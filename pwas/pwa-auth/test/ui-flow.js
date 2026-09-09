@@ -17,7 +17,7 @@ async function _run(page) {
         .getByRole("button", { name: locale === "de" ? "Sechsstellige App-PIN einrichten" : "Set a six-digit app PIN", exact: true })
         .click();
       await p.getByLabel(locale === "de" ? "App-PIN" : "App PIN", { exact: true }).fill("012345");
-      await p.getByLabel(locale === "de" ? "App-PIN wiederholen" : "Repeat app PIN", { exact: true }).fill("012345");
+      await p.getByLabel(locale === "de" ? "PIN wiederholen" : "Repeat PIN", { exact: true }).fill("012345");
       await p.getByRole("button", { name: locale === "de" ? "Schutz speichern" : "Save protection", exact: true }).click();
       await p.getByRole("heading", { name: locale === "de" ? "Cloud hinzufügen" : "Add Cloud", exact: true }).waitFor();
       const d = p.getByRole("dialog");
@@ -43,6 +43,47 @@ async function _run(page) {
       await p.getByRole("dialog").locator("input").fill("https://invalid.example/#pairing=bad");
       await next.click();
       await p.getByRole("alert").waitFor();
+      if ((await d.locator("input").inputValue()) !== "https://invalid.example/#pairing=bad") throw new Error("Invalid link was erased");
+      const payload = {
+        protocol: "cloud-app-approval-v1",
+        issuer: "https://pairing-test.example",
+        pairingId: "11111111-1111-4111-8111-111111111111",
+        secret: "A".repeat(43),
+        expiresAt: new Date(Date.now() + 240000).toISOString(),
+      };
+      const link = (origin, value = payload) => origin + "/#pairing=" + encodeURIComponent(JSON.stringify(value));
+      await d.locator("input").fill(link("http://localhost:4178"));
+      if (await p.getByRole("alert").count()) throw new Error("Editing did not clear stale error");
+      await next.click();
+      await p.getByRole("alert").filter({ hasText: "localhost" }).waitFor();
+      await d.locator("input").fill(link("http://127.0.0.1:4178", { ...payload, expiresAt: new Date(Date.now() - 1000).toISOString() }));
+      await next.click();
+      await p
+        .getByRole("alert")
+        .filter({ hasText: locale === "de" ? "abgelaufen" : "expired" })
+        .waitFor();
+      await d.locator("input").fill(link("http://127.0.0.1:4178"));
+      await next.click();
+      let release;
+      const gate = new Promise((resolve) => {
+        release = resolve;
+      });
+      await p.route("https://pairing-test.example/**", async (route) => {
+        await gate;
+        await route.abort("failed");
+      });
+      await p.getByLabel(locale === "de" ? "Account-Bezeichnung" : "Account label", { exact: true }).fill("Test");
+      await p.getByRole("button", { name: locale === "de" ? "Cloud vertrauen und koppeln" : "Trust Cloud and pair", exact: true }).click();
+      await p
+        .getByRole("button", { name: locale === "de" ? "Verbindung zur Cloud wird hergestellt…" : "Connecting to Cloud…", exact: true })
+        .waitFor();
+      release();
+      await p
+        .getByRole("alert")
+        .filter({ hasText: locale === "de" ? "Cloud nicht erreichbar" : "Could not reach Cloud" })
+        .waitFor();
+      await p.getByRole("button", { name: locale === "de" ? "Anderen Link verwenden" : "Use another link", exact: true }).click();
+      await next.waitFor();
       await p.keyboard.press("Escape");
       await d.waitFor({ state: "hidden" });
       const trigger = p.getByRole("button", { name: locale === "de" ? "Menü" : "Menu", exact: true });

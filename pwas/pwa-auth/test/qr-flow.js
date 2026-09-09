@@ -79,7 +79,7 @@ async function _run(page) {
       await p.getByRole("button", { name: "Add Cloud", exact: true }).click();
       await p.getByRole("button", { name: "Set a six-digit app PIN", exact: true }).click();
       await p.getByLabel("App PIN", { exact: true }).fill("012345");
-      await p.getByLabel("Repeat app PIN", { exact: true }).fill("012345");
+      await p.getByLabel("Repeat PIN", { exact: true }).fill("012345");
       await p.getByRole("button", { name: "Save protection", exact: true }).click();
       await p.getByRole("heading", { name: "Add Cloud", exact: true }).waitFor();
       if ((await p.evaluate(() => window.cameraTest.calls)) !== 0) throw new Error("Camera opened before click");
@@ -147,7 +147,7 @@ async function _run(page) {
           Object.defineProperty(document, "visibilityState", { configurable: true, get: () => "hidden" });
           document.dispatchEvent(new Event("visibilitychange"));
         });
-        await p.getByRole("button", { name: "Unlock", exact: true }).waitFor();
+        await p.getByRole("button", { name: "Scan QR code", exact: true }).waitFor();
         await p.evaluate(() => {
           delete document.visibilityState;
           document.dispatchEvent(new Event("visibilitychange"));

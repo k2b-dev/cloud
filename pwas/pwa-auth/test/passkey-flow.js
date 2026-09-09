@@ -57,12 +57,18 @@ async function _run(page) {
       await ready();
     }
     await button("Add Cloud").click();
-    await button("Use a passkey · Recommended").click();
+    const cta = button("Set up passkey");
+    if (!(await cta.evaluate((button) => !!button.closest("footer")))) throw new Error("Passkey CTA outside footer");
+    const alternative = button("Set a six-digit app PIN");
+    if (!(await alternative.evaluate((button) => button.dataset.variant === "text" || button.classList.contains("k2b-button--text"))))
+      throw new Error("PIN is not a text alternative");
+    await p.screenshot({ path: "output/playwright/pwa-passkey-setup.png" });
+    await cta.click();
     await p.getByRole("heading", { name: "Add Cloud", exact: true }).waitFor({ timeout: 15000 });
     await button("Close").click();
     await ready();
     await p.reload();
-    await button("Unlock").click();
+    if (!(await p.getByRole("dialog").count())) await button("Unlock").click();
     if (await button("Use passkey instead").isVisible()) await button("Use passkey instead").click();
     await button("Unlock with passkey").click();
     await ready();
@@ -71,11 +77,11 @@ async function _run(page) {
     if (await button("Use passkey instead").isVisible()) await button("Use passkey instead").click();
     await button("Unlock with passkey").click();
     await fillAppPin(p, "012345");
-    await p.getByLabel("Repeat app PIN", { exact: true }).fill("012345");
+    await p.getByLabel("Repeat PIN", { exact: true }).fill("012345");
     await button("Save protection").click();
     await ready();
     await menu("Lock app");
-    await button("Unlock").click();
+    if (!(await p.getByRole("dialog").count())) await button("Unlock").click();
     await fillAppPin(p, "012");
     await button("Use passkey instead").click();
     if (await p.getByRole("group", { name: "App PIN", exact: true }).count()) throw new Error("PIN remained visible in passkey mode");
@@ -95,7 +101,7 @@ async function _run(page) {
     await button("Close").click();
     await ready();
     await menu("Lock app");
-    await button("Unlock").click();
+    if (!(await p.getByRole("dialog").count())) await button("Unlock").click();
     if (await p.getByLabel("App PIN", { exact: true }).count()) throw new Error("Removed PIN still offered");
     if (await button("Use passkey instead").isVisible()) await button("Use passkey instead").click();
     await button("Unlock with passkey").click();

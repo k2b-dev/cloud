@@ -18,7 +18,7 @@ async function _run(page) {
     await p.getByRole("button", { name: "Add Cloud", exact: true }).click();
     await p.getByRole("button", { name: "Set a six-digit app PIN", exact: true }).click();
     await p.getByLabel("App PIN", { exact: true }).fill("012345");
-    await p.getByLabel("Repeat app PIN", { exact: true }).fill("012345");
+    await p.getByLabel("Repeat PIN", { exact: true }).fill("012345");
     await p.getByRole("button", { name: "Save protection", exact: true }).click();
     await p.getByRole("heading", { name: "Add Cloud", exact: true }).waitFor();
     const input = await p

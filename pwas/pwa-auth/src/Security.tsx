@@ -137,12 +137,25 @@ export function Security(props: { vault: Vault; mode: "setup" | "unlock" | "mana
                 <p>
                   {props.mode === "reset" ? t().resetWarning : t().securityScope}
                   <Show when={props.mode === "manage" && authenticate()}> {t().verifyFirst}</Show>
+                  <Show when={props.mode === "setup" && !selected() && props.vault.capability() !== "unsupported"}>
+                    {" "}
+                    {props.vault.capability() === "supported" ? t().passkeyHelp : t().passkeyCheck}
+                  </Show>
                 </p>
               </Show>
               <Show when={props.mode === "reset"}>
                 <Checkbox label={t().resetConfirm} value={confirmed} onValueChange={setConfirmed} />
               </Show>
-              <Show when={(props.mode === "setup" || props.mode === "manage") && !selected()}>
+              <Show when={props.mode === "setup" && !selected() && props.vault.capability() !== "unsupported"}>
+                <p class="auth-security-alternative">
+                  {t().pinAlternativeBefore}{" "}
+                  <Button variant="text" aria-label={t().usePin} disabled={busy()} onClick={() => choose("pin")}>
+                    {t().appPin}
+                  </Button>
+                  {t().pinAlternativeAfter}
+                </p>
+              </Show>
+              <Show when={props.mode === "manage" && !selected()}>
                 <Show when={props.vault.capability() !== "unsupported"}>
                   <Button variant="secondary" disabled={busy()} onClick={() => choose("passkey")}>
                     {t().usePasskey}
@@ -169,13 +182,15 @@ export function Security(props: { vault: Vault; mode: "setup" | "unlock" | "mana
                 </Show>
               </Show>
               <Show when={pinEntry()}>
-                <Show when={!authenticate()}>
-                  <p class="auth-flow-note">{t().pinWarning}</p>
-                </Show>
                 <Show
                   when={authenticate()}
                   fallback={
                     <TextInput
+                      ref={(input) =>
+                        queueMicrotask(() => {
+                          if (input.isConnected && !stopped) input.focus();
+                        })
+                      }
                       label={t().appPin}
                       password
                       onSubmit={submitPin}
@@ -215,6 +230,7 @@ export function Security(props: { vault: Vault; mode: "setup" | "unlock" | "mana
                     onValueChange={(v) => setRepeat(v.replace(/[^0-9]/g, "").slice(0, 6))}
                     disabled={busy()}
                   />
+                  <p>{t().pinWarning}</p>
                 </Show>
               </Show>
               <Show when={authenticate() && has("pin") && has("passkey")}>
@@ -254,6 +270,11 @@ export function Security(props: { vault: Vault; mode: "setup" | "unlock" | "mana
               <Button variant="ghost" disabled={busy()} onClick={() => (pinSetup() ? backToMethods() : props.close())}>
                 {pinSetup() ? t().back : t().close}
               </Button>
+              <Show when={props.mode === "setup" && (!selected() || selected() === "passkey")}>
+                <Button loading={busy()} onClick={() => choose(props.vault.capability() === "unsupported" ? "pin" : "passkey")}>
+                  {props.vault.capability() === "unsupported" ? t().usePin : t().setupPasskey}
+                </Button>
+              </Show>
               <Show when={pinEntry() && !authenticate()}>
                 <Button disabled={busy() || !valid()} onClick={submitPin}>
                   {t().saveSecurity}
@@ -297,6 +318,8 @@ export const openSecurity = (vault: Vault, preferences: Preferences, mode: "setu
       initialFocus:
         mode === "unlock"
           ? (dialog) => dialog.querySelector<HTMLElement>(".auth-flow input:not([disabled]), .auth-flow button:not([disabled])")
-          : "first-input",
+          : mode === "setup"
+            ? (dialog) => dialog.querySelector<HTMLElement>("footer button:last-child")
+            : "first-input",
     },
   );

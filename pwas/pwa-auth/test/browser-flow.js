@@ -37,7 +37,7 @@ async function _run(page, protection = "pin") {
         await intro.click();
         await target.waitForFunction(() => !history.state?.cloudLoginDialog);
       }
-      await target.getByRole("button", { name: "Unlock", exact: true }).click();
+      if (!(await target.getByRole("dialog").count())) await target.getByRole("button", { name: "Unlock", exact: true }).click();
     }
     if (protection === "passkey") await target.getByRole("button", { name: "Unlock with passkey", exact: true }).click();
     else {
@@ -77,11 +77,11 @@ async function _run(page, protection = "pin") {
     const first = await post(a, "pair");
     await p.goto(first.link);
     if (p.url().includes("#")) throw new Error("Pairing fragment retained");
-    if (protection !== "pin") await p.getByRole("button", { name: "Use a passkey · Recommended", exact: true }).click();
+    if (protection !== "pin") await p.getByRole("button", { name: "Set up passkey", exact: true }).click();
     else {
       await p.getByRole("button", { name: "Set a six-digit app PIN", exact: true }).click();
       await fillAppPin(p, "012345");
-      await p.getByLabel("Repeat app PIN", { exact: true }).fill("012345");
+      await p.getByLabel("Repeat PIN", { exact: true }).fill("012345");
       await p.getByRole("button", { name: "Save protection", exact: true }).click();
     }
     await p.getByRole("heading", { name: "Add Cloud", exact: true }).waitFor();
@@ -99,9 +99,8 @@ async function _run(page, protection = "pin") {
     const code = await p.locator(".auth-comparison").textContent();
     await context.unroute("**/api/auth/app-approval/v1/pairings/claim");
     if (claims !== 1) throw new Error("Claim was retried after a lost response");
-    await p.getByRole("checkbox", { name: "Both codes match." }).check();
     await post(a, "confirm", { pairingId: first.pairingId, comparison: code });
-    await p.getByRole("button", { name: "Finish pairing" }).click({ timeout: 15000 });
+    await p.getByRole("button", { name: "Both codes match." }).click({ timeout: 15000 });
     await p.getByRole("heading", { name: "Personal Cloud", exact: true }).waitFor();
     if (protection === "both") {
       await p.getByRole("button", { name: "Menu", exact: true }).click();
@@ -109,7 +108,7 @@ async function _run(page, protection = "pin") {
       await p.getByRole("button", { name: "Set a six-digit app PIN", exact: true }).click();
       await p.getByRole("button", { name: "Unlock with passkey", exact: true }).click();
       await fillAppPin(p, "012345");
-      await p.getByLabel("Repeat app PIN", { exact: true }).fill("012345");
+      await p.getByLabel("Repeat PIN", { exact: true }).fill("012345");
       await p.getByRole("button", { name: "Save protection", exact: true }).click();
       await p.waitForFunction(() => !history.state?.cloudLoginDialog);
     }
@@ -134,9 +133,8 @@ async function _run(page, protection = "pin") {
     await p.getByRole("button", { name: "Trust Cloud and pair" }).click();
     await p.locator(".auth-comparison").waitFor();
     if ((await p.locator(".auth-comparison").textContent()) !== codeB) throw new Error("Recovery changed comparison");
-    await p.getByRole("checkbox", { name: "Both codes match." }).check();
     await post(b, "confirm", { pairingId: second.pairingId, comparison: codeB });
-    await p.getByRole("button", { name: "Finish pairing" }).click({ timeout: 15000 });
+    await p.getByRole("button", { name: "Both codes match." }).click({ timeout: 15000 });
     await p.getByRole("heading", { name: "Work Cloud", exact: true }).waitFor();
     await p.reload();
     const dismiss = p.getByRole("button", { name: "Continue in browser", exact: true });
@@ -232,10 +230,13 @@ async function _run(page, protection = "pin") {
       delete document.visibilityState;
       document.dispatchEvent(new Event("visibilitychange"));
     });
-    await unlock(p);
     step = "revocation";
-    await cloudB.getByRole("button", { name: "Disconnect Cloud: Work Cloud", exact: true }).click();
+    await p.getByRole("button", { name: "Menu", exact: true }).click();
+    await p.getByRole("menuitem", { name: "Manage accounts", exact: true }).click();
+    await p.getByRole("button", { name: "Disconnect Cloud: Work Cloud", exact: true }).click();
     await p.getByRole("button", { name: "Revoke device", exact: true }).click();
+    await p.getByRole("button", { name: "Revoke device", exact: true }).waitFor({ state: "hidden" });
+    await p.getByRole("button", { name: "Close", exact: true }).click();
     await p.getByRole("dialog").waitFor({ state: "hidden" });
     if (await p.getByRole("heading", { name: "Work Cloud", exact: true }).count()) throw new Error("Revocation did not remove binding");
     const devices = await post(b, "devices");

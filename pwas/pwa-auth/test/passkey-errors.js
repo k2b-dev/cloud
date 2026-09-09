@@ -20,7 +20,7 @@ async function _run(page) {
     await p.getByRole("button", { name: "Continue in browser", exact: true }).click();
     await p.waitForFunction(() => !history.state?.cloudLoginDialog);
     await p.getByRole("button", { name: "Add Cloud", exact: true }).click();
-    await p.getByRole("button", { name: "Use a passkey · Recommended", exact: true }).click();
+    await p.getByRole("button", { name: "Set up passkey", exact: true }).click();
     await p.getByRole("alert").waitFor();
     const header = await p.evaluate(async () => {
       const db = await new Promise((resolve) => {
@@ -37,7 +37,7 @@ async function _run(page) {
     if (header) throw new Error("Provider without PRF created a vault");
     await p.getByRole("button", { name: "Set a six-digit app PIN", exact: true }).click();
     await p.getByLabel("App PIN", { exact: true }).fill("012345");
-    await p.getByLabel("Repeat app PIN", { exact: true }).fill("012345");
+    await p.getByLabel("Repeat PIN", { exact: true }).fill("012345");
     await p.getByRole("button", { name: "Save protection", exact: true }).click();
     await p.getByRole("heading", { name: "Add Cloud", exact: true }).waitFor();
     return { missingProviderPrfRejected: true, noImplicitFallback: true, explicitPinSetupWorks: true };

@@ -173,13 +173,13 @@ body {
   width: 100%;
   max-width: 33rem;
   margin-inline: auto;
-  align-self: start;
-  display: grid;
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
   gap: 1.5rem;
 }
 .auth-cloud {
-  border: 1px solid var(--k2b-border);
-  border-radius: var(--k2b-radius-surface);
+  flex: none;
   padding: 1.25rem;
   display: grid;
   gap: 1rem;
@@ -317,4 +317,59 @@ body.k2b-ui textarea {
   min-height: 6rem;
   color: var(--k2b-success-text);
   font-size: 4rem;
+}
+
+.auth-flow .auth-security-alternative .k2b-button {
+  display: inline;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  font: inherit;
+  color: inherit;
+  vertical-align: baseline;
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
+}
+
+.auth-account-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.auth-account-copy {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.auth-cloud-logo {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  flex: none;
+  color: var(--k2b-text-muted);
+  font-size: 1.5rem;
+}
+.auth-cloud-logo img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  opacity: 0;
+}
+.auth-cloud-logo img.auth-cloud-logo--loaded {
+  opacity: 1;
+}
+.auth-cloud-heading {
+  flex: 1;
+  min-width: 0;
+}
+
+.auth-clouds > .auth-recovery {
+  margin: auto 0 0;
+  padding-top: 1.5rem;
 }

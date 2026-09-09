@@ -1,4 +1,4 @@
-import { Button, Checkbox, PanelDialog, TextInput, toast, useLocale } from "@k2b/ui";
+import { Button, PanelDialog, TextInput, toast, useLocale } from "@k2b/ui";
 import { appApproval } from "@valentinkolb/cloud/browser/app-approval";
 import { createMemo, createSignal, onCleanup, onMount, Show } from "solid-js";
 import { type Authenticator, failure, type PairingPayload } from "./authenticator";
@@ -16,9 +16,9 @@ export function Pairing(props: { auth: Authenticator; link?: string; close: () =
   const [label, setLabel] = createSignal("");
   const [error, setError] = createSignal("");
   const [busy, setBusy] = createSignal(false);
+  const [progress, setProgress] = createSignal("");
   const [comparison, setComparison] = createSignal("");
   const [confirmed, setConfirmed] = createSignal(false);
-  const [matched, setMatched] = createSignal(false);
   let enrollment: Enrollment | undefined;
   let deviceId: string | undefined;
   let abort = new AbortController();
@@ -26,15 +26,26 @@ export function Pairing(props: { auth: Authenticator; link?: string; close: () =
   let nextPoll = 0;
   let delay = appApproval.limits.pollSeconds * 1000;
   const parse = (link: string) => {
-    setText("");
     setError("");
     try {
       const p = appApproval.parsePairingLink(link, location.origin);
-      if (Date.parse(p.expiresAt) <= Date.now()) throw new Error();
+      if (Date.parse(p.expiresAt) <= Date.now()) {
+        setError(t().expiredLink);
+        return false;
+      }
+      setText("");
       setPayload(p);
       return true;
     } catch {
-      setError(t().invalidLink);
+      let message = t().invalidLink;
+      try {
+        const origin = new URL(link.trim()).origin;
+        appApproval.parsePairingLink(link, origin);
+        if (origin !== location.origin) message = t().wrongAppLink;
+      } catch {
+        /* Keep the generic format error for malformed links. */
+      }
+      setError(message);
       return false;
     }
   };
@@ -48,6 +59,7 @@ export function Pairing(props: { auth: Authenticator; link?: string; close: () =
       return;
     }
     setBusy(true);
+    setProgress(t().checkingPairing);
     let reserved = false;
     const pollId = `pair-poll:${enrollment.id}`;
     try {
@@ -60,10 +72,11 @@ export function Pairing(props: { auth: Authenticator; link?: string; close: () =
         stopped = true;
         return;
       }
-      reserved = await storage.reserve(pollId, Date.now() + 2 * appApproval.limits.proofSeconds * 1000);
+      reserved = await storage.reserve(pollId, Date.now() + appApproval.limits.pollSeconds * 1000);
       if (!reserved) return;
-      const api = await props.auth.client(p.issuer, abort.signal);
-      const result = await api.pairingResult(p, enrollment.key, abort.signal);
+      const signal = AbortSignal.any([abort.signal, AbortSignal.timeout(30_000)]);
+      const api = await props.auth.client(p.issuer, signal);
+      const result = await api.pairingResult(p, enrollment.key, signal);
       setError("");
       if (result.state === "cancelled") {
         stopped = true;
@@ -89,7 +102,7 @@ export function Pairing(props: { auth: Authenticator; link?: string; close: () =
     } catch (e) {
       if (!abort.signal.aborted) {
         const reason = failure(e);
-        setError(t()[reason]);
+        setError(reason === "unavailable" ? t().pairingRetrying : t()[reason]);
         if (reason === "forbidden" || reason === "stale") stopped = true;
         delay = Math.min(delay * 2, appApproval.limits.proofSeconds * 1000);
       }
@@ -104,11 +117,13 @@ export function Pairing(props: { auth: Authenticator; link?: string; close: () =
     if (!p || busy() || enrollment || !name().trim() || !label().trim()) return;
     setBusy(true);
     setError("");
+    setProgress(t().connectingCloud);
     try {
-      const api = await props.auth.client(p.issuer, abort.signal);
+      const signal = AbortSignal.any([abort.signal, AbortSignal.timeout(30_000)]);
+      const api = await props.auth.client(p.issuer, signal);
       const id = bindingId(p.issuer, p.pairingId);
       // Serializes generation and claim across tabs. Reload/paste recovers the original key.
-      await navigator.locks.request(`pairing:${id}`, { signal: abort.signal }, async () => {
+      await navigator.locks.request(`pairing:${id}`, { signal }, async () => {
         const saved = await storage.enrollment(id);
         if (saved) {
           enrollment = saved;
@@ -117,19 +132,25 @@ export function Pairing(props: { auth: Authenticator; link?: string; close: () =
           setComparison(saved.comparison ?? "");
           return;
         }
+        setProgress(t().preparingPairing);
         const key = await storage.createKey();
         await storage.saveEnrollment({ id, issuer: p.issuer, key, name: name().trim(), label: label().trim() });
         enrollment = await storage.enrollment(id);
         if (!enrollment || !(enrollment.key.privateKey instanceof CryptoKey) || enrollment.key.privateKey.extractable)
           throw new Error("storage");
-        const claimed = await api.claim(p, enrollment.key, enrollment.name, abort.signal);
+        signal.throwIfAborted();
+        setProgress(t().sendingPairing);
+        const claimed = await api.claim(p, enrollment.key, enrollment.name, signal);
         deviceId = claimed.deviceId;
         setComparison(claimed.comparison);
         enrollment.comparison = claimed.comparison;
         await storage.saveEnrollment(enrollment);
       });
     } catch (e) {
-      setError(e instanceof Error && e.message === "storage" ? t().storage : t()[failure(e)]);
+      if (!abort.signal.aborted) {
+        const reason = failure(e);
+        setError(reason === "unavailable" ? (enrollment ? t().pairingRetrying : t().pairingConnectionFailed) : t()[reason]);
+      }
     } finally {
       setBusy(false);
       nextPoll = 0;
@@ -137,8 +158,9 @@ export function Pairing(props: { auth: Authenticator; link?: string; close: () =
     }
   };
   const finish = async () => {
-    if (!confirmed() || !matched() || !enrollment || !deviceId || busy()) return;
+    if (!confirmed() || !comparison() || !enrollment || !deviceId || busy()) return;
     setBusy(true);
+    setProgress(t().savingCloud);
     try {
       await storage.saveBinding({
         id: bindingId(enrollment.issuer, deviceId),
@@ -211,7 +233,13 @@ export function Pairing(props: { auth: Authenticator; link?: string; close: () =
                         icon="ti ti-link"
                         label={t().pairingLink}
                         value={text}
-                        onValueChange={setText}
+                        onValueChange={(value) => {
+                          setText(value);
+                          setError("");
+                        }}
+                        onSubmit={() => {
+                          if (text().trim()) parse(text());
+                        }}
                         maxLength={appApproval.limits.bodyBytes}
                         autocomplete="off"
                         spellcheck={false}
@@ -222,7 +250,7 @@ export function Pairing(props: { auth: Authenticator; link?: string; close: () =
                   <QrCamera
                     onResult={(link) => {
                       if (!parse(link)) {
-                        toast.error(t().invalidLink, { title: t().invalidQrTitle });
+                        toast.error(error(), { title: t().invalidQrTitle });
                         return false;
                       }
                       setScanning(false);
@@ -264,7 +292,6 @@ export function Pairing(props: { auth: Authenticator; link?: string; close: () =
                 <Show when={comparison()}>
                   <p>{t().pairingComparison}</p>
                   <output class="auth-comparison">{comparison()}</output>
-                  <Checkbox label={t().codesMatch} value={matched} onValueChange={setMatched} />
                   <p role="status">{confirmed() ? t().pairingConfirmed : t().waitingConfirmation}</p>
                 </Show>
 
@@ -273,6 +300,12 @@ export function Pairing(props: { auth: Authenticator; link?: string; close: () =
                 </Show>
               </>
             )}
+          </Show>
+          <Show when={busy() && (!comparison() || !enrollment || confirmed())}>
+            <p role="status">{progress()}</p>
+          </Show>
+          <Show when={!busy() && !!enrollment && !comparison() && !error()}>
+            <p role="status">{t().checkingPairing}</p>
           </Show>
           <Show when={error()}>
             <p role="alert">{error()}</p>
@@ -296,7 +329,9 @@ export function Pairing(props: { auth: Authenticator; link?: string; close: () =
           </Show>
           <Show when={payload() && !comparison() && !confirmed()}>
             <Button
-              disabled={busy() || !!enrollment || !name().trim() || !label().trim()}
+              loading={busy()}
+              loadingLabel={progress()}
+              disabled={!!enrollment || !name().trim() || !label().trim()}
               onClick={() => {
                 void claim();
               }}
@@ -304,14 +339,35 @@ export function Pairing(props: { auth: Authenticator; link?: string; close: () =
               {t().trustAndPair}
             </Button>
           </Show>
-          <Show when={confirmed()}>
+          <Show when={payload() && error() && !busy() && !confirmed()}>
             <Button
-              disabled={!matched() || busy()}
+              variant="secondary"
+              onClick={() => {
+                abort.abort();
+                abort = new AbortController();
+                enrollment = undefined;
+                deviceId = undefined;
+                stopped = false;
+                nextPoll = 0;
+                delay = appApproval.limits.pollSeconds * 1000;
+                setPayload(undefined);
+                setComparison("");
+                setError("");
+              }}
+            >
+              {t().useAnotherLink}
+            </Button>
+          </Show>
+          <Show when={comparison()}>
+            <Button
+              loading={confirmed() && busy()}
+              loadingLabel={t().savingCloud}
+              disabled={!confirmed() || busy()}
               onClick={() => {
                 void finish();
               }}
             >
-              {t().finishPairing}
+              {t().codesMatch}
             </Button>
           </Show>
         </div>

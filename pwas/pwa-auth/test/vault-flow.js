@@ -28,10 +28,11 @@ async function _run(page) {
     await button("Add Cloud").click();
     await p.getByRole("heading", { name: "Protect Cloud Login" }).waitFor();
     await button("Set a six-digit app PIN").click();
+    await p.waitForFunction(() => document.activeElement === document.querySelector("dialog input"));
     await pin("012345");
-    await p.getByLabel("Repeat app PIN", { exact: true }).fill("012346");
+    await p.getByLabel("Repeat PIN", { exact: true }).fill("012346");
     if (!(await button("Save protection").isDisabled())) throw new Error("Mismatched PIN accepted");
-    await p.getByLabel("Repeat app PIN", { exact: true }).fill("012345");
+    await p.getByLabel("Repeat PIN", { exact: true }).fill("012345");
     await button("Save protection").click();
     await p.getByRole("heading", { name: "Add Cloud", exact: true }).waitFor();
     await button("Close").click();
@@ -52,7 +53,7 @@ async function _run(page) {
     if (JSON.stringify(stored).includes("012345") || stored.config.methods[0].kdf !== "argon2id-64m-t3-p1")
       throw new Error("Unsafe PIN storage");
     await p.reload();
-    await button("Unlock").click();
+    if (!(await p.getByRole("dialog").count())) await button("Unlock").click();
     await p.waitForFunction(() => document.activeElement === document.querySelector("dialog .k2b-pin-input input"));
     if (await p.getByRole("dialog").getByRole("button", { name: "Unlock", exact: true }).count())
       throw new Error("Redundant unlock button");
@@ -68,7 +69,7 @@ async function _run(page) {
     }
     const deadline = await p.evaluate(() => JSON.parse(localStorage.getItem("pwa-auth.pin-retry")).retryAt);
     await p.reload();
-    await button("Unlock").click();
+    if (!(await p.getByRole("dialog").count())) await button("Unlock").click();
     if (
       !(await p
         .locator("dialog .k2b-pin-input input")
@@ -89,20 +90,20 @@ async function _run(page) {
     await menu("App security");
     await button("Change app PIN").click();
     await pin("012345");
-    await p.getByLabel("Repeat app PIN", { exact: true }).waitFor();
+    await p.getByLabel("Repeat PIN", { exact: true }).waitFor();
     await pin("654321");
-    await p.getByLabel("Repeat app PIN", { exact: true }).fill("654321");
+    await p.getByLabel("Repeat PIN", { exact: true }).fill("654321");
     await button("Save protection").click();
     await ready();
     await menu("Lock app");
-    await button("Unlock").click();
+    if (!(await p.getByRole("dialog").count())) await button("Unlock").click();
     await pin("012345");
     await p.getByRole("alert").waitFor();
     await pin("654321");
     await ready();
     const other = await context.newPage();
     await other.goto("http://127.0.0.1:4178/");
-    await other.getByRole("button", { name: "Unlock", exact: true }).click();
+    if (!(await other.getByRole("dialog").count())) await other.getByRole("button", { name: "Unlock", exact: true }).click();
     await fillAppPin(other, "654321");
     await other.waitForFunction(() => !history.state?.cloudLoginDialog);
     await menu("Lock app");

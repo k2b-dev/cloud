@@ -21,6 +21,7 @@ export function createVault() {
   let generation = 0;
   let ceremony: AbortController | undefined;
   let lastActivity = Date.now();
+  let hiddenAt: number | undefined;
   const [retry, setRetry] = localStore.create("pwa-auth.pin-retry", { attempts: 0, retryAt: 0 });
   const attempts = () => (Number.isInteger(retry.attempts) ? Math.max(0, Math.min(6, retry.attempts)) : 0);
   const retryAt = () => (Number.isSafeInteger(retry.retryAt) ? retry.retryAt : 0);
@@ -33,6 +34,7 @@ export function createVault() {
   };
   const lock = (broadcast = true) => {
     cancelPending();
+    hiddenAt = undefined;
     lockStorage();
     if (status() === "open") setStatus("locked");
     closeDialogs();
@@ -200,13 +202,19 @@ export function createVault() {
     };
     const visibility = () => {
       if (document.visibilityState !== "visible") {
-        // A WebAuthn OS sheet can temporarily hide the page. It never keeps an open vault alive.
-        if (status() === "open" || !ceremony) lock(false);
+        if (status() === "open") {
+          hiddenAt ??= Date.now();
+          cancelPending();
+        } else if (!ceremony) lock(false);
+      } else {
+        if (hiddenAt !== undefined && Date.now() - hiddenAt >= 60_000) lock(false);
+        hiddenAt = undefined;
       }
     };
     const hide = () => lock(false);
     const timer = setInterval(() => {
       setNow(Date.now());
+      if (status() === "open" && hiddenAt !== undefined && Date.now() - hiddenAt >= 60_000) lock(false);
       if (status() === "open" && Date.now() - lastActivity >= 300_000) lock();
     }, 1000);
     channel.onmessage = () => {

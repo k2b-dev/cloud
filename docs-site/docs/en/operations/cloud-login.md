@@ -57,7 +57,10 @@ vault, even when a passkey is configured. Local retry delays are not a hardware
 guess limit. Failed attempts and the remaining delay survive reloads, but
 clearing or changing browser data can bypass this local delay.
 
-The app starts locked after a reload and locks when hidden, on page exit, after
+The unlock dialog opens automatically on startup or return to the locked app.
+It can be dismissed; passkey verification starts with an explicit button press.
+
+The app starts locked after a reload and locks after one minute in the background, on page exit, after
 five minutes without interaction, or through **Lock app**. Locking hides Cloud
 and account details, closes sensitive dialogs, and stops polling. Other open
 tabs receive the lock as well. Operating-system passkey dialogs may temporarily
@@ -82,6 +85,12 @@ On your own Cloud profile page, open **Security → Paired devices → Pair a de
 Copy the link into **Add Cloud** in Cloud Login, open the link on the same device,
 or choose **Scan QR code** to scan inside Cloud Login. The phone's camera can
 also open the link. All paths carry the same temporary link.
+
+Invalid pasted links remain editable. The app distinguishes expired links from
+links intended for another app origin. After you trust the Cloud, progress is
+shown while connecting and pairing. Network requests time out after 30 seconds.
+If a claim may already have reached Cloud, the app checks its status without
+resending it. You can use another link after an error.
 The PWA removes its fragment from browser history before contacting the Cloud.
 
 The in-app scanner requests camera access only after a click. Its images stay
@@ -90,13 +99,21 @@ paste the link instead. Scanning never skips issuer consent or confirmation.
 
 Check the Cloud address before trusting it. Choose an account label for this
 device and a device name, compare the code in both windows, and confirm in the
-original Cloud session. Finish pairing in Cloud Login after confirming that
-the codes match. The local label is user-chosen, not verified account metadata.
+original Cloud session. Once Cloud confirms, choose **Both codes match** in
+Cloud Login to finish pairing. The local label is user-chosen, not verified account metadata.
 
-Switching to the Cloud window can lock Cloud Login and close the pairing dialog.
+A switch to the Cloud window keeps Cloud Login unlocked for up to one minute.
+After a longer absence, it locks and closes the pairing dialog.
 Unlock and paste the same unexpired link again to reuse the stored key. Pairing links expire
 after five minutes. If the link expires, start again in Cloud and revoke any
 previously confirmed device you can no longer use.
+
+## Manage connected accounts
+
+Open **Manage accounts** from the menu. Use the pencil to change a local account
+label, or the delete button to open the disconnect confirmation. Nothing is
+removed until you confirm. By default, disconnecting revokes the device in Cloud;
+the explicit local-only option removes it from this app without revocation.
 
 ## Approve and recover
 

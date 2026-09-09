@@ -22,7 +22,7 @@ async function _run(page) {
     };
     const fill = async (value) => {
       await fillAppPin(p, value);
-      await p.getByLabel("Repeat app PIN", { exact: true }).fill(value);
+      await p.getByLabel("Repeat PIN", { exact: true }).fill(value);
     };
     const readHeader = () =>
       p.evaluate(async () => {
@@ -74,7 +74,7 @@ async function _run(page) {
             },
           });
         });
-        await button("Use a passkey · Recommended").click();
+        await button("Set up passkey").click();
         await p.waitForFunction(() => window.credentialPending);
         await p.keyboard.press("Escape");
         await ready();
@@ -104,7 +104,7 @@ async function _run(page) {
         }
         if (mode === "late-unlock") {
           await menu("Lock app");
-          await button("Unlock").click();
+          if (!(await p.getByRole("dialog").count())) await button("Unlock").click();
           await p.evaluate(() => {
             const decrypt = crypto.subtle.decrypt.bind(crypto.subtle);
             crypto.subtle.decrypt = async (...args) => {
@@ -132,13 +132,22 @@ async function _run(page) {
             Object.defineProperty(document, "visibilityState", { configurable: true, get: () => "hidden" });
             document.dispatchEvent(new Event("visibilitychange"));
           });
-          await button("Unlock").waitFor();
-          await p.getByRole("dialog").waitFor({ state: "hidden" });
+          if (!(await p.getByRole("dialog").isVisible())) throw new Error("Short background switch closed pairing");
           await p.evaluate(() => {
             Object.defineProperty(document, "visibilityState", { configurable: true, get: () => "visible" });
             document.dispatchEvent(new Event("visibilitychange"));
           });
+          if (!(await p.getByRole("dialog").isVisible())) throw new Error("Short return locked app");
+          await p.evaluate(() => {
+            Object.defineProperty(document, "visibilityState", { configurable: true, get: () => "hidden" });
+            document.dispatchEvent(new Event("visibilitychange"));
+            const now = Date.now;
+            Date.now = () => now() + 61000;
+            Object.defineProperty(document, "visibilityState", { configurable: true, get: () => "visible" });
+            document.dispatchEvent(new Event("visibilitychange"));
+          });
           await button("Unlock").waitFor();
+          await p.getByRole("dialog").waitFor({ state: "hidden" });
           results.push({ mode, passed: true });
           continue;
         }
@@ -160,7 +169,7 @@ async function _run(page) {
           await p.getByRole("alert").waitFor();
           if (JSON.stringify(before) !== JSON.stringify(await readHeader())) throw new Error("Failed transaction changed protection");
           await p.reload();
-          await button("Unlock").click();
+          if (!(await p.getByRole("dialog").count())) await button("Unlock").click();
           await fillAppPin(p, "012345");
           await ready();
           results.push({ mode, passed: true });

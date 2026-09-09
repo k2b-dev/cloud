@@ -197,6 +197,12 @@ export function createAuthenticator(vault: import("./vault").Vault) {
     client,
     decide,
     revoke,
+    rename: async (binding: Binding, label: string) => {
+      const latest = (await storage.bindings()).find((b) => b.id === binding.id);
+      if (!latest || !label.trim() || label.length > 80) throw new Error("storage");
+      await storage.saveBinding({ ...latest, label: label.trim() });
+      await changed();
+    },
     forget: async (binding: Binding) => {
       await storage.removeBinding(binding.id);
       await changed();

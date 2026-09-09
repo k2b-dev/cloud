@@ -20,7 +20,7 @@ async function _run(page) {
     await p.getByRole("button", { name: "Add Cloud", exact: true }).click();
     await p.getByRole("button", { name: "Set a six-digit app PIN", exact: true }).click();
     await fillAppPin(p, "012345");
-    await p.getByLabel("Repeat app PIN", { exact: true }).fill("012345");
+    await p.getByLabel("Repeat PIN", { exact: true }).fill("012345");
     await p.getByRole("button", { name: "Save protection", exact: true }).click();
     await p.getByRole("heading", { name: "Add Cloud", exact: true }).waitFor();
     await p.getByRole("button", { name: "Close", exact: true }).click();
@@ -39,7 +39,7 @@ async function _run(page) {
         throw error;
     });
     await p.getByText("You are offline. Connect to the internet to pair or approve sign-ins.", { exact: true }).waitFor();
-    await p.getByRole("button", { name: "Unlock", exact: true }).click();
+    if (!(await p.getByRole("dialog").count())) await p.getByRole("button", { name: "Unlock", exact: true }).click();
     await fillAppPin(p, "012345");
     await p.waitForFunction(() => !history.state?.cloudLoginDialog);
     await p.getByRole("button", { name: "Add Cloud", exact: true }).waitFor();

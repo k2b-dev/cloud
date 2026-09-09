@@ -1,7 +1,7 @@
 import { Button, Dropdown, type DropdownItem, LocaleProvider, Placeholder, useLocale } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, onCleanup, onMount, Show } from "solid-js";
 import { consumePairingLocation, createAuthenticator } from "./authenticator";
-import { Clouds } from "./Clouds";
+import { Clouds, openManageAccounts } from "./Clouds";
 import { openDialog } from "./dialog";
 import { openInstallDialog } from "./InstallDialog";
 import { authMessages } from "./i18n";
@@ -19,6 +19,24 @@ export function App(props: { preferences: Preferences }) {
   const vault = createVault();
   const auth = createAuthenticator(vault);
   let pairingOpen = false;
+  let unlockOpen = false;
+  const showUnlock = async () => {
+    if (
+      vault.status() !== "locked" ||
+      document.visibilityState !== "visible" ||
+      unlockOpen ||
+      pairingOpen ||
+      installDialogOpen ||
+      document.querySelector("dialog[open]")
+    )
+      return;
+    unlockOpen = true;
+    try {
+      await openSecurity(vault, props.preferences, "unlock");
+    } finally {
+      unlockOpen = false;
+    }
+  };
   const showPairing = async (link?: string) => {
     if (pairingOpen) return;
     pairingOpen = true;
@@ -48,15 +66,21 @@ export function App(props: { preferences: Preferences }) {
       await openInstallDialog(installation, props.preferences);
     } finally {
       installDialogOpen = false;
+      void showUnlock();
     }
   };
   const [pendingLink, setPendingLink] = createSignal<string>();
+  let initialUnlockChecked = false;
   createEffect(() => {
     if (vault.status() === "loading") return;
     const link = pendingLink();
     if (link) {
       setPendingLink(undefined);
+      initialUnlockChecked = true;
       void showPairing(link);
+    } else if (!initialUnlockChecked) {
+      initialUnlockChecked = true;
+      void showUnlock();
     }
   });
   onMount(() => {
@@ -67,12 +91,28 @@ export function App(props: { preferences: Preferences }) {
       const next = consumePairingLocation();
       if (next) setPendingLink(next);
     };
+    const resumed = () =>
+      queueMicrotask(() => {
+        void showUnlock();
+      });
     window.addEventListener("hashchange", changed);
-    onCleanup(() => window.removeEventListener("hashchange", changed));
+    window.addEventListener("focus", resumed);
+    document.addEventListener("visibilitychange", resumed);
+    onCleanup(() => {
+      window.removeEventListener("hashchange", changed);
+      window.removeEventListener("focus", resumed);
+      document.removeEventListener("visibilitychange", resumed);
+    });
   });
   const items = createMemo<DropdownItem[]>(() => [
     ...(vault.status() === "open"
       ? [
+          {
+            label: t().manageAccounts,
+            action: () => {
+              void openManageAccounts(auth, props.preferences);
+            },
+          },
           {
             label: t().security,
             action: () => {
@@ -147,7 +187,7 @@ export function App(props: { preferences: Preferences }) {
               <img class="auth-mark" src="/favicon.svg" width="80" height="80" alt="" />
               <Show when={vault.status() === "locked"}>
                 <Placeholder title={t().unlockApp} description={t().lockedHelp} />
-                <Button onClick={() => void openSecurity(vault, props.preferences, "unlock")}>{t().unlockApp}</Button>
+                <Button onClick={() => void showUnlock()}>{t().unlockApp}</Button>
               </Show>
               <Show when={vault.status() === "legacy"}>
                 <Placeholder title={t().legacyTitle} description={t().legacyHelp} />
