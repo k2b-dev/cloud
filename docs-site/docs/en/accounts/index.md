@@ -21,6 +21,9 @@ People manage their own devices in **My account → Security**.
 Use the avatar menu to open **Profile settings** or **Sign out**. Signing out
 ends the current browser session.
 
+Choose **Deutsch** or **English** beside the legal links on sign-in and
+recovery pages. The choice also applies after sign-in and is saved in this browser.
+
 ## Before your first use
 
 After signing in, review and accept this Cloud's terms and acknowledge its

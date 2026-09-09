@@ -24,7 +24,7 @@ export const appApprovalMessages = i18n.define({
       devices: "Paired devices",
       pair: "Pair a device",
       identifier: "Email or username",
-      identifierPlaceholder: "name@example.org or your username",
+      identifierPlaceholder: "Email or username",
       signIn: "Sign in with app",
       signInHint: "Use an app already paired with this Cloud account. Without a paired app, use the alternative sign-in below.",
       waiting: "Compare this code with your app, then confirm there.",
@@ -113,7 +113,7 @@ export const appApprovalMessages = i18n.define({
       devices: "Gekoppelte Geräte",
       pair: "Gerät koppeln",
       identifier: "E-Mail oder Kürzel",
-      identifierPlaceholder: "name@beispiel.de oder dein Kürzel",
+      identifierPlaceholder: "E-Mail oder Kürzel",
       signIn: "Mit App anmelden",
       signInHint:
         "Nutze eine bereits mit diesem Cloud-Account gekoppelte App. Ohne gekoppelte App nutze die alternative Anmeldung darunter.",

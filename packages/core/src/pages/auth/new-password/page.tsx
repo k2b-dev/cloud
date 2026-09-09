@@ -4,8 +4,9 @@ import { getLocale } from "@valentinkolb/cloud/server";
 import { coreSettings } from "@valentinkolb/cloud/services";
 import { normalizeRedirectTo, readThemeFromCookieHeader } from "@valentinkolb/cloud/shared";
 import { ssr } from "../../../config";
-import NewPasswordForm from "./NewPasswordForm.island";
+import AuthFooter from "../AuthFooter";
 import { authMessages } from "../messages";
+import NewPasswordForm from "./NewPasswordForm.island";
 
 /** Set new password page (for expired/temporary passwords). */
 export default ssr(async (c) => {
@@ -74,16 +75,7 @@ export default ssr(async (c) => {
               </div>
             </main>
           </div>
-          <div class="text-center text-xs text-dimmed">
-            {legalLinks.map((link, i) => (
-              <>
-                {i > 0 ? " · " : null}
-                <a href={link.href} target="_blank" class="hover:text-primary">
-                  {link.label}
-                </a>
-              </>
-            ))}
-          </div>
+          <AuthFooter links={legalLinks} />
         </div>
       </div>
     </LocaleProvider>

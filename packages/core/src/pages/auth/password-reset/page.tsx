@@ -4,9 +4,10 @@ import { getLocale } from "@valentinkolb/cloud/server";
 import { coreSettings } from "@valentinkolb/cloud/services";
 import { normalizeRedirectTo, readThemeFromCookieHeader } from "@valentinkolb/cloud/shared";
 import { ssr } from "../../../config";
+import AuthFooter from "../AuthFooter";
+import { authMessages } from "../messages";
 import PasswordResetCompleteForm from "./PasswordResetCompleteForm.island";
 import PasswordResetRequestForm from "./PasswordResetRequestForm.island";
-import { authMessages } from "../messages";
 
 /** Email password reset page for IPA-backed accounts. */
 export default ssr(async (c) => {
@@ -84,16 +85,7 @@ export default ssr(async (c) => {
               </div>
             </main>
           </div>
-          <div class="text-center text-xs text-dimmed">
-            {legalLinks.map((link, i) => (
-              <>
-                {i > 0 ? " · " : null}
-                <a href={link.href} target="_blank" class="hover:text-primary">
-                  {link.label}
-                </a>
-              </>
-            ))}
-          </div>
+          <AuthFooter links={legalLinks} />
         </div>
       </div>
     </LocaleProvider>

@@ -5,6 +5,20 @@
 @source "../**/*.{ts,tsx}";
 @custom-variant dark (&:where(.dark, .dark *));
 
+.k2b-ui .k2b-button.auth-language-trigger {
+  font: inherit;
+  color: inherit;
+  padding-inline: 0.25rem;
+}
+.k2b-ui .k2b-button.auth-login-action,
+.k2b-ui .k2b-button.auth-login-alternative {
+  min-height: 2.75rem;
+  font-weight: 500;
+}
+.k2b-ui .auth-login-identifier .k2b-input-shell__icon {
+  display: none;
+}
+
 .k2b-ui .k2b-dialog.app-pairing-dialog {
   width: min(96vw, 32rem);
 }

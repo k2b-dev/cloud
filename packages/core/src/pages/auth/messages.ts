@@ -16,8 +16,8 @@ export const authMessages = i18n.define({
       appLoginIntro: "Confirm your sign-in in your paired app.",
       emailLoginIntro: "We will email you a sign-in link.",
       passwordLoginIntro: "Sign in with your FreeIPA password.",
-      appSetupEmail: "No app paired yet? Use the email link to sign in first.",
-      appSetupPassword: "No app paired yet? Sign in with your password first.",
+      appSetupEmail: "No paired app? Use an email link.",
+      appSetupPassword: "No paired app? Use your password.",
       useAppInstead: "Use the app instead",
       useEmailInstead: "Use an email link instead",
       usePasswordInstead: "Use your FreeIPA password instead",
@@ -26,8 +26,7 @@ export const authMessages = i18n.define({
       restoreLoginConfirmation:
         "Re-enable access for all local Login accounts to recover administration. Login visibility remains unchanged.",
       welcomeBack: "Welcome back",
-      welcomeDescription:
-        "Your applications and information in one place.",
+      welcomeDescription: "Your applications and information in one place.",
       adminToken: "Admin token",
       adminTokenDescription: "Use the emergency admin token configured for this instance.",
       completeEmailSignIn: "Complete email sign-in",
@@ -114,8 +113,8 @@ export const authMessages = i18n.define({
       appLoginIntro: "Bestätige deine Anmeldung in deiner gekoppelten App.",
       emailLoginIntro: "Wir senden dir einen Link zur Anmeldung.",
       passwordLoginIntro: "Melde dich mit deinem FreeIPA-Passwort an.",
-      appSetupEmail: "Noch keine App gekoppelt? Verwende zuerst den E-Mail-Link.",
-      appSetupPassword: "Noch keine App gekoppelt? Melde dich zuerst mit deinem Passwort an.",
+      appSetupEmail: "Ohne gekoppelte App? E-Mail-Link verwenden.",
+      appSetupPassword: "Ohne gekoppelte App? Passwort verwenden.",
       useAppInstead: "Stattdessen die App nutzen",
       useEmailInstead: "Stattdessen E-Mail-Link nutzen",
       usePasswordInstead: "Stattdessen FreeIPA-Passwort nutzen",
@@ -124,8 +123,7 @@ export const authMessages = i18n.define({
       restoreLoginConfirmation:
         "Zugriff für alle lokalen Login-Accounts wieder erlauben, um die Administration wiederherzustellen. Die Sichtbarkeit im Login bleibt unverändert.",
       welcomeBack: "Willkommen zurück",
-      welcomeDescription:
-        "Deine Anwendungen und Informationen an einem Ort.",
+      welcomeDescription: "Deine Anwendungen und Informationen an einem Ort.",
       adminToken: "Admin-Token",
       adminTokenDescription: "Verwende den für diese Instanz eingerichteten Notfall-Token.",
       completeEmailSignIn: "Anmeldung per E-Mail abschließen",

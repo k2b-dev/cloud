@@ -10,6 +10,7 @@ import { appApprovalMessages } from "../app-approval/messages";
 import AccountCategorySwitch from "./AccountCategorySwitch.island";
 import AdminLoginForm from "./AdminLoginForm.island";
 import AppLoginForm from "./AppLoginForm.island";
+import AuthFooter from "./AuthFooter";
 import GuestLoginForm from "./GuestLoginForm.island";
 import LoginForm from "./LoginForm.island";
 import { isReauthenticationRequest } from "./login-redirect";
@@ -178,7 +179,7 @@ export default ssr(async (c) => {
                     <NoticeCard tone="info">{t.noLoginAvailable}</NoticeCard>
                   )}
                   {approvalEnabled && !useApproval && !token && !isAdminLogin && activeMethod && activeMethod !== "email" && (
-                    <ButtonLink href={credentialHref} variant="secondary" class="w-full justify-center" size="lg">
+                    <ButtonLink href={credentialHref} variant="ghost" class="auth-login-alternative w-full justify-center">
                       {t.useAppInstead}
                     </ButtonLink>
                   )}
@@ -200,16 +201,7 @@ export default ssr(async (c) => {
               </div>
             </main>
           </div>
-          <div class="text-center text-xs text-dimmed">
-            {legalLinks.map((link, i) => (
-              <>
-                {i > 0 ? " · " : null}
-                <a href={link.href} target="_blank" class="hover:text-primary">
-                  {link.label}
-                </a>
-              </>
-            ))}
-          </div>
+          <AuthFooter links={legalLinks} />
         </div>
       </div>
     </LocaleProvider>

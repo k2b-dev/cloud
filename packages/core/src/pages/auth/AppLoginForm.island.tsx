@@ -140,15 +140,18 @@ export default function AppLoginForm(props: {
             }}
           >
             <TextInput
+              class="auth-login-identifier"
               label={t().identifier}
               placeholder={t().identifierPlaceholder}
               value={identifier}
               onValueChange={setIdentifier}
               autocomplete="username"
+              icon=""
+              activeIcon=""
               required
               maxLength={254}
             />
-            <Button type="submit" size="lg" class="w-full justify-center" loading={busy()} disabled={!identifier().trim()}>
+            <Button type="submit" class="auth-login-action w-full justify-center" loading={busy()} disabled={!identifier().trim()}>
               {t().signIn}
             </Button>
           </form>
@@ -176,13 +179,13 @@ export default function AppLoginForm(props: {
       </Show>
       <Show when={!busy() ? props.fallback : undefined}>
         {(fallback) => (
-          <ButtonLink href={fallback().href} variant="secondary" size="lg" class="w-full justify-center" onClick={clear}>
+          <ButtonLink href={fallback().href} variant="ghost" class="auth-login-alternative w-full justify-center" onClick={clear}>
             {fallback().label}
           </ButtonLink>
         )}
       </Show>
       <Show when={!pending() && props.setupHint}>
-        <p class="text-sm text-dimmed">{props.setupHint}</p>
+        <p class="text-xs text-center text-dimmed">{props.setupHint}</p>
       </Show>
     </section>
   );
