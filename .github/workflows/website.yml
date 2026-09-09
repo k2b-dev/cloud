@@ -39,7 +39,7 @@ jobs:
           container=$(docker run -d -p 127.0.0.1:4188:3000 cloud-website:test)
           trap 'docker logs "$container"; docker rm -f "$container"' EXIT
           curl --retry 30 --retry-all-errors --retry-delay 1 --fail http://127.0.0.1:4188/health
-          for path in en en/docs en/ui robots.txt sitemap.xml llms.txt .well-known/agent-skills/index.json; do
+          for path in en en/docs en/ui en/apps en/apps/cloud-login en/docs/accounts/app-sign-in en/docs/accounts/devices en/docs/operations/cloud-login robots.txt sitemap.xml llms.txt .well-known/agent-skills/index.json; do
             curl --fail --silent --output /dev/null "http://127.0.0.1:4188/$path"
           done
       - name: Resolve image name
