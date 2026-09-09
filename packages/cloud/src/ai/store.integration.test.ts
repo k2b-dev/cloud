@@ -76,6 +76,22 @@ const assistantMessage = (text: string): Message => ({
 const runConfig = { kind: "chat" as const, input: "hi", toolSource: { kind: "none" as const } };
 
 suite("AI conversation store integration", () => {
+  test("persists immutable tool scope and preserves it in forks", async () => {
+    const userId = await insertUser();
+    const conversationIds: string[] = [];
+    try {
+      for (const allowedTools of [undefined, [], ["grids.gql.execute", "grids.view.create"]]) {
+        const source = await aiConversations.createConversation({ ownerUserId: userId, allowedTools });
+        conversationIds.push(source.id);
+        expect((await aiConversations.getConversation({ conversationId: source.id }))?.allowedTools).toEqual(allowedTools ?? null);
+        const fork = await aiConversations.forkConversation({ sourceConversationId: source.id, ownerUserId: userId, throughSeq: 0 });
+        conversationIds.push(fork.id);
+        expect(fork.allowedTools).toEqual(allowedTools ?? null);
+      }
+    } finally {
+      await cleanupFixture({ userId, conversationIds });
+    }
+  });
   test("creates and explicitly revokes a short-lived internal user delegation", async () => {
     const userId = await insertUser();
     try {

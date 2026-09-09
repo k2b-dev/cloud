@@ -7,6 +7,7 @@ import { aiAttachmentMarker } from "./attachments";
 import { AI_TURN_ATTACHMENT_MAX_ITEMS } from "./limits";
 import { AiResourceMarkerSchema } from "./resource-markers";
 import { AI_SHORT_ID_PATTERN } from "./short-id";
+import { AI_SKILL_NAME_MAX_CHARS, AI_SKILL_NAME_PATTERN } from "./skill-format";
 import {
   AI_MESSAGE_FEEDBACK_REASONS,
   type AiClientToolId,
@@ -64,6 +65,11 @@ export const AiCreateConversationInputSchema = z.object({
   projectId: z.string().regex(AI_SHORT_ID_PATTERN).optional(),
   draft: AiInitialConversationDraftInputSchema.optional(),
   preloadTools: z.array(AiToolPreloadSchema).max(8).optional(),
+  allowedTools: z.array(z.string().min(1).max(200)).max(64).optional(),
+  skills: z
+    .array(z.string().trim().min(1).max(AI_SKILL_NAME_MAX_CHARS).regex(AI_SKILL_NAME_PATTERN))
+    .max(AI_TURN_ATTACHMENT_MAX_ITEMS)
+    .optional(),
   launchedByAppId: CapabilityAppIdSchema.optional(),
 });
 

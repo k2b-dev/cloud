@@ -722,12 +722,64 @@ so additive result fields remain compatible.
 
 ## Return structured results
 
+### Optional table previews
+
+`CapabilityResult<T>` accepts optional `presentation` metadata:
+
+```ts
+type TablePresentation = {
+  kind: "table";
+  rowsPath: string[];
+  columns: Array<{ path: string[]; label: string; format?: "text" | "number" | "date" | "datetime" }>;
+  rowLinksPath?: string[];
+};
+```
+
+Metadata describes existing data, not a second result. `rowsPath` selects an array
+relative to `data`; `[]` selects `data` itself. Column paths and `rowLinksPath` are
+relative to each row. Segments are literal own JSON property names, not dotted
+expressions, templates or executable code. Missing cells display as absent.
+Row links use the existing semantic-link contract.
+
+Assistant opens capability navigation links in a new browser tab so users keep
+their conversation. This is client behavior, not a provider `target` setting.
+
+```ts
+return ok({
+  data: [{ name: "Cable", stock: "42.0000" }],
+  presentation: {
+    kind: "table", rowsPath: [],
+    columns: [{ path: ["name"], label: "Item" }, { path: ["stock"], label: "Stock", format: "number" }],
+  },
+});
+```
+
+For Grids-shaped data, use `rowsPath: ["rows"]`, column paths such as
+`["values", column.key]`, and `rowLinksPath: ["links"]`. Derive columns from the
+authorized result; never reread hidden fields to improve a preview. Exact decimal
+strings stay intact; format hints do not authorize lossy numeric conversion.
+
+Metadata is bounded to 100 columns, 16 path segments, and 500 characters per segment
+or label. It counts toward the existing result byte budget. Providers validate the
+supported shape. Generic clients can ignore presentation entirely; the typed
+client ignores unknown or invalid presentation while still validating canonical
+data. An unknown future kind is not a data failure.
+
+Assistant renders up to 100 returned rows with scrolling and a notice when the
+preview is capped. The full result remains in tool details. Existing `page`
+metadata indicates additional server pages; do not duplicate pagination or invent
+totals in presentation. No endpoint, widget, HTML, callback or mutation authority
+is added.
+
+### Result envelope
+
 Every successful operation returns `data`. Add only the navigation and identity
 metadata the caller can use:
 
 ```ts
 type CapabilityResult<T> = {
   data: T;
+  presentation?: TablePresentation;
   summary?: string;
   refs?: Array<{
     type: string;

@@ -9,6 +9,32 @@ GQL ist die Grids Query Language. Sie beschreibt, welche gespeicherten Daten du 
 
 Für gewöhnliche Tabellenarbeit benötigst du kein GQL. Beginne mit den Steuerelementen für Suche, Filter, Sortierung und Berechnete Spalten. Nutze GQL, wenn eine präzise Abfrage als Text leichter zu verstehen, wiederzuverwenden oder zu prüfen ist.
 
+## Abfrage mit KI {icon="sparkles"}
+
+Wähle **Abfrage mit KI**, um einen Assistant-Entwurf mit dieser Base, Quelle und
+Abfrage zu öffnen. Ergänze, was du finden möchtest, und sende ihn ab. Assistant
+findet relevante Felder, prüft Abfragen und zeigt echte Ergebnisse mit denselben
+Berechtigungen wie der Editor. Dieser Chat kann keine Datensätze oder das Schema
+ändern.
+
+Er kann eine Abfrage als Ansicht speichern, nachdem du Name und persönliche oder
+geteilte Sichtbarkeit bestätigst. Beides erfordert Base-Adminrechte. Über den
+zurückgegebenen Link öffnest du die Abfrage in einem neuen Browser-Tab; der Chat bleibt geöffnet. Sehr lange Abfragen musst
+du gegebenenfalls kopieren. Vorschauen und einzelne Seiten sind keine vollständigen
+Exporte.
+
+Der integrierte Skill **cloud-grids** verweist für Produktfragen und Administration
+auf die aktuelle Hilfe. Wenn kein Werkzeug eine Aktion unterstützt, erklärt
+Assistant die Schritte in der Oberfläche. Der Skill vergibt keine Berechtigungen.
+
+Beschreibe bei einer allgemeinen Anfrage zuerst das gewünschte Ergebnis, bevor
+Assistant das Schema liest. Abfragefehler zeigen auch die technische Ursache und
+Position. Eine Korrektur soll die fachlichen Bedingungen erhalten, etwa den
+Ausleihstatus nicht durch den Positionsstatus ersetzen. Auswahl- und
+Mitgliedschaftsfilter auf verknüpften Tabellen werden derzeit nicht unterstützt.
+Eigenständige Assistant-Abfragen verwenden `TODAY()` und `NOW()`; der
+Custom-App-Kontext `@auth` und `@time` wird hier nicht bereitgestellt.
+
 ## Eine erste Abfrage lesen {icon="search"}
 
 Diese Abfrage liest die Tabelle Books, behält verfügbare Bücher, wählt drei Felder aus, sortiert die neuesten zuerst und gibt höchstens 25 Zeilen zurück:

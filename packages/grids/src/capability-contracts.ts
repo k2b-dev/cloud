@@ -69,9 +69,8 @@ const FieldContextItemSchema = z
     name: z.string().min(1).max(200),
     description: z.string().max(2_000).nullable(),
     type: z.string().min(1).max(100),
-    position: z.number().int(),
-    required: z.boolean(),
-    writable: z.boolean(),
+    required: z.boolean().optional(),
+    writable: z.boolean().optional(),
     valueHint: z.string().min(1).max(500).nullable(),
     targetTableId: ShortIdSchema.nullable(),
     relationCardinality: z.enum(["single", "multiple"]).nullable(),
@@ -119,18 +118,18 @@ const RecordWriteContextSchema = z
   .strict();
 
 export const GqlContextItemSchema = z.discriminatedUnion("kind", [
-  TableCapabilityDataSchema,
-  ViewCapabilityDataSchema,
+  TableCapabilityDataSchema.pick({ kind: true, id: true, tableKind: true, name: true, description: true }),
+  ViewCapabilityDataSchema.omit({ icon: true, links: true }),
   FieldContextItemSchema,
   OptionContextItemSchema,
 ]);
 
 export const GqlContextDataSchema = z
   .object({
-    base: BaseCapabilityDataSchema,
+    base: BaseCapabilityDataSchema.pick({ id: true, name: true }),
     kind: ContextKindSchema,
     items: z.array(GqlContextItemSchema).max(100),
-    recordWrite: RecordWriteContextSchema.nullable(),
+    recordWrite: RecordWriteContextSchema.optional(),
   })
   .strict();
 
@@ -140,6 +139,12 @@ export const GqlContextInputSchema = z
     kind: ContextKindSchema.default("tables").describe("Catalog section: tables, views, fields, or exact select option IDs."),
     tableId: ShortIdSchema.optional().describe("Public Table ID; required for fields and options, optional for views."),
     fieldId: ShortIdSchema.optional().describe("Public Select Field ID; required when kind is options."),
+    includeWriteContext: z
+      .boolean()
+      .default(false)
+      .describe(
+        "For kind fields only: include writable/required flags and record audit requirements before a record write. Omit for queries.",
+      ),
     cursor: CursorSchema,
     limit: PageLimitSchema,
   })
@@ -167,6 +172,19 @@ const GqlInputShape = {
   currentSource: CurrentSourceSchema.optional().describe("Optional current Table or View source used when GQL omits from."),
   cursor: CursorSchema,
 };
+
+export const ViewCreateInputSchema = z
+  .object({
+    baseId: GqlInputShape.baseId,
+    query: GqlInputShape.query,
+    currentSource: CurrentSourceSchema.optional().describe("Source for a query without an explicit from clause."),
+    name: z.string().trim().min(1).max(200).describe("Name for the new saved View."),
+    shared: z
+      .boolean()
+      .default(false)
+      .describe("Share the View with Base readers; otherwise create a personal View. Both require Base admin access."),
+  })
+  .strict();
 
 export const GqlPreviewInputSchema = z
   .object({
@@ -210,21 +228,7 @@ const GqlColumnSchema = z
     fieldId: ShortIdSchema.optional(),
     joinAlias: z.string().max(500).optional(),
     type: z.string().max(100),
-    sqlType: z.string().max(100),
     aggregate: z.string().max(100).optional(),
-  })
-  .strict();
-
-const RecordMetaSchema = z
-  .object({
-    version: z.number().int().positive(),
-    finalizedAt: TimestampSchema.nullable(),
-    finalizedBy: z.uuid().nullable(),
-    deletedAt: TimestampSchema.nullable(),
-    createdBy: z.uuid().nullable(),
-    updatedBy: z.uuid().nullable(),
-    createdAt: TimestampSchema,
-    updatedAt: TimestampSchema,
   })
   .strict();
 
@@ -239,7 +243,6 @@ const GqlSuccessSchema = z
           .object({
             recordId: ShortIdSchema.optional(),
             tableId: ShortIdSchema.optional(),
-            recordMeta: RecordMetaSchema.optional(),
             values: z.record(z.string(), z.unknown()),
             links: ResourceLinksSchema,
           })

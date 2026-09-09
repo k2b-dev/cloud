@@ -47,12 +47,15 @@ describe("localized authoring diagnostics", () => {
         code: "gql.syntax",
         line: 2,
         column: 4,
-        message: "Die GQL-Syntax ist ungültig. Prüfe die markierte Stelle.",
+        message: "Die GQL-Syntax ist ungültig. Prüfe die markierte Stelle. arbitrary parser detail",
       },
     ]);
     expect(gqlDiagnosticsForLocale([{ message: "unknown foo" }], "de-DE", "gql.resolution")[0]?.message).toContain(
       "unbekannt oder nicht verfügbar",
     );
+    expect(
+      gqlDiagnosticsForLocale([{ message: 'select alias "item" conflicts with a source field' }], "de", "gql.resolution")[0]?.message,
+    ).toContain('select alias "item" conflicts with a source field');
     expect(gqlDiagnosticsForLocale([{ message: "expected ')'" }], "en", "gql.syntax")).toEqual([
       { code: "gql.syntax", message: "expected ')'" },
     ]);

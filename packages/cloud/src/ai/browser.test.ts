@@ -18,6 +18,7 @@ describe("launchAssistant", () => {
     );
 
     const input = {
+      skills: ["cloud-mail"],
       launchedByAppId: "mail",
       draft: {
         content: [
@@ -48,13 +49,17 @@ describe("launchAssistant", () => {
   });
 
   test("uploads browser files before saving their exact draft versions", async () => {
+    const skill = { type: "resource", ref: { type: "core.ai.skill", id: "Sk2345" }, title: "cloud-grids", icon: "ti ti-sparkles" };
     const calls: Array<[string, RequestInit | undefined]> = [];
     globalThis.fetch = Object.assign(
       async (request: RequestInfo | URL, init?: RequestInit) => {
         const path = String(request);
         calls.push([path, init]);
         if (path === "/api/ai/conversations") {
-          return Response.json({ id: "cHt234", shortId: "cHt234", draft: { content: [], revision: 0, updatedAt: null } }, { status: 201 });
+          return Response.json(
+            { id: "cHt234", shortId: "cHt234", draft: { content: [skill], revision: 0, updatedAt: null } },
+            { status: 201 },
+          );
         }
         if (path.endsWith("/files")) {
           return Response.json({ file: { path: "/brief.txt", mediaType: "text/plain", size: 5, version: 2 } });
@@ -68,7 +73,7 @@ describe("launchAssistant", () => {
       { preconnect: originalFetch.preconnect },
     );
 
-    const launch = await launchAssistant({ files: [new File(["brief"], "brief.txt", { type: "text/plain" })] });
+    const launch = await launchAssistant({ skills: ["cloud-grids"], files: [new File(["brief"], "brief.txt", { type: "text/plain" })] });
 
     expect(launch.conversation.draft.revision).toBe(1);
     expect(calls.map(([path, init]) => `${init?.method} ${path}`)).toEqual([
@@ -78,7 +83,7 @@ describe("launchAssistant", () => {
     ]);
     expect(JSON.parse(String(calls[2]![1]?.body))).toEqual({
       expectedRevision: 0,
-      content: [{ type: "file", path: "/brief.txt", mediaType: "text/plain", size: 5, version: 2 }],
+      content: [skill, { type: "file", path: "/brief.txt", mediaType: "text/plain", size: 5, version: 2 }],
     });
   });
 });

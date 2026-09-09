@@ -9,6 +9,29 @@ GQL is the Grids Query Language. It describes which saved data you want and how 
 
 You do not need GQL for ordinary table work. Start with Search, Filter, Sort, and Computed controls. Use GQL when text makes a precise query easier to understand, reuse, or review.
 
+## Query with AI {icon="sparkles"}
+
+Choose **Query with AI** in the editor to open an Assistant draft with this Base,
+source and query. Add what you want to find, then send it. Assistant discovers
+relevant fields, checks queries and displays actual results with the same
+permissions as the editor. This chat cannot change records or the schema.
+
+It can save a query as a View after you confirm its name and personal/shared
+visibility; both require Base admin rights. Use the returned link to open the
+query in a new browser tab, keeping the conversation open. Very long queries may need copying instead. Previews and
+paginated results are not complete exports.
+
+The built-in **cloud-grids** Skill directs Assistant to current Help for product
+questions and administration. It explains GUI steps when no tool supports an
+operation; it does not grant more permissions.
+
+For a generic request, describe the result you want before Assistant reads the
+schema. When a query fails, its diagnostic includes the technical cause and
+location. A corrected query should keep the same business conditions, not replace
+a parent status with a line-item status. Joined select/membership filters are not
+currently supported. Standalone Assistant queries use `TODAY()` and `NOW()`;
+Custom App `@auth` and `@time` context is not supplied to these queries.
+
 ## Read a first query {icon="search"}
 
 This query reads the Books table, keeps available books, chooses three fields, orders the newest first, and returns at most 25 rows:

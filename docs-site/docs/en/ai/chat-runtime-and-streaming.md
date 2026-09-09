@@ -61,6 +61,31 @@ zero or more Cloud resource refs. Save it with `PUT
 are idempotent; stale writes return a conflict. Submit a turn with the returned
 `draftRevision`. The transaction consumes and clears exactly that revision, so
 text and attachments cannot drift between save and send.
+
+Pass `skills: ["cloud-grids"]` to attach enabled, readable Skills by exact name
+when launching a chat. Core resolves them into ordinary `core.ai.skill` resource
+chips with stable IDs and names; no instructions are copied into the draft.
+The user can remove a chip before sending. Unavailable or disabled Skills fail
+the launch, and linked Skills count toward the normal attachment limit.
+For a scoped chat, include `load_skill` in `allowedTools`. Assistant loads a
+selected Skill through that tool using its ID, with the same permission and
+revision checks as loading by name. Linking never widens the tool scope.
+For other resource chips, supply `title` and `icon` alongside `ref` to show a
+useful name instead of the ID fallback. Do not repeat resource IDs as draft text.
+
+Pass `allowedTools: string[]` to restrict a launched chat to exact built-in names
+or qualified capability IDs such as `grids.gql.execute`. Omission preserves normal
+discovery; an empty array permits no task tools. Preloads must belong to this set.
+The ceiling is stored on the conversation, cannot be widened through updates, and
+is preserved by forks. Each turn filters static tools, capability discovery and
+loaded tools. Search/load/list metadata tools cannot expose excluded operations.
+This restricts tools; it does not grant permissions or bypass Action approval.
+Preloading alone is not a restriction.
+
+Grids Query with AI uses this for discovery, Help, queries and approved View
+creation without record or schema changes. Its launch creates an editable draft,
+not an automatically submitted query.
+
 `launchAssistant()` uploads browser `File` values after creating the private
 conversation and then stores their returned versions in the same draft. The
 JSON create endpoint itself accepts text and resource refs, not unuploaded file

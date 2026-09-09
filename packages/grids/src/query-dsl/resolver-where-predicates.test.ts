@@ -19,6 +19,14 @@ import {
 import { compileDslQueryPlanToSql } from "./sql-compiler";
 
 describe("GQL where predicates — first-class per field type", () => {
+  test("explains unsupported joined membership instead of implying the field is missing", () => {
+    const result = resolveDslQueryToQueryPlan(
+      parseOk("join table Custs as customer on customer_link = customer.id\nwhere oneof(customer.Name, 'Ada')\nselect customer.Name"),
+      ctx(),
+    );
+    expect(result.ok).toBeFalse();
+    if (!result.ok) expect(result.diagnostics[0]?.message).toContain("membership predicate ONEOF on joined field");
+  });
   const statusOptions = {
     options: [
       { id: "open", label: "Open" },

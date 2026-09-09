@@ -4,9 +4,20 @@ export const gridsCapabilityMessages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
+      openQuery: "Open in query editor",
+      queryCapped: "The query result is capped; this is not a complete export.",
+      queryCopy: "No editor link fits this query. Copy the GQL into the editor instead.",
+      personalViewUserRequired: "Sign in as a user to create a personal View.",
+      saveViewReview: ({ name }: { name: string }) => `Save the query as a new View “${name}”.`,
+      savedView: ({ name }: { name: string }) => `Saved View “${name}”.`,
+      viewVisibility: "Visibility",
+      sharedView: "Shared with Base readers",
+      personalView: "Personal",
       documentTemplateDisabled: "Document template is disabled.",
       invalidDocumentCursor: "Invalid document cursor.",
       fewerDocuments: "Request fewer documents per page.",
+      contextTooLarge:
+        "This schema context exceeds the response limit. Request fewer items per page. If the write context alone is too large, use the record editor instead.",
       issueDocumentReview: "Issue a permanent document; its number and contents cannot be edited afterward.",
       recordActionReview:
         "Create one linked correction or cancellation Draft. The finalized original remains unchanged; no document is issued or sent.",
@@ -87,9 +98,20 @@ export const gridsCapabilityMessages = i18n.define({
       currentVersion: "Current version",
     },
     de: {
+      openQuery: "Im Abfrage-Editor öffnen",
+      queryCapped: "Das Ergebnis ist begrenzt; dies ist kein vollständiger Export.",
+      queryCopy: "Für diese Abfrage passt kein Editor-Link. Kopiere stattdessen das GQL in den Editor.",
+      personalViewUserRequired: "Melde dich als Benutzer an, um eine persönliche Ansicht zu erstellen.",
+      saveViewReview: ({ name }: { name: string }) => `Abfrage als neue Ansicht „${name}“ speichern.`,
+      savedView: ({ name }: { name: string }) => `Ansicht „${name}“ gespeichert.`,
+      viewVisibility: "Sichtbarkeit",
+      sharedView: "Mit Lesern der Base geteilt",
+      personalView: "Persönlich",
       documentTemplateDisabled: "Die Dokumentvorlage ist deaktiviert.",
       invalidDocumentCursor: "Ungültiger Dokument-Cursor.",
       fewerDocuments: "Bitte weniger Dokumente pro Seite anfordern.",
+      contextTooLarge:
+        "Dieser Schemakontext überschreitet das Antwortlimit. Fordere weniger Einträge pro Seite an. Ist der Schreibkontext allein zu groß, nutze stattdessen den Datensatzeditor.",
       issueDocumentReview: "Ein dauerhaftes Dokument ausstellen; Nummer und Inhalt können danach nicht bearbeitet werden.",
       recordActionReview:
         "Einen verknüpften Korrektur- oder Storno-Entwurf anlegen. Das abgeschlossene Original bleibt unverändert; kein Dokument wird ausgestellt oder versendet.",

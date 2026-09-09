@@ -133,7 +133,7 @@ const invokeCapabilityWithResultSchema = async <TDataSchema extends z.ZodType, T
           : { input: invocation.input },
       ),
     });
-    return readCapabilityResponse(response, capabilityResultSchema(dataSchema));
+    return readCapabilityResponse(response, capabilityResultSchema(dataSchema, { consumer: true }));
   } catch (cause) {
     return unavailable(cause, invocation, caller.locale ?? undefined);
   }

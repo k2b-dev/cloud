@@ -25,6 +25,7 @@ import { AI_FILES_MAX_FILE_BYTES_DEFAULT, aiFileStore, decodeAiFileContent, gues
 import {
   AiCompactionInputSchema,
   AiCreateConversationInputSchema,
+  AiInitialConversationDraftInputSchema,
   AiMessageFeedbackInputSchema,
   AiMessageForkInputSchema,
   AiMessageRetryInputSchema,
@@ -244,7 +245,23 @@ const prepareConversationForMessageRetry = async (conversationId: string): Promi
   return (await aiConversations.getActiveTurn({ conversationId })) ? "busy" : "ready";
 };
 
-export const __aiRoutesTest = { prepareConversationForMessageRetry };
+const prepareLaunchDraft = async (body: z.infer<typeof AiCreateConversationInputSchema>, subject: AccessSubject | null) => {
+  const content = [...(body.draft?.content ?? [])];
+  if (body.skills?.length && body.allowedTools && !body.allowedTools.includes("load_skill")) {
+    return fail(err.badInput("Linked Skills require load_skill in allowedTools."));
+  }
+  for (const name of new Set(body.skills ?? [])) {
+    const skill = await aiSkills.getByName(name, subject);
+    if (!skill?.enabled) return fail(err.badInput(`Skill is unavailable: ${name}`));
+    if (!content.some((part) => part.type === "resource" && part.ref.type === "core.ai.skill" && part.ref.id === skill.shortId)) {
+      content.push({ type: "resource", ref: { type: "core.ai.skill", id: skill.shortId }, title: skill.name, icon: "ti ti-sparkles" });
+    }
+  }
+  const draft = AiInitialConversationDraftInputSchema.safeParse({ content });
+  return draft.success ? ok(draft.data) : fail(err.badInput("Too many draft attachments or content parts."));
+};
+
+export const __aiRoutesTest = { prepareConversationForMessageRetry, prepareLaunchDraft };
 
 export const aiRoutes = (() => {
   const loadConversation = async (c: Context<AuthContext>, ctx: AiChatRequestContext, archived = false): Promise<AiConversation | null> => {
@@ -445,6 +462,8 @@ export const aiRoutes = (() => {
         const body = c.req.valid("json");
         const project = body.projectId ? await aiProjects.getByShortId(body.projectId, c.get("accessSubject"), "read") : null;
         if (body.projectId && !project) return respond(c, fail(err.notFound("Project")));
+        const draft = await prepareLaunchDraft(body, c.get("accessSubject"));
+        if (!draft.ok) return respond(c, draft);
         const requestedCapabilityTools = (body.preloadTools ?? []).filter(
           (requested): requested is { appId: string; kind: "query" | "action"; id: string } => "appId" in requested,
         );
@@ -472,6 +491,9 @@ export const aiRoutes = (() => {
           const label = "name" in requested ? requested.name : `${requested.appId}.${requested.id}`;
           return respond(c, fail(err.badInput(`Tool is unavailable: ${label}`)));
         }
+        if (body.allowedTools && preloadTools.some((name) => !body.allowedTools!.includes(name!))) {
+          return respond(c, fail(err.badInput("Preloaded tools must be included in allowedTools.")));
+        }
         return respond(
           c,
           ok(
@@ -480,8 +502,9 @@ export const aiRoutes = (() => {
                 ownerUserId: ctx.ownerUserId,
                 title: body.title,
                 projectId: project?.id,
-                draft: body.draft?.content,
+                draft: draft.data.content,
                 preloadTools: preloadTools.map((name) => name!),
+                allowedTools: body.allowedTools,
                 launchedByAppId: body.launchedByAppId,
               }),
               project?.shortId ?? null,

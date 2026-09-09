@@ -10,6 +10,7 @@ import { errorMessage } from "../utils/api-helpers";
 import { GqlSourceEditor } from "./GqlSourceEditor";
 import { queryMessages } from "./messages";
 import QueryResultTable from "./QueryResultTable";
+import { launchQueryAssistant } from "./query-assistant";
 import {
   currentSourceForApi,
   type QueryWorkspaceCurrentSource,
@@ -20,6 +21,7 @@ import {
 
 type Props = {
   baseId: string;
+  baseName?: string;
   initialQuery: string;
   initialCursor?: string | null;
   initialPreview?: PublicDslQueryPreviewResponse | null;
@@ -212,6 +214,18 @@ export default function QueryWorkspace(props: Props) {
   const [layout, setLayout] = createSignal(createQueryWorkspacePanesLayout());
   const [sourceSearch, setSourceSearch] = createSignal("");
   const apiSource = createMemo(() => currentSourceForApi(props.currentSource));
+  const assistant = mutations.create({
+    mutation: async () =>
+      launchQueryAssistant({
+        baseId: props.baseId,
+        baseName: props.baseName,
+        query: query(),
+        currentSource: props.currentSource,
+        title: t.queryWithAi,
+        prompt: t.queryAiPrompt,
+      }),
+    onSuccess: (result) => window.location.assign(result.href),
+  });
   const sourceTables = createMemo(() => props.tables.filter((table) => !table.deletedAt));
   const sourceRows = createMemo<QuerySourceRow[]>(() =>
     sourceTables().flatMap((table) => {
@@ -519,6 +533,15 @@ export default function QueryWorkspace(props: Props) {
                 </Show>
 
                 <div class="flex shrink-0 flex-wrap items-center gap-2 pt-2">
+                  <Button
+                    variant="ai"
+                    size="sm"
+                    type="button"
+                    disabled={assistant.loading()}
+                    onClick={() => void assistant.mutate(undefined)}
+                  >
+                    <i class={assistant.loading() ? "ti ti-loader-2 animate-spin" : "ti ti-sparkles"} /> {t.queryWithAi}
+                  </Button>
                   <div class="flex min-w-0 flex-1 flex-wrap items-center gap-2">
                     <For each={examples()}>
                       {(example) => (
@@ -541,6 +564,13 @@ export default function QueryWorkspace(props: Props) {
                     <i class={saveButtonIcon()} /> {saveButtonLabel()}
                   </Button>
                 </div>
+                <Show when={assistant.error()}>
+                  {(error) => (
+                    <NoticeCard tone="danger" class="mt-2">
+                      {error().message}
+                    </NoticeCard>
+                  )}
+                </Show>
               </section>
             ),
           },

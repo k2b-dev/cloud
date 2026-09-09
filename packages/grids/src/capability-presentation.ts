@@ -84,14 +84,16 @@ export const gridsCapabilityPresentation: CapabilityPresentationCatalog = {
           },
         },
         "gql.context": {
-          title: "Laden Sie den Grids GQL-Kontext",
+          title: "Grids-Abfragekontext laden",
           description:
-            "Laden Sie das Schema, bevor Sie GQL erstellen oder Schreibvorgänge aufzeichnen. BaseId von base.list oder base.search abrufen; Zuerst Tabellen anfordern, dann Felder oder Auswahloptionen mit zurückgegebenem IDs oder Ansichten für gql.view.execute. Feldergebnisse umfassen Schreib- und Prüfanforderungen.",
+            "Lade das relevante Schema für eine konkrete Aufgabe. Bei unbekannter Quelle zuerst tables, sonst fields mit tableId. options benötigt tableId und fieldId. Unbenutzte IDs weglassen, keine leeren Strings senden. includeWriteContext nur vor Datensatzänderungen verwenden.",
           input: {
             baseId: "Öffentliche Basis ID, deren berechtigungsbasierter GQL-Kontext geladen werden soll.",
             kind: "Katalogabschnitt: Tabellen, Ansichten, Felder oder genaue Auswahloption IDs.",
             tableId: "Öffentlicher Tisch ID; Erforderlich für Felder und Optionen, optional für Ansichten.",
             fieldId: "Öffentliches Auswahlfeld ID; erforderlich, wenn Art Optionen ist.",
+            includeWriteContext:
+              "Nur bei fields: Schreibrechte, Pflichtfelder und Audit-Anforderungen vor einer Datensatzänderung mitladen. Für Abfragen weglassen.",
             cursor: "Undurchsichtiger Cursor, der von der vorherigen Seite zurückgegeben wurde.",
             limit: "Maximale Anzahl der zurückzugebenden Artikel.",
           },
@@ -160,6 +162,11 @@ export const gridsCapabilityPresentation: CapabilityPresentationCatalog = {
         },
       },
       actions: {
+        "view.create": {
+          title: "Abfrage als Grids-Ansicht speichern",
+          description:
+            "Eine geprüfte GQL-Abfrage als persönliche oder geteilte Ansicht speichern. Erfordert Base-Adminrechte und Bestätigung. Ändert keine Tabellen oder Datensätze. Bei ungewissem Ergebnis zuerst vorhandene Ansichten prüfen, nicht blind wiederholen.",
+        },
         "document.create": {
           title: "Unveränderliches Dokument ausstellen",
           description:
@@ -173,7 +180,7 @@ export const gridsCapabilityPresentation: CapabilityPresentationCatalog = {
         "record.create": {
           title: "Einen Grids-Datensatz erstellen",
           description:
-            "Rufen Sie zuerst die Artfelder gql.context auf und erstellen Sie dann einmal mit Werten, die durch das öffentliche beschreibbare Feld ID verschlüsselt sind. Wählen Sie Werte mit der Option IDs aus. Gibt begrenzte Metadaten zurück; Werte mit gezieltem GQL lesen. Diese Aktion ist nicht idempotent.",
+            "Lade zuerst gql.context mit kind fields und includeWriteContext true. Erstelle dann einen Datensatz mit öffentlichen IDs beschreibbarer Felder als Schlüssel. Auswahlwerte verwenden Options-IDs. Gibt begrenzte Metadaten zurück; Feldwerte mit gezieltem GQL lesen. Nicht idempotent: nicht blind wiederholen.",
           input: {
             tableId: "Öffentliches ID der beschreibbaren gespeicherten Tabelle, die den Datensatz empfangen soll.",
             values: "Öffentliches Feld IDs, das explizit bereitgestellten Werten zugeordnet ist.",
@@ -182,7 +189,7 @@ export const gridsCapabilityPresentation: CapabilityPresentationCatalog = {
         "record.update": {
           title: "Den Grids-Eintrag aktualisieren",
           description:
-            "Laden Sie Felder für Wert- und Prüfanforderungen und dann record.read für ifVersion. Nur vor Ort erhältlicher öffentlicher IDs-Wechsel; veraltete Versionen werden abgelehnt. Gibt begrenzte Metadaten zurück; Werte mit gezieltem GQL lesen.",
+            "Lade gql.context mit kind fields und includeWriteContext true für Wert- und Audit-Anforderungen, danach record.read für ifVersion. Nur übergebene Felder werden geändert; veraltete Versionen werden abgelehnt. Gibt begrenzte Metadaten zurück; Feldwerte mit gezieltem GQL lesen.",
           input: {
             tableId: "Öffentliches ID der beschreibbaren gespeicherten Tabelle, die den Datensatz enthält.",
             recordId: "Stabile öffentliche Live-Aufnahme ID zum Aktualisieren.",
@@ -195,7 +202,7 @@ export const gridsCapabilityPresentation: CapabilityPresentationCatalog = {
         "record.upsert-external": {
           title: "Externen Grids-Datensatz hochladen",
           description:
-            "Binden Sie Provider + ProviderAccount + ResourceKind + ExternalId erneut sicher an einen Datensatz. Die erste Anfrage erstellt es; Spätere Updates erfordern nur ifVersion und den bereitgestellten Patch Field IDs.",
+            "Lade zuerst gql.context mit kind fields und includeWriteContext true. Ordne provider + providerAccount + resourceKind + externalId wiederholungssicher einem Datensatz zu. Der erste Aufruf erstellt ihn; spätere Änderungen benötigen ifVersion und ändern nur übergebene Felder.",
           input: {
             tableId: "Öffentliches ID der beschreibbaren gespeicherten Tabelle, die den Datensatz besitzt.",
             externalRef: "Groß- und Kleinschreibung beachtete dauerhafte Identität des Quelldatensatzes außerhalb von Grids.",

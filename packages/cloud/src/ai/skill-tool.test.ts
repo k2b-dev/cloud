@@ -1,10 +1,26 @@
 import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
-import { createCloudAiLoadSkillTool, createCloudAiSearchSkillsTool } from "./skill-tool";
+import { CloudAiLoadSkillInputSchema, createCloudAiLoadSkillTool, createCloudAiSearchSkillsTool } from "./skill-tool";
 import { aiSkills } from "./skills";
 
 afterEach(() => mock.restore());
 
 describe("load_skill", () => {
+  test("accepts exactly one stable selector", () => {
+    expect(CloudAiLoadSkillInputSchema.safeParse({ id: "Sk2345" }).success).toBeTrue();
+    expect(CloudAiLoadSkillInputSchema.safeParse({}).success).toBeFalse();
+    expect(CloudAiLoadSkillInputSchema.safeParse({ id: "Sk2345", name: "weekly-status" }).success).toBeFalse();
+  });
+  test("passes attached IDs directly to the authorized pinned load without a rename race", async () => {
+    const subject = { type: "user" as const, userId: "11111111-1111-4111-8111-111111111111" };
+    const read = spyOn(aiSkills, "getByShortId");
+    const load = spyOn(aiSkills, "loadForTurn").mockResolvedValue(null);
+    const tool = createCloudAiLoadSkillTool(subject);
+    if (tool.location !== "server") throw new Error("Expected server tool");
+    const ctx = { turnId: "turn-1" } as never;
+    await expect(tool.run({ id: "Sk2345" }, ctx)).rejects.toThrow("unavailable");
+    expect(read).not.toHaveBeenCalled();
+    expect(load).toHaveBeenCalledWith("turn-1", { id: "Sk2345" }, subject);
+  });
   test("pins the selected revision and returns its standard file mount", async () => {
     const subject = { type: "user" as const, userId: "11111111-1111-4111-8111-111111111111" };
     spyOn(aiSkills, "loadForTurn").mockResolvedValue({

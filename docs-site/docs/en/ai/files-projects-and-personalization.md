@@ -150,7 +150,9 @@ Cloud never cuts a description mid-entry. When the complete catalog does not
 fit its hard prompt budget, Cloud selects whole entries relevant to the current
 request and exposes the omitted entries through `search_skills`. A normal small
 catalog needs no search call. The model must call
-`load_skill` with the exact name before following a Skill. The call rechecks
+`load_skill` with the exact name, or the ID of an attached `core.ai.skill`
+resource, before following a Skill. Attachment names and metadata are not
+trusted instructions. The call rechecks
 access, returns the instructions, and mounts that revision read-only at
 `/skills/<name>/SKILL.md`; references appear below
 `/skills/<name>/references/`. Assistant reads reference files with `read_file`
@@ -166,7 +168,9 @@ retries, so an edit cannot change an in-progress result. A later turn sees the
 new revision. Reading a mounted file still checks current Cloud access; revoked
 access takes effect immediately.
 
-Cloud seeds seven Skills once with `read` access for every authenticated user.
+Cloud seeds eight Skills once with `read` access for every authenticated user.
+`cloud-grids` guides queries and daily work and routes product and administration
+questions to canonical Grids Help.
 `cloud-assistant` covers conversation history and resources, inter-chat
 messaging, and scheduled chat work.
 `skill-creator` explains how to draft a concise Skill and names the

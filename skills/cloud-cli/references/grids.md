@@ -49,6 +49,18 @@ The base landing page is **Overview**, with **Groups** and **All resources** tab
 
 ## Agent workflow
 
+The in-app Assistant has a separate built-in `cloud-grids` Skill. It routes product
+and administration questions through `search_help` / `read_help`, rather than
+duplicating this reference or all in-app Help. Query with AI opens a restricted
+chat that can discover schema, preview/execute GQL and save a View after approval
+and the existing Base-admin check. It cannot change records or schema. That
+restriction does not limit a separately authorized CLI agent using this Skill.
+
+Capability results may include optional table presentation metadata referencing
+their existing `data`. Programmatic consumers can ignore it; exact values,
+pagination and semantic links remain canonical. Editor links carry URL-encoded
+GQL and its source; very long queries may not have a link.
+
 For an inventory, CRM, invoicing, expense or merchandise-management application, first read [Build a business application](grids-build-apps.md). It connects model choices, permissions, atomic transitions, templates and scenario-specific acceptance checks. This reference supplies the individual commands.
 
 Work from discovery to mutation, then read the result back.

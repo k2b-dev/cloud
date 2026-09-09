@@ -109,6 +109,7 @@ type ConversationRow = {
   draft_updated_at: Date | string | null;
   created_by_user_id: string | null;
   launched_by_app_id: string | null;
+  allowed_tools: string[] | null;
   created_at: Date | string;
   updated_at: Date | string;
 };
@@ -501,6 +502,7 @@ const rowToConversation = (row: ConversationRow): AiConversation => ({
   },
   createdByUserId: row.created_by_user_id,
   launchedByAppId: row.launched_by_app_id,
+  allowedTools: row.allowed_tools ?? null,
   createdAt: iso(row.created_at),
   updatedAt: iso(row.updated_at),
 });
@@ -870,7 +872,8 @@ export const aiConversations: AiConversationService = {
         loaded_tools,
         draft_updated_at,
         created_by_user_id,
-        launched_by_app_id
+        launched_by_app_id,
+        allowed_tools
       )
       SELECT
         ${shortId},
@@ -882,7 +885,8 @@ export const aiConversations: AiConversationService = {
         ${toPgTextArray(input.preloadTools ?? [])}::text[],
         ${input.draft?.length ? new Date() : null},
         ${input.ownerUserId},
-        ${input.launchedByAppId?.trim() || null}
+        ${input.launchedByAppId?.trim() || null},
+        ${input.allowedTools === undefined ? null : toPgTextArray(input.allowedTools)}::text[]
       WHERE ${input.projectId ?? null}::uuid IS NULL
          OR EXISTS (SELECT 1 FROM ai.projects project WHERE project.id = ${input.projectId ?? null}::uuid)
       RETURNING *
@@ -903,10 +907,10 @@ export const aiConversations: AiConversationService = {
         "idx_ai_conversations_short_id",
         (attempt, shortId) => attempt<ConversationRow[]>`
           INSERT INTO ai.conversations (
-            short_id, title, description, project_id, created_by_user_id
+            short_id, title, description, project_id, created_by_user_id, allowed_tools
           )
           SELECT
-            ${shortId}, ${input.title?.trim() || source[0]!.title}, description, project_id, ${input.ownerUserId}::uuid
+            ${shortId}, ${input.title?.trim() || source[0]!.title}, description, project_id, ${input.ownerUserId}::uuid, allowed_tools
           FROM ai.conversations WHERE id = ${input.sourceConversationId}::uuid
           RETURNING *
         `,

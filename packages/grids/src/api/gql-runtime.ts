@@ -66,7 +66,9 @@ export const gqlDiagnosticsForLocale = (
   return diagnostics.map((diagnostic) => ({
     ...diagnostic,
     code,
-    message: isGermanAuthoringLocale(locale) ? localizedMessage : diagnostic.message,
+    // Keep the parser/resolver detail: replacing it with a translated stage
+    // label prevents both people and machine clients from repairing the query.
+    message: (isGermanAuthoringLocale(locale) ? `${localizedMessage} ${diagnostic.message}` : diagnostic.message).slice(0, 2_000),
   }));
 };
 
@@ -293,29 +295,41 @@ const cursorScopeForPlan = async (
   return revisions.length > 0 ? `${scope}:federation:${revisions.join(",")}` : scope;
 };
 
-export const canonicalGqlSource = async (
-  c: Context<AuthContext>,
+export const canonicalGqlSourceForContext = async (
+  runtime: GridsGqlRuntimeContext,
   baseId: string,
   body: { query: string; currentTableId?: string; currentSource?: DslCurrentSource },
 ): Promise<
   { ok: true; source: string; tableId: string; plan: DslResolvedSqlQueryPlan } | { ok: false; diagnostics: DslQueryPreviewDiagnostic[] }
 > => {
   const parsed = parseGridsQueryDsl(body.query);
-  if (!parsed.ok) return { ok: false, diagnostics: gqlDiagnosticsForLocale(parsed.diagnostics, getDateConfig(c).locale, "gql.syntax") };
+  if (!parsed.ok) return { ok: false, diagnostics: gqlDiagnosticsForLocale(parsed.diagnostics, runtime.dateConfig.locale, "gql.syntax") };
   const bound = bindDslQueryContext(parsed.ast);
   if (!bound.ok)
     return {
       ok: false,
-      diagnostics: gqlDiagnosticsForLocale([{ line: 1, message: bound.error }], getDateConfig(c).locale, "gql.context"),
+      diagnostics: gqlDiagnosticsForLocale([{ line: 1, message: bound.error }], runtime.dateConfig.locale, "gql.context"),
     };
 
-  const ctx = await buildPermissionedGqlResolverContext(c, baseId, body.currentTableId, body.currentSource, bound.ast);
+  const ctx = await buildPermissionedGqlResolverContextForAccess(
+    runtime.access,
+    baseId,
+    body.currentTableId,
+    body.currentSource,
+    bound.ast,
+  );
   const ast = sourceAst(bound.ast, body.currentSource, ctx);
   const canonical = canonicalizeDslQuery(ast, ctx);
   if (!canonical.ok)
-    return { ok: false, diagnostics: gqlDiagnosticsForLocale(canonical.diagnostics, getDateConfig(c).locale, "gql.resolution") };
+    return { ok: false, diagnostics: gqlDiagnosticsForLocale(canonical.diagnostics, runtime.dateConfig.locale, "gql.resolution") };
   return { ok: true, source: canonical.source, tableId: canonical.plan.tableId, plan: canonical.plan };
 };
+
+export const canonicalGqlSource = (
+  c: Context<AuthContext>,
+  baseId: string,
+  body: { query: string; currentTableId?: string; currentSource?: DslCurrentSource },
+) => canonicalGqlSourceForContext(httpGqlRuntimeContext(c, c.req.raw.signal), baseId, body);
 
 type ExecuteGqlSourceOptions = {
   maxRows?: number;

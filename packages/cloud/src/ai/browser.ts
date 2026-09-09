@@ -30,6 +30,10 @@ export type LaunchAssistantInput = {
   draft?: { content: Array<Extract<AiDraftContentPart, { type: "text" | "resource" }>> };
   files?: File[];
   preloadTools?: Array<{ name: string } | { appId: string; kind: "query" | "action"; id: string }>;
+  /** Optional immutable ceiling of built-in names and qualified capability IDs. */
+  allowedTools?: string[];
+  /** Exact enabled Skill names, resolved into ordinary removable resource attachments. */
+  skills?: string[];
 };
 
 export type AssistantLaunch = {
@@ -71,7 +75,7 @@ export const launchAssistant = async (input: LaunchAssistantInput): Promise<Assi
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           expectedRevision: conversation.draft.revision,
-          content: [...(input.draft?.content ?? []), ...uploaded.map((item) => ({ type: "file" as const, ...item.file }))],
+          content: [...conversation.draft.content, ...uploaded.map((item) => ({ type: "file" as const, ...item.file }))],
         }),
       });
       if (!draftResponse.ok) throw new Error("Assistant draft attachments could not be saved");

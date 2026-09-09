@@ -4,6 +4,8 @@ export const queryMessages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
+      queryWithAi: "Query with AI",
+      queryAiPrompt: "Help me create a query for this Base.",
       loadSuggestionsFailed: "Could not load query suggestions.",
       noRows: "No rows",
       rowRange: ({ start, end }: { start: number; end: number }) => `Rows ${start}-${end}`,
@@ -213,6 +215,8 @@ export const queryMessages = i18n.define({
       functionDescription: ({ description }: { description: string }) => description,
     },
     de: {
+      queryWithAi: "Abfrage mit KI",
+      queryAiPrompt: "Hilf mir, eine Abfrage für diese Base zu erstellen.",
       loadSuggestionsFailed: "Abfragevorschläge konnten nicht geladen werden.",
       noRows: "Keine Zeilen",
       rowRange: ({ start, end }) => `Zeilen ${start}–${end}`,

@@ -257,6 +257,58 @@ const createExecutor = (
   });
 
 suite("AI executor integration", () => {
+  test("a stored scope excludes runtime-added tools even with a supplied chatId and persisted preload", async () => {
+    const userId = await insertUser();
+    const conversation = await aiConversations.createConversation({ ownerUserId: userId, allowedTools: [], preloadTools: ["write_file"] });
+    const requests: unknown[] = [];
+    try {
+      completionRequestCount = 0;
+      completionQueue = [textCompletion("No task tools are available")];
+      onCompletionRequest = (body) => {
+        requests.push(body);
+      };
+      const { turn } = await aiConversations.submitChatTurn({
+        conversationId: conversation.id,
+        modelProfileId: MODEL_ID,
+        runConfig: {
+          kind: "chat",
+          input: "What can you do?",
+          chatId: conversation.shortId,
+          actor: { kind: "user", user: actorUser(userId) },
+          toolSource: { kind: "default", appTools: true },
+        },
+        userMessage: userMessage("What can you do?"),
+      });
+      const claim = await aiConversations.claimTurn({
+        conversationId: conversation.id,
+        turnId: turn.id,
+        leaseOwner: "scope-exec",
+        leaseMs: 30_000,
+        from: "queue",
+        maxAttempts: 5,
+        runBudgetMs: 60_000,
+      });
+      await createExecutor("scope-exec", undefined, fakeValidateBoundedToolTurn).run({
+        conversationId: conversation.id,
+        turnId: turn.id,
+        claim: claim!,
+        signal: new AbortController().signal,
+      });
+      const request = requests[0];
+      if (!request || typeof request !== "object" || !("tools" in request)) throw new Error("Expected discovery tools");
+      const advertised = JSON.stringify(request.tools);
+      expect(advertised).toContain("search_tools");
+      for (const name of ["write_file", "memory", "load_skill", "read_file", "local_bash"])
+        expect(advertised).not.toContain(`\"name\":\"${name}\"`);
+      expect(JSON.stringify(request)).toContain("fixed tool scope");
+      expect((await aiConversations.getTurn({ conversationId: conversation.id, turnId: turn.id }))?.status).toBe("completed");
+    } finally {
+      completionQueue = [];
+      onCompletionRequest = null;
+      await sql`DELETE FROM ai.conversations WHERE id = ${conversation.id}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
+    }
+  });
   test("requires a fresh background approval without changing interactive remembered approvals", async () => {
     const userId = await insertUser();
     const approvalContext = { actorUserId: userId };

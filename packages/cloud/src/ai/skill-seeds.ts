@@ -1,3 +1,4 @@
+import { CLOUD_GRIDS_INSTRUCTIONS, CLOUD_GRIDS_QUERY_REFERENCE } from "./grids-skill";
 import { aiSkills } from "./skills";
 
 const SKILL_CREATOR_INSTRUCTIONS = `# Create and improve Skills
@@ -350,6 +351,14 @@ Mail attachment inputs require base64: encode the exact returned calendar string
 Do not fabricate organizer/attendee addresses, regenerate the returned calendar text, commit after a failed attachment, or retry an unknown mutation result without reconciliation.`;
 
 const BUILTIN_CLOUD_AI_SKILLS: Array<Parameters<typeof aiSkills.seedOnce>[0]> = [
+  {
+    key: "grids:cloud-grids",
+    name: "cloud-grids",
+    description:
+      "Use for Cloud Grids: finding or analysing records, GQL queries, reports and Views, inventory, CRM, invoices, or understanding and administering Bases, tables, relations, permissions, forms, workflows, documents, custom apps and navigation. Explain unsupported administration through the GUI; use only available authorized tools.",
+    instructions: CLOUD_GRIDS_INSTRUCTIONS,
+    references: [{ path: "references/query-tasks.md", content: CLOUD_GRIDS_QUERY_REFERENCE }],
+  },
   {
     key: "assistant:cloud-assistant",
     name: "cloud-assistant",

@@ -643,12 +643,17 @@ export class AiTurnExecutor {
     let validated: ValidatedTurn;
     let resolvedProjectId: string | null = null;
     let chatId = config.chatId ?? "";
+    let allowedTools: string[] | null = null;
     try {
       const [nextMaterial, conversation] = await Promise.all([
         materializeChatConfig(config, abortController.signal, turnId),
-        chatId ? Promise.resolve(null) : aiConversations.getConversation({ conversationId }),
+        aiConversations.getConversation({ conversationId }),
       ]);
       material = nextMaterial;
+      if (!conversation) throw new Error("Conversation is no longer available.");
+      allowedTools = conversation.allowedTools ?? null;
+      const allowed = allowedTools === null ? null : new Set(allowedTools);
+      if (allowed) material.tools = material.tools.filter((tool) => allowed.has(tool.def.name));
       chatId ||= conversation?.shortId ?? "";
       if (config.project) {
         const subject = accessSubjectForActor(material.actor);
@@ -763,7 +768,8 @@ export class AiTurnExecutor {
         : []),
     ];
     const toolsSupported = resolved.profile.capabilities.includes("tools");
-    const activeTools = toolsSupported ? runtimeTools : [];
+    const allowed = allowedTools === null ? null : new Set(allowedTools);
+    const activeTools = toolsSupported ? runtimeTools.filter((tool) => !allowed || allowed.has(tool.def.name)) : [];
     const memoryToolEnabled = activeTools.some((tool) => tool.def.name === "memory");
     const projectToolEnabled = activeTools.some((tool) => tool.def.name === "search_project");
 
@@ -859,6 +865,7 @@ export class AiTurnExecutor {
           conversationId,
           actor: capabilityAuthority?.actor ?? toolActor,
           staticTools: activeTools,
+          allowedTools,
           runtimeContext: dynamicToolRuntimeContext,
           store: aiConversations,
           ...(capabilityAuthority ? { listRegistry: listCapabilities } : {}),
@@ -951,7 +958,16 @@ export class AiTurnExecutor {
 
     const systemPrompt = composeAiSystemPrompt({
       globalInstructions: settings.globalInstructions,
-      turnInstructions: material.systemPrompt,
+      turnInstructions: [
+        material.systemPrompt,
+        ...(allowedTools === null
+          ? []
+          : [
+              `This conversation has a fixed tool scope. Only these task tools may be used: ${allowedTools.join(", ") || "none"}. Discovery cannot widen it. Explain unavailable operations; do not bypass this scope through another conversation or tool.`,
+            ]),
+      ]
+        .filter(Boolean)
+        .join("\n\n"),
       chatId,
       project: config.project,
       files: config.files,

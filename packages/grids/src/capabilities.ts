@@ -3,7 +3,8 @@ import {
   CAPABILITY_MAX_RESULT_BYTES,
   type CapabilityActionReview,
   type CapabilityExecutionContext,
-  type CloudResourceRef,
+  CapabilityTablePresentationSchema,
+  type CloudResourceReference,
   type CloudResourceView,
   capabilityPage,
   defineCapabilities,
@@ -17,6 +18,7 @@ import type { z } from "zod";
 import { toPublicGqlResponse } from "./api/gql-public";
 import {
   buildPermissionedGqlResolverContextForAccess,
+  canonicalGqlSourceForContext,
   emptyDslAst,
   executeGqlSourceForContext,
   executeSavedViewSourceForContext,
@@ -52,6 +54,7 @@ import {
   TableCapabilityDataSchema,
   TableReadInputSchema,
   ViewCapabilityDataSchema,
+  ViewCreateInputSchema,
   ViewReadInputSchema,
 } from "./capability-contracts";
 import { capabilityMessagesFor } from "./capability-messages";
@@ -59,8 +62,10 @@ import { gridsCapabilityPresentation } from "./capability-presentation";
 import { type DslQueryPreviewResponse, ShortIdSchema } from "./contracts";
 import { dailyCapabilities } from "./daily-capabilities";
 import { isRecordWritableFieldType } from "./field-types";
+import { queryCapabilityHref } from "./query-capability-link";
 import { gridsService } from "./service";
 import { resolvePublicIds } from "./service/public-resources";
+import { buildRelationLabelCacheForIds } from "./service/relation-labels";
 import type { Base, Field, GridRecord, Table } from "./service/types";
 
 const GQL_CAPABILITY_RESULT_BUDGET_BYTES = CAPABILITY_MAX_RESULT_BYTES - 32 * 1024;
@@ -294,7 +299,7 @@ type TableContextItem = Extract<GqlContextItem, { kind: "table" }>;
 const allowsDirectMutations = (table: Table): boolean =>
   table.mutationPolicy.mode === "all" || table.mutationPolicy.sources.includes("direct");
 
-const tableContextItem = (table: Table, base: Base, permission: "read" | "write" | "admin"): TableContextItem => ({
+const tableContextItem = (table: Table, base: Base, permission: "read" | "write" | "admin"): z.infer<typeof TableCapabilityDataSchema> => ({
   kind: "table",
   id: table.shortId,
   baseId: base.shortId,
@@ -312,6 +317,7 @@ const fieldContextItem = (
   table: Table,
   readableTablesById: ReadonlyMap<string, Table>,
   canUpdateRecords: boolean,
+  includeWriteContext: boolean,
   locale?: string,
 ): GqlContextItem => {
   const configuredTarget = (field.config as { targetTableId?: unknown }).targetTableId;
@@ -324,9 +330,7 @@ const fieldContextItem = (
     name: field.name,
     description: field.description,
     type: field.type,
-    position: field.position,
-    required: field.required,
-    writable: canUpdateRecords && isRecordWritableFieldType(field.type),
+    ...(includeWriteContext ? { required: field.required, writable: canUpdateRecords && isRecordWritableFieldType(field.type) } : {}),
     valueHint: fieldValueHint(field, locale),
     targetTableId,
     relationCardinality:
@@ -365,7 +369,11 @@ const auditQuestions = (table: Table) =>
   })) ?? [];
 
 const pageContextItems = (items: GqlContextItem[], offset: number, limit: number) => {
-  const data = items.slice(offset, offset + limit);
+  const data: GqlContextItem[] = [];
+  for (const item of items.slice(offset, offset + limit)) {
+    if (data.length > 0 && new TextEncoder().encode(JSON.stringify([...data, item])).byteLength > GQL_CAPABILITY_RESULT_BUDGET_BYTES) break;
+    data.push(item);
+  }
   const nextOffset = offset + data.length;
   const hasMore = nextOffset < items.length;
   return { data, page: capabilityPage(hasMore ? encodeCursor(nextOffset) : undefined) };
@@ -380,7 +388,7 @@ const runGqlContext = async (input: z.infer<typeof GqlContextInputSchema>, conte
   if (!baseResult.ok) return baseResult;
 
   let items: GqlContextItem[];
-  let recordWrite: ReturnType<typeof recordWriteContext> | null = null;
+  let recordWrite: ReturnType<typeof recordWriteContext> | undefined;
   if (input.kind === "tables") {
     const [resolver, tables] = await Promise.all([
       buildPermissionedGqlResolverContextForAccess(access, baseResult.data.id, undefined, undefined, emptyDslAst()),
@@ -393,8 +401,11 @@ const runGqlContext = async (input: z.infer<typeof GqlContextInputSchema>, conte
       return table && permission && permission !== "none"
         ? [
             {
-              ...tableContextItem(table, baseResult.data, permission),
-              links: [{ rel: "open" as const, href: tableHref(baseResult.data, table) }],
+              kind: "table",
+              id: table.shortId,
+              tableKind: table.kind,
+              name: table.name,
+              description: table.description,
             },
           ]
         : [];
@@ -429,10 +440,19 @@ const runGqlContext = async (input: z.infer<typeof GqlContextInputSchema>, conte
     const fieldsById = new Map(fields.map((field) => [field.id, field]));
     if (input.kind === "fields") {
       const writeContext = recordWriteContext(tableResult.data, fieldsById, permission);
-      recordWrite = writeContext;
+      if (input.includeWriteContext) recordWrite = writeContext;
       items = fields
         .sort((left, right) => left.position - right.position || left.id.localeCompare(right.id))
-        .map((field) => fieldContextItem(field, tableResult.data, readableTablesById, writeContext.canUpdateRecords, context.locale));
+        .map((field) =>
+          fieldContextItem(
+            field,
+            tableResult.data,
+            readableTablesById,
+            writeContext.canUpdateRecords,
+            input.includeWriteContext,
+            context.locale,
+          ),
+        );
     } else {
       const field = fields.find((candidate) => candidate.id === fieldResult?.id);
       if (!field || field.type !== "select") return fail(notFoundError(t.selectFieldNotFound));
@@ -463,8 +483,6 @@ const runGqlContext = async (input: z.infer<typeof GqlContextInputSchema>, conte
                 tableId: table.shortId,
                 name: view.name,
                 description: view.description,
-                icon: view.icon ?? null,
-                links: [{ rel: "open" as const, href: viewHref(baseResult.data, table, view.shortId) }],
               },
             ]
           : [];
@@ -473,18 +491,28 @@ const runGqlContext = async (input: z.infer<typeof GqlContextInputSchema>, conte
   }
 
   const page = pageContextItems(items, cursor.data, input.limit);
-  const refs: CloudResourceRef[] = page.data.flatMap((item) =>
-    item.kind === "table" || item.kind === "view" ? [{ type: `grids.${item.kind}` as "grids.table" | "grids.view", id: item.id }] : [],
+  const refs: CloudResourceReference[] = page.data.flatMap((item) =>
+    item.kind === "table" || item.kind === "view"
+      ? [{ type: `grids.${item.kind}` as "grids.table" | "grids.view", id: item.id, title: item.name }]
+      : [],
   );
-  return ok({
-    data: { base: mapBase(baseResult.data), kind: input.kind, items: page.data, recordWrite },
-    refs: [{ type: "grids.base", id: baseResult.data.shortId }, ...refs],
-    links: [{ rel: "open" as const, href: baseHref(baseResult.data) }],
+  const result = {
+    data: {
+      base: { id: baseResult.data.shortId, name: baseResult.data.name },
+      kind: input.kind,
+      items: page.data,
+      ...(recordWrite ? { recordWrite } : {}),
+    },
+    refs,
     page: page.page,
-  });
+  };
+  if (new TextEncoder().encode(JSON.stringify(result)).byteLength > CAPABILITY_MAX_RESULT_BYTES) {
+    return fail(err.badInput(t.contextTooLarge));
+  }
+  return ok(result);
 };
 
-type GqlCapabilityOutcome = { kind: "preview" | "execute"; viewName?: string };
+type GqlCapabilityOutcome = { kind: "preview" | "execute"; viewName?: string; queryLink?: string };
 
 const gqlCapabilitySummary = (response: DslQueryPreviewResponse, base: Base, outcome: GqlCapabilityOutcome, locale?: string) => {
   const t = capabilityMessagesFor(locale);
@@ -493,11 +521,22 @@ const gqlCapabilitySummary = (response: DslQueryPreviewResponse, base: Base, out
       ? t.gqlPreviewInvalid({ count: response.diagnostics.length })
       : t.gqlExecutionInvalid({ count: response.diagnostics.length });
   }
-  if (outcome.viewName) return t.executedSavedView({ name: outcome.viewName, count: response.rows.length });
-  return t.gqlOutcome({ preview: outcome.kind === "preview", base: base.name, count: response.rows.length });
+  return [
+    outcome.viewName
+      ? t.executedSavedView({ name: outcome.viewName, count: response.rows.length })
+      : t.gqlOutcome({ preview: outcome.kind === "preview", base: base.name, count: response.rows.length }),
+    ...(response.truncated ? [t.queryCapped] : []),
+    ...(!outcome.queryLink ? [t.queryCopy] : []),
+  ].join(" ");
 };
 
-const gqlCapabilityResult = async (response: DslQueryPreviewResponse, base: Base, outcome: GqlCapabilityOutcome, locale?: string) => {
+const gqlCapabilityResult = async (
+  response: DslQueryPreviewResponse,
+  base: Base,
+  outcome: GqlCapabilityOutcome,
+  context: CapabilityExecutionContext,
+) => {
+  const locale = context.locale;
   const t = capabilityMessagesFor(locale);
   if (!response.ok) {
     const tooLarge = response.diagnostics.find((diagnostic) => diagnostic.message.startsWith("GQL result is too large."));
@@ -521,33 +560,79 @@ const gqlCapabilityResult = async (response: DslQueryPreviewResponse, base: Base
     return fail(err.internal(t.publicIdProjectionFailed));
   }
   if (!projected.ok) return fail(err.internal(t.successfulProjectionFailed));
-  const { page, ...resultData } = projected;
+  const { page, columns, ...resultData } = projected;
+  const labelIds = new Map<string, Set<string>>();
+  for (const row of response.rows) {
+    if (!row.tableId || !row.recordId) continue;
+    const ids = labelIds.get(row.tableId) ?? new Set<string>();
+    ids.add(row.recordId);
+    labelIds.set(row.tableId, ids);
+  }
+  const labels = await buildRelationLabelCacheForIds(labelIds, actorViewerFor(accessContext(context)));
   const data = {
     ...resultData,
+    columns: columns.map(({ sqlType: _sqlType, ...column }) => column),
     rows: projected.rows.map((row, index) => {
+      const { recordMeta: _recordMeta, ...values } = row;
       const internalRow = response.rows[index];
       const table = internalRow?.tableId ? tablesById.get(internalRow.tableId) : undefined;
       return {
-        ...row,
+        ...values,
         ...(row.recordId && table ? { links: [{ rel: "open" as const, href: recordHref(base, table, row.recordId) }] } : {}),
       };
     }),
   };
-  const refs: CloudResourceRef[] = [{ type: "grids.base", id: base.shortId }];
+  const refs: CloudResourceReference[] = [];
   const seen = new Set<string>();
-  for (const row of projected.rows) {
+  for (const [index, row] of projected.rows.entries()) {
     if (!row.recordId || seen.has(row.recordId)) continue;
+    if (refs.length === 100) break;
     seen.add(row.recordId);
-    refs.push({ type: "grids.record", id: row.recordId });
+    const internalRow = response.rows[index];
+    const label = internalRow?.recordId ? labels[internalRow.recordId] : undefined;
+    const table = internalRow?.tableId ? tablesById.get(internalRow.tableId) : undefined;
+    refs.push({
+      type: "grids.record",
+      id: row.recordId,
+      ...(label ? { title: label.slice(0, 500) } : {}),
+      ...(table ? { preview: table.name, icon: table.icon ?? "ti ti-table" } : {}),
+    });
   }
   const nextCursor = page?.nextCursor ?? undefined;
-  return ok({
+  const result = {
     data,
     summary: gqlCapabilitySummary(response, base, outcome, locale),
     refs,
-    links: [{ rel: "open" as const, href: baseHref(base) }],
+    ...(outcome.queryLink ? { links: [{ rel: "open" as const, href: outcome.queryLink, title: t.openQuery }] } : {}),
     page: capabilityPage(nextCursor),
-  });
+  };
+  // Labels are optional presentation. Preserve every identity and row when
+  // unusually large labels consume the reserved envelope budget.
+  for (
+    let index = refs.length - 1;
+    index >= 0 && new TextEncoder().encode(JSON.stringify(result)).byteLength > CAPABILITY_MAX_RESULT_BYTES;
+    index--
+  ) {
+    const ref = refs[index]!;
+    refs[index] = { type: ref.type, id: ref.id };
+  }
+  const presentation = CapabilityTablePresentationSchema.safeParse(
+    data.columns.length
+      ? {
+          kind: "table" as const,
+          rowsPath: ["rows"],
+          columns: data.columns.map((column) => ({ path: ["values", column.key], label: column.label })),
+          rowLinksPath: ["links"],
+        }
+      : undefined,
+  );
+  // Presentation is optional; it must never turn a valid bounded data result into an oversized response.
+  return ok(
+    presentation.success &&
+      new TextEncoder().encode(JSON.stringify({ ...result, presentation: presentation.data })).byteLength <= CAPABILITY_MAX_RESULT_BYTES
+      ? { ...result, presentation: presentation.data }
+      : result,
+  );
 };
 
 const gqlUnavailable = (error: unknown, locale?: string) =>
@@ -596,7 +681,7 @@ const runGqlPreview = async (input: z.infer<typeof GqlPreviewInputSchema>, conte
       },
       { maxRows: 25, maxResultBytes: GQL_CAPABILITY_RESULT_BUDGET_BYTES, operation: "preview", labelRelationValues: false },
     );
-    return await gqlCapabilityResult(result.response, base.data, { kind: "preview" }, context.locale);
+    return await gqlCapabilityResult(result.response, base.data, { kind: "preview", queryLink: queryCapabilityHref(input) }, context);
   } catch (error) {
     return gqlUnavailable(error, context.locale);
   }
@@ -622,7 +707,7 @@ const runGqlExecute = async (input: z.infer<typeof GqlExecuteInputSchema>, conte
       },
       { maxRows: 1_000, maxResultBytes: GQL_CAPABILITY_RESULT_BUDGET_BYTES, operation: "execute", labelRelationValues: false },
     );
-    return await gqlCapabilityResult(result.response, base.data, { kind: "execute" }, context.locale);
+    return await gqlCapabilityResult(result.response, base.data, { kind: "execute", queryLink: queryCapabilityHref(input) }, context);
   } catch (error) {
     return gqlUnavailable(error, context.locale);
   }
@@ -646,7 +731,16 @@ const runGqlViewExecute = async (input: z.infer<typeof GqlViewExecuteInputSchema
       surface: "api",
       labelRelationValues: false,
     });
-    return await gqlCapabilityResult(response, base.data, { kind: "execute", viewName: view.name }, context.locale);
+    return await gqlCapabilityResult(
+      response,
+      base.data,
+      {
+        kind: "execute",
+        viewName: view.name,
+        queryLink: queryCapabilityHref({ baseId: input.baseId, query: `from view {${view.shortId}}` }),
+      },
+      context,
+    );
   } catch (error) {
     return gqlUnavailable(error, context.locale);
   }
@@ -904,6 +998,31 @@ const runRecordUpdate = async (input: z.infer<typeof RecordUpdateInputSchema>, c
     : result;
 };
 
+const prepareViewCreate = async (input: z.infer<typeof ViewCreateInputSchema>, context: CapabilityExecutionContext) => {
+  const base = await requireBase(input.baseId, accessContext(context), context.locale);
+  if (!base.ok) return base;
+  const gate = await gateBaseAtAccess(accessContext(context), base.data.id, "admin");
+  if (!gate.ok) return gate;
+  const user = accessActorUser(accessContext(context));
+  if (!input.shared && !user) return fail(err.forbidden(capabilityMessagesFor(context.locale).personalViewUserRequired));
+  const current = await resolveGqlCurrentSource(base.data.id, input, context.locale);
+  if (!current.ok) return current;
+  const compiled = await canonicalGqlSourceForContext(await gqlRuntimeContext(context), base.data.id, {
+    query: input.query,
+    ...current.data,
+  });
+  if (!compiled.ok)
+    return fail(
+      err.badInput(
+        compiled.diagnostics
+          .map((item) => item.message)
+          .join("; ")
+          .slice(0, 1000),
+      ),
+    );
+  return ok({ base: base.data, user, compiled });
+};
+
 export const gridsCapabilities = defineCapabilities({
   protocolVersion: 1,
   presentation: gridsCapabilityPresentation,
@@ -972,7 +1091,7 @@ export const gridsCapabilities = defineCapabilities({
     "gql.context": {
       title: "Load Grids GQL context",
       description:
-        "Load the schema before authoring GQL or record writes. Get baseId from base.list or base.search; request tables first, then fields or select options with returned IDs, or views for gql.view.execute. Field results include write and audit requirements.",
+        "Load compact schema for a known task. If the source is unknown, request tables first; otherwise request fields with tableId. Options need tableId and fieldId. Omit unused IDs, never send empty strings. Use includeWriteContext only before record writes. Views can feed gql.view.execute.",
       input: GqlContextInputSchema,
       data: GqlContextDataSchema,
       openWorld: false,
@@ -1017,10 +1136,48 @@ export const gridsCapabilities = defineCapabilities({
   },
   actions: {
     ...dailyCapabilities.actions,
+    "view.create": {
+      title: "Save Grids query as View",
+      description:
+        "Save a reviewed GQL query as a new personal or shared View. Requires Base admin access. Does not change tables or records. Never retry an uncertain result; inspect existing Views first.",
+      input: ViewCreateInputSchema,
+      data: ViewCapabilityDataSchema,
+      openWorld: false,
+      destructive: false,
+      idempotency: "none",
+      review: async (input, context) => {
+        const prepared = await prepareViewCreate(input, context);
+        if (!prepared.ok) return prepared;
+        const t = capabilityMessagesFor(context.locale);
+        return ok({
+          message: t.saveViewReview({ name: input.name }),
+          details: [
+            { label: t.viewVisibility, value: input.shared ? t.sharedView : t.personalView },
+            { label: "GQL", value: input.query.slice(0, 10000), display: "block" as const },
+            ...(input.query.length > 10000 ? [{ label: "GQL (2)", value: input.query.slice(10000), display: "block" as const }] : []),
+          ],
+        });
+      },
+      run: async (input, context) => {
+        const prepared = await prepareViewCreate(input, context);
+        if (!prepared.ok) return prepared;
+        const { compiled, user } = prepared.data;
+        const created = await gridsService.view.create(
+          { tableId: compiled.tableId, name: input.name, source: compiled.source, ownerUserId: input.shared ? null : (user?.id ?? null) },
+          user?.id ?? null,
+          context.locale,
+        );
+        if (!created.ok) return created;
+        const result = await runViewRead({ id: created.data.shortId }, context);
+        return result.ok
+          ? ok({ ...result.data, summary: capabilityMessagesFor(context.locale).savedView({ name: created.data.name }) })
+          : result;
+      },
+    },
     "record.create": {
       title: "Create Grids Record",
       description:
-        "Call gql.context kind fields first, then create once with values keyed by writable Field public ID. Select values use option IDs. Returns bounded metadata; read values with targeted GQL. This action is not idempotent.",
+        "Call gql.context kind fields with includeWriteContext true first, then create once with values keyed by writable Field public ID. Select values use option IDs. Returns bounded metadata; read values with targeted GQL. This action is not idempotent.",
       input: RecordCreateInputSchema,
       data: RecordCapabilityDataSchema,
       destructive: false,
@@ -1031,7 +1188,7 @@ export const gridsCapabilities = defineCapabilities({
     "record.upsert-external": {
       title: "Upsert external Grids Record",
       description:
-        "Retry-safely bind provider + providerAccount + resourceKind + externalId to one Record. " +
+        "Load gql.context kind fields with includeWriteContext true. Retry-safely bind provider + providerAccount + resourceKind + externalId to one Record. " +
         "The first request creates it; later updates require ifVersion and patch only supplied Field IDs.",
       input: RecordExternalUpsertInputSchema,
       data: RecordExternalUpsertDataSchema,
@@ -1065,7 +1222,7 @@ export const gridsCapabilities = defineCapabilities({
     "record.update": {
       title: "Update Grids Record",
       description:
-        "Load fields for value and audit requirements, then record.read for ifVersion. Only supplied Field public IDs change; stale versions are rejected. Returns bounded metadata; read values with targeted GQL.",
+        "Load gql.context kind fields with includeWriteContext true for value and audit requirements, then record.read for ifVersion. Only supplied Field public IDs change; stale versions are rejected. Returns bounded metadata; read values with targeted GQL.",
       input: RecordUpdateInputSchema,
       data: RecordCapabilityDataSchema,
       destructive: true,

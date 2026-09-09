@@ -616,6 +616,7 @@ export const createAiToolResolver =
     conversationId: string;
     actor: RequestActor;
     staticTools: AiRuntimeTool[];
+    allowedTools?: readonly string[] | null;
     runtimeContext?: Omit<AiToolPreparationContext, "actor" | "conversationId">;
     store: Pick<AiConversationService, "getLoadedTools" | "loadTools">;
     listRegistry?: () => Promise<CapabilityRegistryEntry[]>;
@@ -648,13 +649,16 @@ export const createAiToolResolver =
         maxLoadedTools: configuredLimit,
       });
     }
-    const capabilityCatalog = buildAiCapabilityCatalog(registry);
+    const allowed = input.allowedTools == null ? null : new Set(input.allowedTools);
+    const capabilityCatalog = buildAiCapabilityCatalog(registry).filter((entry) => !allowed || allowed.has(entry.name));
     const helpTools = input.listHelpRegistry ? createAiHelpTools(helpRegistry, input.locale) : [];
     const resourceTool =
       input.execute && capabilityCatalog.length > 0
         ? createAiResourceReaderTool({ apps: registry, catalog: capabilityCatalog, execute: input.execute })
         : null;
-    const builtIns = [...input.staticTools, ...helpTools, ...(resourceTool ? [resourceTool] : [])];
+    const builtIns = [...input.staticTools, ...helpTools, ...(resourceTool ? [resourceTool] : [])].filter(
+      (tool) => !allowed || allowed.has(tool.def.name),
+    );
     const catalog = buildAiToolCatalog(builtIns, capabilityCatalog);
     const catalogNames = new Set(catalog.map((entry) => entry.name));
     const unavailableLoadedNames = loadedNames.filter((name) => !catalogNames.has(name));
@@ -662,7 +666,7 @@ export const createAiToolResolver =
     const activeBuiltIns = builtIns.filter((tool) => eagerNames.has(tool.def.name) || loadedNames.includes(tool.def.name));
     const runtimeTools = [
       ...createAiToolMetaTools({
-        apps: registry,
+        apps: allowed ? registry.filter((app) => capabilityCatalog.some((entry) => entry.appId === app.appId)) : registry,
         catalog,
         eagerNames,
         conversationId: input.conversationId,

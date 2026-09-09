@@ -54,6 +54,45 @@ const block = (status: "running" | "awaiting_approval" | "completed" | "failed")
 });
 
 describe("capability tool presentation", () => {
+  test("table preview handles empty, capped, invalid and failed results honestly", () => {
+    const render = (result: unknown, failed = false) => {
+      const completed = block(failed ? "failed" : "completed");
+      if (completed.kind !== "tool") throw new Error("tool expected");
+      completed.result = result;
+      return renderToString(() => createComponent(AiTurnBlockView, { block: completed, turnId: "turn-1" }));
+    };
+    const presentation = { kind: "table", rowsPath: [], columns: [{ path: ["name"], label: "Name" }] };
+    expect(render({ data: [], presentation })).toContain("No matching rows");
+    const many = Array.from({ length: 101 }, (_, index) => ({ name: `item-${index}` }));
+    expect(render({ data: many, presentation })).toContain("first 100 returned rows");
+    expect(render({ data: [], presentation: { ...presentation, kind: "future" } })).not.toContain("<table");
+    expect(render({ data: {}, presentation })).not.toContain("<table");
+    expect(render({ data: [], presentation }, true)).not.toContain("<table");
+  });
+  test("renders metadata from actual values, including exact decimals, safe links and partial results", () => {
+    const completed = block("completed");
+    if (completed.kind !== "tool") throw new Error("tool expected");
+    completed.result = {
+      data: { rows: [{ values: { amount: "12345678901234567890.123400" }, links: [{ rel: "open", href: "/app/grids/Base01" }] }] },
+      presentation: {
+        kind: "table",
+        rowsPath: ["rows"],
+        columns: [{ path: ["values", "amount"], label: "Amount", format: "number" }],
+        rowLinksPath: ["links"],
+      },
+      page: { hasMore: true },
+      summary: "Query preview",
+      links: [{ rel: "open", href: "/app/grids/Base01/query?q=test", title: "Open query editor" }],
+    };
+    const html = renderToString(() => createComponent(AiTurnBlockView, { block: completed, turnId: "turn-1" }));
+    expect(html).toContain("12345678901234567890.123400");
+    expect(html).toContain("<table");
+    expect(html).toContain("/app/grids/Base01");
+    expect(html).toContain("More rows");
+    expect(html).toMatch(/<a(?=[^>]*href="\/app\/grids\/Base01")(?=[^>]*target="_blank")[^>]*>/);
+    expect(html).toMatch(/<a(?=[^>]*href="\/app\/grids\/Base01\/query\?q=test")(?=[^>]*target="_blank")[^>]*>/);
+    expect(html).toContain('rel="noopener noreferrer"');
+  });
   test("renders compact capability rows with only the capability title", () => {
     for (const status of ["running", "completed", "failed"] as const) {
       const html = renderToString(() => createComponent(AiTurnBlockView, { block: block(status), turnId: "turn-1" }));
@@ -313,7 +352,7 @@ describe("capability tool presentation", () => {
         eof: true,
         truncated: false,
       },
-      "bytes 0–42 · complete",
+      "Bytes 0–42 · complete",
     ],
     [
       "write_file",

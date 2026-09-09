@@ -15,6 +15,16 @@ A tool gives the model a named action with validated input and output.
 The model may request the action. Cloud still controls where it runs, whether
 approval is required, and which actor reaches the implementation.
 
+Capability results can include optional [table presentation metadata](/en/docs/platform/capabilities#optional-table-previews).
+Assistant displays the referenced canonical values directly; the model does not
+generate a separate table payload. This metadata grants no authority and remains
+optional for CLI and programmatic clients.
+
+Applications can also restrict launched conversations through
+[`allowedTools`](/en/docs/ai/chat-runtime-and-streaming). The stored ceiling applies
+to later turns and forks as well as initial discovery. Action approval and domain
+permissions still apply to every permitted operation.
+
 ## Define a server tool
 
 ```ts

@@ -424,7 +424,12 @@ const buildPredicateFunction = (
     }
     return recordMetaPredicate(metaKey, values, spanForExpr(baseSpan, expr));
   }
-  if (isScopedFormulaFieldRef(first.fieldId)) return null;
+  if (isScopedFormulaFieldRef(first.fieldId)) {
+    if (expr.fn === "ONEOF" || expr.fn === "NONEOF" || expr.fn === "CONTAINSALL") {
+      return diagnostic(`membership predicate ${expr.fn} on joined field "${first.fieldId}" is not supported`, spanForExpr(baseSpan, expr));
+    }
+    return null;
+  }
   const fieldSpan = spanForExpr(baseSpan, first);
   const callSpan = spanForExpr(baseSpan, expr);
   const field = fieldByRef(scope, first.fieldId, fieldSpan);

@@ -140,6 +140,39 @@ export type CapabilityPage = z.infer<typeof CapabilityPageSchema>;
 export const capabilityPage = (nextCursor?: string | null): CapabilityPage =>
   nextCursor === undefined || nextCursor === null ? { hasMore: false } : { hasMore: true, nextCursor };
 
+// Presentation work is bounded independently of the result's byte envelope.
+const CapabilityDataPathSchema = z.array(z.string().max(500)).max(16);
+export const CapabilityTablePresentationSchema = z
+  .object({
+    kind: z.literal("table"),
+    rowsPath: CapabilityDataPathSchema,
+    columns: z
+      .array(
+        z
+          .object({
+            path: CapabilityDataPathSchema,
+            label: z.string().max(500),
+            format: z.enum(["text", "number", "date", "datetime"]).optional(),
+          })
+          .strict(),
+      )
+      .min(1)
+      .max(100),
+    rowLinksPath: CapabilityDataPathSchema.optional(),
+  })
+  .strict();
+export type CapabilityTablePresentation = z.infer<typeof CapabilityTablePresentationSchema>;
+
+/** Resolve own JSON properties only. Paths are data, never expressions. */
+export const capabilityDataAtPath = (data: unknown, path: readonly string[]): unknown => {
+  let value = data;
+  for (const segment of path) {
+    if (value === null || typeof value !== "object" || !Object.hasOwn(value, segment)) return undefined;
+    value = Object.getOwnPropertyDescriptor(value, segment)?.value;
+  }
+  return value;
+};
+
 export type CapabilityResult<T> = {
   data: T;
   /** Provider-authored, user-facing summary of the successful result. Render as escaped plain text. */
@@ -147,9 +180,13 @@ export type CapabilityResult<T> = {
   refs?: CloudResourceReference[];
   page?: CapabilityPage;
   links?: CapabilitySemanticLink[];
+  presentation?: CapabilityTablePresentation;
 };
 
-export const capabilityResultSchema = <T extends z.ZodType>(data: T): z.ZodType<CapabilityResult<z.output<T>>> =>
+export const capabilityResultSchema = <T extends z.ZodType>(
+  data: T,
+  options?: { consumer?: boolean },
+): z.ZodType<CapabilityResult<z.output<T>>> =>
   z
     .object({
       data,
@@ -157,8 +194,24 @@ export const capabilityResultSchema = <T extends z.ZodType>(data: T): z.ZodType<
       refs: z.array(CloudResourceReferenceSchema).max(100).optional(),
       page: CapabilityPageSchema.optional(),
       links: z.array(CapabilitySemanticLinkSchema).max(20).optional(),
+      presentation: options?.consumer
+        ? CapabilityTablePresentationSchema.optional().catch(undefined)
+        : CapabilityTablePresentationSchema.optional(),
     })
-    .strict() as unknown as z.ZodType<CapabilityResult<z.output<T>>>;
+    .strict()
+    .superRefine((result, context) => {
+      if (
+        !options?.consumer &&
+        result.presentation &&
+        !Array.isArray(capabilityDataAtPath(capabilityDataAtPath(result, ["data"]), result.presentation.rowsPath))
+      ) {
+        context.addIssue({
+          code: "custom",
+          path: ["presentation", "rowsPath"],
+          message: "Table rowsPath must reference an array in data.",
+        });
+      }
+    }) as unknown as z.ZodType<CapabilityResult<z.output<T>>>;
 
 export const capabilityResultJsonSchema = (dataSchema: Record<string, unknown>): Record<string, unknown> =>
   z.toJSONSchema(capabilityResultSchema(z.fromJSONSchema(structuredClone(dataSchema))), { io: "output" }) as Record<string, unknown>;

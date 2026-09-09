@@ -11,7 +11,7 @@ describe("Cloud AI Skill seeds", () => {
 
     await seedCloudAiSkills();
 
-    expect(seedOnce).toHaveBeenCalledTimes(7);
+    expect(seedOnce).toHaveBeenCalledTimes(8);
     const inputs = seedOnce.mock.calls.map(([input]) => input);
     const input = inputs.find((candidate) => candidate.name === "skill-creator");
     expect(input).toMatchObject({ key: "core:skill-creator", name: "skill-creator" });
@@ -169,5 +169,25 @@ describe("Cloud AI Skill seeds", () => {
     expect(getBuiltinAiSkillTemplate("cloud-spaces")?.instructions).toContain("spaces.event.agenda");
     expect(getBuiltinAiSkillTemplate("cloud-spaces")?.instructions).toContain("spaces.task.focus");
     expect(seed).not.toHaveBeenCalled();
+  });
+
+  test("Grids skill uses canonical Help and names only declared capabilities", async () => {
+    const grids = getBuiltinAiSkillTemplate("cloud-grids")!;
+    expect(grids.instructions).toContain("Help is the product handbook");
+    expect(grids.instructions).toContain("search_help");
+    expect(grids.instructions).toContain("read_help");
+    expect(grids.instructions).toContain("What is a custom app?");
+    expect(grids.instructions).toContain("cannot change records");
+    expect(grids.instructions).toContain("Before discovery, establish");
+    expect(grids.instructions).toContain("preserving the requested entities");
+    expect(grids.instructions).toContain("includeWriteContext true");
+    expect(grids.instructions).toContain("TODAY()");
+    const sources = await Promise.all(
+      ["capabilities.ts", "daily-capabilities.ts"].map((path) => Bun.file(new URL(`../../../grids/src/${path}`, import.meta.url)).text()),
+    );
+    const declared = new Set(sources.flatMap((source) => [...source.matchAll(/"([a-z0-9.-]+)": \{/g)].map((match) => `grids.${match[1]}`)));
+    for (const match of grids.instructions.matchAll(/`(grids\.[a-z0-9.-]+)`/g)) expect(declared.has(match[1]!)).toBeTrue();
+    const help = await Bun.file(new URL("../../../grids/src/help/documents/en/grids-gql.help.md", import.meta.url)).text();
+    expect(help).toContain("Query with AI");
   });
 });

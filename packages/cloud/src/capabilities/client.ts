@@ -81,7 +81,7 @@ const invokeCapabilityWithResultSchema = async <TDataSchema extends z.ZodType, T
       body: JSON.stringify({ input: invocation.input }),
       signal: invocation.signal,
     });
-    const result = await readCapabilityResponse(response, capabilityResultSchema(dataSchema));
+    const result = await readCapabilityResponse(response, capabilityResultSchema(dataSchema, { consumer: true }));
     if (
       invocation.kind === "action" &&
       !invocation.idempotencyKey &&

@@ -10,7 +10,7 @@ import {
 } from "../server/services/access";
 import { toPgUuidArray } from "../services/postgres";
 import { mountAiSkillFilePath } from "./file-mount";
-import { withAiShortIdForDb } from "./short-id";
+import { AI_SHORT_ID_PATTERN, withAiShortIdForDb } from "./short-id";
 import {
   type AiSkillExtraFrontmatter,
   type AiSkillReferenceInput,
@@ -843,10 +843,17 @@ export const aiSkills = {
     });
   },
 
-  async loadForTurn(turnId: string, name: string, subject: AccessSubject | null): Promise<AiLoadedSkillSnapshot | null> {
+  async loadForTurn(
+    turnId: string,
+    selector: string | { id: string },
+    subject: AccessSubject | null,
+  ): Promise<AiLoadedSkillSnapshot | null> {
+    const name = typeof selector === "string" ? validateAiSkillName(selector) : null;
+    const shortId = typeof selector === "string" ? null : selector.id;
+    if (shortId !== null && !AI_SHORT_ID_PATTERN.test(shortId)) throw new AiSkillInputError("Invalid Skill ID.");
     return sql.begin(async (tx) => {
       const [row] = await tx<SkillRow[]>`
-        SELECT * FROM ai.skills WHERE name = ${validateAiSkillName(name)} FOR SHARE
+        SELECT * FROM ai.skills WHERE name = ${name} OR short_id = ${shortId} FOR SHARE
       `;
       const skill = await requireSkill(row ?? null, subject, "read", tx);
       if (!skill?.enabled) return null;

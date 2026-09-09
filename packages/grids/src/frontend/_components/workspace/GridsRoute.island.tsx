@@ -71,6 +71,7 @@ export default function GridsRoute(props: { state: PublicOkWorkspaceState; cloud
       <RecordsView
         cloudUrl={props.cloudUrl}
         baseId={state.base.id}
+        baseName={state.base.name}
         tableId={records.activeTable.id}
         tableKind={records.activeTable.kind}
         tableName={records.activeTable.name}
@@ -147,6 +148,7 @@ export default function GridsRoute(props: { state: PublicOkWorkspaceState; cloud
               return (
                 <QueryWorkspace
                   baseId={state.base.id}
+                  baseName={state.base.name}
                   initialQuery={query.initialQuery}
                   initialCursor={query.initialCursor}
                   initialPreview={query.initialPreview}

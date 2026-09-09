@@ -4,6 +4,11 @@ const messages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
+      tableLinks: "Links",
+      tableOpen: "Open",
+      tableEmpty: "No matching rows.",
+      tableCapped: "Showing the first 100 returned rows. The full tool result remains available in details.",
+      tableMore: "More rows are available. Ask for the next page or open the result in the application.",
       assistantTurns: "Assistant turns",
       workSteps: "Work steps",
       surveyNoAnswer: "No answer",
@@ -15,6 +20,12 @@ const messages = i18n.define({
       byteRange: ({ start, end }: { start: string; end: string }) => `Bytes ${start}–${end}`,
     },
     de: {
+      tableLinks: "Links",
+      tableOpen: "Öffnen",
+      tableEmpty: "Keine passenden Zeilen.",
+      tableCapped:
+        "Die ersten 100 zurückgegebenen Zeilen werden angezeigt. Das vollständige Werkzeugergebnis bleibt in den Details verfügbar.",
+      tableMore: "Weitere Zeilen sind verfügbar. Frage nach der nächsten Seite oder öffne das Ergebnis in der Anwendung.",
       assistantTurns: "Antwortdurchläufe",
       workSteps: "Arbeitsschritte",
       surveyNoAnswer: "Keine Antwort",

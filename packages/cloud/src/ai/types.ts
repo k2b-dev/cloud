@@ -157,6 +157,8 @@ export type AiConversation = {
   createdByUserId: string | null;
   /** Application that explicitly launched this chat through `launchAssistant`; null for direct Assistant chats. */
   launchedByAppId?: string | null;
+  /** Immutable tool ceiling for this conversation; null means unrestricted discovery. */
+  allowedTools?: string[] | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -598,6 +600,7 @@ export type AiConversationService = {
     projectId?: string;
     draft?: AiDraftContentPart[];
     preloadTools?: string[];
+    allowedTools?: string[];
     launchedByAppId?: string;
   }): Promise<AiConversation>;
   forkConversation(input: {

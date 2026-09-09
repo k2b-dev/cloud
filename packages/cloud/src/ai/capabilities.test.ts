@@ -773,6 +773,35 @@ describe("AI capability catalog", () => {
     expect(searchDescription).not.toContain("spaces.create");
   });
 
+  test("restricted conversations cannot discover or load excluded tools, including persisted names", async () => {
+    let persisted = ["contacts.list", "contacts.create", "spaces.create"];
+    const resolver = createAiToolResolver({
+      conversationId: "scoped",
+      actor,
+      staticTools: [],
+      allowedTools: ["contacts.list"],
+      store: {
+        getLoadedTools: async () => persisted,
+        loadTools: async ({ names }) => {
+          persisted = [...persisted, ...names];
+          return { loaded: names, alreadyLoaded: [], evicted: [] };
+        },
+      },
+      listRegistry: async () => [capabilityApp("contacts"), capabilityApp("spaces")],
+      execute: async () => ({ data: [] }),
+    });
+    const tools = await resolver();
+    expect(tools.map((tool) => tool.def.name)).toEqual(["search_tools", "load_tools", "list_apps", "contacts__query__list"]);
+    const load = tools.find((tool) => tool.def.name === "load_tools")!;
+    expect(
+      await load.execute(
+        { names: ["contacts.create", "spaces.create", "local_bash"] },
+        { signal: AbortSignal.timeout(1_000), requestApproval: async () => false, requestClientTool: async <T>() => undefined as T },
+      ),
+    ).toMatchObject({ missing: ["contacts.create", "spaces.create", "local_bash"], loaded: [] });
+    expect((await resolver()).map((tool) => tool.def.name)).not.toContain("contacts__action__create");
+  });
+
   test("snapshots presentation and remembered-approval scope for a loaded capability", async () => {
     let presentation: unknown;
     let approvalScope: string | undefined;

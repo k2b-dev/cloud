@@ -290,13 +290,14 @@ describe("Grids capabilities", () => {
       "record.create",
       "record.update",
       "record.upsert-external",
+      "view.create",
       "workflow.record-action",
     ]);
     expect(
       Object.entries(gridsCapabilities.actions ?? {})
         .filter(([, action]) => "review" in action && action.review)
         .map(([id]) => id),
-    ).toEqual(["document.create", "workflow.record-action", "record.upsert-external", "record.update"]);
+    ).toEqual(["document.create", "workflow.record-action", "view.create", "record.upsert-external", "record.update"]);
     expect(gridsCapabilities.queries?.["base.list"]?.description).toContain("Normal entry for Base-scoped Grids work");
     expect(gridsCapabilities.queries?.["gql.context"]?.description).toContain("request tables first");
     expect(gridsCapabilities.queries?.["gql.execute"]?.description).toContain("normally gql.preview");
@@ -489,26 +490,32 @@ describe("Grids capabilities", () => {
         kind: "table",
         id: tablePublicId,
         name: "Items",
-        permission: "write",
-        canCreateRecords: true,
-        canUpdateRecords: true,
-        links: [{ rel: "open", href: expect.stringContaining("/table/") }],
+        tableKind: "stored",
       });
       expect(tables.data.data.items.find((item: { id: string }) => item.id === secretTablePublicId)).toMatchObject({
         kind: "table",
         id: secretTablePublicId,
         name: "Secret items",
-        permission: "write",
-        canCreateRecords: true,
-        canUpdateRecords: true,
       });
+      expect(tables.data.data.base).toEqual({ id: basePublicId, name: "Capability Base" });
+      expect(tables.data.data.items[0]).not.toHaveProperty("permission");
+      expect(tables.data.data).not.toHaveProperty("recordWrite");
       const loadedTable = await invoke("query", "table.read", { id: tablePublicId }, context);
       expect(loadedTable.ok && loadedTable.data.summary).toBe("Read Grids Table “Items”.");
+
+      const readFields = await invoke("query", "gql.context", { baseId: basePublicId, kind: "fields", tableId: tablePublicId }, context);
+      expect(readFields.ok).toBeTrue();
+      if (readFields.ok) {
+        expect(readFields.data.data).not.toHaveProperty("recordWrite");
+        expect(readFields.data.data.items[0]).not.toHaveProperty("writable");
+        expect(readFields.data.data.items[0]).not.toHaveProperty("required");
+        expect(readFields.data.data.items[0]).not.toHaveProperty("position");
+      }
 
       const fields = await invoke(
         "query",
         "gql.context",
-        { baseId: basePublicId, kind: "fields", tableId: tablePublicId, limit: 25 },
+        { baseId: basePublicId, kind: "fields", tableId: tablePublicId, limit: 25, includeWriteContext: true },
         context,
       );
       expect(fields.ok && fields.data.data).toMatchObject({
@@ -563,7 +570,6 @@ describe("Grids capabilities", () => {
       expect(options.ok && options.data.data).toMatchObject({
         kind: "options",
         items: [{ kind: "option", id: "open", fieldId: selectFieldPublicId, label: "Open", description: "Work has started." }],
-        recordWrite: null,
       });
       if (!options.ok || !options.data.page?.hasMore) throw new Error("Expected a second select-option page");
       const nextCursor = options.data.page.nextCursor;
@@ -588,7 +594,7 @@ describe("Grids capabilities", () => {
       const views = await invoke("query", "gql.context", { baseId: basePublicId, kind: "views", limit: 25 }, context);
       expect(views.ok && views.data.data).toMatchObject({
         kind: "views",
-        items: [{ kind: "view", id: viewPublicId, name: "All items", links: [{ rel: "open", href: expect.stringContaining("/view/") }] }],
+        items: [{ kind: "view", id: viewPublicId, name: "All items" }],
       });
       const loadedView = await invoke("query", "view.read", { id: viewPublicId }, context);
       expect(loadedView.ok && loadedView.data.summary).toBe("Read Grids View “All items”.");
@@ -761,7 +767,7 @@ describe("Grids capabilities", () => {
         (column: { fieldId?: string; key: string }) => column.fieldId === relationFieldPublicId,
       );
       if (!groupedRelationColumn) throw new Error("Expected grouped relation GQL column");
-      expect(groupedRelationColumn.sqlType).toBe("uuid");
+      expect(groupedRelationColumn).not.toHaveProperty("sqlType");
       expect(
         groupedRelationQuery.data.data.rows.map((row: { values: Record<string, unknown> }) => row.values[groupedRelationColumn.key]),
       ).toEqual([relatedBId]);
@@ -785,8 +791,28 @@ describe("Grids capabilities", () => {
       expect(previewColumn.tableId).toBe(tablePublicId);
       expect(previewRow.tableId).toBe(tablePublicId);
       expect(previewRow.values[previewColumn.key]).toBe("First");
+      expect(previewRow).not.toHaveProperty("recordMeta");
+      expect(previewColumn).not.toHaveProperty("sqlType");
+      expect(preview.data.refs).toContainEqual(expect.objectContaining({ type: "grids.record", id: record.id, title: "First" }));
       expect(previewRow.links?.[0]?.href).toContain(`record=${record.id}`);
       expect(preview.data.summary).toContain("Previewed Grids GQL in “Capability Base”");
+      expect(preview.data.presentation).toMatchObject({ kind: "table", rowsPath: ["rows"], rowLinksPath: ["links"] });
+      expect(preview.data.links?.[0]?.href).toContain("/query?q=");
+
+      const statusOnly = await invoke(
+        "query",
+        "gql.preview",
+        {
+          baseId: basePublicId,
+          query: `from table {${tablePublicId}}\nselect {${selectFieldPublicId}}\nwhere record.id = '${record.id}'`,
+        },
+        context,
+      );
+      expect(statusOnly.ok).toBeTrue();
+      if (statusOnly.ok) {
+        expect(statusOnly.data.refs).toContainEqual(expect.objectContaining({ type: "grids.record", id: record.id, title: "First" }));
+        expect(statusOnly.data.data.rows[0].values).not.toHaveProperty(fieldPublicId);
+      }
 
       const gql = await invoke(
         "query",
@@ -924,6 +950,32 @@ describe("Grids capabilities", () => {
           value: "changed",
         });
       }
+      const viewInput = {
+        baseId: basePublicId,
+        query: `from table {${tablePublicId}}\nselect {${fieldPublicId}}`,
+        name: "Saved by Assistant",
+        shared: false,
+      };
+      expect(await review("view.create", viewInput, context)).toMatchObject({ ok: false, error: { code: "FORBIDDEN" } });
+      expect(await invoke("action", "view.create", viewInput, context)).toMatchObject({ ok: false, error: { code: "FORBIDDEN" } });
+      await sql`UPDATE auth.access SET permission = 'admin'::auth.permission_level WHERE id = ${accessIds[0]!}::uuid`;
+      const before = await gridsService.view.listForTable({ tableId, userId: user.id });
+      expect((await review("view.create", viewInput, userContext(user))).ok).toBeTrue();
+      expect(await gridsService.view.listForTable({ tableId, userId: user.id })).toHaveLength(before.length);
+      expect(await review("view.create", { ...viewInput, query: "not a query" }, userContext(user))).toMatchObject({
+        ok: false,
+        error: { code: "BAD_INPUT" },
+      });
+      const saved = await invoke("action", "view.create", viewInput, userContext(user));
+      expect(saved.ok).toBeTrue();
+      if (!saved.ok) throw new Error(saved.error.message);
+      const storedView = await gridsService.view.getByShortId(saved.data.data.id);
+      expect(storedView?.ownerUserId).toBe(user.id);
+      expect(storedView?.source).toContain(tablePublicId);
+      expect((await invoke("action", "view.create", viewInput, userContext(user))).ok).toBeFalse();
+      const shared = await invoke("action", "view.create", { ...viewInput, name: "Shared by Assistant", shared: true }, userContext(user));
+      expect(shared.ok).toBeTrue();
+      if (shared.ok) expect((await gridsService.view.getByShortId(shared.data.data.id))?.ownerUserId).toBeNull();
     } finally {
       await sql`DELETE FROM grids.bases WHERE id = ${baseId}::uuid`;
       for (const accessId of accessIds) await sql`DELETE FROM auth.access WHERE id = ${accessId}::uuid`;
@@ -1005,12 +1057,12 @@ describe("Grids capabilities", () => {
       expect(crossBase).toMatchObject({ ok: false, error: { code: "FORBIDDEN", status: 403 } });
       const tables = await invoke("query", "gql.context", { baseId: boundBasePublicId, kind: "tables", limit: 25 }, context);
       expect(tables.ok && tables.data.data).toMatchObject({
-        items: [{ id: tablePublicId, permission: "read", canCreateRecords: false, canUpdateRecords: false }],
+        items: [{ id: tablePublicId, tableKind: "stored" }],
       });
       const fields = await invoke(
         "query",
         "gql.context",
-        { baseId: boundBasePublicId, kind: "fields", tableId: tablePublicId, limit: 25 },
+        { baseId: boundBasePublicId, kind: "fields", tableId: tablePublicId, limit: 25, includeWriteContext: true },
         context,
       );
       expect(fields.ok && fields.data.data).toMatchObject({

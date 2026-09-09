@@ -79,6 +79,7 @@ type Props = {
   cloudUrl: string;
   /** UUID of the base — for API calls. */
   baseId: string;
+  baseName?: string;
   /** UUID of the active table — for API calls (POST /api/grids/.../by-table/<uuid>). */
   tableId: string;
   tableKind: "stored" | "federated";
@@ -254,6 +255,7 @@ export default function RecordsView(props: Props) {
             <div class="flex h-[min(72vh,46rem)] min-h-[30rem] min-w-0 overflow-hidden">
               <QueryWorkspace
                 baseId={props.baseId}
+                baseName={props.baseName}
                 initialQuery={queryPanelInitialSource()}
                 queryPath={queryWorkspaceHref()}
                 currentSource={queryCurrentSource()}

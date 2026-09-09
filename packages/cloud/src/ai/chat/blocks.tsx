@@ -7,6 +7,7 @@ import { markdown } from "../../shared";
 import type { AiTurnBlock } from "../protocol";
 import { isRenderableTurnBlock } from "../protocol";
 import { hasSpecializedBuiltinToolView, SpecializedBuiltinToolBlock } from "./builtin-tools";
+import { CapabilityTablePreview } from "./capability-table";
 import { PresentToolBlock } from "./file-tools";
 import { useAiChatActions } from "./message-actions";
 import {
@@ -309,7 +310,7 @@ function ApprovalBlockView(props: { turnId: string; block: ToolBlock }) {
             <nav class="flex flex-wrap gap-1" aria-label={`${title()} links`}>
               <For each={reviewLinks()}>
                 {(link) => (
-                  <ButtonLink href={link.href} size="xs" variant="ghost">
+                  <ButtonLink href={link.href} target="_blank" rel="noopener noreferrer" size="xs" variant="ghost">
                     {link.title ?? reviewLinkTitle(link.rel)}
                   </ButtonLink>
                 )}
@@ -420,73 +421,85 @@ function CapabilityToolView(props: { block: ToolBlock }) {
   };
   const hasReadableResult = () => !props.block.isError && Boolean(summary());
   return (
-    <Show
-      when={props.block.status !== "running"}
-      fallback={
-        <Chat.Activity
-          icon={aiToolIcon(props.block.name, presentation().appIcon)}
-          label={label()}
-          tone="ai"
-          accent={presentation().appAccent}
-          busy
-        />
-      }
-    >
+    <>
       <Show
-        when={!props.block.isError}
+        when={props.block.status !== "running"}
         fallback={
           <Chat.Activity
             icon={aiToolIcon(props.block.name, presentation().appIcon)}
-            label={`${label()} failed`}
-            description={capabilityErrorDescription(props.block.result)}
-            tone="danger"
+            label={label()}
+            tone="ai"
             accent={presentation().appAccent}
+            busy
           />
         }
       >
         <Show
-          when={hasReadableResult()}
+          when={!props.block.isError}
           fallback={
-            <ToolResultDisclosure
-              blockId={props.block.id}
-              name={label()}
-              labelOnError={label()}
+            <Chat.Activity
               icon={aiToolIcon(props.block.name, presentation().appIcon)}
+              label={`${label()} failed`}
+              description={capabilityErrorDescription(props.block.result)}
+              tone="danger"
               accent={presentation().appAccent}
-              toolName={props.block.name}
-              args={props.block.args}
-              result={props.block.result}
-              isError={Boolean(props.block.isError)}
             />
           }
         >
-          <Chat.Activity
-            icon={aiToolIcon(props.block.name, presentation().appIcon)}
-            label={summary()}
-            accent={presentation().appAccent}
-            trailing={
-              links().length > 0 ? (
-                <span class="flex min-w-0 flex-wrap items-center justify-end gap-1">
-                  <For each={links()}>
-                    {(link) => (
-                      <ButtonLink class="ai-chat-result-link" href={String(link.href)} size="xs" variant="ghost">
-                        {typeof link.title === "string"
-                          ? link.title
-                          : link.rel === "edit"
-                            ? "Edit"
-                            : link.rel === "download"
-                              ? "Download"
-                              : "Open"}
-                      </ButtonLink>
-                    )}
-                  </For>
-                </span>
-              ) : undefined
+          <Show
+            when={hasReadableResult()}
+            fallback={
+              <ToolResultDisclosure
+                blockId={props.block.id}
+                name={label()}
+                labelOnError={label()}
+                icon={aiToolIcon(props.block.name, presentation().appIcon)}
+                accent={presentation().appAccent}
+                toolName={props.block.name}
+                args={props.block.args}
+                result={props.block.result}
+                isError={Boolean(props.block.isError)}
+              />
             }
-          />
+          >
+            <Chat.Activity
+              icon={aiToolIcon(props.block.name, presentation().appIcon)}
+              label={summary()}
+              accent={presentation().appAccent}
+              trailing={
+                links().length > 0 ? (
+                  <span class="flex min-w-0 flex-wrap items-center justify-end gap-1">
+                    <For each={links()}>
+                      {(link) => (
+                        <ButtonLink
+                          class="ai-chat-result-link"
+                          href={String(link.href)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          size="xs"
+                          variant="ghost"
+                        >
+                          {typeof link.title === "string"
+                            ? link.title
+                            : link.rel === "edit"
+                              ? "Edit"
+                              : link.rel === "download"
+                                ? "Download"
+                                : "Open"}
+                        </ButtonLink>
+                      )}
+                    </For>
+                  </span>
+                ) : undefined
+              }
+            />
+          </Show>
         </Show>
       </Show>
-    </Show>
+      <Show when={props.block.status !== "running" && !props.block.isError}>
+        <CapabilityTablePreview result={props.block.result} label={label()} />
+      </Show>
+    </>
   );
 }
 

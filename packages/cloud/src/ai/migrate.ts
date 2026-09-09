@@ -92,6 +92,7 @@ export const migrateCloudAi = async (): Promise<void> => {
     END $$
   `.simple();
   await sql`ALTER TABLE ai.conversations ADD COLUMN IF NOT EXISTS loaded_tools TEXT[] NOT NULL DEFAULT '{}'`.simple();
+  await sql`ALTER TABLE ai.conversations ADD COLUMN IF NOT EXISTS allowed_tools TEXT[]`.simple();
   // Capability tools used to persist provider-encoded function names. The
   // encoding is reversible for every non-hashed valid capability id; hashed
   // names were only cache state and are safely reloaded through discovery.

@@ -109,19 +109,20 @@ describe.skipIf(!(await canUseAiDatabase()))("aiSkills (integration)", () => {
 
       const updated = await aiSkills.update(skill.id, owner, {
         expectedRevision: skill.revision,
-        name: skill.name,
+        name: `${skill.name}-renamed`,
         description: skill.description,
         instructions: "List wins, blockers, and next steps.",
         extraFrontmatter: {},
         references: skill.references,
       });
       expect(updated?.revision).toBe(2);
-      expect((await aiSkills.loadForTurn(turn!.id, skill.name, member))?.instructions).toBe("List wins and blockers.");
+      expect((await aiSkills.loadForTurn(turn!.id, { id: skill.shortId }, member))?.instructions).toBe("List wins and blockers.");
+      expect(await aiSkills.loadForTurn(turn!.id, skill.name, member)).toBeNull();
 
       expect((await aiSkills.list(member)).find((entry) => entry.id === skill.id)?.enabled).toBe(true);
       expect(await aiSkills.setEnabled(skill.id, member, false)).toBe(false);
       expect((await aiSkills.list(member)).find((entry) => entry.id === skill.id)?.enabled).toBe(false);
-      expect(await aiSkills.loadForTurn(turn!.id, skill.name, member)).toBeNull();
+      expect(await aiSkills.loadForTurn(turn!.id, { id: skill.shortId }, member)).toBeNull();
       expect(await aiSkills.listTurnFiles(turn!.id, member)).toEqual([]);
       expect(await aiSkills.readTurnFile(turn!.id, `${skill.name}/SKILL.md`, member)).toBeNull();
 
@@ -130,6 +131,7 @@ describe.skipIf(!(await canUseAiDatabase()))("aiSkills (integration)", () => {
       expect((await aiSkills.listTurnFiles(turn!.id, member)).length).toBe(2);
 
       expect(await aiSkills.revokeAccess(skill.id, grant!.id, owner)).toBe(true);
+      expect(await aiSkills.loadForTurn(turn!.id, { id: skill.shortId }, member)).toBeNull();
       expect(await aiSkills.listTurnFiles(turn!.id, member)).toEqual([]);
       expect(await aiSkills.readTurnFile(turn!.id, `${skill.name}/SKILL.md`, member)).toBeNull();
     } finally {
