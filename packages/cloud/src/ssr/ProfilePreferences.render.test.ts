@@ -79,6 +79,10 @@ describe("ProfilePreferences SSR", () => {
     expect(html).toContain("Heller Modus");
     expect(html).toContain("English");
     expect(html).toContain("Profileinstellungen");
+    expect(html).toContain("Abmelden");
+    expect(html).toContain('<button type="button" class="layout-profile-preferences__link"');
+    expect(html).not.toContain('<a href="/me" class="layout-profile-preferences__link"');
+    expect(html.indexOf("Abmelden")).toBeGreaterThan(html.indexOf("Profileinstellungen"));
     expect(html).toContain('data-position="bottom-left"');
     expect(html).toContain('data-position="right-start"');
     expect(html).not.toContain(user.mail ?? "");

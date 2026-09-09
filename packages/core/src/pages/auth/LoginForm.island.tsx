@@ -4,6 +4,7 @@ import { NoticeCard, Button, TextInput, useLocale } from "@k2b/ui";
 import { apiClient } from "@valentinkolb/cloud/clients/core";
 import { createSignal } from "solid-js";
 import { authMessages } from "./messages";
+import { afterSignInHref } from "./login-redirect";
 
 export default function LoginForm(props: { redirectTo?: string; showBanner?: boolean; defaultUsername?: string; appName?: string }) {
   const locale = useLocale();
@@ -14,7 +15,7 @@ export default function LoginForm(props: { redirectTo?: string; showBanner?: boo
   const mutation = mutations.create({
     mutation: async () => {
       const res = await apiClient.auth.login.$post({
-        json: { username: username(), password: password(), acceptedAgb: true },
+        json: { username: username(), password: password() },
       });
       if (!res.ok) {
         const data = (await res.json().catch(() => null)) as {
@@ -33,7 +34,7 @@ export default function LoginForm(props: { redirectTo?: string; showBanner?: boo
     },
     onSuccess: () => {
       cookies.writeCookie("login_method", "ipa");
-      window.location.href = props.redirectTo || "/";
+      window.location.href = afterSignInHref(props.redirectTo);
     },
   });
 
@@ -88,7 +89,7 @@ export default function LoginForm(props: { redirectTo?: string; showBanner?: boo
         </NoticeCard>
       )}
 
-      <Button type="submit" class="w-full justify-center py-2" loading={mutation.loading()} loadingLabel={t().signingIn}>
+      <Button type="submit" size="lg" class="w-full justify-center" loading={mutation.loading()} loadingLabel={t().signingIn}>
         {mutation.loading() ? <i class="ti ti-loader-2 animate-spin" /> : <i class="ti ti-login-2" />}
         {t().signInWithFreeIpa}
       </Button>

@@ -1,26 +1,45 @@
 import { dates } from "@k2b/stdlib";
-import { Button, ButtonLink, Placeholder, prompts, TextInput, toast, useLocale } from "@k2b/ui";
+import { Button, Placeholder, prompts, TextInput, toast, useLocale } from "@k2b/ui";
 import { AppDevicesPageSchema, type AppDeviceView } from "@valentinkolb/cloud/contracts";
-import { createSignal, For, onCleanup, Show } from "solid-js";
+import { createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import type { z } from "zod";
 import { approvalApi, approvalRequestOptions, checked, parsed } from "./client";
 import ApprovalFeedback from "./Feedback";
 import { appApprovalMessages } from "./messages";
 import ApprovalStatus from "./ApprovalStatus";
 import type { ApprovalAvailability } from "./availability";
+import Pairing from "./Pairing";
+import InstallApp from "./InstallApp";
 
 export default function Devices(props: {
   initial: z.infer<typeof AppDevicesPageSchema> | null;
   availability: ApprovalAvailability;
   admin?: boolean;
+  pairing?: { userId: string; name: string; appOrigin: string };
 }) {
   const locale = useLocale();
   const t = () => appApprovalMessages.resolve([locale()]).t;
   const [page, setPage] = createSignal(props.initial);
+  const activeDevices = createMemo(() => page()?.items.filter((device) => !device.revokedAt) ?? []);
   const [busy, setBusy] = createSignal(false);
   const [error, setError] = createSignal<unknown>(props.initial ? undefined : new Error());
   const [editing, setEditing] = createSignal<string>();
   const [name, setName] = createSignal("");
+  const [pairingOpen, setPairingOpen] = createSignal(false);
+  onMount(() => {
+    const url = new URL(window.location.href);
+    const requestedUser = url.searchParams.get("pairDevice");
+    if (!requestedUser) return;
+    url.searchParams.delete("pairDevice");
+    url.searchParams.delete("reauthenticate");
+    window.history.replaceState(window.history.state, "", url.pathname + url.search + url.hash);
+    if (props.availability === "configured" && requestedUser === props.pairing?.userId) {
+      try {
+        window.sessionStorage.removeItem(`cloud.app-pairing:${requestedUser}:${requestedUser}`);
+      } catch {}
+      setPairingOpen(true);
+    }
+  });
   let disposed = false;
   onCleanup(() => {
     disposed = true;
@@ -96,16 +115,27 @@ export default function Devices(props: {
           <p class="mt-1 text-xs text-dimmed">{t().description}</p>
         </div>
         <div class="flex flex-wrap gap-2">
-          <Button variant="secondary" size="sm" disabled={busy()} onClick={() => load()}>
-            {t().refresh}
-          </Button>
+          <Show when={props.pairing?.appOrigin}>{(origin) => <InstallApp origin={origin()} />}</Show>
           <Show when={props.availability === "configured"}>
-            <ButtonLink size="sm" href="/me/security/pair">
+            <Button size="sm" disabled={!props.pairing} onClick={() => setPairingOpen(true)}>
               {t().pair}
-            </ButtonLink>
+            </Button>
           </Show>
         </div>
       </div>
+      <Show when={pairingOpen() && props.pairing}>
+        {(pairing) => (
+          <Pairing
+            {...pairing()}
+              actorId={pairing().userId}
+            returnTo="/me/security"
+            onClose={() => {
+              setPairingOpen(false);
+              void load();
+            }}
+          />
+        )}
+      </Show>
       <Show when={props.availability !== "configured"}>
         <ApprovalStatus state={props.availability} admin={props.admin} settingsLink={props.admin} />
       </Show>
@@ -114,7 +144,7 @@ export default function Devices(props: {
         {(data) => (
           <>
             <Show
-              when={data().items.length}
+              when={activeDevices().length}
               fallback={
                 <Show when={props.availability === "configured"}>
                   <Placeholder icon="ti ti-device-mobile" description={t().empty} />
@@ -122,7 +152,7 @@ export default function Devices(props: {
               }
             >
               <div class="divide-y divide-[var(--k2b-border)]">
-                <For each={data().items}>
+                <For each={activeDevices()}>
                   {(device) => (
                     <div class="flex flex-wrap items-start justify-between gap-3 py-3">
                       <div class="min-w-0">

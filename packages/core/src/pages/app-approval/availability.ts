@@ -4,4 +4,5 @@ export type ApprovalAvailability = "disabled" | "setup-required" | "configured" 
 export const approvalAvailability = (config: { enabled: boolean; appOrigin: string } | null): ApprovalAvailability =>
   !config ? "unavailable" : !config.enabled ? "disabled" : !config.appOrigin ? "setup-required" : "configured";
 
-export const useAppSignIn = (configured: boolean, credential: string | null) => configured && credential === "app";
+export const useAppSignIn = (configured: boolean, credential: string | null, category?: string | null) =>
+  configured && (credential === "app" || (credential !== "legacy" && (category === "login" || category === "freeipa")));

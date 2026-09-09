@@ -4,6 +4,7 @@ import { NoticeCard, Button, useLocale } from "@k2b/ui";
 import { browserSupportsWebAuthn, startAuthentication } from "@simplewebauthn/browser";
 import { apiClient } from "@valentinkolb/cloud/clients/core";
 import { authMessages } from "./messages";
+import { afterSignInHref } from "./login-redirect";
 
 export default function PasskeyLoginButton(props: { redirectTo?: string }) {
   const locale = useLocale();
@@ -20,7 +21,7 @@ export default function PasskeyLoginButton(props: { redirectTo?: string }) {
         optionsJSON: options as never,
       });
       const verifyRes = await apiClient.auth.passkeys.authentication.verify.$post({
-        json: { response, acceptedAgb: true },
+        json: { response },
       });
       if (!verifyRes.ok) {
         const data = (await verifyRes.json().catch(() => null)) as {
@@ -31,7 +32,7 @@ export default function PasskeyLoginButton(props: { redirectTo?: string }) {
     },
     onSuccess: () => {
       cookies.writeCookie("login_method", "passkey");
-      window.location.href = props.redirectTo || "/";
+      window.location.href = afterSignInHref(props.redirectTo);
     },
   });
 
@@ -39,8 +40,8 @@ export default function PasskeyLoginButton(props: { redirectTo?: string }) {
     <div class="flex flex-col gap-2">
       <Button
         type="button"
-        size="lg"
-        class="h-12 w-full justify-center text-base"
+        size="sm"
+        variant="ghost"
         loading={mutation.loading()}
         loadingLabel={t().signingIn}
         onClick={() => mutation.mutate({})}

@@ -1,7 +1,7 @@
 import { ssr } from "../config";
 import { join } from "node:path";
 import { type AuthContext, auth } from "@valentinkolb/cloud/server";
-import { authFlows, coreSettings } from "@valentinkolb/cloud/services";
+import { authFlows, coreSettings, legalConsent } from "@valentinkolb/cloud/services";
 import { getRuntimeContext, hasDedicatedRuntimeRoute } from "@valentinkolb/cloud/ssr";
 import { Hono } from "hono";
 import cliInstaller from "../../../cloud-cli/scripts/install.sh" with { type: "text" };
@@ -10,7 +10,8 @@ import announcementsAdminPage from "./admin/announcements/page";
 import adminPage from "./admin/page";
 import settingsPage from "./admin/settings/page";
 import pairDevicePage from "./app-approval/pair.page";
-import { resolveAuthenticatedLoginRedirect } from "./auth/login-redirect";
+import { afterSignInHref, isReauthenticationRequest, resolveAuthenticatedLoginRedirect } from "./auth/login-redirect";
+import consentPage from "./auth/consent.page";
 import newPasswordPage from "./auth/new-password/page";
 import loginPage from "./auth/page";
 import passwordResetPage from "./auth/password-reset/page";
@@ -66,7 +67,12 @@ export const createPagesRouter = (options?: { brandingPublicDir?: string }): Hon
     .get("/me/security/pair", auth.requireRole("authenticated", ssr.access), auth.requireUser(ssr.access), ...pairDevicePage)
     .get("/me/access", auth.requireRole("authenticated", ssr.access), auth.requireUser(ssr.access), ...accessPage)
     .get("/me/notifications", auth.requireRole("authenticated", ssr.access), auth.requireUser(ssr.access), ...notificationsPage)
-    .get("/me/notifications/history", auth.requireRole("authenticated", ssr.access), auth.requireUser(ssr.access), ...notificationHistoryPage)
+    .get(
+      "/me/notifications/history",
+      auth.requireRole("authenticated", ssr.access),
+      auth.requireUser(ssr.access),
+      ...notificationHistoryPage,
+    )
     .get("/me/developer", auth.requireRole("authenticated", ssr.access), auth.requireUser(ssr.access), ...developerPage)
     // Admin pages (admin only)
     .get("/admin", auth.requireRole("admin", ssr.access), ...adminPage)
@@ -85,7 +91,19 @@ export const createPagesRouter = (options?: { brandingPublicDir?: string }): Hon
       );
     })
     // Auth routes
-    .get("/auth/login", auth.requireRole("anonymous", { onReject: (c) => resolveAuthenticatedLoginRedirect(c.req.url) }), ...loginPage)
+    .get("/auth/continue", ...consentPage)
+    .get(
+      "/auth/login",
+      async (c, next) => {
+        if (!c.req.query("token") && await legalConsent.pending(c)) return c.redirect(afterSignInHref(c.req.query("redirectTo")), 302);
+        return next();
+      },
+      (c, next) =>
+        isReauthenticationRequest(c.req.url)
+          ? next()
+          : auth.requireRole("anonymous", { onReject: (c) => resolveAuthenticatedLoginRedirect(c.req.url) })(c, next),
+      ...loginPage,
+    )
     .get("/auth/new-password", ...newPasswordPage)
     .get("/auth/password-reset", auth.requireRole("anonymous", auth.redirect("/")), ...passwordResetPage)
     .get("/auth/proxy-return", auth.requireRole("authenticated", ssr.access), async (c) => {

@@ -1,10 +1,9 @@
 import { Button, NoticeCard, useLocale } from "@k2b/ui";
 import { createSignal, Show } from "solid-js";
-import { signOutCurrentSession } from "../me/account-session";
 import { ApprovalError } from "./client";
 import { appApprovalMessages } from "./messages";
 
-export default function ApprovalFeedback(props: { error: unknown; returnTo?: string }) {
+export default function ApprovalFeedback(props: { error: unknown; returnTo?: string; beforeReauthenticate?: () => void }) {
   const locale = useLocale();
   const t = () => appApprovalMessages.resolve([locale()]).t;
   const [busy, setBusy] = createSignal(false);
@@ -27,7 +26,10 @@ export default function ApprovalFeedback(props: { error: unknown; returnTo?: str
     if (busy()) return;
     setBusy(true);
     try {
-      await signOutCurrentSession(t().failure, props.returnTo ?? "/me/security");
+      props.beforeReauthenticate?.();
+      const target = new URL(props.returnTo ?? "/me/security", window.location.origin);
+      target.searchParams.set("reauthenticate", "1");
+      window.location.assign(`/auth/login?${new URLSearchParams({ redirectTo: target.pathname + target.search, credential: "legacy" })}`);
     } catch {
       setLogoutFailed(true);
       setBusy(false);

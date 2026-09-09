@@ -17,9 +17,14 @@ installation.
 
 ## Pair a device
 
-1. Open **My account → Security → Pair a device**.
-2. Scan the QR with the authenticator, copy the pairing link into it, or choose
-   **Open app on this device**. Each method transfers the Cloud address and
+Choose **Install app** under **My account → Security** to open
+the configured authenticator on a phone. On a desktop, this shows a QR code and
+a button to copy the app address. Installing the app does not pair an account.
+
+1. Open **My account → Security → Pair a device**. The pairing dialog starts
+   immediately. If asked, confirm your identity; pairing reopens after sign-in.
+2. Scan the QR with the authenticator or copy the pairing link into it.
+   Each method transfers the Cloud address and
    pairing link; no camera is required.
 3. In Cloud Login, set up or unlock the app's PIN or passkey protection.
    Check the Cloud address before connecting.
@@ -31,10 +36,11 @@ installation.
 The pairing link is a temporary secret. Do not put it in tickets, screenshots
 or messages to other people. It expires after five minutes.
 After a reload, an already claimed pairing can resume; if the authenticator
-has not received it, cancel and start a new pairing.
+has not received it, close the dialog and start a new pairing.
 
 Pairing, renaming and revoking require a Cloud session created within the last
-ten minutes. If prompted, sign out and sign in again, then start a new pairing.
+ten minutes. If prompted, choose **Confirm identity** and sign in with the same
+account. You do not need to sign out first.
 
 ## Help someone pair a device
 
@@ -49,6 +55,7 @@ The action is audited and the user is notified.
 Under **My account → Security**, rename devices so you recognize them.
 Revoke a lost or unwanted device there. Revocation stops that credential from
 approving new sign-ins; it does not sign out Cloud sessions already created.
+Revoked devices disappear from the device list.
 
 Removing a Cloud locally from the authenticator and revoking its Cloud
 credential are different actions. For a lost device, use Cloud's device list.

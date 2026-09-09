@@ -55,8 +55,8 @@ export const CORE_SETTINGS = {
     kind: "string",
     label: "App website address (origin)",
     description:
-      "Trusted HTTPS origin of the separately hosted authenticator. Changing this origin requires reviewing every existing device; never use a wildcard.",
-    default: "",
+      "Trusted HTTPS origin of the authenticator, used for app installation and pairing links. Changing this origin requires reviewing existing devices; never use a wildcard.",
+    default: "https://cloud-login.pwa.k2b.dev",
   },
   "user.app_approval.admin_pairing": {
     kind: "boolean",

@@ -18,6 +18,21 @@ Configure installation-wide policy in **Administration → Accounts & sign-in**.
 Create and manage individual users, groups and requests in **Accounts**.
 People manage their own devices in **My account → Security**.
 
+Use the avatar menu to open **Profile settings** or **Sign out**. Signing out
+ends the current browser session.
+
+## Before your first use
+
+After signing in, review and accept this Cloud's terms and acknowledge its
+privacy policy. This is required once, regardless of whether you sign in with
+an email link, FreeIPA, a passkey or a paired app. Until you confirm, you cannot
+open applications or use the new session for API access. You can cancel and
+sign out instead. Later sign-ins continue directly to your destination.
+
+Operators configure the documents under **Administration → Legal**. Configure
+them before inviting users. Existing sessions remain valid after an upgrade;
+accounts without a recorded acceptance are asked at their next sign-in.
+
 ## Start with your scenario
 
 - **Cloud-managed accounts only:** allow Login, give it your company label, and

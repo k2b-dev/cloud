@@ -184,3 +184,4 @@ export type {
 export { latestTopicCursor } from "./topic-cursor";
 export { readAccountCategoryPolicy, isAccountCategoryAllowed } from "./account-category-policy";
 export { appApproval, type AppDeviceEnrollmentNotice } from "./app-approval";
+export { legalConsent } from "./legal-consent";

@@ -34,7 +34,7 @@ const de: Record<string, SettingCopy> = {
   "user.app_approval.origin": {
     label: "Adresse der App-Website (Origin)",
     description:
-      "Vertrauenswürdige HTTPS-Origin der separat gehosteten App, ohne Pfad. Bei einem Wechsel bestehende Geräte prüfen und bei Bedarf widerrufen. Keine Wildcards.",
+      "Vertrauenswürdige HTTPS-Origin der Anmelde-App, ohne Pfad. Gilt für App-Installation und Kopplungslinks. Bei einem Wechsel bestehende Geräte prüfen und bei Bedarf widerrufen. Keine Wildcards.",
   },
   "user.app_approval.admin_pairing": {
     label: "Administratoren dürfen bei der Kopplung helfen",

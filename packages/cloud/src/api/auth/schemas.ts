@@ -5,19 +5,19 @@ import { UserSchema } from "../../contracts";
 export const LoginSchema = z.object({
   username: z.string(),
   password: z.string(),
-  acceptedAgb: z.literal(true),
+  acceptedAgb: z.literal(true).optional(),
 });
 
 export const EmailLoginSchema = z.object({
   email: z.email(),
   category: z.enum(["guest", "login"]).optional(),
-  acceptedAgb: z.literal(true),
+  acceptedAgb: z.literal(true).optional(),
   redirectTo: z.string().max(2048).optional(),
 });
 
 export const VerifyTokenSchema = z.object({
   token: z.uuid(),
-  acceptedAgb: z.literal(true),
+  acceptedAgb: z.literal(true).optional(),
 });
 
 export const PasswordResetRequestSchema = z.object({
@@ -31,7 +31,7 @@ export const PasswordResetCompleteSchema = z
     token: z.uuid(),
     newPassword: z.string().min(8),
     confirmPassword: z.string().min(1),
-    acceptedAgb: z.literal(true),
+    acceptedAgb: z.literal(true).optional(),
   })
   .refine((data) => data.newPassword === data.confirmPassword, {
     message: "Passwords do not match",
@@ -50,5 +50,5 @@ export const AuthResponseSchema = z.object({
 
 export const VerifyPasskeyAuthenticationSchema = z.object({
   response: z.unknown(),
-  acceptedAgb: z.literal(true),
+  acceptedAgb: z.literal(true).optional(),
 });

@@ -4,6 +4,7 @@ import { apiClient } from "@valentinkolb/cloud/clients/core";
 import { createSignal } from "solid-js";
 import { PasswordSetupFields } from "../PasswordSetupFields";
 import { authMessages } from "../messages";
+import { afterSignInHref } from "../login-redirect";
 
 type PasswordResetCompleteFormProps = {
   token: string;
@@ -23,7 +24,6 @@ export default function PasswordResetCompleteForm(props: PasswordResetCompleteFo
           token: props.token,
           newPassword: newPassword(),
           confirmPassword: confirmPassword(),
-          acceptedAgb: true,
         },
       });
       const data = (await res.json().catch(() => null)) as {
@@ -34,7 +34,7 @@ export default function PasswordResetCompleteForm(props: PasswordResetCompleteFo
       }
     },
     onSuccess: () => {
-      window.location.href = props.redirectTo || "/";
+      window.location.href = afterSignInHref(props.redirectTo);
     },
   });
 

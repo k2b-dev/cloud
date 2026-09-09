@@ -5,11 +5,13 @@ import type { z } from "zod";
 import { ApprovalError, approvalApi, approvalRequestOptions, checked, parsed, pollApproval } from "../app-approval/client";
 import ApprovalFeedback from "../app-approval/Feedback";
 import { appApprovalMessages } from "../app-approval/messages";
+import { afterSignInHref } from "./login-redirect";
 
 export default function AppLoginForm(props: {
   category: AccountCategory;
   redirectTo?: string;
   fallback?: { href: string; label: string };
+  setupHint?: string;
 }) {
   const locale = useLocale();
   const t = () => appApprovalMessages.resolve([locale()]).t;
@@ -53,7 +55,7 @@ export default function AppLoginForm(props: {
           setBusy(true);
           try {
             await checked(await approvalApi.login.complete.$post({ json }, approvalRequestOptions()));
-            if (!disposed) window.location.assign(props.redirectTo || "/");
+            if (!disposed) window.location.assign(afterSignInHref(props.redirectTo));
           } catch {
             if (!disposed) setMessage("uncertain");
           } finally {
@@ -137,27 +139,27 @@ export default function AppLoginForm(props: {
               void start();
             }}
           >
-            <p class="text-sm text-dimmed">{t().signInHint}</p>
             <TextInput
               label={t().identifier}
+              placeholder={t().identifierPlaceholder}
               value={identifier}
               onValueChange={setIdentifier}
               autocomplete="username"
               required
               maxLength={254}
             />
-            <Button type="submit" loading={busy()} disabled={!identifier().trim()}>
+            <Button type="submit" size="lg" class="w-full justify-center" loading={busy()} disabled={!identifier().trim()}>
               {t().signIn}
             </Button>
           </form>
         }
       >
         {(request) => (
-          <div class="flex flex-col gap-3" role="status" aria-live="polite">
-            <p class="text-sm text-dimmed">{t().waiting}</p>
-            <div>
-              <p class="text-sm">{t().comparison}</p>
-              <p class="text-3xl font-mono tracking-widest">{request().comparison}</p>
+          <div class="flex flex-col gap-5">
+            <div class="text-center" role="status" aria-live="polite">
+              <p class="text-sm text-dimmed">{t().waiting}</p>
+              <span class="sr-only">{t().comparison}</span>
+              <p class="py-6 text-4xl sm:text-5xl font-mono tabular-nums tracking-widest">{request().comparison}</p>
             </div>
             <Button
               variant="secondary"
@@ -169,16 +171,18 @@ export default function AppLoginForm(props: {
             >
               {t().cancelWait}
             </Button>
-            <p class="text-xs text-dimmed">{t().cancelWaitHint}</p>
           </div>
         )}
       </Show>
       <Show when={!busy() ? props.fallback : undefined}>
         {(fallback) => (
-          <ButtonLink href={fallback().href} variant="ghost" size="sm" onClick={clear}>
+          <ButtonLink href={fallback().href} variant="secondary" size="lg" class="w-full justify-center" onClick={clear}>
             {fallback().label}
           </ButtonLink>
         )}
+      </Show>
+      <Show when={!pending() && props.setupHint}>
+        <p class="text-sm text-dimmed">{props.setupHint}</p>
       </Show>
     </section>
   );

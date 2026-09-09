@@ -1,9 +1,10 @@
 import { cookies } from "@k2b/stdlib/browser";
 import { mutation as mutations } from "@k2b/stdlib/solid";
-import { Button, Checkbox, NoticeCard, TextInput, useLocale } from "@k2b/ui";
+import { Button, NoticeCard, TextInput, useLocale } from "@k2b/ui";
 import { apiClient } from "@valentinkolb/cloud/clients/core";
 import { createSignal, onMount, Show } from "solid-js";
 import { authMessages } from "./messages";
+import { afterSignInHref } from "./login-redirect";
 
 export default function GuestLoginForm(props: {
   redirectTo?: string;
@@ -14,15 +15,13 @@ export default function GuestLoginForm(props: {
   const locale = useLocale();
   const t = () => authMessages.resolve([locale()]).t;
   const [email, setEmail] = createSignal("");
-  const [acceptedAgb, setAcceptedAgb] = createSignal(!!props.token);
   const [tokenInput, setTokenInput] = createSignal(props.token ?? "");
   const [showTokenInput, setShowTokenInput] = createSignal(!!props.token);
 
   const emailMutation = mutations.create({
     mutation: async () => {
-      if (!acceptedAgb()) throw new Error(t().acceptLegal);
       const res = await apiClient.auth["email-login"].$post({
-        json: { email: email(), acceptedAgb: true, redirectTo: props.redirectTo, category: props.category },
+        json: { email: email(), redirectTo: props.redirectTo, category: props.category },
       });
       const data = (await res.json()) as Record<string, unknown>;
       if (!res.ok) throw new Error((data.message as string) ?? t().requestFailed);
@@ -32,9 +31,8 @@ export default function GuestLoginForm(props: {
 
   const tokenMutation = mutations.create({
     mutation: async () => {
-      if (!acceptedAgb()) throw new Error(t().acceptLegal);
       const res = await apiClient.auth["verify-token"].$post({
-        json: { token: tokenInput(), acceptedAgb: true },
+        json: { token: tokenInput() },
       });
       if (!res.ok) {
         const data = (await res.json().catch(() => null)) as { message?: string } | null;
@@ -43,7 +41,7 @@ export default function GuestLoginForm(props: {
     },
     onSuccess: () => {
       cookies.writeCookie("login_method", props.category ?? "email");
-      window.location.href = props.redirectTo || "/";
+      window.location.href = afterSignInHref(props.redirectTo);
     },
   });
 
@@ -85,23 +83,6 @@ export default function GuestLoginForm(props: {
             </NoticeCard>
           )}
 
-          <Checkbox
-            label={
-              <span>
-                {t().termsPrefix}{" "}
-                <a href="/legal/terms" target="_blank" class="text-primary hover:underline">
-                  {t().terms}
-                </a>{" "}
-                {t().privacyJoin}{" "}
-                <a href="/legal/privacy" target="_blank" class="text-primary hover:underline">
-                  {t().privacy}
-                </a>
-              </span>
-            }
-            value={acceptedAgb}
-            onValueChange={setAcceptedAgb}
-          />
-
           <Button type="submit" class="w-full justify-center py-2" loading={loading()} loadingLabel={t().verifying}>
             {tokenMutation.loading() ? <i class="ti ti-loader-2 animate-spin" /> : t().verify}
           </Button>
@@ -132,31 +113,14 @@ export default function GuestLoginForm(props: {
           </NoticeCard>
         )}
 
-        <Checkbox
-          label={
-            <span>
-              {t().termsPrefix}{" "}
-              <a href="/legal/terms" target="_blank" class="text-primary hover:underline">
-                {t().terms}
-              </a>{" "}
-              {t().privacyJoin}{" "}
-              <a href="/legal/privacy" target="_blank" class="text-primary hover:underline">
-                {t().privacy}
-              </a>
-            </span>
-          }
-          value={acceptedAgb}
-          onValueChange={setAcceptedAgb}
-        />
-
-        <Button type="submit" class="w-full justify-center py-2" loading={loading()} loadingLabel={t().sendingLoginLink}>
+        <Button type="submit" size="lg" class="w-full justify-center" loading={loading()} loadingLabel={t().sendingLoginLink}>
           {emailMutation.loading() ? <i class="ti ti-loader-2 animate-spin" /> : <i class="ti ti-send" />}
           {t().sendLoginLink}
         </Button>
 
-        <div class="rounded-md border border-zinc-200 bg-zinc-50 p-3 text-xs leading-5 text-dimmed dark:border-zinc-800 dark:bg-zinc-900">
+        <p class="text-sm text-dimmed">
           {props.allowSelfRegistration ? t().selfRegistrationHint : t().existingAccountHint}
-        </div>
+        </p>
       </form>
     </Show>
   );

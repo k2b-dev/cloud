@@ -109,6 +109,8 @@ export const loadJwtSessionUser = async (
     sid: string;
     authEpoch: number;
     groupsAdmin: string[];
+    /** Core's consent screen only: still validates family, epoch and expiry. */
+    allowPendingLegalConsent?: boolean;
   },
   query: typeof sql = sql,
 ): Promise<User | null> => {
@@ -124,6 +126,9 @@ export const loadJwtSessionUser = async (
       AND u.auth_epoch = ${params.authEpoch}
       AND sf.revoked_at IS NULL
       AND sf.expires_at > now()
+      AND (${params.allowPendingLegalConsent === true} OR NOT sf.legal_pending OR EXISTS (
+        SELECT 1 FROM auth.legal_acceptances la WHERE la.user_id = u.id
+      ))
   `;
   return rows[0] ? buildProjectedUser(rows[0]) : null;
 };

@@ -11,8 +11,10 @@ Die verfügbaren Anmeldeverfahren hängen vom Kontodienst und den Einstellungen 
 ## Anmelden und Zugriff wiederherstellen {icon="shield-lock"}
 
 Die Accounttypen heißen **Guest**, **Login** (gegebenenfalls mit einem anderen
-Namen deiner Organisation) und **FreeIPA**. Guest und Login verwenden
-E-Mail-Codes statt lokaler Passwörter. Ein bestehender Passkey funktioniert
+Namen deiner Organisation) und **FreeIPA**. Guest startet mit einem E-Mail-Link.
+Wenn die App-Anmeldung eingerichtet ist, starten Login und FreeIPA mit der App;
+E-Mail-Link beziehungsweise Passwort bleiben als Alternative verfügbar.
+Lokale Accounts verwenden keine Passwörter. Ein bestehender Passkey funktioniert
 weiter, solange der Accounttyp erlaubt ist. Nutze bei einem verborgenen Typ
 deinen Einladungs- oder direkten Anmeldelink. Verbergen ist nicht dasselbe wie
 Zugriff sperren; wende dich bei deaktiviertem Zugang an die Administration.
@@ -27,7 +29,7 @@ Zugriff sperren; wende dich bei deaktiviertem Zugang an die Administration.
 
 Wenn die Administration die App-Anmeldung aktiviert und eingerichtet hat, öffne **Mein Account
 → Sicherheit → Gerät koppeln**. Scanne den QR-Code, kopiere den Kopplungslink
-in die App oder öffne die App auf demselben Gerät. Kehre zur Cloud zurück,
+in die App. Kehre zur Cloud zurück,
 vergleiche die sechsstelligen Codes und bestätige nur, wenn sie übereinstimmen.
 Lass die App geöffnet, bis sie die Kopplung bestätigt. Der Link gilt fünf
 Minuten; teile ihn nicht außerhalb dieser Einrichtung.
@@ -35,11 +37,15 @@ Minuten; teile ihn nicht außerhalb dieser Einrichtung.
 Steht unter Sicherheit **Aktiviert — Einrichtung fehlt**, muss die Administration
 die App-Konfiguration noch abschließen. Nutze bis dahin deine bisherige Anmeldung.
 
-Wähle bei einer späteren Anmeldung deinen Accounttyp und die App-Anmeldung als Alternative, gib E-Mail oder
-Benutzernamen ein und wähle **Mit App anmelden**. Öffne die gekoppelte App und
+Wähle bei einer späteren Anmeldung deinen Accounttyp und bei Guest die App-Anmeldung
+als Alternative. Gib E-Mail oder Kürzel ein und wähle **Mit App anmelden**. Öffne die gekoppelte App und
 bestätige nur deine eigene Anfrage mit übereinstimmendem Code. Ohne App können
 lokale Accounts weiterhin einen E-Mail-Link nutzen, FreeIPA-Accounts ihr
 Passwort. Bestehende Passkeys bleiben verfügbar.
+
+Nach der Anmeldung bittet dich die Cloud einmalig, ihre Nutzungsbedingungen
+anzunehmen und die Datenschutzhinweise zur Kenntnis zu nehmen. Bestätige zum
+Fortfahren oder brich ab, um dich abzumelden.
 
 **Gekoppelte Geräte** zeigt Namen, Kopplungsdatum, letzte Nutzung und eine
 mögliche Unterstützung durch die Administration. Benenne Geräte um oder
@@ -47,8 +53,9 @@ widerrufe Geräte, die du nicht mehr kontrollierst. Der Widerruf verhindert neue
 Anmeldungen, beendet aber keine bestehenden Sitzungen. Die Verwaltung bleibt
 auch bei deaktivierter App-Anmeldung verfügbar.
 
-Koppeln, Umbenennen und Widerrufen können eine erneute Anmeldung verlangen.
-Du kehrst danach zur selben Seite zurück; starte unfertige Kopplungen neu.
+Koppeln, Umbenennen und Widerrufen können eine Bestätigung deiner Identität verlangen.
+Melde dich mit demselben Account an, ohne dich vorher abzumelden.
+Die Kopplung öffnet sich danach automatisch wieder.
 Ist das Ergebnis einer Anmeldung unklar, lade die Seite neu, um deine Sitzung
 zu prüfen, oder starte eine neue Anfrage.
 

@@ -60,14 +60,20 @@ when replacing an untrusted authenticator.
 ## Sign in with the app
 
 1. [Pair a device](/en/docs/accounts/devices#pair-a-device) with your account.
-2. On Cloud's login page, choose your account type if a selector is shown,
-   choose app sign-in, and enter your username or email.
+2. On Cloud's login page, choose your account type if a selector is shown.
+   Login and FreeIPA start with app sign-in; Guests start with email and can
+   switch to the app. Enter your username or an email that identifies one account.
 3. Keep the login page open and open your authenticator.
 4. Unlock the app, compare the request with the waiting login page, and approve
    only if the codes match and you started the request.
 
 The waiting page signs you in after approval. Deny requests you do not recognize.
 If a request expires, start a new sign-in from Cloud.
+
+Without a paired device, use the prominent email-link alternative for local
+accounts or the password alternative for FreeIPA. Existing passkeys remain
+available at the bottom of the page. If your email is shared by multiple
+accounts, use your username for app sign-in.
 
 Before offering app sign-in to your users, check pairing, approval, denial and
 lost-device recovery on the browsers and devices your organization supports.
@@ -95,6 +101,9 @@ The file contains all three values:
 The settings are `user.app_approval.enabled`, `user.app_approval.origin`
 and `user.app_approval.admin_pairing`. GUI and CLI use the same save operation.
 An empty origin is allowed during setup but cannot authorize pairing or login.
+The default is `https://cloud-login.pwa.k2b.dev`. The same setting supplies
+the **Install app** link, its QR code, and pairing links. Override it when you
+host the authenticator elsewhere; it is separate from the Cloud address in `app.url`.
 
 ## Maintain the integration
 

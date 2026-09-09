@@ -4,6 +4,7 @@ import { apiClient } from "@valentinkolb/cloud/clients/core";
 import { createSignal } from "solid-js";
 import { PasswordSetupFields } from "../PasswordSetupFields";
 import { authMessages } from "../messages";
+import { afterSignInHref } from "../login-redirect";
 
 type NewPasswordFormProps = {
   defaultUsername: string;
@@ -38,7 +39,7 @@ export default function NewPasswordForm(props: NewPasswordFormProps) {
       }
     },
     onSuccess: () => {
-      window.location.href = props.redirectTo || "/";
+      window.location.href = afterSignInHref(props.redirectTo);
     },
   });
 

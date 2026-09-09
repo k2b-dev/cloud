@@ -168,6 +168,18 @@ export const migrate = async (): Promise<void> => {
     ON auth.session_families(signing_kid, expires_at DESC)
   `.simple();
   await migrateBrowserSessionCutover();
+  // Existing sessions retain their access; every newly issued session records
+  // whether explicit first-login acceptance is still outstanding.
+  await sql`ALTER TABLE auth.session_families ADD COLUMN IF NOT EXISTS legal_pending BOOLEAN NOT NULL DEFAULT false`.simple();
+  await sql`
+    CREATE TABLE IF NOT EXISTS auth.legal_acceptances (
+      user_id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+      accepted_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      session_id UUID NOT NULL,
+      document_version TEXT NOT NULL,
+      documents JSONB NOT NULL
+    )
+  `.simple();
   console.log("  ✓ auth.session_families table");
 
   await sql`

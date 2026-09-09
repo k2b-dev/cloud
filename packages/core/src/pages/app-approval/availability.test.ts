@@ -8,8 +8,12 @@ test("activation, incomplete setup, configuration and read failures remain disti
   expect(approvalAvailability({ enabled: true, appOrigin: "https://auth.example.test" })).toBe("configured");
 });
 
-test("enabling app sign-in does not strand unpaired users or replace their default method", () => {
-  for (const credential of [null, "legacy", "unknown"]) expect(useAppSignIn(true, credential)).toBe(false);
-  expect(useAppSignIn(true, "app")).toBe(true);
-  expect(useAppSignIn(false, "app")).toBe(false);
+test("app is the default for full accounts, email for guests, with explicit fallbacks", () => {
+  for (const category of ["login", "freeipa"]) {
+    expect(useAppSignIn(true, null, category)).toBe(true);
+    expect(useAppSignIn(true, "legacy", category)).toBe(false);
+    expect(useAppSignIn(false, "app", category)).toBe(false);
+  }
+  expect(useAppSignIn(true, null, "guest")).toBe(false);
+  expect(useAppSignIn(true, "app", "guest")).toBe(true);
 });

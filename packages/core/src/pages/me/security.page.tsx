@@ -43,7 +43,20 @@ export default ssr<AuthContext>(async (c) => {
         <div class="flex flex-col gap-2">
           <AccountPageHeader title={t.security} description={t.securityDescription} />
           {(user.roles.includes("admin") || approvalConfig?.enabled || devices === null || devices.items.length > 0) && (
-            <Devices initial={devices} availability={approvalAvailability(approvalConfig)} admin={user.roles.includes("admin")} />
+            <Devices
+              initial={devices}
+              availability={approvalAvailability(approvalConfig)}
+              admin={user.roles.includes("admin")}
+              pairing={
+                approvalConfig?.enabled && approvalConfig.appOrigin
+                  ? {
+                      userId: user.id,
+                      name: `${user.displayName || user.uid} (${user.uid})`,
+                      appOrigin: approvalConfig.appOrigin,
+                    }
+                  : undefined
+              }
+            />
           )}
           <PasskeysSettings initialPasskeys={passkeys} />
           <ProfileSettings provider={user.provider} profile={user.profile} freeIpaEnabled={Boolean(freeIpaEnabledRaw)} />

@@ -17,6 +17,7 @@ import { isAccountCategoryAllowed } from "./account-category-policy";
 import { audit } from "./audit";
 import { decryptValue } from "./settings/crypto";
 import { publicCloudOrigin } from "../shared/app-url";
+import { CORE_SETTINGS } from "./settings/core-settings";
 
 export class AppApprovalError extends Error {
   constructor(
@@ -47,7 +48,7 @@ export const readAppApprovalConfig = async (db: SQL = sql, requireAppOrigin = tr
   if (typeof enabled !== "boolean" || typeof adminPairing !== "boolean") return reject("UNAVAILABLE", 503);
   // The issuer is the operator's canonical URL, never the request Host header.
   const rawIssuer = values.get("app.url") ?? process.env.APP_URL ?? "localhost:3000";
-  const rawOrigin = values.get("user.app_approval.origin") ?? "";
+  const rawOrigin = values.get("user.app_approval.origin") ?? CORE_SETTINGS["user.app_approval.origin"].default;
   const origin = (value: unknown) => {
     if (typeof value !== "string") return reject("UNAVAILABLE", 503);
     try {

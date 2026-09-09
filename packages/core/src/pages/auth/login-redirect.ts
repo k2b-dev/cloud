@@ -1,5 +1,16 @@
 import { normalizeRedirectTo } from "@valentinkolb/cloud/shared";
 
+/** Every browser sign-in finishes through the same first-use consent screen. */
+export const afterSignInHref = (redirectTo?: string) =>
+  `/auth/continue?${new URLSearchParams({ redirectTo: normalizeRedirectTo(redirectTo) ?? "/" })}`;
+
+/** Display credential entry without revoking the existing session. This never refreshes authentication itself. */
+export const isReauthenticationRequest = (requestUrl: string): boolean => {
+  const request = new URL(requestUrl);
+  const target = normalizeRedirectTo(request.searchParams.get("redirectTo"));
+  return !!target && new URL(target, request.origin).searchParams.get("reauthenticate") === "1";
+};
+
 /** Resolve where an already-authenticated visitor should leave the login page. */
 export const resolveAuthenticatedLoginRedirect = (requestUrl: string): string => {
   const request = new URL(requestUrl);

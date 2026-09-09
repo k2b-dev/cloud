@@ -3,6 +3,7 @@ import { Button, Checkbox, NoticeCard, TextInput, useLocale } from "@k2b/ui";
 import { apiClient } from "@valentinkolb/cloud/clients/core";
 import { createSignal } from "solid-js";
 import { authMessages } from "./messages";
+import { afterSignInHref } from "./login-redirect";
 
 export default function AdminLoginForm(props: { redirectTo?: string; requiresRecovery?: boolean }) {
   const locale = useLocale();
@@ -23,7 +24,7 @@ export default function AdminLoginForm(props: { redirectTo?: string; requiresRec
       }
     },
     onSuccess: () => {
-      window.location.href = props.redirectTo || "/";
+      window.location.href = afterSignInHref(props.redirectTo);
     },
   });
 

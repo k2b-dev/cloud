@@ -202,10 +202,10 @@ automatically or persist pairing links. A clipboard manager may retain a copy.
 
 ## Approve a browser sign-in
 
-When app approval is enabled and configured, each available **Guest**, **Login** or **FreeIPA**
-category offers an explicit app sign-in alternative by email or username.
-Existing email/password forms remain the default, so users without a paired
-device can still sign in and enroll one under Security. Cloud does not expose a
+When app approval is enabled and configured, **Login** and **FreeIPA** default
+to app sign-in by email or username. **Guest** defaults to email, with the app
+available as an alternative. Users without a paired device can use the email
+or password alternative and enroll one under Security. Cloud does not expose a
 public account/device lookup to choose a method. The category switch remains
 unchanged. Local accounts retain **Use an email link instead**; FreeIPA retains
 its password alternative. Passkeys and email-link verification still work.
@@ -216,14 +216,17 @@ The waiting Cloud page displays the comparison code. Open the paired app and
 approve only a request you started whose code matches. Cloud checks in the
 foreground no faster than every five seconds, backs off on connection errors,
 and stops at a terminal state. Requests have a 30-second UI network timeout.
-The browser completes an approved login once and follows its validated return
-URL. A lost completion response requires checking the session by reloading or
+The browser completes an approved login once and visits `/auth/continue` with
+its validated local `redirectTo`. Core requests explicit first-use legal
+acceptance if needed, then follows the return URL. A newly issued session
+without acceptance cannot authorize application or API access. The PWA does
+not collect this acceptance. A lost completion response requires checking the session by reloading or
 starting a new request, never retrying the old completion.
 
 The initiating tab stores its pending browser secret in session storage,
 scoped to the category and return URL, to survive reloads. It is never placed
-in a URL or transferred to the authenticator. Terminal states and **Stop
-waiting** discard it; the server request expires after five minutes. Stopping
+in a URL or transferred to the authenticator. Terminal states and **Cancel**
+discard it; the server request expires after five minutes. Stopping
 does not remove the request from the app immediately.
 
 The Cloud browser calls `POST /login/start` with `{identifier, category}`.

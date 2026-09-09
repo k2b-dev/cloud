@@ -1,5 +1,18 @@
 import { describe, expect, test } from "bun:test";
-import { resolveAuthenticatedLoginRedirect } from "./login-redirect";
+import { afterSignInHref, isReauthenticationRequest, resolveAuthenticatedLoginRedirect } from "./login-redirect";
+
+test("all sign-in completions preserve only local destinations through consent", () => {
+  expect(afterSignInHref("/app/contacts?view=mine#entry")).toBe("/auth/continue?redirectTo=%2Fapp%2Fcontacts%3Fview%3Dmine%23entry");
+  expect(afterSignInHref("https://other.example")).toBe("/auth/continue?redirectTo=%2F");
+});
+
+test("reauthentication and email completion can show credentials without a logout or external redirect", () => {
+  const target = encodeURIComponent("/me/security?reauthenticate=1&pairDevice=user-id");
+  expect(isReauthenticationRequest(`https://cloud.example/auth/login?redirectTo=${target}`)).toBe(true);
+  expect(isReauthenticationRequest(`https://cloud.example/auth/login?token=proof&redirectTo=${target}`)).toBe(true);
+  expect(isReauthenticationRequest("https://cloud.example/auth/login?redirectTo=%2Fme%2Fsecurity")).toBe(false);
+  expect(isReauthenticationRequest("https://cloud.example/auth/login?redirectTo=https://evil.example/?reauthenticate=1")).toBe(false);
+});
 
 const loginUrl = (params = "") => `https://cloud.example/auth/login${params ? `?${params}` : ""}`;
 

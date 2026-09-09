@@ -140,8 +140,9 @@ const issueJwtSession = async (c: Context, userId: string, ttlSeconds: number, a
       if (!activeKey) throw new Error("Prepared Cloud session signer is no longer active");
       await tx`
         INSERT INTO auth.session_families (
-          sid, user_id, auth_epoch, signing_kid, issued_at, expires_at, created_request_id, created_user_agent
-        ) VALUES (${sid}, ${userId}, ${epoch}, ${signer.kid}, ${issuedAt}, ${expiresAt}, ${requestId}, ${userAgent})
+          sid, user_id, auth_epoch, signing_kid, issued_at, expires_at, created_request_id, created_user_agent, legal_pending
+        ) VALUES (${sid}, ${userId}, ${epoch}, ${signer.kid}, ${issuedAt}, ${expiresAt}, ${requestId}, ${userAgent},
+          NOT EXISTS (SELECT 1 FROM auth.legal_acceptances WHERE user_id = ${userId}::uuid))
       `;
       await tx`UPDATE auth.users SET last_login_local = ${issuedAt} WHERE id = ${userId}::uuid`;
       return epoch;

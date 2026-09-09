@@ -159,6 +159,12 @@ The cookie is:
 Signing out removes the current session. Revoking all sessions for a user
 invalidates every older session.
 
+After credential verification, Core completes browser sign-in through
+`/auth/continue`. If the account has not accepted the terms yet, the new session
+cannot authorize application requests until the user confirms there. This
+applies to every browser sign-in method; applications do not collect consent
+themselves. See [First use](/en/docs/accounts#before-your-first-use).
+
 Revocation takes effect without waiting for the token to expire. OAuth grants,
 API credentials and background mandates have separate lifecycles; signing out
 of the browser does not revoke them.

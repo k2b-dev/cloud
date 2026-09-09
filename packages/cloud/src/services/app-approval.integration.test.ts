@@ -140,6 +140,8 @@ suite("isolated app approval protocol", () => {
   test("feature defaults off, issuer uses canonical app URL, malformed origins fail closed", async () => {
     expect((await readAppApprovalConfig()).enabled).toBe(false);
     await settings.set("user.app_approval.enabled", true);
+    await settings.remove("user.app_approval.origin");
+    expect((await readAppApprovalConfig()).appOrigin).toBe("https://cloud-login.pwa.k2b.dev");
     await settings.set("user.app_approval.origin", "https://auth.example.test/path");
     await expect(readAppApprovalConfig()).rejects.toMatchObject({ code: "UNAVAILABLE" });
     expect(await readAppApprovalConfig(sql, false)).toMatchObject({ enabled: true, appOrigin: "" });

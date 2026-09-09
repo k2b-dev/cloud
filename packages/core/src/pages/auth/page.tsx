@@ -5,19 +5,22 @@ import { getLocale } from "@valentinkolb/cloud/server";
 import { appApproval, coreSettings, readAccountCategoryPolicy } from "@valentinkolb/cloud/services";
 import { normalizeRedirectTo, readLoginMethodFromCookieHeader, readThemeFromCookieHeader } from "@valentinkolb/cloud/shared";
 import { ssr } from "../../config";
+import { useAppSignIn } from "../app-approval/availability";
+import { appApprovalMessages } from "../app-approval/messages";
 import AccountCategorySwitch from "./AccountCategorySwitch.island";
 import AdminLoginForm from "./AdminLoginForm.island";
 import AppLoginForm from "./AppLoginForm.island";
 import GuestLoginForm from "./GuestLoginForm.island";
 import LoginForm from "./LoginForm.island";
+import { isReauthenticationRequest } from "./login-redirect";
 import { authMessages } from "./messages";
 import PasskeyLoginButton from "./PasskeyLoginButton.island";
-import { useAppSignIn } from "../app-approval/availability";
 
 /** Login page. */
 export default ssr(async (c) => {
   const locale = getLocale(c);
   const t = authMessages.resolve([locale]).t;
+  const confirmation = isReauthenticationRequest(c.req.url) ? appApprovalMessages.resolve([locale]).t : null;
   const [rawAppName, freeIpaEnabledRaw, allowSelfRegistrationRaw, contactEmailRaw, legalLinks, policy] = await Promise.all([
     coreSettings.get<string>("app.name"),
     coreSettings.get<boolean>("freeipa.enable"),
@@ -63,14 +66,17 @@ export default ssr(async (c) => {
 
   const isEmailLogin = activeMethod === "email" || activeMethod === "guest" || activeMethod === "login";
   const useApproval =
-    useAppSignIn(approvalEnabled, params.get("credential")) && !token && !isAdminLogin && activeMethod && activeMethod !== "email";
+    useAppSignIn(approvalEnabled, params.get("credential"), activeMethod) &&
+    !token &&
+    !isAdminLogin &&
+    activeMethod &&
+    activeMethod !== "email";
   const categoryLabel = (category: AccountCategory) =>
     category === "login" ? policy.login.label : category === "guest" ? "Guest" : "FreeIPA";
 
   const buildMethodUrl = (nextMethod: AccountCategory | "admin") => {
     const methodParams = new URLSearchParams();
     methodParams.set("method", nextMethod === "freeipa" ? "ipa" : nextMethod);
-    if (params.get("credential") === "app") methodParams.set("credential", "app");
     if (redirectTo) methodParams.set("redirectTo", redirectTo);
     if (hide && freeIpaEnabled && nextMethod === "freeipa") methodParams.set("hide", hide);
     if (hasBanner && nextMethod === "freeipa") methodParams.set("banner", hasBanner);
@@ -78,20 +84,24 @@ export default ssr(async (c) => {
     return `/auth/login?${methodParams.toString()}`;
   };
   const adminHref = buildMethodUrl("admin");
-  const supportHref = contactEmail ? `mailto:${contactEmail}` : "/legal/imprint";
+  const supportHref = contactEmail ? `mailto:${contactEmail}` : "/impressum";
   const credentialParams = new URLSearchParams(params);
   credentialParams.delete("token");
   credentialParams.set("credential", useApproval ? "legacy" : "app");
   const credentialHref = `/auth/login?${credentialParams}`;
   const showPasskey = !isAdminLogin && !token && !!activeMethod;
-  const formTitle = isAdminLogin
-    ? t.adminToken
+  const formTitle = isAdminLogin ? t.adminToken : token ? t.completeEmailSignIn : t.signIn;
+  const formSubtitle = isAdminLogin
+    ? t.adminTokenDescription
     : token
-      ? t.completeEmailSignIn
-      : activeMethod && activeMethod !== "email"
-        ? categoryLabel(activeMethod)
-        : t.signIn;
-  const formSubtitle = isAdminLogin ? t.adminTokenDescription : token ? t.verifyingEmailLink : activeMethod ? t.signInDescription : null;
+      ? t.verifyingEmailLink
+      : useApproval
+        ? t.appLoginIntro
+        : isEmailLogin
+          ? t.emailLoginIntro
+          : activeMethod === "freeipa"
+            ? t.passwordLoginIntro
+            : null;
 
   return () => (
     <LocaleProvider locale={locale}>
@@ -123,29 +133,16 @@ export default ssr(async (c) => {
               </div>
             </aside>
 
-            <main class="flex items-center justify-center p-6 sm:p-10">
-              <div class="w-full max-w-md" style={{ "view-transition-name": "login-card" }}>
+            <main class="flex justify-center p-6 sm:p-10">
+              <div class="flex min-h-[32rem] w-full max-w-md flex-col sm:min-h-[36rem]" style={{ "view-transition-name": "login-card" }}>
                 <div>
                   <h1 class="sr-only">{t.signIn}</h1>
-                  <h2 class="text-3xl font-semibold tracking-tight text-primary">{formTitle}</h2>
-                  {formSubtitle && <p class="mt-1 text-sm text-dimmed">{formSubtitle}</p>}
+                  <h2 class="text-3xl font-semibold tracking-tight text-primary">{confirmation?.reauthenticate ?? formTitle}</h2>
+                  {(confirmation?.recent || formSubtitle) && <p class="mt-1 text-sm text-dimmed">{confirmation?.recent ?? formSubtitle}</p>}
                 </div>
 
-                {showPasskey && (
-                  <>
-                    <div class="mt-8">
-                      <PasskeyLoginButton redirectTo={redirectTo} />
-                    </div>
-                    <div class="my-6 flex items-center gap-3 text-xs text-zinc-400">
-                      <span class="h-px flex-1 bg-zinc-200 dark:bg-zinc-800" />
-                      <span>{t.fallbackDivider}</span>
-                      <span class="h-px flex-1 bg-zinc-200 dark:bg-zinc-800" />
-                    </div>
-                  </>
-                )}
-
                 {!isAdminLogin && visibleCategories.length > 1 && !token && (
-                  <div class="mb-5" style={{ "view-transition-name": "login-switch" }}>
+                  <div class="mt-6" style={{ "view-transition-name": "login-switch" }}>
                     <AccountCategorySwitch
                       options={visibleCategories.map((category) => ({
                         value: category,
@@ -158,7 +155,7 @@ export default ssr(async (c) => {
                   </div>
                 )}
 
-                <div class="flex flex-col gap-4">
+                <div class="flex flex-1 flex-col justify-center gap-4 py-7">
                   {isAdminLogin ? (
                     <AdminLoginForm redirectTo={redirectTo} requiresRecovery={!policy.login.enabled} />
                   ) : useApproval && activeMethod ? (
@@ -166,6 +163,7 @@ export default ssr(async (c) => {
                       category={activeMethod}
                       redirectTo={redirectTo}
                       fallback={{ href: credentialHref, label: activeMethod === "freeipa" ? t.usePasswordInstead : t.useEmailInstead }}
+                      setupHint={activeMethod === "freeipa" ? t.appSetupPassword : t.appSetupEmail}
                     />
                   ) : isEmailLogin ? (
                     <GuestLoginForm
@@ -180,18 +178,19 @@ export default ssr(async (c) => {
                     <NoticeCard tone="info">{t.noLoginAvailable}</NoticeCard>
                   )}
                   {approvalEnabled && !useApproval && !token && !isAdminLogin && activeMethod && activeMethod !== "email" && (
-                    <ButtonLink href={credentialHref} variant="ghost" size="sm">
+                    <ButtonLink href={credentialHref} variant="secondary" class="w-full justify-center" size="lg">
                       {t.useAppInstead}
                     </ButtonLink>
                   )}
                 </div>
 
                 {!isAdminLogin && !token && (
-                  <div class="mt-4 flex items-center justify-between gap-3 text-xs text-dimmed">
+                  <div class="flex flex-wrap items-center justify-between gap-2 text-xs text-dimmed">
                     <ButtonLink href={supportHref} variant="secondary" size="sm">
                       <i class="ti ti-lifebuoy" />
                       {t.contactSupport}
                     </ButtonLink>
+                    {showPasskey && <PasskeyLoginButton redirectTo={redirectTo} />}
                     <ButtonLink href={adminHref} variant="secondary" size="sm">
                       <i class="ti ti-shield" />
                       {t.adminToken}

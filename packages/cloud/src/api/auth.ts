@@ -8,7 +8,9 @@ import { type AuthContext, auth, getLocale, jsonResponse, rateLimit, respond, v 
 import { accounts, audit, authFlows, getFreeIpaConfig, logger, webauthn } from "../services";
 import { isAccountCategoryAllowed } from "../services/account-category-policy";
 import type { AuthNotificationSender } from "../services/auth-flows/notification-sender";
+import { legalConsent } from "../services/legal-consent";
 import * as categorySettings from "../services/settings";
+import { publicCloudOrigin } from "../shared/app-url";
 
 const log = logger("auth");
 
@@ -30,6 +32,17 @@ const jsonError = (c: Context, message: string, status: 400 | 401 | 500 | 503) =
 export const createAuthRoutes = (notificationSender: AuthNotificationSender) =>
   new Hono<AuthContext>()
     .use(rateLimit())
+    .post(
+      "/legal-consent",
+      describeRoute({ tags: ["Auth"], summary: "Explicitly accept terms after sign-in; unlock the pending session" }),
+      v("json", z.object({ accepted: z.literal(true), version: z.string().regex(/^[a-f0-9]{64}$/) }).strict()),
+      async (c) => {
+        const issuer = await categorySettings.get<string>("app.url");
+        if (c.req.header("Origin") !== publicCloudOrigin(issuer)) return c.json({ code: "FORBIDDEN" }, 403);
+        await legalConsent.accept(c, c.req.valid("json").version);
+        return c.body(null, 204);
+      },
+    )
     .post(
       "/login",
       describeRoute({
