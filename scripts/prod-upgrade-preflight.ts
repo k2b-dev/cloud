@@ -232,7 +232,7 @@ export const main = async (): Promise<number> => {
   if (failures.length) {
     console.error("Preflight blocked:");
     for (const failure of failures) console.error(`- ${failure}`);
-    console.error("Follow SYNC_6_MIGRATION.md. This command never changes Redis, NATS resources, or containers.");
+    console.error("Resolve the reported failures before upgrading. This command never changes Redis, NATS resources, or containers.");
     return 1;
   }
   console.log("v6 fleet preflight passed. Legacy drain and Yjs snapshot evidence remain separate cutover requirements.");

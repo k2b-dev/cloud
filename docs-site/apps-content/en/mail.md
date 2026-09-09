@@ -5,7 +5,7 @@ section: Work
 order: 110
 description: Connected mailboxes with search, team context, reliable sending, and automation.
 tags: [mail, email, collaboration]
-updated: 2026-09-07
+updated: 2026-09-09
 ---
 
 # Mail
@@ -48,6 +48,18 @@ The email provider remains the source for portable mail state. Mail keeps a
 synchronized Cloud copy for search, collaboration, durable commands, and
 observable delivery. Credentials and refresh tokens are stored as write-only
 secrets.
+
+## Delete and restore a mailbox
+
+Moving a mailbox to **Recently deleted** pauses its transport and retains its
+Cloud data. It does not delete provider mail. A mailbox administrator can
+restore it, but synchronization stays paused until the connection and mailbox
+health have been checked and synchronization is explicitly resumed.
+
+Back up Cloud's Postgres data, including Mail attachments and collaboration
+history. Reconnecting the email provider does not restore Cloud-only data.
+See [Deployment requirements](/en/docs/operations/deployment-requirements)
+for the backup boundary.
 
 ## Manage automation access
 
