@@ -1,6 +1,7 @@
 import { localStore } from "@k2b/stdlib/solid";
 import { type AppVaultMethod, type AppVaultSession, appApproval } from "@valentinkolb/cloud/browser/app-approval";
 import { createMemo, createSignal, onCleanup, onMount } from "solid-js";
+import { waitForVaultVisibility } from "./vault-visibility";
 import { closeDialogs } from "./dialog";
 import {
   currentSession,
@@ -63,6 +64,7 @@ export function createVault() {
     try {
       const value = await operation(abort.signal);
       try {
+        await waitForVaultVisibility(abort.signal);
         guard(gen);
       } catch (error) {
         dispose?.(value);
@@ -95,8 +97,7 @@ export function createVault() {
           throw error;
         }
         try {
-          if ((await readHeader())?.revision !== expected.revision || signal.aborted || document.visibilityState !== "visible")
-            throw new Error("locked");
+          if ((await readHeader())?.revision !== expected.revision || signal.aborted) throw new Error("locked");
           setRetry({ attempts: 0, retryAt: 0 });
           return value;
         } catch (e) {

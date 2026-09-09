@@ -39,6 +39,8 @@ COPY packages/cloud/src packages/cloud/src
 COPY packages/ui/src packages/ui/src
 COPY packages/ui/scripts packages/ui/scripts
 COPY pwas/pwa-auth pwas/pwa-auth
+ARG PWA_VERSION=unreleased
+ARG PWA_REVISION
 RUN bun packages/ui/scripts/build.ts \
   && bun run --cwd pwas/pwa-auth typecheck \
   && bun test pwas/pwa-auth/src packages/cloud/src/browser/app-approval-vault.test.ts \

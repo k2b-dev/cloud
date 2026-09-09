@@ -1,6 +1,6 @@
 import { timing } from "@k2b/stdlib";
 import { Button, Checkbox, IconButton, LocaleProvider, PanelDialog, PinInput, TextInput, useLocale } from "@k2b/ui";
-import type { AppVaultSession } from "@valentinkolb/cloud/browser/app-approval";
+import { AppVaultError, type AppVaultSession } from "@valentinkolb/cloud/browser/app-approval";
 import { createMemo, createSignal, onCleanup, onMount, Show } from "solid-js";
 import { openDialog } from "./dialog";
 import { authMessages } from "./i18n";
@@ -40,11 +40,21 @@ export function Security(props: { vault: Vault; mode: "setup" | "unlock" | "mana
     setError("");
     try {
       await operation();
-    } catch {
+    } catch (cause) {
       if (!stopped) {
         setVerified(false);
         if (props.mode === "setup" && selected() === "passkey") setSelected(undefined);
-        setError(props.mode === "unlock" ? (pinEntry() ? t().pinUnlockFailed : t().passkeyUnlockFailed) : t().securityFailed);
+        setError(
+          cause instanceof AppVaultError && cause.code === "UNSUPPORTED"
+            ? t().passkeyUnsupported
+            : cause instanceof DOMException && cause.name === "NotAllowedError"
+              ? t().passkeyCancelled
+              : props.mode === "unlock"
+                ? pinEntry()
+                  ? t().pinUnlockFailed
+                  : t().passkeyUnlockFailed
+                : t().securityFailed,
+        );
       }
     } finally {
       const hadPinFocus = pinControl?.contains(document.activeElement);
@@ -87,6 +97,7 @@ export function Security(props: { vault: Vault; mode: "setup" | "unlock" | "mana
     if (!busy() && valid() && (!authenticate() || props.vault.retryAfter() === 0)) void run(authenticate() ? () => unlock("pin") : perform);
   };
   const choose = (action: "pin" | "passkey" | "remove-pin" | "remove-passkey") => {
+    if (busy()) return;
     setSelected(action);
     setError("");
     if (props.mode === "setup" && action === "passkey") void run(perform);
@@ -123,10 +134,14 @@ export function Security(props: { vault: Vault; mode: "setup" | "unlock" | "mana
     focusPin();
     window.addEventListener("focus", focusPin);
     window.addEventListener("load", focusPin);
+    window.addEventListener("pageshow", focusPin);
+    document.addEventListener("visibilitychange", focusPin);
     onCleanup(() => {
       cancelAnimationFrame(frame);
       window.removeEventListener("focus", focusPin);
       window.removeEventListener("load", focusPin);
+      window.removeEventListener("pageshow", focusPin);
+      document.removeEventListener("visibilitychange", focusPin);
     });
   });
   return (

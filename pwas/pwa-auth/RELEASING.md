@@ -76,3 +76,8 @@ contains no fixed hostname and can be promoted without rebuilding.
 Retain the prior image digest for operational rollback. Check storage-format
 compatibility before reverting application code after users have opened a newer
 version. Changing the deployment image does not reset or recover device vaults.
+
+The image build passes `PWA_VERSION` (release tag) and `PWA_REVISION` (source
+commit) into the app. **Settings** displays them so reports identify the installed
+build. Custom Docker builds can supply these with `--build-arg`; without a
+version, the app displays `unreleased`.

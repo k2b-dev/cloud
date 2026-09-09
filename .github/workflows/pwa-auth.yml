@@ -25,6 +25,9 @@ jobs:
         with:
           context: .
           file: pwas/pwa-auth/Dockerfile
+          build-args: |
+            PWA_VERSION=${{ github.ref_name }}
+            PWA_REVISION=${{ github.sha }}
           load: true
           tags: cloud-pwa-auth:test
           cache-from: type=gha,scope=pwa-auth
@@ -55,6 +58,9 @@ jobs:
         with:
           context: .
           file: pwas/pwa-auth/Dockerfile
+          build-args: |
+            PWA_VERSION=${{ github.ref_name }}
+            PWA_REVISION=${{ github.sha }}
           platforms: linux/amd64,linux/arm64
           push: true
           labels: |

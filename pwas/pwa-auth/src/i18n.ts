@@ -35,6 +35,9 @@ export const authMessages = i18n.define({
       pinWarning: "A six-digit PIN is easier to guess if someone copies your browser data. A passkey provides stronger protection.",
       pinUnlockFailed: "Check your PIN.",
       passkeyUnlockFailed: "Try your passkey again.",
+      passkeyUnsupported:
+        "This passkey provider cannot encrypt your app keys. Choose another provider or set an app PIN. A saved passkey alone does not finish setup.",
+      passkeyCancelled: "Passkey setup was not completed. Please try again.",
       securityFailed: "Could not unlock or save protection. Check your PIN or try a compatible passkey provider.",
       securing: "Protecting your keys…",
       saveSecurity: "Save protection",
@@ -192,6 +195,9 @@ export const authMessages = i18n.define({
         "Eine sechsstellige PIN lässt sich leichter erraten, wenn jemand deine Browserdaten kopiert. Ein Passkey bietet stärkeren Schutz.",
       pinUnlockFailed: "Bitte PIN prüfen.",
       passkeyUnlockFailed: "Passkey erneut versuchen.",
+      passkeyUnsupported:
+        "Dieser Passkey-Anbieter kann deine App-Schlüssel nicht verschlüsseln. Wähle einen anderen Anbieter oder eine App-PIN. Ein gespeicherter Passkey allein schließt die Einrichtung nicht ab.",
+      passkeyCancelled: "Passkey-Vorgang nicht abgeschlossen. Bitte versuche es erneut.",
       securityFailed: "Entsperren oder Speichern nicht möglich. Prüfe deine PIN oder versuche einen kompatiblen Passkey-Anbieter.",
       securing: "Schlüssel werden geschützt…",
       saveSecurity: "Schutz speichern",
