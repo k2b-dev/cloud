@@ -215,6 +215,12 @@ body {
   gap: 1rem;
   width: 100%;
 }
+.auth-settings-version {
+  color: var(--k2b-text-muted);
+  font-size: 0.75rem;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
 .auth-pairing-intro {
   display: flex;
   align-items: flex-start;
@@ -308,19 +314,6 @@ body.k2b-ui textarea {
   min-height: 6rem;
   color: var(--k2b-success-text);
   font-size: 4rem;
-}
-
-.auth-flow .auth-security-alternative .k2b-button {
-  display: inline;
-  min-height: 0;
-  padding: 0;
-  border: 0;
-  border-radius: 0;
-  font: inherit;
-  color: inherit;
-  vertical-align: baseline;
-  text-decoration: underline;
-  text-underline-offset: 0.15em;
 }
 
 .auth-account-row {

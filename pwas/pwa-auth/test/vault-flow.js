@@ -11,6 +11,11 @@ async function _run(page) {
     .context()
     .browser()
     .newContext({ locale: "en", viewport: { width: 390, height: 844 } });
+  await context.addInitScript(() => {
+    navigator.credentials.create = navigator.credentials.get = async () => {
+      throw new Error("Unexpected credential-manager request");
+    };
+  });
   const p = await context.newPage();
   const errors = [];
   p.on("pageerror", (e) => errors.push(e.message));
@@ -26,8 +31,7 @@ async function _run(page) {
     await button("Continue in browser").click();
     await ready();
     await button("Add Cloud").click();
-    await p.getByRole("heading", { name: "Protect Cloud Login" }).waitFor();
-    await button("Set a six-digit app PIN").click();
+    await p.getByRole("heading", { name: "Set app PIN" }).waitFor();
     await p.waitForFunction(() => document.activeElement === document.querySelector("dialog input"));
     await pin("012345");
     await p.getByLabel("Repeat PIN", { exact: true }).fill("012346");
@@ -88,7 +92,6 @@ async function _run(page) {
     if (cleared.attempts || cleared.retryAt) throw new Error("Successful unlock did not reset delay");
     await button("Add Cloud").waitFor();
     await menu("App security");
-    await button("Change app PIN").click();
     await pin("012345");
     await p.getByLabel("Repeat PIN", { exact: true }).waitFor();
     await pin("654321");

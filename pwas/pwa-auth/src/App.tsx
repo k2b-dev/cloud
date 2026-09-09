@@ -41,7 +41,8 @@ export function App(props: { preferences: Preferences }) {
     if (pairingOpen) return;
     pairingOpen = true;
     try {
-      if (vault.status() === "loading" || vault.status() === "legacy" || vault.status() === "error") return;
+      if (vault.status() === "loading" || vault.status() === "legacy" || vault.status() === "error" || vault.status() === "unsupported")
+        return;
       if (vault.status() !== "open") {
         if (!(await openSecurity(vault, props.preferences, vault.status() === "empty" ? "setup" : "unlock"))) return;
       }
@@ -146,7 +147,7 @@ export function App(props: { preferences: Preferences }) {
           },
         ]
       : []),
-    ...(["locked", "legacy", "error"].includes(vault.status())
+    ...(["locked", "legacy", "unsupported", "error"].includes(vault.status())
       ? [
           {
             sectionLabel: t().securitySection,
@@ -184,7 +185,7 @@ export function App(props: { preferences: Preferences }) {
       <header class="auth-header">
         <h1>{t().appName}</h1>
         <div class="auth-header-actions">
-          <Dropdown.Root items={items()} align="end" width="16rem">
+          <Dropdown.Root items={items()} align="end" variant="touch">
             <Dropdown.Trigger iconOnly label={t().menu} class="auth-menu-button" tooltip={false}>
               <span aria-hidden="true">···</span>
             </Dropdown.Trigger>
@@ -206,6 +207,10 @@ export function App(props: { preferences: Preferences }) {
               <Show when={vault.status() === "locked"}>
                 <Placeholder title={t().unlockApp} description={t().lockedHelp} />
                 <Button onClick={() => void showUnlock()}>{t().unlockApp}</Button>
+              </Show>
+              <Show when={vault.status() === "unsupported"}>
+                <Placeholder title={t().resetApp} description={t().unsupportedProtection} />
+                <Button onClick={() => void openSecurity(vault, props.preferences, "reset")}>{t().resetApp}</Button>
               </Show>
               <Show when={vault.status() === "legacy"}>
                 <Placeholder title={t().legacyTitle} description={t().legacyHelp} />

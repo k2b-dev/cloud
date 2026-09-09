@@ -60,33 +60,27 @@ async function _run(page) {
       } else if (mode === "cancel") {
         await button("Add Cloud").click();
         await p.evaluate(() => {
-          Object.defineProperty(navigator, "credentials", {
-            configurable: true,
-            value: {
-              create: (options) =>
-                new Promise((resolve, reject) => {
-                  window.credentialPending = true;
-                  options.signal.addEventListener("abort", () => {
-                    window.credentialAborted = true;
-                    reject(new DOMException("Cancelled", "AbortError"));
-                  });
-                }),
-            },
-          });
+          const encrypt = crypto.subtle.encrypt.bind(crypto.subtle);
+          crypto.subtle.encrypt = async (...args) => {
+            window.encryptionPending = true;
+            await new Promise((resolve) => {
+              window.finishEncryption = resolve;
+            });
+            return encrypt(...args);
+          };
         });
-        await button("Set up passkey").click();
-        await p.waitForFunction(() => window.credentialPending);
+        await fill("012345");
+        await button("Save protection").click();
+        await p.waitForFunction(() => window.encryptionPending);
         await p.keyboard.press("Escape");
         await ready();
-        await p.waitForFunction(() => window.credentialAborted);
+        await p.evaluate(() => window.finishEncryption());
+        await p.waitForTimeout(200);
         if (await readHeader()) throw new Error("Cancelled setup persisted");
-        await button("Add Cloud").click();
-        await p.getByRole("heading", { name: "Protect Cloud Login" }).waitFor();
         results.push({ mode, passed: true });
         continue;
       } else {
         await button("Add Cloud").click();
-        await button("Set a six-digit app PIN").click();
         await fill("012345");
         await button("Save protection").click();
         await p.getByRole("heading", { name: "Add Cloud", exact: true }).waitFor();
@@ -154,7 +148,6 @@ async function _run(page) {
         if (mode === "atomic") {
           const before = await readHeader();
           await menu("App security");
-          await button("Change app PIN").click();
           await fillAppPin(p, "012345");
           await fill("654321");
           await p.evaluate(() => {

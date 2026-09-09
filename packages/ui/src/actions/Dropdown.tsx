@@ -65,7 +65,9 @@ export type DropdownProps = {
   items: readonly DropdownItem[];
   children: JSX.Element;
   position?: DropdownPosition | (() => DropdownPosition);
-  /** Menu width as a CSS length. Defaults to `12rem`. */
+  /** Larger menu rows and typography for touch. Defaults to `default`. */
+  variant?: "default" | "touch";
+  /** Menu width as a CSS length. Defaults to `12rem`, or `18rem` for touch. */
   width?: string;
   class?: string;
   menuClass?: string;
@@ -529,6 +531,7 @@ function DropdownRoot(props: DropdownProps): JSX.Element {
           aria-label={props.label ?? messages().dropdownMenu}
           class={`k2b-dropdown__menu ${props.menuClass ?? ""}`}
           style={props.width ? { "--k2b-dropdown-width": props.width } : undefined}
+          data-variant={props.variant ?? "default"}
           data-position={position()}
           onKeyDown={handleMenuKeyDown}
           onToggle={(event) => {

@@ -212,6 +212,20 @@ const MenusDemo = () => (
       >
         <Dropdown.Trigger variant="secondary">Actions</Dropdown.Trigger>
       </Dropdown.Root>
+      <Dropdown.Root
+        variant="touch"
+        items={[
+          {
+            sectionLabel: "Account",
+            items: [
+              { label: "Settings", icon: "ti ti-settings", action: () => {} },
+              { label: "Sign out", icon: "ti ti-logout", action: () => {} },
+            ],
+          },
+        ]}
+      >
+        <Dropdown.Trigger variant="secondary">Touch menu</Dropdown.Trigger>
+      </Dropdown.Root>
       <Dropdown.Root items={[{ label: "Duplicate", icon: "ti ti-copy", action: () => {} }]}>
         <Dropdown.Trigger iconOnly label="More actions">
           <i class="ti ti-dots" aria-hidden="true" />

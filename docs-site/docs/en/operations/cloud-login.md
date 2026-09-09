@@ -53,43 +53,28 @@ Changing either origin requires reviewing the existing pairings.
 
 ## Protect the app
 
-The first **Add Cloud** action requires app protection before pairing starts.
-Choose a passkey (recommended when available), a six-digit app PIN, or add the
-second method later through **App security**. When both are configured, the
-unlock dialog lets you switch between the six masked PIN fields and passkey
-unlock. Entering the sixth PIN digit starts unlocking automatically. Wrong PINs
-leave the app locked and impose a local delay rising from one to thirty seconds.
-Switching methods clears any entered PIN. Either configured method unlocks
-all Clouds in this browser installation. This does not approve a sign-in.
+The first **Add Cloud** action opens PIN setup before pairing starts. Enter a
+six-digit PIN twice; leading zeroes count. One PIN protects every connected
+Cloud on this device. Entering the sixth digit in the unlock dialog starts
+unlocking automatically. Wrong PINs leave the app locked and impose a local
+delay rising from one to thirty seconds.
 
-A passkey can use face recognition, a fingerprint, or the device code, as chosen
-by the operating system. The app checks the selected provider's encryption
-support during setup; browser support alone is not sufficient. If that check
-fails, choose a compatible provider or set a PIN. A passkey saved in the password
-manager does not by itself mean app protection is ready: the encryption check
-and a successful unlock must finish first.
+A six-digit PIN has at most one million combinations. Argon2id makes guessing
+more expensive but cannot prevent offline guessing against copied app data.
+The retry delay survives reloads, but clearing or changing browser data can
+bypass it; it is not a hardware guess limit.
 
-Enter a PIN twice, with exactly six digits; leading zeroes count. A PIN has at
-most one million combinations. Its slow Argon2id derivation makes guessing more
-expensive but cannot prevent offline guessing against copied browser data.
-Adding a PIN fallback also gives such an attacker a PIN-based route into the
-vault, even when a passkey is configured. Local retry delays are not a hardware
-guess limit. Failed attempts and the remaining delay survive reloads, but
-clearing or changing browser data can bypass this local delay.
+The unlock dialog opens on startup or return to the locked app. The app starts
+locked after a reload and locks after one minute in the background, on page
+exit, after five minutes without interaction, or through **Lock app**. Locking
+hides account details, closes sensitive dialogs, and stops polling. Other open
+tabs receive the lock as well.
 
-The unlock dialog opens automatically on startup or return to the locked app.
-It can be dismissed; passkey verification starts with an explicit button press.
+**App security** asks for the current PIN before setting a new one. The new PIN
+must successfully unlock before it is saved. Cloud pairings remain unchanged.
+If no usable PIN is stored, the app offers an explicit reset and re-pairing
+path. Nothing is deleted automatically.
 
-The app starts locked after a reload and locks after one minute in the background, on page exit, after
-five minutes without interaction, or through **Lock app**. Locking hides Cloud
-and account details, closes sensitive dialogs, and stops polling. Other open
-tabs receive the lock as well. Operating-system passkey dialogs may temporarily
-hide a page during authentication. The app waits up to one minute for the page
-to return before accepting the result; closing or locking the app cancels it.
-
-**App security** requires a fresh unlock before adding, replacing, or removing
-a method. A new method must successfully unlock before it is saved. The last
-method cannot be removed. Changing the PIN keeps your Cloud pairings.
 Changing app protection does not secure copies of browser data that an attacker
 already obtained. After suspected compromise, revoke the devices in Cloud and
 pair again.

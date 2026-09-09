@@ -32,6 +32,23 @@ import {
 } from "@k2b/ui";
 ```
 
+## Touch menus
+
+Set `variant="touch"` on `Dropdown.Root` for larger touch targets. It uses rows
+at least 52 px high, 16 px labels, larger icons, and an 18rem default width.
+An explicit `width` still takes precedence; the menu stays within the viewport
+and scrolls when necessary. Keyboard navigation and selection behave the same.
+Omitting `variant` (or using `variant="default"`) keeps the compact appearance
+and 12rem default width. Trigger styling is configured separately.
+
+```tsx
+<Dropdown.Root items={items} variant="touch" align="end">
+  <Dropdown.Trigger iconOnly label="Menu">
+    <i class="ti ti-dots" aria-hidden="true" />
+  </Dropdown.Trigger>
+</Dropdown.Root>
+```
+
 ## Items and sections
 
 Both components accept `DropdownItem[]`. An item is one of:

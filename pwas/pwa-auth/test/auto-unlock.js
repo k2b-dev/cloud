@@ -22,8 +22,7 @@ async function _run(page) {
     await button("Continue in browser").click();
     await ready();
     await button("Add Cloud").click();
-    await p.getByRole("heading", { name: "Protect Cloud Login" }).waitFor();
-    await button("Set a six-digit app PIN").click();
+    await p.getByRole("heading", { name: "Set app PIN" }).waitFor();
     await p.waitForFunction(() => document.activeElement === document.querySelector("dialog input"));
     await pin("012345");
     await p.getByLabel("Repeat PIN", { exact: true }).fill("012346");

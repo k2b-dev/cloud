@@ -77,7 +77,6 @@ async function _run(page) {
       await p.goto("http://127.0.0.1:4178/");
       await p.getByRole("button", { name: "Continue in browser", exact: true }).click();
       await p.getByRole("button", { name: "Add Cloud", exact: true }).click();
-      await p.getByRole("button", { name: "Set a six-digit app PIN", exact: true }).click();
       await p.getByLabel("App PIN", { exact: true }).fill("012345");
       await p.getByLabel("Repeat PIN", { exact: true }).fill("012345");
       await p.getByRole("button", { name: "Save protection", exact: true }).click();

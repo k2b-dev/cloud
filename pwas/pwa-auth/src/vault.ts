@@ -1,7 +1,6 @@
 import { localStore } from "@k2b/stdlib/solid";
 import { type AppVaultMethod, type AppVaultSession, appApproval } from "@valentinkolb/cloud/browser/app-approval";
 import { createMemo, createSignal, onCleanup, onMount } from "solid-js";
-import { waitForVaultVisibility } from "./vault-visibility";
 import { closeDialogs } from "./dialog";
 import {
   currentSession,
@@ -16,11 +15,10 @@ import {
 
 export function createVault() {
   const [header, setHeader] = createSignal<VaultHeader>();
-  const [status, setStatus] = createSignal<"loading" | "empty" | "locked" | "open" | "legacy" | "error">("loading");
-  const [capability, setCapability] = createSignal<"supported" | "unknown" | "unsupported">("unknown");
+  const [status, setStatus] = createSignal<"loading" | "empty" | "locked" | "open" | "legacy" | "unsupported" | "error">("loading");
   const channel = new BroadcastChannel("cloud-login-vault");
   let generation = 0;
-  let ceremony: AbortController | undefined;
+  let pendingOperation: AbortController | undefined;
   let lastActivity = Date.now();
   let hiddenAt: number | undefined;
   const [retry, setRetry] = localStore.create("pwa-auth.pin-retry", { attempts: 0, retryAt: 0 });
@@ -30,8 +28,8 @@ export function createVault() {
   const retryAfter = createMemo(() => Math.max(0, Math.min(30, Math.ceil((retryAt() - now()) / 1000))));
   const cancelPending = () => {
     generation++;
-    ceremony?.abort();
-    ceremony = undefined;
+    pendingOperation?.abort();
+    pendingOperation = undefined;
   };
   const lock = (broadcast = true) => {
     cancelPending();
@@ -48,7 +46,7 @@ export function createVault() {
       const legacy = !h && (await hasLegacy());
       if (gen !== generation) return;
       setHeader(h);
-      setStatus(h ? "locked" : legacy ? "legacy" : "empty");
+      setStatus(h ? (h.config.methods.some((method) => method.type === "pin") ? "locked" : "unsupported") : legacy ? "legacy" : "empty");
     } catch {
       if (gen === generation) setStatus("error");
     }
@@ -58,13 +56,12 @@ export function createVault() {
   };
   const run = async <T>(operation: (signal: AbortSignal) => Promise<T>, dispose?: (value: T) => void) => {
     const gen = generation;
-    if (ceremony || document.visibilityState !== "visible") throw new Error("locked");
+    if (pendingOperation || document.visibilityState !== "visible") throw new Error("locked");
     const abort = new AbortController();
-    ceremony = abort;
+    pendingOperation = abort;
     try {
       const value = await operation(abort.signal);
       try {
-        await waitForVaultVisibility(abort.signal);
         guard(gen);
       } catch (error) {
         dispose?.(value);
@@ -72,11 +69,11 @@ export function createVault() {
       }
       return value;
     } finally {
-      if (ceremony === abort) ceremony = undefined;
+      if (pendingOperation === abort) pendingOperation = undefined;
     }
   };
-  const verify = async (type: "pin" | "passkey", pin?: string) => {
-    if (type === "pin" && Date.now() < retryAt()) throw new Error("locked");
+  const verify = async (pin: string) => {
+    if (Date.now() < retryAt()) throw new Error("locked");
     const expected = header();
     if (!expected) throw new Error("locked");
     if (status() === "open") {
@@ -87,9 +84,9 @@ export function createVault() {
       async (signal) => {
         let value: AppVaultSession;
         try {
-          value = await appApproval.vault.unlock(expected.config, type, pin, signal);
+          value = await appApproval.vault.unlock(expected.config, "pin", pin, signal);
         } catch (error) {
-          if (type === "pin" && !signal.aborted) {
+          if (!signal.aborted) {
             const time = Date.now();
             setNow(time);
             setRetry({ attempts: Math.min(6, attempts() + 1), retryAt: time + Math.min(30, 2 ** attempts()) * 1000 });
@@ -114,15 +111,26 @@ export function createVault() {
     setStatus("open");
     lastActivity = Date.now();
   };
-  const unlock = async (type: "pin" | "passkey", pin?: string) => {
+  const unlock = async (pin: string) => {
     const gen = generation;
-    const value = await verify(type, pin);
+    const value = await verify(pin);
     const h = header();
     if (!h || gen !== generation || document.visibilityState !== "visible") {
       value.lock();
       throw new Error("locked");
     }
-    activate(value, h);
+    if (h.config.methods.length > 1) {
+      try {
+        await save(
+          value,
+          h.config.methods.filter((method) => method.type === "pin"),
+          h.revision,
+        );
+      } catch (error) {
+        value.lock();
+        throw error;
+      }
+    } else activate(value, h);
   };
   const save = async (value: AppVaultSession, methods: AppVaultMethod[], expected?: string) => {
     const gen = generation;
@@ -142,16 +150,16 @@ export function createVault() {
     activate(value, h);
     channel.postMessage("changed");
   };
-  const setup = async (type: "pin" | "passkey", pin?: string) => {
+  const setup = async (pin: string) => {
     if (status() !== "empty") throw new Error("locked");
     const gen = generation;
     const value = await appApproval.vault.create();
     try {
       guard(gen);
-      const method = await run((signal) => (type === "pin" ? value.pin(pin ?? "") : value.passkey(signal)));
+      const method = await run(() => value.pin(pin));
       const config = { version: 1 as const, id: value.id, methods: [method] };
       const checked = await run(
-        (signal) => appApproval.vault.unlock(config, type, pin, signal),
+        (signal) => appApproval.vault.unlock(config, "pin", pin, signal),
         (value) => value.lock(),
       );
       checked.lock();
@@ -162,23 +170,19 @@ export function createVault() {
       throw e;
     }
   };
-  const change = async (proof: AppVaultSession, action: "pin" | "passkey" | "remove-pin" | "remove-passkey", pin?: string) => {
+  const change = async (proof: AppVaultSession, pin: string) => {
     const gen = generation;
     const h = header();
     if (!h || proof.id !== h.config.id) throw new Error("locked");
     try {
-      let methods = h.config.methods;
-      if (action === "pin" || action === "passkey") {
-        const method = await run((signal) => (action === "pin" ? proof.pin(pin ?? "") : proof.passkey(signal)));
-        const checked = await run(
-          (signal) => appApproval.vault.unlock({ ...h.config, methods: [method] }, action, pin, signal),
-          (value) => value.lock(),
-        );
-        checked.lock();
-        methods = [...methods.filter((m) => m.type !== action), method];
-      } else methods = methods.filter((m) => m.type !== action.slice(7));
+      const method = await run(() => proof.pin(pin));
+      const checked = await run(
+        (signal) => appApproval.vault.unlock({ ...h.config, methods: [method] }, "pin", pin, signal),
+        (value) => value.lock(),
+      );
+      checked.lock();
       guard(gen);
-      await save(proof, methods, h.revision);
+      await save(proof, [method], h.revision);
     } catch (e) {
       proof.lock();
       throw e;
@@ -196,7 +200,6 @@ export function createVault() {
   };
   onMount(() => {
     void refresh();
-    void appApproval.vault.capability().then(setCapability);
     const activity = () => {
       if (Date.now() - lastActivity > 300_000 && status() === "open") lock();
       else lastActivity = Date.now();
@@ -206,7 +209,7 @@ export function createVault() {
         if (status() === "open") {
           hiddenAt ??= Date.now();
           cancelPending();
-        } else if (!ceremony) lock(false);
+        } else lock(false);
       } else {
         if (hiddenAt !== undefined && Date.now() - hiddenAt >= 60_000) lock(false);
         hiddenAt = undefined;
@@ -236,6 +239,6 @@ export function createVault() {
       document.removeEventListener("keydown", activity);
     });
   });
-  return { header, status, capability, lock, unlock, setup, verify, change, reset, cancelPending, retryAfter, session: currentSession };
+  return { header, status, lock, unlock, setup, verify, change, reset, cancelPending, retryAfter, session: currentSession };
 }
 export type Vault = ReturnType<typeof createVault>;

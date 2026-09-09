@@ -52,6 +52,9 @@ be direct or an accessor; the application updates it through `onValueChange`.
 ## Close ownership
 
 The muted header uses a 20 px semibold title and a 13 px secondary subtitle.
+Without a subtitle, the header uses a compact vertical inset and centers the
+title beside its icon and actions. Headers with a subtitle keep their two-line,
+top-aligned layout. Action touch targets keep their size.
 Header, body, and footer share a 24 px horizontal inset. Keep filenames and
 other long identifiers in the subtitle or body; both heading lines wrap.
 Use whitespace to separate content when additional section frames add no meaning.
