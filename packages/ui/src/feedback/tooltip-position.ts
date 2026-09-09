@@ -1,10 +1,25 @@
-export type TooltipPlacement = "top" | "bottom";
+export type TooltipPlacement = "top" | "bottom" | "left" | "right";
 
 const VIEWPORT_PADDING = 8;
 const TRIGGER_GAP = 6;
 
 export const positionTooltipSurface = (tooltip: HTMLElement, target: HTMLElement, placement: TooltipPlacement = "top"): void => {
   const targetRect = target.getBoundingClientRect();
+  if (placement === "left" || placement === "right") {
+    const rect = tooltip.getBoundingClientRect();
+    const right = targetRect.right + TRIGGER_GAP;
+    const left = targetRect.left - rect.width - TRIGGER_GAP;
+    const rightFits = right + rect.width <= window.innerWidth - VIEWPORT_PADDING;
+    const leftFits = left >= VIEWPORT_PADDING;
+    const useRight = placement === "right" ? rightFits || !leftFits : !leftFits && rightFits;
+    const maxLeft = Math.max(VIEWPORT_PADDING, window.innerWidth - rect.width - VIEWPORT_PADDING);
+    tooltip.style.left = `${Math.round(Math.max(VIEWPORT_PADDING, Math.min(useRight ? right : left, maxLeft)))}px`;
+    const measured = tooltip.getBoundingClientRect();
+    const maxTop = Math.max(VIEWPORT_PADDING, window.innerHeight - measured.height - VIEWPORT_PADDING);
+    tooltip.style.top = `${Math.round(Math.max(VIEWPORT_PADDING, Math.min(targetRect.top + targetRect.height / 2 - measured.height / 2, maxTop)))}px`;
+    tooltip.dataset.placement = useRight ? "right" : "left";
+    return;
+  }
   const initialTooltipRect = tooltip.getBoundingClientRect();
   const initialLeft = Math.max(
     VIEWPORT_PADDING,

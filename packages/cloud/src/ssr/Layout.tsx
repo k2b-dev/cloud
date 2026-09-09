@@ -3,6 +3,7 @@ import { AppWorkspace, appWorkspaceLayoutStyle, LocaleProvider, NoticeCard } fro
 import type { JSX } from "solid-js/jsx-runtime";
 import { readAppWorkspaceLayoutCookie, resolveAppWorkspaceLayoutForSidebar } from "../_internal/app-workspace-state";
 import { resolveNavMatch } from "../contracts/app"; // ==========================
+import { defaultRailPreferences } from "../contracts/rail-preferences";
 import { hasRole, type User } from "../contracts/shared";
 import { getLocale } from "../server/locale";
 import { getDateConfig } from "../server/time";
@@ -15,13 +16,14 @@ import { visibleNavigationApps } from "./app-navigation";
 import BrowserNotifications from "./BrowserNotifications.island";
 import GlobalAnnouncements from "./GlobalAnnouncements.island";
 import type { GlobalSearchHelpApp } from "./GlobalSearchHelpDialog";
-import type { LayoutContext } from "./layout-context";
 import LayoutFooter from "./LayoutFooter";
 import LayoutHeader from "./LayoutHeader";
-import type { LayoutBreadcrumb } from "./layout-runtime";
 import LayoutRail, { type LayoutAppLink } from "./LayoutRail";
+import type { LayoutContext } from "./layout-context";
+import type { LayoutBreadcrumb } from "./layout-runtime";
 import { platformMessages } from "./platform-messages";
 import RegisteredHelpDocuments from "./RegisteredHelpDocuments.island";
+import { sortRailApps } from "./rail-navigation";
 import { getLocalizedRuntimeContext, type RuntimeContext } from "./runtime";
 import TimezoneCookie from "./TimezoneCookie.island";
 
@@ -48,6 +50,7 @@ function buildNavLinks(
     section: app.nav.section,
     link: {
       iconClass: app.icon,
+      defaultVisible: app.nav.section === "primary",
       id: app.id,
       label: app.name,
       href: app.nav.href,
@@ -61,6 +64,7 @@ function buildNavLinks(
   if (user && hasRole(user, "admin")) {
     more.push({
       id: "admin",
+      defaultVisible: false,
       iconClass: "ti ti-settings",
       label: t.admin,
       href: "/admin",
@@ -157,7 +161,7 @@ export default function Layout(props: LayoutProps) {
     workspaceSidebarCollapsible,
   );
   const { primary: primaryApps, more: moreApps } = buildNavLinks(runtime.apps, user, lang);
-  const allApps = [...primaryApps, ...moreApps];
+  const allApps = sortRailApps([...primaryApps, ...moreApps], lang);
   const launchpadApps: AppLaunchpadApp[] = allApps.map((app) => ({
     id: app.id,
     iconClass: app.iconClass,
@@ -243,8 +247,9 @@ export default function Layout(props: LayoutProps) {
             launchpadApps={launchpadApps}
             legalLinks={legalLinks}
             openAppsLabel={t.openApps}
-            pathname={pathname}
-            primaryApps={primaryApps}
+            apps={allApps}
+            railSettings={c.get("railPreferences") ?? defaultRailPreferences()}
+            currentUrl={c.req.raw.url}
             profileAvatarSrc={profileAvatarSrc}
             profileName={profileName}
             searchHelpApps={searchHelpApps}

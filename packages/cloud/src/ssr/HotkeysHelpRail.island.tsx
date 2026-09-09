@@ -1,5 +1,5 @@
 import { hotkeys } from "@k2b/stdlib/solid";
-import { IconButton, useLocale } from "@k2b/ui";
+import { IconButton, Tooltip, useLocale } from "@k2b/ui";
 import type { GlobalSearchHelpApp } from "./GlobalSearchHelpDialog";
 import { openLayoutHelpDialog } from "./LayoutHelp";
 import { platformMessages } from "./platform-messages";
@@ -34,15 +34,17 @@ export default function HotkeysHelpRail(props: HotkeysHelpTriggerProps) {
 
   if (props.variant === "rail")
     return (
-      <button
+      <Tooltip.Trigger
         type="button"
         class={`rail-item text-blue-500 hover:bg-blue-500/10 hover:text-blue-600 dark:text-blue-400 dark:hover:bg-blue-500/15 dark:hover:text-blue-300 ${props.class ?? ""}`}
         onClick={openHelp}
         aria-label={t().openHelp}
-        title={t().helpShortcut}
+        placement="right"
+        delay={0}
+        content={t().helpShortcut}
       >
         <i class="ti ti-help-circle text-base" />
-      </button>
+      </Tooltip.Trigger>
     );
 
   return (

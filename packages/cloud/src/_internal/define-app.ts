@@ -41,6 +41,7 @@ import {
 } from "../services/identity/invocation-operations";
 import { logger } from "../services/logging";
 import { startNotificationDefinitionRegistration } from "../services/notifications/catalog";
+import { railPreferences } from "../services/rail-preferences";
 import { get, loadCache as loadSettingsCache, set } from "../services/settings";
 import { createSettingsAPI, type SettingsAPI } from "../services/settings/api";
 import { registerSettings, toLegacySettingDefs } from "../services/settings/defaults";
@@ -335,8 +336,10 @@ export const defineApp = <
   // `getDateConfig` share one canonical `getLocale(c)` that page handlers
   // cannot override.
   const ssr = Object.assign(
-    createStatusPreservingSsrHandler<PageOptions>(html, (c) => {
+    createStatusPreservingSsrHandler<PageOptions>(html, async (c) => {
       c.get("page").lang = getLocale(c);
+      const user = c.get("user");
+      if (user) c.set("railPreferences", await railPreferences.get(user.id));
     }),
     createPageResponses(html),
   );

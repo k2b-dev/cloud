@@ -49,6 +49,8 @@ import {
 } from "../services";
 import { MandatePolicyV1Schema } from "../services/mandates";
 
+import { createMeRailRoutes } from "./me-rail";
+
 const toAccountsActor = (user: AuthContext["Variables"]["user"]) => ({
   userId: user.id,
   uid: user.uid,
@@ -184,6 +186,7 @@ const app = new Hono<AuthContext>()
   .use(auth.requireRole("authenticated"))
   .use(auth.requireUser())
   .route("/", mandateRoutes)
+  .route("/", createMeRailRoutes())
 
   .get(
     "/activity",

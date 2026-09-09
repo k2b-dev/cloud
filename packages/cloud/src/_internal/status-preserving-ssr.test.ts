@@ -37,3 +37,16 @@ test("SSR redirects remain passthrough responses", async () => {
   expect(response.status).toBe(302);
   expect(response.headers.get("location")).toBe("/new");
 });
+
+test("awaits async page preparation before rendering and skips redirects", async () => {
+  let preparations = 0;
+  const prepared = createStatusPreservingSsrHandler(html, async (c) => {
+    await Promise.resolve();
+    preparations++;
+    c.get("page").title = "Prepared snapshot";
+  });
+  const app = new Hono().get("/page", ...prepared(() => () => "Page")).get("/redirect", ...prepared((c) => c.redirect("/page")));
+  expect(await (await app.request("/page")).text()).toBe("<title>Prepared snapshot</title>Page");
+  expect((await app.request("/redirect")).status).toBe(302);
+  expect(preparations).toBe(1);
+});

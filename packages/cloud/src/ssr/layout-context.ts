@@ -1,9 +1,11 @@
+import type { RailPreferences } from "../contracts/rail-preferences";
 import type { User } from "../contracts/shared";
 import type { LayoutAnnouncementsState } from "../server/middleware/settings";
 import type { RuntimeContext } from "./runtime";
 
 export type LayoutContext = {
   get(key: "user"): User | undefined;
+  get(key: "railPreferences"): RailPreferences | undefined;
   get(key: "page"): { theme?: "light" | "dark" };
   get(key: "runtime"): RuntimeContext;
   get(key: "announcements"): LayoutAnnouncementsState | undefined;

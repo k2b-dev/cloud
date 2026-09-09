@@ -1,5 +1,6 @@
 import { AppWorkspace } from "@k2b/ui";
 import type { JSX } from "solid-js/jsx-runtime";
+import type { RailPreferences } from "../contracts/rail-preferences";
 import { getLocale } from "../server/locale";
 import type { LayoutAnnouncementsState } from "../server/middleware/settings";
 import AdminSidebar from "./AdminSidebar";
@@ -9,6 +10,7 @@ import { getLocalizedRuntimeContext, type RuntimeContext } from "./runtime";
 
 type Breadcrumb = { title: string; href?: string };
 type AdminLayoutContext = {
+  get(key: "railPreferences"): RailPreferences | undefined;
   get(key: "user"): any;
   get(key: "page"): any;
   get(key: "runtime"): RuntimeContext;

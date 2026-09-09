@@ -14,3 +14,5 @@ export const Layout = {
   AppLaunchpadButton,
   AppLaunchpadProvider,
 };
+
+export { RailEditorButton } from "../RailEditor";

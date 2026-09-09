@@ -304,6 +304,8 @@ describe("@k2b/ui feedback runtime", () => {
     }
 
     wrapper?.dispatchEvent(new Event("pointerenter", { bubbles: true }));
+    // delay=0 opens synchronously, before the next timer or microtask.
+    expect(surface?.matches(":popover-open")).toBe(true);
     await settle();
     expect(surface?.matches(":popover-open")).toBe(true);
 
@@ -313,10 +315,17 @@ describe("@k2b/ui feedback runtime", () => {
 
     setDisabled(false);
     wrapper?.dispatchEvent(new Event("pointerenter", { bubbles: true }));
+    // delay=0 opens synchronously, before the next timer or microtask.
+    expect(surface?.matches(":popover-open")).toBe(true);
     await settle();
     expect(surface?.matches(":popover-open")).toBe(true);
 
     dom.document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    expect(surface?.matches(":popover-open")).toBe(false);
+    wrapper?.dispatchEvent(new Event("pointerleave"));
+    wrapper?.dispatchEvent(new FocusEvent("focusin", { bubbles: true }));
+    expect(surface?.matches(":popover-open")).toBe(true);
+    wrapper?.dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
     expect(surface?.matches(":popover-open")).toBe(false);
 
     dispose();

@@ -120,6 +120,51 @@ the current request identity.
 The live app registry supplies the navigation. Do not hardcode links to every
 other Cloud application.
 
+## Personalize the app bar
+
+The desktop app bar sorts ordinary apps alphabetically using the current UI
+language. An application's `nav.section` supplies the default: `primary` is
+shown, `more` stays in the launcher, and `hidden` is never offered. Users can
+open **Apps → Customize app bar** from any application, including the
+dashboard, to show or hide individual available apps. The dashboard also has a
+separate **Customize app bar** button next to **Edit dashboard**. Newly installed
+apps follow their declared defaults.
+
+Cloud surfaces can render `RailEditorButton` from `@k2b/cloud/ssr/islands`
+inside an island to open this same editor. It uses the current layout context
+and inherited UI locale.
+
+App bar shortcuts form a separate, ordered list above the ordinary apps, with
+a divider between the two groups. Users can pin an app or add a link with a
+title and icon, edit it, move it up or down, or remove it. Pinning an app removes
+its duplicate from the ordinary list. Links to individual pages can coexist
+with their application. Dashboard shortcuts remain independent.
+
+**Save** applies the changes across Cloud. Closing the dialog discards unsaved edits;
+**Reset app bar** prepares the default app selection and an empty shortcut list
+for saving. If another editor has saved in the meantime, the save is rejected
+so that those changes are not overwritten. Close and reopen to load them.
+
+App and shortcut hints open immediately to the right on hover or keyboard
+focus. The app list scrolls when space is limited, keeping the launcher and
+global controls reachable. On mobile, app bar shortcuts remain available in
+the app launcher.
+
+Core stores these preferences per user; the platform loads them before SSR
+without a process-wide preference cache. Applications do not need to fetch or
+persist navigation settings themselves. Apply the Core migration before
+starting applications built against this layout. Unavailable apps are omitted without
+removing their saved preferences. Showing or pinning an app does not grant
+access to its routes or resources.
+
+The self-service API is `GET /api/me/rail` and `PUT /api/me/rail`. The snapshot
+contains `revision`, `visibility` (app IDs mapped to booleans), and `shortcuts`.
+Writes must supply the revision read previously; a stale revision returns
+`409`. Core derives the user from authentication. Settings have a 16 KiB
+serialized page budget; links accept absolute paths and HTTP(S) URLs without
+embedded credentials. App shortcuts resolve metadata from the current,
+authorized registry.
+
 ## Render an admin page
 
 ```tsx

@@ -25,8 +25,8 @@ Buttons expose tooltip properties directly:
 | Property | Type | Default | Purpose |
 | --- | --- | --- | --- |
 | `tooltip` | `JSX.Element \| false` | none | Supplies the non-interactive hint. |
-| `tooltipPlacement` | `"top" \| "bottom"` | `"top"` | Requests the preferred vertical placement. |
-| `tooltipDelay` | `number` | `250` | Sets the open delay in milliseconds. |
+| `tooltipPlacement` | `"top" \| "bottom" \| "left" \| "right"` | `"top"` | Requests the preferred side. |
+| `tooltipDelay` | `number` | `250` | Sets the open delay in milliseconds; `0` opens immediately. |
 
 Use `Tooltip.Anchor` as an explicit wrapper for non-button content. It accepts
 `content`, `placement`, `delay`, `disabled`, and ordinary span attributes. Use
@@ -34,7 +34,7 @@ Use `Tooltip.Anchor` as an explicit wrapper for non-button content. It accepts
 shared `Button` components. Neither contract searches or rewrites descendant
 DOM.
 
-Placement is a preference. The surface flips vertically when the requested side does not fit and clamps horizontally to the viewport.
+Placement is a preference. The surface flips to the opposite side when the requested side does not fit and clamps to the viewport.
 
 ## Accessibility
 

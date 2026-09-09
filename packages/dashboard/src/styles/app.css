@@ -2,6 +2,7 @@
    layout primitives, etc.) come in via global.css. Apps must NEVER scan each
    other's source. */
 @import "tailwindcss/utilities.css" layer(utilities);
+@reference "tailwindcss/theme.css";
 @source "../**/*.{ts,tsx}";
 @custom-variant dark (&:where(.dark, .dark *));
 
@@ -164,5 +165,30 @@
 
   .dashboard-briefing-grid.has-context {
     grid-template-columns: minmax(0, 1.55fr) minmax(17rem, 0.85fr);
+  }
+}
+
+/* Keep editor spacing and responsive rows in the app-owned stylesheet. */
+.dashboard-editor {
+  padding-bottom: 1rem;
+}
+
+.dashboard-widget-setting {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas: "identity actions" "layout layout";
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem;
+}
+
+.dashboard-widget-setting__identity { grid-area: identity; }
+.dashboard-widget-setting__layout { grid-area: layout; min-width: 0; }
+.dashboard-widget-setting__actions { grid-area: actions; }
+
+@media (min-width: 40rem) {
+  .dashboard-widget-setting {
+    grid-template-columns: minmax(0, 1fr) 16rem auto;
+    grid-template-areas: "identity layout actions";
   }
 }

@@ -141,7 +141,7 @@ const TooltipDemo = () => (
     id="tooltip"
     chip={{ kind: "component", name: "Tooltip", from: "@k2b/ui" }}
     description="Buttons own their tooltip directly. Tooltip.Anchor is the explicit target for non-button content. Long content wraps, remeasures, and stays clamped inside the viewport."
-    code={`<Button variant="secondary" tooltip="Copy the public URL">
+    code={`<Button variant="secondary" tooltip="Copy the public URL" tooltipPlacement="right" tooltipDelay={0}>
   Share
 </Button>
 
@@ -153,7 +153,7 @@ const TooltipDemo = () => (
 </Tooltip.Anchor>`}
   >
     <div class="ui-tooltip-demo">
-      <Button variant="secondary" tooltip="Copy the public URL">
+      <Button variant="secondary" tooltip="Copy the public URL" tooltipPlacement="right" tooltipDelay={0}>
         Focus or hover
       </Button>
       <Tooltip.Anchor placement="bottom" content="A longer explanation wraps before its final viewport position is calculated.">

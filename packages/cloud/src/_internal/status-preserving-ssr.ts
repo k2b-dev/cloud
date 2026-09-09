@@ -2,8 +2,10 @@ import type { HtmlFn, RenderFn } from "@k2b/ssr";
 import { createSSRHandler } from "@k2b/ssr/hono";
 import type { Context, Env, MiddlewareHandler, TypedResponse } from "hono";
 import type { StatusCode } from "hono/utils/http-status";
+import type { RailPreferences } from "../contracts/rail-preferences";
+import type { User } from "../contracts/shared";
 
-type PageEnv<T extends object> = { Variables: { page: Partial<T> } };
+type PageEnv<T extends object> = { Variables: { page: Partial<T>; user?: User; railPreferences?: RailPreferences } };
 type SsrHandlerResult = RenderFn | Response | TypedResponse;
 type SsrHandler<E extends Env, T extends object> = (context: Context<E & PageEnv<T>>) => SsrHandlerResult | Promise<SsrHandlerResult>;
 
@@ -19,7 +21,7 @@ type SsrHandler<E extends Env, T extends object> = (context: Context<E & PageEnv
  */
 export const createStatusPreservingSsrHandler = <T extends object>(
   html: HtmlFn<T>,
-  finalizePage?: (context: Context<PageEnv<T>>) => void,
+  finalizePage?: (context: Context<PageEnv<T>>) => void | Promise<void>,
 ) => {
   const createHandler = createSSRHandler<T>(html);
 
@@ -30,7 +32,7 @@ export const createStatusPreservingSsrHandler = <T extends object>(
     return createHandler<E>(...middlewares, async (context) => {
       const result = await handler(context as Context<E & PageEnv<T>>);
       if (result instanceof Response) return result;
-      finalizePage?.(context as unknown as Context<PageEnv<T>>);
+      await finalizePage?.(context as unknown as Context<PageEnv<T>>);
       if (typeof result !== "function") return result;
 
       const status = context.newResponse(null).status;

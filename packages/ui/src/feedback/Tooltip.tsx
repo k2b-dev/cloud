@@ -53,7 +53,7 @@ function TooltipSurface(props: TooltipProps): JSX.Element {
   const open = () => {
     clearTimer();
     if (props.disabled || dismissedUntilLeave || !surface || !target || surface.matches(":popover-open")) return;
-    openTimer = setTimeout(() => {
+    const show = () => {
       openTimer = undefined;
       if (props.disabled || !surface?.isConnected || !target) return;
       try {
@@ -65,7 +65,10 @@ function TooltipSurface(props: TooltipProps): JSX.Element {
       document.addEventListener("keydown", dismissOnEscape);
       window.addEventListener("scroll", close, true);
       window.addEventListener("resize", close);
-    }, props.delay ?? 250);
+    };
+    const delay = props.delay ?? 250;
+    if (delay <= 0) show();
+    else openTimer = setTimeout(show, delay);
   };
 
   createEffect(() => {

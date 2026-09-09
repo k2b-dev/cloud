@@ -133,3 +133,21 @@ describe("positionTooltipSurface placement", () => {
     expect(clamped.top).toBe(232);
   });
 });
+
+test("places rail tooltips to the right, flips at the opposite edge and clamps vertically", () => {
+  expect(place([1000, 800], targetAt({ left: 4, width: 32, top: 100, height: 32 }), [200, 40], "right")).toEqual({
+    left: 42,
+    top: 96,
+    placement: "right",
+  });
+  expect(place([1000, 800], targetAt({ left: 960, width: 32, top: 0, height: 32 }), [200, 40], "right")).toEqual({
+    left: 754,
+    top: 8,
+    placement: "left",
+  });
+  expect(place([1000, 800], targetAt({ left: 4, width: 32, top: 770, height: 30 }), [200, 40], "left")).toEqual({
+    left: 42,
+    top: 752,
+    placement: "right",
+  });
+});

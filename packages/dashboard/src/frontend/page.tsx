@@ -36,7 +36,8 @@ import {
   normalizeDashboardSettings,
   resolveDashboardWidgetLayout,
 } from "../shared";
-import DashboardControls, { DashboardEditButton } from "./EditDashboard.island";
+import DashboardEditButton from "./DashboardEditButton.island";
+import DashboardControls from "./EditDashboard.island";
 import { type DashboardMessages, dashboardMessages } from "./messages";
 import {
   DASHBOARD_WIDGET_DEADLINE_MS,
