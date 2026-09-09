@@ -1,7 +1,7 @@
 import { timing } from "@k2b/stdlib";
 import { Button, Checkbox, IconButton, LocaleProvider, PanelDialog, PinInput, TextInput, useLocale } from "@k2b/ui";
 import type { AppVaultSession } from "@valentinkolb/cloud/browser/app-approval";
-import { createMemo, createSignal, onCleanup, Show } from "solid-js";
+import { createMemo, createSignal, onCleanup, onMount, Show } from "solid-js";
 import { openDialog } from "./dialog";
 import { authMessages } from "./i18n";
 import type { Preferences } from "./preferences";
@@ -98,6 +98,37 @@ export function Security(props: { vault: Vault; mode: "setup" | "unlock" | "mana
     setSelected(undefined);
   };
   const pinSetup = () => props.mode === "setup" && selected() === "pin";
+  onMount(() => {
+    if (props.mode !== "unlock") return;
+    let frame = 0;
+    const focusPin = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        if (
+          stopped ||
+          !pinEntry() ||
+          busy() ||
+          document.visibilityState !== "visible" ||
+          !pinControl?.getClientRects().length ||
+          pinControl.closest("dialog")?.open !== true
+        )
+          return;
+        // Reload/window activation may restore focus after the dialog's initial focus pass.
+        // Keep the user's current digit when the PIN already has focus.
+        const active = document.activeElement;
+        if (active && pinControl.contains(active)) return;
+        pinControl.querySelector<HTMLInputElement>("input")?.focus({ preventScroll: true });
+      });
+    };
+    focusPin();
+    window.addEventListener("focus", focusPin);
+    window.addEventListener("load", focusPin);
+    onCleanup(() => {
+      cancelAnimationFrame(frame);
+      window.removeEventListener("focus", focusPin);
+      window.removeEventListener("load", focusPin);
+    });
+  });
   return (
     <div classList={{ "auth-security--success": success() }}>
       <PanelDialog>

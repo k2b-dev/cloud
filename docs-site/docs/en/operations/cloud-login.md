@@ -14,6 +14,24 @@ Cloud Login is a standalone authenticator for one or more Cloud accounts. It con
 directly to each paired Cloud and uses a separate device key for each pairing.
 It does not require a central account or session server.
 
+The project deployment address is [cloud-login.pwa.k2b.dev](https://cloud-login.pwa.k2b.dev).
+For installation and everyday use, see [Cloud Login](/en/apps/cloud-login).
+You can also host it at your own stable HTTPS origin.
+
+## Run the container
+
+Cloud Login has its own image release, independent of Cloud application images.
+Use `ghcr.io/<repository-owner>/cloud-pwa-auth:pwa-auth-v<version>` after the
+release workflow succeeds, and pin its digest in your deployment. The image
+supports AMD64 and ARM64, listens on port 3000, and exposes `/health`.
+It runs without a database, volume, Cloud credentials or runtime dependencies.
+
+Put it behind HTTPS at the root of one dedicated, stable origin. Preserve its
+cache and content-type headers. The container supports a read-only filesystem
+and runs as an unprivileged user. Publishing the image does not deploy it.
+The repository's `pwas/pwa-auth/RELEASING.md` describes release verification,
+version tags and rollout precautions.
+
 ## Build and configure
 
 Run `bun run --cwd pwas/pwa-auth build` in the monorepo and serve the resulting

@@ -36,6 +36,21 @@ async function _run(page) {
     await p.reload();
     await p.getByRole("dialog").waitFor();
     await p.waitForFunction(() => document.activeElement === document.querySelector("dialog .k2b-pin-input input"));
+    await p.evaluate(() => {
+      document.querySelector("dialog").focus();
+      window.dispatchEvent(new Event("focus"));
+    });
+    await p.waitForFunction(() => document.activeElement === document.querySelector("dialog .k2b-pin-input input"));
+    await p.locator("dialog .k2b-pin-input input").nth(2).focus();
+    await p.evaluate(() => window.dispatchEvent(new Event("focus")));
+    await p.waitForTimeout(50);
+    if (
+      !(await p
+        .locator("dialog .k2b-pin-input input")
+        .nth(2)
+        .evaluate((el) => el === document.activeElement))
+    )
+      throw new Error("Activation reset the current PIN digit");
     await button("Close").click();
     await ready();
     await p.waitForTimeout(250);

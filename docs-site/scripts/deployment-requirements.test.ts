@@ -21,8 +21,13 @@ describe("deployment requirements coverage", () => {
     const pages: string[] = [];
     for await (const filename of new Bun.Glob("*.md").scan(catalog.pathname)) {
       if (filename === "index.md") continue;
-      pages.push(filename.replace(/\.md$/, ""));
       const source = await Bun.file(new URL(filename, catalog)).text();
+      if (filename === "cloud-login.md") {
+        expect(source).toContain("section: Companion apps");
+        expect(source).toContain("(/en/docs/operations/cloud-login)");
+        continue;
+      }
+      pages.push(filename.replace(/\.md$/, ""));
       expect(source).toContain("(/en/docs/operations/deployment-requirements)");
     }
     expect(pages.sort()).toEqual(appIds.filter((id) => id !== "gateway").sort());

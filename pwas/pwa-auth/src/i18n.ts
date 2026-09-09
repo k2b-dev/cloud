@@ -6,6 +6,8 @@ export const authMessages = i18n.define({
     en: {
       pinRetry: "Try your PIN again in",
       security: "App security",
+      securitySection: "Security",
+      installationSection: "Installation",
       protectApp: "Protect Cloud Login",
       unlockApp: "Unlock",
       unlocked: "Unlocked",
@@ -160,6 +162,8 @@ export const authMessages = i18n.define({
     de: {
       pinRetry: "PIN erneut versuchen in",
       security: "App-Sicherheit",
+      securitySection: "Sicherheit",
+      installationSection: "Installation",
       protectApp: "Cloud Login schützen",
       unlockApp: "Entsperren",
       unlocked: "Entsperrt",

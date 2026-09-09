@@ -332,6 +332,7 @@ export default function HomePage(props: HomePageProps) {
         <div class="cloud-shell cloud-home-footer-inner">
           <span>Cloud</span>
           <nav aria-label="Footer navigation">
+            <a href="https://cloud-login.pwa.k2b.dev">Cloud Login</a>
             <a href="https://github.com/k2b-dev/cloud">Source</a>
             <a href="https://github.com/k2b-dev/cloud/blob/main/LICENSE">AGPL-3.0</a>
             <a href="https://impressum.k2b.dev">Imprint</a>

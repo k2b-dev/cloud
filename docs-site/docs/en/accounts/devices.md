@@ -15,6 +15,9 @@ Sign in to Cloud using a working login method before pairing. If **Pair a device
 is unavailable, ask your administrator whether app sign-in is enabled for your
 installation.
 
+[Cloud Login](/en/apps/cloud-login) can manage accounts from several Clouds in
+one app. Use the authenticator address configured by your administrator.
+
 ## Pair a device
 
 Choose **Install app** under **My account → Security** to open

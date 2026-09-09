@@ -1,14 +1,14 @@
 ---
-title: Built-in applications
+title: Cloud applications
 navTitle: Overview
 section: Start
 order: 10
 description: See what Cloud applications provide and where each application's responsibility begins.
 tags: [apps, products]
-updated: 2026-09-07
+updated: 2026-09-09
 ---
 
-# Built-in applications
+# Cloud applications
 
 Cloud ships focused applications on the same platform contract available to
 standalone services. Each application owns its product behavior and data.
@@ -62,6 +62,14 @@ a running application for detailed usage instructions.
 | [Pulse](/en/apps/pulse) | Metrics, events, states, and realtime dashboards |
 
 The [UI catalog](/en/ui) in Fibel documents the reusable component package.
+
+## Companion apps
+
+These apps run separately and connect to your Cloud installations.
+
+| Application | Use it for |
+| --- | --- |
+| [Cloud Login](/en/apps/cloud-login) | Approving sign-ins to multiple Cloud accounts from one installable app |
 
 ## Know which reference to use
 

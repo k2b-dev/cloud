@@ -19,7 +19,8 @@ Local and FreeIPA accounts can use it when their
 ## Before you start
 
 You need administrator access and the HTTPS address of the authenticator your
-organization uses, for example `https://auth.example.org`. It must be reachable
+organization uses. For the project-hosted [Cloud Login](/en/apps/cloud-login),
+use `https://cloud-login.pwa.k2b.dev`. Self-hosted apps can use another HTTPS origin. It must be reachable
 from users' browsers and devices. If you host it yourself, follow
 [Run Cloud Login](/en/docs/operations/cloud-login).
 

@@ -33,7 +33,7 @@ export default defineFibel({
     {
       id: "apps",
       label: "Apps",
-      description: "Built-in Cloud applications, their product boundaries, and their Cloud integration.",
+      description: "Cloud applications and companion apps, their product boundaries, and their integration.",
       content: "apps-content",
       path: "/apps",
     },

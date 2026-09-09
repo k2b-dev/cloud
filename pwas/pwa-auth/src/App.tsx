@@ -105,48 +105,76 @@ export function App(props: { preferences: Preferences }) {
     });
   });
   const items = createMemo<DropdownItem[]>(() => [
+    {
+      items: [
+        ...(vault.status() === "open"
+          ? [
+              {
+                label: t().manageAccounts,
+                icon: "ti ti-cloud",
+                action: () => {
+                  void openManageAccounts(auth, props.preferences).then((add) => {
+                    if (add) void showPairing();
+                  });
+                },
+              },
+            ]
+          : []),
+        {
+          label: t().settings,
+          icon: "ti ti-adjustments",
+          action: () => {
+            void openSettings(props.preferences);
+          },
+        },
+      ],
+    },
     ...(vault.status() === "open"
       ? [
           {
-            label: t().manageAccounts,
-            action: () => {
-              void openManageAccounts(auth, props.preferences).then((add) => {
-                if (add) void showPairing();
-              });
-            },
+            sectionLabel: t().securitySection,
+            items: [
+              {
+                label: t().security,
+                icon: "ti ti-shield-lock",
+                action: () => {
+                  void openSecurity(vault, props.preferences, "manage");
+                },
+              },
+              { label: t().lockApp, icon: "ti ti-lock", action: () => vault.lock() },
+            ],
           },
-          {
-            label: t().security,
-            action: () => {
-              void openSecurity(vault, props.preferences, "manage");
-            },
-          },
-          { label: t().lockApp, action: () => vault.lock() },
         ]
       : []),
     ...(["locked", "legacy", "error"].includes(vault.status())
       ? [
           {
-            label: t().resetApp,
-            action: () => {
-              void openSecurity(vault, props.preferences, "reset");
-            },
+            sectionLabel: t().securitySection,
+            items: [
+              {
+                label: t().resetApp,
+                icon: "ti ti-restore",
+                action: () => {
+                  void openSecurity(vault, props.preferences, "reset");
+                },
+              },
+            ],
           },
         ]
       : []),
-    {
-      label: t().settings,
-      action: () => {
-        void openSettings(props.preferences);
-      },
-    },
     ...(!installation.installed()
       ? [
           {
-            label: t().install,
-            action: () => {
-              void showInstall();
-            },
+            sectionLabel: t().installationSection,
+            items: [
+              {
+                label: t().install,
+                icon: "ti ti-download",
+                action: () => {
+                  void showInstall();
+                },
+              },
+            ],
           },
         ]
       : []),

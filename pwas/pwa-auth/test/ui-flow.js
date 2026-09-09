@@ -90,6 +90,9 @@ async function _run(page) {
       await trigger.click();
       const triggerBox = await trigger.boundingBox();
       const menuBox = await p.getByRole("menu").boundingBox();
+      if ((await p.locator(".k2b-dropdown__section").count()) !== 3) throw new Error("Missing menu sections");
+      if ((await p.getByRole("menu").locator("i.ti").count()) < 5) throw new Error("Missing menu icons");
+      await p.screenshot({ path: `output/playwright/pwa-menu-${locale}.png` });
       if (Math.abs(triggerBox.x + triggerBox.width - menuBox.x - menuBox.width) > 1) throw new Error("Menu is not end aligned");
       await p.keyboard.press("Escape");
       await trigger.click();
