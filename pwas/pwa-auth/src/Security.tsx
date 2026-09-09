@@ -1,6 +1,6 @@
 import { timing } from "@k2b/stdlib";
 import { Button, Checkbox, IconButton, LocaleProvider, PanelDialog, PinInput, TextInput, useLocale } from "@k2b/ui";
-import { AppVaultError, type AppVaultSession } from "@valentinkolb/cloud/browser/app-approval";
+import { type AppVaultSession } from "@valentinkolb/cloud/browser/app-approval";
 import { createMemo, createSignal, onCleanup, onMount, Show } from "solid-js";
 import { openDialog } from "./dialog";
 import { authMessages } from "./i18n";
@@ -15,9 +15,7 @@ export function Security(props: { vault: Vault; mode: "setup" | "unlock" | "mana
   const [success, setSuccess] = createSignal(false);
   const [busy, setBusy] = createSignal(false);
   const [error, setError] = createSignal("");
-  const [selected, setSelected] = createSignal<"pin" | "passkey" | "remove-pin" | "remove-passkey">();
   const [verified, setVerified] = createSignal(false);
-  const [passkeySelected, setPasskeySelected] = createSignal(false);
   const [confirmed, setConfirmed] = createSignal(false);
   let proof: AppVaultSession | undefined;
   let pinControl: HTMLDivElement | undefined;
@@ -29,10 +27,8 @@ export function Security(props: { vault: Vault; mode: "setup" | "unlock" | "mana
     setPin("");
     setRepeat("");
   });
-  const has = (type: "pin" | "passkey") => props.vault.header()?.config.methods.some((m) => m.type === type) ?? false;
-  const authenticate = () => props.mode === "unlock" || (props.mode === "manage" && !!selected() && !verified());
-  const passkeyEntry = () => authenticate() && has("passkey") && (!has("pin") || passkeySelected());
-  const pinEntry = () => (authenticate() ? has("pin") && !passkeyEntry() : selected() === "pin");
+  const authenticate = () => props.mode === "unlock" || (props.mode === "manage" && !verified());
+  const pinEntry = () => props.mode !== "reset";
   const valid = () => /^[0-9]{6}$/.test(pin()) && (authenticate() || pin() === repeat());
   const run = async (operation: () => Promise<void>) => {
     if (busy()) return;
@@ -40,21 +36,12 @@ export function Security(props: { vault: Vault; mode: "setup" | "unlock" | "mana
     setError("");
     try {
       await operation();
-    } catch (cause) {
+    } catch {
       if (!stopped) {
+        proof?.lock();
+        proof = undefined;
+        setError(authenticate() ? t().pinUnlockFailed : t().securityFailed);
         setVerified(false);
-        if (props.mode === "setup" && selected() === "passkey") setSelected(undefined);
-        setError(
-          cause instanceof AppVaultError && cause.code === "UNSUPPORTED"
-            ? t().passkeyUnsupported
-            : cause instanceof DOMException && cause.name === "NotAllowedError"
-              ? t().passkeyCancelled
-              : props.mode === "unlock"
-                ? pinEntry()
-                  ? t().pinUnlockFailed
-                  : t().passkeyUnlockFailed
-                : t().securityFailed,
-        );
       }
     } finally {
       const hadPinFocus = pinControl?.contains(document.activeElement);
@@ -67,25 +54,23 @@ export function Security(props: { vault: Vault; mode: "setup" | "unlock" | "mana
     }
   };
   const perform = async () => {
-    const action = selected();
-    if (!action) return;
-    if (props.mode === "setup" && (action === "pin" || action === "passkey")) await props.vault.setup(action, pin());
+    if (props.mode === "setup") await props.vault.setup(pin());
     else if (proof) {
       const value = proof;
       proof = undefined;
-      await props.vault.change(value, action, pin());
+      await props.vault.change(value, pin());
     } else return;
     if (!stopped) props.close(true);
   };
-  const unlock = async (type: "pin" | "passkey") => {
+  const unlock = async () => {
     if (props.mode === "unlock") {
-      await props.vault.unlock(type, pin());
+      await props.vault.unlock(pin());
       if (stopped) return;
       setSuccess(true);
       await timing.sleep(600);
       if (!stopped && props.vault.status() === "open") props.close(true);
     } else {
-      proof = await props.vault.verify(type, pin());
+      proof = await props.vault.verify(pin());
       if (stopped) {
         proof.lock();
         return;
@@ -94,23 +79,10 @@ export function Security(props: { vault: Vault; mode: "setup" | "unlock" | "mana
     }
   };
   const submitPin = () => {
-    if (!busy() && valid() && (!authenticate() || props.vault.retryAfter() === 0)) void run(authenticate() ? () => unlock("pin") : perform);
+    if (!busy() && valid() && (!authenticate() || props.vault.retryAfter() === 0)) void run(authenticate() ? unlock : perform);
   };
-  const choose = (action: "pin" | "passkey" | "remove-pin" | "remove-passkey") => {
-    if (busy()) return;
-    setSelected(action);
-    setError("");
-    if (props.mode === "setup" && action === "passkey") void run(perform);
-  };
-  const backToMethods = () => {
-    setPin("");
-    setRepeat("");
-    setError("");
-    setSelected(undefined);
-  };
-  const pinSetup = () => props.mode === "setup" && selected() === "pin";
   onMount(() => {
-    if (props.mode !== "unlock") return;
+    if (props.mode === "reset") return;
     let frame = 0;
     const focusPin = () => {
       cancelAnimationFrame(frame);
@@ -159,14 +131,12 @@ export function Security(props: { vault: Vault; mode: "setup" | "unlock" | "mana
             success()
               ? t().unlocked
               : props.mode === "setup"
-                ? pinSetup()
-                  ? t().pinSetupTitle
-                  : t().protectApp
+                ? t().pinSetupTitle
                 : props.mode === "unlock"
                   ? t().unlockApp
                   : props.mode === "reset"
                     ? t().resetApp
-                    : t().security
+                    : t().changePin
           }
         />
         <PanelDialog.Body>
@@ -183,50 +153,12 @@ export function Security(props: { vault: Vault; mode: "setup" | "unlock" | "mana
                 <p>
                   {props.mode === "reset" ? t().resetWarning : t().securityScope}
                   <Show when={props.mode === "manage" && authenticate()}> {t().verifyFirst}</Show>
-                  <Show when={props.mode === "setup" && !selected() && props.vault.capability() !== "unsupported"}>
-                    {" "}
-                    {props.vault.capability() === "supported" ? t().passkeyHelp : t().passkeyCheck}
-                  </Show>
                 </p>
               </Show>
               <Show when={props.mode === "reset"}>
                 <Checkbox label={t().resetConfirm} value={confirmed} onValueChange={setConfirmed} />
               </Show>
-              <Show when={props.mode === "setup" && !selected() && props.vault.capability() !== "unsupported"}>
-                <p class="auth-security-alternative">
-                  {t().pinAlternativeBefore}{" "}
-                  <Button variant="text" aria-label={t().usePin} disabled={busy()} onClick={() => choose("pin")}>
-                    {t().appPin}
-                  </Button>
-                  {t().pinAlternativeAfter}
-                </p>
-              </Show>
-              <Show when={props.mode === "manage" && !selected()}>
-                <Show when={props.vault.capability() !== "unsupported"}>
-                  <Button variant="secondary" disabled={busy()} onClick={() => choose("passkey")}>
-                    {t().usePasskey}
-                  </Button>
-                  <p class="auth-flow-note">{props.vault.capability() === "supported" ? t().passkeyHelp : t().passkeyCheck}</p>
-                </Show>
-                <Button variant="secondary" disabled={busy()} onClick={() => choose("pin")}>
-                  {has("pin") ? t().changePin : t().usePin}
-                </Button>
-                <Show when={props.mode === "manage" && has("pin") && has("passkey")}>
-                  <Button variant="ghost" onClick={() => choose("remove-pin")}>
-                    {t().removePin}
-                  </Button>
-                  <Button variant="ghost" onClick={() => choose("remove-passkey")}>
-                    {t().removePasskey}
-                  </Button>
-                </Show>
-              </Show>
-              <Show when={authenticate()}>
-                <Show when={passkeyEntry()}>
-                  <Button disabled={busy()} onClick={() => void run(() => unlock("passkey"))}>
-                    {t().unlockPasskey}
-                  </Button>
-                </Show>
-              </Show>
+
               <Show when={pinEntry()}>
                 <Show
                   when={authenticate()}
@@ -279,19 +211,7 @@ export function Security(props: { vault: Vault; mode: "setup" | "unlock" | "mana
                   <p>{t().pinWarning}</p>
                 </Show>
               </Show>
-              <Show when={authenticate() && has("pin") && has("passkey")}>
-                <Button
-                  variant="ghost"
-                  disabled={busy()}
-                  onClick={() => {
-                    setPin("");
-                    setError("");
-                    setPasskeySelected(!passkeySelected());
-                  }}
-                >
-                  {passkeyEntry() ? t().switchToPin : t().switchToPasskey}
-                </Button>
-              </Show>
+
               <Show when={error() || props.vault.retryAfter() > 0}>
                 <div class="auth-security-feedback">
                   <Show when={error()}>
@@ -313,24 +233,16 @@ export function Security(props: { vault: Vault; mode: "setup" | "unlock" | "mana
         <Show when={props.mode !== "unlock"}>
           <PanelDialog.Footer>
             <div class="auth-dialog-actions">
-              <Button variant="ghost" disabled={busy()} onClick={() => (pinSetup() ? backToMethods() : props.close())}>
-                {pinSetup() ? t().back : t().close}
+              <Button variant="ghost" disabled={busy()} onClick={() => props.close()}>
+                {t().close}
               </Button>
-              <Show when={props.mode === "setup" && (!selected() || selected() === "passkey")}>
-                <Button loading={busy()} onClick={() => choose(props.vault.capability() === "unsupported" ? "pin" : "passkey")}>
-                  {props.vault.capability() === "unsupported" ? t().usePin : t().setupPasskey}
-                </Button>
-              </Show>
+
               <Show when={pinEntry() && !authenticate()}>
                 <Button disabled={busy() || !valid()} onClick={submitPin}>
                   {t().saveSecurity}
                 </Button>
               </Show>
-              <Show when={verified() && selected() !== "pin"}>
-                <Button disabled={busy()} onClick={() => void run(perform)}>
-                  {t().saveSecurity}
-                </Button>
-              </Show>
+
               <Show when={props.mode === "reset"}>
                 <Button
                   disabled={busy() || !confirmed()}
@@ -364,8 +276,6 @@ export const openSecurity = (vault: Vault, preferences: Preferences, mode: "setu
       initialFocus:
         mode === "unlock"
           ? (dialog) => dialog.querySelector<HTMLElement>(".auth-flow input:not([disabled]), .auth-flow button:not([disabled])")
-          : mode === "setup"
-            ? (dialog) => dialog.querySelector<HTMLElement>("footer button:last-child")
-            : "first-input",
+          : "first-input",
     },
   );

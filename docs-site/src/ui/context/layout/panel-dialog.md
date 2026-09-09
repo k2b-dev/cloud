@@ -51,6 +51,10 @@ be direct or an accessor; the application updates it through `onValueChange`.
 
 ## Close ownership
 
+Without a subtitle, the header uses a compact vertical inset and centers the
+title beside its icon and actions. Headers with a subtitle keep their two-line,
+top-aligned layout. Action touch targets keep their size.
+
 Pass the dialog's `close` callback to `PanelDialog.Header`. `closeDisabled`
 temporarily disables that control, and `closeLabel` overrides its accessible
 name.

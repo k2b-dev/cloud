@@ -18,7 +18,6 @@ async function _run(page) {
     await p.waitForFunction(() => navigator.serviceWorker.controller !== null);
     await p.waitForFunction(() => !history.state?.cloudLoginDialog);
     await p.getByRole("button", { name: "Add Cloud", exact: true }).click();
-    await p.getByRole("button", { name: "Set a six-digit app PIN", exact: true }).click();
     await fillAppPin(p, "012345");
     await p.getByLabel("Repeat PIN", { exact: true }).fill("012345");
     await p.getByRole("button", { name: "Save protection", exact: true }).click();

@@ -22,9 +22,8 @@ checks PWA types, runs PWA and vault tests, and builds the production shell.
 The HTTP check verifies the manifest, icons, screenshots, every precached asset,
 cache headers, HEAD support and rejection of non-public paths.
 
-Before broad rollout, verify installation, camera access, passkey-provider PRF
-support, PIN recovery, two-Cloud pairing and approval on the browsers/devices
-being supported. Desktop tests cannot certify Face ID or Android hardware.
+Before broad rollout, verify installation, camera access, PIN recovery, two-Cloud pairing and approval on the browsers/devices
+being supported. Desktop tests cannot certify mobile hardware behavior.
 The browser scripts in `test/` cover these flows with synthetic credentials;
 `test/offline-flow.js` verifies offline startup and waiting updates against its
 isolated fixture. Do not deploy test servers.
@@ -70,7 +69,7 @@ activating an update. A reload alone does not force an update.
 Configure the exact HTTPS origin in each Cloud's app sign-in settings; see
 [Run Cloud Login](../../docs-site/docs/en/operations/cloud-login.md). Clouds may
 have different HTTPS origins and require no PWA-side issuer list. Keep the PWA
-origin stable: local vault storage and passkeys belong to it. The built image
+origin stable: local vault storage belongs to it. The built image
 contains no fixed hostname and can be promoted without rebuilding.
 
 Retain the prior image digest for operational rollback. Check storage-format

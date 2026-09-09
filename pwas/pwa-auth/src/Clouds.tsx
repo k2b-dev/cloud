@@ -215,7 +215,7 @@ export function Clouds(props: { auth: Authenticator; preferences: Preferences })
                 </span>
                 <div class="auth-cloud-heading">
                   <h2>{binding.label}</h2>
-                  <p class="auth-issuer">{binding.issuer}</p>
+                  <p class="auth-issuer">{new URL(binding.issuer).host}</p>
                 </div>
               </header>
               <Show when={state()?.error}>{(error) => <p role="status">{t()[error()]}</p>}</Show>
@@ -330,7 +330,7 @@ function ManageAccounts(props: { auth: Authenticator; preferences: Preferences; 
               <div class="auth-account-row">
                 <div class="auth-account-copy">
                   <strong>{binding.label}</strong>
-                  <p class="auth-issuer">{binding.issuer}</p>
+                  <p class="auth-issuer">{new URL(binding.issuer).host}</p>
                 </div>
                 <IconButton label={`${t().editCloudLabel}: ${binding.label}`} variant="ghost" onClick={() => void edit(binding, false)}>
                   <i class="ti ti-pencil" aria-hidden="true" />

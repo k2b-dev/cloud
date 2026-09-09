@@ -1,4 +1,4 @@
-async function _run(page, protection = "pin") {
+async function _run(page) {
   const fillAppPin = async (target, value) => {
     await target.waitForFunction(() => !document.querySelector("dialog input:disabled, dialog input[readonly]"));
     const digits = target.getByRole("group", { name: "App PIN", exact: true }).locator("input");
@@ -12,23 +12,6 @@ async function _run(page, protection = "pin") {
     .browser()
     .newContext({ locale: "en", viewport: { width: 390, height: 844 } });
   const p = await context.newPage();
-  const attachAuthenticator = async (target) => {
-    const cdp = await context.newCDPSession(target);
-    await cdp.send("WebAuthn.enable");
-    await cdp.send("WebAuthn.addVirtualAuthenticator", {
-      options: {
-        protocol: "ctap2",
-        ctap2Version: "ctap2_1",
-        transport: "internal",
-        hasResidentKey: true,
-        hasUserVerification: true,
-        isUserVerified: true,
-        automaticPresenceSimulation: true,
-        hasPrf: true,
-      },
-    });
-  };
-  if (protection !== "pin") await attachAuthenticator(p);
   const unlock = async (target, dialog = false) => {
     if (!dialog) {
       await target.getByRole("button", { name: "Unlock", exact: true }).waitFor();
@@ -39,10 +22,7 @@ async function _run(page, protection = "pin") {
       }
       if (!(await target.getByRole("dialog").count())) await target.getByRole("button", { name: "Unlock", exact: true }).click();
     }
-    if (protection === "passkey") await target.getByRole("button", { name: "Unlock with passkey", exact: true }).click();
-    else {
-      await fillAppPin(target, "012345");
-    }
+    await fillAppPin(target, "012345");
     if (!dialog) await target.waitForFunction(() => !history.state?.cloudLoginDialog);
   };
   const events = [];
@@ -77,13 +57,9 @@ async function _run(page, protection = "pin") {
     const first = await post(a, "pair");
     await p.goto(first.link);
     if (p.url().includes("#")) throw new Error("Pairing fragment retained");
-    if (protection !== "pin") await p.getByRole("button", { name: "Set up passkey", exact: true }).click();
-    else {
-      await p.getByRole("button", { name: "Set a six-digit app PIN", exact: true }).click();
-      await fillAppPin(p, "012345");
-      await p.getByLabel("Repeat PIN", { exact: true }).fill("012345");
-      await p.getByRole("button", { name: "Save protection", exact: true }).click();
-    }
+    await fillAppPin(p, "012345");
+    await p.getByLabel("Repeat PIN", { exact: true }).fill("012345");
+    await p.getByRole("button", { name: "Save protection", exact: true }).click();
     await p.getByRole("heading", { name: "Add Cloud", exact: true }).waitFor();
     step = "first-fill";
     await p.getByRole("dialog").locator("input").nth(0).fill("Personal Cloud", { timeout: 5000 });
@@ -102,16 +78,6 @@ async function _run(page, protection = "pin") {
     await post(a, "confirm", { pairingId: first.pairingId, comparison: code });
     await p.getByRole("button", { name: "Both codes match." }).click({ timeout: 15000 });
     await p.getByRole("heading", { name: "Personal Cloud", exact: true }).waitFor();
-    if (protection === "both") {
-      await p.getByRole("button", { name: "Menu", exact: true }).click();
-      await p.getByRole("menuitem", { name: "App security", exact: true }).click();
-      await p.getByRole("button", { name: "Set a six-digit app PIN", exact: true }).click();
-      await p.getByRole("button", { name: "Unlock with passkey", exact: true }).click();
-      await fillAppPin(p, "012345");
-      await p.getByLabel("Repeat PIN", { exact: true }).fill("012345");
-      await p.getByRole("button", { name: "Save protection", exact: true }).click();
-      await p.waitForFunction(() => !history.state?.cloudLoginDialog);
-    }
     step = "second-pair";
     const second = await post(b, "pair");
     await p.getByRole("button", { name: "Menu", exact: true }).click();
@@ -187,8 +153,7 @@ async function _run(page, protection = "pin") {
     await p.getByRole("button", { name: "Approve sign-in", exact: true }).click();
     await p.getByRole("alert").waitFor();
     await p.getByRole("button", { name: "Close", exact: true }).click();
-    // CDP does not export a virtual authenticator's PRF secret. Test PRF recovery in the same authenticator; PIN/both also exercise a second tab.
-    const other = protection === "passkey" ? p : await context.newPage();
+    const other = await context.newPage();
     await other.goto("http://localhost:4178/");
     await unlock(other);
     await other.locator(".auth-comparison").filter({ hasText: lost.comparison }).waitFor();
@@ -235,7 +200,6 @@ async function _run(page, protection = "pin") {
     await p.screenshot({ path: "output/playwright/pwa-clouds.png", fullPage: true });
     if (events.length) throw new Error(events.join("\n"));
     return {
-      protection,
       pairedClouds: 2,
       copyPaste: true,
       sameDeviceFragment: true,
@@ -244,8 +208,8 @@ async function _run(page, protection = "pin") {
       keysNonExtractable: true,
       approvalIsolated: true,
       explicitDenial: true,
-      lostResponseAcrossTabs: protection !== "passkey",
-      lostResponseAfterReload: protection === "passkey",
+      lostResponseAcrossTabs: true,
+      lostResponseAfterReload: false,
       independentFailure: true,
       foregroundOnly: true,
       revocation: true,

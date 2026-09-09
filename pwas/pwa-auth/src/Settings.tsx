@@ -40,11 +40,11 @@ export function Settings(props: { preferences: Preferences; close: () => void })
               ]}
             />
           </section>
-          <p class="auth-quiet">Version {__PWA_VERSION__}</p>
         </div>
       </PanelDialog.Body>
       <PanelDialog.Footer>
-        <div class="auth-dialog-actions auth-dialog-actions--end">
+        <div class="auth-dialog-actions">
+          <small class="auth-settings-version">Version {__PWA_VERSION__}</small>
           <Button onClick={props.close}>{t().done}</Button>
         </div>
       </PanelDialog.Footer>

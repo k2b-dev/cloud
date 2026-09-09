@@ -2496,6 +2496,11 @@
   padding: 0 1rem;
 }
 
+.k2b-ui .k2b-panel-dialog__header[data-has-subtitle="false"] {
+  padding-block: 0.75rem;
+  align-items: center;
+}
+
 .k2b-ui .k2b-panel-dialog__header > i {
   color: var(--k2b-text-muted);
   font-size: 1rem;
@@ -3490,6 +3495,51 @@
   font-weight: 500;
   letter-spacing: 0.06em;
   text-transform: uppercase;
+}
+
+/* Opt-in touch menus leave the compact default and shared ContextMenu rows unchanged. */
+.k2b-ui .k2b-dropdown__menu[data-variant="touch"] {
+  width: var(--k2b-dropdown-width, 18rem);
+  max-height: min(32rem, 80dvh);
+  padding: 0.5rem;
+  gap: 0.25rem;
+}
+
+.k2b-ui .k2b-dropdown__menu[data-variant="touch"] .k2b-dropdown__item {
+  min-height: 3.25rem;
+  padding: 0.875rem 1rem;
+  gap: 0.875rem;
+  font-size: 1rem;
+  line-height: 1.375rem;
+}
+
+.k2b-ui .k2b-dropdown__menu[data-variant="touch"] .k2b-dropdown__item > i {
+  font-size: 1.25rem;
+}
+
+.k2b-ui .k2b-dropdown__menu[data-variant="touch"] .k2b-dropdown__copy > small {
+  font-size: 0.8125rem;
+  line-height: 1.125rem;
+}
+
+.k2b-ui .k2b-dropdown__menu[data-variant="touch"] .k2b-dropdown__image {
+  width: 1.5rem;
+  height: 1.5rem;
+}
+
+.k2b-ui .k2b-dropdown__menu[data-variant="touch"] .k2b-dropdown__checkbox {
+  width: 1.25rem;
+  height: 1.25rem;
+  font-size: 0.875rem;
+}
+
+.k2b-ui .k2b-dropdown__menu[data-variant="touch"] .k2b-dropdown__section {
+  gap: 0.25rem;
+}
+
+.k2b-ui .k2b-dropdown__menu[data-variant="touch"] .k2b-dropdown__label {
+  padding: 0.75rem 1rem 0.375rem;
+  font-size: 0.75rem;
 }
 
 /* Filter triggers are field controls: they use the same height, radius, and
