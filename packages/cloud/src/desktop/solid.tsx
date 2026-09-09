@@ -1,4 +1,4 @@
-import { deserialize, serialize } from "seroval";
+import { deserialize as deserializeProps, serialize as serializeProps } from "seroval";
 import type { Component, JSX, ParentProps } from "solid-js";
 import { children, createContext, createEffect, createMemo, createSignal, For, onCleanup, onMount, Show, useContext } from "solid-js";
 import { Dynamic, Portal } from "solid-js/web";
@@ -47,7 +47,7 @@ export const defineDesktopWindows = <Definitions extends Record<string, DesktopW
       ({
         kind: desktopWindowDescriptorKind,
         name,
-        props: serialize(props ?? {}),
+        props: serializeProps(props ?? {}),
       }) satisfies DesktopWindowDescriptor as unknown as JSX.Element;
   }
 
@@ -73,7 +73,7 @@ export function DesktopWindowHost<Definitions extends Record<string, DesktopWind
   const windowProps = createMemo(() => {
     const current = descriptor();
     if (!current) return {};
-    return deserialize<Record<string, unknown>>(current.props);
+    return deserializeProps<Record<string, unknown>>(current.props);
   });
 
   return createMemo(() => {

@@ -1,7 +1,7 @@
 import { beforeAll, describe, expect } from "bun:test";
-import { ok } from "@k2b/stdlib";
 import type { User } from "@k2b/cloud/contracts";
 import type { AuthContext } from "@k2b/cloud/server";
+import { ok } from "@k2b/stdlib";
 import { sql } from "bun";
 import { Hono, type MiddlewareHandler } from "hono";
 import type { DslQueryPreviewResponse } from "../contracts";
@@ -265,8 +265,9 @@ describe("Grids App Form runtime", () => {
         WHERE from_record_id = ${selectedId}::uuid AND from_field_id = ${relationFieldId}::uuid`,
       ).toEqual([{ targetId: recordId }]);
 
-      const [authUser] = await sql<Array<{ id: string }>>`SELECT id::text FROM auth.users ORDER BY id LIMIT 1`;
-      if (!authUser) throw new Error("CustomApp integration tests require a local auth user");
+      const authUser = userFor(testUuid());
+      await sql`INSERT INTO auth.users (id, uid, provider, profile, display_name, given_name, sn)
+        VALUES (${authUser.id}::uuid, ${authUser.uid}, 'local', 'user', ${authUser.displayName}, ${authUser.givenname}, ${authUser.sn})`;
       const authenticatedApi = new Hono<AuthContext>().route(
         "/apps",
         createCustomAppsApi({
@@ -379,8 +380,9 @@ describe("Grids App Form runtime", () => {
       const appPublicId = testShortId("A");
       const launcherPublicId = testShortId("L");
       const workflowPublicId = testShortId("W");
-      const [authUser] = await sql<Array<{ id: string }>>`SELECT id::text FROM auth.users ORDER BY id LIMIT 1`;
-      if (!authUser) throw new Error("Grids App API integration test needs one auth user");
+      const authUser = userFor(testUuid());
+      await sql`INSERT INTO auth.users (id, uid, provider, profile, display_name, given_name, sn)
+        VALUES (${authUser.id}::uuid, ${authUser.uid}, 'local', 'user', ${authUser.displayName}, ${authUser.givenname}, ${authUser.sn})`;
       const accessIds: string[] = [];
       let userBaseAccessId: string | null = null;
       try {

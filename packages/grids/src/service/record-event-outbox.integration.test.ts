@@ -1,8 +1,9 @@
-import { beforeAll, describe, expect } from "bun:test";
+import { beforeAll, describe, expect, test } from "bun:test";
 import { toPgUuidArray } from "@k2b/cloud/services";
 import { sql } from "bun";
 import { postgresTest, testShortId as shortId, testUuid as uuid } from "../integration-test-utils";
 import { migrate } from "../migrate";
+import { startGridsTestSync } from "../sync-test-utils";
 import type { SqlClient } from "./audit";
 import {
   captureRecordEventSnapshot,
@@ -347,44 +348,50 @@ describe("record event outbox integration", () => {
     }
   });
 
-  postgresTest("drains same-record bursts without waiting for the reconcile interval", async () => {
-    const fixture = createFixture();
-    try {
-      await insertFixture(fixture);
-      await startRecordEventOutbox();
-      const first = await insertRecordAndEvent(sql, fixture, "Burst");
-      const outboxIds = [first.outboxId];
-      for (let version = 2; version <= 4; version += 1) {
-        outboxIds.push(
-          await enqueueRecordEvent(sql, {
-            type: "record.updated",
-            baseId: fixture.baseId,
-            tableId: fixture.tableId,
-            recordId: first.recordId,
-            version,
-            changedFieldIds: [fixture.fieldId],
-            actorId: fixture.actorId,
-          }),
-        );
-      }
-      notifyRecordEventOutbox(first.outboxId);
+  (process.env.GRIDS_DB_TEST === "1" && process.env.GRIDS_SYNC_TEST === "1" ? test : test.skip)(
+    "drains same-record bursts without waiting for the reconcile interval",
+    async () => {
+      const fixture = createFixture();
+      const stopSync = await startGridsTestSync();
+      try {
+        await insertFixture(fixture);
+        await startRecordEventOutbox();
+        const first = await insertRecordAndEvent(sql, fixture, "Burst");
+        const outboxIds = [first.outboxId];
+        for (let version = 2; version <= 4; version += 1) {
+          outboxIds.push(
+            await enqueueRecordEvent(sql, {
+              type: "record.updated",
+              baseId: fixture.baseId,
+              tableId: fixture.tableId,
+              recordId: first.recordId,
+              version,
+              changedFieldIds: [fixture.fieldId],
+              actorId: fixture.actorId,
+            }),
+          );
+        }
+        notifyRecordEventOutbox(first.outboxId);
 
-      const deadline = performance.now() + 5_000;
-      let delivered = 0;
-      while (delivered < outboxIds.length && performance.now() < deadline) {
-        const [row] = await sql<Array<{ count: number }>>`
+        const deadline = performance.now() + 5_000;
+        let delivered = 0;
+        while (delivered < outboxIds.length && performance.now() < deadline) {
+          const [row] = await sql<Array<{ count: number }>>`
           SELECT count(*)::int AS count
           FROM grids.record_event_outbox
           WHERE id = ANY(${toPgUuidArray(outboxIds)}::uuid[])
             AND status = 'delivered'
         `;
-        delivered = row?.count ?? 0;
-        if (delivered < outboxIds.length) await Bun.sleep(25);
+          delivered = row?.count ?? 0;
+          if (delivered < outboxIds.length) await Bun.sleep(25);
+        }
+        expect(delivered).toBe(outboxIds.length);
+      } finally {
+        await stopRecordEventOutbox();
+        await stopSync();
+        await cleanupFixture(fixture);
       }
-      expect(delivered).toBe(outboxIds.length);
-    } finally {
-      await stopRecordEventOutbox();
-      await cleanupFixture(fixture);
-    }
-  });
+    },
+    15_000,
+  );
 });
