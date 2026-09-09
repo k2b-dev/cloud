@@ -16,7 +16,8 @@
     "scripts",
     "public",
     "!src/**/*.test.ts",
-    "!src/**/*.integration.test.ts"
+    "!src/**/*.integration.test.ts",
+    "!scripts/**/*.test.ts"
   ],
   "exports": {
     ".": "./src/index.ts",

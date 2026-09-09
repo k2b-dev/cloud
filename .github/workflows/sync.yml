@@ -32,6 +32,8 @@ jobs:
         with:
           bun-version: 1.3.14
       - run: bun install --frozen-lockfile
+      - name: Build shared UI package
+        run: bun run --cwd packages/ui build
       - name: Prepare local NATS system account
         run: bun packages/gateway-ops/scripts/dev-nats.ts
       - name: Validate generated NATS configuration and include paths
