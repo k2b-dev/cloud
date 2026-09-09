@@ -422,6 +422,8 @@ const migrateCoreRecords = async (sql: SQL): Promise<void> => {
     )
   `.simple();
   console.log("  ✓ grids.bases");
+  await sql`ALTER TABLE grids.bases ADD COLUMN IF NOT EXISTS navigation_groups JSONB NOT NULL DEFAULT '[]'::jsonb`.simple();
+  await sql`ALTER TABLE grids.bases ADD COLUMN IF NOT EXISTS navigation_revision INTEGER NOT NULL DEFAULT 0`.simple();
 
   await sql`
     CREATE TABLE IF NOT EXISTS grids.base_access (

@@ -1353,7 +1353,7 @@ export const UpdateEmailTemplateSchema = z.object({
 export type UpdateEmailTemplateInput = z.infer<typeof UpdateEmailTemplateSchema>;
 
 const DocumentFolderSchema = z.object({
-  kind: z.enum(["year", "month"]),
+  kind: z.enum(["template", "year", "month"]),
   key: z.string(),
   label: z.string(),
   path: z.array(z.string()),

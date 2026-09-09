@@ -224,6 +224,7 @@ export default function RecordDocumentsSection(props: {
     const template = availableTemplates().find((candidate) => candidate.id === document.templateId);
     void openDocumentDetailsDialog({
       document,
+      templateName: props.templates.find((candidate) => candidate.id === document.templateId)?.name,
       canWrite: props.canWrite,
       onDownload: (item) => redownloadMut.mutate(item),
       ...(props.live && props.canWrite && template ? { onGenerateAgain: () => generate(template) } : {}),

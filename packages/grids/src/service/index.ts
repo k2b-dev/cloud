@@ -277,6 +277,7 @@ export const gridsService = {
     listDocumentsForWorkflow: documents.listDocumentsForWorkflow,
     listDocumentsForTemplate: documents.listDocumentsForTemplate,
     browseDocumentsForTemplate: documents.browseDocumentsForTemplate,
+    browseDocumentsForBase: documents.browseDocumentsForBase,
     summarizeDocument: documents.summarizeDocument,
     getDocument: documents.getDocument,
     getDocumentByShortId: documents.getDocumentByShortId,

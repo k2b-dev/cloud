@@ -172,6 +172,15 @@ describe("loadGridsWorkspaceState — GQL-backed views", () => {
 
   afterEach(() => mock.restore());
 
+  test("opens the base overview without implicitly querying the first table", async () => {
+    const state = await loadWorkspaceState({ href: "/app/grids/BASE01", baseShortId: base.shortId, user });
+    expect(state.kind).toBe("ok");
+    if (state.kind !== "ok") return;
+    expect(state.route.kind).toBe("overview");
+    expect(lastRecordListParams).toBeNull();
+    expect(recordGetCalls).toBe(0);
+  });
+
   test("loads records views from canonical GQL source instead of cached RecordQuery JSON", async () => {
     catalogViewsByTable = { [table.id]: [savedView] };
     lookupTable = table;

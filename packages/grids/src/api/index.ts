@@ -4,6 +4,7 @@ import wsRoutes from "../ws";
 import accessRoutes from "./access";
 import adminRoutes from "./admin";
 import adminSettingsRoutes from "./admin-settings";
+import baseNavigationRoutes from "./base-navigation";
 import basesRoutes from "./bases";
 import customAppsRoutes from "./custom-apps";
 import documentsRoutes from "./documents";
@@ -28,6 +29,7 @@ const app = new Hono()
   .route("/admin", adminRoutes)
   .route("/templates", templatesRoutes)
   .route("/bases", basesRoutes)
+  .route("/bases", baseNavigationRoutes)
   .route("/apps", customAppsRoutes)
   .route("/tables", tablesRoutes)
   .route("/fields", fieldsRoutes)

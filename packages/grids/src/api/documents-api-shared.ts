@@ -85,7 +85,7 @@ export const PublicDocumentBrowseResponseSchema = PublicDocumentListSchema.exten
   path: z.array(z.string()),
   folders: z.array(
     z.object({
-      kind: z.enum(["year", "month"]),
+      kind: z.enum(["template", "year", "month"]),
       key: z.string(),
       label: z.string(),
       path: z.array(z.string()),
@@ -720,6 +720,16 @@ export const DocumentBrowseQuerySchema = PublicDocumentListQuerySchema.extend({
         .map((part) => part.trim())
         .filter(Boolean),
     ),
+});
+
+export const BaseDocumentBrowseQuerySchema = DocumentBrowseQuerySchema.omit({ tags: true }).extend({
+  mode: z.enum(["list", "folders"]).optional().default("folders"),
+  path: z
+    .string()
+    .optional()
+    .default("")
+    .transform((value) => (value ? value.split("/") : []))
+    .pipe(z.union([z.tuple([]), z.tuple([ShortIdSchema]), z.tuple([ShortIdSchema, z.string().regex(/^\d{4}$/)])])),
 });
 
 export const DocumentTemplateSummaryQuerySchema = z.object({

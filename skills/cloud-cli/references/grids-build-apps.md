@@ -54,6 +54,8 @@ Configure Table Record changes to allow only the entry paths needed by the proce
 
 ## Build the audience journey, not just a dashboard
 
+Organize the Base overview with shared navigation groups once the resources exist. A group such as Loans or Invoices can link an App, View, Form, Workflow and Document template without changing their ownership or permissions. Views may join multiple tables; group them by the task, not their technical source table. Use `bases navigation get` and `bases navigation set` with the current revision and returned public IDs (see [shared base navigation](grids.md#shared-base-navigation)). Keep the complete resource lists available and avoid duplicating the same shortcut within a group. These groups organize the Base workspace, not the navigation inside a published App.
+
 Start with a task list, a hidden Record detail page, and a create Form. Add the fields, documents, comments and actions needed for that journey. Use stable local page/block IDs and returned public resource IDs. Record page parameters are required typed Record IDs; they are not arbitrary search or filter strings.
 
 Bind list navigation with `ROW.id`, Form success with `RESULT.recordId`, and parent context with `PARAMS`. Prefer a fixed relation binding in a nested Form so users cannot accidentally attach a line to another parent. Use `AUTH.currentUser` for a signed-in claimant instead of asking them to pick their own identity. Server-run GQL and `availableWhen` enforce audience/state restrictions; hiding navigation does not.

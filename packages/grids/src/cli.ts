@@ -5,6 +5,7 @@ import { customAppCommands } from "./cli/custom-apps";
 import { documentCommands, documentTemplateCommands } from "./cli/documents";
 import { evidenceCommands } from "./cli/evidence";
 import { formCommands } from "./cli/forms";
+import { navigationCommands } from "./cli/navigation";
 import { publishedAppCommands } from "./cli/published-apps";
 import { recordDiscussionCommands } from "./cli/record-discussion";
 import { recordEventCommands } from "./cli/record-events";
@@ -24,6 +25,7 @@ export default defineCliCommands({
     "apps runtime comments": "Read and manage comments in published Apps",
     "apps runtime files": "Upload, download, and manage files in published Apps",
     bases: "Create, inspect, and manage Grids bases",
+    "bases navigation": "Read and replace shared base navigation groups",
     "bases destruction": "Preview, run, and control bounded controlled File destruction",
     "bases preservation-holds": "List, create, and release preservation holds",
     "bases retention files": "List and download unreferenced Files under a retention floor",
@@ -54,6 +56,7 @@ export default defineCliCommands({
   },
   commands: [
     ...baseCrudCommands,
+    ...navigationCommands,
     ...baseTemplateCommands,
     ...accessCommands,
     ...customAppCommands,

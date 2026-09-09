@@ -1,6 +1,6 @@
 import { navigateTo } from "@k2b/ssr/nav";
 import { mutation as mutations } from "@k2b/stdlib/solid";
-import { AppWorkspace, Button, dialogCore, PanelDialog, panelDialogOptions, prompts, TextInput, useLocale } from "@k2b/ui";
+import { Button, dialogCore, PanelDialog, panelDialogOptions, prompts, TextInput, useLocale } from "@k2b/ui";
 import { createSignal } from "solid-js";
 import { apiClient } from "../../../api/client";
 import { errorMessage } from "../utils/api-helpers";
@@ -8,7 +8,7 @@ import { sidebarMessages } from "./messages";
 
 type CreatedCustomApp = { id: string };
 
-export default function CreateCustomAppButton(props: { baseId: string }) {
+export function createCustomAppAction(props: { baseId: string }) {
   const { t } = sidebarMessages.resolve([useLocale()()]);
   const createMutation = mutations.create<CreatedCustomApp, string>({
     mutation: async (name) => {
@@ -46,13 +46,8 @@ export default function CreateCustomAppButton(props: { baseId: string }) {
         </PanelDialog>
       );
     }, panelDialogOptions);
-    if (name) createMutation.mutate(name);
+    if (name) await createMutation.mutate(name);
   };
 
-  return (
-    <AppWorkspace.SidebarItem tone="success" disabled={createMutation.loading()} onClick={() => void createApp()}>
-      <AppWorkspace.SidebarItemIcon icon={createMutation.loading() ? "ti ti-loader-2 animate-spin" : "ti ti-plus"} />
-      <AppWorkspace.SidebarItemLabel>{t.newAppAction}</AppWorkspace.SidebarItemLabel>
-    </AppWorkspace.SidebarItem>
-  );
+  return createApp;
 }

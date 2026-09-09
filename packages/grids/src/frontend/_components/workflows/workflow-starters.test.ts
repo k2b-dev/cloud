@@ -67,7 +67,7 @@ describe("workflow starters", () => {
 
   test("keeps starter launcher installation inside the editor save lifecycle", async () => {
     const editorSource = await Bun.file(new URL("./WorkflowEditor.tsx", import.meta.url)).text();
-    const starterSource = await Bun.file(new URL("../sidebar/CreateWorkflowButton.island.tsx", import.meta.url)).text();
+    const starterSource = await Bun.file(new URL("../sidebar/create-workflow.tsx", import.meta.url)).text();
 
     expect(editorSource).toContain("if (props.beforeClose) await props.beforeClose(saved, { abortSignal })");
     expect(editorSource).toContain("triggerValidationMut.abort()");
@@ -79,7 +79,7 @@ describe("workflow starters", () => {
   });
 
   test("lets an admin choose correction or cancellation without promising cancellation calculations", async () => {
-    const starterSource = await Bun.file(new URL("../sidebar/CreateWorkflowButton.island.tsx", import.meta.url)).text();
+    const starterSource = await Bun.file(new URL("../sidebar/create-workflow.tsx", import.meta.url)).text();
     const launcherSource = await Bun.file(new URL("./WorkflowLauncherManager.tsx", import.meta.url)).text();
 
     expect(starterSource).toContain("label={t.action}");

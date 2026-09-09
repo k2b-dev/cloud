@@ -406,6 +406,27 @@ export const createBookshopTemplate = (locale?: string): GridTemplate => {
     icon: "ti ti-books",
     baseName: t.templateName,
     baseDescription: t.baseDescription,
+    navigationGroups: [
+      {
+        name: t.orders,
+        entries: [
+          { type: "customApp", key: "sales" },
+          { type: "table", key: "orders" },
+          { type: "form", key: "new_order" },
+          { type: "form", key: "add_order_line" },
+          { type: "workflow", key: "send_order_invoice" },
+          { type: "documentTemplate", key: "order_invoice" },
+        ],
+      },
+      {
+        name: t.books,
+        entries: [
+          { type: "view", key: "recent_books" },
+          { type: "form", key: "add_book" },
+          { type: "table", key: "authors" },
+        ],
+      },
+    ],
     tables: [
       {
         key: "authors",

@@ -134,7 +134,7 @@ type WorkspaceEmptyRoute = {
   kind: "empty";
 };
 
-type WorkspaceDocumentsRoute = { kind: "documents" };
+type WorkspaceDocumentsRoute = { kind: "documents"; initialBrowserPage: DocumentBrowseResponse };
 
 type WorkspaceWorkflowsRoute = {
   kind: "workflows";
@@ -210,7 +210,8 @@ export type GridsWorkspaceRoute =
   | WorkspaceQueryRoute
   | WorkspaceDocumentTemplateRoute
   | WorkspaceDocumentsRoute
-  | WorkspaceEmptyRoute;
+  | WorkspaceEmptyRoute
+  | { kind: "overview" };
 
 export type GridsWorkspaceState =
   | { kind: "notFound"; title: string; message: string }

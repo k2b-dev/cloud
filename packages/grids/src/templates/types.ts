@@ -1,5 +1,6 @@
 import type { WorkflowJsonValue } from "@valentinkolb/cloud/workflows";
 import type { CustomAppDefinition } from "../custom-apps/contracts";
+import type { NavigationReference } from "../navigation-contracts";
 import type { GridsWorkflowLauncherConfig } from "../workflows/contracts";
 
 type TemplateRefKind = "table" | "field" | "record" | "view" | "form" | "launcher" | "documentTemplate";
@@ -145,6 +146,7 @@ export type GridTemplate = {
   emailTemplates?: TemplateEmailTemplate[];
   workflows?: TemplateWorkflow[];
   workflowLaunchers?: TemplateWorkflowLauncher[];
+  navigationGroups?: Array<{ name: string; entries: Array<{ type: NavigationReference["type"]; key: string }> }>;
 };
 
 export const table = (key: string): TemplateRef => ({ $ref: "table", key });

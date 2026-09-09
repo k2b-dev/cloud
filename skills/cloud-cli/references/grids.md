@@ -35,6 +35,18 @@ Grids stores structured operational data in bases made of tables, fields, record
 
 Permissions are enforced by the backend on every command. Raw Grids commands require the owning Base permission. Only Base and Grids Apps have Cloud access grants; listing or resolving either resource does not grant access to it.
 
+## Shared base navigation
+
+After building the resources, organize useful task-based shortcuts for the team. Navigation groups mix tables, views (including joined views), forms, document templates, workflows, and Apps. They do not grant access or move/delete resources. Only base admins manage this configuration; this is not a daily-task capability.
+
+Read the current revision with `cld grids bases navigation get --base <base> --json`. Replace the ordered configuration with `cld grids bases navigation set --base <base> --body-file navigation.json` (or `--body` / `--stdin`). The body is `{ "revision": 0, "groups": [{ "id": "GROUP1", "name": "Invoices", "entries": [{ "type": "view", "id": "VIEW01" }] }] }`: use the returned revision and real resource public IDs. Group IDs are unique six-character alphanumeric IDs scoped to the base. Entry types are `table`, `view`, `form`, `documentTemplate`, `workflow`, and `customApp`. Names are required (up to 200 characters); the group configuration is limited to 64 KiB. References may repeat across groups, not within one group.
+
+Array order controls display order. Rename, reorder, remove, or clear groups through the same replacement command. On HTTP 409, read the latest configuration and reconcile deliberately; do not blindly retry with a newer revision. Unknown or foreign-base targets are rejected; existing unavailable shortcuts can be retained or removed. Ordinary readers only receive visible groups and links in the workspace. Custom App workspace links retain the existing base-admin boundary; publishing an App does not grant raw workspace access.
+
+In the GUI, **New** in Edit mode groups permitted creation actions. Table-based actions ask for a table; creating a View opens the query editor. **Documents** always expands to **All documents** and template destinations. Workflow email templates are managed under **Settings → Email templates**; CLI commands are unchanged.
+
+The base landing page is **Overview**, with shared groups and searchable resources grouped by type. Base admins edit shared groups in **Settings → Navigation**. Without visible groups, the sidebar retains its other open resource lists. With groups, complete resource-type lists are expandable. Expansion is browser-local cookie state, not part of the shared configuration.
+
 ## Agent workflow
 
 For an inventory, CRM, invoicing, expense or merchandise-management application, first read [Build a business application](grids-build-apps.md). It connects model choices, permissions, atomic transitions, templates and scenario-specific acceptance checks. This reference supplies the individual commands.

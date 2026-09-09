@@ -422,6 +422,10 @@ Zusätzliche BWIP-Symbol-IDs
 
 Die Dokumentseite listet jedes generierte Dokument einer Vorlage auf. Nutze **Tabelle** für eine durchsuchbare Liste oder **Ordner**, um nach Jahr und Monat zu navigieren. Eine Suche wechselt zum Tabellenergebnis, damit passende Dokumente nicht in Ordnern verborgen bleiben.
 
+**Alle Dokumente** öffnet sich in der Ansicht **Ordner**, gruppiert nach Dokumentvorlage und anschließend Jahr. Die Suche durchsucht Dateinamen, Dokumentnummern und Tags der gesamten Base, unabhängig vom geöffneten Ordner. Beide Dokumentseiten zeigen ihre ersten Ergebnisse bereits beim Laden der Seite.
+
+Öffne ein Dokument, um sein PDF oder zusätzliche Dateien herunterzuladen. **Freigabelinks** zeigt die Anzahl aktiver Links und öffnet die Linkverwaltung. **Technische Details** öffnet IDs und Prüfsummen. Nach dem Schließen bist du wieder beim Dokument. Mit Schreibzugriff kannst du über **Weitere Aktionen → Erneut erzeugen** ein neues Dokument erstellen. Das vorhandene bleibt unverändert.
+
 Vor der Generierung kannst du Tags ergänzen und bei einer HTML-Vorlage den Dateinamen überschreiben. Ein E-Rechnungsrenderer bestimmt seine Artefaktdateinamen selbst. Nummer, Dateiname, Tags und Artefakte eines abgeschlossenen Dokuments sind unveränderlich.
 
 Leseberechtigung auf die Basis erlaubt das Durchsuchen und erneute Herunterladen generierter Dokumente. Schreibberechtigung erlaubt zusätzlich Generierung. Personen mit Verwaltungsrechten verwalten Vorlagen. Eine lesende Person einer Grids App darf nur ein Dokument für den aktuellen Seitendatensatz herunterladen, dessen Vorlage in der veröffentlichten Capability dieses Datensatzblocks enthalten ist. Dieser App-begrenzte Download gewährt keinen allgemeinen Dokumentzugriff auf die Basis.

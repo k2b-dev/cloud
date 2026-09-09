@@ -37,7 +37,7 @@ export default function DocumentBrowserToolbar(props: Props) {
   return (
     <div class="flex shrink-0 flex-wrap items-center gap-2">
       <Show when={props.canWrite}>
-        <Button variant="primary" size="sm" type="button" onClick={props.onGenerate}>
+        <Button variant="input" type="button" onClick={props.onGenerate}>
           <i class="ti ti-plus" />
           {t().addNew}
         </Button>
@@ -55,7 +55,7 @@ export default function DocumentBrowserToolbar(props: Props) {
         />
       </div>
       <Dropdown.Root position="bottom-left" items={modeItems()}>
-        <Dropdown.Trigger variant="secondary" size="sm">
+        <Dropdown.Trigger variant="input">
           <i class={activeIcon()} />
           {activeLabel()}
           <i class="ti ti-chevron-down text-[10px] opacity-60" />

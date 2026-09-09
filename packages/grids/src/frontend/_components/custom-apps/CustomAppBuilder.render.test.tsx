@@ -789,7 +789,7 @@ describe("CustomAppBuilder", () => {
     const source = await Bun.file(resolve(import.meta.dir, "CustomAppBuilder.tsx")).text();
     const gqlFieldSource = await Bun.file(resolve(import.meta.dir, "CustomAppGqlField.tsx")).text();
     const markdownFieldSource = await Bun.file(resolve(import.meta.dir, "CustomAppMarkdownField.tsx")).text();
-    const createAppSource = await Bun.file(resolve(import.meta.dir, "../sidebar/CreateCustomAppButton.island.tsx")).text();
+    const createAppSource = await Bun.file(resolve(import.meta.dir, "../sidebar/create-custom-app.tsx")).text();
     const gqlSettings = source.slice(source.indexOf('<Show when={selectedSourceBlock()?.source.kind === "gql"}>'));
 
     expect(gqlSettings).toContain("<CustomAppGqlField");

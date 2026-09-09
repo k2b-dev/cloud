@@ -421,6 +421,10 @@ Additional BWIP symbol ids
 
 The document page lists every generated Document for a template. Use **Table** for a searchable list or **Folders** to browse by year and month. Searching switches to the table result so matching documents are not hidden inside folders.
 
+**All documents** opens in **Folders**, grouped by document template and then year. Its search covers filenames, document numbers, and tags across the Base, regardless of the open folder. Both document pages include their first results when the page loads.
+
+Open a document to download its PDF or additional files. **Share links** shows the number of active links and opens link management. **Technical details** opens IDs and checksums. Closing either dialog returns to the document. Writers can use **More actions → Generate again** to create a new document without changing the existing one.
+
 Before generation you can add tags and, for an HTML template, override the filename. An E-Invoice renderer owns its artifact filenames. A completed Document's number, filename, tags, and artifacts are immutable.
 
 Base Read allows browsing and redownloading generated documents. Base Write also allows generation. Base Admin manages templates. A Grids App reader may download only a Document for the current page record whose template is in that Record block's published capability. This App-scoped download does not grant the reader generic Base document access.

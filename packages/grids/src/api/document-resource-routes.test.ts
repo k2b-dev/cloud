@@ -15,6 +15,7 @@ describe("Document resource API", () => {
 
     expect(Object.keys(spec.paths ?? {}).sort()).toEqual([
       "/by-base/{baseId}",
+      "/by-base/{baseId}/browse",
       "/renderers",
       "/{documentId}",
       "/{documentId}/artifacts/{artifactKey}",

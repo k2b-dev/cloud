@@ -1,6 +1,6 @@
 import { navigateTo } from "@k2b/ssr/nav";
 import { mutation as mutations } from "@k2b/stdlib/solid";
-import { AppWorkspace, Button, CheckboxCard, dialogCore, PanelDialog, panelDialogOptions, prompts, TextInput, useLocale } from "@k2b/ui";
+import { Button, CheckboxCard, dialogCore, PanelDialog, panelDialogOptions, prompts, TextInput, useLocale } from "@k2b/ui";
 import { createSignal } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { PublicTable } from "../../../api/public-dto";
@@ -8,7 +8,7 @@ import type { TableKind } from "../../../contracts";
 import { errorMessage } from "../utils/api-helpers";
 import { sidebarMessages } from "./messages";
 
-export default function CreateTableButton(props: { baseId: string }) {
+export function createTableAction(props: { baseId: string }) {
   const { t } = sidebarMessages.resolve([useLocale()()]);
   const createMutation = mutations.create<PublicTable, { name: string; kind: TableKind }>({
     mutation: async (input) => {
@@ -74,13 +74,8 @@ export default function CreateTableButton(props: { baseId: string }) {
       );
     }, panelDialogOptions);
     if (!result) return;
-    createMutation.mutate(result);
+    await createMutation.mutate(result);
   };
 
-  return (
-    <AppWorkspace.SidebarItem tone="success" disabled={createMutation.loading()} onClick={() => void handleClick()}>
-      <AppWorkspace.SidebarItemIcon icon={createMutation.loading() ? "ti ti-loader-2 animate-spin" : "ti ti-plus"} />
-      <AppWorkspace.SidebarItemLabel>{t.newTable}</AppWorkspace.SidebarItemLabel>
-    </AppWorkspace.SidebarItem>
-  );
+  return handleClick;
 }

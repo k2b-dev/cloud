@@ -152,7 +152,7 @@ function DocumentLinkDialog(props: { args: DocumentLinkDialogArgs; close: () => 
               <NoticeCard
                 tone="success"
                 title={copiedOnCreate() ? t().linkCreatedCopied : t().linkCreated}
-                detail={copiedOnCreate() ? t().sharePdf : t().copyLinkGuidance}
+                detail={t().fullUrlCreationOnly}
               />
               <code class="block break-all rounded-[var(--ui-radius-control)] bg-[var(--ui-field)] p-2 font-mono text-xs text-secondary">
                 {url()}

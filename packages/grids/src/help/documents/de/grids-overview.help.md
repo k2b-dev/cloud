@@ -39,6 +39,20 @@ Wähle einen kleinen Prozess mit bereits klar definierten Einträgen, etwa Gerä
 
 In dieser Reihenfolge bleiben Fehler kostengünstig. Eine klare Tabelle und einige repräsentative Datensätze erleichtern alle späteren Entscheidungen.
 
+## In einer Base zurechtfinden {icon="layout-dashboard"}
+
+Unter **Übersicht** findest du gemeinsame Schnellzugriffe und eine Suche nach Ressourcenname oder Typ. Tabellen, Views, Formulare, Dokumentvorlagen, Workflows und Apps behalten ihr bisheriges Verhalten; Formulare öffnen weiterhin ihren Dialog.
+
+Über **Neu** im Bearbeitungsmodus erstellst du Tabellen, Ansichten, Formulare, Dokumentvorlagen, Workflows oder Apps. Die Auswahl zeigt nur erlaubte Aktionen. Bei tabellenbezogenen Ressourcen wählst du eine Tabelle; die aktuelle Tabelle ist vorausgewählt, sofern sie geeignet ist. **Ansicht** öffnet den Abfrageeditor, in dem du die Ansicht konfigurierst und speicherst.
+
+**Dokumente** lässt sich immer aufklappen: Öffne **Alle Dokumente** oder wähle eine Vorlage für deren erzeugte Dokumente. Base-Admins verwalten Workflow-E-Mail-Vorlagen unter **Einstellungen → E-Mail-Vorlagen**.
+
+Base-Admins können unter **Einstellungen → Navigation** Gruppen anlegen. Füge Ressourcen über die durchsuchbare Auswahl hinzu, ändere ihre Reihenfolge mit den Pfeil-Schaltflächen und speichere deine Änderungen. Das Entfernen eines Schnellzugriffs oder einer Gruppe löscht keine Ressource. Eine Ressource darf in mehreren Gruppen vorkommen.
+
+Die Gruppen gelten gemeinsam, aber jeder sieht nur zugängliche Ressourcen. Leere Gruppen bleiben verborgen. Ohne sichtbare Gruppen bleiben die übrigen Ressourcenlisten offen. Mit Gruppen lassen sie sich aufklappen und enthalten weiterhin alle zugänglichen Ressourcen, auch die bereits gruppierten. Dieser Browser merkt sich den Klappzustand; ein direkter Link macht die aktive Ressource sichtbar.
+
+Hat ein anderer Admin inzwischen gespeichert, wird dein Speichern abgelehnt statt dessen Änderungen zu überschreiben. **Navigation neu laden** lädt den aktuellen Stand und fragt vor dem Verwerfen deiner Änderungen nach.
+
 ## So geht es weiter {icon="arrow-right"}
 
 - Lies **Kernmodell**, wenn Basen, Tabellen, Datensätze und Relationen neu für dich sind.

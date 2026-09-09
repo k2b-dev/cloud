@@ -25,6 +25,8 @@ const emptyClientCatalog = (): PublicWorkspaceCatalog => ({
 const routeClientState = (state: PublicOkWorkspaceState): PublicOkWorkspaceState => {
   const catalog = emptyClientCatalog();
   switch (state.route.kind) {
+    case "overview":
+      return state;
     case "customApp":
       catalog.customApps = state.catalog.customApps;
       catalog.tables = state.catalog.tables;

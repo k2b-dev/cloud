@@ -21,6 +21,7 @@ import type {
   PublicWorkflowTriggerRuntimeStateSchema,
 } from "../../../api/workflow-public-contracts";
 import type { RecordDisplayConfig, RecordQuery } from "../../../contracts";
+import type { BaseNavigation } from "../../../navigation-contracts";
 import type { CombinedRecordOrigin } from "../../../service";
 import type {
   PublicDocument,
@@ -179,7 +180,8 @@ export type PublicWorkspaceRoute =
       initialDocumentViewMode: GridsDocumentViewMode;
       initialBrowserPage: PublicDocumentBrowseResponse;
     }
-  | { kind: "documents" }
+  | { kind: "documents"; initialBrowserPage: PublicDocumentBrowseResponse }
+  | { kind: "overview" }
   | { kind: "empty" };
 
 type WorkspaceFailureState =
@@ -193,6 +195,8 @@ type PublicWorkspaceState =
   | {
       kind: "ok";
       base: PublicBase;
+      navigation?: BaseNavigation;
+      initialNavigationExpansion?: string[];
       title: Array<{ title: string; href?: string }>;
       rememberPath: string;
       adminModeRequested: boolean;

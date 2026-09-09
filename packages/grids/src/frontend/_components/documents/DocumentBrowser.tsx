@@ -100,7 +100,7 @@ export default function DocumentBrowser(props: Props) {
   };
 
   return (
-    <section class="paper min-h-0 flex-1 overflow-hidden">
+    <section class="min-h-0 flex-1 overflow-hidden">
       <Show
         when={!props.loading}
         fallback={<Placeholder state="loading" class="h-full" title={t().loadingDocuments} description={t().readingGeneratedDocuments} />}
@@ -112,7 +112,7 @@ export default function DocumentBrowser(props: Props) {
               state="error"
               class="h-full"
               title={t().couldNotLoadGeneratedDocuments}
-              description={props.error?.message ?? t().tryAgainMoment}
+              description={props.error?.message?.trim() !== t().couldNotLoadGeneratedDocuments ? props.error?.message : undefined}
             />
           }
         >

@@ -46,3 +46,19 @@ export const loadDocumentTemplateState = async (
     [...common.chrome.titleBase, { title: t.documents }, { title: template.name }],
   );
 };
+
+export const loadDocumentsState = async (common: WorkspaceCommon): Promise<GridsWorkspaceState> => {
+  const t = resolveWorkspaceMessages(common.params.locale);
+  const level = await resolveBaseLevel(common.params.user, common.base.id);
+  if (!gridsService.permission.hasAtLeast(level, "read")) {
+    return { kind: "accessDenied", title: t.accessDenied, message: t.noDocumentTemplateAccess };
+  }
+  const initialBrowserPage = await gridsService.document.browseDocumentsForBase({
+    baseId: common.base.id,
+    mode: "folders",
+    path: [],
+    limit: PUBLIC_DOCUMENT_PAGE_LIMIT,
+    timeZone: common.params.dateConfig?.timeZone,
+  });
+  return okState(common, { kind: "documents", initialBrowserPage }, [...common.chrome.titleBase, { title: t.documents }]);
+};

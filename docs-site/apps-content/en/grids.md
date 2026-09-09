@@ -16,6 +16,18 @@ documents, and workflows without splitting the domain across unrelated tools.
 
 ## Use Grids
 
+Use **New** in Edit mode for permitted creation actions. Table-based actions ask for a table and preselect the current one when eligible. **View** opens the existing query editor. **Documents** always expands to **All documents** and individual template destinations. Workflow email templates live under **Settings → Email templates**.
+
+**All documents** defaults to folders by document template and year. Search matches filenames, document numbers, and tags across the Base. Both the Base catalog and template document pages load their initial results on the server.
+
+Open a Base's **Overview** to search its resources and use shared navigation groups.
+Base admins configure one level of ordered groups in **Settings → Navigation**; groups can mix
+Tables, Views, Forms, Document templates, Workflows, and Apps. Shortcuts do not
+change access or resource ownership. Without visible groups, the sidebar keeps
+its other resource lists open; with groups, the complete lists become expandable.
+Each browser remembers its expansion state. The CLI exposes the same revision-checked
+configuration through `grids bases navigation get` and `grids bases navigation set`.
+
 - Create a base for one operational domain, then define tables, fields, and
   relationships around its records.
 - Review Table structure, indexed and unique fields, write paths, Durable

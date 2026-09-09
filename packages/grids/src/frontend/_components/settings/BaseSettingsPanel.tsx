@@ -2,10 +2,14 @@ import { confirmDiscardIfDirty, NoticeCard, SettingsGroup, SettingsModal, useLoc
 import type { AccessEntry } from "@valentinkolb/cloud/contracts";
 import { createSignal } from "solid-js";
 import type { PublicBase } from "../../../api/public-dto";
+import { navigationMessages } from "../../../navigation-messages";
+import type { NavigationResource } from "../workspace/navigation-catalog";
 import { DangerZone, DocumentDefaultsForm, GeneralForm, PermissionsSection, TrashSection } from "./BaseSettingsSections";
 import { ControlledDestructionSection } from "./ControlledDestructionSection";
+import EmailTemplatesSettings from "./EmailTemplatesSettings";
 import { EvidenceExportsSection } from "./EvidenceExportsSection";
 import { useGridsSettingsMessages } from "./messages";
+import NavigationSettingsSection from "./NavigationSettingsSection";
 import { PreservationHoldsSection } from "./PreservationHoldsSection";
 import { RetentionPolicySection } from "./RetentionPolicySection";
 import { TablesOverviewSection } from "./TablesOverviewSection";
@@ -13,12 +17,14 @@ import { TablesOverviewSection } from "./TablesOverviewSection";
 type Props = {
   base: PublicBase;
   accessEntries: AccessEntry[];
+  navigationResources?: NavigationResource[];
   onClose?: () => void;
 };
 
 export default function BaseSettingsPanel(props: Props) {
   const locale = useLocale();
   const t = useGridsSettingsMessages(locale);
+  const { t: navigationText } = navigationMessages.resolve([locale()]);
   const [activeTab, setActiveTab] = createSignal("general");
   const [dirty, setDirty] = createSignal<Record<string, boolean>>({});
   const [saving, setSaving] = createSignal<Record<string, boolean>>({});
@@ -81,6 +87,15 @@ export default function BaseSettingsPanel(props: Props) {
             />
           </SettingsModal.Tab>
 
+          <SettingsModal.Tab id="navigation" title={navigationText.navigation} icon="ti ti-list-tree" description={navigationText.shared}>
+            <NavigationSettingsSection
+              baseId={props.base.id}
+              resources={props.navigationResources ?? []}
+              onDirtyChange={(value) => setSectionDirty("navigation", value)}
+              onSavingChange={(value) => setSectionSaving("navigation", value)}
+            />
+          </SettingsModal.Tab>
+
           <SettingsModal.Tab id="tables" title={t().tables} icon="ti ti-table-options" description={t().tablesDescription}>
             <TablesOverviewSection baseId={props.base.id} />
           </SettingsModal.Tab>
@@ -91,6 +106,14 @@ export default function BaseSettingsPanel(props: Props) {
               onDirtyChange={(value) => setSectionDirty("documents", value)}
               onSavingChange={(value) => setSectionSaving("documents", value)}
             />
+          </SettingsModal.Tab>
+          <SettingsModal.Tab
+            id="emailTemplates"
+            title={navigationText.emailTemplates}
+            icon="ti ti-mail"
+            description={navigationText.emailTemplatesDescription}
+          >
+            <EmailTemplatesSettings baseId={props.base.id} />
           </SettingsModal.Tab>
         </SettingsModal.Group>
 

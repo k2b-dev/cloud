@@ -57,7 +57,7 @@ export const documentTemplateCommands = [
           "Document templates",
           "",
           "Create PDFs from a GQL source plus Liquid HTML/CSS. Per-record templates usually filter with:",
-          '  where record.id = "{{ record.id }}"',
+          "  where record.id = '{{ record.id }}'",
           "",
           "Fields:",
           ...Object.entries(DOCUMENT_TEMPLATE_REFERENCE.fields).map(([key, value]) => `  ${key}: ${value}`),

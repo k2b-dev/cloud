@@ -1,4 +1,5 @@
 export {
+  browseDocumentsForBase,
   browseDocumentsForTemplate,
   listDocumentSummariesForRecordByTemplates,
   listDocumentsForBase,

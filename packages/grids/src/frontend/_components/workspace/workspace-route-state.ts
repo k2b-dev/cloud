@@ -1,5 +1,5 @@
 import { resolveWorkspaceMessages } from "./messages";
-import { loadDocumentTemplateState } from "./workspace-document-state";
+import { loadDocumentsState, loadDocumentTemplateState } from "./workspace-document-state";
 import { loadQueryState } from "./workspace-query-state";
 import { loadRecordsState } from "./workspace-records-state";
 import type { WorkspaceRequestContext } from "./workspace-request-state";
@@ -30,7 +30,7 @@ export const loadWorkspaceRoute = async (request: WorkspaceRequestContext): Prom
   const activeTableFromSlug = request.requestedViewTable ?? tableForPublicRouteId(common.catalog.tables, common.params.activeTableSlug);
 
   if (common.params.documentsRequested) {
-    return okState(common, { kind: "documents" }, [...common.chrome.titleBase, { title: t.documents }]);
+    return loadDocumentsState(common);
   }
   if (queryWorkspaceRequested) return loadQueryState(common, activeTableFromSlug, common.params.activeViewSlug);
   if (workflowWorkspaceRequested) {
@@ -43,7 +43,8 @@ export const loadWorkspaceRoute = async (request: WorkspaceRequestContext): Prom
     return loadDocumentTemplateState(common, request.requestedDocumentTable, request.requestedDocumentTemplate);
   }
 
-  const activeTable = activeTableFromSlug ?? common.catalog.tables[0] ?? null;
+  if (!common.params.activeTableSlug && !common.params.activeViewSlug) return okState(common, { kind: "overview" });
+  const activeTable = activeTableFromSlug ?? null;
   if (!activeTable) return okState(common, { kind: "empty" });
   return loadRecordsState(common, activeTable, common.params.activeViewSlug);
 };

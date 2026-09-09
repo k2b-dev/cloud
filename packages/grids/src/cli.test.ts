@@ -10,6 +10,7 @@ import { customAppCommands } from "./cli/custom-apps";
 import { documentCommands, documentTemplateCommands } from "./cli/documents";
 import { evidenceCommands } from "./cli/evidence";
 import { formCommands } from "./cli/forms";
+import { navigationCommands } from "./cli/navigation";
 import { publishedAppCommands } from "./cli/published-apps";
 import { recordDiscussionCommands } from "./cli/record-discussion";
 import { recordEventCommands } from "./cli/record-events";
@@ -22,6 +23,7 @@ import { WORKFLOW_REVISION_HEADER } from "./workflows/contracts";
 
 const commandGroups = [
   baseCrudCommands,
+  navigationCommands,
   baseTemplateCommands,
   accessCommands,
   customAppCommands,
@@ -436,6 +438,36 @@ describe("grids CLI", () => {
     expect(calls.map((call) => call.path)).toEqual(["/api/grids/bases?q=bk001A&limit=500&offset=0"]);
     expect(defaults["grids.base"]).toBe("bk001A");
     expect(lines).toEqual(["Using Grids base Bookshop (bk001A)."]);
+  });
+
+  test("reads and replaces shared navigation without retrying conflicts", async () => {
+    const config = { revision: 2, groups: [{ id: "GROUP1", name: "Orders", entries: [{ type: "table", id: tableId }] }] };
+    const get = createContext(["bases", "navigation", "get", baseId], {}, [jsonResponse(basePage), jsonResponse(config)], {
+      output: "json",
+    });
+    await gridsCli.run(get.ctx);
+    expect(get.calls.at(-1)?.path).toBe(`/api/grids/bases/${baseId}/navigation`);
+    expect(get.jsonValues).toEqual([config]);
+    const set = createContext(["bases", "navigation", "set", baseId], { body: JSON.stringify(config) }, [
+      jsonResponse(basePage),
+      jsonResponse({ ...config, revision: 3 }),
+    ]);
+    await gridsCli.run(set.ctx);
+    expect(set.calls.at(-1)?.init?.method).toBe("PUT");
+    expect(JSON.parse(String(set.calls.at(-1)?.init?.body))).toEqual(config);
+    const conflict = createContext(["bases", "navigation", "set", baseId], { body: JSON.stringify(config) }, [
+      jsonResponse(basePage),
+      jsonResponse({ message: "Reload navigation" }, 409),
+    ]);
+    await expect(gridsCli.run(conflict.ctx)).rejects.toThrow("Reload navigation");
+    expect(conflict.calls).toHaveLength(2);
+    const invalid = createContext(
+      ["bases", "navigation", "set", baseId],
+      { body: JSON.stringify({ ...config, groups: [{ ...config.groups[0], entries: [{ type: "table", id: "Unknown record" }] }] }) },
+      [jsonResponse(basePage)],
+    );
+    await expect(gridsCli.run(invalid.ctx)).rejects.toThrow();
+    expect(invalid.calls).toHaveLength(1);
   });
 
   test("shows and previews a Base retention floor through public ids", async () => {

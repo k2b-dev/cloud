@@ -2,8 +2,10 @@ import { describe, expect, test } from "bun:test";
 import { sql } from "bun";
 import { CustomAppCapabilitiesSchema, CustomAppDefinitionSchema } from "../custom-apps/contracts";
 import { migrate } from "../migrate";
+import { getBaseNavigation } from "../service/base-navigation";
 import { buildLiveRenderData, renderDocumentHtml } from "../service/document-rendering";
 import { getTemplate as getDocumentTemplate } from "../service/document-templates";
+import { resolvePublicId } from "../service/public-resources";
 import { get as getRecord } from "../service/records";
 import { get as getTable } from "../service/tables";
 import { instantiate } from "../service/templates";
@@ -15,6 +17,13 @@ type CustomAppRow = { published_definition: unknown; published_capabilities: unk
 type DocumentTemplateRow = { id: string; table_id: string; name: string };
 
 const verifyRuntimeSurfaces = async (baseId: string, withSampleData: boolean) => {
+  const navigation = await getBaseNavigation(baseId);
+  expect(navigation?.revision).toBe(1);
+  expect(navigation?.groups.length).toBeGreaterThan(0);
+  for (const group of navigation!.groups) {
+    expect(group.entries.length).toBeGreaterThan(0);
+    for (const entry of group.entries) expect(await resolvePublicId(entry.type, entry.id)).not.toBeNull();
+  }
   const apps = await sql<CustomAppRow[]>`
     SELECT published_definition, published_capabilities
     FROM grids.custom_apps

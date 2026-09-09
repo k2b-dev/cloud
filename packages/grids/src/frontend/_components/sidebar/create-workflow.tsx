@@ -1,6 +1,5 @@
 import { navigateTo } from "@k2b/ssr/nav";
 import {
-  AppWorkspace,
   Button,
   dialogCore,
   MultiSelectInput,
@@ -247,7 +246,7 @@ type LauncherApi = {
 
 const launcherApi = apiClient.workflows as unknown as LauncherApi;
 
-export default function CreateWorkflowButton(props: { baseId: string; tables: Table[]; fieldsByTable: Record<string, Field[]> }) {
+export function createWorkflowAction(props: { baseId: string; tables: Table[]; fieldsByTable: Record<string, Field[]> }) {
   const locale = useLocale();
   const { t } = sidebarMessages.resolve([locale()]);
   let disposed = false;
@@ -315,10 +314,5 @@ export default function CreateWorkflowButton(props: { baseId: string; tables: Ta
     );
   };
 
-  return (
-    <AppWorkspace.SidebarItem tone="success" onClick={() => void openEditor()}>
-      <AppWorkspace.SidebarItemIcon icon="ti ti-plus" />
-      <AppWorkspace.SidebarItemLabel>{t.newWorkflow}</AppWorkspace.SidebarItemLabel>
-    </AppWorkspace.SidebarItem>
-  );
+  return openEditor;
 }

@@ -1,12 +1,12 @@
 import { AppWorkspace, useLocale } from "@k2b/ui";
+import { navigationMessages } from "../../../navigation-messages";
 import BaseSettingsButton from "../sidebar/BaseSettingsButton.island";
-import CreateCustomAppButton from "../sidebar/CreateCustomAppButton.island";
-import CreateTableButton from "../sidebar/CreateTableButton.island";
-import CreateWorkflowButton from "../sidebar/CreateWorkflowButton.island";
-import EmailTemplatesButton from "../sidebar/EmailTemplatesButton.island";
 import FormSidebarEntry from "../sidebar/FormSidebarEntry.island";
+import NewResourceButton from "../sidebar/NewResourceButton.island";
 import SidebarTableMeta from "../sidebar/SidebarTableMeta";
+import GroupedNavigation from "./GroupedNavigation.island";
 import { workspaceMessages } from "./messages";
+import { activeNavigationKey, navigationResources } from "./navigation-catalog";
 import type {
   PublicOkWorkspaceState,
   PublicWorkspaceQueryResultViewRoute,
@@ -32,12 +32,37 @@ const SidebarLink = (props: Parameters<typeof AppWorkspace.SidebarItem>[0]) => (
 export default function GridsSidebar(props: { state: PublicOkWorkspaceState }) {
   const { t } = workspaceMessages.resolve([useLocale()()]);
   const state = props.state;
+  const { t: navText } = navigationMessages.resolve([useLocale()()]);
   const route = state.route;
   const recordsRoute = route.kind === "records" ? (route as PublicWorkspaceRecordsRoute) : null;
   const queryResultViewRoute = route.kind === "queryResultView" ? (route as PublicWorkspaceQueryResultViewRoute) : null;
   const workflowsRoute = route.kind === "workflows" ? (route as PublicWorkspaceWorkflowsRoute) : null;
   const activeCustomAppId = route.kind === "customApp" ? route.app.id : null;
-  const canCreateStructure = state.adminModeRequested && state.canCreateTables;
+  const createButton = () =>
+    state.adminModeRequested && (state.canCreateTables || state.canManageBase) ? (
+      <NewResourceButton
+        baseId={state.base.id}
+        tables={state.catalog.tables}
+        fieldsByTable={state.catalog.fieldsByTable}
+        tableLevels={state.catalog.tableLevels}
+        canCreateTables={state.canCreateTables}
+        canManageBase={state.canManageBase}
+        activeTableId={recordsRoute?.activeTable.id ?? queryResultViewRoute?.activeView.tableId}
+      />
+    ) : null;
+  const documentNavigation = () => (
+    <GroupedNavigation
+      baseId={state.base.id}
+      groups={[]}
+      resources={navigationResources(state.base.id, state.catalog, state.adminModeRequested)}
+      active={activeNavigationKey(route)}
+      initialExpanded={state.initialNavigationExpansion}
+      forms={state.catalog.sidebarForms}
+      fields={state.catalog.fieldsByTable}
+      editMode={state.adminModeRequested}
+      dateConfig={state.dateConfig}
+    />
+  );
   const sidebarViews = state.catalog.tables.flatMap((table) =>
     (state.catalog.viewsByTable[table.id] ?? []).map((view) => ({ table, view })),
   );
@@ -48,6 +73,31 @@ export default function GridsSidebar(props: { state: PublicOkWorkspaceState }) {
         <AppWorkspace.SidebarItemLabel>{t.query}</AppWorkspace.SidebarItemLabel>
       </SidebarLink>
     ) : null;
+
+  const overviewLink = () => (
+    <SidebarLink href={keepEdit(`/app/grids/${state.base.id}`, state.adminModeRequested)} active={route.kind === "overview"}>
+      <AppWorkspace.SidebarItemIcon icon="ti ti-layout-dashboard" />
+      <AppWorkspace.SidebarItemLabel>{navText.overview}</AppWorkspace.SidebarItemLabel>
+    </SidebarLink>
+  );
+  const navigation = () =>
+    state.navigation?.groups.length ? (
+      <>
+        <GroupedNavigation
+          baseId={state.base.id}
+          groups={state.navigation.groups}
+          resources={navigationResources(state.base.id, state.catalog, state.adminModeRequested)}
+          active={activeNavigationKey(route)}
+          initialExpanded={state.initialNavigationExpansion}
+          forms={state.catalog.sidebarForms}
+          fields={state.catalog.fieldsByTable}
+          editMode={state.adminModeRequested}
+          dateConfig={state.dateConfig}
+        />
+      </>
+    ) : (
+      renderNavigationSections()
+    );
 
   const renderNavigationSections = () => (
     <>
@@ -72,7 +122,6 @@ export default function GridsSidebar(props: { state: PublicOkWorkspaceState }) {
             );
           })
         )}
-        {canCreateStructure && <CreateTableButton baseId={state.base.id} />}
       </AppWorkspace.SidebarSection>
 
       {sidebarViews.length > 0 && (
@@ -111,34 +160,9 @@ export default function GridsSidebar(props: { state: PublicOkWorkspaceState }) {
         </AppWorkspace.SidebarSection>
       )}
 
-      <AppWorkspace.SidebarSection title={t.documents}>
-        <SidebarLink
-          href={keepEdit(`/app/grids/${state.base.id}/documents`, state.adminModeRequested)}
-          active={route.kind === "documents"}
-          class={itemClass(route.kind === "documents", state.adminModeRequested)}
-          title={t.allCompletedDocuments}
-        >
-          <AppWorkspace.SidebarItemIcon icon="ti ti-files" />
-          <AppWorkspace.SidebarItemLabel>{t.allDocuments}</AppWorkspace.SidebarItemLabel>
-        </SidebarLink>
-        {state.catalog.sidebarDocumentTemplates.map(({ template, table }) => {
-          const active = route.kind === "documentTemplate" && route.template.id === template.id;
-          return (
-            <SidebarLink
-              href={keepEdit(`/app/grids/${state.base.id}/document/${table.id}/${template.id}`, state.adminModeRequested)}
-              active={active}
-              class={itemClass(active, state.adminModeRequested)}
-              title={t.tableContext({ name: template.name, table: table.name })}
-            >
-              <AppWorkspace.SidebarItemIcon icon="ti ti-file-type-pdf" />
-              <AppWorkspace.SidebarItemLabel>{template.name}</AppWorkspace.SidebarItemLabel>
-              <SidebarTableMeta tableName={table.name} />
-            </SidebarLink>
-          );
-        })}
-      </AppWorkspace.SidebarSection>
+      {documentNavigation()}
 
-      {(state.catalog.workflows.length > 0 || (state.adminModeRequested && state.canManageBase)) && (
+      {state.catalog.workflows.length > 0 && (
         <AppWorkspace.SidebarSection title={t.workflows}>
           {state.catalog.workflows.map((workflow) => {
             const active = workflowsRoute?.activeWorkflow?.id === workflow.id;
@@ -159,16 +183,10 @@ export default function GridsSidebar(props: { state: PublicOkWorkspaceState }) {
               </SidebarLink>
             );
           })}
-          {state.adminModeRequested && state.canManageBase && (
-            <>
-              <CreateWorkflowButton baseId={state.base.id} tables={state.catalog.tables} fieldsByTable={state.catalog.fieldsByTable} />
-              <EmailTemplatesButton baseId={state.base.id} />
-            </>
-          )}
         </AppWorkspace.SidebarSection>
       )}
 
-      {(state.catalog.customApps.length > 0 || (state.adminModeRequested && state.canManageBase)) && (
+      {state.catalog.customApps.length > 0 && (
         <AppWorkspace.SidebarSection title={t.apps}>
           {state.catalog.customApps.map((app) => (
             <SidebarLink
@@ -193,7 +211,6 @@ export default function GridsSidebar(props: { state: PublicOkWorkspaceState }) {
               )}
             </SidebarLink>
           ))}
-          {state.adminModeRequested && state.canManageBase && <CreateCustomAppButton baseId={state.base.id} />}
         </AppWorkspace.SidebarSection>
       )}
     </>
@@ -219,13 +236,17 @@ export default function GridsSidebar(props: { state: PublicOkWorkspaceState }) {
             <AppWorkspace.SidebarItemLabel>{t.allGrids}</AppWorkspace.SidebarItemLabel>
           </SidebarLink>
           {renderQueryItem()}
-          {state.canManageBase && <BaseSettingsButton base={state.base} />}
+          {overviewLink()}
+          {createButton()}
+          {state.canManageBase && (
+            <BaseSettingsButton base={state.base} navigationResources={navigationResources(state.base.id, state.catalog)} />
+          )}
         </AppWorkspace.SidebarMobileItems>
         <AppWorkspace.SidebarMobileBody
           class="!max-h-[min(40rem,calc(100dvh-14rem))]"
           scrollPreserveKey={`grids-sidebar-mobile-body-${state.base.id}`}
         >
-          {renderNavigationSections()}
+          {navigation()}
         </AppWorkspace.SidebarMobileBody>
       </AppWorkspace.SidebarMobile>
       <AppWorkspace.SidebarDesktop>
@@ -235,8 +256,10 @@ export default function GridsSidebar(props: { state: PublicOkWorkspaceState }) {
             <AppWorkspace.SidebarItemLabel>{t.allGrids}</AppWorkspace.SidebarItemLabel>
           </SidebarLink>
           {renderQueryItem()}
+          {overviewLink()}
+          {createButton()}
         </AppWorkspace.SidebarSection>
-        <AppWorkspace.SidebarBody scrollPreserveKey="grids-sidebar">{renderNavigationSections()}</AppWorkspace.SidebarBody>
+        <AppWorkspace.SidebarBody scrollPreserveKey="grids-sidebar">{navigation()}</AppWorkspace.SidebarBody>
         {(state.canUseEditMode || state.canManageBase) && (
           <AppWorkspace.SidebarFooter>
             {state.canUseEditMode && (
@@ -249,7 +272,9 @@ export default function GridsSidebar(props: { state: PublicOkWorkspaceState }) {
                 <AppWorkspace.SidebarItemLabel>{state.adminModeRequested ? t.doneEditing : t.editMode}</AppWorkspace.SidebarItemLabel>
               </SidebarLink>
             )}
-            {state.canManageBase && <BaseSettingsButton base={state.base} />}
+            {state.canManageBase && (
+              <BaseSettingsButton base={state.base} navigationResources={navigationResources(state.base.id, state.catalog)} />
+            )}
           </AppWorkspace.SidebarFooter>
         )}
       </AppWorkspace.SidebarDesktop>

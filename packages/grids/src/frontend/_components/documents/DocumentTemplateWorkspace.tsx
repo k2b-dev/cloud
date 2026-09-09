@@ -188,6 +188,7 @@ export default function DocumentTemplateWorkspace(props: Props) {
   const openDocumentDetails = (document: PublicDocument) =>
     void openDocumentDetailsDialog({
       document,
+      templateName: props.template.name,
       canWrite: props.canWriteTemplate,
       dateConfig: props.dateConfig,
       onDownload: (item) => downloadDocument(item),

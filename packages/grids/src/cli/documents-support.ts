@@ -41,7 +41,7 @@ export const DOCUMENT_TEMPLATE_REFERENCE = {
   ],
   examples: [
     {
-      source: 'from table Invoices\nwhere record.id = "{{ record.id }}"\nlimit 1',
+      source: "from table Invoices\nwhere record.id = '{{ record.id }}'\nlimit 1",
       renderer: {
         kind: "html",
         body: "<h1>Invoice {{ document.number }}</h1>\n<p>{{ record.data.Customer }}</p>",
@@ -50,7 +50,7 @@ export const DOCUMENT_TEMPLATE_REFERENCE = {
       },
     },
     {
-      source: 'from table Invoices\nwhere record.id = "{{ record.id }}"\nlimit 1',
+      source: "from table Invoices\nwhere record.id = '{{ record.id }}'\nlimit 1",
       renderer: {
         kind: "profile",
         id: "de.zugferd.en16931",

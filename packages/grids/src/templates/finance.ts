@@ -314,6 +314,26 @@ export const createFinanceTemplate = (locale?: string): GridTemplate => {
     icon: "ti ti-wallet",
     baseName: t.baseName,
     baseDescription: t.baseDescription,
+    navigationGroups: [
+      {
+        name: t.transactions,
+        entries: [
+          { type: "customApp", key: "overview" },
+          { type: "view", key: "recent_transactions" },
+          { type: "form", key: "log_expense" },
+          { type: "workflow", key: "clear_and_send_receipt" },
+          { type: "documentTemplate", key: "transaction_receipt" },
+        ],
+      },
+      {
+        name: t.budgets,
+        entries: [
+          { type: "view", key: "budgets" },
+          { type: "table", key: "accounts" },
+          { type: "table", key: "categories" },
+        ],
+      },
+    ],
     tables: [
       {
         key: "accounts",

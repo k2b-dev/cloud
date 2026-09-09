@@ -62,7 +62,12 @@ if (process.argv.includes("--bootstrap")) {
       "src/frontend/_components/records/RecordReferencedBy.behavior.test.ts",
       "src/service/record-event-outbox.integration.test.ts",
     ];
-    const dom = [special[5]!, "src/frontend/_components/custom-apps/CustomAppBlockPreview.behavior.test.tsx"];
+    const dom = [
+      special[5]!,
+      "src/frontend/_components/custom-apps/CustomAppBlockPreview.behavior.test.tsx",
+      "src/frontend/_components/workspace/BaseOverview.behavior.test.tsx",
+      "src/frontend/_components/documents/DocumentDetailsDialog.behavior.test.tsx",
+    ];
     const packageRoot = join(root, "packages/grids");
     const all = [...new Bun.Glob("{src,scripts}/**/*.test.{ts,tsx}").scanSync(packageRoot)].sort();
     const phases = [

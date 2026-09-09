@@ -24,6 +24,38 @@ type Props = {
   onFormsChanged?: (forms: PublicForm[]) => void;
 };
 
+export const createForm = async (props: { tableId: string; fields: Field[] }, locale: string): Promise<PublicForm | undefined> => {
+  const t = () => gridsFormMessages.resolve([locale]).t;
+  const result = await prompts.form({
+    title: t().newForm,
+    icon: "ti ti-forms",
+    fields: {
+      name: { type: "text", label: t().name, required: true, placeholder: t().formNameExample },
+    },
+    confirmText: t().create,
+  });
+  if (!result) return;
+
+  const eligibleFields = props.fields.filter((f) => !f.deletedAt && canBeFormInput(f));
+  // Default config = include every editable field, in declared order.
+  const config: FormConfig = {
+    fields: eligibleFields.map((f) => ({
+      kind: "user_input" as const,
+      fieldId: f.id,
+      required: f.required,
+    })),
+  };
+  const res = await apiClient.forms["by-table"][":tableId"].$post({
+    param: { tableId: props.tableId },
+    json: { name: String(result.name).trim(), config, isPublic: false },
+  });
+  if (!res.ok) {
+    prompts.error(await errorMessage(res, t().createFormFailed));
+    return;
+  }
+  return res.json();
+};
+
 /**
  * Form builder. Mirrors the field-editor card pattern: every form
  * collapses to a one-line summary; clicking expands it for full edit.
@@ -62,37 +94,9 @@ export default function FormsManager(props: Props) {
 
   // ---- Create ----------------------------------------------------------
   const handleCreate = async () => {
-    const result = await prompts.form({
-      title: t().newForm,
-      icon: "ti ti-forms",
-      fields: {
-        name: { type: "text", label: t().name, required: true, placeholder: t().formNameExample },
-      },
-      confirmText: t().create,
-    });
-    if (!result) return;
-
-    const eligibleFields = props.fields.filter((f) => !f.deletedAt && canBeFormInput(f));
-    // Default config = include every editable field, in declared order.
-    const config: FormConfig = {
-      fields: eligibleFields.map((f) => ({
-        kind: "user_input" as const,
-        fieldId: f.id,
-        required: f.required,
-      })),
-    };
-    const res = await apiClient.forms["by-table"][":tableId"].$post({
-      param: { tableId: props.tableId },
-      json: { name: String(result.name).trim(), config, isPublic: false },
-    });
-    if (!res.ok) {
-      prompts.error(await errorMessage(res, t().createFormFailed));
-      return;
-    }
-    const created = await res.json();
+    const created = await createForm(props, locale());
+    if (!created) return;
     updateForms([...forms(), created]);
-    // Open the editor modal immediately so the user can configure the
-    // newly created form. Mirrors the pre-modal auto-expand behaviour.
     openFormEditor(created);
   };
 

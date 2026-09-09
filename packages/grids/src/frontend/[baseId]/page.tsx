@@ -6,7 +6,7 @@ import { Layout } from "@valentinkolb/cloud/ssr";
 import { currentActorUser } from "../../api/permissions";
 import { withInitialGqlResults } from "../../api/workspace-query-preview";
 import { ssr } from "../../config";
-import { parseDocumentViewMode } from "../_components/sidebar/GridsSettingsStore";
+import { parseDocumentViewMode, parseNavigationExpansion } from "../_components/sidebar/GridsSettingsStore";
 import GridsWorkspace from "../_components/workspace/GridsWorkspace";
 import { projectPublicWorkspaceState } from "../_components/workspace/workspace-public-state";
 import { loadGridsWorkspaceState } from "../_components/workspace/workspace-state";
@@ -77,6 +77,7 @@ export default ssr<AuthContext>(async (c) => {
 
   const state = loaded.state;
   if (!state) throw new Error("Workspace state projection is missing");
+  state.initialNavigationExpansion = parseNavigationExpansion(c.req.header("Cookie"), state.base.id);
   const cloudUrl = publicCloudOrigin(await coreSettings.get<string>("app.url"));
 
   return () => (

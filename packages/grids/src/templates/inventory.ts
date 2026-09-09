@@ -595,6 +595,27 @@ export const createInventoryTemplate = (locale?: string): GridTemplate => {
     icon: "ti ti-packages",
     baseName: t.templateName,
     baseDescription: t.baseDescription,
+    navigationGroups: [
+      {
+        name: t.loans,
+        entries: [
+          { type: "customApp", key: "loan_desk" },
+          { type: "view", key: "open_loans" },
+          { type: "form", key: "request_loan" },
+          { type: "workflow", key: "approve_loan" },
+          { type: "documentTemplate", key: "loan_agreement" },
+        ],
+      },
+      {
+        name: t.items,
+        entries: [
+          { type: "view", key: "available_items" },
+          { type: "form", key: "add_item" },
+          { type: "table", key: "kits" },
+          { type: "documentTemplate", key: "asset_label" },
+        ],
+      },
+    ],
     tables: [
       {
         key: "categories",

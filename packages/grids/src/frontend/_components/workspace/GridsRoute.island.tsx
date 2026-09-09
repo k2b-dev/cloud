@@ -9,6 +9,7 @@ import QueryWorkspace from "../query/QueryWorkspace";
 import RecordsView from "../records-view/RecordsView";
 import { WorkflowRunDetailPanel } from "../workflows/WorkflowRunDetailPanel";
 import WorkflowsPage from "../workflows/WorkflowsPage";
+import BaseOverview from "./BaseOverview";
 import { workspaceMessages } from "./messages";
 import { workspaceMainClass } from "./workspace-layout";
 import type {
@@ -25,6 +26,7 @@ export default function GridsRoute(props: { state: PublicOkWorkspaceState; cloud
   const { t } = workspaceMessages.resolve([useLocale()()]);
   const state = props.state;
   const route = state.route;
+  if (route.kind === "overview") return <BaseOverview state={state} />;
   const [selectedWorkflowRunId, setSelectedWorkflowRunId] = createSignal(route.kind === "workflows" ? route.selectedRunId : null);
   const [workflowRunUpdate, setWorkflowRunUpdate] = createSignal<GridsWorkflowRun | null>(null);
 
@@ -199,7 +201,16 @@ export default function GridsRoute(props: { state: PublicOkWorkspaceState; cloud
             })()}
           </Match>
           <Match when={route.kind === "documents"}>
-            <DocumentsWorkspace baseId={state.base.id} documentTemplateLevels={state.catalog.documentTemplateLevels} />
+            {(() => {
+              if (route.kind !== "documents") return null;
+              return (
+                <DocumentsWorkspace
+                  baseId={state.base.id}
+                  documentTemplateLevels={state.catalog.documentTemplateLevels}
+                  initialBrowserPage={route.initialBrowserPage}
+                />
+              );
+            })()}
           </Match>
           <Match when={route.kind === "empty"}>
             <Placeholder

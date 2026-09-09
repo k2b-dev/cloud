@@ -39,6 +39,20 @@ Choose a small process that already has clear items, such as equipment loans or 
 
 This order keeps mistakes inexpensive. A clear table and a few representative records make every later choice easier.
 
+## Find your work in a base {icon="layout-dashboard"}
+
+Use **New** in Edit mode to create a table, view, form, document template, workflow, or App. The menu only offers actions you may use. For table-based resources, select a table; the current table is preselected when eligible. **View** opens the query editor, where you configure and save the view.
+
+**Documents** is always expandable: open **All documents** or select a template to see its generated documents. Base admins manage workflow email templates under **Settings → Email templates**.
+
+Open **Overview** to see shared shortcut groups and search all resources by name or type. Tables, views, forms, document templates, workflows, and Apps keep their existing behavior; opening a form still opens its form dialog.
+
+Base admins can open **Settings → Navigation** to create named groups. Add resources with the searchable picker, change their order with the arrow buttons, then save your changes. Removing a shortcut or group does not delete any resource. A resource can appear in several groups.
+
+Groups are shared, but readers only see resources they can access. Empty groups are hidden. Without visible groups the sidebar keeps its other resource lists open; with groups those lists become expandable. They still contain all accessible resources, including grouped ones. This browser remembers which branches you expand; opening a direct link reveals the active resource.
+
+If another admin saved first, your save is rejected rather than overwriting their changes. **Reload navigation** loads the current configuration after asking before discarding your edits.
+
 ## Where to continue {icon="arrow-right"}
 
 - Read **Core model** if bases, tables, records, and relations are new to you.

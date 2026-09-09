@@ -6,6 +6,7 @@ import { sql } from "bun";
 import { documentTemplateStarterById } from "../document-template-starters";
 import { type GridTemplate, getTemplate, getTemplates, type TemplateDateExpression, type TemplateRef } from "../templates";
 import type { GridsWorkflow } from "../workflows/contracts";
+import { updateBaseNavigation } from "./base-navigation";
 import * as bases from "./bases";
 import * as customApps from "./custom-apps";
 import * as documents from "./documents";
@@ -426,6 +427,7 @@ const createCustomApps = async (template: GridTemplate, base: Base, actorId: str
       ),
     );
     requireResult(await customApps.publish(created.id, actorId, locale));
+    ctx.publicRefs.set(`customApp:${templateApp.key}`, created.shortId);
   }
 };
 
@@ -495,6 +497,7 @@ const createWorkflows = async (template: GridTemplate, baseId: string, actorId: 
       ),
     );
     ctx.workflows.set(definition.key, created);
+    ctx.publicRefs.set(`workflow:${definition.key}`, created.shortId);
   }
 };
 
@@ -568,6 +571,24 @@ export const instantiate = async (
     await createWorkflows(template, base.id, actorId, ctx, locale);
     await createWorkflowLaunchers(template, actorId, ctx, locale);
     await createCustomApps(template, base, actorId, ctx, locale);
+    if (template.navigationGroups?.length) {
+      const groupIds = new Set<string>();
+      const groups = template.navigationGroups.map((group) => {
+        let id = newShortId();
+        while (groupIds.has(id)) id = newShortId();
+        groupIds.add(id);
+        return {
+          id,
+          name: group.name,
+          entries: group.entries.map((entry) => {
+            const targetId = ctx.publicRefs.get(`${entry.type}:${entry.key}`);
+            if (!targetId) throw new TemplateError(err.badInput(`Unknown navigation reference: ${entry.type}:${entry.key}`));
+            return { type: entry.type, id: targetId };
+          }),
+        };
+      });
+      requireResult(await updateBaseNavigation(base.id, { revision: 0, groups }, actorId, locale));
+    }
     return ok(base);
   } catch (error) {
     // Nothing in the kernel references a Grids table, so dropping the base does

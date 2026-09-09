@@ -3,9 +3,10 @@ import { createSignal } from "solid-js";
 import { apiClient } from "../../../api/client";
 import type { PublicBase as Base } from "../../../api/public-dto";
 import BaseSettingsPanel from "../settings/BaseSettingsPanel";
+import type { NavigationResource } from "../workspace/navigation-catalog";
 import { sidebarMessages } from "./messages";
 
-export default function BaseSettingsButton(props: { base: Base }) {
+export default function BaseSettingsButton(props: { base: Base; navigationResources: NavigationResource[] }) {
   const { t } = sidebarMessages.resolve([useLocale()()]);
   const [open, setOpen] = createSignal(false);
 
@@ -19,7 +20,12 @@ export default function BaseSettingsButton(props: { base: Base }) {
       await prompts.dialog<void>(
         (close) => (
           <div class="flex h-[86vh] min-h-0 flex-col overflow-hidden">
-            <BaseSettingsPanel base={props.base} accessEntries={accessEntries} onClose={() => close()} />
+            <BaseSettingsPanel
+              base={props.base}
+              navigationResources={props.navigationResources}
+              accessEntries={accessEntries}
+              onClose={() => close()}
+            />
           </div>
         ),
         { surface: "bare", header: false, size: "large", cancelBehavior: "ignore" },

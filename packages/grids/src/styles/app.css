@@ -1,6 +1,70 @@
+@reference "tailwindcss";
 @import "tailwindcss/utilities.css" layer(utilities);
 @source "../**/*.{ts,tsx}";
 @custom-variant dark (&:where(.dark, .dark *));
+
+.k2b-ui .k2b-panel-dialog-frame.grids-document-dialog {
+  width: min(96vw, 44rem);
+}
+
+.k2b-ui .k2b-button.grids-document-detail-row {
+  width: calc(100% + 1.5rem);
+  margin-inline: -0.75rem;
+  height: auto;
+  padding: 0.875rem 0.75rem;
+  text-align: left;
+}
+
+.k2b-ui .grids-document-detail-row > .k2b-button__label {
+  width: 100%;
+  min-width: 0;
+  justify-content: flex-start;
+  gap: 0.75rem;
+  white-space: normal;
+}
+
+.k2b-ui .k2b-button.grids-document-source-link[data-variant="text"] {
+  color: var(--k2b-success-text);
+  font-weight: 400;
+  text-align: left;
+  white-space: normal;
+  height: auto;
+}
+
+.k2b-ui .grids-document-source-link > .k2b-button__label {
+  justify-content: flex-start;
+  overflow-wrap: anywhere;
+}
+
+.grids-document-file-icon {
+  background: var(--k2b-surface-muted);
+}
+
+.grids-navigation-columns {
+  column-count: 1;
+  column-gap: 1rem;
+}
+
+.grids-navigation-columns > * {
+  break-inside: avoid;
+  margin-bottom: 1rem;
+}
+
+@media (min-width: 64rem) {
+  .grids-navigation-columns {
+    column-count: 2;
+  }
+}
+
+.grids-navigation-link > .k2b-button__label {
+  width: 100%;
+  min-width: 0;
+}
+
+.grids-navigation-link.k2b-button {
+  height: auto;
+  padding-block: 0.625rem;
+}
 
 .grids-workspace-editing {
   --grids-edit-accent: color-mix(in srgb, var(--color-emerald-500) 76%, transparent);

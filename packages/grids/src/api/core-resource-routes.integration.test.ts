@@ -9,6 +9,7 @@ import { migrate } from "../migrate";
 import { dropFieldUniqueIndex, ensureFieldUniqueIndex } from "../service/field-indexes";
 import { encodeRecordChangeFeedCursor } from "../service/record-change-feed";
 import { deleteExpiredExternalRecordOperations } from "../service/record-external-identity";
+import baseNavigationRoutes from "./base-navigation";
 import basesRoutes from "./bases";
 import fieldsRoutes from "./fields";
 import recordsRoutes from "./records";
@@ -36,6 +37,7 @@ type Fixture = {
 
 const app = new Hono<AuthContext>()
   .route("/bases", basesRoutes)
+  .route("/bases", baseNavigationRoutes)
   .route("/tables", tablesRoutes)
   .route("/fields", fieldsRoutes)
   .route("/records", recordsRoutes)
@@ -253,6 +255,40 @@ beforeAll(async () => {
 });
 
 describe("classic resource route contracts", () => {
+  postgresTest(
+    "shared navigation enforces admin scope, base ownership, revision conflicts and harmless removal",
+    async () => {
+      const fixture = newFixture();
+      await setupFixture(fixture);
+      try {
+        const path = `/bases/${fixture.basePublicId}/navigation`;
+        for (const token of [fixture.tokens.read, fixture.tokens.write, fixture.tokens.delegated]) {
+          expect((await app.request(path, bearer(token))).status).toBe(403);
+          expect((await app.request(path, jsonRequest(token, { revision: 0, groups: [] }, "PUT"))).status).toBe(403);
+        }
+        expect(await (await app.request(path, bearer(fixture.tokens.admin))).json()).toEqual({ revision: 0, groups: [] });
+        const group = { id: "GROUP1", name: "Operations", entries: [{ type: "table", id: fixture.tablePublicId }] };
+        const save = (revision: number, groups: unknown[]) =>
+          app.request(path, jsonRequest(fixture.tokens.admin, { revision, groups }, "PUT"));
+        const foreign = await save(0, [{ ...group, entries: [{ type: "table", id: fixture.foreignTablePublicId }] }]);
+        expect(foreign.status, await foreign.text()).toBe(400);
+        expect((await save(0, [{ ...group, entries: [{ type: "table", id: "Unknown record" }] }])).status).toBe(400);
+        expect((await save(0, [group])).status).toBe(200);
+        const raced = await Promise.all([save(1, [group]), save(1, [])]);
+        expect(raced.map((res) => res.status).sort()).toEqual([200, 409]);
+        expect((await save(2, [group])).status).toBe(200);
+        await sql`UPDATE grids.tables SET deleted_at = now() WHERE id = ${fixture.tableId}::uuid`;
+        expect((await save(3, [group])).status).toBe(200);
+        expect((await save(4, [])).status).toBe(200);
+        expect(await count("tables", "id", fixture.tableId)).toBe(1);
+        expect(await (await app.request(path, bearer(fixture.tokens.admin))).json()).toEqual({ revision: 5, groups: [] });
+        expect((await app.request(`/bases/${fixture.foreignBasePublicId}/navigation`, bearer(fixture.tokens.admin))).status).not.toBe(200);
+      } finally {
+        await cleanupFixture(fixture);
+      }
+    },
+    20_000,
+  );
   postgresTest(
     "enforces auth, credential caps, resource binding, validation, and result mappings",
     async () => {

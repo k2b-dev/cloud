@@ -39,8 +39,10 @@ describe("Grids Base settings composition", () => {
     for (const group of ["Base", "Sharing", "Recovery", "Lifecycle"]) expect(html).toContain(group);
     for (const tab of [
       "General",
+      "Navigation",
       "Tables",
       "Documents",
+      "Email templates",
       "Access",
       "Trash",
       "Retention",

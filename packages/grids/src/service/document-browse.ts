@@ -161,16 +161,23 @@ export const listDocumentsForWorkflow = async (
   };
 };
 
-const documentWhere = (params: {
-  templateId: string;
-  q?: string | null;
-  tags?: string[];
-  year?: number | null;
-  month?: number | null;
-  timeZone?: string | null;
-}) => {
+type DocumentScope =
+  | { templateId: string; baseId?: never; templateShortId?: never }
+  | { baseId: string; templateId?: never; templateShortId?: string };
+
+const documentWhere = (
+  params: DocumentScope & {
+    q?: string | null;
+    tags?: string[];
+    year?: number | null;
+    month?: number | null;
+    timeZone?: string | null;
+  },
+) => {
   const timeZone = params.timeZone || "UTC";
-  const conditions = [sql`template_id = ${params.templateId}::uuid`];
+  const conditions = params.baseId ? [sql`base_id = ${params.baseId}::uuid`] : [sql`template_id = ${params.templateId}::uuid`];
+  if (params.templateShortId)
+    conditions.push(sql`template_id IN (SELECT id FROM grids.document_templates WHERE short_id = ${params.templateShortId})`);
   const q = params.q?.trim();
   if (q) {
     const pattern = `%${escapeLikePattern(q)}%`;
@@ -188,17 +195,18 @@ const documentWhere = (params: {
   return conditions.reduce((acc, cur) => sql`${acc} AND ${cur}`);
 };
 
-export const listDocumentsForTemplate = async (params: {
-  templateId: string;
-  q?: string | null;
-  tags?: string[];
-  limit?: number;
-  offset?: number;
-  cursor?: string | null;
-  year?: number | null;
-  month?: number | null;
-  timeZone?: string | null;
-}): Promise<DocumentPage> => {
+const listDocumentPage = async (
+  params: DocumentScope & {
+    q?: string | null;
+    tags?: string[];
+    limit?: number;
+    offset?: number;
+    cursor?: string | null;
+    year?: number | null;
+    month?: number | null;
+    timeZone?: string | null;
+  },
+): Promise<DocumentPage> => {
   const limit = Math.min(Math.max(params.limit ?? 200, 1), 500);
   const offset = Math.max(params.offset ?? 0, 0);
   const cursor = decodeDocumentCursor(params.cursor);
@@ -230,6 +238,64 @@ export const listDocumentsForTemplate = async (params: {
     hasMore,
     nextOffset: hasMore && !cursor ? nextOffset : null,
     nextCursor: hasMore && last ? encodeDocumentCursor(last) : null,
+  };
+};
+
+export const listDocumentsForTemplate = (params: Extract<Parameters<typeof listDocumentPage>[0], { templateId: string }>) =>
+  listDocumentPage(params);
+
+/** Base permission is checked by API/SSR callers, just as for listDocumentsForBase. */
+export const browseDocumentsForBase = async (params: {
+  baseId: string;
+  q?: string;
+  path?: string[];
+  mode?: "list" | "folders";
+  limit?: number;
+  cursor?: string | null;
+  timeZone?: string;
+}): Promise<DocumentBrowsePage> => {
+  const path = params.path ?? [];
+  const searching = Boolean(params.q?.trim());
+  const templateShortId = !searching && params.mode !== "list" ? path[0] : undefined;
+  const year = templateShortId && path[1] ? Number(path[1]) : null;
+  if (searching || params.mode === "list" || year !== null) {
+    const page = await listDocumentPage({ ...params, templateShortId, year });
+    return { ...page, path: searching || params.mode === "list" ? [] : path, folders: [] };
+  }
+  const where = documentWhere({ baseId: params.baseId, templateShortId });
+  if (!templateShortId) {
+    const rows = await sql<Array<{ short_id: string; name: string; count: number }>>`
+      SELECT t.short_id, t.name, count(*)::int AS count
+      FROM grids.documents d JOIN grids.document_templates t ON t.id = d.template_id
+      WHERE d.base_id = ${params.baseId}::uuid
+      GROUP BY t.id, t.short_id, t.name ORDER BY t.name, t.short_id
+    `;
+    return {
+      path: [],
+      items: [],
+      folders: rows.map((row) => ({
+        kind: "template",
+        key: row.short_id,
+        label: row.name,
+        path: [row.short_id],
+        count: Number(row.count),
+      })),
+    };
+  }
+  const rows = await sql<Array<{ year: number; count: number }>>`
+    SELECT EXTRACT(YEAR FROM created_at AT TIME ZONE ${params.timeZone || "UTC"})::int AS year, count(*)::int AS count
+    FROM grids.documents WHERE ${where} GROUP BY year ORDER BY year DESC
+  `;
+  return {
+    path,
+    items: [],
+    folders: rows.map((row) => ({
+      kind: "year",
+      key: String(row.year),
+      label: String(row.year),
+      path: [templateShortId, String(row.year)],
+      count: Number(row.count),
+    })),
   };
 };
 

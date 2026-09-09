@@ -51,6 +51,11 @@ be direct or an accessor; the application updates it through `onValueChange`.
 
 ## Close ownership
 
+The muted header uses a 20 px semibold title and a 13 px secondary subtitle.
+Header, body, and footer share a 24 px horizontal inset. Keep filenames and
+other long identifiers in the subtitle or body; both heading lines wrap.
+Use whitespace to separate content when additional section frames add no meaning.
+
 Pass the dialog's `close` callback to `PanelDialog.Header`. `closeDisabled`
 temporarily disables that control, and `closeLabel` overrides its accessible
 name.

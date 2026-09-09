@@ -28,7 +28,10 @@ import {
   toPublicWorkflowTriggerState,
 } from "../../../api/workflow-api-shared";
 import type { Field } from "../../../contracts";
+import { navigationReferenceKey, visibleNavigationGroups } from "../../../navigation-contracts";
+import { getBaseNavigation } from "../../../service/base-navigation";
 import { projectPublicId, projectPublicIds } from "../../../service/public-resources";
+import { navigationResources } from "./navigation-catalog";
 import type { PublicOkWorkspaceState, PublicWorkspaceCatalog, PublicWorkspaceRoute } from "./workspace-public-state-model";
 import type { OkWorkspaceState, WorkspaceCatalog, WorkspaceRecordDetail, WorkspaceWorkflowRunDetail } from "./workspace-state-model";
 
@@ -156,7 +159,7 @@ export const projectPublicWorkspaceWorkflowRunDetail = async (detail: WorkspaceW
 
 const projectRoute = async (state: OkWorkspaceState, catalog: PublicWorkspaceCatalog): Promise<PublicWorkspaceRoute> => {
   const route = state.route;
-  if (route.kind === "empty") return route;
+  if (route.kind === "empty" || route.kind === "overview") return route;
   if (route.kind === "customApp") {
     return {
       ...route,
@@ -269,7 +272,17 @@ const projectRoute = async (state: OkWorkspaceState, catalog: PublicWorkspaceCat
       },
     };
   }
-  if (route.kind === "documents") return route;
+  if (route.kind === "documents")
+    return {
+      ...route,
+      initialBrowserPage: {
+        items: await projectDocuments(route.initialBrowserPage.items),
+        cursor: route.initialBrowserPage.nextCursor ?? null,
+        hasMore: route.initialBrowserPage.hasMore ?? false,
+        path: route.initialBrowserPage.path,
+        folders: route.initialBrowserPage.folders,
+      },
+    };
   const workflows = await toPublicWorkflows(route.activeWorkflow ? [route.activeWorkflow] : []);
   const overviewRuns = await toPublicWorkflowRuns(route.initialOverview.runs.items);
   const overviewLaunchers = await toPublicWorkflowLaunchers(route.initialOverview.launchers);
@@ -292,5 +305,8 @@ const projectRoute = async (state: OkWorkspaceState, catalog: PublicWorkspaceCat
 export const projectPublicWorkspaceState = async (state: OkWorkspaceState): Promise<PublicOkWorkspaceState> => {
   const catalog = await projectCatalog(state.catalog);
   const { baseShortId: _baseShortId, ...rest } = state;
-  return { ...rest, base: toPublicBase(state.base), catalog, route: await projectRoute(state, catalog) };
+  const stored = await getBaseNavigation(state.base.id);
+  const visible = new Set(navigationResources(state.base.shortId, catalog).map(navigationReferenceKey));
+  const navigation = stored ? { revision: stored.revision, groups: visibleNavigationGroups(stored.groups, visible) } : undefined;
+  return { ...rest, base: toPublicBase(state.base), navigation, catalog, route: await projectRoute(state, catalog) };
 };

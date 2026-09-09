@@ -32,6 +32,18 @@ afterEach(() => {
 });
 
 describe("@k2b/ui Cloud feedback parity", () => {
+  test("panel dialog headings have a quiet hierarchy and aligned content insets", () => {
+    const header = indexCss.match(/\.k2b-ui \.k2b-panel-dialog__header \{([^}]*)\}/)?.[1] ?? "";
+    const title = indexCss.match(/\.k2b-ui \.k2b-panel-dialog__heading h2 \{([^}]*)\}/g)?.at(-1) ?? "";
+    const subtitle = indexCss.match(/\.k2b-ui \.k2b-panel-dialog__heading p \{([^}]*)\}/)?.[1] ?? "";
+    expect(header).toContain("padding: 1.25rem 1.5rem");
+    expect(title).toContain("font-size: 1.25rem");
+    expect(title).toContain("font-weight: 600");
+    expect(title).toContain("overflow-wrap: anywhere");
+    expect(subtitle).toContain("margin-top: 0.375rem");
+    expect(subtitle).toContain("font-size: 0.8125rem");
+  });
+
   test("renders quiet contextual guidance with semantic tones and native actions", () => {
     const html = renderToString(() =>
       createComponent(InlineGuidance, {

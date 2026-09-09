@@ -1,12 +1,14 @@
 import { ErrorResponseSchema } from "@valentinkolb/cloud/contracts";
-import { type AuthContext, auth, getLocale, jsonResponse, respond } from "@valentinkolb/cloud/server";
+import { type AuthContext, auth, getDateConfig, getLocale, jsonResponse, respond } from "@valentinkolb/cloud/server";
 import { Hono, type MiddlewareHandler } from "hono";
 import { describeRoute } from "hono-openapi";
 import { z } from "zod";
 import { DocumentProfileSummarySchema } from "../document-profile-contracts";
 import { gridsService } from "../service";
 import {
+  BaseDocumentBrowseQuerySchema,
   gateDocument,
+  PublicDocumentBrowseResponseSchema,
   PublicDocumentListSchema,
   PublicDocumentPageQuerySchema,
   PublicDocumentSchema,
@@ -43,6 +45,35 @@ export const createDocumentResourceRoutes = (deps: { requireAuthenticated?: Midd
         responses: { 200: jsonResponse(z.array(DocumentProfileSummarySchema), "Document renderers") },
       }),
       (c) => c.json(gridsService.document.profiles()),
+    )
+    .get(
+      "/by-base/:baseId/browse",
+      describeRoute({
+        tags: ["Grids:Document"],
+        summary: "Browse Documents by template and year or search the Base",
+        responses: {
+          200: jsonResponse(PublicDocumentBrowseResponseSchema, "Document browser page"),
+          403: jsonResponse(ErrorResponseSchema, "Forbidden"),
+        },
+      }),
+      v("query", BaseDocumentBrowseQuerySchema),
+      async (c) => {
+        const baseId = internalIdParam(c, "baseId")!;
+        const gate = await gateAt(c, { baseId }, "read");
+        if (!gate.ok) return respond(c, () => Promise.resolve(gate));
+        const page = await gridsService.document.browseDocumentsForBase({
+          ...c.req.valid("query"),
+          baseId,
+          timeZone: (await getDateConfig(c)).timeZone,
+        });
+        return c.json({
+          path: page.path,
+          folders: page.folders,
+          items: await projectDocuments(page.items),
+          cursor: page.nextCursor ?? null,
+          hasMore: page.hasMore ?? false,
+        });
+      },
     )
     .get(
       "/by-base/:baseId",

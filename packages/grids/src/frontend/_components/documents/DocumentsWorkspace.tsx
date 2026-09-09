@@ -1,44 +1,76 @@
-import { mutation as mutations } from "@k2b/stdlib/solid";
+import { mutation as mutations, query, timed } from "@k2b/stdlib/solid";
 import { Button, prompts, useLocale } from "@k2b/ui";
-import { createResource, createSignal } from "solid-js";
+import { createEffect, createSignal } from "solid-js";
 import { apiClient } from "@/api/client";
+import { PUBLIC_DOCUMENT_PAGE_LIMIT } from "../../../api/document-public-contracts";
 import { errorMessage } from "../utils/api-helpers";
 import DocumentBrowser from "./DocumentBrowser";
+import DocumentBrowserToolbar from "./DocumentBrowserToolbar";
 import { openDocumentDetailsDialog } from "./DocumentDetailsDialog";
+import {
+  activeDocumentViewMode,
+  documentBrowserEmptyText,
+  documentBrowserKey,
+  documentCountLabel,
+  serializeDocumentBrowserKey,
+} from "./document-browser-model";
 import { downloadPdfResponse } from "./document-download";
 import { requestDocumentDownload } from "./document-transfer-client";
 import { documentMessages } from "./messages";
-import type { PublicDocument } from "./public-document-types";
+import type { PublicDocument, PublicDocumentBrowseResponse } from "./public-document-types";
 
-type DocumentPage = { items: PublicDocument[]; cursor: string | null; hasMore: boolean };
 type PermissionLevel = "none" | "read" | "write" | "admin";
 
-const PAGE_SIZE = 100;
-
-const loadPage = async (baseId: string, cursor?: string | null, signal?: AbortSignal, locale = "en"): Promise<DocumentPage> => {
-  const response = await apiClient.documents["by-base"][":baseId"].$get(
-    { param: { baseId }, query: { limit: String(PAGE_SIZE), cursor: cursor ?? "" } },
+const loadPage = async (
+  key: ReturnType<typeof documentBrowserKey>,
+  cursor?: string | null,
+  signal?: AbortSignal,
+  locale = "en",
+): Promise<PublicDocumentBrowseResponse> => {
+  const response = await apiClient.documents["by-base"][":baseId"].browse.$get(
+    {
+      param: { baseId: key.templateId },
+      query: { limit: String(PUBLIC_DOCUMENT_PAGE_LIMIT), cursor: cursor ?? "", q: key.search, mode: key.mode, path: key.path.join("/") },
+    },
     signal ? { init: { signal } } : undefined,
   );
   if (!response.ok) throw new Error(await errorMessage(response, documentMessages.resolve([locale]).t.couldNotLoadDocuments));
-  return response.json() as Promise<DocumentPage>;
+  return response.json();
 };
 
-export default function DocumentsWorkspace(props: { baseId: string; documentTemplateLevels: Record<string, PermissionLevel> }) {
+export default function DocumentsWorkspace(props: {
+  baseId: string;
+  documentTemplateLevels: Record<string, PermissionLevel>;
+  initialBrowserPage: PublicDocumentBrowseResponse;
+}) {
   const locale = useLocale();
   const t = () => documentMessages.resolve([locale()]).t;
-  const [page, { refetch }] = createResource(
-    () => [props.baseId, locale()] as const,
-    ([baseId, requestLocale]) => loadPage(baseId, null, undefined, requestLocale),
-  );
-  const [appended, setAppended] = createSignal<PublicDocument[]>([]);
-  const [cursor, setCursor] = createSignal<string | null>(null);
-  const [hasMore, setHasMore] = createSignal(false);
+  const [searchDraft, setSearchDraft] = createSignal("");
+  const [search, setSearch] = createSignal("");
+  const [mode, setMode] = createSignal<"list" | "folders">("folders");
+  const [path, setPath] = createSignal<string[]>([]);
+  const debounce = timed.debounce((value: string) => setSearch(value.trim()), 250);
+  createEffect(() => debounce.debouncedFn(searchDraft()));
+  const key = () => documentBrowserKey(props.baseId, mode(), search(), path());
+  const pages = query.createInfinite<ReturnType<typeof documentBrowserKey>, PublicDocumentBrowseResponse, string>({
+    source: key,
+    isSameSource: (a, b) => serializeDocumentBrowserKey(a) === serializeDocumentBrowserKey(b),
+    initial: { source: key(), pages: [props.initialBrowserPage] },
+    loadPage: (source, { cursor, abortSignal }) => loadPage(source, cursor, abortSignal, locale()),
+    getNextCursor: (page) => (page.hasMore ? (page.cursor ?? undefined) : undefined),
+  });
   const [busyDocumentId, setBusyDocumentId] = createSignal<string | null>(null);
 
-  const documents = () => [...(page()?.items ?? []), ...appended()];
-  const currentCursor = () => (appended().length > 0 ? cursor() : (page()?.cursor ?? null));
-  const moreAvailable = () => (appended().length > 0 ? hasMore() : (page()?.hasMore ?? false));
+  const documents = () => pages.pages().flatMap((page) => page.items);
+  const folders = () => pages.pages()[0]?.folders ?? [];
+  const activeMode = () => activeDocumentViewMode(mode(), search());
+  const breadcrumbs = () => [
+    { label: t().allDocuments, path: [] },
+    ...path().map((part, index) => ({
+      label: index === 0 ? (props.initialBrowserPage.folders.find((folder) => folder.key === part)?.label ?? part) : part,
+      path: path().slice(0, index + 1),
+    })),
+  ];
   const canWrite = (document: PublicDocument) => {
     const level = props.documentTemplateLevels[document.templateId] ?? "none";
     return level === "write" || level === "admin";
@@ -60,71 +92,65 @@ export default function DocumentsWorkspace(props: { baseId: string; documentTemp
     },
   });
 
-  const loadMoreMut = mutations.create<DocumentPage, void>({
-    mutation: (_, { abortSignal }) => {
-      const nextCursor = currentCursor();
-      if (!nextCursor) throw new Error(t().noMoreDocuments);
-      return loadPage(props.baseId, nextCursor, abortSignal, locale());
-    },
-    onSuccess: (next) => {
-      setAppended((current) => [...current, ...next.items]);
-      setCursor(next.cursor);
-      setHasMore(next.hasMore);
-    },
-    onError: (error) => prompts.error(error.message),
-  });
-
   const openDetails = (document: PublicDocument) =>
     void openDocumentDetailsDialog({
       document,
+      templateName: props.initialBrowserPage.folders.find((folder) => folder.key === document.templateId)?.label,
       canWrite: canWrite(document),
       onDownload: downloadDocument,
     });
 
   return (
     <div class="flex h-full min-h-0 flex-col gap-2 overflow-hidden" data-scroll-preserve="grids-documents-workspace">
-      <header class="paper flex shrink-0 items-center justify-between gap-3 px-4 py-3">
+      <header class="flex shrink-0 items-center justify-between gap-3 px-4 py-3">
         <div>
           <h2 class="text-base font-semibold text-primary">{t().allDocuments}</h2>
           <p class="text-xs text-dimmed">{t().allDocumentsDescription}</p>
         </div>
-        <Button
-          variant="secondary"
-          size="sm"
-          type="button"
-          onClick={() => {
-            setAppended([]);
-            setCursor(null);
-            setHasMore(false);
-            void refetch();
-          }}
-          disabled={page.loading}
-        >
-          <i class={page.loading ? "ti ti-loader-2 animate-spin" : "ti ti-refresh"} />
+        <Button variant="secondary" size="sm" type="button" onClick={() => void pages.refresh()} disabled={pages.refreshing()}>
+          <i class={pages.refreshing() ? "ti ti-loader-2 animate-spin" : "ti ti-refresh"} />
           {t().refresh}
         </Button>
       </header>
+      <DocumentBrowserToolbar
+        canWrite={false}
+        searchDraft={searchDraft}
+        setSearchDraft={setSearchDraft}
+        clearSearch={() => {
+          debounce.cancel();
+          setSearchDraft("");
+          setSearch("");
+        }}
+        activeMode={activeMode()}
+        searching={Boolean(search())}
+        countLabel={documentCountLabel(activeMode(), folders(), documents(), pages.hasMore(), locale())}
+        onGenerate={() => {}}
+        onMode={(next) => {
+          setMode(next);
+          setPath([]);
+        }}
+      />
       <DocumentBrowser
-        loading={page.loading}
-        error={page.error ?? undefined}
-        mode="list"
-        searching={false}
-        folders={[]}
+        loading={pages.loading() || pages.refreshing()}
+        error={pages.error() ?? undefined}
+        mode={activeMode()}
+        searching={Boolean(search())}
+        folders={folders()}
         documents={documents()}
-        breadcrumbs={[]}
-        emptyText={t().noDocumentsYet}
-        hasMore={moreAvailable()}
-        loadingMore={loadMoreMut.loading()}
+        breadcrumbs={breadcrumbs()}
+        emptyText={documentBrowserEmptyText(search(), activeMode(), path(), locale())}
+        hasMore={pages.hasMore()}
+        loadingMore={pages.loadingMore()}
         busyDocumentId={busyDocumentId()}
         canWrite={false}
         folderTitle={(folder) => folder.label}
-        onBreadcrumb={() => {}}
-        onFolder={() => {}}
+        onBreadcrumb={setPath}
+        onFolder={(folder) => setPath(folder.path)}
         onDocument={openDetails}
         onEdit={openDetails}
         onLink={() => {}}
         onDownload={(document) => void downloadMut.mutate(document)}
-        onLoadMore={() => void loadMoreMut.mutate(undefined)}
+        onLoadMore={() => void pages.loadMore()}
       />
     </div>
   );

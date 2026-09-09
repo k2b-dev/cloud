@@ -3,6 +3,7 @@ import { sql } from "bun";
 import { insertTestDocumentArtifact, postgresTest, testShortId, testUuid } from "../integration-test-utils";
 import { migrate } from "../migrate";
 import {
+  browseDocumentsForBase,
   browseDocumentsForTemplate,
   listDocumentSummariesForRecordByTemplates,
   listDocumentsForBase,
@@ -103,6 +104,33 @@ const cleanupFixture = async (fixture: Fixture): Promise<void> => {
 };
 
 describe("document browsing integration", () => {
+  postgresTest("base folders group by public template id then local year, with bounded global search", async () => {
+    const fixture = await insertFixture();
+    const root = await browseDocumentsForBase({ baseId: fixture.baseId });
+    expect(root.folders).toHaveLength(1);
+    const folder = root.folders[0]!;
+    expect(folder.kind).toBe("template");
+    expect(folder.label).toBe("Invoice");
+    expect(folder.key).not.toBe(fixture.templateId);
+    expect(folder.count).toBe(5);
+    const years = await browseDocumentsForBase({ baseId: fixture.baseId, path: folder.path, timeZone: "Europe/Berlin" });
+    expect(years.folders.map((f) => [f.label, f.count])).toEqual([["2026", 5]]);
+    const first = await browseDocumentsForBase({ baseId: fixture.baseId, path: [folder.key, "2026"], limit: 2, timeZone: "Europe/Berlin" });
+    expect(first.items).toHaveLength(2);
+    expect(first.hasMore).toBe(true);
+    const second = await browseDocumentsForBase({
+      baseId: fixture.baseId,
+      path: [folder.key, "2026"],
+      limit: 2,
+      cursor: first.nextCursor,
+      timeZone: "Europe/Berlin",
+    });
+    expect(second.items.every((item) => !first.items.some((other) => other.id === item.id))).toBe(true);
+    const search = await browseDocumentsForBase({ baseId: fixture.baseId, path: [folder.key, "1999"], q: "100%_done\\final" });
+    expect(search.items.map((item) => item.id)).toEqual([fixture.documentIds[0]!]);
+    const other = await insertFixture();
+    expect((await browseDocumentsForBase({ baseId: other.baseId, path: [folder.key, "2026"] })).items).toEqual([]);
+  });
   postgresTest("returns the same lightweight summaries through every list path", async () => {
     const fixture = await insertFixture();
     const base = await listDocumentsForBase({ baseId: fixture.baseId });

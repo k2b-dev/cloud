@@ -180,6 +180,7 @@ let currentTable: typeof table | null = table;
 let currentDocument: DocumentFixture | null = document;
 let listTemplateInput: unknown;
 let browseTemplateInput: unknown;
+let browseBaseInput: unknown;
 let listRecordInput: unknown;
 let listBaseInput: unknown;
 let artifactInput: unknown;
@@ -217,6 +218,7 @@ describe("document routes", () => {
     currentDocument = document;
     listTemplateInput = undefined;
     browseTemplateInput = undefined;
+    browseBaseInput = undefined;
     listRecordInput = undefined;
     listBaseInput = undefined;
     artifactInput = undefined;
@@ -243,6 +245,14 @@ describe("document routes", () => {
         hasMore: true,
         nextCursor: "next-browse-cursor",
       } as never;
+    });
+    spyOn(gridsService.document, "browseDocumentsForBase").mockImplementation(async (input) => {
+      browseBaseInput = input;
+      return {
+        path: [],
+        folders: [{ kind: "template", key: templatePublicId, label: "Invoice", path: [templatePublicId], count: 1 }],
+        items: [],
+      };
     });
     spyOn(gridsService.document, "listForRecord").mockImplementation(async (input) => {
       listRecordInput = input;
@@ -318,6 +328,31 @@ describe("document routes", () => {
   }
 
   describe("GET /by-base/:baseId", () => {
+    test("base browser defaults to folders and exposes only public template ids", async () => {
+      const response = await app().request(path(`/by-base/${basePublicId}/browse`));
+      expect(response.status).toBe(200);
+      expect(browseBaseInput).toMatchObject({ baseId, mode: "folders", path: [], q: "" });
+      expect(await response.json()).toMatchObject({
+        folders: [{ key: templatePublicId, path: [templatePublicId] }],
+        hasMore: false,
+        cursor: null,
+      });
+    });
+
+    test("base browser checks permission before loading folders", async () => {
+      tableLevel = "none";
+      await expectForbidden(await app().request(path(`/by-base/${basePublicId}/browse`)));
+      expect(browseBaseInput).toBeUndefined();
+    });
+
+    test("base browser validates folder paths and forwards search", async () => {
+      for (const invalid of ["Unknown record/2026", `${templatePublicId}/no-year`, `${templatePublicId}/2026/09`]) {
+        expect((await app().request(path(`/by-base/${basePublicId}/browse?path=${encodeURIComponent(invalid)}`))).status).toBe(400);
+      }
+      const response = await app().request(path(`/by-base/${basePublicId}/browse?path=${templatePublicId}/2026&q=demo&limit=2`));
+      expect(response.status).toBe(200);
+      expect(browseBaseInput).toMatchObject({ baseId, path: [templatePublicId, "2026"], q: "demo", limit: 2 });
+    });
     test("requires base read permission before listing Documents", async () => {
       tableLevel = "none";
 
