@@ -1,4 +1,4 @@
-/** Shared discovery source for editor completion, cld sdk and author docs. */
+/** Canonical method signatures for cld sdk and generated in-app Help. */
 export const sdkReference = {
   version: 1,
   entrypoints: "*.script.js: export default kit.script({ name, icon?, order?, run() {} })",
@@ -11,6 +11,25 @@ export const sdkReference = {
     localItemMiB: 16,
   },
   methods: [
+    ["money.fromMinor", "money.fromMinor(amount, currency)", "Create money from safe integer minor units."],
+    [
+      "money.fromDecimal",
+      "money.fromDecimal(decimal, { currency, rounding? })",
+      "Parse a decimal string; excess precision requires rounding.",
+    ],
+    ["money.toDecimal", "money.toDecimal(value)", "Return fixed-decimal major units as a string."],
+    ["money.currencyDigits", "money.currencyDigits(currency)", "Return the currency precision."],
+    ["money.parse", "money.parse(text, { locale, currency, rounding? })", "Parse numeric text with explicit locale and currency."],
+    ["money.format", "money.format(value, { locale })", "Format money with an explicit locale."],
+    ["money.add", "money.add(a, b)", "Add values of the same currency."],
+    ["money.subtract", "money.subtract(a, b)", "Subtract values of the same currency."],
+    ["money.sum", "money.sum(values, { currency }?)", "Sum values; an empty array requires currency."],
+    ["money.compare", "money.compare(a, b)", "Compare values of the same currency: -1, 0 or 1."],
+    ["money.multiply", "money.multiply(value, factor, { rounding })", "Multiply by a decimal string."],
+    ["money.divide", "money.divide(value, divisor, { rounding })", "Divide by a decimal string."],
+    ["money.taxFromNet", "money.taxFromNet(value, { percent, rounding })", "Return { net, tax, gross } from net money."],
+    ["money.taxFromGross", "money.taxFromGross(value, { percent, rounding })", "Return { net, tax, gross } from gross money."],
+    ["money.allocate", "money.allocate(value, weights)", "Distribute minor units exactly using largest remainders."],
     ["script", "script({ name, icon?, order?, run })", "Define a tool page using literal metadata."],
     ["ui.text", "ui.text(text)", "Returns a handle with setText(text)."],
     [
@@ -67,7 +86,7 @@ export const sdkReference = {
     ["file.open", "file.open({ accept? })", "Promise<File|null>; Local file picker; accept uses HTML file types, e.g. .csv,text/csv."],
     ["file.openMultiple", "file.openMultiple({ accept? })", "Promise<File[]>; local files only."],
     ["file.openFolder", "file.openFolder()", "Promise<File[]>; relative paths on webkitRelativePath."],
-    ["file.save", "file.save(blobOrText, filename)", "Offer a local download."],
+    ["file.save", "file.save(blobOrText, filename)", "Immediately request a local download; browser download settings apply."],
     ["sheet.fromCsv", "sheet.fromCsv(fileOrText, { delimiter? })", "Parse header-based CSV; preserve strings and identifiers."],
     ["sheet.toCsv", "sheet.toCsv(rows, { delimiter?, bom? })", "Excel-compatible CSV; semicolon/BOM defaults and formula escaping."],
     ["store.get", "store.get(key)", "Read JSON from app-local KV; missing key returns null."],

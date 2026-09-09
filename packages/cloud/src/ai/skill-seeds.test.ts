@@ -11,8 +11,13 @@ describe("Cloud AI Skill seeds", () => {
 
     await seedCloudAiSkills();
 
-    expect(seedOnce).toHaveBeenCalledTimes(8);
+    expect(seedOnce).toHaveBeenCalledTimes(9);
     const inputs = seedOnce.mock.calls.map(([input]) => input);
+    const kit = inputs.find((candidate) => candidate.name === "cloud-kit");
+    expect(kit?.instructions).toContain("search_help");
+    expect(kit?.instructions).toContain("read_help");
+    expect(kit?.instructions).toContain("kit.source.apply");
+    expect(kit?.instructions).not.toContain("kit.sdk.read");
     const input = inputs.find((candidate) => candidate.name === "skill-creator");
     expect(input).toMatchObject({ key: "core:skill-creator", name: "skill-creator" });
     expect(input?.description).toContain("Use this whenever");

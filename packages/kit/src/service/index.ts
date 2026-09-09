@@ -15,6 +15,7 @@ import {
   type Principal,
 } from "@valentinkolb/cloud/server";
 import { type Bundle, type Project, type ProjectInput, PublicId } from "../contracts";
+import { SourceChanges, SourceReadInput, MetadataInput, mergeSource, sourceManifest, SOURCE_WINDOW } from "../source";
 import { validateProject } from "../project";
 export class ProjectError extends Error {
   constructor(
@@ -152,6 +153,60 @@ export const projects = {
       if (!next) throw new ProjectError(404, "NOT_FOUND");
       return bundle(db, next, "admin");
     });
+  },
+  async manifest(id: string, identity: Identity) {
+    return sourceManifest(await projects.get(id, identity, "read"));
+  },
+  async readSource(input: unknown, identity: Identity) {
+    const { id, path, expectedRevision, offset } = SourceReadInput.parse(input);
+    const bundle = await projects.get(id, identity);
+    if (bundle.revision !== expectedRevision) throw new ProjectError(409, "REVISION_CONFLICT");
+    const file = bundle.files.find((f) => f.path === path);
+    if (!file) throw new ProjectError(404, "NOT_FOUND");
+    if (offset > file.content.length) throw new ProjectError(400, "INVALID_INPUT");
+    const end = Math.min(file.content.length, offset + SOURCE_WINDOW);
+    return {
+      id,
+      path,
+      revision: bundle.revision,
+      offset,
+      content: file.content.slice(offset, end),
+      length: file.content.length,
+      complete: end === file.content.length,
+      nextOffset: end < file.content.length ? end : null,
+    };
+  },
+  async changeSource(id: string, input: unknown, identity: Identity, apply = false) {
+    const changes = SourceChanges.parse(input);
+    return sql.begin(async (db) => {
+      const { row, level } = await requireProject(db, id, identity, "admin", true);
+      if (row.revision !== changes.expectedRevision) throw new ProjectError(409, "REVISION_CONFLICT");
+      const current = await bundle(db, row, level);
+      const { project: next, entries } = mergeSource(current, changes);
+      if (!apply) return { id, revision: row.revision, entries, valid: true };
+      await db`DELETE FROM kit.project_files WHERE project_id=${row.id}::uuid`;
+      await writeFiles(db, row.id, next);
+      await db`UPDATE kit.projects SET revision=revision+1,updated_at=now() WHERE id=${row.id}::uuid`;
+      return { id, revision: row.revision + 1, entries, valid: true };
+    });
+  },
+  async metadata(id: string, input: unknown, identity: Identity) {
+    const { expectedRevision, ...patch } = MetadataInput.parse(input);
+    const current = await projects.get(id, identity, "admin");
+    return sourceManifest(
+      await projects.save(
+        id,
+        {
+          name: current.name,
+          description: current.description,
+          persistenceEnabled: current.persistenceEnabled,
+          files: current.files,
+          ...patch,
+        },
+        expectedRevision,
+        identity,
+      ),
+    );
   },
   async remove(id: string, identity: Identity) {
     return sql.begin(async (db) => {

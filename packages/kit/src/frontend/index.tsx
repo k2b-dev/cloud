@@ -8,10 +8,11 @@ import Overview from "./Overview.island";
 import Workbench from "./Workbench.island";
 const overview = ssr<AuthContext>(async (c) => {
   const page = Math.max(1, Math.min(100000, Number(c.req.query("page")) || 1));
-  const result = await projects.list({ actor: c.get("actor"), accessSubject: c.get("accessSubject") }, Math.floor(page));
+  const query = (c.req.query("q") ?? "").slice(0, 120);
+  const result = await projects.list({ actor: c.get("actor"), accessSubject: c.get("accessSubject") }, Math.floor(page), query);
   return () => (
     <Layout c={c} title={[{ title: "Cloud", href: "/" }, { title: "Kit" }]}>
-      <Overview items={result.items} page={result.page} hasNext={result.hasNext} />
+      <Overview items={result.items} page={result.page} hasNext={result.hasNext} query={query} />
     </Layout>
   );
 });

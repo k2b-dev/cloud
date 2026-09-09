@@ -684,3 +684,10 @@
     display: none !important;
   }
 }
+
+/* Overview edges are clipped by the shell. Keep this outside layers, like the
+   standalone workspace styles it overrides; other workspaces retain shadows. */
+.k2b-ui .mail-focus-workspace,
+.k2b-ui .mail-focus-main {
+  box-shadow: none;
+}

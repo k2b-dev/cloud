@@ -1,4 +1,5 @@
 import Papa from "papaparse";
+import { money } from "@k2b/stdlib";
 import { LIMITS } from "../contracts";
 import { UiNode } from "./protocol";
 
@@ -135,6 +136,7 @@ type FilePickerOptions = ControlOptions & {
   onChange: (files: File[]) => unknown;
 };
 const kit = {
+  money,
   script: (definition: Definition) => definition,
   ui: {
     text: (value: string) => node("text", value),

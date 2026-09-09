@@ -66,7 +66,9 @@ test("overview uses the shared workspace and localized create/search controls", 
       },
     }),
   );
-  expect(html).toContain("kit-overview-workspace");
+  expect(html).toContain("k2b-app-overview");
+  expect(html).toContain("Leere App");
+  expect(html).toContain("CSV-Werkstatt");
   expect(html).toContain("Neue App");
   expect(html).toContain("Suchen");
   expect(html).toContain("/app/kit/abc123");

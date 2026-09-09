@@ -3,6 +3,14 @@ export const messages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
+      pagination: "Pages",
+      noDescription: "Browser tool",
+      chooseStarter: "Choose a starting point.",
+      blankApp: "Blank app",
+      csvWorkshop: "CSV workshop",
+      blankAppDescription: "One tool, ready for your code or Assistant.",
+      csvAppDescription: "Convert CSV files and keep an export history.",
+      help: "Help",
       runtimeError: "The script reported an error.",
       workspace: "Editor workspace",
       code: "Code",
@@ -92,6 +100,14 @@ export const messages = i18n.define({
       renameFile: "Rename file",
     },
     de: {
+      pagination: "Seiten",
+      noDescription: "Browser-Werkzeug",
+      chooseStarter: "Wähle einen Ausgangspunkt.",
+      blankApp: "Leere App",
+      csvWorkshop: "CSV-Werkstatt",
+      blankAppDescription: "Ein Werkzeug, bereit für deinen Code oder den Assistant.",
+      csvAppDescription: "CSV-Dateien umwandeln und Exporte wiederfinden.",
+      help: "Hilfe",
       runtimeError: "Das Script hat einen Fehler gemeldet.",
       workspace: "Editor-Arbeitsbereich",
       code: "Code",
@@ -104,7 +120,8 @@ export const messages = i18n.define({
       previewStale: "Code geändert – starte die Vorschau neu, um sie zu aktualisieren.",
       downloadDraft: "Entwurf herunterladen",
       loadLatest: "Neueste Version laden",
-      confirmLoadLatest: "Deinen lokalen Entwurf durch die zuletzt gespeicherte Version ersetzen? Lade den Entwurf vorher herunter, um deine Änderungen zu behalten.",
+      confirmLoadLatest:
+        "Deinen lokalen Entwurf durch die zuletzt gespeicherte Version ersetzen? Lade den Entwurf vorher herunter, um deine Änderungen zu behalten.",
       validationTitle: "Prüfe deinen Code",
       renameBlocked: "Behebe Codefehler vor dem Umbenennen, damit Imports sicher aktualisiert werden können.",
 

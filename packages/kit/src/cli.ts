@@ -1,7 +1,17 @@
-import { arg, command, confirmFlag, defineCliCommands, flag, printStructured, type CloudCliContext } from "@valentinkolb/cloud/cli";
+import {
+  arg,
+  readCliInput,
+  command,
+  confirmFlag,
+  defineCliCommands,
+  flag,
+  printStructured,
+  type CloudCliContext,
+} from "@valentinkolb/cloud/cli";
 import { createAccessCommands } from "@valentinkolb/cloud/cli/access";
 import { PublicId, type Bundle } from "./contracts";
-import { starter } from "./starter";
+import { SourceChanges, SourceReadInput, MetadataInput } from "./source";
+import { blankStarter, starter } from "./starter";
 import { sdkReference } from "./sdk";
 import { readProject, writeProject, writeManifest } from "./cli/project-files";
 
@@ -27,7 +37,7 @@ const directoryArgs = {
 const projectPath = (id: string) => `/projects/${PublicId.parse(id)}`;
 export default defineCliCommands({
   name: "kit",
-  summary: "Build, run and share local browser tools.",
+  summary: "Build and share local browser tools.",
   commands: [
     command("list", {
       summary: "List accessible apps",
@@ -57,8 +67,9 @@ export default defineCliCommands({
     command("init", {
       summary: "Create a local CSV converter and history project",
       args: directoryArgs,
-      async run({ ctx, args }) {
-        await writeProject(args.directory, starter);
+      flags: { blank: flag.boolean({ description: "Start with one empty tool instead of the CSV workshop" }) },
+      async run({ ctx, args, flags }) {
+        await writeProject(args.directory, flags.blank ? blankStarter : starter);
         output(ctx, { directory: args.directory });
       },
     }),
@@ -111,6 +122,66 @@ export default defineCliCommands({
         });
       },
     }),
+    command("manifest", {
+      summary: "Read metadata, revision and file paths without source",
+      args: idArgs,
+      async run({ ctx, args }) {
+        output(ctx, await request(ctx, `${projectPath(args.id)}/manifest`));
+      },
+    }),
+    command("update", {
+      summary: "Update app metadata with an expected revision (admin)",
+      args: idArgs,
+      flags: {
+        input: flag.input({
+          valueLabel: "json",
+          description: "JSON with expectedRevision and optional name, description, persistenceEnabled",
+          required: true,
+        }),
+      },
+      async run({ ctx, args, flags }) {
+        const text = await readCliInput(flags.input, { label: "Kit metadata JSON", required: true });
+        output(ctx, await request(ctx, projectPath(args.id), "PATCH", MetadataInput.parse(JSON.parse(text ?? ""))));
+      },
+    }),
+    command("source read", {
+      summary: "Read a source window at an exact revision; continue with nextOffset",
+      args: idArgs,
+      flags: {
+        input: flag.input({ valueLabel: "json", description: "JSON with path, expectedRevision and optional offset", required: true }),
+      },
+      async run({ ctx, args, flags }) {
+        const text = await readCliInput(flags.input, { label: "Kit source read JSON", required: true });
+        output(
+          ctx,
+          await request(
+            ctx,
+            `${projectPath(args.id)}/source/read`,
+            "POST",
+            SourceReadInput.omit({ id: true }).parse(JSON.parse(text ?? "")),
+          ),
+        );
+      },
+    }),
+    ...(["validate", "apply"] as const).map((operation) =>
+      command(`source ${operation}`, {
+        summary:
+          operation === "apply"
+            ? "Atomically apply source changes at an expected revision (admin)"
+            : "Validate proposed source changes without saving or executing (admin)",
+        args: idArgs,
+        flags: {
+          input: flag.input({ valueLabel: "json", description: "JSON with expectedRevision, upsert, delete and/or edits", required: true }),
+        },
+        async run({ ctx, args, flags }) {
+          const text = await readCliInput(flags.input, { label: "Kit source changes JSON", required: true });
+          output(
+            ctx,
+            await request(ctx, `${projectPath(args.id)}/source/${operation}`, "POST", SourceChanges.parse(JSON.parse(text ?? ""))),
+          );
+        },
+      }),
+    ),
     command("delete", {
       summary: "Delete an app and its sharing grants",
       args: idArgs,

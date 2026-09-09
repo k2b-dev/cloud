@@ -79,54 +79,6 @@
   color: var(--k2b-danger-text);
   overflow-wrap: anywhere;
 }
-.k2b-ui .kit-overview-workspace {
-  border-color: transparent;
-  border-radius: 0;
-  background: var(--k2b-surface);
-  box-shadow: none;
-}
-.k2b-ui .kit-overview-main {
-  gap: clamp(2rem, 4vw, 3.5rem);
-  padding: clamp(1rem, 3vw, 2.5rem);
-  overflow-y: auto;
-  background: var(--k2b-surface);
-}
-.kit-overview-section {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-  gap: 1rem;
-}
-.kit-overview-heading {
-  display: flex;
-  min-width: 0;
-  flex-wrap: wrap;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 0.75rem 1rem;
-}
-.kit-overview-heading h2 {
-  color: var(--k2b-text);
-  font-size: 1rem;
-  font-weight: 650;
-}
-.kit-overview-heading p {
-  margin-top: 0.125rem;
-  color: var(--k2b-text-muted);
-  font-size: 0.8125rem;
-}
-.kit-overview-apps {
-  display: flex;
-  min-width: 0;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.5rem;
-}
-.kit-overview-apps > :is(a, button) {
-  min-width: 0;
-  max-width: min(100%, 20rem);
-}
-
 /* Workbench: the script owns its content, the application owns the shell. */
 .kit-main {
   min-width: 0;

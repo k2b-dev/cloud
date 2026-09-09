@@ -9,14 +9,18 @@ import { compile } from "../runtime/compile";
 import { ProjectValidationError } from "../project";
 import { starter } from "../starter";
 import { apiErrorMessage, errorMessages } from "../errors";
+import { SourceChanges, SourceReadInput, MetadataInput } from "../source";
 import { sdkReference } from "../sdk";
 const invalidInput = (c: Context) => ({ code: "INVALID_INPUT", message: apiErrorMessage("INVALID_INPUT", getLocale(c)) });
 const router = new Hono<AuthContext>()
   .use("*", auth.requireRole("authenticated"))
-  .use("*", bodyLimit({
-    maxSize: LIMITS.sourceBytes + 128 * 1024,
-    onError: c => c.json({ code: "INVALID_INPUT", message: apiErrorMessage("INVALID_INPUT", getLocale(c)) }, 413),
-  }))
+  .use(
+    "*",
+    bodyLimit({
+      maxSize: LIMITS.sourceBytes + 128 * 1024,
+      onError: (c) => c.json({ code: "INVALID_INPUT", message: apiErrorMessage("INVALID_INPUT", getLocale(c)) }, 413),
+    }),
+  )
   .use("*", async (c, next) => {
     c.header("Cache-Control", "private, no-store");
     await next();
@@ -74,6 +78,59 @@ const router = new Hono<AuthContext>()
       }),
     );
   })
+  .get("/projects/:id/manifest", describeRoute({ tags: ["Kit"], summary: "Read app metadata and file manifest" }), async (c) =>
+    c.json(await projects.manifest(PublicId.parse(c.req.param("id")), { actor: c.get("actor"), accessSubject: c.get("accessSubject") })),
+  )
+  .post(
+    "/projects/:id/source/read",
+    describeRoute({ tags: ["Kit"], summary: "Read a revision-pinned source window" }),
+    v("json", SourceReadInput.omit({ id: true }), invalidInput),
+    async (c) =>
+      c.json(
+        await projects.readSource(
+          { ...c.req.valid("json"), id: c.req.param("id") },
+          { actor: c.get("actor"), accessSubject: c.get("accessSubject") },
+        ),
+      ),
+  )
+  .post(
+    "/projects/:id/source/validate",
+    describeRoute({ tags: ["Kit"], summary: "Validate source changes without saving" }),
+    v("json", SourceChanges, invalidInput),
+    async (c) =>
+      c.json(
+        await projects.changeSource(PublicId.parse(c.req.param("id")), c.req.valid("json"), {
+          actor: c.get("actor"),
+          accessSubject: c.get("accessSubject"),
+        }),
+      ),
+  )
+  .post(
+    "/projects/:id/source/apply",
+    describeRoute({ tags: ["Kit"], summary: "Apply source changes atomically" }),
+    v("json", SourceChanges, invalidInput),
+    async (c) =>
+      c.json(
+        await projects.changeSource(
+          PublicId.parse(c.req.param("id")),
+          c.req.valid("json"),
+          { actor: c.get("actor"), accessSubject: c.get("accessSubject") },
+          true,
+        ),
+      ),
+  )
+  .patch(
+    "/projects/:id",
+    describeRoute({ tags: ["Kit"], summary: "Update app metadata at an exact revision" }),
+    v("json", MetadataInput, invalidInput),
+    async (c) =>
+      c.json(
+        await projects.metadata(PublicId.parse(c.req.param("id")), c.req.valid("json"), {
+          actor: c.get("actor"),
+          accessSubject: c.get("accessSubject"),
+        }),
+      ),
+  )
   .delete("/projects/:id", async (c) =>
     c.json(
       await projects.remove(PublicId.parse(c.req.param("id")), {
@@ -99,15 +156,18 @@ const router = new Hono<AuthContext>()
       }),
     );
   })
-  .patch("/projects/:id/access/:accessId", v("json", z.object({ permission: z.enum(["read", "write", "admin"]) }), invalidInput), async (c) =>
-    c.json(
-      await projects.changeGrant(
-        PublicId.parse(c.req.param("id")),
-        z.uuid().parse(c.req.param("accessId")),
-        c.req.valid("json").permission,
-        { actor: c.get("actor"), accessSubject: c.get("accessSubject") },
+  .patch(
+    "/projects/:id/access/:accessId",
+    v("json", z.object({ permission: z.enum(["read", "write", "admin"]) }), invalidInput),
+    async (c) =>
+      c.json(
+        await projects.changeGrant(
+          PublicId.parse(c.req.param("id")),
+          z.uuid().parse(c.req.param("accessId")),
+          c.req.valid("json").permission,
+          { actor: c.get("actor"), accessSubject: c.get("accessSubject") },
+        ),
       ),
-    ),
   )
   .delete("/projects/:id/access/:accessId", async (c) =>
     c.json(

@@ -250,6 +250,7 @@
 }
 
 .k2b-ui .notebooks-overview-main {
+  box-shadow: none;
   gap: clamp(2rem, 4vw, 3.5rem);
   padding: clamp(1rem, 3vw, 2.5rem);
   overflow-y: auto;

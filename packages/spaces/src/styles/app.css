@@ -10,7 +10,7 @@
 @media (prefers-reduced-motion: reduce) { .k2b-ui .k2b-panel-dialog-frame.spaces-item-create-dialog { transition: none; } }
 
 .k2b-ui .spaces-overview-workspace { border-color: transparent; border-radius: 0; background: var(--ui-surface); box-shadow: none; }
-.k2b-ui .spaces-overview-main { gap: clamp(2rem, 4vw, 3.5rem); padding: clamp(1rem, 3vw, 2.5rem); overflow-y: auto; background: var(--ui-surface); }
+.k2b-ui .spaces-overview-main { box-shadow: none; gap: clamp(2rem, 4vw, 3.5rem); padding: clamp(1rem, 3vw, 2.5rem); overflow-y: auto; background: var(--ui-surface); }
 .spaces-overview-spaces, .spaces-overview-focus { display: flex; min-width: 0; flex-direction: column; gap: 1rem; }
 .spaces-overview-heading { display: flex; min-width: 0; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: .75rem 1rem; }
 .spaces-overview-heading h2 { color: var(--color-zinc-950); font-size: 1rem; font-weight: 650; }

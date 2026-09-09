@@ -115,3 +115,10 @@ export const starter: ProjectInput = {
     },
   ],
 };
+
+export const blankStarter: ProjectInput = {
+  name: "My app",
+  description: "",
+  persistenceEnabled: true,
+  files: [{ path: "main.script.js", content: 'export default kit.script({ name: "Main", run() {\n  kit.ui.text("Hello!");\n} });\n' }],
+};

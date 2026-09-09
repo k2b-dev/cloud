@@ -182,3 +182,24 @@ test("a busy worker can be stopped and replaced without blocking the browser", a
     await browser.close();
   }
 }, 15000);
+
+test("money namespace computes exact amounts inside the isolated worker", async () => {
+  const messages = await browserTest(`export default kit.script({name:"Money",run(){
+    const m = kit.money;
+    const net = m.parse('1.234,56', { locale: 'de-DE', currency: 'EUR' });
+    const total = m.taxFromNet(net, { percent: '19', rounding: 'half-up' });
+    const shares = m.allocate(total.gross, [1, 1, 1]);
+    if (net.amount !== 123456 || total.gross.amount !== 146913) throw Error('Tax mismatch');
+    if (m.compare(m.sum(shares), total.gross) !== 0) throw Error('Allocation mismatch');
+    if (m.toDecimal(total.gross) !== '1469.13') throw Error('CSV mismatch');
+    if (!m.format(total.gross, {locale:'de-DE'}).includes('1.469,13')) throw Error('Format mismatch');
+    let rejected = false;
+    try { m.add(net, m.fromMinor(1, 'USD')); } catch { rejected = true; }
+    if (!rejected) throw Error('Mixed currency accepted');
+    kit.ui.text('Money verified');
+  }});`);
+  expect(
+    messages.filter((message) => typeof message === "object" && message !== null && "type" in message && message.type === "error"),
+  ).toEqual([]);
+  expect(JSON.stringify(messages)).toContain("Money verified");
+}, 20000);

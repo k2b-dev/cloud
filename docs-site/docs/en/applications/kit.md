@@ -116,6 +116,7 @@ unchanged. V1 does not offer an i18n API to script authors.
   Folder files preserve `webkitRelativePath`.
 - `kit.sheet`: parse CSV with headers, preserving values as strings; export with
   semicolons, a UTF-8 BOM, CRLF and formula escaping by default.
+- `kit.money`: the complete stdlib money namespace, executed directly in the worker.
 - `kit.store`: get, set, delete and list JSON values.
 - `kit.opfs`: read, write, delete and list relative file paths.
 
@@ -276,3 +277,82 @@ sidebar. Confirmation stops the current run, waits for its pending storage
 operations and deletes only this app/current user directory, including files and
 KV values. Other apps and users retain their data. Close other tabs running the
 same app before deleting local data. The project and its sharing remain intact.
+
+### Exact money
+
+`kit.money` exposes stdlib's `fromMinor`, `fromDecimal`, `toDecimal`,
+`currencyDigits`, `parse`, `format`, `add`, `subtract`, `sum`, `compare`,
+`multiply`, `divide`, `taxFromNet`, `taxFromGross` and `allocate` unchanged.
+Values are JSON objects `{ amount, currency }`. Amounts are signed safe integers
+in currency minor units (cents for EUR); arithmetic rejects mixed currencies.
+
+```js
+const net = kit.money.parse("1.234,56", { locale: "de-DE", currency: "EUR" });
+const { gross } = kit.money.taxFromNet(net, { percent: "19", rounding: "half-up" });
+kit.ui.text(kit.money.format(gross, { locale: "de-DE" }));
+const csvAmount = kit.money.toDecimal(gross).replace(".", ",");
+const shares = kit.money.allocate(gross, [1, 1, 1]);
+```
+
+Parsing and formatting require an explicit locale. Numeric input does not accept
+currency symbols. Multiplication, division and taxes require `rounding`:
+`half-up`, `half-even` or `toward-zero`. Decimal parsing requires a rounding rule
+when input exceeds currency precision. Tax percentages and decimal factors are
+strings. Allocation preserves the exact total, including for credits. Invalid
+input throws; scripts handle these errors like other JavaScript errors.
+
+
+## Assistant authoring and Help
+
+The built-in `cloud-kit` Assistant Skill uses `search_help` and `read_help` to
+read Kit's registered Help before selecting SDK methods. Help includes guides
+for using, editing, programming with Assistant, and sharing apps, plus SDK
+articles grouped by namespace. SDK signatures are generated from the same
+`sdkReference` as `cld kit sdk`; there is no SDK capability.
+
+Users create and administer apps. Assistant can program an existing app through
+these capability operations:
+
+| Operation | Behavior | Permission |
+| --- | --- | --- |
+| `kit.app.search` | Universal Search for accessible apps | Read |
+| `kit.app.read` | Metadata, revision, entrypoints and file manifest | Read |
+| `kit.source.read` | A revision-pinned source window | Use |
+| `kit.source.validate` | Check a proposed source batch without saving or executing | Admin |
+| `kit.source.apply` | Save a valid source batch atomically | Admin |
+
+The resource type is `kit.app`, addressed by its six-character public ID.
+The canonical reader is `app.read`. Search returns selection results, not an
+exhaustive app export; use the paginated CLI list for that.
+
+A source read takes `id`, `path`, `expectedRevision` and optional `offset`.
+It returns at most 16,000 UTF-16 units, `length`, `complete` and `nextOffset`.
+Continue until complete at the same revision before replacing a whole file.
+A stale revision fails instead of combining windows from different versions.
+
+Source changes take `expectedRevision`, `upsert` (complete `{ path, content }`
+files), `delete` (paths) and `edits` (`{ path, offset, deleteCount, content }`).
+Each path appears in one operation only; omitted files and app metadata remain
+unchanged. Range offsets count UTF-16 units in the expected revision. The entire
+resulting project must pass syntax, imports and entrypoint validation. Runtime
+code is not executed. Capabilities have a 256 KiB JSON transport limit; use
+focused edits and small valid batches for large files. CLI pull/push supports
+full project transfers within the existing Kit limits.
+
+Apply has a read-only review showing the app, revision and affected files. It is
+a destructive, closed-world Action with no automatic retry after an unknown
+outcome. It rechecks current permissions and revision while holding the project
+lock. Reconcile by reading the current revision and source before retrying.
+Saving never launches code. No capability grants browser storage access or app
+creation, metadata, sharing or deletion authority.
+
+The CLI adds `manifest`, `update`, `source read`, `source validate` and
+`source apply`. JSON inputs use the standard `--input`, `--input-file` and
+`--stdin` conventions. `update` changes only supplied metadata against
+`expectedRevision`. The existing access and delete commands provide the complete
+administrative workflow. `init --blank` creates a single-tool starter; the
+normal initializer creates the CSV workshop.
+
+The Kit overview uses `AppOverview` with responsive app cards, server-side search,
+pagination and separate blank/CSV starters. Cards show descriptions and access
+levels. Opening a card still requires an explicit Start before execution.

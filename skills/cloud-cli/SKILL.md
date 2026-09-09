@@ -1,6 +1,6 @@
 ---
 name: cloud-cli
-description: Use the Cloud CLI (`cld`) to work with a user's Cloud content from a terminal. Use this skill whenever an agent needs to use installed Cloud app commands, sign in or select a Cloud profile, choose safe CLI input/output, inspect Cloud API documentation, or complete Assistant, Contacts, FAQ, Grids, Mail, Notebooks, Pulse, Spaces, or Tools workflows for the user.
+description: Use the Cloud CLI (`cld`) to work with a user's Cloud content from a terminal. Use this skill whenever an agent needs to use installed Cloud app commands, sign in or select a Cloud profile, choose safe CLI input/output, inspect Cloud API documentation, or complete Assistant, Contacts, FAQ, Grids, Kit, Mail, Notebooks, Pulse, Spaces, or Tools workflows for the user.
 ---
 
 # Cloud CLI
