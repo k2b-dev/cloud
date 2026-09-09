@@ -104,3 +104,7 @@ types; processing must still validate contents. `ui.markdown`, `ui.link` and
 `ui.linkButton` provide presentation and navigation. `kit.money` handles exact
 currency amounts. Preserve originals and give useful empty, loading and error
 states. The user explicitly starts every tool; code changes do not auto-run it.
+
+### Markdown pages
+
+Project files may also use `.md`. Each Markdown file appears in app navigation; its first `# Heading` supplies the title, falling back to its filename. The editor offers **Add Markdown page**, the shared Markdown editor, and a live preview. Pages render directly without a worker launch. Existing source read, validate, apply, pull, and push operations handle Markdown with the same permissions, revision guards, and file size limits. Markdown cannot be imported as JavaScript. An app needs at least one script entrypoint or Markdown page.

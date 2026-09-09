@@ -11,6 +11,7 @@ export const sdkReference = {
     localItemMiB: 16,
   },
   methods: [
+    ["pdf.text", "pdf.text(file, { onProgress? })", "Extract local PDF text with PDF.js as [{ page, text }]. No OCR, rendering or uploads. Up to 16 MiB input/text and 1000 pages. onProgress(page, total); Stop terminates the worker."],
     ["money.fromMinor", "money.fromMinor(amount, currency)", "Create money from safe integer minor units."],
     [
       "money.fromDecimal",

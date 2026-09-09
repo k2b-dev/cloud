@@ -30,3 +30,14 @@ zeigt Fehler und Meldungen mit Zeitstempeln.
 Während des Speicherns neu eingegebene Änderungen bleiben ungespeichert. Bei
 einem Revisionskonflikt lade deinen Entwurf herunter, lade den neuesten Stand
 und führe die Änderungen zusammen.
+
+## Markdown-Seiten
+
+Wähle **Markdown-Seite hinzufügen** in der Editor-Seitenleiste für eine `.md`-Datei.
+Bearbeite sie mit der normalen Markdown-Werkzeugleiste; die Vorschau aktualisiert
+sich beim Schreiben. Die erste `# Überschrift` wird zum Navigationstitel,
+ansonsten der Dateiname. Nach dem Speichern erscheint die Seite in der App.
+Sie öffnet sich direkt ohne Script-Start. Umbenennen und Löschen findest du im
+Dateimenü. Mindestens ein Werkzeug oder eine Seite muss bleiben. Seiten nutzen
+die Freigaben und Revision der App. CLI und Assistant können sie über dieselben
+Dateioperationen lesen und ändern.

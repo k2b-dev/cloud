@@ -17,7 +17,7 @@ browser unless the user downloads them. Scripts receive no Cloud credentials.
 ## Project and permissions
 
 An app has a six-character public ID, a revision, a name, an optional description,
-a local-storage setting and a set of JavaScript files. Internal database UUIDs
+a local-storage setting and a set of JavaScript and Markdown files. Internal database UUIDs
 are not author-facing IDs. Updates require the revision that was read; a stale
 update returns `409 REVISION_CONFLICT`.
 
@@ -356,3 +356,18 @@ normal initializer creates the CSV workshop.
 The Kit overview uses `AppOverview` with responsive app cards, server-side search,
 pagination and separate blank/CSV starters. Cards show descriptions and access
 levels. Opening a card still requires an explicit Start before execution.
+
+### Markdown pages
+
+Project files may also use `.md`. Each Markdown file appears in app navigation; its first `# Heading` supplies the title, falling back to its filename. The editor offers **Add Markdown page**, the shared Markdown editor, and a live preview. Pages render directly without a worker launch. Existing source read, validate, apply, pull, and push operations handle Markdown with the same permissions, revision guards, and file size limits. Markdown cannot be imported as JavaScript. An app needs at least one script entrypoint or Markdown page.
+
+### Local PDF text
+
+`await kit.pdf.text(file, { onProgress(page, total) {} })` returns
+`[{ page, text }]` with one-based pages. PDF.js runs inside the existing,
+terminable Kit worker; it does not upload files or render pages. Scanned PDFs
+need OCR, which this API does not provide. Input and extracted text are limited
+to 16 MiB, and documents to 1000 pages. The host Stop control terminates parsing.
+Invalid or password-protected documents reject the call. Missing embedded
+character mappings can limit extraction; applications must validate their
+format-specific fields rather than treating arbitrary extracted text as data.

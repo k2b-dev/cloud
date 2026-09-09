@@ -7,7 +7,7 @@ import { kitCapabilities } from "../src/capabilities";
 test("localized Help contains every SDK signature from the CLI source", () => {
   for (const locale of ["en", "de"]) {
     const documents = kitHelp.documentsByLocale?.[locale] ?? [];
-    expect(documents).toHaveLength(11);
+    expect(documents).toHaveLength(12);
     for (const [name, signature] of sdkReference.methods) {
       const namespace = name.split(".")[0]!;
       expect(kitHelp.getMarkdown(`kit-sdk-${namespace}`, locale)).toContain(`kit.${signature}`);

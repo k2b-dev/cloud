@@ -255,3 +255,5 @@
   .kit-editor-workspace[data-mobile="code"] > .kit-editor-panes > .k2b-panes__split > .k2b-panes__split-child:last-child,
   .kit-editor-workspace[data-mobile="preview"] > .kit-editor-panes > .k2b-panes__split > .k2b-panes__split-child:first-child { display: none; }
 }
+
+.kit-markdown-page { min-width: 0; padding: 1rem; overflow: auto; flex: 1; }

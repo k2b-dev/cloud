@@ -2,7 +2,13 @@ import { parse, type Node, type Property } from "acorn";
 import { ProjectValidationError } from "./errors";
 export { ProjectValidationError } from "./errors";
 import { LIMITS, ProjectInput, type Entry, type SourceFile } from "./contracts";
+export const isPage = (path: string) => path.endsWith(".md");
+export const isNavigationFile = (path: string) => isPage(path) || path.endsWith(".script.js");
 export function inspect(file: SourceFile) {
+  if (isPage(file.path)) {
+    const heading = file.content.match(/^# +(.+?) *#* *$/m)?.[1]?.trim();
+    return { entry: { path: file.path, name: (heading || file.path.split("/").at(-1)!.slice(0, -3)).slice(0, 120), icon: "ti ti-file-text", order: 0 }, imports: [] as string[] };
+  }
   const tree = parseFile(file);
   let entry: Entry | undefined;
   const imports: string[] = [];
@@ -147,7 +153,7 @@ function parseFile(file: SourceFile) {
 }
 /** Keep file identities visible while their author is typing incomplete code. */
 export function discoverEntries(files: SourceFile[], previous: Entry[] = []): Entry[] {
-  return files.filter(file => file.path.endsWith(".script.js")).map(file => {
+  return files.filter(file => isNavigationFile(file.path)).map(file => {
     try {
       return inspect(file).entry!;
     }
@@ -157,8 +163,10 @@ export function discoverEntries(files: SourceFile[], previous: Entry[] = []): En
   }).sort((a, b) => a.order - b.order || a.path.localeCompare(b.path));
 }
 export function renameProjectFile(files: SourceFile[], from: string, to: string): SourceFile[] {
+  if (isPage(from) && isPage(to)) return files.map(file => file.path === from ? { ...file, path: to } : file);
   // Parse every file before applying any edit. Rewriting text heuristically could change strings or comments.
   return files.map(file => {
+    if (isPage(file.path)) return { ...file, path: file.path === from ? to : file.path };
     const tree = parseFile(file);
     const nextPath = file.path === from ? to : file.path;
     const edits: {

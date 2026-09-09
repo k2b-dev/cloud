@@ -1,12 +1,12 @@
 import { batch, createMemo, createSignal, For, Show, onCleanup, onMount } from "solid-js";
-import { AppWorkspace, Button, Dropdown, Paper, prompts, useLocale } from "@k2b/ui";
+import { AppWorkspace, Button, Dropdown, MarkdownView, Paper, prompts, useLocale } from "@k2b/ui";
 import { KitSettings } from "./KitSettings";
 import type { AccessEntry } from "@valentinkolb/cloud/contracts";
 import { files } from "@k2b/stdlib/browser";
 import { timing } from "@k2b/stdlib";
 import { mutation } from "@k2b/stdlib/solid";
 import { FilePath, LIMITS, type Entry, type Bundle, type ProjectInput } from "../contracts";
-import { validateProject, discoverEntries, renameProjectFile } from "../project";
+import { validateProject, discoverEntries, renameProjectFile, isPage, isNavigationFile } from "../project";
 import { messages } from "./messages";
 import { client, checked, displayError, KitRequestError } from "./client";
 import { EditorWorkspace } from "./EditorWorkspace";
@@ -119,7 +119,7 @@ export default function Workbench(props: { project: Bundle; userId: string; edit
   const logTime = () => new Date().toLocaleTimeString(locale(), { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" });
   const logLabel = (level: string) => ({ info: "inf", warn: "wrn", error: "err", system: "sys", debug: "dbg" })[level] ?? "log";
   async function start() {
-    if (clearing() || loading()) return;
+    if (clearing() || loading() || isPage(selectedEntry())) return;
     if (props.edit && validation()) { setError(validation()); return; }
     stop();
     const token = generation;
@@ -200,30 +200,31 @@ export default function Workbench(props: { project: Bundle; userId: string; edit
         if (!value || !FilePath.safeParse(value).success) return t().invalidPath;
         if (entryOnly && !value.endsWith(".script.js")) return t().entryPath;
         if (value !== from && source().some(file => file.path === value)) return t().duplicatePath;
-        if (from?.endsWith(".script.js") && !value.endsWith(".script.js") && entries().length === 1) return t().lastEntry;
+        if (from && isNavigationFile(from) && !isNavigationFile(value) && entries().length === 1) return t().lastEntry;
         return null;
       } },
     } });
     return result?.path;
   }
-  async function addFile(entryOnly = false) {
+  async function addFile(entryOnly = false, markdown = false) {
     if (source().length >= LIMITS.files) { setError(t().tooManyFiles); return; }
     let index = 1;
-    const base = entryOnly ? "tool" : "new";
-    let initial = `${base}.script.js`;
-    while (source().some(file => file.path === initial)) initial = `${base}-${index++}.script.js`;
-    const path = await pathPrompt(entryOnly ? t().newTool : t().addFile, initial, undefined, entryOnly);
+    const base = markdown ? "documentation" : entryOnly ? "tool" : "new";
+    const extension = markdown ? ".md" : ".script.js";
+    let initial = `${base}${extension}`;
+    while (source().some(file => file.path === initial)) initial = `${base}-${index++}${extension}`;
+    const path = await pathPrompt(markdown ? t().addPage : entryOnly ? t().newTool : t().addFile, initial, undefined, entryOnly);
     if (!path) return;
-    if (path.endsWith(".script.js") && busy() && !(await prompts.confirm(t().confirmLeave, { title: t().stop }))) return;
-    if (path.endsWith(".script.js")) stop();
+    if (isNavigationFile(path) && busy() && !(await prompts.confirm(t().confirmLeave, { title: t().stop }))) return;
+    if (isNavigationFile(path)) stop();
     batch(() => {
-      setSource(files => [...files, { path, content: path.endsWith(".script.js") ? 'export default kit.script({ name: "New tool", run() { kit.ui.text("Hello"); } });\n' : "" }]);
+      setSource(files => [...files, { path, content: path.endsWith(".script.js") ? 'export default kit.script({ name: "New tool", run() { kit.ui.text("Hello"); } });\n' : isPage(path) ? "# Documentation\n\n" : "" }]);
       setSelectedFile(path); setError("");
     });
-    if (path.endsWith(".script.js")) await switchEntry(path);
+    if (isNavigationFile(path)) await switchEntry(path);
   }
   async function removeFile(path: string) {
-    if (path.endsWith(".script.js") && entries().length === 1) { setError(t().lastEntry); return; }
+    if (isNavigationFile(path) && entries().length === 1) { setError(t().lastEntry); return; }
     if (!(await prompts.confirm(`${t().deleteFile}: ${path}?`, { title: t().deleteFile, variant: "danger", confirmText: t().deleteFile }))) return;
     if (path === selectedEntry() && !(await switchEntry(entries().find(entry => entry.path !== path)!.path))) return;
     batch(() => {
@@ -243,7 +244,7 @@ export default function Workbench(props: { project: Bundle; userId: string; edit
       batch(() => {
         setSource(renamed);
         if (selectedFile() === from) setSelectedFile(path);
-        if (selected) setSelectedEntry(path.endsWith(".script.js") ? path : entries()[0]!.path);
+        if (selected) setSelectedEntry(isNavigationFile(path) ? path : entries()[0]!.path);
         setError("");
       });
       if (selected) await switchEntry(selectedEntry());
@@ -332,7 +333,7 @@ export default function Workbench(props: { project: Bundle; userId: string; edit
               ? source().map((f) => ({
                   path: f.path,
                   name: f.path,
-                  icon: "ti ti-file-code",
+                  icon: isPage(f.path) ? "ti ti-file-text" : "ti ti-file-code",
                 }))
               : entries()
           }
@@ -365,6 +366,7 @@ export default function Workbench(props: { project: Bundle; userId: string; edit
           <AppWorkspace.SidebarItem icon="ti ti-plus" tone="success" onClick={() => addFile()}>
             {t().addFile}
           </AppWorkspace.SidebarItem>
+          <AppWorkspace.SidebarItem icon="ti ti-file-plus" tone="success" onClick={() => addFile(false, true)}>{t().addPage}</AppWorkspace.SidebarItem>
         </Show>
       </>
     );
@@ -417,6 +419,7 @@ export default function Workbench(props: { project: Bundle; userId: string; edit
     </Show>
   );
   const preview = () => (
+    <Show when={isPage(selectedEntry())} fallback={
     <section class="kit-preview" aria-label={props.edit ? t().preview : t().use}>
       <div ref={container} hidden />
       <Show when={stale()}><p class="kit-preview-stale" role="status">{t().previewStale}</p></Show>
@@ -457,7 +460,11 @@ export default function Workbench(props: { project: Bundle; userId: string; edit
           </Show>
         </Paper>
       </Show>
-    </section>
+    </section>}>
+      <section class="kit-markdown-page" aria-label={props.edit ? t().preview : t().use}>
+        <MarkdownView markdown={source().find(file => file.path === selectedEntry())?.content ?? ""} />
+      </section>
+    </Show>
   );
   return (
     <AppWorkspace class={`kit-workspace ${props.edit ? "kit-edit" : "kit-use"}`}>

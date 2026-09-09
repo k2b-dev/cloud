@@ -1,6 +1,7 @@
 import { test, expect } from "bun:test";
 import { chromium } from "playwright";
 import { compile } from "../src/runtime/compile";
+import { WorkerMessage } from "../src/runtime/protocol";
 import { sandboxDocument } from "../src/runtime/sandbox";
 
 const browserTest = async (content: string) => {
@@ -203,3 +204,16 @@ test("money namespace computes exact amounts inside the isolated worker", async 
   ).toEqual([]);
   expect(JSON.stringify(messages)).toContain("Money verified");
 }, 20000);
+
+test("PDF.js extracts text in the opaque worker without network", async () => {
+  // Minimal PDF with one standard-font text stream, generated in memory.
+  const stream = 'BT /F1 12 Tf 40 100 Td (Kit PDF text) Tj ET';
+  const objects = ['<< /Type /Catalog /Pages 2 0 R >>','<< /Type /Pages /Kids [3 0 R] /Count 1 >>','<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>','<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',`<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`];
+  let pdf='%PDF-1.4\n'; const offsets=[0];
+  objects.forEach((body,i)=>{offsets.push(pdf.length);pdf+=`${i+1} 0 obj\n${body}\nendobj\n`;});
+  const xref=pdf.length; pdf+=`xref\n0 6\n0000000000 65535 f \n${offsets.slice(1).map(n=>String(n).padStart(10,'0')+' 00000 n ').join('\n')}\ntrailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`;
+  const messages = await browserTest(`export default kit.script({name:"PDF",async run(){const pages=await kit.pdf.text(new Blob([${JSON.stringify(pdf)}]));console.log(JSON.stringify(pages));}});`);
+  for (const message of messages) expect(WorkerMessage.safeParse(message).success).toBe(true);
+  expect(JSON.stringify(messages)).toContain('Kit PDF text');
+  expect(JSON.stringify(messages)).toContain('"type":"ready"');
+});

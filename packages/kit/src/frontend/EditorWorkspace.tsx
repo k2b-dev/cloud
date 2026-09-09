@@ -1,5 +1,5 @@
 import { createMemo, createSignal, createRoot, getOwner, onCleanup, createEffect, type JSX } from "solid-js";
-import { Button, Panes, useLocale, type PanesLayout } from "@k2b/ui";
+import { Button, MarkdownEditor, Panes, useLocale, type PanesLayout } from "@k2b/ui";
 import { Editor } from "./Editor";
 import { messages } from "./messages";
 export function EditorWorkspace(props: {
@@ -35,7 +35,7 @@ export function EditorWorkspace(props: {
   function editor(path: string) {
     let session = sessions.get(path);
     if (!session) {
-      session = createRoot(dispose => ({ dispose, element: <Editor path={path} content={props.files.find(file => file.path === path)?.content ?? ""} onChange={content => props.onChange(path, content)} onSave={props.onSave}/> }), owner);
+      session = createRoot(dispose => ({ dispose, element: path.endsWith(".md") ? <div class="kit-code"><MarkdownEditor aria-label={path} value={() => props.files.find(file => file.path === path)?.content ?? ""} onValueChange={content => props.onChange(path, content)} onSave={props.onSave} fill showStats={false} variant="paper" /></div> : <Editor path={path} content={props.files.find(file => file.path === path)?.content ?? ""} onChange={content => props.onChange(path, content)} onSave={props.onSave}/> }), owner);
       sessions.set(path, session);
     }
     return session.element;
@@ -54,8 +54,8 @@ export function EditorWorkspace(props: {
     const fileIds = props.files.map(file => fileId(file.path));
     const previewIds = props.previews.map(entry => `preview-${fileId(entry.path)}`);
     const items = [
-      ...props.files.map(file => ({ id: fileId(file.path), title: file.path, icon: "ti ti-file-code", render: () => editor(file.path) })),
-      ...props.previews.map(entry => ({ id: `preview-${fileId(entry.path)}`, title: entry.name, icon: "ti ti-player-play", render: props.preview })),
+      ...props.files.map(file => ({ id: fileId(file.path), title: file.path, icon: file.path.endsWith(".md") ? "ti ti-file-text" : "ti ti-file-code", render: () => editor(file.path) })),
+      ...props.previews.map(entry => ({ id: `preview-${fileId(entry.path)}`, title: entry.name, icon: entry.path.endsWith(".md") ? "ti ti-file-text" : "ti ti-player-play", render: props.preview })),
     ];
     const fileActive = fileIds.includes(fileId(props.selected)) ? fileId(props.selected) : fileIds[0]!;
     const previewActive = previewIds.includes(`preview-${fileId(props.selectedPreview)}`) ? `preview-${fileId(props.selectedPreview)}` : previewIds[0]!;

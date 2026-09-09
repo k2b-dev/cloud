@@ -21,6 +21,7 @@
     "hono": "catalog:",
     "hono-openapi": "catalog:",
     "papaparse": "5.7.0",
+    "pdfjs-dist": "6.3.289",
     "solid-js": "catalog:",
     "zod": "catalog:"
   },

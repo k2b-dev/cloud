@@ -58,3 +58,19 @@ test("rename updates import and re-export paths, including moved relative import
   expect(files[1]!.path).toBe("lib/a.js");
   expect(() => renameProjectFile([{ path: "bad.js", content: "const broken =" }], "bad.js", "ok.js")).toThrow();
 });
+
+test("Markdown pages share project validation and discovery without parsing JavaScript", async () => {
+  const { discoverEntries, renameProjectFile } = await import("../src/project");
+  const pages = [{ path: "docs/guide.md", content: "# User guide\n\nNot JavaScript: <script>alert(1)</script>" }, { path: "faq.md", content: "No heading" }];
+  const input = { ...starter, files: [...starter.files, ...pages] };
+  const entries = validateProject(input).entries;
+  expect(entries.find(e => e.path === pages[0]!.path)?.name).toBe("User guide");
+  expect(entries.find(e => e.path === "faq.md")?.name).toBe("faq");
+  expect(discoverEntries(input.files)).toEqual(entries);
+  expect(validateProject({ ...starter, files: pages }).entries).toHaveLength(2);
+  const renamed = renameProjectFile(input.files, "docs/guide.md", "help.md");
+  expect(renamed.find(f => f.path === "help.md")?.content).toBe(pages[0]!.content);
+  expect(() => validateProject({ ...starter, files: [{ path: "main.script.js", content: 'import "./faq.md"; export default kit.script({name:"X",run(){}})' }, ...pages] })).toThrow();
+  const { compile } = await import("../src/runtime/compile");
+  await expect(compile(input, "faq.md")).rejects.toThrow();
+});

@@ -27,11 +27,11 @@ export const SourceChanges = z
       .array(
         z
           .object({
-            path: FilePath.describe("Relative .js path to create or replace in full."),
+            path: FilePath.describe("Relative .js or .md path to create or replace in full."),
             content: z
               .string()
               .max(LIMITS.fileBytes)
-              .describe("Complete JavaScript source for this file. Read the complete old file before replacing it."),
+              .describe("Complete JavaScript or Markdown source for this file. Read the complete old file before replacing it."),
           })
           .strict(),
       )
@@ -46,7 +46,7 @@ export const SourceChanges = z
             path: FilePath.describe("Existing file to edit without replacing unseen content."),
             offset: z.number().int().min(0).max(LIMITS.fileBytes).describe("UTF-16 offset in the exact expectedRevision source."),
             deleteCount: z.number().int().min(0).max(LIMITS.fileBytes).describe("Number of UTF-16 units to replace; zero inserts."),
-            content: z.string().max(LIMITS.fileBytes).describe("JavaScript text to insert. Use bounded edits for large files."),
+            content: z.string().max(LIMITS.fileBytes).describe("Source text to insert. Use bounded edits for large files."),
           })
           .strict(),
       )

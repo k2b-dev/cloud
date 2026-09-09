@@ -1,3 +1,4 @@
+import { pdfText } from "./pdf";
 import Papa from "papaparse";
 import { money } from "@k2b/stdlib";
 import { LIMITS } from "../contracts";
@@ -136,6 +137,7 @@ type FilePickerOptions = ControlOptions & {
   onChange: (files: File[]) => unknown;
 };
 const kit = {
+  pdf: { text: pdfText },
   money,
   script: (definition: Definition) => definition,
   ui: {

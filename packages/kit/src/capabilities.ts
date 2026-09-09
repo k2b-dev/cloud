@@ -52,14 +52,14 @@ const sourceInputDe = {
   id: "Sechsstellige App-ID aus einer kit.app-Referenz oder Kit-URL.",
   expectedRevision: "Exakte Revision aus kit.app.read; nicht selbst erhöhen.",
   upsert: "Vollständige neue oder ersetzte Dateien. Nicht genannte Dateien bleiben erhalten.",
-  "upsert[].path": "Relativer .js-Dateipfad zum Anlegen oder vollständigen Ersetzen.",
+  "upsert[].path": "Relativer .js- oder .md-Dateipfad zum Anlegen oder vollständigen Ersetzen.",
   "upsert[].content": "Vollständiger Quelltext. Vor dem Ersetzen die ganze bisherige Datei lesen.",
   delete: "Exakte zu löschende Pfade; Imports im selben Änderungssatz anpassen.",
   edits: "Ein Bereich pro bestehender Datei; jeder Pfad darf nur einmal vorkommen.",
   "edits[].path": "Bestehende Datei für eine gezielte Änderung.",
   "edits[].offset": "UTF-16-Startposition in der angegebenen Revision.",
   "edits[].deleteCount": "Anzahl zu ersetzender UTF-16-Einheiten; null Einheiten fügt ein.",
-  "edits[].content": "Einzufügender JavaScript-Text; große Dateien gezielt ändern.",
+  "edits[].content": "Einzufügender Quelltext; große Dateien gezielt ändern.",
 };
 const changed = z
   .object({ id: PublicId, revision: z.number().int(), entries: z.array(entry).max(LIMITS.files), valid: z.boolean() })

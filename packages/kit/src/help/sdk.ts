@@ -2,6 +2,7 @@ import { sdkReference } from "../sdk";
 
 // Signatures come only from sdkReference; localized explanations stay app-owned.
 const de: Record<string, string> = {
+  "pdf.text": "Lokalen PDF-Text mit PDF.js als [{ page, text }] auslesen. Keine OCR oder Uploads. Bis 16 MiB Datei/Text und 1000 Seiten; onProgress(page, total). Stoppen beendet den Worker.",
   script: "Definiert ein Werkzeug mit statischen Metadaten.",
   "ui.text": "Text anzeigen; mit setText(text) aktualisieren.",
   "ui.button": "Worker-Callback ausführen. Standardmäßig sekundär; setDisabled und setLoading steuern den Zustand.",
@@ -53,6 +54,7 @@ const de: Record<string, string> = {
   "money.allocate": "Betrag exakt nach Gewichten aufteilen; Reste nach größtem Rest verteilen.",
 };
 const examples: Record<string, string> = {
+  pdf: 'const file = await kit.file.open({ accept: ".pdf" });\nif (file) { const pages = await kit.pdf.text(file); kit.ui.text(pages.map(p => p.text).join("\\n")); }',
   script: 'export default kit.script({ name: "Main", run() { kit.ui.text("Hello!"); } });',
   ui: 'const status = kit.ui.status("Ready");\nconst table = kit.ui.table({ columns: [{ key: "name", label: "Name" }] });\nconst picker = kit.ui.filePicker("CSV", { accept: ".csv,text/csv", async onChange(files) {\n  if (!files.length) return;\n  try { table.setRows((await kit.sheet.fromCsv(files[0])).slice(0, 100)); }\n  catch (error) { status.setState("error"); status.setText(error.message); }\n} });\nkit.ui.workbench({ controls: [picker], content: [table], footer: { status } });',
   file: 'const file = await kit.file.open({ accept: ".csv,text/csv" });\nif (file) await kit.file.save(await file.text(), "copy.csv");',
@@ -64,7 +66,7 @@ const examples: Record<string, string> = {
   opfs: 'await kit.opfs.write("exports/result.csv", "name;amount\\nExample;12,34");\nconst saved = await kit.opfs.read("exports/result.csv");\nif (saved) await kit.file.save(saved, "result.csv");',
 };
 export function sdkHelp(locale: "en" | "de") {
-  return ["script", "ui", "file", "sheet", "money", "store", "opfs"].map((namespace, index) => {
+  return ["script", "ui", "file", "sheet", "money", "store", "opfs", "pdf"].map((namespace, index) => {
     const methods = sdkReference.methods.filter(([name]) => name === namespace || name.startsWith(`${namespace}.`));
     const body = methods
       .map(([name, signature, description]) => {

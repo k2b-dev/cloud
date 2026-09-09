@@ -18,8 +18,8 @@ export const FilePath = z
   .string()
   .max(180)
   .refine(
-    (p) => /^[a-zA-Z0-9_.-]+(?:\/[a-zA-Z0-9_.-]+)*\.js$/.test(p) && p.split("/").every((s) => s !== "." && s !== ".."),
-    "Expected a relative .js path",
+    (p) => /^[a-zA-Z0-9_.-]+(?:\/[a-zA-Z0-9_.-]+)*\.(?:js|md)$/.test(p) && p.split("/").every((s) => s !== "." && s !== ".."),
+    "Expected a relative .js or .md path",
   );
 export const SourceFile = z.object({ path: FilePath, content: z.string().max(LIMITS.fileBytes) }).strict();
 export const ProjectInput = z

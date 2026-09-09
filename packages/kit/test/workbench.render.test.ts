@@ -196,3 +196,15 @@ test("local explorer renders localized controls without browser storage during S
     expect(html).toContain(locale === "de" ? "Noch keine lokalen Daten" : "No local data yet");
   }
 });
+
+test("Markdown navigation renders content without launch controls or console", () => {
+  const files = [...starter.files, { path: "guide.md", content: "# Guide\n\n**Read me**\n\n<script>window.bad = true</script>" }];
+  const withPage = { ...project, files, entries: validateProject({ ...starter, files }).entries };
+  const html = renderToString(() => createComponent(LocaleProvider, { locale: "en", get children() {
+    return createComponent(Workbench, { project: withPage, userId: "user", edit: false, entry: "guide.md", access: [] });
+  } }));
+  expect(html).toContain("<strong>Read me</strong>");
+  expect(html).not.toContain("kit-launch-button");
+  expect(html).not.toContain("kit-console-header");
+  expect(html).not.toContain("<script>window.bad");
+});
