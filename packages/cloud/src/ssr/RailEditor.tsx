@@ -291,14 +291,3 @@ export const openRailEditor = (locale: string) => {
     },
   );
 };
-
-/** Direct entry point for Cloud surfaces, separate from their own editors. */
-export function RailEditorButton() {
-  const locale = useLocale();
-  return (
-    <Button variant="secondary" size="sm" onClick={() => openRailEditor(locale())}>
-      <i class="ti ti-layout-sidebar" />
-      {railMessages.resolve([locale()]).t.customize}
-    </Button>
-  );
-}

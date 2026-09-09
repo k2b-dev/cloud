@@ -126,13 +126,9 @@ The desktop app bar sorts ordinary apps alphabetically using the current UI
 language. An application's `nav.section` supplies the default: `primary` is
 shown, `more` stays in the launcher, and `hidden` is never offered. Users can
 open **Apps → Customize app bar** from any application, including the
-dashboard, to show or hide individual available apps. The dashboard also has a
-separate **Customize app bar** button next to **Edit dashboard**. Newly installed
-apps follow their declared defaults.
-
-Cloud surfaces can render `RailEditorButton` from `@k2b/cloud/ssr/islands`
-inside an island to open this same editor. It uses the current layout context
-and inherited UI locale.
+dashboard, to show or hide individual available apps. The subtle settings icon
+at the top right of the launcher opens the editor. Newly installed apps follow
+their declared defaults.
 
 App bar shortcuts form a separate, ordered list above the ordinary apps, with
 a divider between the two groups. Users can pin an app or add a link with a

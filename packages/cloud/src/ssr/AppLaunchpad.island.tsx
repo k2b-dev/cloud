@@ -1,4 +1,4 @@
-import { Button, IconButton, prompts, ScrollArea, Tooltip, useLocale } from "@k2b/ui";
+import { IconButton, prompts, ScrollArea, Tooltip, useLocale } from "@k2b/ui";
 import { createEffect, For, Show } from "solid-js";
 import { platformMessages } from "./platform-messages";
 import { openRailEditor } from "./RailEditor";
@@ -83,6 +83,23 @@ const AppLaunchpadPanel = (props: AppLaunchpadContext & { close: () => void }) =
   const shortcuts = () => (rail ? projectRailNavigation(rail.apps, rail.settings, locale()).shortcuts : []);
   return (
     <ScrollArea class="launchpad-panel mx-auto max-h-[min(86vh,var(--ui-dialog-available-height))] w-[var(--ui-dialog-available-width)] max-w-[var(--ui-dialog-available-width)] overscroll-contain p-4 text-primary sm:w-fit sm:p-6 md:p-7 dark:text-white">
+      <Show when={rail}>
+        <div class="mb-2 flex justify-end">
+          <IconButton
+            variant="ghost"
+            size="sm"
+            label={t().customize}
+            tooltip={t().customize}
+            tooltipDelay={0}
+            onClick={() => {
+              props.close();
+              openRailEditor(locale());
+            }}
+          >
+            <i class="ti ti-adjustments-horizontal" aria-hidden="true" />
+          </IconButton>
+        </div>
+      </Show>
       <Show when={shortcuts().length > 0}>
         <section class="mb-5 flex flex-col gap-3" aria-label={t().shortcuts}>
           <h3 class="text-center text-sm font-medium">{t().shortcuts}</h3>
@@ -119,21 +136,6 @@ const AppLaunchpadPanel = (props: AppLaunchpadContext & { close: () => void }) =
           )}
         </For>
       </div>
-      <Show when={rail}>
-        <div class="mt-5 flex justify-center">
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={() => {
-              props.close();
-              openRailEditor(locale());
-            }}
-          >
-            <i class="ti ti-adjustments-horizontal" aria-hidden="true" />
-            {t().customize}
-          </Button>
-        </div>
-      </Show>
       <Show when={props.legalLinks.length > 0}>
         <div class="mt-7 flex flex-wrap justify-center text-[11px] text-dimmed dark:text-white/56">
           <For each={props.legalLinks}>

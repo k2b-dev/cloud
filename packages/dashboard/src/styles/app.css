@@ -169,10 +169,6 @@
 }
 
 /* Keep editor spacing and responsive rows in the app-owned stylesheet. */
-.dashboard-editor {
-  padding-bottom: 1rem;
-}
-
 .dashboard-widget-setting {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;

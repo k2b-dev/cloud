@@ -4,9 +4,13 @@ import {
   Button,
   ButtonLink,
   Checkbox,
+  confirmDiscardIfDirty,
+  dialogCore,
   IconButton,
   IconInput,
+  PanelDialog,
   Placeholder,
+  panelDialogOptions,
   prompts,
   SegmentedControl,
   Select,
@@ -16,7 +20,7 @@ import {
   useLocale,
 } from "@k2b/ui";
 import type { DashboardWidgetSpan, DashboardWidgetZone } from "@valentinkolb/cloud/contracts";
-import { openAppLaunchpad, RailEditorButton } from "@valentinkolb/cloud/ssr/islands";
+import { openAppLaunchpad } from "@valentinkolb/cloud/ssr/islands";
 import { createMemo, createSignal, For, Show } from "solid-js";
 import { apiClient } from "../api/client";
 import {
@@ -157,16 +161,19 @@ export function DashboardEditButton(props: DashboardControlsProps) {
   };
 
   const openEdit = () => {
-    void prompts.dialog<void>((close) => <EditForm props={props} close={close} onAddShortcut={openAddShortcut} />, {
-      title: t().editDashboard,
-      icon: "ti ti-adjustments",
-      size: "large",
-    });
+    void dialogCore.open<void>(
+      (close, context) => (
+        <EditForm props={props} close={close} onAddShortcut={openAddShortcut} setDismissHandler={context.setDismissHandler} />
+      ),
+      {
+        ...panelDialogOptions,
+        ariaLabel: t().editDashboard,
+      },
+    );
   };
 
   return (
     <div class="flex flex-wrap items-center gap-2">
-      <RailEditorButton />
       <Button variant="secondary" size="sm" class="shrink-0" onClick={openEdit}>
         <i class="ti ti-adjustments" />
         {t().editDashboard}
@@ -280,7 +287,12 @@ const ShortcutForm = (params: { apps: DashboardAppSummary[]; settings: Dashboard
   );
 };
 
-const EditForm = (params: { props: DashboardControlsProps; close: (r?: void) => void; onAddShortcut: () => void }) => {
+const EditForm = (params: {
+  props: DashboardControlsProps;
+  close: (r?: void) => void;
+  onAddShortcut: () => void;
+  setDismissHandler: (handler: () => void | Promise<void>) => void;
+}) => {
   const t = useDashboardText();
   const { props, close, onAddShortcut } = params;
   const [hidden, setHidden] = createSignal<string[]>([...props.settings.hiddenWidgets]);
@@ -354,194 +366,207 @@ const EditForm = (params: { props: DashboardControlsProps; close: (r?: void) => 
     onError: (error) => prompts.error(error instanceof Error ? error.message : t().saveDashboardFailed),
   });
 
+  const dirty = () =>
+    hidden().join() !== props.settings.hiddenWidgets.join() ||
+    gradient() !== props.settings.gradient ||
+    JSON.stringify(shortcuts()) !== JSON.stringify(props.settings.shortcuts) ||
+    layoutTouched();
+  const requestClose = async () => {
+    if (save.loading()) return;
+    if (await confirmDiscardIfDirty(dirty)) close();
+  };
+  params.setDismissHandler(requestClose);
   const appById = createMemo(() => new Map(props.apps.map((app) => [app.id, app])));
 
   return (
-    <div class="dashboard-editor flex flex-col gap-4">
-      <section class="flex flex-col gap-2">
-        <span class="text-[11px] uppercase tracking-wider text-dimmed">{t().nameColor}</span>
-        <div class="flex flex-wrap gap-2">
-          <For each={gradients.gradientPresets}>
-            {(preset) => (
-              <Tooltip.Anchor content={preset.label}>
-                <button
-                  type="button"
-                  aria-label={t().nameColorLabel({ name: preset.label })}
-                  aria-pressed={gradient() === preset.id}
-                  onClick={() => setGradient(preset.id)}
-                  class={`h-7 w-7 rounded-full transition-all ${
-                    gradient() === preset.id
-                      ? "ring-2 ring-[var(--ui-app-accent-border)] ring-offset-2 ring-offset-[var(--ui-dialog-surface)]"
-                      : "hover:scale-110"
-                  }`}
-                  style={`background:${preset.preview}`}
-                />
-              </Tooltip.Anchor>
-            )}
-          </For>
-        </div>
-      </section>
-
-      <section class="flex flex-col gap-3">
-        <div class="flex items-center justify-between gap-3">
-          <span class="text-[11px] uppercase tracking-wider text-dimmed">{t().shortcuts}</span>
-          <Button variant="secondary" size="sm" onClick={onAddShortcut}>
-            <i class="ti ti-plus" />
-            {t().add}
-          </Button>
-        </div>
-        <Show when={shortcuts().length > 0} fallback={<Placeholder align="left" class="px-0 py-2" description={<>{t().noShortcuts}</>} />}>
-          <ul class="flex flex-col gap-2">
-            <For each={shortcuts()}>
-              {(shortcut) => {
-                const app = shortcut.kind === "app" ? appById().get(shortcut.appId) : null;
-                const title = shortcut.kind === "link" ? shortcut.title : (shortcut.title ?? app?.name ?? t().unknownApp);
-                const icon = shortcut.kind === "link" ? shortcut.icon : (shortcut.icon ?? app?.icon ?? "ti ti-apps");
-                const meta = shortcut.kind === "link" ? shortcut.href : (app?.description ?? shortcut.appId);
-                return (
-                  <li class="flex items-center gap-3 rounded-[var(--ui-radius-control)] bg-[var(--ui-surface-subtle)] p-2">
-                    <span class="grid h-10 w-10 shrink-0 place-items-center rounded-[var(--ui-radius-control)] bg-[var(--ui-surface)] text-lg text-secondary">
-                      <i class={icon} />
-                    </span>
-                    <span class="min-w-0 flex-1">
-                      <span class="block truncate text-sm font-medium text-primary">{title}</span>
-                      <span class="block truncate text-xs text-dimmed">{meta}</span>
-                    </span>
-                    <Tooltip.Anchor content={t().removeShortcut}>
-                      <IconButton size="sm" label={t().removeNamed({ name: title })} onClick={() => removeShortcut(shortcut.id)}>
-                        <i class="ti ti-trash" />
-                      </IconButton>
-                    </Tooltip.Anchor>
-                  </li>
-                );
-              }}
-            </For>
-          </ul>
-        </Show>
-      </section>
-
-      <Show when={props.available.length > 0}>
-        <section class="flex flex-col gap-3">
-          <div>
-            <span class="text-[11px] uppercase tracking-wider text-dimmed">{t().widgets}</span>
-            <p class="mt-1 text-xs text-dimmed">{t().widgetsDescription}</p>
-          </div>
-          <ul class="flex flex-col gap-2">
-            <For each={orderedWidgets()}>
-              {(widget, index) => {
-                const resolved = () => resolvedByKey().get(widget.key);
-                const overridden = () => layoutOverrides().some((entry) => entry.key === widget.key);
-                const recommendation = () => {
-                  const parts = [
-                    widget.presentation?.defaultZone === "focus" ? t().focus : null,
-                    widget.presentation?.defaultZone === "context" ? t().side : null,
-                    widget.presentation?.defaultSpan === "wide" ? t().wide : null,
-                  ].filter(Boolean);
-                  return parts.length > 0 ? t().recommendation({ values: parts.join(" · ") }) : null;
-                };
-                return (
-                  <li class="dashboard-widget-setting rounded-[var(--ui-radius-control)] bg-[var(--ui-surface-subtle)]">
-                    <div class="dashboard-widget-setting__identity min-w-0">
-                      <Checkbox
-                        class="min-w-0 flex-1"
-                        value={() => !hidden().includes(widget.key)}
-                        onValueChange={() => toggleWidget(widget.key)}
-                        label={
-                          <span class="flex min-w-0 items-center gap-3">
-                            <span class="min-w-0 flex-1">
-                              <span class="block truncate text-sm font-medium text-primary">{widget.title}</span>
-                              <Show when={recommendation()}>{(label) => <span class="block text-[11px] text-dimmed">{label()}</span>}</Show>
-                            </span>
-                          </span>
-                        }
-                      />
-                    </div>
-                    <div class="dashboard-widget-setting__actions flex shrink-0 items-center gap-1">
-                      <Tooltip.Anchor content={t().moveUp} disabled={index() === 0}>
-                        <IconButton
-                          size="sm"
-                          label={t().moveNamedUp({ name: widget.title })}
-                          disabled={index() === 0}
-                          onClick={() => moveWidget(widget.key, -1)}
-                        >
-                          <i class="ti ti-arrow-up" />
-                        </IconButton>
-                      </Tooltip.Anchor>
-                      <Tooltip.Anchor content={t().moveDown} disabled={index() === orderedWidgets().length - 1}>
-                        <IconButton
-                          size="sm"
-                          label={t().moveNamedDown({ name: widget.title })}
-                          disabled={index() === orderedWidgets().length - 1}
-                          onClick={() => moveWidget(widget.key, 1)}
-                        >
-                          <i class="ti ti-arrow-down" />
-                        </IconButton>
-                      </Tooltip.Anchor>
-                      <Tooltip.Anchor content={t().reset} disabled={!overridden()}>
-                        <IconButton size="sm" label={t().reset} disabled={!overridden()} onClick={() => resetWidgetLayout(widget.key)}>
-                          <i class="ti ti-restore" />
-                        </IconButton>
-                      </Tooltip.Anchor>
-                    </div>
-
-                    <div class="dashboard-widget-setting__layout grid grid-cols-2 gap-2">
-                      <Select
-                        value={() => resolved()?.zone ?? "overview"}
-                        onValueChange={(zone) => {
-                          if (zone === "focus" || zone === "overview" || zone === "context") updateWidgetLayout(widget.key, { zone });
-                        }}
-                        aria-label={t().sectionLabel({ name: widget.title })}
-                        options={[
-                          { value: "focus", label: t().focus, icon: "ti ti-focus-2" },
-                          { value: "overview", label: t().overview, icon: "ti ti-layout-grid" },
-                          { value: "context", label: t().side, icon: "ti ti-layout-sidebar-right" },
-                        ]}
-                      />
-                      <Select
-                        value={() => resolved()?.span ?? "standard"}
-                        disabled={resolved()?.zone === "context"}
-                        onValueChange={(span) => {
-                          if (span === "standard" || span === "wide") updateWidgetLayout(widget.key, { span });
-                        }}
-                        aria-label={t().widthLabel({ name: widget.title })}
-                        options={[
-                          { value: "standard", label: t().standard },
-                          { value: "wide", label: t().wide },
-                        ]}
-                      />
-                    </div>
-                  </li>
-                );
-              }}
-            </For>
-          </ul>
-        </section>
-      </Show>
-
-      <Show when={props.inaccessible.length > 0}>
-        <section class="flex flex-col gap-2">
-          <span class="text-[11px] uppercase tracking-wider text-dimmed">{t().inaccessible}</span>
-          <ul class="grid gap-2 sm:grid-cols-2">
-            <For each={props.inaccessible}>
-              {(widget) => (
-                <li class="flex items-center gap-3 rounded-[var(--ui-radius-control)] bg-[var(--ui-surface-subtle)] p-2 opacity-60">
-                  <i class="ti ti-lock text-xs text-dimmed" />
-                  <i class={`${widget.icon} text-sm text-dimmed`} />
-                  <span class="min-w-0 truncate text-sm text-secondary">{widget.title}</span>
-                </li>
+    <PanelDialog>
+      <PanelDialog.Header title={t().editDashboard} icon="ti ti-adjustments" close={requestClose} closeDisabled={save.loading()} />
+      <PanelDialog.Body>
+        <PanelDialog.Section title={t().nameColor} icon="ti ti-palette">
+          <div class="flex flex-wrap gap-2">
+            <For each={gradients.gradientPresets}>
+              {(preset) => (
+                <Tooltip.Anchor content={preset.label}>
+                  <button
+                    type="button"
+                    aria-label={t().nameColorLabel({ name: preset.label })}
+                    aria-pressed={gradient() === preset.id}
+                    onClick={() => setGradient(preset.id)}
+                    class={`h-7 w-7 rounded-full transition-all ${
+                      gradient() === preset.id
+                        ? "ring-2 ring-[var(--ui-app-accent-border)] ring-offset-2 ring-offset-[var(--ui-dialog-surface)]"
+                        : "hover:scale-110"
+                    }`}
+                    style={`background:${preset.preview}`}
+                  />
+                </Tooltip.Anchor>
               )}
             </For>
-          </ul>
-        </section>
-      </Show>
+          </div>
+        </PanelDialog.Section>
 
-      <p class="text-[11px] text-dimmed">{t().settingsPersistence}</p>
+        <PanelDialog.Section
+          title={t().shortcuts}
+          icon="ti ti-link"
+          actions={
+            <Button variant="secondary" size="sm" onClick={onAddShortcut}>
+              <i class="ti ti-plus" />
+              {t().add}
+            </Button>
+          }
+        >
+          <Show
+            when={shortcuts().length > 0}
+            fallback={<Placeholder align="left" class="px-0 py-2" description={<>{t().noShortcuts}</>} />}
+          >
+            <ul class="flex flex-col gap-2">
+              <For each={shortcuts()}>
+                {(shortcut) => {
+                  const app = shortcut.kind === "app" ? appById().get(shortcut.appId) : null;
+                  const title = shortcut.kind === "link" ? shortcut.title : (shortcut.title ?? app?.name ?? t().unknownApp);
+                  const icon = shortcut.kind === "link" ? shortcut.icon : (shortcut.icon ?? app?.icon ?? "ti ti-apps");
+                  const meta = shortcut.kind === "link" ? shortcut.href : (app?.description ?? shortcut.appId);
+                  return (
+                    <li class="flex items-center gap-3 rounded-[var(--ui-radius-control)] bg-[var(--ui-surface-subtle)] p-2">
+                      <span class="grid h-10 w-10 shrink-0 place-items-center rounded-[var(--ui-radius-control)] bg-[var(--ui-surface)] text-lg text-secondary">
+                        <i class={icon} />
+                      </span>
+                      <span class="min-w-0 flex-1">
+                        <span class="block truncate text-sm font-medium text-primary">{title}</span>
+                        <span class="block truncate text-xs text-dimmed">{meta}</span>
+                      </span>
+                      <Tooltip.Anchor content={t().removeShortcut}>
+                        <IconButton size="sm" label={t().removeNamed({ name: title })} onClick={() => removeShortcut(shortcut.id)}>
+                          <i class="ti ti-trash" />
+                        </IconButton>
+                      </Tooltip.Anchor>
+                    </li>
+                  );
+                }}
+              </For>
+            </ul>
+          </Show>
+        </PanelDialog.Section>
 
-      <div class="flex justify-end gap-2 pt-2">
+        <Show when={props.available.length > 0}>
+          <PanelDialog.Section title={t().widgets} subtitle={t().widgetsDescription} icon="ti ti-layout-grid">
+            <ul class="flex flex-col gap-2">
+              <For each={orderedWidgets()}>
+                {(widget, index) => {
+                  const resolved = () => resolvedByKey().get(widget.key);
+                  const overridden = () => layoutOverrides().some((entry) => entry.key === widget.key);
+                  const recommendation = () => {
+                    const parts = [
+                      widget.presentation?.defaultZone === "focus" ? t().focus : null,
+                      widget.presentation?.defaultZone === "context" ? t().side : null,
+                      widget.presentation?.defaultSpan === "wide" ? t().wide : null,
+                    ].filter(Boolean);
+                    return parts.length > 0 ? t().recommendation({ values: parts.join(" · ") }) : null;
+                  };
+                  return (
+                    <li class="dashboard-widget-setting rounded-[var(--ui-radius-control)] bg-[var(--ui-surface-subtle)]">
+                      <div class="dashboard-widget-setting__identity min-w-0">
+                        <Checkbox
+                          class="min-w-0 flex-1"
+                          value={() => !hidden().includes(widget.key)}
+                          onValueChange={() => toggleWidget(widget.key)}
+                          label={
+                            <span class="flex min-w-0 items-center gap-3">
+                              <span class="min-w-0 flex-1">
+                                <span class="block truncate text-sm font-medium text-primary">{widget.title}</span>
+                                <Show when={recommendation()}>
+                                  {(label) => <span class="block text-[11px] text-dimmed">{label()}</span>}
+                                </Show>
+                              </span>
+                            </span>
+                          }
+                        />
+                      </div>
+                      <div class="dashboard-widget-setting__actions flex shrink-0 items-center gap-1">
+                        <Tooltip.Anchor content={t().moveUp} disabled={index() === 0}>
+                          <IconButton
+                            size="sm"
+                            label={t().moveNamedUp({ name: widget.title })}
+                            disabled={index() === 0}
+                            onClick={() => moveWidget(widget.key, -1)}
+                          >
+                            <i class="ti ti-arrow-up" />
+                          </IconButton>
+                        </Tooltip.Anchor>
+                        <Tooltip.Anchor content={t().moveDown} disabled={index() === orderedWidgets().length - 1}>
+                          <IconButton
+                            size="sm"
+                            label={t().moveNamedDown({ name: widget.title })}
+                            disabled={index() === orderedWidgets().length - 1}
+                            onClick={() => moveWidget(widget.key, 1)}
+                          >
+                            <i class="ti ti-arrow-down" />
+                          </IconButton>
+                        </Tooltip.Anchor>
+                        <Tooltip.Anchor content={t().reset} disabled={!overridden()}>
+                          <IconButton size="sm" label={t().reset} disabled={!overridden()} onClick={() => resetWidgetLayout(widget.key)}>
+                            <i class="ti ti-restore" />
+                          </IconButton>
+                        </Tooltip.Anchor>
+                      </div>
+
+                      <div class="dashboard-widget-setting__layout grid grid-cols-2 gap-2">
+                        <Select
+                          value={() => resolved()?.zone ?? "overview"}
+                          onValueChange={(zone) => {
+                            if (zone === "focus" || zone === "overview" || zone === "context") updateWidgetLayout(widget.key, { zone });
+                          }}
+                          aria-label={t().sectionLabel({ name: widget.title })}
+                          options={[
+                            { value: "focus", label: t().focus, icon: "ti ti-focus-2" },
+                            { value: "overview", label: t().overview, icon: "ti ti-layout-grid" },
+                            { value: "context", label: t().side, icon: "ti ti-layout-sidebar-right" },
+                          ]}
+                        />
+                        <Select
+                          value={() => resolved()?.span ?? "standard"}
+                          disabled={resolved()?.zone === "context"}
+                          onValueChange={(span) => {
+                            if (span === "standard" || span === "wide") updateWidgetLayout(widget.key, { span });
+                          }}
+                          aria-label={t().widthLabel({ name: widget.title })}
+                          options={[
+                            { value: "standard", label: t().standard },
+                            { value: "wide", label: t().wide },
+                          ]}
+                        />
+                      </div>
+                    </li>
+                  );
+                }}
+              </For>
+            </ul>
+          </PanelDialog.Section>
+        </Show>
+
+        <Show when={props.inaccessible.length > 0}>
+          <PanelDialog.Section title={t().inaccessible} icon="ti ti-lock">
+            <ul class="grid gap-2 sm:grid-cols-2">
+              <For each={props.inaccessible}>
+                {(widget) => (
+                  <li class="flex items-center gap-3 rounded-[var(--ui-radius-control)] bg-[var(--ui-surface-subtle)] p-2 opacity-60">
+                    <i class="ti ti-lock text-xs text-dimmed" />
+                    <i class={`${widget.icon} text-sm text-dimmed`} />
+                    <span class="min-w-0 truncate text-sm text-secondary">{widget.title}</span>
+                  </li>
+                )}
+              </For>
+            </ul>
+          </PanelDialog.Section>
+        </Show>
+
+        <p class="text-[11px] text-dimmed">{t().settingsPersistence}</p>
+      </PanelDialog.Body>
+      <PanelDialog.Footer>
         <Button size="sm" onClick={() => save.mutate()} loading={save.loading()} loadingLabel={t().savingDashboard}>
           {t().save}
         </Button>
-      </div>
-    </div>
+      </PanelDialog.Footer>
+    </PanelDialog>
   );
 };
