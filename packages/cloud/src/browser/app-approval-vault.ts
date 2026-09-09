@@ -126,8 +126,11 @@ async function passkeyKey(credentialId: string, salt: string, signal?: AbortSign
   });
   const result = extension(credential);
   if (result.id !== credentialId || !result.output) throw new AppVaultError("UNSUPPORTED");
+  return derivePasskeyKey(result.output);
+}
+async function derivePasskeyKey(output: Uint8Array<ArrayBuffer>) {
   try {
-    const ikm = await crypto.subtle.importKey("raw", result.output, "HKDF", false, ["deriveKey"]);
+    const ikm = await crypto.subtle.importKey("raw", output, "HKDF", false, ["deriveKey"]);
     return await crypto.subtle.deriveKey(
       { name: "HKDF", hash: "SHA-256", salt: text.encode(location.origin), info: text.encode("cloud-login-vault-wrap-v1") },
       ikm,
@@ -136,7 +139,7 @@ async function passkeyKey(credentialId: string, salt: string, signal?: AbortSign
       ["encrypt", "decrypt"],
     );
   } finally {
-    result.output.fill(0);
+    output.fill(0);
   }
 }
 async function capability(): Promise<"supported" | "unknown" | "unsupported"> {
@@ -246,6 +249,7 @@ function session(id: string, raw: Uint8Array<ArrayBuffer>, key: CryptoKey) {
     },
     async passkey(signal?: AbortSignal): Promise<AppVaultMethod> {
       check();
+      const salt = encode(bytes(32));
       const credential = await navigator.credentials.create({
         publicKey: {
           challenge: bytes(32),
@@ -254,15 +258,18 @@ function session(id: string, raw: Uint8Array<ArrayBuffer>, key: CryptoKey) {
           pubKeyCredParams: [{ type: "public-key", alg: -7 }],
           authenticatorSelection: { residentKey: "required", userVerification: "required" },
           attestation: "none",
-          extensions: { prf: {} },
+          extensions: { prf: { eval: { first: decode(salt) } } },
         },
         signal,
       });
       const result = extension(credential);
-      result.output?.fill(0);
-      if (!result.enabled) throw new AppVaultError("UNSUPPORTED");
-      const method = { type: "passkey" as const, credentialId: result.id, salt: encode(bytes(32)) };
-      const wrapping = await passkeyKey(method.credentialId, method.salt, signal);
+      if (!result.enabled) {
+        result.output?.fill(0);
+        throw new AppVaultError("UNSUPPORTED");
+      }
+      const method = { type: "passkey" as const, credentialId: result.id, salt };
+      // Some providers evaluate PRF during creation; others require authentication.
+      const wrapping = result.output ? await derivePasskeyKey(result.output) : await passkeyKey(method.credentialId, method.salt, signal);
       check();
       const wrapped = await encrypt(wrapping, raw, wrapContext(id, method));
       check();

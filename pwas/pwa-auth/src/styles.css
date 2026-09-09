@@ -421,3 +421,7 @@ body.k2b-ui textarea {
   border-radius: 2px;
   background: var(--k2b-border-strong);
 }
+
+.auth-dialog-actions--end {
+  justify-content: flex-end;
+}

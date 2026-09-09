@@ -1,4 +1,4 @@
-async function _run(page) {
+async function _run(page, { prf = true, registrationOutput = true } = {}) {
   const fillAppPin = async (target, value) => {
     await target.waitForFunction(() => !document.querySelector("dialog input:disabled, dialog input[readonly]"));
     const digits = target.getByRole("group", { name: "App PIN", exact: true }).locator("input");
@@ -11,23 +11,38 @@ async function _run(page) {
     .context()
     .browser()
     .newContext({ locale: "en", viewport: { width: 390, height: 844 } });
-  await context.addInitScript(() => {
-    window.__vaultTrace = [];
-    for (const operation of ["create", "get"]) {
-      const original = navigator.credentials[operation].bind(navigator.credentials);
-      navigator.credentials[operation] = async (options) => {
-        try {
-          const value = await original(options);
-          const prf = value?.getClientExtensionResults().prf;
-          window.__vaultTrace.push({ operation, enabled: prf?.enabled, bytes: prf?.results?.first?.byteLength });
-          return value;
-        } catch (error) {
-          window.__vaultTrace.push({ operation, error: error.name });
-          throw error;
-        }
-      };
-    }
-  });
+  await context.addInitScript(
+    ({ registrationOutput }) => {
+      window.__vaultTrace = [];
+      for (const operation of ["create", "get"]) {
+        const original = navigator.credentials[operation].bind(navigator.credentials);
+        navigator.credentials[operation] = async (options) => {
+          try {
+            const value = await original(options);
+            const prf = value?.getClientExtensionResults().prf;
+            window.__vaultTrace.push({ operation, enabled: prf?.enabled, bytes: prf?.results?.first?.byteLength });
+            // Native sheets may resolve while the installed app is still hidden.
+            if (operation === "get") {
+              Object.defineProperty(document, "visibilityState", { configurable: true, value: "hidden" });
+              document.dispatchEvent(new Event("visibilitychange"));
+              setTimeout(() => {
+                Object.defineProperty(document, "visibilityState", { configurable: true, value: "visible" });
+                document.dispatchEvent(new Event("visibilitychange"));
+              }, 150);
+            }
+            if (operation === "create" && !registrationOutput && prf?.enabled) {
+              value.getClientExtensionResults = () => ({ prf: { enabled: true } });
+            }
+            return value;
+          } catch (error) {
+            window.__vaultTrace.push({ operation, error: error.name });
+            throw error;
+          }
+        };
+      }
+    },
+    { registrationOutput },
+  );
   const p = await context.newPage();
   const cdp = await context.newCDPSession(p);
   await cdp.send("WebAuthn.enable");
@@ -40,7 +55,7 @@ async function _run(page) {
       hasUserVerification: true,
       isUserVerified: true,
       automaticPresenceSimulation: true,
-      hasPrf: true,
+      hasPrf: prf,
     },
   });
   const button = (name) => p.getByRole("button", { name, exact: true });
@@ -64,7 +79,16 @@ async function _run(page) {
       throw new Error("PIN is not a text alternative");
     await p.screenshot({ path: "output/playwright/pwa-passkey-setup.png" });
     await cta.click();
+    if (!prf) {
+      await p.getByRole("alert").filter({ hasText: "cannot encrypt your app keys" }).waitFor();
+      const trace = await p.evaluate(() => window.__vaultTrace);
+      if (trace.length !== 1 || trace[0].operation !== "create") throw new Error("Unsupported provider retried automatically");
+      if (!(await cta.isEnabled())) throw new Error("Cannot retry setup");
+      return { unsupportedProviderExplained: true, noAutomaticRegistrationLoop: true };
+    }
     await p.getByRole("heading", { name: "Add Cloud", exact: true }).waitFor({ timeout: 15000 });
+    const setupTrace = await p.evaluate(() => window.__vaultTrace);
+    if (setupTrace.filter((entry) => entry.operation === "create").length !== 1) throw new Error("Repeated registration");
     await button("Close").click();
     await ready();
     await p.reload();

@@ -65,7 +65,9 @@ all Clouds in this browser installation. This does not approve a sign-in.
 A passkey can use face recognition, a fingerprint, or the device code, as chosen
 by the operating system. The app checks the selected provider's encryption
 support during setup; browser support alone is not sufficient. If that check
-fails, choose a compatible provider or set a PIN.
+fails, choose a compatible provider or set a PIN. A passkey saved in the password
+manager does not by itself mean app protection is ready: the encryption check
+and a successful unlock must finish first.
 
 Enter a PIN twice, with exactly six digits; leading zeroes count. A PIN has at
 most one million combinations. Its slow Argon2id derivation makes guessing more
@@ -82,7 +84,8 @@ The app starts locked after a reload and locks after one minute in the backgroun
 five minutes without interaction, or through **Lock app**. Locking hides Cloud
 and account details, closes sensitive dialogs, and stops polling. Other open
 tabs receive the lock as well. Operating-system passkey dialogs may temporarily
-hide a page during authentication; they do not keep an unlocked vault alive.
+hide a page during authentication. The app waits up to one minute for the page
+to return before accepting the result; closing or locking the app cancels it.
 
 **App security** requires a fresh unlock before adding, replacing, or removing
 a method. A new method must successfully unlock before it is saved. The last
@@ -161,3 +164,7 @@ Approvals need an internet connection. Open the app to see pending requests;
 there are no push notifications. Before making the app available to your
 organization, check camera access, installation and switching between Cloud
 and the app on the devices and browsers you support.
+
+For troubleshooting, open **Settings** and note the version shown below the
+appearance control. Release images show their tag and source revision; local
+development shows `dev`.

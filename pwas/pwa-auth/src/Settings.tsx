@@ -4,6 +4,8 @@ import { openDialog } from "./dialog";
 import { authMessages } from "./i18n";
 import type { Preferences } from "./preferences";
 
+declare const __PWA_VERSION__: string;
+
 export function Settings(props: { preferences: Preferences; close: () => void }) {
   const locale = useLocale();
   const t = createMemo(() => authMessages.resolve([locale()]).t);
@@ -38,10 +40,13 @@ export function Settings(props: { preferences: Preferences; close: () => void })
               ]}
             />
           </section>
+          <p class="auth-quiet">Version {__PWA_VERSION__}</p>
         </div>
       </PanelDialog.Body>
       <PanelDialog.Footer>
-        <Button onClick={props.close}>{t().done}</Button>
+        <div class="auth-dialog-actions auth-dialog-actions--end">
+          <Button onClick={props.close}>{t().done}</Button>
+        </div>
       </PanelDialog.Footer>
     </PanelDialog>
   );

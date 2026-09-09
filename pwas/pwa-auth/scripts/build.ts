@@ -40,7 +40,15 @@ export async function build({ development = false } = {}) {
     plugins: [solid],
     minify: true,
     naming: "[name]-[hash].[ext]",
-    define: { "process.env.NODE_ENV": JSON.stringify("production"), __PWA_OFFLINE__: JSON.stringify(!development) },
+    define: {
+      "process.env.NODE_ENV": JSON.stringify("production"),
+      __PWA_OFFLINE__: JSON.stringify(!development),
+      __PWA_VERSION__: JSON.stringify(
+        development
+          ? "dev"
+          : `${process.env.PWA_VERSION || "unreleased"}${process.env.PWA_REVISION ? ` (${process.env.PWA_REVISION.slice(0, 7)})` : ""}`,
+      ),
+    },
   });
   if (!result.success) throw new AggregateError(result.logs, "PWA build failed");
   const entry = result.outputs.find((output) => output.kind === "entry-point" && output.path.endsWith(".js"));

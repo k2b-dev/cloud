@@ -41,6 +41,12 @@ async function _run(page) {
       window.dispatchEvent(new Event("focus"));
     });
     await p.waitForFunction(() => document.activeElement === document.querySelector("dialog .k2b-pin-input input"));
+    await p.evaluate(() => {
+      document.querySelector("dialog").focus();
+      document.dispatchEvent(new Event("visibilitychange"));
+      window.dispatchEvent(new Event("pageshow"));
+    });
+    await p.waitForFunction(() => document.activeElement === document.querySelector("dialog .k2b-pin-input input"));
     await p.locator("dialog .k2b-pin-input input").nth(2).focus();
     await p.evaluate(() => window.dispatchEvent(new Event("focus")));
     await p.waitForTimeout(50);
