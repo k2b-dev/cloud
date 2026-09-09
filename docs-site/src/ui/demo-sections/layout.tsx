@@ -1191,7 +1191,7 @@ const DetailPanelDemo = () => {
                     </div>
                   </DetailPanel.Section>
 
-                  <DetailPanel.Section title="Info" icon="ti ti-info-circle" tone="neutral">
+                  <DetailPanel.Section title="Info" icon="ti ti-info-circle" tone="neutral" collapsible>
                     <DescriptionList
                       layout="rows"
                       size="sm"

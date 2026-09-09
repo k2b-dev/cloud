@@ -1,4 +1,4 @@
-import { createUniqueId, type JSX, Show, splitProps } from "solid-js";
+import { createEffect, createSignal, createUniqueId, type JSX, Show, splitProps } from "solid-js";
 import { Button, ButtonLink, type ButtonLinkProps, type ButtonProps } from "../actions/Button";
 import { Dropdown, type DropdownItem } from "../actions/Dropdown";
 
@@ -97,12 +97,18 @@ export type DetailPanelSectionProps = DetailPanelSectionBaseProps &
         actions?: JSX.Element;
         collapsible?: false;
         defaultOpen?: never;
+        open?: never;
+        onOpenChange?: never;
+        disabled?: never;
       }
     | {
         children: JSX.Element;
         actions?: never;
         collapsible: true;
         defaultOpen?: boolean;
+        open?: boolean;
+        onOpenChange?: (open: boolean) => void;
+        disabled?: boolean;
       }
   );
 
@@ -257,6 +263,28 @@ const DetailPanelAction = (props: DetailPanelActionProps): JSX.Element => {
 
 const DetailPanelSection = (props: DetailPanelSectionProps): JSX.Element => {
   const headingId = `k2b-detail-panel-section-${createUniqueId()}`;
+  const bodyId = `${headingId}-body`;
+  const [internalOpen, setInternalOpen] = createSignal(props.defaultOpen ?? false);
+  const open = () => props.open ?? internalOpen();
+  let expand: HTMLButtonElement | undefined;
+  let collapse: HTMLButtonElement | undefined;
+  let body: HTMLDivElement | undefined;
+  const toggle = (next: boolean) => {
+    if (props.disabled) return;
+    if (props.open === undefined) setInternalOpen(next);
+    props.onOpenChange?.(next);
+  };
+  createEffect(() => {
+    const expanded = open();
+    // Restore focus only when its current control becomes hidden, including
+    // a parent-controlled collapse while focus is inside an editor.
+    queueMicrotask(() => {
+      if (expanded !== open()) return;
+      const active = expand?.ownerDocument.activeElement;
+      if (expanded && active === expand) collapse?.focus();
+      if (!expanded && (active === collapse || (active && body?.contains(active)))) expand?.focus();
+    });
+  });
   const className = () => classNames("k2b-detail-panel__section", props.class);
 
   return (
@@ -285,24 +313,62 @@ const DetailPanelSection = (props: DetailPanelSectionProps): JSX.Element => {
         </section>
       }
     >
-      <details class={className()} open={props.defaultOpen}>
-        <summary class="k2b-detail-panel__section-summary">
-          <DetailPanelSectionIcon icon={props.icon} tone={props.tone} />
-          <span class="k2b-detail-panel__section-copy">
-            <span id={headingId} class="k2b-detail-panel__section-title">
-              {props.title}
+      <section class={className()} aria-labelledby={open() ? headingId : `${headingId}-closed`} data-open={open()}>
+        <div hidden={open()}>
+          <Button
+            ref={expand}
+            variant="ghost"
+            class="k2b-detail-panel__section-summary"
+            disabled={props.disabled}
+            aria-expanded={false}
+            aria-controls={bodyId}
+            onClick={() => toggle(true)}
+          >
+            <DetailPanelSectionIcon icon={props.icon} tone={props.tone} />
+            <span class="k2b-detail-panel__section-copy">
+              <span id={`${headingId}-closed`} class="k2b-detail-panel__section-title">
+                {props.title}
+              </span>
+              <Show when={props.description}>
+                <span class="k2b-detail-panel__section-description">{props.description}</span>
+              </Show>
             </span>
-            <Show when={props.description}>
-              <span class="k2b-detail-panel__section-description">{props.description}</span>
+            <Show when={props.meta}>
+              <span class="k2b-detail-panel__section-meta">{props.meta}</span>
             </Show>
-          </span>
-          <Show when={props.meta}>
-            <span class="k2b-detail-panel__section-meta">{props.meta}</span>
-          </Show>
-          <i class="ti ti-chevron-down" aria-hidden="true" />
-        </summary>
-        <div class="k2b-detail-panel__section-body">{props.children}</div>
-      </details>
+            <i class="ti ti-chevron-down" aria-hidden="true" />
+          </Button>
+        </div>
+        <div hidden={!open()}>
+          <header class="k2b-detail-panel__section-header">
+            <DetailPanelSectionIcon icon={props.icon} tone={props.tone} />
+            <div class="k2b-detail-panel__section-copy">
+              <h3 id={headingId}>{props.title}</h3>
+              <Show when={props.description}>
+                <p>{props.description}</p>
+              </Show>
+            </div>
+            <Show when={props.meta}>
+              <div class="k2b-detail-panel__section-meta">{props.meta}</div>
+            </Show>
+            <Button
+              ref={collapse}
+              variant="ghost"
+              size="sm"
+              disabled={props.disabled}
+              aria-labelledby={headingId}
+              aria-expanded={true}
+              aria-controls={bodyId}
+              onClick={() => toggle(false)}
+            >
+              <i class="ti ti-chevron-up" aria-hidden="true" />
+            </Button>
+          </header>
+        </div>
+        <div ref={body} id={bodyId} hidden={!open()} class="k2b-detail-panel__section-body">
+          {props.children}
+        </div>
+      </section>
     </Show>
   );
 };

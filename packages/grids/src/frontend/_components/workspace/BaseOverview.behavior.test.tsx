@@ -81,11 +81,11 @@ describe("Base navigation interactions", () => {
 
   test("field option sections collapse through the header without remounting inputs", async () => {
     const dom = createDomTestHarness();
-    const { FieldOptionsSection } = await import("../fields/FieldOptionsSection");
+    const { DetailPanel } = await import("@k2b/ui");
     const input = document.createElement("input");
     input.value = "Unsaved";
     const dispose = render(
-      () => createComponent(FieldOptionsSection, { title: "Appearance", icon: "ti ti-palette", children: input }),
+      () => createComponent(DetailPanel.Section, { collapsible: true, title: "Appearance", icon: "ti ti-palette", children: input }),
       dom.root,
     );
     try {
@@ -93,11 +93,14 @@ describe("Base navigation interactions", () => {
       const collapse = dom.root.querySelector<HTMLButtonElement>('button[aria-expanded="true"]')!;
       const panel = document.getElementById(expand.getAttribute("aria-controls")!)!;
       expect(panel.hidden).toBe(true);
+      expand.focus();
       expand.click();
+      await Promise.resolve();
       expect(panel.hidden).toBe(false);
       expect(document.activeElement).toBe(collapse);
       expect(collapse.closest("header")?.textContent).toContain("Appearance");
       collapse.click();
+      await Promise.resolve();
       expect(panel.hidden).toBe(true);
       expect(document.activeElement).toBe(expand);
       expand.click();

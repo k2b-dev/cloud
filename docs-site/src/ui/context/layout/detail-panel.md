@@ -46,8 +46,17 @@ portable `accent`, `neutral`, `success`, `warning`, or `danger` roles through
 text color only. Pass `description` for short supporting context, `meta` for a
 count or state, and `actions` for a normal section. A normal section may omit
 its body to represent a compact, actionable empty group. Set `collapsible` for
-secondary content; a collapsible section uses native `details` behavior and
-therefore does not accept header actions.
+secondary content. Closed sections show a compact action row; open sections show
+a heading with a collapse button on the right. Their content stays mounted when
+closed, preserving unsaved input and child state. Collapsible sections reserve
+the header action for collapsing.
+
+Use `defaultOpen` for an initially expanded section, or control it with `open`
+and `onOpenChange`. Controlled state is authoritative: the callback requests a
+change but does not open or close the section itself. This lets an editor open
+the relevant section after validation fails. `disabled` disables both toggle
+buttons; it does not disable the child controls. Use a fieldset for that.
+The content owns its layout: wrap form controls in a column with a gap.
 
 Use `DetailPanel.Group` when one or more sections form one stable context, such
 as a company and its contacts or a document and its derived metadata. Merge
@@ -85,15 +94,17 @@ data, comments, history, or form fields.
 The header title is an `h2`; normal section titles are labelled `h3` headings.
 Decorative header and section icons are hidden from assistive technology, so
 their adjacent text remains the label and color is never the only signal.
-Collapsible sections use a native `summary` with a visible focus indicator.
+Collapsible sections use native buttons with expanded state and a relationship
+to their content. Focus follows the toggle when its counterpart becomes visible.
 Every icon-only action and every control embedded in a description value still
 needs its own accessible name. `DetailPanel.Action` keeps its visible title as
 the accessible name and renders a real link or button.
 
 ## Runtime
 
-The composition is server-renderable. Collapsible sections work without client
-JavaScript. Interactive children keep their own hydration and state contracts.
+The composition and its initial open state are server-renderable. Toggling a
+collapsible section requires hydration. Interactive children keep their own
+state and remain mounted when the section closes.
 
 ## Example
 

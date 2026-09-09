@@ -4,6 +4,7 @@ import {
   Button,
   CheckboxCard,
   confirmDiscardIfDirty,
+  DetailPanel,
   dialogCore,
   IconInput,
   NoticeCard,
@@ -21,7 +22,6 @@ import { effectiveDisplayField } from "../../../lookup-display";
 import { ColumnFormatControls, type ColumnFormatControlsHandle } from "../dialogs/ViewColumnSettingsDialog";
 import { FieldInput } from "../forms/form-fields";
 import { errorMessage } from "../utils/api-helpers";
-import { FieldOptionsSection } from "./FieldOptionsSection";
 import { FieldConfigEditor, type FieldConfigState } from "./field-config-editor";
 import { RECORD_INPUT_FIELD_TYPES } from "./field-render";
 import { gridsFieldMessages } from "./messages";
@@ -341,27 +341,29 @@ function FieldEditor(props: {
             </Show>
           </PanelDialog.Section>
 
-          <FieldOptionsSection title={t().appearance} icon="ti ti-palette">
-            <TextInput
-              label={t().descriptionOptional}
-              description={t().fieldDescriptionDescription}
-              value={description}
-              onValueChange={wrap(setDescription)}
-              icon="ti ti-info-circle"
-              multiline
-              lines={2}
-              placeholder={t().fieldDescriptionExample}
-            />
+          <DetailPanel.Section collapsible title={t().appearance} icon="ti ti-palette">
+            <div class="flex flex-col gap-4 min-w-0">
+              <TextInput
+                label={t().descriptionOptional}
+                description={t().fieldDescriptionDescription}
+                value={description}
+                onValueChange={wrap(setDescription)}
+                icon="ti ti-info-circle"
+                multiline
+                lines={2}
+                placeholder={t().fieldDescriptionExample}
+              />
 
-            <IconInput
-              label={t().iconOptional}
-              value={icon}
-              onValueChange={(value) => wrap(setIcon)(value ?? "")}
-              placeholder={t().searchIcons}
-            />
-          </FieldOptionsSection>
+              <IconInput
+                label={t().iconOptional}
+                value={icon}
+                onValueChange={(value) => wrap(setIcon)(value ?? "")}
+                placeholder={t().searchIcons}
+              />
+            </div>
+          </DetailPanel.Section>
 
-          <FieldOptionsSection title={t().recordBehavior} description={t().recordBehaviorDescription} icon="ti ti-toggle-right">
+          <DetailPanel.Section collapsible title={t().recordBehavior} description={t().recordBehaviorDescription} icon="ti ti-toggle-right">
             <div class="grid grid-cols-1 md:grid-cols-2 gap-2">
               <Show when={supportsRequired()}>
                 <CheckboxCard
@@ -399,10 +401,10 @@ function FieldEditor(props: {
                 />
               </Show>
             </div>
-          </FieldOptionsSection>
+          </DetailPanel.Section>
 
           <Show when={supportsIndexed()}>
-            <FieldOptionsSection title={t().queryPerformance} description={t().queryPerformanceDescription} icon="ti ti-bolt">
+            <DetailPanel.Section collapsible title={t().queryPerformance} description={t().queryPerformanceDescription} icon="ti ti-bolt">
               <CheckboxCard
                 label={t().indexed}
                 description={t().indexedDescription}
@@ -410,11 +412,11 @@ function FieldEditor(props: {
                 value={indexed}
                 onValueChange={wrap(setIndexed)}
               />
-            </FieldOptionsSection>
+            </DetailPanel.Section>
           </Show>
 
           <Show when={props.tableColumns}>
-            <FieldOptionsSection title={t().tableDisplay} description={t().tableDisplayDescription} icon="ti ti-table">
+            <DetailPanel.Section collapsible title={t().tableDisplay} description={t().tableDisplayDescription} icon="ti ti-table">
               <TextInput
                 label={t().tableColumnName}
                 description={t().tableColumnNameDescription}
@@ -444,7 +446,7 @@ function FieldEditor(props: {
                   props.onDirtyChange?.(true);
                 }}
               />
-            </FieldOptionsSection>
+            </DetailPanel.Section>
           </Show>
 
           <Show when={supportsDefaultValue()}>
@@ -453,7 +455,7 @@ function FieldEditor(props: {
             matches the field type (NumberInput for number, Select
             for select, etc). Saved as `defaultValue` on the field
             row; null/undefined = no default. */}
-            <FieldOptionsSection title={t().default} description={t().defaultDescription} icon="ti ti-file-plus">
+            <DetailPanel.Section collapsible title={t().default} description={t().defaultDescription} icon="ti ti-file-plus">
               <Show
                 when={props.field.type === "date"}
                 fallback={
@@ -508,7 +510,7 @@ function FieldEditor(props: {
                 </Show>
               </Show>
               <p class="text-[11px] text-dimmed leading-snug">{t().leaveDefaultEmpty}</p>
-            </FieldOptionsSection>
+            </DetailPanel.Section>
           </Show>
         </fieldset>
       </PanelDialog.Body>

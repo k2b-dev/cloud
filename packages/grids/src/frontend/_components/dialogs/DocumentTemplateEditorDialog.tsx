@@ -3,7 +3,7 @@ import {
   Button,
   CheckboxCard,
   confirmDiscardIfDirty,
-  Disclosure,
+  DetailPanel,
   dialogCore,
   NoticeCard,
   PanelDialog,
@@ -465,8 +465,15 @@ function DocumentTemplateEditorDialog(props: {
                 : undefined
             }
           />
-          <Disclosure summary={t().templateSettings} value={outputOpen} onValueChange={setOutputOpen} disabled={saveMut.loading()}>
-            <div class="grid shrink-0 gap-2 lg:grid-cols-2">
+          <DetailPanel.Section
+            collapsible
+            title={t().templateSettings}
+            icon="ti ti-settings"
+            open={outputOpen()}
+            onOpenChange={setOutputOpen}
+            disabled={saveMut.loading()}
+          >
+            <div class="grid shrink-0 gap-2 lg:grid-cols-2 items-end">
               <TextInput
                 label={t().description}
                 value={description}
@@ -529,8 +536,15 @@ function DocumentTemplateEditorDialog(props: {
                 <p class="text-xs text-dimmed">{t().rendererOwnsNumbering}</p>
               </Show>
             </div>
-          </Disclosure>
-          <Disclosure summary={t().templateDataSource} value={sourceOpen} onValueChange={setSourceOpen} disabled={saveMut.loading()}>
+          </DetailPanel.Section>
+          <DetailPanel.Section
+            collapsible
+            title={t().templateDataSource}
+            icon="ti ti-database"
+            open={sourceOpen()}
+            onOpenChange={setSourceOpen}
+            disabled={saveMut.loading()}
+          >
             <div class="lg:col-span-2">
               <div class="mb-1.5 flex items-center justify-between gap-2">
                 <div class="text-sm font-medium text-primary">
@@ -565,7 +579,7 @@ function DocumentTemplateEditorDialog(props: {
                 </NoticeCard>
               </Show>
             </div>
-          </Disclosure>
+          </DetailPanel.Section>
         </fieldset>
       </PanelDialog.Body>
       <PanelDialog.Footer>

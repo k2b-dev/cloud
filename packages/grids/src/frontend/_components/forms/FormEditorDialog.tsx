@@ -227,9 +227,10 @@ function FormEditor(props: {
           )}
         </Show>
         <fieldset disabled={pending()} class="flex flex-col gap-4 min-w-0">
-          <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-3 items-end">
             <TextInput
               label={t().name}
+              description={t().nameDescription}
               value={name}
               onValueChange={wrap(setName)}
               icon="ti ti-typography"
@@ -397,7 +398,7 @@ function FormEditorSection(props: { title: string; subtitle?: string; icon: stri
       when={props.primary}
       fallback={
         <DetailPanel.Section collapsible title={props.title} description={props.subtitle} icon={props.icon}>
-          {props.children}
+          <div class="flex flex-col gap-4 min-w-0">{props.children}</div>
         </DetailPanel.Section>
       }
     >

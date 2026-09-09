@@ -69,8 +69,9 @@ describe("DetailPanel", () => {
     expect(html).toMatch(/<section[^>]+aria-labelledby="k2b-detail-panel-section-[^"]+"/);
     expect(html).toContain("No workflow context yet");
     expect(html).toContain('class="k2b-detail-panel__section-meta">0</div>');
-    expect(html).toContain('<details class="k2b-detail-panel__section"');
-    expect(html).toContain('<summary class="k2b-detail-panel__section-summary">');
+    expect(html).toContain('data-open="true"');
+    expect(html).toContain('aria-expanded="true"');
+    expect(html).toContain('aria-controls="k2b-detail-panel-section-');
     expect(html).not.toContain("paper");
   });
 
