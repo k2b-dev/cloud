@@ -17,6 +17,8 @@ export type DialogRender<T> = (
   close: DialogClose<T>,
   context: {
     dialog: HTMLDialogElement;
+    /** Route Escape/backdrop through the same guarded handler as Cancel and X. */
+    setDismissHandler: (handler: () => void | Promise<void>) => void;
   },
 ) => JSX.Element;
 
@@ -35,6 +37,8 @@ type DialogStackEntry = {
   initialFocus: NonNullable<OpenDialogOptions["initialFocus"]>;
   opener?: HTMLElement;
   ariaLabel?: string;
+  dismissHandler?: () => void | Promise<void>;
+  dismissPending?: boolean;
 };
 
 type DialogState = {
@@ -147,6 +151,23 @@ export const createDialogCore = (): DialogCore => {
     };
   };
 
+  const requestDismiss = async (entry: DialogStackEntry) => {
+    if (state.stack[state.stack.length - 1] !== entry || entry.dismissPending) return;
+    if (!entry.dismissHandler) {
+      popTop(undefined);
+      return;
+    }
+    entry.dismissPending = true;
+    try {
+      await entry.dismissHandler();
+    } catch (error) {
+      // A failed guard must never discard the dialog's state.
+      console.error("Dialog dismissal failed", error);
+    } finally {
+      entry.dismissPending = false;
+    }
+  };
+
   const popTop = (result?: unknown) => {
     const top = state.stack.pop();
     if (!top) return;
@@ -159,7 +180,7 @@ export const createDialogCore = (): DialogCore => {
       previous.container.style.display = "";
       dialog.className = previous.panelClassName;
       applyAccessibleName(dialog, previous);
-      applyCancelBehavior(dialog, () => popTop(undefined), previous.cancelBehavior);
+      applyCancelBehavior(dialog, () => void requestDismiss(previous), previous.cancelBehavior);
       schedule(() => {
         const target = top.opener?.isConnected ? top.opener : resolveInitialFocusTarget(previous, dialog);
         target?.focus();
@@ -238,9 +259,18 @@ export const createDialogCore = (): DialogCore => {
 
       state.stack.push(entry);
       try {
-        entry.dispose = render(() => view(closeTyped, { dialog }), container);
+        entry.dispose = render(
+          () =>
+            view(closeTyped, {
+              dialog,
+              setDismissHandler: (handler) => {
+                entry.dismissHandler = handler;
+              },
+            }),
+          container,
+        );
         applyAccessibleName(dialog, entry);
-        applyCancelBehavior(dialog, () => closeTyped(undefined), cancelBehavior);
+        applyCancelBehavior(dialog, () => void requestDismiss(entry), cancelBehavior);
 
         if (state.stack.length === 1) {
           if (typeof dialog.showModal === "function") dialog.showModal();

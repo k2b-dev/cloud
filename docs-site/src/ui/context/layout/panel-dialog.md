@@ -62,6 +62,14 @@ name.
 
 If the editor can be dirty, call `confirmDiscardIfDirty` before closing. The application decides what counts as dirty.
 
+Register that same handler with the render context's `setDismissHandler` so
+Escape and backdrop clicks cannot bypass it. While saving, the handler should
+leave the dialog open. Call `close` directly after a successful save; it is the
+completion callback, not a discard request. Dismissal handlers may be async and
+may open a confirmation subdialog. Repeated native dismiss requests are ignored
+while that handler is pending. `cancelBehavior: "ignore"` still disables native
+dismissal entirely.
+
 `dialogCore` owns the backdrop, focus handling, and Escape behavior. Do not create a second dialog frame around `PanelDialog`.
 
 ## Accessibility
@@ -83,14 +91,18 @@ user's decision.
 
 ```tsx
 await dialogCore.open<void>(
-  (close) => (
+  (close, context) => {
+    const requestClose = async () => {
+      if (saving()) return;
+      if (await confirmDiscardIfDirty(dirty)) close();
+    };
+    context.setDismissHandler(requestClose);
+    return (
     <PanelDialog>
       <PanelDialog.Header
         title="Edit item"
         icon="ti ti-pencil"
-        close={async () => {
-          if (await confirmDiscardIfDirty(dirty)) close();
-        }}
+        close={requestClose}
       />
       <PanelDialog.Body scrollPreserveKey="item-editor">
         <PanelDialog.Section
@@ -105,11 +117,12 @@ await dialogCore.open<void>(
         </PanelDialog.Section>
       </PanelDialog.Body>
       <PanelDialog.Footer>
-        <Button variant="secondary" size="sm" onClick={close}>Cancel</Button>
+        <Button variant="secondary" size="sm" onClick={requestClose}>Cancel</Button>
         <Button size="sm" onClick={save}>Save</Button>
       </PanelDialog.Footer>
     </PanelDialog>
-  ),
+    );
+  },
   panelDialogOptions,
 );
 ```

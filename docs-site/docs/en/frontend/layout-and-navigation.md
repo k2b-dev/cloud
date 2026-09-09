@@ -140,7 +140,10 @@ title and icon, edit it, move it up or down, or remove it. Pinning an app remove
 its duplicate from the ordinary list. Links to individual pages can coexist
 with their application. Dashboard shortcuts remain independent.
 
-**Save** applies the changes across Cloud. Closing the dialog discards unsaved edits;
+The editor groups apps and shortcuts into separate sections. Its fixed footer
+places **Reset app bar** on the left and **Save** on the right.
+
+**Save** applies the changes across Cloud. Closing with unsaved edits asks before discarding them;
 **Reset app bar** prepares the default app selection and an empty shortcut list
 for saving. If another editor has saved in the meantime, the save is rejected
 so that those changes are not overwritten. Close and reopen to load them.
