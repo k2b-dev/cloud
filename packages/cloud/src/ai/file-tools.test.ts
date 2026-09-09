@@ -40,6 +40,14 @@ const toolContext = {
 };
 
 describe("AI Project file mount", () => {
+  test("missing turn-local Skill mount explains recovery without reading other storage", async () => {
+    const read = createCloudAiReadFileTool();
+    if (read.location !== "server") throw new Error("Expected server tool");
+    await expect(
+      read.run({ path: "/skills/cloud-grids/references/query-tasks.md", offset: 0, length: 1024 }, toolContext as never),
+    ).rejects.toThrow("Call load_skill for the Skill again, then read a returned file path");
+  });
+
   test("lists and reads loaded skills below their reserved read-only namespace", async () => {
     const list = createCloudAiListFilesTool();
     const read = createCloudAiReadFileTool();
@@ -86,9 +94,9 @@ describe("AI Project file mount", () => {
       content: "# Weekly status",
       eof: true,
     });
-    await expect(
-      write.run({ path: "/skills/weekly-status/output.md", content: "No", mode: "overwrite" }, context),
-    ).rejects.toThrow("/skills namespace is read-only");
+    await expect(write.run({ path: "/skills/weekly-status/output.md", content: "No", mode: "overwrite" }, context)).rejects.toThrow(
+      "/skills namespace is read-only",
+    );
   });
 
   test("lists and reads Project files below the reserved read-only namespace", async () => {

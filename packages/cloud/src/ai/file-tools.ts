@@ -137,9 +137,7 @@ export const createCloudAiListFilesTool = () =>
       includeSkillFiles && ctx.skillFiles ? ctx.skillFiles.list() : Promise.resolve([]),
     ]);
     const files = [
-      ...conversationFiles.filter(
-        (file) => aiProjectFilePathFromMount(file.path) === null && aiSkillFilePathFromMount(file.path) === null,
-      ),
+      ...conversationFiles.filter((file) => aiProjectFilePathFromMount(file.path) === null && aiSkillFilePathFromMount(file.path) === null),
       ...projectFiles
         .filter((file) => projectPathMatchesPrefix(file.path, projectPrefix ?? ""))
         .map((file) => ({ ...file, path: mountAiProjectFilePath(file.path), origin: "project" as const })),
@@ -203,7 +201,10 @@ export const createCloudAiReadFileTool = () => {
       projectPath !== null && projectPath.length > 0 && ctx.projectFiles ? await ctx.projectFiles.read(projectPath) : null;
     if (projectPath !== null && !projectFile) throw new Error(`No such Project file: ${path}`);
     const skillFile = skillPath !== null && skillPath.length > 0 && ctx.skillFiles ? await ctx.skillFiles.read(skillPath) : null;
-    if (skillPath !== null && !skillFile) throw new Error(`No such loaded skill file: ${path}`);
+    if (skillPath !== null && !skillFile)
+      throw new Error(
+        `Skill file unavailable in this turn: ${path}. Call load_skill for the Skill again, then read a returned file path. If loading is denied or the file is still absent, use available Help instead.`,
+      );
     const mountedFile = projectFile ?? skillFile;
     const snapshotRequired = projectPath === null && skillPath === null && (ctx.attachedFilePaths?.has(path) ?? false);
     const snapshot =

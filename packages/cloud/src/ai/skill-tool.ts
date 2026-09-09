@@ -38,7 +38,7 @@ export const createCloudAiLoadSkillTool = (subject: AccessSubject) =>
   defineAiTool({
     name: "load_skill",
     description:
-      "Load one available Agent Skill by its exact name or attached core.ai.skill ID for the current turn. This rechecks Cloud read permission, pins the skill revision, returns its SKILL.md instructions, and mounts its immutable files read-only below /skills/<name>.",
+      "Load one available Agent Skill by its exact name or attached core.ai.skill ID for the current turn. This rechecks Cloud read permission, pins the skill revision, returns its SKILL.md instructions, and mounts its immutable files read-only below /skills/<name>. Load again in a later turn before reading its reference files; historical load results do not mount files in this turn.",
     inputSchema: CloudAiLoadSkillInputSchema,
     outputSchema: CloudAiLoadSkillOutputSchema,
     approval: "never",

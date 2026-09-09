@@ -68,6 +68,25 @@ describe("load_skill", () => {
       } as never),
     ).rejects.toThrow("unavailable or access was revoked");
   });
+
+  test("continuation reloads with the new turn and rechecks revoked access", async () => {
+    const subject = { type: "user" as const, userId: "11111111-1111-4111-8111-111111111111" };
+    const load = spyOn(aiSkills, "loadForTurn")
+      .mockResolvedValueOnce({
+        name: "cloud-grids",
+        description: "Queries",
+        revision: 2,
+        instructions: "Use GQL",
+        files: [],
+        loadedAt: "2026-09-09T20:00:00Z",
+      })
+      .mockResolvedValueOnce(null);
+    const tool = createCloudAiLoadSkillTool(subject);
+    if (tool.location !== "server") throw new Error("Expected server tool");
+    await tool.run({ name: "cloud-grids" }, { turnId: "turn-1" } as never);
+    await expect(tool.run({ name: "cloud-grids" }, { turnId: "turn-2" } as never)).rejects.toThrow("unavailable or access was revoked");
+    expect(load).toHaveBeenNthCalledWith(2, "turn-2", "cloud-grids", subject);
+  });
 });
 
 describe("search_skills", () => {

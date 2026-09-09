@@ -169,8 +169,11 @@ new revision. Reading a mounted file still checks current Cloud access; revoked
 access takes effect immediately.
 
 Cloud seeds eight Skills once with `read` access for every authenticated user.
-`cloud-grids` guides queries and daily work and routes product and administration
-questions to canonical Grids Help.
+`cloud-grids` includes a compact GQL syntax guide with lookup, join, and
+aggregation examples. It guides queries and daily work and routes product and
+administration questions to canonical Grids Help. Skill reference files are
+mounted for one turn: load the Skill again before reading its files in a later
+turn. A missing-file error explains this recovery; reloading still checks access.
 `cloud-assistant` covers conversation history and resources, inter-chat
 messaging, and scheduled chat work.
 `skill-creator` explains how to draft a concise Skill and names the
