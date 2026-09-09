@@ -12,6 +12,7 @@ export const documentMessages = i18n.define({
       activeLinkCount: ({ count, formatted }: { count: number; formatted: string }) =>
         i18n.plural(count, "en", { one: "1 active link", other: `${formatted} active links` }),
       retryLinks: "Try again",
+      retry: "Retry",
       documentId: "Document ID",
       openSourceRecord: "Open source record",
       sourceUnavailable: "Source record unavailable",
@@ -115,6 +116,14 @@ export const documentMessages = i18n.define({
       chooseRecordAndPreview: "Choose a record and render a PDF preview before generating.",
       cancel: "Cancel",
       generateDocument: "Generate Document",
+      generatingDocument: "Generating document…",
+      keepGenerationOpen: "Keep this dialog open until generation finishes. Closing it would not cancel an issued document.",
+      abandonGeneration: "Leave this generation attempt?",
+      abandonGenerationDetail:
+        "The document may already have been created. Retry here to retrieve the same document safely. If you close this dialog, first check the document list before generating again: a new attempt can create another document.",
+      closeAnyway: "Close anyway",
+      templateSettings: "Output & numbering",
+      templateDataSource: "Data source",
       createLinkTitle: "Create public link",
       validity: "Validity",
       publicLinkValidity: "Public link validity",
@@ -244,6 +253,7 @@ export const documentMessages = i18n.define({
       activeLinkCount: ({ count, formatted }: { count: number; formatted: string }) =>
         i18n.plural(count, "de", { one: "1 aktiver Link", other: `${formatted} aktive Links` }),
       retryLinks: "Erneut versuchen",
+      retry: "Erneut versuchen",
       documentId: "Dokument-ID",
       openSourceRecord: "Quelldatensatz öffnen",
       sourceUnavailable: "Quelldatensatz nicht verfügbar",
@@ -338,6 +348,15 @@ export const documentMessages = i18n.define({
       chooseRecordAndPreview: "Wähle einen Datensatz und erzeuge vor dem Dokument eine PDF-Vorschau.",
       cancel: "Abbrechen",
       generateDocument: "Dokument erzeugen",
+      generatingDocument: "Dokument wird erzeugt…",
+      keepGenerationOpen:
+        "Lass diesen Dialog geöffnet, bis die Erzeugung abgeschlossen ist. Das Schließen würde ein bereits ausgestelltes Dokument nicht abbrechen.",
+      abandonGeneration: "Diesen Erzeugungsversuch verlassen?",
+      abandonGenerationDetail:
+        "Das Dokument könnte bereits erzeugt worden sein. Versuche es hier erneut, um dasselbe Dokument sicher abzurufen. Wenn du den Dialog schließt, prüfe vor einer erneuten Erzeugung zuerst die Dokumentenliste: Ein neuer Versuch kann ein weiteres Dokument erzeugen.",
+      closeAnyway: "Trotzdem schließen",
+      templateSettings: "Ausgabe & Nummerierung",
+      templateDataSource: "Datenquelle",
       createLinkTitle: "Öffentlichen Link erstellen",
       validity: "Gültigkeit",
       publicLinkValidity: "Gültigkeitsdauer des öffentlichen Links",

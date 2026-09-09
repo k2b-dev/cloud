@@ -38,29 +38,38 @@ type Props = {
 };
 
 export const openViewSettingsDialog = (props: Props) =>
-  dialogCore.open<void>((close) => <ViewSettingsDialog props={props} close={close} />, panelDialogOptions);
+  dialogCore.open<void>(
+    (close, context) => <ViewSettingsDialog props={props} close={close} setDismissHandler={context.setDismissHandler} />,
+    panelDialogOptions,
+  );
 
-function ViewSettingsDialog(props: { props: Props; close: () => void }) {
+function ViewSettingsDialog(props: { props: Props; close: () => void; setDismissHandler: (handler: () => void | Promise<void>) => void }) {
   const locale = useLocale();
   const t = () => gridsDialogMessages.resolve([locale()]).t;
   const [dirty, setDirty] = createSignal(false);
+  const [saving, setSaving] = createSignal(false);
   const closeIfClean = async () => {
+    if (saving()) return;
     if (await confirmDiscardIfDirty(dirty)) props.close();
   };
+  props.setDismissHandler(closeIfClean);
   return (
     <PanelDialog>
       <PanelDialog.Header title={t().viewSettings({ name: props.props.initialView.name })} icon="ti ti-table-spark" close={closeIfClean} />
-      <ViewSettingsBody {...props.props} onDirtyChange={setDirty} />
+      <ViewSettingsBody {...props.props} onDirtyChange={setDirty} onSavingChange={setSaving} />
     </PanelDialog>
   );
 }
 
-function ViewSettingsBody(props: Props & { onDirtyChange?: (dirty: boolean) => void }) {
+function ViewSettingsBody(props: Props & { onDirtyChange?: (dirty: boolean) => void; onSavingChange: (saving: boolean) => void }) {
   const locale = useLocale();
   const t = () => gridsDialogMessages.resolve([locale()]).t;
   const [generalDirty, setGeneralDirty] = createSignal(false);
   const [queryDirty, setQueryDirty] = createSignal(false);
+  const [generalSaving, setGeneralSaving] = createSignal(false);
+  const [querySaving, setQuerySaving] = createSignal(false);
   createEffect(() => props.onDirtyChange?.(generalDirty() || queryDirty()));
+  createEffect(() => props.onSavingChange(generalSaving() || querySaving()));
   return (
     <PanelDialog.Body>
       <GeneralSection
@@ -70,6 +79,7 @@ function ViewSettingsBody(props: Props & { onDirtyChange?: (dirty: boolean) => v
         fields={props.fields}
         onSaved={props.onSaved}
         onDirtyChange={setGeneralDirty}
+        onSavingChange={setGeneralSaving}
       />
 
       <QuerySourceSection
@@ -78,6 +88,7 @@ function ViewSettingsBody(props: Props & { onDirtyChange?: (dirty: boolean) => v
         initial={props.initialView}
         onSaved={props.onSaved}
         onDirtyChange={setQueryDirty}
+        onSavingChange={setQuerySaving}
       />
 
       <PanelDialog.Section title={t().dangerZone} subtitle={t().deleteViewDescription} icon="ti ti-trash">
@@ -98,6 +109,7 @@ function GeneralSection(props: {
   fields: PublicField[];
   onSaved?: (view: PublicView) => void;
   onDirtyChange?: (dirty: boolean) => void;
+  onSavingChange: (saving: boolean) => void;
 }) {
   const locale = useLocale();
   const t = () => gridsDialogMessages.resolve([locale()]).t;
@@ -108,10 +120,12 @@ function GeneralSection(props: {
     shared: props.initial.ownerUserId === null,
   });
   const patch = (partial: Partial<ReturnType<typeof draft.draft>>) => {
+    if (mut.loading()) return;
     draft.patch(partial);
     props.onDirtyChange?.(true);
   };
   const name = () => draft.draft().name;
+  const [submitted, setSubmitted] = createSignal(false);
   const icon = () => draft.draft().icon;
   const displayConfig = () => draft.draft().displayConfig;
   const shared = () => draft.draft().shared;
@@ -135,46 +149,64 @@ function GeneralSection(props: {
       props.onDirtyChange?.(false);
       props.onSaved?.(saved);
     },
-    onError: (e) => prompts.error(e.message),
   });
+  createEffect(() => props.onSavingChange(mut.loading()));
 
   return (
     <PanelDialog.Section title={t().general} subtitle={t().viewGeneralDescription} icon="ti ti-id">
-      <TextInput label={t().name} value={name} onValueChange={(v) => patch({ name: v })} icon="ti ti-typography" required />
-      <IconInput
-        label={t().icon}
-        value={() => icon() ?? null}
-        onValueChange={(v) => patch({ icon: v ?? undefined })}
-        placeholder={t().searchIcons}
-      />
-      <RecordDisplayConfigEditor value={displayConfig} onChange={(value) => patch({ displayConfig: value })} fields={() => props.fields} />
-      <CheckboxCard
-        label={t().sharedView}
-        description={t().sharedViewDescription({ table: props.tableName })}
-        icon="ti ti-users"
-        variant="input"
-        value={shared}
-        onValueChange={(v) => patch({ shared: v })}
-      />
-      <Show when={draft.dirty()}>
-        <Button
-          variant="primary"
-          size="sm"
-          type="button"
-          class="self-start"
-          onClick={() => {
-            if (!name().trim()) {
-              prompts.error(t().nameRequired);
-              return;
-            }
-            mut.mutate(undefined);
-          }}
-          loading={mut.loading()}
-          loadingLabel={t().savingView}
-        >
-          {t().save}
-        </Button>
-      </Show>
+      <fieldset disabled={mut.loading()} class="flex min-w-0 flex-col gap-3">
+        <Show when={mut.error()}>
+          {(error) => (
+            <NoticeCard tone="danger" role="alert">
+              {error().message}
+            </NoticeCard>
+          )}
+        </Show>
+        <TextInput
+          label={t().name}
+          value={name}
+          onValueChange={(v) => patch({ name: v })}
+          error={submitted() && !name().trim() ? t().nameRequired : undefined}
+          icon="ti ti-typography"
+          required
+        />
+        <IconInput
+          label={t().icon}
+          value={() => icon() ?? null}
+          onValueChange={(v) => patch({ icon: v ?? undefined })}
+          placeholder={t().searchIcons}
+        />
+        <RecordDisplayConfigEditor
+          value={displayConfig}
+          onChange={(value) => patch({ displayConfig: value })}
+          fields={() => props.fields}
+        />
+        <CheckboxCard
+          label={t().sharedView}
+          description={t().sharedViewDescription({ table: props.tableName })}
+          icon="ti ti-users"
+          variant="input"
+          value={shared}
+          onValueChange={(v) => patch({ shared: v })}
+        />
+        <Show when={draft.dirty()}>
+          <Button
+            variant="primary"
+            size="sm"
+            type="button"
+            class="self-start"
+            onClick={() => {
+              setSubmitted(true);
+              if (!name().trim()) return;
+              mut.mutate(undefined);
+            }}
+            loading={mut.loading()}
+            loadingLabel={t().savingView}
+          >
+            {t().save}
+          </Button>
+        </Show>
+      </fieldset>
     </PanelDialog.Section>
   );
 }
@@ -185,6 +217,7 @@ function QuerySourceSection(props: {
   initial: PublicView;
   onSaved?: (view: PublicView) => void;
   onDirtyChange?: (dirty: boolean) => void;
+  onSavingChange: (saving: boolean) => void;
 }) {
   const locale = useLocale();
   const t = () => gridsDialogMessages.resolve([locale()]).t;
@@ -197,6 +230,7 @@ function QuerySourceSection(props: {
   const [validationError, setValidationError] = createSignal<string | null>(null);
   const source = () => draft.draft().source;
   const patch = (value: string) => {
+    if (mut.loading()) return;
     draft.patch({ source: value });
     props.onDirtyChange?.(draft.dirty());
   };
@@ -275,61 +309,70 @@ function QuerySourceSection(props: {
       props.onDirtyChange?.(false);
       props.onSaved?.(saved);
     },
-    onError: (e) => prompts.error(e.message),
   });
+  createEffect(() => props.onSavingChange(mut.loading()));
 
   return (
     <PanelDialog.Section title={t().query} subtitle={t().queryDescription} icon="ti ti-code">
-      <NoticeCard tone="info" title={t().controlView} detail={t().controlViewDetail} />
-      <label class="text-sm font-medium text-primary" for={`view-source-${props.viewId}`}>
-        {t().gqlSource}
-      </label>
-      <GqlSourceEditor
-        baseId={props.baseId}
-        currentSource={{ kind: "table", tableId: props.initial.tableId }}
-        id={`view-source-${props.viewId}`}
-        name={`view-source-${props.viewId}`}
-        value={source}
-        onValueChange={patch}
-        lines={8}
-        spellcheck={false}
-        aria-label={t().gqlSource}
-        aria-invalid={validationState() === "invalid" || validationState() === "error"}
-        error={validationState() === "invalid" || validationState() === "error"}
-        variant="paper"
-      />
-      <div class="min-h-5 text-xs" aria-live="polite">
-        <Show when={validationState() === "checking"}>
-          <span class="text-dimmed">
-            <i class="ti ti-loader-2 animate-spin" aria-hidden="true" /> {t().checkingGql}
-          </span>
+      <fieldset disabled={mut.loading()} class="flex min-w-0 flex-col gap-3">
+        <Show when={mut.error()}>
+          {(error) => (
+            <NoticeCard tone="danger" role="alert">
+              {error().message}
+            </NoticeCard>
+          )}
         </Show>
-        <Show when={validationState() === "valid"}>
-          <span class="text-success">
-            <i class="ti ti-check" aria-hidden="true" /> {t().validGql}
-          </span>
+        <NoticeCard tone="info" title={t().controlView} detail={t().controlViewDetail} />
+        <label class="text-sm font-medium text-primary" for={`view-source-${props.viewId}`}>
+          {t().gqlSource}
+        </label>
+        <GqlSourceEditor
+          baseId={props.baseId}
+          currentSource={{ kind: "table", tableId: props.initial.tableId }}
+          id={`view-source-${props.viewId}`}
+          name={`view-source-${props.viewId}`}
+          value={source}
+          onValueChange={patch}
+          lines={8}
+          spellcheck={false}
+          aria-label={t().gqlSource}
+          aria-invalid={validationState() === "invalid" || validationState() === "error"}
+          error={validationState() === "invalid" || validationState() === "error"}
+          variant="paper"
+        />
+        <div class="min-h-5 text-xs" aria-live="polite">
+          <Show when={validationState() === "checking"}>
+            <span class="text-dimmed">
+              <i class="ti ti-loader-2 animate-spin" aria-hidden="true" /> {t().checkingGql}
+            </span>
+          </Show>
+          <Show when={validationState() === "valid"}>
+            <span class="text-success">
+              <i class="ti ti-check" aria-hidden="true" /> {t().validGql}
+            </span>
+          </Show>
+          <Show when={validationError()}>{(message) => <span class="text-danger">{message()}</span>}</Show>
+          <Show when={diagnostics().length > 0}>
+            <ul class="grid gap-1 text-danger">
+              <For each={diagnostics().slice(0, 4)}>{(diagnostic) => <li>{formatDiagnostic(diagnostic, locale())}</li>}</For>
+            </ul>
+          </Show>
+        </div>
+        <Show when={draft.dirty()}>
+          <Button
+            variant="primary"
+            size="sm"
+            type="button"
+            class="self-start"
+            onClick={() => mut.mutate(undefined)}
+            disabled={validationState() !== "valid"}
+            loading={mut.loading()}
+            loadingLabel={t().savingQuery}
+          >
+            {t().saveQuery}
+          </Button>
         </Show>
-        <Show when={validationError()}>{(message) => <span class="text-danger">{message()}</span>}</Show>
-        <Show when={diagnostics().length > 0}>
-          <ul class="grid gap-1 text-danger">
-            <For each={diagnostics().slice(0, 4)}>{(diagnostic) => <li>{formatDiagnostic(diagnostic, locale())}</li>}</For>
-          </ul>
-        </Show>
-      </div>
-      <Show when={draft.dirty()}>
-        <Button
-          variant="primary"
-          size="sm"
-          type="button"
-          class="self-start"
-          onClick={() => mut.mutate(undefined)}
-          disabled={validationState() !== "valid"}
-          loading={mut.loading()}
-          loadingLabel={t().savingQuery}
-        >
-          {t().saveQuery}
-        </Button>
-      </Show>
+      </fieldset>
     </PanelDialog.Section>
   );
 }

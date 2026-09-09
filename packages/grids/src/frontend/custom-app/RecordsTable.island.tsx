@@ -11,7 +11,7 @@ import { FieldValue } from "../_components/table/FieldValue";
 import { customAppCardFileUrl } from "./records-card-url";
 import { customAppRecordsResultColumns } from "./records-table-model";
 import { useCustomAppRuntimeMessages } from "./runtime-messages";
-import { invokeCustomAppWorkflow } from "./workflow-action-client";
+import { type CustomAppWorkflowOperation, invokeCustomAppWorkflow } from "./workflow-action-client";
 
 type QuerySuccess = Extract<DslQueryPreviewResponse, { ok: true }>;
 export type CustomAppRecordsSuccess = QuerySuccess & {
@@ -71,11 +71,18 @@ export default function RecordsTable(props: {
   const [history, setHistory] = createSignal<Array<string | null>>([]);
   const [loading, setLoading] = createSignal(false);
   const [pendingKey, setPendingKey] = createSignal<string | null>(null);
+  const [operations, setOperations] = createSignal<
+    Record<string, { operation: CustomAppWorkflowOperation; body: Record<string, unknown> }>
+  >({});
+  const actionLabel = (rowId: string, action: CustomAppRenderedRowAction) =>
+    operations()[`${rowId}:${action.id}`] ? messages().checkWorkflowStatus : action.label;
   let queryTimer: number | null = null;
   let requestController: AbortController | null = null;
   let workflowController: AbortController | null = null;
+  let disposed = false;
 
   onCleanup(() => {
+    disposed = true;
     if (queryTimer !== null) window.clearTimeout(queryTimer);
     requestController?.abort();
     workflowController?.abort();
@@ -193,12 +200,24 @@ export default function RecordsTable(props: {
     setPendingKey(key);
     let controller: AbortController | null = null;
     try {
-      if (action.confirm && !(await prompts.confirm(action.confirm, { title: action.label, confirmText: action.label }))) return;
+      if (
+        !operations()[key] &&
+        action.confirm &&
+        !(await prompts.confirm(action.confirm, { title: action.label, confirmText: action.label }))
+      )
+        return;
+      if (disposed) return;
       controller = new AbortController();
       workflowController = controller;
+      const active = operations()[key] ?? {
+        operation: { operationId: crypto.randomUUID() },
+        body: { rowId, search: appliedQuery() || undefined, cursor: cursor() || undefined },
+      };
+      setOperations((current) => ({ ...current, [key]: active }));
       const outcome = await invokeCustomAppWorkflow({
         endpoint: action.endpoint,
-        body: { rowId, search: appliedQuery() || undefined, cursor: cursor() || undefined },
+        operation: active.operation,
+        body: active.body,
         signal: controller.signal,
         messages: {
           startFailed: messages().workflowStartFailed,
@@ -208,6 +227,7 @@ export default function RecordsTable(props: {
           stillRunning: messages().workflowStillRunning,
         },
       });
+      if (outcome.kind !== "running") setOperations((current) => Object.fromEntries(Object.entries(current).filter(([id]) => id !== key)));
       if (outcome.kind === "success") {
         toast.success(outcome.message);
         await loadPage(cursor(), appliedQuery(), history());
@@ -287,7 +307,7 @@ export default function RecordsTable(props: {
                             when={action.showLabel}
                             fallback={
                               <IconButton
-                                label={action.label}
+                                label={actionLabel(row.recordId!, action)}
                                 size="xs"
                                 variant="secondary"
                                 loading={pendingKey() === `${row.recordId}:${action.id}`}
@@ -316,7 +336,7 @@ export default function RecordsTable(props: {
                               <Show when={action.icon}>
                                 <i class={`ti ti-${action.icon}`} aria-hidden="true" />
                               </Show>
-                              {action.label}
+                              {actionLabel(row.recordId!, action)}
                             </Button>
                           </Show>
                         )}
@@ -386,7 +406,7 @@ export default function RecordsTable(props: {
                           when={action.showLabel}
                           fallback={
                             <IconButton
-                              label={action.label}
+                              label={actionLabel(record.id, action)}
                               size="xs"
                               variant="secondary"
                               loading={pendingKey() === `${record.id}:${action.id}`}
@@ -407,7 +427,7 @@ export default function RecordsTable(props: {
                             onClick={() => void invoke(record.id, action)}
                           >
                             <Show when={action.icon}>{(icon) => <i class={`ti ti-${icon()}`} aria-hidden="true" />}</Show>
-                            {action.label}
+                            {actionLabel(record.id, action)}
                           </Button>
                         </Show>
                       )}

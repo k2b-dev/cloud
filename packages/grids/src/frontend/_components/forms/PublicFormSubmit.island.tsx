@@ -25,6 +25,8 @@ type Props = {
   surface?: "bare" | "paper";
   showTitle?: boolean;
   titleAs?: "h1" | "h2";
+  onDirtyChange?: (dirty: boolean) => void;
+  onSubmittingChange?: (submitting: boolean) => void;
 } & (
   | { publicToken: string; submitUrl?: never; preview?: never }
   | { publicToken?: never; submitUrl: string; preview?: never }
@@ -58,9 +60,14 @@ export default function FormSubmit(props: Props) {
     Object.fromEntries(validationFailures().map((failure) => [failure.errorFieldId, failure.message])),
   );
 
-  const setValue = (fieldId: string, v: unknown) => setValues((current) => ({ ...current, [fieldId]: v }));
-  const setInlineDrafts = (fieldId: string, drafts: InlineCreateState[string]) =>
+  const setValue = (fieldId: string, v: unknown) => {
+    setValues((current) => ({ ...current, [fieldId]: v }));
+    props.onDirtyChange?.(true);
+  };
+  const setInlineDrafts = (fieldId: string, drafts: InlineCreateState[string]) => {
     setInlineCreates((current) => ({ ...current, [fieldId]: drafts }));
+    props.onDirtyChange?.(true);
+  };
   const hasInlineCreate = () => entries.some((entry) => entry.inlineCreate?.enabled);
   const surfaceClass = () => (props.surface === "bare" ? "w-full" : "paper mx-auto max-w-xl p-6");
 
@@ -68,19 +75,20 @@ export default function FormSubmit(props: Props) {
 
   const handleSubmit = async (event: Event) => {
     event.preventDefault();
-    if (props.preview) return;
+    if (props.preview || submitting()) return;
     setError(null);
     const invalid = validationFailures()[0];
     if (invalid) {
-      setError(invalid.message);
       formRef?.querySelector<HTMLElement>(`[name="${invalid.errorFieldId}"]`)?.focus();
       return;
     }
+    // Capture native controls before the pending fieldset disables them.
+    const formData = formRef ? new FormData(formRef) : null;
     setSubmitting(true);
+    props.onSubmittingChange?.(true);
     try {
       const payload: Record<string, unknown> = { ...values() };
-      if (formRef) {
-        const formData = new FormData(formRef);
+      if (formData) {
         for (const [key, value] of formData.entries()) {
           if (typeof value !== "string") continue;
           payload[key] = value;
@@ -104,6 +112,7 @@ export default function FormSubmit(props: Props) {
         setError(await errorMessage(res, t().submitFailed));
         return;
       }
+      props.onDirtyChange?.(false);
       if (props.submitUrl) {
         const result = (await res.json()) as { navigateTo?: unknown };
         if (typeof result.navigateTo === "string") {
@@ -121,6 +130,7 @@ export default function FormSubmit(props: Props) {
       setError(e instanceof Error ? e.message : t().submitFailed);
     } finally {
       setSubmitting(false);
+      props.onSubmittingChange?.(false);
     }
   };
 
@@ -164,50 +174,52 @@ export default function FormSubmit(props: Props) {
           data-grids-public-form-ready={clientReady() ? "true" : "false"}
           onSubmit={handleSubmit}
         >
-          <Show when={hasInlineCreate()}>
-            <NoticeCard tone="warning" icon={false} bodyClass="flex items-start gap-2">
-              <i class="ti ti-alert-triangle mt-0.5 shrink-0" />
-              <span>{t().linkedRecordsWarning}</span>
-            </NoticeCard>
-          </Show>
-          <For each={entries}>
-            {(entry) => {
-              const field = fieldsById.get(entry.fieldId);
-              if (!field || field.deletedAt) return null;
-              return (
-                <FieldInput
-                  field={field}
-                  entry={entry}
-                  value={values()[entry.fieldId]}
-                  onChange={(v) => setValue(entry.fieldId, v)}
-                  error={() => validationErrors()[entry.fieldId]}
-                  inlineCreates={inlineCreates}
-                  onInlineCreatesChange={setInlineDrafts}
-                  inlineTargetFields={props.inlineTargetFields}
-                  dateConfig={props.dateConfig}
-                />
-              );
-            }}
-          </For>
+          <fieldset disabled={submitting()} class="flex flex-col gap-3 min-w-0">
+            <Show when={hasInlineCreate()}>
+              <NoticeCard tone="warning" icon={false} bodyClass="flex items-start gap-2">
+                <i class="ti ti-alert-triangle mt-0.5 shrink-0" />
+                <span>{t().linkedRecordsWarning}</span>
+              </NoticeCard>
+            </Show>
+            <For each={entries}>
+              {(entry) => {
+                const field = fieldsById.get(entry.fieldId);
+                if (!field || field.deletedAt) return null;
+                return (
+                  <FieldInput
+                    field={field}
+                    entry={entry}
+                    value={values()[entry.fieldId]}
+                    onChange={(v) => setValue(entry.fieldId, v)}
+                    error={() => validationErrors()[entry.fieldId]}
+                    inlineCreates={inlineCreates}
+                    onInlineCreatesChange={setInlineDrafts}
+                    inlineTargetFields={props.inlineTargetFields}
+                    dateConfig={props.dateConfig}
+                  />
+                );
+              }}
+            </For>
 
-          <Show when={error()}>
-            <NoticeCard tone="danger" icon={false} bodyClass="flex items-start gap-2">
-              <i class="ti ti-alert-circle mt-0.5 shrink-0" />
-              <span>{error()}</span>
-            </NoticeCard>
-          </Show>
+            <Show when={error()}>
+              <NoticeCard tone="danger" icon={false} bodyClass="flex items-start gap-2">
+                <i class="ti ti-alert-circle mt-0.5 shrink-0" />
+                <span>{error()}</span>
+              </NoticeCard>
+            </Show>
 
-          {/* Wrap the button so it sizes to its content rather than
+            {/* Wrap the button so it sizes to its content rather than
               stretching the full form width (flex-column children are
               `align-items: stretch` by default). */}
-          <div class="mt-2 flex items-center justify-end">
-            <Button variant="primary" size="sm" type="submit" disabled={props.preview || submitting()}>
-              <Show when={submitting()} fallback={<i class="ti ti-send" />}>
-                <i class="ti ti-loader-2 animate-spin" />
-              </Show>
-              {props.form.config.submitLabel ?? t().submit}
-            </Button>
-          </div>
+            <div class="mt-2 flex items-center justify-end">
+              <Button variant="primary" size="sm" type="submit" disabled={props.preview || submitting()}>
+                <Show when={submitting()} fallback={<i class="ti ti-send" />}>
+                  <i class="ti ti-loader-2 animate-spin" />
+                </Show>
+                {props.form.config.submitLabel ?? t().submit}
+              </Button>
+            </div>
+          </fieldset>
         </form>
       </Show>
     </div>

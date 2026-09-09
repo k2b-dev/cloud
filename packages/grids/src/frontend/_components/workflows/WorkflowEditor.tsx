@@ -63,6 +63,7 @@ type WorkflowEditorProps = {
   beforeClose?: (workflow: PublicWorkflow, context: { abortSignal: AbortSignal }) => Promise<void>;
   onChanged: (workflow?: PublicWorkflow) => void;
   onClose: () => void;
+  setDismissHandler?: (handler: () => void | Promise<void>) => void;
 };
 
 class WorkflowConflictError extends Error {
@@ -372,6 +373,7 @@ export function WorkflowEditor(props: WorkflowEditorProps) {
     if (triggerValidationMut.loading() || confirmingTriggers() || saveMut.loading() || deleteMut.loading()) return;
     if (await confirmDiscardIfDirty(() => workflowEditorDraftDirty(currentDraft(), cleanDraft))) props.onClose();
   };
+  props.setDismissHandler?.(closeIfClean);
 
   const canSave = () =>
     workflowEditorDraftDirty(currentDraft(), cleanDraft) &&

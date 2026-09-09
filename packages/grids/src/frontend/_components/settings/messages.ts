@@ -267,7 +267,9 @@ export const gridsSettingsMessages = i18n.define({
       holdCreatedDescription: ({ reason, date, by, id }: { reason: string; date: string; by: string; id: string }) =>
         `${reason} · Created ${date}${by ? ` by ${by}` : ""} · ${id}`,
       release: "Release",
-      newestHoldsCli: "Showing the newest 100 active holds. Use the CLI to page through the complete list.",
+      searchHolds: "Search active holds",
+      searchHoldsPlaceholder: "Reason, table, person, or ID",
+      noMatchingHolds: "No active holds match this search.",
       destructionLoadFailed: "Could not load controlled destruction",
       refreshBeforeDestruction: "Refresh the preview before starting destruction.",
       destructionConfirm: ({ count, size }: { count: string; size: string }) =>
@@ -696,8 +698,9 @@ export const gridsSettingsMessages = i18n.define({
       tableWithId: ({ id }) => `Tabelle ${id}`,
       holdCreatedDescription: ({ reason, date, by, id }) => `${reason} · Erstellt am ${date}${by ? ` von ${by}` : ""} · ${id}`,
       release: "Aufheben",
-      newestHoldsCli:
-        "Die 100 neuesten aktiven Sperren werden angezeigt. Die vollständige Liste kann mit der CLI seitenweise abgerufen werden.",
+      searchHolds: "Aktive Sperren durchsuchen",
+      searchHoldsPlaceholder: "Begründung, Tabelle, Person oder ID",
+      noMatchingHolds: "Keine aktiven Sperren passen zu dieser Suche.",
       destructionLoadFailed: "Die kontrollierte Vernichtung konnte nicht geladen werden",
       refreshBeforeDestruction: "Aktualisiere die Vorschau, bevor du die Vernichtung startest.",
       destructionConfirm: ({ count, size }) =>

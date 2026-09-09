@@ -468,7 +468,7 @@ export default function QueryWorkspace(props: Props) {
   };
 
   return (
-    <div class="flex min-h-0 flex-1 flex-col bg-[var(--ui-surface-subtle)] p-2" data-scroll-preserve="grids-query-workspace">
+    <div class="flex min-h-0 flex-1 flex-col bg-surface p-2" data-scroll-preserve="grids-query-workspace">
       <Panes
         layout={layout()}
         onLayoutChange={setLayout}

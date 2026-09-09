@@ -95,10 +95,13 @@ Du benötigst **Verwalten**-Zugriff. Öffne **Basiseinstellungen → Erhaltungss
 
 Mehrere Sperren können gleichzeitig aktiv sein. Das Freigeben einer Sperre erfordert einen neuen Grund und lässt alle anderen Sperren aktiv. Das Freigeben der letzten Sperre entfernt nur diese Blockade. Es löscht nichts und startet keine Bereinigung.
 
+Durchsuche aktive Sperren nach Begründung, Tabellenname, erstellender Person oder Sperren-ID. Die Liste ist seitenweise aufgeteilt, damit alle Treffer erreichbar bleiben. Schlägt das Erstellen oder Aufheben fehl, bleiben deine Begründung und die Fehlermeldung im Dialog sichtbar. Du kannst es dort erneut versuchen.
+
 Die Cloud CLI verwendet dieselbe nur mit Verwaltungsrechten zugängliche API:
 
 ```bash
 cld grids bases preservation-holds list 8yMtTb --status active --json
+cld grids bases preservation-holds list 8yMtTb --search "Invoice dispute" --page 1 --json
 cld grids bases preservation-holds create 8yMtTb --reason "Annual review" --json
 cld grids bases preservation-holds create 8yMtTb --scope table --table Invoices --reason "Invoice dispute" --json
 cld grids bases preservation-holds list 8yMtTb --scope table --table Invoices --status active --json

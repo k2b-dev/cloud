@@ -5,15 +5,17 @@ import {
   Checkbox,
   CopyButton,
   confirmDiscardIfDirty,
+  DetailPanel,
   dialogCore,
   ImageInput,
+  NoticeCard,
   PanelDialog,
   panelDialogWideOptions,
   prompts,
   TextInput,
   useLocale,
 } from "@k2b/ui";
-import { createSignal, type JSX, Show } from "solid-js";
+import { createEffect, createSignal, type JSX, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { PublicField as Field, PublicForm } from "../../../api/public-dto";
 import type { FormValidationRule } from "../../../contracts";
@@ -31,30 +33,71 @@ type OpenFormEditorDialogArgs = {
 };
 
 export const openFormEditorDialog = (args: OpenFormEditorDialogArgs) =>
-  dialogCore.open<void>((close) => <FormEditorDialog args={args} close={close} />, panelDialogWideOptions);
+  dialogCore.open<void>(
+    (close, context) => <FormEditorDialog args={args} close={close} setDismissHandler={context.setDismissHandler} />,
+    panelDialogWideOptions,
+  );
 
-function FormEditorDialog(props: { args: OpenFormEditorDialogArgs; close: () => void }) {
+function FormEditorDialog(props: {
+  args: OpenFormEditorDialogArgs;
+  close: () => void;
+  setDismissHandler: (handler: () => Promise<void>) => void;
+}) {
   const locale = useLocale();
   const t = () => gridsFormMessages.resolve([locale()]).t;
   const [dirty, setDirty] = createSignal(false);
+  const [pending, setPending] = createSignal(false);
+  const [deleting, setDeleting] = createSignal(false);
+  const [deleteError, setDeleteError] = createSignal<string>();
   const closeIfClean = async () => {
+    if (pending() || deleting()) return;
     if (await confirmDiscardIfDirty(dirty)) props.close();
   };
+  props.setDismissHandler(closeIfClean);
   return (
     <PanelDialog>
-      <PanelDialog.Header title={t().editForm({ name: props.args.form.name })} icon="ti ti-forms" close={closeIfClean} />
+      <PanelDialog.Header
+        title={t().editForm({ name: props.args.form.name })}
+        icon="ti ti-forms"
+        close={closeIfClean}
+        closeDisabled={pending() || deleting()}
+      />
       <FormEditor
         form={props.args.form}
         tableFields={props.args.tableFields}
+        deleting={deleting()}
+        deleteError={deleteError()}
         onDirtyChange={setDirty}
+        onPendingChange={setPending}
         onSaved={(next) => {
           setDirty(false);
           props.args.onSaved?.(next);
           props.close();
         }}
         onDelete={async () => {
-          await props.args.onDelete?.();
-          props.close();
+          if (pending() || deleting()) return;
+          const formId = props.args.form.id;
+          if (!formId) return;
+          setDeleting(true);
+          setDeleteError(undefined);
+          try {
+            if (
+              !(await prompts.confirm(t().deleteFormConfirm({ name: props.args.form.name }), {
+                title: t().deleteFormQuestion,
+                variant: "danger",
+                confirmText: t().delete,
+              }))
+            )
+              return;
+            const response = await apiClient.forms[":formId"].$delete({ param: { formId } });
+            if (!response.ok) throw new Error(await errorMessage(response, t().deleteFormFailed));
+            await props.args.onDelete?.();
+            props.close();
+          } catch (error) {
+            setDeleteError(error instanceof Error ? error.message : t().deleteFormFailed);
+          } finally {
+            setDeleting(false);
+          }
         }}
         onCancel={closeIfClean}
       />
@@ -81,6 +124,9 @@ function FormEditor(props: {
   onSaved: (next: PublicForm) => void;
   onDelete: () => void;
   onDirtyChange?: (dirty: boolean) => void;
+  onPendingChange?: (pending: boolean) => void;
+  deleting: boolean;
+  deleteError?: string;
   onCancel?: () => void;
 }) {
   const locale = useLocale();
@@ -99,6 +145,9 @@ function FormEditor(props: {
     props.form.config.validations?.map((rule) => ({ ...rule })) ?? [],
   );
   const [dirty, setDirty] = createSignal(false);
+  const [nameInvalid, setNameInvalid] = createSignal(false);
+  const [confirming, setConfirming] = createSignal(false);
+  let nameInput: HTMLInputElement | HTMLTextAreaElement | undefined;
 
   const markDirty = () => {
     setDirty(true);
@@ -144,16 +193,21 @@ function FormEditor(props: {
       props.onDirtyChange?.(false);
       if (request?.closeMainDialog) props.onSaved(next);
     },
-    onError: (error) => prompts.error(error.message),
   });
+  const pending = () => updateMut.loading() || confirming() || props.deleting;
+  createEffect(() => props.onPendingChange?.(updateMut.loading() || confirming()));
 
   const handleSave = async () => {
+    if (pending()) return;
     if (!name().trim()) {
-      prompts.error(t().nameRequired);
+      setNameInvalid(true);
+      nameInput?.focus();
       return;
     }
     if (props.form.publicToken && props.form.isActive) {
+      setConfirming(true);
       const confirmed = await prompts.confirm(t().liveFormWarning, { title: t().saveLiveForm, confirmText: t().save });
+      setConfirming(false);
       if (!confirmed) return;
     }
     void updateMut.mutate({ closeMainDialog: true });
@@ -162,130 +216,161 @@ function FormEditor(props: {
   return (
     <>
       <PanelDialog.Body>
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-          <TextInput label={t().name} value={name} onValueChange={wrap(setName)} icon="ti ti-typography" required />
-          <TextInput
-            label={t().title}
-            description={t().titleDescription}
-            value={title}
-            onValueChange={wrap(setTitle)}
-            icon="ti ti-heading"
-            placeholder={name()}
-          />
-        </div>
-        <TextInput
-          label={t().description}
-          description={t().descriptionDescription}
-          value={description}
-          onValueChange={wrap(setDescription)}
-          icon="ti ti-align-left"
-          multiline
-          lines={2}
-        />
-        <ImageInput
-          label={t().titleImage}
-          description={t().titleImageDescription}
-          value={titleImage}
-          onValueChange={wrap(setTitleImage)}
-          transform={bannerTransform}
-        />
-
-        <FormEditorSection title={t().availability} subtitle={t().availabilityDescription} icon="ti ti-world">
-          <Checkbox label={t().active} description={t().activeDescription} value={isActive} onValueChange={wrap(setIsActive)} />
-          <div class="flex items-center gap-3 flex-wrap">
-            <Checkbox
-              label={t().public}
-              description={t().publicDescription}
-              value={isPublic}
-              onValueChange={async (next) => {
-                if (!next && props.form.publicToken) {
-                  const confirmed = await prompts.confirm(t().disablePublicWarning, {
-                    title: t().disablePublicLink,
-                    variant: "danger",
-                    confirmText: t().disable,
-                  });
-                  if (!confirmed) {
-                    setIsPublic(false);
-                    queueMicrotask(() => setIsPublic(true));
-                    return;
-                  }
-                }
-                wrap(setIsPublic)(next);
-              }}
+        <Show when={props.deleteError}>{(error) => <NoticeCard tone="danger" title={error()} />}</Show>
+        <Show when={updateMut.error()}>
+          {(error) => (
+            <NoticeCard
+              tone="danger"
+              title={t().saveFormFailed}
+              detail={error().message === t().saveFormFailed ? undefined : error().message}
             />
-            <Show when={props.form.publicToken}>
-              {(token) => (
-                <CopyButton
-                  text={`${typeof window === "undefined" ? "" : window.location.origin}/share/grids/forms/${token()}`}
-                  variant="ghost"
-                  size="sm"
-                />
-              )}
-            </Show>
-          </div>
-        </FormEditorSection>
-
-        <FormEditorSection title={t().submission} subtitle={t().submissionDescription} icon="ti ti-send">
+          )}
+        </Show>
+        <fieldset disabled={pending()} class="flex flex-col gap-4 min-w-0">
           <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
             <TextInput
-              label={t().submitButtonLabel}
-              description={t().defaultsToSave}
-              value={submitLabel}
-              onValueChange={wrap(setSubmitLabel)}
-              icon="ti ti-send"
-              placeholder={t().save}
+              label={t().name}
+              value={name}
+              onValueChange={wrap(setName)}
+              icon="ti ti-typography"
+              required
+              ref={(element) => {
+                nameInput = element;
+              }}
+              error={() => (nameInvalid() && !name().trim() ? t().nameRequired : undefined)}
             />
             <TextInput
-              label={t().successMessage}
-              description={t().successMessageDescription}
-              value={successMessage}
-              onValueChange={wrap(setSuccessMessage)}
-              icon="ti ti-circle-check"
-              placeholder={t().saved}
+              label={t().title}
+              description={t().titleDescription}
+              value={title}
+              onValueChange={wrap(setTitle)}
+              icon="ti ti-heading"
+              placeholder={name()}
             />
           </div>
-          <TextInput
-            label={t().redirectUrl}
-            description={t().redirectUrlDescription}
-            value={redirectUrl}
-            onValueChange={wrap(setRedirectUrl)}
-            icon="ti ti-external-link"
-            placeholder="https://example.com/thanks"
-            type="url"
-          />
-        </FormEditorSection>
+          <FormEditorSection primary title={t().fields} subtitle={t().fieldsDescription} icon="ti ti-forms">
+            <FormFieldsEditor
+              tableFields={props.tableFields}
+              entries={entries}
+              setEntries={(next) => {
+                setEntries(next);
+                markDirty();
+              }}
+            />
+          </FormEditorSection>
 
-        <FormEditorSection title={t().fields} subtitle={t().fieldsDescription} icon="ti ti-forms">
-          <FormFieldsEditor
-            tableFields={props.tableFields}
-            entries={entries}
-            setEntries={(next) => {
-              setEntries(next);
-              markDirty();
-            }}
-          />
-        </FormEditorSection>
+          <FormEditorSection title={t().appearance} icon="ti ti-palette">
+            <TextInput
+              label={t().description}
+              description={t().descriptionDescription}
+              value={description}
+              onValueChange={wrap(setDescription)}
+              icon="ti ti-align-left"
+              multiline
+              lines={2}
+            />
+            <ImageInput
+              label={t().titleImage}
+              description={t().titleImageDescription}
+              value={titleImage}
+              onValueChange={wrap(setTitleImage)}
+              transform={bannerTransform}
+            />
+          </FormEditorSection>
 
-        <FormEditorSection title={t().crossFieldValidation} subtitle={t().crossFieldValidationDescription} icon="ti ti-arrows-left-right">
-          <FormValidationsEditor
-            fields={props.tableFields}
-            entries={entries()}
-            rules={validations()}
-            onChange={(next) => {
-              setValidations(next);
-              markDirty();
-            }}
-          />
-        </FormEditorSection>
+          <FormEditorSection title={t().availability} subtitle={t().availabilityDescription} icon="ti ti-world">
+            <Checkbox label={t().active} description={t().activeDescription} value={isActive} onValueChange={wrap(setIsActive)} />
+            <div class="flex items-center gap-3 flex-wrap">
+              <Checkbox
+                label={t().public}
+                description={t().publicDescription}
+                value={isPublic}
+                onValueChange={async (next) => {
+                  if (!next && props.form.publicToken) {
+                    const confirmed = await prompts.confirm(t().disablePublicWarning, {
+                      title: t().disablePublicLink,
+                      variant: "danger",
+                      confirmText: t().disable,
+                    });
+                    if (!confirmed) {
+                      setIsPublic(false);
+                      queueMicrotask(() => setIsPublic(true));
+                      return;
+                    }
+                  }
+                  wrap(setIsPublic)(next);
+                }}
+              />
+              <Show when={props.form.publicToken}>
+                {(token) => (
+                  <CopyButton
+                    text={`${typeof window === "undefined" ? "" : window.location.origin}/share/grids/forms/${token()}`}
+                    variant="ghost"
+                    size="sm"
+                  />
+                )}
+              </Show>
+            </div>
+          </FormEditorSection>
+
+          <FormEditorSection title={t().submission} subtitle={t().submissionDescription} icon="ti ti-send">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <TextInput
+                label={t().submitButtonLabel}
+                description={t().defaultsToSave}
+                value={submitLabel}
+                onValueChange={wrap(setSubmitLabel)}
+                icon="ti ti-send"
+                placeholder={t().save}
+              />
+              <TextInput
+                label={t().successMessage}
+                description={t().successMessageDescription}
+                value={successMessage}
+                onValueChange={wrap(setSuccessMessage)}
+                icon="ti ti-circle-check"
+                placeholder={t().saved}
+              />
+            </div>
+            <TextInput
+              label={t().redirectUrl}
+              description={t().redirectUrlDescription}
+              value={redirectUrl}
+              onValueChange={wrap(setRedirectUrl)}
+              icon="ti ti-external-link"
+              placeholder="https://example.com/thanks"
+              type="url"
+            />
+          </FormEditorSection>
+
+          <FormEditorSection title={t().crossFieldValidation} subtitle={t().crossFieldValidationDescription} icon="ti ti-arrows-left-right">
+            <FormValidationsEditor
+              fields={props.tableFields}
+              entries={entries()}
+              rules={validations()}
+              onChange={(next) => {
+                setValidations(next);
+                markDirty();
+              }}
+            />
+          </FormEditorSection>
+        </fieldset>
       </PanelDialog.Body>
 
       <PanelDialog.Footer>
-        <Button variant="ghost" size="sm" type="button" class="text-red-500 hover:text-red-600" onClick={props.onDelete}>
+        <Button
+          variant="ghost"
+          size="sm"
+          type="button"
+          class="text-red-500 hover:text-red-600"
+          onClick={props.onDelete}
+          disabled={pending()}
+        >
           <i class="ti ti-trash" /> {t().deleteForm}
         </Button>
         <div class="flex items-center gap-2">
           <Show when={props.onCancel}>
-            <Button variant="secondary" size="sm" type="button" onClick={() => props.onCancel?.()}>
+            <Button variant="secondary" size="sm" type="button" onClick={() => props.onCancel?.()} disabled={pending()}>
               {t().cancel}
             </Button>
           </Show>
@@ -294,7 +379,7 @@ function FormEditor(props: {
             size="sm"
             type="button"
             onClick={handleSave}
-            disabled={!dirty()}
+            disabled={!dirty() || confirming()}
             loading={updateMut.loading()}
             loadingLabel={t().savingForm}
           >
@@ -306,10 +391,19 @@ function FormEditor(props: {
   );
 }
 
-function FormEditorSection(props: { title: string; subtitle?: string; icon: string; children: JSX.Element }) {
+function FormEditorSection(props: { title: string; subtitle?: string; icon: string; children: JSX.Element; primary?: boolean }) {
   return (
-    <PanelDialog.Section title={props.title} subtitle={props.subtitle} icon={props.icon}>
-      {props.children}
-    </PanelDialog.Section>
+    <Show
+      when={props.primary}
+      fallback={
+        <DetailPanel.Section collapsible title={props.title} description={props.subtitle} icon={props.icon}>
+          {props.children}
+        </DetailPanel.Section>
+      }
+    >
+      <PanelDialog.Section title={props.title} subtitle={props.subtitle} icon={props.icon}>
+        {props.children}
+      </PanelDialog.Section>
+    </Show>
   );
 }

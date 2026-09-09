@@ -169,6 +169,15 @@ export const TableAuditPolicySchema = z
   .default({});
 export type TableAuditPolicy = z.infer<typeof TableAuditPolicySchema>;
 
+// Browser and API input validation share the public field-ID boundary.
+const TableAuditPolicyObjectSchema = TableAuditPolicySchema.removeDefault();
+const PublicAuditUpdateRequirementSchema = TableAuditPolicyObjectSchema.shape.update
+  .unwrap()
+  .safeExtend({ fieldIds: z.array(ShortIdSchema).max(200).default([]) });
+export const PublicTableAuditPolicySchema = TableAuditPolicyObjectSchema.extend({
+  update: PublicAuditUpdateRequirementSchema.optional(),
+}).default({});
+
 export const MutationSourceSchema = z.enum(["direct", "form", "workflow"]);
 export type MutationSource = z.infer<typeof MutationSourceSchema>;
 

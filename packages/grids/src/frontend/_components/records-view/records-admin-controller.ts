@@ -86,7 +86,9 @@ export const createRecordsAdminController = (options: RecordsAdminControllerOpti
       onSaved: (updated) => syncFields(options.fields().map((candidate) => (candidate.id === updated.id ? updated : candidate))),
       onTableColumnsSaved: options.setTableColumns,
       onDeleted: async () => {
-        if (await deleteFieldWithChecks(field)) syncFields(options.fields().filter((candidate) => candidate.id !== field.id));
+        const deleted = await deleteFieldWithChecks(field);
+        if (deleted) syncFields(options.fields().filter((candidate) => candidate.id !== field.id));
+        return deleted;
       },
     });
   };

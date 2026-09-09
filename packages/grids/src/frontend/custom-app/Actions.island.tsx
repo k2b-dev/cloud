@@ -1,7 +1,7 @@
 import { Button, ButtonLink, prompts } from "@k2b/ui";
 import { createSignal, For, onCleanup, Show } from "solid-js";
 import { useCustomAppRuntimeMessages } from "./runtime-messages";
-import { invokeCustomAppWorkflow } from "./workflow-action-client";
+import { type CustomAppWorkflowOperation, invokeCustomAppWorkflow } from "./workflow-action-client";
 
 export type CustomAppRenderedAction =
   | {
@@ -24,10 +24,13 @@ export type CustomAppRenderedAction =
 export default function Actions(props: { actions: CustomAppRenderedAction[] }) {
   const messages = useCustomAppRuntimeMessages();
   const [pendingId, setPendingId] = createSignal<string | null>(null);
+  const [operations, setOperations] = createSignal<Record<string, CustomAppWorkflowOperation>>({});
   const [status, setStatus] = createSignal<{ kind: "running" | "success" | "error"; message: string } | null>(null);
   let controller: AbortController | null = null;
   let reloadTimer: number | null = null;
+  let disposed = false;
   onCleanup(() => {
+    disposed = true;
     controller?.abort();
     if (reloadTimer !== null) window.clearTimeout(reloadTimer);
   });
@@ -38,6 +41,7 @@ export default function Actions(props: { actions: CustomAppRenderedAction[] }) {
     setStatus(null);
     try {
       if (
+        !operations()[action.id] &&
         action.confirm &&
         !(await prompts.confirm(action.confirm, {
           title: action.label,
@@ -45,8 +49,12 @@ export default function Actions(props: { actions: CustomAppRenderedAction[] }) {
         }))
       )
         return;
+      if (disposed) return;
       controller = new AbortController();
+      const operation = operations()[action.id] ?? { operationId: crypto.randomUUID() };
+      setOperations((current) => ({ ...current, [action.id]: operation }));
       const outcome = await invokeCustomAppWorkflow({
+        operation,
         endpoint: action.endpoint,
         signal: controller.signal,
         onRunning: () => setStatus({ kind: "running", message: messages().workflowRunning }),
@@ -59,6 +67,8 @@ export default function Actions(props: { actions: CustomAppRenderedAction[] }) {
         },
       });
       setStatus(outcome);
+      if (outcome.kind !== "running")
+        setOperations((current) => Object.fromEntries(Object.entries(current).filter(([id]) => id !== action.id)));
       if (outcome.kind === "success") reloadTimer = window.setTimeout(() => window.location.reload(), 600);
     } catch (cause) {
       if (controller?.signal.aborted) return;
@@ -118,7 +128,7 @@ export default function Actions(props: { actions: CustomAppRenderedAction[] }) {
                 <Show when={action.icon}>
                   <i class={`ti ti-${action.icon}`} aria-hidden="true" />
                 </Show>
-                {action.label}
+                {operations()[action.id] ? messages().checkWorkflowStatus : action.label}
               </Button>
             </Show>
           )}

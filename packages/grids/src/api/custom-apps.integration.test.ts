@@ -275,6 +275,7 @@ describe("Grids App Form runtime", () => {
         }),
       );
       const editUrl = `/apps/runtime/${applied.data.shortId}/record-detail/record/record?cursor=${recordShortId}`;
+      expect((await authenticatedApi.request(editUrl)).status).toBe(200);
       const commentUrl = `/apps/runtime/${applied.data.shortId}/record-detail/comments/comments?cursor=${recordShortId}`;
       const comments = await authenticatedApi.request(`${commentUrl}&_limit=1`);
       expect(comments.status).toBe(200);
@@ -335,6 +336,7 @@ describe("Grids App Form runtime", () => {
         body: JSON.stringify({ values: { [relationFieldShortId]: [newTargetRecordShortId] } }),
       });
       expect(driftedEdit.status).toBe(404);
+      expect((await authenticatedApi.request(editUrl)).status).toBe(404);
       expect(
         await sql<Array<{ targetId: string }>>`SELECT to_record_id::text AS "targetId" FROM grids.record_links
         WHERE from_record_id = ${recordId}::uuid AND from_field_id = ${relationFieldId}::uuid`,
@@ -835,6 +837,9 @@ describe("Grids App Form runtime", () => {
           DELETE FROM grids.custom_app_access
           WHERE custom_app_id = ${appId}::uuid AND access_id = ${appGrant.data.accessId}::uuid
         `;
+        expect((await api.request(`/apps/runtime/${applied.data.shortId}/request/record/record?request_id=${body.recordId}`)).status).toBe(
+          404,
+        );
         const authenticatedGrant = await grantAccess({
           resourceType: "customApp",
           resourceId: appId,
@@ -1020,6 +1025,7 @@ describe("Grids App Form runtime", () => {
       `;
 
         const recordUrl = `/apps/runtime/${applied.data.shortId}/request/record/record?request_id=${body.recordId}`;
+        expect((await publicApi.request(recordUrl)).status).toBe(401);
         expect((await api.request(`/apps/runtime/${applied.data.shortId}/request/record/record?request_id=${recordId}`)).status).toBe(404);
         const anonymousRecordEdit = await publicApi.request(recordUrl, {
           method: "PATCH",
@@ -1046,6 +1052,9 @@ describe("Grids App Form runtime", () => {
           relationLabels: {},
         });
         expect(updatedRecordBody.data).not.toHaveProperty(hiddenFieldPublicId);
+        const refreshedRecord = await api.request(recordUrl);
+        expect(refreshedRecord.status).toBe(200);
+        expect(await refreshedRecord.json()).toEqual(updatedRecordBody);
 
         const rejectedField = await api.request(recordUrl, {
           method: "PATCH",
@@ -1784,6 +1793,9 @@ describe("Grids App Form runtime", () => {
         SET published_definition = ${{ schemaVersion: 1, kind: "grids.custom-app" }}::jsonb
         WHERE id = ${appId}::uuid
       `;
+        expect((await api.request(recordUrl)).status).toBe(404);
+        await sql`UPDATE grids.custom_apps SET published_definition = NULL WHERE id = ${appId}::uuid`;
+        expect((await api.request(recordUrl)).status).toBe(404);
         const legacyRuntime = await publicApi.request(`/apps/runtime/${applied.data.shortId}/home/apply/submit`, {
           method: "POST",
           headers: { "content-type": "application/json", "x-forwarded-for": `custom-app-v1-${baseId}` },

@@ -41,7 +41,7 @@ In dieser Reihenfolge bleiben Fehler kostengünstig. Eine klare Tabelle und eini
 
 ## In einer Base zurechtfinden {icon="layout-dashboard"}
 
-Unter **Übersicht** findest du gemeinsame Schnellzugriffe und eine Suche nach Ressourcenname oder Typ. Tabellen, Views, Formulare, Dokumentvorlagen, Workflows und Apps behalten ihr bisheriges Verhalten; Formulare öffnen weiterhin ihren Dialog.
+Wechsle unter **Übersicht** zwischen **Gruppen** für gemeinsame Schnellzugriffe und **Alle Ressourcen** mit Suche nach Name oder Typ. Der ausgewählte Tab steht in der URL und bleibt beim Teilen, Neuladen sowie Vor- und Zurücknavigieren erhalten. Bases mit Gruppen öffnen standardmäßig **Gruppen**, sonst **Alle Ressourcen**. Formulare öffnen weiterhin ihren Dialog.
 
 Über **Neu** im Bearbeitungsmodus erstellst du Tabellen, Ansichten, Formulare, Dokumentvorlagen, Workflows oder Apps. Die Auswahl zeigt nur erlaubte Aktionen. Bei tabellenbezogenen Ressourcen wählst du eine Tabelle; die aktuelle Tabelle ist vorausgewählt, sofern sie geeignet ist. **Ansicht** öffnet den Abfrageeditor, in dem du die Ansicht konfigurierst und speicherst.
 

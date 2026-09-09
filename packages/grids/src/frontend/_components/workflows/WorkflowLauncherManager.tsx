@@ -2,6 +2,7 @@ import { mutation as mutations } from "@k2b/stdlib/solid";
 import {
   Button,
   CheckboxCard,
+  confirmDiscardIfDirty,
   dialogCore,
   IconButton,
   NoticeCard,
@@ -127,7 +128,9 @@ function LauncherEditor(props: {
   workflow: PublicWorkflow;
   tables: PublicTable[];
   launcher?: PublicWorkflowLauncher;
-  close: (draft?: LauncherDraft) => void;
+  close: () => void;
+  save: (draft: LauncherDraft) => Promise<void>;
+  setDismissHandler: (handler: () => void | Promise<void>) => void;
 }) {
   const locale = useLocale();
   const t = () => workflowMessages.resolve([locale()]).t;
@@ -184,6 +187,27 @@ function LauncherEditor(props: {
       initial.config.kind === "customApp" ? initial.config.inputBindings : undefined,
     ),
   );
+  const draftSnapshot = () =>
+    JSON.stringify({
+      name: name(),
+      enabled: enabled(),
+      kind: kind(),
+      input: input(),
+      scannerSources: scannerSources(),
+      resolveBy: resolveBy(),
+      field: field(),
+      scannerFixedDraft: scannerFixedDraft(),
+      customAppInputMode: customAppInputMode(),
+      customAppBindings: customAppBindings(),
+    });
+  const initialSnapshot = draftSnapshot();
+  const [saving, setSaving] = createSignal(false);
+  const [saveError, setSaveError] = createSignal<string>();
+  const closeIfClean = async () => {
+    if (saving()) return;
+    if (await confirmDiscardIfDirty(() => draftSnapshot() !== initialSnapshot)) props.close();
+  };
+  props.setDismissHandler(closeIfClean);
   const inputOptions = createMemo(() =>
     props.workflow.plan.inputs
       .filter((candidate) => candidate.type === (kind() === "record" ? "record" : "recordList"))
@@ -234,8 +258,8 @@ function LauncherEditor(props: {
   const setScannerFixedValue = (name: string, value: WorkflowRunInputDraftValue) =>
     setScannerFixedDraft((current) => ({ ...current, [name]: value }));
 
-  const submit = () => {
-    if (!valid()) return;
+  const submit = async () => {
+    if (!valid() || saving()) return;
     const bindings = customAppValidation();
     const fixedScannerValues = scannerFixedValidation();
     const scannerInputSources = (): Record<string, GridsScannerInputSource> => {
@@ -278,7 +302,16 @@ function LauncherEditor(props: {
           : kind() === "record"
             ? { kind: "record", input: input(), profile: "correctionDraft", intent: recordIntent() }
             : { kind: "scanner", inputSources: scannerInputSources() };
-    props.close({ name: name().trim(), enabled: enabled(), config });
+    setSaving(true);
+    setSaveError(undefined);
+    try {
+      await props.save({ name: name().trim(), enabled: enabled(), config });
+      props.close();
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : t().saveRunOptionFailed);
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -287,10 +320,10 @@ function LauncherEditor(props: {
         title={props.launcher ? t().editRunOption : t().addRunOption}
         subtitle={props.workflow.name}
         icon="ti ti-rocket"
-        close={() => props.close()}
+        close={() => void closeIfClean()}
       />
       <PanelDialog.Body>
-        <div class="flex flex-col gap-3">
+        <fieldset disabled={saving()} class="flex min-w-0 flex-col gap-3">
           <TextInput label={t().name} required value={name} onValueChange={setName} icon="ti ti-letter-case" />
           <Select
             label={t().surface}
@@ -456,15 +489,22 @@ function LauncherEditor(props: {
             </Show>
           </Show>
           <CheckboxCard label={t().enabled} description={t().enabledRunOptionDescription} value={enabled} onValueChange={setEnabled} />
-        </div>
+        </fieldset>
+        <Show when={saveError()}>
+          {(message) => (
+            <NoticeCard tone="danger" class="mt-4">
+              {message()}
+            </NoticeCard>
+          )}
+        </Show>
       </PanelDialog.Body>
       <PanelDialog.Footer>
         <span />
         <div class="flex items-center gap-2">
-          <Button variant="secondary" size="sm" type="button" onClick={() => props.close()}>
+          <Button variant="secondary" size="sm" type="button" disabled={saving()} onClick={() => void closeIfClean()}>
             {t().cancel}
           </Button>
-          <Button variant="primary" size="sm" type="button" disabled={!valid()} onClick={submit}>
+          <Button variant="primary" size="sm" type="button" loading={saving()} disabled={!valid()} onClick={() => void submit()}>
             <i class="ti ti-check" /> {props.launcher ? t().saveRunOption : t().addRunOption}
           </Button>
         </div>
@@ -473,9 +513,23 @@ function LauncherEditor(props: {
   );
 }
 
-const requestLauncherDraft = (workflow: PublicWorkflow, tables: PublicTable[], launcher?: PublicWorkflowLauncher) =>
-  dialogCore.open<LauncherDraft>(
-    (close) => <LauncherEditor workflow={workflow} tables={tables} launcher={launcher} close={close} />,
+const requestLauncherDraft = (
+  workflow: PublicWorkflow,
+  tables: PublicTable[],
+  save: (draft: LauncherDraft) => Promise<void>,
+  launcher?: PublicWorkflowLauncher,
+) =>
+  dialogCore.open<void>(
+    (close, context) => (
+      <LauncherEditor
+        workflow={workflow}
+        tables={tables}
+        launcher={launcher}
+        close={close}
+        save={save}
+        setDismissHandler={context.setDismissHandler}
+      />
+    ),
     panelDialogOptions,
   );
 
@@ -484,6 +538,7 @@ export function WorkflowLauncherManager(props: {
   tables: PublicTable[];
   onChanged: () => void;
   onClose: () => void;
+  setDismissHandler?: (handler: () => void | Promise<void>) => void;
 }) {
   const locale = useLocale();
   const t = () => workflowMessages.resolve([locale()]).t;
@@ -526,9 +581,6 @@ export function WorkflowLauncherManager(props: {
       loadMut.mutate();
       props.onChanged();
     },
-    onError: (error) => {
-      if (!disposed) void prompts.error(error.message);
-    },
   });
 
   const removeMut = mutations.create<boolean, PublicWorkflowLauncher>({
@@ -558,8 +610,16 @@ export function WorkflowLauncherManager(props: {
 
   const edit = async (launcher?: PublicWorkflowLauncher) => {
     if (!loaded() || loadMut.loading() || saveMut.loading() || removeMut.loading()) return;
-    const draft = await requestLauncherDraft(props.workflow, props.tables, launcher);
-    if (draft) saveMut.mutate({ launcher, draft });
+    await requestLauncherDraft(
+      props.workflow,
+      props.tables,
+      async (draft) => {
+        await saveMut.mutate({ launcher, draft });
+        const error = saveMut.error();
+        if (error) throw error;
+      },
+      launcher,
+    );
   };
 
   const mutationsBlocked = () => !loaded() || loadMut.loading() || saveMut.loading() || removeMut.loading();
@@ -567,6 +627,7 @@ export function WorkflowLauncherManager(props: {
   const close = () => {
     if (!writing()) props.onClose();
   };
+  props.setDismissHandler?.(close);
 
   onMount(() => loadMut.mutate());
   onCleanup(() => {

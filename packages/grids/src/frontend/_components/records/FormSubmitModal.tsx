@@ -1,5 +1,5 @@
 import type { DateContext } from "@k2b/stdlib";
-import { Button, CopyButton, dialogCore, NoticeCard, PanelDialog, panelDialogOptions, useLocale } from "@k2b/ui";
+import { Button, CopyButton, confirmDiscardIfDirty, dialogCore, NoticeCard, PanelDialog, panelDialogOptions, useLocale } from "@k2b/ui";
 import { createMemo, createSignal, For, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { PublicField as Field, PublicForm as Form } from "../../../api/public-dto";
@@ -23,17 +23,27 @@ import { recordMessages } from "./messages";
  *   to add a single record and likely wants to add more in a row.
  */
 export const openFormModal = (form: Form, fields: Field[], options: { onSubmitted?: () => void; dateConfig?: DateContext } = {}) =>
-  dialogCore.open<void>(
-    (close) => (
+  dialogCore.open<void>((close, context) => {
+    let requestClose = () => {};
+    context.setDismissHandler(() => requestClose());
+    return (
       <PanelDialog>
-        <PanelDialog.Header title={form.config.title ?? form.name} icon="ti ti-forms" close={() => close()} />
+        <PanelDialog.Header title={form.config.title ?? form.name} icon="ti ti-forms" close={() => requestClose()} />
         <PanelDialog.Body>
-          <FormSubmitBody form={form} fields={fields} onSubmitted={options.onSubmitted} dateConfig={options.dateConfig} close={close} />
+          <FormSubmitBody
+            form={form}
+            fields={fields}
+            onSubmitted={options.onSubmitted}
+            dateConfig={options.dateConfig}
+            close={close}
+            registerClose={(handler) => {
+              requestClose = handler;
+            }}
+          />
         </PanelDialog.Body>
       </PanelDialog>
-    ),
-    panelDialogOptions,
-  );
+    );
+  }, panelDialogOptions);
 
 function FormSubmitBody(props: {
   form: Form;
@@ -41,6 +51,7 @@ function FormSubmitBody(props: {
   onSubmitted?: () => void;
   dateConfig?: DateContext;
   close: (result?: void) => void;
+  registerClose: (handler: () => void) => void;
 }) {
   const locale = useLocale();
   const t = () => recordMessages.resolve([locale()]).t;
@@ -52,21 +63,38 @@ function FormSubmitBody(props: {
   const [submitting, setSubmitting] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
   const [done, setDone] = createSignal(false);
+  const [attempted, setAttempted] = createSignal(false);
+  const requestClose = async () => {
+    if (submitting()) return;
+    if (
+      done() ||
+      (await confirmDiscardIfDirty(
+        () => JSON.stringify(values()) !== JSON.stringify(buildInitialValues(entries)) || Object.keys(inlineCreates()).length > 0,
+      ))
+    )
+      props.close();
+  };
+  props.registerClose(() => void requestClose());
   const validationFailures = createMemo(() => evaluateFormValidations(props.form.config.validations, values(), fieldsById));
   const validationErrors = createMemo(() =>
-    Object.fromEntries(validationFailures().map((failure) => [failure.errorFieldId, failure.message])),
+    Object.fromEntries((attempted() ? validationFailures() : []).map((failure) => [failure.errorFieldId, failure.message])),
   );
 
-  const setValue = (fieldId: string, v: unknown) => setValues((current) => ({ ...current, [fieldId]: v }));
-  const setInlineDrafts = (fieldId: string, drafts: InlineCreateState[string]) =>
-    setInlineCreates((current) => ({ ...current, [fieldId]: drafts }));
+  const setValue = (fieldId: string, v: unknown) => {
+    if (!submitting()) setValues((current) => ({ ...current, [fieldId]: v }));
+  };
+  const setInlineDrafts = (fieldId: string, drafts: InlineCreateState[string]) => {
+    if (!submitting()) setInlineCreates((current) => ({ ...current, [fieldId]: drafts }));
+  };
 
   const handleSubmit = async (event: Event) => {
     event.preventDefault();
+    if (submitting()) return;
+    setAttempted(true);
     setError(null);
     const invalid = validationFailures()[0];
     if (invalid) {
-      setError(invalid.message);
+      if (event.currentTarget instanceof HTMLElement) event.currentTarget.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus();
       return;
     }
     setSubmitting(true);
@@ -101,6 +129,7 @@ function FormSubmitBody(props: {
     setInlineCreates({});
     setError(null);
     setDone(false);
+    setAttempted(false);
   };
 
   return (
@@ -119,24 +148,26 @@ function FormSubmitBody(props: {
           <p class="text-sm text-dimmed">{props.form.config.description}</p>
         </Show>
 
-        <For each={entries}>
-          {(entry) => {
-            const field = fieldsById.get(entry.fieldId);
-            if (!field || field.deletedAt) return null;
-            return (
-              <FieldInput
-                field={field}
-                entry={entry}
-                value={values()[entry.fieldId]}
-                onChange={(v) => setValue(entry.fieldId, v)}
-                error={() => validationErrors()[entry.fieldId]}
-                inlineCreates={inlineCreates}
-                onInlineCreatesChange={setInlineDrafts}
-                dateConfig={props.dateConfig}
-              />
-            );
-          }}
-        </For>
+        <fieldset disabled={submitting()} class="contents">
+          <For each={entries}>
+            {(entry) => {
+              const field = fieldsById.get(entry.fieldId);
+              if (!field || field.deletedAt) return null;
+              return (
+                <FieldInput
+                  field={field}
+                  entry={entry}
+                  value={values()[entry.fieldId]}
+                  onChange={(v) => setValue(entry.fieldId, v)}
+                  error={() => validationErrors()[entry.fieldId]}
+                  inlineCreates={inlineCreates}
+                  onInlineCreatesChange={setInlineDrafts}
+                  dateConfig={props.dateConfig}
+                />
+              );
+            }}
+          </For>
+        </fieldset>
 
         <Show when={error()}>
           <NoticeCard tone="danger" icon={false} bodyClass="flex items-start gap-2">
@@ -164,7 +195,7 @@ function FormSubmitBody(props: {
             )}
           </Show>
           <div class="ml-auto flex items-center gap-2">
-            <Button variant="ghost" size="sm" type="button" onClick={() => props.close()} disabled={submitting()}>
+            <Button variant="ghost" size="sm" type="button" onClick={requestClose} disabled={submitting()}>
               {t().cancel}
             </Button>
             <Button variant="primary" size="sm" type="submit" disabled={submitting()}>

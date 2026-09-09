@@ -45,7 +45,7 @@ Use **New** in Edit mode to create a table, view, form, document template, workf
 
 **Documents** is always expandable: open **All documents** or select a template to see its generated documents. Base admins manage workflow email templates under **Settings → Email templates**.
 
-Open **Overview** to see shared shortcut groups and search all resources by name or type. Tables, views, forms, document templates, workflows, and Apps keep their existing behavior; opening a form still opens its form dialog.
+In **Overview**, switch between **Groups** for shared shortcuts and **All resources** to search by name or type. The selected tab is part of the URL, so links, reloads, and browser history preserve it. Bases with groups open on **Groups** by default; otherwise they open on **All resources**. Opening a form still opens its form dialog.
 
 Base admins can open **Settings → Navigation** to create named groups. Add resources with the searchable picker, change their order with the arrow buttons, then save your changes. Removing a shortcut or group does not delete any resource. A resource can appear in several groups.
 

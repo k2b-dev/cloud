@@ -2,13 +2,16 @@ import { mutation as mutations, timed } from "@k2b/stdlib/solid";
 import {
   Button,
   CheckboxCard,
+  confirmDiscardIfDirty,
   dialogCore,
+  NoticeCard,
   PanelDialog,
   Placeholder,
   panelDialogOptions,
   prompts,
   Select,
   TextInput,
+  toast,
   useLocale,
 } from "@k2b/ui";
 import { createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
@@ -36,9 +39,18 @@ const selectOptions = (field: PublicField | undefined): SelectOption[] => {
 };
 
 export const openFederatedTableDialog = (args: { tableId: string; tableName: string; targetFields: PublicField[] }) =>
-  dialogCore.open<void>((close) => <FederatedTableDialog {...args} close={close} />, panelDialogOptions);
+  dialogCore.open<void>(
+    (close, context) => <FederatedTableDialog {...args} close={close} setDismissHandler={context.setDismissHandler} />,
+    panelDialogOptions,
+  );
 
-function FederatedTableDialog(props: { tableId: string; tableName: string; targetFields: PublicField[]; close: () => void }) {
+function FederatedTableDialog(props: {
+  tableId: string;
+  tableName: string;
+  targetFields: PublicField[];
+  close: () => void;
+  setDismissHandler: (handler: () => void | Promise<void>) => void;
+}) {
   const locale = useLocale();
   const t = () => gridsDialogMessages.resolve([locale()]).t;
   const fieldT = () => gridsFieldMessages.resolve([locale()]).t;
@@ -54,6 +66,10 @@ function FederatedTableDialog(props: { tableId: string; tableName: string; targe
   const [mappings, setMappings] = createSignal<MappingDraft[]>([]);
   const [validationDiagnostics, setValidationDiagnostics] = createSignal<FederatedDiagnostic[]>([]);
   const [loading, setLoading] = createSignal(true);
+  const [loadError, setLoadError] = createSignal<string | null>(null);
+  const [savedDraft, setSavedDraft] = createSignal("");
+  const [revoking, setRevoking] = createSignal(false);
+  const [actionError, setActionError] = createSignal<string | null>(null);
 
   let candidateRequest: AbortController | null = null;
   const sourceTables = createMemo(() => Object.values(candidateCache()).map((candidate) => ({ ...candidate.table, base: candidate.base })));
@@ -128,6 +144,7 @@ function FederatedTableDialog(props: { tableId: string; tableName: string; targe
 
   const load = async () => {
     setLoading(true);
+    setLoadError(null);
     try {
       searchCandidates.cancel();
       setCandidates([]);
@@ -140,12 +157,13 @@ function FederatedTableDialog(props: { tableId: string; tableName: string; targe
       setSelectedSources(sourceIds);
       setMappingSourceId(sourceIds[0] ?? "");
       setMappings(nextConfig.draft.mappings);
+      setSavedDraft(JSON.stringify({ sourceTableIds: sourceIds, mappings: nextConfig.draft.mappings }));
       setValidationDiagnostics(nextConfig.draft.diagnostics);
       await loadCandidates({ reset: true, query: candidateQuery() });
       const accessibleSourceIds = sourceIds.filter((sourceId) => candidateCache()[sourceId] !== undefined);
       await Promise.all(accessibleSourceIds.map(loadFields));
     } catch (error) {
-      prompts.error(error instanceof Error ? error.message : t().combinedConfigLoadFailed);
+      setLoadError(error instanceof Error ? error.message : t().combinedConfigLoadFailed);
     } finally {
       setLoading(false);
     }
@@ -154,6 +172,7 @@ function FederatedTableDialog(props: { tableId: string; tableName: string; targe
   onMount(() => void load());
 
   const toggleSource = async (tableId: string, enabled: boolean) => {
+    if (controlsDisabled()) return;
     if (enabled) {
       if (selectedSources().length + hiddenSourceCount() >= MAX_SOURCES) {
         prompts.error(t().sourceLimit({ count: MAX_SOURCES }));
@@ -182,6 +201,7 @@ function FederatedTableDialog(props: { tableId: string; tableName: string; targe
     mappings().find((mapping) => mapping.sourceTableId === sourceTableId && mapping.targetFieldId === targetFieldId);
 
   const setMapping = (sourceTableId: string, targetFieldId: string, sourceFieldId: string) => {
+    if (controlsDisabled()) return;
     setValidationDiagnostics([]);
     setMappings((current) => {
       const rest = current.filter((mapping) => !(mapping.sourceTableId === sourceTableId && mapping.targetFieldId === targetFieldId));
@@ -195,6 +215,7 @@ function FederatedTableDialog(props: { tableId: string; tableName: string; targe
   };
 
   const setOptionMapping = (sourceTableId: string, targetFieldId: string, sourceOptionId: string, targetOptionId: string) => {
+    if (controlsDisabled()) return;
     setValidationDiagnostics([]);
     setMappings((current) =>
       current.map((mapping) => {
@@ -221,18 +242,21 @@ function FederatedTableDialog(props: { tableId: string; tableName: string; targe
   const saveDraft = async (): Promise<PublicFederatedRevisionView> => {
     const draftToken = config()?.draft.revisionToken;
     if (!draftToken) throw new Error(t().combinedNotLoaded);
+    const input = draftInput();
     const response = await apiClient.tables[":tableId"].federation.draft.$put({
       param: { tableId: props.tableId },
-      json: { ...draftInput(), draftToken },
+      json: { ...input, draftToken },
     });
     if (!response.ok) throw new Error(await errorMessage(response, t().saveCombinedDraftFailed));
     const draft = await response.json();
     setConfig((current) => (current ? { ...current, draft } : current));
     setValidationDiagnostics(draft.diagnostics);
+    setSavedDraft(JSON.stringify(input));
     return draft;
   };
 
   const validateMutation = mutations.create<{ valid: boolean; diagnostics: FederatedDiagnostic[] }, void>({
+    onBefore: () => setActionError(null),
     mutation: async () => {
       const response = await apiClient.tables[":tableId"].federation.validate.$post({
         param: { tableId: props.tableId },
@@ -243,17 +267,19 @@ function FederatedTableDialog(props: { tableId: string; tableName: string; targe
     },
     onSuccess: (result) => {
       setValidationDiagnostics(result.diagnostics);
-      if (result.valid) prompts.success(t().combinedValid);
+      if (result.valid) toast.success(t().combinedValid);
     },
-    onError: (error) => prompts.error(error.message),
+    onError: (error) => setActionError(error.message),
   });
 
   const saveMutation = mutations.create<PublicFederatedRevisionView, void>({
+    onBefore: () => setActionError(null),
     mutation: saveDraft,
-    onSuccess: () => prompts.success(t().combinedDraftSaved),
-    onError: (error) => prompts.error(error.message),
+    onSuccess: () => toast.success(t().combinedDraftSaved),
+    onError: (error) => setActionError(error.message),
   });
   const publishMutation = mutations.create<PublicFederatedRevisionView, void>({
+    onBefore: () => setActionError(null),
     mutation: async () => {
       await saveDraft();
       const response = await apiClient.tables[":tableId"].federation.publish.$post({ param: { tableId: props.tableId } });
@@ -261,219 +287,267 @@ function FederatedTableDialog(props: { tableId: string; tableName: string; targe
       return response.json();
     },
     onSuccess: () => {
-      prompts.success(t().combinedPublished);
+      toast.success(t().combinedPublished);
       void load();
     },
-    onError: (error) => prompts.error(error.message),
+    onError: (error) => setActionError(error.message),
   });
 
   const revoke = async (sourceTableId: string) => {
-    const confirmed = await prompts.confirm(t().revokeSourceConfirm, {
-      title: t().revokeSourceQuestion,
-      variant: "danger",
-      confirmText: t().revoke,
-    });
-    if (!confirmed) return;
-    const response = await apiClient.tables[":tableId"].federation.sources[":sourceTableId"].revoke.$post({
-      param: { tableId: props.tableId, sourceTableId },
-    });
-    if (!response.ok) return prompts.error(await errorMessage(response, t().revokeSourceFailed));
-    await load();
+    if (controlsDisabled()) return;
+    setRevoking(true);
+    try {
+      if (!(await confirmDiscardIfDirty(() => JSON.stringify(draftInput()) !== savedDraft()))) return;
+      const confirmed = await prompts.confirm(t().revokeSourceConfirm, {
+        title: t().revokeSourceQuestion,
+        variant: "danger",
+        confirmText: t().revoke,
+      });
+      if (!confirmed) return;
+      const response = await apiClient.tables[":tableId"].federation.sources[":sourceTableId"].revoke.$post({
+        param: { tableId: props.tableId, sourceTableId },
+      });
+      if (!response.ok) return prompts.error(await errorMessage(response, t().revokeSourceFailed));
+      await load();
+    } catch (error) {
+      prompts.error(error instanceof Error ? error.message : t().revokeSourceFailed);
+    } finally {
+      setRevoking(false);
+    }
   };
+
+  const busy = () => saveMutation.loading() || publishMutation.loading() || validateMutation.loading() || revoking();
+  const controlsDisabled = () => busy() || loading() || Boolean(loadError());
+  const closeIfClean = async () => {
+    if (busy()) return;
+    if (await confirmDiscardIfDirty(() => Boolean(savedDraft()) && JSON.stringify(draftInput()) !== savedDraft())) props.close();
+  };
+  props.setDismissHandler(closeIfClean);
 
   return (
     <PanelDialog>
-      <PanelDialog.Header title={t().combinedFor({ table: props.tableName })} icon="ti ti-table-share" close={props.close} />
+      <PanelDialog.Header title={t().combinedFor({ table: props.tableName })} icon="ti ti-table-share" close={closeIfClean} />
       <PanelDialog.Body>
+        <Show when={actionError()}>{(message) => <NoticeCard tone="danger" title={message()} />}</Show>
         <Show when={!loading()} fallback={<Placeholder state="loading" title={t().loadingCombined} description={t().readingSources} />}>
-          <PanelDialog.Section title={t().sources} subtitle={t().sourcesDetail} icon="ti ti-database-share">
-            <TextInput
-              aria-label={t().searchSourceAria}
-              value={candidateQuery}
-              onValueChange={(value) => {
-                setCandidateQuery(value);
-                searchCandidates.debouncedFn(value);
-              }}
-              icon="ti ti-search"
-              placeholder={t().searchSources}
-            />
-            <Show
-              when={candidates().length > 0}
-              fallback={
-                <Placeholder
-                  state={candidateLoading() ? "loading" : "empty"}
-                  icon={candidateLoading() ? "ti ti-loader-2 animate-spin" : "ti ti-database-off"}
-                  title={candidateLoading() ? t().loadingSources : t().noSources}
-                  description={candidateQuery().trim() ? t().noSourceMatch : t().noAdminSources}
-                />
-              }
-            >
-              <For each={candidateGroups()}>
-                {(group) => (
-                  <div class="space-y-2">
-                    <div class="text-xs font-semibold text-dimmed">{group.base.name}</div>
-                    <For each={group.items}>
-                      {(candidate) => (
-                        <CheckboxCard
-                          label={candidate.table.name}
-                          description={t().fieldCount({ count: candidate.fieldCount })}
-                          icon={candidate.table.icon ?? "ti ti-table"}
-                          variant="input"
-                          value={() => selectedSources().includes(candidate.table.id)}
-                          onValueChange={(enabled) => void toggleSource(candidate.table.id, enabled)}
-                        />
-                      )}
-                    </For>
-                  </div>
-                )}
-              </For>
-              <Show when={candidates().length < candidateTotal()}>
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  type="button"
-                  class="self-center"
-                  disabled={candidateLoading()}
-                  onClick={() => void loadCandidates().catch((error) => prompts.error((error as Error).message))}
-                >
-                  {candidateLoading() ? <i class="ti ti-loader-2 animate-spin" /> : <i class="ti ti-dots" />} {t().loadMoreSources}
-                </Button>
-              </Show>
-            </Show>
-            <Show when={hiddenSourceCount() > 0}>
-              <div class="paper flex items-start gap-2 p-3 text-sm text-secondary">
-                <i class="ti ti-lock mt-0.5" aria-hidden="true" />
-                <span>{t().hiddenSources({ count: hiddenSourceCount() })}</span>
-              </div>
-            </Show>
-          </PanelDialog.Section>
-
-          <PanelDialog.Section title={t().fieldMappings} subtitle={t().fieldMappingsDetail} icon="ti ti-arrows-join-2">
-            <Show
-              when={selectedTables().length > 0 && canonicalFields().length > 0}
-              fallback={
-                <Placeholder
-                  icon="ti ti-columns"
-                  title={t().noEditableMappings}
-                  description={hiddenSourceCount() > 0 ? t().hiddenMappingsDetail : t().addSourceFirst}
-                />
-              }
-            >
-              <Select
-                label={t().sourceToMap}
-                description={t().selectedSources({ count: selectedTables().length })}
-                value={() => mappingTable()?.id ?? ""}
-                onValueChange={setMappingSourceId}
-                options={selectedTables().map((table) => ({
-                  id: table.id,
-                  label: `${table.name} · ${table.base.name}`,
-                  icon: table.icon ?? "ti ti-table",
-                }))}
+          <Show
+            when={!loadError()}
+            fallback={
+              <Placeholder
+                state="error"
+                title={t().combinedConfigLoadFailed}
+                description={loadError() !== t().combinedConfigLoadFailed ? (loadError() ?? undefined) : undefined}
+                action={
+                  <Button variant="secondary" onClick={() => void load()}>
+                    {t().retry}
+                  </Button>
+                }
               />
-              <Show when={mappingTable()} keyed>
-                {(table) => (
-                  <div class="paper space-y-2 p-3">
-                    <div>
-                      <div class="text-sm font-semibold text-primary">{table.name}</div>
-                      <div class="text-xs text-dimmed">{table.base.name}</div>
-                    </div>
-                    <For each={canonicalFields()}>
-                      {(target) => {
-                        const sourceSelectOptions = () => selectOptions(selectedSourceField(table.id, target.id));
-                        const targetSelectOptions = () =>
-                          selectOptions(target).map((option) => ({ id: option.id, label: option.label, icon: "ti ti-tag" }));
-                        return (
-                          <div class="space-y-2">
-                            <Select
-                              label={target.name}
-                              description={t().mappingFieldDetail({ type: fieldT().typeLabel({ type: target.type }) })}
-                              value={() => mappingFor(table.id, target.id)?.sourceFieldId ?? ""}
-                              onValueChange={(sourceFieldId) => setMapping(table.id, target.id, sourceFieldId ?? "")}
-                              options={compatibleOptions(table.id, target)}
-                              placeholder={t().notMapped}
-                              clearable
+            }
+          >
+            <fieldset disabled={controlsDisabled()} class="m-0 flex min-w-0 flex-col gap-4 border-0 p-0">
+              <PanelDialog.Section title={t().sources} subtitle={t().sourcesDetail} icon="ti ti-database-share">
+                <TextInput
+                  aria-label={t().searchSourceAria}
+                  value={candidateQuery}
+                  onValueChange={(value) => {
+                    if (controlsDisabled()) return;
+                    setCandidateQuery(value);
+                    searchCandidates.debouncedFn(value);
+                  }}
+                  icon="ti ti-search"
+                  placeholder={t().searchSources}
+                />
+                <Show
+                  when={candidates().length > 0}
+                  fallback={
+                    <Placeholder
+                      state={candidateLoading() ? "loading" : "empty"}
+                      icon={candidateLoading() ? "ti ti-loader-2 animate-spin" : "ti ti-database-off"}
+                      title={candidateLoading() ? t().loadingSources : t().noSources}
+                      description={candidateQuery().trim() ? t().noSourceMatch : t().noAdminSources}
+                    />
+                  }
+                >
+                  <For each={candidateGroups()}>
+                    {(group) => (
+                      <div class="space-y-2">
+                        <div class="text-xs font-semibold text-dimmed">{group.base.name}</div>
+                        <For each={group.items}>
+                          {(candidate) => (
+                            <CheckboxCard
+                              label={candidate.table.name}
+                              description={t().fieldCount({ count: candidate.fieldCount })}
+                              icon={candidate.table.icon ?? "ti ti-table"}
+                              variant="input"
+                              value={() => selectedSources().includes(candidate.table.id)}
+                              onValueChange={(enabled) => void toggleSource(candidate.table.id, enabled)}
                             />
-                            <Show when={target.type === "select" && sourceSelectOptions().length > 0}>
-                              <div class="space-y-2 rounded-[var(--ui-radius-control)] bg-[var(--ui-surface-subtle)] p-2">
-                                <div class="text-xs font-medium text-secondary">{t().optionMapping}</div>
-                                <For each={sourceSelectOptions()}>
-                                  {(sourceOption) => (
-                                    <Select
-                                      label={sourceOption.label}
-                                      value={() => {
-                                        const optionMap = (mappingFor(table.id, target.id)?.config?.optionMap ?? {}) as Record<
-                                          string,
-                                          string
-                                        >;
-                                        return optionMap[sourceOption.id] ?? "";
-                                      }}
-                                      onValueChange={(targetOptionId) =>
-                                        setOptionMapping(table.id, target.id, sourceOption.id, targetOptionId ?? "")
-                                      }
-                                      options={targetSelectOptions()}
-                                      placeholder={t().chooseCanonicalOption}
-                                      clearable
-                                    />
-                                  )}
-                                </For>
+                          )}
+                        </For>
+                      </div>
+                    )}
+                  </For>
+                  <Show when={candidates().length < candidateTotal()}>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      type="button"
+                      class="self-center"
+                      disabled={candidateLoading()}
+                      onClick={() => void loadCandidates().catch((error) => prompts.error((error as Error).message))}
+                    >
+                      {candidateLoading() ? <i class="ti ti-loader-2 animate-spin" /> : <i class="ti ti-dots" />} {t().loadMoreSources}
+                    </Button>
+                  </Show>
+                </Show>
+                <Show when={hiddenSourceCount() > 0}>
+                  <div class="paper flex items-start gap-2 p-3 text-sm text-secondary">
+                    <i class="ti ti-lock mt-0.5" aria-hidden="true" />
+                    <span>{t().hiddenSources({ count: hiddenSourceCount() })}</span>
+                  </div>
+                </Show>
+              </PanelDialog.Section>
+
+              <PanelDialog.Section title={t().fieldMappings} subtitle={t().fieldMappingsDetail} icon="ti ti-arrows-join-2">
+                <Show
+                  when={selectedTables().length > 0 && canonicalFields().length > 0}
+                  fallback={
+                    <Placeholder
+                      icon="ti ti-columns"
+                      title={t().noEditableMappings}
+                      description={hiddenSourceCount() > 0 ? t().hiddenMappingsDetail : t().addSourceFirst}
+                    />
+                  }
+                >
+                  <Select
+                    label={t().sourceToMap}
+                    description={t().selectedSources({ count: selectedTables().length })}
+                    value={() => mappingTable()?.id ?? ""}
+                    onValueChange={(value) => {
+                      if (!controlsDisabled()) setMappingSourceId(value ?? "");
+                    }}
+                    disabled={controlsDisabled()}
+                    options={selectedTables().map((table) => ({
+                      id: table.id,
+                      label: `${table.name} · ${table.base.name}`,
+                      icon: table.icon ?? "ti ti-table",
+                    }))}
+                  />
+                  <Show when={mappingTable()} keyed>
+                    {(table) => (
+                      <div class="paper space-y-2 p-3">
+                        <div>
+                          <div class="text-sm font-semibold text-primary">{table.name}</div>
+                          <div class="text-xs text-dimmed">{table.base.name}</div>
+                        </div>
+                        <For each={canonicalFields()}>
+                          {(target) => {
+                            const sourceSelectOptions = () => selectOptions(selectedSourceField(table.id, target.id));
+                            const targetSelectOptions = () =>
+                              selectOptions(target).map((option) => ({ id: option.id, label: option.label, icon: "ti ti-tag" }));
+                            return (
+                              <div class="space-y-2">
+                                <Select
+                                  label={target.name}
+                                  description={t().mappingFieldDetail({ type: fieldT().typeLabel({ type: target.type }) })}
+                                  value={() => mappingFor(table.id, target.id)?.sourceFieldId ?? ""}
+                                  onValueChange={(sourceFieldId) => setMapping(table.id, target.id, sourceFieldId ?? "")}
+                                  disabled={controlsDisabled()}
+                                  options={compatibleOptions(table.id, target)}
+                                  placeholder={t().notMapped}
+                                  clearable
+                                />
+                                <Show when={target.type === "select" && sourceSelectOptions().length > 0}>
+                                  <div class="space-y-2 rounded-[var(--ui-radius-control)] bg-[var(--ui-surface-subtle)] p-2">
+                                    <div class="text-xs font-medium text-secondary">{t().optionMapping}</div>
+                                    <For each={sourceSelectOptions()}>
+                                      {(sourceOption) => (
+                                        <Select
+                                          label={sourceOption.label}
+                                          value={() => {
+                                            const optionMap = (mappingFor(table.id, target.id)?.config?.optionMap ?? {}) as Record<
+                                              string,
+                                              string
+                                            >;
+                                            return optionMap[sourceOption.id] ?? "";
+                                          }}
+                                          onValueChange={(targetOptionId) =>
+                                            setOptionMapping(table.id, target.id, sourceOption.id, targetOptionId ?? "")
+                                          }
+                                          disabled={controlsDisabled()}
+                                          options={targetSelectOptions()}
+                                          placeholder={t().chooseCanonicalOption}
+                                          clearable
+                                        />
+                                      )}
+                                    </For>
+                                  </div>
+                                </Show>
                               </div>
+                            );
+                          }}
+                        </For>
+                      </div>
+                    )}
+                  </Show>
+                </Show>
+              </PanelDialog.Section>
+
+              <Show when={validationDiagnostics().length > 0}>
+                <PanelDialog.Section title={t().validation} subtitle={t().validationDetail} icon="ti ti-alert-triangle">
+                  <div class="paper p-3">
+                    <ul class="space-y-1 text-sm text-danger">
+                      <For each={validationDiagnostics()}>
+                        {(diagnostic) => <li>{t().federatedDiagnostic({ code: diagnostic.code, fallback: diagnostic.message })}</li>}
+                      </For>
+                    </ul>
+                  </div>
+                </PanelDialog.Section>
+              </Show>
+
+              <Show when={config()?.current} keyed>
+                {(current) => (
+                  <PanelDialog.Section
+                    title={t().publishedRevision}
+                    subtitle={t().revisionStatus({
+                      revision: current.revision,
+                      status: current.status === "active" ? t().active : t().actionRequired,
+                    })}
+                    icon="ti ti-cloud-check"
+                  >
+                    <For each={current.sources}>
+                      {(source) => {
+                        const table = () => sourceTables().find((candidate) => candidate.id === source.sourceTableId);
+                        return (
+                          <div class="flex items-center gap-2 py-1">
+                            <span class="min-w-0 flex-1 truncate text-sm text-primary">{table()?.name ?? t().unavailableSource}</span>
+                            <Show when={table() && source.sourceTableId} keyed>
+                              {(sourceTableId) => (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  type="button"
+                                  class="text-danger"
+                                  onClick={() => void revoke(sourceTableId)}
+                                >
+                                  <i class="ti ti-unlink" /> {t().revoke}
+                                </Button>
+                              )}
                             </Show>
                           </div>
                         );
                       }}
                     </For>
-                  </div>
+                  </PanelDialog.Section>
                 )}
               </Show>
-            </Show>
-          </PanelDialog.Section>
-
-          <Show when={validationDiagnostics().length > 0}>
-            <PanelDialog.Section title={t().validation} subtitle={t().validationDetail} icon="ti ti-alert-triangle">
-              <div class="paper p-3">
-                <ul class="space-y-1 text-sm text-danger">
-                  <For each={validationDiagnostics()}>
-                    {(diagnostic) => <li>{t().federatedDiagnostic({ code: diagnostic.code, fallback: diagnostic.message })}</li>}
-                  </For>
-                </ul>
-              </div>
-            </PanelDialog.Section>
-          </Show>
-
-          <Show when={config()?.current} keyed>
-            {(current) => (
-              <PanelDialog.Section
-                title={t().publishedRevision}
-                subtitle={t().revisionStatus({
-                  revision: current.revision,
-                  status: current.status === "active" ? t().active : t().actionRequired,
-                })}
-                icon="ti ti-cloud-check"
-              >
-                <For each={current.sources}>
-                  {(source) => {
-                    const table = () => sourceTables().find((candidate) => candidate.id === source.sourceTableId);
-                    return (
-                      <div class="flex items-center gap-2 py-1">
-                        <span class="min-w-0 flex-1 truncate text-sm text-primary">{table()?.name ?? t().unavailableSource}</span>
-                        <Show when={table() && source.sourceTableId} keyed>
-                          {(sourceTableId) => (
-                            <Button variant="ghost" size="sm" type="button" class="text-danger" onClick={() => void revoke(sourceTableId)}>
-                              <i class="ti ti-unlink" /> {t().revoke}
-                            </Button>
-                          )}
-                        </Show>
-                      </div>
-                    );
-                  }}
-                </For>
-              </PanelDialog.Section>
-            )}
+            </fieldset>
           </Show>
         </Show>
       </PanelDialog.Body>
       <PanelDialog.Footer>
-        <Button variant="secondary" size="sm" type="button" onClick={props.close}>
+        <Button variant="secondary" size="sm" type="button" onClick={closeIfClean} disabled={busy()}>
           {t().close}
         </Button>
         <div class="flex items-center gap-2">
@@ -481,7 +555,7 @@ function FederatedTableDialog(props: { tableId: string; tableName: string; targe
             variant="secondary"
             size="sm"
             type="button"
-            disabled={validateMutation.loading() || selectedSources().length + hiddenSourceCount() === 0}
+            disabled={busy() || loading() || Boolean(loadError()) || selectedSources().length + hiddenSourceCount() === 0}
             onClick={() => validateMutation.mutate(undefined)}
           >
             {validateMutation.loading() ? <i class="ti ti-loader-2 animate-spin" /> : <i class="ti ti-checkup-list" />} {t().validate}
@@ -490,7 +564,7 @@ function FederatedTableDialog(props: { tableId: string; tableName: string; targe
             variant="secondary"
             size="sm"
             type="button"
-            disabled={saveMutation.loading()}
+            disabled={busy() || loading() || Boolean(loadError()) || !config()}
             onClick={() => saveMutation.mutate(undefined)}
           >
             {t().saveDraft}
@@ -499,7 +573,7 @@ function FederatedTableDialog(props: { tableId: string; tableName: string; targe
             variant="primary"
             size="sm"
             type="button"
-            disabled={publishMutation.loading() || selectedSources().length + hiddenSourceCount() === 0}
+            disabled={busy() || loading() || Boolean(loadError()) || selectedSources().length + hiddenSourceCount() === 0}
             onClick={() => publishMutation.mutate(undefined)}
           >
             {publishMutation.loading() ? <i class="ti ti-loader-2 animate-spin" /> : <i class="ti ti-cloud-upload" />} {t().publish}

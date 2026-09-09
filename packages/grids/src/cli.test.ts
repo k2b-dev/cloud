@@ -753,12 +753,14 @@ describe("grids CLI", () => {
     };
     const list = createContext(
       ["bases", "preservation-holds", "list", baseId],
-      { status: "active", page: "2", "per-page": "10" },
+      { status: "active", page: "2", "per-page": "10", search: " Review " },
       [jsonResponse(basePage), jsonResponse(page)],
       { output: "json" },
     );
     await gridsCli.run(list.ctx);
-    expect(list.calls.at(-1)?.path).toBe(`/api/grids/bases/${baseId}/preservation-holds?status=active&scope=all&page=2&per_page=10`);
+    expect(list.calls.at(-1)?.path).toBe(
+      `/api/grids/bases/${baseId}/preservation-holds?status=active&scope=all&q=Review&page=2&per_page=10`,
+    );
     expect(list.jsonValues).toEqual([page]);
 
     const create = createContext(

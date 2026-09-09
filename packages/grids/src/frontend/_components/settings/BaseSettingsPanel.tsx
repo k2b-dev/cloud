@@ -19,6 +19,7 @@ type Props = {
   accessEntries: AccessEntry[];
   navigationResources?: NavigationResource[];
   onClose?: () => void;
+  setDismissHandler?: (handler: () => void | Promise<void>) => void;
 };
 
 export default function BaseSettingsPanel(props: Props) {
@@ -68,6 +69,7 @@ export default function BaseSettingsPanel(props: Props) {
       setNavigationPending(false);
     }
   };
+  props.setDismissHandler?.(requestClose);
 
   return (
     <div ref={container} class="flex h-full min-h-0 flex-col overflow-hidden">

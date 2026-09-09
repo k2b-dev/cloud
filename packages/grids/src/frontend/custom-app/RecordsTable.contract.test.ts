@@ -8,7 +8,9 @@ describe("App Records table actions", () => {
     expect(source).toContain("renderActions={");
     expect(source).toContain("<FieldValue");
     expect(source).toContain("<IconButton");
-    expect(source).toContain("label={action.label}");
+    expect(source).toContain("label={actionLabel(row.recordId!, action)}");
+    expect(source).toContain("label={actionLabel(record.id, action)}");
+    expect(source).toContain("operation: active.operation");
     expect(source).toContain("body: { rowId, search: appliedQuery() || undefined, cursor: cursor() || undefined }");
     expect(source).toContain("event.stopPropagation()");
     expect(source).toContain("ti ti-external-link");

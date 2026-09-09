@@ -113,6 +113,18 @@ function FormulaPreview(props: { preview: FormulaPreviewResponse | null; loading
   );
 }
 
+export function FormulaBasics() {
+  const locale = useLocale();
+  const t = () => gridsFieldMessages.resolve([locale()]).t;
+  return (
+    <div class="flex flex-col gap-1 text-xs leading-snug">
+      <p>{t().formulaReferenceHelp}</p>
+      <p>{t().formulaRenameWarning}</p>
+      <p>{t().formulaStrings}</p>
+    </div>
+  );
+}
+
 export function FormulaExpressionEditor(props: {
   value: () => string;
   onInput: (value: string) => void;
@@ -122,6 +134,7 @@ export function FormulaExpressionEditor(props: {
   baseId?: string;
   tableId?: string;
   ariaLabel?: string;
+  showGuidance?: boolean;
 }) {
   const locale = useLocale();
   const t = () => gridsFieldMessages.resolve([locale()]).t;
@@ -193,12 +206,11 @@ export function FormulaExpressionEditor(props: {
 
   return (
     <div class="flex flex-col gap-3">
-      <div class="flex flex-col gap-1 text-xs leading-snug text-dimmed">
-        <span class="font-medium">{t().formulaBasics}</span>
-        <span>{t().formulaReferenceHelp}</span>
-        <span>{t().formulaRenameWarning}</span>
-        <span>{t().formulaStrings}</span>
-      </div>
+      <Show when={props.showGuidance !== false}>
+        <NoticeCard tone="info" title={t().formulaBasics}>
+          <FormulaBasics />
+        </NoticeCard>
+      </Show>
 
       <div class="flex flex-col gap-2 text-xs">
         <span class="font-medium text-secondary">{t().examples}</span>
@@ -209,11 +221,14 @@ export function FormulaExpressionEditor(props: {
                 variant="secondary"
                 size="sm"
                 type="button"
-                class="h-auto min-w-0 justify-start py-2 text-left"
+                class="grids-formula-example"
+                title={example.expression}
                 onClick={() => props.onInput(example.expression)}
               >
-                <span class="block text-[11px] font-medium text-secondary">{example.label}</span>
-                <code class="block truncate font-mono text-[11px] text-dimmed">{example.expression}</code>
+                <span class="flex min-w-0 flex-col gap-1">
+                  <span class="truncate text-[11px] font-medium text-secondary">{example.label}</span>
+                  <code class="block truncate font-mono text-[11px] font-normal text-dimmed">{example.expression}</code>
+                </span>
               </Button>
             )}
           </For>

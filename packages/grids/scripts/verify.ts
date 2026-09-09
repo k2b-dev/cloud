@@ -67,6 +67,13 @@ if (process.argv.includes("--bootstrap")) {
       "src/frontend/_components/custom-apps/CustomAppBlockPreview.behavior.test.tsx",
       "src/frontend/_components/workspace/BaseOverview.behavior.test.tsx",
       "src/frontend/_components/documents/DocumentDetailsDialog.behavior.test.tsx",
+      "src/frontend/_components/documents/DocumentGenerateDialog.behavior.test.tsx",
+      "src/frontend/_components/dialogs/PolicyDialogs.behavior.test.tsx",
+      "src/frontend/_components/dialogs/ViewSettingsDialogs.behavior.test.tsx",
+      "src/frontend/_components/forms/EditorDialogs.behavior.test.tsx",
+      "src/frontend/_components/settings/settings-creation.behavior.test.tsx",
+      "src/frontend/_components/records/RecordDialogs.behavior.test.tsx",
+      "src/frontend/_components/workflows/WorkflowLauncherManager.behavior.test.tsx",
     ];
     const packageRoot = join(root, "packages/grids");
     const all = [...new Bun.Glob("{src,scripts}/**/*.test.{ts,tsx}").scanSync(packageRoot)].sort();
@@ -80,7 +87,7 @@ if (process.argv.includes("--bootstrap")) {
       },
       { name: "sync", files: special.slice(0, 3), flags: [] },
       { name: "recovery-and-cleanup", files: special.slice(3, 5), flags: [] },
-      { name: "dom", files: dom, flags: ["--conditions=browser", "--preload", "./packages/ui/test/solid-dom-preload.ts"] },
+      { name: "dom", files: dom, flags: ["--isolate", "--conditions=browser", "--preload", "./packages/ui/test/solid-dom-preload.ts"] },
     ];
     for (const phase of phases) {
       const report = join(reports, `${phase.name}.xml`);

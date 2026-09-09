@@ -15,6 +15,8 @@ type Props = {
   excludeIds?: () => string[];
   clearable?: boolean;
   includeDeleted?: boolean;
+  required?: boolean;
+  error?: () => string | undefined;
 };
 
 export default function RecordPicker(props: Props) {
@@ -26,6 +28,8 @@ export default function RecordPicker(props: Props) {
     <Select
       label={props.label}
       description={props.description}
+      required={props.required}
+      error={props.error}
       placeholder={props.placeholder ?? t().searchRecords}
       icon="ti ti-database"
       activeIcon="ti ti-search"

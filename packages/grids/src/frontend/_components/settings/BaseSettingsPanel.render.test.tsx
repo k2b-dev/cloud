@@ -123,6 +123,8 @@ describe("Grids Base settings composition", () => {
       createComponent(CreatePreservationHoldDialog, {
         baseId: base.id,
         close: () => undefined,
+        save: async () => undefined,
+        setDismissHandler: () => undefined,
       }),
     );
     expect(html).toContain("Entire Base");
@@ -160,7 +162,8 @@ describe("Grids Base settings composition", () => {
     const sections = readFileSync(join(import.meta.dir, "BaseSettingsSections.tsx"), "utf8");
     const opener = readFileSync(join(import.meta.dir, "../sidebar/BaseSettingsButton.island.tsx"), "utf8");
 
-    expect(opener).toContain('cancelBehavior: "ignore"');
+    expect(opener).toContain("setDismissHandler={context.setDismissHandler}");
+    expect(panel).toContain("props.setDismissHandler?.(requestClose)");
     expect(panel).toContain("navigationPending() || savePending()");
     expect(panel).toContain("confirmDiscardIfDirty(hasUnsavedChanges)");
     expect(panel).toContain("confirmDiscardIfDirty(hasUnsavedChanges)) || savePending()");

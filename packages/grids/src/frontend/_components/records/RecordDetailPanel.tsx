@@ -1,7 +1,7 @@
 import type { DateContext } from "@k2b/stdlib";
 import { mutation as mutations, query } from "@k2b/stdlib/solid";
 import { Button, DescriptionList, DetailPanel, Dropdown, IconButton, NoticeCard, prompts, Tooltip, toast, useLocale } from "@k2b/ui";
-import { createEffect, onCleanup, Show } from "solid-js";
+import { createEffect, createSignal, onCleanup, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { PublicField as Field, PublicGridRecord as GridRecord } from "../../../api/public-dto";
 import type { PublicRecordFinalizationReadiness, PublicRecordFinalizationRequest } from "../../../api/record-finalization";
@@ -23,7 +23,7 @@ import RecordFileField from "./RecordFileField";
 import RecordHistorySection from "./RecordHistorySection";
 import RecordReadView from "./RecordReadView";
 import RecordReferencedBy from "./RecordReferencedBy.island";
-import { openRecordUpsertDialog } from "./RecordUpsertDialog";
+import { openRecordUpsertDialog, RecordSaveConflictError } from "./RecordUpsertDialog";
 import RecordVersions from "./RecordVersions.island";
 import { CorrectionDraftInvocationError, createCorrectionDraft } from "./record-correction";
 import { recordDisplayTitle } from "./record-display";
@@ -134,21 +134,24 @@ export default function RecordDetailPanel(props: Props) {
   };
 
   // ---- Mutations ---------------------------------------------------------
-  const updateMut = mutations.create<GridRecord, { rec: GridRecord; payload: Record<string, unknown>; audit?: RecordMutationAudit }>({
-    mutation: async ({ rec, payload, audit }) => {
+  const [updating, setUpdating] = createSignal(false);
+  const updateRecord = async (rec: GridRecord, payload: Record<string, unknown>, audit?: RecordMutationAudit, version = rec.version) => {
+    setUpdating(true);
+    try {
       const res = await apiClient.records[":tableId"][":recordId"].$patch(
         {
           param: { tableId: props.tableId, recordId: rec.id },
           json: { values: payload, audit },
         },
-        { headers: { "If-Match": String(rec.version) } },
+        { headers: { "If-Match": String(version) } },
       );
+      if (res.status === 409) throw new RecordSaveConflictError(await errorMessage(res, t().updateFailed));
       if (!res.ok) throw new Error(await errorMessage(res, t().updateFailed));
-      return res.json();
-    },
-    onSuccess: (updated) => props.onUpdated(updated),
-    onError: (e) => prompts.error(e.message),
-  });
+      props.onUpdated(await res.json());
+    } finally {
+      setUpdating(false);
+    }
+  };
 
   const deleteMut = mutations.create<string, { rec: GridRecord; audit?: RecordMutationAudit }>({
     mutation: async ({ rec, audit }) => {
@@ -309,7 +312,7 @@ export default function RecordDetailPanel(props: Props) {
       return;
     }
     let audit: RecordMutationAudit | undefined;
-    const result = await openRecordUpsertDialog({
+    await openRecordUpsertDialog({
       mode: "edit",
       fields: visibleFields(),
       baseId: props.baseId,
@@ -317,9 +320,18 @@ export default function RecordDetailPanel(props: Props) {
       record: rec,
       relationLabels: props.relationLabels,
       dateConfig: props.dateConfig,
-      beforeSubmit: async (payload) => {
+      onSubmit: (payload, version) => updateRecord(rec, payload, audit, version),
+      reloadRecord: async () => {
+        const response = await apiClient.records[":tableId"][":recordId"].$get({
+          param: { tableId: props.tableId, recordId: rec.id },
+          query: {},
+        });
+        if (!response.ok) throw new Error(await errorMessage(response, t().updateFailed));
+        return response.json();
+      },
+      beforeSubmit: async (payload, baselineData) => {
         const changedFieldIds = Object.keys(payload).filter(
-          (fieldId) => JSON.stringify(payload[fieldId]) !== JSON.stringify(rec.data[fieldId]),
+          (fieldId) => JSON.stringify(payload[fieldId]) !== JSON.stringify(baselineData[fieldId]),
         );
         const requirement = recordAuditRequirementFor(props.auditPolicy, "update", changedFieldIds);
         if (!requirement) {
@@ -343,8 +355,6 @@ export default function RecordDetailPanel(props: Props) {
         return true;
       },
     });
-    if (!result) return;
-    updateMut.mutate({ rec, payload: result, audit });
   };
 
   const handleDelete = async (rec: GridRecord) => {
@@ -631,7 +641,7 @@ export default function RecordDetailPanel(props: Props) {
                   type="button"
                   aria-label={t().editRecordLabel}
                   onClick={() => handleEdit(rec)}
-                  disabled={updateMut.loading()}
+                  disabled={updating()}
                 >
                   <i class="ti ti-pencil" /> {t().edit}
                 </Button>

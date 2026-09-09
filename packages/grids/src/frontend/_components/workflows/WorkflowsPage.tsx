@@ -498,22 +498,31 @@ export default function WorkflowsPage(props: Props) {
 
   const openEditor = async (workflow: PublicWorkflow) => {
     await dialogCore.open<void>(
-      (close) => (
+      (close, context) => (
         <WorkflowEditor
           baseId={props.baseId}
           tables={props.tables}
           workflow={workflow}
+          setDismissHandler={context.setDismissHandler}
           onChanged={() => props.onWorkflowChanged()}
           onClose={close}
         />
       ),
-      { ...panelDialogWorkspaceOptions, cancelBehavior: "ignore" },
+      panelDialogWorkspaceOptions,
     );
   };
 
   const openLaunchers = async (workflow: PublicWorkflow) => {
     await dialogCore.open<void>(
-      (close) => <WorkflowLauncherManager workflow={workflow} tables={props.tables} onChanged={props.onWorkflowChanged} onClose={close} />,
+      (close, context) => (
+        <WorkflowLauncherManager
+          workflow={workflow}
+          tables={props.tables}
+          onChanged={props.onWorkflowChanged}
+          onClose={close}
+          setDismissHandler={context.setDismissHandler}
+        />
+      ),
       panelDialogWorkspaceOptions,
     );
   };

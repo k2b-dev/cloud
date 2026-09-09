@@ -52,6 +52,63 @@ describe("Base navigation interactions", () => {
     return;
   }
 
+  test("overview tabs use the SSR URL, preserve other params and restore browser history", async () => {
+    const dom = createDomTestHarness();
+    const { default: Overview } = await import("./BaseOverview");
+    const current = state();
+    current.navigation = { revision: 1, groups: [{ id: "GROUP1", name: "Loan desk", entries: [] }] };
+    current.rememberPath = "/app/grids/BASE01?tab=resources";
+    window.history.replaceState(null, "", "/app/grids/BASE01?edit=true&tab=resources");
+    const dispose = render(() => createComponent(Overview, { state: current }), dom.root);
+    try {
+      const selected = () => dom.root.querySelector('[role="tab"][aria-selected="true"]')?.textContent;
+      expect(selected()).toBe("All resources");
+      const tabs = dom.root.querySelectorAll<HTMLButtonElement>('[role="tab"]');
+      tabs[0]!.click();
+      expect(selected()).toBe("Groups");
+      expect(window.location.search).toBe("?edit=true&tab=groups");
+      expect(dom.root.querySelector('[role="tabpanel"]')?.textContent).toContain("Loan desk");
+      expect(dom.root.querySelector("input")).toBeNull();
+      window.history.replaceState(null, "", "/app/grids/BASE01?edit=true&tab=resources");
+      window.dispatchEvent(new Event("popstate"));
+      expect(selected()).toBe("All resources");
+      expect(dom.root.querySelector("input")).not.toBeNull();
+    } finally {
+      dispose();
+      dom.cleanup();
+    }
+  });
+
+  test("field option sections collapse through the header without remounting inputs", async () => {
+    const dom = createDomTestHarness();
+    const { FieldOptionsSection } = await import("../fields/FieldOptionsSection");
+    const input = document.createElement("input");
+    input.value = "Unsaved";
+    const dispose = render(
+      () => createComponent(FieldOptionsSection, { title: "Appearance", icon: "ti ti-palette", children: input }),
+      dom.root,
+    );
+    try {
+      const expand = dom.root.querySelector<HTMLButtonElement>('button[aria-expanded="false"]')!;
+      const collapse = dom.root.querySelector<HTMLButtonElement>('button[aria-expanded="true"]')!;
+      const panel = document.getElementById(expand.getAttribute("aria-controls")!)!;
+      expect(panel.hidden).toBe(true);
+      expand.click();
+      expect(panel.hidden).toBe(false);
+      expect(document.activeElement).toBe(collapse);
+      expect(collapse.closest("header")?.textContent).toContain("Appearance");
+      collapse.click();
+      expect(panel.hidden).toBe(true);
+      expect(document.activeElement).toBe(expand);
+      expand.click();
+      expect(panel.querySelector("input")).toBe(input);
+      expect(input.value).toBe("Unsaved");
+    } finally {
+      dispose();
+      dom.cleanup();
+    }
+  });
+
   test("New only offers permitted resources and opens the existing table dialog without creating on cancel", async () => {
     const dom = createDomTestHarness();
     const { default: NewResource } = await import("../sidebar/NewResourceButton.island");

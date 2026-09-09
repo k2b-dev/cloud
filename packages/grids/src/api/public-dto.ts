@@ -19,12 +19,12 @@ import {
   FormatSpecSchema,
   type GridRecord,
   GridRecordSchema,
+  PublicTableAuditPolicySchema,
   RecordOperationBodySchema,
   RecordPayloadSchema,
   ShortIdSchema,
   type Table,
   type TableAuditPolicy,
-  TableAuditPolicySchema,
   TableMutationPolicySchema,
   TableQueryResponseSchema,
   TableSchema,
@@ -53,14 +53,6 @@ const PublicFieldColumnSchema = z.object({
   label: z.string().optional(),
   format: FormatSpecSchema.optional(),
 });
-
-const TableAuditPolicyObjectSchema = TableAuditPolicySchema.removeDefault();
-const PublicAuditUpdateRequirementSchema = TableAuditPolicyObjectSchema.shape.update
-  .unwrap()
-  .safeExtend({ fieldIds: z.array(ShortIdSchema).max(200).default([]) });
-const PublicTableAuditPolicySchema = TableAuditPolicyObjectSchema.extend({
-  update: PublicAuditUpdateRequirementSchema.optional(),
-}).default({});
 
 export const PublicTableSchema = TableSchema.omit({ id: true, shortId: true, baseId: true }).extend({
   id: ShortIdSchema,

@@ -4,7 +4,7 @@ import { renderToString } from "solid-js/web";
 import "../ssr-test-plugin";
 import type { PublicOkWorkspaceState } from "./workspace-public-state-model";
 
-const { default: GridsWorkspace } = await import("./GridsWorkspace");
+const { default: GridsWorkspace, routeClientState } = await import("./GridsWorkspace");
 
 const workspaceState = (): PublicOkWorkspaceState => ({
   kind: "ok",
@@ -47,6 +47,13 @@ const workspaceState = (): PublicOkWorkspaceState => ({
 });
 
 describe("GridsWorkspace", () => {
+  test("All documents preserves resolved template access without granting extra rights", () => {
+    const state = workspaceState();
+    state.route = { kind: "documents", initialBrowserPage: { items: [], folders: [], path: [], cursor: null, hasMore: false } };
+    state.catalog.documentTemplateLevels = { TMPL01: "admin", TMPL02: "write", TMPL03: "read" };
+    expect(routeClientState(state).catalog.documentTemplateLevels).toEqual(state.catalog.documentTemplateLevels);
+    expect(routeClientState(state).catalog.documentTemplateLevels.MISSING).toBeUndefined();
+  });
   test("owns one content shell outside the interactive route island", () => {
     const html = renderToString(() =>
       createComponent(GridsWorkspace, {

@@ -3,6 +3,7 @@ import {
   Checkbox,
   dialogCore,
   MultiSelectInput,
+  NoticeCard,
   PanelDialog,
   panelDialogOptions,
   ScrollArea,
@@ -69,7 +70,7 @@ const downloadBlob = (blob: Blob, filename: string) => {
   URL.revokeObjectURL(url);
 };
 
-const ExportDialogBody = (props: OpenArgs & { close: () => void }) => {
+const ExportDialogBody = (props: OpenArgs & { close: () => void; registerClose: (handler: () => void) => void }) => {
   const locale = useLocale();
   const t = () => recordMessages.resolve([locale()]).t;
   const [format, setFormat] = createSignal<"csv" | "json">("csv");
@@ -77,33 +78,57 @@ const ExportDialogBody = (props: OpenArgs & { close: () => void }) => {
   const [markdown, setMarkdown] = createSignal<"raw" | "html">("raw");
   const [rows, setRows] = createSignal<RowState[]>(initialRows(props));
   const [targetFields, setTargetFields] = createSignal<Record<string, Field[]>>({});
+  const [targetLoading, setTargetLoading] = createSignal<Record<string, boolean>>({});
+  const [targetError, setTargetError] = createSignal<Record<string, string | undefined>>({});
   const [busy, setBusy] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
+  const requestClose = () => {
+    if (!busy()) props.close();
+  };
+  props.registerClose(requestClose);
 
   const fieldsById = new Map(props.fields.map((field) => [field.id, field]));
 
+  const loadTargetFields = async (tableId: string) => {
+    if (targetLoading()[tableId]) return;
+    setTargetLoading((current) => ({ ...current, [tableId]: true }));
+    setTargetError((current) => ({ ...current, [tableId]: undefined }));
+    try {
+      const res = await apiClient.fields["by-table"][":tableId"].$get({ param: { tableId } });
+      if (!res.ok) throw new Error(await errorMessage(res, t().exportRelationFieldsFailed));
+      const fields = await res.json();
+      setTargetFields((current) => ({ ...current, [tableId]: fields.filter((field) => !field.deletedAt) }));
+    } catch (cause) {
+      setTargetError((current) => ({ ...current, [tableId]: cause instanceof Error ? cause.message : t().exportRelationFieldsFailed }));
+    } finally {
+      setTargetLoading((current) => ({ ...current, [tableId]: false }));
+    }
+  };
   onMount(() => {
-    const targetIds = [...new Set(props.fields.map(relationTargetTableId).filter((id): id is string => !!id))];
-    void Promise.all(
-      targetIds.map(async (tableId) => {
-        const res = await apiClient.fields["by-table"][":tableId"].$get({ param: { tableId } });
-        if (!res.ok) return [tableId, []] as const;
-        const fields = await res.json();
-        return [tableId, fields.filter((f) => !f.deletedAt)] as const;
-      }),
-    ).then((entries) => setTargetFields(Object.fromEntries(entries)));
+    for (const tableId of new Set(props.fields.map(relationTargetTableId).filter((id): id is string => Boolean(id))))
+      void loadTargetFields(tableId);
   });
+  const selectedFieldsUnavailable = () =>
+    rows().some((row) => {
+      if (!row.enabled || row.relationMode !== "fields") return false;
+      const field = fieldsById.get(row.fieldId);
+      const target = field ? relationTargetTableId(field) : null;
+      return !target || targetLoading()[target] || Boolean(targetError()[target]);
+    });
 
   const updateRow = (index: number, patch: Partial<RowState>) => {
+    if (busy()) return;
     setRows((current) => current.map((row, i) => (i === index ? { ...row, ...patch } : row)));
   };
 
   const runExport = async () => {
+    if (busy()) return;
     const selected = rows().filter((row) => row.enabled);
     if (selected.length === 0) {
       setError(t().chooseField);
       return;
     }
+    if (selectedFieldsUnavailable()) return;
 
     const body: ExportBody = {
       format: format(),
@@ -143,113 +168,150 @@ const ExportDialogBody = (props: OpenArgs & { close: () => void }) => {
 
   return (
     <PanelDialog>
-      <PanelDialog.Header title={t().exportRecords} icon="ti ti-download" close={props.close} />
+      <PanelDialog.Header title={t().exportRecords} icon="ti ti-download" close={requestClose} closeDisabled={busy()} />
       <PanelDialog.Body>
-        <div class="grid gap-3 sm:grid-cols-3">
-          <Select
-            label={t().format}
-            value={format}
-            onValueChange={(value) => setFormat(value as "csv" | "json")}
-            options={[
-              { id: "csv", label: "CSV" },
-              { id: "json", label: "JSON" },
-            ]}
-          />
-          <Show when={format() === "csv"}>
+        <fieldset disabled={busy()} class="contents">
+          <div class="grid gap-3 sm:grid-cols-3">
             <Select
-              label={t().delimiter}
-              value={delimiter}
-              onValueChange={(value) => setDelimiter(value as "," | ";" | "\t" | "|")}
+              label={t().format}
+              value={format}
+              onValueChange={(value) => setFormat(value as "csv" | "json")}
               options={[
-                { id: ",", label: t().comma },
-                { id: ";", label: t().semicolon },
-                { id: "\t", label: t().tab },
-                { id: "|", label: t().pipe },
+                { id: "csv", label: "CSV" },
+                { id: "json", label: "JSON" },
               ]}
             />
-          </Show>
-          <Select
-            label={t().markdown}
-            value={markdown}
-            onValueChange={(value) => setMarkdown(value as "raw" | "html")}
-            options={[
-              { id: "raw", label: t().keepMarkdown },
-              { id: "html", label: t().convertHtml },
-            ]}
-          />
-        </div>
+            <Show when={format() === "csv"}>
+              <Select
+                label={t().delimiter}
+                value={delimiter}
+                onValueChange={(value) => setDelimiter(value as "," | ";" | "\t" | "|")}
+                options={[
+                  { id: ",", label: t().comma },
+                  { id: ";", label: t().semicolon },
+                  { id: "\t", label: t().tab },
+                  { id: "|", label: t().pipe },
+                ]}
+              />
+            </Show>
+            <Select
+              label={t().markdown}
+              value={markdown}
+              onValueChange={(value) => setMarkdown(value as "raw" | "html")}
+              options={[
+                { id: "raw", label: t().keepMarkdown },
+                { id: "html", label: t().convertHtml },
+              ]}
+            />
+          </div>
 
-        <PanelDialog.Section title={t().exportFields} subtitle={t().exportFieldsSubtitle} icon="ti ti-columns">
-          <ScrollArea class="flex max-h-[46vh] flex-col gap-2">
-            <For each={rows()}>
-              {(row, index) => {
-                const field = fieldsById.get(row.fieldId)!;
-                const targetTableId = relationTargetTableId(field);
-                const availableTargetFields = () =>
-                  targetTableId ? (targetFields()[targetTableId] ?? []).sort((a, b) => a.position - b.position) : [];
-                return (
-                  <div class="px-1 py-2">
-                    <div class="grid gap-2 sm:grid-cols-2 sm:items-start">
-                      <Checkbox
-                        label={field.name}
-                        description={field.type}
-                        value={() => row.enabled}
-                        onValueChange={(enabled) => updateRow(index(), { enabled })}
-                      />
-                      <TextInput
-                        label={t().columnLabel}
-                        value={() => row.label}
-                        onValueChange={(label) => updateRow(index(), { label })}
-                        disabled={!row.enabled}
-                      />
-                    </div>
-                    <Show when={field.type === "relation" && row.enabled}>
-                      <div class="mt-2 grid gap-2 sm:grid-cols-[12rem_1fr]">
-                        <Select
-                          label={t().relationOutput}
-                          value={() => row.relationMode}
-                          onValueChange={(relationMode) => updateRow(index(), { relationMode: relationMode as RowState["relationMode"] })}
-                          options={[
-                            { id: "ids", label: t().ids },
-                            { id: "labels", label: t().labels },
-                            { id: "fields", label: t().selectedFields },
-                          ]}
+          <PanelDialog.Section title={t().exportFields} subtitle={t().exportFieldsSubtitle} icon="ti ti-columns">
+            <ScrollArea class="flex max-h-[46vh] flex-col gap-2">
+              <For each={rows()}>
+                {(row, index) => {
+                  const field = fieldsById.get(row.fieldId)!;
+                  const targetTableId = relationTargetTableId(field);
+                  const availableTargetFields = () =>
+                    targetTableId ? (targetFields()[targetTableId] ?? []).sort((a, b) => a.position - b.position) : [];
+                  return (
+                    <div class="px-1 py-2">
+                      <div class="grid gap-2 sm:grid-cols-2 sm:items-start">
+                        <Checkbox
+                          label={field.name}
+                          description={field.type}
+                          value={() => row.enabled}
+                          onValueChange={(enabled) => updateRow(index(), { enabled })}
                         />
-                        <Show when={row.relationMode === "fields"}>
-                          <MultiSelectInput
-                            label={t().targetFields}
-                            placeholder={t().chooseFields}
-                            icon="ti ti-columns"
-                            value={() => row.targetFieldIds}
-                            onValueChange={(targetFieldIds) => updateRow(index(), { targetFieldIds })}
-                            options={availableTargetFields().map((target) => ({
-                              id: target.id,
-                              label: target.name,
-                              description: target.type,
-                              icon: target.icon ?? "ti ti-columns",
-                            }))}
-                            clearable
-                          />
-                        </Show>
+                        <TextInput
+                          label={t().columnLabel}
+                          value={() => row.label}
+                          onValueChange={(label) => updateRow(index(), { label })}
+                          disabled={!row.enabled}
+                        />
                       </div>
-                    </Show>
-                  </div>
-                );
-              }}
-            </For>
-          </ScrollArea>
-          <Show when={error()}>
-            <p class="text-xs text-red-600 dark:text-red-400">{error()}</p>
-          </Show>
-        </PanelDialog.Section>
+                      <Show when={field.type === "relation" && row.enabled}>
+                        <div class="mt-2 grid gap-2 sm:grid-cols-[12rem_1fr]">
+                          <Select
+                            label={t().relationOutput}
+                            value={() => row.relationMode}
+                            onValueChange={(relationMode) => updateRow(index(), { relationMode: relationMode as RowState["relationMode"] })}
+                            options={[
+                              { id: "ids", label: t().ids },
+                              { id: "labels", label: t().labels },
+                              { id: "fields", label: t().selectedFields },
+                            ]}
+                          />
+                          <Show when={row.relationMode === "fields"}>
+                            <Show
+                              when={targetTableId && !targetLoading()[targetTableId] && !targetError()[targetTableId]}
+                              fallback={
+                                <Show
+                                  when={targetTableId && targetError()[targetTableId]}
+                                  fallback={
+                                    <p class="text-sm text-dimmed" role="status">
+                                      {t().loadingExportRelationFields}
+                                    </p>
+                                  }
+                                >
+                                  {(message) => (
+                                    <NoticeCard tone="danger">
+                                      <p>{message()}</p>
+                                      <Button
+                                        variant="secondary"
+                                        size="sm"
+                                        onClick={() => {
+                                          if (targetTableId) void loadTargetFields(targetTableId);
+                                        }}
+                                      >
+                                        {t().retry}
+                                      </Button>
+                                    </NoticeCard>
+                                  )}
+                                </Show>
+                              }
+                            >
+                              <MultiSelectInput
+                                label={t().targetFields}
+                                placeholder={t().chooseFields}
+                                icon="ti ti-columns"
+                                value={() => row.targetFieldIds}
+                                onValueChange={(targetFieldIds) => updateRow(index(), { targetFieldIds })}
+                                options={availableTargetFields().map((target) => ({
+                                  id: target.id,
+                                  label: target.name,
+                                  description: target.type,
+                                  icon: target.icon ?? "ti ti-columns",
+                                }))}
+                                clearable
+                              />
+                            </Show>
+                          </Show>
+                        </div>
+                      </Show>
+                    </div>
+                  );
+                }}
+              </For>
+            </ScrollArea>
+            <Show when={error()}>
+              <p class="text-xs text-red-600 dark:text-red-400">{error()}</p>
+            </Show>
+          </PanelDialog.Section>
+        </fieldset>
       </PanelDialog.Body>
       <PanelDialog.Footer>
         <span />
         <div class="flex items-center gap-2">
-          <Button variant="ghost" size="sm" type="button" onClick={props.close} disabled={busy()}>
+          <Button variant="ghost" size="sm" type="button" onClick={requestClose} disabled={busy()}>
             {t().cancel}
           </Button>
-          <Button variant="primary" size="sm" type="button" onClick={() => void runExport()} disabled={busy()}>
+          <Button
+            variant="primary"
+            size="sm"
+            type="button"
+            onClick={() => void runExport()}
+            disabled={busy() || selectedFieldsUnavailable()}
+          >
             <i class={`ti ${busy() ? "ti-loader-2 animate-spin" : "ti-download"} text-sm`} />
             {t().export}
           </Button>
@@ -260,4 +322,7 @@ const ExportDialogBody = (props: OpenArgs & { close: () => void }) => {
 };
 
 export const openExportRecordsDialog = (args: OpenArgs): Promise<void> =>
-  dialogCore.open<void>((close) => <ExportDialogBody {...args} close={close} />, panelDialogOptions);
+  dialogCore.open<void>(
+    (close, context) => <ExportDialogBody {...args} close={close} registerClose={context.setDismissHandler} />,
+    panelDialogOptions,
+  );

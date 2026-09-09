@@ -11,6 +11,7 @@ export const sidebarMessages = i18n.define({
       newApp: "New App",
       newAppSubtitle: "Start with one editable Home page.",
       name: "Name",
+      requiredName: "Enter a name.",
       appNameExample: "e.g. Sales dashboard",
       cancel: "Cancel",
       create: "Create",
@@ -34,6 +35,7 @@ export const sidebarMessages = i18n.define({
       edit: "Edit",
       submit: "Submit",
       newWorkflow: "New workflow",
+      changeStarter: "Choose another starter",
       newWorkflowSubtitle: "Start blank or install a guided Record action.",
       closeSelectedRecords: "Close selected Records",
       closeSelectedRecordsDescription:
@@ -80,6 +82,7 @@ export const sidebarMessages = i18n.define({
       newApp: "Neue App",
       newAppSubtitle: "Beginne mit einer bearbeitbaren Startseite.",
       name: "Name",
+      requiredName: "Gib einen Namen ein.",
       appNameExample: "z. B. Vertriebsübersicht",
       cancel: "Abbrechen",
       create: "Erstellen",
@@ -103,6 +106,7 @@ export const sidebarMessages = i18n.define({
       edit: "Bearbeiten",
       submit: "Ausfüllen",
       newWorkflow: "Neuer Workflow",
+      changeStarter: "Andere Vorlage wählen",
       newWorkflowSubtitle: "Leer beginnen oder eine geführte Record-Aktion einrichten.",
       closeSelectedRecords: "Ausgewählte Records schließen",
       closeSelectedRecordsDescription:

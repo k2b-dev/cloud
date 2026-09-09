@@ -1,10 +1,23 @@
-import { Button, Checkbox, dialogCore, MultiSelectInput, NoticeCard, PanelDialog, panelDialogOptions, TextInput, useLocale } from "@k2b/ui";
-import { createEffect, createMemo, createSignal, Show } from "solid-js";
+import { query } from "@k2b/stdlib/solid";
+import {
+  Button,
+  Checkbox,
+  confirmDiscardIfDirty,
+  dialogCore,
+  MultiSelectInput,
+  NoticeCard,
+  PanelDialog,
+  panelDialogOptions,
+  TextInput,
+  useLocale,
+} from "@k2b/ui";
+import { createMemo, createSignal, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { FormFieldEntry } from "../../../service/forms";
 import { isRecordInputField } from "../fields/field-render";
 import { fieldTypeIcon, fieldTypeLabel } from "../fields/field-type-meta";
 import { gridsFieldMessages } from "../fields/messages";
+import { errorMessage } from "../utils/api-helpers";
 import { FieldInput, type FrontendField } from "./form-fields";
 import { gridsFormMessages } from "./messages";
 export function FormFieldInspector(props: {
@@ -137,10 +150,15 @@ const cloneFormFieldEntry = (entry: FormFieldEntry): FormFieldEntry => {
 };
 
 export const openFormFieldSettingsDialog = (args: { entry: FormFieldEntry; field: FrontendField }) =>
-  dialogCore.open<FormFieldEntry | null>((close) => {
+  dialogCore.open<FormFieldEntry | null>((close, context) => {
     const locale = useLocale();
     const t = () => gridsFormMessages.resolve([locale()]).t;
     const [draft, setDraft] = createSignal<FormFieldEntry>(cloneFormFieldEntry(args.entry));
+    const initial = JSON.stringify(draft());
+    const dismiss = async () => {
+      if (await confirmDiscardIfDirty(JSON.stringify(draft()) !== initial)) close(null);
+    };
+    context.setDismissHandler(dismiss);
     const userEntry = createMemo(() =>
       draft().kind === "user_input" ? (draft() as Extract<FormFieldEntry, { kind: "user_input" }>) : null,
     );
@@ -159,7 +177,7 @@ export const openFormFieldSettingsDialog = (args: { entry: FormFieldEntry; field
         <PanelDialog.Header
           title={t().fieldSettings({ name: args.field.name })}
           icon={fieldTypeIcon(args.field.type, args.field.icon)}
-          close={() => close(null)}
+          close={dismiss}
         />
         <PanelDialog.Body>
           <FormFieldSettings
@@ -174,7 +192,7 @@ export const openFormFieldSettingsDialog = (args: { entry: FormFieldEntry; field
         <PanelDialog.Footer>
           <span class="text-[11px] text-dimmed">{t().confirmStagesSettings}</span>
           <div class="flex items-center gap-2">
-            <Button variant="secondary" size="sm" type="button" onClick={() => close(null)}>
+            <Button variant="secondary" size="sm" type="button" onClick={dismiss}>
               {t().cancel}
             </Button>
             <Button variant="primary" size="sm" type="button" onClick={() => close(cloneFormFieldEntry(draft()))}>
@@ -194,17 +212,17 @@ function InlineCreateEditor(props: {
   const t = () => gridsFormMessages.resolve([locale()]).t;
   const targetTableId = () =>
     props.field.type === "relation" ? (props.field.config as { targetTableId?: string }).targetTableId : undefined;
-  const [targetFields, setTargetFields] = createSignal<FrontendField[]>([]);
-
-  createEffect(() => {
-    const tableId = targetTableId();
-    setTargetFields([]);
-    if (!tableId) return;
-    void (async () => {
-      const res = await apiClient.fields["by-table"][":tableId"].$get({ param: { tableId } });
-      if (res.ok && targetTableId() === tableId) setTargetFields(await res.json());
-    })();
+  const fieldsQuery = query.create({
+    source: targetTableId,
+    load: async (tableId, { abortSignal }) => {
+      if (!tableId) return [];
+      const res = await apiClient.fields["by-table"][":tableId"].$get({ param: { tableId } }, { init: { signal: abortSignal } });
+      if (!res.ok) throw new Error(await errorMessage(res, t().loadInlineFieldsFailed));
+      return res.json();
+    },
   });
+  const targetFields = () => fieldsQuery.data() ?? [];
+  const fieldsUnavailable = () => fieldsQuery.loading() || fieldsQuery.refreshing() || Boolean(fieldsQuery.error());
 
   const enabled = () => Boolean(props.entry?.inlineCreate?.enabled);
   const selectedFieldIds = () => (props.entry?.inlineCreate?.fields ?? []).map((entry) => entry.fieldId);
@@ -221,7 +239,7 @@ function InlineCreateEditor(props: {
   const selectedInlineOptions = createMemo(() =>
     selectedFieldIds()
       .map((fieldId) => targetFields().find((field) => field.id === fieldId))
-      .filter((field): field is FrontendField => Boolean(field))
+      .filter((field) => field !== undefined)
       .map(fieldOption),
   );
 
@@ -260,7 +278,31 @@ function InlineCreateEditor(props: {
   return (
     <Show when={targetTableId()}>
       <div class="mt-1 flex flex-col gap-2">
-        <Checkbox label={t().inlineCreate} description={t().inlineCreateDescription} value={enabled} onValueChange={setEnabled} />
+        <Checkbox
+          label={t().inlineCreate}
+          description={t().inlineCreateDescription}
+          value={enabled}
+          onValueChange={setEnabled}
+          disabled={fieldsUnavailable()}
+        />
+        <Show when={fieldsQuery.loading()}>
+          <p class="text-sm text-dimmed" role="status">
+            {t().loadingFields}
+          </p>
+        </Show>
+        <Show when={fieldsQuery.error()}>
+          {(error) => (
+            <NoticeCard
+              tone="danger"
+              title={t().loadInlineFieldsFailed}
+              detail={error().message === t().loadInlineFieldsFailed ? undefined : error().message}
+            >
+              <Button variant="secondary" size="sm" onClick={() => fieldsQuery.refresh()}>
+                {t().retry}
+              </Button>
+            </NoticeCard>
+          )}
+        </Show>
         <Show when={enabled()}>
           <MultiSelectInput
             label={t().inlineFields}
@@ -272,6 +314,7 @@ function InlineCreateEditor(props: {
             options={candidateOptions()}
             selectedOptions={selectedInlineOptions}
             clearable
+            disabled={fieldsUnavailable()}
           />
         </Show>
       </div>

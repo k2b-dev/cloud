@@ -1,7 +1,9 @@
+import { query } from "@k2b/stdlib/solid";
 import {
   Button,
   dialogCore,
   IconButton,
+  NoticeCard,
   PanelDialog,
   Placeholder,
   panelDialogOptions,
@@ -11,7 +13,7 @@ import {
   Tooltip,
   useLocale,
 } from "@k2b/ui";
-import { createResource, createSignal, For, Show } from "solid-js";
+import { createSignal, For, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import { type DocumentTemplateStarter, getDocumentTemplateStarters } from "../../../document-template-starters";
 import { documentMessages, documentStarterPresentation } from "../documents/messages";
@@ -41,17 +43,34 @@ function DocumentTemplatesManager(props: { baseId: string; tableId: string; tabl
   const locale = useLocale();
   const t = () => documentMessages.resolve([locale()]).t;
   const [reordering, setReordering] = createSignal(false);
-  const [templates, { refetch }] = createResource(
-    () => props.tableId,
-    async (tableId) => {
-      const res = await apiClient.documents.templates["by-table"][":tableId"].full.$get({ param: { tableId } });
-      if (!res.ok) {
-        prompts.error(await errorMessage(res, t().failedLoadTemplates));
-        return [] as PublicDocumentTemplate[];
-      }
+  const [actionPending, setActionPending] = createSignal(false);
+  const [actionError, setActionError] = createSignal<string | null>(null);
+  const templatesQuery = query.create({
+    source: () => props.tableId,
+    load: async (tableId, { abortSignal }) => {
+      const res = await apiClient.documents.templates["by-table"][":tableId"].full.$get(
+        { param: { tableId } },
+        { init: { signal: abortSignal } },
+      );
+      if (!res.ok) throw new Error(await errorMessage(res, t().failedLoadTemplates));
       return res.json();
     },
-  );
+  });
+  const templates = templatesQuery.data;
+  const refetch = templatesQuery.refresh;
+  const busy = () => actionPending() || reordering();
+  const runAction = async (action: () => Promise<unknown>) => {
+    if (busy()) return;
+    setActionPending(true);
+    setActionError(null);
+    try {
+      await action();
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : t().failedUpdateTemplate);
+    } finally {
+      setActionPending(false);
+    }
+  };
 
   const deleteTemplate = async (template: PublicDocumentTemplate) => {
     const confirmed = await prompts.confirm(t().deleteTemplateConfirm({ name: template.name }), {
@@ -62,8 +81,7 @@ function DocumentTemplatesManager(props: { baseId: string; tableId: string; tabl
     if (!confirmed) return;
     const res = await apiClient.documents.templates[":templateId"].$delete({ param: { templateId: template.id } });
     if (!res.ok) {
-      prompts.error(await errorMessage(res, t().failedDeleteTemplate));
-      return;
+      throw new Error(await errorMessage(res, t().failedDeleteTemplate));
     }
     await refetch();
   };
@@ -71,8 +89,7 @@ function DocumentTemplatesManager(props: { baseId: string; tableId: string; tabl
   const patchTemplate = async (template: PublicDocumentTemplate, patch: Partial<Pick<PublicDocumentTemplate, "enabled" | "position">>) => {
     const res = await apiClient.documents.templates[":templateId"].$patch({ param: { templateId: template.id }, json: patch });
     if (!res.ok) {
-      prompts.error(await errorMessage(res, t().failedUpdateTemplate));
-      return false;
+      throw new Error(await errorMessage(res, t().failedUpdateTemplate));
     }
     await refetch();
     return true;
@@ -90,8 +107,7 @@ function DocumentTemplatesManager(props: { baseId: string; tableId: string; tabl
       },
     });
     if (!res.ok) {
-      prompts.error(await errorMessage(res, t().failedDuplicateTemplate));
-      return;
+      throw new Error(await errorMessage(res, t().failedDuplicateTemplate));
     }
     await refetch();
   };
@@ -141,19 +157,34 @@ function DocumentTemplatesManager(props: { baseId: string; tableId: string; tabl
     <div class="flex flex-col gap-3">
       <div class="flex items-center justify-between gap-2">
         <span class="text-xs text-dimmed">
-          {templates.loading
+          {templatesQuery.loading()
             ? t().loading
-            : t().templateCount({
-                count: templates()?.length ?? 0,
-                formatted: new Intl.NumberFormat(locale()).format(templates()?.length ?? 0),
-              })}
+            : templatesQuery.error()
+              ? ""
+              : t().templateCount({
+                  count: templates()?.length ?? 0,
+                  formatted: new Intl.NumberFormat(locale()).format(templates()?.length ?? 0),
+                })}
         </span>
         <Button variant="secondary" size="sm" type="button" onClick={() => void addTemplate()}>
           <i class="ti ti-plus" /> {t().addTemplate}
         </Button>
       </div>
 
-      <Show when={!templates.loading && (templates()?.length ?? 0) === 0}>
+      <Show when={actionError()}>{(message) => <NoticeCard tone="danger" title={message()} />}</Show>
+      <Show when={templatesQuery.error()}>
+        <Placeholder
+          state="error"
+          title={t().failedLoadTemplates}
+          description={templatesQuery.error()?.message !== t().failedLoadTemplates ? templatesQuery.error()?.message : undefined}
+          action={
+            <Button variant="secondary" size="sm" onClick={() => void refetch()}>
+              {t().retry}
+            </Button>
+          }
+        />
+      </Show>
+      <Show when={!templatesQuery.loading() && !templatesQuery.error() && (templates()?.length ?? 0) === 0}>
         <Placeholder align="left" description={t().noTemplates} />
       </Show>
 
@@ -179,7 +210,8 @@ function DocumentTemplatesManager(props: { baseId: string; tableId: string; tabl
                   size="sm"
                   type="button"
                   label={template.enabled ? t().disableTemplate : t().enableTemplate}
-                  onClick={() => void patchTemplate(template, { enabled: !template.enabled })}
+                  disabled={busy()}
+                  onClick={() => void runAction(() => patchTemplate(template, { enabled: !template.enabled }))}
                 >
                   <i class={`ti ${template.enabled ? "ti-toggle-right" : "ti-toggle-left"}`} />
                 </IconButton>
@@ -190,7 +222,7 @@ function DocumentTemplatesManager(props: { baseId: string; tableId: string; tabl
                   size="sm"
                   type="button"
                   label={t().moveTemplateUp}
-                  disabled={reordering() || index() === 0}
+                  disabled={busy() || index() === 0}
                   onClick={() => void moveTemplate(template, -1)}
                 >
                   <i class="ti ti-arrow-up" />
@@ -202,7 +234,7 @@ function DocumentTemplatesManager(props: { baseId: string; tableId: string; tabl
                   size="sm"
                   type="button"
                   label={t().moveTemplateDown}
-                  disabled={reordering() || index() === (templates()?.length ?? 0) - 1}
+                  disabled={busy() || index() === (templates()?.length ?? 0) - 1}
                   onClick={() => void moveTemplate(template, 1)}
                 >
                   <i class="ti ti-arrow-down" />
@@ -214,7 +246,8 @@ function DocumentTemplatesManager(props: { baseId: string; tableId: string; tabl
                   size="sm"
                   type="button"
                   label={t().duplicateTemplate}
-                  onClick={() => void duplicateTemplate(template)}
+                  disabled={busy()}
+                  onClick={() => void runAction(() => duplicateTemplate(template))}
                 >
                   <i class="ti ti-copy" />
                 </IconButton>
@@ -231,7 +264,8 @@ function DocumentTemplatesManager(props: { baseId: string; tableId: string; tabl
                   type="button"
                   class="text-dimmed hover:text-red-500"
                   label={t().deleteTemplate}
-                  onClick={() => void deleteTemplate(template)}
+                  disabled={busy()}
+                  onClick={() => void runAction(() => deleteTemplate(template))}
                 >
                   <i class="ti ti-trash" />
                 </IconButton>

@@ -223,6 +223,7 @@ export const createBasesApi = (deps: { requireAuthenticated?: MiddlewareHandler<
         const query = c.req.valid("query");
         const pagination = parsePagination(query);
         const result = await gridsService.base.preservationHolds.list(baseId, {
+          search: query.q,
           status: query.status,
           scope: query.scope,
           tablePublicId: query.tableId ?? null,

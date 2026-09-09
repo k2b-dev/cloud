@@ -111,6 +111,9 @@ configuration through `grids bases navigation get` and `grids bases navigation s
 
 - Generate documents or PDFs from reviewed templates and record data.
 - Download exact stored PDF bytes for completed Documents. **Generate again** creates a new immutable Document.
+- If generation has an uncertain result, keep its dialog open and retry that
+  attempt. Closing loses the retry context; check All documents before creating
+  another Document.
 - Select an installed E-Invoice renderer on a table's Document template when
   one frozen Record snapshot must produce both a readable PDF and structured
   artifact. Generate it from the Record detail or template workspace; the same

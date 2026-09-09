@@ -1,4 +1,18 @@
-import { Button, CopyButton, IconButton, Placeholder, prompts, ScrollArea, Tooltip, useLocale } from "@k2b/ui";
+import {
+  Button,
+  CopyButton,
+  confirmDiscardIfDirty,
+  dialogCore,
+  IconButton,
+  NoticeCard,
+  PanelDialog,
+  Placeholder,
+  panelDialogOptions,
+  ScrollArea,
+  TextInput,
+  Tooltip,
+  useLocale,
+} from "@k2b/ui";
 import { createSignal, For, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { PublicField as Field, PublicForm } from "../../../api/public-dto";
@@ -26,16 +40,6 @@ type Props = {
 
 export const createForm = async (props: { tableId: string; fields: Field[] }, locale: string): Promise<PublicForm | undefined> => {
   const t = () => gridsFormMessages.resolve([locale]).t;
-  const result = await prompts.form({
-    title: t().newForm,
-    icon: "ti ti-forms",
-    fields: {
-      name: { type: "text", label: t().name, required: true, placeholder: t().formNameExample },
-    },
-    confirmText: t().create,
-  });
-  if (!result) return;
-
   const eligibleFields = props.fields.filter((f) => !f.deletedAt && canBeFormInput(f));
   // Default config = include every editable field, in declared order.
   const config: FormConfig = {
@@ -45,15 +49,68 @@ export const createForm = async (props: { tableId: string; fields: Field[] }, lo
       required: f.required,
     })),
   };
-  const res = await apiClient.forms["by-table"][":tableId"].$post({
-    param: { tableId: props.tableId },
-    json: { name: String(result.name).trim(), config, isPublic: false },
-  });
-  if (!res.ok) {
-    prompts.error(await errorMessage(res, t().createFormFailed));
-    return;
-  }
-  return res.json();
+  return dialogCore.open<PublicForm>((close, context) => {
+    const [name, setName] = createSignal("");
+    const [pending, setPending] = createSignal(false);
+    const [invalid, setInvalid] = createSignal(false);
+    const [error, setError] = createSignal<string>();
+    let input: HTMLInputElement | undefined;
+    const dismiss = async () => {
+      if (!pending() && (await confirmDiscardIfDirty(Boolean(name())))) close();
+    };
+    context.setDismissHandler(dismiss);
+    const save = async () => {
+      if (pending()) return;
+      if (!name().trim()) {
+        setInvalid(true);
+        input?.focus();
+        return;
+      }
+      setPending(true);
+      setError(undefined);
+      try {
+        const response = await apiClient.forms["by-table"][":tableId"].$post({
+          param: { tableId: props.tableId },
+          json: { name: name().trim(), config, isPublic: false },
+        });
+        if (!response.ok) throw new Error(await errorMessage(response, t().createFormFailed));
+        close(await response.json());
+      } catch (error) {
+        setError(error instanceof Error ? error.message : t().createFormFailed);
+      } finally {
+        setPending(false);
+      }
+    };
+    return (
+      <PanelDialog>
+        <PanelDialog.Header title={t().newForm} icon="ti ti-forms" close={dismiss} closeDisabled={pending()} />
+        <PanelDialog.Body>
+          <TextInput
+            ref={(element) => {
+              input = element;
+            }}
+            label={t().name}
+            value={name}
+            onValueChange={setName}
+            required
+            placeholder={t().formNameExample}
+            disabled={pending()}
+            error={() => (invalid() && !name().trim() ? t().nameRequired : undefined)}
+            onSubmit={save}
+          />
+          <Show when={error()}>{(message) => <NoticeCard tone="danger" title={message()} />}</Show>
+        </PanelDialog.Body>
+        <PanelDialog.Footer>
+          <Button variant="secondary" onClick={dismiss} disabled={pending()}>
+            {t().cancel}
+          </Button>
+          <Button onClick={save} loading={pending()}>
+            {t().create}
+          </Button>
+        </PanelDialog.Footer>
+      </PanelDialog>
+    );
+  }, panelDialogOptions);
 };
 
 /**
@@ -89,7 +146,7 @@ export default function FormsManager(props: Props) {
       form,
       tableFields: props.fields,
       onSaved: (next) => updateForms(forms().map((f) => (f.id === next.id ? next : f))),
-      onDelete: () => handleDelete(form),
+      onDelete: () => updateForms(forms().filter((f) => f.id !== form.id)),
     });
 
   // ---- Create ----------------------------------------------------------
@@ -98,23 +155,6 @@ export default function FormsManager(props: Props) {
     if (!created) return;
     updateForms([...forms(), created]);
     openFormEditor(created);
-  };
-
-  // ---- Delete ----------------------------------------------------------
-  const handleDelete = async (form: PublicForm) => {
-    if (!form.id) return;
-    const confirmed = await prompts.confirm(t().deleteFormConfirm({ name: form.name }), {
-      title: t().deleteFormQuestion,
-      variant: "danger",
-      confirmText: t().delete,
-    });
-    if (!confirmed) return;
-    const res = await apiClient.forms[":formId"].$delete({ param: { formId: form.id } });
-    if (res.status >= 400) {
-      prompts.error(await errorMessage(res, t().deleteFormFailed));
-      return;
-    }
-    updateForms(forms().filter((f) => f.id !== form.id));
   };
 
   return (

@@ -6,6 +6,7 @@ import {
   createTemplateEditorPanesLayout,
   dialogCore,
   IconButton,
+  NoticeCard,
   PanelDialog,
   Panes,
   Placeholder,
@@ -110,7 +111,13 @@ const renderEmailTemplatePreview = (
   }
 };
 
-function EmailTemplateEditor(props: { baseId: string; template?: PublicEmailTemplate; onSaved: () => void; onClose: () => void }) {
+function EmailTemplateEditor(props: {
+  baseId: string;
+  template?: PublicEmailTemplate;
+  onSaved: () => void;
+  onClose: () => void;
+  setDismissHandler: (handler: () => void | Promise<void>) => void;
+}) {
   const locale = useLocale();
   const t = () => workflowMessages.resolve([locale()]).t;
   const cleanDraft = workflowEmailTemplateDraft(
@@ -153,8 +160,10 @@ function EmailTemplateEditor(props: { baseId: string; template?: PublicEmailTemp
       cleanDraft,
     );
   const closeIfClean = async () => {
+    if (saveMut.loading()) return;
     if (await confirmDiscardIfDirty(dirty)) props.onClose();
   };
+  props.setDismissHandler(closeIfClean);
 
   const saveMut = mutations.create<PublicEmailTemplate, void>({
     mutation: async (_, { abortSignal }) => {
@@ -201,7 +210,7 @@ function EmailTemplateEditor(props: { baseId: string; template?: PublicEmailTemp
         close={() => void closeIfClean()}
       />
       <PanelDialog.Body scrollPreserveKey={`grids-email-template-editor-${props.template?.id ?? "new"}`}>
-        <div class="flex min-h-[42rem] flex-1 flex-col gap-2">
+        <div class="flex min-h-[42rem] flex-1 flex-col gap-2" inert={saveMut.loading()}>
           <div class="grid shrink-0 gap-2 md:grid-cols-2">
             <TextInput label={t().name} value={name} onValueChange={setName} required icon="ti ti-mail" placeholder={t().invoiceEmail} />
             <TextInput
@@ -298,7 +307,7 @@ function EmailTemplateEditor(props: { baseId: string; template?: PublicEmailTemp
       <PanelDialog.Footer>
         <div />
         <div class="flex items-center gap-2">
-          <Button variant="secondary" size="sm" type="button" onClick={() => void closeIfClean()}>
+          <Button variant="secondary" size="sm" type="button" disabled={saveMut.loading()} onClick={() => void closeIfClean()}>
             {t().cancel}
           </Button>
           <Button variant="primary" size="sm" type="button" disabled={!canSave()} onClick={() => saveMut.mutate()}>
@@ -329,7 +338,6 @@ export function EmailTemplateManager(props: { baseId: string; onChanged: () => v
       setTemplates(PublicEmailTemplateListSchema.parse(await templatesRes.json()));
       setDependencies(PublicEmailTemplateDependencyMapSchema.parse(await dependenciesRes.json()));
     },
-    onError: (error) => prompts.error(error.message),
   });
 
   const deleteMut = mutations.create<{ deleted: boolean }, PublicEmailTemplate>({
@@ -367,10 +375,11 @@ export function EmailTemplateManager(props: { baseId: string; onChanged: () => v
 
   const openEditor = async (template?: PublicEmailTemplate) => {
     await dialogCore.open<void>(
-      (close) => (
+      (close, context) => (
         <EmailTemplateEditor
           baseId={props.baseId}
           template={template}
+          setDismissHandler={context.setDismissHandler}
           onSaved={() => {
             props.onChanged();
             loadMut.mutate();
@@ -378,7 +387,7 @@ export function EmailTemplateManager(props: { baseId: string; onChanged: () => v
           onClose={close}
         />
       ),
-      { ...panelDialogWorkspaceOptions, cancelBehavior: "ignore" },
+      panelDialogWorkspaceOptions,
     );
   };
 
@@ -396,71 +405,83 @@ export function EmailTemplateManager(props: { baseId: string; onChanged: () => v
         close={props.onClose}
       />
       <PanelDialog.Body scrollPreserveKey="grids-email-template-manager">
-        <section class="paper flex flex-col gap-1 overflow-hidden p-1">
-          <For
-            each={templates()}
-            fallback={
-              <Placeholder
-                state={loadMut.error() ? "error" : loadMut.loading() ? "loading" : "empty"}
-                align="left"
-                class="py-8"
-                title={
-                  loadMut.error() ? t().couldNotLoadEmailTemplates : loadMut.loading() ? t().loadingEmailTemplates : t().noEmailTemplates
-                }
-                description={loadMut.error()?.message}
-              />
-            }
-          >
-            {(template) => (
-              <article class="grid grid-cols-[auto_1fr_auto] items-center gap-3 rounded-[var(--ui-radius-control)] px-3 py-2 transition-colors hover:bg-[var(--ui-hover)]">
-                <span class="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-[var(--ui-radius-control)] bg-[var(--ui-surface-subtle)] text-secondary">
-                  <i class="ti ti-mail" />
-                </span>
-                <button type="button" class="min-w-0 text-left" onClick={() => void openEditor(template)}>
-                  <span class="flex min-w-0 items-center gap-2">
-                    <span class="truncate text-sm font-semibold text-primary">{template.name}</span>
-                    <StatusBadge tone={template.enabled ? "ok" : "neutral"} label={template.enabled ? t().enabled : t().disabled} />
+        <Show when={loadMut.error()}>
+          {(error) => (
+            <NoticeCard tone="danger" title={t().couldNotLoadEmailTemplates} class="mb-4">
+              <Show when={error().message.replace(/\.$/, "") !== t().couldNotLoadEmailTemplates}>{error().message}</Show>
+              <Button variant="secondary" size="sm" loading={loadMut.loading()} onClick={() => void loadMut.retry()}>
+                {t().retry}
+              </Button>
+            </NoticeCard>
+          )}
+        </Show>
+        <Show when={!loadMut.error() || templates().length > 0}>
+          <section class="paper flex flex-col gap-1 overflow-hidden p-1">
+            <For
+              each={templates()}
+              fallback={
+                <Placeholder
+                  state={loadMut.error() ? "error" : loadMut.loading() ? "loading" : "empty"}
+                  align="left"
+                  class="py-8"
+                  title={
+                    loadMut.error() ? t().couldNotLoadEmailTemplates : loadMut.loading() ? t().loadingEmailTemplates : t().noEmailTemplates
+                  }
+                  description={loadMut.error()?.message}
+                />
+              }
+            >
+              {(template) => (
+                <article class="grid grid-cols-[auto_1fr_auto] items-center gap-3 rounded-[var(--ui-radius-control)] px-3 py-2 transition-colors hover:bg-[var(--ui-hover)]">
+                  <span class="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-[var(--ui-radius-control)] bg-[var(--ui-surface-subtle)] text-secondary">
+                    <i class="ti ti-mail" />
                   </span>
-                  <span class="mt-0.5 block truncate text-xs text-dimmed">{template.subject}</span>
-                  <Show when={template.description}>
-                    {(description) => <span class="mt-1 block truncate text-xs text-dimmed">{description()}</span>}
-                  </Show>
-                  <Show when={(dependencies()[template.id] ?? []).length > 0}>
-                    <span class="mt-1 block truncate text-xs text-secondary">
-                      {t().usedBy({ names: (dependencies()[template.id] ?? []).map((dependency) => dependency.workflowName).join(", ") })}
+                  <button type="button" class="min-w-0 text-left" onClick={() => void openEditor(template)}>
+                    <span class="flex min-w-0 items-center gap-2">
+                      <span class="truncate text-sm font-semibold text-primary">{template.name}</span>
+                      <StatusBadge tone={template.enabled ? "ok" : "neutral"} label={template.enabled ? t().enabled : t().disabled} />
                     </span>
-                  </Show>
-                </button>
-                <div class="flex items-center gap-1">
-                  <Tooltip.Anchor content={t().editEmailTemplate}>
-                    <IconButton
-                      variant="ghost"
-                      size="sm"
-                      type="button"
-                      label={t().editEmailTemplate}
-                      onClick={() => void openEditor(template)}
-                    >
-                      <i class="ti ti-pencil" />
-                    </IconButton>
-                  </Tooltip.Anchor>
-                  <Tooltip.Anchor content={t().deleteEmailTemplate}>
-                    <IconButton
-                      variant="ghost"
-                      size="sm"
-                      type="button"
-                      class="text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300"
-                      label={t().deleteEmailTemplate}
-                      disabled={deleteMut.loading() || (dependencies()[template.id] ?? []).length > 0}
-                      onClick={() => deleteMut.mutate(template)}
-                    >
-                      <i class={deleteMut.loading() ? "ti ti-loader-2 animate-spin" : "ti ti-trash"} />
-                    </IconButton>
-                  </Tooltip.Anchor>
-                </div>
-              </article>
-            )}
-          </For>
-        </section>
+                    <span class="mt-0.5 block truncate text-xs text-dimmed">{template.subject}</span>
+                    <Show when={template.description}>
+                      {(description) => <span class="mt-1 block truncate text-xs text-dimmed">{description()}</span>}
+                    </Show>
+                    <Show when={(dependencies()[template.id] ?? []).length > 0}>
+                      <span class="mt-1 block truncate text-xs text-secondary">
+                        {t().usedBy({ names: (dependencies()[template.id] ?? []).map((dependency) => dependency.workflowName).join(", ") })}
+                      </span>
+                    </Show>
+                  </button>
+                  <div class="flex items-center gap-1">
+                    <Tooltip.Anchor content={t().editEmailTemplate}>
+                      <IconButton
+                        variant="ghost"
+                        size="sm"
+                        type="button"
+                        label={t().editEmailTemplate}
+                        onClick={() => void openEditor(template)}
+                      >
+                        <i class="ti ti-pencil" />
+                      </IconButton>
+                    </Tooltip.Anchor>
+                    <Tooltip.Anchor content={t().deleteEmailTemplate}>
+                      <IconButton
+                        variant="ghost"
+                        size="sm"
+                        type="button"
+                        class="text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300"
+                        label={t().deleteEmailTemplate}
+                        disabled={deleteMut.loading() || (dependencies()[template.id] ?? []).length > 0}
+                        onClick={() => deleteMut.mutate(template)}
+                      >
+                        <i class={deleteMut.loading() ? "ti ti-loader-2 animate-spin" : "ti ti-trash"} />
+                      </IconButton>
+                    </Tooltip.Anchor>
+                  </div>
+                </article>
+              )}
+            </For>
+          </section>
+        </Show>
       </PanelDialog.Body>
       <PanelDialog.Footer>
         <div />

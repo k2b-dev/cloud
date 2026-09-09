@@ -3,6 +3,7 @@ import {
   Button,
   CheckboxCard,
   CopyButton,
+  confirmDiscardIfDirty,
   DateRangePicker,
   DescriptionList,
   dialogCore,
@@ -161,11 +162,19 @@ const download = async (item: EvidenceExport, unavailableMessage: string) => {
 
 const openEvidenceExportDialog = (base: PublicBase, tables: PublicTable[], onCreated: () => void) =>
   dialogCore.open<void>(
-    (close) => <EvidenceExportDialog base={base} tables={tables} close={close} onCreated={onCreated} />,
+    (close, context) => (
+      <EvidenceExportDialog base={base} tables={tables} close={close} onCreated={onCreated} setDismissHandler={context.setDismissHandler} />
+    ),
     panelDialogOptions,
   );
 
-function EvidenceExportDialog(props: { base: PublicBase; tables: PublicTable[]; close: () => void; onCreated: () => void }) {
+function EvidenceExportDialog(props: {
+  base: PublicBase;
+  tables: PublicTable[];
+  close: () => void;
+  onCreated: () => void;
+  setDismissHandler: (handler: () => void | Promise<void>) => void;
+}) {
   const locale = useLocale();
   const messages = useGridsSettingsMessages(locale);
   const number = (value: number) => new Intl.NumberFormat(locale()).format(value);
@@ -222,15 +231,31 @@ function EvidenceExportDialog(props: { base: PublicBase; tables: PublicTable[]; 
       props.onCreated();
       props.close();
     },
-    onError: (error) => prompts.error(error.message),
   });
 
   const submitDisabled = () => sections().length === 0 || preflight.loading() || !currentPreflight()?.withinKnownBudgets;
+  const dismiss = async () => {
+    if (
+      !createMutation.loading() &&
+      (await confirmDiscardIfDirty(
+        tableId() !== "" || range().start !== null || range().end !== null || sections().length !== EVIDENCE_EXPORT_SECTIONS.length,
+      ))
+    )
+      props.close();
+  };
+  props.setDismissHandler(dismiss);
 
   return (
     <PanelDialog>
-      <PanelDialog.Header title={messages().newEvidenceExport} subtitle={props.base.name} icon="ti ti-package-export" close={props.close} />
+      <PanelDialog.Header
+        title={messages().newEvidenceExport}
+        subtitle={props.base.name}
+        icon="ti ti-package-export"
+        close={dismiss}
+        closeDisabled={createMutation.loading()}
+      />
       <PanelDialog.Body>
+        <Show when={createMutation.error()}>{(error) => <InlineGuidance tone="danger">{error().message}</InlineGuidance>}</Show>
         <NoticeCard tone="info" title={messages().verifiableNotCertificate} detail={messages().evidenceManifestDescription} />
         <div class="grid gap-3 sm:grid-cols-2">
           <Select
@@ -304,7 +329,7 @@ function EvidenceExportDialog(props: { base: PublicBase; tables: PublicTable[]; 
       <PanelDialog.Footer>
         <span class="text-xs text-muted">{messages().packagesExpire}</span>
         <div class="flex items-center gap-2">
-          <Button variant="secondary" size="sm" onClick={props.close} disabled={createMutation.loading()}>
+          <Button variant="secondary" size="sm" onClick={dismiss} disabled={createMutation.loading()}>
             {messages().cancel}
           </Button>
           <Button

@@ -1,8 +1,12 @@
 import { mutation as mutations, query } from "@k2b/stdlib/solid";
 import {
   Button,
+  confirmDiscardIfDirty,
+  dialogCore,
   InlineGuidance,
+  PanelDialog,
   Placeholder,
+  panelDialogOptions,
   prompts,
   Select,
   SettingsCollection,
@@ -11,7 +15,7 @@ import {
   toast,
   useLocale,
 } from "@k2b/ui";
-import { createEffect, createSignal, For, onCleanup, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { PublicTable } from "../../../api/public-dto";
 import {
@@ -22,29 +26,6 @@ import {
 } from "../../../preservation-hold-contracts";
 import { errorMessage } from "../utils/api-helpers";
 import { useGridsSettingsMessages } from "./messages";
-
-const askReleaseReason = (messages: ReturnType<ReturnType<typeof useGridsSettingsMessages>>) =>
-  prompts.form({
-    title: messages.releaseHoldTitle,
-    icon: "ti ti-lock-open",
-    fields: {
-      explanation: {
-        type: "info" as const,
-        content: messages.releaseHoldExplanation,
-      },
-      reason: {
-        type: "text" as const,
-        label: messages.reason,
-        description: messages.releaseHoldReason,
-        required: true,
-        multiline: true,
-        lines: 3,
-        maxLength: PRESERVATION_HOLD_REASON_MAX_LENGTH,
-      },
-    },
-    confirmText: messages.releaseHold,
-    variant: "danger",
-  });
 
 export const buildPreservationHoldInput = (
   scope: "base" | "table",
@@ -57,84 +38,111 @@ export const buildPreservationHoldInput = (
   return { reason: trimmedReason, scope: { type: "base" } };
 };
 
-export const CreatePreservationHoldDialog = (props: { baseId: string; close: (input?: CreatePreservationHoldInput) => void }) => {
+export const CreatePreservationHoldDialog = (props: {
+  baseId: string;
+  close: () => void;
+  save: (input: CreatePreservationHoldInput) => Promise<void>;
+  setDismissHandler: (handler: () => void | Promise<void>) => void;
+}) => {
   const locale = useLocale();
   const messages = useGridsSettingsMessages(locale);
   const [scope, setScope] = createSignal<"base" | "table">("base");
   const [tableId, setTableId] = createSignal<string | null>(null);
   const [reason, setReason] = createSignal("");
   const input = () => buildPreservationHoldInput(scope(), tableId(), reason());
+  const save = mutations.create({ mutation: props.save, onSuccess: props.close });
+  const dismiss = async () => {
+    if (!save.loading() && (await confirmDiscardIfDirty(reason().length > 0 || scope() !== "base"))) props.close();
+  };
+  props.setDismissHandler(dismiss);
 
   return (
     <form
       onSubmit={(event) => {
         event.preventDefault();
         const value = input();
-        if (value) props.close(value);
+        if (value && !save.loading()) void save.mutate(value);
       }}
     >
-      <div class="k2b-dialog__body">
-        <p>{messages().holdScopeExplanation}</p>
-        <Select
-          label={messages().scope}
-          description={messages().holdScopeDescription}
-          required
-          value={scope}
-          onValueChange={(value) => {
-            setScope(value === "table" ? "table" : "base");
-            if (value !== "table") setTableId(null);
-          }}
-          options={[
-            { id: "base", label: messages().entireBase, description: messages().entireBaseHoldDescription },
-            {
-              id: "table",
-              label: messages().oneTable,
-              description: messages().oneTableHoldDescription,
-            },
-          ]}
+      <PanelDialog>
+        <PanelDialog.Header
+          title={messages().createPreservationHold}
+          icon="ti ti-lock-plus"
+          close={dismiss}
+          closeDisabled={save.loading()}
         />
-        <Show when={scope() === "table"}>
-          <Select
-            label={messages().table}
-            description={messages().searchActiveTables}
-            placeholder={messages().searchTablesPlaceholder}
-            required
-            value={tableId}
-            onValueChange={setTableId}
-            fetchData={async (search, signal) => {
-              const response = await apiClient.tables["by-base"][":baseId"].$get(
-                { param: { baseId: props.baseId }, query: { q: search, limit: "25" } },
-                { init: { signal } },
-              );
-              if (!response.ok) throw new Error(await errorMessage(response, messages().searchTablesFailed));
-              return ((await response.json()) as PublicTable[]).map((table) => ({
-                id: table.id,
-                label: table.name,
-                description: `${table.kind === "federated" ? messages().combinedTable : messages().storedTable} · ${table.id}`,
-                icon: table.icon ?? "ti ti-table",
-              }));
-            }}
-          />
-        </Show>
-        <TextInput
-          label={messages().reason}
-          description={messages().holdReasonDescription}
-          required
-          multiline
-          lines={3}
-          maxLength={PRESERVATION_HOLD_REASON_MAX_LENGTH}
-          value={reason}
-          onValueChange={setReason}
-        />
-      </div>
-      <footer class="k2b-dialog__actions">
-        <Button type="button" variant="secondary" onClick={() => props.close()}>
-          {messages().cancel}
-        </Button>
-        <Button type="submit" disabled={!input()}>
-          {messages().createHold}
-        </Button>
-      </footer>
+        <PanelDialog.Body>
+          <div class="flex flex-col gap-4">
+            <Show when={save.error()}>{(error) => <InlineGuidance tone="danger">{error().message}</InlineGuidance>}</Show>
+            <p>{messages().holdScopeExplanation}</p>
+            <Select
+              label={messages().scope}
+              description={messages().holdScopeDescription}
+              required
+              disabled={save.loading()}
+              value={scope}
+              onValueChange={(value) => {
+                setScope(value === "table" ? "table" : "base");
+                if (value !== "table") setTableId(null);
+              }}
+              options={[
+                { id: "base", label: messages().entireBase, description: messages().entireBaseHoldDescription },
+                {
+                  id: "table",
+                  label: messages().oneTable,
+                  description: messages().oneTableHoldDescription,
+                },
+              ]}
+            />
+            <Show when={scope() === "table"}>
+              <Select
+                label={messages().table}
+                description={messages().searchActiveTables}
+                placeholder={messages().searchTablesPlaceholder}
+                required
+                disabled={save.loading()}
+                value={tableId}
+                onValueChange={setTableId}
+                fetchData={async (search, signal) => {
+                  const response = await apiClient.tables["by-base"][":baseId"].$get(
+                    { param: { baseId: props.baseId }, query: { q: search, limit: "25" } },
+                    { init: { signal } },
+                  );
+                  if (!response.ok) throw new Error(await errorMessage(response, messages().searchTablesFailed));
+                  return ((await response.json()) as PublicTable[]).map((table) => ({
+                    id: table.id,
+                    label: table.name,
+                    description: `${table.kind === "federated" ? messages().combinedTable : messages().storedTable} · ${table.id}`,
+                    icon: table.icon ?? "ti ti-table",
+                  }));
+                }}
+              />
+            </Show>
+            <TextInput
+              label={messages().reason}
+              description={messages().holdReasonDescription}
+              required
+              disabled={save.loading()}
+              multiline
+              lines={3}
+              maxLength={PRESERVATION_HOLD_REASON_MAX_LENGTH}
+              value={reason}
+              onValueChange={setReason}
+            />
+          </div>
+        </PanelDialog.Body>
+        <PanelDialog.Footer>
+          <span />
+          <div class="flex gap-2">
+            <Button type="button" variant="secondary" onClick={dismiss} disabled={save.loading()}>
+              {messages().cancel}
+            </Button>
+            <Button type="submit" disabled={!input()} loading={save.loading()}>
+              {messages().createHold}
+            </Button>
+          </div>
+        </PanelDialog.Footer>
+      </PanelDialog>
     </form>
   );
 };
@@ -145,16 +153,26 @@ export function PreservationHoldsSection(props: { baseId: string; onSavingChange
   const dateTime = (value: string) =>
     new Intl.DateTimeFormat(locale(), { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
   let disposed = false;
+  const [page, setPage] = createSignal(1);
+  const [search, setSearch] = createSignal("");
+  const source = createMemo(() => ({ baseId: props.baseId, page: page(), search: search().trim() }));
   const holds = query.create({
-    source: () => props.baseId,
-    load: async (baseId, { abortSignal }) => {
+    source,
+    load: async ({ baseId, page, search }, { abortSignal }) => {
       const response = await apiClient.bases[":baseId"]["preservation-holds"].$get(
-        { param: { baseId }, query: { status: "active", page: "1", per_page: "100" } },
+        { param: { baseId }, query: { status: "active", page: String(page), per_page: "25", q: search } },
         { init: { signal: abortSignal } },
       );
       if (!response.ok) throw new Error(await errorMessage(response, messages().loadHoldsFailed));
-      return (await response.json()) as PreservationHoldsResponse;
+      const result = (await response.json()) as PreservationHoldsResponse;
+      return { ...result, requestedPage: page, requestedSearch: search };
     },
+  });
+  createEffect(() => {
+    const result = holds.data();
+    if (result?.requestedPage !== page() || result.requestedSearch !== search().trim()) return;
+    const lastPage = Math.max(1, result.pagination.total_pages);
+    if (page() > lastPage) setPage(lastPage);
   });
 
   const createHold = mutations.create<PreservationHold, CreatePreservationHoldInput>({
@@ -170,7 +188,6 @@ export function PreservationHoldsSection(props: { baseId: string; onSavingChange
       toast.success(messages().holdCreated);
       void holds.invalidate().catch(() => !disposed && void prompts.error(messages().holdCreatedRefreshFailed));
     },
-    onError: (error) => prompts.error(error.message),
   });
 
   const releaseHold = mutations.create<PreservationHold, { holdId: string; reason: string }>({
@@ -186,22 +203,81 @@ export function PreservationHoldsSection(props: { baseId: string; onSavingChange
       toast.success(messages().holdReleased);
       void holds.invalidate().catch(() => !disposed && void prompts.error(messages().holdReleasedRefreshFailed));
     },
-    onError: (error) => prompts.error(error.message),
   });
 
   const busy = () => createHold.loading() || releaseHold.loading();
   createEffect(() => props.onSavingChange(busy()));
   const create = async () => {
-    const input = await prompts.dialog<CreatePreservationHoldInput>(
-      (close) => <CreatePreservationHoldDialog baseId={props.baseId} close={close} />,
-      { title: messages().createPreservationHold, icon: "ti ti-lock-plus", size: "medium" },
+    await dialogCore.open<void>(
+      (close, context) => (
+        <CreatePreservationHoldDialog
+          baseId={props.baseId}
+          close={close}
+          setDismissHandler={context.setDismissHandler}
+          save={async (input) => {
+            await createHold.mutate(input);
+            if (createHold.error()) throw createHold.error();
+          }}
+        />
+      ),
+      panelDialogOptions,
     );
-    if (input) createHold.mutate(input);
   };
   const release = async (holdId: string) => {
-    const result = await askReleaseReason(messages());
-    const reason = result?.reason.trim();
-    if (reason) releaseHold.mutate({ holdId, reason });
+    await dialogCore.open<void>((close, context) => {
+      const [reason, setReason] = createSignal("");
+      const save = mutations.create({
+        mutation: async () => {
+          await releaseHold.mutate({ holdId, reason: reason().trim() });
+          if (releaseHold.error()) throw releaseHold.error();
+        },
+        onSuccess: close,
+      });
+      const dismiss = async () => {
+        if (!save.loading() && (await confirmDiscardIfDirty(reason().length > 0))) close();
+      };
+      context.setDismissHandler(dismiss);
+      return (
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (reason().trim() && !save.loading()) void save.mutate(undefined);
+          }}
+        >
+          <PanelDialog>
+            <PanelDialog.Header title={messages().releaseHoldTitle} icon="ti ti-lock-open" close={dismiss} closeDisabled={save.loading()} />
+            <PanelDialog.Body>
+              <div class="flex flex-col gap-4">
+                <p>{messages().releaseHoldExplanation}</p>
+                <Show when={save.error()}>{(error) => <InlineGuidance tone="danger">{error().message}</InlineGuidance>}</Show>
+                <TextInput
+                  label={messages().reason}
+                  description={messages().releaseHoldReason}
+                  value={reason}
+                  onValueChange={setReason}
+                  required
+                  multiline
+                  lines={3}
+                  maxLength={PRESERVATION_HOLD_REASON_MAX_LENGTH}
+                  disabled={save.loading()}
+                />
+              </div>
+            </PanelDialog.Body>
+            <PanelDialog.Footer>
+              <span />
+              <div class="flex gap-2">
+                <Button type="button" variant="secondary" disabled={save.loading()} onClick={dismiss}>
+                  {messages().cancel}
+                </Button>
+                <Button type="submit" variant="danger" disabled={!reason().trim()} loading={save.loading()}>
+                  {messages().releaseHold}
+                </Button>
+              </div>
+            </PanelDialog.Footer>
+          </PanelDialog>
+        </form>
+      );
+    }, panelDialogOptions);
   };
   onCleanup(() => {
     disposed = true;
@@ -215,6 +291,18 @@ export function PreservationHoldsSection(props: { baseId: string; onSavingChange
       <InlineGuidance tone="info" icon="ti ti-info-circle">
         {messages().holdsGuidance}
       </InlineGuidance>
+      <TextInput
+        type="search"
+        label={messages().searchHolds}
+        placeholder={messages().searchHoldsPlaceholder}
+        icon="ti ti-search"
+        value={search}
+        maxLength={200}
+        onValueChange={(value) => {
+          setPage(1);
+          setSearch(value);
+        }}
+      />
       <Show when={!holds.loading()} fallback={<Placeholder state="loading" variant="compact" title={messages().loadingHolds} />}>
         <Show
           when={!holds.error()}
@@ -240,7 +328,7 @@ export function PreservationHoldsSection(props: { baseId: string; onSavingChange
               </span>
             }
             description={messages().activeHoldsDescription}
-            empty={messages().noActiveHolds}
+            empty={search().trim() ? messages().noMatchingHolds : messages().noActiveHolds}
           >
             <SettingsCollection.Action>
               <Button size="sm" variant="secondary" disabled={busy()} onClick={() => void create()}>
@@ -266,7 +354,7 @@ export function PreservationHoldsSection(props: { baseId: string; onSavingChange
                       <StatusBadge tone="neutral" variant="text" label={scopeDescription} icon={null} />
                     </SettingsCollection.Item.Status>
                     <SettingsCollection.Item.Actions>
-                      <Button size="sm" variant="secondary" disabled={busy()} onClick={() => void release(hold.id)}>
+                      <Button size="sm" variant="secondary" disabled={busy() || holds.refreshing()} onClick={() => void release(hold.id)}>
                         {messages().release}
                       </Button>
                     </SettingsCollection.Item.Actions>
@@ -275,8 +363,26 @@ export function PreservationHoldsSection(props: { baseId: string; onSavingChange
               }}
             </For>
           </SettingsCollection>
-          <Show when={(holds.data()?.pagination.total ?? 0) > 100}>
-            <p class="text-xs text-dimmed">{messages().newestHoldsCli}</p>
+          <Show when={holds.refreshing()}>
+            <Placeholder state="loading" variant="compact" title={messages().loadingHolds} />
+          </Show>
+          <Show when={(holds.data()?.pagination.total_pages ?? 1) > 1}>
+            <div class="flex items-center justify-between gap-3">
+              <Button size="sm" variant="secondary" disabled={page() <= 1 || holds.refreshing()} onClick={() => setPage(page() - 1)}>
+                {messages().previous}
+              </Button>
+              <span class="text-xs text-dimmed">
+                {messages().pageOf({ page: String(page()), total: String(holds.data()?.pagination.total_pages ?? 1) })}
+              </span>
+              <Button
+                size="sm"
+                variant="secondary"
+                disabled={page() >= (holds.data()?.pagination.total_pages ?? 1) || holds.refreshing()}
+                onClick={() => setPage(page() + 1)}
+              >
+                {messages().next}
+              </Button>
+            </div>
           </Show>
         </Show>
       </Show>

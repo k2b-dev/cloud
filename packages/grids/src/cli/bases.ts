@@ -386,13 +386,14 @@ export const baseCrudCommands = [
   }),
   command("bases preservation-holds list", {
     summary: "List preservation holds",
-    description: "Requires Base admin access. Status, scope, table filtering, and pagination run on the server.",
+    description: "Requires Base admin access. Search, status, scope, table filtering, and pagination run on the server.",
     args: baseArgs,
     flags: {
       ...baseFlag,
       status: flag.enum(["active", "released", "all"] as const, { default: "active", description: "Hold status" }),
       scope: flag.enum(["base", "table", "all"] as const, { default: "all", description: "Hold scope" }),
       table: flag.string({ description: "Filter by Table public id or exact name; requires --scope table" }),
+      search: flag.string({ description: "Search reason, Table name, creator, or hold ID" }),
       ...paginationFlags({ defaultPerPage: 25, maxPerPage: 100 }),
     },
     async run({ ctx, args, flags }) {
@@ -405,6 +406,7 @@ export const baseCrudCommands = [
           status: flags.status,
           scope: flags.scope,
           tableId,
+          q: flags.search?.trim() || undefined,
           page: flags.page ?? 1,
           per_page: flags.perPage ?? 25,
         })}`,

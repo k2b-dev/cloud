@@ -3,6 +3,9 @@ type CustomAppWorkflowOutcome = {
   message: string;
 };
 
+/** Retain this handle while the outcome is unknown; retries must not create a second run. */
+export type CustomAppWorkflowOperation = { operationId: string; statusUrl?: string };
+
 type CustomAppWorkflowMessages = {
   startFailed: string;
   statusUnavailable: string;
@@ -47,24 +50,35 @@ export const invokeCustomAppWorkflow = async (input: {
   signal: AbortSignal;
   onRunning?: () => void;
   messages?: CustomAppWorkflowMessages;
+  operation?: CustomAppWorkflowOperation;
 }): Promise<CustomAppWorkflowOutcome> => {
   const messages = input.messages ?? defaultMessages;
-  const response = await fetch(input.endpoint, {
-    method: "POST",
-    headers: { Accept: "application/json", "Content-Type": "application/json" },
-    body: JSON.stringify({ operationId: crypto.randomUUID(), ...input.body }),
-    signal: input.signal,
-  });
-  if (!response.ok) throw new Error(await responseMessage(response, messages.startFailed));
-  const started = (await response.json()) as { statusUrl?: unknown };
-  if (typeof started.statusUrl !== "string") throw new Error(messages.statusUnavailable);
+  const operation = input.operation ?? { operationId: crypto.randomUUID() };
+  if (!operation.statusUrl) {
+    const response = await fetch(input.endpoint, {
+      method: "POST",
+      headers: { Accept: "application/json", "Content-Type": "application/json" },
+      body: JSON.stringify({ ...input.body, operationId: operation.operationId }),
+      signal: input.signal,
+    });
+    if (!response.ok) throw new Error(await responseMessage(response, messages.startFailed));
+    const started = (await response.json()) as { statusUrl?: unknown };
+    if (typeof started.statusUrl !== "string") throw new Error(messages.statusUnavailable);
+    operation.statusUrl = started.statusUrl;
+  }
   input.onRunning?.();
 
   for (let attempt = 0; attempt < 150; attempt += 1) {
     await delay(Math.min(400 + attempt * 100, 2_000), input.signal);
-    const statusResponse = await fetch(started.statusUrl, { headers: { Accept: "application/json" }, signal: input.signal });
-    if (!statusResponse.ok) throw new Error(await responseMessage(statusResponse, messages.statusUnavailable));
-    const status = (await statusResponse.json()) as { status?: unknown; message?: unknown };
+    let status: { status?: unknown; message?: unknown };
+    try {
+      const statusResponse = await fetch(operation.statusUrl, { headers: { Accept: "application/json" }, signal: input.signal });
+      if (!statusResponse.ok) return { kind: "running", message: messages.statusUnavailable };
+      status = await statusResponse.json();
+    } catch (error) {
+      if (input.signal.aborted) throw error;
+      return { kind: "running", message: messages.statusUnavailable };
+    }
     if (status.status === "succeeded") {
       return { kind: "success", message: typeof status.message === "string" ? status.message : messages.completed };
     }

@@ -10,6 +10,15 @@ export const recordMessages = i18n.define({
       noReferences: "No active records reference this record.",
       loadingMore: "Loading more",
       retry: "Retry",
+      compareCurrentRecord: "Compare current record",
+      yourDraftValue: "Your draft",
+      currentSavedValue: "Currently saved",
+      compareCurrentRecordDetail:
+        "These are the current saved values for the fields you edited. Continue to keep your edits and use the current version. Other fields are refreshed automatically. Nothing is saved until you press Save again.",
+      keepEditsOnCurrentVersion: "Keep my edits on this version",
+      conflictRecordUnavailable: "This record is no longer editable. Your draft is still here; copy any values you need before closing.",
+      exportRelationFieldsFailed: "Linked table fields could not be loaded. Retry, or export labels instead.",
+      loadingExportRelationFields: "Loading linked table fields…",
       deleted: "Deleted",
       snapshot: "Snapshot",
       finalized: "Finalized",
@@ -319,6 +328,17 @@ export const recordMessages = i18n.define({
       noReferences: "Kein aktiver Datensatz verweist auf diesen Datensatz.",
       loadingMore: "Weitere werden geladen",
       retry: "Erneut versuchen",
+      compareCurrentRecord: "Aktuellen Datensatz vergleichen",
+      yourDraftValue: "Dein Entwurf",
+      currentSavedValue: "Aktuell gespeichert",
+      compareCurrentRecordDetail:
+        "Dies sind die aktuell gespeicherten Werte der von dir bearbeiteten Felder. Fahre fort, um deine Änderungen auf dieser Version zu behalten. Andere Felder werden aktualisiert. Gespeichert wird erst, wenn du erneut auf Speichern klickst.",
+      keepEditsOnCurrentVersion: "Meine Änderungen auf dieser Version behalten",
+      conflictRecordUnavailable:
+        "Dieser Datensatz kann nicht mehr bearbeitet werden. Dein Entwurf bleibt hier; kopiere benötigte Werte vor dem Schließen.",
+      exportRelationFieldsFailed:
+        "Die Felder der verknüpften Tabellen konnten nicht geladen werden. Versuche es erneut oder exportiere stattdessen die Bezeichnungen.",
+      loadingExportRelationFields: "Felder der verknüpften Tabellen werden geladen…",
       deleted: "Gelöscht",
       snapshot: "Snapshot",
       finalized: "Finalisiert",

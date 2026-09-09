@@ -28,7 +28,7 @@ describe("Grids settings dialog guidance", () => {
 
     expect(tableSettings).toContain("title={t.chooseFieldStorage}");
     expect(dialogMessages).toContain('chooseFieldStorage: "Choose what this field stores"');
-    expect(fieldEditor).toContain("title={t().aboutFields({ type: typeLabel() })}");
+    expect(fieldEditor).toContain("subtitle={typeDescription() || t().typeSettingsDescription}");
     expect(fieldEditor).toContain("title={t().numberSeries}");
     expect(fieldConfig).toContain("title={t().uniqueNumber}");
     expect(fieldMessages).toContain('uniqueNumber: "Each record gets its own number"');

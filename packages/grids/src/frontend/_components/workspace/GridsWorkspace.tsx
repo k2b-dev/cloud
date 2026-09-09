@@ -22,7 +22,7 @@ const emptyClientCatalog = (): PublicWorkspaceCatalog => ({
   sidebarDocumentTemplates: [],
 });
 
-const routeClientState = (state: PublicOkWorkspaceState): PublicOkWorkspaceState => {
+export const routeClientState = (state: PublicOkWorkspaceState): PublicOkWorkspaceState => {
   const catalog = emptyClientCatalog();
   switch (state.route.kind) {
     case "overview":
@@ -61,6 +61,9 @@ const routeClientState = (state: PublicOkWorkspaceState): PublicOkWorkspaceState
       catalog.sidebarDocumentTemplates = state.catalog.sidebarDocumentTemplates;
       break;
     case "documentTemplate":
+      break;
+    case "documents":
+      catalog.documentTemplateLevels = state.catalog.documentTemplateLevels;
       break;
   }
   return { ...state, catalog };

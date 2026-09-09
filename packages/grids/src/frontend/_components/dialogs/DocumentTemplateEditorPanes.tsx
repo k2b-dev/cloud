@@ -1,5 +1,5 @@
 import { Panes, type PanesLayout, PdfPreview, TemplateEditor, type TemplateVariable, useLocale } from "@k2b/ui";
-import { type Accessor, createSignal } from "solid-js";
+import { type Accessor, createEffect, createMemo, createSignal } from "solid-js";
 import type { DocumentPreviewResponse } from "../../../contracts";
 import { documentMessages } from "../documents/messages";
 import { DocumentDataTree, RenderedDocumentSource } from "./DocumentTemplatePreviewData";
@@ -30,15 +30,17 @@ type Props = {
   source: Accessor<string>;
   previewRecordId: Accessor<string>;
   previewPdf: () => Promise<Response>;
+  disabled?: Accessor<boolean>;
+  bodyError?: Accessor<string | undefined>;
 };
 
-const createPanesLayout = (): PanesLayout => ({
+const createPanesLayout = (rendererKind: "html" | "profile"): PanesLayout => ({
   version: 2,
   root: {
     type: "split",
     direction: "horizontal",
     ratio: 0.58,
-    first: { type: "group", items: ["body", "header", "footer", "css"], active: "body" },
+    first: { type: "group", items: rendererKind === "html" ? ["body", "header", "footer", "css"] : ["body"], active: "body" },
     second: { type: "group", items: ["preview", "data", "source"], active: "preview" },
   },
 });
@@ -46,7 +48,13 @@ const createPanesLayout = (): PanesLayout => ({
 export function DocumentTemplateEditorPanes(props: Props) {
   const locale = useLocale();
   const t = () => documentMessages.resolve([locale()]).t;
-  const [layout, setLayout] = createSignal(createPanesLayout());
+  let rendererKind = props.rendererKind();
+  const [layout, setLayout] = createSignal(createPanesLayout(rendererKind));
+  createEffect(() => {
+    if (props.rendererKind() === rendererKind) return;
+    rendererKind = props.rendererKind();
+    setLayout(createPanesLayout(rendererKind));
+  });
   const snippets: TemplateSnippet[] = [
     {
       id: "body",
@@ -81,23 +89,27 @@ export function DocumentTemplateEditorPanes(props: Props) {
       placeholder: "@page { size: A4; margin: 28mm 14mm 22mm; }",
     },
   ];
-  const items = [
-    ...snippets.map((snippet) => ({
-      id: snippet.id,
-      title: typeof snippet.title === "string" ? snippet.title : snippet.title(),
-      icon: snippet.icon,
-      render: () => (
-        <section class="flex h-full min-h-0 flex-col overflow-hidden">
-          <TemplateEditor
-            value={snippet.value}
-            onValueChange={snippet.onInput}
-            variables={props.templateVariables()}
-            fill
-            placeholder={snippet.placeholder}
-          />
-        </section>
-      ),
-    })),
+  const items = createMemo(() => [
+    ...snippets
+      .filter((snippet) => props.rendererKind() === "html" || snippet.id === "body")
+      .map((snippet) => ({
+        id: snippet.id,
+        title: typeof snippet.title === "string" ? snippet.title : snippet.title(),
+        icon: snippet.icon,
+        render: () => (
+          <section class="flex h-full min-h-0 flex-col overflow-hidden">
+            <TemplateEditor
+              value={snippet.value}
+              onValueChange={snippet.onInput}
+              variables={props.templateVariables()}
+              fill
+              disabled={props.disabled?.()}
+              error={snippet.id === "body" ? props.bodyError : undefined}
+              placeholder={snippet.placeholder}
+            />
+          </section>
+        ),
+      })),
     {
       id: "preview",
       title: t().preview,
@@ -109,7 +121,9 @@ export function DocumentTemplateEditorPanes(props: Props) {
             class="min-h-0 flex-1"
             buttonLabel={t().renderPreview}
             emptyText={t().unsavedPreview}
-            disabled={() => !props.source().trim() || !props.body().trim() || !props.previewRecordId().trim()}
+            disabled={() =>
+              Boolean(props.disabled?.()) || !props.source().trim() || !props.body().trim() || !props.previewRecordId().trim()
+            }
             request={props.previewPdf}
           />
         </section>
@@ -143,9 +157,9 @@ export function DocumentTemplateEditorPanes(props: Props) {
         </section>
       ),
     },
-  ];
+  ]);
 
   return (
-    <Panes layout={layout()} onLayoutChange={setLayout} items={items} class="min-h-[24rem] w-full flex-1" movable={false} split={false} />
+    <Panes layout={layout()} onLayoutChange={setLayout} items={items()} class="min-h-[24rem] w-full flex-1" movable={false} split={false} />
   );
 }

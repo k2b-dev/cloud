@@ -1,6 +1,19 @@
 import { navigateTo } from "@k2b/ssr/nav";
 import { mutation as mutations, timed } from "@k2b/stdlib/solid";
-import { AppOverview, Pagination, prompts, TextInput, useLocale } from "@k2b/ui";
+import {
+  AppOverview,
+  Button,
+  CheckboxCard,
+  confirmDiscardIfDirty,
+  dialogCore,
+  InlineGuidance,
+  Pagination,
+  PanelDialog,
+  panelDialogOptions,
+  prompts,
+  TextInput,
+  useLocale,
+} from "@k2b/ui";
 import { createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { PublicBase } from "../../../api/public-dto";
@@ -77,82 +90,110 @@ export default function BasesOverview(props: Props) {
   }, 250);
   onCleanup(() => abortCtl?.abort());
 
-  const createBaseMutation = mutations.create<PublicBase | null, void>({
-    mutation: async () => {
-      const result = await prompts.form({
-        title: t.newBase,
-        icon: "ti ti-database-plus",
-        fields: {
-          name: { type: "text", label: t.name, required: true, placeholder: t.baseNameExample },
-          description: { type: "text", label: t.description, multiline: true, placeholder: t.optional },
-        },
-        confirmText: t.create,
-      });
-      if (!result) return null;
-      const res = await apiClient.bases.$post({
-        json: {
-          name: String(result.name).trim(),
-          description: String(result.description ?? "").trim() || null,
-        },
-      });
-      if (!res.ok) throw new Error(await errorMessage(res, t.createBaseFailed));
-      return res.json();
-    },
-    onSuccess: (base) => {
-      if (base) navigateTo(`/app/grids/${base.id}`);
-    },
-    onError: (e) => prompts.error(e.message),
-  });
-
-  const createFromTemplateMutation = mutations.create<PublicBase | null, TemplateSummary>({
-    mutation: async (template) => {
-      const result = await prompts.form({
-        title: t.createTemplate({ name: template.name }),
-        icon: template.icon,
-        fields: {
-          name: {
-            type: "text",
-            label: t.name,
-            description: t.renameTemplateDescription,
-            placeholder: template.name,
+  const [isCreating, setIsCreating] = createSignal(false);
+  const createBase = async (template?: TemplateSummary) => {
+    if (isCreating()) return;
+    setIsCreating(true);
+    setCreatingTemplateId(template?.id ?? null);
+    try {
+      const base = await dialogCore.open<PublicBase>((close, context) => {
+        const initialName = template?.name ?? "";
+        const [name, setName] = createSignal(initialName);
+        const [description, setDescription] = createSignal("");
+        const [sampleData, setSampleData] = createSignal(true);
+        const [submitted, setSubmitted] = createSignal(false);
+        const save = mutations.create<PublicBase, void>({
+          mutation: async () => {
+            const response = template
+              ? await apiClient.templates[":templateId"].$post({
+                  param: { templateId: template.id },
+                  json: { name: name().trim(), withSampleData: sampleData() },
+                })
+              : await apiClient.bases.$post({ json: { name: name().trim(), description: description().trim() || null } });
+            if (!response.ok) throw new Error(await errorMessage(response, template ? t.createFromTemplateFailed : t.createBaseFailed));
+            return response.json();
           },
-          withSampleData: {
-            type: "boolean",
-            label: t.includeSampleData,
-            description: t.includeSampleDataDescription,
-            default: true,
-          },
-        },
-        confirmText: t.createBase,
-      });
-      if (!result) return null;
-      const res = await apiClient.templates[":templateId"].$post({
-        param: { templateId: template.id },
-        json: {
-          name: String(result.name ?? "").trim() || undefined,
-          withSampleData: Boolean(result.withSampleData),
-        },
-      });
-      if (!res.ok) throw new Error(await errorMessage(res, t.createFromTemplateFailed));
-      return res.json();
-    },
-    onSuccess: (base) => {
-      setCreatingTemplateId(null);
+          onSuccess: close,
+        });
+        const dismiss = async () => {
+          if (!save.loading() && (await confirmDiscardIfDirty(name() !== initialName || description().length > 0 || !sampleData())))
+            close();
+        };
+        context.setDismissHandler(dismiss);
+        return (
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              setSubmitted(true);
+              if (name().trim() && !save.loading()) void save.mutate();
+            }}
+          >
+            <PanelDialog>
+              <PanelDialog.Header
+                title={template ? t.createTemplate({ name: template.name }) : t.newBase}
+                icon={template?.icon ?? "ti ti-database-plus"}
+                close={dismiss}
+                closeDisabled={save.loading()}
+              />
+              <PanelDialog.Body>
+                <div class="flex flex-col gap-4">
+                  <Show when={save.error()}>{(error) => <InlineGuidance tone="danger">{error().message}</InlineGuidance>}</Show>
+                  <TextInput
+                    label={t.name}
+                    description={template ? t.renameTemplateDescription : undefined}
+                    value={name}
+                    onValueChange={setName}
+                    placeholder={t.baseNameExample}
+                    required
+                    error={submitted() && !name().trim() ? t.requiredName : undefined}
+                    disabled={save.loading()}
+                  />
+                  <Show
+                    when={template}
+                    fallback={
+                      <TextInput
+                        label={t.description}
+                        value={description}
+                        onValueChange={setDescription}
+                        multiline
+                        placeholder={t.optional}
+                        disabled={save.loading()}
+                      />
+                    }
+                  >
+                    <CheckboxCard
+                      label={t.includeSampleData}
+                      description={t.includeSampleDataDescription}
+                      value={sampleData}
+                      onValueChange={setSampleData}
+                      disabled={save.loading()}
+                    />
+                  </Show>
+                </div>
+              </PanelDialog.Body>
+              <PanelDialog.Footer>
+                <span />
+                <div class="flex gap-2">
+                  <Button type="button" variant="secondary" onClick={dismiss} disabled={save.loading()}>
+                    {t.cancel}
+                  </Button>
+                  <Button type="submit" loading={save.loading()}>
+                    {t.createBase}
+                  </Button>
+                </div>
+              </PanelDialog.Footer>
+            </PanelDialog>
+          </form>
+        );
+      }, panelDialogOptions);
       if (base) navigateTo(`/app/grids/${base.id}`);
-    },
-    onError: (e) => {
+    } finally {
+      setIsCreating(false);
       setCreatingTemplateId(null);
-      prompts.error(e.message);
-    },
-  });
-
-  const isCreating = () => createBaseMutation.loading() || createFromTemplateMutation.loading();
-  const createBlank = () => createBaseMutation.mutate(undefined);
-
-  const createFromTemplate = (template: TemplateSummary) => {
-    setCreatingTemplateId(template.id);
-    createFromTemplateMutation.mutate(template);
+    }
   };
+  const createBlank = () => void createBase();
+  const createFromTemplate = (template: TemplateSummary) => void createBase(template);
 
   const onSearchInput = (value: string) => {
     setQuery(value);
@@ -272,10 +313,10 @@ export default function BasesOverview(props: Props) {
             class="paper p-4 text-left flex items-start gap-3 hover:paper-highlighted transition-all"
             onClick={createBlank}
             disabled={isCreating()}
-            aria-busy={createBaseMutation.loading()}
+            aria-busy={isCreating() && creatingTemplateId() === null}
           >
             <span class="app-accent-text w-9 h-9 thumbnail bg-[var(--ui-selected)] flex items-center justify-center shrink-0">
-              <i class={`ti ${createBaseMutation.loading() ? "ti-loader-2 animate-spin" : "ti-plus"} text-lg`} />
+              <i class={`ti ${isCreating() && creatingTemplateId() === null ? "ti-loader-2 animate-spin" : "ti-plus"} text-lg`} />
             </span>
             <span class="min-w-0 flex-1">
               <span class="block text-sm font-semibold text-primary">{t.blankBase}</span>

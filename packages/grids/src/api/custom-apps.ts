@@ -472,6 +472,41 @@ const resolveRuntimeRecordEdit = async (c: Context<AuthContext>) => {
   return resolved && resolved.block.editableFieldIds.length > 0 ? resolved : null;
 };
 
+const projectRuntimeEditableRecord = async (
+  c: Context<AuthContext>,
+  resolved: NonNullable<Awaited<ReturnType<typeof resolveRuntimeRecordEdit>>>,
+  record: GridRecord,
+  fields: Awaited<ReturnType<typeof gridsService.field.listByTable>>,
+) => {
+  const visibleFieldIds = new Set(resolved.block.fieldIds);
+  const visibleFields = fields.filter((field) => visibleFieldIds.has(field.id));
+  const visibleRelations = resolved.capability.relationLabels.filter((relation) => visibleFieldIds.has(relation.fieldId));
+  const relationTableIds = [resolved.tableId, ...new Set(resolved.capability.relationLabels.map((relation) => relation.targetTableId))];
+  const relationViewer = {
+    ...resolved.viewer,
+    isAdmin: false,
+    readableTableIds: new Set(relationTableIds),
+    tableReadAccess: new Map(relationTableIds.map((tableId) => [tableId, true])),
+  };
+  const relationLabels = await buildCustomAppRecordLabelCache({
+    records: [record],
+    fields: visibleFields,
+    relations: visibleRelations,
+    viewer: relationViewer,
+    actorUserId: currentActorUserId(c),
+  }).catch(() => ({}));
+  const [projected, relationRecordIds] = await Promise.all([
+    projectGridRecord(projectCustomAppRecord(record, resolved.block.fieldIds), visibleFields),
+    projectPublicIds("record", Object.keys(relationLabels)),
+  ]);
+  return {
+    ...projected,
+    relationLabels: Object.fromEntries(
+      Object.entries(relationLabels).map(([id, label]) => [requiredProjected(relationRecordIds, id, "record"), label]),
+    ),
+  };
+};
+
 const resolveRuntimeRecordFile = async (c: Context<AuthContext>, requireWrite: boolean) => {
   const resolved = await resolveRuntimeRecordBlock(c);
   if (!resolved) return null;
@@ -934,6 +969,13 @@ export const createCustomAppsApi = (
         return c.body(null, 204);
       },
     )
+    .get("/runtime/:shortId/:pageId/:blockId/record", async (c) => {
+      const resolved = await resolveRuntimeRecordEdit(c);
+      if (!resolved) return c.json({ message: apiMessages(c).recordEditorNotFound }, 404);
+      return c.json(
+        await projectRuntimeEditableRecord(c, resolved, resolved.record, await gridsService.field.listByTable(resolved.tableId)),
+      );
+    })
     .patch("/runtime/:shortId/:pageId/:blockId/record", v("json", CustomAppRecordUpdateSchema), async (c) => {
       const resolved = await resolveRuntimeRecordEdit(c);
       if (!resolved) return c.json({ message: apiMessages(c).recordEditorNotFound }, 404);
@@ -983,33 +1025,7 @@ export const createCustomAppsApi = (
         },
       );
       if (!result.ok) return respond(c, () => Promise.resolve(result));
-      const visibleFieldIds = new Set(resolved.block.fieldIds);
-      const visibleFields = fields.filter((field) => visibleFieldIds.has(field.id));
-      const visibleRelations = resolved.capability.relationLabels.filter((relation) => visibleFieldIds.has(relation.fieldId));
-      const relationTableIds = [resolved.tableId, ...new Set(resolved.capability.relationLabels.map((relation) => relation.targetTableId))];
-      const relationViewer = {
-        ...resolved.viewer,
-        isAdmin: false,
-        readableTableIds: new Set(relationTableIds),
-        tableReadAccess: new Map(relationTableIds.map((tableId) => [tableId, true])),
-      };
-      const relationLabels = await buildCustomAppRecordLabelCache({
-        records: [result.data],
-        fields: visibleFields,
-        relations: visibleRelations,
-        viewer: relationViewer,
-        actorUserId: currentActorUserId(c),
-      }).catch(() => ({}));
-      const [record, relationRecordIds] = await Promise.all([
-        projectGridRecord(projectCustomAppRecord(result.data, resolved.block.fieldIds), visibleFields),
-        projectPublicIds("record", Object.keys(relationLabels)),
-      ]);
-      return c.json({
-        ...record,
-        relationLabels: Object.fromEntries(
-          Object.entries(relationLabels).map(([id, label]) => [requiredProjected(relationRecordIds, id, "record"), label]),
-        ),
-      });
+      return c.json(await projectRuntimeEditableRecord(c, resolved, result.data, fields));
     })
     .get("/runtime/:shortId/:pageId/:blockId/record/files/:fieldId", requirePublicIdParam("fieldId", "field", "Field"), async (c) => {
       const resolved = await resolveRuntimeRecordFile(c, false);

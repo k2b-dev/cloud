@@ -2,13 +2,13 @@ import {
   Button,
   CheckboxCard,
   CopyButton,
+  confirmDiscardIfDirty,
   dialogCore,
   IconButton,
   MultiSelectInput,
   NoticeCard,
   PanelDialog,
   panelDialogOptions,
-  prompts,
   Select,
   TextInput,
   Tooltip,
@@ -21,8 +21,8 @@ import {
   AuditQuestionSchema,
   type AuditRequirement,
   type AuditUpdateRequirement,
+  PublicTableAuditPolicySchema,
   type TableAuditPolicy,
-  TableAuditPolicySchema,
 } from "../../../contracts";
 import { gridsDialogMessages } from "./messages";
 
@@ -66,7 +66,7 @@ const openQuestionDialog = (question: AuditQuestion, locale: string): Promise<Au
     label: option.id === "text" ? t.shortText : option.id === "longtext" ? t.longText : t.select,
   }));
   return dialogCore
-    .open<AuditQuestion | null>((close) => {
+    .open<AuditQuestion | null>((close, context) => {
       const [label, setLabel] = createSignal(question.label);
       const [description, setDescription] = createSignal(question.description ?? "");
       const [type, setType] = createSignal<AuditQuestion["type"]>(question.type);
@@ -77,19 +77,27 @@ const openQuestionDialog = (question: AuditQuestion, locale: string): Promise<Au
 
       const updateOption = (id: string, value: string) =>
         setOptions((current) => current.map((option) => (option.id === id ? { ...option, label: value } : option)));
-
+      const [submitted, setSubmitted] = createSignal(false);
+      const candidate = () => ({
+        id: question.id,
+        label: label(),
+        description: description().trim() || undefined,
+        type: type(),
+        required: required(),
+        ...(type() === "select" ? { options: options() } : {}),
+      });
+      const initialQuestion = JSON.stringify(candidate());
+      const closeIfClean = async () => {
+        if (await confirmDiscardIfDirty(() => JSON.stringify(candidate()) !== initialQuestion)) close(null);
+      };
+      context.setDismissHandler(closeIfClean);
       const save = () => {
-        const candidate = {
-          id: question.id,
-          label: label(),
-          description: description().trim() || undefined,
-          type: type(),
-          required: required(),
-          ...(type() === "select" ? { options: options() } : {}),
-        };
-        const parsed = AuditQuestionSchema.safeParse(candidate);
+        setSubmitted(true);
+        const parsed = AuditQuestionSchema.safeParse(candidate());
         if (!parsed.success) {
-          prompts.error(t.checkAuditQuestion);
+          context.dialog
+            .querySelector<HTMLElement>('[data-invalid="true"] input, input[data-invalid="true"], textarea[data-invalid="true"]')
+            ?.focus();
           return;
         }
         close(parsed.data);
@@ -100,11 +108,19 @@ const openQuestionDialog = (question: AuditQuestion, locale: string): Promise<Au
           <PanelDialog.Header
             title={question.label ? t.editAuditQuestion : t.addAuditQuestion}
             icon="ti ti-message-question"
-            close={() => close(null)}
+            close={closeIfClean}
           />
           <PanelDialog.Body>
             <PanelDialog.Section title={t.question} subtitle={t.questionDescription} icon="ti ti-message-question">
-              <TextInput label={t.label} value={label} onValueChange={setLabel} placeholder={t.auditLabelPlaceholder} required />
+              <TextInput
+                label={t.label}
+                value={label}
+                onValueChange={setLabel}
+                placeholder={t.auditLabelPlaceholder}
+                required
+                maxLength={200}
+                error={() => (submitted() && !label().trim() ? t.auditLabelRequired : undefined)}
+              />
               <TextInput
                 label={t.guidance}
                 value={description}
@@ -112,6 +128,7 @@ const openQuestionDialog = (question: AuditQuestion, locale: string): Promise<Au
                 placeholder={t.guidancePlaceholder}
                 multiline
                 lines={2}
+                maxLength={1_000}
               />
               <Select
                 label={t.answerType}
@@ -143,6 +160,8 @@ const openQuestionDialog = (question: AuditQuestion, locale: string): Promise<Au
                             onValueChange={(value) => updateOption(option.id, value)}
                             placeholder={t.optionLabel}
                             required
+                            maxLength={200}
+                            error={() => (submitted() && !option.label.trim() ? t.auditOptionRequired : undefined)}
                           />
                         </div>
                         <Tooltip.Anchor content={t.removeOption}>
@@ -166,6 +185,7 @@ const openQuestionDialog = (question: AuditQuestion, locale: string): Promise<Au
                     size="sm"
                     type="button"
                     class="self-start"
+                    disabled={options().length >= 100}
                     onClick={() => setOptions((current) => [...current, { id: crypto.randomUUID(), label: "" }])}
                   >
                     <i class="ti ti-plus" /> {t.addOption}
@@ -177,7 +197,7 @@ const openQuestionDialog = (question: AuditQuestion, locale: string): Promise<Au
           <PanelDialog.Footer>
             <span />
             <div class="flex items-center gap-2">
-              <Button variant="ghost" size="sm" type="button" onClick={() => close(null)}>
+              <Button variant="ghost" size="sm" type="button" onClick={closeIfClean}>
                 {t.cancel}
               </Button>
               <Button variant="primary" size="sm" type="button" onClick={save}>
@@ -262,6 +282,7 @@ function RequirementEditor(props: {
   requirement: () => AuditRequirement | AuditUpdateRequirement;
   fields: Field[];
   onChange: (requirement: AuditRequirement | AuditUpdateRequirement) => void;
+  error?: string;
 }) {
   const locale = useLocale();
   const t = () => gridsDialogMessages.resolve([locale()]).t;
@@ -282,6 +303,9 @@ function RequirementEditor(props: {
       subtitle={description()}
       icon={props.operation === "delete" ? "ti ti-trash" : props.operation === "restore" ? "ti ti-arrow-back-up" : "ti ti-pencil"}
     >
+      <Show when={props.error}>
+        <NoticeCard tone="danger" title={props.error} />
+      </Show>
       <CheckboxCard
         label={t().requireAuditAnswers}
         description={t().requireAuditAnswersDescription}
@@ -328,19 +352,43 @@ export const openAuditPolicyDialog = (args: {
   value: TableAuditPolicy;
 }): Promise<TableAuditPolicy | null> =>
   dialogCore
-    .open<TableAuditPolicy | null>((close) => {
+    .open<TableAuditPolicy | null>((close, context) => {
       const locale = useLocale();
       const t = () => gridsDialogMessages.resolve([locale()]).t;
       const [policy, setPolicy] = createSignal<TableAuditPolicy>(clonePolicy(args.value));
+      const [errors, setErrors] = createSignal<Partial<Record<Operation, string>>>({});
+      const closeIfClean = async () => {
+        if (await confirmDiscardIfDirty(() => JSON.stringify(policy()) !== JSON.stringify(args.value))) close(null);
+      };
+      context.setDismissHandler(closeIfClean);
       const requirement = (operation: Operation): AuditRequirement | AuditUpdateRequirement =>
         policy()[operation] ?? (operation === "update" ? defaultUpdateRequirement() : defaultRequirement());
-      const updateRequirement = (operation: Operation, value: AuditRequirement | AuditUpdateRequirement) =>
+      const updateRequirement = (operation: Operation, value: AuditRequirement | AuditUpdateRequirement) => {
+        setErrors((current) => ({ ...current, [operation]: undefined }));
         setPolicy((current) => ({ ...current, [operation]: value }));
+      };
 
       const save = () => {
-        const parsed = TableAuditPolicySchema.safeParse(policy());
+        const parsed = PublicTableAuditPolicySchema.safeParse(policy());
         if (!parsed.success) {
-          prompts.error(t().checkAuditRequirements);
+          const next: Partial<Record<Operation, string>> = {};
+          for (const issue of parsed.error.issues) {
+            const operation = issue.path[0];
+            if (operation === "update" || operation === "delete" || operation === "restore") {
+              next[operation] =
+                issue.path[1] === "fieldIds"
+                  ? t().auditSelectFields
+                  : requirement(operation).questions.length === 0
+                    ? t().auditQuestionMissing
+                    : issue.message === "Audit question labels must be unique"
+                      ? t().auditQuestionDuplicates
+                      : issue.message === "Select option labels must be unique"
+                        ? t().auditOptionsDuplicates
+                        : t().auditQuestionsGuidance;
+            }
+          }
+          setErrors(next);
+          context.dialog.querySelector<HTMLElement>('[role="alert"]')?.scrollIntoView({ block: "nearest" });
           return;
         }
         close(parsed.data);
@@ -348,23 +396,26 @@ export const openAuditPolicyDialog = (args: {
 
       return (
         <PanelDialog>
-          <PanelDialog.Header title={t().auditRequirements} subtitle={args.tableName} icon="ti ti-shield-check" close={() => close(null)} />
+          <PanelDialog.Header title={t().auditRequirements} subtitle={args.tableName} icon="ti ti-shield-check" close={closeIfClean} />
           <PanelDialog.Body>
             <NoticeCard tone="info" title={t().askReason} detail={t().askReasonDetail} />
             <RequirementEditor
               operation="update"
+              error={errors().update}
               requirement={() => requirement("update")}
               fields={args.fields}
               onChange={(value) => updateRequirement("update", value)}
             />
             <RequirementEditor
               operation="delete"
+              error={errors().delete}
               requirement={() => requirement("delete")}
               fields={args.fields}
               onChange={(value) => updateRequirement("delete", value)}
             />
             <RequirementEditor
               operation="restore"
+              error={errors().restore}
               requirement={() => requirement("restore")}
               fields={args.fields}
               onChange={(value) => updateRequirement("restore", value)}
@@ -373,7 +424,7 @@ export const openAuditPolicyDialog = (args: {
           <PanelDialog.Footer>
             <span />
             <div class="flex items-center gap-2">
-              <Button variant="ghost" size="sm" type="button" onClick={() => close(null)}>
+              <Button variant="ghost" size="sm" type="button" onClick={closeIfClean}>
                 {t().cancel}
               </Button>
               <Button variant="primary" size="sm" type="button" onClick={save}>

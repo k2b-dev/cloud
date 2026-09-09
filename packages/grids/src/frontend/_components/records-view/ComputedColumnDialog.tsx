@@ -1,8 +1,8 @@
-import { Button, dialogCore, NoticeCard, PanelDialog, panelDialogOptions, prompts, TextInput, useLocale } from "@k2b/ui";
+import { Button, confirmDiscardIfDirty, dialogCore, NoticeCard, PanelDialog, panelDialogOptions, TextInput, useLocale } from "@k2b/ui";
 import { createSignal, Show } from "solid-js";
 import type { PublicField as Field } from "../../../api/public-dto";
 import type { ColumnSpec } from "../../../contracts";
-import { FormulaExpressionEditor } from "../fields/FormulaExpressionEditor";
+import { FormulaBasics, FormulaExpressionEditor } from "../fields/FormulaExpressionEditor";
 import { recordsViewMessages } from "./messages";
 
 type ComputedColumn = Extract<ColumnSpec, { kind: "computed" }>;
@@ -24,22 +24,22 @@ export const openComputedColumnDialog = (args: {
   tableId: string;
   column?: ComputedColumn;
 }) =>
-  dialogCore.open<ComputedColumnDialogResult | null>((close) => {
+  dialogCore.open<ComputedColumnDialogResult | null>((close, context) => {
     const locale = useLocale();
     const t = () => recordsViewMessages.resolve([locale()]).t;
     const [label, setLabel] = createSignal(args.column?.label ?? "");
     const [expression, setExpression] = createSignal(args.column?.expression ?? "");
+    const [attempted, setAttempted] = createSignal(false);
+    const requestClose = async () => {
+      if (await confirmDiscardIfDirty(() => label() !== (args.column?.label ?? "") || expression() !== (args.column?.expression ?? "")))
+        close(null);
+    };
+    context.setDismissHandler(requestClose);
     const save = () => {
       const nextLabel = label().trim();
       const nextExpression = expression().trim();
-      if (!nextLabel) {
-        prompts.error(t().nameRequired);
-        return;
-      }
-      if (!nextExpression) {
-        prompts.error(t().expressionRequired);
-        return;
-      }
+      setAttempted(true);
+      if (!nextLabel || !nextExpression) return;
       close({
         action: "save",
         column: {
@@ -56,10 +56,12 @@ export const openComputedColumnDialog = (args: {
         <PanelDialog.Header
           title={args.column ? t().editComputedColumn : t().computedColumn}
           icon="ti ti-calculator"
-          close={() => close(null)}
+          close={requestClose}
         />
         <PanelDialog.Body>
-          <NoticeCard tone="info" title={t().computedTitle} detail={t().computedDetail} />
+          <NoticeCard tone="info" title={t().computedTitle} detail={t().computedDetail}>
+            <FormulaBasics />
+          </NoticeCard>
           <TextInput
             label={t().name}
             value={label}
@@ -67,8 +69,15 @@ export const openComputedColumnDialog = (args: {
             icon="ti ti-typography"
             placeholder={t().computedExample}
             required
+            error={() => (attempted() && !label().trim() ? t().nameRequired : undefined)}
           />
+          <Show when={attempted() && !expression().trim()}>
+            <p class="text-sm text-danger" role="alert">
+              {t().expressionRequired}
+            </p>
+          </Show>
           <FormulaExpressionEditor
+            showGuidance={false}
             value={expression}
             onInput={setExpression}
             fields={args.fields}
@@ -85,7 +94,7 @@ export const openComputedColumnDialog = (args: {
             </Button>
           </Show>
           <div class="flex items-center gap-2">
-            <Button variant="ghost" size="sm" type="button" onClick={() => close(null)}>
+            <Button variant="ghost" size="sm" type="button" onClick={requestClose}>
               {t().cancel}
             </Button>
             <Button variant="primary" size="sm" type="button" onClick={save}>

@@ -1,5 +1,5 @@
-import { AppWorkspace, Button, ButtonLink, Paper, Placeholder, prompts, Select, TextInput, useLocale } from "@k2b/ui";
-import { createMemo, createSignal, For, Show } from "solid-js";
+import { AppWorkspace, Button, ButtonLink, Paper, Placeholder, prompts, Select, Tabs, TextInput, useLocale } from "@k2b/ui";
+import { createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { NavigationResourceTypeSchema, navigationReferenceKey } from "../../../navigation-contracts";
 import { navigationMessages } from "../../../navigation-messages";
 import { sidebarMessages } from "../sidebar/messages";
@@ -18,6 +18,24 @@ export default function BaseOverview(props: { state: PublicOkWorkspaceState }) {
   const byKey = new Map(resources.map((resource) => [navigationReferenceKey(resource), resource]));
   const [search, setSearch] = createSignal("");
   const [type, setType] = createSignal<string | null>(null);
+  const resolveTab = (href: string) => {
+    const value = new URL(href, "http://grids.local").searchParams.get("tab");
+    return value === "groups" || value === "resources" ? value : state.navigation?.groups.length ? "groups" : "resources";
+  };
+  const [tab, setTab] = createSignal(resolveTab(state.rememberPath));
+  const selectTab = (value: string) => {
+    if (value !== "groups" && value !== "resources") return;
+    if (tab() === value) return;
+    const url = new URL(window.location.href);
+    url.searchParams.set("tab", value);
+    window.history.pushState(window.history.state, "", url);
+    setTab(value);
+  };
+  onMount(() => {
+    const restore = () => setTab(resolveTab(window.location.href));
+    window.addEventListener("popstate", restore);
+    onCleanup(() => window.removeEventListener("popstate", restore));
+  });
   const typeLabels = {
     table: workspaceText.tables,
     view: workspaceText.views,
@@ -83,54 +101,59 @@ export default function BaseOverview(props: { state: PublicOkWorkspaceState }) {
             <p class="mt-2 text-dimmed">{state.base.description}</p>
           </Show>
         </header>
-        <Show when={state.navigation?.groups.length}>
-          <div class="grids-navigation-columns">
-            <For each={state.navigation?.groups}>
-              {(group) => (
-                <Paper class="p-4">
-                  <h2 class="mb-3 font-semibold">{group.name}</h2>
-                  <ul class="flex flex-col gap-1">
-                    {group.entries.flatMap((entry) => {
-                      const resource = byKey.get(navigationReferenceKey(entry));
-                      return resource ? [<li>{resourceLink(resource)}</li>] : [];
-                    })}
-                  </ul>
-                </Paper>
-              )}
-            </For>
-          </div>
-        </Show>
-        <section class="flex flex-col gap-4">
-          <h2 class="text-lg font-semibold">{t.allResources}</h2>
-          <div class="grid gap-3 sm:grid-cols-[1fr_14rem]">
-            <TextInput label={t.search} value={search} onValueChange={setSearch} icon="ti ti-search" />
-            <Select
-              label={t.allTypes}
-              placeholder={t.allTypes}
-              value={type}
-              onValueChange={setType}
-              clearable
-              options={NavigationResourceTypeSchema.options.map((type) => ({ value: type, label: typeLabels[type] }))}
-            />
-          </div>
-          <Show when={groups().length} fallback={<Placeholder title={t.empty} />}>
-            <div class="grids-navigation-columns">
-              <For each={groups()}>
-                {(group) => (
-                  <Paper class="p-4">
-                    <h3 class="mb-3 flex items-center justify-between gap-2 font-semibold">
-                      <span>{typeLabels[group.type]}</span>
-                      <span class="text-sm font-normal text-dimmed">{group.entries.length}</span>
-                    </h3>
-                    <ul class="flex flex-col gap-1">
-                      <For each={group.entries}>{(resource) => <li>{resourceLink(resource)}</li>}</For>
-                    </ul>
-                  </Paper>
-                )}
-              </For>
-            </div>
-          </Show>
-        </section>
+        <Tabs value={tab} onValueChange={selectTab} ariaLabel={t.overview}>
+          <Tabs.Item value="groups" label={t.groups} icon="ti ti-folders">
+            <Show when={state.navigation?.groups.length} fallback={<Placeholder title={t.noGroupsYet} />}>
+              <div class="grids-navigation-columns">
+                <For each={state.navigation?.groups}>
+                  {(group) => (
+                    <Paper class="p-4">
+                      <h2 class="mb-3 font-semibold">{group.name}</h2>
+                      <ul class="flex flex-col gap-1">
+                        {group.entries.flatMap((entry) => {
+                          const resource = byKey.get(navigationReferenceKey(entry));
+                          return resource ? [<li>{resourceLink(resource)}</li>] : [];
+                        })}
+                      </ul>
+                    </Paper>
+                  )}
+                </For>
+              </div>
+            </Show>
+          </Tabs.Item>
+          <Tabs.Item value="resources" label={t.allResources} icon="ti ti-list">
+            <section class="flex flex-col gap-4">
+              <div class="grid gap-3 sm:grid-cols-[1fr_14rem]">
+                <TextInput label={t.search} value={search} onValueChange={setSearch} icon="ti ti-search" />
+                <Select
+                  label={t.allTypes}
+                  placeholder={t.allTypes}
+                  value={type}
+                  onValueChange={setType}
+                  clearable
+                  options={NavigationResourceTypeSchema.options.map((type) => ({ value: type, label: typeLabels[type] }))}
+                />
+              </div>
+              <Show when={groups().length} fallback={<Placeholder title={t.empty} />}>
+                <div class="grids-navigation-columns">
+                  <For each={groups()}>
+                    {(group) => (
+                      <Paper class="p-4">
+                        <h3 class="mb-3 flex items-center justify-between gap-2 font-semibold">
+                          <span>{typeLabels[group.type]}</span>
+                          <span class="text-sm font-normal text-dimmed">{group.entries.length}</span>
+                        </h3>
+                        <ul class="flex flex-col gap-1">
+                          <For each={group.entries}>{(resource) => <li>{resourceLink(resource)}</li>}</For>
+                        </ul>
+                      </Paper>
+                    )}
+                  </For>
+                </div>
+              </Show>
+            </section>
+          </Tabs.Item>
+        </Tabs>
       </div>
     </AppWorkspace.Main>
   );

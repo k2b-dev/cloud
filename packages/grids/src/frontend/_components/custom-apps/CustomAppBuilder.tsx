@@ -1490,8 +1490,9 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
       return;
     }
     await dialogCore.open<void>(
-      (close) => (
+      (close, context) => (
         <WorkflowEditor
+          setDismissHandler={context.setDismissHandler}
           baseId={draft.draft().baseId}
           tables={props.catalog.tables}
           onChanged={(created) => {
@@ -1501,7 +1502,7 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
           onClose={close}
         />
       ),
-      { ...panelDialogWorkspaceOptions, cancelBehavior: "ignore" },
+      panelDialogWorkspaceOptions,
     );
   };
 

@@ -59,6 +59,8 @@ export function WorkflowInputFields(props: Props) {
                   description={description}
                   placeholder={t().chooseRecord}
                   clearable={!required}
+                  required={required}
+                  error={errorFor(name)}
                   value={() => (typeof value(name) === "string" ? (value(name) as string) : "")}
                   onChange={(recordId) => props.onValueChange(name, recordId)}
                 />
@@ -70,6 +72,7 @@ export function WorkflowInputFields(props: Props) {
                   placeholder={t().chooseRecords}
                   required={required}
                   clearable={!required}
+                  error={errorFor(name)}
                   value={() => (Array.isArray(value(name)) ? (value(name) as string[]) : [])}
                   onValueChange={(recordIds) => props.onValueChange(name, recordIds)}
                   fetchData={async (query, signal) =>

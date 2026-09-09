@@ -40,6 +40,34 @@
   background: var(--k2b-surface-muted);
 }
 
+.k2b-ui .k2b-button.grids-formula-example {
+  min-width: 0;
+  height: auto;
+  padding-block: 0.5rem;
+  text-align: left;
+}
+
+.k2b-ui .grids-formula-example > .k2b-button__label {
+  display: block;
+  min-width: 0;
+  width: 100%;
+}
+
+.k2b-ui .k2b-button.grids-workflow-choice {
+  height: auto;
+  min-width: 0;
+  padding-block: 1rem;
+  white-space: normal;
+  text-align: left;
+}
+
+.k2b-ui .grids-workflow-choice > .k2b-button__label {
+  min-width: 0;
+  width: 100%;
+  justify-content: flex-start;
+  overflow-wrap: anywhere;
+}
+
 .grids-navigation-columns {
   column-count: 1;
   column-gap: 1rem;

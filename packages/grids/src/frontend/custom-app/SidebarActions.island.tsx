@@ -1,6 +1,6 @@
 import type { DateContext } from "@k2b/stdlib";
-import { AppWorkspace, dialogCore, PanelDialog, panelDialogOptions } from "@k2b/ui";
-import { For } from "solid-js";
+import { AppWorkspace, confirmDiscardIfDirty, dialogCore, PanelDialog, panelDialogOptions } from "@k2b/ui";
+import { createSignal, For } from "solid-js";
 import type { PublicField as Field } from "../../api/public-dto";
 import type { PublicRenderableForm } from "../../service/forms";
 import FormSubmit from "../_components/forms/PublicFormSubmit.island";
@@ -21,13 +21,20 @@ export type CustomAppRenderedSidebarAction = {
 export default function SidebarActions(props: { actions: CustomAppRenderedSidebarAction[]; preview?: boolean }) {
   const openForm = (action: CustomAppRenderedSidebarAction) => {
     if (props.preview) return;
-    void dialogCore.open<void>(
-      (close) => (
+    void dialogCore.open<void>((close, context) => {
+      const [dirty, setDirty] = createSignal(false);
+      const [submitting, setSubmitting] = createSignal(false);
+      const closeIfClean = async () => {
+        if (submitting()) return;
+        if (await confirmDiscardIfDirty(dirty)) close();
+      };
+      context.setDismissHandler(closeIfClean);
+      return (
         <PanelDialog>
           <PanelDialog.Header
             title={action.form.config.title || action.label}
             icon={`ti ti-${action.icon ?? "forms"}`}
-            close={() => close()}
+            close={() => void closeIfClean()}
           />
           <PanelDialog.Body>
             <FormSubmit
@@ -38,12 +45,13 @@ export default function SidebarActions(props: { actions: CustomAppRenderedSideba
               dateConfig={action.dateConfig}
               surface="bare"
               showTitle={false}
+              onDirtyChange={setDirty}
+              onSubmittingChange={setSubmitting}
             />
           </PanelDialog.Body>
         </PanelDialog>
-      ),
-      panelDialogOptions,
-    );
+      );
+    }, panelDialogOptions);
   };
 
   return (

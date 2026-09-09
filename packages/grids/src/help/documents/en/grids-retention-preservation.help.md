@@ -95,10 +95,13 @@ You need **Admin** access. Open **Base settings → Preservation holds**, then s
 
 More than one hold can be active. Releasing one hold requires a new reason and leaves every other hold active. Releasing the last hold only removes that block; it does not delete anything or start cleanup.
 
+Search active holds by reason, Table name, creator, or hold ID. The list is paginated, so every matching hold remains accessible. If creating or releasing a hold fails, the dialog keeps your reason and displays the error so you can retry.
+
 The Cloud CLI uses the same Admin-only API:
 
 ```bash
 cld grids bases preservation-holds list 8yMtTb --status active --json
+cld grids bases preservation-holds list 8yMtTb --search "Invoice dispute" --page 1 --json
 cld grids bases preservation-holds create 8yMtTb --reason "Annual review" --json
 cld grids bases preservation-holds create 8yMtTb --scope table --table Invoices --reason "Invoice dispute" --json
 cld grids bases preservation-holds list 8yMtTb --scope table --table Invoices --status active --json

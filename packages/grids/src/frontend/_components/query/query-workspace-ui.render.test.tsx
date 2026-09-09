@@ -65,6 +65,8 @@ describe("query workspace UI contracts", () => {
     );
 
     expect(html).toContain('class="k2b-field " data-fill="true"');
+    expect(html).toContain('bg-surface p-2" data-scroll-preserve="grids-query-workspace"');
+    expect(html).not.toContain('bg-[var(--ui-surface-subtle)] p-2" data-scroll-preserve="grids-query-workspace"');
     expect(html).toContain("text-[11px] leading-4");
     expect(html).toContain('<span class="truncate">Asset ID</span>');
     expect(html).not.toContain('<span class="truncate">&quot;Asset ID&quot;</span>');

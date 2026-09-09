@@ -48,6 +48,7 @@ export type PreservationHold = z.infer<typeof PreservationHoldSchema>;
 export const PreservationHoldsQuerySchema = z
   .object({
     ...PaginationQuerySchema.shape,
+    q: z.string().trim().max(200).optional(),
     status: z.enum(["active", "released", "all"]).optional().default("active"),
     scope: z.enum(["base", "table", "all"]).optional().default("all"),
     tableId: ShortIdSchema.optional(),

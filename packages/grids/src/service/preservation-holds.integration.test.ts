@@ -58,6 +58,19 @@ describe("scoped preservation holds", () => {
       expect(active.total).toBe(3);
       expect(active.items).toHaveLength(1);
       expect(active.items[0]?.baseId).toBe(baseShortId);
+      const searchOptions = { status: "active" as const, scope: "all" as const, tablePublicId: null, perPage: 1, search: " REVIEW " };
+      const firstSearchPage = await list(baseId, { ...searchOptions, offset: 0 });
+      const nextSearchPage = await list(baseId, { ...searchOptions, offset: 1 });
+      expect(firstSearchPage.total).toBe(2);
+      expect(nextSearchPage.total).toBe(2);
+      expect(firstSearchPage.items).toHaveLength(1);
+      expect(nextSearchPage.items).toHaveLength(1);
+      expect(firstSearchPage.items[0]!.id).not.toBe(nextSearchPage.items[0]!.id);
+      expect((await list(foreignBaseId, { ...searchOptions, offset: 0 })).total).toBe(0);
+      expect((await list(baseId, { ...searchOptions, search: "%", offset: 0 })).total).toBe(0);
+      const nameSearch = await list(baseId, { ...searchOptions, search: "invoices", offset: 0 });
+      expect(nameSearch.total).toBe(1);
+      expect(nameSearch.items[0]?.scope).toMatchObject({ tableName: "Invoices" });
       const tableOnly = await list(baseId, {
         status: "active",
         scope: "table",

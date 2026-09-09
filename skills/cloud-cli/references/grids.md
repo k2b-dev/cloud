@@ -45,7 +45,7 @@ Array order controls display order. Rename, reorder, remove, or clear groups thr
 
 In the GUI, **New** in Edit mode groups permitted creation actions. Table-based actions ask for a table; creating a View opens the query editor. **Documents** always expands to **All documents** and template destinations. Workflow email templates are managed under **Settings → Email templates**; CLI commands are unchanged.
 
-The base landing page is **Overview**, with shared groups and searchable resources grouped by type. Base admins edit shared groups in **Settings → Navigation**. Without visible groups, the sidebar retains its other open resource lists. With groups, complete resource-type lists are expandable. Expansion is browser-local cookie state, not part of the shared configuration.
+The base landing page is **Overview**, with **Groups** and **All resources** tabs (`?tab=groups` or `?tab=resources`). It defaults to groups when present, otherwise all resources. The selected tab survives reload and browser history. Base admins edit shared groups in **Settings → Navigation**. Without visible groups, the sidebar retains its other open resource lists. With groups, complete resource-type lists are expandable. Expansion is browser-local cookie state, not part of the shared configuration.
 
 ## Agent workflow
 
@@ -159,6 +159,7 @@ A Base Admin can also block future controlled destruction for the complete Base 
 
 ```bash
 cld grids bases preservation-holds list Bookshop --status active --json
+cld grids bases preservation-holds list Bookshop --status active --search "Annual review" --page 2 --per-page 25 --json
 cld grids bases preservation-holds create Bookshop --reason "Annual review" --json
 cld grids bases preservation-holds create Bookshop --scope table --table Authors --reason "Authorship dispute" --json
 cld grids bases preservation-holds list Bookshop --scope table --table Authors --status active --json

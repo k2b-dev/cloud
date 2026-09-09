@@ -64,6 +64,7 @@ describe("preservation hold routes", () => {
       await sql`INSERT INTO grids.base_access (base_id, access_id) VALUES (${otherBaseId}::uuid, ${accessId}::uuid)`;
 
       expect((await app.request(path)).status).toBe(403);
+      expect((await app.request(`${path}?q=review`)).status).toBe(403);
       expect(
         (
           await app.request(path, {
@@ -127,6 +128,9 @@ describe("preservation hold routes", () => {
         pagination: { page: 1, per_page: 10, total: 1, has_next: false },
       });
       expect((await app.request(`${path}?status=active&scope=all&tableId=${tableShortId}`)).status).toBe(400);
+      const searched = await app.request(`${path}?q=annual&page=1&per_page=1`);
+      expect(await searched.json()).toMatchObject({ items: [{ id: created.id }], pagination: { total: 1 } });
+      expect((await app.request(`${path}?q=${"a".repeat(201)}`)).status).toBe(400);
       const unknownTableFilter = await app.request(`${path}?status=active&scope=table&tableId=${testShortId("T")}`);
       expect(unknownTableFilter.status).toBe(200);
       expect(await unknownTableFilter.json()).toMatchObject({ items: [], pagination: { total: 0 } });

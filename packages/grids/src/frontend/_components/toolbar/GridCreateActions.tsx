@@ -1,8 +1,7 @@
 import { refreshCurrentPath } from "@k2b/ssr/nav";
 import type { DateContext } from "@k2b/stdlib";
-import { mutation as mutations } from "@k2b/stdlib/solid";
 import { Button, Dropdown, prompts, Tooltip, useLocale } from "@k2b/ui";
-import { createMemo, Show } from "solid-js";
+import { createMemo, createSignal, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { PublicField as Field, PublicForm as Form, PublicGridRecord } from "../../../api/public-dto";
 import { isUserEditable } from "../fields/field-prompt-schema";
@@ -31,21 +30,22 @@ export function GridCreateActions(props: Props) {
   const t = () => toolbarMessages.resolve([locale()]).t;
   const activeForms = createMemo(() => (props.canSubmitForms ? (props.forms ?? []).filter((form) => form.isActive) : []));
   const blockedReason = () => (props.canSubmitForms ? t().activeFormRequired : t().changesUnavailable);
-  const addMutation = mutations.create<PublicGridRecord, Record<string, unknown>>({
-    mutation: async (payload) => {
+  const [creating, setCreating] = createSignal(false);
+  const saveRecord = async (payload: Record<string, unknown>) => {
+    setCreating(true);
+    try {
       const response = await apiClient.records["by-table"][":tableId"].$post({
         param: { tableId: props.tableId },
         json: payload,
       });
       if (!response.ok) throw new Error(await errorMessage(response, t().createFailed));
-      return response.json();
-    },
-    onSuccess: (created) => {
+      const created = await response.json();
       if (props.onRecordCreated) props.onRecordCreated(created);
       else refreshCurrentPath();
-    },
-    onError: (error) => prompts.error(error.message),
-  });
+    } finally {
+      setCreating(false);
+    }
+  };
 
   const addRecord = async () => {
     const liveFields = props.fields.filter((field) => !field.deletedAt);
@@ -54,14 +54,14 @@ export function GridCreateActions(props: Props) {
       prompts.error(t().noEditableFields);
       return;
     }
-    const result = await openRecordUpsertDialog({
+    await openRecordUpsertDialog({
       mode: "create",
       fields: liveFields,
       baseId: props.baseId,
       tableName: props.tableName,
       dateConfig: props.dateConfig,
+      onSubmit: saveRecord,
     });
-    if (result) addMutation.mutate(result);
   };
 
   const submitForm = (form: Form) =>
@@ -77,8 +77,8 @@ export function GridCreateActions(props: Props) {
         fallback={
           <>
             <Show when={props.canDirectWrite && !props.disableDirectInsert}>
-              <Button variant="primary" size="sm" type="button" onClick={addRecord} disabled={addMutation.loading()}>
-                <Show when={addMutation.loading()} fallback={<i class="ti ti-plus" />}>
+              <Button variant="primary" size="sm" type="button" onClick={addRecord} disabled={creating()}>
+                <Show when={creating()} fallback={<i class="ti ti-plus" />}>
                   <i class="ti ti-loader-2 animate-spin" />
                 </Show>
                 {t().addRecord}
@@ -127,8 +127,8 @@ export function GridCreateActions(props: Props) {
           )}
         </Show>
         <Show when={props.canDirectWrite && !props.disableDirectInsert}>
-          <Button variant="primary" size="sm" type="button" onClick={addRecord} disabled={addMutation.loading()}>
-            <Show when={addMutation.loading()} fallback={<i class="ti ti-plus" />}>
+          <Button variant="primary" size="sm" type="button" onClick={addRecord} disabled={creating()}>
+            <Show when={creating()} fallback={<i class="ti ti-plus" />}>
               <i class="ti ti-loader-2 animate-spin" />
             </Show>
             {t().addRecord}

@@ -1,8 +1,9 @@
-import { mutation as mutations } from "@k2b/stdlib/solid";
+import { mutation as mutations, query } from "@k2b/stdlib/solid";
 import {
   Button,
   CheckboxCard,
   confirmDiscardIfDirty,
+  Disclosure,
   dialogCore,
   NoticeCard,
   PanelDialog,
@@ -13,7 +14,7 @@ import {
   TextInput,
   useLocale,
 } from "@k2b/ui";
-import { createEffect, createMemo, createResource, createSignal, For, onCleanup, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { DocumentPreviewResponse, DocumentTemplateRenderer } from "../../../contracts";
 import type { DocumentTemplateStarter } from "../../../document-template-starters";
@@ -95,7 +96,10 @@ export function openDocumentTemplateEditorDialog(args: {
   starter?: DocumentTemplateStarter;
   onSaved?: (template: PublicDocumentTemplate) => void;
 }) {
-  return dialogCore.open<void>((close) => <DocumentTemplateEditorDialog args={args} close={close} />, panelDialogWorkspaceOptions);
+  return dialogCore.open<void>(
+    (close, context) => <DocumentTemplateEditorDialog args={args} close={close} setDismissHandler={context.setDismissHandler} />,
+    panelDialogWorkspaceOptions,
+  );
 }
 
 const templateReferenceHref = (_baseShortId: string) => "/app/grids/help/grids-documents-pdfs";
@@ -114,6 +118,7 @@ function DocumentTemplateEditorDialog(props: {
     onSaved?: (template: PublicDocumentTemplate) => void;
   };
   close: () => void;
+  setDismissHandler: (handler: () => void | Promise<void>) => void;
 }) {
   const locale = useLocale();
   const t = () => documentMessages.resolve([locale()]).t;
@@ -132,6 +137,10 @@ function DocumentTemplateEditorDialog(props: {
   if (blankRenderer.kind !== "html") throw new Error(t().blankStarterHtml);
   const starterRenderer = initialStarter.renderer.kind === "html" ? initialStarter.renderer : blankRenderer;
   const [name, setName] = createSignal(initialName);
+  const [submitted, setSubmitted] = createSignal(false);
+  const [outputOpen, setOutputOpen] = createSignal(false);
+  const [sourceOpen, setSourceOpen] = createSignal(false);
+  let editorBody: HTMLFieldSetElement | undefined;
   const [description, setDescription] = createSignal(initialDescription);
   const [numberTemplate, setNumberTemplate] = createSignal(
     initialRenderer.kind === "html" ? initialRenderer.numberTemplate : defaultDocumentNumberTemplate,
@@ -147,11 +156,15 @@ function DocumentTemplateEditorDialog(props: {
   const [profileInput, setProfileInput] = createSignal<string | null>(
     initialRenderer.kind === "profile" ? initialRenderer.inputTemplate : null,
   );
-  const [profiles] = createResource(async () => {
-    const response = await fetch("/api/grids/documents/renderers");
-    if (!response.ok) throw new Error(await errorMessage(response, t().failedLoadRenderers));
-    return response.json() as Promise<Array<{ id: string; version: number; title: string; description: string }>>;
+  const profileQuery = query.create({
+    source: () => "/api/grids/documents/renderers",
+    load: async (url, { abortSignal }) => {
+      const response = await fetch(url, { signal: abortSignal });
+      if (!response.ok) throw new Error(await errorMessage(response, t().failedLoadRenderers));
+      return response.json() as Promise<Array<{ id: string; version: number; title: string; description: string }>>;
+    },
   });
+  const profiles = profileQuery.data;
   const selectProfile = (value: string | null) => {
     setProfileKey(value);
     setProfileInput(value ? (profileInput() ?? DEFAULT_PROFILE_INPUT) : null);
@@ -209,15 +222,30 @@ function DocumentTemplateEditorDialog(props: {
       recordId: previewRecordId().trim(),
     });
   const hasCurrentSuccessfulPreview = () => lastSuccessfulPreviewSignature() === currentPreviewSignature();
+  const requiredInputError = () => {
+    const renderer = currentRenderer();
+    if (!name().trim()) return t().nameRequired;
+    if (!source().trim()) return t().gqlSourceRequired;
+    if (!renderer) return t().selectRenderer;
+    if (renderer.kind === "html" && !renderer.body) return t().htmlBodyRequired;
+    if (renderer.kind === "html" && !renderer.numberTemplate) return t().numberPatternRequired;
+    if (renderer.kind === "html" && !renderer.filenameTemplate) return t().filenameTemplateRequired;
+    if (renderer.kind === "profile" && !renderer.inputTemplate) return t().rendererInputRequired;
+    return null;
+  };
 
   const closeIfClean = async () => {
+    if (saveMut.loading()) return;
     if (await confirmDiscardIfDirty(dirty)) props.close();
   };
+  props.setDismissHandler(closeIfClean);
 
   const saveMut = mutations.create<PublicDocumentTemplate, void>({
     mutation: async () => {
       const renderer = currentRenderer();
       if (!renderer) throw new Error(t().selectRenderer);
+      const inputError = requiredInputError();
+      if (inputError) throw new Error(inputError);
       const payload = {
         name: name().trim(),
         description: description().trim() || null,
@@ -225,12 +253,6 @@ function DocumentTemplateEditorDialog(props: {
         renderer,
         enabled: enabled(),
       };
-      if (!payload.name) throw new Error(t().nameRequired);
-      if (!payload.source) throw new Error(t().gqlSourceRequired);
-      if (renderer.kind === "html" && !renderer.body) throw new Error(t().htmlBodyRequired);
-      if (renderer.kind === "html" && !renderer.numberTemplate) throw new Error(t().numberPatternRequired);
-      if (renderer.kind === "html" && !renderer.filenameTemplate) throw new Error(t().filenameTemplateRequired);
-      if (renderer.kind === "profile" && !renderer.inputTemplate) throw new Error(t().rendererInputRequired);
       const res = template
         ? await apiClient.documents.templates[":templateId"].$patch({ param: { templateId: template.id }, json: payload })
         : await apiClient.documents.templates["by-table"][":tableId"].$post({ param: { tableId: props.args.tableId }, json: payload });
@@ -241,7 +263,6 @@ function DocumentTemplateEditorDialog(props: {
       props.args.onSaved?.(saved);
       props.close();
     },
-    onError: (e) => prompts.error(e.message),
   });
 
   const previewPdf = async () => {
@@ -265,6 +286,17 @@ function DocumentTemplateEditorDialog(props: {
   };
 
   const saveTemplate = async () => {
+    if (saveMut.loading()) return;
+    setSubmitted(true);
+    const renderer = currentRenderer();
+    if (requiredInputError()) {
+      if (!renderer || (renderer.kind === "html" && (!renderer.numberTemplate || !renderer.filenameTemplate))) setOutputOpen(true);
+      if (!source().trim()) setSourceOpen(true);
+      editorBody
+        ?.querySelector<HTMLElement>('[data-invalid="true"] input, input[data-invalid="true"], textarea[data-invalid="true"]')
+        ?.focus();
+      return;
+    }
     const warnings: string[] = [];
     if (gqlDiagnosticError()) warnings.push(gqlDiagnosticError()!);
     if (previewSourceError()) warnings.push(previewSourceError()!);
@@ -386,117 +418,27 @@ function DocumentTemplateEditorDialog(props: {
         }
       />
       <PanelDialog.Body>
-        <div class="flex h-full min-h-0 flex-col gap-2">
-          <div class="grid shrink-0 gap-2 lg:grid-cols-2">
-            <TextInput label={t().name} value={name} onValueChange={setName} icon="ti ti-typography" required />
+        <Show when={!requiredInputError() && saveMut.error()}>{(error) => <NoticeCard tone="danger" title={error().message} />}</Show>
+        <fieldset ref={editorBody} disabled={saveMut.loading()} class="m-0 flex h-full min-h-0 min-w-0 flex-col gap-3 border-0 p-0">
+          <div class="grid shrink-0 gap-3 lg:grid-cols-2">
             <TextInput
-              label={t().description}
-              value={description}
-              onValueChange={setDescription}
-              icon="ti ti-align-left"
-              placeholder={t().optional}
+              label={t().name}
+              value={name}
+              onValueChange={setName}
+              icon="ti ti-typography"
+              required
+              error={() => (submitted() && !name().trim() ? t().nameRequired : undefined)}
             />
-            <Select
-              label={t().renderer}
-              description={t().chooseRenderer}
-              value={profileKey}
-              onValueChange={selectProfile}
-              options={(profiles() ?? []).map((profile) => ({
-                id: `${profile.id}@${profile.version}`,
-                label: profile.title,
-                description: profile.description,
-              }))}
-              placeholder={t().htmlPdf}
-              clearable
+            <RecordPicker
+              tableId={props.args.tableId}
+              templateId={template?.id}
+              label={t().previewRecord}
+              value={previewRecordId}
+              onChange={setPreviewRecordId}
+              placeholder={t().searchPreviewRecord}
+              disabled={saveMut.loading}
             />
-            <div>
-              <TextInput
-                label={t().documentNumber}
-                description={t().numberPatternDescription}
-                value={numberTemplate}
-                onValueChange={setNumberTemplate}
-                icon="ti ti-hash"
-                placeholder={defaultDocumentNumberTemplate}
-                required
-                disabled={profileKey() !== null}
-              />
-              <NoticeCard tone={template?.numberSeries?.migrationNote ? "warning" : "info"} icon={false} class="mt-2" role="status">
-                {profileKey()
-                  ? t().rendererOwnsNumbering
-                  : template?.numberSeries
-                    ? t().numberSeries({
-                        id: template.numberSeries.id,
-                        value: new Intl.NumberFormat(locale()).format(template.numberSeries.lastValue),
-                      })
-                    : t().numberSeriesCreated}
-              </NoticeCard>
-            </div>
-            <div>
-              <TextInput
-                label={t().filename}
-                description={t().filenamePatternDescription}
-                value={filenameTemplate}
-                onValueChange={setFilenameTemplate}
-                icon="ti ti-file-text"
-                placeholder="{{ document.number }}.pdf"
-                required
-                disabled={profileKey() !== null}
-              />
-            </div>
-            <div class="lg:col-span-2">
-              <CheckboxCard
-                value={enabled}
-                onValueChange={setEnabled}
-                label={t().enabled}
-                description={t().enabledDescription}
-                icon="ti ti-file-check"
-                variant="input"
-              />
-            </div>
-            <div class="lg:col-span-2">
-              <RecordPicker
-                tableId={props.args.tableId}
-                templateId={template?.id}
-                label={t().previewRecord}
-                value={previewRecordId}
-                onChange={setPreviewRecordId}
-                placeholder={t().searchPreviewRecord}
-              />
-            </div>
-            <div class="lg:col-span-2">
-              <div class="mb-1.5 flex items-center justify-between gap-2">
-                <div class="text-sm font-medium text-primary">
-                  {t().gqlSource} <span class="text-red-500">*</span>
-                </div>
-                <span class="text-xs text-dimmed">{t().scopedTo({ table: props.args.tableName })}</span>
-              </div>
-              <GqlSourceEditor
-                baseId={props.args.baseId}
-                currentSource={{ kind: "table", tableId: props.args.tableId }}
-                value={source}
-                onValueChange={setSource}
-                lines={4}
-                placeholder={`from table ${props.args.tableName}\nwhere record.id = "{{ record.id }}"\nlimit 1`}
-                spellcheck={false}
-                aria-label={t().gqlSource}
-              />
-              <Show when={gqlDiagnosticError() || previewSourceError() || gqlDiagnostics().length > 0}>
-                <NoticeCard tone="danger" icon={false} class="mt-2">
-                  <Show
-                    when={gqlDiagnosticError() || previewSourceError()}
-                    fallback={
-                      <ul class="grid gap-1">
-                        <For each={gqlDiagnostics().slice(0, 4)}>{(diagnostic) => <li>{diagnosticText(diagnostic)}</li>}</For>
-                      </ul>
-                    }
-                  >
-                    {(message) => message()}
-                  </Show>
-                </NoticeCard>
-              </Show>
-            </div>
           </div>
-
           <DocumentTemplateEditorPanes
             rendererKind={() => (profileKey() ? "profile" : "html")}
             body={() => profileInput() ?? html()}
@@ -514,11 +456,128 @@ function DocumentTemplateEditorDialog(props: {
             source={source}
             previewRecordId={previewRecordId}
             previewPdf={previewPdf}
+            disabled={saveMut.loading}
+            bodyError={() =>
+              submitted() && !(profileKey() ? profileInput()?.trim() : html().trim())
+                ? profileKey()
+                  ? t().rendererInputRequired
+                  : t().htmlBodyRequired
+                : undefined
+            }
           />
-        </div>
+          <Disclosure summary={t().templateSettings} value={outputOpen} onValueChange={setOutputOpen} disabled={saveMut.loading()}>
+            <div class="grid shrink-0 gap-2 lg:grid-cols-2">
+              <TextInput
+                label={t().description}
+                value={description}
+                onValueChange={setDescription}
+                icon="ti ti-align-left"
+                placeholder={t().optional}
+              />
+              <Select
+                label={t().renderer}
+                description={t().chooseRenderer}
+                value={profileKey}
+                onValueChange={selectProfile}
+                options={(profiles() ?? []).map((profile) => ({
+                  id: `${profile.id}@${profile.version}`,
+                  label: profile.title,
+                  description: profile.description,
+                }))}
+                placeholder={t().htmlPdf}
+                clearable
+                disabled={saveMut.loading()}
+                error={() => (submitted() && !currentRenderer() ? t().selectRenderer : undefined)}
+              />
+              <Show when={profileQuery.error()}>
+                <NoticeCard tone="danger" title={t().failedLoadRenderers}>
+                  <Button variant="secondary" size="sm" onClick={() => void profileQuery.refresh()}>
+                    {t().retry}
+                  </Button>
+                </NoticeCard>
+              </Show>
+              <Show when={!profileKey()}>
+                <div>
+                  <TextInput
+                    label={t().documentNumber}
+                    description={t().numberPatternDescription}
+                    value={numberTemplate}
+                    onValueChange={setNumberTemplate}
+                    icon="ti ti-hash"
+                    placeholder={defaultDocumentNumberTemplate}
+                    required
+                    error={() => (submitted() && !numberTemplate().trim() ? t().numberPatternRequired : undefined)}
+                  />
+                  <Show when={!template?.numberSeries}>
+                    <p class="mt-2 text-xs text-dimmed">{t().numberSeriesCreated}</p>
+                  </Show>
+                </div>
+                <div>
+                  <TextInput
+                    label={t().filename}
+                    description={t().filenamePatternDescription}
+                    value={filenameTemplate}
+                    onValueChange={setFilenameTemplate}
+                    icon="ti ti-file-text"
+                    placeholder="{{ document.number }}.pdf"
+                    required
+                    error={() => (submitted() && !filenameTemplate().trim() ? t().filenameTemplateRequired : undefined)}
+                  />
+                </div>
+              </Show>
+              <Show when={profileKey()}>
+                <p class="text-xs text-dimmed">{t().rendererOwnsNumbering}</p>
+              </Show>
+            </div>
+          </Disclosure>
+          <Disclosure summary={t().templateDataSource} value={sourceOpen} onValueChange={setSourceOpen} disabled={saveMut.loading()}>
+            <div class="lg:col-span-2">
+              <div class="mb-1.5 flex items-center justify-between gap-2">
+                <div class="text-sm font-medium text-primary">
+                  {t().gqlSource} <span class="text-red-500">*</span>
+                </div>
+                <span class="text-xs text-dimmed">{t().scopedTo({ table: props.args.tableName })}</span>
+              </div>
+              <GqlSourceEditor
+                baseId={props.args.baseId}
+                currentSource={{ kind: "table", tableId: props.args.tableId }}
+                value={source}
+                onValueChange={setSource}
+                lines={4}
+                placeholder={`from table ${props.args.tableName}\nwhere record.id = '{{ record.id }}'\nlimit 1`}
+                spellcheck={false}
+                aria-label={t().gqlSource}
+                disabled={saveMut.loading()}
+                error={() => (submitted() && !source().trim() ? t().gqlSourceRequired : undefined)}
+              />
+              <Show when={gqlDiagnosticError() || previewSourceError() || gqlDiagnostics().length > 0}>
+                <NoticeCard tone="danger" icon={false} class="mt-2">
+                  <Show
+                    when={gqlDiagnosticError() || previewSourceError()}
+                    fallback={
+                      <ul class="grid gap-1">
+                        <For each={gqlDiagnostics().slice(0, 4)}>{(diagnostic) => <li>{diagnosticText(diagnostic)}</li>}</For>
+                      </ul>
+                    }
+                  >
+                    {(message) => message()}
+                  </Show>
+                </NoticeCard>
+              </Show>
+            </div>
+          </Disclosure>
+        </fieldset>
       </PanelDialog.Body>
       <PanelDialog.Footer>
-        <span />
+        <CheckboxCard
+          value={enabled}
+          onValueChange={setEnabled}
+          label={t().enabled}
+          description={t().enabledDescription}
+          icon="ti ti-file-check"
+          variant="input"
+          disabled={saveMut.loading()}
+        />
         <div class="flex items-center justify-end gap-2">
           <Button variant="secondary" size="sm" type="button" onClick={closeIfClean}>
             {t().cancel}

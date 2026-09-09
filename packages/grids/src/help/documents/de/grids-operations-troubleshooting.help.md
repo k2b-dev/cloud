@@ -25,7 +25,7 @@ Wenn eine Änderung nicht sichtbar ist, lade die Seite einmal neu. Live-Aktualis
 
 ## Die Bearbeitung eines Datensatzes wurde abgelehnt {icon="table"}
 
-Eine andere Person oder ein anderer Tab hat möglicherweise eine neuere Version gespeichert. Lade den Datensatz neu, vergleiche die neuen Werte und wende deine Änderung erneut an. So überschreibt ein älteres Formular keine neuere Arbeit.
+Eine andere Person oder ein anderer Tab hat möglicherweise eine neuere Version gespeichert. Der Bearbeitungsdialog behält deine Eingaben. Wähle **Aktuellen Datensatz vergleichen**, prüfe die neuesten Werte und übernimm deine Änderungen ausdrücklich auf diese Version, bevor du erneut speicherst. Unveränderte Felder übernehmen ihren aktuellen Wert. So überschreibt ein älteres Formular keine neuere Arbeit unbemerkt.
 
 Wenn die Meldung einen Änderungskontext verlangt, beantworte die unter **Tabelleneinstellungen → Datenintegrität** konfigurierten Fragen. Geschützte Aktualisierungen, Papierkorbaktionen und Wiederherstellungen können ohne die erforderlichen Antworten nicht fortfahren.
 
@@ -72,9 +72,13 @@ Korrigiere die Quelle, wenn Zeilen leer sind, und kopiere Pfade aus Daten, statt
 
 Neu generierte Dokumente laden ihre exakten gespeicherten PDF-Bytes herunter. Spätere Änderungen an Datensatz, Vorlage oder Renderer können ein vorhandenes Artefakt nicht umschreiben.
 
+Ist das Ergebnis der Erzeugung unklar, lasse den Dialog offen und nutze **Erzeugung wiederholen**. Dadurch wird dieselbe Anfrage wiederholt, statt ein neues Dokument zu erzeugen. Beim Schließen geht dieser Wiederholungskontext verloren. Prüfe deshalb **Alle Dokumente**, bevor du einen neuen Versuch startest.
+
 ## Ein Workflow hat sich anders als erwartet verhalten {icon="route"}
 
 Öffne die Ausführungsdetails, statt den Workflow sofort zu wiederholen. Prüfe Revision, Modus, Kanal, Eingaben, Schrittergebnisse, gespeicherte Ausgaben und Fehler. Die Ausführung hat die beim Start festgeschriebene Revision verwendet. Das ist nicht zwingend das derzeit auf dem Bildschirm sichtbare YAML. Öffne die verknüpfte Revision der Ausführung, um die tatsächlich ausgeführte Version zu lesen.
+
+Kann eine Grids-App-Aktion ihr Ergebnis nicht abrufen, nutze **Status prüfen**, solange die Seite geöffnet bleibt. Das verfolgt den vorhandenen Vorgang, statt einen weiteren Workflow zu starten. Ein Statusfehler bedeutet nicht, dass der Workflow fehlgeschlagen ist.
 
 Ein `dryRun` zeichnet vorhergesagte Auswirkungen auf, führt aber keine Schreibvorgänge oder externen Anfragen aus. Eine Wiederholung mit `execute` sollte einen bewusst gewählten Idempotenzschlüssel verwenden. Empfänger externer HTTP-Anfragen sollten auch doppelte Anfragen sicher verarbeiten.
 

@@ -94,12 +94,16 @@ export const openMutationPolicyDialog = (args: {
   value: TableMutationPolicy;
 }): Promise<TableMutationPolicy | null> =>
   dialogCore
-    .open<TableMutationPolicy | null>((close) => <MutationPolicyDialog args={args} close={close} />, panelDialogOptions)
+    .open<TableMutationPolicy | null>(
+      (close, context) => <MutationPolicyDialog args={args} close={close} setDismissHandler={context.setDismissHandler} />,
+      panelDialogOptions,
+    )
     .then((result) => result ?? null);
 
 function MutationPolicyDialog(props: {
   args: { tableId: string; tableName: string; value: TableMutationPolicy };
   close: (value: TableMutationPolicy | null) => void;
+  setDismissHandler: (handler: () => void | Promise<void>) => void;
 }) {
   const locale = useLocale();
   const t = () => gridsDialogMessages.resolve([locale()]).t;
@@ -160,12 +164,13 @@ function MutationPolicyDialog(props: {
       return response.json();
     },
     onSuccess: (result) => props.close(result.policy),
-    onError: (error) => prompts.error(error.message),
   });
 
   const closeIfClean = async () => {
+    if (saveMutation.loading()) return;
     if (await confirmDiscardIfDirty(dirty)) props.close(null);
   };
+  props.setDismissHandler(closeIfClean);
 
   const save = async () => {
     if (!dirty() || !impactReady()) return;
@@ -182,10 +187,12 @@ function MutationPolicyDialog(props: {
   };
 
   const setAll = (allowed: boolean) => {
+    if (saveMutation.loading()) return;
     setPolicy(allowed ? { mode: "all" } : { mode: "selected", sources: [...ALL_SOURCES] });
   };
 
   const setSource = (source: MutationSource, allowed: boolean) => {
+    if (saveMutation.loading()) return;
     const current = selectedSources(policy());
     const sources = ALL_SOURCES.filter((candidate) => (candidate === source ? allowed : current.includes(candidate)));
     setPolicy(sources.length === ALL_SOURCES.length ? { mode: "all" } : { mode: "selected", sources });
@@ -195,95 +202,104 @@ function MutationPolicyDialog(props: {
     <PanelDialog>
       <PanelDialog.Header title={t().recordChanges} subtitle={props.args.tableName} icon="ti ti-route" close={closeIfClean} />
       <PanelDialog.Body>
-        <NoticeCard tone="info" title={t().chooseChangeSources} detail={t().chooseChangeSourcesDetail} />
-
-        <PanelDialog.Section title={t().allowedSources} subtitle={t().allowedSourcesDescription} icon="ti ti-route">
-          <CheckboxCard
-            label={t().all}
-            description={t().allSourcesDescription}
-            icon="ti ti-arrows-exchange"
-            value={() => policy().mode === "all"}
-            onValueChange={setAll}
-          />
-          <Show when={policy().mode === "selected"}>
-            <div class="grid gap-2">
-              <For each={sourceOptions()}>
-                {(option) => (
-                  <CheckboxCard
-                    label={option.label}
-                    description={option.description}
-                    icon={option.icon}
-                    variant="input"
-                    value={() => selectedSources(policy()).includes(option.id)}
-                    onValueChange={(allowed) => setSource(option.id, allowed)}
-                  />
-                )}
-              </For>
-            </div>
+        <fieldset disabled={saveMutation.loading()} class="flex min-w-0 flex-col gap-3">
+          <Show when={saveMutation.error()}>
+            {(error) => (
+              <NoticeCard tone="danger" role="alert">
+                {error().message}
+              </NoticeCard>
+            )}
           </Show>
-          <Show when={isFrozen()}>
-            <NoticeCard tone="warning" title={t().freezeWarning} detail={t().freezeWarningDetail} />
-          </Show>
-        </PanelDialog.Section>
+          <NoticeCard tone="info" title={t().chooseChangeSources} detail={t().chooseChangeSourcesDetail} />
 
-        <Show when={hasRemovedSources()}>
-          <PanelDialog.Section title={t().stopsWorking} subtitle={t().stopsWorkingDescription} icon="ti ti-alert-triangle">
-            <Show when={!impactQuery.loading()} fallback={<Placeholder state="loading" align="left" title={t().checkingEntryPoints} />}>
-              <Show
-                when={!impactQuery.error()}
-                fallback={
-                  <Placeholder
-                    state="error"
-                    align="left"
-                    title={t().entryPointsUnavailable}
-                    description={impactQuery.error()?.message}
-                    action={
-                      <Button variant="secondary" size="sm" type="button" onClick={() => void impactQuery.refresh()}>
-                        {t().retry}
-                      </Button>
-                    }
-                  />
-                }
-              >
-                <Show when={currentImpact()}>
-                  {(impact) => (
-                    <Show
-                      when={impact().total > 0 || !impact().complete}
-                      fallback={<NoticeCard tone="neutral" title={t().noEntryPoints} detail={t().noEntryPointsDetail} />}
-                    >
-                      <NoticeCard
-                        tone="warning"
-                        title={
-                          !impact().complete && impact().total === 0
-                            ? t().moreMayBeAffected
-                            : t().impactCount({ count: impact().total, incomplete: !impact().complete })
-                        }
-                        detail={
-                          !impact().complete
-                            ? t().impactLimited
-                            : impact().truncated
-                              ? t().impactShown({ shown: impact().items.length, total: impact().total })
-                              : t().reviewEntryPoints
-                        }
-                      />
-                      <ul class="paper divide-y divide-[var(--ui-border)]" aria-label={t().affectedEntryPoints}>
-                        <For each={impact().items}>
-                          {(item) => (
-                            <li class="flex items-center gap-3 px-3 py-2">
-                              <i class={`${impactKind(item.kind).icon} text-base text-dimmed`} aria-hidden="true" />
-                              <span class="min-w-0 flex-1 truncate text-sm font-medium text-primary">{item.name}</span>
-                              <span class="text-xs text-dimmed">{impactKind(item.kind).label}</span>
-                            </li>
-                          )}
-                        </For>
-                      </ul>
-                    </Show>
+          <PanelDialog.Section title={t().allowedSources} subtitle={t().allowedSourcesDescription} icon="ti ti-route">
+            <CheckboxCard
+              label={t().all}
+              description={t().allSourcesDescription}
+              icon="ti ti-arrows-exchange"
+              value={() => policy().mode === "all"}
+              onValueChange={setAll}
+            />
+            <Show when={policy().mode === "selected"}>
+              <div class="grid gap-2">
+                <For each={sourceOptions()}>
+                  {(option) => (
+                    <CheckboxCard
+                      label={option.label}
+                      description={option.description}
+                      icon={option.icon}
+                      variant="input"
+                      value={() => selectedSources(policy()).includes(option.id)}
+                      onValueChange={(allowed) => setSource(option.id, allowed)}
+                    />
                   )}
-                </Show>
-              </Show>
+                </For>
+              </div>
+            </Show>
+            <Show when={isFrozen()}>
+              <NoticeCard tone="warning" title={t().freezeWarning} detail={t().freezeWarningDetail} />
             </Show>
           </PanelDialog.Section>
-        </Show>
+
+          <Show when={hasRemovedSources()}>
+            <PanelDialog.Section title={t().stopsWorking} subtitle={t().stopsWorkingDescription} icon="ti ti-alert-triangle">
+              <Show when={!impactQuery.loading()} fallback={<Placeholder state="loading" align="left" title={t().checkingEntryPoints} />}>
+                <Show
+                  when={!impactQuery.error()}
+                  fallback={
+                    <Placeholder
+                      state="error"
+                      align="left"
+                      title={t().entryPointsUnavailable}
+                      description={impactQuery.error()?.message}
+                      action={
+                        <Button variant="secondary" size="sm" type="button" onClick={() => void impactQuery.refresh()}>
+                          {t().retry}
+                        </Button>
+                      }
+                    />
+                  }
+                >
+                  <Show when={currentImpact()}>
+                    {(impact) => (
+                      <Show
+                        when={impact().total > 0 || !impact().complete}
+                        fallback={<NoticeCard tone="neutral" title={t().noEntryPoints} detail={t().noEntryPointsDetail} />}
+                      >
+                        <NoticeCard
+                          tone="warning"
+                          title={
+                            !impact().complete && impact().total === 0
+                              ? t().moreMayBeAffected
+                              : t().impactCount({ count: impact().total, incomplete: !impact().complete })
+                          }
+                          detail={
+                            !impact().complete
+                              ? t().impactLimited
+                              : impact().truncated
+                                ? t().impactShown({ shown: impact().items.length, total: impact().total })
+                                : t().reviewEntryPoints
+                          }
+                        />
+                        <ul class="paper divide-y divide-[var(--ui-border)]" aria-label={t().affectedEntryPoints}>
+                          <For each={impact().items}>
+                            {(item) => (
+                              <li class="flex items-center gap-3 px-3 py-2">
+                                <i class={`${impactKind(item.kind).icon} text-base text-dimmed`} aria-hidden="true" />
+                                <span class="min-w-0 flex-1 truncate text-sm font-medium text-primary">{item.name}</span>
+                                <span class="text-xs text-dimmed">{impactKind(item.kind).label}</span>
+                              </li>
+                            )}
+                          </For>
+                        </ul>
+                      </Show>
+                    )}
+                  </Show>
+                </Show>
+              </Show>
+            </PanelDialog.Section>
+          </Show>
+        </fieldset>
       </PanelDialog.Body>
       <PanelDialog.Footer>
         <span />

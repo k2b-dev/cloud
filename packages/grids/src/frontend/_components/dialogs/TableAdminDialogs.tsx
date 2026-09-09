@@ -17,7 +17,7 @@ import {
   Tooltip,
   useLocale,
 } from "@k2b/ui";
-import { createSignal, For, onMount, Show } from "solid-js";
+import { createEffect, createSignal, For, onMount, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { PublicFederatedSourcePublication, PublicField, PublicForm, PublicTable } from "../../../api/public-dto";
 import type { TableMutationPolicy } from "../../../contracts";
@@ -46,7 +46,11 @@ export const openTableSettingsDialog = (args: {
   onSaved: (table: PublicTable) => void;
   onMutationPolicySaved: (policy: TableMutationPolicy) => void;
   onDeleted?: () => void;
-}) => dialogCore.open<void>((close) => <TableSettingsDialog args={args} close={close} />, panelDialogOptions);
+}) =>
+  dialogCore.open<void>(
+    (close, context) => <TableSettingsDialog args={args} close={close} registerClose={context.setDismissHandler} />,
+    panelDialogOptions,
+  );
 
 function TableSettingsDialog(props: {
   args: {
@@ -58,21 +62,31 @@ function TableSettingsDialog(props: {
     onDeleted?: () => void;
   };
   close: () => void;
+  registerClose: (handler: () => void | Promise<void>) => void;
 }) {
   const locale = useLocale();
   const t = () => gridsDialogMessages.resolve([locale()]).t;
   const [dirty, setDirty] = createSignal(false);
+  const [pending, setPending] = createSignal(false);
   const closeIfClean = async () => {
+    if (pending()) return;
     if (await confirmDiscardIfDirty(dirty)) props.close();
   };
+  props.registerClose(closeIfClean);
   return (
     <PanelDialog>
-      <PanelDialog.Header title={t().tableSettings({ name: props.args.table.name })} icon="ti ti-settings" close={closeIfClean} />
+      <PanelDialog.Header
+        title={t().tableSettings({ name: props.args.table.name })}
+        icon="ti ti-settings"
+        close={closeIfClean}
+        closeDisabled={pending()}
+      />
       <TableSettingsBody
         table={props.args.table}
         fields={props.args.fields}
         canManageBase={props.args.canManageBase}
         onDirtyChange={setDirty}
+        onPendingChange={setPending}
         onSaved={(table) => {
           setDirty(false);
           props.args.onSaved(table);
@@ -214,6 +228,7 @@ function TableSettingsBody(props: {
   onMutationPolicySaved: (policy: TableMutationPolicy) => void;
   onDeleted?: () => void;
   onDirtyChange?: (dirty: boolean) => void;
+  onPendingChange?: (pending: boolean) => void;
   onCancel: () => void;
 }) {
   const locale = useLocale();
@@ -227,6 +242,7 @@ function TableSettingsBody(props: {
     disableDirectInsert: props.table.disableDirectInsert,
   });
   const patch = (partial: Partial<ReturnType<typeof draft.draft>>) => {
+    if (saveMut.loading() || deleteMut.loading()) return;
     draft.patch(partial);
     props.onDirtyChange?.(true);
   };
@@ -238,17 +254,20 @@ function TableSettingsBody(props: {
   const disableDirectInsert = () => draft.draft().disableDirectInsert;
   const [publications, setPublications] = createSignal<PublicFederatedSourcePublication[]>([]);
   const [publicationsLoading, setPublicationsLoading] = createSignal(false);
+  const [publicationsError, setPublicationsError] = createSignal<string | null>(null);
   const [mutationPolicy, setMutationPolicy] = createSignal(props.table.mutationPolicy);
 
   const loadPublications = async () => {
     if (props.table.kind !== "stored" || !props.canManageBase) return;
+    if (publicationsLoading()) return;
     setPublicationsLoading(true);
+    setPublicationsError(null);
     try {
       const response = await apiClient.tables[":tableId"].federation.publications.$get({ param: { tableId: props.table.id } });
       if (!response.ok) throw new Error(await errorMessage(response, t().publicationsLoadFailed));
       setPublications(await response.json());
     } catch (error) {
-      prompts.error(error instanceof Error ? error.message : t().publicationsLoadFailed);
+      setPublicationsError(error instanceof Error ? error.message : t().publicationsLoadFailed);
     } finally {
       setPublicationsLoading(false);
     }
@@ -314,6 +333,7 @@ function TableSettingsBody(props: {
     },
     onError: (e) => prompts.error(e.message),
   });
+  createEffect(() => props.onPendingChange?.(saveMut.loading() || deleteMut.loading()));
 
   const deleteTable = async () => {
     const ok = await prompts.confirm(t().deleteTableConfirm({ name: name() }), {
@@ -347,154 +367,172 @@ function TableSettingsBody(props: {
   return (
     <>
       <PanelDialog.Body>
-        <PanelDialog.Section title={t().identity} subtitle={t().identityDetail} icon="ti ti-id">
-          <TextInput label={t().name} value={name} onValueChange={(v) => patch({ name: v })} icon="ti ti-typography" required />
-          <IconInput
-            label={t().icon}
-            value={() => icon() ?? null}
-            onValueChange={(v) => patch({ icon: v ?? undefined })}
-            placeholder={t().searchIcons}
-          />
-          <TextInput
-            label={t().description}
-            value={description}
-            onValueChange={(v) => patch({ description: v })}
-            icon="ti ti-align-left"
-            multiline
-            lines={2}
-            placeholder={t().optional}
-          />
-          <Show when={props.table.kind === "stored"}>
-            <CheckboxCard
-              label={t().addThroughForms}
-              description={t().addThroughFormsDetail}
-              icon="ti ti-forms"
-              variant="input"
-              value={disableDirectInsert}
-              onValueChange={(v) => patch({ disableDirectInsert: v })}
+        <fieldset disabled={saveMut.loading() || deleteMut.loading()} class="contents">
+          <PanelDialog.Section title={t().identity} subtitle={t().identityDetail} icon="ti ti-id">
+            <TextInput label={t().name} value={name} onValueChange={(v) => patch({ name: v })} icon="ti ti-typography" required />
+            <IconInput
+              label={t().icon}
+              value={() => icon() ?? null}
+              onValueChange={(v) => patch({ icon: v ?? undefined })}
+              placeholder={t().searchIcons}
             />
-          </Show>
-        </PanelDialog.Section>
-
-        <PanelDialog.Section title={t().display} subtitle={t().tableDisplayDetail} icon="ti ti-layout">
-          <RecordDisplayConfigEditor
-            value={displayConfig}
-            onChange={(value) => patch({ displayConfig: value })}
-            fields={() => props.fields}
-          />
-        </PanelDialog.Section>
-
-        <Show when={props.table.kind === "federated" && props.canManageBase}>
-          <PanelDialog.Section title={t().combinedData} subtitle={t().combinedDataDetail} icon="ti ti-table-share">
-            <button
-              type="button"
-              class="paper flex w-full items-center gap-3 p-3 text-left hover:paper-highlighted"
-              onClick={() => void openFederatedTableDialog({ tableId: props.table.id, tableName: name(), targetFields: props.fields })}
-            >
-              <i class="ti ti-table-share text-lg text-dimmed" />
-              <span class="min-w-0 flex-1">
-                <span class="block text-sm font-medium text-primary">{t().configureSources}</span>
-                <span class="block text-xs text-dimmed">{t().configureSourcesDetail}</span>
-              </span>
-              <i class="ti ti-chevron-right text-dimmed" aria-hidden="true" />
-            </button>
-          </PanelDialog.Section>
-        </Show>
-
-        <Show when={props.table.kind === "stored" && props.canManageBase && (publicationsLoading() || publications().length > 0)}>
-          <PanelDialog.Section title={t().combinedPublications} subtitle={t().combinedPublicationsDetail} icon="ti ti-database-share">
-            <Show when={!publicationsLoading()} fallback={<Placeholder state="loading" align="left" title={t().loadingPublications} />}>
-              <For each={publications()}>
-                {(publication) => (
-                  <div class="paper flex items-center gap-3 p-3">
-                    <i class="ti ti-table-share text-lg text-dimmed" aria-hidden="true" />
-                    <div class="min-w-0 flex-1">
-                      <div class="truncate text-sm font-medium text-primary">{publication.targetTableName}</div>
-                      <div class="truncate text-xs text-dimmed">
-                        {t().publicationMeta({
-                          base: publication.targetBaseName,
-                          revision: publication.revision,
-                          count: publication.mappings.length,
-                        })}
-                      </div>
-                      <div class="mt-2 flex flex-wrap gap-1">
-                        <For each={publication.mappings}>
-                          {(mapping) => (
-                            <span class="rounded-[var(--ui-radius-control)] bg-[var(--ui-surface-subtle)] px-2 py-1 text-xs text-secondary">
-                              {mapping.sourceFieldName} <i class="ti ti-arrow-right mx-1" aria-hidden="true" /> {mapping.targetFieldName}
-                            </span>
-                          )}
-                        </For>
-                      </div>
-                    </div>
-                    <span class={publication.revokedAt ? "text-xs text-danger" : "text-xs text-secondary"}>
-                      {publication.revokedAt ? t().revoked : publication.status === "active" ? t().active : t().actionRequired}
-                    </span>
-                    <Show when={!publication.revokedAt}>
-                      <Tooltip.Anchor content={t().revokePublication}>
-                        <IconButton
-                          variant="ghost"
-                          size="sm"
-                          type="button"
-                          class="text-danger"
-                          label={t().revokePublicationTo({ table: publication.targetTableName })}
-                          onClick={() => void revokePublication(publication)}
-                        >
-                          <i class="ti ti-unlink" aria-hidden="true" />
-                        </IconButton>
-                      </Tooltip.Anchor>
-                    </Show>
-                  </div>
-                )}
-              </For>
+            <TextInput
+              label={t().description}
+              value={description}
+              onValueChange={(v) => patch({ description: v })}
+              icon="ti ti-align-left"
+              multiline
+              lines={2}
+              placeholder={t().optional}
+            />
+            <Show when={props.table.kind === "stored"}>
+              <CheckboxCard
+                label={t().addThroughForms}
+                description={t().addThroughFormsDetail}
+                icon="ti ti-forms"
+                variant="input"
+                value={disableDirectInsert}
+                onValueChange={(v) => patch({ disableDirectInsert: v })}
+              />
             </Show>
           </PanelDialog.Section>
-        </Show>
 
-        <Show when={props.table.kind === "stored"}>
-          <PanelDialog.Section title={t().dataIntegrity} subtitle={t().dataIntegrityDetail} icon="ti ti-shield-check">
-            <div class="flex flex-col gap-1">
-              <DetailPanel.Action
-                type="button"
-                onClick={() => void configureAudit()}
-                leading={<i class="ti ti-shield-check" aria-hidden="true" />}
-                title={t().tableAuditRequirements}
-                description={auditPolicySummary(auditPolicy(), locale())}
-                trailing={<i class="ti ti-chevron-right" aria-hidden="true" />}
-              />
-              <Show when={props.canManageBase}>
-                <DetailPanel.Action
-                  type="button"
-                  onClick={() => void configureMutationPolicy()}
-                  leading={<i class="ti ti-route" aria-hidden="true" />}
-                  title={t().recordChanges}
-                  description={mutationPolicySummary(mutationPolicy(), locale())}
-                  trailing={<i class="ti ti-chevron-right" aria-hidden="true" />}
-                />
-                <DetailPanel.Action
-                  type="button"
-                  onClick={() => void openHistoryProtectionDialog({ tableId: props.table.id, tableName: name() })}
-                  leading={<i class="ti ti-history" aria-hidden="true" />}
-                  title={t().historyProtection}
-                  description={t().historyProtectionDetail}
-                  trailing={<i class="ti ti-chevron-right" aria-hidden="true" />}
-                />
-              </Show>
-            </div>
+          <PanelDialog.Section title={t().display} subtitle={t().tableDisplayDetail} icon="ti ti-layout">
+            <RecordDisplayConfigEditor
+              value={displayConfig}
+              onChange={(value) => patch({ displayConfig: value })}
+              fields={() => props.fields}
+            />
           </PanelDialog.Section>
-        </Show>
 
-        <PanelDialog.Section title={t().dangerZone} subtitle={t().tableDangerDetail} icon="ti ti-trash">
-          <Button variant="danger" size="sm" type="button" class="self-start" onClick={deleteTable} disabled={deleteMut.loading()}>
-            <i class="ti ti-trash" /> {t().deleteTable}
-          </Button>
-        </PanelDialog.Section>
+          <Show when={props.table.kind === "federated" && props.canManageBase}>
+            <PanelDialog.Section title={t().combinedData} subtitle={t().combinedDataDetail} icon="ti ti-table-share">
+              <button
+                type="button"
+                class="paper flex w-full items-center gap-3 p-3 text-left hover:paper-highlighted"
+                onClick={() => void openFederatedTableDialog({ tableId: props.table.id, tableName: name(), targetFields: props.fields })}
+              >
+                <i class="ti ti-table-share text-lg text-dimmed" />
+                <span class="min-w-0 flex-1">
+                  <span class="block text-sm font-medium text-primary">{t().configureSources}</span>
+                  <span class="block text-xs text-dimmed">{t().configureSourcesDetail}</span>
+                </span>
+                <i class="ti ti-chevron-right text-dimmed" aria-hidden="true" />
+              </button>
+            </PanelDialog.Section>
+          </Show>
+
+          <Show
+            when={
+              props.table.kind === "stored" &&
+              props.canManageBase &&
+              (publicationsLoading() || publicationsError() || publications().length > 0)
+            }
+          >
+            <PanelDialog.Section title={t().combinedPublications} subtitle={t().combinedPublicationsDetail} icon="ti ti-database-share">
+              <Show when={publicationsError()}>
+                {(message) => (
+                  <NoticeCard tone="danger">
+                    <p>{message()}</p>
+                    <Button variant="secondary" size="sm" onClick={() => void loadPublications()}>
+                      {t().retry}
+                    </Button>
+                  </NoticeCard>
+                )}
+              </Show>
+              <Show when={!publicationsLoading()} fallback={<Placeholder state="loading" align="left" title={t().loadingPublications} />}>
+                <For each={publications()}>
+                  {(publication) => (
+                    <div class="paper flex items-center gap-3 p-3">
+                      <i class="ti ti-table-share text-lg text-dimmed" aria-hidden="true" />
+                      <div class="min-w-0 flex-1">
+                        <div class="truncate text-sm font-medium text-primary">{publication.targetTableName}</div>
+                        <div class="truncate text-xs text-dimmed">
+                          {t().publicationMeta({
+                            base: publication.targetBaseName,
+                            revision: publication.revision,
+                            count: publication.mappings.length,
+                          })}
+                        </div>
+                        <div class="mt-2 flex flex-wrap gap-1">
+                          <For each={publication.mappings}>
+                            {(mapping) => (
+                              <span class="rounded-[var(--ui-radius-control)] bg-[var(--ui-surface-subtle)] px-2 py-1 text-xs text-secondary">
+                                {mapping.sourceFieldName} <i class="ti ti-arrow-right mx-1" aria-hidden="true" /> {mapping.targetFieldName}
+                              </span>
+                            )}
+                          </For>
+                        </div>
+                      </div>
+                      <span class={publication.revokedAt ? "text-xs text-danger" : "text-xs text-secondary"}>
+                        {publication.revokedAt ? t().revoked : publication.status === "active" ? t().active : t().actionRequired}
+                      </span>
+                      <Show when={!publication.revokedAt && !publicationsError()}>
+                        <Tooltip.Anchor content={t().revokePublication}>
+                          <IconButton
+                            variant="ghost"
+                            size="sm"
+                            type="button"
+                            class="text-danger"
+                            label={t().revokePublicationTo({ table: publication.targetTableName })}
+                            onClick={() => void revokePublication(publication)}
+                          >
+                            <i class="ti ti-unlink" aria-hidden="true" />
+                          </IconButton>
+                        </Tooltip.Anchor>
+                      </Show>
+                    </div>
+                  )}
+                </For>
+              </Show>
+            </PanelDialog.Section>
+          </Show>
+
+          <Show when={props.table.kind === "stored"}>
+            <PanelDialog.Section title={t().dataIntegrity} subtitle={t().dataIntegrityDetail} icon="ti ti-shield-check">
+              <div class="flex flex-col gap-1">
+                <DetailPanel.Action
+                  type="button"
+                  onClick={() => void configureAudit()}
+                  leading={<i class="ti ti-shield-check" aria-hidden="true" />}
+                  title={t().tableAuditRequirements}
+                  description={auditPolicySummary(auditPolicy(), locale())}
+                  trailing={<i class="ti ti-chevron-right" aria-hidden="true" />}
+                />
+                <Show when={props.canManageBase}>
+                  <DetailPanel.Action
+                    type="button"
+                    onClick={() => void configureMutationPolicy()}
+                    leading={<i class="ti ti-route" aria-hidden="true" />}
+                    title={t().recordChanges}
+                    description={mutationPolicySummary(mutationPolicy(), locale())}
+                    trailing={<i class="ti ti-chevron-right" aria-hidden="true" />}
+                  />
+                  <DetailPanel.Action
+                    type="button"
+                    onClick={() => void openHistoryProtectionDialog({ tableId: props.table.id, tableName: name() })}
+                    leading={<i class="ti ti-history" aria-hidden="true" />}
+                    title={t().historyProtection}
+                    description={t().historyProtectionDetail}
+                    trailing={<i class="ti ti-chevron-right" aria-hidden="true" />}
+                  />
+                </Show>
+              </div>
+            </PanelDialog.Section>
+          </Show>
+
+          <PanelDialog.Section title={t().dangerZone} subtitle={t().tableDangerDetail} icon="ti ti-trash">
+            <Button variant="danger" size="sm" type="button" class="self-start" onClick={deleteTable} disabled={deleteMut.loading()}>
+              <i class="ti ti-trash" /> {t().deleteTable}
+            </Button>
+          </PanelDialog.Section>
+        </fieldset>
       </PanelDialog.Body>
 
       <PanelDialog.Footer>
         <span />
         <div class="flex items-center justify-end gap-2">
-          <Button variant="secondary" size="sm" type="button" onClick={props.onCancel}>
+          <Button variant="secondary" size="sm" type="button" onClick={props.onCancel} disabled={saveMut.loading() || deleteMut.loading()}>
             {t().cancel}
           </Button>
           <Button

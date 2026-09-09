@@ -52,6 +52,7 @@ const projection = sql`
 export const list = async (
   baseId: string,
   input: {
+    search?: string;
     status: "active" | "released" | "all";
     scope: "base" | "table" | "all";
     tablePublicId: string | null;
@@ -59,6 +60,7 @@ export const list = async (
     offset: number;
   },
 ): Promise<{ items: PreservationHold[]; total: number }> => {
+  const search = input.search?.trim().toLowerCase() ?? "";
   const [count] = await sql<Array<{ total: number }>>`
     SELECT count(*)::int AS total
     FROM grids.preservation_holds hold
@@ -68,6 +70,7 @@ export const list = async (
         OR (${input.status} = 'released' AND hold.released_at IS NOT NULL))
       AND (${input.scope} = 'all' OR hold.scope_type = ${input.scope})
       AND (${input.tablePublicId}::text IS NULL OR hold.table_short_id = ${input.tablePublicId})
+      AND (${search} = '' OR strpos(lower(concat_ws(' ', hold.short_id, hold.reason, hold.table_name, hold.created_by_display_name)), ${search}) > 0)
   `;
   const rows = await sql<HoldRow[]>`
     SELECT ${projection}
@@ -79,6 +82,7 @@ export const list = async (
         OR (${input.status} = 'released' AND hold.released_at IS NOT NULL))
       AND (${input.scope} = 'all' OR hold.scope_type = ${input.scope})
       AND (${input.tablePublicId}::text IS NULL OR hold.table_short_id = ${input.tablePublicId})
+      AND (${search} = '' OR strpos(lower(concat_ws(' ', hold.short_id, hold.reason, hold.table_name, hold.created_by_display_name)), ${search}) > 0)
     ORDER BY hold.created_at DESC, hold.id DESC
     LIMIT ${input.perPage} OFFSET ${input.offset}
   `;

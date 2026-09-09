@@ -1,6 +1,7 @@
 import { mutation as mutations, query } from "@k2b/stdlib/solid";
 import {
   Button,
+  confirmDiscardIfDirty,
   dialogCore,
   InlineGuidance,
   NoticeCard,
@@ -21,18 +22,17 @@ import { errorMessage } from "../utils/api-helpers";
 import { gridsDialogMessages } from "./messages";
 
 export const openHistoryProtectionDialog = (args: { tableId: string; tableName: string }) =>
-  dialogCore.open<void>((close) => {
-    const locale = useLocale();
-    const t = () => gridsDialogMessages.resolve([locale()]).t;
-    return (
-      <PanelDialog>
-        <PanelDialog.Header title={t().historyProtection} subtitle={args.tableName} icon="ti ti-history" close={close} />
-        <HistoryProtectionBody tableId={args.tableId} />
-      </PanelDialog>
-    );
-  }, panelDialogOptions);
+  dialogCore.open<void>(
+    (close, context) => <HistoryProtectionBody {...args} close={close} setDismissHandler={context.setDismissHandler} />,
+    panelDialogOptions,
+  );
 
-function HistoryProtectionBody(props: { tableId: string }) {
+function HistoryProtectionBody(props: {
+  tableId: string;
+  tableName: string;
+  close: () => void;
+  setDismissHandler: (handler: () => void | Promise<void>) => void;
+}) {
   const locale = useLocale();
   const t = () => gridsDialogMessages.resolve([locale()]).t;
   const statusQuery = query.create({
@@ -190,152 +190,99 @@ function HistoryProtectionBody(props: { tableId: string }) {
     if (!confirmed) return;
     policyMut.mutate(policyMode() === "fourEyes" ? { mode: "fourEyes", approverGroupId: group!.id } : { mode: "direct" });
   };
+  const closeIfClean = async () => {
+    if (historyMut.loading() || finalizationMut.loading() || policyMut.loading()) return;
+    if (
+      await confirmDiscardIfDirty(() =>
+        enabledFinalizationStatus() ? policyChanged() : policyMode() !== "direct" || approverGroup() !== null,
+      )
+    )
+      props.close();
+  };
+  props.setDismissHandler(closeIfClean);
 
   return (
-    <PanelDialog.Body>
-      <NoticeCard tone="info" title={t().historyIntro} detail={t().historyIntroDetail} />
-      <Show when={!statusQuery.loading()} fallback={<Placeholder state="loading" align="left" title={t().loadingHistory} />}>
-        <Show
-          when={!statusQuery.error()}
-          fallback={
-            <Placeholder
-              state="error"
-              align="left"
-              title={t().historyUnavailable}
-              description={statusQuery.error()?.message}
-              action={
-                <Button variant="secondary" size="sm" type="button" onClick={() => void statusQuery.refresh()}>
-                  {t().retry}
-                </Button>
-              }
-            />
-          }
-        >
-          <Show when={statusQuery.data()}>
-            <PanelDialog.Section title={t().durableHistory} subtitle={t().durableHistoryDetail} icon="ti ti-history">
-              <Show
-                when={enabledHistoryStatus()}
-                fallback={
-                  <div class="flex flex-col items-start gap-3">
-                    <InlineGuidance>{t().historyStartsNow}</InlineGuidance>
-                    <Button
-                      variant="primary"
-                      size="sm"
-                      type="button"
-                      onClick={() => void enableHistory()}
-                      loading={historyMut.loading()}
-                      loadingLabel={t().enablingHistory}
-                    >
-                      <i class="ti ti-history" aria-hidden="true" /> {t().enableHistory}
-                    </Button>
-                  </div>
+    <PanelDialog>
+      <PanelDialog.Header title={t().historyProtection} subtitle={props.tableName} icon="ti ti-history" close={closeIfClean} />
+      <PanelDialog.Body>
+        <NoticeCard tone="info" title={t().historyIntro} detail={t().historyIntroDetail} />
+        <Show when={!statusQuery.loading()} fallback={<Placeholder state="loading" align="left" title={t().loadingHistory} />}>
+          <Show
+            when={!statusQuery.error()}
+            fallback={
+              <Placeholder
+                state="error"
+                align="left"
+                title={t().historyUnavailable}
+                description={statusQuery.error()?.message}
+                action={
+                  <Button variant="secondary" size="sm" type="button" onClick={() => void statusQuery.refresh()}>
+                    {t().retry}
+                  </Button>
                 }
-              >
-                {(status) => (
-                  <div class="flex flex-col items-start gap-3">
-                    <NoticeCard
-                      class="w-full"
-                      tone={status().status === "active" ? "success" : "warning"}
-                      title={status().status === "active" ? t().historyOn : t().preparingHistory}
-                      detail={
-                        status().status === "active"
-                          ? t().historyActiveSince({ date: new Date(status().activatedAt).toLocaleString(locale()) })
-                          : t().historyProgress({ captured: status().baseline.captured, total: status().baseline.total })
-                      }
-                    />
-                    <Show when={status().status === "activating"}>
+              />
+            }
+          >
+            <Show when={statusQuery.data()}>
+              <PanelDialog.Section title={t().durableHistory} subtitle={t().durableHistoryDetail} icon="ti ti-history">
+                <Show
+                  when={enabledHistoryStatus()}
+                  fallback={
+                    <div class="flex flex-col items-start gap-3">
+                      <InlineGuidance>{t().historyStartsNow}</InlineGuidance>
                       <Button
-                        variant="secondary"
+                        variant="primary"
                         size="sm"
                         type="button"
-                        onClick={() => historyMut.mutate("continue")}
+                        onClick={() => void enableHistory()}
                         loading={historyMut.loading()}
-                        loadingLabel={t().savingExisting}
+                        loadingLabel={t().enablingHistory}
                       >
-                        {t().continueSetup}
+                        <i class="ti ti-history" aria-hidden="true" /> {t().enableHistory}
                       </Button>
-                    </Show>
-                  </div>
-                )}
-              </Show>
-            </PanelDialog.Section>
-
-            <PanelDialog.Section title={t().recordFinalization} subtitle={t().recordFinalizationDetail} icon="ti ti-lock">
-              <Show when={finalizationStatus()}>
-                {(status) => (
-                  <Show
-                    when={enabledFinalizationStatus()}
-                    fallback={
-                      <div class="flex flex-col items-start gap-3">
-                        <InlineGuidance tone={status().durableHistory === "active" ? "neutral" : "warning"}>
-                          {status().durableHistory === "active" ? t().finalizationOff : t().enableHistoryFirst}
-                        </InlineGuidance>
-                        <div class="flex w-full flex-col gap-3">
-                          <Select
-                            label={t().finalizationMode}
-                            description={t().finalizationModeDetail}
-                            options={[
-                              {
-                                id: "direct",
-                                label: t().direct,
-                                description: t().directDetail,
-                                icon: "ti ti-lock",
-                              },
-                              {
-                                id: "fourEyes",
-                                label: t().fourEyes,
-                                description: t().fourEyesDetail,
-                                icon: "ti ti-users-group",
-                              },
-                            ]}
-                            value={policyMode}
-                            onValueChange={(value) => {
-                              if (value === "direct" || value === "fourEyes") setPolicyMode(value);
-                            }}
-                            disabled={status().durableHistory !== "active" || finalizationMut.loading()}
-                          />
-                          <Show when={policyMode() === "fourEyes"}>
-                            <PrincipalInput
-                              label={t().approverGroup}
-                              description={t().approverGroupDetail}
-                              value={approverGroup() ? [approverGroup()!] : null}
-                              multi={false}
-                              types={["group"]}
-                              disabled={status().durableHistory !== "active" || finalizationMut.loading()}
-                              onChange={(value) => setApproverGroup(value?.[0] ?? null)}
-                            />
-                          </Show>
-                        </div>
+                    </div>
+                  }
+                >
+                  {(status) => (
+                    <div class="flex flex-col items-start gap-3">
+                      <NoticeCard
+                        class="w-full"
+                        tone={status().status === "active" ? "success" : "warning"}
+                        title={status().status === "active" ? t().historyOn : t().preparingHistory}
+                        detail={
+                          status().status === "active"
+                            ? t().historyActiveSince({ date: new Date(status().activatedAt).toLocaleString(locale()) })
+                            : t().historyProgress({ captured: status().baseline.captured, total: status().baseline.total })
+                        }
+                      />
+                      <Show when={status().status === "activating"}>
                         <Button
                           variant="secondary"
                           size="sm"
                           type="button"
-                          disabled={status().durableHistory !== "active" || (policyMode() === "fourEyes" && !approverGroup())}
-                          onClick={() => void changeFinalization("enable")}
-                          loading={finalizationMut.loading()}
-                          loadingLabel={t().enablingFinalization}
+                          onClick={() => historyMut.mutate("continue")}
+                          loading={historyMut.loading()}
+                          loadingLabel={t().savingExisting}
                         >
-                          <i class="ti ti-lock" /> {t().enableFinalization}
+                          {t().continueSetup}
                         </Button>
-                      </div>
-                    }
-                  >
-                    {(enabled) => (
-                      <div class="flex flex-col items-start gap-3">
-                        <NoticeCard
-                          class="w-full"
-                          tone="success"
-                          title={t().finalizationOn}
-                          detail={
-                            enabled().finalizedCount === 0
-                              ? enabled().mode === "fourEyes"
-                                ? t().fourEyesStatus({ group: enabled().approverGroupName ?? t().defaultApproverGroup })
-                                : t().directDetail
-                              : t().finalizedCount({ count: enabled().finalizedCount })
-                          }
-                        />
-                        <div class="flex w-full flex-col gap-3">
-                          <div class="flex flex-col gap-3">
+                      </Show>
+                    </div>
+                  )}
+                </Show>
+              </PanelDialog.Section>
+
+              <PanelDialog.Section title={t().recordFinalization} subtitle={t().recordFinalizationDetail} icon="ti ti-lock">
+                <Show when={finalizationStatus()}>
+                  {(status) => (
+                    <Show
+                      when={enabledFinalizationStatus()}
+                      fallback={
+                        <div class="flex flex-col items-start gap-3">
+                          <InlineGuidance tone={status().durableHistory === "active" ? "neutral" : "warning"}>
+                            {status().durableHistory === "active" ? t().finalizationOff : t().enableHistoryFirst}
+                          </InlineGuidance>
+                          <div class="flex w-full flex-col gap-3">
                             <Select
                               label={t().finalizationMode}
                               description={t().finalizationModeDetail}
@@ -357,7 +304,7 @@ function HistoryProtectionBody(props: { tableId: string }) {
                               onValueChange={(value) => {
                                 if (value === "direct" || value === "fourEyes") setPolicyMode(value);
                               }}
-                              disabled={policyMut.loading()}
+                              disabled={status().durableHistory !== "active" || finalizationMut.loading()}
                             />
                             <Show when={policyMode() === "fourEyes"}>
                               <PrincipalInput
@@ -366,49 +313,115 @@ function HistoryProtectionBody(props: { tableId: string }) {
                                 value={approverGroup() ? [approverGroup()!] : null}
                                 multi={false}
                                 types={["group"]}
-                                disabled={policyMut.loading()}
+                                disabled={status().durableHistory !== "active" || finalizationMut.loading()}
                                 onChange={(value) => setApproverGroup(value?.[0] ?? null)}
                               />
                             </Show>
                           </div>
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            type="button"
+                            disabled={status().durableHistory !== "active" || (policyMode() === "fourEyes" && !approverGroup())}
+                            onClick={() => void changeFinalization("enable")}
+                            loading={finalizationMut.loading()}
+                            loadingLabel={t().enablingFinalization}
+                          >
+                            <i class="ti ti-lock" /> {t().enableFinalization}
+                          </Button>
                         </div>
-                        <div class="flex w-full flex-wrap items-center gap-2">
-                          <Show when={enabled().canDisable}>
-                            <Button
-                              variant="secondary"
-                              size="sm"
-                              type="button"
-                              onClick={() => void changeFinalization("disable")}
-                              loading={finalizationMut.loading()}
-                              loadingLabel={t().disablingFinalization}
-                            >
-                              {t().disableFinalization}
-                            </Button>
-                          </Show>
-                          <Show when={policyChanged()}>
-                            <Button
-                              class="ml-auto"
-                              variant="primary"
-                              size="sm"
-                              type="button"
-                              onClick={() => void savePolicy()}
-                              loading={policyMut.loading()}
-                              loadingLabel={t().savingFinalizationMode}
-                              disabled={policyMode() === "fourEyes" && !approverGroup()}
-                            >
-                              <i class="ti ti-device-floppy" aria-hidden="true" /> {t().saveFinalizationMode}
-                            </Button>
-                          </Show>
+                      }
+                    >
+                      {(enabled) => (
+                        <div class="flex flex-col items-start gap-3">
+                          <NoticeCard
+                            class="w-full"
+                            tone="success"
+                            title={t().finalizationOn}
+                            detail={
+                              enabled().finalizedCount === 0
+                                ? enabled().mode === "fourEyes"
+                                  ? t().fourEyesStatus({ group: enabled().approverGroupName ?? t().defaultApproverGroup })
+                                  : t().directDetail
+                                : t().finalizedCount({ count: enabled().finalizedCount })
+                            }
+                          />
+                          <div class="flex w-full flex-col gap-3">
+                            <div class="flex flex-col gap-3">
+                              <Select
+                                label={t().finalizationMode}
+                                description={t().finalizationModeDetail}
+                                options={[
+                                  {
+                                    id: "direct",
+                                    label: t().direct,
+                                    description: t().directDetail,
+                                    icon: "ti ti-lock",
+                                  },
+                                  {
+                                    id: "fourEyes",
+                                    label: t().fourEyes,
+                                    description: t().fourEyesDetail,
+                                    icon: "ti ti-users-group",
+                                  },
+                                ]}
+                                value={policyMode}
+                                onValueChange={(value) => {
+                                  if (value === "direct" || value === "fourEyes") setPolicyMode(value);
+                                }}
+                                disabled={policyMut.loading()}
+                              />
+                              <Show when={policyMode() === "fourEyes"}>
+                                <PrincipalInput
+                                  label={t().approverGroup}
+                                  description={t().approverGroupDetail}
+                                  value={approverGroup() ? [approverGroup()!] : null}
+                                  multi={false}
+                                  types={["group"]}
+                                  disabled={policyMut.loading()}
+                                  onChange={(value) => setApproverGroup(value?.[0] ?? null)}
+                                />
+                              </Show>
+                            </div>
+                          </div>
+                          <div class="flex w-full flex-wrap items-center gap-2">
+                            <Show when={enabled().canDisable}>
+                              <Button
+                                variant="secondary"
+                                size="sm"
+                                type="button"
+                                onClick={() => void changeFinalization("disable")}
+                                loading={finalizationMut.loading()}
+                                loadingLabel={t().disablingFinalization}
+                              >
+                                {t().disableFinalization}
+                              </Button>
+                            </Show>
+                            <Show when={policyChanged()}>
+                              <Button
+                                class="ml-auto"
+                                variant="primary"
+                                size="sm"
+                                type="button"
+                                onClick={() => void savePolicy()}
+                                loading={policyMut.loading()}
+                                loadingLabel={t().savingFinalizationMode}
+                                disabled={policyMode() === "fourEyes" && !approverGroup()}
+                              >
+                                <i class="ti ti-device-floppy" aria-hidden="true" /> {t().saveFinalizationMode}
+                              </Button>
+                            </Show>
+                          </div>
                         </div>
-                      </div>
-                    )}
-                  </Show>
-                )}
-              </Show>
-            </PanelDialog.Section>
+                      )}
+                    </Show>
+                  )}
+                </Show>
+              </PanelDialog.Section>
+            </Show>
           </Show>
         </Show>
-      </Show>
-    </PanelDialog.Body>
+      </PanelDialog.Body>
+    </PanelDialog>
   );
 }

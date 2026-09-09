@@ -25,7 +25,7 @@ If a change is not visible, reload once. Live updates keep the current query rul
 
 ## A record edit was rejected {icon="table"}
 
-Another user or tab may have saved a newer version. Reload the record, compare the new values, and apply your change again. This prevents an older form from overwriting newer work.
+Another user or tab may have saved a newer version. The edit dialog keeps your input. Choose **Compare current record** to review the latest values, then explicitly keep your edits on that version before saving again. Fields you did not change take their current values. This prevents an older form from silently overwriting newer work.
 
 If the message asks for change context, answer the questions configured under **Table settings → Data integrity**. Protected updates, trash actions, and restores cannot proceed without the required answers.
 
@@ -72,9 +72,13 @@ Correct the source when rows are empty, and copy paths from Data instead of gues
 
 New generated documents download their exact stored PDF bytes. Later record, template, or renderer changes cannot rewrite an existing artifact.
 
+If generation returns an uncertain result, keep the dialog open and use **Retry generation**. It retries the same request rather than creating a new document. Closing abandons that retry context; check **All documents** before starting a new attempt.
+
 ## A workflow did not do what you expected {icon="route"}
 
 Open the run detail rather than immediately retrying. Check its revision, mode, channel, inputs, step outcomes, saved outputs, and error. The run executed the revision it pinned when it started, which is not necessarily the YAML on screen now — open the run's linked revision to read what actually ran.
+
+If a Grids App action cannot retrieve its result, use **Check status** while the page remains open. This follows the existing operation instead of starting another workflow. A status error does not prove the workflow failed.
 
 A `dryRun` records predicted effects but does not perform writes or external requests. An `execute` retry should use a deliberate idempotency key; external HTTP receivers should also handle duplicate requests safely.
 

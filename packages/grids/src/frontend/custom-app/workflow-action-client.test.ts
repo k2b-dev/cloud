@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
-import { invokeCustomAppWorkflow } from "./workflow-action-client";
+import { type CustomAppWorkflowOperation, invokeCustomAppWorkflow } from "./workflow-action-client";
 
 const originalFetch = globalThis.fetch;
 const originalSetTimeout = globalThis.setTimeout;
@@ -10,6 +10,36 @@ afterEach(() => {
 });
 
 describe("Grids App workflow action client", () => {
+  test("status recovery polls the same run instead of posting a second operation", async () => {
+    const operation: CustomAppWorkflowOperation = { operationId: crypto.randomUUID() };
+    const requests: string[] = [];
+    let unavailable = true;
+    globalThis.fetch = (async (input) => {
+      requests.push(String(input));
+      if (String(input) === "/invoke") return Response.json({ statusUrl: "/status" });
+      return unavailable ? new Response("Unavailable", { status: 503 }) : Response.json({ status: "succeeded" });
+    }) as typeof fetch;
+    const args = { endpoint: "/invoke", operation, signal: new AbortController().signal };
+    expect(await invokeCustomAppWorkflow(args)).toEqual({ kind: "running", message: "The workflow status is unavailable." });
+    unavailable = false;
+    expect((await invokeCustomAppWorkflow(args)).kind).toBe("success");
+    expect(requests).toEqual(["/invoke", "/status", "/status"]);
+  });
+
+  test("a lost start response retries with the same operation identity", async () => {
+    const operation: CustomAppWorkflowOperation = { operationId: crypto.randomUUID() };
+    const ids: string[] = [];
+    globalThis.fetch = (async (input, init) => {
+      if (String(input) !== "/invoke") return Response.json({ status: "succeeded" });
+      ids.push(JSON.parse(String(init?.body)).operationId);
+      if (ids.length === 1) throw new TypeError("Network disconnected");
+      return Response.json({ statusUrl: "/status" });
+    }) as typeof fetch;
+    const args = { endpoint: "/invoke", operation, signal: new AbortController().signal };
+    await expect(invokeCustomAppWorkflow(args)).rejects.toThrow("Network disconnected");
+    expect((await invokeCustomAppWorkflow(args)).kind).toBe("success");
+    expect(ids).toEqual([operation.operationId, operation.operationId]);
+  });
   test("follows the scoped status URL until the workflow succeeds", async () => {
     const requests: string[] = [];
     const statuses = [

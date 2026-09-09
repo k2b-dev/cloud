@@ -1,6 +1,7 @@
 import { mutation as mutations } from "@k2b/stdlib/solid";
 import {
   Button,
+  confirmDiscardIfDirty,
   dialogCore,
   NoticeCard,
   PanelDialog,
@@ -29,12 +30,19 @@ type DocumentGenerateDialogArgs = {
 };
 
 export const openDocumentGenerateDialog = (args: DocumentGenerateDialogArgs) =>
-  dialogCore.open<void>((close) => <DocumentGenerateDialog args={args} close={close} />, {
-    ...panelDialogFixedOptions,
-    panelClassName: `${panelDialogFixedOptions.panelClassName} is-wide`,
-  });
+  dialogCore.open<void>(
+    (close, context) => <DocumentGenerateDialog args={args} close={close} setDismissHandler={context.setDismissHandler} />,
+    {
+      ...panelDialogFixedOptions,
+      panelClassName: `${panelDialogFixedOptions.panelClassName} is-wide`,
+    },
+  );
 
-function DocumentGenerateDialog(props: { args: DocumentGenerateDialogArgs; close: () => void }) {
+function DocumentGenerateDialog(props: {
+  args: DocumentGenerateDialogArgs;
+  close: () => void;
+  setDismissHandler: (handler: () => void | Promise<void>) => void;
+}) {
   const locale = useLocale();
   const t = () => documentMessages.resolve([locale()]).t;
   const attempt = createDocumentGenerationAttempt();
@@ -87,8 +95,20 @@ function DocumentGenerateDialog(props: { args: DocumentGenerateDialogArgs; close
       await props.args.onGenerated();
       props.close();
     },
-    onError: (error) => prompts.error(error.message),
   });
+
+  const closeSafely = async () => {
+    if (generateMut.loading()) return;
+    if (attempt.request()) {
+      if (!(await prompts.confirm(t().abandonGenerationDetail, { title: t().abandonGeneration, confirmText: t().closeAnyway }))) return;
+    } else if (
+      !(await confirmDiscardIfDirty(() => Boolean(filename().trim() || tags().length || recordId() !== (props.args.initialRecordId ?? ""))))
+    ) {
+      return;
+    }
+    props.close();
+  };
+  props.setDismissHandler(closeSafely);
 
   const startNewAttempt = async () => {
     if (generateMut.loading()) return;
@@ -106,9 +126,13 @@ function DocumentGenerateDialog(props: { args: DocumentGenerateDialogArgs; close
         })}
         subtitle={props.args.table.name}
         icon="ti ti-file-type-pdf"
-        close={props.close}
+        close={closeSafely}
       />
       <PanelDialog.Body>
+        <Show when={generateMut.error()}>{(error) => <NoticeCard tone="danger" title={error().message} />}</Show>
+        <Show when={generateMut.loading()}>
+          <NoticeCard tone="info" title={t().generatingDocument} detail={t().keepGenerationOpen} />
+        </Show>
         <section class="flex shrink-0 flex-col gap-2">
           <RecordPicker
             tableId={props.args.table.id}
@@ -162,7 +186,7 @@ function DocumentGenerateDialog(props: { args: DocumentGenerateDialogArgs; close
           </Button>
         </Show>
         <div class="flex items-center justify-end gap-2">
-          <Button variant="secondary" size="sm" type="button" onClick={props.close} disabled={generateMut.loading()}>
+          <Button variant="secondary" size="sm" type="button" onClick={closeSafely} disabled={generateMut.loading()}>
             {t().cancel}
           </Button>
           <Button

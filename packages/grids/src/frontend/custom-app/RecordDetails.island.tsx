@@ -10,7 +10,7 @@ import type { PublicDocument } from "../_components/documents/public-document-ty
 import { openRecordAuditDialog } from "../_components/records/RecordAuditDialog";
 import RecordFileField from "../_components/records/RecordFileField";
 import { formatRecordRelativeTime } from "../_components/records/RecordHistorySection";
-import { openRecordUpsertDialog } from "../_components/records/RecordUpsertDialog";
+import { openRecordUpsertDialog, RecordSaveConflictError } from "../_components/records/RecordUpsertDialog";
 import { FieldValue } from "../_components/table/FieldValue";
 import { useCustomAppRuntimeMessages } from "./runtime-messages";
 
@@ -52,7 +52,8 @@ export default function RecordDetails(props: {
     if (!props.updateEndpoint || saving()) return;
     let audit: RecordMutationAudit | undefined;
     const current = record();
-    const values = await openRecordUpsertDialog({
+    const endpoint = props.updateEndpoint;
+    await openRecordUpsertDialog({
       mode: "edit",
       fields: editableFields,
       baseId: props.baseId,
@@ -60,12 +61,20 @@ export default function RecordDetails(props: {
       record: current,
       relationLabels: relationLabels(),
       dateConfig: props.dateConfig,
-      beforeSubmit: async (payload) => {
+      reloadRecord: async () => {
+        const response = await fetch(endpoint, { headers: { Accept: "application/json" } });
+        if (!response.ok) throw new Error(await responseMessage(response, messages().updateRecordFailed));
+        return response.json();
+      },
+      beforeSubmit: async (payload, baselineData) => {
         const changedFieldIds = Object.keys(payload).filter(
-          (fieldId) => JSON.stringify(payload[fieldId]) !== JSON.stringify(current.data[fieldId]),
+          (fieldId) => JSON.stringify(payload[fieldId]) !== JSON.stringify(baselineData[fieldId]),
         );
         const requirement = recordAuditRequirementFor(props.auditPolicy, "update", changedFieldIds);
-        if (!requirement) return true;
+        if (!requirement) {
+          audit = undefined;
+          return true;
+        }
         const answer = await openRecordAuditDialog({
           operation: "update",
           requirement,
@@ -75,26 +84,27 @@ export default function RecordDetails(props: {
         audit = answer;
         return true;
       },
+      onSubmit: async (values, version) => {
+        setSaving(true);
+        try {
+          const response = await fetch(endpoint, {
+            method: "PATCH",
+            headers: { "content-type": "application/json", "If-Match": String(version ?? current.version) },
+            body: JSON.stringify({ values, audit }),
+          });
+          if (!response.ok) {
+            const message = await responseMessage(response, messages().updateRecordFailed);
+            throw response.status === 409 ? new RecordSaveConflictError(message) : new Error(message);
+          }
+          const updated = (await response.json()) as GridRecord & { relationLabels?: Record<string, string> };
+          setRecord(updated);
+          const updatedLabels = updated.relationLabels;
+          if (updatedLabels) setRelationLabels((current) => ({ ...current, ...updatedLabels }));
+        } finally {
+          setSaving(false);
+        }
+      },
     });
-    if (!values) return;
-
-    setSaving(true);
-    try {
-      const response = await fetch(props.updateEndpoint, {
-        method: "PATCH",
-        headers: { "content-type": "application/json", "If-Match": String(current.version) },
-        body: JSON.stringify({ values, audit }),
-      });
-      if (!response.ok) throw new Error(await responseMessage(response, messages().updateRecordFailed));
-      const updated = (await response.json()) as GridRecord & { relationLabels?: Record<string, string> };
-      setRecord(updated);
-      const updatedLabels = updated.relationLabels;
-      if (updatedLabels) setRelationLabels((current) => ({ ...current, ...updatedLabels }));
-    } catch (error) {
-      prompts.error(error instanceof Error ? error.message : messages().updateRecordFailed);
-    } finally {
-      setSaving(false);
-    }
   };
 
   const download = async (document: CustomAppDocument) => {
