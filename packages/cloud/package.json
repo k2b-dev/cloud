@@ -16,6 +16,7 @@
     "scripts",
     "public",
     "!src/**/*.test.ts",
+    "!src/**/*.test.tsx",
     "!src/**/*.integration.test.ts",
     "!scripts/**/*.test.ts"
   ],

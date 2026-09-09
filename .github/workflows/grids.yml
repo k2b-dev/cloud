@@ -84,6 +84,7 @@ jobs:
       REDIS_URL: redis://127.0.0.1:6379
       DATABASE_URL: postgresql://ipa:ipa@localhost:5432/ipa
       GRIDS_DB_TEST: "1"
+      APP_SECRET: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
 
