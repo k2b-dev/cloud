@@ -3,7 +3,7 @@
  *
  * `defineApp().start()` and the `middleware.runtime()` factory both call
  * `ensureRuntimeWatcher()` — the first call watches the app registry and
- * rebuilds the snapshot on every change; subsequent calls await the same
+ * rebuilds the snapshot on changes (coalescing bursts); subsequent calls await the same
  * in-flight init promise. Reads happen via `getCurrentRuntime()`.
  *
  * One process = one app = one watcher; lives until `stopRuntimeWatcher()`
@@ -24,7 +24,8 @@ let watcherTask: Promise<void> | undefined;
 let abort: AbortController | undefined;
 
 const refresh = async () => {
-  const [apps, capabilities] = await Promise.all([listApps(), listCapabilities()]);
+  const apps = await listApps();
+  const capabilities = await listCapabilities(apps);
   current = buildRuntimeFromRegistry(apps, capabilities);
 };
 

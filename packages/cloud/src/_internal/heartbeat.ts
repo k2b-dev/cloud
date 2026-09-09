@@ -58,8 +58,8 @@ export const createHeartbeat = <T>(appId: string, entry: T, options: HeartbeatOp
   };
 
   const refresh = async (): Promise<void> => {
-    // Normal heartbeats renew only the lease, so bounded capability manifests
-    // are not serialized and written every minute. A missing entry is repaired
+    // Touch renews the existing entry (and emits a registry invalidation).
+    // Avoid rebuilding the manifest here. A missing entry is repaired
     // immediately, preserving restart-free registry recovery.
     const touched = await registry.touch({ key });
     if (!touched) await registry.upsert({ key, value: entry });

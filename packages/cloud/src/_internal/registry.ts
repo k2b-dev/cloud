@@ -7,6 +7,7 @@ import { resolveAppPresentations } from "../shared/app-presentation";
 import { compileCapabilityPresentation, parseCapabilityManifest } from "./capabilities";
 import { lazySync } from "./process-sync";
 import { validateAppRegistryEntry } from "./registry-validation";
+import { watchRegistryChanges } from "./registry-watch";
 
 /**
  * Shared app registry: three @k2b/sync ephemerals on the process Sync
@@ -50,18 +51,13 @@ export const helpRegistry = lazySync((sync) => sync.ephemeral<HelpRegistryEntry>
 
 /**
  * Follow the app registry until `signal` aborts. The watch first replays the
- * current entries, then streams changes; `onChange` runs once per event and
- * is awaited (events queue meanwhile). A `resync_required` event (history no
- * longer covers the watch) restarts the watch, which replays again.
+ * current entries, then streams changes. While a refresh runs, further events
+ * coalesce into one follow-up refresh. Resync also refreshes an empty registry.
+ * Shutdown waits for received invalidations; refresh errors stop the watch.
  */
 export const watchAppRegistry = async ({ signal, onChange }: { signal: AbortSignal; onChange: () => Promise<void> }): Promise<void> => {
   const registry = appRegistry();
-  while (!signal.aborted) {
-    for await (const event of registry.watch({ prefix: APP_REGISTRY_PREFIX, signal })) {
-      if (event.type === "resync_required") break;
-      await onChange();
-    }
-  }
+  await watchRegistryChanges({ signal, onChange, watch: (signal) => registry.watch({ prefix: APP_REGISTRY_PREFIX, signal }) });
 };
 
 /**
@@ -219,8 +215,8 @@ export const resolveLiveCapabilityRegistryEntry = (
   }
 };
 
-export const listCapabilities = async (): Promise<CapabilityRegistryEntry[]> => {
-  const [snap, apps] = await Promise.all([capabilityRegistry().snapshot({ prefix: "capabilities/" }), listApps()]);
+export const listCapabilities = async (appSnapshot?: AppRegistryEntry[]): Promise<CapabilityRegistryEntry[]> => {
+  const [snap, apps] = await Promise.all([capabilityRegistry().snapshot({ prefix: "capabilities/" }), appSnapshot ?? listApps()]);
   const byId = new Map(apps.map((app) => [app.id, app]));
   return snap.entries.flatMap((entry) => {
     const appId = entry.key.startsWith("capabilities/") ? entry.key.slice("capabilities/".length) : "";
