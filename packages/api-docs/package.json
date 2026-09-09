@@ -1,5 +1,5 @@
 {
-  "name": "@valentinkolb/cloud-app-api-docs",
+  "name": "@k2b/cloud-app-api-docs",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -14,7 +14,7 @@
   },
   "dependencies": {
     "@scalar/hono-api-reference": "0.10.20",
-    "@valentinkolb/cloud": "workspace:*",
+    "@k2b/cloud": "workspace:*",
     "hono": "catalog:"
   },
   "devDependencies": {

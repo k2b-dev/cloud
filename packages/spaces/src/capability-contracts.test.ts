@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { capabilityResultSchema } from "@valentinkolb/cloud/contracts";
+import { capabilityResultSchema } from "@k2b/cloud/contracts";
 import {
   CalendarDestinationListInputSchema,
   SpaceBrowseDataSchema,

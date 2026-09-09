@@ -1,6 +1,6 @@
-import { type AuthContext, getLocale } from "@valentinkolb/cloud/server";
-import { notifications, readAccountCategoryPolicy } from "@valentinkolb/cloud/services";
-import { getLocalizedRuntimeContext, Layout } from "@valentinkolb/cloud/ssr";
+import { type AuthContext, getLocale } from "@k2b/cloud/server";
+import { notifications, readAccountCategoryPolicy } from "@k2b/cloud/services";
+import { getLocalizedRuntimeContext, Layout } from "@k2b/cloud/ssr";
 import { ssr } from "../../config";
 import AccountHub, { AccountPageHeader, AccountSubnav, notificationViews } from "./AccountHub";
 import BrowserNotificationSetup from "./BrowserNotificationSetup.island";

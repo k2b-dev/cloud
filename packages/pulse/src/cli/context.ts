@@ -1,4 +1,4 @@
-import type { CloudCliContext } from "@valentinkolb/cloud/cli";
+import type { CloudCliContext } from "@k2b/cloud/cli";
 import type { PulseBase, PulseDashboard, PulseSavedQuery, PulseSource } from "../contracts";
 import { exactMatch, readApi } from "./shared";
 

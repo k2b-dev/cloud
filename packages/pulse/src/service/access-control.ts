@@ -1,4 +1,4 @@
-import type { RequestActor, ServiceAccount } from "@valentinkolb/cloud/contracts";
+import type { RequestActor, ServiceAccount } from "@k2b/cloud/contracts";
 import {
   type AccessSubject,
   buildAccessPrincipalCondition,
@@ -7,7 +7,7 @@ import {
   ok,
   type PermissionLevel,
   type Result,
-} from "@valentinkolb/cloud/server";
+} from "@k2b/cloud/server";
 import { sql } from "bun";
 
 export type UserScope = {

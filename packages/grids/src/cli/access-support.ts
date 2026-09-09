@@ -1,6 +1,6 @@
-import type { CloudCliContext } from "@valentinkolb/cloud/cli";
-import { resolveAccessPrincipal } from "@valentinkolb/cloud/cli";
-import type { PermissionLevel, Principal } from "@valentinkolb/cloud/contracts";
+import type { CloudCliContext } from "@k2b/cloud/cli";
+import { resolveAccessPrincipal } from "@k2b/cloud/cli";
+import type { PermissionLevel, Principal } from "@k2b/cloud/contracts";
 import { resolveCustomApp } from "./custom-apps";
 import { resolveBase, resolveBaseFromCommand } from "./resources";
 import { requireRestArg } from "./runtime";

@@ -1,5 +1,5 @@
-import { type AccessSubject, hasPermission, listUsersWithAccess, type PermissionLevel } from "@valentinkolb/cloud/server";
-import { toPgUuidArray } from "@valentinkolb/cloud/services";
+import { type AccessSubject, hasPermission, listUsersWithAccess, type PermissionLevel } from "@k2b/cloud/server";
+import { toPgUuidArray } from "@k2b/cloud/services";
 import { sql } from "bun";
 import type {
   CreateWormhole,

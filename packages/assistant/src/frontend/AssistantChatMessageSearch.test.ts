@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { AiConversationTimelineEntry, AiStoredMessage } from "@valentinkolb/cloud/ai";
+import type { AiConversationTimelineEntry, AiStoredMessage } from "@k2b/cloud/ai";
 import { assistantMessageAnchorSeq, assistantMessageSearchItem } from "./AssistantChatMessageSearch";
 
 const stored = (input: { role: "user" | "assistant"; seq: number; text: string; loopId?: string | null }): AiStoredMessage => ({

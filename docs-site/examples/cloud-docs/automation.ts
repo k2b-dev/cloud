@@ -1,14 +1,14 @@
 import { expBackoff, isRetryableTransportError, retry } from "@k2b/sync/retry";
-import { lazySync } from "@valentinkolb/cloud";
-import { ratelimit } from "@valentinkolb/cloud/server";
-import { defineWorkflowModule, type WorkflowBoundPlan, workflowAction } from "@valentinkolb/cloud/workflows";
-import { bindWorkflow, compileWorkflow } from "@valentinkolb/cloud/workflows/language";
+import { lazySync } from "@k2b/cloud";
+import { ratelimit } from "@k2b/cloud/server";
+import { defineWorkflowModule, type WorkflowBoundPlan, workflowAction } from "@k2b/cloud/workflows";
+import { bindWorkflow, compileWorkflow } from "@k2b/cloud/workflows/language";
 import {
   createWorkflowScheduleRegistration,
   reconcileWorkflowSchedules,
   type WorkflowScheduleRegistration,
   workflowScheduleSlotKey,
-} from "@valentinkolb/cloud/workflows/runtime";
+} from "@k2b/cloud/workflows/runtime";
 import {
   createWorkflow,
   createWorkflowActionPort,
@@ -22,8 +22,8 @@ import {
   WORKFLOW_RUN_LEASE_MS,
   WORKFLOW_RUN_MAX_CONSECUTIVE_FAILURES,
   type WorkflowActivationInput,
-} from "@valentinkolb/cloud/workflows/store";
-import { directOnlyProcessFixture, runWorkflowProcessFixture } from "@valentinkolb/cloud/workflows/testing";
+} from "@k2b/cloud/workflows/store";
+import { directOnlyProcessFixture, runWorkflowProcessFixture } from "@k2b/cloud/workflows/testing";
 import type { SQL } from "bun";
 
 export const inventoryJobs = lazySync((sync) =>

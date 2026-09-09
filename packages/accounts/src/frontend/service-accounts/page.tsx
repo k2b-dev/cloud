@@ -1,14 +1,14 @@
 import { dates } from "@k2b/stdlib";
 import { DataTable, type DataTableColumn, Pagination, Paper, Placeholder, StatusBadge, type StatusTone } from "@k2b/ui";
-import type { AuthContext } from "@valentinkolb/cloud/server";
-import { expectUserBackedActor, getLocale } from "@valentinkolb/cloud/server";
+import type { AuthContext } from "@k2b/cloud/server";
+import { expectUserBackedActor, getLocale } from "@k2b/cloud/server";
 import {
   accountsAppService as accountsService,
   type ServiceAccountCredentialOverview,
   serviceAccountCredentials,
-} from "@valentinkolb/cloud/services";
-import { Layout } from "@valentinkolb/cloud/ssr";
-import { SearchBar } from "@valentinkolb/cloud/ssr/islands";
+} from "@k2b/cloud/services";
+import { Layout } from "@k2b/cloud/ssr";
+import { SearchBar } from "@k2b/cloud/ssr/islands";
 import AccountAvatar from "@/frontend/AccountAvatar";
 import { ssr } from "../../config";
 import AccountsWorkspace from "../AccountsWorkspace";

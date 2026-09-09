@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { DocumentExtractionError } from "@valentinkolb/cloud/services/document-extraction";
+import { DocumentExtractionError } from "@k2b/cloud/services/document-extraction";
 import { attachmentExtractionJobKey, attachmentExtractionStatusForError, sliceUtf8Text } from "./attachment-extraction";
 
 describe("Mail attachment extraction outcomes", () => {

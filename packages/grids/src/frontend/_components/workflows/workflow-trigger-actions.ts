@@ -1,4 +1,4 @@
-import type { WorkflowIrInput, WorkflowJsonValue } from "@valentinkolb/cloud/workflows";
+import type { WorkflowIrInput, WorkflowJsonValue } from "@k2b/cloud/workflows";
 import { workflowMessages } from "./messages";
 
 export type WorkflowRunInputDraftValue = string | number | boolean | string[] | null | undefined;

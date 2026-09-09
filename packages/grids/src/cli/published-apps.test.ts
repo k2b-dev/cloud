@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { CloudCliContext } from "@valentinkolb/cloud/cli";
+import type { CloudCliContext } from "@k2b/cloud/cli";
 import { publishedAppCommands } from "./published-apps";
 
 const context = (responses: Response[]) => {

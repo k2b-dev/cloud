@@ -1,15 +1,15 @@
 {
-  "name": "@valentinkolb/cloud",
+  "name": "@k2b/cloud",
   "version": "0.6.0",
   "description": "Modular Hono+SolidJS framework for building per-app docker services behind a dynamic gateway. Powers cloud.stuve-ulm.de.",
   "license": "AGPL-3.0-or-later",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/ValentinKolb/cloud.git",
+    "url": "git+https://github.com/k2b-dev/cloud.git",
     "directory": "packages/cloud"
   },
-  "homepage": "https://github.com/ValentinKolb/cloud",
-  "bugs": "https://github.com/ValentinKolb/cloud/issues",
+  "homepage": "https://github.com/k2b-dev/cloud",
+  "bugs": "https://github.com/k2b-dev/cloud/issues",
   "type": "module",
   "files": [
     "src",
@@ -85,7 +85,7 @@
     "@tailwindcss/typography": "0.5.20",
     "@k2b/nessi": "0.11.0",
     "@k2b/ssr": "0.12.0",
-    "@k2b/ui": "0.1.0",
+    "@k2b/ui": "0.2.0",
     "@k2b/stdlib": "0.22.0",
     "@k2b/sync": "6.4.0",
     "@nats-io/transport-node": "3.4.0",
@@ -97,7 +97,7 @@
     "liquidjs": "10.27.2",
     "marked": "17.0.6",
     "mermaid": "11.16.0",
-    "nodemailer": "9.0.3",
+    "nodemailer": "9.1.1",
     "postcss": "8.5.25",
     "reflect-metadata": "0.2.2",
     "sanitize-html": "2.17.6",

@@ -1,4 +1,4 @@
-import type { User } from "@valentinkolb/cloud/contracts";
+import type { User } from "@k2b/cloud/contracts";
 
 export type CloudSession = {
   sessionToken: string;

@@ -9,8 +9,8 @@ import type {
   AiPublicModelProfile,
   AiSettingsError,
   AiStoredMessage,
-} from "@valentinkolb/cloud/ai";
-import { type AiLiveConnection, createAiChatController, createAiLiveConnection } from "@valentinkolb/cloud/ai/solid";
+} from "@k2b/cloud/ai";
+import { type AiLiveConnection, createAiChatController, createAiLiveConnection } from "@k2b/cloud/ai/solid";
 import {
   AI_COMPOSER_TEXT_MAX_CHARS,
   AI_TURN_ATTACHMENT_MAX_ITEMS,
@@ -28,9 +28,9 @@ import {
   createAiPastedTextFile,
   readAiComposerFiles,
   shouldAttachAiPastedText,
-} from "@valentinkolb/cloud/ai/ui";
-import { cloudResourceClipboard } from "@valentinkolb/cloud/browser/resource-clipboard";
-import { openCloudResourcePicker } from "@valentinkolb/cloud/browser/resource-picker";
+} from "@k2b/cloud/ai/ui";
+import { cloudResourceClipboard } from "@k2b/cloud/browser/resource-clipboard";
+import { openCloudResourcePicker } from "@k2b/cloud/browser/resource-picker";
 import { createEffect, createMemo, createSignal, onCleanup, onMount, Show } from "solid-js";
 import { assistantApi } from "../api/client";
 import type { AssistantChatContextSnapshot } from "../chat-context";
@@ -75,7 +75,7 @@ type InitialDetail = {
   conversation: AiConversation;
   messages: AiStoredMessage[];
   hasMoreMessages?: boolean;
-  activeTurn: import("@valentinkolb/cloud/ai").AiTurnSnapshot | null;
+  activeTurn: import("@k2b/cloud/ai").AiTurnSnapshot | null;
   timeline?: AiConversationTimelineEntry[];
 };
 

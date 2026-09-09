@@ -1,7 +1,7 @@
 import type { DateContext } from "@k2b/stdlib";
 import { clipboard } from "@k2b/stdlib/solid";
 import { DescriptionList, DetailPanel, IconButton, Placeholder, StatusBadge, Tooltip, useLocale } from "@k2b/ui";
-import { cloudResourceClipboard } from "@valentinkolb/cloud/browser/resource-clipboard";
+import { cloudResourceClipboard } from "@k2b/cloud/browser/resource-clipboard";
 import { For, type JSX, Show } from "solid-js";
 import type { PublicField as Field, PublicGridRecord as GridRecord } from "../../../api/public-dto";
 import type { ColumnSpec, FormatSpec } from "../../../contracts";

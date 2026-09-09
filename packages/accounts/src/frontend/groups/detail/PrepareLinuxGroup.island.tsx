@@ -1,7 +1,7 @@
 import { refreshCurrentPath } from "@k2b/ssr/nav";
 import { mutation } from "@k2b/stdlib/solid";
 import { Button, NoticeCard, prompts, SettingsSection, useLocale } from "@k2b/ui";
-import { coreClient } from "@valentinkolb/cloud/clients/core";
+import { coreClient } from "@k2b/cloud/clients/core";
 import { Show } from "solid-js";
 import { showAccountActionNotice } from "../../action-notice";
 import { accountLinuxError, linuxAccountMessages } from "../../linux-messages";

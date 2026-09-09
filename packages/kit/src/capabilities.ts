@@ -7,7 +7,7 @@ import {
   type CapabilityExecutionContext,
   type CapabilityResult,
   type CloudResourceView,
-} from "@valentinkolb/cloud/contracts";
+} from "@k2b/cloud/contracts";
 import { projects, ProjectError } from "./service";
 import { AppId, SourceChangeInput, SourceReadInput, SOURCE_WINDOW } from "./source";
 import { apiErrorMessage, ProjectValidationError } from "./errors";

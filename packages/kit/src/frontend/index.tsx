@@ -1,7 +1,7 @@
 import { PublicId } from "../contracts";
 import { Hono } from "hono";
-import { auth, expectUserBackedActor, type AuthContext } from "@valentinkolb/cloud/server";
-import { Layout } from "@valentinkolb/cloud/ssr";
+import { auth, expectUserBackedActor, type AuthContext } from "@k2b/cloud/server";
+import { Layout } from "@k2b/cloud/ssr";
 import { ssr } from "../config";
 import { projects, ProjectError } from "../service";
 import Overview from "./Overview.island";

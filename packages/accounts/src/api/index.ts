@@ -1,4 +1,4 @@
-import { getLocale, rateLimit } from "@valentinkolb/cloud/server";
+import { getLocale, rateLimit } from "@k2b/cloud/server";
 import { type Context, Hono } from "hono";
 import accountRequestsRoutes from "./account-requests";
 import actionNoticeRoutes from "./action-notice";

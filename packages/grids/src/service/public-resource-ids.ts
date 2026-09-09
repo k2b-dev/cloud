@@ -1,4 +1,4 @@
-import { toPgTextArray, toPgUuidArray } from "@valentinkolb/cloud/services";
+import { toPgTextArray, toPgUuidArray } from "@k2b/cloud/services";
 import { type SQL, sql } from "bun";
 import { ShortIdSchema } from "../contracts";
 

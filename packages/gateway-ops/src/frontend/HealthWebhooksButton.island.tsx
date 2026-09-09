@@ -16,7 +16,7 @@ import {
   toast,
   useLocale,
 } from "@k2b/ui";
-import { formatDateTime as fmtDateTime } from "@valentinkolb/cloud/shared";
+import { formatDateTime as fmtDateTime } from "@k2b/cloud/shared";
 import { createSignal, For, onCleanup, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import { type GatewayOpsMessages, gatewayOpsMessages } from "../messages";

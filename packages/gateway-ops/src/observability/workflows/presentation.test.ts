@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { UndispatchedWorkflowEvent, WorkflowStepSummary } from "@valentinkolb/cloud/workflows/store";
+import type { UndispatchedWorkflowEvent, WorkflowStepSummary } from "@k2b/cloud/workflows/store";
 import { eventState, runErrorSummary, stepDetail } from "./presentation";
 
 const step = (values: Partial<WorkflowStepSummary>): WorkflowStepSummary => ({

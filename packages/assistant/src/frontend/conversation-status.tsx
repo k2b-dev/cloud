@@ -1,4 +1,4 @@
-import type { AiConversation } from "@valentinkolb/cloud/ai";
+import type { AiConversation } from "@k2b/cloud/ai";
 import { useLocale } from "@k2b/ui";
 import { Show } from "solid-js";
 import { conversationStatusPresentation } from "./conversation-view";

@@ -15,7 +15,7 @@ import type {
   CloudResourceRef,
   CloudResourceView,
   UniversalSearchData,
-} from "@valentinkolb/cloud/contracts";
+} from "@k2b/cloud/contracts";
 import { For, Show } from "solid-js";
 import type { SelectedCapability } from "../catalog";
 import { resolveCapabilityDataPresentation } from "../result-presentation";

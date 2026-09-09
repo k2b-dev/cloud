@@ -1,8 +1,8 @@
 import { expect, test } from "bun:test";
 import { ok } from "@k2b/stdlib";
-import { defineCapabilities } from "@valentinkolb/cloud";
-import type { CapabilityCaller } from "@valentinkolb/cloud/capabilities/server";
-import { compileCapabilityManifest } from "@valentinkolb/cloud/capabilities/testing";
+import { defineCapabilities } from "@k2b/cloud";
+import type { CapabilityCaller } from "@k2b/cloud/capabilities/server";
+import { compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 import { z } from "zod";
 import type { SpaceItemResourceReference } from "../contracts";
 import { resolveReferenceViews } from "./resource-reference-views";

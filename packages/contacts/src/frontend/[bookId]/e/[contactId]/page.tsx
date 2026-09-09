@@ -1,5 +1,5 @@
-import type { AuthContext } from "@valentinkolb/cloud/server";
-import { expectUserBackedActor } from "@valentinkolb/cloud/server";
+import type { AuthContext } from "@k2b/cloud/server";
+import { expectUserBackedActor } from "@k2b/cloud/server";
 import { ssr } from "../../../../config";
 import { contactsService } from "../../../../service";
 import { projectBooks, projectContacts, resolveBookPublicIds, resolvePublicId } from "../../../../service/public-resources";

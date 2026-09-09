@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
-import { IpaProfileFieldsSchema, UpdateAvatarResponseSchema, UpdateAvatarSchema, UserSchema } from "@valentinkolb/cloud/contracts";
-import { type AuthContext, auth, getLocale, jsonResponse, requiresAdmin, respond, v } from "@valentinkolb/cloud/server";
-import { accountsAppService as accountsService, logger } from "@valentinkolb/cloud/services";
+import { IpaProfileFieldsSchema, UpdateAvatarResponseSchema, UpdateAvatarSchema, UserSchema } from "@k2b/cloud/contracts";
+import { type AuthContext, auth, getLocale, jsonResponse, requiresAdmin, respond, v } from "@k2b/cloud/server";
+import { accountsAppService as accountsService, logger } from "@k2b/cloud/services";
 import { Hono } from "hono";
 import { describeRoute } from "hono-openapi";
 import { z } from "zod";

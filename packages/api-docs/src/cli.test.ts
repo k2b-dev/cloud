@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { CloudCliContext } from "@valentinkolb/cloud/cli";
+import type { CloudCliContext } from "@k2b/cloud/cli";
 import cli, { fetchOpenApiText, loadOperationsFromSources } from "./cli";
 import { extractOperations, parseOpenApiDocument } from "./openapi";
 import type { ApiDocSource } from "./sources";

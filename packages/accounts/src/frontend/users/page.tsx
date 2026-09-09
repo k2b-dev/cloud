@@ -1,10 +1,10 @@
 import { ButtonLink, DataTable, type DataTableColumn, Pagination, Paper, Placeholder, Tag } from "@k2b/ui";
-import { accountCategoryLabel } from "@valentinkolb/cloud/contracts";
-import type { AuthContext } from "@valentinkolb/cloud/server";
-import { expectUserBackedActor, getLocale } from "@valentinkolb/cloud/server";
-import { accountsAppService as accountsService, coreSettings, readAccountCategoryPolicy } from "@valentinkolb/cloud/services";
-import { Layout } from "@valentinkolb/cloud/ssr";
-import { SearchBar } from "@valentinkolb/cloud/ssr/islands";
+import { accountCategoryLabel } from "@k2b/cloud/contracts";
+import type { AuthContext } from "@k2b/cloud/server";
+import { expectUserBackedActor, getLocale } from "@k2b/cloud/server";
+import { accountsAppService as accountsService, coreSettings, readAccountCategoryPolicy } from "@k2b/cloud/services";
+import { Layout } from "@k2b/cloud/ssr";
+import { SearchBar } from "@k2b/cloud/ssr/islands";
 import AccountAvatar from "@/frontend/AccountAvatar";
 import { ssr } from "../../config";
 import AccountsWorkspace from "../AccountsWorkspace";

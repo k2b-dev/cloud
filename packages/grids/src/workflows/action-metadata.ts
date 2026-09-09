@@ -1,4 +1,4 @@
-import type { WorkflowActionMap } from "@valentinkolb/cloud/workflows";
+import type { WorkflowActionMap } from "@k2b/cloud/workflows";
 import { MAX_CORRECTION_PREFILL_FIELDS } from "./contracts";
 
 const saveAs = {

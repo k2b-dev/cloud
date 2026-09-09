@@ -9,7 +9,7 @@ import {
   isTotalRow,
   type ProgressValue,
   parseProgressValue,
-} from "@valentinkolb/cloud/shared";
+} from "@k2b/cloud/shared";
 import { notebookWorkspaceMessages } from "../[id]/messages";
 import { prettyTableMessages } from "./pretty-table-messages";
 

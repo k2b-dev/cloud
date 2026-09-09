@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, spyOn, test } from "bun:test";
-import { compileCapabilityManifest } from "@valentinkolb/cloud/capabilities/testing";
+import { compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 import {
   type CapabilityActionDefinition,
   type CapabilityActionReviewResult,
@@ -7,8 +7,8 @@ import {
   type CapabilityExecutionContext,
   capabilityResultSchema,
   type User,
-} from "@valentinkolb/cloud/contracts";
-import { audit } from "@valentinkolb/cloud/services";
+} from "@k2b/cloud/contracts";
+import { audit } from "@k2b/cloud/services";
 import {
   decodeNotebookCapabilityCursor,
   decodeNotebookTreeCursor,

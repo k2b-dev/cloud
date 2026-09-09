@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { CloudCliContext, CloudCliFlags } from "@valentinkolb/cloud/cli";
+import type { CloudCliContext, CloudCliFlags } from "@k2b/cloud/cli";
 import faqCli from "./cli";
 
 type FetchCall = {

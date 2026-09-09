@@ -1,6 +1,6 @@
 import { dates } from "@k2b/stdlib";
 import { Button, Placeholder, prompts, TextInput, toast, useLocale } from "@k2b/ui";
-import { AppDevicesPageSchema, type AppDeviceView } from "@valentinkolb/cloud/contracts";
+import { AppDevicesPageSchema, type AppDeviceView } from "@k2b/cloud/contracts";
 import { createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import type { z } from "zod";
 import { approvalApi, approvalRequestOptions, checked, parsed } from "./client";

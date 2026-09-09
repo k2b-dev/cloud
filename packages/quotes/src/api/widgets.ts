@@ -1,6 +1,6 @@
 import { i18n } from "@k2b/stdlib";
-import type { WidgetResponse } from "@valentinkolb/cloud/contracts";
-import { type AuthContext, getLocale } from "@valentinkolb/cloud/server";
+import type { WidgetResponse } from "@k2b/cloud/contracts";
+import { type AuthContext, getLocale } from "@k2b/cloud/server";
 import { type Context, Hono } from "hono";
 import { quotesService } from "../service";
 

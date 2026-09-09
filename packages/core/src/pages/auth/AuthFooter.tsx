@@ -1,4 +1,4 @@
-import type { listLegalLinks } from "@valentinkolb/cloud";
+import type { listLegalLinks } from "@k2b/cloud";
 import LanguageSwitch from "./LanguageSwitch.island";
 
 export default function AuthFooter(props: { links: Awaited<ReturnType<typeof listLegalLinks>> }) {

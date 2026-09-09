@@ -1,7 +1,7 @@
 import { err, fail, ok, type Result } from "@k2b/stdlib";
-import { get as settingsGet } from "@valentinkolb/cloud/services/settings";
-import { normalizeLocale, normalizeTimeZone } from "@valentinkolb/cloud/shared";
-import type { WorkflowInvocationMode, WorkflowInvocationReceipt, WorkflowJsonValue } from "@valentinkolb/cloud/workflows";
+import { get as settingsGet } from "@k2b/cloud/services/settings";
+import { normalizeLocale, normalizeTimeZone } from "@k2b/cloud/shared";
+import type { WorkflowInvocationMode, WorkflowInvocationReceipt, WorkflowJsonValue } from "@k2b/cloud/workflows";
 import { sql } from "bun";
 import { z } from "zod";
 import { type RecordQuery, RecordQuerySchema } from "../contracts";

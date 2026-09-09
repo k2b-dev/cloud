@@ -1,4 +1,4 @@
-import { type UniversalSearchData, UniversalSearchDataSchema } from "@valentinkolb/cloud/contracts";
+import { type UniversalSearchData, UniversalSearchDataSchema } from "@k2b/cloud/contracts";
 import type { SelectedCapability } from "./catalog";
 
 type CapabilityDataPresentation = { kind: "universal-search"; items: UniversalSearchData } | { kind: "generic"; data: unknown };

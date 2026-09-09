@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import { createMcpRoutes } from "@valentinkolb/cloud/api";
-import { type AuthContext, auth, v } from "@valentinkolb/cloud/server";
-import { oauthTokens, serviceAccounts } from "@valentinkolb/cloud/services";
-import { createTestSession } from "@valentinkolb/cloud/services/session/test-fixture";
+import { createMcpRoutes } from "@k2b/cloud/api";
+import { type AuthContext, auth, v } from "@k2b/cloud/server";
+import { oauthTokens, serviceAccounts } from "@k2b/cloud/services";
+import { createTestSession } from "@k2b/cloud/services/session/test-fixture";
 import { sql } from "bun";
 import { Hono } from "hono";
 import * as jose from "jose";

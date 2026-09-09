@@ -1,5 +1,5 @@
-import type { AiConversation } from "@valentinkolb/cloud/ai";
-import type { AiComposerSendInput } from "@valentinkolb/cloud/ai/ui";
+import type { AiConversation } from "@k2b/cloud/ai";
+import type { AiComposerSendInput } from "@k2b/cloud/ai/ui";
 
 export const submitAssistantProjectMessage = async (input: {
   projectId: string;

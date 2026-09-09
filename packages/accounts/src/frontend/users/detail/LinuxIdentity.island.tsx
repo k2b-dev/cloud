@@ -1,8 +1,8 @@
 import { mutation, query } from "@k2b/stdlib/solid";
 import { Button, ButtonLink, NoticeCard, prompts, SettingsSection, TextInput, useLocale } from "@k2b/ui";
-import { coreClient } from "@valentinkolb/cloud/clients/core";
-import { PosixOverridesSchema } from "@valentinkolb/cloud/contracts";
-import type { linuxIdentities } from "@valentinkolb/cloud/services";
+import { coreClient } from "@k2b/cloud/clients/core";
+import { PosixOverridesSchema } from "@k2b/cloud/contracts";
+import type { linuxIdentities } from "@k2b/cloud/services";
 import { createSignal, For, Show } from "solid-js";
 import { showAccountActionNotice } from "../../action-notice";
 import { accountLinuxError, linuxAccountMessages } from "../../linux-messages";

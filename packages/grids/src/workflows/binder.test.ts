@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { compileWorkflow } from "@valentinkolb/cloud/workflows/language";
+import { compileWorkflow } from "@k2b/cloud/workflows/language";
 import {
   buildWorkflowCatalog,
   restoreWorkflowCatalog,

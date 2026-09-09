@@ -1,4 +1,4 @@
-import type { AppRegistryEntry } from "@valentinkolb/cloud/contracts";
+import type { AppRegistryEntry } from "@k2b/cloud/contracts";
 
 // ─── Route table from registry ──────────────────────────────────────────────
 //

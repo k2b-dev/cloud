@@ -12,7 +12,7 @@ test("telemetry enables original-consumer recovery and drains it on shutdown", a
     const abort = new AbortController();
     let registered = false;
     let drained = false;
-    mock.module("@valentinkolb/cloud/services", () => ({
+    mock.module("@k2b/cloud/services", () => ({
       GATEWAY_TELEMETRY_TENANT: "ops",
       gatewayTelemetryTopic: () => ({ process: async (options, handler) => {
         if (options.consumer !== "postgres-writer" || options.tenantId !== "ops" || options.recoverDeadLetters !== true || typeof handler !== "function") throw new Error("Recovery contract missing");

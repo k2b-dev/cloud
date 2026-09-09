@@ -4,7 +4,7 @@ import { CalendarDestinationListDataSchema } from "../../../spaces/src/capabilit
 
 const calls: Array<{ input: unknown; request: unknown }> = [];
 let responses: Array<{ data: unknown; page?: { hasMore: boolean; nextCursor?: string } }> = [];
-mock.module("@valentinkolb/cloud/capabilities/server", () => ({
+mock.module("@k2b/cloud/capabilities/server", () => ({
   getCapabilityCatalogApp: async () => ({ ok: false }),
   invokeCapabilityWithDataSchema: async (call: { input: unknown }, schema: z.ZodType, request: unknown) => {
     calls.push({ input: call.input, request });

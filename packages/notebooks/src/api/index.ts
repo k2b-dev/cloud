@@ -1,5 +1,5 @@
 import { err, fail, ok, type Result } from "@k2b/stdlib";
-import type { MutationResult, PermissionLevel, User } from "@valentinkolb/cloud/contracts";
+import type { MutationResult, PermissionLevel, User } from "@k2b/cloud/contracts";
 import {
   AccessEntrySchema,
   createPagination,
@@ -12,7 +12,7 @@ import {
   parsePagination,
   ServiceAccountCredentialSchema,
   UpdateAccessSchema,
-} from "@valentinkolb/cloud/contracts";
+} from "@k2b/cloud/contracts";
 import {
   type AuthContext,
   auth,
@@ -23,8 +23,8 @@ import {
   rateLimit,
   requiresAuth,
   respond,
-} from "@valentinkolb/cloud/server";
-import { settings, settingsService } from "@valentinkolb/cloud/services";
+} from "@k2b/cloud/server";
+import { settings, settingsService } from "@k2b/cloud/services";
 import {
   GotenbergRenderError,
   MARKDOWN_PDF_MAX_CUSTOM_CSS_BYTES,
@@ -32,7 +32,7 @@ import {
   MARKDOWN_PDF_TEMPLATE_IDS,
   MarkdownPdfError,
   renderMarkdownToPdf,
-} from "@valentinkolb/cloud/services/pdf";
+} from "@k2b/cloud/services/pdf";
 import { type Context, Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { describeRoute } from "hono-openapi";

@@ -1,4 +1,4 @@
-import { defineHelp } from "@valentinkolb/cloud/server";
+import { defineHelp } from "@k2b/cloud/server";
 import adminDe from "./documents/de/mail-admin.help.md" with { type: "text" };
 import automationDe from "./documents/de/mail-automation.help.md" with { type: "text" };
 import collaborationDe from "./documents/de/mail-collaboration.help.md" with { type: "text" };

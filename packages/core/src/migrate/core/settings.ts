@@ -1,4 +1,4 @@
-import { encryptValue } from "@valentinkolb/cloud/services/settings/crypto";
+import { encryptValue } from "@k2b/cloud/services/settings/crypto";
 import { sql } from "bun";
 
 export const migrate = async (db: typeof sql = sql): Promise<void> => {

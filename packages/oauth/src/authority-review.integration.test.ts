@@ -1,5 +1,5 @@
 import { beforeAll, describe, expect, test } from "bun:test";
-import { clearIdentityKeyCachesForTest, prepareIdentitySigner, revokeIdentitySigningKey } from "@valentinkolb/cloud/services/identity";
+import { clearIdentityKeyCachesForTest, prepareIdentitySigner, revokeIdentitySigningKey } from "@k2b/cloud/services/identity";
 import { sql } from "bun";
 import { exportJWK, generateKeyPair, SignJWT } from "jose";
 import { createIdentityOAuthIssuanceRoutes } from "../../core/src/api/identity-oauth-issuance";

@@ -1,8 +1,8 @@
 import { DataTable, type DataTableColumn, Pagination, StatCell, StatGrid } from "@k2b/ui";
-import type { AuthContext } from "@valentinkolb/cloud/server";
-import { getLocale } from "@valentinkolb/cloud/server";
-import { AdminLayout } from "@valentinkolb/cloud/ssr";
-import { SearchBar } from "@valentinkolb/cloud/ssr/islands";
+import type { AuthContext } from "@k2b/cloud/server";
+import { getLocale } from "@k2b/cloud/server";
+import { AdminLayout } from "@k2b/cloud/ssr";
+import { SearchBar } from "@k2b/cloud/ssr/islands";
 import { ssr } from "../config";
 import { contactsService } from "../service";
 import { projectBooks } from "../service/public-resources";

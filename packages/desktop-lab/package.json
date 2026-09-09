@@ -1,5 +1,5 @@
 {
-  "name": "@valentinkolb/cloud-desktop-lab",
+  "name": "@k2b/cloud-desktop-lab",
   "version": "0.0.0",
   "private": true,
   "description": "Inactive experimental desktop prototype; not part of the supported Cloud workspace.",
@@ -14,7 +14,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit --pretty false 2>&1 | grep -v node_modules | (! grep -q 'error TS')"
   },
   "dependencies": {
-    "@valentinkolb/cloud": "workspace:*",
+    "@k2b/cloud": "workspace:*",
     "@k2b/ui": "workspace:*",
     "@k2b/stdlib": "0.21.1",
     "solid-js": "^1.9.10"

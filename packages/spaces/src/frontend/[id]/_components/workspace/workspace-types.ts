@@ -1,5 +1,5 @@
 import { dates as calendar, type DateContext } from "@k2b/stdlib";
-import { CloudResourceViewSchema } from "@valentinkolb/cloud/contracts";
+import { CloudResourceViewSchema } from "@k2b/cloud/contracts";
 import { z } from "zod";
 import {
   CalendarItemSchema,

@@ -1,9 +1,9 @@
 import { createHash } from "node:crypto";
-import { type BoundNotificationMap, type NotificationDeliveryPolicy, notification } from "@valentinkolb/cloud";
-import { notifications, renderTemplate, type AppDeviceEnrollmentNotice } from "@valentinkolb/cloud/services";
-import type { AccountLifecycleNotificationSender } from "@valentinkolb/cloud/services/account-lifecycle/notification-sender";
-import type { AuthNotificationSender } from "@valentinkolb/cloud/services/auth-flows";
-import * as settings from "@valentinkolb/cloud/services/settings";
+import { type BoundNotificationMap, type NotificationDeliveryPolicy, notification } from "@k2b/cloud";
+import { notifications, renderTemplate, type AppDeviceEnrollmentNotice } from "@k2b/cloud/services";
+import type { AccountLifecycleNotificationSender } from "@k2b/cloud/services/account-lifecycle/notification-sender";
+import type { AuthNotificationSender } from "@k2b/cloud/services/auth-flows";
+import * as settings from "@k2b/cloud/services/settings";
 import { dates, i18n } from "@k2b/stdlib";
 import { z } from "zod";
 

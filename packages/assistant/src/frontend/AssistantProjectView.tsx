@@ -12,10 +12,10 @@ import {
   ScrollArea,
   toast,
 } from "@k2b/ui";
-import type { AiConversation, AiConversationPage, AiProject, AiProjectKnowledge } from "@valentinkolb/cloud/ai";
-import { openCloudResourcePicker } from "@valentinkolb/cloud/browser/resource-picker";
-import { coreClient } from "@valentinkolb/cloud/clients/core";
-import { formatDateTime } from "@valentinkolb/cloud/shared";
+import type { AiConversation, AiConversationPage, AiProject, AiProjectKnowledge } from "@k2b/cloud/ai";
+import { openCloudResourcePicker } from "@k2b/cloud/browser/resource-picker";
+import { coreClient } from "@k2b/cloud/clients/core";
+import { formatDateTime } from "@k2b/cloud/shared";
 import { createMemo, createSignal, For, type JSX, onCleanup, onMount, Show } from "solid-js";
 import { assistantApi } from "../api/client";
 import type { AssistantProjectContextSnapshot } from "../project-context";

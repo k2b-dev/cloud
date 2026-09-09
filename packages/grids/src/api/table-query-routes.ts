@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { ok } from "@k2b/stdlib";
-import { ErrorResponseSchema } from "@valentinkolb/cloud/contracts";
-import { type AuthContext, getDateConfig, getLocale, jsonResponse } from "@valentinkolb/cloud/server";
+import { ErrorResponseSchema } from "@k2b/cloud/contracts";
+import { type AuthContext, getDateConfig, getLocale, jsonResponse } from "@k2b/cloud/server";
 import { type Context, Hono } from "hono";
 import type { ClientErrorStatusCode, ServerErrorStatusCode } from "hono/utils/http-status";
 import { describeRoute } from "hono-openapi";

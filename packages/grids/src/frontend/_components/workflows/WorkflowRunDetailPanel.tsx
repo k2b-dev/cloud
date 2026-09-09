@@ -12,7 +12,7 @@ import {
   toast,
   useLocale,
 } from "@k2b/ui";
-import type { WorkflowJsonValue } from "@valentinkolb/cloud/workflows";
+import type { WorkflowJsonValue } from "@k2b/cloud/workflows";
 import { createEffect, createMemo, createSignal, onCleanup, Show } from "solid-js";
 import { apiClient } from "../../../api/client";
 import type { PublicTable } from "../../../api/public-dto";

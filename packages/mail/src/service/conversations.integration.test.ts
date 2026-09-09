@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { Readable } from "node:stream";
-import { notifications } from "@valentinkolb/cloud/services";
+import { notifications } from "@k2b/cloud/services";
 import { sql } from "bun";
 import { app } from "../config";
 import { newShortId } from "../lib/short-id";

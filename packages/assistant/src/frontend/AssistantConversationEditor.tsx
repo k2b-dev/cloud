@@ -15,7 +15,7 @@ import {
   TextInput,
   toast,
 } from "@k2b/ui";
-import type { AiConversation, AiEnrichmentRun, AiEnrichmentStatus } from "@valentinkolb/cloud/ai";
+import type { AiConversation, AiEnrichmentRun, AiEnrichmentStatus } from "@k2b/cloud/ai";
 import { createSignal, onCleanup, onMount, Show } from "solid-js";
 import { assistantApi } from "../api/client";
 import { useAssistantCopy, useAssistantText } from "./ui-copy";

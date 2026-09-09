@@ -40,7 +40,7 @@ services:
   # Gateway — the only service exposed to Traefik.
   gateway:
     <<: *app-defaults
-    image: ghcr.io/valentinkolb/cloud-gateway:${CLOUD_IMAGE_TAG:?CLOUD_IMAGE_TAG is required}
+    image: ghcr.io/k2b-dev/cloud-gateway:${CLOUD_IMAGE_TAG:?CLOUD_IMAGE_TAG is required}
     networks: [cloud-internal, traefik]
     labels:
       - "traefik.enable=true"
@@ -52,7 +52,7 @@ services:
 
   app-gateway-ops:
     <<: *app-defaults
-    image: ghcr.io/valentinkolb/cloud-app-gateway-ops:${CLOUD_IMAGE_TAG:?CLOUD_IMAGE_TAG is required}
+    image: ghcr.io/k2b-dev/cloud-app-gateway-ops:${CLOUD_IMAGE_TAG:?CLOUD_IMAGE_TAG is required}
     # System-account diagnostics credentials belong only to Gateway Ops.
     # Mount the referenced files here, never in the shared application volumes.
     environment:
@@ -65,7 +65,7 @@ services:
   # Apps — internal only, reached through the gateway.
   app-core:
     <<: *app-defaults
-    image: ghcr.io/valentinkolb/cloud-core:${CLOUD_IMAGE_TAG:?CLOUD_IMAGE_TAG is required}
+    image: ghcr.io/k2b-dev/cloud-core:${CLOUD_IMAGE_TAG:?CLOUD_IMAGE_TAG is required}
     environment:
       <<: *shared-env
       APP_ID: core
@@ -76,86 +76,86 @@ services:
 
   app-accounts:
     <<: *app-defaults
-    image: ghcr.io/valentinkolb/cloud-app-accounts:${CLOUD_IMAGE_TAG:?CLOUD_IMAGE_TAG is required}
+    image: ghcr.io/k2b-dev/cloud-app-accounts:${CLOUD_IMAGE_TAG:?CLOUD_IMAGE_TAG is required}
 
   app-api-docs:
     <<: *app-defaults
-    image: ghcr.io/valentinkolb/cloud-app-api-docs:${CLOUD_IMAGE_TAG:?CLOUD_IMAGE_TAG is required}
+    image: ghcr.io/k2b-dev/cloud-app-api-docs:${CLOUD_IMAGE_TAG:?CLOUD_IMAGE_TAG is required}
 
   app-assistant:
     <<: *app-defaults
-    image: ghcr.io/valentinkolb/cloud-app-assistant:${CLOUD_IMAGE_TAG:?CLOUD_IMAGE_TAG is required}
+    image: ghcr.io/k2b-dev/cloud-app-assistant:${CLOUD_IMAGE_TAG:?CLOUD_IMAGE_TAG is required}
 
   app-capabilities:
     <<: *app-defaults
-    image: ghcr.io/valentinkolb/cloud-app-capabilities:${CLOUD_IMAGE_TAG:?CLOUD_IMAGE_TAG is required}
+    image: ghcr.io/k2b-dev/cloud-app-capabilities:${CLOUD_IMAGE_TAG:?CLOUD_IMAGE_TAG is required}
 
   app-contacts:
     <<: *app-defaults
-    image: ghcr.io/valentinkolb/cloud-app-contacts:${CLOUD_IMAGE_TAG:?CLOUD_IMAGE_TAG is required}
+    image: ghcr.io/k2b-dev/cloud-app-contacts:${CLOUD_IMAGE_TAG:?CLOUD_IMAGE_TAG is required}
 
   app-dashboard:
     <<: *app-defaults
-    image: ghcr.io/valentinkolb/cloud-app-dashboard:${CLOUD_IMAGE_TAG:?CLOUD_IMAGE_TAG is required}
+    image: ghcr.io/k2b-dev/cloud-app-dashboard:${CLOUD_IMAGE_TAG:?CLOUD_IMAGE_TAG is required}
 
   app-faq:
     <<: *app-defaults
-    image: ghcr.io/valentinkolb/cloud-app-faq:${CLOUD_IMAGE_TAG:?CLOUD_IMAGE_TAG is required}
+    image: ghcr.io/k2b-dev/cloud-app-faq:${CLOUD_IMAGE_TAG:?CLOUD_IMAGE_TAG is required}
 
   app-files:
     <<: *app-defaults
-    image: ghcr.io/valentinkolb/cloud-app-files:${CLOUD_IMAGE_TAG:?CLOUD_IMAGE_TAG is required}
+    image: ghcr.io/k2b-dev/cloud-app-files:${CLOUD_IMAGE_TAG:?CLOUD_IMAGE_TAG is required}
 
   app-grids:
     <<: *app-defaults
-    image: ghcr.io/valentinkolb/cloud-app-grids:${CLOUD_IMAGE_TAG:?CLOUD_IMAGE_TAG is required}
+    image: ghcr.io/k2b-dev/cloud-app-grids:${CLOUD_IMAGE_TAG:?CLOUD_IMAGE_TAG is required}
 
   app-ipa-hosts:
     <<: *app-defaults
-    image: ghcr.io/valentinkolb/cloud-app-ipa-hosts:${CLOUD_IMAGE_TAG:?CLOUD_IMAGE_TAG is required}
+    image: ghcr.io/k2b-dev/cloud-app-ipa-hosts:${CLOUD_IMAGE_TAG:?CLOUD_IMAGE_TAG is required}
 
   app-kit:
     <<: *app-defaults
-    image: ghcr.io/valentinkolb/cloud-app-kit:${CLOUD_IMAGE_TAG:?CLOUD_IMAGE_TAG is required}
+    image: ghcr.io/k2b-dev/cloud-app-kit:${CLOUD_IMAGE_TAG:?CLOUD_IMAGE_TAG is required}
 
   app-mail:
     <<: *app-defaults
-    image: ghcr.io/valentinkolb/cloud-app-mail:${CLOUD_IMAGE_TAG:?CLOUD_IMAGE_TAG is required}
+    image: ghcr.io/k2b-dev/cloud-app-mail:${CLOUD_IMAGE_TAG:?CLOUD_IMAGE_TAG is required}
     environment:
       <<: *shared-env
       CLOUD_APP_CREDENTIAL: ${CLOUD_MAIL_APP_CREDENTIAL:-}
 
   app-notebooks:
     <<: *app-defaults
-    image: ghcr.io/valentinkolb/cloud-app-notebooks:${CLOUD_IMAGE_TAG:?CLOUD_IMAGE_TAG is required}
+    image: ghcr.io/k2b-dev/cloud-app-notebooks:${CLOUD_IMAGE_TAG:?CLOUD_IMAGE_TAG is required}
 
   app-oauth:
     <<: *app-defaults
-    image: ghcr.io/valentinkolb/cloud-app-oauth:${CLOUD_IMAGE_TAG:?CLOUD_IMAGE_TAG is required}
+    image: ghcr.io/k2b-dev/cloud-app-oauth:${CLOUD_IMAGE_TAG:?CLOUD_IMAGE_TAG is required}
     environment:
       <<: *shared-env
       CLOUD_OAUTH_BROKER_SECRET: ${CLOUD_OAUTH_BROKER_SECRET:?CLOUD_OAUTH_BROKER_SECRET is required}
 
   app-proxy-auth:
     <<: *app-defaults
-    image: ghcr.io/valentinkolb/cloud-app-proxy-auth:${CLOUD_IMAGE_TAG:?CLOUD_IMAGE_TAG is required}
+    image: ghcr.io/k2b-dev/cloud-app-proxy-auth:${CLOUD_IMAGE_TAG:?CLOUD_IMAGE_TAG is required}
 
   app-quotes:
     <<: *app-defaults
-    image: ghcr.io/valentinkolb/cloud-app-quotes:${CLOUD_IMAGE_TAG:?CLOUD_IMAGE_TAG is required}
+    image: ghcr.io/k2b-dev/cloud-app-quotes:${CLOUD_IMAGE_TAG:?CLOUD_IMAGE_TAG is required}
 
   app-spaces:
     <<: *app-defaults
-    image: ghcr.io/valentinkolb/cloud-app-spaces:${CLOUD_IMAGE_TAG:?CLOUD_IMAGE_TAG is required}
+    image: ghcr.io/k2b-dev/cloud-app-spaces:${CLOUD_IMAGE_TAG:?CLOUD_IMAGE_TAG is required}
 
   app-tools:
     <<: *app-defaults
-    image: ghcr.io/valentinkolb/cloud-app-tools:${CLOUD_IMAGE_TAG:?CLOUD_IMAGE_TAG is required}
+    image: ghcr.io/k2b-dev/cloud-app-tools:${CLOUD_IMAGE_TAG:?CLOUD_IMAGE_TAG is required}
 
   app-venue:
     <<: *app-defaults
-    image: ghcr.io/valentinkolb/cloud-app-venue:${CLOUD_IMAGE_TAG:?CLOUD_IMAGE_TAG is required}
+    image: ghcr.io/k2b-dev/cloud-app-venue:${CLOUD_IMAGE_TAG:?CLOUD_IMAGE_TAG is required}
 
   app-weather:
     <<: *app-defaults
-    image: ghcr.io/valentinkolb/cloud-app-weather:${CLOUD_IMAGE_TAG:?CLOUD_IMAGE_TAG is required}
+    image: ghcr.io/k2b-dev/cloud-app-weather:${CLOUD_IMAGE_TAG:?CLOUD_IMAGE_TAG is required}

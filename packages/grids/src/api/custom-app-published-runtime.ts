@@ -1,4 +1,4 @@
-import type { getDateConfig } from "@valentinkolb/cloud/server";
+import type { getDateConfig } from "@k2b/cloud/server";
 import { ShortIdSchema } from "../contracts";
 import type { CustomAppAction, CustomAppBlock, CustomAppRowAction } from "../custom-apps/contracts";
 import { customAppPageHref, resolveCustomAppPage } from "../custom-apps/routing";

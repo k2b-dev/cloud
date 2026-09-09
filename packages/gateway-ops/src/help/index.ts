@@ -1,4 +1,4 @@
-import { defineHelp } from "@valentinkolb/cloud/server";
+import { defineHelp } from "@k2b/cloud/server";
 import incidentDe from "./documents/de/gateway-ops-incident.help.md" with { type: "text" };
 import operationsDe from "./documents/de/gateway-ops-operations.help.md" with { type: "text" };
 import referenceDe from "./documents/de/gateway-ops-reference.help.md" with { type: "text" };

@@ -1,4 +1,4 @@
-import { PaginationQuerySchema, PaginationResponseSchema } from "@valentinkolb/cloud/contracts";
+import { PaginationQuerySchema, PaginationResponseSchema } from "@k2b/cloud/contracts";
 import { z } from "zod";
 import { ShortIdSchema } from "./contracts";
 

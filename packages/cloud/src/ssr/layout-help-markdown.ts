@@ -1,4 +1,4 @@
-import type { HelpDocumentManifest, HelpDocumentPayload } from "@valentinkolb/cloud/shared";
+import type { HelpDocumentManifest, HelpDocumentPayload } from "@k2b/cloud/shared";
 
 type MarkdownHelpDocument = Pick<HelpDocumentManifest, "title" | "description"> & Pick<HelpDocumentPayload, "markdown">;
 

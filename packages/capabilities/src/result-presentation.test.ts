@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { CapabilityActionManifest, CapabilityQueryManifest } from "@valentinkolb/cloud/contracts";
+import type { CapabilityActionManifest, CapabilityQueryManifest } from "@k2b/cloud/contracts";
 import type { SelectedCapability } from "./catalog";
 import { resolveCapabilityDataPresentation } from "./result-presentation";
 

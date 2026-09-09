@@ -1,4 +1,4 @@
-import { flag } from "@valentinkolb/cloud/cli";
+import { flag } from "@k2b/cloud/cli";
 import { METRIC_TYPES, SOURCE_KINDS } from "../contracts";
 
 export const QUERY_INPUT = flag.input({

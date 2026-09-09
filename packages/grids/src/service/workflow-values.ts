@@ -1,7 +1,7 @@
-import { getEffectiveGroupIds } from "@valentinkolb/cloud/server";
-import type { WorkflowBoundPlan, WorkflowInvocation, WorkflowIrInput, WorkflowJsonValue } from "@valentinkolb/cloud/workflows";
-import { workflowPathKey } from "@valentinkolb/cloud/workflows";
-import type { WorkflowValueResolution, WorkflowValueResolverPort, WorkflowVariableScope } from "@valentinkolb/cloud/workflows/runtime";
+import { getEffectiveGroupIds } from "@k2b/cloud/server";
+import type { WorkflowBoundPlan, WorkflowInvocation, WorkflowIrInput, WorkflowJsonValue } from "@k2b/cloud/workflows";
+import { workflowPathKey } from "@k2b/cloud/workflows";
+import type { WorkflowValueResolution, WorkflowValueResolverPort, WorkflowVariableScope } from "@k2b/cloud/workflows/runtime";
 import { sql } from "bun";
 import { z } from "zod";
 import type { GridRecord } from "../contracts";

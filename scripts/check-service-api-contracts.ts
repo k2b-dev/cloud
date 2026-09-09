@@ -183,12 +183,12 @@ for (const appDir of appDirs) {
   const apiSpecifiers = extractSpecifiers(apiSource);
   const hasDirectRoutes = hasMatch(apiSource, /^\s*\.(get|post|put|patch|delete)\(/m);
 
-  const hasServerImport = apiSpecifiers.includes("@valentinkolb/cloud/server");
+  const hasServerImport = apiSpecifiers.includes("@k2b/cloud/server");
 
   if (hasDirectRoutes && !hasServerImport) {
     violations.push({
       file: apiPath,
-      message: "API must import from @valentinkolb/cloud/server.",
+      message: "API must import from @k2b/cloud/server.",
     });
   }
 
@@ -240,7 +240,7 @@ for (const appDir of appDirs) {
   }
 
   const hasRateLimitImport =
-    apiSpecifiers.includes("@valentinkolb/cloud/server") && importsNamed(apiSource, "@valentinkolb/cloud/server", "rateLimit");
+    apiSpecifiers.includes("@k2b/cloud/server") && importsNamed(apiSource, "@k2b/cloud/server", "rateLimit");
 
   if (hasRateLimitImport && !/\.use\(\s*rateLimit\(/.test(apiSource)) {
     violations.push({

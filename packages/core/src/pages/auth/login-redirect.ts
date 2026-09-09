@@ -1,4 +1,4 @@
-import { normalizeRedirectTo } from "@valentinkolb/cloud/shared";
+import { normalizeRedirectTo } from "@k2b/cloud/shared";
 
 /** Every browser sign-in finishes through the same first-use consent screen. */
 export const afterSignInHref = (redirectTo?: string) =>

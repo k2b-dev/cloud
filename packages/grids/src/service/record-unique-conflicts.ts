@@ -1,5 +1,5 @@
 import { err, fail, type Result } from "@k2b/stdlib";
-import { isUniqueViolation } from "@valentinkolb/cloud/services";
+import { isUniqueViolation } from "@k2b/cloud/services";
 import { getGridsCrudMessages } from "./crud-messages";
 import { fieldUniqueIndexName } from "./field-indexes";
 import type { Field } from "./types";

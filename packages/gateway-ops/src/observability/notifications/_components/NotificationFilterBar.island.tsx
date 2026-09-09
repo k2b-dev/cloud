@@ -1,6 +1,6 @@
 import { navigateTo } from "@k2b/ssr/nav";
 import { FilterChip, type FilterChipSection, useLocale } from "@k2b/ui";
-import { SearchBar } from "@valentinkolb/cloud/ssr/islands";
+import { SearchBar } from "@k2b/cloud/ssr/islands";
 import { buildLegacyNotificationsUrl, type LegacyNotificationStatusFilter, NOTIFICATION_ADMIN_BASE_URL } from "./filter-state";
 import SendAllPending from "./SendAllPending";
 import { gatewayOpsMessages } from "../../../messages";

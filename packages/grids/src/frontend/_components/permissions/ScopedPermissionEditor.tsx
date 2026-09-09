@@ -1,6 +1,6 @@
 import { Button, NoticeCard, Placeholder, useLocale } from "@k2b/ui";
-import { PermissionEditor } from "@valentinkolb/cloud/access/ui";
-import type { AccessEntry, PermissionLevel, Principal } from "@valentinkolb/cloud/contracts/shared";
+import { PermissionEditor } from "@k2b/cloud/access/ui";
+import type { AccessEntry, PermissionLevel, Principal } from "@k2b/cloud/contracts/shared";
 import { createSignal, onMount, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import { resolveGridsMessages } from "../../messages";

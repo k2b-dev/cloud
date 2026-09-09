@@ -1,5 +1,5 @@
 import { timingSafeEqual } from "node:crypto";
-import { env } from "@valentinkolb/cloud/config";
+import { env } from "@k2b/cloud/config";
 
 /**
  * Upload tickets bind a chunked-upload session to the base it was started in.

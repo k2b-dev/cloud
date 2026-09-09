@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { WorkflowIrInput } from "@valentinkolb/cloud/workflows";
+import type { WorkflowIrInput } from "@k2b/cloud/workflows";
 import { buildWorkflowRunInput, workflowInputDraftFromValues } from "./workflow-trigger-actions";
 
 describe("workflow run inputs", () => {

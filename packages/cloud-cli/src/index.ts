@@ -12,27 +12,27 @@ import type {
   CloudCliModule,
   CloudCliOptions,
   CloudCliTableColumn,
-} from "@valentinkolb/cloud/cli";
-import { localizeCloudCliText, resolveCloudCliLocale } from "@valentinkolb/cloud/cli";
-import accountCliModule from "@valentinkolb/cloud/cli/account";
-import adminCliModule from "@valentinkolb/cloud/cli/admin";
-import appsCliModule from "@valentinkolb/cloud/cli/apps";
-import capabilitiesCliModule from "@valentinkolb/cloud/cli/capabilities";
-import accountsCliModule from "@valentinkolb/cloud-app-accounts/cli";
-import apiDocsCliModule from "@valentinkolb/cloud-app-api-docs/cli";
-import assistantCliModule from "@valentinkolb/cloud-app-assistant/cli";
-import contactsCliModule from "@valentinkolb/cloud-app-contacts/cli";
-import kitCliModule from "@valentinkolb/cloud-app-kit/cli";
-import faqCliModule from "@valentinkolb/cloud-app-faq/cli";
-import gridsCliModule from "@valentinkolb/cloud-app-grids/cli";
-import ipaHostsCliModule from "@valentinkolb/cloud-app-ipa-hosts/cli";
-import mailCliModule from "@valentinkolb/cloud-app-mail/cli";
-import notebooksCliModule from "@valentinkolb/cloud-app-notebooks/cli";
-import oauthCliModule from "@valentinkolb/cloud-app-oauth/cli";
-import pulseCliModule from "@valentinkolb/cloud-app-pulse/cli";
-import spacesCliModule from "@valentinkolb/cloud-app-spaces/cli";
-import toolsCliModule from "@valentinkolb/cloud-app-tools/cli";
-import venueCliModule from "@valentinkolb/cloud-app-venue/cli";
+} from "@k2b/cloud/cli";
+import { localizeCloudCliText, resolveCloudCliLocale } from "@k2b/cloud/cli";
+import accountCliModule from "@k2b/cloud/cli/account";
+import adminCliModule from "@k2b/cloud/cli/admin";
+import appsCliModule from "@k2b/cloud/cli/apps";
+import capabilitiesCliModule from "@k2b/cloud/cli/capabilities";
+import accountsCliModule from "@k2b/cloud-app-accounts/cli";
+import apiDocsCliModule from "@k2b/cloud-app-api-docs/cli";
+import assistantCliModule from "@k2b/cloud-app-assistant/cli";
+import contactsCliModule from "@k2b/cloud-app-contacts/cli";
+import kitCliModule from "@k2b/cloud-app-kit/cli";
+import faqCliModule from "@k2b/cloud-app-faq/cli";
+import gridsCliModule from "@k2b/cloud-app-grids/cli";
+import ipaHostsCliModule from "@k2b/cloud-app-ipa-hosts/cli";
+import mailCliModule from "@k2b/cloud-app-mail/cli";
+import notebooksCliModule from "@k2b/cloud-app-notebooks/cli";
+import oauthCliModule from "@k2b/cloud-app-oauth/cli";
+import pulseCliModule from "@k2b/cloud-app-pulse/cli";
+import spacesCliModule from "@k2b/cloud-app-spaces/cli";
+import toolsCliModule from "@k2b/cloud-app-tools/cli";
+import venueCliModule from "@k2b/cloud-app-venue/cli";
 import type { Hono } from "hono";
 import { hc } from "hono/client";
 import { defaultCloudCliSkillsDir, updateCli } from "./release";

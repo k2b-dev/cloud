@@ -3,7 +3,7 @@
  *
  * `sync.resources()`, dead-letter stores, and `scheduler.list()` are
  * process-local, so every app exposes them under `/_internal/sync` (see
- * `createSyncOpsRoutes` in `@valentinkolb/cloud/services`). This service walks
+ * `createSyncOpsRoutes` in `@k2b/cloud/services`). This service walks
  * the live app registry, calls that surface on each app's internal base URL
  * through the Core invocation broker, and merges the answers. One
  * unreachable app degrades to a warning row; it never hides the others.
@@ -11,10 +11,10 @@
 
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import type { SyncHealth, SyncResourceSummary } from "@k2b/sync";
-import type { AppRegistryEntry } from "@valentinkolb/cloud/contracts";
-import type { SyncDeadLetterEntry, SyncDeadLetterKind, SyncDeadLetterStoreView, SyncScheduleView } from "@valentinkolb/cloud/services";
-import { get } from "@valentinkolb/cloud/services";
-import { publicCloudOrigin } from "@valentinkolb/cloud/shared";
+import type { AppRegistryEntry } from "@k2b/cloud/contracts";
+import type { SyncDeadLetterEntry, SyncDeadLetterKind, SyncDeadLetterStoreView, SyncScheduleView } from "@k2b/cloud/services";
+import { get } from "@k2b/cloud/services";
+import { publicCloudOrigin } from "@k2b/cloud/shared";
 import { z } from "zod";
 
 export const SYNC_OPS_PATH = "/_internal/sync";

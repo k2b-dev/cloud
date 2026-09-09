@@ -1,6 +1,6 @@
 import { mutation } from "@k2b/stdlib/solid";
 import { prompts, toast } from "@k2b/ui";
-import type { ResourceApiKey, ResourceApiKeysProps } from "@valentinkolb/cloud/access/ui";
+import type { ResourceApiKey, ResourceApiKeysProps } from "@k2b/cloud/access/ui";
 import { type Accessor, onCleanup, type Setter } from "solid-js";
 import type { PulseSource } from "../../contracts";
 import { jsonFetch } from "../http";

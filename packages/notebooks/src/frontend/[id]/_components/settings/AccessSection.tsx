@@ -1,7 +1,7 @@
 import { query } from "@k2b/stdlib/solid";
 import { Button, Placeholder, SettingsGroup, useLocale } from "@k2b/ui";
-import { PermissionEditor, type ResourceApiKey, ResourceApiKeys } from "@valentinkolb/cloud/access/ui";
-import type { AccessEntry } from "@valentinkolb/cloud/contracts";
+import { PermissionEditor, type ResourceApiKey, ResourceApiKeys } from "@k2b/cloud/access/ui";
+import type { AccessEntry } from "@k2b/cloud/contracts";
 import { createSignal, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { Notebook } from "../sidebar/types";

@@ -1,15 +1,15 @@
 import type { Scheduler, Worker } from "@k2b/sync";
-import { lazySync } from "@valentinkolb/cloud";
-import { createRuntimeLifecycle, logger, trace } from "@valentinkolb/cloud/services";
-import type { WorkflowJsonValue } from "@valentinkolb/cloud/workflows";
+import { lazySync } from "@k2b/cloud";
+import { createRuntimeLifecycle, logger, trace } from "@k2b/cloud/services";
+import type { WorkflowJsonValue } from "@k2b/cloud/workflows";
 import {
   createWorkflowScheduleRegistration,
   evaluateWorkflowTriggerInputs,
   reconcileWorkflowSchedules,
   type WorkflowScheduleRegistration,
   workflowScheduleSlotKey,
-} from "@valentinkolb/cloud/workflows/runtime";
-import { emitWorkflowEvent } from "@valentinkolb/cloud/workflows/store";
+} from "@k2b/cloud/workflows/runtime";
+import { emitWorkflowEvent } from "@k2b/cloud/workflows/store";
 import { sql } from "bun";
 import { MAIL_WORKFLOW_APP_ID, MAIL_WORKFLOW_EVENT } from "../workflows/events";
 

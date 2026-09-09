@@ -1,4 +1,4 @@
-import { command } from "@valentinkolb/cloud/cli";
+import { command } from "@k2b/cloud/cli";
 import { type BaseNavigation, BaseNavigationSchema } from "../navigation-contracts";
 import { baseArgs, baseFlag, resolveBaseFromCommand } from "./resources";
 import { JSON_BODY_INPUT, jsonRequest, printJsonOrMessage, readApi, readJsonInput } from "./runtime";

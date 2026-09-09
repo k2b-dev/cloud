@@ -1,4 +1,4 @@
-import { AppApprovalClientError, appApproval } from "@valentinkolb/cloud/browser/app-approval";
+import { AppApprovalClientError, appApproval } from "@k2b/cloud/browser/app-approval";
 import { createEffect, createSignal, onCleanup, onMount } from "solid-js";
 import { type Binding, storage } from "./storage";
 

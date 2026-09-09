@@ -1,5 +1,5 @@
 import { type DateContext, err, fail, ok, type Result } from "@k2b/stdlib";
-import { getEffectiveGroupIds } from "@valentinkolb/cloud/server";
+import { getEffectiveGroupIds } from "@k2b/cloud/server";
 import { type SQLQuery, sql } from "bun";
 import { getRecordWritableFieldType } from "../field-types";
 import { logAudit, type SqlClient } from "./audit";

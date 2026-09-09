@@ -1,4 +1,4 @@
-import { defineHelp } from "@valentinkolb/cloud/server";
+import { defineHelp } from "@k2b/cloud/server";
 import chooseDe from "./documents/de/tools-choose.help.md" with { type: "text" };
 import documentMarkdownDe from "./documents/de/tools-document-markdown.help.md" with { type: "text" };
 import imageConverterDe from "./documents/de/tools-image-converter.help.md" with { type: "text" };

@@ -1,6 +1,6 @@
-import { hasRole } from "@valentinkolb/cloud/contracts";
-import { type AuthContext, expectUserBackedActor, getDateConfig, getLocale } from "@valentinkolb/cloud/server";
-import { get } from "@valentinkolb/cloud/services";
+import { hasRole } from "@k2b/cloud/contracts";
+import { type AuthContext, expectUserBackedActor, getDateConfig, getLocale } from "@k2b/cloud/server";
+import { get } from "@k2b/cloud/services";
 import type { Context } from "hono";
 import { toPublicNotebook, toPublicNoteComment } from "@/api/public-resources";
 import { extractNamedBlockSummaries } from "@/lib/named-blocks";

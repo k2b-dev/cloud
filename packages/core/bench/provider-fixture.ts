@@ -1,9 +1,9 @@
 import { spyOn } from "bun:test";
 import assert from "node:assert/strict";
-import { UniversalSearchInputSchema } from "@valentinkolb/cloud/contracts";
-import type { AuthContext } from "@valentinkolb/cloud/server";
-import * as identity from "@valentinkolb/cloud/services/identity";
-import { getIdentityRuntimeConfig, invalidateIdentityRuntimeConfig } from "@valentinkolb/cloud/services/identity/runtime-config";
+import { UniversalSearchInputSchema } from "@k2b/cloud/contracts";
+import type { AuthContext } from "@k2b/cloud/server";
+import * as identity from "@k2b/cloud/services/identity";
+import { getIdentityRuntimeConfig, invalidateIdentityRuntimeConfig } from "@k2b/cloud/services/identity/runtime-config";
 import { redis } from "bun";
 import { Hono } from "hono";
 import { z } from "zod";

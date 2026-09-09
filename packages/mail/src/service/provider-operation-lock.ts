@@ -1,5 +1,5 @@
 import type { Lock } from "@k2b/sync";
-import { lazySync } from "@valentinkolb/cloud";
+import { lazySync } from "@k2b/cloud";
 import { withLeaseHeartbeat } from "./lease-heartbeat";
 
 export const MAIL_PROVIDER_OPERATION_LEASE_MS = 5 * 60_000;

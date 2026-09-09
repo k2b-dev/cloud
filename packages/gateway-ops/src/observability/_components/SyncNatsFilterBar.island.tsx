@@ -1,6 +1,6 @@
 import { navigateTo } from "@k2b/ssr/nav";
 import { FilterChip, useLocale } from "@k2b/ui";
-import { SearchBar } from "@valentinkolb/cloud/ssr/islands";
+import { SearchBar } from "@k2b/cloud/ssr/islands";
 import { gatewayOpsMessages } from "../../messages";
 import { natsMessages } from "../nats/messages";
 import { syncOpsMessages } from "../sync/ops-messages";

@@ -1,4 +1,4 @@
-import { audit, logger } from "@valentinkolb/cloud/services";
+import { audit, logger } from "@k2b/cloud/services";
 import { crypto as cryptoUtils, err, fail, isServiceError, ok, type Result } from "@k2b/stdlib";
 import { sql } from "bun";
 import type { ConversationReferencePreview, EnsureConversationReference, PutConversationReferenceConfiguration } from "../contracts";

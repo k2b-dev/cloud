@@ -12,11 +12,11 @@ import {
   UniversalSearchDataSchema,
   type UniversalSearchInput,
   UniversalSearchInputSchema,
-} from "@valentinkolb/cloud/contracts";
-import { hasPermission, type PermissionLevel } from "@valentinkolb/cloud/server";
-import { type AuditActor, audit } from "@valentinkolb/cloud/services";
-import { get as settingsGet } from "@valentinkolb/cloud/services/settings";
-import { normalizeTimeZone } from "@valentinkolb/cloud/shared";
+} from "@k2b/cloud/contracts";
+import { hasPermission, type PermissionLevel } from "@k2b/cloud/server";
+import { type AuditActor, audit } from "@k2b/cloud/services";
+import { get as settingsGet } from "@k2b/cloud/services/settings";
+import { normalizeTimeZone } from "@k2b/cloud/shared";
 import type { z } from "zod";
 import {
   CalendarDestinationListDataSchema,

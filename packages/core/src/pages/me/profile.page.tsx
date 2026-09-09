@@ -1,8 +1,8 @@
 import { dates } from "@k2b/stdlib";
-import { accountCategoryLabel } from "@valentinkolb/cloud/contracts";
-import { type AuthContext, getLocale } from "@valentinkolb/cloud/server";
-import { coreSettings, readAccountCategoryPolicy } from "@valentinkolb/cloud/services";
-import { Layout } from "@valentinkolb/cloud/ssr";
+import { accountCategoryLabel } from "@k2b/cloud/contracts";
+import { type AuthContext, getLocale } from "@k2b/cloud/server";
+import { coreSettings, readAccountCategoryPolicy } from "@k2b/cloud/services";
+import { Layout } from "@k2b/cloud/ssr";
 import { ssr } from "../../config";
 import AccountHub, { AccountPageHeader, AccountProfileActions } from "./AccountHub";
 import { accountMessages } from "./messages";

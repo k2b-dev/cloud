@@ -1,6 +1,6 @@
 import { err, fail, ok, type Result } from "@k2b/stdlib";
-import type { AuthContext } from "@valentinkolb/cloud/server";
-import { getDateConfig, getLocale, respond } from "@valentinkolb/cloud/server";
+import type { AuthContext } from "@k2b/cloud/server";
+import { getDateConfig, getLocale, respond } from "@k2b/cloud/server";
 import type { Context } from "hono";
 import { z } from "zod";
 import { ShortIdSchema } from "../contracts";

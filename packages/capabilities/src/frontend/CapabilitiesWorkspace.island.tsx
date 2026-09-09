@@ -16,7 +16,7 @@ import {
   TextInput,
   useLocale,
 } from "@k2b/ui";
-import { reviewCapabilityAction } from "@valentinkolb/cloud/capabilities";
+import { reviewCapabilityAction } from "@k2b/cloud/capabilities";
 import { createMemo, createSignal, For, type JSX, onCleanup, Show } from "solid-js";
 import { ActionReviewContent, confirmActionRun } from "../action-review";
 import type { SelectedCapability } from "../catalog";

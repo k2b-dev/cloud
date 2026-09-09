@@ -23,8 +23,8 @@ import {
   toast,
   useLocale,
 } from "@k2b/ui";
-import { PermissionEditor, type ResourceApiKey, ResourceApiKeys } from "@valentinkolb/cloud/access/ui";
-import type { AccessEntry, PermissionLevel, Principal } from "@valentinkolb/cloud/contracts";
+import { PermissionEditor, type ResourceApiKey, ResourceApiKeys } from "@k2b/cloud/access/ui";
+import type { AccessEntry, PermissionLevel, Principal } from "@k2b/cloud/contracts";
 import { createEffect, createSignal, For, onCleanup, Show } from "solid-js";
 import { apiClient } from "../../../api/client";
 import type {

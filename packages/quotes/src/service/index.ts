@@ -3,7 +3,7 @@
  * Fetches a new quote every hour.
  */
 
-import { coreSettings, logger } from "@valentinkolb/cloud/services";
+import { coreSettings, logger } from "@k2b/cloud/services";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { redis } from "bun";
 

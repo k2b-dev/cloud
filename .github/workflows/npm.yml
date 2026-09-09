@@ -1,6 +1,6 @@
 name: npm publish
 
-# Publish @valentinkolb/cloud to npm via OIDC trusted publisher.
+# Publish @k2b/cloud to npm via OIDC trusted publisher.
 #
 # Trigger: tag matching `npm-cloud-v*` (e.g. npm-cloud-v0.2.0).
 # Avoids the `cloud-*-v*` pattern owned by docker.yml.
@@ -10,7 +10,7 @@ name: npm publish
 # tag, push.
 #
 # Trusted publisher must be configured on npmjs.org for the package
-# (Repository: ValentinKolb/cloud, Workflow: npm.yml). No NPM_TOKEN.
+# (Repository: k2b-dev/cloud, Workflow: npm.yml). No NPM_TOKEN.
 
 on:
   push:
@@ -42,6 +42,14 @@ jobs:
         working-directory: .
         run: bun ci --registry=https://registry.npmjs.org
 
+      - name: Verify platform checks and types
+        working-directory: .
+        run: bun run check
+
+      - name: Verify client and workflow contracts
+        working-directory: .
+        run: bun test packages/cloud-cli/src packages/cloud/src/workflows/module.test.ts packages/grids/test/help.test.ts
+
       - name: Require published Sync recovery support
         working-directory: .
         run: |
@@ -55,21 +63,17 @@ jobs:
       - name: Use npm 11.5.1+
         run: npm install -g npm@11.5.1
 
-      - name: Resolve version
-        id: ver
+      - name: Validate release version
+        env:
+          REQUESTED_VERSION: ${{ inputs.version }}
         run: |
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            v="${{ inputs.version }}"
-          else
-            v="${GITHUB_REF#refs/tags/npm-cloud-v}"
-          fi
-          echo "value=$v" >> "$GITHUB_OUTPUT"
-
-      - name: Set version in package.json
-        # `npm version` triggers an internal install that chokes on
-        # `workspace:*` deps in sibling packages. `npm pkg set` is a
-        # pure JSON edit — no resolve, no lockfile.
-        run: npm pkg set version=${{ steps.ver.outputs.value }}
+          node --input-type=module -e '
+            import fs from "node:fs";
+            const p = JSON.parse(fs.readFileSync("package.json", "utf8"));
+            const version = process.env.GITHUB_EVENT_NAME === "workflow_dispatch"
+              ? process.env.REQUESTED_VERSION : process.env.GITHUB_REF_NAME.replace(/^npm-cloud-v/, "");
+            if (!/^\d+\.\d+\.\d+$/.test(version) || p.version !== version) throw new Error("Release version must match package.json");
+          '
 
       - name: Publish
         run: npm publish --provenance --access public

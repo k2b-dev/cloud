@@ -1,5 +1,5 @@
-import type { RequestActor } from "@valentinkolb/cloud/server";
-import { accounts, serviceAccounts, toPgTextArray } from "@valentinkolb/cloud/services";
+import type { RequestActor } from "@k2b/cloud/server";
+import { accounts, serviceAccounts, toPgTextArray } from "@k2b/cloud/services";
 import { sql } from "bun";
 import type { ActorRef } from "../contracts";
 import { requireMailboxPermission } from "./access";

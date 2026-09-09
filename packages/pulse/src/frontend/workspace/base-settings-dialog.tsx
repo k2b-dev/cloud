@@ -12,8 +12,8 @@ import {
   TextInput,
   toast,
 } from "@k2b/ui";
-import { PermissionEditor } from "@valentinkolb/cloud/access/ui";
-import type { AccessEntry, Principal } from "@valentinkolb/cloud/contracts";
+import { PermissionEditor } from "@k2b/cloud/access/ui";
+import type { AccessEntry, Principal } from "@k2b/cloud/contracts";
 import { type Accessor, createSignal, onCleanup, Show } from "solid-js";
 import type { PulseBase } from "../../contracts";
 import { jsonFetch } from "./helpers";

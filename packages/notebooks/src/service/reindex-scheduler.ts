@@ -17,8 +17,8 @@
  */
 
 import type { Worker } from "@k2b/sync";
-import { lazySync } from "@valentinkolb/cloud";
-import { logger, get as settingsGet } from "@valentinkolb/cloud/services";
+import { lazySync } from "@k2b/cloud";
+import { logger, get as settingsGet } from "@k2b/cloud/services";
 import { reindexAll } from "./note-refs";
 import { yjsSnapshotWorker } from "./yjs-snapshot-worker";
 

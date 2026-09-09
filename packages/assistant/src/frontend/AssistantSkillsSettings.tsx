@@ -16,8 +16,8 @@ import {
   TextInput,
   toast,
 } from "@k2b/ui";
-import { PermissionEditor } from "@valentinkolb/cloud/access/ui";
-import type { AiSkill, AiSkillExtraFrontmatter, AiSkillReferenceInput, AiSkillSummary } from "@valentinkolb/cloud/ai";
+import { PermissionEditor } from "@k2b/cloud/access/ui";
+import type { AiSkill, AiSkillExtraFrontmatter, AiSkillReferenceInput, AiSkillSummary } from "@k2b/cloud/ai";
 import { createEffect, createMemo, createResource, createSignal, For, Show } from "solid-js";
 import { assistantApi } from "../api/client";
 import { type AiSkillImport, downloadAiSkillMarkdown, downloadAiSkillZip, readAiSkillImport } from "./assistant-skill-files";

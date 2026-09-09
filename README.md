@@ -31,7 +31,7 @@ Cloud bundles a set of apps that cover the common operational needs of an organi
 
 ## Build your own app
 
-The whole platform is structured around custom apps. The starter repo **[github.com/ValentinKolb/cloud-template](https://github.com/ValentinKolb/cloud-template)** has everything to run the platform plus your own app side-by-side: a single `docker compose up` pulls the prebuilt platform images from ghcr and builds your custom app locally. Your app depends on `@valentinkolb/cloud` from npm — no monorepo, no workspace, no platform code in your repo.
+The whole platform is structured around custom apps. The starter repo **[github.com/ValentinKolb/cloud-template](https://github.com/ValentinKolb/cloud-template)** has everything to run the platform plus your own app side-by-side: a single `docker compose up` pulls the prebuilt platform images from ghcr and builds your custom app locally. Your app depends on `@k2b/cloud` from npm — no monorepo, no workspace, no platform code in your repo.
 
 ```bash
 git clone https://github.com/ValentinKolb/cloud-template my-cloud
@@ -44,7 +44,7 @@ The template ships with a working reference app (`expeditions`) you can edit, fo
 
 ```ts
 // src/config.ts in cloud-template
-import { defineApp } from "@valentinkolb/cloud";
+import { defineApp } from "@k2b/cloud";
 
 export const app = defineApp({
   id: "my-app",
@@ -172,7 +172,7 @@ canonical contribution rules are in
 Install the CLI operator skill directly from the repository:
 
 ```bash
-bunx skills add github.com/ValentinKolb/cloud
+bunx skills add github.com/k2b-dev/cloud
 ```
 
 - [`cloud-dev`](docs-site/agent-skills/cloud-dev/SKILL.md) — public application contract for standalone and built-in Cloud apps; repository maintainers also follow [`AGENTS.md`](AGENTS.md)

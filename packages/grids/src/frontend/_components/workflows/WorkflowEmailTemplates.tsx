@@ -23,8 +23,8 @@ import {
   toast,
   useLocale,
 } from "@k2b/ui";
-import { renderLiquidTemplate } from "@valentinkolb/cloud/shared";
-import type { WorkflowJsonValue } from "@valentinkolb/cloud/workflows";
+import { renderLiquidTemplate } from "@k2b/cloud/shared";
+import type { WorkflowJsonValue } from "@k2b/cloud/workflows";
 import { createMemo, createSignal, For, onMount, Show } from "solid-js";
 import { apiClient } from "../../../api/client";
 import {

@@ -1,7 +1,7 @@
 import { navigateTo, refreshCurrentPath } from "@k2b/ssr/nav";
 import { mutation as mutations } from "@k2b/stdlib/solid";
 import { Button, Dropdown, ProgressBar, prompts, ScrollArea, TextInput, toast, useLocale } from "@k2b/ui";
-import { formatBytes } from "@valentinkolb/cloud/shared";
+import { formatBytes } from "@k2b/cloud/shared";
 import { createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { FileBaseInfo } from "@/contracts";

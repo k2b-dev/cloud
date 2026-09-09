@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { unlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { CloudCliContext, CloudCliFlags, CloudCliOutputMode } from "@valentinkolb/cloud/cli";
+import type { CloudCliContext, CloudCliFlags, CloudCliOutputMode } from "@k2b/cloud/cli";
 import pulseCli from "./cli";
 
 type FetchCall = {

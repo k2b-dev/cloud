@@ -1,6 +1,6 @@
-import { type AuthContext, expectUserBackedActor, getLocale } from "@valentinkolb/cloud/server";
-import { audit, get } from "@valentinkolb/cloud/services";
-import { publicCloudOrigin } from "@valentinkolb/cloud/shared";
+import { type AuthContext, expectUserBackedActor, getLocale } from "@k2b/cloud/server";
+import { audit, get } from "@k2b/cloud/services";
+import { publicCloudOrigin } from "@k2b/cloud/shared";
 import { sql } from "bun";
 import type { Context } from "hono";
 import { z } from "zod";

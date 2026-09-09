@@ -1,5 +1,5 @@
 import { ok } from "@k2b/stdlib";
-import { type AuthContext, expectUserBackedActor, getLocale, respond, v } from "@valentinkolb/cloud/server";
+import { type AuthContext, expectUserBackedActor, getLocale, respond, v } from "@k2b/cloud/server";
 import { Hono } from "hono";
 import { z } from "zod";
 import { gatewayOpsMessages } from "../../messages";

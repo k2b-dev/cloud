@@ -1,5 +1,5 @@
-import { ErrorResponseSchema } from "@valentinkolb/cloud/contracts";
-import { type AuthContext, auth, getLocale, jsonResponse, respond, v } from "@valentinkolb/cloud/server";
+import { ErrorResponseSchema } from "@k2b/cloud/contracts";
+import { type AuthContext, auth, getLocale, jsonResponse, respond, v } from "@k2b/cloud/server";
 import { type Context, Hono } from "hono";
 import { describeRoute } from "hono-openapi";
 import { z } from "zod";

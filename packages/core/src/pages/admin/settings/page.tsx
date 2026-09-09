@@ -9,19 +9,19 @@ import {
   aiProjects,
   aiSkills,
   listAiCredentialProfileIds,
-} from "@valentinkolb/cloud/ai";
+} from "@k2b/cloud/ai";
 import {
   AI_BACKGROUND_TASK_PROMPTS,
   type AiModelAccessMap,
   type AiUsageReport,
   aiModelAccess,
   aiUsage,
-} from "@valentinkolb/cloud/ai/admin";
-import { type AuthContext, getLocale } from "@valentinkolb/cloud/server";
-import { appApproval, coreSettings, linuxIdentities, settingsService } from "@valentinkolb/cloud/services";
+} from "@k2b/cloud/ai/admin";
+import { type AuthContext, getLocale } from "@k2b/cloud/server";
+import { appApproval, coreSettings, linuxIdentities, settingsService } from "@k2b/cloud/services";
 import { approvalAvailability } from "../../app-approval/availability";
-import { AiUsageQuerySchema } from "@valentinkolb/cloud/shared";
-import { AdminLayout, getRuntimeContext, hasDedicatedRuntimeRoute } from "@valentinkolb/cloud/ssr";
+import { AiUsageQuerySchema } from "@k2b/cloud/shared";
+import { AdminLayout, getRuntimeContext, hasDedicatedRuntimeRoute } from "@k2b/cloud/ssr";
 import { z } from "zod";
 import { ssr } from "../../../config";
 import { adminMessages } from "../messages";

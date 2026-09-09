@@ -1,5 +1,5 @@
-import type { AiProject, AiProjectAccess, AiProjectFile, AiProjectKnowledge, AiProjectReference } from "@valentinkolb/cloud/ai";
-import { arg, type CloudCliContext, command, confirmFlag, flag, readCliInput } from "@valentinkolb/cloud/cli";
+import type { AiProject, AiProjectAccess, AiProjectFile, AiProjectKnowledge, AiProjectReference } from "@k2b/cloud/ai";
+import { arg, type CloudCliContext, command, confirmFlag, flag, readCliInput } from "@k2b/cloud/cli";
 import { jsonRequest, printRows, printValue, readProjectsApi, requireConfirmation } from "./shared";
 
 const path = (projectId: string, suffix = ""): string => `/${encodeURIComponent(projectId)}${suffix}`;

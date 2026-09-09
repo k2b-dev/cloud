@@ -1,4 +1,4 @@
-import type { AuthContext } from "@valentinkolb/cloud/server";
+import type { AuthContext } from "@k2b/cloud/server";
 import type { Context, MiddlewareHandler } from "hono";
 import { boundedQueryPoolSize } from "../service/bounded-query";
 import { apiMessages } from "./messages";

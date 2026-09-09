@@ -1,5 +1,5 @@
-import { lazySync } from "@valentinkolb/cloud";
-import { latestTopicCursor, logger } from "@valentinkolb/cloud/services";
+import { lazySync } from "@k2b/cloud";
+import { latestTopicCursor, logger } from "@k2b/cloud/services";
 
 const log = logger("grids:workflow-runtime-events");
 const TENANT_ID = "global";

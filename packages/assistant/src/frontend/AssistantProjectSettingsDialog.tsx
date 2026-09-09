@@ -1,7 +1,7 @@
 import { query } from "@k2b/stdlib/solid";
 import { Button, confirmDiscardIfDirty, Placeholder, prompts, SettingsGroup, SettingsModal, StatusBadge, TextInput, toast } from "@k2b/ui";
-import type { AiProject, AiProjectAccess } from "@valentinkolb/cloud/ai";
-import { coreClient } from "@valentinkolb/cloud/clients/core";
+import type { AiProject, AiProjectAccess } from "@k2b/cloud/ai";
+import { coreClient } from "@k2b/cloud/clients/core";
 import { createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import {
   type AssistantLiveHub,

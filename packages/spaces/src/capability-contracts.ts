@@ -1,4 +1,4 @@
-import { CapabilitySemanticLinkSchema, CloudResourceRefSchema, CloudResourceViewSchema } from "@valentinkolb/cloud/contracts";
+import { CapabilitySemanticLinkSchema, CloudResourceRefSchema, CloudResourceViewSchema } from "@k2b/cloud/contracts";
 import { z } from "zod";
 import {
   CreateTaskChecklistEntrySchema,

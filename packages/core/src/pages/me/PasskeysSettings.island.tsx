@@ -2,8 +2,8 @@ import { dates } from "@k2b/stdlib";
 import { mutation as mutations } from "@k2b/stdlib/solid";
 import { Button, Placeholder, prompts, TextInput, useLocale } from "@k2b/ui";
 import { browserSupportsWebAuthn, startRegistration } from "@simplewebauthn/browser";
-import { apiClient } from "@valentinkolb/cloud/clients/core";
-import type { WebAuthnPasskey } from "@valentinkolb/cloud/contracts";
+import { apiClient } from "@k2b/cloud/clients/core";
+import type { WebAuthnPasskey } from "@k2b/cloud/contracts";
 import { createSignal, For, Show } from "solid-js";
 import { accountMessages } from "./messages";
 

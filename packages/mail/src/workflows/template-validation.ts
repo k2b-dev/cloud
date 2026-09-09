@@ -1,5 +1,5 @@
-import type { WorkflowDiagnostic, WorkflowIr, WorkflowIrStep } from "@valentinkolb/cloud/workflows";
-import { workflowPathKey } from "@valentinkolb/cloud/workflows";
+import type { WorkflowDiagnostic, WorkflowIr, WorkflowIrStep } from "@k2b/cloud/workflows";
+import { workflowPathKey } from "@k2b/cloud/workflows";
 import { validateMailLiquidTemplate } from "../service/template-rendering";
 
 const TEMPLATE_FIELDS: Readonly<Record<string, readonly string[]>> = {

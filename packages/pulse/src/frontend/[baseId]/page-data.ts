@@ -1,7 +1,7 @@
-import type { ResourceApiKey } from "@valentinkolb/cloud/access/ui";
+import type { ResourceApiKey } from "@k2b/cloud/access/ui";
 import type { ServiceError } from "@k2b/stdlib";
-import { type AuthContext, expectUserBackedActor, getDateConfig } from "@valentinkolb/cloud/server";
-import { get as getSetting } from "@valentinkolb/cloud/services";
+import { type AuthContext, expectUserBackedActor, getDateConfig } from "@k2b/cloud/server";
+import { get as getSetting } from "@k2b/cloud/services";
 import type { Context } from "hono";
 import type {
   MetricQueryPoint,

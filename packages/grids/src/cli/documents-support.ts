@@ -1,5 +1,5 @@
-import type { CliInputFlagValue, CloudCliContext } from "@valentinkolb/cloud/cli";
-import { flag } from "@valentinkolb/cloud/cli";
+import type { CliInputFlagValue, CloudCliContext } from "@k2b/cloud/cli";
+import { flag } from "@k2b/cloud/cli";
 import type { z } from "zod";
 import type {
   PublicDocumentBrowseResponseSchema,

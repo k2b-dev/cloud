@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import type { DateContext } from "@k2b/stdlib";
-import { CAPABILITY_MAX_RESULT_BYTES, capabilityPage } from "@valentinkolb/cloud/contracts";
-import type { AccessSubject } from "@valentinkolb/cloud/server";
+import { CAPABILITY_MAX_RESULT_BYTES, capabilityPage } from "@k2b/cloud/contracts";
+import type { AccessSubject } from "@k2b/cloud/server";
 import type { z } from "zod";
 import {
   decodeAgendaCursor,

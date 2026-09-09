@@ -1,4 +1,4 @@
-import { defineApp } from "@valentinkolb/cloud";
+import { defineApp } from "@k2b/cloud";
 import { Hono } from "hono";
 
 export const gettingStartedApp = defineApp({

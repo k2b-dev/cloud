@@ -1,9 +1,9 @@
 import { i18n } from "@k2b/stdlib";
 import { DataTable, type DataTableColumn, Pagination, StatCell, StatGrid, StatusBadge } from "@k2b/ui";
-import type { AuthContext } from "@valentinkolb/cloud/server";
-import { getLocale } from "@valentinkolb/cloud/server";
-import { AdminLayout } from "@valentinkolb/cloud/ssr";
-import { SearchBar } from "@valentinkolb/cloud/ssr/islands";
+import type { AuthContext } from "@k2b/cloud/server";
+import { getLocale } from "@k2b/cloud/server";
+import { AdminLayout } from "@k2b/cloud/ssr";
+import { SearchBar } from "@k2b/cloud/ssr/islands";
 import { ssr } from "../config";
 import { spacesService } from "../service";
 import { spacesPublicResources } from "../service/public-resources";

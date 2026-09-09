@@ -7,13 +7,13 @@
     "baseUrl": ".",
     "paths": {
       "@/*": ["./src/*"],
-      "@valentinkolb/cloud": ["../cloud/src/index.ts"],
-      "@valentinkolb/cloud/desktop": ["../cloud/src/desktop/index.ts"],
-      "@valentinkolb/cloud/desktop/solid": ["../cloud/src/desktop/solid.tsx"],
-      "@valentinkolb/cloud/browser": ["../cloud/src/server/api-client.ts"],
-      "@valentinkolb/cloud/shared": ["../cloud/src/shared/index.ts"],
-      "@valentinkolb/cloud/contracts": ["../cloud/src/contracts/index.ts"],
-      "@valentinkolb/cloud/contracts/*": ["../cloud/src/contracts/*"]
+      "@k2b/cloud": ["../cloud/src/index.ts"],
+      "@k2b/cloud/desktop": ["../cloud/src/desktop/index.ts"],
+      "@k2b/cloud/desktop/solid": ["../cloud/src/desktop/solid.tsx"],
+      "@k2b/cloud/browser": ["../cloud/src/server/api-client.ts"],
+      "@k2b/cloud/shared": ["../cloud/src/shared/index.ts"],
+      "@k2b/cloud/contracts": ["../cloud/src/contracts/index.ts"],
+      "@k2b/cloud/contracts/*": ["../cloud/src/contracts/*"]
     },
     "jsx": "preserve",
     "jsxImportSource": "solid-js",

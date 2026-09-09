@@ -1,11 +1,12 @@
+import { type AuthContext, middleware } from "@k2b/cloud/server";
 import { Hono } from "hono";
-import { middleware, type AuthContext } from "@valentinkolb/cloud/server";
-import { app } from "./config";
 import api from "./api";
-import pages from "./frontend";
 import { kitCapabilities } from "./capabilities";
+import { app } from "./config";
+import pages from "./frontend";
 import { kitHelp } from "./help";
 import { migrate } from "./migrate";
+
 const router = new Hono<AuthContext>()
   .use("*", middleware.runtime())
   .use("*", middleware.settings())
@@ -18,3 +19,8 @@ export default await app.start({
   openapi: api,
   lifecycle: { setup: migrate },
 });
+
+import * as service from "./service";
+
+export type { ApiType } from "./api";
+export { service };

@@ -1,11 +1,11 @@
-import { buildRuntimeFromRegistry, listApps, type ProcessSync, startProcessSync, watchAppRegistry } from "@valentinkolb/cloud";
+import { buildRuntimeFromRegistry, listApps, type ProcessSync, startProcessSync, watchAppRegistry } from "@k2b/cloud";
 import {
   buildGatewayRouteSnapshot,
   logger,
   publishGatewayRouteSnapshot,
   removeGatewayRouteSnapshot,
   superviseRuntimeTask,
-} from "@valentinkolb/cloud/services";
+} from "@k2b/cloud/services";
 import { gatewayRouter } from "./config";
 import { type AppRouteWarning, buildAppRoutesDetailed } from "./routes";
 import { getRouteTable, setRouteTable, stats } from "./stats";

@@ -10,15 +10,15 @@ import {
   aiChatTasks,
   aiConversations,
   aiSkills,
-} from "@valentinkolb/cloud/ai";
-import { compileCapabilityManifest } from "@valentinkolb/cloud/capabilities/testing";
+} from "@k2b/cloud/ai";
+import { compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 import {
   type CapabilityActionDefinition,
   CapabilityActionReviewSchema,
   type CapabilityExecutionContext,
   capabilityResultSchema,
   type User,
-} from "@valentinkolb/cloud/contracts";
+} from "@k2b/cloud/contracts";
 import * as taskRuntime from "./ai-chat-tasks-runtime";
 import { aiCapabilities } from "./capabilities";
 

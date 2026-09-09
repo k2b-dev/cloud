@@ -6,16 +6,10 @@ import { env } from "../../config/env";
 import type { User } from "../../contracts/shared";
 import { isAccountCategoryAllowed } from "../account-category-policy";
 import { isAccountExpired } from "../account-model";
-import {
-  type CloudSessionClaims,
-  invalidateIdentitySignerCache,
-  isSessionJwtCandidate,
-  prepareIdentitySigner,
-  signSessionToken,
-  verifySessionToken,
-} from "../identity";
 import { IDENTITY_CLOCK_TOLERANCE_SECONDS, IDENTITY_ROLLOUT_MARGIN_MS } from "../identity/constants";
+import { invalidateIdentitySignerCache, prepareIdentitySigner } from "../identity/key-ring";
 import { getIdentityRuntimeConfig } from "../identity/runtime-config";
+import { type CloudSessionClaims, isSessionJwtCandidate, signSessionToken, verifySessionToken } from "../identity/session-token";
 import * as settings from "../settings";
 import { loadJwtSessionUser } from "./user";
 

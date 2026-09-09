@@ -1,5 +1,5 @@
 {
-  "name": "@valentinkolb/cloud-app-oauth",
+  "name": "@k2b/cloud-app-oauth",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -13,7 +13,7 @@
   },
   "dependencies": {
     "@k2b/ui": "workspace:*",
-    "@valentinkolb/cloud": "workspace:*",
+    "@k2b/cloud": "workspace:*",
     "@k2b/ssr": "catalog:",
     "@k2b/stdlib": "catalog:",
     "hono": "catalog:",

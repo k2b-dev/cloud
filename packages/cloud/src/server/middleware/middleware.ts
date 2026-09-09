@@ -3,7 +3,7 @@
  * that every cloud app composes into its own router. Apps register
  * what they need; the framework no longer injects anything implicitly.
  *
- *   import { middleware, auth } from "@valentinkolb/cloud/server"
+ *   import { middleware, auth } from "@k2b/cloud/server"
  *
  *   const router = new Hono<AuthContext>()
  *     .use("*", middleware.logger())

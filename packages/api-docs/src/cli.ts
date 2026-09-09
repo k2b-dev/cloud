@@ -1,4 +1,4 @@
-import { arg, type CloudCliContext, command, defineCliCommands, flag } from "@valentinkolb/cloud/cli";
+import { arg, type CloudCliContext, command, defineCliCommands, flag } from "@k2b/cloud/cli";
 import {
   type ApiOperation,
   extractOperations,

@@ -1,4 +1,4 @@
-import { type AccessUser, listUsersWithAccess } from "@valentinkolb/cloud/server";
+import { type AccessUser, listUsersWithAccess } from "@k2b/cloud/server";
 import { sql } from "bun";
 
 type SqlClient = typeof sql;

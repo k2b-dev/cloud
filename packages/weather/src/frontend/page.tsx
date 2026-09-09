@@ -1,8 +1,8 @@
 import { AppOverview, ScrollArea } from "@k2b/ui";
-import type { AuthContext } from "@valentinkolb/cloud/server";
-import { expectUserBackedActor, getLocale } from "@valentinkolb/cloud/server";
-import { weatherService } from "@valentinkolb/cloud/services";
-import { Layout } from "@valentinkolb/cloud/ssr";
+import type { AuthContext } from "@k2b/cloud/server";
+import { expectUserBackedActor, getLocale } from "@k2b/cloud/server";
+import { weatherService } from "@k2b/cloud/services";
+import { Layout } from "@k2b/cloud/ssr";
 import { ssr } from "../config";
 import { weatherMessages } from "../messages";
 import AddLocationButton from "./AddLocation.island";

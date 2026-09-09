@@ -1,5 +1,5 @@
 import { sql } from "bun";
-import { get } from "@valentinkolb/cloud/services";
+import { get } from "@k2b/cloud/services";
 import type { FileBase, MutationResult } from "@/contracts";
 import path from "node:path";
 

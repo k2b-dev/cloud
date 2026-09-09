@@ -1,5 +1,5 @@
 import { i18n } from "@k2b/stdlib";
-import { normalizeLocale } from "@valentinkolb/cloud/shared";
+import { normalizeLocale } from "@k2b/cloud/shared";
 
 export const workflowRuntimeMessages = i18n.define({
   baseLocale: "en",

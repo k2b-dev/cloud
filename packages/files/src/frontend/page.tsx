@@ -1,5 +1,5 @@
-import { type AuthContext, expectUserBackedActor, getLocale } from "@valentinkolb/cloud/server";
-import { Layout } from "@valentinkolb/cloud/ssr";
+import { type AuthContext, expectUserBackedActor, getLocale } from "@k2b/cloud/server";
+import { Layout } from "@k2b/cloud/ssr";
 import { AppOverview } from "@k2b/ui";
 import { filesService } from "@/service";
 import { ssr } from "../config";

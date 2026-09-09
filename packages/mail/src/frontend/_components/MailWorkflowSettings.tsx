@@ -20,7 +20,7 @@ import {
   buildWorkflowAutocompleteCompletions,
   createWorkflowYamlHighlighter,
   type WorkflowAutocompleteRequest,
-} from "@valentinkolb/cloud/workflows/editor";
+} from "@k2b/cloud/workflows/editor";
 import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import { apiClient } from "../../api/client";
 import type {

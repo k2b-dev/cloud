@@ -9,8 +9,8 @@ import {
   type Principal,
   paginateItems,
   resolveDisplayNames,
-} from "@valentinkolb/cloud/server";
-import { type ServiceAccountCredential, serviceAccountCredentials } from "@valentinkolb/cloud/services";
+} from "@k2b/cloud/server";
+import { type ServiceAccountCredential, serviceAccountCredentials } from "@k2b/cloud/services";
 import { err, fail, ok, type PageParams, type Paginated, type Result } from "@k2b/stdlib";
 import { sql } from "bun";
 import { conflictError, contactsMessages, notFoundError } from "./messages";

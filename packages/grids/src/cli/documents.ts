@@ -1,4 +1,4 @@
-import { arg, command, confirmFlag, flag } from "@valentinkolb/cloud/cli";
+import { arg, command, confirmFlag, flag } from "@k2b/cloud/cli";
 import type { z } from "zod";
 import { PUBLIC_DOCUMENT_PAGE_LIMIT } from "../api/document-public-contracts";
 import type {

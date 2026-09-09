@@ -1,5 +1,5 @@
-import { type AuthContext, getLocale } from "@valentinkolb/cloud/server";
-import { Layout } from "@valentinkolb/cloud/ssr";
+import { type AuthContext, getLocale } from "@k2b/cloud/server";
+import { Layout } from "@k2b/cloud/ssr";
 import { ssr } from "../../config";
 import { type MailRequestContext, mailboxes } from "../../service";
 import MailComposeIntentPage from "../_components/MailComposeIntentPage.island";

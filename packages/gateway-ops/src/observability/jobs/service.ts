@@ -1,5 +1,5 @@
 import { err, fail, ok, type Result } from "@k2b/stdlib";
-import { TRACE_STUCK_AFTER_MS, type TraceCategory, type TraceSourceGroup } from "@valentinkolb/cloud/services";
+import { TRACE_STUCK_AFTER_MS, type TraceCategory, type TraceSourceGroup } from "@k2b/cloud/services";
 import { syncOpsService } from "../sync/runtime";
 import type { SyncOpsCredentials, SyncScheduleRow } from "../sync/service";
 

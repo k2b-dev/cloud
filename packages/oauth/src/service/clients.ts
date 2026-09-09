@@ -1,4 +1,4 @@
-import { audit, serviceAccounts, toPgTextArray, toPgUuidArray } from "@valentinkolb/cloud/services";
+import { audit, serviceAccounts, toPgTextArray, toPgUuidArray } from "@k2b/cloud/services";
 import { sql } from "bun";
 import type {
   CreateOAuthClient,

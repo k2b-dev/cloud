@@ -1,4 +1,4 @@
-import type { AiInvalidation, AiInvalidationDomain } from "@valentinkolb/cloud/ai/live-events";
+import type { AiInvalidation, AiInvalidationDomain } from "@k2b/cloud/ai/live-events";
 import { createContext, type JSX, useContext } from "solid-js";
 
 export type AssistantLiveInvalidation = {

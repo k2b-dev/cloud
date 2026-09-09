@@ -1,8 +1,8 @@
 import { refreshCurrentPath } from "@k2b/ssr/nav";
 import { mutation } from "@k2b/stdlib/solid";
 import { IconButton, prompts, Tooltip, useLocale } from "@k2b/ui";
-import { PermissionEditor } from "@valentinkolb/cloud/access/ui";
-import type { AccessEntry } from "@valentinkolb/cloud/contracts";
+import { PermissionEditor } from "@k2b/cloud/access/ui";
+import type { AccessEntry } from "@k2b/cloud/contracts";
 import { createMemo } from "solid-js";
 import { apiClient } from "../../api/client";
 import { mailSettingsMessages } from "./mail-settings-messages";

@@ -1,5 +1,5 @@
 import { crypto } from "@k2b/stdlib";
-import { isUniqueViolation, toPgTextArray, toPgUuidArray } from "@valentinkolb/cloud/services";
+import { isUniqueViolation, toPgTextArray, toPgUuidArray } from "@k2b/cloud/services";
 import { sql } from "bun";
 
 export const SHORT_ID_REGEX = /^[0-9A-Za-z]{6}$/;

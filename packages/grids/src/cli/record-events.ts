@@ -1,4 +1,4 @@
-import { arg, command, confirmFlag, flag } from "@valentinkolb/cloud/cli";
+import { arg, command, confirmFlag, flag } from "@k2b/cloud/cli";
 import { z } from "zod";
 import { requirePublicId } from "./resources";
 import { jsonRequest, printCliStructured, queryString, readApi } from "./runtime";

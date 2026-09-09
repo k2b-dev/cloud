@@ -1,5 +1,5 @@
 {
-  "name": "@valentinkolb/cloud-app-grids",
+  "name": "@k2b/cloud-app-grids",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -33,7 +33,7 @@
     "@k2b/sync": "catalog:",
     "@k2b/ui": "workspace:*",
     "@stackforge-eu/factur-x": "1.2.0",
-    "@valentinkolb/cloud": "workspace:*",
+    "@k2b/cloud": "workspace:*",
     "decimal.js": "10.6.0",
     "hono": "catalog:",
     "hono-openapi": "catalog:",

@@ -1,5 +1,5 @@
-import type { CloudCliContext } from "@valentinkolb/cloud/cli";
-import { arg, flag } from "@valentinkolb/cloud/cli";
+import type { CloudCliContext } from "@k2b/cloud/cli";
+import { arg, flag } from "@k2b/cloud/cli";
 import type { PublicBase, PublicField, PublicTable } from "../api/public-dto";
 import { queryString, readApi, requireRestArg } from "./runtime";
 

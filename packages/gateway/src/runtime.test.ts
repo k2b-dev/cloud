@@ -30,7 +30,7 @@ if (process.env.GATEWAY_RUNTIME_TEST_CHILD !== "1") {
     const clock = spyOn(Date, "now").mockImplementation(() => now);
     const stats = { totalRequests: 0 };
     mock.module("./stats", () => ({ stats, getRouteTable: () => ({ routeCount: 0 }), setRouteTable: () => {} }));
-    mock.module("@valentinkolb/cloud", () => ({
+    mock.module("@k2b/cloud", () => ({
       buildRuntimeFromRegistry: () => ({}),
       listApps: async () => {
         listCalls++;
@@ -40,7 +40,7 @@ if (process.env.GATEWAY_RUNTIME_TEST_CHILD !== "1") {
       watchAppRegistry: ({ signal }: { signal: AbortSignal }) =>
         new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true })),
     }));
-    mock.module("@valentinkolb/cloud/services", () => ({
+    mock.module("@k2b/cloud/services", () => ({
       logger: () => ({ info: () => {}, warn: () => {}, error: () => {} }),
       buildGatewayRouteSnapshot: (input: { stats: { totalRequests: number } }) => ({
         updatedAt: now,

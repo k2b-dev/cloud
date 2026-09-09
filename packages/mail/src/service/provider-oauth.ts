@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { audit, coreSettings, decryptSecret, encryptSecret } from "@valentinkolb/cloud/services";
+import { audit, coreSettings, decryptSecret, encryptSecret } from "@k2b/cloud/services";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { sql } from "bun";
 import type {

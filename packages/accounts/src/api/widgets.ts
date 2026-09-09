@@ -1,8 +1,8 @@
 import { i18n } from "@k2b/stdlib";
-import type { WidgetBlock, WidgetResponse } from "@valentinkolb/cloud/contracts";
-import { hasRole } from "@valentinkolb/cloud/contracts";
-import { type AuthContext, auth, getLocale, getUserBackedActor } from "@valentinkolb/cloud/server";
-import { accountsAppService } from "@valentinkolb/cloud/services";
+import type { WidgetBlock, WidgetResponse } from "@k2b/cloud/contracts";
+import { hasRole } from "@k2b/cloud/contracts";
+import { type AuthContext, auth, getLocale, getUserBackedActor } from "@k2b/cloud/server";
+import { accountsAppService } from "@k2b/cloud/services";
 import { type Context, Hono } from "hono";
 
 const widgetMessages = i18n.define({

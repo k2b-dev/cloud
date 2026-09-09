@@ -1,5 +1,5 @@
 import { Button, ButtonLink, NoticeCard, TextInput, useLocale } from "@k2b/ui";
-import { type AccountCategory, AppLoginStartResultSchema, AppLoginStatusSchema } from "@valentinkolb/cloud/contracts";
+import { type AccountCategory, AppLoginStartResultSchema, AppLoginStatusSchema } from "@k2b/cloud/contracts";
 import { createSignal, onCleanup, onMount, Show } from "solid-js";
 import type { z } from "zod";
 import { ApprovalError, approvalApi, approvalRequestOptions, checked, parsed, pollApproval } from "../app-approval/client";

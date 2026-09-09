@@ -15,9 +15,9 @@ import { syncOpsCredentials } from "../sync/service";
  */
 
 import { ok } from "@k2b/stdlib";
-import { createPagination, parsePagination } from "@valentinkolb/cloud/contracts";
-import { type AuthContext, auth, rateLimit, respond, v } from "@valentinkolb/cloud/server";
-import { type TraceWindow, trace } from "@valentinkolb/cloud/services";
+import { createPagination, parsePagination } from "@k2b/cloud/contracts";
+import { type AuthContext, auth, rateLimit, respond, v } from "@k2b/cloud/server";
+import { type TraceWindow, trace } from "@k2b/cloud/services";
 import { Hono } from "hono";
 import { z } from "zod";
 import { buildBackgroundJobRows, filterBackgroundJobRows, jobsObservabilityService } from "./service";

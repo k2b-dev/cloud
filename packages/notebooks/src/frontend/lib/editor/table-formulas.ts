@@ -9,7 +9,7 @@
  * already selected for replacement.
  *
  * Functions mirror the registry in
- * `@valentinkolb/cloud/shared/markdown/formula.ts` (the same module
+ * `@k2b/cloud/shared/markdown/formula.ts` (the same module
  * that EVALUATES the formulas in both edit-mode preview and
  * read-mode rendering). Keep them in sync when new functions are
  * added there.

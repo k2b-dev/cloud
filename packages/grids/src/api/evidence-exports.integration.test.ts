@@ -1,8 +1,8 @@
 import { beforeAll, describe, expect } from "bun:test";
 import { createHash } from "node:crypto";
-import type { User } from "@valentinkolb/cloud/contracts";
-import type { AuthContext } from "@valentinkolb/cloud/server";
-import { serviceAccountCredentials, serviceAccounts } from "@valentinkolb/cloud/services";
+import type { User } from "@k2b/cloud/contracts";
+import type { AuthContext } from "@k2b/cloud/server";
+import { serviceAccountCredentials, serviceAccounts } from "@k2b/cloud/services";
 import { sql } from "bun";
 import { Hono } from "hono";
 import { postgresTest, testShortId, testUuid } from "../integration-test-utils";

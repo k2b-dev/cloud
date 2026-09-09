@@ -1,4 +1,4 @@
-import { defineHelp } from "@valentinkolb/cloud/server";
+import { defineHelp } from "@k2b/cloud/server";
 import readDe from "./documents/de/weather-read.help.md" with { type: "text" };
 import startDe from "./documents/de/weather-start.help.md" with { type: "text" };
 import troubleshootDe from "./documents/de/weather-troubleshooting.help.md" with { type: "text" };

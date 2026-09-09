@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, spyOn, test } from "bun:test";
-import type { CloudRuntime, PermissionLevel, User } from "@valentinkolb/cloud/contracts";
-import type { AuthContext } from "@valentinkolb/cloud/server";
-import * as cloudServices from "@valentinkolb/cloud/services";
+import type { CloudRuntime, PermissionLevel, User } from "@k2b/cloud/contracts";
+import type { AuthContext } from "@k2b/cloud/server";
+import * as cloudServices from "@k2b/cloud/services";
 import { Hono } from "hono";
 import type { PresentationMode } from "../../lib/presentation-mode";
 import { notebooksService } from "../../service";

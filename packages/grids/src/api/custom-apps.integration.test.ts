@@ -1,7 +1,7 @@
 import { beforeAll, describe, expect } from "bun:test";
 import { ok } from "@k2b/stdlib";
-import type { User } from "@valentinkolb/cloud/contracts";
-import type { AuthContext } from "@valentinkolb/cloud/server";
+import type { User } from "@k2b/cloud/contracts";
+import type { AuthContext } from "@k2b/cloud/server";
 import { sql } from "bun";
 import { Hono, type MiddlewareHandler } from "hono";
 import type { DslQueryPreviewResponse } from "../contracts";

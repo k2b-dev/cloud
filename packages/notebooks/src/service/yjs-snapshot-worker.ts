@@ -1,6 +1,6 @@
 import { type JobConfig, RetentionGapError, type Worker } from "@k2b/sync";
-import { lazySync } from "@valentinkolb/cloud";
-import { logger } from "@valentinkolb/cloud/services";
+import { lazySync } from "@k2b/cloud";
+import { logger } from "@k2b/cloud/services";
 import * as Y from "yjs";
 import * as notes from "./notes";
 import { applyYjsTopicEvent, compareStreamCursor, createYjsTopic, MalformedSyncEventError, NODE_ID, TOPIC_RETENTION_MS } from "./yjs-sync";

@@ -1,7 +1,7 @@
 import { afterEach, expect, spyOn, test } from "bun:test";
-import type { CloudRuntime, User } from "@valentinkolb/cloud/contracts";
-import type { AuthContext } from "@valentinkolb/cloud/server";
-import * as cloudServices from "@valentinkolb/cloud/services";
+import type { CloudRuntime, User } from "@k2b/cloud/contracts";
+import type { AuthContext } from "@k2b/cloud/server";
+import * as cloudServices from "@k2b/cloud/services";
 import { Hono } from "hono";
 import { notebooksService } from "../../../service";
 import "../_components/detail/ssr-test-plugin";

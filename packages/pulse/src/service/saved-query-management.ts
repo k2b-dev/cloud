@@ -1,4 +1,4 @@
-import { err, fail, ok, type Result } from "@valentinkolb/cloud/server";
+import { err, fail, ok, type Result } from "@k2b/cloud/server";
 import { sql } from "bun";
 import type { PulseSavedQuery } from "../contracts";
 import { withShortId } from "../lib/short-id";

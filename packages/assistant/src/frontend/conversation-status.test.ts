@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { AiConversation } from "@valentinkolb/cloud/ai";
+import type { AiConversation } from "@k2b/cloud/ai";
 import { conversationStatusPresentation } from "./conversation-view";
 
 const conversation = (overrides: Partial<AiConversation> = {}): AiConversation => ({

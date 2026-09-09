@@ -1,5 +1,5 @@
-import type { User } from "@valentinkolb/cloud/contracts";
-import type { PermissionLevel } from "@valentinkolb/cloud/server";
+import type { User } from "@k2b/cloud/contracts";
+import type { PermissionLevel } from "@k2b/cloud/server";
 import { type Contact, type ContactBook, contactsService } from "../service";
 import { resolveBookPublicIds, resolvePublicId } from "../service/public-resources";
 

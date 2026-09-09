@@ -1,8 +1,8 @@
 import { ssr } from "../config";
 import { join } from "node:path";
-import { type AuthContext, auth } from "@valentinkolb/cloud/server";
-import { authFlows, coreSettings, legalConsent } from "@valentinkolb/cloud/services";
-import { getRuntimeContext, hasDedicatedRuntimeRoute } from "@valentinkolb/cloud/ssr";
+import { type AuthContext, auth } from "@k2b/cloud/server";
+import { authFlows, coreSettings, legalConsent } from "@k2b/cloud/services";
+import { getRuntimeContext, hasDedicatedRuntimeRoute } from "@k2b/cloud/ssr";
 import { Hono } from "hono";
 import cliInstaller from "../../../cloud-cli/scripts/install.sh" with { type: "text" };
 import browserNotificationServiceWorker from "../browser-notifications/service-worker.js" with { type: "text" };

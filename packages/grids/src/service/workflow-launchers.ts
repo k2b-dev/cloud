@@ -1,5 +1,5 @@
 import { err, fail, ok, type Result } from "@k2b/stdlib";
-import type { WorkflowDiagnostic, WorkflowIrInput } from "@valentinkolb/cloud/workflows";
+import type { WorkflowDiagnostic, WorkflowIrInput } from "@k2b/cloud/workflows";
 import { sql } from "bun";
 import type {
   CreateGridsWorkflowLauncherInput,

@@ -1,5 +1,5 @@
-import { readAppRegistrySnapshot } from "@valentinkolb/cloud";
-import { listGatewayRouteSnapshots } from "@valentinkolb/cloud/services";
+import { readAppRegistrySnapshot } from "@k2b/cloud";
+import { listGatewayRouteSnapshots } from "@k2b/cloud/services";
 import { buildAppRuntimeStatuses } from "./app-runtime-status";
 import { getGridsOperationalSnapshot, gridsSloStatus, listAppSloWindows } from "./grids-operational-health";
 import { getNatsInventorySummary } from "./observability/nats/service";

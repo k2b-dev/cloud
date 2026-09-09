@@ -1,6 +1,6 @@
-import type { WidgetBlock, WidgetListItem, WidgetResponse } from "@valentinkolb/cloud/contracts";
-import { type AuthContext, auth, getLocale, getUserBackedActor } from "@valentinkolb/cloud/server";
-import { logger, weatherService } from "@valentinkolb/cloud/services";
+import type { WidgetBlock, WidgetListItem, WidgetResponse } from "@k2b/cloud/contracts";
+import { type AuthContext, auth, getLocale, getUserBackedActor } from "@k2b/cloud/server";
+import { logger, weatherService } from "@k2b/cloud/services";
 import { type Context, Hono } from "hono";
 import { type WeatherMessages, weatherConditionLabel, weatherMessages } from "../messages";
 

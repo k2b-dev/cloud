@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { AppRegistryEntry } from "@valentinkolb/cloud/contracts";
+import type { AppRegistryEntry } from "@k2b/cloud/contracts";
 import { createSyncOpsService, isListedResource, type SyncResourceRow } from "./service";
 
 const app = (id: string, name = id): AppRegistryEntry => ({

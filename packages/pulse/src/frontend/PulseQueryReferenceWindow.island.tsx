@@ -1,6 +1,6 @@
 import { AppWorkspace } from "@k2b/ui";
-import type { HelpDocumentManifest } from "@valentinkolb/cloud/shared";
-import { Layout } from "@valentinkolb/cloud/ssr/islands";
+import type { HelpDocumentManifest } from "@k2b/cloud/shared";
+import { Layout } from "@k2b/cloud/ssr/islands";
 import { navigate } from "@k2b/ssr/nav";
 import { createMemo, createSignal, For, Show } from "solid-js";
 import type {

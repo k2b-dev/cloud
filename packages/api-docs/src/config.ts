@@ -1,4 +1,4 @@
-import { defineApp } from "@valentinkolb/cloud";
+import { defineApp } from "@k2b/cloud";
 
 /**
  * API Docs: single Scalar UI that aggregates every running app's

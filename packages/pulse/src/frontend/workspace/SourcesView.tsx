@@ -1,4 +1,4 @@
-import type { ResourceApiKey, ResourceApiKeysProps } from "@valentinkolb/cloud/access/ui";
+import type { ResourceApiKey, ResourceApiKeysProps } from "@k2b/cloud/access/ui";
 import { Button, DataTable, TextInput, type DataTableColumn, useLocale } from "@k2b/ui";
 import { Show, type Accessor, type JSX } from "solid-js";
 import type { PulseSource, PulseSourceScrape } from "../../contracts";

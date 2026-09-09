@@ -24,7 +24,7 @@ import {
   type CompletionSource,
   pickedCompletion,
 } from "@codemirror/autocomplete";
-import { formatBytes } from "@valentinkolb/cloud/shared";
+import { formatBytes } from "@k2b/cloud/shared";
 import { apiClient } from "@/api/client";
 import { createNotebookFetchCache } from "./_lib/notebook-fetch-cache";
 import { isInsideFencedCode } from "./editor-scope";

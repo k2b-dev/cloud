@@ -1,5 +1,5 @@
 import { Electroview } from "electrobun/view";
-import { installDesktopBridge, type DesktopBridge } from "@valentinkolb/cloud/desktop";
+import { installDesktopBridge, type DesktopBridge } from "@k2b/cloud/desktop";
 import type { DesktopLabBridge } from "../../bridge/types";
 import type { DesktopLabRPC } from "./rpc";
 

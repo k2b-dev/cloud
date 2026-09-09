@@ -1,7 +1,7 @@
 import { mutation as mutations } from "@k2b/stdlib/solid";
 import { Checkbox, Placeholder, toast, useLocale } from "@k2b/ui";
-import { apiClient } from "@valentinkolb/cloud/clients/core";
-import type { UserNotificationPreference, UserNotificationPreferencesResponse } from "@valentinkolb/cloud/contracts";
+import { apiClient } from "@k2b/cloud/clients/core";
+import type { UserNotificationPreference, UserNotificationPreferencesResponse } from "@k2b/cloud/contracts";
 import { createSignal, For, Show } from "solid-js";
 import { accountMessages } from "./messages";
 import { notificationChannelAvailability, notificationChannelMeta } from "./notification-ui";

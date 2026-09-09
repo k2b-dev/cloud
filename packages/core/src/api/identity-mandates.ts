@@ -1,7 +1,7 @@
-import { CAPABILITY_MAX_REQUEST_BYTES, CapabilityAppIdSchema } from "@valentinkolb/cloud/contracts";
-import { respond } from "@valentinkolb/cloud/server";
-import { mandates } from "@valentinkolb/cloud/services";
-import { type AuthenticatedWorkload, authenticateWorkloadCredential } from "@valentinkolb/cloud/services/identity";
+import { CAPABILITY_MAX_REQUEST_BYTES, CapabilityAppIdSchema } from "@k2b/cloud/contracts";
+import { respond } from "@k2b/cloud/server";
+import { mandates } from "@k2b/cloud/services";
+import { type AuthenticatedWorkload, authenticateWorkloadCredential } from "@k2b/cloud/services/identity";
 import { type Context, Hono } from "hono";
 import { z } from "zod";
 

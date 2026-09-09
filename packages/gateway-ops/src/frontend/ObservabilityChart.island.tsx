@@ -1,5 +1,5 @@
 import { Chart, useLocale } from "@k2b/ui";
-import { formatBytes, formatDateTime, formatNumber } from "@valentinkolb/cloud/shared";
+import { formatBytes, formatDateTime, formatNumber } from "@k2b/cloud/shared";
 
 /**
  * Hydrating wrapper around `Chart`.

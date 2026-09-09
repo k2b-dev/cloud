@@ -1,5 +1,5 @@
-import { coreSettings } from "@valentinkolb/cloud/services";
-import { CLOUD_LOGO_SVG } from "@valentinkolb/cloud/shared";
+import { coreSettings } from "@k2b/cloud/services";
+import { CLOUD_LOGO_SVG } from "@k2b/cloud/shared";
 import type { DocumentDefaults } from "../contracts";
 import { get as getBase } from "./bases";
 

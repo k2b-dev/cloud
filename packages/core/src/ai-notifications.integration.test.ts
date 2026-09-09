@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { aiChatTasks, aiConversations, createAiShortId, migrateCloudAi } from "@valentinkolb/cloud/ai";
-import { registerNotificationDefinitions } from "@valentinkolb/cloud/services/notifications/catalog";
+import { aiChatTasks, aiConversations, createAiShortId, migrateCloudAi } from "@k2b/cloud/ai";
+import { registerNotificationDefinitions } from "@k2b/cloud/services/notifications/catalog";
 import { sql } from "bun";
 import { app } from "./config";
 import { createAiNotificationService } from "./ai-notifications";

@@ -1,5 +1,5 @@
 import { sql } from "bun";
-import { formatDurationMs, formatNumber, formatPercent } from "@valentinkolb/cloud/shared";
+import { formatDurationMs, formatNumber, formatPercent } from "@k2b/cloud/shared";
 import { gatewayOpsMessages } from "../../messages";
 
 export type DiagnosticWarning = {

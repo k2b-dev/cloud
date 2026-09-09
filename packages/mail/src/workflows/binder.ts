@@ -6,16 +6,16 @@ import type {
   WorkflowIrStep,
   WorkflowJsonValue,
   WorkflowSourceLocation,
-} from "@valentinkolb/cloud/workflows";
-import { workflowPathKey } from "@valentinkolb/cloud/workflows";
+} from "@k2b/cloud/workflows";
+import { workflowPathKey } from "@k2b/cloud/workflows";
 import {
   bindWorkflow,
   isWorkflowReservedReferenceRoot,
   parseWorkflowValueString,
   resolveWorkflowValuePathDescriptor,
   type WorkflowValuePathDescriptor,
-} from "@valentinkolb/cloud/workflows/language";
-import { normalizeWorkflowSchedule } from "@valentinkolb/cloud/workflows/runtime";
+} from "@k2b/cloud/workflows/language";
+import { normalizeWorkflowSchedule } from "@k2b/cloud/workflows/runtime";
 import { responseScheduleDefinitionSchema } from "../contracts";
 import { validateResponseScheduleDefinition } from "../response-schedule-validation";
 import { mailLiquidTemplateVariables } from "../service/template-rendering";

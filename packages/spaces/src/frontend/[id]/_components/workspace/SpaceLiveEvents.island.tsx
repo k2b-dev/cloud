@@ -1,4 +1,4 @@
-import { createLiveWebSocket } from "@valentinkolb/cloud/browser/live";
+import { createLiveWebSocket } from "@k2b/cloud/browser/live";
 import { onCleanup, onMount } from "solid-js";
 import {
   parseSpaceLiveServerMessage,

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import type { AuthContext } from "@valentinkolb/cloud/server";
-import { DocumentExtractionError } from "@valentinkolb/cloud/services/document-extraction";
+import type { AuthContext } from "@k2b/cloud/server";
+import { DocumentExtractionError } from "@k2b/cloud/services/document-extraction";
 import type { MiddlewareHandler } from "hono";
 import { generateSpecs } from "hono-openapi";
 import { createDocumentMarkdownRoutes, DOCUMENT_MARKDOWN_MAX_REQUEST_BYTES, DocumentMarkdownResponseSchema } from "./document-markdown";

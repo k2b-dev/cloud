@@ -1,7 +1,7 @@
 import { refreshCurrentPath } from "@k2b/ssr/nav";
 import { mutation } from "@k2b/stdlib/solid";
 import { Button, prompts, toast, useLocale } from "@k2b/ui";
-import type { WorkflowJsonValue, WorkflowRunState } from "@valentinkolb/cloud/workflows";
+import type { WorkflowJsonValue, WorkflowRunState } from "@k2b/cloud/workflows";
 import { apiClient } from "../api-client";
 import { gatewayOpsMessages } from "../../../messages";
 

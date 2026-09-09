@@ -1,4 +1,4 @@
-import { logger } from "@valentinkolb/cloud/services";
+import { logger } from "@k2b/cloud/services";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { z } from "zod";
 import {

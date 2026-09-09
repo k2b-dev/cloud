@@ -1,4 +1,4 @@
-import { logger } from "@valentinkolb/cloud/services";
+import { logger } from "@k2b/cloud/services";
 import { gridsService } from "../../../service";
 import { latestMetadataEventCursor } from "../../../service/metadata-events";
 import { latestRecordEventCursor } from "../../../service/record-events";

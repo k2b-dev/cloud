@@ -1,6 +1,6 @@
-import { defineApp } from "@valentinkolb/cloud";
-import { type AuthContext, auth } from "@valentinkolb/cloud/server";
-import { createUrlFilter, Layout, oneOf, page, text } from "@valentinkolb/cloud/ssr";
+import { defineApp } from "@k2b/cloud";
+import { type AuthContext, auth } from "@k2b/cloud/server";
+import { createUrlFilter, Layout, oneOf, page, text } from "@k2b/cloud/ssr";
 import { StatusBadge } from "@k2b/ui";
 import { Hono } from "hono";
 

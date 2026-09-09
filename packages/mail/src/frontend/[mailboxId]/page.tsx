@@ -1,6 +1,6 @@
-import { type AuthContext, getDateConfig, getLocale } from "@valentinkolb/cloud/server";
-import { readThemeFromCookieHeader } from "@valentinkolb/cloud/shared";
-import { Layout } from "@valentinkolb/cloud/ssr";
+import { type AuthContext, getDateConfig, getLocale } from "@k2b/cloud/server";
+import { readThemeFromCookieHeader } from "@k2b/cloud/shared";
+import { Layout } from "@k2b/cloud/ssr";
 import { ssr } from "../../config";
 import type { MailRequestContext } from "../../service";
 import { getSpacesMailIntegrationAvailability } from "../../service/app-integrations";

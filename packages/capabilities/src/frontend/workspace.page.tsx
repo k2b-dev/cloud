@@ -1,7 +1,7 @@
 import { AppWorkspace, DataTable, type DataTableColumn, IconButtonLink, Pagination, Placeholder, StatusBadge } from "@k2b/ui";
-import { type AuthContext, getLocale } from "@valentinkolb/cloud/server";
-import { Layout } from "@valentinkolb/cloud/ssr";
-import { SearchBar } from "@valentinkolb/cloud/ssr/islands";
+import { type AuthContext, getLocale } from "@k2b/cloud/server";
+import { Layout } from "@k2b/cloud/ssr";
+import { SearchBar } from "@k2b/cloud/ssr/islands";
 import { For, Show } from "solid-js";
 import { type CapabilityAppSummary, loadCapabilityWorkspace, type SelectedCapability, selectCapability } from "../catalog";
 import { ssr } from "../config";

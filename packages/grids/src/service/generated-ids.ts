@@ -1,5 +1,5 @@
 import { crypto, type DateContext } from "@k2b/stdlib";
-import { isUniqueViolation } from "@valentinkolb/cloud/services";
+import { isUniqueViolation } from "@k2b/cloud/services";
 import { fieldUniqueIndexName } from "./field-indexes";
 import { allocateNumber } from "./number-series";
 import type { Field } from "./types";

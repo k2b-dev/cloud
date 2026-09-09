@@ -1,4 +1,4 @@
-import { audit } from "@valentinkolb/cloud/services";
+import { audit } from "@k2b/cloud/services";
 import { err, fail, isServiceError, ok, type Result } from "@k2b/stdlib";
 import { sql } from "bun";
 import { z } from "zod";

@@ -1,4 +1,4 @@
-import { type AuthContext, getDateConfig, getLocale } from "@valentinkolb/cloud/server";
+import { type AuthContext, getDateConfig, getLocale } from "@k2b/cloud/server";
 import { projectPublishedRecords } from "../api/custom-app-public-dto";
 import { resolvePublishedCustomAppRuntime } from "../api/custom-app-published-runtime";
 import { projectDocuments } from "../api/documents-api-shared";

@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
-import { accountRequestsEnabled } from "@valentinkolb/cloud/services/accounts/request-policy";
-import { encryptValue } from "@valentinkolb/cloud/services/settings/crypto";
+import { accountRequestsEnabled } from "@k2b/cloud/services/accounts/request-policy";
+import { encryptValue } from "@k2b/cloud/services/settings/crypto";
 import { SQL } from "bun";
 import { migrate } from "./settings";
 
@@ -61,7 +61,7 @@ suite("account request opt-in migration", () => {
     await migrate(db);
     await (await import("./auth")).migrate();
     await (await import("./audit")).migrate();
-    const { accountsAppService } = await import("@valentinkolb/cloud/services");
+    const { accountsAppService } = await import("@k2b/cloud/services");
     const id = crypto.randomUUID();
     await db`INSERT INTO auth.users(id, uid, provider, profile) VALUES (${id}, ${id}, 'local', 'user')`;
     const [pending] = await db`INSERT INTO auth.account_requests(user_id, status) VALUES (${id}, 'pending') RETURNING id`;

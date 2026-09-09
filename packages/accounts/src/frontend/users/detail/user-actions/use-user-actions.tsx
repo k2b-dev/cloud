@@ -1,8 +1,8 @@
 import { navigateTo, refreshCurrentPath } from "@k2b/ssr/nav";
 import { mutation as mutations } from "@k2b/stdlib/solid";
 import { Button, DatePicker, NoticeCard, prompts, toast } from "@k2b/ui";
-import { openAvatarUploadDialog } from "@valentinkolb/cloud/account/ui";
-import type { AccountActionNoticeInput } from "@valentinkolb/cloud/shared";
+import { openAvatarUploadDialog } from "@k2b/cloud/account/ui";
+import type { AccountActionNoticeInput } from "@k2b/cloud/shared";
 import { createSignal } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { User } from "@/contracts";

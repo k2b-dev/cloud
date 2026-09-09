@@ -1,5 +1,5 @@
 {
-  "name": "@valentinkolb/cloud-app-files",
+  "name": "@k2b/cloud-app-files",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -9,7 +9,7 @@
   },
   "dependencies": {
     "@k2b/ui": "workspace:*",
-    "@valentinkolb/cloud": "workspace:*",
+    "@k2b/cloud": "workspace:*",
     "@k2b/ssr": "catalog:",
     "@valentinkolb/filegate": "2.4.0",
     "@k2b/stdlib": "catalog:",

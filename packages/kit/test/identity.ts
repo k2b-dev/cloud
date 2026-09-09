@@ -1,4 +1,4 @@
-import type { CapabilityExecutionContext, User } from "@valentinkolb/cloud/contracts";
+import type { CapabilityExecutionContext, User } from "@k2b/cloud/contracts";
 export function testIdentity(id: string): CapabilityExecutionContext {
   const user: User = {
     id,

@@ -2,7 +2,7 @@ import {
   buildWorkflowAutocompleteCompletions,
   type WorkflowAutocompleteRequest,
   workflowCompletionItemToSuggestion,
-} from "@valentinkolb/cloud/workflows/editor";
+} from "@k2b/cloud/workflows/editor";
 import type { WorkflowAutocompleteResponse } from "../../../workflows/contracts";
 
 export type { WorkflowAutocompleteRequest };

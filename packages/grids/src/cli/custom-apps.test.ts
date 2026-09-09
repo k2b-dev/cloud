@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { CloudCliContext } from "@valentinkolb/cloud/cli";
+import type { CloudCliContext } from "@k2b/cloud/cli";
 import type { CustomAppDefinition } from "../custom-apps/contracts";
 import { type CliCustomApp, customAppCommands } from "./custom-apps";
 import { gqlCommands } from "./views-gql";

@@ -1,4 +1,4 @@
-import { arg, command, confirmFlag, flag, printStructured } from "@valentinkolb/cloud/cli";
+import { arg, command, confirmFlag, flag, printStructured } from "@k2b/cloud/cli";
 import type { PublicView as View } from "../api/public-dto";
 import type { DslQueryAutocompleteResponse, DslQueryCompileViewResponse, DslQueryExecuteResponse } from "../contracts";
 import { customAppContextKeys } from "../custom-apps/context-keys";

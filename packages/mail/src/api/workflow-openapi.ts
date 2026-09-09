@@ -1,6 +1,6 @@
-import { ErrorResponseSchema } from "@valentinkolb/cloud/contracts";
-import { jsonResponse, requiresAuth } from "@valentinkolb/cloud/server";
-import type { WorkflowBoundPlan, WorkflowIr, WorkflowIrStep } from "@valentinkolb/cloud/workflows";
+import { ErrorResponseSchema } from "@k2b/cloud/contracts";
+import { jsonResponse, requiresAuth } from "@k2b/cloud/server";
+import type { WorkflowBoundPlan, WorkflowIr, WorkflowIrStep } from "@k2b/cloud/workflows";
 import { describeRoute } from "hono-openapi";
 import { z } from "zod";
 import {

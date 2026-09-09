@@ -1,6 +1,6 @@
-import type { AiPublicModelProfile } from "@valentinkolb/cloud/ai";
-import { createAiChatController } from "@valentinkolb/cloud/ai/solid";
-import { AiChatActionsProvider, aiChatModelOptions, aiComposerSendInput, createAiChatTimeline } from "@valentinkolb/cloud/ai/ui";
+import type { AiPublicModelProfile } from "@k2b/cloud/ai";
+import { createAiChatController } from "@k2b/cloud/ai/solid";
+import { AiChatActionsProvider, aiChatModelOptions, aiComposerSendInput, createAiChatTimeline } from "@k2b/cloud/ai/ui";
 import { Chat } from "@k2b/ui";
 import { createSignal } from "solid-js";
 

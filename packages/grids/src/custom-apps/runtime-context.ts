@@ -1,5 +1,5 @@
 import type { DateContext } from "@k2b/stdlib";
-import { getEffectiveGroupIds } from "@valentinkolb/cloud/server";
+import { getEffectiveGroupIds } from "@k2b/cloud/server";
 import type { GridsAccessContext } from "../api/permissions";
 import { accessActorUser } from "../api/permissions";
 import type { DslQueryContextValues } from "../query-dsl/parameters";

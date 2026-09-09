@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { CloudCliContext } from "@valentinkolb/cloud/cli";
+import type { CloudCliContext } from "@k2b/cloud/cli";
 import assistantCli from "./cli";
 import { collectSurveyResult, collectTextEditorResult, runInteractiveAssistant } from "./cli/interactive";
 import { streamAssistantTurn } from "./cli/stream";

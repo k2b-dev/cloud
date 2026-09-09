@@ -1,4 +1,4 @@
-import { type AuthContext, getDateConfig, getLocale } from "@valentinkolb/cloud/server";
+import { type AuthContext, getDateConfig, getLocale } from "@k2b/cloud/server";
 import { ssr } from "../config";
 import { pulseService } from "../service";
 import { projectDashboardSnapshot } from "../service/public-resources";

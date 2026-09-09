@@ -5,7 +5,7 @@ import type {
   WorkflowJsonValue,
   WorkflowRevision,
   WorkflowRunState,
-} from "@valentinkolb/cloud/workflows";
+} from "@k2b/cloud/workflows";
 import { z } from "zod";
 
 export const GRIDS_WORKFLOW_CHANNELS = ["api", "customApp", "scanner", "bulk", "record", "schedule", "recordEvent"] as const;

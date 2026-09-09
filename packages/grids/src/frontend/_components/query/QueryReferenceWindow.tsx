@@ -14,7 +14,7 @@ import {
   Tag,
   useLocale,
 } from "@k2b/ui";
-import type { HelpDocumentManifest } from "@valentinkolb/cloud/shared";
+import type { HelpDocumentManifest } from "@k2b/cloud/shared";
 import { createMemo, For, type JSX, Show } from "solid-js";
 import type { PublicField as Field, PublicTable as Table, PublicView as View } from "../../../api/public-dto";
 import { GRID_FORMULA_FUNCTIONS } from "../../../formula/function-catalog";

@@ -10,7 +10,7 @@ if (process.env.MAIL_INTEGRATION_TESTS === "1") {
   const namespace = `mail-test-${crypto.randomUUID()}`;
   process.env.SYNC_NAMESPACE = namespace;
   process.env.NATS_IGNORE_CLUSTER_UPDATES = "true";
-  const { startProcessSync } = await import("@valentinkolb/cloud");
+  const { startProcessSync } = await import("@k2b/cloud");
   const runtime = await startProcessSync({ application: "mail" });
   afterAll(async () => {
     await runtime.stop();
@@ -18,7 +18,7 @@ if (process.env.MAIL_INTEGRATION_TESTS === "1") {
   });
 }
 
-// The NATS client packages are dependencies of @k2b/sync and @valentinkolb/cloud, not of this
+// The NATS client packages are dependencies of @k2b/sync and @k2b/cloud, not of this
 // app, so they are resolved from those packages; only the members used here are typed.
 type CleanupConnection = { drain(): Promise<void> };
 type TransportModule = {
@@ -35,7 +35,7 @@ type JetStreamModule = {
 const resolveFrom = (specifier: string, from: string) => Bun.resolveSync(specifier, new URL(".", import.meta.resolve(from)).pathname);
 
 async function deleteNamespaceStreams(namespace: string): Promise<void> {
-  const { connect }: TransportModule = await import(resolveFrom("@nats-io/transport-node", "@valentinkolb/cloud"));
+  const { connect }: TransportModule = await import(resolveFrom("@nats-io/transport-node", "@k2b/cloud"));
   const { jetstreamManager }: JetStreamModule = await import(resolveFrom("@nats-io/jetstream", "@k2b/sync"));
   const servers = (process.env.NATS_SERVERS ?? "").split(",").filter(Boolean);
   const connection = await connect({ servers, name: "mail-test-cleanup", ignoreClusterUpdates: true });

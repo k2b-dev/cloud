@@ -9,10 +9,10 @@
  */
 
 import { MarkdownView, Placeholder } from "@k2b/ui";
-import { coreSettings } from "@valentinkolb/cloud/services";
-import { markdown } from "@valentinkolb/cloud/shared";
-import { Layout } from "@valentinkolb/cloud/ssr";
-import { getLocale } from "@valentinkolb/cloud/server";
+import { coreSettings } from "@k2b/cloud/services";
+import { markdown } from "@k2b/cloud/shared";
+import { Layout } from "@k2b/cloud/ssr";
+import { getLocale } from "@k2b/cloud/server";
 import { ssr } from "../../config";
 import { corePageMessages } from "../messages";
 

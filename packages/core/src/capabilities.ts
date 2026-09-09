@@ -24,7 +24,7 @@ import {
   chatTaskCreateFingerprint,
   isConversationResourceCursor,
   normalizeChatTaskSchedule,
-} from "@valentinkolb/cloud/ai";
+} from "@k2b/cloud/ai";
 import {
   CloudResourceRefSchema,
   type CloudResourceView,
@@ -32,7 +32,7 @@ import {
   capabilityPage,
   defineCapabilities,
   UniversalSearchDataSchema,
-} from "@valentinkolb/cloud/contracts";
+} from "@k2b/cloud/contracts";
 import { z } from "zod";
 import { aiChatTaskRuntime, reconcileAiChatTasks } from "./ai-chat-tasks-runtime";
 import { deliverPendingAiMessages } from "./ai-inter-chat-messages";

@@ -12,8 +12,8 @@ import {
   toast,
   useLocale,
 } from "@k2b/ui";
-import { type GrantableLevel, PermissionEditor, type ResourceApiKey, ResourceApiKeys } from "@valentinkolb/cloud/access/ui";
-import type { AccessEntry, Principal } from "@valentinkolb/cloud/contracts";
+import { type GrantableLevel, PermissionEditor, type ResourceApiKey, ResourceApiKeys } from "@k2b/cloud/access/ui";
+import type { AccessEntry, Principal } from "@k2b/cloud/contracts";
 import { createSignal, onCleanup, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { ContactBook, ContactTag } from "../../service";

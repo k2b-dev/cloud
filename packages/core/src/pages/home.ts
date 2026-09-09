@@ -1,4 +1,4 @@
-import { normalizeRedirectTo } from "@valentinkolb/cloud/shared";
+import { normalizeRedirectTo } from "@k2b/cloud/shared";
 
 export const DEFAULT_HOME_PATH = "/app/dashboard";
 

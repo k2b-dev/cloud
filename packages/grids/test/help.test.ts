@@ -1,17 +1,17 @@
 import { describe, expect, test } from "bun:test";
-import { compileHelp, HELP_REGISTRY_MAX_BYTES } from "../../../cloud/src/_internal/help";
-import { AGGREGATE_KINDS } from "../aggregate-catalog";
-import { DOCUMENT_TEMPLATE_STARTERS } from "../document-template-starters";
-import { GRID_FORMULA_FUNCTIONS } from "../formula/function-catalog";
-import { parseFormula } from "../formula/parser";
+import { compileHelp, HELP_REGISTRY_MAX_BYTES } from "../../cloud/src/_internal/help";
+import { AGGREGATE_KINDS } from "../src/aggregate-catalog";
+import { DOCUMENT_TEMPLATE_STARTERS } from "../src/document-template-starters";
+import { GRID_FORMULA_FUNCTIONS } from "../src/formula/function-catalog";
+import { parseFormula } from "../src/formula/parser";
 import {
   GROUP_GRANULARITIES,
   PREDICATE_COMPARISON_OPERATORS,
   PREDICATE_FUNCTIONS,
   PREDICATE_OPERATORS,
-} from "../query-dsl/intelligence-grammar";
-import { parseGridsQueryDsl } from "../query-dsl/parser";
-import { gridsHelp } from ".";
+} from "../src/query-dsl/intelligence-grammar";
+import { parseGridsQueryDsl } from "../src/query-dsl/parser";
+import { gridsHelp } from "../src/help";
 
 test("registers the complete bilingual Help corpus within the platform budget", () => {
   const compiled = compileHelp({ appId: "grids", appName: "Grids", appIcon: "ti ti-table", basePath: "/app/grids", definition: gridsHelp });
@@ -20,7 +20,7 @@ test("registers the complete bilingual Help corpus within the platform budget", 
   expect(compiled.registryEntry.documentsByLocale?.de).toHaveLength(gridsHelp.documentsByLocale?.de?.length ?? 0);
 });
 
-const cliSkillReference = await Bun.file(new URL("../../../../skills/cloud-cli/references/grids.md", import.meta.url)).text();
+const cliSkillReference = await Bun.file(new URL("../../../skills/cloud-cli/references/grids.md", import.meta.url)).text();
 
 test("documents issuer responsibility without an external E-Invoice approval gate", () => {
   const english = gridsHelp.getMarkdown("grids-documents-pdfs", "en")!;

@@ -1,5 +1,5 @@
-import type { CapabilityClientError, CapabilityReviewClientResult } from "@valentinkolb/cloud/capabilities";
-import type { CapabilityActionManifest, CapabilityActionReview, CapabilitySemanticLink } from "@valentinkolb/cloud/contracts";
+import type { CapabilityClientError, CapabilityReviewClientResult } from "@k2b/cloud/capabilities";
+import type { CapabilityActionManifest, CapabilityActionReview, CapabilitySemanticLink } from "@k2b/cloud/contracts";
 import { For, type JSX, Show } from "solid-js";
 import { useLocale } from "@k2b/ui";
 import { capabilityRuntimeMessages } from "./messages";

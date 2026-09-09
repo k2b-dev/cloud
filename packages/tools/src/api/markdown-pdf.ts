@@ -1,4 +1,4 @@
-import { type AuthContext, auth, getLocale, jsonResponse, type RateLimitConfig, rateLimit, requiresAuth, v } from "@valentinkolb/cloud/server";
+import { type AuthContext, auth, getLocale, jsonResponse, type RateLimitConfig, rateLimit, requiresAuth, v } from "@k2b/cloud/server";
 import {
   GotenbergRenderError,
   MARKDOWN_PDF_MAX_CUSTOM_CSS_BYTES,
@@ -6,7 +6,7 @@ import {
   MARKDOWN_PDF_TEMPLATE_IDS,
   MarkdownPdfError,
   renderMarkdownToPdf,
-} from "@valentinkolb/cloud/services/pdf";
+} from "@k2b/cloud/services/pdf";
 import { Hono, type MiddlewareHandler } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { describeRoute } from "hono-openapi";

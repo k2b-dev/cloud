@@ -1,6 +1,6 @@
-import type { AuthContext } from "@valentinkolb/cloud/server";
-import { expectUserBackedActor, getDateConfig, getLocale } from "@valentinkolb/cloud/server";
-import { Layout } from "@valentinkolb/cloud/ssr";
+import type { AuthContext } from "@k2b/cloud/server";
+import { expectUserBackedActor, getDateConfig, getLocale } from "@k2b/cloud/server";
+import { Layout } from "@k2b/cloud/ssr";
 import { notebooksService } from "@/service";
 import { ssr } from "../config";
 import { parseLastNotebookId, parsePinnedNotebookIds } from "./[id]/_components/settings/NotebookSettingsStore";

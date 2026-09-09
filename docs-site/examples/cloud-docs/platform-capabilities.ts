@@ -1,11 +1,11 @@
 import { ok } from "@k2b/stdlib";
-import { defineCapabilities } from "@valentinkolb/cloud";
-import { cloudResourceClipboard } from "@valentinkolb/cloud/browser/resource-clipboard";
-import { openCloudResourcePicker } from "@valentinkolb/cloud/browser/resource-picker";
-import { invokeCapabilityWithDataSchema as invokeCapabilityInBrowser } from "@valentinkolb/cloud/capabilities";
-import { type CapabilityCaller, invokeCapabilityWithDataSchema as invokeCapabilityOnServer } from "@valentinkolb/cloud/capabilities/server";
-import { assertCapabilityManifestEvolution, compileCapabilityManifest } from "@valentinkolb/cloud/capabilities/testing";
-import { type AccessSubject, UniversalSearchDataSchema, UniversalSearchInputSchema } from "@valentinkolb/cloud/contracts";
+import { defineCapabilities } from "@k2b/cloud";
+import { cloudResourceClipboard } from "@k2b/cloud/browser/resource-clipboard";
+import { openCloudResourcePicker } from "@k2b/cloud/browser/resource-picker";
+import { invokeCapabilityWithDataSchema as invokeCapabilityInBrowser } from "@k2b/cloud/capabilities";
+import { type CapabilityCaller, invokeCapabilityWithDataSchema as invokeCapabilityOnServer } from "@k2b/cloud/capabilities/server";
+import { assertCapabilityManifestEvolution, compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
+import { type AccessSubject, UniversalSearchDataSchema, UniversalSearchInputSchema } from "@k2b/cloud/contracts";
 import { z } from "zod";
 
 export const inventoryResourceClipboard = cloudResourceClipboard;

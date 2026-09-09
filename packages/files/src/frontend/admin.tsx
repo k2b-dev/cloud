@@ -1,6 +1,6 @@
-import { type AuthContext, getLocale } from "@valentinkolb/cloud/server";
-import { coreSettings } from "@valentinkolb/cloud/services";
-import { AdminLayout } from "@valentinkolb/cloud/ssr";
+import { type AuthContext, getLocale } from "@k2b/cloud/server";
+import { coreSettings } from "@k2b/cloud/services";
+import { AdminLayout } from "@k2b/cloud/ssr";
 import { ssr } from "../config";
 import FilesSettingsForm from "./_components/FilesSettingsForm.island";
 import { filesMessages } from "./messages";

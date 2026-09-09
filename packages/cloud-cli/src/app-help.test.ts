@@ -1,18 +1,18 @@
 import { describe, expect, test } from "bun:test";
-import type { CloudCliContext, CloudCliModule } from "@valentinkolb/cloud/cli";
-import accountsCliModule from "@valentinkolb/cloud-app-accounts/cli";
-import apiDocsCliModule from "@valentinkolb/cloud-app-api-docs/cli";
-import contactsCliModule from "@valentinkolb/cloud-app-contacts/cli";
-import faqCliModule from "@valentinkolb/cloud-app-faq/cli";
-import gridsCliModule from "@valentinkolb/cloud-app-grids/cli";
-import ipaHostsCliModule from "@valentinkolb/cloud-app-ipa-hosts/cli";
-import mailCliModule from "@valentinkolb/cloud-app-mail/cli";
-import notebooksCliModule from "@valentinkolb/cloud-app-notebooks/cli";
-import oauthCliModule from "@valentinkolb/cloud-app-oauth/cli";
-import pulseCliModule from "@valentinkolb/cloud-app-pulse/cli";
-import spacesCliModule from "@valentinkolb/cloud-app-spaces/cli";
-import toolsCliModule from "@valentinkolb/cloud-app-tools/cli";
-import venueCliModule from "@valentinkolb/cloud-app-venue/cli";
+import type { CloudCliContext, CloudCliModule } from "@k2b/cloud/cli";
+import accountsCliModule from "@k2b/cloud-app-accounts/cli";
+import apiDocsCliModule from "@k2b/cloud-app-api-docs/cli";
+import contactsCliModule from "@k2b/cloud-app-contacts/cli";
+import faqCliModule from "@k2b/cloud-app-faq/cli";
+import gridsCliModule from "@k2b/cloud-app-grids/cli";
+import ipaHostsCliModule from "@k2b/cloud-app-ipa-hosts/cli";
+import mailCliModule from "@k2b/cloud-app-mail/cli";
+import notebooksCliModule from "@k2b/cloud-app-notebooks/cli";
+import oauthCliModule from "@k2b/cloud-app-oauth/cli";
+import pulseCliModule from "@k2b/cloud-app-pulse/cli";
+import spacesCliModule from "@k2b/cloud-app-spaces/cli";
+import toolsCliModule from "@k2b/cloud-app-tools/cli";
+import venueCliModule from "@k2b/cloud-app-venue/cli";
 
 const appModules = [
   accountsCliModule,

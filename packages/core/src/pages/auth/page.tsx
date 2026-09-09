@@ -1,9 +1,9 @@
 import { ButtonLink, LocaleProvider, NoticeCard } from "@k2b/ui";
-import { listLegalLinks } from "@valentinkolb/cloud";
-import { type AccountCategory, resolveAccountCategoryLogin } from "@valentinkolb/cloud/contracts";
-import { getLocale } from "@valentinkolb/cloud/server";
-import { appApproval, coreSettings, readAccountCategoryPolicy } from "@valentinkolb/cloud/services";
-import { normalizeRedirectTo, readLoginMethodFromCookieHeader, readThemeFromCookieHeader } from "@valentinkolb/cloud/shared";
+import { listLegalLinks } from "@k2b/cloud";
+import { type AccountCategory, resolveAccountCategoryLogin } from "@k2b/cloud/contracts";
+import { getLocale } from "@k2b/cloud/server";
+import { appApproval, coreSettings, readAccountCategoryPolicy } from "@k2b/cloud/services";
+import { normalizeRedirectTo, readLoginMethodFromCookieHeader, readThemeFromCookieHeader } from "@k2b/cloud/shared";
 import { ssr } from "../../config";
 import { useAppSignIn } from "../app-approval/availability";
 import { appApprovalMessages } from "../app-approval/messages";

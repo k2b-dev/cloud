@@ -1,7 +1,7 @@
-import { cloudMcpResourceUri, publicCloudOrigin } from "@valentinkolb/cloud/api";
-import { type AuthContext, getLocale } from "@valentinkolb/cloud/server";
-import { coreSettings, readAccountCategoryPolicy, serviceAccountCredentials } from "@valentinkolb/cloud/services";
-import { Layout } from "@valentinkolb/cloud/ssr";
+import { cloudMcpResourceUri, publicCloudOrigin } from "@k2b/cloud/api";
+import { type AuthContext, getLocale } from "@k2b/cloud/server";
+import { coreSettings, readAccountCategoryPolicy, serviceAccountCredentials } from "@k2b/cloud/services";
+import { Layout } from "@k2b/cloud/ssr";
 import { ssr } from "../../config";
 import AccountHub, { AccountPageHeader, AccountProfileActions } from "./AccountHub";
 import ApiKeysSettings from "./ApiKeysSettings.island";
@@ -46,7 +46,7 @@ export default ssr<AuthContext>(async (c) => {
               </p>
               <a
                 class="w-fit text-link hover:underline"
-                href="https://github.com/ValentinKolb/cloud/blob/main/docs-site/docs/en/platform/mcp.md"
+                href="https://github.com/k2b-dev/cloud/blob/main/docs-site/docs/en/platform/mcp.md"
               >
                 {t.mcpGuide}
               </a>

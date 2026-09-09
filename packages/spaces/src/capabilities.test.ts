@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
-import { compileCapabilityManifest } from "@valentinkolb/cloud/capabilities/testing";
+import { compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 import {
   CAPABILITY_MAX_RESULT_BYTES,
   type CapabilityActionDefinition,
@@ -8,8 +8,8 @@ import {
   type CapabilityExecutionContext,
   capabilityResultSchema,
   type User,
-} from "@valentinkolb/cloud/contracts";
-import { audit } from "@valentinkolb/cloud/services";
+} from "@k2b/cloud/contracts";
+import { audit } from "@k2b/cloud/services";
 import { decodeSpacesCapabilityCursor, spacesCapabilities } from "./capabilities";
 import {
   CalendarDestinationListInputSchema,

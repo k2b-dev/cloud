@@ -1,6 +1,6 @@
-import { logger } from "@valentinkolb/cloud/services";
-import type { WorkflowDependency } from "@valentinkolb/cloud/workflows";
-import { wakeWorkflowRunsWaitingOn } from "@valentinkolb/cloud/workflows/store";
+import { logger } from "@k2b/cloud/services";
+import type { WorkflowDependency } from "@k2b/cloud/workflows";
+import { wakeWorkflowRunsWaitingOn } from "@k2b/cloud/workflows/store";
 
 const log = logger("mail:workflow-dependencies");
 const MAIL_WORKFLOW_DEPENDENCY_RECHECK_MS = 30_000;

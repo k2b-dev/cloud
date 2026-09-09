@@ -1,4 +1,4 @@
-import { v } from "@valentinkolb/cloud/server";
+import { v } from "@k2b/cloud/server";
 import { type Context, Hono } from "hono";
 import { z } from "zod";
 import { type MailRequestContext, mailboxes } from "../service";

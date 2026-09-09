@@ -1,7 +1,7 @@
-import { listAppsDetailed } from "@valentinkolb/cloud";
-import type { User } from "@valentinkolb/cloud/contracts";
-import type { AuthContext } from "@valentinkolb/cloud/server";
-import { listGatewayRouteSnapshots, logging, serviceAccountCredentials, serviceAccounts } from "@valentinkolb/cloud/services";
+import { listAppsDetailed } from "@k2b/cloud";
+import type { User } from "@k2b/cloud/contracts";
+import type { AuthContext } from "@k2b/cloud/server";
+import { listGatewayRouteSnapshots, logging, serviceAccountCredentials, serviceAccounts } from "@k2b/cloud/services";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { getGridsOperationalSnapshot, listAppSloWindows } from "../../grids-operational-health";
 import { listRegisteredAppStatus } from "../../registered-apps";

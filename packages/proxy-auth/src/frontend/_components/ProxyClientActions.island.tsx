@@ -2,7 +2,7 @@ import { refreshCurrentPath } from "@k2b/ssr/nav";
 import { clipboard } from "@k2b/stdlib/browser";
 import { mutation as mutations } from "@k2b/stdlib/solid";
 import { NoticeCard, Button, Dropdown, prompts, Tag, TextInput, toast, useLocale } from "@k2b/ui";
-import { EntitySearch, type EntitySearchPrincipal } from "@valentinkolb/cloud/account/ui";
+import { EntitySearch, type EntitySearchPrincipal } from "@k2b/cloud/account/ui";
 import { createSignal, For, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { ProxyAuthAllowedGroup, ProxyAuthClient, UpdateProxyAuthClient } from "@/contracts";

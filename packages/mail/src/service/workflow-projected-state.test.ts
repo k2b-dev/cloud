@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import type { WorkflowBoundPlan, WorkflowStepOutcome } from "@valentinkolb/cloud/workflows";
-import type { WorkflowActionStep, WorkflowExecuteActionContext } from "@valentinkolb/cloud/workflows/runtime";
+import type { WorkflowBoundPlan, WorkflowStepOutcome } from "@k2b/cloud/workflows";
+import type { WorkflowActionStep, WorkflowExecuteActionContext } from "@k2b/cloud/workflows/runtime";
 import type { FrozenMailWorkflowSource } from "./workflow-data";
 import {
   applyMailConversationTransition,

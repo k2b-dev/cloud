@@ -9,9 +9,9 @@
  * ports, and the assertions are about rows.
  */
 import { beforeAll, describe, expect } from "bun:test";
-import type { WorkflowBoundPlan, WorkflowIrStep, WorkflowJsonValue } from "@valentinkolb/cloud/workflows";
-import { hashWorkflowJson } from "@valentinkolb/cloud/workflows/language";
-import { createWorkflowRun } from "@valentinkolb/cloud/workflows/store";
+import type { WorkflowBoundPlan, WorkflowIrStep, WorkflowJsonValue } from "@k2b/cloud/workflows";
+import { hashWorkflowJson } from "@k2b/cloud/workflows/language";
+import { createWorkflowRun } from "@k2b/cloud/workflows/store";
 import { sql } from "bun";
 import { postgresTest, testShortId as shortId, testUuid as uuid } from "../integration-test-utils";
 import { migrate } from "../migrate";

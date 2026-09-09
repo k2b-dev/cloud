@@ -1,4 +1,4 @@
-import { defineHelp } from "@valentinkolb/cloud/server";
+import { defineHelp } from "@k2b/cloud/server";
 import guidanceDe from "./documents/de/assistant-guidance.help.md" with { type: "text" };
 import overviewDe from "./documents/de/assistant-overview.help.md" with { type: "text" };
 import workflowDe from "./documents/de/assistant-workflow.help.md" with { type: "text" };

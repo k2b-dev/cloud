@@ -1,5 +1,5 @@
-import { lazySync } from "@valentinkolb/cloud";
-import { latestTopicCursor, logger } from "@valentinkolb/cloud/services";
+import { lazySync } from "@k2b/cloud";
+import { latestTopicCursor, logger } from "@k2b/cloud/services";
 import { sql } from "bun";
 import { type PublicSpaceEvent, type SpaceServiceEvent, type SpaceServiceEventData, toPublicSpaceEvent } from "../live-events";
 

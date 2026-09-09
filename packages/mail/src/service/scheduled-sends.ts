@@ -1,5 +1,5 @@
 import { err, fail, ok, type Result } from "@k2b/stdlib";
-import { audit, logger } from "@valentinkolb/cloud/services";
+import { audit, logger } from "@k2b/cloud/services";
 import { sql } from "bun";
 import { z } from "zod";
 import type {

@@ -10,7 +10,7 @@ import {
   WidgetStatus,
   type WidgetStatusTone,
 } from "@k2b/ui";
-import { type DashboardWidget, listLegalLinks, listWidgets } from "@valentinkolb/cloud";
+import { type DashboardWidget, listLegalLinks, listWidgets } from "@k2b/cloud";
 import {
   hasRole,
   type Role,
@@ -19,11 +19,11 @@ import {
   type WidgetBlock,
   type WidgetResponse,
   WidgetResponseSchema,
-} from "@valentinkolb/cloud/contracts";
-import type { AuthContext } from "@valentinkolb/cloud/server";
-import { expectUserBackedActor, getLocale } from "@valentinkolb/cloud/server";
-import { get, logger } from "@valentinkolb/cloud/services";
-import { getLocalizedRuntimeContext, Layout } from "@valentinkolb/cloud/ssr";
+} from "@k2b/cloud/contracts";
+import type { AuthContext } from "@k2b/cloud/server";
+import { expectUserBackedActor, getLocale } from "@k2b/cloud/server";
+import { get, logger } from "@k2b/cloud/services";
+import { getLocalizedRuntimeContext, Layout } from "@k2b/cloud/ssr";
 import type { JSX } from "solid-js";
 import { ssr } from "../config";
 import { dashboardSettingsService } from "../service";

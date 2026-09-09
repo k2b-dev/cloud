@@ -1,4 +1,4 @@
-import type { AiConversation } from "@valentinkolb/cloud/ai";
+import type { AiConversation } from "@k2b/cloud/ai";
 import { assistantMessages } from "./messages";
 
 export const conversationStatusPresentation = (conversation: AiConversation, locale = "en") => {

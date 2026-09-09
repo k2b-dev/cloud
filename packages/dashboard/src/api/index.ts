@@ -1,5 +1,5 @@
 import { err, fail, ok, type Result } from "@k2b/stdlib";
-import { type AuthContext, auth, getUserBackedActor, rateLimit, respond, v } from "@valentinkolb/cloud/server";
+import { type AuthContext, auth, getUserBackedActor, rateLimit, respond, v } from "@k2b/cloud/server";
 import { type Context, Hono } from "hono";
 import { z } from "zod";
 import { dashboardSettingsService } from "../service";

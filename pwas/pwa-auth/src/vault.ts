@@ -1,5 +1,5 @@
 import { localStore } from "@k2b/stdlib/solid";
-import { type AppVaultMethod, type AppVaultSession, appApproval } from "@valentinkolb/cloud/browser/app-approval";
+import { type AppVaultMethod, type AppVaultSession, appApproval } from "@k2b/cloud/browser/app-approval";
 import { createMemo, createSignal, onCleanup, onMount } from "solid-js";
 import { closeDialogs } from "./dialog";
 import {

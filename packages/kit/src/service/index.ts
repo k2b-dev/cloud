@@ -1,30 +1,26 @@
-import { sql } from "bun";
-import { crypto } from "@k2b/stdlib";
 import {
+  type AccessSubject,
+  type AuthContext,
   buildAccessPrincipalCondition,
   createAccess,
   deleteAccess,
   getAccess,
   hasPermission,
+  type PermissionLevel,
+  type Principal,
   resolveDisplayNames,
   updateAccess,
   userFromActor,
-  type AccessSubject,
-  type AuthContext,
-  type PermissionLevel,
-  type Principal,
-} from "@valentinkolb/cloud/server";
+} from "@k2b/cloud/server";
+import { crypto } from "@k2b/stdlib";
+import { sql } from "bun";
 import { type Bundle, type Project, type ProjectInput, PublicId } from "../contracts";
-import { SourceChanges, SourceReadInput, MetadataInput, mergeSource, sourceManifest, SOURCE_WINDOW } from "../source";
 import { validateProject } from "../project";
-export class ProjectError extends Error {
-  constructor(
-    public status: 400 | 403 | 404 | 409,
-    public code: string,
-  ) {
-    super(code);
-  }
-}
+import { MetadataInput, mergeSource, SOURCE_WINDOW, SourceChanges, SourceReadInput, sourceManifest } from "../source";
+
+export { ProjectError } from "../errors";
+
+import { ProjectError } from "../errors";
 export type Identity = {
   actor: AuthContext["Variables"]["actor"];
   accessSubject: AccessSubject;
@@ -104,7 +100,7 @@ async function bundle(db: Db, row: Row, level: PermissionLevel): Promise<Bundle>
 async function writeFiles(db: Db, id: string, input: ProjectInput) {
   for (const f of input.files) await db`INSERT INTO kit.project_files(project_id,path,content) VALUES(${id}::uuid,${f.path},${f.content})`;
 }
-export const projects = {
+export const kitService = {
   async list(identity: Identity, page = 1, search = "") {
     const match = predicate(identity);
     const rows = await sql<
@@ -155,11 +151,11 @@ export const projects = {
     });
   },
   async manifest(id: string, identity: Identity) {
-    return sourceManifest(await projects.get(id, identity, "read"));
+    return sourceManifest(await kitService.get(id, identity, "read"));
   },
   async readSource(input: unknown, identity: Identity) {
     const { id, path, expectedRevision, offset } = SourceReadInput.parse(input);
-    const bundle = await projects.get(id, identity);
+    const bundle = await kitService.get(id, identity);
     if (bundle.revision !== expectedRevision) throw new ProjectError(409, "REVISION_CONFLICT");
     const file = bundle.files.find((f) => f.path === path);
     if (!file) throw new ProjectError(404, "NOT_FOUND");
@@ -192,9 +188,9 @@ export const projects = {
   },
   async metadata(id: string, input: unknown, identity: Identity) {
     const { expectedRevision, ...patch } = MetadataInput.parse(input);
-    const current = await projects.get(id, identity, "admin");
+    const current = await kitService.get(id, identity, "admin");
     return sourceManifest(
-      await projects.save(
+      await kitService.save(
         id,
         {
           name: current.name,
@@ -253,3 +249,5 @@ export const projects = {
     });
   },
 };
+
+export { kitService as projects };

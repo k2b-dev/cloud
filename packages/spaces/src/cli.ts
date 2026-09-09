@@ -12,8 +12,8 @@ import {
   flag,
   printRows as printJsonOrTable,
   printStructured,
-} from "@valentinkolb/cloud/cli";
-import type { AccessEntry, PermissionLevel, Principal } from "@valentinkolb/cloud/contracts";
+} from "@k2b/cloud/cli";
+import type { AccessEntry, PermissionLevel, Principal } from "@k2b/cloud/contracts";
 import type {
   CalendarItem,
   ItemListResult,

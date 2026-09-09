@@ -1,4 +1,4 @@
-import { type AuthContext, middleware, auth } from "@valentinkolb/cloud/server";
+import { type AuthContext, middleware, auth } from "@k2b/cloud/server";
 import { Hono } from "hono";
 import { app, ssr } from "./config";
 import pageRoutes from "./frontend";

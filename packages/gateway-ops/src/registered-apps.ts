@@ -1,6 +1,6 @@
-import type { AppRegistryDetail } from "@valentinkolb/cloud";
-import type { AppRegistryEntry } from "@valentinkolb/cloud/contracts";
-import { err, fail, ok, type Result } from "@valentinkolb/cloud/server";
+import type { AppRegistryDetail } from "@k2b/cloud";
+import type { AppRegistryEntry } from "@k2b/cloud/contracts";
+import { err, fail, ok, type Result } from "@k2b/cloud/server";
 import { sql } from "bun";
 
 type DbRegisteredAppRow = {

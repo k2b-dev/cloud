@@ -1,4 +1,4 @@
-import { rateLimit, v } from "@valentinkolb/cloud/server";
+import { rateLimit, v } from "@k2b/cloud/server";
 import { type Context, Hono } from "hono";
 import { z } from "zod";
 import { ResourceShortIdSchema, remoteContentRuleInputSchema } from "../contracts";

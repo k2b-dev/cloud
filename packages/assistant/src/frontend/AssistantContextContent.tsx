@@ -9,14 +9,14 @@ import {
   MarkdownView,
   prompts,ScrollArea,
 } from "@k2b/ui";
-import type { AiProjectFile } from "@valentinkolb/cloud/ai";
+import type { AiProjectFile } from "@k2b/cloud/ai";
 import {
   type CapabilityCatalogClientResult,
   type CapabilityClientResult,
   invokeCapability,
   listCapabilityCatalog,
-} from "@valentinkolb/cloud/capabilities";
-import { type CloudResourceRef, cloudResourceRefAppId, resolveCapabilityResourceReader } from "@valentinkolb/cloud/contracts";
+} from "@k2b/cloud/capabilities";
+import { type CloudResourceRef, cloudResourceRefAppId, resolveCapabilityResourceReader } from "@k2b/cloud/contracts";
 import { For, type JSX, Show } from "solid-js";
 import { assistantBrowserCopy, assistantBrowserText, useAssistantText } from "./ui-copy";
 

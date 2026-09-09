@@ -1,5 +1,5 @@
 /**
- * Server-only. Kept out of `@valentinkolb/cloud/workflows`, which islands
+ * Server-only. Kept out of `@k2b/cloud/workflows`, which islands
  * import for its contracts — pulling this in would drag Bun's `sql` into a
  * browser bundle.
  */

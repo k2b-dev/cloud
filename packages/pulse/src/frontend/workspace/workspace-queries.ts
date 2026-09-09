@@ -1,5 +1,5 @@
 import { query } from "@k2b/stdlib/solid";
-import type { ResourceApiKey } from "@valentinkolb/cloud/access/ui";
+import type { ResourceApiKey } from "@k2b/cloud/access/ui";
 import { type Accessor, createMemo } from "solid-js";
 import type {
   MetricQueryPoint,

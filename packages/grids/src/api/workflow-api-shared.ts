@@ -1,11 +1,11 @@
-import type { AuthContext } from "@valentinkolb/cloud/server";
+import type { AuthContext } from "@k2b/cloud/server";
 import {
   buildWorkflowManifestCompletions,
   type WorkflowInvocationReceipt,
   workflowCompletionContext,
   workflowCompletionItem,
-} from "@valentinkolb/cloud/workflows";
-import { compileWorkflow } from "@valentinkolb/cloud/workflows/language";
+} from "@k2b/cloud/workflows";
+import { compileWorkflow } from "@k2b/cloud/workflows/language";
 import type { Context } from "hono";
 import { z } from "zod";
 import type { DocumentSummaryList } from "../contracts";

@@ -1,8 +1,8 @@
 import { dates } from "@k2b/stdlib";
 import { ButtonLink, CodeDisplay, DataTable, type DataTableColumn, Disclosure, Paper, Placeholder, StatusBadge, Tag } from "@k2b/ui";
-import { accountCategory, accountCategoryLabel } from "@valentinkolb/cloud/contracts";
-import type { AuthContext } from "@valentinkolb/cloud/server";
-import { expectUserBackedActor, getLocale } from "@valentinkolb/cloud/server";
+import { accountCategory, accountCategoryLabel } from "@k2b/cloud/contracts";
+import type { AuthContext } from "@k2b/cloud/server";
+import { expectUserBackedActor, getLocale } from "@k2b/cloud/server";
 import {
   accountsAppService as accountsService,
   appApproval,
@@ -11,8 +11,8 @@ import {
   readAccountCategoryPolicy,
   type ServiceAccountCredentialOverview,
   serviceAccountCredentials,
-} from "@valentinkolb/cloud/services";
-import { Layout } from "@valentinkolb/cloud/ssr";
+} from "@k2b/cloud/services";
+import { Layout } from "@k2b/cloud/ssr";
 import type { JSX } from "solid-js/jsx-runtime";
 import { z } from "zod";
 import type { BaseGroup } from "@/contracts";

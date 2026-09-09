@@ -1,4 +1,4 @@
-import type { AuthContext } from "@valentinkolb/cloud/server";
+import type { AuthContext } from "@k2b/cloud/server";
 import type { Context } from "hono";
 import { syncOpsCredentials } from "../sync/service";
 import { jobsObservabilityService } from "./service";

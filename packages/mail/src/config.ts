@@ -1,4 +1,4 @@
-import { defineApp } from "@valentinkolb/cloud";
+import { defineApp } from "@k2b/cloud";
 import { MAIL_APP_ID, MAILBOX_RESOURCE_TYPE } from "./app-identity";
 import { NOTIFICATIONS } from "./notifications";
 

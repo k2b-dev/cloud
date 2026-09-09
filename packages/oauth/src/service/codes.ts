@@ -1,4 +1,4 @@
-import { toPgTextArray } from "@valentinkolb/cloud/services";
+import { toPgTextArray } from "@k2b/cloud/services";
 import { sql } from "bun";
 import type { OAuthClient, OAuthScope } from "@/contracts";
 import * as clients from "./clients";

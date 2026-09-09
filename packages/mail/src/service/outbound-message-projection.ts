@@ -1,4 +1,4 @@
-import { toPgTextArray } from "@valentinkolb/cloud/services";
+import { toPgTextArray } from "@k2b/cloud/services";
 import { sql } from "bun";
 import { withShortIdDb } from "../lib/short-id";
 import { normalizeEmailAddress } from "./address-normalization";

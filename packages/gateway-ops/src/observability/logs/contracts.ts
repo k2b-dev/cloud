@@ -18,4 +18,4 @@ export {
   PaginationQuerySchema,
   PaginationResponseSchema,
   parsePagination,
-} from "@valentinkolb/cloud/contracts";
+} from "@k2b/cloud/contracts";

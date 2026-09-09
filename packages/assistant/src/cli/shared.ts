@@ -1,4 +1,4 @@
-import type { CloudCliContext } from "@valentinkolb/cloud/cli";
+import type { CloudCliContext } from "@k2b/cloud/cli";
 
 export const AI_API = "/api/ai";
 const ASSISTANT_API = "/api/assistant";

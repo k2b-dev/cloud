@@ -522,7 +522,7 @@ describe("@k2b/ui portable chat family", () => {
     for (const file of sources) {
       const source = await Bun.file(resolve(import.meta.dir, file)).text();
       expect(source, file).not.toMatch(forbidden);
-      expect(source, file).not.toMatch(/from\s+"(?:@valentinkolb\/cloud|.*\/cloud\/)/);
+      expect(source, file).not.toMatch(/from\s+"(?:@k2b\/cloud|.*\/cloud\/)/);
       for (const match of source.matchAll(/from\s+"(\.[^"]+)"/g)) {
         expect(match[1], `${file} imports ${match[1]}`).not.toContain("../../");
       }

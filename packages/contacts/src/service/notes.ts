@@ -1,5 +1,5 @@
 import { err, fail, ok, type PageParams, type Paginated, paginate, type Result } from "@k2b/stdlib";
-import { capabilityIdempotencyConflict } from "@valentinkolb/cloud/contracts";
+import { capabilityIdempotencyConflict } from "@k2b/cloud/contracts";
 import { sql } from "bun";
 import { newShortId, withShortId, withShortIdRetry } from "../lib/short-id";
 import { isUuid, type SqlExecutor } from "./shared";

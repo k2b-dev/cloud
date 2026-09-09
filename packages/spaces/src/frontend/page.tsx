@@ -1,7 +1,7 @@
-import type { AuthContext } from "@valentinkolb/cloud/server";
-import { expectUserBackedActor, getDateConfig, getLocale } from "@valentinkolb/cloud/server";
-import { logger } from "@valentinkolb/cloud/services";
-import { Layout } from "@valentinkolb/cloud/ssr";
+import type { AuthContext } from "@k2b/cloud/server";
+import { expectUserBackedActor, getDateConfig, getLocale } from "@k2b/cloud/server";
+import { logger } from "@k2b/cloud/services";
+import { Layout } from "@k2b/cloud/ssr";
 import { spacesService } from "@/service";
 import { spacesPublicResources } from "@/service/public-resources";
 import { ssr } from "../config";

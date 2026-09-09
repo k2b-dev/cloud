@@ -11,8 +11,8 @@ import {
   requiresAuth,
   respond,
   v,
-} from "@valentinkolb/cloud/server";
-import { coreSettings } from "@valentinkolb/cloud/services";
+} from "@k2b/cloud/server";
+import { coreSettings } from "@k2b/cloud/services";
 import { type Context, Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { describeRoute } from "hono-openapi";

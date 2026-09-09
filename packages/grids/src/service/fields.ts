@@ -1,5 +1,5 @@
 import { err, fail, ok, type Result } from "@k2b/stdlib";
-import { isUniqueViolation, logger, toPgUuidArray } from "@valentinkolb/cloud/services";
+import { isUniqueViolation, logger, toPgUuidArray } from "@k2b/cloud/services";
 import { sql } from "bun";
 import { FieldColumnSpecSchema, RecordDisplayConfigSchema, ViewUiSettingsSchema } from "../contracts";
 import { isKnownFieldType } from "../field-types";

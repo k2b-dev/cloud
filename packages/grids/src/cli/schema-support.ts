@@ -1,5 +1,5 @@
-import type { CloudCliContext } from "@valentinkolb/cloud/cli";
-import { printStructured } from "@valentinkolb/cloud/cli";
+import type { CloudCliContext } from "@k2b/cloud/cli";
+import { printStructured } from "@k2b/cloud/cli";
 import type { PublicField as Field, PublicTable as Table } from "../api/public-dto";
 import {
   COMPUTED_FIELD_TYPES,

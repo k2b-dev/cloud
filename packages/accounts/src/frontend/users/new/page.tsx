@@ -1,14 +1,14 @@
 import { NoticeCard, Paper } from "@k2b/ui";
-import type { AuthContext } from "@valentinkolb/cloud/server";
-import { expectUserBackedActor, getLocale } from "@valentinkolb/cloud/server";
-import { accountsAppService as accountsService, coreSettings } from "@valentinkolb/cloud/services";
-import { Layout } from "@valentinkolb/cloud/ssr";
+import type { AuthContext } from "@k2b/cloud/server";
+import { expectUserBackedActor, getLocale } from "@k2b/cloud/server";
+import { accountsAppService as accountsService, coreSettings } from "@k2b/cloud/services";
+import { Layout } from "@k2b/cloud/ssr";
 import { ssr } from "../../../config";
 import AccountsWorkspace from "../../AccountsWorkspace";
 import { accountsMessages } from "../../messages";
 import DenyRequest from "../DenyRequest.island";
 import CreateUserForm from "./CreateUserForm.island";
-import { readAccountCategoryPolicy } from "@valentinkolb/cloud/services";
+import { readAccountCategoryPolicy } from "@k2b/cloud/services";
 
 type AccountRequest = {
   id: string;

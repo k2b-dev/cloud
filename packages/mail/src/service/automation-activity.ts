@@ -1,6 +1,6 @@
-import type { TraceSpan } from "@valentinkolb/cloud/services";
-import type { WorkflowRunState } from "@valentinkolb/cloud/workflows";
-import type { WorkflowRunSummary } from "@valentinkolb/cloud/workflows/store";
+import type { TraceSpan } from "@k2b/cloud/services";
+import type { WorkflowRunState } from "@k2b/cloud/workflows";
+import type { WorkflowRunSummary } from "@k2b/cloud/workflows/store";
 import { i18n } from "@k2b/stdlib";
 
 const activityMessages = i18n.define({

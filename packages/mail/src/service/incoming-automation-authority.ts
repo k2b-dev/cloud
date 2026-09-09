@@ -1,4 +1,4 @@
-import type { MandatePolicyV1 } from "@valentinkolb/cloud/services";
+import type { MandatePolicyV1 } from "@k2b/cloud/services";
 import type { MailAutomationStep } from "../contracts";
 
 const visitSteps = (steps: MailAutomationStep[], visit: (step: MailAutomationStep) => void): void => {

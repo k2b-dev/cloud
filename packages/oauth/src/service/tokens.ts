@@ -1,5 +1,5 @@
-import { accounts, isAccountCategoryAllowed, serviceAccounts, toPgTextArray } from "@valentinkolb/cloud/services";
-import { isAccountExpired } from "@valentinkolb/cloud/services/account-model";
+import { accounts, isAccountCategoryAllowed, serviceAccounts, toPgTextArray } from "@k2b/cloud/services";
+import { isAccountExpired } from "@k2b/cloud/services/account-model";
 import { sql } from "bun";
 import * as jose from "jose";
 import { DYNAMIC_CLIENT_SCOPES, type OAuthClient, type OAuthScope } from "@/contracts";

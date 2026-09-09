@@ -1,20 +1,27 @@
-import { workerBuildOptions } from "./build-options";
 import { ProjectValidationError } from "../errors";
 import { resolveImport, validateProject } from "../project";
+import { workerBuildOptions } from "./build-options";
+
 let runtime: Promise<string> | undefined;
 export function runtimeSource() {
-  if (process.env.NODE_ENV === "production") return (runtime ??= Bun.file(new URL("./kit-worker.js", import.meta.url)).text());
-  return (runtime ??= Bun.build({
+  if (runtime) return runtime;
+  if (process.env.NODE_ENV === "production") {
+    runtime = Bun.file(new URL("./kit-worker.js", import.meta.url)).text();
+    return runtime;
+  }
+  runtime = Bun.build({
     entrypoints: [`${import.meta.dir}/worker.ts`],
     ...workerBuildOptions,
   }).then(async (b) => {
     if (!b.success) throw new Error(b.logs.join("\n"));
     return b.outputs[0]!.text();
-  }));
+  });
+  return runtime;
 }
 export async function compile(input: unknown, entryPath: string) {
   const { project, entries } = validateProject(input);
-  if (!entryPath.endsWith(".script.js") || !entries.some((e) => e.path === entryPath)) throw new ProjectValidationError("entry", "", entryPath);
+  if (!entryPath.endsWith(".script.js") || !entries.some((e) => e.path === entryPath))
+    throw new ProjectValidationError("entry", "", entryPath);
   const files = new Map(project.files.map((f) => [f.path, f.content]));
   const build = await Bun.build({
     entrypoints: ["__kit_entry__"],

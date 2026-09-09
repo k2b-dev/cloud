@@ -1,5 +1,5 @@
 import { writeFile } from "node:fs/promises";
-import { command, confirmFlag, flag } from "@valentinkolb/cloud/cli";
+import { command, confirmFlag, flag } from "@k2b/cloud/cli";
 import type { CustomAppCapabilities, CustomAppDefinition, CustomAppDiagnostic } from "../custom-apps/contracts";
 import type { CustomAppPlan } from "../service/custom-apps";
 import { baseArgs, baseFlag, resolveBaseFromCommand, resolveNamedResource } from "./resources";

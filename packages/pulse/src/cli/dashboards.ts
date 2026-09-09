@@ -1,4 +1,4 @@
-import { arg, type CloudCliContext, command, confirmFlag, flag, readCliInput } from "@valentinkolb/cloud/cli";
+import { arg, type CloudCliContext, command, confirmFlag, flag, readCliInput } from "@k2b/cloud/cli";
 import type { DashboardRefreshInterval, PulseDashboard, PulseDashboardDslCompileResult, PulseDashboardSnapshot } from "../contracts";
 import { listDashboards, requireRestArg, resolveBaseFromCommand, resolveDashboard } from "./context";
 import { baseFlag, DASHBOARD_DSL_INPUT, publicDisplayFlags } from "./flags";

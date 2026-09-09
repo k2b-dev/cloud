@@ -1,4 +1,4 @@
-import { toPgUuidArray } from "@valentinkolb/cloud/services";
+import { toPgUuidArray } from "@k2b/cloud/services";
 import { type SQL, sql } from "bun";
 import type {
   Document,

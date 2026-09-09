@@ -7,8 +7,8 @@ import {
   parseAiSkillMarkdown,
   serializeAiSkillMarkdown,
   validateAiSkillReferences,
-} from "@valentinkolb/cloud/ai/browser";
-import type { AiSkill } from "@valentinkolb/cloud/ai";
+} from "@k2b/cloud/ai/browser";
+import type { AiSkill } from "@k2b/cloud/ai";
 import { assistantBrowserCopy, assistantBrowserText } from "./ui-copy";
 
 export type AiSkillImport = AiSkillDocument & { references: AiSkillReferenceInput[] };

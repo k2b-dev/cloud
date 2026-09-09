@@ -1,4 +1,4 @@
-import type { MutationResult } from "@valentinkolb/cloud/contracts";
+import type { MutationResult } from "@k2b/cloud/contracts";
 import { sql } from "bun";
 import { noteFavoriteChanged } from "./workspace-events";
 

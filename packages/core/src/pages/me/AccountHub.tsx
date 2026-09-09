@@ -1,6 +1,6 @@
 import { Avatar, useLocale } from "@k2b/ui";
-import type { User } from "@valentinkolb/cloud/contracts";
-import { accountCategoryLabel } from "@valentinkolb/cloud/contracts";
+import type { User } from "@k2b/cloud/contracts";
+import { accountCategoryLabel } from "@k2b/cloud/contracts";
 import type { JSXElement } from "solid-js";
 import { accountMessages } from "./messages";
 import ProfileActions from "./ProfileActions.island";

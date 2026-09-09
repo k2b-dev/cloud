@@ -1,4 +1,4 @@
-import { defineHelp } from "@valentinkolb/cloud/server";
+import { defineHelp } from "@k2b/cloud/server";
 import sharingDe from "./documents/de/spaces-sharing.help.md" with { type: "text" };
 import startDe from "./documents/de/spaces-start.help.md" with { type: "text" };
 import troubleshootDe from "./documents/de/spaces-troubleshooting.help.md" with { type: "text" };

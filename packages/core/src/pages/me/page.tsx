@@ -1,6 +1,6 @@
 import { dates } from "@k2b/stdlib";
 import { ButtonLink, NoticeCard, Placeholder } from "@k2b/ui";
-import { type AuthContext, getLocale } from "@valentinkolb/cloud/server";
+import { type AuthContext, getLocale } from "@k2b/cloud/server";
 import {
   accountsAppService,
   audit,
@@ -9,8 +9,8 @@ import {
   readAccountCategoryPolicy,
   serviceAccountCredentials,
   webauthn,
-} from "@valentinkolb/cloud/services";
-import { Layout } from "@valentinkolb/cloud/ssr";
+} from "@k2b/cloud/services";
+import { Layout } from "@k2b/cloud/ssr";
 import { ssr } from "../../config";
 import AccountHub, { AccountPageHeader, AccountProfileActions } from "./AccountHub";
 import { type AccountMessages, accountMessages } from "./messages";

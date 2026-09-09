@@ -11,7 +11,7 @@ import {
   type StatusTone,
   useLocale,
 } from "@k2b/ui";
-import type { AiMemoryLearningChange, AiMemoryLearningRun } from "@valentinkolb/cloud/ai";
+import type { AiMemoryLearningChange, AiMemoryLearningRun } from "@k2b/cloud/ai";
 import { createMemo, createResource, createSignal, Show } from "solid-js";
 import { assistantApi } from "../api/client";
 import { assistantConversationHref } from "./assistant-navigation";

@@ -1,6 +1,6 @@
 import { beforeAll, describe, expect, test } from "bun:test";
-import type { User } from "@valentinkolb/cloud/contracts";
-import type { AuthContext } from "@valentinkolb/cloud/server";
+import type { User } from "@k2b/cloud/contracts";
+import type { AuthContext } from "@k2b/cloud/server";
 import { sql } from "bun";
 import { Hono, type MiddlewareHandler } from "hono";
 import { insertTestDocumentArtifact } from "../integration-test-utils";

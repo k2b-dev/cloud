@@ -10,17 +10,17 @@ import {
   StatGrid,
   useLocale,
 } from "@k2b/ui";
-import { createPagination } from "@valentinkolb/cloud/contracts";
-import { type AuthContext, getDateConfig, getLocale } from "@valentinkolb/cloud/server";
-import { type TraceListFilter, type TraceRunStats, type TraceSourceGroup, type TraceSpan, trace } from "@valentinkolb/cloud/services";
+import { createPagination } from "@k2b/cloud/contracts";
+import { type AuthContext, getDateConfig, getLocale } from "@k2b/cloud/server";
+import { type TraceListFilter, type TraceRunStats, type TraceSourceGroup, type TraceSpan, trace } from "@k2b/cloud/services";
 import {
   formatDate,
   formatDurationMs as formatMs,
   formatNumber,
   formatPercent,
   formatDateTime as formatTimestamp,
-} from "@valentinkolb/cloud/shared";
-import { AdminLayout } from "@valentinkolb/cloud/ssr";
+} from "@k2b/cloud/shared";
+import { AdminLayout } from "@k2b/cloud/ssr";
 import { ssr } from "../../config";
 import ObservabilityChart from "../../frontend/ObservabilityChart.island";
 import { type GatewayOpsMessages, gatewayOpsMessages } from "../../messages";

@@ -24,7 +24,7 @@ import {
   TextInput,
   Toolbar,
 } from "@k2b/ui";
-import type { WorkflowJsonValue } from "@valentinkolb/cloud/workflows";
+import type { WorkflowJsonValue } from "@k2b/cloud/workflows";
 import { batch, createEffect, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "../../../api/client";
 import type { PublicDslQueryPreviewResponse as DslQueryPreviewResponse } from "../../../api/gql-public";

@@ -1,7 +1,7 @@
 import { ButtonLink } from "@k2b/ui";
-import { type AuthContext, getLocale } from "@valentinkolb/cloud/server";
-import { accounts, appApproval, readAccountCategoryPolicy } from "@valentinkolb/cloud/services";
-import { Layout } from "@valentinkolb/cloud/ssr";
+import { type AuthContext, getLocale } from "@k2b/cloud/server";
+import { accounts, appApproval, readAccountCategoryPolicy } from "@k2b/cloud/services";
+import { Layout } from "@k2b/cloud/ssr";
 import { z } from "zod";
 import { ssr } from "../../config";
 import AccountHub from "../me/AccountHub";

@@ -1,6 +1,6 @@
 
-import { type AuthContext, expectUserBackedActor, getDateConfig, getLocale } from "@valentinkolb/cloud/server";
-import { Layout } from "@valentinkolb/cloud/ssr";
+import { type AuthContext, expectUserBackedActor, getDateConfig, getLocale } from "@k2b/cloud/server";
+import { Layout } from "@k2b/cloud/ssr";
 import { ssr } from "../../config";
 import { ResourceShortIdSchema } from "../../contracts";
 import { isMailInvitationIntegrationAvailable } from "../../service/mail-integration";

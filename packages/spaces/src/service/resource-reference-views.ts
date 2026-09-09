@@ -1,4 +1,4 @@
-import { type CapabilityCaller, getCapabilityCatalogApp, invokeCapabilityWithDataSchema } from "@valentinkolb/cloud/capabilities/server";
+import { type CapabilityCaller, getCapabilityCatalogApp, invokeCapabilityWithDataSchema } from "@k2b/cloud/capabilities/server";
 import {
   type CapabilityManifest,
   type CapabilitySemanticLink,
@@ -7,7 +7,7 @@ import {
   CloudResourceViewSchema,
   cloudResourceRefAppId,
   resolveCapabilityResourceReader,
-} from "@valentinkolb/cloud/contracts";
+} from "@k2b/cloud/contracts";
 import { z } from "zod";
 import type { SpaceItemResourceReference } from "@/contracts";
 

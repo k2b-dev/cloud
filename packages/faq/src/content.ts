@@ -1,4 +1,4 @@
-import { canonicalLocale, localeFallbackChain } from "@valentinkolb/cloud/shared";
+import { canonicalLocale, localeFallbackChain } from "@k2b/cloud/shared";
 import { FAQ_BASE_LOCALE, type FaqEntry, type FaqTranslation, type FaqTranslations } from "./contracts";
 
 export type ResolvedFaqEntry = Omit<FaqEntry, "translations"> & FaqTranslation & { locale: string };

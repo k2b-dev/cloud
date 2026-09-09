@@ -1,4 +1,4 @@
-import type { PermissionLevel } from "@valentinkolb/cloud/contracts";
+import type { PermissionLevel } from "@k2b/cloud/contracts";
 
 export type ApiKeyPermission = Extract<PermissionLevel, "read" | "write" | "admin">;
 

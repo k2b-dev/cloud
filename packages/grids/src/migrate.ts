@@ -1,4 +1,4 @@
-import { toPgTextArray, toPgUuidArray } from "@valentinkolb/cloud/services";
+import { toPgTextArray, toPgUuidArray } from "@k2b/cloud/services";
 import { sql as defaultSql, type SQL } from "bun";
 import { parseJsonbRow } from "./service/jsonb";
 import { numberSeriesFormatForField, numberSeriesSequenceName } from "./service/number-series";

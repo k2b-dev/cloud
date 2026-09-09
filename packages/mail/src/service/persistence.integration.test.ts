@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, spyOn, test } from "bun:test";
 import { Readable } from "node:stream";
-import { encryptSecret } from "@valentinkolb/cloud/services";
+import { encryptSecret } from "@k2b/cloud/services";
 import { sql } from "bun";
 import { mailCapabilities } from "../capabilities";
 import { ConversationGetDataSchema } from "../capability-contracts";

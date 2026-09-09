@@ -1,4 +1,4 @@
-import { normalizeTimeZone } from "@valentinkolb/cloud/shared";
+import { normalizeTimeZone } from "@k2b/cloud/shared";
 import type { ResponseScheduleDefinitionInput } from "./contracts";
 
 type ScheduleWindow = { start: string; end: string };

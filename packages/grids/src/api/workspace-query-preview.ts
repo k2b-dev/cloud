@@ -1,4 +1,4 @@
-import type { AuthContext } from "@valentinkolb/cloud/server";
+import type { AuthContext } from "@k2b/cloud/server";
 import type { Context } from "hono";
 import type { GridsWorkspaceState } from "../frontend/_components/workspace/workspace-state";
 import { type DslCurrentSource, executeGqlSource, executeSavedViewSource } from "./gql-runtime";

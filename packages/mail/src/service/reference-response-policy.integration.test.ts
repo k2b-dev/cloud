@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { deleteWorkflowScope } from "@valentinkolb/cloud/workflows/store";
+import { deleteWorkflowScope } from "@k2b/cloud/workflows/store";
 import { sql } from "bun";
 import { newShortId } from "../lib/short-id";
 import { migrate } from "../migrate";

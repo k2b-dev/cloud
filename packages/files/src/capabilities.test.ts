@@ -1,11 +1,11 @@
 import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
-import { compileCapabilityManifest } from "@valentinkolb/cloud/capabilities/testing";
+import { compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 import {
   type CapabilityExecutionContext,
   UniversalSearchDataSchema,
   UniversalSearchInputSchema,
   type User,
-} from "@valentinkolb/cloud/contracts";
+} from "@k2b/cloud/contracts";
 import { filesCapabilities } from "./capabilities";
 import { filesService } from "./service";
 

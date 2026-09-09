@@ -1,6 +1,6 @@
 import { Chart, DataPanel, useLocale } from "@k2b/ui";
-import type { AiUsageReport } from "@valentinkolb/cloud/ai/admin";
-import { formatNumber } from "@valentinkolb/cloud/shared";
+import type { AiUsageReport } from "@k2b/cloud/ai/admin";
+import { formatNumber } from "@k2b/cloud/shared";
 import { aiUsageMessages } from "./ai-usage-messages";
 
 export default function AiUsageCharts(props: { timeline: AiUsageReport["timeline"]; range: AiUsageReport["query"]["range"] }) {

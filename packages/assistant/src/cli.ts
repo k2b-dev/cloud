@@ -1,4 +1,4 @@
-import { defineCliCommands } from "@valentinkolb/cloud/cli";
+import { defineCliCommands } from "@k2b/cloud/cli";
 import { assistantChatCommands, assistantManagementCommands } from "./cli/chat";
 import { assistantRootCommand } from "./cli/interactive";
 import { assistantPersonalizationCommands } from "./cli/personalization";

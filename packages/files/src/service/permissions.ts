@@ -1,6 +1,6 @@
 import { sql } from "bun";
-import { toPgTextArray } from "@valentinkolb/cloud/services";
-import { getEffectiveGroupIds } from "@valentinkolb/cloud/server";
+import { toPgTextArray } from "@k2b/cloud/services";
+import { getEffectiveGroupIds } from "@k2b/cloud/server";
 import type { User, FileBase, FileBaseInfo, MutationResult } from "@/contracts";
 
 type DbRow = Record<string, unknown>;

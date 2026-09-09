@@ -1,6 +1,6 @@
 import { err, fail, ok } from "@k2b/stdlib";
-import { type AuthContext, auth, expectUserBackedActor, jsonResponse, requiresAdmin, respond, v } from "@valentinkolb/cloud/server";
-import { notificationBatches } from "@valentinkolb/cloud/services";
+import { type AuthContext, auth, expectUserBackedActor, jsonResponse, requiresAdmin, respond, v } from "@k2b/cloud/server";
+import { notificationBatches } from "@k2b/cloud/services";
 import { Hono } from "hono";
 import { describeRoute } from "hono-openapi";
 import { z } from "zod";

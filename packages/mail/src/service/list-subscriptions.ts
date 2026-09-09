@@ -5,7 +5,7 @@ import {
   type NetworkLookup,
   type PublicNetworkAddress,
   resolvePublicNetworkAddresses,
-} from "@valentinkolb/cloud/services/network-security";
+} from "@k2b/cloud/services/network-security";
 import { sql } from "bun";
 import { z } from "zod";
 import {

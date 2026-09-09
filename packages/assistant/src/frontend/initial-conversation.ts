@@ -1,4 +1,4 @@
-import type { AiConversation } from "@valentinkolb/cloud/ai";
+import type { AiConversation } from "@k2b/cloud/ai";
 
 type ResolveInitialConversationInput = {
   requestedConversationId?: string;

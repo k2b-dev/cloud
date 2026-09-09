@@ -1,4 +1,4 @@
-import { defineDesktopApp } from "@valentinkolb/cloud/desktop";
+import { defineDesktopApp } from "@k2b/cloud/desktop";
 
 export const desktopApp = defineDesktopApp({
   name: "Markdown Desk",

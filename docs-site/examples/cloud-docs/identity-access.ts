@@ -1,4 +1,4 @@
-import type { User } from "@valentinkolb/cloud/contracts";
+import type { User } from "@k2b/cloud/contracts";
 import {
   type AccessEntry,
   type AccessSubject,
@@ -13,8 +13,8 @@ import {
   type RequestActor,
   type ResourceAccessAdapter,
   type Result,
-} from "@valentinkolb/cloud/server";
-import { type ServiceAccountCredential, serviceAccountCredentials, serviceAccounts } from "@valentinkolb/cloud/services";
+} from "@k2b/cloud/server";
+import { type ServiceAccountCredential, serviceAccountCredentials, serviceAccounts } from "@k2b/cloud/services";
 import { Hono } from "hono";
 
 type AccessRepository = {

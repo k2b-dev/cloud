@@ -1,7 +1,7 @@
 import { err, fail, ok, type Result } from "@k2b/stdlib";
-import type { AccessSubject } from "@valentinkolb/cloud/server";
-import { buildAccessPrincipalCondition } from "@valentinkolb/cloud/server";
-import { toPgTextArray, toPgUuidArray } from "@valentinkolb/cloud/services";
+import type { AccessSubject } from "@k2b/cloud/server";
+import { buildAccessPrincipalCondition } from "@k2b/cloud/server";
+import { toPgTextArray, toPgUuidArray } from "@k2b/cloud/services";
 import { sql } from "bun";
 import { z } from "zod";
 import type { ContactResolveDataSchema, ContactResolveInputSchema, ContactResolveMatchDataSchema } from "../capability-contracts";

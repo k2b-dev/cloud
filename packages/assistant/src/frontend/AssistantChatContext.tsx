@@ -1,7 +1,7 @@
 import { query } from "@k2b/stdlib/solid";
 import { useLocale, Button, Lightbox, Placeholder, prompts, StatusBadge } from "@k2b/ui";
-import type { AiConversationSource, AiProject, AiChatTaskView as AssistantChatTask } from "@valentinkolb/cloud/ai";
-import { conversationFileSource } from "@valentinkolb/cloud/ai/solid";
+import type { AiConversationSource, AiProject, AiChatTaskView as AssistantChatTask } from "@k2b/cloud/ai";
+import { conversationFileSource } from "@k2b/cloud/ai/solid";
 import { createEffect, createSignal, For, onCleanup, Show } from "solid-js";
 import { assistantApi } from "../api/client";
 import type { AssistantChatContextSnapshot } from "../chat-context";

@@ -6,8 +6,8 @@ import {
   type CapabilityExecutionContext,
   capabilityResultSchema,
   type User,
-} from "@valentinkolb/cloud/contracts";
-import { audit } from "@valentinkolb/cloud/services";
+} from "@k2b/cloud/contracts";
+import { audit } from "@k2b/cloud/services";
 import { contactsCapabilities, decodeContactCapabilityCursor } from "./capabilities";
 import {
   CONTACT_COLLECTION_LIMIT,

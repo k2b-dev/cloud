@@ -1,6 +1,6 @@
 import type { JobContext, Worker } from "@k2b/sync";
-import { lazySync } from "@valentinkolb/cloud";
-import { logger, trace } from "@valentinkolb/cloud/services";
+import { lazySync } from "@k2b/cloud";
+import { logger, trace } from "@k2b/cloud/services";
 import { sql } from "bun";
 
 const BASE_DELETE_BATCH_SIZE = 50_000;

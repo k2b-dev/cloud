@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import type { TraceSpan } from "@valentinkolb/cloud/services";
-import type { WorkflowRunSummary } from "@valentinkolb/cloud/workflows/store";
+import type { TraceSpan } from "@k2b/cloud/services";
+import type { WorkflowRunSummary } from "@k2b/cloud/workflows/store";
 import {
   mailBackfillWorkflowId,
   projectMailBackfillActivity,

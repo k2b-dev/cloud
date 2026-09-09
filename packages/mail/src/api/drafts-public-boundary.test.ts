@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { ok } from "@k2b/stdlib";
-import type { User } from "@valentinkolb/cloud/contracts";
-import { oauthTokens } from "@valentinkolb/cloud/services";
+import type { User } from "@k2b/cloud/contracts";
+import { oauthTokens } from "@k2b/cloud/services";
 import { commands, drafts, publicResources } from "../service";
 import app from ".";
 

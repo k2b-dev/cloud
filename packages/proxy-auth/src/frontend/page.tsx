@@ -1,8 +1,8 @@
 import { NoticeCard, DataTable, type DataTableColumn, Placeholder, StatCell, StatGrid } from "@k2b/ui";
-import { type AuthContext, getLocale } from "@valentinkolb/cloud/server";
-import { get } from "@valentinkolb/cloud/services";
-import { formatDate } from "@valentinkolb/cloud/shared";
-import { AdminLayout } from "@valentinkolb/cloud/ssr";
+import { type AuthContext, getLocale } from "@k2b/cloud/server";
+import { get } from "@k2b/cloud/services";
+import { formatDate } from "@k2b/cloud/shared";
+import { AdminLayout } from "@k2b/cloud/ssr";
 import { ssr } from "../config";
 import { proxyAuthService } from "../service";
 import CreateProxyClient from "./_components/CreateProxyClient.island";

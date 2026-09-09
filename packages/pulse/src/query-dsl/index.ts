@@ -1,4 +1,4 @@
-import { err, fail, ok, type Result } from "@valentinkolb/cloud/server";
+import { err, fail, ok, type Result } from "@k2b/cloud/server";
 import type { Aggregation, EventAggregation, EventQuery, MetricQuery, PulseExplorerQuery, StateQuery } from "../contracts";
 import { AGGREGATIONS } from "../contracts";
 import { SHORT_ID_REGEX } from "../lib/short-id";

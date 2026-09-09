@@ -1,4 +1,4 @@
-import type { WorkflowJsonValue } from "@valentinkolb/cloud/workflows";
+import type { WorkflowJsonValue } from "@k2b/cloud/workflows";
 import type { MailConversationChangedEvent } from "./events";
 import { notifyMailInvalidations } from "./events";
 

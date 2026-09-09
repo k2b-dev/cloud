@@ -1,5 +1,5 @@
 import { err, fail, ok, type Result } from "@k2b/stdlib";
-import { isUniqueViolation } from "@valentinkolb/cloud/services";
+import { isUniqueViolation } from "@k2b/cloud/services";
 import { sql } from "bun";
 import type {
   CreateEmailTemplateInput,

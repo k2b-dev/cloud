@@ -3,7 +3,7 @@ import { existsSync, mkdtempSync, rmSync, symlinkSync, unlinkSync } from "node:f
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { createConfig } from "@k2b/ssr";
-import type { AiConversation, AiProject } from "@valentinkolb/cloud/ai";
+import type { AiConversation, AiProject } from "@k2b/cloud/ai";
 import { createComponent, createSignal } from "solid-js";
 import { renderToString } from "solid-js/web";
 

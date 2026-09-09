@@ -1,5 +1,5 @@
 import { err, fail, isServiceError, ok, type Result, type ServiceError } from "@k2b/stdlib";
-import { audit, decryptSecret, encryptSecret, isUniqueViolation, logger } from "@valentinkolb/cloud/services";
+import { audit, decryptSecret, encryptSecret, isUniqueViolation, logger } from "@k2b/cloud/services";
 import { sql } from "bun";
 import type {
   ConnectorVerification,

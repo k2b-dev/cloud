@@ -1,5 +1,5 @@
 import { describe, expect, mock, test } from "bun:test";
-import { DEFAULT_ACCOUNT_CATEGORY_POLICY } from "@valentinkolb/cloud/contracts";
+import { DEFAULT_ACCOUNT_CATEGORY_POLICY } from "@k2b/cloud/contracts";
 import { type Context, Hono } from "hono";
 import type { JSX } from "solid-js";
 import { renderToString } from "solid-js/web";
@@ -52,16 +52,16 @@ mock.module("../../config", () => ({
     },
   ],
 }));
-mock.module("@valentinkolb/cloud/server", () => ({
+mock.module("@k2b/cloud/server", () => ({
   expectUserBackedActor: () => ({ id: "local-id", uid: "admin", roles: ["admin"], provider: "local" }),
   getLocale: () => "en",
 }));
-mock.module("@valentinkolb/cloud/services", () => ({
+mock.module("@k2b/cloud/services", () => ({
   accountsAppService: { user: { listDuplicateEmails: list }, accountRequest: { list: async () => ({ total: 0 }) } },
   coreSettings: { get: async () => true },
   readAccountCategoryPolicy: async () => DEFAULT_ACCOUNT_CATEGORY_POLICY,
 }));
-mock.module("@valentinkolb/cloud/ssr", () => ({ Layout: (props: { children: JSX.Element }) => props.children }));
+mock.module("@k2b/cloud/ssr", () => ({ Layout: (props: { children: JSX.Element }) => props.children }));
 mock.module("../AccountsWorkspace", () => ({ default: (props: { children: JSX.Element }) => props.children }));
 
 const { default: page } = await import("./page");

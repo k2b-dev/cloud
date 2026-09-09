@@ -1,6 +1,6 @@
-import type { CapabilityCatalogApp } from "@valentinkolb/cloud/capabilities/server";
-import { getCapabilityCatalogApp, listCapabilityCatalog } from "@valentinkolb/cloud/capabilities/server";
-import type { CapabilityActionManifest, CapabilityManifest, CapabilityQueryManifest } from "@valentinkolb/cloud/contracts";
+import type { CapabilityCatalogApp } from "@k2b/cloud/capabilities/server";
+import { getCapabilityCatalogApp, listCapabilityCatalog } from "@k2b/cloud/capabilities/server";
+import type { CapabilityActionManifest, CapabilityManifest, CapabilityQueryManifest } from "@k2b/cloud/contracts";
 
 const CATALOG_PAGE_SIZE = 25;
 

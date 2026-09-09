@@ -1,4 +1,4 @@
-import type { WidgetResponse } from "@valentinkolb/cloud/contracts";
+import type { WidgetResponse } from "@k2b/cloud/contracts";
 import {
   AccessEntrySchema,
   ErrorResponseSchema,
@@ -7,7 +7,7 @@ import {
   type PermissionLevel,
   ServiceAccountCredentialSchema,
   UpdateAccessSchema,
-} from "@valentinkolb/cloud/contracts";
+} from "@k2b/cloud/contracts";
 import {
   type AuthContext,
   auth,
@@ -21,8 +21,8 @@ import {
   respond,
   respondMessage,
   v,
-} from "@valentinkolb/cloud/server";
-import { coreSettings, serviceAccountCredentials, serviceAccounts } from "@valentinkolb/cloud/services";
+} from "@k2b/cloud/server";
+import { coreSettings, serviceAccountCredentials, serviceAccounts } from "@k2b/cloud/services";
 import { type Context, Hono } from "hono";
 import { describeRoute } from "hono-openapi";
 import { z } from "zod";

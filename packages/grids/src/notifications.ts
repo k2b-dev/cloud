@@ -1,6 +1,6 @@
 import { i18n } from "@k2b/stdlib";
-import { type BoundNotificationMap, notification } from "@valentinkolb/cloud";
-import { notifications } from "@valentinkolb/cloud/services";
+import { type BoundNotificationMap, notification } from "@k2b/cloud";
+import { notifications } from "@k2b/cloud/services";
 import { z } from "zod";
 
 const workflowEmailData = z.object({ subject: z.string(), html: z.string() });

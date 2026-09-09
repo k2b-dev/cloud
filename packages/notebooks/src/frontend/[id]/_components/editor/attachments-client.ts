@@ -72,7 +72,7 @@ export {
   extractAttachmentIds,
 } from "../../../lib/editor/attachment-url";
 
-import { formatBytes as sharedFormatBytes } from "@valentinkolb/cloud/shared";
+import { formatBytes as sharedFormatBytes } from "@k2b/cloud/shared";
 
 export type AttachmentRef = {
   id: string;

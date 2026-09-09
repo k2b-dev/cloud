@@ -1,5 +1,5 @@
 import { AppWorkspace, useLocale } from "@k2b/ui";
-import { type WeatherData, weatherService } from "@valentinkolb/cloud/services";
+import { type WeatherData, weatherService } from "@k2b/cloud/services";
 import { weatherMessages } from "../../messages";
 import AddLocationButton from "../AddLocation.island";
 

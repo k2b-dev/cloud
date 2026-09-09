@@ -1,4 +1,4 @@
-import type { HelpDocumentManifest } from "@valentinkolb/cloud/shared";
+import type { HelpDocumentManifest } from "@k2b/cloud/shared";
 
 type HelpArticleSession = { articleScrollTop: number };
 type HelpArticleScroller = { scrollTop: number };

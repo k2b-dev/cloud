@@ -16,7 +16,7 @@ import {
   TextInput,
   useLocale,
 } from "@k2b/ui";
-import { type AccountCategory, type AccountCategoryPolicy, accountCategoryLabel } from "@valentinkolb/cloud/contracts";
+import { type AccountCategory, type AccountCategoryPolicy, accountCategoryLabel } from "@k2b/cloud/contracts";
 import { createEffect, createSignal, createUniqueId, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import { type CreateUserResponse, CreateUserResponseSchema, ErrorResponseSchema } from "@/contracts";

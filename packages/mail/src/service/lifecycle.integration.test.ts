@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, spyOn, test } from "bun:test";
 import { Readable } from "node:stream";
-import { getProcessSync, lazySync } from "@valentinkolb/cloud";
-import type { WorkflowBoundPlan } from "@valentinkolb/cloud/workflows";
+import { getProcessSync, lazySync } from "@k2b/cloud";
+import type { WorkflowBoundPlan } from "@k2b/cloud/workflows";
 import {
   claimWorkflowRun,
   createWorkflow as createKernelWorkflow,
@@ -9,7 +9,7 @@ import {
   createWorkflowRuntimeRepository,
   finishWorkflowRun,
   publishWorkflowVersion,
-} from "@valentinkolb/cloud/workflows/store";
+} from "@k2b/cloud/workflows/store";
 import { sql } from "bun";
 import { type ConnectorVerification, unavailableProviderLimitSnapshot } from "../contracts";
 import { newShortId } from "../lib/short-id";

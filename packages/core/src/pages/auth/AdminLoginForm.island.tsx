@@ -1,6 +1,6 @@
 import { mutation as mutations } from "@k2b/stdlib/solid";
 import { Button, Checkbox, NoticeCard, TextInput, useLocale } from "@k2b/ui";
-import { apiClient } from "@valentinkolb/cloud/clients/core";
+import { apiClient } from "@k2b/cloud/clients/core";
 import { createSignal } from "solid-js";
 import { authMessages } from "./messages";
 import { afterSignInHref } from "./login-redirect";

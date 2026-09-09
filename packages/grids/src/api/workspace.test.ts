@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import type { User } from "@valentinkolb/cloud/contracts";
-import type { AuthContext } from "@valentinkolb/cloud/server";
+import type { User } from "@k2b/cloud/contracts";
+import type { AuthContext } from "@k2b/cloud/server";
 import type { MiddlewareHandler } from "hono";
 import { createWorkspaceApi } from "./workspace";
 

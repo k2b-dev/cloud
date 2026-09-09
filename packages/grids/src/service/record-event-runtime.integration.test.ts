@@ -158,7 +158,7 @@ if (!databaseName) {
       try {
         await startRecordEventOutbox();
         await stalledEntered.promise;
-        const { stopRuntimeResources } = await import("@valentinkolb/cloud/services");
+        const { stopRuntimeResources } = await import("@k2b/cloud/services");
         let nextResourceStopped = false;
         await expect(
           stopRuntimeResources([

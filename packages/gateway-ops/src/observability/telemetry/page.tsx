@@ -1,8 +1,8 @@
 import { DataTable, type DataTableColumn, StatCell, StatGrid } from "@k2b/ui";
-import { listAppsDetailed } from "@valentinkolb/cloud";
-import { type AuthContext, getLocale } from "@valentinkolb/cloud/server";
-import { formatNumber as fmtCount, formatDurationMs as fmtMs, formatPercent as fmtRatio } from "@valentinkolb/cloud/shared";
-import { AdminLayout } from "@valentinkolb/cloud/ssr";
+import { listAppsDetailed } from "@k2b/cloud";
+import { type AuthContext, getLocale } from "@k2b/cloud/server";
+import { formatNumber as fmtCount, formatDurationMs as fmtMs, formatPercent as fmtRatio } from "@k2b/cloud/shared";
+import { AdminLayout } from "@k2b/cloud/ssr";
 import { ssr } from "../../config";
 import ObservabilityChart from "../../frontend/ObservabilityChart.island";
 import { listAppSloWindows } from "../../grids-operational-health";

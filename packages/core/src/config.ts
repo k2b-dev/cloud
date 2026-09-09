@@ -1,4 +1,4 @@
-import { defineApp } from "@valentinkolb/cloud";
+import { defineApp } from "@k2b/cloud";
 import { CORE_SETTINGS } from "./_settings";
 import { AI_NOTIFICATIONS } from "./ai-notifications";
 import { NOTIFICATIONS } from "./notifications";

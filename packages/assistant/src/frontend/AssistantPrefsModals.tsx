@@ -16,8 +16,8 @@ import {
   toast,
   useLocale,
 } from "@k2b/ui";
-import type { AiApprovalPreferenceView, AiMemory, AiMemoryKind, AiUserPrefs } from "@valentinkolb/cloud/ai";
-import { coreClient } from "@valentinkolb/cloud/clients/core";
+import type { AiApprovalPreferenceView, AiMemory, AiMemoryKind, AiUserPrefs } from "@k2b/cloud/ai";
+import { coreClient } from "@k2b/cloud/clients/core";
 import { createEffect, createResource, createSignal, For, onCleanup, Show } from "solid-js";
 import { assistantApi } from "../api/client";
 import { assistantConversationHref } from "./assistant-navigation";

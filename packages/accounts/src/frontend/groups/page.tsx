@@ -1,10 +1,10 @@
 import { DataTable, type DataTableColumn, Pagination, Paper, Placeholder, Tag } from "@k2b/ui";
-import type { AuthContext } from "@valentinkolb/cloud/server";
-import { expectUserBackedActor, getLocale } from "@valentinkolb/cloud/server";
-import { accountsAppService as accountsService, coreSettings } from "@valentinkolb/cloud/services";
-import { getDefaultGroupScope, isAdminUser } from "@valentinkolb/cloud/shared";
-import { Layout } from "@valentinkolb/cloud/ssr";
-import { SearchBar } from "@valentinkolb/cloud/ssr/islands";
+import type { AuthContext } from "@k2b/cloud/server";
+import { expectUserBackedActor, getLocale } from "@k2b/cloud/server";
+import { accountsAppService as accountsService, coreSettings } from "@k2b/cloud/services";
+import { getDefaultGroupScope, isAdminUser } from "@k2b/cloud/shared";
+import { Layout } from "@k2b/cloud/ssr";
+import { SearchBar } from "@k2b/cloud/ssr/islands";
 import { ssr } from "../../config";
 import AccountsWorkspace from "../AccountsWorkspace";
 

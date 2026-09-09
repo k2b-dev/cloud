@@ -1,4 +1,4 @@
-import { v as cloudValidator } from "@valentinkolb/cloud/server";
+import { v as cloudValidator } from "@k2b/cloud/server";
 import type { ValidationTargets } from "hono";
 import type { ZodType } from "zod";
 import { apiMessages } from "./messages";

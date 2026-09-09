@@ -1,7 +1,7 @@
-import type { AuthContext } from "@valentinkolb/cloud/server";
-import { getLocale } from "@valentinkolb/cloud/server";
-import { coreSettings } from "@valentinkolb/cloud/services";
-import { AdminLayout } from "@valentinkolb/cloud/ssr";
+import type { AuthContext } from "@k2b/cloud/server";
+import { getLocale } from "@k2b/cloud/server";
+import { coreSettings } from "@k2b/cloud/services";
+import { AdminLayout } from "@k2b/cloud/ssr";
 import { ssr } from "../config";
 import { weatherMessages } from "../messages";
 import WeatherSettingsForm from "./_components/WeatherSettingsForm.island";

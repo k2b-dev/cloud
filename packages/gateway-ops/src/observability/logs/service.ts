@@ -1,4 +1,4 @@
-import { logging } from "@valentinkolb/cloud/services";
+import { logging } from "@k2b/cloud/services";
 import { err, type PageParams, type Paginated, paginate, tryCatch } from "@k2b/stdlib";
 
 type LogEntry = Awaited<ReturnType<typeof logging.list>>["entries"][number];

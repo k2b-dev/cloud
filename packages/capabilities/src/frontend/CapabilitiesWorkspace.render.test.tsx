@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { CapabilityActionManifest, CapabilityQueryManifest } from "@valentinkolb/cloud/contracts";
+import type { CapabilityActionManifest, CapabilityQueryManifest } from "@k2b/cloud/contracts";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import type { SelectedCapability } from "../catalog";

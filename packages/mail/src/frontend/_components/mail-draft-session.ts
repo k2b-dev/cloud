@@ -1,4 +1,4 @@
-import { createLiveWebSocket } from "@valentinkolb/cloud/browser/live";
+import { createLiveWebSocket } from "@k2b/cloud/browser/live";
 import type { Accessor } from "solid-js";
 import { createEffect, createSignal, onCleanup, onMount } from "solid-js";
 import { apiClient } from "../../api/client";

@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { CloudCliContext, CloudCliFlags } from "@valentinkolb/cloud/cli";
+import type { CloudCliContext, CloudCliFlags } from "@k2b/cloud/cli";
 import gridsCli from "./cli";
 import { accessCommands } from "./cli/access";
 import { baseCrudCommands } from "./cli/bases";

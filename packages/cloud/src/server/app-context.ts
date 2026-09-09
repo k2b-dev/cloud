@@ -9,7 +9,7 @@
  *
  *   ```ts
  *   import { app } from "./config";
- *   import type { AppContext } from "@valentinkolb/cloud/server";
+ *   import type { AppContext } from "@k2b/cloud/server";
  *   export type FilesAppContext = AppContext<typeof app>;
  *   ```
  *

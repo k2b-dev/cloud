@@ -1,5 +1,5 @@
-import type { CloudResourceRef } from "@valentinkolb/cloud/contracts";
-import { toPgUuidArray } from "@valentinkolb/cloud/services";
+import type { CloudResourceRef } from "@k2b/cloud/contracts";
+import { toPgUuidArray } from "@k2b/cloud/services";
 import { sql } from "bun";
 import { MAX_ITEM_RESOURCE_REFERENCES, type SpaceItemResourceReference, type SpaceItemResourceReferenceInput } from "@/contracts";
 import { publishSpaceEvent } from "./events";

@@ -17,10 +17,10 @@
  */
 
 import type { DateContext } from "@k2b/stdlib";
-import { get as settingsGet } from "@valentinkolb/cloud/services/settings";
-import { normalizeTimeZone } from "@valentinkolb/cloud/shared";
-import type { WorkflowActionContext, WorkflowActionResult, WorkflowJsonValue, WorkflowPlannedEffect } from "@valentinkolb/cloud/workflows";
-import { workflowAction } from "@valentinkolb/cloud/workflows";
+import { get as settingsGet } from "@k2b/cloud/services/settings";
+import { normalizeTimeZone } from "@k2b/cloud/shared";
+import type { WorkflowActionContext, WorkflowActionResult, WorkflowJsonValue, WorkflowPlannedEffect } from "@k2b/cloud/workflows";
+import { workflowAction } from "@k2b/cloud/workflows";
 import { sql } from "bun";
 import type { RecordMutationAudit, Table } from "./contracts";
 import { logAudit, type SqlClient } from "./service/audit";

@@ -8,8 +8,8 @@ import {
   revokeIdentitySigningKey,
   runIdentityKeyMaintenance,
   withActiveIdentitySigner,
-} from "@valentinkolb/cloud/services/identity";
-import { readIdentityKeyEncryptionConfig } from "@valentinkolb/cloud/services/identity/key-config";
+} from "@k2b/cloud/services/identity";
+import { readIdentityKeyEncryptionConfig } from "@k2b/cloud/services/identity/key-config";
 import { sql } from "bun";
 import { migrate } from "./migrate/core/auth";
 

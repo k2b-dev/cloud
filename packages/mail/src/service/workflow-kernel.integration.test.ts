@@ -1,11 +1,11 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { toPgUuidArray } from "@valentinkolb/cloud/services/postgres";
+import { toPgUuidArray } from "@k2b/cloud/services/postgres";
 import {
   createWorkflowRun,
   deleteWorkflowScope,
   dispatchPendingWorkflowEvents,
   emitWorkflowEvent,
-} from "@valentinkolb/cloud/workflows/store";
+} from "@k2b/cloud/workflows/store";
 import { sql } from "bun";
 import { newShortId } from "../lib/short-id";
 import { migrate } from "../migrate";

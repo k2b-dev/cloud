@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { decryptSecret, encryptSecret } from "@valentinkolb/cloud/services";
+import { decryptSecret, encryptSecret } from "@k2b/cloud/services";
 
 const createPublicDashboardTokenValue = (): string => randomUUID();
 

@@ -6,7 +6,7 @@
 
 set -eu
 
-REPO="${CLD_RELEASE_REPO:-ValentinKolb/cloud}"
+REPO="${CLD_RELEASE_REPO:-k2b-dev/cloud}"
 RELEASE_BASE="${CLD_RELEASE_BASE:-https://github.com/${REPO}/releases}"
 API_BASE="${CLD_RELEASE_API_BASE:-https://api.github.com/repos/${REPO}}"
 PREFIX="${HOME}/.local/bin"
@@ -20,7 +20,7 @@ CURL_RETRY_COUNT=3
 CURL_CONNECT_TIMEOUT=10
 CURL_MAX_TIME=60
 MAX_RELEASE_PAGES=100
-COSIGN_IDENTITY_REGEXP='^https://github\.com/ValentinKolb/cloud/\.github/workflows/cli\.yml@refs/tags/cli-v[0-9]+\.[0-9]+\.[0-9]+$'
+COSIGN_IDENTITY_REGEXP='^https://github\.com/k2b-dev/cloud/\.github/workflows/cli\.yml@refs/tags/cli-v[0-9]+\.[0-9]+\.[0-9]+$'
 SKILL_ASSET="cloud-cli-skill.tar.gz"
 SKILL_NAME="cloud-cli"
 

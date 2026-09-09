@@ -3,9 +3,9 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createConfig } from "@k2b/ssr";
-import type { CloudRuntime } from "@valentinkolb/cloud/contracts";
-import type { AuthContext } from "@valentinkolb/cloud/server";
-import * as services from "@valentinkolb/cloud/services";
+import type { CloudRuntime } from "@k2b/cloud/contracts";
+import type { AuthContext } from "@k2b/cloud/server";
+import * as services from "@k2b/cloud/services";
 import { Hono } from "hono";
 import * as catalog from "../catalog";
 

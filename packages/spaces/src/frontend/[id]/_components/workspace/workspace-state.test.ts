@@ -71,7 +71,7 @@ const comment = {
   canDelete: true,
 };
 
-mock.module("@valentinkolb/cloud/services", () => ({
+mock.module("@k2b/cloud/services", () => ({
   logger: () => ({ warn: () => undefined }),
   weatherService: {
     location: { cookie: { name: "weather", parse: () => null } },

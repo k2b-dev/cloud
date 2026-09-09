@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { AppRegistryEntry } from "@valentinkolb/cloud/contracts";
+import type { AppRegistryEntry } from "@k2b/cloud/contracts";
 import { buildAppRuntimeStatuses } from "./app-runtime-status";
 
 const app = (id: string, syncVersion: string): AppRegistryEntry => ({

@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { createSync, type Worker } from "@k2b/sync";
 import { jetstreamManager } from "@nats-io/jetstream";
 import { connect } from "@nats-io/transport-node";
-import { bindProcessSync, unbindProcessSync } from "@valentinkolb/cloud";
+import { bindProcessSync, unbindProcessSync } from "@k2b/cloud";
 import { SNAPSHOT_JOB_CONFIG, yjsSnapshotWorker } from "./yjs-snapshot-worker";
 import { createYjsTopic } from "./yjs-sync";
 

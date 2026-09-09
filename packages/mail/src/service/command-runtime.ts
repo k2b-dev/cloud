@@ -1,14 +1,14 @@
 import type { Worker } from "@k2b/sync";
 import { expBackoff } from "@k2b/sync/retry";
-import { lazySync } from "@valentinkolb/cloud";
+import { lazySync } from "@k2b/cloud";
 import {
   createRuntimeLifecycle,
   createRuntimeTaskTracker,
   logger,
   stopRuntimeJobs,
   stopRuntimeResources,
-} from "@valentinkolb/cloud/services";
-import { toPgTextArray } from "@valentinkolb/cloud/services/postgres";
+} from "@k2b/cloud/services";
+import { toPgTextArray } from "@k2b/cloud/services/postgres";
 import { sql } from "bun";
 import { z } from "zod";
 import type { CommandState, MailCommand, RemoteMessagePrecondition } from "../contracts";

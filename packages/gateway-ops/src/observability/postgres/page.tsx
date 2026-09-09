@@ -1,8 +1,8 @@
 import { ButtonLink, DataPanel, DataTable, type DataTableColumn, StatCell, StatGrid, StatusBadge } from "@k2b/ui";
-import { type AuthContext, getDateConfig, getLocale } from "@valentinkolb/cloud/server";
-import { formatBytes, formatDateTime as formatDate, formatNumber } from "@valentinkolb/cloud/shared";
-import { AdminLayout } from "@valentinkolb/cloud/ssr";
-import { SearchBar } from "@valentinkolb/cloud/ssr/islands";
+import { type AuthContext, getDateConfig, getLocale } from "@k2b/cloud/server";
+import { formatBytes, formatDateTime as formatDate, formatNumber } from "@k2b/cloud/shared";
+import { AdminLayout } from "@k2b/cloud/ssr";
+import { SearchBar } from "@k2b/cloud/ssr/islands";
 import { ssr } from "../../config";
 
 /** Seconds to a compact age; sessions report ages, not durations. */

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { parseDataUrl } from "@valentinkolb/cloud/shared";
-import { compileWorkflow } from "@valentinkolb/cloud/workflows/language";
+import { parseDataUrl } from "@k2b/cloud/shared";
+import { compileWorkflow } from "@k2b/cloud/workflows/language";
 import {
   CreateBaseSchema,
   CreateDocumentTemplateSchema,

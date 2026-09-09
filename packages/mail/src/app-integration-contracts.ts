@@ -3,7 +3,7 @@ import {
   CapabilitySemanticLinkSchema,
   CloudResourceRefSchema,
   CloudResourceViewSchema,
-} from "@valentinkolb/cloud/contracts";
+} from "@k2b/cloud/contracts";
 import { z } from "zod";
 
 const timestampSchema = z.string().datetime({ offset: true });

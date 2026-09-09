@@ -1,5 +1,5 @@
-import { type AiProjectFile, type AiProjectKnowledge, type AiProjectReference, aiProjects } from "@valentinkolb/cloud/ai";
-import type { AccessSubject } from "@valentinkolb/cloud/server";
+import { type AiProjectFile, type AiProjectKnowledge, type AiProjectReference, aiProjects } from "@k2b/cloud/ai";
+import type { AccessSubject } from "@k2b/cloud/server";
 
 export type AssistantProjectContextSnapshot = {
   projectId: string;

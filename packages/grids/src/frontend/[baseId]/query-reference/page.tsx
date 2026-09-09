@@ -1,5 +1,5 @@
-import { type AuthContext, getLocale } from "@valentinkolb/cloud/server";
-import { getRuntimeContext } from "@valentinkolb/cloud/ssr";
+import { type AuthContext, getLocale } from "@k2b/cloud/server";
+import { getRuntimeContext } from "@k2b/cloud/ssr";
 import { currentActorUser, gateBaseAtAccess, gridsAccessContext } from "../../../api/permissions";
 import { toPublicFields, toPublicTables, toPublicViews } from "../../../api/public-dto";
 import { ssr } from "../../../config";

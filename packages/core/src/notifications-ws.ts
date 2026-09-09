@@ -3,9 +3,9 @@ import {
   NOTIFICATION_LIVE_WS_TYPE,
   NotificationLiveClientMessageSchema,
   type NotificationLiveServerMessage,
-} from "@valentinkolb/cloud/contracts";
-import { auth, getLocale } from "@valentinkolb/cloud/server";
-import { logger, notifications } from "@valentinkolb/cloud/services";
+} from "@k2b/cloud/contracts";
+import { auth, getLocale } from "@k2b/cloud/server";
+import { logger, notifications } from "@k2b/cloud/services";
 import type { ServerWebSocket } from "bun";
 import { Hono } from "hono";
 import { upgradeWebSocket } from "hono/bun";

@@ -3,7 +3,7 @@ import {
   CAPABILITY_MAX_RESULT_BYTES,
   CapabilityErrorSchema,
   capabilityResultSchema,
-} from "@valentinkolb/cloud/contracts";
+} from "@k2b/cloud/contracts";
 import { z } from "zod";
 import { capabilityRuntimeMessages } from "./messages";
 

@@ -1,5 +1,5 @@
 {
-  "name": "@valentinkolb/cloud-app-capabilities",
+  "name": "@k2b/cloud-app-capabilities",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -9,7 +9,7 @@
     "test": "bun test"
   },
   "dependencies": {
-    "@valentinkolb/cloud": "workspace:*",
+    "@k2b/cloud": "workspace:*",
     "@k2b/ssr": "catalog:",
     "@k2b/stdlib": "catalog:",
     "@k2b/ui": "workspace:*",

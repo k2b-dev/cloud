@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { compileWorkflow, hashWorkflowJson } from "@valentinkolb/cloud/workflows/language";
+import { compileWorkflow, hashWorkflowJson } from "@k2b/cloud/workflows/language";
 import { bindMailWorkflow, validateMailWorkflowTemplateReferences } from "./binder";
 import { buildMailWorkflowCatalog, type MailWorkflowCatalog, snapshotMailWorkflowCatalog } from "./catalog";
 import { mailWorkflows } from "./module";

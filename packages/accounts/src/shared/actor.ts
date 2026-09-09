@@ -1,5 +1,5 @@
-import type { AuthContext } from "@valentinkolb/cloud/server";
-import { expectUserBackedActor, getUserBackedActor } from "@valentinkolb/cloud/server";
+import type { AuthContext } from "@k2b/cloud/server";
+import { expectUserBackedActor, getUserBackedActor } from "@k2b/cloud/server";
 
 type UserBackedActor = AuthContext["Variables"]["user"];
 

@@ -1,6 +1,6 @@
 import { type DateContext, dates, i18n } from "@k2b/stdlib";
 import type { StatusTone } from "@k2b/ui";
-import type { CloudTheme } from "@valentinkolb/cloud/shared";
+import type { CloudTheme } from "@k2b/cloud/shared";
 import type { MessageDeliveryState, MessageDetail } from "../../service/messages";
 import type { MailReadingFormat } from "./mail-user-preferences";
 

@@ -1,5 +1,5 @@
 import { openSpotlightSearch, type PromptSearchItem } from "@k2b/ui";
-import type { AiConversationTimelineEntry, AiStoredMessage } from "@valentinkolb/cloud/ai";
+import type { AiConversationTimelineEntry, AiStoredMessage } from "@k2b/cloud/ai";
 import { assistantApi } from "../api/client";
 import { assistantMessages } from "./messages";
 

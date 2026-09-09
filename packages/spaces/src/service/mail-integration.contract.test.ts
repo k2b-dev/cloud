@@ -40,7 +40,7 @@ beforeEach(() => {
   identityPage = undefined;
   identityPages = undefined;
 });
-mock.module("@valentinkolb/cloud/capabilities/server", () => ({
+mock.module("@k2b/cloud/capabilities/server", () => ({
   getCapabilityCatalogApp: async () => ({ ok: false }),
   invokeCapabilityWithDataSchema: async (call: { capabilityId: string; input: unknown }, schema: z.ZodType) => {
     calls.push(call);

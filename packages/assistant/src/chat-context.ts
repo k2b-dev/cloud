@@ -1,5 +1,5 @@
-import { type AiConversationSource, type AiFileStat, aiChatTasks, aiConversations, listAiConversationFiles } from "@valentinkolb/cloud/ai";
-import { type AiChatTaskView as AssistantChatTask, toAiChatTaskView } from "@valentinkolb/cloud/ai";
+import { type AiConversationSource, type AiFileStat, aiChatTasks, aiConversations, listAiConversationFiles } from "@k2b/cloud/ai";
+import { type AiChatTaskView as AssistantChatTask, toAiChatTaskView } from "@k2b/cloud/ai";
 
 export type AssistantChatContextSnapshot = {
   chatId: string;

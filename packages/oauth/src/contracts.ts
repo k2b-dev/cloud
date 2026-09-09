@@ -1,4 +1,4 @@
-import { PaginationQuerySchema, PaginationResponseSchema } from "@valentinkolb/cloud/contracts";
+import { PaginationQuerySchema, PaginationResponseSchema } from "@k2b/cloud/contracts";
 import { z } from "zod";
 
 const MAX_URL_LENGTH = 2_000;
@@ -181,7 +181,7 @@ export const DynamicClientRegistrationErrorSchema = z.object({
 export type DynamicClientRegistrationRequest = z.infer<typeof DynamicClientRegistrationRequestSchema>;
 export type DynamicClientRegistrationResponse = z.infer<typeof DynamicClientRegistrationResponseSchema>;
 
-export type { MutationResult } from "@valentinkolb/cloud/contracts";
+export type { MutationResult } from "@k2b/cloud/contracts";
 export {
   createPagination,
   ErrorResponseSchema,
@@ -189,4 +189,4 @@ export {
   PaginationQuerySchema,
   PaginationResponseSchema,
   parsePagination,
-} from "@valentinkolb/cloud/contracts";
+} from "@k2b/cloud/contracts";

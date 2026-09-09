@@ -21,14 +21,14 @@
  */
 
 import { err, fail, ok, type Result } from "@k2b/stdlib";
-import type { WorkflowBoundPlan, WorkflowDiagnostic } from "@valentinkolb/cloud/workflows";
-import type { WorkflowActivationInput } from "@valentinkolb/cloud/workflows/store";
+import type { WorkflowBoundPlan, WorkflowDiagnostic } from "@k2b/cloud/workflows";
+import type { WorkflowActivationInput } from "@k2b/cloud/workflows/store";
 import {
   createWorkflow as createKernelWorkflow,
   publishWorkflowVersion,
   renameWorkflow as renameKernelWorkflow,
   setWorkflowEnabled,
-} from "@valentinkolb/cloud/workflows/store";
+} from "@k2b/cloud/workflows/store";
 import { type SQL, sql } from "bun";
 import { compileAndBindGridsWorkflowSource } from "../workflows/binder";
 import type {

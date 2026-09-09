@@ -47,7 +47,7 @@ const extractSpecifiers = (source: string): Array<{ specifier: string; index: nu
 const lineFromIndex = (source: string, index: number): number => source.slice(0, index).split("\n").length;
 
 /**
- * An app may only import @valentinkolb/cloud subpaths that the package
+ * An app may only import @k2b/cloud subpaths that the package
  * actually exports. Validating the first path segment is not enough: the
  * tsconfig `paths` aliases are broader than the exports map, so an import can
  * resolve in the monorepo and still throw ERR_PACKAGE_PATH_NOT_EXPORTED for an
@@ -58,7 +58,7 @@ const cloudExports: Record<string, unknown> = JSON.parse(
 ).exports;
 
 const allowedCloudSubpath = (specifier: string): boolean => {
-  const subpath = specifier === "@valentinkolb/cloud" ? "." : `.${specifier.slice("@valentinkolb/cloud".length)}`;
+  const subpath = specifier === "@k2b/cloud" ? "." : `.${specifier.slice("@k2b/cloud".length)}`;
 
   if (subpath in cloudExports) return cloudExports[subpath] !== null;
 
@@ -87,12 +87,12 @@ const checkAppsBoundaries = (): Violation[] => {
         const line = lineFromIndex(source, index);
 
         // Forbid old-style package imports
-        if (/^@valentinkolb\/cloud-(apps|core|lib|contracts)(?:\/|$)/.test(specifier)) {
+        if (/^@k2b\/cloud-(apps|core|lib|contracts)(?:\/|$)/.test(specifier)) {
           violations.push({
             file,
             line,
             specifier,
-            message: "Use @valentinkolb/cloud/<subpath> imports, not old hyphenated package names.",
+            message: "Use @k2b/cloud/<subpath> imports, not old hyphenated package names.",
           });
           continue;
         }
@@ -103,7 +103,7 @@ const checkAppsBoundaries = (): Violation[] => {
             file,
             line,
             specifier,
-            message: "Use @valentinkolb/cloud/config instead of @config.",
+            message: "Use @k2b/cloud/config instead of @config.",
           });
           continue;
         }
@@ -119,14 +119,14 @@ const checkAppsBoundaries = (): Violation[] => {
           continue;
         }
 
-        // Forbid importing another app's @valentinkolb/cloud-app-* package.
+        // Forbid importing another app's @k2b/cloud-app-* package.
         // Each app is its own container — share via cloud-lib services, not direct imports.
-        const otherAppMatch = specifier.match(/^@valentinkolb\/cloud-app-([a-z0-9-]+)/);
+        const otherAppMatch = specifier.match(/^@k2b\/cloud-app-([a-z0-9-]+)/);
         if (otherAppMatch && otherAppMatch[1] !== appName) {
-          if (/^@valentinkolb\/cloud-app-[a-z0-9-]+\/integration$/.test(specifier)) {
+          if (/^@k2b\/cloud-app-[a-z0-9-]+\/integration$/.test(specifier)) {
             continue;
           }
-          if (appName === "cloud-cli" && /^@valentinkolb\/cloud-app-[a-z0-9-]+\/cli$/.test(specifier)) {
+          if (appName === "cloud-cli" && /^@k2b\/cloud-app-[a-z0-9-]+\/cli$/.test(specifier)) {
             continue;
           }
           violations.push({
@@ -138,17 +138,17 @@ const checkAppsBoundaries = (): Violation[] => {
           continue;
         }
 
-        // Validate @valentinkolb/cloud subpaths
+        // Validate @k2b/cloud subpaths
         if (
-          specifier.startsWith("@valentinkolb/cloud") &&
-          !specifier.startsWith("@valentinkolb/cloud-") &&
+          specifier.startsWith("@k2b/cloud") &&
+          !specifier.startsWith("@k2b/cloud-") &&
           !allowedCloudSubpath(specifier)
         ) {
           violations.push({
             file,
             line,
             specifier,
-            message: `Invalid @valentinkolb/cloud subpath. Allowed: ${allowedSubpathList}.`,
+            message: `Invalid @k2b/cloud subpath. Allowed: ${allowedSubpathList}.`,
           });
         }
       }
@@ -167,8 +167,8 @@ const checkUiPackageBoundaries = (): Violation[] => {
       const source = readFileSync(file, "utf8");
       for (const { specifier, index } of extractSpecifiers(source)) {
         if (
-          specifier.startsWith("@valentinkolb/cloud") ||
-          specifier.startsWith("@valentinkolb/cloud-app-") ||
+          specifier.startsWith("@k2b/cloud") ||
+          specifier.startsWith("@k2b/cloud-app-") ||
           specifier.includes("../cloud/") ||
           specifier.includes("../../cloud/")
         ) {
@@ -225,7 +225,7 @@ violations.push(...checkContractsSharedDrift());
  * "jsonl" silently prints a text table under `--jsonl`, which is a wrong
  * answer rather than an error for anything consuming the output.
  *
- * Use `printRows` / `printStructured` from `@valentinkolb/cloud/cli`. A local
+ * Use `printRows` / `printStructured` from `@k2b/cloud/cli`. A local
  * helper is still fine as long as it covers all three modes.
  */
 const checkCliOutputModes = (): Violation[] => {
@@ -244,7 +244,7 @@ const checkCliOutputModes = (): Violation[] => {
         file,
         line,
         specifier: 'options.output === "json"',
-        message: "CLI output branches on json but never handles jsonl. Use printRows/printStructured from @valentinkolb/cloud/cli.",
+        message: "CLI output branches on json but never handles jsonl. Use printRows/printStructured from @k2b/cloud/cli.",
       });
     }
   }
@@ -282,7 +282,7 @@ const checkActorUsage = (): Violation[] => {
           line: index + 1,
           specifier: 'c.get("user")',
           message:
-            "Apps authorize through actor/accessSubject. For the acting user use expectUserBackedActor from @valentinkolb/cloud/server.",
+            "Apps authorize through actor/accessSubject. For the acting user use expectUserBackedActor from @k2b/cloud/server.",
         });
       });
     }

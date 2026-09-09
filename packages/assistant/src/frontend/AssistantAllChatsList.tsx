@@ -1,8 +1,8 @@
 import { Link, type LinkNavigateEvent, refreshCurrentPath } from "@k2b/ssr/nav";
 import { mutation } from "@k2b/stdlib/solid";
 import { IconButton, Placeholder, prompts, StatusBadge, Tooltip } from "@k2b/ui";
-import type { AiConversation, AiProject } from "@valentinkolb/cloud/ai";
-import { formatDateTime as formatUpdatedAt } from "@valentinkolb/cloud/shared";
+import type { AiConversation, AiProject } from "@k2b/cloud/ai";
+import { formatDateTime as formatUpdatedAt } from "@k2b/cloud/shared";
 import { createEffect, createSignal, For, Show } from "solid-js";
 import { assistantApi } from "../api/client";
 import { openAssistantConversationEditor } from "./AssistantConversationEditor";

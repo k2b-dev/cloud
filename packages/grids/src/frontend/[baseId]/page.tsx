@@ -1,8 +1,8 @@
 import { NotFoundState } from "@k2b/ui";
-import { type AuthContext, getDateConfig, getLocale } from "@valentinkolb/cloud/server";
-import { coreSettings } from "@valentinkolb/cloud/services";
-import { publicCloudOrigin } from "@valentinkolb/cloud/shared";
-import { Layout } from "@valentinkolb/cloud/ssr";
+import { type AuthContext, getDateConfig, getLocale } from "@k2b/cloud/server";
+import { coreSettings } from "@k2b/cloud/services";
+import { publicCloudOrigin } from "@k2b/cloud/shared";
+import { Layout } from "@k2b/cloud/ssr";
 import { currentActorUser } from "../../api/permissions";
 import { withInitialGqlResults } from "../../api/workspace-query-preview";
 import { ssr } from "../../config";

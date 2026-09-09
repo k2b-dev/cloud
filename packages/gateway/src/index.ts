@@ -5,8 +5,8 @@
  * matching, HTTP/WS proxying, minimal health, and telemetry publication.
  */
 
-import { APP_READINESS_PATH } from "@valentinkolb/cloud";
-import { logger } from "@valentinkolb/cloud/services";
+import { APP_READINESS_PATH } from "@k2b/cloud";
+import { logger } from "@k2b/cloud/services";
 import { gatewayRouter } from "./config";
 import { proxyRequest } from "./proxy";
 import { gatewayRuntime } from "./runtime";

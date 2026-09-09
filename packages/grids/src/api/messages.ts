@@ -1,5 +1,5 @@
 import { i18n } from "@k2b/stdlib";
-import { getLocale } from "@valentinkolb/cloud/server";
+import { getLocale } from "@k2b/cloud/server";
 
 export const gridsApiMessages = i18n.define({
   baseLocale: "en",

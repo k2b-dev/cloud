@@ -1,5 +1,5 @@
-import type { WorkflowRunState } from "@valentinkolb/cloud/workflows";
-import type { WorkflowRunSummary } from "@valentinkolb/cloud/workflows/store";
+import type { WorkflowRunState } from "@k2b/cloud/workflows";
+import type { WorkflowRunSummary } from "@k2b/cloud/workflows/store";
 
 export const WORKFLOW_TIMELINE_LANES = 12;
 const RUNS_PER_LANE = 300;

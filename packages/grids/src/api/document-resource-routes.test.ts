@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { AuthContext } from "@valentinkolb/cloud/server";
+import type { AuthContext } from "@k2b/cloud/server";
 import type { MiddlewareHandler } from "hono";
 import { generateSpecs } from "hono-openapi";
 import { createDocumentResourceRoutes } from "./document-resource-routes";

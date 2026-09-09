@@ -61,7 +61,7 @@ jobs:
           bun test packages/cloud/src/services/sync-ops.integration.test.ts
           bun test packages/cloud/src/services/account-lifecycle/ipa-backfill.test.ts
           bun test packages/gateway/src/runtime.test.ts
-          bun run --filter @valentinkolb/cloud-app-gateway-ops test:integration
+          bun run --filter @k2b/cloud-app-gateway-ops test:integration
       - name: Verify Mail live replay and durable invalidation recovery
         env:
           MAIL_INTEGRATION_TESTS: "1"

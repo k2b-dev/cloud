@@ -1,5 +1,5 @@
-import type { User } from "@valentinkolb/cloud/contracts";
-import { type ServiceAccount, serviceAccountCredentials, serviceAccounts } from "@valentinkolb/cloud/services";
+import type { User } from "@k2b/cloud/contracts";
+import { type ServiceAccount, serviceAccountCredentials, serviceAccounts } from "@k2b/cloud/services";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import {
   ensureNotebookServiceAccountAccess,

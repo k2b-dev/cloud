@@ -11,7 +11,7 @@ const post = mock(
     }),
 );
 if (!isServer) {
-  mock.module("@valentinkolb/cloud/clients/core", () => ({ coreClient: { admin: { lifecycle: { jobs: { $post: post } } } } }));
+  mock.module("@k2b/cloud/clients/core", () => ({ coreClient: { admin: { lifecycle: { jobs: { $post: post } } } } }));
 }
 const flush = async () => {
   for (let i = 0; i < 20; i++) await Promise.resolve();

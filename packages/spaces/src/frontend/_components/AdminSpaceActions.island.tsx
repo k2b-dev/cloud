@@ -1,7 +1,7 @@
 import { refreshCurrentPath } from "@k2b/ssr/nav";
 import { mutation as mutations, query } from "@k2b/stdlib/solid";
 import { Button, Dropdown, Placeholder, prompts, toast } from "@k2b/ui";
-import { PermissionEditor } from "@valentinkolb/cloud/access/ui";
+import { PermissionEditor } from "@k2b/cloud/access/ui";
 import { Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { AccessEntry } from "@/contracts";

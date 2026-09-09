@@ -1,7 +1,7 @@
 import { DataPanel, DataTable, type DataTableColumn, NoticeCard, StatusBadge, StructuredDataPreview, useLocale } from "@k2b/ui";
-import { formatDurationMs, formatNumber, formatRelative } from "@valentinkolb/cloud/shared";
-import type { WorkflowRunState } from "@valentinkolb/cloud/workflows";
-import type { WorkflowRunDetail, WorkflowStepSummary } from "@valentinkolb/cloud/workflows/store";
+import { formatDurationMs, formatNumber, formatRelative } from "@k2b/cloud/shared";
+import type { WorkflowRunState } from "@k2b/cloud/workflows";
+import type { WorkflowRunDetail, WorkflowStepSummary } from "@k2b/cloud/workflows/store";
 import type { JSX } from "solid-js";
 import { type WorkflowsFilterState, workflowsFilter } from "../filters";
 import { EFFECT_TONE, RUN_TONE, runErrorSummary, STEP_TONE, stepDetail } from "../presentation";

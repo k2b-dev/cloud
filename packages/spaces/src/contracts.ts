@@ -1,4 +1,4 @@
-import { CloudResourceRefSchema } from "@valentinkolb/cloud/contracts";
+import { CloudResourceRefSchema } from "@k2b/cloud/contracts";
 import { z } from "zod";
 import { CompletionInputSchema } from "./work-contracts";
 
@@ -558,7 +558,7 @@ export type {
   PermissionLevel,
   Principal,
   User,
-} from "@valentinkolb/cloud/contracts";
+} from "@k2b/cloud/contracts";
 export {
   AccessEntrySchema,
   ErrorResponseSchema,
@@ -568,4 +568,4 @@ export {
   PermissionLevelSchema,
   PrincipalSchema,
   UpdateAccessSchema,
-} from "@valentinkolb/cloud/contracts";
+} from "@k2b/cloud/contracts";

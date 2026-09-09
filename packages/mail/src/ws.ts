@@ -1,8 +1,8 @@
 import type { Result } from "@k2b/stdlib";
 import { CursorMismatchError, RetentionGapError } from "@k2b/sync";
-import type { PermissionLevel } from "@valentinkolb/cloud/server";
-import { type AuthContext, auth, getLocale } from "@valentinkolb/cloud/server";
-import { logger } from "@valentinkolb/cloud/services";
+import type { PermissionLevel } from "@k2b/cloud/server";
+import { type AuthContext, auth, getLocale } from "@k2b/cloud/server";
+import { logger } from "@k2b/cloud/services";
 import type { ServerWebSocket } from "bun";
 import { Hono } from "hono";
 import { upgradeWebSocket } from "hono/bun";

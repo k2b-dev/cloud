@@ -1,7 +1,7 @@
-import type { WorkflowJsonValue } from "@valentinkolb/cloud/workflows";
-import { readWorkflowValuePath } from "@valentinkolb/cloud/workflows/language";
-import type { WorkflowValueResolverPort } from "@valentinkolb/cloud/workflows/runtime";
-import type { WorkflowRunClaim } from "@valentinkolb/cloud/workflows/store";
+import type { WorkflowJsonValue } from "@k2b/cloud/workflows";
+import { readWorkflowValuePath } from "@k2b/cloud/workflows/language";
+import type { WorkflowValueResolverPort } from "@k2b/cloud/workflows/runtime";
+import type { WorkflowRunClaim } from "@k2b/cloud/workflows/store";
 import { sql } from "bun";
 import { resolveMailboxPublicId } from "./public-resources";
 import { enqueueMessageHydration } from "./sync-runtime";

@@ -6,14 +6,14 @@ import type {
   AiPublicModelProfile,
   CloudAiSurveyInput,
   CloudAiTextEditorInput,
-} from "@valentinkolb/cloud/ai";
+} from "@k2b/cloud/ai";
 import {
   AI_TURN_ATTACHMENT_MAX_ITEMS,
   CloudAiCardInputSchema,
   CloudAiSurveyInputSchema,
   CloudAiTextEditorInputSchema,
-} from "@valentinkolb/cloud/ai/browser";
-import { arg, type CloudCliContext, command, flag } from "@valentinkolb/cloud/cli";
+} from "@k2b/cloud/ai/browser";
+import { arg, type CloudCliContext, command, flag } from "@k2b/cloud/cli";
 import { deniedLocalBashResult, parseLocalBashInput, runLocalBash } from "./local-bash";
 import { jsonRequest, readApi } from "./shared";
 import { type AssistantTurnStreamResult, streamAssistantTurn } from "./stream";

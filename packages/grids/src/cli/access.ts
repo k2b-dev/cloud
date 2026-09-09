@@ -6,8 +6,8 @@ import {
   flag,
   listAccessPrincipalEntities,
   paginationFlags,
-} from "@valentinkolb/cloud/cli";
-import type { AccessEntry } from "@valentinkolb/cloud/contracts";
+} from "@k2b/cloud/cli";
+import type { AccessEntry } from "@k2b/cloud/contracts";
 import {
   ACCESS_RESOURCE_TYPES,
   type AccessPermission,

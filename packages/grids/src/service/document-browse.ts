@@ -1,4 +1,4 @@
-import { escapeLikePattern, toPgUuidArray } from "@valentinkolb/cloud/services";
+import { escapeLikePattern, toPgUuidArray } from "@k2b/cloud/services";
 import { sql } from "bun";
 import type { Document, DocumentFolder, DocumentSummary, DocumentSummaryList } from "../contracts";
 import { type DocumentDbRow, hydrateDocumentSummaries } from "./document-mappers";

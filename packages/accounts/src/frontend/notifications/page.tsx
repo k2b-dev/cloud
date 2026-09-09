@@ -1,10 +1,10 @@
 import { dates } from "@k2b/stdlib";
 import { DataTable, type DataTableColumn, Pagination, Paper, Placeholder, StatusBadge, type StatusTone } from "@k2b/ui";
-import type { AuthContext } from "@valentinkolb/cloud/server";
-import { expectUserBackedActor, getLocale } from "@valentinkolb/cloud/server";
-import { accountsAppService as accountsService, type NotificationBatch, notificationBatches } from "@valentinkolb/cloud/services";
-import { formatNumber } from "@valentinkolb/cloud/shared";
-import { Layout } from "@valentinkolb/cloud/ssr";
+import type { AuthContext } from "@k2b/cloud/server";
+import { expectUserBackedActor, getLocale } from "@k2b/cloud/server";
+import { accountsAppService as accountsService, type NotificationBatch, notificationBatches } from "@k2b/cloud/services";
+import { formatNumber } from "@k2b/cloud/shared";
+import { Layout } from "@k2b/cloud/ssr";
 import { ssr } from "../../config";
 import AccountsWorkspace from "../AccountsWorkspace";
 import { accountsMessages } from "../messages";

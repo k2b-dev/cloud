@@ -1,4 +1,4 @@
-import type { ServiceAccount } from "@valentinkolb/cloud/contracts";
+import type { ServiceAccount } from "@k2b/cloud/contracts";
 import { sql } from "bun";
 import type { EventQuery, PulseEvent } from "../contracts";
 import { newShortId } from "../lib/short-id";

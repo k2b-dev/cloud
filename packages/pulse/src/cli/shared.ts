@@ -1,4 +1,4 @@
-import { type CliInputFlagValue, type CloudCliContext, readCliInput } from "@valentinkolb/cloud/cli";
+import { type CliInputFlagValue, type CloudCliContext, readCliInput } from "@k2b/cloud/cli";
 
 const apiPath = (path: string) => `/api/pulse${path}`;
 

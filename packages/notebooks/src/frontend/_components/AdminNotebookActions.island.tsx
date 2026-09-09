@@ -1,8 +1,8 @@
 import { refreshCurrentPath } from "@k2b/ssr/nav";
 import { query } from "@k2b/stdlib/solid";
 import { Button, Dropdown, Placeholder, prompts, toast, useLocale } from "@k2b/ui";
-import { PermissionEditor } from "@valentinkolb/cloud/access/ui";
-import type { AccessEntry } from "@valentinkolb/cloud/contracts";
+import { PermissionEditor } from "@k2b/cloud/access/ui";
+import type { AccessEntry } from "@k2b/cloud/contracts";
 import { createSignal, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import { notebooksAdminMessages } from "../admin-messages";

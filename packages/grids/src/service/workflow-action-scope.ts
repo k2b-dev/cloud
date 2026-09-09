@@ -14,9 +14,9 @@
  * `grids.workflow_run_profile` instead. One query changes; nothing else does.
  */
 
-import { type AccessSubject, getEffectiveGroupIds } from "@valentinkolb/cloud/server";
-import { accounts, toPgUuidArray } from "@valentinkolb/cloud/services";
-import type { WorkflowActionContext } from "@valentinkolb/cloud/workflows";
+import { type AccessSubject, getEffectiveGroupIds } from "@k2b/cloud/server";
+import { accounts, toPgUuidArray } from "@k2b/cloud/services";
+import type { WorkflowActionContext } from "@k2b/cloud/workflows";
 import { sql } from "bun";
 import { buildCustomAppQueryContext } from "../custom-apps/query-context";
 import { customAppPageHref, resolveCustomAppPageParams } from "../custom-apps/routing";

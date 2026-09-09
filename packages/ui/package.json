@@ -1,14 +1,14 @@
 {
   "name": "@k2b/ui",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Production-ready components for SolidJS applications.",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/ValentinKolb/cloud.git",
+    "url": "git+https://github.com/k2b-dev/cloud.git",
     "directory": "packages/ui"
   },
-  "homepage": "https://github.com/ValentinKolb/cloud",
-  "bugs": "https://github.com/ValentinKolb/cloud/issues",
+  "homepage": "https://github.com/k2b-dev/cloud",
+  "bugs": "https://github.com/k2b-dev/cloud/issues",
   "type": "module",
   "types": "./dist/types/index.d.ts",
   "sideEffects": [

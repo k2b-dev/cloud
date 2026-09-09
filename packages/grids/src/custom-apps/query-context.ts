@@ -1,6 +1,6 @@
 import type { DateContext } from "@k2b/stdlib";
 import { dates } from "@k2b/stdlib";
-import { normalizeTimeZone } from "@valentinkolb/cloud/shared";
+import { normalizeTimeZone } from "@k2b/cloud/shared";
 import type { DslQueryContextValues } from "../query-dsl/parameters";
 
 type RuntimeUser = { id: string; displayName: string; uid: string; mail: string | null };

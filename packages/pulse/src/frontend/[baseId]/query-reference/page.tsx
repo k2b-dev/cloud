@@ -1,6 +1,6 @@
-import type { AuthContext } from "@valentinkolb/cloud/server";
-import { expectUserBackedActor, getLocale } from "@valentinkolb/cloud/server";
-import { getRuntimeContext } from "@valentinkolb/cloud/ssr";
+import type { AuthContext } from "@k2b/cloud/server";
+import { expectUserBackedActor, getLocale } from "@k2b/cloud/server";
+import { getRuntimeContext } from "@k2b/cloud/ssr";
 import { ssr } from "../../../config";
 import { pulseService } from "../../../service";
 import { projectPublicRelations, projectSources, resolvePublicId } from "../../../service/public-resources";

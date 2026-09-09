@@ -13,7 +13,7 @@ type LiveOptions = {
 let options!: LiveOptions;
 const transport = { connected: 0, disposed: 0, applied: [] as Array<string | null> };
 if (!isServer) {
-  mock.module("@valentinkolb/cloud/browser/live", () => ({
+  mock.module("@k2b/cloud/browser/live", () => ({
     createLiveWebSocket: (next: LiveOptions) => {
       options = next;
       return {

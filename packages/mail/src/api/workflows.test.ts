@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { AuthContext } from "@valentinkolb/cloud/server";
+import type { AuthContext } from "@k2b/cloud/server";
 import { Hono } from "hono";
 import { generateSpecs } from "hono-openapi";
 import workflowRoutes from "./workflows";

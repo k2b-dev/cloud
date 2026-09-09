@@ -5,7 +5,7 @@ import type {
   DesktopWindowOpenInput,
   DesktopWindowRefData,
   DesktopWindowSetTitleInput,
-} from "@valentinkolb/cloud/desktop";
+} from "@k2b/cloud/desktop";
 import type {
   BridgeResult,
   ConnectCloudInput,

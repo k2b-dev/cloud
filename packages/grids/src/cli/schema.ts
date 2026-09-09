@@ -1,4 +1,4 @@
-import { arg, command, confirmFlag, flag, paginationFlags } from "@valentinkolb/cloud/cli";
+import { arg, command, confirmFlag, flag, paginationFlags } from "@k2b/cloud/cli";
 import type { PublicDurableHistoryStatus } from "../api/durable-history";
 import type {
   PublicFederatedRevisionView as FederatedRevisionView,

@@ -1,4 +1,4 @@
-import { defineApp } from "@valentinkolb/cloud";
+import { defineApp } from "@k2b/cloud";
 
 const envString = (key: string): string | undefined => {
   const v = process.env[key]?.trim();

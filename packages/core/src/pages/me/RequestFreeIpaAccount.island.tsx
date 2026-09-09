@@ -1,6 +1,6 @@
 import { mutation as mutations } from "@k2b/stdlib/solid";
 import { Button, NoticeCard, prompts, useLocale } from "@k2b/ui";
-import { apiClient } from "@valentinkolb/cloud/clients/core";
+import { apiClient } from "@k2b/cloud/clients/core";
 import { accountMessages } from "./messages";
 
 type RequestFreeIpaAccountProps = {

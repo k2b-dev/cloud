@@ -7,7 +7,7 @@ export const packageSpecifiers = (source: string): Set<string> => new Set([...so
 
 // Compile fixtures use the workspace package until its npm scope is migrated.
 export const documentedFixtureSource = (source: string): string =>
-  source.replaceAll(/@valentinkolb\/cloud(?=[/"'])/g, "@k2b/cloud");
+  source.replaceAll(/@k2b\/cloud(?=[/"'])/g, "@k2b/cloud");
 
 export type RecipeFixture = {
   page: string;

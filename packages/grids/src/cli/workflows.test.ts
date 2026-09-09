@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { type CloudCliContext, type CloudCliFlags, defineCliCommands } from "@valentinkolb/cloud/cli";
-import { compileWorkflow } from "@valentinkolb/cloud/workflows/language";
+import { type CloudCliContext, type CloudCliFlags, defineCliCommands } from "@k2b/cloud/cli";
+import { compileWorkflow } from "@k2b/cloud/workflows/language";
 import { BulkLauncherRequestSchema } from "../api/workflow-public-contracts";
 import { buildWorkflowCatalog } from "../service/workflow-catalog";
 import { bindGridsWorkflow } from "../workflows/binder";

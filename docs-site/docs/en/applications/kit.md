@@ -1,6 +1,7 @@
 ---
 title: Kit browser apps
-section: Applications
+navTitle: Kit
+section: Platform services
 order: 1200
 description: Author and share browser tools with isolated JavaScript, local files and a shared per-app workspace.
 tags: [kit, browser, cli, permissions]

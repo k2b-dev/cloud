@@ -1,6 +1,6 @@
-import { type AuthContext, getLocale } from "@valentinkolb/cloud/server";
-import { resolveHelpManifest } from "@valentinkolb/cloud/shared";
-import { getLocalizedRuntimeContext } from "@valentinkolb/cloud/ssr";
+import { type AuthContext, getLocale } from "@k2b/cloud/server";
+import { resolveHelpManifest } from "@k2b/cloud/shared";
+import { getLocalizedRuntimeContext } from "@k2b/cloud/ssr";
 import { ssr } from "../../config";
 import CoreLayoutHelp from "../CoreLayoutHelp.island";
 import { corePageMessages } from "../messages";

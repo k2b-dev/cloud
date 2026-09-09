@@ -1,4 +1,4 @@
-import { AccessEntrySchema, PermissionLevelSchema, ServiceAccountCredentialSchema } from "@valentinkolb/cloud/contracts";
+import { AccessEntrySchema, PermissionLevelSchema, ServiceAccountCredentialSchema } from "@k2b/cloud/contracts";
 import { z } from "zod";
 import { SpaceDetailSchema, SpaceWormholeSchema } from "./contracts";
 

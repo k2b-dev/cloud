@@ -1,10 +1,10 @@
 import { createHash } from "node:crypto";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import type { Worker } from "@k2b/sync";
-import { lazySync } from "@valentinkolb/cloud";
-import { type LogEntry, logger, get as settingsGet, settingsService } from "@valentinkolb/cloud/services";
-import { parsePgJsonRecord } from "@valentinkolb/cloud/services/postgres";
-import { decryptValue, encryptValue } from "@valentinkolb/cloud/services/settings/crypto";
+import { lazySync } from "@k2b/cloud";
+import { type LogEntry, logger, get as settingsGet, settingsService } from "@k2b/cloud/services";
+import { parsePgJsonRecord } from "@k2b/cloud/services/postgres";
+import { decryptValue, encryptValue } from "@k2b/cloud/services/settings/crypto";
 import { sql } from "bun";
 import { exportNotebookZip, type NotebookExport } from "./export";
 

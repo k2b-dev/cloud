@@ -1,6 +1,6 @@
 import { ButtonLink } from "@k2b/ui";
-import { type AuthContext, getLocale } from "@valentinkolb/cloud/server";
-import { AdminLayout } from "@valentinkolb/cloud/ssr";
+import { type AuthContext, getLocale } from "@k2b/cloud/server";
+import { AdminLayout } from "@k2b/cloud/ssr";
 import { resolvePublicIdParam } from "../api/route-params";
 import { ssr } from "../config";
 import { gridsService } from "../service";

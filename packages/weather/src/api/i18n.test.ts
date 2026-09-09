@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
-import { weatherService } from "@valentinkolb/cloud/services";
+import { weatherService } from "@k2b/cloud/services";
 import app from ".";
 
 afterEach(() => mock.restore());

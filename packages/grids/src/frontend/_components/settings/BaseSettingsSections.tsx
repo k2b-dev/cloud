@@ -14,7 +14,7 @@ import {
   toast,
   useLocale,
 } from "@k2b/ui";
-import type { AccessEntry } from "@valentinkolb/cloud/contracts";
+import type { AccessEntry } from "@k2b/cloud/contracts";
 import { createEffect, createMemo, createResource, createSignal, For, onCleanup, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { PublicBase } from "../../../api/public-dto";

@@ -1,11 +1,11 @@
 import { ButtonLink, DataPanel, DataTable, type DataTableColumn, RangePicker, StatusBadge, useLocale } from "@k2b/ui";
-import { formatDurationMs, formatNumber, formatPercent, formatRelative } from "@valentinkolb/cloud/shared";
+import { formatDurationMs, formatNumber, formatPercent, formatRelative } from "@k2b/cloud/shared";
 import type {
   StrandedWorkflowEffect,
   UndispatchedWorkflowEvent,
   WorkflowFamilySummary,
   WorkflowRunSummary,
-} from "@valentinkolb/cloud/workflows/store";
+} from "@k2b/cloud/workflows/store";
 import type { JSX } from "solid-js";
 import { WINDOWS, type WorkflowsFilterState, workflowsFilter } from "../filters";
 import { EFFECT_TONE, eventState, LAG_WARN_MS, RUN_TONE, runErrorSummary } from "../presentation";

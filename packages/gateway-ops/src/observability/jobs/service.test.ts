@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { TraceSourceGroup } from "@valentinkolb/cloud/services";
+import type { TraceSourceGroup } from "@k2b/cloud/services";
 import type { SyncScheduleRow } from "../sync/service";
 import { buildBackgroundJobRows, filterBackgroundJobRows, normalizeScheduleMetadata } from "./service";
 

@@ -1,4 +1,4 @@
-import { arg, command, confirmFlag, flag } from "@valentinkolb/cloud/cli";
+import { arg, command, confirmFlag, flag } from "@k2b/cloud/cli";
 import { requireRestArg, resolveBaseFromCommand, resolveSource } from "./context";
 import { baseFlag } from "./flags";
 import { keyRows } from "./rows";

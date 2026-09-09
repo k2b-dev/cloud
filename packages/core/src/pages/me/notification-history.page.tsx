@@ -1,9 +1,9 @@
 import { dates } from "@k2b/stdlib";
 import { DataTable, type DataTableColumn, Pagination, Placeholder } from "@k2b/ui";
-import type { NotificationDeliveryStatus, UserNotificationHistoryItem } from "@valentinkolb/cloud/contracts";
-import { type AuthContext, getLocale } from "@valentinkolb/cloud/server";
-import { notifications, readAccountCategoryPolicy } from "@valentinkolb/cloud/services";
-import { getLocalizedRuntimeContext, Layout } from "@valentinkolb/cloud/ssr";
+import type { NotificationDeliveryStatus, UserNotificationHistoryItem } from "@k2b/cloud/contracts";
+import { type AuthContext, getLocale } from "@k2b/cloud/server";
+import { notifications, readAccountCategoryPolicy } from "@k2b/cloud/services";
+import { getLocalizedRuntimeContext, Layout } from "@k2b/cloud/ssr";
 import { ssr } from "../../config";
 import AccountHub, { AccountPageHeader, AccountSubnav, notificationViews } from "./AccountHub";
 import { type AccountMessages, accountMessages } from "./messages";

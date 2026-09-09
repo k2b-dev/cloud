@@ -1,8 +1,8 @@
 import { CursorMismatchError, RetentionGapError, type TopicEvent, type TopicLiveEvent } from "@k2b/sync";
 import { retry } from "@k2b/sync/retry";
-import type { NotebookPresenceParticipant, User } from "@valentinkolb/cloud/contracts";
-import { auth, getLocale } from "@valentinkolb/cloud/server";
-import { logger } from "@valentinkolb/cloud/services";
+import type { NotebookPresenceParticipant, User } from "@k2b/cloud/contracts";
+import { auth, getLocale } from "@k2b/cloud/server";
+import { logger } from "@k2b/cloud/services";
 import type { ServerWebSocket } from "bun";
 import { Hono } from "hono";
 import { upgradeWebSocket } from "hono/bun";

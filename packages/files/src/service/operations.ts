@@ -1,5 +1,5 @@
 import { Filegate } from "@valentinkolb/filegate/client";
-import { get } from "@valentinkolb/cloud/services";
+import { get } from "@k2b/cloud/services";
 import type {
   FileBase,
   FileInfo,

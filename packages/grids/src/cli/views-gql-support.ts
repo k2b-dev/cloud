@@ -1,6 +1,6 @@
 import { writeFile } from "node:fs/promises";
-import type { CliInputFlagValue, CloudCliContext } from "@valentinkolb/cloud/cli";
-import { flag, printStructured } from "@valentinkolb/cloud/cli";
+import type { CliInputFlagValue, CloudCliContext } from "@k2b/cloud/cli";
+import { flag, printStructured } from "@k2b/cloud/cli";
 import type { PublicTable as Table, PublicView as View } from "../api/public-dto";
 import type { DslQueryExecuteResponse } from "../contracts";
 import { GRID_FORMULA_FUNCTIONS } from "../formula/function-catalog";

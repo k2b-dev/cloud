@@ -1,5 +1,5 @@
 import { ssr } from "../config";
-import { type AuthContext, auth } from "@valentinkolb/cloud/server";
+import { type AuthContext, auth } from "@k2b/cloud/server";
 import { Hono } from "hono";
 import weatherDetailPage from "./[id]/page";
 import weatherAdminPage from "./admin";

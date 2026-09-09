@@ -1,5 +1,5 @@
 import { DataTable, type DataTableColumn, DetailPanel, IconButtonLink, Placeholder, useLocale } from "@k2b/ui";
-import { formatDateTime, formatDurationMs } from "@valentinkolb/cloud/shared";
+import { formatDateTime, formatDurationMs } from "@k2b/cloud/shared";
 import type { TelemetryEventRow } from "../service";
 import { gatewayOpsMessages } from "../../../messages";
 

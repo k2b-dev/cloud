@@ -6,7 +6,7 @@ import { createDomTestHarness } from "../../ui/test/dom";
 const accept = mock(async (_input: unknown) => new Response(null, { status: 204 }));
 const logout = mock(async () => new Response(null, { status: 204 }));
 if (!isServer)
-  mock.module("@valentinkolb/cloud/clients/core", () => ({
+  mock.module("@k2b/cloud/clients/core", () => ({
     apiClient: {
       auth: {
         "legal-consent": { $post: accept },

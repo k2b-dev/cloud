@@ -1,4 +1,4 @@
-import { type AuthContext, auth, jsonResponse, rateLimit, respond, v } from "@valentinkolb/cloud/server";
+import { type AuthContext, auth, jsonResponse, rateLimit, respond, v } from "@k2b/cloud/server";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { type Context, Hono } from "hono";
 import { describeRoute } from "hono-openapi";

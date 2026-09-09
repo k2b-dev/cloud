@@ -1,5 +1,5 @@
-import type { PaginationParams } from "@valentinkolb/cloud/contracts";
-import { logger, toPgTextArray } from "@valentinkolb/cloud/services";
+import type { PaginationParams } from "@k2b/cloud/contracts";
+import { logger, toPgTextArray } from "@k2b/cloud/services";
 import { sql } from "bun";
 import { buildNotebookVisibleAccessCondition } from "./access";
 import type { Note } from "./notes";

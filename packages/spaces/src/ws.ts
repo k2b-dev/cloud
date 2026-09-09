@@ -1,6 +1,6 @@
 import { CursorMismatchError, RetentionGapError } from "@k2b/sync";
-import { auth, getLocale, hasPermission } from "@valentinkolb/cloud/server";
-import { logger } from "@valentinkolb/cloud/services";
+import { auth, getLocale, hasPermission } from "@k2b/cloud/server";
+import { logger } from "@k2b/cloud/services";
 import type { ServerWebSocket } from "bun";
 import { Hono } from "hono";
 import { upgradeWebSocket } from "hono/bun";

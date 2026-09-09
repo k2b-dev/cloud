@@ -1,4 +1,4 @@
-import type { AccessEntry } from "@valentinkolb/cloud/contracts";
+import type { AccessEntry } from "@k2b/cloud/contracts";
 import type {
   ComposeSignatureDefault,
   ComposeTemplate,

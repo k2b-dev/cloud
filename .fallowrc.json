@@ -1,6 +1,6 @@
 {
   "$schema": "https://raw.githubusercontent.com/fallow-rs/fallow/main/schema.json",
-  "publicPackages": ["@valentinkolb/cloud"],
+  "publicPackages": ["@k2b/cloud"],
   "ignorePatterns": ["packages/grids/src/styles/app.css"],
   "rules": {
     "duplicate-exports": "off"

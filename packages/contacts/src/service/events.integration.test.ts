@@ -7,7 +7,7 @@ natsTest(
   async () => {
     const { createSync } = await import("@k2b/sync");
     const { connect } = await import("@nats-io/transport-node");
-    const { bindProcessSync, unbindProcessSync } = await import("@valentinkolb/cloud");
+    const { bindProcessSync, unbindProcessSync } = await import("@k2b/cloud");
     const connection = await connect({
       servers: process.env.NATS_SERVERS ?? "nats://localhost:4222",
       ignoreClusterUpdates: true,

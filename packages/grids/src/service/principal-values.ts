@@ -1,5 +1,5 @@
 import { err, fail, i18n, ok, type Result } from "@k2b/stdlib";
-import { accountsAppService } from "@valentinkolb/cloud/services";
+import { accountsAppService } from "@k2b/cloud/services";
 import { type PrincipalReference, PrincipalReferenceSchema } from "../field-types/principal";
 import type { Field } from "./types";
 

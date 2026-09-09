@@ -1,5 +1,5 @@
 import { err, fail, isServiceError, ok, type Result } from "@k2b/stdlib";
-import { audit } from "@valentinkolb/cloud/services";
+import { audit } from "@k2b/cloud/services";
 import { sql } from "bun";
 import type { AddConversationLocalTags, CreateLocalTag, DeleteLocalTag, SetConversationLocalTags, UpdateLocalTag } from "../contracts";
 import { withShortIdDb } from "../lib/short-id";

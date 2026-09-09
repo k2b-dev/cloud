@@ -1,4 +1,4 @@
-import type { TraceCategory, TraceWindow } from "@valentinkolb/cloud/services";
+import type { TraceCategory, TraceWindow } from "@k2b/cloud/services";
 
 export type JobsHealthFilter = "all" | "failed" | "stuck" | "running" | "healthy";
 export type JobsTypeFilter = "all" | TraceCategory;

@@ -1,5 +1,5 @@
-import { getCapabilityCatalogApp, invokeCapabilityWithDataSchema } from "@valentinkolb/cloud/capabilities/server";
-import type { CapabilityResult } from "@valentinkolb/cloud/contracts";
+import { getCapabilityCatalogApp, invokeCapabilityWithDataSchema } from "@k2b/cloud/capabilities/server";
+import type { CapabilityResult } from "@k2b/cloud/contracts";
 import { z } from "zod";
 import {
   type MailEventInvitationDraft,

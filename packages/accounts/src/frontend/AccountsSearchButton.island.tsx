@@ -1,7 +1,7 @@
 import { navigateTo } from "@k2b/ssr/nav";
 import { isSpotlightShortcut, openSpotlightSearch, SPOTLIGHT_SHORTCUT_TITLE, SpotlightButton, type SpotlightButtonVariant } from "@k2b/ui";
-import { apiClient as coreClient } from "@valentinkolb/cloud/clients/core";
-import type { EntityKind, EntityListItem } from "@valentinkolb/cloud/contracts";
+import { apiClient as coreClient } from "@k2b/cloud/clients/core";
+import type { EntityKind, EntityListItem } from "@k2b/cloud/contracts";
 import { onCleanup, onMount } from "solid-js";
 import { useAccountsMessages } from "./messages";
 

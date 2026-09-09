@@ -1,7 +1,7 @@
 import { ButtonLink, DataTable, type DataTableColumn, NoticeCard, StatusBadge } from "@k2b/ui";
-import { type AuthContext, getDateConfig, getLocale } from "@valentinkolb/cloud/server";
-import { formatBytes, formatDateTime, formatNumber } from "@valentinkolb/cloud/shared";
-import { AdminLayout } from "@valentinkolb/cloud/ssr";
+import { type AuthContext, getDateConfig, getLocale } from "@k2b/cloud/server";
+import { formatBytes, formatDateTime, formatNumber } from "@k2b/cloud/shared";
+import { AdminLayout } from "@k2b/cloud/ssr";
 import SyncNatsFilterBar from "../_components/SyncNatsFilterBar.island";
 import { ssr } from "../../config";
 import { NatsQuerySchema, readNatsDiagnostics } from "./diagnostics";

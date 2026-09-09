@@ -1,6 +1,6 @@
 import { beforeAll, describe, expect } from "bun:test";
 import { err, fail, ok } from "@k2b/stdlib";
-import type { AuthContext } from "@valentinkolb/cloud/server";
+import type { AuthContext } from "@k2b/cloud/server";
 import { sql } from "bun";
 import { Hono } from "hono";
 import { snapshotTableReadAuthorizer } from "../api/documents-api-shared";

@@ -1,10 +1,10 @@
-import { type AuthContext, auth, getLocale, jsonResponse, type RateLimitConfig, rateLimit, requiresAuth, v } from "@valentinkolb/cloud/server";
+import { type AuthContext, auth, getLocale, jsonResponse, type RateLimitConfig, rateLimit, requiresAuth, v } from "@k2b/cloud/server";
 import {
   DOCUMENT_EXTRACTION_MAX_INPUT_BYTES,
   DocumentExtractionError,
   type DocumentExtractionErrorCode,
   extractDocumentMarkdown,
-} from "@valentinkolb/cloud/services/document-extraction";
+} from "@k2b/cloud/services/document-extraction";
 import { Hono, type MiddlewareHandler } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { describeRoute } from "hono-openapi";

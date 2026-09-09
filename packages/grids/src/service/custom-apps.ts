@@ -1,5 +1,5 @@
 import { err, fail, ok, type Result, crypto as stdCrypto } from "@k2b/stdlib";
-import { toPgUuidArray } from "@valentinkolb/cloud/services";
+import { toPgUuidArray } from "@k2b/cloud/services";
 import { sql } from "bun";
 import { type Field, ViewUiSettingsSchema } from "../contracts";
 import { customAppPageRecordFieldIds } from "../custom-apps/conditions";

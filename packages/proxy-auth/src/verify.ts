@@ -1,5 +1,5 @@
-import { type AuthContext, auth, getEffectiveGroups } from "@valentinkolb/cloud/server";
-import { authFlows } from "@valentinkolb/cloud/services";
+import { type AuthContext, auth, getEffectiveGroups } from "@k2b/cloud/server";
+import { authFlows } from "@k2b/cloud/services";
 import { type Context, Hono } from "hono";
 import { proxyAuthService } from "./service";
 

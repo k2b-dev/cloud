@@ -3,7 +3,7 @@ import type {
   CapabilityCatalogApp,
   CapabilityCatalogAppClientResult,
   CapabilityCatalogClientResult,
-} from "@valentinkolb/cloud/capabilities/server";
+} from "@k2b/cloud/capabilities/server";
 import { loadCapabilityWorkspace } from "./catalog";
 
 const hash = "a".repeat(64);

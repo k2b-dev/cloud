@@ -4,8 +4,8 @@ import {
   liquidTemplateVariables,
   renderLiquidTemplate,
   validateLiquidTemplate,
-} from "@valentinkolb/cloud/shared";
-import type { WorkflowActionContext, WorkflowJsonValue } from "@valentinkolb/cloud/workflows";
+} from "@k2b/cloud/shared";
+import type { WorkflowActionContext, WorkflowJsonValue } from "@k2b/cloud/workflows";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 
 const MAX_MAIL_TEMPLATE_BYTES = 200_000;

@@ -1,6 +1,6 @@
 import type { Worker } from "@k2b/sync";
-import { lazySync } from "@valentinkolb/cloud";
-import { trace } from "@valentinkolb/cloud/services";
+import { lazySync } from "@k2b/cloud";
+import { trace } from "@k2b/cloud/services";
 import { sql } from "bun";
 import {
   resumePulseBaseDataClearJobs,

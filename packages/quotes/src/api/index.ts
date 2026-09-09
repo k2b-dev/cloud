@@ -1,8 +1,8 @@
 import { Hono } from "hono";
-import { rateLimit } from "@valentinkolb/cloud/server";
+import { rateLimit } from "@k2b/cloud/server";
 import { describeRoute } from "hono-openapi";
-import { jsonResponse } from "@valentinkolb/cloud/server";
-import { respond } from "@valentinkolb/cloud/server";
+import { jsonResponse } from "@k2b/cloud/server";
+import { respond } from "@k2b/cloud/server";
 import { quotesService } from "../service";
 import { z } from "zod";
 

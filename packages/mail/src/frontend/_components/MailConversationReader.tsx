@@ -17,7 +17,7 @@ import {
   toast,
   useLocale,
 } from "@k2b/ui";
-import type { CloudTheme } from "@valentinkolb/cloud/shared";
+import type { CloudTheme } from "@k2b/cloud/shared";
 import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "../../api/client";
 import type {

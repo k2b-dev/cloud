@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { AiConversation, AiStoredMessage } from "@valentinkolb/cloud/ai";
+import type { AiConversation, AiStoredMessage } from "@k2b/cloud/ai";
 import { buildAssistantChatDiagnostic } from "./diagnostics";
 
 const stored = (input: Pick<AiStoredMessage, "seq" | "message"> & Partial<AiStoredMessage>): AiStoredMessage => ({

@@ -1,6 +1,6 @@
 import { timing } from "@k2b/stdlib";
 import { Button, Checkbox, IconButton, LocaleProvider, PanelDialog, PinInput, TextInput, useLocale } from "@k2b/ui";
-import { type AppVaultSession } from "@valentinkolb/cloud/browser/app-approval";
+import { type AppVaultSession } from "@k2b/cloud/browser/app-approval";
 import { createMemo, createSignal, onCleanup, onMount, Show } from "solid-js";
 import { openDialog } from "./dialog";
 import { authMessages } from "./i18n";

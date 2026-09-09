@@ -48,7 +48,7 @@ if (!isServer) {
     },
   }));
 
-  mock.module("@valentinkolb/cloud/account/ui", () => ({
+  mock.module("@k2b/cloud/account/ui", () => ({
     EntitySearch: (props: { includeUsers?: boolean; includeGroups?: boolean; onSelect: (principal: unknown) => void }) => {
       const button = document.createElement("button");
       button.type = "button";

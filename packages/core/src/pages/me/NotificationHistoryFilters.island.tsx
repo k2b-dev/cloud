@@ -1,6 +1,6 @@
 import { navigateTo } from "@k2b/ssr/nav";
 import { FilterChip, type FilterChipSection, useLocale } from "@k2b/ui";
-import type { NotificationDeliveryStatus } from "@valentinkolb/cloud/contracts";
+import type { NotificationDeliveryStatus } from "@k2b/cloud/contracts";
 import { accountMessages } from "./messages";
 
 export default function NotificationHistoryFilters(props: { status?: NotificationDeliveryStatus }) {

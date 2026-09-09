@@ -1,7 +1,7 @@
 import { afterAll, afterEach, expect, spyOn, test } from "bun:test";
-import type { User } from "@valentinkolb/cloud/contracts";
-import { accountsAppService, coreSettings } from "@valentinkolb/cloud/services";
-import { session } from "@valentinkolb/cloud/services/session";
+import type { User } from "@k2b/cloud/contracts";
+import { accountsAppService, coreSettings } from "@k2b/cloud/services";
+import { session } from "@k2b/cloud/services/session";
 import notices from "./action-notice";
 
 const user: User = {

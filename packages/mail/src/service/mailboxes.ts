@@ -1,6 +1,6 @@
 import { err, fail, ok, type Result, tryCatch, unwrap } from "@k2b/stdlib";
-import { createAccess, type PermissionLevel } from "@valentinkolb/cloud/server";
-import { audit } from "@valentinkolb/cloud/services";
+import { createAccess, type PermissionLevel } from "@k2b/cloud/server";
+import { audit } from "@k2b/cloud/services";
 import { sql } from "bun";
 import { z } from "zod";
 import {

@@ -1,4 +1,4 @@
-import { defineApp } from "@valentinkolb/cloud";
+import { defineApp } from "@k2b/cloud";
 export const app = defineApp({
   id: "kit",
   name: "Kit",

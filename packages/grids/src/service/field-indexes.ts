@@ -1,4 +1,4 @@
-import { logger } from "@valentinkolb/cloud/services";
+import { logger } from "@k2b/cloud/services";
 import { type SQL, sql } from "bun";
 import { isMultiSelectField } from "./field-storage";
 

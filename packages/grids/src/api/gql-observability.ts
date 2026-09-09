@@ -1,4 +1,4 @@
-import { type TraceAttributes, type TraceStatus, trace } from "@valentinkolb/cloud/services";
+import { type TraceAttributes, type TraceStatus, trace } from "@k2b/cloud/services";
 import type { DslQueryPreviewBody, DslQueryPreviewResponse, DslQuerySurface } from "../contracts";
 import type { DslResolvedSqlQueryPlan } from "../query-dsl/resolver";
 

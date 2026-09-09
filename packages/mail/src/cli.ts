@@ -15,8 +15,8 @@ import {
   printStructured,
   printRows as printTable,
   readCliInput,
-} from "@valentinkolb/cloud/cli";
-import type { AccessEntry, PermissionLevel, Principal } from "@valentinkolb/cloud/contracts";
+} from "@k2b/cloud/cli";
+import type { AccessEntry, PermissionLevel, Principal } from "@k2b/cloud/contracts";
 import { z } from "zod";
 import type { CalendarInvitationImportResult, CalendarInvitationPreview, SpacesMailDestinationContext } from "./app-integration-contracts";
 import {

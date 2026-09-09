@@ -1,5 +1,5 @@
-import type { WorkflowBoundPlan, WorkflowJsonValue, WorkflowStepOutcome } from "@valentinkolb/cloud/workflows";
-import type { WorkflowActionStep, WorkflowExecuteActionContext } from "@valentinkolb/cloud/workflows/runtime";
+import type { WorkflowBoundPlan, WorkflowJsonValue, WorkflowStepOutcome } from "@k2b/cloud/workflows";
+import type { WorkflowActionStep, WorkflowExecuteActionContext } from "@k2b/cloud/workflows/runtime";
 import type { FrozenMailWorkflowSource } from "./workflow-data";
 
 export type MailWorkflowProjectedObject = Record<string, WorkflowJsonValue>;

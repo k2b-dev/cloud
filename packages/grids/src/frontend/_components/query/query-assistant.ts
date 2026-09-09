@@ -1,4 +1,4 @@
-import { type LaunchAssistantInput, launchAssistant } from "@valentinkolb/cloud/ai/browser";
+import { type LaunchAssistantInput, launchAssistant } from "@k2b/cloud/ai/browser";
 
 /** This ceiling is persisted by Cloud; preloading alone does not restrict a chat. */
 export const GRIDS_QUERY_TOOLS = [

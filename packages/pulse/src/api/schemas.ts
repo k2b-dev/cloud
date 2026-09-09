@@ -1,4 +1,4 @@
-import { PermissionLevelSchema, PrincipalSchema, ServiceAccountCredentialSchema } from "@valentinkolb/cloud/contracts";
+import { PermissionLevelSchema, PrincipalSchema, ServiceAccountCredentialSchema } from "@k2b/cloud/contracts";
 import { z } from "zod";
 import { AGGREGATIONS, EVENT_AGGREGATIONS, METRIC_TYPES, PANEL_VISUALS, SOURCE_KINDS } from "../contracts";
 import { PULSE_EXTERNAL_INGEST_BATCH_LIMIT, PULSE_EXTERNAL_INGEST_COLLECTION_LIMIT } from "../ingest-limits";

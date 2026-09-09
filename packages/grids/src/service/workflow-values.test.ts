@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import type { WorkflowBoundPlan, WorkflowInvocation, WorkflowJsonValue } from "@valentinkolb/cloud/workflows";
-import type { WorkflowVariableScope } from "@valentinkolb/cloud/workflows/runtime";
+import type { WorkflowBoundPlan, WorkflowInvocation, WorkflowJsonValue } from "@k2b/cloud/workflows";
+import type { WorkflowVariableScope } from "@k2b/cloud/workflows/runtime";
 import type { GridRecord } from "../contracts";
 import { GridsWorkflowValueResolver, prepareWorkflowInputs, WorkflowInputPreparationError } from "./workflow-values";
 

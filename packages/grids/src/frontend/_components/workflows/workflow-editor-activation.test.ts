@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { WorkflowBoundPlan } from "@valentinkolb/cloud/workflows";
+import type { WorkflowBoundPlan } from "@k2b/cloud/workflows";
 import { automaticTriggerSummary, shouldConfirmAutomaticTriggers } from "./workflow-editor-activation";
 
 const plan = (triggers: WorkflowBoundPlan["triggers"]): WorkflowBoundPlan =>

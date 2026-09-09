@@ -8,9 +8,9 @@
  */
 
 import { ButtonLink, IconButtonLink, NoticeCard, Pagination, Placeholder, RangePicker, StatCell, StatGrid, useLocale } from "@k2b/ui";
-import { type AuthContext, getDateConfig, getLocale } from "@valentinkolb/cloud/server";
-import { formatDateTime, formatDurationMs, formatNumber } from "@valentinkolb/cloud/shared";
-import { AdminLayout } from "@valentinkolb/cloud/ssr";
+import { type AuthContext, getDateConfig, getLocale } from "@k2b/cloud/server";
+import { formatDateTime, formatDurationMs, formatNumber } from "@k2b/cloud/shared";
+import { AdminLayout } from "@k2b/cloud/ssr";
 import {
   getWorkflow,
   getWorkflowRun,
@@ -21,7 +21,7 @@ import {
   listWorkflowRunTimeline,
   type WorkflowAppHealth,
   workflowHealth,
-} from "@valentinkolb/cloud/workflows/store";
+} from "@k2b/cloud/workflows/store";
 import type { JSX } from "solid-js";
 import { ssr } from "../../config";
 import ObservabilityChart from "../../frontend/ObservabilityChart.island";

@@ -1,4 +1,4 @@
-import { type AssistantLaunch, type LaunchAssistantInput, launchAssistant } from "@valentinkolb/cloud/ai/browser";
+import { type AssistantLaunch, type LaunchAssistantInput, launchAssistant } from "@k2b/cloud/ai/browser";
 import { contactOpenHref } from "../../app-integration-contracts";
 import type { MailAddress } from "../../contracts";
 import { resolveContacts } from "./contact-capabilities";

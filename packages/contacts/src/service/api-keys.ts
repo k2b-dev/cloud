@@ -1,5 +1,5 @@
-import type { PermissionLevel, User } from "@valentinkolb/cloud/contracts";
-import { serviceAccountCredentials, serviceAccounts } from "@valentinkolb/cloud/services";
+import type { PermissionLevel, User } from "@k2b/cloud/contracts";
+import { serviceAccountCredentials, serviceAccounts } from "@k2b/cloud/services";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { CONTACT_BOOK_RESOURCE_TYPE, CONTACTS_APP_ID, type ContactBookApiKey, grantBookAccess, listContactBookApiKeys } from "./access";
 

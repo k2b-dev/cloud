@@ -1,4 +1,4 @@
-import { invokeCapabilityWithDataSchema } from "@valentinkolb/cloud/capabilities";
+import { invokeCapabilityWithDataSchema } from "@k2b/cloud/capabilities";
 import type { z } from "zod";
 import {
   contactBooksSchema,

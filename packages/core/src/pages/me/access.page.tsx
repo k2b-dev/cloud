@@ -1,10 +1,10 @@
 import { dates } from "@k2b/stdlib";
 import { ButtonLink, NoticeCard } from "@k2b/ui";
-import { accountCategoryLabel } from "@valentinkolb/cloud/contracts";
-import { type AuthContext, getLocale } from "@valentinkolb/cloud/server";
-import { accountsAppService, coreSettings, readAccountCategoryPolicy } from "@valentinkolb/cloud/services";
-import { canManageAnyGroups } from "@valentinkolb/cloud/shared";
-import { getRuntimeContext, hasDedicatedRuntimeRoute, Layout } from "@valentinkolb/cloud/ssr";
+import { accountCategoryLabel } from "@k2b/cloud/contracts";
+import { type AuthContext, getLocale } from "@k2b/cloud/server";
+import { accountsAppService, coreSettings, readAccountCategoryPolicy } from "@k2b/cloud/services";
+import { canManageAnyGroups } from "@k2b/cloud/shared";
+import { getRuntimeContext, hasDedicatedRuntimeRoute, Layout } from "@k2b/cloud/ssr";
 import { ssr } from "../../config";
 import AccountHub, { AccountPageHeader, AccountProfileActions } from "./AccountHub";
 import { accountMessages } from "./messages";

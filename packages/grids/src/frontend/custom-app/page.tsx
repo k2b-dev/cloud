@@ -1,6 +1,6 @@
 import { MarkdownView, Placeholder, StatCell, StatGrid } from "@k2b/ui";
-import type { AuthContext, getDateConfig } from "@valentinkolb/cloud/server";
-import { Layout } from "@valentinkolb/cloud/ssr";
+import type { AuthContext, getDateConfig } from "@k2b/cloud/server";
+import { Layout } from "@k2b/cloud/ssr";
 import {
   type BlockResult,
   type ChartBlock,

@@ -1,7 +1,7 @@
 import { batch, createMemo, createSignal, For, Show, onCleanup, onMount } from "solid-js";
 import { AppWorkspace, Button, Dropdown, MarkdownView, Paper, prompts, useLocale } from "@k2b/ui";
 import { KitSettings } from "./KitSettings";
-import type { AccessEntry } from "@valentinkolb/cloud/contracts";
+import type { AccessEntry } from "@k2b/cloud/contracts";
 import { files } from "@k2b/stdlib/browser";
 import { timing } from "@k2b/stdlib";
 import { mutation } from "@k2b/stdlib/solid";

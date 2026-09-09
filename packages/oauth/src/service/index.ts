@@ -1,4 +1,4 @@
-import { err, fail, ok, type PageParams, type Paginated, paginate, type Result, type ServiceError } from "@valentinkolb/cloud/server";
+import { err, fail, ok, type PageParams, type Paginated, paginate, type Result, type ServiceError } from "@k2b/cloud/server";
 import type { MutationResult } from "@/contracts";
 import { oauth } from "./oauth";
 

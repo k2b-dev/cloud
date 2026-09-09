@@ -1,7 +1,7 @@
-import { accountCategory } from "@valentinkolb/cloud/contracts";
-import { type AuthContext, auth, jsonResponse, requiresAuth, v } from "@valentinkolb/cloud/server";
-import { accountsAppService, coreSettings } from "@valentinkolb/cloud/services";
-import { AccountActionNoticeSchema, renderAccountActionNotice } from "@valentinkolb/cloud/shared";
+import { accountCategory } from "@k2b/cloud/contracts";
+import { type AuthContext, auth, expectUserBackedActor, jsonResponse, requiresAuth, v } from "@k2b/cloud/server";
+import { accountsAppService, coreSettings } from "@k2b/cloud/services";
+import { AccountActionNoticeSchema, renderAccountActionNotice } from "@k2b/cloud/shared";
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { describeRoute } from "hono-openapi";
@@ -33,7 +33,7 @@ export default new Hono<AuthContext>()
     async (c) => {
       c.header("Cache-Control", "no-store");
       const input = c.req.valid("json");
-      const roles = c.get("user").roles;
+      const roles = expectUserBackedActor(c).roles;
       if (!roles.includes("admin") && !(input.action.startsWith("group.") && roles.includes("group-manager"))) {
         return c.json({ markdown: null, failed: false });
       }

@@ -1,4 +1,4 @@
-import { UserProfileSchema, UserProviderSchema } from "@valentinkolb/cloud/contracts";
+import { UserProfileSchema, UserProviderSchema } from "@k2b/cloud/contracts";
 import { z } from "zod";
 
 export const CreateGroupSchema = z.object({
@@ -76,7 +76,7 @@ export type {
   EntityListItem,
   PaginationResponse,
   User,
-} from "@valentinkolb/cloud/contracts";
+} from "@k2b/cloud/contracts";
 export {
   BaseGroupSchema,
   BaseUserSchema,
@@ -88,4 +88,4 @@ export {
   PaginationResponseSchema,
   parsePagination,
   SearchQuerySchema,
-} from "@valentinkolb/cloud/contracts";
+} from "@k2b/cloud/contracts";

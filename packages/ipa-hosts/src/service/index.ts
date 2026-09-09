@@ -1,6 +1,6 @@
 import { ipaHosts } from "../backend";
-import { audit, type AuditActor, type AuditTarget } from "@valentinkolb/cloud/services";
-import { getFreeIpaConfig } from "@valentinkolb/cloud/services/freeipa-config";
+import { audit, type AuditActor, type AuditTarget } from "@k2b/cloud/services";
+import { getFreeIpaConfig } from "@k2b/cloud/services/freeipa-config";
 import {
   err,
   fail,
@@ -11,7 +11,7 @@ import {
   type Paginated,
   type Result,
   type ServiceErrorCode,
-} from "@valentinkolb/cloud/server";
+} from "@k2b/cloud/server";
 import type { IpaHost, IpaHostgroup } from "@/contracts";
 
 type IpaMutationResult = { ok: true } | { ok: false; error: string; status: 400 | 401 | 403 | 404 | 500 };

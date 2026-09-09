@@ -1,4 +1,4 @@
-import type { PermissionLevel } from "@valentinkolb/cloud/server";
+import type { PermissionLevel } from "@k2b/cloud/server";
 import { sql } from "bun";
 import {
   type DocumentTemplate,

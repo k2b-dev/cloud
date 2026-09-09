@@ -1,5 +1,5 @@
-import { defineApp } from "@valentinkolb/cloud";
-import { WEATHER_SETTINGS } from "@valentinkolb/cloud/services/weather/settings";
+import { defineApp } from "@k2b/cloud";
+import { WEATHER_SETTINGS } from "@k2b/cloud/services/weather/settings";
 
 export const app = defineApp({
   id: "weather",

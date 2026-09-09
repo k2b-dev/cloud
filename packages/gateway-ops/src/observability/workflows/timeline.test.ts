@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { WorkflowRunSummary } from "@valentinkolb/cloud/workflows/store";
+import type { WorkflowRunSummary } from "@k2b/cloud/workflows/store";
 import { buildWorkflowTimelineRows, WORKFLOW_TIMELINE_LANES } from "./timeline";
 
 const WINDOW = { fromMs: 1_000_000, toMs: 1_000_000 + 3_600_000 };

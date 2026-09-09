@@ -18,11 +18,11 @@ import {
   toast,
   useLocale,
 } from "@k2b/ui";
-import { coreClient } from "@valentinkolb/cloud/clients/core";
-import { SearchBar } from "@valentinkolb/cloud/ssr/islands";
+import { coreClient } from "@k2b/cloud/clients/core";
+import { SearchBar } from "@k2b/cloud/ssr/islands";
 import { navigateTo } from "@k2b/ssr/nav";
-import { LinuxIdentityConfigurationSchema, type LinuxIdentityConfiguration } from "@valentinkolb/cloud/contracts";
-import type { linuxIdentities, PosixCandidate } from "@valentinkolb/cloud/services";
+import { LinuxIdentityConfigurationSchema, type LinuxIdentityConfiguration } from "@k2b/cloud/contracts";
+import type { linuxIdentities, PosixCandidate } from "@k2b/cloud/services";
 import { createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import { linuxErrorText, linuxMessages } from "./linux-messages";
 

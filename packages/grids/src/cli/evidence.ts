@@ -1,4 +1,4 @@
-import { arg, command, confirmFlag, flag } from "@valentinkolb/cloud/cli";
+import { arg, command, confirmFlag, flag } from "@k2b/cloud/cli";
 import { EvidenceExportRequestSchema } from "../evidence-export-contracts";
 import { verifyEvidencePackage } from "../evidence-package-verifier";
 import { baseArgs, baseFlag, requirePublicId, resolveBaseFromCommand } from "./resources";

@@ -12,7 +12,7 @@ import {
   SegmentedControl,
   useLocale,
 } from "@k2b/ui";
-import { markdown } from "@valentinkolb/cloud/shared";
+import { markdown } from "@k2b/cloud/shared";
 import { diffLines } from "diff";
 import { createMemo, createSignal, For, Show } from "solid-js";
 import { apiClient } from "@/api/client";

@@ -1,4 +1,4 @@
-import { arg, type CloudCliContext, command, flag } from "@valentinkolb/cloud/cli";
+import { arg, type CloudCliContext, command, flag } from "@k2b/cloud/cli";
 import type { PublicBase as Base } from "../api/public-dto";
 import { GRIDS_BASE_DEFAULT_KEY } from "./resources";
 import { exactMatch, jsonRequest, printJsonOrMessage, printJsonOrTable, readApi } from "./runtime";

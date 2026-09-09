@@ -1,4 +1,4 @@
-import { logger, toPgTextArray } from "@valentinkolb/cloud/services";
+import { logger, toPgTextArray } from "@k2b/cloud/services";
 import { sql } from "bun";
 import { buildNotebookVisibleAccessCondition } from "./access";
 import { notebookServiceMessages } from "./messages";

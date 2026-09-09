@@ -5,7 +5,7 @@
  * any workflow broken" without scraping HTML. The two writes mirror the
  * kernel's safe controls: cancellation and an explicit effect decision.
  */
-import { type AuthContext, auth, rateLimit, respond, v } from "@valentinkolb/cloud/server";
+import { type AuthContext, auth, rateLimit, respond, v } from "@k2b/cloud/server";
 import {
   getWorkflowRun,
   listStrandedWorkflowEffects,
@@ -15,7 +15,7 @@ import {
   resolveWorkflowRunAttention,
   type WorkflowAttentionResolution,
   workflowHealth,
-} from "@valentinkolb/cloud/workflows/store";
+} from "@k2b/cloud/workflows/store";
 import { err, fail, ok } from "@k2b/stdlib";
 import { Hono } from "hono";
 import { z } from "zod";

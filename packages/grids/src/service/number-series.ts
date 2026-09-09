@@ -1,5 +1,5 @@
 import { type DateContext, dates } from "@k2b/stdlib";
-import { toPgUuidArray } from "@valentinkolb/cloud/services";
+import { toPgUuidArray } from "@k2b/cloud/services";
 import { SQL, sql } from "bun";
 import type { SqlClient } from "./audit";
 import { insertWithShortIdForDb } from "./short-id";

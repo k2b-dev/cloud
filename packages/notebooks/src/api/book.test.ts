@@ -1,5 +1,5 @@
 import { afterAll, beforeEach, describe, expect, spyOn, test } from "bun:test";
-import type { User } from "@valentinkolb/cloud/contracts";
+import type { User } from "@k2b/cloud/contracts";
 import type { Notebook } from "../service/notebooks";
 
 // Isolate import-time middleware spies while exercising the actual auth,
@@ -16,8 +16,8 @@ if (process.env.NOTEBOOKS_BOOK_API_TEST !== "1") {
   }, 30_000);
 } else {
   await import("../frontend/[id]/_components/detail/ssr-test-plugin");
-  const server = await import("@valentinkolb/cloud/server");
-  const { oauthTokens } = await import("@valentinkolb/cloud/services");
+  const server = await import("@k2b/cloud/server");
+  const { oauthTokens } = await import("@k2b/cloud/services");
   const rateLimit = spyOn(server, "rateLimit").mockReturnValue(async (_c, next) => next());
   const { notebooksService } = await import("../service");
   const book = await import("../service/book");

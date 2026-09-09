@@ -1,4 +1,4 @@
-import { type AuthContext, getLocale } from "@valentinkolb/cloud/server";
+import { type AuthContext, getLocale } from "@k2b/cloud/server";
 import { currentActorUser, gateBaseAtAccess, gridsAccessContext } from "../../../../../api/permissions";
 import { ssr } from "../../../../../config";
 import { gridsService } from "../../../../../service";

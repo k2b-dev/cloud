@@ -1,4 +1,4 @@
-import { installDesktopBridge, type DesktopBridge } from "@valentinkolb/cloud/desktop";
+import { installDesktopBridge, type DesktopBridge } from "@k2b/cloud/desktop";
 import type { BridgeResult, DesktopLabBridge } from "../bridge/types";
 
 const post = async <T>(path: string, body?: unknown): Promise<BridgeResult<T>> => {

@@ -1,7 +1,7 @@
-import { type AuthContext, auth, jsonResponse, rateLimit, v } from "@valentinkolb/cloud/server";
-import { accounts, get, isAccountCategoryAllowed, logger } from "@valentinkolb/cloud/services";
-import { isAccountExpired } from "@valentinkolb/cloud/services/account-model";
-import { createLoginRedirectUrl, publicCloudOrigin } from "@valentinkolb/cloud/shared";
+import { type AuthContext, auth, jsonResponse, rateLimit, v } from "@k2b/cloud/server";
+import { accounts, get, isAccountCategoryAllowed, logger } from "@k2b/cloud/services";
+import { isAccountExpired } from "@k2b/cloud/services/account-model";
+import { createLoginRedirectUrl, publicCloudOrigin } from "@k2b/cloud/shared";
 import { type Context, Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { describeRoute, validator as openApiValidator } from "hono-openapi";

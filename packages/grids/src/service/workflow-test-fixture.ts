@@ -10,7 +10,7 @@
  * compilation — a test asserting run behaviour should not also depend on its
  * source compiling.
  */
-import { deleteWorkflowScope } from "@valentinkolb/cloud/workflows/store";
+import { deleteWorkflowScope } from "@k2b/cloud/workflows/store";
 import { type SQL, sql } from "bun";
 import { GRIDS_EVENT } from "../workflows/events";
 import { GRIDS_APP_ID } from "./workflow-runs";

@@ -1,6 +1,6 @@
-import { type AuthContext, auth, getLocale } from "@valentinkolb/cloud/server";
-import { appApproval, audit, coreSettings, readAccountCategoryPolicy, webauthn } from "@valentinkolb/cloud/services";
-import { Layout } from "@valentinkolb/cloud/ssr";
+import { type AuthContext, auth, getLocale } from "@k2b/cloud/server";
+import { appApproval, audit, coreSettings, readAccountCategoryPolicy, webauthn } from "@k2b/cloud/services";
+import { Layout } from "@k2b/cloud/ssr";
 import { ssr } from "../../config";
 import Devices from "../app-approval/Devices.island";
 import { approvalAvailability } from "../app-approval/availability";

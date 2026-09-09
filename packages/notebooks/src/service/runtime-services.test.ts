@@ -1,10 +1,10 @@
 import { beforeEach, describe, expect, mock, test } from "bun:test";
 import { ok } from "@k2b/stdlib";
-import type { PermissionLevel, User } from "@valentinkolb/cloud/contracts";
-import type { ServiceAccount } from "@valentinkolb/cloud/services";
+import type { PermissionLevel, User } from "@k2b/cloud/contracts";
+import type { ServiceAccount } from "@k2b/cloud/services";
 
-const cloudServices = await import("@valentinkolb/cloud/services");
-const cloud = await import("@valentinkolb/cloud");
+const cloudServices = await import("@k2b/cloud/services");
+const cloud = await import("@k2b/cloud");
 const accessModule = await import("./access");
 const noteRefsModule = await import("./note-refs");
 const snapshotWorkerModule = await import("./yjs-snapshot-worker");
@@ -70,7 +70,7 @@ let jobHandler:
 let workerStops = 0;
 let workerDrains = 0;
 
-mock.module("@valentinkolb/cloud/services", () => ({
+mock.module("@k2b/cloud/services", () => ({
   ...cloudServices,
   get: async (key: string) => {
     if (key === "app.timezone") return "Europe/Berlin";
@@ -145,7 +145,7 @@ const fakeSync = {
     },
   }),
 };
-mock.module("@valentinkolb/cloud", () => ({
+mock.module("@k2b/cloud", () => ({
   ...cloud,
   lazySync: (create: (sync: typeof fakeSync) => unknown) => {
     const handle = create(fakeSync);

@@ -1,7 +1,7 @@
 import { mutation } from "@k2b/stdlib/solid";
 import { Button, DataTable, type DataTableColumn, Placeholder, prompts, SettingsSection, toast, useLocale } from "@k2b/ui";
-import { coreClient } from "@valentinkolb/cloud/clients/core";
-import { formatDateTime as formatDate } from "@valentinkolb/cloud/shared";
+import { coreClient } from "@k2b/cloud/clients/core";
+import { formatDateTime as formatDate } from "@k2b/cloud/shared";
 import { createResource, Show } from "solid-js";
 import { settingsMessages } from "./messages";
 

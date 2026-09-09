@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { kitHelp } from "../src/help";
 import { sdkReference } from "../src/sdk";
-import { compileCapabilityManifest } from "@valentinkolb/cloud/capabilities/testing";
+import { compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 import { kitCapabilities } from "../src/capabilities";
 
 test("localized Help contains every SDK signature from the CLI source", () => {

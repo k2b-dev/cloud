@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 import { mkdir, readdir, unlink } from "node:fs/promises";
-import { type GotenbergConfig, getGotenbergConfig } from "@valentinkolb/cloud/services";
+import { type GotenbergConfig, getGotenbergConfig } from "@k2b/cloud/services";
 import { sql } from "bun";
 import type { DocumentTemplate } from "../src/contracts";
 import { DOCUMENT_TEMPLATE_STARTERS, type DocumentTemplateStarter, documentTemplateStarterById } from "../src/document-template-starters";

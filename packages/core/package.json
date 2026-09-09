@@ -1,5 +1,5 @@
 {
-  "name": "@valentinkolb/cloud-app-core",
+  "name": "@k2b/cloud-app-core",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -10,7 +10,7 @@
   "dependencies": {
     "@fontsource/ibm-plex-sans-condensed": "5.3.0",
     "@simplewebauthn/browser": "13.3.0",
-    "@valentinkolb/cloud": "workspace:*",
+    "@k2b/cloud": "workspace:*",
     "@k2b/ssr": "catalog:",
     "@k2b/stdlib": "catalog:",
     "@k2b/sync": "catalog:",

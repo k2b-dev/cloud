@@ -1,13 +1,13 @@
 import { err, fail, isServiceError, ok, type Result } from "@k2b/stdlib";
-import { audit } from "@valentinkolb/cloud/services";
-import type { WorkflowBoundPlan, WorkflowDiagnostic, WorkflowIr, WorkflowJsonValue } from "@valentinkolb/cloud/workflows";
-import { compileWorkflow } from "@valentinkolb/cloud/workflows/language";
+import { audit } from "@k2b/cloud/services";
+import type { WorkflowBoundPlan, WorkflowDiagnostic, WorkflowIr, WorkflowJsonValue } from "@k2b/cloud/workflows";
+import { compileWorkflow } from "@k2b/cloud/workflows/language";
 import {
   createWorkflow as createKernelWorkflow,
   publishWorkflowVersion,
   renameWorkflow,
   type WorkflowActivationInput,
-} from "@valentinkolb/cloud/workflows/store";
+} from "@k2b/cloud/workflows/store";
 import { sql } from "bun";
 import type {
   ActivateWorkflowInput,

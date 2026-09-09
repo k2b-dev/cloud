@@ -3,7 +3,7 @@ import {
   type WorkflowCompletionItem,
   workflowCompletionContext,
   workflowCompletionItem,
-} from "@valentinkolb/cloud/workflows";
+} from "@k2b/cloud/workflows";
 import type { MailWorkflowCatalog, MailWorkflowCatalogEntry, MailWorkflowCatalogIndex } from "./catalog";
 import { mailWorkflows } from "./module";
 

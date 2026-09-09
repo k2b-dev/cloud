@@ -1,15 +1,6 @@
+import { type AuthContext, auth, getLocale, getUserBackedActor, jsonResponse, rateLimit, requiresAuth, respond } from "@k2b/cloud/server";
+import { weatherService } from "@k2b/cloud/services";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
-import {
-  type AuthContext,
-  auth,
-  getLocale,
-  getUserBackedActor,
-  jsonResponse,
-  rateLimit,
-  requiresAuth,
-  respond,
-} from "@valentinkolb/cloud/server";
-import { weatherService } from "@valentinkolb/cloud/services";
 import { type Context, Hono, type ValidationTargets } from "hono";
 import { describeRoute, validator as honoValidator } from "hono-openapi";
 import { type ZodType, z } from "zod";
@@ -86,7 +77,7 @@ const localizedV = <Target extends keyof ValidationTargets, T extends ZodType>(
   message: (c: Context<AuthContext>) => string,
 ) =>
   honoValidator(target, schema, (result, c: Context<AuthContext>) => {
-    if (!result.success) return c.json({ message: message(c) }, 400);
+    if (!result.success) return respond(c, { ok: false, error: message(c), status: 400 });
   });
 
 const localizedMessage = (select: (t: ReturnType<typeof weatherMessages.resolve>["t"]) => string) => (c: Context<AuthContext>) =>

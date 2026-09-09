@@ -1,5 +1,5 @@
-import { api } from "@valentinkolb/cloud/browser";
-import { createPagination, ErrorResponseSchema, PaginationQuerySchema, PaginationResponseSchema } from "@valentinkolb/cloud/contracts";
+import { api } from "@k2b/cloud/browser";
+import { createPagination, ErrorResponseSchema, PaginationQuerySchema, PaginationResponseSchema } from "@k2b/cloud/contracts";
 import {
   type AccessSubject,
   type AuthContext,
@@ -13,7 +13,7 @@ import {
   respond,
   respondMessage,
   v,
-} from "@valentinkolb/cloud/server";
+} from "@k2b/cloud/server";
 import { Hono } from "hono";
 import { describeRoute } from "hono-openapi";
 import { z } from "zod";

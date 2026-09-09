@@ -6,8 +6,8 @@ import {
   PaginationResponseSchema,
   parsePagination,
   type User,
-} from "@valentinkolb/cloud/contracts";
-import { type AuthContext, auth, jsonResponse, rateLimit, requiresAdmin, requiresAuth, respond, v } from "@valentinkolb/cloud/server";
+} from "@k2b/cloud/contracts";
+import { type AuthContext, auth, jsonResponse, rateLimit, requiresAdmin, requiresAuth, respond, v } from "@k2b/cloud/server";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { type Context, Hono } from "hono";
 import { describeRoute } from "hono-openapi";

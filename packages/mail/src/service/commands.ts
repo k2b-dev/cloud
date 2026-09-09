@@ -1,6 +1,6 @@
 import { err, fail, isServiceError, ok, type Result } from "@k2b/stdlib";
-import { capabilityIdempotencyConflict } from "@valentinkolb/cloud/contracts";
-import { audit, logger, toPgTextArray, toPgUuidArray } from "@valentinkolb/cloud/services";
+import { capabilityIdempotencyConflict } from "@k2b/cloud/contracts";
+import { audit, logger, toPgTextArray, toPgUuidArray } from "@k2b/cloud/services";
 import { sql } from "bun";
 import { z } from "zod";
 import {

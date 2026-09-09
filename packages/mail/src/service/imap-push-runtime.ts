@@ -1,6 +1,6 @@
 import type { Lock, Mutex } from "@k2b/sync";
-import { lazySync } from "@valentinkolb/cloud";
-import { createRuntimeLifecycle, logger } from "@valentinkolb/cloud/services";
+import { lazySync } from "@k2b/cloud";
+import { createRuntimeLifecycle, logger } from "@k2b/cloud/services";
 import { sql } from "bun";
 import { parseConnectorCapabilities } from "../contracts";
 import { sha256Json } from "./canonical";

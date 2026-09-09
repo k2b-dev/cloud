@@ -1,6 +1,6 @@
 import type { StatusTone } from "@k2b/ui";
-import type { WorkflowRunState } from "@valentinkolb/cloud/workflows";
-import type { UndispatchedWorkflowEvent, WorkflowStepSummary } from "@valentinkolb/cloud/workflows/store";
+import type { WorkflowRunState } from "@k2b/cloud/workflows";
+import type { UndispatchedWorkflowEvent, WorkflowStepSummary } from "@k2b/cloud/workflows/store";
 
 export const RUN_TONE: Record<WorkflowRunState, StatusTone> = {
   queued: "neutral",

@@ -1,7 +1,7 @@
 import { join } from "node:path";
 import { homedir } from "node:os";
 import { spawnSync } from "node:child_process";
-import type { DesktopWindowOpenInput } from "@valentinkolb/cloud/desktop";
+import type { DesktopWindowOpenInput } from "@k2b/cloud/desktop";
 import type {
   BridgeResult,
   DesktopEnvironment,

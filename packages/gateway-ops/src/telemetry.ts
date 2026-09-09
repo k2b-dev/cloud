@@ -1,5 +1,5 @@
 import type { TopicEvent } from "@k2b/sync";
-import { GATEWAY_TELEMETRY_TENANT, type GatewayTelemetryEvent, gatewayTelemetryTopic } from "@valentinkolb/cloud/services";
+import { GATEWAY_TELEMETRY_TENANT, type GatewayTelemetryEvent, gatewayTelemetryTopic } from "@k2b/cloud/services";
 import { sql } from "bun";
 
 const WORKER_GROUP = "postgres-writer";

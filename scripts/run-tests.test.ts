@@ -10,8 +10,8 @@ describe("root test orchestration", () => {
     const byName = new Map(suites.map((suite) => [suite.name, suite]));
 
     expect(byName.get("@k2b/ui")?.command).toEqual(["bun", "run", "test"]);
-    expect(byName.get("@valentinkolb/cloud-app-pulse")?.command).toEqual(["bun", "run", "test"]);
-    expect(byName.get("@valentinkolb/cloud-app-accounts")?.command).toEqual(["bun", "test"]);
+    expect(byName.get("@k2b/cloud-app-pulse")?.command).toEqual(["bun", "run", "test"]);
+    expect(byName.get("@k2b/cloud-app-accounts")?.command).toEqual(["bun", "test"]);
     expect(byName.get("workspace root tests")?.command).toEqual(["bun", "test"]);
     expect(byName.get("workspace root scripts")?.command).toEqual(["bun", "test"]);
   });
@@ -20,9 +20,9 @@ describe("root test orchestration", () => {
     const suites = await discoverTestSuites(workspaceRoot);
     const names = suites.map((suite) => suite.name);
 
-    expect(names).toContain("@valentinkolb/cloud-docs");
-    expect(names).toContain("@valentinkolb/cloud-app-gateway");
-    expect(names).toContain("@valentinkolb/cloud-app-tools");
+    expect(names).toContain("@k2b/cloud-docs");
+    expect(names).toContain("@k2b/cloud-app-gateway");
+    expect(names).toContain("@k2b/cloud-app-tools");
     expect(names.slice(-2)).toEqual(["workspace root tests", "workspace root scripts"]);
   });
 });

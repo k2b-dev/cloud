@@ -1,5 +1,5 @@
 import { err, fail, ok, type Result } from "@k2b/stdlib";
-import { audit, isUniqueViolation, logger, toPgTextArray } from "@valentinkolb/cloud/services";
+import { audit, isUniqueViolation, logger, toPgTextArray } from "@k2b/cloud/services";
 import { sql } from "bun";
 import type { ConnectorVerification, ProviderBinding, RemoteFolder, RemoteNamespace } from "../contracts";
 import { withShortIdDb } from "../lib/short-id";

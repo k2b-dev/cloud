@@ -107,14 +107,14 @@ await sql`SELECT 1`;
 assert.equal(counts["pg.other"] ?? 0, metered ? 1 : 0, "The real default SQL handle must use the selected transport");
 // Maintainer-only harness: exercise the actual internal router, not a new public API.
 const { createSearchRoutes } = await import("../../cloud/src/api/search");
-const { auth } = await import("@valentinkolb/cloud/server");
+const { auth } = await import("@k2b/cloud/server");
 const { createProviderFixture, ProviderStats, providerResult } = await import("./provider-fixture");
-const identity = await import("@valentinkolb/cloud/services/identity");
-const { session } = await import("@valentinkolb/cloud/services/session");
-const { compileCapabilityManifest } = await import("@valentinkolb/cloud/capabilities/testing");
-const { defineCapabilities, UniversalSearchInputSchema, UniversalSearchDataSchema } = await import("@valentinkolb/cloud/contracts");
+const identity = await import("@k2b/cloud/services/identity");
+const { session } = await import("@k2b/cloud/services/session");
+const { compileCapabilityManifest } = await import("@k2b/cloud/capabilities/testing");
+const { defineCapabilities, UniversalSearchInputSchema, UniversalSearchDataSchema } = await import("@k2b/cloud/contracts");
 const { createLocalJWKSet } = await import("jose");
-const { getIdentityRuntimeConfig, invalidateIdentityRuntimeConfig } = await import("@valentinkolb/cloud/services/identity/runtime-config");
+const { getIdentityRuntimeConfig, invalidateIdentityRuntimeConfig } = await import("@k2b/cloud/services/identity/runtime-config");
 
 const rawGet = redis.get.bind(redis);
 const getSpy = spyOn(redis, "get").mockImplementation((key) => {

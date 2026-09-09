@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { err, fail, ok, type Result } from "@valentinkolb/cloud/server";
+import { err, fail, ok, type Result } from "@k2b/cloud/server";
 import type {
   Aggregation,
   EventAggregation,

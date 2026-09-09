@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { defineWorkflowModule } from "@valentinkolb/cloud/workflows";
-import { hashWorkflowJson } from "@valentinkolb/cloud/workflows/language";
+import { defineWorkflowModule } from "@k2b/cloud/workflows";
+import { hashWorkflowJson } from "@k2b/cloud/workflows/language";
 import { gridsWorkflows } from "./module";
 
 const gridsWorkflowManifest = gridsWorkflows.manifest;

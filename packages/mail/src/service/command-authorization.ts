@@ -1,5 +1,5 @@
-import type { AccessSubject } from "@valentinkolb/cloud/server";
-import { toPgTextArray } from "@valentinkolb/cloud/services";
+import type { AccessSubject } from "@k2b/cloud/server";
+import { toPgTextArray } from "@k2b/cloud/services";
 import { sql } from "bun";
 import { mailboxAccessPrincipalCondition } from "./access";
 

@@ -1,4 +1,4 @@
-import { defineHelp } from "@valentinkolb/cloud/server";
+import { defineHelp } from "@k2b/cloud/server";
 import adminDe from "./documents/de/accounts-admin.help.md" with { type: "text" };
 import cliDe from "./documents/de/accounts-cli.help.md" with { type: "text" };
 import lifecycleDe from "./documents/de/accounts-lifecycle.help.md" with { type: "text" };

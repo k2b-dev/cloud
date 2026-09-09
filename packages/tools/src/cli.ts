@@ -1,5 +1,5 @@
 import { readFile, writeFile } from "node:fs/promises";
-import { arg, type CloudCliContext, type CloudCliFlags, command, defineCliCommands, flag, printStructured } from "@valentinkolb/cloud/cli";
+import { arg, type CloudCliContext, type CloudCliFlags, command, defineCliCommands, flag, printStructured } from "@k2b/cloud/cli";
 import { encoding, password, crypto as stdCrypto } from "@k2b/stdlib";
 import { qr } from "@k2b/stdlib/qr";
 

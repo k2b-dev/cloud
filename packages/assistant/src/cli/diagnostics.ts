@@ -1,4 +1,4 @@
-import type { AiConversation, AiStoredMessage } from "@valentinkolb/cloud/ai";
+import type { AiConversation, AiStoredMessage } from "@k2b/cloud/ai";
 
 type DiagnosticMessageEvent = {
   type: "user" | "assistant" | "summary";

@@ -7,7 +7,7 @@ import {
   UniversalSearchDataSchema,
   UniversalSearchInputSchema,
   type User,
-} from "@valentinkolb/cloud/contracts";
+} from "@k2b/cloud/contracts";
 import { sql } from "bun";
 import { pulseCapabilities } from "./capabilities";
 import {

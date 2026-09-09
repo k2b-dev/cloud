@@ -1,4 +1,4 @@
-import { publishRequestTelemetry, ROUTE_TEMPLATE_HEADER } from "@valentinkolb/cloud/services";
+import { publishRequestTelemetry, ROUTE_TEMPLATE_HEADER } from "@k2b/cloud/services";
 import { boundTemplateCardinality, derivePathTemplate } from "./path-template";
 import { isInternalPath } from "./request-boundary";
 import type { RouteTable } from "./trie";

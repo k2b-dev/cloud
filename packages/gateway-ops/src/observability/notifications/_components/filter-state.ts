@@ -1,4 +1,4 @@
-import type { NotificationDeliveryStatus } from "@valentinkolb/cloud/contracts";
+import type { NotificationDeliveryStatus } from "@k2b/cloud/contracts";
 
 export const NOTIFICATION_ADMIN_BASE_URL = "/admin/observability/notifications";
 

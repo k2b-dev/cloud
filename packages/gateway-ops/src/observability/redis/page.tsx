@@ -1,8 +1,8 @@
 import { ButtonLink, DataTable, type DataTableColumn, StatCell, StatGrid } from "@k2b/ui";
-import { type AuthContext, getLocale } from "@valentinkolb/cloud/server";
-import { formatBytes, formatNumber, formatPercent } from "@valentinkolb/cloud/shared";
-import { AdminLayout } from "@valentinkolb/cloud/ssr";
-import { SearchBar } from "@valentinkolb/cloud/ssr/islands";
+import { type AuthContext, getLocale } from "@k2b/cloud/server";
+import { formatBytes, formatNumber, formatPercent } from "@k2b/cloud/shared";
+import { AdminLayout } from "@k2b/cloud/ssr";
+import { SearchBar } from "@k2b/cloud/ssr/islands";
 import { ssr } from "../../config";
 import ObservabilityChart from "../../frontend/ObservabilityChart.island";
 import { getRedisDiagnostics, type RedisPrefixDiagnostic } from "../data/service";

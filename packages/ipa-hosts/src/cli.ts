@@ -8,7 +8,7 @@ import {
   paginationFlags,
   printRows as printJsonOrTable,
   printStructured,
-} from "@valentinkolb/cloud/cli";
+} from "@k2b/cloud/cli";
 import type { IpaHost, IpaHostgroup, PaginationResponse, SyncCronResponse } from "./contracts";
 
 type HostsResponse = {

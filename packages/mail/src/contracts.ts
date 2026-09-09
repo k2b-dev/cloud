@@ -1,11 +1,11 @@
-import { CloudResourceViewSchema } from "@valentinkolb/cloud/contracts";
+import { CloudResourceViewSchema } from "@k2b/cloud/contracts";
 import type {
   WorkflowDiagnostic as KernelWorkflowDiagnostic,
   WorkflowBoundPlan,
   WorkflowCompletionItem,
   WorkflowIr,
   WorkflowJsonValue,
-} from "@valentinkolb/cloud/workflows";
+} from "@k2b/cloud/workflows";
 import { z } from "zod";
 import { contactResolveMatchSchema, normalizedContactEmailSchema } from "./app-integration-contracts";
 

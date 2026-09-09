@@ -46,4 +46,4 @@ export const UpdateProxyAuthClientSchema = z.object({
 });
 export type UpdateProxyAuthClient = z.infer<typeof UpdateProxyAuthClientSchema>;
 
-export { ErrorResponseSchema, MessageResponseSchema } from "@valentinkolb/cloud/contracts";
+export { ErrorResponseSchema, MessageResponseSchema } from "@k2b/cloud/contracts";

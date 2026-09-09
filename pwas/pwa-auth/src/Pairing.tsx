@@ -1,5 +1,5 @@
 import { Button, PanelDialog, TextInput, toast, useLocale } from "@k2b/ui";
-import { appApproval } from "@valentinkolb/cloud/browser/app-approval";
+import { appApproval } from "@k2b/cloud/browser/app-approval";
 import { createMemo, createSignal, onCleanup, onMount, Show } from "solid-js";
 import { type Authenticator, failure, type PairingPayload } from "./authenticator";
 import { authMessages } from "./i18n";

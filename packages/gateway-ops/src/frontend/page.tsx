@@ -1,7 +1,7 @@
-import { readAppRegistrySnapshot } from "@valentinkolb/cloud";
-import { type AuthContext, getLocale } from "@valentinkolb/cloud/server";
-import { latestGatewayRouteSnapshot } from "@valentinkolb/cloud/services";
-import { AdminLayout } from "@valentinkolb/cloud/ssr";
+import { readAppRegistrySnapshot } from "@k2b/cloud";
+import { type AuthContext, getLocale } from "@k2b/cloud/server";
+import { latestGatewayRouteSnapshot } from "@k2b/cloud/services";
+import { AdminLayout } from "@k2b/cloud/ssr";
 import { DEFAULT_TELEMETRY_RANGE, isTelemetryRange, TELEMETRY_RANGES, type TelemetryRange } from "../observability/telemetry/contracts";
 
 const TELEMETRY_RANGE_KEYS = Object.keys(TELEMETRY_RANGES) as TelemetryRange[];
@@ -16,8 +16,8 @@ const rangeUrl = (url: URL, range: TelemetryRange): string => {
 };
 
 import { ButtonLink, DataTable, type DataTableColumn, NoticeCard, StatCell, StatGrid, StatusBadge } from "@k2b/ui";
-import { formatNumber as fmtCount, formatDurationMs as fmtMs } from "@valentinkolb/cloud/shared";
-import { SearchBar } from "@valentinkolb/cloud/ssr/islands";
+import { formatNumber as fmtCount, formatDurationMs as fmtMs } from "@k2b/cloud/shared";
+import { SearchBar } from "@k2b/cloud/ssr/islands";
 import { type AppRuntimeStatus, buildAppRuntimeStatuses } from "../app-runtime-status";
 import { ssr } from "../config";
 import { getTelemetryAppTotals, getTelemetryPrefixTotals } from "../observability/telemetry/service";

@@ -1,6 +1,6 @@
 import { type DateContext, dates } from "@k2b/stdlib";
-import { type AccessSubject, type AccessUser, listUsersWithAccess } from "@valentinkolb/cloud/server";
-import { logger, toPgTextArray, toPgUuidArray } from "@valentinkolb/cloud/services";
+import { type AccessSubject, type AccessUser, listUsersWithAccess } from "@k2b/cloud/server";
+import { logger, toPgTextArray, toPgUuidArray } from "@k2b/cloud/services";
 import { sql } from "bun";
 import type {
   AssignedToFilter,

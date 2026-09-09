@@ -1,5 +1,5 @@
 import { confirmDiscardIfDirty, NoticeCard, SettingsGroup, SettingsModal, useLocale } from "@k2b/ui";
-import type { AccessEntry } from "@valentinkolb/cloud/contracts";
+import type { AccessEntry } from "@k2b/cloud/contracts";
 import { createSignal } from "solid-js";
 import type { PublicBase } from "../../../api/public-dto";
 import { navigationMessages } from "../../../navigation-messages";

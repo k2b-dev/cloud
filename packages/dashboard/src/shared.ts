@@ -1,4 +1,4 @@
-import type { DashboardWidgetPresentation, DashboardWidgetSpan, DashboardWidgetZone } from "@valentinkolb/cloud/contracts";
+import type { DashboardWidgetPresentation, DashboardWidgetSpan, DashboardWidgetZone } from "@k2b/cloud/contracts";
 
 export const DASHBOARD_COOKIE = "dashboard_settings";
 

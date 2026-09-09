@@ -10,7 +10,7 @@ import {
   paginationFlags,
   printRows as printJsonOrTable,
   printStructured,
-} from "@valentinkolb/cloud/cli";
+} from "@k2b/cloud/cli";
 
 type UserProvider = "local" | "ipa";
 type UserProfile = "user" | "guest";

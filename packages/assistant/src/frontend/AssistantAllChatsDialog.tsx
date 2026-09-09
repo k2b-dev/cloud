@@ -1,6 +1,6 @@
 import { query as solidQuery } from "@k2b/stdlib/solid";
 import { Button, dialogCore, PanelDialog, Placeholder, panelDialogFixedOptions, SegmentedControl, TextInput } from "@k2b/ui";
-import type { AiConversation, AiConversationPage, AiConversationStatusFilter, AiProject } from "@valentinkolb/cloud/ai";
+import type { AiConversation, AiConversationPage, AiConversationStatusFilter, AiProject } from "@k2b/cloud/ai";
 import { createEffect, createMemo, createSignal, onCleanup, Show } from "solid-js";
 import { assistantApi } from "../api/client";
 import AssistantAllChatsList from "./AssistantAllChatsList";

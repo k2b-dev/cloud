@@ -1,6 +1,6 @@
-import { listLegalLinks } from "@valentinkolb/cloud";
-import { type AuthContext, getDateConfig, getLocale } from "@valentinkolb/cloud/server";
-import { MinimalLayout } from "@valentinkolb/cloud/ssr";
+import { listLegalLinks } from "@k2b/cloud";
+import { type AuthContext, getDateConfig, getLocale } from "@k2b/cloud/server";
+import { MinimalLayout } from "@k2b/cloud/ssr";
 import { toPublicForm } from "../../../../api/form-api-shared";
 import { toPublicFields } from "../../../../api/public-dto";
 import { ssr } from "../../../../config";

@@ -1,4 +1,4 @@
-import { defineHelp } from "@valentinkolb/cloud/server";
+import { defineHelp } from "@k2b/cloud/server";
 import startDe from "./documents/de/ipa-hosts-start.help.md" with { type: "text" };
 import troubleshootDe from "./documents/de/ipa-hosts-troubleshooting.help.md" with { type: "text" };
 import start from "./documents/en/ipa-hosts-start.help.md" with { type: "text" };

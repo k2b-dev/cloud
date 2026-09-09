@@ -1,6 +1,6 @@
 import { type PageParams, type Paginated, paginate } from "@k2b/stdlib";
-import { type AccessSubject, hasPermission, type PermissionLevel } from "@valentinkolb/cloud/server";
-import { logger, serviceAccounts } from "@valentinkolb/cloud/services";
+import { type AccessSubject, hasPermission, type PermissionLevel } from "@k2b/cloud/server";
+import { logger, serviceAccounts } from "@k2b/cloud/services";
 import { sql } from "bun";
 import type { CreateSpace, MutationResult, Space, SpaceDetail, UpdateSpace } from "@/contracts";
 import { newShortId, withShortIdRetry } from "../lib/short-id";

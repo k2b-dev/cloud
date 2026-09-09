@@ -1,4 +1,4 @@
-import { type AppVaultBlob, type AppVaultConfig, type AppVaultSession, appApproval } from "@valentinkolb/cloud/browser/app-approval";
+import { type AppVaultBlob, type AppVaultConfig, type AppVaultSession, appApproval } from "@k2b/cloud/browser/app-approval";
 
 export interface VaultHeader {
   revision: string;

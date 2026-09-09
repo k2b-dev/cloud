@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import type { User } from "@valentinkolb/cloud/contracts";
-import { toPgUuidArray } from "@valentinkolb/cloud/services";
+import type { User } from "@k2b/cloud/contracts";
+import { toPgUuidArray } from "@k2b/cloud/services";
 import { sql } from "bun";
 import { newShortId } from "../lib/short-id";
 import { listBaseIdsVisibleTo, type ResourceScope, requireBaseAccess } from "./access-control";

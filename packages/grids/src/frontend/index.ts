@@ -1,4 +1,4 @@
-import { type AuthContext, auth, getLocale, rateLimit } from "@valentinkolb/cloud/server";
+import { type AuthContext, auth, getLocale, rateLimit } from "@k2b/cloud/server";
 import type { Context } from "hono";
 import { Hono } from "hono";
 import { pdfResponse } from "../api/download-response";

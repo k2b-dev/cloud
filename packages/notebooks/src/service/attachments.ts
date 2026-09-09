@@ -14,7 +14,7 @@
  */
 
 import { fileIcons } from "@k2b/stdlib";
-import { toPgTextArray, toPgUuidArray } from "@valentinkolb/cloud/services";
+import { toPgTextArray, toPgUuidArray } from "@k2b/cloud/services";
 import { sql } from "bun";
 import { generateUniqueShortId } from "../lib/short-id";
 

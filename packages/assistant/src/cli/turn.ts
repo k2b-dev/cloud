@@ -1,13 +1,13 @@
 import { basename } from "node:path";
-import type { AiConversation, AiDraftContentPart, AiFileStat, AiTurnBlock, AiTurnContentPart } from "@valentinkolb/cloud/ai";
+import type { AiConversation, AiDraftContentPart, AiFileStat, AiTurnBlock, AiTurnContentPart } from "@k2b/cloud/ai";
 import {
   AI_IMAGE_INPUT_MAX_BYTES,
   AI_TURN_ATTACHMENT_MAX_ITEMS,
   AI_TURN_IMAGE_MAX_TOTAL_BYTES,
   guessAiMediaType,
   isAiImageMediaType,
-} from "@valentinkolb/cloud/ai/browser";
-import { type CloudCliContext, printStructured } from "@valentinkolb/cloud/cli";
+} from "@k2b/cloud/ai/browser";
+import { type CloudCliContext, printStructured } from "@k2b/cloud/cli";
 import { AI_API, jsonRequest, printValue, readApi } from "./shared";
 import { type AssistantTurnStreamResult, streamAssistantTurn } from "./stream";
 

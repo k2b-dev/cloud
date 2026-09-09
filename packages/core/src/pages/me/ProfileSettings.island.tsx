@@ -1,7 +1,7 @@
 import { mutation as mutations } from "@k2b/stdlib/solid";
 import { Button, NoticeCard, prompts, TextInput, useLocale } from "@k2b/ui";
-import { apiClient } from "@valentinkolb/cloud/clients/core";
-import type { UserProfile, UserProvider } from "@valentinkolb/cloud/contracts";
+import { apiClient } from "@k2b/cloud/clients/core";
+import type { UserProfile, UserProvider } from "@k2b/cloud/contracts";
 import { createSignal, Show } from "solid-js";
 import { PasswordSetupFields } from "../auth/PasswordSetupFields";
 import { signOutCurrentSession } from "./account-session";

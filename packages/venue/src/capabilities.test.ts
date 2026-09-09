@@ -5,7 +5,7 @@ import {
   type CapabilityQueryDefinition,
   capabilityResultSchema,
   type User,
-} from "@valentinkolb/cloud/contracts";
+} from "@k2b/cloud/contracts";
 import { sql } from "bun";
 import { venueCapabilities } from "./capabilities";
 import { VenueListDataSchema } from "./capability-contracts";

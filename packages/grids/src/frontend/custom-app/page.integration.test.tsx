@@ -1,5 +1,5 @@
 import { beforeAll, describe, expect, spyOn } from "bun:test";
-import type { AuthContext } from "@valentinkolb/cloud/server";
+import type { AuthContext } from "@k2b/cloud/server";
 import { sql } from "bun";
 import { Hono } from "hono";
 import type { CustomAppDefinition } from "../../custom-apps/contracts";

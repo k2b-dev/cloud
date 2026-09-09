@@ -1,5 +1,5 @@
 import { beforeAll, describe, expect, setDefaultTimeout, spyOn, test } from "bun:test";
-import { compileCapabilityManifest } from "@valentinkolb/cloud/capabilities/testing";
+import { compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 import {
   CAPABILITY_MAX_RESULT_BYTES,
   type CapabilityActionDefinition,
@@ -8,7 +8,7 @@ import {
   type CapabilityQueryDefinition,
   capabilityResultSchema,
   type User,
-} from "@valentinkolb/cloud/contracts";
+} from "@k2b/cloud/contracts";
 import { sql } from "bun";
 import { PublicDocumentSchema } from "./api/document-public-contracts";
 import { gridsCapabilities } from "./capabilities";

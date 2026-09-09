@@ -1,7 +1,7 @@
-import type { WidgetBlock, WidgetResponse } from "@valentinkolb/cloud/contracts";
-import { hasRole } from "@valentinkolb/cloud/contracts";
-import { type AuthContext, auth, getLocale } from "@valentinkolb/cloud/server";
-import { formatNumber } from "@valentinkolb/cloud/shared";
+import type { WidgetBlock, WidgetResponse } from "@k2b/cloud/contracts";
+import { hasRole } from "@k2b/cloud/contracts";
+import { type AuthContext, auth, getLocale } from "@k2b/cloud/server";
+import { formatNumber } from "@k2b/cloud/shared";
 import { type Context, Hono } from "hono";
 import { gatewayOpsMessages } from "../../messages";
 import { loggingService } from "./service";

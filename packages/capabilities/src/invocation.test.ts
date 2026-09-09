@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { CAPABILITY_MAX_RESULT_BYTES } from "@valentinkolb/cloud/contracts";
+import { CAPABILITY_MAX_RESULT_BYTES } from "@k2b/cloud/contracts";
 import { ambiguousActionNetworkOutcome, preserveAmbiguousActionOutcome, readCapabilityOutcome } from "./invocation";
 
 describe("capability invocation responses", () => {

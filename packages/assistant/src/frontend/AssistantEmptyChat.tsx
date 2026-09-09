@@ -1,5 +1,5 @@
 import { Button, useLocale } from "@k2b/ui";
-import type { AiProject } from "@valentinkolb/cloud/ai";
+import type { AiProject } from "@k2b/cloud/ai";
 import type { JSX } from "solid-js";
 import { assistantMessages } from "./messages";
 

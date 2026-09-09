@@ -5,7 +5,7 @@ import { encoding } from "@k2b/stdlib";
 import { clipboard, files } from "@k2b/stdlib/browser";
 import { dropzone, query } from "@k2b/stdlib/solid";
 import { NoticeCard, prompts, toast, useLocale } from "@k2b/ui";
-import { layout } from "@valentinkolb/cloud/ssr/layout-runtime";
+import { layout } from "@k2b/cloud/ssr/layout-runtime";
 import { createCodeMirror } from "solid-codemirror";
 import { createEffect, createSignal, onCleanup, onMount, Show } from "solid-js";
 import { yCollab, yUndoManagerKeymap } from "y-codemirror.next";

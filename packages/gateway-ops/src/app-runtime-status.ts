@@ -1,5 +1,5 @@
-import { type AppRegistryIssue, assessRuntimeCompatibility } from "@valentinkolb/cloud";
-import type { AppRegistryEntry } from "@valentinkolb/cloud/contracts";
+import { type AppRegistryIssue, assessRuntimeCompatibility } from "@k2b/cloud";
+import type { AppRegistryEntry } from "@k2b/cloud/contracts";
 
 export type AppRuntimeStatus = {
   status: "ok" | "warn" | "error";

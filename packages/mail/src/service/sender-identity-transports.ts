@@ -1,5 +1,5 @@
 import { err, fail, ok, type Result } from "@k2b/stdlib";
-import { audit, decryptSecret, encryptSecret, logger } from "@valentinkolb/cloud/services";
+import { audit, decryptSecret, encryptSecret, logger } from "@k2b/cloud/services";
 import { sql } from "bun";
 import {
   type ProviderSecret,

@@ -51,11 +51,11 @@ import {
   toast,
   useLocale,
 } from "@k2b/ui";
-import { PermissionEditor } from "@valentinkolb/cloud/access/ui";
-import type { AiEnrichmentOverview } from "@valentinkolb/cloud/ai";
-import type { AiModelAccessDraft, AiModelAccessMap } from "@valentinkolb/cloud/ai/admin";
-import { coreClient } from "@valentinkolb/cloud/clients/core";
-import type { AccessEntry } from "@valentinkolb/cloud/contracts/shared";
+import { PermissionEditor } from "@k2b/cloud/access/ui";
+import type { AiEnrichmentOverview } from "@k2b/cloud/ai";
+import type { AiModelAccessDraft, AiModelAccessMap } from "@k2b/cloud/ai/admin";
+import { coreClient } from "@k2b/cloud/clients/core";
+import type { AccessEntry } from "@k2b/cloud/contracts/shared";
 import {
   ACCOUNT_ACTION_NOTICE_SAMPLE,
   AccountActionNoticeSchema,
@@ -63,7 +63,7 @@ import {
   formatBytes,
   renderAccountActionNotice,
   renderLiquidTemplate,
-} from "@valentinkolb/cloud/shared";
+} from "@k2b/cloud/shared";
 import { createMemo, createSignal, For, type JSX, Show } from "solid-js";
 import { accountSettingsSection } from "./account-settings";
 import { aiModelChoiceGroups, aiModelGroupFiltersFor } from "./ai-model-choice-groups";

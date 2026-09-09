@@ -9,9 +9,9 @@ import {
   UniversalSearchDataSchema,
   type UniversalSearchInput,
   UniversalSearchInputSchema,
-} from "@valentinkolb/cloud/contracts";
-import { hasPermission, type PermissionLevel } from "@valentinkolb/cloud/server";
-import { type AuditActor, audit } from "@valentinkolb/cloud/services";
+} from "@k2b/cloud/contracts";
+import { hasPermission, type PermissionLevel } from "@k2b/cloud/server";
+import { type AuditActor, audit } from "@k2b/cloud/services";
 import type { z } from "zod";
 import {
   CommentBrowseDataSchema,

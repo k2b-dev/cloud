@@ -1,8 +1,8 @@
-import { arg, command, confirmFlag, flag, readCliInput } from "@valentinkolb/cloud/cli";
+import { arg, command, confirmFlag, flag, readCliInput } from "@k2b/cloud/cli";
 import type {
   AiChatTaskOccurrenceView as AssistantChatTaskOccurrence,
   AiChatTaskView as AssistantChatTask,
-} from "@valentinkolb/cloud/ai";
+} from "@k2b/cloud/ai";
 import { idempotentJsonRequest, jsonRequest, printRows, printValue, queryString, readApi, requireConfirmation } from "./shared";
 
 type TaskDetail = { task: AssistantChatTask; occurrences: AssistantChatTaskOccurrence[] };

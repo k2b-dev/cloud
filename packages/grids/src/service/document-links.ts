@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from "node:crypto";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
-import { coreSettings } from "@valentinkolb/cloud/services";
+import { coreSettings } from "@k2b/cloud/services";
 import { sql } from "bun";
 import type { CreateDocumentLinkInput, Document, DocumentLink, DocumentLinkTtl } from "../contracts";
 import { logAudit, type SqlClient } from "./audit";

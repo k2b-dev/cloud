@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { createSync } from "@k2b/sync";
 import { jetstreamManager } from "@nats-io/jetstream";
 import { connect } from "@nats-io/transport-node";
-import { bindProcessSync, unbindProcessSync } from "@valentinkolb/cloud";
+import { bindProcessSync, unbindProcessSync } from "@k2b/cloud";
 import { join, leave, snapshot } from "./presence";
 
 describe("notebook presence", () => {

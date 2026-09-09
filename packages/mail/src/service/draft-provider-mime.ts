@@ -1,5 +1,5 @@
 import type { Readable } from "node:stream";
-import { markdown, sanitizeEmailHtml } from "@valentinkolb/cloud/shared";
+import { markdown, sanitizeEmailHtml } from "@k2b/cloud/shared";
 import MailComposer from "nodemailer/lib/mail-composer";
 import { z } from "zod";
 import { mailAddressSchema } from "../contracts";

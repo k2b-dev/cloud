@@ -533,6 +533,7 @@ function SurveyToolView(props: { turnId: string; block: ToolBlock; active?: bool
       </Match>
       <Match when={submittedResult()}>
         {(result) => (
+          // biome-ignore lint/a11y/useValidAriaRole: Chat.Message uses a conversation role, not an ARIA role.
           <Chat.Message role="user">
             <CloudSurveyResultBlock args={props.block.args} result={result()} />
           </Chat.Message>

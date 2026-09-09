@@ -12,7 +12,7 @@ import {
   parsePagination,
   ServiceAccountCredentialSchema,
   UpdateAccessSchema,
-} from "@valentinkolb/cloud/contracts";
+} from "@k2b/cloud/contracts";
 import {
   type AuthContext,
   auth,
@@ -24,7 +24,7 @@ import {
   respond,
   respondMessage,
   v,
-} from "@valentinkolb/cloud/server";
+} from "@k2b/cloud/server";
 import { type Context, Hono, type MiddlewareHandler, type TypedResponse } from "hono";
 import { describeRoute } from "hono-openapi";
 import { z } from "zod";

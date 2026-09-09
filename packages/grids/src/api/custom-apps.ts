@@ -1,5 +1,5 @@
 import { Buffer } from "node:buffer";
-import { type AuthContext, auth, getDateConfig, getLocale, respond } from "@valentinkolb/cloud/server";
+import { type AuthContext, auth, getDateConfig, getLocale, respond } from "@k2b/cloud/server";
 import { type Context, Hono, type MiddlewareHandler } from "hono";
 import { z } from "zod";
 import { type GridRecord, ShortIdSchema } from "../contracts";

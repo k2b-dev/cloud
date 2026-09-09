@@ -11,9 +11,9 @@ import {
   printRows,
   printStructured,
   readCliInput,
-} from "@valentinkolb/cloud/cli";
-import type { AccessEntry, Principal } from "@valentinkolb/cloud/contracts";
-import { defineHelp } from "@valentinkolb/cloud/server";
+} from "@k2b/cloud/cli";
+import type { AccessEntry, Principal } from "@k2b/cloud/contracts";
+import { defineHelp } from "@k2b/cloud/server";
 
 type InventoryItem = {
   [key: string]: unknown;

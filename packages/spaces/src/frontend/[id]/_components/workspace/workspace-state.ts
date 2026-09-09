@@ -1,5 +1,5 @@
 import { dates as calendar, type DateContext } from "@k2b/stdlib";
-import { logger, weatherService } from "@valentinkolb/cloud/services";
+import { logger, weatherService } from "@k2b/cloud/services";
 import {
   type CalendarItem,
   type ItemListResult,

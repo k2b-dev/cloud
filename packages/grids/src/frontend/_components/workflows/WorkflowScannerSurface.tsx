@@ -1,5 +1,5 @@
 import { Button, dialogCore, IconButtonLink, PanelDialog, panelDialogOptions, ScrollArea, TextInput, Tooltip, useLocale } from "@k2b/ui";
-import type { WorkflowBoundPlan, WorkflowJsonValue } from "@valentinkolb/cloud/workflows";
+import type { WorkflowBoundPlan, WorkflowJsonValue } from "@k2b/cloud/workflows";
 import { createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "../../../api/client";
 import type { PublicTable } from "../../../api/public-dto";

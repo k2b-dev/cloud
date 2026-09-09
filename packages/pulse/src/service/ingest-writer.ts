@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
-import type { ServiceAccount } from "@valentinkolb/cloud/contracts";
-import { err, fail, isServiceError, ok, type Result, type ServiceError } from "@valentinkolb/cloud/server";
-import { logger } from "@valentinkolb/cloud/services";
+import type { ServiceAccount } from "@k2b/cloud/contracts";
+import { err, fail, isServiceError, ok, type Result, type ServiceError } from "@k2b/cloud/server";
+import { logger } from "@k2b/cloud/services";
 import { sql } from "bun";
 import type { PulseEvent, PulseIngestBatch, PulseMetric, PulseState } from "../contracts";
 import {

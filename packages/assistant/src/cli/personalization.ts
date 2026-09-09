@@ -1,5 +1,5 @@
-import type { AiMemory, AiUserPrefs } from "@valentinkolb/cloud/ai";
-import { arg, command, confirmFlag, flag, readCliInput } from "@valentinkolb/cloud/cli";
+import type { AiMemory, AiUserPrefs } from "@k2b/cloud/ai";
+import { arg, command, confirmFlag, flag, readCliInput } from "@k2b/cloud/cli";
 import { jsonRequest, printRows, printValue, queryString, readApi, requireConfirmation } from "./shared";
 
 type PersonalizationSettings = Pick<AiUserPrefs, "memoryEnabled" | "memoryLearningEnabled">;

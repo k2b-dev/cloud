@@ -6,8 +6,8 @@ import {
   ok,
   type RequestActor,
   type Result,
-} from "@valentinkolb/cloud/server";
-import { escapeLikePattern, isUniqueViolation, secrets, toPgTextArray, toPgUuidArray } from "@valentinkolb/cloud/services";
+} from "@k2b/cloud/server";
+import { escapeLikePattern, isUniqueViolation, secrets, toPgTextArray, toPgUuidArray } from "@k2b/cloud/services";
 import { sql } from "bun";
 
 type InventoryItem = {

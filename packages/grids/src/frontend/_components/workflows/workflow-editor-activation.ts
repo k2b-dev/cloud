@@ -1,4 +1,4 @@
-import type { WorkflowBoundPlan } from "@valentinkolb/cloud/workflows";
+import type { WorkflowBoundPlan } from "@k2b/cloud/workflows";
 import { workflowMessages } from "./messages";
 
 export const automaticTriggerSummary = (plan: WorkflowBoundPlan, locale = "en"): string | null => {

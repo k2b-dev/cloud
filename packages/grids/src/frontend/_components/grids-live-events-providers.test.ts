@@ -27,7 +27,7 @@ type ProviderCall = {
 
 const providerCalls: ProviderCall[] = [];
 
-mock.module("@valentinkolb/cloud/browser/live", () => ({
+mock.module("@k2b/cloud/browser/live", () => ({
   createLiveWebSocket: (options: ProviderOptions) => {
     const call: ProviderCall = {
       options,

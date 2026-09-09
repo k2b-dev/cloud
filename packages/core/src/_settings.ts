@@ -3,4 +3,4 @@
  * literal-type inference. The definitions themselves live in the framework —
  * every container has to register them, not just the one that renders the UI.
  */
-export { CORE_SETTINGS } from "@valentinkolb/cloud/services/settings/core-settings";
+export { CORE_SETTINGS } from "@k2b/cloud/services/settings/core-settings";

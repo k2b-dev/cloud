@@ -1,5 +1,5 @@
 import { DatePicker, DateTimePicker, MultiSelectInput, NoticeCard, NumberInput, Select, TextInput, useLocale } from "@k2b/ui";
-import type { WorkflowBoundPlan, WorkflowIrInput } from "@valentinkolb/cloud/workflows";
+import type { WorkflowBoundPlan, WorkflowIrInput } from "@k2b/cloud/workflows";
 import { For, Match, Show, Switch } from "solid-js";
 import type { PublicTable } from "../../../api/public-dto";
 import RecordPicker from "../records/RecordPicker";

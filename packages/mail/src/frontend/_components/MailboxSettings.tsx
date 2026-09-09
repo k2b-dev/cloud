@@ -14,7 +14,7 @@ import {
   toast,
   useLocale,
 } from "@k2b/ui";
-import { PermissionEditor } from "@valentinkolb/cloud/access/ui";
+import { PermissionEditor } from "@k2b/cloud/access/ui";
 import { createMemo, createSignal, onCleanup, Show } from "solid-js";
 import { apiClient } from "../../api/client";
 import type { ConfigurableFolderRole, Mailbox } from "../../contracts";

@@ -1,8 +1,8 @@
-import { listLegalLinks } from "@valentinkolb/cloud";
-import { auth, getLocale } from "@valentinkolb/cloud/server";
-import { legalConsent } from "@valentinkolb/cloud/services";
-import { normalizeRedirectTo } from "@valentinkolb/cloud/shared";
-import { MinimalLayout } from "@valentinkolb/cloud/ssr";
+import { listLegalLinks } from "@k2b/cloud";
+import { auth, getLocale } from "@k2b/cloud/server";
+import { legalConsent } from "@k2b/cloud/services";
+import { normalizeRedirectTo } from "@k2b/cloud/shared";
+import { MinimalLayout } from "@k2b/cloud/ssr";
 import { ssr } from "../../config";
 import AuthFooter from "./AuthFooter";
 import ConsentForm from "./ConsentForm.island";

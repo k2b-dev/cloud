@@ -1,4 +1,4 @@
-import type { AccessSubject } from "@valentinkolb/cloud/server";
+import type { AccessSubject } from "@k2b/cloud/server";
 import { sql } from "bun";
 import { buildSpacePrincipalCondition } from "./access";
 

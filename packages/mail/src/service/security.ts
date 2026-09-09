@@ -1,5 +1,5 @@
 import { err, fail, ok, type Result } from "@k2b/stdlib";
-import { audit, isUniqueViolation, toPgTextArray, toPgUuidArray } from "@valentinkolb/cloud/services";
+import { audit, isUniqueViolation, toPgTextArray, toPgUuidArray } from "@k2b/cloud/services";
 import { sql } from "bun";
 import type {
   CreateMailProtectedIdentityInput,

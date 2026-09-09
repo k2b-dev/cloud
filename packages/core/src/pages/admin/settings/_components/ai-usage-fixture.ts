@@ -1,5 +1,5 @@
-import type { AiUsageReport, AiUsageStats, AiUsagePage } from "@valentinkolb/cloud/ai/admin";
-import { AiUsageQuerySchema } from "@valentinkolb/cloud/shared";
+import type { AiUsageReport, AiUsageStats, AiUsagePage } from "@k2b/cloud/ai/admin";
+import { AiUsageQuerySchema } from "@k2b/cloud/shared";
 export const usageStats: AiUsageStats = {
   avgOutputTokensPerSecond: 25,
   switchesAway: 1,

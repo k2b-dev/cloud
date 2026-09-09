@@ -1,5 +1,5 @@
 import { err, fail } from "@k2b/stdlib";
-import { getLocale, v } from "@valentinkolb/cloud/server";
+import { getLocale, v } from "@k2b/cloud/server";
 import { type Context, Hono } from "hono";
 import {
   automaticReplyPreviewInputSchema,

@@ -3,7 +3,7 @@ import {
   DocumentExtractionError,
   documentFormatFromFilename,
   extractDocumentMarkdown,
-} from "@valentinkolb/cloud/services/document-extraction";
+} from "@k2b/cloud/services/document-extraction";
 import { z } from "zod";
 import type { RequestActor } from "../server";
 import {

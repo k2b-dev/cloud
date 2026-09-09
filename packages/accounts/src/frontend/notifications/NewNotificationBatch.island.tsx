@@ -12,8 +12,8 @@ import {
   TextInput,
   useLocale,
 } from "@k2b/ui";
-import { EntitySearch, type EntitySearchPrincipal } from "@valentinkolb/cloud/account/ui";
-import { formatNumber } from "@valentinkolb/cloud/shared";
+import { EntitySearch, type EntitySearchPrincipal } from "@k2b/cloud/account/ui";
+import { formatNumber } from "@k2b/cloud/shared";
 import { createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import AccountAvatar from "@/frontend/AccountAvatar";

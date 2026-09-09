@@ -1,6 +1,6 @@
-import { type AiInterChatMessage, aiConversations, aiProjects, personalAiModelPolicy } from "@valentinkolb/cloud/ai";
-import { deliverAiInterChatMessage } from "@valentinkolb/cloud/ai/runtime";
-import { accounts, logger } from "@valentinkolb/cloud/services";
+import { type AiInterChatMessage, aiConversations, aiProjects, personalAiModelPolicy } from "@k2b/cloud/ai";
+import { deliverAiInterChatMessage } from "@k2b/cloud/ai/runtime";
+import { accounts, logger } from "@k2b/cloud/services";
 
 const log = logger("core:ai-inter-chat-messages");
 

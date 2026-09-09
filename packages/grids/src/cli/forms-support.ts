@@ -1,5 +1,5 @@
-import type { CloudCliContext } from "@valentinkolb/cloud/cli";
-import { flag } from "@valentinkolb/cloud/cli";
+import type { CloudCliContext } from "@k2b/cloud/cli";
+import { flag } from "@k2b/cloud/cli";
 import type { PublicBase as Base, PublicForm, PublicTable as Table } from "../api/public-dto";
 import { resolveBaseFromCommand, resolveNamedResource, resolveTable } from "./resources";
 import { readApi } from "./runtime";

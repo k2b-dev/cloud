@@ -1,4 +1,4 @@
-import * as settings from "@valentinkolb/cloud/services/settings";
+import * as settings from "@k2b/cloud/services/settings";
 
 export const DEFAULT_MAX_FILE_SIZE_MB = 10;
 

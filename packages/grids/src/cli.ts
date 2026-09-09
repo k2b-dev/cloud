@@ -1,4 +1,4 @@
-import { defineCliCommands } from "@valentinkolb/cloud/cli";
+import { defineCliCommands } from "@k2b/cloud/cli";
 import { accessCommands } from "./cli/access";
 import { baseCrudCommands } from "./cli/bases";
 import { customAppCommands } from "./cli/custom-apps";

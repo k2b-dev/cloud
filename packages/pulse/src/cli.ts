@@ -1,4 +1,4 @@
-import { arg, command, defineCliCommands } from "@valentinkolb/cloud/cli";
+import { arg, command, defineCliCommands } from "@k2b/cloud/cli";
 import { type PulseCapabilitySnapshot, type PulseIngestBatch } from "./contracts";
 import { pulseAccessCommands } from "./cli/access";
 import { baseCommands } from "./cli/bases";

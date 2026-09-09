@@ -1,5 +1,5 @@
 import { describe, expect, mock, spyOn, test } from "bun:test";
-import type { LiveWebSocketOptions } from "@valentinkolb/cloud/browser/live";
+import type { LiveWebSocketOptions } from "@k2b/cloud/browser/live";
 import { createComponent } from "solid-js";
 import { isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../ui/test/dom";
@@ -18,7 +18,7 @@ describe("Spaces live owner disposal", () => {
     const markApplied = mock(() => {});
     const connectionDispose = mock(() => {});
     const reload = spyOn(dom.window.location, "reload").mockImplementation(() => {});
-    mock.module("@valentinkolb/cloud/browser/live", () => ({
+    mock.module("@k2b/cloud/browser/live", () => ({
       createLiveWebSocket: (options: LiveWebSocketOptions<SpaceLiveServerMessage>) => {
         callbacks = options;
         return { connect: () => {}, markApplied, dispose: connectionDispose };

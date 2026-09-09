@@ -10,25 +10,25 @@
 
 import { err, fail, type Result } from "@k2b/stdlib";
 import { CursorMismatchError, RetentionGapError, type Worker } from "@k2b/sync";
-import { lazySync } from "@valentinkolb/cloud";
-import { createRuntimeLifecycle, createRuntimeTaskTracker, logger, stopRuntimeResources, trace } from "@valentinkolb/cloud/services";
-import { get as settingsGet } from "@valentinkolb/cloud/services/settings";
-import { normalizeLocale } from "@valentinkolb/cloud/shared";
+import { lazySync } from "@k2b/cloud";
+import { createRuntimeLifecycle, createRuntimeTaskTracker, logger, stopRuntimeResources, trace } from "@k2b/cloud/services";
+import { get as settingsGet } from "@k2b/cloud/services/settings";
+import { normalizeLocale } from "@k2b/cloud/shared";
 import {
   createWorkflowBuiltinActionPorts,
   type WorkflowExecutionError,
   type WorkflowInvocationMode,
   type WorkflowInvocationReceipt,
   type WorkflowJsonValue,
-} from "@valentinkolb/cloud/workflows";
-import { hashWorkflowJson } from "@valentinkolb/cloud/workflows/language";
+} from "@k2b/cloud/workflows";
+import { hashWorkflowJson } from "@k2b/cloud/workflows/language";
 import {
   evaluateWorkflowTriggerInputs,
   type WorkflowDryRunActionPort,
   type WorkflowExecuteActionPort,
   type WorkflowTraceEvent,
   type WorkflowTracePort,
-} from "@valentinkolb/cloud/workflows/runtime";
+} from "@k2b/cloud/workflows/runtime";
 import {
   createWorkflowActionPort,
   createWorkflowDryRunPort,
@@ -37,7 +37,7 @@ import {
   tickWorkflows,
   type WorkflowRunClaim,
   wakeExpiredWorkflowRuns,
-} from "@valentinkolb/cloud/workflows/store";
+} from "@k2b/cloud/workflows/store";
 import type { WorkflowRunEventScope } from "../lib/workflow-run-events";
 import type {
   GridsWorkflow,

@@ -1,5 +1,5 @@
 import { err, fail, ok, type Result } from "@k2b/stdlib";
-import type { AccessUser, PermissionLevel } from "@valentinkolb/cloud/server";
+import type { AccessUser, PermissionLevel } from "@k2b/cloud/server";
 import { sql } from "bun";
 import type {
   ActorRef,

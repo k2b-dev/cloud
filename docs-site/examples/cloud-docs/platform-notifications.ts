@@ -1,7 +1,7 @@
-import { browserNotificationClient } from "@valentinkolb/cloud/browser/notifications";
-import { type NotificationChannelDriver, registerNotificationChannel } from "@valentinkolb/cloud/services";
+import { browserNotificationClient } from "@k2b/cloud/browser/notifications";
+import { type NotificationChannelDriver, registerNotificationChannel } from "@k2b/cloud/services";
 
-declare module "@valentinkolb/cloud/contracts/notifications" {
+declare module "@k2b/cloud/contracts/notifications" {
   interface NotificationChannelRegistry {
     sms: true;
   }

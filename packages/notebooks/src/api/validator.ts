@@ -1,4 +1,4 @@
-import { getLocale } from "@valentinkolb/cloud/server";
+import { getLocale } from "@k2b/cloud/server";
 import type { Context, ValidationTargets } from "hono";
 import { validator as honoValidator } from "hono-openapi";
 import type { ZodType } from "zod";

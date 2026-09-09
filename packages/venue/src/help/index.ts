@@ -1,4 +1,4 @@
-import { defineHelp } from "@valentinkolb/cloud/server";
+import { defineHelp } from "@k2b/cloud/server";
 import startDe from "./documents/de/venue-start.help.md" with { type: "text" };
 import troubleshootDe from "./documents/de/venue-troubleshooting.help.md" with { type: "text" };
 import workDe from "./documents/de/venue-work.help.md" with { type: "text" };

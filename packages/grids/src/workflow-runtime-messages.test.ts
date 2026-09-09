@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { WorkflowActionContext } from "@valentinkolb/cloud/workflows";
+import type { WorkflowActionContext } from "@k2b/cloud/workflows";
 import { workflowInvocationLocale, workflowRuntimeMessages, workflowRuntimeText } from "./workflow-runtime-messages";
 import { GRIDS_WORKFLOW_ACTIONS } from "./workflows";
 

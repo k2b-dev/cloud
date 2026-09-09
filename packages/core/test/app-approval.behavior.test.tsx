@@ -30,7 +30,7 @@ const update = mock(async () => new Response(null, { status: 204 }));
 const list = mock(async () => Response.json({ items: [], nextCursor: null }));
 const logout = mock(async () => new Response(null, { status: 204 }));
 if (!isServer)
-  mock.module("@valentinkolb/cloud/clients/core", () => ({
+  mock.module("@k2b/cloud/clients/core", () => ({
     apiClient: {
       auth: {
         logout: { $post: logout },

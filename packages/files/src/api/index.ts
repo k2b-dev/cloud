@@ -8,7 +8,7 @@ import {
   requiresIpaUser,
   respond,
   v,
-} from "@valentinkolb/cloud/server";
+} from "@k2b/cloud/server";
 import { type Context, Hono } from "hono";
 import { describeRoute } from "hono-openapi";
 import {

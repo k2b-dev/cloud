@@ -1,4 +1,4 @@
-import { CapabilitySemanticLinkSchema } from "@valentinkolb/cloud/contracts";
+import { CapabilitySemanticLinkSchema } from "@k2b/cloud/contracts";
 import { z } from "zod";
 
 const TimestampSchema = z.string().datetime({ offset: true });

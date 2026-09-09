@@ -1,5 +1,5 @@
-import { err, fail, ok, type Result } from "@valentinkolb/cloud/server";
-import { toPgTextArray } from "@valentinkolb/cloud/services";
+import { err, fail, ok, type Result } from "@k2b/cloud/server";
+import { toPgTextArray } from "@k2b/cloud/services";
 import { sql } from "bun";
 import type {
   Aggregation,

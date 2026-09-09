@@ -1,5 +1,5 @@
 import { err, fail, ok, type Result } from "@k2b/stdlib";
-import type { WorkflowBoundPlan, WorkflowIrStep, WorkflowJsonValue } from "@valentinkolb/cloud/workflows";
+import type { WorkflowBoundPlan, WorkflowIrStep, WorkflowJsonValue } from "@k2b/cloud/workflows";
 import { sql } from "bun";
 import type { MutationSource, TableMutationPolicy } from "../contracts";
 import { MutationSourceSchema, TableMutationPolicySchema } from "../contracts";

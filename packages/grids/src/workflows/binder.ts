@@ -6,8 +6,8 @@ import type {
   WorkflowIrStep,
   WorkflowJsonValue,
   WorkflowSourceLocation,
-} from "@valentinkolb/cloud/workflows";
-import { workflowPathKey } from "@valentinkolb/cloud/workflows";
+} from "@k2b/cloud/workflows";
+import { workflowPathKey } from "@k2b/cloud/workflows";
 import {
   bindWorkflow,
   compileWorkflow,
@@ -17,8 +17,8 @@ import {
   resolveWorkflowValuePathDescriptor,
   type WorkflowValuePathDescriptor,
   workflowMessageExpressions,
-} from "@valentinkolb/cloud/workflows/language";
-import { normalizeWorkflowSchedule } from "@valentinkolb/cloud/workflows/runtime";
+} from "@k2b/cloud/workflows/language";
+import { normalizeWorkflowSchedule } from "@k2b/cloud/workflows/runtime";
 import {
   getWorkflowCatalogRef,
   snapshotWorkflowCatalog,

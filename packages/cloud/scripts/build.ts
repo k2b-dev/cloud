@@ -8,7 +8,7 @@
  *     # appDir defaults to packages/<APP_ID>, run from workspace root.
  *
  *   Standalone (npm consumer, see cloud-template):
- *     APP_ID=<id> APP_DIR=. bun run node_modules/@valentinkolb/cloud/scripts/build.ts
+ *     APP_ID=<id> APP_DIR=. bun run node_modules/@k2b/cloud/scripts/build.ts
  *     # appDir = APP_DIR (resolved against cwd) and must be the directory
  *     # that CONTAINS src/, since entrypoints resolve to <appDir>/src/*.
  *
@@ -39,7 +39,7 @@ if (!appId) throw new Error("APP_ID env var required");
 const root = process.cwd();
 
 // Framework dir — works whether this script is in packages/cloud/scripts/
-// (monorepo) or node_modules/@valentinkolb/cloud/scripts/ (npm install).
+// (monorepo) or node_modules/@k2b/cloud/scripts/ (npm install).
 const frameworkDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
 const release = process.env.CLOUD_RELEASE?.trim() || "local";

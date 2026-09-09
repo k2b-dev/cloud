@@ -1,6 +1,6 @@
 import { err, fail, ok, type PageParams, type Paginated, paginate, type Result } from "@k2b/stdlib";
-import { type AccessSubject, buildAccessPrincipalCondition, type PermissionLevel } from "@valentinkolb/cloud/server";
-import { serviceAccounts } from "@valentinkolb/cloud/services";
+import { type AccessSubject, buildAccessPrincipalCondition, type PermissionLevel } from "@k2b/cloud/server";
+import { serviceAccounts } from "@k2b/cloud/services";
 import { sql } from "bun";
 import { withShortId } from "../lib/short-id";
 import {

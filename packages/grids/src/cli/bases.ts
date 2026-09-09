@@ -1,4 +1,4 @@
-import { arg, command, confirmFlag, flag, paginationFlags } from "@valentinkolb/cloud/cli";
+import { arg, command, confirmFlag, flag, paginationFlags } from "@k2b/cloud/cli";
 import type { PublicBase as Base, PublicField as Field, PublicTable as Table } from "../api/public-dto";
 import type { ControlledDestructionOverview, ControlledDestructionRun } from "../controlled-destruction-contracts";
 import type { PreservationHold, PreservationHoldsResponse } from "../preservation-hold-contracts";

@@ -1,9 +1,9 @@
 import { ButtonLink, NoticeCard, Tag } from "@k2b/ui";
-import type { AuthContext } from "@valentinkolb/cloud/server";
-import { expectUserBackedActor, getLocale } from "@valentinkolb/cloud/server";
-import { accountsAppService as accountsService, coreSettings, linuxIdentities } from "@valentinkolb/cloud/services";
-import { canManageGroup, getDefaultGroupScope, isAdminUser } from "@valentinkolb/cloud/shared";
-import { Layout } from "@valentinkolb/cloud/ssr";
+import type { AuthContext } from "@k2b/cloud/server";
+import { expectUserBackedActor, getLocale } from "@k2b/cloud/server";
+import { accountsAppService as accountsService, coreSettings, linuxIdentities } from "@k2b/cloud/services";
+import { canManageGroup, getDefaultGroupScope, isAdminUser } from "@k2b/cloud/shared";
+import { Layout } from "@k2b/cloud/ssr";
 import type { JSX } from "solid-js/jsx-runtime";
 import { z } from "zod";
 import { createPagination } from "@/contracts";

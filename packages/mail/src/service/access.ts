@@ -9,8 +9,8 @@ import {
   type Principal,
   resolveDisplayNames,
   updateAccess,
-} from "@valentinkolb/cloud/server";
-import { accounts, audit } from "@valentinkolb/cloud/services";
+} from "@k2b/cloud/server";
+import { accounts, audit } from "@k2b/cloud/services";
 import { err, fail, ok, type Result, tryCatch, unwrap } from "@k2b/stdlib";
 import { sql } from "bun";
 import { auditActorFromRequest, capByCredentialScopes, isResourceBoundToMailbox, type MailRequestContext, userBackedActor } from "./auth";

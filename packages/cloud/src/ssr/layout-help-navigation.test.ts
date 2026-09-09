@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { HelpDocumentManifest } from "@valentinkolb/cloud/shared";
+import type { HelpDocumentManifest } from "@k2b/cloud/shared";
 import { adjacentHelpDocuments, focusHelpArticleHeading, resetHelpArticleScroll } from "./layout-help-navigation";
 
 const documents = ["start", "work", "troubleshooting"].map(

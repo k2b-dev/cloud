@@ -1,5 +1,5 @@
-import { type AuthContext, auth, middleware } from "@valentinkolb/cloud/server";
-import { createRuntimeLifecycle, stopRuntimeResources } from "@valentinkolb/cloud/services";
+import { type AuthContext, auth, middleware } from "@k2b/cloud/server";
+import { createRuntimeLifecycle, stopRuntimeResources } from "@k2b/cloud/services";
 import { Hono } from "hono";
 import { websocket } from "hono/bun";
 import apiRoutes from "./api";

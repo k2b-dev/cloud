@@ -1,6 +1,6 @@
 import { LocaleProvider } from "@k2b/ui";
-import { getLocale } from "@valentinkolb/cloud/server";
-import { weatherService } from "@valentinkolb/cloud/services";
+import { getLocale } from "@k2b/cloud/server";
+import { weatherService } from "@k2b/cloud/services";
 import { ssr } from "../../config";
 import { weatherMessages } from "../../messages";
 import PublicWeatherDisplay from "./PublicWeatherDisplay.island";

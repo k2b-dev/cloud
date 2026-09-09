@@ -4,19 +4,19 @@ import { documentedFixtureSource, missingExampleImports, packageSpecifiers, type
 test("extracts static and dynamic package imports", () => {
   expect(
     packageSpecifiers(`
-      import { defineApp } from "@valentinkolb/cloud";
+      import { defineApp } from "@k2b/cloud";
       const module = import("@k2b/ssr/nav");
     `),
-  ).toEqual(new Set(["@valentinkolb/cloud", "@k2b/ssr/nav"]));
+  ).toEqual(new Set(["@k2b/cloud", "@k2b/ssr/nav"]));
 });
 
 test("reports documented imports without a compile fixture", () => {
   expect(
     missingExampleImports(
-      ["@valentinkolb/cloud", "@valentinkolb/cloud/ai/ui", "@valentinkolb/cloud/src/internal"],
-      ["@valentinkolb/cloud"],
+      ["@k2b/cloud", "@k2b/cloud/ai/ui", "@k2b/cloud/src/internal"],
+      ["@k2b/cloud"],
     ),
-  ).toEqual(["@valentinkolb/cloud/ai/ui"]);
+  ).toEqual(["@k2b/cloud/ai/ui"]);
 });
 
 test("requires canonical recipe pages and compile fixtures", () => {
@@ -30,8 +30,8 @@ test("requires canonical recipe pages and compile fixtures", () => {
   expect(
     recipeFixtureErrors(
       recipes,
-      new Map([["server/http.md", 'import { respond } from "@valentinkolb/cloud/server";']]),
-      new Map([["server-api.ts", 'import { respond } from "@valentinkolb/cloud/server";']]),
+      new Map([["server/http.md", 'import { respond } from "@k2b/cloud/server";']]),
+      new Map([["server-api.ts", 'import { respond } from "@k2b/cloud/server";']]),
     ),
   ).toEqual([]);
 
@@ -41,12 +41,12 @@ test("requires canonical recipe pages and compile fixtures", () => {
       new Map([
         [
           "server/http.md",
-          ['import { respond } from "@valentinkolb/cloud/server";', 'import { api } from "@valentinkolb/cloud/browser";'].join("\n"),
+          ['import { respond } from "@k2b/cloud/server";', 'import { api } from "@k2b/cloud/browser";'].join("\n"),
         ],
       ]),
-      new Map([["server-api.ts", 'import { respond } from "@valentinkolb/cloud/server";']]),
+      new Map([["server-api.ts", 'import { respond } from "@k2b/cloud/server";']]),
     ),
-  ).toEqual(["server/http.md: documented import is not covered by its compile fixture: @valentinkolb/cloud/browser"]);
+  ).toEqual(["server/http.md: documented import is not covered by its compile fixture: @k2b/cloud/browser"]);
 
   expect(
     recipeFixtureErrors(
@@ -57,7 +57,7 @@ test("requires canonical recipe pages and compile fixtures", () => {
           fixtures: ["identity-access.ts"],
         },
       ],
-      new Map([["server/http.md", 'import { respond } from "@valentinkolb/cloud/server";']]),
+      new Map([["server/http.md", 'import { respond } from "@k2b/cloud/server";']]),
       new Map(),
     ),
   ).toEqual(["server/http.md: compile fixture does not exist: server-api.ts", "identity/authorization.md: recipe page does not exist"]);
@@ -65,10 +65,10 @@ test("requires canonical recipe pages and compile fixtures", () => {
 
 // Scope migration must preserve subpaths without rewriting unrelated workspace names.
 test("compares current compile fixtures with the migrated documentation scope", () => {
-  expect(documentedFixtureSource('import { defineApp } from "@valentinkolb/cloud";')).toBe(
+  expect(documentedFixtureSource('import { defineApp } from "@k2b/cloud";')).toBe(
     'import { defineApp } from "@k2b/cloud";',
   );
-  expect(documentedFixtureSource('import("@valentinkolb/cloud/server")')).toBe('import("@k2b/cloud/server")');
-  expect(documentedFixtureSource('import("@valentinkolb/cloud-app-grids")')).toBe('import("@valentinkolb/cloud-app-grids")');
+  expect(documentedFixtureSource('import("@k2b/cloud/server")')).toBe('import("@k2b/cloud/server")');
+  expect(documentedFixtureSource('import("@k2b/cloud-app-grids")')).toBe('import("@k2b/cloud-app-grids")');
   expect(documentedFixtureSource('import("@k2b/cloud/server")')).toBe('import("@k2b/cloud/server")');
 });

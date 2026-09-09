@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { createConfig } from "@k2b/ssr";
 import type { FileSource } from "@k2b/ui";
-import type { CapabilityCatalogClientResult, CapabilityClientResult } from "@valentinkolb/cloud/capabilities";
+import type { CapabilityCatalogClientResult, CapabilityClientResult } from "@k2b/cloud/capabilities";
 
 const root = mkdtempSync(resolve(tmpdir(), "assistant-context-content-"));
 const { plugin } = createConfig({ dev: true, rootDir: root });

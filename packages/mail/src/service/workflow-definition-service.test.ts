@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { WorkflowBoundPlan } from "@valentinkolb/cloud/workflows";
+import type { WorkflowBoundPlan } from "@k2b/cloud/workflows";
 import { workflowActivationError, workflowTriggerRegistrations } from "./workflow-definition-service";
 
 const plan: WorkflowBoundPlan = {

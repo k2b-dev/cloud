@@ -3,7 +3,7 @@
  * docker compose -f compose.dev.yml exec -T app-core bun packages/core/scripts/sync-dev-smoke.ts
  * Uses a disposable local account and canonical session issuance; no credentials are printed.
  */
-import { session } from "@valentinkolb/cloud/services";
+import { session } from "@k2b/cloud/services";
 import { sql } from "bun";
 import { Hono } from "hono";
 import { z } from "zod";

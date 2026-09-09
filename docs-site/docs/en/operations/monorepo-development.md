@@ -250,3 +250,22 @@ Leave NATS running across the printed minute boundary. The check verifies a
 retained job, a missed scheduled tick, and their acknowledgments, then removes
 its own broker resources. It can bracket a full application restart, but does
 not replace recovery tests for each application's domain work.
+
+## K2B package and image migration
+
+The repository is now `k2b-dev/cloud`. Update an existing checkout with
+`git remote set-url origin https://github.com/k2b-dev/cloud.git`.
+
+New application releases use `@k2b/cloud`; replace the former
+`@valentinkolb/cloud` dependency and its import prefixes together. The old
+npm package remains available for existing applications. `@k2b/ui` keeps its
+package name and independent release cycle.
+
+Cloud-owned production images use `ghcr.io/k2b-dev/cloud-*`. Deploy one
+complete immutable release tag with `CLOUD_IMAGE_TAG`; retain the previous
+image digests until the upgraded installation is verified. External Filegate
+and Geo images keep their own repositories and release paths.
+
+The CLI installer and updater verify releases signed by
+`k2b-dev/cloud/.github/workflows/cli.yml`. No CLI GitHub releases existed
+under the former repository owner at transfer time.

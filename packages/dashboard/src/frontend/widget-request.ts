@@ -1,4 +1,4 @@
-import { LOCALE_HEADER } from "@valentinkolb/cloud/shared";
+import { LOCALE_HEADER } from "@k2b/cloud/shared";
 
 export const DASHBOARD_WIDGET_CONCURRENCY = 8;
 export const DASHBOARD_WIDGET_DEADLINE_MS = 500;

@@ -1,4 +1,4 @@
-import { defineHelp } from "@valentinkolb/cloud/server";
+import { defineHelp } from "@k2b/cloud/server";
 import booksDe from "./documents/de/contacts-books-sharing.help.md" with { type: "text" };
 import hierarchyDe from "./documents/de/contacts-hierarchy.help.md" with { type: "text" };
 import startDe from "./documents/de/contacts-start.help.md" with { type: "text" };

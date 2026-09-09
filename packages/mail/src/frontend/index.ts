@@ -1,5 +1,5 @@
 import { ssr } from "../config";
-import { type AuthContext, auth } from "@valentinkolb/cloud/server";
+import { type AuthContext, auth } from "@k2b/cloud/server";
 import { Hono } from "hono";
 import automationActivityPage from "./[mailboxId]/automations/activity/page";
 import incomingAutomationsPage from "./[mailboxId]/automations/incoming/page";

@@ -1,7 +1,7 @@
 import { refreshCurrentPath } from "@k2b/ssr/nav";
 import { mutation as mutations } from "@k2b/stdlib/solid";
 import { Button, CopyButton, IconButton, Placeholder, prompts, Tooltip, toast, useLocale } from "@k2b/ui";
-import { formatDateTime as formatDate } from "@valentinkolb/cloud/shared";
+import { formatDateTime as formatDate } from "@k2b/cloud/shared";
 import type { MetricsToken } from "../service";
 import { gatewayOpsMessages } from "../../../messages";
 

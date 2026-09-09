@@ -1,4 +1,4 @@
-import { type AppContext, type AuthContext, middleware, auth } from "@valentinkolb/cloud/server";
+import { type AppContext, type AuthContext, middleware, auth } from "@k2b/cloud/server";
 import { Hono } from "hono";
 import apiRoutes from "./api";
 import { currentWeatherWidgetHandler } from "./api/widgets";

@@ -9,9 +9,9 @@ import type {
   AiPublicModelProfile,
   AiStoredMessage,
   AiUserPrefs,
-} from "@valentinkolb/cloud/ai";
-import { guessAiMediaType } from "@valentinkolb/cloud/ai/browser";
-import { arg, command, confirmFlag, flag, readCliInput } from "@valentinkolb/cloud/cli";
+} from "@k2b/cloud/ai";
+import { guessAiMediaType } from "@k2b/cloud/ai/browser";
+import { arg, command, confirmFlag, flag, readCliInput } from "@k2b/cloud/cli";
 import { buildAssistantChatDiagnostic } from "./diagnostics";
 import { AI_API, jsonRequest, parseJson, printRows, printValue, queryString, readApi, requireConfirmation, shortId } from "./shared";
 import { streamAssistantTurn } from "./stream";

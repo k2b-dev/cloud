@@ -1,8 +1,8 @@
 import { createHash } from "node:crypto";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import type { ScheduleContext, Worker } from "@k2b/sync";
-import { lazySync } from "@valentinkolb/cloud";
-import { logger, toPgTextArray } from "@valentinkolb/cloud/services";
+import { lazySync } from "@k2b/cloud";
+import { logger, toPgTextArray } from "@k2b/cloud/services";
 import { type SQL, type SQLQuery, sql } from "bun";
 import {
   EVIDENCE_EXPORT_SECTIONS,

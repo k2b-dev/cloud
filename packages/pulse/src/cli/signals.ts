@@ -1,4 +1,4 @@
-import { arg, command, flag } from "@valentinkolb/cloud/cli";
+import { arg, command, flag } from "@k2b/cloud/cli";
 import type {
   MetricType,
   PulseCurrentState,

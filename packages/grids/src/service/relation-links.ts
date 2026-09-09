@@ -1,4 +1,4 @@
-import { toPgUuidArray } from "@valentinkolb/cloud/services";
+import { toPgUuidArray } from "@k2b/cloud/services";
 import { sql } from "bun";
 import type { SqlClient } from "./audit";
 import { runBoundedQuery } from "./bounded-query";

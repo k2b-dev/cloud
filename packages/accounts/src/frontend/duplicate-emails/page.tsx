@@ -1,9 +1,9 @@
 import { dates } from "@k2b/stdlib";
 import { DataTable, type DataTableColumn, Pagination, Paper, Placeholder, Tag } from "@k2b/ui";
-import { accountCategoryLabel } from "@valentinkolb/cloud/contracts";
-import { type AuthContext, expectUserBackedActor, getLocale } from "@valentinkolb/cloud/server";
-import { accountsAppService, coreSettings, readAccountCategoryPolicy } from "@valentinkolb/cloud/services";
-import { Layout } from "@valentinkolb/cloud/ssr";
+import { accountCategoryLabel } from "@k2b/cloud/contracts";
+import { type AuthContext, expectUserBackedActor, getLocale } from "@k2b/cloud/server";
+import { accountsAppService, coreSettings, readAccountCategoryPolicy } from "@k2b/cloud/services";
+import { Layout } from "@k2b/cloud/ssr";
 import { HTTPException } from "hono/http-exception";
 import { ssr } from "../../config";
 import { toAccountsActor } from "../../shared/actor";

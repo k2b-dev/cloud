@@ -1,6 +1,6 @@
 import { err, fail, ok, type Result } from "@k2b/stdlib";
-import { logger, trace } from "@valentinkolb/cloud/services";
-import { listWorkflowRuns } from "@valentinkolb/cloud/workflows/store";
+import { logger, trace } from "@k2b/cloud/services";
+import { listWorkflowRuns } from "@k2b/cloud/workflows/store";
 import type { Mailbox, MailWorkflow, SenderIdentity } from "../contracts";
 import { type MailWorkflowCatalogSnapshot, snapshotMailWorkflowCatalog } from "../workflows/catalog";
 import * as access from "./access";

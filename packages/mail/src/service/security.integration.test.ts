@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { toPgTextArray } from "@valentinkolb/cloud/services";
+import { toPgTextArray } from "@k2b/cloud/services";
 import { sql } from "bun";
 import { newShortId } from "../lib/short-id";
 import { migrate } from "../migrate";

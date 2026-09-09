@@ -8,8 +8,8 @@ import {
   requiresAdmin,
   respond,
   v,
-} from "@valentinkolb/cloud/server";
-import { serviceAccountCredentials } from "@valentinkolb/cloud/services";
+} from "@k2b/cloud/server";
+import { serviceAccountCredentials } from "@k2b/cloud/services";
 import { Hono } from "hono";
 import { describeRoute } from "hono-openapi";
 import { z } from "zod";

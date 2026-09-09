@@ -1,8 +1,8 @@
 import { DataTable, type DataTableColumn, Placeholder, StatCell, StatGrid } from "@k2b/ui";
-import type { AnnouncementEntry } from "@valentinkolb/cloud/contracts";
-import { getLocale, type AuthContext } from "@valentinkolb/cloud/server";
-import { announcements } from "@valentinkolb/cloud/services";
-import { AdminLayout } from "@valentinkolb/cloud/ssr";
+import type { AnnouncementEntry } from "@k2b/cloud/contracts";
+import { getLocale, type AuthContext } from "@k2b/cloud/server";
+import { announcements } from "@k2b/cloud/services";
+import { AdminLayout } from "@k2b/cloud/ssr";
 import { ssr } from "../../../config";
 import AnnouncementActions from "./AnnouncementActions.island";
 import { adminMessages } from "../messages";

@@ -37,7 +37,7 @@ COPY packages/ui/tsconfig.json packages/ui/tsconfig.build.json packages/ui/
 COPY packages/venue/package.json packages/venue/
 COPY packages/weather/package.json packages/weather/
 COPY fixtures/ui-ssr/package.json fixtures/ui-ssr/
-RUN bun install --frozen-lockfile --ignore-scripts --filter @valentinkolb/cloud-docs
+RUN bun install --frozen-lockfile --ignore-scripts --filter @k2b/cloud-docs
 
 COPY packages/cloud/tsconfig.json packages/cloud/
 COPY packages/cloud/src packages/cloud/src

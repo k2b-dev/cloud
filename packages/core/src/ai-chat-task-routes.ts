@@ -9,9 +9,9 @@ import {
   normalizeChatTaskSchedule,
   toAiChatTaskOccurrenceView,
   toAiChatTaskView,
-} from "@valentinkolb/cloud/ai";
-import { CapabilityIdempotencyKeySchema, capabilityIdempotencyConflict } from "@valentinkolb/cloud/contracts";
-import { type AuthContext, auth, err, fail, ok, rateLimit, respond, v } from "@valentinkolb/cloud/server";
+} from "@k2b/cloud/ai";
+import { CapabilityIdempotencyKeySchema, capabilityIdempotencyConflict } from "@k2b/cloud/contracts";
+import { type AuthContext, auth, err, fail, ok, rateLimit, respond, v } from "@k2b/cloud/server";
 import { type Context, Hono } from "hono";
 import { z } from "zod";
 import { aiChatTaskRuntime, reconcileAiChatTasks } from "./ai-chat-tasks-runtime";

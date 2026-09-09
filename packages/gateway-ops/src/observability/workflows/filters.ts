@@ -5,7 +5,7 @@
  * the page is reloadable and shareable, and an operator can send a colleague
  * the exact view that shows the problem.
  */
-import { createUrlFilter, oneOf, page, text, type UrlFilterField } from "@valentinkolb/cloud/ssr/url-filter";
+import { createUrlFilter, oneOf, page, text, type UrlFilterField } from "@k2b/cloud/ssr/url-filter";
 import { z } from "zod";
 
 export const WORKFLOWS_BASE_PATH = "/admin/observability/workflows";

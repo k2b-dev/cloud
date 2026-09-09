@@ -44,7 +44,7 @@ if (!databaseName) {
     expect(database?.name).toBe(databaseName);
     const { createSync } = await import("@k2b/sync");
     const { connect } = await import("@nats-io/transport-node");
-    const { bindProcessSync, unbindProcessSync } = await import("@valentinkolb/cloud");
+    const { bindProcessSync, unbindProcessSync } = await import("@k2b/cloud");
     const connection = await connect({ servers: "nats://127.0.0.1:4222" });
     const namespace = `snapshot-${crypto.randomUUID()}`;
     const sync = createSync({ connection, namespace, application: "notebooks" });
@@ -267,7 +267,7 @@ if (!databaseName) {
         (error: unknown) => error,
       );
       expect(gap).toBeInstanceOf(RetentionGapError);
-      const services = await import("@valentinkolb/cloud/services");
+      const services = await import("@k2b/cloud/services");
       const traced: unknown[] = [];
       const traceComplete = spyOn(services.trace, "complete").mockImplementation(async (params) => {
         traced.push({ status: params.status, summary: params.summary });

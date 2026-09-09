@@ -1,5 +1,5 @@
-import { toPgUuidArray } from "@valentinkolb/cloud/services";
-import type { WorkflowJsonValue } from "@valentinkolb/cloud/workflows";
+import { toPgUuidArray } from "@k2b/cloud/services";
+import type { WorkflowJsonValue } from "@k2b/cloud/workflows";
 import { sql } from "bun";
 import { normalizeEmailAddress } from "./address-normalization";
 import { sha256Json } from "./canonical";

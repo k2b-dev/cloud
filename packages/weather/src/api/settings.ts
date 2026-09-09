@@ -8,7 +8,7 @@
  * fresh values via the per-request snapshot or async coreSettings reads.
  */
 
-import { type AuthContext, auth, getLocale, v } from "@valentinkolb/cloud/server";
+import { type AuthContext, auth, getLocale, v } from "@k2b/cloud/server";
 import { sql } from "bun";
 import { Hono } from "hono";
 import { z } from "zod";

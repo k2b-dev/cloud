@@ -3,7 +3,7 @@ import {
   type LiquidTemplateFilter,
   renderLiquidTemplate,
   validateLiquidTemplate as validateSharedLiquidTemplate,
-} from "@valentinkolb/cloud/shared";
+} from "@k2b/cloud/shared";
 import { type BarcodeFormat, BarcodeRenderError, barcodeDataUrl } from "../barcode-rendering";
 import type { DocumentTemplate } from "../contracts";
 import { documentServiceText, isGermanDocumentLocale } from "./document-messages";

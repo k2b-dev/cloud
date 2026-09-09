@@ -1,9 +1,9 @@
 import { dates } from "@k2b/stdlib";
 import { mutation as mutations } from "@k2b/stdlib/solid";
 import { Button, NoticeCard, prompts, TextInput, useLocale } from "@k2b/ui";
-import { openAvatarUploadDialog } from "@valentinkolb/cloud/account/ui";
-import { apiClient } from "@valentinkolb/cloud/clients/core";
-import type { UserProfile, UserProvider } from "@valentinkolb/cloud/contracts";
+import { openAvatarUploadDialog } from "@k2b/cloud/account/ui";
+import { apiClient } from "@k2b/cloud/clients/core";
+import type { UserProfile, UserProvider } from "@k2b/cloud/contracts";
 import { createSignal, For, Show } from "solid-js";
 import { accountMessages } from "./messages";
 

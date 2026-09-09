@@ -10,7 +10,7 @@
  *     # appDir defaults to packages/<APP_ID>, run from workspace root.
  *
  *   Standalone (npm consumer, see cloud-template):
- *     APP_ID=<id> APP_DIR=. bun run --preload=node_modules/@valentinkolb/cloud/scripts/preload.ts ...
+ *     APP_ID=<id> APP_DIR=. bun run --preload=node_modules/@k2b/cloud/scripts/preload.ts ...
  *     # appDir = APP_DIR (resolved against cwd), i.e. the directory holding src/.
  *
  * Uses bun-plugin-tailwind with root=cwd for stable path resolution. Each app
@@ -31,7 +31,7 @@ const appId = process.env.APP_ID ?? "core";
 const root = process.cwd();
 
 // Framework dir — works whether this script sits in packages/cloud/scripts/
-// (monorepo) or node_modules/@valentinkolb/cloud/scripts/ (npm install).
+// (monorepo) or node_modules/@k2b/cloud/scripts/ (npm install).
 const frameworkDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
 // App dir — APP_DIR override for standalone consumers, defaults to monorepo

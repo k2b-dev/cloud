@@ -3,8 +3,8 @@
  * Migrations, background jobs — nothing generic here.
  */
 
-import { aiChatTasks, aiMaintenanceJobs, migrateCloudAi, seedCloudAiSkills } from "@valentinkolb/cloud/ai";
-import { startAiRuntime } from "@valentinkolb/cloud/ai/runtime";
+import { aiChatTasks, aiMaintenanceJobs, migrateCloudAi, seedCloudAiSkills } from "@k2b/cloud/ai";
+import { startAiRuntime } from "@k2b/cloud/ai/runtime";
 import {
   browserNotifications,
   lifecycleJobs,
@@ -12,8 +12,8 @@ import {
   startMandateMaintenance,
   startNotificationRuntime,
   stopNotificationRuntime,
-} from "@valentinkolb/cloud/services";
-import { initializeIdentityAuthority, startIdentityKeyMaintenance } from "@valentinkolb/cloud/services/identity";
+} from "@k2b/cloud/services";
+import { initializeIdentityAuthority, startIdentityKeyMaintenance } from "@k2b/cloud/services/identity";
 import { aiChatTaskRuntime } from "./ai-chat-tasks-runtime";
 import { deliverPendingAiMessages } from "./ai-inter-chat-messages";
 import type { createAiNotificationService } from "./ai-notifications";

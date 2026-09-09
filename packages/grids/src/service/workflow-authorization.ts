@@ -1,12 +1,12 @@
-import type { User } from "@valentinkolb/cloud/contracts";
-import type { AccessSubject, PermissionLevel } from "@valentinkolb/cloud/server";
+import type { User } from "@k2b/cloud/contracts";
+import type { AccessSubject, PermissionLevel } from "@k2b/cloud/server";
 import {
   accounts,
   type ServiceAccount,
   type ServiceAccountCredentialOverview,
   serviceAccountCredentials,
   serviceAccounts,
-} from "@valentinkolb/cloud/services";
+} from "@k2b/cloud/services";
 import { sql } from "bun";
 import type { GridsWorkflowCredential, GridsWorkflowCredentialBinding, GridsWorkflowPrincipal } from "../workflows/contracts";
 import {

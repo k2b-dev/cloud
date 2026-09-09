@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { AiChatTask } from "@valentinkolb/cloud/ai";
+import type { AiChatTask } from "@k2b/cloud/ai";
 import { reconcileAiChatTaskSchedules, recoverAiChatTasks } from "./ai-chat-tasks-runtime";
 
 const task = (id: string): AiChatTask => ({

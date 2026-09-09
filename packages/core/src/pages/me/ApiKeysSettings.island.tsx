@@ -1,8 +1,8 @@
 import { dates } from "@k2b/stdlib";
 import { mutation as mutations } from "@k2b/stdlib/solid";
 import { Button, CopyButton, DateTimePicker, NoticeCard, Placeholder, prompts, TextInput, useLocale } from "@k2b/ui";
-import { apiClient } from "@valentinkolb/cloud/clients/core";
-import type { ServiceAccountCredential } from "@valentinkolb/cloud/contracts";
+import { apiClient } from "@k2b/cloud/clients/core";
+import type { ServiceAccountCredential } from "@k2b/cloud/contracts";
 import { createSignal, For, Show } from "solid-js";
 import { accountMessages } from "./messages";
 

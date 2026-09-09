@@ -1,5 +1,5 @@
-import type { AuthContext } from "@valentinkolb/cloud/server";
-import { AdminLayout } from "@valentinkolb/cloud/ssr";
+import type { AuthContext } from "@k2b/cloud/server";
+import { AdminLayout } from "@k2b/cloud/ssr";
 import { ssr } from "../../config";
 import HealthWebhooksPanel from "../../frontend/HealthWebhooksButton.island";
 

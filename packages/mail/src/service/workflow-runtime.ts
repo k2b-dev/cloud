@@ -1,14 +1,14 @@
-import { createRuntimeLifecycle, createRuntimeTaskTracker, logger } from "@valentinkolb/cloud/services";
-import { AI_WORKFLOW_ACTIONS, createWorkflowBuiltinActionPorts, type WorkflowExecutionError } from "@valentinkolb/cloud/workflows";
-import { startWorkflowAiRuntime, stopWorkflowAiRuntime } from "@valentinkolb/cloud/workflows/ai";
-import type { WorkflowExecuteActionPort, WorkflowTracePort } from "@valentinkolb/cloud/workflows/runtime";
+import { createRuntimeLifecycle, createRuntimeTaskTracker, logger } from "@k2b/cloud/services";
+import { AI_WORKFLOW_ACTIONS, createWorkflowBuiltinActionPorts, type WorkflowExecutionError } from "@k2b/cloud/workflows";
+import { startWorkflowAiRuntime, stopWorkflowAiRuntime } from "@k2b/cloud/workflows/ai";
+import type { WorkflowExecuteActionPort, WorkflowTracePort } from "@k2b/cloud/workflows/runtime";
 import {
   createWorkflowActionPort,
   runOneWorkflow,
   tickWorkflows,
   type WorkflowRunClaim,
   wakeExpiredWorkflowRuns,
-} from "@valentinkolb/cloud/workflows/store";
+} from "@k2b/cloud/workflows/store";
 import { sql } from "bun";
 import { MAIL_WORKFLOW_APP_ID } from "../workflows/events";
 import { authorizeMailWorkflowExecution } from "../workflows/actions";
@@ -93,12 +93,12 @@ const values = (claim: WorkflowRunClaim) => {
   );
   for (const key of Object.keys(claim.inputs)) delete claim.inputs[key];
   Object.assign(claim.inputs, projected.inputs);
-  claim.context.source = projected.source as unknown as import("@valentinkolb/cloud/workflows").WorkflowJsonValue;
+  claim.context.source = projected.source as unknown as import("@k2b/cloud/workflows").WorkflowJsonValue;
 
-  let frozen: Promise<Record<string, import("@valentinkolb/cloud/workflows").WorkflowJsonValue>> | null = null;
+  let frozen: Promise<Record<string, import("@k2b/cloud/workflows").WorkflowJsonValue>> | null = null;
   return {
     resolve: async (input: Parameters<ReturnType<typeof createMailWorkflowValueResolver>["resolve"]>[0]) => {
-      frozen ??= sql<{ frozen_hydration: Record<string, import("@valentinkolb/cloud/workflows").WorkflowJsonValue> | string }[]>`
+      frozen ??= sql<{ frozen_hydration: Record<string, import("@k2b/cloud/workflows").WorkflowJsonValue> | string }[]>`
         SELECT frozen_hydration
         FROM mail.workflow_run_state
         WHERE run_id = ${claim.runId}::uuid

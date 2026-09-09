@@ -1,6 +1,6 @@
 import { type LinkNavigateEvent, navigate, navigateTo } from "@k2b/ssr/nav";
 import { AppWorkspace, Dropdown, IconButton, isSpotlightShortcut, openSpotlightSearch, SPOTLIGHT_SHORTCUT_TITLE, useLocale } from "@k2b/ui";
-import type { AiConversation, AiProject } from "@valentinkolb/cloud/ai";
+import type { AiConversation, AiProject } from "@k2b/cloud/ai";
 import { type Accessor, createEffect, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { assistantApi } from "../api/client";
 import { openAssistantAllChatsDialog } from "./AssistantAllChatsDialog";

@@ -1,7 +1,7 @@
 import { createSync } from "@k2b/sync";
 import { jetstreamManager } from "@nats-io/jetstream";
 import { connect } from "@nats-io/transport-node";
-import { bindProcessSync, unbindProcessSync } from "@valentinkolb/cloud";
+import { bindProcessSync, unbindProcessSync } from "@k2b/cloud";
 
 /** Isolated broker resources; the returned stop removes only this namespace's streams. */
 export const startGridsTestSync = async () => {

@@ -7,8 +7,8 @@ import {
   flag,
   printStructured,
   type CloudCliContext,
-} from "@valentinkolb/cloud/cli";
-import { createAccessCommands } from "@valentinkolb/cloud/cli/access";
+} from "@k2b/cloud/cli";
+import { createAccessCommands } from "@k2b/cloud/cli/access";
 import { PublicId, type Bundle } from "./contracts";
 import { SourceChanges, SourceReadInput, MetadataInput } from "./source";
 import { blankStarter, starter } from "./starter";

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import type { CloudCliContext } from "@valentinkolb/cloud/cli";
-import { compileWorkflow } from "@valentinkolb/cloud/workflows/language";
+import type { CloudCliContext } from "@k2b/cloud/cli";
+import { compileWorkflow } from "@k2b/cloud/workflows/language";
 import { z } from "zod";
 import mailCli from "../cli";
 import { createAutomaticReplyConfigurationSchema, createIncomingAutomationSchema } from "../contracts";

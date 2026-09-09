@@ -1,5 +1,5 @@
 {
-  "name": "@valentinkolb/cloud-app-notebooks",
+  "name": "@k2b/cloud-app-notebooks",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -38,7 +38,7 @@
     "@lezer/highlight": "1.2.3",
     "@uiw/codemirror-themes": "4.25.11",
     "@k2b/ui": "workspace:*",
-    "@valentinkolb/cloud": "workspace:*",
+    "@k2b/cloud": "workspace:*",
     "@k2b/ssr": "catalog:",
     "@k2b/stdlib": "catalog:",
     "@k2b/sync": "catalog:",

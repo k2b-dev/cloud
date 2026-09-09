@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { WorkflowIrInput } from "@valentinkolb/cloud/workflows";
+import type { WorkflowIrInput } from "@k2b/cloud/workflows";
 import type { PublicWorkflowLauncher } from "../workspace/workspace-public-state-model";
 import { customAppLauncherConfigForSave, missingLauncherRequiredInputs } from "./workflow-launcher-draft";
 

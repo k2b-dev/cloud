@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { compileWorkflow } from "@valentinkolb/cloud/workflows/language";
+import { compileWorkflow } from "@k2b/cloud/workflows/language";
 import { buildWorkflowCatalog } from "../../../service/workflow-catalog";
 import { bindGridsWorkflow } from "../../../workflows/binder";
 import { GRIDS_WORKFLOW_CHANNELS, GRIDS_WORKFLOW_LAUNCHER_KINDS, GridsWorkflowRunStatusSchema } from "../../../workflows/contracts";

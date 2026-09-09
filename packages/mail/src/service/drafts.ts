@@ -1,6 +1,6 @@
 import { err, fail, ok, type Result } from "@k2b/stdlib";
-import { capabilityIdempotencyConflict } from "@valentinkolb/cloud/contracts";
-import { logger } from "@valentinkolb/cloud/services";
+import { capabilityIdempotencyConflict } from "@k2b/cloud/contracts";
+import { logger } from "@k2b/cloud/services";
 import { sql } from "bun";
 import { convert } from "html-to-text";
 import { z } from "zod";

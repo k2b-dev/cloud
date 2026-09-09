@@ -1,7 +1,7 @@
 import { navigateTo, refreshCurrentPath } from "@k2b/ssr/nav";
 import { mutation as mutations } from "@k2b/stdlib/solid";
 import { Button, FilterChip, type FilterChipSection, prompts, Tooltip, toast, useLocale } from "@k2b/ui";
-import { SearchBar } from "@valentinkolb/cloud/ssr/islands";
+import { SearchBar } from "@k2b/cloud/ssr/islands";
 import { apiClient as loggingClient } from "../api-client";
 import { buildLogFilterUrl, defaultLogFilter, hasActiveLogFilters, type LogFilterState } from "./types";
 import { gatewayOpsMessages } from "../../../messages";

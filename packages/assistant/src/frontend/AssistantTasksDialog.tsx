@@ -6,7 +6,7 @@ import { assistantApi } from "../api/client";
 import type {
   AiChatTaskOccurrenceView as AssistantChatTaskOccurrence,
   AiChatTaskView as AssistantChatTask,
-} from "@valentinkolb/cloud/ai";
+} from "@k2b/cloud/ai";
 import { type AssistantLiveInvalidation, matchesAssistantInvalidation, useAssistantLive } from "./assistant-live";
 import { assistantBrowserText, useAssistantCopy, useAssistantText } from "./ui-copy";
 

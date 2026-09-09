@@ -1,7 +1,7 @@
 import { type DateContext, dates, fromBase64Strict } from "@k2b/stdlib";
 import { RetentionGapError } from "@k2b/sync";
-import type { MutationResult, PaginationParams } from "@valentinkolb/cloud/contracts";
-import { logger, get as settingsGet, toPgTextArray, toPgUuidArray, trace } from "@valentinkolb/cloud/services";
+import type { MutationResult, PaginationParams } from "@k2b/cloud/contracts";
+import { logger, get as settingsGet, toPgTextArray, toPgUuidArray, trace } from "@k2b/cloud/services";
 import { sql } from "bun";
 import * as Y from "yjs";
 import {

@@ -1,5 +1,5 @@
-import { arg, command, confirmFlag, flag } from "@valentinkolb/cloud/cli";
-import type { WorkflowInvocationReceipt } from "@valentinkolb/cloud/workflows";
+import { arg, command, confirmFlag, flag } from "@k2b/cloud/cli";
+import type { WorkflowInvocationReceipt } from "@k2b/cloud/workflows";
 import type { z } from "zod";
 import { PUBLIC_DOCUMENT_PAGE_LIMIT } from "../api/document-public-contracts";
 import type { PublicWorkflowDocumentListSchema } from "../api/workflow-public-contracts";

@@ -5,13 +5,13 @@ import {
   assistantAiSettingsState,
   listAssistantAiModels,
   loadAiStreamState,
-} from "@valentinkolb/cloud/ai";
-import { latestAiInvalidationCursor } from "@valentinkolb/cloud/ai/live";
-import type { AuthContext } from "@valentinkolb/cloud/server";
-import { expectUserBackedActor, getLocale } from "@valentinkolb/cloud/server";
-import { coreSettings } from "@valentinkolb/cloud/services";
-import { publicCloudOrigin } from "@valentinkolb/cloud/shared";
-import { Layout } from "@valentinkolb/cloud/ssr";
+} from "@k2b/cloud/ai";
+import { latestAiInvalidationCursor } from "@k2b/cloud/ai/live";
+import type { AuthContext } from "@k2b/cloud/server";
+import { expectUserBackedActor, getLocale } from "@k2b/cloud/server";
+import { coreSettings } from "@k2b/cloud/services";
+import { publicCloudOrigin } from "@k2b/cloud/shared";
+import { Layout } from "@k2b/cloud/ssr";
 import { loadAssistantChatContextSnapshot } from "../chat-context";
 import { ssr } from "../config";
 import { loadAssistantProjectContextSnapshot } from "../project-context";

@@ -5,7 +5,7 @@ import {
   type RenderHtmlToPdfResult,
   renderTemplatePdfPreview,
   type TemplatePdfPreviewResult,
-} from "@valentinkolb/cloud/services";
+} from "@k2b/cloud/services";
 import { type Document, type DocumentTemplate, DocumentTemplateRendererSchema } from "../contracts";
 import { parseGridsQueryDsl } from "../query-dsl/parser";
 import { previewDslQuery } from "../query-dsl/preview";

@@ -1,4 +1,4 @@
-import { auth, rateLimit, type AuthContext } from "@valentinkolb/cloud/server";
+import { auth, rateLimit, type AuthContext } from "@k2b/cloud/server";
 import { Hono } from "hono";
 import basesRoutes from "./routes/bases";
 import dashboardsRoutes from "./routes/dashboards";

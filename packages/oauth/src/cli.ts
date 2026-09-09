@@ -7,7 +7,7 @@ import {
   flag,
   printRows as printJsonOrTable,
   printStructured,
-} from "@valentinkolb/cloud/cli";
+} from "@k2b/cloud/cli";
 import type {
   OAuthAccessMode,
   OAuthAllowedProfile,

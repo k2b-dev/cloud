@@ -1,5 +1,5 @@
 import { FileBrowserPanel, IconButton, prompts, Tooltip, useLocale } from "@k2b/ui";
-import { conversationFileSource } from "@valentinkolb/cloud/ai/solid";
+import { conversationFileSource } from "@k2b/cloud/ai/solid";
 import { type Accessor, onCleanup } from "solid-js";
 import { type AssistantLiveHub, AssistantLiveProvider, matchesAssistantInvalidation } from "./assistant-live";
 import { assistantMessages } from "./messages";

@@ -1,4 +1,4 @@
-import type { AccessSubject, PermissionLevel, RequestActor } from "@valentinkolb/cloud/server";
+import type { AccessSubject, PermissionLevel, RequestActor } from "@k2b/cloud/server";
 import { MAIL_APP_ID, MAILBOX_RESOURCE_TYPE } from "../app-identity";
 import type { ActorRef } from "../contracts";
 

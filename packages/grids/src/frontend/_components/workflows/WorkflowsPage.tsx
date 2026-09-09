@@ -17,7 +17,7 @@ import {
   Tag,
   useLocale,
 } from "@k2b/ui";
-import type { WorkflowJsonValue } from "@valentinkolb/cloud/workflows";
+import type { WorkflowJsonValue } from "@k2b/cloud/workflows";
 import { createEffect, createMemo, createSignal, For, lazy, onCleanup, onMount, Show, Suspense } from "solid-js";
 import type { z } from "zod";
 import { apiClient } from "../../../api/client";

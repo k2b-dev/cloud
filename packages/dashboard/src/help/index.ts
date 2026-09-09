@@ -1,4 +1,4 @@
-import { defineHelp } from "@valentinkolb/cloud/server";
+import { defineHelp } from "@k2b/cloud/server";
 import startDe from "./documents/de/dashboard-start.help.md" with { type: "text" };
 import troubleshootDe from "./documents/de/dashboard-troubleshooting.help.md" with { type: "text" };
 import start from "./documents/en/dashboard-start.help.md" with { type: "text" };

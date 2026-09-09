@@ -1,4 +1,4 @@
-import { createRuntimeLifecycle, stopRuntimeResources } from "@valentinkolb/cloud/services";
+import { createRuntimeLifecycle, stopRuntimeResources } from "@k2b/cloud/services";
 import * as mailboxAccess from "./access";
 import * as activityPublic from "./activity-public";
 import * as attachmentExtraction from "./attachment-extraction";

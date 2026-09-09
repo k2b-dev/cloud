@@ -1,5 +1,5 @@
 {
-  "name": "@valentinkolb/cloud-app-mail",
+  "name": "@k2b/cloud-app-mail",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -18,7 +18,7 @@
     "browser-smoke": "bun --env-file=../../.env run scripts/browser-smoke.ts"
   },
   "dependencies": {
-    "@valentinkolb/cloud": "workspace:*",
+    "@k2b/cloud": "workspace:*",
     "@k2b/ui": "workspace:*",
     "@k2b/ssr": "catalog:",
     "@k2b/stdlib": "catalog:",

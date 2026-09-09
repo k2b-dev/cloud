@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import type { PermissionLevel } from "@valentinkolb/cloud/server";
-import { toPgUuidArray } from "@valentinkolb/cloud/services";
+import type { PermissionLevel } from "@k2b/cloud/server";
+import { toPgUuidArray } from "@k2b/cloud/services";
 import { sql } from "bun";
 import { newShortId } from "../lib/short-id";
 import { actorForUser, create, transfer, type WormholeActor } from "./wormholes";

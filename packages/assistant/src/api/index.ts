@@ -1,4 +1,4 @@
-import { type AuthContext, auth, err, fail, ok, rateLimit, respond } from "@valentinkolb/cloud/server";
+import { type AuthContext, auth, err, fail, ok, rateLimit, respond } from "@k2b/cloud/server";
 import type { Context } from "hono";
 import { Hono } from "hono";
 import { loadAssistantChatContextSnapshot } from "../chat-context";

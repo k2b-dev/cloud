@@ -1,9 +1,9 @@
 import type { CalendarView } from "@k2b/ui";
-import type { ResourceApiKey } from "@valentinkolb/cloud/access/ui";
-import type { AuthContext } from "@valentinkolb/cloud/server";
-import { expectUserBackedActor, getLocale } from "@valentinkolb/cloud/server";
-import { serviceAccountCredentials } from "@valentinkolb/cloud/services";
-import { Layout } from "@valentinkolb/cloud/ssr";
+import type { ResourceApiKey } from "@k2b/cloud/access/ui";
+import type { AuthContext } from "@k2b/cloud/server";
+import { expectUserBackedActor, getLocale } from "@k2b/cloud/server";
+import { serviceAccountCredentials } from "@k2b/cloud/services";
+import { Layout } from "@k2b/cloud/ssr";
 import { ssr } from "../../config";
 import { venueService } from "../../service";
 import { venueMessages } from "../../messages";

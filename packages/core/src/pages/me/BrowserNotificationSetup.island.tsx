@@ -1,6 +1,6 @@
 import { Button, toast, useLocale } from "@k2b/ui";
-import type { BrowserNotificationState } from "@valentinkolb/cloud/browser/notifications";
-import { browserNotificationClient } from "@valentinkolb/cloud/browser/notifications";
+import type { BrowserNotificationState } from "@k2b/cloud/browser/notifications";
+import { browserNotificationClient } from "@k2b/cloud/browser/notifications";
 import { createSignal, onMount, Show } from "solid-js";
 import { type AccountMessages, accountMessages } from "./messages";
 

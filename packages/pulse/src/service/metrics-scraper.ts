@@ -1,5 +1,5 @@
-import { err, fail, ok, type Result } from "@valentinkolb/cloud/server";
-import { decryptSecret, logger } from "@valentinkolb/cloud/services";
+import { err, fail, ok, type Result } from "@k2b/cloud/server";
+import { decryptSecret, logger } from "@k2b/cloud/services";
 import { sql } from "bun";
 import { METRIC_TYPES, type MetricType, type PulseIngestBatch, type PulseMetric } from "../contracts";
 

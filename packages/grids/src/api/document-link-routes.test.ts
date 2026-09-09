@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
-import type { User } from "@valentinkolb/cloud/contracts";
-import type { AuthContext, PermissionLevel } from "@valentinkolb/cloud/server";
+import type { User } from "@k2b/cloud/contracts";
+import type { AuthContext, PermissionLevel } from "@k2b/cloud/server";
 import { Hono, type MiddlewareHandler } from "hono";
 import type { DocumentLink } from "../contracts";
 import { gridsService } from "../service";

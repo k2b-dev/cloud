@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { crypto as stdCrypto } from "@k2b/stdlib";
-import type { AccessSubject } from "@valentinkolb/cloud/server";
+import type { AccessSubject } from "@k2b/cloud/server";
 import { sql } from "bun";
 import type { User } from "../contracts";
 import {

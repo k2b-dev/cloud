@@ -1,5 +1,5 @@
 import { i18n } from "@k2b/stdlib";
-import { createMockCover } from "@valentinkolb/cloud/shared";
+import { createMockCover } from "@k2b/cloud/shared";
 import {
   currentMonthDate,
   documentTemplate,

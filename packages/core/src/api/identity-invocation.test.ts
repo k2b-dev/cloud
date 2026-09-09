@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { err, fail, ok } from "@k2b/stdlib";
-import type { CapabilityRegistryEntry } from "@valentinkolb/cloud/contracts/registry";
-import type { withActiveIdentitySigner } from "@valentinkolb/cloud/services/identity";
+import type { CapabilityRegistryEntry } from "@k2b/cloud/contracts/registry";
+import type { withActiveIdentitySigner } from "@k2b/cloud/services/identity";
 import { sql } from "bun";
 import { generateKeyPair } from "jose";
 import { z } from "zod";

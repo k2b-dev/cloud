@@ -1,4 +1,4 @@
-import type { CapabilityPresentationCatalog } from "@valentinkolb/cloud/contracts";
+import type { CapabilityPresentationCatalog } from "@k2b/cloud/contracts";
 
 export const filesCapabilityPresentation: CapabilityPresentationCatalog = {
   baseLocale: "en",

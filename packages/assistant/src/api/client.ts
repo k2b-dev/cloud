@@ -22,10 +22,10 @@ import type {
   AiStoredMessage,
   AiUserPrefs,
   AiChatTaskView as AssistantChatTask,
-} from "@valentinkolb/cloud/ai";
+} from "@k2b/cloud/ai";
 
 type AiEditableMemoryKind = Exclude<AiMemoryKind, "workflow">;
-import { api } from "@valentinkolb/cloud/browser";
+import { api } from "@k2b/cloud/browser";
 import type { AssistantChatContextSnapshot } from "../chat-context";
 import type { AssistantProjectContextSnapshot } from "../project-context";
 import type { AssistantSidebarSnapshot } from "../sidebar";

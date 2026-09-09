@@ -1,4 +1,4 @@
-import { arg, command, confirmFlag, flag } from "@valentinkolb/cloud/cli";
+import { arg, command, confirmFlag, flag } from "@k2b/cloud/cli";
 import type { PulseSource, PulseSourceScrape, SourceKind } from "../contracts";
 import { listSources, requireRestArg, resolveBaseFromCommand, resolveSource } from "./context";
 import { baseFlag, bearerTokenFlags, sourceKindFlag } from "./flags";

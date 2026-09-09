@@ -14,15 +14,15 @@
  */
 
 import { err, fail, ok, type Result } from "@k2b/stdlib";
-import { toPgUuidArray } from "@valentinkolb/cloud/services";
-import type { WorkflowInvocationMode, WorkflowInvocationReceipt, WorkflowJsonValue } from "@valentinkolb/cloud/workflows";
+import { toPgUuidArray } from "@k2b/cloud/services";
+import type { WorkflowInvocationMode, WorkflowInvocationReceipt, WorkflowJsonValue } from "@k2b/cloud/workflows";
 import {
   createWorkflowRun,
   emitWorkflowEvent,
   listWorkflowRunSteps,
   requestWorkflowRunCancel,
   type WorkflowStepSummary,
-} from "@valentinkolb/cloud/workflows/store";
+} from "@k2b/cloud/workflows/store";
 import { sql } from "bun";
 import type {
   GridsWorkflowChannel,

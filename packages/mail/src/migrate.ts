@@ -1,4 +1,4 @@
-import { migrateWorkflowAi } from "@valentinkolb/cloud/workflows/ai";
+import { migrateWorkflowAi } from "@k2b/cloud/workflows/ai";
 import { sql } from "bun";
 import { canonicalizeSavedViewFilter } from "./saved-view-search-migration";
 import { SEARCH_CHUNK_CHARACTERS, SEARCH_CHUNK_OVERLAP_CHARACTERS } from "./service/search-chunks";

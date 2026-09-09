@@ -1,8 +1,8 @@
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { CloudAiTextEditorInput, CloudAiTextEditorOutput } from "@valentinkolb/cloud/ai";
-import { CLOUD_AI_TEXT_EDITOR_MAX_CHARS } from "@valentinkolb/cloud/ai/browser";
+import type { CloudAiTextEditorInput, CloudAiTextEditorOutput } from "@k2b/cloud/ai";
+import { CLOUD_AI_TEXT_EDITOR_MAX_CHARS } from "@k2b/cloud/ai/browser";
 
 export const parseEditorCommand = (value: string): string[] | null => {
   const args: string[] = [];

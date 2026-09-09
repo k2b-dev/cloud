@@ -1,6 +1,6 @@
 import { createMemo, createSignal, onMount, Show } from "solid-js";
-import { desktop } from "@valentinkolb/cloud/desktop";
-import { defineDesktopWindows, DesktopWindowHost, DesktopWorkspace } from "@valentinkolb/cloud/desktop/solid";
+import { desktop } from "@k2b/cloud/desktop";
+import { defineDesktopWindows, DesktopWindowHost, DesktopWorkspace } from "@k2b/cloud/desktop/solid";
 import { Button, MarkdownEditor, MarkdownView, SegmentedControl, toast } from "@k2b/ui";
 import type { DesktopEnvironment, DesktopLabBridge } from "../bridge/types";
 import { getDesktopBridge } from "./bridge";

@@ -1,4 +1,4 @@
-import { type AuthContext, auth, err, fail, getLocale, ok, respond, v } from "@valentinkolb/cloud/server";
+import { type AuthContext, auth, err, fail, getLocale, ok, respond, v } from "@k2b/cloud/server";
 import type { Context } from "hono";
 import { Hono } from "hono";
 import { z } from "zod";

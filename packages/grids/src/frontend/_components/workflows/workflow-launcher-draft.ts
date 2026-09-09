@@ -1,4 +1,4 @@
-import type { WorkflowIrInput, WorkflowJsonValue } from "@valentinkolb/cloud/workflows";
+import type { WorkflowIrInput, WorkflowJsonValue } from "@k2b/cloud/workflows";
 import type { GridsWorkflowLauncherConfig, GridsWorkflowLauncherKind } from "../../../workflows/contracts";
 import type { PublicWorkflowLauncher } from "../workspace/workspace-public-state-model";
 import { workflowInputLabel, workflowInputRequired } from "./workflow-trigger-actions";

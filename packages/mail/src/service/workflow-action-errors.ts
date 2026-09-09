@@ -1,4 +1,4 @@
-import type { WorkflowActionResult, WorkflowJsonValue } from "@valentinkolb/cloud/workflows";
+import type { WorkflowActionResult, WorkflowJsonValue } from "@k2b/cloud/workflows";
 
 type ActionFailure = Extract<WorkflowActionResult<WorkflowJsonValue>, { state: "failed" }>;
 type ErrorShape = { code?: unknown; errno?: unknown; message?: unknown; retryable?: unknown };

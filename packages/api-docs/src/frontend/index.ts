@@ -1,5 +1,5 @@
 import { Scalar } from "@scalar/hono-api-reference";
-import { getLocalizedRuntimeContext } from "@valentinkolb/cloud/ssr";
+import { getLocalizedRuntimeContext } from "@k2b/cloud/ssr";
 import { Hono } from "hono";
 import { apiDocsHelp } from "../help";
 import { buildApiDocsGuideSource, buildScalarSources } from "../sources";

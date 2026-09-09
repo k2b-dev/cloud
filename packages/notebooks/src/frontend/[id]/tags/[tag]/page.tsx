@@ -8,11 +8,11 @@
  */
 
 import { AppWorkspace, Pagination, Placeholder, ScrollArea } from "@k2b/ui";
-import { hasRole } from "@valentinkolb/cloud/contracts";
-import { type AuthContext, expectUserBackedActor, getDateConfig, getLocale } from "@valentinkolb/cloud/server";
-import { get } from "@valentinkolb/cloud/services";
-import { Layout } from "@valentinkolb/cloud/ssr";
-import { SearchBar } from "@valentinkolb/cloud/ssr/islands";
+import { hasRole } from "@k2b/cloud/contracts";
+import { type AuthContext, expectUserBackedActor, getDateConfig, getLocale } from "@k2b/cloud/server";
+import { get } from "@k2b/cloud/services";
+import { Layout } from "@k2b/cloud/ssr";
+import { SearchBar } from "@k2b/cloud/ssr/islands";
 import { renderToString } from "solid-js/web";
 import { notebooksService } from "@/service";
 import { ssr } from "../../../../config";

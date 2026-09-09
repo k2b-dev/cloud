@@ -1,8 +1,8 @@
 import { expect, test, spyOn, afterEach, mock } from "bun:test";
-import { compileCapabilityManifest } from "@valentinkolb/cloud/capabilities/testing";
+import { compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 import { kitCapabilities } from "../src/capabilities";
 import { projects, ProjectError } from "../src/service";
-import { CapabilityActionReviewSchema } from "@valentinkolb/cloud/contracts";
+import { CapabilityActionReviewSchema } from "@k2b/cloud/contracts";
 import { testIdentity } from "./identity";
 
 const context = testIdentity("00000000-0000-4000-8000-000000000001");

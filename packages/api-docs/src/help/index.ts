@@ -1,4 +1,4 @@
-import { defineHelp } from "@valentinkolb/cloud/server";
+import { defineHelp } from "@k2b/cloud/server";
 import startDe from "./documents/de/api-docs-start.help.md" with { type: "text" };
 import start from "./documents/en/api-docs-start.help.md" with { type: "text" };
 

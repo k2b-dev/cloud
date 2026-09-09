@@ -1,7 +1,7 @@
 import { AppWorkspace, Placeholder } from "@k2b/ui";
-import type { AuthContext } from "@valentinkolb/cloud/server";
-import { getLocale } from "@valentinkolb/cloud/server";
-import { Layout } from "@valentinkolb/cloud/ssr";
+import type { AuthContext } from "@k2b/cloud/server";
+import { getLocale } from "@k2b/cloud/server";
+import { Layout } from "@k2b/cloud/ssr";
 import { ssr } from "../../config";
 import { notebooksPageMessages } from "../messages";
 import BookSurface from "./_components/book/BookSurface";

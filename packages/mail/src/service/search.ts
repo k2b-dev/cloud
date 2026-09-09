@@ -1,6 +1,6 @@
 import { err, fail, ok, type Result } from "@k2b/stdlib";
-import { logger } from "@valentinkolb/cloud/services";
-import { escapeLikePattern } from "@valentinkolb/cloud/services/postgres";
+import { logger } from "@k2b/cloud/services";
+import { escapeLikePattern } from "@k2b/cloud/services/postgres";
 import { sql } from "bun";
 import { z } from "zod";
 import type { MailSearchExpression, SearchRequest } from "../contracts";

@@ -12,8 +12,8 @@ import {
   StatusBadge,
   type StatusTone,
 } from "@k2b/ui";
-import type { AuthContext } from "@valentinkolb/cloud/server";
-import { expectUserBackedActor, getLocale } from "@valentinkolb/cloud/server";
+import type { AuthContext } from "@k2b/cloud/server";
+import { expectUserBackedActor, getLocale } from "@k2b/cloud/server";
 import {
   accounts,
   accountsAppService as accountsService,
@@ -21,9 +21,9 @@ import {
   type NotificationBatchRecipient,
   type NotificationBatchRecipientStatus,
   notificationBatches,
-} from "@valentinkolb/cloud/services";
-import { formatNumber } from "@valentinkolb/cloud/shared";
-import { Layout } from "@valentinkolb/cloud/ssr";
+} from "@k2b/cloud/services";
+import { formatNumber } from "@k2b/cloud/shared";
+import { Layout } from "@k2b/cloud/ssr";
 import { z } from "zod";
 import AccountAvatar from "@/frontend/AccountAvatar";
 import { ssr } from "../../config";

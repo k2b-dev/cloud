@@ -12,9 +12,9 @@
  */
 
 import { ButtonLink, Placeholder, StatCell, StatGrid, StatusBadge } from "@k2b/ui";
-import { type AuthContext, getLocale } from "@valentinkolb/cloud/server";
-import { logging, type TraceWindow, trace } from "@valentinkolb/cloud/services";
-import { AdminLayout } from "@valentinkolb/cloud/ssr";
+import { type AuthContext, getLocale } from "@k2b/cloud/server";
+import { logging, type TraceWindow, trace } from "@k2b/cloud/services";
+import { AdminLayout } from "@k2b/cloud/ssr";
 import { ssr } from "../config";
 import ObservabilityChart from "../frontend/ObservabilityChart.island";
 import { buildGatewayHealth } from "../health";

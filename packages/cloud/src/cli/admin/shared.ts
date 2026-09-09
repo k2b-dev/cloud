@@ -3,7 +3,7 @@
  * Cloud API, output shaping, and the flag conventions the CLI standardises on.
  */
 
-import { formatDurationMs, formatBytes as sharedBytes } from "@valentinkolb/cloud/shared";
+import { formatDurationMs, formatBytes as sharedBytes } from "@k2b/cloud/shared";
 import { type CliInputFlagValue, type CloudCliContext, type CloudCliTableColumn, readCliInput } from "../index";
 
 export type Pagination = {

@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { type DateContext, err, fail, ok, type Result, type ServiceError } from "@k2b/stdlib";
-import type { RenderHtmlToPdfResult } from "@valentinkolb/cloud/services";
+import type { RenderHtmlToPdfResult } from "@k2b/cloud/services";
 import { sql as defaultSql, type SQL } from "bun";
 import { z } from "zod";
 import { type Document, type DocumentArtifact, type DocumentTemplate, DocumentTemplateSchema } from "../contracts";

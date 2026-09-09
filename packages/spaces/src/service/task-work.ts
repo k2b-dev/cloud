@@ -1,4 +1,4 @@
-import type { AccessSubject } from "@valentinkolb/cloud/server";
+import type { AccessSubject } from "@k2b/cloud/server";
 import { sql } from "bun";
 import type { MutationResult } from "../contracts";
 import { ClaimTaskSchema, type TaskWork, TaskWorkSchema, type WorkActor, WorkActorSchema, WorkTextSchema } from "../work-contracts";

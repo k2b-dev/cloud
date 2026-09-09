@@ -1,4 +1,4 @@
-import { type AuthContext, auth } from "@valentinkolb/cloud/server";
+import { type AuthContext, auth } from "@k2b/cloud/server";
 import { Hono, type MiddlewareHandler } from "hono";
 import { createWorkflowCatalogRoutes } from "./workflow-catalog-routes";
 import { createWorkflowRunRoutes } from "./workflow-run-routes";

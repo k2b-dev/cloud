@@ -10,8 +10,8 @@ import {
   UniversalSearchDataSchema,
   type UniversalSearchInput,
   UniversalSearchInputSchema,
-} from "@valentinkolb/cloud/contracts";
-import { type AuditActor, audit, weatherService } from "@valentinkolb/cloud/services";
+} from "@k2b/cloud/contracts";
+import { type AuditActor, audit, weatherService } from "@k2b/cloud/services";
 import { z } from "zod";
 import { weatherCapabilityPresentation } from "./capability-presentation";
 import { CurrentWeatherSchema, WeatherDataSchema, WeatherIconSchema, WeatherLocationIdSchema } from "./contracts";

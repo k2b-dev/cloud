@@ -17,7 +17,7 @@ import {
   toast,
   useLocale,
 } from "@k2b/ui";
-import type { NotebookPresenceParticipant } from "@valentinkolb/cloud/contracts";
+import type { NotebookPresenceParticipant } from "@k2b/cloud/contracts";
 import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { PublicNoteComment } from "@/api/public-resources";

@@ -1,7 +1,7 @@
 import { qr } from "@k2b/stdlib/qr";
 import { Button, dialogCore, NoticeCard, PanelDialog, panelDialogOptions, Placeholder, toast, useLocale } from "@k2b/ui";
-import { appApproval } from "@valentinkolb/cloud/browser/app-approval";
-import { AppPairingInspectionSchema, AppPairingPayloadSchema } from "@valentinkolb/cloud/contracts";
+import { appApproval } from "@k2b/cloud/browser/app-approval";
+import { AppPairingInspectionSchema, AppPairingPayloadSchema } from "@k2b/cloud/contracts";
 import { createSignal, onCleanup, onMount, Show } from "solid-js";
 import { z } from "zod";
 import { ApprovalError, approvalApi, approvalRequestOptions, checked, parsed, pollApproval } from "./client";

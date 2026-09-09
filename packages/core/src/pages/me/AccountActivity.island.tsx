@@ -1,7 +1,7 @@
 import { navigateTo } from "@k2b/ssr/nav";
 import { dates } from "@k2b/stdlib";
 import { DataTable, type DataTableColumn, FilterChip, type FilterChipSection, useLocale } from "@k2b/ui";
-import type { AccountActivity as AccountActivityEntry } from "@valentinkolb/cloud/contracts";
+import type { AccountActivity as AccountActivityEntry } from "@k2b/cloud/contracts";
 import { type AccountMessages, accountMessages } from "./messages";
 
 type ActivityDays = 7 | 30 | 90;

@@ -1,11 +1,11 @@
-import { type CapabilityDispatchDependencies, dispatchCapability } from "@valentinkolb/cloud/api";
+import { type CapabilityDispatchDependencies, dispatchCapability } from "@k2b/cloud/api";
 import {
   CAPABILITY_MAX_REQUEST_BYTES,
   CapabilityAppIdSchema,
   CapabilityIdempotencyKeySchema,
   CapabilityLocalIdSchema,
-} from "@valentinkolb/cloud/contracts";
-import { type AuthenticatedWorkload, authenticateWorkloadCredential } from "@valentinkolb/cloud/services/identity";
+} from "@k2b/cloud/contracts";
+import { type AuthenticatedWorkload, authenticateWorkloadCredential } from "@k2b/cloud/services/identity";
 import { type Context, Hono } from "hono";
 import { z } from "zod";
 

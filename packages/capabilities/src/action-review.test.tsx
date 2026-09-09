@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { CapabilityActionManifest, CapabilityActionReview } from "@valentinkolb/cloud/contracts";
+import type { CapabilityActionManifest, CapabilityActionReview } from "@k2b/cloud/contracts";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import "./frontend/ssr-test-plugin";

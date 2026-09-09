@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { type AuthContext } from "@valentinkolb/cloud/server";
+import { type AuthContext } from "@k2b/cloud/server";
 
 // Web Crypto caps getRandomValues at 65536 bytes per call, so the chunk
 // has to fit in that window.

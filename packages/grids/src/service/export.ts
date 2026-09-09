@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { type DateContext, dates, err, fail, ok, type Result } from "@k2b/stdlib";
-import { markdown as markdownRenderer } from "@valentinkolb/cloud/shared";
+import { markdown as markdownRenderer } from "@k2b/cloud/shared";
 import type { ExportFieldSpec, RecordQuery, SearchSpec } from "../contracts";
 import { previewDslQuery } from "../query-dsl/preview";
 import { recordQueryPlan } from "../query-dsl/record-query-plan";

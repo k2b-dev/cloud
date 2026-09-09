@@ -1,6 +1,6 @@
 import { describe, expect, mock, test } from "bun:test";
-import type { User } from "@valentinkolb/cloud/contracts";
-import type { ServiceAccount, ServiceAccountCredentialOverview } from "@valentinkolb/cloud/services";
+import type { User } from "@k2b/cloud/contracts";
+import type { ServiceAccount, ServiceAccountCredentialOverview } from "@k2b/cloud/services";
 import { sql } from "bun";
 import { migrate } from "../migrate";
 import type { GridsWorkflowPrincipal } from "../workflows/contracts";

@@ -1,4 +1,4 @@
-import type { PermissionLevel } from "@valentinkolb/cloud/server";
+import type { PermissionLevel } from "@k2b/cloud/server";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { sql } from "bun";
 import { getMailboxPermission } from "./access";

@@ -1,7 +1,7 @@
 import type { DateContext } from "@k2b/stdlib";
 import type { PanesLayout } from "@k2b/ui";
-import type { ResourceApiKey } from "@valentinkolb/cloud/access/ui";
-import type { PermissionLevel } from "@valentinkolb/cloud/contracts";
+import type { ResourceApiKey } from "@k2b/cloud/access/ui";
+import type { PermissionLevel } from "@k2b/cloud/contracts";
 import type {
   MetricQueryPoint,
   PulseBase,

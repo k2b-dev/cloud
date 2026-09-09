@@ -1,5 +1,5 @@
 {
-  "name": "@valentinkolb/cloud-app-gateway-ops",
+  "name": "@k2b/cloud-app-gateway-ops",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -11,7 +11,7 @@
   "dependencies": {
     "@nats-io/transport-node": "catalog:",
     "@k2b/ui": "workspace:*",
-    "@valentinkolb/cloud": "workspace:*",
+    "@k2b/cloud": "workspace:*",
     "@k2b/stdlib": "catalog:",
     "@k2b/sync": "catalog:",
     "@k2b/ssr": "catalog:",

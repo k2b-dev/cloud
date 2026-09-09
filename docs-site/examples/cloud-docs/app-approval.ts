@@ -1,4 +1,4 @@
-import { type AppApprovalDevice, appApproval } from "@valentinkolb/cloud/browser/app-approval";
+import { type AppApprovalDevice, appApproval } from "@k2b/cloud/browser/app-approval";
 
 /** Call only after showing the parsed issuer and obtaining consent. */
 export const connectTrustedPairing = async (link: string, authenticatorOrigin: string, signal?: AbortSignal) => {

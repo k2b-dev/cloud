@@ -1,4 +1,4 @@
-import { type ServiceAccount, serviceAccountCredentials, serviceAccounts } from "@valentinkolb/cloud/services";
+import { type ServiceAccount, serviceAccountCredentials, serviceAccounts } from "@k2b/cloud/services";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import type { PermissionLevel, User } from "@/contracts";
 import { ensureSpaceServiceAccountAccess, listSpaceApiKeys, SPACE_RESOURCE_TYPE, SPACES_APP_ID, type SpaceApiKey } from "./access";

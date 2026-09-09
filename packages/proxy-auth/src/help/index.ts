@@ -1,4 +1,4 @@
-import { defineHelp } from "@valentinkolb/cloud/server";
+import { defineHelp } from "@k2b/cloud/server";
 import setupDe from "./documents/de/proxy-auth-setup.help.md" with { type: "text" };
 import startDe from "./documents/de/proxy-auth-start.help.md" with { type: "text" };
 import troubleshootDe from "./documents/de/proxy-auth-troubleshooting.help.md" with { type: "text" };

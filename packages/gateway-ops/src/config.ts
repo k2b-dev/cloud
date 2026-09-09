@@ -1,4 +1,4 @@
-import { defineApp } from "@valentinkolb/cloud";
+import { defineApp } from "@k2b/cloud";
 
 const port = parseInt(process.env.PORT ?? "3000", 10);
 

@@ -1,5 +1,5 @@
-import { AccessEntrySchema, ErrorResponseSchema, GrantAccessSchema, PermissionLevelSchema } from "@valentinkolb/cloud/contracts";
-import { type AuthContext, auth, getLocale, jsonResponse, respond } from "@valentinkolb/cloud/server";
+import { AccessEntrySchema, ErrorResponseSchema, GrantAccessSchema, PermissionLevelSchema } from "@k2b/cloud/contracts";
+import { type AuthContext, auth, getLocale, jsonResponse, respond } from "@k2b/cloud/server";
 import { Hono, type MiddlewareHandler } from "hono";
 import { describeRoute } from "hono-openapi";
 import { z } from "zod";

@@ -1,5 +1,5 @@
 import type { DateContext } from "@k2b/stdlib";
-import { type AuthContext, getDateConfig, type PermissionLevel } from "@valentinkolb/cloud/server";
+import { type AuthContext, getDateConfig, type PermissionLevel } from "@k2b/cloud/server";
 import type { Context } from "hono";
 import type { DslQueryPreviewBody, DslQueryPreviewDiagnostic, DslQueryPreviewResponse, DslQuerySurface, RecordQuery } from "../contracts";
 import { canonicalizeDslQuery } from "../query-dsl/canonical";

@@ -23,8 +23,8 @@ import {
   Tooltip,
   useLocale,
 } from "@k2b/ui";
-import { coreClient } from "@valentinkolb/cloud/clients/core";
-import type { SettingValueSource } from "@valentinkolb/cloud/contracts";
+import { coreClient } from "@k2b/cloud/clients/core";
+import type { SettingValueSource } from "@k2b/cloud/contracts";
 import { createMemo, createSignal, type JSX, Show } from "solid-js";
 import type { SettingFieldDef } from "./CoreSettingsForm.island";
 import { settingsMessages } from "./messages";

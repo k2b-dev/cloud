@@ -1,6 +1,6 @@
 import { err, fail, ok, type Result } from "@k2b/stdlib";
-import { toPgUuidArray } from "@valentinkolb/cloud/services";
-import type { WorkflowBoundPlan } from "@valentinkolb/cloud/workflows";
+import { toPgUuidArray } from "@k2b/cloud/services";
+import type { WorkflowBoundPlan } from "@k2b/cloud/workflows";
 import type { SqlClient } from "./audit";
 import { workflowServiceText } from "./workflow-service-messages";
 

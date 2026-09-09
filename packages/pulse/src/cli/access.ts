@@ -1,5 +1,5 @@
-import { createAccessCommands } from "@valentinkolb/cloud/cli";
-import type { AccessEntry, PermissionLevel, Principal } from "@valentinkolb/cloud/contracts";
+import { createAccessCommands } from "@k2b/cloud/cli";
+import type { AccessEntry, PermissionLevel, Principal } from "@k2b/cloud/contracts";
 import { resolveBaseFromCommand } from "./context";
 import { compactId, jsonRequest, readApi } from "./shared";
 import type { MessageResult } from "./types";

@@ -1,4 +1,4 @@
-import { canonicalLocale } from "@valentinkolb/cloud/shared";
+import { canonicalLocale } from "@k2b/cloud/shared";
 import { z } from "zod";
 
 export const FAQ_BASE_LOCALE = "en";
@@ -66,4 +66,4 @@ export const ReorderFaqSchema = z
   });
 export type ReorderFaq = z.infer<typeof ReorderFaqSchema>;
 
-export { ErrorResponseSchema, hasRole, MessageResponseSchema } from "@valentinkolb/cloud/contracts";
+export { ErrorResponseSchema, hasRole, MessageResponseSchema } from "@k2b/cloud/contracts";

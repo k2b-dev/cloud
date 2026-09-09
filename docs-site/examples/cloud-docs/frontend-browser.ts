@@ -1,5 +1,5 @@
-import { api } from "@valentinkolb/cloud/browser";
-import { createLiveWebSocket } from "@valentinkolb/cloud/browser/live";
+import { api } from "@k2b/cloud/browser";
+import { createLiveWebSocket } from "@k2b/cloud/browser/live";
 import { query } from "@k2b/stdlib/solid";
 import type { Accessor } from "solid-js";
 import type { InventoryApi } from "./frontend-server";

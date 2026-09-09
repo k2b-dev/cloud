@@ -1,11 +1,11 @@
-import type { User } from "@valentinkolb/cloud/contracts";
+import type { User } from "@k2b/cloud/contracts";
 import type {
   DesktopWindowDescriptor,
   DesktopWindowIdInput,
   DesktopWindowOpenInput,
   DesktopWindowRefData,
   DesktopWindowSetTitleInput,
-} from "@valentinkolb/cloud/desktop";
+} from "@k2b/cloud/desktop";
 import type { DesktopCredentialKind } from "../cloud/sync-contract";
 
 export type DesktopMode = "unset" | "local" | "cloud";

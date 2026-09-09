@@ -10,7 +10,7 @@ import {
   validateNotificationTargetHref,
 } from "./notification-types";
 
-declare module "@valentinkolb/cloud/contracts/notifications" {
+declare module "@k2b/cloud/contracts/notifications" {
   interface NotificationChannelRegistry {
     mobileTest: true;
   }

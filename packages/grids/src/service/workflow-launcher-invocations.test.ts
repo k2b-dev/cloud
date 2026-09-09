@@ -1,6 +1,6 @@
 import { describe, expect, mock, test } from "bun:test";
 import { err, fail, ok } from "@k2b/stdlib";
-import type { WorkflowInvocationReceipt } from "@valentinkolb/cloud/workflows";
+import type { WorkflowInvocationReceipt } from "@k2b/cloud/workflows";
 import type { GridsWorkflow, GridsWorkflowLauncher, GridsWorkflowLauncherConfig } from "../workflows/contracts";
 import {
   admitBulkLauncher,

@@ -15,7 +15,7 @@ import {
   UniversalSearchDataSchema,
   type UniversalSearchInput,
   UniversalSearchInputSchema,
-} from "@valentinkolb/cloud/contracts";
+} from "@k2b/cloud/contracts";
 import type { z } from "zod";
 import * as c from "./capability-contracts";
 import { mailCapabilityMessages } from "./capability-messages";

@@ -1,6 +1,6 @@
 import type { Worker } from "@k2b/sync";
-import { lazySync } from "@valentinkolb/cloud";
-import { logger } from "@valentinkolb/cloud/services";
+import { lazySync } from "@k2b/cloud";
+import { logger } from "@k2b/cloud/services";
 import { sql } from "bun";
 
 const log = logger("contacts:capability-retention");

@@ -1,6 +1,6 @@
 import { beforeAll, describe, expect } from "bun:test";
-import type { WorkflowBoundPlan, WorkflowJsonValue } from "@valentinkolb/cloud/workflows";
-import { createWorkflowRun } from "@valentinkolb/cloud/workflows/store";
+import type { WorkflowBoundPlan, WorkflowJsonValue } from "@k2b/cloud/workflows";
+import { createWorkflowRun } from "@k2b/cloud/workflows/store";
 import { sql } from "bun";
 import { postgresTest, testShortId, testUuid } from "../integration-test-utils";
 import { migrate } from "../migrate";

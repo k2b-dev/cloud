@@ -1,4 +1,4 @@
-import { apiClient } from "@valentinkolb/cloud/clients/core";
+import { apiClient } from "@k2b/cloud/clients/core";
 import type { z } from "zod";
 
 export const approvalApi = apiClient.auth["app-approval"].v1;

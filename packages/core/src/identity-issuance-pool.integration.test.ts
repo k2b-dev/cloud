@@ -14,13 +14,13 @@ if (process.env.CLOUD_IDENTITY_POOL_INTEGRATION !== "1") {
   }
   const pool = new bun.SQL(databaseUrl, { max: 1, connectionTimeout: 5, idleTimeout: 0 });
   mock.module("bun", () => ({ ...bun, sql: pool }));
-  const identity = await import("@valentinkolb/cloud/services/identity");
-  const runtimeConfig = await import("@valentinkolb/cloud/services/identity/runtime-config");
-  const settings = await import("@valentinkolb/cloud/services/settings");
-  const { withMandateIssueAuthority } = await import("@valentinkolb/cloud/services/mandates");
-  const { dispatchCapability } = await import("@valentinkolb/cloud/api");
-  const { compileCapabilityManifest } = await import("@valentinkolb/cloud/capabilities/testing");
-  const { defineCapabilities } = await import("@valentinkolb/cloud/contracts");
+  const identity = await import("@k2b/cloud/services/identity");
+  const runtimeConfig = await import("@k2b/cloud/services/identity/runtime-config");
+  const settings = await import("@k2b/cloud/services/settings");
+  const { withMandateIssueAuthority } = await import("@k2b/cloud/services/mandates");
+  const { dispatchCapability } = await import("@k2b/cloud/api");
+  const { compileCapabilityManifest } = await import("@k2b/cloud/capabilities/testing");
+  const { defineCapabilities } = await import("@k2b/cloud/contracts");
   const { ok } = await import("@k2b/stdlib");
   const issuer = "https://pool.cloud.example";
   const previousEnvironment = {

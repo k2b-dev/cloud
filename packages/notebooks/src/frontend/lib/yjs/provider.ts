@@ -1,5 +1,5 @@
 import { encoding } from "@k2b/stdlib";
-import { type NotebookPresenceParticipant, NotebookPresenceParticipantSchema } from "@valentinkolb/cloud/contracts";
+import { type NotebookPresenceParticipant, NotebookPresenceParticipantSchema } from "@k2b/cloud/contracts";
 import * as awarenessProtocol from "y-protocols/awareness";
 import * as Y from "yjs";
 import { notebooksWorkspace, type PublicNotebookWorkspaceEvent } from "../../../lib/workspace-events";

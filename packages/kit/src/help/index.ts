@@ -1,4 +1,4 @@
-import { defineHelp } from "@valentinkolb/cloud/server";
+import { defineHelp } from "@k2b/cloud/server";
 import { sdkHelp } from "./sdk";
 import en0 from "./documents/en/kit-start.help.md" with { type: "text" };
 import en1 from "./documents/en/kit-authoring.help.md" with { type: "text" };

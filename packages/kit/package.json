@@ -1,5 +1,5 @@
 {
-  "name": "@valentinkolb/cloud-app-kit",
+  "name": "@k2b/cloud-app-kit",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -16,7 +16,7 @@
     "@k2b/ssr": "catalog:",
     "@k2b/stdlib": "catalog:",
     "@k2b/ui": "workspace:*",
-    "@valentinkolb/cloud": "workspace:*",
+    "@k2b/cloud": "workspace:*",
     "acorn": "8.18.0",
     "hono": "catalog:",
     "hono-openapi": "catalog:",

@@ -1,7 +1,7 @@
 /** @jsxImportSource solid-js */
 import { Button } from "@k2b/ui";
-import { type AuthContext, expectUserBackedActor, getLocale } from "@valentinkolb/cloud/server";
-import { Layout } from "@valentinkolb/cloud/ssr";
+import { type AuthContext, expectUserBackedActor, getLocale } from "@k2b/cloud/server";
+import { Layout } from "@k2b/cloud/ssr";
 import type { Context, Env } from "hono";
 import { ssr } from "../config";
 import { oauth } from "../service/oauth";

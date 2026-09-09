@@ -1,4 +1,4 @@
-import { type AuthContext, auth } from "@valentinkolb/cloud/server";
+import { type AuthContext, auth } from "@k2b/cloud/server";
 import { Hono } from "hono";
 import { ssr } from "../config";
 import auditPage from "./audit/page";

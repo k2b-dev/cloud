@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { AiConversation } from "@valentinkolb/cloud/ai";
+import type { AiConversation } from "@k2b/cloud/ai";
 import { resolveInitialConversation } from "./initial-conversation";
 
 const conversation = (id: string): AiConversation => ({

@@ -18,7 +18,7 @@ import {
   toast,
   useLocale,
 } from "@k2b/ui";
-import { openCloudResourcePicker } from "@valentinkolb/cloud/browser/resource-picker";
+import { openCloudResourcePicker } from "@k2b/cloud/browser/resource-picker";
 import { createEffect, createSignal, For, onCleanup, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type {

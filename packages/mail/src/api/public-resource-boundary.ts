@@ -1,5 +1,5 @@
 import { err, fail, type Result, type ServiceError } from "@k2b/stdlib";
-import { type ApiErrorResponse, type AuthContext, getLocale, respond } from "@valentinkolb/cloud/server";
+import { type ApiErrorResponse, type AuthContext, getLocale, respond } from "@k2b/cloud/server";
 import type { Context, Next, TypedResponse } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { z } from "zod";

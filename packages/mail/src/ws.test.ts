@@ -1,8 +1,8 @@
 import { describe, expect, spyOn, test } from "bun:test";
 import { err, fail, ok } from "@k2b/stdlib";
 import { CursorMismatchError } from "@k2b/sync";
-import { getProcessSync } from "@valentinkolb/cloud";
-import { UserSchema } from "@valentinkolb/cloud/contracts";
+import { getProcessSync } from "@k2b/cloud";
+import { UserSchema } from "@k2b/cloud/contracts";
 import { MAIL_LIVE_WS_TYPE, type MailInvalidation, type MailLiveServerMessage, parseMailLiveServerMessage } from "./live-events";
 import type { MailRequestContext } from "./service/auth";
 import {

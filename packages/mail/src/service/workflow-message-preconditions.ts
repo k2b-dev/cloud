@@ -1,4 +1,4 @@
-import type { WorkflowJsonValue } from "@valentinkolb/cloud/workflows";
+import type { WorkflowJsonValue } from "@k2b/cloud/workflows";
 import { type RemoteMessagePrecondition, remoteMessagePreconditionSchema } from "../contracts";
 
 const object = (value: WorkflowJsonValue | undefined): Record<string, WorkflowJsonValue> | null =>

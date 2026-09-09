@@ -1,5 +1,5 @@
-import type { WorkflowFieldSchema } from "@valentinkolb/cloud/workflows";
-import { createWorkflowManifest } from "@valentinkolb/cloud/workflows/language";
+import type { WorkflowFieldSchema } from "@k2b/cloud/workflows";
+import { createWorkflowManifest } from "@k2b/cloud/workflows/language";
 import { GRIDS_WORKFLOW_ACTION_METADATA } from "./action-metadata";
 
 const text = (description: string, optional = false, maxLength = 1_000): WorkflowFieldSchema => ({

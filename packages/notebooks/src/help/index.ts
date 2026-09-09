@@ -1,4 +1,4 @@
-import { defineHelp } from "@valentinkolb/cloud/server";
+import { defineHelp } from "@k2b/cloud/server";
 import coreModelDe from "./documents/de/notebooks-core-model.help.md" with { type: "text" };
 import settingsAccessDe from "./documents/de/notebooks-settings-access.help.md" with { type: "text" };
 import startDe from "./documents/de/notebooks-start.help.md" with { type: "text" };

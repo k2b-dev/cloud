@@ -1,5 +1,5 @@
-import { defineApp } from "@valentinkolb/cloud";
-import { type AppContext, middleware } from "@valentinkolb/cloud/server";
+import { defineApp } from "@k2b/cloud";
+import { type AppContext, middleware } from "@k2b/cloud/server";
 import { Hono } from "hono";
 
 export const app = defineApp({

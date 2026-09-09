@@ -1,5 +1,5 @@
-import type { AccessSubject, PermissionLevel, RequestActor, User } from "@valentinkolb/cloud/contracts";
-import { err, fail, hasPermission, ok, type Result } from "@valentinkolb/cloud/server";
+import type { AccessSubject, PermissionLevel, RequestActor, User } from "@k2b/cloud/contracts";
+import { err, fail, hasPermission, ok, type Result } from "@k2b/cloud/server";
 
 const VENUE_APP_ID = "venue";
 const VENUE_RESOURCE_TYPE = "venue";

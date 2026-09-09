@@ -1,7 +1,7 @@
 import { AppWorkspace, Button, Chart, IconButton, MarkdownEditor, MarkdownView, ScrollArea, SegmentedControl, StatCell, Tag, toast } from "@k2b/ui";
-import { desktop } from "@valentinkolb/cloud/desktop";
-import { DesktopWorkspace, workspace as desktopWorkspace } from "@valentinkolb/cloud/desktop/solid";
-import { formatBytes } from "@valentinkolb/cloud/shared";
+import { desktop } from "@k2b/cloud/desktop";
+import { DesktopWorkspace, workspace as desktopWorkspace } from "@k2b/cloud/desktop/solid";
+import { formatBytes } from "@k2b/cloud/shared";
 import { createEffect, createMemo, createSignal, For, type JSX, onCleanup, onMount, Show } from "solid-js";
 import type {
   DesktopLabBridge,

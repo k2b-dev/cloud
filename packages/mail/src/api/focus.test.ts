@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
-import type { User } from "@valentinkolb/cloud/contracts";
-import { oauthTokens } from "@valentinkolb/cloud/services";
+import type { User } from "@k2b/cloud/contracts";
+import { oauthTokens } from "@k2b/cloud/services";
 import { generateSpecs } from "hono-openapi";
 import { focus, publicResources } from "../service";
 import * as workspace from "../service/workspace";

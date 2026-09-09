@@ -1,14 +1,14 @@
 /**
  * Core app — thin shell that mounts the platform API (defined in cloud-lib),
  * builds runtime pages, and runs core setup hooks. The API itself lives in
- * `@valentinkolb/cloud/api` so other apps can import its typed client without
+ * `@k2b/cloud/api` so other apps can import its typed client without
  * cross-app imports.
  */
 
-import { aiLiveRoutes } from "@valentinkolb/cloud/ai/live";
-import { createCoreApiRouter, createMcpProtectedResourceRoutes } from "@valentinkolb/cloud/api";
-import { type AppContext, type AuthContext, middleware } from "@valentinkolb/cloud/server";
-import { createIdentityPublicRoutes } from "@valentinkolb/cloud/services/identity";
+import { aiLiveRoutes } from "@k2b/cloud/ai/live";
+import { createCoreApiRouter, createMcpProtectedResourceRoutes } from "@k2b/cloud/api";
+import { type AppContext, type AuthContext, middleware } from "@k2b/cloud/server";
+import { createIdentityPublicRoutes } from "@k2b/cloud/services/identity";
 import { Hono } from "hono";
 import { websocket } from "hono/bun";
 import { aiChatTaskRoutes } from "./ai-chat-task-routes";

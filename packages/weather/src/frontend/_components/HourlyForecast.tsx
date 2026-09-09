@@ -1,5 +1,5 @@
 import { useLocale } from "@k2b/ui";
-import { weatherUiService } from "@valentinkolb/cloud/services/weather/ui";
+import { weatherUiService } from "@k2b/cloud/services/weather/ui";
 import type { HourlyForecastPayload } from "../../contracts";
 import { weatherMessages } from "../../messages";
 

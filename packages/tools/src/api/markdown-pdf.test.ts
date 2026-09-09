@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import type { AuthContext } from "@valentinkolb/cloud/server";
-import { GotenbergRenderError, MARKDOWN_PDF_MAX_MARKDOWN_BYTES, MarkdownPdfError } from "@valentinkolb/cloud/services/pdf";
+import type { AuthContext } from "@k2b/cloud/server";
+import { GotenbergRenderError, MARKDOWN_PDF_MAX_MARKDOWN_BYTES, MarkdownPdfError } from "@k2b/cloud/services/pdf";
 import type { MiddlewareHandler } from "hono";
 import { generateSpecs } from "hono-openapi";
 import { createMarkdownPdfRoutes, MARKDOWN_PDF_MAX_REQUEST_BYTES } from "./markdown-pdf";

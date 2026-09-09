@@ -1,4 +1,4 @@
-import { arg, type CloudCliContext, command, confirmFlag, flag } from "@valentinkolb/cloud/cli";
+import { arg, type CloudCliContext, command, confirmFlag, flag } from "@k2b/cloud/cli";
 import type { MetricQueryPoint, PulseCurrentState, PulseQueryCompileResult, PulseRecordedEvent, PulseSavedQuery } from "../contracts";
 import { listSavedQueries, requireRestArg, resolveBaseFromCommand, resolveSavedQueryId } from "./context";
 import { baseFlag, QUERY_INPUT } from "./flags";

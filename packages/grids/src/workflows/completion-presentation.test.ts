@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { buildWorkflowManifestCompletions } from "@valentinkolb/cloud/workflows";
+import { buildWorkflowManifestCompletions } from "@k2b/cloud/workflows";
 import { presentWorkflowCompletions } from "./completion-presentation";
 import { gridsWorkflows } from "./module";
 

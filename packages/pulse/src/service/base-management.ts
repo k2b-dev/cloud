@@ -7,8 +7,8 @@ import {
   type Principal,
   type Result,
   resolveDisplayNames,
-} from "@valentinkolb/cloud/server";
-import { toPgUuidArray } from "@valentinkolb/cloud/services";
+} from "@k2b/cloud/server";
+import { toPgUuidArray } from "@k2b/cloud/services";
 import { sql } from "bun";
 import type { PulseBase } from "../contracts";
 import { withShortId } from "../lib/short-id";

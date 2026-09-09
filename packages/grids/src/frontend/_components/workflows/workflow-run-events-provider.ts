@@ -1,4 +1,4 @@
-import { createLiveWebSocket } from "@valentinkolb/cloud/browser/live";
+import { createLiveWebSocket } from "@k2b/cloud/browser/live";
 import { gridsWorkspace, isGridsStreamCursor } from "../../../lib/workspace-events";
 import { workflowMessages } from "./messages";
 import type { PublicWorkflowRunEvent } from "./workflow-run-public-event";

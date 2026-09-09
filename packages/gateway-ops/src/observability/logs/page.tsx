@@ -1,7 +1,7 @@
 import { ButtonLink, Pagination, Placeholder, StatCell, StatGrid } from "@k2b/ui";
-import { type AuthContext, getLocale } from "@valentinkolb/cloud/server";
-import { get } from "@valentinkolb/cloud/services";
-import { AdminLayout } from "@valentinkolb/cloud/ssr";
+import { type AuthContext, getLocale } from "@k2b/cloud/server";
+import { get } from "@k2b/cloud/services";
+import { AdminLayout } from "@k2b/cloud/ssr";
 import { ssr } from "../../config";
 import ObservabilityChart from "../../frontend/ObservabilityChart.island";
 import LogTable from "./_components/LogTable.island";

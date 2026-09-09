@@ -1,8 +1,8 @@
 import { timingSafeEqual } from "node:crypto";
-import { isAccountCategoryAllowed } from "@valentinkolb/cloud/services";
-import { withActiveIdentitySigner } from "@valentinkolb/cloud/services/identity";
-import * as settings from "@valentinkolb/cloud/services/settings";
-import { publicCloudOrigin } from "@valentinkolb/cloud/shared";
+import { isAccountCategoryAllowed } from "@k2b/cloud/services";
+import { withActiveIdentitySigner } from "@k2b/cloud/services/identity";
+import * as settings from "@k2b/cloud/services/settings";
+import { publicCloudOrigin } from "@k2b/cloud/shared";
 import { sql } from "bun";
 import { Hono } from "hono";
 import { SignJWT } from "jose";

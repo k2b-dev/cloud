@@ -1,4 +1,4 @@
-import { type ResourceApiKey, ResourceApiKeys, type ResourceApiKeysProps } from "@valentinkolb/cloud/access/ui";
+import { type ResourceApiKey, ResourceApiKeys, type ResourceApiKeysProps } from "@k2b/cloud/access/ui";
 
 type ItemApiKeysProps = {
   initialKeys: ResourceApiKey[];

@@ -1,6 +1,6 @@
 import { err, fail, ok, type Result } from "@k2b/stdlib";
-import { type AuthContext, auth, getLocale, jsonResponse, requiresAdmin, requiresAuth, respond, v } from "@valentinkolb/cloud/server";
-import { accountsAppService as accountsService } from "@valentinkolb/cloud/services";
+import { type AuthContext, auth, getLocale, jsonResponse, requiresAdmin, requiresAuth, respond, v } from "@k2b/cloud/server";
+import { accountsAppService as accountsService } from "@k2b/cloud/services";
 import { type Context, Hono } from "hono";
 import { describeRoute } from "hono-openapi";
 import { z } from "zod";

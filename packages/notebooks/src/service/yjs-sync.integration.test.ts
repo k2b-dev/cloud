@@ -1,7 +1,7 @@
 import { expect, spyOn, test } from "bun:test";
 import { createSync, RetentionGapError } from "@k2b/sync";
 import { connect } from "@nats-io/transport-node";
-import { bindProcessSync, unbindProcessSync } from "@valentinkolb/cloud";
+import { bindProcessSync, unbindProcessSync } from "@k2b/cloud";
 import * as Y from "yjs";
 import { createYjsTopic, MalformedSyncEventError, NODE_ID, replayYjsTopicToCursor, toBase64 } from "./yjs-sync";
 

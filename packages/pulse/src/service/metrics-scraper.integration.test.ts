@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { err, fail, ok } from "@valentinkolb/cloud/server";
+import { err, fail, ok } from "@k2b/cloud/server";
 import { sql } from "bun";
 import { newShortId } from "../lib/short-id";
 import { runMetricsSourceScrape } from "./metrics-scraper";

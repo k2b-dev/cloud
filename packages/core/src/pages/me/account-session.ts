@@ -1,6 +1,6 @@
-import { browserNotificationClient } from "@valentinkolb/cloud/browser/notifications";
-import { apiClient } from "@valentinkolb/cloud/clients/core";
-import { normalizeRedirectTo } from "@valentinkolb/cloud/shared";
+import { browserNotificationClient } from "@k2b/cloud/browser/notifications";
+import { apiClient } from "@k2b/cloud/clients/core";
+import { normalizeRedirectTo } from "@k2b/cloud/shared";
 
 export const signOutCurrentSession = async (errorMessage = "Sign out failed. Please try again.", returnTo?: string): Promise<void> => {
   await browserNotificationClient.disable().catch(() => undefined);

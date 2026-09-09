@@ -1,5 +1,5 @@
-import type { HelpDocumentManifest } from "@valentinkolb/cloud/shared";
-import { Layout } from "@valentinkolb/cloud/ssr/islands";
+import type { HelpDocumentManifest } from "@k2b/cloud/shared";
+import { Layout } from "@k2b/cloud/ssr/islands";
 
 type Props = {
   documents: readonly HelpDocumentManifest[];

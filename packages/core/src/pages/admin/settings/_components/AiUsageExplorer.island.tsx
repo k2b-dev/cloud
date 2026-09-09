@@ -20,7 +20,7 @@ import {
   TextInput,
   useLocale,
 } from "@k2b/ui";
-import type { AiUsageFeedback, AiUsageGroup, AiUsagePage, AiUsageReport, AiUsageRun, AiUsageStats } from "@valentinkolb/cloud/ai/admin";
+import type { AiUsageFeedback, AiUsageGroup, AiUsagePage, AiUsageReport, AiUsageRun, AiUsageStats } from "@k2b/cloud/ai/admin";
 import {
   aiUsageHref,
   AiUsageQuerySchema,
@@ -32,8 +32,8 @@ import {
   formatDurationMs,
   formatNumber,
   formatPercent,
-} from "@valentinkolb/cloud/shared";
-import { coreClient } from "@valentinkolb/cloud/clients/core";
+} from "@k2b/cloud/shared";
+import { coreClient } from "@k2b/cloud/clients/core";
 import { aiUsageMessages } from "./ai-usage-messages";
 import AiUsageCharts from "./AiUsageCharts";
 

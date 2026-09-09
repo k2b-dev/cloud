@@ -129,7 +129,8 @@ jobs:
             gateway|core) name="cloud-${{ matrix.app }}" ;;
             *)            name="cloud-app-${{ matrix.app }}" ;;
           esac
-          echo "name=ghcr.io/${{ github.repository_owner }}/$name" >> "$GITHUB_OUTPUT"
+          owner="${{ github.repository_owner }}"
+          echo "name=ghcr.io/${owner,,}/$name" >> "$GITHUB_OUTPUT"
 
       - uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5
         id: meta
@@ -178,6 +179,7 @@ jobs:
           RELEASE_TAG: ${{ needs.matrix.outputs.release_tag }}
         run: |
           set -euo pipefail
+          OWNER="${OWNER,,}"
           while read -r app; do
             case "$app" in
               gateway|core) image="cloud-$app" ;;

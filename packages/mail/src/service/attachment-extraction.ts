@@ -1,5 +1,5 @@
 import type { Worker } from "@k2b/sync";
-import { lazySync } from "@valentinkolb/cloud";
+import { lazySync } from "@k2b/cloud";
 import {
   createRuntimeLifecycle,
   createRuntimeTaskTracker,
@@ -7,12 +7,12 @@ import {
   stopRuntimeJobs,
   stopRuntimeResources,
   trace,
-} from "@valentinkolb/cloud/services";
+} from "@k2b/cloud/services";
 import {
   DOCUMENT_EXTRACTION_MAX_INPUT_BYTES,
   DocumentExtractionError,
   extractDocumentMarkdown,
-} from "@valentinkolb/cloud/services/document-extraction";
+} from "@k2b/cloud/services/document-extraction";
 import { sql } from "bun";
 import { MAIL_ATTACHMENT_EXTRACTOR_VERSION } from "./attachment-extraction-contract";
 import { sha256Text } from "./canonical";

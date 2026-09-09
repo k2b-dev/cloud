@@ -1,4 +1,4 @@
-import { type AccessUser, listUsersWithAccess } from "@valentinkolb/cloud/server";
+import { type AccessUser, listUsersWithAccess } from "@k2b/cloud/server";
 import { type SQLQuery, sql } from "bun";
 import type { RecordMetaQuery, RecordMetaUserKey } from "../contracts";
 

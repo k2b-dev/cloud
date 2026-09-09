@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { AiConversation } from "@valentinkolb/cloud/ai";
+import type { AiConversation } from "@k2b/cloud/ai";
 import { submitAssistantProjectMessage } from "./assistant-project-chat";
 
 const conversation = { id: "chat123", projectId: "project123" } as AiConversation;

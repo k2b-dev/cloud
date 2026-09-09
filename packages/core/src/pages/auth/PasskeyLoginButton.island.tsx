@@ -2,7 +2,7 @@ import { cookies } from "@k2b/stdlib/browser";
 import { mutation as mutations } from "@k2b/stdlib/solid";
 import { NoticeCard, Button, useLocale } from "@k2b/ui";
 import { browserSupportsWebAuthn, startAuthentication } from "@simplewebauthn/browser";
-import { apiClient } from "@valentinkolb/cloud/clients/core";
+import { apiClient } from "@k2b/cloud/clients/core";
 import { authMessages } from "./messages";
 import { afterSignInHref } from "./login-redirect";
 

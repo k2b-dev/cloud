@@ -1,5 +1,5 @@
 {
-  "name": "@valentinkolb/cloud-app-spaces",
+  "name": "@k2b/cloud-app-spaces",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -20,7 +20,7 @@
     "@k2b/stdlib": "catalog:",
     "@k2b/sync": "catalog:",
     "@k2b/ui": "workspace:*",
-    "@valentinkolb/cloud": "workspace:*",
+    "@k2b/cloud": "workspace:*",
     "dayjs": "catalog:",
     "hono": "catalog:",
     "hono-openapi": "catalog:",

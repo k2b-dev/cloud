@@ -1,9 +1,9 @@
 import { DataTable, type DataTableColumn, Pagination, StatCell, StatGrid } from "@k2b/ui";
-import { listApps } from "@valentinkolb/cloud";
-import { createPagination, hasRole, type NotificationDeliveryStatus } from "@valentinkolb/cloud/contracts";
-import { type AuthContext, expectUserBackedActor, getDateConfig, getLocale } from "@valentinkolb/cloud/server";
-import { formatDateTime, formatNumber } from "@valentinkolb/cloud/shared";
-import { AdminLayout } from "@valentinkolb/cloud/ssr";
+import { listApps } from "@k2b/cloud";
+import { createPagination, hasRole, type NotificationDeliveryStatus } from "@k2b/cloud/contracts";
+import { type AuthContext, expectUserBackedActor, getDateConfig, getLocale } from "@k2b/cloud/server";
+import { formatDateTime, formatNumber } from "@k2b/cloud/shared";
+import { AdminLayout } from "@k2b/cloud/ssr";
 import type { JSX } from "solid-js";
 import { ssr } from "../../config";
 import ObservabilityChart from "../../frontend/ObservabilityChart.island";

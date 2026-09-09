@@ -1,5 +1,5 @@
-import type { AiConversationSource } from "@valentinkolb/cloud/ai";
-import type { CloudResourceRef } from "@valentinkolb/cloud/contracts";
+import type { AiConversationSource } from "@k2b/cloud/ai";
+import type { CloudResourceRef } from "@k2b/cloud/contracts";
 import type { AssistantChatContextSnapshot } from "../chat-context";
 
 export const splitAssistantConversationSources = (items: AiConversationSource[]) => ({

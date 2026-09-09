@@ -1,4 +1,4 @@
-import { CapabilitySemanticLinkSchema, CloudResourceViewSchema } from "@valentinkolb/cloud/contracts";
+import { CapabilitySemanticLinkSchema, CloudResourceViewSchema } from "@k2b/cloud/contracts";
 import { z } from "zod";
 import {
   composeSafetyApprovalSchema,

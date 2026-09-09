@@ -19,8 +19,8 @@ import {
   toast,
   useLocale,
 } from "@k2b/ui";
-import type { DashboardWidgetSpan, DashboardWidgetZone } from "@valentinkolb/cloud/contracts";
-import { openAppLaunchpad } from "@valentinkolb/cloud/ssr/islands";
+import type { DashboardWidgetSpan, DashboardWidgetZone } from "@k2b/cloud/contracts";
+import { openAppLaunchpad } from "@k2b/cloud/ssr/islands";
 import { createMemo, createSignal, For, Show } from "solid-js";
 import { apiClient } from "../api/client";
 import {

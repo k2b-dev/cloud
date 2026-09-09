@@ -1,4 +1,4 @@
-import { arg, command, confirmFlag, flag } from "@valentinkolb/cloud/cli";
+import { arg, command, confirmFlag, flag } from "@k2b/cloud/cli";
 import { type Form, formFlag, formRows, listForms, resolveFormFromCommand } from "./forms-support";
 import { baseFlag, resolveBaseFromCommand, resolveTable, tableArgs, tableFlag } from "./resources";
 import {

@@ -1,7 +1,7 @@
 import { err, fail, ok } from "@k2b/stdlib";
-import { ErrorResponseSchema } from "@valentinkolb/cloud/contracts";
-import { type AuthContext, auth, getLocale, jsonResponse, respond } from "@valentinkolb/cloud/server";
-import { settingsService } from "@valentinkolb/cloud/services";
+import { ErrorResponseSchema } from "@k2b/cloud/contracts";
+import { type AuthContext, auth, getLocale, jsonResponse, respond } from "@k2b/cloud/server";
+import { settingsService } from "@k2b/cloud/services";
 import { Hono } from "hono";
 import { describeRoute } from "hono-openapi";
 import { z } from "zod";

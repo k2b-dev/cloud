@@ -1,4 +1,4 @@
-import { defineHelp } from "@valentinkolb/cloud/server";
+import { defineHelp } from "@k2b/cloud/server";
 import adminDe from "./documents/de/core-admin.help.md" with { type: "text" };
 import notificationsDe from "./documents/de/core-notifications.help.md" with { type: "text" };
 import profileDe from "./documents/de/core-profile.help.md" with { type: "text" };

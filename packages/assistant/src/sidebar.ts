@@ -1,4 +1,4 @@
-import { type AiConversation, type AiProject, aiConversations, aiProjects } from "@valentinkolb/cloud/ai";
+import { type AiConversation, type AiProject, aiConversations, aiProjects } from "@k2b/cloud/ai";
 
 export type AssistantSidebarSnapshot = {
   conversations: AiConversation[];

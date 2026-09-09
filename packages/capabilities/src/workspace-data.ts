@@ -1,4 +1,4 @@
-import type { CapabilityActionManifest, CapabilityQueryManifest } from "@valentinkolb/cloud/contracts";
+import type { CapabilityActionManifest, CapabilityQueryManifest } from "@k2b/cloud/contracts";
 import type { CapabilityKind, CapabilitySortDirection, CapabilitySortKey } from "./routes";
 
 export const CAPABILITIES_PER_PAGE = 50;

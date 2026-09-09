@@ -1,5 +1,5 @@
 import { fromBase64Strict } from "@k2b/stdlib";
-import { getProcessSync, lazySync } from "@valentinkolb/cloud";
+import { getProcessSync, lazySync } from "@k2b/cloud";
 import * as Y from "yjs";
 import { notebooksYjs } from "../lib/yjs";
 

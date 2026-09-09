@@ -1,4 +1,4 @@
-import { type AuthContext, auth, middleware } from "@valentinkolb/cloud/server";
+import { type AuthContext, auth, middleware } from "@k2b/cloud/server";
 import { Hono } from "hono";
 import { websocket } from "hono/bun";
 import apiRoutes from "./api";

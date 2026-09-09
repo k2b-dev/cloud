@@ -9,7 +9,7 @@
  * is broken / what is busy" in one call, which is the question worth asking
  * before paging through individual requests.
  */
-import { type AuthContext, auth, rateLimit, respond, v } from "@valentinkolb/cloud/server";
+import { type AuthContext, auth, rateLimit, respond, v } from "@k2b/cloud/server";
 import { ok } from "@k2b/stdlib";
 import { Hono } from "hono";
 import { z } from "zod";

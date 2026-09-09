@@ -7,7 +7,7 @@ import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
 
-export const CLI_RELEASE_REPOSITORY = "ValentinKolb/cloud";
+export const CLI_RELEASE_REPOSITORY = "k2b-dev/cloud";
 export const CLI_RELEASE_BASE = `https://github.com/${CLI_RELEASE_REPOSITORY}/releases`;
 export const CLI_RELEASE_API_BASE = `https://api.github.com/repos/${CLI_RELEASE_REPOSITORY}`;
 
@@ -19,7 +19,7 @@ const CLOUD_CLI_SKILL_ASSET = "cloud-cli-skill.tar.gz";
 const CLOUD_CLI_SKILL_NAME = "cloud-cli";
 const cliReleaseTag = /^cli-v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
 export const COSIGN_CERTIFICATE_IDENTITY_REGEXP =
-  "^https://github\\.com/ValentinKolb/cloud/\\.github/workflows/cli\\.yml@refs/tags/cli-v[0-9]+\\.[0-9]+\\.[0-9]+$";
+  "^https://github\\.com/k2b-dev/cloud/\\.github/workflows/cli\\.yml@refs/tags/cli-v[0-9]+\\.[0-9]+\\.[0-9]+$";
 
 export type CliRelease = {
   tag: string;

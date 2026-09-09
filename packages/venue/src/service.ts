@@ -14,8 +14,8 @@ import {
   type Result,
   resolveDisplayNames,
   updateAccess,
-} from "@valentinkolb/cloud/server";
-import { logger, serviceAccounts } from "@valentinkolb/cloud/services";
+} from "@k2b/cloud/server";
+import { logger, serviceAccounts } from "@k2b/cloud/services";
 import { sql } from "bun";
 import type { z } from "zod";
 import { permissionFromVenueScopes, type VenueAccessScope } from "./access-control";

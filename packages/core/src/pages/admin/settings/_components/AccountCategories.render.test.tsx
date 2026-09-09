@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createConfig } from "@k2b/ssr";
 import { LocaleProvider } from "@k2b/ui";
-import { CORE_SETTINGS } from "@valentinkolb/cloud/services/settings/core-settings";
+import { CORE_SETTINGS } from "@k2b/cloud/services/settings/core-settings";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import { authMessages } from "../../../auth/messages";

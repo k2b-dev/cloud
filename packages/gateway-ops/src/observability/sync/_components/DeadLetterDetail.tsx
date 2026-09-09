@@ -1,5 +1,5 @@
 import { DescriptionList, DetailPanel, IconButtonLink, useLocale } from "@k2b/ui";
-import type { SyncDeadLetterEntry } from "@valentinkolb/cloud/services";
+import type { SyncDeadLetterEntry } from "@k2b/cloud/services";
 import { gatewayOpsMessages } from "../../../messages";
 import { syncOpsMessages } from "../ops-messages";
 

@@ -1,5 +1,5 @@
 import { err, fail, ok, type Result } from "@k2b/stdlib";
-import { type AccessSubject, buildAccessPrincipalTierConditions } from "@valentinkolb/cloud/server";
+import { type AccessSubject, buildAccessPrincipalTierConditions } from "@k2b/cloud/server";
 import { sql } from "bun";
 import { DocumentDefaultsSchema } from "../contracts";
 import { grantAccess } from "./access";

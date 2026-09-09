@@ -1,4 +1,4 @@
-import { arg, type CloudCliContext, command, flag } from "@valentinkolb/cloud/cli";
+import { arg, type CloudCliContext, command, flag } from "@k2b/cloud/cli";
 import type {
   PulseCurrentState,
   PulseInventory,

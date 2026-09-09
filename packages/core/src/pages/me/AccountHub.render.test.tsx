@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createConfig } from "@k2b/ssr";
-import type { User } from "@valentinkolb/cloud/contracts";
+import type { User } from "@k2b/cloud/contracts";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 

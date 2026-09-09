@@ -1,4 +1,4 @@
-import { buildAccessPrincipalCondition, err, fail, ok, type Result } from "@valentinkolb/cloud/server";
+import { buildAccessPrincipalCondition, err, fail, ok, type Result } from "@k2b/cloud/server";
 import { sql } from "bun";
 import type {
   MetricType,

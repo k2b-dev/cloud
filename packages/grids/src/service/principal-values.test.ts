@@ -1,6 +1,6 @@
 import { describe, expect, mock, test } from "bun:test";
 import type { Paginated } from "@k2b/stdlib";
-import type { EntityListItem, User } from "@valentinkolb/cloud/contracts/shared";
+import type { EntityListItem, User } from "@k2b/cloud/contracts/shared";
 import { buildPrincipalLabelCache, type PrincipalValueValidationDeps, validatePrincipalValuesForActor } from "./principal-values";
 import type { Field } from "./types";
 

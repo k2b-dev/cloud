@@ -1,8 +1,8 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { getProcessSync } from "@valentinkolb/cloud";
-import { mandates, toPgUuidArray } from "@valentinkolb/cloud/services";
-import { parsePgJsonRecord } from "@valentinkolb/cloud/services/postgres";
-import { deleteWorkflowScope } from "@valentinkolb/cloud/workflows/store";
+import { getProcessSync } from "@k2b/cloud";
+import { mandates, toPgUuidArray } from "@k2b/cloud/services";
+import { parsePgJsonRecord } from "@k2b/cloud/services/postgres";
+import { deleteWorkflowScope } from "@k2b/cloud/workflows/store";
 import { sql } from "bun";
 import { newShortId } from "../lib/short-id";
 import { migrate } from "../migrate";

@@ -1,5 +1,5 @@
 import { err, fail, ok, type Result } from "@k2b/stdlib";
-import { toPgTextArray } from "@valentinkolb/cloud/services";
+import { toPgTextArray } from "@k2b/cloud/services";
 import { sql } from "bun";
 import { z } from "zod";
 import {

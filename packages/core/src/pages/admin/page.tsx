@@ -1,6 +1,6 @@
 import { LinkCard } from "@k2b/ui";
-import { getLocale, type AuthContext } from "@valentinkolb/cloud/server";
-import { AdminLayout, getLocalizedRuntimeContext, hasDedicatedRuntimeRoute } from "@valentinkolb/cloud/ssr";
+import { getLocale, type AuthContext } from "@k2b/cloud/server";
+import { AdminLayout, getLocalizedRuntimeContext, hasDedicatedRuntimeRoute } from "@k2b/cloud/ssr";
 import { ssr } from "../../config";
 import { adminMessages } from "./messages";
 

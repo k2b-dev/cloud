@@ -10,7 +10,7 @@ import {
   validateInput,
   validateXsd,
 } from "@stackforge-eu/factur-x";
-import { type RenderFacturXHtmlToPdfInput, renderFacturXHtmlToPdf } from "@valentinkolb/cloud/services/pdf";
+import { type RenderFacturXHtmlToPdfInput, renderFacturXHtmlToPdf } from "@k2b/cloud/services/pdf";
 import Decimal from "decimal.js";
 import { z } from "zod";
 import type { DocumentProfile } from "../document-profiles";

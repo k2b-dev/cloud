@@ -1,7 +1,7 @@
 import { createMemo, createSignal, Show } from "solid-js";
 import { Button, TextInput, SettingsModal, prompts, useLocale } from "@k2b/ui";
-import { PermissionEditor } from "@valentinkolb/cloud/access/ui";
-import type { AccessEntry } from "@valentinkolb/cloud/contracts";
+import { PermissionEditor } from "@k2b/cloud/access/ui";
+import type { AccessEntry } from "@k2b/cloud/contracts";
 import type { Bundle } from "../contracts";
 import { LocalFiles } from "./LocalFiles";
 import { messages } from "./messages";

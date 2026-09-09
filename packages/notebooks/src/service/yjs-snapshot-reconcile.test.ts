@@ -8,8 +8,8 @@ test("snapshot reconciliation visits every bounded page, heartbeats and honours 
     let queued = [];
     let heartbeats = 0;
     const rows = Array.from({ length: 5001 }, (_, i) => ({ noteId: String(i).padStart(5, "0"), streamCursor: i === 5000 ? null : "s6t.fixture.1" }));
-    mock.module("@valentinkolb/cloud", () => ({ lazySync: () => () => ({ submit: async input => queued.push(input) }) }));
-    mock.module("@valentinkolb/cloud/services", () => ({ logger: () => ({ info() {}, debug() {}, error() {}, warn() {} }) }));
+    mock.module("@k2b/cloud", () => ({ lazySync: () => () => ({ submit: async input => queued.push(input) }) }));
+    mock.module("@k2b/cloud/services", () => ({ logger: () => ({ info() {}, debug() {}, error() {}, warn() {} }) }));
     mock.module("./notes", () => ({ listSnapshotCursors: async ({ limit, after }) => {
       pages.push({ limit, after });
       return rows.filter(row => !after || row.noteId > after).slice(0, limit);

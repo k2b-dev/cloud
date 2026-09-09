@@ -59,6 +59,10 @@ describe("Cloud CLI releases", () => {
     await expect(resolveCliRelease("1.2.3-rc.1", { fetchImpl: async () => Response.json({}) })).rejects.toThrow("stable version");
     expect(COSIGN_CERTIFICATE_IDENTITY_REGEXP).toContain("workflows/cli");
     expect(COSIGN_CERTIFICATE_IDENTITY_REGEXP).toContain("refs/tags/cli-v");
+    const identity = new RegExp(COSIGN_CERTIFICATE_IDENTITY_REGEXP);
+    expect(identity.test("https://github.com/k2b-dev/cloud/.github/workflows/cli.yml@refs/tags/cli-v0.1.0")).toBe(true);
+    expect(identity.test("https://github.com/ValentinKolb/cloud/.github/workflows/cli.yml@refs/tags/cli-v0.1.0")).toBe(false);
+    expect(identity.test("https://github.com/k2b-dev/other/.github/workflows/cli.yml@refs/tags/cli-v0.1.0")).toBe(false);
   });
 
   test("updates an installed binary only after checksum verification", async () => {

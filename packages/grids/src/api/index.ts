@@ -1,4 +1,4 @@
-import { rateLimit } from "@valentinkolb/cloud/server";
+import { rateLimit } from "@k2b/cloud/server";
 import { Hono } from "hono";
 import wsRoutes from "../ws";
 import accessRoutes from "./access";

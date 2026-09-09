@@ -1,4 +1,4 @@
-import { logger } from "@valentinkolb/cloud/services";
+import { logger } from "@k2b/cloud/services";
 import { runFieldIndexMaintenanceBatch } from "./field-indexes";
 
 const log = logger("grids:field-index-maintenance");

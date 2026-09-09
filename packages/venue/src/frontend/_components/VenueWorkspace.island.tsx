@@ -23,7 +23,7 @@ import {
   toast,
   useLocale,
 } from "@k2b/ui";
-import { SearchBar } from "@valentinkolb/cloud/ssr/islands";
+import { SearchBar } from "@k2b/cloud/ssr/islands";
 import { createMemo, createSignal, For, type JSX, onCleanup, Show } from "solid-js";
 import { apiClient } from "../../api/client";
 import type { FeedbackEntry, PublicSection, PublicSectionInput, ShiftAssignment, UpcomingSlot } from "../../contracts";

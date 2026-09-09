@@ -3,7 +3,7 @@ import { type ClientRequest, request as httpRequest, type IncomingMessage, type 
 import { request as httpsRequest } from "node:https";
 import { isIP } from "node:net";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
-import { isUnsafeNetworkAddress, isUnsafeNetworkHostname, normalizeNetworkHostname } from "@valentinkolb/cloud/shared";
+import { isUnsafeNetworkAddress, isUnsafeNetworkHostname, normalizeNetworkHostname } from "@k2b/cloud/shared";
 import { workflowServiceText } from "./workflow-service-messages";
 
 const MAX_REQUEST_BYTES = 64 * 1024;

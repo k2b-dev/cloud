@@ -1,5 +1,5 @@
 import { afterEach, expect, mock, spyOn, test } from "bun:test";
-import { CAPABILITY_MAX_RESULT_BYTES } from "@valentinkolb/cloud/contracts";
+import { CAPABILITY_MAX_RESULT_BYTES } from "@k2b/cloud/contracts";
 import { decodeWorkCursor, EventAgendaDataSchema, EventAgendaInputSchema, TaskFocusInputSchema } from "./capability-work-contracts";
 import { boundedWorkPage, runEventAgenda, runTaskFocus } from "./capability-work-queries";
 import type { CalendarItem } from "./contracts";

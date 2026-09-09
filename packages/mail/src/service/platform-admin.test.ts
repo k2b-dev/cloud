@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { UserSchema, type User } from "@valentinkolb/cloud/contracts";
+import { UserSchema, type User } from "@k2b/cloud/contracts";
 import type { MailRequestContext } from "./auth";
 import { isCurrentPlatformAdmin } from "./access";
 

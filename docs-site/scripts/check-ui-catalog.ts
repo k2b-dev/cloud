@@ -79,7 +79,7 @@ const portableBoundaryViolations = uiCatalogEntries
     (entry) =>
       entry.scope === "portable" &&
       (!entry.context.includes("@k2b/ui") ||
-        entry.context.includes("@valentinkolb/cloud/") ||
+        entry.context.includes("@k2b/cloud/") ||
         entry.context.includes("@k2b/cloud")),
   )
   .map((entry) => entry.id);
@@ -101,7 +101,7 @@ const portableDemoSources = await Promise.all(
   })),
 );
 const portableDemoBoundaryViolations = portableDemoSources
-  .filter(({ source }) => source.includes("@valentinkolb/cloud") || source.includes("@k2b/cloud"))
+  .filter(({ source }) => source.includes("@k2b/cloud") || source.includes("@k2b/cloud"))
   .map(({ path }) => path);
 
 const liveRuntimeImports = new Set<string>();

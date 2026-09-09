@@ -1,4 +1,4 @@
-import { notifications } from "@valentinkolb/cloud/services";
+import { notifications } from "@k2b/cloud/services";
 import type {
   ErasedWorkflowAction,
   WorkflowActionContext,
@@ -6,8 +6,8 @@ import type {
   WorkflowFieldSchema,
   WorkflowJsonValue,
   WorkflowPlannedEffect,
-} from "@valentinkolb/cloud/workflows";
-import { workflowAction } from "@valentinkolb/cloud/workflows";
+} from "@k2b/cloud/workflows";
+import { workflowAction } from "@k2b/cloud/workflows";
 import { sql } from "bun";
 import { z } from "zod";
 import { app } from "../config";
@@ -56,7 +56,7 @@ const text = (description: string, optional = false, maxLength = 1_000) =>
   ({ kind: "string", minLength: 1, maxLength, optional, description }) as const;
 const identifier = (description: string, optional = true) =>
   ({ kind: "string", format: "identifier", maxLength: 120, optional, description }) as const;
-const object = <const T extends Record<string, import("@valentinkolb/cloud/workflows").WorkflowFieldSchema>>(properties: T) =>
+const object = <const T extends Record<string, import("@k2b/cloud/workflows").WorkflowFieldSchema>>(properties: T) =>
   ({ kind: "object", properties }) as const;
 const messageReference = text("Message value reference.", false, 500);
 const conversationReference = text("Conversation value reference.", false, 500);

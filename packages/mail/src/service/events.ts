@@ -1,5 +1,5 @@
-import { lazySync } from "@valentinkolb/cloud";
-import { createPgOutbox } from "@valentinkolb/cloud/services/outbox";
+import { lazySync } from "@k2b/cloud";
+import { createPgOutbox } from "@k2b/cloud/services/outbox";
 import type { sql } from "bun";
 import type { MailInvalidation } from "../live-events";
 

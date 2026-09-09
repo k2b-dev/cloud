@@ -1,4 +1,4 @@
-import type { WorkflowJsonValue } from "@valentinkolb/cloud/workflows";
+import type { WorkflowJsonValue } from "@k2b/cloud/workflows";
 import type { CustomAppDefinition } from "../custom-apps/contracts";
 import type { NavigationReference } from "../navigation-contracts";
 import type { GridsWorkflowLauncherConfig } from "../workflows/contracts";

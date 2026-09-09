@@ -1,4 +1,4 @@
-import type { AppApprovalDevice, AppApprovalKey } from "@valentinkolb/cloud/browser/app-approval";
+import type { AppApprovalDevice, AppApprovalKey } from "@k2b/cloud/browser/app-approval";
 
 export interface Binding extends AppApprovalDevice {
   id: string;

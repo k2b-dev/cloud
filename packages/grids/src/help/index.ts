@@ -1,4 +1,4 @@
-import { defineHelp } from "@valentinkolb/cloud/server";
+import { defineHelp } from "@k2b/cloud/server";
 import buildBaseDe from "./documents/de/grids-build-base.help.md" with { type: "text" };
 import buildBusinessAppDe from "./documents/de/grids-build-business-app.help.md" with { type: "text" };
 import buildCustomAppDe from "./documents/de/grids-build-custom-app.help.md" with { type: "text" };

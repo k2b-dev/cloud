@@ -31,13 +31,13 @@ if (process.env.NOTEBOOKS_WS_LIFECYCLE_CHILD !== "1") {
       await new Promise<void>((resolve) => config.signal?.addEventListener("abort", () => resolve(), { once: true }));
   };
   const note = { id: "test-note", notebookId: "test-notebook", lockedAt: null };
-  mock.module("@valentinkolb/cloud/server", () => ({
+  mock.module("@k2b/cloud/server", () => ({
     getLocale: () => "en",
     auth: {
       session: { getToken: () => "session", authenticate: async () => ({ user: { id: "user", displayName: "User", avatarHash: null } }) },
     },
   }));
-  mock.module("@valentinkolb/cloud/services", () => ({
+  mock.module("@k2b/cloud/services", () => ({
     logger: () => ({ debug: () => {}, info: () => {}, warn: () => {}, error: () => {} }),
   }));
   mock.module("hono/bun", () => ({

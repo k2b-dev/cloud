@@ -1,4 +1,4 @@
-import { logger, stopRuntimeJobs, trace } from "@valentinkolb/cloud/services";
+import { logger, stopRuntimeJobs, trace } from "@k2b/cloud/services";
 import { sql } from "bun";
 import type { SqlClient } from "./audit";
 import { type GridsRecordEvent, GridsRecordEventSchema, publishRecordEventWithFederatedTargets } from "./record-events";

@@ -1,7 +1,7 @@
 import type { Worker } from "@k2b/sync";
-import { lazySync, listApps, listAppsDetailed, watchAppRegistry } from "@valentinkolb/cloud";
-import type { AppLifecycle } from "@valentinkolb/cloud/contracts";
-import { get as getSetting, logger, superviseRuntimeTask, trace } from "@valentinkolb/cloud/services";
+import { lazySync, listApps, listAppsDetailed, watchAppRegistry } from "@k2b/cloud";
+import type { AppLifecycle } from "@k2b/cloud/contracts";
+import { get as getSetting, logger, superviseRuntimeTask, trace } from "@k2b/cloud/services";
 import { runHealthWebhookCheck, startHealthWebhookDelivery, stopHealthWebhookDelivery } from "./health-webhooks";
 import { migrate } from "./migrate";
 import { listRegisteredAppStatus, markOfflineLogged, upsertRegisteredApps } from "./registered-apps";

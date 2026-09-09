@@ -1,8 +1,8 @@
 import { ButtonLink, DataTable, type DataTableColumn, NoticeCard, StatCell, StatGrid, StatusBadge, type StatusTone } from "@k2b/ui";
-import { type AuthContext, getDateConfig, getLocale } from "@valentinkolb/cloud/server";
-import { formatDateTime, formatNumber } from "@valentinkolb/cloud/shared";
-import { AdminLayout } from "@valentinkolb/cloud/ssr";
-import { listApps } from "@valentinkolb/cloud";
+import { type AuthContext, getDateConfig, getLocale } from "@k2b/cloud/server";
+import { formatDateTime, formatNumber } from "@k2b/cloud/shared";
+import { AdminLayout } from "@k2b/cloud/ssr";
+import { listApps } from "@k2b/cloud";
 import SyncNatsFilterBar from "../_components/SyncNatsFilterBar.island";
 import { ssr } from "../../config";
 import { gatewayOpsMessages } from "../../messages";

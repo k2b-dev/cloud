@@ -1,4 +1,4 @@
-import { type AccessSubject, buildAccessPrincipalCondition, type PermissionLevel } from "@valentinkolb/cloud/server";
+import { type AccessSubject, buildAccessPrincipalCondition, type PermissionLevel } from "@k2b/cloud/server";
 import { sql } from "bun";
 import { runBoundedQuery } from "./bounded-query";
 

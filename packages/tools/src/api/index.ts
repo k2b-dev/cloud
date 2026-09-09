@@ -1,4 +1,4 @@
-import { type AuthContext, rateLimit } from "@valentinkolb/cloud/server";
+import { type AuthContext, rateLimit } from "@k2b/cloud/server";
 import { Hono } from "hono";
 import documentMarkdownRoutes from "./document-markdown";
 import markdownPdfRoutes from "./markdown-pdf";

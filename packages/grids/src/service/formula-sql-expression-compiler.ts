@@ -1,4 +1,4 @@
-import { normalizeTimeZone } from "@valentinkolb/cloud/shared";
+import { normalizeTimeZone } from "@k2b/cloud/shared";
 import { sql } from "bun";
 import { parseFormula } from "../formula/parser";
 import type { BinOp, Expr } from "../formula/types";

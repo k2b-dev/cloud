@@ -1,4 +1,4 @@
-import { defineApp } from "@valentinkolb/cloud";
+import { defineApp } from "@k2b/cloud";
 import { NOTIFICATIONS } from "./notifications";
 
 export const app = defineApp({

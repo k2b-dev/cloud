@@ -1,5 +1,5 @@
 import { type PageParams, type Paginated, paginate } from "@k2b/stdlib";
-import type { AccessSubject } from "@valentinkolb/cloud/server";
+import type { AccessSubject } from "@k2b/cloud/server";
 import type { AccessEntry, Space, SpaceColumn, SpaceComment, SpaceItem, SpaceTag } from "@/contracts";
 import * as access from "./access";
 import * as activity from "./activity";

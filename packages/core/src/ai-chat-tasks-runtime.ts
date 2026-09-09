@@ -1,9 +1,9 @@
 import type { JobContext, Worker } from "@k2b/sync";
-import { lazySync } from "@valentinkolb/cloud";
-import { aiChatTasks, aiConversations, aiProjects, personalAiModelPolicy } from "@valentinkolb/cloud/ai";
-import { enqueueExistingAiTurn, validateAiTurnRequest } from "@valentinkolb/cloud/ai/runtime";
-import { accounts, coreSettings, logger } from "@valentinkolb/cloud/services";
-import { isAccountExpired } from "@valentinkolb/cloud/services/account-model";
+import { lazySync } from "@k2b/cloud";
+import { aiChatTasks, aiConversations, aiProjects, personalAiModelPolicy } from "@k2b/cloud/ai";
+import { enqueueExistingAiTurn, validateAiTurnRequest } from "@k2b/cloud/ai/runtime";
+import { accounts, coreSettings, logger } from "@k2b/cloud/services";
+import { isAccountExpired } from "@k2b/cloud/services/account-model";
 import { deliverPendingAiMessages } from "./ai-inter-chat-messages";
 
 const APP_ID = "core";

@@ -10,8 +10,8 @@ import {
   printRows,
   printStructured,
   readCliInput,
-} from "@valentinkolb/cloud/cli";
-import type { MessageResponse } from "@valentinkolb/cloud/contracts";
+} from "@k2b/cloud/cli";
+import type { MessageResponse } from "@k2b/cloud/contracts";
 import { type CreateFaq, type FaqAudience, FaqAudienceSchema, type FaqEntry, FaqTranslationsSchema, type UpdateFaq } from "./contracts";
 
 const apiPath = (path = "") => `/api/faq${path === "/" ? "" : path}`;

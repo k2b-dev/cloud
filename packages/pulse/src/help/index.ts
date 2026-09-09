@@ -1,4 +1,4 @@
-import { defineHelp } from "@valentinkolb/cloud/server";
+import { defineHelp } from "@k2b/cloud/server";
 import dashboardDslDe from "./documents/de/pulse-dashboard-dsl.help.md" with { type: "text" };
 import dataModelDe from "./documents/de/pulse-data-model.help.md" with { type: "text" };
 import findDataDe from "./documents/de/pulse-find-data.help.md" with { type: "text" };

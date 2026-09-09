@@ -1,5 +1,5 @@
-import type { User } from "@valentinkolb/cloud/contracts";
-import { type AuthContext, err, fail, ok, type Result } from "@valentinkolb/cloud/server";
+import type { User } from "@k2b/cloud/contracts";
+import { type AuthContext, err, fail, ok, type Result } from "@k2b/cloud/server";
 import type { Context } from "hono";
 import { SHORT_ID_REGEX } from "../lib/short-id";
 import { type AccessScope, accessScopeFor } from "../service/access-control";

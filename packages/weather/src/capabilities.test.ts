@@ -6,8 +6,8 @@ import {
   type CapabilityExecutionContext,
   capabilityResultSchema,
   type User,
-} from "@valentinkolb/cloud/contracts";
-import { audit, weatherService } from "@valentinkolb/cloud/services";
+} from "@k2b/cloud/contracts";
+import { audit, weatherService } from "@k2b/cloud/services";
 import { decodeWeatherCapabilityCursor, weatherCapabilities } from "./capabilities";
 import { CurrentWeatherSchema } from "./contracts";
 

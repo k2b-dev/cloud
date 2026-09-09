@@ -1,5 +1,5 @@
 import { NoticeCard, Button, CheckboxCard, PanelDialog, Select, TextInput, useLocale } from "@k2b/ui";
-import { EntitySearch, type EntitySearchPrincipal } from "@valentinkolb/cloud/account/ui";
+import { EntitySearch, type EntitySearchPrincipal } from "@k2b/cloud/account/ui";
 import { createSignal, For, Show } from "solid-js";
 import type { CreateOAuthClient, OAuthClient, OAuthScope, UpdateOAuthClient } from "@/contracts";
 import { oauthMessages } from "../messages";

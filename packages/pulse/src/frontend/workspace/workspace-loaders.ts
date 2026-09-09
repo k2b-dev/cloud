@@ -1,4 +1,4 @@
-import type { ResourceApiKey } from "@valentinkolb/cloud/access/ui";
+import type { ResourceApiKey } from "@k2b/cloud/access/ui";
 import type {
   MetricType,
   PulseCurrentState,

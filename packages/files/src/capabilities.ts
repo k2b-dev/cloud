@@ -6,7 +6,7 @@ import {
   UniversalSearchDataSchema,
   type UniversalSearchInput,
   UniversalSearchInputSchema,
-} from "@valentinkolb/cloud/contracts";
+} from "@k2b/cloud/contracts";
 import { z } from "zod";
 import { filesCapabilityPresentation } from "./capability-presentation";
 import { filesService } from "./service";

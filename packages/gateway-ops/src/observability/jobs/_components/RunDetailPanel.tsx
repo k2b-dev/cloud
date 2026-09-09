@@ -8,8 +8,8 @@ import {
   type StructuredDataValue,
   useLocale,
 } from "@k2b/ui";
-import type { TraceEvent, TraceSpan } from "@valentinkolb/cloud/services";
-import { formatDate, formatDurationMs, formatNumber } from "@valentinkolb/cloud/shared";
+import type { TraceEvent, TraceSpan } from "@k2b/cloud/services";
+import { formatDate, formatDurationMs, formatNumber } from "@k2b/cloud/shared";
 import type { JSX } from "solid-js";
 import { gatewayOpsMessages } from "../../../messages";
 

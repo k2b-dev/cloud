@@ -1,5 +1,5 @@
-import { err, fail, ok, type Result } from "@valentinkolb/cloud/server";
-import { toPgUuidArray } from "@valentinkolb/cloud/services";
+import { err, fail, ok, type Result } from "@k2b/cloud/server";
+import { toPgUuidArray } from "@k2b/cloud/services";
 import { sql } from "bun";
 import type { EventQuery, MetricQuery, MetricQueryPoint, PulseCurrentState, PulseRecordedEvent, StateQuery } from "../contracts";
 import { durationToInterval, intervalToMs } from "../query-dsl";

@@ -2,7 +2,7 @@ import { currentPathWithQuery } from "@k2b/ssr/nav";
 import { i18n } from "@k2b/stdlib";
 import { retry } from "@k2b/sync/retry";
 import { useLocale } from "@k2b/ui";
-import { createLiveWebSocket } from "@valentinkolb/cloud/browser/live";
+import { createLiveWebSocket } from "@k2b/cloud/browser/live";
 import { onCleanup, onMount } from "solid-js";
 import {
   CONTACTS_LIVE_WS_TYPE,
