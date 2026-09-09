@@ -24,6 +24,7 @@ COPY packages/gateway/package.json packages/gateway/
 COPY packages/gateway-ops/package.json packages/gateway-ops/
 COPY packages/grids/package.json packages/grids/
 COPY packages/ipa-hosts/package.json packages/ipa-hosts/
+COPY packages/kit/package.json packages/kit/
 COPY packages/mail/package.json packages/mail/
 COPY packages/notebooks/package.json packages/notebooks/
 COPY packages/oauth/package.json packages/oauth/

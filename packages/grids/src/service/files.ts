@@ -833,9 +833,7 @@ export const createProtected = async (
 
 type ProtectionIdentity = Pick<ProtectParams, "fileId" | "ownerKind" | "ownerId">;
 
-const releaseProtectionWithClient = async (params: ProtectionIdentity, client: SqlClient, locale?: string): Promise<Result<void>> => {
-  const t = documentServiceText(locale);
-  if (params.ownerKind === "document_artifact") return fail(err.badInput(t.artifactProtectionReleaseDenied));
+const releaseProtectionWithClient = async (params: ProtectionIdentity, client: SqlClient): Promise<Result<void>> => {
   const [asset] = await client<{ id: string }[]>`
     SELECT id::text AS id FROM grids.files WHERE id = ${params.fileId}::uuid FOR UPDATE
   `;
@@ -853,8 +851,10 @@ const releaseProtectionWithClient = async (params: ProtectionIdentity, client: S
   return ok();
 };
 
-export const releaseProtection = async (params: ProtectionIdentity, client?: SqlClient, locale?: string): Promise<Result<void>> =>
-  client ? releaseProtectionWithClient(params, client, locale) : sql.begin((tx) => releaseProtectionWithClient(params, tx, locale));
+export const releaseProtection = async (params: ProtectionIdentity, client?: SqlClient, locale?: string): Promise<Result<void>> => {
+  if (params.ownerKind === "document_artifact") return fail(err.badInput(documentServiceText(locale).artifactProtectionReleaseDenied));
+  return client ? releaseProtectionWithClient(params, client) : sql.begin((tx) => releaseProtectionWithClient(params, tx));
+};
 
 export const getProtectedContent = async (params: ProtectionIdentity & { locale?: string }): Promise<Result<ProtectedFileContent>> => {
   const t = documentServiceText(params.locale);

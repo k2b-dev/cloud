@@ -670,7 +670,7 @@
       },
     },
     "pwas/pwa-auth": {
-      "name": "@valentinkolb/pwa-auth",
+      "name": "@k2b/pwa-auth",
       "version": "0.0.0",
       "dependencies": {
         "@k2b/cloud": "workspace:*",
@@ -1044,6 +1044,8 @@
 
     "@k2b/nessi": ["@k2b/nessi@0.11.0", "", { "dependencies": { "zod": "^4.3.0" } }, "sha512-SajlKjEJQvM209JqFQNpGlGhOIj6z3U13NbgDYBx4snhbxxRXtCO3qNseNWMT5OgjqkWvrp4M84tP2nWZAC1Eg=="],
 
+    "@k2b/pwa-auth": ["@k2b/pwa-auth@workspace:pwas/pwa-auth"],
+
     "@k2b/ssr": ["@k2b/ssr@0.12.0", "", { "dependencies": { "@babel/core": "^7.29.7", "@babel/preset-typescript": "^7.29.7", "@types/babel__core": "^7.20.5", "babel-preset-solid": "^1.9.12", "seroval": "^1.5.5" }, "peerDependencies": { "elysia": "^1.0.0", "hono": "^4.0.0", "solid-js": "^1.9.0" }, "optionalPeers": ["elysia", "hono"] }, "sha512-71Yg65mfkpVuBSaq0m+QZyvw5KL4uvFVKnZREjNmXVf0K4+IpNWbCcM+fVXbPnzVMr48+FEM9n0/c1E6Jq7yPA=="],
 
     "@k2b/stdlib": ["@k2b/stdlib@0.22.0", "", { "dependencies": { "@types/big.js": "^7.0.0", "big.js": "^7.0.1", "dayjs": "^1.11.0" }, "peerDependencies": { "lean-qr": "", "solid-js": "" }, "optionalPeers": ["lean-qr", "solid-js"] }, "sha512-HP3XsijDZJsGaLC90AgC2d1XiyiCYpMdHIr9sCg8gdOn5DCDwT1Ko453j4Y4JGCF/BPKzQ4wnz5h4T3IZF2qFw=="],
@@ -1405,8 +1407,6 @@
     "@upsetjs/venn.js": ["@upsetjs/venn.js@2.0.0", "", { "optionalDependencies": { "d3-selection": "^3.0.0", "d3-transition": "^3.0.1" } }, "sha512-WbBhLrooyePuQ1VZxrJjtLvTc4NVfpOyKx0sKqioq9bX1C1m7Jgykkn8gLrtwumBioXIqam8DLxp88Adbue6Hw=="],
 
     "@valentinkolb/filegate": ["@valentinkolb/filegate@2.4.0", "", { "dependencies": { "@henrygd/semaphore": "^0.1.0", "@hono/standard-validator": "^0.2.2", "@scalar/hono-api-reference": "^0.9.37", "@scalar/openapi-to-markdown": "^0.3.31", "hono": "^4.11.7", "hono-openapi": "^1.2.0", "sanitize-filename": "^1.6.3", "sharp": "^0.34.5", "zod": "^4.3.6" }, "peerDependencies": { "typescript": "^5" } }, "sha512-JUQy7ChYCxXszcLJaMwjOE4WZfCoEiaG0fZwH/pOfNBx37stOYHpBCDuaq8UxGB9hf1XmRzWdYqKV5GvtwS+ZQ=="],
-
-    "@valentinkolb/pwa-auth": ["@valentinkolb/pwa-auth@workspace:pwas/pwa-auth"],
 
     "@vue/compiler-core": ["@vue/compiler-core@3.5.42", "", { "dependencies": { "@babel/parser": "^7.29.8", "@vue/shared": "3.5.42", "entities": "^7.0.1", "estree-walker": "^2.0.2", "source-map-js": "^1.2.1" } }, "sha512-2Ye1ilMtKXxl8qZUrQ5j0CdgenFp/HFQmta6rfRyfEsTG69L6Wk+tWuNoHYHMx9E8tF2Slvdg1FuwDvAXdy1LQ=="],
 

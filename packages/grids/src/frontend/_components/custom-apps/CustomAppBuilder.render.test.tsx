@@ -582,7 +582,7 @@ describe("CustomAppBuilder", () => {
     expect(always).not.toContain("Open large editor");
     expect(custom).toContain("Custom rule");
     expect(custom).toContain("Open large editor");
-    expect(custom).toContain('class="k2b-detail-panel__section" open');
+    expect(custom).toMatch(/<section class="k2b-detail-panel__section"[^>]*data-open="true"/);
   });
 
   test("keeps compact Markdown editing focused and moves placeholder browsing to the large editor", () => {

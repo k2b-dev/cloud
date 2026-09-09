@@ -24,6 +24,7 @@ jobs:
       GRIDS_EVIDENCE_CLEANUP_DB_TEST: "1"
       GRIDS_RECORD_EVENTS_DB_TEST: "1"
       GRIDS_DB_TEST: "1"
+      REDIS_URL: redis://127.0.0.1:6379
       DATABASE_URL: postgres://ipa:ipa@127.0.0.1:5432/ipa
       NATS_IGNORE_CLUSTER_UPDATES: "true"
     steps:
@@ -39,7 +40,7 @@ jobs:
       - name: Validate generated NATS configuration and include paths
         run: docker compose -f compose.yml run --rm --no-deps nats-1 --config /etc/nats/nats.conf -t
       - name: Start three-node JetStream cluster and isolated test database server
-        run: docker compose -f compose.yml up -d --wait nats-1 nats-2 nats-3 postgres
+        run: docker compose -f compose.yml up -d --wait nats-1 nats-2 nats-3 postgres valkey
       - name: Create core and gateway database schemas
         run: |
           bun -e 'import { runCoreSetup } from "./packages/core/src/runtime-helpers"; await runCoreSetup()'

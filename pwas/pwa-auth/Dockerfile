@@ -19,6 +19,7 @@ COPY packages/gateway/package.json packages/gateway/
 COPY packages/gateway-ops/package.json packages/gateway-ops/
 COPY packages/grids/package.json packages/grids/
 COPY packages/ipa-hosts/package.json packages/ipa-hosts/
+COPY packages/kit/package.json packages/kit/
 COPY packages/mail/package.json packages/mail/
 COPY packages/notebooks/package.json packages/notebooks/
 COPY packages/oauth/package.json packages/oauth/
@@ -32,7 +33,7 @@ COPY packages/ui/tsconfig.json packages/ui/tsconfig.build.json packages/ui/
 COPY packages/venue/package.json packages/venue/
 COPY packages/weather/package.json packages/weather/
 COPY fixtures/ui-ssr/package.json fixtures/ui-ssr/
-RUN bun install --frozen-lockfile --ignore-scripts --filter @valentinkolb/pwa-auth
+RUN bun install --frozen-lockfile --ignore-scripts --filter @k2b/pwa-auth
 
 COPY packages/cloud/tsconfig.json packages/cloud/
 COPY packages/cloud/src packages/cloud/src

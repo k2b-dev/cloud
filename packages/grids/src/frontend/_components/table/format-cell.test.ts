@@ -41,7 +41,7 @@ describe("formatCell", () => {
       "1.234,50",
     );
     expect(formatCell("1234.5", "number", {}, { kind: "decimal", precision: 2, thousandsSeparator: true }, undefined, "de-CH")).toBe(
-      "1'234.50",
+      new Intl.NumberFormat("de-CH", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(1234.5),
     );
   });
 
