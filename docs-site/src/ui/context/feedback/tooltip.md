@@ -26,7 +26,7 @@ Buttons expose tooltip properties directly:
 | --- | --- | --- | --- |
 | `tooltip` | `JSX.Element \| false` | none | Supplies the non-interactive hint. |
 | `tooltipPlacement` | `"top" \| "bottom" \| "left" \| "right"` | `"top"` | Requests the preferred side. |
-| `tooltipDelay` | `number` | `250` | Sets the open delay in milliseconds; `0` opens immediately. |
+| `tooltipDelay` | `number` | `250` | Sets the open delay in milliseconds; `0` opens and closes immediately, without a fade animation. |
 
 Use `Tooltip.Anchor` as an explicit wrapper for non-button content. It accepts
 `content`, `placement`, `delay`, `disabled`, and ordinary span attributes. Use

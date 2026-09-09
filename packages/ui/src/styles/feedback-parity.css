@@ -493,6 +493,11 @@
   pointer-events: auto;
 }
 
+/* Zero-delay hints must also leave the top layer without an exit animation. */
+.k2b-ui [popover].k2b-tooltip[data-instant="true"] {
+  transition: none;
+}
+
 .k2b-ui [popover].k2b-tooltip:popover-open {
   display: block;
 

@@ -305,6 +305,7 @@ describe("@k2b/ui feedback runtime", () => {
 
     wrapper?.dispatchEvent(new Event("pointerenter", { bubbles: true }));
     // delay=0 opens synchronously, before the next timer or microtask.
+    expect(surface?.getAttribute("data-instant")).toBe("true");
     expect(surface?.matches(":popover-open")).toBe(true);
     await settle();
     expect(surface?.matches(":popover-open")).toBe(true);

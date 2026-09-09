@@ -1,4 +1,4 @@
-import { IconButton, prompts, ScrollArea, Tooltip, useLocale } from "@k2b/ui";
+import { dialogCore, IconButton, ScrollArea, Tooltip, useLocale } from "@k2b/ui";
 import { createEffect, For, Show } from "solid-js";
 import { platformMessages } from "./platform-messages";
 import { openRailEditor } from "./RailEditor";
@@ -169,10 +169,10 @@ export function openAppLaunchpad(apps?: AppLaunchpadApp[], legalLinks?: AppLaunc
   const context = apps ? { apps, legalLinks: legalLinks ?? [] } : (window.__cloudAppLaunchpad ?? readEmbeddedContext());
   if (!context || context.apps.length === 0) return;
   window.__cloudAppLaunchpad = context;
-  void prompts.dialog<void>((close) => <AppLaunchpadPanel apps={context.apps} legalLinks={context.legalLinks} close={close} />, {
-    surface: "bare",
-    header: false,
-    size: "large",
+  void dialogCore.open<void>((close) => <AppLaunchpadPanel apps={context.apps} legalLinks={context.legalLinks} close={close} />, {
+    panelClassName: "k2b-dialog k2b-dialog--large is-bare",
+    contentClassName: "k2b-dialog__viewport is-bare",
+    initialFocus: (dialog) => dialog.querySelector<HTMLAnchorElement>("a[href]"),
   });
 }
 

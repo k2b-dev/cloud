@@ -115,7 +115,14 @@ function TooltipSurface(props: TooltipProps): JSX.Element {
   });
 
   return (
-    <span ref={surface} id={tooltipId} role="tooltip" popover="manual" class="k2b-tooltip">
+    <span
+      ref={surface}
+      id={tooltipId}
+      role="tooltip"
+      popover="manual"
+      class="k2b-tooltip"
+      data-instant={props.delay !== undefined && props.delay <= 0 ? "true" : undefined}
+    >
       {props.content}
     </span>
   );
