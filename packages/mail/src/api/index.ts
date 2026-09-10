@@ -146,7 +146,6 @@ import { discoverMailConfigurations } from "../service/onboarding-discovery";
 import { loadMailboxConversationDetail, loadMailboxPageData } from "../service/workspace";
 import wsRoutes from "../ws";
 import { projectActivityResult } from "./activity-public";
-import { providerOAuthApi } from "./provider-oauth";
 import {
   internalInput,
   internalMailboxId,
@@ -2932,7 +2931,6 @@ const adminApi = new Hono<MailApiContext>()
   );
 
 const authenticatedApi = new Hono<MailApiContext>()
-  .route("/", providerOAuthApi)
   .route("/", resourceRoutes)
   .route("/", adminApi)
   .route("/", mailOperationsApi);

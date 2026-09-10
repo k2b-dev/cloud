@@ -5,7 +5,7 @@ section: Operations
 order: 1140
 description: Configure application containers, platform connections, and environment-specific values.
 tags: [configuration, environment, settings]
-updated: 2026-09-07
+updated: 2026-09-10
 ---
 
 # Runtime configuration
@@ -43,12 +43,13 @@ encrypted with `APP_SECRET`.
 | `CLOUD_OAUTH_JWKS_ORIGIN` | Optional private transport origin for loading OAuth's public JWKS; does not change the public issuer |
 | `CLOUD_CORE_INTERNAL_ORIGIN` | Private Core origin required for OAuth issuance and workload/mandate broker calls; interactive capability calls can default to the public Cloud origin |
 | `CLOUD_APP_CREDENTIAL` | Per-application resource-bound workload credential for background broker callers; not used by OAuth |
-| `PORT` | Service port; defaults to `3000` |
-| `NODE_ENV` | Enables production or development behavior |
-| `ADMIN_LOGIN_TOKEN` | Local emergency administrator login |
+| `NODE_ENV` | Set to `production` by built-in images; development tooling supplies its own mode |
+| `ADMIN_LOGIN_TOKEN` | Core-only temporary first-access or recovery token; no production default |
 
 `APP_ID` selects the application for Cloud's build and development scripts. It
-is not application runtime configuration.
+is not application runtime configuration. Runtime identity comes from the app declaration.
+Built-in services listen on port 3000 and ignore `PORT`; application authors can
+select an explicit port with `app.start({ port })` for standalone deployments.
 
 Every application container must use the same `APP_SECRET`.
 It remains the data/settings encryption input; it never signs or verifies a
@@ -158,7 +159,10 @@ Mail incoming automations use mandates. Provision Mail's `identity:invoke`
 app credential and keep Core's broker available. For upgrades that change
 stored credentials, follow [Deprecations and migrations](/en/docs/reference/deprecations-and-migrations).
 
-Do not enable `ADMIN_LOGIN_TOKEN` in production.
+For first access, temporarily provide `ADMIN_LOGIN_TOKEN` only to Core and open
+`/auth/login?method=admin`. Set up and verify normal administrator sign-in,
+then remove the token and recreate Core. See the
+[fresh installation sequence](/en/docs/operations/deployment-requirements#bring-up-a-fresh-installation).
 
 ## Use settings for application values
 
@@ -189,11 +193,12 @@ Applications may declare settings for services such as:
 - FreeIPA;
 - Filegate;
 - mail providers;
-- OAuth providers;
 - AI providers;
 - PDF rendering.
 
-Read the page for that service before setting environment fallbacks.
+FreeIPA and Files use administration settings only. Mailbox credentials belong
+to user-created IMAP/SMTP connections, not global provider settings. Grids query
+limits are configured in Grids administration and require restarting every Grids replica.
 
 ## Validate a deployment
 
@@ -201,7 +206,7 @@ Check configuration in this order:
 
 1. the container received the expected variables;
 2. Postgres, Valkey and NATS names resolve on the private network;
-3. every container shares `APP_SECRET`;
+3. application containers share `APP_SECRET`; the gateway does not receive it;
 4. only Core has the current identity KEK;
 5. only Core and OAuth share the OAuth broker secret, and background callers
    have only their own scoped workload credentials;

@@ -1,6 +1,6 @@
 import type { AuthContext } from "@k2b/cloud/server";
 import type { Context, MiddlewareHandler } from "hono";
-import { boundedQueryPoolSize } from "../service/bounded-query";
+import { getQuerySettings } from "../service/query-settings";
 import { apiMessages } from "./messages";
 
 type QueryAdmissionRejection = "aborted" | "full" | "timeout";
@@ -17,22 +17,6 @@ type Waiter = {
   signal?: AbortSignal;
   onAbort?: () => void;
   timer: ReturnType<typeof setTimeout>;
-};
-
-const positiveInteger = (name: string, fallback: number): number => {
-  const raw = process.env[name];
-  if (raw === undefined) return fallback;
-  const value = Number(raw);
-  if (!Number.isSafeInteger(value) || value < 1) throw new Error(`${name} must be a positive integer`);
-  return value;
-};
-
-const nonNegativeInteger = (name: string, fallback: number): number => {
-  const raw = process.env[name];
-  if (raw === undefined) return fallback;
-  const value = Number(raw);
-  if (!Number.isSafeInteger(value) || value < 0) throw new Error(`${name} must be a non-negative integer`);
-  return value;
 };
 
 export const createQueryAdmission = (options: QueryAdmissionOptions) => {
@@ -138,20 +122,22 @@ export const isQueryAdmissionError = (error: unknown): error is QueryAdmissionEr
 
 // Long-running reads use a dedicated pool, so admission can match its capacity
 // without starving authentication, metadata reads, or writes.
-const queryAdmission = createQueryAdmission({
-  maxActive: positiveInteger("GRIDS_QUERY_CONCURRENCY", boundedQueryPoolSize),
-  maxQueued: nonNegativeInteger("GRIDS_QUERY_QUEUE_LIMIT", 64),
-  waitTimeoutMs: positiveInteger("GRIDS_QUERY_QUEUE_TIMEOUT_MS", 1_000),
-});
+let queryAdmission: Promise<QueryAdmission> | undefined;
+const getQueryAdmission = (): Promise<QueryAdmission> =>
+  (queryAdmission ??= getQuerySettings().then((settings) => createQueryAdmission({
+    maxActive: settings.concurrency,
+    maxQueued: settings.queueLimit,
+    waitTimeoutMs: settings.queueTimeoutMs,
+  })));
 
 const admittedRequests = new WeakSet<Request>();
 
 export const runWithQueryAdmissionSignal = async <T>(
   signal: AbortSignal,
   task: (signal: AbortSignal) => Promise<T>,
-  admission: QueryAdmission = queryAdmission,
+  admission?: QueryAdmission,
 ): Promise<T> => {
-  const result = await admission.run(() => task(signal), signal);
+  const result = await (admission ?? await getQueryAdmission()).run(() => task(signal), signal);
   if (!result.ok) throw new QueryAdmissionError(result.reason);
   return result.value;
 };
@@ -159,16 +145,16 @@ export const runWithQueryAdmissionSignal = async <T>(
 export const runWithQueryAdmission = async <T>(
   c: Context<AuthContext>,
   task: (signal: AbortSignal) => Promise<T>,
-  admission: QueryAdmission = queryAdmission,
+  admission?: QueryAdmission,
 ): Promise<T> => {
   const request = c.req.raw;
   if (admittedRequests.has(request)) return task(request.signal);
   return runWithQueryAdmissionSignal(request.signal, task, admission);
 };
 
-export const queryAdmissionMiddleware = (admission: QueryAdmission = queryAdmission): MiddlewareHandler<AuthContext> => {
+export const queryAdmissionMiddleware = (admission?: QueryAdmission): MiddlewareHandler<AuthContext> => {
   return async (c, next) => {
-    const result = await admission.run(async () => {
+    const result = await (admission ?? await getQueryAdmission()).run(async () => {
       admittedRequests.add(c.req.raw);
       try {
         await next();

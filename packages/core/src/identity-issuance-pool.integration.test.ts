@@ -1,3 +1,4 @@
+import { bindProcessApplicationId, clearProcessApplicationId } from "../../cloud/src/_internal/process-identity";
 import { afterAll, beforeAll, describe, expect, mock, spyOn, test } from "bun:test";
 import * as bun from "bun";
 import { createLocalJWKSet } from "jose";
@@ -24,7 +25,6 @@ if (process.env.CLOUD_IDENTITY_POOL_INTEGRATION !== "1") {
   const { ok } = await import("@k2b/stdlib");
   const issuer = "https://pool.cloud.example";
   const previousEnvironment = {
-    APP_ID: process.env.APP_ID,
     CLOUD_IDENTITY_KEY_ENCRYPTION_KEY: process.env.CLOUD_IDENTITY_KEY_ENCRYPTION_KEY,
     CLOUD_IDENTITY_PREVIOUS_KEY: process.env.CLOUD_IDENTITY_PREVIOUS_KEY,
     CLOUD_IDENTITY_NEXT_KEY: process.env.CLOUD_IDENTITY_NEXT_KEY,
@@ -87,7 +87,7 @@ if (process.env.CLOUD_IDENTITY_POOL_INTEGRATION !== "1") {
 
   describe("identity issuance with one real Postgres connection", () => {
     beforeAll(async () => {
-      process.env.APP_ID = "core";
+      bindProcessApplicationId("core");
       process.env.CLOUD_IDENTITY_KEY_ENCRYPTION_KEY = "31".repeat(32);
       delete process.env.CLOUD_IDENTITY_PREVIOUS_KEY;
       delete process.env.CLOUD_IDENTITY_NEXT_KEY;
@@ -111,6 +111,7 @@ if (process.env.CLOUD_IDENTITY_POOL_INTEGRATION !== "1") {
     }, 60_000);
 
     afterAll(async () => {
+      clearProcessApplicationId();
       settingRead.mockRestore();
       identity.clearIdentityKeyCachesForTest();
       runtimeConfig.invalidateIdentityRuntimeConfig();

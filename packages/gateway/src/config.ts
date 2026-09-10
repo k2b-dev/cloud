@@ -1,6 +1,6 @@
 import type { BunPlugin } from "bun";
 
-const port = parseInt(process.env.PORT ?? "3000", 10);
+const port = 3000;
 
 export const gatewayRouter = {
   id: process.env.GATEWAY_INSTANCE_ID || process.env.HOSTNAME || "gateway-router",

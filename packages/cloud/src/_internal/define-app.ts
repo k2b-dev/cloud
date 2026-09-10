@@ -1,3 +1,4 @@
+import { bindProcessApplicationId, clearProcessApplicationId } from "./process-identity";
 /**
  * defineApp() — The single entry point for every cloud app.
  *
@@ -400,6 +401,8 @@ export const defineApp = <
         }
       })());
     try {
+      bindProcessApplicationId(meta.id);
+      cleanup.unshift(clearProcessApplicationId);
       const startedAt = Date.now();
 
       // OpenAPI advertised in the registry only when there's a router to

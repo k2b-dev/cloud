@@ -5,7 +5,7 @@ section: Work
 order: 140
 description: Structured data with Bases, Views, Forms, Custom Apps, documents, and workflows.
 tags: [grids, tables, workflows]
-updated: 2026-09-07
+updated: 2026-09-10
 ---
 
 # Grids
@@ -264,3 +264,19 @@ automatically.
 See [Deployment requirements](/en/docs/operations/deployment-requirements) for
 this app’s startup prerequisites, optional integrations, configuration and
 functional checks.
+
+## Configure query capacity
+
+In **Grids administration** (`/admin/grids`), configure the query limits per
+Grids process. Save them, then restart every Grids instance so the fleet uses
+the same settings. These values are no longer environment variables.
+
+| Setting | Default | Meaning |
+| --- | --- | --- |
+| `grids.query_pool_size` | 12 | Maximum connections in the query pool; at least 1. |
+| `grids.query_concurrency` | 0 | Active queries; 0 follows the pool size. Larger values are limited to the pool size. |
+| `grids.query_queue_limit` | 64 | Waiting queries; 0 rejects queries when all active slots are occupied. |
+| `grids.query_queue_timeout_ms` | 1000 | Maximum admission wait in milliseconds; at least 1. |
+
+Values must be whole numbers. Budget database connections across all replicas,
+including each process's other database connections.

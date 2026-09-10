@@ -1,6 +1,6 @@
 import { defineApp } from "@k2b/cloud";
 
-const port = parseInt(process.env.PORT ?? "3000", 10);
+const port = 3000;
 
 export const app = defineApp({
   id: "gateway-ops",

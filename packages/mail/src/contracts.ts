@@ -401,7 +401,6 @@ export const providerSecretSchema = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("oauth2"),
     accessToken: z.string().min(1).max(65_536),
-    refreshToken: z.string().min(1).max(65_536).optional(),
     expiresAt: z.string().datetime().optional(),
   }),
 ]);
@@ -420,39 +419,6 @@ export type ProviderConnectionInput = z.infer<typeof providerConnectionInputSche
 export const providerConnectionDetailsSchema = providerConnectionInputSchema.omit({ secret: true });
 export type ProviderConnectionDetails = z.infer<typeof providerConnectionDetailsSchema>;
 
-export const mailOAuthProviderIdSchema = z.enum(["google", "microsoft"]);
-export type MailOAuthProviderId = z.infer<typeof mailOAuthProviderIdSchema>;
-
-export const mailOAuthProviderSchema = z.object({
-  id: mailOAuthProviderIdSchema,
-  name: z.string(),
-  domains: z.array(z.string()),
-});
-export type MailOAuthProvider = z.infer<typeof mailOAuthProviderSchema>;
-
-export const mailOAuthStartInputSchema = z.discriminatedUnion("operation", [
-  z.object({
-    operation: z.literal("create"),
-    providerId: mailOAuthProviderIdSchema,
-    connection: providerConnectionDetailsSchema,
-    createSender: z.boolean().default(true),
-    savesSentAutomatically: z.boolean().default(false),
-  }),
-  z.object({
-    operation: z.literal("reconnect"),
-    providerId: mailOAuthProviderIdSchema,
-    connectionId: z.string().uuid(),
-    connection: providerConnectionDetailsSchema.optional(),
-  }),
-]);
-export type MailOAuthStartInput = z.infer<typeof mailOAuthStartInputSchema>;
-
-export const mailOAuthStartResultSchema = z.object({
-  authorizationUrl: z.string().url(),
-  expiresAt: z.string().datetime(),
-});
-export type MailOAuthStartResult = z.infer<typeof mailOAuthStartResultSchema>;
-
 export const providerTransportDiagnosticSchema = z.object({
   status: z.enum(["verified", "failed"]),
   category: z.enum(["authentication", "tls", "endpoint", "unavailable", "unknown"]).nullable(),
@@ -465,17 +431,6 @@ export const providerTransportDiagnosticsSchema = z.object({
   smtp: providerTransportDiagnosticSchema,
 });
 export type ProviderTransportDiagnostics = z.infer<typeof providerTransportDiagnosticsSchema>;
-
-export const mailOAuthFlowResultSchema = z.object({
-  id: z.string().uuid(),
-  mailboxId: ResourceShortIdSchema,
-  status: z.enum(["pending", "exchanging", "completed", "failed"]),
-  resultCode: z.string().nullable(),
-  message: z.string().nullable(),
-  connectionId: z.string().uuid().nullable(),
-  diagnostics: providerTransportDiagnosticsSchema.nullable(),
-});
-export type MailOAuthFlowResult = z.infer<typeof mailOAuthFlowResultSchema>;
 
 export const providerLimitStatusSchema = z.enum(["supported", "unsupported", "unavailable"]);
 export type ProviderLimitStatus = z.infer<typeof providerLimitStatusSchema>;
@@ -542,13 +497,6 @@ export const providerConnectionSchema = z.object({
     kind: z.enum(["password", "oauth2"]),
     isSet: z.boolean(),
   }),
-  oauth: z
-    .object({
-      providerId: mailOAuthProviderIdSchema,
-      expiresAt: z.string().datetime().nullable(),
-      state: z.enum(["active", "expiring", "reconnect_required"]),
-    })
-    .nullable(),
   status: z.enum(["active", "degraded", "revoked"]),
   authenticatedPrincipal: z.string().nullable(),
   limits: providerLimitSnapshotSchema,

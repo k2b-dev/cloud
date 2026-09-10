@@ -5,7 +5,7 @@ section: Platform services
 order: 510
 description: Define application settings and access them in requests, jobs, and lifecycle hooks.
 tags: [settings, configuration, typescript]
-updated: 2026-07-27
+updated: 2026-09-10
 ---
 
 # Settings
@@ -111,3 +111,10 @@ defines value resolution, environment bootstrap, validation, encryption, and
 every supported field. Use
 [Runtime configuration](/en/docs/operations/runtime-configuration) for
 deployment-wide process variables such as `APP_SECRET`.
+
+## Require whole-number settings
+
+For `kind: "number"`, set `integer: true` when fractional values are invalid,
+for example for a connection count. Validation then requires a safe whole
+number in addition to any `min` and `max`. Ordinary number settings continue
+to accept fractions. Validation applies to administration and API writes.

@@ -1,3 +1,4 @@
+import { bindProcessApplicationId, clearProcessApplicationId, getProcessApplicationId } from "../../cloud/src/_internal/process-identity";
 import { beforeAll, describe, expect, test } from "bun:test";
 import { clearIdentityKeyCachesForTest, prepareIdentitySigner, revokeIdentitySigningKey } from "@k2b/cloud/services/identity";
 import { sql } from "bun";
@@ -256,10 +257,11 @@ suite("OAuth external review regressions", () => {
   });
 
   test("emergency OAuth revoke eagerly prepares a usable replacement", async () => {
-    const originalApp = process.env.APP_ID;
+    const originalApp = getProcessApplicationId();
     const originalKey = process.env.CLOUD_IDENTITY_KEY_ENCRYPTION_KEY;
     try {
-      process.env.APP_ID = "core";
+      clearProcessApplicationId();
+      bindProcessApplicationId("core");
       process.env.CLOUD_IDENTITY_KEY_ENCRYPTION_KEY = "12".repeat(32);
       clearIdentityKeyCachesForTest();
       const signer = await prepareIdentitySigner("oauth");
@@ -270,8 +272,8 @@ suite("OAuth external review regressions", () => {
       expect(active).toHaveLength(1);
       expect(active[0]!.kid).not.toBe(signer.kid);
     } finally {
-      if (originalApp === undefined) delete process.env.APP_ID;
-      else process.env.APP_ID = originalApp;
+      clearProcessApplicationId();
+      if (originalApp) bindProcessApplicationId(originalApp);
       if (originalKey === undefined) delete process.env.CLOUD_IDENTITY_KEY_ENCRYPTION_KEY;
       else process.env.CLOUD_IDENTITY_KEY_ENCRYPTION_KEY = originalKey;
       clearIdentityKeyCachesForTest();

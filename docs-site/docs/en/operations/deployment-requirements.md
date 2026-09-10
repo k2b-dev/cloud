@@ -5,7 +5,7 @@ section: Operations
 order: 1125
 description: Choose Cloud applications and identify their infrastructure, secrets, feature dependencies, startup order, and verification checks.
 tags: [deployment, dependencies, infrastructure, configuration, bootstrap]
-updated: 2026-09-07
+updated: 2026-09-10
 ---
 
 # Deployment requirements
@@ -14,9 +14,9 @@ Use this reference before deploying a fresh Cloud installation or adding an
 application. Choose the apps **and the features** you intend to use: a ready
 container does not prove that its mail, AI, storage, or PDF integration works.
 
-This page covers the gateway and all 22 built-in applications in the current
+This page covers the gateway and all 23 built-in applications in the current
 development Compose configuration. Production Compose includes the gateway and
-21 applications; **Pulse is not included**. A standalone application can have
+23 applications, including **Pulse**. A standalone application can have
 additional requirements declared by its author. Check the documentation and
 configuration shipped with the exact release you deploy.
 
@@ -65,13 +65,14 @@ environment fallback.
 
 | Configuration | Recipient | When required |
 | --- | --- | --- |
-| `DATABASE_URL`, `REDIS_URL`, `APP_SECRET` | Built-in application services | Common application baseline. Every app must use the same stable `APP_SECRET` for encrypted settings and credentials. The gateway uses the registry; Compose also gives it the shared environment. |
+| `DATABASE_URL`, `REDIS_URL`, `APP_SECRET` | Built-in application services | Common application baseline. Every app must use the same stable `APP_SECRET` for encrypted settings and credentials. The gateway receives Postgres for logging and NATS for discovery; it does not receive Valkey, `APP_SECRET`, or identity credentials. |
 | `CLOUD_IDENTITY_KEY_ENCRYPTION_KEY` | **Core only** | Core identity issuance; generate an independent 32-byte key as 64 hex characters. `CLOUD_IDENTITY_NEXT_KEY` / `CLOUD_IDENTITY_PREVIOUS_KEY` are temporary rotation inputs, also Core-only. |
 | `CLOUD_OAUTH_BROKER_SECRET` | **Core and OAuth only** | Running OAuth. Generate an independent 32-byte secret as 64 hex characters. No admin credential provisioning is needed. Dev Compose provides a development-only default; production requires an explicit value. |
 | `CLOUD_CORE_INTERNAL_ORIGIN` | OAuth and background broker callers | Direct private Core origin, not the gateway. Compose supplies it. |
 | `CLOUD_APP_CREDENTIAL` | Each background caller separately | Mandate-backed cross-app work, such as Mail incoming automations; scope `identity:invoke`. Compose passes `CLOUD_MAIL_APP_CREDENTIAL` only to Mail under this runtime name. OAuth does not use it. |
 | `CLOUD_IDENTITY_JWKS_ORIGIN`, `CLOUD_OAUTH_JWKS_ORIGIN` | JWT-verifying applications | Optional private transport origins for Core and OAuth public keys. If omitted, verification retrieves keys through the public issuer origin. Neither value grants signing authority. |
-| `PORT`, `NODE_ENV`, `APP_URL` | Service runtime | Service port, runtime mode and initial public URL. Images normally listen on port 3000; advertised addresses and network configuration must agree. |
+| `APP_URL` | Application services | Initial public URL; saved `app.url` takes precedence. Built-in images run in production mode on port 3000. |
+| `ADMIN_LOGIN_TOKEN` | **Core only** | Temporary first administrator access on a fresh installation; no production default. Remove after configuring and verifying normal administrator sign-in. |
 
 See [Runtime configuration](/en/docs/operations/runtime-configuration) for the
 complete identity configuration, validation behavior and broker-secret rotation.
@@ -95,7 +96,7 @@ or mutate real data without approval.
 
 | Service / app ID | Startup requirements | Feature dependencies and configuration | Functional check |
 | --- | --- | --- | --- |
-| Gateway (`gateway`) | Valkey, NATS JetStream and private reachability to advertised app addresses | Upstream apps provide the routes; ingress must preserve WebSockets and streaming. Optional `GATEWAY_INSTANCE_ID` identifies a replica. No independent signing secret. | Read `/health`, inspect registered routes, then request an actual app route through the public origin. |
+| Gateway (`gateway`) | Postgres, NATS JetStream and private reachability to advertised app addresses | Upstream apps provide the routes; ingress must preserve WebSockets and streaming. Optional `GATEWAY_INSTANCE_ID` identifies a replica. No independent signing secret. | Read `/health`, inspect registered routes, then request an actual app route through the public origin. |
 | [Core](/en/apps/core) (`core`) | Postgres, Valkey, NATS JetStream, `APP_SECRET`, Core identity KEK; runs shared schema setup and starts identity maintenance | Runs AI workers and shared notifications. Optional SMTP, FreeIPA, AI providers, web push, Gotenberg and weather services are described below. `app.home_path` defaults to `/app/dashboard`: deploy Dashboard or choose an installed home route. | Sign in using the intended account provider; load the profile; verify session and invocation public-key endpoints. |
 | [Gateway operations](/en/apps/gateway-ops) (`gateway-ops`) | Baseline; runs its operations lifecycle | Gateway snapshots and registered apps supply health/telemetry; outgoing health webhooks need reachable configured destinations. Optional metrics scraping uses `/metrics`. Settings include `gateway.health_check_schedule` and telemetry retention. | Open `/admin/gateway/apps` and `/admin/observability`; verify current app state and an observed request. |
 | [Accounts](/en/apps/accounts) (`accounts`) | Baseline | Local accounts do not require FreeIPA. IPA users/groups require configured FreeIPA access; account emails require shared SMTP. | Read a local account and group; if IPA is enabled, verify directory connectivity and the intended group scope. |
@@ -104,7 +105,7 @@ or mutate real data without approval.
 | [API Docs](/en/apps/api-docs) (`api-docs`) | Baseline | Registered applications must publish reachable OpenAPI endpoints to appear as usable sources. | Open `/app/api-docs`, select an installed app, and load its specification. |
 | [Capabilities](/en/apps/capabilities) (`capabilities`) | Baseline | Core's dispatcher and the selected provider apps. The Capabilities app is a UI, not a prerequisite for other apps to call capabilities. | Open `/app/capabilities` and execute a permitted read-only query against an installed provider. |
 | [Dashboard](/en/apps/dashboard) (`dashboard`) | Baseline | Selected widget-provider apps and Core's widget proxy; no fixed requirement to install every provider. | Open `/app/dashboard`; verify a selected provider's widget and its unavailable state when that provider is absent. |
-| [Pulse](/en/apps/pulse) (`pulse`) | Baseline; **Dev Compose only** in the supplied service set | Ingestion requires configured sources, source-bound credentials and producers. Its dashboards are separate from gateway observability. Production needs an explicitly deployed Pulse service/image. | Ingest a disposable signal through its source credential and query it from the intended base. |
+| [Pulse](/en/apps/pulse) (`pulse`) | Baseline; included in development and production Compose | Ingestion requires configured sources, source-bound credentials and producers. Its dashboards are separate from gateway observability. The release workflow publishes the Pulse image. | Ingest a disposable signal through its source credential and query it from the intended base. |
 
 ### Work applications
 
@@ -112,10 +113,10 @@ or mutate real data without approval.
 | --- | --- | --- | --- |
 | [Contacts](/en/apps/contacts) (`contacts`) | Baseline | No additional external service for contact books and records. Cross-app use requires whichever consumer/provider is selected. | Create and read a disposable contact in a test book; verify another account's access boundary. |
 | [FAQ](/en/apps/faq) (`faq`) | Baseline | No additional external service for authored FAQ content. | Publish a test entry and verify its intended visibility on `/faq`. |
-| [Files](/en/apps/files) (`files`) | Baseline; the process can start without a working Filegate | Actual file operations require Filegate, persistent allowed home/group roots and IPA identity/group data. Configure `files.filegate_url`, `files.filegate_token`, `files.base_homes`, `files.base_groups` and the directory/file modes. `FILEGATE_URL` / `FILEGATE_TOKEN` can bootstrap the connection settings. | As an IPA user, list an authorized base and upload/download a disposable file; verify forbidden bases stay inaccessible. |
+| [Files](/en/apps/files) (`files`) | Baseline; the process can start without a working Filegate | Actual file operations require Filegate, persistent allowed home/group roots and IPA identity/group data. Configure `files.filegate_url`, `files.filegate_token`, `files.base_homes`, `files.base_groups` and the directory/file modes. Configure these in Files administration; Cloud does not read Filegate bootstrap variables. | As an IPA user, list an authorized base and upload/download a disposable file; verify forbidden bases stay inaccessible. |
 | [Grids](/en/apps/grids) (`grids`) | Baseline | Files are stored in Postgres (`grids.max_file_size_mb` controls upload size). Document PDF rendering requires Gotenberg. Workflow email uses shared SMTP, not the Mail app. Other workflow integrations require their selected providers. | Create a test base/table/record; upload a small file. If documents are enabled, render a test PDF. |
 | [Kit](/en/apps/kit) (`kit`) | Baseline | Project source and access grants use Postgres. Scripts, local storage and PDF text extraction run in the browser without Cloud credentials or external network access. | Create a test app, run its script and open a Markdown page; verify sharing with a second user. |
-| [Mail](/en/apps/mail) (`mail`) | Baseline; an unconnected mailbox is not proof of provider readiness | Mailbox synchronization and delivery require configured IMAP/SMTP endpoints, TLS, credentials and network-policy approval. Google/Microsoft connection OAuth uses Mail's provider settings, not the Cloud OAuth app. Incoming automations need Mail's workload credential and mandates; AI steps need AI configuration, Spaces actions need Spaces. | Verify a test mailbox connection and synchronization; send only to an approved test recipient. Exercise one permitted automation if enabled. |
+| [Mail](/en/apps/mail) (`mail`) | Baseline; an unconnected mailbox is not proof of provider readiness | Mailbox synchronization and delivery require configured IMAP/SMTP endpoints, TLS, credentials and network-policy approval. Users connect their own mailboxes through IMAP/SMTP; managed Google/Microsoft browser authorization is not available. Incoming automations need Mail's workload credential and mandates; AI steps need AI configuration, Spaces actions need Spaces. | Verify a test mailbox connection and synchronization; send only to an approved test recipient. Exercise one permitted automation if enabled. |
 | [Notebooks](/en/apps/notebooks) (`notebooks`) | Baseline | Live collaboration requires WebSockets. Notes and attachments use Postgres. PDF export requires Gotenberg. S3 snapshots need per-notebook endpoint, region, bucket and credentials; they are optional. `notebooks.reindex_cron` and `notebooks.snapshot_cron` schedule maintenance. | Edit a test note from two sessions; reload it and download an attachment. If snapshots are enabled, run and inspect one snapshot. |
 | [Spaces](/en/apps/spaces) (`spaces`) | Baseline | Live updates require WebSockets. Attachments use Postgres. Mail-backed invitations require Mail and an authorized sender/mailbox. Calendar weather uses the shared weather service; the Weather app UI is not required for that in-process feature. | Create a disposable item/event, verify live updates and reload; test invitations only if configured. |
 | [Venues](/en/apps/venue) (`venue`) | Baseline | No additional external service for venue records, hours, shifts and feedback. | Create a test venue and verify its public status page and intended staff-only access. |
@@ -139,12 +140,11 @@ egress is needed from Core, while Mail needs access to its mailbox providers.
 | Feature | Configuration and dependency | What to verify |
 | --- | --- | --- |
 | Platform email | `mail.noreply.smtp_host`, `mail.noreply.smtp_port`, `mail.noreply.from`, `mail.noreply.user`, `mail.noreply.password`; reachable SMTP server | Use the saved-settings email test. Magic links, password-reset emails and email notifications need this independently of installing Mail. |
-| FreeIPA | `freeipa.enable`, connection, service credentials, trusted CA and group rules. Bootstrap inputs: `FREEIPA_URL`, `FREEIPA_SVC_USER`, `FREEIPA_SVC_PASSWORD`, `GROUPS_ADMIN`, `GROUPS_BASE_SYNC`, `GROUPS_BASE_IPA_REALM`, `GROUPS_EXCLUDED`. | Follow [FreeIPA setup](/en/docs/operations/freeipa), test TLS/login, and preview sync scope before directory changes. |
+| FreeIPA | `freeipa.enable`, connection, service credentials, trusted CA and group rules. Configure and explicitly enable the integration in Core administration; environment bootstrap is not supported. | Follow [FreeIPA setup](/en/docs/operations/freeipa), test TLS/login, and preview sync scope before directory changes. |
 | AI | `ai.enabled`, `ai.model_profiles_json`, selected model IDs, profile credentials/endpoint and applicable model access grants | Follow [Models and providers](/en/docs/ai/models-and-providers). An installed Assistant is not an enabled or authorized model. Private models need reachable inference endpoints; hosted models need provider credentials. |
 | AI web tools | `ai.firecrawl_api_key` and provider egress | Test the selected web tool; this is not required for basic chat. |
 | HTML/Markdown PDF | `gotenberg.url`, optional `gotenberg.username` / `gotenberg.password`, and configured limits/timeouts | Follow [PDF and templates](/en/docs/platform/pdf-and-templates). In Dev the service origin is `http://gotenberg:3000`; starting its container does not populate the Cloud setting. |
 | Browser push | `notifications.web_push_public_key`, `notifications.web_push_private_key`, browser subscription/permission and outbound push-service access | Test delivery to an opted-in browser. In-app notification storage does not depend on browser push. |
-| Mail provider OAuth | `mail.oauth.google_client_id` / `mail.oauth.google_client_secret`, or `mail.oauth.microsoft_client_id` / `mail.oauth.microsoft_client_secret`, provider registration and callback | Configure Mail administration and the provider's matching callback at the public origin plus /api/mail/oauth/callback. The corresponding `MAIL_OAUTH_GOOGLE_*` / `MAIL_OAUTH_MICROSOFT_*` variables are optional bootstrap/fallback inputs read by Mail. |
 | City search | `weather.geo_url` pointing to the supported Geo API | Dev supplies a Geo container (`http://geo:4000` internally), but the setting must still be configured. Forecast access is a separate dependency. |
 
 For S3 snapshots, enter credentials in the individual notebook's snapshot
@@ -154,13 +154,9 @@ server-side `FILE_PROXY_TOKEN` must match Cloud's Files token, and its
 
 ## Bring up a fresh installation
 
-1. Select apps and optional features from the tables. Choose an administrator
-   access path before public exposure. Do not assume that a fresh production
-   database automatically contains an administrator: use the intended FreeIPA
-   administrator mapping or an explicitly approved local-account bootstrap.
-   The repository supplies a local Dev emergency login, not an automated
-   production administrator-provisioning workflow. Do not carry `dev-admin` or
-   an enabled `ADMIN_LOGIN_TOKEN` into production.
+1. Select apps and optional features. Generate a private temporary
+   `ADMIN_LOGIN_TOKEN` and supply it only to Core. Production has no default
+   token and a fresh database has no normal administrator account.
 2. Generate and store the independent deployment secrets. Set the public
    origin, private service addresses, database, Valkey and NATS connections. Give
    Core and OAuth the same broker secret if OAuth is selected; only Core gets
@@ -174,9 +170,14 @@ server-side `FILE_PROXY_TOKEN` must match Cloud's Files token, and its
    provision the owning app's `identity:invoke` credential using
    [Background mandates](/en/docs/identity/background-mandates), inject it only
    into that app, and recreate that app's container to apply environment changes.
-5. Configure optional providers and app settings through administration.
-   Use the service's internal address, not `localhost` from another container.
-   Environment bootstrap values do not replace already saved settings.
+5. Open `/auth/login?method=admin` at the public origin and enter the temporary
+   admin token. Review and accept the displayed legal documents to finish
+   first sign-in. Configure a normal administrator account or FreeIPA administrator
+   group mapping, then verify that sign-in in a separate session. Remove
+   `ADMIN_LOGIN_TOKEN` from Core and recreate Core before normal operation.
+   Configure optional services through administration using their internal
+   addresses, not `localhost` from another container. FreeIPA and Files do not
+   import environment values.
 6. Verify the selected rows' functional checks before exposing normal traffic.
    Confirm health, authorization, durable writes, and any required background
    operation separately.

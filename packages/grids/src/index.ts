@@ -1,3 +1,4 @@
+import { getQuerySettings } from "./service/query-settings";
 import { type AuthContext, auth, middleware } from "@k2b/cloud/server";
 import { createRuntimeLifecycle, stopRuntimeResources } from "@k2b/cloud/services";
 import { Hono } from "hono";
@@ -28,6 +29,7 @@ const router = new Hono<AuthContext>()
 
 const gridsRuntimeLifecycle = createRuntimeLifecycle({
   start: async () => {
+    await getQuerySettings();
     await startControlledDestructionJobs();
     await startEvidenceExportJobs();
     await startExternalRecordOperationRetention();

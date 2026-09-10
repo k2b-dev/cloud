@@ -42,8 +42,7 @@ import { hydrateMessageFromSource } from "./message-hydration";
 import { parseMessageProtocolFacts } from "./message-protocol";
 import { normalizeMailSubject } from "./message-threading";
 import { loadProviderConnectionRuntimeSnapshot } from "./provider-connections";
-import { isConcurrentCredentialRefresh, isProviderAuthenticationFailure, providerErrorCode, providerErrorMessage } from "./provider-errors";
-import { cleanupProviderOAuthFlows } from "./provider-oauth-cleanup";
+import { isProviderAuthenticationFailure, providerErrorCode, providerErrorMessage } from "./provider-errors";
 import { mailProviderOperationMutex, providerBusyRetryDelayMs, withProviderOperationBarrier } from "./provider-operation-lock";
 import { waitForMailProviderSlot } from "./provider-pacer";
 import { cleanupMailRuntimeHistory } from "./runtime-history-retention";
@@ -727,7 +726,6 @@ const recordSyncFailure = async (params: {
   folderId: string;
   bindingId: string | null;
   secretRevision: number | null;
-  oauthTokenRevision: number | null;
   fence: FenceClaim | null;
   error: unknown;
 }): Promise<void> => {
@@ -767,10 +765,6 @@ const recordSyncFailure = async (params: {
             OR (
               pc.secret_revision = ${params.secretRevision}::integer
               AND pb.verified_secret_revision = ${params.secretRevision}::integer
-              AND (
-                ${params.oauthTokenRevision}::bigint IS NULL
-                OR pc.oauth_token_revision = ${params.oauthTokenRevision}::bigint
-              )
             )
           )
       `;
@@ -787,10 +781,6 @@ const recordSyncFailure = async (params: {
               OR (
                 pc.secret_revision = ${params.secretRevision}::integer
                 AND pb.verified_secret_revision = ${params.secretRevision}::integer
-                AND (
-                  ${params.oauthTokenRevision}::bigint IS NULL
-                  OR pc.oauth_token_revision = ${params.oauthTokenRevision}::bigint
-                )
               )
             )
         `;
@@ -814,10 +804,6 @@ const recordSyncFailure = async (params: {
             OR pb.id <> ${params.bindingId}::uuid
             OR ${params.secretRevision}::integer IS NULL
             OR pc.secret_revision <> ${params.secretRevision}::integer
-            OR (
-              ${params.oauthTokenRevision}::bigint IS NOT NULL
-              AND pc.oauth_token_revision <> ${params.oauthTokenRevision}::bigint
-            )
           )
       ) AS exists
     `;
@@ -1228,7 +1214,6 @@ const syncFolderBatch = async (folderId: string, jobHeartbeat: () => Promise<voi
   let runId: string | null = null;
   let selectedBindingId: string | null = null;
   let selectedSecretRevision: number | null = null;
-  let selectedOAuthTokenRevision: number | null = null;
   let activeFence: FenceClaim | null = null;
   try {
     return await withLeaseHeartbeat({
@@ -1269,7 +1254,6 @@ const syncFolderBatch = async (folderId: string, jobHeartbeat: () => Promise<voi
         activeFence = fence;
         runId = fence.runId;
         const runtimeSnapshot = await loadResolvedRuntimeSnapshot(execution.data.connectionId, secretRevision);
-        selectedOAuthTokenRevision = runtimeSnapshot.oauthTokenRevision;
         const runtime = runtimeSnapshot.runtime;
         const status = await imapSmtpConnector.getFolderStatus(runtime, folderExecution.path, signal);
         await extendSyncLease(lock, "after status refresh");
@@ -1350,14 +1334,12 @@ const syncFolderBatch = async (folderId: string, jobHeartbeat: () => Promise<voi
       code !== "SYNC_JOB_LEASE_LOST" &&
       code !== "STALE_SYNC_FENCE" &&
       code !== "STALE_SYNC_BINDING" &&
-      code !== "MAILBOX_TRANSPORT_CHANGED" &&
-      !isConcurrentCredentialRefresh(error)
+      code !== "MAILBOX_TRANSPORT_CHANGED"
     ) {
       await recordSyncFailure({
         folderId,
         bindingId: selectedBindingId,
         secretRevision: selectedSecretRevision,
-        oauthTokenRevision: selectedOAuthTokenRevision,
         fence: activeFence,
         error,
       });
@@ -1897,14 +1879,6 @@ const mailRuntimeLifecycle = createRuntimeLifecycle({
       meta: { appId: "mail", family: "mail:storage", label: "Mail attachment link cleanup" },
       process: async () => {
         await cleanupPublicAttachmentLinks();
-      },
-    });
-    await mailScheduler().create({
-      id: "mail:oauth-flow-cleanup",
-      cron: "37 * * * *",
-      meta: { appId: "mail", family: "mail:oauth", label: "Mail OAuth flow cleanup" },
-      process: async () => {
-        await cleanupProviderOAuthFlows();
       },
     });
     await mailScheduler().create({

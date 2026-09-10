@@ -5,7 +5,7 @@ section: Operations
 order: 1130
 description: Build a standalone application image and connect it to a Cloud deployment.
 tags: [build, docker, deployment]
-updated: 2026-09-07
+updated: 2026-09-10
 ---
 
 # Build and deploy
@@ -81,6 +81,7 @@ RUN APP_ID=inventory APP_DIR=/app \
 
 FROM oven/bun:1-slim AS runtime
 WORKDIR /app
+ENV NODE_ENV=production
 COPY --from=build /app/dist/ ./
 EXPOSE 3000
 CMD ["bun", "server.js"]
@@ -118,8 +119,13 @@ Give it:
 
 - `DATABASE_URL`;
 - `REDIS_URL`;
+- `NATS_SERVERS` and the installation's `SYNC_NAMESPACE`;
 - the deployment-wide `APP_SECRET`;
-- application-specific bootstrap values when needed.
+- the public `APP_URL` for initial setup.
+
+Configure product integrations through saved application settings. FreeIPA,
+Filegate and Mail provider environment bootstrap is not supported. The gateway
+has a smaller environment; use its row in Deployment requirements.
 
 Core additionally requires the Core-only
 `CLOUD_IDENTITY_KEY_ENCRYPTION_KEY`. Do not add that variable to the shared
@@ -153,13 +159,28 @@ before changing platform containers:
 ```bash
 export CLOUD_IMAGE_TAG=sha-0123456789ab
 docker compose -f compose.prod.yml config
-bun run prod:preflight
 docker compose -f compose.prod.yml pull
 ```
 
 Pull every image successfully before stopping or recreating services. For the
 Sync v5 to v6 boundary (Redis to NATS JetStream), stop the complete old runtime
 before starting the new release set.
+
+The production Compose file is an application template, not a complete host
+installation. Copy `.env.prod.example` to a protected `.env`, replace the example
+values, and supply persistent infrastructure and the existing Traefik
+network before using it. Keep rendered Compose output private because it
+contains resolved secrets. Follow the fresh-install order in Deployment
+requirements for Core initialization, administrator sign-in, and app setup.
+
+`bun run prod:preflight` checks an already running fleet against the selected
+release; it cannot pass before a fresh installation starts or while an older
+release is still running. It needs `CLOUD_IMAGE_TAG`, `SYNC_NAMESPACE`,
+`CLOUD_CORE_URL` (reachable Core origin) and `CLOUD_ADMIN_TOKEN` (an authorized
+administrator bearer credential). Supply these through the process environment;
+do not confuse that API credential with Core's temporary `ADMIN_LOGIN_TOKEN`
+used on the sign-in page. If you adapt Compose, adapt the preflight's Compose
+target and expected service inventory too.
 
 ## Check the rollout
 
@@ -172,7 +193,7 @@ After deployment:
 5. verify migrations and background workers;
 6. verify Core identity key readiness and the internal JWKS response;
 7. confirm the app reports its expected release and Sync version in Admin → Apps;
-8. for a platform release, run `bun run prod:preflight` again;
+8. for a platform release, run `bun run prod:preflight`;
 9. stop one application instance and confirm registry cleanup.
 
 See [Identity key operations](/en/docs/operations/identity-key-operations) for

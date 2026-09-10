@@ -83,7 +83,7 @@ const SettingRow = (props: { entry: SettingEntry; disabled: boolean; onChange: (
         id={`setting-${props.entry.key}`}
         label={label()}
         description={description()}
-        min={1}
+        min={props.entry.key === "grids.query_concurrency" || props.entry.key === "grids.query_queue_limit" ? 0 : 1}
         disabled={props.disabled}
         step={1}
         value={() => (value().trim() === "" ? null : Number(value()))}

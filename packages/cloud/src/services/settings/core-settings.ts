@@ -19,18 +19,6 @@ const envString = (key: string): string | undefined => {
   return value && value.length > 0 ? value : undefined;
 };
 
-const envCsv = (key: string): string | undefined => {
-  const value = process.env[key]
-    ?.split(",")
-    .map((part) => part.trim())
-    .filter(Boolean)
-    .join(",");
-  return value && value.length > 0 ? value : undefined;
-};
-
-const hasRequiredFreeIpaEnv = (): boolean =>
-  Boolean(envString("FREEIPA_URL") && envString("FREEIPA_SVC_USER") && envString("FREEIPA_SVC_PASSWORD"));
-
 const IPA_MATCH_MODE_OPTIONS = [
   { value: "ignore", label: "Ignore local match" },
   { value: "migrate", label: "Migrate matching local account" },
@@ -356,8 +344,6 @@ export const CORE_SETTINGS = {
     label: "Enable FreeIPA",
     default: false,
     description: "Enable FreeIPA-backed login, sync, account management, and IPA groups.",
-    envFallback: () => hasRequiredFreeIpaEnv(),
-    envBootstrap: () => (hasRequiredFreeIpaEnv() ? true : undefined),
   },
   "freeipa.url": {
     kind: "string",
@@ -365,8 +351,6 @@ export const CORE_SETTINGS = {
     default: "freeipa.ipa.example.com",
     description: "FreeIPA host name used for RPC and login requests (without protocol).",
     placeholder: "e.g. ipa.example.org",
-    envFallback: () => envString("FREEIPA_URL"),
-    envBootstrap: () => envString("FREEIPA_URL"),
   },
   "freeipa.ca_cert": {
     kind: "text",
@@ -389,16 +373,12 @@ export const CORE_SETTINGS = {
     default: "svc-cloud",
     description: "FreeIPA service account username used for internal admin operations.",
     placeholder: "e.g. svc-cloud",
-    envFallback: () => envString("FREEIPA_SVC_USER"),
-    envBootstrap: () => envString("FREEIPA_SVC_USER"),
   },
   "freeipa.service_password": {
     kind: "secret",
     label: "Service Password",
     default: "",
     description: "FreeIPA service account password used for internal admin operations.",
-    envFallback: () => envString("FREEIPA_SVC_PASSWORD"),
-    envBootstrap: () => envString("FREEIPA_SVC_PASSWORD"),
   },
   "freeipa.groups.admin": {
     kind: "string_list",
@@ -406,8 +386,6 @@ export const CORE_SETTINGS = {
     default: ["admins"] as readonly string[],
     description: "FreeIPA groups that imply app admin access.",
     placeholder: "admins,cloud-admins",
-    envFallback: () => envCsv("GROUPS_ADMIN"),
-    envBootstrap: () => envCsv("GROUPS_ADMIN"),
   },
   "freeipa.groups.base_sync": {
     kind: "string_list",
@@ -416,8 +394,6 @@ export const CORE_SETTINGS = {
     description:
       "Required. FreeIPA groups whose members get a Cloud account at all. There is no safe default — leaving this empty keeps FreeIPA incomplete rather than syncing your whole directory.",
     placeholder: "e.g. ipausers",
-    envFallback: () => envCsv("GROUPS_BASE_SYNC"),
-    envBootstrap: () => envCsv("GROUPS_BASE_SYNC"),
   },
   "freeipa.groups.base_ipa_realm": {
     kind: "string_list",
@@ -426,8 +402,6 @@ export const CORE_SETTINGS = {
     description:
       "Required. FreeIPA groups whose members become full users; everyone else in the sync scope becomes a guest. There is no safe default — leaving this empty keeps FreeIPA incomplete rather than demoting every account to guest.",
     placeholder: "e.g. staff",
-    envFallback: () => envCsv("GROUPS_BASE_IPA_REALM"),
-    envBootstrap: () => envCsv("GROUPS_BASE_IPA_REALM"),
   },
   "freeipa.groups.excluded": {
     kind: "string_list",
@@ -435,8 +409,6 @@ export const CORE_SETTINGS = {
     default: ["editors", "trust admins", "admins"] as readonly string[],
     description: "FreeIPA groups excluded from mirrored memberships and hierarchy logic.",
     placeholder: "editors,trust admins,admins",
-    envFallback: () => envCsv("GROUPS_EXCLUDED"),
-    envBootstrap: () => envCsv("GROUPS_EXCLUDED"),
   },
   "freeipa.user_match_mode": {
     kind: "enum",

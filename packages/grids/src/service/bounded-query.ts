@@ -1,21 +1,13 @@
+import { getQuerySettings } from "./query-settings";
 import { SQL, sql } from "bun";
 import type { SqlClient } from "./audit";
 
-const positiveInteger = (name: string, fallback: number): number => {
-  const raw = process.env[name];
-  if (raw === undefined) return fallback;
-  const value = Number(raw);
-  if (!Number.isSafeInteger(value) || value < 1) throw new Error(`${name} must be a positive integer`);
-  return value;
-};
-
-export const boundedQueryPoolSize = positiveInteger("GRIDS_QUERY_POOL_SIZE", 12);
-
 let queryPool: SQL | undefined;
 
-const getQueryPool = (): SQL => {
+const getQueryPool = async (): Promise<SQL> => {
+  const { poolSize } = await getQuerySettings();
   const url = process.env.DATABASE_URL;
-  queryPool ??= url ? new SQL({ url, max: boundedQueryPoolSize }) : new SQL({ max: boundedQueryPoolSize });
+  queryPool ??= url ? new SQL({ url, max: poolSize }) : new SQL({ max: poolSize });
   return queryPool;
 };
 
@@ -56,11 +48,12 @@ const runBoundedQueryDirect = async <T>(query: unknown, timeoutMs: number, signa
   validateTimeout(timeoutMs);
   if (signal?.aborted) throw new BoundedQueryAbortedError();
 
-  const reserved = client ? undefined : await getQueryPool().reserve();
+  const reserved = client ? undefined : await (await getQueryPool()).reserve();
   const connection = client ?? reserved!;
   let previousTimeout: string | undefined;
   let succeeded = false;
   try {
+    if (signal?.aborted) throw new BoundedQueryAbortedError();
     if (client) {
       const [settings] = await client<{ timeout: string }[]>`SELECT current_setting('statement_timeout') AS timeout`;
       previousTimeout = settings?.timeout;
@@ -71,6 +64,7 @@ const runBoundedQueryDirect = async <T>(query: unknown, timeoutMs: number, signa
         set_config('statement_timeout', ${`${timeoutMs}ms`}, ${Boolean(client)}) AS statement_timeout
     `;
     if (!backend) throw new Error("reserved query connection has no PostgreSQL backend");
+    if (signal?.aborted) throw new BoundedQueryAbortedError();
     let abort: (() => void) | undefined;
     let cancelRequest: Promise<unknown> | undefined;
     let queryActive = false;
@@ -91,6 +85,7 @@ const runBoundedQueryDirect = async <T>(query: unknown, timeoutMs: number, signa
       if (signal?.aborted) abort();
       const rows = await pending;
       queryActive = false;
+      if (signal?.aborted) throw new BoundedQueryAbortedError();
       succeeded = true;
       return [...rows];
     } catch (error) {

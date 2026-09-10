@@ -17,6 +17,7 @@ it does not configure app sign-in. The built-in Help reader stays independent.
 
 :::reference
 - **Overview:** Lists registered apps with admin panels and summarizes registered apps, manageable admin panels, and user-visible navigation entries.
+- **App credentials:** Select an application and create a named credential for background work across apps. Copy the token when it is shown once; afterward only metadata and revocation are available. User mandates still limit the actions it can perform.
 - **Announcements:** Create and edit announcements or banners. Entries can be active, scheduled, or expired based on publish and expiry timestamps.
 - **Settings:** Edit settings by group. Each field shows its current value and source where the settings service exposes it.
 :::
@@ -47,3 +48,20 @@ local Login accounts without changing login visibility.
 - **Mail and PDF rendering:** Configure SMTP delivery, sender credentials, Gotenberg connection, credentials, and render limits.
 - **Templates, security, and legal:** Transactional email templates, rate limits, access protection defaults, Terms of Service, Privacy Policy, and Imprint.
 :::
+
+## First administrator access {icon="key"}
+
+On a fresh installation, the operator supplies a temporary `ADMIN_LOGIN_TOKEN`
+only to Core. Open `/auth/login?method=admin` and enter it. Review and accept
+the displayed legal documents to complete first sign-in. Configure and verify
+normal administrator sign-in, then have the operator remove the token and
+restart Core. Configure FreeIPA and its administrator group mapping in Settings;
+there is no FreeIPA environment bootstrap.
+
+## Rotate an app credential {icon="key"}
+
+Create a new credential under **App credentials**, optionally with an expiration time.
+Give it to the owning app as `CLOUD_APP_CREDENTIAL` through the deployment secret
+store. Background calls also require Core's private address in
+`CLOUD_CORE_INTERNAL_ORIGIN`. After applying it and checking background work,
+revoke the old credential. Revocation stops new calls using that credential.

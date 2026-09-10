@@ -1,3 +1,4 @@
+import { clearProcessApplicationId, getProcessApplicationId } from "./process-identity";
 import { expect, spyOn, test } from "bun:test";
 import type { Sync } from "@k2b/sync";
 
@@ -119,6 +120,7 @@ test("internal Sync operations require a bound invocation and current admin auth
       routes: ["/api/sync-context"],
     });
     const server = await app.start({ fetch: () => new Response("App fallback") });
+    expect(getProcessApplicationId()).toBe("sync-context");
     const request = (headers: HeadersInit = {}) => server.fetch(new Request("http://sync-context/_internal/sync/resources", { headers }));
     expect((await request({ cookie: "session_token=source" })).status).toBe(401);
     expect((await request({ authorization: "Bearer source" })).status).toBe(401);
@@ -141,6 +143,7 @@ test("internal Sync operations require a bound invocation and current admin auth
   } finally {
     for (const spy of spies) spy.mockRestore();
     processSync.unbindProcessSync();
+    clearProcessApplicationId();
     Object.defineProperty(env, "APP_SECRET", originalSecret);
     for (const [index, signal] of signals.entries()) {
       for (const listener of process.listeners(signal)) {

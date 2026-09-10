@@ -271,3 +271,23 @@ After inspecting a failure, queue/job `sync dead-letters requeue`, topic
 accepts work; reuse the request ID after an uncertain response. Inspect the
 returned run with `sync schedules runs get <app> <scheduler> <schedule> <run-id>`;
 `--timeout-ms` permits a bounded wait, and `completed: false` means pending.
+
+## App credentials
+
+Use the generic workload administration commands for any owning app:
+
+```bash
+cld admin app-credentials apps
+cld admin app-credentials list mail --json
+(umask 077; cld admin app-credentials create mail --name production --yes > mail-credential.txt)
+cld admin app-credentials revoke mail <credential-id> --yes
+```
+
+Creation prints the token once; structured output includes token and metadata.
+Transfer the token to the deployment secret store, then remove the temporary
+file. An optional `--expires-at` takes a future ISO 8601 timestamp. Lists show
+metadata only. Configure `CLOUD_APP_CREDENTIAL` only in its owning app and
+`CLOUD_CORE_INTERNAL_ORIGIN` with Core's private origin. Mandates still control
+the allowed background actions. For rotation, create and deploy a replacement,
+verify its calls, then revoke the old credential. The equivalent UI is
+**Administration → App credentials**.

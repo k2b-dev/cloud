@@ -1,3 +1,4 @@
+import { getProcessApplicationId } from "../../_internal/process-identity";
 import { createHash, randomBytes } from "node:crypto";
 import type { SyncEvent } from "@k2b/sync";
 import { sql } from "bun";
@@ -1034,7 +1035,7 @@ const detailAttributes = (detail: Record<string, unknown>): TraceAttributes => {
 };
 
 /** The app hosting this process; Sync events carry no app name. */
-const processAppId = (): string | undefined => process.env.APP_ID?.trim() || undefined;
+const processAppId = getProcessApplicationId;
 
 const traceSyncEvent = async (event: SyncEvent, application?: string): Promise<void> => {
   const resource = event.resource;

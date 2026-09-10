@@ -46,7 +46,7 @@ Cloud-Administratoren sehen denselben bereinigten Gesamtstand unter **Administra
 
 Unter **Konten und Identitäten > Verbundenes Konto** liegt die gemeinsame Eingangs- und Ausgangsverbindung. Mail prüft IMAP und SMTP, bevor neue Zugangsdaten gespeichert werden.
 
-Verwende zunächst **Einstellungen suchen**. Öffne **Manuelle Servereinstellungen** nur, wenn die Erkennung nicht funktioniert oder falsche Angaben liefert. Ist in der Bereitstellung ein passender OAuth-Client für Google oder Microsoft eingerichtet, fahre im Autorisierungsfenster des Anbieters fort. OAuth-Zugriffs- und Aktualisierungstokens werden verschlüsselt und nie angezeigt. **Neu verbinden** eignet sich nach widerrufener Zustimmung; **Ersetzen** für Passwörter, App-Passwörter oder Tokens.
+Verwende zunächst **Einstellungen suchen**. Öffne **Manuelle Servereinstellungen**, wenn die Erkennung nicht funktioniert oder falsche Angaben liefert. Gib ein Passwort, App-Passwort oder einen manuell bereitgestellten Zugriffstoken ein, den der Anbieter akzeptiert. Gespeicherte Zugangsdaten sind verschlüsselt und nicht mehr anzeigbar. Ändere sie über **Ersetzen**, auch bei abgelaufenen manuellen Tokens. Mail erneuert Tokens nicht und bietet keine Browser-Autorisierung für Google oder Microsoft.
 
 Mail meldet die IMAP- und SMTP-Prüfung getrennt. Eine fehlgeschlagene IMAP-Prüfung blockiert die Synchronisierung, eine fehlgeschlagene SMTP-Prüfung den Versand. Behebe den gemeldeten Transportfehler vor einem neuen Versuch. Das Entfernen der Verbindung trennt den Transport, löscht aber weder E-Mails beim Anbieter noch die in Cloud aufbewahrten Postfachdaten.
 

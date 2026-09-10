@@ -1,3 +1,4 @@
+import appCredentialsPage from "./admin/app-credentials/page";
 import { ssr } from "../config";
 import { join } from "node:path";
 import { type AuthContext, auth } from "@k2b/cloud/server";
@@ -77,6 +78,7 @@ export const createPagesRouter = (options?: { brandingPublicDir?: string }): Hon
     // Admin pages (admin only)
     .get("/admin", auth.requireRole("admin", ssr.access), ...adminPage)
     .get("/admin/announcements", auth.requireRole("admin", ssr.access), ...announcementsAdminPage)
+    .get("/admin/app-credentials", auth.requireRole("admin", ssr.access), ...appCredentialsPage)
     .get("/admin/settings", auth.requireRole("admin", ssr.access), ...settingsPage)
     // Keep legacy admin entry points useful when their optional UI apps are absent.
     .get("/admin/apps", auth.requireRole("admin", ssr.access), (c) => {

@@ -5,7 +5,7 @@ section: Identity and access
 order: 358
 description: Let durable app work call another application without storing a user's session or API key.
 tags: [identity, background, capabilities, mandates]
-updated: 2026-09-07
+updated: 2026-09-10
 ---
 
 # Background authority mandates
@@ -124,7 +124,27 @@ Also set `CLOUD_CORE_INTERNAL_ORIGIN` to Core's private service origin. Workload
 broker routes are not reachable through the public gateway, and the helper
 does not fall back to the public origin for mandate calls.
 
-An administrator creates it through Core's identity API:
+An administrator opens **Administration → App credentials** (`/admin/app-credentials`),
+selects the owning app and creates a named credential with an optional expiration time.
+The token is shown once. Save it in the deployment's secret store and inject it
+only into that app. The page lists metadata and supports revocation.
+
+The CLI exposes the same operations. For example, using an administrator profile:
+
+```sh
+cld admin app-credentials apps
+cld admin app-credentials list mail
+(umask 077; cld admin app-credentials create mail --name production --yes > mail-credential.txt)
+cld admin app-credentials revoke mail <credential-id> --yes
+```
+
+The create command prints the token once (structured output includes token and
+metadata). Transfer it into the deployment secret store and remove the temporary
+file. Use `--expires-at` with a future ISO 8601 timestamp to set the expiration time.
+Create/list/revoke also work for an explicit app ID before it registers; the UI
+selector and `apps` command show registered applications.
+
+Core's administrator API provides the same creation operation:
 
 ```http
 POST /api/admin/identity/workloads/inventory/credentials

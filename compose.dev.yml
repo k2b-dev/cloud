@@ -203,7 +203,7 @@ services:
   app-files:
     <<: *app
     container_name: app-files
-    environment: { <<: *env, APP_ID: files, FILEGATE_URL: "http://filegate:4000", FILEGATE_TOKEN: dev-secret-token }
+    environment: { <<: *env, APP_ID: files }
     profiles: [extra]
     volumes:
       - ./packages/cloud/src:/app/packages/cloud/src

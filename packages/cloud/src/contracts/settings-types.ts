@@ -43,7 +43,7 @@ type StringLikeKind = "string" | "text" | "email" | "url" | "secret" | "image" |
 export type AppSettingDef =
   | (CommonDef & { kind: StringLikeKind; default: string; placeholder?: string; templateVars?: readonly string[] })
   | (CommonDef & { kind: "boolean"; default: boolean })
-  | (CommonDef & { kind: "number"; default: number; min?: number; max?: number; placeholder?: string })
+  | (CommonDef & { kind: "number"; default: number; min?: number; max?: number; integer?: boolean; placeholder?: string })
   | (CommonDef & { kind: "enum"; default: string; options: ReadonlyArray<SettingOption> })
   | (CommonDef & { kind: "string_list"; default: readonly string[]; placeholder?: string })
   | (CommonDef & { kind: "number_list"; default: readonly number[]; placeholder?: string });

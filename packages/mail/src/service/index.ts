@@ -39,7 +39,6 @@ import * as operations from "./operations";
 import * as operatorActions from "./operator-actions";
 import * as presence from "./presence";
 import * as providerConnections from "./provider-connections";
-import * as providerOAuth from "./provider-oauth";
 import * as publicResources from "./public-resources";
 import * as reminders from "./reminders";
 import * as remoteContent from "./remote-content";
@@ -119,7 +118,6 @@ export {
   operations,
   presence,
   providerConnections,
-  providerOAuth,
   publicResources,
   reminders,
   remoteContent,
@@ -171,7 +169,6 @@ export const mailService = {
   operations,
   operatorActions,
   providerConnections,
-  providerOAuth,
   publicResources,
   presence,
   reminders,

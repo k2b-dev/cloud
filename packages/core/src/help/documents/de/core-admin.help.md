@@ -18,6 +18,7 @@ Die integrierte Hilfe bleibt davon unabhängig.
 
 :::reference
 - **Übersicht:** Listet registrierte Apps mit Administrationsbereichen und fasst registrierte Apps, verwaltbare Bereiche und sichtbare Navigationseinträge zusammen.
+- **App-Zugänge:** Wähle eine Anwendung und erstelle einen benannten Zugang für Hintergrundarbeit zwischen Apps. Kopiere den einmalig angezeigten Token; danach sind nur Metadaten und Widerruf verfügbar. Nutzermandate begrenzen weiterhin die erlaubten Aktionen.
 - **Ankündigungen:** Erstelle und bearbeite Ankündigungen oder Banner. Einträge können abhängig von Veröffentlichungs- und Ablaufzeit aktiv, geplant oder abgelaufen sein.
 - **Einstellungen:** Bearbeite Einstellungen nach Gruppen. Jedes Feld zeigt seinen aktuellen Wert und, sofern vom Einstellungsdienst bereitgestellt, seine Quelle.
 :::
@@ -50,3 +51,22 @@ wieder alle lokalen Login-Accounts; die Login-Sichtbarkeit bleibt unverändert.
 - **Mail und PDF-Rendering:** Konfiguriere SMTP-Zustellung, Absenderzugangsdaten, Gotenberg-Verbindung, Zugangsdaten und Rendergrenzen.
 - **Vorlagen, Sicherheit und Rechtliches:** Transaktionale E-Mail-Vorlagen, Ratenbegrenzungen, Standards für den Zugriffsschutz, Nutzungsbedingungen, Datenschutzerklärung und Impressum.
 :::
+
+## Erster Administratorzugang {icon="key"}
+
+Für eine neue Instanz hinterlegt der Betreiber vorübergehend `ADMIN_LOGIN_TOKEN`
+ausschließlich in Core. Öffne `/auth/login?method=admin` und gib ihn ein.
+Prüfe und akzeptiere die angezeigten rechtlichen Dokumente, um die erste Anmeldung
+abzuschließen.
+Richte die reguläre Admin-Anmeldung ein und prüfe sie. Danach entfernt der
+Betreiber den Token und startet Core neu. FreeIPA und die Admin-Gruppenzuordnung
+werden in den Einstellungen eingerichtet; es gibt keinen FreeIPA-Env-Bootstrap.
+
+## App-Zugang rotieren {icon="key"}
+
+Erstelle unter **App-Zugänge** einen neuen Zugang, bei Bedarf mit Ablaufzeit.
+Hinterlege ihn über die Secret-Verwaltung des Deployments ausschließlich in der
+zugehörigen App als `CLOUD_APP_CREDENTIAL`. Hintergrundaufrufe benötigen außerdem
+Cores interne Adresse in `CLOUD_CORE_INTERNAL_ORIGIN`. Prüfe nach der Übernahme
+die Hintergrundarbeit und widerrufe anschließend den alten Zugang. Der Widerruf
+stoppt neue Aufrufe mit diesem Zugang.

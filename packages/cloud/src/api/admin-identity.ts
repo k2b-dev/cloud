@@ -1,6 +1,8 @@
 import { fail, ok } from "@k2b/stdlib";
+import { listApps } from "../_internal/registry";
 import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
+import { describeRoute } from "hono-openapi";
 import { z } from "zod";
 import { CapabilityAppIdSchema } from "../contracts/capabilities";
 import { type AuthContext, auth, err, respond, v } from "../server";
@@ -40,6 +42,7 @@ const MandateListQuerySchema = z
   .strict();
 
 type IdentityAdminDependencies = {
+  apps: () => Promise<Array<{ id: string; name: string }>>;
   status: typeof getIdentitySigningKeyStatus;
   rewrap: typeof rewrapIdentitySigningKeys;
   revoke: typeof revokeIdentitySigningKey;
@@ -49,6 +52,7 @@ type IdentityAdminDependencies = {
 };
 
 const dependencies: IdentityAdminDependencies = {
+  apps: async () => (await listApps()).map(({ id, name }) => ({ id, name })),
   status: getIdentitySigningKeyStatus,
   rewrap: rewrapIdentitySigningKeys,
   revoke: revokeIdentitySigningKey,
@@ -63,60 +67,84 @@ export const createAdminIdentityRoutes = (
 ) =>
   new Hono<AuthContext>()
     .use(authenticate)
-    .post("/workloads/:appId/credentials", v("param", WorkloadAppParamsSchema), v("json", WorkloadCredentialInputSchema), async (c) =>
-      respond(
-        c,
-        async () => {
-          const { appId } = c.req.valid("param");
-          const input = c.req.valid("json");
-          const actor = c.get("user");
-          const account = await service.serviceAccounts.getOrCreateResourceBound({
-            name: `${appId} workload`,
-            appId,
-            resourceType: "cloud.app",
-            resourceId: appId,
-            createdBy: actor.id,
-          });
-          if (!account.ok) return fail(account.error);
-
-          // The raw token intentionally appears only in this one create response.
-          return service.credentials.createResourceApiToken({
-            serviceAccountId: account.data.id,
-            actor,
-            name: input.name,
-            scopes: input.scopes,
-            expiresAt: input.expiresAt,
-          });
-        },
-        201,
-      ),
-    )
-    .get("/workloads/:appId/credentials", v("param", WorkloadAppParamsSchema), v("query", WorkloadCredentialListQuerySchema), async (c) => {
-      const { appId } = c.req.valid("param");
-      return c.json(
-        await service.credentials.listOverview({
-          pagination: c.req.valid("query"),
-          filter: { serviceAccountKind: "resource_bound", appId, resourceType: "cloud.app", resourceId: appId },
-        }),
-      );
+    .use("*", async (c, next) => {
+      c.header("Cache-Control", "no-store");
+      await next();
     })
-    .delete("/workloads/:appId/credentials/:credentialId", v("param", WorkloadCredentialParamsSchema), async (c) =>
-      respond(c, async () => {
-        const { appId, credentialId } = c.req.valid("param");
-        const credential = await service.credentials.getOverview({ id: credentialId });
-        if (
-          !credential ||
-          credential.owner.type !== "resource" ||
-          credential.owner.appId !== appId ||
-          credential.owner.resourceType !== "cloud.app" ||
-          credential.owner.resourceId !== appId
-        ) {
-          return fail(err.notFound("Workload credential"));
-        }
+    .get(
+      "/workloads",
+      describeRoute({ tags: ["App credentials"], summary: "List registered applications for workload credentials" }),
+      async (c) => c.json(await service.apps()),
+    )
+    .post(
+      "/workloads/:appId/credentials",
+      describeRoute({ tags: ["App credentials"], summary: "Create an app-bound credential; return its token once" }),
+      v("param", WorkloadAppParamsSchema),
+      v("json", WorkloadCredentialInputSchema),
+      async (c) =>
+        respond(
+          c,
+          async () => {
+            const { appId } = c.req.valid("param");
+            const input = c.req.valid("json");
+            const actor = c.get("user");
+            const account = await service.serviceAccounts.getOrCreateResourceBound({
+              name: `${appId} workload`,
+              appId,
+              resourceType: "cloud.app",
+              resourceId: appId,
+              createdBy: actor.id,
+            });
+            if (!account.ok) return fail(account.error);
 
-        const revoked = await service.credentials.revoke({ credentialId, actor: c.get("user") });
-        return revoked.ok ? ok({ revoked: true as const }) : revoked;
-      }),
+            // The raw token intentionally appears only in this one create response.
+            return service.credentials.createResourceApiToken({
+              serviceAccountId: account.data.id,
+              actor,
+              name: input.name,
+              scopes: input.scopes,
+              expiresAt: input.expiresAt,
+            });
+          },
+          201,
+        ),
+    )
+    .get(
+      "/workloads/:appId/credentials",
+      describeRoute({ tags: ["App credentials"], summary: "List app credential metadata without secrets" }),
+      v("param", WorkloadAppParamsSchema),
+      v("query", WorkloadCredentialListQuerySchema),
+      async (c) => {
+        const { appId } = c.req.valid("param");
+        return c.json(
+          await service.credentials.listOverview({
+            pagination: c.req.valid("query"),
+            filter: { serviceAccountKind: "resource_bound", appId, resourceType: "cloud.app", resourceId: appId },
+          }),
+        );
+      },
+    )
+    .delete(
+      "/workloads/:appId/credentials/:credentialId",
+      describeRoute({ tags: ["App credentials"], summary: "Revoke one exact app credential" }),
+      v("param", WorkloadCredentialParamsSchema),
+      async (c) =>
+        respond(c, async () => {
+          const { appId, credentialId } = c.req.valid("param");
+          const credential = await service.credentials.getOverview({ id: credentialId });
+          if (
+            !credential ||
+            credential.owner.type !== "resource" ||
+            credential.owner.appId !== appId ||
+            credential.owner.resourceType !== "cloud.app" ||
+            credential.owner.resourceId !== appId
+          ) {
+            return fail(err.notFound("Workload credential"));
+          }
+
+          const revoked = await service.credentials.revoke({ credentialId, actor: c.get("user") });
+          return revoked.ok ? ok({ revoked: true as const }) : revoked;
+        }),
     )
     .get("/mandates", v("query", MandateListQuerySchema), async (c) => {
       const query = c.req.valid("query");

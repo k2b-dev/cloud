@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { resolveSettingPresentation, toLegacySettingDefs } from "./defaults";
+import { resolveSettingPresentation, toLegacySettingDefs, validateSettingValue } from "./defaults";
 
 describe("setting presentation", () => {
   test("inherits the app base locale and resolves regional overlays", () => {
@@ -44,4 +44,14 @@ describe("setting presentation", () => {
       }),
     ).toThrow("presentation locale");
   });
+});
+
+test("integer settings reject fractions and unsafe values without changing ordinary numbers", () => {
+  const [integer, decimal] = toLegacySettingDefs({
+    "example.count": { kind: "number", default: 12, min: 1, integer: true },
+    "example.ratio": { kind: "number", default: 0.5 },
+  });
+  expect(validateSettingValue(integer!, "12")).toEqual({ ok: true, value: 12 });
+  for (const value of [1.5, 0, Number.MAX_SAFE_INTEGER + 1, Infinity]) expect(validateSettingValue(integer!, value).ok).toBe(false);
+  expect(validateSettingValue(decimal!, 1.5)).toEqual({ ok: true, value: 1.5 });
 });

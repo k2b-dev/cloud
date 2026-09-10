@@ -146,7 +146,11 @@ cld --json mail provider add \
   --secret-stdin
 ```
 
-Browser OAuth for configured Google and Microsoft providers starts in **Mail > Settings > Connections** because the callback is bound to an authenticated browser session and an HttpOnly nonce cookie. The CLI keeps manual credentials as the generic fallback. Use `provider discover` to see whether browser OAuth is available and `provider list` to inspect state without exposing tokens.
+Mail uses manual IMAP/SMTP credentials. `provider discover` suggests server
+settings; it does not start Google or Microsoft browser authorization. Use a
+password, app password or a manually supplied access token accepted by the
+provider. Tokens are not renewed automatically. `provider list` shows connection
+metadata without revealing credentials.
 
 Inspect the provider limits cached during verification, or refresh them
 explicitly:

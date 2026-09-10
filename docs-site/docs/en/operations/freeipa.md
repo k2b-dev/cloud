@@ -5,7 +5,7 @@ section: Accounts & sign-in
 order: 1083
 description: Connect a Cloud deployment to FreeIPA identity infrastructure.
 tags: [freeipa, identity, directory]
-updated: 2026-09-09
+updated: 2026-09-10
 ---
 
 # FreeIPA setup
@@ -27,11 +27,10 @@ The connection needs:
 - the service account password;
 - directory group rules.
 
-`FREEIPA_URL`, `FREEIPA_SVC_USER`, and `FREEIPA_SVC_PASSWORD` can bootstrap the
-first configuration.
-
-All three bootstrap values must be present. For an already configured
-installation, edit the saved settings in Administration.
+FreeIPA connection and group rules are settings only. Cloud does not read
+FreeIPA or group bootstrap environment variables. For a fresh installation,
+use the temporary [admin-token first access](/en/docs/operations/deployment-requirements#bring-up-a-fresh-installation),
+then configure and test FreeIPA before switching to directory sign-in.
 
 ## Configure TLS
 

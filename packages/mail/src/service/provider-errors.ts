@@ -16,8 +16,3 @@ export const isProviderAuthenticationFailure = (error: unknown, code = providerE
     code.includes("AUTH_FAILED")
   );
 };
-
-const CONCURRENT_CREDENTIAL_REFRESH_CODES = new Set(["CREDENTIAL_REFRESH_BUSY", "CREDENTIAL_REFRESH_SUPERSEDED"]);
-
-export const isConcurrentCredentialRefresh = (error: unknown): boolean =>
-  CONCURRENT_CREDENTIAL_REFRESH_CODES.has(providerErrorCode(error, ""));

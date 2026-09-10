@@ -1,3 +1,4 @@
+import { bindProcessApplicationId } from "../../cloud/src/_internal/process-identity";
 import { spyOn } from "bun:test";
 import assert from "node:assert/strict";
 import { connect, createServer, type Socket } from "node:net";
@@ -11,6 +12,7 @@ import { summary } from "./statistics";
 const source = new URL(process.env.DATABASE_URL!);
 assert.match(source.pathname, /^\/cloud_identity_bench_[a-z0-9]+$/);
 assert(["localhost", "127.0.0.1"].includes(source.hostname));
+bindProcessApplicationId("core");
 const configuration = benchmarkConfiguration(process.env);
 const samplesPerMode = configuration.samples;
 const metered = configuration.mode !== "direct-postgres";

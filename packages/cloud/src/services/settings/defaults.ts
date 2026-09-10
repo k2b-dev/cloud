@@ -52,6 +52,7 @@ type NumberSettingDef = SettingCommon & {
   default: number;
   min?: number;
   max?: number;
+  integer?: boolean;
 };
 
 type EnumSettingDef = SettingCommon & {
@@ -120,6 +121,7 @@ export const toLegacySettingDefs = (settings: Record<string, unknown>, requested
       templateVars: d.templateVars as readonly string[] | undefined,
       options: d.options as ReadonlyArray<{ value: string; label: string }> | undefined,
       min: d.min as number | undefined,
+      integer: d.integer as boolean | undefined,
       max: d.max as number | undefined,
     } as SettingDef;
   });
@@ -273,6 +275,9 @@ export const validateSettingValue = (def: SettingDef, raw: unknown): SettingVali
     case "number":
       if (typeof value !== "number" || !Number.isFinite(value)) {
         return { ok: false, error: `${getSettingLabel(def)} must be a valid number` };
+      }
+      if (def.integer && !Number.isSafeInteger(value)) {
+        return { ok: false, error: `${getSettingLabel(def)} must be a safe whole number` };
       }
       if (def.min !== undefined && value < def.min) {
         return { ok: false, error: `${getSettingLabel(def)} must be at least ${def.min}` };

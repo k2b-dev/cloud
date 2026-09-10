@@ -17,6 +17,7 @@ const authenticateAdmin: MiddlewareHandler<AuthContext> = async (c, next) => {
 type Dependencies = NonNullable<Parameters<typeof createAdminIdentityRoutes>[1]>;
 
 const dependencies = (overrides: Partial<Dependencies> = {}): Dependencies => ({
+  apps: async () => [{ id: "inventory", name: "Inventory" }],
   status: async () => [],
   rewrap: async () => 0,
   revoke: async () => false,
@@ -115,7 +116,8 @@ describe("identity key administration", () => {
     const routes = createAdminIdentityRoutes(
       pass,
       dependencies({
-        status: async () => [],
+        apps: async () => [{ id: "inventory", name: "Inventory" }],
+  status: async () => [],
         rewrap: async () => 3,
         revoke: async (input) => {
           revoked.push(input);
@@ -283,4 +285,12 @@ describe("identity key administration", () => {
     ]);
     expect((await routes.request("/mandates?perPage=101")).status).toBe(400);
   });
+});
+
+ test("registered workload apps are admin-only and return no credentials", async () => {
+  expect((await createAdminIdentityRoutes().request("/workloads")).status).toBe(401);
+  const response = await createAdminIdentityRoutes(authenticateAdmin, dependencies()).request("/workloads");
+  expect(response.status).toBe(200);
+  expect(response.headers.get("cache-control")).toBe("no-store");
+  expect(await response.json()).toEqual([{ id: "inventory", name: "Inventory" }]);
 });

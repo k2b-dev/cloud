@@ -1,3 +1,4 @@
+import { bindProcessApplicationId, clearProcessApplicationId } from "../../_internal/process-identity";
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { createLocalJWKSet, exportJWK, generateKeyPair, type JWK, type JWTVerifyGetKey, SignJWT } from "jose";
 import { CLOUD_IDENTITY_ALGORITHM, CLOUD_SESSION_AUDIENCE, CLOUD_SESSION_TOKEN_TYPE, IDENTITY_MAX_COMPACT_TOKEN_BYTES } from "./constants";
@@ -173,28 +174,28 @@ describe("Cloud session JWT", () => {
 });
 
 describe("Core identity KEK configuration", () => {
-  const originalAppId = process.env.APP_ID;
   const originalCurrent = process.env.CLOUD_IDENTITY_KEY_ENCRYPTION_KEY;
   const originalPrevious = process.env.CLOUD_IDENTITY_PREVIOUS_KEY;
   const originalNext = process.env.CLOUD_IDENTITY_NEXT_KEY;
 
   afterAll(() => {
-    if (originalAppId === undefined) delete process.env.APP_ID;
-    else process.env.APP_ID = originalAppId;
     if (originalCurrent === undefined) delete process.env.CLOUD_IDENTITY_KEY_ENCRYPTION_KEY;
     else process.env.CLOUD_IDENTITY_KEY_ENCRYPTION_KEY = originalCurrent;
     if (originalPrevious === undefined) delete process.env.CLOUD_IDENTITY_PREVIOUS_KEY;
     else process.env.CLOUD_IDENTITY_PREVIOUS_KEY = originalPrevious;
     if (originalNext === undefined) delete process.env.CLOUD_IDENTITY_NEXT_KEY;
     else process.env.CLOUD_IDENTITY_NEXT_KEY = originalNext;
+    clearProcessApplicationId();
   });
 
   test("is Core-only and requires a distinct 32-byte hexadecimal key", async () => {
-    process.env.APP_ID = "mail";
+    clearProcessApplicationId();
+    bindProcessApplicationId("mail");
     process.env.CLOUD_IDENTITY_KEY_ENCRYPTION_KEY = "00".repeat(32);
     expect(readIdentityKeyEncryptionConfig()).rejects.toThrow("Core application");
 
-    process.env.APP_ID = "core";
+    clearProcessApplicationId();
+    bindProcessApplicationId("core");
     process.env.CLOUD_IDENTITY_KEY_ENCRYPTION_KEY = "short";
     expect(readIdentityKeyEncryptionConfig()).rejects.toThrow("64 hexadecimal");
 

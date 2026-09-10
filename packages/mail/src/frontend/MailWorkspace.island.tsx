@@ -581,42 +581,6 @@ export default function MailWorkspace(props: {
 
   onMount(() => {
     setRequestUrl(window.location.href);
-    const oauthUrl = new URL(window.location.href);
-    const oauthOutcome = oauthUrl.searchParams.get("oauth");
-    const oauthFlowId = oauthUrl.searchParams.get("flow");
-    if (oauthOutcome) {
-      oauthUrl.searchParams.delete("oauth");
-      oauthUrl.searchParams.delete("flow");
-      window.history.replaceState(window.history.state, "", `${oauthUrl.pathname}${oauthUrl.search}${oauthUrl.hash}`);
-      if (oauthOutcome === "connected" || oauthOutcome === "reconnected") toast.success(t().oauthConnected);
-      else if (oauthOutcome === "partial")
-        toast(t().oauthNeedsAttention, {
-          title: t().oauthIncomplete,
-        });
-      else toast.error(t().oauthFailed);
-      void (async () => {
-        if (oauthFlowId) {
-          try {
-            const response = await apiClient.oauth.flows[":flowId"].$get({ param: { flowId: oauthFlowId } });
-            if (disposed) return;
-            if (response.ok) {
-              const result = await response.json();
-              if (disposed) return;
-              const resultCode = result.resultCode?.toLowerCase() ?? null;
-              if (result.message && resultCode !== "connected" && resultCode !== "reconnected" && resultCode !== "partial") {
-                toast.error(t().oauthProviderResultFailed);
-              }
-              if (result.diagnostics?.imap.status === "failed" || result.diagnostics?.smtp.status === "failed") {
-                toast.error(t().connectionChecksFailed);
-              }
-            }
-          } catch {
-            if (!disposed) toast.error(t().oauthStatusFailed);
-          }
-        }
-        if (!disposed) await openSettings("delivery");
-      })();
-    }
     let readyReceived = false;
     const live = createLiveWebSocket<MailLiveServerMessage>({
       url: "/api/mail/ws",

@@ -1,10 +1,5 @@
 import { defineApp } from "@k2b/cloud";
 
-const envString = (key: string): string | undefined => {
-  const v = process.env[key]?.trim();
-  return v && v.length > 0 ? v : undefined;
-};
-
 export const app = defineApp({
   id: "files",
   name: "Files",
@@ -40,8 +35,6 @@ export const app = defineApp({
       presentation: {
         translations: { de: { description: "Filegate-Proxy-URL für Dateioperationen", placeholder: "z. B. http://filegate:4000" } },
       },
-      envFallback: () => envString("FILEGATE_URL"),
-      envBootstrap: () => envString("FILEGATE_URL"),
     },
     "files.filegate_token": {
       kind: "secret",
@@ -49,8 +42,6 @@ export const app = defineApp({
       default: "",
       description: "Filegate authentication token",
       presentation: { translations: { de: { label: "Filegate-Token", description: "Authentifizierungstoken für Filegate" } } },
-      envFallback: () => envString("FILEGATE_TOKEN"),
-      envBootstrap: () => envString("FILEGATE_TOKEN"),
     },
     "files.base_homes": {
       kind: "string",

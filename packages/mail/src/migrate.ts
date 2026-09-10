@@ -2706,76 +2706,6 @@ const addPublicAttachmentLinksAndStorageSnapshots = async (db: SqlClient): Promi
   `;
 };
 
-const addManagedProviderOAuth = async (db: SqlClient): Promise<void> => {
-  await db`
-    ALTER TABLE mail.provider_connections
-      ADD COLUMN IF NOT EXISTS oauth_provider_id TEXT CHECK (oauth_provider_id IN ('google', 'microsoft')),
-      ADD COLUMN IF NOT EXISTS oauth_token_revision BIGINT NOT NULL DEFAULT 0 CHECK (oauth_token_revision >= 0),
-      ADD COLUMN IF NOT EXISTS oauth_expires_at TIMESTAMPTZ
-  `;
-  await db`
-    DO $$
-    BEGIN
-      IF NOT EXISTS (
-        SELECT 1
-        FROM pg_constraint
-        WHERE conrelid = 'mail.provider_connections'::regclass
-          AND conname = 'provider_connections_managed_oauth_check'
-      ) THEN
-        ALTER TABLE mail.provider_connections
-          ADD CONSTRAINT provider_connections_managed_oauth_check CHECK (
-            oauth_provider_id IS NULL OR secret_kind = 'oauth2'
-          );
-      END IF;
-    END
-    $$
-  `;
-  await db`
-    CREATE INDEX IF NOT EXISTS provider_connections_oauth_expiry_idx
-    ON mail.provider_connections (oauth_expires_at, id)
-    WHERE oauth_provider_id IS NOT NULL AND status <> 'revoked'
-  `;
-  await db`
-    CREATE TABLE IF NOT EXISTS mail.provider_oauth_flows (
-      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      state_hash TEXT NOT NULL UNIQUE CHECK (state_hash ~ '^[a-f0-9]{64}$'),
-      browser_nonce_hash TEXT NOT NULL CHECK (browser_nonce_hash ~ '^[a-f0-9]{64}$'),
-      mailbox_id UUID NOT NULL REFERENCES mail.mailboxes(id) ON DELETE CASCADE,
-      user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
-      provider_id TEXT NOT NULL CHECK (provider_id IN ('google', 'microsoft')),
-      operation TEXT NOT NULL,
-      connection_id UUID REFERENCES mail.provider_connections(id) ON DELETE CASCADE,
-      connection_input JSONB NOT NULL CHECK (jsonb_typeof(connection_input) = 'object'),
-      create_sender BOOLEAN NOT NULL DEFAULT false,
-      saves_sent_automatically BOOLEAN NOT NULL DEFAULT false,
-      encrypted_code_verifier TEXT NOT NULL CHECK (char_length(encrypted_code_verifier) > 0),
-      status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'exchanging', 'completed', 'failed')),
-      result_connection_id UUID REFERENCES mail.provider_connections(id) ON DELETE SET NULL,
-      result_code TEXT CHECK (result_code IS NULL OR char_length(result_code) <= 100),
-      result_message TEXT CHECK (result_message IS NULL OR char_length(result_message) <= 500),
-      diagnostics JSONB CHECK (diagnostics IS NULL OR jsonb_typeof(diagnostics) = 'object'),
-      expires_at TIMESTAMPTZ NOT NULL,
-      consumed_at TIMESTAMPTZ,
-      completed_at TIMESTAMPTZ,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-      CONSTRAINT provider_oauth_flows_operation_check CHECK (
-        (operation = 'create' AND connection_id IS NULL) OR
-        (operation = 'reconnect' AND connection_id IS NOT NULL)
-      ),
-      CONSTRAINT provider_oauth_flows_expiry_check CHECK (expires_at > created_at)
-    )
-  `;
-  await db`
-    CREATE INDEX IF NOT EXISTS provider_oauth_flows_cleanup_idx
-    ON mail.provider_oauth_flows (expires_at, id)
-  `;
-  await db`
-    CREATE INDEX IF NOT EXISTS provider_oauth_flows_user_idx
-    ON mail.provider_oauth_flows (user_id, created_at DESC)
-  `;
-};
-
 const addDraftDeliveryClasses = async (db: SqlClient): Promise<void> => {
   await db`
     ALTER TABLE mail.drafts
@@ -3557,13 +3487,6 @@ const addWorkflowKernelProfile = async (db: SqlClient): Promise<void> => {
   `;
 };
 
-const addProviderOAuthSentMode = async (db: SqlClient): Promise<void> => {
-  await db`
-    ALTER TABLE mail.provider_oauth_flows
-    ADD COLUMN IF NOT EXISTS saves_sent_automatically BOOLEAN NOT NULL DEFAULT false
-  `;
-};
-
 const addCanonicalOutboundMessages = async (db: SqlClient): Promise<void> => {
   await db`
     ALTER TABLE mail.outbox_submissions
@@ -4268,7 +4191,6 @@ const migrations: readonly MailMigration[] = [
   { version: 62, name: "draft_recovery_attachments", run: addDraftRecoveryAttachments },
   { version: 63, name: "canonical_saved_view_search_guard", run: repairCanonicalSavedConversationViewConstraint },
   { version: 64, name: "public_attachment_links_storage_snapshots", run: addPublicAttachmentLinksAndStorageSnapshots },
-  { version: 65, name: "managed_provider_oauth", run: addManagedProviderOAuth },
   { version: 66, name: "draft_delivery_classes", run: addDraftDeliveryClasses },
   { version: 67, name: "operator_maintenance_commands", run: addOperatorMaintenanceCommands },
   { version: 69, name: "operator_attention_query_index", run: addOperatorAttentionIndex },
@@ -4296,7 +4218,6 @@ const migrations: readonly MailMigration[] = [
   { version: 91, name: "managed_sender_rules", run: addManagedMailRules },
   { version: 92, name: "managed_sender_rules_hardening", run: hardenManagedMailRules },
   { version: 96, name: "sender_read_batches", run: addSenderReadBatches },
-  { version: 97, name: "provider_oauth_sent_mode", run: addProviderOAuthSentMode },
   { version: 98, name: "canonical_outbound_messages", run: addCanonicalOutboundMessages },
   { version: 99, name: "composable_sender_rule_actions", run: addComposableMailRuleActions },
   { version: 100, name: "sender_rule_backfill_pointer", run: addMailRuleBackfillPointer },

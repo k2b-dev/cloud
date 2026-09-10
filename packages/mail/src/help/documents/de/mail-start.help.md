@@ -28,12 +28,12 @@ Fokus kopiert oder verschiebt keine E-Mails zwischen Postfächern. Jede Zeile be
 2. Gib einen **Namen** ein, den andere Personen im Team wiedererkennen. Die Beschreibung ist optional.
 3. Öffne im Einstellungsdialog **Konten und Identitäten** und verbinde das Konto.
 4. Gib die E-Mail-Adresse ein und wähle **Einstellungen suchen**. Du kannst IMAP- und SMTP-Host, Ports und TLS-Modi auch selbst eingeben.
-5. Wähle bei einem konfigurierten Google- oder Microsoft-Konto die OAuth-Schaltfläche für den Browser und erteile den Zugriff. Gib bei anderen Konten das Passwort, App-Passwort oder OAuth2-Zugriffstoken des Anbieters ein.
+5. Gib das Passwort, App-Passwort oder einen manuell bereitgestellten OAuth2-Zugriffstoken ein, den dein IMAP-/SMTP-Anbieter akzeptiert.
 6. Lass **Standardidentität für diese Adresse erstellen** bei einem normalen Postfach aktiviert.
 7. Wähle **Prüfen und verbinden**.
 :::
 
-Mail prüft IMAP und SMTP getrennt, bevor die Zugangsdaten gespeichert werden. Zugangsdaten und OAuth-Aktualisierungstoken werden verschlüsselt und schreibgeschützt gespeichert: Nach der Annahme können weder Personen mit Zugriff noch Personen mit Postfach-Adminrechten sie erneut anzeigen. Verwaltete OAuth-Verbindungen werden automatisch aktualisiert und zeigen **Erneut verbinden**, wenn die Zustimmung beim Anbieter abgelaufen ist oder widerrufen wurde. Manuelle Zugangsdaten stehen weiterhin für alle allgemeinen IMAP-/SMTP-Anbieter zur Verfügung.
+Mail prüft IMAP und SMTP getrennt, bevor die Zugangsdaten gespeichert werden. Sie werden verschlüsselt gespeichert und können danach weder von Nutzern noch von Postfach-Admins angezeigt werden. Mail bietet keine Browser-Autorisierung oder automatische Token-Erneuerung. Ersetze manuelle Tokens bei Ablauf. Dein Anbieter muss die gewählte IMAP-/SMTP-Anmeldung erlauben.
 
 Nach der Einrichtung erkennt Mail die Ordner des Anbieters und beginnt mit der Synchronisierung. Ältere Nachrichten können nach und nach erscheinen, während das Postfach bereits nutzbar ist. Unter **Postfachwerkzeuge > Postfachstatus** findest du den Verbindungsstatus sowie den Stand von Ordnererkennung, Synchronisierung und Suche.
 

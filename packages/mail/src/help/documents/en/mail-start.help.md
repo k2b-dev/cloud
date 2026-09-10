@@ -28,12 +28,12 @@ Focus does not copy or move mail between mailboxes. Each row keeps its source ma
 2. Enter a **Name** that collaborators will recognize. The description is optional.
 3. In the settings dialog, open **Accounts & identities** and connect the account.
 4. Enter the email address and select **Find settings**, or enter the IMAP and SMTP hosts, ports, and TLS modes yourself.
-5. For a configured Google or Microsoft account, select the browser OAuth button and approve access. Otherwise enter the password, app password, or OAuth2 access token supplied by the provider.
+5. Enter the password, app password, or manually supplied OAuth2 access token accepted by your IMAP/SMTP provider.
 6. Leave **Create the default identity for this address** enabled for a normal mailbox.
 7. Select **Verify and connect**.
 :::
 
-Mail verifies IMAP and SMTP separately before storing the credential. Credentials and OAuth refresh tokens are encrypted and write-only: after they are accepted, no user or mailbox administrator can reveal them again. Managed OAuth connections refresh automatically and show **Reconnect** when provider consent has expired or was revoked. Manual credentials remain available for every generic IMAP/SMTP provider.
+Mail verifies IMAP and SMTP separately before saving credentials. Credentials are encrypted and write-only: after saving, no mailbox user or administrator can reveal them. Mail does not provide browser authorization or automatic token renewal. Replace manual tokens when they expire. Your provider must allow the chosen IMAP/SMTP authentication method.
 
 After setup, Mail discovers the provider's folders and begins synchronization. Initial history can appear progressively while the mailbox remains usable. Open **Mailbox tools > Mailbox health** to see connection health, folder discovery, synchronization, and search state.
 

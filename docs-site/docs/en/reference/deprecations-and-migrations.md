@@ -5,10 +5,38 @@ section: Reference
 order: 1250
 description: Find removed or superseded APIs and the supported migration path.
 tags: [deprecations, migrations, compatibility]
-updated: 2026-09-08
+updated: 2026-09-10
 ---
 
 # Deprecations and migrations
+
+## Production configuration cleanup
+
+Built-in images use production mode and port 3000. Remove runtime `APP_ID`
+and `PORT` overrides; application identity comes from its declaration. Build
+and development scripts still accept `APP_ID` to select an application.
+
+FreeIPA and Files no longer import environment configuration. Configure the
+`freeipa.*` (including group rules) and `files.filegate_*` settings in administration.
+Remove Cloud-side `FREEIPA_*`, `GROUPS_*`, `FILEGATE_URL` and `FILEGATE_TOKEN`
+bootstrap inputs. Filegate's own server configuration remains separate.
+
+Grids query limits moved to `grids.query_pool_size`, `grids.query_concurrency`,
+`grids.query_queue_limit` and `grids.query_queue_timeout_ms` on its admin page.
+Remove the corresponding `GRIDS_QUERY_*` environment variables. Restart all
+Grids instances after saving these settings.
+
+Mail's unreleased Google/Microsoft managed OAuth integration has been removed:
+provider environment variables, `mail.oauth.*` settings, browser callbacks,
+automatic token refresh and reconnect flows are no longer available. Users
+create IMAP/SMTP connections with a password, app password or manually supplied
+access token. Manual access tokens are not renewed automatically. No migration
+of old alpha managed OAuth connections is provided; use a fresh Mail schema.
+The Cloud OAuth application and its client integrations are unchanged.
+
+Pulse is included in production Compose and the release image set. Fresh Core
+installations use an explicitly supplied temporary `ADMIN_LOGIN_TOKEN` for
+first access; see [Deployment requirements](/en/docs/operations/deployment-requirements).
 
 ## Grids schema baseline: bridge update
 

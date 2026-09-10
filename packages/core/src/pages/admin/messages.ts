@@ -4,6 +4,8 @@ export const adminMessages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
+      appCredentials: "App credentials",
+      appCredentialsDescription: "Create and revoke access for app background work.",
       overview: "Overview",
       administration: "Administration",
       administrationDescription: "Operate the instance, manage access, and configure platform services.",
@@ -127,6 +129,8 @@ export const adminMessages = i18n.define({
       legalSettingsDescription: "Terms of Service, Privacy Policy, and Imprint.",
     },
     de: {
+      appCredentials: "App-Zugänge",
+      appCredentialsDescription: "Zugänge für Hintergrundarbeit von Apps erstellen und widerrufen.",
       overview: "Übersicht",
       administration: "Administration",
       administrationDescription: "Betreibe die Instanz, verwalte Zugriffe und konfiguriere Plattformdienste.",

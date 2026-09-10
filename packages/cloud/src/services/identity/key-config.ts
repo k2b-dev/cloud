@@ -1,4 +1,5 @@
 import { crypto } from "@k2b/stdlib";
+import { getProcessApplicationId } from "../../_internal/process-identity";
 
 const KEY_PATTERN = /^[0-9a-f]{64}$/i;
 
@@ -23,7 +24,7 @@ const identify = async (key: string): Promise<{ id: string; key: string }> => ({
 });
 
 export const readIdentityKeyEncryptionConfig = async (): Promise<IdentityKeyEncryptionConfig> => {
-  if ((process.env.APP_ID ?? "").trim() !== "core") {
+  if (getProcessApplicationId() !== "core") {
     throw new Error("Private Cloud identity keys may only be loaded by the Core application");
   }
   const current = parseKey("CLOUD_IDENTITY_KEY_ENCRYPTION_KEY", process.env.CLOUD_IDENTITY_KEY_ENCRYPTION_KEY, true)!;

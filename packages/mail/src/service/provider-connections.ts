@@ -3,7 +3,6 @@ import { audit, decryptSecret, encryptSecret, isUniqueViolation, logger } from "
 import { sql } from "bun";
 import type {
   ConnectorVerification,
-  MailOAuthProviderId,
   ProviderConnection,
   ProviderConnectionInput,
   ProviderLimitSnapshot,
@@ -15,7 +14,6 @@ import { auditActorFromRequest, type MailRequestContext, permissionFromScopes } 
 import { imapSmtpConnector } from "./connectors";
 import { EndpointPolicyError } from "./connectors/endpoint-policy";
 import { logDatabaseFailure } from "./database-errors";
-import { refreshManagedOAuthConnection } from "./provider-oauth-tokens";
 import { withMailboxProviderOperationBarrier } from "./provider-operation-lock";
 
 type SqlClient = typeof sql;
@@ -38,9 +36,6 @@ type DbProviderConnection = {
   secret_kind: "password" | "oauth2";
   encrypted_secret: string | null;
   secret_revision: number;
-  oauth_provider_id: MailOAuthProviderId | null;
-  oauth_token_revision: string | number;
-  oauth_expires_at: Date | string | null;
   status: "active" | "degraded" | "revoked";
   authenticated_principal: string | null;
   limit_snapshot: unknown;
@@ -67,9 +62,6 @@ const connectionColumns = sql`
   pc.secret_kind,
   pc.encrypted_secret,
   pc.secret_revision,
-  pc.oauth_provider_id,
-  pc.oauth_token_revision,
-  pc.oauth_expires_at,
   pc.status,
   pc.authenticated_principal,
   pc.limit_snapshot,
@@ -93,18 +85,6 @@ const mapConnection = (row: DbProviderConnection): ProviderConnection => ({
   imap: { host: row.imap_host, port: row.imap_port, tlsMode: row.imap_tls_mode },
   smtp: { host: row.smtp_host, port: row.smtp_port, tlsMode: row.smtp_tls_mode },
   secret: { kind: row.secret_kind, isSet: Boolean(row.encrypted_secret) },
-  oauth: row.oauth_provider_id
-    ? {
-        providerId: row.oauth_provider_id,
-        expiresAt: toNullableIso(row.oauth_expires_at),
-        state:
-          row.status === "degraded"
-            ? "reconnect_required"
-            : row.oauth_expires_at && new Date(row.oauth_expires_at).getTime() <= Date.now() + 5 * 60_000
-              ? "expiring"
-              : "active",
-      }
-    : null,
   status: row.status,
   authenticatedPrincipal: row.authenticated_principal,
   limits: parseProviderLimitSnapshot(row.limit_snapshot),
@@ -177,8 +157,6 @@ export const createProviderConnection = async (params: {
   context: MailRequestContext;
   mailboxId: string;
   input: ProviderConnectionInput;
-  managedOAuth?: { providerId: MailOAuthProviderId; expiresAt: string };
-  onStored?: (db: SqlClient, connection: ProviderConnection) => Promise<void>;
 }): Promise<Result<{ connection: ProviderConnection; verification: ConnectorVerification }>> => {
   const ownerAccess = await authorizeMailbox(params.context, params.mailboxId);
   if (!ownerAccess.ok) return ownerAccess;
@@ -222,8 +200,6 @@ export const createProviderConnection = async (params: {
           smtp_tls_mode,
           secret_kind,
           encrypted_secret,
-          oauth_provider_id,
-          oauth_expires_at,
           status,
           authenticated_principal,
           capabilities,
@@ -245,8 +221,6 @@ export const createProviderConnection = async (params: {
           ${params.input.smtp.tlsMode},
           ${params.input.secret.kind},
           ${encryptedSecret},
-          ${params.managedOAuth?.providerId ?? null},
-          ${params.managedOAuth?.expiresAt ?? null}::timestamptz,
           'active',
           ${verification.data.authenticatedPrincipal},
           ${verification.data.capabilities}::jsonb,
@@ -258,7 +232,6 @@ export const createProviderConnection = async (params: {
         `;
         if (!row) throw new Error("Provider connection insert returned no row");
         const connection = mapConnection(row);
-        await params.onStored?.(tx, connection);
         await audit.record(
           {
             action: "mail.provider_connection.create",
@@ -333,7 +306,7 @@ export const refreshProviderConnectionLimits = async (params: {
         }
         const recheck = await authorizeMailbox(params.context, params.mailboxId, tx);
         if (!recheck.ok) return recheck;
-        if (locked.secret_revision !== runtime.secretRevision || Number(locked.oauth_token_revision) !== runtime.oauthTokenRevision) {
+        if (locked.secret_revision !== runtime.secretRevision) {
           return fail(err.conflict("Provider credentials changed while limits were being refreshed; retry the operation"));
         }
         const [updated] = await tx<DbProviderConnection[]>`
@@ -449,8 +422,6 @@ export const replaceProviderConnection = async (params: {
   context: MailRequestContext;
   connectionId: string;
   input: ProviderConnectionInput;
-  managedOAuth?: { providerId: MailOAuthProviderId; expiresAt: string };
-  onStored?: (db: SqlClient, connection: ProviderConnection) => Promise<void>;
 }): Promise<Result<{ connection: ProviderConnection; verification: ConnectorVerification }>> => {
   const current = await loadConnectionRow(params.connectionId);
   if (!current) return fail(err.notFound("Provider connection"));
@@ -509,9 +480,6 @@ export const replaceProviderConnection = async (params: {
           secret_kind = ${params.input.secret.kind},
           encrypted_secret = ${encryptedSecret},
           secret_revision = secret_revision + 1,
-          oauth_provider_id = ${params.managedOAuth?.providerId ?? null},
-          oauth_token_revision = 0,
-          oauth_expires_at = ${params.managedOAuth?.expiresAt ?? null}::timestamptz,
           status = 'active',
           authenticated_principal = ${verification.data.authenticatedPrincipal},
           capabilities = ${verification.data.capabilities}::jsonb,
@@ -577,7 +545,6 @@ export const replaceProviderConnection = async (params: {
           `;
         }
         const connection = mapConnection(row);
-        await params.onStored?.(tx, connection);
         await audit.record(
           {
             action: "mail.provider_connection.replace",
@@ -701,16 +668,10 @@ export const loadProviderConnectionRuntime = async (connectionId: string): Promi
 
 export const loadProviderConnectionRuntimeSnapshot = async (
   connectionId: string,
-): Promise<{ runtime: ProviderConnectionInput; secretRevision: number; oauthTokenRevision: number }> => {
-  let row = await loadConnectionRow(connectionId);
+): Promise<{ runtime: ProviderConnectionInput; secretRevision: number }> => {
+  const row = await loadConnectionRow(connectionId);
   if (!row || row.status === "revoked" || !row.encrypted_secret)
     throw Object.assign(new Error("Provider connection is unavailable"), { code: "CONNECTION_UNAVAILABLE" });
-  if (row.oauth_provider_id && (!row.oauth_expires_at || new Date(row.oauth_expires_at).getTime() <= Date.now() + 5 * 60_000)) {
-    await refreshManagedOAuthConnection(connectionId);
-    row = await loadConnectionRow(connectionId);
-    if (!row || row.status === "revoked" || !row.encrypted_secret)
-      throw Object.assign(new Error("Provider connection is unavailable"), { code: "CONNECTION_UNAVAILABLE" });
-  }
   let secret: ProviderSecret;
   try {
     secret = providerSecretSchema.parse(await decryptSecret<ProviderSecret>(row.encrypted_secret));
@@ -733,6 +694,5 @@ export const loadProviderConnectionRuntimeSnapshot = async (
       secret,
     ),
     secretRevision: row.secret_revision,
-    oauthTokenRevision: Number(row.oauth_token_revision),
   };
 };

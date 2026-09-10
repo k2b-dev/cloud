@@ -424,3 +424,34 @@ describe("admin CLI", () => {
     expect(confirmed.lines).toEqual([`Cancellation requested for ${runId}.`]);
   });
 });
+
+describe("app credential administration", () => {
+  const credential = { id: "33333333-3333-4333-8333-333333333333", name: "Production", status: "active", tokenPrefix: "cld_test", expiresAt: null };
+  test("creation requires confirmation and returns only the new token in text mode", async () => {
+    const blocked = createContext(["app-credentials", "create", "inventory"], { name: "Production" });
+    await expect(adminCli.run(blocked.ctx)).rejects.toThrow("--yes");
+    expect(blocked.calls).toHaveLength(0);
+    const write = createContext(["app-credentials", "create", "inventory"], { name: "Production", yes: true, "expires-at": "2027-01-01T00:00:00Z" }, [jsonResponse({ credential, token: "test-once-token" })]);
+    await adminCli.run(write.ctx);
+    expect(write.calls[0]?.path).toBe("/api/admin/identity/workloads/inventory/credentials");
+    expect(JSON.parse(String(write.calls[0]?.init?.body))).toEqual({ name: "Production", scopes: ["identity:invoke"], expiresAt: "2027-01-01T00:00:00Z" });
+    expect(write.lines).toEqual(["test-once-token"]);
+  });
+  test("list preserves bounded pagination in structured output", async () => {
+    const listing = { items: [credential], page: 2, perPage: 20, total: 21, hasNext: false };
+    const read = createContext(["app-credentials", "list", "inventory"], { page: "2" }, [jsonResponse(listing)]);
+    read.ctx.options.output = "json";
+    await adminCli.run(read.ctx);
+    expect(read.calls[0]?.path).toBe("/api/admin/identity/workloads/inventory/credentials?page=2&perPage=20");
+    expect(JSON.parse(read.lines[0]!)).toEqual(listing);
+  });
+  test("revoke targets one UUID and requires confirmation", async () => {
+    const blocked = createContext(["app-credentials", "revoke", "inventory", credential.id]);
+    await expect(adminCli.run(blocked.ctx)).rejects.toThrow("--yes");
+    expect(blocked.calls).toHaveLength(0);
+    const write = createContext(["app-credentials", "revoke", "inventory", credential.id], { yes: true }, [jsonResponse({ revoked: true })]);
+    await adminCli.run(write.ctx);
+    expect(write.calls[0]?.path).toBe(`/api/admin/identity/workloads/inventory/credentials/${credential.id}`);
+    expect(write.calls[0]?.init?.method).toBe("DELETE");
+  });
+});

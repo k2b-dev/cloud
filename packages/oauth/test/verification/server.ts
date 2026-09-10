@@ -50,6 +50,8 @@ if (core) {
     }),
   );
   if (current) {
+    const { bindProcessApplicationId } = await import("../../../cloud/src/_internal/process-identity");
+    bindProcessApplicationId("core");
     const { createIdentityPublicRoutes } = await import("../../../cloud/src/services/identity");
     const { createAdminIdentityRoutes } = await import("../../../cloud/src/api/admin-identity");
     const { createIdentityOAuthIssuanceRoutes } = await import("../../../core/src/api/identity-oauth-issuance");

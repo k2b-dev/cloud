@@ -1,3 +1,4 @@
+import { clearProcessApplicationId, getProcessApplicationId } from "./process-identity";
 import { expect, spyOn, test } from "bun:test";
 import type { Sync } from "@k2b/sync";
 import { type Handler, Hono } from "hono";
@@ -129,6 +130,7 @@ test("internal invocation widgets receive runtime, settings, actor and locale li
     const server = await app.start({ fetch: publicRoutes.fetch, widgets: { context: handler } });
     const headers = { authorization: `Bearer ${invocationCandidate}`, "x-cloud-locale": "de-CH" };
     const internal = await server.fetch(new Request("http://widget-context/api/_internal/widgets/v1/context", { headers }));
+    expect(getProcessApplicationId()).toBe("widget-context");
     const direct = await server.fetch(new Request("http://widget-context/api/widget-context/widget", { headers }));
     expect(internal.status).toBe(200);
     expect(direct.status).toBe(200);
@@ -146,6 +148,7 @@ test("internal invocation widgets receive runtime, settings, actor and locale li
   } finally {
     for (const spy of spies) spy.mockRestore();
     processSync.unbindProcessSync();
+    clearProcessApplicationId();
     Object.defineProperty(env, "APP_SECRET", originalSecret);
     for (const [index, signal] of signals.entries()) {
       for (const listener of process.listeners(signal)) {

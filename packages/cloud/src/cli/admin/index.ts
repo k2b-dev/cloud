@@ -1,3 +1,4 @@
+import { appCredentialCommands } from "./app-credentials";
 /**
  * `cld admin` — Cloud administration surfaces.
  *
@@ -30,6 +31,7 @@ export default defineCliCommands({
   name: "admin",
   summary: "Inspect and operate Cloud administration surfaces.",
   groupSummaries: {
+    "app-credentials": "Manage per-application credentials for background work.",
     "app-sign-in config": "Manage the trusted app website and pairing policy.",
     "accounts config": "Manage account types and sign-in visibility.",
     "accounts administration": "Manage account requests and account/group follow-up notices.",
@@ -38,6 +40,7 @@ export default defineCliCommands({
     "linux config": "Manage Linux identity defaults and allocation range.",
   },
   commands: [
+    ...appCredentialCommands,
     ...documentationCommands,
     ...appSignInCommands,
     ...accountCategoryCommands,

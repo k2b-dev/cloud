@@ -19,7 +19,7 @@ import {
 } from "@k2b/ui";
 import { createMemo, createSignal, onCleanup, Show } from "solid-js";
 import { apiClient } from "../../api/client";
-import type { MailOAuthProviderId, ProviderConnection, ProviderConnectionDetails, SenderIdentity } from "../../contracts";
+import type { ProviderConnection, SenderIdentity } from "../../contracts";
 import type { DiscoveredMailConfiguration } from "../../service/onboarding-discovery";
 import { readApiError } from "./api-response";
 import { connectionEditorDialogOptions, type ProviderSettingsProps } from "./mail-provider-settings-shared";
@@ -60,7 +60,6 @@ export function MailConnectionSettings(props: ProviderSettingsProps) {
   const [createSender, setCreateSender] = createSignal(true);
   const [savesSentAutomatically, setSavesSentAutomatically] = createSignal(false);
   const [discoverySource, setDiscoverySource] = createSignal<string | null>(null);
-  const [oauthProviderId, setOAuthProviderId] = createSignal<MailOAuthProviderId | null>(null);
   const [editorBaseline, setEditorBaseline] = createSignal("");
   let closeConnectionDialog: (() => void) | null = null;
   const currentConnection = createMemo(() => props.admin.connections.find((connection) => connection.status !== "revoked"));
@@ -117,7 +116,6 @@ export function MailConnectionSettings(props: ProviderSettingsProps) {
     setCreateSender(true);
     setSavesSentAutomatically(false);
     setDiscoverySource(null);
-    setOAuthProviderId(null);
     captureEditorBaseline();
   };
 
@@ -139,7 +137,6 @@ export function MailConnectionSettings(props: ProviderSettingsProps) {
     setCreateSender(false);
     setSavesSentAutomatically(false);
     setDiscoverySource(null);
-    setOAuthProviderId(connection.oauth?.providerId ?? null);
     captureEditorBaseline();
   };
 
@@ -171,7 +168,6 @@ export function MailConnectionSettings(props: ProviderSettingsProps) {
       setSmtpPort(candidate.smtp.port);
       setSmtpTls(candidate.smtp.tlsMode);
       setAuth(candidate.authentication.includes("password") ? "password" : "oauth2");
-      setOAuthProviderId(candidate.oauthProviderId);
       setDiscoverySource(candidate.source.replaceAll("_", " "));
       toast.success(messages().providerSettingsFound);
     },
@@ -186,47 +182,6 @@ export function MailConnectionSettings(props: ProviderSettingsProps) {
       smtpPort() >= 1 &&
       smtpPort() <= 65_535,
   );
-
-  const canStartOAuth = createMemo(
-    () =>
-      Boolean(name().trim() && email().trim() && username().trim() && imapHost().trim() && smtpHost().trim()) &&
-      imapPort() >= 1 &&
-      imapPort() <= 65_535 &&
-      smtpPort() >= 1 &&
-      smtpPort() <= 65_535,
-  );
-
-  const startOAuth = mutation.create<
-    void,
-    { providerId: MailOAuthProviderId; connectionId?: string; connection?: ProviderConnectionDetails }
-  >({
-    mutation: async ({ providerId, connectionId, connection }, { abortSignal }) => {
-      const json = connectionId
-        ? ({ operation: "reconnect", providerId, connectionId, ...(connection ? { connection } : {}) } as const)
-        : ({
-            operation: "create",
-            providerId,
-            createSender: createSender(),
-            savesSentAutomatically: savesSentAutomatically(),
-            connection: {
-              name: name().trim(),
-              email: email().trim(),
-              username: username().trim(),
-              imap: { host: imapHost().trim(), port: imapPort(), tlsMode: imapTls() },
-              smtp: { host: smtpHost().trim(), port: smtpPort(), tlsMode: smtpTls() },
-            },
-          } as const);
-      const response = await apiClient.mailboxes[":mailboxId"].oauth.start.$post(
-        { param: { mailboxId: props.mailbox.id }, json },
-        { init: { signal: abortSignal } },
-      );
-      if (!response.ok) throw new Error(await readApiError(response, messages().failedStartOAuth));
-      const result = await response.json();
-      if (abortSignal.aborted) return;
-      window.location.assign(result.authorizationUrl);
-    },
-    onError: (error) => prompts.error(error.message),
-  });
 
   const requestDefaultSenderSetup = async (bindingId: string, abortSignal?: AbortSignal) => {
     const response = await apiClient.mailboxes[":mailboxId"]["sender-identities"].default.setup.$post(
@@ -377,7 +332,6 @@ export function MailConnectionSettings(props: ProviderSettingsProps) {
   });
   onCleanup(() => {
     discover.abort();
-    startOAuth.abort();
     connect.abort();
     revoke.abort();
     finishSetup.abort();
@@ -511,34 +465,6 @@ export function MailConnectionSettings(props: ProviderSettingsProps) {
                 subtitle={replacingConnectionId() ? messages().replaceCredentialDescription : messages().credentialDescription}
                 icon="ti ti-key"
               >
-                <Show when={oauthProviderId()}>
-                  {(providerId) => (
-                    <Button
-                      size="sm"
-                      type="button"
-                      class="self-start"
-                      disabled={!canStartOAuth() || startOAuth.loading()}
-                      onClick={() =>
-                        startOAuth.mutate({
-                          providerId: providerId(),
-                          connectionId: replacingConnectionId() ?? undefined,
-                          connection: replacingConnectionId()
-                            ? {
-                                name: name().trim(),
-                                email: email().trim(),
-                                username: username().trim(),
-                                imap: { host: imapHost().trim(), port: imapPort(), tlsMode: imapTls() },
-                                smtp: { host: smtpHost().trim(), port: smtpPort(), tlsMode: smtpTls() },
-                              }
-                            : undefined,
-                        })
-                      }
-                    >
-                      <i class={startOAuth.loading() ? "ti ti-loader-2 animate-spin" : "ti ti-login-2"} aria-hidden="true" />
-                      {messages().continueWith({ provider: providerId() === "google" ? "Google" : "Microsoft" })}
-                    </Button>
-                  )}
-                </Show>
                 <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
                   <Select
                     label={messages().authentication}
@@ -637,7 +563,6 @@ export function MailConnectionSettings(props: ProviderSettingsProps) {
               <span class="block truncate text-sm font-medium text-primary">{connection().name}</span>
               <span class="block truncate text-xs text-dimmed">
                 {connection().email} · {connection().imap.host}
-                <Show when={connection().oauth}> {` · ${connectionStateLabel(connection().oauth!.state)}`}</Show>
                 <Show when={currentBinding()}>
                   {" "}
                   {` · ${messages().mailboxBindingState({ state: connectionStateLabel(currentBinding()!.state) })}`}
@@ -672,19 +597,6 @@ export function MailConnectionSettings(props: ProviderSettingsProps) {
                     void openConnectionEditor();
                   },
                 },
-                ...(connection().oauth
-                  ? [
-                      {
-                        label: messages().reconnectAccount,
-                        icon: "ti ti-refresh",
-                        action: () =>
-                          startOAuth.mutate({
-                            providerId: connection().oauth!.providerId,
-                            connectionId: connection().id,
-                          }),
-                      },
-                    ]
-                  : []),
                 {
                   sectionLabel: messages().dangerZone,
                   items: [
@@ -704,7 +616,7 @@ export function MailConnectionSettings(props: ProviderSettingsProps) {
                 variant="ghost"
                 class="opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100"
                 label={messages().connectedAccountActions}
-                disabled={props.reloading || revoke.loading() || startOAuth.loading()}
+                disabled={props.reloading || revoke.loading()}
               >
                 <i class="ti ti-dots" aria-hidden="true" />
               </Dropdown.Trigger>

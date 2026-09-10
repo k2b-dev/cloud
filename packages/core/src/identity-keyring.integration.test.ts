@@ -1,3 +1,4 @@
+import { bindProcessApplicationId, clearProcessApplicationId } from "../../cloud/src/_internal/process-identity";
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import {
   clearIdentityKeyCachesForTest,
@@ -19,14 +20,13 @@ const keyB = "20".repeat(32);
 
 suite("Core identity key ring", () => {
   const original = {
-    appId: process.env.APP_ID,
     current: process.env.CLOUD_IDENTITY_KEY_ENCRYPTION_KEY,
     previous: process.env.CLOUD_IDENTITY_PREVIOUS_KEY,
     next: process.env.CLOUD_IDENTITY_NEXT_KEY,
   };
 
   beforeAll(async () => {
-    process.env.APP_ID = "core";
+    bindProcessApplicationId("core");
     process.env.CLOUD_IDENTITY_KEY_ENCRYPTION_KEY = keyA;
     delete process.env.CLOUD_IDENTITY_PREVIOUS_KEY;
     delete process.env.CLOUD_IDENTITY_NEXT_KEY;
@@ -34,8 +34,8 @@ suite("Core identity key ring", () => {
   }, 30_000);
 
   afterAll(() => {
+    clearProcessApplicationId();
     for (const [name, value] of [
-      ["APP_ID", original.appId],
       ["CLOUD_IDENTITY_KEY_ENCRYPTION_KEY", original.current],
       ["CLOUD_IDENTITY_PREVIOUS_KEY", original.previous],
       ["CLOUD_IDENTITY_NEXT_KEY", original.next],

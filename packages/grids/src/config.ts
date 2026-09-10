@@ -31,6 +31,71 @@ export const app = defineApp({
     requiresRoles: ["user"],
   },
   settings: {
+    "grids.query_pool_size": {
+      kind: "number",
+      label: "Query pool size",
+      default: 12,
+      min: 1,
+      integer: true,
+      description: "Per Grids process. Changes take effect after restarting all Grids instances.",
+      presentation: {
+        translations: {
+          de: {
+            label: "Abfrage-Poolgröße",
+            description: "Pro Grids-Prozess. Änderungen werden nach Neustart aller Grids-Instanzen wirksam.",
+          },
+        },
+      },
+    },
+    "grids.query_concurrency": {
+      kind: "number",
+      label: "Concurrent queries (0 = pool size)",
+      default: 0,
+      min: 0,
+      integer: true,
+      description: "Limited to the query pool size per Grids process. Changes take effect after restarting all Grids instances.",
+      presentation: {
+        translations: {
+          de: {
+            label: "Parallele Abfragen (0 = Poolgröße)",
+            description:
+              "Auf die Abfrage-Poolgröße pro Grids-Prozess begrenzt. Änderungen werden nach Neustart aller Grids-Instanzen wirksam.",
+          },
+        },
+      },
+    },
+    "grids.query_queue_limit": {
+      kind: "number",
+      label: "Queued queries",
+      default: 64,
+      min: 0,
+      integer: true,
+      description: "Per Grids process. Changes take effect after restarting all Grids instances.",
+      presentation: {
+        translations: {
+          de: {
+            label: "Wartende Abfragen",
+            description: "Pro Grids-Prozess. Änderungen werden nach Neustart aller Grids-Instanzen wirksam.",
+          },
+        },
+      },
+    },
+    "grids.query_queue_timeout_ms": {
+      kind: "number",
+      label: "Queue wait timeout (ms)",
+      default: 1000,
+      min: 1,
+      integer: true,
+      description: "Per Grids process. Changes take effect after restarting all Grids instances.",
+      presentation: {
+        translations: {
+          de: {
+            label: "Wartezeit in der Warteschlange (ms)",
+            description: "Pro Grids-Prozess. Änderungen werden nach Neustart aller Grids-Instanzen wirksam.",
+          },
+        },
+      },
+    },
     "grids.max_file_size_mb": {
       kind: "number",
       label: "Max File Size",

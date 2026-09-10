@@ -3435,7 +3435,6 @@ export default defineCliCommands({
             { key: "file", label: "FILE" },
             { key: "status", label: "STATUS" },
             { key: "downloads", label: "DOWNLOADS" },
-            { key: "expires", label: "EXPIRES" },
             { key: "id", label: "ID" },
           ],
         );
@@ -4665,9 +4664,7 @@ export default defineCliCommands({
             username: candidate.username,
             imap: `${candidate.imap.host}:${candidate.imap.port} (${candidate.imap.tlsMode})`,
             smtp: `${candidate.smtp.host}:${candidate.smtp.port} (${candidate.smtp.tlsMode})`,
-            auth: candidate.oauthProviderId
-              ? `${candidate.authentication.join(",")} (${candidate.oauthProviderId} browser OAuth available)`
-              : candidate.authentication.join(","),
+            auth: candidate.authentication.join(","),
           })),
           [
             { key: "source", label: "SOURCE" },
@@ -4741,16 +4738,12 @@ export default defineCliCommands({
             name: connection.name,
             email: connection.email,
             status: connection.status,
-            oauth: connection.oauth ? `${connection.oauth.providerId}:${connection.oauth.state}` : "manual",
-            expires: connection.oauth?.expiresAt ?? "",
             id: connection.id,
           })),
           [
             { key: "name", label: "NAME" },
             { key: "email", label: "EMAIL" },
             { key: "status", label: "STATUS" },
-            { key: "oauth", label: "OAUTH" },
-            { key: "expires", label: "EXPIRES" },
             { key: "id", label: "ID" },
           ],
         );

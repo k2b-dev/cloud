@@ -18,7 +18,6 @@ import {
   deleteSenderIdentityTransportInputSchema,
   draftContentInputSchema,
   draftEditableContentInputSchema,
-  mailOAuthStartInputSchema,
   mailSearchExpressionSchema,
   mergeConversationsInputSchema,
   messageStateChangeSchema,
@@ -40,55 +39,6 @@ import {
   validateWorkflowInputSchema,
 } from "./contracts";
 
-describe("provider OAuth contracts", () => {
-  const connection = {
-    name: "Work Mail",
-    email: "user@example.com",
-    username: "user@example.com",
-    imap: { host: "imap.example.com", port: 993, tlsMode: "implicit" as const },
-    smtp: { host: "smtp.example.com", port: 587, tlsMode: "starttls" as const },
-  };
-
-  test("defaults regular sender setup to ordinary IMAP Sent handling", () => {
-    expect(
-      mailOAuthStartInputSchema.parse({
-        operation: "create",
-        providerId: "google",
-        connection,
-        createSender: true,
-      }),
-    ).toMatchObject({
-      createSender: true,
-      savesSentAutomatically: false,
-    });
-  });
-
-  test("preserves explicit provider-managed Sent handling for create flows", () => {
-    expect(
-      mailOAuthStartInputSchema.parse({
-        operation: "create",
-        providerId: "google",
-        connection,
-        createSender: true,
-        savesSentAutomatically: true,
-      }),
-    ).toMatchObject({
-      createSender: true,
-      savesSentAutomatically: true,
-    });
-  });
-
-  test("keeps sender setup options outside reconnect flows", () => {
-    expect(
-      mailOAuthStartInputSchema.parse({
-        operation: "reconnect",
-        providerId: "google",
-        connectionId: "11111111-1111-4111-8111-111111111111",
-        savesSentAutomatically: true,
-      }),
-    ).not.toHaveProperty("savesSentAutomatically");
-  });
-});
 
 describe("conversation tag contracts", () => {
   test("normalizes valid colors and rejects ambiguous tag colors", () => {

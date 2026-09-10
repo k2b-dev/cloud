@@ -7,12 +7,6 @@ const str = (key: string, fallback: string = ""): string => process.env[key] ?? 
 
 const optional = (key: string): string | undefined => process.env[key]?.trim() || undefined;
 
-const int = (key: string, fallback: number): number => {
-  const value = process.env[key];
-  const parsed = parseInt(value ?? "", 10);
-  return isNaN(parsed) ? fallback : parsed;
-};
-
 const bool = (key: string, fallback: boolean): boolean => {
   const value = process.env[key]?.trim().toLowerCase();
   if (!value) return fallback;
@@ -28,10 +22,9 @@ const list = (key: string): string[] =>
 export const env = {
   // Application (infrastructure — not changeable at runtime)
   APP_SECRET: str("APP_SECRET"),
-  PORT: int("PORT", 3000),
   IS_DEVELOPMENT: process.env.NODE_ENV === "development",
 
-  // Admin login (local emergency access — token-based, no IPA required)
+  // Admin login (temporary first access or recovery — Core only, no IPA required)
   ADMIN_LOGIN_TOKEN: str("ADMIN_LOGIN_TOKEN"),
 
   // NATS / @k2b/sync (Postgres and Redis are read by Bun from DATABASE_URL / REDIS_URL)

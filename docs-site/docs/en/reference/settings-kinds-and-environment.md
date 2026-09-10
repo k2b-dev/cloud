@@ -5,7 +5,7 @@ section: Reference
 order: 1230
 description: Look up supported setting kinds, defaults, validation, and environment behavior.
 tags: [settings, environment, validation]
-updated: 2026-07-27
+updated: 2026-09-10
 ---
 
 # Settings kinds and environment
@@ -97,7 +97,7 @@ Writes validate, encrypt, store, and invalidate the shared Valkey cache.
 ## Separate process environment
 
 Infrastructure variables such as `DATABASE_URL`, `REDIS_URL`, `APP_SECRET`,
-`APP_ID`, and `PORT` are not settings.
+`APP_ID` are not settings. Built-in services use port 3000; `PORT` is no longer runtime configuration.
 
 See [Runtime configuration](/en/docs/operations/runtime-configuration) for
 their deployment contract and [Settings](/en/docs/platform/settings) for usage.

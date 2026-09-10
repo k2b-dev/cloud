@@ -6,6 +6,7 @@ import { adminMessages } from "./messages";
 
 const platformTasks = (t: ReturnType<typeof adminMessages.resolve>["t"]) =>
   [
+    { href: "/admin/app-credentials", title: t.appCredentials, description: t.appCredentialsDescription, icon: "ti ti-key", color: "blue" },
     {
       href: "/admin/settings?tab=general",
       title: t.generalSettings,

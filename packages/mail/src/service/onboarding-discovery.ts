@@ -2,9 +2,8 @@ import { resolveSrv } from "node:dns/promises";
 import { request as httpsRequest } from "node:https";
 import { domainToASCII } from "node:url";
 import { XMLParser } from "fast-xml-parser";
-import type { MailEndpoint, MailOAuthProviderId } from "../contracts";
+import type { MailEndpoint } from "../contracts";
 import { createPinnedLookup, resolvePublicEndpoint } from "./connectors/endpoint-policy";
-import { configuredOAuthProviderForEmail } from "./provider-oauth-providers";
 
 const MAX_AUTOCONFIG_BYTES = 256 * 1024;
 const DEFAULT_TIMEOUT_MS = 5_000;
@@ -18,10 +17,9 @@ export type DiscoveredMailConfiguration = {
   imap: MailEndpoint;
   smtp: MailEndpoint;
   authentication: string[];
-  oauthProviderId: MailOAuthProviderId | null;
 };
 
-type DiscoveryPreset = Omit<DiscoveredMailConfiguration, "source" | "email" | "username" | "oauthProviderId"> & {
+type DiscoveryPreset = Omit<DiscoveredMailConfiguration, "source" | "email" | "username"> & {
   domains: string[];
 };
 
@@ -139,7 +137,6 @@ export const parseThunderbirdAutoconfig = (params: {
       imap: imap.endpoint,
       smtp: smtp.endpoint,
       authentication,
-      oauthProviderId: null,
     })),
   );
 };
@@ -230,7 +227,6 @@ const srvCandidates = async (
       imap: { host: imapEndpoint.host, port: imapEndpoint.port, tlsMode: imapEndpoint.tlsMode },
       smtp: { host: smtpEndpoint.host, port: smtpEndpoint.port, tlsMode: smtpEndpoint.tlsMode },
       authentication: ["password"],
-      oauthProviderId: null,
     })),
   );
 };
@@ -270,10 +266,7 @@ export const discoverMailConfigurations = async (
     imap: item.imap,
     smtp: item.smtp,
     authentication: item.authentication,
-    oauthProviderId: null as MailOAuthProviderId | null,
   }));
-  const oauthProviderId = await configuredOAuthProviderForEmail(parts.email);
-  if (preset[0] && oauthProviderId) preset[0].oauthProviderId = oauthProviderId;
   const providerUrls = [
     new URL(`https://autoconfig.${parts.domain}/mail/config-v1.1.xml?emailaddress=${encodeURIComponent(parts.email)}`),
     new URL(`https://${parts.domain}/.well-known/autoconfig/mail/config-v1.1.xml?emailaddress=${encodeURIComponent(parts.email)}`),

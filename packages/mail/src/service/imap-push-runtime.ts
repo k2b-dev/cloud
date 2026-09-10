@@ -28,7 +28,6 @@ export type ImapPushBindingPlan = {
   mailboxId: string;
   connectionId: string;
   secretRevision: number;
-  oauthTokenRevision: number;
   imapHost: string;
   folderId: string;
   folderPath: string;
@@ -187,7 +186,6 @@ const queryPlans = async (bindingId: string | null): Promise<ImapPushBindingPlan
       mailbox_id: string;
       connection_id: string;
       secret_revision: number;
-      oauth_token_revision: string | number;
       imap_host: string;
       capabilities: Record<string, unknown> | string;
       folder_id: string;
@@ -201,7 +199,6 @@ const queryPlans = async (bindingId: string | null): Promise<ImapPushBindingPlan
       resource.mailbox_id,
       connection.id AS connection_id,
       connection.secret_revision,
-      connection.oauth_token_revision,
       connection.imap_host,
       binding.capabilities,
       selected_folder.folder_id,
@@ -251,7 +248,6 @@ const queryPlans = async (bindingId: string | null): Promise<ImapPushBindingPlan
     mailboxId: row.mailbox_id,
     connectionId: row.connection_id,
     secretRevision: row.secret_revision,
-    oauthTokenRevision: Number(row.oauth_token_revision),
     imapHost: row.imap_host,
     folderId: row.folder_id,
     folderPath: row.remote_path,
@@ -326,7 +322,6 @@ export const imapPushPlanFingerprint = (plan: ImapPushBindingPlan): string =>
     mailboxId: plan.mailboxId,
     connectionId: plan.connectionId,
     secretRevision: plan.secretRevision,
-    oauthTokenRevision: plan.oauthTokenRevision,
     imapHost: plan.imapHost.trim().toLowerCase(),
     folderId: plan.folderId,
     folderPath: plan.folderPath,
@@ -625,7 +620,7 @@ export const runImapPushBinding = async (
           let connectedAt: number | null = null;
           try {
             const snapshot = await dependencies.loadRuntime(plan.connectionId);
-            if (snapshot.secretRevision !== plan.secretRevision || snapshot.oauthTokenRevision !== plan.oauthTokenRevision) return;
+            if (snapshot.secretRevision !== plan.secretRevision) return;
             await assertLeaseActive();
             activeListener = await dependencies.listen(snapshot.runtime, {
               folderPath: plan.folderPath,

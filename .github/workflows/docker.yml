@@ -49,7 +49,7 @@ jobs:
           set -euo pipefail
 
           # Single source of truth for which apps produce a docker image.
-          ALL='["gateway","core","accounts","api-docs","assistant","capabilities","contacts","dashboard","faq","files","gateway-ops","grids","ipa-hosts","kit","mail","notebooks","oauth","proxy-auth","quotes","spaces","tools","venue","weather"]'
+          ALL='["gateway","core","accounts","api-docs","assistant","capabilities","contacts","dashboard","faq","files","gateway-ops","grids","ipa-hosts","kit","mail","notebooks","oauth","proxy-auth","pulse","quotes","spaces","tools","venue","weather"]'
 
           if [[ "$REF" == refs/tags/cloud-*-v* ]]; then
             # Tag form: cloud-<image>-v<version>. Strip prefix + version to
@@ -79,7 +79,7 @@ jobs:
             if echo "$changed" | grep -qE '^(packages/cloud/|patches/|Dockerfile|\.dockerignore|bun\.lock|bunfig\.toml|package\.json|styles\.css|\.github/workflows/docker\.yml)'; then
               apps="$ALL"
             else
-              # Match packages/<id>/, intersect with ALL (drops pulse).
+              # Match packages/<id>/, intersect with ALL.
               touched=$(echo "$changed" | sed -nE 's|^packages/([^/]+)/.*|\1|p' | sort -u)
               apps=$(jq -nc --argjson all "$ALL" --arg list "$touched" \
                 '[$list | split("\n")[] | select(length > 0)] as $t | $all | map(select(. as $a | $t | index($a)))')

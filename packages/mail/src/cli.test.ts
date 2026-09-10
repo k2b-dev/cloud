@@ -4289,7 +4289,6 @@ test("provider discovery exposes mailbox-scoped autoconfiguration candidates", a
     imap: { host: "imap.example.com", port: 993, tlsMode: "implicit" },
     smtp: { host: "smtp.example.com", port: 587, tlsMode: "starttls" },
     authentication: ["password"],
-    oauthProviderId: null,
   };
   const requestedEmails: (string | null)[] = [];
   const server = withMailbox((request) => {
@@ -4317,8 +4316,7 @@ test("provider discovery exposes mailbox-scoped autoconfiguration candidates", a
   expect(JSON.parse(result.stdout)).toEqual([candidate]);
 });
 
-test("provider list reports managed OAuth state without credentials", async () => {
-  const expiresAt = "2026-07-21T12:00:00.000Z";
+test("provider list reports manual connection metadata without credentials", async () => {
   const server = withMailbox((request) => {
     const url = new URL(request.url);
     if (request.method === "GET" && url.pathname === `/api/mail/mailboxes/${MAILBOX_ID}/connections`) {
@@ -4333,7 +4331,6 @@ test("provider list reports managed OAuth state without credentials", async () =
           imap: { host: "imap.gmail.com", port: 993, tlsMode: "implicit" },
           smtp: { host: "smtp.gmail.com", port: 587, tlsMode: "starttls" },
           secret: { kind: "oauth2", isSet: true },
-          oauth: { providerId: "google", expiresAt, state: "reconnect_required" },
           status: "degraded",
           authenticatedPrincipal: "support@gmail.com",
           lastVerifiedAt: null,
@@ -4350,8 +4347,9 @@ test("provider list reports managed OAuth state without credentials", async () =
   const result = await runCli(`http://127.0.0.1:${server.port}`, ["mail", "provider", "list", "--mailbox", MAILBOX_ID]);
 
   expect(result.exitCode).toBe(0);
-  expect(result.stdout).toContain("google:reconnect_required");
-  expect(result.stdout).toContain(expiresAt);
+  expect(result.stdout).toContain("Google Mail");
+  expect(result.stdout).toContain("degraded");
+  expect(result.stdout).not.toContain("OAUTH");
   expect(result.stdout).not.toContain("accessToken");
   expect(result.stdout).not.toContain("refreshToken");
 });
