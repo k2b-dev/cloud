@@ -1,3 +1,4 @@
+import { startAiDictationRuntime } from "./dictation-runtime";
 import { isDeepStrictEqual } from "node:util";
 import type { InboundEvent, Input, Message } from "@k2b/nessi";
 import type { QueueMessage } from "@k2b/sync";
@@ -506,11 +507,13 @@ export const startAiRuntime = (
   const sweepTimer = setInterval(runSweep, AI_SWEEP_INTERVAL_MS);
   if (typeof sweepTimer === "object" && "unref" in sweepTimer) sweepTimer.unref();
 
+  const stopDictations = startAiDictationRuntime();
   const state: AiRuntimeState = {
     listeners,
     stop: () => {
       if (running !== state) return;
       controller.abort();
+      stopDictations();
       clearInterval(sweepTimer);
       listeners.clear();
       running = null;

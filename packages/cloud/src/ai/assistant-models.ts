@@ -1,3 +1,4 @@
+import { resolveAiAudioModel } from "./transcription";
 import type { AccessSubject, RequestActor } from "../server";
 import { aiModelAccess } from "./model-access";
 import { personalAiModelPolicy } from "./personal-agent";
@@ -20,12 +21,22 @@ export const listAssistantAiModels = async (subject: AccessSubject | null, polic
   aiModelAccess.filterModels(await listAiModels(policy), subject);
 
 export const assistantAiSettingsState = async (subject: AccessSubject | null) => {
-  const [status, models] = await Promise.all([
+  const [status, models, audioModelConfigured] = await Promise.all([
     toPublicAiSettingsState(personalAiModelPolicy.allowedDataBoundaries),
     listAssistantAiModels(subject),
+    (async () => {
+      try {
+        const model = await resolveAiAudioModel({ allowedDataBoundaries: personalAiModelPolicy.allowedDataBoundaries });
+        await aiModelAccess.assertAllowed(model.profile.id, subject);
+        return true;
+      } catch {
+        return false;
+      }
+    })(),
   ]);
   return {
     ...status,
+    audioModelConfigured,
     models,
     defaultModelId: models.some((model) => model.id === status.defaultModelId) ? status.defaultModelId : (models[0]?.id ?? ""),
   };

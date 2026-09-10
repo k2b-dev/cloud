@@ -1,4 +1,4 @@
-import { sql } from "bun";
+import { sql, type SQL } from "bun";
 
 export { guessAiMediaType } from "./file-media-type";
 
@@ -48,42 +48,54 @@ const numberedAiFilePath = (path: string, number: number): string => {
   return dot > 0 ? `${directory}${name.slice(0, dot)}-${number}${name.slice(dot)}` : `${directory}${name}-${number}`;
 };
 
-const createUniqueAiFile = async (input: {
-  conversationId: string;
-  path: string;
-  bytes: Uint8Array;
-  mediaType?: string;
-  origin: "user" | "assistant";
-  maxFileBytes?: number;
-  maxConversationBytes?: number;
-}): Promise<AiFileStat> => {
+export const createUniqueAiFileInTransaction = async (
+  tx: SQL,
+  input: {
+    conversationId: string;
+    path: string;
+    bytes: Uint8Array;
+    mediaType?: string;
+    origin: "user" | "assistant";
+    maxFileBytes?: number;
+    maxConversationBytes?: number;
+  },
+): Promise<AiFileStat> => {
   const maxFile = input.maxFileBytes ?? AI_FILES_MAX_FILE_BYTES_DEFAULT;
   const maxConversation = input.maxConversationBytes ?? AI_FILES_MAX_CONVERSATION_BYTES_DEFAULT;
   if (input.bytes.byteLength > maxFile) {
     throw new Error(`File exceeds the per-file limit of ${Math.floor(maxFile / (1024 * 1024))} MB.`);
   }
 
-  return sql.begin(async (tx) => {
-    await tx`SELECT id FROM ai.conversations WHERE id = ${input.conversationId} FOR UPDATE`;
-    const totals = await tx<{ total: number | string }[]>`
-      SELECT COALESCE(SUM(size), 0) AS total FROM ai.files WHERE conversation_id = ${input.conversationId}
-    `;
-    if (Number(totals[0]?.total ?? 0) + input.bytes.byteLength > maxConversation) {
-      throw new Error(`Conversation storage limit of ${Math.floor(maxConversation / (1024 * 1024))} MB exceeded.`);
-    }
+  await tx`SELECT id FROM ai.conversations WHERE id = ${input.conversationId} FOR UPDATE`;
+  const total = await aiConversationStoredBytes(tx, input.conversationId);
+  if (total + input.bytes.byteLength > maxConversation) {
+    throw new Error(`Conversation storage limit of ${Math.floor(maxConversation / (1024 * 1024))} MB exceeded.`);
+  }
 
-    for (let number = 1; number <= 100; number++) {
-      const path = numberedAiFilePath(input.path, number);
-      const rows = await tx<FileRow[]>`
+  for (let number = 1; number <= 100; number++) {
+    const path = numberedAiFilePath(input.path, number);
+    const rows = await tx<FileRow[]>`
         INSERT INTO ai.files (conversation_id, path, bytes, media_type, size, origin, updated_at)
         VALUES (${input.conversationId}, ${path}, ${input.bytes}, ${input.mediaType ?? "application/octet-stream"}, ${input.bytes.byteLength}, ${input.origin}, now())
         ON CONFLICT (conversation_id, path) DO NOTHING
         RETURNING path, size, media_type, origin, updated_at, version
       `;
-      if (rows[0]) return toStat(rows[0]);
-    }
-    throw new Error("Could not allocate a unique file path.");
-  });
+    if (rows[0]) return toStat(rows[0]);
+  }
+  throw new Error("Could not allocate a unique file path.");
+};
+
+const createUniqueAiFile = (input: Parameters<typeof createUniqueAiFileInTransaction>[1]) =>
+  sql.begin((tx) => createUniqueAiFileInTransaction(tx, input));
+
+/** Every file mutation holds the conversation row lock before checking this shared quota. */
+export const aiConversationStoredBytes = async (db: SQL, conversationId: string, excludingPath: string | null = null): Promise<number> => {
+  const [row] = await db<{ total: number | string }[]>`
+    SELECT (SELECT COALESCE(SUM(size), 0) FROM ai.files
+      WHERE conversation_id = ${conversationId} AND (${excludingPath}::text IS NULL OR path <> ${excludingPath}))
+      + (SELECT COALESCE(SUM(octet_length(source_bytes)), 0) FROM ai.dictations WHERE conversation_id = ${conversationId}) AS total
+  `;
+  return Number(row?.total ?? 0);
 };
 
 /** Normalize a VFS path: absolute, no `.`/`..` segments, no trailing slash. */
@@ -116,6 +128,47 @@ export const decodeAiFileContent = (content: string, encoding: "utf8" | "base64"
  * files never load fully.
  */
 export const aiFileStore = {
+  /** Stable output for one tool call; retries cannot overwrite an edited or foreign file. */
+  async createToolArtifact(input: {
+    conversationId: string;
+    path: string;
+    bytes: Uint8Array;
+    producerCallKey: string;
+    mediaType: string;
+  }): Promise<AiFileStat> {
+    if (!normalizeAiFilePath(input.path) || input.bytes.byteLength > AI_FILES_MAX_FILE_BYTES_DEFAULT) {
+      throw new Error("Invalid tool artifact path or file size.");
+    }
+    return sql.begin(async (tx) => {
+      await tx`SELECT id FROM ai.conversations WHERE id = ${input.conversationId} FOR UPDATE`;
+      const existing = await tx<(FileContentRow & { producer_call_key: string | null })[]>`
+        SELECT path, bytes, size, media_type, origin, updated_at, version, producer_call_key
+        FROM ai.files WHERE conversation_id = ${input.conversationId} AND path = ${input.path}
+      `;
+      const row = existing[0];
+      if (row) {
+        if (
+          row.origin === "assistant" &&
+          Number(row.version) === 1 &&
+          row.producer_call_key === input.producerCallKey &&
+          row.media_type === input.mediaType &&
+          Buffer.from(row.bytes).equals(Buffer.from(input.bytes))
+        )
+          return toStat(row);
+        throw new Error("Transcript artifact already exists with different or edited content.");
+      }
+      const total = await aiConversationStoredBytes(tx, input.conversationId);
+      if (total + input.bytes.byteLength > AI_FILES_MAX_CONVERSATION_BYTES_DEFAULT) {
+        throw new Error("Conversation storage limit exceeded.");
+      }
+      const rows = await tx<FileRow[]>`
+        INSERT INTO ai.files (conversation_id, path, bytes, media_type, size, origin, producer_call_key)
+        VALUES (${input.conversationId}, ${input.path}, ${input.bytes}, ${input.mediaType}, ${input.bytes.byteLength}, 'assistant', ${input.producerCallKey})
+        RETURNING path, size, media_type, origin, updated_at, version
+      `;
+      return toStat(rows[0]!);
+    });
+  },
   async createUserUpload(input: {
     conversationId: string;
     path: string;
@@ -244,12 +297,7 @@ export const aiFileStore = {
 
     await sql.begin(async (tx) => {
       await tx`SELECT id FROM ai.conversations WHERE id = ${input.conversationId} FOR UPDATE`;
-      const totals = await tx<{ total: number | string }[]>`
-        SELECT COALESCE(SUM(size), 0) AS total
-        FROM ai.files
-        WHERE conversation_id = ${input.conversationId} AND path <> ${input.path}
-      `;
-      const otherBytes = Number(totals[0]?.total ?? 0);
+      const otherBytes = await aiConversationStoredBytes(tx, input.conversationId, input.path);
       if (otherBytes + input.bytes.byteLength > maxConversation) {
         throw new Error(`Conversation storage limit of ${Math.floor(maxConversation / (1024 * 1024))} MB exceeded.`);
       }
@@ -306,10 +354,8 @@ export const aiFileStore = {
       if (nextSize > maxFile) {
         throw new Error(`File exceeds the per-file limit of ${Math.floor(maxFile / (1024 * 1024))} MB.`);
       }
-      const totals = await tx<{ total: number | string }[]>`
-        SELECT COALESCE(SUM(size), 0) AS total FROM ai.files WHERE conversation_id = ${input.conversationId}
-      `;
-      if (Number(totals[0]?.total ?? 0) + input.bytes.byteLength > maxConversation) {
+      const total = await aiConversationStoredBytes(tx, input.conversationId);
+      if (total + input.bytes.byteLength > maxConversation) {
         throw new Error(`Conversation storage limit of ${Math.floor(maxConversation / (1024 * 1024))} MB exceeded.`);
       }
       const appended = await tx<{ id: string }[]>`
@@ -366,22 +412,33 @@ export const aiFileStore = {
 
   /** Copy every file into another conversation (fork). */
   async copyToConversation(input: { sourceConversationId: string; targetConversationId: string }): Promise<number> {
-    const rows = await sql<{ id: string }[]>`
-      INSERT INTO ai.files (conversation_id, path, bytes, media_type, size, origin)
-      SELECT ${input.targetConversationId}, path, bytes, media_type, size, origin
-      FROM ai.files
-      WHERE conversation_id = ${input.sourceConversationId}
-      ON CONFLICT (conversation_id, path) DO NOTHING
-      RETURNING id
-    `;
-    return rows.length;
+    return sql.begin(async (tx) => {
+      // Lock in stable order to avoid deadlocks when two chats are forked concurrently.
+      await tx`SELECT id FROM ai.conversations WHERE id IN (${input.sourceConversationId}, ${input.targetConversationId}) ORDER BY id FOR UPDATE`;
+      const [incoming] = await tx<{ total: number | string }[]>`
+        SELECT COALESCE(SUM(source.size), 0) AS total FROM ai.files source
+        WHERE source.conversation_id = ${input.sourceConversationId} AND NOT EXISTS (
+          SELECT 1 FROM ai.files target WHERE target.conversation_id = ${input.targetConversationId} AND target.path = source.path
+        )
+      `;
+      if (
+        (await aiConversationStoredBytes(tx, input.targetConversationId)) + Number(incoming?.total ?? 0) >
+        AI_FILES_MAX_CONVERSATION_BYTES_DEFAULT
+      ) {
+        throw new Error("Conversation storage limit exceeded.");
+      }
+      const rows = await tx<{ id: string }[]>`
+        INSERT INTO ai.files (conversation_id, path, bytes, media_type, size, origin)
+        SELECT ${input.targetConversationId}, path, bytes, media_type, size, origin
+        FROM ai.files WHERE conversation_id = ${input.sourceConversationId}
+        ON CONFLICT (conversation_id, path) DO NOTHING RETURNING id
+      `;
+      return rows.length;
+    });
   },
 
   async totalBytes(conversationId: string): Promise<number> {
-    const rows = await sql<{ total: number | string }[]>`
-      SELECT COALESCE(SUM(size), 0) AS total FROM ai.files WHERE conversation_id = ${conversationId}
-    `;
-    return Number(rows[0]?.total ?? 0);
+    return aiConversationStoredBytes(sql, conversationId);
   },
 };
 

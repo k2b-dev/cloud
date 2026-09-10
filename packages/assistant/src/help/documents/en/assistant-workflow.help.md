@@ -51,3 +51,28 @@ text to another chat, it can request the `core.ai.chat.message` Action. The appr
 prompt shows the target and exact text before anything is queued. Delivered
 messages appear in the target history with their source chat; they are not
 shown as messages authored by you.
+
+## Audio and dictation {icon="microphone"}
+
+Attach a voice memo like any other file and write your own request, for example:
+“Transcribe this recording and summarize the next steps.” Uploading alone does
+not start transcription. Assistant can save the transcript as a text file in
+the chat.
+
+Choose **Dictate**, speak, then choose **Stop recording** to upload the complete
+recording. If your composer is unchanged, the recognized text is appended.
+Otherwise, **Dictation ready** offers **Insert** and **Discard**. Review the text
+and send it yourself.
+
+After upload confirmation, the dictation remains available in its chat across
+navigation and reloads. Before that, reloading or closing the tab can lose the
+recording. An upload failure lets you retry the recording still held in the
+browser. A transcription failure lets you retry or discard the stored recording.
+
+If another session changed the saved draft, your local text is preserved.
+Review the displayed saved draft and choose which version to keep.
+
+Dictation requires microphone permission, browser support, and access to a
+configured audio model. Recordings use WAV. Transcription accepts at most
+25 MB; support for other file formats depends on the configured provider.
+There is no automatic format conversion.

@@ -1,3 +1,9 @@
+import { bodyLimit } from "hono/body-limit";
+import { AI_AUDIO_MAX_BYTES } from "./audio-format";
+import { aiDictations, AiDictationConflict, AiDictationStartSchema, AiDictationListSchema } from "./dictations";
+import { enqueueAiDictation } from "./dictation-runtime";
+import { resolveAiAudioModel } from "./transcription";
+import { aiModelAccess } from "./model-access";
 import { type Context, Hono } from "hono";
 import { z } from "zod";
 import { listCapabilities } from "../_internal/registry";
@@ -1029,6 +1035,114 @@ export const aiRoutes = (() => {
         const files = await aiFileStore.list({ conversationId: conversation.id, prefix: c.req.valid("query").prefix ?? "/" });
         return respond(c, ok({ files, totalBytes: await aiFileStore.totalBytes(conversation.id) }));
       })
+      .post("/conversations/:conversationId/dictations", bodyLimit({ maxSize: AI_AUDIO_MAX_BYTES + 65_536 }), async (c) => {
+        const ctx = await resolveContext(c);
+        if (ctx instanceof Response) return ctx;
+        const conversation = await loadConversation(c, ctx);
+        if (!conversation) return notFound(c);
+        try {
+          const form = await c.req.formData();
+          const file = form.get("file");
+          if (!(file instanceof File)) return respond(c, fail(err.badInput("Attach one audio recording.")));
+          const options = AiDictationStartSchema.parse({
+            operationId: form.get("operationId"),
+            language: form.get("language") ?? undefined,
+          });
+          const dictation = await aiDictations.start({
+            ...options,
+            conversationId: conversation.id,
+            userId: ctx.ownerUserId,
+            bytes: new Uint8Array(await file.arrayBuffer()),
+            resolveModel: async () => {
+              const model = await resolveAiAudioModel({ allowedDataBoundaries: ctx.modelPolicy.allowedDataBoundaries });
+              await aiModelAccess.assertAllowed(model.profile.id, c.get("accessSubject"));
+              return model;
+            },
+          });
+          await enqueueAiDictation(dictation.id).catch(() => undefined); // The DB sweep heals failed delivery.
+          return respond(c, ok(dictation));
+        } catch (error) {
+          return respond(
+            c,
+            fail(
+              error instanceof AiDictationConflict
+                ? err.conflict(error.message)
+                : err.badInput(error instanceof Error ? error.message : "Recording upload failed."),
+            ),
+          );
+        }
+      })
+      .get("/conversations/:conversationId/dictations", v("query", AiDictationListSchema), async (c) => {
+        const ctx = await resolveContext(c);
+        if (ctx instanceof Response) return ctx;
+        const conversation = await loadConversation(c, ctx);
+        if (!conversation) return notFound(c);
+        return respond(
+          c,
+          ok(await aiDictations.list({ ...c.req.valid("query"), conversationId: conversation.id, userId: ctx.ownerUserId })),
+        );
+      })
+      .get("/conversations/:conversationId/dictations/:dictationId", async (c) => {
+        const ctx = await resolveContext(c);
+        if (ctx instanceof Response) return ctx;
+        const conversation = await loadConversation(c, ctx);
+        if (!conversation) return notFound(c);
+        const result = await aiDictations.get({
+          conversationId: conversation.id,
+          userId: ctx.ownerUserId,
+          id: z.string().regex(AI_SHORT_ID_PATTERN).parse(c.req.param("dictationId")),
+        });
+        return result ? respond(c, ok(result)) : notFound(c);
+      })
+      .post("/conversations/:conversationId/dictations/:dictationId/apply", v("json", AiSaveConversationDraftInputSchema), async (c) => {
+        const ctx = await resolveContext(c);
+        if (ctx instanceof Response) return ctx;
+        const conversation = await loadConversation(c, ctx);
+        if (!conversation) return notFound(c);
+        try {
+          return respond(
+            c,
+            ok(
+              await aiDictations.apply({
+                ...c.req.valid("json"),
+                conversationId: conversation.id,
+                userId: ctx.ownerUserId,
+                id: z.string().regex(AI_SHORT_ID_PATTERN).parse(c.req.param("dictationId")),
+              }),
+            ),
+          );
+        } catch (error) {
+          return respond(
+            c,
+            fail(
+              error instanceof AiDictationConflict
+                ? err.conflict(error.message)
+                : err.badInput(error instanceof Error ? error.message : "Dictation could not be inserted."),
+            ),
+          );
+        }
+      })
+      .post(
+        "/conversations/:conversationId/dictations/:dictationId/action",
+        v("json", z.object({ action: z.enum(["discard", "retry"]) })),
+        async (c) => {
+          const ctx = await resolveContext(c);
+          if (ctx instanceof Response) return ctx;
+          const conversation = await loadConversation(c, ctx);
+          if (!conversation) return notFound(c);
+          const input = {
+            conversationId: conversation.id,
+            userId: ctx.ownerUserId,
+            id: z.string().regex(AI_SHORT_ID_PATTERN).parse(c.req.param("dictationId")),
+          };
+          if (c.req.valid("json").action === "discard") await aiDictations.discard(input);
+          else {
+            await aiDictations.retry(input);
+            await enqueueAiDictation(input.id).catch(() => undefined);
+          }
+          return respond(c, ok({ success: true }));
+        },
+      )
       .post("/conversations/:conversationId/files", async (c) => {
         const ctx = await resolveContext(c);
         if (ctx instanceof Response) return ctx;

@@ -270,6 +270,43 @@ const conversation = (id: string): AiConversation => ({
 });
 
 describe("AI controller conversation transitions", () => {
+  test("ignores an older refresh arriving after the latest draft", async () => {
+    const pending: Array<(response: Response) => void> = [];
+    globalThis.fetch = Object.assign(
+      (request: RequestInfo | URL) =>
+        String(request).endsWith("/conversations/refresh-chat")
+          ? new Promise<Response>((resolve) => pending.push(resolve))
+          : Promise.resolve(Response.json([])),
+      {
+        preconnect: originalFetch.preconnect,
+      },
+    );
+    let dispose!: () => void;
+    const current = conversation("refresh-chat");
+    const controller = createRoot((rootDispose) => {
+      dispose = rootDispose;
+      return createAiChatController({
+        baseUrl: "/api/ai",
+        initialConversationId: current.id,
+        initialDetail: { conversation: current, messages: [], activeTurn: null },
+      });
+    });
+    const older = controller.refreshActiveConversation();
+    const newer = controller.refreshActiveConversation();
+    const reply = (revision: number) =>
+      Response.json({
+        conversation: { ...current, draft: { content: [{ type: "text", text: `Draft ${revision}` }], revision, updatedAt: null } },
+        messages: [],
+        activeTurn: null,
+      });
+    pending[1]!(reply(2));
+    await newer;
+    pending[0]!(reply(1));
+    await older;
+    expect(controller.conversation()?.draft.revision).toBe(2);
+    dispose();
+  });
+
   test("does not report an idle controller without a conversation as loading", () => {
     expect(isActiveConversationLoading(null, null)).toBe(false);
     expect(isActiveConversationLoading("chat", null)).toBe(false);

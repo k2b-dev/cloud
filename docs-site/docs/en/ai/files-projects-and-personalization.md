@@ -338,3 +338,24 @@ Cloud composes the system prompt in this order:
 See [AI resources and access](/en/docs/ai/resources-and-access) for authorized
 domain context and [Tools and approvals](/en/docs/ai/tools-and-approvals) for
 tool execution boundaries.
+
+## Audio attachments
+
+Audio uses the normal conversation file picker and file lifecycle. Uploading a
+memo does not transcribe it or create a request. The user supplies the task.
+The shared file preview plays audio when the browser supports its codec.
+
+`transcribe_audio` reads a conversation file or an authorized `/project` file
+and uses the configured audio profile. Attached conversation audio comes from
+the exact turn snapshot; a missing required snapshot fails the call. The
+operation runs inside the existing durable chat turn, without a second job.
+
+The tool writes the full transcript to a call-owned text artifact and returns
+its path plus a bounded text preview. Replay of an already persisted successful
+tool result uses that result. A crash before result persistence can repeat the
+provider call; it cannot overwrite another call's artifact or a file edited
+since creation. Artifact collisions fail explicitly.
+
+See [Models and providers](/en/docs/ai/models-and-providers#configure-audio-transcription)
+for container and provider limits. Normal file storage limits do not imply
+that an audio endpoint accepts the same input size.

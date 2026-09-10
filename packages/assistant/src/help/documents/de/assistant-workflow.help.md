@@ -45,3 +45,30 @@ Manche Anfragen benötigen eine Freigabe oder das Ergebnis eines Frontend-Tools.
 Der Assistent kann seine verfügbaren Capabilities verwenden, wenn deine Anfrage vom Chatverlauf abhängt. Er kann den aktuellen Chat durchsuchen, einen anderen eigenen Chat finden und lesen sowie strukturierte Cloud-Ressourcen suchen, die in einem der beiden Bereiche verwendet wurden.
 
 Wenn du den Assistenten ausdrücklich bittest, einer anderen Unterhaltung einen genauen Text mitzuteilen, sie danach zu fragen, sie zu benachrichtigen oder Text weiterzuleiten oder zu senden, kann er die Aktion `core.ai.chat.message` anfordern. Vor dem Einreihen zeigt die Freigabeaufforderung das Ziel und den genauen Text. Zugestellte Nachrichten erscheinen mit ihrem Quell-Chat im Zielverlauf. Sie werden nicht als von dir verfasste Nachrichten dargestellt.
+
+## Audio und Diktieren {icon="microphone"}
+
+Hänge eine Sprachmemo wie jede andere Datei an und schreibe deinen Auftrag
+selbst dazu, zum Beispiel: „Transkribiere diese Aufnahme und fasse die nächsten
+Schritte zusammen.“ Das Anhängen allein startet keine Transkription. Der
+Assistent kann das Transkript als Textdatei im Chat speichern.
+
+Mit **Diktieren** sprichst du deinen Prompt ein. **Aufnahme stoppen** lädt die
+vollständige Aufnahme hoch. Ist dein Eingabefeld unverändert geblieben, wird
+der erkannte Text dort ergänzt. Ansonsten erscheint **Diktat bereit** mit
+**Einfügen** und **Verwerfen**. Du prüfst den Text und sendest ihn selbst.
+
+Nach bestätigtem Upload bleibt das Diktat im zugehörigen Chat verfügbar, auch
+wenn du den Chat wechselst oder die Seite neu lädst. Vorher kann ein Reload
+oder das Schließen des Tabs die Aufnahme verlieren. Bei einem Uploadfehler
+kannst du die noch vorhandene Aufnahme erneut hochladen. Bei einem Fehler der
+Transkription kannst du sie wiederholen oder verwerfen.
+
+Wurde der gespeicherte Entwurf in einer anderen Sitzung geändert, bleibt dein
+lokaler Text erhalten. Prüfe den angezeigten gespeicherten Entwurf und wähle,
+welchen Stand du übernehmen möchtest.
+
+Diktieren benötigt eine Mikrofonberechtigung, einen unterstützten Browser und
+ein freigegebenes Audio-Modell. Die Aufnahme wird als WAV gespeichert.
+Transkriptionen akzeptieren höchstens 25 MB; weitere Dateiformate hängen vom
+konfigurierten Provider ab. Es gibt keine automatische Formatkonvertierung.

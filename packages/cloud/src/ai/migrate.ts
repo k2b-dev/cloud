@@ -1681,7 +1681,7 @@ export const migrateCloudAi = async (): Promise<void> => {
       created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
       CONSTRAINT ai_live_invalidation_domains_check CHECK (
         cardinality(domains) > 0 AND domains <@ ARRAY[
-          'conversation-list', 'conversation-detail', 'conversation-sources', 'conversation-files', 'conversation-tasks',
+          'conversation-list', 'conversation-detail', 'conversation-sources', 'conversation-files', 'conversation-tasks', 'conversation-dictations',
           'project-list', 'project-detail', 'project-context'
         ]::text[]
       )
@@ -2094,6 +2094,52 @@ export const migrateCloudAi = async (): Promise<void> => {
     ADD COLUMN IF NOT EXISTS workflow_run_id UUID,
     ADD COLUMN IF NOT EXISTS trace_id TEXT`.simple();
   await sql`CREATE INDEX IF NOT EXISTS idx_ai_structured_runs_user_created ON ai.structured_runs(user_id, created_at DESC)`.simple();
+
+  await sql`
+    CREATE TABLE IF NOT EXISTS ai.dictations (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      short_id TEXT NOT NULL CONSTRAINT ai_dictations_short_id_key UNIQUE,
+      conversation_id UUID NOT NULL REFERENCES ai.conversations(id) ON DELETE CASCADE,
+      user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+      operation_id UUID NOT NULL,
+      request_hash TEXT NOT NULL,
+      source_path TEXT NOT NULL,
+      source_bytes BYTEA,
+      media_type TEXT NOT NULL,
+      model_profile_id TEXT NOT NULL,
+      language TEXT,
+      status TEXT NOT NULL DEFAULT 'queued' CHECK (status IN ('queued', 'running', 'succeeded', 'failed', 'canceled')),
+      disposition TEXT NOT NULL DEFAULT 'pending' CHECK (disposition IN ('pending', 'applied', 'discarded')),
+      result TEXT,
+      error_code TEXT,
+      attempts INTEGER NOT NULL DEFAULT 0,
+      lease_token UUID,
+      lease_until TIMESTAMPTZ,
+      next_attempt_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      UNIQUE (conversation_id, user_id, operation_id)
+    )
+  `.simple();
+  await sql`CREATE INDEX IF NOT EXISTS ai_dictations_pending ON ai.dictations(conversation_id, created_at, id) WHERE disposition = 'pending'`.simple();
+  await sql`CREATE INDEX IF NOT EXISTS ai_dictations_recovery ON ai.dictations(status, next_attempt_at, lease_until) WHERE status IN ('queued', 'running')`.simple();
+  await sql.begin(async (tx) => {
+    await tx`ALTER TABLE ai.live_invalidation_outbox DROP CONSTRAINT IF EXISTS ai_live_invalidation_domains_check`;
+    await tx`ALTER TABLE ai.live_invalidation_outbox ADD CONSTRAINT ai_live_invalidation_domains_check CHECK (
+      domains <@ ARRAY['conversation-list', 'conversation-detail', 'conversation-sources', 'conversation-files', 'conversation-tasks',
+        'conversation-dictations', 'project-list', 'project-detail', 'project-context']::text[] AND cardinality(domains) > 0
+    )`;
+  });
+  await sql`DROP TRIGGER IF EXISTS ai_live_dictations_changed ON ai.dictations`.simple();
+  await sql`DROP TRIGGER IF EXISTS ai_live_dictations_state_changed ON ai.dictations`.simple();
+  await sql`CREATE TRIGGER ai_live_dictations_changed AFTER INSERT OR DELETE ON ai.dictations
+    FOR EACH ROW EXECUTE FUNCTION ai.live_conversation_child_changed('conversation-dictations')`.simple();
+  await sql`CREATE TRIGGER ai_live_dictations_state_changed AFTER UPDATE ON ai.dictations
+    FOR EACH ROW WHEN (OLD.status IS DISTINCT FROM NEW.status OR OLD.disposition IS DISTINCT FROM NEW.disposition)
+    EXECUTE FUNCTION ai.live_conversation_child_changed('conversation-dictations')`.simple();
+
+  // A tool artifact may be reused only by its producing call and while unedited.
+  await sql`ALTER TABLE ai.files ADD COLUMN IF NOT EXISTS producer_call_key TEXT`.simple();
 
   await migrateAiTurnUsage();
   await migrateAiModelAccess();

@@ -43,6 +43,30 @@ suite("normalizeAiFilePath", () => {
 });
 
 suite("aiFileStore integration", () => {
+  test("tool artifacts reuse an identical unedited call output and reject foreign or edited files", async () => {
+    const userId = await insertUser();
+    const conversation = await aiConversations.createConversation({ ownerUserId: userId });
+    const input = {
+      conversationId: conversation.id,
+      path: "/transcript.txt",
+      bytes: bytes("speech"),
+      producerCallKey: "turn:call",
+      mediaType: "text/plain",
+    };
+    try {
+      const first = await aiFileStore.createToolArtifact(input);
+      expect(await aiFileStore.createToolArtifact(input)).toEqual(first);
+      expect(await aiFileStore.list({ conversationId: conversation.id })).toHaveLength(1);
+      await expect(aiFileStore.createToolArtifact({ ...input, producerCallKey: "other" })).rejects.toThrow();
+      await expect(aiFileStore.createToolArtifact({ ...input, bytes: bytes("different") })).rejects.toThrow();
+      await aiFileStore.write({ ...input, bytes: bytes("edited") });
+      await expect(aiFileStore.createToolArtifact(input)).rejects.toThrow();
+      expect(new TextDecoder().decode((await aiFileStore.read(input))!.bytes)).toBe("edited");
+    } finally {
+      await sql`DELETE FROM ai.conversations WHERE id = ${conversation.id}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
+    }
+  });
   test("allocates distinct paths for concurrent same-named user uploads", async () => {
     const userId = await insertUser();
     const conversation = await aiConversations.createConversation({ ownerUserId: userId });

@@ -16,7 +16,7 @@ import type { CapabilityActionReview, CloudResourceRef } from "../contracts/capa
 import type { RequestActor } from "../server";
 import type { AiTurnBlock } from "./protocol";
 
-export const AI_MODEL_CAPABILITIES = ["streaming", "tools", "vision"] as const;
+export const AI_MODEL_CAPABILITIES = ["streaming", "tools", "vision", "transcription"] as const;
 export type AiModelCapability = (typeof AI_MODEL_CAPABILITIES)[number];
 
 export const AI_IMAGE_MEDIA_TYPES = ["image/png", "image/jpeg", "image/jpg", "image/webp", "image/gif"] as const;

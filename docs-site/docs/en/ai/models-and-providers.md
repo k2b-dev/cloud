@@ -5,7 +5,7 @@ section: AI
 order: 1020
 description: Configure models and providers without exposing credentials to application clients.
 tags: [ai, models, providers]
-updated: 2026-09-05
+updated: 2026-09-10
 ---
 
 # Models and providers
@@ -46,7 +46,7 @@ A locked policy needs `modelId`. A selectable policy may set
 | `provider` | Provider adapter |
 | `model` | Provider model name |
 | `enabled` | Whether Cloud may resolve the profile |
-| `capabilities` | `streaming`, `tools`, or `vision` |
+| `capabilities` | `streaming`, `tools`, `vision`, or an exclusive `transcription` profile |
 | `dataBoundary` | `hosted` or `private` |
 | `baseURL` | Optional provider endpoint |
 | `contextWindow` | Optional context limit |
@@ -132,3 +132,28 @@ chat data to a hosted fallback.
 See [Settings](/en/docs/platform/settings) for runtime configuration and
 [Runtime configuration](/en/docs/operations/runtime-configuration) for
 deployment responsibilities.
+
+## Configure audio transcription
+
+Create a normal model profile, enable **Audio transcription**, then select it
+as the audio model in AI settings (`ai.audio_model_id`). Use `openai` or
+`openai-compatible`; the latter requires an explicit base URL supporting
+`POST /audio/transcriptions`. Credentials and data boundaries use the same
+profile contract as text models.
+
+`transcription` is exclusive: combining it with `streaming`, `tools`, or
+`vision` fails validation. Audio profiles cannot serve as the default chat,
+background, or workflow model and do not appear in chat model selection.
+An empty audio selection disables default audio resolution; Cloud never falls
+back to a text model or another provider.
+
+Supported containers depend on the endpoint. Cloud recognizes WAV, MP3/MPEG
+audio, FLAC, OGG, M4A/MP4, and WebM, checks their container signatures, and
+normalizes the upload filename and MIME type. This does not validate every
+codec or convert a recording. A provider can reject a recognized container.
+The shared transcription call accepts at most 25,000,000 bytes.
+
+For example, [Scaleway's audio API](https://www.scaleway.com/en/developers/api/generative-apis/audio)
+lists WAV, MP3/MPGA, FLAC, and OGG/OGA. Its documented list does not include
+M4A/MP4 or WebM. Check the chosen endpoint before promising support for phone
+memos or browser recordings.

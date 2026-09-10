@@ -200,6 +200,7 @@ describe("AI tools", () => {
       "present",
       "calculate",
       "view_image",
+      "transcribe_audio",
     ]);
     expect(withWeb.map((tool) => tool.def.name)).toEqual([
       "survey",
@@ -212,6 +213,7 @@ describe("AI tools", () => {
       "present",
       "calculate",
       "view_image",
+      "transcribe_audio",
       "web_search",
       "web_extract",
     ]);
@@ -226,6 +228,7 @@ describe("AI tools", () => {
       "present",
       "calculate",
       "view_image",
+      "transcribe_audio",
     ]);
 
     const prepared = prepareAiTools({ tools: withWeb, actor });

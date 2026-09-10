@@ -335,3 +335,13 @@ export {
   type CloudAiViewImageOutput,
   CloudAiViewImageOutputSchema,
 } from "./vision-tool";
+
+export {
+  createAiTranscriptionProvider,
+  resolveAiAudioModel,
+  runAiTranscription,
+  type AiResolvedAudioModel,
+  type RunAiTranscriptionInput,
+} from "./transcription";
+
+export { createCloudAiTranscribeAudioTool, CloudAiTranscribeAudioInputSchema, CloudAiTranscribeAudioOutputSchema } from "./audio-tool";

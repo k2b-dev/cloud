@@ -37,3 +37,5 @@ export {
   createCloudAiMarkdownToPdfTool,
 } from "./markdown-pdf-tool";
 export { createCloudAiViewImageTool } from "./vision-tool";
+
+export { createCloudAiTranscribeAudioTool, CloudAiTranscribeAudioInputSchema, CloudAiTranscribeAudioOutputSchema } from "./audio-tool";

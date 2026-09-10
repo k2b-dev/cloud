@@ -25,6 +25,9 @@ import {
 import { type AiConversationStreamTransport, type AiStreamHandle, aiSseConversationStreamTransport } from "./transport";
 
 type ComposerDraftInput = {
+  /** Bind local content to the server draft it was actually based on. */
+  conversationId?: string;
+  expectedDraftRevision?: number;
   message?: string;
   content?: AiUserContentPart[];
   files?: File[];
@@ -436,15 +439,25 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
     return generation === conversationOpenGeneration ? ("failed" as const) : ("stale" as const);
   };
 
+  let conversationRefreshGeneration = 0;
   const refreshActiveConversation = async (): Promise<void> => {
     const conversationId = activeConversationId();
     if (!conversationId) return;
+    const refreshGeneration = ++conversationRefreshGeneration;
+    const openGeneration = conversationOpenGeneration;
     const detail = await request<AiConversationDetail>(
       `/conversations/${conversationId}`,
       { method: "GET" },
       "Failed to refresh conversation",
     );
-    if (!isActiveConversation(conversationId)) return;
+    if (
+      !isActiveConversation(conversationId) ||
+      refreshGeneration !== conversationRefreshGeneration ||
+      openGeneration !== conversationOpenGeneration
+    )
+      return;
+    const currentDraft = state.conversation?.draft;
+    if (currentDraft && currentDraft.revision > detail.conversation.draft.revision) detail.conversation.draft = currentDraft;
     const windowOldest = detail.messages[0]?.seq;
     const preservedOlder = windowOldest === undefined ? [] : state.messages.filter((message) => message.seq < windowOldest);
     setProjection({ ...detailToProjection(detail), messages: [...preservedOlder, ...detail.messages] }, conversationId);
@@ -661,10 +674,14 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
     try {
       const draft = await request<AiConversation["draft"]>(
         `/conversations/${conversationId}/draft`,
-        { method: "PUT", body: JSON.stringify({ expectedRevision: conversation.draft.revision, content }) },
+        { method: "PUT", body: JSON.stringify({ expectedRevision: input.expectedDraftRevision ?? conversation.draft.revision, content }) },
         "Failed to save conversation draft",
       );
-      const nextConversation = { ...conversation, draft };
+      const current = isActiveConversation(conversationId) ? state.conversation : cache.get(conversationId)?.conversation;
+      const nextConversation = {
+        ...(current ?? conversation),
+        draft: current && current.draft.revision > draft.revision ? current.draft : draft,
+      };
       const projection = isActiveConversation(conversationId)
         ? { conversation: nextConversation, messages: state.messages, activeTurn: state.activeTurn }
         : { ...(cache.get(conversationId) ?? emptyProjection(nextConversation)), conversation: nextConversation };
@@ -687,13 +704,13 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
   };
 
   const saveDraft = (input: ComposerDraftInput) => {
-    const targetConversation = ensureConversation();
+    const targetConversation = input.conversationId ? Promise.resolve(input.conversationId) : ensureConversation();
     return queueDraftOperation(async () => persistComposerDraft(input, await targetConversation));
   };
 
   const send = (input: ComposerDraftInput & { modelProfileId?: string }): Promise<boolean> => {
     if (!isComposerDraftSendable(input)) return Promise.resolve(false);
-    const targetConversation = ensureConversation();
+    const targetConversation = input.conversationId ? Promise.resolve(input.conversationId) : ensureConversation();
     return queueDraftOperation(async () => {
       const savedDraft = await persistComposerDraft(input, await targetConversation);
       if (!savedDraft) return false;

@@ -62,6 +62,7 @@ beforeEach(() => {
       enabled: false,
       defaultModelId: "",
       visionModelConfigured: false,
+      audioModelConfigured: false,
       error: null,
       firecrawlConfigured: false,
       models: [],

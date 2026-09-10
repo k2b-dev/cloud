@@ -259,3 +259,58 @@ Use the final turn status for completion. Handle `failed` and `aborted`
 explicitly.
 
 For the UI layer, see [Chat interface](/en/docs/ai/chat-interface).
+
+## Dictation and draft revisions
+
+Assistant records a complete mono WAV before uploading it. There is no live
+audio stream, automatic prompt submission, or meeting transcription. Microphone
+permission and AudioWorklet support are required. Recording stops at the
+25,000,000-byte transcription limit; its duration depends on the device sample
+rate. Before upload confirmation, reloading or closing the tab can lose the
+recording. Navigation during recording stops and uploads it to its bound chat.
+
+Core owns the Assistant dictation API and worker. These conversation endpoints
+use the same user-backed authorization as drafts:
+
+| Endpoint suffix below `/api/ai/conversations/:conversationId` | Operation |
+| --- | --- |
+| `POST /dictations` | Multipart `file`, client UUID `operationId`, optional two-letter `language` |
+| `GET /dictations` | Pending items; optional `after` cursor and `limit` up to 50 |
+| `GET /dictations/:dictationId` | Status and complete transcript |
+| `POST /dictations/:dictationId/apply` | Local draft `content` and `expectedRevision`; append once atomically |
+| `POST /dictations/:dictationId/action` | `action: "retry"` or `action: "discard"` |
+
+The start transaction writes one normal conversation file and a private input
+snapshot. Both count toward the conversation storage quota. The operation ID
+is bound to user, chat, bytes, and options. Repeating it with different input
+returns a conflict; repeating identical input returns the same dictation even
+if the configured default model changed. One pending dictation per chat is
+allowed. Results use public short IDs; operation IDs are client correlation.
+
+The worker uses the pinned profile ID and rechecks model and Project access.
+Two concurrent jobs share the Core runtime lifecycle. Postgres leases fence
+stale workers; a sweep every 15 seconds recovers missing queue delivery and
+expired claims. Transient provider failures have at most three automatic
+attempts. Input snapshots remain available for explicit retries after failure
+and are released after success or discard. A crash around provider completion
+can repeat the provider request and its charge.
+
+The existing AI WebSocket publishes `conversation-dictations` invalidations,
+not audio or transcript content. A database trigger creates the outbox entry
+in the same transaction as each status change. Initial loading, reconnect, and
+returning to a chat reload pending dictations through HTTP. A completed upload
+also refreshes that query to cover completion before subscription.
+
+Each local composer tracks the revision of the draft actually displayed and a
+separate edit generation. Controller `saveDraft()` and `send()` accept explicit
+`conversationId` and `expectedDraftRevision` for that binding. A remote refresh
+cannot advance the base of dirty local text. Safe unchanged sessions can append
+a finished dictation automatically; changes, navigation, or reload require an
+explicit **Insert**. Apply checks the revision and marks the dictation applied
+in the same transaction. Typing during apply preserves local text and exposes
+the saved draft for an explicit decision. Conflicts never retry with an unseen
+newer revision.
+
+This worker is specific to Assistant conversations. Other applications call
+`runAiTranscription()` from their own authorized service or durable worker and
+own their own inputs and results.

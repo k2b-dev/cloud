@@ -1,3 +1,6 @@
+import { createAssistantDictation } from "./assistant-dictation";
+import { audioMessages } from "./audio-messages";
+import { newComposerSession, editComposerSession, observeComposerRevision, confirmComposerSave } from "./composer-session";
 import { navigate, navigateTo } from "@k2b/ssr/nav";
 import { mutation, query } from "@k2b/stdlib/solid";
 import { AppWorkspace, Button, Chat, openSpotlightSearch, prompts, useLocale } from "@k2b/ui";
@@ -67,6 +70,7 @@ type Status = {
   enabled: boolean;
   defaultModelId: string;
   visionModelConfigured: boolean;
+  audioModelConfigured?: boolean;
   error: AiSettingsError | null;
   models: AiPublicModelProfile[];
 };
@@ -106,6 +110,7 @@ type ProjectViewState = {
 export default function AssistantWorkspace(props: Props) {
   const locale = useLocale();
   const t = () => assistantMessages.resolve([locale()]).t;
+  const audioCopy = () => audioMessages.resolve([locale()]).t;
   const isSelectable = (modelId: string | null | undefined): modelId is string =>
     Boolean(modelId && props.models.some((model) => model.id === modelId));
 
@@ -219,7 +224,6 @@ export default function AssistantWorkspace(props: Props) {
   const [queuedMessages, setQueuedMessages] = createSignal<Record<string, AssistantQueuedMessage[]>>({});
   const [sendingQueuedId, setSendingQueuedId] = createSignal<string | null>(null);
   const [composerSubmitting, setComposerSubmitting] = createSignal(false);
-  const submittedDrafts = new Set<string>();
   let queuedMessageSequence = 0;
   const [pendingProjectChats, setPendingProjectChats] = createSignal<Record<string, AiConversation>>({});
   const [filesDialogOpen, setFilesDialogOpen] = createSignal(false);
@@ -283,54 +287,121 @@ export default function AssistantWorkspace(props: Props) {
   });
   const composerSessionKey = () => chat.activeConversationId() ?? (activeProject() ? projectComposerKey(activeProject()!.id) : "__new__");
   const composerDraft = (key: string) => composerDrafts()[key] ?? "";
-  const setComposerDraft = (key: string, value: string) => setComposerDrafts((current) => ({ ...current, [key]: value }));
+  const sessions = new Map<string, ReturnType<typeof newComposerSession>>();
+  const [serverDrafts, setServerDrafts] = createSignal<Record<string, AiConversation["draft"]>>({});
+  const [sessionVersion, setSessionVersion] = createSignal(0);
+  const touchSession = () => setSessionVersion((n) => n + 1);
+  const session = (key: string) => {
+    let value = sessions.get(key);
+    if (!value) {
+      value = newComposerSession();
+      sessions.set(key, value);
+    }
+    return value;
+  };
+  const setComposerDraft = (key: string, value: string) => {
+    editComposerSession(session(key));
+    setComposerDrafts((current) => ({ ...current, [key]: value }));
+  };
   const composerAttachmentsFor = (key: string) => composerAttachments()[key] ?? [];
-  const setComposerAttachmentsFor = (key: string, attachments: AiComposerAttachment[]) =>
+  const setComposerAttachmentsFor = (key: string, attachments: AiComposerAttachment[]) => {
+    editComposerSession(session(key));
     setComposerAttachments((current) => ({ ...current, [key]: attachments }));
+  };
 
-  const hydratedDrafts = new Set<string>();
-  createEffect(() => {
-    const conversation = chat.conversation();
-    if (!conversation || hydratedDrafts.has(conversation.id)) return;
-    hydratedDrafts.add(conversation.id);
+  const hydrateComposer = (key: string, draft: AiConversation["draft"]) => {
+    const conversation = { id: key, draft };
     const text = conversation.draft.content
       .filter((part) => part.type === "text")
       .map((part) => part.text)
       .join("\n\n");
-    setComposerDraft(conversation.id, text);
-    setComposerAttachmentsFor(
+    setComposerDrafts((current) => ({ ...current, [key]: text }));
+    const attachments = conversation.draft.content.flatMap((part): AiComposerAttachment[] => {
+      if (part.type === "resource") {
+        return [
+          {
+            kind: "resource",
+            id: `resource:${part.ref.type}:${part.ref.id}`,
+            name: part.title ?? part.ref.id,
+            ref: part.ref,
+            icon: part.icon ?? "ti ti-cloud",
+            href: part.href,
+          },
+        ];
+      }
+      if (part.type === "file") {
+        return [
+          {
+            kind: "stored-file",
+            id: `file:${part.path}:${part.version}`,
+            name: part.path.split("/").at(-1) || part.path,
+            path: part.path,
+            mediaType: part.mediaType,
+            size: part.size,
+            version: part.version,
+            icon: "ti-file",
+          },
+        ];
+      }
+      return [];
+    });
+    setComposerAttachments((current) => ({ ...current, [key]: attachments }));
+    const local = session(key);
+    local.editGeneration++;
+    local.baseRevision = draft.revision;
+    local.dirty = false;
+    local.conflict = false;
+    touchSession();
+  };
+  createEffect(() => {
+    const conversation = chat.conversation();
+    if (!conversation) return;
+    const keys = [
       conversation.id,
-      conversation.draft.content.flatMap((part): AiComposerAttachment[] => {
-        if (part.type === "resource") {
-          return [
-            {
-              kind: "resource",
-              id: `resource:${part.ref.type}:${part.ref.id}`,
-              name: part.title ?? part.ref.id,
-              ref: part.ref,
-              icon: part.icon ?? "ti ti-cloud",
-              href: part.href,
-            },
-          ];
-        }
-        if (part.type === "file") {
-          return [
-            {
-              kind: "stored-file",
-              id: `file:${part.path}:${part.version}`,
-              name: part.path.split("/").at(-1) || part.path,
-              path: part.path,
-              mediaType: part.mediaType,
-              size: part.size,
-              version: part.version,
-              icon: "ti-file",
-            },
-          ];
-        }
-        return [];
-      }),
-    );
+      ...Object.entries(pendingProjectChats())
+        .filter(([, pending]) => pending.id === conversation.id)
+        .map(([projectId]) => projectComposerKey(projectId)),
+    ];
+    for (const key of keys) {
+      setServerDrafts((all) => ({ ...all, [key]: conversation.draft }));
+      const existing = sessions.get(key);
+      if (!existing || observeComposerRevision(existing, conversation.draft.revision) === "hydrate") {
+        hydrateComposer(key, conversation.draft);
+      } else if (existing.conflict) touchSession();
+    }
   });
+  const composerSaves = new Map<string, Promise<unknown>>();
+  const serializeComposer = <T,>(key: string, action: () => Promise<T>): Promise<T> => {
+    const next = (composerSaves.get(key) ?? Promise.resolve()).then(action, action);
+    composerSaves.set(
+      key,
+      next.catch(() => undefined),
+    );
+    return next;
+  };
+  const composerInput = (key: string) =>
+    aiComposerSendInput({ intent: "send", text: composerDraft(key), attachments: aiChatAttachments(composerAttachmentsFor(key)) });
+  const saveComposer = (key: string, target: string) =>
+    serializeComposer(key, async () => {
+      const local = session(key);
+      if (local.conflict) return null;
+      const generation = local.editGeneration;
+      local.saving = true;
+      try {
+        const saved = await chat.saveDraft({ ...composerInput(key), conversationId: target, expectedDraftRevision: local.baseRevision });
+        if (saved) confirmComposerSave(local, saved.revision, generation);
+        else {
+          local.conflict = true;
+          if (chat.activeConversationId() === target) await chat.refreshActiveConversation();
+        }
+        return saved;
+      } finally {
+        local.saving = false;
+        const remote = serverDrafts()[key];
+        if (remote && observeComposerRevision(local, remote.revision) === "hydrate") hydrateComposer(key, remote);
+        touchSession();
+      }
+    });
 
   const selectedModel = createMemo(() => props.models.find((model) => model.id === selectedModelId()) ?? null);
   const acceptsImages = () =>
@@ -364,28 +435,25 @@ export default function AssistantWorkspace(props: Props) {
     return newConversation.data();
   };
   createEffect(() => {
-    if (activeProject()) return;
-    if (composerSubmitting()) return;
-    const sessionKey = composerSessionKey();
-    const text = composerDraft(sessionKey);
-    const composerFiles = composerAttachmentsFor(sessionKey);
-    const attachments = aiChatAttachments(composerFiles);
-    const input = aiComposerSendInput({ intent: "send", text, attachments });
-    const hasDraft = Boolean(input.message || input.files?.length || input.resources?.length || input.storedFiles?.length);
-    const activeConversationId = chat.activeConversationId();
-    if (!hasDraft && activeConversationId && submittedDrafts.delete(activeConversationId)) return;
-    if (!chat.activeConversationId() && !hasDraft) return;
+    if (activeProject() || composerSubmitting()) return;
+    const key = composerSessionKey();
+    const text = composerDraft(key);
+    const files = composerAttachmentsFor(key);
+    if (!session(key).dirty || session(key).conflict) return;
+    if (!chat.activeConversationId() && !text && !files.length) return;
+    const target = chat.activeConversationId();
     const timer = window.setTimeout(async () => {
-      let conversationId = chat.activeConversationId();
+      if (composerSessionKey() !== key || session(key).conflict) return;
+      let conversationId = target;
       if (!conversationId) {
-        const conversation = await createConversation(false);
-        if (!conversation) return;
-        conversationId = conversation.id;
-        hydratedDrafts.add(conversationId);
-        setComposerDraft(conversationId, text);
-        setComposerAttachmentsFor(conversationId, composerFiles);
+        const created = await createConversation(false);
+        if (!created) return;
+        conversationId = created.id;
+        setComposerDraft(conversationId, composerDraft(key));
+        setComposerAttachmentsFor(conversationId, composerAttachmentsFor(key));
+        session(conversationId).baseRevision = created.draft.revision;
       }
-      await chat.saveDraft(input);
+      await saveComposer(conversationId, conversationId);
     }, 2_000);
     onCleanup(() => window.clearTimeout(timer));
   });
@@ -469,25 +537,44 @@ export default function AssistantWorkspace(props: Props) {
   });
 
   const send = async (input: AiComposerSendInput) => {
-    if (!canSend()) return false;
+    if (!canSend() || dictation.busy()) return false;
+    dictation.invalidateAutomatic();
     setComposerSubmitting(true);
     try {
       if (!chat.activeConversationId()) {
         const conversation = await createConversation(false);
         if (!conversation || chat.activeConversationId() !== conversation.id) return false;
+        session(conversation.id).baseRevision = conversation.draft.revision;
       }
-      const sent = await chat.send({
-        ...input,
-        modelProfileId: selectedModelId() || undefined,
+      const target = chat.activeConversationId()!;
+      const sent = await serializeComposer(target, async () => {
+        const local = session(target);
+        if (local.conflict) return false;
+        local.saving = true;
+        try {
+          const result = await chat.send({
+            ...input,
+            conversationId: target,
+            expectedDraftRevision: local.baseRevision,
+            modelProfileId: selectedModelId() || undefined,
+          });
+          const draft = chat.conversation()?.id === target ? chat.conversation()?.draft : undefined;
+          if (draft) local.baseRevision = draft.revision;
+          if (!result) local.conflict = true;
+          return result;
+        } finally {
+          local.saving = false;
+          touchSession();
+        }
       });
-      if (sent && chat.activeConversationId()) submittedDrafts.add(chat.activeConversationId()!);
       return sent;
     } finally {
       setComposerSubmitting(false);
     }
   };
   const sendProjectMessage = async (projectId: string, input: AiComposerSendInput) => {
-    if (!canSend()) return false;
+    if (!canSend() || dictation.busy()) return false;
+    dictation.invalidateAutomatic();
     const modelProfileId = selectedModelId() || undefined;
     return submitAssistantProjectMessage({
       projectId,
@@ -497,7 +584,26 @@ export default function AssistantWorkspace(props: Props) {
       activeConversationId: chat.activeConversationId,
       openConversation: chat.openConversation,
       createConversation: (targetProjectId) => createConversation(false, targetProjectId, false),
-      send: chat.send,
+      send: (message) => {
+        const target = chat.activeConversationId();
+        if (!target) return Promise.resolve(false);
+        const key = projectComposerKey(projectId);
+        return serializeComposer(key, async () => {
+          const local = session(key);
+          if (local.conflict) return false;
+          local.saving = true;
+          try {
+            const sent = await chat.send({ ...message, conversationId: target, expectedDraftRevision: local.baseRevision });
+            const draft = chat.conversation()?.draft;
+            if (draft) local.baseRevision = draft.revision;
+            if (!sent) local.conflict = true;
+            return sent;
+          } finally {
+            local.saving = false;
+            touchSession();
+          }
+        });
+      },
       rememberPending: (conversation) => setPendingProjectChats((current) => ({ ...current, [projectId]: conversation })),
       clearPending: () =>
         setPendingProjectChats((current) => {
@@ -668,10 +774,7 @@ export default function AssistantWorkspace(props: Props) {
     }
     if (attachmentErrors.length > 0) chat.setError(attachmentErrors.join(" "));
     if (result.attachments.length === 0) return;
-    setComposerAttachments((all) => ({
-      ...all,
-      [sessionKey]: [...(all[sessionKey] ?? []), ...result.attachments],
-    }));
+    setComposerAttachmentsFor(sessionKey, [...composerAttachmentsFor(sessionKey), ...result.attachments]);
   };
 
   const composerAttachmentsBlocked = (sessionKey: string) => chat.activeConversationId() === sessionKey && chat.running();
@@ -794,6 +897,73 @@ export default function AssistantWorkspace(props: Props) {
     ]);
   };
 
+  const dictationKey = () => (activeProject() ? projectComposerKey(activeProject()!.id) : composerSessionKey());
+  const dictationTarget = () => (activeProject() ? (pendingProjectChats()[activeProject()!.id]?.id ?? null) : chat.activeConversationId());
+  const dictation = createAssistantDictation({
+    configured: () => Boolean(props.status.audioModelConfigured) && canUseComposer(),
+    key: dictationKey,
+    target: dictationTarget,
+    generation: (key) => {
+      composerDraft(key);
+      composerAttachmentsFor(key);
+      return session(key).editGeneration;
+    },
+    live: liveHub,
+    onError: chat.setError,
+    ensureTarget: async () => {
+      const key = dictationKey();
+      const projectId = activeProject()?.id;
+      const target = dictationTarget();
+      if (target) return { key, target };
+      const created = await createConversation(false, projectId, !projectId);
+      if (!created) return null;
+      if (projectId) {
+        session(key).baseRevision = created.draft.revision;
+        setPendingProjectChats((all) => ({ ...all, [projectId]: created }));
+        return { key, target: created.id };
+      }
+      setComposerDraft(created.id, composerDraft(key));
+      setComposerAttachmentsFor(created.id, composerAttachmentsFor(key));
+      session(created.id).baseRevision = created.draft.revision;
+      return { key: created.id, target: created.id };
+    },
+    apply: async (key, target, id) => {
+      const generation = session(key).editGeneration;
+      const saved = await saveComposer(key, target);
+      if (!saved || generation !== session(key).editGeneration) return false;
+      return serializeComposer(key, async () => {
+        const local = session(key);
+        if (local.conflict || local.editGeneration !== generation) return false;
+        local.saving = true;
+        try {
+          const response = await fetch(`/api/ai/conversations/${target}/dictations/${id}/apply`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ expectedRevision: local.baseRevision, content: saved.content }),
+          });
+          if (!response.ok) {
+            local.conflict = true;
+            await chat.refreshActiveConversation();
+            return false;
+          }
+          const result: { disposition: string; draft: AiConversation["draft"] | null } = await response.json();
+          if (result.draft) {
+            setServerDrafts((all) => ({ ...all, [key]: result.draft! }));
+            if (local.editGeneration === generation) hydrateComposer(key, result.draft);
+            else local.conflict = true;
+          } else if (result.disposition === "applied") {
+            local.conflict = true;
+          }
+          await chat.refreshActiveConversation();
+          return result.disposition === "applied";
+        } finally {
+          local.saving = false;
+          touchSession();
+        }
+      });
+    },
+  });
+
   const AssistantComposer = (composerProps: { projectId?: string; projectName?: string }) => {
     const sessionKey = () => (composerProps.projectId ? projectComposerKey(composerProps.projectId) : composerSessionKey());
     const projectComposer = () => Boolean(composerProps.projectId);
@@ -810,7 +980,45 @@ export default function AssistantWorkspace(props: Props) {
             />
           )}
         </Show>
+        <dictation.Status />
+        <Show when={(sessionVersion(), session(sessionKey()).conflict)}>
+          <div role="status" class="space-y-2 rounded-lg border border-border p-3 text-sm">
+            <p>{audioCopy().conflict}</p>
+            <Show when={serverDrafts()[sessionKey()]}>
+              {(saved) => (
+                <>
+                  <p>{audioCopy().savedDraft}</p>
+                  <pre class="max-h-48 overflow-auto whitespace-pre-wrap">
+                    {saved()
+                      .content.filter((part) => part.type === "text")
+                      .map((part) => part.text)
+                      .join("\n\n")}
+                  </pre>
+                  <Button size="sm" variant="secondary" onClick={() => hydrateComposer(sessionKey(), saved())}>
+                    {audioCopy().useSaved}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={async () => {
+                      const key = sessionKey();
+                      const target = dictationTarget();
+                      if (!target) return;
+                      const local = session(key);
+                      local.baseRevision = saved().revision;
+                      local.conflict = false;
+                      await saveComposer(key, target);
+                    }}
+                  >
+                    {audioCopy().keepLocal}
+                  </Button>
+                </>
+              )}
+            </Show>
+          </div>
+        </Show>
         <Chat.Composer
+          footerTools={<dictation.Control />}
           value={composerDraft(sessionKey())}
           onValueChange={(value) => setComposerDraft(sessionKey(), value)}
           attachments={aiChatAttachments(composerAttachmentsFor(sessionKey()), {

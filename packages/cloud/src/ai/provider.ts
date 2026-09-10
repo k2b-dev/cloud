@@ -16,6 +16,7 @@ const commonOptions = (profile: AiModelProfile, apiKey?: string) => ({
 });
 
 export const createAiProvider = (profile: AiModelProfile, apiKey?: string): Provider => {
+  if (profile.capabilities.includes("transcription")) throw new Error("Transcription profiles cannot be used for chat generation.");
   switch (profile.provider) {
     case "openai":
       return openai(profile.model, commonOptions(profile, apiKey));

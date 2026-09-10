@@ -20,6 +20,18 @@ const MEDIA_TYPES: Record<string, string> = {
   pdf: "application/pdf",
   zip: "application/zip",
   ics: "text/calendar",
+  wav: "audio/wav",
+  mp3: "audio/mpeg",
+  mpga: "audio/mpeg",
+  mpeg: "audio/mpeg",
+  flac: "audio/flac",
+  ogg: "audio/ogg",
+  oga: "audio/ogg",
+  opus: "audio/ogg",
+  m4a: "audio/mp4",
+  mp4: "video/mp4",
+  webm: "video/webm",
+  weba: "audio/webm",
 };
 
 export const guessAiMediaType = (path: string): string => {

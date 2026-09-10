@@ -234,3 +234,35 @@ for filters, error details, attribution, and the matching CLI commands.
 
 Use [Chat runtime and streaming](/en/docs/ai/chat-runtime-and-streaming) when
 the user needs an interactive, stored conversation.
+
+## Transcribe an audio file
+
+Use `runAiTranscription()` from `@k2b/cloud/ai` in an authorized server-side
+service. It uses the configured audio model or an explicit transcription
+profile and returns text without starting a conversation.
+
+```ts
+import { runAiTranscription } from "@k2b/cloud/ai";
+
+const result = await runAiTranscription({
+  task: "transcribe-memo",
+  file: authorizedAudioBlob,
+  filename: "memo.wav",
+  language: "de",
+  allowedDataBoundaries: ["private"],
+  signal,
+});
+// Persist result.text in the application's own authorized service.
+```
+
+The caller owns source authorization, durable input storage, retries, and
+result persistence. This function makes one provider call with a ten-minute
+upper timeout and respects the caller's abort signal. Empty text is a valid
+result when no speech was recognized. It performs no translation, format
+conversion, splitting, or automatic retry.
+
+Each attempt records model, task, duration, status, and optional attribution in
+the metadata-only AI usage ledger. Audio and transcripts are excluded, and
+unknown provider usage or costs remain unknown. See
+[Models and providers](/en/docs/ai/models-and-providers#configure-audio-transcription)
+for configuration and file limits.

@@ -123,7 +123,7 @@
       "dependencies": {
         "@firecrawl/anydoc": "0.1.9",
         "@hono/standard-validator": "0.2.2",
-        "@k2b/nessi": "0.11.0",
+        "@k2b/nessi": "0.12.0",
         "@k2b/ssr": "0.12.0",
         "@k2b/stdlib": "0.22.0",
         "@k2b/sync": "6.4.0",
@@ -1044,7 +1044,7 @@
 
     "@k2b/fibel": ["@k2b/fibel@0.7.4", "", { "dependencies": { "@k2b/nessi": "^0.10.0", "@k2b/stdlib": "^0.17.0", "@modelcontextprotocol/sdk": "1.30.0", "bun-plugin-tailwind": "^0.1.2", "marked": "^16.4.1", "tailwindcss": "^4.1.14", "zod": "^4.4.3" }, "peerDependencies": { "@k2b/ssr": "^0.12.0", "solid-js": "^1.9.0" }, "optionalPeers": ["@k2b/ssr", "solid-js"], "bin": { "fibel": "src/cli.ts" } }, "sha512-jsfX7f5Cs9/KESgzGjhRk+AKXCSWezHkgG9sUkzDFcF/oySU9cOzHpvis6t1HDqHgAovEztK5Fm5wn0cUPgAQQ=="],
 
-    "@k2b/nessi": ["@k2b/nessi@0.11.0", "", { "dependencies": { "zod": "^4.3.0" } }, "sha512-SajlKjEJQvM209JqFQNpGlGhOIj6z3U13NbgDYBx4snhbxxRXtCO3qNseNWMT5OgjqkWvrp4M84tP2nWZAC1Eg=="],
+    "@k2b/nessi": ["@k2b/nessi@0.12.0", "", { "dependencies": { "zod": "^4.3.0" } }, "sha512-1yxW7UWmpeoUTw8hvYrm5IF/8YwZLzcBwbczzAvYxqSfZ/k9xHn0dDvoo8P7eHnj82P4TlsY85xUQ2NJHuj6Vg=="],
 
     "@k2b/pwa-auth": ["@k2b/pwa-auth@workspace:pwas/pwa-auth"],
 

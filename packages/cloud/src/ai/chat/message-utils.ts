@@ -1,3 +1,4 @@
+import { AI_AUDIO_EXTENSIONS } from "../audio-format";
 import type { Message, Usage } from "@k2b/nessi";
 import { fileIcons } from "@k2b/stdlib";
 import { formatBytes as sharedFormatBytes } from "../../shared/format";
@@ -111,6 +112,8 @@ export const TEXT_ATTACHMENT_MEDIA_TYPES = new Set([
 ]);
 export const FILE_INPUT_ACCEPT = [
   ...AI_IMAGE_MEDIA_TYPES,
+  "audio/*",
+  ...AI_AUDIO_EXTENSIONS.map((extension) => `.${extension}`),
   "text/*",
   ...Array.from(TEXT_ATTACHMENT_MEDIA_TYPES),
   ...Array.from(new Set([...TEXT_ATTACHMENT_EXTENSIONS, ...DOCUMENT_ATTACHMENT_EXTENSIONS]), (extension) => `.${extension}`),

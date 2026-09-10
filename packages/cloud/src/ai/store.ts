@@ -1,6 +1,6 @@
 import type { DoneReason, InboundEvent, LoopAggregate, Message, SessionStore, StoreEntry } from "@k2b/nessi";
 import type { Usage } from "@k2b/nessi/ai";
-import { sql } from "bun";
+import { sql, type SQL } from "bun";
 import { type CapabilityActionReview, CapabilityActionReviewSchema } from "../contracts/capabilities";
 import { logger } from "../services/logging";
 import { toPgTextArray } from "../services/postgres";
@@ -857,6 +857,69 @@ const toolMessageMeta = (
   return Object.keys(toolPresentations).length > 0 ? { toolPresentations } : null;
 };
 
+export const saveAiDraftInTransaction = async (
+  tx: SQL,
+  input: Parameters<AiConversationService["saveDraft"]>[0],
+): ReturnType<AiConversationService["saveDraft"]> => {
+  const [conversation] = await tx<{ draft_content: unknown; draft_revision: number | string; draft_updated_at: Date | string | null }[]>`
+        SELECT draft_content, draft_revision, draft_updated_at
+        FROM ai.conversations
+        WHERE id = ${input.conversationId}::uuid
+          AND created_by_user_id = ${input.ownerUserId}::uuid
+          AND archived_at IS NULL
+        FOR UPDATE
+      `;
+  if (!conversation) return { ok: false as const, reason: "not_found" as const };
+  if (Number(conversation.draft_revision) !== input.expectedRevision) {
+    return { ok: false as const, reason: "conflict" as const };
+  }
+  const [sameDraft] = await tx<{ same: boolean }[]>`
+        SELECT ${JSON.stringify(input.content)}::jsonb = ${JSON.stringify(parseJsonValue(conversation.draft_content))}::jsonb AS same
+      `;
+  if (sameDraft?.same) {
+    return {
+      ok: true as const,
+      draft: {
+        content: input.content,
+        revision: Number(conversation.draft_revision),
+        updatedAt: conversation.draft_updated_at ? iso(conversation.draft_updated_at) : null,
+      },
+    };
+  }
+
+  for (const part of input.content) {
+    if (part.type !== "file") continue;
+    const [file] = await tx<{ exists: boolean }[]>`
+          SELECT EXISTS (
+            SELECT 1 FROM ai.files
+            WHERE conversation_id = ${input.conversationId}::uuid
+              AND path = ${part.path}
+              AND media_type = ${part.mediaType}
+              AND size = ${part.size}
+              AND version = ${part.version}
+          ) AS exists
+        `;
+    if (!file?.exists) throw new Error(`Conversation file changed or no longer exists: ${part.path}`);
+  }
+
+  const [saved] = await tx<{ draft_content: unknown; draft_revision: number | string; draft_updated_at: Date | string }[]>`
+        UPDATE ai.conversations
+        SET draft_content = ${JSON.stringify(input.content)}::jsonb,
+            draft_revision = draft_revision + 1,
+            draft_updated_at = now()
+        WHERE id = ${input.conversationId}::uuid
+        RETURNING draft_content, draft_revision, draft_updated_at
+      `;
+  return {
+    ok: true as const,
+    draft: {
+      content: parseJsonValue<AiConversationDraft["content"]>(saved!.draft_content),
+      revision: Number(saved!.draft_revision),
+      updatedAt: iso(saved!.draft_updated_at),
+    },
+  };
+};
+
 export const aiConversations: AiConversationService = {
   createConversation: async (input) => {
     const rows = await withAiShortId(
@@ -1138,68 +1201,7 @@ export const aiConversations: AiConversationService = {
     return loadConversationSummary(input);
   },
 
-  saveDraft: async (input) =>
-    sql.begin(async (tx) => {
-      const [conversation] = await tx<
-        { draft_content: unknown; draft_revision: number | string; draft_updated_at: Date | string | null }[]
-      >`
-        SELECT draft_content, draft_revision, draft_updated_at
-        FROM ai.conversations
-        WHERE id = ${input.conversationId}::uuid
-          AND created_by_user_id = ${input.ownerUserId}::uuid
-          AND archived_at IS NULL
-        FOR UPDATE
-      `;
-      if (!conversation) return { ok: false as const, reason: "not_found" as const };
-      if (Number(conversation.draft_revision) !== input.expectedRevision) {
-        return { ok: false as const, reason: "conflict" as const };
-      }
-      const [sameDraft] = await tx<{ same: boolean }[]>`
-        SELECT ${JSON.stringify(input.content)}::jsonb = ${JSON.stringify(parseJsonValue(conversation.draft_content))}::jsonb AS same
-      `;
-      if (sameDraft?.same) {
-        return {
-          ok: true as const,
-          draft: {
-            content: input.content,
-            revision: Number(conversation.draft_revision),
-            updatedAt: conversation.draft_updated_at ? iso(conversation.draft_updated_at) : null,
-          },
-        };
-      }
-
-      for (const part of input.content) {
-        if (part.type !== "file") continue;
-        const [file] = await tx<{ exists: boolean }[]>`
-          SELECT EXISTS (
-            SELECT 1 FROM ai.files
-            WHERE conversation_id = ${input.conversationId}::uuid
-              AND path = ${part.path}
-              AND media_type = ${part.mediaType}
-              AND size = ${part.size}
-              AND version = ${part.version}
-          ) AS exists
-        `;
-        if (!file?.exists) throw new Error(`Conversation file changed or no longer exists: ${part.path}`);
-      }
-
-      const [saved] = await tx<{ draft_content: unknown; draft_revision: number | string; draft_updated_at: Date | string }[]>`
-        UPDATE ai.conversations
-        SET draft_content = ${JSON.stringify(input.content)}::jsonb,
-            draft_revision = draft_revision + 1,
-            draft_updated_at = now()
-        WHERE id = ${input.conversationId}::uuid
-        RETURNING draft_content, draft_revision, draft_updated_at
-      `;
-      return {
-        ok: true as const,
-        draft: {
-          content: parseJsonValue<AiConversationDraft["content"]>(saved!.draft_content),
-          revision: Number(saved!.draft_revision),
-          updatedAt: iso(saved!.draft_updated_at),
-        },
-      };
-    }),
+  saveDraft: async (input) => sql.begin((tx) => saveAiDraftInTransaction(tx, input)),
 
   getLoadedTools: async (input) => {
     const rows = await sql<{ loaded_tools: string[] | null }[]>`

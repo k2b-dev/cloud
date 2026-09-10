@@ -112,6 +112,7 @@ export const createAssistantLiveInvalidationHub = (options: {
           "conversation-sources",
           "conversation-files",
           "conversation-tasks",
+          "conversation-dictations",
           "project-list",
           "project-detail",
           "project-context",

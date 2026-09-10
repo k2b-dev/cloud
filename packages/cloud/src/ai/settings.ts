@@ -98,6 +98,18 @@ const ModelProfileSchema = z
     creditsPerOutputToken: z.number().nonnegative().optional(),
   })
   .superRefine((profile, ctx) => {
+    if (profile.capabilities?.includes("transcription")) {
+      if (profile.capabilities.some((capability) => capability !== "transcription")) {
+        ctx.addIssue({ code: "custom", path: ["capabilities"], message: "Audio transcription cannot be combined with chat capabilities." });
+      }
+      if (profile.provider !== "openai" && profile.provider !== "openai-compatible") {
+        ctx.addIssue({
+          code: "custom",
+          path: ["provider"],
+          message: "Audio transcription requires OpenAI or an OpenAI-compatible endpoint.",
+        });
+      }
+    }
     if (profile.provider === "openai-compatible" && !profile.baseURL) {
       ctx.addIssue({ code: "custom", path: ["baseURL"], message: "OpenAI-compatible profiles require a base URL." });
     }
@@ -177,6 +189,7 @@ export const validateAiSettingsConfiguration = (input: {
   defaultModelId: string;
   backgroundModelId: string;
   visionModelId?: string;
+  audioModelId?: string;
   workflowModelId: string;
   profiles: readonly AiModelProfile[];
   credentialProfileIds: readonly string[];
@@ -186,13 +199,14 @@ export const validateAiSettingsConfiguration = (input: {
   const errors: Record<string, string> = {};
   const enabledProfiles = input.profiles.filter((profile) => profile.enabled);
   const defaultProfile = input.profiles.find((profile) => profile.id === input.defaultModelId);
-  if (!input.defaultModelId || !defaultProfile?.enabled) {
+  if (!input.defaultModelId || !defaultProfile?.enabled || defaultProfile.capabilities.includes("transcription")) {
     errors["ai.default_model_id"] = "Choose an enabled model profile.";
   }
 
   if (input.backgroundModelId) {
     const backgroundProfile = input.profiles.find((profile) => profile.id === input.backgroundModelId);
-    if (!backgroundProfile?.enabled) errors["ai.background_model_id"] = "Choose an enabled model profile or use the platform default.";
+    if (!backgroundProfile?.enabled || backgroundProfile.capabilities.includes("transcription"))
+      errors["ai.background_model_id"] = "Choose an enabled chat model profile or use the platform default.";
   }
 
   if (input.visionModelId) {
@@ -204,7 +218,15 @@ export const validateAiSettingsConfiguration = (input: {
 
   if (input.workflowModelId) {
     const workflowProfile = input.profiles.find((profile) => profile.id === input.workflowModelId);
-    if (!workflowProfile?.enabled) errors["ai.workflow_model_id"] = "Choose an enabled model profile or use the background model.";
+    if (!workflowProfile?.enabled || workflowProfile.capabilities.includes("transcription"))
+      errors["ai.workflow_model_id"] = "Choose an enabled chat model profile or use the background model.";
+  }
+
+  if (input.audioModelId) {
+    const audioProfile = input.profiles.find((profile) => profile.id === input.audioModelId);
+    if (!audioProfile?.enabled || !audioProfile.capabilities.includes("transcription")) {
+      errors["ai.audio_model_id"] = "Choose an enabled audio transcription profile or disable audio transcription.";
+    }
   }
 
   const configured = new Set(input.credentialProfileIds);
@@ -301,7 +323,7 @@ export const resolveAiSettingsStateFromRaw = async (input: {
     };
   }
 
-  if (!defaultProfile.enabled) {
+  if (!defaultProfile.enabled || defaultProfile.capabilities.includes("transcription")) {
     return {
       ok: false,
       ...baseState,
@@ -309,7 +331,7 @@ export const resolveAiSettingsStateFromRaw = async (input: {
       profiles: parsed.profiles,
       error: {
         code: "default_model_disabled",
-        message: `Default AI model "${input.defaultModelId}" is disabled.`,
+        message: `Default AI model "${input.defaultModelId}" must be an enabled text model.`,
         fields: { "ai.default_model_id": "Choose an enabled model profile id." },
       },
     };
@@ -398,6 +420,7 @@ const hasAll = <T extends string>(values: readonly T[], required: readonly T[] |
 
 const matchesPolicy = (profile: AiModelProfile, policy: AiModelPolicy): boolean => {
   if (!profile.enabled) return false;
+  if (profile.capabilities.includes("transcription") !== Boolean(policy.requiredCapabilities?.includes("transcription"))) return false;
   if ("allowedModelIds" in policy && policy.allowedModelIds && !policy.allowedModelIds.includes(profile.id)) return false;
   if (policy.allowedDataBoundaries && !policy.allowedDataBoundaries.includes(profile.dataBoundary)) return false;
   return hasAll(profile.capabilities, policy.requiredCapabilities);
@@ -521,7 +544,11 @@ export const toPublicAiSettingsState = async (allowedDataBoundaries?: AiDataBoun
     firecrawlConfigured: state.firecrawlConfigured,
     models:
       state.ok && state.enabled
-        ? state.profiles.filter((profile) => profile.enabled && isUsableProfile(profile, configured)).map(profileToPublic)
+        ? state.profiles
+            .filter(
+              (profile) => matchesPolicy(profile, { kind: "selectable", allowedDataBoundaries }) && isUsableProfile(profile, configured),
+            )
+            .map(profileToPublic)
         : [],
   };
 };

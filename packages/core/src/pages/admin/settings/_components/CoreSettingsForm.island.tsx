@@ -182,6 +182,7 @@ const AI_MEMORY_LEARNING_INSTRUCTIONS_SETTING_KEY = "ai.memory_learning_instruct
 const AI_MAX_TOOL_RESULT_CHARS_SETTING_KEY = "ai.max_tool_result_chars";
 const AI_FIRECRAWL_API_KEY_SETTING_KEY = "ai.firecrawl_api_key";
 const AI_BACKGROUND_MODEL_SETTING_KEY = "ai.background_model_id";
+const AI_AUDIO_MODEL_SETTING_KEY = "ai.audio_model_id";
 const AI_VISION_MODEL_SETTING_KEY = "ai.vision_model_id";
 const AI_WORKFLOW_MODEL_SETTING_KEY = "ai.workflow_model_id";
 const AI_ENRICH_CRON_SETTING_KEY = "ai.enrich_cron";
@@ -200,6 +201,7 @@ const AI_SETTINGS_HANDLED_BY_PANEL = new Set<string>([
   AI_FIRECRAWL_API_KEY_SETTING_KEY,
   AI_BACKGROUND_MODEL_SETTING_KEY,
   AI_VISION_MODEL_SETTING_KEY,
+  AI_AUDIO_MODEL_SETTING_KEY,
   AI_WORKFLOW_MODEL_SETTING_KEY,
   AI_ENRICH_CRON_SETTING_KEY,
   AI_MEMORY_LEARNING_CRON_SETTING_KEY,
@@ -239,6 +241,7 @@ const AI_MODEL_CAPABILITY_OPTIONS = [
   { id: "streaming", label: "Streaming", description: "Can stream output tokens to the UI." },
   { id: "tools", label: "Tools", description: "Can call registered backend tools." },
   { id: "vision", label: "Vision", description: "Can accept image input." },
+  { id: "transcription", label: "Audio transcription", description: "Transcribes audio files." },
 ] as const;
 type AiModelCapability = (typeof AI_MODEL_CAPABILITY_OPTIONS)[number]["id"];
 
@@ -1174,7 +1177,8 @@ function AiSettingsPanel(props: {
   const setProfiles = (next: AiModelProfileDraft[]) => props.onChange(AI_PROFILE_SETTING_KEY, serializeAiProfiles(next));
 
   const setDefaultModel = (id: string) => props.onChange(AI_DEFAULT_MODEL_SETTING_KEY, id);
-  const firstEnabledProfileId = (items: AiModelProfileDraft[]) => items.find((item) => item.enabled)?.id ?? "";
+  const firstEnabledProfileId = (items: AiModelProfileDraft[]) =>
+    items.find((item) => item.enabled && !item.capabilities.includes("transcription"))?.id ?? "";
 
   const addProvider = async () => {
     const result = await openProfile();
@@ -1192,7 +1196,8 @@ function AiSettingsPanel(props: {
     const nextProfiles = profiles().map((item) => (item.id === profile.id ? result : item));
     setProfiles(nextProfiles);
     if (profile.id === defaultModelId() && result.id !== profile.id) setDefaultModel(result.id);
-    if (profile.id === defaultModelId() && !result.enabled) setDefaultModel(firstEnabledProfileId(nextProfiles));
+    if (profile.id === defaultModelId() && (!result.enabled || result.capabilities.includes("transcription")))
+      setDefaultModel(firstEnabledProfileId(nextProfiles));
   };
 
   const duplicateProfile = (profile: AiModelProfileDraft) => {
@@ -1327,7 +1332,7 @@ function AiSettingsPanel(props: {
             value={() => defaultModelId()}
             onValueChange={(value) => value !== null && setDefaultModel(value)}
             options={profiles()
-              .filter((profile) => profile.enabled || profile.id === defaultModelId())
+              .filter((profile) => !profile.capabilities.includes("transcription") && (profile.enabled || profile.id === defaultModelId()))
               .map((profile) => ({
                 id: profile.id,
                 label: profile.enabled ? profile.label : `${profile.label} (${t().disabledSuffix})`,
@@ -1336,7 +1341,9 @@ function AiSettingsPanel(props: {
                 groups: aiModelChoiceGroups(profile),
               }))}
             groups={aiModelGroupFiltersFor(
-              profiles().filter((profile) => profile.enabled || profile.id === defaultModelId()),
+              profiles().filter(
+                (profile) => !profile.capabilities.includes("transcription") && (profile.enabled || profile.id === defaultModelId()),
+              ),
               modelGroupLabels(),
             )}
             groupsAriaLabel={t().filterModels}
@@ -1401,6 +1408,20 @@ function AiSettingsPanel(props: {
             icon="ti ti-photo-spark"
             error={() => props.errorFor(AI_VISION_MODEL_SETTING_KEY)}
           />
+          <Select
+            label={t().audioModel}
+            description={t().audioModelDescription}
+            value={() => asString(props.valueOf(AI_AUDIO_MODEL_SETTING_KEY))}
+            onValueChange={(value) => props.onChange(AI_AUDIO_MODEL_SETTING_KEY, value ?? "")}
+            options={[
+              { id: "", label: t().disableAudio },
+              ...profiles()
+                .filter((profile) => profile.enabled && profile.capabilities.includes("transcription"))
+                .map((profile) => ({ id: profile.id, label: profile.label, description: profile.model })),
+            ]}
+            icon="ti ti-microphone"
+            error={() => props.errorFor(AI_AUDIO_MODEL_SETTING_KEY)}
+          />
           <NumberInput
             label={t().toolResultCeiling}
             description={t().toolResultCeilingDescription}
@@ -1424,7 +1445,7 @@ function AiSettingsPanel(props: {
             options={[
               { id: "", label: t().useDefaultModel, icon: "ti ti-sparkles" },
               ...profiles()
-                .filter((profile) => profile.enabled)
+                .filter((profile) => profile.enabled && !profile.capabilities.includes("transcription"))
                 .map((profile) => ({
                   id: profile.id,
                   label: profile.label,
@@ -1434,7 +1455,7 @@ function AiSettingsPanel(props: {
                 })),
             ]}
             groups={aiModelGroupFiltersFor(
-              profiles().filter((profile) => profile.enabled),
+              profiles().filter((profile) => profile.enabled && !profile.capabilities.includes("transcription")),
               modelGroupLabels(),
             )}
             groupsAriaLabel={t().filterBackgroundModels}
@@ -1450,7 +1471,7 @@ function AiSettingsPanel(props: {
             options={[
               { id: "", label: t().useBackgroundModel, icon: "ti ti-sparkles" },
               ...profiles()
-                .filter((profile) => profile.enabled)
+                .filter((profile) => profile.enabled && !profile.capabilities.includes("transcription"))
                 .map((profile) => ({
                   id: profile.id,
                   label: profile.label,
@@ -1460,7 +1481,7 @@ function AiSettingsPanel(props: {
                 })),
             ]}
             groups={aiModelGroupFiltersFor(
-              profiles().filter((profile) => profile.enabled),
+              profiles().filter((profile) => profile.enabled && !profile.capabilities.includes("transcription")),
               modelGroupLabels(),
             )}
             groupsAriaLabel={t().filterWorkflowModels}
@@ -1853,6 +1874,13 @@ async function openAiProfileDialog(input: {
         return;
       }
 
+      if (
+        capabilities().includes("transcription") &&
+        (capabilities().some((value) => value !== "transcription") || !["openai", "openai-compatible"].includes(provider()))
+      ) {
+        setFormError(t().invalidAudioProfile);
+        return;
+      }
       const nextProfile: AiModelProfileDraft = {
         ...(input.profile ?? {}),
         id: nextId,
@@ -2038,39 +2066,40 @@ async function openAiProfileDialog(input: {
             </Show>
 
             <PanelDialog.Section title={t().policy} subtitle={t().policyDescription} icon="ti ti-shield">
-              <NumberInput
-                label={t().contextWindow}
-                description={t().contextWindowDescription}
-                value={contextWindow}
-                onValueChange={setContextWindow}
-                min={1}
-                clearable
-                showSteppers={false}
-                placeholder={t().providerDefault}
-              />
+              <Show when={!capabilities().includes("transcription")}>
+                <NumberInput
+                  label={t().contextWindow}
+                  description={t().contextWindowDescription}
+                  value={contextWindow}
+                  onValueChange={setContextWindow}
+                  min={1}
+                  clearable
+                  showSteppers={false}
+                  placeholder={t().providerDefault}
+                />
 
-              <NumberInput
-                label={t().loadedToolLimit}
-                description={t().loadedToolLimitDescription}
-                value={maxLoadedTools}
-                onValueChange={setMaxLoadedTools}
-                min={0}
-                clearable
-                showSteppers={false}
-                placeholder={t().unlimited}
-              />
+                <NumberInput
+                  label={t().loadedToolLimit}
+                  description={t().loadedToolLimitDescription}
+                  value={maxLoadedTools}
+                  onValueChange={setMaxLoadedTools}
+                  min={0}
+                  clearable
+                  showSteppers={false}
+                  placeholder={t().unlimited}
+                />
 
-              <NumberInput
-                label={t().toolRoundLimit}
-                description={t().toolRoundLimitDescription}
-                value={maxToolRounds}
-                onValueChange={setMaxToolRounds}
-                min={0}
-                clearable
-                showSteppers={false}
-                placeholder={t().unlimited}
-              />
-
+                <NumberInput
+                  label={t().toolRoundLimit}
+                  description={t().toolRoundLimitDescription}
+                  value={maxToolRounds}
+                  onValueChange={setMaxToolRounds}
+                  min={0}
+                  clearable
+                  showSteppers={false}
+                  placeholder={t().unlimited}
+                />
+              </Show>
               <Select
                 label={t().dataBoundary}
                 description={t().dataBoundaryDescription}
@@ -2080,16 +2109,24 @@ async function openAiProfileDialog(input: {
                 icon="ti ti-shield"
               />
 
-              <MultiSelectInput
-                label={t().capabilities}
-                description={t().capabilitiesDescription}
-                value={capabilities}
-                onValueChange={setCapabilities}
-                options={localizedCapabilityOptions(t()).map((option) => ({ ...option, icon: "ti ti-bolt" }))}
-                placeholder={t().chooseCapabilities}
-                icon="ti ti-bolt"
-                clearable
+              <CheckboxCard
+                label={t().transcription}
+                description={t().transcriptionDescription}
+                value={() => capabilities().includes("transcription")}
+                onValueChange={(checked) => setCapabilities(checked ? ["transcription"] : ["streaming"])}
               />
+              <Show when={!capabilities().includes("transcription")}>
+                <MultiSelectInput
+                  label={t().capabilities}
+                  description={t().capabilitiesDescription}
+                  value={capabilities}
+                  onValueChange={setCapabilities}
+                  options={localizedCapabilityOptions(t()).map((option) => ({ ...option, icon: "ti ti-bolt" }))}
+                  placeholder={t().chooseCapabilities}
+                  icon="ti ti-bolt"
+                  clearable
+                />
+              </Show>
             </PanelDialog.Section>
           </PanelDialog.Body>
           <PanelDialog.Footer>

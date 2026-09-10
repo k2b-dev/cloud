@@ -58,6 +58,7 @@ const AI_PROFILES_KEY = "ai.model_profiles_json";
 const AI_ENABLED_KEY = "ai.enabled";
 const AI_DEFAULT_MODEL_KEY = "ai.default_model_id";
 const AI_BACKGROUND_MODEL_KEY = "ai.background_model_id";
+const AI_AUDIO_MODEL_KEY = "ai.audio_model_id";
 const AI_VISION_MODEL_KEY = "ai.vision_model_id";
 const AI_WORKFLOW_MODEL_KEY = "ai.workflow_model_id";
 const AI_CONFIGURATION_KEYS = new Set([
@@ -65,6 +66,7 @@ const AI_CONFIGURATION_KEYS = new Set([
   AI_DEFAULT_MODEL_KEY,
   AI_BACKGROUND_MODEL_KEY,
   AI_VISION_MODEL_KEY,
+  AI_AUDIO_MODEL_KEY,
   AI_WORKFLOW_MODEL_KEY,
   AI_PROFILES_KEY,
 ]);
@@ -116,6 +118,7 @@ const prepareAiSettingsMutation = async (
     currentDefaultModelId,
     currentBackgroundModelId,
     currentVisionModelId,
+    currentAudioModelId,
     currentWorkflowModelId,
     currentProfilesJson,
   ] = await Promise.all([
@@ -123,6 +126,7 @@ const prepareAiSettingsMutation = async (
     settings.get<string>(AI_DEFAULT_MODEL_KEY),
     settings.get<string>(AI_BACKGROUND_MODEL_KEY),
     settings.get<string>(AI_VISION_MODEL_KEY),
+    settings.get<string>(AI_AUDIO_MODEL_KEY),
     settings.get<string>(AI_WORKFLOW_MODEL_KEY),
     settings.get<string>(AI_PROFILES_KEY),
   ]);
@@ -162,6 +166,7 @@ const prepareAiSettingsMutation = async (
     enabled: nextEnabled,
     defaultModelId: String(valueAfterMutation(AI_DEFAULT_MODEL_KEY, currentDefaultModelId ?? "", updates, resets)),
     backgroundModelId: String(valueAfterMutation(AI_BACKGROUND_MODEL_KEY, currentBackgroundModelId ?? "", updates, resets)),
+    audioModelId: String(valueAfterMutation(AI_AUDIO_MODEL_KEY, currentAudioModelId ?? "", updates, resets)),
     visionModelId: String(valueAfterMutation(AI_VISION_MODEL_KEY, currentVisionModelId ?? "", updates, resets)),
     workflowModelId: String(valueAfterMutation(AI_WORKFLOW_MODEL_KEY, currentWorkflowModelId ?? "", updates, resets)),
     profiles: nextParsed.profiles,

@@ -211,6 +211,12 @@ export const CORE_SETTINGS = {
     description: "Model profile id used for background AI jobs. Empty = platform default model.",
     placeholder: "e.g. openrouter-fast",
   },
+  "ai.audio_model_id": {
+    kind: "string",
+    label: "Audio Model ID",
+    default: "",
+    description: "Audio transcription model profile for dictation and audio files. Empty disables transcription.",
+  },
   "ai.vision_model_id": {
     kind: "string",
     label: "Vision Model ID",

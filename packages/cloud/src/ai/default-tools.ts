@@ -20,6 +20,7 @@ import { createCloudAiWebExtractTool, createCloudAiWebSearchTool, isCloudAiFirec
 import { createCloudAiMarkdownToPdfTool } from "./markdown-pdf-tool";
 import { defineAiTool } from "./tools";
 import type { AiDataBoundary, AiRuntimeTool } from "./types";
+import { createCloudAiTranscribeAudioTool } from "./audio-tool";
 import { createCloudAiViewImageTool } from "./vision-tool";
 
 export {
@@ -116,6 +117,7 @@ export const createConfiguredDefaultCloudAiTools = async (config?: {
     createCloudAiPresentTool(),
     createCloudAiCalculateTool(),
     createCloudAiViewImageTool(),
+    createCloudAiTranscribeAudioTool(),
   ];
   const firecrawlConfigured =
     config && "firecrawlApiKey" in config ? Boolean(config.firecrawlApiKey?.trim()) : await isCloudAiFirecrawlConfigured();
