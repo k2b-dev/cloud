@@ -28,7 +28,7 @@ Focus does not copy or move mail between mailboxes. Each row keeps its source ma
 2. Enter a **Name** that collaborators will recognize. The description is optional.
 3. In the settings dialog, open **Accounts & identities** and connect the account.
 4. Enter the email address and select **Find settings**, or enter the IMAP and SMTP hosts, ports, and TLS modes yourself.
-5. Enter the password, app password, or manually supplied OAuth2 access token accepted by your IMAP/SMTP provider.
+5. Enter the password or app password accepted by your IMAP/SMTP provider.
 6. Leave **Create the default identity for this address** enabled for a normal mailbox.
 7. Select **Verify and connect**.
 :::

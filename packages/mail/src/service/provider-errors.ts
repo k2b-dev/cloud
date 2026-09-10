@@ -8,11 +8,5 @@ export const providerErrorMessage = (error: unknown, fallback: string): string =
 
 export const isProviderAuthenticationFailure = (error: unknown, code = providerErrorCode(error, "")): boolean => {
   const value = error as { authenticationFailed?: unknown; responseCode?: unknown } | null;
-  return (
-    value?.authenticationFailed === true ||
-    code === "EAUTH" ||
-    code === "CREDENTIAL_EXPIRED" ||
-    code.includes("AUTHENTICATION") ||
-    code.includes("AUTH_FAILED")
-  );
+  return value?.authenticationFailed === true || code === "EAUTH" || code.includes("AUTHENTICATION") || code.includes("AUTH_FAILED");
 };

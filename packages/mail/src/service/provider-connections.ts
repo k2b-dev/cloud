@@ -33,7 +33,7 @@ type DbProviderConnection = {
   smtp_host: string;
   smtp_port: number;
   smtp_tls_mode: "implicit" | "starttls";
-  secret_kind: "password" | "oauth2";
+  secret_kind: "password";
   encrypted_secret: string | null;
   secret_revision: number;
   status: "active" | "degraded" | "revoked";
@@ -677,9 +677,6 @@ export const loadProviderConnectionRuntimeSnapshot = async (
     secret = providerSecretSchema.parse(await decryptSecret<ProviderSecret>(row.encrypted_secret));
   } catch {
     throw Object.assign(new Error("Provider credential could not be decrypted"), { code: "CREDENTIAL_DECRYPTION_FAILED" });
-  }
-  if (secret.kind === "oauth2" && secret.expiresAt && new Date(secret.expiresAt).getTime() <= Date.now()) {
-    throw Object.assign(new Error("Provider OAuth credential expired"), { code: "CREDENTIAL_EXPIRED" });
   }
   return {
     runtime: connectionFromInput(

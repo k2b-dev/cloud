@@ -16,7 +16,6 @@ export type DiscoveredMailConfiguration = {
   username: string;
   imap: MailEndpoint;
   smtp: MailEndpoint;
-  authentication: string[];
 };
 
 type DiscoveryPreset = Omit<DiscoveredMailConfiguration, "source" | "email" | "username"> & {
@@ -35,19 +34,16 @@ const PRESETS: DiscoveryPreset[] = [
     domains: ["gmail.com", "googlemail.com"],
     imap: { host: "imap.gmail.com", port: 993, tlsMode: "implicit" },
     smtp: { host: "smtp.gmail.com", port: 587, tlsMode: "starttls" },
-    authentication: ["oauth2", "password"],
   },
   {
     domains: ["outlook.com", "hotmail.com", "live.com", "msn.com"],
     imap: { host: "outlook.office365.com", port: 993, tlsMode: "implicit" },
     smtp: { host: "smtp.office365.com", port: 587, tlsMode: "starttls" },
-    authentication: ["oauth2", "password"],
   },
   {
     domains: ["icloud.com", "me.com", "mac.com"],
     imap: { host: "imap.mail.me.com", port: 993, tlsMode: "implicit" },
     smtp: { host: "smtp.mail.me.com", port: 587, tlsMode: "starttls" },
-    authentication: ["password"],
   },
 ];
 
@@ -128,7 +124,6 @@ export const parseThunderbirdAutoconfig = (params: {
       const endpoint = endpointFromXml(entry);
       return endpoint ? [{ endpoint, username: substituteUsername(entry.username, parts) }] : [];
     });
-  const authentication = [...new Set([...incoming, ...outgoing].flatMap(() => ["password"]))];
   return incoming.slice(0, 4).flatMap((imap) =>
     outgoing.slice(0, 4).map((smtp) => ({
       source: params.source,
@@ -136,7 +131,6 @@ export const parseThunderbirdAutoconfig = (params: {
       username: imap.username || smtp.username || parts.email,
       imap: imap.endpoint,
       smtp: smtp.endpoint,
-      authentication,
     })),
   );
 };
@@ -226,7 +220,6 @@ const srvCandidates = async (
       username: parts.email,
       imap: { host: imapEndpoint.host, port: imapEndpoint.port, tlsMode: imapEndpoint.tlsMode },
       smtp: { host: smtpEndpoint.host, port: smtpEndpoint.port, tlsMode: smtpEndpoint.tlsMode },
-      authentication: ["password"],
     })),
   );
 };
@@ -265,7 +258,6 @@ export const discoverMailConfigurations = async (
     username: parts.email,
     imap: item.imap,
     smtp: item.smtp,
-    authentication: item.authentication,
   }));
   const providerUrls = [
     new URL(`https://autoconfig.${parts.domain}/mail/config-v1.1.xml?emailaddress=${encodeURIComponent(parts.email)}`),

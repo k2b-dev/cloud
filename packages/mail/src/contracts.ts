@@ -393,17 +393,10 @@ export const endpointSchema = z.object({
 });
 export type MailEndpoint = z.infer<typeof endpointSchema>;
 
-export const providerSecretSchema = z.discriminatedUnion("kind", [
-  z.object({
-    kind: z.literal("password"),
-    password: z.string().min(1).max(16_384),
-  }),
-  z.object({
-    kind: z.literal("oauth2"),
-    accessToken: z.string().min(1).max(65_536),
-    expiresAt: z.string().datetime().optional(),
-  }),
-]);
+export const providerSecretSchema = z.object({
+  kind: z.literal("password"),
+  password: z.string().min(1).max(16_384),
+});
 export type ProviderSecret = z.infer<typeof providerSecretSchema>;
 
 export const providerConnectionInputSchema = z.object({
@@ -494,7 +487,7 @@ export const providerConnectionSchema = z.object({
   imap: endpointSchema,
   smtp: endpointSchema,
   secret: z.object({
-    kind: z.enum(["password", "oauth2"]),
+    kind: z.literal("password"),
     isSet: z.boolean(),
   }),
   status: z.enum(["active", "degraded", "revoked"]),
@@ -2768,7 +2761,7 @@ export const senderIdentityTransportSchema = z.object({
   tlsMode: tlsModeSchema.nullable(),
   username: z.string().nullable(),
   secret: z.object({
-    kind: z.enum(["password", "oauth2"]).nullable(),
+    kind: z.literal("password").nullable(),
     isSet: z.boolean(),
   }),
   revision: z.number().int().nonnegative(),

@@ -71,7 +71,7 @@ type DbIdentity = {
   transport_port: number | null;
   transport_tls_mode: "implicit" | "starttls" | null;
   transport_username: string | null;
-  transport_secret_kind: "password" | "oauth2" | null;
+  transport_secret_kind: "password" | null;
   transport_secret_is_set: boolean;
   transport_revision: number | null;
   transport_status: "active" | "degraded" | "revoked" | null;

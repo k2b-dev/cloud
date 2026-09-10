@@ -28,7 +28,7 @@ Fokus kopiert oder verschiebt keine E-Mails zwischen Postfächern. Jede Zeile be
 2. Gib einen **Namen** ein, den andere Personen im Team wiedererkennen. Die Beschreibung ist optional.
 3. Öffne im Einstellungsdialog **Konten und Identitäten** und verbinde das Konto.
 4. Gib die E-Mail-Adresse ein und wähle **Einstellungen suchen**. Du kannst IMAP- und SMTP-Host, Ports und TLS-Modi auch selbst eingeben.
-5. Gib das Passwort, App-Passwort oder einen manuell bereitgestellten OAuth2-Zugriffstoken ein, den dein IMAP-/SMTP-Anbieter akzeptiert.
+5. Gib das Passwort oder App-Passwort ein, das dein IMAP-/SMTP-Anbieter akzeptiert.
 6. Lass **Standardidentität für diese Adresse erstellen** bei einem normalen Postfach aktiviert.
 7. Wähle **Prüfen und verbinden**.
 :::

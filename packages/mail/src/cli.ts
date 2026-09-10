@@ -70,7 +70,6 @@ import {
   type PlatformMailOperations,
   type ProviderBinding,
   type ProviderConnection,
-  providerSecretSchema,
   type RelatedConversationSummary,
   type RelatedMailPage,
   type SavedConversationViewFilter,
@@ -396,7 +395,7 @@ const senderIdentityVcardInput = flag.input({
 const senderIdentityTransportSecretInput = flag.input({
   fileName: "secret-file",
   stdinName: "secret-stdin",
-  description: "SMTP password or OAuth JSON; use stdin/file to avoid shell history",
+  description: "SMTP password or app password; use stdin/file to avoid shell history",
 });
 
 const rejectInlineSecretInput = (input: Parameters<typeof readCliInput>[0], label: string, alternatives: string): void => {
@@ -771,10 +770,7 @@ const providerConnectionFlags = {
     required: true,
     stdinName: "secret-stdin",
     fileName: "secret-file",
-    description: "Provider password or OAuth JSON; use stdin/file to avoid shell history",
-  }),
-  oauth2: flag.boolean({
-    description: "Interpret secret input as OAuth2 JSON",
+    description: "Provider password or app password; use stdin/file to avoid shell history",
   }),
 };
 
@@ -789,7 +785,6 @@ const providerConnectionInput = async (flags: {
   smtpPort?: number;
   smtpTls?: "implicit" | "starttls";
   secret: Parameters<typeof readCliInput>[0];
-  oauth2: boolean;
 }) => {
   if (!flags.name || !flags.email || !flags.username || !flags.imapHost || !flags.smtpHost) {
     throw new Error("Provider name, email, username, IMAP host, and SMTP host are required.");
@@ -816,26 +811,8 @@ const providerConnectionInput = async (flags: {
       port: parsePort(flags.smtpPort, smtpTls === "implicit" ? 465 : 587),
       tlsMode: smtpTls,
     },
-    secret: flags.oauth2 ? parseOAuthSecret(secretInput) : { kind: "password" as const, password: secretInput },
+    secret: { kind: "password" as const, password: secretInput },
   };
-};
-
-const parseOAuthSecret = (value: string) => {
-  let document: unknown;
-  try {
-    document = JSON.parse(value);
-  } catch {
-    throw new Error("Provider OAuth secret must be valid JSON.");
-  }
-  const parsed = providerSecretSchema.safeParse({
-    ...(typeof document === "object" && document !== null && !Array.isArray(document) ? document : {}),
-    kind: "oauth2",
-  });
-  if (!parsed.success) {
-    throw new Error(`Invalid provider OAuth secret: ${parsed.error.issues[0]?.message ?? "expected an access token"}.`);
-  }
-  if (parsed.data.kind !== "oauth2") throw new Error("Invalid provider OAuth secret.");
-  return parsed.data;
 };
 
 const commandResult = async (
@@ -4664,14 +4641,12 @@ export default defineCliCommands({
             username: candidate.username,
             imap: `${candidate.imap.host}:${candidate.imap.port} (${candidate.imap.tlsMode})`,
             smtp: `${candidate.smtp.host}:${candidate.smtp.port} (${candidate.smtp.tlsMode})`,
-            auth: candidate.authentication.join(","),
           })),
           [
             { key: "source", label: "SOURCE" },
             { key: "username", label: "USERNAME" },
             { key: "imap", label: "IMAP" },
             { key: "smtp", label: "SMTP" },
-            { key: "auth", label: "AUTH" },
           ],
         );
       },
@@ -5114,9 +5089,6 @@ export default defineCliCommands({
         }),
         username: flag.string({ required: true, description: "SMTP username" }),
         secret: senderIdentityTransportSecretInput,
-        oauth2: flag.boolean({
-          description: "Interpret secret input as OAuth2 JSON",
-        }),
       },
       run: async ({ ctx, args, flags }) => {
         if (!flags.host || flags.port === undefined || !flags.tls || !flags.username) {
@@ -5141,11 +5113,7 @@ export default defineCliCommands({
             port: flags.port,
             tlsMode: flags.tls,
             username: flags.username,
-            ...(secretInput
-              ? {
-                  secret: flags.oauth2 ? parseOAuthSecret(secretInput) : { kind: "password" as const, password: secretInput },
-                }
-              : {}),
+            ...(secretInput ? { secret: { kind: "password" as const, password: secretInput } } : {}),
           }),
         );
         if (printStructured(ctx, transport)) return;

@@ -48,7 +48,7 @@ Cloud administrators can review the same redacted aggregate under **Administrati
 
 **Settings > Accounts & identities > Connected account** contains the current incoming- and outgoing-mail credential. Mail verifies both protocols before storing a new or replacement credential.
 
-Use **Find settings** first. Open **Manual server settings** if discovery is unavailable or incorrect. Enter a password, app password, or manually supplied access token accepted by the provider. Credentials are encrypted and cannot be displayed after saving. Use **Replace** to change them, including when a manual token expires. Mail does not renew tokens or offer Google/Microsoft browser authorization.
+Use **Find settings** first. Open **Manual server settings** if discovery is unavailable or incorrect. Enter a password or app password accepted by the provider. Credentials are encrypted and cannot be displayed after saving. Use **Replace** to change them. Mail does not offer Google/Microsoft browser authorization.
 
 Mail reports IMAP and SMTP verification independently. An IMAP failure blocks synchronization and an SMTP failure blocks sending; correct the reported transport before retrying.
 

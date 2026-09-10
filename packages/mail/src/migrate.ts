@@ -90,7 +90,7 @@ const createInitialSchema = async (db: SqlClient): Promise<void> => {
       smtp_host TEXT NOT NULL CHECK (char_length(smtp_host) BETWEEN 1 AND 253),
       smtp_port INTEGER NOT NULL CHECK (smtp_port BETWEEN 1 AND 65535),
       smtp_tls_mode TEXT NOT NULL CHECK (smtp_tls_mode IN ('implicit', 'starttls')),
-      secret_kind TEXT NOT NULL CHECK (secret_kind IN ('password', 'oauth2')),
+      secret_kind TEXT NOT NULL CHECK (secret_kind = 'password'),
       encrypted_secret TEXT CHECK (encrypted_secret IS NULL OR char_length(encrypted_secret) > 0),
       secret_revision INTEGER NOT NULL DEFAULT 1 CHECK (secret_revision > 0),
       status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'degraded', 'revoked')),
@@ -3257,7 +3257,7 @@ const addIdentityDeliveryOptions = async (db: SqlClient): Promise<void> => {
       port INTEGER NOT NULL CHECK (port BETWEEN 1 AND 65535),
       tls_mode TEXT NOT NULL CHECK (tls_mode IN ('implicit', 'starttls')),
       username TEXT NOT NULL,
-      secret_kind TEXT NOT NULL CHECK (secret_kind IN ('password', 'oauth2')),
+      secret_kind TEXT NOT NULL CHECK (secret_kind = 'password'),
       encrypted_secret TEXT,
       revision INTEGER NOT NULL DEFAULT 1 CHECK (revision > 0),
       status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'degraded', 'revoked')),
@@ -3923,6 +3923,29 @@ const installLiveInvalidationEnqueue = async (db: SqlClient): Promise<void> => {
   `;
 };
 
+const requirePasswordProviderSecrets = async (db: SqlClient): Promise<void> => {
+  const [remaining] = await db<{ connections: number; transports: number }[]>`
+    SELECT
+      (SELECT count(*) FROM mail.provider_connections WHERE secret_kind <> 'password') AS connections,
+      (SELECT count(*) FROM mail.sender_identity_transports WHERE secret_kind <> 'password') AS transports
+  `;
+  if (Number(remaining?.connections ?? 0) > 0 || Number(remaining?.transports ?? 0) > 0) {
+    throw new Error(
+      "Mail no longer supports OAuth2 provider secrets. Replace every affected provider connection and identity transport credential with a password or app password before migrating.",
+    );
+  }
+  await db`
+    ALTER TABLE mail.provider_connections
+      DROP CONSTRAINT IF EXISTS provider_connections_secret_kind_check,
+      ADD CONSTRAINT provider_connections_secret_kind_check CHECK (secret_kind = 'password')
+  `;
+  await db`
+    ALTER TABLE mail.sender_identity_transports
+      DROP CONSTRAINT IF EXISTS sender_identity_transports_secret_kind_check,
+      ADD CONSTRAINT sender_identity_transports_secret_kind_check CHECK (secret_kind = 'password')
+  `;
+};
+
 const requireAutomaticReplyInterval = async (db: SqlClient): Promise<void> => {
   await db`
     UPDATE mail.automatic_reply_configurations
@@ -4255,6 +4278,7 @@ const migrations: readonly MailMigration[] = [
   { version: 119, name: "attachment_document_extraction", run: addAttachmentDocumentExtraction },
   { version: 121, name: "incoming_automation_mandates", run: addIncomingAutomationMandates },
   { version: 122, name: "automatic_reply_interval_floor", run: requireAutomaticReplyInterval },
+  { version: 123, name: "password_only_provider_secrets", run: requirePasswordProviderSecrets },
 ];
 
 const ensureMigrationFoundation = async (db: SqlClient): Promise<void> => {

@@ -2657,43 +2657,6 @@ test("provider and attachment-link secrets reject inline values", async () => {
   expect(link.stderr).not.toContain("inline-link-secret");
 });
 
-test("provider OAuth input reports malformed documents before making a connection request", async () => {
-  let connectionRequests = 0;
-  const server = withMailbox((request) => {
-    if (request.method === "POST") connectionRequests += 1;
-    return api({ message: "unexpected" }, { status: 500 });
-  });
-  servers.push(server);
-
-  const result = await runCli(
-    `http://127.0.0.1:${server.port}`,
-    [
-      "mail",
-      "provider",
-      "add",
-      "--mailbox",
-      MAILBOX_ID,
-      "--name",
-      "Provider",
-      "--email",
-      "sender@example.com",
-      "--username",
-      "sender@example.com",
-      "--imap-host",
-      "imap.example.com",
-      "--smtp-host",
-      "smtp.example.com",
-      "--oauth2",
-      "--secret-stdin",
-    ],
-    "not-json",
-  );
-
-  expect(result.exitCode).toBe(1);
-  expect(result.stderr).toContain("Provider OAuth secret must be valid JSON");
-  expect(connectionRequests).toBe(0);
-});
-
 test("send validates offset-aware schedules before creating a draft", async () => {
   let sideEffects = 0;
   const server = withMailbox((request) => {
@@ -4288,7 +4251,6 @@ test("provider discovery exposes mailbox-scoped autoconfiguration candidates", a
     username: "support@example.com",
     imap: { host: "imap.example.com", port: 993, tlsMode: "implicit" },
     smtp: { host: "smtp.example.com", port: 587, tlsMode: "starttls" },
-    authentication: ["password"],
   };
   const requestedEmails: (string | null)[] = [];
   const server = withMailbox((request) => {
@@ -4330,7 +4292,7 @@ test("provider list reports manual connection metadata without credentials", asy
           connectorKind: "imap_smtp",
           imap: { host: "imap.gmail.com", port: 993, tlsMode: "implicit" },
           smtp: { host: "smtp.gmail.com", port: 587, tlsMode: "starttls" },
-          secret: { kind: "oauth2", isSet: true },
+          secret: { kind: "password", isSet: true },
           status: "degraded",
           authenticatedPrincipal: "support@gmail.com",
           lastVerifiedAt: null,
@@ -4349,9 +4311,7 @@ test("provider list reports manual connection metadata without credentials", asy
   expect(result.exitCode).toBe(0);
   expect(result.stdout).toContain("Google Mail");
   expect(result.stdout).toContain("degraded");
-  expect(result.stdout).not.toContain("OAUTH");
-  expect(result.stdout).not.toContain("accessToken");
-  expect(result.stdout).not.toContain("refreshToken");
+  expect(result.stdout).not.toContain("password");
 });
 
 test("provider limit commands expose cached evidence and explicit refresh", async () => {

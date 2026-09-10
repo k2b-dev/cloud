@@ -55,7 +55,6 @@ export function MailConnectionSettings(props: ProviderSettingsProps) {
   const [smtpHost, setSmtpHost] = createSignal("");
   const [smtpPort, setSmtpPort] = createSignal(587);
   const [smtpTls, setSmtpTls] = createSignal<"implicit" | "starttls">("starttls");
-  const [auth, setAuth] = createSignal<"password" | "oauth2">("password");
   const [secret, setSecret] = createSignal("");
   const [createSender, setCreateSender] = createSignal(true);
   const [savesSentAutomatically, setSavesSentAutomatically] = createSignal(false);
@@ -86,7 +85,6 @@ export function MailConnectionSettings(props: ProviderSettingsProps) {
       smtpHost: smtpHost(),
       smtpPort: smtpPort(),
       smtpTls: smtpTls(),
-      auth: auth(),
       secret: secret(),
       createSender: createSender(),
       savesSentAutomatically: savesSentAutomatically(),
@@ -111,7 +109,6 @@ export function MailConnectionSettings(props: ProviderSettingsProps) {
     setSmtpHost("");
     setSmtpPort(587);
     setSmtpTls("starttls");
-    setAuth("password");
     setSecret("");
     setCreateSender(true);
     setSavesSentAutomatically(false);
@@ -132,7 +129,6 @@ export function MailConnectionSettings(props: ProviderSettingsProps) {
     setSmtpHost(connection.smtp.host);
     setSmtpPort(connection.smtp.port);
     setSmtpTls(connection.smtp.tlsMode);
-    setAuth(connection.secret.kind);
     setSecret("");
     setCreateSender(false);
     setSavesSentAutomatically(false);
@@ -167,7 +163,6 @@ export function MailConnectionSettings(props: ProviderSettingsProps) {
       setSmtpHost(candidate.smtp.host);
       setSmtpPort(candidate.smtp.port);
       setSmtpTls(candidate.smtp.tlsMode);
-      setAuth(candidate.authentication.includes("password") ? "password" : "oauth2");
       setDiscoverySource(candidate.source.replaceAll("_", " "));
       toast.success(messages().providerSettingsFound);
     },
@@ -237,8 +232,7 @@ export function MailConnectionSettings(props: ProviderSettingsProps) {
         username: username().trim(),
         imap: { host: imapHost().trim(), port: imapPort(), tlsMode: imapTls() },
         smtp: { host: smtpHost().trim(), port: smtpPort(), tlsMode: smtpTls() },
-        secret:
-          auth() === "oauth2" ? { kind: "oauth2" as const, accessToken: secret() } : { kind: "password" as const, password: secret() },
+        secret: { kind: "password" as const, password: secret() },
       };
       const replacementId = replacingConnectionId();
       const connectionResponse = replacementId
@@ -465,27 +459,15 @@ export function MailConnectionSettings(props: ProviderSettingsProps) {
                 subtitle={replacingConnectionId() ? messages().replaceCredentialDescription : messages().credentialDescription}
                 icon="ti ti-key"
               >
-                <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                  <Select
-                    label={messages().authentication}
-                    description={messages().authenticationDescription}
-                    value={auth}
-                    onValueChange={(value) => setAuth(value === "oauth2" ? "oauth2" : "password")}
-                    options={[
-                      { id: "password", label: messages().password },
-                      { id: "oauth2", label: messages().oauthAccessToken },
-                    ]}
-                  />
-                  <TextInput
-                    label={auth() === "oauth2" ? messages().accessToken : messages().password}
-                    description={messages().secretDescription}
-                    value={secret}
-                    onValueChange={setSecret}
-                    password
-                    required
-                    autocomplete="off"
-                  />
-                </div>
+                <TextInput
+                  label={messages().password}
+                  description={messages().secretDescription}
+                  value={secret}
+                  onValueChange={setSecret}
+                  password
+                  required
+                  autocomplete="off"
+                />
                 <Show when={!replacingConnectionId()}>
                   <div class="flex flex-col gap-2">
                     <CheckboxCard

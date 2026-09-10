@@ -148,9 +148,8 @@ cld --json mail provider add \
 
 Mail uses manual IMAP/SMTP credentials. `provider discover` suggests server
 settings; it does not start Google or Microsoft browser authorization. Use a
-password, app password or a manually supplied access token accepted by the
-provider. Tokens are not renewed automatically. `provider list` shows connection
-metadata without revealing credentials.
+password or app password accepted by the provider. `provider list` shows
+connection metadata without revealing credentials.
 
 Inspect the provider limits cached during verification, or refresh them
 explicitly:

@@ -69,15 +69,15 @@ export const MAX_IMAP_LITERAL_BYTES = 128 * 1024 * 1024;
 
 const sha256 = (value: string): string => createHash("sha256").update(value).digest("hex");
 
-const authForImap = (config: ProviderConnectionInput): NonNullable<ImapFlowOptions["auth"]> =>
-  config.secret.kind === "password"
-    ? { user: config.username, pass: config.secret.password }
-    : { user: config.username, accessToken: config.secret.accessToken };
+const authForImap = (config: ProviderConnectionInput): NonNullable<ImapFlowOptions["auth"]> => ({
+  user: config.username,
+  pass: config.secret.password,
+});
 
-const authForSmtp = (config: SmtpConnectionConfig): SMTPTransport.Options["auth"] =>
-  config.secret.kind === "password"
-    ? { user: config.username, pass: config.secret.password }
-    : { type: "OAuth2", user: config.username, accessToken: config.secret.accessToken };
+const authForSmtp = (config: SmtpConnectionConfig): SMTPTransport.Options["auth"] => ({
+  user: config.username,
+  pass: config.secret.password,
+});
 
 const createImapClient = (config: ProviderConnectionInput, endpoint: ResolvedEndpoint): ImapFlow =>
   new ImapFlow({
