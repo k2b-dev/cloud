@@ -913,6 +913,63 @@ describe("Grids capabilities", () => {
         FROM generate_series(1, 30) AS item
       `;
       const pagedQuery = `from table {${tablePublicId}}\nselect {${fieldPublicId}}\nwhere contains({${fieldPublicId}}, 'page-')`;
+      for (const query of [
+        pagedQuery,
+        `${pagedQuery}\nlimit 10`,
+        `from table {${tablePublicId}}\nwhere contains({${fieldPublicId}}, 'page-')\ngroup by {${fieldPublicId}}\naggregate count(*) as records`,
+      ]) {
+        const capped = await invoke("query", "gql.execute", { baseId: basePublicId, query, limit: 1 }, context);
+        expect(capped).toMatchObject({ ok: true, data: { data: { ok: true, limit: 1 }, page: { hasMore: false } } });
+        if (!capped.ok || !capped.data.data.ok) throw new Error("Expected capped result");
+        expect(capped.data.data.rows).toHaveLength(1);
+        const editorLink = capped.data.links?.find((link: { href: string }) => link.href.includes("/query?"));
+        expect(editorLink).toBeDefined();
+        const editorQuery = new URL(editorLink!.href, "http://localhost").searchParams.get("q");
+        const reopened = await invoke("query", "gql.execute", { baseId: basePublicId, query: editorQuery }, context);
+        expect(reopened).toMatchObject({ ok: true, data: { page: { hasMore: false } } });
+        if (!reopened.ok || !reopened.data.data.ok) throw new Error("Expected editor result");
+        expect(reopened.data.data.rows).toHaveLength(1);
+      }
+      const tighterQuery = await invoke(
+        "query",
+        "gql.execute",
+        { baseId: basePublicId, query: `${pagedQuery}\nlimit 1`, limit: 5 },
+        context,
+      );
+      if (!tighterQuery.ok || !tighterQuery.data.data.ok) throw new Error("Expected tighter query limit");
+      expect(tighterQuery.data.data.rows).toHaveLength(1);
+      expect(tighterQuery.data.page).toEqual({ hasMore: false });
+      const cappedFirst = await invoke("query", "gql.execute", { baseId: basePublicId, query: pagedQuery, pageSize: 2, limit: 3 }, context);
+      if (!cappedFirst.ok || !cappedFirst.data.data.ok || !cappedFirst.data.page?.hasMore) throw new Error("Expected capped cursor");
+      expect(cappedFirst.data.data.rows).toHaveLength(2);
+      const cappedNext = await invoke(
+        "query",
+        "gql.execute",
+        {
+          baseId: basePublicId,
+          query: pagedQuery,
+          pageSize: 2,
+          limit: 3,
+          cursor: cappedFirst.data.page.nextCursor,
+        },
+        context,
+      );
+      if (!cappedNext.ok || !cappedNext.data.data.ok) throw new Error("Expected final capped page");
+      expect(cappedNext.data.data.rows).toHaveLength(1);
+      expect(cappedNext.data.page).toEqual({ hasMore: false });
+      const changedCap = await invoke(
+        "query",
+        "gql.execute",
+        {
+          baseId: basePublicId,
+          query: pagedQuery,
+          pageSize: 2,
+          limit: 4,
+          cursor: cappedFirst.data.page.nextCursor,
+        },
+        context,
+      );
+      expect(changedCap.ok && changedCap.data.data.ok).toBe(false);
       const firstPage = await invoke("query", "gql.execute", { baseId: basePublicId, query: pagedQuery, pageSize: 100 }, context);
       expect(firstPage.ok).toBe(true);
       if (!firstPage.ok || !firstPage.data.page?.hasMore) throw new Error("Expected a byte-bounded first GQL page");

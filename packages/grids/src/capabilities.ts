@@ -1011,12 +1011,23 @@ const runGqlExecute = async (input: z.infer<typeof GqlExecuteInputSchema>, conte
         currentTableId: current.data.currentTableId,
         currentSource: current.data.currentSource,
         cursor: input.cursor,
-        pageSize: input.pageSize,
-        limit: input.limit,
+        pageSize: Math.min(input.pageSize, input.limit ?? input.pageSize),
       },
-      { maxRows: 1_000, maxResultBytes: GQL_CAPABILITY_RESULT_BUDGET_BYTES, operation: "execute", labelRelationValues: false },
+      {
+        resultLimit: input.limit,
+        maxRows: 1_000,
+        maxResultBytes: GQL_CAPABILITY_RESULT_BUDGET_BYTES,
+        operation: "execute",
+        labelRelationValues: false,
+      },
     );
-    return await gqlCapabilityResult(result.response, base.data, { kind: "execute", queryLink: queryCapabilityHref(input) }, context);
+    const query = input.limit !== undefined ? (result.source ?? input.query) : input.query;
+    return await gqlCapabilityResult(
+      result.response,
+      base.data,
+      { kind: "execute", queryLink: queryCapabilityHref({ ...input, query }) },
+      context,
+    );
   } catch (error) {
     return gqlUnavailable(error, context.locale);
   }

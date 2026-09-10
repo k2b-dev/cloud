@@ -1,5 +1,5 @@
-import type { DateContext } from "@k2b/stdlib";
 import { type AuthContext, getDateConfig, type PermissionLevel } from "@k2b/cloud/server";
+import type { DateContext } from "@k2b/stdlib";
 import type { Context } from "hono";
 import type { DslQueryPreviewBody, DslQueryPreviewDiagnostic, DslQueryPreviewResponse, DslQuerySurface, RecordQuery } from "../contracts";
 import { canonicalizeDslQuery } from "../query-dsl/canonical";
@@ -332,6 +332,8 @@ export const canonicalGqlSource = (
 ) => canonicalGqlSourceForContext(httpGqlRuntimeContext(c, c.req.raw.signal), baseId, body);
 
 type ExecuteGqlSourceOptions = {
+  /** Logical GQL result cap, independent of the legacy preview page limit. */
+  resultLimit?: number;
   maxRows?: number;
   maxResultBytes?: number;
   operation?: GqlRuntimeOperation;
@@ -406,7 +408,9 @@ const executeQueryUnadmitted = async (
     );
     timings.contextMs = performance.now() - contextStartedAt;
     const resolveStartedAt = performance.now();
-    const ast = sourceAst(bound.ast, body.currentSource, ctx);
+    const source = sourceAst(bound.ast, body.currentSource, ctx);
+    const ast =
+      options.resultLimit === undefined ? source : { ...source, limit: Math.min(source.limit ?? options.resultLimit, options.resultLimit) };
     const structuredSource = typeof body.query === "string" ? null : ctx.tables.find((table) => table.id === body.currentTableId);
     const validation =
       structuredSource && typeof body.query !== "string"
@@ -488,7 +492,7 @@ const executeQueryUnadmitted = async (
     });
     timings.executeMs = performance.now() - executeStartedAt;
     await endTrace({ stage: "execute", outcome: response.ok ? "success" : "diagnostic", plan, response });
-    return { ok: true as const, response, revisionScope };
+    return { ok: true as const, response, revisionScope, source: canonical.source };
   } catch (error) {
     await endTrace({ stage: "runtime", outcome: "error", error });
     throw error;

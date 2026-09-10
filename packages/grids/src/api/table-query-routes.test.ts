@@ -62,6 +62,7 @@ const makeDeps = (
       ok: true,
       response: { ok: true, mode: "groups", columns: [], rows: [], limit: 100 },
       revisionScope: [],
+      source: "record-query:{}",
     };
   };
 
