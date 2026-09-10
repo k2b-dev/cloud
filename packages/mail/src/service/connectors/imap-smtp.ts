@@ -63,6 +63,10 @@ type ImapFlowNamespaces = {
 };
 type ImapFlowWithNamespaces = ImapFlow & { namespaces?: ImapFlowNamespaces };
 
+// The largest message literal ImapFlow will accept from a server. Anything
+// bigger cannot be fetched at all, so it is also the hydration ceiling.
+export const MAX_IMAP_LITERAL_BYTES = 128 * 1024 * 1024;
+
 const sha256 = (value: string): string => createHash("sha256").update(value).digest("hex");
 
 const authForImap = (config: ProviderConnectionInput): NonNullable<ImapFlowOptions["auth"]> =>
@@ -94,7 +98,7 @@ const createImapClient = (config: ProviderConnectionInput, endpoint: ResolvedEnd
     greetingTimeout: 15_000,
     socketTimeout: 60_000,
     maxLineLength: 8 * 1024 * 1024,
-    maxLiteralSize: 128 * 1024 * 1024,
+    maxLiteralSize: MAX_IMAP_LITERAL_BYTES,
     tls: {
       rejectUnauthorized: true,
       minVersion: "TLSv1.2",
@@ -659,6 +663,11 @@ const verify = async (config: ProviderConnectionInput): Promise<ConnectorVerific
   throw Object.assign(new Error(summary), { code: "PROVIDER_TRANSPORT_VERIFICATION_FAILED", diagnostics: result.diagnostics });
 };
 
+const isServerRefusal = (error: unknown): boolean => {
+  const status = (error as { responseStatus?: unknown } | null)?.responseStatus;
+  return status === "NO" || status === "BAD";
+};
+
 const discoverFolders = async (config: ProviderConnectionInput, signal?: AbortSignal): Promise<RemoteFolder[]> =>
   withImapClient(
     config,
@@ -691,7 +700,10 @@ const discoverFolders = async (config: ProviderConnectionInput, signal?: AbortSi
           } finally {
             lock.release();
           }
-        } catch {
+        } catch (error) {
+          // A server that refuses to select the folder answers NO/BAD; anything
+          // else (socket, TLS, auth) is transient and must fail discovery.
+          if (!isServerRefusal(error)) throw error;
           folder.rights = [];
           folder.rightsSource = "unknown";
         }
@@ -712,26 +724,21 @@ const fetchEnvelopeBatch = async (
     async (client) => {
       const lock = await client.getMailboxLock(request.folderPath, { readOnly: true });
       try {
-        const actualUidValidity = client.mailbox && client.mailbox.uidValidity.toString();
-        if (!actualUidValidity || actualUidValidity !== request.uidValidity) {
-          const error = Object.assign(new Error("Folder UIDVALIDITY changed"), {
-            code: "UIDVALIDITY_CHANGED",
-            expected: request.uidValidity,
-            actual: actualUidValidity ?? null,
-          });
-          throw error;
-        }
+        assertSelectedMailbox(client, request.uidValidity);
         const highUid = Math.max(1, request.highUid);
         const lowUid = Math.max(1, request.lowUid ?? 1);
-        const selected = await selectUidBatch({
-          lowUid,
-          highUid,
-          limit: request.limit,
-          search: async (probeLow, probeHigh) => {
-            const matches = await client.search({ uid: `${probeLow}:${probeHigh}` }, { uid: true });
-            return matches || [];
-          },
-        });
+        const selected = request.uids
+          ? { uids: [...new Set(request.uids)].sort((left, right) => left - right), nextHighUid: null }
+          : await selectUidBatch({
+              lowUid,
+              highUid,
+              limit: request.limit,
+              search: async (probeLow, probeHigh) => {
+                const matches = await client.search({ uid: `${probeLow}:${probeHigh}` }, { uid: true });
+                assertSelectedMailbox(client, request.uidValidity);
+                return matches || [];
+              },
+            });
         const fetched: FetchMessageObject[] = [];
         if (selected.uids.length > 0) {
           for await (const message of client.fetch(
@@ -771,6 +778,7 @@ const fetchEnvelopeBatch = async (
           )) {
             fetched.push(message);
           }
+          assertSelectedMailbox(client, request.uidValidity);
         }
         fetched.sort((left, right) => right.uid - left.uid);
         const messages = await Promise.all(fetched.map((message) => mapFetchedEnvelope(message, request)));
@@ -819,7 +827,7 @@ const fetchFlagChanges = async (
     async (client) => {
       const lock = await client.getMailboxLock(folderPath, { readOnly: true });
       try {
-        assertSelectedUidValidity(client, uidValidity);
+        assertSelectedMailbox(client, uidValidity);
         const changes: FlagChange[] = [];
         for await (const message of client.fetch(
           `${Math.max(1, lowUid)}:${Math.max(1, highUid)}`,
@@ -834,6 +842,7 @@ const fetchFlagChanges = async (
             labels: [...new Set([...state.keywords, ...(message.labels ?? [])])].sort(),
           });
         }
+        assertSelectedMailbox(client, uidValidity);
         return changes;
       } finally {
         lock.release();
@@ -849,18 +858,29 @@ const fetchUidWindow = async (
   lowUid: number,
   highUid: number,
   signal?: AbortSignal,
-): Promise<number[]> =>
+): Promise<FlagChange[]> =>
   withImapClient(
     config,
     async (client) => {
       const lock = await client.getMailboxLock(folderPath, { readOnly: true });
       try {
-        assertSelectedUidValidity(client, uidValidity);
-        const uids: number[] = [];
-        for await (const message of client.fetch(`${Math.max(1, lowUid)}:${Math.max(1, highUid)}`, { uid: true }, { uid: true })) {
-          uids.push(message.uid);
+        assertSelectedMailbox(client, uidValidity);
+        const entries: FlagChange[] = [];
+        for await (const message of client.fetch(
+          `${Math.max(1, lowUid)}:${Math.max(1, highUid)}`,
+          { uid: true, flags: true, labels: true },
+          { uid: true },
+        )) {
+          const state = splitRemoteFlags(message.flags ?? []);
+          entries.push({
+            uid: message.uid,
+            modseq: message.modseq?.toString() ?? null,
+            flags: state.flags,
+            labels: [...new Set([...state.keywords, ...(message.labels ?? [])])].sort(),
+          });
         }
-        return uids.sort((left, right) => left - right);
+        assertSelectedMailbox(client, uidValidity);
+        return entries.sort((left, right) => left.uid - right.uid);
       } finally {
         lock.release();
       }
@@ -982,6 +1002,18 @@ export const assertUidValidity = (actual: string | null, expected: string): void
   }
 };
 
+type SelectedMailboxClient = Pick<ImapFlow, "usable" | "mailbox">;
+
+// ImapFlow answers SEARCH with undefined and yields nothing from FETCH once the
+// socket dropped, so an empty result is only trustworthy while the mailbox is
+// still selected on a usable connection.
+export const assertSelectedMailbox = (client: SelectedMailboxClient, expected: string): void => {
+  if (!client.usable || !client.mailbox) {
+    throw Object.assign(new Error("IMAP connection lost while the folder was selected"), { code: "IMAP_CONNECTION_LOST" });
+  }
+  assertUidValidity(client.mailbox.uidValidity.toString(), expected);
+};
+
 const assertSelectedUidValidity = (client: ImapFlow, expected: string): void => {
   const actual = client.mailbox && client.mailbox.uidValidity.toString();
   assertUidValidity(actual || null, expected);
@@ -1060,14 +1092,9 @@ const changeMessageState = async (
     }
   });
 
-const mapCopyResult = (
-  result: Awaited<ReturnType<ImapFlow["messageCopy"]>>,
-  sourceUid: number,
-  expungePending = false,
-): RemoteCopyResult => ({
+const mapCopyResult = (result: Awaited<ReturnType<ImapFlow["messageCopy"]>>, sourceUid: number): RemoteCopyResult => ({
   destinationUidValidity: result && result.uidValidity ? result.uidValidity.toString() : null,
   destinationUid: result && result.uidMap ? (result.uidMap.get(sourceUid) ?? null) : null,
-  expungePending,
 });
 
 const copy = async (config: ProviderConnectionInput, target: RemoteMutationTarget, destinationPath: string): Promise<RemoteCopyResult> =>
@@ -1079,16 +1106,10 @@ const copy = async (config: ProviderConnectionInput, target: RemoteMutationTarge
 
 const move = async (config: ProviderConnectionInput, target: RemoteMutationTarget, destinationPath: string): Promise<RemoteCopyResult> =>
   withSelectedMailbox(config, target, async (client) => {
+    // MOVE, or COPY plus UID EXPUNGE through UIDPLUS. Without either the source
+    // would survive the move, so there is no safe path.
     if (!capability(client, "MOVE") && !capability(client, "UIDPLUS")) {
-      const copied = await client.messageCopy(target.uid, destinationPath, { uid: true });
-      if (!copied) throw Object.assign(new Error("Remote message move copy failed"), { code: "REMOTE_MOVE_FAILED" });
-      const marked = await client.messageFlagsAdd(target.uid, ["\\Deleted"], { uid: true });
-      if (!marked) {
-        throw Object.assign(new Error("Remote message was copied but the source could not be marked deleted"), {
-          code: "MOVE_SOURCE_DELETE_MARK_FAILED",
-        });
-      }
-      return mapCopyResult(copied, target.uid, true);
+      throw Object.assign(new Error("Provider cannot move a message without losing the source"), { code: "SAFE_MOVE_UNSUPPORTED" });
     }
     const result = await client.messageMove(target.uid, destinationPath, { uid: true });
     if (!result) throw Object.assign(new Error("Remote message move failed"), { code: "REMOTE_MOVE_FAILED" });

@@ -340,12 +340,14 @@ export type CoalescedImapHints = {
 
 export const coalesceImapHints = (hints: readonly ConnectorChangeHint[]): CoalescedImapHints => {
   const uncertain = hints.some((hint) => hint.type === "overflow" || hint.type === "disconnected");
-  const vanishedUids = hints.flatMap((hint) =>
-    hint.type === "folder_changed" && hint.cause === "vanished" && hint.uid != null ? [hint.uid] : [],
-  );
+  const vanished = hints.flatMap((hint) => (hint.type === "folder_changed" && hint.cause === "vanished" ? [hint.uid] : []));
+  // EXPUNGE without QRESYNC carries no UID, so an untargeted deletion still has
+  // to reconcile the folder from the start.
+  const untargetedVanish = vanished.some((uid) => uid == null);
+  const vanishedUids = vanished.filter((uid): uid is number => uid != null);
   return {
     folderChanged: hints.some((hint) => hint.type === "folder_changed" || hint.type === "overflow" || hint.type === "disconnected"),
-    reconcileFromUid: uncertain ? 1 : vanishedUids.length > 0 ? Math.min(...vanishedUids) : null,
+    reconcileFromUid: uncertain || untargetedVanish ? 1 : vanishedUids.length > 0 ? Math.min(...vanishedUids) : null,
     rediscover: hints.some(
       (hint) =>
         hint.type === "overflow" ||

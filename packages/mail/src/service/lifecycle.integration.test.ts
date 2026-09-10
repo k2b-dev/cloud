@@ -53,7 +53,7 @@ import {
   loadSenderIdentityTransportRuntime,
   upsertSenderIdentityTransport,
 } from "./sender-identity-transports";
-import { claimFence, commitSyncBatch, executeBindingRediscovery, hydrateMessageBatch } from "./sync-runtime";
+import { claimFence, commitSyncBatch, executeBindingRediscovery, fetchReconcileStep, hydrateMessageBatch } from "./sync-runtime";
 import { createConversationTriageCommands } from "./triage";
 
 const enabled = process.env.MAIL_INTEGRATION_TESTS === "1";
@@ -1027,6 +1027,13 @@ suite("mail lifecycle control plane", () => {
         folderRequirements: [{ folderId: inboxFolderId, rights: ["write_flags"] }],
       });
       expect(execution.ok).toBe(false);
+
+      discover.mockResolvedValue([remoteFolder("INBOX", "10", "inbox")]);
+      await rediscoverProviderBinding({ bindingId });
+      const [restored] = await sql<{ selected_for_sync: boolean; sync_status: string }[]>`
+        SELECT selected_for_sync, sync_status FROM mail.folders WHERE id = ${inboxFolderId}::uuid
+      `;
+      expect(restored).toEqual({ selected_for_sync: true, sync_status: "pending" });
     } finally {
       discover.mockRestore();
       verify.mockRestore();
@@ -1214,6 +1221,270 @@ suite("mail lifecycle control plane", () => {
           WHERE id IN (SELECT value::uuid FROM jsonb_array_elements_text(${selectedFolders.map((folder) => folder.id)}::jsonb))
         `;
       }
+    }
+  });
+
+  const reconcileFolderIds: string[] = [];
+  const dropReconcileFolders = async (): Promise<void> => {
+    if (reconcileFolderIds.length === 0) return;
+    await sql`
+      DELETE FROM mail.folders
+      WHERE id IN (SELECT value::uuid FROM jsonb_array_elements_text(${reconcileFolderIds}::jsonb))
+    `;
+    reconcileFolderIds.length = 0;
+  };
+
+  const reconcileFixture = async (params: { key: string; uidValidity: string; localUids: number[] }) => {
+    const [resource] = await sql<{ id: string }[]>`
+      SELECT remote_resource_id AS id FROM mail.provider_bindings WHERE id = ${bindingId}::uuid
+    `;
+    const [folder] = await sql<{ id: string }[]>`
+      INSERT INTO mail.folders (short_id,
+        remote_resource_id, stable_key, name, role, selected_for_sync, sync_status, envelope_cursor
+      ) VALUES (${newShortId()},
+        ${resource!.id}::uuid,
+        ${`${params.key}-${suffix}`},
+        ${`Reconcile ${params.key}`},
+        'other',
+        false,
+        'current',
+        ${{ ...reconcileCursor(params.uidValidity) }}::jsonb
+      ) RETURNING id
+    `;
+    await sql`
+      INSERT INTO mail.binding_folder_refs (
+        binding_id, folder_id, remote_path, uid_validity, uid_next, highest_modseq, effective_rights, last_verified_at
+      ) VALUES (
+        ${bindingId}::uuid,
+        ${folder!.id}::uuid,
+        ${`${params.key}-${suffix}`},
+        ${params.uidValidity}::numeric,
+        11,
+        1,
+        ARRAY['read']::text[],
+        now()
+      )
+    `;
+    for (const uid of params.localUids) {
+      const [message] = await sql<{ id: string }[]>`
+        INSERT INTO mail.message_contents (short_id,
+          mailbox_id, message_id, subject, internal_date, size_bytes, content_hash, hydration_status
+        ) VALUES (${newShortId()},
+          ${mailboxId}::uuid,
+          ${`<${params.key}-${uid}-${suffix}@example.com>`},
+          ${`Reconcile ${params.key} ${uid}`},
+          now(),
+          1,
+          ${sha256Json({ key: params.key, uid, suffix })},
+          'complete'
+        ) RETURNING id
+      `;
+      const [remoteRef] = await sql<{ id: string }[]>`
+        INSERT INTO mail.remote_message_refs (folder_id, message_id, uid_validity, uid)
+        VALUES (${folder!.id}::uuid, ${message!.id}::uuid, ${params.uidValidity}::numeric, ${uid}::numeric)
+        RETURNING id
+      `;
+      await sql`
+        INSERT INTO mail.message_placements (remote_message_ref_id, folder_id, message_id, flags, keywords)
+        VALUES (${remoteRef!.id}::uuid, ${folder!.id}::uuid, ${message!.id}::uuid, ARRAY[]::text[], ARRAY[]::text[])
+      `;
+    }
+    reconcileFolderIds.push(folder!.id);
+    return { resourceId: resource!.id, folderId: folder!.id };
+  };
+
+  const reconcileCursor = (uidValidity: string, reconcileNextLow: number | null = null) => ({
+    version: 1 as const,
+    uidValidity,
+    highestSeenUid: 10,
+    backfillNextHigh: null,
+    backfillComplete: true,
+    incrementalTargetHigh: null,
+    incrementalNextHigh: null,
+    highestModseq: null,
+    flagTargetModseq: null,
+    flagNextLow: null,
+    flagMaxUid: null,
+    reconcileNextLow,
+    lastFullReconcileAt: null,
+  });
+
+  const reconcileEnvelope = (uid: number, uidValidity: string, folderId: string, key: string) => ({
+    remoteRef: { folderStableKey: folderId, uidValidity, uid: String(uid), modseq: null },
+    providerMessageId: null,
+    providerThreadId: null,
+    messageId: `<reimport-${key}-${uid}-${suffix}@example.com>`,
+    inReplyTo: null,
+    references: [],
+    subject: `Re-imported ${uid}`,
+    sentAt: new Date(),
+    internalDate: new Date(),
+    sizeBytes: 42,
+    flags: ["\\Seen"],
+    labels: [],
+    addresses: {
+      from: [{ name: null, address: "sender@example.com" }],
+      replyTo: [],
+      to: [{ name: null, address: "lifecycle@example.com" }],
+      cc: [],
+      bcc: [],
+    },
+    mimeStructure: {},
+  });
+
+  test("a reconcile window re-imports remote UIDs that are missing locally and applies their flags", async () => {
+    const fixture = await reconcileFixture({ key: "reconcile-commit", uidValidity: "61", localUids: [1, 3] });
+    const fence = await claimFence(fixture.resourceId, bindingId, "incremental");
+    const cursor = reconcileCursor("61");
+    await commitSyncBatch({
+      folder: {
+        folder_id: fixture.folderId,
+        mailbox_id: mailboxId,
+        remote_resource_id: fixture.resourceId,
+        sync_generation: fence.generation,
+        envelope_cursor: cursor,
+        role: "other",
+      },
+      folderId: fixture.folderId,
+      bindingId,
+      secretRevision: 1,
+      fence,
+      status: { uidValidity: "61", uidNext: 11, highestModseq: null, messages: 2 },
+      beforeCursor: cursor,
+      cursor,
+      uidValidityChanged: false,
+      envelopeBatch: null,
+      envelopeKind: null,
+      flagChanges: [],
+      reconcileWindow: {
+        low: 1,
+        high: 10,
+        uids: [1, 2],
+        flags: [
+          { uid: 1, modseq: null, flags: ["\\Seen"], labels: ["work"] },
+          { uid: 2, modseq: null, flags: ["\\Seen"], labels: [] },
+        ],
+        imports: [reconcileEnvelope(2, "61", fixture.folderId, "commit")],
+      },
+    });
+
+    const placements = await sql<{ uid: string; flags: string[]; keywords: string[]; stale_at: Date | null; deleted_at: Date | null }[]>`
+      SELECT rmr.uid::text AS uid, mp.flags, mp.keywords, rmr.stale_at, mp.deleted_at
+      FROM mail.remote_message_refs rmr
+      JOIN mail.message_placements mp ON mp.remote_message_ref_id = rmr.id
+      WHERE rmr.folder_id = ${fixture.folderId}::uuid
+      ORDER BY rmr.uid
+    `;
+    expect(placements.map((row) => row.uid)).toEqual(["1", "2", "3"]);
+    // Flags arrive without CONDSTORE, straight from the reconcile window.
+    expect(placements[0]!.flags).toEqual(["\\Seen"]);
+    expect(placements[0]!.keywords).toEqual(["work"]);
+    // The gap at UID 2 is re-imported instead of staying missing forever.
+    expect(placements[1]!.stale_at).toBeNull();
+    expect(placements[1]!.deleted_at).toBeNull();
+    // UID 3 is genuinely gone remotely.
+    expect(placements[2]!.stale_at).not.toBeNull();
+    await dropReconcileFolders();
+  });
+
+  test("a reconcile request that arrives during a batch survives the batch commit", async () => {
+    const fixture = await reconcileFixture({ key: "reconcile-rewind", uidValidity: "63", localUids: [1] });
+    const commit = async (beforeLow: number | null, resultLow: number | null) => {
+      const fence = await claimFence(fixture.resourceId, bindingId, "incremental");
+      await commitSyncBatch({
+        folder: {
+          folder_id: fixture.folderId,
+          mailbox_id: mailboxId,
+          remote_resource_id: fixture.resourceId,
+          sync_generation: fence.generation,
+          envelope_cursor: reconcileCursor("63", beforeLow),
+          role: "other",
+        },
+        folderId: fixture.folderId,
+        bindingId,
+        secretRevision: 1,
+        fence,
+        status: { uidValidity: "63", uidNext: 11, highestModseq: null, messages: 1 },
+        beforeCursor: reconcileCursor("63", beforeLow),
+        cursor: reconcileCursor("63", resultLow),
+        uidValidityChanged: false,
+        envelopeBatch: null,
+        envelopeKind: null,
+        flagChanges: [],
+        reconcileWindow: null,
+      });
+      const [row] = await sql<{ low: string | null }[]>`
+        SELECT envelope_cursor ->> 'reconcileNextLow' AS low FROM mail.folders WHERE id = ${fixture.folderId}::uuid
+      `;
+      return row?.low ?? null;
+    };
+    // A push EXPUNGE rewinds the stored cursor while the batch is in flight.
+    await sql`
+      UPDATE mail.folders
+      SET envelope_cursor = jsonb_set(envelope_cursor, '{reconcileNextLow}', '1'::jsonb, true)
+      WHERE id = ${fixture.folderId}::uuid
+    `;
+    expect(await commit(null, null)).toBe("1");
+    // Without a concurrent rewind the batch result wins.
+    expect(await commit(1, 5001)).toBe("5001");
+    await dropReconcileFolders();
+  });
+
+  test("a reconcile window refuses an empty remote answer for a folder that reports messages", async () => {
+    const fixture = await reconcileFixture({ key: "reconcile-empty", uidValidity: "62", localUids: [1, 2] });
+    const cursor = reconcileCursor("62", 1);
+    const window = spyOn(imapSmtpConnector, "fetchUidWindow").mockResolvedValue([]);
+    try {
+      await expect(
+        fetchReconcileStep({
+          cursor,
+          currentHighUid: 10,
+          remoteMessages: 2,
+          runtime: {} as never,
+          folderPath: "Reconcile",
+          folderId: fixture.folderId,
+          uidValidity: "62",
+          signal: AbortSignal.timeout(10_000),
+        }),
+      ).rejects.toMatchObject({ code: "RECONCILE_WINDOW_UNTRUSTED" });
+      expect(cursor.reconcileNextLow).toBe(1);
+    } finally {
+      window.mockRestore();
+      await dropReconcileFolders();
+    }
+  });
+
+  test("a reconcile window fetches envelopes only for UIDs without a live local reference", async () => {
+    const fixture = await reconcileFixture({ key: "reconcile-gap", uidValidity: "63", localUids: [1] });
+    const cursor = reconcileCursor("63", 1);
+    const window = spyOn(imapSmtpConnector, "fetchUidWindow").mockResolvedValue([
+      { uid: 1, modseq: null, flags: [], labels: [] },
+      { uid: 2, modseq: null, flags: ["\\Seen"], labels: [] },
+    ]);
+    const envelopes = spyOn(imapSmtpConnector, "fetchEnvelopeBatch").mockResolvedValue({
+      messages: [reconcileEnvelope(2, "63", fixture.folderId, "gap")],
+      nextHighUid: null,
+    });
+    try {
+      const result = await fetchReconcileStep({
+        cursor,
+        currentHighUid: 10,
+        remoteMessages: 2,
+        runtime: {} as never,
+        folderPath: "Reconcile",
+        folderId: fixture.folderId,
+        uidValidity: "63",
+        signal: AbortSignal.timeout(10_000),
+      });
+      expect(envelopes.mock.calls[0]?.[1]).toMatchObject({ uids: [2] });
+      expect(result?.uids).toEqual([1, 2]);
+      expect(result?.flags).toHaveLength(2);
+      expect(result?.imports).toHaveLength(1);
+      expect(cursor.reconcileNextLow).toBeNull();
+    } finally {
+      envelopes.mockRestore();
+      window.mockRestore();
+      await dropReconcileFolders();
     }
   });
 
@@ -2314,7 +2585,8 @@ suite("mail lifecycle control plane", () => {
         FROM mail.commands
         WHERE id = ${effectCommandId}::uuid
       `;
-      expect(effect).toEqual({ started: true, attempt: 2 });
+      // A REMOTE_RESOURCE_BUSY requeue does not consume an attempt, so this is the first executed attempt.
+      expect(effect).toEqual({ started: true, attempt: 1 });
       return {
         exists: true,
         flags: ["\\Answered", "\\Seen"],

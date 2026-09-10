@@ -561,6 +561,18 @@ const processExportSnapshot = async (snapshotId: string, jobHeartbeat: () => Pro
       WHERE binding.id = ${current.execution.bindingId}::uuid
         AND binding.verified_secret_revision = ${current.execution.secretRevision}
     `;
+        // Exporting requires the same capability retiring needs: without it every autosave would leave
+        // another copy in the provider's Drafts folder instead of replacing the previous one.
+        if (capabilities[0]?.uidplus !== true || !current.folder.rights.includes("delete_messages")) {
+          await markProjectionFailure(
+            snapshot.id,
+            "needs_attention",
+            Object.assign(new Error("Drafts cannot be exported because a superseded remote copy cannot be deleted safely"), {
+              code: "SAFE_DRAFT_DELETE_UNAVAILABLE",
+            }),
+          );
+          return;
+        }
         await assertLeaseActive();
         const folderStatus = await imapSmtpConnector.getFolderStatus(current.runtime, current.folder.path);
         const latestDraft = await loadDraftContent(snapshot.draft_id!);

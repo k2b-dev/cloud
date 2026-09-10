@@ -309,10 +309,16 @@ suite("reversible mailbox lifecycle", () => {
       { idempotency_key: `queued-${suffix}`, state: "cancelled", worker_heartbeat_at: null },
     ]);
 
+    await sql`
+      UPDATE mail.mailboxes
+      SET compose_safety = ${{ internalDomains: ["restored.example"], largeRecipientThreshold: 42 }}::jsonb
+      WHERE id = ${mailboxId}::uuid
+    `;
     const restored = await restoreMailbox(ownerContext, mailboxId);
     expect(restored.ok).toBe(true);
     if (!restored.ok) return;
     expect(restored.data).toMatchObject({ syncEnabled: false, health: "paused" });
+    expect(restored.data.composeSafety).toEqual({ internalDomains: ["restored.example"], largeRecipientThreshold: 42 });
     expect((await restoreMailbox(ownerContext, mailboxId)).ok).toBe(true);
     const readExecution = await resolveMailExecution({ mailboxId, operation: "actorRead", context: ownerContext });
     expect(readExecution.ok && readExecution.data.localOnly).toBe(true);

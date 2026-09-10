@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   activateWorkflowInputSchema,
+  actorCommandInputSchema,
   addConversationLocalTagsSchema,
   automaticReplyPreviewInputSchema,
   cancelScheduledSendInputSchema,
@@ -164,6 +165,21 @@ describe("scheduled send contracts", () => {
       }).success,
     ).toBe(false);
   });
+
+  test("bounds how far ahead a send can be scheduled", () => {
+    const command = {
+      kind: "send",
+      draftId: "Draft1",
+      expectedDraftRevision: 1,
+      senderIdentityId: "Ident1",
+      idempotencyKey: "00000000-0000-4000-8000-000000000003",
+    };
+    const inDays = (days: number) => new Date(Date.now() + days * 24 * 60 * 60 * 1_000).toISOString();
+    expect(actorCommandInputSchema.safeParse({ ...command, scheduledAt: inDays(300) }).success).toBe(true);
+    const tooFar = actorCommandInputSchema.safeParse({ ...command, scheduledAt: inDays(400) });
+    expect(tooFar.success).toBe(false);
+    if (!tooFar.success) expect(tooFar.error.issues[0]?.message).toBe("A send can be scheduled at most one year in the future");
+  });
 });
 
 describe("automatic reply configuration contracts", () => {
@@ -185,6 +201,11 @@ describe("automatic reply configuration contracts", () => {
       exceptions: [],
     },
   };
+
+  test("requires at least one hour between replies to one recipient", () => {
+    expect(createAutomaticReplyConfigurationSchema.safeParse({ ...configuration, minimumIntervalHours: 0 }).success).toBe(false);
+    expect(createAutomaticReplyConfigurationSchema.safeParse({ ...configuration, minimumIntervalHours: 1 }).success).toBe(true);
+  });
 
   test("keeps presets out of the persisted contract", () => {
     expect(createAutomaticReplyConfigurationSchema.safeParse(configuration).success).toBe(true);

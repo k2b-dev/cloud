@@ -9,6 +9,7 @@ import { normalizeEmailAddress, normalizeEmailDomain } from "./address-normaliza
 import { auditActorFromRequest, type MailRequestContext, userBackedActor } from "./auth";
 import { createPinnedLookup, resolvePublicEndpoint } from "./connectors/endpoint-policy";
 import { resolveMailExecution } from "./execution";
+import { assessMessage } from "./security";
 
 const MAX_REMOTE_IMAGE_BYTES = 5 * 1024 * 1024;
 const REMOTE_IMAGE_TIMEOUT_MS = 10_000;
@@ -407,6 +408,11 @@ export const loadRemoteImage = async (params: {
 }): Promise<Result<RemoteImagePayload>> => {
   const source = await remoteImageSource(params);
   if (!source.ok) return source;
+  // The browser hides the load action for a quarantined message; the API must refuse it as well,
+  // otherwise a direct request still fetches attacker-controlled URLs on the reader's behalf.
+  const assessment = await assessMessage(params.mailboxId, params.messageId);
+  if (!assessment.ok) return assessment;
+  if (assessment.data.linksDisabled) return fail(err.forbidden("Remote content is blocked for this message"));
   try {
     const image = await requestRemoteImage(new URL(source.data));
     const currentSource = await remoteImageSource(params);

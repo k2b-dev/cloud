@@ -7,7 +7,6 @@ describe("mail mutation failure classification", () => {
       "DELETE_RECONCILIATION_FAILED",
       "FLAG_RECONCILIATION_FAILED",
       "MOVE_RECONCILIATION_FAILED",
-      "MOVE_SOURCE_DELETE_MARK_FAILED",
       "REMOTE_DELETE_FAILED",
       "REMOTE_MOVE_FAILED",
     ]) {
@@ -26,7 +25,18 @@ describe("mail mutation failure classification", () => {
       "ambiguous",
     );
     expect(mutationFailureState(Object.assign(new Error("partial folder"), { code: "REMOTE_CREATE_SUBSCRIBE_PARTIAL" }))).toBe("ambiguous");
-    expect(mutationFailureState(Object.assign(new Error("rights"), { code: "PROVIDER_RIGHTS_CHANGED" }))).toBe("failed");
+    expect(mutationFailureState(Object.assign(new Error("rights"), { code: "PROVIDER_RIGHTS_CHANGED" }), false)).toBe("failed");
+  });
+
+  test("never fails a command whose provider effect already started", () => {
+    for (const error of [
+      new Error("plain failure after the provider effect"),
+      Object.assign(new Error("rights"), { code: "PROVIDER_RIGHTS_CHANGED" }),
+      Object.assign(new Error("missing"), { code: "REMOTE_MESSAGE_MISSING" }),
+    ]) {
+      expect(mutationFailureState(error, true)).toBe("ambiguous");
+      expect(mutationFailureState(error, false)).toBe("failed");
+    }
   });
 
   test("retries connection failures that happen before a provider mutation can start", () => {

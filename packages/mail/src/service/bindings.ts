@@ -451,7 +451,7 @@ const finalizeFolderProjection = async (params: {
       discovery_state = CASE WHEN availability.available THEN 'active' ELSE 'missing' END,
       missing_since = CASE WHEN availability.available THEN NULL ELSE COALESCE(folder.missing_since, now()) END,
       dismissed_at = CASE WHEN availability.available THEN NULL ELSE folder.dismissed_at END,
-      selected_for_sync = folder.selected_for_sync AND availability.readable,
+      selected_for_sync = availability.readable,
       sync_status = CASE
         WHEN NOT availability.available OR NOT availability.readable THEN 'excluded'
         WHEN folder.sync_status = 'excluded' THEN 'pending'

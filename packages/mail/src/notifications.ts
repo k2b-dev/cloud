@@ -23,6 +23,9 @@ const RECOVERY_BATCH_SIZE = 100;
 const RUNTIME_DISPATCH_BATCH_SIZE = 1_000;
 const RUNTIME_DISPATCH_RESERVATION_SECONDS = 15 * 60;
 const STALE_CLAIM_SECONDS = 10 * 60;
+// Same attempt ceiling as the Mail outbox: a delivery that failed five times is dead, not slow.
+const MAX_DELIVERY_ATTEMPTS = 5;
+const TERMINAL_RETENTION_DAYS = 90;
 
 const log = logger("mail:collaboration-notifications");
 const presentation = (label: string, description: string) => ({ baseLocale: "en", translations: { de: { label, description } } });
@@ -197,7 +200,7 @@ const loadSendInput = async (delivery: DeliveryRow): Promise<MailNotificationSen
     : null;
 };
 
-const skipClaimedDelivery = async (delivery: DeliveryRow, claimId: string): Promise<void> => {
+const skipClaimedDelivery = async (delivery: DeliveryRow, claimId: string, reason: string): Promise<void> => {
   await sql.begin(async (tx) => {
     if (delivery.kind === "reminder") {
       await tx`
@@ -209,7 +212,7 @@ const skipClaimedDelivery = async (delivery: DeliveryRow, claimId: string): Prom
     }
     const [updated] = await tx<{ id: string }[]>`
       UPDATE mail.collaboration_notification_deliveries
-      SET state = 'skipped', claim_id = NULL, claimed_at = NULL, last_error = 'Source or recipient access is no longer current'
+      SET state = 'skipped', claim_id = NULL, claimed_at = NULL, last_error = ${reason.slice(0, 1_000)}
       WHERE id = ${delivery.id}::uuid AND state = 'sending' AND claim_id = ${claimId}::uuid
       RETURNING id
     `;
@@ -250,6 +253,11 @@ const completeClaimedDelivery = async (delivery: DeliveryRow, claimId: string): 
 };
 
 const retryClaimedDelivery = async (delivery: DeliveryRow, claimId: string, error: unknown): Promise<void> => {
+  const message = error instanceof Error ? error.message : "Notification delivery failed";
+  if (delivery.attempt >= MAX_DELIVERY_ATTEMPTS) {
+    await skipClaimedDelivery(delivery, claimId, `Giving up after ${delivery.attempt} attempts: ${message}`);
+    return;
+  }
   const retryDelayMs = Math.min(5 * 60_000, 2 ** Math.min(delivery.attempt, 8) * 1_000);
   await sql`
     UPDATE mail.collaboration_notification_deliveries
@@ -257,7 +265,7 @@ const retryClaimedDelivery = async (delivery: DeliveryRow, claimId: string, erro
         claim_id = NULL,
         claimed_at = NULL,
         available_at = now() + (${retryDelayMs}::text || ' milliseconds')::interval,
-        last_error = ${error instanceof Error ? error.message.slice(0, 1_000) : "Notification delivery failed"}
+        last_error = ${message.slice(0, 1_000)}
     WHERE id = ${delivery.id}::uuid AND state = 'sending' AND claim_id = ${claimId}::uuid
   `;
 };
@@ -272,6 +280,12 @@ const recoverStaleClaims = async (db: typeof sql = sql): Promise<void> => {
         last_error = 'Recovered stale delivery claim'
     WHERE state = 'sending'
       AND claimed_at < now() - (${STALE_CLAIM_SECONDS}::text || ' seconds')::interval
+  `;
+  // Terminal rows are only kept so a stale notification link still resolves; nothing re-reads them later.
+  await db`
+    DELETE FROM mail.collaboration_notification_deliveries
+    WHERE state IN ('sent', 'skipped')
+      AND created_at < now() - (${TERMINAL_RETENTION_DAYS}::text || ' days')::interval
   `;
 };
 
@@ -355,7 +369,7 @@ const deliverClaimedNotification = async (params: {
   if (!delivery) return "skipped";
   const sendInput = await loadSendInput(delivery);
   if (!sendInput) {
-    await skipClaimedDelivery(delivery, params.claimId);
+    await skipClaimedDelivery(delivery, params.claimId, "Source or recipient access is no longer current");
     return "skipped";
   }
   await params.send(sendInput);

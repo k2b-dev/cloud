@@ -10,7 +10,7 @@ order: 30
 
 Wähle **Verfassen** für eine neue Nachricht oder verwende in einer Unterhaltung **Antworten**, **Allen antworten**, **Weiterleiten** oder **Auswahl zitieren**. Mail erstellt zunächst einen gemeinsamen Entwurf und öffnet dann die eigene Verfassen-Seite. Die Absicht des Entwurfs bleibt erhalten. Die abschließende Schaltfläche heißt daher **Senden**, **Antworten**, **Allen antworten** oder **Weiterleiten**.
 
-Wähle unter **Von** eine verifizierte Absenderidentität, füge Empfänger hinzu und gib Betreff und Nachricht ein. **Cc/Bcc** blendet die zusätzlichen Empfängerfelder ein.
+Wähle unter **Von** eine verifizierte Absenderidentität, füge Empfänger hinzu und gib Betreff und Nachricht ein. **Cc/Bcc** blendet die zusätzlichen Empfängerfelder ein. Empfänger sehen die Bcc-Liste nie; deine eigene Kopie unter Gesendet behält sie, sodass jeder Mail-Client zeigt, wen du blind kopiert hast.
 
 Der Editor ist vom Postfach-Arbeitsbereich getrennt. Wähle **Zurück zum Postfach**, um die letzten Änderungen zu speichern, die Bearbeitungssperre freizugeben und zurückzukehren. **In neuem Fenster öffnen** verschiebt denselben Entwurf in ein eigenes Browserfenster. Dabei entsteht kein zweiter Entwurf.
 
@@ -72,7 +72,7 @@ Administratoren verwalten Vorlagen und Standards unter **Einstellungen > Schreib
 
 Wähle **Dateien anhängen** und eine oder mehrere Dateien aus oder ziehe Dateien vom Desktop auf den Editor. Der Editor wird hervorgehoben, solange er die Dateien ablegen kann. Uploadfortschritt und Fehler erscheinen neben den Anhängen des Entwurfs. Einen unvollständigen Upload kannst du wiederholen oder abbrechen. Anhänge lassen sich vor dem Senden entfernen.
 
-Jeder ausgehende Anhang ist auf 100 MiB begrenzt. Eine Nachricht kann nicht gesendet werden, solange ein Anhang unvollständig oder fehlerhaft hochgeladen ist.
+Jeder ausgehende Anhang ist auf 100 MiB begrenzt; ein Entwurf enthält höchstens 200 Anhänge mit insgesamt 100 MiB. Eine Nachricht kann nicht gesendet werden, solange ein Anhang unvollständig oder fehlerhaft hochgeladen ist.
 
 Dein E-Mail-Anbieter kann für die vollständige ausgehende Nachricht ein niedrigeres Limit festlegen. Mail berücksichtigt die endgültig codierte E-Mail einschließlich Kopfzeilen und Anhangscodierung, bevor die Zustellung eingereiht wird. Durch die Codierung wird eine angehängte Datei bei der Übertragung größer. Veröffentlicht der Anbieter ein aktuelles Limit, lehnt Mail eine zu große Nachricht vor Beginn von SMTP ab und nennt beide Größen. Entferne Anhänge oder teile eine große Datei stattdessen über einen öffentlichen Downloadlink. Ein unbekanntes oder veraltetes Anbieterlimit verhindert das Senden nicht.
 

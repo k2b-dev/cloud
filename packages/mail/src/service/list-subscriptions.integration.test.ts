@@ -1,12 +1,58 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, spyOn, test } from "bun:test";
 import { sql } from "bun";
+import { type ConnectorVerification, unavailableProviderLimitSnapshot } from "../contracts";
 import { newShortId } from "../lib/short-id";
 import { migrate } from "../migrate";
 import { grantMailboxAccess } from "./access";
 import type { MailRequestContext } from "./auth";
+import { rediscoverProviderBinding } from "./bindings";
+import { sha256Json } from "./canonical";
+import { imapSmtpConnector } from "./connectors";
 import { applyMailingListDisposition, listSubscriptions, requestUnsubscribe } from "./list-subscriptions";
 import { createMailbox } from "./mailboxes";
 import { EMPTY_MESSAGE_PROTOCOL_FACTS } from "./message-protocol";
+import { createProviderConnection } from "./provider-connections";
+
+const FOLDER_RIGHTS = ["read", "write_flags", "insert", "move", "delete_messages"];
+
+const remoteFolder = (path: string, uidValidity: string, role: "inbox" | "sent" | "archive") => ({
+  stableKey: `${path}:${uidValidity}`,
+  path,
+  name: path,
+  delimiter: "/",
+  parentPath: null,
+  role,
+  subscribed: true,
+  selectable: true,
+  uidValidity,
+  uidNext: "1",
+  highestModseq: "1",
+  rights: FOLDER_RIGHTS,
+  rightsSource: "acl" as const,
+});
+
+const fixtureFolders = () => [remoteFolder("INBOX", "10", "inbox"), remoteFolder("Sent", "20", "sent"), remoteFolder("Archive", "30", "archive")];
+
+const fixtureVerification = (): ConnectorVerification => ({
+  authenticatedPrincipal: "lists@example.test",
+  serverIdentity: { serverInfo: { name: "fixture" } },
+  capabilities: {
+    idle: true,
+    condstore: true,
+    qresync: true,
+    move: true,
+    uidplus: true,
+    namespace: true,
+    listExtended: true,
+    specialUse: true,
+    acl: true,
+    notify: false,
+    quota: false,
+    gmailExtensions: false,
+  },
+  limits: unavailableProviderLimitSnapshot(),
+  accounts: [{ id: "lists@example.test", name: "Lists fixture", locator: {}, namespaces: [{ kind: "personal", prefix: "", delimiter: "/" }] }],
+});
 
 const enabled = process.env.MAIL_INTEGRATION_TESTS === "1";
 const suite = enabled ? describe : describe.skip;
@@ -36,6 +82,8 @@ suite("mailing-list subscriptions", () => {
   const suffix = crypto.randomUUID().slice(0, 8);
   const userIds: string[] = [];
   let mailboxId = "";
+  let inboxFolderId = "";
+  let sentFolderId = "";
   let ownerContext: MailRequestContext;
   let readerContext: MailRequestContext;
   let outsiderContext: MailRequestContext;
@@ -95,6 +143,98 @@ suite("mailing-list subscriptions", () => {
           'complete',
           ${protocolFacts}::jsonb
         )
+      `;
+    }
+
+    const verify = spyOn(imapSmtpConnector, "verify").mockResolvedValue(fixtureVerification());
+    const discover = spyOn(imapSmtpConnector, "discoverFolders").mockResolvedValue(fixtureFolders());
+    try {
+      const connection = await createProviderConnection({
+        context: ownerContext,
+        mailboxId,
+        input: {
+          name: `Lists fixture ${suffix}`,
+          email: "lists@example.test",
+          username: "lists@example.test",
+          imap: { host: "imap.example.test", port: 993, tlsMode: "implicit" },
+          smtp: { host: "smtp.example.test", port: 587, tlsMode: "starttls" },
+          secret: { kind: "password", password: "fixture-secret" },
+        },
+      });
+      if (!connection.ok) throw new Error(connection.error.message);
+      const evidence = {
+        version: 1,
+        serverKey: sha256Json({ host: "imap.example.test", port: 993, tlsMode: "implicit", serverInfo: { name: "fixture" } }),
+        accountId: "lists@example.test",
+        namespaces: [{ kind: "personal", prefix: "", delimiter: "/" }],
+        folders: fixtureFolders().map((folder) => ({
+          relativePath: folder.path,
+          parentRelativePath: null,
+          name: folder.name,
+          role: folder.role,
+          remotePath: folder.path,
+          delimiter: folder.delimiter,
+          selectable: folder.selectable,
+          subscribed: folder.subscribed,
+          uidValidity: folder.uidValidity,
+          uidNext: folder.uidNext,
+          highestModseq: folder.highestModseq,
+          rights: folder.rights,
+          rightsSource: folder.rightsSource,
+        })),
+      };
+      const scope = sha256Json(evidence);
+      const [resource] = await sql<{ id: string }[]>`
+        INSERT INTO mail.remote_resources (mailbox_id, remote_locator, server_identity, scope_fingerprint, status)
+        VALUES (${mailboxId}::uuid, ${{ accountId: "lists@example.test" }}::jsonb, '{}'::jsonb, ${scope}, 'active')
+        RETURNING id
+      `;
+      const [binding] = await sql<{ id: string }[]>`
+        INSERT INTO mail.provider_bindings (
+          remote_resource_id, connection_id, state, authenticated_principal, remote_locator,
+          capabilities, rights, verification_evidence, verified_scope_fingerprint, verified_secret_revision, last_verified_at
+        ) VALUES (
+          ${resource!.id}::uuid, ${connection.data.connection.id}::uuid, 'active', 'lists@example.test',
+          ${{ accountId: "lists@example.test" }}::jsonb, ${fixtureVerification().capabilities}::jsonb, '{}'::jsonb,
+          ${evidence}::jsonb, ${scope}, 1, now()
+        ) RETURNING id
+      `;
+      await rediscoverProviderBinding({ bindingId: binding!.id });
+    } finally {
+      discover.mockRestore();
+      verify.mockRestore();
+    }
+    const folders = await sql<{ id: string; role: string }[]>`
+      SELECT folder.id, folder.role
+      FROM mail.folders folder
+      JOIN mail.remote_resources resource ON resource.id = folder.remote_resource_id
+      WHERE resource.mailbox_id = ${mailboxId}::uuid
+    `;
+    inboxFolderId = folders.find((folder) => folder.role === "inbox")?.id ?? "";
+    sentFolderId = folders.find((folder) => folder.role === "sent")?.id ?? "";
+    if (!inboxFolderId || !sentFolderId) throw new Error("Failed to discover the mailing-list fixture folders");
+
+    // The list message the user received sits in the inbox; the user's own post to the list sits in Sent.
+    const placements: Array<{ messageId: string; folderId: string; uid: number }> = [];
+    for (const [index, folderId] of [inboxFolderId, sentFolderId].entries()) {
+      const [message] = await sql<{ id: string }[]>`
+        SELECT id FROM mail.message_contents
+        WHERE mailbox_id = ${mailboxId}::uuid AND message_id = ${`<list-${index}-${suffix}@example.test>`}
+      `;
+      placements.push({ messageId: message!.id, folderId, uid: 500 + index });
+    }
+    for (const placement of placements) {
+      const [uidValidity] = await sql<{ uid_validity: string }[]>`
+        SELECT ref.uid_validity FROM mail.binding_folder_refs ref WHERE ref.folder_id = ${placement.folderId}::uuid
+      `;
+      const [remoteRef] = await sql<{ id: string }[]>`
+        INSERT INTO mail.remote_message_refs (folder_id, message_id, uid_validity, uid)
+        VALUES (${placement.folderId}::uuid, ${placement.messageId}::uuid, ${uidValidity!.uid_validity}, ${placement.uid})
+        RETURNING id
+      `;
+      await sql`
+        INSERT INTO mail.message_placements (remote_message_ref_id, folder_id, message_id)
+        VALUES (${remoteRef!.id}::uuid, ${placement.folderId}::uuid, ${placement.messageId}::uuid)
       `;
     }
   });
@@ -206,6 +346,24 @@ suite("mailing-list subscriptions", () => {
     });
     expect(disposition.ok).toBe(false);
     if (!disposition.ok) expect(disposition.error.status).toBe(403);
+  });
+
+  test("never disposes the user's own list posts out of Sent", async () => {
+    const received = await applyMailingListDisposition({
+      context: ownerContext,
+      mailboxId,
+      input: { listKey: "updates.example.test", disposition: "archive", idempotencyKey: `inbox-disposition-${suffix}` },
+    });
+    expect(received.ok).toBe(true);
+    if (received.ok) expect(received.data).toEqual({ commandCount: 1, truncated: false });
+
+    const ownPost = await applyMailingListDisposition({
+      context: ownerContext,
+      mailboxId,
+      input: { listKey: "alerts.example.test", disposition: "archive", idempotencyKey: `sent-disposition-${suffix}` },
+    });
+    expect(ownPost.ok).toBe(true);
+    if (ownPost.ok) expect(ownPost.data).toEqual({ commandCount: 0, truncated: false });
   });
 
   test("requires write access before selecting disposition targets", async () => {

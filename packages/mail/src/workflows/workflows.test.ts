@@ -96,7 +96,7 @@ describe("Mail workflow manifest", () => {
   });
 
   test("preserves the published manifest hash", async () => {
-    expect(await hashWorkflowJson(mailWorkflowManifest)).toBe("bcfbf29a90b066d21351bb4cf2e70934a1fdee736dcab6fd6c426bd6250465a5");
+    expect(await hashWorkflowJson(mailWorkflowManifest)).toBe("a518b07287b83cae90e3d4df3d60847d34618994354d0493bd8d2b67259dcceb");
   });
 
   test("classifies provider, collaboration, and terminal effects", () => {
@@ -464,6 +464,38 @@ steps:
     if (result.ok) return;
     expect(result.diagnostics).toContainEqual(
       expect.objectContaining({ code: "automaticReply.trigger", path: ["steps", 0, "automaticReply"] }),
+    );
+  });
+
+  test("rejects unguarded sending from a messageReceived trigger", async () => {
+    const result = await bindMailWorkflow(
+      await compile(`inputs:
+  message:
+    type: mailMessage
+  conversation:
+    type: mailConversation
+triggers:
+  messageReceived:
+    with:
+      message: "\${{ trigger.message }}"
+      conversation: "\${{ trigger.conversation }}"
+steps:
+  - createDraft:
+      sender: Support
+      to: "\${{ inputs.message.fromAddress }}"
+      subject: Received
+      body: Received
+      saveAs: reply
+  - scheduleDraftSend:
+      draft: reply
+      scheduledAt: "\${{ context.occurredAt }}"
+`),
+      catalog(),
+    );
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.diagnostics).toContainEqual(
+      expect.objectContaining({ code: "scheduleDraftSend.trigger", path: ["steps", 1, "scheduleDraftSend"] }),
     );
   });
 

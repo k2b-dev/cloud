@@ -3923,6 +3923,20 @@ const installLiveInvalidationEnqueue = async (db: SqlClient): Promise<void> => {
   `;
 };
 
+const requireAutomaticReplyInterval = async (db: SqlClient): Promise<void> => {
+  await db`
+    UPDATE mail.automatic_reply_configurations
+    SET minimum_interval_hours = 1
+    WHERE minimum_interval_hours < 1
+  `;
+  await db`
+    ALTER TABLE mail.automatic_reply_configurations
+      DROP CONSTRAINT IF EXISTS automatic_reply_configurations_minimum_interval_hours_check,
+      ADD CONSTRAINT automatic_reply_configurations_minimum_interval_hours_check
+        CHECK (minimum_interval_hours BETWEEN 1 AND 8760)
+  `;
+};
+
 const addLiveInvalidationOutbox = async (db: SqlClient): Promise<void> => {
   await db`
     CREATE TABLE mail.live_invalidation_outbox (
@@ -4240,6 +4254,7 @@ const migrations: readonly MailMigration[] = [
   { version: 118, name: "flat_conversation_comments", run: flattenConversationComments },
   { version: 119, name: "attachment_document_extraction", run: addAttachmentDocumentExtraction },
   { version: 121, name: "incoming_automation_mandates", run: addIncomingAutomationMandates },
+  { version: 122, name: "automatic_reply_interval_floor", run: requireAutomaticReplyInterval },
 ];
 
 const ensureMigrationFoundation = async (db: SqlClient): Promise<void> => {

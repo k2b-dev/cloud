@@ -860,6 +860,7 @@ steps:
       source: { messageId: string; conversationId: string };
       recipient: string;
       listId?: string;
+      minimumIntervalHours?: number;
     }) =>
       sql.begin((tx) =>
         prepareAutomaticReplyInTransaction({
@@ -881,7 +882,7 @@ steps:
             list: { ...EMPTY_MESSAGE_PROTOCOL_FACTS.list, id: params.listId ?? null },
           },
           occurredAt: "2026-07-26T12:00:00.000Z",
-          minimumIntervalHours: 24,
+          minimumIntervalHours: params.minimumIntervalHours ?? 24,
           schedule: { mode: "always" },
         }),
       );
@@ -956,6 +957,44 @@ steps:
       WHERE effect.workflow_run_id = ${firstRun}::uuid
     `;
     expect(stored).toEqual({ effect_state: "cancelled", draft_state: "discarded" });
+
+    const afterCancellation = await prepare({
+      runId: await createRun("after-cancellation"),
+      source: firstSource,
+      recipient: "customer@example.test",
+    });
+    expect(afterCancellation).toMatchObject({
+      ok: true,
+      data: { state: "suppressed", reasons: expect.arrayContaining(["already_replied"]) },
+    });
+
+    const zeroInterval = await prepare({
+      runId: await createRun("zero-interval"),
+      source: await createSource("5"),
+      recipient: "interval@example.test",
+      minimumIntervalHours: 0,
+    });
+    expect(zeroInterval).toMatchObject({ ok: false, error: { code: "BAD_INPUT" } });
+
+    await sql`
+      INSERT INTO mail.automatic_reply_effects (
+        mailbox_id, workflow_version_id, workflow_run_id, step_key, message_id, conversation_id,
+        sender_identity_id, recipient, state
+      )
+      SELECT ${mailboxId}::uuid, ${created.data.currentVersion.id}::uuid, ${firstRun}::uuid,
+             'mailbox-cap.' || series, ${firstSource.messageId}::uuid, ${firstSource.conversationId}::uuid,
+             ${senderIdentityId}::uuid, 'cap-' || series || '@example.test', 'queued'
+      FROM generate_series(1, 100) AS series
+    `;
+    const mailboxCapped = await prepare({
+      runId: await createRun("mailbox-cap"),
+      source: await createSource("6"),
+      recipient: "unrelated@example.test",
+    });
+    expect(mailboxCapped).toMatchObject({
+      ok: true,
+      data: { state: "suppressed", reasons: expect.arrayContaining(["mailbox_rate_limited"]) },
+    });
   });
 
   test("dispatches an active Mail event and completes its kernel run", async () => {

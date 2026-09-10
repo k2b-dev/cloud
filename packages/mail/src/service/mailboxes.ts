@@ -596,16 +596,15 @@ export const restoreMailbox = async (context: MailRequestContext, mailboxId: str
           db: tx,
         });
         const [restored] = await tx<DbMailbox[]>`
-          UPDATE mail.mailboxes
+          UPDATE mail.mailboxes m
           SET
             deleted_at = NULL,
             sync_enabled = false,
             health = 'paused',
             health_reason = 'Mailbox restored; provider diagnostics are required before synchronization can resume',
             updated_at = now()
-          WHERE id = ${mailboxId}::uuid AND deleted_at IS NOT NULL
-          RETURNING id, name, description, health, health_reason, sync_enabled, search_backend,
-            automatic_reply_management_permission, deleted_at, created_at, updated_at
+          WHERE m.id = ${mailboxId}::uuid AND m.deleted_at IS NOT NULL
+          RETURNING ${mailboxColumns}
         `;
         if (!restored) throw new Error("Mailbox restore returned no row");
         transitioned = true;

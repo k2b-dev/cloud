@@ -75,9 +75,8 @@ const attachCalendar = async (params: {
 }): Promise<Result<void>> => {
   const bytes = Buffer.from(params.calendar, "utf8");
   const blob = await storeReadableBlob(Readable.from(bytes), bytes.byteLength);
-  let inserted = false;
   try {
-    inserted = await sql.begin(async (tx) => {
+    await sql.begin(async (tx) => {
       const rows = await withShortIdDb(
         tx,
         "draftAttachment",
@@ -91,22 +90,12 @@ const attachCalendar = async (params: {
         RETURNING id
       `,
       );
-      if (rows.length > 0) {
-        await tx`UPDATE mail.drafts SET revision = revision + 1 WHERE id = ${params.draftId}::uuid`;
-        return true;
-      }
-      return false;
+      if (rows.length > 0) await tx`UPDATE mail.drafts SET revision = revision + 1 WHERE id = ${params.draftId}::uuid`;
     });
   } catch {
-    await sql`DELETE FROM mail.message_part_blobs WHERE id = ${blob.id}::uuid AND NOT EXISTS (
-      SELECT 1 FROM mail.draft_attachments WHERE blob_id = ${blob.id}::uuid
-    )`;
+    // Blobs are content addressed, so this one may already back other attachments or messages.
+    // deleteOrphanedBlobs sweeps it if nothing references it.
     return fail(err.internal("Failed to attach the calendar payload"));
-  }
-  if (!inserted) {
-    await sql`DELETE FROM mail.message_part_blobs WHERE id = ${blob.id}::uuid AND NOT EXISTS (
-      SELECT 1 FROM mail.draft_attachments WHERE blob_id = ${blob.id}::uuid
-    )`;
   }
   await enqueueDraftProjection(params.draftId);
   return ok(undefined);

@@ -10,7 +10,7 @@ order: 30
 
 Select **Compose** for a new message, or use **Reply**, **Reply all**, **Forward**, or **Quote selection** inside a conversation. Mail first creates a shared draft and then opens its focused composer page. Mail keeps the intent of the draft, so the final action button is labeled **Send**, **Reply**, **Reply all**, or **Forward**.
 
-Choose a verified sender in **From**, add recipients, and enter a subject and body. **Cc/Bcc** reveals the additional recipient fields.
+Choose a verified sender in **From**, add recipients, and enter a subject and body. **Cc/Bcc** reveals the additional recipient fields. Recipients never see the Bcc list; your own copy in Sent keeps it, so any mail client shows whom you blind-copied.
 
 The composer is separate from the mailbox workspace. Use **Back to mailbox** to save the latest changes, release the editing lease, and return. **Open in new window** moves the same draft to a dedicated browser window; it never creates a second draft.
 
@@ -72,7 +72,7 @@ Administrators manage templates and defaults under **Settings > Writing**. Choos
 
 Select **Attach files** and choose one or more files, or drag files onto the composer from your desktop. The composer highlights while it can accept the drop. Upload progress and failures appear next to the draft attachments. You can retry or cancel an incomplete upload and remove an attached file before sending.
 
-Each outgoing attachment is limited to 100 MiB. A message cannot be sent while an attachment upload is incomplete or failed.
+Each outgoing attachment is limited to 100 MiB, and one draft holds at most 200 attachments with 100 MiB in total. A message cannot be sent while an attachment upload is incomplete or failed.
 
 Your mail provider can impose a smaller limit on the complete outgoing message.
 Mail counts the final encoded email, including headers and attachment encoding,

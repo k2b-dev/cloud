@@ -1241,7 +1241,14 @@ export const actorCommandInputSchema = z.discriminatedUnion("kind", [
     draftId: ResourceShortIdSchema,
     expectedDraftRevision: z.number().int().positive(),
     senderIdentityId: ResourceShortIdSchema,
-    scheduledAt: z.string().datetime().optional(),
+    scheduledAt: z
+      .string()
+      .datetime()
+      .refine(
+        (value) => Date.parse(value) <= Date.now() + 365 * 24 * 60 * 60 * 1_000,
+        "A send can be scheduled at most one year in the future",
+      )
+      .optional(),
     undoSeconds: z.number().int().min(0).max(60).default(20),
     safetyApproval: composeSafetyApprovalSchema.optional(),
   }),
@@ -1931,7 +1938,7 @@ const automaticReplyConfigurationFields = {
     .refine((value) => value.trim().length > 0, "Message cannot be blank"),
   format: z.enum(["plain", "markdown"]),
   ensureReference: z.boolean(),
-  minimumIntervalHours: z.number().int().min(0).max(8_760),
+  minimumIntervalHours: z.number().int().min(1).max(8_760),
   inactiveBehavior: automaticReplyInactiveBehaviorSchema,
   schedule: responseScheduleDefinitionSchema,
 } as const;
@@ -1942,7 +1949,7 @@ export const createAutomaticReplyConfigurationSchema = z
     enabled: z.boolean().default(true),
     format: z.enum(["plain", "markdown"]).default("markdown"),
     ensureReference: z.boolean().default(false),
-    minimumIntervalHours: z.number().int().min(0).max(8_760).default(24),
+    minimumIntervalHours: z.number().int().min(1).max(8_760).default(24),
     inactiveBehavior: automaticReplyInactiveBehaviorSchema.default("skip"),
   })
   .strict();

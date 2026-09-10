@@ -1,2 +1,2 @@
 export type * from "./contract";
-export { imapSmtpConnector } from "./imap-smtp";
+export { imapSmtpConnector, MAX_IMAP_LITERAL_BYTES } from "./imap-smtp";

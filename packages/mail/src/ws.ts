@@ -27,6 +27,9 @@ const log = logger("mail:websocket");
 const ACCESS_REFRESH_INTERVAL_MS = 8_000;
 const MAX_CLIENT_MESSAGE_LENGTH = 16_000;
 const MAX_PENDING_MESSAGES = 8;
+/** Per-socket token bucket: a short burst is fine, a sustained flood closes the connection. */
+const MESSAGE_BUCKET_CAPACITY = 20;
+const MESSAGE_BUCKET_REFILL_PER_SECOND = 5;
 
 type WsPhase = "open" | "subscribed" | "closing";
 
@@ -300,6 +303,15 @@ const startStream = (ctx: WsContext, mailboxId: string, internalMailboxId: strin
 
 const handleSubscribe = async (ctx: WsContext, mailboxId: string, fromCursor: string | null) => {
   if (isClosing(ctx)) return;
+  // Authenticate before touching the mailbox registry, otherwise resolving the public ID tells an
+  // unauthenticated caller which mailbox IDs exist.
+  const context = await ctx.deps.access.resolveContext(ctx.sessionToken, ctx.requestId);
+  if (isClosing(ctx)) return;
+  if (!context) {
+    ctx.mailboxId = mailboxId;
+    revoke(ctx, mailboxId, { ok: false, code: "login_required", message: ctx.messages.loginRequired });
+    return;
+  }
   const internalMailboxId = await ctx.deps.resolveMailboxId(mailboxId);
   if (!internalMailboxId) {
     ctx.mailboxId = mailboxId;
@@ -391,6 +403,8 @@ export const createMailLiveConnection = (
   };
   let processing: Promise<void> = Promise.resolve();
   let pendingMessages = 0;
+  let tokens = MESSAGE_BUCKET_CAPACITY;
+  let lastRefillAt = Date.now();
 
   return {
     message(data) {
@@ -399,6 +413,14 @@ export const createMailLiveConnection = (
         closeWithError(ctx, "invalid_message", ctx.messages.invalidSubscription, 1008);
         return;
       }
+      const now = Date.now();
+      tokens = Math.min(MESSAGE_BUCKET_CAPACITY, tokens + ((now - lastRefillAt) / 1_000) * MESSAGE_BUCKET_REFILL_PER_SECOND);
+      lastRefillAt = now;
+      if (tokens < 1) {
+        closeWithError(ctx, "backpressure", ctx.messages.tooManyMessages, 1013);
+        return;
+      }
+      tokens -= 1;
       if (pendingMessages >= MAX_PENDING_MESSAGES) {
         closeWithError(ctx, "backpressure", ctx.messages.tooManyMessages, 1013);
         return;

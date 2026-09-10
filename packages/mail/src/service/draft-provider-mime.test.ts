@@ -110,6 +110,31 @@ describe("draft provider MIME", () => {
     expect(parsed.attachments[0]?.content.equals(bytes)).toBe(true);
   });
 
+  test("clamps thread references instead of rejecting the draft", () => {
+    const overlong = `<${"x".repeat(1_200)}@example.com>`;
+    const content = draftProviderContentSchema.parse({
+      revision: 1,
+      senderIdentityId: "00000000-0000-4000-8000-000000000005",
+      from: { name: "", address: "sender@example.com" },
+      replyTo: null,
+      to: [],
+      cc: [],
+      bcc: [],
+      subject: "",
+      body: "A",
+      format: "plain",
+      inReplyTo: overlong,
+      references: [...Array.from({ length: 600 }, (_, index) => `<thread-${index}@example.com>`), overlong, "<parent@example.com>"],
+      attachments: [],
+    });
+
+    expect(content.references).toHaveLength(500);
+    expect(content.references.at(-1)).toBe("<parent@example.com>");
+    expect(content.references.at(0)).toBe("<thread-101@example.com>");
+    expect(content.references).not.toContain(overlong);
+    expect(content.inReplyTo).toBeNull();
+  });
+
   test("fingerprint changes only when editable content changes", () => {
     const content = draftProviderContentSchema.parse({
       revision: 1,

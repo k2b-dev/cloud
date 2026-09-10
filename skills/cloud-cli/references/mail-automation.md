@@ -101,7 +101,7 @@ Schedule rules are evaluated in `timeZone`:
 - `exceptions` contains at most 366 entries and at most 32 windows per entry. Each item has `date`, `closed`, and `windows`: `closed: true` closes the date, while `closed: false` replaces that date's normal windows with the supplied list.
 - `inactiveBehavior: skip` suppresses a response outside active time.
 - `inactiveBehavior: defer` retains it until the next active window.
-- `minimumIntervalHours` limits repeated replies to the same sender. `0` disables this interval, but protocol loop and same-message duplicate guards remain active.
+- `minimumIntervalHours` limits repeated replies to the same sender and is at least `1`. Independently, one mailbox sends at most 100 automatic replies per hour; further replies are suppressed with reason `mailbox_rate_limited`. Protocol loop and same-message duplicate guards always remain active.
 
 Mail also suppresses unsafe automatic responses such as bulk mail, mailing-list mail, delivery-status notifications, self-mail, and messages that request no automatic reply.
 

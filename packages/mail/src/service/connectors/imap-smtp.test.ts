@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import type { ListResponse } from "imapflow";
 import {
   assertProviderKeywordsSupported,
+  assertSelectedMailbox,
   assertUidValidity,
   disposeImapClient,
   normalizeImapQuotaEvidence,
@@ -259,5 +260,19 @@ describe("IMAP UIDVALIDITY fencing", () => {
     expect(() => assertUidValidity("42", "42")).not.toThrow();
     expect(() => assertUidValidity("43", "42")).toThrow(expect.objectContaining({ code: "UIDVALIDITY_CHANGED" }));
     expect(() => assertUidValidity(null, "42")).toThrow(expect.objectContaining({ code: "UIDVALIDITY_CHANGED" }));
+  });
+
+  test("treats a dropped connection as a transport failure instead of an empty result", () => {
+    const selected = { uidValidity: 42n } as never;
+    expect(() => assertSelectedMailbox({ usable: true, mailbox: selected }, "42")).not.toThrow();
+    expect(() => assertSelectedMailbox({ usable: true, mailbox: false }, "42")).toThrow(
+      expect.objectContaining({ code: "IMAP_CONNECTION_LOST" }),
+    );
+    expect(() => assertSelectedMailbox({ usable: false, mailbox: selected }, "42")).toThrow(
+      expect.objectContaining({ code: "IMAP_CONNECTION_LOST" }),
+    );
+    expect(() => assertSelectedMailbox({ usable: true, mailbox: { uidValidity: 43n } as never }, "42")).toThrow(
+      expect.objectContaining({ code: "UIDVALIDITY_CHANGED" }),
+    );
   });
 });

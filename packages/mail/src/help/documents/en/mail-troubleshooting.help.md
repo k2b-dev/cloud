@@ -141,6 +141,8 @@ Folder creation, rename, deletion, subscription, and Archive, Trash, Junk, Sent,
 4. retry the action once.
 :::
 
+Mail refuses to move or delete messages on a provider that offers neither the MOVE extension nor UIDPLUS, because the remote result could not be proven; the command fails immediately instead of leaving a copy behind. Draft synchronization to the provider needs UIDPLUS and delete rights on the Drafts folder; otherwise drafts stay in Cloud and Mailbox health reports it once.
+
 Shared and other-user folders may be readable while folder creation, rename, or deletion remains unavailable. Cloud does not grant or edit those upstream rights. Repeatedly clicking a queued action can make the result harder to interpret; wait for the live update or inspect the provider before retrying.
 
 ## The mailbox was restored but still does not sync {icon="point"}

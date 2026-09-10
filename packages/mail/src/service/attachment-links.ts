@@ -1,4 +1,4 @@
-import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { audit, coreSettings } from "@k2b/cloud/services";
 import { sql } from "bun";
@@ -17,7 +17,6 @@ export const MAX_ATTACHMENT_LINK_FILE_BYTES = 100 * 1024 * 1024;
 
 const PUBLIC_TOKEN_BYTES = 32;
 const PUBLIC_TOKEN_PATTERN = /^[A-Za-z0-9_-]{43}$/;
-const TOKEN_HASH_PATTERN = /^[0-9a-f]{64}$/;
 const MIN_PASSWORD_BYTES = 8;
 const MAX_PASSWORD_BYTES = 256;
 const MAX_DOWNLOAD_LIMIT = 1_000_000;
@@ -66,19 +65,10 @@ export type CreateAttachmentLinkResult =
       code: "invalid_file_size" | "invalid_time" | "invalid_expiry" | "invalid_password" | "invalid_download_limit";
     }>;
 
-export type AttachmentLinkDownloadDecision =
-  | Readonly<{ ok: true; nextDownloadCount: number }>
-  | Readonly<{ ok: false; code: "unavailable" }>;
-
-const unavailable: AttachmentLinkDownloadDecision = Object.freeze({ ok: false, code: "unavailable" });
-
 const isValidDate = (value: unknown): value is Date => value instanceof Date && Number.isFinite(value.getTime());
 
 const isValidFileSize = (value: unknown): value is number =>
   Number.isSafeInteger(value) && (value as number) >= 0 && (value as number) <= MAX_ATTACHMENT_LINK_FILE_BYTES;
-
-const isValidDownloadCount = (value: unknown): value is number =>
-  Number.isSafeInteger(value) && (value as number) >= 0 && (value as number) < Number.MAX_SAFE_INTEGER;
 
 const isValidMaxDownloads = (value: unknown): value is number | null =>
   value === null || (Number.isSafeInteger(value) && (value as number) > 0 && (value as number) <= MAX_DOWNLOAD_LIMIT);
@@ -87,14 +77,6 @@ const isValidPassword = (value: unknown): value is string =>
   typeof value === "string" &&
   Buffer.byteLength(value, "utf8") >= MIN_PASSWORD_BYTES &&
   Buffer.byteLength(value, "utf8") <= MAX_PASSWORD_BYTES;
-
-const tokenMatches = (publicToken: unknown, tokenHash: unknown): boolean => {
-  if (typeof publicToken !== "string" || typeof tokenHash !== "string") return false;
-  if (!PUBLIC_TOKEN_PATTERN.test(publicToken) || !TOKEN_HASH_PATTERN.test(tokenHash)) return false;
-  const actual = Buffer.from(hashAttachmentLinkToken(publicToken), "hex");
-  const expected = Buffer.from(tokenHash, "hex");
-  return timingSafeEqual(actual, expected);
-};
 
 export const hashAttachmentLinkToken = (publicToken: string): string => createHash("sha256").update(publicToken).digest("hex");
 
@@ -130,36 +112,6 @@ export const createAttachmentLink = async (input: CreateAttachmentLinkInput): Pr
       maxDownloads,
     },
   };
-};
-
-export const decideAttachmentLinkDownload = async (input: {
-  link: AttachmentLinkSnapshot;
-  publicToken: string;
-  password?: string | null;
-  now: Date;
-}): Promise<AttachmentLinkDownloadDecision> => {
-  const { link } = input;
-  if (!isValidDate(input.now) || !tokenMatches(input.publicToken, link.tokenHash)) return unavailable;
-  if (!isValidFileSize(link.fileSizeBytes) || !isValidDownloadCount(link.downloadCount)) return unavailable;
-  if (!isValidMaxDownloads(link.maxDownloads)) return unavailable;
-  if (link.expiresAt !== null && !isValidDate(link.expiresAt)) return unavailable;
-  if (link.revokedAt !== null && !isValidDate(link.revokedAt)) return unavailable;
-  if (link.revokedAt !== null || (link.expiresAt !== null && input.now.getTime() >= link.expiresAt.getTime())) return unavailable;
-  if (link.maxDownloads !== null && link.downloadCount >= link.maxDownloads) return unavailable;
-
-  if (link.passwordHash !== null) {
-    if (typeof link.passwordHash !== "string" || link.passwordHash.length === 0 || !isValidPassword(input.password)) {
-      return unavailable;
-    }
-    try {
-      if (!(await Bun.password.verify(input.password, link.passwordHash))) return unavailable;
-    } catch {
-      return unavailable;
-    }
-  }
-
-  // Persistence must claim this count atomically against the validated snapshot before streaming bytes.
-  return { ok: true, nextDownloadCount: link.downloadCount + 1 };
 };
 
 type DbAttachmentLink = {
@@ -198,6 +150,34 @@ const linkColumns = sql`
   link.max_downloads,
   link.last_downloaded_at,
   link.created_at
+`;
+
+/**
+ * A public link may never outlive the attachment it was created from: a purged message, a deleted draft
+ * or a replaced or removed draft attachment makes the link unavailable exactly like a revocation.
+ */
+const linkSourceAlive = sql`
+  (
+    EXISTS (
+      SELECT 1
+      FROM mail.attachments attachment
+      JOIN mail.message_contents message ON message.id = attachment.message_id
+      WHERE link.source_kind = 'message'
+        AND attachment.message_id = link.source_id
+        AND attachment.blob_id = link.blob_id
+        AND message.mailbox_id = link.mailbox_id
+    )
+    OR EXISTS (
+      SELECT 1
+      FROM mail.draft_attachments attachment
+      JOIN mail.drafts draft ON draft.id = attachment.draft_id
+      WHERE link.source_kind = 'draft'
+        AND attachment.draft_id = link.source_id
+        AND attachment.blob_id = link.blob_id
+        AND attachment.removed_at IS NULL
+        AND draft.mailbox_id = link.mailbox_id
+    )
+  )
 `;
 
 const toIso = (value: Date | string | null): string | null =>
@@ -504,6 +484,7 @@ const publicLinkByToken = async (publicToken: string): Promise<DbAttachmentLink 
       AND link.revoked_at IS NULL
       AND (link.expires_at IS NULL OR link.expires_at > now())
       AND (link.max_downloads IS NULL OR link.download_count < link.max_downloads)
+      AND ${linkSourceAlive}
   `;
   return row ?? null;
 };
@@ -589,6 +570,7 @@ export const inspectPublicAttachmentDownload = async (params: {
       AND link.revoked_at IS NULL
       AND (link.expires_at IS NULL OR link.expires_at > now())
       AND (link_grant.download_claimed_at IS NOT NULL OR link.max_downloads IS NULL OR link.download_count < link.max_downloads)
+      AND ${linkSourceAlive}
   `;
   if (!row) return fail(err.notFound("Attachment link"));
   return ok({
@@ -615,6 +597,7 @@ export const assertPublicAttachmentDownloadAccess = async (linkId: string, grant
       AND link_grant.expires_at > now()
       AND link.revoked_at IS NULL
       AND (link.expires_at IS NULL OR link.expires_at > now())
+      AND ${linkSourceAlive}
   `;
   if (!row?.available) throw new Error("Attachment link access was revoked");
 };
@@ -638,6 +621,7 @@ export const claimPublicAttachmentDownload = async (params: {
         WHERE link.token_hash = ${tokenHash}
           AND link.revoked_at IS NULL
           AND (link.expires_at IS NULL OR link.expires_at > now())
+          AND ${linkSourceAlive}
         FOR UPDATE OF link
       `;
       if (!row || !row.blob_id) return null;

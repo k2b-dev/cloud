@@ -49,6 +49,8 @@ export type EnvelopeBatchRequest = {
   highUid: number;
   lowUid?: number;
   limit: number;
+  /** Fetch exactly these UIDs instead of selecting a window; used to re-import gaps found while reconciling. */
+  uids?: number[];
 };
 
 export type EnvelopeBatch = {
@@ -112,7 +114,6 @@ export type RemoteMutationTarget = {
 export type RemoteCopyResult = {
   destinationUidValidity: string | null;
   destinationUid: number | null;
-  expungePending: boolean;
 };
 
 export type RemoteAppendResult = {
@@ -208,7 +209,7 @@ export interface MailConnector {
     lowUid: number,
     highUid: number,
     signal?: AbortSignal,
-  ): Promise<number[]>;
+  ): Promise<FlagChange[]>;
   downloadSourceBatch(
     config: ProviderConnectionInput,
     folderPath: string,

@@ -262,10 +262,16 @@ const configurationColumns = sql`
   configuration.updated_at
 `;
 
+// Every dimension is explicit: the kernel treats a missing dimension as
+// uncapped, so an omitted key would silently uncap that effect class.
 const managedWorkflowBudget = (ensureReference: boolean): WorkflowEffectBudget => ({
   maxTargets: 1,
   maxMoves: 0,
+  maxCopies: 0,
   maxSends: 1,
+  maxDrafts: 1,
+  maxFlagChanges: 0,
+  maxNotifications: 0,
   maxKeywordChanges: 0,
   maxCollaborationChanges: ensureReference ? 1 : 0,
   maxAiCalls: 0,

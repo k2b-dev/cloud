@@ -3,6 +3,7 @@ import MailComposer from "nodemailer/lib/mail-composer";
 import { Readable } from "node:stream";
 import { z } from "zod";
 import { mailAddressSchema, mailPrioritySchema } from "../contracts";
+import { MAX_DRAFT_ATTACHMENTS, mimeMessageIdSchema, mimeReferencesSchema } from "./draft-provider-mime";
 
 const outboundDraftSnapshotBaseSchema = z.object({
   revision: z.number().int().positive(),
@@ -25,8 +26,8 @@ const outboundDraftSnapshotBaseSchema = z.object({
   bcc: z.array(mailAddressSchema).max(200),
   subject: z.string().max(998),
   body: z.string().max(2 * 1024 * 1024),
-  inReplyTo: z.string().max(998).nullable().default(null),
-  references: z.array(z.string().max(998)).max(500).default([]),
+  inReplyTo: mimeMessageIdSchema.default(null),
+  references: mimeReferencesSchema.default([]),
   attachments: z
     .array(
       z.object({
@@ -38,7 +39,7 @@ const outboundDraftSnapshotBaseSchema = z.object({
         contentHash: z.string().length(64),
       }),
     )
-    .max(200)
+    .max(MAX_DRAFT_ATTACHMENTS)
     .default([]),
 });
 
@@ -77,6 +78,8 @@ export const buildMimeStream = (params: {
   messageId: string;
   date: Date;
   openAttachment: (blobId: string) => Readable;
+  /** Keep the Bcc header; only for the sender's own Sent copy, never for the copy handed to SMTP. */
+  keepBcc?: boolean;
 }): Readable => {
   const html =
     params.snapshot.format === "plain"
@@ -113,7 +116,7 @@ export const buildMimeStream = (params: {
       content: Readable.from(Buffer.from(params.snapshot.vcard, "utf8")),
     });
   }
-  return new MailComposer({
+  const compiled = new MailComposer({
     from: formatAddress(params.snapshot.from),
     replyTo: params.snapshot.replyTo ?? undefined,
     to: params.snapshot.to.map(formatAddress),
@@ -130,9 +133,9 @@ export const buildMimeStream = (params: {
     attachments,
     disableFileAccess: true,
     disableUrlAccess: true,
-  })
-    .compile()
-    .createReadStream();
+  }).compile();
+  compiled.keepBcc = params.keepBcc === true;
+  return compiled.createReadStream();
 };
 
 export const buildMimeSource = async (params: {

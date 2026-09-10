@@ -1,8 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
-  type AttachmentLinkSnapshot,
   createAttachmentLink,
-  decideAttachmentLinkDownload,
   hashAttachmentLinkToken,
   MAX_ATTACHMENT_LINK_FILE_BYTES,
   publicAttachmentLinkUrlForAppUrl,
@@ -60,78 +58,8 @@ describe("mail public attachment links", () => {
     });
   });
 
-  test("uses Bun.password and returns the same public failure for missing and wrong passwords", async () => {
+  test("hashes a password with Bun argon2id", async () => {
     const created = await createLink({ password: "correct horse battery staple" });
     expect(created.persistent.passwordHash).toStartWith("$argon2id$");
-
-    const missing = await decideAttachmentLinkDownload({ link: created.persistent, publicToken: created.publicToken, now: NOW });
-    const wrong = await decideAttachmentLinkDownload({
-      link: created.persistent,
-      publicToken: created.publicToken,
-      password: "wrong",
-      now: NOW,
-    });
-    const valid = await decideAttachmentLinkDownload({
-      link: created.persistent,
-      publicToken: created.publicToken,
-      password: "correct horse battery staple",
-      now: NOW,
-    });
-
-    expect(missing).toEqual({ ok: false, code: "unavailable" });
-    expect(wrong).toEqual(missing);
-    expect(valid).toEqual({ ok: true, nextDownloadCount: 1 });
-  });
-
-  test("rejects expired and revoked links with constant public semantics", async () => {
-    const created = await createLink({ expiresAt: new Date(NOW.getTime() + 60_000) });
-    const expired = await decideAttachmentLinkDownload({
-      link: created.persistent,
-      publicToken: created.publicToken,
-      now: new Date(NOW.getTime() + 60_000),
-    });
-    const revoked = await decideAttachmentLinkDownload({
-      link: { ...created.persistent, revokedAt: new Date(NOW.getTime() + 1) },
-      publicToken: created.publicToken,
-      now: NOW,
-    });
-
-    expect(expired).toEqual({ ok: false, code: "unavailable" });
-    expect(revoked).toEqual(expired);
-  });
-
-  test("returns the next count below the limit and rejects an exhausted link", async () => {
-    const created = await createLink({ maxDownloads: 2 });
-    const available: AttachmentLinkSnapshot = { ...created.persistent, downloadCount: 1 };
-    const exhausted: AttachmentLinkSnapshot = { ...created.persistent, downloadCount: 2 };
-
-    expect(await decideAttachmentLinkDownload({ link: available, publicToken: created.publicToken, now: NOW })).toEqual({
-      ok: true,
-      nextDownloadCount: 2,
-    });
-    expect(await decideAttachmentLinkDownload({ link: exhausted, publicToken: created.publicToken, now: NOW })).toEqual({
-      ok: false,
-      code: "unavailable",
-    });
-  });
-
-  test("fails closed for a wrong token and malformed persistent hashes", async () => {
-    const created = await createLink({ password: "secret-1" });
-    const wrongToken = await createLink();
-    const tokenFailure = await decideAttachmentLinkDownload({
-      link: created.persistent,
-      publicToken: wrongToken.publicToken,
-      password: "secret-1",
-      now: NOW,
-    });
-    const passwordHashFailure = await decideAttachmentLinkDownload({
-      link: { ...created.persistent, passwordHash: "not-a-password-hash" },
-      publicToken: created.publicToken,
-      password: "secret-1",
-      now: NOW,
-    });
-
-    expect(tokenFailure).toEqual({ ok: false, code: "unavailable" });
-    expect(passwordHashFailure).toEqual(tokenFailure);
   });
 });

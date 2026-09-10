@@ -105,7 +105,7 @@ An exception wins over normal weekly hours. Times cannot cross midnight; create 
 
 - The **Out of office** preset uses 96 hours, or 4 days. This prevents a sender who writes several times during one absence from receiving the same notice every day.
 - **Office-hours acknowledgement** and **Custom automatic reply** use 24 hours.
-- `0` disables the sender interval, but Mail still prevents duplicate replies to the same incoming message and keeps its protocol-level loop guards.
+- The shortest interval is 1 hour. Mail additionally replies to any incoming message at most once and sends at most 100 automatic replies per hour for the whole mailbox; anything beyond that is suppressed and visible in the activity history.
 
 Choose a shorter interval only when repeated acknowledgements are useful to the recipient. The value is mailbox-wide for that automatic reply, not a delay before the first response.
 

@@ -18,15 +18,14 @@ import { linkAutomaticReplyCommandInTransaction, prepareAutomaticReplyInTransact
 import {
   createWorkflowConversationCommentInTransaction,
   insertActivity,
-  updateConversationCollaborationInTransaction,
   updateWorkflowConversationCollaborationInTransaction,
 } from "../service/collaboration";
 import { hasCurrentMailboxUserPermission } from "../service/collaborators";
 import { createWorkflowCommand, createWorkflowCommandInTransaction, enqueueCreatedWorkflowCommand } from "../service/commands";
 import { ensureConversationReferenceInTransaction } from "../service/conversation-reference";
-import { updateConversationSummaryInTransaction, updateWorkflowConversationSummaryInTransaction } from "../service/conversation-summary";
+import { updateWorkflowConversationSummaryInTransaction } from "../service/conversation-summary";
 import { createWorkflowDraftInTransaction, createWorkflowReviewReplyDraftInTransaction } from "../service/drafts";
-import { incomingAutomationMandateCaller } from "../service/incoming-automation-workload";
+import { resolveIncomingAutomationMandateCaller } from "../service/incoming-automation-workload";
 import { updateWorkflowConversationLocalTagInTransaction } from "../service/local-tags";
 import { parseMessageProtocolFacts } from "../service/message-protocol";
 import { type MailboxOwnedPublicResourceTable, publicIds, requirePublicId, resolveMailboxPublicId } from "../service/public-resources";
@@ -163,9 +162,7 @@ type MailRunScope = {
 
 const parseSnapshot = (value: unknown): MailWorkflowAuthorizationSnapshot | null => {
   const parsed = typeof value === "string" ? JSON.parse(value) : value;
-  return isObject(parsed) && parsed.version === 2 && (parsed.authority === "actor" || parsed.authority === "mailbox")
-    ? (parsed as MailWorkflowAuthorizationSnapshot)
-    : null;
+  return isObject(parsed) && parsed.version === 2 && parsed.authority === "mailbox" ? (parsed as MailWorkflowAuthorizationSnapshot) : null;
 };
 
 const loadScope = async (ctx: Pick<WorkflowActionContext, "runId">, db: SqlClient = sql): Promise<MailRunScope> => {
@@ -247,24 +244,7 @@ const resolveObject = async (ctx: WorkflowActionContext, value: unknown, key: st
   if (typeof value === "string") return asObject(await ctx.resolveReference(value, key), key);
   throw new Error(`${key} must resolve to an object`);
 };
-const workflowIntegrationRequest = async (ctx: WorkflowActionContext) => {
-  const [row] = await sql<{ mandate_id: string | null; mandate_revision: string | number | null }[]>`
-    SELECT automation.mandate_id,
-           mandate.revision AS mandate_revision
-    FROM workflows.run run
-    JOIN mail.incoming_automations automation ON automation.workflow_id = run.workflow_id
-    LEFT JOIN auth.mandates mandate ON mandate.id = automation.mandate_id
-    WHERE run.id = ${ctx.runId}::uuid
-      AND automation.deleted_at IS NULL
-  `;
-  if (row?.mandate_id) {
-    return {
-      ...incomingAutomationMandateCaller({ id: row.mandate_id, revision: Number(row.mandate_revision) }),
-      requestId: ctx.runId,
-    };
-  }
-  throw Object.assign(new Error("This automation has no active Spaces authorization"), { code: "FORBIDDEN" });
-};
+const workflowIntegrationRequest = (ctx: WorkflowActionContext) => resolveIncomingAutomationMandateCaller(ctx.runId);
 const appActionResult = (result: Awaited<ReturnType<typeof createSpaceEventOnce>>): ActionResult =>
   result.ok
     ? { state: "succeeded", output: result.data as WorkflowJsonValue }
@@ -292,7 +272,7 @@ const commandOutcome = (command: MailCommand): ActionResult => {
 
 const createCommand = async (ctx: WorkflowActionContext, scope: MailRunScope, input: ActorCommandInput): Promise<ActionResult> => {
   const command = await createWorkflowCommand({
-    context: scope.authority.kind === "actor" ? scope.authority.context : null,
+    context: null,
     mailboxId: scope.mailboxId,
     workflowVersionId: scope.workflowVersionId,
     input,
@@ -431,31 +411,17 @@ const conversationMutation = (
         if (!mailConversationTransitionChanges(conversation, kind, value)) {
           return { state: "succeeded", output: { action: kind, applied: false } as JsonObject };
         }
-        const mutation =
-          scope.authority.kind === "actor"
-            ? await updateConversationCollaborationInTransaction({
-                context: scope.authority.context,
-                mailboxId: scope.mailboxId,
-                conversationId,
-                input:
-                  kind === "assignConversation"
-                    ? { expectedRevision, assigneeUserId: value as string | null }
-                    : { expectedRevision, workStatus: value as "needs_action" | "waiting" | "done" },
-                db: tx,
-                actorOverride: { kind: "workflow", workflowVersionId: scope.workflowVersionId },
-                activityMetadata: { workflowRunId: ctx.runId, workflowStepKey: ctx.stepKey },
-              })
-            : await updateWorkflowConversationCollaborationInTransaction({
-                mailboxId: scope.mailboxId,
-                workflowVersionId: scope.workflowVersionId,
-                conversationId,
-                input:
-                  kind === "assignConversation"
-                    ? { expectedRevision, assigneeUserId: value as string | null }
-                    : { expectedRevision, workStatus: value as "needs_action" | "waiting" | "done" },
-                db: tx,
-                activityMetadata: { workflowRunId: ctx.runId, workflowStepKey: ctx.stepKey },
-              });
+        const mutation = await updateWorkflowConversationCollaborationInTransaction({
+          mailboxId: scope.mailboxId,
+          workflowVersionId: scope.workflowVersionId,
+          conversationId,
+          input:
+            kind === "assignConversation"
+              ? { expectedRevision, assigneeUserId: value as string | null }
+              : { expectedRevision, workStatus: value as "needs_action" | "waiting" | "done" },
+          db: tx,
+          activityMetadata: { workflowRunId: ctx.runId, workflowStepKey: ctx.stepKey },
+        });
         if (!mutation.ok) return resultFailure(mutation.error);
         applyMailConversationTransition(conversation, kind, value);
         conversation.revision = mutation.data.value.revision;
@@ -496,6 +462,7 @@ export const MAIL_WORKFLOW_ACTIONS = {
             },
           },
           await workflowIntegrationRequest(ctx),
+          ctx.effectKey,
         );
         return result.ok
           ? { state: "succeeded", output: result.data as WorkflowJsonValue }
@@ -651,25 +618,14 @@ export const MAIL_WORKFLOW_ACTIONS = {
         }
         const summary = renderMailWorkflowTemplate(ctx, asText(values.summary, "summary"), "text").trim();
         if (!summary) throw new Error("summary must resolve to non-empty text");
-        const mutation =
-          scope.authority.kind === "actor"
-            ? await updateConversationSummaryInTransaction({
-                context: scope.authority.context,
-                mailboxId: scope.mailboxId,
-                conversationId,
-                input: { expectedSummaryRevision, summary },
-                db: tx,
-                actorOverride: { kind: "workflow", workflowVersionId: scope.workflowVersionId },
-                activityMetadata: { workflowRunId: ctx.runId, workflowStepKey: ctx.stepKey },
-              })
-            : await updateWorkflowConversationSummaryInTransaction({
-                mailboxId: scope.mailboxId,
-                workflowVersionId: scope.workflowVersionId,
-                conversationId,
-                input: { expectedSummaryRevision, summary },
-                db: tx,
-                activityMetadata: { workflowRunId: ctx.runId, workflowStepKey: ctx.stepKey },
-              });
+        const mutation = await updateWorkflowConversationSummaryInTransaction({
+          mailboxId: scope.mailboxId,
+          workflowVersionId: scope.workflowVersionId,
+          conversationId,
+          input: { expectedSummaryRevision, summary },
+          db: tx,
+          activityMetadata: { workflowRunId: ctx.runId, workflowStepKey: ctx.stepKey },
+        });
         if (!mutation.ok) return resultFailure(mutation.error);
         const applied = Boolean(mutation.data.event);
         if (applied) {
@@ -1093,7 +1049,7 @@ export const MAIL_WORKFLOW_ACTIONS = {
       minimumIntervalHours: {
         kind: "number",
         integer: true,
-        minimum: 0,
+        minimum: 1,
         maximum: 8_760,
         optional: true,
         description: "Minimum hours between replies.",
@@ -1167,7 +1123,7 @@ export const MAIL_WORKFLOW_ACTIONS = {
           };
           const command = await createWorkflowCommandInTransaction(
             {
-              context: scope.authority.kind === "actor" ? scope.authority.context : null,
+              context: null,
               mailboxId: scope.mailboxId,
               workflowVersionId: scope.workflowVersionId,
               input,

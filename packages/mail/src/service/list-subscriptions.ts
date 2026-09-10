@@ -566,6 +566,7 @@ export const applyMailingListDisposition = async (params: {
       AND ${listKeyHashSql} = md5(${parsed.data.listKey})
       AND ${listKeySql} = ${parsed.data.listKey}
       AND placement.folder_id <> ${destination.data.id}::uuid
+      AND folder.role NOT IN ('sent', 'drafts')
     ORDER BY remote_ref.id, placement.updated_at DESC
     LIMIT ${DISPOSITION_LIMIT + 1}
   `;

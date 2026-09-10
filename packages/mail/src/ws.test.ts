@@ -366,6 +366,56 @@ describe("Mail live connection", () => {
     }
   });
 
+  test("never resolves a mailbox ID for an unauthenticated socket", async () => {
+    const { socket, messages, closes } = recordingSocket();
+    let resolveCalls = 0;
+    const connection = createMailLiveConnection(
+      socket,
+      { sessionToken: null, requestId: null, locale: "en" },
+      {
+        resolveMailboxId: async () => {
+          resolveCalls++;
+          return "internal-box-1";
+        },
+        access: { resolveContext: async () => null, requireRead: async () => ok("read") },
+        latestCursor: async () => "s6t.mailtest.100",
+        cursorSequence: sequenceOf,
+        events: () => (async function* () {})(),
+      },
+    );
+    try {
+      connection.message(JSON.stringify({ type: MAIL_LIVE_WS_TYPE.subscribe, payload: { mailboxId: MAILBOX_ID, fromCursor: null } }));
+      await waitFor(() => closes.length === 1);
+      expect(resolveCalls).toBe(0);
+      expect(messages.map((message) => message.type)).toEqual([MAIL_LIVE_WS_TYPE.revoked]);
+      expect(closes).toEqual([{ code: 1008, reason: "login_required" }]);
+    } finally {
+      await connection.close();
+    }
+  });
+
+  test("closes a socket that floods inbound frames", async () => {
+    const { socket, closes } = recordingSocket();
+    const connection = createMailLiveConnection(
+      socket,
+      { sessionToken: "session", requestId: null, locale: "en" },
+      {
+        resolveMailboxId: async () => "internal-box-1",
+        access: { resolveContext: async () => contextFor("Alice"), requireRead: async () => ok("read") },
+        latestCursor: async () => "s6t.mailtest.100",
+        cursorSequence: sequenceOf,
+        events: () => (async function* () {})(),
+      },
+    );
+    try {
+      const frame = JSON.stringify({ type: MAIL_LIVE_WS_TYPE.subscribe, payload: { mailboxId: MAILBOX_ID, fromCursor: null } });
+      for (let count = 0; count < 200; count++) connection.message(frame);
+      expect(closes.at(-1)).toEqual({ code: 1013, reason: "backpressure" });
+    } finally {
+      await connection.close();
+    }
+  });
+
   (process.env.MAIL_INTEGRATION_TESTS === "1" ? test : test.skip)(
     "bounds a real JetStream reconnect, refreshes coverage, and tails only authorized mailbox events",
     async () => {

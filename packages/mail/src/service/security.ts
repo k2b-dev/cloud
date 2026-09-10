@@ -131,9 +131,37 @@ const loadConfiguration = async (): Promise<{
   };
 };
 
+/**
+ * Outgoing means Cloud itself produced the message, not that the From header claims a local identity.
+ * A sender identity in From is attacker controlled, so it must never suppress the phishing assessment.
+ */
+const loadOutgoingMessageIds = async (mailboxId: string, messageIds: string[]): Promise<Set<string>> => {
+  const rows = await sql<{ id: string }[]>`
+    SELECT message.id
+    FROM mail.message_contents message
+    WHERE message.mailbox_id = ${mailboxId}::uuid
+      AND message.id = ANY(${toPgUuidArray(messageIds)}::uuid[])
+      AND (
+        EXISTS (SELECT 1 FROM mail.outbox_submissions submission WHERE submission.message_id = message.id)
+        OR EXISTS (
+          SELECT 1
+          FROM mail.message_placements placement
+          JOIN mail.folders folder ON folder.id = placement.folder_id
+          JOIN mail.remote_resources resource ON resource.id = folder.remote_resource_id
+          LEFT JOIN mail.folder_role_overrides override
+            ON override.mailbox_id = resource.mailbox_id AND override.folder_id = folder.id
+          WHERE placement.message_id = message.id
+            AND placement.deleted_at IS NULL
+            AND COALESCE(override.role, folder.role) IN ('sent', 'drafts')
+        )
+      )
+  `;
+  return new Set(rows.map((row) => row.id));
+};
+
 export const assessMessages = async (mailboxId: string, messageIds: string[]): Promise<Result<Map<string, MailSecurityAssessment>>> => {
   if (messageIds.length === 0) return ok(new Map());
-  const [messages, configuration] = await Promise.all([
+  const [messages, configuration, outgoingIds] = await Promise.all([
     sql<
       {
         id: string;
@@ -141,7 +169,6 @@ export const assessMessages = async (mailboxId: string, messageIds: string[]): P
         sanitized_html: string | null;
         from_addresses: Array<{ name: string | null; address: string }> | string;
         reply_to_addresses: Array<{ name: string | null; address: string }> | string;
-        outgoing: boolean;
       }[]
     >`
     SELECT
@@ -149,16 +176,7 @@ export const assessMessages = async (mailboxId: string, messageIds: string[]): P
       message.selected_headers,
       message.sanitized_html,
       COALESCE(from_rows.addresses, '[]'::jsonb) AS from_addresses,
-      COALESCE(reply_rows.addresses, '[]'::jsonb) AS reply_to_addresses,
-      EXISTS (
-        SELECT 1
-        FROM mail.message_addresses sender
-        JOIN mail.sender_identities identity
-          ON identity.mailbox_id = message.mailbox_id
-         AND lower(identity.from_address) = sender.normalized_email
-         AND identity.status <> 'disabled'
-        WHERE sender.message_id = message.id AND sender.role = 'from'
-      ) AS outgoing
+      COALESCE(reply_rows.addresses, '[]'::jsonb) AS reply_to_addresses
     FROM mail.message_contents message
     LEFT JOIN LATERAL (
       SELECT jsonb_agg(jsonb_build_object('name', address.display_name, 'address', address.email) ORDER BY address.position) AS addresses
@@ -174,11 +192,12 @@ export const assessMessages = async (mailboxId: string, messageIds: string[]): P
       AND message.id = ANY(${toPgUuidArray(messageIds)}::uuid[])
     `,
     loadConfiguration(),
+    loadOutgoingMessageIds(mailboxId, messageIds),
   ]);
   const evaluatedAt = new Date().toISOString();
   const assessments = new Map<string, MailSecurityAssessment>();
   for (const message of messages) {
-    const assessment: MailSecurityAssessment = message.outgoing
+    const assessment: MailSecurityAssessment = outgoingIds.has(message.id)
       ? { risk: "none", verdict: "clear", findings: [], linksDisabled: false, evaluatedAt }
       : assessMailSecurityEvidence({
           from: parseJson(message.from_addresses),
@@ -218,7 +237,7 @@ export const reportMessage = async (params: {
   if (!access.ok) return access;
   const actor = actorRefFromRequest(params.context);
   if (actor.kind !== "user" && actor.kind !== "service_account") return fail(err.forbidden("This actor cannot report mail"));
-  const [message] = await sql<{ outgoing: boolean; sender_address: string | null }[]>`
+  const [message] = await sql<{ sender_address: string | null }[]>`
     SELECT
       (
         SELECT sender.email
@@ -226,22 +245,14 @@ export const reportMessage = async (params: {
         WHERE sender.message_id = content.id AND sender.role = 'from'
         ORDER BY sender.position
         LIMIT 1
-      ) AS sender_address,
-      EXISTS (
-      SELECT 1
-      FROM mail.message_addresses sender
-      JOIN mail.sender_identities identity
-        ON identity.mailbox_id = content.mailbox_id
-       AND lower(identity.from_address) = sender.normalized_email
-       AND identity.status <> 'disabled'
-      WHERE sender.message_id = content.id AND sender.role = 'from'
-      ) AS outgoing
+      ) AS sender_address
     FROM mail.message_contents content
     WHERE content.mailbox_id = ${params.mailboxId}::uuid
       AND content.id = ${params.messageId}::uuid
   `;
   if (!message) return fail(err.notFound("Mail message"));
-  if (message.outgoing) return fail(err.badInput("Outgoing messages cannot be reported as phishing"));
+  const outgoingIds = await loadOutgoingMessageIds(params.mailboxId, [params.messageId]);
+  if (outgoingIds.has(params.messageId)) return fail(err.badInput("Outgoing messages cannot be reported as phishing"));
   const senderAddress = message.sender_address ? normalizeEmailAddress(message.sender_address) : null;
   const senderDomain = senderAddress ? normalizeEmailDomain(senderAddress.slice(senderAddress.lastIndexOf("@") + 1)) : null;
   const assessment = await assessMessage(params.mailboxId, params.messageId);

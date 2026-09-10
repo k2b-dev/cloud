@@ -302,4 +302,42 @@ suite("public attachment links", () => {
     });
     expect(unlocked.status).toBe(303);
   });
+
+  test("the live claim path refuses expired, revoked, and source-less links", async () => {
+    const expired = await createLink();
+    const revoked = await createLink();
+    const orphaned = await createLink();
+    expect(expired.ok && revoked.ok && orphaned.ok).toBe(true);
+    if (!expired.ok || !revoked.ok || !orphaned.ok) return;
+    const tokenOf = (url: string) => url.split("/").at(-1)!;
+
+    const expiredGrant = await unlockPublicAttachmentLink(tokenOf(expired.data.url));
+    const revokedGrant = await unlockPublicAttachmentLink(tokenOf(revoked.data.url));
+    const orphanedGrant = await unlockPublicAttachmentLink(tokenOf(orphaned.data.url));
+    expect(expiredGrant.ok && revokedGrant.ok && orphanedGrant.ok).toBe(true);
+    if (!expiredGrant.ok || !revokedGrant.ok || !orphanedGrant.ok) return;
+
+    await sql`
+      UPDATE mail.attachment_links
+      SET created_at = now() - interval '2 hours', expires_at = now() - interval '1 hour'
+      WHERE id = ${expired.data.link.id}::uuid
+    `;
+    expect((await revokePublicAttachmentLink({ context: adminContext, mailboxId, linkId: revoked.data.link.id })).ok).toBe(true);
+    expect((await claimPublicAttachmentDownload({ publicToken: tokenOf(expired.data.url), grantToken: expiredGrant.data.grantToken })).ok).toBe(
+      false,
+    );
+    expect((await claimPublicAttachmentDownload({ publicToken: tokenOf(revoked.data.url), grantToken: revokedGrant.data.grantToken })).ok).toBe(
+      false,
+    );
+
+    // Losing the source attachment must make the link behave exactly like a revoked one.
+    expect(
+      (await claimPublicAttachmentDownload({ publicToken: tokenOf(orphaned.data.url), grantToken: orphanedGrant.data.grantToken })).ok,
+    ).toBe(true);
+    await sql`DELETE FROM mail.attachments WHERE id = ${attachmentId}::uuid`;
+    expect((await unlockPublicAttachmentLink(tokenOf(orphaned.data.url))).ok).toBe(false);
+    expect(
+      (await claimPublicAttachmentDownload({ publicToken: tokenOf(orphaned.data.url), grantToken: orphanedGrant.data.grantToken })).ok,
+    ).toBe(false);
+  });
 });

@@ -37,6 +37,7 @@ import { sha256Json } from "./canonical";
 import { resolveDefaultSignatureSource } from "./compose-templates";
 import { applyConversationReferenceToReplySubjectInTransaction } from "./conversation-reference";
 import { withOwnedDraftLease } from "./draft-leases";
+import { MAX_DRAFT_ATTACHMENTS } from "./draft-provider-mime";
 import { enqueueDraftProjection, enqueueDraftProjectionSnapshot, queueDraftProjectionInTransaction } from "./draft-provider-projection";
 import { notifyMailInvalidations } from "./events";
 import type { AttachmentDownload } from "./messages";
@@ -360,11 +361,12 @@ const mergeDefaultCc = (params: { to: MailAddress[]; cc: MailAddress[]; bcc: Mai
   const blocked = new Set([...params.to, ...params.bcc].map((recipient) => recipient.address.trim().toLowerCase()));
   const merged = new Map<string, MailAddress>();
   for (const recipient of [...params.cc, ...params.defaultCc]) {
-    const key = recipient.address.trim().toLowerCase();
+    const address = recipient.address.trim();
+    const key = address.toLowerCase();
     if (blocked.has(key) || merged.has(key)) continue;
     merged.set(key, {
       ...(recipient.name?.trim() ? { name: recipient.name.trim() } : {}),
-      address: key,
+      address,
     });
   }
   return [...merged.values()];
@@ -379,11 +381,12 @@ const mergeDefaultBcc = (params: {
   const blocked = new Set([...params.to, ...params.cc].map((recipient) => recipient.address.trim().toLowerCase()));
   const merged = new Map<string, MailAddress>();
   for (const recipient of [...params.bcc, ...params.defaultBcc]) {
-    const key = recipient.address.trim().toLowerCase();
+    const address = recipient.address.trim();
+    const key = address.toLowerCase();
     if (blocked.has(key) || merged.has(key)) continue;
     merged.set(key, {
       ...(recipient.name?.trim() ? { name: recipient.name.trim() } : {}),
-      address: key,
+      address,
     });
   }
   return [...merged.values()];
@@ -439,7 +442,7 @@ const resolveInitialReplyRecipients = async (params: {
       SELECT from_address, reply_to
       FROM mail.sender_identities
       WHERE mailbox_id = ${params.mailboxId}::uuid
-        AND status <> 'disabled'
+        AND status = 'verified'
       ORDER BY id
     `,
   ]);
@@ -595,6 +598,16 @@ const sourceAttachmentPreviews = async (db: typeof sql, sourceMessageId: string 
   }));
 };
 
+/**
+ * A draft must never hold more attachments or bytes than the provider projection and the send path
+ * can carry, otherwise it becomes unprojectable and unsendable after the fact.
+ */
+export const draftAttachmentCapacity = (totals: { count: number; bytes: number }): Result<void> => {
+  if (totals.count > MAX_DRAFT_ATTACHMENTS) return fail(err.badInput(`A draft can hold at most ${MAX_DRAFT_ATTACHMENTS} attachments`));
+  if (totals.bytes > MAX_DRAFT_ATTACHMENT_BYTES) return fail(err.badInput("Draft attachments cannot exceed 100 MiB in total"));
+  return ok();
+};
+
 const prepareSourceAttachments = async (db: typeof sql, sourceMessageId: string | null): Promise<Result<DraftAttachment[]>> => {
   if (!sourceMessageId) return ok([]);
   const [invalid] = await db<{ invalid: boolean }[]>`
@@ -606,9 +619,13 @@ const prepareSourceAttachments = async (db: typeof sql, sourceMessageId: string 
         AND (blob.id IS NULL OR blob.complete = false OR blob.byte_length > ${MAX_DRAFT_ATTACHMENT_BYTES})
     ) AS invalid
   `;
-  return invalid?.invalid
-    ? fail(err.badInput("One or more original attachments cannot be forwarded"))
-    : ok(await sourceAttachmentPreviews(db, sourceMessageId));
+  if (invalid?.invalid) return fail(err.badInput("One or more original attachments cannot be forwarded"));
+  const previews = await sourceAttachmentPreviews(db, sourceMessageId);
+  const capacity = draftAttachmentCapacity({
+    count: previews.length,
+    bytes: previews.reduce((total, attachment) => total + attachment.byteLength, 0),
+  });
+  return capacity.ok ? ok(previews) : capacity;
 };
 
 const prepareComposeDraftInTransaction = async (params: {

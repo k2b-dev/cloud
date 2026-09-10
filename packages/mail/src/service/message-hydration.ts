@@ -7,6 +7,7 @@ import { type AttachmentStream, MailParser, type MessageText } from "mailparser"
 import sanitizeHtml from "sanitize-html";
 import { withShortIdDb } from "../lib/short-id";
 import { enqueueAttachmentExtractionsForMessage, logAttachmentExtractionEnqueueFailure } from "./attachment-extraction";
+import { MAX_IMAP_LITERAL_BYTES } from "./connectors";
 import { deriveConversationWorkState, isAutomaticSubmission } from "./conversation-work-state";
 import { allowedEmailInlineStyles } from "./email-inline-style-policy";
 import { type MailCollaborationEvent, publishMailCollaborationEvent } from "./events";
@@ -29,9 +30,13 @@ type HydratedPart = {
   attachment: boolean;
 };
 
+// Hydration stops retrying at this attempt count; a permanent failure jumps to it.
+const MAX_HYDRATION_ATTEMPTS = 5;
+
 type ClaimedMessage = {
   id: string;
   mailbox_id: string;
+  size_bytes: string | number;
   mime_structure: Record<string, unknown> | string;
   resume_hydration_status: "envelope" | "headers" | "body" | "failed";
   resume_hydration_attempt: number;
@@ -289,7 +294,7 @@ const claimMessage = async (messageId: string, claimId: string): Promise<Claimed
       FROM mail.message_contents
       WHERE id = ${messageId}::uuid
         AND hydration_status <> 'complete'
-        AND hydration_attempt < 5
+        AND hydration_attempt < ${MAX_HYDRATION_ATTEMPTS}
         AND (
           hydration_status <> 'hydrating'
           OR hydration_claimed_at < now() - interval '15 minutes'
@@ -308,6 +313,7 @@ const claimMessage = async (messageId: string, claimId: string): Promise<Claimed
     RETURNING
       message.id,
       message.mailbox_id,
+      message.size_bytes,
       message.mime_structure,
       CASE WHEN candidate.hydration_status = 'hydrating' THEN 'headers' ELSE candidate.hydration_status END AS resume_hydration_status,
       candidate.hydration_attempt AS resume_hydration_attempt,
@@ -657,6 +663,22 @@ export const hydrateMessageFromSource = async (params: {
     });
   }
 
+  // A source the connector cannot even fetch must not be parsed into memory.
+  if (Number(claimed.size_bytes) > MAX_IMAP_LITERAL_BYTES) {
+    params.source.destroy();
+    await sql`
+      UPDATE mail.message_contents
+      SET
+        hydration_status = 'failed',
+        hydration_error_code = 'MESSAGE_TOO_LARGE',
+        hydration_attempt = ${MAX_HYDRATION_ATTEMPTS},
+        hydration_claim_id = NULL,
+        hydration_claimed_at = NULL
+      WHERE id = ${params.messageId}::uuid AND hydration_claim_id = ${claimId}::uuid
+    `;
+    throw Object.assign(new Error("Message source is too large to hydrate"), { code: "MESSAGE_TOO_LARGE" });
+  }
+
   const mimeStructure =
     typeof claimed.mime_structure === "string" ? (JSON.parse(claimed.mime_structure) as Record<string, unknown>) : claimed.mime_structure;
   const parser = new MailParser({
@@ -955,7 +977,7 @@ export const hydrateMessageFromSource = async (params: {
         WHERE id = ${params.messageId}::uuid AND hydration_claim_id = ${claimId}::uuid
         RETURNING mailbox_id, hydration_attempt
       `.catch(() => []);
-      if (failed && failed.hydration_attempt >= 5) {
+      if (failed && failed.hydration_attempt >= MAX_HYDRATION_ATTEMPTS) {
         await publishMailWorkflowDependency({
           mailboxId: failed.mailbox_id,
           dependency: { kind: "mail.hydration", key: params.messageId },

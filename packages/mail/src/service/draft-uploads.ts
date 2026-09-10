@@ -12,7 +12,7 @@ import { withShortIdDb } from "../lib/short-id";
 import { requireMailboxPermission } from "./access";
 import { actorRefFromRequest, type MailRequestContext } from "./auth";
 import { sha256Text } from "./canonical";
-import { getDraft, sanitizeContentType, sanitizeFilename } from "./drafts";
+import { draftAttachmentCapacity, getDraft, sanitizeContentType, sanitizeFilename } from "./drafts";
 
 export const DRAFT_UPLOAD_CHUNK_BYTES = 1024 * 1024;
 const DRAFT_UPLOAD_TTL_HOURS = 24;
@@ -318,6 +318,16 @@ export const finalizeDraftAttachmentUpload = async (params: {
       if (!upload.blob_id) return fail(err.internal("Attachment upload has no blob to finalize"));
       if (upload.draft_state !== "draft") return fail(err.badInput("Draft can no longer accept attachments"));
       if (Number(upload.draft_revision) !== params.expectedRevision) return conflict("Draft changed before the upload could be attached");
+      const [totals] = await tx<{ count: string | number; bytes: string | number }[]>`
+        SELECT count(*) AS count, COALESCE(sum(byte_length), 0) AS bytes
+        FROM mail.draft_attachments
+        WHERE draft_id = ${draftId}::uuid AND removed_at IS NULL
+      `;
+      const capacity = draftAttachmentCapacity({
+        count: Number(totals?.count ?? 0) + 1,
+        bytes: Number(totals?.bytes ?? 0) + Number(upload.byte_length),
+      });
+      if (!capacity.ok) return capacity;
 
       await tx`SELECT pg_advisory_xact_lock(hashtextextended(${contentHash.data}, 0))`;
       const [existing] = await tx<{ id: string; byte_length: string | number }[]>`

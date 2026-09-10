@@ -209,11 +209,6 @@ type IncomingAutomationBackfillInput = {
   cutoffAt: string;
 };
 
-type IncomingAutomationBackfillCursor = {
-  internalDate: string;
-  remoteMessageRefId: string;
-};
-
 type IncomingAutomationBackfillItem = {
   key: string;
   remoteMessageRefId: string;
@@ -768,21 +763,16 @@ const backfillMutationMutex = lazySync((sync) =>
 
 const BACKFILL_PUMP_ID = "mail:incoming-automation-backfill";
 const getIncomingAutomationBackfillPump = lazySync((sync) =>
-  sync.pump<IncomingAutomationBackfillInput, IncomingAutomationBackfillCursor, IncomingAutomationBackfillItem>({
+  sync.pump<IncomingAutomationBackfillInput, never, IncomingAutomationBackfillItem>({
     id: BACKFILL_PUMP_ID,
-    batchSize: 100,
+    batchSize: EXISTING_MESSAGE_APPLICATION_LIMIT,
     retry: { maxAttempts: 3, backoffMs: [1_000, 2_000, 4_000] },
-    pull: async ({ input, cursor, limit }) => {
+    // One backfill applies at most EXISTING_MESSAGE_APPLICATION_LIMIT messages —
+    // the same ceiling the preview advertises. There is no cursor: anything
+    // beyond the first batch stays in `remainingCount` for a later backfill.
+    pull: async ({ input, limit }) => {
       await loadCurrentBackfillAutomation(input, sql);
-      const afterCursor = cursor
-        ? sql`
-            AND (
-              message.internal_date < ${cursor.internalDate}
-              OR (message.internal_date = ${cursor.internalDate} AND remote_ref.id < ${cursor.remoteMessageRefId}::uuid)
-            )
-          `
-        : sql``;
-      const rows = await sql<{ remote_message_ref_id: string; internal_date: Date | string }[]>`
+      const rows = await sql<{ remote_message_ref_id: string }[]>`
         SELECT DISTINCT remote_ref.id AS remote_message_ref_id, message.internal_date
         ${incomingAutomationTargetFrom}
         WHERE resource.mailbox_id = ${input.mailboxId}::uuid
@@ -799,20 +789,12 @@ const getIncomingAutomationBackfillPump = lazySync((sync) =>
               AND existing_event.dedupe_key =
                 ${incomingAutomationExistingDedupePrefix(input.automationId, input.workflowVersionId)} || remote_ref.id::text
           )
-          ${afterCursor}
         ORDER BY message.internal_date DESC, remote_ref.id DESC
-        LIMIT ${limit}
+        LIMIT ${Math.min(limit, EXISTING_MESSAGE_APPLICATION_LIMIT)}
       `;
-      const last = rows.at(-1);
       return {
         items: rows.map((row) => ({ key: row.remote_message_ref_id, remoteMessageRefId: row.remote_message_ref_id })),
-        nextCursor:
-          rows.length === limit && last
-            ? {
-                internalDate: toIso(last.internal_date),
-                remoteMessageRefId: last.remote_message_ref_id,
-              }
-            : null,
+        nextCursor: null,
       };
     },
     dispatch: async ({ input, item }) => {
@@ -883,7 +865,7 @@ const loadIncomingAutomationBackfillCounts = async (
 };
 
 const mapIncomingAutomationBackfill = async (
-  state: PumpState<IncomingAutomationBackfillInput, IncomingAutomationBackfillCursor>,
+  state: PumpState<IncomingAutomationBackfillInput, never>,
 ): Promise<IncomingAutomationBackfill> => {
   const counts = await loadIncomingAutomationBackfillCounts(state.input);
   const newlyAcceptedCount = Math.min(state.dispatched, counts.accepted);

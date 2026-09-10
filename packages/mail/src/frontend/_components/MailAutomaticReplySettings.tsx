@@ -586,7 +586,7 @@ function AutomaticReplyEditor(props: {
               description={messages().repeatProtectionDescription}
               value={() => draft().minimumIntervalHours}
               onValueChange={(value) => update("minimumIntervalHours", value ?? 24)}
-              min={0}
+              min={1}
               max={8_760}
               suffix={messages().hours}
             />

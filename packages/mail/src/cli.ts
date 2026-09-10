@@ -6077,7 +6077,7 @@ export default defineCliCommands({
         if (printStructured(ctx, preview)) return;
         ctx.print(
           `${preview.messageCount} messages in ${preview.conversationCount} conversations match${
-            preview.capped ? `; bulk actions process at most ${preview.applicationLimit} at a time` : ""
+            preview.capped ? `; one backfill applies at most ${preview.applicationLimit} of them, so repeat it to continue` : ""
           }.`,
         );
       },
@@ -6558,9 +6558,6 @@ export default defineCliCommands({
         if (printStructured(ctx, result)) return;
         {
           ctx.print(`${result.kind}: ${result.state}${result.lastError ? ` - ${result.lastError}` : ""}`);
-          if (result.transportMetadata.expungePending === true) {
-            ctx.print("The source is safely marked \\Deleted; this provider cannot expunge only that UID.");
-          }
           if (Object.keys(result.result).length > 0) ctx.print(JSON.stringify(result.result, null, 2));
         }
       },

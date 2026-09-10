@@ -43,7 +43,7 @@ import { parseMessageProtocolFacts } from "./message-protocol";
 import { normalizeMailSubject } from "./message-threading";
 import { loadProviderConnectionRuntimeSnapshot } from "./provider-connections";
 import { isProviderAuthenticationFailure, providerErrorCode, providerErrorMessage } from "./provider-errors";
-import { mailProviderOperationMutex, providerBusyRetryDelayMs, withProviderOperationBarrier } from "./provider-operation-lock";
+import { mailProviderOperationMutex, providerBusyRetryDelayMs } from "./provider-operation-lock";
 import { waitForMailProviderSlot } from "./provider-pacer";
 import { cleanupMailRuntimeHistory } from "./runtime-history-retention";
 import { reconcileMailStorageUsage } from "./storage-observability";
@@ -660,27 +660,42 @@ const applyFlagChanges = async (params: {
   uidValidity: string;
   changes: FlagChange[];
 }): Promise<number> => {
-  let updated = 0;
-  for (const change of params.changes) {
-    const result = await params.db`
+  if (params.changes.length === 0) return 0;
+  const [result] = await params.db<{ count: number }[]>`
+    WITH incoming AS (
+      SELECT
+        (entry ->> 'uid')::numeric AS uid,
+        (entry ->> 'modseq')::numeric AS modseq,
+        ARRAY(SELECT jsonb_array_elements_text(entry -> 'flags')) AS flags,
+        ARRAY(SELECT jsonb_array_elements_text(entry -> 'labels')) AS labels
+      FROM jsonb_array_elements(${params.changes}::jsonb) AS entry
+    ),
+    matched AS (
+      SELECT rmr.id, incoming.modseq, incoming.flags, incoming.labels
+      FROM incoming
+      JOIN mail.remote_message_refs rmr
+        ON rmr.folder_id = ${params.folderId}::uuid
+       AND rmr.uid_validity = ${params.uidValidity}::numeric
+       AND rmr.uid = incoming.uid
+    ),
+    refreshed AS (
+      UPDATE mail.remote_message_refs rmr
+      SET modseq = matched.modseq, last_seen_at = now()
+      FROM matched
+      WHERE rmr.id = matched.id
+      RETURNING rmr.id
+    ),
+    changed AS (
       UPDATE mail.message_placements mp
-      SET flags = ${toPgTextArray(change.flags)}::text[], keywords = ${toPgTextArray(change.labels)}::text[], updated_at = now()
-      FROM mail.remote_message_refs rmr
-      WHERE mp.remote_message_ref_id = rmr.id
-        AND rmr.folder_id = ${params.folderId}::uuid
-        AND rmr.uid_validity = ${params.uidValidity}::numeric
-        AND rmr.uid = ${change.uid}::numeric
-    `;
-    updated += result.count;
-    await params.db`
-      UPDATE mail.remote_message_refs
-      SET modseq = ${change.modseq}::numeric, last_seen_at = now()
-      WHERE folder_id = ${params.folderId}::uuid
-        AND uid_validity = ${params.uidValidity}::numeric
-        AND uid = ${change.uid}::numeric
-    `;
-  }
-  return updated;
+      SET flags = matched.flags, keywords = matched.labels, updated_at = now()
+      FROM matched
+      WHERE mp.remote_message_ref_id = matched.id
+        AND (mp.flags IS DISTINCT FROM matched.flags OR mp.keywords IS DISTINCT FROM matched.labels)
+      RETURNING mp.remote_message_ref_id
+    )
+    SELECT (SELECT count(*) FROM changed)::int AS count
+  `;
+  return result?.count ?? 0;
 };
 
 const markMissingUids = async (params: {
@@ -830,7 +845,15 @@ const recordSyncFailure = async (params: {
 type SyncRuntime = Awaited<ReturnType<typeof loadResolvedRuntime>>;
 type FolderStatus = Awaited<ReturnType<typeof imapSmtpConnector.getFolderStatus>>;
 type EnvelopeBatch = Awaited<ReturnType<typeof imapSmtpConnector.fetchEnvelopeBatch>>;
-type ReconcileWindow = { low: number; high: number; uids: number[] };
+type ReconcileWindow = {
+  low: number;
+  high: number;
+  uids: number[];
+  /** Remote flag state for the window, so reconciliation also works without CONDSTORE. */
+  flags: FlagChange[];
+  /** Envelopes for window UIDs that have no live local reference; re-imported through the backfill path. */
+  imports: ConnectorEnvelope[];
+};
 
 const loadSyncFolder = async (folderId: string): Promise<FolderSyncRow | null> => {
   const [folder] = await sql<FolderSyncRow[]>`
@@ -953,11 +976,13 @@ const fetchFlagStep = async (params: {
   return changes;
 };
 
-const fetchReconcileStep = async (params: {
+export const fetchReconcileStep = async (params: {
   cursor: EnvelopeCursor;
   currentHighUid: number;
+  remoteMessages: number;
   runtime: SyncRuntime;
   folderPath: string;
+  folderId: string;
   uidValidity: string;
   signal: AbortSignal;
 }): Promise<ReconcileWindow | null> => {
@@ -973,10 +998,73 @@ const fetchReconcileStep = async (params: {
     return null;
   }
   const high = Math.min(params.currentHighUid, low + RECONCILE_WINDOW_SIZE - 1);
-  const uids = await imapSmtpConnector.fetchUidWindow(params.runtime, params.folderPath, params.uidValidity, low, high, params.signal);
+  const flags = await imapSmtpConnector.fetchUidWindow(params.runtime, params.folderPath, params.uidValidity, low, high, params.signal);
+  // A window that spans the whole folder and still reports nothing contradicts
+  // the folder status: never let that silence retire local messages.
+  if (flags.length === 0 && params.remoteMessages > 0 && low === 1 && high >= params.currentHighUid) {
+    throw Object.assign(new Error("Reconciliation window reported no remote messages while the folder is not empty"), {
+      code: "RECONCILE_WINDOW_UNTRUSTED",
+    });
+  }
+  const uids = flags.map((entry) => entry.uid);
+  const imports = await fetchReconcileImports({
+    window: { low, high, uids },
+    runtime: params.runtime,
+    folderPath: params.folderPath,
+    folderId: params.folderId,
+    uidValidity: params.uidValidity,
+    signal: params.signal,
+  });
   params.cursor.reconcileNextLow = high < params.currentHighUid ? high + 1 : null;
   if (params.cursor.reconcileNextLow == null) params.cursor.lastFullReconcileAt = new Date().toISOString();
-  return { low, high, uids };
+  // More gaps than one envelope batch can carry: repeat this window next time.
+  if (imports.truncated) params.cursor.reconcileNextLow = low;
+  return { low, high, uids, flags, imports: imports.messages };
+};
+
+// UIDs the provider still lists but that have no live local reference: a gap
+// left by a lost batch or a wrongly retired message. Re-import them through the
+// same envelope path backfill uses.
+const fetchReconcileImports = async (params: {
+  window: { low: number; high: number; uids: number[] };
+  runtime: SyncRuntime;
+  folderPath: string;
+  folderId: string;
+  uidValidity: string;
+  signal: AbortSignal;
+}): Promise<{ messages: ConnectorEnvelope[]; truncated: boolean }> => {
+  if (params.window.uids.length === 0) return { messages: [], truncated: false };
+  const missing = await sql<{ uid: string }[]>`
+    SELECT remote.uid
+    FROM jsonb_array_elements_text(${params.window.uids}::jsonb) AS remote(uid)
+    WHERE NOT EXISTS (
+      SELECT 1
+      FROM mail.remote_message_refs rmr
+      WHERE rmr.folder_id = ${params.folderId}::uuid
+        AND rmr.uid_validity = ${params.uidValidity}::numeric
+        AND rmr.uid = remote.uid::numeric
+        AND rmr.stale_at IS NULL
+    )
+    ORDER BY remote.uid::numeric
+    LIMIT ${ENVELOPE_BATCH_SIZE + 1}
+  `;
+  if (missing.length === 0) return { messages: [], truncated: false };
+  const truncated = missing.length > ENVELOPE_BATCH_SIZE;
+  const uids = missing.slice(0, ENVELOPE_BATCH_SIZE).map((row) => Number(row.uid));
+  const batch = await imapSmtpConnector.fetchEnvelopeBatch(
+    params.runtime,
+    {
+      folderPath: params.folderPath,
+      folderStableKey: params.folderId,
+      uidValidity: params.uidValidity,
+      highUid: uids[uids.length - 1]!,
+      lowUid: uids[0]!,
+      limit: ENVELOPE_BATCH_SIZE,
+      uids,
+    },
+    params.signal,
+  );
+  return { messages: batch.messages, truncated };
 };
 
 export const commitSyncBatch = async (params: {
@@ -1018,10 +1106,19 @@ export const commitSyncBatch = async (params: {
       FOR UPDATE
     `;
     if (!resource) throw Object.assign(new Error("Stale mail sync fence"), { code: "STALE_SYNC_FENCE" });
-    const [lockedFolder] = await tx<{ id: string }[]>`
-      SELECT id FROM mail.folders WHERE id = ${params.folderId}::uuid FOR UPDATE
+    const [lockedFolder] = await tx<{ id: string; reconcile_next_low: string | null }[]>`
+      SELECT id, envelope_cursor ->> 'reconcileNextLow' AS reconcile_next_low
+      FROM mail.folders
+      WHERE id = ${params.folderId}::uuid
+      FOR UPDATE
     `;
     if (!lockedFolder) throw new Error("Folder disappeared during sync");
+    // A reconcile request (push EXPUNGE, reconnect) may have rewound the stored
+    // cursor while this batch ran; the batch result must not overwrite it.
+    const storedReconcileLow = lockedFolder.reconcile_next_low == null ? null : Number(lockedFolder.reconcile_next_low);
+    if (storedReconcileLow != null && storedReconcileLow !== (params.beforeCursor?.reconcileNextLow ?? null)) {
+      params.cursor.reconcileNextLow = Math.min(storedReconcileLow, params.cursor.reconcileNextLow ?? storedReconcileLow);
+    }
     const [effectiveRole] = await tx<{ is_drafts: boolean }[]>`
       SELECT (
         EXISTS (
@@ -1071,7 +1168,7 @@ export const commitSyncBatch = async (params: {
         folderId: params.folderId,
         uidValidity: params.status.uidValidity,
         uidValidityChanged: params.uidValidityChanged,
-        envelopes: params.envelopeBatch?.messages ?? [],
+        envelopes: [...(params.envelopeBatch?.messages ?? []), ...(params.reconcileWindow?.imports ?? [])],
         reconcileWindow: params.reconcileWindow,
       });
       draftImportSnapshotIds = projection.importSnapshotIds;
@@ -1090,6 +1187,18 @@ export const commitSyncBatch = async (params: {
           }),
         );
       }
+      for (const message of params.reconcileWindow?.imports ?? []) {
+        hydratedIds.push(
+          await ingestEnvelope({
+            db: tx,
+            mailboxId: params.folder.mailbox_id,
+            remoteResourceId: params.folder.remote_resource_id,
+            folderId: params.folderId,
+            message,
+            captureWorkflowTriggers: false,
+          }),
+        );
+      }
     }
     const flagsUpdated = isDraftFolder
       ? 0
@@ -1097,7 +1206,7 @@ export const commitSyncBatch = async (params: {
           db: tx,
           folderId: params.folderId,
           uidValidity: params.status.uidValidity,
-          changes: params.flagChanges,
+          changes: [...params.flagChanges, ...(params.reconcileWindow?.flags ?? [])],
         });
     const removed = isDraftFolder
       ? draftRemoved
@@ -1291,8 +1400,10 @@ const syncFolderBatch = async (folderId: string, jobHeartbeat: () => Promise<voi
         const reconcileWindow = await fetchReconcileStep({
           cursor,
           currentHighUid,
+          remoteMessages: status.messages,
           runtime,
           folderPath: folderExecution.path,
+          folderId,
           uidValidity: status.uidValidity,
           signal,
         });
@@ -1389,10 +1500,6 @@ const startSyncFolderJob = async (): Promise<void> => {
       } catch (error) {
         const code = normalizeSyncErrorCode(error);
         if (code === "MAILBOX_TRANSPORT_CHANGED") return;
-        if (isConcurrentCredentialRefresh(error)) {
-          ctx.resubmit({ delayMs: 2_000 });
-          return;
-        }
         if (code === "MAIL_RATE_LIMITED") {
           ctx.resubmit({ delayMs: retryAfterMs(error, 5_000) });
           return;
@@ -1794,42 +1901,29 @@ export const enqueueFolderSync = async (folderId: string): Promise<void> => {
 export const enqueueFolderReconciliation = async (folderId: string, fromUid: number): Promise<void> => {
   const boundedUid = Math.max(1, Number.isSafeInteger(fromUid) ? fromUid : 1);
   const reconcileWindowStart = Math.floor((boundedUid - 1) / RECONCILE_WINDOW_SIZE) * RECONCILE_WINDOW_SIZE + 1;
-  const [folder] = await sql<{ remote_resource_id: string }[]>`
-    SELECT remote_resource_id
-    FROM mail.folders
+  // Only a cursor rewind: a running sync batch may hold the provider mutex, and
+  // the request must survive that contention.
+  await sql`
+    UPDATE mail.folders
+    SET
+      envelope_cursor = jsonb_set(
+        envelope_cursor,
+        '{reconcileNextLow}',
+        to_jsonb(
+          LEAST(
+            COALESCE((envelope_cursor ->> 'reconcileNextLow')::numeric, ${reconcileWindowStart}::numeric),
+            ${reconcileWindowStart}::numeric
+          )
+        ),
+        true
+      ),
+      last_reconciled_at = NULL
     WHERE id = ${folderId}::uuid
       AND selected_for_sync = true
       AND discovery_state = 'active'
       AND sync_status <> 'excluded'
+      AND envelope_cursor ->> 'version' = '1'
   `;
-  if (!folder) return;
-  const barrier = await withProviderOperationBarrier([folder.remote_resource_id], async (assertLeaseActive) => {
-    await assertLeaseActive();
-    await sql`
-      UPDATE mail.folders
-      SET
-        envelope_cursor = jsonb_set(
-          envelope_cursor,
-          '{reconcileNextLow}',
-          to_jsonb(
-            LEAST(
-              COALESCE((envelope_cursor ->> 'reconcileNextLow')::int, ${reconcileWindowStart}),
-              ${reconcileWindowStart}
-            )
-          ),
-          true
-        ),
-        last_reconciled_at = NULL
-      WHERE id = ${folderId}::uuid
-        AND envelope_cursor ->> 'version' = '1'
-    `;
-    await assertLeaseActive();
-  });
-  if (!barrier.acquired) {
-    throw Object.assign(new Error("Mail sync resource is busy while requesting reconciliation"), {
-      code: "SYNC_BUSY",
-    });
-  }
   await submitSyncFolderJob(folderId);
 };
 

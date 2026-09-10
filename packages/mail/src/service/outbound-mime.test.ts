@@ -35,6 +35,40 @@ describe("outbound MIME", () => {
     expect(outboundRecipients(snapshot)).toEqual(["alice@example.com", "audit@example.com"]);
   });
 
+  test("keeps Bcc only in the sender's own Sent copy", async () => {
+    const snapshot = outboundDraftSnapshotSchema.parse({
+      revision: 1,
+      from: { name: "Support", address: "support@example.com" },
+      replyTo: null,
+      envelopeFrom: null,
+      to: [{ name: null, address: "alice@example.com" }],
+      cc: [],
+      bcc: [{ name: "Audit", address: "audit@example.com" }],
+      subject: "Blind copy",
+      body: "Hello",
+      format: "plain",
+      inReplyTo: null,
+      references: [],
+    });
+    const build = async (keepBcc: boolean) => {
+      const chunks: Buffer[] = [];
+      for await (const value of buildMimeStream({
+        snapshot,
+        messageId: "<bcc@example.com>",
+        date: new Date("2026-01-02T03:04:05.000Z"),
+        openAttachment: () => Readable.from([]),
+        keepBcc,
+      })) {
+        chunks.push(Buffer.isBuffer(value) ? value : Buffer.from(value as Uint8Array));
+      }
+      return Buffer.concat(chunks).toString("utf8");
+    };
+    expect(await build(false)).not.toMatch(/^Bcc:/im);
+    const sentCopy = await build(true);
+    expect(sentCopy).toMatch(/^Bcc: Audit <audit@example.com>$/im);
+    expect(sentCopy).toMatch(/^To: alice@example.com$/im);
+  });
+
   test("streams attachment content into MIME without changing bytes", async () => {
     const attachment = Buffer.alloc(3 * 1024 * 1024 + 17);
     for (let index = 0; index < attachment.length; index += 1) attachment[index] = (index * 31) % 256;

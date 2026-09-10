@@ -234,4 +234,52 @@ suite("Mail security operations", () => {
     expect(reopened.ok && reopened.data.reportCount).toBe(1);
     expect(await countEvents()).toBe(before);
   });
+
+  test("a spoofed From claiming a sender identity is still assessed and reportable", async () => {
+    const mailbox = await createMailbox(adminContext, { name: `Mail security spoof ${suffix}` });
+    expect(mailbox.ok).toBeTrue();
+    if (!mailbox.ok) return;
+    mailboxIds.push(mailbox.data.id);
+
+    const ownDomain = `spoof-${suffix}.example`;
+    const ownAddress = `owner@${ownDomain}`;
+    await sql`
+      INSERT INTO mail.sender_identities (short_id, mailbox_id, label, display_name, from_address, is_default, status)
+      VALUES (${newShortId()}, ${mailbox.data.id}::uuid, 'Owner', 'Owner', ${ownAddress}, true, 'verified')
+    `;
+    const policy = await createPolicy({
+      context: adminContext,
+      input: { disposition: "deny", target: "sender_domain", value: ownDomain, enabled: true },
+    });
+    expect(policy.ok).toBeTrue();
+    if (!policy.ok) return;
+    policyIds.push(policy.data.id);
+
+    const [message] = await sql<{ id: string }[]>`
+      INSERT INTO mail.message_contents (short_id,
+        mailbox_id, message_id, subject, normalized_subject, internal_date, size_bytes, content_hash, hydration_status
+      ) VALUES (${newShortId()},
+        ${mailbox.data.id}::uuid,
+        ${`<mail-security-spoof-${suffix}@example.test>`},
+        'Please confirm your account',
+        'please confirm your account',
+        now(),
+        128,
+        ${crypto.randomUUID().replaceAll("-", "").padEnd(64, "0")},
+        'complete'
+      )
+      RETURNING id
+    `;
+    if (!message) throw new Error("Failed to seed spoofed Mail security message");
+    await sql`
+      INSERT INTO mail.message_addresses (message_id, role, position, display_name, email, normalized_email)
+      VALUES
+        (${message.id}::uuid, 'from', 0, 'Owner', ${ownAddress}, ${ownAddress}),
+        (${message.id}::uuid, 'reply_to', 0, 'Attacker', ${`attacker@evil-${suffix}.example`}, ${`attacker@evil-${suffix}.example`})
+    `;
+
+    const assessment = await assessMessage(mailbox.data.id, message.id);
+    expect(assessment.ok && assessment.data.verdict).toBe("quarantined");
+    expect((await reportMessage({ context: adminContext, mailboxId: mailbox.data.id, messageId: message.id })).ok).toBeTrue();
+  });
 });

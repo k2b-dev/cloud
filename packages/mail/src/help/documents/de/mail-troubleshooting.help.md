@@ -137,6 +137,8 @@ Erstellung, Umbenennung, Löschung und Abonnement von Ordnern sowie die Zuordnun
 4. den Vorgang einmal wiederholen.
 :::
 
+Mail lehnt das Verschieben oder Löschen von Nachrichten bei Anbietern ab, die weder die MOVE-Erweiterung noch UIDPLUS unterstützen, weil das Ergebnis beim Anbieter nicht nachweisbar wäre; der Befehl schlägt sofort fehl, statt eine Kopie zurückzulassen. Die Synchronisierung von Entwürfen zum Anbieter benötigt UIDPLUS und Löschrechte im Entwürfe-Ordner; andernfalls bleiben Entwürfe in Cloud und der Postfachstatus meldet das einmalig.
+
 Geteilte Ordner und Ordner anderer Personen können lesbar sein, obwohl Erstellung, Umbenennung oder Löschung von Ordnern nicht verfügbar sind. Cloud vergibt oder ändert diese vorgelagerten Rechte nicht. Wiederholte Klicks auf eine vorgemerkte Aktion können die Auswertung erschweren. Warte auf die Live-Aktualisierung oder prüfe den Anbieter, bevor du es erneut versuchst.
 
 ## Das Postfach wurde wiederhergestellt, synchronisiert aber weiterhin nicht {icon="point"}

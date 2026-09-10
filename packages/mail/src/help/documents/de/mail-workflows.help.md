@@ -210,7 +210,7 @@ Referenzfelder namens `message`, `conversation` oder `draft` akzeptieren einen r
 | `createDraft`, `createReplyDraft` | `format`: standardmäßig `markdown` oder `plain`; Betreff: höchstens 998 Zeichen; Text: höchstens 2 MiB; jede To-, Cc- oder Bcc-Liste: höchstens 200 Adressen | erforderliches `saveAs` erhält `mail.draft` | 1 `maxDrafts` |
 | `scheduleDraftSend` | `scheduledAt`: ISO-Zeitstempel mit höchstens 100 Zeichen | keine | 1 `maxSends` |
 | `notifyUser` | Titel: höchstens 160 Zeichen; Text: höchstens 2.000 Zeichen | keine | 1 `maxNotifications` |
-| `automaticReply` | `format`: standardmäßig `plain`; `inactiveBehavior`: standardmäßig `defer`; `minimumIntervalHours`: standardmäßig 24, von 0 bis 8.760 | keine | 1 `maxDrafts` und 1 `maxSends` |
+| `automaticReply` | `format`: standardmäßig `plain`; `inactiveBehavior`: standardmäßig `defer`; `minimumIntervalHours`: standardmäßig 24, von 1 bis 8.760 | keine | 1 `maxDrafts` und 1 `maxSends` |
 | `aiGenerateText` | Prompt: 1–20.000 Zeichen; `maxOutputChars`: standardmäßig 4.000, von 1 bis 20.000; optionale Felder `input` und `model` | erforderliches `saveAs` erhält `core.text` | 1 `maxAiCalls` für eine neu erstellte Aufgabe |
 | `aiClassify` | Prompt: 1–20.000 Zeichen; 2–50 eindeutige Auswahlwerte mit 1–200 Zeichen; optionales `model` | erforderliches `saveAs` erhält einen deklarierten Auswahlwert als `core.text` | 1 `maxAiCalls` für eine neu erstellte Aufgabe |
 | `aiClassifyMany` | dieselben Grenzen für Auswahlwerte; `minChoices`: standardmäßig 0; `maxChoices`: standardmäßig alle Auswahlwerte; beide von 0 bis 50 | erforderliches `saveAs` erhält ein geordnetes, eindeutiges `core.textArray` | 1 `maxAiCalls` für eine neu erstellte Aufgabe |
@@ -330,7 +330,7 @@ Ein optionales `model` wählt für eine Aktion ein aktiviertes Profil aus. Ander
 
 AI-Aufgaben überstehen Neustarts von Workern. Wird die Mail-Ausführung abgebrochen, bricht sie die laufende Inferenz ab, sofern dies unterstützt wird, und verwirft verspätete Ausgaben. Eine Testausführung kann die AI-Ausgabe nicht vorhersagen. Deshalb meldet sie den nicht verfügbaren Wert, statt mit einer erfundenen Klassifizierung oder einem erfundenen Entwurf fortzufahren.
 
-Prompts, Eingaben und Ausgaben werden mit der dauerhaften Aufgabe gespeichert. Nimm nur die Nachrichtenfelder auf, die für die Entscheidung benötigt werden. Behalte erzeugte Antworten als Entwürfe, wenn eine Person sie prüfen soll. Ergänze `scheduleDraftSend` nur, wenn der unbeaufsichtigte Versand bewusst freigegeben wurde.
+Prompts, Eingaben und Ausgaben werden mit der dauerhaften Aufgabe gespeichert. Nimm nur die Nachrichtenfelder auf, die für die Entscheidung benötigt werden. Behalte erzeugte Antworten als Entwürfe, wenn eine Person sie prüfen soll. Ergänze `scheduleDraftSend` nur, wenn der unbeaufsichtigte Versand bewusst freigegeben wurde. In einem Workflow mit dem Auslöser `messageReceived` ist `scheduleDraftSend` nicht erlaubt: Antworten auf eingehende Mail müssen über `automaticReply` und dessen Schleifenschutz laufen.
 
 Um eine fortlaufende Zusammenfassung der Unterhaltung zu pflegen, übergib sowohl die aktuelle Zusammenfassung als auch die neu empfangene Nachricht an `aiGenerateText`. Übergib anschließend dessen normale Textausgabe an `setConversationSummary`:
 

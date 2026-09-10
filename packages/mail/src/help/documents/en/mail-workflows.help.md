@@ -210,7 +210,7 @@ Reference fields named `message`, `conversation`, or `draft` accept a raw value 
 | `createDraft`, `createReplyDraft` | `format`: `markdown` by default or `plain`; subject: at most 998 characters; body: at most 2 MiB; each To, Cc, or Bcc list: at most 200 addresses | required `saveAs` receives `mail.draft` | 1 `maxDrafts` |
 | `scheduleDraftSend` | `scheduledAt`: ISO timestamp of at most 100 characters | none | 1 `maxSends` |
 | `notifyUser` | title: at most 160 characters; body: at most 2,000 characters | none | 1 `maxNotifications` |
-| `automaticReply` | `format`: `plain` by default; `inactiveBehavior`: `defer` by default; `minimumIntervalHours`: 24 by default, from 0 to 8,760 | none | 1 `maxDrafts` and 1 `maxSends` |
+| `automaticReply` | `format`: `plain` by default; `inactiveBehavior`: `defer` by default; `minimumIntervalHours`: 24 by default, from 1 to 8,760 | none | 1 `maxDrafts` and 1 `maxSends` |
 | `aiGenerateText` | prompt: 1–20,000 characters; `maxOutputChars`: 4,000 by default, from 1 to 20,000; optional `input` and `model` | required `saveAs` receives `core.text` | 1 `maxAiCalls` for a newly created task |
 | `aiClassify` | prompt: 1–20,000 characters; 2–50 unique choices of 1–200 characters; optional `model` | required `saveAs` receives one declared choice as `core.text` | 1 `maxAiCalls` for a newly created task |
 | `aiClassifyMany` | same choice limits; `minChoices`: 0 by default; `maxChoices`: all choices by default; both from 0 to 50 | required `saveAs` receives an ordered unique `core.textArray` | 1 `maxAiCalls` for a newly created task |
@@ -330,7 +330,7 @@ An optional `model` selects an enabled profile for one action. Otherwise Mail us
 
 AI tasks survive worker restarts. Canceling the Mail run aborts running inference when supported and discards late output. A dry run cannot predict AI output, so it reports the unavailable value instead of continuing with a fabricated classification or draft.
 
-Prompts, inputs, and outputs are stored with the durable task. Include only message fields needed for the decision. Keep generated replies as drafts when a person should review them; add `scheduleDraftSend` only when unattended sending is intentionally approved.
+Prompts, inputs, and outputs are stored with the durable task. Include only message fields needed for the decision. Keep generated replies as drafts when a person should review them; add `scheduleDraftSend` only when unattended sending is intentionally approved. A workflow triggered by `messageReceived` cannot use `scheduleDraftSend` at all, because replying to incoming mail must go through `automaticReply` and its loop protection.
 
 To maintain a rolling conversation summary, supply both the current summary and the newly received message to `aiGenerateText`, then pass its normal text output to `setConversationSummary`:
 

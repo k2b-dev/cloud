@@ -274,7 +274,11 @@ const paginateSortedList = <Source, Data>(params: {
   if (!params.result.ok) return params.result;
   const cursor = decodeListCursor(params.cursor, params.scope);
   if (!cursor.ok) return cursor;
-  const sorted = [...params.result.data].sort((left, right) => params.id(left).localeCompare(params.id(right)));
+  // Page boundaries compare IDs with `>`, so the order must be plain code-unit order, not a locale collation.
+  const sorted = [...params.result.data].sort((left, right) => {
+    const [leftId, rightId] = [params.id(left), params.id(right)];
+    return leftId < rightId ? -1 : leftId > rightId ? 1 : 0;
+  });
   const remaining = cursor.data === null ? sorted : sorted.filter((item) => params.id(item) > cursor.data!);
   const items = remaining.slice(0, params.limit);
   const data = items.map(params.map);
@@ -2584,7 +2588,8 @@ const actionDefinitions = {
     description: "Send or schedule a reviewed draft email for external delivery.",
     input: c.DraftSendInputSchema,
     data: c.DraftSendDataSchema,
-    destructive: false,
+    // Handing a message to a provider cannot be undone once the undo window closes.
+    destructive: true,
     openWorld: true,
     idempotency: "required",
     review: async (input: z.output<typeof c.DraftSendInputSchema>, context: CapabilityExecutionContext) => {

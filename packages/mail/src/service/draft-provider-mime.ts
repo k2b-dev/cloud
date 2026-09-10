@@ -5,6 +5,26 @@ import { z } from "zod";
 import { mailAddressSchema } from "../contracts";
 import { sha256Json } from "./canonical";
 
+/** Longest header value a MIME line contract accepts (RFC 5322 line limit). */
+const MAX_MIME_LINE_CHARS = 998;
+/** Most recent References entries kept in an outgoing MIME message. */
+const MAX_MIME_REFERENCES = 500;
+/** Attachments one draft can carry, shared by the provider projection and the send path. */
+export const MAX_DRAFT_ATTACHMENTS = 200;
+
+/**
+ * References and In-Reply-To come from remote headers and are unbounded, so they are clamped instead
+ * of rejected: a thread the user did not compose must never make a draft unprojectable or unsendable.
+ * Keeping the most recent references preserves threading for every mail client that reads them.
+ */
+export const mimeReferencesSchema = z
+  .array(z.string())
+  .transform((references) => references.filter((reference) => reference.length <= MAX_MIME_LINE_CHARS).slice(-MAX_MIME_REFERENCES));
+export const mimeMessageIdSchema = z
+  .string()
+  .nullable()
+  .transform((value) => (value && value.length <= MAX_MIME_LINE_CHARS ? value : null));
+
 const draftProviderAttachmentSchema = z
   .object({
     id: z.string().uuid(),
@@ -28,9 +48,9 @@ export const draftProviderContentSchema = z
     subject: z.string().max(998),
     body: z.string().max(2 * 1024 * 1024),
     format: z.enum(["plain", "markdown"]),
-    inReplyTo: z.string().max(998).nullable(),
-    references: z.array(z.string().max(998)).max(500),
-    attachments: z.array(draftProviderAttachmentSchema).max(200),
+    inReplyTo: mimeMessageIdSchema,
+    references: mimeReferencesSchema,
+    attachments: z.array(draftProviderAttachmentSchema).max(MAX_DRAFT_ATTACHMENTS),
   })
   .strict();
 

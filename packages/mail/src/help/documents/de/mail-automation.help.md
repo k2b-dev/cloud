@@ -105,7 +105,7 @@ Der **Wiederholungsschutz** ist die Mindestzeit, bevor derselbe Absender eine we
 
 - Die Vorlage **Abwesenheit** verwendet 96 Stunden oder 4 Tage. Wer während einer Abwesenheit mehrmals schreibt, erhält dadurch nicht täglich dieselbe Nachricht.
 - **Bestätigung außerhalb der Geschäftszeiten** und **Eigene automatische Antwort** verwenden 24 Stunden.
-- `0` deaktiviert das Absenderintervall. Mail verhindert weiterhin doppelte Antworten auf dieselbe eingehende Nachricht und behält seine Schutzmaßnahmen auf Protokollebene bei.
+- Das kürzeste Intervall beträgt 1 Stunde. Zusätzlich beantwortet Mail jede eingehende Nachricht höchstens einmal und versendet höchstens 100 automatische Antworten pro Stunde für das gesamte Postfach. Alles darüber hinaus wird unterdrückt und bleibt im Aktivitätsverlauf sichtbar.
 
 Wähle nur dann ein kürzeres Intervall, wenn wiederholte Bestätigungen für den Empfänger nützlich sind. Der Wert gilt postfachweit für diese automatische Antwort und ist keine Verzögerung vor der ersten Antwort.
 

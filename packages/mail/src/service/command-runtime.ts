@@ -36,6 +36,7 @@ import { activeSmtpMessageLimit, assertProviderMessageSize, loadBindingProviderL
 import { MAIL_PROVIDER_OPERATION_LEASE_MS, mailProviderOperationMutex, providerBusyRetryDelayMs } from "./provider-operation-lock";
 import { waitForMailProviderSlot } from "./provider-pacer";
 import { loadSenderIdentityTransportRuntimeById } from "./sender-identity-transports";
+import { enqueueFolderSync } from "./sync-runtime";
 import { publishMailWorkflowDependency } from "./workflow-dependencies";
 
 const log = logger("mail:commands");
@@ -519,7 +520,6 @@ const PARTIAL_MUTATION_CODES = new Set([
   "DELETE_RECONCILIATION_FAILED",
   "FLAG_RECONCILIATION_FAILED",
   "MOVE_RECONCILIATION_FAILED",
-  "MOVE_SOURCE_DELETE_MARK_FAILED",
   "REMOTE_DELETE_FAILED",
   "REMOTE_MOVE_FAILED",
 ]);
@@ -541,6 +541,8 @@ export const mutationFailureState = (error: unknown, providerEffectStarted = tru
   if (PARTIAL_MUTATION_CODES.has(code)) return "needs_attention";
   if (AMBIGUOUS_COMMAND_CODES.has(code)) return "ambiguous";
   if (RETRYABLE_CONNECTION_CODES.has(code)) return providerEffectStarted ? "ambiguous" : "queued";
+  // A started provider effect can never be replayed, so its outcome is reconciled instead of retried.
+  if (providerEffectStarted) return "ambiguous";
   return isAmbiguousTransportError(error) ? "ambiguous" : "failed";
 };
 
@@ -860,40 +862,24 @@ const executeDeleteMutation = async (params: {
   });
 };
 
-const resolveTransferDestination = async (params: {
-  runtime: MutationRuntime;
-  source: DbRemoteMessage;
-  destination: DbDestinationFolder;
-  baseline: number[];
-  result: { destinationUid: number | null; destinationUidValidity: string | null };
-}): Promise<{ destinationUid: number | null; destinationUidValidity: string | null }> => {
-  if ((params.result.destinationUid && params.result.destinationUidValidity) || !params.source.message_id) return params.result;
-  const matches = await imapSmtpConnector.findMessageById(params.runtime, params.destination.folder_path, params.source.message_id);
-  const destinationUid = matches.find((uid) => !params.baseline.includes(uid)) ?? null;
-  return {
-    destinationUid,
-    destinationUidValidity: destinationUid ? String(params.destination.uid_validity ?? "") || null : null,
-  };
-};
+/**
+ * A destination reference may only be projected when the provider reported the
+ * UID it created and the destination generation still matches the synchronized
+ * one. Otherwise the folder sync owns the placement.
+ */
+const confirmedDestinationRef = (
+  destination: DbDestinationFolder,
+  result: { destinationUid: number | null; destinationUidValidity: string | null },
+): { uid: number; uidValidity: string } | null =>
+  result.destinationUid && result.destinationUidValidity && result.destinationUidValidity === String(destination.uid_validity ?? "")
+    ? { uid: result.destinationUid, uidValidity: result.destinationUidValidity }
+    : null;
 
-const verifyMoveSource = async (params: {
-  runtime: MutationRuntime;
-  target: RemoteMutationTarget;
-  expungePending: boolean;
-}): Promise<boolean> => {
-  const sourceAfter = await imapSmtpConnector.getMessageState(params.runtime, params.target);
-  if (params.expungePending) {
-    if (sourceAfter.exists && !sourceAfter.flags.includes("\\Deleted")) {
-      throw Object.assign(new Error("Provider did not retain the source deletion marker after move"), {
-        code: "MOVE_RECONCILIATION_FAILED",
-      });
-    }
-    return sourceAfter.exists;
-  }
+const assertMoveSourceRemoved = async (runtime: MutationRuntime, target: RemoteMutationTarget): Promise<void> => {
+  const sourceAfter = await imapSmtpConnector.getMessageState(runtime, target);
   if (sourceAfter.exists) {
     throw Object.assign(new Error("Provider did not confirm source removal after move"), { code: "MOVE_RECONCILIATION_FAILED" });
   }
-  return false;
 };
 
 const executeTransferMutation = async (params: {
@@ -902,6 +888,7 @@ const executeTransferMutation = async (params: {
   source: DbRemoteMessage;
   target: MutationTarget;
   remoteTarget: RemoteMutationTarget;
+  capabilities: JsonRecord;
   assertLeaseActive: LeaseAssertion;
   assertAuthorized: LeaseAssertion;
   beginEffect: LeaseAssertion;
@@ -911,6 +898,11 @@ const executeTransferMutation = async (params: {
     throw Object.assign(new Error("Unsupported actor command kind"), { code: "UNSUPPORTED_COMMAND" });
   }
   if (!target.destinationFolderId) throw Object.assign(new Error("Destination folder is missing"), { code: "INVALID_COMMAND_TARGET" });
+  // Without MOVE or UIDPLUS the provider can only copy and mark the source deleted, which leaves the
+  // message in both folders. Refuse before any provider effect instead of reporting a partial move.
+  if (command.kind === "move" && params.capabilities.move !== true && params.capabilities.uidplus !== true) {
+    throw Object.assign(new Error("Provider cannot move a message without losing the source"), { code: "SAFE_MOVE_UNSUPPORTED" });
+  }
   requireRights(source.effective_rights, command.kind === "move" ? ["read", "move"] : ["read"]);
   const destination = await loadDestinationFolder(command, target.destinationFolderId);
   requireRights(destination.effective_rights, ["insert"]);
@@ -925,26 +917,22 @@ const executeTransferMutation = async (params: {
       ? await imapSmtpConnector.copy(runtime, params.remoteTarget, destination.folder_path)
       : await imapSmtpConnector.move(runtime, params.remoteTarget, destination.folder_path);
   await params.assertLeaseActive();
-  const { destinationUid, destinationUidValidity } = await resolveTransferDestination({
-    runtime,
-    source,
-    destination,
-    baseline,
-    result,
-  });
-  const expungePending =
-    command.kind === "move"
-      ? await verifyMoveSource({ runtime, target: params.remoteTarget, expungePending: result.expungePending })
-      : result.expungePending;
+  if (command.kind === "move") await assertMoveSourceRemoved(runtime, params.remoteTarget);
+  const destinationRef = confirmedDestinationRef(destination, result);
   await persistMutationOutcome(async () => {
-    if (!(await updateMutationProjection({ command, source, destination, destinationUid, destinationUidValidity }))) return;
-    if (expungePending) {
-      await recordCommandTransportMetadata(command, {
-        expungePending: true,
-        expungePendingFolderId: source.folder_id,
-        expungePendingUid: Number(source.uid),
-      });
+    if (
+      !(await updateMutationProjection({
+        command,
+        source,
+        destination,
+        destinationUid: destinationRef?.uid ?? null,
+        destinationUidValidity: destinationRef?.uidValidity ?? null,
+      }))
+    ) {
+      return;
     }
+    // The destination placement is unknown locally, so the folder sync has to make the message visible again.
+    if (!destinationRef) await enqueueFolderSync(destination.folder_id);
     await commandState(command, "confirmed");
   });
 };
@@ -958,7 +946,8 @@ const executeFreshMutation = async (command: DbCommandExecution, assertLeaseActi
     );
     return;
   }
-  const runtime = await loadPinnedRuntime(await loadPinnedBinding(command));
+  const binding = await loadPinnedBinding(command);
+  const runtime = await loadPinnedRuntime(binding);
   const target = sourceTargetSchema.parse(parseJsonRecord(command.target));
   const source = await loadRemoteMessage(command, target);
   const remote = remoteTarget(source);
@@ -986,7 +975,7 @@ const executeFreshMutation = async (command: DbCommandExecution, assertLeaseActi
   if (command.kind === "set_flags") return executeSetFlagsMutation(params);
   if (command.kind === "change_message_state") return executeMessageStateMutation(params);
   if (command.kind === "delete") return executeDeleteMutation(params);
-  return executeTransferMutation({ ...params, target, remoteTarget: remote });
+  return executeTransferMutation({ ...params, target, remoteTarget: remote, capabilities: parseJsonRecord(binding.capabilities) });
 };
 
 const loadReconciliationSource = async (command: DbCommandExecution, target: MutationTarget): Promise<DbRemoteMessage> => {
@@ -1087,27 +1076,11 @@ const reconcileTransferMutation = async (params: {
   const destination = await loadDestinationFolder(command, target.destinationFolderId);
   const matches = await imapSmtpConnector.findMessageById(runtime, destination.folder_path, source.message_id);
   const newUid = matches.find((uid) => !baselineUids(command).includes(uid)) ?? null;
-  const expungePending = command.kind === "move" && Boolean(newUid && sourceState.exists && sourceState.flags.includes("\\Deleted"));
-  const successful = command.kind === "copy" ? Boolean(newUid) : Boolean(newUid && (!sourceState.exists || expungePending));
+  const successful = command.kind === "copy" ? Boolean(newUid) : Boolean(newUid && !sourceState.exists);
   if (!successful) return false;
-  if (
-    !(await updateMutationProjection({
-      command,
-      source,
-      destination,
-      destinationUid: newUid,
-      destinationUidValidity: newUid ? String(destination.uid_validity ?? "") || null : null,
-    }))
-  ) {
-    return true;
-  }
-  if (expungePending) {
-    await recordCommandTransportMetadata(command, {
-      expungePending: true,
-      expungePendingFolderId: source.folder_id,
-      expungePendingUid: Number(source.uid),
-    });
-  }
+  // The destination UID is proven but its generation is not, so the folder sync owns the placement.
+  if (!(await updateMutationProjection({ command, source, destination }))) return true;
+  await enqueueFolderSync(destination.folder_id);
   await commandState(command, "reconciled");
   return true;
 };
@@ -1252,11 +1225,25 @@ const defaultBindingNamespace = async (
   return { path, delimiter };
 };
 
-const requeueCommand = async (command: DbCommandExecution, code: string, message: string): Promise<void> => {
+const claimedState = (claimed: { previousState: string }): "queued" | "ambiguous" =>
+  claimed.previousState === "ambiguous" ? "ambiguous" : "queued";
+
+/**
+ * Returns the command to the state it was claimed from, so a command that was
+ * claimed for reconciliation is never re-executed fresh. The requeue itself
+ * never reaches the provider and therefore never consumes an attempt.
+ */
+const requeueCommand = async (
+  command: DbCommandExecution,
+  state: "queued" | "ambiguous",
+  code: string,
+  message: string,
+): Promise<void> => {
   await sql`
     UPDATE mail.commands
     SET
-      state = 'queued',
+      state = ${state},
+      attempt = attempt - 1,
       worker_heartbeat_at = NULL,
       last_error_code = ${code},
       last_error_message = ${message.slice(0, 1_000)},
@@ -1483,6 +1470,8 @@ const reconcileFolderOperation = async (
   if (safelyRetryable) {
     await requeueCommand(
       command,
+      // The provider proved the idempotent operation did not apply, so a fresh execution is safe.
+      "queued",
       "FOLDER_OPERATION_NOT_APPLIED",
       "Provider state shows that the idempotent folder operation can be retried",
     );
@@ -1514,7 +1503,12 @@ const runFolderOperation = async (
     ttlMs: MAIL_PROVIDER_OPERATION_LEASE_MS,
   });
   if (!lock) {
-    await requeueCommand(command, "REMOTE_RESOURCE_BUSY", "Remote mailbox is currently being synchronized or administered");
+    await requeueCommand(
+      command,
+      claimedState(claimed),
+      "REMOTE_RESOURCE_BUSY",
+      "Remote mailbox is currently being synchronized or administered",
+    );
     return;
   }
   try {
@@ -1563,7 +1557,12 @@ const runMessageMutation = async (
   assertJobLeaseActive: LeaseAssertion,
 ): Promise<void> => {
   if (await hasEarlierActiveMessageMutation(claimed.command.id)) {
-    await requeueCommand(claimed.command, "MESSAGE_MUTATION_PREDECESSOR_ACTIVE", "An earlier change to this message is still pending");
+    await requeueCommand(
+      claimed.command,
+      claimedState(claimed),
+      "MESSAGE_MUTATION_PREDECESSOR_ACTIVE",
+      "An earlier change to this message is still pending",
+    );
     return;
   }
   const binding = await loadPinnedBinding(claimed.command);
@@ -1572,7 +1571,12 @@ const runMessageMutation = async (
     ttlMs: MAIL_PROVIDER_OPERATION_LEASE_MS,
   });
   if (!lock) {
-    await requeueCommand(claimed.command, "REMOTE_RESOURCE_BUSY", "Remote mailbox is currently being synchronized or changed");
+    await requeueCommand(
+      claimed.command,
+      claimedState(claimed),
+      "REMOTE_RESOURCE_BUSY",
+      "Remote mailbox is currently being synchronized or changed",
+    );
     return;
   }
   try {
@@ -2382,6 +2386,26 @@ const sentMatches = async (params: {
 }): Promise<number[]> =>
   params.sentPath ? imapSmtpConnector.findMessageById(params.runtime, params.sentPath, params.messageId, params.signal) : [];
 
+// The Sent copy keeps Bcc so any client shows whom the user blind-copied; the
+// copy handed to SMTP never carries it. Without Bcc both copies are identical.
+const sentCopySource = async (
+  outbox: DbOutboxExecution,
+  mime: { blobId: string; byteLength: number },
+): Promise<{ blobId: string; byteLength: number }> => {
+  const snapshot = outboundDraftSnapshotSchema.parse(parseJsonRecord(outbox.draft_snapshot));
+  if (snapshot.bcc.length === 0) return mime;
+  const blob = await storeReadableBlob(
+    buildMimeStream({
+      snapshot,
+      messageId: outbox.stable_message_id,
+      date: new Date(outbox.mime_date),
+      openAttachment: createBlobReadable,
+      keepBcc: true,
+    }),
+  );
+  return { blobId: blob.id, byteLength: blob.byteLength };
+};
+
 const appendSentCopy = async (params: {
   outbox: DbOutboxExecution;
   sender: DbSenderBinding;
@@ -2400,13 +2424,14 @@ const appendSentCopy = async (params: {
     signal: params.signal,
   });
   if (existing.length > 0) return true;
+  const source = await sentCopySource(params.outbox, { blobId: params.mimeBlobId, byteLength: params.mimeByteLength });
   await params.assertLeaseActive();
   try {
     await imapSmtpConnector.appendSource(
       params.runtime,
       params.sender.sent_path,
-      createBlobReadable(params.mimeBlobId),
-      params.mimeByteLength,
+      createBlobReadable(source.blobId),
+      source.byteLength,
       ["\\Seen"],
       new Date(params.outbox.created_at),
       params.signal,

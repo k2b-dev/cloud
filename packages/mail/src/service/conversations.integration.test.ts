@@ -506,6 +506,74 @@ suite("mail manual conversation threading", () => {
         (${mailboxId}::uuid, ${targetConversationId}::uuid, ${sharedTagId}::uuid, 'user', ${owner.id}::uuid)
     `;
 
+    // A delivery receipt and its audit event must survive the merge instead of being cascaded away.
+    const [connection] = await sql<{ id: string }[]>`
+      INSERT INTO mail.provider_connections (
+        owner_mailbox_id, name, email, username,
+        imap_host, imap_port, imap_tls_mode, smtp_host, smtp_port, smtp_tls_mode,
+        secret_kind, encrypted_secret
+      ) VALUES (
+        ${mailboxId}::uuid, 'Receipt fixture', 'receipt@example.com', 'receipt@example.com',
+        'imap.example.com', 993, 'implicit', 'smtp.example.com', 587, 'starttls',
+        'password', 'fixture'
+      ) RETURNING id
+    `;
+    const [receiptBinding] = await sql<{ id: string }[]>`
+      INSERT INTO mail.provider_bindings (remote_resource_id, connection_id, state, remote_locator)
+      VALUES (${remoteResourceId}::uuid, ${connection!.id}::uuid, 'active', '{}'::jsonb)
+      RETURNING id
+    `;
+    const [receiptCommand] = await sql<{ id: string }[]>`
+      INSERT INTO mail.commands (
+        mailbox_id, kind, actor_kind, actor_id, idempotency_key, request_hash, target, payload,
+        access_subject_kind, access_subject_id, credential_scopes
+      ) VALUES (
+        ${mailboxId}::uuid, 'send', 'user', ${writer.id}::uuid, ${`receipt-${suffix}`}, ${"b".repeat(64)},
+        '{}'::jsonb, '{}'::jsonb, 'user', ${writer.id}::uuid, ARRAY[]::text[]
+      ) RETURNING id
+    `;
+    const [receiptDraft] = await sql<{ id: string }[]>`
+      SELECT id FROM mail.drafts WHERE conversation_id = ${sourceConversationId}::uuid LIMIT 1
+    `;
+    const [receiptIdentity] = await sql<{ id: string }[]>`
+      SELECT id FROM mail.sender_identities WHERE mailbox_id = ${mailboxId}::uuid LIMIT 1
+    `;
+    const [receiptSubmission] = await sql<{ id: string }[]>`
+      INSERT INTO mail.outbox_submissions (
+        short_id, mailbox_id, draft_id, command_id, sender_identity_id, selected_binding_id,
+        stable_message_id, state, mime_date
+      ) VALUES (
+        ${newShortId()}, ${mailboxId}::uuid, ${receiptDraft!.id}::uuid, ${receiptCommand!.id}::uuid,
+        ${receiptIdentity!.id}::uuid, ${receiptBinding!.id}::uuid, ${`<receipt-${suffix}@example.com>`}, 'sent', now()
+      ) RETURNING id
+    `;
+    const [receiptMessage] = await sql<{ id: string }[]>`
+      INSERT INTO mail.message_contents (
+        short_id, mailbox_id, message_id, subject, internal_date, size_bytes, content_hash, hydration_status
+      ) VALUES (
+        ${newShortId()}, ${mailboxId}::uuid, ${`<receipt-report-${suffix}@example.com>`}, 'Delivery report',
+        now(), 1, ${`receipt${suffix}`.padEnd(64, "c").slice(0, 64)}, 'complete'
+      ) RETURNING id
+    `;
+    const [receiptActivity] = await sql<{ id: string | number }[]>`
+      INSERT INTO mail.activity_events (
+        mailbox_id, conversation_id, actor_kind, action, outcome, target_type, target_id
+      ) VALUES (
+        ${mailboxId}::uuid, ${sourceConversationId}::uuid, 'system', 'message.receipt', 'confirmed',
+        'message', ${receiptMessage!.id}::uuid
+      ) RETURNING id
+    `;
+    await sql`
+      INSERT INTO mail.message_receipt_reports (
+        report_message_id, mailbox_id, conversation_id, outbox_submission_id, activity_id,
+        kind, status, original_message_id
+      ) VALUES (
+        ${receiptMessage!.id}::uuid, ${mailboxId}::uuid, ${sourceConversationId}::uuid,
+        ${receiptSubmission!.id}::uuid, ${receiptActivity!.id}, 'delivery', 'delivered',
+        ${`<receipt-${suffix}@example.com>`}
+      )
+    `;
+
     const merged = await mergeConversations({
       context: writerContext,
       mailboxId,
@@ -530,7 +598,19 @@ suite("mail manual conversation threading", () => {
       FROM mail.activity_events
       WHERE target_type = 'comment' AND target_id = ${sourceCommentId}::uuid
     `;
-    expect(sourceCommentActivityAfterMerge?.conversation_id).toBe(sourceConversationId);
+    expect(sourceCommentActivityAfterMerge?.conversation_id).toBe(targetConversationId);
+    const [receiptAfterMerge] = await sql<{ conversation_id: string }[]>`
+      SELECT conversation_id::text
+      FROM mail.message_receipt_reports
+      WHERE report_message_id = ${receiptMessage!.id}::uuid
+    `;
+    expect(receiptAfterMerge?.conversation_id).toBe(targetConversationId);
+    const [receiptActivityAfterMerge] = await sql<{ conversation_id: string }[]>`
+      SELECT conversation_id::text
+      FROM mail.activity_events
+      WHERE id = ${receiptActivity!.id}
+    `;
+    expect(receiptActivityAfterMerge?.conversation_id).toBe(targetConversationId);
     const [mergeProjection] = await sql<
       {
         source_exists: boolean;
@@ -715,7 +795,8 @@ suite("mail manual conversation threading", () => {
       FROM mail.activity_events
       WHERE target_type = 'comment' AND target_id = ${sourceCommentId}::uuid
     `;
-    expect(sourceCommentActivityAfterSplit?.conversation_id).toBe(sourceConversationId);
+    // The merge already repointed this audit event to the surviving conversation; a split never moves it.
+    expect(sourceCommentActivityAfterSplit?.conversation_id).toBe(targetConversationId);
     const [splitActivity] = await sql<{ metadata: { createdConversationId?: string } }[]>`
       SELECT metadata
       FROM mail.activity_events

@@ -76,6 +76,10 @@ export const reconcileMailStorageUsage = async (): Promise<{ mailboxes: number }
     `;
 
     for (const row of rows) {
+      // message_bytes is the RFC822 size of the whole message (IMAP RFC822.SIZE, or the built MIME blob for
+      // Cloud-sent mail), so it already contains received_attachment_bytes. external_link_bytes points at blobs
+      // that belong to a counted message or draft. Adding either to the total would double count them, so the
+      // total is messages plus drafts and the other two columns are breakdowns inside it.
       const messageBytes = Number(row.message_bytes);
       const receivedAttachmentBytes = Number(row.received_attachment_bytes);
       const draftAttachmentBytes = Number(row.draft_attachment_bytes);

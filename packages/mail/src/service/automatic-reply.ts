@@ -14,7 +14,19 @@ import { evaluateResponseSchedule, nextResponseScheduleInstant } from "./respons
 
 type SqlClient = typeof sql;
 
-type AutomaticReplyBusinessSuppressionReason = "outside_response_schedule" | "recipient_rate_limited" | "response_schedule_unavailable";
+type AutomaticReplyBusinessSuppressionReason =
+  | "outside_response_schedule"
+  | "recipient_rate_limited"
+  | "mailbox_rate_limited"
+  | "response_schedule_unavailable";
+
+/**
+ * Mailbox-wide ceiling on automatic replies queued per hour. It matches the
+ * bulk application limit Mail already advertises for one automation pass
+ * (`EXISTING_MESSAGE_APPLICATION_LIMIT`), so a mailbox can never emit more
+ * automatic replies per hour than one backfill may apply at a time.
+ */
+const MAILBOX_AUTOMATIC_REPLIES_PER_HOUR = 100;
 type AutomaticReplySuppressionReason = AutoReplySuppressionReason | AutomaticReplyBusinessSuppressionReason;
 
 type PreparedAutomaticReply =
@@ -94,7 +106,7 @@ export const prepareAutomaticReplyInTransaction = async (params: {
   try {
     const occurredAt = new Date(params.occurredAt);
     if (!Number.isFinite(occurredAt.getTime())) return fail(err.badInput("Automatic reply occurrence time is invalid"));
-    if (!Number.isSafeInteger(params.minimumIntervalHours) || params.minimumIntervalHours < 0 || params.minimumIntervalHours > 8_760) {
+    if (!Number.isSafeInteger(params.minimumIntervalHours) || params.minimumIntervalHours < 1 || params.minimumIntervalHours > 8_760) {
       return fail(err.badInput("Automatic reply minimum interval is invalid"));
     }
     const recipient = parseReturnPathAddress(params.protocolFacts.returnPath);
@@ -137,7 +149,7 @@ export const prepareAutomaticReplyInTransaction = async (params: {
       return existingResult(existing, params.db);
     }
 
-    const [identityRows, duplicateRows, rateRows] = await Promise.all([
+    const [identityRows, duplicateRows, rateRows, mailboxRateRows] = await Promise.all([
       params.db<{ from_address: string }[]>`
         SELECT from_address
         FROM mail.sender_identities
@@ -148,10 +160,10 @@ export const prepareAutomaticReplyInTransaction = async (params: {
           SELECT 1 FROM mail.automatic_reply_effects
           WHERE mailbox_id = ${params.mailboxId}::uuid
             AND message_id = ${params.messageId}::uuid
-            AND state IN ('queued', 'confirmed', 'needs_attention')
+            AND state <> 'suppressed'
         ) AS exists
       `,
-      params.minimumIntervalHours === 0 || recipient === null
+      recipient === null
         ? Promise.resolve([{ exists: false }])
         : params.db<{ exists: boolean }[]>`
             SELECT EXISTS (
@@ -167,6 +179,16 @@ export const prepareAutomaticReplyInTransaction = async (params: {
                 )
             ) AS exists
           `,
+      params.db<{ exists: boolean }[]>`
+        SELECT COUNT(*) >= ${MAILBOX_AUTOMATIC_REPLIES_PER_HOUR} AS exists
+        FROM (
+          SELECT 1 FROM mail.automatic_reply_effects
+          WHERE mailbox_id = ${params.mailboxId}::uuid
+            AND state IN ('queued', 'confirmed', 'needs_attention')
+            AND created_at >= now() - interval '1 hour'
+          LIMIT ${MAILBOX_AUTOMATIC_REPLIES_PER_HOUR}
+        ) recent
+      `,
     ]);
     const policy = evaluateAutoReplyPolicy({
       senderAddresses: recipient ? [recipient] : [],
@@ -177,6 +199,7 @@ export const prepareAutomaticReplyInTransaction = async (params: {
     });
     const suppressionReasons: AutomaticReplySuppressionReason[] = policy.allowed ? [] : [...policy.reasons];
     if (rateRows[0]?.exists) suppressionReasons.push("recipient_rate_limited");
+    if (mailboxRateRows[0]?.exists) suppressionReasons.push("mailbox_rate_limited");
 
     let scheduledAt = new Date();
     const schedule = responseScheduleDefinitionSchema.safeParse(params.schedule);

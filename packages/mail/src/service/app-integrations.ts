@@ -110,6 +110,7 @@ export const searchSpaceItems = (query: string, request: AppIntegrationRequest) 
 export const linkSpaceItemResource = (
   input: { itemId: string; reference: { ref: { type: string; id: string }; label: string } },
   request: AppIntegrationRequest,
+  idempotencyKey?: string,
 ) =>
   fetchAppCapability({
     appId: "spaces",
@@ -118,6 +119,7 @@ export const linkSpaceItemResource = (
     request,
     dataSchema: spacesItemResourceReferenceSchema,
     input,
+    ...(idempotencyKey ? { idempotencyKey } : {}),
   }).then((result) => (result.ok ? { ok: true as const, data: result.data.data } : result));
 
 export const createSpaceEventOnce = (input: Record<string, unknown>, idempotencyKey: string, request: AppIntegrationRequest) =>

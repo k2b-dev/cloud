@@ -482,6 +482,16 @@ const bindAction = (
     bindCatalogValue(config.sender, context.catalog.senderIdentities, "sender identity", [...path, "sender"], scope, context);
     bindMessage(config.body, [...path, "body"], scope, context);
   } else if (step.action === "scheduleDraftSend") {
+    // Sending in response to inbound mail is only allowed through automaticReply,
+    // which owns the auto-reply headers, policy and rate limits.
+    if (context.ir.triggers.some((trigger) => trigger.kind === "messageReceived")) {
+      addDiagnostic(
+        context,
+        "scheduleDraftSend.trigger",
+        "scheduleDraftSend cannot run from a messageReceived trigger; use automaticReply to reply to incoming mail",
+        path,
+      );
+    }
     expectReference(config.draft, "mail.draft", "draft", [...path, "draft"], scope, context);
     if (config.scheduledAt !== undefined) bindValue(config.scheduledAt, [...path, "scheduledAt"], scope, context);
   } else if (step.action === "notifyUser") {

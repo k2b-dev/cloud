@@ -2,11 +2,11 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { getProcessSync } from "@k2b/cloud";
 import { mandates, toPgUuidArray } from "@k2b/cloud/services";
 import { parsePgJsonRecord } from "@k2b/cloud/services/postgres";
-import { deleteWorkflowScope } from "@k2b/cloud/workflows/store";
+import { createWorkflowRun, deleteWorkflowScope } from "@k2b/cloud/workflows/store";
 import { sql } from "bun";
 import { newShortId } from "../lib/short-id";
 import { migrate } from "../migrate";
-import { grantMailboxAccess } from "./access";
+import { grantMailboxAccess, listMailboxAccess, revokeMailboxAccess } from "./access";
 import type { MailRequestContext } from "./auth";
 import {
   createIncomingAutomation,
@@ -19,6 +19,7 @@ import {
   stopIncomingAutomationBackfillRuntime,
   updateIncomingAutomation,
 } from "./incoming-automations";
+import { resolveIncomingAutomationMandateCaller } from "./incoming-automation-workload";
 import { createMailbox } from "./mailboxes";
 
 const enabled = process.env.MAIL_INTEGRATION_TESTS === "1";
@@ -554,6 +555,67 @@ suite("incoming automations", () => {
       { action: "mandate.pause", actor_user_id: null, owner_app_id: "mail" },
       { action: "mandate.revoke", actor_user_id: null, owner_app_id: "mail" },
     ]);
+  });
+
+  test("stops mandate-bearing steps when the authorizing user loses mailbox access", async () => {
+    const uid = `incoming-automation-mandate-loss-${suffix}`;
+    const [row] = await sql<{ id: string }[]>`
+      INSERT INTO auth.users (uid, provider, profile, display_name, admin)
+      VALUES (${uid}, 'local', 'user', 'mandate loss incoming automation test', false)
+      RETURNING id
+    `;
+    if (!row) throw new Error("Failed to create mandate loss user");
+    userIds.push(row.id);
+    const authorContext = contextFor({ id: row.id, uid, displayName: "mandate loss incoming automation test" });
+    const granted = await grantMailboxAccess({
+      context: ownerContext,
+      mailboxId,
+      principal: { type: "user", userId: row.id },
+      permission: "admin",
+    });
+    if (!granted.ok) throw new Error(granted.error.message);
+
+    const created = await createIncomingAutomation({
+      context: authorContext,
+      mailboxId,
+      input: {
+        name: `Mandate loss ${suffix}`,
+        enabled: true,
+        scope: { mode: "all" },
+        steps: [{ id: crypto.randomUUID(), kind: "link_space_item", itemId: "Item01" }],
+      },
+    });
+    if (!created.ok) throw new Error(created.error.message);
+    const runId = await createWorkflowRun({
+      appId: "mail",
+      scopeId: mailboxId,
+      workflowId: created.data.workflowId,
+      workflowVersionId: created.data.workflowVersionId,
+      mode: "execute",
+      authorization: {},
+      idempotencyKey: `mandate-loss-${suffix}`,
+      occurredAt: new Date(),
+    });
+    const previousCredential = process.env.CLOUD_APP_CREDENTIAL;
+    process.env.CLOUD_APP_CREDENTIAL = "mandate-loss-test-credential";
+    try {
+      const caller = await resolveIncomingAutomationMandateCaller(runId);
+      expect(caller.mandate.callingAppId).toBe("mail");
+      const mandateId = caller.mandate.id;
+
+      const access = await listMailboxAccess(ownerContext, mailboxId);
+      if (!access.ok) throw new Error(access.error.message);
+      const entry = access.data.find((item) => item.principal.type === "user" && item.principal.userId === row.id);
+      if (!entry) throw new Error("Expected mailbox access entry");
+      const revoked = await revokeMailboxAccess({ context: ownerContext, mailboxId, accessId: entry.id });
+      if (!revoked.ok) throw new Error(revoked.error.message);
+
+      await expect(resolveIncomingAutomationMandateCaller(runId)).rejects.toMatchObject({ code: "FORBIDDEN" });
+      expect((await mandates.get(mandateId))?.state).toBe("paused");
+    } finally {
+      if (previousCredential === undefined) delete process.env.CLOUD_APP_CREDENTIAL;
+      else process.env.CLOUD_APP_CREDENTIAL = previousCredential;
+    }
   });
 
   test("lets a shared mailbox admin remove all Spaces effects and disable revoked authority", async () => {

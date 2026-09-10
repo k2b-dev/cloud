@@ -2937,8 +2937,8 @@ const authenticatedApi = new Hono<MailApiContext>()
 
 const api = new Hono<MailApiContext>()
   .use(rateLimit())
-  .route("/ws", wsRoutes)
   .use(auth.requireRole("authenticated"))
+  .route("/ws", wsRoutes)
   .route("/", authenticatedApi);
 
 export default api;

@@ -446,6 +446,16 @@ export const mergeConversations = async (params: {
           updated_at = now()
         WHERE conversation_id = ${params.input.sourceConversationId}::uuid
       `;
+      await tx`
+        UPDATE mail.message_receipt_reports
+        SET conversation_id = ${params.targetConversationId}::uuid
+        WHERE conversation_id = ${params.input.sourceConversationId}::uuid
+      `;
+      await tx`
+        UPDATE mail.activity_events
+        SET conversation_id = ${params.targetConversationId}::uuid
+        WHERE conversation_id = ${params.input.sourceConversationId}::uuid
+      `;
       await tx`DELETE FROM mail.conversations WHERE id = ${params.input.sourceConversationId}::uuid`;
 
       const actor = actorIdentity(params.context);
