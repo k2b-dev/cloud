@@ -7,6 +7,7 @@ import {
   capabilityResultSchema,
   type User,
 } from "@k2b/cloud/contracts";
+import { compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 import { audit } from "@k2b/cloud/services";
 import { contactsCapabilities, decodeContactCapabilityCursor } from "./capabilities";
 import {
@@ -403,7 +404,7 @@ describe("contacts capabilities", () => {
     spyOn(contactsService.contact, "findBookId").mockResolvedValue(bookId);
     spyOn(contactsService.book, "get").mockResolvedValue(book);
     spyOn(contactsService.contact, "get").mockResolvedValue(contact);
-    spyOn(audit, "recordResultAfterSideEffect").mockImplementation(async ({ result }) => result);
+    const recordAudit = spyOn(audit, "recordResultAfterSideEffect").mockImplementation(async ({ result }) => result);
 
     spyOn(contactsService.contact, "update").mockResolvedValue({
       ok: true,
@@ -418,6 +419,13 @@ describe("contacts capabilities", () => {
       context,
     );
     expect(update).toMatchObject({ ok: true, data: { summary: "Changed the email address of Ada Example." } });
+    expect(recordAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "contacts.capability.contact.update",
+        requestId: context.requestId,
+        metadata: { capability: "contacts.contact.update", origin: context.origin },
+      }),
+    );
     if (update.ok)
       expect(capabilityResultSchema(contactsCapabilities.actions["contact.update"].data).safeParse(update.data).success).toBeTrue();
 
@@ -629,5 +637,9 @@ describe("contacts capabilities", () => {
     const value = { items: [], matchedEmails: ["ada@example.com"] };
     expect(ContactResolveDataSchema.safeParse(value).success).toBeTrue();
     expect(ContactResolveDataSchema.safeParse({ ...value, bankAccounts: [] }).success).toBeFalse();
+  });
+
+  test("compiles the declared capability manifest", () => {
+    expect(() => compileCapabilityManifest("contacts", contactsCapabilities)).not.toThrow();
   });
 });

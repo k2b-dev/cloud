@@ -115,12 +115,6 @@ const stableUuid = (value: string): string => {
   const hex = createHash("sha256").update(value).digest("hex");
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-4${hex.slice(13, 16)}-8${hex.slice(17, 20)}-${hex.slice(20, 32)}`;
 };
-const sha256 = (value: string): string => createHash("sha256").update(value).digest("hex");
-const capabilityActorKey = (context: CapabilityExecutionContext): string =>
-  context.accessSubject.type === "user"
-    ? `user:${context.accessSubject.userId}:${context.accessSubject.delegatedByServiceAccountId ?? "direct"}`
-    : `service_account:${context.accessSubject.serviceAccountId}`;
-const EVENT_CREATE_ONCE_ACTION_ID = "spaces.event.create-once";
 
 const capabilityFail = (context: CapabilityExecutionContext, error: ServiceError, messageKey?: keyof SpacesMessages) => {
   if (!messageKey) return fail(localizeSpacesError(error, context.locale));
@@ -128,14 +122,6 @@ const capabilityFail = (context: CapabilityExecutionContext, error: ServiceError
   if (typeof message !== "string") throw new Error(`Spaces capability error message ${messageKey} must be static`);
   return fail({ ...error, message });
 };
-
-/**
- * Guard for irreversible Actions whose service guards repeat calls with an
- * ownership or time-window check instead of a durable key claim. The key proves
- * the caller retried the same call deliberately.
- */
-const requireIdempotentRetry = (context: CapabilityExecutionContext) =>
-  context.idempotencyKey ? null : capabilityFail(context, err.badInput("An idempotency key is required"), "genericIdempotencyKeyRequired");
 
 const truncateText = (value: string, maxBytes: number): { text: string; truncated: boolean } => {
   if (Buffer.byteLength(value, "utf8") <= maxBytes) return { text: value, truncated: false };
@@ -1236,8 +1222,6 @@ const runChecklistUpdate = async (input: z.infer<typeof TaskChecklistUpdateInput
 
 const runChecklistDelete = async (input: z.infer<typeof TaskChecklistDeleteInputSchema>, context: CapabilityExecutionContext) =>
   audited(actionAudit(context, "task.checklist.delete", "space_item", input.itemId), async () => {
-    const retry = requireIdempotentRetry(context);
-    if (retry) return retry;
     const task = await requireChecklistTask(input.itemId, context, "write");
     if (!task.ok) return task;
     const id = await spacesPublicResources.resolvePublicId("checklist", input.entryId);
@@ -1439,45 +1423,6 @@ const runEventCreate = async (input: z.infer<typeof EventCreateInputSchema>, con
     );
   });
 
-const runEventCreateOnce = async (input: z.infer<typeof EventCreateInputSchema>, context: CapabilityExecutionContext) => {
-  let replayed = false;
-  return audited(
-    actionAudit(context, "event.create-once", "space", input.spaceId),
-    async () => {
-      if (!context.idempotencyKey) return capabilityFail(context, err.badInput("Idempotency-Key is required"), "idempotencyKeyRequired");
-      const access = await requireSpace(input.spaceId, context, "write");
-      if (!access.ok) return access;
-      const { spaceId, ...data } = input;
-      const [columnIds, tagIds] = await Promise.all([
-        spacesPublicResources.resolveSpacePublicIds("columns", access.data.internalId, [data.columnId]),
-        spacesPublicResources.resolveSpacePublicIds("tags", access.data.internalId, data.tagIds ?? []),
-      ]);
-      const columnId = columnIds?.[0];
-      if (!columnId || !tagIds) return capabilityFail(context, err.badInput("Unknown Space column or tag"), "unknownSpaceColumnOrTag");
-      return itemMutationResult(
-        await spacesService.item.create({
-          spaceId: access.data.internalId,
-          data: { ...data, columnId, tagIds },
-          createdBy: context.user?.id ?? null,
-          actor: spaceActivityActor(context),
-          idempotency: {
-            actorKey: capabilityActorKey(context),
-            actionId: EVENT_CREATE_ONCE_ACTION_ID,
-            idempotencyKeyHash: sha256(context.idempotencyKey),
-            requestHash: sha256(JSON.stringify(input)),
-            onReplay: () => {
-              replayed = true;
-            },
-          },
-        }),
-        (item) => spacesMessages(context.locale).createdInSpace({ title: item.title, space: access.data.space.name }),
-        context,
-      );
-    },
-    () => replayed,
-  );
-};
-
 const runEventUpdate = async (input: z.infer<typeof EventUpdateInputSchema>, context: CapabilityExecutionContext) =>
   audited(actionAudit(context, "event.update", "space_item", input.itemId), async () => {
     const resolved = await requireItem(input.itemId, context, "write");
@@ -1499,8 +1444,6 @@ const runEventUpdate = async (input: z.infer<typeof EventUpdateInputSchema>, con
 
 const runItemDelete = async (input: z.infer<typeof ItemDeleteInputSchema>, context: CapabilityExecutionContext) =>
   audited(actionAudit(context, "item.delete", "space_item", input.itemId), async () => {
-    const retry = requireIdempotentRetry(context);
-    if (retry) return retry;
     const resolved = await requireItem(input.itemId, context, "write");
     if (!resolved.ok) return resolved;
     const result = await spacesService.item.remove({ id: resolved.data.internalId, actor: spaceActivityActor(context) });
@@ -1537,8 +1480,6 @@ const runCommentCreate = async (input: z.infer<typeof CommentCreateInputSchema>,
 
 const runCommentUpdate = async (input: z.infer<typeof CommentUpdateInputSchema>, context: CapabilityExecutionContext) =>
   audited(actionAudit(context, "comment.update", "space_comment", input.commentId), async () => {
-    const retry = requireIdempotentRetry(context);
-    if (retry) return retry;
     if (!context.user) return capabilityFail(context, err.forbidden("Comments require a user-backed actor"), "commentsNeedUser");
     const resolved = await resolveComment(input.commentId, context, "write");
     if (!resolved.ok) return resolved;
@@ -1552,8 +1493,6 @@ const runCommentUpdate = async (input: z.infer<typeof CommentUpdateInputSchema>,
 
 const runCommentDelete = async (input: z.infer<typeof CommentDeleteInputSchema>, context: CapabilityExecutionContext) =>
   audited(actionAudit(context, "comment.delete", "space_comment", input.commentId), async () => {
-    const retry = requireIdempotentRetry(context);
-    if (retry) return retry;
     if (!context.user) return capabilityFail(context, err.forbidden("Comments require a user-backed actor"), "commentsNeedUser");
     const resolved = await resolveComment(input.commentId, context, "write");
     if (!resolved.ok) return resolved;
@@ -2260,7 +2199,7 @@ export const spacesCapabilities = defineCapabilities({
       data: TaskDataSchema,
       destructive: false,
       openWorld: false,
-      idempotency: "none",
+      idempotency: "required",
       run: runTaskCreate,
     },
     "task.update": {
@@ -2353,18 +2292,8 @@ export const spacesCapabilities = defineCapabilities({
       data: EventDataSchema,
       destructive: false,
       openWorld: false,
-      idempotency: "none",
-      run: runEventCreate,
-    },
-    "event.create-once": {
-      title: "Create calendar event once",
-      description: "Create one calendar event with retry-safe idempotency for durable workflows.",
-      input: EventCreateInputSchema,
-      data: EventDataSchema,
-      destructive: false,
-      openWorld: false,
       idempotency: "required",
-      run: runEventCreateOnce,
+      run: runEventCreate,
     },
     "event.update": {
       title: "Update event",
@@ -2511,7 +2440,7 @@ export const spacesCapabilities = defineCapabilities({
       data: CommentDataSchema,
       destructive: false,
       openWorld: false,
-      idempotency: "none",
+      idempotency: "required",
       approval: "rememberable",
       review: async (input, context) => {
         const t = spacesMessages(context.locale);

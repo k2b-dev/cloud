@@ -11,10 +11,17 @@ const catalog = i18n.define({
       catalogLimit: ({ max }: { max: number }) => `Capability catalog limit must be between 1 and ${max}`,
       cloudUnavailable: "Cloud is unavailable",
       deadlineExceeded: "The capability deadline was exceeded",
+      idempotencyConflict: "This Idempotency-Key was already used with different input",
+      idempotencyInProgress:
+        "An identical call with this Idempotency-Key is still running; verify the outcome with a Query before retrying",
       idempotencyInvalid: "Idempotency-Key is invalid",
       idempotencyNotAllowed: "This Action does not support idempotent retries; omit Idempotency-Key",
       idempotencyOnlyActions: "Idempotency-Key is only valid for Actions that require it",
       idempotencyRequired: "This Action requires an Idempotency-Key",
+      idempotencyResultNotRetained:
+        "This Action already succeeded, but its result was too large to retain; read the current state with a Query",
+      idempotencyUncertain:
+        "An earlier call with this Idempotency-Key ended with an unknown outcome; verify the current state with a Query",
       inputNotSerializable: "Capability input must be JSON-serializable",
       inputSchemaMismatch: "Capability input did not match the registered schema",
       invalidCapabilityError: ({ appId }: { appId: string }) => `App ${appId} returned an invalid capability error`,
@@ -39,10 +46,17 @@ const catalog = i18n.define({
       catalogLimit: ({ max }) => `Das Limit des Capability-Katalogs muss zwischen 1 und ${max} liegen`,
       cloudUnavailable: "Cloud ist nicht verfügbar",
       deadlineExceeded: "Das Zeitlimit der Capability wurde überschritten",
+      idempotencyConflict: "Dieser Idempotency-Key wurde bereits mit anderen Eingaben verwendet",
+      idempotencyInProgress:
+        "Ein identischer Aufruf mit diesem Idempotency-Key läuft noch; prüfe das Ergebnis mit einer Query, bevor du erneut aufrufst",
       idempotencyInvalid: "Der Idempotency-Key ist ungültig",
       idempotencyNotAllowed: "Diese Action unterstützt keine idempotenten Wiederholungen; Idempotency-Key weglassen",
       idempotencyOnlyActions: "Ein Idempotency-Key ist nur für Actions gültig, die ihn voraussetzen",
       idempotencyRequired: "Diese Action benötigt einen Idempotency-Key",
+      idempotencyResultNotRetained:
+        "Diese Action war bereits erfolgreich, ihr Ergebnis war jedoch zu groß zum Aufbewahren; lies den aktuellen Stand mit einer Query",
+      idempotencyUncertain:
+        "Ein früherer Aufruf mit diesem Idempotency-Key endete mit unbekanntem Ergebnis; prüfe den aktuellen Stand mit einer Query",
       inputNotSerializable: "Die Capability-Eingabe muss als JSON serialisierbar sein",
       inputSchemaMismatch: "Die Capability-Eingabe entspricht nicht dem registrierten Schema",
       invalidCapabilityError: ({ appId }) => `App ${appId} hat einen ungültigen Capability-Fehler zurückgegeben`,

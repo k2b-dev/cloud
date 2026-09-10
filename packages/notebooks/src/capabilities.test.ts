@@ -577,7 +577,7 @@ describe("notebooks capabilities", () => {
     expect(notebooksCapabilities.actions["comment.create"]).toMatchObject({
       destructive: false,
       openWorld: false,
-      idempotency: "none",
+      idempotency: "required",
     });
     expect(notebooksCapabilities.actions["note.edit"]).toMatchObject({
       destructive: false,
@@ -856,6 +856,13 @@ describe("notebooks capabilities", () => {
         },
       ]);
     }
+    expect(record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "notebooks.capability.note.edit",
+        requestId: userContext.requestId,
+        metadata: { capability: "notebooks.note.edit", origin: userContext.origin },
+      }),
+    );
     expect(editContent).toHaveBeenCalledWith({
       noteId,
       data: {

@@ -31,6 +31,7 @@ const execution: CapabilityExecution = {
   inputMeta: { type: "object", keys: ["contactId", "<script>"], omittedKeys: 4 },
   outputMeta: { type: "array", length: 3 },
   idempotencyKey: "idem-full-key",
+  replayed: false,
   startedAt: "2026-09-08T12:00:00.000Z",
   completedAt: "2026-09-08T12:00:07.000Z",
   durationMs: 7000,

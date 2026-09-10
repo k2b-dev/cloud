@@ -408,14 +408,6 @@ const requireIdempotencyKey = (context: CapabilityExecutionContext, actionId: st
   return ok(createHash("sha256").update(`mail:${actionId}:${subject}:${context.idempotencyKey}`).digest("hex"));
 };
 
-/**
- * Guard for irreversible Actions whose service guards repeat calls with a
- * revision or state check instead of a durable key claim. The key proves the
- * caller retried the same call deliberately.
- */
-const requireIdempotentRetry = (context: CapabilityExecutionContext): Result<null> =>
-  context.idempotencyKey ? ok(null) : fail(err.badInput("An idempotency key is required"));
-
 const mapMailbox = (mailbox: Mailbox & { permission: "read" | "write" | "admin" }, id: string) => {
   const description = boundedText(mailbox.description, 2000);
   const healthReason = boundedText(mailbox.healthReason, 1000);
@@ -2455,8 +2447,6 @@ const actionDefinitions = {
     },
     run: async (input: z.output<typeof c.DraftDiscardInputSchema>, context: CapabilityExecutionContext) => {
       const t = mailCapabilityMessages(context.locale);
-      const retry = requireIdempotentRetry(context);
-      if (!retry.ok) return retry;
       const draft = await requireDraftForReview(input.mailboxId, input.draftId, context);
       if (!draft.ok) return draft;
       const scope = await resolveDraftScope(input.mailboxId, input.draftId);
@@ -2480,7 +2470,7 @@ const actionDefinitions = {
     data: c.DraftMutationDataSchema,
     destructive: false,
     openWorld: false,
-    idempotency: "none",
+    idempotency: "required",
     approval: "rememberable",
     review: async (input: z.output<typeof c.DraftAttachmentAddInputSchema>, context: CapabilityExecutionContext) => {
       const t = mailCapabilityMessages(context.locale);
@@ -2568,8 +2558,6 @@ const actionDefinitions = {
     },
     run: async (input: z.output<typeof c.DraftAttachmentRemoveInputSchema>, context: CapabilityExecutionContext) => {
       const t = mailCapabilityMessages(context.locale);
-      const retry = requireIdempotentRetry(context);
-      if (!retry.ok) return retry;
       const scope = await resolveDraftScope(input.mailboxId, input.draftId);
       if (!scope.ok) return scope;
       const [draft, attachmentId] = await Promise.all([
@@ -2725,8 +2713,6 @@ const actionDefinitions = {
     },
     run: async (input: z.output<typeof c.DeliveryCancelInputSchema>, context: CapabilityExecutionContext) => {
       const t = mailCapabilityMessages(context.locale);
-      const retry = requireIdempotentRetry(context);
-      if (!retry.ok) return retry;
       const scope = await resolveMailboxScope(input.mailboxId);
       if (!scope.ok) return scope;
       const deliveryId = await resolveMailboxResource("deliveries", scope.data.id, input.deliveryId);
@@ -3277,7 +3263,7 @@ const actionDefinitions = {
     data: c.CommentMutationDataSchema,
     destructive: false,
     openWorld: false,
-    idempotency: "none",
+    idempotency: "required",
     approval: "rememberable",
     review: async (input: z.output<typeof c.CommentCreateInputSchema>, context: CapabilityExecutionContext) => {
       const t = mailCapabilityMessages(context.locale);
@@ -3429,8 +3415,6 @@ const actionDefinitions = {
     },
     run: async (input: z.output<typeof c.CommentDeleteInputSchema>, context: CapabilityExecutionContext) => {
       const t = mailCapabilityMessages(context.locale);
-      const retry = requireIdempotentRetry(context);
-      if (!retry.ok) return retry;
       const review = await requireCommentForReview(input, context);
       if (!review.ok) return review;
       const scope = await resolveConversationScope(input.mailboxId, input.conversationId);
@@ -3471,7 +3455,7 @@ const actionDefinitions = {
     data: c.TagMutationDataSchema,
     destructive: false,
     openWorld: false,
-    idempotency: "none",
+    idempotency: "required",
     approval: "rememberable",
     review: async (input: z.output<typeof c.TagCreateInputSchema>, context: CapabilityExecutionContext) => {
       const t = mailCapabilityMessages(context.locale);
@@ -3590,8 +3574,6 @@ const actionDefinitions = {
     },
     run: async (input: z.output<typeof c.TagDeleteInputSchema>, context: CapabilityExecutionContext) => {
       const t = mailCapabilityMessages(context.locale);
-      const retry = requireIdempotentRetry(context);
-      if (!retry.ok) return retry;
       const scope = await resolveMailboxScope(input.mailboxId);
       if (!scope.ok) return scope;
       const tagId = await resolveMailboxResource("tags", scope.data.id, input.tagId);
@@ -3643,8 +3625,6 @@ const actionDefinitions = {
     },
     run: async (input: z.output<typeof c.SubscriptionUnsubscribeInputSchema>, context: CapabilityExecutionContext) => {
       const t = mailCapabilityMessages(context.locale);
-      const retry = requireIdempotentRetry(context);
-      if (!retry.ok) return retry;
       const scope = await resolveMailboxScope(input.mailboxId);
       if (!scope.ok) return scope;
       const subscription = await listSubscriptions.getSubscription(requestContext(context), scope.data.id, input.listKey);

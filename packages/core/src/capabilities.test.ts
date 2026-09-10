@@ -194,7 +194,7 @@ describe("Core AI capabilities", () => {
       ),
     ).toEqual({
       "ai.chat.message": { destructive: false, idempotency: "required" },
-      "ai.skill.create": { destructive: false, idempotency: "none" },
+      "ai.skill.create": { destructive: false, idempotency: "required" },
       "ai.skill.delete": { destructive: true, idempotency: "required" },
       "ai.skill.enabled.set": { destructive: false, idempotency: "none" },
       "ai.skill.reference.remove": { destructive: false, idempotency: "none" },

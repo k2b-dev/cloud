@@ -1324,13 +1324,6 @@ export const create = async (params: {
   createdBy: string | null;
   dateConfig?: DateContext;
   actor?: SpaceActivityIdentity;
-  idempotency?: {
-    actorKey: string;
-    actionId: string;
-    idempotencyKeyHash: string;
-    requestHash: string;
-    onReplay?: () => void;
-  };
 }): Promise<MutationResult<SpaceItem>> => {
   const { spaceId, data, createdBy } = params;
 
@@ -1372,37 +1365,7 @@ export const create = async (params: {
   const recurrence = recurrenceValues(data.recurrence);
 
   const row = await withShortId("item", (shortId) =>
-    sql.begin(async (tx): Promise<{ id: string; replayed: boolean; conflict?: boolean } | null> => {
-      let allocatedId: string | null = null;
-      if (params.idempotency) {
-        const [allocated] = await tx<{ id: string }[]>`SELECT gen_random_uuid() AS id`;
-        if (!allocated) throw new Error("Failed to allocate Space item id");
-        const [claim] = await tx<{ item_id: string }[]>`
-          INSERT INTO spaces.capability_action_results (
-            actor_key, action_id, idempotency_key_hash, request_hash, item_id
-          ) VALUES (
-            ${params.idempotency.actorKey}, ${params.idempotency.actionId},
-            ${params.idempotency.idempotencyKeyHash}, ${params.idempotency.requestHash}, ${allocated.id}::uuid
-          )
-          ON CONFLICT (actor_key, action_id, idempotency_key_hash) DO NOTHING
-          RETURNING item_id
-        `;
-        if (!claim) {
-          const [existing] = await tx<{ request_hash: string; item_id: string }[]>`
-            SELECT request_hash, item_id
-            FROM spaces.capability_action_results
-            WHERE actor_key = ${params.idempotency.actorKey}
-              AND action_id = ${params.idempotency.actionId}
-              AND idempotency_key_hash = ${params.idempotency.idempotencyKeyHash}
-          `;
-          if (!existing) throw new Error("Space idempotency replay lookup failed");
-          if (existing.request_hash !== params.idempotency.requestHash) {
-            return { id: existing.item_id, replayed: true, conflict: true };
-          }
-          return { id: existing.item_id, replayed: true };
-        }
-        allocatedId = claim.item_id;
-      }
+    sql.begin(async (tx): Promise<{ id: string } | null> => {
       const [created] = await tx<{ id: string }[]>`
       INSERT INTO spaces.items (
         id, short_id, space_id, column_id, title, description, location, url, starts_at, ends_at, deadline,
@@ -1410,7 +1373,7 @@ export const create = async (params: {
         recurring_event_id, recurrence_id, rank, completed_at, created_by
       )
       VALUES (
-        COALESCE(${allocatedId}::uuid, gen_random_uuid()), ${shortId},
+        gen_random_uuid(), ${shortId},
         ${spaceId},
         ${data.columnId},
         ${data.title},
@@ -1463,7 +1426,7 @@ export const create = async (params: {
         tx,
       );
 
-      return { id: created.id, replayed: false };
+      return { id: created.id };
     }),
   );
 
@@ -1473,17 +1436,12 @@ export const create = async (params: {
     }
     return { ok: false, error: "Failed to create item", status: 500 };
   }
-  if (row.conflict) return { ok: false, error: "Idempotency-Key was already used with different input", status: 409 };
-
   const item = await get({ id: row.id });
   if (!item) {
     return { ok: false, error: "Failed to load created item", status: 500 };
   }
 
-  if (row.replayed) params.idempotency?.onReplay?.();
-  else {
-    await publishSpaceEvent({ type: "item.created", spaceId, itemId: item.id });
-  }
+  await publishSpaceEvent({ type: "item.created", spaceId, itemId: item.id });
   return { ok: true, data: item };
 };
 

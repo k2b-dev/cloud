@@ -2126,20 +2126,6 @@ const migrateFormsAndEvents = async (sql: SQL): Promise<void> => {
     )
   `.simple();
 
-  // Keep create receipts independently of the created Record: deleting a
-  // Record must not turn a capability retry into a second create.
-  await sql`
-    CREATE TABLE IF NOT EXISTS grids.record_create_claims (
-      scope_hash TEXT NOT NULL,
-      key_hash TEXT NOT NULL,
-      request_hash TEXT NOT NULL,
-      table_id UUID NOT NULL REFERENCES grids.tables(id) ON DELETE CASCADE,
-      record_id UUID NOT NULL,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-      PRIMARY KEY (scope_hash, key_hash)
-    )
-  `.simple();
-
   // ──────────────────────────────────────────────────────────────────
   // audit log
   // ──────────────────────────────────────────────────────────────────
@@ -2897,6 +2883,15 @@ const migrateOperationalHealth = async (sql: SQL): Promise<void> => {
   console.log("  ✓ grids.operational_health view");
 };
 
+/**
+ * Record create receipts are now a platform concern: the capability dispatcher
+ * claims every `idempotency: "required"` Action in
+ * `capabilities.idempotency_claims` before it forwards the call.
+ */
+const dropRecordCreateClaims = async (sql: SQL): Promise<void> => {
+  await sql`DROP TABLE IF EXISTS grids.record_create_claims`.simple();
+};
+
 const recordSchemaBaseline = async (sql: SQL): Promise<void> => {
   const [baseline] = await sql<Array<{ present: boolean }>>`
     SELECT EXISTS (SELECT 1 FROM grids.storage_contracts WHERE name = ${GRIDS_SCHEMA_BASELINE}) AS present
@@ -2967,6 +2962,7 @@ export const migrate = async (sql: SQL = defaultSql): Promise<void> => {
     await removeObsoleteAccess(connection);
     await migrateRecordScanCodes(connection);
     await migrateOperationalHealth(connection);
+    await dropRecordCreateClaims(connection);
     await recordSchemaBaseline(connection);
     await connection`COMMIT`.simple();
     transactionStarted = false;

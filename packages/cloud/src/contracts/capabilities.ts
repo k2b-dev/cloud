@@ -14,6 +14,8 @@ export const CAPABILITY_FRAMEWORK_ERROR_CODES = {
   idempotencyKeyRequired: "IDEMPOTENCY_KEY_REQUIRED",
   idempotencyKeyNotAllowed: "IDEMPOTENCY_KEY_NOT_ALLOWED",
   idempotencyConflict: "IDEMPOTENCY_CONFLICT",
+  idempotencyInProgress: "IDEMPOTENCY_IN_PROGRESS",
+  idempotencyUncertain: "IDEMPOTENCY_UNCERTAIN",
   deadlineExceeded: "DEADLINE_EXCEEDED",
   actionOutcomeUnknown: "ACTION_OUTCOME_UNKNOWN",
   requestCancelled: "REQUEST_CANCELLED",

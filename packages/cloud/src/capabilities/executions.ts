@@ -1,8 +1,23 @@
 import { sql } from "bun";
 import type { CapabilityOrigin } from "../contracts/capabilities";
 import { logger } from "../services/logging";
+import { CAPABILITY_CLAIM_RETENTION_HOURS, pruneCapabilityIdempotencyClaims } from "./claims";
 
+export {
+  CAPABILITY_CLAIM_MAX_BODY_BYTES,
+  type CapabilityClaimOutcome,
+  type CapabilityClaimScope,
+  type CapabilityClaimState,
+  capabilityIdempotencyKeyHash,
+  capabilityRequestHash,
+  claimCapabilityIdempotency,
+  completeCapabilityClaim,
+  markCapabilityClaimUncertain,
+  releaseCapabilityClaim,
+  resolveCapabilityClaim,
+} from "./claims";
 export { migrateCloudCapabilities } from "./migrate";
+export { CAPABILITY_CLAIM_RETENTION_HOURS };
 
 const log = logger("capabilities:executions");
 
@@ -52,6 +67,8 @@ export type CapabilityExecutionInput = {
   inputMeta?: CapabilityValueMeta | null;
   outputMeta?: CapabilityValueMeta | null;
   idempotencyKey?: string | null;
+  /** True when the dispatcher replayed a stored idempotent result instead of forwarding. */
+  replayed?: boolean;
   startedAt: Date;
   completedAt: Date;
 };
@@ -74,6 +91,7 @@ export type CapabilityExecution = {
   inputMeta: CapabilityValueMeta | null;
   outputMeta: CapabilityValueMeta | null;
   idempotencyKey: string | null;
+  replayed: boolean;
   startedAt: string;
   completedAt: string;
   durationMs: number;
@@ -86,7 +104,7 @@ export const recordCapabilityExecution = async (input: CapabilityExecutionInput)
     INSERT INTO capabilities.executions (
       request_id, origin, app_id, capability, kind, destructive,
       actor_kind, actor_id, user_id, access_subject_type, access_subject_id,
-      status, error_code, input_meta, output_meta, idempotency_key,
+      status, error_code, input_meta, output_meta, idempotency_key, replayed,
       started_at, completed_at, duration_ms
     ) VALUES (
       ${input.requestId}, ${input.origin}, ${input.appId}, ${input.capability}, ${input.kind}, ${input.destructive},
@@ -95,7 +113,7 @@ export const recordCapabilityExecution = async (input: CapabilityExecutionInput)
       ${input.status}, ${input.errorCode ?? null},
       ${input.inputMeta ? JSON.stringify(input.inputMeta) : null}::jsonb,
       ${input.outputMeta ? JSON.stringify(input.outputMeta) : null}::jsonb,
-      ${input.idempotencyKey ?? null}, ${input.startedAt}, ${input.completedAt}, ${durationMs}
+      ${input.idempotencyKey ?? null}, ${input.replayed ?? false}, ${input.startedAt}, ${input.completedAt}, ${durationMs}
     )
     RETURNING id::text AS id
   `;
@@ -135,7 +153,7 @@ const columns = sql`
   execution.actor_kind AS "actorKind", execution.actor_id::text AS "actorId", execution.user_id::text AS "userId",
   execution.access_subject_type AS "accessSubjectType", execution.access_subject_id::text AS "accessSubjectId",
   execution.status, execution.error_code AS "errorCode", execution.input_meta AS "inputMeta",
-  execution.output_meta AS "outputMeta", execution.idempotency_key AS "idempotencyKey",
+  execution.output_meta AS "outputMeta", execution.idempotency_key AS "idempotencyKey", execution.replayed,
   to_json(execution.started_at) #>> '{}' AS "startedAt", to_json(execution.completed_at) #>> '{}' AS "completedAt",
   execution.duration_ms AS "durationMs"
 `;
@@ -262,8 +280,10 @@ export const startCapabilityExecutionMaintenance = (): (() => void) => {
     try {
       const removed = await pruneCapabilityExecutions(new Date(Date.now() - CAPABILITY_EXECUTION_RETENTION_DAYS * 86_400_000));
       if (removed > 0) log.info("Pruned expired capability executions", { removed });
+      const claims = await pruneCapabilityIdempotencyClaims(new Date(Date.now() - CAPABILITY_CLAIM_RETENTION_HOURS * 3_600_000));
+      if (claims > 0) log.info("Pruned expired capability idempotency claims", { removed: claims });
     } catch (error) {
-      log.error("Capability execution pruning failed", { error: error instanceof Error ? error.message : String(error) });
+      log.error("Capability retention sweep failed", { error: error instanceof Error ? error.message : String(error) });
     } finally {
       pruneRunning = false;
     }

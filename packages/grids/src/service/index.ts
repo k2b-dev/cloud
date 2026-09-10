@@ -145,7 +145,6 @@ export const gridsService = {
     getByShortId: records.getByShortId,
     findTableId: records.findTableId,
     create: records.create,
-    createIdempotent: records.createIdempotent,
     createMany: records.createMany,
     external: recordExternalIdentity,
     changes: recordChangeFeed,

@@ -53,5 +53,29 @@ export const migrateCloudCapabilities = async (): Promise<void> => {
     WHERE user_id IS NOT NULL
   `.simple();
 
+  await sql`ALTER TABLE capabilities.executions ADD COLUMN IF NOT EXISTS replayed BOOLEAN NOT NULL DEFAULT false`.simple();
+
+  // Platform-owned idempotency claims. One row per
+  // (app, capability, principal, key); the dispatcher claims before it
+  // forwards and resolves the row once the outcome is known. Response bodies
+  // are retained only to replay a lost answer and expire with the claim.
+  await sql`
+    CREATE TABLE IF NOT EXISTS capabilities.idempotency_claims (
+      app_id TEXT NOT NULL,
+      capability TEXT NOT NULL,
+      principal TEXT NOT NULL,
+      key_hash TEXT NOT NULL,
+      request_hash TEXT NOT NULL,
+      state TEXT NOT NULL,
+      response_status INTEGER,
+      response_body JSONB,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      PRIMARY KEY (app_id, capability, principal, key_hash),
+      CONSTRAINT capabilities_claims_state_check CHECK (state IN ('in_flight', 'succeeded', 'uncertain'))
+    )
+  `.simple();
+  await sql`CREATE INDEX IF NOT EXISTS idx_capabilities_claims_created ON capabilities.idempotency_claims(created_at)`.simple();
+
   console.log("  ✓ capability execution history");
 };

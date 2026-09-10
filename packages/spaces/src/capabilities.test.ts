@@ -516,7 +516,6 @@ describe("spaces capabilities", () => {
       "comment.delete",
       "comment.update",
       "event.create",
-      "event.create-once",
       "event.invitation.commit",
       "event.invitation.prepare",
       "event.update",
@@ -568,7 +567,7 @@ describe("spaces capabilities", () => {
     expect(spacesCapabilities.actions["task.create"]).toMatchObject({
       destructive: false,
       openWorld: false,
-      idempotency: "none",
+      idempotency: "required",
     });
     expect(spacesCapabilities.actions["comment.delete"]).toMatchObject({
       destructive: true,
@@ -596,7 +595,7 @@ describe("spaces capabilities", () => {
   test("uses agent-oriented calendar creation wording", () => {
     expect(spacesCapabilities.actions["event.create"].title).toBe("Create calendar event");
     expect(spacesCapabilities.actions["event.create"].description).toContain("calendar event");
-    expect(spacesCapabilities.actions["event.create-once"].idempotency).toBe("required");
+    expect(spacesCapabilities.actions["event.create"].idempotency).toBe("required");
     expect(spacesCapabilities.actions["calendar-invitation.import"].title).toBe("Import calendar invitation");
   });
 
@@ -1186,28 +1185,18 @@ describe("spaces capabilities", () => {
     expect(recordAllowed).toHaveBeenCalledWith(expect.objectContaining({ requestId: userContext.requestId }));
   });
 
-  test("passes a stable idempotency claim to retry-safe event creation", async () => {
+  test("creates events through the plain item boundary; retry safety is platform-owned", async () => {
     spyOn(spacesService.space, "get").mockResolvedValue(space);
     spyOn(spacesService.space.permission, "get").mockResolvedValue("write");
     const create = spyOn(spacesService.item, "create").mockResolvedValue({ ok: true, data: event });
     spyOn(audit, "recordResultAfterSideEffect").mockImplementation(async ({ result }) => result);
 
-    const result = await spacesCapabilities.actions["event.create-once"].run(
+    const result = await spacesCapabilities.actions["event.create"].run(
       { spaceId, columnId, title: event.title, startsAt: event.startsAt!, endsAt: event.endsAt! },
       { ...userContext, idempotencyKey: "mail-workflow-effect-1" },
     );
 
-    expect(create).toHaveBeenCalledWith(
-      expect.objectContaining({
-        spaceId: spaceUuid,
-        idempotency: expect.objectContaining({
-          actorKey: `user:${userId}:direct`,
-          actionId: "spaces.event.create-once",
-          idempotencyKeyHash: expect.stringMatching(/^[0-9a-f]{64}$/),
-          requestHash: expect.stringMatching(/^[0-9a-f]{64}$/),
-        }),
-      }),
-    );
+    expect(create).toHaveBeenCalledWith(expect.not.objectContaining({ idempotency: expect.anything() }));
     expect(result).toMatchObject({ ok: true, data: { data: { kind: "event", id: itemId } } });
   });
 
@@ -1340,17 +1329,13 @@ describe("spaces capabilities", () => {
       status: 403,
     });
 
-    const withoutKey = await spacesCapabilities.actions["comment.delete"].run({ commentId }, userContext);
-
-    expect(withoutKey).toMatchObject({ ok: false, error: { code: "BAD_INPUT" } });
-
     const expired = await spacesCapabilities.actions["comment.delete"].run(
       { commentId },
       { ...userContext, idempotencyKey: "comment-delete-window" },
     );
 
     expect(expired).toMatchObject({ ok: false, error: { code: "FORBIDDEN", status: 403 } });
-    expect(recordDenied).toHaveBeenCalledTimes(3);
+    expect(recordDenied).toHaveBeenCalledTimes(2);
   });
 
   test("keeps compact item and comment pages below the capability transport limit", () => {

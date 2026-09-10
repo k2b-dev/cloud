@@ -803,7 +803,7 @@ export const aiCapabilities = defineCapabilities({
       data: SkillDetailDataSchema,
       destructive: false,
       openWorld: false,
-      idempotency: "none",
+      idempotency: "required",
       async review(input, context) {
         if (!context.accessSubject) return fail(err.forbidden("Creating Skills requires an authenticated actor"));
         return ok({

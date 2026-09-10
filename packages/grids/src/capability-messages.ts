@@ -74,7 +74,6 @@ export const gridsCapabilityMessages = i18n.define({
       relatedIdsInvalid: "Related Record IDs must be six-character public Grids IDs.",
       relatedIdUnknown: "Unknown related Record ID.",
       createdRecord: ({ id, table }: { id: string; table: string }) => `Created Record ${id} in “${table}”.`,
-      replayedRecord: ({ id, table }: { id: string; table: string }) => `Replayed the create of Record ${id} in “${table}”.`,
       idempotencyRequired: "Idempotency-Key is required.",
       replayedExternalRecord: ({ id, table, version }: { id: string; table: string; version: number }) =>
         `Replayed external Record ${id} in “${table}” at version ${version}.`,
@@ -169,7 +168,6 @@ export const gridsCapabilityMessages = i18n.define({
       relatedIdsInvalid: "IDs verknüpfter Datensätze müssen sechsstellige öffentliche Grids-IDs sein.",
       relatedIdUnknown: "Unbekannte ID eines verknüpften Datensatzes.",
       createdRecord: ({ id, table }) => `Datensatz ${id} in „${table}“ erstellt.`,
-      replayedRecord: ({ id, table }) => `Erstellung von Datensatz ${id} in „${table}“ erneut angewendet.`,
       idempotencyRequired: "Idempotency-Key ist erforderlich.",
       replayedExternalRecord: ({ id, table, version }) =>
         `Externen Datensatz ${id} in „${table}“ mit Version ${version} erneut angewendet.`,

@@ -6,6 +6,7 @@ import {
   capabilityResultSchema,
   type User,
 } from "@k2b/cloud/contracts";
+import { compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 import { sql } from "bun";
 import { venueCapabilities } from "./capabilities";
 import { VenueListDataSchema } from "./capability-contracts";
@@ -502,5 +503,9 @@ describe("Venue capabilities", () => {
       for (const accessId of accessIds) await sql`DELETE FROM auth.access WHERE id = ${accessId}::uuid`;
       await sql`DELETE FROM auth.service_accounts WHERE id = ${serviceAccount.id}::uuid`;
     }
+  });
+
+  test("compiles the declared capability manifest", () => {
+    expect(() => compileCapabilityManifest("venue", venueCapabilities)).not.toThrow();
   });
 });

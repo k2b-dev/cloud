@@ -7,6 +7,7 @@ import {
   capabilityResultSchema,
   type User,
 } from "@k2b/cloud/contracts";
+import { compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 import { audit, weatherService } from "@k2b/cloud/services";
 import { decodeWeatherCapabilityCursor, weatherCapabilities } from "./capabilities";
 import { CurrentWeatherSchema } from "./contracts";
@@ -126,7 +127,7 @@ describe("weather capabilities", () => {
     expect(createAction).toMatchObject({
       destructive: false,
       openWorld: false,
-      idempotency: "none",
+      idempotency: "required",
     });
     expect("target" in createAction).toBeFalse();
     expect(weatherCapabilities.actions["location.delete"]).toMatchObject({
@@ -392,7 +393,19 @@ describe("weather capabilities", () => {
         expect(capabilityResultSchema(weatherCapabilities.actions[localId].data).safeParse(result.data).success).toBeTrue();
       }
     }
-    expect(recordAllowed).toHaveBeenCalledWith(expect.objectContaining({ action: "weather.capability.location.create" }));
-    expect(recordDenied).toHaveBeenCalledWith(expect.objectContaining({ action: "weather.capability.location.delete" }));
+    expect(recordAllowed).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "weather.capability.location.create",
+        requestId: userContext.requestId,
+        metadata: { capability: "weather.location.create", origin: userContext.origin },
+      }),
+    );
+    expect(recordDenied).toHaveBeenCalledWith(
+      expect.objectContaining({ action: "weather.capability.location.delete", requestId: serviceAccountContext.requestId }),
+    );
+  });
+
+  test("compiles the declared capability manifest", () => {
+    expect(() => compileCapabilityManifest("weather", weatherCapabilities)).not.toThrow();
   });
 });

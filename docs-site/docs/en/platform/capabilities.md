@@ -229,8 +229,9 @@ export default await app.start({
 ```
 
 `app.start()` compiles the declaration before registration. The application
-service still owns durable reads and writes, permission checks, audit records,
-and any transactional idempotency claim.
+service still owns durable reads and writes, permission checks, and audit
+records. Retry safety is not an application concern: Cloud claims every
+`idempotency: "required"` Action for you.
 
 ### Localize catalog presentation
 
@@ -521,11 +522,10 @@ An Action that creates a record should also require idempotency. That one is
 guidance rather than a compile check, because Cloud cannot tell a create from
 an update.
 
-The Cloud `idempotency` field declares transport retry safety rather than a
-broader semantic guarantee. Queries are retry-safe. An Action with
-`idempotency: "required"` is retry-safe only when the caller supplies a stable
-key; `none` means callers must not send a key and must not retry after an
-ambiguous transport failure.
+Queries are always retry-safe. An Action with `idempotency: "required"` is
+retry-safe because Cloud enforces it (see
+[Retry an Action safely](#retry-an-action-safely)); `none` means callers must
+not send a key and must not retry after an ambiguous transport failure.
 
 Do not rely on MCP's conservative defaults. Declare these fields explicitly so
 the live Cloud catalog remains deterministic. MCP defines annotations as
@@ -557,14 +557,38 @@ None of the metadata replaces application-side authorization. The owning app
 must authorize both an optional review and the eventual Action against current
 state.
 
-When an Action requires idempotency, scope the durable claim to the owning app,
-Action, current `AccessSubject`, and key. Atomically bind that claim to the
-normalized parsed input with the state change. Concurrent calls with the same
-claim wait for or replay the same terminal success; the same key with different
-input fails with `IDEMPOTENCY_CONFLICT`. Keep completed claims for at least 24
-hours. A cache lookup before the mutation is not enough.
-
 Record security-sensitive mutations with [Audit events](/en/docs/platform/audit-events).
+
+### Retry an Action safely
+
+Idempotency is a platform mechanism. Applications write no claim code, no
+receipt table, and no replay branch: they implement the Action once and Cloud
+guarantees that one `Idempotency-Key` produces at most one effect.
+
+The caller sends a stable `Idempotency-Key` header with every
+`idempotency: "required"` Action, and reuses the exact same key and input to
+retry it. Before forwarding, the dispatcher claims
+(app, capability, acting principal, key) together with a hash of the canonical
+input, and resolves that claim once the outcome is known:
+
+| Situation | Result |
+| --- | --- |
+| First call | Forwarded once; a definitive success is stored |
+| Retry of a stored success | The stored status and body are replayed without forwarding |
+| Same key, different input | `409 IDEMPOTENCY_CONFLICT` |
+| A concurrent attempt is still running | `409 IDEMPOTENCY_IN_PROGRESS` |
+| An earlier attempt lost its answer | `409 IDEMPOTENCY_UNCERTAIN` |
+
+A failure that proves nothing happened — a `4xx` from the app, or a dispatcher
+rejection before forwarding — releases the key, so a corrected retry runs
+normally. A timeout, transport failure, or unusable response freezes the key as
+uncertain; the outcome is genuinely unknown, so Cloud never re-forwards it and
+the caller must read the current state with a Query before deciding.
+
+Stored responses larger than 256 KiB are not retained; replaying one returns
+`IDEMPOTENCY_UNCERTAIN` with a "result not retained" message. Claims expire 24
+hours after they are created, pruned by the same maintenance that prunes
+execution history. Reuse a key only to retry the same call.
 
 ### Describe an Action before it runs
 
@@ -921,7 +945,8 @@ descriptions; validation feedback is recovery, not primary documentation.
 
 Framework errors include `VALIDATION_FAILED`, `SCHEMA_MISMATCH`,
 `IDEMPOTENCY_KEY_REQUIRED`, `IDEMPOTENCY_KEY_NOT_ALLOWED`,
-`IDEMPOTENCY_CONFLICT`, `APP_UNAVAILABLE`, `CAPABILITY_NOT_FOUND`,
+`IDEMPOTENCY_CONFLICT`, `IDEMPOTENCY_IN_PROGRESS`, `IDEMPOTENCY_UNCERTAIN`,
+`APP_UNAVAILABLE`, `CAPABILITY_NOT_FOUND`,
 `DEADLINE_EXCEEDED`, `ACTION_OUTCOME_UNKNOWN`, `REQUEST_CANCELLED`,
 `INVALID_APP_RESPONSE`, and `RESPONSE_TOO_LARGE`. Applications may return their
 own domain error codes. Provider failures accept the explicit HTTP statuses
@@ -1132,7 +1157,8 @@ A row holds correlation and shape, never payloads: `request_id`, `origin`,
 `app_id`, the qualified `capability`, `kind`, the declared `destructive` flag,
 the acting principal and the access subject when they differ, `status`,
 `error_code`, the input and output shape metadata, an optional
-`idempotency_key`, and start, end, and duration.
+`idempotency_key`, whether the row was `replayed` from an idempotency claim,
+and start, end, and duration.
 
 | Status | Meaning |
 | --- | --- |

@@ -486,5 +486,5 @@ export { get };
 export const listActors = listRecordActors;
 
 export { recordEventOutboxStats, redriveRecordEventOutbox } from "./record-event-outbox";
-export { create, createIdempotent, createMany, restore, softDelete, update } from "./record-write";
+export { create, createMany, restore, softDelete, update } from "./record-write";
 export { findTableId };

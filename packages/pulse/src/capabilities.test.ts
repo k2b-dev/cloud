@@ -8,6 +8,7 @@ import {
   UniversalSearchInputSchema,
   type User,
 } from "@k2b/cloud/contracts";
+import { compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 import { sql } from "bun";
 import { pulseCapabilities } from "./capabilities";
 import {
@@ -346,5 +347,9 @@ describe("Pulse capabilities", () => {
       if (accessId) await sql`DELETE FROM auth.access WHERE id = ${accessId}::uuid`;
       await sql`DELETE FROM auth.users WHERE id IN (${user.id}::uuid, ${otherUserRow.id}::uuid)`;
     }
+  });
+
+  test("compiles the declared capability manifest", () => {
+    expect(() => compileCapabilityManifest("pulse", pulseCapabilities)).not.toThrow();
   });
 });

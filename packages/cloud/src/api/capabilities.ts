@@ -4,7 +4,19 @@ import { z } from "zod";
 import { readBoundedJson } from "../_internal/bounded-json";
 import { resolveCapabilityManifestPresentation } from "../_internal/capabilities";
 import { getCapability, listApps } from "../_internal/registry";
-import { type CapabilityExecutionStatus, capabilityValueMeta, recordCapabilityExecution } from "../capabilities/executions";
+import {
+  type CapabilityClaimScope,
+  type CapabilityExecutionStatus,
+  capabilityIdempotencyKeyHash,
+  capabilityRequestHash,
+  capabilityValueMeta,
+  claimCapabilityIdempotency,
+  completeCapabilityClaim,
+  markCapabilityClaimUncertain,
+  recordCapabilityExecution,
+  releaseCapabilityClaim,
+  resolveCapabilityClaim,
+} from "../capabilities/executions";
 import {
   CAPABILITY_FRAMEWORK_ERROR_CODES,
   CAPABILITY_MAX_CATALOG_BYTES,
@@ -222,12 +234,22 @@ export type CapabilityDispatchParams = {
   dependencies?: CapabilityDispatchDependencies;
 };
 
-type CapabilityDispatchOutcome = { body: unknown; status: number };
+type CapabilityDispatchOutcome = { body: unknown; status: number; replayed?: boolean };
 
 /** Principal resolved while dispatching. A mandate only reveals it during issuance. */
 type CapabilityDispatchObservation = {
   subject: { type: "user" | "service_account"; id: string } | null;
   destructive: boolean;
+};
+
+type CapabilityPrincipal = { type: "user" | "service_account"; id: string } | null;
+
+/** Acting principal for the execution row and the idempotency claim scope. A mandate reveals it during issuance. */
+const dispatchPrincipal = (params: CapabilityDispatchParams, observed: CapabilityDispatchObservation): CapabilityPrincipal => {
+  const actor = params.authority?.actor;
+  if (actor?.kind === "user") return { type: "user", id: actor.user.id };
+  if (actor?.kind === "service_account") return { type: "service_account", id: actor.serviceAccount.id };
+  return observed.subject;
 };
 
 const runCapabilityDispatch = async (
@@ -448,6 +470,69 @@ const runCapabilityDispatch = async (
     return unknown;
   };
 
+  const claimPrincipal = dispatchPrincipal(params, observed);
+  const claimScope: CapabilityClaimScope | null =
+    params.kind === "actions" &&
+    !params.review &&
+    "idempotency" in operation &&
+    operation.idempotency === "required" &&
+    idempotencyKey?.success
+      ? {
+          appId: params.appId,
+          capability: `${params.appId}.${params.capabilityId}`,
+          principal: claimPrincipal ? `${claimPrincipal.type}:${claimPrincipal.id}` : "anonymous",
+          keyHash: capabilityIdempotencyKeyHash(idempotencyKey.data),
+        }
+      : null;
+  if (claimScope) {
+    let claim: Awaited<ReturnType<typeof claimCapabilityIdempotency>>;
+    try {
+      claim = await claimCapabilityIdempotency(claimScope, capabilityRequestHash(input.data));
+    } catch (error) {
+      // Nothing has been forwarded yet, so refusing the call is the safe answer.
+      log.error("Capability idempotency claim failed", {
+        appId: params.appId,
+        capabilityId: params.capabilityId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return errorResponse(CAPABILITY_FRAMEWORK_ERROR_CODES.internal, messages.cloudUnavailable, 503, { retrySafe: true });
+    }
+    if (claim.state === "replay") return { body: claim.body, status: claim.status, replayed: true };
+    if (claim.state === "conflict")
+      return errorResponse(CAPABILITY_FRAMEWORK_ERROR_CODES.idempotencyConflict, messages.idempotencyConflict, 409);
+    if (claim.state === "in_flight") {
+      return errorResponse(CAPABILITY_FRAMEWORK_ERROR_CODES.idempotencyInProgress, messages.idempotencyInProgress, 409, {
+        retrySafe: false,
+      });
+    }
+    if (claim.state === "uncertain") {
+      return errorResponse(CAPABILITY_FRAMEWORK_ERROR_CODES.idempotencyUncertain, messages.idempotencyUncertain, 409, { retrySafe: false });
+    }
+    if (claim.state === "not_retained") {
+      return errorResponse(CAPABILITY_FRAMEWORK_ERROR_CODES.idempotencyUncertain, messages.idempotencyResultNotRetained, 409, {
+        retrySafe: false,
+      });
+    }
+  }
+
+  /**
+   * Resolve the claim once the outcome is known: a definitive success is
+   * replayable, a failure that proves nothing happened frees the key for a
+   * corrected retry, and anything ambiguous freezes the key.
+   */
+  const settle = async (outcome: CapabilityDispatchOutcome, disposition: "succeeded" | "nothing_happened" | "uncertain") => {
+    if (!claimScope) return outcome;
+    await resolveCapabilityClaim(
+      disposition === "succeeded"
+        ? completeCapabilityClaim(claimScope, outcome.status, outcome.body)
+        : disposition === "nothing_happened"
+          ? releaseCapabilityClaim(claimScope)
+          : markCapabilityClaimUncertain(claimScope),
+      claimScope,
+    );
+    return outcome;
+  };
+
   let response: Response;
   try {
     response = await fetchUpstream(
@@ -466,18 +551,18 @@ const runCapabilityDispatch = async (
       kind: params.kind,
       error: error instanceof Error ? error.message : String(error),
     });
-    if (actionWithoutRetrySafety) return outcomeUnknown();
+    if (actionWithoutRetrySafety) return settle(outcomeUnknown(), "uncertain");
     if (params.request.signal.aborted) {
       const cancelled = errorResponse(CAPABILITY_FRAMEWORK_ERROR_CODES.requestCancelled, messages.requestCancelled, 499, {
         retrySafe: params.kind === "queries" || ("idempotency" in operation && operation.idempotency === "required"),
       });
-      return cancelled;
+      return settle(cancelled, "uncertain");
     }
     if (timeout.aborted) {
       const deadline = errorResponse(CAPABILITY_FRAMEWORK_ERROR_CODES.deadlineExceeded, messages.deadlineExceeded, 504, {
         retrySafe: params.kind === "queries" || ("idempotency" in operation && operation.idempotency === "required"),
       });
-      return deadline;
+      return settle(deadline, "uncertain");
     }
     const unavailable = errorResponse(
       CAPABILITY_FRAMEWORK_ERROR_CODES.appUnavailable,
@@ -485,28 +570,30 @@ const runCapabilityDispatch = async (
       503,
       { retrySafe: params.kind === "queries" || ("idempotency" in operation && operation.idempotency === "required") },
     );
-    return unavailable;
+    return settle(unavailable, "uncertain");
   }
 
   const upstreamBody = await readBoundedJson(response, CAPABILITY_MAX_RESULT_BYTES);
   if (!upstreamBody.ok) {
-    if (actionWithoutRetrySafety) return outcomeUnknown();
+    if (actionWithoutRetrySafety) return settle(outcomeUnknown(), "uncertain");
     const code =
       upstreamBody.reason === "too_large"
         ? CAPABILITY_FRAMEWORK_ERROR_CODES.responseTooLarge
         : CAPABILITY_FRAMEWORK_ERROR_CODES.invalidAppResponse;
     const invalid = errorResponse(code, messages.invalidCapabilityJson({ appId: params.appId }), 502);
-    return invalid;
+    return settle(invalid, "uncertain");
   }
 
   if (!response.ok) {
     const parsed = CapabilityErrorSchema.safeParse(upstreamBody.data);
     if (parsed.success && response.status >= 400 && response.status <= 599) {
-      return { body: parsed.data, status: response.status };
+      // A 4xx from the owning app is a decision about the request itself and
+      // proves the effect did not happen; a 5xx proves nothing.
+      return settle({ body: parsed.data, status: response.status }, response.status < 500 ? "nothing_happened" : "uncertain");
     }
-    if (actionWithoutRetrySafety) return outcomeUnknown();
+    if (actionWithoutRetrySafety) return settle(outcomeUnknown(), "uncertain");
     const invalid = errorResponse("INVALID_APP_RESPONSE", messages.invalidCapabilityError({ appId: params.appId }), 502);
-    return invalid;
+    return settle(invalid, "uncertain");
   }
 
   const resultValidator = params.review
@@ -520,12 +607,12 @@ const runCapabilityDispatch = async (
     !parsedReview?.success ||
     (operation.approval === "rememberable" ? parsedReview.data.approvalScope !== undefined : parsedReview.data.approvalScope === undefined);
   if (!resultValidator || !parsedResult?.success || !reviewApprovalScopeIsValid) {
-    if (actionWithoutRetrySafety) return outcomeUnknown();
+    if (actionWithoutRetrySafety) return settle(outcomeUnknown(), "uncertain");
     const invalid = errorResponse("INVALID_APP_RESPONSE", messages.outsideResultSchema({ appId: params.appId }), 502);
-    return invalid;
+    return settle(invalid, "uncertain");
   }
 
-  return { body: upstreamBody.data, status: 200 };
+  return settle({ body: upstreamBody.data, status: 200 }, "succeeded");
 };
 
 const executionStatus = (status: number, code: string | null): CapabilityExecutionStatus => {
@@ -558,12 +645,7 @@ export const dispatchCapability = async (params: CapabilityDispatchParams): Prom
   const outcome = await runCapabilityDispatch(params, requestId, observed);
   if (!params.review) {
     const actor = params.authority?.actor;
-    const principal =
-      actor?.kind === "user"
-        ? ({ type: "user", id: actor.user.id } as const)
-        : actor?.kind === "service_account"
-          ? ({ type: "service_account", id: actor.serviceAccount.id } as const)
-          : observed.subject;
+    const principal = dispatchPrincipal(params, observed);
     const accessSubject = params.authority?.accessSubject;
     const subject =
       accessSubject?.type === "user"
@@ -588,6 +670,7 @@ export const dispatchCapability = async (params: CapabilityDispatchParams): Prom
       inputMeta: capabilityValueMeta(params.input),
       outputMeta: outcome.status < 400 ? resultDataMeta(outcome.body) : null,
       idempotencyKey: CapabilityIdempotencyKeySchema.safeParse(params.request.headers.get("idempotency-key")).data ?? null,
+      replayed: outcome.replayed === true,
       startedAt,
       completedAt: new Date(),
     }).catch((error) => {

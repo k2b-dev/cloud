@@ -1204,34 +1204,18 @@ const resolveRecordValues = async (tableId: string, values: Record<string, unkno
 
 const runRecordCreate = async (input: z.infer<typeof RecordCreateInputSchema>, context: CapabilityExecutionContext) => {
   const t = capabilityMessagesFor(context.locale);
-  if (!context.idempotencyKey) return fail(err.badInput(t.idempotencyRequired));
   const access = accessContext(context);
   const table = await requireTable(input.tableId, access, "write", context.locale);
   if (!table.ok) return table;
   const values = await resolveRecordValues(table.data.id, input.values, context.locale);
   if (!values.ok) return values;
   const dateConfig = await capabilityDateConfig(context.locale);
-  const result = await gridsService.record.createIdempotent(
-    table.data.id,
-    values.data.values,
-    accessActorUser(access)?.id ?? null,
-    "direct",
-    {
-      scope: `capability:record.create:${gridsService.record.external.externalRecordRequestHash(context.accessSubject)}`,
-      key: context.idempotencyKey,
-      requestHash: gridsService.record.external.externalRecordRequestHash(input),
-    },
-    { dateConfig, viewer: actorViewerFor(access) },
-  );
+  const result = await gridsService.record.create(table.data.id, values.data.values, accessActorUser(access)?.id ?? null, "direct", {
+    dateConfig,
+    viewer: actorViewerFor(access),
+  });
   if (!result.ok) return result;
-  const { record, replayed } = result.data;
-  return recordResult(
-    record,
-    table.data,
-    replayed
-      ? t.replayedRecord({ id: record.shortId, table: table.data.name })
-      : t.createdRecord({ id: record.shortId, table: table.data.name }),
-  );
+  return recordResult(result.data, table.data, t.createdRecord({ id: result.data.shortId, table: table.data.name }));
 };
 
 const runRecordExternalUpsert = async (input: z.infer<typeof RecordExternalUpsertInputSchema>, context: CapabilityExecutionContext) => {
@@ -1481,7 +1465,7 @@ export const gridsCapabilities = defineCapabilities({
       data: ViewCapabilityDataSchema,
       openWorld: false,
       destructive: false,
-      idempotency: "none",
+      idempotency: "required",
       review: async (input, context) => {
         const prepared = await prepareViewCreate(input, context);
         if (!prepared.ok) return prepared;

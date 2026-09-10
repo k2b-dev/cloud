@@ -1735,10 +1735,6 @@ describe("mail capabilities", () => {
     } as never);
     const deleteTag = spyOn(localTags, "deleteLocalTag").mockResolvedValue({ ok: true, data: { deleted: true } } as never);
 
-    const missingKey = await mailCapabilities.actions["mailbox.tag.delete"].run({ mailboxId, tagId, expectedRevision: 2 }, context);
-    expect(missingKey).toMatchObject({ ok: false, error: { code: "BAD_INPUT" } });
-    expect(deleteTag).not.toHaveBeenCalled();
-
     await mailCapabilities.actions["mailbox.tag.delete"].run(
       { mailboxId, tagId, expectedRevision: 2 },
       { ...context, idempotencyKey: "tag-delete" },

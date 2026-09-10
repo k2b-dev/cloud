@@ -1212,7 +1212,7 @@ export const notebooksCapabilities = defineCapabilities({
       data: CommentDataSchema,
       destructive: false,
       openWorld: false,
-      idempotency: "none",
+      idempotency: "required",
       approval: "rememberable",
       review: async (input, context) => {
         const { t } = notebookCapabilityMessages.resolve(context.locale ? [context.locale] : []);
@@ -1238,7 +1238,7 @@ export const notebooksCapabilities = defineCapabilities({
       data: NoteSummaryDataSchema,
       destructive: false,
       openWorld: false,
-      idempotency: "none",
+      idempotency: "required",
       approval: "rememberable",
       review: async (input, context) => {
         const { t } = notebookCapabilityMessages.resolve(context.locale ? [context.locale] : []);

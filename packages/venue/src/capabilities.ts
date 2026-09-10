@@ -571,7 +571,7 @@ export const venueCapabilities = defineCapabilities({
       data: AssignmentActionDataSchema,
       destructive: false,
       openWorld: false,
-      idempotency: "none",
+      idempotency: "required",
       review: async (input, context) => {
         const t = messagesFor(context);
         const actor = await requireUserAndVenue(input.venueId, context, "write");
@@ -612,7 +612,7 @@ export const venueCapabilities = defineCapabilities({
       data: AssignmentActionDataSchema,
       destructive: false,
       openWorld: false,
-      idempotency: "none",
+      idempotency: "required",
       review: async (input, context) => {
         const t = messagesFor(context);
         const actor = await requireUserAndVenue(input.venueId, context, "write");

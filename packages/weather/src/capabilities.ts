@@ -557,7 +557,7 @@ export const weatherCapabilities = defineCapabilities({
       data: LocationSchema,
       destructive: false,
       openWorld: false,
-      idempotency: "none",
+      idempotency: "required",
       approval: "rememberable",
       review: async (input, context) => {
         const { t } = resolveWeatherMessages(context.locale);
