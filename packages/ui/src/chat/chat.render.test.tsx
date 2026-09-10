@@ -15,6 +15,27 @@ const publicUi = await import("../index");
 const { Chat, formatChatTokens } = publicUi;
 
 describe("@k2b/ui portable chat family", () => {
+  test("keeps application submit controls beside either Send or Stop", () => {
+    for (const state of ["idle", "running"] as const) {
+      const html = renderToString(() =>
+        createComponent(Chat.Composer, {
+          value: "",
+          onValueChange: () => undefined,
+          onSubmit: () => undefined,
+          onStop: () => undefined,
+          state,
+          footerTools: "left-tools",
+          submitTools: "submit-tools",
+        }),
+      );
+      expect(html.indexOf("left-tools")).toBeLessThan(html.indexOf("k2b-chat-composer__submit"));
+      expect(html.indexOf("submit-tools")).toBeGreaterThan(html.indexOf("k2b-chat-composer__submit"));
+      expect(html.indexOf("submit-tools")).toBeLessThan(
+        html.indexOf(state === "running" ? "k2b-chat-composer__stop" : "k2b-chat-composer__send"),
+      );
+    }
+  });
+
   test("exposes one compound chat API without legacy runtime exports", () => {
     expect(Object.keys(Chat)).toEqual(["Timeline", "Message", "Activity", "Composer", "ContextUsage"]);
     for (const legacyExport of ["ChatTimeline", "ChatMessage", "ChatActivity", "ChatComposer", "ChatContextUsage"]) {
@@ -627,4 +648,20 @@ describe("@k2b/ui portable chat family", () => {
     expect(bodyRule).toContain("padding: 0.375rem 0 0;");
     expect(bodyRule).not.toContain("padding: 0.375rem 0 0.625rem;");
   });
+});
+
+test("footer override preserves the editor and replaces standard actions", () => {
+  const html = renderToString(() =>
+    createComponent(Chat.Composer, {
+      value: "Keep this draft",
+      onValueChange: () => undefined,
+      onSubmit: () => undefined,
+      footerContent: "recording-controls",
+      footerTools: "standard-tools",
+    }),
+  );
+  expect(html).toContain("Keep this draft");
+  expect(html).toContain("recording-controls");
+  expect(html).not.toContain("standard-tools");
+  expect(html).not.toContain("k2b-chat-composer__send");
 });

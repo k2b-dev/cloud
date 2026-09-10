@@ -909,7 +909,6 @@ export default function AssistantWorkspace(props: Props) {
       return session(key).editGeneration;
     },
     live: liveHub,
-    onError: chat.setError,
     ensureTarget: async () => {
       const key = dictationKey();
       const projectId = activeProject()?.id;
@@ -1018,7 +1017,8 @@ export default function AssistantWorkspace(props: Props) {
           </div>
         </Show>
         <Chat.Composer
-          footerTools={<dictation.Control />}
+          submitTools={<dictation.Control />}
+          footerContent={dictation.recording() ? <dictation.RecordingFooter /> : undefined}
           value={composerDraft(sessionKey())}
           onValueChange={(value) => setComposerDraft(sessionKey(), value)}
           attachments={aiChatAttachments(composerAttachmentsFor(sessionKey()), {

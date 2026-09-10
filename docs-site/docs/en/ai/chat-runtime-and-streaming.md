@@ -275,6 +275,7 @@ use the same user-backed authorization as drafts:
 | Endpoint suffix below `/api/ai/conversations/:conversationId` | Operation |
 | --- | --- |
 | `POST /dictations` | Multipart `file`, client UUID `operationId`, optional two-letter `language` |
+| `POST /dictations/discard` | Client UUID `operationId`; discard even before the start response |
 | `GET /dictations` | Pending items; optional `after` cursor and `limit` up to 50 |
 | `GET /dictations/:dictationId` | Status and complete transcript |
 | `POST /dictations/:dictationId/apply` | Local draft `content` and `expectedRevision`; append once atomically |
@@ -314,3 +315,17 @@ newer revision.
 This worker is specific to Assistant conversations. Other applications call
 `runAiTranscription()` from their own authorized service or durable worker and
 own their own inputs and results.
+
+Dictation clients can discard an upload before receiving its job ID with
+`POST /api/ai/conversations/:conversationId/dictations/discard` and
+`{ operationId }`. Core serializes this with start and apply, retaining a
+conversation-owned cancellation marker so a delayed upload cannot recreate
+the job. Repeated discard is safe. An already applied draft is preserved;
+the response reports `applied` or `discarded`. Normal chat files are retained.
+
+Transcription attempts use AI traces and the structured-run ledger. Failed attempts
+record a safe error message, a stable error code, and the trace ID. Provider HTTP
+failures include the status and a diagnostic hint without retaining response bodies,
+audio, or transcripts in logs. Filter Logs by `ai:transcription` or `ai:dictations`;
+dictation worker entries also include the dictation ID, model profile, attempt,
+and retry decision. Dictations are not workflow runs.

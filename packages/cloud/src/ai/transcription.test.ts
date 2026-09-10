@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { createAiProvider } from "./provider";
 import { parseAiModelProfiles, resolveAiSettingsStateFromRaw, selectAiModelProfile, validateAiSettingsConfiguration } from "./settings";
-import { createAiTranscriptionProvider } from "./transcription";
+import { describeTranscriptionFailure, createAiTranscriptionProvider } from "./transcription";
 import type { AiModelProfile } from "./types";
 
 const audio: AiModelProfile = {
@@ -91,4 +91,17 @@ describe("audio model boundaries", () => {
       server.stop(true);
     }
   });
+});
+
+test("classifies provider failures without storing response bodies", () => {
+  const failure = describeTranscriptionFailure(new Error("openai-compatible 404: private transcript and secret"), "provider");
+  expect(failure.code).toBe("transcription_http_404");
+  expect(failure.httpStatus).toBe(404);
+  expect(failure.message).toContain("base URL");
+  expect(failure.message).not.toContain("private");
+  expect(failure.retryable).toBe(false);
+  expect(describeTranscriptionFailure(new Error("openai 429: secret"), "provider").retryable).toBe(true);
+  expect(describeTranscriptionFailure(new Error("openai-compatible connection failed: secret"), "provider").retryable).toBe(true);
+  expect(describeTranscriptionFailure(new Error("secret"), "configuration").message).not.toContain("secret");
+  expect(describeTranscriptionFailure(new Error("secret"), "provider", true).code).toBe("transcription_aborted");
 });

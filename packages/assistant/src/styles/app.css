@@ -60,3 +60,46 @@
 .k2b-ui .assistant-chat-layout .k2b-chat-message[data-status="pending"] .k2b-chat-message__status > i {
   font-size: 1em;
 }
+
+/* Fixed-size recording control next to the composer's submit action. */
+.k2b-ui .assistant-dictation-control {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  width: 1.875rem;
+  height: 1.875rem;
+  min-width: 1.875rem;
+  padding: 0;
+  font-size: .875rem;
+}
+.k2b-ui .assistant-dictation-control[data-failed="true"],
+.k2b-ui .assistant-dictation-error {
+  color: var(--k2b-danger-text);
+}
+.k2b-ui .assistant-dictation-control.assistant-dictation-error i,
+.k2b-ui .assistant-dictation-control > .ti,
+.k2b-ui .assistant-dictation-control .assistant-dictation-icon,
+.k2b-ui .assistant-dictation-control .assistant-dictation-trash { font-size: .875rem; }
+.k2b-ui .assistant-dictation-trash { display: none; }
+.k2b-ui .assistant-dictation-control[data-cancelable="true"]:is(:hover, :focus-visible) .assistant-dictation-icon { display: none; }
+.k2b-ui .assistant-dictation-control[data-cancelable="true"]:is(:hover, :focus-visible) .assistant-dictation-trash { display: inline-block; }
+.k2b-ui .assistant-dictation-ready { display: flex; align-items: center; gap: 0.375rem; font-size: 0.8125rem; color: var(--k2b-text-muted); }
+@media (prefers-reduced-motion: reduce) {
+  .k2b-ui .assistant-dictation-control[data-recording] .assistant-dictation-icon { animation: none; }
+}
+@media (hover: none) {
+  .k2b-ui .assistant-dictation-control[data-cancelable="true"] .assistant-dictation-trash { display: inline-block; position: absolute; right: -0.125rem; bottom: -0.125rem; font-size: 0.625rem; }
+}
+
+/* Recording replaces footer controls with explicit cancel and finish actions. */
+.k2b-ui .assistant-recording-footer { display: flex; align-items: center; gap: .75rem; width: 100%; min-width: 0; }
+.k2b-ui .assistant-recording-action { flex: 0 0 auto; width: 1.875rem; height: 1.875rem; padding: 0; border-radius: 50%; background: var(--k2b-surface-subtle); color: var(--k2b-text); }
+.k2b-ui .assistant-recording-action i { font-size: .875rem; }
+.k2b-ui .assistant-recording-stop { display: block; width: .5625rem; height: .5625rem; border-radius: 2px; background: currentColor; }
+.k2b-ui .assistant-recording-wave { display: flex; flex: 1; min-width: 0; align-items: center; justify-content: space-between; gap: 2px; height: 28px; overflow: hidden; color: var(--k2b-text-muted); }
+.k2b-ui .assistant-recording-wave > span { flex: 1 1 3px; max-width: 3px; min-width: 1px; height: 26px; border-radius: 3px; background: currentColor; transform: scaleY(var(--audio-scale)); transition: transform 75ms linear; }
+@media (prefers-reduced-motion: reduce) {
+  .k2b-ui .assistant-recording-wave > span { transition: none; transform: scaleY(.25); }
+}

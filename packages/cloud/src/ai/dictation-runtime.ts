@@ -1,10 +1,10 @@
 import { sql } from "bun";
 import { lazySync } from "../_internal/process-sync";
-import { logger } from "../services/logging";
+import { logger, trace } from "../services/logging";
 import { superviseRuntimeTask } from "../services/runtime-lifecycle";
 import { aiModelAccess } from "./model-access";
 import { aiProjects } from "./projects";
-import { runAiTranscription, type RunAiTranscriptionInput } from "./transcription";
+import { AiTranscriptionError, describeTranscriptionFailure, runAiTranscription, type RunAiTranscriptionInput } from "./transcription";
 
 const log = logger("ai:dictations");
 const queue = lazySync((sync) =>
@@ -32,6 +32,7 @@ type ClaimedDictation = {
 
 /** Nessi 0.12 exposes normalized messages, not typed HTTP errors. Fail closed for unknown errors. */
 export const isRetryableDictationError = (error: unknown): boolean => {
+  if (error instanceof AiTranscriptionError) return error.retryable;
   if (!(error instanceof Error)) return false;
   return (
     /^(openai|openai-compatible) (408|409|425|429|5\d\d): /.test(error.message) ||
@@ -52,6 +53,13 @@ export const processAiDictation = async (
     RETURNING id, conversation_id, user_id, source_path, source_bytes, language, model_profile_id, attempts
   `;
   if (!task) return;
+  const span = await trace.start({
+    name: "ai.dictation",
+    source: "ai:dictations",
+    category: "ai",
+    attributes: { dictationId: id, conversationId: task.conversation_id, modelProfileId: task.model_profile_id, attempt: task.attempts },
+  });
+  let failure: AiTranscriptionError | undefined;
   const canceled = new AbortController();
   const combined = AbortSignal.any([signal, canceled.signal]);
   let checking = false;
@@ -81,6 +89,7 @@ export const processAiDictation = async (
       throw new Error("Project access unavailable.");
     const result = await run({
       task: "dictation",
+      traceParent: span,
       file: new Blob([new Uint8Array(task.source_bytes)]),
       filename: task.source_path,
       requestedModelId: task.model_profile_id,
@@ -94,13 +103,23 @@ export const processAiDictation = async (
     await sql`UPDATE ai.dictations SET status = 'succeeded', result = ${result.text}, source_bytes = NULL, lease_token = NULL, lease_until = NULL, error_code = NULL, updated_at = now()
       WHERE id = ${id} AND lease_token = ${token} AND status = 'running' AND disposition = 'pending'`;
   } catch (error) {
+    failure = describeTranscriptionFailure(error, "configuration", combined.aborted);
     const interrupted = signal.aborted;
     const retry = !canceled.signal.aborted && task.attempts < MAX_ATTEMPTS && (interrupted || isRetryableDictationError(error));
+    log.error(failure.message, {
+      dictationId: id,
+      traceId: span.traceId,
+      modelProfileId: task.model_profile_id,
+      attempt: task.attempts,
+      retry,
+      errorCode: failure.code,
+    });
     await sql`UPDATE ai.dictations SET status = ${retry ? "queued" : "failed"}, lease_token = NULL, lease_until = NULL,
-      error_code = ${retry ? null : "transcription_failed"}, next_attempt_at = now() + ${task.attempts * 2} * interval '1 second', updated_at = now()
+      error_code = ${retry ? null : failure.code}, next_attempt_at = now() + ${task.attempts * 2} * interval '1 second', updated_at = now()
       WHERE id = ${id} AND lease_token = ${token} AND status = 'running' AND disposition = 'pending'`;
   } finally {
     clearInterval(timer);
+    await trace.end({ context: span, status: failure ? "error" : "ok", statusMessage: failure?.message });
   }
 };
 

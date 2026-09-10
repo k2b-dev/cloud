@@ -4,6 +4,13 @@ export const audioMessages = i18n.define({
   messages: {
     en: {
       dictate: "Dictate",
+      alreadyInserted: "This dictation was already inserted. Review the saved draft.",
+      inserting: "Inserting dictation…",
+      discarding: "Discarding dictation…",
+      discardDictation: "Discard dictation",
+      statusFailed: "Could not load the dictation status. Retry to check the recording.",
+      applyFailed: "Could not insert the dictation. Review the draft and retry; the transcript is saved.",
+      discardFailed: "Could not confirm that the dictation was discarded. Retry to finish discarding it.",
       stop: "Stop recording",
       starting: "Opening microphone…",
       uploading: "Uploading recording…",
@@ -26,6 +33,13 @@ export const audioMessages = i18n.define({
     },
     de: {
       dictate: "Diktieren",
+      alreadyInserted: "Dieses Diktat wurde bereits eingefügt. Prüfe den gespeicherten Entwurf.",
+      inserting: "Diktat wird eingefügt…",
+      discarding: "Diktat wird verworfen…",
+      discardDictation: "Diktat verwerfen",
+      statusFailed: "Der Diktatstatus konnte nicht geladen werden. Versuche es erneut, um die Aufnahme zu prüfen.",
+      applyFailed: "Das Diktat konnte nicht eingefügt werden. Prüfe den Entwurf und versuche es erneut. Das Transkript ist gespeichert.",
+      discardFailed: "Das Verwerfen konnte nicht bestätigt werden. Versuche es erneut, um das Diktat zu verwerfen.",
       stop: "Aufnahme stoppen",
       starting: "Mikrofon wird geöffnet…",
       uploading: "Aufnahme wird hochgeladen…",

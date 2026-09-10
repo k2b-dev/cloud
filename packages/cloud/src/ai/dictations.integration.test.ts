@@ -91,6 +91,55 @@ suite("durable dictation", () => {
       await cleanup();
     }
   });
+  test("discard before start fences delayed uploads without creating a file", async () => {
+    const { input, cleanup } = await setup();
+    try {
+      expect(await aiDictations.discardOperation(input)).toEqual({ disposition: "discarded" });
+      expect(await aiDictations.discardOperation(input)).toEqual({ disposition: "discarded" });
+      await expect(aiDictations.start(input)).rejects.toThrow("discarded");
+      expect(await aiFileStore.list(input)).toHaveLength(0);
+      expect((await aiDictations.list(input)).items).toHaveLength(0);
+      await expect(aiDictations.discardOperation({ ...input, userId: crypto.randomUUID() })).rejects.toThrow("unavailable");
+    } finally {
+      await cleanup();
+    }
+  });
+  test("concurrent start and operation discard leave no runnable job and retain any committed file", async () => {
+    const { input, cleanup } = await setup();
+    try {
+      const [start] = await Promise.allSettled([aiDictations.start(input), aiDictations.discardOperation(input)]);
+      expect((await aiDictations.list(input)).items).toHaveLength(0);
+      await expect(aiDictations.start(input)).rejects.toThrow("discarded");
+      if (start.status === "fulfilled") {
+        expect((await aiDictations.get({ ...input, id: start.value.id }))?.disposition).toBe("discarded");
+        expect(await aiFileStore.totalBytes(input.conversationId)).toBe(audio.length);
+      }
+    } finally {
+      await cleanup();
+    }
+  });
+  test("apply and operation discard serialize without removing an already applied draft", async () => {
+    const { input, cleanup } = await setup();
+    try {
+      const task = await aiDictations.start(input);
+      await sql`UPDATE ai.dictations SET status = 'succeeded', result = 'Saved words', source_bytes = NULL WHERE short_id = ${task.id}`;
+      const [applied] = await Promise.all([
+        aiDictations.apply({ ...input, id: task.id, expectedRevision: 0, content: [] }),
+        aiDictations.discardOperation(input),
+      ]);
+      const result = await aiDictations.get({ ...input, id: task.id });
+      if (applied.disposition === "applied") {
+        expect(result?.disposition).toBe("applied");
+        expect(await aiDictations.discardOperation(input)).toEqual({ disposition: "applied" });
+        expect(applied.draft?.content).toEqual([{ type: "text", text: "Saved words" }]);
+      } else {
+        expect(result?.disposition).toBe("discarded");
+        expect(applied.draft).toBeNull();
+      }
+    } finally {
+      await cleanup();
+    }
+  });
   test("source replacement cannot change processing; apply uses CAS and is persisted at most once", async () => {
     const { input, conversation, model, cleanup } = await setup();
     try {

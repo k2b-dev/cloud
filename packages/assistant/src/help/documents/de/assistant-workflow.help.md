@@ -53,7 +53,9 @@ selbst dazu, zum Beispiel: „Transkribiere diese Aufnahme und fasse die nächst
 Schritte zusammen.“ Das Anhängen allein startet keine Transkription. Der
 Assistent kann das Transkript als Textdatei im Chat speichern.
 
-Mit **Diktieren** sprichst du deinen Prompt ein. **Aufnahme stoppen** lädt die
+Mit **Diktieren** sprichst du deinen Prompt ein. Die neutrale Wellenform zeigt
+deinen Mikrofonpegel. Mit × verwirfst du die Aufnahme; die quadratische Stopptaste
+beendet sie. **Aufnahme stoppen** lädt die
 vollständige Aufnahme hoch. Ist dein Eingabefeld unverändert geblieben, wird
 der erkannte Text dort ergänzt. Ansonsten erscheint **Diktat bereit** mit
 **Einfügen** und **Verwerfen**. Du prüfst den Text und sendest ihn selbst.
@@ -72,3 +74,12 @@ Diktieren benötigt eine Mikrofonberechtigung, einen unterstützten Browser und
 ein freigegebenes Audio-Modell. Die Aufnahme wird als WAV gespeichert.
 Transkriptionen akzeptieren höchstens 25 MB; weitere Dateiformate hängen vom
 konfigurierten Provider ab. Es gibt keine automatische Formatkonvertierung.
+
+Nach dem Stoppen erscheint bis zum Abschluss eine Ladeanzeige. Bei Hover oder Tastaturfokus wird daraus ein
+Papierkorb zum Verwerfen. Auf Touch-Geräten kannst du den Button direkt antippen.
+Eine bereits hochgeladene Audiodatei bleibt dabei im Chat.
+
+Fehlerhinweise bleiben als Benachrichtigung sichtbar, bis du sie schließt.
+„Erneut versuchen“ wiederholt den fehlgeschlagenen Schritt. Das Schließen
+verwirft die Aufnahme nicht: Am Icon bleiben „Erneut versuchen“ und „Verwerfen“
+erreichbar.

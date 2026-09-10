@@ -1072,6 +1072,15 @@ export const aiRoutes = (() => {
           );
         }
       })
+      .post("/conversations/:conversationId/dictations/discard", v("json", z.object({ operationId: z.uuid() })), async (c) => {
+        const ctx = await resolveContext(c);
+        if (ctx instanceof Response) return ctx;
+        const conversation = await loadConversation(c, ctx);
+        if (!conversation) return notFound(c);
+        return respond(c, ok(await aiDictations.discardOperation({
+          conversationId: conversation.id, userId: ctx.ownerUserId, operationId: c.req.valid("json").operationId,
+        })));
+      })
       .get("/conversations/:conversationId/dictations", v("query", AiDictationListSchema), async (c) => {
         const ctx = await resolveContext(c);
         if (ctx instanceof Response) return ctx;

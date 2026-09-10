@@ -59,8 +59,12 @@ Attach a voice memo like any other file and write your own request, for example:
 not start transcription. Assistant can save the transcript as a text file in
 the chat.
 
-Choose **Dictate**, speak, then choose **Stop recording** to upload the complete
-recording. If your composer is unchanged, the recognized text is appended.
+Click the microphone next to Send to dictate. The neutral waveform responds to your
+microphone level while recording. Use × to discard or the square Stop button
+to finish and upload the complete recording. A loader
+then stays visible until processing finishes. Hover or focus the control to
+show the trash icon and discard the dictation. On touchscreens, tap the
+control to discard it. An already uploaded audio file stays in the chat. If your composer is unchanged, the recognized text is appended.
 Otherwise, **Dictation ready** offers **Insert** and **Discard**. Review the text
 and send it yourself.
 
@@ -76,3 +80,7 @@ Dictation requires microphone permission, browser support, and access to a
 configured audio model. Recordings use WAV. Transcription accepts at most
 25 MB; support for other file formats depends on the configured provider.
 There is no automatic format conversion.
+
+Dictation errors stay in a notification until you close it. Choose **Retry**
+to repeat the failed step. Closing the notification does not discard the
+recording: its control still offers **Retry** and **Discard**.

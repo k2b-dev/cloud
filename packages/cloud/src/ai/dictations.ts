@@ -72,6 +72,9 @@ export const aiDictations = {
       .digest("hex");
     return sql.begin(async (tx) => {
       await lockConversation(tx, input.conversationId, input.userId);
+      const [canceled] = await tx`SELECT operation_id FROM ai.dictation_cancellations
+        WHERE conversation_id = ${input.conversationId} AND user_id = ${input.userId} AND operation_id = ${input.operationId}`;
+      if (canceled) throw new AiDictationConflict("This recording operation was discarded.");
       const [previous] = await tx<
         DictationRow[]
       >`SELECT * FROM ai.dictations WHERE conversation_id = ${input.conversationId} AND user_id = ${input.userId} AND operation_id = ${input.operationId}`;
@@ -128,6 +131,23 @@ export const aiDictations = {
       await tx`UPDATE ai.dictations SET disposition = 'discarded', status = CASE WHEN status IN ('queued', 'running') THEN 'canceled' ELSE status END,
         source_bytes = NULL, lease_token = NULL, lease_until = NULL, updated_at = now()
         WHERE conversation_id = ${input.conversationId} AND user_id = ${input.userId} AND short_id = ${input.id} AND disposition = 'pending'`;
+    });
+  },
+  async discardOperation(input: { conversationId: string; userId: string; operationId: string }) {
+    z.uuid().parse(input.operationId);
+    return sql.begin(async (tx) => {
+      // Same lock as start/apply: the marker also fences a start that has not arrived yet.
+      await lockConversation(tx, input.conversationId, input.userId);
+      const [row] = await tx<DictationRow[]>`SELECT * FROM ai.dictations
+        WHERE conversation_id = ${input.conversationId} AND user_id = ${input.userId} AND operation_id = ${input.operationId}`;
+      if (row?.disposition === "applied") return { disposition: "applied" as const };
+      await tx`INSERT INTO ai.dictation_cancellations (conversation_id, user_id, operation_id)
+        VALUES (${input.conversationId}, ${input.userId}, ${input.operationId}) ON CONFLICT DO NOTHING`;
+      await tx`UPDATE ai.dictations SET disposition = 'discarded', status = 'canceled',
+        source_bytes = NULL, lease_token = NULL, lease_until = NULL, updated_at = now()
+        WHERE conversation_id = ${input.conversationId} AND user_id = ${input.userId} AND operation_id = ${input.operationId}
+          AND disposition = 'pending'`;
+      return { disposition: "discarded" as const };
     });
   },
   async retry(input: { conversationId: string; userId: string; id: string }) {

@@ -55,6 +55,10 @@ export type ChatComposerProps = {
   contextActions?: readonly ChatAction[];
   /** Additional compact controls rendered with the add/model controls. */
   footerTools?: JSX.Element;
+  /** Compact application controls immediately before the send/stop button. */
+  submitTools?: JSX.Element;
+  /** Replaces footer controls during an application-owned interaction, preserving the editor. */
+  footerContent?: JSX.Element;
   placeholder?: string;
   label?: string;
   inputLabel?: string;
@@ -443,120 +447,130 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
       </Show>
 
       <footer class="k2b-chat-composer__footer">
-        <div class="k2b-chat-composer__tools">
-          {props.footerTools}
-          <Show when={hasAddMenu()}>
-            <Dropdown.Root position="top-right" width="12rem" label={messages().addToChat} items={menuItems()} disabled={blocked()}>
-              <Dropdown.Trigger
-                appearance="plain"
-                class="k2b-chat-composer__icon-action"
-                label={messages().addToChat}
-                title={messages().addToChat}
-              >
-                <i class="ti ti-plus" aria-hidden="true" />
-              </Dropdown.Trigger>
-            </Dropdown.Root>
-          </Show>
-          <Show when={props.fileSelection}>
-            <input
-              ref={fileInputRef}
-              class="k2b-sr-only"
-              type="file"
-              tabIndex={-1}
-              aria-hidden="true"
-              accept={props.fileSelection?.accept}
-              multiple={props.fileSelection?.multiple ?? true}
-              onChange={(event) => {
-                if (event.currentTarget.files?.length) void runFiles(event.currentTarget.files);
-              }}
-            />
-          </Show>
-          <Show when={(props.models?.length ?? 0) > 0}>
-            <SelectChip
-              aria-label={messages().chooseModel}
-              position="top-right"
-              class="k2b-chat-composer__model"
-              menuWidth="15rem"
-              placeholder={messages().model}
-              value={() => props.selectedModelId ?? ""}
-              options={(props.models ?? []).map((model) => ({
-                value: model.id,
-                label: model.label,
-                description: model.description,
-                icon: model.icon,
-                image: model.image,
-              }))}
-              disabled={blocked() || running() || !props.onModelChange}
-              onValueChange={(modelId) => {
-                props.onModelChange?.(modelId);
-                queueMicrotask(focus);
-              }}
-            />
-          </Show>
-        </div>
+        <Show
+          when={props.footerContent}
+          fallback={
+            <>
+              <div class="k2b-chat-composer__tools">
+                {props.footerTools}
+                <Show when={hasAddMenu()}>
+                  <Dropdown.Root position="top-right" width="12rem" label={messages().addToChat} items={menuItems()} disabled={blocked()}>
+                    <Dropdown.Trigger
+                      appearance="plain"
+                      class="k2b-chat-composer__icon-action"
+                      label={messages().addToChat}
+                      title={messages().addToChat}
+                    >
+                      <i class="ti ti-plus" aria-hidden="true" />
+                    </Dropdown.Trigger>
+                  </Dropdown.Root>
+                </Show>
+                <Show when={props.fileSelection}>
+                  <input
+                    ref={fileInputRef}
+                    class="k2b-sr-only"
+                    type="file"
+                    tabIndex={-1}
+                    aria-hidden="true"
+                    accept={props.fileSelection?.accept}
+                    multiple={props.fileSelection?.multiple ?? true}
+                    onChange={(event) => {
+                      if (event.currentTarget.files?.length) void runFiles(event.currentTarget.files);
+                    }}
+                  />
+                </Show>
+                <Show when={(props.models?.length ?? 0) > 0}>
+                  <SelectChip
+                    aria-label={messages().chooseModel}
+                    position="top-right"
+                    class="k2b-chat-composer__model"
+                    menuWidth="15rem"
+                    placeholder={messages().model}
+                    value={() => props.selectedModelId ?? ""}
+                    options={(props.models ?? []).map((model) => ({
+                      value: model.id,
+                      label: model.label,
+                      description: model.description,
+                      icon: model.icon,
+                      image: model.image,
+                    }))}
+                    disabled={blocked() || running() || !props.onModelChange}
+                    onValueChange={(modelId) => {
+                      props.onModelChange?.(modelId);
+                      queueMicrotask(focus);
+                    }}
+                  />
+                </Show>
+              </div>
 
-        <div class="k2b-chat-composer__submit">
-          <For each={props.contextActions}>
-            {(action) => (
-              <button
-                type="button"
-                class="k2b-chat-composer__icon-action"
-                data-tone={action.variant === "danger" ? "danger" : undefined}
-                disabled={action.disabled}
-                aria-label={action.label}
-                title={action.label}
-                onClick={() => reportChatFailure(() => executeChatAction(action), props.onError)}
-              >
-                <i class={action.icon ?? "ti ti-dots"} aria-hidden="true" />
-              </button>
-            )}
-          </For>
-          <Show when={hasContextUsage() ? props.contextUsage : undefined}>{(usage) => <ContextUsage {...usage()} />}</Show>
-          <Show
-            when={running() && !hasDraft() && props.onStop}
-            fallback={
-              <button
-                type="button"
-                class="k2b-chat-composer__send"
-                disabled={!canSubmit()}
-                aria-label={
-                  submitting()
-                    ? running()
-                      ? runningSubmitIntent() === "queue"
-                        ? messages().queueing
-                        : messages().steering
-                      : messages().sending
-                    : running()
-                      ? runningSubmitIntent() === "queue"
-                        ? messages().queueMessage
-                        : messages().steerResponse
-                      : messages().sendMessage
-                }
-                title={
-                  running()
-                    ? runningSubmitIntent() === "queue"
-                      ? messages().queueMessage
-                      : messages().steerResponse
-                    : messages().sendMessage
-                }
-                onClick={() => void submit()}
-              >
-                <i class={submitting() ? "ti ti-loader-2 k2b-spin" : "ti ti-arrow-up"} aria-hidden="true" />
-              </button>
-            }
-          >
-            <button
-              type="button"
-              class="k2b-chat-composer__stop"
-              disabled={stopping()}
-              aria-label={stopping() ? messages().stopping : messages().stopResponse}
-              title={stopping() ? messages().stopping : messages().stopResponse}
-              onClick={() => reportChatFailure(() => props.onStop?.(), props.onError)}
-            >
-              <i class={stopping() ? "ti ti-loader-2 k2b-spin" : "ti ti-player-stop"} aria-hidden="true" />
-            </button>
-          </Show>
-        </div>
+              <div class="k2b-chat-composer__submit">
+                <For each={props.contextActions}>
+                  {(action) => (
+                    <button
+                      type="button"
+                      class="k2b-chat-composer__icon-action"
+                      data-tone={action.variant === "danger" ? "danger" : undefined}
+                      disabled={action.disabled}
+                      aria-label={action.label}
+                      title={action.label}
+                      onClick={() => reportChatFailure(() => executeChatAction(action), props.onError)}
+                    >
+                      <i class={action.icon ?? "ti ti-dots"} aria-hidden="true" />
+                    </button>
+                  )}
+                </For>
+                <Show when={hasContextUsage() ? props.contextUsage : undefined}>{(usage) => <ContextUsage {...usage()} />}</Show>
+                {props.submitTools}
+                <Show
+                  when={running() && !hasDraft() && props.onStop}
+                  fallback={
+                    <button
+                      type="button"
+                      class="k2b-chat-composer__send"
+                      disabled={!canSubmit()}
+                      aria-label={
+                        submitting()
+                          ? running()
+                            ? runningSubmitIntent() === "queue"
+                              ? messages().queueing
+                              : messages().steering
+                            : messages().sending
+                          : running()
+                            ? runningSubmitIntent() === "queue"
+                              ? messages().queueMessage
+                              : messages().steerResponse
+                            : messages().sendMessage
+                      }
+                      title={
+                        running()
+                          ? runningSubmitIntent() === "queue"
+                            ? messages().queueMessage
+                            : messages().steerResponse
+                          : messages().sendMessage
+                      }
+                      onClick={() => void submit()}
+                    >
+                      <i class={submitting() ? "ti ti-loader-2 k2b-spin" : "ti ti-arrow-up"} aria-hidden="true" />
+                    </button>
+                  }
+                >
+                  <button
+                    type="button"
+                    class="k2b-chat-composer__stop"
+                    disabled={stopping()}
+                    aria-label={stopping() ? messages().stopping : messages().stopResponse}
+                    title={stopping() ? messages().stopping : messages().stopResponse}
+                    onClick={() => reportChatFailure(() => props.onStop?.(), props.onError)}
+                  >
+                    <i class={stopping() ? "ti ti-loader-2 k2b-spin" : "ti ti-player-stop"} aria-hidden="true" />
+                  </button>
+                </Show>
+              </div>
+            </>
+          }
+        >
+          {(content) => content()}
+        </Show>
       </footer>
     </section>
   );

@@ -2121,6 +2121,13 @@ export const migrateCloudAi = async (): Promise<void> => {
       UNIQUE (conversation_id, user_id, operation_id)
     )
   `.simple();
+  // Retained for the conversation lifetime so a delayed upload cannot undo a discard.
+  await sql`CREATE TABLE IF NOT EXISTS ai.dictation_cancellations (
+    conversation_id UUID NOT NULL REFERENCES ai.conversations(id) ON DELETE CASCADE,
+    user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+    operation_id UUID NOT NULL,
+    PRIMARY KEY (conversation_id, user_id, operation_id)
+  )`.simple();
   await sql`CREATE INDEX IF NOT EXISTS ai_dictations_pending ON ai.dictations(conversation_id, created_at, id) WHERE disposition = 'pending'`.simple();
   await sql`CREATE INDEX IF NOT EXISTS ai_dictations_recovery ON ai.dictations(status, next_attempt_at, lease_until) WHERE status IN ('queued', 'running')`.simple();
   await sql.begin(async (tx) => {
