@@ -246,6 +246,15 @@ at `localhost` or `127.0.0.1`. Tests create their own users, mailboxes, and
 provider connections; nothing is seeded, so the run never depends on the state
 of your development database.
 
+Mail's schema is a single baseline in `packages/mail/src/schema.sql`; its runner
+knows exactly one version, `1` (`baseline`). A development database created by
+the previous 1..126 migration chain is refused with an explicit error. Mail has
+never been deployed, so reset such a machine once with:
+
+```bash
+psql "$DATABASE_URL" -c 'DROP SCHEMA mail CASCADE;'
+```
+
 ### Run Sync integration checks
 
 The Compose cluster exposes NATS on `127.0.0.1:4222` and monitoring on

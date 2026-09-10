@@ -34,6 +34,11 @@ access token. Manual access tokens are not renewed automatically. No migration
 of old alpha managed OAuth connections is provided; use a fresh Mail schema.
 The Cloud OAuth application and its client integrations are unchanged.
 
+Mail's alpha migration chain (versions 1 to 126) was collapsed into a single
+baseline schema. Mail has never been deployed, so no upgrade path exists: a
+development database that still holds the old versions is refused at startup and
+is reset with `DROP SCHEMA mail CASCADE;`.
+
 Pulse is included in production Compose and the release image set. Fresh Core
 installations use an explicitly supplied temporary `ADMIN_LOGIN_TOKEN` for
 first access; see [Deployment requirements](/en/docs/operations/deployment-requirements).
