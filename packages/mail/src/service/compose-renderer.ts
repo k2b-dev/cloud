@@ -228,6 +228,27 @@ export const validateComposeTemplateSource = (source: string): Result<void> => {
 
 export const markComposeTemplateSegment = (source: string): string => `${COMPOSE_SEGMENT_START}${source}${COMPOSE_SEGMENT_END}`;
 
+const TEMPLATE_SYNTAX = /\{\{|\{%/;
+
+/**
+ * Reports Liquid syntax that sits outside a marked template segment and would therefore be sent verbatim.
+ *
+ * Bodies that left Cloud as a provider draft and came back from another client lose their segment markers,
+ * so their template text can no longer be rendered and must be reviewed instead.
+ */
+export const hasUnrenderedTemplateSyntax = (body: string): boolean => {
+  let cursor = 0;
+  while (cursor < body.length) {
+    const start = body.indexOf(COMPOSE_SEGMENT_START, cursor);
+    if (start < 0) return TEMPLATE_SYNTAX.test(body.slice(cursor));
+    if (TEMPLATE_SYNTAX.test(body.slice(cursor, start))) return true;
+    const end = body.indexOf(COMPOSE_SEGMENT_END, start + COMPOSE_SEGMENT_START.length);
+    if (end < 0) return TEMPLATE_SYNTAX.test(body.slice(start + COMPOSE_SEGMENT_START.length));
+    cursor = end + COMPOSE_SEGMENT_END.length;
+  }
+  return false;
+};
+
 const markdownToPlainText = (source: string): Result<string> => {
   const complexity = validateMarkdownSourceComplexity(source);
   if (!complexity.ok) return complexity;

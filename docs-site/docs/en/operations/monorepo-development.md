@@ -220,6 +220,32 @@ contracts, shared UI coverage, CSS architecture, and formatting.
 
 See [Frontend testing](/en/docs/frontend/testing) for browser-facing checks.
 
+### Run application integration checks
+
+Applications that talk to PostgreSQL and NATS keep those checks behind a
+package script. Mail is the reference:
+
+```bash
+bun run --cwd packages/mail test:integration
+```
+
+The script sets `MAIL_INTEGRATION_TESTS=1` and loads
+`packages/mail/test/integration-preload.ts`. The preload isolates the run from
+the development stack in both directions:
+
+- it creates a private `cloud_mail_test_<random>` PostgreSQL database from
+  `DATABASE_URL`, migrates it like a fresh installation (core schemas, then the
+  application's own migrations), points the run at it, and drops it afterwards;
+- it uses a private `SYNC_NAMESPACE` and deletes the namespace's JetStream
+  streams afterwards, defaulting `NATS_SERVERS` to `nats://localhost:4222`.
+
+Without that isolation the running `app-mail` container competes for the same
+hydration jobs, workflow events, and commands, and the suite fails at random.
+The preload refuses to provision a database when `DATABASE_URL` does not point
+at `localhost` or `127.0.0.1`. Tests create their own users, mailboxes, and
+provider connections; nothing is seeded, so the run never depends on the state
+of your development database.
+
 ### Run Sync integration checks
 
 The Compose cluster exposes NATS on `127.0.0.1:4222` and monitoring on

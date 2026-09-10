@@ -397,6 +397,10 @@ export const migrate = async (db: SQL = sql): Promise<void> => {
       -- performed it. A transactional action can only keep its promise -- a
       -- crash means it did not happen -- if the evidence commits with the work.
       effect_output JSONB,
+      -- When this step's effect budget was charged. A parked step is executed
+      -- again when its dependency fires, and an allowance sized per effect
+      -- would be exhausted by the resume of the effect it already paid for.
+      budget_charged_at TIMESTAMPTZ,
       started_at TIMESTAMPTZ NOT NULL DEFAULT now(),
       finished_at TIMESTAMPTZ,
       updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -410,6 +414,7 @@ export const migrate = async (db: SQL = sql): Promise<void> => {
       CONSTRAINT step_outcome_dependency_chk CHECK ((state = 'waiting') = (dependency IS NOT NULL))
     )
   `.simple();
+  await db`ALTER TABLE workflows.step_outcome ADD COLUMN IF NOT EXISTS budget_charged_at TIMESTAMPTZ`.simple();
   // Resuming a parked run: find the steps blocked on a dependency that fired.
   await db`
     CREATE INDEX IF NOT EXISTS idx_workflows_step_outcome_dependency

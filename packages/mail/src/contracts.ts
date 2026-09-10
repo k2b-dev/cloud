@@ -1079,6 +1079,7 @@ export const composeSafetyWarningIdSchema = z.enum([
   "external_recipients",
   "reply_all",
   "suspicious_link",
+  "unrendered_template",
 ]);
 export type ComposeSafetyWarningId = z.infer<typeof composeSafetyWarningIdSchema>;
 
@@ -1086,7 +1087,7 @@ export const composeSafetyApprovalSchema = z
   .object({
     revision: z.number().int().positive().describe("Exact reviewed draft revision."),
     fingerprint: z.string().length(64).describe("Exact review fingerprint."),
-    warningIds: z.array(composeSafetyWarningIdSchema).max(5).describe("Warning identifiers accepted by the caller."),
+    warningIds: z.array(composeSafetyWarningIdSchema).max(6).describe("Warning identifiers accepted by the caller."),
   })
   .strict();
 export type ComposeSafetyApproval = z.infer<typeof composeSafetyApprovalSchema>;

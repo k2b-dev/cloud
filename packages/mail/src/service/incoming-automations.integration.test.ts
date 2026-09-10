@@ -2,7 +2,12 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { getProcessSync } from "@k2b/cloud";
 import { mandates, toPgUuidArray } from "@k2b/cloud/services";
 import { parsePgJsonRecord } from "@k2b/cloud/services/postgres";
-import { createWorkflowRun, deleteWorkflowScope } from "@k2b/cloud/workflows/store";
+import {
+  createWorkflowRun,
+  deleteWorkflowScope,
+  dispatchPendingWorkflowEvents,
+  wakeWorkflowRunsWaitingOn,
+} from "@k2b/cloud/workflows/store";
 import { sql } from "bun";
 import { newShortId } from "../lib/short-id";
 import { migrate } from "../migrate";
@@ -21,6 +26,8 @@ import {
 } from "./incoming-automations";
 import { resolveIncomingAutomationMandateCaller } from "./incoming-automation-workload";
 import { createMailbox } from "./mailboxes";
+import { ingestEnvelope } from "./sync-runtime";
+import { runMailWorkflow } from "./workflow-runtime";
 
 const enabled = process.env.MAIL_INTEGRATION_TESTS === "1";
 const suite = enabled ? describe : describe.skip;
@@ -51,6 +58,9 @@ suite("incoming automations", () => {
   const suffix = crypto.randomUUID().slice(0, 8);
   const userIds: string[] = [];
   let mailboxId = "";
+  let remoteResourceId = "";
+  let inboxFolderId = "";
+  let archiveFolderId = "";
   let ownerContext: MailRequestContext;
   let writerContext: MailRequestContext;
   let sharedAdminContext: MailRequestContext;
@@ -114,6 +124,7 @@ suite("incoming automations", () => {
       RETURNING id
     `;
     if (!resource) throw new Error("Failed to create incoming automation remote resource");
+    remoteResourceId = resource.id;
     const [binding] = await sql<{ id: string }[]>`
       INSERT INTO mail.provider_bindings (
         remote_resource_id, connection_id, state, remote_locator,
@@ -131,14 +142,30 @@ suite("incoming automations", () => {
       RETURNING id
     `;
     if (!junkFolder) throw new Error("Failed to create incoming automation junk folder");
-    await sql`
-      INSERT INTO mail.binding_folder_refs (
-        binding_id, folder_id, remote_path, uid_validity, uid_next, effective_rights, last_verified_at
-      ) VALUES (
-        ${binding.id}::uuid, ${junkFolder.id}::uuid, 'Junk', 1, 1,
-        ARRAY['read', 'insert', 'move']::text[], now()
-      )
+    const folders = await sql<{ id: string; stable_key: string }[]>`
+      INSERT INTO mail.folders (short_id, remote_resource_id, stable_key, name, role, sync_status)
+      VALUES
+        (${newShortId()}, ${resource.id}::uuid, ${`incoming-automation-inbox-${suffix}`}, 'Inbox', 'inbox', 'current'),
+        (${newShortId()}, ${resource.id}::uuid, ${`incoming-automation-archive-${suffix}`}, 'Archive', 'archive', 'current')
+      RETURNING id, stable_key
     `;
+    inboxFolderId = folders.find((folder) => folder.stable_key === `incoming-automation-inbox-${suffix}`)?.id ?? "";
+    archiveFolderId = folders.find((folder) => folder.stable_key === `incoming-automation-archive-${suffix}`)?.id ?? "";
+    if (!inboxFolderId || !archiveFolderId) throw new Error("Failed to create incoming automation folders");
+    for (const folder of [
+      { id: junkFolder.id, path: "Junk" },
+      { id: inboxFolderId, path: "INBOX" },
+      { id: archiveFolderId, path: "Archive" },
+    ]) {
+      await sql`
+        INSERT INTO mail.binding_folder_refs (
+          binding_id, folder_id, remote_path, uid_validity, uid_next, effective_rights, last_verified_at
+        ) VALUES (
+          ${binding.id}::uuid, ${folder.id}::uuid, ${folder.path}, 1, 1,
+          ARRAY['read', 'insert', 'move']::text[], now()
+        )
+      `;
+    }
   });
 
   afterAll(async () => {
@@ -303,55 +330,6 @@ suite("incoming automations", () => {
       id: updated.data.id,
       workflowId: updated.data.workflowId,
       name: updated.data.name,
-    });
-
-    const destructive = await createIncomingAutomation({
-      context: ownerContext,
-      mailboxId,
-      input: {
-        name: "Overlapping junk",
-        enabled: true,
-        scope: {
-          mode: "matching",
-          conditions: {
-            mode: "any",
-            items: [
-              { field: "sender_address", operator: "is", value: "first@example.test" },
-              { field: "sender_address", operator: "is", value: "shared@example.test" },
-            ],
-          },
-        },
-        steps: [{ id: crypto.randomUUID(), kind: "mail_action", action: { kind: "junk" } }],
-      },
-    });
-    expect(destructive.ok).toBe(true);
-    if (!destructive.ok) return;
-    const conflict = await createIncomingAutomation({
-      context: ownerContext,
-      mailboxId,
-      input: {
-        name: "Overlapping trash",
-        enabled: true,
-        scope: {
-          mode: "matching",
-          conditions: {
-            mode: "any",
-            items: [
-              { field: "sender_address", operator: "is", value: "other@example.test" },
-              { field: "sender_address", operator: "is", value: "shared@example.test" },
-            ],
-          },
-        },
-        steps: [{ id: crypto.randomUUID(), kind: "mail_action", action: { kind: "trash" } }],
-      },
-    });
-    expect(conflict.ok).toBe(false);
-    if (!conflict.ok) expect(conflict.error.message).toContain("Overlapping junk");
-    await deleteIncomingAutomation({
-      context: ownerContext,
-      mailboxId,
-      automationId: destructive.data.id,
-      input: { expectedRevision: destructive.data.revision },
     });
   });
 
@@ -743,5 +721,151 @@ suite("incoming automations", () => {
       automationId: created.data.id,
       input: { expectedRevision: enabled.data.revision },
     });
+  });
+  test("runs matching automations oldest first and skips a message an older automation moved", async () => {
+    const [archive] = await sql<{ short_id: string }[]>`
+      SELECT short_id FROM mail.folders WHERE id = ${archiveFolderId}::uuid
+    `;
+    if (!archive) throw new Error("Failed to load the archive folder public id");
+    const sender = `ordered-${suffix}@external.test`;
+    const scope = {
+      mode: "matching" as const,
+      conditions: { mode: "all" as const, items: [{ field: "sender_address" as const, operator: "is" as const, value: sender }] },
+    };
+    const older = await createIncomingAutomation({
+      context: ownerContext,
+      mailboxId,
+      input: {
+        name: `Ordered move ${suffix}`,
+        enabled: true,
+        scope,
+        steps: [
+          { id: crypto.randomUUID(), kind: "mail_action", action: { kind: "move_to_folder", folderId: archive.short_id } },
+        ],
+      },
+    });
+    if (!older.ok) throw new Error(older.error.message);
+    const newer = await createIncomingAutomation({
+      context: ownerContext,
+      mailboxId,
+      input: {
+        name: `Ordered junk ${suffix}`,
+        enabled: true,
+        scope,
+        steps: [{ id: crypto.randomUUID(), kind: "mail_action", action: { kind: "junk" } }],
+      },
+    });
+    if (!newer.ok) throw new Error(newer.error.message);
+    // The list is the run order.
+    const listed = await listIncomingAutomations(ownerContext, mailboxId);
+    const listedIds = listed.ok ? listed.data.map((item) => item.id) : [];
+    expect(listedIds.indexOf(older.data.id)).toBeLessThan(listedIds.indexOf(newer.data.id));
+
+    const uid = 8100 + Math.floor(Math.random() * 800);
+    await ingestEnvelope({
+      db: sql,
+      mailboxId,
+      remoteResourceId,
+      folderId: inboxFolderId,
+      message: {
+        remoteRef: { folderStableKey: `incoming-automation-inbox-${suffix}`, uidValidity: "1", uid: String(uid), modseq: String(uid) },
+        providerMessageId: `ordered-${suffix}`,
+        providerThreadId: null,
+        messageId: `<ordered-${suffix}@external.test>`,
+        inReplyTo: null,
+        references: [],
+        subject: "Ordered automations",
+        sentAt: new Date(),
+        internalDate: new Date(),
+        sizeBytes: 128,
+        flags: [],
+        labels: [],
+        addresses: {
+          from: [{ name: "Boss", address: sender }],
+          replyTo: [],
+          to: [{ name: "Support", address: "automation@example.test" }],
+          cc: [],
+          bcc: [],
+        },
+        mimeStructure: {},
+      } as never,
+      captureWorkflowTriggers: true,
+    });
+    await dispatchPendingWorkflowEvents(100, { appId: "mail", scopeId: mailboxId });
+    const runIdFor = async (workflowId: string): Promise<string> => {
+      const [row] = await sql<{ id: string }[]>`
+        SELECT run.id
+        FROM workflows.run run
+        WHERE run.workflow_id = ${workflowId}::uuid
+        ORDER BY run.created_at DESC
+        LIMIT 1
+      `;
+      if (!row) throw new Error("Automation run was not dispatched");
+      return row.id;
+    };
+    const olderRunId = await runIdFor(older.data.workflowId);
+    const newerRunId = await runIdFor(newer.data.workflowId);
+
+    // The older automation issues its move and parks on the provider command.
+    await runMailWorkflow(olderRunId);
+    const commandsFor = async (runId: string) => sql<{ kind: string }[]>`
+      SELECT kind FROM mail.commands WHERE correlation_id = ${runId}
+    `;
+    expect((await commandsFor(olderRunId)).map((command) => command.kind)).toEqual(["move"]);
+
+    // The newer one leaves the placement to it and finishes cleanly.
+    const settled = await runMailWorkflow(newerRunId);
+    expect(settled.state).toBe("finished");
+    expect(await commandsFor(newerRunId)).toEqual([]);
+    const [skipped] = await sql<{ state: string; outcome: { outcome?: { output?: Record<string, unknown> } } | string }[]>`
+      SELECT run.state, step.outcome
+      FROM workflows.run run
+      JOIN workflows.step_outcome step ON step.run_id = run.id AND step.state = 'completed'
+      WHERE run.id = ${newerRunId}::uuid
+      ORDER BY step.step_key DESC
+      LIMIT 1
+    `;
+    expect(skipped?.state).toBe("succeeded");
+    const outcome = typeof skipped?.outcome === "string" ? JSON.parse(skipped.outcome) : skipped?.outcome;
+    expect(outcome?.outcome?.output).toMatchObject({ action: "junkMessage", applied: false, skipped: "earlier_automation" });
+
+    // The provider confirms the move, and the parked run resumes to observe it.
+    // Its allowance is one move, which the move already spent: charging the
+    // resume again failed every guided placement automation.
+    const [moveCommand] = await sql<{ id: string }[]>`
+      SELECT id FROM mail.commands WHERE correlation_id = ${olderRunId} AND kind = 'move'
+    `;
+    if (!moveCommand) throw new Error("The move command was not created");
+    await sql`UPDATE mail.commands SET state = 'confirmed', finished_at = now() WHERE id = ${moveCommand.id}::uuid`;
+    expect(await wakeWorkflowRunsWaitingOn({ appId: "mail", kind: "mail.command", key: moveCommand.id })).toContain(olderRunId);
+
+    const resumed = await runMailWorkflow(olderRunId);
+    expect(resumed.state).toBe("finished");
+    const [older_run] = await sql<{ state: string; effects_used: Record<string, number> | string }[]>`
+      SELECT state, effects_used FROM workflows.run WHERE id = ${olderRunId}::uuid
+    `;
+    expect(older_run?.state).toBe("succeeded");
+    const used = typeof older_run?.effects_used === "string" ? JSON.parse(older_run.effects_used) : older_run?.effects_used;
+    expect(used?.maxMoves).toBe(1);
+    // Still one move: the resume adopted the command it already issued.
+    expect((await commandsFor(olderRunId)).map((command) => command.kind)).toEqual(["move"]);
+
+    const attention = await sql<{ id: string }[]>`
+      SELECT id FROM workflows.run
+      WHERE scope_id = ${mailboxId} AND state = 'needs_attention'
+    `;
+    expect(attention).toEqual([]);
+
+    for (const automation of [newer.data, older.data]) {
+      const [current] = await sql<{ revision: string | number }[]>`
+        SELECT revision FROM mail.incoming_automations WHERE id = ${automation.id}::uuid
+      `;
+      await deleteIncomingAutomation({
+        context: ownerContext,
+        mailboxId,
+        automationId: automation.id,
+        input: { expectedRevision: Number(current!.revision) },
+      });
+    }
   });
 });

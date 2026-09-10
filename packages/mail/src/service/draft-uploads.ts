@@ -12,6 +12,7 @@ import { withShortIdDb } from "../lib/short-id";
 import { requireMailboxPermission } from "./access";
 import { actorRefFromRequest, type MailRequestContext } from "./auth";
 import { sha256Text } from "./canonical";
+import { requireDraftLeaseAvailable } from "./draft-leases";
 import { draftAttachmentCapacity, getDraft, sanitizeContentType, sanitizeFilename } from "./drafts";
 
 export const DRAFT_UPLOAD_CHUNK_BYTES = 1024 * 1024;
@@ -96,6 +97,8 @@ export const createDraftAttachmentUpload = async (params: {
   if (!size.ok) return size;
   const actor = uploadActor(params.context);
   if (!actor) return fail(err.forbidden("Draft upload actor is invalid"));
+  const lease = await requireDraftLeaseAvailable({ context: params.context, mailboxId: params.mailboxId, draftId: params.draftId });
+  if (!lease.ok) return lease;
   try {
     return await sql.begin(async (tx) => {
       const allowed = await requireMailboxPermission(params.context, params.mailboxId, "write", tx);
@@ -280,6 +283,8 @@ export const finalizeDraftAttachmentUpload = async (params: {
   if (!actor) return fail(err.forbidden("Draft upload actor is invalid"));
   const permission = await requireMailboxPermission(params.context, params.mailboxId, "write");
   if (!permission.ok) return permission;
+  const lease = await requireDraftLeaseAvailable({ context: params.context, mailboxId: params.mailboxId, draftId: params.draftId });
+  if (!lease.ok) return lease;
   const draftId = params.draftId;
   const [candidate] = await sql<(DbUpload & { mailbox_id: string })[]>`
     SELECT ${uploadColumns}, draft.mailbox_id

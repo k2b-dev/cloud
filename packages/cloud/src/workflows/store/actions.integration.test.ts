@@ -439,6 +439,39 @@ describe("declared actions", () => {
     expect(JSON.stringify(detail?.error)).toContain("effect budget for emails");
   });
 
+  test("a step that parks and resumes is charged once, not once per attempt", async () => {
+    if (!(await ready())) return;
+    // One move allowed, which is how an incoming automation is sized: the
+    // effect happens on the first attempt and the resume only observes it.
+    const { runId, appId } = await queued("probe.move", { maxMoves: 1 });
+    let calls = 0;
+    const dependency = { kind: "probe.command", key: crypto.randomUUID() };
+    const actions = {
+      "probe.move": workflowAction.idempotent({
+        label: "Move",
+        description: "Moves.",
+        config: CONFIG,
+        plan: async () => ({ summary: "move", consumes: { maxMoves: 1 } }),
+        run: async () => {
+          calls += 1;
+          return calls === 1 ? { state: "waiting" as const, dependency } : { state: "succeeded" as const, output: { moved: true } };
+        },
+      }),
+    };
+    const port = createWorkflowActionPort(workflowModule(actions));
+
+    await runOneWorkflow({ worker: "w1", runId, actions: port });
+    expect((await getWorkflowRun(runId))?.state).toBe("waiting");
+
+    expect(await wakeWorkflowRunsWaitingOn({ appId, ...dependency })).toEqual([runId]);
+    await runOneWorkflow({ worker: "w2", runId, actions: port });
+
+    const detail = await getWorkflowRun(runId);
+    expect(detail?.state).toBe("succeeded");
+    expect(detail?.effectsUsed).toEqual({ maxMoves: 1 });
+    expect(calls).toBe(2);
+  });
+
   test("a transactional action commits its work and its evidence together", async () => {
     if (!(await ready())) return;
     const { runId } = await queued("probe.tx");

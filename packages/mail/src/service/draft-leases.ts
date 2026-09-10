@@ -220,6 +220,34 @@ export const acquireDraftLease = async (params: {
   });
 };
 
+/**
+ * Rejects a draft content mutation while another collaborator holds the editing lease.
+ *
+ * A free draft stays editable so a single user is never blocked by their own expired lease.
+ */
+export const requireDraftLeaseAvailable = async (params: {
+  context: MailRequestContext;
+  mailboxId: string;
+  draftId: string;
+}): Promise<Result<void>> => {
+  const allowed = await requireMailboxPermission(params.context, params.mailboxId, "write");
+  if (!allowed.ok) return allowed;
+  const holder = holderFromContext(params.context);
+  try {
+    return await withLeaseState(params.draftId, async () => {
+      const current = await currentValidEntry(params.mailboxId, params.draftId);
+      if (!current || sameHolder(current.value.holder, holder)) return ok();
+      return fail({
+        code: "DRAFT_LEASE_HELD",
+        message: `This draft is being edited by ${current.value.holder.displayName}`,
+        status: 409 as const,
+      });
+    });
+  } catch {
+    return fail(err.internal("Failed to verify the draft editing lease"));
+  }
+};
+
 const ownedEntry = async (draftId: string, holder: DraftLeaseHolder, token: string): Promise<DraftLeaseEntry | null> => {
   const entry = await currentEntry(draftId);
   return entry && sameHolder(entry.value.holder, holder) && entry.value.token === token ? entry.value : null;

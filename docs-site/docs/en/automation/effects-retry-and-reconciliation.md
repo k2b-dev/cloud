@@ -111,7 +111,9 @@ The same plan drives dry runs and execution budgets. Synthetic outputs must say
 that they are planned.
 
 Publication can set an `effectBudget`. The kernel charges the root run, so
-fan-out cannot multiply an allowed effect count.
+fan-out cannot multiply an allowed effect count. Each step is charged once: a
+step that parks on a dependency and resumes, or is retried, does not pay a
+second time for the effect it already performed.
 
 AI actions consume `maxAiCalls`. A replay of an already-created durable AI task
 does not charge that unit again.

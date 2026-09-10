@@ -31,7 +31,19 @@ type AutomaticReplySuppressionReason = AutoReplySuppressionReason | AutomaticRep
 
 type PreparedAutomaticReply =
   | { state: "suppressed"; effectId: string; reasons: AutomaticReplySuppressionReason[] }
-  | { state: "queued"; effectId: string; draftId: string; draftRevision: number; scheduledAt: string };
+  | {
+      state: "queued";
+      effectId: string;
+      draftId: string;
+      draftRevision: number;
+      scheduledAt: string;
+      /**
+       * The send command this step already issued, when the effect is adopted
+       * from an earlier execution generation. A retried step reports that
+       * command's outcome instead of issuing a second one.
+       */
+      commandId: string | null;
+    };
 
 type AutomaticReplyEffectRow = {
   id: string;
@@ -82,6 +94,7 @@ const existingResult = async (effect: AutomaticReplyEffectRow, db: SqlClient): P
     draftId: effect.draft_id,
     draftRevision: Number(draft.revision),
     scheduledAt: toIso(effect.scheduled_at),
+    commandId: effect.command_id,
   });
 };
 
@@ -272,7 +285,14 @@ export const prepareAutomaticReplyInTransaction = async (params: {
         ${{ messageId: params.messageId, conversationId: params.conversationId, recipient, scheduledAt: scheduledAt.toISOString() }}::jsonb
       )
     `;
-    return ok({ state: "queued", effectId, draftId, draftRevision: draft.data.revision, scheduledAt: scheduledAt.toISOString() });
+    return ok({
+      state: "queued",
+      effectId,
+      draftId,
+      draftRevision: draft.data.revision,
+      scheduledAt: scheduledAt.toISOString(),
+      commandId: null,
+    });
   } catch (error) {
     if (isServiceError(error)) return fail(error);
     throw error;

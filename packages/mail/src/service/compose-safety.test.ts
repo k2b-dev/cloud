@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { markComposeTemplateSegment } from "./compose-renderer";
 import type { ComposeSafetySource } from "./compose-safety";
 import { evaluateComposeSafety } from "./compose-safety";
 
@@ -13,6 +14,7 @@ const source = (overrides: Partial<ComposeSafetySource> = {}): ComposeSafetySour
   format: "markdown",
   attachmentNames: [],
   config: { internalDomains: ["example.org"], largeRecipientThreshold: 20 },
+  origin: "user",
   ...overrides,
 });
 
@@ -70,6 +72,13 @@ describe("compose safety", () => {
     const review = evaluateComposeSafety(source({ body: "[https://example.org](https://lookalike.example/login)" }));
     expect(review.warnings.map((warning) => warning.id)).toContain("suspicious_link");
     expect(evaluateComposeSafety(source({ body: "[Project](https://example.org/project)" })).warnings).toHaveLength(0);
+  });
+
+  test("warns about template text that no longer sits inside a rendered segment", () => {
+    const raw = evaluateComposeSafety(source({ body: "Regards\n{{ sender.email }}" }));
+    expect(raw.warnings.map((warning) => warning.id)).toContain("unrendered_template");
+    const marked = evaluateComposeSafety(source({ body: `Regards\n${markComposeTemplateSegment("{{ sender.email }}")}` }));
+    expect(marked.warnings.map((warning) => warning.id)).not.toContain("unrendered_template");
   });
 
   test("fingerprint changes with reviewed content and configuration", () => {

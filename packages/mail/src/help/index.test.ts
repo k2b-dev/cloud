@@ -116,7 +116,7 @@ describe("mailHelp", () => {
     const expectedContent = new Map([
       ["mail-start", "Mail organizes email around **mailboxes**"],
       ["mail-work", "Use **Search mailbox** for a quick search"],
-      ["mail-compose", "Only one editing session can save the draft at a time"],
+      ["mail-compose", "Only the session that currently holds the editing lease can change the draft"],
       ["mail-collaboration", "Internal comments are visible to people who can read the mailbox"],
       ["mail-security", "Mail keeps uncertain signals quiet"],
       ["mail-admin", "Pause mailbox** stops incoming synchronization"],

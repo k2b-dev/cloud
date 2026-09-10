@@ -376,13 +376,15 @@ const protectMailboxSenders = async (params: {
   if (genericMoves.length > 0) {
     const folderIds = [...new Set(genericMoves.map((action) => action.folderId))];
     const folders = await params.db<{ id: string; role: string | null }[]>`
-      SELECT folder.id, COALESCE(role_override.role, folder.role) AS role
+      -- A guided action names its destination by public short id, the same
+      -- reference the generated workflow source binds.
+      SELECT folder.short_id AS id, COALESCE(role_override.role, folder.role) AS role
       FROM mail.folders folder
       JOIN mail.remote_resources resource ON resource.id = folder.remote_resource_id
       LEFT JOIN mail.folder_role_overrides role_override
         ON role_override.mailbox_id = resource.mailbox_id AND role_override.folder_id = folder.id
       WHERE resource.mailbox_id = ${params.mailboxId}::uuid
-        AND folder.id = ANY(${toPgUuidArray(folderIds)}::uuid[])
+        AND folder.short_id = ANY(${toPgTextArray(folderIds)}::text[])
         AND folder.discovery_state = 'active'
         AND folder.selectable
     `;
@@ -446,73 +448,6 @@ const destructiveAction = (action: MailAutomationAction): action is Extract<Mail
 
 const destructiveActionFrom = (actions: MailAutomationAction[]): Extract<MailAutomationAction, { kind: "junk" | "trash" }> | undefined =>
   actions.find(destructiveAction);
-
-const destructiveKindsFrom = (actions: MailAutomationAction[]): Set<"junk" | "trash"> =>
-  new Set(actions.flatMap((action) => (destructiveAction(action) ? [action.kind] : [])));
-
-const senderScopesOverlap = (left: { kind: SenderMatchKind; value: string }, right: { kind: SenderMatchKind; value: string }): boolean => {
-  if (left.kind === "sender" && right.kind === "sender") return left.value === right.value;
-  if (left.kind === "domain" && right.kind === "domain") {
-    return isSameOrSubdomain(left.value, right.value) || isSameOrSubdomain(right.value, left.value);
-  }
-  const sender = left.kind === "sender" ? left.value : right.value;
-  const domain = left.kind === "domain" ? left.value : right.value;
-  return isSameOrSubdomain(sender.slice(sender.lastIndexOf("@") + 1), domain);
-};
-
-const constrainingSenderScopes = (conditions: AutomationConditionSet): Array<{ kind: SenderMatchKind; value: string }> | null => {
-  const scopes = conditions.items.flatMap((condition) => {
-    const scope = senderCondition(condition);
-    return scope ? [scope] : [];
-  });
-  if (conditions.mode === "any") return scopes.length === conditions.items.length ? scopes : null;
-  return scopes.length > 0 ? [scopes[0]!] : null;
-};
-
-const conditionsPotentiallyOverlap = (left: AutomationConditionSet, right: AutomationConditionSet): boolean => {
-  if (JSON.stringify(left) === JSON.stringify(right)) return true;
-  const leftScopes = constrainingSenderScopes(left);
-  const rightScopes = constrainingSenderScopes(right);
-  return (
-    !leftScopes ||
-    !rightScopes ||
-    leftScopes.some((leftScope) => rightScopes.some((rightScope) => senderScopesOverlap(leftScope, rightScope)))
-  );
-};
-
-const protectAgainstConflictingAutomations = async (params: {
-  mailboxId: string;
-  automationId?: string;
-  enabled: boolean;
-  conditions: AutomationConditionSet;
-  actions: MailAutomationAction[];
-  db: SqlClient;
-}): Promise<Result<void>> => {
-  const destructiveKinds = destructiveKindsFrom(params.actions);
-  if (!params.enabled || destructiveKinds.size === 0) return ok();
-  const rows = await params.db<
-    Array<{
-      id: string;
-      name: string;
-      scope: MailAutomationScope | string;
-      steps: MailAutomationStep[] | string;
-    }>
-  >`
-    SELECT automation.id, automation.name, automation.scope, automation.steps
-    FROM mail.incoming_automations automation
-    WHERE automation.mailbox_id = ${params.mailboxId}::uuid
-      AND automation.deleted_at IS NULL
-      AND automation.enabled = true
-      AND (${params.automationId ?? null}::uuid IS NULL OR automation.id <> ${params.automationId ?? null}::uuid)
-    FOR UPDATE
-  `;
-  const conflict = rows.find((row) => {
-    const existingKinds = destructiveKindsFrom(incomingAutomationActions(parseJson<MailAutomationStep[]>(row.steps)));
-    const incompatible = [...existingKinds].some((existing) => [...destructiveKinds].some((candidate) => existing !== candidate));
-    return incompatible && conditionsPotentiallyOverlap(params.conditions, scopeConditions(parseJson(row.scope)));
-  });
-  return conflict ? fail(err.conflict(`Incoming automation conflicts with “${conflict.name}”`)) : ok();
-};
 
 export const validateDestructiveIncomingAutomationsForMailbox = async (params: {
   mailboxId: string;
@@ -675,7 +610,9 @@ export const listIncomingAutomations = async (context: MailRequestContext, mailb
     FROM mail.incoming_automations automation
     WHERE automation.mailbox_id = ${mailboxId}::uuid
       AND automation.deleted_at IS NULL
-    ORDER BY automation.enabled DESC, automation.normalized_name, automation.id
+    -- The list reads as the run order: for one message, automations act
+    -- oldest first.
+    ORDER BY automation.created_at, automation.id
     LIMIT 500
   `;
   return ok(rows.map(mapIncomingAutomation));
@@ -1137,15 +1074,6 @@ export const createIncomingAutomation = async (params: {
           db: tx,
         }),
       );
-      unwrap(
-        await protectAgainstConflictingAutomations({
-          mailboxId: params.mailboxId,
-          enabled: parsed.data.enabled,
-          conditions,
-          actions,
-          db: tx,
-        }),
-      );
       const actor = requestActor(params.context);
       const mandate = incomingAutomationHasSpaces(parsed.data.steps)
         ? unwrap(await createAutomationMandate(params.context, automationId, parsed.data.steps, tx))
@@ -1243,16 +1171,6 @@ export const updateIncomingAutomation = async (params: {
       unwrap(
         await protectMailboxSenders({
           mailboxId: params.mailboxId,
-          conditions,
-          actions,
-          db: tx,
-        }),
-      );
-      unwrap(
-        await protectAgainstConflictingAutomations({
-          mailboxId: params.mailboxId,
-          automationId: params.automationId,
-          enabled: parsed.data.enabled,
           conditions,
           actions,
           db: tx,
@@ -1379,16 +1297,6 @@ export const setIncomingAutomationEnabled = async (params: {
         unwrap(
           await protectMailboxSenders({
             mailboxId: params.mailboxId,
-            conditions: scopeConditions(current.scope),
-            actions: incomingAutomationActions(current.steps),
-            db: tx,
-          }),
-        );
-        unwrap(
-          await protectAgainstConflictingAutomations({
-            mailboxId: params.mailboxId,
-            automationId: params.automationId,
-            enabled: true,
             conditions: scopeConditions(current.scope),
             actions: incomingAutomationActions(current.steps),
             db: tx,

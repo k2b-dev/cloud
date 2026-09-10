@@ -10,14 +10,19 @@ suite("mail migrations", () => {
   test("installs mandate-only automation authority idempotently", async () => {
     await migrate();
     await migrate();
-    const [shape] = await sql<{ columns: number; applied: number }[]>`
+    const [shape] = await sql<{ columns: number; indexes: number; constraints: number; applied: number; converged: number }[]>`
       SELECT
         (SELECT count(*)::int FROM information_schema.columns WHERE table_schema = 'mail'
           AND table_name = 'incoming_automations'
           AND column_name IN ('integration_credential_id', 'encrypted_integration_token', 'authority_migration_attempted_at')) AS columns,
-        (SELECT count(*)::int FROM mail.schema_migrations WHERE version = 121) AS applied
+        (SELECT count(*)::int FROM pg_indexes WHERE schemaname = 'mail'
+          AND indexname IN ('incoming_automations_legacy_authority_idx', 'incoming_automations_legacy_authority_retry_idx')) AS indexes,
+        (SELECT count(*)::int FROM pg_constraint WHERE conrelid = 'mail.incoming_automations'::regclass
+          AND conname IN ('incoming_automations_integration_credential_shape', 'incoming_automations_authority_shape')) AS constraints,
+        (SELECT count(*)::int FROM mail.schema_migrations WHERE version = 121) AS applied,
+        (SELECT count(*)::int FROM mail.schema_migrations WHERE version = 126 AND name = 'drop_legacy_automation_authority') AS converged
     `;
-    expect(shape).toEqual({ columns: 0, applied: 1 });
+    expect(shape).toEqual({ columns: 0, indexes: 0, constraints: 0, applied: 1, converged: 1 });
   });
 
   test("installs versioned attachment extraction and source-aware search chunks", async () => {

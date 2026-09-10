@@ -3965,6 +3965,29 @@ const requirePasswordProviderSecrets = async (db: SqlClient): Promise<void> => {
   `;
 };
 
+/**
+ * Versions 120, 122 and 123 introduced integration-credential authority for
+ * incoming automations and were removed again before any deployment. Fresh
+ * databases never saw them, but early databases still carry their columns,
+ * check constraints and partial indexes. This step converges them on the
+ * mandate-only model; the deleted migrations stay deleted.
+ */
+const dropLegacyAutomationAuthority = async (db: SqlClient): Promise<void> => {
+  await db`
+    ALTER TABLE mail.incoming_automations
+      DROP CONSTRAINT IF EXISTS incoming_automations_integration_credential_shape,
+      DROP CONSTRAINT IF EXISTS incoming_automations_authority_shape
+  `;
+  await db`DROP INDEX IF EXISTS mail.incoming_automations_legacy_authority_idx`;
+  await db`DROP INDEX IF EXISTS mail.incoming_automations_legacy_authority_retry_idx`;
+  await db`
+    ALTER TABLE mail.incoming_automations
+      DROP COLUMN IF EXISTS integration_credential_id,
+      DROP COLUMN IF EXISTS encrypted_integration_token,
+      DROP COLUMN IF EXISTS authority_migration_attempted_at
+  `;
+};
+
 const requireAutomaticReplyInterval = async (db: SqlClient): Promise<void> => {
   await db`
     UPDATE mail.automatic_reply_configurations
@@ -4296,10 +4319,12 @@ const migrations: readonly MailMigration[] = [
   { version: 118, name: "flat_conversation_comments", run: flattenConversationComments },
   { version: 119, name: "attachment_document_extraction", run: addAttachmentDocumentExtraction },
   { version: 121, name: "incoming_automation_mandates", run: addIncomingAutomationMandates },
-  // 122 and 123 were used by migrations that no longer exist; databases that ran
-  // them keep those rows, so the next steps continue at 124.
+  // 120, 122 and 123 were used by migrations that no longer exist; databases that
+  // ran them keep those rows, so the next steps continue at 124 and version 126
+  // removes the schema they left behind.
   { version: 124, name: "automatic_reply_interval_floor", run: requireAutomaticReplyInterval },
   { version: 125, name: "password_only_provider_secrets", run: requirePasswordProviderSecrets },
+  { version: 126, name: "drop_legacy_automation_authority", run: dropLegacyAutomationAuthority },
 ];
 
 const ensureMigrationFoundation = async (db: SqlClient): Promise<void> => {

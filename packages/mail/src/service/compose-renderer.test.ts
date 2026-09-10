@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   type ComposeRenderContext,
   DEFAULT_MAIL_CSS,
+  hasUnrenderedTemplateSyntax,
   markComposeTemplateSegment,
   renderComposeContent,
   validateComposeCss,
@@ -60,6 +61,14 @@ describe("compose renderer", () => {
     if (!rendered.ok) return;
     expect(rendered.data.text).toBe("Contact writer-123@example.test");
     expect(rendered.data.html).not.toContain("href=");
+  });
+
+  test("detects template syntax that sits outside a marked segment", () => {
+    expect(hasUnrenderedTemplateSyntax(markComposeTemplateSegment("{{ sender.email }}"))).toBe(false);
+    expect(hasUnrenderedTemplateSyntax("Regards\n{{ sender.email }}")).toBe(true);
+    expect(hasUnrenderedTemplateSyntax(`${markComposeTemplateSegment("{{ sender.email }}")}\n{% if x %}`)).toBe(true);
+    expect(hasUnrenderedTemplateSyntax("Plain regards")).toBe(false);
+    expect(hasUnrenderedTemplateSyntax("\u2063{{ sender.email }}")).toBe(true);
   });
 
   test("keeps unknown user braces literal and prevents Markdown injection from variables", () => {

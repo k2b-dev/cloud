@@ -4,6 +4,8 @@ import { newShortId } from "../lib/short-id";
 import { migrate } from "../migrate";
 import { grantMailboxAccess } from "./access";
 import type { MailRequestContext } from "./auth";
+import { reviewDraftComposeSafety, validateDraftComposeSafety } from "./compose-safety";
+import { acquireDraftLease, releaseDraftLease } from "./draft-leases";
 import { appendDraftAttachmentUpload, createDraftAttachmentUpload, finalizeDraftAttachmentUpload } from "./draft-uploads";
 import { createDraft, updateDraft } from "./drafts";
 import { createMailbox } from "./mailboxes";
@@ -290,5 +292,141 @@ suite("mail draft limits", () => {
     expect(draft.ok).toBe(true);
     if (!draft.ok) return;
     expect(draft.data.cc).toEqual([{ name: "Ops", address: "Ops@Example.com" }]);
+  });
+
+  test("lets only the current lease holder change a shared draft", async () => {
+    const [collaboratorRow] = await sql<{ id: string; uid: string; display_name: string; mail: string }[]>`
+      INSERT INTO auth.users (uid, provider, profile, display_name, mail)
+      VALUES (${`draft-lease-mate-${suffix}`}, 'local', 'user', 'Bea Mate', ${`draft-lease-mate-${suffix}@example.test`})
+      RETURNING id, uid, display_name, mail
+    `;
+    if (!collaboratorRow) throw new Error("Draft lease test collaborator was not created");
+    userIds.push(collaboratorRow.id);
+    const collaborator = userContext(collaboratorRow.id, collaboratorRow.uid, collaboratorRow.display_name, collaboratorRow.mail);
+    const granted = await grantMailboxAccess({
+      context: owner,
+      mailboxId,
+      principal: { type: "user", userId: collaboratorRow.id },
+      permission: "write",
+    });
+    if (granted.ok) accessIds.push(granted.data.id);
+
+    const draft = await createDraft({
+      context: owner,
+      mailboxId,
+      input: {
+        senderIdentityId: identityId,
+        to: [{ name: "Customer", address: "customer@example.com" }],
+        cc: [],
+        bcc: [],
+        subject: "Shared draft",
+        body: "Body",
+        format: "plain",
+      },
+    });
+    expect(draft.ok).toBe(true);
+    if (!draft.ok) return;
+    const content = {
+      senderIdentityId: identityId,
+      to: draft.data.to,
+      cc: [],
+      bcc: [],
+      subject: "Shared draft",
+      format: "plain" as const,
+    };
+
+    const lease = await acquireDraftLease({ context: owner, mailboxId, draftId: draft.data.id });
+    expect(lease.ok).toBe(true);
+    if (!lease.ok) return;
+
+    const blocked = await updateDraft({
+      context: collaborator,
+      mailboxId,
+      draftId: draft.data.id,
+      expectedRevision: draft.data.revision,
+      input: { ...content, body: "Collaborator body" },
+    });
+    expect(blocked.ok).toBe(false);
+    if (!blocked.ok) {
+      expect(blocked.error.code).toBe("DRAFT_LEASE_HELD");
+      expect(blocked.error.status).toBe(409);
+      expect(blocked.error.message).toContain("Ada Owner");
+    }
+    const [copies] = await sql<{ count: string | number }[]>`
+      SELECT count(*) AS count FROM mail.draft_recovery_copies WHERE draft_id = ${draft.data.id}::uuid
+    `;
+    expect(Number(copies!.count)).toBe(0);
+
+    const holderSave = await updateDraft({
+      context: owner,
+      mailboxId,
+      draftId: draft.data.id,
+      expectedRevision: draft.data.revision,
+      input: { ...content, body: "Holder body" },
+    });
+    expect(holderSave.ok && holderSave.data.body).toBe("Holder body");
+    if (!holderSave.ok) return;
+
+    const released = await releaseDraftLease({ context: owner, mailboxId, draftId: draft.data.id, token: lease.data.token });
+    expect(released.ok).toBe(true);
+
+    const afterRelease = await updateDraft({
+      context: collaborator,
+      mailboxId,
+      draftId: draft.data.id,
+      expectedRevision: holderSave.data.revision,
+      input: { ...content, body: "Collaborator body" },
+    });
+    expect(afterRelease.ok && afterRelease.data.body).toBe("Collaborator body");
+  });
+
+  test("refuses an unapproved send when template text would leave the mailbox verbatim", async () => {
+    const draft = await createDraft({
+      context: owner,
+      mailboxId,
+      input: {
+        senderIdentityId: identityId,
+        to: [{ name: "Customer", address: "customer@example.com" }],
+        cc: [],
+        bcc: [],
+        subject: "Externally edited",
+        body: "Regards\n{{ sender.email }}",
+        format: "plain",
+      },
+    });
+    expect(draft.ok).toBe(true);
+    if (!draft.ok) return;
+
+    const unapproved = await validateDraftComposeSafety({
+      db: sql,
+      mailboxId,
+      draftId: draft.data.id,
+      expectedRevision: draft.data.revision,
+    });
+    expect(unapproved.ok).toBe(false);
+    if (!unapproved.ok) expect(unapproved.error.status).toBe(409);
+
+    const review = await reviewDraftComposeSafety({
+      context: owner,
+      mailboxId,
+      draftId: draft.data.id,
+      expectedRevision: draft.data.revision,
+    });
+    expect(review.ok).toBe(true);
+    if (!review.ok) return;
+    expect(review.data.warnings.map((warning) => warning.id)).toContain("unrendered_template");
+
+    const approved = await validateDraftComposeSafety({
+      db: sql,
+      mailboxId,
+      draftId: draft.data.id,
+      expectedRevision: draft.data.revision,
+      approval: {
+        revision: review.data.revision,
+        fingerprint: review.data.fingerprint,
+        warningIds: review.data.warnings.map((warning) => warning.id),
+      },
+    });
+    expect(approved.ok).toBe(true);
   });
 });

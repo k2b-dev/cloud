@@ -80,6 +80,76 @@ describe("IMAP push runtime", () => {
     expect(coalesceImapHints(hints)).toEqual({ folderChanged: true, reconcileFromUid: 1, rediscover: true });
   });
 
+  test("spends the reconcile and rediscovery budget at most once per interval on a flapping connection", () => {
+    const hints: ConnectorChangeHint[] = [{ type: "disconnected", folderPath: "INBOX", reason: "closed" }];
+    const now = Date.now();
+    expect(
+      coalesceImapHints(hints, { lastDiscoveryAt: now - 60_000, lastFullReconcileAt: now - 60 * 60_000, fullReconcilePending: false }, now),
+    ).toEqual({
+      folderChanged: true,
+      reconcileFromUid: null,
+      rediscover: false,
+    });
+    expect(
+      coalesceImapHints(
+        hints,
+        { lastDiscoveryAt: now - 16 * 60_000, lastFullReconcileAt: now - 7 * 60 * 60_000, fullReconcilePending: false },
+        now,
+      ),
+    ).toEqual({
+      folderChanged: true,
+      reconcileFromUid: 1,
+      rediscover: true,
+    });
+    // A walk the folder sync has not finished is not restarted from UID 1.
+    expect(coalesceImapHints(hints, { lastDiscoveryAt: now, lastFullReconcileAt: null, fullReconcilePending: true }, now)).toEqual({
+      folderChanged: true,
+      reconcileFromUid: null,
+      rediscover: false,
+    });
+    // Explicit VANISHED evidence still reconciles from the smallest UID, and a
+    // changed UIDVALIDITY still rediscovers, regardless of the budget.
+    expect(
+      coalesceImapHints(
+        [
+          ...hints,
+          { type: "folder_changed", cause: "vanished", folderPath: "INBOX", uid: 9_100, modseq: null },
+          { type: "folder_changed", cause: "vanished", folderPath: "INBOX", uid: 9_004, modseq: null },
+          { type: "folder_changed", cause: "uidvalidity_changed", folderPath: "INBOX", uid: null, modseq: null },
+        ],
+        { lastDiscoveryAt: now, lastFullReconcileAt: now, fullReconcilePending: false },
+        now,
+      ),
+    ).toEqual({ folderChanged: true, reconcileFromUid: 9_004, rediscover: true });
+  });
+
+  test("does not rediscover a reconnect within the regular discovery interval", async () => {
+    const calls: string[] = [];
+    const now = Date.now();
+    const applied = await applyImapPushHints({
+      expected: plan,
+      hints: [{ type: "disconnected", folderPath: "INBOX", reason: "error" }],
+      assertLeaseActive: async () => undefined,
+      loadPlan: async () => plan,
+      enqueueFolder: async (folderId) => {
+        calls.push(`folder:${folderId}`);
+      },
+      enqueueReconciliation: async (_folderId, fromUid) => {
+        calls.push(`reconcile:${fromUid}`);
+      },
+      enqueueRediscovery: async () => {
+        calls.push("rediscovery");
+      },
+      loadReconnectBudget: async () => ({
+        lastDiscoveryAt: now - 5 * 60_000,
+        lastFullReconcileAt: now - 60_000,
+        fullReconcilePending: false,
+      }),
+    });
+    expect(applied).toBe("applied");
+    expect(calls).toEqual([`folder:${plan.folderId}`]);
+  });
+
   test("starts targeted UID reconciliation for VANISHED hints", async () => {
     const calls: string[] = [];
     const applied = await applyImapPushHints({
@@ -101,6 +171,7 @@ describe("IMAP push runtime", () => {
       enqueueRediscovery: async () => {
         calls.push("rediscovery");
       },
+      loadReconnectBudget: async () => ({ lastDiscoveryAt: null, lastFullReconcileAt: null, fullReconcilePending: false }),
     });
     expect(applied).toBe("applied");
     expect(calls).toEqual(["lease", "lease", "reconcile:6001", "lease", "lease"]);
@@ -137,6 +208,7 @@ describe("IMAP push runtime", () => {
       enqueueRediscovery: async () => {
         calls.push("rediscovery");
       },
+      loadReconnectBudget: async () => ({ lastDiscoveryAt: null, lastFullReconcileAt: null, fullReconcilePending: false }),
     });
     expect(applied).toBe("stale");
     expect(calls).toEqual(["lease"]);
@@ -177,6 +249,7 @@ describe("IMAP push runtime", () => {
       enqueueFolder: async () => undefined,
       enqueueReconciliation: async () => undefined,
       enqueueRediscovery: async () => undefined,
+      loadReconnectBudget: async () => ({ lastDiscoveryAt: null, lastFullReconcileAt: null, fullReconcilePending: false }),
       leaderMutex: leader,
       permits: new FixedImapConnectionPermitPool(new FakeMutex(), { global: 1, host: 1, mailbox: 1 }),
       sleep: async () => undefined,
@@ -210,6 +283,7 @@ describe("IMAP push runtime", () => {
       },
       enqueueReconciliation: async () => undefined,
       enqueueRediscovery: async () => undefined,
+      loadReconnectBudget: async () => ({ lastDiscoveryAt: null, lastFullReconcileAt: null, fullReconcilePending: false }),
       leaderMutex: new FakeMutex(),
       permits: {
         acquire: async () => {
@@ -265,6 +339,7 @@ describe("IMAP push runtime", () => {
         rediscoveryEnqueues += 1;
         controller.abort(new Error("test complete"));
       },
+      loadReconnectBudget: async () => ({ lastDiscoveryAt: null, lastFullReconcileAt: null, fullReconcilePending: false }),
       leaderMutex: new FakeMutex(),
       permits: new FixedImapConnectionPermitPool(new FakeMutex(), { global: 1, host: 1, mailbox: 1 }),
       sleep: async (_ms: number, signal: AbortSignal) => {
@@ -313,6 +388,7 @@ describe("IMAP push runtime", () => {
         enqueueFolder: async () => undefined,
         enqueueReconciliation: async () => undefined,
         enqueueRediscovery: async () => undefined,
+        loadReconnectBudget: async () => ({ lastDiscoveryAt: null, lastFullReconcileAt: null, fullReconcilePending: false }),
         leaderMutex: new FakeMutex(),
         permits: new FixedImapConnectionPermitPool(new FakeMutex(), { global: 1, host: 1, mailbox: 1 }),
         sleep: async (_ms: number, signal: AbortSignal) => {
@@ -344,6 +420,7 @@ describe("IMAP push runtime", () => {
       enqueueFolder: async () => undefined,
       enqueueReconciliation: async () => undefined,
       enqueueRediscovery: async () => undefined,
+      loadReconnectBudget: async () => ({ lastDiscoveryAt: null, lastFullReconcileAt: null, fullReconcilePending: false }),
       leaderMutex: new FakeMutex(),
       permits: new FixedImapConnectionPermitPool(new FakeMutex(), { global: 1, host: 1, mailbox: 1 }),
       sleep: async () => undefined,
@@ -394,6 +471,7 @@ describe("IMAP push runtime", () => {
       enqueueFolder: async () => undefined,
       enqueueReconciliation: async () => undefined,
       enqueueRediscovery: async () => undefined,
+      loadReconnectBudget: async () => ({ lastDiscoveryAt: null, lastFullReconcileAt: null, fullReconcilePending: false }),
       leaderMutex: new FakeMutex(),
       permits: new FixedImapConnectionPermitPool(new FakeMutex(), { global: 1, host: 1, mailbox: 1 }),
       sleep: async (_ms: number, signal: AbortSignal) => {
@@ -449,6 +527,7 @@ describe("IMAP push runtime", () => {
         enqueueFolder: async () => undefined,
         enqueueReconciliation: async () => undefined,
         enqueueRediscovery: async () => undefined,
+        loadReconnectBudget: async () => ({ lastDiscoveryAt: null, lastFullReconcileAt: null, fullReconcilePending: false }),
         leaderMutex: new FakeMutex(),
         permits: {
           acquire: async () => ({ locks: [] }),
@@ -491,6 +570,7 @@ describe("IMAP push runtime", () => {
       enqueueFolder: async () => undefined,
       enqueueReconciliation: async () => undefined,
       enqueueRediscovery: async () => undefined,
+      loadReconnectBudget: async () => ({ lastDiscoveryAt: null, lastFullReconcileAt: null, fullReconcilePending: false }),
       leaderMutex: new FakeMutex(),
       permits: new FixedImapConnectionPermitPool(new FakeMutex(), { global: 1, host: 1, mailbox: 1 }),
       sleep: async () => undefined,

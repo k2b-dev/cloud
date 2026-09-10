@@ -29,7 +29,7 @@ Verfasser können ihre eigenen Kommentare nach dem Veröffentlichen 10 Minuten l
 
 Die **Persönliche Erinnerung** ist nur für dich sichtbar. Wenn du sie änderst oder entfernst, bleiben die Erinnerungen anderer Personen unverändert. Zum Fälligkeitszeitpunkt erstellt Mail eine Cloud-Benachrichtigung, sofern du weiterhin Zugriff auf das Postfach hast.
 
-Wenn die Live-Anwesenheit verfügbar ist, zeigt **Gerade hier** die Personen, die die Unterhaltung aktuell ansehen oder darin schreiben. Die Anwesenheitsanzeige ist nur ein Hinweis. Die Bearbeitungssperre des gemeinsamen Entwurfs ist das verbindliche Signal dafür, wer einen Entwurf bearbeiten darf.
+Wenn die Live-Anwesenheit verfügbar ist, zeigt **Gerade hier** die Personen, die die Unterhaltung aktuell ansehen oder darin schreiben. Die Anwesenheitsanzeige ist nur ein Hinweis. Die Bearbeitungssperre des gemeinsamen Entwurfs ist das verbindliche Signal dafür, wer einen Entwurf bearbeiten darf: Solange sie jemand hält, weist Mail Änderungen aller anderen ab, bis sie die Bearbeitung übernehmen.
 
 ## Berechtigungen verstehen {icon="shield-lock"}
 

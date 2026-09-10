@@ -49,7 +49,9 @@ Drafts belong to the mailbox, not only to the browser that created them. When a 
 
 Mail saves the shared draft as you work and keeps a browser recovery journal for changes that have not reached the server. After a reload or interrupted connection, Mail can restore those browser changes.
 
-Only one editing session can save the draft at a time. If another tab or person is editing it, Mail names that session when possible and lets you continue read-only or explicitly move editing to this tab. The composer keeps a quiet reminder after the dialog closes. Use **Take over** only when you intend to make the other editor read-only. A temporary connection problem is shown separately and does not ask you to take over. Concurrent or stale saves can create recovery copies; use the recovery action in the composer to inspect and restore them.
+Only the session that currently holds the editing lease can change the draft. Mail refuses saves, attachment changes, and discards from every other session, tab, agent, or CLI call and names the current editor. If nobody holds the lease, the next editor may change the draft again, so a single user is never blocked by their own expired session. If another tab or person is editing it, Mail names that session when possible and lets you continue read-only or explicitly move editing to this tab. The composer keeps a quiet reminder after the dialog closes. Use **Take over** only when you intend to make the other editor read-only. A temporary connection problem is shown separately and does not ask you to take over. Stale saves within your own session can create recovery copies; use the recovery action in the composer to inspect and restore them.
+
+If the draft is also synchronized to the provider's Drafts folder and you edit it in another mail program, Mail keeps its own version whenever the returning text contains unresolved placeholders and offers the external version as a recovery copy.
 
 If another session schedules, sends, or discards the draft, every open composer reloads the authoritative draft state and stops saving or renewing its editing lease. The composer stays read-only instead of allowing another send or takeover. Unsaved local text remains visible and can be copied or saved as a new independent draft; when the original message belongs to a conversation, **Open message** returns to it.
 
@@ -92,7 +94,7 @@ Mail derives the organizer from the draft's verified sender identity. **To** and
 
 ## Review sending warnings {icon="shield-check"}
 
-Before an immediate, delayed, or scheduled send, Mail checks the exact saved draft for common mistakes. It may ask you to review a missing attachment, an unusually large recipient list, external recipients, Reply all, or a suspicious link. The dialog explains each warning and lets you return to the draft. Choose **Send anyway** only after reviewing the current recipients, links, and attachments.
+Before an immediate, delayed, or scheduled send, Mail checks the exact saved draft for common mistakes. It may ask you to review a missing attachment, an unusually large recipient list, external recipients, Reply all, a suspicious link, or template placeholders such as `{{ sender.email }}` that are no longer part of a signature or snippet and would be sent as literal text. The dialog explains each warning and lets you return to the draft. Choose **Send anyway** only after reviewing the current recipients, links, and attachments.
 
 An approval applies only to that saved draft revision. Editing the draft after approval runs the checks again. Mail records the approved warning types for delivery auditing, but not a second copy of the message content.
 

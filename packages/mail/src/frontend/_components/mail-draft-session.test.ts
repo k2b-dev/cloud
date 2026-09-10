@@ -3,6 +3,7 @@ import type { MailDraftSeed } from "../../contracts";
 import {
   createSerializedDraftMutationQueue,
   draftSeedContentChanged,
+  isDraftLeaseHeldResponse,
   reconcileDraftSessionAfterLiveInvalidation,
 } from "./mail-draft-session";
 
@@ -126,5 +127,14 @@ describe("live draft reconciliation", () => {
       resumeLease: async () => void calls.push("lease"),
     });
     expect(calls).toEqual(["lifecycle"]);
+  });
+});
+
+describe("draft lease rejection", () => {
+  test("recognizes only the exclusive-lease conflict raised by the API", async () => {
+    expect(await isDraftLeaseHeldResponse(Response.json({ code: "DRAFT_LEASE_HELD", message: "held" }, { status: 409 }))).toBe(true);
+    expect(await isDraftLeaseHeldResponse(Response.json({ code: "CONFLICT", message: "revision" }, { status: 409 }))).toBe(false);
+    expect(await isDraftLeaseHeldResponse(new Response("gateway", { status: 502 }))).toBe(false);
+    expect(await isDraftLeaseHeldResponse(new Response("not json", { status: 409 }))).toBe(false);
   });
 });

@@ -3154,6 +3154,72 @@ suite("mail lifecycle control plane", () => {
     expect(created?.count).toBe(0);
   });
 
+  test("conversation triage picks the newest placement when a message has duplicate active refs", async () => {
+    const [conversation] = await sql<{ id: string }[]>`
+      INSERT INTO mail.conversations (short_id, mailbox_id, subject, participant_summary, latest_message_at)
+      VALUES (${newShortId()}, ${mailboxId}::uuid, 'Duplicate refs', 'fixture', now())
+      RETURNING id
+    `;
+    const [message] = await sql<{ id: string }[]>`
+      INSERT INTO mail.message_contents (short_id,
+        mailbox_id, message_id, subject, internal_date, size_bytes, content_hash, hydration_status
+      ) VALUES (${newShortId()},
+        ${mailboxId}::uuid,
+        ${`<duplicate-refs-${suffix}@example.com>`},
+        'Duplicate refs',
+        now(),
+        1,
+        ${`${"e".repeat(56)}${suffix}`},
+        'complete'
+      ) RETURNING id
+    `;
+    await sql`
+      INSERT INTO mail.conversation_messages (conversation_id, message_id, position)
+      VALUES (${conversation!.id}::uuid, ${message!.id}::uuid, 0)
+    `;
+    // The same message twice in one folder: what a duplicated provider UID looks
+    // like locally until the sync's duplicate merge retires the older placement.
+    const duplicateRefs: string[] = [];
+    for (const [position, placedAt] of ["1 hour", "1 minute"].entries()) {
+      const [remoteRef] = await sql<{ id: string }[]>`
+        INSERT INTO mail.remote_message_refs (folder_id, message_id, uid_validity, uid)
+        VALUES (${inboxFolderId}::uuid, ${message!.id}::uuid, 10, ${884000 + position})
+        RETURNING id
+      `;
+      await sql`
+        INSERT INTO mail.message_placements (remote_message_ref_id, folder_id, message_id, updated_at)
+        VALUES (${remoteRef!.id}::uuid, ${inboxFolderId}::uuid, ${message!.id}::uuid, now() - ${placedAt}::interval)
+      `;
+      duplicateRefs.push(remoteRef!.id);
+    }
+
+    const idempotencyKey = `duplicate-refs-${suffix}`;
+    const triage = await createConversationTriageCommands({
+      context: adminContext,
+      mailboxId,
+      conversationId: conversation!.id,
+      input: {
+        kind: "change_state",
+        sourceFolderId: inboxFolderShortId,
+        change: { addFlags: ["seen"], removeFlags: [], addKeywords: [], removeKeywords: [] },
+        idempotencyKey,
+      },
+    });
+    expect(triage.ok).toBe(true);
+    if (!triage.ok) return;
+    expect(triage.data.commands).toHaveLength(1);
+    const created = await sql<{ idempotency_key: string; target: Record<string, unknown> | string }[]>`
+      SELECT idempotency_key, target
+      FROM mail.commands
+      WHERE mailbox_id = ${mailboxId}::uuid
+        AND correlation_id = ${triage.data.correlationId}
+    `;
+    expect(created).toHaveLength(1);
+    expect(created[0]!.idempotency_key).toBe(`${idempotencyKey}:${duplicateRefs[1]}`);
+    const target = typeof created[0]!.target === "string" ? JSON.parse(created[0]!.target as string) : created[0]!.target;
+    expect(target).toMatchObject({ remoteMessageRefId: duplicateRefs[1] });
+  });
+
   test("command idempotency stays actor-bound and rechecks write access on replay", async () => {
     const accessId = accessIds[0]!;
     const promoted = await updateMailboxAccess({

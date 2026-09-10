@@ -70,22 +70,33 @@ export const createConversationTriageCommands = async (params: {
   });
   if (!execution.ok) return execution;
 
+  // One target per conversation message: duplicate active refs in the same
+  // folder are a transient sync state, so pick the newest placement the same way
+  // command creation resolves the provider message.
   const targets = await sql<ConversationTarget[]>`
-    SELECT ref.id AS remote_message_ref_id, message.id AS message_id
-    FROM mail.conversation_messages conversation_message
-    JOIN mail.conversations conversation ON conversation.id = conversation_message.conversation_id
-    JOIN mail.remote_message_refs ref ON ref.message_id = conversation_message.message_id
-    JOIN mail.message_contents message ON message.id = ref.message_id
-    JOIN mail.message_placements placement ON placement.remote_message_ref_id = ref.id
-    JOIN mail.folders folder ON folder.id = ref.folder_id
-    JOIN mail.remote_resources resource ON resource.id = folder.remote_resource_id
-    WHERE conversation.id = ${conversationId}::uuid
-      AND conversation.mailbox_id = ${params.mailboxId}::uuid
-      AND resource.mailbox_id = ${params.mailboxId}::uuid
-      AND ref.folder_id = ${sourceFolderId}::uuid
-      AND ref.stale_at IS NULL
-      AND placement.deleted_at IS NULL
-    ORDER BY conversation_message.position, ref.uid
+    SELECT target.remote_message_ref_id, target.message_id
+    FROM (
+      SELECT DISTINCT ON (conversation_message.message_id)
+        ref.id AS remote_message_ref_id,
+        message.id AS message_id,
+        conversation_message.position AS conversation_position,
+        ref.uid AS uid
+      FROM mail.conversation_messages conversation_message
+      JOIN mail.conversations conversation ON conversation.id = conversation_message.conversation_id
+      JOIN mail.remote_message_refs ref ON ref.message_id = conversation_message.message_id
+      JOIN mail.message_contents message ON message.id = ref.message_id
+      JOIN mail.message_placements placement ON placement.remote_message_ref_id = ref.id
+      JOIN mail.folders folder ON folder.id = ref.folder_id
+      JOIN mail.remote_resources resource ON resource.id = folder.remote_resource_id
+      WHERE conversation.id = ${conversationId}::uuid
+        AND conversation.mailbox_id = ${params.mailboxId}::uuid
+        AND resource.mailbox_id = ${params.mailboxId}::uuid
+        AND ref.folder_id = ${sourceFolderId}::uuid
+        AND ref.stale_at IS NULL
+        AND placement.deleted_at IS NULL
+      ORDER BY conversation_message.message_id, placement.updated_at DESC, ref.id
+    ) target
+    ORDER BY target.conversation_position, target.uid
     LIMIT ${MAX_CONVERSATION_TARGETS + 1}
   `;
   if (targets.length === 0) return fail(err.notFound("Conversation messages in the selected folder"));

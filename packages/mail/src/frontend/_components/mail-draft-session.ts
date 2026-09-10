@@ -31,6 +31,17 @@ export const createSerializedDraftMutationQueue = () => {
 };
 
 const journalKey = (mailboxId: string, draftId: string): string => `cloud:mail:draft:${mailboxId}:${draftId}`;
+
+/** Reports the exclusive-lease rejection the API raises when another session owns the draft. */
+export const isDraftLeaseHeldResponse = async (response: Response): Promise<boolean> => {
+  if (response.status !== 409) return false;
+  try {
+    const body: unknown = await response.clone().json();
+    return typeof body === "object" && body !== null && "code" in body && (body as { code?: unknown }).code === "DRAFT_LEASE_HELD";
+  } catch {
+    return false;
+  }
+};
 const isAbortError = (error: unknown): boolean => error instanceof Error && error.name === "AbortError";
 
 const draftEditableContent = (draft: MailDraft): DraftEditableContent => ({
@@ -386,6 +397,14 @@ export const createMailDraftSession = (options: {
       if (!response.ok) {
         if (options.isDisposed()) return null;
         if (lifecycleTransition()) return null;
+        if (await isDraftLeaseHeldResponse(response)) {
+          stopHeartbeat();
+          setLease(null);
+          await refreshDraftLifecycle().catch(() => undefined);
+          if (options.isDisposed() || lifecycleTransition()) return null;
+          await reportLeaseConflict(currentDraft, "lost");
+          return null;
+        }
         const message = await readApiError(response, t().draftSaveFailed);
         setStatus("error");
         setStatusMessage(message);

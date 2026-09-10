@@ -9,6 +9,7 @@ import {
   createMailLiveConnection,
   evaluateMailLiveAccess,
   MAIL_LIVE_MAX_REPLAY_EVENTS,
+  MAIL_LIVE_MAX_SOCKETS_PER_USER,
   type MailLiveAccessDependencies,
   type MailLiveConnectionDependencies,
   type MailLiveSocket,
@@ -394,6 +395,41 @@ describe("Mail live connection", () => {
     }
   });
 
+  test("bounds the live sockets one user may hold open across mailboxes", async () => {
+    const context = contextFor("Cap");
+    const deps: MailLiveConnectionDependencies = {
+      resolveMailboxId: async () => "internal-box-1",
+      access: { resolveContext: async () => context, requireRead: async () => ok("read") },
+      latestCursor: async () => "s6t.mailtest.100",
+      cursorSequence: sequenceOf,
+      events: ({ signal }) =>
+        (async function* () {
+          await new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true }));
+        })(),
+    };
+    const sockets = Array.from({ length: MAIL_LIVE_MAX_SOCKETS_PER_USER + 1 }, () => recordingSocket());
+    const connections = sockets.map((recorded) =>
+      createMailLiveConnection(recorded.socket, { sessionToken: "session", requestId: null, locale: "en" }, deps),
+    );
+    try {
+      // Subscribe one socket at a time so the eviction order is the open order.
+      for (const [index, connection] of connections.entries()) {
+        connection.message(JSON.stringify({ type: MAIL_LIVE_WS_TYPE.subscribe, payload: { mailboxId: MAILBOX_ID, fromCursor: null } }));
+        await waitFor(() => sockets[index]!.messages.length > 0);
+      }
+      await waitFor(() => sockets[0]!.closes.length === 1);
+      // The oldest socket makes room; every later socket keeps its subscription.
+      expect(sockets[0]!.closes).toEqual([{ code: 1013, reason: "backpressure" }]);
+      expect(sockets[0]!.messages.at(-1)).toEqual({
+        type: MAIL_LIVE_WS_TYPE.error,
+        payload: { mailboxId: MAILBOX_ID, code: "backpressure", message: expect.any(String) },
+      });
+      expect(sockets.slice(1).every((recorded) => recorded.closes.length === 0)).toBe(true);
+    } finally {
+      await Promise.all(connections.map((connection) => connection.close()));
+    }
+  });
+
   test("closes a socket that floods inbound frames", async () => {
     const { socket, closes } = recordingSocket();
     const connection = createMailLiveConnection(
@@ -472,7 +508,9 @@ describe("Mail live connection", () => {
             payload: { mailboxId: MAILBOX_ID, cursor: receipt.cursor, event: expect.objectContaining({ mailboxId: MAILBOX_ID }) },
           },
         ]);
-        expect(permissionChecks).toBe(2);
+        // Subscribe authorizes once; delivery reuses that decision until the next
+        // scheduled revalidation instead of re-running the chain per event.
+        expect(permissionChecks).toBe(1);
       } finally {
         await connection.close();
       }

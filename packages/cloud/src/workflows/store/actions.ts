@@ -25,7 +25,14 @@ import type {
   WorkflowExecuteActionPort,
 } from "../runtime/ports";
 import { budgetError, budgetRootRunId, chargeWorkflowEffectBudget } from "./budget";
-import { beginWorkflowEffect, readWorkflowEffect, recordWorkflowEffect, settleWorkflowEffect } from "./runs";
+import {
+  beginWorkflowEffect,
+  markWorkflowStepBudgetCharged,
+  readWorkflowEffect,
+  recordWorkflowEffect,
+  settleWorkflowEffect,
+  workflowStepBudgetCharged,
+} from "./runs";
 import { withTransaction } from "./transaction";
 
 /**
@@ -198,8 +205,17 @@ const runDeclaredAction = async (
     const planned = await action.plan(actionContext(ctx, step, effectKey), config as never);
     if (!planned.consumes || Object.keys(planned.consumes).length === 0) return null;
     const handle = db ?? options.db;
-    const root = await budgetRootRunId(ctx.run.runId, { ...(handle ? { db: handle } : {}) });
-    const charged = await chargeWorkflowEffectBudget(root, planned.consumes, { ...(handle ? { db: handle } : {}) });
+    const consumes = planned.consumes;
+    // Once per step, not once per attempt: a step that parked on a dependency
+    // runs again to observe the effect it already paid for, and charging that
+    // resume refuses the automation it already performed.
+    const charged = await withTransaction(handle, async (tx) => {
+      if (await workflowStepBudgetCharged(tx, journalStep)) return { state: "ok" as const, used: {} };
+      const root = await budgetRootRunId(ctx.run.runId, { db: tx });
+      const outcome = await chargeWorkflowEffectBudget(root, consumes, { db: tx });
+      if (outcome.state === "ok") await markWorkflowStepBudgetCharged(tx, journalStep);
+      return outcome;
+    });
     if (charged.state !== "exceeded") return null;
     const error = budgetError(charged);
     return {

@@ -25,6 +25,7 @@ import { createWorkflowCommand, createWorkflowCommandInTransaction, enqueueCreat
 import { ensureConversationReferenceInTransaction } from "../service/conversation-reference";
 import { updateWorkflowConversationSummaryInTransaction } from "../service/conversation-summary";
 import { createWorkflowDraftInTransaction, createWorkflowReviewReplyDraftInTransaction } from "../service/drafts";
+import { resolveIncomingAutomationPlacementTurn } from "../service/incoming-automation-order";
 import { resolveIncomingAutomationMandateCaller } from "../service/incoming-automation-workload";
 import { updateWorkflowConversationLocalTagInTransaction } from "../service/local-tags";
 import { parseMessageProtocolFacts } from "../service/message-protocol";
@@ -255,7 +256,7 @@ const appActionResult = (result: Awaited<ReturnType<typeof createSpaceEventOnce>
         retryable: result.status >= 500,
       };
 
-const commandOutcome = (command: MailCommand): ActionResult => {
+const commandOutcome = (command: Pick<MailCommand, "id" | "state" | "lastError">): ActionResult => {
   const output = { commandId: command.id, state: command.state };
   if (command.state === "confirmed" || command.state === "reconciled") return { state: "succeeded", output };
   if (command.state === "needs_attention") {
@@ -286,6 +287,9 @@ const createCommand = async (ctx: WorkflowActionContext, scope: MailRunScope, in
   });
   return command.ok ? commandOutcome(command.data) : resultFailure(command.error);
 };
+
+/** Actions that change where a message sits, and therefore run one at a time. */
+const PLACEMENT_ACTIONS = new Set(["moveMessage", "archiveMessage", "trashMessage", "junkMessage"]);
 
 type MessageAction =
   | "addKeyword"
@@ -322,6 +326,22 @@ const messageAction = (
         const messageId = await internalResourceId(tx, "messages", scope.mailboxId, publicMessageId, "Message");
         const publicFolderId = asText(message.folderId, "message.folderId");
         const folderId = await internalResourceId(tx, "folders", scope.mailboxId, publicFolderId, "Folder");
+        if (PLACEMENT_ACTIONS.has(kind)) {
+          const turn = await resolveIncomingAutomationPlacementTurn({
+            db: tx,
+            runId: ctx.runId,
+            mailboxId: scope.mailboxId,
+            messageId,
+            folderId,
+          });
+          // An older automation already moved this message, or is the one that
+          // decides where it goes. Ordering a move out of a folder the message
+          // has left is not this automation's failure to report.
+          if (turn.state === "skip") {
+            const skipped: ActionResult = { state: "succeeded", output: { action: kind, applied: false, skipped: turn.reason } };
+            return skipped;
+          }
+        }
         const [target] = await tx<{ remote_message_ref_id: string }[]>`
           SELECT remote_ref.id AS remote_message_ref_id
           FROM mail.remote_message_refs remote_ref
@@ -1110,6 +1130,20 @@ export const MAIL_WORKFLOW_ACTIONS = {
             schedule,
           });
           if (!reply.ok || reply.data.state === "suppressed") return reply;
+          // A retried step whose effect already carries a send command adopts
+          // it. The command was issued under an earlier execution generation
+          // and its outbox submission is already on its way, so issuing a
+          // second one would only collide with the kernel's fence while the
+          // reply goes out regardless.
+          if (reply.data.commandId) {
+            const [issued] = await tx<{ id: string; state: MailCommand["state"]; last_error_message: string | null }[]>`
+              SELECT id::text, state, last_error_message
+              FROM mail.commands
+              WHERE id = ${reply.data.commandId}::uuid AND mailbox_id = ${scope.mailboxId}::uuid
+            `;
+            if (!issued) throw Object.assign(new Error("Automatic reply command is no longer available"), { code: "NOT_FOUND" });
+            return { ...reply, adopted: { id: issued.id, state: issued.state, lastError: issued.last_error_message } };
+          }
 
           const input: ActorCommandInput = {
             kind: "send",
@@ -1145,6 +1179,7 @@ export const MAIL_WORKFLOW_ACTIONS = {
         if (prepared.data.state === "suppressed") {
           return { state: "succeeded", output: { applied: false, effectId: prepared.data.effectId, reasons: prepared.data.reasons } };
         }
+        if ("adopted" in prepared) return commandOutcome(prepared.adopted);
         if (!("command" in prepared)) {
           throw Object.assign(new Error("Automatic reply command was not created"), { code: "MAIL_AUTOMATIC_REPLY_COMMAND_MISSING" });
         }

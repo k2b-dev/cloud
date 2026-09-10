@@ -29,7 +29,7 @@ Comment authors can edit or delete their own comments for 10 minutes after posti
 
 **Personal reminder** is private to you. Clearing or changing it does not affect another collaborator's reminder. When due, Mail creates a Cloud notification if you still have access to the mailbox.
 
-When live presence is available, **Here now** shows collaborators currently viewing or composing in the conversation. Presence is advisory. The shared draft lease remains the authoritative signal for who can edit a draft.
+When live presence is available, **Here now** shows collaborators currently viewing or composing in the conversation. Presence is advisory. The shared draft lease remains the authoritative signal for who can edit a draft: while someone holds it, Mail rejects draft changes from everyone else until they take over.
 
 ## Understand permissions {icon="shield-lock"}
 

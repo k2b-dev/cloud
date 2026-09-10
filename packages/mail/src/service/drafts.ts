@@ -36,7 +36,7 @@ import { actorRefFromRequest, type MailRequestContext } from "./auth";
 import { sha256Json } from "./canonical";
 import { resolveDefaultSignatureSource } from "./compose-templates";
 import { applyConversationReferenceToReplySubjectInTransaction } from "./conversation-reference";
-import { withOwnedDraftLease } from "./draft-leases";
+import { requireDraftLeaseAvailable, withOwnedDraftLease } from "./draft-leases";
 import { MAX_DRAFT_ATTACHMENTS } from "./draft-provider-mime";
 import { enqueueDraftProjection, enqueueDraftProjectionSnapshot, queueDraftProjectionInTransaction } from "./draft-provider-projection";
 import { notifyMailInvalidations } from "./events";
@@ -1657,6 +1657,8 @@ export const updateDraft = async (params: {
   if (!Number.isInteger(params.expectedRevision) || params.expectedRevision < 1) return fail(err.badInput("Invalid draft revision"));
   const actor = mutableActor(params.context);
   if (!actor) return fail(err.forbidden("Draft author is invalid"));
+  const lease = await requireDraftLeaseAvailable({ context: params.context, mailboxId: params.mailboxId, draftId: params.draftId });
+  if (!lease.ok) return lease;
   try {
     const result = await sql.begin(async (tx) => {
       const allowed = await requireMailboxPermission(params.context, params.mailboxId, "write", tx);
@@ -1982,6 +1984,8 @@ export const removeDraftAttachment = async (params: {
   if (!Number.isInteger(params.expectedRevision) || params.expectedRevision < 1) return fail(err.badInput("Invalid draft revision"));
   const actor = mutableActor(params.context);
   if (!actor) return fail(err.forbidden("Draft author is invalid"));
+  const lease = await requireDraftLeaseAvailable({ context: params.context, mailboxId: params.mailboxId, draftId: params.draftId });
+  if (!lease.ok) return lease;
   try {
     const result = await sql.begin(async (tx) => {
       const allowed = await requireMailboxPermission(params.context, params.mailboxId, "write", tx);
@@ -2093,6 +2097,8 @@ export const discardDraft = async (params: {
   if (!Number.isInteger(params.expectedRevision) || params.expectedRevision < 1) return fail(err.badInput("Invalid draft revision"));
   const actor = mutableActor(params.context);
   if (!actor) return fail(err.forbidden("Draft author is invalid"));
+  const lease = await requireDraftLeaseAvailable({ context: params.context, mailboxId: params.mailboxId, draftId: params.draftId });
+  if (!lease.ok) return lease;
   try {
     let retirementSnapshotId: string | null = null;
     const result = await sql.begin(async (tx) => {

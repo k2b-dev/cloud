@@ -17,7 +17,7 @@ import {
   type MailLiveRevocationCode,
   type MailLiveServerMessage,
 } from "./live-events";
-import type { MailRequestContext } from "./service/auth";
+import { type MailRequestContext, userBackedActor } from "./service/auth";
 import * as collaboration from "./service/collaboration";
 import { latestMailInvalidationCursor, liveMailInvalidations, mailInvalidationCursorSequence } from "./service/events";
 import { resolvePublicId } from "./service/public-resources";
@@ -30,6 +30,12 @@ const MAX_PENDING_MESSAGES = 8;
 /** Per-socket token bucket: a short burst is fine, a sustained flood closes the connection. */
 const MESSAGE_BUCKET_CAPACITY = 20;
 const MESSAGE_BUCKET_REFILL_PER_SECOND = 5;
+/**
+ * Live sockets one user may hold open across all mailboxes in this process. A
+ * person with several tabs on a few devices stays far below it; beyond it the
+ * oldest socket is closed so a leaking client cannot pin unbounded fan-out work.
+ */
+export const MAIL_LIVE_MAX_SOCKETS_PER_USER = 16;
 
 type WsPhase = "open" | "subscribed" | "closing";
 
@@ -72,6 +78,23 @@ type WsContext = {
   internalMailboxId: string | null;
   streamAbort: AbortController | null;
   accessRefreshTimer: ReturnType<typeof setTimeout> | null;
+  userId: string | null;
+  /** Access decision reused between the periodic revalidations, never across them. */
+  accessCache: { internalMailboxId: string; expiresAt: number; result: MailLiveAccessResult } | null;
+};
+
+/** Open live sockets per user, oldest first; in-process like the per-socket token bucket. */
+const socketsByUser = new Map<string, WsContext[]>();
+
+const releaseSocketSlot = (ctx: WsContext): void => {
+  const userId = ctx.userId;
+  ctx.userId = null;
+  if (!userId) return;
+  const open = socketsByUser.get(userId);
+  if (!open) return;
+  const index = open.indexOf(ctx);
+  if (index >= 0) open.splice(index, 1);
+  if (open.length === 0) socketsByUser.delete(userId);
 };
 
 const resolveCurrentContext = async (sessionToken: string | null, requestId: string | null): Promise<MailRequestContext | null> => {
@@ -183,6 +206,21 @@ const closeWithError = (ctx: WsContext, code: MailLiveErrorCode, message: string
   ctx.socket.close(closeCode, code);
 };
 
+/** A new subscription takes a slot; the user's oldest socket goes when the cap is exceeded. */
+const claimSocketSlot = (ctx: WsContext, userId: string): void => {
+  if (ctx.userId === userId) return;
+  releaseSocketSlot(ctx);
+  const open = socketsByUser.get(userId) ?? [];
+  open.push(ctx);
+  ctx.userId = userId;
+  socketsByUser.set(userId, open);
+  while (open.length > MAIL_LIVE_MAX_SOCKETS_PER_USER) {
+    const oldest = open.shift()!;
+    oldest.userId = null;
+    closeWithError(oldest, "backpressure", oldest.messages.tooManyConnections, 1013);
+  }
+};
+
 const revoke = (ctx: WsContext, mailboxId: string, access: Exclude<MailLiveAccessResult, { ok: true }>) => {
   if (isClosing(ctx)) return;
   ctx.phase = "closing";
@@ -194,11 +232,22 @@ const revoke = (ctx: WsContext, mailboxId: string, access: Exclude<MailLiveAcces
   ctx.socket.close(1008, access.code);
 };
 
-const currentAccess = (ctx: WsContext, internalMailboxId: string) =>
-  evaluateMailLiveAccess(
+/**
+ * `cached` reuses the last decision until the next scheduled revalidation, so a
+ * busy event stream does not re-run the permission chain per event. Every
+ * revalidation seam (subscribe, refresh tick, retention resync) asks for a fresh
+ * decision, which keeps the revocation delay at the refresh interval.
+ */
+const currentAccess = async (ctx: WsContext, internalMailboxId: string, options: { cached?: boolean } = {}) => {
+  const cache = ctx.accessCache;
+  if (options.cached && cache && cache.internalMailboxId === internalMailboxId && cache.expiresAt > Date.now()) return cache.result;
+  const result = await evaluateMailLiveAccess(
     { sessionToken: ctx.sessionToken, requestId: ctx.requestId, mailboxId: internalMailboxId, locale: ctx.locale },
     ctx.deps.access,
   );
+  ctx.accessCache = { internalMailboxId, expiresAt: Date.now() + ACCESS_REFRESH_INTERVAL_MS, result };
+  return result;
+};
 
 const subscriptionIsCurrent = (ctx: WsContext, mailboxId: string, internalMailboxId: string, abort: AbortController): boolean =>
   !abort.signal.aborted && ctx.phase === "subscribed" && ctx.mailboxId === mailboxId && ctx.internalMailboxId === internalMailboxId;
@@ -241,7 +290,7 @@ const deliverReplayEvent = async (
     log.warn("Mail live event skipped: payload does not match the protocol", { mailboxId, cursor: event.cursor });
     return true;
   }
-  const access = await currentAccess(ctx, internalMailboxId);
+  const access = await currentAccess(ctx, internalMailboxId, { cached: true });
   if (!subscriptionIsCurrent(ctx, mailboxId, internalMailboxId, abort)) return false;
   if (!access.ok) {
     revoke(ctx, mailboxId, access);
@@ -340,6 +389,9 @@ const handleSubscribe = async (ctx: WsContext, mailboxId: string, fromCursor: st
   }
   if (isClosing(ctx)) return;
   stopSubscription(ctx);
+  const userId = userBackedActor(context)?.id ?? null;
+  if (userId) claimSocketSlot(ctx, userId);
+  if (isClosing(ctx)) return;
   ctx.phase = "subscribed";
   ctx.mailboxId = mailboxId;
   ctx.internalMailboxId = internalMailboxId;
@@ -400,6 +452,8 @@ export const createMailLiveConnection = (
     internalMailboxId: null,
     streamAbort: null,
     accessRefreshTimer: null,
+    userId: null,
+    accessCache: null,
   };
   let processing: Promise<void> = Promise.resolve();
   let pendingMessages = 0;
@@ -442,6 +496,7 @@ export const createMailLiveConnection = (
     },
     async close() {
       ctx.phase = "closing";
+      releaseSocketSlot(ctx);
       stopSubscription(ctx);
       await processing.catch(() => undefined);
     },

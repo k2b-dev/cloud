@@ -7,6 +7,7 @@ import { Splitter, Streamer } from "@zone-eu/mailsplit";
 import { sql } from "bun";
 import { type AddressObject, type AttachmentStream, type Headers, MailParser, type MessageText } from "mailparser";
 import { withShortIdDb } from "../lib/short-id";
+import { hasUnrenderedTemplateSyntax } from "./compose-renderer";
 import type { ConnectorEnvelope } from "./connectors";
 import { imapSmtpConnector } from "./connectors";
 import {
@@ -1063,7 +1064,11 @@ const applyImportedDraft = async (params: {
         snapshotRevision: params.snapshot.cloud_revision,
         headerRevision: params.parsed.cloudRevision,
       });
-      if (existing.state !== "draft" || currentRevision !== baseRevision) {
+      // A provider draft carries no segment markers, so template text returning from another client can no
+      // longer be rendered. Keep the Cloud draft and surface the external edit as a recovery copy instead.
+      const concurrentEdit = existing.state !== "draft" || currentRevision !== baseRevision;
+      const externalTemplateEdit = !concurrentEdit && hasUnrenderedTemplateSyntax(params.parsed.body);
+      if (concurrentEdit || externalTemplateEdit) {
         await storeProviderRecovery({
           db: tx,
           draftId: existing.id,
@@ -1080,8 +1085,12 @@ const applyImportedDraft = async (params: {
             content_fingerprint = ${params.fingerprint},
             content_snapshot = ${params.parsed}::jsonb,
             state = 'conflict',
-            last_error_code = 'DRAFT_CONCURRENT_EDIT',
-            last_error_message = 'Cloud and provider draft revisions changed concurrently',
+            last_error_code = ${externalTemplateEdit ? "DRAFT_EXTERNAL_TEMPLATE_EDIT" : "DRAFT_CONCURRENT_EDIT"},
+            last_error_message = ${
+              externalTemplateEdit
+                ? "The provider draft was edited outside Cloud and contains unresolved template text"
+                : "Cloud and provider draft revisions changed concurrently"
+            },
             completed_at = now()
           WHERE id = ${params.snapshot.id}::uuid
         `;

@@ -5,12 +5,17 @@ import {
   deleteWorkflowScope,
   dispatchPendingWorkflowEvents,
   emitWorkflowEvent,
+  wakeWorkflowRunsWaitingOn,
 } from "@k2b/cloud/workflows/store";
 import { sql } from "bun";
 import { newShortId } from "../lib/short-id";
 import { migrate } from "../migrate";
 import type { MailRequestContext } from "./auth";
-import { cancelPendingAutomaticRepliesInTransaction, prepareAutomaticReplyInTransaction } from "./automatic-reply";
+import {
+  cancelPendingAutomaticRepliesInTransaction,
+  linkAutomaticReplyCommandInTransaction,
+  prepareAutomaticReplyInTransaction,
+} from "./automatic-reply";
 import { listActivity } from "./collaboration";
 import { getDraft, listConversationDrafts } from "./drafts";
 import { createMailbox } from "./mailboxes";
@@ -137,12 +142,60 @@ suite("Mail shared workflow kernel", () => {
     inboxFolderId = folders.find((folder) => folder.stable_key === `workflow-inbox-${suffix}`)?.id ?? "";
     copyFolderId = folders.find((folder) => folder.stable_key === `workflow-copy-${suffix}`)?.id ?? "";
     if (!inboxFolderId || !copyFolderId) throw new Error("Failed to create Mail workflow folders");
+    // Sending needs a provider to send through: an automatic reply becomes a
+    // real command and outbox submission, not only a draft.
+    const [connection] = await sql<{ id: string }[]>`
+      INSERT INTO mail.provider_connections (
+        owner_mailbox_id, name, email, username,
+        imap_host, imap_port, imap_tls_mode,
+        smtp_host, smtp_port, smtp_tls_mode,
+        secret_kind, encrypted_secret, status
+      ) VALUES (
+        ${mailboxId}::uuid, 'Workflow kernel fixture', 'support@example.test', 'support@example.test',
+        'imap.example.test', 993, 'implicit',
+        'smtp.example.test', 465, 'implicit',
+        'password', 'fixture-secret', 'active'
+      )
+      RETURNING id
+    `;
+    if (!connection) throw new Error("Failed to create Mail workflow provider connection");
+    const [binding] = await sql<{ id: string }[]>`
+      INSERT INTO mail.provider_bindings (
+        remote_resource_id, connection_id, state, remote_locator,
+        verified_scope_fingerprint, verified_secret_revision
+      ) VALUES (
+        ${remoteResourceId}::uuid, ${connection.id}::uuid, 'active', '{}'::jsonb,
+        ${"d".repeat(64)}, 1
+      )
+      RETURNING id
+    `;
+    if (!binding) throw new Error("Failed to create Mail workflow provider binding");
+    for (const folder of [
+      { id: inboxFolderId, path: "INBOX" },
+      { id: copyFolderId, path: "Archive" },
+    ]) {
+      await sql`
+        INSERT INTO mail.binding_folder_refs (
+          binding_id, folder_id, remote_path, uid_validity, uid_next, effective_rights, last_verified_at
+        ) VALUES (
+          ${binding.id}::uuid, ${folder.id}::uuid, ${folder.path}, 1, 1,
+          ARRAY['read', 'insert', 'move']::text[], now()
+        )
+      `;
+    }
     const [identity] = await sql<{ id: string; short_id: string }[]>`
       INSERT INTO mail.sender_identities (short_id, mailbox_id, label, display_name, from_address, is_default, status)
       VALUES (${newShortId()}, ${mailboxId}::uuid, 'Support', 'Support', 'support@example.test', true, 'verified')
       RETURNING id, short_id
     `;
     if (!identity) throw new Error("Failed to create Mail workflow sender identity");
+    await sql`
+      INSERT INTO mail.sender_identity_bindings (
+        sender_identity_id, binding_id, provider_principal, verified_at, verified_secret_revision, saves_sent_automatically
+      ) VALUES (
+        ${identity.id}::uuid, ${binding.id}::uuid, 'support@example.test', now(), 1, true
+      )
+    `;
     senderIdentityId = identity.id;
     senderIdentityShortId = identity.short_id;
     const [deniedUser] = await sql<{ id: string; uid: string }[]>`
@@ -995,6 +1048,158 @@ steps:
       ok: true,
       data: { state: "suppressed", reasons: expect.arrayContaining(["mailbox_rate_limited"]) },
     });
+
+    // A step retried under a new execution generation adopts the command its
+    // lost generation already issued instead of ordering a second reply.
+    await sql`DELETE FROM mail.automatic_reply_effects WHERE mailbox_id = ${mailboxId}::uuid AND step_key LIKE 'mailbox-cap.%'`;
+    await sql`UPDATE mail.sender_identities SET status = 'verified' WHERE id = ${senderIdentityId}::uuid`;
+    const adoptSource = await createSource("7");
+    const adoptRun = await createRun("adopt");
+    const adoptRecipient = `adopt-${suffix}@example.test`;
+    const issued = await prepare({ runId: adoptRun, source: adoptSource, recipient: adoptRecipient });
+    expect(issued).toMatchObject({ ok: true, data: { state: "queued", commandId: null } });
+    if (!issued.ok || issued.data.state !== "queued") throw new Error("Automatic reply was not queued");
+    const [command] = await sql<{ id: string }[]>`
+      INSERT INTO mail.commands (
+        mailbox_id, kind, state, actor_kind, actor_id, access_subject_kind, idempotency_key, request_hash,
+        correlation_id, workflow_execution_generation, target, payload
+      ) VALUES (
+        ${mailboxId}::uuid, 'send', 'queued', 'workflow', ${created.data.currentVersion.id}::uuid, 'system',
+        ${`automatic-reply-adopt-${suffix}`}, ${"a".repeat(64)}, ${adoptRun}, 1,
+        ${{ draftId: issued.data.draftId }}::jsonb, '{}'::jsonb
+      )
+      RETURNING id
+    `;
+    if (!command) throw new Error("Failed to create the adopted automatic reply command");
+    await sql.begin((tx) => linkAutomaticReplyCommandInTransaction({ db: tx, effectId: issued.data.effectId, commandId: command.id }));
+    const retried = await prepare({ runId: adoptRun, source: adoptSource, recipient: adoptRecipient });
+    expect(retried).toMatchObject({ ok: true, data: { state: "queued", effectId: issued.data.effectId, commandId: command.id } });
+    const [effects] = await sql<{ count: number }[]>`
+      SELECT COUNT(*)::int AS count FROM mail.automatic_reply_effects WHERE workflow_run_id = ${adoptRun}::uuid
+    `;
+    expect(effects?.count).toBe(1);
+  });
+
+  test("sends one automatic reply through its command and outbox", async () => {
+    const sender = `auto-reply-${suffix}@external.test`;
+    const incoming = envelope({ uid: 7092, providerMessageId: `workflow-auto-reply-${suffix}`, from: sender });
+    await ingestEnvelope({
+      db: sql,
+      mailboxId,
+      remoteResourceId,
+      folderId: inboxFolderId,
+      message: incoming,
+      captureWorkflowTriggers: false,
+    });
+    const [reference] = await sql<{ id: string }[]>`
+      SELECT ref.id
+      FROM mail.remote_message_refs ref
+      JOIN mail.message_contents message ON message.id = ref.message_id
+      WHERE message.mailbox_id = ${mailboxId}::uuid AND message.message_id = ${incoming.messageId}
+      LIMIT 1
+    `;
+    if (!reference) throw new Error("Failed to load the automatic reply source message");
+    // The sender's return path is what an automatic reply answers; this fixture
+    // ingests no headers, so state it before the snapshot is taken.
+    await sql`
+      UPDATE mail.message_contents
+      SET protocol_facts = protocol_facts || ${{ returnPath: `<${sender}>`, autoSubmitted: "no" }}::jsonb
+      WHERE mailbox_id = ${mailboxId}::uuid AND message_id = ${incoming.messageId}
+    `;
+    const snapshot = await getWorkflowSnapshot({ mailboxId, remoteMessageRefId: reference.id });
+    if (!snapshot?.source.conversation) throw new Error("Automatic reply source has no conversation");
+    // The reply leaves the mailbox's internal domains, which is a compose
+    // safety warning. Nobody is composing it, so it must still go out.
+    await sql`
+      UPDATE mail.mailboxes
+      SET compose_safety = ${{ internalDomains: ["example.test"], largeRecipientThreshold: 20 }}::jsonb
+      WHERE id = ${mailboxId}::uuid
+    `;
+
+    const created = await createWorkflow({
+      context,
+      mailboxId,
+      input: {
+        name: `Automatic reply send ${suffix}`,
+        priority: 100,
+        source: `inputs:
+  message:
+    type: mailMessage
+    required: true
+  conversation:
+    type: mailConversation
+    required: true
+triggers:
+  messageReceived:
+    with:
+      message: "\${{ trigger.message }}"
+      conversation: "\${{ trigger.conversation }}"
+steps:
+  - automaticReply:
+      message: inputs.message
+      conversation: inputs.conversation
+      sender: ${senderIdentityShortId}
+      schedule:
+        mode: always
+      subject: Receipt
+      body: We received your message.
+`,
+        effectBudget: { ...noEffectBudget, maxSends: 1, maxDrafts: 1 },
+      },
+    });
+    if (!created.ok) throw new Error(`${created.error.code}: ${created.error.message}`);
+    const activated = await activateWorkflow({
+      context,
+      mailboxId,
+      workflowId: created.data.id,
+      input: { expectedVersionId: created.data.currentVersion.id },
+    });
+    if (!activated.ok) throw new Error(activated.error.message);
+    const emission = await emitWorkflowEvent(
+      {
+        appId: "mail",
+        scopeId: mailboxId,
+        type: "mail.messageReceived",
+        targetWorkflowId: created.data.id,
+        data: { message: snapshot.source.message, conversation: snapshot.source.conversation },
+        context: mailWorkflowEventContext(snapshot),
+        dedupeKey: `mail-workflow-auto-reply-${suffix}`,
+        occurredAt: new Date(snapshot.internalDate),
+      },
+      { dispatch: "now" },
+    );
+    const runId = emission.runIds[0]!;
+    expect(await runMailWorkflow(runId)).toMatchObject({ state: "finished" });
+
+    const commands = await sql<{ id: string; kind: string; result: { outboxSubmissionId?: string } | string }[]>`
+      SELECT id, kind, result FROM mail.commands WHERE correlation_id = ${runId}
+    `;
+    expect(commands.map((command) => command.kind)).toEqual(["send"]);
+    const submissions = await sql<{ id: string }[]>`
+      SELECT submission.id
+      FROM mail.outbox_submissions submission
+      WHERE submission.command_id = ${commands[0]!.id}::uuid
+    `;
+    expect(submissions).toHaveLength(1);
+
+    // The provider confirms the send, and the run resumes to observe it.
+    await sql`UPDATE mail.commands SET state = 'confirmed', finished_at = now() WHERE id = ${commands[0]!.id}::uuid`;
+    expect(await wakeWorkflowRunsWaitingOn({ appId: "mail", kind: "mail.command", key: commands[0]!.id })).toContain(runId);
+    expect(await runMailWorkflow(runId)).toMatchObject({ state: "finished" });
+    const [run] = await sql<{ state: string; effects_used: Record<string, number> | string }[]>`
+      SELECT state, effects_used FROM workflows.run WHERE id = ${runId}::uuid
+    `;
+    expect(run?.state).toBe("succeeded");
+    const used = typeof run?.effects_used === "string" ? JSON.parse(run.effects_used) : run?.effects_used;
+    expect(used).toMatchObject({ maxSends: 1, maxDrafts: 1 });
+    const settled = await sql<{ id: string }[]>`SELECT id FROM mail.commands WHERE correlation_id = ${runId}`;
+    expect(settled).toHaveLength(1);
+
+    await sql`
+      UPDATE mail.mailboxes
+      SET compose_safety = ${{ internalDomains: [], largeRecipientThreshold: 20 }}::jsonb
+      WHERE id = ${mailboxId}::uuid
+    `;
   });
 
   test("dispatches an active Mail event and completes its kernel run", async () => {

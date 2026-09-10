@@ -22,6 +22,13 @@ const POLL_FALLBACK_MS = 30_000;
 const MAX_PENDING_HINTS = 128;
 const MAX_RECONNECT_DELAY_MS = 60_000;
 const STABLE_CONNECTION_MS = 60_000;
+// The sync scheduler already rediscovers every eligible binding whose last
+// verification is older than 15 minutes (submitDueWork in sync-runtime); a
+// flapping connection must not beat that cadence.
+const DISCOVERY_INTERVAL_MS = 15 * 60_000;
+// sync-runtime's fetchReconcileStep walks the full UID range at most every 6
+// hours; a reconnect uses the same budget instead of restarting the walk.
+const FULL_RECONCILE_INTERVAL_MS = 6 * 60 * 60_000;
 
 export type ImapPushBindingPlan = {
   bindingId: string;
@@ -73,6 +80,7 @@ type ImapPushRuntimeDependencies = {
   enqueueFolder(folderId: string): Promise<void>;
   enqueueReconciliation(folderId: string, fromUid: number): Promise<void>;
   enqueueRediscovery(bindingId: string): Promise<void>;
+  loadReconnectBudget(plan: ImapPushBindingPlan): Promise<ImapReconnectBudget>;
   leaderMutex: Mutex;
   permits: PermitPool;
   sleep(ms: number, signal: AbortSignal): Promise<void>;
@@ -261,6 +269,31 @@ const listPlans = async (): Promise<ImapPushBindingPlan[]> => queryPlans(null);
 
 const loadPlan = async (bindingId: string): Promise<ImapPushBindingPlan | null> => (await queryPlans(bindingId))[0] ?? null;
 
+const timestampMs = (value: Date | string | null): number | null => {
+  if (value == null) return null;
+  const parsed = value instanceof Date ? value.getTime() : Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : null;
+};
+
+const loadReconnectBudget = async (plan: ImapPushBindingPlan): Promise<ImapReconnectBudget> => {
+  const [row] = await sql<
+    { last_discovery_at: Date | string | null; last_full_reconcile_at: string | null; full_reconcile_pending: boolean }[]
+  >`
+    SELECT
+      resource.last_discovery_at,
+      folder.envelope_cursor->>'lastFullReconcileAt' AS last_full_reconcile_at,
+      folder.envelope_cursor->>'reconcileNextLow' IS NOT NULL AS full_reconcile_pending
+    FROM mail.folders folder
+    JOIN mail.remote_resources resource ON resource.id = folder.remote_resource_id
+    WHERE folder.id = ${plan.folderId}::uuid
+  `;
+  return {
+    lastDiscoveryAt: timestampMs(row?.last_discovery_at ?? null),
+    lastFullReconcileAt: timestampMs(row?.last_full_reconcile_at ?? null),
+    fullReconcilePending: row?.full_reconcile_pending === true,
+  };
+};
+
 const claimGeneration = async (plan: ImapPushBindingPlan): Promise<number> => {
   const [row] = await sql<{ generation: string | number }[]>`
     INSERT INTO mail.imap_push_listener_health (
@@ -338,22 +371,49 @@ export type CoalescedImapHints = {
   rediscover: boolean;
 };
 
-export const coalesceImapHints = (hints: readonly ConnectorChangeHint[]): CoalescedImapHints => {
-  const uncertain = hints.some((hint) => hint.type === "overflow" || hint.type === "disconnected");
+/** Epoch milliseconds of the last completed discovery and full UID reconciliation; `null` means never. */
+export type ImapReconnectBudget = {
+  lastDiscoveryAt: number | null;
+  lastFullReconcileAt: number | null;
+  /** A reconciliation walk the folder sync has not finished yet. */
+  fullReconcilePending: boolean;
+};
+
+const UNSPENT_RECONNECT_BUDGET: ImapReconnectBudget = {
+  lastDiscoveryAt: null,
+  lastFullReconcileAt: null,
+  fullReconcilePending: false,
+};
+
+const isUncertainHint = (hint: ConnectorChangeHint): boolean => hint.type === "overflow" || hint.type === "disconnected";
+
+export const hintsCarryUncertainty = (hints: readonly ConnectorChangeHint[]): boolean => hints.some(isUncertainHint);
+
+const elapsed = (since: number | null, now: number): number => (since == null ? Number.POSITIVE_INFINITY : now - since);
+
+export const coalesceImapHints = (
+  hints: readonly ConnectorChangeHint[],
+  budget: ImapReconnectBudget = UNSPENT_RECONNECT_BUDGET,
+  now: number = Date.now(),
+): CoalescedImapHints => {
+  const uncertain = hintsCarryUncertainty(hints);
   const vanished = hints.flatMap((hint) => (hint.type === "folder_changed" && hint.cause === "vanished" ? [hint.uid] : []));
   // EXPUNGE without QRESYNC carries no UID, so an untargeted deletion still has
   // to reconcile the folder from the start.
   const untargetedVanish = vanished.some((uid) => uid == null);
   const vanishedUids = vanished.filter((uid): uid is number => uid != null);
+  // A flapping connection reconnects as often as once per second: its uncertainty
+  // only buys a full UID walk or a LIST+ACL rediscovery once per regular cadence.
+  // A pending walk already covers the folder: requesting it again only rewinds
+  // its cursor to the start.
+  const fullReconcileDue = !budget.fullReconcilePending && elapsed(budget.lastFullReconcileAt, now) >= FULL_RECONCILE_INTERVAL_MS;
+  const rediscoveryDue = elapsed(budget.lastDiscoveryAt, now) >= DISCOVERY_INTERVAL_MS;
+  const smallestVanishedUid = vanishedUids.length > 0 ? Math.min(...vanishedUids) : null;
   return {
-    folderChanged: hints.some((hint) => hint.type === "folder_changed" || hint.type === "overflow" || hint.type === "disconnected"),
-    reconcileFromUid: uncertain || untargetedVanish ? 1 : vanishedUids.length > 0 ? Math.min(...vanishedUids) : null,
-    rediscover: hints.some(
-      (hint) =>
-        hint.type === "overflow" ||
-        hint.type === "disconnected" ||
-        (hint.type === "folder_changed" && hint.cause === "uidvalidity_changed"),
-    ),
+    folderChanged: hints.some((hint) => hint.type === "folder_changed" || isUncertainHint(hint)),
+    reconcileFromUid: untargetedVanish || (uncertain && fullReconcileDue) ? 1 : smallestVanishedUid,
+    rediscover:
+      (uncertain && rediscoveryDue) || hints.some((hint) => hint.type === "folder_changed" && hint.cause === "uidvalidity_changed"),
   };
 };
 
@@ -365,12 +425,18 @@ export const applyImapPushHints = async (params: {
   enqueueFolder(folderId: string): Promise<void>;
   enqueueReconciliation(folderId: string, fromUid: number): Promise<void>;
   enqueueRediscovery(bindingId: string): Promise<void>;
+  loadReconnectBudget(plan: ImapPushBindingPlan): Promise<ImapReconnectBudget>;
 }): Promise<"applied" | "stale"> => {
-  const batch = coalesceImapHints(params.hints);
-  if (!batch.folderChanged && !batch.rediscover) return "applied";
+  const uncertain = hintsCarryUncertainty(params.hints);
+  const relevant = uncertain || params.hints.some((hint) => hint.type === "folder_changed");
+  if (!relevant) return "applied";
   await params.assertLeaseActive();
   const current = await params.loadPlan(params.expected.bindingId);
   if (!samePlan(params.expected, current)) return "stale";
+  // Only an uncertain stream (disconnect or overflow) is throttled, so the extra
+  // read stays on the reconnect path.
+  const batch = coalesceImapHints(params.hints, uncertain ? await params.loadReconnectBudget(current) : UNSPENT_RECONNECT_BUDGET);
+  if (!batch.folderChanged && !batch.rediscover) return "applied";
   await params.assertLeaseActive();
   if (batch.reconcileFromUid != null) {
     await params.enqueueReconciliation(current.folderId, batch.reconcileFromUid);
@@ -404,6 +470,7 @@ const applyImapReconciliationHint = (params: {
     enqueueFolder: params.dependencies.enqueueFolder,
     enqueueReconciliation: params.dependencies.enqueueReconciliation,
     enqueueRediscovery: params.dependencies.enqueueRediscovery,
+    loadReconnectBudget: params.dependencies.loadReconnectBudget,
   });
 
 const consumeHints = async (params: {
@@ -432,6 +499,7 @@ const consumeHints = async (params: {
       enqueueFolder: params.dependencies.enqueueFolder,
       enqueueReconciliation: params.dependencies.enqueueReconciliation,
       enqueueRediscovery: params.dependencies.enqueueRediscovery,
+      loadReconnectBudget: params.dependencies.loadReconnectBudget,
     });
     if (applied === "stale") {
       throw Object.assign(new Error("IMAP push binding changed before a delayed effect"), { code: "IMAP_PUSH_PLAN_CHANGED" });
@@ -600,6 +668,7 @@ export const runImapPushBinding = async (
               enqueueFolder: dependencies.enqueueFolder,
               enqueueReconciliation: dependencies.enqueueReconciliation,
               enqueueRediscovery: dependencies.enqueueRediscovery,
+              loadReconnectBudget: dependencies.loadReconnectBudget,
             });
             if (applied === "stale") return;
             await dependencies.sleep(POLL_FALLBACK_MS, signal);
@@ -652,6 +721,7 @@ export const runImapPushBinding = async (
                 enqueueFolder: dependencies.enqueueFolder,
                 enqueueReconciliation: dependencies.enqueueReconciliation,
                 enqueueRediscovery: dependencies.enqueueRediscovery,
+                loadReconnectBudget: dependencies.loadReconnectBudget,
               });
               if (applied === "stale") return;
               await releaseActivePermit();
@@ -706,6 +776,7 @@ export const runImapPushBinding = async (
                 enqueueFolder: dependencies.enqueueFolder,
                 enqueueReconciliation: dependencies.enqueueReconciliation,
                 enqueueRediscovery: dependencies.enqueueRediscovery,
+                loadReconnectBudget: dependencies.loadReconnectBudget,
               });
               if (applied === "stale") return;
             }
@@ -754,6 +825,7 @@ const defaultDependencies: ImapPushRuntimeDependencies = {
   enqueueFolder: enqueueFolderSync,
   enqueueReconciliation: enqueueFolderReconciliation,
   enqueueRediscovery: enqueueBindingRediscovery,
+  loadReconnectBudget,
   get leaderMutex() {
     return listenerLeaderMutex();
   },

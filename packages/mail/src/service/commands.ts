@@ -207,19 +207,21 @@ const resolveActorCommandInput = async (
   db: typeof sql,
 ): Promise<Result<ActorCommandInput & { remoteMessageRefId?: string }>> => {
   const resolveProviderMessage = async (messageId: string, folderId: string): Promise<Result<string>> => {
+    // Duplicate active refs for one message in one folder are a transient sync
+    // state the user cannot see or resolve: act on the newest placement and let
+    // the sync's duplicate merge retire the rest instead of dead-ending here.
     const rows = await db<{ id: string }[]>`
-      SELECT DISTINCT remote_ref.id
+      SELECT remote_ref.id
       FROM mail.remote_message_refs remote_ref
       JOIN mail.message_placements placement ON placement.remote_message_ref_id = remote_ref.id
       WHERE remote_ref.message_id = ${messageId}::uuid
         AND remote_ref.folder_id = ${folderId}::uuid
         AND remote_ref.stale_at IS NULL
         AND placement.deleted_at IS NULL
-      ORDER BY remote_ref.id
-      LIMIT 2
+      ORDER BY placement.updated_at DESC, remote_ref.id
+      LIMIT 1
     `;
     if (rows.length === 0) return fail(err.notFound("Message placement"));
-    if (rows.length > 1) return fail(err.conflict("Message has more than one active placement in the selected folder"));
     return ok(rows[0]!.id);
   };
   if (input.kind === "move" || input.kind === "copy") {

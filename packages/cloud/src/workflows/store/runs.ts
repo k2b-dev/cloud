@@ -831,6 +831,42 @@ export const recordWorkflowEffect = async (
   if (rows.length === 0) throw new WorkflowLeaseLostError();
 };
 
+/**
+ * Whether this step's effect budget was already charged.
+ *
+ * A step is executed more than once by design: it parks on a dependency and
+ * runs again when that dependency fires, and the second attempt adopts the
+ * effect the first one performed instead of performing it again. Charging per
+ * attempt therefore refused exactly the automations whose allowance is sized
+ * per effect — `maxMoves: 1` was spent by the move, and the resume that only
+ * observed its result was rejected as overspending.
+ *
+ * A run whose journal lives outside this table — an app adopting declared
+ * actions before its runs do — has no row here and keeps the per-attempt
+ * behaviour rather than silently going uncharged.
+ */
+export const workflowStepBudgetCharged = async (db: SQL, step: { runId: string; key: string }): Promise<boolean> => {
+  const [row] = await db<{ budget_charged_at: Date | null }[]>`
+    SELECT budget_charged_at FROM workflows.step_outcome
+    WHERE run_id = ${step.runId}::uuid AND step_key = ${step.key}
+  `;
+  return Boolean(row?.budget_charged_at);
+};
+
+/**
+ * Records that this step paid for its effect.
+ *
+ * Written on the handle that charged, so a charge that unwinds — a
+ * transactional action that ends up waiting — takes this with it.
+ */
+export const markWorkflowStepBudgetCharged = async (db: SQL, step: { runId: string; key: string }): Promise<void> => {
+  await db`
+    UPDATE workflows.step_outcome
+    SET budget_charged_at = now(), updated_at = now()
+    WHERE run_id = ${step.runId}::uuid AND step_key = ${step.key} AND budget_charged_at IS NULL
+  `;
+};
+
 /** Settles an effect once its fate is known. `ambiguous` is a real answer, not a failure. */
 export const settleWorkflowEffect = async (
   step: { runId: string; key: string; executionGeneration: number },

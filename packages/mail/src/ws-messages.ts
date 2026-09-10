@@ -15,6 +15,7 @@ const catalog = i18n.define({
       invalidJson: "Invalid JSON payload",
       invalidSubscription: "Invalid Mail live subscription",
       tooManyMessages: "Too many pending Mail live messages",
+      tooManyConnections: "Too many open Mail live connections for this account",
       subscriptionFailed: "Mail live subscription failed",
     },
     de: {
@@ -29,6 +30,7 @@ const catalog = i18n.define({
       invalidJson: "Die JSON-Daten sind ungültig",
       invalidSubscription: "Die Live-Anmeldung für Mail ist ungültig",
       tooManyMessages: "Zu viele ausstehende Mail-Live-Nachrichten",
+      tooManyConnections: "Zu viele offene Mail-Live-Verbindungen für dieses Konto",
       subscriptionFailed: "Die Live-Anmeldung für Mail ist fehlgeschlagen",
     },
   },

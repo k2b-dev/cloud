@@ -14,6 +14,7 @@ import {
 import { requireMailboxPermission } from "./access";
 import type { MailRequestContext } from "./auth";
 import { sha256Json } from "./canonical";
+import { hasUnrenderedTemplateSyntax } from "./compose-renderer";
 
 type SafetyDraft = {
   id: string;
@@ -25,6 +26,7 @@ type SafetyDraft = {
   body_markdown: string;
   body_format: "plain" | "markdown";
   attachment_names: string[] | null;
+  origin: "user" | "workflow";
 };
 
 const safetyMessages = i18n.define({
@@ -41,6 +43,8 @@ const safetyMessages = i18n.define({
       replyAllDescription: ({ count }: { count: number }) => `This reply will be sent to ${count} people. Check whether everyone needs it.`,
       suspiciousLinkTitle: "Review message links",
       suspiciousLinkDescription: "A link uses an unusual destination or its visible address does not match where it opens.",
+      unrenderedTemplateTitle: "Unresolved template text",
+      unrenderedTemplateDescription: "The message contains template placeholders such as {{ sender.email }} that are sent as literal text.",
     },
     de: {
       missingAttachmentTitle: "Kein Anhang hinzugefügt",
@@ -53,6 +57,8 @@ const safetyMessages = i18n.define({
       replyAllDescription: ({ count }) => `Diese Antwort wird an ${count} Personen gesendet. Prüfe, ob alle sie benötigen.`,
       suspiciousLinkTitle: "Links in der E-Mail prüfen",
       suspiciousLinkDescription: "Ein Link verwendet ein ungewöhnliches Ziel oder seine sichtbare Adresse stimmt nicht mit dem Ziel überein.",
+      unrenderedTemplateTitle: "Nicht aufgelöster Platzhaltertext",
+      unrenderedTemplateDescription: "Die E-Mail enthält Platzhalter wie {{ sender.email }}, die als reiner Text versendet werden.",
     },
   },
 });
@@ -68,6 +74,8 @@ export type ComposeSafetySource = {
   format: "plain" | "markdown";
   attachmentNames: string[];
   config: ComposeSafetyConfig;
+  /** Who wrote the draft. A workflow draft has no composer to review warnings. */
+  origin: "user" | "workflow";
 };
 
 const parseAddresses = (value: MailAddress[] | string): MailAddress[] =>
@@ -176,6 +184,13 @@ export const evaluateComposeSafety = (source: ComposeSafetySource, locale = "en"
       description: t.replyAllDescription({ count: recipients.length }),
     });
   }
+  if (hasUnrenderedTemplateSyntax(source.body)) {
+    warnings.push({
+      id: "unrendered_template",
+      title: t.unrenderedTemplateTitle,
+      description: t.unrenderedTemplateDescription,
+    });
+  }
   if (suspiciousLink(source.body, source.format)) {
     warnings.push({
       id: "suspicious_link",
@@ -211,6 +226,7 @@ const loadSafetySource = async (params: { db: SQL; mailboxId: string; draftId: s
       draft.bcc_addresses,
       draft.body_markdown,
       draft.body_format,
+      draft.origin,
       COALESCE(
         array_agg(attachment.filename ORDER BY attachment.position, attachment.id)
           FILTER (WHERE attachment.id IS NOT NULL),
@@ -222,7 +238,6 @@ const loadSafetySource = async (params: { db: SQL; mailboxId: string; draftId: s
      AND attachment.removed_at IS NULL
     WHERE draft.id = ${params.draftId}::uuid
       AND draft.mailbox_id = ${params.mailboxId}::uuid
-      AND draft.origin = 'user'
       AND draft.state = 'draft'
     GROUP BY draft.id
   `;
@@ -245,6 +260,7 @@ const loadSafetySource = async (params: { db: SQL; mailboxId: string; draftId: s
     format: draft.body_format,
     attachmentNames: draft.attachment_names ?? [],
     config,
+    origin: draft.origin,
   });
 };
 
@@ -277,6 +293,16 @@ export const validateDraftComposeSafety = async (params: {
   if (source.data.revision !== params.expectedRevision) return fail(err.conflict("Draft changed before sending"));
   const review = evaluateComposeSafety(source.data);
   if (review.warnings.length === 0) return ok(review);
+  /*
+   * These warnings are a prompt to the person composing the message, and the
+   * approval below is that person confirming they read them. An automatic reply
+   * has no such person: its text was reviewed when the automation was authored,
+   * and its recipients come from the message it answers, not from a choice
+   * someone made and might regret. Requiring an approval token there refused
+   * every automatic reply instead of protecting anyone, so the warnings stay
+   * advisory for a draft the platform wrote itself.
+   */
+  if (source.data.origin !== "user") return ok(review);
   const expectedIds = review.warnings.map((warning) => warning.id).sort();
   const approvedIds = [...new Set(params.approval?.warningIds ?? [])].sort();
   if (
