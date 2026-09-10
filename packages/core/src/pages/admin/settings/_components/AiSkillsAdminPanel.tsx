@@ -1,7 +1,7 @@
-import { DataPanel, DataTable, type DataTableColumn, Pagination, SettingsPage, StatCell, StatGrid, StatusBadge, useLocale } from "@k2b/ui";
 import type { AiSkillAdminListItem, AiSkillAdminSummary } from "@k2b/cloud/ai";
 import { formatDateTime } from "@k2b/cloud/shared";
 import { SearchBar } from "@k2b/cloud/ssr/islands";
+import { DataPanel, DataTable, type DataTableColumn, Pagination, SettingsPage, StatCell, StatGrid, StatusBadge, useLocale } from "@k2b/ui";
 import AiSkillAdminActions from "./AiSkillAdminActions.island";
 import { settingsMessages } from "./messages";
 
@@ -23,6 +23,7 @@ export default function AiSkillsAdminPanel(props: Props) {
     : "/admin/settings?tab=ai-skills&page=";
   const columns: DataTableColumn<AiSkillAdminListItem>[] = [
     { id: "skill", header: t().skill, value: (skill) => skill.name },
+    { id: "template", header: t().skillTemplate },
     { id: "updated", header: t().updated, value: (skill) => skill.updatedAt, cellClass: "whitespace-nowrap" },
     { id: "access", header: t().access, value: (skill) => skill.accessCount, cellClass: "whitespace-nowrap" },
     { id: "admins", header: t().admins, value: (skill) => skill.adminCount, cellClass: "whitespace-nowrap" },
@@ -82,6 +83,24 @@ export default function AiSkillsAdminPanel(props: Props) {
                 </div>
               );
             }
+            if (col.id === "template")
+              return (
+                <div class="space-y-1 text-xs">
+                  <div>{skill.templateId ? `${skill.templateId} · v${skill.templateVersion}` : t().noSkillTemplate}</div>
+                  {skill.templateStatus && (
+                    <StatusBadge
+                      tone={skill.templateStatus === "current" ? "neutral" : "warning"}
+                      label={
+                        skill.templateStatus === "current"
+                          ? t().skillTemplateCurrent
+                          : skill.templateStatus === "modified"
+                            ? t().skillTemplateModified
+                            : t().skillTemplateUpdate({ version: skill.currentTemplateVersion ?? 0 })
+                      }
+                    />
+                  )}
+                </div>
+              );
             if (col.id === "updated")
               return <span class="text-xs text-dimmed">{formatDateTime(skill.updatedAt, { locale: locale() })}</span>;
             if (col.id === "access") return <span class="text-xs tabular-nums text-dimmed">{skill.accessCount}</span>;
@@ -94,7 +113,14 @@ export default function AiSkillsAdminPanel(props: Props) {
               );
             }
             if (col.id === "actions") {
-              return <AiSkillAdminActions skillId={skill.shortId} skillName={skill.name} />;
+              return (
+                <AiSkillAdminActions
+                  skillId={skill.shortId}
+                  skillName={skill.name}
+                  revision={skill.revision}
+                  templateId={skill.templateId}
+                />
+              );
             }
             return "";
           }}

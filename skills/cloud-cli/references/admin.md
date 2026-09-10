@@ -291,3 +291,22 @@ metadata only. Configure `CLOUD_APP_CREDENTIAL` only in its owning app and
 the allowed background actions. For rotation, create and deploy a replacement,
 verify its calls, then revoke the old credential. The equivalent UI is
 **Administration → App credentials**.
+
+
+## Built-in Assistant Skills
+
+Use `cld admin ai skills list --json` for exact Skill IDs, revisions, template
+origin and status, and `cld admin ai skills templates --json` for the current
+trusted template IDs and versions. These commands require platform-admin access.
+
+For an existing installation, `ai skills associate <skill-id> --template <id>
+--template-version <version> --revision <revision> --yes` explicitly links a Skill
+and preserves its content. Never infer authorization from a matching name.
+`ai skills reset` takes the same flags and replaces all content and references.
+Export customized content in Assistant settings first when a copy is needed.
+Read again after a revision or template conflict; do not retry with guessed values.
+
+Unmodified linked Skills receive newer templates automatically. Customized Skills
+stay intact. Identity, grants, personal activation, and loaded turn snapshots are
+preserved. Deleted linked Skills stay deleted; there is no automatic recreation,
+merge, or version history.

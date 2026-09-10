@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { type SQL, type SQLQuery, sql } from "bun";
 import type { AccessSubject } from "../server";
 import {
@@ -21,6 +22,7 @@ import {
   validateAiSkillName,
   validateAiSkillReferences,
 } from "./skill-format";
+import { getBuiltinAiSkillTemplates } from "./skill-seeds";
 import type { AiSkillFileToolContent, AiSkillFileToolStat } from "./types";
 
 export type AiSkillPermission = Exclude<PermissionLevel, "none">;
@@ -55,7 +57,22 @@ export type AiSkillAccess = {
   createdAt: string;
 };
 
+export type AiSkillTemplate = {
+  key: string;
+  version: number;
+  name: string;
+  description: string;
+  instructions: string;
+  extraFrontmatter?: AiSkillExtraFrontmatter;
+  references?: readonly AiSkillReferenceInput[];
+};
+
 export type AiSkillAdminListItem = {
+  revision: number;
+  templateId: string | null;
+  templateVersion: number | null;
+  currentTemplateVersion: number | null;
+  templateStatus: "current" | "modified" | "update_available" | null;
   id: string;
   shortId: string;
   name: string;
@@ -86,6 +103,9 @@ type SkillRow = {
   id: string;
   short_id: string;
   managed_key: string | null;
+  template_id: string | null;
+  template_version: number | null;
+  template_hash: string | null;
   name: string;
   description: string;
   instructions: string;
@@ -113,6 +133,7 @@ type SkillSummaryRow = SkillRow & {
 };
 
 type AdminSkillRow = SkillRow & {
+  content_references: AiSkillReference[] | string;
   reference_count: number;
   access_count: number;
   admin_count: number;
@@ -361,26 +382,92 @@ const validatedFields = (input: {
   }
 };
 
-const sameReferences = (left: readonly AiSkillReference[], right: readonly AiSkillReference[]): boolean =>
-  left.length === right.length &&
-  left.every((reference, index) => reference.path === right[index]?.path && reference.content === right[index]?.content);
+// JSON object key order and reference insertion order are not content changes.
+const canonicalJson = (value: unknown): string => {
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
+  if (value !== null && typeof value === "object") {
+    return `{${Object.entries(value)
+      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+      .map(([key, child]) => `${JSON.stringify(key)}:${canonicalJson(child)}`)
+      .join(",")}}`;
+  }
+  return JSON.stringify(value);
+};
+
+const contentHash = (fields: ReturnType<typeof validatedFields>): string =>
+  createHash("sha256")
+    .update(
+      canonicalJson({
+        ...fields,
+        references: [...fields.references].sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0)),
+      }),
+    )
+    .digest("hex");
+
+const rowContentHash = async (row: SkillRow, db: SQL = sql): Promise<string> =>
+  contentHash({
+    name: row.name,
+    description: row.description,
+    instructions: row.instructions,
+    extraFrontmatter: jsonObject(row.extra_frontmatter),
+    references: await listReferences(row.id, db),
+  });
+
+const validateTemplate = (input: AiSkillTemplate) => {
+  if (!input.key.trim() || !Number.isSafeInteger(input.version) || input.version < 1 || input.version > 2147483647)
+    throw new AiSkillInputError("A template needs a stable ID and a positive integer version.");
+  const fields = validatedFields(input);
+  return { fields, hash: contentHash(fields) };
+};
+
+const replaceTemplate = async (row: SkillRow, template: AiSkillTemplate, db: SQL): Promise<void> => {
+  const { fields, hash } = validateTemplate(template);
+  await db`UPDATE ai.skills SET name = ${fields.name}, description = ${fields.description},
+    instructions = ${fields.instructions}, extra_frontmatter = (${JSON.stringify(fields.extraFrontmatter)}::text)::jsonb,
+    template_id = ${template.key}, template_version = ${template.version}, template_hash = ${hash},
+    revision = revision + 1, updated_at = now() WHERE id = ${row.id}::uuid`;
+  await db`DELETE FROM ai.skill_references WHERE skill_id = ${row.id}::uuid`;
+  for (const ref of fields.references)
+    await db`INSERT INTO ai.skill_references (skill_id, path, content)
+    VALUES (${row.id}::uuid, ${ref.path}, ${ref.content})`;
+};
 
 const skillSearchPattern = (search?: string): string | null => {
   const value = search?.trim().toLowerCase();
   return value ? `%${value.replace(/[\\%_]/g, (char) => `\\${char}`)}%` : null;
 };
 
-const toAdminSkill = (row: AdminSkillRow): AiSkillAdminListItem => ({
-  id: row.id,
-  shortId: row.short_id,
-  name: row.name,
-  description: row.description,
-  referenceCount: Number(row.reference_count),
-  accessCount: Number(row.access_count),
-  adminCount: Number(row.admin_count),
-  createdAt: iso(row.created_at),
-  updatedAt: iso(row.updated_at),
-});
+const toAdminSkill = (row: AdminSkillRow): AiSkillAdminListItem => {
+  const template = getBuiltinAiSkillTemplates().find((entry) => entry.key === row.template_id);
+  return {
+    revision: Number(row.revision),
+    templateId: row.template_id,
+    templateVersion: row.template_version,
+    currentTemplateVersion: template?.version ?? null,
+    templateStatus: !row.template_id
+      ? null
+      : template && template.version > Number(row.template_version)
+        ? "update_available"
+        : contentHash({
+              name: row.name,
+              description: row.description,
+              instructions: row.instructions,
+              extraFrontmatter: jsonObject(row.extra_frontmatter),
+              references: snapshotFiles(row.content_references),
+            }) === row.template_hash
+          ? "current"
+          : "modified",
+    id: row.id,
+    shortId: row.short_id,
+    name: row.name,
+    description: row.description,
+    referenceCount: Number(row.reference_count),
+    accessCount: Number(row.access_count),
+    adminCount: Number(row.admin_count),
+    createdAt: iso(row.created_at),
+    updatedAt: iso(row.updated_at),
+  };
+};
 
 const skillSnapshotFiles = (skill: AiSkill): { path: string; content: string }[] => [
   {
@@ -391,89 +478,51 @@ const skillSnapshotFiles = (skill: AiSkill): { path: string; content: string }[]
 ];
 
 export const aiSkills = {
-  async seedOnce(input: {
-    key: string;
-    name: string;
-    description: string;
-    instructions: string;
-    extraFrontmatter?: AiSkillExtraFrontmatter;
-    references?: readonly AiSkillReferenceInput[];
-  }): Promise<void> {
-    const key = input.key.trim();
-    if (!key) throw new AiSkillInputError("Skill seed key is required.");
-    const fields = validatedFields(input);
+  async seedOnce(template: AiSkillTemplate): Promise<void> {
+    const { fields, hash } = validateTemplate(template);
     await sql.begin(async (tx) => {
-      const [claimed] = await tx<{ key: string }[]>`
-        INSERT INTO ai.skill_seeds (key) VALUES (${key})
-        ON CONFLICT (key) DO NOTHING
-        RETURNING key
-      `;
+      const [claimed] = await tx`INSERT INTO ai.skill_seeds (key, catalog_version)
+        VALUES (${template.key}, ${template.version}) ON CONFLICT (key) DO NOTHING RETURNING key`;
+      // Seed lock always precedes the Skill lock, including administrator adoption/reset.
+      const [seed] = await tx<{ skill_id: string | null; catalog_version: number }[]>`
+        SELECT skill_id, catalog_version FROM ai.skill_seeds WHERE key = ${template.key} FOR UPDATE`;
+      if (!seed || seed.catalog_version > template.version) return;
+      await tx`UPDATE ai.skill_seeds SET catalog_version = ${template.version} WHERE key = ${template.key}`;
+      if (seed.skill_id) {
+        const [row] = await tx<SkillRow[]>`SELECT * FROM ai.skills WHERE id = ${seed.skill_id}::uuid FOR UPDATE`;
+        if (!row || row.template_id !== template.key || Number(row.template_version) >= template.version) return;
+        if ((await rowContentHash(row, tx)) !== row.template_hash) return;
+        // A user may have claimed the new name. Keep the existing Skill rather than fail startup.
+        const [collision] = await tx`SELECT id FROM ai.skills WHERE name = ${fields.name} AND id <> ${row.id}::uuid`;
+        if (!collision) {
+          try {
+            await tx.savepoint((attempt) => replaceTemplate(row, template, attempt));
+          } catch (error) {
+            // A concurrent normal create may claim the name after our read.
+            if (!(typeof error === "object" && error !== null && "constraint" in error && error.constraint === "idx_ai_skills_name"))
+              throw error;
+          }
+        }
+        return;
+      }
+      // Old seed markers and name collisions never authorize adoption or replacement.
       if (!claimed) return;
-
-      let [row] = await tx<SkillRow[]>`SELECT * FROM ai.skills WHERE managed_key = ${key} FOR UPDATE`;
-      if (!row) {
-        const [conflict] = await tx<{ id: string }[]>`SELECT id FROM ai.skills WHERE name = ${fields.name}`;
-        if (conflict) return;
-        const rows = await withAiShortIdForDb(
-          tx,
-          "idx_ai_skills_short_id",
-          (attempt, shortId) => attempt<SkillRow[]>`
-            INSERT INTO ai.skills (short_id, name, description, instructions, extra_frontmatter)
-            VALUES (
-              ${shortId}, ${fields.name}, ${fields.description}, ${fields.instructions},
-              (${JSON.stringify(fields.extraFrontmatter)}::text)::jsonb
-            )
-            RETURNING *
-          `,
-        );
-        row = rows[0]!;
-      } else {
-        const references = await listReferences(row.id, tx);
-        const changed =
-          row.name !== fields.name ||
-          row.description !== fields.description ||
-          row.instructions !== fields.instructions ||
-          JSON.stringify(jsonObject(row.extra_frontmatter)) !== JSON.stringify(fields.extraFrontmatter) ||
-          !sameReferences(references, fields.references);
-        if (changed) {
-          [row] = await tx<SkillRow[]>`
-            UPDATE ai.skills
-            SET name = ${fields.name}, description = ${fields.description}, instructions = ${fields.instructions},
-                extra_frontmatter = (${JSON.stringify(fields.extraFrontmatter)}::text)::jsonb,
-                managed_key = NULL, revision = revision + 1, updated_at = now()
-            WHERE id = ${row.id}::uuid
-            RETURNING *
-          `;
-        } else {
-          [row] = await tx<SkillRow[]>`
-            UPDATE ai.skills SET managed_key = NULL WHERE id = ${row.id}::uuid RETURNING *
-          `;
-        }
-      }
-
-      const currentReferences = await listReferences(row!.id, tx);
-      if (!sameReferences(currentReferences, fields.references)) {
-        await tx`DELETE FROM ai.skill_references WHERE skill_id = ${row!.id}::uuid`;
-        for (const reference of fields.references) {
-          await tx`
-            INSERT INTO ai.skill_references (skill_id, path, content)
-            VALUES (${row!.id}::uuid, ${reference.path}, ${reference.content})
-          `;
-        }
-      }
-
-      const [grant] = await tx<{ id: string; permission: AiSkillPermission }[]>`
-        SELECT access.id, access.permission
-        FROM ai.skill_access skill_access
-        JOIN auth.access access ON access.id = skill_access.access_id
-        WHERE skill_access.skill_id = ${row!.id}::uuid AND access.authenticated_only = true
-        LIMIT 1
-      `;
-      if (!grant) {
-        await createSkillAccess(row!.id, { principal: { type: "authenticated" }, permission: "read" }, tx);
-      } else if (grant.permission !== "read") {
-        await tx`UPDATE auth.access SET permission = 'read' WHERE id = ${grant.id}::uuid`;
-      }
+      const [collision] = await tx`SELECT id FROM ai.skills WHERE name = ${fields.name}`;
+      if (collision) return;
+      const [row] = await withAiShortIdForDb(
+        tx,
+        "idx_ai_skills_short_id",
+        (attempt, shortId) => attempt<SkillRow[]>`
+        INSERT INTO ai.skills (short_id, name, description, instructions, extra_frontmatter, template_id, template_version, template_hash)
+        VALUES (${shortId}, ${fields.name}, ${fields.description}, ${fields.instructions},
+          (${JSON.stringify(fields.extraFrontmatter)}::text)::jsonb, ${template.key}, ${template.version}, ${hash}) ON CONFLICT (name) DO NOTHING RETURNING *`,
+      );
+      if (!row) return;
+      for (const ref of fields.references)
+        await tx`INSERT INTO ai.skill_references (skill_id, path, content)
+        VALUES (${row!.id}::uuid, ${ref.path}, ${ref.content})`;
+      await tx`UPDATE ai.skill_seeds SET skill_id = ${row!.id}::uuid WHERE key = ${template.key}`;
+      await createSkillAccess(row!.id, { principal: { type: "authenticated" }, permission: "read" }, tx);
     });
   },
 
@@ -640,6 +689,48 @@ export const aiSkills = {
   },
 
   admin: {
+    // Platform-owned recovery API: callers must enforce platform-admin authorization.
+    async applyTemplate(
+      skillId: string,
+      input: {
+        templateId: string;
+        templateVersion: number;
+        expectedRevision: number;
+        mode: "associate" | "reset";
+      },
+    ): Promise<boolean> {
+      const template = getBuiltinAiSkillTemplates().find((entry) => entry.key === input.templateId);
+      if (!template) throw new AiSkillInputError("Unknown Skill template.");
+      if (template.version !== input.templateVersion) throw new AiSkillRevisionConflictError();
+      const { hash } = validateTemplate(template);
+      return sql.begin(async (tx) => {
+        await tx`INSERT INTO ai.skill_seeds (key, catalog_version) VALUES (${template.key}, ${template.version})
+          ON CONFLICT (key) DO NOTHING`;
+        const [seed] = await tx<{ skill_id: string | null; catalog_version: number }[]>`
+          SELECT skill_id, catalog_version FROM ai.skill_seeds WHERE key = ${template.key} FOR UPDATE`;
+        const [row] = await tx<SkillRow[]>`SELECT * FROM ai.skills WHERE id = ${skillId}::uuid FOR UPDATE`;
+        if (!row) return false;
+        if (
+          Number(row.revision) !== input.expectedRevision ||
+          seed!.catalog_version > template.version ||
+          Number(row.template_version) > template.version
+        )
+          throw new AiSkillRevisionConflictError();
+        if (seed!.skill_id && seed!.skill_id !== row.id)
+          throw new AiSkillInputError("This template is already linked, possibly to a deleted Skill.");
+        if (input.mode === "associate") {
+          if (row.template_id) throw new AiSkillInputError("This Skill already has a template.");
+          await tx`UPDATE ai.skills SET template_id = ${template.key}, template_version = ${template.version},
+            template_hash = ${hash}, managed_key = NULL, revision = revision + 1, updated_at = now() WHERE id = ${row.id}::uuid`;
+        } else {
+          if (row.template_id !== template.key) throw new AiSkillInputError("Associate this Skill with its template first.");
+          await replaceTemplate(row, template, tx);
+        }
+        await tx`UPDATE ai.skill_seeds SET skill_id = ${row.id}::uuid, catalog_version = ${template.version} WHERE key = ${template.key}`;
+        return true;
+      });
+    },
+
     async list(params: {
       search?: string;
       page?: number;
@@ -659,6 +750,8 @@ export const aiSkills = {
       `;
       const rows = await sql<AdminSkillRow[]>`
         SELECT skill.*,
+               (SELECT COALESCE(jsonb_agg(jsonb_build_object('path', content.path, 'content', content.content)), '[]'::jsonb)
+                FROM ai.skill_references content WHERE content.skill_id = skill.id) AS content_references,
                count(DISTINCT reference.path)::int AS reference_count,
                count(DISTINCT skill_access.access_id)::int AS access_count,
                count(DISTINCT skill_access.access_id) FILTER (WHERE access.permission = 'admin')::int AS admin_count
@@ -704,6 +797,8 @@ export const aiSkills = {
     async getByShortId(shortId: string): Promise<AiSkillAdminListItem | null> {
       const rows = await sql<AdminSkillRow[]>`
         SELECT skill.*,
+               (SELECT COALESCE(jsonb_agg(jsonb_build_object('path', content.path, 'content', content.content)), '[]'::jsonb)
+                FROM ai.skill_references content WHERE content.skill_id = skill.id) AS content_references,
                count(DISTINCT reference.path)::int AS reference_count,
                count(DISTINCT skill_access.access_id)::int AS access_count,
                count(DISTINCT skill_access.access_id) FILTER (WHERE access.permission = 'admin')::int AS admin_count

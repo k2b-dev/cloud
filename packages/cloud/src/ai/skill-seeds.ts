@@ -1,6 +1,6 @@
 import { CLOUD_KIT_INSTRUCTIONS } from "./kit-skill";
 import { CLOUD_GRIDS_INSTRUCTIONS, CLOUD_GRIDS_QUERY_REFERENCE } from "./grids-skill";
-import { aiSkills } from "./skills";
+import type { AiSkillTemplate } from "./skills";
 
 const SKILL_CREATOR_INSTRUCTIONS = `# Create and improve Skills
 
@@ -196,7 +196,7 @@ Use these defaults unless the user asks otherwise or a more specific loaded Skil
 - Simple subtasks use \`spaces.task.checklist.list\`, \`spaces.task.checklist.create\`, \`spaces.task.checklist.update\` and \`spaces.task.checklist.delete\`. Keep each entry to a label and completion state; do not turn checklist entries into independent assigned tasks.
 - Use comments for discussion; read before replacing or deleting them. For tag replacement, preserve tags not included in the requested change.
 - Use \`spaces.item.reference.find\` to find existing items for a source resource. Link on creation through references rather than a redundant second mutation. For an existing item use \`spaces.item.reference.add\`; use \`spaces.item.link-candidate.search\` when a writable target is unknown.
-- Use \`spaces.event.create-once\` only in retryable durable workflows with their stable idempotency key. Normal interactive creation uses \`spaces.event.create\`. Never blindly retry an uncertain mutation.
+- Use \`spaces.event.create\` for interactive creation. Never blindly retry an uncertain mutation.
 
 ## Calendar mail and cross-app work
 
@@ -351,13 +351,17 @@ Mail attachment inputs require base64: encode the exact returned calendar string
 
 Do not fabricate organizer/attendee addresses, regenerate the returned calendar text, commit after a failed attachment, or retry an unknown mutation result without reconciliation.`;
 
-const BUILTIN_CLOUD_AI_SKILLS: Array<Parameters<typeof aiSkills.seedOnce>[0]> = [
+const BUILTIN_CLOUD_AI_SKILLS: AiSkillTemplate[] = [
   {
-    key: "kit:cloud-kit", name: "cloud-kit",
-    description: "Use for Cloud Kit: programming or improving browser mini apps, file converters, JavaScript tools, workbench UIs, CSV processing or exact money calculations in an existing Kit app. Read current Kit Help before choosing SDK methods.",
+    version: 1,
+    key: "kit:cloud-kit",
+    name: "cloud-kit",
+    description:
+      "Use for Cloud Kit: programming or improving browser mini apps, file converters, JavaScript tools, workbench UIs, CSV processing or exact money calculations in an existing Kit app. Read current Kit Help before choosing SDK methods.",
     instructions: CLOUD_KIT_INSTRUCTIONS,
   },
   {
+    version: 1,
     key: "grids:cloud-grids",
     name: "cloud-grids",
     description:
@@ -366,6 +370,7 @@ const BUILTIN_CLOUD_AI_SKILLS: Array<Parameters<typeof aiSkills.seedOnce>[0]> = 
     references: [{ path: "references/query-tasks.md", content: CLOUD_GRIDS_QUERY_REFERENCE }],
   },
   {
+    version: 1,
     key: "assistant:cloud-assistant",
     name: "cloud-assistant",
     description:
@@ -373,6 +378,7 @@ const BUILTIN_CLOUD_AI_SKILLS: Array<Parameters<typeof aiSkills.seedOnce>[0]> = 
     instructions: CLOUD_ASSISTANT_INSTRUCTIONS,
   },
   {
+    version: 1,
     key: "core:skill-creator",
     name: "skill-creator",
     description:
@@ -380,6 +386,7 @@ const BUILTIN_CLOUD_AI_SKILLS: Array<Parameters<typeof aiSkills.seedOnce>[0]> = 
     instructions: SKILL_CREATOR_INSTRUCTIONS,
   },
   {
+    version: 1,
     key: "mail:cloud-mail",
     name: "cloud-mail",
     description:
@@ -387,6 +394,7 @@ const BUILTIN_CLOUD_AI_SKILLS: Array<Parameters<typeof aiSkills.seedOnce>[0]> = 
     instructions: CLOUD_MAIL_INSTRUCTIONS,
   },
   {
+    version: 1,
     key: "notebooks:cloud-notebooks",
     name: "cloud-notebooks",
     description:
@@ -395,6 +403,7 @@ const BUILTIN_CLOUD_AI_SKILLS: Array<Parameters<typeof aiSkills.seedOnce>[0]> = 
     references: [{ path: "references/structured-pages.md", content: CLOUD_NOTEBOOKS_REFERENCE }],
   },
   {
+    version: 1,
     key: "contacts:cloud-contacts",
     name: "cloud-contacts",
     description:
@@ -402,6 +411,7 @@ const BUILTIN_CLOUD_AI_SKILLS: Array<Parameters<typeof aiSkills.seedOnce>[0]> = 
     instructions: CLOUD_CONTACTS_INSTRUCTIONS,
   },
   {
+    version: 1,
     key: "spaces:cloud-spaces",
     name: "cloud-spaces",
     description:
@@ -410,6 +420,7 @@ const BUILTIN_CLOUD_AI_SKILLS: Array<Parameters<typeof aiSkills.seedOnce>[0]> = 
     references: [{ path: "references/calendar-mail.md", content: CLOUD_SPACES_CALENDAR_REFERENCE }],
   },
   {
+    version: 1,
     key: "weather:cloud-weather",
     name: "cloud-weather",
     description:
@@ -418,13 +429,16 @@ const BUILTIN_CLOUD_AI_SKILLS: Array<Parameters<typeof aiSkills.seedOnce>[0]> = 
   },
 ];
 
+export const getBuiltinAiSkillTemplates = (): readonly AiSkillTemplate[] => BUILTIN_CLOUD_AI_SKILLS;
+
 export const getBuiltinAiSkillTemplate = (name: string) => {
   const seed = BUILTIN_CLOUD_AI_SKILLS.find((entry) => entry.name === name);
   if (!seed) return undefined;
-  const { key: _key, ...template } = seed;
-  return template;
+  const { key, ...template } = seed;
+  return { ...template, templateId: key };
 };
 
 export const seedCloudAiSkills = async (): Promise<void> => {
+  const { aiSkills } = await import("./skills");
   for (const seed of BUILTIN_CLOUD_AI_SKILLS) await aiSkills.seedOnce(seed);
 };

@@ -168,7 +168,8 @@ retries, so an edit cannot change an in-progress result. A later turn sees the
 new revision. Reading a mounted file still checks current Cloud access; revoked
 access takes effect immediately.
 
-Cloud seeds eight Skills once with `read` access for every authenticated user.
+Cloud installs built-in Skills with `read` access for every authenticated user.
+`cloud-kit` covers Kit mini apps and their SDK.
 `cloud-grids` includes a compact GQL syntax guide with lookup, join, and
 aggregation examples. It guides queries and daily work and routes product and
 administration questions to canonical Grids Help. Skill reference files are
@@ -181,7 +182,7 @@ messaging, and scheduled chat work.
 manage references, personally enable or disable, and delete Skills.
 `cloud-mail`, `cloud-notebooks`, `cloud-contacts`, `cloud-spaces`, and
 `cloud-weather` provide their application's normal capability paths, domain
-defaults, and cross-application guidance. After their initial seed they are
+defaults, and cross-application guidance. They remain
 ordinary permission-owned Skills: platform administrators can grant themselves
 access, and Skill administrators can edit, share, or delete them. A deleted
 seed is not recreated during later starts. Like every readable Skill, each
@@ -189,29 +190,64 @@ starts enabled and can be disabled personally.
 
 ### Update an installed built-in Skill
 
-Upgrading Cloud does not replace installed Skills. New installations receive
-the current templates; existing installations choose which changes to adopt.
-To update one Skill, use an account with `write` permission for that Skill:
+Cloud records each built-in Skill's stable template ID, installed integer
+version, and hash of the last adopted template content. The resource revision
+separately protects edits from concurrent changes. Normal Skill edits and imports
+cannot set template identity or version.
 
-1. Read `GET /api/ai/skills` and select the exact Skill ID. Read and export its
-   complete current fields with `GET /api/ai/skills/:skillId`, including its
-   `revision`, references, and extra frontmatter.
-2. Read the current template with
-   `GET /api/ai/skills/templates/cloud-mail` (or `cloud-spaces`,
-   `cloud-notebooks`, or another built-in name). This authenticated read returns
-   a `template` object and changes nothing. Unknown names return 404.
-3. Compare the template with the exported Skill. Keep custom instructions,
-   references, and extra frontmatter unless their replacement was explicitly
-   approved. References with the same path must be merged deliberately.
-4. After reviewing the complete proposed content, send
-   `PUT /api/ai/skills/:skillId` with `name`, `description`, `instructions`,
-   `extraFrontmatter`, all retained `references`, and `expectedRevision` from
-   step 1. This is a full content replacement, not a patch. A stale revision
-   returns 409; read again and review the intervening changes before retrying.
-5. Read the same Skill again to verify its content and new revision.
+At startup, a newer template replaces the installed content only if the complete
+current content still matches that baseline. The check covers name, description,
+instructions, extra frontmatter, and every reference path and content. JSON key
+order and reference ordering do not count as edits. Customized Skills stay intact.
+Concurrent starts apply each upgrade once; older Core versions cannot downgrade a
+Skill or reset it after a newer template has been observed.
 
-The update preserves the Skill's identity, access grants, and personal enabled
-state. Do not delete and recreate it or run a blanket template overwrite.
+**Admin > AI > Skills** shows template origin, installed version, and status:
+
+- **Current**: content matches the adopted template.
+- **Modified**: content differs from the adopted template.
+- **Update available**: this Core version ships a newer template. Customizations
+  remain intact until an administrator chooses to reset it.
+
+To replace a linked Skill, select **Reset to current template** and confirm the
+named Skill and template version. This replaces all content and references; it
+does not merge changes or keep a version history. Export the Skill from
+**Assistant settings > Skills** first if you need a copy. An administrator without
+Skill access can grant themselves access through the existing permissions action.
+ID, grants, personal enabled state, and already loaded turn content remain intact.
+A stale resource revision or template version fails; reload before trying again.
+
+Existing installations have seed markers without a reliable Skill association or
+baseline. They require an explicit administrator choice: select **Link to
+template**, choose the correct template, and confirm. Association preserves all
+existing content. Content that differs from the current template stays customized;
+use the separate reset action if replacement is wanted. Names and revision numbers
+never authorize automatic adoption. A template can be linked to only one Skill.
+Deleting a linked Skill is permanent: neither restart nor association to another
+Skill recreates that built-in. Ordinary user-authored Skills remain unaffected.
+
+The same platform-admin workflow is available through the CLI:
+
+```bash
+cld admin ai skills list --json
+cld admin ai skills templates --json
+cld admin ai skills associate <skill-id> --template core:skill-creator --template-version 1 --revision <revision> --yes
+cld admin ai skills reset <skill-id> --template core:skill-creator --template-version 1 --revision <revision> --yes
+```
+
+Use the IDs, template version, and revision returned by the current reads.
+`GET /api/admin/core/ai-skills` lists status and revision;
+`GET /api/admin/core/ai-skills/templates` lists trusted template IDs and versions.
+`POST /api/admin/core/ai-skills/:skillId/template` accepts `templateId`,
+`templateVersion`, `expectedRevision`, `mode` (`associate` or `reset`), and
+`confirmed: true`. All three routes require platform-admin access. Content
+validation and revision protection belong to the shared platform service.
+The authenticated `GET /api/ai/skills/templates/:name` remains a read-only source
+of current template content; a template read does not associate or replace a Skill.
+
+Maintainers must increment the code-owned template version whenever any template
+content changes. Keep the stable ID unchanged. The content hash is deterministic
+SHA-256 over the validated fields; there is no merge engine or history store.
 
 The Skill management Actions are reviewed and recheck the current actor's
 Cloud permission. Updates and reference changes require the exact revision

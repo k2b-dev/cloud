@@ -81,7 +81,8 @@ describe("AI Skill routes", () => {
         body: JSON.stringify(proposal),
       });
     expect((await request()).status).toBe(200);
-    expect(update).toHaveBeenCalledWith(skillId, subject, proposal);
+    const { templateId: _templateId, version: _version, ...content } = proposal;
+    expect(update).toHaveBeenCalledWith(skillId, subject, content);
     expect(access).not.toHaveBeenCalled();
     expect(remove).not.toHaveBeenCalled();
     expect(enabled).not.toHaveBeenCalled();

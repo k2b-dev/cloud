@@ -1415,6 +1415,12 @@ export const migrateCloudAi = async (): Promise<void> => {
       seeded_at TIMESTAMPTZ NOT NULL DEFAULT now()
     )
   `.simple();
+  // A seed's UUID deliberately has no FK: it is a durable deletion tombstone.
+  await sql`ALTER TABLE ai.skill_seeds ADD COLUMN IF NOT EXISTS skill_id UUID`.simple();
+  await sql`ALTER TABLE ai.skill_seeds ADD COLUMN IF NOT EXISTS catalog_version INTEGER NOT NULL DEFAULT 0`.simple();
+  await sql`ALTER TABLE ai.skills ADD COLUMN IF NOT EXISTS template_id TEXT,
+    ADD COLUMN IF NOT EXISTS template_version INTEGER, ADD COLUMN IF NOT EXISTS template_hash TEXT`.simple();
+  await sql`CREATE UNIQUE INDEX IF NOT EXISTS idx_ai_skills_template_id ON ai.skills(template_id) WHERE template_id IS NOT NULL`.simple();
   await backfillAiShortIds(
     "idx_ai_skills_short_id",
     await sql<{ id: string }[]>`SELECT id FROM ai.skills WHERE short_id IS NULL`,

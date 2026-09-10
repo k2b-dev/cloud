@@ -11,7 +11,7 @@ const { plugin } = createConfig({ dev: true, rootDir: root });
 Bun.plugin(plugin());
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 
-const { default: AiSkillsAdminPanel } = await import("./AiSkillsAdminPanel.tsx");
+const [{ LocaleProvider }, { default: AiSkillsAdminPanel }] = await Promise.all([import("@k2b/ui"), import("./AiSkillsAdminPanel.tsx")]);
 
 describe("AiSkillsAdminPanel", () => {
   test("renders every Skill as a normal permission-owned recovery record", () => {
@@ -23,6 +23,11 @@ describe("AiSkillsAdminPanel", () => {
             shortId: "sKl234",
             name: "orphaned-skill",
             description: "A shared Skill without an administrator.",
+            revision: 1,
+            templateId: null,
+            templateVersion: null,
+            currentTemplateVersion: null,
+            templateStatus: null,
             referenceCount: 0,
             accessCount: 0,
             adminCount: 0,
@@ -34,6 +39,11 @@ describe("AiSkillsAdminPanel", () => {
             shortId: "mNg234",
             name: "skill-creator",
             description: "Create Skills.",
+            revision: 2,
+            templateId: "core:skill-creator",
+            templateVersion: 1,
+            currentTemplateVersion: 2,
+            templateStatus: "update_available",
             referenceCount: 0,
             accessCount: 1,
             adminCount: 0,
@@ -56,6 +66,46 @@ describe("AiSkillsAdminPanel", () => {
     expect(html).toContain("Actions for orphaned-skill");
     expect(html).toContain("Actions for skill-creator");
     expect(html).toContain("Delete Skill");
+    expect(html).toContain("No template linked");
+    expect(html).toContain("core:skill-creator");
+    expect(html).toContain("Update available");
+    expect(html).toContain("Reset to current template");
+    expect(html).toContain("Link to template");
     expect(html).not.toContain("Save changes");
+  });
+  test("renders template origin and all lifecycle states in the inherited German locale", () => {
+    const html = renderToString(() =>
+      createComponent(LocaleProvider, {
+        locale: "de-CH",
+        get children() {
+          return createComponent(AiSkillsAdminPanel, {
+            skills: (["current", "modified", "update_available"] as const).map((templateStatus, index) => ({
+              id: `id-${index}`,
+              shortId: `skl23${index}`,
+              name: `test-${index}`,
+              description: "Template workflow",
+              revision: 3,
+              templateId: `test:template-${index}`,
+              templateVersion: 1,
+              currentTemplateVersion: templateStatus === "update_available" ? 2 : 1,
+              templateStatus,
+              referenceCount: 1,
+              accessCount: 1,
+              adminCount: 1,
+              createdAt: "2026-09-10T10:00:00Z",
+              updatedAt: "2026-09-10T10:00:00Z",
+            })),
+            summary: { total: 3, unmanaged: 0, totalAccess: 3 },
+            total: 3,
+            page: 1,
+            perPage: 100,
+            search: "",
+          });
+        },
+      }),
+    );
+    for (const text of ["KI-Skills", "Vorlage", "Aktuell", "Angepasst", "Update verfügbar", "Auf aktuelle Vorlage zurücksetzen"])
+      expect(html).toContain(text);
+    expect(html).not.toContain("Reset to current template");
   });
 });

@@ -1,6 +1,7 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
 import { sql } from "bun";
 import { migrateCloudAi } from "./migrate";
+import * as skillTemplates from "./skill-seeds";
 import { AiSkillRevisionConflictError, aiSkills } from "./skills";
 import { aiConversations } from "./store";
 
@@ -17,6 +18,8 @@ const canUseAiDatabase = async (): Promise<boolean> => {
   }
 };
 
+const databaseReady = await canUseAiDatabase();
+
 const insertUser = async (label: string): Promise<string> => {
   const suffix = crypto.randomUUID();
   const [row] = await sql<{ id: string }[]>`
@@ -27,7 +30,7 @@ const insertUser = async (label: string): Promise<string> => {
   return row!.id;
 };
 
-describe.skipIf(!(await canUseAiDatabase()))("aiSkills (integration)", () => {
+describe.skipIf(!databaseReady)("aiSkills (integration)", () => {
   test("seeds one ordinary Skill once, then leaves permissions, edits, and deletion to admins", async () => {
     const userId = await insertUser("seeded");
     const subject = { type: "user" as const, userId };
@@ -38,6 +41,7 @@ describe.skipIf(!(await canUseAiDatabase()))("aiSkills (integration)", () => {
 
     try {
       const seed = {
+        version: 1,
         key,
         name,
         description: "Create a seeded test workflow when integration coverage needs it.",
@@ -229,6 +233,242 @@ describe.skipIf(!(await canUseAiDatabase()))("aiSkills (integration)", () => {
     } finally {
       if (skillId) await aiSkills.admin.delete(skillId);
       await sql`DELETE FROM auth.users WHERE id IN (${ownerId}::uuid, ${rescuerId}::uuid)`;
+    }
+  });
+});
+
+describe.skipIf(!databaseReady)("versioned Skill templates (integration)", () => {
+  test("upgrades atomically, preserves customization and identity, and keeps deletion durable", async () => {
+    const userId = await insertUser("template");
+    const subject = { type: "user" as const, userId };
+    const name = `template-${crypto.randomUUID().slice(0, 8)}`;
+    const template = {
+      key: `test:${name}`,
+      version: 1,
+      name,
+      description: "Template workflow.",
+      instructions: "Original instructions.",
+      extraFrontmatter: { metadata: { a: 1, z: { b: true, a: false } } },
+      references: [
+        { path: "references/b.md", content: "B" },
+        { path: "references/a.md", content: "A" },
+      ],
+    };
+    let id: string | undefined;
+    const conversation = await aiConversations.createConversation({ ownerUserId: userId });
+    try {
+      await Promise.all(Array.from({ length: 6 }, () => aiSkills.seedOnce(template)));
+      const first = (await aiSkills.getByName(name, subject))!;
+      id = first.id;
+      expect(first.revision).toBe(1);
+      await aiSkills.admin.grantAccess(id, { principal: { type: "user", userId }, permission: "admin" });
+      const grants = await aiSkills.admin.listAccess(id);
+      // Object and reference order must not falsely mark a Skill as customized.
+      await aiSkills.update(id, subject, {
+        ...first,
+        extraFrontmatter: { metadata: { z: { a: false, b: true }, a: 1 } },
+        references: [...first.references].reverse(),
+        expectedRevision: first.revision,
+      });
+      const [turn] = await sql<{ id: string }[]>`INSERT INTO ai.turns (short_id, conversation_id, status)
+        VALUES (${`skill-${crypto.randomUUID()}`}, ${conversation.id}::uuid, 'queued') RETURNING id`;
+      const pinned = await aiSkills.loadForTurn(turn!.id, name, subject);
+      await aiSkills.setEnabled(id, subject, false);
+      const next = {
+        ...template,
+        version: 2,
+        instructions: "Upgraded instructions.",
+        references: [{ path: "references/new.md", content: "New" }],
+      };
+      await Promise.all([aiSkills.seedOnce(next), aiSkills.seedOnce(next), aiSkills.seedOnce(template)]);
+      const upgraded = (await aiSkills.get(id, subject))!;
+      expect(upgraded).toMatchObject({ id, shortId: first.shortId, revision: 3, enabled: false, instructions: next.instructions });
+      expect([...upgraded.references]).toEqual(next.references);
+      expect(await aiSkills.admin.listAccess(id)).toEqual(grants);
+      await aiSkills.setEnabled(id, subject, true);
+      expect(await aiSkills.loadForTurn(turn!.id, name, subject)).toEqual(pinned);
+      await expect(aiSkills.update(id, subject, { ...first, expectedRevision: 2 })).rejects.toBeInstanceOf(AiSkillRevisionConflictError);
+      const custom = (await aiSkills.setReference(id, subject, {
+        expectedRevision: upgraded.revision,
+        path: "references/custom.md",
+        content: "Keep me",
+      }))!;
+      await aiSkills.seedOnce({ ...next, version: 3, instructions: "Do not overwrite custom reference." });
+      expect(await aiSkills.get(id, subject)).toEqual(custom);
+      await aiSkills.admin.delete(id);
+      id = undefined;
+      await aiSkills.seedOnce({ ...next, version: 4 });
+      expect(await aiSkills.getByName(name, subject)).toBeNull();
+      const [seed] = await sql<{ skill_id: string }[]>`SELECT skill_id FROM ai.skill_seeds WHERE key = ${template.key}`;
+      expect(seed!.skill_id).toBe(first.id);
+    } finally {
+      if (id) await aiSkills.admin.delete(id);
+      await sql`DELETE FROM ai.skill_seeds WHERE key = ${template.key}`;
+      await sql`DELETE FROM ai.conversations WHERE id = ${conversation.id}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
+    }
+  });
+
+  test("never adopts legacy markers, name collisions, or managed rows automatically", async () => {
+    const userId = await insertUser("legacy");
+    const subject = { type: "user" as const, userId };
+    const name = `legacy-${crypto.randomUUID().slice(0, 8)}`;
+    const template = { key: `test:${name}`, version: 1, name, description: "Legacy Skill.", instructions: "User content." };
+    const skill = await aiSkills.create({ ...template, subject });
+    try {
+      await sql`UPDATE ai.skills SET managed_key = ${template.key} WHERE id = ${skill.id}::uuid`;
+      await aiSkills.seedOnce({ ...template, instructions: "Replacement" });
+      expect((await aiSkills.get(skill.id, subject))!.instructions).toBe("User content.");
+      expect((await aiSkills.admin.getByShortId(skill.shortId))!.templateId).toBeNull();
+      await sql`UPDATE ai.skills SET managed_key = NULL WHERE id = ${skill.id}::uuid`;
+      await aiSkills.seedOnce({ ...template, version: 2 });
+      expect((await aiSkills.admin.getByShortId(skill.shortId))!.templateId).toBeNull();
+    } finally {
+      await aiSkills.admin.delete(skill.id);
+      await sql`DELETE FROM ai.skill_seeds WHERE key = ${template.key}`;
+      await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
+    }
+  });
+  test("explicit legacy association preserves content; reset checks revision, catalog and tombstones", async () => {
+    const userId = await insertUser("adoption");
+    const subject = { type: "user" as const, userId };
+    const name = `adopt-${crypto.randomUUID().slice(0, 8)}`;
+    let template = {
+      key: `test:${name}`,
+      version: 2,
+      name,
+      description: "Trusted description.",
+      instructions: "Trusted instructions.",
+      references: [{ path: "references/trusted.md", content: "Trusted reference." }],
+    };
+    const catalog = spyOn(skillTemplates, "getBuiltinAiSkillTemplates").mockImplementation(() => [template]);
+    const skill = await aiSkills.create({
+      subject,
+      name,
+      description: "Customized description.",
+      instructions: "Preserve this.",
+      references: [{ path: "references/custom.md", content: "Custom" }],
+    });
+    const input = { templateId: template.key, templateVersion: 2, expectedRevision: 1, mode: "associate" as const };
+    try {
+      await sql`INSERT INTO ai.skill_seeds (key) VALUES (${template.key})`;
+      await aiSkills.seedOnce(template);
+      expect((await aiSkills.admin.getByShortId(skill.shortId))!.templateId).toBeNull();
+      await aiSkills.setEnabled(skill.id, subject, false);
+      expect(await aiSkills.admin.applyTemplate(skill.id, input)).toBe(true);
+      expect((await aiSkills.get(skill.id, subject))!.instructions).toBe(skill.instructions);
+      expect(await aiSkills.admin.getByShortId(skill.shortId)).toMatchObject({
+        templateId: template.key,
+        templateVersion: 2,
+        templateStatus: "modified",
+        revision: 2,
+      });
+      template = { ...template, version: 3, instructions: "Newest instructions." };
+      await aiSkills.seedOnce(template);
+      expect(await aiSkills.admin.getByShortId(skill.shortId)).toMatchObject({
+        templateStatus: "update_available",
+        currentTemplateVersion: 3,
+      });
+      await expect(aiSkills.admin.applyTemplate(skill.id, { ...input, mode: "reset", expectedRevision: 2 })).rejects.toBeInstanceOf(
+        AiSkillRevisionConflictError,
+      );
+      const reset = { ...input, mode: "reset" as const, expectedRevision: 2, templateVersion: 3 };
+      const results = await Promise.allSettled([
+        aiSkills.admin.applyTemplate(skill.id, reset),
+        aiSkills.admin.applyTemplate(skill.id, reset),
+      ]);
+      expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+      expect(results.filter((result) => result.status === "rejected")).toHaveLength(1);
+      const current = (await aiSkills.get(skill.id, subject))!;
+      expect(current).toMatchObject({
+        id: skill.id,
+        shortId: skill.shortId,
+        enabled: false,
+        permission: "admin",
+        revision: 3,
+        instructions: template.instructions,
+      });
+      expect([...current.references]).toEqual(template.references);
+      expect((await aiSkills.admin.getByShortId(skill.shortId))!.templateStatus).toBe("current");
+      // A newer process has observed v4, even if customization prevented installation.
+      await aiSkills.update(skill.id, subject, { ...current, instructions: "Edited again", expectedRevision: 3 });
+      await aiSkills.seedOnce({ ...template, version: 4 });
+      await expect(aiSkills.admin.applyTemplate(skill.id, { ...reset, expectedRevision: 4 })).rejects.toBeInstanceOf(
+        AiSkillRevisionConflictError,
+      );
+      await aiSkills.admin.delete(skill.id);
+      const replacement = await aiSkills.create({ subject, name, description: "Other Skill", instructions: "Other content" });
+      try {
+        template = { ...template, version: 4 };
+        await expect(aiSkills.admin.applyTemplate(replacement.id, { ...input, templateVersion: 4 })).rejects.toThrow("already linked");
+        await aiSkills.seedOnce(template);
+        expect((await aiSkills.admin.getByShortId(replacement.shortId))!.templateId).toBeNull();
+      } finally {
+        await aiSkills.admin.delete(replacement.id);
+      }
+    } finally {
+      catalog.mockRestore();
+      await aiSkills.admin.delete(skill.id);
+      await sql`DELETE FROM ai.skill_seeds WHERE key = ${template.key}`;
+      await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
+    }
+  });
+  test("every content field protects customization, and edits racing startup use the same revision lock", async () => {
+    const userId = await insertUser("content-hash");
+    const subject = { type: "user" as const, userId };
+    const suffix = crypto.randomUUID().slice(0, 8);
+    const keys: string[] = [];
+    const ids: string[] = [];
+    try {
+      for (const change of ["name", "description", "instructions", "extraFrontmatter", "referencePath", "referenceContent"] as const) {
+        const name = `hash-${suffix}-${change.toLowerCase()}`;
+        const template = {
+          key: `test:${name}`,
+          version: 1,
+          name,
+          description: "Baseline",
+          instructions: "Baseline instructions",
+          extraFrontmatter: { metadata: { items: [1, 2] } },
+          references: [{ path: "references/one.md", content: "Baseline reference" }],
+        };
+        keys.push(template.key);
+        await aiSkills.seedOnce(template);
+        const skill = (await aiSkills.getByName(name, subject))!;
+        ids.push(skill.id);
+        await aiSkills.admin.grantAccess(skill.id, { principal: { type: "user", userId }, permission: "write" });
+        const custom = (await aiSkills.update(skill.id, subject, {
+          ...skill,
+          expectedRevision: skill.revision,
+          ...(change === "name" ? { name: `${name}-custom` } : {}),
+          ...(change === "description" ? { description: "Custom description" } : {}),
+          ...(change === "instructions" ? { instructions: "Custom instructions" } : {}),
+          ...(change === "extraFrontmatter" ? { extraFrontmatter: { metadata: { items: [2, 1] } } } : {}),
+          ...(change === "referencePath" ? { references: [{ path: "references/other.md", content: "Baseline reference" }] } : {}),
+          ...(change === "referenceContent" ? { references: [{ path: "references/one.md", content: "Custom reference" }] } : {}),
+        }))!;
+        await aiSkills.seedOnce({ ...template, version: 2, instructions: "Upgraded instructions" });
+        expect(await aiSkills.get(skill.id, subject)).toEqual(custom);
+      }
+      const name = `race-${suffix}`;
+      const template = { key: `test:${name}`, version: 1, name, description: "Baseline", instructions: "Baseline" };
+      keys.push(template.key);
+      await aiSkills.seedOnce(template);
+      const skill = (await aiSkills.getByName(name, subject))!;
+      ids.push(skill.id);
+      await aiSkills.admin.grantAccess(skill.id, { principal: { type: "user", userId }, permission: "write" });
+      const results = await Promise.allSettled([
+        aiSkills.update(skill.id, subject, { ...skill, instructions: "Concurrent edit", expectedRevision: 1 }),
+        aiSkills.seedOnce({ ...template, version: 2, instructions: "Concurrent upgrade" }),
+      ]);
+      const current = (await aiSkills.get(skill.id, subject))!;
+      expect(results[1]!.status).toBe("fulfilled");
+      expect(current.revision).toBe(2);
+      expect(current.instructions).toBe(results[0]!.status === "fulfilled" ? "Concurrent edit" : "Concurrent upgrade");
+      if (results[0]!.status === "rejected") expect(results[0]!.reason).toBeInstanceOf(AiSkillRevisionConflictError);
+    } finally {
+      for (const id of ids) await aiSkills.admin.delete(id);
+      for (const key of keys) await sql`DELETE FROM ai.skill_seeds WHERE key = ${key}`;
+      await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
     }
   });
 });

@@ -1,15 +1,17 @@
-import { refreshCurrentPath } from "@k2b/ssr/nav";
-import { mutation as mutations, query } from "@k2b/stdlib/solid";
-import { Button, Dropdown, Placeholder, prompts, toast, useLocale } from "@k2b/ui";
 import { PermissionEditor } from "@k2b/cloud/access/ui";
 import type { AiSkillAccess } from "@k2b/cloud/ai";
 import { coreClient } from "@k2b/cloud/clients/core";
-import { Show } from "solid-js";
+import { refreshCurrentPath } from "@k2b/ssr/nav";
+import { mutation as mutations, query } from "@k2b/stdlib/solid";
+import { Button, Dropdown, Placeholder, prompts, Select, toast, useLocale } from "@k2b/ui";
+import { createSignal, Show } from "solid-js";
 import { settingsMessages } from "./messages";
 
 type Props = {
   skillId: string;
   skillName: string;
+  revision: number;
+  templateId: string | null;
 };
 
 const readError = async (response: Response, fallback: string): Promise<string> => {
@@ -95,6 +97,89 @@ const openPermissionDialog = async (props: Props) => {
   refreshCurrentPath();
 };
 
+const TemplateDialogBody = (props: Props & { close: () => void }) => {
+  const locale = useLocale();
+  const t = () => settingsMessages.resolve([locale()]).t;
+  const [selected, setSelected] = createSignal(props.templateId ?? "");
+  const templates = query.create({
+    source: () => props.skillId,
+    load: async (_skillId, { abortSignal }) => {
+      const response = await coreClient.admin.core["ai-skills"].templates.$get({}, { init: { signal: abortSignal } });
+      if (!response.ok) throw new Error(await readError(response, t().skillTemplateFailed));
+      return (await response.json()).templates;
+    },
+  });
+  const apply = mutations.create<void, { mode: "associate" | "reset"; templateId: string; templateVersion: number }>({
+    mutation: async (input) => {
+      const response = await coreClient.admin.core["ai-skills"][":skillId"].template.$post({
+        param: { skillId: props.skillId },
+        json: { ...input, expectedRevision: props.revision, confirmed: true },
+      });
+      if (!response.ok) throw new Error(await readError(response, t().skillTemplateFailed));
+    },
+    onSuccess: () => {
+      toast.success(t().skillTemplateSaved);
+      props.close();
+      refreshCurrentPath();
+    },
+    onError: (error) => prompts.error(error.message),
+  });
+  const submit = async () => {
+    const template = templates.data()?.find((item) => item.templateId === selected());
+    if (!template || apply.loading()) return;
+    const mode = props.templateId ? "reset" : "associate";
+    if (
+      await prompts.confirm(
+        mode === "reset"
+          ? t().resetSkillTemplateConfirm({ name: props.skillName, template: template.name, version: template.version })
+          : t().associateSkillTemplateConfirm({ name: props.skillName, template: template.name }),
+        {
+          title: mode === "reset" ? t().resetSkillTemplate : t().associateSkillTemplate,
+          confirmText: mode === "reset" ? t().resetSkillTemplate : t().associateSkillTemplate,
+          variant: mode === "reset" ? "danger" : "primary",
+        },
+      )
+    )
+      await apply.mutate({ mode, templateId: template.templateId, templateVersion: template.version });
+  };
+  return (
+    <div class="space-y-4">
+      <p class="text-sm text-dimmed">{props.templateId ? t().resetSkillTemplateHelp : t().associateSkillTemplateHelp}</p>
+      <Show when={templates.error()}>
+        <Placeholder
+          title={t().skillTemplateFailed}
+          icon="ti ti-alert-circle"
+          action={<Button onClick={() => void templates.refresh()}>{t().retry}</Button>}
+        />
+      </Show>
+      <Show
+        when={templates.data()}
+        fallback={
+          <Show when={!templates.error()}>
+            <span>{t().loadingSkillTemplates}</span>
+          </Show>
+        }
+      >
+        {(items) => (
+          <>
+            <Select
+              value={selected}
+              onValueChange={(value) => setSelected(value ?? "")}
+              disabled={!!props.templateId || apply.loading()}
+              aria-label={t().skillTemplate}
+              placeholder={t().chooseSkillTemplate}
+              options={items().map((item) => ({ value: item.templateId, label: `${item.name} · v${item.version}` }))}
+            />
+            <Button disabled={!items().some((item) => item.templateId === selected()) || apply.loading()} onClick={() => void submit()}>
+              {props.templateId ? t().resetSkillTemplate : t().associateSkillTemplate}
+            </Button>
+          </>
+        )}
+      </Show>
+    </div>
+  );
+};
+
 export default function AiSkillAdminActions(props: Props) {
   const locale = useLocale();
   const t = () => settingsMessages.resolve([locale()]).t;
@@ -127,6 +212,15 @@ export default function AiSkillAdminActions(props: Props) {
       items={[
         {
           items: [
+            {
+              icon: "ti ti-refresh",
+              label: props.templateId ? t().resetSkillTemplate : t().associateSkillTemplate,
+              action: () =>
+                void prompts.dialog<void>((close) => <TemplateDialogBody {...props} close={close} />, {
+                  title: props.skillName,
+                  icon: "ti ti-wand",
+                }),
+            },
             {
               icon: "ti ti-shield",
               label: t().permissions,

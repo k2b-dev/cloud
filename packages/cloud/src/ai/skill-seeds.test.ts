@@ -188,7 +188,7 @@ describe("Cloud AI Skill seeds", () => {
     expect(grids.instructions).toContain("includeWriteContext true");
     expect(grids.instructions).toContain("TODAY()");
     const sources = await Promise.all(
-      ["capabilities.ts", "daily-capabilities.ts"].map((path) => Bun.file(new URL(`../../../grids/src/${path}`, import.meta.url)).text()),
+      ["capabilities.ts"].map((path) => Bun.file(new URL(`../../../grids/src/${path}`, import.meta.url)).text()),
     );
     const declared = new Set(sources.flatMap((source) => [...source.matchAll(/"([a-z0-9.-]+)": \{/g)].map((match) => `grids.${match[1]}`)));
     for (const match of grids.instructions.matchAll(/`(grids\.[a-z0-9.-]+)`/g)) expect(declared.has(match[1]!)).toBeTrue();

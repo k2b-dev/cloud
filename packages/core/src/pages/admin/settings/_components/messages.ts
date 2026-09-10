@@ -41,6 +41,25 @@ export const settingsMessages = i18n.define({
       adminCount: ({ count }: { count: number }) => i18n.plural(count, "en", { one: `${count} admin`, other: `${count} admins` }),
       project: "Project",
       skills: "Skills",
+      loadingSkillTemplates: "Loading templates…",
+      skillTemplate: "Template",
+      chooseSkillTemplate: "Choose a template",
+      noSkillTemplate: "No template linked",
+      skillTemplateCurrent: "Current",
+      skillTemplateModified: "Modified",
+      skillTemplateUpdate: ({ version }: { version: number }) => `Update available · v${version}`,
+      resetSkillTemplate: "Reset to current template",
+      associateSkillTemplate: "Link to template",
+      skillTemplateFailed: "Could not update the Skill template.",
+      skillTemplateSaved: "Skill template updated.",
+      resetSkillTemplateHelp:
+        "Reset replaces all Skill content, including references. Export your Skill in Assistant settings first if you want to keep a copy. Access and personal enabled state stay unchanged.",
+      associateSkillTemplateHelp:
+        "Choose a template to link this Skill to. Its content stays unchanged. Automatic updates apply only while the Skill matches the linked template.",
+      resetSkillTemplateConfirm: ({ name, template, version }: { name: string; template: string; version: number }) =>
+        `Replace all content of “${name}” with ${template} v${version}? Customizations and references will be replaced.`,
+      associateSkillTemplateConfirm: ({ name, template }: { name: string; template: string }) =>
+        `Link “${name}” to ${template}? The content stays unchanged. Automatic updates apply only while the Skill matches the linked template.`,
       aiSkills: "AI Skills",
       aiSkillsDescription: "Recover and manage access to shared Assistant Skills.",
       sharedSkills: "shared Skills",
@@ -241,6 +260,25 @@ export const settingsMessages = i18n.define({
       adminCount: ({ count }) => i18n.plural(count, "de", { one: `${count} Administrator`, other: `${count} Administratoren` }),
       project: "Projekt",
       skills: "Skills",
+      loadingSkillTemplates: "Vorlagen werden geladen…",
+      skillTemplate: "Vorlage",
+      chooseSkillTemplate: "Vorlage auswählen",
+      noSkillTemplate: "Keine Vorlage verknüpft",
+      skillTemplateCurrent: "Aktuell",
+      skillTemplateModified: "Angepasst",
+      skillTemplateUpdate: ({ version }: { version: number }) => `Update verfügbar · v${version}`,
+      resetSkillTemplate: "Auf aktuelle Vorlage zurücksetzen",
+      associateSkillTemplate: "Mit Vorlage verknüpfen",
+      skillTemplateFailed: "Die Skill-Vorlage konnte nicht aktualisiert werden.",
+      skillTemplateSaved: "Skill-Vorlage aktualisiert.",
+      resetSkillTemplateHelp:
+        "Zurücksetzen ersetzt alle Skill-Inhalte einschließlich Referenzen. Exportiere den Skill vorher in den Assistant-Einstellungen, wenn du eine Kopie behalten möchtest. Zugriff und persönliche Aktivierung bleiben erhalten.",
+      associateSkillTemplateHelp:
+        "Wähle die Vorlage, mit der du diesen Skill verknüpfen möchtest. Der Inhalt bleibt erhalten. Automatische Updates erfolgen nur, solange der Skill unverändert der verknüpften Vorlage entspricht.",
+      resetSkillTemplateConfirm: ({ name, template, version }: { name: string; template: string; version: number }) =>
+        `Alle Inhalte von „${name}“ durch ${template} v${version} ersetzen? Anpassungen und Referenzen werden ersetzt.`,
+      associateSkillTemplateConfirm: ({ name, template }: { name: string; template: string }) =>
+        `„${name}“ mit der Vorlage ${template} verknüpfen? Der Inhalt bleibt erhalten. Automatische Updates erfolgen nur, solange der Skill unverändert der verknüpften Vorlage entspricht.`,
       aiSkills: "KI-Skills",
       aiSkillsDescription: "Zugriff auf gemeinsam verwendete Assistant Skills wiederherstellen und verwalten.",
       sharedSkills: "gemeinsame Skills",

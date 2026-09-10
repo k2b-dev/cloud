@@ -1,6 +1,7 @@
 import { Hono, type MiddlewareHandler } from "hono";
 import { z } from "zod";
-import { AiSkillLastAdminError, aiSkills } from "../ai/skills";
+import { getBuiltinAiSkillTemplates } from "../ai/skill-seeds";
+import { AiSkillInputError, AiSkillLastAdminError, AiSkillRevisionConflictError, aiSkills } from "../ai/skills";
 import { PrincipalSchema } from "../contracts/shared";
 import { type AuthContext, auth, err, fail, ok, respond, v } from "../server";
 
@@ -15,8 +16,7 @@ const SkillAccessSchema = z.object({ principal: PrincipalSchema, permission: z.e
 const SkillAccessUpdateSchema = z.object({ permission: z.enum(["read", "write", "admin"]) }).strict();
 
 const notFound = (c: Parameters<typeof respond>[0], noun: string) => respond(c, fail(err.notFound(noun)));
-const conflict = (c: Parameters<typeof respond>[0], error: AiSkillLastAdminError) =>
-  respond(c, { ok: false, error: error.message, status: 409 as const });
+const conflict = (c: Parameters<typeof respond>[0], error: Error) => respond(c, { ok: false, error: error.message, status: 409 as const });
 
 export const createAdminAiSkillsRoutes = (authenticate: MiddlewareHandler<AuthContext> = auth.requireRole("admin")) =>
   new Hono<AuthContext>()
@@ -33,6 +33,43 @@ export const createAdminAiSkillsRoutes = (authenticate: MiddlewareHandler<AuthCo
         }),
       );
     })
+    .get("/templates", (c) =>
+      respond(c, ok({ templates: getBuiltinAiSkillTemplates().map(({ key, version, name }) => ({ templateId: key, version, name })) })),
+    )
+    .post(
+      "/:skillId/template",
+      v(
+        "json",
+        z
+          .object({
+            templateId: z.string().min(1),
+            templateVersion: z.number().int().positive(),
+            expectedRevision: z.number().int().positive(),
+            mode: z.enum(["associate", "reset"]),
+            confirmed: z.literal(true),
+          })
+          .strict(),
+      ),
+      async (c) => {
+        const skill = await aiSkills.admin.getByShortId(c.req.param("skillId")!);
+        if (!skill) return notFound(c, "Skill");
+        try {
+          return (await aiSkills.admin.applyTemplate(skill.id, c.req.valid("json")))
+            ? respond(c, ok({ updated: true }))
+            : notFound(c, "Skill");
+        } catch (error) {
+          if (error instanceof AiSkillRevisionConflictError) return conflict(c, error);
+          if (error instanceof AiSkillInputError) return respond(c, fail(err.badInput(error.message)));
+          if (
+            typeof error === "object" &&
+            error !== null &&
+            (("code" in error && error.code === "23505") || ("errno" in error && error.errno === "23505"))
+          )
+            return conflict(c, new Error("A Skill with this name already exists."));
+          throw error;
+        }
+      },
+    )
     .get("/:skillId/access", async (c) => {
       const skill = await aiSkills.admin.getByShortId(c.req.param("skillId")!);
       return skill ? respond(c, ok({ access: await aiSkills.admin.listAccess(skill.id) })) : notFound(c, "Skill");

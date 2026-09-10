@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
 import type { MiddlewareHandler } from "hono";
-import { aiSkills } from "../ai/skills";
+import { AiSkillRevisionConflictError, aiSkills } from "../ai/skills";
 import type { AuthContext } from "../server";
 import { createAdminAiSkillsRoutes } from "./admin-ai-skills";
 
@@ -12,6 +12,11 @@ const skill = {
   shortId: skillShortId,
   name: "weekly-status",
   description: "Create weekly status updates.",
+  revision: 1,
+  templateId: null,
+  templateVersion: null,
+  currentTemplateVersion: null,
+  templateStatus: null,
   referenceCount: 0,
   accessCount: 0,
   adminCount: 0,
@@ -78,5 +83,26 @@ describe("admin AI Skill routes", () => {
     expect(response.status).toBe(200);
     expect(aiSkills.admin.delete).toHaveBeenCalledWith(skillId);
     expect(await response.json()).toEqual({ deleted: true });
+  });
+  test("requires admin access and explicit confirmation for template changes", async () => {
+    const apply = spyOn(aiSkills.admin, "applyTemplate").mockResolvedValue(true);
+    const input = { templateId: "core:skill-creator", templateVersion: 1, expectedRevision: 3, mode: "reset", confirmed: true };
+    const request = { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(input) };
+    expect((await createAdminAiSkillsRoutes().request(`/${skillShortId}/template`, request)).status).toBe(401);
+    const denied: MiddlewareHandler<AuthContext> = async (c) => c.json({ message: "Forbidden" }, 403);
+    expect((await createAdminAiSkillsRoutes(denied).request(`/${skillShortId}/template`, request)).status).toBe(403);
+    expect(apply).not.toHaveBeenCalled();
+    spyOn(aiSkills.admin, "getByShortId").mockResolvedValue(skill);
+    const routes = createAdminAiSkillsRoutes(pass);
+    expect(
+      (await routes.request(`/${skillShortId}/template`, { ...request, body: JSON.stringify({ ...input, confirmed: false }) })).status,
+    ).toBe(400);
+    expect(apply).not.toHaveBeenCalled();
+    expect((await routes.request(`/${skillShortId}/template`, request)).status).toBe(200);
+    expect(apply).toHaveBeenCalledWith(skillId, input);
+    apply.mockRejectedValue(new AiSkillRevisionConflictError());
+    const stale = await routes.request(`/${skillShortId}/template`, request);
+    expect(stale.status).toBe(409);
+    expect(await stale.json()).toMatchObject({ message: new AiSkillRevisionConflictError().message });
   });
 });

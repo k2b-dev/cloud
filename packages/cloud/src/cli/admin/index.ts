@@ -10,6 +10,7 @@ import { defineCliCommands } from "../commands";
 import { accountAdministrationCommands } from "./account-administration";
 import { accountCategoryCommands } from "./account-categories";
 import { appSignInCommands } from "./app-sign-in";
+import { aiSkillCommands } from "./ai-skills";
 import { aiUsageCommands } from "./ai-usage";
 import { dataCommands } from "./data";
 import { documentationCommands } from "./documentation";
@@ -46,6 +47,7 @@ export default defineCliCommands({
     ...accountCategoryCommands,
     ...accountAdministrationCommands,
     ...aiUsageCommands,
+    ...aiSkillCommands,
     ...instanceCommands,
     ...gatewayCommands,
     ...logCommands,
