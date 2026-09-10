@@ -117,7 +117,7 @@ describe("identity key administration", () => {
       pass,
       dependencies({
         apps: async () => [{ id: "inventory", name: "Inventory" }],
-  status: async () => [],
+        status: async () => [],
         rewrap: async () => 3,
         revoke: async (input) => {
           revoked.push(input);
@@ -287,10 +287,36 @@ describe("identity key administration", () => {
   });
 });
 
- test("registered workload apps are admin-only and return no credentials", async () => {
+test("registered workload apps are admin-only and return no credentials", async () => {
   expect((await createAdminIdentityRoutes().request("/workloads")).status).toBe(401);
   const response = await createAdminIdentityRoutes(authenticateAdmin, dependencies()).request("/workloads");
   expect(response.status).toBe(200);
   expect(response.headers.get("cache-control")).toBe("no-store");
   expect(await response.json()).toEqual([{ id: "inventory", name: "Inventory" }]);
+});
+
+test("lists app credentials across apps with bounded pagination and admin access", async () => {
+  expect((await createAdminIdentityRoutes().request("/workloads/credentials")).status).toBe(401);
+  const base = dependencies();
+  let received: Parameters<typeof base.credentials.listOverview>[0];
+  const routes = createAdminIdentityRoutes(
+    authenticateAdmin,
+    dependencies({
+      credentials: {
+        ...base.credentials,
+        listOverview: async (input) => {
+          received = input;
+          return { items: [], page: 2, perPage: 20, total: 0, hasNext: false };
+        },
+      },
+    }),
+  );
+  const response = await routes.request("/workloads/credentials?page=2&perPage=20");
+  expect(response.status).toBe(200);
+  expect(response.headers.get("Cache-Control")).toBe("no-store");
+  expect(received).toEqual({
+    pagination: { page: 2, perPage: 20 },
+    filter: { serviceAccountKind: "resource_bound", resourceType: "cloud.app" },
+  });
+  expect((await routes.request("/workloads/credentials?perPage=501")).status).toBe(400);
 });

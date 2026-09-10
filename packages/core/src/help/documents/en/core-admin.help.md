@@ -60,7 +60,7 @@ there is no FreeIPA environment bootstrap.
 
 ## Rotate an app credential {icon="key"}
 
-Create a new credential under **App credentials**, optionally with an expiration time.
+In **App credentials**, choose **Create credential**. Select the application and enter the name and optional expiration time in the dialog. The table lists existing credentials; **Revoke** opens a confirmation dialog.
 Give it to the owning app as `CLOUD_APP_CREDENTIAL` through the deployment secret
 store. Background calls also require Core's private address in
 `CLOUD_CORE_INTERNAL_ORIGIN`. After applying it and checking background work,

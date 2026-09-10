@@ -1,9 +1,9 @@
 import { fail, ok } from "@k2b/stdlib";
-import { listApps } from "../_internal/registry";
 import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
 import { describeRoute } from "hono-openapi";
 import { z } from "zod";
+import { listApps } from "../_internal/registry";
 import { CapabilityAppIdSchema } from "../contracts/capabilities";
 import { type AuthContext, auth, err, respond, v } from "../server";
 import { getIdentitySigningKeyStatus, identityMetrics, revokeIdentitySigningKey, rewrapIdentitySigningKeys } from "../services/identity";
@@ -75,6 +75,18 @@ export const createAdminIdentityRoutes = (
       "/workloads",
       describeRoute({ tags: ["App credentials"], summary: "List registered applications for workload credentials" }),
       async (c) => c.json(await service.apps()),
+    )
+    .get(
+      "/workloads/credentials",
+      describeRoute({ tags: ["App credentials"], summary: "List credential metadata across applications without secrets" }),
+      v("query", WorkloadCredentialListQuerySchema),
+      async (c) =>
+        c.json(
+          await service.credentials.listOverview({
+            pagination: c.req.valid("query"),
+            filter: { serviceAccountKind: "resource_bound", resourceType: "cloud.app" },
+          }),
+        ),
     )
     .post(
       "/workloads/:appId/credentials",

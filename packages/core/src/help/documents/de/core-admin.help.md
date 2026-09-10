@@ -64,7 +64,7 @@ werden in den Einstellungen eingerichtet; es gibt keinen FreeIPA-Env-Bootstrap.
 
 ## App-Zugang rotieren {icon="key"}
 
-Erstelle unter **App-Zugänge** einen neuen Zugang, bei Bedarf mit Ablaufzeit.
+Klicke unter **App-Zugänge** auf **Zugang erstellen**. Wähle im Dialog die Anwendung und gib den Namen und bei Bedarf die Ablaufzeit an. Die Tabelle zeigt vorhandene Zugänge; **Widerrufen** öffnet einen Bestätigungsdialog.
 Hinterlege ihn über die Secret-Verwaltung des Deployments ausschließlich in der
 zugehörigen App als `CLOUD_APP_CREDENTIAL`. Hintergrundaufrufe benötigen außerdem
 Cores interne Adresse in `CLOUD_CORE_INTERNAL_ORIGIN`. Prüfe nach der Übernahme
