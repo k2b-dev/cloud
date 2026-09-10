@@ -26,7 +26,23 @@ one, two, or three responsive columns from the item count.
 
 The component owns presentation only. Put retry, dismissal, and navigation controls beside the notice when they are needed.
 
-`InlineGuidance` accepts `children`, an optional `tone`, and an optional icon. It is borderless and has no default icon. Its tones use the shared `neutral`, `info`, `success`, `warning`, and `danger` vocabulary. Put a native link or `ButtonLink variant="text"` inside the guidance when a real next step exists.
+`InlineGuidance` accepts `children`, an optional `tone`, and an optional icon. It is borderless and has no default icon unless `loading` is true. Its tones use the shared `neutral`, `info`, `success`, `warning`, and `danger` vocabulary. Put a native link or `ButtonLink variant="text"` inside the guidance when a real next step exists.
+
+### Inline loading and feedback
+
+Use `loading` for a short progress message beside a control. It supplies a
+spinner and a subtle text shimmer. The application owns when loading starts
+and ends; the component adds no delay. Use plain text for loading messages.
+A custom `icon` overrides the spinner; `icon={false}` hides it.
+Reduced-motion and forced-color preferences disable both animations and retain
+readable text. Other tones keep their existing appearance and explicit icons.
+
+```tsx
+<InlineGuidance loading>Loading templates…</InlineGuidance>
+<InlineGuidance tone="info" icon="ti ti-info-circle">Your content stays unchanged.</InlineGuidance>
+<InlineGuidance tone="success" icon="ti ti-circle-check">Template linked.</InlineGuidance>
+<InlineGuidance tone="danger" icon="ti ti-alert-circle">Templates could not be loaded.</InlineGuidance>
+```
 
 ### Render outside Solid
 
@@ -44,7 +60,9 @@ should render `NoticeCard` instead of assembling its internal markup.
 
 Notice cards add no live-region role. If a new error notice must be announced immediately, the owning application must provide the appropriate alert semantics. All tones keep visible text, so the result never depends on color or icon.
 
-Inline guidance also adds no live-region role. A danger tone must still name the problem in text; color is not enough. Add `role="alert"` only when a newly appearing error needs immediate announcement.
+Inline guidance adds `role="status"`, `aria-live="polite"`, and `aria-busy="true"`
+while loading. Without loading it adds no live-region role. Explicit HTML
+attributes can override these defaults. A danger tone must still name the problem in text; color is not enough. Add `role="alert"` only when a newly appearing error needs immediate announcement.
 
 Action labels must say what happens next, such as **Retry** or **Open settings**.
 

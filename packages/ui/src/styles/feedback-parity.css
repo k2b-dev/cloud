@@ -723,3 +723,31 @@
   accent-color: var(--k2b-action);
 }
 .k2b-ui .k2b-toast__progress[hidden] { display: none; }
+
+/* Inline progress stays text-sized and inherits the guidance tone. */
+.k2b-ui .k2b-inline-guidance[data-loading="true"] .k2b-inline-guidance__icon {
+  animation: k2b-parity-spin 900ms linear infinite;
+}
+
+.k2b-ui .k2b-inline-guidance[data-loading="true"] .k2b-inline-guidance__content {
+  background-image: linear-gradient(105deg, currentColor 38%, color-mix(in srgb, currentColor 55%, transparent) 50%, currentColor 62%);
+  background-size: 240% 100%;
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: k2b-guidance-shimmer 2s linear infinite;
+}
+
+@keyframes k2b-guidance-shimmer {
+  from { background-position: 120% 0; }
+  to { background-position: -120% 0; }
+}
+
+@media (prefers-reduced-motion: reduce), (forced-colors: active) {
+  .k2b-ui .k2b-inline-guidance[data-loading="true"] .k2b-inline-guidance__icon,
+  .k2b-ui .k2b-inline-guidance[data-loading="true"] .k2b-inline-guidance__content {
+    animation: none;
+    background-image: none;
+    -webkit-text-fill-color: currentColor;
+  }
+}

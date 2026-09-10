@@ -76,6 +76,25 @@ describe("@k2b/ui Cloud feedback parity", () => {
     expect(quietHtml).not.toContain("k2b-inline-guidance__icon");
   });
 
+  test("loading guidance supplies accessible progress without changing quiet defaults", () => {
+    const html = renderToString(() => createComponent(InlineGuidance, { loading: true, children: "Loading templates…" }));
+    for (const text of ['role="status"', 'aria-live="polite"', 'aria-busy="true"', 'data-loading="true"', "ti ti-loader-2"])
+      expect(html).toContain(text);
+    const hidden = renderToString(() =>
+      createComponent(InlineGuidance, { loading: true, icon: false, role: "presentation", children: "Loading" }),
+    );
+    expect(hidden).not.toContain("k2b-inline-guidance__icon");
+    expect(hidden).toContain('role="presentation"');
+    const custom = renderToString(() => createComponent(InlineGuidance, { loading: true, icon: "ti ti-refresh", children: "Refreshing" }));
+    expect(custom).toContain("ti ti-refresh");
+    expect(custom).not.toContain("ti ti-loader-2");
+    const idle = renderToString(() => createComponent(InlineGuidance, { loading: false, children: "Ready" }));
+    expect(idle).not.toContain("aria-busy");
+    expect(idle).not.toContain('role="status"');
+    expect(feedbackCss).toContain("@media (prefers-reduced-motion: reduce), (forced-colors: active)");
+    expect(feedbackCss).toContain("-webkit-text-fill-color: currentColor");
+  });
+
   test("keeps form defaults and validates declared form rules", () => {
     createRoot((dispose) => {
       const form = createFormState({

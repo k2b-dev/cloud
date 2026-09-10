@@ -3,7 +3,7 @@ import type { AiSkillAccess } from "@k2b/cloud/ai";
 import { coreClient } from "@k2b/cloud/clients/core";
 import { refreshCurrentPath } from "@k2b/ssr/nav";
 import { mutation as mutations, query } from "@k2b/stdlib/solid";
-import { Button, Dropdown, Placeholder, prompts, Select, toast, useLocale } from "@k2b/ui";
+import { Button, Dropdown, InlineGuidance, Placeholder, prompts, Select, toast, useLocale } from "@k2b/ui";
 import { createSignal, Show } from "solid-js";
 import { settingsMessages } from "./messages";
 
@@ -156,7 +156,7 @@ const TemplateDialogBody = (props: Props & { close: () => void }) => {
         when={templates.data()}
         fallback={
           <Show when={!templates.error()}>
-            <span>{t().loadingSkillTemplates}</span>
+            <InlineGuidance loading>{t().loadingSkillTemplates}</InlineGuidance>
           </Show>
         }
       >

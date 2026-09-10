@@ -23,6 +23,11 @@ const BlocksDemo = () => (
   {(notice) => <NoticeCard {...notice} />}
 </NoticeCard.Grid>
 
+<InlineGuidance loading>Loading templates…</InlineGuidance>
+<InlineGuidance tone="info" icon="ti ti-info-circle">Your content stays unchanged.</InlineGuidance>
+<InlineGuidance tone="success" icon="ti ti-circle-check">Template linked.</InlineGuidance>
+<InlineGuidance tone="danger" icon="ti ti-alert-circle">Templates could not be loaded.</InlineGuidance>
+
 <InlineGuidance tone="danger">
   No delivery provider is connected.{" "}
   <ButtonLink variant="text" size="xs" href="/settings/providers">
@@ -42,6 +47,19 @@ const BlocksDemo = () => (
       >
         {(notice) => <NoticeCard {...notice} />}
       </NoticeCard.Grid>
+      <div class="space-y-3">
+        <h3 class="text-sm font-medium">Inline guidance</h3>
+        <InlineGuidance loading>Loading templates…</InlineGuidance>
+        <InlineGuidance tone="info" icon="ti ti-info-circle">
+          Your content stays unchanged.
+        </InlineGuidance>
+        <InlineGuidance tone="success" icon="ti ti-circle-check">
+          Template linked.
+        </InlineGuidance>
+        <InlineGuidance tone="danger" icon="ti ti-alert-circle">
+          Templates could not be loaded.
+        </InlineGuidance>
+      </div>
       <InlineGuidance tone="danger">
         No delivery provider is connected.{" "}
         <ButtonLink variant="text" size="xs" href="#blocks">
