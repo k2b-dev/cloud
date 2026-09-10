@@ -34,6 +34,11 @@ Cloud bundles a set of apps that cover the common operational needs of an organi
 Build an independent application with `@k2b/cloud` from npm. Your application
 owns its repository and image and connects to the shared Cloud deployment.
 
+Start with the [Cloud app starter](https://github.com/k2b-dev/cloud-app-starter),
+a to-do app with SSR, live updates, permissions, and a `@k2b/ui` workspace.
+Choose **Use this template** on GitHub and follow its README to connect it to
+your development stack.
+
 Follow [Create the first application](docs-site/docs/en/build/getting-started.md)
 for the package setup, application declaration, and first verified endpoint.
 Then use [Standalone development](docs-site/docs/en/operations/standalone-development.md)

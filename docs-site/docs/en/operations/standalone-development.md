@@ -20,6 +20,12 @@ This is the default development shape for third-party applications. Start with
 package, TypeScript, declaration, and route setup; this page explains how that
 same app joins a real Cloud environment.
 
+For a ready-made UI application, use the
+[Cloud app starter](https://github.com/k2b-dev/cloud-app-starter).
+Its README covers `bun run setup`, local configuration, and `bun run dev`.
+The starter connects to an existing Cloud deployment; it does not create the
+shared platform services below.
+
 ## Run the application directly
 
 The development preload configures Solid SSR and watches the application

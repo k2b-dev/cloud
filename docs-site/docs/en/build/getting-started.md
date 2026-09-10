@@ -14,6 +14,15 @@ Build Cloud applications in their own repositories. A standalone application
 owns its source, dependencies, image, version, and release cycle while Cloud
 supplies the gateway and shared platform services.
 
+> **Start with the Cloud app starter**
+>
+> Use the [Cloud app starter](https://github.com/k2b-dev/cloud-app-starter)
+> for a working to-do app with SSR, live updates, permissions, notifications,
+> and a `@k2b/ui` workspace.
+>
+> Choose **Use this template** on GitHub, then follow its README to connect
+> the app to your existing Cloud development stack.
+
 This guide creates an API-only `inventory` service with one endpoint:
 
 ```text
@@ -26,10 +35,21 @@ and route discovery agree.
 
 ## Work with a coding agent
 
-Fibel publishes the `cloud-dev` Agent Skill for standalone and built-in Cloud
-applications. Open the **Agents** dialog in the documentation footer to install
-it for your agent. The skill supplies stable application boundaries and routes
-the agent to current documentation instead of duplicating API details.
+Install the `cloud-dev` Agent Skill from your project directory with Bun:
+
+```bash
+bunx skills add k2b-dev/cloud --full-depth --skill cloud-dev
+```
+
+`--full-depth` finds the skill in the repository's documentation directory;
+`--skill cloud-dev` selects only the development skill, not `cloud-cli`.
+Add `--global` to install it for your user instead of the current project.
+The **Agents** dialog in the documentation footer provides another installation
+option.
+
+The skill supplies stable application boundaries for standalone and built-in
+Cloud applications and routes the agent to current documentation instead of
+duplicating API details.
 
 For documentation access, configure a streamable HTTP MCP server named
 `cloud-dev-mcp` at `https://cloud.k2b.dev/_fibel/mcp`, then restart the agent
