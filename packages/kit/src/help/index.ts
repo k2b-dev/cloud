@@ -8,10 +8,12 @@ import de0 from "./documents/de/kit-start.help.md" with { type: "text" };
 import de1 from "./documents/de/kit-authoring.help.md" with { type: "text" };
 import de2 from "./documents/de/kit-assistant.help.md" with { type: "text" };
 import de3 from "./documents/de/kit-sharing.help.md" with { type: "text" };
+import en4 from "./documents/en/kit-sdk-runtime.help.md" with { type: "text" };
+import de4 from "./documents/de/kit-sdk-runtime.help.md" with { type: "text" };
 export const kitHelp = defineHelp({
   baseLocale: "en",
   documents: {
-    en: [en0, en1, en2, en3, ...sdkHelp("en")],
-    de: [de0, de1, de2, de3, ...sdkHelp("de")],
+    en: [en0, en1, en2, en3, en4, ...sdkHelp("en")],
+    de: [de0, de1, de2, de3, de4, ...sdkHelp("de")],
   },
 });

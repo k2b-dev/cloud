@@ -1,14 +1,25 @@
+import { LIMITS } from "./contracts";
+import { methodDetails, referenceSchemas, tableMethods, handleMethods, chartExamples, referenceNotes, handleExamples } from "./sdk-details";
+import { sdkGerman } from "./sdk-locales";
 /** Canonical method signatures for cld sdk and generated in-app Help. */
 export const sdkReference = {
-  version: 1,
+  version: 2,
+  details: methodDetails,
+  schemas: referenceSchemas,
+  tableMethods,
+  chartExamples,
+  notes: referenceNotes,
+  handleMethods,
+  handleExamples,
+  descriptions: { de: sdkGerman },
   entrypoints: "*.script.js: export default kit.script({ name, icon?, order?, run() {} })",
   storage: "Browser-local kit/{appShortId}/{userId}/; shared across app pages, not users or devices.",
   limits: {
-    sourceMiB: 2,
-    files: 64,
-    visibleRows: 1000,
-    uiNodes: 300,
-    localItemMiB: 16,
+    sourceMiB: LIMITS.sourceBytes / (1024 * 1024),
+    files: LIMITS.files,
+    visibleRows: LIMITS.rows,
+    uiNodes: LIMITS.nodes,
+    localItemMiB: LIMITS.rpcBytes / (1024 * 1024),
   },
   methods: [
     [
@@ -35,7 +46,7 @@ export const sdkReference = {
     [
       "db.importData",
       "db.importData(table, rows, { createTable?, columns?, notify?, onProgress? })",
-      "Append validated JSON rows in sequential bounded batches. Missing tables require createTable and Admin. Returns { confirmedRows, totalRows, status, error? }; status is complete, cancelled or unknown. No automatic write retries. Cancellation preserves confirmed batches. onProgress receives { confirmedRows, totalRows, phase }. Default progress toast; notify:false hides it. New manual imports can insert duplicates.",
+      "Append validated JSON rows in sequential bounded batches. Missing tables require createTable and Admin. Returns { confirmedRows, totalRows, status, error? }; status is complete, cancelled, failed or unknown. No automatic write retries. Cancellation preserves confirmed batches. onProgress receives { confirmedRows, totalRows, phase }. Default progress toast; notify:false hides it. New manual imports can insert duplicates.",
     ],
     [
       "pdf.text",
@@ -70,7 +81,7 @@ export const sdkReference = {
     ],
     [
       "ui.input",
-      "ui.input(label, { value?, id?, description?, placeholder?, onChange? })",
+      "ui.input(label, { value?, id?, description?, placeholder?, disabled?, loading?, icon?, onChange? })",
       "getValue() reads the text; set(text) changes it without invoking onChange.",
     ],
     [
@@ -91,7 +102,7 @@ export const sdkReference = {
     ["ui.section", "ui.section({ title, description? }, children)", "Group handles with a shared section heading."],
     [
       "ui.filePicker",
-      "ui.filePicker(label, { accept?, multiple?, description?, icon?, id?, onChange(files) })",
+      "ui.filePicker(label, { accept?, multiple?, description?, icon?, id?, disabled?, loading?, onChange(files) })",
       "Local picker with selected filenames; callback receives File[]. Cancellation keeps current selection.",
     ],
     ["ui.status", "ui.status(text)", "Accessible status. set(text), setState(state), setDescription(text)."],
@@ -107,7 +118,7 @@ export const sdkReference = {
     ],
     [
       "ui.linkButton",
-      "ui.linkButton(label, { href, newTab?, icon?, variant?, disabled? })",
+      "ui.linkButton(label, { href, newTab?, icon?, variant?, disabled?, loading?, id?, description? })",
       "Navigation with button appearance; secondary by default.",
     ],
     [
@@ -122,12 +133,12 @@ export const sdkReference = {
     ],
     [
       "ui.modal.text",
-      "ui.modal.text({ title, label, value?, required?, minLength?, maxLength?, multiline?, confirmText?, cancelText? })",
+      "ui.modal.text({ title, label, value?, required?, minLength?, maxLength?, multiline?, confirmText?, cancelText?, variant? })",
       "Promise<string|null>; null on cancellation. Text validation runs in the host.",
     ],
     [
       "ui.modal.number",
-      "ui.modal.number({ title, label, value?, required?, min?, max?, confirmText?, cancelText? })",
+      "ui.modal.number({ title, label, value?, required?, min?, max?, confirmText?, cancelText?, variant? })",
       "Promise<number|null>; finite number with optional bounds. null on cancellation.",
     ],
     [

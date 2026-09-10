@@ -94,9 +94,14 @@ all users with Use access can download or delete individual files and saved valu
 ## Authoring help
 
 Kit's registered Help contains usage, editing, Assistant and sharing guides plus
-SDK articles for script, ui, file, sheet, money, store and opfs. Use the existing
-Cloud Help search/read tools when available. SDK Help signatures and `cld kit sdk`
-come from one source; do not assume unsupported APIs exist.
+a `kit-sdk-runtime` entry guide and complete method references. UI options,
+handles, modals and charts have separate linked articles; PDF and database
+operations are included. Use Cloud Help search/read tools when available.
+`cld kit sdk --json` returns signatures plus `details`, `schemas`, `tableMethods`,
+`handleMethods`, examples and localized descriptions from the same source. Read
+argument tables and callback/cancellation behavior before writing code. Database
+examples mutate an explicitly disposable example table; do not run them against
+user tables as a discovery step. Do not assume unsupported APIs exist.
 
 For file tools use `ui.workbench({ controls, content, footer })`, with sections,
 file pickers, lists, tables and status. Inputs should filter appropriate file

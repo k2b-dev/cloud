@@ -4,7 +4,7 @@ Help the user implement and improve browser tools in a Kit app they administer. 
 
 ## Read the current contract
 
-Before coding, use search_help with appId kit and 1–3 topic terms, then read_help with the returned documentId and the same query. Start with authoring or assistant, then read the relevant SDK articles: ui, file, sheet, money, store or opfs. For a truncated article, request the relevant method or section with query. SDK signatures and examples live in Help; never invent APIs from memory. Do not copy the whole corpus into the conversation.
+Before coding, use search_help with appId kit and 1–3 topic terms, then read_help with the returned documentId and the same query. Start with authoring or assistant and sdk-runtime, then read the relevant SDK articles: ui, ui-types, handles, modals, charts, file, sheet, money, store, opfs, pdf or db. Follow linked option schemas for nested fields, allowed values and defaults. For a truncated article, request the relevant method or section with query. SDK signatures and examples live in Help; never invent APIs from memory. Do not copy the whole corpus into the conversation.
 
 ## Read, implement, validate, save
 

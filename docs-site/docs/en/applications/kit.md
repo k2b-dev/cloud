@@ -315,8 +315,13 @@ input throws; scripts handle these errors like other JavaScript errors.
 The built-in `cloud-kit` Assistant Skill uses `search_help` and `read_help` to
 read Kit's registered Help before selecting SDK methods. Help includes guides
 for using, editing, programming with Assistant, and sharing apps, plus SDK
-articles grouped by namespace. SDK signatures are generated from the same
-`sdkReference` as `cld kit sdk`; there is no SDK capability.
+articles grouped by namespace, with separate UI handles, field types, modals and
+charts. Start with `kit-sdk-runtime`, then read the method and its linked option
+tables. Signatures, argument definitions, examples, schema projections and
+localized descriptions come from the same `sdkReference` as `cld kit sdk`;
+there is no SDK capability. Reference format version 2 adds these structured
+fields without changing script execution. Tests compare the worker surface,
+compile examples, execute local examples and enforce the Help corpus budget.
 
 Users create and administer apps. Assistant can program an existing app through
 these capability operations:
