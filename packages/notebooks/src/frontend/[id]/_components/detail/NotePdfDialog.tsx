@@ -1,4 +1,14 @@
-import { AutocompleteEditor, Button, dialogCore, NoticeCard, PanelDialog, panelDialogOptions, Select, useLocale } from "@k2b/ui";
+import {
+  AutocompleteEditor,
+  Button,
+  dialogCore,
+  InlineGuidance,
+  NoticeCard,
+  PanelDialog,
+  panelDialogOptions,
+  Select,
+  useLocale,
+} from "@k2b/ui";
 import { createSignal, onCleanup, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import { notebookWorkspaceMessages } from "../../messages";
@@ -150,10 +160,7 @@ function NotePdfDialog(props: NotePdfDialogProps & { close: () => void }) {
                 spellcheck={false}
               />
             </Show>
-            <p class="flex items-start gap-2 text-xs leading-relaxed text-dimmed">
-              <i class="ti ti-server mt-0.5 shrink-0" aria-hidden="true" />
-              <span>{t().pdfDataNotice}</span>
-            </p>
+            <InlineGuidance icon="ti ti-server">{t().pdfDataNotice}</InlineGuidance>
             <Show when={error()}>
               <div role="alert">
                 <NoticeCard tone="danger" title={t().pdfGenerationFailed}>

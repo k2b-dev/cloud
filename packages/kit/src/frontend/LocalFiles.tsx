@@ -1,5 +1,5 @@
 import { createSignal, For, onMount, Show } from "solid-js";
-import { Button, Placeholder, SettingsCollection, prompts, useLocale } from "@k2b/ui";
+import { Button, InlineGuidance, Placeholder, SettingsCollection, prompts, useLocale } from "@k2b/ui";
 import { files } from "@k2b/stdlib/browser";
 import { AppStorage } from "../runtime/storage";
 import { messages } from "./messages";
@@ -80,9 +80,9 @@ export function LocalFiles(props: { appId: string; userId: string; beforeDelete:
         </Button>
       </div>
       <Show when={error()}>
-        <p role="alert" class="kit-error">
+        <InlineGuidance tone="danger" icon="ti ti-alert-circle" role="alert">
           {error()}
-        </p>
+        </InlineGuidance>
       </Show>
       <SettingsCollection
         title={t().localFiles}

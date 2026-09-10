@@ -1,5 +1,5 @@
 import type { DateContext } from "@k2b/stdlib";
-import { Button } from "@k2b/ui";
+import { Button, InlineGuidance } from "@k2b/ui";
 import { createSignal, onCleanup, onMount, Show } from "solid-js";
 import type { CalendarItem, SpaceColumn, SpaceTag } from "@/contracts";
 import { subscribeToDetailSelection } from "../../../lib/detail";
@@ -45,8 +45,10 @@ export default function SpacesCalendarRoute(props: Props) {
     <div class="flex min-h-0 flex-1 flex-col overflow-hidden" data-scroll-preserve={`spaces-main-${props.spaceId}`}>
       <Show when={navigation.error()}>
         {(error) => (
-          <div class="flex items-center justify-between gap-2 pb-1 text-xs text-red-600" role="alert">
-            <span>{error().message}</span>
+          <div class="flex items-center justify-between gap-2 pb-1">
+            <InlineGuidance tone="danger" icon="ti ti-alert-circle" role="alert">
+              {error().message}
+            </InlineGuidance>
             <Button type="button" variant="ghost" size="xs" onClick={() => void navigation.refresh()}>
               Retry
             </Button>

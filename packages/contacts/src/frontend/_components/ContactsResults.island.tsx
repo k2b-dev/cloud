@@ -1,6 +1,6 @@
 import { documentNavigate, type LinkNavigateEvent, navigate } from "@k2b/ssr/nav";
 import { query as queries, timed } from "@k2b/stdlib/solid";
-import { Button, FilterChip, type FilterChipSection, Pagination, ScrollArea, Tag, TextInput, useLocale } from "@k2b/ui";
+import { Button, FilterChip, type FilterChipSection, InlineGuidance, Pagination, ScrollArea, Tag, TextInput, useLocale } from "@k2b/ui";
 import { createEffect, createSignal, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { Contact, ContactPresenceFilter, ContactSort, ContactTag } from "../../service";
@@ -462,8 +462,10 @@ export default function ContactsResults(props: Props) {
       <ScrollArea class="flex-1 px-3 pb-3 sm:px-4" scrollPreserveKey="contacts-main-list">
         <Show when={results.error()}>
           {(error) => (
-            <div class="mb-2 flex items-center justify-between gap-2 text-xs text-red-600" role="alert">
-              <span>{error().message}</span>
+            <div class="mb-2 flex items-center justify-between gap-2">
+              <InlineGuidance tone="danger" icon="ti ti-alert-circle" role="alert">
+                {error().message}
+              </InlineGuidance>
               <Button type="button" variant="ghost" size="xs" disabled={results.refreshing()} onClick={() => void results.refresh()}>
                 {t().retry}
               </Button>

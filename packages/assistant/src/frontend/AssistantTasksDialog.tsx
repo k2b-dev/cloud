@@ -1,6 +1,6 @@
 import { dates } from "@k2b/stdlib";
 import { query } from "@k2b/stdlib/solid";
-import { useLocale, Button, DateTimePicker, Placeholder, prompts, Select, StatusBadge, TextInput, toast } from "@k2b/ui";
+import { useLocale, Button, DateTimePicker, InlineGuidance, Placeholder, prompts, Select, StatusBadge, TextInput, toast } from "@k2b/ui";
 import { createEffect, createMemo, createResource, createSignal, For, onCleanup, Show } from "solid-js";
 import { assistantApi } from "../api/client";
 import type {
@@ -267,9 +267,9 @@ export function AssistantTasksView(props: { chatId: string }) {
         </Show>
         <Show when={formError()}>
           {(message) => (
-            <p class="text-sm text-red-600 dark:text-red-300" role="alert">
+            <InlineGuidance tone="danger" icon="ti ti-alert-circle" role="alert">
               {message()}
-            </p>
+            </InlineGuidance>
           )}
         </Show>
         <div class="flex justify-end gap-2">

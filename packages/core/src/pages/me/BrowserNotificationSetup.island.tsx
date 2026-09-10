@@ -1,4 +1,4 @@
-import { Button, toast, useLocale } from "@k2b/ui";
+import { Button, InlineGuidance, toast, useLocale } from "@k2b/ui";
 import type { BrowserNotificationState } from "@k2b/cloud/browser/notifications";
 import { browserNotificationClient } from "@k2b/cloud/browser/notifications";
 import { createSignal, onMount, Show } from "solid-js";
@@ -76,10 +76,18 @@ export default function BrowserNotificationSetup() {
             </div>
             <p class="mt-1 text-xs leading-relaxed text-dimmed">{t().browserNotificationsDescription}</p>
             <Show when={state()?.reason} keyed>
-              {(reason) => <p class="mt-2 text-xs text-secondary">{localizeBrowserReason(reason, t())}</p>}
+              {(reason) => (
+                <InlineGuidance class="mt-2" tone="info" icon="ti ti-info-circle">
+                  {localizeBrowserReason(reason, t())}
+                </InlineGuidance>
+              )}
             </Show>
             <Show when={error()} keyed>
-              {(message) => <p class="mt-2 text-xs text-red-600 dark:text-red-400">{message}</p>}
+              {(message) => (
+                <InlineGuidance class="mt-2" tone="danger" icon="ti ti-alert-circle" role="alert">
+                  {message}
+                </InlineGuidance>
+              )}
             </Show>
           </div>
         </div>

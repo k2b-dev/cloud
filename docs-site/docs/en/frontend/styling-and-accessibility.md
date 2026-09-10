@@ -96,7 +96,7 @@ Choose the public component that owns the required appearance and behavior:
   navigation rows.
 - Use `PanelDialog`, `AppWorkspace`, `Panes`, `DataTable`, and the other layout
   primitives for the geometry and interaction they document.
-- Use `Placeholder`, `NotFoundState`, `NoticeCard`, and `StatusBadge` for their
+- Use `InlineGuidance`, `Placeholder`, `NotFoundState`, `NoticeCard`, and `StatusBadge` for their
   specific feedback and status roles.
 - Use `Paper` for one neutral application-owned group when no more specific
   shared surface owns the content. It deliberately leaves padding and layout
@@ -206,6 +206,9 @@ loading, error, and dark treatments.
   and ring colors on the same edge.
 - Keep progressive actions discoverable by keyboard focus and touch when they
   are hidden at rest on fine pointers.
+- Use `InlineGuidance` for a short local hint, action error, or loading message
+  while the affected content remains visible. Use its `loading` prop for inline
+  progress rather than assembling a spinner and text.
 - Use `Placeholder` for a region that is empty, loading, or failed. Use
   `NotFoundState` for a whole-page dead end or missing resource.
 - Use `NoticeCard` for a persistent finding and a toast for short confirmation.
@@ -214,6 +217,22 @@ loading, error, and dark treatments.
 The application owns feedback copy and recovery actions. Distinguish an empty
 result from a failed request, and do not replace field validation or
 domain-specific states with a generic `Placeholder`.
+
+### Choose feedback by scope
+
+| Situation | Component |
+| --- | --- |
+| Invalid field value | The input's validation props |
+| Local prerequisite, action error, or inline progress | [InlineGuidance](/en/ui/feedback/blocks) |
+| Empty, loading, or failed content region | [`Placeholder`](/en/ui/surfaces/empty-states) |
+| Persistent finding that needs emphasis | [NoticeCard](/en/ui/feedback/blocks) |
+| Compact health or lifecycle label | [StatusBadge](/en/ui/feedback/badges) |
+| Brief confirmation after an action | [Toast](/en/ui/feedback/toast) |
+
+Keep static descriptions and metadata as ordinary text. Button loading belongs
+on the button; progress with a known completion percentage belongs in a progress
+indicator. Keep retry actions beside the feedback and preserve existing content
+when a refresh fails.
 
 ## Compose responsive layouts
 
@@ -243,6 +262,14 @@ example, `Panes` owns its resize interaction and `AppWorkspace.NavTree` owns
 tree keyboard navigation. `NavTree.Item` only forwards optional native drag
 events; an application using them still owns the drag payload, permission
 checks, drop behavior, mutation, and an equivalent keyboard path.
+
+`InlineGuidance loading` supplies status, live-region, and busy semantics. Avoid
+adding another live region around the same message. A `danger` tone alone does
+not announce an error: add `role="alert"` when a newly appearing action error
+needs immediate attention. Do not announce every historical error as an alert
+when a list renders. Keep field errors associated with their inputs. Loading
+animations respect reduced-motion preferences; see the
+[component contract](/en/ui/feedback/blocks) for defaults and overrides.
 
 Do not add `aria-grabbed` as a substitute for keyboard-operable movement and
 clear announcements.

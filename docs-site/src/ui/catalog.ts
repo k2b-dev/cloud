@@ -173,7 +173,7 @@ const portableSections = [
     title: "Feedback",
     icon: "ti ti-message-circle",
     pages: [
-      page("blocks", "Notices", "ti ti-info-circle", "Persistent findings and quiet contextual guidance."),
+      page("blocks", "Notices and inline guidance", "ti ti-info-circle", "Persistent findings and quiet contextual guidance."),
       page("badges", "Status badges", "ti ti-status-change", "Semantic status presentation in chip, dot, and text forms."),
       page("toast", "Toast", "ti ti-bell", "Scoped transient feedback with updates, actions, and dismissal."),
       page("tooltip", "Tooltip", "ti ti-message", "Concise accessible hints with viewport-aware positioning."),

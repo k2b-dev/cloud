@@ -1,7 +1,7 @@
 import { documentNavigate } from "@k2b/ssr/nav";
 import { type DateContext, dates } from "@k2b/stdlib";
 import { mutation, query } from "@k2b/stdlib/solid";
-import { Button, ButtonLink, Placeholder, prompts, Select, StatusBadge, toast, useLocale } from "@k2b/ui";
+import { Button, ButtonLink, InlineGuidance, Placeholder, prompts, Select, StatusBadge, toast, useLocale } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, onCleanup, Show } from "solid-js";
 import { apiClient } from "../../api/client";
 import { readApiError } from "./api-response";
@@ -288,9 +288,9 @@ export default function MailCalendarInvitation(props: {
               </div>
             </Show>
             <Show when={importEvent.error() || respond.error()}>
-              <p class="text-xs text-danger" role="alert">
+              <InlineGuidance tone="danger" icon="ti ti-alert-circle" role="alert">
                 {importEvent.error()?.message ?? respond.error()?.message}
-              </p>
+              </InlineGuidance>
             </Show>
             <Show when={props.canWrite && destinationQuery.loading()}>
               <Placeholder state="loading" variant="compact" align="left" title={messages().loadingWritableSpaces} />

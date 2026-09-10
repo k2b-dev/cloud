@@ -5,6 +5,7 @@ import {
   type DropdownItem,
   FileDropzone,
   IconButton,
+  InlineGuidance,
   Lightbox,
   openSpotlightSearch,
   Placeholder,
@@ -403,7 +404,13 @@ export default function AssistantProjectView(props: Props) {
                   <i class="ti ti-search" aria-hidden="true" />
                 </IconButton>
               </header>
-              <Show when={chats.error()}>{(error) => <p class="px-2 text-xs text-danger">{error().message}</p>}</Show>
+              <Show when={chats.error()}>
+                {(error) => (
+                  <InlineGuidance class="px-2" tone="danger" icon="ti ti-alert-circle" role="alert">
+                    {error().message}
+                  </InlineGuidance>
+                )}
+              </Show>
               <ScrollArea
                 ref={chatListViewport}
                 class="max-h-40"
@@ -440,9 +447,9 @@ export default function AssistantProjectView(props: Props) {
                 <Show when={!chats.error() && chatItems().length === 0}>
                   <p class="px-2 py-3 text-sm text-dimmed">{text("No Project chats yet.")}</p>
                 </Show>
-                <div ref={loadMoreSentinel} class="flex min-h-4 items-center justify-center" aria-live="polite">
+                <div ref={loadMoreSentinel} class="flex min-h-4 items-center justify-center">
                   <Show when={chats.loading() || chats.refreshing() || chats.loadingMore()}>
-                    <span class="text-xs text-dimmed">{text("Loading chats…")}</span>
+                    <InlineGuidance loading>{text("Loading chats…")}</InlineGuidance>
                   </Show>
                 </div>
               </ScrollArea>
