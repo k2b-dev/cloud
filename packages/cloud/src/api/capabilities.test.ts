@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, mock, test } from "bun:test";
 import { ok } from "@k2b/stdlib";
 import { sql } from "bun";
 import { generateKeyPair } from "jose";
@@ -15,6 +15,21 @@ import {
   loadCapabilityCatalogPage,
   dispatchCapability as performDispatch,
 } from "./capabilities";
+
+// The dispatcher records executions and idempotency claims through the store.
+// This suite is a unit test of the dispatch path: keep it away from any database.
+const executionStore = await import("../capabilities/executions");
+mock.module(new URL("../capabilities/executions.ts", import.meta.url).pathname, () => ({
+  ...executionStore,
+  recordCapabilityExecution: async () => crypto.randomUUID(),
+  claimCapabilityIdempotency: async () => ({ state: "claimed" as const }),
+  completeCapabilityClaim: async () => undefined,
+  releaseCapabilityClaim: async () => undefined,
+  markCapabilityClaimUncertain: async () => undefined,
+  resolveCapabilityClaim: async (resolve: Promise<void>) => {
+    await resolve;
+  },
+}));
 
 const compiled = compileCapabilities(
   "demo",
