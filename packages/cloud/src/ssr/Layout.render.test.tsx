@@ -14,6 +14,7 @@ process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { defineApp } = await import("../_internal/define-app");
 const { default: Layout } = await import("./Layout");
 const { default: MinimalLayout } = await import("./MinimalLayout");
+const { useLocale } = await import("@k2b/ui");
 const { default: AdminLayout } = await import("./AdminLayout");
 
 const app = defineApp({
@@ -43,7 +44,9 @@ const server = new Hono()
           c,
           title: "Settings",
           scroll: c.req.query("scroll") !== "false",
-          children: "Admin content",
+          get children() {
+            return `Admin content locale=${createComponent(() => useLocale()(), {})}`;
+          },
         }),
     ),
   )
@@ -74,6 +77,15 @@ const server = new Hono()
   );
 
 describe("Cloud layouts SSR", () => {
+  test("admin children inherit the request locale during SSR", async () => {
+    for (const locale of ["de", "en", "de-CH"]) {
+      const response = await server.request("/admin", { headers: { "Accept-Language": locale } });
+      const html = await response.text();
+      expect(response.status).toBe(200);
+      expect(html).toContain(`<html lang="${locale}"`);
+      expect(html).toContain(`Admin content locale=${locale}`);
+    }
+  });
   test("admin shell is viewport-bound and delegates scrolling only when requested", async () => {
     const ordinary = await (await server.request("/admin")).text();
     const bounded = await (await server.request("/admin?scroll=false")).text();

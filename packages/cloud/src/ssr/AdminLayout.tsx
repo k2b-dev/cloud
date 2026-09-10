@@ -25,7 +25,9 @@ type Props = {
   /** Disable when a bounded child such as SettingsPage owns scrolling. */
   scroll?: boolean;
 };
-export default function AdminLayout({ children, c, title, scroll = true }: Props) {
+export default function AdminLayout(props: Props) {
+  // Keep children lazy so Layout installs the request locale before rendering them.
+  const { c, title, scroll = true } = props;
   const locale = getLocale(c);
   const t = platformMessages.resolve([locale]).t;
   const url = new URL(c.req.raw.url);
@@ -44,7 +46,7 @@ export default function AdminLayout({ children, c, title, scroll = true }: Props
         <AdminSidebar currentPath={currentPath} apps={runtime.apps} />
         <AppWorkspace.Content>
           <AppWorkspace.Main scroll={scroll} class={scroll ? "p-[var(--ui-space-shell)]" : undefined}>
-            {children}
+            {props.children}
           </AppWorkspace.Main>
         </AppWorkspace.Content>
       </AppWorkspace>
