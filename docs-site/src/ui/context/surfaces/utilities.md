@@ -31,6 +31,12 @@ Override fonts through `--k2b-font-sans`, `--k2b-font-condensed`, and `--k2b-fon
 
 Accent, neutral, success, warning, and danger stacks are CSS variables. Semantic aliases such as `--k2b-action`, `--k2b-surface`, `--k2b-text`, and `--k2b-border` derive from those stacks.
 
+Input placeholders use `--k2b-placeholder-color`, independently of helper text.
+The default is neutral-500 in light mode and a mix of 70% neutral-400 with
+30% neutral-500 in dark mode. Native inputs, selection controls, and editor
+placeholders share this color without additional placeholder opacity. Override
+the token on your `.k2b-ui` scope to adjust them together.
+
 The default dark theme uses a cool ink hierarchy for canvas, content,
 navigation, elevated surfaces, borders, and hover states. These semantic dark
 surface roles are purpose-built rather than direct neutral-stack aliases. When

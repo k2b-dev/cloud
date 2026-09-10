@@ -271,6 +271,7 @@ const emojiCompletion: Completion = {
 
 const TextDemo = () => {
   const [project, setProject] = createSignal("Portable value");
+  const [expiresAt, setExpiresAt] = createSignal("");
   const [token, setToken] = createSignal("secret");
   const [notes, setNotes] = createSignal("One focused multiline field.");
   const [prompt, setPrompt] = createSignal("Summarize this release");
@@ -282,7 +283,9 @@ const TextDemo = () => {
       code={`<TextInput label="Project" value={project} onValueChange={setProject} clearable icon="ti ti-folder" />
 <TextInput label="Token" description="The package owns the reveal control." value={token} onValueChange={setToken} password icon="ti ti-lock" autocomplete="current-password" />
 <TextInput label="Notes" value={notes} onValueChange={setNotes} multiline lines={3} icon="ti ti-notes" />
-<TextInput label="AI prompt" value={prompt} onValueChange={setPrompt} variant="ai" />`}
+<TextInput label="AI prompt" value={prompt} onValueChange={setPrompt} variant="ai" />
+<TextInput label="Expiry (placeholder)" value={expiresAt} onValueChange={setExpiresAt} placeholder="2027-01-01T00:00:00Z" icon="ti ti-calendar" />
+<TextInput label="Expiry (entered value)" value="2027-01-01T00:00:00Z" icon="ti ti-calendar" />`}
     >
       <div class="ui-demo-form-grid">
         <TextInput label="Project" value={project} onValueChange={setProject} clearable icon="ti ti-folder" />
@@ -297,6 +300,8 @@ const TextDemo = () => {
         />
         <TextInput label="Notes" value={notes} onValueChange={setNotes} multiline lines={3} icon="ti ti-notes" />
         <TextInput label="AI prompt" value={prompt} onValueChange={setPrompt} variant="ai" />
+        <TextInput label="Expiry (placeholder)" value={expiresAt} onValueChange={setExpiresAt} placeholder="2027-01-01T00:00:00Z" icon="ti ti-calendar" />
+        <TextInput label="Expiry (entered value)" value="2027-01-01T00:00:00Z" icon="ti ti-calendar" />
       </div>
     </DemoCard>
   );

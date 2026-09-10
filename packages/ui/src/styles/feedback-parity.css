@@ -329,7 +329,8 @@
 }
 
 .k2b-ui .k2b-prompt-search__input input::placeholder {
-  color: var(--k2b-text-muted);
+  color: var(--k2b-placeholder-color);
+  opacity: 1;
 }
 
 .k2b-ui .k2b-prompt-search__collapse {

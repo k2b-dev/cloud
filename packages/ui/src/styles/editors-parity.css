@@ -213,7 +213,7 @@
   inset: 0;
   z-index: 0;
   padding: 0.625rem 0.75rem;
-  color: var(--k2b-text-muted);
+  color: var(--k2b-placeholder-color);
   pointer-events: none;
   user-select: none;
 }

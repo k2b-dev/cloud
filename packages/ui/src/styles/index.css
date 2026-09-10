@@ -51,6 +51,7 @@
   --k2b-text: var(--k2b-neutral-950);
   --k2b-text-secondary: var(--k2b-neutral-700);
   --k2b-text-muted: var(--k2b-neutral-600);
+  --k2b-placeholder-color: var(--k2b-neutral-500);
   --k2b-border: var(--k2b-neutral-200);
   --k2b-border-strong: var(--k2b-neutral-300);
   --k2b-hover: var(--k2b-accent-50);
@@ -116,6 +117,7 @@
   --k2b-text: var(--k2b-neutral-50);
   --k2b-text-secondary: var(--k2b-neutral-200);
   --k2b-text-muted: var(--k2b-neutral-400);
+  --k2b-placeholder-color: color-mix(in srgb, var(--k2b-neutral-400) 70%, var(--k2b-neutral-500));
   --k2b-border: #29313a;
   --k2b-border-strong: #3a4552;
   --k2b-hover: #252c35;
@@ -1474,7 +1476,8 @@
 }
 
 .k2b-ui .k2b-input::placeholder {
-  color: var(--k2b-text-muted);
+  color: var(--k2b-placeholder-color);
+  opacity: 1;
 }
 
 /* Browser autofill paints the native input, but TextInput is one compound
@@ -2792,8 +2795,8 @@
 }
 
 .k2b-ui .k2b-number-input__control::placeholder {
-  color: var(--k2b-text-muted);
-  opacity: 0.65;
+  color: var(--k2b-placeholder-color);
+  opacity: 1;
 }
 
 /* Typed values additionally read as numbers (mono, semibold). Keyed off the
@@ -3757,8 +3760,9 @@
   white-space: nowrap;
 }
 
+.k2b-ui .k2b-select-chip > span[data-placeholder="true"],
 .k2b-ui .k2b-choice-trigger__value[data-placeholder="true"] {
-  color: var(--k2b-text-muted);
+  color: var(--k2b-placeholder-color);
 }
 
 .k2b-ui .k2b-choice-control__clear {
@@ -3815,7 +3819,8 @@
 }
 
 .k2b-ui .k2b-combobox__input > input::placeholder {
-  color: var(--k2b-text-muted);
+  color: var(--k2b-placeholder-color);
+  opacity: 1;
 }
 
 .k2b-ui .k2b-combobox__input > input:disabled {
@@ -4441,7 +4446,7 @@
 }
 
 .k2b-ui .k2b-tags-input__placeholder {
-  color: var(--k2b-text-muted);
+  color: var(--k2b-placeholder-color);
 }
 
 .k2b-ui .k2b-tags-input__values {
@@ -4595,7 +4600,7 @@
 }
 
 .k2b-ui .k2b-date-trigger[data-placeholder="true"] .k2b-date-trigger__value {
-  color: var(--k2b-text-muted);
+  color: var(--k2b-placeholder-color);
 }
 
 .k2b-ui .k2b-date-trigger__chevron {
@@ -6662,7 +6667,8 @@
 }
 
 .k2b-ui .k2b-chat-composer__input textarea::placeholder {
-  color: var(--k2b-text-muted);
+  color: var(--k2b-placeholder-color);
+  opacity: 1;
 }
 
 .k2b-ui .k2b-chat-composer__drop {

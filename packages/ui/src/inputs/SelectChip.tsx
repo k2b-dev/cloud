@@ -82,7 +82,7 @@ export function SelectChip<T extends string | number = string>(props: SelectChip
             {(image) => <img src={image()} alt="" />}
           </Show>
           <Show when={!props.iconOnly}>
-            <span>{selected()?.label ?? props.placeholder ?? ""}</span>
+            <span data-placeholder={selected() ? undefined : "true"}>{selected()?.label ?? props.placeholder ?? ""}</span>
             <i class="ti ti-chevron-down" aria-hidden="true" />
           </Show>
         </Dropdown.Trigger>

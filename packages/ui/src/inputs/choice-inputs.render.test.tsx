@@ -585,7 +585,7 @@ describe("@k2b/ui complete choice input migrations", () => {
     expect(filledNumber).toContain('data-filled="true"');
     expect(emptyNumber).not.toContain("data-filled");
     expect(cssRule(".k2b-ui .k2b-number-input__control")).toContain("text-align: right");
-    expect(cssRule(".k2b-ui .k2b-number-input__control::placeholder")).toContain("opacity: 0.65");
+    expect(cssRule(".k2b-ui .k2b-number-input__control::placeholder")).toContain("opacity: 1");
     // The mono treatment must key off the value: `:placeholder-shown` never
     // matches when the caller passes no placeholder.
     expect(cssRule('.k2b-ui .k2b-number-input__control[data-filled="true"]')).toContain("font-family: var(--k2b-font-mono)");
