@@ -96,6 +96,14 @@ export const createDialogCore = (): DialogCore => {
     if (state.element?.isConnected) return state.element;
 
     const element = document.createElement("dialog");
+    element.onclose = () => {
+      // Repeated Escape can force a non-cancelable native close. A retained
+      // entry (ignore, an async guard, or a parent) still owns the modal.
+      const top = state.stack[state.stack.length - 1];
+      if (state.element !== element || element.open || !top) return;
+      element.showModal();
+      resolveInitialFocusTarget(top, element)?.focus();
+    };
     getK2bPortalRoot().appendChild(element);
     state.element = element;
     return element;

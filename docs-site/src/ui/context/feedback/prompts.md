@@ -238,3 +238,8 @@ const removeProject = async () => {
   await deleteProject("atlas");
 };
 ```
+
+Repeated Escape does not bypass an ignored or guarded dismissal. If the browser
+forces the native window closed, the shared dialog core restores retained
+content, including an underlying dialog after its child closes. Close custom
+dialogs through the supplied callback, not the native element's `close()` method.
