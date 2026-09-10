@@ -1,6 +1,7 @@
 import type { AiStoredMessage, AiStreamSseEvent, AiTurnBlock } from "@k2b/cloud/ai";
 import { parseAiSse } from "@k2b/cloud/ai/browser";
 import type { CloudCliContext } from "@k2b/cloud/cli";
+import { printCapabilityTable } from "./capability-table";
 import { AI_API, jsonRequest } from "./shared";
 
 export type AssistantTurnStreamResult = {
@@ -51,6 +52,11 @@ export const streamAssistantTurn = async (input: {
   let emittedText = "";
   const blocks = new Map<string, AiTurnBlock>();
   const emittedByBlock = new Map<string, string>();
+  const renderedTables = new Set<string>();
+  const emitTable = (callId: string, result: unknown) => {
+    if (ctx.options.output !== "text" || renderedTables.has(callId)) return;
+    if (printCapabilityTable(ctx, result)) renderedTables.add(callId);
+  };
 
   const emitJsonLine = (value: Record<string, unknown>) => {
     if (ctx.options.output === "jsonl") ctx.jsonLine({ v: 1, conversationId, turnId: targetTurnId, ...value });
@@ -66,6 +72,9 @@ export const streamAssistantTurn = async (input: {
     emitJsonLine({ type: "text_delta", blockId, delta });
   };
   const finish = (result: AssistantTurnStreamResult): AssistantTurnStreamResult => {
+    for (const stored of result.messages) {
+      if (stored.message.role === "tool_result") emitTable(stored.message.callId, stored.message.result);
+    }
     const text = result.text;
     if (ctx.options.output === "text") {
       if (text.startsWith(emittedText)) {
@@ -81,6 +90,7 @@ export const streamAssistantTurn = async (input: {
     block: Extract<AiTurnBlock, { kind: "tool" }>,
     previous?: AiTurnBlock,
   ): Promise<AssistantTurnStreamResult | null> => {
+    if (block.status === "completed") emitTable(block.callId, block.result);
     if (previous?.kind !== "tool" || previous.status !== block.status) {
       input.onToolBlock?.(block);
       emitJsonLine({ type: "tool", callId: block.callId, name: block.name, status: block.status });

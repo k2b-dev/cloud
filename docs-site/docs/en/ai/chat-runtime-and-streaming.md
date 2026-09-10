@@ -186,6 +186,13 @@ deployment, not per request.
 
 ## Stream state
 
+Assistant renders capability table presentation metadata in both web chat and
+text-mode CLI output. The CLI shows up to 100 returned rows, shortens long cells,
+and prints supplied result links. Additional rows or pages are marked; displaying
+a table does not fetch more data. JSON and JSONL output retain their structured
+format and do not include terminal tables. The Assistant summarizes findings and
+completeness limits instead of repeating rows, unless the user requests them.
+
 The conversation protocol is transport-neutral. Every subscription receives a
 full authorized state snapshot and then ordered updates for messages, text,
 tools, approvals, and turn completion. The runtime captures the retained-topic

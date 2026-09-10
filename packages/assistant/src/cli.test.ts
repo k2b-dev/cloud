@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { CloudCliContext } from "@k2b/cloud/cli";
 import assistantCli from "./cli";
+import { printCapabilityTable } from "./cli/capability-table";
 import { collectSurveyResult, collectTextEditorResult, runInteractiveAssistant } from "./cli/interactive";
 import { streamAssistantTurn } from "./cli/stream";
 
@@ -62,6 +63,117 @@ const createContext = (
 };
 
 describe("assistant CLI", () => {
+  const tableResult = {
+    data: { rows: [{ amount: "9007199254740993.01", missing: null }] },
+    presentation: {
+      kind: "table",
+      rowsPath: ["rows"],
+      columns: [
+        { label: "Amount", path: ["amount"] },
+        { label: "Optional", path: ["missing"] },
+      ],
+    },
+    page: { hasMore: true, nextCursor: "cursor" },
+    links: [{ rel: "open", href: "/app/grids/Base01/query?q=test", title: "Open query" }],
+  };
+
+  test("renders declared columns without coercing decimals and signals bounded results", () => {
+    const { ctx, stdout } = createContext([], async () => json({}));
+    const tables: unknown[] = [];
+    ctx.table = (rows, columns) => tables.push({ rows, columns });
+    expect(printCapabilityTable(ctx, tableResult)).toBe(true);
+    expect(tables).toEqual([
+      {
+        rows: [{ "0": "9007199254740993.01", "1": "—" }],
+        columns: [
+          { key: "0", label: "Amount" },
+          { key: "1", label: "Optional" },
+        ],
+      },
+    ]);
+    expect(stdout.join("")).toContain("More results");
+    expect(stdout.join("")).toContain("https://cloud.example/app/grids/Base01/query?q=test");
+    expect(printCapabilityTable(ctx, { data: {}, presentation: tableResult.presentation })).toBe(false);
+    expect(printCapabilityTable(ctx, { data: tableResult.data })).toBe(false);
+  });
+
+  test("bounds and sanitizes table display without changing the result", () => {
+    const { ctx, stdout } = createContext([], async () => json({}));
+    const result = { ...tableResult, data: { rows: Array.from({ length: 101 }, () => ({ amount: `\u001b[2J${"x".repeat(100)}` })) } };
+    const before = JSON.stringify(result);
+    ctx.table = (rows) => {
+      expect(rows).toHaveLength(100);
+      expect(String(rows[0]?.["0"])).not.toContain("\u001b");
+      expect(String(rows[0]?.["0"])).toHaveLength(60);
+    };
+    printCapabilityTable(ctx, result);
+    expect(JSON.stringify(result)).toBe(before);
+    expect(stdout.join("")).toContain("Showing 100 of 101");
+    ctx.table = () => undefined;
+    printCapabilityTable(ctx, { ...tableResult, data: { rows: [] } });
+    expect(stdout.join("")).toContain("No rows.");
+  });
+
+  for (const output of ["text", "json", "jsonl"] as const) {
+    test(`table stream replay is deduplicated and preserves ${output} output`, async () => {
+      const { ctx, stdout } = createContext([], async () => json({}), output);
+      let tables = 0;
+      ctx.table = () => {
+        tables++;
+      };
+      const block = {
+        id: "block-1",
+        kind: "tool",
+        callId: "call-1",
+        name: "example.query",
+        status: "completed",
+        result: tableResult,
+        args: {},
+      };
+      const messages = [
+        {
+          id: "msg-1",
+          loopId: "turn-1",
+          kind: "message",
+          message: { role: "tool_result", callId: "call-1", name: "example.query", result: tableResult },
+        },
+      ];
+      const result = await streamAssistantTurn({
+        ctx,
+        conversationId: "chat-1",
+        turnId: "turn-1",
+        initialResponse: sse(
+          { type: "state", conversation: { id: "chat-1" }, messages: [], activeTurn: { turnId: "turn-1", blocks: [block] } },
+          { type: "block_set", turnId: "turn-1", block },
+          { type: "turn_finished", turnId: "turn-1", status: "completed", error: null, messages },
+        ),
+      });
+      expect(tables).toBe(output === "text" ? 1 : 0);
+      expect(JSON.stringify(result.messages)).toBe(JSON.stringify(messages));
+      if (output === "json") expect(stdout).toEqual([]);
+      if (output === "jsonl") expect(stdout.map((line) => JSON.parse(line).type)).toEqual(["tool", "turn_finished"]);
+    });
+  }
+
+  test("completed snapshot renders stored tool results when no live blocks remain", async () => {
+    const { ctx } = createContext([], async () => json({}));
+    let tables = 0;
+    ctx.table = () => {
+      tables++;
+    };
+    await streamAssistantTurn({
+      ctx,
+      conversationId: "chat-1",
+      turnId: "turn-1",
+      initialResponse: sse({
+        type: "state",
+        activeTurn: null,
+        messages: [{ loopId: "turn-1", message: { role: "tool_result", callId: "call-1", result: tableResult } }],
+      }),
+    });
+    expect(tables).toBe(1);
+  });
+
   test("documents the one-shot and management surface", () => {
     const help = assistantCli.help?.() ?? "";
     expect(help).toContain("cld assistant -p");

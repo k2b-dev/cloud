@@ -11,7 +11,7 @@ test("Grids Skill examples use valid GQL rather than SQL or GraphQL", () => {
 test("Grids Skill separates query results, context and turn-local reference loading", () => {
   expect(CLOUD_GRIDS_INSTRUCTIONS.length).toBeLessThanOrEqual(10_000);
   expect(CLOUD_GRIDS_INSTRUCTIONS).toContain("execute it before reporting");
-  expect(CLOUD_GRIDS_INSTRUCTIONS).toContain("do not duplicate it as a Markdown table");
+  expect(CLOUD_GRIDS_INSTRUCTIONS).not.toContain("Markdown table");
   expect(CLOUD_GRIDS_INSTRUCTIONS).toContain("load_skill again before reading a reference in a later turn");
   expect(CLOUD_GRIDS_INSTRUCTIONS).toContain("Custom App @auth/@time context is not injected here");
   expect(CLOUD_GRIDS_INSTRUCTIONS).toContain("'days'");

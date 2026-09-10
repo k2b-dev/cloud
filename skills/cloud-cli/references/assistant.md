@@ -52,7 +52,7 @@ Useful options:
 - `--detach` submits the turn and returns its ID without waiting in print mode.
 - Repeat `--approve <exact-tool-name>` in print mode to approve only those tools for that turn. There is deliberately no approve-all flag.
 
-Print mode writes assistant text to stdout and tool progress to stderr. `--json` waits and prints one final aggregate. `--jsonl` emits versioned stream events such as text deltas, tool state changes, attention requests, and turn completion. Structured output, detached submission, and piped input require `--print`.
+Print mode writes assistant text and capability result tables to stdout and tool progress to stderr. Tables show up to 100 returned rows, shorten long cells for display, and include supplied result links. A notice identifies additional rows or pages. Use `--json` for complete returned cell values: it waits and prints one final aggregate without terminal tables. `--jsonl` emits versioned stream events such as text deltas, tool state changes, attention requests, and turn completion. Structured output, detached submission, and piped input require `--print`.
 `--allow-bash` is deliberately rejected with `--print`, structured output, and
 detached execution.
 
