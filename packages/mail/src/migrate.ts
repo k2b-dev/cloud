@@ -3923,17 +3923,36 @@ const installLiveInvalidationEnqueue = async (db: SqlClient): Promise<void> => {
   `;
 };
 
+// A credential Mail can no longer use is revoked, not converted: the mailbox
+// shows the reconnect state it already knows, and an administrator enters a
+// password or app password deliberately.
 const requirePasswordProviderSecrets = async (db: SqlClient): Promise<void> => {
-  const [remaining] = await db<{ connections: number; transports: number }[]>`
-    SELECT
-      (SELECT count(*) FROM mail.provider_connections WHERE secret_kind <> 'password') AS connections,
-      (SELECT count(*) FROM mail.sender_identity_transports WHERE secret_kind <> 'password') AS transports
+  await db`
+    UPDATE mail.provider_connections
+    SET
+      status = 'revoked',
+      encrypted_secret = NULL,
+      secret_kind = 'password',
+      last_error_code = 'CREDENTIAL_KIND_UNSUPPORTED',
+      last_error_message = 'Mail accepts only a password or app password; reconnect this provider.'
+    WHERE secret_kind <> 'password'
+    RETURNING id
   `;
-  if (Number(remaining?.connections ?? 0) > 0 || Number(remaining?.transports ?? 0) > 0) {
-    throw new Error(
-      "Mail no longer supports OAuth2 provider secrets. Replace every affected provider connection and identity transport credential with a password or app password before migrating.",
-    );
-  }
+  await db`
+    UPDATE mail.provider_bindings
+    SET state = 'revoked', last_error_code = 'CONNECTION_REVOKED', last_error_message = 'Provider connection revoked'
+    WHERE state <> 'revoked'
+      AND connection_id IN (SELECT id FROM mail.provider_connections WHERE status = 'revoked' AND last_error_code = 'CREDENTIAL_KIND_UNSUPPORTED')
+  `;
+  await db`
+    UPDATE mail.sender_identity_transports
+    SET
+      status = 'revoked',
+      encrypted_secret = NULL,
+      secret_kind = 'password',
+      last_error_message = 'Mail accepts only a password or app password; enter a new transport credential.'
+    WHERE secret_kind <> 'password'
+  `;
   await db`
     ALTER TABLE mail.provider_connections
       DROP CONSTRAINT IF EXISTS provider_connections_secret_kind_check,
@@ -4277,8 +4296,10 @@ const migrations: readonly MailMigration[] = [
   { version: 118, name: "flat_conversation_comments", run: flattenConversationComments },
   { version: 119, name: "attachment_document_extraction", run: addAttachmentDocumentExtraction },
   { version: 121, name: "incoming_automation_mandates", run: addIncomingAutomationMandates },
-  { version: 122, name: "automatic_reply_interval_floor", run: requireAutomaticReplyInterval },
-  { version: 123, name: "password_only_provider_secrets", run: requirePasswordProviderSecrets },
+  // 122 and 123 were used by migrations that no longer exist; databases that ran
+  // them keep those rows, so the next steps continue at 124.
+  { version: 124, name: "automatic_reply_interval_floor", run: requireAutomaticReplyInterval },
+  { version: 125, name: "password_only_provider_secrets", run: requirePasswordProviderSecrets },
 ];
 
 const ensureMigrationFoundation = async (db: SqlClient): Promise<void> => {
