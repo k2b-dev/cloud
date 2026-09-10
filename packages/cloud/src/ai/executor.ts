@@ -1144,13 +1144,10 @@ export class AiTurnExecutor {
               callId: event.callId,
               toolName,
               location: prepared.frontendModes.get(event.name) ?? "server",
-              args: event.args,
             })
             .catch(() => undefined);
         } else if (event.type === "tool_execution_end") {
-          await aiToolAudit
-            .noteToolCompleted({ turnId, callId: event.callId, result: event.result, isError: event.isError })
-            .catch(() => undefined);
+          await aiToolAudit.noteToolCompleted({ turnId, callId: event.callId, isError: event.isError }).catch(() => undefined);
           const toolBlock = pipeline.blocks.find((block) => block.kind === "tool" && block.callId === event.callId);
           await indexConversationToolSource({
             conversationId,
@@ -1244,9 +1241,7 @@ export class AiTurnExecutor {
         result: { displayed: true },
         isError: false,
       } as OutboundEvent);
-      await aiToolAudit
-        .noteToolCompleted({ turnId, callId: event.callId, result: { displayed: true }, isError: false })
-        .catch(() => undefined);
+      await aiToolAudit.noteToolCompleted({ turnId, callId: event.callId, isError: false }).catch(() => undefined);
       return false;
     }
 
@@ -1286,13 +1281,12 @@ export class AiTurnExecutor {
           callId: event.callId,
           toolName,
           location: frontendMode ?? "client",
-          args: event.args,
           status: "waiting_for_frontend",
         })
         .catch(() => undefined);
     } else {
       await aiToolAudit
-        .noteApprovalRequested({ conversationId, turnId, callId: event.callId, toolName, location: "server", args: event.args })
+        .noteApprovalRequested({ conversationId, turnId, callId: event.callId, toolName, location: "server" })
         .catch(() => undefined);
     }
 

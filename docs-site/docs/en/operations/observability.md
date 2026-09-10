@@ -84,6 +84,28 @@ Use the dedicated pages for:
 - [workflow observability](/en/docs/automation/workflow-observability-and-testing);
 - [notifications](/en/docs/platform/notifications).
 
+## Read capability calls
+
+Use **Observability > Capabilities** for the single history of dispatched
+capability calls. The assistant, MCP, HTTP callers, and app-to-app mandates all
+appear in the same list, so "what did an agent do, on whose behalf, and did it
+work" is one question rather than one per surface.
+
+The summary reports executions, failures, denials, destructive actions, and
+average and 95th-percentile duration for the selected range, with per-app and
+per-capability breakdowns limited to the 50 busiest entries. Filter by app,
+capability, origin, status, user, destructive-only, and time range; every filter
+and the keyset cursor stay in the URL. Opening a row shows its request ID,
+actor, access subject, timing, error code, idempotency key, and the shape of the
+input and result.
+
+Rows carry correlation and shape, never payloads, and are pruned after 90 days.
+Correlate an entry with application audit events and request logs through its
+request ID, and follow an assistant call to **Admin > AI > AI Usage** for that
+user. See [Capabilities](/en/docs/platform/capabilities) for the recorded fields
+and status meanings. The same data is available at
+`/api/gateway/capabilities`.
+
 ## Operate AI workloads
 
 Use **Admin > AI > AI Usage** for bounded 24-hour, 7-day, 30-day, or 90-day

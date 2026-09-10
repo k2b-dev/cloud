@@ -23,6 +23,7 @@ The pages are server-rendered admin views with URL-backed filters, search, pagin
 - **Logs:** Filter structured log entries by source, level, search text, and page. Retention is shown from the log retention setting.
 - **Telemetry:** Inspect gateway request events by app, route, method, status, duration, slow requests, and errors.
 - **Metrics:** Expose a Prometheus-compatible metrics endpoint and manage bearer tokens for Pulse or external scrapers.
+- **Capabilities:** Read the history of dispatched capability calls by app, capability, origin, status, user, destructive flag, and time range. Rows carry correlation, timing, and input and result shape metadata, never payloads, and are pruned after 90 days.
 - **Notifications:** Search notification delivery records and filter by sent, pending, or error status.
 :::
 

@@ -111,6 +111,7 @@ describe.skipIf(!(await canUseAiDatabase()))("AI conversation resources and inte
         turnId: sourceTurn.id,
         callId: "call-message",
         toolName: aiCapabilityId("assistant", "chat.message"),
+        requestId: crypto.randomUUID(),
         idempotencyKey: "ai-inter-chat-test",
       });
       expect(

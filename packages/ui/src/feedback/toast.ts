@@ -4,8 +4,7 @@ export type ToastVariant = "default" | "success" | "error";
 
 export type ToastAction = {
   label: string;
-  href: string;
-};
+} & ({ href: string } | { onClick: () => void });
 
 export type ToastOptions = {
   variant?: ToastVariant;
@@ -13,6 +12,9 @@ export type ToastOptions = {
   iconClass?: string;
   title?: string;
   action?: ToastAction | null;
+  /** Fraction from 0 to 1, or an indeterminate activity indicator. null removes it. */
+  progress?: number | "indeterminate" | null;
+  dismissLabel?: string;
 };
 
 export type ToastHandle = {
@@ -159,6 +161,7 @@ const showToast = (description: string, options?: ToastOptions): ToastHandle => 
   let dismissed = false;
   let dismissTimer: ReturnType<typeof setTimeout> | null = null;
   let currentVariant: ToastVariant = options?.variant ?? "default";
+  let currentProgress = options?.progress ?? null;
   let currentDuration = options?.duration ?? DEFAULT_DURATION_MS;
   let remainingDuration = currentDuration;
   let timerStartedAt = 0;
@@ -188,7 +191,7 @@ const showToast = (description: string, options?: ToastOptions): ToastHandle => 
   const closeButton = document.createElement("button");
   closeButton.type = "button";
   closeButton.className = "k2b-toast__close";
-  closeButton.setAttribute("aria-label", "Dismiss notification");
+  closeButton.setAttribute("aria-label", options?.dismissLabel ?? "Dismiss notification");
   const closeIcon = document.createElement("i");
   closeIcon.className = "ti ti-x";
   closeIcon.setAttribute("aria-hidden", "true");
@@ -209,7 +212,7 @@ const showToast = (description: string, options?: ToastOptions): ToastHandle => 
   };
 
   const resumeDismissTimer = () => {
-    if (dismissed || currentDuration === 0 || remainingDuration <= 0 || pausedByPointer || pausedByFocus) return;
+    if (dismissed || currentProgress !== null || currentDuration === 0 || remainingDuration <= 0 || pausedByPointer || pausedByFocus) return;
     clearDismissTimer();
     timerStartedAt = Date.now();
     dismissTimer = setTimeout(() => dismiss(), remainingDuration);
@@ -234,18 +237,37 @@ const showToast = (description: string, options?: ToastOptions): ToastHandle => 
     }, ANIMATION_MS);
   };
 
-  let actionElement: HTMLAnchorElement | null = null;
+  const progressElement = document.createElement("progress");
+  progressElement.className = "k2b-toast__progress";
+  progressElement.max = 1;
+  const renderProgress = () => {
+    progressElement.hidden = currentProgress === null;
+    progressElement.setAttribute("aria-label", titleElement.textContent || descriptionElement.textContent || "");
+    if (typeof currentProgress === "number") progressElement.value = Number.isFinite(currentProgress) ? Math.max(0, Math.min(1, currentProgress)) : 0;
+    else progressElement.removeAttribute("value");
+  };
+  contentElement.append(progressElement);
+  renderProgress();
+  let actionElement: HTMLAnchorElement | HTMLButtonElement | null = null;
   const renderAction = (action: ToastAction | null | undefined) => {
     actionElement?.remove();
     actionElement = null;
     if (!action) return;
-    actionElement = document.createElement("a");
+    if ("href" in action) {
+      const link = document.createElement("a");
+      link.href = action.href;
+      actionElement = link;
+    } else {
+      const button = document.createElement("button");
+      button.type = "button";
+      actionElement = button;
+    }
     actionElement.className = "k2b-toast__action";
-    actionElement.href = action.href;
     actionElement.textContent = action.label;
     actionElement.addEventListener("click", (event) => {
       event.stopPropagation();
-      dismiss();
+      if ("onClick" in action) action.onClick();
+      else dismiss();
     });
     contentElement.appendChild(actionElement);
   };
@@ -274,10 +296,13 @@ const showToast = (description: string, options?: ToastOptions): ToastHandle => 
     if (nextOptions && Object.prototype.hasOwnProperty.call(nextOptions, "duration")) {
       currentDuration = nextOptions.duration ?? DEFAULT_DURATION_MS;
     }
+    if (nextOptions && Object.prototype.hasOwnProperty.call(nextOptions, "progress")) currentProgress = nextOptions.progress ?? null;
+    if (nextOptions?.dismissLabel) closeButton.setAttribute("aria-label", nextOptions.dismissLabel);
+    renderProgress();
     resetDismissTimer(currentDuration);
   };
 
-  toastElement.addEventListener("click", dismiss);
+  toastElement.addEventListener("click", () => { if (currentProgress === null) dismiss(); });
   closeButton.addEventListener("click", (event) => {
     event.stopPropagation();
     dismiss();

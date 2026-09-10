@@ -12,7 +12,7 @@ export const AiUsageQuerySchema = z.object({
   providerModel: text,
   appId: text,
   view: z.enum(AI_USAGE_VIEWS).default("overview"),
-  kind: z.enum(["chat", "background", "tool"]).optional(),
+  kind: z.enum(["chat", "background"]).optional(),
   status: z
     .enum([
       "completed",

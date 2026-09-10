@@ -177,6 +177,7 @@ services:
     command: bun run --preload=/app/packages/cloud/scripts/preload.ts packages/faq/src/index.ts
 
   app-kit:
+    env_file: ./.local/rsql/credentials.env
     <<: *app
     container_name: app-kit
     environment: { <<: *env, APP_ID: kit }

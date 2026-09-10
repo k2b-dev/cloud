@@ -636,12 +636,13 @@ export const venueCapabilities = defineCapabilities({
     },
     "assignment.cancel": {
       title: "Cancel my shift assignment",
-      description: "Delete only the current user-backed actor's own assignment. This action is not idempotent.",
+      description: "Delete only the current user-backed actor's own assignment. Supply an idempotency key so an uncertain attempt can be repeated safely.",
       input: AssignmentCancelInputSchema,
       data: AssignmentCancelDataSchema,
+      // Cancelling releases the slot to everyone else, so signing up again may be impossible.
       destructive: true,
       openWorld: false,
-      idempotency: "none",
+      idempotency: "required",
       review: async (input, context) => {
         const t = messagesFor(context);
         const actor = await requireUserAndVenue(input.venueId, context, "read");

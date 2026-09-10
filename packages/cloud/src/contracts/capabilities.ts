@@ -32,6 +32,17 @@ export const capabilityIdempotencyConflict = (
   ...(details ? { details } : {}),
 });
 
+/**
+ * Cloud surface a capability invocation came from. The dispatcher resolves it
+ * once, records it on the execution row, and forwards it to the owning app.
+ */
+export const CAPABILITY_ORIGINS = ["assistant", "mcp", "http", "app"] as const;
+export type CapabilityOrigin = (typeof CAPABILITY_ORIGINS)[number];
+export const CapabilityOriginSchema = z.enum(CAPABILITY_ORIGINS);
+
+/** Transports the resolved origin from the Cloud dispatcher to the app endpoint. */
+export const CAPABILITY_ORIGIN_HEADER = "x-cloud-capability-origin";
+
 export const CapabilityIdempotencyKeySchema = z
   .string()
   .trim()
@@ -285,6 +296,14 @@ export type CapabilityExecutionContext = {
    * error codes and data must not depend on it.
    */
   locale: string;
+  /**
+   * Correlation id of the originating Cloud request. Write it into the app's
+   * own audit rows so a capability execution record and the app's domain trail
+   * can be joined without sharing payloads.
+   */
+  requestId: string;
+  /** Cloud surface that invoked this capability. */
+  origin: CapabilityOrigin;
   signal: AbortSignal;
 };
 

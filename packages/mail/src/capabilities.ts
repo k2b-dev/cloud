@@ -52,6 +52,7 @@ import type { ConversationSummary, MessageSummary } from "./service/messages";
 const requestContext = (context: CapabilityExecutionContext): MailRequestContext => ({
   actor: context.actor,
   accessSubject: context.accessSubject,
+  requestId: context.requestId,
 });
 
 const localizeCapabilityErrors = <T extends CapabilityDefinitions>(definitions: T): T => {
@@ -406,6 +407,14 @@ const requireIdempotencyKey = (context: CapabilityExecutionContext, actionId: st
       : `service_account:${context.accessSubject.serviceAccountId}`;
   return ok(createHash("sha256").update(`mail:${actionId}:${subject}:${context.idempotencyKey}`).digest("hex"));
 };
+
+/**
+ * Guard for irreversible Actions whose service guards repeat calls with a
+ * revision or state check instead of a durable key claim. The key proves the
+ * caller retried the same call deliberately.
+ */
+const requireIdempotentRetry = (context: CapabilityExecutionContext): Result<null> =>
+  context.idempotencyKey ? ok(null) : fail(err.badInput("An idempotency key is required"));
 
 const mapMailbox = (mailbox: Mailbox & { permission: "read" | "write" | "admin" }, id: string) => {
   const description = boundedText(mailbox.description, 2000);
@@ -2197,7 +2206,7 @@ const actionDefinitions = {
       "Change only supplied fields at expectedRevision. Omitted fields are preserved server-side, including long bodies and all recipients. Supplied recipient arrays replace that entire recipient list; [] clears it. Does not send mail; send review remains required.",
     input: c.DraftPatchInputSchema,
     data: c.DraftMutationDataSchema,
-    destructive: true,
+    destructive: false,
     openWorld: false,
     idempotency: "none",
     approval: "rememberable",
@@ -2371,7 +2380,7 @@ const actionDefinitions = {
       "Replace ALL editable draft content using an optimistic revision. Never construct this from truncated draft.read output: check editableSnapshotComplete first. Prefer draft.patch for selected fields or incomplete snapshots.",
     input: c.DraftUpdateInputSchema,
     data: c.DraftMutationDataSchema,
-    destructive: true,
+    destructive: false,
     openWorld: false,
     idempotency: "none",
     approval: "rememberable",
@@ -2425,9 +2434,10 @@ const actionDefinitions = {
     description: "Discard one user draft using an optimistic revision.",
     input: c.DraftDiscardInputSchema,
     data: c.DeletedDataSchema,
+    // Irreversible for the user: no restore path, and the provider draft is retired.
     destructive: true,
     openWorld: false,
-    idempotency: "none",
+    idempotency: "required",
     review: async (input: z.output<typeof c.DraftDiscardInputSchema>, context: CapabilityExecutionContext) => {
       const t = mailCapabilityMessages(context.locale);
       const draft = await requireDraftForReview(input.mailboxId, input.draftId, context);
@@ -2445,6 +2455,8 @@ const actionDefinitions = {
     },
     run: async (input: z.output<typeof c.DraftDiscardInputSchema>, context: CapabilityExecutionContext) => {
       const t = mailCapabilityMessages(context.locale);
+      const retry = requireIdempotentRetry(context);
+      if (!retry.ok) return retry;
       const draft = await requireDraftForReview(input.mailboxId, input.draftId, context);
       if (!draft.ok) return draft;
       const scope = await resolveDraftScope(input.mailboxId, input.draftId);
@@ -2527,9 +2539,10 @@ const actionDefinitions = {
     description: "Remove one attachment using an optimistic draft revision.",
     input: c.DraftAttachmentRemoveInputSchema,
     data: c.DraftMutationDataSchema,
+    // Irreversible for the user: nothing clears removed_at once set.
     destructive: true,
     openWorld: false,
-    idempotency: "none",
+    idempotency: "required",
     review: async (input: z.output<typeof c.DraftAttachmentRemoveInputSchema>, context: CapabilityExecutionContext) => {
       const t = mailCapabilityMessages(context.locale);
       const draft = await requireDraftForReview(input.mailboxId, input.draftId, context);
@@ -2555,6 +2568,8 @@ const actionDefinitions = {
     },
     run: async (input: z.output<typeof c.DraftAttachmentRemoveInputSchema>, context: CapabilityExecutionContext) => {
       const t = mailCapabilityMessages(context.locale);
+      const retry = requireIdempotentRetry(context);
+      if (!retry.ok) return retry;
       const scope = await resolveDraftScope(input.mailboxId, input.draftId);
       if (!scope.ok) return scope;
       const [draft, attachmentId] = await Promise.all([
@@ -2683,7 +2698,7 @@ const actionDefinitions = {
     data: c.DeliveryCancelDataSchema,
     destructive: true,
     openWorld: false,
-    idempotency: "none",
+    idempotency: "required",
     review: async (input: z.output<typeof c.DeliveryCancelInputSchema>, context: CapabilityExecutionContext) => {
       const t = mailCapabilityMessages(context.locale);
       const scope = await resolveMailboxScope(input.mailboxId);
@@ -2710,6 +2725,8 @@ const actionDefinitions = {
     },
     run: async (input: z.output<typeof c.DeliveryCancelInputSchema>, context: CapabilityExecutionContext) => {
       const t = mailCapabilityMessages(context.locale);
+      const retry = requireIdempotentRetry(context);
+      if (!retry.ok) return retry;
       const scope = await resolveMailboxScope(input.mailboxId);
       if (!scope.ok) return scope;
       const deliveryId = await resolveMailboxResource("deliveries", scope.data.id, input.deliveryId);
@@ -2746,7 +2763,7 @@ const actionDefinitions = {
     description: "Mark one email conversation read, unread, flagged, or unflagged in its current source folder.",
     input: c.ConversationMarkInputSchema,
     data: c.ConversationMutationDataSchema,
-    destructive: true,
+    destructive: false,
     openWorld: false,
     idempotency: "required",
     approval: "rememberable",
@@ -2816,7 +2833,7 @@ const actionDefinitions = {
     description: "Move one email conversation to a standard role or an explicit folder.",
     input: c.ConversationMoveInputSchema,
     data: c.ConversationMutationDataSchema,
-    destructive: true,
+    destructive: false,
     openWorld: false,
     idempotency: "required",
     review: async (input: z.output<typeof c.ConversationMoveInputSchema>, context: CapabilityExecutionContext) => {
@@ -2897,7 +2914,7 @@ const actionDefinitions = {
     description: "Add and remove Cloud-local tags with optimistic concurrency.",
     input: c.ConversationTagUpdateInputSchema,
     data: c.ConversationTagDataSchema,
-    destructive: true,
+    destructive: false,
     openWorld: false,
     idempotency: "none",
     approval: "rememberable",
@@ -2994,7 +3011,7 @@ const actionDefinitions = {
     description: "Assign one conversation to an eligible mailbox member, or clear its assignee.",
     input: c.ConversationAssignInputSchema,
     data: c.CollaborationDataSchema,
-    destructive: true,
+    destructive: false,
     openWorld: false,
     idempotency: "none",
     approval: "rememberable",
@@ -3056,7 +3073,7 @@ const actionDefinitions = {
     description: "Mark one conversation done or reopen it.",
     input: c.ConversationStatusUpdateInputSchema,
     data: c.CollaborationDataSchema,
-    destructive: true,
+    destructive: false,
     openWorld: false,
     idempotency: "none",
     approval: "rememberable",
@@ -3104,7 +3121,7 @@ const actionDefinitions = {
     description: "Set or clear the snooze deadline of one conversation.",
     input: c.ConversationSnoozeInputSchema,
     data: c.CollaborationDataSchema,
-    destructive: true,
+    destructive: false,
     openWorld: false,
     idempotency: "none",
     approval: "rememberable",
@@ -3156,7 +3173,7 @@ const actionDefinitions = {
     description: "Create or reschedule the current user's personal conversation reminder.",
     input: c.ReminderSetInputSchema,
     data: c.ReminderDataSchema,
-    destructive: true,
+    destructive: false,
     openWorld: false,
     idempotency: "none",
     approval: "rememberable",
@@ -3201,7 +3218,7 @@ const actionDefinitions = {
     description: "Cancel the current user's pending conversation reminder.",
     input: c.ReminderCancelInputSchema,
     data: c.ReminderDataSchema,
-    destructive: true,
+    destructive: false,
     openWorld: false,
     idempotency: "none",
     approval: "rememberable",
@@ -3319,7 +3336,8 @@ const actionDefinitions = {
     description: "Edit your own internal comment within 10 minutes using an optimistic revision.",
     input: c.CommentUpdateInputSchema,
     data: c.CommentMutationDataSchema,
-    destructive: true,
+    // Reversible: every revision is kept in mail.conversation_comment_versions.
+    destructive: false,
     openWorld: false,
     idempotency: "none",
     approval: "rememberable",
@@ -3390,7 +3408,7 @@ const actionDefinitions = {
     data: c.CommentMutationDataSchema,
     destructive: true,
     openWorld: false,
-    idempotency: "none",
+    idempotency: "required",
     review: async (input: z.output<typeof c.CommentDeleteInputSchema>, context: CapabilityExecutionContext) => {
       const t = mailCapabilityMessages(context.locale);
       const review = await requireCommentForReview(input, context);
@@ -3411,6 +3429,8 @@ const actionDefinitions = {
     },
     run: async (input: z.output<typeof c.CommentDeleteInputSchema>, context: CapabilityExecutionContext) => {
       const t = mailCapabilityMessages(context.locale);
+      const retry = requireIdempotentRetry(context);
+      if (!retry.ok) return retry;
       const review = await requireCommentForReview(input, context);
       if (!review.ok) return review;
       const scope = await resolveConversationScope(input.mailboxId, input.conversationId);
@@ -3493,7 +3513,7 @@ const actionDefinitions = {
     description: "Rename or recolor a mailbox tag using an optimistic revision.",
     input: c.TagUpdateInputSchema,
     data: c.TagMutationDataSchema,
-    destructive: true,
+    destructive: false,
     openWorld: false,
     idempotency: "none",
     review: async (input: z.output<typeof c.TagUpdateInputSchema>, context: CapabilityExecutionContext) => {
@@ -3550,7 +3570,7 @@ const actionDefinitions = {
     data: c.DeletedDataSchema,
     destructive: true,
     openWorld: false,
-    idempotency: "none",
+    idempotency: "required",
     review: async (input: z.output<typeof c.TagDeleteInputSchema>, context: CapabilityExecutionContext) => {
       const t = mailCapabilityMessages(context.locale);
       const scope = await resolveMailboxScope(input.mailboxId);
@@ -3570,6 +3590,8 @@ const actionDefinitions = {
     },
     run: async (input: z.output<typeof c.TagDeleteInputSchema>, context: CapabilityExecutionContext) => {
       const t = mailCapabilityMessages(context.locale);
+      const retry = requireIdempotentRetry(context);
+      if (!retry.ok) return retry;
       const scope = await resolveMailboxScope(input.mailboxId);
       if (!scope.ok) return scope;
       const tagId = await resolveMailboxResource("tags", scope.data.id, input.tagId);
@@ -3597,7 +3619,7 @@ const actionDefinitions = {
     data: c.SubscriptionUnsubscribeDataSchema,
     destructive: true,
     openWorld: true,
-    idempotency: "none",
+    idempotency: "required",
     review: async (input: z.output<typeof c.SubscriptionUnsubscribeInputSchema>, context: CapabilityExecutionContext) => {
       const t = mailCapabilityMessages(context.locale);
       const scope = await resolveMailboxScope(input.mailboxId);
@@ -3621,6 +3643,8 @@ const actionDefinitions = {
     },
     run: async (input: z.output<typeof c.SubscriptionUnsubscribeInputSchema>, context: CapabilityExecutionContext) => {
       const t = mailCapabilityMessages(context.locale);
+      const retry = requireIdempotentRetry(context);
+      if (!retry.ok) return retry;
       const scope = await resolveMailboxScope(input.mailboxId);
       if (!scope.ok) return scope;
       const subscription = await listSubscriptions.getSubscription(requestContext(context), scope.data.id, input.listKey);

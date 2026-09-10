@@ -19,6 +19,7 @@ import {
   capabilityResultSchema,
   type User,
 } from "@k2b/cloud/contracts";
+import { audit } from "@k2b/cloud/services";
 import * as taskRuntime from "./ai-chat-tasks-runtime";
 import { aiCapabilities } from "./capabilities";
 
@@ -47,8 +48,12 @@ const context: CapabilityExecutionContext = {
   accessSubject: { type: "user", userId: user.id },
   user,
   locale: "en",
+  requestId: "core-capability-test-request",
+  origin: "assistant",
   signal: new AbortController().signal,
 };
+
+const idempotentContext: CapabilityExecutionContext = { ...context, idempotencyKey: "core-capability-test-key" };
 
 const chat: AiConversation = {
   id: "22222222-2222-4222-8222-222222222222",
@@ -190,18 +195,18 @@ describe("Core AI capabilities", () => {
     ).toEqual({
       "ai.chat.message": { destructive: false, idempotency: "required" },
       "ai.skill.create": { destructive: false, idempotency: "none" },
-      "ai.skill.delete": { destructive: true, idempotency: "none" },
-      "ai.skill.enabled.set": { destructive: true, idempotency: "none" },
-      "ai.skill.reference.remove": { destructive: true, idempotency: "none" },
-      "ai.skill.reference.set": { destructive: true, idempotency: "none" },
-      "ai.skill.references.set": { destructive: true, idempotency: "none" },
-      "ai.skill.update": { destructive: true, idempotency: "none" },
+      "ai.skill.delete": { destructive: true, idempotency: "required" },
+      "ai.skill.enabled.set": { destructive: false, idempotency: "none" },
+      "ai.skill.reference.remove": { destructive: false, idempotency: "none" },
+      "ai.skill.reference.set": { destructive: false, idempotency: "none" },
+      "ai.skill.references.set": { destructive: false, idempotency: "none" },
+      "ai.skill.update": { destructive: false, idempotency: "none" },
       "ai.task.create": { destructive: false, idempotency: "required" },
-      "ai.task.delete": { destructive: true, idempotency: "none" },
-      "ai.task.pause": { destructive: true, idempotency: "none" },
-      "ai.task.resume": { destructive: true, idempotency: "none" },
+      "ai.task.delete": { destructive: true, idempotency: "required" },
+      "ai.task.pause": { destructive: false, idempotency: "none" },
+      "ai.task.resume": { destructive: false, idempotency: "none" },
       "ai.task.run": { destructive: false, idempotency: "required" },
-      "ai.task.update": { destructive: true, idempotency: "none" },
+      "ai.task.update": { destructive: false, idempotency: "none" },
     });
     expect(aiCapabilities.actions["ai.chat.message"].input.safeParse({ chatId: chat.shortId, text: "x".repeat(10_001) }).success).toBe(
       false,
@@ -372,6 +377,7 @@ describe("Core AI capabilities", () => {
     spyOn(aiSkills, "removeReference").mockResolvedValue({ ...skill, references: [], referenceCount: 0, revision: 2 });
     spyOn(aiSkills, "setEnabled").mockResolvedValue(false);
     spyOn(aiSkills, "delete").mockResolvedValue(true);
+    spyOn(audit, "recordResultAfterSideEffect").mockImplementation(async ({ result }) => result);
 
     const updateReview = await aiCapabilities.actions["ai.skill.update"].review!(
       { skillId: skill.shortId, expectedRevision: 1, description: "Updated description." },
@@ -411,7 +417,7 @@ describe("Core AI capabilities", () => {
         context,
       ),
       "ai.skill.enabled.set": await aiCapabilities.actions["ai.skill.enabled.set"].run({ skillId: skill.shortId, enabled: false }, context),
-      "ai.skill.delete": await aiCapabilities.actions["ai.skill.delete"].run({ skillId: skill.shortId }, context),
+      "ai.skill.delete": await aiCapabilities.actions["ai.skill.delete"].run({ skillId: skill.shortId }, idempotentContext),
     };
 
     for (const [localId, result] of Object.entries(results)) {
@@ -430,6 +436,25 @@ describe("Core AI capabilities", () => {
       ],
     });
     expect(get).toHaveBeenCalledWith(skill.shortId, context.accessSubject, "admin");
+  });
+
+  test("writes the request id of an irreversible Skill delete into the audit row", async () => {
+    spyOn(aiSkills, "getByShortId").mockResolvedValue(skill);
+    spyOn(aiSkills, "delete").mockResolvedValue(true);
+    const recorded = spyOn(audit, "recordResultAfterSideEffect").mockImplementation(async ({ result }) => result);
+
+    const missingKey = await aiCapabilities.actions["ai.skill.delete"].run({ skillId: skill.shortId }, context);
+    expect(missingKey).toMatchObject({ ok: false, error: { code: "BAD_INPUT" } });
+
+    const deleted = await aiCapabilities.actions["ai.skill.delete"].run({ skillId: skill.shortId }, idempotentContext);
+
+    expect(deleted.ok).toBeTrue();
+    expect(recorded).toHaveBeenCalledTimes(1);
+    expect(recorded.mock.calls[0]?.[0]).toMatchObject({
+      action: "core.capability.ai.skill.delete",
+      requestId: idempotentContext.requestId,
+      target: { type: "ai_skill", id: skill.id },
+    });
   });
 
   test("returns a schema-valid user outcome from every Core action", async () => {
@@ -474,7 +499,6 @@ describe("Core AI capabilities", () => {
       },
     });
 
-    const idempotentContext = { ...context, idempotencyKey: "core-summary-test" };
     const results = {
       "ai.task.create": await aiCapabilities.actions["ai.task.create"].run(
         {
@@ -492,7 +516,7 @@ describe("Core AI capabilities", () => {
       "ai.task.pause": await aiCapabilities.actions["ai.task.pause"].run({ taskId: scheduledTask.shortId }, context),
       "ai.task.resume": await aiCapabilities.actions["ai.task.resume"].run({ taskId: scheduledTask.shortId }, context),
       "ai.task.run": await aiCapabilities.actions["ai.task.run"].run({ taskId: scheduledTask.shortId }, idempotentContext),
-      "ai.task.delete": await aiCapabilities.actions["ai.task.delete"].run({ taskId: scheduledTask.shortId }, context),
+      "ai.task.delete": await aiCapabilities.actions["ai.task.delete"].run({ taskId: scheduledTask.shortId }, idempotentContext),
       "ai.chat.message": await aiCapabilities.actions["ai.chat.message"].run(
         { chatId: "cHt567", text: "Please verify it." },
         idempotentContext,

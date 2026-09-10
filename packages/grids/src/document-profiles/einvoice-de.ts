@@ -1,3 +1,4 @@
+import { type RenderFacturXHtmlToPdfInput, renderFacturXHtmlToPdf } from "@k2b/cloud/services/pdf";
 import {
   buildXml,
   DocumentTypeCode,
@@ -10,7 +11,6 @@ import {
   validateInput,
   validateXsd,
 } from "@stackforge-eu/factur-x";
-import { type RenderFacturXHtmlToPdfInput, renderFacturXHtmlToPdf } from "@k2b/cloud/services/pdf";
 import Decimal from "decimal.js";
 import { z } from "zod";
 import type { DocumentProfile } from "../document-profiles";
@@ -93,7 +93,33 @@ export const germanEInvoiceSnapshotSchema = z
     if (value.dueDate < value.invoiceDate) ctx.addIssue({ code: "custom", path: ["dueDate"], message: "must not precede invoiceDate" });
   });
 
-type GermanEInvoiceSnapshot = z.infer<typeof germanEInvoiceSnapshotSchema>;
+const billingKindSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("invoice") }).strict(),
+  z
+    .object({
+      kind: z.literal("creditNote"),
+      original: z.object({ number: text(100), invoiceDate: date }).strict(),
+      reason: text(500),
+    })
+    .strict(),
+  z.object({ kind: z.literal("selfBilling"), agreementReference: text(200) }).strict(),
+]);
+
+export const germanBillingSnapshotSchema = germanEInvoiceSnapshotSchema
+  .safeExtend({
+    billing: billingKindSchema,
+    serviceDate: date,
+  })
+  .superRefine((value, ctx) => {
+    if (value.billing.kind === "creditNote" && value.billing.original.invoiceDate > value.invoiceDate) {
+      ctx.addIssue({ code: "custom", path: ["billing", "original", "invoiceDate"], message: "must not follow invoiceDate" });
+    }
+    if (value.seller.vatId === value.buyer.vatId) {
+      ctx.addIssue({ code: "custom", path: ["buyer", "vatId"], message: "seller and buyer must be different parties" });
+    }
+  });
+
+type GermanEInvoiceSnapshot = z.infer<typeof germanEInvoiceSnapshotSchema> | z.infer<typeof germanBillingSnapshotSchema>;
 type Render = (input: RenderFacturXHtmlToPdfInput) => Promise<{ pdf: Uint8Array }>;
 type Validate = (input: { xml: string }) => Promise<{ valid: boolean; errors: unknown[] }>;
 type ExtractEmbedded = (pdf: Uint8Array) => Promise<{ filename: string; xml: string }>;
@@ -126,6 +152,7 @@ const facturXInput = (
   context: Parameters<DocumentProfile<GermanEInvoiceSnapshot>["issue"]>[1],
 ): FacturXInvoiceInput => {
   const totals = calculate(snapshot);
+  const billing = "billing" in snapshot ? snapshot.billing : undefined;
   const party = (value: GermanEInvoiceSnapshot["seller"]) => ({
     name: value.name,
     address: {
@@ -140,9 +167,24 @@ const facturXInput = (
     document: {
       id: context.number,
       issueDate: snapshot.invoiceDate,
-      typeCode: DocumentTypeCode.COMMERCIAL_INVOICE,
+      typeCode:
+        billing?.kind === "creditNote"
+          ? DocumentTypeCode.CREDIT_NOTE
+          : billing?.kind === "selfBilling"
+            ? DocumentTypeCode.SELF_BILLED_INVOICE
+            : DocumentTypeCode.COMMERCIAL_INVOICE,
       buyerReference: snapshot.buyerReference,
+      ...(billing?.kind === "creditNote"
+        ? { notes: [{ content: billing.reason }] }
+        : billing?.kind === "selfBilling"
+          ? { notes: [{ content: `Gutschrift (Selbstabrechnung). Vereinbarung: ${billing.agreementReference}` }] }
+          : {}),
     },
+    ...(billing?.kind === "creditNote"
+      ? {
+          references: [{ type: "preceding" as const, id: billing.original.number, issueDate: billing.original.invoiceDate }],
+        }
+      : {}),
     seller: party(snapshot.seller),
     buyer: party(snapshot.buyer),
     lines: totals.lines.map((line) => ({
@@ -151,6 +193,9 @@ const facturXInput = (
       quantity: Number(line.quantity),
       unitCode: UnitCode.UNIT,
       unitPrice: Number(line.unitPrice),
+      // The library otherwise recalculates using binary floating point and
+      // validates the header against unrounded products, unlike the PDF.
+      lineTotal: Number(money(line.net)),
       vatCategoryCode: VatCategoryCode.STANDARD_RATE,
       vatRatePercent: Number(line.taxRate),
     })),
@@ -176,7 +221,7 @@ const facturXInput = (
       accountName: snapshot.payment.accountName,
       dueDate: snapshot.dueDate,
     },
-    delivery: { date: snapshot.invoiceDate },
+    delivery: { date: "serviceDate" in snapshot ? snapshot.serviceDate : snapshot.invoiceDate },
   };
 };
 
@@ -193,7 +238,17 @@ export const buildGermanEInvoiceXml = (
 
 const buildHtml = (snapshot: GermanEInvoiceSnapshot, number: string) => {
   const totals = calculate(snapshot);
-  return `<!doctype html><html lang="de"><head><meta charset="utf-8"><style>@page{size:A4;margin:18mm}body{font:12px system-ui;color:#17202a}h1{font-size:24px}table{width:100%;border-collapse:collapse;margin-top:24px}th,td{padding:8px;border-bottom:1px solid #ccd1d1;text-align:right}th:first-child,td:first-child{text-align:left}.total{font-weight:700}</style></head><body><h1>Rechnung ${escapeHtml(number)}</h1><p>${escapeHtml(snapshot.seller.name)} · ${escapeHtml(snapshot.seller.address.line1)} · ${escapeHtml(snapshot.seller.address.postalCode)} ${escapeHtml(snapshot.seller.address.city)}</p><p>An: ${escapeHtml(snapshot.buyer.name)}<br>${escapeHtml(snapshot.buyer.address.line1)}<br>${escapeHtml(snapshot.buyer.address.postalCode)} ${escapeHtml(snapshot.buyer.address.city)}</p><p>Rechnungsdatum: ${snapshot.invoiceDate} · Fällig: ${snapshot.dueDate}</p><table><thead><tr><th>Leistung</th><th>Menge</th><th>Einzelpreis</th><th>USt.</th><th>Netto</th></tr></thead><tbody>${totals.lines.map((line) => `<tr><td>${escapeHtml(line.name)}</td><td>${line.quantity}</td><td>${line.unitPrice} EUR</td><td>${line.taxRate} %</td><td>${money(line.net)} EUR</td></tr>`).join("")}<tr><td colspan="4">Netto</td><td>${money(totals.net)} EUR</td></tr><tr><td colspan="4">Umsatzsteuer</td><td>${money(totals.tax)} EUR</td></tr><tr class="total"><td colspan="4">Gesamt</td><td>${money(totals.total)} EUR</td></tr></tbody></table><p>IBAN: ${snapshot.payment.iban}</p></body></html>`;
+  const billing = "billing" in snapshot ? snapshot.billing : undefined;
+  const title =
+    billing?.kind === "creditNote" ? "Rechnungskorrektur" : billing?.kind === "selfBilling" ? "Gutschrift (Selbstabrechnung)" : "Rechnung";
+  const detail =
+    billing?.kind === "creditNote"
+      ? `<p>Bezug: ${escapeHtml(billing.original.number)} vom ${billing.original.invoiceDate}<br>${escapeHtml(billing.reason)}</p>`
+      : billing?.kind === "selfBilling"
+        ? `<p>Erstellt durch den Leistungsempfänger (Käufer). Vereinbarung: ${escapeHtml(billing.agreementReference)}</p>`
+        : "";
+  const service = "serviceDate" in snapshot ? `<p>Leistungsdatum: ${snapshot.serviceDate}</p>` : "";
+  return `<!doctype html><html lang="de"><head><meta charset="utf-8"><style>@page{size:A4;margin:18mm}body{font:12px system-ui;color:#17202a}h1{font-size:24px}table{width:100%;border-collapse:collapse;margin-top:24px}th,td{padding:8px;border-bottom:1px solid #ccd1d1;text-align:right}th:first-child,td:first-child{text-align:left}.total{font-weight:700}</style></head><body><h1>${title} ${escapeHtml(number)}</h1>${detail}${service}<p>${escapeHtml(snapshot.seller.name)} · ${escapeHtml(snapshot.seller.address.line1)} · ${escapeHtml(snapshot.seller.address.postalCode)} ${escapeHtml(snapshot.seller.address.city)}</p><p>An: ${escapeHtml(snapshot.buyer.name)}<br>${escapeHtml(snapshot.buyer.address.line1)}<br>${escapeHtml(snapshot.buyer.address.postalCode)} ${escapeHtml(snapshot.buyer.address.city)}</p><p>Rechnungsdatum: ${snapshot.invoiceDate} · Fällig: ${snapshot.dueDate}</p><table><thead><tr><th>Leistung</th><th>Menge</th><th>Einzelpreis</th><th>USt.</th><th>Netto</th></tr></thead><tbody>${totals.lines.map((line) => `<tr><td>${escapeHtml(line.name)}</td><td>${line.quantity}</td><td>${line.unitPrice} EUR</td><td>${line.taxRate} %</td><td>${money(line.net)} EUR</td></tr>`).join("")}<tr><td colspan="4">Netto</td><td>${money(totals.net)} EUR</td></tr><tr><td colspan="4">Umsatzsteuer</td><td>${money(totals.tax)} EUR</td></tr><tr class="total"><td colspan="4">Gesamt</td><td>${money(totals.total)} EUR</td></tr></tbody></table><p>IBAN: ${snapshot.payment.iban}</p></body></html>`;
 };
 
 export const createGermanEInvoiceProfile = (
@@ -240,3 +295,16 @@ export const createGermanEInvoiceProfile = (
 });
 
 export const germanEInvoiceProfile = createGermanEInvoiceProfile();
+
+export const createGermanBillingProfile = (
+  dependencies: Parameters<typeof createGermanEInvoiceProfile>[0] = {},
+): DocumentProfile<z.infer<typeof germanBillingSnapshotSchema>> => ({
+  ...createGermanEInvoiceProfile(dependencies),
+  version: 2,
+  title: "German invoices, credit notes and self-billing (ZUGFeRD EN 16931)",
+  description:
+    "EUR invoices, credit notes referring to an original invoice, and self-billing with an agreement reference. Seller remains the supplier and buyer the customer. Technical validation is not tax or legal approval; original-document eligibility and remaining credit or settlement balances must be checked by the issuing workflow.",
+  input: germanBillingSnapshotSchema,
+});
+
+export const germanBillingProfile = createGermanBillingProfile();

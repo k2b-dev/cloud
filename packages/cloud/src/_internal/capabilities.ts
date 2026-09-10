@@ -499,8 +499,27 @@ export const compileCapabilities = (appId: string, definitions: CapabilityDefini
   for (const [localId, definition] of Object.entries(definitions.actions ?? {}).sort(([left], [right]) => left.localeCompare(right))) {
     registerLocalId(localId, "Action");
     const label = `Action ${localId}`;
+    // Declaration rule, documented in docs/platform/capabilities.md:
+    // destructive means irreversible or externally visible. An irreversible or
+    // open-world effect must always be reviewable and safely repeatable, and
+    // must never be approved once and then replayed silently.
+    if (definition.destructive && !definition.review) {
+      throw new Error(`${label} is destructive and must declare review()`);
+    }
+    if (definition.destructive && definition.idempotency !== "required") {
+      throw new Error(`${label} is destructive and must declare idempotency: "required"`);
+    }
+    if (definition.openWorld && !definition.review) {
+      throw new Error(`${label} is open-world and must declare review()`);
+    }
+    if (definition.openWorld && definition.idempotency !== "required") {
+      throw new Error(`${label} is open-world and must declare idempotency: "required"`);
+    }
     if (definition.approval === "rememberable" && definition.openWorld) {
       throw new Error(`${label} cannot remember approval for an open-world effect`);
+    }
+    if (definition.approval === "rememberable" && definition.destructive) {
+      throw new Error(`${label} cannot remember approval for a destructive effect`);
     }
     if (definition.approval === "rememberable" && !definition.review) {
       throw new Error(`${label} must provide a review before approval can be remembered`);

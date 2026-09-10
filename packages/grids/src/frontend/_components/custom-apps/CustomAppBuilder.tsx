@@ -1,3 +1,4 @@
+import type { WorkflowJsonValue } from "@k2b/cloud/workflows";
 import { documentNavigate } from "@k2b/ssr/nav";
 import type { DateContext } from "@k2b/stdlib";
 import { dnd, mutation as mutations } from "@k2b/stdlib/solid";
@@ -24,7 +25,6 @@ import {
   TextInput,
   Toolbar,
 } from "@k2b/ui";
-import type { WorkflowJsonValue } from "@k2b/cloud/workflows";
 import { batch, createEffect, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "../../../api/client";
 import type { PublicDslQueryPreviewResponse as DslQueryPreviewResponse } from "../../../api/gql-public";
@@ -3360,6 +3360,20 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                             updateSelectedBlock((block) =>
                               block.type === "form" ? { ...block, formId, fixedValues: {}, onSuccessNavigate: undefined } : block,
                             );
+                          }}
+                        />
+                        <Select
+                          label={text("Form action")}
+                          error={() => diagnosticFor(selected().block.id, "mode")}
+                          description={text("Editing uses the record bound to this page and saves its related rows together.")}
+                          value={() => selectedFormBlock()?.mode ?? "create"}
+                          options={[
+                            { id: "create", label: text("Create a record") },
+                            { id: "edit", label: text("Edit this page's record"), disabled: !selectedPage().record },
+                          ]}
+                          onValueChange={(mode) => {
+                            if (mode !== "create" && mode !== "edit") return;
+                            updateSelectedBlock((block) => (block.type === "form" ? { ...block, mode } : block));
                           }}
                         />
                       </DetailPanel.Section>

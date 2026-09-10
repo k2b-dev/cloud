@@ -88,6 +88,53 @@ describe("guarded dialog dismissal", () => {
   });
 });
 
+test("aborting a dialog closes only its own stack entry", async () => {
+  const dom = createDomTestHarness();
+  const core = createDialogCore();
+  const controller = new AbortController();
+  let closeChild: () => void = () => {};
+  const parent = core.open(() => document.createTextNode("Parent"), { signal: controller.signal });
+  const child = core.open((close) => {
+    closeChild = close;
+    return document.createTextNode("Child");
+  });
+  controller.abort();
+  expect(await parent).toBeUndefined();
+  expect(core.isOpen()).toBe(true);
+  expect(dom.document.body.textContent).toContain("Child");
+  expect(dom.document.body.textContent).not.toContain("Parent");
+  closeChild();
+  await child;
+  expect(core.isOpen()).toBe(false);
+  const aborted = new AbortController();
+  aborted.abort();
+  let mounted = false;
+  await core.open(
+    () => {
+      mounted = true;
+      return document.createTextNode("No");
+    },
+    { signal: aborted.signal },
+  );
+  expect(mounted).toBe(false);
+  dom.cleanup();
+});
+
+test("aborting the top dialog resolves cancellation and restores its parent", async () => {
+  const dom = createDomTestHarness();
+  const core = createDialogCore();
+  const parent = core.open(() => document.createTextNode("Parent"));
+  const controller = new AbortController();
+  const child = core.open(() => document.createTextNode("Child"), { signal: controller.signal });
+  controller.abort();
+  expect(await child).toBeUndefined();
+  expect(dom.document.body.textContent).toContain("Parent");
+  expect(dom.document.body.textContent).not.toContain("Child");
+  core.close();
+  await parent;
+  dom.cleanup();
+});
+
 const forceNativeClose = (dialog: HTMLDialogElement) => {
   dialog.dispatchEvent(new Event("cancel", { cancelable: false }));
   dialog.removeAttribute("open");
@@ -155,5 +202,19 @@ test("ignore keeps its content after forced native close", async () => {
   expect(dialog.textContent).toBe("Keep me");
   core.close();
   await result;
+  dom.cleanup();
+});
+
+test("default dialog focus prefers an input over the preceding close button", async () => {
+  const dom = createDomTestHarness();
+  const core = createDialogCore();
+  const content = dom.document.createElement("div");
+  const close = dom.document.createElement("button");
+  const input = dom.document.createElement("input");
+  content.append(close, input);
+  const result = core.open(() => content);
+  await Bun.sleep(30);
+  expect(dom.document.activeElement).toBe(input);
+  core.close(); await result;
   dom.cleanup();
 });

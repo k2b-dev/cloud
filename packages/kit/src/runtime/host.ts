@@ -3,6 +3,13 @@ import { FileOpenOptions, WorkerMessage, type UiNode } from "./protocol";
 import { sandboxDocument } from "./sandbox";
 import { AppStorage } from "./storage";
 export type RunHooks = {
+  modal?: (request: unknown, signal: AbortSignal) => Promise<unknown>;
+  database?: (
+    method: string,
+    args: unknown[],
+    signal: AbortSignal,
+    progress: (value: import("../database-import").ImportProgress) => void,
+  ) => Promise<unknown>;
   ui: (nodes: UiNode[]) => void;
   log: (level: string, text: string) => void;
   error: (message: string) => void;
@@ -17,6 +24,7 @@ export function startRun(container: HTMLElement, source: { runtime: string; code
   frame.hidden = true;
   frame.title = "Isolated app runtime";
   frame.srcdoc = sandboxDocument();
+  const abort = new AbortController();
   let stopped = false,
     windowStart = Date.now(),
     messages = 0,
@@ -30,6 +38,7 @@ export function startRun(container: HTMLElement, source: { runtime: string; code
     if (stopped) return chain;
     post({ type: "stop" });
     stopped = true;
+    abort.abort();
     window.removeEventListener("message", receive);
     frame.remove();
     hooks.busy(false);
@@ -54,7 +63,12 @@ export function startRun(container: HTMLElement, source: { runtime: string; code
           : n.kind === "list"
             ? n.items.flatMap((item) => (item.action ? [item.action] : []))
             : n.children;
-      if (JSON.stringify(references) !== JSON.stringify(n.children)) throw new Error("Invalid layout references");
+      // Lists retain ownership of reusable actions whose rows are temporarily absent.
+      const validReferences =
+        n.kind === "list"
+          ? new Set(references).size === references.length && references.every((id) => n.children.includes(id))
+          : JSON.stringify(references) === JSON.stringify(n.children);
+      if (!validReferences) throw new Error("Invalid layout references");
       if (new Set(n.items.map((item) => item.id)).size !== n.items.length) throw new Error("Duplicate list item ids");
       for (const c of n.children) {
         if (parent.has(c)) throw new Error("UI child has two parents");
@@ -65,8 +79,16 @@ export function startRun(container: HTMLElement, source: { runtime: string; code
     const workbenches = nodes.filter((n) => n.kind === "workbench");
     if (workbenches.length > 1 || workbenches.some((n) => parent.has(n.id))) throw new Error("Workbench must be a single root layout");
   }
-  async function request(method: string, args: unknown[]) {
+  async function request(method: string, args: unknown[], requestId: number) {
     if (stopped) throw new Error("Run stopped");
+    if (method === "ui.modal") {
+      if (!hooks.modal) throw new Error("Modal host unavailable");
+      return hooks.modal(args[0], abort.signal);
+    }
+    if (method === "db.call" || method === "db.import") {
+      if (!hooks.database) throw new Error("Database host unavailable");
+      return hooks.database(method, args, abort.signal, (value) => post({ type: "dbProgress", id: requestId, value }));
+    }
     if (method.startsWith("store.") || method.startsWith("opfs.")) return storage.call(method, args);
     if (method === "file.open" || method === "file.openMultiple" || method === "file.openFolder") {
       const options = FileOpenOptions.parse(args[0] ?? {});
@@ -131,7 +153,7 @@ export function startRun(container: HTMLElement, source: { runtime: string; code
             return;
           }
           try {
-            const value = await request(m.method, m.args);
+            const value = await request(m.method, m.args, m.id);
             post({ type: "result", id: m.id, value });
           } catch (e) {
             post({

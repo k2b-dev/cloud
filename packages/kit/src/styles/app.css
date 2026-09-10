@@ -257,3 +257,5 @@
 }
 
 .kit-markdown-page { min-width: 0; padding: 1rem; overflow: auto; flex: 1; }
+
+.kit-runtime-workbench-full { grid-template-columns: minmax(0, 1fr); }

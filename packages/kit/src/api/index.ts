@@ -1,3 +1,6 @@
+import { databaseApi } from "./database";
+import { DatabaseError } from "../service/database";
+import { databaseErrorMessage } from "../database-messages";
 import { type AuthContext, auth, getLocale, rateLimit, respond, v } from "@k2b/cloud/server";
 import { ok } from "@k2b/stdlib";
 import { type Context, Hono } from "hono";
@@ -29,6 +32,8 @@ const router = new Hono<AuthContext>()
     await next();
   })
   .onError((e, c) => {
+    if (e instanceof DatabaseError)
+      return respond(c, { ok: false, error: databaseErrorMessage(e.code, getLocale(c)), status: e.status, code: e.code });
     if (e instanceof ProjectValidationError)
       return respond(c, { ok: false, error: e.localized(getLocale(c)), status: 400, code: "INVALID_PROJECT" });
     if (e instanceof ProjectError)
@@ -38,6 +43,7 @@ const router = new Hono<AuthContext>()
     console.error("Kit API failed", e instanceof Error ? e.message : "Unknown error");
     return respond(c, { ok: false, error: apiErrorMessage("REQUEST_FAILED", getLocale(c)), status: 500, code: "REQUEST_FAILED" });
   })
+  .route("/", databaseApi)
   .get("/sdk", (c) => respond(c, ok(sdkReference)))
   .get("/starter", (c) => respond(c, ok(starter)))
   .get("/projects", describeRoute({ tags: ["Kit"], summary: "List accessible Kit apps" }), async (c) => {

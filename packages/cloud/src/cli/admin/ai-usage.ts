@@ -1,7 +1,8 @@
+import type { AiUsageReport, AiUsageRun } from "../../ai/usage";
+import { AI_USAGE_RANGES, AI_USAGE_REASONS } from "../../shared/ai-usage";
 import { arg, command, flag } from "../index";
 import { apiGet, printJsonOrTable } from "./shared";
-import { AI_USAGE_RANGES, AI_USAGE_REASONS } from "../../shared/ai-usage";
-import type { AiUsageReport, AiUsageRun } from "../../ai/usage";
+
 const filters = {
   range: flag.enum(AI_USAGE_RANGES, { default: "30d", description: "Response/run period" }),
   until: flag.string({ description: "Fixed ISO end time; reuse report.query.until across pages" }),
@@ -9,9 +10,9 @@ const filters = {
   modelProfileId: flag.string({ name: "model", description: "Model profile ID" }),
   providerModel: flag.string({ name: "provider-model", description: "Actual provider model" }),
   appId: flag.string({ name: "app", description: "Source application ID" }),
-  kind: flag.enum(["chat", "background", "tool"] as const, { description: "Run kind (runs only)" }),
+  kind: flag.enum(["chat", "background"] as const, { description: "Run kind (runs only)" }),
   status: flag.string({ description: "Run status, e.g. failed (runs only)" }),
-  task: flag.string({ description: "Exact task or tool name (runs only)" }),
+  task: flag.string({ description: "Exact background task name (runs only)" }),
   errorCode: flag.string({ name: "error-code", description: "Stored error code (runs only)" }),
   search: flag.string({ description: "Search task and error text (runs/facets only)" }),
   rating: flag.enum(["up", "down"] as const, { description: "Rating (feedback only)" }),
@@ -30,7 +31,7 @@ const params = (values: Record<string, string | number | undefined>) => {
   return q;
 };
 export const aiUsageCommands = [
-  ...(["report", "users", "models", "tasks", "apps", "launches", "capabilities", "feedback", "runs"] as const).map((section) =>
+  ...(["report", "users", "models", "tasks", "apps", "launches", "feedback", "runs"] as const).map((section) =>
     command(`ai usage ${section}`, {
       summary:
         section === "report"

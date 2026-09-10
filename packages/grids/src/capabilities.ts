@@ -1204,17 +1204,34 @@ const resolveRecordValues = async (tableId: string, values: Record<string, unkno
 
 const runRecordCreate = async (input: z.infer<typeof RecordCreateInputSchema>, context: CapabilityExecutionContext) => {
   const t = capabilityMessagesFor(context.locale);
+  if (!context.idempotencyKey) return fail(err.badInput(t.idempotencyRequired));
   const access = accessContext(context);
   const table = await requireTable(input.tableId, access, "write", context.locale);
   if (!table.ok) return table;
   const values = await resolveRecordValues(table.data.id, input.values, context.locale);
   if (!values.ok) return values;
   const dateConfig = await capabilityDateConfig(context.locale);
-  const result = await gridsService.record.create(table.data.id, values.data.values, accessActorUser(access)?.id ?? null, "direct", {
-    dateConfig,
-    viewer: actorViewerFor(access),
-  });
-  return result.ok ? recordResult(result.data, table.data, t.createdRecord({ id: result.data.shortId, table: table.data.name })) : result;
+  const result = await gridsService.record.createIdempotent(
+    table.data.id,
+    values.data.values,
+    accessActorUser(access)?.id ?? null,
+    "direct",
+    {
+      scope: `capability:record.create:${gridsService.record.external.externalRecordRequestHash(context.accessSubject)}`,
+      key: context.idempotencyKey,
+      requestHash: gridsService.record.external.externalRecordRequestHash(input),
+    },
+    { dateConfig, viewer: actorViewerFor(access) },
+  );
+  if (!result.ok) return result;
+  const { record, replayed } = result.data;
+  return recordResult(
+    record,
+    table.data,
+    replayed
+      ? t.replayedRecord({ id: record.shortId, table: table.data.name })
+      : t.createdRecord({ id: record.shortId, table: table.data.name }),
+  );
 };
 
 const runRecordExternalUpsert = async (input: z.infer<typeof RecordExternalUpsertInputSchema>, context: CapabilityExecutionContext) => {
@@ -1497,12 +1514,12 @@ export const gridsCapabilities = defineCapabilities({
     "record.create": {
       title: "Create Grids Record",
       description:
-        "Call gql.context kind fields with includeWriteContext true first, then create once with values keyed by writable Field public ID. Select values use option IDs. Returns bounded metadata; read values with targeted GQL. This action is not idempotent.",
+        "Call gql.context kind fields with includeWriteContext true first, then create once with values keyed by writable Field public ID. Select values use option IDs. Returns bounded metadata; read values with targeted GQL. Reuse the idempotency key only to retry the same create.",
       input: RecordCreateInputSchema,
       data: RecordCapabilityDataSchema,
       destructive: false,
       openWorld: false,
-      idempotency: "none",
+      idempotency: "required",
       run: runRecordCreate,
     },
     "record.upsert-external": {
@@ -1512,7 +1529,7 @@ export const gridsCapabilities = defineCapabilities({
         "The first request creates it; later updates require ifVersion and patch only supplied Field IDs.",
       input: RecordExternalUpsertInputSchema,
       data: RecordExternalUpsertDataSchema,
-      destructive: true,
+      destructive: false,
       openWorld: false,
       idempotency: "required",
       approval: "rememberable",
@@ -1545,7 +1562,7 @@ export const gridsCapabilities = defineCapabilities({
         "Load gql.context kind fields with includeWriteContext true for value and audit requirements, then record.read for ifVersion. Only supplied Field public IDs change; stale versions are rejected. Returns bounded metadata; read values with targeted GQL.",
       input: RecordUpdateInputSchema,
       data: RecordCapabilityDataSchema,
-      destructive: true,
+      destructive: false,
       openWorld: false,
       idempotency: "none",
       approval: "rememberable",

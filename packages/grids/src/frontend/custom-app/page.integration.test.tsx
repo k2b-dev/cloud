@@ -2,6 +2,7 @@ import { beforeAll, describe, expect, spyOn } from "bun:test";
 import type { AuthContext } from "@k2b/cloud/server";
 import { sql } from "bun";
 import { Hono } from "hono";
+import { createCustomAppsApi } from "../../api/custom-apps";
 import type { CustomAppDefinition } from "../../custom-apps/contracts";
 import { postgresTest, testShortId, testUuid } from "../../integration-test-utils";
 import { migrate } from "../../migrate";
@@ -22,6 +23,10 @@ describe("published App SSR availability", () => {
     const tableId = testUuid();
     const fieldId = testUuid();
     const recordId = testUuid();
+    const childId = testUuid();
+    const relationId = testUuid();
+    const childPublicId = testShortId("R");
+    const relationPublicId = testShortId("F");
     const viewId = testUuid();
     const metricViewId = testUuid();
     const formId = testUuid();
@@ -43,11 +48,22 @@ describe("published App SSR availability", () => {
         VALUES (${fieldId}::uuid, ${fieldPublicId}, ${tableId}::uuid, 'Subject', 'text', '{}'::jsonb, 0)`;
       await sql`INSERT INTO grids.records (id, short_id, table_id, data)
         VALUES (${recordId}::uuid, ${recordPublicId}, ${tableId}::uuid, ${{ [fieldId]: "Public binding survives SSR" }}::jsonb)`;
+      await sql`INSERT INTO grids.fields (id, short_id, table_id, name, type, config, position)
+        VALUES (${relationId}::uuid, ${relationPublicId}, ${tableId}::uuid, 'Lines', 'relation', ${{ targetTableId: tableId, cardinality: "multiple" }}::jsonb, 1)`;
+      await sql`INSERT INTO grids.records (id, short_id, table_id, data)
+        VALUES (${childId}::uuid, ${childPublicId}, ${tableId}::uuid, ${{ [fieldId]: "Existing line" }}::jsonb)`;
+      await sql`INSERT INTO grids.record_links (from_record_id, from_field_id, to_record_id)
+        VALUES (${recordId}::uuid, ${relationId}::uuid, ${childId}::uuid)`;
       await sql`INSERT INTO grids.views (id, short_id, table_id, name, source) VALUES
         (${viewId}::uuid, ${viewPublicId}, ${tableId}::uuid, 'Requests', ${`from table {${tablePublicId}}`}),
         (${metricViewId}::uuid, ${metricViewPublicId}, ${tableId}::uuid, 'Count', ${`from table {${tablePublicId}}\naggregate count(*) as Requests`})`;
       await sql`INSERT INTO grids.forms (id, short_id, table_id, name, config)
-        VALUES (${formId}::uuid, ${formPublicId}, ${tableId}::uuid, 'New request', ${{ fields: [{ kind: "user_input", fieldId }] }}::jsonb)`;
+        VALUES (${formId}::uuid, ${formPublicId}, ${tableId}::uuid, 'New request', ${{
+          fields: [
+            { kind: "user_input", fieldId },
+            { kind: "user_input", fieldId: relationId, inlineCreate: { enabled: true, fields: [{ fieldId }] } },
+          ],
+        }}::jsonb)`;
       const definition: CustomAppDefinition = {
         schemaVersion: 5,
         kind: "grids.custom-app",
@@ -93,6 +109,7 @@ describe("published App SSR availability", () => {
                       },
                       { id: "metric", type: "metrics", source: { kind: "view", viewId: metricViewPublicId } },
                       { id: "form", type: "form", formId: formPublicId, fixedValues: {} },
+                      { id: "edit-form", type: "form", formId: formPublicId, mode: "edit", fixedValues: {} },
                       {
                         id: "actions",
                         type: "actions",
@@ -140,8 +157,41 @@ describe("published App SSR availability", () => {
       expect(html).toContain(`request_id=${recordPublicId}`);
       expect(html).toContain(formPublicId);
       expect(html).toContain(fieldPublicId);
+      expect(html).toContain("edit-form/submit");
+      expect(html).toContain('value="Public binding survives SSR"');
+      expect(html).toContain('value="Existing line"');
+      expect(html).not.toContain(childId);
+      expect(html).not.toContain(relationId);
       for (const id of [baseId, tableId, fieldId, recordId, viewId, metricViewId, formId]) expect(html).not.toContain(id);
       expect(recordGet.mock.calls.some(([id, record]) => id === tableId && record === recordId)).toBe(true);
+      const api = createCustomAppsApi();
+      const editUrl = `/runtime/${appPublicId}/detail/edit-form/submit?request_id=${recordPublicId}`;
+      const body = {
+        version: 1,
+        idempotencyKey: "published-edit",
+        data: { [fieldPublicId]: "Edited through the published form", [relationPublicId]: [childPublicId] },
+        inlineUpdates: { [relationPublicId]: [{ recordId: childPublicId, version: 1, data: { [fieldPublicId]: "Edited line" } }] },
+      };
+      const send = (url: string, payload: unknown) =>
+        api.request(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload) });
+      const edited = await send(editUrl, body);
+      expect(edited.status).toBe(200);
+      expect(await edited.json()).toEqual({ recordId: recordPublicId });
+      expect((await send(editUrl, body)).status).toBe(200);
+      expect((await send(`/runtime/${appPublicId}/detail/form/submit?request_id=${recordPublicId}`, body)).status).toBe(400);
+      expect((await send(editUrl, { ...body, idempotencyKey: "stale-edit" })).status).toBe(409);
+      const [saved] = await sql<
+        { data: Record<string, unknown>; version: number }[]
+      >`SELECT data, version FROM grids.records WHERE id = ${recordId}::uuid`;
+      expect(saved?.data[fieldId]).toBe("Edited through the published form");
+      expect(saved?.version).toBe(2);
+      const [count] = await sql<{ count: number }[]>`SELECT count(*)::int AS count FROM grids.records WHERE table_id = ${tableId}::uuid`;
+      expect(count?.count).toBe(2);
+      const [child] = await sql<
+        { data: Record<string, unknown>; version: number }[]
+      >`SELECT data, version FROM grids.records WHERE id = ${childId}::uuid`;
+      expect(child?.data[fieldId]).toBe("Edited line");
+      expect(child?.version).toBe(2);
       expect((await app.request(`/${appPublicId}/detail?request_id=${recordId}`)).status).toBe(404);
       await sql`UPDATE grids.fields SET short_id = ${testShortId("F")} WHERE id = ${fieldId}::uuid`;
       expect((await app.request(`/${appPublicId}/detail?request_id=${recordPublicId}`)).status).toBe(404);

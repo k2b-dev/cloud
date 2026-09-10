@@ -643,6 +643,7 @@ describe("AI capability catalog", () => {
     let called = "";
     const loaded = createLoadedAiCapabilityTools({
       catalog,
+      actor,
       loadedNames: ["contacts.list", "removed.list"],
       execute: async (entry) => {
         called = entry.name;
@@ -671,6 +672,7 @@ describe("AI capability catalog", () => {
     const actionPrepared = prepareAiTools({
       tools: createLoadedAiCapabilityTools({
         catalog,
+        actor,
         loadedNames: ["contacts.create"],
         review: async () => ({
           message: "Create a contact.",

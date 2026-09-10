@@ -414,7 +414,8 @@ const audited = async <T>(
     action: string;
     actor: AuditActor;
     target: { type: string; id?: string; label?: string };
-    metadata: { capability: string };
+    requestId: string;
+    metadata: { capability: string; origin: string };
   },
   operation: () => Promise<CapabilityInvocationResult<T>>,
 ): Promise<CapabilityInvocationResult<T>> => {
@@ -428,7 +429,8 @@ const runLocationCreate = async (input: z.infer<typeof LocationCreateInputSchema
       action: "weather.capability.location.create",
       actor: capabilityAuditActor(context),
       target: { type: "weather_location", label: input.name },
-      metadata: { capability: "weather.location.create" },
+      requestId: context.requestId,
+      metadata: { capability: "weather.location.create", origin: context.origin },
     },
     async () => {
       const { t } = resolveWeatherMessages(context.locale);
@@ -452,7 +454,8 @@ const runLocationDelete = async (input: z.infer<typeof LocationTargetInputSchema
       action: "weather.capability.location.delete",
       actor: capabilityAuditActor(context),
       target: { type: "weather_location", id: input.locationId },
-      metadata: { capability: "weather.location.delete" },
+      requestId: context.requestId,
+      metadata: { capability: "weather.location.delete", origin: context.origin },
     },
     async () => {
       const { t } = resolveWeatherMessages(context.locale);
@@ -580,7 +583,7 @@ export const weatherCapabilities = defineCapabilities({
       data: LocationDeleteDataSchema,
       destructive: true,
       openWorld: false,
-      idempotency: "none",
+      idempotency: "required",
       review: async (input, context) => {
         const { t } = resolveWeatherMessages(context.locale);
         const userId = requireUserId(context);

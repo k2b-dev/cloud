@@ -11,7 +11,37 @@ export const sdkReference = {
     localItemMiB: 16,
   },
   methods: [
-    ["pdf.text", "pdf.text(file, { onProgress? })", "Extract local PDF text with PDF.js as [{ page, text }]. No OCR, rendering or uploads. Up to 16 MiB input/text and 1000 pages. onProgress(page, total); Stop terminates the worker."],
+    [
+      "db.tables.list",
+      "db.tables.list()",
+      "List tables and row counts in the shared server database. Requires globally enabled rsql and app database activation.",
+    ],
+    [
+      "db.tables.create",
+      "db.tables.create({ name, columns })",
+      "Create a table. Requires App Admin. Columns have name, type and optional not_null, unique, index.",
+    ],
+    ["db.tables.delete", "db.tables.delete(name)", "Delete a table and its rows. Requires App Admin."],
+    [
+      "db.table",
+      "db.table(name)",
+      "Return bound schema.get(), schema.update(changes), and rows.list(query), rows.get(id), rows.insert(rowOrRows), rows.update(id,row), rows.delete(id). Schema writes need Admin; row access needs Use. Lists return rsql data/meta; limit up to 1000.",
+    ],
+    [
+      "db.query",
+      "db.query(sql, params?)",
+      "Run a SELECT subset with bound parameters and a 1000-row result budget. No CTEs, comments, internal objects or arbitrary functions. Use row APIs for writes.",
+    ],
+    [
+      "db.importData",
+      "db.importData(table, rows, { createTable?, columns?, notify?, onProgress? })",
+      "Append validated JSON rows in sequential bounded batches. Missing tables require createTable and Admin. Returns { confirmedRows, totalRows, status, error? }; status is complete, cancelled or unknown. No automatic write retries. Cancellation preserves confirmed batches. onProgress receives { confirmedRows, totalRows, phase }. Default progress toast; notify:false hides it. New manual imports can insert duplicates.",
+    ],
+    [
+      "pdf.text",
+      "pdf.text(file, { onProgress? })",
+      "Extract local PDF text with PDF.js as [{ page, text }]. No OCR, rendering or uploads. Up to 16 MiB input/text and 1000 pages. onProgress(page, total); Stop terminates the worker.",
+    ],
     ["money.fromMinor", "money.fromMinor(amount, currency)", "Create money from safe integer minor units."],
     [
       "money.fromDecimal",
@@ -32,22 +62,26 @@ export const sdkReference = {
     ["money.taxFromGross", "money.taxFromGross(value, { percent, rounding })", "Return { net, tax, gross } from gross money."],
     ["money.allocate", "money.allocate(value, weights)", "Distribute minor units exactly using largest remainders."],
     ["script", "script({ name, icon?, order?, run })", "Define a tool page using literal metadata."],
-    ["ui.text", "ui.text(text)", "Returns a handle with setText(text)."],
+    ["ui.text", "ui.text(text)", "Returns a handle with set(text)."],
     [
       "ui.button",
       "ui.button(label, callback, { id?, variant?, icon?, disabled?, loading? })",
       "Worker callback. Secondary by default; handles expose setDisabled and setLoading.",
     ],
-    ["ui.input", "ui.input(label, { value?, id?, description?, placeholder?, onChange? })", "Returns a handle with getValue()."],
+    [
+      "ui.input",
+      "ui.input(label, { value?, id?, description?, placeholder?, onChange? })",
+      "getValue() reads the text; set(text) changes it without invoking onChange.",
+    ],
     [
       "ui.select",
       "ui.select(label, options, initial?, id?)",
-      "Options require { value, label }; optional icon and description. getValue() returns the value.",
+      "Options require { value, label }; optional icon and description. getValue() returns the value; set(value) selects a declared option.",
     ],
     [
       "ui.table",
-      "ui.table({ columns: [{ key, label, align? }], id?, label?, empty? })",
-      "setRows(rows), setColumns(columns), setState(ready|empty|loading|error, description?). At most 1000 visible rows.",
+      "ui.table({ columns: [{ key, label, align? }], rowKey?, id?, label?, empty? })",
+      "set(rows) replaces rows; upsert(rows) replaces matching keys in place and appends new rows. remove(ids) removes matching keys; remove() clears displayed rows; remove([]) does nothing. upsert and keyed removal require rowKey and unique string/number keys. setColumns and setState remain available. At most 1000 rows.",
     ],
     [
       "ui.workbench",
@@ -60,11 +94,11 @@ export const sdkReference = {
       "ui.filePicker(label, { accept?, multiple?, description?, icon?, id?, onChange(files) })",
       "Local picker with selected filenames; callback receives File[]. Cancellation keeps current selection.",
     ],
-    ["ui.status", "ui.status(text)", "Accessible status. setText(text), setState(state), setDescription(text)."],
+    ["ui.status", "ui.status(text)", "Accessible status. set(text), setState(state), setDescription(text)."],
     [
       "ui.list",
       "ui.list({ title, description?, empty?: { title, description? }, id? }, items)",
-      "Items: { id, title, description?, icon?, action?: UIHandle }. Stable ids, one action handle per row.",
+      "Items: { id, title, description?, icon?, action?: UIHandle }. set(items) replaces visible rows; upsert(items) replaces matching ids in place and appends new items; remove(ids) removes matching items, remove() clears the list, remove([]) does nothing. Use stable unique ids. Reuse action handles (a row may group buttons); removed rows keep their handles owned by the list. At most 1000 items; allocated UI nodes remain subject to the app node limit.",
     ],
     [
       "ui.link",
@@ -79,7 +113,32 @@ export const sdkReference = {
     [
       "ui.markdown",
       "ui.markdown(source, { headingScale?, id? })",
-      "Shared Cloud Markdown renderer; setMarkdown(source). Raw HTML escaped; images shown as alt text without requests.",
+      "Shared Cloud Markdown renderer; set(source). Raw HTML escaped; images shown as alt text without requests.",
+    ],
+    [
+      "ui.modal.confirm",
+      "ui.modal.confirm({ title, message, confirmText?, cancelText?, variant? })",
+      "Promise<boolean>; false on cancellation. Required visible title. Uses the host Cloud confirmation dialog.",
+    ],
+    [
+      "ui.modal.text",
+      "ui.modal.text({ title, label, value?, required?, minLength?, maxLength?, multiline?, confirmText?, cancelText? })",
+      "Promise<string|null>; null on cancellation. Text validation runs in the host.",
+    ],
+    [
+      "ui.modal.number",
+      "ui.modal.number({ title, label, value?, required?, min?, max?, confirmText?, cancelText? })",
+      "Promise<number|null>; finite number with optional bounds. null on cancellation.",
+    ],
+    [
+      "ui.modal.dialog",
+      "ui.modal.dialog({ title, fields, confirmText?, cancelText?, variant? })",
+      "Promise<object|null>. fields maps 1–64 names to { type: text|number|select|boolean, label, required?, default?, description?, placeholder? }. Text supports minLength/maxLength/multiline; number min/max/step; select options require {value,label} with optional icon/description. No callbacks in the schema. Standard buttons and validation inherit Cloud locale; author text is unchanged. Modals close on Stop/navigation and are serialized with other host calls.",
+    ],
+    [
+      "ui.chart",
+      "ui.chart({ kind, ...options })",
+      "Responsive stdlib chart rendered by the shared UI. Kinds: line/scatter (series:[{label?,data:[{x,y}]}]), bar/pie/donut (data:[{label,value}]), sparkline/histogram (data:number[]), boxplot (groups:[{label,values:number[]}]), gauge (value), barGauge (data:[{label,value}]), stat (label,value), heatmap (data:[{x,y,value}]), map (series:[{data:[{latitude,longitude}]}]), stateTimeline (rows:[{label,intervals:[{from,to,state}]}]). Use set({kind,...options}) to replace the configuration. JSON stdlib option names; no formatter functions, HTML, links, CSS classes or external resources. Shared UI owns size/theme/empty state. At most 1000 array entries total across the configuration. upsert/remove apply only to lists and tables.",
     ],
     ["ui.progress", "ui.progress()", "Use set(fraction) from zero to one."],
     ["ui.row", 'ui.row({ gap: "sm" | "md" | "lg" }, children)', "Compose UI handles horizontally with wrapping."],

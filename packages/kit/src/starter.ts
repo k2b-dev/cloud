@@ -33,15 +33,15 @@ export const starter: ProjectInput = {
           await kit.opfs.write(filename, csv);
           const history = await kit.store.get("history") || [];
           await kit.store.set("history", [...history, { filename, rows: output.length, createdAt: new Date().toISOString() }]);
-          status.setText("Export gespeichert: " + filename);
+          status.set("Export gespeichert: " + filename);
         } catch (error) {
-          status.setText("Download bereit. Der lokale Verlauf konnte nicht gespeichert werden: " + error.message);
+          status.set("Download bereit. Der lokale Verlauf konnte nicht gespeichert werden: " + error.message);
         }
       } finally { save.setLoading(false); }
     }, { id: "export", variant: "primary", icon: "ti ti-download", disabled: true });
     function preview() {
       save.setDisabled(true); output = [];
-      if (!rows.length) { table.setRows([]); return; }
+      if (!rows.length) { table.set([]); return; }
       try {
         const fields = columns.getValue().split(",").map(s => s.trim()).filter(Boolean);
         const mapping = fields.map(field => field.split(":").map(s => s.trim()));
@@ -52,25 +52,25 @@ export const starter: ProjectInput = {
           return [to, row[from]];
         }))) : rows;
         table.setColumns(Object.keys(output[0]).map(key => ({ key, label: key })));
-        table.setRows(output.slice(0, 100));
+        table.set(output.slice(0, 100));
         save.setDisabled(false);
-        status.setState("ready"); status.setText(rows.length + " Zeilen geladen");
+        status.setState("ready"); status.set(rows.length + " Zeilen geladen");
       } catch (error) {
-        table.setRows([]); table.setState("error", error.message);
-        status.setState("error"); status.setText(error.message);
+        table.set([]); table.setState("error", error.message);
+        status.setState("error"); status.set(error.message);
       }
     }
     const open = kit.ui.filePicker("CSV auswählen", {
       id: "open", accept: ".csv,text/csv", icon: "ti ti-file-type-csv",
       description: "CSV-Datei vom Gerät auswählen. Das Original bleibt unverändert.",
       async onChange(files) {
-        rows = []; output = []; save.setDisabled(true); table.setRows([]); table.setState("loading");
-        status.setText("Datei wird gelesen…");
+        rows = []; output = []; save.setDisabled(true); table.set([]); table.setState("loading");
+        status.set("Datei wird gelesen…");
         try {
           rows = await kit.sheet.fromCsv(files[0]); preview();
-          if (!rows.length) status.setText("Die Datei enthält keine Datenzeilen.");
+          if (!rows.length) status.set("Die Datei enthält keine Datenzeilen.");
         } catch (error) {
-          table.setState("error", error.message); status.setState("error"); status.setText("Datei konnte nicht gelesen werden: " + error.message);
+          table.setState("error", error.message); status.setState("error"); status.set("Datei konnte nicht gelesen werden: " + error.message);
         }
       }
     });
@@ -102,7 +102,7 @@ export const starter: ProjectInput = {
         const file = await kit.opfs.read(item.filename);
         if (!file) throw new Error("Die Exportdatei ist auf diesem Gerät nicht mehr vorhanden.");
         await kit.file.save(file, item.filename);
-        status.setText("Download bereit: " + item.filename);
+        status.set("Download bereit: " + item.filename);
       }, { icon: "ti ti-download", variant: "secondary" })
     })));
     kit.ui.workbench({

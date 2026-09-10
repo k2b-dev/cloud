@@ -180,7 +180,7 @@ export const gridsCapabilityPresentation: CapabilityPresentationCatalog = {
         "record.create": {
           title: "Einen Grids-Datensatz erstellen",
           description:
-            "Lade zuerst gql.context mit kind fields und includeWriteContext true. Erstelle dann einen Datensatz mit öffentlichen IDs beschreibbarer Felder als Schlüssel. Auswahlwerte verwenden Options-IDs. Gibt begrenzte Metadaten zurück; Feldwerte mit gezieltem GQL lesen. Nicht idempotent: nicht blind wiederholen.",
+            "Lade zuerst gql.context mit kind fields und includeWriteContext true. Erstelle dann einen Datensatz mit öffentlichen IDs beschreibbarer Felder als Schlüssel. Auswahlwerte verwenden Options-IDs. Gibt begrenzte Metadaten zurück; Feldwerte mit gezieltem GQL lesen. Verwende den Idempotenzschlüssel nur, um dieselbe Erstellung zu wiederholen.",
           input: {
             tableId: "Öffentliches ID der beschreibbaren gespeicherten Tabelle, die den Datensatz empfangen soll.",
             values: "Öffentliches Feld IDs, das explizit bereitgestellten Werten zugeordnet ist.",

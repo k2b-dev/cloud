@@ -1,22 +1,38 @@
+import { createHash } from "node:crypto";
 import { type DateContext, err, fail, isServiceError, ok, type Result } from "@k2b/stdlib";
 import { sql } from "bun";
 import { evaluateFormValidations, formValidationFieldsCompatible } from "../form-validations";
+import { lockDurableHistoryMutationBoundary } from "./durable-history";
 import { listByTable as listFields, materializeFieldDefault } from "./fields";
 import { formMessagesFor } from "./form-messages";
 import type { Form } from "./forms";
 import { notifyRecordEventOutbox } from "./record-event-outbox";
-import { createInTransaction } from "./record-write";
+import { createInTransaction, updateInTransaction } from "./record-write";
 import type { ExpansionViewer } from "./relation-access";
 
 type InlineCreateDraft = {
   tempId: string;
   data: Record<string, unknown>;
 };
+type InlineUpdateDraft = { recordId: string; version: number; data: Record<string, unknown> };
 
 export type FormSubmission = {
   data: Record<string, unknown>;
   inlineCreates: Record<string, InlineCreateDraft[]>;
+  inlineUpdates?: Record<string, InlineUpdateDraft[]>;
+  idempotencyKey?: string;
 };
+
+const hash = (value: unknown) =>
+  createHash("sha256")
+    .update(
+      JSON.stringify(value, (_key: string, item: unknown) =>
+        item && typeof item === "object" && !Array.isArray(item)
+          ? Object.fromEntries(Object.entries(item).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)))
+          : item,
+      ),
+    )
+    .digest("hex");
 
 export const MAX_INLINE_CREATES_PER_FIELD = 20;
 export const MAX_INLINE_CREATES_PER_SUBMISSION = 50;
@@ -44,10 +60,45 @@ export const submitForm = async (params: {
   /** Request-scoped values resolved by a trusted server surface. */
   fixedValues?: Record<string, unknown>;
   viewer?: ExpansionViewer;
+  /** Trusted update target; public create-only routes must never populate it. */
+  record?: { id: string; version: number };
 }): Promise<Result<{ recordId: string }>> => {
   const t = formMessagesFor(params.dateConfig.locale);
+  const key = params.submission.idempotencyKey;
+  if (params.record && (!key || !Number.isSafeInteger(params.record.version) || params.record.version < 1)) {
+    return fail(err.badInput(t.updateNeedsVersionAndKey));
+  }
+  if (!params.record && Object.values(params.submission.inlineUpdates ?? {}).some((items) => items.length)) {
+    return fail(err.badInput(t.inlineUpdateNeedsRecord));
+  }
+  if (key !== undefined && (!key.trim() || key.length > 200 || key.includes("\0"))) return fail(err.badInput(t.invalidSubmissionKey));
+  const receipt =
+    key === undefined
+      ? null
+      : {
+          scope: hash([params.form.tableId, params.form.id, params.actorId, params.viewer?.serviceAccountId ?? null]),
+          key: hash(key),
+          request: hash({
+            data: params.submission.data,
+            inlineCreates: params.submission.inlineCreates,
+            inlineUpdates: params.submission.inlineUpdates ?? {},
+            record: params.record ?? null,
+            fixedValues: params.fixedValues ?? {},
+          }),
+        };
+  const groups = Object.fromEntries(
+    [...new Set([...Object.keys(params.submission.inlineCreates), ...Object.keys(params.submission.inlineUpdates ?? {})])].map(
+      (fieldId) => [fieldId, [...(params.submission.inlineCreates[fieldId] ?? []), ...(params.submission.inlineUpdates?.[fieldId] ?? [])]],
+    ),
+  );
   const inlineCreateBounds = validateInlineCreateBounds(params.submission.inlineCreates, params.dateConfig.locale);
   if (!inlineCreateBounds.ok) return inlineCreateBounds;
+  if (
+    Object.values(groups).some((items) => items.length > MAX_INLINE_CREATES_PER_FIELD) ||
+    Object.values(groups).reduce((sum, items) => sum + items.length, 0) > MAX_INLINE_CREATES_PER_SUBMISSION
+  ) {
+    return fail(err.badInput(t.inlineSubmissionLimit({ count: MAX_INLINE_CREATES_PER_SUBMISSION })));
+  }
   const formFields = params.form.config.fields ?? [];
   const fields = await listFields(params.form.tableId);
   const fieldsById = new Map(fields.map((field) => [field.id, field]));
@@ -72,7 +123,7 @@ export const submitForm = async (params: {
     if (!userInputIds.has(key)) return fail(err.badInput(t.fieldNotInForm({ field: fieldName(key) })));
   }
 
-  for (const key of Object.keys(params.submission.inlineCreates)) {
+  for (const key of Object.keys(groups)) {
     if (Object.prototype.hasOwnProperty.call(params.fixedValues ?? {}, key)) {
       return fail(err.badInput(t.fixedFieldCannotCreate({ field: fieldName(key) })));
     }
@@ -127,7 +178,43 @@ export const submitForm = async (params: {
   const outboxIds: string[] = [];
   try {
     const recordId = await sql.begin(async (tx) => {
-      for (const [relationFieldId, drafts] of Object.entries(params.submission.inlineCreates)) {
+      if (receipt) {
+        await tx`SELECT pg_advisory_xact_lock(hashtextextended(${`grids:form:${receipt.scope}:${receipt.key}`}, 0))`;
+        const [stored] = await tx<{ request_hash: string; record_id: string; available: boolean }[]>`
+          SELECT submission.request_hash, submission.record_id,
+            EXISTS (SELECT 1 FROM grids.records record WHERE record.id = submission.record_id AND record.deleted_at IS NULL) AS available
+          FROM grids.form_submissions submission WHERE scope_hash = ${receipt.scope} AND key_hash = ${receipt.key}
+        `;
+        if (stored) {
+          if (stored.request_hash !== receipt.request) throw { ...err.conflict("Form submission"), message: t.submissionChanged };
+          if (!stored.available) throw { ...err.conflict("Form submission"), message: t.submissionRemoved };
+          return stored.record_id;
+        }
+      }
+      if (params.record) {
+        const tableIds = new Set([params.form.tableId]);
+        for (const fieldId of Object.keys(groups)) {
+          const field = fieldsById.get(fieldId);
+          if (field?.type === "relation" && typeof field.config.targetTableId === "string") tableIds.add(field.config.targetTableId);
+        }
+        for (const tableId of [...tableIds].sort()) await lockDurableHistoryMutationBoundary(tx, tableId);
+        const ids = [
+          ...new Set([
+            params.record.id,
+            ...Object.values(params.submission.inlineUpdates ?? {}).flatMap((items) => items.map((item) => item.recordId)),
+          ]),
+        ];
+        // A target-row lock also serializes incoming links through their FK. Check
+        // membership only after acquiring it, so sharing cannot race the edit.
+        const locked = await tx<{ id: string; table_id: string; version: number }[]>`
+          SELECT id, table_id, version FROM grids.records WHERE id = ANY(${tx.array(ids, "UUID")}::uuid[])
+            AND deleted_at IS NULL ORDER BY id FOR UPDATE
+        `;
+        const current = locked.find((row) => row.id === params.record!.id && row.table_id === params.form.tableId);
+        if (!current || current.version !== params.record.version) throw { ...err.conflict("Form record"), message: t.recordChanged };
+      }
+      const updatedIds = new Set<string>();
+      for (const [relationFieldId, drafts] of Object.entries(groups)) {
         if (drafts.length === 0) continue;
         const entry = entriesById.get(relationFieldId);
         const relationField = fieldsById.get(relationFieldId);
@@ -139,11 +226,26 @@ export const submitForm = async (params: {
         const cardinality = (relationField.config as { cardinality?: "single" | "multiple" }).cardinality ?? "multiple";
         const inlineEntries = entry.inlineCreate.fields ?? [];
         const allowedFieldIds = new Set(inlineEntries.map((inlineEntry) => inlineEntry.fieldId));
-        const targetFields = await listFields(targetTableId);
+        const targetFields = await listFields(targetTableId, false, tx);
         const targetFieldsById = new Map(targetFields.map((field) => [field.id, field]));
 
         for (const draft of drafts) {
-          if (!draft.tempId.startsWith("tmp_")) throw err.badInput(t.invalidInlineDraftId({ field: fieldName(relationFieldId) }));
+          if ("tempId" in draft && !draft.tempId.startsWith("tmp_"))
+            throw err.badInput(t.invalidInlineDraftId({ field: fieldName(relationFieldId) }));
+          if ("recordId" in draft) {
+            if (!Number.isSafeInteger(draft.version) || draft.version < 1 || updatedIds.has(draft.recordId))
+              throw err.badInput(t.inlineUpdateInvalid);
+            updatedIds.add(draft.recordId);
+            const [linked] = await tx<{ exclusive: boolean }[]>`
+              SELECT NOT EXISTS (SELECT 1 FROM grids.record_links other WHERE other.to_record_id = ${draft.recordId}::uuid
+                AND other.from_record_id <> ${params.record!.id}::uuid) AS exclusive
+              FROM grids.record_links link WHERE link.from_record_id = ${params.record!.id}::uuid
+                AND link.from_field_id = ${relationFieldId}::uuid AND link.to_record_id = ${draft.recordId}::uuid
+                AND EXISTS (SELECT 1 FROM grids.tables source JOIN grids.tables target ON target.base_id = source.base_id
+                  WHERE source.id = ${params.form.tableId}::uuid AND target.id = ${targetTableId}::uuid)
+            `;
+            if (!linked?.exclusive) throw err.badInput(t.inlineUpdateNotOwned);
+          }
           for (const key of Object.keys(draft.data)) {
             if (!allowedFieldIds.has(key)) {
               throw err.badInput(t.inlineFieldNotAllowed({ field: fieldName(relationFieldId) }));
@@ -156,14 +258,15 @@ export const submitForm = async (params: {
           : typeof payload[relationFieldId] === "string"
             ? [payload[relationFieldId]]
             : [];
-        const draftIds = drafts.map((draft) => draft.tempId);
+        const draftIds = drafts.flatMap((draft) => ("tempId" in draft ? [draft.tempId] : []));
         const existingIds = currentIds.filter((id) => !draftIds.includes(id));
-        if (cardinality === "single" && (drafts.length > 1 || (drafts.length > 0 && existingIds.length > 0))) {
+        if (cardinality === "single" && (draftIds.length > 1 || (draftIds.length > 0 && existingIds.length > 0))) {
           throw err.badInput(t.singleRelationConflict({ field: fieldName(relationFieldId) }));
         }
 
         const replacements = new Map<string, string>();
         for (const draft of drafts) {
+          if ("recordId" in draft && !existingIds.includes(draft.recordId)) throw err.badInput(t.inlineUpdateNotOwned);
           const draftPayload: Record<string, unknown> = { ...draft.data };
           for (const inlineEntry of inlineEntries) {
             const targetField = targetFieldsById.get(inlineEntry.fieldId);
@@ -187,6 +290,25 @@ export const submitForm = async (params: {
               throw err.badInput(t.fieldRequired({ field: inlineEntry.label?.trim() || targetField.name }));
             }
           }
+          if ("recordId" in draft) {
+            const updated = await updateInTransaction(
+              tx,
+              targetTableId,
+              draft.recordId,
+              draftPayload,
+              params.actorId,
+              "form",
+              draft.version,
+              {
+                dateConfig: params.dateConfig,
+                locale: params.dateConfig.locale,
+                viewer: params.viewer,
+              },
+            );
+            if (!updated.ok) throw updated.error;
+            if (updated.data.outboxId) outboxIds.push(updated.data.outboxId);
+            continue;
+          }
           const created = await createInTransaction(tx, targetTableId, draftPayload, params.actorId, "form", {
             dateConfig: params.dateConfig,
             locale: params.dateConfig.locale,
@@ -206,13 +328,30 @@ export const submitForm = async (params: {
         payload[relationFieldId] = sourceIds.map((id) => replacements.get(id) ?? id);
       }
 
-      const created = await createInTransaction(tx, params.form.tableId, payload, params.actorId, "form", {
-        dateConfig: params.dateConfig,
-        locale: params.dateConfig.locale,
-        viewer: params.viewer,
-      });
+      const writeOptions = { dateConfig: params.dateConfig, locale: params.dateConfig.locale, viewer: params.viewer };
+      const created = params.record
+        ? await updateInTransaction(
+            tx,
+            params.form.tableId,
+            params.record.id,
+            payload,
+            params.actorId,
+            "form",
+            params.record.version,
+            writeOptions,
+          )
+        : await createInTransaction(tx, params.form.tableId, payload, params.actorId, "form", {
+            dateConfig: params.dateConfig,
+            locale: params.dateConfig.locale,
+            viewer: params.viewer,
+          });
       if (!created.ok) throw created.error;
-      outboxIds.push(created.data.outboxId);
+      if (created.data.outboxId) outboxIds.push(created.data.outboxId);
+      if (receipt)
+        await tx`
+        INSERT INTO grids.form_submissions (scope_hash, key_hash, request_hash, table_id, record_id)
+        VALUES (${receipt.scope}, ${receipt.key}, ${receipt.request}, ${params.form.tableId}::uuid, ${created.data.record.id}::uuid)
+      `;
       return created.data.record.id;
     });
 

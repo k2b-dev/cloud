@@ -1,3 +1,6 @@
+import { database, DatabaseError } from "./service/database";
+import { DatabaseCall } from "./database-contracts";
+import { databaseErrorMessage } from "./database-messages";
 import { z } from "zod";
 import { ok, fail, i18n } from "@k2b/stdlib";
 import {
@@ -40,6 +43,8 @@ async function result<T>(context: CapabilityExecutionContext, operation: () => P
   try {
     return ok(await operation());
   } catch (e) {
+    if (e instanceof DatabaseError)
+      return fail({ code: e.code, status: e.status === 502 ? 500 : e.status, message: databaseErrorMessage(e.code, context.locale) });
     if (e instanceof ProjectError) return fail({ code: e.code, status: e.status, message: apiErrorMessage(e.code, context.locale) });
     if (e instanceof ProjectValidationError)
       return fail({ code: "INVALID_PROJECT", status: 400 as const, message: e.localized(context.locale) });
@@ -75,6 +80,14 @@ export const kitCapabilities = defineCapabilities({
       de: {
         types: { app: { title: "Kit-App", description: "Eine Kit-App mit lokal ausgeführten Werkzeugen." } },
         queries: {
+          "database.status": {
+            title: "Kit-Datenbankstatus lesen",
+            description: "Aktivierung, Generation und Diagnose lesen, ohne eine Datenbank zu aktivieren.",
+          },
+          "database.read": {
+            title: "Kit-Datenbank lesen",
+            description: "Tabellen, Schema, Datensätze oder eine begrenzte SELECT-Abfrage mit der aktuellen Generation lesen.",
+          },
           "app.search": {
             title: "Kit-Apps suchen",
             input: {
@@ -106,6 +119,11 @@ export const kitCapabilities = defineCapabilities({
           },
         },
         actions: {
+          "database.write": {
+            title: "Kit-Datenbank ändern",
+            description:
+              "Schema als Admin oder Datensätze mit Use ändern. Die Datenbank muss bereits aktiviert sein; unklare Schreibausgänge werden nicht wiederholt.",
+          },
           "source.apply": {
             title: "Kit-Quelltext speichern",
             input: sourceInputDe,
@@ -118,6 +136,26 @@ export const kitCapabilities = defineCapabilities({
   },
   types: { app: { title: "Kit app", description: "A Kit app with locally executed tools.", icon: "ti ti-code", reader: "app.read" } },
   queries: {
+    "database.status": {
+      title: "Read Kit database status",
+      description: "Read activation, generation and diagnostics. Use this before database operations. Does not enable a database.",
+      input: z.object({ id: AppId }).strict(),
+      data: z.unknown(),
+      openWorld: false,
+      run: ({ id }, context) => result(context, async () => ({ data: await database.status(id, context, true), ...identity(id) })),
+    },
+    "database.read": {
+      title: "Read Kit database",
+      description:
+        "Read tables, schema, rows or a bounded SELECT. Use the exact generation from database.status. No network or namespace choice.",
+      input: DatabaseCall.extend({ id: AppId }).refine((v) =>
+        ["tables.list", "schema.get", "rows.list", "rows.get", "query"].includes(v.request.operation),
+      ),
+      data: z.unknown(),
+      openWorld: false,
+      run: ({ id, generation, request }, context) =>
+        result(context, async () => ({ data: await database.call(id, generation, request, context), ...identity(id) })),
+    },
     "app.search": {
       title: "Search Kit apps",
       description: "Find accessible apps by name or description when the ID is unknown. Read returned kit.app refs using app.read.",
@@ -190,6 +228,39 @@ export const kitCapabilities = defineCapabilities({
     },
   },
   actions: {
+    "database.write": {
+      title: "Change Kit database",
+      description:
+        "Create or change schema (Admin), or insert/update/delete records (Use). Requires an already enabled database. Writes are not automatically replayed after errors.",
+      input: DatabaseCall.extend({ id: AppId }).refine((v) =>
+        ["tables.create", "tables.update", "tables.delete", "rows.insert", "rows.update", "rows.delete"].includes(v.request.operation),
+      ),
+      data: z.unknown(),
+      destructive: true,
+      openWorld: false,
+      idempotency: "required",
+      review: async ({ id, generation, request }: z.infer<typeof DatabaseCall> & { id: string }, context: CapabilityExecutionContext) => {
+        const checked = await result(context, async () => {
+          await projects.get(id, context, request.operation.startsWith("tables.") ? "admin" : "write");
+          const state = await database.status(id, context);
+          if (!state.enabled || !state.globallyEnabled || state.generation !== generation) throw new DatabaseError("DB_STALE", 409);
+          return { data: state };
+        });
+        if (!checked.ok) return checked;
+        return ok({
+          message: context.locale.startsWith("de")
+            ? "Diese Datenbankänderung ausführen? Bestätigte Schreibvorgänge werden nicht automatisch wiederholt."
+            : "Apply this database change? Confirmed writes are not automatically replayed.",
+          details: [
+            { label: "App", value: id },
+            { label: context.locale.startsWith("de") ? "Aktion" : "Operation", value: request.operation },
+            { label: context.locale.startsWith("de") ? "Änderung" : "Change", value: JSON.stringify(request) },
+          ],
+        });
+      },
+      run: ({ id, generation, request }, context) =>
+        result(context, async () => ({ data: await database.call(id, generation, request, context), ...identity(id) })),
+    },
     "source.apply": {
       title: "Save Kit source changes",
       description: `${changeDescription} Requires Admin. Changes source only; never creates, deletes, launches or shares an app.`,
@@ -197,7 +268,7 @@ export const kitCapabilities = defineCapabilities({
       data: changed,
       destructive: true,
       openWorld: false,
-      idempotency: "none",
+      idempotency: "required",
       review: async ({ id, ...input }: z.infer<typeof SourceChangeInput>, context: CapabilityExecutionContext) => {
         const checked = await result(context, async () => {
           await projects.changeSource(id, input, context);

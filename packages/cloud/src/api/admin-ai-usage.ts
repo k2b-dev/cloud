@@ -2,8 +2,8 @@ import { Hono, type MiddlewareHandler } from "hono";
 import { describeRoute } from "hono-openapi";
 import { z } from "zod";
 import { aiUsage } from "../ai/usage";
+import { type AuthContext, auth, err, fail, ok, respond, v } from "../server";
 import { AiUsageQuerySchema } from "../shared/ai-usage";
-import { auth, type AuthContext, v, respond, ok, fail, err } from "../server";
 
 export const createAdminAiUsageRoutes = (
   authenticate: MiddlewareHandler<AuthContext> = auth.requireRole("admin"),
@@ -32,7 +32,7 @@ export const createAdminAiUsageRoutes = (
     .get(
       "/runs/:kind/:id",
       describeRoute({ summary: "Read an AI run and its stored error", tags: ["Admin AI usage"] }),
-      v("param", z.object({ kind: z.enum(["chat", "background", "tool"]), id: z.uuid() })),
+      v("param", z.object({ kind: z.enum(["chat", "background"]), id: z.uuid() })),
       async (c) => {
         const { kind, id } = c.req.valid("param");
         const result = await service.detail(kind, id);

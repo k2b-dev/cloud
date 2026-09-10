@@ -9,6 +9,8 @@ import { gatewayOpsHelp } from "./help";
 import { gatewayOpsLifecycle } from "./lifecycle";
 import { gatewayOpsApiErrorMessage } from "./messages";
 import alertsPage from "./observability/alerts/page";
+import capabilitiesApiRoutes from "./observability/capabilities/api";
+import capabilitiesPage from "./observability/capabilities/page";
 import { runScheduleNowAction } from "./observability/jobs/actions";
 import jobsApiRoutes from "./observability/jobs/api";
 import jobsPage from "./observability/jobs/page";
@@ -72,6 +74,7 @@ const router = new Hono<AuthContext>()
   .post("/admin/observability/jobs/run-now", auth.requireRole("admin", ssr.access), runScheduleNowAction)
   .get("/admin/observability/telemetry", auth.requireRole("admin", ssr.access), ...telemetryPage)
   .get("/admin/observability/workflows", auth.requireRole("admin", ssr.access), ...workflowsPage)
+  .get("/admin/observability/capabilities", auth.requireRole("admin", ssr.access), ...capabilitiesPage)
   .get("/admin/observability/metrics", auth.requireRole("admin", ssr.access), ...metricsPage)
   .get("/admin/observability/data", auth.requireRole("admin", ssr.access), (c) => c.redirect("/admin/observability/postgres"))
   .get("/admin/observability/postgres", auth.requireRole("admin", ssr.access), ...postgresPage)
@@ -93,6 +96,7 @@ const router = new Hono<AuthContext>()
   .route("/api/gateway/sync", syncApiRoutes)
   .route("/api/gateway/nats", natsApiRoutes)
   .route("/api/gateway/workflows", workflowsApiRoutes)
+  .route("/api/gateway/capabilities", capabilitiesApiRoutes)
   .route("/api/gateway", apiRoutes);
 
 router.get("/admin/gateway/*", auth.requireRole("*"), (c) => ssr.error(c, 404));

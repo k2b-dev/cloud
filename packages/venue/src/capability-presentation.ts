@@ -112,7 +112,7 @@ export const venueCapabilityPresentation: CapabilityPresentationCatalog = {
         "assignment.cancel": {
           title: "Storniere meinen Schichtauftrag",
           description:
-            "Löschen Sie nur die eigene Zuweisung des aktuellen vom Benutzer unterstützten Akteurs. Diese Aktion ist nicht idempotent.",
+            "Löschen Sie nur die eigene Zuweisung des aktuellen vom Benutzer unterstützten Akteurs. Geben Sie einen Idempotenzschlüssel an, damit ein unsicherer Versuch sicher wiederholt werden kann.",
           input: {
             venueId: "Venue ID zurückgegeben von Search/List Venues oder einem venue.venue ref.",
             assignmentId: "Eigene Zuweisung ID zurückgegeben von Meine Zuweisungen auflisten oder venue.assignment ref.",

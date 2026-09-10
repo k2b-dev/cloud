@@ -132,6 +132,8 @@ const context = {
   actor: { kind: "user", user: { id: userId } },
   accessSubject: { type: "user", userId },
   user: { id: userId },
+  requestId: "mail-capability-test-request",
+  origin: "assistant",
   signal: new AbortController().signal,
 } as CapabilityExecutionContext;
 
@@ -1065,7 +1067,7 @@ describe("mail capabilities", () => {
       {
         localId: "draft.discard",
         action: mailCapabilities.actions["draft.discard"],
-        run: () => mailCapabilities.actions["draft.discard"].run({ mailboxId, draftId, expectedRevision: 2 }, context),
+        run: () => mailCapabilities.actions["draft.discard"].run({ mailboxId, draftId, expectedRevision: 2 }, idempotentContext),
       },
       {
         localId: "draft.attachment.add",
@@ -1087,7 +1089,7 @@ describe("mail capabilities", () => {
         run: () =>
           mailCapabilities.actions["draft.attachment.remove"].run(
             { mailboxId, draftId, attachmentId: draftAttachmentId, expectedRevision: 2 },
-            context,
+            idempotentContext,
           ),
       },
       {
@@ -1102,7 +1104,7 @@ describe("mail capabilities", () => {
       {
         localId: "delivery.cancel",
         action: mailCapabilities.actions["delivery.cancel"],
-        run: () => mailCapabilities.actions["delivery.cancel"].run({ mailboxId, deliveryId, disposition: "draft" }, context),
+        run: () => mailCapabilities.actions["delivery.cancel"].run({ mailboxId, deliveryId, disposition: "draft" }, idempotentContext),
       },
       {
         localId: "conversation.mark",
@@ -1197,7 +1199,7 @@ describe("mail capabilities", () => {
         run: () =>
           mailCapabilities.actions["conversation.comment.delete"].run(
             { mailboxId, conversationId, commentId, expectedRevision: 3 },
-            context,
+            idempotentContext,
           ),
       },
       {
@@ -1213,7 +1215,7 @@ describe("mail capabilities", () => {
       {
         localId: "mailbox.tag.delete",
         action: mailCapabilities.actions["mailbox.tag.delete"],
-        run: () => mailCapabilities.actions["mailbox.tag.delete"].run({ mailboxId, tagId, expectedRevision: 2 }, context),
+        run: () => mailCapabilities.actions["mailbox.tag.delete"].run({ mailboxId, tagId, expectedRevision: 2 }, idempotentContext),
       },
       {
         localId: "mailing-list.unsubscribe",
@@ -1221,7 +1223,7 @@ describe("mail capabilities", () => {
         run: () =>
           mailCapabilities.actions["mailing-list.unsubscribe"].run(
             { mailboxId, listKey: "example", href: "https://example.test/unsubscribe" },
-            context,
+            idempotentContext,
           ),
       },
     ];
@@ -1609,7 +1611,7 @@ describe("mail capabilities", () => {
     const result = await mailCapabilities.queries["conversation.read"].run({ id: conversationId }, context);
 
     expect(listMessages).toHaveBeenCalledWith({
-      context: { actor: context.actor, accessSubject: context.accessSubject },
+      context: { actor: context.actor, accessSubject: context.accessSubject, requestId: context.requestId },
       mailboxId: internalMailboxId,
       conversationId: internalConversationId,
       limit: 5,
@@ -1722,6 +1724,27 @@ describe("mail capabilities", () => {
         links: [{ rel: "open", href: `/app/mail/${mailboxId}?conversation=${conversationId}` }],
       },
     });
+  });
+
+  test("carries the request id into the service context that writes audit rows", async () => {
+    spyOn(mailboxAccess, "requireMailboxPermission").mockResolvedValue({ ok: true, data: "admin" });
+    spyOn(publicResources, "resolveMailboxPublicId").mockResolvedValue(internalIdsByTable.tags.get(tagId)!);
+    spyOn(localTags, "listLocalTags").mockResolvedValue({
+      ok: true,
+      data: [{ id: internalIdsByTable.tags.get(tagId)!, name: "customer", color: "blue", revision: 2 }],
+    } as never);
+    const deleteTag = spyOn(localTags, "deleteLocalTag").mockResolvedValue({ ok: true, data: { deleted: true } } as never);
+
+    const missingKey = await mailCapabilities.actions["mailbox.tag.delete"].run({ mailboxId, tagId, expectedRevision: 2 }, context);
+    expect(missingKey).toMatchObject({ ok: false, error: { code: "BAD_INPUT" } });
+    expect(deleteTag).not.toHaveBeenCalled();
+
+    await mailCapabilities.actions["mailbox.tag.delete"].run(
+      { mailboxId, tagId, expectedRevision: 2 },
+      { ...context, idempotencyKey: "tag-delete" },
+    );
+
+    expect(deleteTag.mock.calls[0]?.[0]).toMatchObject({ context: { requestId: context.requestId } });
   });
 
   test("summarizes a tag update with the readable conversation and final state", async () => {

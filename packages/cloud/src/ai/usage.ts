@@ -1,10 +1,11 @@
 import { sql } from "bun";
-import { AiUsageQuerySchema, type AiUsageQuery } from "../shared/ai-usage";
+import { type AiUsageQuery, AiUsageQuerySchema } from "../shared/ai-usage";
+
 export { AI_USAGE_RANGES, type AiUsageRange } from "../shared/ai-usage";
 
 export type AiUsageRun = {
   id: string;
-  kind: "chat" | "background" | "tool";
+  kind: "chat" | "background";
   task: string;
   status: string;
   createdAt: string;
@@ -54,7 +55,7 @@ export type AiUsageStats = {
   negative: number;
   rated: number;
 };
-export type AiUsageGroup = AiUsageStats & { id: string | null; label: string | null; providerModel?: string | null; capabilities: number };
+export type AiUsageGroup = AiUsageStats & { id: string | null; label: string | null; providerModel?: string | null };
 export type AiUsagePoint = { bucket: string; turns: number; tokens: number | null; failed: number; credits: number | null };
 export type AiUsagePagination = { page: number; perPage: number; total: number };
 export type AiUsagePage<T> = AiUsagePagination & { items: T[] };
@@ -65,13 +66,11 @@ export type AiUsageReport = {
   overview: AiUsageStats;
   chat: AiUsageStats;
   background: AiUsageStats;
-  tool: AiUsageStats;
   unassignedBackgroundRuns: number;
   timeline: AiUsagePoint[];
   users: AiUsagePage<AiUsageGroup>;
   models: AiUsagePage<AiUsageGroup>;
   launches: AiUsagePage<AiUsageLaunch>;
-  capabilities: AiUsagePage<AiUsageGroup>;
   tasks: AiUsagePage<AiUsageGroup>;
   apps: AiUsagePage<AiUsageGroup>;
   feedback: AiUsagePage<AiUsageFeedback>;
@@ -82,7 +81,6 @@ export type AiUsageReportOptions = Partial<AiUsageQuery>;
 export type AiUsageOverview = AiUsageStats;
 export type AiUsageModel = AiUsageGroup;
 export type AiUsageUser = AiUsageGroup;
-export type AiUsageCapability = AiUsageGroup;
 export type AiUsageBackgroundTask = AiUsageGroup;
 export type AiUsageLaunch = { appId: string; chats: number; users: number };
 
@@ -94,7 +92,11 @@ const period = (input: Partial<AiUsageQuery>) => {
   return { query: { ...query, until: until.toISOString() }, since, until };
 };
 
-/** One row per durable event. Tool events have no inference charge. No message content leaves this projection. */
+/**
+ * One row per durable inference event. Capability calls are not inference and
+ * are recorded by the platform in `capabilities.executions`; this projection
+ * never carries message content.
+ */
 const events = (since: Date, until: Date) => sql`
   SELECT t.id::text, 'chat'::text AS kind, 'chat'::text AS task, t.status,
     t.created_at, c.created_by_user_id AS user_id, c.id AS conversation_id, t.id AS turn_id,
@@ -125,13 +127,6 @@ const events = (since: Date, until: Date) => sql`
     r.model_profile_id,r.provider_model,r.app_id,r.total_tokens::double precision,r.credits_used,r.duration_ms::double precision,
     r.error_code,r.error,r.attempts,0,0,0,NULL::double precision,0
   FROM ai.structured_runs r WHERE r.created_at >= ${since} AND r.created_at <= ${until}
-  UNION ALL
-  SELECT tool.id::text,'tool',tool.tool_name,tool.status,tool.created_at,c.created_by_user_id,
-    c.id,tool.turn_id,NULL::uuid,NULL::text,t.model_profile_id,t.provider_model,c.launched_by_app_id,
-    NULL::double precision,NULL::double precision,
-    EXTRACT(EPOCH FROM (tool.completed_at-tool.started_at))*1000,NULL::text,tool.error,NULL::int,0,0,0,NULL::double precision,0
-  FROM ai.tool_calls tool JOIN ai.conversations c ON c.id=tool.conversation_id JOIN ai.turns t ON t.id=tool.turn_id
-  WHERE tool.created_at >= ${since} AND tool.created_at <= ${until}
 `;
 const globalFilter = (q: AiUsageQuery) => sql`
   (${q.userId ?? null}::text IS NULL OR (${q.userId === "unassigned"} AND e.user_id IS NULL) OR e.user_id::text=${q.userId ?? null})
@@ -191,28 +186,27 @@ export const aiUsage = {
     const { query: q, since, until } = period({ ...options, range: AiUsageQuerySchema.shape.range.parse(range) });
     const source = events(since, until);
     const filtered = sql`SELECT e.* FROM (${source}) e WHERE ${globalFilter(q)}`;
-    const inference = sql`SELECT * FROM (${filtered}) i WHERE kind<>'tool'`;
+    const inference = filtered;
     const summary = async (kind?: string) => {
-      const [row] = await sql<AiUsageStats[]>`SELECT ${stats} FROM (${filtered}) e WHERE ${kind ? sql`kind=${kind}` : sql`kind<>'tool'`}`;
+      const [row] = await sql<AiUsageStats[]>`SELECT ${stats} FROM (${filtered}) e WHERE ${kind ? sql`kind=${kind}` : sql`TRUE`}`;
       return row!;
     };
-    const groups = (dimension: "users" | "models" | "tasks" | "apps" | "capabilities") => {
+    const groups = (dimension: "users" | "models" | "tasks" | "apps") => {
       const key =
         dimension === "users"
           ? sql`e.user_id::text`
           : dimension === "models"
             ? sql`e.model_profile_id`
-            : dimension === "tasks" || dimension === "capabilities"
+            : dimension === "tasks"
               ? sql`e.task`
               : sql`e.app_id`;
       const label = dimension === "users" ? sql`COALESCE(NULLIF(u.display_name,''),u.uid)` : key;
       const provider = dimension === "models" ? sql`e.provider_model` : sql`NULL::text`;
       return pageOf<AiUsageGroup>(
-        sql`WITH grouped AS (
-        SELECT ${key} AS id,${label} AS label,${provider} AS "providerModel",${stats}
-        FROM (${dimension === "capabilities" ? sql`SELECT * FROM (${filtered}) e WHERE kind='tool'` : inference}) e LEFT JOIN auth.users u ON u.id=e.user_id
+        sql`SELECT ${key} AS id,${label} AS label,${provider} AS "providerModel",${stats}
+        FROM (${inference}) e LEFT JOIN auth.users u ON u.id=e.user_id
         GROUP BY ${key},${label},${provider}
-      ) SELECT grouped.*,${dimension === "users" ? sql`(SELECT count(DISTINCT task)::int FROM (${filtered}) e WHERE kind='tool' AND e.user_id::text=grouped.id)` : sql`0::int`} AS capabilities FROM grouped ORDER BY ${comparisonOrder(q)},id NULLS LAST,"providerModel" NULLS LAST`,
+        ORDER BY ${comparisonOrder(q)},id NULLS LAST,"providerModel" NULLS LAST`,
         q,
       );
     };
@@ -230,37 +224,34 @@ export const aiUsage = {
       AND (${q.rating ?? null}::text IS NULL OR m.feedback_rating=${q.rating === "up" ? 1 : -1})
       AND (${q.reason ?? null}::text IS NULL OR ${q.reason ?? null}=ANY(m.feedback_reasons))
       ORDER BY m.created_at DESC,m.id`;
-    const [overview, chat, background, tool, users, models, tasks, apps, feedback, runs, timeline, unassigned, capabilities, launches] =
-      await Promise.all([
-        summary(),
-        summary("chat"),
-        summary("background"),
-        summary("tool"),
-        groups("users"),
-        groups("models"),
-        groups("tasks"),
-        groups("apps"),
-        pageOf<AiUsageFeedback>(feedbackRows, q),
-        pageOf<AiUsageRun>(runRows, q),
-        sql<
-          AiUsagePoint[]
-        >`SELECT date_trunc(${q.range === "24h" ? "hour" : "day"},created_at AT TIME ZONE 'UTC') AT TIME ZONE 'UTC' AS bucket,
+    const [overview, chat, background, users, models, tasks, apps, feedback, runs, timeline, unassigned, launches] = await Promise.all([
+      summary(),
+      summary("chat"),
+      summary("background"),
+      groups("users"),
+      groups("models"),
+      groups("tasks"),
+      groups("apps"),
+      pageOf<AiUsageFeedback>(feedbackRows, q),
+      pageOf<AiUsageRun>(runRows, q),
+      sql<
+        AiUsagePoint[]
+      >`SELECT date_trunc(${q.range === "24h" ? "hour" : "day"},created_at AT TIME ZONE 'UTC') AT TIME ZONE 'UTC' AS bucket,
         count(*)::int AS turns,sum(tokens)::double precision AS tokens,count(*) FILTER (WHERE status='failed')::int AS failed,sum(credits)::double precision AS credits
         FROM (${inference}) e GROUP BY 1 ORDER BY 1`,
-        sql<{ count: number }[]>`SELECT count(*)::int AS count FROM (${source}) e WHERE e.kind='background' AND e.user_id IS NULL
+      sql<{ count: number }[]>`SELECT count(*)::int AS count FROM (${source}) e WHERE e.kind='background' AND e.user_id IS NULL
         AND ${globalFilter({ ...q, userId: undefined })}`,
-        groups("capabilities"),
-        pageOf<AiUsageLaunch>(
-          sql`SELECT c.launched_by_app_id AS "appId",count(*)::int AS chats,count(DISTINCT c.created_by_user_id)::int AS users
+      pageOf<AiUsageLaunch>(
+        sql`SELECT c.launched_by_app_id AS "appId",count(*)::int AS chats,count(DISTINCT c.created_by_user_id)::int AS users
         FROM ai.conversations c WHERE c.created_at >= ${since} AND c.created_at <= ${until} AND c.launched_by_app_id IS NOT NULL
         AND (${q.userId ?? null}::text IS NULL OR (${q.userId === "unassigned"} AND c.created_by_user_id IS NULL) OR c.created_by_user_id::text=${q.userId ?? null})
         AND (${q.appId ?? null}::text IS NULL OR c.launched_by_app_id=${q.appId ?? null})
         AND ((${q.modelProfileId ?? null}::text IS NULL AND ${q.providerModel ?? null}::text IS NULL) OR EXISTS (
           SELECT 1 FROM (${filtered}) e WHERE e.kind='chat' AND e.conversation_id=c.id
         )) GROUP BY c.launched_by_app_id ORDER BY chats DESC,c.launched_by_app_id`,
-          q,
-        ),
-      ]);
+        q,
+      ),
+    ]);
     const step = q.range === "24h" ? 3600000 : 86400000;
     const points = new Map(timeline.map((p) => [new Date(p.bucket).toISOString(), p]));
     const filled: AiUsagePoint[] = [];
@@ -275,7 +266,6 @@ export const aiUsage = {
       overview,
       chat,
       background,
-      tool,
       unassignedBackgroundRuns: unassigned[0]?.count ?? 0,
       timeline: filled,
       users,
@@ -284,7 +274,6 @@ export const aiUsage = {
       apps,
       feedback,
       runs,
-      capabilities,
       launches,
     };
   },

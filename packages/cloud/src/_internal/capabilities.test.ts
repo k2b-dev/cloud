@@ -31,6 +31,8 @@ const context = {
   accessSubject: { type: "user" as const, userId: "user-1" },
   user: { id: "user-1", roles: ["user"] } as any,
   locale: "en",
+  requestId: "request-1",
+  origin: "http" as const,
   signal: new AbortController().signal,
 };
 
@@ -229,8 +231,8 @@ describe("capability v1 compilation", () => {
       description: "Updates one item.",
       input: z.object({ id: z.string().describe("Stable item id.") }).strict(),
       data: z.object({}).strict(),
-      destructive: true,
-      idempotency: "none" as const,
+      destructive: false,
+      idempotency: "required" as const,
       approval: "rememberable" as const,
       run: async () => ok({ data: {} }),
     };
@@ -260,6 +262,42 @@ describe("capability v1 compilation", () => {
         }),
       ),
     ).toThrow("cannot remember approval for an open-world effect");
+  });
+
+  test("enforces the Action declaration rule at compile time", () => {
+    const base = {
+      title: "Delete item",
+      description: "Deletes one item.",
+      input: z.object({ id: z.string().describe("Stable item id.") }).strict(),
+      data: z.object({}).strict(),
+      run: async () => ok({ data: {} }),
+    };
+    const compile = (action: Record<string, unknown>) =>
+      compileCapabilities("example", defineCapabilities({ protocolVersion: 1, actions: { remove: { ...base, ...action } as never } }));
+    const review = async () => ok({ message: "This item will be deleted." });
+
+    expect(() => compile({ destructive: true, openWorld: false, idempotency: "required" })).toThrow(
+      "is destructive and must declare review()",
+    );
+    expect(() => compile({ destructive: true, openWorld: false, idempotency: "none", review })).toThrow(
+      'is destructive and must declare idempotency: "required"',
+    );
+    expect(() => compile({ destructive: false, openWorld: true, idempotency: "required" })).toThrow(
+      "is open-world and must declare review()",
+    );
+    expect(() => compile({ destructive: false, openWorld: true, idempotency: "none", review })).toThrow(
+      'is open-world and must declare idempotency: "required"',
+    );
+    expect(() => compile({ destructive: false, openWorld: true, idempotency: "required", review, approval: "rememberable" })).toThrow(
+      "cannot remember approval for an open-world effect",
+    );
+    expect(() => compile({ destructive: true, openWorld: false, idempotency: "required", review, approval: "rememberable" })).toThrow(
+      "cannot remember approval for a destructive effect",
+    );
+
+    // A destructive Action that is reviewable and safely repeatable is accepted.
+    const compiled = compile({ destructive: true, openWorld: false, idempotency: "required", review });
+    expect(compiled.manifest.actions[0]).toMatchObject({ localId: "remove", destructive: true, idempotency: "required", review: true });
   });
 
   test("requires one globally unique local id across all capability kinds", () => {

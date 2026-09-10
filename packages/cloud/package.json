@@ -34,6 +34,7 @@
     "./browser/resource-picker": "./src/browser/resource-picker.tsx",
     "./capabilities": "./src/capabilities/client.ts",
     "./capabilities/server": "./src/capabilities/server.ts",
+    "./capabilities/store": "./src/capabilities/executions.ts",
     "./capabilities/testing": "./src/capabilities/testing.ts",
     "./cli": "./src/cli/index.ts",
     "./cli/access": "./src/cli/access.ts",

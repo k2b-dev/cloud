@@ -1,7 +1,7 @@
 import Decimal from "decimal.js";
 import { z } from "zod";
 import { type DocumentProfileSummary, DocumentProfileSummarySchema } from "./document-profile-contracts";
-import { germanEInvoiceProfile } from "./document-profiles/einvoice-de";
+import { germanBillingProfile, germanEInvoiceProfile } from "./document-profiles/einvoice-de";
 
 export type DocumentArtifactDraft = {
   key: string;
@@ -48,7 +48,7 @@ export const exactDecimalSchema = (options: { scale?: number; nonnegative?: bool
       }
     });
 
-export const documentProfiles: readonly DocumentProfile[] = [germanEInvoiceProfile];
+export const documentProfiles: readonly DocumentProfile[] = [germanEInvoiceProfile, germanBillingProfile];
 
 export const profileKey = (id: string, version: number): string => `${id}@${version}`;
 

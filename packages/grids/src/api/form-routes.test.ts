@@ -34,6 +34,25 @@ const form = {
 };
 
 describe("public form routes", () => {
+  test("rejects invalid retry keys before invoking the submission service", async () => {
+    let calls = 0;
+    const app = createPublicFormRoutes({
+      getByPublicToken: async () => form as never,
+      submit: async () => {
+        calls += 1;
+        return ok({ recordId: formId });
+      },
+    });
+    for (const idempotencyKey of ["", " ", "x".repeat(201), "key\0bad"]) {
+      const response = await app.request("/public/token/submit", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ data: {}, idempotencyKey }),
+      });
+      expect(response.status).toBe(400);
+    }
+    expect(calls).toBe(0);
+  });
   test("keeps management routes behind parent auth", async () => {
     expect((await formsRoutes.request(`/by-table/${tableId}`)).status).toBe(401);
   });

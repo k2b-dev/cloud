@@ -748,6 +748,8 @@ suite("mail PostgreSQL foundation", () => {
           accessSubject: context.accessSubject,
           user: context.actor.kind === "user" ? context.actor.user : context.actor.delegatedUser,
           locale: "en",
+          requestId: context.requestId ?? "mail-persistence-integration",
+          origin: "app" as const,
           signal: AbortSignal.timeout(10_000),
         },
       );

@@ -801,6 +801,16 @@ cld grids documents renderers --json
 
 The installed `de.zugferd.en16931@1` renderer accepts outgoing German EUR invoices with German seller and buyer addresses, standard VAT rates, bank transfer, and exact string decimals. It emits both the hybrid PDF/A-3b and `factur-x.xml`, validates the XML against the pinned XSD, then verifies the embedded XML. Use four decimal places for quantities and unit prices and two for tax rates. Version 1 excludes corrections, replacements, tax exemptions, allowances, charges, prepayments, discounts, foreign currencies, incoming invoices, and filings. These technical checks are not tax or legal approval. The invoice issuer is responsible for the content and for checking whether this renderer fits the intended use. Do not interpret a valid report as a compliance certificate.
 
+Renderer `de.zugferd.en16931@2` retains the version 1 fields and additionally requires `serviceDate` (`YYYY-MM-DD`) and one strict `billing` object:
+
+- `{ "kind": "invoice" }` — commercial invoice (380).
+- `{ "kind": "creditNote", "original": { "number": "RE-42", "invoiceDate": "2026-08-01" }, "reason": "Returned goods" }` — credit note (381), with a preceding invoice reference.
+- `{ "kind": "selfBilling", "agreementReference": "Agreement-42" }` — self-billed invoice (389), for example a commission settlement. Seller stays the supplier, buyer stays the customer issuing it. This is not a payout record.
+
+Use positive quantities and nonnegative prices in all three cases. The document kind carries the credit direction. Supply the intended receiving account explicitly. Version 2 rejects identical seller/buyer VAT IDs and a referenced invoice date later than the credit note. Other version 1 scope limits still apply. Existing templates and retries remain on their selected version.
+
+The renderer checks document shape, not original-document existence, remaining credit balances or duplicate commission settlement. Enforce those in the issuing workflow under concurrency before offering this as a billing application. A valid artifact does not prove those business checks passed.
+
 Public document links are bearer links. Create only the lifetime the user needs and revoke them when no longer required:
 
 ```bash

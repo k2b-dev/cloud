@@ -10,14 +10,21 @@ afterEach(() => mock.restore());
 test("capability manifest exposes source authoring without administration or SDK tools", () => {
   const manifest = compileCapabilityManifest("kit", kitCapabilities);
   expect(JSON.stringify(manifest)).toContain("source.apply");
-  expect(Object.keys(kitCapabilities.actions)).toEqual(["source.apply"]);
-  expect(Object.keys(kitCapabilities.queries)).toEqual(["app.search", "app.read", "source.read", "source.validate"]);
-  expect(kitCapabilities.actions["source.apply"].destructive).toBe(true);
+  expect(Object.keys(kitCapabilities.actions)).toEqual(["database.write", "source.apply"]);
+  expect(Object.keys(kitCapabilities.queries)).toEqual([
+    "database.status",
+    "database.read",
+    "app.search",
+    "app.read",
+    "source.read",
+    "source.validate",
+  ]);
+  expect(kitCapabilities.actions[("database.write", "source.apply")].destructive).toBe(true);
 });
 test("capability validation and apply share service revision guards and localized failures", async () => {
   const change = spyOn(projects, "changeSource").mockRejectedValue(new ProjectError(409, "REVISION_CONFLICT"));
   const input = { id: "abc123", expectedRevision: 2, upsert: [{ path: "helper.js", content: "" }], delete: [], edits: [] };
-  const result = await kitCapabilities.actions["source.apply"].run(input, context);
+  const result = await kitCapabilities.actions[("database.write", "source.apply")].run(input, context);
   expect(result).toMatchObject({ ok: false, error: { code: "REVISION_CONFLICT", status: 409 } });
   expect(JSON.stringify(result)).toContain("andernorts");
   expect(change.mock.calls[0]?.[3]).toBe(true);
@@ -46,7 +53,7 @@ test("action review keeps all affected paths within platform presentation limits
     files: [],
     entries: [],
   });
-  const review = await kitCapabilities.actions["source.apply"].review(input, context);
+  const review = await kitCapabilities.actions[("database.write", "source.apply")].review(input, context);
   expect(review.ok).toBe(true);
   if (!review.ok) throw Error("Review failed");
   const parsed = CapabilityActionReviewSchema.parse(review.data);

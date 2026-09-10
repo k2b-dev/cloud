@@ -5,6 +5,7 @@
 
 import { aiChatTasks, aiMaintenanceJobs, migrateCloudAi, seedCloudAiSkills } from "@k2b/cloud/ai";
 import { startAiRuntime } from "@k2b/cloud/ai/runtime";
+import { migrateCloudCapabilities, startCapabilityExecutionMaintenance } from "@k2b/cloud/capabilities/store";
 import {
   browserNotifications,
   lifecycleJobs,
@@ -32,6 +33,7 @@ import type { CoreNotificationSender } from "./notifications";
 let stopCloudAiRuntime: (() => void) | null = null;
 let stopIdentityMaintenance: (() => void) | null = null;
 let stopMandateMaintenance: (() => void) | null = null;
+let stopCapabilityExecutionMaintenance: (() => void) | null = null;
 
 /** Run all core database migrations (auth, notifications, settings, logging). */
 export const runCoreSetup = async (): Promise<void> => {
@@ -46,6 +48,7 @@ export const runCoreSetup = async (): Promise<void> => {
     { name: "logging", run: migrateLogging },
     { name: "workflows", run: migrateWorkflows },
     { name: "weather", run: migrateWeather },
+    { name: "capabilities", run: migrateCloudCapabilities },
     { name: "ai", run: migrateCloudAi },
     { name: "ai-skills", run: seedCloudAiSkills },
   ];
@@ -64,6 +67,7 @@ export const startCoreServices = async (
     await initializeIdentityAuthority();
     stopIdentityMaintenance = startIdentityKeyMaintenance();
     stopMandateMaintenance = startMandateMaintenance();
+    stopCapabilityExecutionMaintenance = startCapabilityExecutionMaintenance();
     await browserNotifications.start();
     await aiNotifications.start();
     stopCloudAiRuntime = startAiRuntime({
@@ -87,6 +91,8 @@ export const startCoreServices = async (
     stopIdentityMaintenance = null;
     stopMandateMaintenance?.();
     stopMandateMaintenance = null;
+    stopCapabilityExecutionMaintenance?.();
+    stopCapabilityExecutionMaintenance = null;
     stopCloudAiRuntime?.();
     stopCloudAiRuntime = null;
     await Promise.allSettled([
@@ -109,6 +115,8 @@ export const stopCoreServices = async (aiNotifications?: ReturnType<typeof creat
     stopIdentityMaintenance = null;
     stopMandateMaintenance?.();
     stopMandateMaintenance = null;
+    stopCapabilityExecutionMaintenance?.();
+    stopCapabilityExecutionMaintenance = null;
     await Promise.all([lifecycleJobs.stop(), appApprovalRuntime.stop()]);
   } finally {
     try {

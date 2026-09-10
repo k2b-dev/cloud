@@ -85,7 +85,7 @@
   },
   "scripts": {
     "dev:pwa-auth": "bun run --cwd pwas/pwa-auth dev",
-    "dev:infra": "bun packages/gateway-ops/scripts/dev-nats.ts && docker compose -f compose.yml up -d --wait --wait-timeout 60",
+    "dev:infra": "bun scripts/dev-rsql.ts && bun packages/gateway-ops/scripts/dev-nats.ts && docker compose -f compose.yml up -d --wait --wait-timeout 60",
     "dev:infra:down": "docker compose -f compose.yml down",
     "dev": "bun run dev:infra && docker compose -f compose.dev.yml up --build",
     "dev:fibel": "docker compose -f compose.fibel.yml up --build -d --wait --wait-timeout 180 --force-recreate --renew-anon-volumes",

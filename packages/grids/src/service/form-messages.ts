@@ -8,6 +8,16 @@ const formServiceMessages = i18n.define({
       quickAdd: "Quick add",
       save: "Save",
       saved: "Saved",
+      invalidSubmissionKey: "Use a non-empty submission key of at most 200 characters.",
+      updateNeedsVersionAndKey: "Updating a form record requires its current version and a submission key.",
+      inlineUpdateNeedsRecord: "Related records can be edited only while updating an existing form record.",
+      inlineUpdateInvalid: "Each related record needs its current version and may appear only once.",
+      inlineUpdateNotOwned:
+        "Only retained related records belonging to this record can be edited here. Shared records must be edited separately.",
+      recordChanged: "This record changed or is no longer available. Reload it before saving again.",
+      submissionChanged:
+        "This submission key was already used for different values. Check the previous submission before starting a new one.",
+      submissionRemoved: "This submission already completed, but its record is no longer available. It was not created again.",
       unknownField: "Unknown field",
       nameRequired: "A name is required.",
       nameEmpty: "The name cannot be empty.",
@@ -60,6 +70,17 @@ const formServiceMessages = i18n.define({
       quickAdd: "Schnellerfassung",
       save: "Speichern",
       saved: "Gespeichert",
+      invalidSubmissionKey: "Verwende einen nicht leeren Übermittlungsschlüssel mit höchstens 200 Zeichen.",
+      updateNeedsVersionAndKey: "Zum Bearbeiten sind die aktuelle Datensatzversion und ein Übermittlungsschlüssel erforderlich.",
+      inlineUpdateNeedsRecord: "Verknüpfte Datensätze können nur beim Bearbeiten eines bestehenden Formulardatensatzes geändert werden.",
+      inlineUpdateInvalid: "Jeder verknüpfte Datensatz benötigt seine aktuelle Version und darf nur einmal vorkommen.",
+      inlineUpdateNotOwned:
+        "Hier können nur weiterhin verknüpfte, zu diesem Datensatz gehörende Einträge bearbeitet werden. Bearbeite gemeinsam verwendete Datensätze separat.",
+      recordChanged: "Dieser Datensatz wurde geändert oder ist nicht mehr verfügbar. Lade ihn vor dem Speichern neu.",
+      submissionChanged:
+        "Dieser Übermittlungsschlüssel wurde bereits für andere Werte verwendet. Prüfe die vorherige Übermittlung, bevor du eine neue beginnst.",
+      submissionRemoved:
+        "Diese Übermittlung wurde bereits abgeschlossen, aber ihr Datensatz ist nicht mehr verfügbar. Er wurde nicht erneut erstellt.",
       unknownField: "Unbekanntes Feld",
       nameRequired: "Ein Name ist erforderlich.",
       nameEmpty: "Der Name darf nicht leer sein.",

@@ -37,3 +37,29 @@ Save to make it available in the app sidebar. Pages open directly without
 starting a script. Rename and delete use the file menu. Keep at least one
 tool or page. Pages share the app permissions and revision, and can also be
 read and changed through the CLI and Assistant source operations.
+
+## Shared data and imports
+
+A Cloud administrator enables rsql globally; an app administrator then enables the app database in Settings. All users with Use access share the same rows. Schema changes require Admin. Disabling access keeps data; resetting deletes tables and records, and deleting the app also deletes its server database. Local files remain separate.
+
+Read the `kit.db` SDK page before programming database operations. `importData` validates rows and appends them in sequential batches. Its progress toast can cancel further work, but confirmed batches remain. `unknown` means the last write may already have completed. Do not blindly repeat it: automatic batch replay and durable resume are not available yet.
+
+Start simple for a one-person tool. Do not add locks, queues or conflict machinery unless multiple users actually need them. In shared workflows, prefer constraints and remember that read-then-write is not an atomic transaction. Reset invalidates running scripts; restart them to use the new database.
+
+## Update UI and ask for input
+
+Use `set(value)` on UI handles. Lists and tables also have `upsert(items)` and
+`remove(ids)`. Calling `remove()` with no argument clears the displayed items;
+it never deletes stored data. Tables need `rowKey` for keyed changes. Read the
+UI SDK Help for limits and shapes. The Alpha API has no legacy setters.
+
+For a new task or similar entry, open `kit.ui.modal.dialog({title, fields})` from
+a button. It supports text, number, select and boolean fields. Use
+`kit.ui.modal.confirm`, `.text` or `.number` for a single decision or value.
+Always handle cancellation before writing data. Stopping a script closes its
+dialog. Titles and field labels are required; standard buttons use Cloud's language.
+
+`kit.ui.chart({kind,...options})` offers all 14 stdlib chart types, including
+line, bar, donut and map. Pass JSON options and update with `.set(options)`.
+The shared UI controls theme, sizing and empty states. Formatter functions and
+custom HTML are not supported. Keep a readable explanation next to the chart.

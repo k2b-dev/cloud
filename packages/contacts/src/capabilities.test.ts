@@ -64,6 +64,8 @@ const context = {
   accessSubject: { type: "user", userId },
   user,
   locale: "en",
+  requestId: "req-test",
+  origin: "app",
   signal: new AbortController().signal,
 } satisfies CapabilityExecutionContext;
 

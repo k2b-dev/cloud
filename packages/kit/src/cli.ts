@@ -1,13 +1,5 @@
-import {
-  arg,
-  readCliInput,
-  command,
-  confirmFlag,
-  defineCliCommands,
-  flag,
-  printStructured,
-  type CloudCliContext,
-} from "@k2b/cloud/cli";
+import { databaseCommands } from "./cli/database";
+import { arg, readCliInput, command, confirmFlag, defineCliCommands, flag, printStructured, type CloudCliContext } from "@k2b/cloud/cli";
 import { createAccessCommands } from "@k2b/cloud/cli/access";
 import { PublicId, type Bundle } from "./contracts";
 import { SourceChanges, SourceReadInput, MetadataInput } from "./source";
@@ -39,6 +31,7 @@ export default defineCliCommands({
   name: "kit",
   summary: "Build and share local browser tools.",
   commands: [
+    ...databaseCommands,
     command("list", {
       summary: "List accessible apps",
       flags: {

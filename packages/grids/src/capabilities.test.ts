@@ -63,6 +63,8 @@ const userContext = (user: User): CapabilityExecutionContext => ({
   accessSubject: { type: "user", userId: user.id },
   user,
   locale: "en",
+  requestId: "req-test",
+  origin: "app",
   signal: new AbortController().signal,
 });
 
@@ -1105,6 +1107,8 @@ describe("Grids capabilities", () => {
         accessSubject: { type: "service_account", serviceAccountId: serviceAccount.id },
         user: null,
         locale: "en",
+        requestId: "req-test",
+        origin: "app",
         signal: new AbortController().signal,
       };
 

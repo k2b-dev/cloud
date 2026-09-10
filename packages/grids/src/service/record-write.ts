@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { type DateContext, err, fail, ok, type Result } from "@k2b/stdlib";
 import { sql } from "bun";
 import type { RecordMutationAudit } from "../contracts";
@@ -23,6 +24,8 @@ import { insertWithShortIdForDb } from "./short-id";
 import type { Field, GridRecord } from "./types";
 
 type DbRow = Record<string, unknown>;
+
+const sha256 = (value: string): string => createHash("sha256").update(value).digest("hex");
 
 const recordVersionConflict = (locale?: string) => ({
   code: "CONFLICT" as const,
@@ -386,6 +389,68 @@ export const create = async (
   if (!record) return fail(err.notFound(getGridsCrudMessages(opts.locale).record));
   notifyRecordEventOutbox(created.data.outboxId);
   return ok(record);
+};
+
+/**
+ * Create a Record exactly once for one caller-supplied claim. The receipt is
+ * written in the same transaction as the Record, so an uncertain retry replays
+ * the first Record instead of creating a second one.
+ */
+export const createIdempotent = async (
+  tableId: string,
+  payload: Record<string, unknown>,
+  actorId: string | null,
+  origin: MutationOrigin,
+  claim: { scope: string; key: string; requestHash: string },
+  opts: {
+    includeRelations?: boolean;
+    viewer?: ExpansionViewer;
+    dateConfig?: DateContext;
+    locale?: string;
+  } = {},
+): Promise<Result<{ record: GridRecord; replayed: boolean }>> => {
+  const messages = getGridsCrudMessages(opts.locale);
+  const scopeHash = sha256(claim.scope);
+  const keyHash = sha256(claim.key);
+  const claimed = await sql
+    .begin(async (tx): Promise<Result<{ recordId: string; outboxId: string | null; replayed: boolean }>> => {
+      await tx`SELECT pg_advisory_xact_lock(hashtextextended(${`grids:record-create-claim:${scopeHash}:${keyHash}`}, 0))`;
+      const [stored] = await tx<Array<{ request_hash: string; record_id: string }>>`
+        SELECT request_hash, record_id::text
+        FROM grids.record_create_claims
+        WHERE scope_hash = ${scopeHash} AND key_hash = ${keyHash}
+      `;
+      if (stored) {
+        return stored.request_hash === claim.requestHash
+          ? ok({ recordId: stored.record_id, outboxId: null, replayed: true })
+          : fail({ code: "IDEMPOTENCY_CONFLICT" as const, status: 409 as const, message: messages.capabilityIdempotencyConflict });
+      }
+      const created = await createInTransaction(tx, tableId, payload, actorId, origin, {
+        dateConfig: opts.dateConfig,
+        viewer: opts.viewer,
+        locale: opts.locale,
+      });
+      if (!created.ok) return created;
+      await tx`
+        INSERT INTO grids.record_create_claims (scope_hash, key_hash, request_hash, table_id, record_id)
+        VALUES (${scopeHash}, ${keyHash}, ${claim.requestHash}, ${tableId}::uuid, ${created.data.record.id}::uuid)
+      `;
+      return ok({ recordId: created.data.record.id, outboxId: created.data.outboxId, replayed: false });
+    })
+    .catch(async (error: unknown) => {
+      const conflict = recordUniqueConflict<{ recordId: string; outboxId: string | null; replayed: boolean }>(
+        error,
+        await listFields(tableId),
+        opts.locale,
+      );
+      if (conflict) return conflict;
+      throw error;
+    });
+  if (!claimed.ok) return claimed;
+  const record = await get(tableId, claimed.data.recordId, opts);
+  if (!record) return fail(err.notFound(messages.record));
+  if (claimed.data.outboxId) notifyRecordEventOutbox(claimed.data.outboxId);
+  return ok({ record, replayed: claimed.data.replayed });
 };
 
 export const createMany = async (

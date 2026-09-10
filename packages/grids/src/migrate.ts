@@ -2112,6 +2112,34 @@ const migrateFormsAndEvents = async (sql: SQL): Promise<void> => {
   await sql`CREATE UNIQUE INDEX IF NOT EXISTS idx_grids_forms_public_token ON grids.forms(public_token) WHERE public_token IS NOT NULL AND deleted_at IS NULL`.simple();
   console.log("  ✓ grids.forms");
 
+  // Keep retry receipts independently of the created Record: deleting a
+  // Record must not turn a retry into another submission.
+  await sql`
+    CREATE TABLE IF NOT EXISTS grids.form_submissions (
+      scope_hash TEXT NOT NULL,
+      key_hash TEXT NOT NULL,
+      request_hash TEXT NOT NULL,
+      table_id UUID NOT NULL REFERENCES grids.tables(id) ON DELETE CASCADE,
+      record_id UUID NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      PRIMARY KEY (scope_hash, key_hash)
+    )
+  `.simple();
+
+  // Keep create receipts independently of the created Record: deleting a
+  // Record must not turn a capability retry into a second create.
+  await sql`
+    CREATE TABLE IF NOT EXISTS grids.record_create_claims (
+      scope_hash TEXT NOT NULL,
+      key_hash TEXT NOT NULL,
+      request_hash TEXT NOT NULL,
+      table_id UUID NOT NULL REFERENCES grids.tables(id) ON DELETE CASCADE,
+      record_id UUID NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      PRIMARY KEY (scope_hash, key_hash)
+    )
+  `.simple();
+
   // ──────────────────────────────────────────────────────────────────
   // audit log
   // ──────────────────────────────────────────────────────────────────

@@ -491,18 +491,35 @@ Actions declare the mutation's objective behavior:
 
 | Field | Meaning |
 | --- | --- |
-| `destructive` | `true` when the Action may delete, overwrite, remove, or otherwise destructively update existing state; `false` only for exclusively additive updates |
+| `destructive` | `true` when the effect is irreversible or externally visible; `false` for reversible in-Cloud state changes |
 | `openWorld` | `true` when the Action may interact with an open world of external entities; `false` when its interaction domain is closed |
 | `idempotency` | Retry contract: `none` or `required` |
 | `approval` | Optional Cloud client policy; `"rememberable"` lets a user remember approval for this closed-world Action |
 | `review` | Optional read-only description of the concrete effect for human review |
 
-Cloud follows the MCP `ToolAnnotations` meanings rather than inventing narrower
-risk labels. Query and Action kinds project to `readOnlyHint`; `destructive`
-and `openWorld` map directly to the matching MCP hints. In particular, changing
-an existing value is not exclusively additive, so an Action such as rename,
-replace, move, clear, or remove uses `destructive: true`. `openWorld` is
-independent of mutation: a read-only web search is still open-world.
+Query and Action kinds project to the MCP `readOnlyHint`; `destructive` and
+`openWorld` project to the matching MCP hints. `openWorld` is independent of
+mutation: a read-only web search is still open-world.
+
+**`destructive` means irreversible or externally visible.** Deleting a record,
+sending a message, publishing, sharing outside Cloud, and overwriting content
+without an undo path are destructive. A reversible state change the same user
+can set back — marking read, marking a favorite, editing tags, changing a status,
+or reassigning an owner — is **not** destructive. Choose the label from the
+consequence for the user, not from the SQL statement.
+
+Cloud enforces the mechanical part of that rule when it compiles a manifest, so
+a violating app fails to start rather than shipping a misleading catalog:
+
+- every `destructive: true` Action must declare `review()` and
+  `idempotency: "required"`;
+- every `openWorld: true` Action must declare `review()` and
+  `idempotency: "required"`, and must not use `approval: "rememberable"`;
+- `approval: "rememberable"` must not be combined with `destructive: true`.
+
+An Action that creates a record should also require idempotency. That one is
+guidance rather than a compile check, because Cloud cannot tell a create from
+an update.
 
 The Cloud `idempotency` field declares transport retry safety rather than a
 broader semantic guarantee. Queries are retry-safe. An Action with
@@ -525,8 +542,8 @@ That review must return an opaque, app-owned `approvalScope`. A remembered
 choice matches the current actor, qualified Action, and exact scope; for
 example, Mail uses one scope per mailbox. Choose the smallest stable domain in
 which repeated calls have the same understandable consequence.
-Cloud rejects this policy on `openWorld` Actions and on Actions without a
-`review`. It does not weaken app-side authorization, input validation, audit,
+Cloud rejects this policy on `openWorld` Actions, on `destructive` Actions, and
+on Actions without a `review`. It does not weaken app-side authorization, input validation, audit,
 or concurrency checks, all of which still run for every invocation.
 
 Use remembered approval only for bounded, repeatable changes where future
@@ -650,8 +667,10 @@ Cloud validates the declaration at startup:
 - `idempotencyKey` is reserved for transports and cannot be an Action field;
 - Action reviews use the fixed platform schema and are advertised as
   `review: true` only when the callback exists;
-- `approval: "rememberable"` appears only on closed-world Actions with a
-  review;
+- `approval: "rememberable"` appears only on non-destructive, closed-world
+  Actions with a review;
+- every `destructive` or `openWorld` Action declares `review()` and
+  `idempotency: "required"`;
 - every provider-owned Type used by `refs` or Universal Search is declared;
 - an app may declare at most 200 Types, 200 Queries, and 200 Actions;
 - the deterministic live manifest may not exceed 256 KiB.
@@ -983,6 +1002,20 @@ interpret provider message codes. See
 contract and [Internationalize an application](/en/docs/build/internationalization)
 for the message and error boundary.
 
+Two more invocation-metadata fields reach every Query, Action, and review
+handler on the same `CapabilityExecutionContext`:
+
+| Field | Meaning |
+| --- | --- |
+| `context.requestId` | Correlation id of the originating Cloud request. The dispatcher reuses a valid incoming `x-request-id` and generates one otherwise, then forwards it unchanged to the app and stores it on the execution record |
+| `context.origin` | Cloud surface that invoked the capability: `assistant`, `mcp`, `http`, or `app` |
+
+Write `context.requestId` into the app's own audit rows. That is the join
+between an app's domain trail and the platform execution record, and it works
+without either side sharing payloads. Use `context.origin` for logging or
+diagnostics only — never for authorization, because permission decisions belong
+to the actor and access subject.
+
 Browser and client islands use the same-origin public client:
 
 ```ts
@@ -1086,3 +1119,35 @@ contract.
 > Cloud capability MCP exposes live application operations. Fibel MCP exposes
 > read-only developer documentation. They are separate endpoints with separate
 > purposes.
+
+### Execution history
+
+Every capability invocation is recorded once, by the dispatcher, in the
+platform-owned `capabilities.executions` table. The assistant, MCP, the
+Capabilities workspace app, and app-to-app mandate calls all produce the same
+row, so operators read one history instead of one per surface. An Action review
+is a read-only preview and is not an execution, so it is not recorded.
+
+A row holds correlation and shape, never payloads: `request_id`, `origin`,
+`app_id`, the qualified `capability`, `kind`, the declared `destructive` flag,
+the acting principal and the access subject when they differ, `status`,
+`error_code`, the input and output shape metadata, an optional
+`idempotency_key`, and start, end, and duration.
+
+| Status | Meaning |
+| --- | --- |
+| `succeeded` | The app returned a valid result |
+| `invalid_input` | Input failed schema, idempotency, or envelope validation |
+| `denied` | The caller was not authorized for this capability |
+| `rejected` | A user declined the Action approval, so it never ran |
+| `timed_out` | The app did not answer within the capability deadline |
+| `failed` | Any other failure, including app errors and cancellation |
+
+Origins are `assistant`, `mcp`, `http`, and `app`. Retention is bounded: Cloud
+prunes execution rows older than 90 days.
+
+Operators read this history at
+[Observability](/en/docs/operations/observability). Applications never write to
+this table; they record their own domain effects with
+[Audit events](/en/docs/platform/audit-events) and correlate them through
+`context.requestId`.

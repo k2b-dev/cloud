@@ -170,3 +170,7 @@ same license.
 
 Separate commercial licenses for proprietary, reseller, managed-service,
 white-label, or embedded product use are available by contacting the maintainer.
+
+### Kit shared databases in development
+
+The local infrastructure includes an optional rsql container for [Kit](packages/kit/README.md). Database access stays disabled until configured under `/admin/kit`. The Kit README explains persistence, import limits and proportionate concurrency for small custom apps.

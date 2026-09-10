@@ -129,6 +129,14 @@ const capabilityFail = (context: CapabilityExecutionContext, error: ServiceError
   return fail({ ...error, message });
 };
 
+/**
+ * Guard for irreversible Actions whose service guards repeat calls with an
+ * ownership or time-window check instead of a durable key claim. The key proves
+ * the caller retried the same call deliberately.
+ */
+const requireIdempotentRetry = (context: CapabilityExecutionContext) =>
+  context.idempotencyKey ? null : capabilityFail(context, err.badInput("An idempotency key is required"), "genericIdempotencyKeyRequired");
+
 const truncateText = (value: string, maxBytes: number): { text: string; truncated: boolean } => {
   if (Buffer.byteLength(value, "utf8") <= maxBytes) return { text: value, truncated: false };
   const chunks: string[] = [];
@@ -930,6 +938,7 @@ const actionAudit = (context: CapabilityExecutionContext, actionId: string, targ
   action: `spaces.capability.${actionId}`,
   actor: capabilityAuditActor(context),
   target: { type: targetType, id: targetId },
+  requestId: context.requestId,
   metadata: { capability: `spaces.${actionId}` },
 });
 
@@ -1227,6 +1236,8 @@ const runChecklistUpdate = async (input: z.infer<typeof TaskChecklistUpdateInput
 
 const runChecklistDelete = async (input: z.infer<typeof TaskChecklistDeleteInputSchema>, context: CapabilityExecutionContext) =>
   audited(actionAudit(context, "task.checklist.delete", "space_item", input.itemId), async () => {
+    const retry = requireIdempotentRetry(context);
+    if (retry) return retry;
     const task = await requireChecklistTask(input.itemId, context, "write");
     if (!task.ok) return task;
     const id = await spacesPublicResources.resolvePublicId("checklist", input.entryId);
@@ -1488,6 +1499,8 @@ const runEventUpdate = async (input: z.infer<typeof EventUpdateInputSchema>, con
 
 const runItemDelete = async (input: z.infer<typeof ItemDeleteInputSchema>, context: CapabilityExecutionContext) =>
   audited(actionAudit(context, "item.delete", "space_item", input.itemId), async () => {
+    const retry = requireIdempotentRetry(context);
+    if (retry) return retry;
     const resolved = await requireItem(input.itemId, context, "write");
     if (!resolved.ok) return resolved;
     const result = await spacesService.item.remove({ id: resolved.data.internalId, actor: spaceActivityActor(context) });
@@ -1524,6 +1537,8 @@ const runCommentCreate = async (input: z.infer<typeof CommentCreateInputSchema>,
 
 const runCommentUpdate = async (input: z.infer<typeof CommentUpdateInputSchema>, context: CapabilityExecutionContext) =>
   audited(actionAudit(context, "comment.update", "space_comment", input.commentId), async () => {
+    const retry = requireIdempotentRetry(context);
+    if (retry) return retry;
     if (!context.user) return capabilityFail(context, err.forbidden("Comments require a user-backed actor"), "commentsNeedUser");
     const resolved = await resolveComment(input.commentId, context, "write");
     if (!resolved.ok) return resolved;
@@ -1537,6 +1552,8 @@ const runCommentUpdate = async (input: z.infer<typeof CommentUpdateInputSchema>,
 
 const runCommentDelete = async (input: z.infer<typeof CommentDeleteInputSchema>, context: CapabilityExecutionContext) =>
   audited(actionAudit(context, "comment.delete", "space_comment", input.commentId), async () => {
+    const retry = requireIdempotentRetry(context);
+    if (retry) return retry;
     if (!context.user) return capabilityFail(context, err.forbidden("Comments require a user-backed actor"), "commentsNeedUser");
     const resolved = await resolveComment(input.commentId, context, "write");
     if (!resolved.ok) return resolved;
@@ -2092,8 +2109,7 @@ export const spacesCapabilities = defineCapabilities({
       data: TaskChecklistDeleteDataSchema,
       destructive: true,
       openWorld: false,
-      idempotency: "none",
-      approval: "rememberable",
+      idempotency: "required",
       review: reviewChecklist,
       run: runChecklistDelete,
     },
@@ -2128,7 +2144,7 @@ export const spacesCapabilities = defineCapabilities({
       description: "Remove one Cloud resource reference from a writable Space item, including dangling references.",
       input: ItemResourceReferenceRemoveInputSchema,
       data: ItemResourceReferenceRemoveDataSchema,
-      destructive: true,
+      destructive: false,
       openWorld: false,
       idempotency: "none",
       approval: "rememberable",
@@ -2153,7 +2169,7 @@ export const spacesCapabilities = defineCapabilities({
       description: "Replace the tags on one writable task or event without changing its other fields.",
       input: ItemTagsSetInputSchema,
       data: ItemDataSchema,
-      destructive: true,
+      destructive: false,
       openWorld: false,
       idempotency: "none",
       approval: "rememberable",
@@ -2209,7 +2225,7 @@ export const spacesCapabilities = defineCapabilities({
       description: "Remove one blocker relationship between two tasks.",
       input: TaskDependencyInputSchema,
       data: TaskDependencyRemoveDataSchema,
-      destructive: true,
+      destructive: false,
       openWorld: false,
       idempotency: "none",
       approval: "rememberable",
@@ -2252,7 +2268,7 @@ export const spacesCapabilities = defineCapabilities({
       description: "Update selected fields of an existing task without converting its item kind.",
       input: TaskUpdateInputSchema,
       data: TaskDataSchema,
-      destructive: true,
+      destructive: false,
       openWorld: false,
       idempotency: "none",
       approval: "rememberable",
@@ -2303,7 +2319,7 @@ export const spacesCapabilities = defineCapabilities({
       description: "Complete an unblocked task or reopen one task using the Space workflow columns.",
       input: TaskSetCompletedInputSchema,
       data: TaskDataSchema,
-      destructive: true,
+      destructive: false,
       openWorld: false,
       idempotency: "none",
       approval: "rememberable",
@@ -2355,7 +2371,7 @@ export const spacesCapabilities = defineCapabilities({
       description: "Update selected event fields without converting its item kind.",
       input: EventUpdateInputSchema,
       data: EventDataSchema,
-      destructive: true,
+      destructive: false,
       openWorld: false,
       idempotency: "none",
       approval: "rememberable",
@@ -2439,7 +2455,8 @@ export const spacesCapabilities = defineCapabilities({
       description: "Record that a prepared event invitation was attached to its correlated Mail draft after rechecking Space event access.",
       input: EventInvitationCommitInputSchema,
       data: EventInvitationCommitDataSchema,
-      destructive: true,
+      // Reversible: the commit only marks the prepared invitation as drafted; nothing leaves Cloud.
+      destructive: false,
       openWorld: false,
       idempotency: "none",
       approval: "rememberable",
@@ -2471,7 +2488,7 @@ export const spacesCapabilities = defineCapabilities({
       data: ItemDeleteDataSchema,
       destructive: true,
       openWorld: false,
-      idempotency: "none",
+      idempotency: "required",
       review: async (input, context) => {
         const t = spacesMessages(context.locale);
         const resolved = await requireItem(input.itemId, context, "write");
@@ -2518,10 +2535,10 @@ export const spacesCapabilities = defineCapabilities({
       description: "Update the current user's own comment within 10 minutes in a writable Space.",
       input: CommentUpdateInputSchema,
       data: CommentDataSchema,
+      // Spaces keeps no comment history, so an edit overwrites the original without an undo path.
       destructive: true,
       openWorld: false,
-      idempotency: "none",
-      approval: "rememberable",
+      idempotency: "required",
       review: async (input, context) => {
         const t = spacesMessages(context.locale);
         if (!context.user) return capabilityFail(context, err.forbidden("Comments require a user-backed actor"), "commentsNeedUser");
@@ -2537,7 +2554,6 @@ export const spacesCapabilities = defineCapabilities({
             { label: t.replacementComment, value: input.content, display: "block" },
           ],
           links: [{ rel: "open" as const, href: buildSpaceItemHref(resolved.data.item.spaceId, resolved.data.item.id) }],
-          approvalScope: itemApprovalScope(resolved.data.item.id),
         });
       },
       run: runCommentUpdate,
@@ -2549,7 +2565,7 @@ export const spacesCapabilities = defineCapabilities({
       data: CommentDeleteDataSchema,
       destructive: true,
       openWorld: false,
-      idempotency: "none",
+      idempotency: "required",
       review: async (input, context) => {
         const t = spacesMessages(context.locale);
         if (!context.user) return capabilityFail(context, err.forbidden("Comments require a user-backed actor"), "commentsNeedUser");
@@ -2574,7 +2590,8 @@ export const spacesCapabilities = defineCapabilities({
         "Idempotently create, update, or cancel the matching event in an explicitly selected writable Space. Mail identifiers are opaque correlation values and grant no Space access.",
       input: CalendarInvitationImportCapabilityInputSchema,
       data: CalendarInvitationImportCapabilityDataSchema,
-      destructive: true,
+      // Reversible: applies the invitation to an in-Cloud event; no external effect.
+      destructive: false,
       openWorld: false,
       idempotency: "none",
       review: async (input, context) => {
@@ -2618,7 +2635,8 @@ export const spacesCapabilities = defineCapabilities({
       description: "Record the correlated Mail draft after mail.draft.create succeeds and recheck access to the linked Space event.",
       input: CalendarInvitationResponseCommitCapabilityInputSchema,
       data: CalendarInvitationResponseCommitCapabilityDataSchema,
-      destructive: true,
+      // Reversible: only records that a reply draft exists; Mail owns any later send.
+      destructive: false,
       openWorld: false,
       idempotency: "none",
       approval: "rememberable",

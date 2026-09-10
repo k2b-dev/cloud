@@ -6,6 +6,7 @@ import { customAppBindingRecordTableId } from "../custom-apps/value-bindings";
 import { listByTable } from "./fields";
 import { get as getForm } from "./forms";
 import { resolvePublicId, resolvePublicIds } from "./public-resources";
+import { get as getTable } from "./tables";
 
 type PublishedFormSurface = CustomAppFormBlock | Extract<CustomAppSidebarAction, { kind: "form" }>;
 
@@ -23,6 +24,12 @@ export const resolvePublishedCustomAppForm = async (input: {
       )
     : input.capabilities.forms.find((candidate) => "sidebarActionId" in candidate && candidate.sidebarActionId === input.surface.id);
   if (!capability) return null;
+  const editing = "mode" in input.surface && input.surface.mode === "edit";
+  if (editing !== ("mode" in capability && capability.mode === "edit")) return null;
+  if (editing) {
+    const tableId = input.page?.record?.tableId;
+    if (!tableId || (await resolvePublicId("table", tableId)) !== capability.tableId) return null;
+  }
   const publicFixedFieldIds = Object.keys(input.surface.fixedValues);
   if (
     !ShortIdSchema.safeParse(input.surface.formId).success ||
@@ -53,6 +60,17 @@ export const resolvePublishedCustomAppForm = async (input: {
   const form = await getForm(formId);
   if (!form) return null;
   const fields = await listByTable(form.tableId, true);
+  if (editing) {
+    const source = await getTable(form.tableId);
+    if (!source) return null;
+    const inputIds = new Set(form.config.fields.filter((entry) => entry.kind === "user_input").map((entry) => entry.fieldId));
+    for (const field of fields) {
+      if (!inputIds.has(field.id) || field.type !== "relation") continue;
+      const targetId = field.config.targetTableId;
+      const target = typeof targetId === "string" ? await getTable(targetId) : null;
+      if (!target || target.baseId !== source.baseId) return null;
+    }
+  }
   const inlineTargetFields: Field[] = (
     await Promise.all(customAppFormInlineTargetTableIds(form.config, fields).map((tableId) => listByTable(tableId, true)))
   ).flat();

@@ -532,6 +532,12 @@ const submitPublishedCustomAppForm = async (c: Context<AuthContext>, submitted: 
   const bindingContext = await loadRuntimeBindingContext(runtime);
   if (!bindingContext) return c.json({ message: apiMessages(c).formNotFound }, 404);
 
+  const editing = block.mode === "edit";
+  const expectedVersion = z.number().int().positive().safeParse(submitted.version);
+  if (editing && (!bindingContext.pageRecord || bindingContext.pageRecord.tableId !== form.tableId || !expectedVersion.success)) {
+    return c.json({ message: apiMessages(c).invalidFormSubmission }, 400);
+  }
+
   const submission = await fromPublicFormSubmission(c, form.tableId, submitted);
   if (!submission.ok) return respond(c, () => Promise.resolve(submission));
   const fixedValues: Record<string, unknown> = {};
@@ -543,6 +549,9 @@ const submitPublishedCustomAppForm = async (c: Context<AuthContext>, submitted: 
   const result = await gridsService.form.submit({
     form,
     submission: submission.data,
+    ...(editing && bindingContext.pageRecord && expectedVersion.success
+      ? { record: { id: bindingContext.pageRecord.id, version: expectedVersion.data } }
+      : {}),
     actorId: currentActorUserId(c),
     dateConfig,
     fixedValues,
@@ -561,7 +570,7 @@ const submitPublishedCustomAppForm = async (c: Context<AuthContext>, submitted: 
         recordId,
       )
     : undefined;
-  return c.json({ recordId, navigateTo }, 201);
+  return c.json({ recordId, navigateTo }, editing ? 200 : 201);
 };
 
 const submitPublishedSidebarForm = async (c: Context<AuthContext>, submitted: Record<string, unknown>) => {

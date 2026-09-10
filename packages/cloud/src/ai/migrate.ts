@@ -670,9 +670,6 @@ export const migrateCloudAi = async (): Promise<void> => {
       location TEXT NOT NULL DEFAULT 'server',
       status TEXT NOT NULL DEFAULT 'pending',
       approval_state TEXT NOT NULL DEFAULT 'not_required',
-      input_meta JSONB,
-      output_meta JSONB,
-      error TEXT,
       created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
       started_at TIMESTAMPTZ,
       approval_requested_at TIMESTAMPTZ,
@@ -695,6 +692,23 @@ export const migrateCloudAi = async (): Promise<void> => {
   `.simple();
 
   await sql`ALTER TABLE ai.tool_calls ADD COLUMN IF NOT EXISTS idempotency_key TEXT`.simple();
+
+  // Capability shape, outcome, and latency belong to capabilities.executions,
+  // which the capability dispatcher writes exactly once. ai.tool_calls keeps
+  // only AI-specific state: approval, turn linkage, and the correlating
+  // request id shared with the execution record and the app's audit rows.
+  await sql`ALTER TABLE ai.tool_calls ADD COLUMN IF NOT EXISTS request_id TEXT`.simple();
+  await sql`
+    ALTER TABLE ai.tool_calls
+      DROP COLUMN IF EXISTS input_meta,
+      DROP COLUMN IF EXISTS output_meta,
+      DROP COLUMN IF EXISTS error
+  `.simple();
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_ai_tool_calls_request
+    ON ai.tool_calls(request_id)
+    WHERE request_id IS NOT NULL
+  `.simple();
   await sql`
     CREATE UNIQUE INDEX IF NOT EXISTS idx_ai_tool_calls_idempotency_key
     ON ai.tool_calls(idempotency_key)

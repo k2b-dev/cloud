@@ -88,8 +88,8 @@ removes source and grants; it cannot remove browser data on other devices.
 
 Sharing shares code, never browser-local results. Disabling persistence blocks
 script reads and writes without deleting retained data. There is no temporary
-fallback. The browser Settings explorer can still inspect retained local data;
-all users with Use access can clear their own app-local data after confirmation.
+fallback. The browser sidebar Local data explorer can still inspect retained local data;
+all users with Use access can download or delete individual files and saved values, or clear their own app-local data after confirmation.
 
 ## Authoring help
 
@@ -108,3 +108,36 @@ states. The user explicitly starts every tool; code changes do not auto-run it.
 ### Markdown pages
 
 Project files may also use `.md`. Each Markdown file appears in app navigation; its first `# Heading` supplies the title, falling back to its filename. The editor offers **Add Markdown page**, the shared Markdown editor, and a live preview. Pages render directly without a worker launch. Existing source read, validate, apply, pull, and push operations handle Markdown with the same permissions, revision guards, and file size limits. Markdown cannot be imported as JavaScript. An app needs at least one script entrypoint or Markdown page.
+
+## Shared databases
+
+`cld kit admin list` lists all apps for global admins. `admin settings` reads redacted rsql settings; `admin configure --input-file <private-file>` and `admin test --input-file ...` use `{ enabled, url, token? }`. Use `--stdin` instead of `--input-file` to read standard input. Never put tokens in command arguments or output. Existing access commands and app deletion also work for global admins recovering orphaned apps.
+
+Use `db status <id>` before changing data. `db enable` / `db disable` control access without deleting data; `db reset <id> --yes` removes all tables and records. `db export <id> <new-file>` streams a SQLite snapshot. App deletion also schedules database cleanup. Global feature disable prevents ordinary database operations but preserves data.
+
+`db call <id> --input-file <file>` accepts the DatabaseRequest schema: `tables.list`, `tables.create`, `tables.update`, `tables.delete`, `schema.get`, `rows.list`, `rows.get`, `rows.insert`, `rows.update`, `rows.delete`, or restricted `query`. Read the in-app SDK Help for supported fields. Schema operations require Admin; rows require Use. CLI binds the current generation; conflicting resets reject stale operations.
+
+`db import <id> <table> --input-file <rows.json> [--create]` appends JSON rows in sequential batches. It never automatically replays a write after a lost response. Inspect `confirmedRows` and `status`; an incomplete import exits with an error. A new import is not a deduplication mechanism.
+
+Keep concurrency simple for the common single-user Kit app. Do not add distributed locks, queues, polling or conflict resolution without a real shared workflow. Use constraints where simultaneous edits matter. Read-then-write and a sequence of batches are not atomic transactions. The user/admin must explicitly enable server storage; do not enable it merely because you are editing source.
+
+### Current Alpha UI contract
+
+Use `handle.set(value)`, never legacy setters. Lists and keyed tables also expose
+`upsert(items)` and `remove(ids)`; omission clears displayed items, an empty ID
+array does nothing. Table mutations require `rowKey`; upsert supplies complete
+rows and keeps existing order. Reuse list action handles across refreshes.
+Stored data is unaffected by UI collection methods.
+
+Use `kit.ui.modal.confirm/text/number/dialog` for decisions and schema forms;
+await the result and handle cancellation before writes. Titles and field labels
+are required. `dialog` accepts text/number/select/boolean fields; select options
+need value and label. Prefer a New item dialog over a permanently expanded form
+when the list is the main task. No functions or HTML in the schema.
+
+`kit.ui.chart({kind,...options})` supports all 14 stdlib chart types with validated
+JSON options; `.set(options)` updates it. Read the SDK Help for data shapes and
+limits. Use the existing Help tools rather than guessing chart methods.
+Mutating Kit capabilities require an idempotency key under the Cloud Action
+contract; Assistant supplies one per invocation. Never retry an uncertain write
+with a new key.

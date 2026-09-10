@@ -1,11 +1,11 @@
 import { createSignal, For, onMount, Show } from "solid-js";
-import { Button, Placeholder, SettingsCollection, useLocale } from "@k2b/ui";
+import { Button, Placeholder, SettingsCollection, prompts, useLocale } from "@k2b/ui";
 import { files } from "@k2b/stdlib/browser";
 import { AppStorage } from "../runtime/storage";
 import { messages } from "./messages";
 
 type Entry = { area: "files" | "kv"; path: string };
-export function LocalFiles(props: { appId: string; userId: string }) {
+export function LocalFiles(props: { appId: string; userId: string; beforeDelete: () => Promise<void> }) {
   const locale = useLocale(),
     t = () => messages.resolve([locale()]).t;
   const storage = new AppStorage(props.userId, props.appId, true);
@@ -46,13 +46,37 @@ export function LocalFiles(props: { appId: string; userId: string }) {
       setBusy(false);
     }
   }
+  async function remove(entry?: Entry) {
+    if (busy()) return;
+    setBusy(true);
+    try {
+      const confirmed = await prompts.confirm(entry ? `${entry.path}\n\n${t().confirmDeleteLocal}` : t().confirmClearLocal, {
+        title: entry ? t().deleteLocalItem : t().clearLocal,
+        confirmText: entry ? t().deleteLocalItem : t().clearLocal,
+        variant: "danger",
+      });
+      if (!confirmed) return;
+      setError("");
+      await props.beforeDelete();
+      if (entry) await storage.call(entry.area === "files" ? "opfs.delete" : "store.delete", [entry.path]);
+      else await storage.clear();
+      await refresh();
+    } catch {
+      setError(t().localFilesError);
+    } finally {
+      setBusy(false);
+    }
+  }
   onMount(() => void refresh());
   return (
-    <div class="kit-flow kit-flow-column kit-gap-md">
+    <div class="kit-flow kit-flow-column kit-gap-md" style={{ "min-height": "min(50vh, 28rem)", "max-height": "65vh", overflow: "auto" }}>
       <p class="text-sm text-muted">{t().storageHint}</p>
-      <div>
+      <div class="flex items-center justify-between gap-2">
         <Button variant="ghost" size="sm" loading={busy()} onClick={refresh}>
           <i class="ti ti-refresh" aria-hidden="true" /> {t().refreshFiles}
+        </Button>
+        <Button variant="danger" size="sm" disabled={busy()} onClick={() => void remove()}>
+          <i class="ti ti-trash" aria-hidden="true" /> {t().clearLocal}
         </Button>
       </div>
       <Show when={error()}>
@@ -84,6 +108,15 @@ export function LocalFiles(props: { appId: string; userId: string }) {
                   aria-label={`${t().downloadFile}: ${entry.path}`}
                 >
                   <i class="ti ti-download" aria-hidden="true" /> {t().downloadFile}
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={busy()}
+                  onClick={() => void remove(entry)}
+                  aria-label={`${t().deleteLocalItem}: ${entry.path}`}
+                >
+                  <i class="ti ti-trash" aria-hidden="true" /> {t().deleteLocalItem}
                 </Button>
               </SettingsCollection.Item.Actions>
             </SettingsCollection.Item>

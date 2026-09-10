@@ -1,3 +1,4 @@
+import { hasRole } from "@k2b/cloud/contracts";
 import {
   type AccessSubject,
   type AuthContext,
@@ -14,6 +15,7 @@ import {
 } from "@k2b/cloud/server";
 import { crypto } from "@k2b/stdlib";
 import { sql } from "bun";
+import { enqueueDatabaseCleanup, requireAdmin } from "./database";
 import { type Bundle, type Project, type ProjectInput, PublicId } from "../contracts";
 import { validateProject } from "../project";
 import { MetadataInput, mergeSource, SOURCE_WINDOW, SourceChanges, SourceReadInput, sourceManifest } from "../source";
@@ -36,7 +38,7 @@ type Row = {
   persistence_enabled: boolean;
   updated_at: Date;
 };
-function user(identity: Identity) {
+export function user(identity: Identity) {
   const u = userFromActor(identity.actor);
   if (!u || identity.accessSubject.type !== "user" || identity.accessSubject.userId !== u.id) throw new ProjectError(403, "USER_REQUIRED");
   return u;
@@ -60,7 +62,7 @@ async function permission(db: Db, id: string, identity: Identity): Promise<Permi
   >`SELECT a.permission FROM auth.access a JOIN kit.project_access pa ON pa.access_id=a.id WHERE pa.project_id=${id}::uuid AND ${match} ORDER BY CASE a.permission WHEN 'admin' THEN 3 WHEN 'write' THEN 2 WHEN 'read' THEN 1 ELSE 0 END DESC LIMIT 1`;
   return r?.permission ?? "none";
 }
-async function requireProject(db: Db, publicId: string, identity: Identity, required: PermissionLevel, lock = false) {
+export async function requireProject(db: Db, publicId: string, identity: Identity, required: PermissionLevel, lock = false) {
   PublicId.parse(publicId);
   user(identity);
   const rows = lock
@@ -68,7 +70,7 @@ async function requireProject(db: Db, publicId: string, identity: Identity, requ
     : await db<Row[]>`SELECT * FROM kit.projects WHERE short_id=${publicId}`;
   const row = rows[0];
   if (!row) throw new ProjectError(404, "NOT_FOUND");
-  const level = await permission(db, row.id, identity);
+  const level = hasRole(user(identity), "admin") ? "admin" : await permission(db, row.id, identity);
   if (!hasPermission(level, required)) throw new ProjectError(403, "ACCESS_DENIED");
   return { row, level };
 }
@@ -101,6 +103,33 @@ async function writeFiles(db: Db, id: string, input: ProjectInput) {
   for (const f of input.files) await db`INSERT INTO kit.project_files(project_id,path,content) VALUES(${id}::uuid,${f.path},${f.content})`;
 }
 export const kitService = {
+  async adminList(identity: Identity, page = 1, search = "") {
+    requireAdmin(identity);
+    const items = await sql<
+      {
+        id: string;
+        name: string;
+        description: string;
+        permissions: number;
+        admins: number;
+        database_enabled: boolean;
+        transitioning: boolean;
+      }[]
+    >`SELECT p.short_id AS id,p.name,p.description,count(a.id)::int AS permissions,
+      count(a.id) FILTER (WHERE a.permission='admin')::int AS admins,
+      coalesce(d.enabled,false) AS database_enabled,d.pending_namespace IS NOT NULL AS transitioning
+      FROM kit.projects p LEFT JOIN kit.project_access pa ON pa.project_id=p.id LEFT JOIN auth.access a ON a.id=pa.access_id
+      LEFT JOIN kit.project_databases d ON d.project_id=p.id
+      WHERE position(lower(${search}) in lower(p.name || ' ' || p.short_id || ' ' || p.description))>0
+      GROUP BY p.id,d.enabled,d.pending_namespace ORDER BY p.updated_at DESC,p.id LIMIT 30 OFFSET ${(page - 1) * 30}`;
+    const [summary] = await sql<{ total: number; orphaned: number; databases: number; cleanup: number }[]>`SELECT count(*)::int AS total,
+      count(*) FILTER (WHERE NOT EXISTS (SELECT 1 FROM kit.project_access pa JOIN auth.access a ON a.id=pa.access_id WHERE pa.project_id=p.id AND a.permission='admin'))::int AS orphaned,
+      count(*) FILTER (WHERE d.enabled)::int AS databases,
+      (SELECT count(*)::int FROM kit.database_cleanup) AS cleanup
+      FROM kit.projects p LEFT JOIN kit.project_databases d ON d.project_id=p.id
+      WHERE position(lower(${search}) in lower(p.name || ' ' || p.short_id || ' ' || p.description))>0`;
+    return { items, summary: summary ?? { total: 0, orphaned: 0, databases: 0, cleanup: 0 }, page };
+  },
   async list(identity: Identity, page = 1, search = "") {
     const match = predicate(identity);
     const rows = await sql<
@@ -208,6 +237,7 @@ export const kitService = {
     return sql.begin(async (db) => {
       const { row } = await requireProject(db, id, identity, "admin", true);
       const grants = await db<{ access_id: string }[]>`SELECT access_id FROM kit.project_access WHERE project_id=${row.id}::uuid`;
+      await enqueueDatabaseCleanup(db, row.id);
       await db`DELETE FROM kit.projects WHERE id=${row.id}::uuid`;
       for (const g of grants) await deleteAccess({ id: g.access_id }, db);
       return { deleted: true };

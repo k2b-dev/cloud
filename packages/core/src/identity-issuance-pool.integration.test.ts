@@ -1,8 +1,8 @@
-import { bindProcessApplicationId, clearProcessApplicationId } from "../../cloud/src/_internal/process-identity";
 import { afterAll, beforeAll, describe, expect, mock, spyOn, test } from "bun:test";
 import * as bun from "bun";
 import { createLocalJWKSet } from "jose";
 import { z } from "zod";
+import { bindProcessApplicationId, clearProcessApplicationId } from "../../cloud/src/_internal/process-identity";
 
 // Run this file alone: replacing Bun's default SQL handle ensures preparation,
 // guarded transactions, mandates and audits all compete for the SAME real pool.
@@ -207,6 +207,7 @@ if (process.env.CLOUD_IDENTITY_POOL_INTEGRATION !== "1") {
           headers: { "x-request-id": "dispatch", authorization: "Bearer source-never-forwarded" },
         }),
         kind: "queries",
+        origin: "app" as const,
         appId: "spaces",
         capabilityId: "read",
         input: { id: "one" },
@@ -243,6 +244,7 @@ if (process.env.CLOUD_IDENTITY_POOL_INTEGRATION !== "1") {
       const failed = await dispatchCapability({
         request: new Request("http://core.test/invoke", { headers: { "x-request-id": "dispatch-failed" } }),
         kind: "queries",
+        origin: "app" as const,
         appId: "spaces",
         capabilityId: "read",
         input: { id: "one" },
@@ -286,6 +288,7 @@ if (process.env.CLOUD_IDENTITY_POOL_INTEGRATION !== "1") {
       const cancelled = dispatchCapability({
         request: new Request("http://core.test/invoke", { signal: abort.signal }),
         kind: "queries",
+        origin: "app" as const,
         appId: "spaces",
         capabilityId: "read",
         input: { id: "one" },

@@ -2,9 +2,11 @@ import { beforeAll, describe, expect } from "bun:test";
 import { sql } from "bun";
 import { postgresTest, testShortId as shortId, testUuid as uuid } from "../integration-test-utils";
 import { migrate } from "../migrate";
+import * as durableHistory from "./durable-history";
 import { submitForm } from "./form-submission";
 import type { Form } from "./forms";
 import { update as updateMutationPolicy } from "./mutation-policy";
+import * as finalization from "./record-finalization";
 
 type Fixture = {
   baseId: string;
@@ -88,6 +90,11 @@ const formFor = (item: Fixture): Form => ({
 });
 
 const cleanup = async (item: Fixture) => {
+  await sql`UPDATE grids.records SET finalized_at = NULL, finalized_by = NULL, final_revision_id = NULL WHERE table_id = ${item.sourceTableId}::uuid`;
+  await sql`DELETE FROM grids.record_revisions WHERE table_id = ${item.sourceTableId}::uuid`;
+  await sql`DELETE FROM grids.table_finalization_activations WHERE table_id = ${item.sourceTableId}::uuid`;
+  await sql`DELETE FROM grids.durable_history_activations WHERE table_id = ${item.sourceTableId}::uuid`;
+  await sql`DELETE FROM grids.table_schema_revisions WHERE table_id = ${item.sourceTableId}::uuid`;
   await sql`DELETE FROM grids.audit_log WHERE base_id = ${item.baseId}::uuid`;
   await sql`DELETE FROM grids.record_event_outbox WHERE base_id = ${item.baseId}::uuid`;
   await sql`DELETE FROM grids.bases WHERE id = ${item.baseId}::uuid`;
@@ -98,6 +105,210 @@ beforeAll(async () => {
 });
 
 describe("form submission integration", () => {
+  postgresTest("edits a parent and its inline rows atomically and replays the same save", async () => {
+    const item = fixture();
+    try {
+      await insertFixture(item);
+      const form = formFor(item);
+      const created = await submitForm({
+        form,
+        actorId: null,
+        dateConfig: {},
+        submission: {
+          data: { [item.sourceNameFieldId]: "Draft" },
+          inlineCreates: { [item.relationFieldId]: [{ tempId: "tmp_first", data: { [item.targetNameFieldId]: "First" } }] },
+        },
+      });
+      if (!created.ok) throw new Error(created.error.message);
+      const [child] = await sql<
+        { id: string; version: number }[]
+      >`SELECT id, version FROM grids.records WHERE table_id = ${item.targetTableId}::uuid`;
+      const [parent] = await sql<{ version: number }[]>`SELECT version FROM grids.records WHERE id = ${created.data.recordId}::uuid`;
+      if (!child || !parent) throw new Error("Missing fixture records");
+      const input = {
+        form,
+        actorId: null,
+        dateConfig: {},
+        record: { id: created.data.recordId, version: parent.version },
+        submission: {
+          idempotencyKey: "edit-draft",
+          data: { [item.sourceNameFieldId]: "Updated", [item.relationFieldId]: [child.id] },
+          inlineCreates: { [item.relationFieldId]: [{ tempId: "tmp_second", data: { [item.targetNameFieldId]: "Second" } }] },
+          inlineUpdates: {
+            [item.relationFieldId]: [{ recordId: child.id, version: child.version, data: { [item.targetNameFieldId]: "First updated" } }],
+          },
+        },
+      };
+      const saved = await submitForm(input);
+      expect(saved).toEqual(created);
+      expect(await submitForm(input)).toEqual(saved);
+      const rows = await sql<
+        { id: string; data: Record<string, unknown>; version: number }[]
+      >`SELECT id, data, version FROM grids.records WHERE table_id IN (${item.sourceTableId}::uuid, ${item.targetTableId}::uuid)`;
+      expect(rows).toHaveLength(3);
+      expect(rows.find((row) => row.id === child.id)?.data[item.targetNameFieldId]).toBe("First updated");
+      expect(rows.find((row) => row.id === created.data.recordId)?.data[item.sourceNameFieldId]).toBe("Updated");
+      const [links] = await sql<
+        { count: number }[]
+      >`SELECT count(*)::int AS count FROM grids.record_links WHERE from_record_id = ${created.data.recordId}::uuid`;
+      expect(links?.count).toBe(2);
+
+      // The new row is written before the stale child is encountered: neither may survive.
+      const currentParent = rows.find((row) => row.id === created.data.recordId)!;
+      const rejected = await submitForm({
+        ...input,
+        record: { id: created.data.recordId, version: currentParent.version },
+        submission: { ...input.submission, idempotencyKey: "stale-child" },
+      });
+      expect(rejected.ok).toBe(false);
+      if (!rejected.ok) expect(rejected.error.code).toBe("CONFLICT");
+      const [counts] = await sql<{ records: number; receipts: number; events: number }[]>`
+        SELECT (SELECT count(*)::int FROM grids.records WHERE table_id IN (${item.sourceTableId}::uuid, ${item.targetTableId}::uuid)) AS records,
+        (SELECT count(*)::int FROM grids.form_submissions WHERE table_id = ${item.sourceTableId}::uuid) AS receipts,
+        (SELECT count(*)::int FROM grids.record_event_outbox WHERE base_id = ${item.baseId}::uuid) AS events
+      `;
+      expect(counts).toEqual({ records: 3, receipts: 1, events: 5 });
+      const sharedBy = uuid();
+      await sql`INSERT INTO grids.records (id, short_id, table_id, data) VALUES (${sharedBy}::uuid, ${shortId("R")}, ${item.sourceTableId}::uuid, '{}'::jsonb)`;
+      await sql`INSERT INTO grids.record_links (from_record_id, from_field_id, to_record_id) VALUES (${sharedBy}::uuid, ${item.relationFieldId}::uuid, ${child.id}::uuid)`;
+      const sharedEdit = await submitForm({
+        ...input,
+        record: { id: created.data.recordId, version: currentParent.version },
+        submission: {
+          ...input.submission,
+          idempotencyKey: "shared-child",
+          inlineCreates: {},
+          inlineUpdates: {
+            [item.relationFieldId]: [{ recordId: child.id, version: child.version + 1, data: { [item.targetNameFieldId]: "Shared edit" } }],
+          },
+        },
+      });
+      expect(sharedEdit.ok).toBe(false);
+      if (!sharedEdit.ok) expect(sharedEdit.error.code).toBe("BAD_INPUT");
+      await sql`DELETE FROM grids.records WHERE id = ${sharedBy}::uuid`;
+      expect((await durableHistory.enable(item.sourceTableId, null)).ok).toBe(true);
+      expect((await finalization.enable(item.sourceTableId, { mode: "direct" }, null)).ok).toBe(true);
+      const finalizedRecord = await finalization.finalize({
+        tableId: item.sourceTableId,
+        recordId: created.data.recordId,
+        actorId: null,
+        origin: "form",
+      });
+      if (!finalizedRecord.ok) throw finalizedRecord.error;
+      const finalized = await submitForm({
+        ...input,
+        record: { id: created.data.recordId, version: finalizedRecord.data.version },
+        submission: {
+          ...input.submission,
+          idempotencyKey: "finalized-parent",
+          inlineUpdates: {
+            [item.relationFieldId]: [
+              { recordId: child.id, version: child.version + 1, data: { [item.targetNameFieldId]: "Must roll back" } },
+            ],
+          },
+        },
+      });
+      expect(finalized.ok).toBe(false);
+      if (!finalized.ok) expect(finalized.error.code).toBe("CONFLICT");
+      const [unchanged] = await sql<{ data: Record<string, unknown> }[]>`SELECT data FROM grids.records WHERE id = ${child.id}::uuid`;
+      expect(unchanged?.data[item.targetNameFieldId]).toBe("First updated");
+      const [remaining] = await sql<
+        { count: number }[]
+      >`SELECT count(*)::int AS count FROM grids.records WHERE table_id = ${item.targetTableId}::uuid`;
+      expect(remaining?.count).toBe(2);
+    } finally {
+      await cleanup(item);
+    }
+  });
+
+  postgresTest("create-only submissions cannot mutate existing inline rows", async () => {
+    const item = fixture();
+    const result = await submitForm({
+      form: formFor(item),
+      actorId: null,
+      dateConfig: {},
+      submission: { data: {}, inlineCreates: {}, inlineUpdates: { [item.relationFieldId]: [{ recordId: uuid(), version: 1, data: {} }] } },
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe("BAD_INPUT");
+  });
+
+  postgresTest("replays concurrent submissions without duplicating the parent, inline records or events", async () => {
+    const item = fixture();
+    try {
+      await insertFixture(item);
+      const form = formFor(item);
+      const input = {
+        form,
+        actorId: null,
+        dateConfig: { timeZone: "UTC" },
+        submission: {
+          idempotencyKey: "same-attempt",
+          data: { [item.sourceNameFieldId]: "ORDER", [item.relationFieldId]: ["tmp_one", "tmp_two"] },
+          inlineCreates: {
+            [item.relationFieldId]: [
+              { tempId: "tmp_one", data: { [item.targetNameFieldId]: "One" } },
+              { tempId: "tmp_two", data: { [item.targetNameFieldId]: "Two" } },
+            ],
+          },
+        },
+      };
+      const results = await Promise.all([submitForm(input), submitForm(input), submitForm(input)]);
+      expect(results.every((result) => result.ok)).toBe(true);
+      expect(results[1]).toEqual(results[0]);
+      expect(results[2]).toEqual(results[0]);
+      const [counts] = await sql<{ records: number; events: number; receipts: number }[]>`
+        SELECT (SELECT count(*)::int FROM grids.records WHERE table_id IN (${item.sourceTableId}::uuid, ${item.targetTableId}::uuid)) AS records,
+          (SELECT count(*)::int FROM grids.record_event_outbox WHERE base_id = ${item.baseId}::uuid) AS events,
+          (SELECT count(*)::int FROM grids.form_submissions WHERE table_id = ${item.sourceTableId}::uuid) AS receipts
+      `;
+      expect(counts).toEqual({ records: 3, events: 3, receipts: 1 });
+      const changed = await submitForm({
+        ...input,
+        submission: { ...input.submission, data: { ...input.submission.data, [item.sourceNameFieldId]: "CHANGED" } },
+      });
+      expect(changed.ok).toBe(false);
+      if (!changed.ok) expect(changed.error.code).toBe("CONFLICT");
+      const first = results[0];
+      if (!first?.ok) throw new Error("Missing first result");
+      await sql`UPDATE grids.records SET deleted_at = now() WHERE id = ${first.data.recordId}::uuid`;
+      const removed = await submitForm(input);
+      expect(removed.ok).toBe(false);
+      if (!removed.ok) expect(removed.error.code).toBe("CONFLICT");
+    } finally {
+      await cleanup(item);
+    }
+  });
+
+  postgresTest("a rejected submission does not consume its retry key", async () => {
+    const item = fixture();
+    try {
+      await insertFixture(item);
+      const form = formFor(item);
+      const submission = {
+        idempotencyKey: "failed-first",
+        data: { [item.sourceNameFieldId]: "ORDER" },
+        inlineCreates: { [item.relationFieldId]: [{ tempId: "tmp_line", data: {} }] },
+      };
+      expect((await submitForm({ form, actorId: null, dateConfig: {}, submission })).ok).toBe(false);
+      const result = await submitForm({
+        form,
+        actorId: null,
+        dateConfig: {},
+        submission: {
+          ...submission,
+          inlineCreates: { [item.relationFieldId]: [{ tempId: "tmp_line", data: { [item.targetNameFieldId]: "Fixed" } }] },
+        },
+      });
+      expect(result.ok).toBe(true);
+      const [count] = await sql<
+        { count: number }[]
+      >`SELECT count(*)::int AS count FROM grids.form_submissions WHERE table_id = ${item.sourceTableId}::uuid`;
+      expect(count?.count).toBe(1);
+    } finally {
+      await cleanup(item);
+    }
+  });
   postgresTest("enforces cross-field validation before creating a record", async () => {
     const item = fixture();
     try {

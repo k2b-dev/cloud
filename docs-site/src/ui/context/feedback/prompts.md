@@ -239,6 +239,14 @@ const removeProject = async () => {
 };
 ```
 
+## Operation cancellation
+
+All prompts accept an optional `signal: AbortSignal`. Aborting resolves the
+prompt as cancellation and closes only that prompt, including when another
+prompt is stacked above it. An already-aborted signal does not mount a dialog.
+Use this to tie a prompt to an operation or component lifetime; it does not
+confirm or submit the form. Normal dismissal and unmount remove the listener.
+
 Repeated Escape does not bypass an ignored or guarded dismissal. If the browser
 forces the native window closed, the shared dialog core restores retained
 content, including an underlying dialog after its child closes. Close custom

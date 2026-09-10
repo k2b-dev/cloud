@@ -1,13 +1,13 @@
-import { err, fail, ok, type Result } from "@k2b/stdlib";
 import type { AuthContext } from "@k2b/cloud/server";
 import { getDateConfig, getLocale, respond } from "@k2b/cloud/server";
+import { err, fail, ok, type Result } from "@k2b/stdlib";
 import type { Context } from "hono";
 import { z } from "zod";
 import { ShortIdSchema } from "../contracts";
 import { gridsService } from "../service";
 import { type FormSubmission, MAX_INLINE_CREATES_PER_FIELD, MAX_INLINE_CREATES_PER_SUBMISSION } from "../service/form-submission";
 import type { Form } from "../service/forms";
-import { fromPublicRecordValues, projectPublicId } from "../service/public-resources";
+import { fromPublicRecordValues, projectPublicId, resolvePublicId } from "../service/public-resources";
 import type { ExpansionViewer } from "../service/relation-access";
 import { apiMessages } from "./messages";
 import {
@@ -94,15 +94,47 @@ const InlineCreatesSchema = z
 const SubmitEnvelopeSchema = z.object({
   data: z.record(z.string(), z.unknown()).optional(),
   inlineCreates: InlineCreatesSchema.optional(),
+  inlineUpdates: z
+    .record(
+      z.string(),
+      z
+        .array(
+          z.object({ recordId: ShortIdSchema, version: z.number().int().positive(), data: z.record(z.string(), z.unknown()) }).strict(),
+        )
+        .max(MAX_INLINE_CREATES_PER_FIELD),
+    )
+    .optional(),
+  idempotencyKey: z
+    .string()
+    .min(1)
+    .max(200)
+    .refine((value) => value.trim().length > 0 && !value.includes("\0"))
+    .optional(),
 });
 
 const parseFormSubmission = (submitted: Record<string, unknown>): FormSubmission | null => {
   const envelopeLike =
-    Object.prototype.hasOwnProperty.call(submitted, "data") || Object.prototype.hasOwnProperty.call(submitted, "inlineCreates");
+    Object.prototype.hasOwnProperty.call(submitted, "data") ||
+    Object.prototype.hasOwnProperty.call(submitted, "inlineCreates") ||
+    Object.prototype.hasOwnProperty.call(submitted, "inlineUpdates") ||
+    Object.prototype.hasOwnProperty.call(submitted, "idempotencyKey");
   if (!envelopeLike) return { data: submitted, inlineCreates: {} };
   const parsed = SubmitEnvelopeSchema.safeParse(submitted);
   if (!parsed.success) return null;
-  return { data: parsed.data.data ?? {}, inlineCreates: parsed.data.inlineCreates ?? {} };
+  const creates = parsed.data.inlineCreates ?? {};
+  const updates = parsed.data.inlineUpdates ?? {};
+  let total = 0;
+  for (const fieldId of new Set([...Object.keys(creates), ...Object.keys(updates)])) {
+    const count = (creates[fieldId]?.length ?? 0) + (updates[fieldId]?.length ?? 0);
+    total += count;
+    if (count > MAX_INLINE_CREATES_PER_FIELD || total > MAX_INLINE_CREATES_PER_SUBMISSION) return null;
+  }
+  return {
+    data: parsed.data.data ?? {},
+    inlineCreates: parsed.data.inlineCreates ?? {},
+    ...(parsed.data.inlineUpdates ? { inlineUpdates: parsed.data.inlineUpdates } : {}),
+    ...(parsed.data.idempotencyKey ? { idempotencyKey: parsed.data.idempotencyKey } : {}),
+  };
 };
 
 export const PublicFormSchema = z.object({
@@ -150,7 +182,27 @@ export const fromPublicFormSubmission = async (
     }
     inlineCreates[relationField.id] = convertedDrafts;
   }
-  return ok({ data: data.data, inlineCreates });
+  const inlineUpdates: NonNullable<FormSubmission["inlineUpdates"]> = {};
+  for (const [publicFieldId, updates] of Object.entries(submission.inlineUpdates ?? {})) {
+    const field = fieldsByPublicId.get(publicFieldId);
+    const targetTableId = field?.type === "relation" ? field.config.targetTableId : null;
+    if (!field || typeof targetTableId !== "string") return fail(err.badInput(apiMessages(context).invalidInlineRelationField));
+    const convertedUpdates: typeof updates = [];
+    for (const update of updates) {
+      const recordId = await resolvePublicId("record", update.recordId);
+      if (!recordId) return fail(err.badInput(apiMessages(context).invalidFormSubmission));
+      const values = await fromPublicRecordValues(targetTableId, update.data, { locale });
+      if (!values.ok) return values;
+      convertedUpdates.push({ recordId, version: update.version, data: values.data });
+    }
+    inlineUpdates[field.id] = convertedUpdates;
+  }
+  return ok({
+    data: data.data,
+    inlineCreates,
+    ...(Object.keys(inlineUpdates).length ? { inlineUpdates } : {}),
+    ...(submission.idempotencyKey ? { idempotencyKey: submission.idempotencyKey } : {}),
+  });
 };
 
 export const submitFormResponse = async (
@@ -160,14 +212,15 @@ export const submitFormResponse = async (
   actorId: string | null,
   deps: SubmitFormDeps = {},
   viewer?: ExpansionViewer,
+  record?: { id: string; version: number },
 ) => {
   const submission = await fromPublicFormSubmission(context, form.tableId, submitted);
   if (!submission.ok) return respond(context, () => Promise.resolve(submission));
   const dateConfig = await (deps.dateConfig ?? getDateConfig)(context);
   const submit = deps.submit ?? gridsService.form.submit;
-  const result = await submit({ form, submission: submission.data, actorId, dateConfig, viewer });
+  const result = await submit({ form, submission: submission.data, actorId, dateConfig, viewer, ...(record ? { record } : {}) });
   if (!result.ok) return respond(context, () => Promise.resolve(result), 201);
   const recordId = await projectPublicId("record", result.data.recordId);
   if (!recordId) return context.json({ message: apiMessages(context).createdRecordMissingPublicId }, 500);
-  return context.json({ recordId }, 201);
+  return context.json({ recordId }, record ? 200 : 201);
 };

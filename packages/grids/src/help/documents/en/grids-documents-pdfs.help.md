@@ -25,6 +25,10 @@ Validation proves only the technical checks named by the selected renderer and v
 
 The built-in `de.zugferd.en16931@1` renderer creates outgoing EUR invoices as a readable PDF/A-3b with an embedded `factur-x.xml`, and retains the XML as a separate artifact. It verifies the embedded XML after rendering, targets ZUGFeRD 2.5 / Factur-X 1.09 EN 16931, validates the generated CII XML against the pinned XSD, and uses exact decimal strings with documented half-up rounding. Version 1 supports German seller and buyer addresses, standard VAT categories, and bank transfer. It does not cover corrections, replacements, incoming invoices, foreign currencies, tax exemptions, allowances, charges, prepayments, cash discounts, self-billing, or filings. The invoice issuer is responsible for the content and for checking whether this renderer fits the intended use. Grids does not certify tax or legal compliance.
 
+Version 2 (`de.zugferd.en16931@2`) additionally renders credit notes with an original invoice number, date and reason, and self-billing with an agreement reference. It requires an explicit document kind and service date. Quantities and amounts stay positive; the document kind determines whether it is an invoice or a credit. For self-billing, the seller remains the supplier and the buyer remains the customer issuing the document. Payment details identify the intended receiving account; they are not inferred from the document kind.
+
+The renderer does not verify that an original invoice exists or that credit or commission amounts remain available. The issuing workflow must enforce these checks, including concurrent requests. Rendering support alone is not a complete billing application. Existing templates and retries keep their selected version; updating a template is explicit.
+
 ## From record to PDF {icon="table"}
 
 The template separates data selection from rendering. **GQL** loads the rows and columns the Document may use. The selected renderer then receives either Liquid HTML and CSS or one Liquid JSON object.

@@ -6,33 +6,52 @@ import { sandboxDocument } from "../src/runtime/sandbox";
 
 const browserTest = async (content: string) => {
   const source = await compile({ name: "Test", files: [{ path: "test.script.js", content }] }, "test.script.js");
+
   const browser = await chromium.launch({ headless: true, channel: "chrome" });
   try {
     const page = await browser.newPage();
-    await page.goto("about:blank");
-    return await page.evaluate(
+    await page.route("http://localhost:4179/**", (route) =>
+      route.fulfill({ contentType: "text/html", body: "<!doctype html><body></body>" }),
+    );
+    await page.goto("http://localhost:4179/");
+
+    const result = await page.evaluate(
       async ({ source, html }) =>
         new Promise<unknown[]>((resolve, reject) => {
           const frame = document.createElement("iframe");
           frame.sandbox.add("allow-scripts");
           frame.srcdoc = html;
           const messages: unknown[] = [];
-          const timer = setTimeout(() => reject(new Error("Runtime timed out")), 10000);
-          addEventListener("message", (event) => {
+          const cleanup = () => {
+            clearTimeout(timer);
+            removeEventListener("message", onMessage);
+            frame.contentWindow?.postMessage({ type: "stop" }, "*");
+            // Let the bridge process stop before detaching its worker context.
+            setTimeout(() => frame.remove(), 0);
+          };
+          const timer = setTimeout(() => {
+            cleanup();
+            reject(new Error("Runtime timed out"));
+          }, 10000);
+          const onMessage = (event: MessageEvent) => {
             if (event.source !== frame.contentWindow) return;
             if (event.data.type === "bridge-ready") frame.contentWindow!.postMessage({ type: "boot", ...source }, "*");
             else {
               messages.push(event.data);
               if (event.data.type === "ready" || event.data.type === "error") {
-                clearTimeout(timer);
+                cleanup();
                 resolve(messages);
               }
             }
-          });
+          };
+          addEventListener("message", onMessage);
           document.body.append(frame);
         }),
       { source, html: sandboxDocument() },
     );
+    await page.waitForFunction(() => document.querySelector("iframe") === null);
+    await page.close();
+    return result;
   } finally {
     await browser.close();
   }
@@ -167,7 +186,8 @@ test("a busy worker can be stopped and replaced without blocking the browser", a
             }
             if (message.type === "ready" && phase === 2) {
               clearTimeout(timer);
-              resolve("restarted");
+              post({ type: "stop" });
+              setTimeout(() => { frame.remove(); resolve("restarted"); }, 0);
             }
             if (message.type === "error") {
               clearTimeout(timer);
@@ -179,6 +199,7 @@ test("a busy worker can be stopped and replaced without blocking the browser", a
       { first, second, html: sandboxDocument() },
     );
     expect(result).toBe("restarted");
+    await page.close();
   } finally {
     await browser.close();
   }
@@ -207,13 +228,63 @@ test("money namespace computes exact amounts inside the isolated worker", async 
 
 test("PDF.js extracts text in the opaque worker without network", async () => {
   // Minimal PDF with one standard-font text stream, generated in memory.
-  const stream = 'BT /F1 12 Tf 40 100 Td (Kit PDF text) Tj ET';
-  const objects = ['<< /Type /Catalog /Pages 2 0 R >>','<< /Type /Pages /Kids [3 0 R] /Count 1 >>','<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>','<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',`<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`];
-  let pdf='%PDF-1.4\n'; const offsets=[0];
-  objects.forEach((body,i)=>{offsets.push(pdf.length);pdf+=`${i+1} 0 obj\n${body}\nendobj\n`;});
-  const xref=pdf.length; pdf+=`xref\n0 6\n0000000000 65535 f \n${offsets.slice(1).map(n=>String(n).padStart(10,'0')+' 00000 n ').join('\n')}\ntrailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`;
-  const messages = await browserTest(`export default kit.script({name:"PDF",async run(){const pages=await kit.pdf.text(new Blob([${JSON.stringify(pdf)}]));console.log(JSON.stringify(pages));}});`);
+  const stream = "BT /F1 12 Tf 40 100 Td (Kit PDF text) Tj ET";
+  const objects = [
+    "<< /Type /Catalog /Pages 2 0 R >>",
+    "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+    "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>",
+    "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+    `<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`,
+  ];
+  let pdf = "%PDF-1.4\n";
+  const offsets = [0];
+  objects.forEach((body, i) => {
+    offsets.push(pdf.length);
+    pdf += `${i + 1} 0 obj\n${body}\nendobj\n`;
+  });
+  const xref = pdf.length;
+  pdf += `xref\n0 6\n0000000000 65535 f \n${offsets
+    .slice(1)
+    .map((n) => String(n).padStart(10, "0") + " 00000 n ")
+    .join("\n")}\ntrailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`;
+  const messages = await browserTest(
+    `export default kit.script({name:"PDF",async run(){const pages=await kit.pdf.text(new Blob([${JSON.stringify(pdf)}]));console.log(JSON.stringify(pages));}});`,
+  );
   for (const message of messages) expect(WorkerMessage.safeParse(message).success).toBe(true);
-  expect(JSON.stringify(messages)).toContain('Kit PDF text');
+  expect(JSON.stringify(messages)).toContain("Kit PDF text");
   expect(JSON.stringify(messages)).toContain('"type":"ready"');
 });
+
+test("lists replace visible items and retain reusable action ownership", async () => {
+  const messages = await browserTest(`export default kit.script({name:"List",run(){
+    const action = kit.ui.button('Done', () => {}, {id:'done'});
+    const list = kit.ui.list({title:'Tasks', id:'tasks'}, [{id:'one',title:'One',action}]);
+    list.set([]);
+    let duplicate = false;
+    try { list.set([{id:'same',title:'A'},{id:'same',title:'B'}]); } catch { duplicate = true; }
+    console.log('duplicate rejected: ' + duplicate);
+    list.set([{id:'two',title:'Two',action}]);
+    list.set([]);
+  }});`);
+  const snapshots = messages.map((message) => WorkerMessage.parse(message)).filter((message) => message.type === "ui");
+  const list = snapshots.at(-1)!.nodes.find((node) => node.id === "tasks")!;
+  expect(list.items).toEqual([]);
+  expect(list.children).toEqual(["done"]);
+  expect(JSON.stringify(messages)).toContain("duplicate rejected: true");
+}, 20000);
+
+test("Alpha UI handles expose only canonical collection and scalar mutations", async () => {
+  const messages = await browserTest(`export default kit.script({name:'Updates',run(){
+    const table=kit.ui.table({id:'table',rowKey:'id',columns:[{key:'title',label:'Title'}]});
+    table.set([{id:'a',title:'A'}]); table.upsert([{id:'a',title:'Changed'},{id:'b',title:'B'}]); table.remove(['b']); table.remove([]);
+    const input=kit.ui.input('Title',{id:'input'}); input.set('New');
+    kit.ui.chart({kind:'bar',data:[{label:'A',value:1}]}).set({kind:'bar',data:[{label:'B',value:2}]});
+    console.log(JSON.stringify({legacy:[table.setRows,table.setItems,input.setText,input.setMarkdown].every(v=>v===undefined),value:input.getValue()}));
+  }});`);
+  const snapshots = messages.map((m) => WorkerMessage.parse(m)).filter((m) => m.type === "ui");
+  const nodes = snapshots.at(-1)!.nodes;
+  expect(nodes.find((n) => n.id === "table")!.rows).toEqual([{ id: "a", title: "Changed" }]);
+  expect(nodes.find((n) => n.kind === "chart")!.chart).toEqual({ kind: "bar", data: [{ label: "B", value: 2 }] });
+  expect(JSON.stringify(messages)).toContain('\\"legacy\\":true');
+  expect(nodes.find((n) => n.id === "input")!.value).toBe("New");
+}, 20000);

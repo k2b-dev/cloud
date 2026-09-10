@@ -1,8 +1,12 @@
 import { pdfText } from "./pdf";
+import { z } from "zod";
 import Papa from "papaparse";
 import { money } from "@k2b/stdlib";
 import { LIMITS } from "../contracts";
 import { UiNode } from "./protocol";
+import { ModalRequest } from "./modal-schema";
+import { ChartOptions } from "./chart-schema";
+import { setUiValue, upsertUiItems, removeUiItems } from "./ui-mutations";
 
 type Definition = {
   name: string;
@@ -10,15 +14,30 @@ type Definition = {
   order?: number;
   run: () => unknown;
 };
+type ListItem = { id: string; title: string; description?: string; icon?: string; action?: Handle };
+function listItems(items: ListItem[]) {
+  const parsed = UiNode.shape.items.parse(items.map((item) => ({ ...item, action: item.action?.id })));
+  if (new Set(parsed.map((item) => item.id)).size !== parsed.length) throw new Error("List item ids must be unique");
+  return parsed;
+}
+function prepareList(input: unknown) {
+  return z
+    .array(z.record(z.string(), z.unknown()))
+    .max(LIMITS.rows)
+    .parse(input)
+    .map((item) => ({
+      ...item,
+      action: item.action === undefined ? undefined : z.object({ id: z.string() }).parse(item.action).id,
+    }));
+}
 type Handle = {
   id: string;
-  setText: (v: string) => void;
-  setRows: (v: Record<string, string | number | boolean | null>[]) => void;
-  set: (v: number) => void;
+  set: (v: unknown) => void;
+  upsert: (v: unknown) => void;
+  remove: (ids?: (string | number)[]) => void;
   getValue: () => string;
   setDescription: (v: string) => void;
   setColumns: (v: UiNode["columns"]) => void;
-  setMarkdown: (v: string) => void;
   setDisabled: (v: boolean) => void;
   setLoading: (v: boolean) => void;
   setState: (v: UiNode["state"], description?: string) => void;
@@ -31,10 +50,12 @@ let seq = 0,
   scheduled = false,
   busy = false;
 const pending = new Map<number, { resolve: (v: unknown) => void; reject: (e: Error) => void }>();
-function rpc(method: string, args: unknown[] = []) {
+const dbProgress = new Map<number, (value: import("../database-import").ImportProgress) => void>();
+function rpc(method: string, args: unknown[] = [], progress?: (value: import("../database-import").ImportProgress) => void) {
   return new Promise<unknown>((resolve, reject) => {
     const id = requestId++;
     pending.set(id, { resolve, reject });
+    if (progress) dbProgress.set(id, progress);
     send({ type: "rpc", id, method, args });
   });
 }
@@ -56,8 +77,12 @@ function node(kind: UiNode["kind"], label = "", extra: Partial<UiNode> = {}, cal
   flush();
   return {
     id,
-    setText: (v) => {
-      n.label = v;
+    upsert: (items) => {
+      upsertUiItems(n, kind === "list" ? prepareList(items) : items);
+      flush();
+    },
+    remove: (ids) => {
+      removeUiItems(n, ids);
       flush();
     },
     setDescription: (v) => {
@@ -66,10 +91,6 @@ function node(kind: UiNode["kind"], label = "", extra: Partial<UiNode> = {}, cal
     },
     setColumns: (v) => {
       n.columns = UiNode.shape.columns.parse(v);
-      flush();
-    },
-    setMarkdown: (v) => {
-      n.value = v;
       flush();
     },
     setDisabled: (v) => {
@@ -85,14 +106,8 @@ function node(kind: UiNode["kind"], label = "", extra: Partial<UiNode> = {}, cal
       if (description !== undefined) n.description = description;
       flush();
     },
-    setRows: (v) => {
-      if (v.length > LIMITS.rows) throw new Error(`Show at most ${LIMITS.rows} rows at once`);
-      n.rows = v;
-      n.state = v.length ? "ready" : "empty";
-      flush();
-    },
     set: (v) => {
-      n.progress = v;
+      setUiValue(n, kind === "list" ? prepareList(v) : v);
       flush();
     },
     getValue: () => n.value,
@@ -136,11 +151,57 @@ type FilePickerOptions = ControlOptions & {
   multiple?: boolean;
   onChange: (files: File[]) => unknown;
 };
+const dbCall = (request: unknown) => rpc("db.call", [request]);
 const kit = {
+  db: {
+    tables: {
+      list: () => dbCall({ operation: "tables.list" }),
+      create: (definition: { name: string; columns: unknown[] }) => dbCall({ operation: "tables.create", ...definition }),
+      delete: (table: string) => dbCall({ operation: "tables.delete", table }),
+    },
+    table: (table: string) => ({
+      schema: {
+        get: () => dbCall({ operation: "schema.get", table }),
+        update: (changes: unknown) => dbCall({ operation: "tables.update", table, changes }),
+      },
+      rows: {
+        list: (query = {}) => dbCall({ operation: "rows.list", table, query }),
+        get: (id: number) => dbCall({ operation: "rows.get", table, id }),
+        insert: (rows: unknown) => dbCall({ operation: "rows.insert", table, rows }),
+        update: (id: number, row: unknown) => dbCall({ operation: "rows.update", table, id, row }),
+        delete: (id: number) => dbCall({ operation: "rows.delete", table, id }),
+      },
+    }),
+    query: (sql: string, params: unknown[] = []) => dbCall({ operation: "query", sql, params }),
+    importData: (
+      table: string,
+      rows: unknown[],
+      options: {
+        createTable?: boolean;
+        columns?: unknown[];
+        notify?: boolean;
+        onProgress?: (value: import("../database-import").ImportProgress) => void;
+      } = {},
+    ) => {
+      const { onProgress, ...rest } = options;
+      return rpc("db.import", [table, rows, rest], onProgress);
+    },
+  },
   pdf: { text: pdfText },
   money,
   script: (definition: Definition) => definition,
   ui: {
+    modal: {
+      confirm: (options: Omit<Extract<ModalRequest, { kind: "confirm" }>, "kind">) =>
+        rpc("ui.modal", [ModalRequest.parse({ ...options, kind: "confirm" })]),
+      text: (options: Omit<Extract<ModalRequest, { kind: "text" }>, "kind">) =>
+        rpc("ui.modal", [ModalRequest.parse({ ...options, kind: "text" })]),
+      number: (options: Omit<Extract<ModalRequest, { kind: "number" }>, "kind">) =>
+        rpc("ui.modal", [ModalRequest.parse({ ...options, kind: "number" })]),
+      dialog: (options: Omit<Extract<ModalRequest, { kind: "dialog" }>, "kind">) =>
+        rpc("ui.modal", [ModalRequest.parse({ ...options, kind: "dialog" })]),
+    },
+    chart: (options: unknown) => node("chart", "", { chart: ChartOptions.parse(options) }),
     text: (value: string) => node("text", value),
     button: (label: string, onClick: () => unknown, options: ButtonOptions = {}) => node("button", label, options, onClick),
     input: (
@@ -160,7 +221,7 @@ const kit = {
         value: initial,
         id: id ?? `node-${seq++}`,
       }),
-    table: (options: { columns: UiNode["columns"]; id?: string; label?: string; empty?: UiNode["empty"] }) =>
+    table: (options: { columns: UiNode["columns"]; rowKey?: string; id?: string; label?: string; empty?: UiNode["empty"] }) =>
       node("table", options.label, { state: "empty", ...options }),
     section: (options: { title: string; description?: string }, children: Handle[]) =>
       node("section", options.title, {
@@ -215,24 +276,14 @@ const kit = {
         empty?: UiNode["empty"];
         id?: string;
       },
-      items: {
-        id: string;
-        title: string;
-        description?: string;
-        icon?: string;
-        action?: Handle;
-      }[],
+      items: ListItem[],
     ) => {
       const { title, ...display } = options;
+      const parsed = listItems(items);
       return node("list", title, {
         ...display,
-        items: items.map((item) => ({
-          ...item,
-          description: item.description ?? "",
-          icon: item.icon ?? "",
-          action: item.action?.id,
-        })),
-        children: items.flatMap((item) => (item.action ? [item.action.id] : [])),
+        items: parsed,
+        children: parsed.flatMap((item) => (item.action ? [item.action] : [])),
       });
     },
     progress: () => node("progress"),
@@ -288,7 +339,12 @@ Object.defineProperty(globalThis, "kit", { value: kit, writable: false });
 let started = false;
 globalThis.addEventListener("message", async (event: MessageEvent) => {
   const m = event.data;
+  if (m.type === "dbProgress") {
+    dbProgress.get(m.id)?.(m.value);
+    return;
+  }
   if (m.type === "result") {
+    dbProgress.delete(m.id);
     const p = pending.get(m.id);
     pending.delete(m.id);
     if (m.error) p?.reject(new Error(m.error));

@@ -22,7 +22,13 @@ import type {
   CloudLifecycleContext,
   WidgetEndpoint,
 } from "../contracts/app";
-import { CAPABILITY_FRAMEWORK_ERROR_CODES, CAPABILITY_MAX_REQUEST_BYTES, type CapabilityDefinitions } from "../contracts/capabilities";
+import {
+  CAPABILITY_FRAMEWORK_ERROR_CODES,
+  CAPABILITY_MAX_REQUEST_BYTES,
+  CAPABILITY_ORIGIN_HEADER,
+  type CapabilityDefinitions,
+  CapabilityOriginSchema,
+} from "../contracts/capabilities";
 import { type BoundNotificationMap, bindNotificationDefinitions, type NotificationDefinitionMap } from "../contracts/notification-types";
 import type { AppRegistryEntry } from "../contracts/registry";
 import type { AppSettingsMap, KindToType } from "../contracts/settings-types";
@@ -40,6 +46,7 @@ import {
   syncInvocationOperation,
   widgetInvocationOperation,
 } from "../services/identity/invocation-operations";
+import { normalizeInvocationRequestId } from "../services/identity/invocation-token";
 import { logger } from "../services/logging";
 import { startNotificationDefinitionRegistration } from "../services/notifications/catalog";
 import { railPreferences } from "../services/rail-preferences";
@@ -617,6 +624,8 @@ export const defineApp = <
               user,
               idempotencyKey,
               locale: requestLocale,
+              requestId: normalizeInvocationRequestId(c.req.header("x-request-id")) ?? crypto.randomUUID(),
+              origin: CapabilityOriginSchema.catch("http").parse(c.req.header(CAPABILITY_ORIGIN_HEADER)),
               signal: c.req.raw.signal,
             },
             onUnexpectedError: (error: unknown) =>

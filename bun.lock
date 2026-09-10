@@ -380,6 +380,7 @@
       "version": "0.0.0",
       "dependencies": {
         "@k2b/cloud": "workspace:*",
+        "@k2b/rsql": "1.0.0",
         "@k2b/ssr": "catalog:",
         "@k2b/stdlib": "catalog:",
         "@k2b/ui": "workspace:*",
@@ -1046,6 +1047,8 @@
     "@k2b/nessi": ["@k2b/nessi@0.11.0", "", { "dependencies": { "zod": "^4.3.0" } }, "sha512-SajlKjEJQvM209JqFQNpGlGhOIj6z3U13NbgDYBx4snhbxxRXtCO3qNseNWMT5OgjqkWvrp4M84tP2nWZAC1Eg=="],
 
     "@k2b/pwa-auth": ["@k2b/pwa-auth@workspace:pwas/pwa-auth"],
+
+    "@k2b/rsql": ["@k2b/rsql@1.0.0", "", {}, "sha512-PQe40kFEaAqTpqcRa/LzmexuVPaIXAsjaAdy5F46973FqV7AavS7sjbLF66VBF7vIyYF/uMCSbsrWGOilRic2g=="],
 
     "@k2b/ssr": ["@k2b/ssr@0.12.0", "", { "dependencies": { "@babel/core": "^7.29.7", "@babel/preset-typescript": "^7.29.7", "@types/babel__core": "^7.20.5", "babel-preset-solid": "^1.9.12", "seroval": "^1.5.5" }, "peerDependencies": { "elysia": "^1.0.0", "hono": "^4.0.0", "solid-js": "^1.9.0" }, "optionalPeers": ["elysia", "hono"] }, "sha512-71Yg65mfkpVuBSaq0m+QZyvw5KL4uvFVKnZREjNmXVf0K4+IpNWbCcM+fVXbPnzVMr48+FEM9n0/c1E6Jq7yPA=="],
 

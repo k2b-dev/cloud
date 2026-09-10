@@ -13,10 +13,11 @@
     "test": "bun test"
   },
   "dependencies": {
+    "@k2b/cloud": "workspace:*",
+    "@k2b/rsql": "1.0.0",
     "@k2b/ssr": "catalog:",
     "@k2b/stdlib": "catalog:",
     "@k2b/ui": "workspace:*",
-    "@k2b/cloud": "workspace:*",
     "acorn": "8.18.0",
     "hono": "catalog:",
     "hono-openapi": "catalog:",

@@ -1,6 +1,6 @@
-import { MarkdownView, Placeholder, StatCell, StatGrid } from "@k2b/ui";
 import type { AuthContext, getDateConfig } from "@k2b/cloud/server";
 import { Layout } from "@k2b/cloud/ssr";
+import { MarkdownView, Placeholder, StatCell, StatGrid } from "@k2b/ui";
 import {
   type BlockResult,
   type ChartBlock,
@@ -155,6 +155,7 @@ const Form = (props: { block: FormBlock; data: FormBlockData; dateConfig: Return
       form={props.data.form}
       fields={props.data.fields}
       inlineTargetFields={props.data.inlineTargetFields}
+      initialRecord={props.data.initialRecord}
       dateConfig={props.dateConfig}
       surface="bare"
       showTitle={!props.block.title}

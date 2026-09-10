@@ -32,7 +32,6 @@ test("use and edit SSR render without browser globals or cleanup failures", () =
           get children() {
             return createComponent(Workbench, {
               project,
-              userId: "user",
               edit,
               entry: project.entries[0]!.path,
               access: [],
@@ -43,7 +42,7 @@ test("use and edit SSR render without browser globals or cleanup failures", () =
       expect(html).toContain(edit ? "kit-edit" : "kit-use");
       expect(html.includes("kit-editor-panes")).toBe(edit);
       expect(html).toContain("kit-launch-button");
-      expect(html).toContain(locale === "de" ? "Lokale Daten löschen" : "Delete local data");
+      expect(html).toContain(locale === "de" ? "Lokale Daten" : "Local data");
       if (!edit) expect(html).toContain(locale === "de" ? "Starten" : "Launch");
       else {
         expect(html).toContain(locale === "de" ? "Abbrechen" : "Cancel");
@@ -156,7 +155,7 @@ test("workbench renders shared list actions and Markdown without remote image re
   expect(html).not.toContain("<script>");
 });
 
-test("settings exposes admin tabs and keeps Use-only settings limited to local files", async () => {
+test("settings excludes local data and keeps admin tabs permission-gated", async () => {
   const { KitSettings } = await import("../src/frontend/KitSettings");
   for (const permission of ["admin", "write"] as const) {
     const html = renderToString(() =>
@@ -164,7 +163,6 @@ test("settings exposes admin tabs and keeps Use-only settings limited to local f
         locale: "en",
         get children() {
           return createComponent(KitSettings, {
-            userId: "user",
             project: { ...project, permission },
             access: [],
             close: () => {},
@@ -173,7 +171,7 @@ test("settings exposes admin tabs and keeps Use-only settings limited to local f
         },
       }),
     );
-    expect(html).toContain("Local data");
+    expect(html).not.toContain("Local data");
     expect(html).not.toContain('role="switch"');
     expect(html.includes('id="')).toBe(true);
     expect(html.includes(">General<")).toBe(permission === "admin");
@@ -188,7 +186,7 @@ test("local explorer renders localized controls without browser storage during S
       createComponent(LocaleProvider, {
         locale,
         get children() {
-          return createComponent(LocalFiles, { appId: "abc123", userId: "user" });
+          return createComponent(LocalFiles, { appId: "abc123", userId: "user", beforeDelete: async () => {} });
         },
       }),
     );
@@ -200,11 +198,54 @@ test("local explorer renders localized controls without browser storage during S
 test("Markdown navigation renders content without launch controls or console", () => {
   const files = [...starter.files, { path: "guide.md", content: "# Guide\n\n**Read me**\n\n<script>window.bad = true</script>" }];
   const withPage = { ...project, files, entries: validateProject({ ...starter, files }).entries };
-  const html = renderToString(() => createComponent(LocaleProvider, { locale: "en", get children() {
-    return createComponent(Workbench, { project: withPage, userId: "user", edit: false, entry: "guide.md", access: [] });
-  } }));
+  const html = renderToString(() =>
+    createComponent(LocaleProvider, {
+      locale: "en",
+      get children() {
+        return createComponent(Workbench, { project: withPage, userId: "user", edit: false, entry: "guide.md", access: [] });
+      },
+    }),
+  );
   expect(html).toContain("<strong>Read me</strong>");
   expect(html).not.toContain("kit-launch-button");
   expect(html).not.toContain("kit-console-header");
   expect(html).not.toContain("<script>window.bad");
+});
+
+test("all stdlib chart kinds render through the shared responsive Chart", async () => {
+  const { RuntimeView } = await import("../src/frontend/RuntimeView");
+  const { UiNode } = await import("../src/runtime/protocol");
+  const configs = [
+    {
+      kind: "line",
+      series: [
+        {
+          data: [
+            { x: 0, y: 1 },
+            { x: 1, y: 2 },
+          ],
+        },
+      ],
+    },
+    { kind: "scatter", series: [{ data: [{ x: 0, y: 1 }] }] },
+    { kind: "bar", data: [{ label: "A", value: 2 }] },
+    { kind: "pie", data: [{ label: "A", value: 2 }] },
+    { kind: "donut", data: [{ label: "A", value: 2 }] },
+    { kind: "sparkline", data: [1, 2] },
+    { kind: "histogram", data: [1, 2, 3] },
+    { kind: "boxplot", groups: [{ label: "A", values: [1, 2, 3] }] },
+    { kind: "gauge", value: 3 },
+    { kind: "barGauge", data: [{ label: "A", value: 2 }] },
+    { kind: "stat", label: "Count", value: 3 },
+    { kind: "heatmap", data: [{ x: "A", y: "B", value: 3 }] },
+    { kind: "map", series: [{ data: [{ latitude: 48, longitude: 10 }] }] },
+    { kind: "stateTimeline", rows: [{ label: "A", intervals: [{ from: 0, to: 5, state: "ok" }] }] },
+  ];
+  for (const chart of configs) {
+    const html = renderToString(() =>
+      createComponent(RuntimeView, { nodes: [UiNode.parse({ id: "chart", kind: "chart", chart })], busy: false, event() {} }),
+    );
+    expect(html).toContain("<svg");
+    expect(html).not.toContain("<script");
+  }
 });

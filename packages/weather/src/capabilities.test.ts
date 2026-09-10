@@ -47,6 +47,8 @@ const userContext = {
   accessSubject: { type: "user", userId },
   user,
   locale: "en",
+  requestId: "req-test",
+  origin: "app",
   signal: new AbortController().signal,
 } satisfies CapabilityExecutionContext;
 
@@ -74,6 +76,8 @@ const serviceAccountContext = {
   },
   user: null,
   locale: "en",
+  requestId: "req-test",
+  origin: "app",
   signal: new AbortController().signal,
 } satisfies CapabilityExecutionContext;
 
@@ -128,7 +132,7 @@ describe("weather capabilities", () => {
     expect(weatherCapabilities.actions["location.delete"]).toMatchObject({
       destructive: true,
       openWorld: false,
-      idempotency: "none",
+      idempotency: "required",
     });
     expect(weatherCapabilities.actions["location.create"].review).toBeFunction();
     expect(weatherCapabilities.actions["location.delete"].review).toBeFunction();

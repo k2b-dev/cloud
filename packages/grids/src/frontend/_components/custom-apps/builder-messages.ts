@@ -3,6 +3,11 @@ import { useLocale } from "@k2b/ui";
 import { createMemo } from "solid-js";
 
 const deCopy = {
+  "Form action": "Formularaktion",
+  "Create a record": "Datensatz anlegen",
+  "Edit this page's record": "Datensatz dieser Seite bearbeiten",
+  "Editing uses the record bound to this page and saves its related rows together.":
+    "Bearbeitet den Datensatz dieser Seite und speichert seine zugehörigen Zeilen gemeinsam.",
   "Retry save": "Speichern erneut versuchen",
   General: "Allgemein",
   Lifecycle: "Lebenszyklus",

@@ -413,6 +413,7 @@ const CustomAppFormBlockSchema = z
     type: z.literal("form"),
     title: z.string().trim().min(1).max(160).optional(),
     formId: CustomAppResourceIdSchema,
+    mode: z.enum(["create", "edit"]).optional(),
     fixedValues: z.record(CustomAppResourceIdSchema, CustomAppFormValueBindingSchema).default({}),
     onSuccessNavigate: CustomAppFormSuccessNavigationSchema.optional(),
     ...CustomAppAvailabilityShape,
@@ -623,6 +624,9 @@ export const CustomAppDefinitionSchema = z
               ctx.addIssue({ code: "custom", message: "A Comments block requires a page record", path: [...blockPath, "type"] });
             }
             if (block.type === "form") {
+              if (block.mode === "edit" && !page.record) {
+                ctx.addIssue({ code: "custom", message: "Editing a Form requires a page record", path: [...blockPath, "mode"] });
+              }
               for (const [fieldId, value] of Object.entries(block.fixedValues)) {
                 if (value.source === "PARAMS" && !page.parameters[value.path]) {
                   ctx.addIssue({
@@ -994,6 +998,7 @@ export const CustomAppCapabilitiesSchema = z
               pageId: CustomAppLocalIdSchema,
               blockId: CustomAppLocalIdSchema,
               formId: z.string().uuid(),
+              mode: z.enum(["create", "edit"]).optional(),
               tableId: z.string().uuid(),
               userInputFieldIds: z.array(z.string().uuid()).max(100),
               fixedFieldIds: z.array(z.string().uuid()).max(30),

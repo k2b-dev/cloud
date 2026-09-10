@@ -89,6 +89,8 @@ const userContext = {
   accessSubject: { type: "user", userId },
   user,
   locale: "en",
+  requestId: "req-test",
+  origin: "app",
   signal: new AbortController().signal,
 } satisfies CapabilityExecutionContext;
 
@@ -114,6 +116,8 @@ const resourceContext = (scopes: string[]) =>
     accessSubject: { type: "service_account", serviceAccountId },
     user: null,
     locale: "en",
+    requestId: "req-test",
+    origin: "app",
     signal: new AbortController().signal,
   }) satisfies CapabilityExecutionContext;
 
@@ -467,8 +471,11 @@ describe("notebooks capabilities", () => {
     const input = { commentId: "mno345", content: "Corrected" };
     const edit = notebooksCapabilities.actions["comment.update"];
     const deletion = notebooksCapabilities.actions["comment.delete"];
+    expect(edit.destructive).toBeFalse();
+    expect(edit.idempotency).toBe("none");
+    expect(deletion.destructive).toBeTrue();
+    expect(deletion.idempotency).toBe("required");
     for (const operation of [edit, deletion]) {
-      expect(operation.destructive).toBeTrue();
       expect("approval" in operation).toBeFalse();
       const review = await operation.review(input, userContext);
       expect(review.ok).toBeTrue();
@@ -573,7 +580,12 @@ describe("notebooks capabilities", () => {
       idempotency: "none",
     });
     expect(notebooksCapabilities.actions["note.edit"]).toMatchObject({
-      destructive: true,
+      destructive: false,
+      openWorld: false,
+      idempotency: "none",
+    });
+    expect(notebooksCapabilities.actions["note.move"]).toMatchObject({
+      destructive: false,
       openWorld: false,
       idempotency: "none",
     });

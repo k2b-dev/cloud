@@ -1,4 +1,4 @@
-import type { AiUsageReport, AiUsageStats, AiUsagePage } from "@k2b/cloud/ai/admin";
+import type { AiUsagePage, AiUsageReport, AiUsageStats } from "@k2b/cloud/ai/admin";
 import { AiUsageQuerySchema } from "@k2b/cloud/shared";
 export const usageStats: AiUsageStats = {
   avgOutputTokensPerSecond: 25,
@@ -24,13 +24,11 @@ export const usageFixture = (): AiUsageReport => ({
   overview: usageStats,
   chat: usageStats,
   background: usageStats,
-  tool: usageStats,
   unassignedBackgroundRuns: 1,
   timeline: [{ bucket: "2026-09-08T00:00:00.000Z", turns: 2, tokens: 120, credits: null, failed: 1 }],
-  users: page([{ ...usageStats, capabilities: 2, id: "11111111-1111-4111-8111-111111111111", label: "Ada" }]),
-  models: page([{ ...usageStats, capabilities: 2, id: "model-a", label: "model-a", providerModel: "provider/model-a" }]),
+  users: page([{ ...usageStats, id: "11111111-1111-4111-8111-111111111111", label: "Ada" }]),
+  models: page([{ ...usageStats, id: "model-a", label: "model-a", providerModel: "provider/model-a" }]),
   launches: page([]),
-  capabilities: page([]),
   tasks: page([]),
   apps: page([]),
   feedback: page([

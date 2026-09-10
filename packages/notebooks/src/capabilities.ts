@@ -807,7 +807,8 @@ const actionAudit = (context: CapabilityExecutionContext, actionId: string, targ
   action: `notebooks.capability.${actionId}`,
   actor: capabilityAuditActor(context),
   target: { type: targetType, id: targetId },
-  metadata: { capability: `notebooks.${actionId}` },
+  requestId: context.requestId,
+  metadata: { capability: `notebooks.${actionId}`, origin: context.origin },
 });
 
 const audited = async <T>(
@@ -1169,7 +1170,7 @@ export const notebooksCapabilities = defineCapabilities({
       description: "Replace the current user's own comment within ten minutes of creation. Requires write access to the notebook.",
       input: CommentUpdateInputSchema,
       data: CommentDataSchema,
-      destructive: true,
+      destructive: false,
       openWorld: false,
       idempotency: "none",
       review: async (input, context) => {
@@ -1191,7 +1192,7 @@ export const notebooksCapabilities = defineCapabilities({
       data: CommentDeleteDataSchema,
       destructive: true,
       openWorld: false,
-      idempotency: "none",
+      idempotency: "required",
       review: async (input, context) => {
         const { t } = notebookCapabilityMessages.resolve(context.locale ? [context.locale] : []);
         const resolved = await requireMutableComment(input.commentId, context);
@@ -1281,7 +1282,7 @@ export const notebooksCapabilities = defineCapabilities({
       description: "Apply conflict-aware structural Markdown edits through the collaborative note service.",
       input: NoteEditInputSchema,
       data: NoteEditDataSchema,
-      destructive: true,
+      destructive: false,
       openWorld: false,
       idempotency: "none",
       approval: "rememberable",
@@ -1305,7 +1306,7 @@ export const notebooksCapabilities = defineCapabilities({
       description: "Move one note inside its notebook while rejecting invalid parents and cycles.",
       input: NoteMoveInputSchema,
       data: NoteSummaryDataSchema,
-      destructive: true,
+      destructive: false,
       openWorld: false,
       idempotency: "none",
       approval: "rememberable",

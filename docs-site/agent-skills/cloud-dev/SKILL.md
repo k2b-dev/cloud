@@ -128,6 +128,9 @@ For capability design or changes, read **App capabilities** in the Docs
 collection (`/en/docs/platform/capabilities`), especially its machine-composition
 and design-review guidance. Trace real task paths and consumers before choosing
 result fields or changing contracts; keep detailed API rules in that guide.
+Cloud records one execution row for every capability call on every surface;
+an application writes `context.requestId` into its own audit rows so the two
+trails join without sharing payloads.
 
 For deployment questions, read **Deployment requirements** in the Docs
 collection (`/en/docs/operations/deployment-requirements`) before selecting

@@ -49,6 +49,14 @@ const definition = () => ({
 });
 
 describe("Grids App definition contract", () => {
+  test("edit forms require a record-bound page; existing forms remain create-only", () => {
+    const source = CustomAppDefinitionSchema.parse(definition());
+    const page = source.pages[0]!;
+    page.rows[0]!.columns[0]!.blocks = [{ id: "form", type: "form", formId: "FORM01", fixedValues: {} }];
+    expect(CustomAppDefinitionSchema.safeParse(source).success).toBe(true);
+    page.rows[0]!.columns[0]!.blocks = [{ id: "form", type: "form", formId: "FORM01", mode: "edit", fixedValues: {} }];
+    expect(CustomAppDefinitionSchema.safeParse(source).success).toBe(false);
+  });
   test("uses only six-character public resource ids in schemaVersion 5", () => {
     const source = CUSTOM_APP_REFERENCE.example;
     expect(CustomAppDefinitionSchema.safeParse(source).success).toBe(true);

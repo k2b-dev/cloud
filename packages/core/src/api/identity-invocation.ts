@@ -126,6 +126,7 @@ export const createIdentityInvocationRoutes = (dependencies: Partial<InvocationB
     const response = await dispatchCapability({
       request: dispatchRequest(c.req.raw, input),
       kind: input.kind === "query" ? "queries" : "actions",
+      origin: "app",
       appId: input.targetApp,
       capabilityId: input.capabilityId,
       input: input.input,

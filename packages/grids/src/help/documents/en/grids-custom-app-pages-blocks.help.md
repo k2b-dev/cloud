@@ -88,6 +88,8 @@ The published capability records the exact tables and fields behind the block. A
 
 Form references one existing Grids form. The form owns visible fields, validation, required inputs, defaults, and record creation.
 
+Choose **Form action → Edit this page's record** to edit an existing draft. The page must bind a record from the Form's table. The server loads its inputs and configured inline rows before rendering; saving checks the versions of the parent and edited rows together. Removing an inline row detaches it from the parent, but does not delete the underlying record. Shared rows and finalized records cannot be edited this way. Related tables must belong to the same Base. Existing Form blocks keep creating new records unless you change this action and publish the App again.
+
 The block may supply trusted values to any user-input field. Use `LITERAL` for a validated fixed value. Compatible relation fields may use a declared Record `PARAMS` value or the current page `RECORD.id`. A Principal field may use `AUTH.currentUser` to assign the signed-in person without displaying another picker. Supplied inputs are omitted from the rendered Form, resolved again by the server, and cannot be overridden by the browser. This supports flows such as “add another article to this list” without asking for the same relation again.
 
 After success, the block may stay on the page or replace-navigate inside the same app. Navigation parameters may preserve declared `PARAMS` values or use the created Form record's `RESULT.recordId`.

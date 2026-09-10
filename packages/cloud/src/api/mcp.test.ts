@@ -48,11 +48,22 @@ const compiled = compileCapabilities(
         description: "Update one demo item.",
         input: z.object({ id: z.string().describe("Stable item id.") }).strict(),
         data: z.object({ id: z.string() }).strict(),
-        destructive: true,
+        destructive: false,
         openWorld: false,
         idempotency: "none",
         approval: "rememberable",
         review: async () => ok({ message: "Update the demo item." }),
+        run: async ({ id }) => ok({ data: { id } }),
+      },
+      remove: {
+        title: "Remove item",
+        description: "Delete one demo item.",
+        input: z.object({ id: z.string().describe("Stable item id.") }).strict(),
+        data: z.object({ id: z.string() }).strict(),
+        destructive: true,
+        openWorld: false,
+        idempotency: "required",
+        review: async () => ok({ message: "Delete the demo item." }),
         run: async ({ id }) => ok({ data: { id } }),
       },
     },
@@ -288,11 +299,13 @@ describe("capability MCP projection", () => {
       "cloud__help__search",
       "cloud__help__read",
       "demo__action__create",
+      "demo__action__remove",
       "demo__action__update",
       "demo__query__get",
     ]);
     const create = result.tools.find((tool) => tool.name === "demo__action__create")!;
     const update = result.tools.find((tool) => tool.name === "demo__action__update")!;
+    const remove = result.tools.find((tool) => tool.name === "demo__action__remove")!;
     const get = result.tools.find((tool) => tool.name === "demo__query__get")!;
     expect(create.inputSchema.required).toContain("idempotencyKey");
     expect(create.annotations).toMatchObject({
@@ -310,6 +323,12 @@ describe("capability MCP projection", () => {
     expect(update.annotations).toMatchObject({
       readOnlyHint: false,
       idempotentHint: false,
+      destructiveHint: false,
+      openWorldHint: false,
+    });
+    expect(remove.annotations).toMatchObject({
+      readOnlyHint: false,
+      idempotentHint: true,
       destructiveHint: true,
       openWorldHint: false,
     });

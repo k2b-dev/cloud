@@ -1,18 +1,31 @@
-import { navigateTo } from "@k2b/ssr/nav";
-import { createSignal, For, Show } from "solid-js";
+import type { AiUsageFeedback, AiUsageGroup, AiUsagePage, AiUsageReport, AiUsageRun, AiUsageStats } from "@k2b/cloud/ai/admin";
+import { coreClient } from "@k2b/cloud/clients/core";
 import {
-  FilterChip,
+  AI_USAGE_RANGES,
+  AI_USAGE_REASONS,
+  AI_USAGE_VIEWS,
+  type AiUsageQuery,
+  AiUsageQuerySchema,
+  aiUsageHref,
+  formatDateTime,
+  formatDurationMs,
+  formatNumber,
+  formatPercent,
+} from "@k2b/cloud/shared";
+import { navigateTo } from "@k2b/ssr/nav";
+import {
   Button,
   ButtonLink,
   CopyButton,
-  Disclosure,
   DataPanel,
   DataTable,
   type DataTableColumn,
+  Disclosure,
   dialogCore,
+  FilterChip,
+  Pagination,
   PanelDialog,
   panelDialogWideOptions,
-  Pagination,
   Select,
   SettingsPage,
   StatCell,
@@ -20,22 +33,9 @@ import {
   TextInput,
   useLocale,
 } from "@k2b/ui";
-import type { AiUsageFeedback, AiUsageGroup, AiUsagePage, AiUsageReport, AiUsageRun, AiUsageStats } from "@k2b/cloud/ai/admin";
-import {
-  aiUsageHref,
-  AiUsageQuerySchema,
-  AI_USAGE_RANGES,
-  AI_USAGE_REASONS,
-  AI_USAGE_VIEWS,
-  type AiUsageQuery,
-  formatDateTime,
-  formatDurationMs,
-  formatNumber,
-  formatPercent,
-} from "@k2b/cloud/shared";
-import { coreClient } from "@k2b/cloud/clients/core";
-import { aiUsageMessages } from "./ai-usage-messages";
+import { createSignal, For, Show } from "solid-js";
 import AiUsageCharts from "./AiUsageCharts";
+import { aiUsageMessages } from "./ai-usage-messages";
 
 export default function AiUsageExplorer(props: { report: AiUsageReport }) {
   const locale = useLocale();
@@ -76,8 +76,7 @@ export default function AiUsageExplorer(props: { report: AiUsageReport }) {
     waiting_for_frontend: t().waiting,
   });
   const status = (value: string) => Object.entries(statuses()).find(([key]) => key === value)?.[1] ?? value;
-  const kindLabel = (kind: AiUsageRun["kind"]) =>
-    kind === "chat" ? t().chatRuns : kind === "background" ? t().backgroundAi : t().toolRuns;
+  const kindLabel = (kind: AiUsageRun["kind"]) => (kind === "chat" ? t().chatRuns : t().backgroundAi);
   const chip = (key: keyof AiUsageQuery, label: string, icon: string, options: { value: string; label: string }[], fallback = "") => (
     <FilterChip
       position="bottom-right"
@@ -217,7 +216,7 @@ export default function AiUsageExplorer(props: { report: AiUsageReport }) {
       />
     </StatGrid>
   );
-  const groupTable = (dimension: "users" | "models" | "tasks" | "apps" | "capabilities", title: string) => {
+  const groupTable = (dimension: "users" | "models" | "tasks" | "apps", title: string) => {
     const columns: DataTableColumn<AiUsageGroup>[] = [
       { id: "name", header: title, value: (row) => row.label ?? row.id ?? t().unassigned },
       { id: "runs", header: t().runs, value: (row) => row.runs, align: "right" },
@@ -231,8 +230,8 @@ export default function AiUsageExplorer(props: { report: AiUsageReport }) {
         ? { userId: row.id ?? "unassigned" }
         : dimension === "models"
           ? { modelProfileId: row.id ?? undefined, providerModel: row.providerModel ?? undefined }
-          : dimension === "tasks" || dimension === "capabilities"
-            ? { task: row.id ?? undefined, view: "runs", kind: dimension === "capabilities" ? "tool" : undefined }
+          : dimension === "tasks"
+            ? { task: row.id ?? undefined, view: "runs" }
             : { appId: row.id ?? undefined };
     const linkable = (row: AiUsageGroup) =>
       dimension === "users" || (row.id !== null && (dimension !== "models" || row.providerModel !== null));
@@ -263,10 +262,6 @@ export default function AiUsageExplorer(props: { report: AiUsageReport }) {
                       {" "}
                       · {n(row.avgOutputTokensPerSecond)} tok/s · {n(row.switchesAway)} {t().switchedAway}
                     </Show>
-                    <Show when={dimension === "users"}>
-                      {" "}
-                      · {n(row.capabilities)} {t().capabilities}
-                    </Show>
                   </div>
                 </div>
               );
@@ -284,7 +279,7 @@ export default function AiUsageExplorer(props: { report: AiUsageReport }) {
                   </ButtonLink>
                 </Show>
               );
-            if (col.id === "feedback" && (!linkable(row) || dimension === "capabilities" || dimension === "tasks"))
+            if (col.id === "feedback" && (!linkable(row) || dimension === "tasks"))
               return row.rated ? `${n(row.negative)} / ${n(row.rated)}` : "—";
             if (col.id === "feedback")
               return (
@@ -421,7 +416,7 @@ export default function AiUsageExplorer(props: { report: AiUsageReport }) {
           <Show when={q().view === "runs"}>
             {chip("kind", t().runKind, "ti ti-category", [
               { value: "", label: t().all },
-              ...(["chat", "background", "tool"] as const).map((value) => ({ value, label: kindLabel(value) })),
+              ...(["chat", "background"] as const).map((value) => ({ value, label: kindLabel(value) })),
             ])}
             {chip("status", t().status, "ti ti-activity", [
               { value: "", label: t().all },
@@ -459,7 +454,7 @@ export default function AiUsageExplorer(props: { report: AiUsageReport }) {
         <p class="text-xs text-dimmed">{t().totalsHelp}</p>
         {stats(report().overview)}
         <div class="grid gap-3 lg:grid-cols-3">
-          <For each={["chat", "background", "tool"] as const}>
+          <For each={["chat", "background"] as const}>
             {(kind) => (
               <DataPanel title={kindLabel(kind)}>
                 <div class="ai-usage-summary flex flex-wrap items-center gap-2 p-3 text-xs font-normal">
@@ -489,7 +484,12 @@ export default function AiUsageExplorer(props: { report: AiUsageReport }) {
               empty={t().noResults}
             />
           </DataPanel>
-          {groupTable("capabilities", t().capabilities)}
+          <p class="text-xs text-dimmed">
+            {t().capabilitiesMoved}{" "}
+            <ButtonLink variant="text" size="sm" href="/admin/observability/capabilities">
+              {t().capabilities}
+            </ButtonLink>
+          </p>
         </Disclosure>
       </Show>
       <Show when={q().view === "comparisons"}>

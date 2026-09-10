@@ -438,4 +438,24 @@ describe("@k2b/ui feedback runtime", () => {
     expect(await formResult).toBeNull();
     dom.cleanup();
   });
+  test("progress toasts update in place and distinguish cancelling from dismissing", async () => {
+    const dom = createDomTestHarness(); dom.root.className = "k2b-ui";
+    const { toast } = await import("../src/feedback/toast");
+    let cancelled = 0;
+    const notice = toast("Preparing", { title:"Import", duration:1, progress:"indeterminate", action:{label:"Cancel",onClick:()=>cancelled++} });
+    await settle();
+    const element = dom.document.querySelector<HTMLElement>("[data-k2b-toast]")!;
+    expect(element).not.toBeNull();
+    const progress = element.querySelector("progress")!;
+    expect(progress.hasAttribute("value")).toBe(false);
+    element.click(); await settle(); expect(element.dataset.closing).toBeUndefined();
+    notice.update("Half done", { progress:0.5 });
+    expect(element.querySelector("progress")).toBe(progress);
+    expect(progress.value).toBe(0.5);
+    element.querySelector<HTMLButtonElement>(".k2b-toast__action")!.click();
+    expect(cancelled).toBe(1); expect(element.dataset.closing).toBeUndefined();
+    notice.update("Stopped",{progress:null,action:null,duration:0});
+    expect(progress.hidden).toBe(true); expect(element.querySelector(".k2b-toast__action")).toBeNull();
+    notice.dismiss(); await Bun.sleep(220); dom.cleanup();
+  });
 });

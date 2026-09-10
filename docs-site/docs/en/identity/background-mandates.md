@@ -125,9 +125,10 @@ broker routes are not reachable through the public gateway, and the helper
 does not fall back to the public origin for mandate calls.
 
 An administrator opens **Administration → App credentials** (`/admin/app-credentials`),
-selects the owning app and creates a named credential with an optional expiration time.
+chooses **Create credential**, then selects the owning app and enters a name and
+optional expiration time in the dialog.
 The token is shown once. Save it in the deployment's secret store and inject it
-only into that app. The page lists metadata and supports revocation.
+only into that app. The table lists credentials across all apps and supports revocation.
 
 The CLI exposes the same operations. For example, using an administrator profile:
 
@@ -154,7 +155,8 @@ Content-Type: application/json
 ```
 
 The raw token appears only in this credential-creation response. List bounded
-credential metadata with `GET /api/admin/identity/workloads/inventory/credentials` and
+credential metadata across apps with `GET /api/admin/identity/workloads/credentials`,
+or for one app with `GET /api/admin/identity/workloads/inventory/credentials`, and
 revoke one exact credential with
 `DELETE /api/admin/identity/workloads/inventory/credentials/<credentialId>`.
 Rotate by creating a new credential, deploying it to the owning app, verifying

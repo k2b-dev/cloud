@@ -6,6 +6,8 @@ import { isPointInsideToast } from "./toast";
 export type DialogClose<T> = (result?: T) => void;
 
 export type OpenDialogOptions = {
+  /** Close only this dialog when its owning operation is cancelled. */
+  signal?: AbortSignal;
   panelClassName?: string;
   contentClassName?: string;
   initialFocus?: "first-input" | "none" | ((dialog: HTMLDialogElement) => HTMLElement | null);
@@ -59,7 +61,10 @@ const resolveInitialFocusTarget = (entry: DialogStackEntry, dialog: HTMLDialogEl
   const { initialFocus } = entry;
   if (initialFocus === "none") return null;
   if (typeof initialFocus === "function") return initialFocus(dialog);
-  return entry.container.querySelector<HTMLElement>(
+  const input = entry.container.querySelector<HTMLElement>(
+    "input:not([type='hidden']):not([disabled]), textarea:not([disabled]), select:not([disabled]), [role='combobox']:not([disabled]):not([aria-disabled='true'])",
+  );
+  return input ?? entry.container.querySelector<HTMLElement>(
     "input:not([type='hidden']):not([disabled]), textarea:not([disabled]), select:not([disabled]), button:not([disabled]), a[href], [tabindex]:not([tabindex='-1'])",
   );
 };
@@ -235,6 +240,7 @@ export const createDialogCore = (): DialogCore => {
   };
 
   const open = <T>(view: DialogRender<T>, options: OpenDialogOptions = {}): Promise<T | undefined> => {
+    if (options.signal?.aborted) return Promise.resolve(undefined);
     const dialog = ensureDialogElement();
     const previousTop = state.stack[state.stack.length - 1];
     if (previousTop) previousTop.container.style.display = "none";
@@ -259,7 +265,21 @@ export const createDialogCore = (): DialogCore => {
     };
 
     return new Promise((resolve, reject) => {
-      entry.resolve = (value) => resolve(value as T | undefined);
+      const abort = () => {
+        const index = state.stack.indexOf(entry);
+        if (index < 0) return;
+        if (index === state.stack.length - 1) popTop(undefined);
+        else {
+          state.stack.splice(index, 1);
+          entry.dispose?.();
+          entry.container.remove();
+          entry.resolve?.(undefined);
+        }
+      };
+      entry.resolve = (value) => {
+        options.signal?.removeEventListener("abort", abort);
+        resolve(value as T | undefined);
+      };
       const closeTyped: DialogClose<T> = (result) => {
         if (state.stack[state.stack.length - 1] !== entry) return;
         popTop(result);
@@ -286,6 +306,8 @@ export const createDialogCore = (): DialogCore => {
           lockPageScroll();
           observeConnection();
         }
+        options.signal?.addEventListener("abort", abort, { once: true });
+        if (options.signal?.aborted) abort();
         schedule(() => {
           if (state.stack[state.stack.length - 1] === entry) resolveInitialFocusTarget(entry, dialog)?.focus();
         });

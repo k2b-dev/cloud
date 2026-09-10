@@ -512,7 +512,9 @@ function InlineRelationCreate(props: {
       <div class="paper mt-2 flex flex-col gap-2 p-3">
         <div class="flex items-start justify-between gap-2">
           <div>
-            <p class="text-xs font-semibold text-primary">{t().newRelatedRecord}</p>
+            <p class="text-xs font-semibold text-primary">
+              {props.drafts().some((draft) => draft.existing) ? t().relatedRecords : t().newRelatedRecord}
+            </p>
             <p class="text-[11px] text-dimmed">{t().linkedRecordSavedTogether}</p>
           </div>
           <div class="flex items-center gap-1">

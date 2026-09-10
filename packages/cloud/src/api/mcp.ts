@@ -26,6 +26,7 @@ import {
   searchHelpCatalog,
 } from "../_internal/help-catalog";
 import { getCapability, listApps, listHelp } from "../_internal/registry";
+import { capabilityValueMeta, recordCapabilityExecution } from "../capabilities/executions";
 import {
   CAPABILITY_FRAMEWORK_ERROR_CODES,
   CAPABILITY_MAX_REQUEST_BYTES,
@@ -41,6 +42,7 @@ import {
 } from "../contracts/capabilities";
 import type { AppRegistryEntry, CapabilityRegistryEntry, HelpRegistryEntry } from "../contracts/registry";
 import { type AuthContext, auth, type RequestAuthority, rateLimit, rejectReservedWorkloadCredential, resolveLocale } from "../server";
+import { normalizeInvocationRequestId } from "../services/identity/invocation-token";
 import { logger } from "../services/logging";
 import { get } from "../services/settings";
 import { cloudMcpResourceUri, publicCloudOrigin } from "../shared/app-url";
@@ -615,6 +617,26 @@ const createMcpServer = (
     }
     const requiredScope = selected.kind === "actions" ? "write" : "read";
     if (!hasScope(requiredScope)) {
+      // Denied before the dispatcher, so this surface records the same row the
+      // dispatcher would have written.
+      const at = new Date();
+      const actor = authority?.actor;
+      await recordCapabilityExecution({
+        requestId: normalizeInvocationRequestId(request.headers.get("x-request-id")) ?? crypto.randomUUID(),
+        origin: "mcp",
+        appId: selected.app.appId,
+        capability: `${selected.app.appId}.${selected.operation.localId}`,
+        kind: selected.kind === "actions" ? "action" : "query",
+        destructive: "destructive" in selected.operation ? selected.operation.destructive : false,
+        actorKind: actor?.kind ?? null,
+        actorId: actor?.kind === "user" ? actor.user.id : (actor?.serviceAccount.id ?? null),
+        userId: actor?.kind === "user" ? actor.user.id : (actor?.delegatedUser?.id ?? null),
+        status: "denied",
+        errorCode: "FORBIDDEN",
+        inputMeta: capabilityValueMeta(message.params.arguments ?? {}),
+        startedAt: at,
+        completedAt: at,
+      }).catch((error) => log.error("MCP denial could not be recorded", { error: error instanceof Error ? error.message : String(error) }));
       return boundedToolResult({ code: "FORBIDDEN", message: `OAuth scope ${requiredScope} is required` }, true);
     }
 
@@ -626,6 +648,7 @@ const createMcpServer = (
     const response = await dispatchCapability({
       request: new Request(request.url, { method: "POST", headers, signal: request.signal }),
       kind: selected.kind,
+      origin: "mcp",
       appId: selected.app.appId,
       capabilityId: selected.operation.localId,
       input: args,

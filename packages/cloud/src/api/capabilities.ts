@@ -4,17 +4,20 @@ import { z } from "zod";
 import { readBoundedJson } from "../_internal/bounded-json";
 import { resolveCapabilityManifestPresentation } from "../_internal/capabilities";
 import { getCapability, listApps } from "../_internal/registry";
+import { type CapabilityExecutionStatus, capabilityValueMeta, recordCapabilityExecution } from "../capabilities/executions";
 import {
   CAPABILITY_FRAMEWORK_ERROR_CODES,
   CAPABILITY_MAX_CATALOG_BYTES,
   CAPABILITY_MAX_REQUEST_BYTES,
   CAPABILITY_MAX_RESULT_BYTES,
+  CAPABILITY_ORIGIN_HEADER,
   CAPABILITY_PROTOCOL_VERSION,
   CapabilityActionReviewSchema,
   type CapabilityCatalog,
   CapabilityCatalogSchema,
   CapabilityErrorSchema,
   CapabilityIdempotencyKeySchema,
+  type CapabilityOrigin,
   capabilityResultJsonSchema,
 } from "../contracts/capabilities";
 import type { AppRegistryEntry, CapabilityRegistryEntry } from "../contracts/registry";
@@ -203,12 +206,7 @@ const waitWithin = <T>(value: Promise<T>, signal: AbortSignal): Promise<T> =>
     );
   });
 
-/**
- * Dispatch one already-parsed capability invocation through the live registry.
- * HTTP, CLI, and MCP callers share this exact app lookup, credential forwarding,
- * schema pinning, timeout, and response validation path.
- */
-export const dispatchCapability = async (params: {
+export type CapabilityDispatchParams = {
   request: Request;
   kind: "queries" | "actions";
   review?: boolean;
@@ -216,11 +214,27 @@ export const dispatchCapability = async (params: {
   capabilityId: string;
   input: unknown;
   locale?: string;
+  /** Cloud surface this invocation came from; recorded on the execution row. */
+  origin: CapabilityOrigin;
   authority?: RequestAuthority;
   mandate?: MandatedCapabilityAuthority;
   callingAppId?: string;
   dependencies?: CapabilityDispatchDependencies;
-}): Promise<Response> => {
+};
+
+type CapabilityDispatchOutcome = { body: unknown; status: number };
+
+/** Principal resolved while dispatching. A mandate only reveals it during issuance. */
+type CapabilityDispatchObservation = {
+  subject: { type: "user" | "service_account"; id: string } | null;
+  destructive: boolean;
+};
+
+const runCapabilityDispatch = async (
+  params: CapabilityDispatchParams,
+  requestId: string,
+  observed: CapabilityDispatchObservation,
+): Promise<CapabilityDispatchOutcome> => {
   const messages = capabilityMessages(params.locale ?? preferredLocale(params.request.headers));
   const registryEntry = params.dependencies?.getCapability ?? getCapability;
   const fetchUpstream = params.dependencies?.fetch ?? globalThis.fetch;
@@ -233,15 +247,16 @@ export const dispatchCapability = async (params: {
       error: error instanceof Error ? error.message : String(error),
     });
     const unavailable = errorResponse(CAPABILITY_FRAMEWORK_ERROR_CODES.appUnavailable, messages.registryUnavailable, 503);
-    return capabilityJsonResponse(unavailable.body, unavailable.status);
+    return unavailable;
   }
   if (!entry) {
     const error = errorResponse(CAPABILITY_FRAMEWORK_ERROR_CODES.appUnavailable, messages.appUnavailable({ appId: params.appId }), 503);
-    return capabilityJsonResponse(error.body, error.status);
+    return error;
   }
 
   const operations = params.kind === "queries" ? entry.manifest.queries : entry.manifest.actions;
   const operation = operations.find((candidate) => candidate.localId === params.capabilityId);
+  if (operation && "destructive" in operation) observed.destructive = operation.destructive;
   if (!operation) {
     const label = params.kind === "queries" ? messages.query : messages.action;
     const error = errorResponse(
@@ -249,7 +264,7 @@ export const dispatchCapability = async (params: {
       messages.notFound({ kind: label, reference: `${params.appId}.${params.capabilityId}` }),
       404,
     );
-    return capabilityJsonResponse(error.body, error.status);
+    return error;
   }
   if (params.review && (params.kind !== "actions" || !("review" in operation) || operation.review !== true)) {
     const error = errorResponse(
@@ -257,7 +272,7 @@ export const dispatchCapability = async (params: {
       messages.notFound({ kind: messages.review, reference: `${params.appId}.${params.capabilityId}` }),
       404,
     );
-    return capabilityJsonResponse(error.body, error.status);
+    return error;
   }
 
   const rawIdempotencyKey = params.request.headers.get("idempotency-key");
@@ -265,35 +280,35 @@ export const dispatchCapability = async (params: {
     const action = operation as (typeof entry.manifest.actions)[number];
     if (action.idempotency === "required" && rawIdempotencyKey === null) {
       const error = errorResponse(CAPABILITY_FRAMEWORK_ERROR_CODES.idempotencyKeyRequired, messages.idempotencyRequired, 400);
-      return capabilityJsonResponse(error.body, error.status);
+      return error;
     }
     if (action.idempotency === "none" && rawIdempotencyKey !== null) {
       const error = errorResponse(CAPABILITY_FRAMEWORK_ERROR_CODES.idempotencyKeyNotAllowed, messages.idempotencyNotAllowed, 400);
-      return capabilityJsonResponse(error.body, error.status);
+      return error;
     }
   } else if (rawIdempotencyKey !== null) {
     const error = errorResponse(CAPABILITY_FRAMEWORK_ERROR_CODES.idempotencyKeyNotAllowed, messages.idempotencyOnlyActions, 400);
-    return capabilityJsonResponse(error.body, error.status);
+    return error;
   }
   const idempotencyKey = rawIdempotencyKey === null ? null : CapabilityIdempotencyKeySchema.safeParse(rawIdempotencyKey);
   if (idempotencyKey && !idempotencyKey.success) {
     const error = errorResponse(CAPABILITY_FRAMEWORK_ERROR_CODES.validationFailed, messages.idempotencyInvalid, 400, {
       issues: idempotencyKey.error.issues.map((issue) => ({ message: issue.message })),
     });
-    return capabilityJsonResponse(error.body, error.status);
+    return error;
   }
 
   const inputValidator = schemaValidator(`${operation.schemaHash}:input`, operation.inputSchema);
   if (!inputValidator) {
     const invalid = errorResponse("INVALID_APP_RESPONSE", messages.unsupportedSchema({ appId: params.appId }), 502);
-    return capabilityJsonResponse(invalid.body, invalid.status);
+    return invalid;
   }
   const input = inputValidator.safeParse(params.input);
   if (!input.success) {
     const invalid = errorResponse("VALIDATION_FAILED", messages.inputSchemaMismatch, 400, {
       issues: input.error.issues.slice(0, 20).map((issue) => ({ path: issue.path.join("."), message: issue.message })),
     });
-    return capabilityJsonResponse(invalid.body, invalid.status);
+    return invalid;
   }
 
   let requestBody: string;
@@ -301,11 +316,11 @@ export const dispatchCapability = async (params: {
     requestBody = JSON.stringify({ input: input.data });
   } catch {
     const invalid = errorResponse(CAPABILITY_FRAMEWORK_ERROR_CODES.validationFailed, messages.inputNotSerializable, 400);
-    return capabilityJsonResponse(invalid.body, invalid.status);
+    return invalid;
   }
   if (new TextEncoder().encode(requestBody).byteLength > CAPABILITY_MAX_REQUEST_BYTES) {
     const invalid = errorResponse(CAPABILITY_FRAMEWORK_ERROR_CODES.validationFailed, messages.requestTooLarge, 400);
-    return capabilityJsonResponse(invalid.body, invalid.status);
+    return invalid;
   }
 
   const invocationOperation = capabilityInvocationOperation(params.kind, params.capabilityId, params.review);
@@ -332,17 +347,18 @@ export const dispatchCapability = async (params: {
                     targetAppId: params.appId,
                     operation: invocationOperation,
                     actionApproval: mandate.actionApproval ?? "none",
-                    requestId: normalizeInvocationRequestId(params.request.headers.get("x-request-id")),
+                    requestId,
                   },
                   async (mandateAuthority) => {
                     signal.throwIfAborted();
+                    observed.subject = mandateAuthority.subject;
                     return (params.dependencies?.signInvocation ?? signInvocationToken)({
                       targetAppId: params.appId,
                       callingAppId: mandate.ownerAppId,
                       operation: invocationOperation,
                       schemaHash: operation.schemaHash,
                       authority: invocationAuthorityFromMandate(mandateAuthority),
-                      requestId: normalizeInvocationRequestId(params.request.headers.get("x-request-id")),
+                      requestId,
                       signer,
                       issuer: signer.issuer,
                     });
@@ -376,7 +392,7 @@ export const dispatchCapability = async (params: {
                   operation: invocationOperation,
                   schemaHash: operation.schemaHash,
                   authority: invocationAuthorityFromRequest(authority),
-                  requestId: normalizeInvocationRequestId(params.request.headers.get("x-request-id")),
+                  requestId,
                   signer,
                   issuer: signer.issuer,
                 }),
@@ -397,7 +413,7 @@ export const dispatchCapability = async (params: {
         error.status === 409 ? "Mandate revision changed" : "Mandate does not authorize this capability invocation",
         error.status,
       );
-      return capabilityJsonResponse(denied.body, denied.status);
+      return denied;
     }
     if (params.request.signal.aborted || timeout.aborted) {
       const cancelled = params.request.signal.aborted;
@@ -407,15 +423,16 @@ export const dispatchCapability = async (params: {
         cancelled ? 499 : 504,
         { retrySafe: true },
       );
-      return capabilityJsonResponse(failure.body, failure.status);
+      return failure;
     }
     console.error("[capabilities] Invocation issuance failed", { appId: params.appId, operation: invocationOperation });
     const failure = errorResponse(CAPABILITY_FRAMEWORK_ERROR_CODES.internal, messages.issuanceFailed, 500, { retrySafe: true });
-    return capabilityJsonResponse(failure.body, failure.status);
+    return failure;
   }
-  for (const name of ["x-request-id", "traceparent", "tracestate"] as const) {
-    const value =
-      name === "x-request-id" ? normalizeInvocationRequestId(params.request.headers.get(name)) : params.request.headers.get(name);
+  headers.set("x-request-id", requestId);
+  headers.set(CAPABILITY_ORIGIN_HEADER, params.origin);
+  for (const name of ["traceparent", "tracestate"] as const) {
+    const value = params.request.headers.get(name);
     if (value) headers.set(name, value);
   }
   const invocationLocale = preferredLocale(params.request.headers);
@@ -424,11 +441,11 @@ export const dispatchCapability = async (params: {
   headers.set("x-cloud-capability-schema-hash", operation.schemaHash);
   const actionWithoutRetrySafety =
     params.kind === "actions" && !params.review && "idempotency" in operation && operation.idempotency === "none";
-  const outcomeUnknown = (): Response => {
+  const outcomeUnknown = (): CapabilityDispatchOutcome => {
     const unknown = errorResponse(CAPABILITY_FRAMEWORK_ERROR_CODES.actionOutcomeUnknown, messages.actionOutcomeUnknown, 502, {
       retrySafe: false,
     });
-    return capabilityJsonResponse(unknown.body, unknown.status);
+    return unknown;
   };
 
   let response: Response;
@@ -454,13 +471,13 @@ export const dispatchCapability = async (params: {
       const cancelled = errorResponse(CAPABILITY_FRAMEWORK_ERROR_CODES.requestCancelled, messages.requestCancelled, 499, {
         retrySafe: params.kind === "queries" || ("idempotency" in operation && operation.idempotency === "required"),
       });
-      return capabilityJsonResponse(cancelled.body, cancelled.status);
+      return cancelled;
     }
     if (timeout.aborted) {
       const deadline = errorResponse(CAPABILITY_FRAMEWORK_ERROR_CODES.deadlineExceeded, messages.deadlineExceeded, 504, {
         retrySafe: params.kind === "queries" || ("idempotency" in operation && operation.idempotency === "required"),
       });
-      return capabilityJsonResponse(deadline.body, deadline.status);
+      return deadline;
     }
     const unavailable = errorResponse(
       CAPABILITY_FRAMEWORK_ERROR_CODES.appUnavailable,
@@ -468,7 +485,7 @@ export const dispatchCapability = async (params: {
       503,
       { retrySafe: params.kind === "queries" || ("idempotency" in operation && operation.idempotency === "required") },
     );
-    return capabilityJsonResponse(unavailable.body, unavailable.status);
+    return unavailable;
   }
 
   const upstreamBody = await readBoundedJson(response, CAPABILITY_MAX_RESULT_BYTES);
@@ -479,17 +496,17 @@ export const dispatchCapability = async (params: {
         ? CAPABILITY_FRAMEWORK_ERROR_CODES.responseTooLarge
         : CAPABILITY_FRAMEWORK_ERROR_CODES.invalidAppResponse;
     const invalid = errorResponse(code, messages.invalidCapabilityJson({ appId: params.appId }), 502);
-    return capabilityJsonResponse(invalid.body, invalid.status);
+    return invalid;
   }
 
   if (!response.ok) {
     const parsed = CapabilityErrorSchema.safeParse(upstreamBody.data);
     if (parsed.success && response.status >= 400 && response.status <= 599) {
-      return capabilityJsonResponse(parsed.data, response.status);
+      return { body: parsed.data, status: response.status };
     }
     if (actionWithoutRetrySafety) return outcomeUnknown();
     const invalid = errorResponse("INVALID_APP_RESPONSE", messages.invalidCapabilityError({ appId: params.appId }), 502);
-    return capabilityJsonResponse(invalid.body, invalid.status);
+    return invalid;
   }
 
   const resultValidator = params.review
@@ -505,10 +522,84 @@ export const dispatchCapability = async (params: {
   if (!resultValidator || !parsedResult?.success || !reviewApprovalScopeIsValid) {
     if (actionWithoutRetrySafety) return outcomeUnknown();
     const invalid = errorResponse("INVALID_APP_RESPONSE", messages.outsideResultSchema({ appId: params.appId }), 502);
-    return capabilityJsonResponse(invalid.body, invalid.status);
+    return invalid;
   }
 
-  return capabilityJsonResponse(upstreamBody.data, 200);
+  return { body: upstreamBody.data, status: 200 };
+};
+
+const executionStatus = (status: number, code: string | null): CapabilityExecutionStatus => {
+  if (status < 400) return "succeeded";
+  if (status === 400) return "invalid_input";
+  if (status === 401 || status === 403) return "denied";
+  if (status === 504 || code === CAPABILITY_FRAMEWORK_ERROR_CODES.deadlineExceeded) return "timed_out";
+  return "failed";
+};
+
+const bodyErrorCode = (body: unknown): string | null =>
+  body && typeof body === "object" && "code" in body && typeof body.code === "string" ? body.code : null;
+
+const resultDataMeta = (body: unknown) =>
+  capabilityValueMeta(body && typeof body === "object" && "data" in body ? (body as { data: unknown }).data : body);
+
+/**
+ * Dispatch one already-parsed capability invocation through the live registry.
+ * HTTP, MCP, and assistant callers share this exact app lookup, credential
+ * forwarding, schema pinning, timeout, and response validation path.
+ *
+ * This is the single writer of `capabilities.executions`: one invocation
+ * produces exactly one row, whatever its outcome. Action reviews are a
+ * read-only preview and are not executions, so they are not recorded.
+ */
+export const dispatchCapability = async (params: CapabilityDispatchParams): Promise<Response> => {
+  const requestId = normalizeInvocationRequestId(params.request.headers.get("x-request-id")) ?? crypto.randomUUID();
+  const observed: CapabilityDispatchObservation = { subject: null, destructive: false };
+  const startedAt = new Date();
+  const outcome = await runCapabilityDispatch(params, requestId, observed);
+  if (!params.review) {
+    const actor = params.authority?.actor;
+    const principal =
+      actor?.kind === "user"
+        ? ({ type: "user", id: actor.user.id } as const)
+        : actor?.kind === "service_account"
+          ? ({ type: "service_account", id: actor.serviceAccount.id } as const)
+          : observed.subject;
+    const accessSubject = params.authority?.accessSubject;
+    const subject =
+      accessSubject?.type === "user"
+        ? ({ type: "user", id: accessSubject.userId } as const)
+        : accessSubject?.type === "service_account"
+          ? ({ type: "service_account", id: accessSubject.serviceAccountId } as const)
+          : null;
+    const errorCode = outcome.status >= 400 ? bodyErrorCode(outcome.body) : null;
+    await recordCapabilityExecution({
+      requestId,
+      origin: params.origin,
+      appId: params.appId,
+      capability: `${params.appId}.${params.capabilityId}`,
+      kind: params.kind === "queries" ? "query" : "action",
+      destructive: observed.destructive,
+      actorKind: principal?.type ?? null,
+      actorId: principal?.id ?? null,
+      userId: actor?.kind === "user" ? actor.user.id : (actor?.delegatedUser?.id ?? (principal?.type === "user" ? principal.id : null)),
+      accessSubject: subject && subject.id !== principal?.id ? subject : null,
+      status: executionStatus(outcome.status, errorCode),
+      errorCode,
+      inputMeta: capabilityValueMeta(params.input),
+      outputMeta: outcome.status < 400 ? resultDataMeta(outcome.body) : null,
+      idempotencyKey: CapabilityIdempotencyKeySchema.safeParse(params.request.headers.get("idempotency-key")).data ?? null,
+      startedAt,
+      completedAt: new Date(),
+    }).catch((error) => {
+      // History is operational evidence; losing a row must not fail the call.
+      log.error("Capability execution could not be recorded", {
+        appId: params.appId,
+        capabilityId: params.capabilityId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    });
+  }
+  return capabilityJsonResponse(outcome.body, outcome.status);
 };
 
 class MandateDispatchError extends Error {
@@ -594,6 +685,7 @@ export const createCapabilityRoutes = (dependencies: CapabilityRouteDependencies
           request: c.req.raw,
           kind: "actions",
           review: true,
+          origin: "http",
           appId: c.req.param("appId") ?? "",
           capabilityId: c.req.param("capabilityId") ?? "",
           input: request.data.input,
@@ -644,6 +736,7 @@ export const createCapabilityRoutes = (dependencies: CapabilityRouteDependencies
         return dispatchCapability({
           request: c.req.raw,
           kind: c.req.param("kind") as "queries" | "actions",
+          origin: "http",
           appId: c.req.param("appId") ?? "",
           capabilityId: c.req.param("capabilityId") ?? "",
           input: request.data.input,

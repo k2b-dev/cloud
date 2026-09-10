@@ -193,6 +193,7 @@ documents all process variables; that larger list is not the shape of `env`.
 | `@k2b/cloud/cli/capabilities` | Platform-owned | Built-in generic capability client | [App capabilities](/en/docs/platform/capabilities) |
 | `@k2b/cloud/capabilities` | Supported, browser | Runtime-validated capability catalog, invocation, and Action review client | [App capabilities](/en/docs/platform/capabilities) |
 | `@k2b/cloud/capabilities/server` | Supported, server-only | Registry-backed capability catalog, invocation, and Action review client | [App capabilities](/en/docs/platform/capabilities) |
+| `@k2b/cloud/capabilities/store` | Platform-owned, server-only | Capability execution history: migration, recording, listing, summary, and retention | [App capabilities](/en/docs/platform/capabilities) |
 | `@k2b/cloud/capabilities/testing` | Supported, tests | Provider manifest compilation and additive-evolution assertions | [App capabilities](/en/docs/platform/capabilities) |
 | `@k2b/cloud/cli/account` | Platform-owned | Built-in account commands | — |
 | `@k2b/cloud/cli/apps` | Platform-owned | Built-in application commands | — |

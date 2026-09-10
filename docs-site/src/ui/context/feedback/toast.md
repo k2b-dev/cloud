@@ -114,3 +114,23 @@ toast.success("Item moved", {
   duration: 8_000,
 });
 ```
+
+## Progress and cancellation
+
+Pass `progress: 0` through `1` for a determinate bar, or `"indeterminate"` while the total is unknown. A progress toast does not time out or dismiss when its body is clicked. Update the existing handle instead of creating one toast per batch. Pass `progress: null` on completion; ordinary duration behavior resumes.
+
+```ts
+const controller = new AbortController();
+const notice = toast("Preparing import", {
+  title: "Import",
+  progress: "indeterminate",
+  action: { label: "Cancel", onClick: () => controller.abort() },
+  dismissLabel: "Dismiss notification",
+});
+notice.update("500 / 1000 records saved", { progress: 0.5 });
+notice.update("1000 records saved", {
+  title: "Import completed", variant: "success", progress: null, action: null,
+});
+```
+
+Callback actions do not dismiss automatically; existing `{ label, href }` actions retain their link behavior. Closing the toast only hides feedback, so cancellation must be explicit. The app owns localized titles, descriptions, action labels and `dismissLabel`. Throttle frequent progress updates to meaningful milestones. Keep any important partial-result state in the application too, since users can dismiss the toast.

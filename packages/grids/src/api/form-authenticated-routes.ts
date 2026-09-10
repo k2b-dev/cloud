@@ -41,6 +41,35 @@ export const createAuthenticatedFormRoutes = (deps: AuthenticatedFormRoutesDeps 
   const projectForms = deps.projectForms ?? toPublicForms;
 
   return new Hono<AuthContext>()
+    .post(
+      "/:formId/records/:recordId",
+      describeRoute({
+        tags: ["Grids:Form"],
+        summary: "Save an existing record and inline related edits through a form",
+        responses: {
+          200: jsonResponse(z.object({ recordId: ShortIdSchema }), "Saved"),
+          409: jsonResponse(ErrorResponseSchema, "Changed or conflicting submission"),
+        },
+      }),
+      v("json", FormSubmitSchema.and(z.object({ version: z.number().int().positive(), idempotencyKey: z.string().min(1).max(200) }))),
+      async (context) => {
+        const formId = await resolveId(context, "formId", "form");
+        if (!formId) return context.json({ message: apiMessages(context).invalidFormId }, 400);
+        const form = await service.form.get(formId);
+        if (!form || !form.isActive) return context.json({ message: apiMessages(context).formNotFound }, 404);
+        const table = await service.table.get(form.tableId);
+        if (!table) return context.json({ message: apiMessages(context).formNotFound }, 404);
+        const gate = await gateAtTarget(context, { baseId: table.baseId }, "write");
+        if (!gate.ok) return respond(context, () => Promise.resolve(gate));
+        const recordId = await resolveId(context, "recordId", "record");
+        if (!recordId) return context.json({ message: apiMessages(context).invalidFormSubmission }, 400);
+        const body = context.req.valid("json");
+        return submitFormResponse(context, form, body, actorId(context), deps, currentActorViewer(context), {
+          id: recordId,
+          version: body.version,
+        });
+      },
+    )
     .get(
       "/by-table/:tableId",
       describeRoute({

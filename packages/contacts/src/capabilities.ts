@@ -527,7 +527,8 @@ const actionAudit = (context: CapabilityExecutionContext, actionId: string, targ
   action: `contacts.capability.${actionId}`,
   actor: capabilityAuditActor(context),
   target: { type: targetType, id: targetId },
-  metadata: { capability: `contacts.${actionId}` },
+  requestId: context.requestId,
+  metadata: { capability: `contacts.${actionId}`, origin: context.origin },
 });
 
 const audited = async <T>(
@@ -1241,7 +1242,7 @@ export const contactsCapabilities = defineCapabilities({
       description: "Update selected contact fields; provided collection fields replace their current values.",
       input: ContactUpdateInputSchema,
       data: ContactMutationDataSchema,
-      destructive: true,
+      destructive: false,
       openWorld: false,
       idempotency: "none",
       approval: "rememberable",
@@ -1299,9 +1300,10 @@ export const contactsCapabilities = defineCapabilities({
       description: "Move a contact to another writable book. Book-scoped tags and hierarchy links are removed.",
       input: ContactMoveInputSchema,
       data: ContactMutationDataSchema,
+      // Moving drops book-scoped tags and hierarchy links, which moving back does not restore.
       destructive: true,
       openWorld: false,
-      idempotency: "none",
+      idempotency: "required",
       review: async (input, context) => {
         const { t } = contactCapabilityMessages.resolve([context.locale]);
         const target = await requireBookPermission(input.targetBookId, context, "write");
@@ -1324,7 +1326,7 @@ export const contactsCapabilities = defineCapabilities({
       data: ContactDeleteDataSchema,
       destructive: true,
       openWorld: false,
-      idempotency: "none",
+      idempotency: "required",
       review: (input, context) => {
         const { t } = contactCapabilityMessages.resolve([context.locale]);
         return reviewContactAction(input.contactId, context, "write", (contact) => ({
@@ -1339,7 +1341,7 @@ export const contactsCapabilities = defineCapabilities({
       description: "Set or clear the current user's favorite state for one readable contact.",
       input: FavoriteSetInputSchema,
       data: FavoriteSetDataSchema,
-      destructive: true,
+      destructive: false,
       openWorld: false,
       idempotency: "none",
       approval: "rememberable",
@@ -1359,7 +1361,7 @@ export const contactsCapabilities = defineCapabilities({
       description: "Atomically add and remove book-scoped tags on one writable contact.",
       input: ContactTagChangeInputSchema,
       data: ContactTagChangeDataSchema,
-      destructive: true,
+      destructive: false,
       openWorld: false,
       idempotency: "none",
       approval: "rememberable",

@@ -47,7 +47,6 @@ export const aiUsageMessages = i18n.define({
       showError: "Show error",
       noResults: "No results for these filters.",
       chatRuns: "Chat turns",
-      toolRuns: "Tool calls",
       runKind: "Run kind",
       searchErrors: "Search tasks and errors",
       applyFilters: "Apply filters",
@@ -56,13 +55,12 @@ export const aiUsageMessages = i18n.define({
       showUnassigned: "Show unassigned",
       periodHelp: "Period uses the start of each run. Feedback shows current ratings for chat turns started in this period. Snapshot:",
       comparisonHelp:
-        "Chat and background inference are counted once; tool calls are separate. Negative share is shown with rating count and response coverage. Duration is generation time for chat turns and elapsed time for background runs.",
+        "Chat and background inference are counted once. Negative share is shown with rating count and response coverage. Duration is generation time for chat turns and elapsed time for background runs.",
       feedbackHelp:
         "Rating and reason filters affect this list. Totals above retain all ratings for the selected user/model cohort. Ratings may be edited or removed; they are not a rating history.",
       runsHelp:
-        "Run kind, status, task and error filters apply to this list. Details show stored metadata and bounded errors, not private chat content. Tool calls carry no additional inference charge.",
-      totalsHelp:
-        "Totals include chat and background inference. Tool calls are separate. Missing measurements appear as —; coverage shows how much is known.",
+        "Run kind, status, task and error filters apply to this list. Details show stored metadata and bounded errors, not private chat content.",
+      totalsHelp: "Totals include chat and background inference. Missing measurements appear as —; coverage shows how much is known.",
       unassignedHelp: ({ count }: { count: string }) =>
         `${count} background runs have no user attribution. They are excluded when a specific user is selected.`,
 
@@ -116,9 +114,8 @@ export const aiUsageMessages = i18n.define({
       usersTitle: "Users",
       usersDescription: "Private message content is never exposed; this table contains accounting metadata only.",
       noUsers: "No user usage in this range.",
-      capabilitiesTitle: "Capabilities",
-      capabilitiesDescription: "Application capability calls, failures, rejections, and server execution time.",
-      noCapabilities: "No application capabilities used in this range.",
+      capabilitiesMoved:
+        "Capability calls are recorded by the platform for every surface, not only the assistant. They live in Observability →",
       backgroundAi: "Background AI",
       backgroundDescription:
         "Structured AI, workflow tasks, and chat summaries. Credits include only runs with reported prices; coverage shows how many runs have a price.",
@@ -187,7 +184,6 @@ export const aiUsageMessages = i18n.define({
       showError: "Fehler anzeigen",
       noResults: "Keine Ergebnisse für diese Filter.",
       chatRuns: "Chat-Durchläufe",
-      toolRuns: "Tool-Aufrufe",
       runKind: "Art des Laufs",
       searchErrors: "Aufgaben und Fehler durchsuchen",
       applyFilters: "Filter anwenden",
@@ -197,13 +193,13 @@ export const aiUsageMessages = i18n.define({
       periodHelp:
         "Der Zeitraum bezieht sich auf den Start des Laufs. Feedback zeigt aktuelle Bewertungen zu Chat-Durchläufen, die in diesem Zeitraum gestartet wurden. Stand:",
       comparisonHelp:
-        "Chat- und Hintergrundinferenz werden einmal gezählt; Tool-Aufrufe separat. Der Negativanteil wird mit Anzahl und Abdeckung der Bewertungen gezeigt. Dauer bedeutet bei Chats Generierungszeit, bei Hintergrundläufen verstrichene Zeit.",
+        "Chat- und Hintergrundinferenz werden einmal gezählt. Der Negativanteil wird mit Anzahl und Abdeckung der Bewertungen gezeigt. Dauer bedeutet bei Chats Generierungszeit, bei Hintergrundläufen verstrichene Zeit.",
       feedbackHelp:
         "Bewertungs- und Grundfilter gelten für diese Liste. Die Kennzahlen behalten alle Bewertungen der gewählten Nutzer-/Modellauswahl bei. Bewertungen können geändert oder entfernt werden; es ist keine Bewertungshistorie.",
       runsHelp:
-        "Art, Status, Aufgabe und Fehlerfilter gelten für diese Liste. Details zeigen gespeicherte Metadaten und begrenzte Fehlermeldungen, keine privaten Chat-Inhalte. Tool-Aufrufe verursachen hier keine zusätzliche Inferenzabrechnung.",
+        "Art, Status, Aufgabe und Fehlerfilter gelten für diese Liste. Details zeigen gespeicherte Metadaten und begrenzte Fehlermeldungen, keine privaten Chat-Inhalte.",
       totalsHelp:
-        "Die Summen enthalten Chat- und Hintergrundinferenz. Tool-Aufrufe zählen separat. Fehlende Messwerte erscheinen als —; die Abdeckung zeigt den bekannten Anteil.",
+        "Die Summen enthalten Chat- und Hintergrundinferenz. Fehlende Messwerte erscheinen als —; die Abdeckung zeigt den bekannten Anteil.",
       unassignedHelp: ({ count }: { count: string }) =>
         `${count} Hintergrundläufe haben keine Nutzerzuordnung. Bei Auswahl eines bestimmten Nutzers sind sie nicht enthalten.`,
 
@@ -258,9 +254,8 @@ export const aiUsageMessages = i18n.define({
       usersTitle: "Benutzer",
       usersDescription: "Private Nachrichteninhalte werden nicht angezeigt; die Tabelle enthält nur Abrechnungsmetadaten.",
       noUsers: "Keine Nutzung durch Benutzer in diesem Zeitraum.",
-      capabilitiesTitle: "Capabilities",
-      capabilitiesDescription: "Capability-Aufrufe von Apps, Fehler, Ablehnungen und serverseitige Ausführungszeit.",
-      noCapabilities: "Keine App-Capabilities in diesem Zeitraum verwendet.",
+      capabilitiesMoved:
+        "Capability-Aufrufe zeichnet die Plattform für alle Oberflächen auf, nicht nur für den Assistenten. Sie stehen unter Observability →",
       backgroundAi: "KI im Hintergrund",
       backgroundDescription:
         "Strukturierte KI, Workflow-Aufgaben und Chat-Zusammenfassungen. Credits umfassen nur Läufe mit gemeldeten Preisen; die Abdeckung zeigt deren Anteil.",

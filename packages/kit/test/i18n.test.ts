@@ -1,8 +1,10 @@
 import { expect, test } from "bun:test";
+import { databaseMessages } from "../src/database-messages";
 import { messages } from "../src/frontend/messages";
 import { apiErrorMessage, errorMessages, ProjectValidationError } from "../src/errors";
 test("Kit UI and error catalogs are complete with regional fallback", () => {
   expect(messages.check()).toEqual([]);
+  expect(databaseMessages.check()).toEqual([]);
   expect(errorMessages.check()).toEqual([]);
   expect(messages.resolve(["de-CH"]).t.duplicatePath).toBe(messages.resolve(["de"]).t.duplicatePath);
   expect(apiErrorMessage("REVISION_CONFLICT", "de-CH")).toContain("Entwurf bleibt erhalten");

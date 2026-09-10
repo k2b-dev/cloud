@@ -35,6 +35,7 @@ import {
 import { buildCustomAppRuntimeContext, customAppDefinitionWithAvailableNavigation } from "../custom-apps/runtime-context";
 import { customAppScannerConfigHash } from "../custom-apps/scanner-capability";
 import type { PublicDocument } from "../frontend/_components/documents/public-document-types";
+import type { FormEditState } from "../frontend/_components/forms/form-submit-payload";
 import type { WorkflowScannerState } from "../frontend/_components/workflows/WorkflowScannerSurface";
 import type { CustomAppRenderedAction } from "../frontend/custom-app/Actions.island";
 import type { CustomAppRecordsSuccess, CustomAppRenderedRowAction } from "../frontend/custom-app/RecordsTable.island";
@@ -51,6 +52,7 @@ import { resolvePublishedCustomAppForm } from "../service/custom-app-published-f
 import { buildCustomAppRecordLabelCache, customAppRecordRelationsMatchPublished } from "../service/custom-app-record-relations";
 import { executePublishedCustomAppRecords } from "../service/custom-app-records-query";
 import { executePublishedCustomAppQuery, publishedCustomAppAvailability } from "../service/custom-app-runtime-query";
+import { MAX_INLINE_CREATES_PER_FIELD, MAX_INLINE_CREATES_PER_SUBMISSION } from "../service/form-submission";
 import type { PublicRenderableForm } from "../service/forms";
 import { projectPublicIds, resolvePublicId, resolvePublicIds } from "../service/public-resources";
 import { scannerLauncherPromptInputSources } from "../workflows/contracts";
@@ -86,6 +88,7 @@ export type FormBlockData =
       fields: PublicField[];
       inlineTargetFields: Record<string, PublicField[]>;
       submitUrl: string;
+      initialRecord?: FormEditState;
     }
   | { ok: false; message: string };
 export type CustomAppDocument = PublicDocument & { downloadUrl: string };
@@ -93,6 +96,7 @@ type ResolvedPublishedForm = NonNullable<Awaited<ReturnType<typeof resolvePublis
 
 const preparePublishedForm = async (
   resolved: ResolvedPublishedForm,
+  recordId?: string,
 ): Promise<Omit<Extract<FormBlockData, { ok: true }>, "submitUrl"> | null> => {
   const fixed = new Set(Object.keys(resolved.fixedValues));
   const renderable = gridsService.form.toPublicRenderableForm(resolved.form);
@@ -128,11 +132,54 @@ const preparePublishedForm = async (
       ]),
     ),
   );
+  let initialRecord: FormEditState | undefined;
+  if (recordId) {
+    const record = await gridsService.record.get(resolved.form.tableId, recordId);
+    if (!record || record.finalizedAt) return null;
+    const projected = await toPublicRecord(
+      projectCustomAppRecord(
+        record,
+        fields.map((field) => field.id),
+      ),
+      fields,
+    );
+    initialRecord = { version: record.version, values: projected.data, inlineCreates: {} };
+    let count = 0;
+    for (const entry of renderable.config.fields) {
+      if (entry.kind !== "user_input" || !entry.inlineCreate?.enabled) continue;
+      const field = fieldsById.get(entry.fieldId);
+      const targetTableId = field?.type === "relation" ? field.config.targetTableId : null;
+      if (!field || typeof targetTableId !== "string") return null;
+      const targetFields = inlineTargetFields[targetTableId];
+      if (!targetFields) return null;
+      const value = record.data[field.id];
+      const ids = Array.isArray(value) ? value : typeof value === "string" ? [value] : [];
+      count += ids.length;
+      if (ids.length > MAX_INLINE_CREATES_PER_FIELD || count > MAX_INLINE_CREATES_PER_SUBMISSION) return null;
+      const drafts: FormEditState["inlineCreates"][string] = [];
+      for (const id of ids) {
+        if (typeof id !== "string") return null;
+        const child = await gridsService.record.get(targetTableId, id);
+        if (!child || child.finalizedAt) return null;
+        const publicChild = await toPublicRecord(
+          projectCustomAppRecord(
+            child,
+            targetFields.map((field) => field.id),
+          ),
+          targetFields,
+        );
+        drafts.push({ tempId: `tmp_${publicChild.id}`, existing: { id: publicChild.id, version: child.version }, data: publicChild.data });
+      }
+      initialRecord.inlineCreates[field.shortId] = drafts;
+      initialRecord.values[field.shortId] = drafts.map((draft) => draft.tempId);
+    }
+  }
   return {
     ok: true,
     form: await toPublicForm({ ...resolved.form, config: renderable.config }),
     fields: await toPublicFields(fields),
     inlineTargetFields: publicInlineTargetFields,
+    ...(initialRecord ? { initialRecord } : {}),
   };
 };
 
@@ -547,7 +594,8 @@ export async function loadPublishedCustomAppPage<T extends AuthContext>(c: impor
       if (!resolvedForm) {
         return [block.id, { ok: false, message: t.thisFormUnavailable }];
       }
-      const prepared = await preparePublishedForm(resolvedForm);
+      if (block.mode === "edit" && !pageRecord) return [block.id, { ok: false, message: t.thisFormUnavailable }];
+      const prepared = await preparePublishedForm(resolvedForm, block.mode === "edit" ? pageRecord?.id : undefined);
       if (!prepared) {
         return [block.id, { ok: false, message: t.formChanged }];
       }

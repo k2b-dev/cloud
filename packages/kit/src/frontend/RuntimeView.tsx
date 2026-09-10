@@ -1,5 +1,6 @@
-import { For, Switch, Match, Show, createMemo, type JSX } from "solid-js";
+import { For, Switch, Match, Show, createMemo, createEffect, type JSX } from "solid-js";
 import {
+  Chart,
   Button,
   ButtonLink,
   TextInput,
@@ -12,6 +13,7 @@ import {
   MarkdownView,
   useLocale,
 } from "@k2b/ui";
+import { createStore, reconcile } from "solid-js/store";
 import { messages } from "./messages";
 import type { UiNode } from "../runtime/protocol";
 export function RuntimeView(props: { nodes: UiNode[]; busy: boolean; event: (id: string, value?: string) => void }) {
@@ -22,7 +24,26 @@ export function RuntimeView(props: { nodes: UiNode[]; busy: boolean; event: (id:
     const children = new Set(props.nodes.flatMap((n) => n.children));
     return props.nodes.filter((n) => !children.has(n.id));
   });
-  const children = (ids: string[]) => <For each={ids}>{(id) => <NodeView id={id} />}</For>;
+  // Keep each keyed child list mounted across structured-cloned worker snapshots.
+  function Children(p: { ids: string[] }) {
+    return <For each={p.ids}>{(id) => <NodeView id={id} />}</For>;
+  }
+  function TableView(p: { node: UiNode }) {
+    const [data, setData] = createStore({ rows: p.node.rows, columns: p.node.columns });
+    createEffect(() => {
+      setData("rows", reconcile(p.node.rows, { key: p.node.rowKey ?? null }));
+      setData("columns", reconcile(p.node.columns, { key: "key" }));
+    });
+    return (
+      <DataTable
+        rows={data.rows}
+        columns={data.columns.map((c) => ({ id: c.key, header: c.label, value: c.key, align: c.align }))}
+        getRowId={p.node.rowKey ? (row) => `${typeof row[p.node.rowKey!]}:${row[p.node.rowKey!]}` : undefined}
+        ariaLabel={p.node.label || t().results}
+        density="normal"
+      />
+    );
+  }
   function NodeView(p: { id: string }): JSX.Element {
     const n = () => by().get(p.id)!;
     const disabled = () => props.busy || n().disabled || n().loading;
@@ -130,19 +151,14 @@ export function RuntimeView(props: { nodes: UiNode[]; busy: boolean; event: (id:
               </Button>
             </div>
           </Match>
+          <Match when={n().kind === "chart"}>
+            <Show when={n().chart}>
+              {(options) => <Chart {...options()} style={{ height: options().kind === "sparkline" ? "4rem" : "18rem" }} />}
+            </Show>
+          </Match>
           <Match when={n().kind === "table"}>
             <Show when={n().rows.length > 0 && n().state === "ready" && !n().loading} fallback={empty()}>
-              <DataTable
-                rows={n().rows}
-                columns={n().columns.map((c) => ({
-                  id: c.key,
-                  header: c.label,
-                  value: c.key,
-                  align: c.align,
-                }))}
-                ariaLabel={n().label || t().results}
-                density="normal"
-              />
+              <TableView node={n()} />
             </Show>
           </Match>
           <Match when={n().kind === "list"}>
@@ -174,14 +190,22 @@ export function RuntimeView(props: { nodes: UiNode[]; busy: boolean; event: (id:
           </Match>
           <Match when={n().kind === "section"}>
             <SettingsGroup title={n().label} description={n().description || undefined}>
-              <div class="kit-flow kit-flow-column kit-gap-md">{children(n().children)}</div>
+              <div class="kit-flow kit-flow-column kit-gap-md">
+                <Children ids={n().children} />
+              </div>
             </SettingsGroup>
           </Match>
           <Match when={n().kind === "workbench"}>
-            <div class="kit-runtime-workbench">
-              <aside class="kit-runtime-controls">{children(n().controls)}</aside>
+            <div class="kit-runtime-workbench" classList={{ "kit-runtime-workbench-full": !n().controls.length }}>
+              <Show when={n().controls.length}>
+                <aside class="kit-runtime-controls">
+                  <Children ids={n().controls} />
+                </aside>
+              </Show>
               <div class="kit-runtime-main">
-                <div class="kit-runtime-content">{children(n().content)}</div>
+                <div class="kit-runtime-content">
+                  <Children ids={n().content} />
+                </div>
               </div>
               <Show when={n().footer}>
                 {(footer) => (
@@ -189,18 +213,26 @@ export function RuntimeView(props: { nodes: UiNode[]; busy: boolean; event: (id:
                     <div>
                       <Show when={footer().status}>{(status) => <NodeView id={status()} />}</Show>
                     </div>
-                    <div class="kit-flow kit-flow-row kit-gap-sm">{children(footer().actions)}</div>
+                    <div class="kit-flow kit-flow-row kit-gap-sm">
+                      <Children ids={footer().actions} />
+                    </div>
                   </footer>
                 )}
               </Show>
             </div>
           </Match>
           <Match when={n().kind === "row" || n().kind === "column"}>
-            <div class={`kit-flow kit-flow-${n().kind} kit-gap-${n().gap}`}>{children(n().children)}</div>
+            <div class={`kit-flow kit-flow-${n().kind} kit-gap-${n().gap}`}>
+              <Children ids={n().children} />
+            </div>
           </Match>
         </Switch>
       </div>
     );
   }
-  return <div class="kit-runtime-root">{children(roots().map((node) => node.id))}</div>;
+  return (
+    <div class="kit-runtime-root">
+      <Children ids={roots().map((node) => node.id)} />
+    </div>
+  );
 }

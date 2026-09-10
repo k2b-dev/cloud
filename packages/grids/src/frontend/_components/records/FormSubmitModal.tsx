@@ -5,6 +5,7 @@ import { apiClient } from "@/api/client";
 import type { PublicField as Field, PublicForm as Form } from "../../../api/public-dto";
 import { evaluateFormValidations } from "../../../form-validations";
 import { buildFormSubmitPayload, buildInitialValues, FieldInput, type InlineCreateState, userInputEntriesOf } from "../forms/form-fields";
+import { gridsFormMessages } from "../forms/messages";
 import { errorMessage } from "../utils/api-helpers";
 import { recordMessages } from "./messages";
 
@@ -61,6 +62,7 @@ function FormSubmitBody(props: {
   const [values, setValues] = createSignal<Record<string, unknown>>(buildInitialValues(entries));
   const [inlineCreates, setInlineCreates] = createSignal<InlineCreateState>({});
   const [submitting, setSubmitting] = createSignal(false);
+  const [pendingSubmission, setPendingSubmission] = createSignal<Record<string, unknown> | null>(null);
   const [error, setError] = createSignal<string | null>(null);
   const [done, setDone] = createSignal(false);
   const [attempted, setAttempted] = createSignal(false);
@@ -81,10 +83,10 @@ function FormSubmitBody(props: {
   );
 
   const setValue = (fieldId: string, v: unknown) => {
-    if (!submitting()) setValues((current) => ({ ...current, [fieldId]: v }));
+    if (!submitting() && !pendingSubmission()) setValues((current) => ({ ...current, [fieldId]: v }));
   };
   const setInlineDrafts = (fieldId: string, drafts: InlineCreateState[string]) => {
-    if (!submitting()) setInlineCreates((current) => ({ ...current, [fieldId]: drafts }));
+    if (!submitting() && !pendingSubmission()) setInlineCreates((current) => ({ ...current, [fieldId]: drafts }));
   };
 
   const handleSubmit = async (event: Event) => {
@@ -101,17 +103,22 @@ function FormSubmitBody(props: {
     try {
       const formId = props.form.id;
       if (!formId) throw new Error(t().submitUnavailable);
-      const payload = buildFormSubmitPayload(
-        entries.map((entry) => fieldsById.get(entry.fieldId)).filter((field): field is Field => Boolean(field && !field.deletedAt)),
-        values(),
-        inlineCreates(),
-        { omitEmpty: true },
-      );
+      const retrying = pendingSubmission() !== null;
+      const payload =
+        pendingSubmission() ??
+        buildFormSubmitPayload(
+          entries.map((entry) => fieldsById.get(entry.fieldId)).filter((field): field is Field => Boolean(field && !field.deletedAt)),
+          values(),
+          inlineCreates(),
+          { omitEmpty: true, idempotencyKey: crypto.randomUUID() },
+        );
+      setPendingSubmission(payload);
       const res = await apiClient.forms[":formId"].submit.$post({
         param: { formId },
         json: payload,
       });
       if (!res.ok) {
+        if (!retrying && [400, 401, 403, 404, 422].includes(res.status)) setPendingSubmission(null);
         setError(await errorMessage(res, t().submitFailed));
         return;
       }
@@ -125,6 +132,7 @@ function FormSubmitBody(props: {
   };
 
   const handleAddAnother = () => {
+    setPendingSubmission(null);
     setValues(buildInitialValues(entries));
     setInlineCreates({});
     setError(null);
@@ -148,7 +156,7 @@ function FormSubmitBody(props: {
           <p class="text-sm text-dimmed">{props.form.config.description}</p>
         </Show>
 
-        <fieldset disabled={submitting()} class="contents">
+        <fieldset disabled={submitting() || pendingSubmission() !== null} class="contents">
           <For each={entries}>
             {(entry) => {
               const field = fieldsById.get(entry.fieldId);
@@ -174,6 +182,9 @@ function FormSubmitBody(props: {
             <i class="ti ti-alert-circle mt-0.5 shrink-0" />
             <span>{error()}</span>
           </NoticeCard>
+          <Show when={pendingSubmission()}>
+            <p class="text-sm text-dimmed">{gridsFormMessages.resolve([locale()]).t.retrySubmission}</p>
+          </Show>
         </Show>
 
         <div class="mt-2 flex items-center gap-2">

@@ -37,7 +37,7 @@ const compiled = compileCapabilities(
         description: "Rename one demo item.",
         input: z.object({ id: z.string().describe("Stable item id."), name: z.string().describe("New item name.") }).strict(),
         data: z.object({ id: z.string(), name: z.string() }).strict(),
-        destructive: true,
+        destructive: false,
         openWorld: false,
         idempotency: "none",
         approval: "rememberable",
@@ -300,6 +300,7 @@ describe("capability API", () => {
           },
         }),
         kind: "queries",
+        origin: "http" as const,
         appId: "demo",
         capabilityId: "get",
         input: { id: "one" },
@@ -360,6 +361,7 @@ describe("capability API", () => {
       const response = await dispatchCapability({
         request: new Request("http://cloud.internal/api/capabilities/v1"),
         kind: "queries",
+        origin: "http" as const,
         appId: "demo",
         capabilityId: "get",
         input: { id: "one" },
@@ -382,13 +384,14 @@ describe("capability API", () => {
     }
   });
 
-  test("drops malformed optional request IDs before real invocation signing and forwarding", async () => {
+  test("replaces malformed optional request IDs with a generated correlation id", async () => {
     {
       for (const requestId of ["contains spaces", "non-ascii-é", "x".repeat(201)]) {
         let forwarded: Headers | undefined;
         const response = await dispatchCapability({
           request: new Request("http://cloud.internal/api/capabilities/v1", { headers: { "x-request-id": requestId } }),
           kind: "queries",
+          origin: "http" as const,
           appId: "demo",
           capabilityId: "get",
           input: { id: "one" },
@@ -403,7 +406,8 @@ describe("capability API", () => {
           },
         });
         expect(response.status).toBe(200);
-        expect(forwarded?.get("x-request-id")).toBeNull();
+        expect(forwarded?.get("x-request-id")).not.toBe(requestId);
+        expect(forwarded?.get("x-request-id")).toMatch(/^[0-9a-f-]{36}$/);
         expect(forwarded?.get("authorization")).toStartWith("Bearer ey");
       }
     }
@@ -630,6 +634,7 @@ describe("capability API", () => {
     const responsePromise = dispatchCapability({
       request: new Request("http://cloud.internal/api/capabilities/v1", { signal: controller.signal }),
       kind: "actions",
+      origin: "http" as const,
       appId: "demo",
       capabilityId: "rename",
       input: { id: "one", name: "Two" },
@@ -708,6 +713,7 @@ describe("capability API", () => {
     const response = await dispatchCapability({
       request: new Request("http://cloud.internal/api/capabilities/v1"),
       kind: "queries",
+      origin: "http" as const,
       appId: "demo",
       capabilityId: "get",
       input: { id: "x".repeat(300 * 1024) },

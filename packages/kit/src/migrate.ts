@@ -16,4 +16,18 @@ export async function migrate() {
     access_id UUID NOT NULL REFERENCES auth.access(id) ON DELETE CASCADE, PRIMARY KEY(project_id,access_id)
   )`.simple();
   await sql`CREATE INDEX IF NOT EXISTS kit_access_id ON kit.project_access(access_id)`.simple();
+  await sql`CREATE TABLE IF NOT EXISTS kit.project_databases (
+    project_id UUID PRIMARY KEY REFERENCES kit.projects(id) ON DELETE CASCADE,
+    enabled BOOLEAN NOT NULL DEFAULT false,
+    namespace TEXT UNIQUE,
+    pending_namespace TEXT UNIQUE,
+    generation INTEGER NOT NULL DEFAULT 0,
+    error TEXT,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  )`.simple();
+  await sql`CREATE TABLE IF NOT EXISTS kit.database_cleanup (
+    namespace TEXT PRIMARY KEY,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    error TEXT
+  )`.simple();
 }

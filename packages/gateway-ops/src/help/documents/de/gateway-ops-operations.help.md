@@ -23,6 +23,7 @@ Die Administrationsseiten werden serverseitig gerendert. Filter, Suche und Seite
 - **Protokolle:** Filtert strukturierte Protokolleinträge nach Quelle, Stufe, Suchtext und Seite. Die Aufbewahrungsdauer stammt aus der Einstellung für die Protokollaufbewahrung.
 - **Telemetrie:** Zeigt Gateway-Anfrageereignisse nach App, Route, Methode, Status, Dauer, langsamen Anfragen und Fehlern.
 - **Metriken:** Stellt einen Prometheus-kompatiblen Metrikendpunkt bereit und verwaltet Bearer-Token für Pulse oder externe Scraper.
+- **Capabilities:** Zeigt den Verlauf ausgeführter Capability-Aufrufe nach App, Capability, Herkunft, Status, Nutzer, destruktivem Flag und Zeitraum. Die Einträge enthalten Korrelation, Zeiten sowie die Struktur von Eingabe und Ergebnis, nie deren Inhalte, und werden nach 90 Tagen entfernt.
 - **Benachrichtigungen:** Durchsucht Zustellungsdatensätze von Benachrichtigungen und filtert nach gesendeter, ausstehender oder fehlgeschlagener Zustellung.
 :::
 

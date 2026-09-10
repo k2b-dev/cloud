@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { ChartOptions } from "./chart-schema";
 import { LIMITS } from "../contracts";
 export const Value = z.union([z.string().max(LIMITS.text), z.number().finite(), z.boolean(), z.null()]);
 export const FileOpenOptions = z.object({ accept: z.string().max(LIMITS.text).optional() }).strict();
@@ -53,11 +54,14 @@ export const UiNode = z
       "link",
       "linkButton",
       "markdown",
+      "chart",
     ]),
     label: z.string().max(LIMITS.text).default(""),
     value: z.string().max(LIMITS.text).default(""),
     children: z.array(z.string().max(80)).max(LIMITS.nodes).default([]),
     columns: z.array(UiColumn).max(64).default([]),
+    rowKey: z.string().min(1).max(120).optional(),
+    chart: ChartOptions.optional(),
     rows: z.array(z.record(z.string(), Value)).max(LIMITS.rows).default([]),
     options: z.array(SelectOption).max(200).default([]),
     description: z.string().max(LIMITS.text).default(""),
@@ -114,6 +118,9 @@ export const WorkerMessage = z.discriminatedUnion("type", [
     type: z.literal("rpc"),
     id: z.number().int().nonnegative(),
     method: z.enum([
+      "ui.modal",
+      "db.call",
+      "db.import",
       "file.open",
       "file.openMultiple",
       "file.openFolder",

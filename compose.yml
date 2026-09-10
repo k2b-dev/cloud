@@ -18,6 +18,18 @@ x-nats: &nats
     retries: 30
 
 services:
+  rsql:
+    image: ghcr.io/k2b-dev/rsql:1.0.0
+    restart: unless-stopped
+    env_file: ./.local/rsql/credentials.env
+    volumes:
+      - kit_rsql_data:/data
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:8080/healthz"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+
   postgres:
     image: postgres:15-alpine
     container_name: ipa_postgres
@@ -132,6 +144,7 @@ configs:
       }
 
 volumes:
+  kit_rsql_data:
   ipa_postgres_data:
   ipa_valkey_data:
   ipa_nats_1_data:

@@ -59,7 +59,6 @@ test("declares remembered approval for bounded Space changes", () => {
   expect(rememberable).toEqual([
     "calendar-invitation.response.commit",
     "comment.create",
-    "comment.update",
     "event.invitation.commit",
     "event.update",
     "item.reference.add",
@@ -68,7 +67,6 @@ test("declares remembered approval for bounded Space changes", () => {
     "task.blocker.add",
     "task.blocker.remove",
     "task.checklist.create",
-    "task.checklist.delete",
     "task.checklist.update",
     "task.set-completed",
     "task.update",
@@ -100,6 +98,8 @@ const userContext = {
   accessSubject: { type: "user", userId },
   user,
   locale: "en",
+  requestId: "spaces-capability-test-request",
+  origin: "assistant",
   signal: new AbortController().signal,
 } satisfies CapabilityExecutionContext;
 
@@ -124,6 +124,8 @@ const serviceAccountContext = {
   accessSubject: { type: "service_account", serviceAccountId },
   user: null,
   locale: "en",
+  requestId: "spaces-capability-test-request",
+  origin: "assistant",
   signal: new AbortController().signal,
 } satisfies CapabilityExecutionContext;
 
@@ -571,7 +573,7 @@ describe("spaces capabilities", () => {
     expect(spacesCapabilities.actions["comment.delete"]).toMatchObject({
       destructive: true,
       openWorld: false,
-      idempotency: "none",
+      idempotency: "required",
     });
   });
 
@@ -976,7 +978,6 @@ describe("spaces capabilities", () => {
     const results: CapabilityActionReviewResult[] = [
       await spacesCapabilities.actions["task.checklist.create"].review({ itemId, label: "New" }, userContext),
       await spacesCapabilities.actions["task.checklist.update"].review({ itemId, entryId: "Chk001", completed: true }, userContext),
-      await spacesCapabilities.actions["task.checklist.delete"].review({ itemId, entryId: "Chk001" }, userContext),
       await spacesCapabilities.actions["item.reference.add"].review!(
         { itemId, reference: { ref: { type: "notebooks.note", id: "Note01" }, label: "Release notes" } },
         userContext,
@@ -991,7 +992,6 @@ describe("spaces capabilities", () => {
       await spacesCapabilities.actions["task.update"].review!({ itemId, title: "Updated task" }, userContext),
       await spacesCapabilities.actions["task.set-completed"].review!({ itemId, completed: true }, userContext),
       await spacesCapabilities.actions["comment.create"].review!({ itemId, content: "Ready." }, userContext),
-      await spacesCapabilities.actions["comment.update"].review!({ commentId, content: "Updated." }, userContext),
     ];
 
     getItem.mockResolvedValue(event);
@@ -1175,6 +1175,17 @@ describe("spaces capabilities", () => {
     expect(recordAllowed).toHaveBeenCalledWith(expect.objectContaining({ action: "spaces.capability.task.create" }));
   });
 
+  test("writes the originating request id into every capability audit row", async () => {
+    spyOn(spacesService.space, "get").mockResolvedValue(space);
+    spyOn(spacesService.space.permission, "get").mockResolvedValue("write");
+    spyOn(spacesService.item, "create").mockResolvedValue({ ok: true, data: task });
+    const recordAllowed = spyOn(audit, "recordResultAfterSideEffect").mockImplementation(async ({ result }) => result);
+
+    await spacesCapabilities.actions["task.create"].run({ spaceId, columnId, title: task.title }, userContext);
+
+    expect(recordAllowed).toHaveBeenCalledWith(expect.objectContaining({ requestId: userContext.requestId }));
+  });
+
   test("passes a stable idempotency claim to retry-safe event creation", async () => {
     spyOn(spacesService.space, "get").mockResolvedValue(space);
     spyOn(spacesService.space.permission, "get").mockResolvedValue("write");
@@ -1329,10 +1340,17 @@ describe("spaces capabilities", () => {
       status: 403,
     });
 
-    const expired = await spacesCapabilities.actions["comment.delete"].run({ commentId }, userContext);
+    const withoutKey = await spacesCapabilities.actions["comment.delete"].run({ commentId }, userContext);
+
+    expect(withoutKey).toMatchObject({ ok: false, error: { code: "BAD_INPUT" } });
+
+    const expired = await spacesCapabilities.actions["comment.delete"].run(
+      { commentId },
+      { ...userContext, idempotencyKey: "comment-delete-window" },
+    );
 
     expect(expired).toMatchObject({ ok: false, error: { code: "FORBIDDEN", status: 403 } });
-    expect(recordDenied).toHaveBeenCalledTimes(2);
+    expect(recordDenied).toHaveBeenCalledTimes(3);
   });
 
   test("keeps compact item and comment pages below the capability transport limit", () => {

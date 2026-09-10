@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import type { ToolContext } from "@k2b/nessi";
 import { type CapabilityDispatchDependencies, dispatchCapability } from "../api/capabilities";
+import { capabilityValueMeta, recordCapabilityExecution } from "../capabilities/executions";
 import { type CapabilityActionManifest, type CapabilityActionReview, CapabilityActionReviewSchema } from "../contracts/capabilities";
 import type { RequestActor } from "../server";
 import type { AccessSubject } from "../server/services/access";
@@ -98,18 +99,24 @@ const dispatchAiCapability = async (input: AiCapabilityCall, review: boolean): P
   const headers = new Headers();
   if (input.locale) headers.set(LOCALE_HEADER, input.locale);
   const action = input.entry.kind === "action" ? (input.entry.operation as CapabilityActionManifest) : null;
-  if (!review && action?.idempotency === "required" && input.context.callId) {
-    const key = idempotencyKey(input.conversationId, input.context.callId);
-    if (input.turnId) {
-      await aiToolAudit.noteCapabilityDispatch({
-        conversationId: input.conversationId,
-        turnId: input.turnId,
-        callId: input.context.callId,
-        toolName: input.entry.name,
-        idempotencyKey: key,
-      });
-    }
-    headers.set("idempotency-key", key);
+  // One request id per dispatch links the tool call, the platform execution
+  // record, and the target app's own audit rows.
+  const requestId = crypto.randomUUID();
+  headers.set("x-request-id", requestId);
+  const key =
+    !review && action?.idempotency === "required" && input.context.callId
+      ? idempotencyKey(input.conversationId, input.context.callId)
+      : null;
+  if (key) headers.set("idempotency-key", key);
+  if (!review && input.turnId && input.context.callId) {
+    await aiToolAudit.noteCapabilityDispatch({
+      conversationId: input.conversationId,
+      turnId: input.turnId,
+      callId: input.context.callId,
+      toolName: input.entry.name,
+      requestId,
+      idempotencyKey: key,
+    });
   }
   const request = new Request("http://cloud.internal/api/ai/capability", {
     method: "POST",
@@ -120,6 +127,7 @@ const dispatchAiCapability = async (input: AiCapabilityCall, review: boolean): P
     await dispatch({
       request,
       kind: input.entry.kind === "query" ? "queries" : "actions",
+      origin: "assistant",
       review,
       appId: input.entry.appId,
       capabilityId: input.entry.operation.localId,
@@ -149,3 +157,30 @@ export const reviewAiCapability = async (input: AiCapabilityCall): Promise<Capab
 };
 
 export const executeAiCapability = (input: AiCapabilityCall): Promise<unknown> => dispatchAiCapability(input, false);
+
+/**
+ * A rejected approval never reaches the dispatcher, so the assistant records
+ * the same execution row the dispatcher would have written for the attempt.
+ */
+export const recordRejectedAiCapability = async (input: {
+  entry: Pick<AiCapabilityCatalogEntry, "appId" | "kind" | "name" | "operation">;
+  actor: CapabilityActor;
+  args: unknown;
+}): Promise<void> => {
+  const at = new Date();
+  await recordCapabilityExecution({
+    requestId: crypto.randomUUID(),
+    origin: "assistant",
+    appId: input.entry.appId,
+    capability: input.entry.name,
+    kind: input.entry.kind,
+    destructive: "destructive" in input.entry.operation ? input.entry.operation.destructive : false,
+    actorKind: "user",
+    actorId: input.actor.user.id,
+    userId: input.actor.user.id,
+    status: "rejected",
+    inputMeta: capabilityValueMeta(input.args),
+    startedAt: at,
+    completedAt: at,
+  });
+};

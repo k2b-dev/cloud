@@ -343,9 +343,7 @@ export const submitAiTurnAction = async (input: {
         return { ok: false, status: 409, message: "AI action was already resolved with a different response." };
       }
     }
-    await aiToolAudit
-      .noteToolCompleted({ turnId: input.turnId, callId: input.callId, result: input.action.result, isError: false })
-      .catch(() => undefined);
+    await aiToolAudit.noteToolCompleted({ turnId: input.turnId, callId: input.callId, isError: false }).catch(() => undefined);
   }
 
   await enqueueAiTurn({ conversationId: input.conversationId, turnId: input.turnId });

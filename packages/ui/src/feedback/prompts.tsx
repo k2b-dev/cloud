@@ -13,6 +13,7 @@ import { resolveUiMessages } from "../intl/messages";
 import { dialogCore, type OpenDialogOptions } from "./dialog-core";
 
 export interface DialogOptions {
+  signal?: AbortSignal;
   title?: string;
   ariaLabel?: string;
   icon?: string;
@@ -148,6 +149,7 @@ type InferFormValues<T extends Record<string, FieldSchema>> = {
 
 type PromptFormValue = string | number | boolean | string[] | undefined;
 type PromptFormOptions<T extends Record<string, FieldSchema>> = {
+  signal?: AbortSignal;
   title?: string;
   ariaLabel?: string;
   icon?: string;
@@ -631,6 +633,7 @@ const openSearchPrompt = <T = unknown>(resolver: CloudSearchResolver<T>, options
       panelClassName: "k2b-dialog k2b-dialog--search is-bare",
       contentClassName: "k2b-dialog__viewport is-search",
       initialFocus: "first-input",
+      signal: options?.signal,
       cancelBehavior: options?.cancelBehavior,
       ariaLabel: options?.ariaLabel ?? options?.title ?? resolveUiMessages().search,
     },
@@ -692,6 +695,7 @@ export const prompts = {
       {
         panelClassName: panelClass(options),
         contentClassName: contentClass(options?.surface),
+        signal: options?.signal,
         cancelBehavior: options?.cancelBehavior,
         ariaLabel: options?.ariaLabel ?? options?.title ?? resolveUiMessages().info,
       },
@@ -776,6 +780,7 @@ export const prompts = {
         panelClassName: panelClass(options),
         contentClassName: contentClass(options?.surface),
         initialFocus: confirmationPhrase ? () => confirmationInput ?? null : undefined,
+        signal: options?.signal,
         cancelBehavior: options?.cancelBehavior,
         ariaLabel: options?.ariaLabel ?? options?.title ?? resolveUiMessages().confirmation,
       },
@@ -789,6 +794,7 @@ export const prompts = {
     (await dialogCore.open<InferFormValues<T> | null>((close) => <PromptFormDialog config={config} close={(value) => close(value)} />, {
       panelClassName: panelClass(config),
       contentClassName: contentClass(),
+      signal: config.signal,
       cancelBehavior: config.cancelBehavior,
       ariaLabel: config.ariaLabel ?? config.title ?? resolveUiMessages().form,
     })) ?? null,
@@ -810,6 +816,7 @@ export const prompts = {
       {
         panelClassName: panelClass(options),
         contentClassName: contentClass(options?.surface),
+        signal: options?.signal,
         cancelBehavior: options?.cancelBehavior,
         ariaLabel: options?.ariaLabel ?? options?.title ?? resolveUiMessages().dialog,
       },
@@ -833,6 +840,7 @@ export const prompts = {
       {
         panelClassName: panelClass({ ...options, variant: "danger" }),
         contentClassName: contentClass(options?.surface),
+        signal: options?.signal,
         cancelBehavior: options?.cancelBehavior,
         ariaLabel: options?.ariaLabel ?? options?.title ?? resolveUiMessages().error,
       },

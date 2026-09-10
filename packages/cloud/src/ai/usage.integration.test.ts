@@ -15,13 +15,12 @@ if (isolated) await migrateCloudAi();
 const suite = isolated ? describe : describe.skip;
 
 suite("AI usage integration", () => {
-  test("aggregates interactive, capability, launch, feedback, switch, and background facts", async () => {
+  test("aggregates interactive, launch, feedback, switch, and background facts", async () => {
     const suffix = crypto.randomUUID().slice(0, 8);
     const uid = `ai-usage-${suffix}`;
     const modelA = `usage-fast-${suffix}`;
     const modelB = `usage-quality-${suffix}`;
     const task = `usage-test-${suffix}`;
-    const capability = `usage-${suffix}.lookup`;
     const [user] = await sql<{ id: string }[]>`
       INSERT INTO auth.users (uid, provider, profile, display_name, mail, given_name, sn)
       VALUES (${uid}, 'local', 'user', ${uid}, ${`${uid}@example.test`}, 'Usage', 'Test') RETURNING id
@@ -50,10 +49,6 @@ suite("AI usage integration", () => {
         messageShortId: messages.at(-1)!.shortId,
         feedback: { rating: "down", reasons: ["incorrect"], comment: "Test feedback" },
       });
-      await sql`
-        INSERT INTO ai.tool_calls (turn_id, conversation_id, call_id, tool_name, status, started_at, completed_at)
-        VALUES (${secondTurn!.id}::uuid, ${conversation.id}::uuid, 'usage-call', ${capability}, 'failed', now() - interval '100 milliseconds', now())
-      `;
       await recordAiStructuredRun({
         task,
         appId: "core",
@@ -69,7 +64,6 @@ suite("AI usage integration", () => {
       const report = await aiUsage.report("24h");
       expect(report.models.items.find((row) => row.id === modelB)).toMatchObject({ runs: 2, tokens: 310, negative: 1 });
       expect(report.users.items.find((row) => row.id === user!.id)).toMatchObject({ runs: 2, tokens: 370, rated: 1 });
-      expect(report.capabilities.items.find((row) => row.id === capability)).toMatchObject({ runs: 1, failed: 1 });
       expect(report.tasks.items.find((row) => row.id === task)).toMatchObject({ runs: 1, failed: 1, tokens: 60 });
       expect(report.apps.items.find((row) => row.id === "mail")?.runs).toBeGreaterThanOrEqual(1);
       expect(report.feedback.items.find((row) => row.comment === "Test feedback")?.reasons).toEqual(["incorrect"]);
@@ -170,32 +164,6 @@ suite("AI usage durable accounting", () => {
     }
   });
 
-  test("counts distinct user capabilities across conversations", async () => {
-    const f = await fixture();
-    try {
-      for (const names of [
-        ["usage.lookup", "usage.shared"],
-        ["usage.write", "usage.shared"],
-      ]) {
-        const conversation = await f.conversation();
-        const { turn } = await aiConversations.submitChatTurn({
-          conversationId: conversation.id,
-          modelProfileId: "usage-caps",
-          runConfig: { kind: "chat", input: "Hello", toolSource: { kind: "none" } },
-          userMessage: { role: "user", content: [{ type: "text", text: "Hello" }] },
-        });
-        for (const name of names)
-          await sql`
-          INSERT INTO ai.tool_calls (turn_id, conversation_id, call_id, tool_name, status)
-          VALUES (${turn.id}::uuid, ${conversation.id}::uuid, ${name}, ${name}, 'completed')
-        `;
-      }
-      expect((await aiUsage.report("24h")).users.items.find((row) => row.id === f.userId)?.capabilities).toBe(3);
-    } finally {
-      await f.cleanup();
-    }
-  });
-
   test("fills inactive UTC time buckets with zero usage", async () => {
     for (const range of ["24h", "7d", "30d", "90d"] as const) {
       const report = await aiUsage.report(range);
@@ -258,7 +226,7 @@ suite("AI usage durable accounting", () => {
     }
   });
 
-  test("exposes every user, capability, and feedback row beyond the first page", async () => {
+  test("exposes every user and feedback row beyond the first page", async () => {
     const prefix = `page-user-${crypto.randomUUID()}`;
     try {
       await sql`
@@ -274,10 +242,6 @@ suite("AI usage durable accounting", () => {
           VALUES (${createAiShortId()}, ${conversation.id}::uuid, 'usage-pages', 'queued', '{"kind":"chat"}'::jsonb) RETURNING id
         `;
         await sql`
-          INSERT INTO ai.tool_calls (turn_id, conversation_id, call_id, tool_name, status)
-          VALUES (${turn!.id}::uuid, ${conversation.id}::uuid, 'page-call', ${`test.${user.uid}`}, 'completed')
-        `;
-        await sql`
           INSERT INTO ai.messages (short_id, conversation_id, seq, kind, role, message, loop_id, feedback_rating, feedback_updated_at)
           VALUES (${createAiShortId()}, ${conversation.id}::uuid, 1, 'message', 'assistant', '{"role":"assistant","content":[]}'::jsonb, ${turn!.id}, 1, now())
         `;
@@ -285,7 +249,7 @@ suite("AI usage durable accounting", () => {
       const first = await aiUsage.report("24h", { perPage: 100 });
       const second = await aiUsage.report("24h", { page: 2, perPage: 100 });
       const beyond = await aiUsage.report("24h", { page: 999, perPage: 100 });
-      for (const key of ["users", "capabilities", "feedback"] as const) {
+      for (const key of ["users", "feedback"] as const) {
         expect(first[key]).toMatchObject({ page: 1, perPage: 100, total: 105 });
         expect(first[key].items).toHaveLength(100);
         expect(second[key].items).toHaveLength(5);
@@ -293,7 +257,6 @@ suite("AI usage durable accounting", () => {
         expect(beyond[key]).toEqual(second[key]);
       }
       expect(new Set([...first.users.items, ...second.users.items].map((row) => row.id)).size).toBe(105);
-      expect(new Set([...first.capabilities.items, ...second.capabilities.items].map((row) => row.id)).size).toBe(105);
       expect(new Set([...first.feedback.items, ...second.feedback.items].map((row) => row.id)).size).toBe(105);
     } finally {
       await sql`DELETE FROM ai.conversations WHERE created_by_user_id IN (SELECT id FROM auth.users WHERE uid LIKE ${`${prefix}-%`})`;
@@ -358,7 +321,6 @@ suite("AI usage exploration", () => {
         durationMs: 40,
         error: "legacy unassigned",
       });
-      await sql`INSERT INTO ai.tool_calls(turn_id,conversation_id,call_id,tool_name,status,error) VALUES(${a}::uuid,${conversations[0]}::uuid,'call','mail.lookup','failed','Tool unavailable')`;
       const report = await aiUsage.report("24h", {
         userId: ids[0],
         modelProfileId: prefix,
@@ -366,7 +328,6 @@ suite("AI usage exploration", () => {
         appId: "test-app",
       });
       expect(report.overview).toMatchObject({ runs: 2, tokens: 110, negative: 1, positive: 0, rated: 1, assistantMessages: 1 });
-      expect(report.tool.runs).toBe(1);
       expect(report.unassignedBackgroundRuns).toBe(1);
       expect(report.feedback.items).toHaveLength(1);
       expect(report.feedback.items[0]?.comment).toBe("complete feedback");

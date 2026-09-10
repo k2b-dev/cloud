@@ -1,19 +1,14 @@
+import { DatabasePanel } from "./DatabasePanel";
+import { databaseMessages } from "../database-messages";
 import { createMemo, createSignal, Show } from "solid-js";
 import { Button, TextInput, SettingsModal, prompts, useLocale } from "@k2b/ui";
 import { PermissionEditor } from "@k2b/cloud/access/ui";
 import type { AccessEntry } from "@k2b/cloud/contracts";
 import type { Bundle } from "../contracts";
-import { LocalFiles } from "./LocalFiles";
 import { messages } from "./messages";
 import { client, checked, displayError } from "./client";
 
-export function KitSettings(props: {
-  userId: string;
-  project: Bundle;
-  access: AccessEntry[];
-  close: () => void;
-  onSaved: (project: Bundle) => void;
-}) {
+export function KitSettings(props: { project: Bundle; access: AccessEntry[]; close: () => void; onSaved: (project: Bundle) => void }) {
   const locale = useLocale(),
     t = () => messages.resolve([locale()]).t;
   const [base, setBase] = createSignal(props.project);
@@ -51,7 +46,14 @@ export function KitSettings(props: {
     }
   }
   async function remove() {
-    if (!(await prompts.confirm(t().confirmDelete, { title: t().deleteApp, confirmText: t().deleteApp, variant: "danger" }))) return;
+    if (
+      !(await prompts.confirm(databaseMessages.resolve([locale()]).t.deleteConfirm, {
+        title: t().deleteApp,
+        confirmText: t().deleteApp,
+        variant: "danger",
+      }))
+    )
+      return;
     setBusy(true);
     try {
       await checked(await client.projects[":id"].$delete({ param: { id: base().id } }));
@@ -122,9 +124,9 @@ export function KitSettings(props: {
           </SettingsModal.Tab>
         </SettingsModal.Group>
       </Show>
-      <SettingsModal.Group title={t().localData}>
-        <SettingsModal.Tab id="local" title={t().localData} icon="ti ti-device-desktop">
-          <LocalFiles appId={base().id} userId={props.userId} />
+      <SettingsModal.Group title={databaseMessages.resolve([locale()]).t.title}>
+        <SettingsModal.Tab id="database" title={databaseMessages.resolve([locale()]).t.title} icon="ti ti-database">
+          <DatabasePanel id={base().id} name={base().name} />
         </SettingsModal.Tab>
       </SettingsModal.Group>
       <Show when={base().permission === "admin"}>

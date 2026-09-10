@@ -25,8 +25,10 @@ and pagination are stored in the URL. **Refresh** advances the period end;
 pagination retains the end time so new runs do not shift existing pages.
 
 - **Overview** shows inference totals, coverage, timelines, application usage,
-  chat launches, and tool activity. Chat and background inference count once.
-  Tool events have no additional inference charge.
+  and chat launches. Chat and background inference count once. Capability calls
+  are not inference and are not counted here; the platform records every
+  capability execution, from the assistant and from every other surface, at
+  [Observability](/en/docs/operations/observability).
 - **Users & models** displays one comparison table at a time. Switch between
   users and models to compare volume, costs, failures, latency, throughput,
   switches away, and feedback. Sort by volume, tokens, credits, failures,
@@ -36,7 +38,7 @@ pagination retains the end time so new runs do not shift existing pages.
   totals retain the whole selected user/model cohort, so filtering to negative
   feedback does not turn its denominator into 100%. Details show the full
   stored comment, reasons, timestamps, and identifiers.
-- **Errors & runs** filters chat, background, and tool events by kind, status,
+- **Errors & runs** filters chat and background events by kind, status,
   task, error code, or literal text in the task/error. **Show error** opens the
   complete stored error plus attribution, duration, usage, and references.
   **Copy details** copies the displayed information.
@@ -63,9 +65,9 @@ on the caller's own chats.
 Unknown tokens and prices appear as **—**. Coverage reports the fraction of
 runs with measurements; partial totals sum only reported values. A reported
 zero is retained as zero. No price is inferred for a provider that omits it.
-Chat duration is generation time; background duration is elapsed inference
-time, and tool duration is execution time. Switching away is counted within
-the selected period before applying model filters.
+Chat duration is generation time and background duration is elapsed inference
+time. Switching away is counted within the selected period before applying
+model filters.
 
 Chat accounting survives retry/edit removal of messages. Feedback and its
 coverage describe remaining messages; deleting a chat removes its chat turns
@@ -104,7 +106,7 @@ cld admin ai usage get background RUN_UUID --json
 cld admin ai usage report --range 7d --json
 ```
 
-Other list commands are `models`, `tasks`, `apps`, `launches`, and `capabilities`.
+Other list commands are `models`, `tasks`, `apps`, and `launches`.
 Use `--provider-model` and `--app` for additional global filtering,
 `--reason` for feedback, and `--task` or `--error-code` for run lists.
 `--user unassigned` selects events without a user. `--page` and `--per-page`
@@ -122,7 +124,7 @@ The Core endpoints are:
 
 - `GET /api/admin/core/ai-usage/report`
 - `GET /api/admin/core/ai-usage/facets?field=userId&search=...`
-- `GET /api/admin/core/ai-usage/runs/{chat|background|tool}/{uuid}`
+- `GET /api/admin/core/ai-usage/runs/{chat|background}/{uuid}`
 
 The report query supports `range` (`24h`, `7d`, `30d`, `90d`), `until` (ISO),
 `userId`, `modelProfileId`, `providerModel`, `appId`, `view`, `kind`, `status`,

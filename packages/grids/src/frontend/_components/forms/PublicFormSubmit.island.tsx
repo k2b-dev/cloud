@@ -13,6 +13,7 @@ import {
   type InlineCreateState,
   userInputEntriesOf,
 } from "./form-fields";
+import type { FormEditState } from "./form-submit-payload";
 import { gridsFormMessages } from "./messages";
 
 type Props = {
@@ -21,6 +22,7 @@ type Props = {
   /** Resolved table fields so we know each entry's type + options. */
   fields: Field[];
   inlineTargetFields?: Record<string, Field[]>;
+  initialRecord?: FormEditState;
   dateConfig?: DateContext;
   surface?: "bare" | "paper";
   showTitle?: boolean;
@@ -49,9 +51,10 @@ export default function FormSubmit(props: Props) {
   const entries = userInputEntriesOf(props.form.config.fields);
   let formRef: HTMLFormElement | undefined;
 
-  const [values, setValues] = createSignal<Record<string, unknown>>(buildInitialValues(entries));
-  const [inlineCreates, setInlineCreates] = createSignal<InlineCreateState>({});
+  const [values, setValues] = createSignal<Record<string, unknown>>(props.initialRecord?.values ?? buildInitialValues(entries));
+  const [inlineCreates, setInlineCreates] = createSignal<InlineCreateState>(props.initialRecord?.inlineCreates ?? {});
   const [submitting, setSubmitting] = createSignal(false);
+  const [pendingSubmission, setPendingSubmission] = createSignal<Record<string, unknown> | null>(null);
   const [error, setError] = createSignal<string | null>(null);
   const [done, setDone] = createSignal(false);
   const [clientReady, setClientReady] = createSignal(false);
@@ -61,10 +64,12 @@ export default function FormSubmit(props: Props) {
   );
 
   const setValue = (fieldId: string, v: unknown) => {
+    if (pendingSubmission()) return;
     setValues((current) => ({ ...current, [fieldId]: v }));
     props.onDirtyChange?.(true);
   };
   const setInlineDrafts = (fieldId: string, drafts: InlineCreateState[string]) => {
+    if (pendingSubmission()) return;
     setInlineCreates((current) => ({ ...current, [fieldId]: drafts }));
     props.onDirtyChange?.(true);
   };
@@ -97,7 +102,15 @@ export default function FormSubmit(props: Props) {
       const submitFields = entries
         .map((entry) => fieldsById.get(entry.fieldId))
         .filter((field): field is Field => Boolean(field && !field.deletedAt));
-      const submitPayload = buildFormSubmitPayload(submitFields, payload, inlineCreates(), { omitEmpty: true });
+      const retrying = pendingSubmission() !== null;
+      const submitPayload =
+        pendingSubmission() ??
+        buildFormSubmitPayload(submitFields, payload, inlineCreates(), {
+          omitEmpty: !props.initialRecord,
+          recordVersion: props.initialRecord?.version,
+          idempotencyKey: crypto.randomUUID(),
+        });
+      setPendingSubmission(submitPayload);
       const res = props.submitUrl
         ? await fetch(props.submitUrl, {
             method: "POST",
@@ -109,6 +122,7 @@ export default function FormSubmit(props: Props) {
             json: submitPayload,
           });
       if (!res.ok) {
+        if (!retrying && [400, 401, 403, 404, 422].includes(res.status)) setPendingSubmission(null);
         setError(await errorMessage(res, t().submitFailed));
         return;
       }
@@ -174,7 +188,7 @@ export default function FormSubmit(props: Props) {
           data-grids-public-form-ready={clientReady() ? "true" : "false"}
           onSubmit={handleSubmit}
         >
-          <fieldset disabled={submitting()} class="flex flex-col gap-3 min-w-0">
+          <fieldset disabled={submitting() || pendingSubmission() !== null} class="flex flex-col gap-3 min-w-0">
             <Show when={hasInlineCreate()}>
               <NoticeCard tone="warning" icon={false} bodyClass="flex items-start gap-2">
                 <i class="ti ti-alert-triangle mt-0.5 shrink-0" />
@@ -200,26 +214,29 @@ export default function FormSubmit(props: Props) {
                 );
               }}
             </For>
+          </fieldset>
 
-            <Show when={error()}>
-              <NoticeCard tone="danger" icon={false} bodyClass="flex items-start gap-2">
-                <i class="ti ti-alert-circle mt-0.5 shrink-0" />
-                <span>{error()}</span>
-              </NoticeCard>
+          <Show when={error()}>
+            <NoticeCard tone="danger" icon={false} bodyClass="flex items-start gap-2">
+              <i class="ti ti-alert-circle mt-0.5 shrink-0" />
+              <span>{error()}</span>
+            </NoticeCard>
+            <Show when={pendingSubmission()}>
+              <p class="text-sm text-dimmed">{t().retrySubmission}</p>
             </Show>
+          </Show>
 
-            {/* Wrap the button so it sizes to its content rather than
+          {/* Wrap the button so it sizes to its content rather than
               stretching the full form width (flex-column children are
               `align-items: stretch` by default). */}
-            <div class="mt-2 flex items-center justify-end">
-              <Button variant="primary" size="sm" type="submit" disabled={props.preview || submitting()}>
-                <Show when={submitting()} fallback={<i class="ti ti-send" />}>
-                  <i class="ti ti-loader-2 animate-spin" />
-                </Show>
-                {props.form.config.submitLabel ?? t().submit}
-              </Button>
-            </div>
-          </fieldset>
+          <div class="mt-2 flex items-center justify-end">
+            <Button variant="primary" size="sm" type="submit" disabled={props.preview || submitting()}>
+              <Show when={submitting()} fallback={<i class="ti ti-send" />}>
+                <i class="ti ti-loader-2 animate-spin" />
+              </Show>
+              {props.form.config.submitLabel ?? (props.initialRecord ? t().saveChanges : t().submit)}
+            </Button>
+          </div>
         </form>
       </Show>
     </div>

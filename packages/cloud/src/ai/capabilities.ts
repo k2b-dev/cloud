@@ -18,6 +18,7 @@ import {
 } from "../contracts/capabilities";
 import type { CapabilityRegistryEntry, HelpRegistryEntry } from "../contracts/registry";
 import type { RequestActor } from "../server";
+import { recordRejectedAiCapability } from "./capability-execution";
 import { CLOUD_AI_DEFERRED_BUILTIN_TOOL_NAMES } from "./default-tools";
 import { type AiToolPreparationContext, defineAiTool, type PreparedAiTools, prepareAiTools } from "./tools";
 import type { AiConversationService, AiRuntimeTool, AiToolPresentation } from "./types";
@@ -554,6 +555,7 @@ export const createAiToolMetaTools = (input: {
 export const createLoadedAiCapabilityTools = (input: {
   catalog: readonly AiCapabilityCatalogEntry[];
   loadedNames: readonly string[];
+  actor: RequestActor;
   review?: (entry: AiCapabilityCatalogEntry, args: unknown, context: ToolContext) => Promise<CapabilityActionReview | null>;
   onReview?: (callId: string, review: CapabilityActionReview) => void;
   execute: (entry: AiCapabilityCatalogEntry, args: unknown, context: ToolContext) => Promise<unknown>;
@@ -578,7 +580,12 @@ export const createLoadedAiCapabilityTools = (input: {
           if (review && context.callId) input.onReview?.(context.callId, review);
           const message =
             review?.message ?? `${entry.appName}: ${entry.title}\nReview the validated arguments below before running this Action.`;
-          if (!(await context.requestApproval(message))) throw new Error("Capability Action was rejected by the user.");
+          if (!(await context.requestApproval(message))) {
+            if (input.actor.kind === "user") {
+              await recordRejectedAiCapability({ entry, actor: input.actor, args }).catch(() => undefined);
+            }
+            throw new Error("Capability Action was rejected by the user.");
+          }
         }
         return input.execute(entry, args, context);
       }),
@@ -679,6 +686,7 @@ export const createAiToolResolver =
         ? createLoadedAiCapabilityTools({
             catalog: capabilityCatalog,
             loadedNames,
+            actor: input.actor,
             review: input.review,
             onReview: input.onReview,
             execute: input.execute,

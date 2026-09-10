@@ -27,18 +27,44 @@ import {
 } from "@k2b/cloud/ai";
 import {
   CloudResourceRefSchema,
+  type CapabilityExecutionContext,
   type CloudResourceView,
   capabilityIdempotencyConflict,
   capabilityPage,
   defineCapabilities,
   UniversalSearchDataSchema,
 } from "@k2b/cloud/contracts";
+import { type AuditActor, audit } from "@k2b/cloud/services";
 import { z } from "zod";
 import { aiChatTaskRuntime, reconcileAiChatTasks } from "./ai-chat-tasks-runtime";
 import { deliverPendingAiMessages } from "./ai-inter-chat-messages";
 import { coreCapabilityPresentation } from "./capability-presentation";
 
 const CORE_APP_ID = "core";
+
+const capabilityAuditActor = (context: CapabilityExecutionContext): AuditActor =>
+  context.actor.kind === "user"
+    ? {
+        userId: context.actor.user.id,
+        uid: context.actor.user.uid,
+        provider: context.actor.user.provider,
+        roles: context.actor.user.roles,
+      }
+    : {
+        uid: `service-account:${context.actor.serviceAccount.id}`,
+        provider: "service_account",
+        roles: context.actor.scopes,
+      };
+
+/** Audit envelope for irreversible Core Actions; `requestId` joins the row to the capability execution. */
+const actionAudit = (context: CapabilityExecutionContext, actionId: string, targetType: string, targetId: string) => ({
+  action: `core.capability.${actionId}`,
+  actor: capabilityAuditActor(context),
+  target: { type: targetType, id: targetId },
+  requestId: context.requestId,
+  metadata: { capability: `core.${actionId}` },
+});
+
 const MAX_MESSAGE_TEXT_CHARS = 8_000;
 const MAX_CAPABILITY_SKILL_CONTENT_CHARS = 10_000;
 const MAX_CAPABILITY_SKILL_REFERENCE_BATCH_ITEMS = 20;
@@ -810,7 +836,7 @@ export const aiCapabilities = defineCapabilities({
       description: "Update one or more main fields of a writable Skill after reviewing the exact changed content.",
       input: SkillUpdateInputSchema,
       data: SkillDetailDataSchema,
-      destructive: true,
+      destructive: false,
       openWorld: false,
       idempotency: "none",
       async review(input, context) {
@@ -857,7 +883,7 @@ export const aiCapabilities = defineCapabilities({
         "Add or replace exactly one Markdown reference on a writable Skill. Use Set Assistant Skill references for two or more files.",
       input: SkillReferenceSetInputSchema,
       data: SkillDetailDataSchema,
-      destructive: true,
+      destructive: false,
       openWorld: false,
       idempotency: "none",
       approval: "rememberable",
@@ -898,7 +924,7 @@ export const aiCapabilities = defineCapabilities({
         "Atomically add or replace multiple Markdown references on one writable Skill after reviewing every complete bounded file.",
       input: SkillReferencesSetInputSchema,
       data: SkillDetailDataSchema,
-      destructive: true,
+      destructive: false,
       openWorld: false,
       idempotency: "none",
       approval: "rememberable",
@@ -939,7 +965,7 @@ export const aiCapabilities = defineCapabilities({
       description: "Remove one exact Markdown reference from a writable Skill after review.",
       input: SkillReferenceRemoveInputSchema,
       data: SkillDetailDataSchema,
-      destructive: true,
+      destructive: false,
       openWorld: false,
       idempotency: "none",
       async review(input, context) {
@@ -974,7 +1000,7 @@ export const aiCapabilities = defineCapabilities({
       description: "Enable or disable one readable Skill only for the current user after review; Cloud access remains unchanged.",
       input: SkillEnabledSetInputSchema,
       data: z.object({ skillId: SkillIdSchema, name: SkillNameSchema, enabled: z.boolean() }).strict(),
-      destructive: true,
+      destructive: false,
       openWorld: false,
       idempotency: "none",
       async review(input, context) {
@@ -1006,7 +1032,7 @@ export const aiCapabilities = defineCapabilities({
       data: z.object({ deleted: z.literal(true) }).strict(),
       destructive: true,
       openWorld: false,
-      idempotency: "none",
+      idempotency: "required",
       async review(input, context) {
         const skill = await readableSkill(input.skillId, context, "admin");
         if (!skill) return fail(err.notFound("Skill"));
@@ -1019,9 +1045,16 @@ export const aiCapabilities = defineCapabilities({
         });
       },
       async run(input, context) {
+        if (!context.idempotencyKey) return fail(err.badInput("An idempotency key is required"));
         const skill = await readableSkill(input.skillId, context, "admin");
-        if (!skill || !(await aiSkills.delete(skill.id, context.accessSubject))) return fail(err.notFound("Skill"));
-        return ok({ data: { deleted: true as const }, summary: `Deleted Assistant Skill “${skill.name}”.` });
+        if (!skill) return fail(err.notFound("Skill"));
+        const deleted = await aiSkills.delete(skill.id, context.accessSubject);
+        return audit.recordResultAfterSideEffect({
+          ...actionAudit(context, "ai.skill.delete", "ai_skill", skill.id),
+          result: deleted
+            ? ok({ data: { deleted: true as const }, summary: `Deleted Assistant Skill “${skill.name}”.` })
+            : fail(err.notFound("Skill")),
+        });
       },
     },
     "ai.task.create": {
@@ -1111,7 +1144,7 @@ export const aiCapabilities = defineCapabilities({
       description: "Update the prompt or future schedule of one owned task after reviewing the exact replacement.",
       input: ChatTaskUpdateInputSchema,
       data: ChatTaskDataSchema,
-      destructive: true,
+      destructive: false,
       openWorld: false,
       idempotency: "none",
       async review(input, context) {
@@ -1164,7 +1197,7 @@ export const aiCapabilities = defineCapabilities({
       description: "Pause one owned scheduled task after review.",
       input: ChatTaskIdInputSchema,
       data: ChatTaskDataSchema,
-      destructive: true,
+      destructive: false,
       openWorld: false,
       idempotency: "none",
       approval: "rememberable",
@@ -1208,7 +1241,7 @@ export const aiCapabilities = defineCapabilities({
       description: "Resume one owned scheduled task after review.",
       input: ChatTaskIdInputSchema,
       data: ChatTaskDataSchema,
-      destructive: true,
+      destructive: false,
       openWorld: false,
       idempotency: "none",
       async review(input, context) {
@@ -1299,7 +1332,7 @@ export const aiCapabilities = defineCapabilities({
       data: z.object({ deleted: z.literal(true) }),
       destructive: true,
       openWorld: false,
-      idempotency: "none",
+      idempotency: "required",
       async review(input, context) {
         if (!context.user) return fail(err.forbidden("Scheduled tasks require a user-backed actor"));
         const task = await aiChatTasks.get({ userId: context.user.id, taskId: input.taskId });
@@ -1315,11 +1348,17 @@ export const aiCapabilities = defineCapabilities({
       },
       async run(input, context) {
         if (!context.user) return fail(err.forbidden("Scheduled tasks require a user-backed actor"));
+        if (!context.idempotencyKey) return fail(err.badInput("An idempotency key is required"));
         const task = await aiChatTasks.get({ userId: context.user.id, taskId: input.taskId });
         if (!task) return fail(err.notFound("Task"));
-        if (!(await aiChatTasks.delete({ userId: context.user.id, taskId: input.taskId }))) return fail(err.notFound("Task"));
-        void reconcileAiChatTasks().catch(() => undefined);
-        return ok({ data: { deleted: true as const }, summary: `Deleted the scheduled task in ${taskChatTitle(task)}.` });
+        const deleted = await aiChatTasks.delete({ userId: context.user.id, taskId: input.taskId });
+        if (deleted) void reconcileAiChatTasks().catch(() => undefined);
+        return audit.recordResultAfterSideEffect({
+          ...actionAudit(context, "ai.task.delete", "ai_chat_task", task.id),
+          result: deleted
+            ? ok({ data: { deleted: true as const }, summary: `Deleted the scheduled task in ${taskChatTitle(task)}.` })
+            : fail(err.notFound("Task")),
+        });
       },
     },
     "ai.chat.message": {

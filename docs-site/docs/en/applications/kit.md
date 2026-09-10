@@ -58,7 +58,7 @@ export default kit.script({
     const submit = kit.ui.button(
       "Greet",
       () => {
-        result.setText(greeting(name.getValue()));
+        result.set(greeting(name.getValue()));
       },
       { id: "greet" },
     );
@@ -184,8 +184,8 @@ const picker = kit.ui.filePicker("Choose CSV", {
     table.setColumns(
       Object.keys(rows[0] ?? {}).map((key) => ({ key, label: key })),
     );
-    table.setRows(rows.slice(0, 100));
-    status.setText(`${rows.length} rows`);
+    table.set(rows.slice(0, 100));
+    status.set(`${rows.length} rows`);
   },
 });
 kit.ui.workbench({
@@ -199,9 +199,9 @@ kit.ui.workbench({
 `onChange(files)` callback. Cancellation preserves the previous selection.
 Files cross the host bridge; they never become JSON UI nodes.
 
-Tables support dynamic `setColumns([{ key, label, align? }])`, `setRows(rows)`
+Tables support dynamic `setColumns([{ key, label, align? }])`, `set(rows)`
 and `setState("ready" | "empty" | "loading" | "error", description?)`.
-`setRows` selects ready or empty automatically. Button handles support
+`set` selects ready or empty automatically. Button handles support
 `setDisabled(boolean)` and `setLoading(boolean)`; buttons default to secondary.
 Use `variant: "primary"` for the main action. Inputs accept `description`,
 `placeholder` and `onChange(value)` in addition to their initial value.
@@ -224,6 +224,13 @@ kit.ui.list({ title: "Exports", empty: { title: "No exports yet" } }, [
 ```
 
 List item IDs must be unique. Each optional `action` is an existing UI handle.
+
+`ui.list` handles expose `set(items)` to replace the visible rows. Use stable,
+unique item IDs and reuse action handles across refreshes. A row action can be
+a `ui.row` containing several buttons. Actions stay owned by their list while
+their item is absent; they do not appear as standalone controls. The existing
+limits on allocated UI nodes and visible rows still apply.
+
 The CSV starter retains its existing history keys and files and shows the latest
 50 exports with download actions. A table preview shows 100 rows; export uses all
 parsed rows and preserves identifiers as strings. If local history cannot be
@@ -236,7 +243,7 @@ Both allow relative URLs, HTTP(S) and mailto. Navigation requires a user action;
 these controls do not grant network access to worker scripts.
 
 `ui.markdown(source, { headingScale? })` uses the shared Markdown renderer.
-Update it with `setMarkdown(source)`. Raw HTML is escaped, image syntax displays
+Update it with `set(source)`. Raw HTML is escaped, image syntax displays
 alt text without loading resources, and links use the same protocol policy and
 open in a new tab. Heading scales are compact, normal (default) and large.
 
@@ -267,16 +274,16 @@ Disabling local persistence blocks both reads and writes through `kit.store` and
 becomes accessible again after re-enabling persistence. Scripts must handle
 storage errors. Saving application settings stops the current run.
 
-The Local data settings tab lists files and saved KV values for this app and the
+The Local data sidebar item opens an explorer for files and saved KV values for this app and the
 current user on this device, including nested file paths. Refresh reloads the
 list; Download exports a file unchanged or a KV value as JSON. The explorer can
 inspect retained data even when script storage access is disabled. General
 settings do not expose a persistence toggle and preserve the manifest value.
 
-All users with Use access can select Delete local data above Settings in the
-sidebar. Confirmation stops the current run, waits for its pending storage
-operations and deletes only this app/current user directory, including files and
-KV values. Other apps and users retain their data. Close other tabs running the
+All users with Use access can open this explorer above Settings in the sidebar.
+They can delete individual files or KV values, or select Delete local data to
+clear both. Confirmation stops the current run, waits for its pending storage
+operations and deletes only the selected data for this app/current user. Other apps and users retain their data. Close other tabs running the
 same app before deleting local data. The project and its sharing remain intact.
 
 ### Exact money
@@ -372,3 +379,116 @@ to 16 MiB, and documents to 1000 pages. The host Stop control terminates parsing
 Invalid or password-protected documents reject the call. Missing embedded
 character mappings can limit extraction; applications must validate their
 format-specific fields rather than treating arbitrary extracted text as data.
+
+## Shared databases and administration
+
+Cloud administrators manage all Kit apps, recover permissions, delete apps, and configure rsql at `/admin/kit`. Shared databases are off by default. Set the private rsql server URL and API token, test the connection, then enable the feature. Tokens are not returned by the settings API. Existing databases and pending cleanup prevent switching servers or removing credentials.
+
+App Settings contains a **Shared database** card. While globally disabled, its checkbox is unavailable and explains that a Cloud administrator must enable the feature. Enabling an app creates one database shared by all its tools and users with Use access. Disabling either switch preserves data. Reset requires confirmation and creates an empty database; scripts must restart. Deleting an app also schedules reliable deletion of its database, including retries while rsql is unavailable. Local data on other users' devices cannot be deleted remotely.
+
+The database panel shows status, tables, records, storage, and the last diagnostics refresh. Counts come from rsql overview and table metadata; they are a diagnostic snapshot, not a transactionally consistent report. Unavailable figures are not displayed as zero.
+
+Use `kit.db.tables`, `kit.db.table(name).rows`, `kit.db.table(name).schema`, `kit.db.query` and `kit.db.importData`. Schema changes require App Admin; row reads/writes require Use. The server binds each operation to the authorized app and database generation. There is no per-row user isolation. SQL accepts a restricted SELECT subset with supported aggregate/string/date/JSON functions; CTEs, comments, internal objects, arbitrary functions and write SQL are rejected. Use pagination and bound parameters.
+
+Imports append rows in sequential batches sized for the request budget. Type inference preserves strings and leading zeros; explicit columns are optional. Creating a missing table requires `createTable: true` and Admin. Existing schema is not silently changed. Imports show one progress toast by default, with cancellation; use `notify: false` or `onProgress` for custom UI. The result reports `confirmedRows`, `totalRows` and `status`. Cancellation keeps completed batches. An ambiguous write yields `unknown`, without automatic replay. Batch replay and durable resume are deferred. Repeating a new import can create duplicates.
+
+Keep concurrency proportionate: a one-person utility usually needs straightforward CRUD and sequential imports, not extra locks, queues or conflict-resolution machinery. For actual shared workflows, use constraints and understand that read-then-write and multiple batches are not atomic transactions. Stopping a script cannot undo a server write that already committed.
+
+The local infrastructure includes the pinned rsql Docker container and persistent volume. It does not make rsql a mandatory production dependency. See `packages/kit/README.md` for development and concurrency guidance, in-app Help for the SDK, and `cld kit db --help` / `cld kit admin --help` for operations.
+
+### UI updates, dialogs and charts
+
+The Alpha UI API uses `set(value)`. There are no legacy setters. Text, buttons,
+status and section headings accept text; inputs/selects accept their value;
+Markdown accepts source; progress accepts a fraction from zero to one. Setting
+an input value does not invoke its `onChange` callback. Metadata methods such as
+`setDescription`, `setDisabled`, `setLoading`, `setColumns` and `setState` remain
+explicit.
+
+Lists and tables additionally support `upsert(items)` and `remove(ids)`.
+An upsert supplies a complete item: existing keys keep their position and new
+keys append. List keys are `id`; tables declare `rowKey` and use unique string or
+number keys. Missing or duplicate keys reject the update without partial changes.
+`remove()` clears displayed items, `remove([])` does nothing, and unknown IDs are
+ignored. These methods do not delete the UI element or modify stored data.
+Unkeyed tables support `set(rows)` and `remove()`, but not keyed mutations.
+File, KV and database deletion APIs retain their explicit storage semantics.
+
+```js
+const table = kit.ui.table({
+  rowKey: "id",
+  columns: [{ key: "title", label: "Task" }],
+});
+table.set([{ id: "one", title: "First task" }]);
+table.upsert([{ id: "one", title: "Updated task" }]);
+table.remove(["one"]);
+```
+
+Use `kit.ui.modal` for a focused user decision. All dialogs require a visible
+`title`. `confirm({title,message})` returns a boolean; cancellation returns false.
+`text({title,label,value?})` returns a string or null, and
+`number({title,label,value?,min?,max?})` returns a finite number or null.
+Text supports `required`, `minLength`, `maxLength` and `multiline`; number supports
+`required`. Both can override `confirmText` and `cancelText`.
+
+```js
+const values = await kit.ui.modal.dialog({
+  title: "New task",
+  confirmText: "Add",
+  fields: {
+    title: { type: "text", label: "Task", required: true, maxLength: 200 },
+    priority: {
+      type: "select", label: "Priority", default: "normal",
+      options: [
+        { value: "normal", label: "Normal" },
+        { value: "important", label: "Important" },
+      ],
+    },
+  },
+});
+if (values) console.log(values.title, values.priority);
+```
+
+A schema dialog accepts 1–64 named fields of type `text`, `number`, `select` or
+`boolean`. Fields require a label and may provide `description`, `placeholder`,
+`required` and `default`. Number fields also accept `step`. Select options require
+both `value` and `label`; `icon` and `description` are optional. Field names start
+with a letter and otherwise contain letters, digits or underscores. Functions
+and custom HTML are not accepted. The returned object contains the entered values;
+cancellation returns null. Standard labels and validation follow the Cloud locale;
+author-supplied strings are unchanged. Stop and navigation close the run's dialog.
+Host operations are serialized, so await dialogs before continuing with writes.
+
+`kit.ui.chart({kind,...options})` uses stdlib's JSON option names and the shared
+responsive Chart. Call `chart.set({kind,...options})` to replace its configuration.
+All 14 stdlib types are available:
+
+| Kinds | Main data shape |
+| --- | --- |
+| line, scatter | `series: [{label?, data: [{x, y}]}]` |
+| bar, pie, donut | `data: [{label, value}]` |
+| sparkline, histogram | `data: number[]` |
+| boxplot | `groups: [{label, values: number[]}]` |
+| gauge | `value`, optional `min`, `max`, `unit` |
+| barGauge | `data: [{label, value, min?, max?, unit?}]` |
+| stat | `label`, `value`, optional `delta`, `trend`, `sparkline` |
+| heatmap | `data: [{x, y, value}]` |
+| map | `series: [{label?, data: [{latitude, longitude}]}]` |
+| stateTimeline | `rows: [{label, intervals: [{from, to, state}]}]` |
+
+```js
+kit.ui.chart({
+  kind: "bar", title: "Tasks", showValues: true,
+  data: [{ label: "Open", value: 8 }, { label: "Done", value: 12 }],
+});
+```
+
+Use stdlib's applicable JSON options for axes, legends, reference lines, smooth
+lines, areas, thresholds and labels. Line and map charts support `interactive`.
+Charts are 18rem high; sparklines are 4rem high and all adapt to their container.
+Theme and empty-state labels come from the shared UI. Formatter functions, custom
+CSS/classes, links and external resources are excluded. Color overrides accept
+hex colors or named colors. Each configuration has a total budget of 1000 array
+entries, including nested series and points. Keep a text or table explanation
+alongside a chart when exact values matter. A workbench with empty `controls`
+uses the full content width.

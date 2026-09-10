@@ -1,5 +1,5 @@
-import { err, fail, ok, type Result, crypto as stdCrypto } from "@k2b/stdlib";
 import { toPgUuidArray } from "@k2b/cloud/services";
+import { err, fail, ok, type Result, crypto as stdCrypto } from "@k2b/stdlib";
 import { sql } from "bun";
 import { type Field, ViewUiSettingsSchema } from "../contracts";
 import { customAppPageRecordFieldIds } from "../custom-apps/conditions";
@@ -952,6 +952,12 @@ export const compile = async (input: unknown, client: SqlClient = sql, locale?: 
         continue;
       }
 
+      const editing = "mode" in block && block.mode === "edit";
+      if (editing && (!page?.record || tableId(page.record.tableId) !== formRow.table_id)) {
+        diagnostics.push(customAppDiagnostic(locale, "form.invalid", [...formPath, "mode"]));
+        continue;
+      }
+
       const config = normalizeFormConfig(formRow.config);
       const userInputFieldIds = config.fields
         .filter((entry) => entry.kind === "user_input")
@@ -1102,8 +1108,28 @@ export const compile = async (input: unknown, client: SqlClient = sql, locale?: 
         }
       }
 
+      if (editing) {
+        const targetIds = [
+          ...new Set(
+            capabilityFields.flatMap((field) => {
+              const config = parseJsonbRow<{ targetTableId?: unknown }>(field.config, {});
+              return field.type === "relation" && typeof config.targetTableId === "string" ? [config.targetTableId] : [];
+            }),
+          ),
+        ];
+        const targets = targetIds.length
+          ? await client<{ id: string }[]>`
+          SELECT id FROM grids.tables WHERE id = ANY(${toPgUuidArray(targetIds)}::uuid[]) AND base_id = ${base.id}::uuid AND deleted_at IS NULL
+        `
+          : [];
+        if (targets.length !== targetIds.length) {
+          diagnostics.push(customAppDiagnostic(locale, "form.invalid", [...formPath, "mode"]));
+          continue;
+        }
+      }
       forms.push({
         ...capabilityIdentity,
+        ...(editing ? { mode: "edit" as const } : {}),
         formId: resourceId("form", block.formId),
         tableId: formRow.table_id,
         userInputFieldIds,
