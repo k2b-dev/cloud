@@ -43,7 +43,9 @@ export async function openKitModal(input: unknown, signal: AbortSignal, locale: 
   if (request.kind === "confirm") return (await prompts.confirm(request.message, { ...options, signal })) ?? false;
   if (request.kind === "dialog") {
     const fields = Object.fromEntries(Object.entries(request.fields).map(([name, field]) => [name, convert(field, t)]));
-    return prompts.form({ ...options, fields, signal });
+    const result = await prompts.form({ ...options, fields, signal });
+    // Kit fields contain scalar values; detach the Solid store before worker RPC.
+    return result === null ? null : Object.fromEntries(Object.entries(result));
   }
   const field: Field =
     request.kind === "text"

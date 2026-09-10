@@ -16,6 +16,8 @@ import { createDomTestHarness } from "../../ui/test/dom";
         fields: {
           title: { type: "text", label: "Task", required: true },
           count: { type: "number", label: "Count", min: 1, max: 3, default: 9 },
+          active: { type: "boolean", label: "Active", default: true },
+          priority: { type: "select", label: "Priority", default: "normal", options: [{ value: "normal", label: "Normal" }] },
         },
       },
       controller.signal,
@@ -30,13 +32,17 @@ import { createDomTestHarness } from "../../ui/test/dom";
     inputs[1]!.value = "2";
     inputs[1]!.dispatchEvent(new dom.window.Event("input", { bubbles: true }));
     submit();
-    expect(await pending).toEqual({ title: "Todo", count: 2 });
+    const result = await pending;
+    expect(result).toEqual({ title: "Todo", count: 2, active: true, priority: "normal" });
+    // Worker RPC uses the structured-clone algorithm, which rejects Solid proxies.
+    expect(structuredClone(result)).toEqual({ title: "Todo", count: 2, active: true, priority: "normal" });
     const confirm = openKitModal({ kind: "confirm", title: "Confirm", message: "Sure?" }, controller.signal, "en");
     expect(dom.document.body.textContent).toContain("Confirm");
     controller.abort();
     expect(await confirm).toBe(false);
     expect(dom.document.querySelector("dialog")).toBeNull();
     expect(await openKitModal({ kind: "text", title: "Text", label: "Text" }, controller.signal, "en")).toBeNull();
+    expect(await openKitModal({ kind: "dialog", title: "Cancelled", fields: { title: { type: "text", label: "Title" } } }, controller.signal, "en")).toBeNull();
   } finally {
     controller.abort();
     dom.cleanup();
