@@ -32,7 +32,7 @@ Der Assistent trennt Projekt-Chats und allgemeine Chats in der Seitenleiste. Ers
 - **Beenden:** Beendet die laufende Antwort des Assistenten im geöffneten Chat.
 - **Erneut versuchen:** Führt eine Benutzernachricht erneut aus und ersetzt spätere Nachrichten dieses Chat-Zweigs.
 - **Abzweigen:** Erstellt einen neuen Chat, der bis einschließlich der ausgewählten Nachricht kopiert wird.
-- **Komprimieren:** Nutze `/compact`, um den aktuellen Chat-Kontext vor dem Fortsetzen zusammenzufassen.
+- **Kontext kürzen:** Öffne die Kontextanzeige beim Eingabefeld und wähle **Kontext kürzen**, um den bisherigen Chat-Kontext zusammenzufassen. Alternativ kannst du `/compact` verwenden. Hover zeigt die Details; ein Klick hält sie offen. Escape oder ein Klick außerhalb schließt sie.
 - **Projekte:** Die Projekteinstellungen zeigen gemeinsame Anweisungen und Kontext entsprechend deiner Lese-, Schreib- oder Administratorberechtigung. Projekt-Chats bleiben privat.
 :::
 

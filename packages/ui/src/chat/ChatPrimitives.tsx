@@ -1,6 +1,7 @@
 import { createSignal, For, type JSX, onCleanup, Show } from "solid-js";
 import { Dropdown, type DropdownItem } from "../actions/Dropdown";
-import { Tooltip } from "../feedback/Tooltip";
+import { ChatContextPopup } from "./ChatContextPopup";
+import { Button } from "../actions/Button";
 import { type UiMessages, useUiMessages } from "../intl/messages";
 import { ProgressBar } from "../surfaces/ProgressBar";
 import { executeChatAction } from "./chat-behavior";
@@ -46,6 +47,8 @@ export type ChatActivityProps = {
 };
 
 export type ChatContextUsageProps = ChatContextUsageData & {
+  action?: ChatAction;
+  onActionError?: (error: unknown) => void;
   /** Host-owned number formatting. The default is locale-independent and SSR-stable. */
   formatNumber?: (value: number) => string;
   class?: string;
@@ -347,6 +350,19 @@ export function ChatActivity(props: ChatActivityProps): JSX.Element {
 }
 
 export function ChatContextUsage(props: ChatContextUsageProps): JSX.Element {
+  const [busy, setBusy] = createSignal(false);
+  const run = async () => {
+    const action = props.action;
+    if (!action || action.disabled || busy()) return;
+    setBusy(true);
+    try {
+      await executeChatAction(action);
+    } catch (error) {
+      props.onActionError?.(error);
+    } finally {
+      setBusy(false);
+    }
+  };
   const messages = useUiMessages();
   const formatNumber = (value: number) => (props.formatNumber ?? formatStableInteger)(value);
   const formattedUsageValue = (value: number | null): string => (value === null ? messages().unknown : formatNumber(value));
@@ -369,8 +385,7 @@ export function ChatContextUsage(props: ChatContextUsageProps): JSX.Element {
   };
 
   return (
-    <Tooltip.Trigger
-      placement="top"
+    <ChatContextPopup
       content={
         <div class="k2b-chat-context__tooltip">
           <strong>{messages().lastRequestContext}</strong>
@@ -416,6 +431,14 @@ export function ChatContextUsage(props: ChatContextUsageProps): JSX.Element {
               </div>
             </Show>
           </dl>
+          <Show when={props.action}>
+            {(action) => (
+              <Button size="xs" variant="subtle" disabled={action().disabled || busy()} onClick={() => void run()} aria-busy={busy()}>
+                <i class={busy() ? "ti ti-loader-2 k2b-spin" : action().icon} aria-hidden="true" />
+                {action().label}
+              </Button>
+            )}
+          </Show>
         </div>
       }
       type="button"
@@ -425,6 +448,6 @@ export function ChatContextUsage(props: ChatContextUsageProps): JSX.Element {
     >
       <i class="ti ti-brain" aria-hidden="true" />
       <span>{percent() === null ? "–" : `${percent()}%`}</span>
-    </Tooltip.Trigger>
+    </ChatContextPopup>
   );
 }

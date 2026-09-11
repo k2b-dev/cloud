@@ -665,3 +665,18 @@ test("footer override preserves the editor and replaces standard actions", () =>
   expect(html).not.toContain("standard-tools");
   expect(html).not.toContain("k2b-chat-composer__send");
 });
+
+test("keeps context actions available without usage and out of the Plus menu", () => {
+  const html = renderToString(() =>
+    createComponent(Chat.Composer, {
+      value: "",
+      onValueChange: () => {},
+      onSubmit: () => {},
+      contextPopupAction: { id: "compact", label: "Compact context", onSelect: () => {} },
+    }),
+  );
+  expect(html).toContain('role="dialog"');
+  expect(html).toContain("Compact context");
+  expect(html).toContain('aria-expanded="false"');
+  expect(html).not.toContain('role="tooltip"');
+});

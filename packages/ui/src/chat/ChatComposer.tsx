@@ -53,6 +53,8 @@ export type ChatComposerProps = {
   commands?: readonly ChatCommand[];
   contextUsage?: ChatContextUsageData;
   contextActions?: readonly ChatAction[];
+  /** Optional action inside the context details popup. */
+  contextPopupAction?: ChatAction;
   /** Additional compact controls rendered with the add/model controls. */
   footerTools?: JSX.Element;
   /** Compact application controls immediately before the send/stop button. */
@@ -98,6 +100,7 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
   const canSelectFiles = () => Boolean(props.fileSelection && !props.fileSelection.disabled && !running() && !blocked());
   const hasAddMenu = () => Boolean(props.fileSelection || props.menuActions?.length);
   const hasContextUsage = () => {
+    if (props.contextPopupAction) return true;
     const context = props.contextUsage;
     if (!context || typeof context.contextWindow !== "number" || !Number.isFinite(context.contextWindow) || context.contextWindow <= 0) {
       return false;
@@ -519,7 +522,9 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
                     </button>
                   )}
                 </For>
-                <Show when={hasContextUsage() ? props.contextUsage : undefined}>{(usage) => <ContextUsage {...usage()} />}</Show>
+                <Show when={hasContextUsage() ? (props.contextUsage ?? {}) : undefined}>
+                  {(usage) => <ContextUsage {...usage()} action={props.contextPopupAction} onActionError={props.onError} />}
+                </Show>
                 {props.submitTools}
                 <Show
                   when={running() && !hasDraft() && props.onStop}

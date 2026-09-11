@@ -32,7 +32,7 @@ Assistant separates Project chats from general chats in the sidebar. Create a Pr
 - **Stop:** Stop aborts the running assistant turn for the open chat.
 - **Retry:** Retry reruns a user message and replaces later messages in that chat branch.
 - **Fork:** Fork creates a new chat copied through the selected message.
-- **Compact:** Use the `/compact` command to summarize the current chat context before continuing.
+- **Compact:** Open the context indicator beside the message input and choose **Compact context** to summarize the current chat context. You can also use `/compact`. Hover previews the details; clicking keeps them open. Press Escape or click outside to close.
 - **Projects:** Project settings expose shared instructions and context according to your read, write, or admin permission. Project chats remain private.
 :::
 

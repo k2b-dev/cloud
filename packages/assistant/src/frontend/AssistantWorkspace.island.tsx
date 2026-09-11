@@ -864,13 +864,6 @@ export default function AssistantWorkspace(props: Props) {
     void addComposerFiles(sessionKey, [createAiPastedTextFile(text)]);
   };
 
-  const pasteComposerResource = async (sessionKey: string) => {
-    if (!requireComposerAttachmentsAvailable(sessionKey)) return;
-    const ref = await cloudResourceClipboard.read(props.cloudUrl);
-    if (!ref) throw new Error(t().clipboardNoResource);
-    await addResolvedComposerResource(sessionKey, ref);
-  };
-
   const addComposerResource = async (sessionKey: string) => {
     if (!requireComposerAttachmentsAvailable(sessionKey)) return;
     if (composerAttachmentsFor(sessionKey).length >= AI_TURN_ATTACHMENT_MAX_ITEMS) {
@@ -1088,13 +1081,6 @@ export default function AssistantWorkspace(props: Props) {
               disabled: composerAttachmentsBlocked(sessionKey()),
               onSelect: () => addComposerResource(sessionKey()),
             },
-            {
-              id: "paste-resource",
-              label: t().pasteResource,
-              icon: "ti ti-clipboard-plus",
-              disabled: composerAttachmentsBlocked(sessionKey()),
-              onSelect: () => pasteComposerResource(sessionKey()),
-            },
             ...(!projectComposer() && activeConversation()
               ? [
                   {
@@ -1108,20 +1094,23 @@ export default function AssistantWorkspace(props: Props) {
                       if (message) await revealMessage(message);
                     },
                   },
-                  {
-                    id: "compact-context",
-                    label: t().compactContext,
-                    icon: "ti ti-package",
-                    disabled: chat.running(),
-                    onSelect: async () => {
-                      if (!chat.activeConversationId()) return;
-                      await chat.compactConversation({ modelProfileId: selectedModelId() || undefined });
-                    },
-                  },
                 ]
               : []),
           ]}
-          contextActions={[]}
+          contextPopupAction={
+            !projectComposer() && activeConversation()
+              ? {
+                  id: "compact-context",
+                  label: t().compactContext,
+                  icon: "ti ti-package",
+                  disabled: chat.running(),
+                  onSelect: async () => {
+                    if (!chat.activeConversationId()) return;
+                    await chat.compactConversation({ modelProfileId: selectedModelId() || undefined });
+                  },
+                }
+              : undefined
+          }
           contextUsage={
             projectComposer()
               ? undefined
