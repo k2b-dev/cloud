@@ -166,7 +166,9 @@ server-side `FILE_PROXY_TOKEN` must match Cloud's Files token, and its
    apps. Start the gateway with private app reachability and keep public
    access restricted during setup.
 4. Start the selected apps. OAuth checks Core at startup and requires **no
-   credential-creation request**. For mandate-backed background integrations,
+   credential-creation request**. The development and production Compose files
+   wait for Core's readiness healthcheck before starting OAuth.
+   For mandate-backed background integrations,
    provision the owning app's `identity:invoke` credential using
    [Background mandates](/en/docs/identity/background-mandates), inject it only
    into that app, and recreate that app's container to apply environment changes.

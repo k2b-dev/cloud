@@ -243,6 +243,9 @@ services:
   app-oauth:
     <<: *app
     container_name: app-oauth
+    depends_on:
+      app-core:
+        condition: service_healthy
     environment:
       <<: *env
       APP_ID: oauth

@@ -71,6 +71,16 @@ services:
   app-core:
     <<: *app-defaults
     image: ghcr.io/k2b-dev/cloud-core:${CLOUD_IMAGE_TAG:?CLOUD_IMAGE_TAG is required}
+    healthcheck:
+      test:
+        - CMD
+        - bun
+        - -e
+        - const response = await fetch("http://127.0.0.1:3000/_cloud/ready"); if (!response.ok) process.exit(1)
+      interval: 2s
+      timeout: 2s
+      retries: 90
+      start_period: 2s
     environment:
       <<: *shared-env
       ADMIN_LOGIN_TOKEN: ${ADMIN_LOGIN_TOKEN:-}
@@ -137,6 +147,9 @@ services:
   app-oauth:
     <<: *app-defaults
     image: ghcr.io/k2b-dev/cloud-app-oauth:${CLOUD_IMAGE_TAG:?CLOUD_IMAGE_TAG is required}
+    depends_on:
+      app-core:
+        condition: service_healthy
     environment:
       <<: *shared-env
       CLOUD_OAUTH_BROKER_SECRET: ${CLOUD_OAUTH_BROKER_SECRET:?CLOUD_OAUTH_BROKER_SECRET is required}
