@@ -6,7 +6,7 @@ import { isAccountExpired } from "./account-model";
 import { IDENTITY_JWKS_MAX_AGE_SECONDS } from "./identity/constants";
 import { getIdentityRuntimeConfig } from "./identity/runtime-config";
 import type { ServiceAccount } from "./service-accounts";
-import { buildProjectedUser, userProjectionSql } from "./session/user";
+import { buildProjectedUser, userProjectionJoin, userProjectionSql } from "./session/user";
 
 type ServiceAccountActorRow = Record<string, unknown> & {
   service_account_id: string;
@@ -116,7 +116,7 @@ export const resolveOAuthTokenActor = async (
       FROM oauth.clients c
       JOIN auth.service_accounts sa ON sa.id = ${serviceAccountId}::uuid AND sa.status = 'active'
       LEFT JOIN auth.users u ON u.id = sa.delegated_user_id
-      LEFT JOIN auth.user_ipa_data ui ON ui.user_id = u.id
+      ${userProjectionJoin}
       WHERE c.client_id = ${clientId}
     `;
     const row = rows[0];
@@ -139,7 +139,7 @@ export const resolveOAuthTokenActor = async (
     SELECT ${userProjectionSql(groupsAdmin)}
     FROM oauth.clients c
     JOIN auth.users u ON ${predicate}
-    LEFT JOIN auth.user_ipa_data ui ON ui.user_id = u.id
+    ${userProjectionJoin}
     WHERE c.client_id = ${clientId}
   `;
   const user = rows[0] ? buildProjectedUser(rows[0]) : null;

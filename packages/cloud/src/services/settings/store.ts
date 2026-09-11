@@ -13,8 +13,11 @@
  * snapshot exposed via `c.get("settings")` (built by snapshot.ts middleware).
  */
 
+import { HTTPException } from "hono/http-exception";
+import { hasRole, type User } from "../../contracts/shared";
 import { redis, sql } from "bun";
 import { toPgTextArray } from "../postgres";
+import { claimCacheFill, completeCacheFill, MISSING_SETTING } from "../cache-fill";
 import { decryptValue, encryptValue } from "./crypto";
 import { SETTINGS, SETTINGS_MAP, type SettingDef, validateSettingValue } from "./defaults";
 
@@ -31,7 +34,7 @@ type SqlClient = typeof sql;
  * therefore invalidate after it commits.
  */
 export const invalidateSettingsCache = async (keys: readonly string[]): Promise<void> => {
-  await Promise.all(keys.map((key) => redis.del(REDIS_KEY(key))));
+  if (keys.length > 0) await redis.del(...keys.map(REDIS_KEY));
 };
 const REDIS_TTL_SEC = 300;
 
@@ -63,102 +66,66 @@ const resolveFallback = (def: SettingDef | undefined): unknown => {
  * Read a single setting key. Tries Redis first, falls back to DB.
  * On DB hit, populates Redis with TTL. On miss, returns env-fallback or default.
  */
-export const readKey = async (key: string): Promise<unknown> => {
-  const def = SETTINGS_MAP.get(key);
+export const readKey = async (key: string): Promise<unknown> => (await bulkRead([key])).get(key);
 
-  const cached = await redis.get(REDIS_KEY(key));
-  if (cached !== null) {
-    try {
-      return JSON.parse(cached);
-    } catch {
-      // Corrupt cache entry — drop and re-read from DB.
-      await redis.del(REDIS_KEY(key));
-    }
-  }
-
-  const rows = await sql<StoredRow[]>`SELECT value FROM settings.entries WHERE key = ${key}`;
-  if (rows.length > 0 && rows[0]) {
-    try {
-      const decrypted = await decryptValue(rows[0].value);
-      if (def) {
-        const validated = validateSettingValue(def, decrypted);
-        if (validated.ok) {
-          await redis.set(REDIS_KEY(key), JSON.stringify(validated.value), "EX", REDIS_TTL_SEC);
-          return validated.value;
-        }
-      } else {
-        // No def known — still cache the decrypted value (caller's responsibility to interpret).
-        await redis.set(REDIS_KEY(key), JSON.stringify(decrypted), "EX", REDIS_TTL_SEC);
-        return decrypted;
-      }
-    } catch {
-      // Decryption failure — legacy row encrypted with a different APP_SECRET.
-      // Skip silently and fall through to env/default fallback.
-    }
-  }
-
-  return resolveFallback(def);
-};
-
-/**
- * Bulk read for snapshot construction. One Redis MGET round-trip, DB fallback
- * for misses (single SELECT with key = ANY), populates Redis for missed keys.
- *
- * Returns a Map keyed by the input keys; every input key is present in the
- * result (with env-fallback or default as last resort).
- */
+/** One warm MGET; missing rows are cached independently of local env/defaults. */
 export const bulkRead = async (keys: readonly string[]): Promise<Map<string, unknown>> => {
   const result = new Map<string, unknown>();
   if (keys.length === 0) return result;
-
-  // 1. Redis MGET — one round-trip
-  const cached = await redis.mget(...keys.map(REDIS_KEY));
+  let cached: Array<string | null>;
+  try {
+    cached = await redis.mget(...keys.map(REDIS_KEY));
+  } catch {
+    cached = keys.map(() => null);
+  }
   const missing: string[] = [];
-  for (let i = 0; i < keys.length; i += 1) {
-    const k = keys[i]!;
-    const c = cached[i];
-    if (c !== null && c !== undefined) {
+  const observed = new Map(keys.map((key, i) => [key, cached[i] ?? null]));
+  const fills = new Map<string, string | null>();
+  for (const [i, key] of keys.entries()) {
+    const value = cached[i] ?? null;
+    if (value === MISSING_SETTING) {
+      result.set(key, resolveFallback(SETTINGS_MAP.get(key)));
+      continue;
+    }
+    if (value !== null) {
       try {
-        result.set(k, JSON.parse(c));
+        result.set(key, JSON.parse(value));
         continue;
       } catch {
-        // Drop corrupt cache entry, treat as missing.
+        /* An old/corrupt value or another reader's fill lease. */
       }
     }
-    missing.push(k);
+    missing.push(key);
   }
-
-  // 2. Fetch missing from DB in one query (Bun sql can't serialize JS arrays
-  // for ANY(), so we hand-build the Postgres TEXT[] literal).
+  await Promise.all(
+    missing.map(async (key) => {
+      fills.set(key, await claimCacheFill(REDIS_KEY(key), observed.get(key) ?? null));
+    }),
+  );
   if (missing.length > 0) {
     const rows = await sql<StoredRow[]>`SELECT key, value FROM settings.entries WHERE key = ANY(${toPgTextArray(missing)}::text[])`;
-    for (const row of rows) {
-      try {
-        const decrypted = await decryptValue(row.value);
-        const def = SETTINGS_MAP.get(row.key);
-        if (def) {
-          const validated = validateSettingValue(def, decrypted);
-          if (validated.ok) {
-            result.set(row.key, validated.value);
-            await redis.set(REDIS_KEY(row.key), JSON.stringify(validated.value), "EX", REDIS_TTL_SEC);
-          }
-        } else {
-          result.set(row.key, decrypted);
-          await redis.set(REDIS_KEY(row.key), JSON.stringify(decrypted), "EX", REDIS_TTL_SEC);
+    const byKey = new Map(rows.map((row) => [row.key, row]));
+    await Promise.all(
+      missing.map(async (key) => {
+        const row = byKey.get(key);
+        if (!row) {
+          await completeCacheFill(REDIS_KEY(key), fills.get(key) ?? null, MISSING_SETTING, REDIS_TTL_SEC);
+          return;
         }
-      } catch {
-        // Legacy row with mismatched key — silent skip.
-      }
-    }
+        try {
+          const value = await decryptValue(row.value);
+          const def = SETTINGS_MAP.get(key);
+          const validated = def ? validateSettingValue(def, value) : { ok: true as const, value };
+          if (!validated.ok) return;
+          result.set(key, validated.value);
+          await completeCacheFill(REDIS_KEY(key), fills.get(key) ?? null, JSON.stringify(validated.value), REDIS_TTL_SEC);
+        } catch {
+          /* Preserve legacy undecryptable-row fallback behavior. */
+        }
+      }),
+    );
   }
-
-  // 3. Apply env-fallback / default for keys that are still missing
-  for (const k of keys) {
-    if (!result.has(k)) {
-      result.set(k, resolveFallback(SETTINGS_MAP.get(k)));
-    }
-  }
-
+  for (const key of keys) if (!result.has(key)) result.set(key, resolveFallback(SETTINGS_MAP.get(key)));
   return result;
 };
 
@@ -238,4 +205,10 @@ export const writeKey = async (key: string, value: unknown, db?: SqlClient): Pro
 export const deleteKey = async (key: string, db?: SqlClient): Promise<void> => {
   await (db ?? sql)`DELETE FROM settings.entries WHERE key = ${key}`;
   if (!db) await invalidateSettingsCache([key]);
+};
+
+/** Clear only registered settings, never sessions, signing keys or rate limits. */
+export const invalidateSettingsCacheForAdmin = async (actor: User | undefined): Promise<void> => {
+  if (!actor || !hasRole(actor, "admin")) throw new HTTPException(403, { message: "Administrator access required" });
+  await invalidateSettingsCache(allKnownKeys());
 };

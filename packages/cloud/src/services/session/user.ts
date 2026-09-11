@@ -1,8 +1,9 @@
-import { sql } from "bun";
+import { type SQLQuery, sql } from "bun";
 import type { User } from "../../contracts/shared";
+import { decodeAccountCategoryEnabled } from "../account-category-policy";
 import { buildRoles } from "../accounts/authz";
 import { resolveProviderProfile } from "../accounts/base-user";
-import { managedGroupIdsSubquery, managedGroupsNamesSubquery } from "../accounts/group-sql";
+import { managedGroupIdsSubquery } from "../accounts/group-sql";
 import { buildIpaUserData, emptyIpaUserData, userIpaDataColumns, userIpaDataJoin } from "../accounts/ipa-data";
 import { resolveAccountExpires } from "../accounts/model";
 import { setRailCacheVersion } from "../rail-snapshot";
@@ -91,41 +92,45 @@ export const userProjectionSql = (groupsAdmin: string[]) => sql`
         AND eg.group_name = ANY(${toPgTextArray(groupsAdmin)}::text[])
     )
   END AS effective_admin,
-  COALESCE(ARRAY(
-    SELECT g.name
-    FROM auth.user_groups_v2 ug
-    JOIN auth.groups g ON g.id = ug.group_id
-    WHERE ug.user_id = u.id
-    ORDER BY g.name
-  ), '{}') AS member_groups,
-  COALESCE(ARRAY(
-    SELECT ug.group_id
-    FROM auth.user_groups_v2 ug
-    JOIN auth.groups g ON g.id = ug.group_id
-    WHERE ug.user_id = u.id
-    ORDER BY g.name
-  ), '{}') AS member_group_ids,
-  COALESCE(ARRAY(${managedGroupsNamesSubquery(sql`u.id`)}), '{}') AS manages,
-  COALESCE(ARRAY(${managedGroupIdsSubquery(sql`u.id`)}), '{}') AS manages_group_ids
+  membership.member_groups, membership.member_group_ids,
+  management.manages, management.manages_group_ids
 `;
 
-export const loadJwtSessionUser = async (
-  params: {
-    userId: string;
-    sid: string;
-    authEpoch: number;
-    groupsAdmin: string[];
-    /** Core's consent screen only: still validates family, epoch and expiry. */
-    allowPendingLegalConsent?: boolean;
-  },
-  query: typeof sql = sql,
-): Promise<User | null> => {
-  const rows = await query<DbRow[]>`
-    SELECT ${userProjectionSql(params.groupsAdmin)}
+/** One scan for membership names/IDs and one recursive traversal for management. */
+export const userProjectionJoin = sql`
+  ${userIpaDataJoin}
+  LEFT JOIN LATERAL (
+    SELECT COALESCE(array_agg(g.name ORDER BY g.name), '{}') AS member_groups,
+      COALESCE(array_agg(g.id ORDER BY g.name), '{}') AS member_group_ids
+    FROM auth.user_groups_v2 ug JOIN auth.groups g ON g.id = ug.group_id
+    WHERE ug.user_id = u.id
+  ) membership ON true
+  LEFT JOIN LATERAL (
+    SELECT COALESCE(array_agg(DISTINCT g.name ORDER BY g.name), '{}') AS manages,
+      COALESCE(array_agg(g.id ORDER BY g.name), '{}') AS manages_group_ids
+    FROM auth.groups g WHERE g.id IN (${managedGroupIdsSubquery(sql`u.id`)})
+  ) management ON true
+`;
+
+type SessionUserParams = {
+  userId: string;
+  sid: string;
+  authEpoch: number;
+  /** Core's consent screen only: still validates family, epoch and expiry. */
+  allowPendingLegalConsent?: boolean;
+};
+
+// Both projections use the same live validity checks. Neither caches authorization.
+const loadSessionRow = async (params: SessionUserParams, projection: SQLQuery, join: SQLQuery, query: typeof sql) => {
+  const [row] = await query<DbRow[]>`
+    SELECT ${projection}, (
+      SELECT value FROM settings.entries WHERE key = 'user.category.' ||
+        CASE WHEN u.provider = 'ipa' THEN 'freeipa' WHEN u.profile = 'guest' THEN 'guest' ELSE 'login' END || '.enabled'
+    ) AS category_enabled
     FROM auth.session_families sf
     JOIN auth.users u ON u.id = sf.user_id
     JOIN auth.signing_keys sk ON sk.kid = sf.signing_kid AND sk.state <> 'revoked'
-    ${userIpaDataJoin}
+    ${join}
     WHERE sf.sid = ${params.sid}::uuid
       AND sf.user_id = ${params.userId}::uuid
       AND sf.auth_epoch = ${params.authEpoch}
@@ -136,14 +141,28 @@ export const loadJwtSessionUser = async (
         SELECT 1 FROM auth.legal_acceptances la WHERE la.user_id = u.id
       ))
   `;
-  return rows[0] ? buildProjectedUser(rows[0]) : null;
+  return row && (await decodeAccountCategoryEnabled(row.category_enabled)) ? row : null;
+};
+
+export const loadJwtSessionUser = async (
+  params: SessionUserParams & { groupsAdmin: string[] },
+  query: typeof sql = sql,
+): Promise<User | null> => {
+  const row = await loadSessionRow(params, userProjectionSql(params.groupsAdmin), userProjectionJoin, query);
+  return row ? buildProjectedUser(row) : null;
+};
+
+/** Identity-only consumers must not pay for group, IPA, role and rail projections. */
+export const loadJwtSessionIdentity = async (params: SessionUserParams, query: typeof sql = sql) => {
+  const row = await loadSessionRow(params, sql`u.id, u.account_expires`, sql``, query);
+  return row ? { userId: String(row.id), accountExpires: resolveAccountExpires(row)?.toISOString() ?? null } : null;
 };
 
 export const loadCurrentUser = async (params: { userId: string; groupsAdmin: string[] }, query: typeof sql = sql): Promise<User | null> => {
   const rows = await query<DbRow[]>`
     SELECT ${userProjectionSql(params.groupsAdmin)}
     FROM auth.users u
-    ${userIpaDataJoin}
+    ${userProjectionJoin}
     WHERE u.id = ${params.userId}::uuid
   `;
   return rows[0] ? buildProjectedUser(rows[0]) : null;

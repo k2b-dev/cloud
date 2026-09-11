@@ -1,5 +1,10 @@
 import { err, fail, ok, type Result } from "@k2b/stdlib";
-import { sql } from "bun";
+import { redis, sql } from "bun";
+import { HTTPException } from "hono/http-exception";
+import { hasRole, type User } from "../../contracts/shared";
+import { z } from "zod";
+import { AnnouncementDisplayEntrySchema } from "../../contracts/announcements";
+import { claimCacheFill, completeCacheFill } from "../cache-fill";
 import type {
   AnnouncementCookieState,
   AnnouncementDisplayEntry,
@@ -11,6 +16,17 @@ import { markdown } from "../../shared/markdown";
 import { logger } from "../logging";
 
 const log = logger("announcements");
+const ACTIVE_CACHE_KEY = "appglobalcache:shared:announcements:v1";
+const invalidateActiveCache = () => redis.del(ACTIVE_CACHE_KEY);
+const invalidateAfterMutation = async () => {
+  try {
+    await invalidateActiveCache();
+  } catch (error) {
+    // The database mutation already succeeded; do not invite duplicate creates.
+    // Unavailable Redis reads fall back to Postgres; old cache entries expire.
+    log.warn("Announcement saved but cache invalidation failed", { error: error instanceof Error ? error.message : String(error) });
+  }
+};
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 type AnnouncementRow = {
@@ -119,6 +135,7 @@ const create = async (params: { data: CreateAnnouncement; actorId: string }): Pr
       RETURNING id, version, kind, title, body, tone, published_at, expires_at,
         created_at, updated_at, created_by, updated_by
     `;
+    if (row) await invalidateAfterMutation();
     return row ? ok(mapRow(row)) : fail(err.internal("Failed to create announcement."));
   } catch (error) {
     log.error("Failed to create announcement", { error: error instanceof Error ? error.message : String(error) });
@@ -156,6 +173,7 @@ const update = async (params: { id: string; data: UpdateAnnouncement; actorId: s
       RETURNING id, version, kind, title, body, tone, published_at, expires_at,
         created_at, updated_at, created_by, updated_by
     `;
+    if (row) await invalidateAfterMutation();
     return row ? ok(mapRow(row)) : fail(err.notFound("Announcement"));
   } catch (error) {
     log.error("Failed to update announcement", { id: params.id, error: error instanceof Error ? error.message : String(error) });
@@ -166,6 +184,7 @@ const update = async (params: { id: string; data: UpdateAnnouncement; actorId: s
 const remove = async (params: { id: string }): Promise<Result<void>> => {
   if (!UUID_PATTERN.test(params.id)) return fail(err.notFound("Announcement"));
   const result = await sql`DELETE FROM announcements.entries WHERE id = ${params.id}::uuid`;
+  if (result.count > 0) await invalidateAfterMutation();
   return result.count > 0 ? ok() : fail(err.notFound("Announcement"));
 };
 
@@ -182,28 +201,65 @@ const listActive = async (params: { now?: Date } = {}): Promise<AnnouncementEntr
   return rows.map(mapRow);
 };
 
-export const selectVisibleForState = (
-  entries: AnnouncementEntry[],
+const selectEntriesForState = <T extends { kind: AnnouncementEntry["kind"]; version: number }>(
+  entries: T[],
   state: AnnouncementCookieState,
-): { banners: AnnouncementDisplayEntry[]; announcements: AnnouncementDisplayEntry[]; latestAnnouncementVersion: number } => {
+) => {
   const dismissedBanners = new Set(state.dismissedBannerVersions);
   const activeAnnouncements = entries.filter((entry) => entry.kind === "announcement");
   const latestAnnouncementVersion = activeAnnouncements.reduce((max, entry) => Math.max(max, entry.version), state.seenAnnouncementVersion);
   return {
     banners: entries
       .filter((entry) => entry.kind === "banner" && !dismissedBanners.has(entry.version))
-      .sort((a, b) => b.version - a.version)
-      .map(renderAnnouncement),
+      .sort((a, b) => b.version - a.version),
     announcements: activeAnnouncements
       .filter((entry) => entry.version > state.seenAnnouncementVersion)
-      .sort((a, b) => b.version - a.version)
-      .map(renderAnnouncement),
+      .sort((a, b) => b.version - a.version),
     latestAnnouncementVersion,
   };
 };
 
+export const selectVisibleForState = (entries: AnnouncementEntry[], state: AnnouncementCookieState) => {
+  const selected = selectEntriesForState(entries, state);
+  return { ...selected, banners: selected.banners.map(renderAnnouncement), announcements: selected.announcements.map(renderAnnouncement) };
+};
+
+const cachedActive = async (): Promise<AnnouncementDisplayEntry[]> => {
+  let cached: string | null = null;
+  try {
+    cached = await redis.get(ACTIVE_CACHE_KEY);
+  } catch {
+    /* Read authoritative data below. */
+  }
+  let entries: AnnouncementDisplayEntry[] | undefined;
+  if (cached !== null) {
+    try {
+      entries = z.array(AnnouncementDisplayEntrySchema).parse(JSON.parse(cached));
+    } catch {
+      /* Miss. */
+    }
+  }
+  if (!entries) {
+    const lease = await claimCacheFill(ACTIVE_CACHE_KEY, cached);
+    // Include scheduled entries: publish/expiry boundaries are applied at read time.
+    const rows = await sql<AnnouncementRow[]>`
+      SELECT id, version, kind, title, body, tone, published_at, expires_at,
+        created_at, updated_at, created_by, updated_by
+      FROM announcements.entries
+      WHERE expires_at IS NULL OR expires_at > now()
+      ORDER BY version DESC
+    `;
+    entries = rows.map((row) => renderAnnouncement(mapRow(row)));
+    await completeCacheFill(ACTIVE_CACHE_KEY, lease, JSON.stringify(entries), 300);
+  }
+  const now = Date.now();
+  return entries.filter((entry) => Date.parse(entry.publishedAt) <= now && (!entry.expiresAt || Date.parse(entry.expiresAt) > now));
+};
+
 const activeForState = async (params: { state: AnnouncementCookieState; now?: Date }) =>
-  selectVisibleForState(await listActive({ now: params.now }), params.state);
+  params.now
+    ? selectVisibleForState(await listActive({ now: params.now }), params.state)
+    : selectEntriesForState(await cachedActive(), params.state);
 
 export const announcements = {
   admin: {
@@ -212,6 +268,10 @@ export const announcements = {
     create,
     update,
     remove,
+    invalidateCache: async (actor: User | undefined) => {
+      if (!actor || !hasRole(actor, "admin")) throw new HTTPException(403, { message: "Administrator access required" });
+      await invalidateActiveCache();
+    },
   },
   active: {
     list: listActive,

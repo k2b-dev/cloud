@@ -4,6 +4,7 @@ import { getLocale, type AuthContext } from "@k2b/cloud/server";
 import { announcements } from "@k2b/cloud/services";
 import { AdminLayout } from "@k2b/cloud/ssr";
 import { ssr } from "../../../config";
+import CacheNotice from "../CacheNotice.island";
 import AnnouncementActions from "./AnnouncementActions.island";
 import { adminMessages } from "../messages";
 
@@ -52,6 +53,8 @@ export default ssr<AuthContext>(async (c) => {
           </div>
           <AnnouncementActions mode="create" />
         </div>
+
+        <CacheNotice area="announcements" />
 
         <StatGrid columns={4}>
           <StatCell label={t.entries} value={items.length} sub={t.total} accent={{ tone: "blue", icon: "ti ti-speakerphone" }} />

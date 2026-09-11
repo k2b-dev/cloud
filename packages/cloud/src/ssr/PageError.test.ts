@@ -6,6 +6,7 @@ import { createConfig } from "@k2b/ssr";
 import { Hono } from "hono";
 import type { User } from "../contracts/shared";
 import { auth, type AuthContext } from "../server/middleware/auth";
+import { announcements } from "../services/announcements";
 import { session } from "../services/session";
 import { serviceAccountCredentials } from "../services/service-account-credentials";
 import { pageErrorMessages } from "./page-error-messages";
@@ -88,6 +89,40 @@ const server = new Hono<AuthContext & { Variables: { runtime: RuntimeContext } }
   .post("/action", auth.requireRole("admin", ssr.access), (c) => c.text("action executed"));
 
 describe("shared page access and error responses", () => {
+  test("signed-in error pages retain shared announcements", async () => {
+    signIn();
+    const now = new Date().toISOString();
+    const active = spyOn(announcements.active, "forState").mockResolvedValue({
+      banners: [
+        {
+          id: crypto.randomUUID(),
+          version: 1,
+          kind: "banner",
+          title: "Error page announcement",
+          bodyHtml: "Visible banner",
+          tone: "info",
+          publishedAt: now,
+          expiresAt: null,
+          createdAt: now,
+          updatedAt: now,
+          createdBy: null,
+          updatedBy: null,
+        },
+      ],
+      announcements: [],
+      latestAnnouncementVersion: 0,
+    });
+    try {
+      for (const path of ["/admin", "/nested/missing"]) {
+        const response = await server.request(path, { headers: { Cookie: "session_token=test-session" } });
+        expect(response.status).toBe(path === "/admin" ? 403 : 404);
+        expect(await response.text()).toContain("Error page announcement");
+      }
+      expect(active).toHaveBeenCalledTimes(2);
+    } finally {
+      active.mockRestore();
+    }
+  });
   test("catalog is complete", () => expect(pageErrorMessages.check()).toEqual([]));
   for (const path of ["/admin?tab=details", "/user", "/account", "/resource"]) {
     test(`anonymous ${path} retains its login return path`, async () => {

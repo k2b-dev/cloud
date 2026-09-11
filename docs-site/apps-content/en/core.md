@@ -5,7 +5,7 @@ section: Platform
 order: 300
 description: Sign-in, profile, notifications, announcements, settings, and the shared Cloud administration entry point.
 tags: [core, accounts, administration]
-updated: 2026-09-07
+updated: 2026-09-11
 ---
 
 # Core
@@ -88,3 +88,22 @@ profile and the same authorization boundaries as the browser surfaces.
 See [Deployment requirements](/en/docs/operations/deployment-requirements) for
 this app’s startup prerequisites, optional integrations, configuration and
 functional checks.
+
+## Refresh cached administration data
+
+Global settings, app-bar shortcuts, and announcements have separate cache
+controls on their existing administration pages. Clearing a cache reloads data
+on the next request and shows a success toast. It does not change stored data.
+
+On **Announcements**, the shared snapshot lasts up to five minutes. Publication
+and expiry times are evaluated on each page request, and each user's dismissed
+or seen state is applied separately. Creating, editing, or deleting an
+announcement invalidates the snapshot. Reload an already open page to see the
+change. If cache invalidation fails during a Valkey outage, the database change
+still succeeds and old cached entries expire within their TTL.
+
+The announcement action uses `DELETE /api/admin/core/announcements/cache` with
+administrator checks in both the route and service. Settings has its own
+control under **Settings → General**. App-bar invalidation remains on
+**App bar**. None of these actions flushes Valkey or clears sessions, signing
+keys, access state, rate limits, or other application caches.

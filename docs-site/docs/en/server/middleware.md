@@ -5,7 +5,7 @@ section: Server
 order: 210
 description: Add the request context and transport policies an application needs.
 tags: [server, middleware, hono]
-updated: 2026-07-27
+updated: 2026-09-11
 ---
 
 # Request middleware
@@ -102,8 +102,10 @@ const threshold = c.get("settings").inventory.low_stock_threshold;
 The next request sees a changed setting. The current request keeps the value it
 started with.
 
-For signed-in page requests, this middleware also preloads active platform
-announcements used by the shared layout.
+Cloud prepares shared-layout announcements during SSR finalization, after the
+page handler returns a render function. Redirects and API responses do not
+load announcements. Cookie dismissal and seen state remain specific to the
+request.
 
 Static paths are skipped by default:
 

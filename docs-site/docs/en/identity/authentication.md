@@ -5,7 +5,7 @@ section: Identity and access
 order: 310
 description: Resolve Cloud credentials into the actor and access subject used by an application.
 tags: [identity, authentication, sessions, middleware]
-updated: 2026-09-08
+updated: 2026-09-11
 ---
 
 # Request identity
@@ -220,3 +220,16 @@ Use it after an authentication policy, not instead of one.
 
 SSR routes can redirect instead. See
 [Route policies](/en/docs/identity/route-policies).
+
+## Validate a user-scoped stream
+
+For a stream that only needs the current session's user ID, use
+`auth.session.authenticateUserId(token)`. It returns the ID or `null`, while
+still checking the signed token, durable session family, signing-key revocation,
+auth epoch, legal consent, account category, and account expiry. It does not
+load groups, roles, IPA profile data, or app-bar preferences. An expired account
+revokes its sessions just as full session authentication does.
+
+This is a fresh database check, not a cached authorization decision. It does
+not authorize access to a resource; keep the resource's permission check in its
+own service. Normal HTTP routes continue to use the authentication middleware.

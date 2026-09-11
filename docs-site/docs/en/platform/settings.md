@@ -5,7 +5,7 @@ section: Platform services
 order: 510
 description: Define application settings and access them in requests, jobs, and lifecycle hooks.
 tags: [settings, configuration, typescript]
-updated: 2026-09-10
+updated: 2026-09-11
 ---
 
 # Settings
@@ -118,3 +118,22 @@ For `kind: "number"`, set `integer: true` when fractional values are invalid,
 for example for a connection count. Validation then requires a safe whole
 number in addition to any `min` and `max`. Ordinary number settings continue
 to accept fractions. Validation applies to administration and API writes.
+
+## Cache behavior and recovery
+
+Stored settings use shared Valkey entries with a five-minute TTL. A warm request
+loads its settings with one bulk cache read. Missing database rows are cached
+too; each application still resolves its own environment fallback and default.
+Saving or removing an override invalidates that key after the database commit.
+A concurrent reader cannot refill an invalidated entry with its older value.
+If Valkey is unavailable, reads fall back to Postgres.
+
+Administrators can clear Core's registered settings cache under
+**Administration → Settings → General**. This removes cached values and missing-row
+markers; it does not reset stored settings, sign out users, or clear security
+state. The action uses `DELETE /api/admin/core/settings/cache` and requires an
+administrator in both the route and service. A toast confirms completion.
+Existing pages keep their request snapshot until reloaded.
+
+Stored JSON cache values and encrypted database rows retain their existing
+formats. These cache optimizations require no database migration.

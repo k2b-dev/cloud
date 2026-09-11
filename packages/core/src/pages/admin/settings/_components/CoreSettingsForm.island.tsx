@@ -68,6 +68,7 @@ import { createMemo, createSignal, For, type JSX, Show } from "solid-js";
 import { accountSettingsSection } from "./account-settings";
 import { aiModelChoiceGroups, aiModelGroupFiltersFor } from "./ai-model-choice-groups";
 import { aiSettingsMessages } from "./ai-settings-messages";
+import CacheNotice from "../../CacheNotice.island";
 import { LegacySettingsSection } from "./LegacySettingsPanel.island";
 import DocumentationLink from "./DocumentationLink";
 import { settingsMessages } from "./messages";
@@ -601,6 +602,7 @@ export default function CoreSettingsForm(props: Props) {
             </Show>
             {renderFieldSections(genericEntries())}
             <Show when={props.showLegacySettings}>
+              <CacheNotice area="settings" />
               <LegacySettingsSection />
             </Show>
           </>

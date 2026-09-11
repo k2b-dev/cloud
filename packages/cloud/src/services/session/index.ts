@@ -11,7 +11,7 @@ import { invalidateIdentitySignerCache, prepareIdentitySigner } from "../identit
 import { getIdentityRuntimeConfig } from "../identity/runtime-config";
 import { type CloudSessionClaims, isSessionJwtCandidate, signSessionToken, verifySessionToken } from "../identity/session-token";
 import * as settings from "../settings";
-import { loadJwtSessionUser } from "./user";
+import { loadJwtSessionIdentity, loadJwtSessionUser } from "./user";
 
 export type SessionData = {
   userId: string;
@@ -68,7 +68,6 @@ const authenticateVerified = async (credential: CloudSessionClaims): Promise<Aut
     groupsAdmin,
   });
   if (!user) return null;
-  if (!(await isAccountCategoryAllowed(user))) return null;
   if (isAccountExpired(user.accountExpires)) {
     await session.revokeAllForUser(user.id);
     return null;
@@ -87,6 +86,18 @@ const authenticateVerified = async (credential: CloudSessionClaims): Promise<Aut
 const authenticateToken = async (token: string): Promise<AuthenticatedSession | null> => {
   const credential = await verifyCredential(token);
   return credential ? authenticateVerified(credential) : null;
+};
+
+const authenticateUserId = async (token: string): Promise<string | null> => {
+  const credential = await verifyCredential(token);
+  if (!credential) return null;
+  const identity = await loadJwtSessionIdentity({ userId: credential.sub, sid: credential.sid, authEpoch: credential.auth_epoch });
+  if (!identity) return null;
+  if (isAccountExpired(identity.accountExpires)) {
+    await session.revokeAllForUser(identity.userId);
+    return null;
+  }
+  return identity.userId;
 };
 
 const revokeToken = async (token: string, requestId?: string | null): Promise<void> => {
@@ -222,6 +233,8 @@ export const session = {
   },
 
   authenticate: authenticateToken,
+  /** Fresh session validity for user-scoped streams; does not grant resource access. */
+  authenticateUserId,
 
   authenticateRequest: (c: Context, token: string): Promise<AuthenticatedSession | null> =>
     requestCached(authenticationByRequest, c, token, async () => {

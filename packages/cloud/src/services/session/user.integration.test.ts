@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { sql } from "bun";
-import { loadJwtSessionUser } from "./user";
+import { loadJwtSessionIdentity, loadJwtSessionUser } from "./user";
 
 const canUseDatabase = async (): Promise<boolean> => {
   try {
@@ -54,16 +54,30 @@ suite("session family actor resolution", () => {
   test("enforces family, epoch and signing-key revocation", async () => {
     const input = { userId, sid, authEpoch: 2, groupsAdmin: ["admins"] };
     expect((await loadJwtSessionUser(input))?.id).toBe(userId);
+    expect((await loadJwtSessionIdentity(input))?.userId).toBe(userId);
+    const invalid = async () => {
+      expect(await loadJwtSessionUser(input)).toBeNull();
+      expect(await loadJwtSessionIdentity(input)).toBeNull();
+    };
+    await sql`UPDATE auth.session_families SET legal_pending = true WHERE sid = ${sid}`;
+    await invalid();
+    expect((await loadJwtSessionUser({ ...input, allowPendingLegalConsent: true }))?.id).toBe(userId);
+    await sql`UPDATE auth.session_families SET legal_pending = false WHERE sid = ${sid}`;
+    await sql`UPDATE auth.session_families SET issued_at = now() - INTERVAL '1 hour', expires_at = now() - INTERVAL '1 second' WHERE sid = ${sid}`;
+    await invalid();
+    await sql`UPDATE auth.session_families SET expires_at = now() + INTERVAL '1 hour' WHERE sid = ${sid}`;
+    expect(await loadJwtSessionIdentity({ ...input, userId: crypto.randomUUID() })).toBeNull();
+    expect(await loadJwtSessionIdentity({ ...input, authEpoch: 3 })).toBeNull();
 
     await sql`UPDATE auth.session_families SET revoked_at = now(), revocation_reason = 'test' WHERE sid = ${sid}`;
-    expect(await loadJwtSessionUser(input)).toBeNull();
+    await invalid();
     await sql`UPDATE auth.session_families SET revoked_at = NULL, revocation_reason = NULL WHERE sid = ${sid}`;
 
     await sql`UPDATE auth.users SET auth_epoch = 3 WHERE id = ${userId}`;
-    expect(await loadJwtSessionUser(input)).toBeNull();
+    await invalid();
     await sql`UPDATE auth.users SET auth_epoch = 2 WHERE id = ${userId}`;
 
     await sql`UPDATE auth.signing_keys SET state = 'revoked', revoked_at = now(), revoke_reason = 'test' WHERE kid = ${kid}`;
-    expect(await loadJwtSessionUser(input)).toBeNull();
+    await invalid();
   });
 });

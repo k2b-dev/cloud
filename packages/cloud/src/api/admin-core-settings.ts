@@ -31,6 +31,8 @@ import { GotenbergRenderError, testGotenberg } from "../services/pdf";
 import * as settings from "../services/settings";
 import { SETTINGS_MAP, validateSettingValue } from "../services/settings/defaults";
 
+import { invalidateSettingsCacheForAdmin } from "../services/settings/store";
+
 const BulkSaveSchema = z.union([
   z
     .object({
@@ -189,6 +191,21 @@ const invalidateCommittedSettings = async (keys: readonly string[]): Promise<voi
 const liveSettingKeys = async () => (await listApps()).flatMap((app) => [...(app.settingKeys ?? [])]);
 
 const app = new Hono<AuthContext>()
+  .delete(
+    "/cache",
+    auth.requireRole("admin"),
+    describeRoute({
+      tags: ["Administration"],
+      summary: "Invalidate registered settings cache",
+      ...requiresAdmin,
+      responses: { 200: jsonResponse(z.object({ success: z.literal(true) }), "Cache invalidated") },
+    }),
+    async (c) => {
+      await invalidateSettingsCacheForAdmin(c.get("user"));
+      c.header("Cache-Control", "no-store");
+      return c.json({ success: true as const });
+    },
+  )
   .get(
     "/documentation",
     auth.requireRole("admin"),

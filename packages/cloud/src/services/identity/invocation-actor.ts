@@ -4,7 +4,7 @@ import type { AccessSubject } from "../../server/services/access";
 import { isAccountCategoryAllowed } from "../account-category-policy";
 import { isAccountExpired } from "../account-model";
 import type { ServiceAccount } from "../service-accounts";
-import { buildProjectedUser, loadCurrentUser, userProjectionSql } from "../session/user";
+import { buildProjectedUser, loadCurrentUser, userProjectionJoin, userProjectionSql } from "../session/user";
 import type { CloudInvocationClaims } from "./invocation-token";
 import { getIdentityRuntimeConfig } from "./runtime-config";
 
@@ -92,7 +92,7 @@ export const resolveInvocationAuthority = async (
       ${userProjectionSql(groupsAdmin)}
     FROM auth.service_accounts sa
     LEFT JOIN auth.users u ON u.id = sa.delegated_user_id
-    LEFT JOIN auth.user_ipa_data ui ON ui.user_id = u.id
+    ${userProjectionJoin}
     WHERE sa.id = ${claims.sub}::uuid
       AND sa.status = 'active'
   `;

@@ -42,7 +42,7 @@ export const legalConsent = {
       groupsAdmin,
       allowPendingLegalConsent: true,
     });
-    if (!user || isAccountExpired(user.accountExpires) || !(await isAccountCategoryAllowed(user))) return null;
+    if (!user || isAccountExpired(user.accountExpires)) return null;
     const [row] = await sql<{ pending: boolean }[]>`
       SELECT legal_pending AND NOT EXISTS (SELECT 1 FROM auth.legal_acceptances WHERE user_id = ${user.id}::uuid) AS pending
       FROM auth.session_families WHERE sid = ${claims.sid}::uuid

@@ -44,6 +44,20 @@ export const announcementRoutes = new Hono<AuthContext>().get(
 
 export const adminAnnouncementRoutes = new Hono<AuthContext>()
   .use(auth.requireRole("admin"))
+  .delete(
+    "/cache",
+    describeRoute({
+      tags: ["Admin Announcements"],
+      summary: "Invalidate announcement cache",
+      ...requiresAdmin,
+      responses: { 200: jsonResponse(z.object({ success: z.literal(true) }), "Cache invalidated") },
+    }),
+    async (c) => {
+      await announcements.admin.invalidateCache(c.get("user"));
+      c.header("Cache-Control", "no-store");
+      return c.json({ success: true as const });
+    },
+  )
   .get(
     "/",
     describeRoute({

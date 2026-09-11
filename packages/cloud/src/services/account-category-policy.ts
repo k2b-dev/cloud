@@ -20,6 +20,15 @@ const readValue = async (key: string, fallback: boolean | string, db: typeof sql
   return value;
 };
 
+/** Decode a policy selected alongside a user, without a second database read. */
+export const decodeAccountCategoryEnabled = async (encrypted: unknown): Promise<boolean> => {
+  if (encrypted === null || encrypted === undefined) return true;
+  if (typeof encrypted !== "string") throw new Error("Invalid account category configuration");
+  const value = await decryptValue(encrypted);
+  if (typeof value !== "boolean") throw new Error("Invalid account category configuration");
+  return value;
+};
+
 export const isAccountCategoryAllowed = async (
   user: { provider: "local" | "ipa"; profile: "guest" | "user" },
   db: typeof sql = sql,

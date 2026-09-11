@@ -40,16 +40,21 @@ export const settings = (opts?: { skipPrefixes?: readonly string[] }) => {
     if (!skip.some((p) => path.startsWith(p))) {
       (c as unknown as { set: (k: string, v: unknown) => void }).set("settings", await loadSnapshot());
     }
-    const cookieHeader = c.req.header("Cookie") ?? null;
-    if (shouldLoadAnnouncements(path, cookieHeader)) {
-      const cookieState = parseAnnouncementCookieHeader(cookieHeader);
-      try {
-        const active = await announcements.active.forState({ state: cookieState });
-        (c as unknown as { set: (k: string, v: unknown) => void }).set("announcements", { ...active, cookieState });
-      } catch (error) {
-        log.warn("Failed to preload announcements", { error: error instanceof Error ? error.message : String(error) });
-      }
-    }
     await next();
   });
+};
+
+/** Called by SSR finalization, after redirects and non-HTML responses are known. */
+export const preloadLayoutAnnouncements = async (c: import("hono").Context): Promise<void> => {
+  const path = c.req.path;
+  const cookieHeader = c.req.header("Cookie") ?? null;
+  if (shouldLoadAnnouncements(path, cookieHeader)) {
+    const cookieState = parseAnnouncementCookieHeader(cookieHeader);
+    try {
+      const active = await announcements.active.forState({ state: cookieState });
+      (c as unknown as { set: (k: string, v: unknown) => void }).set("announcements", { ...active, cookieState });
+    } catch (error) {
+      log.warn("Failed to preload announcements", { error: error instanceof Error ? error.message : String(error) });
+    }
+  }
 };

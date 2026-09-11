@@ -49,6 +49,7 @@ import {
 import { normalizeInvocationRequestId } from "../services/identity/invocation-token";
 import { logger } from "../services/logging";
 import { startNotificationDefinitionRegistration } from "../services/notifications/catalog";
+import { preloadLayoutAnnouncements } from "../server/middleware/settings";
 import { readRailSnapshot } from "../services/rail-snapshot";
 import { get, loadCache as loadSettingsCache, set } from "../services/settings";
 import { createSettingsAPI, type SettingsAPI } from "../services/settings/api";
@@ -347,7 +348,10 @@ export const defineApp = <
     createStatusPreservingSsrHandler<PageOptions>(html, async (c) => {
       c.get("page").lang = getLocale(c);
       const user = c.get("user");
-      if (user) c.set("railPreferences", await readRailSnapshot(user));
+      await Promise.all([
+        preloadLayoutAnnouncements(c),
+        user ? readRailSnapshot(user).then((snapshot) => c.set("railPreferences", snapshot)) : undefined,
+      ]);
     }),
     createPageResponses(html),
   );

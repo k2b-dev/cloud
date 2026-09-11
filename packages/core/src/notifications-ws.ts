@@ -1,9 +1,5 @@
 import { CursorMismatchError, RetentionGapError } from "@k2b/sync";
-import {
-  NOTIFICATION_LIVE_WS_TYPE,
-  NotificationLiveClientMessageSchema,
-  type NotificationLiveServerMessage,
-} from "@k2b/cloud/contracts";
+import { NOTIFICATION_LIVE_WS_TYPE, NotificationLiveClientMessageSchema, type NotificationLiveServerMessage } from "@k2b/cloud/contracts";
 import { auth, getLocale } from "@k2b/cloud/server";
 import { logger, notifications } from "@k2b/cloud/services";
 import type { ServerWebSocket } from "bun";
@@ -74,7 +70,7 @@ const revoke = (ctx: WsContext, code = "login_required", message = ctx.messages.
 
 const resolveUserId = async (sessionToken: string | null): Promise<string | null> => {
   if (!sessionToken) return null;
-  return (await auth.session.authenticate(sessionToken))?.user.id ?? null;
+  return auth.session.authenticateUserId(sessionToken);
 };
 
 const startAccessRefresh = (ctx: WsContext, userId: string) => {
