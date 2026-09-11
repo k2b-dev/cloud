@@ -38,6 +38,13 @@ should use them only when a feature guide gives the exact import.
 Use the barrels above by default. Use a subpath when the specialized-entry
 table below links its feature guide.
 
+Core's app bar administration uses `railShortcuts` from
+`@k2b/cloud/services` and the `RailAdminSchema`, `RailAdminInputSchema`,
+`RailAccessSchema`, `RailAdminState`, and `RailAdminEntry` contracts from
+`@k2b/cloud/contracts`. These are platform-owned. Applications receive the
+resolved navigation through `Layout`; see
+[Global app bar shortcuts](/en/docs/frontend/layout-and-navigation#provide-global-app-bar-shortcuts).
+
 ## Define the application
 
 Import `defineApp()` from the package root:

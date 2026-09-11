@@ -23,6 +23,7 @@ import accountsEntitiesRoutes from "./accounts-entities";
 import adminAiUsageRoutes from "./admin-ai-usage";
 import adminAiProjectsRoutes from "./admin-ai-projects";
 import adminAiSkillsRoutes from "./admin-ai-skills";
+import adminRailRoutes from "./admin-rail";
 import adminCoreSettingsRoutes from "./admin-core-settings";
 import adminIdentityRoutes from "./admin-identity";
 import adminLifecycleRoutes from "./admin-lifecycle";
@@ -70,6 +71,7 @@ const buildCoreApi = (options: CoreApiOptions) => {
     .route("/admin/core/ai-skills", adminAiSkillsRoutes)
     .route("/admin/core/announcements", adminAnnouncementRoutes)
     .route("/admin/core/settings", adminCoreSettingsRoutes)
+    .route("/admin/core/rail", adminRailRoutes)
     .route("/admin/core/linux-identities", adminLinuxIdentityRoutes)
     .route("/admin/identity", adminIdentityRoutes)
     .route("/admin/sync", createSyncOpsProxyRoutes())

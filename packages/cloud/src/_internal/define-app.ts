@@ -49,7 +49,7 @@ import {
 import { normalizeInvocationRequestId } from "../services/identity/invocation-token";
 import { logger } from "../services/logging";
 import { startNotificationDefinitionRegistration } from "../services/notifications/catalog";
-import { railPreferences } from "../services/rail-preferences";
+import { readRailSnapshot } from "../services/rail-snapshot";
 import { get, loadCache as loadSettingsCache, set } from "../services/settings";
 import { createSettingsAPI, type SettingsAPI } from "../services/settings/api";
 import { registerSettings, toLegacySettingDefs } from "../services/settings/defaults";
@@ -347,7 +347,7 @@ export const defineApp = <
     createStatusPreservingSsrHandler<PageOptions>(html, async (c) => {
       c.get("page").lang = getLocale(c);
       const user = c.get("user");
-      if (user) c.set("railPreferences", await railPreferences.get(user.id));
+      if (user) c.set("railPreferences", await readRailSnapshot(user));
     }),
     createPageResponses(html),
   );

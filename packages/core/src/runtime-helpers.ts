@@ -25,6 +25,7 @@ import { migrate as migrateAudit } from "./migrate/core/audit";
 import { migrate as migrateAuth } from "./migrate/core/auth";
 import { migrate as migrateLogging } from "./migrate/core/logging";
 import { migrate as migrateNotifications } from "./migrate/core/notifications";
+import { migrate as migrateRailShortcuts } from "./migrate/core/rail-shortcuts";
 import { migrate as migrateRailPreferences } from "./migrate/core/rail-preferences";
 import { migrate as migrateSettings } from "./migrate/core/settings";
 import { migrate as migrateWorkflows } from "./migrate/core/workflows";
@@ -40,6 +41,7 @@ export const runCoreSetup = async (): Promise<void> => {
   const steps = [
     { name: "auth", run: migrateAuth },
     { name: "rail-preferences", run: migrateRailPreferences },
+    { name: "rail-shortcuts", run: migrateRailShortcuts },
     { name: "app-approval", run: migrateAppApproval },
     { name: "audit", run: migrateAudit },
     { name: "announcements", run: migrateAnnouncements },

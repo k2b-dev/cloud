@@ -1,6 +1,6 @@
 import { ScrollArea, Tooltip, useLocale } from "@k2b/ui";
 import { createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
-import type { RailPreferences } from "../contracts/rail-preferences";
+import type { RailSnapshot } from "../contracts/rail-preferences";
 import { appAccentStyle } from "./app-appearance";
 import { RAIL_PREFERENCES_EVENT, readRailContext } from "./rail-context";
 import { projectRailNavigation, type RailApp, type RailLink, railLinkActive } from "./rail-navigation";
@@ -26,7 +26,7 @@ function RailIcon(props: { link: RailLink; currentUrl: string }) {
   );
 }
 
-export default function RailApps(props: { apps: RailApp[]; settings: RailPreferences; currentUrl: string }) {
+export default function RailApps(props: { apps: RailApp[]; settings: RailSnapshot; currentUrl: string }) {
   const locale = useLocale();
   const [settings, setSettings] = createSignal(props.settings);
   const [currentUrl, setCurrentUrl] = createSignal(props.currentUrl);

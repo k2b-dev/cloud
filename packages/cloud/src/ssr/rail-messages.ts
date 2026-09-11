@@ -4,6 +4,7 @@ export const railMessages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
+      managed: "Provided by the administration",
       customize: "Customize app bar",
       apps: "Visible apps",
       shortcuts: "App bar shortcuts",
@@ -33,6 +34,7 @@ export const railMessages = i18n.define({
       invalid: "Check shortcut titles, links and icons. Each app can be pinned once; settings must fit within 16 KiB.",
     },
     de: {
+      managed: "Von der Administration bereitgestellt",
       customize: "App-Leiste anpassen",
       apps: "Sichtbare Apps",
       shortcuts: "Shortcuts der App-Leiste",

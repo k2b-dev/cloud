@@ -1,4 +1,4 @@
-import type { RailPreferences } from "../contracts/rail-preferences";
+import type { RailSnapshot } from "../contracts/rail-preferences";
 import type { CloudTheme } from "../shared/theme";
 import AppLaunchpad, { type AppLaunchpadApp } from "./AppLaunchpad.island";
 import type { GlobalSearchHelpApp } from "./GlobalSearchHelpDialog";
@@ -17,7 +17,7 @@ type LayoutRailProps = {
   legalLinks: Array<{ label: string; href: string; icon?: string }>;
   openAppsLabel: string;
   apps: RailApp[];
-  railSettings: RailPreferences;
+  railSettings: RailSnapshot;
   currentUrl: string;
   profileAvatarSrc?: string;
   profileName: string;

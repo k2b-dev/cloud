@@ -5,6 +5,7 @@ import { resolveProviderProfile } from "../accounts/base-user";
 import { managedGroupIdsSubquery, managedGroupsNamesSubquery } from "../accounts/group-sql";
 import { buildIpaUserData, emptyIpaUserData, userIpaDataColumns, userIpaDataJoin } from "../accounts/ipa-data";
 import { resolveAccountExpires } from "../accounts/model";
+import { setRailCacheVersion } from "../rail-snapshot";
 import { toPgTextArray } from "../postgres";
 
 type DbRow = Record<string, unknown>;
@@ -69,13 +70,18 @@ export const buildProjectedUser = (row: DbRow): User => {
     manages,
     managesGroupIds,
   };
-  return provider === "ipa"
-    ? { ...common, provider: "ipa", ipa: buildIpaUserData(row) ?? emptyIpaUserData() }
-    : { ...common, provider: "local", ipa: null };
+  const user: User =
+    provider === "ipa"
+      ? { ...common, provider: "ipa", ipa: buildIpaUserData(row) ?? emptyIpaUserData() }
+      : { ...common, provider: "local", ipa: null };
+  setRailCacheVersion(user, row.rail_cache_version);
+  return user;
 };
 
 export const userProjectionSql = (groupsAdmin: string[]) => sql`
   u.*,
+  (SELECT cache_version::text FROM auth.rail_state WHERE singleton) || ':' ||
+    COALESCE((SELECT cache_version::text FROM auth.rail_preferences WHERE user_id = u.id), 'default') AS rail_cache_version,
   ${userIpaDataColumns},
   CASE
     WHEN u.provider = 'local' THEN u.admin

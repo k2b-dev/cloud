@@ -19,7 +19,7 @@ import { coreClient } from "../clients/core";
 import { type RailPreferences, RailPreferencesSchema, type RailShortcut } from "../contracts/rail-preferences";
 import { publishRailPreferences, readRailContext } from "./rail-context";
 import { railMessages } from "./rail-messages";
-import { isRailAppVisible, type RailApp, sortRailApps } from "./rail-navigation";
+import { isRailAppVisible, projectRailNavigation, type RailApp, sortRailApps } from "./rail-navigation";
 
 export const readRailPreferences = async (signal: AbortSignal, message: string) => {
   const response = await coreClient.me.rail.$get({}, { init: { signal } });
@@ -35,7 +35,10 @@ function RailEditorForm(props: RailDialogProps & { initial: RailPreferences }) {
   const [settings, setSettings] = createSignal<RailPreferences>(structuredClone(props.initial));
   const valid = createMemo(() => RailPreferencesSchema.safeParse(settings()).success);
   const dirty = () => JSON.stringify(settings()) !== JSON.stringify(props.initial);
-  const pinned = () => new Set(settings().shortcuts.flatMap((entry) => (entry.kind === "app" ? [entry.appId] : [])));
+  const managedShortcuts = readRailContext()?.settings.managedShortcuts ?? [];
+  const managedLinks = () => projectRailNavigation(props.apps, { ...settings(), shortcuts: [], managedShortcuts }, locale()).shortcuts;
+  const pinned = () =>
+    new Set([...managedShortcuts, ...settings().shortcuts].flatMap((entry) => (entry.kind === "app" ? [entry.appId] : [])));
   const appOptions = () => props.apps.map((app) => ({ id: app.id, label: app.label, icon: app.iconClass }));
   const nextApp = () => props.apps.find((app) => !pinned().has(app.id));
   const updateShortcut = (index: number, next: RailShortcut) =>
@@ -77,6 +80,18 @@ function RailEditorForm(props: RailDialogProps & { initial: RailPreferences }) {
       />
       <PanelDialog.Body>
         <fieldset disabled={save.loading()} class="flex min-h-0 flex-col gap-4">
+          <Show when={managedLinks().length > 0}>
+            <PanelDialog.Section title={t().managed} icon="ti ti-building">
+              <For each={managedLinks()}>
+                {(link) => (
+                  <div class="flex items-center gap-2 text-sm">
+                    <i class={link.iconClass} aria-hidden="true" />
+                    <span>{link.label}</span>
+                  </div>
+                )}
+              </For>
+            </PanelDialog.Section>
+          </Show>
           <PanelDialog.Section title={t().apps} icon="ti ti-apps">
             <div
               style={{ display: "grid", "grid-template-columns": "repeat(auto-fit, minmax(min(100%, 13rem), 1fr))", gap: "0.75rem 1.5rem" }}

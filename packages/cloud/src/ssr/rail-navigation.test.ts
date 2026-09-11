@@ -84,3 +84,27 @@ describe("personal app rail", () => {
 test("app IDs matching Object prototype names still follow their declared defaults", () => {
   expect(projectRailNavigation([app("constructor", "Constructor", false)], defaultRailPreferences(), "en").apps).toEqual([]);
 });
+
+test("managed shortcuts lead personal pins without deleting them, including after a personal reset", () => {
+  const managedShortcuts = [{ id: "global-mail", kind: "app" as const, appId: "mail" }];
+  const settings = {
+    ...defaultRailPreferences(),
+    visibility: { mail: false },
+    managedShortcuts,
+    shortcuts: [
+      { id: "personal-mail", kind: "app" as const, appId: "mail" },
+      { id: "deep", kind: "link" as const, title: "Inbox", href: "/app/mail/inbox", icon: "ti ti-link" },
+    ],
+  };
+  const catalog = [{ id: "mail", label: "Mail", href: "/app/mail", match: "/app/mail", iconClass: "ti ti-mail", defaultVisible: true }];
+  expect(projectRailNavigation(catalog, settings, "en").shortcuts.map((link) => link.id)).toEqual(["global-mail", "deep"]);
+  expect(projectRailNavigation(catalog, { ...defaultRailPreferences(), managedShortcuts }, "en").shortcuts.map((link) => link.id)).toEqual([
+    "global-mail",
+  ]);
+  expect(projectRailNavigation([], settings, "en").shortcuts.map((link) => link.id)).toEqual(["deep"]);
+  expect(settings.shortcuts).toHaveLength(2);
+  expect(projectRailNavigation(catalog, { ...settings, managedShortcuts: [] }, "en").shortcuts.map((link) => link.id)).toEqual([
+    "personal-mail",
+    "deep",
+  ]);
+});

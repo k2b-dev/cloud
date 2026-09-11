@@ -51,3 +51,19 @@ export const RailPreferencesSchema = z
   });
 export type RailPreferences = z.infer<typeof RailPreferencesSchema>;
 export const defaultRailPreferences = (): RailPreferences => ({ revision: 0, visibility: {}, shortcuts: [] });
+
+/** Managed entries are separate from the writable personal API contract. */
+export type RailSnapshot = RailPreferences & { managedShortcuts?: RailShortcut[] };
+export const RailSnapshotSchema = z
+  .object({
+    revision: z.number(),
+    visibility: z.record(z.string(), z.boolean()),
+    shortcuts: z.array(RailShortcutSchema),
+    managedShortcuts: z.array(RailShortcutSchema).optional(),
+  })
+  .strict()
+  .superRefine(({ managedShortcuts, ...personal }, ctx) => {
+    if (!RailPreferencesSchema.safeParse(personal).success) ctx.addIssue({ code: "custom", message: "Invalid personal app bar settings" });
+    if (new TextEncoder().encode(JSON.stringify(managedShortcuts ?? [])).byteLength > RAIL_PREFERENCES_MAX_BYTES)
+      ctx.addIssue({ code: "custom", message: "Managed shortcuts exceed the 16 KiB page budget" });
+  });

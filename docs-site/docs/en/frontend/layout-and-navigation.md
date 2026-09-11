@@ -150,7 +150,7 @@ global controls reachable. On mobile, app bar shortcuts remain available in
 the app launcher.
 
 Core stores these preferences per user; the platform loads them before SSR
-without a process-wide preference cache. Applications do not need to fetch or
+through a shared Valkey cache. Applications do not need to fetch or
 persist navigation settings themselves. Apply the Core migration before
 starting applications built against this layout. Unavailable apps are omitted without
 removing their saved preferences. Showing or pinning an app does not grant
@@ -163,6 +163,72 @@ Writes must supply the revision read previously; a stale revision returns
 serialized page budget; links accept absolute paths and HTTP(S) URLs without
 embedded credentials. App shortcuts resolve metadata from the current,
 authorized registry.
+
+## Provide global app bar shortcuts
+
+Administrators open **Administration → App bar** (`/admin/rail`) to create,
+edit, reorder, or remove global shortcuts. Each shortcut points to an available
+app or a link with a title and icon.
+
+The full-width table lists shortcuts in their app bar order. New shortcuts
+are visible to **All signed-in users** by default. Turn on **Restrict audience**
+to show the permission editor and select individual users or groups. Turning
+the restriction off makes the shortcut visible to all signed-in users; draft
+selections are retained if you turn it back on before closing the dialog.
+Nested group membership is respected. An enabled restriction with no selected
+audience makes the shortcut visible to nobody. Existing restrictions are preserved. Audience changes and shortcut edits
+are saved together; closing the dialog discards unsaved changes after
+confirmation. Concurrent changes return a conflict instead of overwriting
+another administrator's configuration; reload the page before trying again.
+
+Global shortcuts appear before personal shortcuts in the desktop app bar and
+the mobile launcher. Users see them under **Provided by the administration**
+in their personal editor and cannot change or remove them. Resetting personal
+settings preserves global shortcuts. An app pinned globally and personally is
+shown once, while the personal pin stays saved and reappears if the global pin
+is removed. Unavailable apps remain omitted. A shortcut's audience controls its
+visibility; the destination still enforces its own authorization.
+
+The Core admin API is `GET /api/admin/core/rail` and
+`PUT /api/admin/core/rail`. The snapshot contains `revision` and ordered
+`entries`. Each entry has a `shortcut` and an `access` list. Write each grant
+as `{ principal, permission }`; returned grants also carry IDs and display
+metadata. Only `read`
+grants to users, groups, or the authenticated audience are accepted. Writes
+replace the complete configuration and require its current revision. The
+personal `/api/me/rail` API remains separate and accepts only personal settings.
+
+Apply the Core `rail-shortcuts` migration before restarting applications with
+this platform version. The migration adds the shared shortcut tables and
+transactional cache versions. The existing identity query reads the current
+global and personal versions together with the user. A warm per-user Valkey
+snapshot therefore avoids additional rail database round trips, including the
+personal preference read. Changes to global shortcuts, grants, and group
+membership invalidate old generations transactionally. Personal changes
+invalidate that user's snapshot. A late cache refill cannot overwrite a newer
+generation. Unused cache entries expire after five minutes; a Valkey failure
+falls back to Postgres. This cache does not replace the normal identity checks.
+
+The admin page explains this behavior and offers **Clear cache for all users**.
+`DELETE /api/admin/core/rail/cache` requires an administrator at both the route
+and service boundary. It changes the shared cache generation with one database
+update, without enumerating users or Redis keys. It leaves the configuration
+revision unchanged, so open editors can still save. Subsequent requests rebuild
+their snapshots; invalidated entries expire within five minutes.
+
+Keys use `appglobalcache:user:<userId>:rail:v1:<globalVersion>:<personalVersion>`.
+The common `appglobalcache:user:*` prefix reserves a namespace for per-user
+application caches; `rail` identifies the current payload. Other payloads can
+be added separately when needed. To inspect keys, operators can use
+`redis-cli --scan --pattern 'appglobalcache:user:*'`. Prefer the admin action for
+invalidation: a concurrent request cannot refill the active generation with
+old data. Prefix deletion alone does not provide that guarantee.
+
+Changes take effect on the next server-rendered navigation or reload. Already
+open pages are not pushed administrative changes. Saving personal settings
+still updates the current page immediately and preserves its managed entries.
+The personal snapshot and global configuration each have a 16 KiB budget;
+managed shortcuts add at most 16 KiB to the page's personal rail snapshot.
 
 ## Render an admin page
 

@@ -2,10 +2,10 @@ import type { HtmlFn, RenderFn } from "@k2b/ssr";
 import { createSSRHandler } from "@k2b/ssr/hono";
 import type { Context, Env, MiddlewareHandler, TypedResponse } from "hono";
 import type { StatusCode } from "hono/utils/http-status";
-import type { RailPreferences } from "../contracts/rail-preferences";
+import type { RailSnapshot } from "../contracts/rail-preferences";
 import type { User } from "../contracts/shared";
 
-type PageEnv<T extends object> = { Variables: { page: Partial<T>; user?: User; railPreferences?: RailPreferences } };
+type PageEnv<T extends object> = { Variables: { page: Partial<T>; user?: User; railPreferences?: RailSnapshot } };
 type SsrHandlerResult = RenderFn | Response | TypedResponse;
 type SsrHandler<E extends Env, T extends object> = (context: Context<E & PageEnv<T>>) => SsrHandlerResult | Promise<SsrHandlerResult>;
 

@@ -1,4 +1,4 @@
-import type { RailPreferences } from "../contracts/rail-preferences";
+import type { RailPreferences, RailSnapshot } from "../contracts/rail-preferences";
 
 export type RailApp = {
   id: string;
@@ -21,11 +21,11 @@ export const sortRailApps = (apps: readonly RailApp[], locale: string): RailApp[
 };
 
 /** Input is the authorized navigation catalog, never the unfiltered registry. */
-export const projectRailNavigation = (apps: readonly RailApp[], settings: RailPreferences, locale: string) => {
+export const projectRailNavigation = (apps: readonly RailApp[], settings: RailSnapshot, locale: string) => {
   const catalog = new Map(apps.map((app) => [app.id, app]));
   const pinned = new Set<string>();
   const shortcuts: RailLink[] = [];
-  for (const shortcut of settings.shortcuts) {
+  for (const shortcut of [...(settings.managedShortcuts ?? []), ...settings.shortcuts]) {
     if (shortcut.kind === "app") {
       const app = catalog.get(shortcut.appId);
       if (!app || pinned.has(app.id)) continue;

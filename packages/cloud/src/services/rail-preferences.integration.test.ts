@@ -16,11 +16,11 @@ suite("Core rail preferences persistence", () => {
       throw new Error("Dedicated local cloud_rail_test database required");
     db = new SQL(url!);
     await db`CREATE SCHEMA IF NOT EXISTS auth`.simple();
-    await db`CREATE TABLE IF NOT EXISTS auth.users (id UUID PRIMARY KEY)`.simple();
+    await db`CREATE TABLE IF NOT EXISTS auth.users (id UUID PRIMARY KEY, uid TEXT NOT NULL, provider TEXT NOT NULL, profile TEXT NOT NULL)`.simple();
     const { migrate } = await import("../../../core/src/migrate/core/rail-preferences");
     await migrate(db);
     await migrate(db);
-    await db`INSERT INTO auth.users(id) VALUES (${first}::uuid), (${second}::uuid)`;
+    await db`INSERT INTO auth.users(id, uid, provider, profile) VALUES (${first}::uuid, ${first}, 'local', 'user'), (${second}::uuid, ${second}, 'local', 'user')`;
     service = createRailPreferencesService(db);
   });
   afterAll(async () => {

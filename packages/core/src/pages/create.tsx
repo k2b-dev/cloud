@@ -8,6 +8,7 @@ import { Hono } from "hono";
 import cliInstaller from "../../../cloud-cli/scripts/install.sh" with { type: "text" };
 import browserNotificationServiceWorker from "../browser-notifications/service-worker.js" with { type: "text" };
 import announcementsAdminPage from "./admin/announcements/page";
+import railAdminPage from "./admin/rail/page";
 import adminPage from "./admin/page";
 import settingsPage from "./admin/settings/page";
 import pairDevicePage from "./app-approval/pair.page";
@@ -77,6 +78,7 @@ export const createPagesRouter = (options?: { brandingPublicDir?: string }): Hon
     .get("/me/developer", auth.requireRole("authenticated", ssr.access), auth.requireUser(ssr.access), ...developerPage)
     // Admin pages (admin only)
     .get("/admin", auth.requireRole("admin", ssr.access), ...adminPage)
+    .get("/admin/rail", auth.requireRole("admin", ssr.access), ...railAdminPage)
     .get("/admin/announcements", auth.requireRole("admin", ssr.access), ...announcementsAdminPage)
     .get("/admin/app-credentials", auth.requireRole("admin", ssr.access), ...appCredentialsPage)
     .get("/admin/settings", auth.requireRole("admin", ssr.access), ...settingsPage)

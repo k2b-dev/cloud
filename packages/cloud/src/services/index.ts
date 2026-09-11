@@ -185,3 +185,6 @@ export { latestTopicCursor } from "./topic-cursor";
 export { readAccountCategoryPolicy, isAccountCategoryAllowed } from "./account-category-policy";
 export { appApproval, type AppDeviceEnrollmentNotice } from "./app-approval";
 export { legalConsent } from "./legal-consent";
+
+/** Core-owned app bar administration; service methods enforce administrator access. */
+export { railShortcuts } from "./rail-shortcuts";
