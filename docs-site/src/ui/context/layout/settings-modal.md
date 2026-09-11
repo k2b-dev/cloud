@@ -126,6 +126,104 @@ settings forms. `readSettingsError(response, fallback)` reads the shared
 `message` and per-field `errors` response shape. These helpers do not perform a
 request or select a persistence backend.
 
+## API reference
+
+```ts
+type SettingsModalTabTone = "default" | "danger";
+
+type SettingsModalProps = {
+  title: string; subtitle?: string; icon?: string; defaultTab?: string; activeTab?: string;
+  onTabChange?: (id: string) => void; onClose?: () => void; closeLabel?: string; class?: string;
+  children: JSX.Element;
+};
+
+type SettingsModalTabProps = {
+  id: string; title: string; description?: string; icon?: string; tone?: SettingsModalTabTone;
+  children: JSX.Element;
+};
+
+type SettingsModalGroupProps = {
+  title: string; children: JSX.Element;
+};
+
+type SettingsModalFooterProps = {
+  children: JSX.Element;
+};
+
+```
+
+### Settings content
+
+```ts
+type SettingsPageProps = {
+  title: JSX.Element; subtitle?: JSX.Element; icon?: string; actions?: JSX.Element; children: JSX.Element;
+  footer?: JSX.Element; scrollPreserveKey?: string; class?: string; style?: JSX.CSSProperties | string;
+};
+
+type SettingsSectionProps = {
+  title: JSX.Element; subtitle?: JSX.Element; icon?: string; actions?: JSX.Element; children: JSX.Element;
+  class?: string;
+};
+
+type SettingsGroupProps = {
+  title: JSX.Element; description?: JSX.Element; children: JSX.Element; class?: string;
+};
+
+type SettingsGroupActionProps = {
+  children: JSX.Element;
+};
+
+type SettingsFieldProps = {
+  label: string; description: string; error: MaybeAccessor<string | undefined>;
+  changed?: MaybeAccessor<boolean>;
+  children: JSX.Element | ((control: SettingsFieldControlProps) => JSX.Element); class?: string;
+};
+
+type SettingsFieldControlProps = {
+  describedBy: () => string;
+};
+
+type SettingsSaveBarProps = {
+  changeCount: MaybeAccessor<number>; loading: MaybeAccessor<boolean>; saveDisabled?: MaybeAccessor<boolean>;
+  onDiscard: () => void; onSave: () => void; saveLabel?: string; saveVariant?: ButtonVariant; class?: string;
+};
+
+type SettingsPanelFooterProps = SettingsSaveBarProps;
+
+```
+
+### Collections
+
+```ts
+type SettingsCollectionProps = {
+  title: JSX.Element; description?: JSX.Element; empty?: JSX.Element; children?: JSX.Element; class?: string;
+};
+
+type SettingsCollectionActionProps = {
+  children: JSX.Element;
+};
+
+type SettingsCollectionItemProps = {
+  title: JSX.Element; description?: JSX.Element; icon?: JSX.Element; children?: JSX.Element;
+};
+
+type SettingsCollectionItemStatusProps = {
+  children: JSX.Element;
+};
+
+type SettingsCollectionItemActionsProps = {
+  children: JSX.Element;
+};
+
+type SettingsCollectionItemReorderProps = {
+  label: string; index: number; count: number; disabled?: boolean; onMove: (direction: -1 | 1) => void;
+};
+```
+
+`MaybeAccessor<T>` means `T | (() => T)`; use accessors where the types require them. Compound slots correspond to their full prop names, e.g. `SettingsCollection.Item.Reorder`. `DropdownItem` is defined under [menus](/en/ui/actions/menus#api-reference). A SettingsField child must give the actual input an accessible name and forward `describedBy()` to associate its description/error. `SettingsModal.subtitle` and `icon` are compatibility props; use tab descriptions/icons for visible context.
+
+`sameSettingValue(left: unknown, right: unknown): boolean` compares JSON serialization, so use it for JSON-compatible setting values. `readSettingsError(response: Response, fallback: string)` resolves to `{ message: string; fields: Record<string, string> }`, reading `message` and `errors` from response JSON; malformed JSON uses the fallback and empty fields.
+
 ## Accessibility
 
 The category rail is a tab list. Group labels are presentational and do not add
@@ -147,62 +245,46 @@ callbacks, and saving require hydrated Solid code.
 
 ## Example
 
-```tsx
-const [active, setActive] = createSignal("general");
-const [endpoint, setEndpoint] = createSignal("https://example.test");
-const [initialEndpoint, setInitialEndpoint] = createSignal(endpoint());
-const [loading, setLoading] = createSignal(false);
-const changed = () => !sameSettingValue(endpoint(), initialEndpoint());
-const save = async () => {
-  setLoading(true);
-  await saveEndpoint(endpoint());
-  setInitialEndpoint(endpoint());
-  setLoading(false);
-};
+```tsx typecheck
+import { SettingsField, SettingsGroup, SettingsModal, SettingsSaveBar, TextInput } from "@k2b/ui";
+import { createSignal } from "solid-js";
 
-<SettingsModal
-  title="Application settings"
-  activeTab={active()}
-  onTabChange={setActive}
->
-  <SettingsModal.Group title="Workspace">
-    <SettingsModal.Tab id="general" title="General" icon="ti ti-settings">
-      <SettingsGroup title="Connection" description="Public service settings.">
-        <SettingsField
-          label="Endpoint"
-          description="Public service URL"
-          error={() => errors().endpoint}
-          changed={changed}
-        >
-          <TextInput value={endpoint()} onValueChange={setEndpoint} />
-        </SettingsField>
-      </SettingsGroup>
-
-      <SettingsCollection title="Webhooks" empty="No webhooks yet.">
-        <SettingsCollection.Action>
-          <Button size="sm">Add webhook</Button>
-        </SettingsCollection.Action>
-      </SettingsCollection>
-
-      <SettingsModal.Footer>
-        <SettingsPanelFooter
-          changeCount={() => changed() ? 1 : 0}
-          loading={loading}
-          onDiscard={() => setEndpoint(initialEndpoint())}
-          onSave={save}
-        />
-      </SettingsModal.Footer>
-    </SettingsModal.Tab>
-  </SettingsModal.Group>
-
-  <SettingsModal.Group title="Lifecycle">
-    <SettingsModal.Tab id="danger" title="Danger" icon="ti ti-alert-triangle" tone="danger">
-      <SettingsGroup title="Delete application" description="Permanently remove this application.">
-        <SettingsGroup.Action>
-          <Button variant="danger">Delete application</Button>
-        </SettingsGroup.Action>
-      </SettingsGroup>
-    </SettingsModal.Tab>
-  </SettingsModal.Group>
-</SettingsModal>
+export function ConnectionSettings(props: {
+  initialEndpoint: string;
+  save: (endpoint: string) => Promise<void>;
+}) {
+  const [saved, setSaved] = createSignal(props.initialEndpoint);
+  const [endpoint, setEndpoint] = createSignal(props.initialEndpoint);
+  const [error, setError] = createSignal<string>();
+  const [loading, setLoading] = createSignal(false);
+  const changed = () => endpoint() !== saved();
+  const save = async () => {
+    setLoading(true);
+    setError(undefined);
+    const value = endpoint();
+    try {
+      await props.save(value);
+      setSaved(value);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Save failed");
+    } finally {
+      setLoading(false);
+    }
+  };
+  return (
+    <SettingsModal title="Connection settings">
+      <SettingsModal.Tab id="connection" title="Connection">
+        <SettingsGroup title="Service">
+          <SettingsField label="Endpoint" description="Public service URL" error={error} changed={changed}>
+            {({ describedBy }) => <TextInput aria-label="Endpoint"
+              aria-describedby={describedBy()} value={endpoint()} onValueChange={setEndpoint}
+              disabled={loading()} />}
+          </SettingsField>
+        </SettingsGroup>
+        <SettingsSaveBar changeCount={() => changed() ? 1 : 0} loading={loading}
+          onSave={() => void save()} onDiscard={() => { setEndpoint(saved()); setError(undefined); }} />
+      </SettingsModal.Tab>
+    </SettingsModal>
+  );
+}
 ```

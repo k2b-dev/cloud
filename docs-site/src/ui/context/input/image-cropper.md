@@ -32,6 +32,47 @@ editing.
 
 Use `createCroppedImageDataUrl` or `createCroppedImageCanvas` to apply the emitted state. Output options support exact dimensions, maximum dimensions, format, and quality.
 
+## API reference
+
+```ts
+type ImageCropAspect = "free" | { width: number; height: number };
+
+type ImageCropRotation = 0 | 90 | 180 | 270;
+
+type ImageCropRect = { x: number; y: number; width: number; height: number };
+
+type ImageCropState = { crop: ImageCropRect; rotation: ImageCropRotation };
+
+type ImageCropSource = File | Blob | HTMLImageElement | HTMLCanvasElement | string;
+
+type ImageCropOutput = {
+  width?: number; height?: number; maxWidth?: number; maxHeight?: number; format?: "webp" | "jpeg" | "png";
+  quality?: number;
+};
+
+type ImageCropSize = { width: number; height: number };
+
+type ImageCropperProps = {
+  source: ImageCropSource; aspect?: ImageCropAspect; previewShape?: "rect" | "circle"; disabled?: boolean;
+  onValueChange?: (state: ImageCropState | null) => void; class?: string;
+};
+```
+
+Crop x/y/width/height are fractions of the **rotated** image, from 0 to 1, measured from its top-left corner. Output dimensions are pixels. Defaults: `aspect="free"`, `previewShape="rect"`, `disabled=false`. Source-load failure reports `null`; the host must handle a missing crop state.
+
+```ts
+declare function createCroppedImageCanvas(source: ImageCropSource, state: ImageCropState, output?: ImageCropOutput): Promise<HTMLCanvasElement>;
+declare function createCroppedImageDataUrl(source: ImageCropSource, state: ImageCropState, output?: ImageCropOutput): Promise<string>;
+declare function imageCropRectToPixels(rect: ImageCropRect, imageSize: ImageCropSize): ImageCropRect;
+declare function getInitialImageCropRect(imageSize: ImageCropSize, aspect?: ImageCropAspect): ImageCropRect;
+declare function clampImageCropRect(rect: ImageCropRect, imageSize: ImageCropSize, aspect?: ImageCropAspect): ImageCropRect;
+declare function resizeImageCropAroundCenter(rect: ImageCropRect, imageSize: ImageCropSize, aspect: ImageCropAspect, scale: number): ImageCropRect;
+declare function normalizeImageCropRotation(rotation: number): ImageCropRotation;
+declare function rotateImageCropRight(rotation: ImageCropRotation): ImageCropRotation;
+```
+
+Exports rotate, crop, then resize. Explicit `width`/`height` take precedence over maximum dimensions; `maxWidth`/`maxHeight` only downscale and preserve aspect ratio. With no output dimensions, the crop retains its pixel size. Data URLs default to WebP at quality `0.86`; quality is a 0–1 encoder value. Loading/encoding can reject, so await and handle failure. `normalizeImageCropRotation` rounds to a quarter turn; `rotateImageCropRight` adds 90°. A resize scale above 1 shrinks the crop around its center.
+
 ## Accessibility
 
 Rotation, moving, and resizing are keyboard operable. Keep a reset path and do

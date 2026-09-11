@@ -6,7 +6,7 @@
 
 Use `MarkdownView` for notes, descriptions, comments, help, and generated content whose source is Markdown.
 
-Use `MarkdownEditor` when the same surface also edits Markdown. Use the editor's dedicated component page for its full completion, save, and input API.
+Use `MarkdownEditor` when the same surface also edits Markdown. Use the [MarkdownEditor reference](/en/ui/input/markdown-editor) for its completion, save, and input API.
 
 ## Import
 

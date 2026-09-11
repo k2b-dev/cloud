@@ -1,19 +1,18 @@
 # CopyButton and remove buttons
 
-`CopyButton` copies known text with short success feedback. `RemoveBtn` and its `RemoveButton` convenience alias provide a compact remove action. The parent owns removal confirmation and the mutation.
+`CopyButton` copies known text with short success feedback. `RemoveButton` provides a compact remove action. The parent owns removal confirmation and the mutation.
 
 ## Use copy and remove actions
 
 Use `CopyButton` for identifiers, commands, links, or tokens already present in the UI.
 
-Use `RemoveBtn` or `RemoveButton` for a compact row or token action. Use a labeled danger button when removal is the page's primary destructive action.
+Use `RemoveButton` for a compact row or token action. Use a labeled danger button when removal is the page's primary destructive action.
 
 ## Import
 
 ```tsx
 import {
   CopyButton,
-  RemoveBtn,
   RemoveButton,
 } from "@k2b/ui";
 ```
@@ -22,17 +21,17 @@ import {
 
 Pass the exact clipboard value through `text`. With `label`, the component shows text and changes it to “Copied” for about two seconds. Without `label`, it renders an icon button with a tooltip and live announcement. The default action is neutral rather than primary.
 
-`class` replaces the default button classes when the surrounding surface needs a different action hierarchy.
+`class` adds classes. Use `variant` (default `"ghost"`) and `size` (default `"sm"`) to change the button treatment. `iconOnly` overrides the default derived from whether `label` is present; `copiedLabel` overrides the success text.
 
-`onCopied` runs after a successful write. `onCopyError` reports the browser error, but clipboard failures still reject the promise. Use the callback for visible recovery and keep the application's normal rejected-promise reporting in place. `resetAfter` changes the feedback duration.
+`onCopyError(error: unknown)` reports a failed write; the click handler absorbs the rejection and does not show success. `onCopied(): void` reports success. `resetAfter` sets the feedback duration in milliseconds (default `2000`). `text` or its `value` alias is required; `text` wins when both are set.
 
-## RemoveBtn
+## RemoveButton
 
 `ariaLabel` is required and should name the affected item. `onClick` runs immediately; the component does not ask for confirmation or perform a mutation.
 
 `loading` replaces the icon with a spinner and disables the button. `disabled` prevents the action without showing progress.
 
-`RemoveButton` accepts `label` as a convenience alias for `ariaLabel`; use `RemoveBtn` when the stricter required-label contract is preferable.
+Normal native button attributes pass through. `ariaLabel: string` is required; there is no `label` alias. `loading` defaults to false.
 
 ## Accessibility
 
@@ -42,23 +41,24 @@ If removal is destructive or difficult to reverse, confirm it before calling the
 
 ## Runtime
 
-Both components require hydrated client code. `CopyButton` uses the browser clipboard helper and transient state; `RemoveBtn` delegates to its click handler.
+Both components require hydrated client code. `CopyButton` uses the browser clipboard helper and transient state; `RemoveButton` delegates to its click handler.
 
 ## Example
 
-```tsx
-<CopyButton
-  text={inviteUrl}
-  label="Copy invite link"
-  onCopied={() => setStatus("Invite link copied")}
-  onCopyError={() => setStatus("Clipboard access failed")}
-/>
+```tsx typecheck
+import { CopyButton, RemoveButton } from "@k2b/ui";
+import { createSignal } from "solid-js";
 
-<RemoveBtn
-  ariaLabel="Remove API key"
-  loading={remove.loading()}
-  onClick={() => removeApiKey(key.id)}
-/>;
-
-<RemoveButton label="Remove attachment" onClick={removeAttachment} />;
+export function AttachmentActions(props: { url: string; remove: () => void }) {
+  const [status, setStatus] = createSignal("");
+  return (
+    <div>
+      <CopyButton text={props.url} label="Copy attachment link"
+        onCopied={() => setStatus("Link copied")}
+        onCopyError={() => setStatus("Clipboard access failed")} />
+      <RemoveButton ariaLabel="Remove attachment" onClick={props.remove} />
+      <span role="status">{status()}</span>
+    </div>
+  );
+}
 ```

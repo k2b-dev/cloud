@@ -89,6 +89,103 @@ devices the Dots trigger appears on row hover, keyboard focus, or while its menu
 is open; it remains visible on touch devices. Do not use it for static key-value
 data, comments, history, or form fields.
 
+## API reference
+
+```ts
+type DetailPanelProps = {
+  children: JSX.Element; class?: string;
+};
+
+type DetailPanelHeaderBaseProps = {
+  title: JSX.Element; subtitle?: JSX.Element; meta?: JSX.Element; actions?: JSX.Element;
+  primaryActions?: JSX.Element; class?: string;
+};
+
+type DetailPanelHeaderProps = DetailPanelHeaderBaseProps &
+  (
+    | {
+        leading?: JSX.Element;
+        icon?: never;
+      }
+    | {
+        leading?: never;
+        icon?: string;
+      }
+  );
+
+type DetailPanelBodyProps = {
+  children: JSX.Element; scrollPreserveKey?: string; class?: string;
+};
+
+type DetailPanelSummaryProps = {
+  title: JSX.Element; children: JSX.Element; actions?: JSX.Element; class?: string;
+};
+
+type DetailPanelGroupProps = {
+  children: JSX.Element; label?: string; class?: string;
+};
+
+type DetailPanelTone = "accent" | "neutral" | "success" | "warning" | "danger";
+
+type DetailPanelSectionBaseProps = {
+  title: JSX.Element; icon?: string; tone?: DetailPanelTone; description?: JSX.Element; meta?: JSX.Element;
+  class?: string;
+};
+
+type DetailPanelSectionProps = DetailPanelSectionBaseProps &
+  (
+    | {
+        children?: JSX.Element;
+        actions?: JSX.Element;
+        collapsible?: false;
+        defaultOpen?: never;
+        open?: never;
+        onOpenChange?: never;
+        disabled?: never;
+      }
+    | {
+        children: JSX.Element;
+        actions?: never;
+        collapsible: true;
+        defaultOpen?: boolean;
+        open?: boolean;
+        onOpenChange?: (open: boolean) => void;
+        disabled?: boolean;
+      }
+  );
+
+type DetailPanelActionBaseProps = {
+  title: JSX.Element; description?: JSX.Element; leading?: JSX.Element; trailing?: JSX.Element;
+  class?: string;
+};
+
+type DetailPanelActionMenuProps =
+  | {
+      menuItems?: never;
+      menuLabel?: never;
+    }
+  | {
+      menuItems: readonly DropdownItem[];
+      menuLabel: string;
+    };
+
+type DetailPanelActionLinkProps = DetailPanelActionBaseProps &
+  DetailPanelActionMenuProps &
+  Omit<ButtonLinkProps, "children" | "class" | "size" | "title" | "variant"> & {
+    href: string;
+  };
+
+type DetailPanelActionButtonProps = DetailPanelActionBaseProps &
+  DetailPanelActionMenuProps &
+  Omit<ButtonProps, "children" | "class" | "size" | "title" | "variant"> & {
+    href?: never;
+  };
+
+type DetailPanelActionProps = DetailPanelActionLinkProps | DetailPanelActionButtonProps;
+```
+
+The `*BaseProps` shapes explain shared fields of the public unions. `Header` chooses icon/title or custom leading content through its union; `Action` chooses a menu, link, or native button. `DropdownItem` uses the [menu contract](/en/ui/actions/menus#api-reference); native button/link attributes retain their usual types. Boolean features are off unless enabled; `Body` owns the scroll area by default.
+
 ## Accessibility
 
 The header title is an `h2`; normal section titles are labelled `h3` headings.

@@ -50,6 +50,40 @@ browser reports an autofilled value, `TextInput` extends one semantic surface
 across the input, leading icon, affixes, and clear or password control. Editing
 the value returns the field to its regular visual state.
 
+## API reference
+
+See [shared field props](/en/ui/getting-started#shared-field-props) for `FieldProps`, `ValueFieldProps<T>` and `MaybeAccessor<T>`.
+
+```ts
+type TextInputProps = Omit<
+  JSX.InputHTMLAttributes<HTMLInputElement>,
+  "onChange" | "onInput" | "prefix" | "suffix" | "type" | "value" | keyof ValueFieldProps<string>
+> &
+  ValueFieldProps<string> & {
+    minLength?: number;
+    maxLength?: number;
+    type?: "text" | "search" | "email" | "url" | "tel";
+    variant?: "default" | "ai";
+    icon?: string;
+    activeIcon?: string;
+    prefix?: JSX.Element;
+    suffix?: JSX.Element;
+    clearable?: boolean;
+    onClear?: () => void;
+    clearLabel?: string;
+    multiline?: boolean;
+    monospace?: boolean;
+    password?: boolean;
+    markdown?: boolean;
+    onSubmit?: () => void;
+    lines?: number;
+    abbreviations?: Record<string, string>;
+    completions?: readonly Completion[];
+  };
+```
+
+`type="text"`, `variant="default"` and `lines=3` are the defaults. Boolean modes are off unless enabled. `completions` and `abbreviations` apply to Markdown mode; see [completion data](/en/ui/input/autocomplete#api-reference). Native input attributes apply to the ordinary input; Markdown mode uses the editor contract.
+
 ## Accessibility
 
 Prefer a visible `label`. When the surrounding layout cannot render one, pass

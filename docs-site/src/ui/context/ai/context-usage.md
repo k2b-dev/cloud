@@ -26,6 +26,25 @@ trigger shows only the percentage; the popup exposes model, input, output,
 loop total, window, and remaining tokens. Number output is SSR-stable by
 default. Localized hosts can pass `formatNumber` explicitly.
 
+## API reference
+
+```ts
+type ChatUsage = {
+  input?: number; output?: number; total?: number;
+};
+
+type ChatContextUsageData = {
+  usage?: ChatUsage | null; loopUsage?: ChatUsage | null; contextWindow?: number; modelLabel?: string;
+};
+
+type ChatContextUsageProps = ChatContextUsageData & {
+  action?: ChatAction; onActionError?: (error: unknown) => void; formatNumber?: (value: number) => string;
+  class?: string;
+};
+```
+
+All usage counters are optional. A finite nonnegative `total` wins; otherwise available `input` and `output` are summed. Invalid counters are unavailable, not authoritative zeroes. `contextWindow` must be positive and finite. `loopUsage` supplies separate cumulative totals rather than replacing the latest request. `ChatAction` is defined on the [Chat page](/en/ui/ai/chat#api-reference).
+
 ## Accessibility
 
 The trigger has a complete accessible label. The popup repeats values as text and uses a labeled progress bar, so the state does not depend on color.

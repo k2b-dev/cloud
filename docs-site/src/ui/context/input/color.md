@@ -30,6 +30,8 @@ provides that state through `transparentValue` and updates it through
 
 Transparency is separate from the color value. Enabling it disables the native color picker but keeps the last color available for switching back.
 
+See [shared field props](/en/ui/getting-started#shared-field-props) for labels, errors, disabled state and value accessors.
+
 ## Accessibility
 
 Prefer the full labeled control when the color has form meaning. Compact mode uses the string label as its accessible name and otherwise falls back to **Choose color**.

@@ -27,6 +27,21 @@ Keep the option set short. Each option should describe the same dimension, such 
 
 Dividers appear only between adjacent inactive options. Selecting an option removes the dividers next to that option so its active surface remains visually continuous.
 
+## API reference
+
+```ts
+type SegmentOption<T extends string = string> = {
+  value: T; label: JSX.Element; icon?: string; disabled?: boolean;
+};
+
+type SegmentedControlProps<T extends string = string> = {
+  options: readonly SegmentOption<T>[]; value: T | (() => T); onValueChange: (value: T) => void;
+  disabled?: boolean; ariaLabel?: string; label?: string; size?: "sm" | "md"; class?: string;
+};
+```
+
+`size` defaults to `"md"`; `disabled` defaults to false. `ariaLabel` defaults to the localized Options label.
+
 ## Accessibility
 
 The component renders a horizontal radio group. Only the selected option is in the tab order.

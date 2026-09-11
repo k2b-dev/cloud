@@ -75,6 +75,44 @@ dismissal entirely.
 
 `dialogCore` owns the backdrop, focus handling, and Escape behavior. Do not create a second dialog frame around `PanelDialog`.
 
+## API reference
+
+```ts
+type PanelDialogSurface = "contained" | "floating";
+
+type PanelDialogProps = {
+  children: JSX.Element; surface?: PanelDialogSurface;
+};
+
+type PanelDialogHeaderProps = {
+  title: JSX.Element; subtitle?: JSX.Element; icon?: string; actions?: JSX.Element; close?: () => void;
+  closeDisabled?: boolean; closeLabel?: string;
+};
+
+type PanelDialogBodyProps = {
+  children: JSX.Element; scrollPreserveKey?: string;
+};
+
+type PanelDialogFooterProps = {
+  children: JSX.Element;
+};
+
+type PanelDialogSectionProps = {
+  title: JSX.Element; subtitle?: JSX.Element; icon?: string; actions?: JSX.Element; children: JSX.Element;
+};
+
+type PanelDialogTabOption<T extends string = string> = {
+  value: T; label: JSX.Element; icon?: string; disabled?: boolean;
+};
+
+type PanelDialogTabsProps<T extends string = string> = {
+  options: readonly PanelDialogTabOption<T>[]; value: T | (() => T); onValueChange: (value: T) => void;
+  ariaLabel?: string; label?: string;
+};
+```
+
+Types map to the correspondingly named compound members. `PanelDialog` supplies geometry, not modal state. For `dialogCore.open` and its cancellation options see [Prompts](/en/ui/feedback/prompts#api-reference). `Tabs` accepts a string value or accessor; the parent applies `onValueChange`.
+
 ## Accessibility
 
 Give the header and every section a clear title and icon. Header actions need their own accessible names.

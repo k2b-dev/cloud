@@ -85,6 +85,63 @@ emphasized.
 `disabled`, `onOpen`, `onClose`, an optional stable `id`, and an accessible
 `label`.
 
+## API reference
+
+```ts
+type DropdownActionBase = {
+  class?: string; disabled?: boolean; icon?: string; image?: string; label: string; description?: string;
+  variant?: "danger";
+};
+
+type DropdownAction =
+  | (DropdownActionBase & {
+      action: () => void;
+      href?: never;
+      external?: never;
+    })
+  | (DropdownActionBase & {
+      href: string;
+      external?: boolean;
+      action?: never;
+    })
+  | (DropdownActionBase & {
+      disabled: true;
+      action?: never;
+      href?: never;
+      external?: never;
+    });
+
+type DropdownChoice = DropdownActionBase & {
+  action: () => void; checked: boolean | (() => boolean); choice: "checkbox" | "radio";
+  closeOnSelect?: boolean; color?: string;
+};
+
+type DropdownSection = {
+  sectionLabel?: string; items: readonly (DropdownAction | DropdownChoice)[];
+};
+
+type DropdownItem = DropdownAction | DropdownChoice | DropdownSection;
+
+type DropdownPosition = "bottom-right" | "bottom-left" | "top-right" | "top-left" | "right-start";
+
+type DropdownProps = {
+  items: readonly DropdownItem[]; children: JSX.Element;
+  position?: DropdownPosition | (() => DropdownPosition); variant?: "default" | "touch"; width?: string;
+  class?: string; menuClass?: string; onClose?: () => void; open?: boolean;
+  onOpenChange?: (open: boolean) => void; disabled?: boolean; label?: string; align?: "start" | "end";
+};
+
+type ContextMenuProps = {
+  items: readonly DropdownItem[]; children: JSX.Element; class?: string | ((isOpen: boolean) => string);
+  tabIndex?: number; disabled?: boolean; onClose?: () => void; onOpen?: () => void; id?: string;
+  label?: string;
+};
+```
+
+`DropdownActionBase` names the shared shape here; import the public `DropdownAction`, `DropdownChoice`, `DropdownSection` and `DropdownItem` types. Action callbacks return `void`; asynchronous work and its errors stay with the host. `DropdownChoice.closeOnSelect` defaults to true; ordinary actions close on activation. A section contains actions/choices, not nested sections.
+
+`position` defaults to `"bottom-right"`; `align` (`"start" | "end"`) is an optional alignment override. `variant="default"`; `width` is a CSS length. Pair controlled `open` with `onOpenChange`, or omit both for internal state. `ContextMenu` has no controlled `open` prop. `DropdownItem` is also a low-level JSX export; normal consumers use the declarative `items` API above.
+
 ## Accessibility
 
 `Dropdown.Trigger` renders `aria-haspopup`, `aria-expanded`, and

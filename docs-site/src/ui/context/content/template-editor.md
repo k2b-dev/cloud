@@ -30,13 +30,7 @@ import {
 `TemplateEditor` is controlled through a direct `value` and
 `onValueChange`. `variables` supplies completion names and optional kinds:
 
-```ts
-type TemplateVariable = {
-  name: string;
-  kind?: "string" | "email" | "url" | "number" | "boolean" | "array" | "object";
-  description?: string;
-};
-```
+See the variable shape in the [API reference](#api-reference).
 
 Variables complete inside Liquid values and conditions. Array variables also complete as loops. HTML tag completions start with `<`.
 
@@ -55,6 +49,35 @@ output limits.
 The interactive example illustrates editing, not a complete template renderer.
 
 Use `fill` inside a stable pane or workspace. Use `lines` for a content-sized form.
+
+## API reference
+
+```ts
+type TemplateVariableKind = "string" | "email" | "url" | "number" | "boolean" | "array" | "object";
+
+type TemplateVariable = {
+  name: string; kind?: TemplateVariableKind; description?: string;
+};
+
+type TemplateEditorProps = Omit<AutocompleteEditorProps, "completions" | "highlight"> & {
+  variables: readonly TemplateVariable[];
+};
+
+type TemplateSampleDataProps = {
+  variables: readonly TemplateVariable[]; values: Readonly<Record<string, string>>;
+  onValueChange: (name: string, value: string) => void; class?: string;
+};
+
+type TemplatePreviewProps = {
+  html: string; title?: string; class?: string;
+};
+
+type TemplateEditorLayout = PanesLayout;
+```
+
+`AutocompleteEditorProps` is defined under [AutocompleteEditor](/en/ui/input/autocomplete#api-reference); its value/commit/submit, singleLine, fill, lines, restoreExpansionOnBackspace and textareaRef contracts apply. Completions/highlighting are owned by TemplateEditor. `TemplatePreview.title` defaults to `"Template preview"`.
+
+`createTemplateEditorPanesLayout(): TemplateEditorLayout` returns a [PanesLayout](/en/ui/layout/panes#api-reference) for the editor composition. Sample-data values remain strings even for numeric/boolean variable kinds; the application parses them for its renderer.
 
 ## Accessibility
 

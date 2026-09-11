@@ -53,6 +53,22 @@ starts in the compact `"grid"` view with `gridSize="sm"`. Pass
 `viewToggle={false}` to keep a fixed list, or set `defaultView="list"` when the
 switch should open in the detailed view.
 
+## API reference
+
+See [shared field props](/en/ui/getting-started#shared-field-props) for `FieldProps`, `ValueFieldProps<T>` and `MaybeAccessor<T>`.
+
+```ts
+type IconOption = SelectOption & { keywords?: readonly string[] };
+
+type IconInputProps = ValueFieldProps<string | null> & {
+  options?: readonly IconOption[]; placeholder?: string; clearable?: boolean; searchLimit?: number;
+  groups?: readonly SelectGroup[]; defaultGroup?: string; groupsAriaLabel?: string; allGroupLabel?: string;
+  viewToggle?: boolean; defaultView?: SelectView; gridSize?: SelectGridSize; name?: string;
+};
+```
+
+`SelectGroup`, `SelectView` and `SelectGridSize` are defined under [selection controls](/en/ui/input/select#api-reference).
+
 ## Accessibility
 
 Provide a visible `label`. Option labels name the icons; the glyph is

@@ -63,6 +63,35 @@ Do not add a second scroll container to the list. A surrounding `DetailPanel.Bod
 
 Applications still decide whether the composer is present, map domain records to items, and enforce create, edit, or delete permissions. `Discussion` never receives domain records or authorization rules.
 
+## API reference
+
+```ts
+type DiscussionProps = Omit<JSX.HTMLAttributes<HTMLElement>, "children" | "class"> & {
+  label: JSX.Element; children: JSX.Element; icon?: string | false; count?: number; actions?: JSX.Element;
+  as?: "h2" | "h3"; surface?: "default" | "bare"; class?: string;
+};
+
+type DiscussionComposerProps = Omit<JSX.FormHTMLAttributes<HTMLFormElement>, "children" | "class" | "onSubmit"> & {
+  label: string; onSubmit: (message: string) => boolean | void | Promise<boolean | void>;
+  initialValue?: string; placeholder?: string; submitLabel?: string; cancelLabel?: string;
+  onCancel?: () => void; lines?: number; class?: string;
+};
+
+type DiscussionListProps = {
+  children?: JSX.Element; loading?: boolean; loadingLabel?: string; error?: string | null;
+  onRetry?: () => void | Promise<void>; hasMore?: boolean; loadingMore?: boolean; loadMoreLabel?: string;
+  onLoadMore?: () => boolean | void | Promise<boolean | void>; class?: string;
+};
+
+type DiscussionItemProps = Omit<JSX.LiHTMLAttributes<HTMLLIElement>, "children" | "class"> & {
+  author: JSX.Element; children: JSX.Element; avatar?: JSX.Element; timestamp?: JSX.Element;
+  meta?: JSX.Element; replyContext?: JSX.Element; actions?: JSX.Element;
+  actionVisibility?: "always" | "progressive"; class?: string;
+};
+```
+
+These props map to `Discussion`, `.Composer`, `.List`, and `.Item`. JSX slots remain application content; asynchronous submit and pagination behavior is described above.
+
 ## Accessibility
 
 The root is a labelled `section`, the entries are an ordered list, and the composer is a native form. Loading and failures use status semantics, retry remains keyboard accessible, and automatic history loading has a manual fallback. Supply real `<time dateTime>` markup for timestamps and accessible names for every icon-only action. Progressive item actions remain discoverable through keyboard focus and are never hidden on touch devices.

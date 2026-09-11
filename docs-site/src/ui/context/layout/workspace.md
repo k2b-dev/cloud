@@ -40,6 +40,8 @@ Give every pane, detail, and drawer a stable purpose-based `id`. Do not use the 
 
 Set `resizable={false}` on the root to disable shared resizing. A region can override the root with its own `resizable` property.
 
+An open `MainPane` keeps its content mounted when layout state, mobile selection, or another pane changes. Closing a `MainPane` unmounts its content; reopening it creates a fresh instance.
+
 `Detail` and `BottomDrawer` remain mounted while closed. Their `open` property
 controls visibility, so local state and SSR DOM identity remain stable.
 
@@ -195,6 +197,189 @@ const [expanded, setExpanded] = createSignal<readonly string[]>(["mail"]);
   </AppWorkspace.NavTree.Item>
 </AppWorkspace.NavTree>
 ```
+
+## API reference
+
+```ts
+type AppWorkspaceProps = {
+  children: JSX.Element; class?: string; resizable?: boolean;
+  layoutState?: () => AppWorkspaceLayoutState | null | undefined;
+  onLayoutChange?: (state: AppWorkspaceLayoutState) => void; controller?: false;
+};
+
+type AppWorkspaceLayoutStateProviderProps = {
+  children: JSX.Element; state: AppWorkspaceLayoutState | null | undefined;
+};
+
+type AppWorkspaceContentProps = { children: JSX.Element; class?: string };
+
+type AppWorkspaceMainProps = {
+  children: JSX.Element; class?: string; mobilePane?: string; scroll?: boolean;
+  scrollPreserveKey?: string | false;
+  "aria-busy"?: boolean | "true" | "false";
+};
+
+type AppWorkspaceMainPaneProps = {
+  id: string; label: string; surface?: "default" | "navigation"; open?: boolean; resizable?: boolean;
+  resizeShadow?: boolean; defaultSize?: number; minSize?: number; maxSize?: number; class?: string;
+  scroll?: boolean; children: JSX.Element;
+};
+
+type AppWorkspaceDetailProps = {
+  children: JSX.Element; open: boolean; id: string; class?: string; width?: AppWorkspaceDetailWidth;
+  viewTransitionName?: string; resizable?: boolean; minWidth?: number; maxWidth?: number;
+};
+
+type AppWorkspaceBottomDrawerProps = {
+  children: JSX.Element; open: boolean; id: string; class?: string; height?: AppWorkspaceBottomDrawerHeight;
+  minHeight?: number; maxHeight?: number; viewTransitionName?: string; resizable?: boolean;
+};
+
+```
+
+### Sidebar
+
+```ts
+type AppWorkspaceSidebarProps = {
+  children: JSX.Element; class?: string; resizable?: boolean; resizeShadow?: boolean; collapsible?: boolean;
+  defaultSize?: number; minSize?: number; maxSize?: number;
+};
+
+type AppWorkspaceSidebarMobileTriggerProps = { label: string };
+
+type AppWorkspaceSidebarMobileProps = { children: JSX.Element };
+
+type AppWorkspaceSidebarMobileItemsProps = {
+  children: JSX.Element; scrollPreserveKey?: string | false;
+};
+
+type AppWorkspaceSidebarBodyProps = {
+  children: JSX.Element; class?: string; scrollPreserveKey?: string | false;
+  sidebarMode?: AppWorkspaceSidebarVisibility;
+};
+
+type AppWorkspaceSidebarSectionProps = AppWorkspaceSidebarBodyProps & {
+  title?: string; actions?: JSX.Element;
+};
+
+type AppWorkspaceSidebarItemProps = {
+  children: JSX.Element; href?: string; navigation?: "enhanced" | "document"; replace?: boolean;
+  scroll?: NavigationScrollMode; onNavigate?: (event: LinkNavigateEvent) => void | Promise<void>;
+  onClick?: (event: MouseEvent) => void; active?: boolean; activeClass?: string; disabled?: boolean;
+  icon?: string; meta?: JSX.Element; metaVisibility?: AppWorkspaceSidebarAccessoryVisibility;
+  actions?: JSX.Element; tone?: AppWorkspaceSidebarItemTone; title?: string; viewTransitionName?: string;
+  class?: string; depth?: number; actionIcon?: string; actionLabel?: string;
+  onActionClick?: (event: MouseEvent) => void;
+  data?: Record<string, string | number | boolean | null | undefined>;
+  sidebarMode?: AppWorkspaceSidebarVisibility;
+};
+
+type AppWorkspaceSidebarIconGridProps = AppWorkspaceSidebarBodyProps & { title?: string; columns?: 2 | 3 };
+
+type AppWorkspaceSidebarIconActionProps = {
+  href?: string | null; navigation?: "enhanced" | "document"; replace?: boolean;
+  scroll?: NavigationScrollMode; onNavigate?: (event: LinkNavigateEvent) => void | Promise<void>;
+  icon: string; label: string; active?: boolean; disabled?: boolean; tone?: AppWorkspaceSidebarIconActionTone;
+  viewTransitionName?: string; onClick?: (event: MouseEvent) => void;
+  sidebarMode?: AppWorkspaceSidebarVisibility;
+};
+
+type AppWorkspaceSidebarItemIconProps = { icon?: string; children?: JSX.Element };
+
+type AppWorkspaceSidebarItemLabelProps = { children: JSX.Element; marquee?: boolean };
+
+type AppWorkspaceSidebarItemMetaProps = {
+  children: JSX.Element; visibility?: AppWorkspaceSidebarAccessoryVisibility;
+};
+
+type AppWorkspaceSidebarItemActionProps = {
+  icon?: string; label: string; visibility?: AppWorkspaceSidebarAccessoryVisibility; href?: string;
+  navigation?: "enhanced" | "document"; onSelect?: (event: MouseEvent) => void; children?: JSX.Element;
+};
+
+type AppWorkspaceSidebarItemActionsProps = {
+  children: JSX.Element; visibility?: AppWorkspaceSidebarAccessoryVisibility;
+};
+
+```
+
+### Navigation tree
+
+```ts
+type AppWorkspaceNavTreeProps = {
+  children: JSX.Element; ariaLabel: string; selectedId?: string | null; expandedIds?: readonly string[];
+  defaultExpandedIds?: readonly string[]; onSelectedIdChange?: (id: string) => void;
+  onExpandedIdsChange?: (ids: readonly string[]) => void; indented?: boolean; class?: string;
+};
+
+type AppWorkspaceNavTreeItemProps = {
+  id: string; label: JSX.Element; children?: JSX.Element; href?: string; navigation?: "enhanced" | "document";
+  replace?: boolean; scroll?: NavigationScrollMode;
+  onNavigate?: (event: LinkNavigateEvent) => void | Promise<void>; onSelect?: (event: MouseEvent) => void;
+  disabled?: boolean; icon?: string; expandedIcon?: string; meta?: JSX.Element;
+  metaVisibility?: AppWorkspaceSidebarAccessoryVisibility; actions?: JSX.Element;
+  tone?: AppWorkspaceSidebarItemTone; title?: string; viewTransitionName?: string; class?: string;
+  onDragEnter?: JSX.EventHandlerUnion<HTMLDivElement, DragEvent>;
+  onDragOver?: JSX.EventHandlerUnion<HTMLDivElement, DragEvent>;
+  onDragLeave?: JSX.EventHandlerUnion<HTMLDivElement, DragEvent>;
+  onDrop?: JSX.EventHandlerUnion<HTMLDivElement, DragEvent>;
+};
+
+```
+
+### Size tokens and persisted state
+
+```ts
+type AppWorkspaceDetailWidth = "sm" | "md" | "lg" | "xl";
+
+type AppWorkspaceBottomDrawerHeight = "sm" | "md" | "lg";
+
+type AppWorkspaceSidebarVisibility = "always" | "expanded" | "collapsed";
+
+type AppWorkspaceSidebarAccessoryVisibility = "always" | "hover";
+
+type AppWorkspaceSidebarItemTone = "default" | "success" | "danger";
+
+type AppWorkspaceSidebarIconActionTone = "default" | "success" | "danger";
+
+type AppWorkspaceLayoutState = {
+  version: 2; sidebarWidth?: number; sidebarCollapsed?: boolean; paneWidths?: Record<string, number>;
+  detailWidths?: Record<string, number>; drawerHeights?: Record<string, number>;
+};
+
+type AppWorkspaceControllerOptions = {
+  root?: Document | HTMLElement; readState?: () => AppWorkspaceLayoutState | null | undefined;
+  writeState?: (state: AppWorkspaceLayoutState) => void;
+};
+```
+
+The prop names map to compound members (`AppWorkspaceMainPaneProps` → `AppWorkspace.MainPane`). `SidebarDesktop` accepts JSX children. `layoutState` is an accessor; the LayoutStateProvider `state` is a direct value. Widths/heights and numeric limits are CSS pixels. IDs identify independently persisted regions and must stay stable.
+
+| Region | Default | Minimum | Maximum |
+| --- | --- | --- | --- |
+| Sidebar | 208 | 176 | 360 |
+| MainPane | 320 | 240 | 640 |
+| Detail | 384 | 288 | 640 |
+| BottomDrawer | 240 | 160 | 560 |
+
+The main area reserves 320px width / 240px height; the available container may reduce maxima. Collapsed sidebar width is 64px; the collapse threshold is 128px. Detail widths `sm/md/lg/xl` are 288/384/480/544px (default md); Drawer heights `sm/md/lg` are 192/240/320px (default md). Restored geometry takes precedence. `resizable` defaults on; `collapsible` is opt-in. `Main.scroll` and `MainPane.scroll` default on.
+
+`LinkNavigateEvent` and `NavigationScrollMode` use [navigation conventions](/en/ui/getting-started#icons-tones-and-navigation). `navigation` defaults to `"document"`. Event callbacks do not load data automatically.
+
+```ts
+declare function normalizeAppWorkspaceLayoutState(value: unknown): AppWorkspaceLayoutState | null;
+declare function parseAppWorkspaceLayoutState(value: string | null | undefined): AppWorkspaceLayoutState | null;
+declare function serializeAppWorkspaceLayoutState(state: AppWorkspaceLayoutState): string;
+declare function appWorkspaceLayoutStyle(state: AppWorkspaceLayoutState | null | undefined): string | undefined;
+declare function installAppWorkspaceController(options?: AppWorkspaceControllerOptions): () => void;
+declare function safeAppWorkspacePanelId(panelId: string): string;
+declare function appWorkspacePanelVariable(kind: "pane" | "detail" | "drawer", panelId: string): string;
+declare function appWorkspaceResizeLimits(options: { kind: "sidebar" | "pane" | "detail" | "drawer"; workspaceSize: number; reservedSize: number; min?: number; max?: number; sidebarCollapsible?: boolean }): { min: number; max: number };
+declare function shouldCollapseAppWorkspaceSidebar(width: number, collapsible: boolean): boolean;
+declare function resolveAppWorkspaceSidebarWidth(width: number, maxWidth: number, collapsible: boolean): { width: number; collapsed: boolean };
+```
+
+Parse/serialize use a URI-encoded JSON string; normalize accepts a decoded object. The installer returns cleanup. Most consumers use the automatic controller and only persist `onLayoutChange` results.
 
 ## Accessibility
 

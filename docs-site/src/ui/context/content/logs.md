@@ -12,6 +12,17 @@ Use the table for compact operational evidence. Fetching, filtering, pagination,
 import { LogEntriesTable, type LogTableEntry } from "@k2b/ui";
 ```
 
+## API reference
+
+```ts
+type LogTableEntry = {
+  id: number | string; level: string; source: string; message: string;
+  metadata: Record<string, unknown> | null; createdAt: string;
+};
+```
+
+`LogEntriesTable` takes `entries: readonly LogTableEntry[]` and optional `emptyMessage: string`. Every entry field shown above is required; use `metadata: null` when absent. Known levels are `debug`, `info`, `warn`, `error`; other strings remain displayable.
+
 ## Accessibility
 
 Levels combine text, icon, and color. Messages should remain understandable without opening metadata.

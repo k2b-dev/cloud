@@ -42,6 +42,38 @@ The component keeps the raw text while focused, so intermediate input is not los
 
 `prefix` and `suffix` display short units inside the field. `clearable` adds an explicit empty-state action.
 
+## API reference
+
+See [shared field props](/en/ui/getting-started#shared-field-props) for `FieldProps`, `ValueFieldProps<T>` and `MaybeAccessor<T>`.
+
+```ts
+type NumberInputProps = Omit<
+  JSX.InputHTMLAttributes<HTMLInputElement>,
+  "max" | "min" | "onChange" | "onInput" | "prefix" | "step" | "type" | "value" | keyof ValueFieldProps<number | null>
+> &
+  ValueFieldProps<number | null> & {
+    max?: number;
+    min?: number;
+    step?: number;
+    decimalPlaces?: number;
+    allowNegative?: boolean;
+    clearable?: boolean;
+    onClear?: () => void;
+    clearLabel?: string;
+    increaseLabel?: string;
+    decreaseLabel?: string;
+    locale?: string;
+    showSteppers?: boolean;
+    disableSteppers?: boolean;
+    icon?: string;
+    activeIcon?: string;
+    prefix?: JSX.Element;
+    suffix?: JSX.Element;
+  };
+```
+
+`onClear` overrides the built-in reset to `null`; the host must then report its own value/commit update. `icon` and `activeIcon` replace the idle and focused icons.
+
 ## Accessibility
 
 Prefer a visible `label`. Without one, the placeholder becomes the accessible name, with **Enter number** as the final fallback.

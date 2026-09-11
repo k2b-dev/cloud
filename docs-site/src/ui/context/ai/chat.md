@@ -58,6 +58,139 @@ Pass `timeLabel` for visible localized timestamps and `createdAt` for the
 machine-readable `dateTime` value. `createdAt` alone intentionally renders no
 runtime-locale text, which keeps SSR and hydration stable.
 
+## API reference
+
+```ts
+type ChatRole = "user" | "assistant" | "system" | "tool";
+
+type ChatMessageStatus = "pending" | "streaming" | "complete" | "error";
+
+type ChatActivityTone = "neutral" | "ai" | "success" | "danger";
+
+type ChatActionBase = {
+  id: string; label: string; icon?: string; variant?: "danger"; disabled?: boolean; pressed?: boolean;
+  pressedTone?: "success" | "danger";
+};
+
+type ChatAction = ChatActionBase &
+  ({ onSelect: () => void | Promise<void>; copyText?: never } | { copyText: string; onSelect?: never });
+
+type ChatAttachment = {
+  id: string; name: string; size?: number; kind?: "file" | "image" | "resource"; icon?: string;
+  previewUrl?: string; alt?: string; href?: string; data?: unknown; action?: ChatAction;
+};
+
+type ChatModelOption = {
+  id: string; label: string; description?: string; image?: string; icon?: string;
+  capabilities?: readonly string[];
+};
+
+type ChatComposerState = "idle" | "submitting" | "running" | "stopping";
+
+type ChatSubmitIntent = "send" | "steer" | "queue";
+
+type ChatSubmitInput = {
+  intent: ChatSubmitIntent; text: string; attachments: readonly ChatAttachment[];
+};
+
+```
+
+### Commands and file selection
+
+```ts
+type ChatCommandContext = {
+  setValue: (value: string) => void; submit: () => void; focus: () => void;
+};
+
+type ChatCommand = {
+  name: string; description: string; icon?: string;
+  action: (context: ChatCommandContext) => void | Promise<void>;
+};
+
+type ChatFileSelection = {
+  onSelect: (files: readonly File[]) => void | Promise<void>; onError?: (error: unknown) => void;
+  accept?: string; multiple?: boolean; disabled?: boolean; label?: string;
+};
+
+type ChatPasteHandler = (event: ClipboardEvent & { currentTarget: HTMLTextAreaElement; target: Element }) => void;
+
+```
+
+### Root and timeline
+
+```ts
+type ChatRootProps = {
+  children: JSX.Element; class?: string; label?: string;
+};
+
+type ChatMessageItem = {
+  kind: "message"; id: string; role: ChatRole; content?: JSX.Element; label?: string;
+  createdAt?: string | Date; timeLabel?: string; status?: ChatMessageStatus;
+  attachments?: readonly ChatAttachment[]; actions?: readonly ChatAction[];
+  actionDisplay?: "auto" | "inline" | "menu"; anchorId?: string | number; class?: string;
+};
+
+type ChatActivityItem = {
+  kind: "activity"; id: string; label: string; description?: string; icon?: string; leading?: JSX.Element;
+  accent?: string; tone?: ChatActivityTone; busy?: boolean; trailing?: JSX.Element; defaultOpen?: boolean;
+  anchorId?: string | number; content?: JSX.Element; class?: string;
+};
+
+type ChatTimelineItem = ChatMessageItem | ChatActivityItem;
+
+type ChatTimelineProps = {
+  items: readonly ChatTimelineItem[]; conversationKey?: string | null; loading?: boolean; hasMore?: boolean;
+  loadingOlder?: boolean; onLoadOlder?: () => boolean | void | Promise<boolean | void>; emptyTitle?: string;
+  emptyDescription?: string; navigation?: JSX.Element; onActionError?: (error: unknown) => void;
+  viewportRef?: (element: HTMLDivElement) => void; contentRef?: (element: HTMLDivElement) => void;
+  label?: string; followThreshold?: number; class?: string;
+};
+
+```
+
+### Composer
+
+```ts
+type ChatComposerProps = {
+  value: string; onValueChange: (value: string) => void;
+  onSubmit: (input: ChatSubmitInput) => boolean | void | Promise<boolean | void>;
+  runningSubmitIntent?: "steer" | "queue"; onStop?: () => void | Promise<void>;
+  onError?: (error: unknown) => void; state?: ChatComposerState; attachments?: readonly ChatAttachment[];
+  onAttachmentsChange?: (attachments: readonly ChatAttachment[]) => void; fileSelection?: ChatFileSelection;
+  onPaste?: ChatPasteHandler; menuActions?: readonly ChatAction[]; models?: readonly ChatModelOption[];
+  selectedModelId?: string | null; onModelChange?: (modelId: string) => void;
+  commands?: readonly ChatCommand[]; contextUsage?: ChatContextUsageData;
+  contextActions?: readonly ChatAction[]; contextPopupAction?: ChatAction; footerTools?: JSX.Element;
+  submitTools?: JSX.Element; footerContent?: JSX.Element; placeholder?: string; label?: string;
+  inputLabel?: string; disabled?: boolean; error?: string; focusToken?: unknown; class?: string;
+};
+
+```
+
+### Direct message and activity components
+
+```ts
+type ChatMessageProps = {
+  role: ChatRole; children?: JSX.Element; label?: string; createdAt?: string | Date; timeLabel?: string;
+  status?: ChatMessageStatus; attachments?: readonly ChatAttachment[]; actions?: readonly ChatAction[];
+  actionDisplay?: "auto" | "inline" | "menu"; anchorId?: string | number;
+  onActionError?: (error: unknown) => void; class?: string;
+};
+
+type ChatActivityProps = {
+  label: string; description?: string; icon?: string; leading?: JSX.Element; accent?: string;
+  tone?: ChatActivityTone; busy?: boolean; trailing?: JSX.Element; open?: boolean;
+  onOpenChange?: (open: boolean) => void; defaultOpen?: boolean; bodyInset?: boolean;
+  anchorId?: string | number; children?: JSX.Element; class?: string;
+};
+```
+
+`ChatRootProps` belongs to `Chat`, the other component props to `.Timeline`, `.Composer`, `.Message`, and `.Activity`. `ChatActionBase` is the common shape shown here; consumers import `ChatAction`. For usage data see [Context usage](/en/ui/ai/context-usage#api-reference).
+
+Defaults: composer `state="idle"`, `runningSubmitIntent="steer"`; timeline `followThreshold=96` CSS pixels. Set `runningSubmitIntent="queue"` to submit queued messages while running. `submitting` and `stopping` block submission. `onLoadOlder` can return false to report that no page was loaded; rejected loads become retryable history errors. `onStop` may be async and failures reach `onError`.
+
+`Chat.Activity` supports controlled `open`/`onOpenChange`; timeline activity records expose only `defaultOpen`. `bodyInset` belongs to the direct Activity component, not the timeline record. Message/activity `content` is JSX, not automatically parsed Markdown. Use `MarkdownView` for Markdown strings.
+
 ## Accessibility
 
 Pass a useful conversation `label` when more than one chat is visible. Visual role labels are intentionally omitted, while screen readers still receive the message role. Time, status, menus, attachments, model selection, context usage, and history loading remain keyboard reachable and named.
@@ -76,25 +209,31 @@ The family uses `--k2b-ai-accent`, `--k2b-ai-accent-hover`, `--k2b-ai-border`, a
 
 ## Example
 
-```tsx
-const [draft, setDraft] = createSignal("");
+```tsx typecheck
+import { Chat, MarkdownView, type ChatTimelineItem } from "@k2b/ui";
+import { createSignal } from "solid-js";
 
-<Chat>
-  <Chat.Timeline items={items()} conversationKey={conversationId()} />
-  <Chat.Composer
-    value={draft()}
-    onValueChange={setDraft}
-    onSubmit={submit}
-    state={runState()}
-    attachments={attachments()}
-    onAttachmentsChange={setAttachments}
-    menuActions={[{ id: "new", label: "New chat", onSelect: createChat }]}
-    models={models}
-    selectedModelId={modelId()}
-    onModelChange={setModelId}
-    contextUsage={{ usage: usage(), contextWindow: 128_000 }}
-  />
-</Chat>;
+export function Conversation() {
+  const [draft, setDraft] = createSignal("");
+  const [items, setItems] = createSignal<ChatTimelineItem[]>([
+    { kind: "message", id: "welcome", role: "assistant", content: "How can I help?" },
+  ]);
+  return (
+    <Chat label="Project conversation">
+      <Chat.Timeline items={items()} conversationKey="project" />
+      <Chat.Composer
+        value={draft()}
+        onValueChange={setDraft}
+        onSubmit={({ text }) => {
+          setItems((current) => [...current, {
+            kind: "message", id: crypto.randomUUID(), role: "user",
+            content: <MarkdownView markdown={text} />,
+          }]);
+        }}
+      />
+    </Chat>
+  );
+}
 ```
 
 The timeline shows the latest message before JavaScript loads. Messages remain

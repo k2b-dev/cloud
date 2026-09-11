@@ -47,6 +47,48 @@ labels, so asynchronous providers stay free of mount-time requests.
 
 `highlight` may return safe HTML for an overlay preview. Keep token styling width-neutral: color and background are safe; font weight, style, and letter spacing can desynchronize the overlay from the textarea.
 
+## API reference
+
+See [shared field props](/en/ui/getting-started#shared-field-props) for `FieldProps`, `ValueFieldProps<T>` and `MaybeAccessor<T>`.
+
+```ts
+type Suggestion = {
+  text: string; label?: string; expansion?: string; appendSpace?: boolean; hint?: string;
+  textEdit?: {
+    start: number;
+    end: number;
+    text: string;
+  };
+};
+
+type SuggestContext = {
+  fullText: string; caret: number; tokenStart: number;
+};
+
+type QueryContext = {
+  start: number; end: number; text: string; query: string; completion: Completion;
+};
+
+type Completion = {
+  trigger?: string;
+  suggest: (query: string, context: SuggestContext, signal: AbortSignal) => readonly Suggestion[] | Promise<readonly Suggestion[]>;
+  knownLabels?: readonly string[]; debounceMs?: number; dropdown?: boolean; allowAfterWord?: boolean;
+};
+
+type AutocompleteEditorProps = ValueFieldProps<string> & {
+  onSubmit?: () => void; completions?: readonly Completion[]; restoreExpansionOnBackspace?: boolean;
+  highlight?: (text: string) => string; singleLine?: boolean; lines?: number; fill?: boolean;
+  placeholder?: string; spellcheck?: boolean; name?: string; maxLength?: number;
+  textareaRef?: (element: HTMLTextAreaElement) => void; variant?: "default" | "paper";
+};
+```
+
+`text` is the inserted token. `label` is its displayed name; `expansion` supplies expanded content. `textEdit` replaces the explicit zero-based `[start, end)` character range instead of the detected token. `appendSpace` controls a trailing space (default true; an existing separator or opening scope avoids a second separator). `knownLabels` marks known tokens; `allowAfterWord` permits a trigger immediately after a word character.
+
+Defaults: `lines=3`, `singleLine=false`, `fill=false`, `spellcheck=false`, `variant="default"`, `restoreExpansionOnBackspace=true`. Disable the last option to keep Backspace from restoring an expansion to its trigger. Completion `debounceMs` defaults to 0; `dropdown` is opt-in. `textareaRef` receives the mounted native textarea. `highlight` returns trusted HTML: escape source text and preserve text positions.
+
+`abbreviations` is a public map used by [MarkdownEditor](/en/ui/input/markdown-editor); its custom map is `Record<string, string>` from abbreviation to expansion.
+
 ## Accessibility
 
 Prefer `label`, `description`, `error`, and `required` for field semantics. If

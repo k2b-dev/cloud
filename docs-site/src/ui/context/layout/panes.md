@@ -58,19 +58,11 @@ Each layout-mutating helper returns the original layout when the requested opera
 
 Pass runtime-only `PanesItem` descriptors separately from the layout:
 
-```ts
-type PanesItem = {
-  id: string;
-  title: string;
-  icon?: string;
-  render: () => JSX.Element;
-  onClose?: () => void;
-};
-```
+See `PanesItem` in the [API reference](#api-reference).
 
 `render` is lazy: Panes invokes it only for the active item in each group. Switching tabs unmounts the previous content. Reordering a group does not recreate its active content.
 
-The presence of `onClose` enables the close control. Its callback only reports intent; the application updates its domain state and layout. The icon-only control overlays the trailing edge on hover or keyboard focus and has no separate background. It reserves no label space while hidden; while visible, a long label truncates with an ellipsis instead of overlapping the control. Pressing it does not start a drag.
+The presence of `onClose` enables the close control. Its callback only reports intent; the application updates its domain state and layout. The close control is available on hover or keyboard focus and does not start a drag.
 
 Pass `onAddItem` to show a plus control in every group. It receives an item id from the target group, or `null` for an empty workspace. The application chooses or creates the item, then updates the layout with `addPanesItem`.
 
@@ -80,11 +72,79 @@ Pass `onAddItem` to show a plus control in every group. It receives an item id f
 
 Tab groups stay on one line and scroll horizontally when their tabs no longer fit. A thin overlay scrollbar appears while the tab row is hovered or contains keyboard focus without changing the row height.
 
-Once dragging starts, Panes shows every valid destination at the same time: exact tab insertion positions, add-to-group targets, and explicit Add left, right, top, and bottom targets. The four directional trapezoids are separated by neutral gaps around an icon-only add-to-group area, so each action reads as its own destination. Their visible shape is also their hit area. Duplicate and no-op destinations are not offered. Releasing elsewhere cancels the move.
-
-Tab insertion targets use compact slots between tabs. The pointer preview follows the same pill shape, icon, label spacing, and truncation as the source tab.
+Once dragging starts, Panes shows every valid destination at the same time: exact tab insertion positions, add-to-group targets, and explicit Add left, right, top, and bottom targets. Duplicate and no-op destinations are not offered. Releasing elsewhere cancels the move.
 
 While resizing, a separator snaps to a nearby separator of the same direction in a neighboring pane. This aligns adjacent pane heights or widths without adding alignment metadata to the persisted layout. Pointer and keyboard resizing use the same visible geometry.
+
+## API reference
+
+```ts
+type PanesDirection = "horizontal" | "vertical";
+
+type PanesSide = "left" | "right" | "top" | "bottom";
+
+type PanesPathSegment = "first" | "second";
+
+type PanesPath = readonly PanesPathSegment[];
+
+type PanesGroup = {
+  type: "group"; items: string[]; active: string;
+};
+
+type PanesSplit = {
+  type: "split"; direction: PanesDirection; ratio: number; first: PanesNode; second: PanesNode;
+};
+
+type PanesNode = PanesGroup | PanesSplit;
+
+type PanesLayout = {
+  version: typeof PANES_LAYOUT_VERSION; root: PanesNode | null;
+};
+
+type PanesIntent =
+  | {
+      type: "tab";
+      itemId: string;
+      targetItemId: string;
+      beforeItemId: string | null;
+    }
+  | {
+      type: "split";
+      itemId: string;
+      targetItemId: string;
+      side: PanesSide;
+    };
+
+type PanesItem = {
+  id: string; title: string; icon?: string; render: () => JSX.Element; onClose?: () => void;
+};
+
+type PanesProps = {
+  layout: PanesLayout; onLayoutChange: (layout: PanesLayout) => void; items: readonly PanesItem[];
+  movable?: boolean; resizable?: boolean; split?: false | "horizontal" | "vertical" | "both";
+  onAddItem?: (targetItemId: string | null) => void; ariaLabel?: string; class?: string;
+};
+
+type AddPanesItemOptions = {
+  itemId: string; targetItemId: string | null; beforeItemId?: string | null;
+};
+```
+
+`PANES_LAYOUT_VERSION` is `2`. `ratio` is the first child's fraction; resize helpers clamp it to 0.08–0.92. IDs must be unique, nonempty stable IDs no longer than 160 characters. Parsing accepts at most 64 nodes and depth 12; invalid input returns null.
+
+```ts
+declare function createPanesLayout(itemIds: readonly string[]): PanesLayout;
+declare function parsePanesLayout(value: unknown): PanesLayout | null;
+declare function activatePanesItem(layout: PanesLayout, itemId: string): PanesLayout;
+declare function addPanesItem(layout: PanesLayout, options: AddPanesItemOptions): PanesLayout;
+declare function removePanesItem(layout: PanesLayout, itemId: string): PanesLayout;
+declare function reconcilePanesLayout(layout: PanesLayout, desiredOpenItemIds: readonly string[]): PanesLayout;
+declare function applyPanesIntent(layout: PanesLayout, intent: PanesIntent): PanesLayout;
+declare function resizePanesSplit(layout: PanesLayout, path: PanesPath, ratio: number): PanesLayout;
+declare function isPanesItemVisible(layout: PanesLayout, itemId: string): boolean;
+```
+
+A `PanesPath` locates a split through `first`/`second` edges; `[]` addresses the root. `AddPanesItemOptions.targetItemId` locates a target group by an existing item; it is not a group ID.
 
 ## Accessibility
 

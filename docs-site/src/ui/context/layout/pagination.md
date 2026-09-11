@@ -50,17 +50,21 @@ With `onNavigate`, link enhancement requires hydration. The server route remains
 
 ## Example
 
-```tsx
-const url = new URL(c.req.url);
-const page = Math.max(1, Number(url.searchParams.get("page") ?? "1"));
-const result = await inventory.list({ page, status: "open" });
+```tsx typecheck
+import { Pagination } from "@k2b/ui";
 
-const base = new URLSearchParams(url.searchParams);
-base.set("page", "");
-
-<Pagination
-  currentPage={result.page}
-  totalPages={result.totalPages}
-  baseUrl={`/app/inventory?${base.toString()}`}
-/>;
+export function InventoryPagination(props: {
+  url: string;
+  page: number;
+  totalPages: number;
+}) {
+  const baseUrl = () => {
+    const url = new URL(props.url);
+    const query = new URLSearchParams(url.searchParams);
+    query.delete("page");
+    query.append("page", "");
+    return `${url.pathname}?${query.toString()}`;
+  };
+  return <Pagination currentPage={props.page} totalPages={props.totalPages} baseUrl={baseUrl()} />;
+}
 ```

@@ -49,9 +49,10 @@ Portalled surfaces such as prompts, menus, and tooltips preserve the scope autom
 ## Fonts and icons
 
 `global.css` includes IBM Plex and the supported Tabler icon font. Applications
-that provide their own fonts or icons can import only the required layers:
+that provide their own fonts or icons can load component styles and choose the optional assets:
 
 ```ts
+import "@k2b/ui/styles.css";
 import "@k2b/ui/fonts/plex.css";
 import "@k2b/ui/icons/tabler.css";
 ```
@@ -83,7 +84,7 @@ Override tokens on your scoped root. Components derive focus, selection, and act
 <main class="k2b-ui product-ui">...</main>
 ```
 
-Most themes only need the font and accent stack. Override semantic tokens such as `--k2b-action`, `--k2b-surface`, `--k2b-text`, or `--k2b-border` when a specific role needs different treatment. See [Theme and styles](./surfaces/utilities) for the complete token reference.
+Most themes only need the font and accent stack. Override semantic tokens such as `--k2b-action`, `--k2b-surface`, `--k2b-text`, or `--k2b-border` when a specific role needs different treatment. See [Theme and styles](./surfaces/utilities) for theme roles and overrides.
 
 ## Solid and SSR
 
@@ -110,6 +111,8 @@ export function ProjectSections() {
 Components format numbers and dates in one inherited locale. Wrap the SSR page in `LocaleProvider` and emit the same locale as `<html lang>`:
 
 ```tsx
+import { LocaleProvider } from "@k2b/ui";
+
 <html lang={locale}>
   <body>
     <main class="k2b-ui">
@@ -124,6 +127,56 @@ The provider controls the server pass. Browser islands are independent Solid roo
 ## Package boundary
 
 Every component in the portable catalog comes from `@k2b/ui`. Product-specific integrations live in a separate section when they depend on authenticated APIs, permissions, sessions, or other host contracts.
+
+## Shared API conventions
+
+Reference types use `JSX.Element` for Solid content and `MaybeAccessor<T>` for
+`T | (() => T)`. A prop only accepts an accessor when its type says so; pass
+`items={items()}` to plain array props. Optional props use `?`. Omission means
+no extra behavior unless a default is stated. Native attributes pass through
+only where the component explicitly inherits them.
+
+### Shared field props
+
+Input pages use these public types from `@k2b/ui`:
+
+```ts
+type MaybeAccessor<T> = T | (() => T);
+type FieldProps = {
+  id?: string; class?: string;
+  label?: JSX.Element; description?: JSX.Element;
+  error?: MaybeAccessor<JSX.Element | undefined>;
+  required?: boolean; disabled?: boolean;
+  "aria-label"?: string; "aria-describedby"?: string;
+};
+type ValueFieldProps<T> = FieldProps & {
+  value: MaybeAccessor<T>;
+  onValueChange?: (value: T) => void;
+  onValueCommit?: (value: T) => void;
+};
+```
+
+The parent updates `value` and owns validation and persistence. `required`
+marks a field; it does not save or validate application data. `error` displays
+the supplied message. `label` supplies the visible accessible name; use
+`aria-label` for a label-free control. Change/commit timing and the empty value
+are component-specific and documented on each input page. Callback omission
+does not universally mean disabled or read-only; use the explicit supported prop.
+
+### Icons, tones and navigation
+
+Most `icon` props take a complete Tabler class, such as `"ti ti-search"`.
+[Documentation components](/en/ui/content/docs) and
+[Combobox](/en/ui/input/combobox) document their bare-name exceptions.
+`IntentTone` is `"neutral" | "info" | "success" | "warning" | "danger"`;
+`AccentColor` is `"zinc" | "blue" | "emerald" | "amber" | "red"`.
+A component may expose a different explicit union, such as Calendar colors or
+StatusBadge tones; those local types take precedence.
+
+URL controls retain native `href` links. Their optional `onNavigate` callback
+uses the [`@k2b/ssr` navigation contract](/en/docs/frontend/url-state-and-navigation).
+The host loads and renders the destination; passing a callback alone does not
+fetch data. See each component for scroll policy and other navigation callbacks.
 
 ## Choose a control
 

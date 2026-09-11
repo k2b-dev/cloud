@@ -35,7 +35,7 @@ or continues a line.
 | `onSubmit` | `() => void` | none | Handles Ctrl/Cmd+Enter. |
 | `placeholder` | `string` | none | Labels an empty editor visually. |
 | `disabled` | `boolean` | `false` | Disables editing and toolbar actions. |
-| `lines` | `number` | component default | Sets the approximate visible height. |
+| `lines` | `number` | `6` | Sets the approximate visible height. |
 | `maxLength` | `number` | none | Applies the native textarea limit. |
 | `spellcheck` | `boolean` | `true` | Controls browser spellcheck. |
 | `noToolbar` | `boolean` | `false` | Hides the toolbar without disabling shortcuts. |
@@ -80,6 +80,11 @@ bulleted and numbered lists, and quotes. It includes matching keyboard
 shortcuts, list continuation and exit, smart URL paste, IME-safe input, active
 format detection, synchronized scrolling, and optional line, word, and
 character statistics.
+
+`textareaRef?: (element: HTMLTextAreaElement) => void` exposes the mounted native
+textarea. `completions` uses the [Completion/Suggestion contract](/en/ui/input/autocomplete#api-reference).
+The editor inherits [ValueFieldProps<string>](/en/ui/getting-started#shared-field-props);
+`lines` defaults to 6 and `spellcheck` and `showStats` default to true.
 
 ## Accessibility
 

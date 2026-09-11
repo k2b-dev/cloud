@@ -21,6 +21,7 @@ For applications with their own fonts or icons, the same layers remain
 available separately:
 
 ```ts
+import "@k2b/ui/styles.css";
 import "@k2b/ui/fonts/plex.css";
 import "@k2b/ui/icons/tabler.css";
 ```

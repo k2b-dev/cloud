@@ -14,6 +14,25 @@ import { Avatar, LinkCard } from "@k2b/ui";
 
 `LinkCard` accepts a title, description, icon, destination, and semantic color. `Avatar` accepts a name, optional image URL or icon, fallback, size, and loading behavior. Image content takes precedence over the icon, which takes precedence over initials.
 
+## API reference
+
+```ts
+type LinkCardColor = "blue" | "emerald" | "violet" | "orange" | "red" | "amber" | "zinc" | "cyan" | "rose";
+
+type LinkCardProps = {
+  href: string; title: string; description: string; icon: string; color: LinkCardColor;
+};
+
+type AvatarSize = "xs" | "sm" | "md" | "lg" | "xl";
+
+type AvatarProps = {
+  name: string; src?: string | null; icon?: string; alt?: string; fallback?: string; size?: AvatarSize;
+  loading?: "eager" | "lazy"; class?: string; style?: JSX.CSSProperties | string;
+};
+```
+
+All five `LinkCard` props are required. `Avatar` defaults to `size="md"` and `loading="lazy"`. `alt` overrides the image alternative; `fallback` overrides initials.
+
 ## Accessibility
 
 The card remains one native link with a visible focus indicator. Avatar supplies an image alternative or fallback `role="img"` label.

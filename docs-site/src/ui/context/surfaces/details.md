@@ -24,6 +24,21 @@ item may provide one short action directly related to its value. Set
 fine pointers reveal them on row hover or focus, while touch layouts keep them
 visible.
 
+## API reference
+
+```ts
+type DescriptionListItem = {
+  term: JSX.Element; description: JSX.Element; action?: JSX.Element;
+};
+
+type DescriptionListProps = {
+  items: readonly DescriptionListItem[]; columns?: 1 | 2 | 3; layout?: "grid" | "rows"; size?: "sm" | "md";
+  actionVisibility?: "always" | "progressive"; class?: string;
+};
+```
+
+`columns` defaults to `1`, `layout` to `"grid"`, and `actionVisibility` to `"always"`; `size` defaults to `"md"`. Item content accepts Solid JSX.
+
 ## Accessibility
 
 The component renders real `dl`, `dt`, and `dd` elements. Terms must be concise,

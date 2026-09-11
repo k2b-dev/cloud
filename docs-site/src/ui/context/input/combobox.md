@@ -41,6 +41,22 @@ automatic clear after selection.
 
 Loading keeps the previous results visible. A failed lookup replaces the list with its error and a retry action.
 
+## API reference
+
+See [shared field props](/en/ui/getting-started#shared-field-props) for `FieldProps`, `ValueFieldProps<T>` and `MaybeAccessor<T>`.
+
+```ts
+type ComboboxOption = { id: string; label: string; description?: string; icon?: string };
+
+type ComboboxProps = FieldProps & {
+  query?: MaybeAccessor<string>; onQueryChange?: (query: string) => void; placeholder?: string;
+  fetchData: (query: string, signal: AbortSignal) => Promise<ComboboxOption[]>;
+  onSelect: (option: ComboboxOption) => void; debounceMs?: number;
+};
+```
+
+`debounceMs` defaults to `150`. Omit `query` for internal query state; supplying it makes the host responsible for applying `onQueryChange`.
+
 ## Accessibility
 
 The input exposes combobox, expanded, controlled-list, and active-option state.

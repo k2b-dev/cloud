@@ -28,13 +28,18 @@ both `onValueChange` and `onValueCommit`.
 All three support the shared `label`, `description`, reactive `error`,
 `required`, and `disabled` field state.
 
-For partial bulk selections, pass `indeterminate`. A checkbox without a visible
+For partial bulk selections, pass `indeterminate` to `Checkbox` only. A checkbox without a visible
 `label` or `description` renders as a compact control; give that form an
 accessible name with `aria-label`.
 
 `CheckboxCard` takes a text or JSX `label`. Add either `icon` or a valid three-
 or six-digit hex `color` as supporting context. `variant="input"` uses the
 denser input surface; the default is `"card"`.
+
+All three inherit [ValueFieldProps<boolean>](/en/ui/getting-started#shared-field-props).
+`Checkbox` and `Switch` also accept `name?: string`; Checkbox adds
+`indeterminate?: boolean` (false). CheckboxCard adds `icon?: string`,
+`color?: string` and `variant?: "input" | "card"` (card).
 
 ## Accessibility
 

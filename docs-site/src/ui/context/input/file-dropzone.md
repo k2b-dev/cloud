@@ -32,6 +32,19 @@ disabled and shows its loading state. `error` accepts visible JSX. `title`,
 
 The component does not retain selected files. Store them or start the upload in `onDrop`.
 
+## API reference
+
+See [shared field props](/en/ui/getting-started#shared-field-props) for `FieldProps`, `ValueFieldProps<T>` and `MaybeAccessor<T>`.
+
+```ts
+type FileDropzoneProps = FieldProps & {
+  accept?: string; multiple?: boolean; busy?: boolean; icon?: string; title?: JSX.Element;
+  subtitle?: JSX.Element; hint?: JSX.Element; onDrop: (files: File[]) => void | Promise<void>;
+};
+```
+
+`accept` uses native file-input syntax, such as `"image/*,.pdf"`. It filters the picker, not files dragged from outside; validate dropped files in `onDrop`. The callback may be asynchronous; the host controls `busy` and error feedback. `multiple=true`; `busy` and `disabled` default to false.
+
 ## Accessibility
 
 The drop surface is a button, so it works with keyboard activation. Provide

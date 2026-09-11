@@ -72,6 +72,19 @@ Links use normal document navigation by default. Inside a hydrated SSR workspace
 Enhanced button links require `onNavigate`; without it they safely retain
 native document navigation.
 
+## Tooltip and split-button options
+
+All button variants accept `tooltip?: JSX.Element | false`,
+`tooltipDelay?: number` (250ms), and `tooltipPlacement?: "top" | "bottom" | "left" | "right"`
+(default top). Use `false` to omit a tooltip. Content follows the
+[Tooltip contract](/en/ui/feedback/tooltip).
+
+`SplitButton` extends Button props with required `items: readonly DropdownItem[]`
+and `menuLabel: string`. `menuPosition?: DropdownPosition | (() => DropdownPosition)`
+and `menuWidth?: string` configure the menu; position defaults to `"bottom-left"` and width is a CSS length. See
+[menu types](/en/ui/actions/menus#api-reference). Link buttons' `onNavigate`
+uses the [navigation event contract](/en/ui/getting-started#icons-tones-and-navigation).
+
 ## Accessibility
 
 All matching native button or anchor attributes pass through. The default button `type` is `button`, so form submission stays explicit. `IconButton` and `IconButtonLink` require `label`; `SplitButton` requires `menuLabel`. These labels supply the icon-only control's accessible name and title.

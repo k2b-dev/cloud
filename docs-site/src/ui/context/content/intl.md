@@ -48,6 +48,112 @@ On the server the provider is the only source, so SSR consumers wrap the page in
 
 Numeric components render a `<span>`; temporal components render `<time>`. Null and invalid input renders the `fallback` text (default `"—"`) in a `<span>`. Native attributes pass through to the rendered element.
 
+## API reference
+
+```ts
+type SpanProps = JSX.HTMLAttributes<HTMLSpanElement>;
+type TimeElementProps = Omit<JSX.HTMLAttributes<HTMLElement>, "ref">;
+type ByteMode = "iec" | "si";
+
+type LocaleProviderProps = {
+  locale: string; children?: JSX.Element;
+};
+
+type LocaleProp = {
+  locale?: string;
+};
+
+type FallbackProp = {
+  fallback?: string;
+};
+
+type FormatNumberProps = SpanProps &
+  LocaleProp &
+  FallbackProp & {
+    value: number | null | undefined;
+    compact?: boolean;
+    decimals?: number;
+  };
+
+type FormatPercentProps = SpanProps &
+  LocaleProp &
+  FallbackProp & {
+    value: number | null | undefined;
+    decimals?: number;
+    clamp?: boolean;
+  };
+
+type FormatCurrencyProps = SpanProps &
+  LocaleProp &
+  FallbackProp & {
+    value: number | null | undefined;
+    currency: string;
+    decimals?: number;
+  };
+
+type FormatBytesProps = SpanProps &
+  LocaleProp &
+  FallbackProp & {
+    value: number | null | undefined;
+    mode?: ByteMode;
+  };
+
+type FormatDateProps = TimeElementProps &
+  LocaleProp &
+  FallbackProp & {
+    value: Date | string | null | undefined;
+    timeZone?: string;
+  };
+
+type FormatTimeProps = FormatDateProps;
+
+type FormatDateTimeProps = FormatDateProps;
+
+type FormatRelativeTimeProps = TimeElementProps &
+  LocaleProp &
+  FallbackProp & {
+    value: Date | string | null | undefined;
+    base?: Date | string;
+    timeZone?: string;
+  };
+
+type FormatDurationProps = TimeElementProps &
+  LocaleProp &
+  FallbackProp & {
+    from: Date | string | null | undefined;
+    to: Date | string | null | undefined;
+  };
+
+type FormatDurationMsProps = TimeElementProps &
+  LocaleProp &
+  FallbackProp & {
+    value: number | null | undefined;
+  };
+```
+
+`SpanProps` means native `JSX.HTMLAttributes<HTMLSpanElement>`. `TimeElementProps` means native HTML attributes without `ref`; the formatter owns `datetime`. `ByteMode` is `"iec" | "si"`. `LocaleProp` and `FallbackProp` name shared shapes in this reference, not additional component exports.
+
+`Format.Percent.decimals` defaults to 0 and `clamp` to false. Currency decimals default to the currency's standard digits. Dates accept `Date` or a parseable string; prefer explicit offset-bearing instants. `Format.RelativeTime.base` defaults to now; supply the same base for deterministic server/browser output. `Format.Duration` takes from/to instants, whereas DurationMs takes a number of milliseconds.
+
+## Date and locale options
+
+Calendar and date-picker `dateConfig` use the public `DateContext` type:
+
+```ts
+type DateContext = {
+  timeZone?: string;
+  locale?: string;
+  weekStartsOn?: 0 | 1;
+  firstDayOfWeek?: 0 | 1;
+};
+```
+
+`timeZone` is an IANA zone; `locale` is a BCP 47 tag. `firstDayOfWeek` wins over
+its `weekStartsOn` alias (0 = Sunday, 1 = Monday, default Monday). Date pickers
+and Calendar inherit an omitted locale; Format date components default to UTC.
+Set an explicit timezone when a calendar or picker must show the same civil
+time on machines in different zones.
+
 ## Accessibility
 
 Temporal components expose the machine-readable instant through the `<time datetime>` attribute. The visible text is plain content, so screen readers announce the localized value directly. Fallback output is text, never an empty element.

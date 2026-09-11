@@ -37,7 +37,9 @@ The first argument is the description. The default titles are `Info`, `Success`,
 | `title` | `string` | variant title | Overrides the title. |
 | `duration` | `number` | `3000` | Sets auto-dismiss time in milliseconds. `0` creates a sticky toast. |
 | `iconClass` | `string` | variant icon | Overrides the Tabler icon class. |
-| `action` | `{ label: string; href: string } \| null` | none | Adds or removes a navigation link. |
+| `action` | `{ label: string } & ({ href: string } \| { onClick: () => void })`, or `null` | none | Adds one link or callback action; `null` removes it. |
+| `progress` | `number \| "indeterminate" \| null` | none | Progress from 0 to 1; `null` restores ordinary dismissal. |
+| `dismissLabel` | `string` | localized close label | Names the close button. |
 
 At most five toasts remain visible. Adding another dismisses the oldest.
 
@@ -84,9 +86,7 @@ build their own light-dismiss surfaces. It returns `false` on the server.
 
 ## Actions
 
-Toast actions are links. Use them to open a destination related to the completed operation.
-
-Pass `action.href`; toast actions do not accept an `onClick` callback.
+Use `action.href` for navigation or `action.onClick` for an application callback, such as cancellation. Supply exactly one behavior. Callback actions do not dismiss automatically and return `void`; the application handles any asynchronous work and its errors.
 
 Do not place a destructive action in a toast. Ask for confirmation before the operation.
 

@@ -33,6 +33,27 @@ const [tab, setTab] = createSignal("overview");
 
 Pass `options` when tabs come from data or content is rendered by a router. Each option has the same `value`, `label`, `icon`, and `disabled` contract plus an optional `panel`.
 
+## API reference
+
+```ts
+type TabOption<T extends string = string> = {
+  value: T; label: JSX.Element; icon?: string; disabled?: boolean; panel?: JSX.Element; onClose?: () => void;
+  closeLabel?: string;
+};
+
+type TabsItemProps<T extends string = string> = Omit<TabOption<T>, "panel"> & {
+  children?: JSX.Element;
+};
+
+type TabsProps<T extends string = string> = {
+  value: MaybeAccessor<T>; onValueChange: (value: T) => void; ariaLabel: string;
+  orientation?: "horizontal" | "vertical"; class?: string; variant?: "line" | "pill"; trailing?: JSX.Element;
+  options?: readonly TabOption<T>[]; children?: JSX.Element;
+};
+```
+
+Defaults: `orientation="horizontal"`, `variant="line"`. Supply `options` or `Tabs.Item` children. `onClose` reports intent; the host removes the item and owns its state. `ariaLabel` is required even when labels are visible.
+
 ## Accessibility
 
 Tabs link triggers and panels with ARIA ids. Arrow keys move by orientation; Home and End select the edges. Selection and roving focus require hydration.

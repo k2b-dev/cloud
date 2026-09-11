@@ -63,50 +63,12 @@ Set `error` when the query failed. It takes precedence over `isEmpty`. Set `isEm
 
 Search remains a slot because client islands must stay in the consuming application.
 
-### StatusBadge
+### Findings and status
 
-`StatusBadge` separates shared status meaning from domain wording.
-
-| Tone | Meaning |
-| --- | --- |
-| `ok` | Healthy or successfully completed. |
-| `warning` | Attention is required, but the operation can continue. |
-| `error` | Failed, unavailable, or blocked. |
-| `degraded` | Running with an unavailable dependency or reduced capability. |
-| `running` | Work is in progress. |
-| `neutral` | Disabled, unknown, or informational. |
-
-Use `variant="dot"` in dense tables and `variant="text"` when the surrounding layout already provides a boundary. Keep the visible `label` specific: `Offline`, `Failed`, and `Rejected` can all use the `error` tone.
-
-Long labels truncate visually without losing their text in the DOM. Add
-`title` when the complete wording must also be available on hover. The
-`running` icon or dot animates only when reduced motion is not requested.
-
-### NoticeCard
-
-`NoticeCard` keeps one diagnostic finding visible. `tone` accepts `neutral`,
-`info`, `success`, `warning`, or `danger`; the default is `warning`. `title` names the
-finding and `detail` provides the evidence.
-
-`NoticeCard.Grid` receives an `items` array and a render function. It renders
-nothing for an empty array. One item stays in one column; two items become two
-columns at 48rem; three or more use two columns at 48rem and three at 80rem.
-
-```tsx
-<NoticeCard.Grid items={findings}>
-  {(finding) => (
-    <NoticeCard
-      tone={finding.tone}
-      title={finding.title}
-      detail={finding.detail}
-    />
-  )}
-</NoticeCard.Grid>
-
-<NoticeCard.Grid items={[]}>
-  {() => <NoticeCard title="Not rendered" />}
-</NoticeCard.Grid>
-```
+Use [StatusBadge](/en/ui/feedback/badges) for one labeled health state and
+[NoticeCard](/en/ui/feedback/blocks) for a persistent finding. Choose tones by
+meaning; keep domain-specific wording in their visible labels. `NoticeCard.Grid`
+arranges several findings and renders nothing for an empty list.
 
 ### RangePicker
 
@@ -120,6 +82,31 @@ columns at 48rem; three or more use two columns at 48rem and three at 80rem.
 | `ariaLabel` | Names the navigation when no visible label is present. |
 
 Build every `href` from the current filter state so changing the range does not discard unrelated filters.
+
+## API reference
+
+```ts
+type PanelHeaderProps = {
+  title: JSX.Element; subtitle?: JSX.Element; actions?: JSX.Element; as?: "h1" | "h2" | "h3";
+  size?: "sm" | "md"; class?: string;
+};
+
+type DataPanelProps = {
+  title: JSX.Element; subtitle?: JSX.Element; actions?: JSX.Element; search?: JSX.Element;
+  filters?: JSX.Element; children?: JSX.Element; error?: string | null; empty?: JSX.Element;
+  isEmpty?: boolean; footer?: JSX.Element; as?: "h1" | "h2"; class?: string;
+};
+
+type RangeOption<T extends string> = {
+  value: T; label?: string; href: string;
+};
+
+type RangePickerProps<T extends string> = {
+  options: readonly RangeOption<T>[]; value: T; label?: string | null; ariaLabel?: string; class?: string;
+};
+```
+
+StatusBadge and NoticeCard have their canonical contracts on [Status badges](/en/ui/feedback/badges) and [Notices](/en/ui/feedback/blocks). `RangePicker` uses direct values and ordinary anchors; option `label` falls back to `value`. `label={null}` omits its visible caption.
 
 ## Accessibility
 

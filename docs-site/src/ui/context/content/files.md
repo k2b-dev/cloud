@@ -102,7 +102,7 @@ type FileViewContent = {
 ```
 
 `getFileViewPreviewKind` returns the inferred `FileViewPreviewKind`.
-`canPreviewFile` also checks the built-in size limits.
+Both helpers apply the built-in size limits when `size` is supplied: 2 MiB for text, Markdown, JSON and delimited text; 25 MiB for images; 50 MiB for PDF, audio, and video. Unsupported or oversized files return `null` from `getFileViewPreviewKind` and `false` from `canPreviewFile`.
 `formatFileViewSize` produces the compact size label used by the preview.
 
 Pass `renderers` to `FileView` or `FileBrowserPanel` to add
@@ -120,6 +120,70 @@ used.
 `openFileBrowser({ source, title, subtitle, icon })` opens the shared panel in
 a dialog and resolves when it closes. The supplied source has the same
 capability and authorization responsibilities as an inline panel.
+
+## API reference
+
+```ts
+type FileTreeEntry = {
+  path: string; displayName?: string; kind?: "file" | "folder"; size?: number; mediaType?: string;
+  updatedAt?: string; icon?: string; badge?: string;
+};
+
+type FileTreeActions = {
+  rename?: (path: string, nextName: string) => void | Promise<void>;
+  remove?: (path: string) => void | Promise<void>; createFile?: (dirPath: string) => void | Promise<void>;
+  createFolder?: (dirPath: string) => void | Promise<void>;
+  move?: (path: string, targetDir: string) => void | Promise<void>;
+  download?: (path: string, isFolder: boolean) => void | Promise<void>;
+};
+
+type FileTreeProps = {
+  entries: FileTreeEntry[]; selectedPath?: string | null; onSelect?: (entry: FileTreeEntry) => void;
+  expandedPaths?: Set<string>; onExpandedChange?: (expanded: Set<string>) => void;
+  contextMenu?: (entry: FileTreeEntry) => DropdownItem[]; actions?: FileTreeActions; label?: string;
+  class?: string;
+};
+
+type FileViewFile = {
+  path: string; mediaType?: string; size?: number;
+};
+
+type FileViewPreviewKind = "markdown" | "image" | "pdf" | "json" | "delimited-text" | "audio" | "video" | "text";
+
+type FileViewRendererProps = {
+  file: FileViewFile; content: FileViewContent; previewHref: string | null; downloadHref: string | null;
+  editor: {
+    draft: () => string;
+    setDraft: (value: string) => void;
+    dirty: () => boolean;
+    saving: () => boolean;
+    save: () => Promise<void>;
+  } | null;
+};
+
+type FileViewRenderer = {
+  id: string; match: (file: FileViewFile, content: FileViewContent) => boolean;
+  component: Component<FileViewRendererProps>; editable?: boolean;
+};
+
+type FileViewProps = {
+  file: FileViewFile; load: () => Promise<FileViewContent>; revision?: unknown;
+  registerRefresh?: (refresh: () => Promise<void>) => void | (() => void);
+  save?: (content: string) => Promise<void>; previewHref?: string | null; downloadHref?: string | null;
+  renderers?: readonly FileViewRenderer[]; onDirtyChange?: (dirty: boolean) => void; class?: string;
+};
+
+type FileBrowserPanelProps = {
+  source: FileSource; readOnly?: boolean; refreshKey?: unknown; initialPath?: string;
+  onSelectedPathChange?: (path: string | null) => void; renderers?: readonly FileViewRenderer[];
+  confirmDiscard?: (path: string, nextPath: string | null) => boolean | Promise<boolean>; class?: string;
+  registerRefresh?: (refresh: () => Promise<void>) => void | (() => void);
+};
+```
+
+`FileSource` and `FileViewContent` are defined above. `Component<P>` is a Solid component taking `P` and returning JSX. Renderer order matters: the first matching custom renderer wins before built-ins. Its `editable` capability and the supplied `save` determine editing availability. `registerRefresh` receives a refresh function and may return cleanup; the host should release stored references on cleanup. `onSelectedPathChange` reports selection; `initialPath` initializes it rather than controlling it. `refreshKey`/`revision` may be any changing identity.
+
+`contextMenu` returns [DropdownItem](/en/ui/actions/menus#api-reference) entries. `FileTreeActions.rename` receives a path and new **name**; `FileSource.rename` receives full from/to **paths**. Size fields are bytes. `getFileViewPreviewKind(file: FileViewFile): FileViewPreviewKind | null` infers the format; `canPreviewFile(file: FileViewFile): boolean` applies format and size support; `formatFileViewSize(bytes: number): string` formats bytes.
 
 ## Accessibility
 

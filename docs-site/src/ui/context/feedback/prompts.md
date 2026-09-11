@@ -207,6 +207,141 @@ await prompts.dialog<void>(
 );
 ```
 
+## API reference
+
+```ts
+interface DialogOptions {
+  signal?: AbortSignal; title?: string; ariaLabel?: string; icon?: string; confirmText?: string;
+  cancelText?: string | false; variant?: "danger" | "primary" | "success";
+  size?: "small" | "medium" | "large" | "wide"; surface?: "default" | "bare"; header?: false;
+  cancelBehavior?: OpenDialogOptions["cancelBehavior"];
+}
+
+interface ConfirmOptions extends DialogOptions {
+  confirmationPhrase?: string;
+}
+
+type PromptSearchInput = {
+  query: string; abortSignal: AbortSignal;
+};
+
+type PromptSearchItem<T = unknown> = {
+  label: string; desc?: string; icon?: string; previewUrl?: string; value?: T;
+};
+
+type PromptSearchOptions = DialogOptions & {
+  placeholder?: string; icon?: string; initialQuery?: string; minQueryLength?: number; debounceMs?: number;
+  emptyText?: string; noResultsText?: string;
+};
+
+type PromptFieldBase<T> = {
+  label?: string | false; description?: string; placeholder?: string; required?: boolean; default?: T;
+  validate?: (value: T | undefined) => string | null;
+};
+
+type FieldSchema =
+  | (PromptFieldBase<string> & {
+      type: "text";
+      multiline?: boolean;
+      lines?: number;
+      maxLength?: number;
+      minLength?: number;
+      icon?: string;
+      activeIcon?: string;
+      password?: boolean;
+      markdown?: boolean;
+    })
+  | (PromptFieldBase<number> & {
+      type: "number";
+      min?: number;
+      max?: number;
+      step?: number;
+    })
+  | (PromptFieldBase<string> & {
+      type: "image";
+      round?: boolean;
+      ariaLabel?: string;
+      accept?: string;
+    })
+  | (PromptFieldBase<string> & {
+      type: "pin";
+      length?: number;
+      stretch?: boolean;
+    })
+  | (PromptFieldBase<string> & {
+      type: "select";
+      options: string[] | { id: string; label?: string; description?: string; icon?: string }[];
+      icon?: string;
+      activeIcon?: string;
+      clearable?: boolean;
+    })
+  | (PromptFieldBase<string[]> & {
+      type: "tags";
+      maxTags?: number;
+      minTags?: number;
+      icon?: string;
+      activeIcon?: string;
+    })
+  | (PromptFieldBase<boolean> & {
+      type: "boolean";
+    })
+  | (PromptFieldBase<string> & {
+      type: "datetime";
+      dateOnly?: boolean;
+    })
+  | {
+      type: "info";
+      content: string | JSX.Element | (() => JSX.Element);
+    };
+
+type PromptFormOptions<T extends Record<string, FieldSchema>> = {
+  signal?: AbortSignal; title?: string; ariaLabel?: string; icon?: string; fields: T; confirmText?: string;
+  cancelText?: string | false; variant?: "danger" | "primary" | "success"; size?: DialogOptions["size"];
+  cancelBehavior?: DialogOptions["cancelBehavior"];
+};
+```
+
+`PromptFormOptions` describes the options passed to `prompts.form`; form output has the same non-info keys, with values inferred from each field type. Optional fields can be `undefined`. `validate(value)` returns an error string or `null`, synchronously. A required boolean must be true.
+
+`prompts.search<T>(resolve, options?)` accepts `(input: PromptSearchInput) => PromptSearchItem<T>[] | Promise<PromptSearchItem<T>[]>` and resolves to the selected **item** or `undefined`, not just its value. `openSpotlightSearch` uses that same result. Use `result?.value` for the application payload. Search cancellation aborts the resolver's signal. `minQueryLength` defaults to 0 and `debounceMs` to 180 milliseconds.
+
+`cancelBehavior` uses `"resolve-undefined" | "ignore"` from the dialog host. Low-level `dialogCore.open(render, options?)` returns a promise for the result or `undefined`; use the [dialog host contract](#dialog-host) when composing a custom modal.
+
+## Dialog host
+
+Use `dialogCore` only for custom modal composition; ordinary confirmation,
+forms, and search should use `prompts`.
+
+```ts
+type DialogClose<T> = (result?: T) => void;
+
+type OpenDialogOptions = {
+  signal?: AbortSignal; panelClassName?: string; contentClassName?: string;
+  initialFocus?: "first-input" | "none" | ((dialog: HTMLDialogElement) => HTMLElement | null);
+  cancelBehavior?: "resolve-undefined" | "ignore"; ariaLabel?: string;
+};
+
+type DialogRender<T> = (
+  close: DialogClose<T>,
+  context: {
+    dialog: HTMLDialogElement;
+    setDismissHandler: (handler: () => void | Promise<void>) => void;
+  },
+) => JSX.Element;
+
+type DialogCore = {
+  open: <T>(view: DialogRender<T>, options?: OpenDialogOptions) => Promise<T | undefined>;
+  close: (result?: unknown) => void; isOpen: () => boolean;
+};
+```
+
+`dialogCore.open` resolves when that dialog closes. Escape/backdrop resolves
+`undefined` by default; `cancelBehavior="ignore"` disables those dismissals.
+`initialFocus` defaults to `"first-input"`. `setDismissHandler` routes Escape
+and backdrop through the application's async guard; that handler must call
+`close()` to complete dismissal. `dialogCore.close` addresses the top dialog.
+Opening requires a browser and throws without `document`.
+
 ## Accessibility
 
 Use specific titles and action labels. Destructive confirmations should name the object and consequence. Do not hide the cancel action when cancellation is a valid path.

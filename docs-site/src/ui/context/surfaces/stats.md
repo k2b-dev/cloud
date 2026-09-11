@@ -65,6 +65,10 @@ An accent has a `tone`, Tabler `icon`, and optional `text`. Text creates a pill.
 - Use `surface="muted"` inside gray dialog or settings sections.
 - Do not use a sparkline as the only representation of a change.
 
+`StatCellAccent` is `{ tone: "zinc" | "blue" | "emerald" | "amber" | "red"; icon: string; text?: string }`.
+The icon uses a complete Tabler class. `StatCell.label` and `value` are required;
+other cell props are optional.
+
 ## Accessibility
 
 Every value needs a visible label. A linked cell is a native, independently

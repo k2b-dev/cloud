@@ -26,6 +26,18 @@ Relevant properties are `label`, `description`, `placeholder`, `value`,
 `onValueChange`, `onValueCommit`, `maxTags`, reactive `error`, `required`, and
 `disabled`.
 
+## API reference
+
+See [shared field props](/en/ui/getting-started#shared-field-props) for `FieldProps`, `ValueFieldProps<T>` and `MaybeAccessor<T>`.
+
+```ts
+type TagsInputProps = ValueFieldProps<string[]> & {
+  placeholder?: string; icon?: string; activeIcon?: string; maxTags?: number; name?: string;
+};
+```
+
+`maxTags` limits the parsed list after trimming and deduplication. Omit it for no count limit. `icon` defaults to `"ti ti-tag"` and `activeIcon` to `"ti ti-pencil"`.
+
 ## Accessibility
 
 Provide `label` for a visible field name. Without one, the placeholder becomes the accessible name.

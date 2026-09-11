@@ -73,10 +73,6 @@ options, apply the third `group` argument in the data source and return the
 matching page. The component does not filter a partial remote result page in
 the browser.
 
-Group chips stay on one horizontal row. When they exceed the dropdown width,
-the row scrolls by touch or trackpad and reveals an overlay scrollbar on hover
-or keyboard focus without changing the toolbar height.
-
 ```tsx
 <Select
   label="Icon"
@@ -106,11 +102,7 @@ or keyboard focus without changing the toolbar height.
 
 ### Switch between list and tile views
 
-Set `viewToggle` when visual options benefit from both detailed rows and a
-compact tile overview. One transparent icon button appears at the right edge
-of the group filters, or right-aligned below the search field when no groups
-are present. It shows the available alternative: `ti-category-2` in list view
-and `ti-list-details` in tile view. Hover changes only the icon color.
+Set `viewToggle` to offer list and tile views for visual options.
 
 `defaultView` accepts `"list"` or `"grid"` and defaults to `"list"`.
 `gridSize` accepts `"sm"`, `"md"`, or `"lg"` and defaults to `"md"`:
@@ -199,6 +191,99 @@ const [permission, setPermission] = createSignal("read");
   options={sortOptions}
 />;
 ```
+
+## API reference
+
+See [shared field props](/en/ui/getting-started#shared-field-props) for `FieldProps`, `ValueFieldProps<T>` and `MaybeAccessor<T>`.
+
+```ts
+type ChoiceOption<T extends string = string> = {
+  value: T; label: string; description?: string; icon?: string; color?: string; disabled?: boolean;
+  groups?: readonly string[];
+};
+
+type SelectOption = ChoiceOption<string>;
+
+type SelectSourceOption =
+  | string
+  | {
+      id: string;
+      label?: string;
+      description?: string;
+      icon?: string;
+      color?: string;
+      groups?: readonly string[];
+    }
+  | SelectOption;
+
+type SelectGroup = {
+  value: string; label: string;
+};
+
+type SelectView = "list" | "grid";
+
+type SelectGridSize = "sm" | "md" | "lg";
+
+```
+
+### Select props
+
+```ts
+type SelectProps = ValueFieldProps<string | null> & {
+  placeholder?: string; icon?: string; activeIcon?: string; options?: SelectSourceOption[];
+  fetchData?: (query: string, signal: AbortSignal, group: string | null) => Promise<SelectSourceOption[]>;
+  loadOptions?: (query: string, signal: AbortSignal, group: string | null) => Promise<readonly ChoiceOption<string>[]>;
+  selectedOption?: ChoiceOption<string>; selectedLabel?: () => string | undefined; fetchDebounceMs?: number;
+  debounceMs?: number; searchable?: boolean;
+  filterOptions?: (options: readonly SelectOption[], query: string) => readonly SelectOption[];
+  groups?: readonly SelectGroup[]; defaultGroup?: string; groupsAriaLabel?: string; allGroupLabel?: string;
+  viewToggle?: boolean; defaultView?: SelectView; gridSize?: SelectGridSize; searchPlaceholder?: string;
+  clearable?: boolean; name?: string;
+};
+
+```
+
+### MultiSelectInput props
+
+```ts
+type MultiSelectOption =
+  | string
+  | { id: string; label?: string; description?: string; icon?: string; color?: string; groups?: readonly string[] }
+  | ChoiceOption<string>;
+
+type MultiSelectFetchDataFn = (query: string, signal: AbortSignal, group: string | null) => Promise<MultiSelectOption[]>;
+
+type MultiSelectInputProps = ValueFieldProps<string[]> & {
+  options?: MultiSelectOption[]; fetchData?: MultiSelectFetchDataFn;
+  selectedOptions?: () => MultiSelectOption[]; placeholder?: string; icon?: string; activeIcon?: string;
+  fetchDebounceMs?: number; debounceMs?: number;
+  loadOptions?: (query: string, signal: AbortSignal, group: string | null) => Promise<readonly ChoiceOption<string>[]>;
+  groups?: readonly SelectGroup[]; defaultGroup?: string; groupsAriaLabel?: string; allGroupLabel?: string;
+  searchable?: boolean; clearable?: boolean; name?: string;
+  renderOption?: (option: ChoiceOption<string>) => JSX.Element;
+  renderValue?: (option: ChoiceOption<string>) => JSX.Element; searchPlaceholder?: string;
+  loadingLabel?: string; noResultsLabel?: string; emptyLabel?: string; retryLabel?: string;
+  clearLabel?: string;
+};
+
+```
+
+### SelectChip props
+
+```ts
+type SelectChipOption<T extends string | number = string> = {
+  value: T; label: string; description?: string; icon?: string; image?: string; disabled?: boolean;
+};
+
+type SelectChipProps<T extends string | number = string> = ValueFieldProps<T> & {
+  value: MaybeAccessor<T>; options: SelectChipOption<T>[]; icon?: string; iconOnly?: boolean;
+  size?: ButtonSize; placeholder?: string; position?: DropdownPosition; menuWidth?: string; name?: string;
+};
+```
+
+`fetchData` takes precedence over `loadOptions`; either remote source takes precedence over `options`. Debounce is `fetchDebounceMs ?? debounceMs ?? 200` milliseconds. Static `Select` search defaults off; static `MultiSelectInput` search defaults on. Remote search is always enabled. Render callbacks belong to `MultiSelectInput`, not `Select`. They receive normalized `ChoiceOption<string>` objects and return Solid content.
+
+`SelectChip.size` uses [ButtonSize](/en/ui/actions/buttons); `position` uses [DropdownPosition](/en/ui/actions/menus#api-reference). `menuWidth` is a CSS length, default `"10rem"`. `SelectChip` does not accept `null`; represent an explicit empty choice with an option of your value type.
 
 ## Accessibility
 

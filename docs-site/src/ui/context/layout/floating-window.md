@@ -49,6 +49,30 @@ The component does not persist its position. Add product-owned persistence only 
 geometry helper used by the component. It returns a clamped
 `FloatingWindowRect`; it does not read the browser or store the result.
 
+## API reference
+
+```ts
+type FloatingWindowRect = { x: number; y: number; width: number; height: number };
+
+type FloatingWindowProps = {
+  title: string; icon?: string; children: JSX.Element; onClose: () => void; initialWidth?: number;
+  initialHeight?: number; minWidth?: number; minHeight?: number; accent?: string; class?: string;
+  resolveScope?: () => HTMLElement | null | undefined;
+};
+
+type OpenFloatingWindowOptions = Omit<FloatingWindowProps, "children" | "onClose">;
+
+type FloatingWindowClose = () => void;
+```
+
+Sizes and coordinates are CSS pixels. Defaults: initial 720×640, minimum 360×320. The viewport can constrain the resulting geometry.
+
+```ts
+declare function fitFloatingWindowRect(rect: FloatingWindowRect, minWidth: number, minHeight: number, viewport: { width: number; height: number }): FloatingWindowRect;
+```
+
+`FloatingWindow.open(view: (close: FloatingWindowClose) => JSX.Element, options: OpenFloatingWindowOptions): FloatingWindowClose` mounts a window and returns its close function. `resolveScope` optionally identifies the host theme scope.
+
 ## Accessibility
 
 The window uses `role="dialog"` with `aria-modal="false"`. The title names it.

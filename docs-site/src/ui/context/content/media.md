@@ -34,6 +34,23 @@ The component provides separate actions to render inside the page or open the do
 
 Authentication, request input, server-side rendering, and error sanitization remain with the caller.
 
+## API reference
+
+```ts
+type LightboxImage = {
+  src: string; alt?: string; downloadUrl?: string;
+};
+
+type PdfPreviewRequest = () => Promise<Response | Blob>;
+
+type PdfPreviewProps = {
+  request: PdfPreviewRequest; disabled?: () => boolean; title?: string; buttonLabel?: string;
+  openButtonLabel?: string; emptyText?: string; class?: string;
+};
+```
+
+`Lightbox` requires `images: LightboxImage[]` and `onClose: () => void`; `initialIndex?: number` defaults to 0. `PdfPreview.disabled` is an accessor, not a direct boolean. Omitted labels use localized defaults; `request` runs only after a preview/open action.
+
 ## Accessibility
 
 The lightbox uses a native dialog, labeled navigation controls, arrow keys, Escape, swipe gestures, and visible image position. Captions come from `alt`.

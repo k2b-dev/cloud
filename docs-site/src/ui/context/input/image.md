@@ -33,6 +33,19 @@ preview with square, borderless icon actions. `round` changes the preview shape.
 The input is read-only when `onValueChange` is absent. URLs containing the
 configured `fallbackMarker` are treated as an unset value.
 
+## API reference
+
+See [shared field props](/en/ui/getting-started#shared-field-props) for `FieldProps`, `ValueFieldProps<T>` and `MaybeAccessor<T>`.
+
+```ts
+type ImageInputProps = ValueFieldProps<string | null> & {
+  round?: boolean; variant?: "default" | "small"; transform?: (file: File) => Promise<string>;
+  accept?: string; fallbackMarker?: string;
+};
+```
+
+`transform` resolves to the image string stored in `value`, normally a data URL. It is not an upload callback. `fallbackMarker` defaults to `"?fallback"`; a value containing it is treated as a fallback instead of a selected image. Defaults: `round=false`, `variant="default"`.
+
 ## Accessibility
 
 Provide a visible `label`, or set `"aria-label"` for the image preview. Change

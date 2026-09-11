@@ -92,13 +92,8 @@ Do not filter or sort a paginated result in the browser. The client does not own
 
 Use `density="compact"` for dense operational tables. Headers are sticky unless `stickyHeader={false}`. `footer` accepts values and an optional cell renderer for server-computed totals.
 
-`DataTable` owns its scroll viewport. Its vertical and horizontal scrollbar
-thumbs overlay the table on hover-capable fine pointers, so a scrollbar never
-reduces the sticky header width. The thumbs appear while the table is hovered,
-contains keyboard focus, or is actively scrolling. Wheel and keyboard scrolling
-remain native; touch, coarse-pointer, and forced-color environments retain
-their native scrollbar treatment. Server-rendered tables also keep native
-scrollbars until hydration has installed the overlay behavior.
+`DataTable` owns its scroll viewport and keeps sticky headers aligned. Avoid
+wrapping it in a second scrolling container.
 
 Use `surface="paper"` for a standalone bordered table and `surface="plain"`
 when a surrounding section owns the border. Set it explicitly whenever the
@@ -108,6 +103,64 @@ component keeps scrolling on its inner viewport. Bound a scrolling table with
 adding another scroll container.
 
 `hasMore`, `loadingMore`, and `onLoadMore` add an infinite-load sentinel. The owning island still fetches the next server page and appends its rows. The table keeps one request in flight until rows or loading state advance.
+
+## API reference
+
+```ts
+type DataTableColumn<T> = {
+  id: string;
+  header: JSX.Element | ((ctx: { col: DataTableColumn<T> }) => JSX.Element);
+  subtitle?: JSX.Element | ((ctx: { col: DataTableColumn<T> }) => JSX.Element);
+  value?: keyof T | ((row: T) => unknown); class?: string; headerClass?: string; cellClass?: string;
+  align?: "left" | "center" | "right"; sortable?: boolean | string;
+};
+
+type DataTableSort = { key: string; direction: "asc" | "desc" };
+
+type DataTableRenderCell<T> = (ctx: {
+  row: T; col: DataTableColumn<T>; value: unknown; render: (value: unknown) => JSX.Element;
+}) => JSX.Element;
+
+type DataTableRenderHeader<T> = (ctx: { col: DataTableColumn<T>; render: () => JSX.Element }) => JSX.Element;
+
+type DataTableFooter<T> = {
+  values?: Record<string, unknown>;
+  renderCell?: (ctx: { col: DataTableColumn<T>; value: unknown; render: (value: unknown) => JSX.Element }) => JSX.Element;
+};
+
+type DataTableProps<T> = {
+  rows: readonly T[]; columns: readonly DataTableColumn<T>[]; ariaLabel?: string; ariaLabelledBy?: string;
+  getRowId?: (row: T) => string; sort?: DataTableSort | null; sortHref?: (next: DataTableSort) => string;
+  selectedRowId?: string | null; rowClass?: string | ((row: T) => string | undefined); hoverRows?: boolean;
+  onRowClick?: (row: T) => void; onRowDoubleClick?: (row: T) => void; renderCell?: DataTableRenderCell<T>;
+  renderHeader?: DataTableRenderHeader<T>; footer?: DataTableFooter<T>; hasMore?: boolean;
+  loadingMore?: boolean; onLoadMore?: () => void; empty?: JSX.Element; density?: "compact" | "normal";
+  stickyHeader?: boolean; highlightColumns?: boolean; verticalAlign?: "top" | "middle" | "bottom";
+  cellContentClass?: string; fillHeight?: boolean; surface?: "paper" | "plain"; class?: string;
+  tableClass?: string; scrollPreserveKey?: string | false;
+};
+
+type DataTablePanelProps = {
+  children: JSX.Element; class?: string;
+};
+
+type DataTableHeaderProps = {
+  title: string; subtitle?: string; children?: JSX.Element; as?: "h1" | "h2" | "h3"; size?: "sm" | "md";
+  class?: string;
+};
+
+type DataTableControlsProps = {
+  children: JSX.Element; class?: string;
+};
+
+type DataTablePanelFooterProps = {
+  children: JSX.Element; class?: string;
+};
+```
+
+The four panel types correspond to `DataTable.Panel`, `.Header`, `.Controls`, and `.Footer`. All row callbacks receive the original row. Footer values are keyed by **column id**. `getRowId` returns a stable string. `onLoadMore` returns `void`; expose request state through `loadingMore` and append rows after success.
+
+Defaults: `density="normal"`, `stickyHeader=true`, `verticalAlign="middle"`. Use `onRowClick`/`onRowDoubleClick` only for real row actions; selection remains controlled through `selectedRowId`. `scrollPreserveKey={false}` disables restoration for the table. `fillHeight` makes the table fill a bounded parent's height. `hoverRows` defaults to whether a row callback exists; `highlightColumns` defaults on when row hover is enabled. Omitted `surface` is paper without a custom class and plain with one, so set it explicitly when styling. `rowClass` styles rows, `tableClass` the table, and `class` its outer shell.
 
 ## Accessibility
 

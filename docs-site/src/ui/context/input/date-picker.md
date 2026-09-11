@@ -48,6 +48,42 @@ Use `dateConfig` to define the application time zone and first day of the week. 
 
 An explicit `dateConfig.locale` wins; without one the pickers inherit the render locale from `LocaleProvider` or the browser's `<html lang>` (see the Locale and formatting page). The timezone never comes from the locale context.
 
+## API reference
+
+See [shared field props](/en/ui/getting-started#shared-field-props) for `FieldProps`, `ValueFieldProps<T>` and `MaybeAccessor<T>`.
+
+```ts
+type DatePreset<T> = {
+  label: string; value: T;
+};
+
+type DurationPreset = {
+  label: string; minutes: number;
+};
+
+type DateRangeValue = {
+  start: string | null; end: string | null;
+};
+
+type DatePickerBaseProps<T> = Omit<ValueFieldProps<T>, "value"> & {
+  placeholder?: string; value: MaybeAccessor<T>; presets?: readonly DatePreset<T>[]; dateConfig?: DateContext;
+  clearable?: boolean;
+};
+
+type DatePickerProps = DatePickerBaseProps<string | null>;
+
+type DateTimePickerProps = DatePickerBaseProps<string | null>;
+
+type DateRangePickerProps = DatePickerBaseProps<DateRangeValue> & {
+  withTime?: boolean; datePresets?: readonly DatePreset<string | null>[];
+  durationPresets?: readonly DurationPreset[];
+};
+```
+
+`DateContext` is defined under [date and locale options](/en/ui/content/intl#date-and-locale-options). `DatePicker` emits `YYYY-MM-DD`; without a timezone `DateTimePicker` emits `YYYY-MM-DDTHH:mm`, with a timezone it emits an ISO instant in UTC. `DateRangePicker` follows the date contract by default and the datetime contract with `withTime=true`. Empty range endpoints are `null`, not an absent range object. Supply preset values in the same format as the controlled value.
+
+`presets` applies complete values; `datePresets` picks individual dates in a timed range, and `durationPresets.minutes` adjusts its duration. Clearing is enabled unless `clearable={false}`. Week-start and locale follow `dateConfig`; `withTime` defaults to false.
+
 ## Accessibility
 
 Provide a visible `label` or a specific placeholder. The trigger exposes dialog

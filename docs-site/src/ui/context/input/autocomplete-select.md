@@ -105,6 +105,28 @@ The clear action is deliberately outside the Tab order. Pointer users can still
 clear the value, while the editable field itself opens the options without adding
 another keyboard stop to the form's native field order.
 
+## API reference
+
+See [shared field props](/en/ui/getting-started#shared-field-props) for `FieldProps`, `ValueFieldProps<T>` and `MaybeAccessor<T>`.
+
+```ts
+type AutocompleteSelectOption = ChoiceOption<string>;
+
+type AutocompleteSelectSearchResult = {
+  options: readonly AutocompleteSelectOption[]; match?: AutocompleteSelectOption;
+};
+
+type AutocompleteSelectProps = ValueFieldProps<string | null> & {
+  search: (query: string, signal: AbortSignal, group: string | null) => Promise<AutocompleteSelectSearchResult>;
+  selectedOption?: AutocompleteSelectOption; formatValue?: (option: AutocompleteSelectOption) => string;
+  groups?: readonly SelectGroup[]; defaultGroup?: string; groupsAriaLabel?: string; allGroupLabel?: string;
+  placeholder?: string; debounceMs?: number; clearable?: boolean; name?: string; autofocus?: boolean;
+  noMatchText?: string; checkingText?: string; noOptionsText?: string;
+};
+```
+
+`ChoiceOption<string>` and groups are defined under [selection controls](/en/ui/input/select#api-reference). `onValueChange` follows the editing/selection behavior above; `onValueCommit` reports a committed selection or clear. These callbacks return `void`.
+
 ## Accessibility
 
 Use a visible `label` and useful `description`. The text input exposes combobox,

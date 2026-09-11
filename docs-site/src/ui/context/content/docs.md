@@ -38,9 +38,7 @@ import {
 
 `DocInlineCode` marks literal paths, names, flags, and tokens.
 
-`DocConcept` and `DocRow` are the item contracts for their repeated
-components. Concept body copy uses `text`; rows use `text` and an optional
-icon. `DocNoteVariant` is `"info" | "tip" | "warning"`.
+The [API reference](#api-reference) defines `DocConcept`, `DocRow` and code options.
 
 `DocConceptGrid` and `DocRows` add the `ti` family class themselves, so their
 `icon` values are bare Tabler names such as `ti-shield-lock`. This differs from
@@ -54,9 +52,30 @@ Pass `highlight` when an application has its own DSL. The function receives one 
 
 Do not put secrets or user-specific values in examples.
 
+## API reference
+
+```ts
+type DocConcept = {
+  title: string; icon: string; text: JSX.Element;
+};
+
+type DocRow = {
+  title: string; icon?: string; text: JSX.Element;
+};
+
+type DocCodeHighlighter = (code: string) => string;
+
+type DocCodeProps = {
+  code: string; title?: string; language?: CodeDisplayLanguage; highlight?: DocCodeHighlighter;
+  format?: (code: string) => string; copy?: boolean; copyText?: string; lineNumbers?: boolean; class?: string;
+};
+```
+
+`DocCode.copyText` overrides what is copied; otherwise the formatted source is copied. `lineNumbers` and `copy` default to false; `language` defaults to `"text"`. `highlight` returns trusted HTML for one line, so escape text in a custom highlighter. Other members: `DocPage`, `DocLead`, `DocInlineCode` accept JSX children; `DocSection` requires `title: string` and children, with optional `eyebrow: string`; `DocConceptGrid`/`DocRows` require `items` arrays of the shapes above. `DocNote` requires `title: string` and children, with `variant?: "info" | "tip" | "warning"` (default info).
+
 ## Accessibility
 
-Keep the surrounding page heading hierarchy correct. `DocSection` renders a third-level heading, so it belongs below the page and topic headings that establish its context.
+Keep the surrounding page heading hierarchy correct. `DocSection` renders a second-level heading, so it belongs below the page heading.
 
 Concept icons supplement visible titles and descriptions. Notes always include a title. Code remains selectable text and the copy control has an accessible label.
 

@@ -18,6 +18,19 @@ import {
 
 `CodeDisplayLanguage` supports TypeScript, JavaScript, script, Markdown, and plain text modes. Line numbers and copy are enabled by default and can be disabled independently.
 
+## API reference
+
+```ts
+type CodeDisplayLanguage = "ts" | "tsx" | "js" | "jsx" | "script" | "markdown" | "md" | "text";
+
+type CodeDisplayProps = {
+  code: string; title?: string; language?: CodeDisplayLanguage; copy?: boolean; lineNumbers?: boolean;
+  class?: string;
+};
+```
+
+Defaults: `language="text"`, `copy=true`, `lineNumbers=true`. Set `copy={false}` or `lineNumbers={false}` independently.
+
 ## Accessibility
 
 Source remains selectable text. Titles and copy controls have text labels. Highlighting must not be the only explanation of an important token.

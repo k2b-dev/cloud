@@ -26,6 +26,8 @@ to `true`; `formatValue` controls its text.
 
 With `center`, the filled track starts at the range midpoint. Double-click resets to `defaultValue`, or to the midpoint for a centered slider and `min` otherwise.
 
+See [shared field props](/en/ui/getting-started#shared-field-props) for labels, errors, disabled state and value accessors.
+
 ## Accessibility
 
 Always provide `label`; the displayed value alone does not name the native range input. Use `description` for units or consequences that are not clear from the label.

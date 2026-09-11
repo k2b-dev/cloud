@@ -20,6 +20,11 @@ Pass `label` as visible status text. Default icons follow the tone and can be re
 
 `title` adds supporting detail without replacing the visible label.
 
+Required props are `label: JSX.Element` and `tone: "ok" | "warning" | "error" | "degraded" | "running" | "neutral"`.
+`variant?: "chip" | "dot" | "text"` defaults to chip. `icon?: string | null`
+overrides the default icon; `null` removes it. `title?: string` and `class?: string`
+add supporting text and layout classes.
+
 ## Accessibility
 
 Color and icons are supplementary. The visible label must state the result without either.

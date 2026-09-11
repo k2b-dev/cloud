@@ -50,6 +50,24 @@ does not add a border, background, or divider. Choose `as="h1"`, `"h2"`, or
 `"h3"` to preserve the page hierarchy, and `size="md"` only for a larger
 page-level title.
 
+## API reference
+
+```ts
+type AppOverviewProps = {
+  title: string; subtitle?: string; icon: string; class?: string; children: JSX.Element;
+};
+
+type AppOverviewPanelProps = {
+  title: string; description?: JSX.Element; toolbar?: JSX.Element; class?: string; children: JSX.Element;
+};
+
+type AppOverviewEmptyStateProps = {
+  title: string; description?: JSX.Element; icon?: string; class?: string; children?: JSX.Element;
+};
+```
+
+PanelHeader and DataPanel are shared with the [operational surfaces reference](/en/ui/surfaces/observability#api-reference). Use the compound members for composition and the parent for the page title/action area.
+
 ## Accessibility
 
 The root renders the page heading. Main and aside titles render section headings.

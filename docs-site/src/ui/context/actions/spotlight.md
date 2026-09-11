@@ -25,6 +25,20 @@ const openSearch = () => openSpotlightSearch({
 
 Variants cover default, compact, chip, sidebar, sidebar-mobile, and icon launchers.
 
+## API reference
+
+```ts
+type SpotlightButtonVariant = "default" | "compact" | "chip" | "sidebar" | "sidebar-mobile" | "icon";
+
+type SpotlightButtonProps = {
+  variant?: SpotlightButtonVariant; label?: string; title?: string; icon?: string;
+  shortcutLabel?: string | false; ariaLabel?: string; disabled?: boolean; class?: string;
+  onClick: () => void | Promise<void>;
+};
+```
+
+The default variant is `"default"`. `shortcutLabel={false}` hides the shortcut text. `openSpotlightSearch<T>(options)` uses the [prompts.search options and result](/en/ui/feedback/prompts#api-reference) and resolves to `PromptSearchItem<T> | undefined`; handle the selected value. `isSpotlightShortcut(event: KeyboardEvent): boolean` only recognizes the shortcut; the host registers its keyboard listener.
+
 ## Accessibility
 
 Every variant retains an accessible label. `isSpotlightShortcut` recognizes Command+Shift+K and Control+Shift+K.

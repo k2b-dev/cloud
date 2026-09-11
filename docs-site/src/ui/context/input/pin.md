@@ -31,6 +31,8 @@ focused digit, for example while checking a PIN.
 
 Set `stretch` when the fields should divide the available width. `description`, `error`, `required`, and `disabled` follow the shared input behavior.
 
+See [shared field props](/en/ui/getting-started#shared-field-props) for labels, errors, disabled state and value accessors.
+
 ## Accessibility
 
 Each digit has an accessible position such as “PIN digit 2 of 6”. Provide a visible `label` so the code's purpose is clear beside the group.
