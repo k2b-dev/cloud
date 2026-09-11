@@ -1,3 +1,4 @@
+import { queryCommands } from "./cli/queries";
 import { databaseCommands } from "./cli/database";
 import { arg, readCliInput, command, confirmFlag, defineCliCommands, flag, printStructured, type CloudCliContext } from "@k2b/cloud/cli";
 import { createAccessCommands } from "@k2b/cloud/cli/access";
@@ -32,6 +33,7 @@ export default defineCliCommands({
   summary: "Build and share local browser tools.",
   commands: [
     ...databaseCommands,
+    ...queryCommands,
     command("list", {
       summary: "List accessible apps",
       flags: {

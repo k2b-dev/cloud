@@ -347,3 +347,7 @@ Before shipping, also verify:
 Cloud repository maintainers additionally run the repository-wide Help corpus
 checks for built-in applications. Third-party application CI does not depend on
 those private source paths.
+
+For a focused reference read, pass an exact level-two heading as the `read_help`
+query. The response selects that section, including its examples, within the
+existing read limit. Other queries retain ranked topic matching.

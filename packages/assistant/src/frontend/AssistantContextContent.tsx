@@ -27,6 +27,8 @@ export type AssistantContextFile = {
   path: string;
   mediaType: string;
   size: number;
+  dictationRecordedAt?: string;
+  displayName?: string;
   scope: AssistantContextScope;
   source: FileSource;
 };
@@ -236,7 +238,7 @@ export const openAssistantCloudReference = async (title: string, ref: CloudResou
 };
 
 const virtualPath = (file: AssistantContextFile): string =>
-  `/${assistantBrowserText(file.scope === "project" ? "Project" : "Chat")}/${file.path.replace(/^\/+/, "")}`;
+  `/${assistantBrowserText(file.dictationRecordedAt ? "Voice inputs" : file.scope === "project" ? "Project" : "Chat")}/${file.path.replace(/^\/+/, "")}`;
 
 export const assistantContextFileSource = (files: readonly AssistantContextFile[]): FileSource => ({
   async list(): Promise<FileTreeEntry[]> {
@@ -244,7 +246,9 @@ export const assistantContextFileSource = (files: readonly AssistantContextFile[
       path: virtualPath(file),
       mediaType: file.mediaType,
       size: file.size,
-      badge: file.scope,
+      badge: file.dictationRecordedAt ? undefined : file.scope,
+      displayName: file.displayName,
+      icon: file.dictationRecordedAt ? "ti-microphone" : undefined,
     }));
   },
   async read(path: string): Promise<FileViewContent> {
@@ -323,9 +327,9 @@ export function AssistantContextRows(props: { children: JSX.Element }) {
   return <div class="flex flex-col gap-1">{props.children}</div>;
 }
 
-export function AssistantContextViewAll(props: { onClick: () => void }) {
+export function AssistantContextViewAll(props: { onClick: () => void; count?: number }) {
   const text = useAssistantText();
-  return <AssistantContextRow icon="ti ti-eye" title={text("View all")} onClick={props.onClick} />;
+  return <AssistantContextRow icon="ti ti-eye" title={props.count === undefined ? text("View all") : `${text("View all")} · ${props.count}`} onClick={props.onClick} />;
 }
 
 export function AssistantContextEmpty(props: { children: JSX.Element }) {

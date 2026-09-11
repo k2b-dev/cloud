@@ -1,3 +1,4 @@
+import { savedQueriesApi } from "./saved-queries";
 import { databaseApi } from "./database";
 import { DatabaseError } from "../service/database";
 import { databaseErrorMessage } from "../database-messages";
@@ -44,6 +45,7 @@ const router = new Hono<AuthContext>()
     return respond(c, { ok: false, error: apiErrorMessage("REQUEST_FAILED", getLocale(c)), status: 500, code: "REQUEST_FAILED" });
   })
   .route("/", databaseApi)
+  .route("/", savedQueriesApi)
   .get("/sdk", (c) => respond(c, ok(sdkReference)))
   .get("/starter", (c) => respond(c, ok(starter)))
   .get("/projects", describeRoute({ tags: ["Kit"], summary: "List accessible Kit apps" }), async (c) => {

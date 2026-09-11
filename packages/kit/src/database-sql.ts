@@ -10,9 +10,10 @@ const functions = new Set(
   ),
 );
 const syntaxBeforeParen = new Set(["in", "as", "over", "exists", "select", "from", "where", "and", "or", "not", "filter"]);
-export function safeQuery(sql: string) {
+export function safeQuery(sql: string, parameterCount?: number) {
   const tokens: { word: string; quoted: boolean }[] = [];
-  let rest = sql.trim();
+  sql = sql.trim().replace(/;$/, "").trimEnd();
+  let rest = sql;
   while (rest) {
     const match = /^(\s+|'(?:''|[^'])*'|"(?:""|[^"])*"|\[(?:[^\]])*\]|[A-Za-z_][A-Za-z0-9_]*|\d+(?:\.\d+)?|[(),.?+*/%=<>!|-])/.exec(rest);
     if (!match) throw new Error("DB_SQL_UNSUPPORTED");
@@ -38,5 +39,6 @@ export function safeQuery(sql: string) {
     if (next?.word === "(" && /^[a-z]/.test(current.word) && !functions.has(current.word) && !syntaxBeforeParen.has(current.word))
       throw new Error("DB_SQL_UNSUPPORTED");
   }
+  if (parameterCount !== undefined && tokens.filter(token => token.word === "?" && !token.quoted).length !== parameterCount) throw new Error("DB_SQL_PARAMS");
   return `SELECT * FROM (${sql}) LIMIT 1001`;
 }

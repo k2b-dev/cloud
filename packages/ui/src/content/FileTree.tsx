@@ -291,7 +291,7 @@ export default function FileTree(props: FileTreeProps) {
                 class="k2b-content-file-tree__item"
                 role="treeitem"
                 tabIndex={renamingPath() === node.entry.path ? -1 : focusedPath() === node.entry.path ? 0 : -1}
-                aria-label={currentNode().name}
+                aria-label={currentNode().entry.displayName ?? currentNode().name}
                 aria-level={currentNode().depth + 1}
                 aria-selected={isSelected()}
                 aria-expanded={currentNode().isFolder ? expanded().has(currentNode().entry.path) : undefined}
@@ -335,7 +335,7 @@ export default function FileTree(props: FileTreeProps) {
                         }}
                       >
                         <i class={`ti ${icon()} k2b-content-file-tree__icon`} aria-hidden="true" />
-                        <span class="k2b-content-file-tree__name">{currentNode().name}</span>
+                        <span class="k2b-content-file-tree__name">{currentNode().entry.displayName ?? currentNode().name}</span>
                         <Show when={currentNode().entry.badge}>
                           <span class="k2b-content-file-tree__badge">{currentNode().entry.badge}</span>
                         </Show>

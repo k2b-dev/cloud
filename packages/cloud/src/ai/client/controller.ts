@@ -4,6 +4,7 @@ import { type AiAttachmentRef, aiAttachmentMarker } from "../attachments";
 import { type AiStreamEvent, type AiTurnBlock, type AiTurnSnapshot, steerMessageBlockId } from "../protocol";
 import { type AiResourceMarker, aiResourceMarker } from "../resource-markers";
 import type {
+  AiClientToolId,
   AiConversation,
   AiConversationTimelineEntry,
   AiDraftContentPart,
@@ -39,6 +40,7 @@ export type AiChatRunStatus = "idle" | "streaming" | "waiting_for_action" | "sto
 export type AiStreamStatus = "idle" | "connecting" | "open" | "reconnecting";
 
 export type AiFrontendToolHandler = (request: {
+  conversationId: string;
   name: string;
   callId: string;
   args: unknown;
@@ -102,6 +104,8 @@ export type CreateAiChatControllerOptions = {
   /** Persist owner read state for conversation-list unread indicators. */
   trackViewedState?: boolean;
   frontendTools?: Record<string, AiFrontendToolHandler>;
+  /** Explicitly advertise only client tools with a connected handler. */
+  clientToolIds?: AiClientToolId[];
   /** Overrides the default SSE transport, for example with a shared WebSocket channel. */
   streamTransport?: AiConversationStreamTransport;
 };
@@ -341,7 +345,7 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
       return false;
     }
     try {
-      const result = await handler({ name, callId, args, turnId });
+      const result = await handler({ name, callId, args, turnId, conversationId });
       return submitTurnActionForConversation(conversationId, turnId, callId, { type: "tool_result", result });
     } catch (toolError) {
       return submitTurnActionForConversation(conversationId, turnId, callId, {
@@ -769,6 +773,7 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
             method: "POST",
             body: JSON.stringify({
               draftRevision: savedDraft.revision,
+              clientToolIds: options.clientToolIds?.filter((id) => options.frontendTools?.[id]),
               modelProfileId: input.modelProfileId,
             }),
           },

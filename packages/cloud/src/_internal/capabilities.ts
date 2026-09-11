@@ -521,6 +521,9 @@ export const compileCapabilities = (appId: string, definitions: CapabilityDefini
     if (definition.approval === "rememberable" && definition.destructive) {
       throw new Error(`${label} cannot remember approval for a destructive effect`);
     }
+    if (definition.approval === "none" && (definition.destructive || definition.openWorld)) {
+      throw new Error(`${label} cannot skip approval for destructive or open-world effects`);
+    }
     if (definition.approval === "rememberable" && !definition.review) {
       throw new Error(`${label} must provide a review before approval can be remembered`);
     }

@@ -1,7 +1,7 @@
 import { test, expect } from "bun:test";
 import { safeQuery } from "../src/database-sql";
 import { importData } from "../src/database-import";
-import type { DatabaseRequest } from "../src/database-contracts";
+import { DatabaseRequest } from "../src/database-contracts";
 test("Kit SELECT subset rejects internal objects, external functions and write syntax", () => {
   for (const sql of [
     "SELECT * FROM _meta",
@@ -95,4 +95,14 @@ test("cancel stops future batches without undoing confirmed writes", async () =>
   );
   expect(writes).toBe(1);
   expect(result).toMatchObject({ status: "cancelled", confirmedRows: 1000 });
+});
+
+test("managed columns and SQL parameter mismatch fail before dispatch", () => {
+  for (const name of ["id", "created_at", "updated_at"]) {
+    const result = DatabaseRequest.safeParse({ operation: "tables.create", name: "books", columns: [{ name, type: "text" }] });
+    expect(result.success).toBe(false);
+    if (!result.success) expect(result.error.message).toContain("managed by rsql");
+  }
+  expect(() => safeQuery("SELECT title FROM books WHERE title = ? OR author = ?", 1)).toThrow("DB_SQL_PARAMS");
+  expect(safeQuery("SELECT '?' AS title FROM books WHERE id = ?", 1)).toContain("LIMIT 1001");
 });

@@ -2,8 +2,10 @@ import { i18n } from "@k2b/stdlib";
 import { useLocale } from "@k2b/ui";
 
 const germanText: Record<string, string> = {
+  "Voice inputs": "Spracheingaben",
   "Scheduled AI task": "Geplante KI-Aufgabe",
   "AI conversation": "KI-Chat",
+  "Assistant app": "Assistant-App",
   "A reference with this name already exists.": "Eine Referenz mit diesem Namen ist bereits vorhanden.",
   "Add a durable fact about you or a preference for future answers. New entries start pinned.": "Füge eine dauerhafte Tatsache über dich oder eine Präferenz für künftige Antworten hinzu. Neue Einträge sind zunächst angeheftet.",
   Access: "Zugriff",
@@ -160,6 +162,8 @@ const germanText: Record<string, string> = {
   "Saved personalization": "Gespeicherte Personalisierung",
   Scheduled: "Geplant",
   "Scheduled task request failed": "Die Anfrage für die geplante Aufgabe ist fehlgeschlagen",
+  "No matching items.": "Keine passenden Einträge.",
+  "No items yet.": "Noch keine Einträge.",
   "Scheduled tasks": "Geplante Aufgaben",
   "Search Project knowledge…": "Projektwissen durchsuchen…",
   "Search chats": "Chats durchsuchen",

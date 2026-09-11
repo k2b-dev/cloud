@@ -30,7 +30,7 @@ const bytesToBase64 = (bytes: Uint8Array): string => {
   return btoa(binary);
 };
 
-export const conversationFileSource = (baseUrl: string, conversationId: string): FileSource => {
+export const conversationFileSource = (baseUrl: string, conversationId: string): FileSource & { listFiles(): Promise<AiFileStat[]> } => {
   const filesUrl = (suffix = "", params?: Record<string, string>) => {
     const query = params ? `?${new URLSearchParams(params).toString()}` : "";
     return `${baseUrl}/conversations/${conversationId}/files${suffix}${query}`;
@@ -45,15 +45,18 @@ export const conversationFileSource = (baseUrl: string, conversationId: string):
     return (await response.json()) as T;
   };
 
+  const listFiles = async (): Promise<AiFileStat[]> =>
+    (await request<{ files: AiFileStat[] }>(filesUrl(), { method: "GET" }, "Failed to load files")).files;
+
   return {
+    listFiles,
     async list(): Promise<FileTreeEntry[]> {
-      const result = await request<{ files: AiFileStat[] }>(filesUrl(), { method: "GET" }, "Failed to load files");
-      return result.files.map((file) => ({
+      return (await listFiles()).map((file) => ({
         path: file.path,
         size: file.size,
         mediaType: file.mediaType,
         updatedAt: file.updatedAt,
-        badge: file.origin === "user" ? "upload" : undefined,
+        badge: file.dictationRecordedAt ? undefined : file.origin === "user" ? "upload" : undefined,
       }));
     },
 

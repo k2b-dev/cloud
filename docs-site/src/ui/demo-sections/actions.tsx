@@ -290,6 +290,10 @@ const SegmentedDemo = () => {
 
 const TabsDemo = () => {
   const [tab, setTab] = createSignal("overview");
+  const [workspaceTab, setWorkspaceTab] = createSignal("overview");
+  const [workspaceIds, setWorkspaceIds] = createSignal(["overview", "activity"]);
+  const openFile = (id: string) => { setWorkspaceIds(ids => ids.includes(id) ? ids : [...ids,id]); setWorkspaceTab(id); };
+  const closeFile = (id: string) => { setWorkspaceIds(ids => ids.filter(item => item !== id)); if (workspaceTab() === id) setWorkspaceTab(workspaceIds()[0] ?? ""); };
   return (
     <DemoCard
       id="tabs"
@@ -320,6 +324,9 @@ const TabsDemo = () => {
           <p>Archived records.</p>
         </Tabs.Item>
       </Tabs>
+      <Tabs variant="pill" ariaLabel="Workspace files" value={workspaceTab} onValueChange={setWorkspaceTab}
+        trailing={<Dropdown.Root items={[{ label: "Overview", action: () => openFile("overview") }, { label: "Activity", action: () => openFile("activity") }]}><Dropdown.Trigger iconOnly label="Open content"><i class="ti ti-plus" aria-hidden="true" /></Dropdown.Trigger></Dropdown.Root>}
+        options={workspaceIds().map(id => ({ value: id, label: id === "overview" ? "Overview" : "Activity", icon: "ti ti-file", onClose: () => closeFile(id), closeLabel: `Close ${id}` }))} />
     </DemoCard>
   );
 };

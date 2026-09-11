@@ -12,6 +12,7 @@ import {
   CLOUD_AI_DEFERRED_BUILTIN_TOOL_NAMES,
   createCloudAiCardTool,
   createCloudAiLocalBashTool,
+  createCloudAiCodeTools,
   createConfiguredDefaultCloudAiTools,
   createDefaultCloudAiTools,
 } from "./default-tools";
@@ -173,6 +174,18 @@ describe("AI tools", () => {
     expect(prepared.approvalPolicies.get("survey")).toBe("never");
     expect(prepared.approvalPolicies.get("text_editor")).toBe("never");
     expect(CLOUD_AI_DEFERRED_BUILTIN_TOOL_NAMES.has("card")).toBe(false);
+  });
+
+  test("browser execution is an explicitly advertised client tool, not a default", () => {
+    const defaults = prepareAiTools({ tools: createDefaultCloudAiTools(), actor });
+    const browser = prepareAiTools({ tools: createCloudAiCodeTools(), actor });
+    for (const tool of browser.tools) {
+      expect(defaults.tools.some((entry) => entry.def.name === tool.def.name)).toBe(false);
+      expect(CLOUD_AI_DEFERRED_BUILTIN_TOOL_NAMES.has(tool.def.name)).toBe(true);
+    }
+    expect(browser.tools).toHaveLength(6);
+    expect(browser.frontendModes.get("code_run")).toBe("client");
+    expect(browser.approvalPolicies.get("code_run")).toBe("never");
   });
 
   test("keeps local Bash outside the default toolset", () => {

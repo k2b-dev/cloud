@@ -18,11 +18,14 @@
     "@k2b/ui": "workspace:*",
     "hono": "catalog:",
     "solid-js": "catalog:",
-    "zod": "catalog:"
+    "zod": "catalog:",
+    "papaparse": "5.7.0"
   },
   "devDependencies": {
     "@types/bun": "catalog:",
-    "typescript": "catalog:"
+    "typescript": "catalog:",
+    "@types/papaparse": "5.5.2",
+    "playwright": "catalog:"
   },
   "license": "AGPL-3.0-or-later"
 }

@@ -1220,6 +1220,7 @@ suite("AI conversation store integration", () => {
       const pinned = await create("Pinned");
       const running = await create("Running");
       const attention = await create("Attention");
+      const browser = await create("Browser work");
       const failed = await create("Failed");
       const done = await create("Done");
 
@@ -1244,12 +1245,15 @@ suite("AI conversation store integration", () => {
       };
       await insertTurn(running.id, "running");
       await insertTurn(attention.id, "waiting_for_action");
+      await insertTurn(browser.id, "waiting_for_action");
+      await sql`UPDATE ai.turns SET live_blocks = (${JSON.stringify([{ kind: "tool", name: "code_run", callId: "browser-call", args: {}, status: "awaiting_client", frontendMode: "client" }])}::text)::jsonb WHERE conversation_id = ${browser.id}::uuid`;
       await insertTurn(failed.id, "failed", true, "Provider unavailable");
       await insertTurn(done.id, "completed", true);
 
       const summaries = await aiConversations.listConversations({ ownerUserId: userId });
       expect(summaries.find((item) => item.id === running.id)?.runStatus).toBe("running");
       expect(summaries.find((item) => item.id === attention.id)?.runStatus).toBe("needs_attention");
+      expect(summaries.find((item) => item.id === browser.id)?.runStatus).toBe("waiting_for_browser");
       expect(summaries.find((item) => item.id === failed.id)).toMatchObject({
         runStatus: "failed",
         runError: "Provider unavailable",
@@ -1259,10 +1263,16 @@ suite("AI conversation store integration", () => {
         runError: null,
         unreadCompletion: true,
       });
-      expect(await aiConversations.listConversations({ ownerUserId: userId, status: "running" })).toHaveLength(1);
+      expect(await aiConversations.listConversations({ ownerUserId: userId, status: "running" })).toHaveLength(2);
       expect(await aiConversations.listConversations({ ownerUserId: userId, status: "needs_attention" })).toHaveLength(1);
       expect(await aiConversations.listConversations({ ownerUserId: userId, status: "failed" })).toHaveLength(1);
       expect(await aiConversations.listConversations({ ownerUserId: userId, status: "unread" })).toHaveLength(1);
+      const browserPage = await aiConversations.listConversationsPage({ ownerUserId: userId, status: "running", page: 1, perPage: 10 });
+      expect(browserPage.total).toBe(2);
+      expect(browserPage.items.find(item => item.id === browser.id)?.runStatus).toBe("waiting_for_browser");
+      await sql`UPDATE ai.turns SET live_blocks = live_blocks || (${JSON.stringify([{ kind: "tool", status: "awaiting_approval", callId: "human-call" }])}::text)::jsonb WHERE conversation_id = ${browser.id}::uuid`;
+      expect((await aiConversations.getConversation({ conversationId: browser.id }))?.runStatus).toBe("needs_attention");
+      expect(await aiConversations.listConversations({ ownerUserId: userId, status: "needs_attention" })).toHaveLength(2);
       expect(await aiConversations.archiveConversation({ conversationId: running.id, ownerUserId: userId })).toBe(false);
 
       expect(await aiConversations.markConversationViewed({ conversationId: done.id, ownerUserId: userId })).toBe(true);

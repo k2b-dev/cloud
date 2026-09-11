@@ -12,6 +12,7 @@ const { plugin } = createConfig({ dev: true, rootDir: root });
 Bun.plugin(plugin());
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { default: Workbench } = await import("../src/frontend/Workbench.island.tsx");
+const { default: QueryConsole } = await import("../src/frontend/QueryConsole.island.tsx");
 const { default: Overview } = await import("../src/frontend/Overview.island.tsx");
 const { LocaleProvider } = await import("@k2b/ui");
 const project = {
@@ -35,6 +36,8 @@ test("use and edit SSR render without browser globals or cleanup failures", () =
               edit,
               entry: project.entries[0]!.path,
               access: [],
+              userId: "test",
+              databaseEnabled: true,
             });
           },
         }),
@@ -248,4 +251,33 @@ test("all stdlib chart kinds render through the shared responsive Chart", async 
     expect(html).toContain("<svg");
     expect(html).not.toContain("<script");
   }
+});
+test("SQL console renders its editor and controls during SSR", async () => {
+  const html = renderToString(() =>
+    createComponent(LocaleProvider, {
+      locale: "en",
+      get children() {
+        return createComponent(QueryConsole, {
+          project,
+          state: {
+            enabled: true,
+            globallyEnabled: true,
+            provisioned: true,
+            generation: 1,
+            status: "ready",
+            canAdmin: true,
+            error: null,
+            overview: null,
+            tables: null,
+          },
+          queries: [],
+          hasNext: false,
+          initial: null,
+        });
+      },
+    }),
+  );
+  expect(html).toContain("SQL console");
+  expect(html).toContain("textarea");
+  expect(html).toContain("kit-sql-main");
 });

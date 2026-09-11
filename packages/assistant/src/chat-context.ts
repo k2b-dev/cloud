@@ -1,3 +1,4 @@
+import { artifacts } from "./artifacts/service";
 import { type AiConversationSource, type AiFileStat, aiChatTasks, aiConversations, listAiConversationFiles } from "@k2b/cloud/ai";
 import { type AiChatTaskView as AssistantChatTask, toAiChatTaskView } from "@k2b/cloud/ai";
 
@@ -16,9 +17,21 @@ export const loadAssistantChatContextSnapshot = async (userId: string, chatId: s
     listAiConversationFiles(conversation.id),
     aiChatTasks.list({ userId, chatId, limit: 100 }),
   ]);
+  while (sourcePage.nextCursor) {
+    const next = await aiConversations.listConversationSources({ conversationId: conversation.id, limit: 100, before: sourcePage.nextCursor });
+    sourcePage.sources.push(...next.sources);
+    sourcePage.nextCursor = next.nextCursor;
+  }
+  const appIds = [...new Set(sourcePage.sources.flatMap(source => source.ref?.type === "assistant.artifact" ? [source.ref.id] : []))];
+  const apps = new Map((await artifacts.describe(appIds, userId)).map(app => [app.id, app]));
+  const sources = sourcePage.sources.flatMap(source => {
+    if (source.ref?.type !== "assistant.artifact") return [source];
+    const app = apps.get(source.ref.id);
+    return app ? [{ ...source, title: app.title, icon: "ti ti-app-window", preview: app.description || null }] : [];
+  });
   return {
     chatId,
-    sources: sourcePage.sources,
+    sources,
     files,
     tasks: tasks.map(toAiChatTaskView),
   };

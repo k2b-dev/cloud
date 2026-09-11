@@ -259,3 +259,37 @@
 .kit-markdown-page { min-width: 0; padding: 1rem; overflow: auto; flex: 1; }
 
 .kit-runtime-workbench-full { grid-template-columns: minmax(0, 1fr); }
+
+.kit-sql-main { display:flex; flex-direction:column; min-height:0; padding:.5rem; gap:.5rem; }
+.kit-sql-header { display:flex; justify-content:space-between; align-items:center; gap:1rem; padding:.5rem; }
+.kit-sql-header h1 { font-size:1.125rem; font-weight:600; }
+.kit-sql-header p, .kit-sql-hint { color:var(--k2b-text-muted); font-size:.8125rem; }
+.kit-sql-hint { padding:0 .5rem; }
+.kit-sql-toolbar { display:flex; align-items:center; flex-wrap:wrap; gap:.5rem; padding:.5rem; }
+.kit-sql-editor { flex:1; min-height:0; }
+.kit-sql-editor[hidden] { display:none; }
+.kit-sql-results { display:flex; flex:1; flex-direction:column; height:100%; min-height:0; padding:.5rem; gap:.5rem; }
+.kit-sql-results > .k2b-table-shell { flex:1; min-height:0; }
+.kit-code .hl-function { color:var(--k2b-code-keyword); }
+.kit-code .hl-variable { color:var(--k2b-code-number); }
+
+.k2b-ui .kit-sql-drawer.k2b-app-workspace__drawer { padding:.5rem; background:transparent; border:0;  }
+.kit-sql-results { padding:0; overflow:auto; }
+.kit-sql-error { color:var(--k2b-danger-text); font-family:var(--k2b-font-mono, monospace); white-space:pre-wrap; overflow-wrap:anywhere; padding:.5rem; }
+
+.kit-sql-catalog { flex:1; min-height:0; overflow:auto; }
+.kit-sql-schema { padding:.5rem; }
+.kit-sql-schema + .kit-sql-schema { border-top:1px solid var(--k2b-border); margin-top:.5rem; }
+.kit-sql-schema-header { display:flex; align-items:center; gap:.75rem; flex-wrap:wrap; }
+.kit-sql-schema-header h2 { font-size:.9375rem; font-weight:600; }
+.kit-sql-schema-header .k2b-button { margin-left:auto; }
+.kit-sql-columns { display:flex; flex-wrap:wrap; gap:.5rem 1.5rem; margin-top:.5rem; font-family:var(--k2b-font-mono, monospace); font-size:.8125rem; }
+.kit-sql-columns > div { display:flex; gap:.5rem; }
+.kit-sql-columns dd { color:var(--k2b-text-muted); }
+
+.kit-sql-toolbar-end { margin-left:auto; }
+.kit-sql-result-toolbar > .k2b-segmented-control { margin-right:auto; }
+.k2b-ui .kit-sql-toolbar > .k2b-segmented-control { width:auto; max-width:100%; flex:0 1 auto; }
+.k2b-ui .kit-sql-toolbar > .k2b-segmented-control .k2b-segmented-control__option { flex:0 0 auto; white-space:nowrap; }
+
+.kit-sql-results > .kit-sql-toolbar, .kit-sql-results .kit-sql-hint, .kit-sql-results .kit-sql-error, .kit-sql-results .kit-sql-schema { padding-left:0; padding-right:0; }

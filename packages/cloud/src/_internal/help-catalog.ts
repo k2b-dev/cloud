@@ -194,6 +194,13 @@ const boundedExcerpt = (markdown: string, terms: readonly string[]): string => {
 };
 
 const selectMarkdown = (markdown: string, query?: string): { markdown: string; truncated: boolean } => {
+  // An exact heading identifies one complete reference section, even in short articles.
+  const headingQuery = query?.trim().toLocaleLowerCase();
+  const exact = headingQuery && splitSections(markdown).find((section) => {
+    const heading = section.match(/^##\s+([^\n]+)/)?.[1]?.replace(/\s*\{icon="[^"]*"\}\s*$/, "").replaceAll("`", "").trim().toLocaleLowerCase();
+    return heading === headingQuery;
+  });
+  if (exact) return { markdown: boundedExcerpt(exact, [headingQuery]), truncated: exact !== markdown };
   if (markdown.length <= HELP_READ_MAX_CHARS) return { markdown, truncated: false };
   const terms = searchTerms(query ?? "");
   const phrase = normalizeSearchText(query ?? "");

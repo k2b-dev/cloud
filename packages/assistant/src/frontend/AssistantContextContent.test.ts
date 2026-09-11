@@ -14,6 +14,7 @@ afterAll(() => rmSync(root, { recursive: true, force: true }));
 const { assistantContextFileSource, assistantMarkdownBody, isAssistantContextImage, resolveAssistantCloudResource } = await import(
   "./AssistantContextContent"
 );
+const { assistantConversationFileSource } = await import("./dictation-files");
 type AssistantContextFile = import("./AssistantContextContent").AssistantContextFile;
 
 const source = (label: string): FileSource => ({
@@ -23,6 +24,40 @@ const source = (label: string): FileSource => ({
 });
 
 describe("Assistant context files", () => {
+  test("file picker groups localized voice inputs and resolves selections to original paths", async () => {
+    const originalFetch = globalThis.fetch;
+    const recordedAt = "2026-09-11T11:42:00Z";
+    const files = [
+      { path: "/renamed.wav", size: 44, mediaType: "audio/wav", origin: "user", updatedAt: recordedAt, dictationRecordedAt: recordedAt, version: 1 },
+      { path: "/dictation-manual.m4a", size: 44, mediaType: "audio/mp4", origin: "user", updatedAt: recordedAt, version: 1 },
+    ];
+    try {
+      globalThis.fetch = Object.assign(async () => Response.json({ files }), { preconnect: originalFetch.preconnect });
+      const picker = assistantConversationFileSource("chat-id", () => "de-DE", () => "Spracheingaben");
+      const entries = await picker.list();
+      expect(entries[0]!.path).toBe("/Spracheingaben/renamed.wav");
+      expect(entries[0]!.displayName).toContain("11.09.26");
+      expect(entries[1]!.path).toBe("/Chat/dictation-manual.m4a");
+      expect(entries[1]!.displayName).toBeUndefined();
+      expect(picker.actualPath(entries[0]!.path)).toBe("/renamed.wav");
+      expect(picker.downloadHref?.(entries[0]!.path)).toContain("path=%2Frenamed.wav");
+    } finally { globalThis.fetch = originalFetch; }
+  });
+
+  test("groups dictation by provenance and keeps its real read/download identity", async () => {
+    const chat = source("chat");
+    const files: AssistantContextFile[] = [
+      { id: "recorded", path: "/renamed.wav", mediaType: "audio/wav", size: 44, scope: "chat", source: chat, dictationRecordedAt: "2026-09-11T11:42:00Z", displayName: "11.09.26, 13:42:00" },
+      { id: "uploaded", path: "/dictation-upload.m4a", mediaType: "audio/mp4", size: 44, scope: "chat", source: chat },
+    ];
+    const combined = assistantContextFileSource(files);
+    const entries = await combined.list();
+    expect(entries[0]).toMatchObject({ path: "/Voice inputs/renamed.wav", displayName: "11.09.26, 13:42:00", icon: "ti-microphone" });
+    expect(entries[1]!.path).toBe("/Chat/dictation-upload.m4a");
+    expect((await combined.read(entries[0]!.path)).content).toBe("chat:/renamed.wav");
+    expect(combined.downloadHref?.(entries[0]!.path)).toBe("/chat/renamed.wav");
+  });
+
   test("keeps Project and chat files in one collision-safe read-only browser", async () => {
     const projectSource = source("project");
     const chatSource = source("chat");

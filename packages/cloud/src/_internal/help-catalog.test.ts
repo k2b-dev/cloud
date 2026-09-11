@@ -89,3 +89,14 @@ describe("live Help catalog", () => {
     expect(parseHelpResourceUri("https://example.com/help")).toBeNull();
   });
 });
+
+test("exact headings select complete sections in short and long articles", () => {
+  for (const filler of ["Short intro.", "Background. ".repeat(800)]) {
+    const markdown = `${filler}\n\n## kit.ui.select {icon="code"}\nSignature\n\n### Example\nExample code\n\n## kit.ui.table {icon="table"}\nOther method`;
+    const catalog = createHelpCatalog([{ ...help, documents: [{ ...help.documents[0]!, markdown }] }]);
+    const selected = readHelpCatalog(catalog, { appId: "inventory", documentId: "permissions", query: "kit.ui.select" });
+    expect(selected?.markdown).toContain("### Example\nExample code");
+    expect(selected?.markdown).not.toContain("kit.ui.table");
+    expect(selected?.markdown.length).toBeLessThan(7000);
+  }
+});

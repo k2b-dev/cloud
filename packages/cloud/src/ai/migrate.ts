@@ -2121,6 +2121,22 @@ export const migrateCloudAi = async (): Promise<void> => {
       UNIQUE (conversation_id, user_id, operation_id)
     )
   `.simple();
+  // Provenance is separate from origin, which still controls file write rights.
+  // Backfill only an unchanged file created in the dictation transaction.
+  await sql`
+    DO $$ BEGIN
+      IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+        WHERE table_schema = 'ai' AND table_name = 'files' AND column_name = 'dictation_recorded_at') THEN
+        ALTER TABLE ai.files ADD COLUMN IF NOT EXISTS dictation_recorded_at TIMESTAMPTZ;
+        UPDATE ai.files f SET dictation_recorded_at = d.created_at FROM ai.dictations d
+        WHERE f.conversation_id = d.conversation_id AND f.path = d.source_path
+          AND f.origin = 'user' AND f.version = 1 AND f.updated_at = d.created_at
+          AND f.dictation_recorded_at IS NULL;
+      END IF;
+    END $$
+  `.simple();
+  await sql`ALTER TABLE ai.turn_files ADD COLUMN IF NOT EXISTS dictation_recorded_at TIMESTAMPTZ`.simple();
+
   // Retained for the conversation lifetime so a delayed upload cannot undo a discard.
   await sql`CREATE TABLE IF NOT EXISTS ai.dictation_cancellations (
     conversation_id UUID NOT NULL REFERENCES ai.conversations(id) ON DELETE CASCADE,

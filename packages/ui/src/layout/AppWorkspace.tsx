@@ -379,7 +379,7 @@ function AppWorkspaceMain(props: AppWorkspaceMainProps): JSX.Element {
     const result: Array<{ type: "primary"; index: number; children: unknown[] } | { type: "pane"; index: number; slot: MainPaneSlot }> = [];
     all.forEach((value, index) => {
       if (mainPaneSlot(value)) {
-        if (value.props.open !== false) result.push({ type: "pane", index, slot: value });
+        result.push({ type: "pane", index, slot: value });
       } else if (!inserted) {
         inserted = true;
         result.push({ type: "primary", index: primaryIndex, children: primary });
@@ -387,7 +387,8 @@ function AppWorkspaceMain(props: AppWorkspaceMainProps): JSX.Element {
     });
     return result;
   });
-  const anchorRegion = createMemo(() => regions().find((candidate) => candidate.type === "primary") ?? regions()[0]);
+  const anchorRegion = createMemo(() => regions().find((candidate) => candidate.type === "primary")
+    ?? regions().find((candidate) => candidate.type === "pane" && candidate.slot.props.open !== false));
   // Presence of a MainPane slot — not of an *open* one — decides the split
   // layout. Deriving it from `regions()` made a workspace whose panes are all
   // closed fall back to `resolved()`, which renders the raw slot objects.
@@ -402,15 +403,17 @@ function AppWorkspaceMain(props: AppWorkspaceMainProps): JSX.Element {
       {...scrollAttrs(props.scrollPreserveKey)}
     >
       <Show when={hasPanes()} fallback={resolved() as JSX.Element}>
-        {regions().flatMap((region) => {
-          const anchor = anchorRegion();
-          const activeMobilePane = props.mobilePane ?? (anchor?.type === "pane" ? anchor.slot.props.id : "main");
+        <For each={regions()}>{(region) => {
+          const activeMobilePane = () => {
+            const anchor = anchorRegion();
+            return props.mobilePane ?? (anchor?.type === "pane" ? anchor.slot.props.id : "main");
+          };
           if (region.type === "primary") {
             return (
               <div
                 class="k2b-app-workspace__main-primary"
                 data-workspace-main-region="main"
-                data-workspace-mobile-active={activeMobilePane === "main" ? "true" : "false"}
+                data-workspace-mobile-active={activeMobilePane() === "main" ? "true" : "false"}
               >
                 {region.children as JSX.Element}
               </div>
@@ -419,44 +422,42 @@ function AppWorkspaceMain(props: AppWorkspaceMainProps): JSX.Element {
           const pane = region.slot;
           const panelId = assertStableUiId(pane.props.id, "AppWorkspace.MainPane id");
           const variable = appWorkspacePanelVariable("pane", panelId);
-          const isAnchor = region === anchor;
-          const resizable = !isAnchor && (pane.props.resizable ?? rootResizable);
-          const defaultSize = pane.props.defaultSize ?? APP_WORKSPACE_PANE_DEFAULT;
-          const minSize = pane.props.minSize ?? APP_WORKSPACE_PANE_MIN;
-          const maxSize = Math.max(minSize, pane.props.maxSize ?? APP_WORKSPACE_PANE_MAX);
-          const content = (
+          const isAnchor = () => region === anchorRegion();
+          const resizable = () => !isAnchor() && (pane.props.resizable ?? rootResizable);
+          const defaultSize = () => pane.props.defaultSize ?? APP_WORKSPACE_PANE_DEFAULT;
+          const minSize = () => pane.props.minSize ?? APP_WORKSPACE_PANE_MIN;
+          const maxSize = () => Math.max(minSize(), pane.props.maxSize ?? APP_WORKSPACE_PANE_MAX);
+          const before = () => region.index < (anchorRegion()?.index ?? 0);
+          const handle = () => <ResizeHandle
+            kind="pane"
+            edge={before() ? "end" : "start"}
+            controls={pane.domId}
+            panelId={panelId}
+            defaultSize={defaultSize()}
+            minSize={minSize()}
+            maxSize={maxSize()}
+            shadow={pane.props.resizeShadow !== false}
+            label={`Resize ${pane.props.label}`}
+          />;
+          return <Show when={pane.props.open !== false}>
+            <Show when={resizable() && !before()}>{handle()}</Show>
             <section
               id={pane.domId}
-              class={`k2b-app-workspace__main-pane ${isAnchor ? "is-primary" : ""} ${pane.props.class ?? ""}`}
+              class={`k2b-app-workspace__main-pane ${isAnchor() ? "is-primary" : ""} ${pane.props.class ?? ""}`}
               aria-label={pane.props.label}
               data-workspace-main-region={pane.props.id}
-              data-workspace-mobile-active={activeMobilePane === pane.props.id ? "true" : "false"}
+              data-workspace-mobile-active={activeMobilePane() === pane.props.id ? "true" : "false"}
               data-workspace-panel-id={panelId}
-              data-workspace-resizable={resizable ? "true" : "false"}
+              data-workspace-resizable={resizable() ? "true" : "false"}
               data-surface={pane.props.surface === "navigation" ? "navigation" : undefined}
               data-scroll={pane.props.scroll === false ? "false" : undefined}
-              style={isAnchor ? undefined : { "--k2b-workspace-panel-size": `var(${variable}, ${defaultSize}px)` }}
+              style={isAnchor() ? undefined : { "--k2b-workspace-panel-size": `var(${variable}, ${defaultSize()}px)` }}
             >
               {pane.props.children}
             </section>
-          );
-          if (!resizable) return content;
-          const before = region.index < (anchor?.index ?? 0);
-          const handle = (
-            <ResizeHandle
-              kind="pane"
-              edge={before ? "end" : "start"}
-              controls={pane.domId}
-              panelId={panelId}
-              defaultSize={defaultSize}
-              minSize={minSize}
-              maxSize={maxSize}
-              shadow={pane.props.resizeShadow !== false}
-              label={`Resize ${pane.props.label}`}
-            />
-          );
-          return before ? [content, handle] : [handle, content];
-        })}
+            <Show when={resizable() && before()}>{handle()}</Show>
+          </Show>;
+        }}</For>
       </Show>
     </div>
   );

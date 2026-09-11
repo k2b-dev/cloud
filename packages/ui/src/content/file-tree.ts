@@ -11,6 +11,8 @@
 export type FileTreeEntry = {
   /** Canonical identity, e.g. "/input/report.csv". */
   path: string;
+  /** Optional presentation label; path remains the identity and rename target. */
+  displayName?: string;
   /** Folders are usually implicit from paths — explicit entries model empty dirs. */
   kind?: "file" | "folder";
   size?: number;

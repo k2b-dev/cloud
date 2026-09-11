@@ -59,9 +59,10 @@ export const SourceChangeInput = SourceChanges.extend({ id: AppId });
 export const MetadataInput = z
   .object({
     expectedRevision: Revision,
-    name: z.string().trim().min(1).max(120).optional(),
-    description: z.string().max(1000).optional(),
+    name: z.string().trim().min(1).max(120).optional().describe("New app name; omit to keep it."),
+    description: z.string().max(1000).optional().describe("New description; omit to keep it."),
     persistenceEnabled: z.boolean().optional(),
+    databaseEnabled: z.boolean().optional().describe("Enable or disable the shared database; disabling preserves data."),
   })
   .strict();
 export type SourceChanges = z.infer<typeof SourceChanges>;
@@ -101,3 +102,13 @@ export function sourceManifest(bundle: Bundle) {
     })),
   };
 }
+
+export const CreateAppInput = z.object({
+  name: z.string().trim().min(1).max(120).describe("Name of the new app."),
+  description: z.string().max(1000).default("").describe("What this app does."),
+  databaseEnabled: z.boolean().default(false).describe("Enable RSQL for shared data. Fails when disabled by the operator."),
+}).strict();
+export const UpdateAppInput = MetadataInput.omit({ persistenceEnabled: true }).extend({ id: AppId }).refine(
+  value => value.name !== undefined || value.description !== undefined || value.databaseEnabled !== undefined,
+  { message: "Provide name, description or databaseEnabled." },
+);

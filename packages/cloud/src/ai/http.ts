@@ -1,3 +1,4 @@
+import { CODE_RUNTIME_TOOL_NAMES } from "./browser-code-contracts";
 import type { Input, Message } from "@k2b/nessi";
 import type { Context } from "hono";
 import { z } from "zod";
@@ -112,7 +113,7 @@ export const AiUserContentPartSchema = z.union([
 
 export type AiTurnContentPart = z.infer<typeof AiUserContentPartSchema>;
 
-export const AiClientToolIdSchema = z.enum(["local_bash"] satisfies [AiClientToolId]);
+export const AiClientToolIdSchema = z.enum(["local_bash", ...CODE_RUNTIME_TOOL_NAMES] satisfies [AiClientToolId, ...AiClientToolId[]]);
 
 export const AiTurnInputSchema = z
   .object({
@@ -123,7 +124,7 @@ export const AiTurnInputSchema = z
       .max(AI_TURN_ATTACHMENT_MAX_ITEMS + 1)
       .optional(),
     modelProfileId: z.string().trim().min(1).optional(),
-    clientToolIds: z.array(AiClientToolIdSchema).max(1).optional(),
+    clientToolIds: z.array(AiClientToolIdSchema).max(1 + CODE_RUNTIME_TOOL_NAMES.length).refine((ids) => new Set(ids).size === ids.length, "Client tool IDs must be unique").optional(),
   })
   .refine((input) => Boolean(input.message?.trim() || input.content?.length), {
     message: "Message or content is required.",
@@ -143,7 +144,7 @@ export type AiTurnInput = z.infer<typeof AiTurnInputSchema>;
 export const AiSubmitConversationDraftInputSchema = z.object({
   draftRevision: z.number().int().min(1),
   modelProfileId: z.string().trim().min(1).optional(),
-  clientToolIds: z.array(AiClientToolIdSchema).max(1).optional(),
+  clientToolIds: z.array(AiClientToolIdSchema).max(1 + CODE_RUNTIME_TOOL_NAMES.length).refine((ids) => new Set(ids).size === ids.length, "Client tool IDs must be unique").optional(),
 });
 
 export const AiSteerInputSchema = z.object({

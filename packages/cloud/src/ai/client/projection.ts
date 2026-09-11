@@ -69,19 +69,16 @@ const normalizeCustomApprovalBlocks = (blocks: AiTurnBlock[]): AiTurnBlock[] => 
   return normalized;
 };
 
-/** Never let a same-turn DB/SSE snapshot remove blocks the browser already observed. */
+/** A complete snapshot replaces its baseline; stale snapshots cannot resurrect old block IDs. */
 export const mergeActiveTurn = (previous: AiActiveTurn | null, incoming: AiActiveTurn | null): AiActiveTurn | null => {
   if (!previous || !incoming || previous.turnId !== incoming.turnId) return incoming;
   if (previous.attempt !== incoming.attempt) return incoming.attempt > previous.attempt ? incoming : previous;
-
-  const incomingIsNewer = incoming.seq >= previous.seq;
-  const blocks = incomingIsNewer ? overlayBlocks(previous.blocks, incoming.blocks) : overlayBlocks(incoming.blocks, previous.blocks);
-  return {
-    ...(incomingIsNewer ? incoming : previous),
-    seq: Math.max(previous.seq, incoming.seq),
-    blocks,
-    status: deriveStatus(blocks),
-  };
+  if (incoming.seq < previous.seq) return previous;
+  // Locally submitted steering may not have reached the snapshot yet.
+  const pendingSteers = previous.blocks.filter(block => block.kind === "steer_message" && block.status !== "consumed");
+  const known = new Set(incoming.blocks.map(block => block.id));
+  const blocks = [...incoming.blocks, ...pendingSteers.filter(block => !known.has(block.id))];
+  return { ...incoming, blocks, status: deriveStatus(blocks) };
 };
 
 export const reconcileActiveTurnActions = (
@@ -141,7 +138,7 @@ export const reduceWireEvent = (state: AiChatProjection, event: AiWireEvent): Ai
   const active = state.activeTurn;
 
   if (event.type === "turn_started") {
-    if (active && active.turnId === event.turnId && event.attempt < active.attempt) return state;
+    if (active && active.turnId === event.turnId && !isNewerWireEvent(event, active)) return state;
     const pendingSteers =
       active?.turnId === event.turnId ? active.blocks.filter((block) => block.kind === "steer_message" && block.status !== "consumed") : [];
     const blocks = event.blocks ? overlayBlocks(normalizeCustomApprovalBlocks(event.blocks), pendingSteers) : pendingSteers;

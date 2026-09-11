@@ -71,12 +71,25 @@ function result<T>(r: RsqlResult<T>): T {
   return r.data;
 }
 // Coordinate configuration with lifecycle/data calls across Kit processes.
-const sharedConfig = (db: Db) => db`SELECT pg_advisory_xact_lock_shared(hashtext('kit-rsql-settings'))`;
+export const sharedConfig = (db: Db) => db`SELECT pg_advisory_xact_lock_shared(hashtext('kit-rsql-settings'))`;
 const exclusiveConfig = (db: Db) => db`SELECT pg_advisory_xact_lock(hashtext('kit-rsql-settings'))`;
 export async function enqueueDatabaseCleanup(db: Db, projectId: string) {
   const [m] = await db<Mapping[]>`SELECT * FROM kit.project_databases WHERE project_id=${projectId}::uuid FOR UPDATE`;
   for (const namespace of [m?.namespace, m?.pending_namespace])
     if (namespace) await db`INSERT INTO kit.database_cleanup(namespace) VALUES(${namespace}) ON CONFLICT DO NOTHING`;
+}
+// Caller holds the configuration lock before the project lock.
+export async function setDatabaseIntent(db: Db, projectId: string, publicId: string, enabled: boolean, reset = false) {
+  const c = await config();
+  if ((enabled || reset) && !c.enabled) throw new DatabaseError("DB_GLOBALLY_DISABLED", 409);
+  if (enabled || reset) connection(c);
+  await db`INSERT INTO kit.project_databases(project_id) VALUES(${projectId}::uuid) ON CONFLICT DO NOTHING`;
+  const [m] = await db<Mapping[]>`SELECT * FROM kit.project_databases WHERE project_id=${projectId}::uuid FOR UPDATE`;
+  if (!m) throw new DatabaseError("NOT_FOUND");
+  if (m.pending_namespace) throw new DatabaseError("DB_TRANSITION", 409);
+  if (reset && !m.namespace) throw new DatabaseError("DB_DISABLED", 409);
+  const pending = reset || (enabled && !m.namespace) ? `kit_${publicId}_${crypto.randomUUID().replaceAll("-", "")}` : null;
+  await db`UPDATE kit.project_databases SET enabled=${reset ? m.enabled : enabled}, pending_namespace=${pending}, error=NULL, updated_at=now() WHERE project_id=${projectId}::uuid`;
 }
 export const database = {
   async settings(identity: Identity) {
@@ -145,15 +158,7 @@ export const database = {
     await sql.begin(async (db) => {
       await sharedConfig(db);
       const { row } = await requireProject(db, id, identity, "admin", true);
-      const c = await config();
-      if (!c.enabled) throw new DatabaseError("DB_GLOBALLY_DISABLED", 409);
-      await db`INSERT INTO kit.project_databases(project_id) VALUES(${row.id}::uuid) ON CONFLICT DO NOTHING`;
-      const [m] = await db<Mapping[]>`SELECT * FROM kit.project_databases WHERE project_id=${row.id}::uuid FOR UPDATE`;
-      if (!m) throw new DatabaseError("NOT_FOUND");
-      if (m.pending_namespace) throw new DatabaseError("DB_TRANSITION", 409);
-      if (reset && !m.namespace) throw new DatabaseError("DB_DISABLED", 409);
-      const pending = reset || (enabled && !m.namespace) ? `kit_${row.short_id}_${crypto.randomUUID().replaceAll("-", "")}` : null;
-      await db`UPDATE kit.project_databases SET enabled=${reset ? m.enabled : enabled}, pending_namespace=${pending}, error=NULL, updated_at=now() WHERE project_id=${row.id}::uuid`;
+      await setDatabaseIntent(db, row.id, row.short_id, enabled, reset);
     });
     await database.reconcile(id);
     return database.status(id, identity);
@@ -194,7 +199,8 @@ export const database = {
         case "rows.list": {
           const limit = Number(req.query.limit ?? 50);
           if (!Number.isInteger(limit) || limit < 1 || limit > LIMITS.rows) throw new DatabaseError("DB_LIMIT");
-          data = result(await client.table(req.table).rows.list({ ...req.query, limit }));
+          const page = result(await client.table(req.table).rows.list({ ...req.query, limit }));
+          data = { ...page, data: page.data ?? [] };
           break;
         }
         case "rows.get":
@@ -212,9 +218,9 @@ export const database = {
         case "query": {
           let query: string;
           try {
-            query = safeQuery(req.sql);
-          } catch {
-            throw new DatabaseError("DB_SQL_UNSUPPORTED");
+            query = safeQuery(req.sql, req.params.length);
+          } catch (error) {
+            throw new DatabaseError(error instanceof Error && error.message === "DB_SQL_PARAMS" ? "DB_SQL_PARAMS" : "DB_SQL_UNSUPPORTED");
           }
           data = result(await client.query.run({ sql: query, params: req.params }));
           break;

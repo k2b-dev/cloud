@@ -1,4 +1,5 @@
-import { children, createMemo, createUniqueId, For, type JSX, Show } from "solid-js";
+import { useUiMessages } from "../intl/messages";
+import { children, createEffect, createMemo, createUniqueId, For, type JSX, Show } from "solid-js";
 import type { MaybeAccessor } from "../inputs/field-contract";
 import { resolveMaybeAccessor } from "../inputs/field-contract";
 
@@ -8,6 +9,8 @@ export type TabOption<T extends string = string> = {
   icon?: string;
   disabled?: boolean;
   panel?: JSX.Element;
+  onClose?: () => void;
+  closeLabel?: string;
 };
 
 export type TabsItemProps<T extends string = string> = Omit<TabOption<T>, "panel"> & {
@@ -25,6 +28,8 @@ export type TabsProps<T extends string = string> = {
   ariaLabel: string;
   orientation?: "horizontal" | "vertical";
   class?: string;
+  variant?: "line" | "pill";
+  trailing?: JSX.Element;
   /** Data-driven alternative to colocated `Tabs.Item` children. */
   options?: readonly TabOption<T>[];
   children?: JSX.Element;
@@ -50,8 +55,11 @@ function TabsItem<T extends string = string>(props: TabsItemProps<T>): JSX.Eleme
 
 /** Controlled, keyboard-accessible tabs with compositional or data-driven items. */
 function TabsRoot<T extends string = string>(props: TabsProps<T>): JSX.Element {
+  const messages = useUiMessages();
+  let root: HTMLDivElement | undefined;
   const instanceId = `k2b-tabs-${createUniqueId()}`;
   const resolvedChildren = children(() => props.children);
+  const trailing = children(() => props.trailing);
   const items = createMemo<readonly TabOption<T>[]>(() => {
     if (props.options) return props.options;
     return collectTabsItems<T>(resolvedChildren.toArray()).map((item) => ({
@@ -60,9 +68,13 @@ function TabsRoot<T extends string = string>(props: TabsProps<T>): JSX.Element {
       icon: item.props.icon,
       disabled: item.props.disabled,
       panel: item.props.children,
+      onClose: item.props.onClose,
+      closeLabel: item.props.closeLabel,
     }));
   });
   const buttons: HTMLButtonElement[] = [];
+  let closing: T | undefined;
+  const requestClose = (option: TabOption<T>) => { closing = option.value; option.onClose?.(); };
   const current = () => resolveMaybeAccessor(props.value);
   const active = createMemo(() => items().find((option) => option.value === current()));
   const activeIndex = createMemo(() =>
@@ -79,6 +91,18 @@ function TabsRoot<T extends string = string>(props: TabsProps<T>): JSX.Element {
     const selected = items().findIndex((option) => option.value === current() && !option.disabled);
     return selected >= 0 ? selected : (enabled()[0]?.index ?? -1);
   });
+  createEffect(() => {
+    const index = activeIndex();
+    const removed = closing !== undefined && !items().some(item => item.value === closing);
+    if (removed) closing = undefined;
+    queueMicrotask(() => {
+      buttons[index]?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
+      if (removed) {
+        const target = items().length ? buttons[index] : root?.querySelector<HTMLElement>(".k2b-tabs__trailing button");
+        target?.focus();
+      }
+    });
+  });
   const select = (index: number) => {
     const option = items()[index];
     if (!option || option.disabled) return;
@@ -94,13 +118,15 @@ function TabsRoot<T extends string = string>(props: TabsProps<T>): JSX.Element {
   };
 
   return (
-    <div class={`k2b-tabs ${props.class ?? ""}`} data-orientation={props.orientation ?? "horizontal"}>
+    <div ref={root} class={`k2b-tabs ${props.class ?? ""}`} data-orientation={props.orientation ?? "horizontal"} data-variant={props.variant ?? "line"}>
+      <div class="k2b-tabs__bar">
       <div class="k2b-tabs__list" role="tablist" aria-label={props.ariaLabel} aria-orientation={props.orientation ?? "horizontal"}>
         <For each={items()}>
           {(option, index) => {
             const id = () => `${instanceId}-tab-${index()}`;
             const panelId = () => `${instanceId}-panel-${index()}`;
             return (
+              <div class="k2b-tabs__item" role="presentation">
               <button
                 ref={(element) => {
                   buttons[index()] = element;
@@ -114,6 +140,7 @@ function TabsRoot<T extends string = string>(props: TabsProps<T>): JSX.Element {
                 disabled={option.disabled}
                 onClick={() => props.onValueChange(option.value)}
                 onKeyDown={(event) => {
+                  if ((event.key === "Delete" || event.key === "Backspace") && option.onClose) { event.preventDefault(); requestClose(option); return; }
                   const previous = props.orientation === "vertical" ? "ArrowUp" : "ArrowLeft";
                   const next = props.orientation === "vertical" ? "ArrowDown" : "ArrowRight";
                   if (event.key === previous || event.key === next) {
@@ -130,9 +157,13 @@ function TabsRoot<T extends string = string>(props: TabsProps<T>): JSX.Element {
                 <Show when={option.icon}>{(icon) => <i class={icon()} aria-hidden="true" />}</Show>
                 <span>{option.label}</span>
               </button>
+              <Show when={option.onClose}><button type="button" class="k2b-tabs__close" aria-label={option.closeLabel ?? messages().closeNamed({ name: typeof option.label === "string" ? option.label : props.ariaLabel })} disabled={option.disabled} onClick={() => requestClose(option)}><i class="ti ti-x" aria-hidden="true" /></button></Show>
+              </div>
             );
           }}
         </For>
+      </div>
+      <Show when={trailing()}><div class="k2b-tabs__trailing">{trailing()}</div></Show>
       </div>
       <Show when={active()?.panel !== undefined}>
         <div

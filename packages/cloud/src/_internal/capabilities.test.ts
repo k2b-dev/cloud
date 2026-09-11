@@ -225,6 +225,19 @@ describe("capability v1 compilation", () => {
     expect(capabilityManifestEvolutionIssues(withReader, replacement)).toContain("Type item reader changed");
   });
 
+  test("no-approval actions must be non-destructive and closed-world", () => {
+    const action = { title: "Write", description: "Write a recoverable file.", input: z.object({}).strict(), data: z.object({}).strict(),
+      destructive: false, openWorld: false, idempotency: "required" as const, approval: "none" as const,
+      review: async () => ok({ message: "Write the file." }),
+      run: async () => ok({ data: {} }),
+    };
+    const compile = (effects: { destructive?: boolean; openWorld?: boolean }) => compileCapabilities("example",
+      defineCapabilities({ protocolVersion: 1, actions: { write: { ...action, ...effects } } }));
+    expect(compile({}).manifest.actions[0]?.approval).toBe("none");
+    expect(() => compile({ destructive: true })).toThrow("cannot skip approval");
+    expect(() => compile({ openWorld: true })).toThrow("cannot skip approval");
+  });
+
   test("requires a closed-world review before approval can be remembered", () => {
     const action = {
       title: "Update item",

@@ -738,6 +738,26 @@ describe("AI capability catalog", () => {
     expect(actionExecutions).toBe(1);
   });
 
+  test("explicit no-approval actions execute without review or a user prompt", async () => {
+    const app = capabilityApp("contacts");
+    app.manifest.actions[0]!.approval = "none";
+    const catalog = buildAiCapabilityCatalog([app]);
+    let calls = 0;
+    const prepared = prepareAiTools({ tools: createLoadedAiCapabilityTools({
+      catalog, actor, loadedNames: ["contacts.create"],
+      review: async () => { throw new Error("Unexpected review"); },
+      execute: async () => { calls++; return { data: { id: "created" } }; },
+    }), actor, conversationId: "conversation-1" });
+    const action = prepared.tools[0];
+    if (!action || action.kind !== "server") throw new Error("Missing action");
+    await action.execute({ title: "Example" }, {
+      callId: "no-approval", signal: AbortSignal.timeout(1000),
+      requestApproval: async () => { throw new Error("Unexpected approval"); },
+      requestClientTool: async <T>() => undefined as T,
+    });
+    expect(calls).toBe(1);
+  });
+
   test("resolves a fresh immutable registry and loaded-tool snapshot for every provider turn", async () => {
     const contacts = capabilityApp("contacts", "Contacts");
     const spaces = capabilityApp("spaces", "Spaces");

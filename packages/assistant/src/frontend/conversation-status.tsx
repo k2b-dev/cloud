@@ -4,10 +4,10 @@ import { Show } from "solid-js";
 import { conversationStatusPresentation } from "./conversation-view";
 import { assistantMessages } from "./messages";
 
-export function ConversationStatusMeta(props: { conversation: AiConversation; labels?: boolean; hideStatus?: boolean }) {
+export function ConversationStatusMeta(props: { conversation: AiConversation; active?: boolean; labels?: boolean; hideStatus?: boolean }) {
   const locale = useLocale();
   const t = () => assistantMessages.resolve([locale()]).t;
-  const status = () => (props.hideStatus ? null : conversationStatusPresentation(props.conversation, locale()));
+  const status = () => (props.hideStatus ? null : conversationStatusPresentation(props.conversation, locale(), props.active));
   return (
     <span class="inline-flex shrink-0 items-center gap-1.5 text-[11px] text-dimmed">
       <Show when={props.conversation.pinnedAt}>

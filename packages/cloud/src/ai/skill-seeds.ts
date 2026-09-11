@@ -1,4 +1,5 @@
 import { CLOUD_KIT_INSTRUCTIONS } from "./kit-skill";
+import { ASSISTANT_CODE_MODE_SKILL } from "./code-mode-skill";
 import { CLOUD_GRIDS_INSTRUCTIONS, CLOUD_GRIDS_QUERY_REFERENCE } from "./grids-skill";
 import type { AiSkillTemplate } from "./skills";
 
@@ -352,12 +353,13 @@ Mail attachment inputs require base64: encode the exact returned calendar string
 Do not fabricate organizer/attendee addresses, regenerate the returned calendar text, commit after a failed attachment, or retry an unknown mutation result without reconciliation.`;
 
 const BUILTIN_CLOUD_AI_SKILLS: AiSkillTemplate[] = [
+  ASSISTANT_CODE_MODE_SKILL,
   {
-    version: 1,
+    version: 2,
     key: "kit:cloud-kit",
     name: "cloud-kit",
     description:
-      "Use for Cloud Kit: programming or improving browser mini apps, file converters, JavaScript tools, workbench UIs, CSV processing or exact money calculations in an existing Kit app. Read current Kit Help before choosing SDK methods.",
+      "Use for Cloud Kit: programming or improving browser mini apps, file converters, JavaScript tools, workbench UIs, CSV processing, exact money calculations, SQL queries or shared database workflows in an existing Kit app. Read current Kit Help before choosing SDK methods.",
     instructions: CLOUD_KIT_INSTRUCTIONS,
   },
   {

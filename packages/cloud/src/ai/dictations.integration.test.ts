@@ -65,6 +65,36 @@ const setup = async () => {
 };
 
 suite("durable dictation", () => {
+  test("dictation provenance survives rename, copies and turn snapshots without classifying uploaded audio", async () => {
+    const { input, cleanup } = await setup();
+    const target = await aiConversations.createConversation({ ownerUserId: input.userId });
+    try {
+      const dictation = await aiDictations.start(input);
+      const original = (await aiFileStore.stat({ ...input, path: dictation.sourcePath }))!;
+      expect(original.dictationRecordedAt).toBe(dictation.createdAt);
+      expect(original.origin).toBe("user");
+      const upload = await aiFileStore.createUserUpload({ ...input, path: "/dictation-manual.m4a", mediaType: "audio/mp4" });
+      expect(upload.dictationRecordedAt).toBeUndefined();
+      await aiFileStore.rename({ ...input, from: original.path, to: "/renamed.wav" });
+      const file = (await aiFileStore.stat({ ...input, path: "/renamed.wav" }))!;
+      expect(file.dictationRecordedAt).toBe(original.dictationRecordedAt);
+      await expect(aiFileStore.write({ ...input, path: file.path, origin: "assistant" })).rejects.toThrow("Cannot overwrite");
+      await aiFileStore.copyToConversation({ sourceConversationId: input.conversationId, targetConversationId: target.id });
+      expect((await aiFileStore.stat({ conversationId: target.id, path: file.path }))?.dictationRecordedAt).toBe(original.dictationRecordedAt);
+      const { turn } = await aiConversations.submitChatTurn({
+        conversationId: input.conversationId, modelProfileId: "test",
+        runConfig: { kind: "chat", input: "Inspect recording", toolSource: { kind: "none" }, files: { attached: [file], available: [file, upload], total: 2 } },
+        userMessage: { role: "user", content: ["Inspect recording"] },
+      });
+      await aiFileStore.write({ ...input, path: file.path, origin: "user", allowUserOverwrite: true });
+      expect((await aiFileStore.stat({ ...input, path: file.path }))?.dictationRecordedAt).toBeUndefined();
+      expect((await aiFileStore.readTurnFile({ turnId: turn.id, path: file.path }))?.dictationRecordedAt).toBe(original.dictationRecordedAt);
+    } finally {
+      await sql`DELETE FROM ai.conversations WHERE id = ${target.id}`;
+      await cleanup();
+    }
+  });
+
   test("atomic upload retries preserve one file, snapshot quota and pinned model; changed payload conflicts", async () => {
     const { input, cleanup } = await setup();
     try {

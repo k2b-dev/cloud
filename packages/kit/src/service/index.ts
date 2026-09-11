@@ -15,10 +15,10 @@ import {
 } from "@k2b/cloud/server";
 import { crypto } from "@k2b/stdlib";
 import { sql } from "bun";
-import { enqueueDatabaseCleanup, requireAdmin } from "./database";
+import { database, enqueueDatabaseCleanup, requireAdmin, sharedConfig, setDatabaseIntent } from "./database";
 import { type Bundle, type Project, type ProjectInput, PublicId } from "../contracts";
 import { validateProject } from "../project";
-import { MetadataInput, mergeSource, SOURCE_WINDOW, SourceChanges, SourceReadInput, sourceManifest } from "../source";
+import { CreateAppInput, MetadataInput, mergeSource, SOURCE_WINDOW, SourceChanges, SourceReadInput, sourceManifest } from "../source";
 
 export { ProjectError } from "../errors";
 
@@ -147,10 +147,11 @@ export const kitService = {
       return bundle(db, row, level);
     });
   },
-  async create(input: unknown, identity: Identity) {
+  async create(input: unknown, identity: Identity, databaseEnabled = false) {
     const u = user(identity);
     const { project: p } = validateProject(input);
     return sql.begin(async (db) => {
+      if (databaseEnabled) await sharedConfig(db);
       let row: Row | undefined;
       for (let attempt = 0; attempt < 10 && !row; attempt++) {
         [row] = await db<
@@ -162,6 +163,7 @@ export const kitService = {
       if (!grant.ok) throw new ProjectError(400, "INVALID_PRINCIPAL");
       await db`INSERT INTO kit.project_access(project_id,access_id) VALUES(${row.id}::uuid,${grant.data.id}::uuid)`;
       await writeFiles(db, row.id, p);
+      if (databaseEnabled) await setDatabaseIntent(db, row.id, row.short_id, true);
       return bundle(db, row, "admin");
     });
   },
@@ -215,23 +217,25 @@ export const kitService = {
       return { id, revision: row.revision + 1, entries, valid: true };
     });
   },
+  async createApp(input: unknown, identity: Identity) {
+    const { databaseEnabled, ...fields } = CreateAppInput.parse(input);
+    const created = await kitService.create({ ...fields, files: [{ path: "README.md", content: `# ${fields.name}\n` }] }, identity, databaseEnabled);
+    if (databaseEnabled) await database.reconcile(created.id);
+    return { ...sourceManifest(created), database: await database.status(created.id, identity) };
+  },
   async metadata(id: string, input: unknown, identity: Identity) {
-    const { expectedRevision, ...patch } = MetadataInput.parse(input);
-    const current = await kitService.get(id, identity, "admin");
-    return sourceManifest(
-      await kitService.save(
-        id,
-        {
-          name: current.name,
-          description: current.description,
-          persistenceEnabled: current.persistenceEnabled,
-          files: current.files,
-          ...patch,
-        },
-        expectedRevision,
-        identity,
-      ),
-    );
+    const { expectedRevision, databaseEnabled, ...patch } = MetadataInput.parse(input);
+    const next = await sql.begin(async (db) => {
+      if (databaseEnabled !== undefined) await sharedConfig(db);
+      const { row } = await requireProject(db, id, identity, "admin", true);
+      if (row.revision !== expectedRevision) throw new ProjectError(409, "REVISION_CONFLICT");
+      if (databaseEnabled !== undefined) await setDatabaseIntent(db, row.id, row.short_id, databaseEnabled);
+      const [updated] = await db<Row[]>`UPDATE kit.projects SET name=${patch.name ?? row.name}, description=${patch.description ?? row.description}, persistence_enabled=${patch.persistenceEnabled ?? row.persistence_enabled}, revision=revision+1, updated_at=now() WHERE id=${row.id}::uuid RETURNING *`;
+      if (!updated) throw new ProjectError(404, "NOT_FOUND");
+      return sourceManifest(await bundle(db, updated, "admin"));
+    });
+    if (databaseEnabled !== undefined) await database.reconcile(id);
+    return next;
   },
   async remove(id: string, identity: Identity) {
     return sql.begin(async (db) => {

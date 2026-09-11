@@ -167,7 +167,8 @@ describe("AI HTTP input helpers", () => {
     expect(() => AiMessageFeedbackInputSchema.parse({ rating: "down", comment: "x".repeat(1001) })).toThrow();
   });
 
-  test("accepts only the predefined optional local client tool", () => {
+  test("accepts only distinct predefined optional client tools", () => {
+    expect(AiTurnInputSchema.parse({ message: "Test the app", clientToolIds: ["code_run"] }).clientToolIds).toEqual(["code_run"]);
     expect(AiTurnInputSchema.parse({ message: "Inspect this checkout", clientToolIds: ["local_bash"] }).clientToolIds).toEqual([
       "local_bash",
     ]);

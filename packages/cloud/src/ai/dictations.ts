@@ -101,6 +101,7 @@ export const aiDictations = {
         bytes: input.bytes,
         mediaType: format.mediaType,
         origin: "user",
+        dictationRecordedAt: new Date(row.created_at).toISOString(),
       });
       await tx`UPDATE ai.dictations SET source_path = ${file.path} WHERE id = ${row.id}`;
       return publicDictation({ ...row, source_path: file.path });

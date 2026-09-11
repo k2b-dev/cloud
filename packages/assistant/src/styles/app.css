@@ -5,6 +5,25 @@
 @source "../**/*.{ts,tsx}";
 @custom-variant dark (&:where(.dark, .dark *));
 
+.artifact-flow { display: flex; min-width: 0; }
+.artifact-flow-row { flex-direction: row; flex-wrap: wrap; align-items: center; }
+.artifact-flow-column { flex-direction: column; }
+.artifact-gap-sm { gap: .5rem; }
+.artifact-gap-md { gap: 1rem; }
+.artifact-gap-lg { gap: 1.5rem; }
+.artifact-runtime-root { container-type: inline-size; flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1.5rem; }
+.artifact-node { min-width: 0; overflow-wrap: anywhere; }
+.artifact-node-workbench { flex: 1; display: flex; }
+.artifact-runtime-workbench { width: 100%; display: grid; grid-template-columns: minmax(12rem, 16rem) minmax(0, 1fr); gap: 1rem; }
+.artifact-runtime-controls { display: flex; flex-direction: column; gap: 1rem; min-width: 0; padding: 1rem; background: var(--k2b-surface-muted); border-radius: var(--ui-radius-frame); align-self: start; }
+.artifact-runtime-main, .artifact-runtime-content { display: flex; flex-direction: column; min-width: 0; gap: 1rem; }
+.artifact-runtime-content { flex: 1; }
+.artifact-runtime-footer { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 1rem; justify-content: space-between; align-items: center; padding-block: 1rem; }
+.artifact-runtime-workbench-full { grid-template-columns: minmax(0, 1fr); }
+.artifact-status[data-state="error"] { color: var(--k2b-danger-text); }
+.artifact-status { font-size: .875rem; color: var(--k2b-text-muted); }
+@container (max-width: 40rem) { .artifact-runtime-workbench { grid-template-columns: minmax(0, 1fr); } }
+
 .k2b-ui .assistant-empty-project-trigger > .k2b-button__label {
   width: 100%;
 }
@@ -40,12 +59,20 @@
   left: calc((100% - var(--assistant-chat-context-width)) / 2);
 }
 
-@media (min-width: 64rem) {
+/* Measure the chat pane, including its optional context column, independently
+   of the viewport and the neighboring artifact workspace. */
+.k2b-ui .assistant-chat-pane { container: assistant-chat / inline-size; }
+.k2b-ui .assistant-chat-layout [data-assistant-context="compact"] { display: none; }
+.k2b-ui .assistant-context-open { display: flex; justify-content: flex-end; padding: .25rem .5rem; flex: none; }
+
+@container assistant-chat (min-width: 56rem) {
+  .k2b-ui .assistant-chat-shell:has([data-assistant-context="compact"]) .assistant-context-open { display: none; }
   .k2b-ui .assistant-chat-layout:has([data-assistant-context="compact"]) {
     --assistant-chat-context-width: 19rem;
   }
 
   .k2b-ui .assistant-chat-layout [data-assistant-context="compact"] {
+    display: flex;
     grid-column: 2;
     grid-row: 1 / -1;
     z-index: 1;
@@ -93,6 +120,27 @@
   .k2b-ui .assistant-dictation-control[data-cancelable="true"] .assistant-dictation-trash { display: inline-block; position: absolute; right: -0.125rem; bottom: -0.125rem; font-size: 0.625rem; }
 }
 
+/* Assistant-owned artifact workspace. Tabs remain mounted while inactive. */
+.artifact-workspace { display: flex; flex-direction: column; height: 100%; min-height: 0; min-width: 0; }
+.artifact-workspace__tabs { display: flex; align-items: center; gap: .25rem; padding: .5rem; min-width: 0; }
+.artifact-workspace__tabs > .k2b-tabs { min-width: 0; flex: 1; overflow-x: auto; }
+.artifact-workspace__tab { display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: auto; padding: .5rem; }
+.artifact-workspace__tab[hidden] { display: none; }
+.artifact-panel { display: flex; flex-direction: column; gap: .5rem; min-height: 100%; }
+.artifact-panel__preview { flex: 1; padding: .5rem; border-radius: var(--ui-radius-frame); background: var(--k2b-surface-subtle, var(--k2b-surface)); }
+.artifact-panel__launch { display: grid; place-content: center; justify-items: center; gap: 1rem; min-height: 12rem; }
+.artifact-console[hidden] { display: none; }
+.artifact-console { flex-shrink: 0; padding: .75rem; }
+.artifact-console__header { display: flex; align-items: center; justify-content: space-between; gap: .5rem; flex-wrap: wrap; }
+.artifact-console__output { font-family: var(--ui-font-mono, monospace); font-size: .8125rem; line-height: 1.6; min-height: 6rem; max-height: 18rem; overflow: auto; margin-top: .5rem; }
+.artifact-console__line { display: flex; align-items: baseline; gap: .5rem; white-space: pre-wrap; overflow-wrap: anywhere; }
+.artifact-console__line time, .artifact-console__level { flex-shrink: 0; color: var(--k2b-text-muted); }
+.artifact-console__line[data-level="error"] { color: var(--k2b-danger-text); }
+.artifact-console__line[data-level="warn"] { color: var(--k2b-warning-text); }
+.artifact-console__line[data-level="error"] .artifact-console__level { color: inherit; }
+.artifact-workspace .artifact-workspace__tabs .artifact-mobile-toggle { display: none; }
+@media (max-width: 767px) { .artifact-workspace .artifact-workspace__tabs .artifact-mobile-toggle { display: inline-flex; } }
+
 /* Recording replaces footer controls with explicit cancel and finish actions. */
 .k2b-ui .assistant-recording-footer { display: flex; align-items: center; gap: .75rem; width: 100%; min-width: 0; }
 .k2b-ui .assistant-recording-action { flex: 0 0 auto; width: 1.875rem; height: 1.875rem; padding: 0; border-radius: 50%; background: var(--k2b-surface-subtle); color: var(--k2b-text); }
@@ -103,3 +151,17 @@
 @media (prefers-reduced-motion: reduce) {
   .k2b-ui .assistant-recording-wave > span { transition: none; transform: scaleY(.25); }
 }
+
+.artifact-source-editor { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.artifact-source-editor__actions { display: flex; justify-content: flex-end; padding: .25rem 0; }
+.artifact-code { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.artifact-code .hl-keyword, .artifact-code .hl-function { color: var(--k2b-code-keyword); }
+.artifact-code .hl-string { color: var(--k2b-code-string); }
+.artifact-code .hl-comment { color: var(--k2b-code-comment); }
+.artifact-code .hl-number, .artifact-code .hl-variable { color: var(--k2b-code-number); }
+.artifact-code .hl-operator { color: var(--k2b-code-punctuation); }
+
+.assistant-app-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(min(100%,15rem),1fr)); gap:.75rem; }
+.artifact-workspace .assistant-app-grid .k2b-detail-panel__action { border:1px solid var(--k2b-border); background:var(--k2b-surface); border-radius:1rem; padding:1rem; min-height:6rem; align-items:flex-start; }
+
+.artifact-workspace .assistant-app-grid .k2b-detail-panel__action-title { font-size:.875rem; font-weight:600; }

@@ -100,6 +100,7 @@ type ConversationRow = {
   archived_at: Date | string | null;
   last_viewed_at: Date | string | null;
   latest_turn_status?: AiTurnStatus | null;
+  latest_browser_pending?: boolean;
   latest_turn_error?: string | null;
   latest_turn_completed_at?: Date | string | null;
   enrich_fail_count: number | null;
@@ -470,10 +471,25 @@ const parseCapabilityActionReview = (value: unknown): CapabilityActionReview | u
 
 const fieldSource = (value: string | null): AiConversation["titleSource"] => (value === "auto" || value === "user" ? value : "default");
 
-const conversationRunStatus = (status: AiTurnStatus | null | undefined): AiConversation["runStatus"] => {
+const browserWorkPending = sql`(
+  latest.status = 'waiting_for_action'
+  AND EXISTS (
+    SELECT 1 FROM jsonb_array_elements(CASE WHEN jsonb_typeof(latest.live_blocks) = 'array' THEN latest.live_blocks ELSE '[]'::jsonb END) block
+    WHERE block->>'kind' = 'tool' AND block->>'status' = 'awaiting_client' AND block->>'frontendMode' = 'client'
+  )
+  AND NOT EXISTS (
+    SELECT 1 FROM jsonb_array_elements(CASE WHEN jsonb_typeof(latest.live_blocks) = 'array' THEN latest.live_blocks ELSE '[]'::jsonb END) block
+    WHERE block->>'kind' = 'tool' AND (
+      block->>'status' = 'awaiting_approval'
+      OR (block->>'status' = 'awaiting_client' AND COALESCE(block->>'frontendMode', '') <> 'client')
+    )
+  )
+)`;
+
+const conversationRunStatus = (status: AiTurnStatus | null | undefined, browserPending = false): AiConversation["runStatus"] => {
   if (status === "queued") return "queued";
   if (status === "running") return "running";
-  if (status === "waiting_for_action") return "needs_attention";
+  if (status === "waiting_for_action") return browserPending ? "waiting_for_browser" : "needs_attention";
   if (status === "failed") return "failed";
   return "idle";
 };
@@ -488,7 +504,7 @@ const rowToConversation = (row: ConversationRow): AiConversation => ({
   keywords: row.keywords ?? [],
   pinnedAt: row.pinned_at ? iso(row.pinned_at) : null,
   archivedAt: row.archived_at ? iso(row.archived_at) : null,
-  runStatus: conversationRunStatus(row.latest_turn_status),
+  runStatus: conversationRunStatus(row.latest_turn_status, row.latest_browser_pending),
   runError: row.latest_turn_status === "failed" ? row.latest_turn_error?.trim() || "Assistant response failed." : null,
   unreadCompletion:
     row.latest_turn_status === "completed" &&
@@ -650,11 +666,12 @@ const loadConversationSummary = async (input: {
     SELECT
       conversation.*,
       latest.status AS latest_turn_status,
+      ${browserWorkPending} AS latest_browser_pending,
       latest.error AS latest_turn_error,
       latest.completed_at AS latest_turn_completed_at
     FROM ai.conversations conversation
     LEFT JOIN LATERAL (
-      SELECT status, error, completed_at
+      SELECT status, error, completed_at, live_blocks
       FROM ai.turns
       WHERE conversation_id = conversation.id
       ORDER BY created_at DESC, id DESC
@@ -995,8 +1012,8 @@ export const aiConversations: AiConversationService = {
         ORDER BY seq ASC
       `;
       await tx`
-        INSERT INTO ai.files (conversation_id, path, bytes, media_type, size, origin, updated_at)
-        SELECT ${target.id}::uuid, path, bytes, media_type, size, origin, updated_at
+        INSERT INTO ai.files (conversation_id, path, bytes, media_type, size, origin, dictation_recorded_at, updated_at)
+        SELECT ${target.id}::uuid, path, bytes, media_type, size, origin, dictation_recorded_at, updated_at
         FROM ai.files WHERE conversation_id = ${input.sourceConversationId}::uuid
       `;
       return rowToConversation(target);
@@ -1018,11 +1035,12 @@ export const aiConversations: AiConversationService = {
       SELECT
         conversation.*,
         latest.status AS latest_turn_status,
+        ${browserWorkPending} AS latest_browser_pending,
         latest.error AS latest_turn_error,
         latest.completed_at AS latest_turn_completed_at
       FROM ai.conversations conversation
       LEFT JOIN LATERAL (
-        SELECT status, error, completed_at
+        SELECT status, error, completed_at, live_blocks
         FROM ai.turns
         WHERE conversation_id = conversation.id
         ORDER BY created_at DESC, id DESC
@@ -1056,8 +1074,8 @@ export const aiConversations: AiConversationService = {
                 OR message.search_document @@ websearch_to_tsquery('simple', ${query ?? ""}))
           ))
         AND (${status}::text IS NULL
-          OR (${status} = 'running' AND latest.status IN ('queued', 'running'))
-          OR (${status} = 'needs_attention' AND latest.status = 'waiting_for_action')
+          OR (${status} = 'running' AND (latest.status IN ('queued', 'running') OR ${browserWorkPending}))
+          OR (${status} = 'needs_attention' AND latest.status = 'waiting_for_action' AND NOT ${browserWorkPending})
           OR (${status} = 'failed' AND latest.status = 'failed')
           OR (${status} = 'unread' AND latest.status = 'completed' AND latest.completed_at > COALESCE(conversation.last_viewed_at, '-infinity')))
       ORDER BY ${order}
@@ -1075,6 +1093,7 @@ export const aiConversations: AiConversationService = {
         SELECT
           conversation.*,
           latest.status AS latest_turn_status,
+          ${browserWorkPending} AS latest_browser_pending,
           latest.error AS latest_turn_error,
           latest.completed_at AS latest_turn_completed_at,
           row_number() OVER (
@@ -1083,7 +1102,7 @@ export const aiConversations: AiConversationService = {
           ) AS sidebar_rank
         FROM ai.conversations conversation
         LEFT JOIN LATERAL (
-          SELECT status, error, completed_at
+          SELECT status, error, completed_at, live_blocks
           FROM ai.turns
           WHERE conversation_id = conversation.id
           ORDER BY created_at DESC, id DESC
@@ -1115,11 +1134,12 @@ export const aiConversations: AiConversationService = {
       SELECT
         conversation.*,
         latest.status AS latest_turn_status,
+        ${browserWorkPending} AS latest_browser_pending,
         latest.error AS latest_turn_error,
         latest.completed_at AS latest_turn_completed_at
       FROM ai.conversations conversation
       LEFT JOIN LATERAL (
-        SELECT status, error, completed_at
+        SELECT status, error, completed_at, live_blocks
         FROM ai.turns
         WHERE conversation_id = conversation.id
         ORDER BY created_at DESC, id DESC
@@ -1142,8 +1162,8 @@ export const aiConversations: AiConversationService = {
                 OR message.search_document @@ websearch_to_tsquery('simple', ${query ?? ""}))
           ))
         AND (${status}::text IS NULL
-          OR (${status} = 'running' AND latest.status IN ('queued', 'running'))
-          OR (${status} = 'needs_attention' AND latest.status = 'waiting_for_action')
+          OR (${status} = 'running' AND (latest.status IN ('queued', 'running') OR ${browserWorkPending}))
+          OR (${status} = 'needs_attention' AND latest.status = 'waiting_for_action' AND NOT ${browserWorkPending})
           OR (${status} = 'failed' AND latest.status = 'failed')
           OR (${status} = 'unread' AND latest.status = 'completed' AND latest.completed_at > COALESCE(conversation.last_viewed_at, '-infinity')))
       ORDER BY ${order}
@@ -1155,7 +1175,7 @@ export const aiConversations: AiConversationService = {
       SELECT COUNT(*) AS total
       FROM ai.conversations conversation
       LEFT JOIN LATERAL (
-        SELECT status, completed_at
+        SELECT status, completed_at, live_blocks
         FROM ai.turns
         WHERE conversation_id = conversation.id
         ORDER BY created_at DESC, id DESC
@@ -1178,8 +1198,8 @@ export const aiConversations: AiConversationService = {
                 OR message.search_document @@ websearch_to_tsquery('simple', ${query ?? ""}))
           ))
         AND (${status}::text IS NULL
-          OR (${status} = 'running' AND latest.status IN ('queued', 'running'))
-          OR (${status} = 'needs_attention' AND latest.status = 'waiting_for_action')
+          OR (${status} = 'running' AND (latest.status IN ('queued', 'running') OR ${browserWorkPending}))
+          OR (${status} = 'needs_attention' AND latest.status = 'waiting_for_action' AND NOT ${browserWorkPending})
           OR (${status} = 'failed' AND latest.status = 'failed')
           OR (${status} = 'unread' AND latest.status = 'completed' AND latest.completed_at > COALESCE(conversation.last_viewed_at, '-infinity')))
     `;
@@ -2316,8 +2336,8 @@ export const aiConversations: AiConversationService = {
       for (const file of attachedFiles) {
         const copied = input.retrySourceTurnId
           ? await tx<{ path: string }[]>`
-          INSERT INTO ai.turn_files (turn_id, path, bytes, media_type, size, origin, updated_at, version)
-          SELECT ${turn.id}::uuid, path, bytes, media_type, size, origin, updated_at, version
+          INSERT INTO ai.turn_files (turn_id, path, bytes, media_type, size, origin, dictation_recorded_at, updated_at, version)
+          SELECT ${turn.id}::uuid, path, bytes, media_type, size, origin, dictation_recorded_at, updated_at, version
           FROM ai.turn_files
           WHERE turn_id = ${input.retrySourceTurnId}::uuid
             AND path = ${file.path}
@@ -2327,8 +2347,8 @@ export const aiConversations: AiConversationService = {
           RETURNING path
         `
           : await tx<{ path: string }[]>`
-          INSERT INTO ai.turn_files (turn_id, path, bytes, media_type, size, origin, updated_at, version)
-          SELECT ${turn.id}::uuid, path, bytes, media_type, size, origin, updated_at, version
+          INSERT INTO ai.turn_files (turn_id, path, bytes, media_type, size, origin, dictation_recorded_at, updated_at, version)
+          SELECT ${turn.id}::uuid, path, bytes, media_type, size, origin, dictation_recorded_at, updated_at, version
           FROM ai.files
           WHERE conversation_id = ${input.conversationId}::uuid
             AND path = ${file.path}

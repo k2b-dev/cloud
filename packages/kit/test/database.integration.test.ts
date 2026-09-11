@@ -76,6 +76,7 @@ const isolated = /\/cloud_kit_rsql_test(?:\?|$)/.test(process.env.DATABASE_URL ?
       },
       owner,
     );
+    expect(await database.call(id, state.generation, { operation: "rows.list", table: "items" }, use)).toMatchObject({ data: [] });
     await expect(database.call(id, state.generation, { operation: "tables.delete", table: "items" }, use)).rejects.toMatchObject({
       code: "ACCESS_DENIED",
     });
@@ -93,6 +94,7 @@ const isolated = /\/cloud_kit_rsql_test(?:\?|$)/.test(process.env.DATABASE_URL ?
       use,
     );
     expect(JSON.stringify(await database.call(id, state.generation, { operation: "rows.list", table: "items" }, owner))).toContain("one");
+    expect(await database.call(id, state.generation, { operation: "rows.list", table: "items", query: { label: "eq.absent", limit: 5, offset: 0 } }, owner)).toMatchObject({ data: [], meta: { limit: 5, offset: 0 } });
     await expect(database.status(id, stranger)).rejects.toMatchObject({ code: "ACCESS_DENIED" });
     expect(await database.call(second, (await database.status(second, owner)).generation, { operation: "tables.list" }, owner)).toEqual([]);
     const diag = await database.status(id, owner, true);
@@ -185,4 +187,31 @@ const isolated = /\/cloud_kit_rsql_test(?:\?|$)/.test(process.env.DATABASE_URL ?
     const [clean] = await sql<{ n: number }[]>`SELECT count(*)::int AS n FROM kit.database_cleanup`;
     expect(clean!.n).toBe(0);
   });
+  test("capability app lifecycle is atomic, revision guarded and preserves database data", async () => {
+    settings["kit.rsql_enabled"] = false;
+    const before = await sql`SELECT count(*)::int AS n FROM kit.projects`;
+    await expect(projects.createApp({ name: "Blocked", databaseEnabled: true }, owner)).rejects.toMatchObject({ code: "DB_GLOBALLY_DISABLED" });
+    expect((await sql`SELECT count(*)::int AS n FROM kit.projects`)[0].n).toBe(before[0].n);
+    settings["kit.rsql_enabled"] = true;
+    const app = await projects.createApp({ name: "Books", databaseEnabled: true }, owner);
+    expect(app.database.status).toBe("ready");
+    expect(app.permission).toBe("admin");
+    expect(app.files.map(f => f.path)).toEqual(["README.md"]);
+    await database.call(app.id, app.database.generation, { operation: "tables.create", name: "books", columns: [{ name: "title", type: "text" }] }, owner);
+    await database.call(app.id, app.database.generation, { operation: "rows.insert", table: "books", rows: { title: "Keep" } }, owner);
+    await expect(projects.metadata(app.id, { expectedRevision: 1, name: "Forbidden" }, stranger)).rejects.toMatchObject({ code: "ACCESS_DENIED" });
+    settings["kit.rsql_enabled"] = false;
+    await expect(projects.metadata(app.id, { expectedRevision: 1, name: "Not saved", databaseEnabled: true }, owner)).rejects.toMatchObject({ code: "DB_GLOBALLY_DISABLED" });
+    expect((await projects.manifest(app.id, owner)).name).toBe("Books");
+    settings["kit.rsql_enabled"] = true;
+    const results = await Promise.allSettled(["First", "Second"].map(name => projects.metadata(app.id, { expectedRevision: 1, name, databaseEnabled: false }, owner)));
+    expect(results.filter(r => r.status === "fulfilled")).toHaveLength(1);
+    expect(results.filter(r => r.status === "rejected")).toHaveLength(1);
+    expect((await database.status(app.id, owner)).enabled).toBe(false);
+    await projects.metadata(app.id, { expectedRevision: 2, databaseEnabled: true }, owner);
+    expect((await database.status(app.id, owner)).generation).toBe(app.database.generation);
+    expect(JSON.stringify(await database.call(app.id, app.database.generation, { operation: "rows.list", table: "books" }, owner))).toContain("Keep");
+    expect((await projects.manifest(app.id, owner)).files).toEqual(app.files);
+  });
+
 });

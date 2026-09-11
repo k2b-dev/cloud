@@ -282,3 +282,91 @@ Server tools remain the default for domain access.
 
 See [Observability](/en/docs/operations/observability#operate-ai-workloads) for
 runtime monitoring and production checks.
+
+## Advertise connected client tools
+
+A frontend handler alone does not advertise execution to the model. Pass
+`clientToolIds` to `createAiChatController` and register matching
+`frontendTools`. The controller forwards only IDs that have a handler. Supported
+IDs are `local_bash`, `code_run`, `code_inspect`, `code_interact`, `code_stop`,
+`code_open`, and `code_export`; duplicates and arbitrary tool names are rejected. Clients without an execution host should omit this option.
+
+Handlers receive `name`, `args`, `callId`, `turnId`, and `conversationId`. Capture
+that conversation identity for asynchronous work instead of using whichever
+chat is active when the work finishes. The controller submits the result to the
+originating conversation. Return JSON-compatible, bounded results.
+
+The six `code_*` client tools each have a flat input schema and are deferred:
+advertising a handler makes the tool discoverable, but the agent must call
+`load_tools` before using it. `createCloudAiCodeTools` supplies their definitions
+through the AI runtime tool exports. `CODE_RUNTIME_TOOL_NAMES`,
+`parseCodeToolInput`, and the internal `CodeRuntimeInput` envelope are exported
+from `@k2b/cloud/ai/browser` and `@k2b/cloud/ai` for host integrations.
+
+`code_run` accepts the app `id` and optional chat `inputPaths`, takes a fixed
+snapshot of current source, and returns a run ID and compact state. There is no
+required source revision. `code_interact` accepts a control ID or the pending
+modal ID, including structured answers. `code_open` never starts the visible
+app. `code_export` copies a captured file into the originating chat.
+
+Assistant publishes `code_create`, `code_read`, `code_write`, `code_remove`,
+`code_list`, and `code_history` capabilities. Writes immediately persist one
+file, preserve other files, and report compilation diagnostics without rejecting
+incomplete source. Execution still requires compilable source. History remains
+available internally; file writes need no revision argument. Concurrent writes
+to the same path use the last saved content.
+
+The host owns isolation, artifact permissions, input file authorization,
+cancellation, and execution deduplication. The controller's in-memory call
+tracking does not provide an exactly-once guarantee across tabs or reloads.
+Assistant uses a server-side claim and never replays an uncertain execution.
+Its test runs are separate from visible apps and persistent user data. A missing
+browser cannot perform execution; do not report an unexecuted test as successful.
+
+### Assistant apps and browser work
+
+Assistant displays executable app references in a dedicated Apps context section,
+with current permission-checked titles. Selecting an app opens it beside the chat
+without starting it. Generic references do not repeat these apps.
+
+Automatic frontend tool work uses the `waiting_for_browser` conversation status.
+It does not show the human-attention hand. A selected chat shows running progress;
+another chat can indicate that browser execution is waiting. Approval and human
+input still use `needs_attention`. Running-list filters include browser work.
+
+### Open chat content beside the conversation
+
+The context panel is the entry point for apps, files, images, sources, project
+knowledge, and scheduled tasks. Compact sections show a preview; View all opens
+a searchable overview beside the conversation. Apps appear as cards with their
+name and optional description. The overview includes apps referenced by that
+conversation, rather than a global library.
+
+The workspace uses rounded, horizontally scrolling tabs. Each tab has its own
+close control. The plus menu opens chat content overviews; it does not create
+or start an app. Opening the same resource selects its existing tab. Switching
+tabs preserves running apps and unsaved source edits. Closing an unsaved editor
+still asks for confirmation. On small screens, Chat returns to the conversation;
+content can be reopened through its context entry.
+
+File and source-code browsing happens in the workspace. External references
+continue to open their destination separately. Confirmations remain dialogs.
+
+The context column responds to the available width of the chat pane, including
+when a neighboring workspace is resized. Below 56rem it is hidden and the chat
+header exposes an Open (+) menu, even with no workspace tabs open. This menu and
+the workspace tab menu offer the same chat apps, files (including images and
+voice inputs), sources and references, project knowledge, and scheduled tasks
+when available. Hiding the column preserves its loaded context and the composer
+draft; it does not unmount the chat.
+
+App consoles start collapsed. The Console button toggles the output without
+stopping the app; a new runtime or startup error opens it automatically. Source,
+Restart, and Stop remain available in the footer. During restart, the reload icon
+spins and the button is disabled; Stop can cancel a pending start.
+
+Running Assistant apps keep their inputs when code is saved. After tool activity,
+a source-editor save, or window focus, the workspace checks for a newer version
+and offers an explicit restart. Starting or restarting fetches current code;
+agent test runs are separate from the user’s app. Status errors display the
+description supplied by the app and clear it when the app returns to ready.

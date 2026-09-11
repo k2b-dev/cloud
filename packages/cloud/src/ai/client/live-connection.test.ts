@@ -110,6 +110,24 @@ afterEach(() => {
 });
 
 describe("AI live connection multiplexing", () => {
+  test("keeps the socket and turn delivery alive while the browser tab is hidden", () => {
+    installBrowser();
+    const received: AiStreamEvent[] = [];
+    const connection = createAiLiveConnection({ initialCursor: "s6t.test.0", onLiveMessage: () => {} });
+    connection.streamTransport.subscribe({ conversationId: "Chat01", url: "/unused", onEvent: event => received.push(event) });
+    connection.connect();
+    const socket = FakeWebSocket.instances[0]!;
+    socket.open();
+    Object.defineProperty(document, "visibilityState", { value: "hidden", configurable: true });
+    document.dispatchEvent(new Event("visibilitychange"));
+    socket.message({ type: "ai.turn.event", payload: { conversationId: "Chat01", event: stateEvent("Chat01") } });
+    expect(socket.readyState).toBe(FakeWebSocket.OPEN);
+    expect(received).toHaveLength(1);
+    expect(FakeWebSocket.instances).toHaveLength(1);
+    connection.dispose();
+    expect(socket.readyState).toBe(FakeWebSocket.CLOSED);
+  });
+
   test("keeps one socket across rapid conversation switches and resubscribes only the current turn", () => {
     installBrowser();
     const received: string[] = [];
@@ -188,7 +206,7 @@ describe("AI live connection multiplexing", () => {
       type: "ai.turn.error",
       payload: { conversationId: "Chat01", code: "not_found", message: "Conversation not found" },
     });
-    socket.message({ type: "ai.live.ready", payload: { cursor: "1-0", recovered: false } });
+    socket.message({ type: "ai.live.ready", payload: { cursor: "s6t.test.1", recovered: false } });
 
     expect(errors).toEqual(["Conversation not found"]);
     expect(live).toEqual(["ai.live.ready"]);

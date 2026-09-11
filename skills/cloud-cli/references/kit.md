@@ -146,3 +146,37 @@ limits. Use the existing Help tools rather than guessing chart methods.
 Mutating Kit capabilities require an idempotency key under the Cloud Action
 contract; Assistant supplies one per invocation. Never retry an uncertain write
 with a new key.
+
+## SQL console and shared queries
+
+The built-in SQL console is available when the app database is enabled.
+Read Help article kit-sql-console for its workflow and kit-sdk-db for
+supported SELECT syntax. A final semicolon is accepted; SQL writes remain unsupported.
+
+    cld kit queries list <id> --page 1
+    cld kit queries get <id> <query-id>
+    cld kit queries create <id> --input-file query.json
+    cld kit queries update <id> <query-id> --input-file query.json
+    cld kit queries delete <id> <query-id> --revision N --yes
+    cld kit queries run <id> <query-id> --revision N
+
+List returns up to 50 summaries and hasNext. Get returns SQL and revision.
+Create requires name and sql; update also requires revision (including rename).
+Create, update and delete require Admin. Read and run require Use. Run executes
+the exact inspected revision.
+
+Saved queries are shared Postgres resources outside the rsql database. They
+survive database reset and disabling; deleting the app deletes them. Do not
+silently retry a conflicted update or create after an ambiguous response.
+
+Saved query names are unique within an app. Use `kit queries list <id> --name "Exact name"` to find a query before updating it with its current revision. A name collision or stale revision returns a conflict; never overwrite blindly.
+
+Assistant capabilities also include `kit.app.create` (name, description, optional
+databaseEnabled) and `kit.app.update` (id, expectedRevision, optional name,
+description, databaseEnabled). Both preserve the manual launch boundary; neither
+shares or deletes apps. They return app identity and database status. Reuse a
+created app while its database is provisioning. Source writes stay in source.apply.
+
+For small CRUD apps, read Kit Help `kit-crud-example` first. It includes schema
+setup and a complete script; use exact SDK headings for targeted follow-up reads.
+Empty `rows.list` results contain `data: []`.

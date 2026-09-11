@@ -18,7 +18,7 @@ import { isAssistantChatTurn } from "./assistant-models";
 import { createAiToolResolver } from "./capabilities";
 import { executeAiCapability, resolveAiCapabilityActor, reviewAiCapability } from "./capability-execution";
 import { createCloudCompactFn } from "./compaction";
-import { createCloudAiLocalBashTool, createConfiguredDefaultCloudAiTools } from "./default-tools";
+import { createCloudAiCodeTools, createCloudAiLocalBashTool, createConfiguredDefaultCloudAiTools } from "./default-tools";
 import { aiFileStore } from "./files-store";
 import { aiMemories } from "./memories";
 import { createCloudAiMemoryTool } from "./memory-tool";
@@ -530,6 +530,7 @@ const materializeChatConfig = async (config: AiChatTurnRunConfig, signal: AbortS
         ? [
             ...(await createConfiguredDefaultCloudAiTools()),
             ...(config.clientToolIds?.includes("local_bash") ? [createCloudAiLocalBashTool()] : []),
+            ...createCloudAiCodeTools().filter((tool) => config.clientToolIds?.some((name) => name === tool.def.name)),
           ]
         : [],
     toolApprovalContext: config.toolApprovalContext,
@@ -855,6 +856,7 @@ export class AiTurnExecutor {
     // Rebuild the whole active-turn view so a re-run/continuation reconstructs it.
     if (!attemptState) {
       pipeline.seedBaseline(rebuildAttemptBaseline({ loopMessages, pendingRecords, resolvedRecords, turnSteers }));
+      await pipeline.emitTurnStarted(resolved.profile.id);
       await pipeline.emitBaseline();
     }
 
@@ -907,7 +909,7 @@ export class AiTurnExecutor {
                       turnId,
                       authority: capabilityAuthority!,
                       mandate: config.mandate,
-                      actionApproval: entry.kind === "action" ? "approved" : undefined,
+                      actionApproval: entry.kind === "action" && !("approval" in entry.operation && entry.operation.approval === "none") ? "approved" : undefined,
                       locale: promptLocale,
                       entry,
                       args,

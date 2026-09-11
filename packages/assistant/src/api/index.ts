@@ -4,6 +4,7 @@ import { Hono } from "hono";
 import { loadAssistantChatContextSnapshot } from "../chat-context";
 import { loadAssistantProjectContextSnapshot } from "../project-context";
 import { loadAssistantSidebarSnapshot } from "../sidebar";
+import { artifactApi } from "../artifacts/api";
 
 const actorUser = (c: Context<AuthContext>) => {
   const actor = c.get("actor");
@@ -14,6 +15,7 @@ const app = new Hono<AuthContext>()
   .use(rateLimit())
   .use("*", auth.requireRole("authenticated"))
   .use("*", auth.requireUser())
+  .route("/artifacts", artifactApi)
   .get("/workspace/sidebar", async (c) => {
     const user = actorUser(c);
     if (!user) return respond(c, fail(err.forbidden("Assistant requires a user-backed actor")));

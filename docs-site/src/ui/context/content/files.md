@@ -66,7 +66,8 @@ the source. Hiding a control is not an authorization boundary.
 
 Each `FileTreeEntry` has an absolute-style path such as `/src/app.tsx`.
 Folders are derived from file paths; explicit `{ path, kind: "folder" }`
-entries represent empty folders.
+entries represent empty folders. Optional `displayName` changes the visible and
+accessible label; selection, reading, and renaming still use the original path.
 
 `selectedPath` and `onSelect` own selection. `expandedPaths` and
 `onExpandedChange` provide controlled expansion; otherwise folders start

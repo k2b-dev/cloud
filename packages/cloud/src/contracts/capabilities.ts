@@ -367,7 +367,7 @@ export type CapabilityQueryDefinition<Input extends z.ZodType = z.ZodType<any>, 
 };
 
 export type CapabilityIdempotencyPolicy = "none" | "required";
-export type CapabilityActionApprovalPolicy = "rememberable";
+export type CapabilityActionApprovalPolicy = "rememberable" | "none";
 
 export type CapabilityActionDefinition<Input extends z.ZodType = z.ZodType<any>, Data extends z.ZodType = z.ZodType<any>> = {
   title: string;
@@ -446,7 +446,7 @@ export const CapabilityActionManifestSchema = CapabilityOperationManifestBaseSch
   destructive: z.boolean(),
   openWorld: z.boolean(),
   idempotency: z.enum(["none", "required"]),
-  approval: z.literal("rememberable").optional(),
+  approval: z.enum(["rememberable", "none"]).optional(),
   review: z.literal(true).optional(),
 }).strict();
 

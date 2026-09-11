@@ -1,3 +1,4 @@
+import { queryMessages } from "./query-messages";
 import { createDatabaseHost } from "./database-host";
 import { batch, createMemo, createSignal, For, Show, onCleanup, onMount } from "solid-js";
 import { AppWorkspace, Button, Dropdown, MarkdownView, Paper, prompts, useLocale } from "@k2b/ui";
@@ -18,7 +19,15 @@ import { startRun } from "../runtime/host";
 import { AppStorage } from "../runtime/storage";
 import type { UiNode } from "../runtime/protocol";
 
-export default function Workbench(props: { project: Bundle; userId: string; edit: boolean; entry: string; access: AccessEntry[] }) {
+export default function Workbench(props: {
+  project: Bundle;
+  userId: string;
+  edit: boolean;
+  entry: string;
+  access: AccessEntry[];
+  databaseEnabled: boolean;
+}) {
+  const [databaseEnabled, setDatabaseEnabled] = createSignal(props.databaseEnabled);
   const locale = useLocale(),
     t = () => messages.resolve([locale()]).t;
   const [saved, setSaved] = createSignal(props.project),
@@ -359,6 +368,12 @@ export default function Workbench(props: { project: Bundle; userId: string; edit
       setError(displayError(e, locale()));
     } finally {
       setSettingsOpen(false);
+      try {
+        const state = await checked(await client.projects[":id"].database.$get({ param: { id: saved().id }, query: {} }));
+        setDatabaseEnabled(state.enabled);
+      } catch (e) {
+        setError(displayError(e, locale()));
+      }
     }
   }
   const leave = (e: BeforeUnloadEvent) => {
@@ -462,6 +477,11 @@ export default function Workbench(props: { project: Bundle; userId: string; edit
             icon={props.edit ? "ti ti-player-play" : "ti ti-code"}
           >
             {props.edit ? t().use : t().edit}
+          </AppWorkspace.SidebarItem>
+        </Show>
+        <Show when={databaseEnabled()}>
+          <AppWorkspace.SidebarItem href={`/app/kit/${saved().id}/database`} icon="ti ti-terminal">
+            {queryMessages.resolve([locale()]).t.title}
           </AppWorkspace.SidebarItem>
         </Show>
         <AppWorkspace.SidebarItem icon="ti ti-folder" onClick={localData} disabled={clearing() || settingsOpen()}>

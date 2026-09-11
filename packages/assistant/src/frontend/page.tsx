@@ -88,6 +88,7 @@ export default ssr<AuthContext>(async (c) => {
   return () => (
     <Layout c={c} fullPage title={[{ title: t.start, href: "/" }, { title: t.assistant }]}>
       <AssistantWorkspace
+        userId={user.id}
         cloudUrl={publicCloudOrigin(appUrl)}
         status={status}
         models={models}

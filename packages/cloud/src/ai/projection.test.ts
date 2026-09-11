@@ -124,6 +124,24 @@ describe("projection reducer", () => {
     expect(refreshed.activeTurn?.blocks.map((block) => block.id)).toEqual([firstTool.id, secondTool.id]);
   });
 
+  test("authoritative snapshots replace streaming IDs and stale snapshots cannot resurrect them", () => {
+    const streamed: AiTurnBlock = { id: "stream-1", kind: "text", text: "Same output" };
+    const persisted: AiTurnBlock = { id: messageBlockId(2, 0), kind: "text", text: "Same output" };
+    let state = feed([
+      { type: "state", conversation, messages: [], activeTurn: null },
+      wire({ attempt: 1, seq: 1, type: "turn_started", modelProfileId: "m", providerModel: "p", blocks: [streamed] }),
+    ]);
+    const snapshot = (seq: number, blocks: AiTurnBlock[]): AiStreamSseEvent => ({
+      type: "state", conversation, messages: [], activeTurn: { turnId: "turn-1", attempt: 1, seq, blocks, status: "running", modelProfileId: "m", createdAt: conversation.createdAt },
+    });
+    state = reduceProjection(state, snapshot(4, [persisted]));
+    expect(state.activeTurn?.blocks).toEqual([persisted]);
+    state = reduceProjection(state, snapshot(2, [streamed]));
+    expect(state.activeTurn?.blocks).toEqual([persisted]);
+    state = reduceProjection(state, wire({ attempt: 1, seq: 1, type: "turn_started", modelProfileId: "m", providerModel: "p", blocks: [streamed] }));
+    expect(state.activeTurn?.blocks).toEqual([persisted]);
+  });
+
   test("state snapshot of a different conversation does not inherit old history", () => {
     const chatA = feed([
       { type: "state", conversation, messages: [storedMessage({ id: "a1", seq: 1 })], activeTurn: null } as AiStreamSseEvent,

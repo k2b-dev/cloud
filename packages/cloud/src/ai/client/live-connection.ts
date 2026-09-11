@@ -63,6 +63,7 @@ export const createAiLiveConnection = (options: CreateAiLiveConnectionOptions): 
 
   socket = createLiveWebSocket<AiLiveServerMessage>({
     url: options.url ?? "/api/ai/live",
+    activity: "always",
     initialCursor: options.initialCursor,
     subscribe: (cursor) => ({
       type: AI_LIVE_WS_TYPE.subscribe,

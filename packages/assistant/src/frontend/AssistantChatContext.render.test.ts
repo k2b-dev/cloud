@@ -102,14 +102,13 @@ describe("Assistant chat context", () => {
     expect(split.references.map((item) => item.key)).toEqual(["nb1234"]);
   });
 
-  test("renders the compact context only at the shared laptop breakpoint", () => {
+  test("renders an accessible context surface without viewport breakpoints", () => {
     const html = renderToString(() => createComponent(AssistantChatContextSurface, { children: "Loading context" }));
 
     expect(html).toContain('data-assistant-context="compact"');
     expect(html).toContain('class="k2b-paper');
     expect(html).toContain('role="complementary"');
-    expect(html).toContain("hidden");
-    expect(html).toContain("lg:flex");
+    expect(html).not.toContain("lg:flex");
     expect(html).toContain("shrink-0");
     expect(html).not.toContain("absolute");
     expect(html).toContain('aria-label="Chat context"');
@@ -235,7 +234,7 @@ describe("Assistant chat context", () => {
     expect(html).not.toContain("Sources");
     expect(html).not.toContain("References");
     expect(html).not.toContain("Scheduled");
-    expect(html.match(/>View all</g)).toHaveLength(2);
+    expect(html.match(/>View all(?: · \d+)?</g)).toHaveLength(2);
     for (const visible of ["image-one.png", "image-two.png", "image-three.png", "file-one.txt", "file-two.txt", "file-three.txt"]) {
       expect(html).toContain(visible);
     }
@@ -262,7 +261,6 @@ describe("Assistant chat context", () => {
     expect(context).toMatch(/icon="ti ti-eye"\s+title=\{text\("View project"\)\}/);
     expect(context).not.toContain("openAssistantProjectSettingsDialog");
     expect(shared).toContain("<DetailPanel.Action");
-    expect(workspace).toContain("chatContextPresence() === true");
   });
 });
 

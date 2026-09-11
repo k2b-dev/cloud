@@ -10,6 +10,16 @@ import {
 import { aiFileStore } from "./files-store";
 
 describe("conversation file manifest", () => {
+  test("labels prompt dictation while leaving same-named audio uploads ordinary", () => {
+    const upload = { path: "/dictation-upload.wav", size: 44, mediaType: "audio/wav", origin: "user" as const, updatedAt: "2026-09-11T11:00:00Z" };
+    const recording = { ...upload, path: "/renamed.wav", dictationRecordedAt: upload.updatedAt };
+    const manifest = renderAiConversationFileManifest({ attached: [], available: [upload, recording], total: 2 });
+    expect(manifest).toContain("/dictation-upload.wav · audio/wav · 44 bytes · user\n");
+    expect(manifest).toContain("/renamed.wav · audio/wav · 44 bytes · user · prompt dictation recorded at");
+    expect(manifest).toContain("not an uploaded attachment");
+    expect(manifest).toContain("audio remains available for re-evaluation");
+  });
+
   test("renders exact turn attachments and a bounded newest-first inventory as untrusted metadata", () => {
     const photo = {
       path: "/photo.jpg",

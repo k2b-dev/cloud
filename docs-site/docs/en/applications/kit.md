@@ -357,7 +357,7 @@ a destructive, closed-world Action with no automatic retry after an unknown
 outcome. It rechecks current permissions and revision while holding the project
 lock. Reconcile by reading the current revision and source before retrying.
 Saving never launches code. No capability grants browser storage access or app
-creation, metadata, sharing or deletion authority.
+sharing, deletion or database reset authority. Creation and metadata changes use the separate app Actions.
 
 The CLI adds `manifest`, `update`, `source read`, `source validate` and
 `source apply`. JSON inputs use the standard `--input`, `--input-file` and
@@ -497,3 +497,49 @@ hex colors or named colors. Each configuration has a total budget of 1000 array
 entries, including nested series and points. Keep a text or table explanation
 alongside a chart when exact values matter. A workbench with empty `controls`
 uses the full content width.
+
+## SQL console
+
+The built-in /app/kit/:id/database page provides a table/schema browser,
+an SQL-highlighted editor without completions, bounded SELECT results and CSV
+export. Its sidebar entry appears when the app database is enabled. Database
+operations use the same generation-bound service as scripts and CLI.
+
+Shared queries live in kit.saved_queries in Postgres, independently of
+rsql reset and activation. Use can list, read and execute; Admin can create,
+update, rename and delete. Updates and deletes require the exact revision.
+The paginated /api/kit/projects/:id/queries API and cld kit queries
+commands share this service. Query text is limited to the existing 16,000
+character SQL budget; names to 120 characters. No results or personal history
+are persisted. App deletion cascades to saved queries.
+
+One trailing SQL semicolon is accepted by the shared SELECT validator.
+All other SQL restrictions, generation checks and request/result limits remain
+in force. See registered Help kit-sql-console for user workflows.
+
+Saved query listing accepts an optional exact `name` filter. Create and rename serialize on the app and reject name collisions; updates and deletes still require the exact revision. The SQL console confirms replacement of an existing named query before submitting its revision-bound update.
+
+Kit capabilities separate structured reads (`database.read`), SELECT queries (`database.sql` with `id`, `generation`, `sql`, `params`) and reviewed structured mutations (`database.write`). The former `database.read` query operation is removed. Script `kit.db.query` and the CLI database call remain unchanged. SQL uses the same bounded SELECT validator and Use permission checks; it cannot execute writes.
+
+### Assistant app lifecycle
+
+`kit.app.create` accepts `name`, `description` and optional `databaseEnabled`.
+It creates a private app with a README page and Admin access for the caller.
+`kit.app.update` accepts an app `id`, exact `expectedRevision`, and optional
+`name`, `description`, `databaseEnabled`. Unspecified fields and source remain
+unchanged. These Actions return app metadata and database state. Database intent
+and app metadata commit together; provisioning uses the existing durable
+reconciliation mechanism. Pending provisioning is not a reason to create another
+app. Operator-disabled RSQL rejects activation before changing the app.
+
+Both Actions support remembered approval: creation is scoped to app creation,
+settings to the exact app. Source replacement and database mutations retain
+per-call review; their current contracts include irreversible effects.
+No app deletion, database reset, permissions or automatic launch are exposed.
+Custom table columns must omit the rsql-managed `id`, `created_at`, `updated_at`.
+SQL binds exactly one parameter for each unquoted `?` placeholder.
+
+The in-app `kit-crud-example` is a complete shared-database starter with dialogs,
+filtering and pagination. `rows.list` always returns an array in `data`, including
+an empty array for no matches. For individual SDK methods, agents can read the
+exact level-two Help heading to retrieve its signature, result and example.

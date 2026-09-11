@@ -1,6 +1,7 @@
 export {
   CLOUD_AI_DEFERRED_BUILTIN_TOOL_NAMES,
   createCloudAiCardTool,
+  createCloudAiCodeTools,
   createCloudAiLocalBashTool,
   createCloudAiSurveyTool,
   createCloudAiTextEditorTool,

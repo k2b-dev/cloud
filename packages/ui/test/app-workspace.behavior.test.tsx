@@ -9,6 +9,41 @@ describe("@k2b/ui AppWorkspace behavior", () => {
     return;
   }
 
+  test("keeps main pane content mounted when visibility inputs and mobile selection change", async () => {
+    const dom = createDomTestHarness();
+    const { default: AppWorkspace } = await import("../src/layout/AppWorkspace");
+    const [count, setCount] = createSignal(1);
+    const [mobile, setMobile] = createSignal("chat");
+    const [chatOpen, setChatOpen] = createSignal(true);
+    let mounts = 0;
+    const Content = () => { mounts++; return <input aria-label="Draft" />; };
+    const dispose = render(() => <AppWorkspace.Main mobilePane={mobile()}>
+      <AppWorkspace.MainPane id="chat" label="Chat" open={chatOpen()}><div>Chat</div></AppWorkspace.MainPane>
+      <AppWorkspace.MainPane id="workspace" label="Workspace" open={count() > 0}><Content /></AppWorkspace.MainPane>
+    </AppWorkspace.Main>, dom.root);
+    try {
+      const input = dom.root.querySelector<HTMLInputElement>("input")!;
+      input.value = "Keep my draft";
+      setCount(2);
+      setMobile("workspace");
+      expect(mounts).toBe(1);
+      expect(dom.root.querySelector("input")).toBe(input);
+      expect(input.value).toBe("Keep my draft");
+      expect(dom.root.querySelector('[data-workspace-main-region="workspace"]')?.getAttribute("data-workspace-mobile-active")).toBe("true");
+      setChatOpen(false);
+      expect(dom.root.querySelector("input")).toBe(input);
+      expect(dom.root.querySelector('[data-workspace-main-region="workspace"]')?.classList.contains("is-primary")).toBe(true);
+      expect(dom.root.querySelectorAll('[role="separator"]').length).toBe(0);
+      setChatOpen(true);
+      expect(dom.root.querySelector("input")).toBe(input);
+      expect(dom.root.querySelectorAll('[role="separator"]').length).toBe(1);
+      setCount(0);
+      expect(dom.root.querySelector("input")).toBeNull();
+      setCount(1);
+      expect(mounts).toBe(2);
+    } finally { dispose(); dom.cleanup(); }
+  });
+
   test("keeps sidebar active state and aria-current reactive", async () => {
     const dom = createDomTestHarness();
     const { default: AppWorkspace } = await import("../src/layout/AppWorkspace");

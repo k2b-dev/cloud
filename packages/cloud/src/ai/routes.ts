@@ -887,6 +887,7 @@ export const aiRoutes = (() => {
             truncateFromSeq: target.seq,
             fileSnapshot: originalRunConfig?.kind !== "compact" ? originalRunConfig?.files : undefined,
             retrySourceTurnId: target.loopId ?? undefined,
+            clientToolIds: originalRunConfig?.kind !== "compact" ? originalRunConfig?.clientToolIds : undefined,
           });
           rememberLastUsedModel(ctx.actor, result.turn.modelProfileId);
           return respond(

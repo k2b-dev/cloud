@@ -14,6 +14,7 @@ export const databaseMessages = i18n.define({
       configured: "Configure the rsql server and token first.",
       inUse:
         "Existing databases or pending cleanup still use this server. Migrate them before changing the address or removing its credentials.",
+      params: "Provide exactly one parameter per SQL ? placeholder, in order.",
       sql: "This SQL is outside the supported SELECT subset.",
       limit: "The request or result is too large. Use smaller batches or pagination.",
       invalid: "Check the database input and column values.",
@@ -81,6 +82,7 @@ export const databaseMessages = i18n.define({
       configured: "Konfiguriere zuerst den rsql-Server und das Token.",
       inUse:
         "Vorhandene Datenbanken oder ausstehende Löschungen verwenden diesen Server. Migriere sie vor dem Ändern der Adresse oder Entfernen der Zugangsdaten.",
+      params: "Gib für jeden SQL-Platzhalter ? genau einen Parameter in derselben Reihenfolge an.",
       sql: "Diese SQL-Abfrage liegt außerhalb des unterstützten SELECT-Umfangs.",
       limit: "Anfrage oder Ergebnis ist zu groß. Verwende kleinere Batches oder Seitennavigation.",
       invalid: "Prüfe die Datenbank-Eingaben und Spaltenwerte.",
@@ -155,6 +157,8 @@ export function databaseErrorMessage(code: string, locale: string) {
       return t.configured;
     case "DB_SERVER_IN_USE":
       return t.inUse;
+    case "DB_SQL_PARAMS":
+      return t.params;
     case "DB_SQL_UNSUPPORTED":
       return t.sql;
     case "DB_LIMIT":

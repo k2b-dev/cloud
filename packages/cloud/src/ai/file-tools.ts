@@ -108,6 +108,7 @@ export const CloudAiListFilesOutputSchema = z.object({
       mediaType: z.string(),
       origin: z.enum(["user", "assistant", "project", "skill"]),
       updatedAt: z.string(),
+      dictationRecordedAt: z.string().optional().describe("Present for prompt dictation recordings, not manually uploaded audio. Original audio remains available for re-evaluation."),
     }),
   ),
   truncated: z.boolean(),

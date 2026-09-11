@@ -73,7 +73,7 @@ export const canonicalizeAiConversationAttachments = <T extends Message>(
 
 const oneLine = (value: string): string => value.replace(/[\r\n]+/gu, " ").trim();
 const fileLine = (file: AiConversationFileSnapshot["available"][number]): string =>
-  `- ${oneLine(file.path)} · ${oneLine(file.mediaType)} · ${file.size} bytes · ${file.origin}`;
+  `- ${oneLine(file.path)} · ${oneLine(file.mediaType)} · ${file.size} bytes · ${file.origin}${file.dictationRecordedAt ? ` · prompt dictation recorded at ${file.dictationRecordedAt} (speech input, not an uploaded attachment; audio remains available for re-evaluation)` : ""}`;
 
 export const renderAiConversationFileManifest = (snapshot: AiConversationFileSnapshot): string => {
   const sections = [

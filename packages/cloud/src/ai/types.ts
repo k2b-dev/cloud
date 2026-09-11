@@ -129,8 +129,8 @@ export type AiConversationDraft = {
 
 export type AiConversationFieldSource = "default" | "auto" | "user";
 export type AiConversationTitleSource = AiConversationFieldSource;
-export type AiConversationRunStatus = "idle" | "queued" | "running" | "needs_attention" | "failed";
-export type AiConversationStatusFilter = Exclude<AiConversationRunStatus, "idle" | "queued"> | "unread";
+export type AiConversationRunStatus = "idle" | "queued" | "running" | "needs_attention" | "waiting_for_browser" | "failed";
+export type AiConversationStatusFilter = Exclude<AiConversationRunStatus, "idle" | "queued" | "waiting_for_browser"> | "unread";
 
 export type AiConversation = {
   id: string;
@@ -419,7 +419,7 @@ export type AiPendingTurnActionRecord = {
 
 export type AiTurnToolSource = { kind: "none" } | { kind: "default"; appTools?: boolean };
 
-export type AiClientToolId = "local_bash";
+export type AiClientToolId = "local_bash" | "code_run" | "code_inspect" | "code_interact" | "code_stop" | "code_open" | "code_export";
 
 /** Immutable project instructions and context manifest captured for one turn. */
 export type AiProjectPromptSnapshot = {
@@ -517,6 +517,7 @@ export type AiConversationSourceObservation = {
 };
 
 export type AiConversationFileSnapshotEntry = {
+  dictationRecordedAt?: string;
   path: string;
   size: number;
   mediaType: string;

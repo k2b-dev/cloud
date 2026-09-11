@@ -614,6 +614,13 @@ to closed-world, exclusively additive Actions merely to repeat the title or
 serialize the same arguments differently; that creates confirmation fatigue
 without adding useful context.
 
+An Action can explicitly declare `approval: "none"` for autonomous execution.
+The compiler accepts this only for non-destructive, closed-world Actions. AI
+execution then skips review and confirmation; normal authorization, validation,
+idempotency, and delegated mandate restrictions still apply. Omitting `approval`
+keeps the default confirmation behavior. Use `rememberable` when users should
+choose whether to approve future operations in the same scope.
+
 Every review returns the same fixed Cloud type:
 
 ```ts

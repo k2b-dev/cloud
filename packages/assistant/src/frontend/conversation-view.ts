@@ -1,8 +1,11 @@
 import type { AiConversation } from "@k2b/cloud/ai";
 import { assistantMessages } from "./messages";
 
-export const conversationStatusPresentation = (conversation: AiConversation, locale = "en") => {
+export const conversationStatusPresentation = (conversation: AiConversation, locale = "en", active = false) => {
   const t = assistantMessages.resolve([locale]).t;
+  if (conversation.runStatus === "waiting_for_browser") {
+    return { label: active ? t.running : t.waitingForBrowser, icon: active ? "ti ti-loader-2 animate-spin" : "ti ti-browser", class: "text-cyan-600 dark:text-cyan-300" };
+  }
   if (conversation.runStatus === "needs_attention") {
     return { label: t.needsAttention, icon: "ti ti-hand-stop", class: "text-amber-600 dark:text-amber-300" };
   }

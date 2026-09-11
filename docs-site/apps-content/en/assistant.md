@@ -103,8 +103,9 @@ Assistant adopts.
 Open **Assistant settings → Approvals** to review Actions previously accepted with
 **Always approve**. Revoking an entry makes Assistant ask again on the next
 matching call. Sending email, deleting data, open-world effects, and other
-Actions not explicitly marked as rememberable continue to require confirmation
-every time.
+Actions with the default approval policy continue to require confirmation every
+time. Code Mode source and execution tools run without confirmation within the
+user's existing permissions; they do not grant sharing or app deletion.
 
 ## Use Assistant from the terminal
 
@@ -154,3 +155,10 @@ messages, files, preferences, Projects, and turn actions. Run
 See [Deployment requirements](/en/docs/operations/deployment-requirements) for
 this app’s startup prerequisites, optional integrations, configuration and
 functional checks.
+
+### Find dictation recordings
+
+Recordings made with the composer microphone appear under **Voice inputs** in
+the context panel and file picker, labeled with their date and time. They remain
+stored conversation files that Assistant can read or transcribe again. Audio
+files you attach yourself remain in the regular chat files.

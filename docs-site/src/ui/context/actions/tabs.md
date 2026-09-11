@@ -61,3 +61,20 @@ Tabs link triggers and panels with ARIA ids. Arrow keys move by orientation; Hom
 ## Runtime
 
 Tabs render complete server HTML. Selection and roving focus require hydration.
+
+## Workspace tabs
+
+Use `variant="pill"` for compact rounded tabs. Each option (or `Tabs.Item`)
+may provide `onClose` and a localized `closeLabel`. Closing reports intent;
+the application owns confirmation, item removal, and the next selected value.
+Delete or Backspace closes the focused tab when a close handler is present.
+Close controls appear on hover, keyboard focus, or touch devices.
+
+The tab list scrolls horizontally. The active tab remains visible. Use
+`trailing` for a fixed action outside the scrollport, such as an IconButton or
+Dropdown trigger. The application owns that action and its menu entries.
+Do not nest a close button inside a tab label.
+
+These options change navigation chrome only. Applications that keep running
+sessions or editor drafts mounted should continue rendering their content
+outside `Tabs`; switching the active panel is not a keep-alive mechanism.

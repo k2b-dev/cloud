@@ -575,7 +575,7 @@ export const createLoadedAiCapabilityTools = (input: {
         // live review has resolved. The review may supply an app-owned scope.
         approval: "never",
       }).server(async (args, context) => {
-        if (entry.kind === "action") {
+        if (entry.kind === "action" && (entry.operation as CapabilityActionManifest).approval !== "none") {
           const review = (await input.review?.(entry, args, context)) ?? null;
           if (review && context.callId) input.onReview?.(context.callId, review);
           const message =

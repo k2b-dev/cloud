@@ -114,7 +114,7 @@ function ConversationSidebarItem(props: {
     >
       <AppWorkspace.SidebarItemLabel>{props.conversation.title}</AppWorkspace.SidebarItemLabel>
       <AppWorkspace.SidebarItemMeta>
-        <ConversationStatusMeta conversation={props.conversation} />
+        <ConversationStatusMeta conversation={props.conversation} active={props.active} />
       </AppWorkspace.SidebarItemMeta>
       <AppWorkspace.SidebarItemAction
         icon="ti ti-settings"

@@ -282,8 +282,17 @@ use the same user-backed authorization as drafts:
 | `POST /dictations/:dictationId/action` | `action: "retry"` or `action: "discard"` |
 
 The start transaction writes one normal conversation file and a private input
-snapshot. Both count toward the conversation storage quota. The operation ID
-is bound to user, chat, bytes, and options. Repeating it with different input
+snapshot. Both count toward the conversation storage quota.
+
+File metadata includes `dictationRecordedAt`, separate from the
+`user` origin used for write protection. Renames, conversation copies, forks,
+and turn snapshots preserve it. Replacing file contents clears this provenance.
+Ordinary audio uploads never receive it. The turn manifest and `list_files`
+identify these recordings as prompt dictation, while keeping the audio readable.
+`conversationFileSource().listFiles()` exposes the original file metadata for
+application-owned grouping without changing file paths.
+
+The operation ID is bound to user, chat, bytes, and options. Repeating it with different input
 returns a conflict; repeating identical input returns the same dictation even
 if the configured default model changed. One pending dictation per chat is
 allowed. Results use public short IDs; operation IDs are client correlation.
@@ -329,3 +338,24 @@ failures include the status and a diagnostic hint without retaining response bod
 audio, or transcripts in logs. Filter Logs by `ai:transcription` or `ai:dictations`;
 dictation worker entries also include the dictation ID, model profile, attempt,
 and retry decision. Dictations are not workflow runs.
+
+### Background Assistant tabs
+
+The Assistant live connection uses `activity: "always"`. Hiding the browser tab
+does not unsubscribe the active conversation or close its WebSocket. This does
+not override browser suspension, operating-system sleep, reload, or closing the
+tab. Worker sessions remain browser-owned; changing the selected conversation
+can leave another conversation waiting for its browser handler.
+
+Code Mode source and runtime tools do not require confirmation. Source Actions
+retain permission checks and idempotency. Browser execution claims resolve a
+public short turn ID to the authorized active turn's UUID before persistence.
+A duplicate claim cannot repeat an interaction. Host failures return
+`kind: "host"` with `retryable: false`; agents should report them rather than
+rewriting otherwise valid application source or retrying unchanged calls.
+
+Complete active-turn snapshots replace the observed block baseline when their
+attempt and sequence are current. Older snapshots cannot restore obsolete
+streaming block IDs. Pending local steering remains visible until acknowledged.
+In-attempt continuations publish a complete turn baseline before incremental
+updates, so persisted and streamed representations do not appear together.

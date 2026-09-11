@@ -11,6 +11,8 @@ export type AiFileStat = {
   size: number;
   mediaType: string;
   origin: "user" | "assistant";
+  /** Present only for recordings made through prompt dictation. */
+  dictationRecordedAt?: string;
   updatedAt: string;
   version: number;
 };
@@ -20,6 +22,7 @@ type FileRow = {
   size: number;
   media_type: string;
   origin: "user" | "assistant";
+  dictation_recorded_at?: Date | string | null;
   updated_at: Date | string;
   version: number | string;
 };
@@ -34,6 +37,7 @@ const toStat = (row: FileRow): AiFileStat => ({
   size: Number(row.size),
   mediaType: row.media_type,
   origin: row.origin,
+  ...(row.dictation_recorded_at ? { dictationRecordedAt: iso(row.dictation_recorded_at) } : {}),
   updatedAt: iso(row.updated_at),
   version: Number(row.version),
 });
@@ -56,6 +60,7 @@ export const createUniqueAiFileInTransaction = async (
     bytes: Uint8Array;
     mediaType?: string;
     origin: "user" | "assistant";
+    dictationRecordedAt?: string;
     maxFileBytes?: number;
     maxConversationBytes?: number;
   },
@@ -75,10 +80,10 @@ export const createUniqueAiFileInTransaction = async (
   for (let number = 1; number <= 100; number++) {
     const path = numberedAiFilePath(input.path, number);
     const rows = await tx<FileRow[]>`
-        INSERT INTO ai.files (conversation_id, path, bytes, media_type, size, origin, updated_at)
-        VALUES (${input.conversationId}, ${path}, ${input.bytes}, ${input.mediaType ?? "application/octet-stream"}, ${input.bytes.byteLength}, ${input.origin}, now())
+        INSERT INTO ai.files (conversation_id, path, bytes, media_type, size, origin, dictation_recorded_at, updated_at)
+        VALUES (${input.conversationId}, ${path}, ${input.bytes}, ${input.mediaType ?? "application/octet-stream"}, ${input.bytes.byteLength}, ${input.origin}, ${input.dictationRecordedAt ?? null}, now())
         ON CONFLICT (conversation_id, path) DO NOTHING
-        RETURNING path, size, media_type, origin, updated_at, version
+        RETURNING path, size, media_type, origin, dictation_recorded_at, updated_at, version
       `;
     if (rows[0]) return toStat(rows[0]);
   }
@@ -142,7 +147,7 @@ export const aiFileStore = {
     return sql.begin(async (tx) => {
       await tx`SELECT id FROM ai.conversations WHERE id = ${input.conversationId} FOR UPDATE`;
       const existing = await tx<(FileContentRow & { producer_call_key: string | null })[]>`
-        SELECT path, bytes, size, media_type, origin, updated_at, version, producer_call_key
+        SELECT path, bytes, size, media_type, origin, dictation_recorded_at, updated_at, version, producer_call_key
         FROM ai.files WHERE conversation_id = ${input.conversationId} AND path = ${input.path}
       `;
       const row = existing[0];
@@ -164,7 +169,7 @@ export const aiFileStore = {
       const rows = await tx<FileRow[]>`
         INSERT INTO ai.files (conversation_id, path, bytes, media_type, size, origin, producer_call_key)
         VALUES (${input.conversationId}, ${input.path}, ${input.bytes}, ${input.mediaType}, ${input.bytes.byteLength}, 'assistant', ${input.producerCallKey})
-        RETURNING path, size, media_type, origin, updated_at, version
+        RETURNING path, size, media_type, origin, dictation_recorded_at, updated_at, version
       `;
       return toStat(rows[0]!);
     });
@@ -195,7 +200,7 @@ export const aiFileStore = {
     const prefix = input.prefix ?? "/";
     const pattern = `${prefix.endsWith("/") ? prefix : `${prefix}/`}%`;
     const rows = await sql<FileRow[]>`
-      SELECT path, size, media_type, origin, updated_at, version
+      SELECT path, size, media_type, origin, dictation_recorded_at, updated_at, version
       FROM ai.files
       WHERE conversation_id = ${input.conversationId}
         AND (path LIKE ${pattern} OR path = ${prefix})
@@ -206,7 +211,7 @@ export const aiFileStore = {
 
   async stat(input: { conversationId: string; path: string }): Promise<AiFileStat | null> {
     const rows = await sql<FileRow[]>`
-      SELECT path, size, media_type, origin, updated_at, version
+      SELECT path, size, media_type, origin, dictation_recorded_at, updated_at, version
       FROM ai.files
       WHERE conversation_id = ${input.conversationId} AND path = ${input.path}
     `;
@@ -215,7 +220,7 @@ export const aiFileStore = {
 
   async read(input: { conversationId: string; path: string }): Promise<AiFileContent | null> {
     const rows = await sql<FileContentRow[]>`
-      SELECT path, bytes, size, media_type, origin, updated_at, version
+      SELECT path, bytes, size, media_type, origin, dictation_recorded_at, updated_at, version
       FROM ai.files
       WHERE conversation_id = ${input.conversationId} AND path = ${input.path}
     `;
@@ -224,7 +229,7 @@ export const aiFileStore = {
 
   async readTurnFile(input: { turnId: string; path: string }): Promise<AiFileContent | null> {
     const rows = await sql<FileContentRow[]>`
-      SELECT path, bytes, size, media_type, origin, updated_at, version
+      SELECT path, bytes, size, media_type, origin, dictation_recorded_at, updated_at, version
       FROM ai.turn_files
       WHERE turn_id = ${input.turnId}::uuid AND path = ${input.path}
     `;
@@ -248,7 +253,7 @@ export const aiFileStore = {
     const offset = Math.max(0, Math.floor(input.offset));
     const length = Math.max(0, Math.floor(input.length));
     const rows = await sql<FileContentRow[]>`
-      SELECT path, substring(bytes FROM ${offset + 1} FOR ${length}) AS bytes, size, media_type, origin, updated_at, version
+      SELECT path, substring(bytes FROM ${offset + 1} FOR ${length}) AS bytes, size, media_type, origin, dictation_recorded_at, updated_at, version
       FROM ai.files
       WHERE conversation_id = ${input.conversationId} AND path = ${input.path}
     `;
@@ -259,7 +264,7 @@ export const aiFileStore = {
     const offset = Math.max(0, Math.floor(input.offset));
     const length = Math.max(0, Math.floor(input.length));
     const rows = await sql<FileContentRow[]>`
-      SELECT path, substring(bytes FROM ${offset + 1} FOR ${length}) AS bytes, size, media_type, origin, updated_at, version
+      SELECT path, substring(bytes FROM ${offset + 1} FOR ${length}) AS bytes, size, media_type, origin, dictation_recorded_at, updated_at, version
       FROM ai.turn_files
       WHERE turn_id = ${input.turnId}::uuid AND path = ${input.path}
     `;
@@ -305,7 +310,7 @@ export const aiFileStore = {
         if (input.allowUserOverwrite) {
           const written = await tx<{ id: string }[]>`
             UPDATE ai.files
-            SET bytes = ${input.bytes}, media_type = ${input.mediaType ?? "application/octet-stream"}, size = ${input.bytes.byteLength}, updated_at = now(), version = version + 1
+            SET dictation_recorded_at = NULL, bytes = ${input.bytes}, media_type = ${input.mediaType ?? "application/octet-stream"}, size = ${input.bytes.byteLength}, updated_at = now(), version = version + 1
             WHERE conversation_id = ${input.conversationId} AND path = ${input.path} AND origin = 'user'
             RETURNING id
           `;
@@ -428,8 +433,8 @@ export const aiFileStore = {
         throw new Error("Conversation storage limit exceeded.");
       }
       const rows = await tx<{ id: string }[]>`
-        INSERT INTO ai.files (conversation_id, path, bytes, media_type, size, origin)
-        SELECT ${input.targetConversationId}, path, bytes, media_type, size, origin
+        INSERT INTO ai.files (conversation_id, path, bytes, media_type, size, origin, dictation_recorded_at)
+        SELECT ${input.targetConversationId}, path, bytes, media_type, size, origin, dictation_recorded_at
         FROM ai.files WHERE conversation_id = ${input.sourceConversationId}
         ON CONFLICT (conversation_id, path) DO NOTHING RETURNING id
       `;

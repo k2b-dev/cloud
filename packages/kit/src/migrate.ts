@@ -30,4 +30,14 @@ export async function migrate() {
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     error TEXT
   )`.simple();
+  await sql`CREATE TABLE IF NOT EXISTS kit.saved_queries (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    project_id UUID NOT NULL REFERENCES kit.projects(id) ON DELETE CASCADE,
+    name TEXT NOT NULL CHECK(length(name) BETWEEN 1 AND 120),
+    sql TEXT NOT NULL CHECK(length(sql) BETWEEN 1 AND 16000),
+    revision INTEGER NOT NULL DEFAULT 1 CHECK(revision>0),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  )`.simple();
+  await sql`CREATE INDEX IF NOT EXISTS kit_saved_queries_project ON kit.saved_queries(project_id,name,id)`.simple();
 }
