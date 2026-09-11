@@ -1109,7 +1109,7 @@
 
 /* Measurement anchor for the tooltip; never visible. */
 .k2b-ui .k2b-chart__anchor {
-  @apply pointer-events-none absolute size-px;
+  @apply pointer-events-none absolute top-0 left-0 size-px;
 }
 
 .k2b-ui .k2b-chart__controls {
@@ -7595,3 +7595,49 @@
 .k2b-ui .k2b-tabs[data-variant="pill"] [role="tab"] { border:0; margin:0; border-radius:.75rem; max-width:16rem; }
 .k2b-ui .k2b-tabs[data-variant="pill"] [role="tab"] span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .k2b-ui .k2b-tabs[data-orientation="vertical"] .k2b-tabs__bar { flex-direction:column; }
+
+/* Optional chart exploration surface; the viewport never changes size on load. */
+.k2b-ui .k2b-chart-explorer { display: grid; gap: 0.75rem; min-width: 0; }
+.k2b-ui .k2b-chart-explorer__header,
+.k2b-ui .k2b-chart-explorer__legend,
+.k2b-ui .k2b-chart-explorer__actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
+.k2b-ui .k2b-chart-explorer__header { justify-content: space-between; }
+.k2b-ui .k2b-chart-explorer__header h3 { margin: 0; font-size: 1rem; font-weight: 600; }
+.k2b-ui .k2b-chart-explorer__status { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; font-size: .8rem; }
+.k2b-ui .k2b-chart-explorer__viewport { min-width: 0; overflow: auto; }
+.k2b-ui .k2b-chart-explorer__viewport > .k2b-table-shell { height: 100%; }
+.k2b-ui .k2b-chart-explorer__details:empty { display: none; }
+.k2b-ui .k2b-chart-explorer__detail-paper { padding: .75rem 1rem; }
+.k2b-ui .k2b-chart-explorer__detail-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: .5rem; color: var(--k2b-text-muted); font-size: .75rem; }
+.k2b-ui .k2b-chart [data-selected] > :is(rect, path, circle) {
+  stroke: var(--k2b-chart-selection-color, var(--k2b-chart-selection-fallback-color)) !important;
+  stroke-width: 3px;
+  vector-effect: non-scaling-stroke;
+}
+.k2b-ui .k2b-chart [data-selected] > .stdlib-chart-inspection-point { fill: var(--k2b-chart-selection-color, var(--k2b-chart-selection-fallback-color)); opacity: 1; }
+.k2b-ui .k2b-chart [data-selected][data-chart-role="value"] { text-decoration: underline; }
+
+/* Initial SSR selection uses the same palette before computed browser paint is available. */
+.k2b-ui .k2b-chart [data-selected] > .stdlib-chart-series-0 { --k2b-chart-selection-fallback-color: color-mix(in srgb, var(--stdlib-chart-c1) 72%, var(--k2b-chart-highlight-mix)); }
+.k2b-ui .k2b-chart [data-selected] > .stdlib-chart-series-1 { --k2b-chart-selection-fallback-color: color-mix(in srgb, var(--stdlib-chart-c2) 72%, var(--k2b-chart-highlight-mix)); }
+.k2b-ui .k2b-chart [data-selected] > .stdlib-chart-series-2 { --k2b-chart-selection-fallback-color: color-mix(in srgb, var(--stdlib-chart-c3) 72%, var(--k2b-chart-highlight-mix)); }
+.k2b-ui .k2b-chart [data-selected] > .stdlib-chart-series-3 { --k2b-chart-selection-fallback-color: color-mix(in srgb, var(--stdlib-chart-c4) 72%, var(--k2b-chart-highlight-mix)); }
+.k2b-ui .k2b-chart [data-selected] > .stdlib-chart-series-4 { --k2b-chart-selection-fallback-color: color-mix(in srgb, var(--stdlib-chart-c5) 72%, var(--k2b-chart-highlight-mix)); }
+.k2b-ui .k2b-chart [data-selected] > .stdlib-chart-series-5 { --k2b-chart-selection-fallback-color: color-mix(in srgb, var(--stdlib-chart-c6) 72%, var(--k2b-chart-highlight-mix)); }
+.k2b-ui .k2b-chart [data-selected] > .stdlib-chart-series-6 { --k2b-chart-selection-fallback-color: color-mix(in srgb, var(--stdlib-chart-c7) 72%, var(--k2b-chart-highlight-mix)); }
+.k2b-ui .k2b-chart [data-selected] > .stdlib-chart-series-7 { --k2b-chart-selection-fallback-color: color-mix(in srgb, var(--stdlib-chart-c8) 72%, var(--k2b-chart-highlight-mix)); }
+
+/* Reveal the full dimension scale without moving the chart or filter controls. */
+.k2b-ui .k2b-chart-explorer__dimension { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) max-content; gap: .75rem; align-items: end; }
+.k2b-ui .k2b-chart-explorer__dimension .k2b-slider { min-height: 1.125rem; }
+.k2b-ui .k2b-chart-explorer__dimension-value { min-width: 3.5rem; color: var(--k2b-text-muted); font-family: var(--k2b-font-mono); font-size: .75rem; text-align: right; }
+.k2b-ui .k2b-chart-explorer__steps { position: absolute; grid-column: 1 / 2; inset: 100% 0 auto; z-index: 30; display: flex; flex-wrap: wrap; justify-content: space-between; gap: .125rem; padding: .25rem; border: 1px solid color-mix(in srgb, var(--k2b-border) 70%, transparent); border-radius: .375rem; background: var(--k2b-surface-canvas); color: var(--k2b-text-muted); box-shadow: 0 2px 6px #00000008; visibility: hidden; pointer-events: none; font-size: .625rem; }
+.k2b-ui .k2b-chart-explorer__steps span { padding: .0625rem .1875rem; white-space: nowrap; }
+.k2b-ui .k2b-chart-explorer__steps [data-current="true"] { background: var(--k2b-surface-muted); color: var(--k2b-text); border-radius: .1875rem; font-weight: 500; }
+.k2b-ui .k2b-chart-explorer__dimension:is([data-keyboard="true"], :has(input:active)) .k2b-chart-explorer__steps { visibility: visible; }
+/* Include the label-to-track gap: hovering the label also hovers its associated input. */
+@media (hover: hover) {
+  .k2b-ui .k2b-chart-explorer__dimension:has(> .k2b-field:hover) .k2b-chart-explorer__steps { visibility: visible; }
+}
+
+.k2b-ui .k2b-chart-explorer__sort-icon { display: inline-block; width: 1em; text-align: center; flex-shrink: 0; }

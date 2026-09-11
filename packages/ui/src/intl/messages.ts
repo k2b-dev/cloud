@@ -5,6 +5,18 @@ const uiMessages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
+      chartView: "Chart view",
+      chartDiagram: "Diagram",
+      chartData: "Table",
+      chartSeries: "Series visibility",
+      chartOnly: "Only",
+      chartShowAll: "Show all",
+      chartShowing: "Showing",
+      chartSelectedDatum: "Selected data point",
+      chartPreviousData: "The chart and table still show the last loaded filters",
+      chartCopyData: "Copy data",
+      chartCopyFailed: "Could not copy data",
+
       actions: "Actions",
       add: "Add",
       addTag: "Add tag",
@@ -345,6 +357,18 @@ const uiMessages = i18n.define({
       yes: "Yes",
     },
     de: {
+      chartView: "Diagrammansicht",
+      chartDiagram: "Diagramm",
+      chartData: "Tabelle",
+      chartSeries: "Sichtbare Datenreihen",
+      chartOnly: "Nur diese",
+      chartShowAll: "Alle anzeigen",
+      chartShowing: "Angezeigt",
+      chartSelectedDatum: "Ausgewählter Datenpunkt",
+      chartPreviousData: "Diagramm und Tabelle zeigen weiterhin die zuletzt geladenen Filter",
+      chartCopyData: "Daten kopieren",
+      chartCopyFailed: "Daten konnten nicht kopiert werden",
+
       actions: "Aktionen",
       add: "Hinzufügen",
       addTag: "Tag hinzufügen",

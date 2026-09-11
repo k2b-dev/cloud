@@ -43,6 +43,7 @@ Changes are emitted immediately. This makes the component suitable for URL-backe
 | `isActive` | `boolean` | `value.length > 0` | Overrides the active trigger treatment. |
 | `position` | `"bottom-left" \| "bottom-right"` | `"bottom-left"` | Positions the dropdown relative to the trigger. |
 | `defaultValue` | `readonly string[]` | none | A non-empty array resets to a baseline instead of clearing all values. |
+| `disabled` | `boolean` | `false` | Disables the trigger and menu actions. |
 | `iconOnly` | `boolean` | `false` | Shows only the icon while retaining the label for assistive text. |
 
 ## Sections and options

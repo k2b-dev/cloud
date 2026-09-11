@@ -327,9 +327,9 @@ function DataTableRoot<T>(props: DataTableProps<T>) {
 
   /** Only a sortable column carries a sort state; the rest carry none at all. */
   const ariaSortFor = (col: DataTableColumn<T>): "ascending" | "descending" | "none" | undefined => {
-    const sort = sortLinkFor(col);
-    if (!sort) return undefined;
-    if (!sort.active) return "none";
+    const key = sortKeyOf(col);
+    if (!key || (!props.sortHref && !props.renderHeader)) return undefined;
+    if (props.sort?.key !== key) return "none";
     return props.sort?.direction === "asc" ? "ascending" : "descending";
   };
 

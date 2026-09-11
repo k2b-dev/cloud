@@ -25,6 +25,7 @@ export type FilterChipProps = {
   position?: "bottom-left" | "bottom-right";
   defaultValue?: readonly string[];
   iconOnly?: boolean;
+  disabled?: boolean;
   class?: string;
 };
 
@@ -100,7 +101,7 @@ export function FilterChip(props: FilterChipProps): JSX.Element {
   });
 
   return (
-    <Dropdown.Root items={items()} position={props.position ?? "bottom-left"} width="13rem" label={props.label}>
+    <Dropdown.Root disabled={props.disabled} items={items()} position={props.position ?? "bottom-left"} width="13rem" label={props.label}>
       <Dropdown.Trigger
         appearance="plain"
         class={`k2b-filter-chip ${props.class ?? ""}`}

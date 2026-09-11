@@ -1,8 +1,8 @@
 import type { MapViewport } from "@k2b/stdlib";
 import { charts } from "@k2b/stdlib";
 import type { JSX } from "solid-js";
-import { createEffect, createMemo, createSignal, createUniqueId, onCleanup, onMount, Show } from "solid-js";
-import { createChartInspection, type ChartSelection, type ChartTooltipFormatter } from "./chart-inspection";
+import { createEffect, createMemo, createSignal, createUniqueId, onCleanup, onMount, Show, splitProps, untrack } from "solid-js";
+import { createChartInspection, type ChartSelection, type ChartTooltipFormatter, type ChartDatumRef } from "./chart-inspection";
 import { useLocale } from "../intl/locale";
 import { useUiMessages } from "../intl/messages";
 import { DEFAULT_MAP_VIEWPORT, normalizeMapViewport, panMapViewport, zoomMapViewport } from "./chart-map-viewport";
@@ -15,7 +15,8 @@ import {
   stateTimelineHeight,
   zoomStateTimelineViewport,
 } from "./chart-state-timeline";
-import { responsiveChartSvg } from "./chart-svg";
+import { isServer } from "solid-js/web";
+import { responsiveChartSvg, selectedChartSvg } from "./chart-svg";
 
 /**
  * Chart — minimal Solid wrapper around `stdlib.charts`.
@@ -92,6 +93,8 @@ export type ChartProps = {
     labels?: ChartLabels;
     interactive?: boolean;
     onSelect?: (selection: ChartSelection) => void;
+    /** Controlled highlight; indices belong to this exact input snapshot. */
+    selected?: ChartDatumRef | null;
     tooltip?: ChartTooltipFormatter;
   } & (K extends "stateTimeline" ? StateTimelineChartOptions : Omit<Parameters<(typeof charts)[K]>[0], "width" | "height" | "inspect">);
 }[ChartKind];
@@ -103,7 +106,7 @@ export type ChartProps = {
  * types; an explicit per-kind switch would type it but balloon the
  * component for no runtime benefit.
  */
-const renderSvg = (
+export const renderChartSvg = (
   props: ChartProps,
   width: number,
   height: number,
@@ -117,6 +120,7 @@ const renderSvg = (
     labels: _labels,
     interactive: _interactive,
     onSelect: _onSelect,
+    selected: _selected,
     tooltip: _tooltip,
     ...opts
   } = props as ChartProps & { interactive?: boolean };
@@ -168,6 +172,7 @@ const isEmpty = (props: ChartProps): boolean => {
 };
 
 const Chart = (props: ChartProps): JSX.Element => {
+  const [, drawingProps] = splitProps(props, ["selected", "onSelect", "tooltip"]);
   const messages = useUiMessages();
   const locale = useLocale();
   let containerRef: HTMLDivElement | undefined;
@@ -445,8 +450,8 @@ const Chart = (props: ChartProps): JSX.Element => {
   });
   const closeChartTooltip = () => inspection.close();
   const svgMarkup = createMemo(() =>
-    renderSvg(
-      props,
+    renderChartSvg(
+      drawingProps,
       size().width,
       size().height,
       interactiveMap() ? mapViewport() : undefined,
@@ -456,7 +461,10 @@ const Chart = (props: ChartProps): JSX.Element => {
   createEffect(() => {
     svgMarkup();
     inspection.invalidate();
+    untrack(() => inspection.selectDatum(props.selected));
   });
+
+  createEffect(() => inspection.selectDatum(props.selected));
 
   onCleanup(() => {
     inspection.close();
@@ -544,7 +552,7 @@ const Chart = (props: ChartProps): JSX.Element => {
             "--k2b-chart-height": `${size().height}px`,
             "aspect-ratio": `${size().width} / ${size().height}`,
           }}
-          innerHTML={svgMarkup()}
+          innerHTML={isServer ? selectedChartSvg(svgMarkup(), props.selected) : svgMarkup()}
         />
         <Show when={interactive()}>
           <span ref={lineAnchorRef} class="k2b-chart__anchor" aria-hidden="true" />

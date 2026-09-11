@@ -14,7 +14,7 @@ export type {
 export { default as Calendar } from "./Calendar";
 
 export type { ChartKind, ChartLabels, ChartProps } from "./Chart";
-export type { ChartSelection, ChartTooltip, ChartTooltipFormatter } from "./chart-inspection";
+export type { ChartDatumRef, ChartSelection, ChartTooltip, ChartTooltipFormatter } from "./chart-inspection";
 export { default as Chart } from "./Chart";
 export type { CodeDisplayLanguage, CodeDisplayProps } from "./CodeDisplay";
 export { default as CodeDisplay } from "./CodeDisplay";
@@ -72,3 +72,8 @@ export type { RangeOption, RangePickerProps } from "./RangePicker";
 export { default as RangePicker } from "./RangePicker";
 export type { StructuredDataPreviewMode, StructuredDataPreviewProps, StructuredDataValue } from "./StructuredDataPreview";
 export { default as StructuredDataPreview, isStructuredDataValue } from "./StructuredDataPreview";
+
+export { ChartExplorer } from "./ChartExplorer";
+export type { ChartExplorerProps, ChartExplorerRequest, ChartExplorerSnapshot, ChartExplorerColumn } from "./ChartExplorer";
+export { prepareChartSnapshot } from "./chart-snapshot";
+export type { ChartSnapshot } from "./chart-snapshot";

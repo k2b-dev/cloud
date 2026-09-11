@@ -2,6 +2,9 @@ import type { ChartDatum } from "@k2b/stdlib";
 import { positionTooltipSurface } from "../feedback/tooltip-position";
 import type { ChartKind } from "./Chart";
 
+export type ChartDatumRef = Pick<ChartDatum, "role" | "index" | "seriesIndex">;
+export const sameChartDatum = (a: ChartDatumRef, b: ChartDatumRef) => a.role === b.role && a.index === b.index && a.seriesIndex === b.seriesIndex;
+
 export type ChartSelection = { kind: ChartKind; datum: ChartDatum };
 export type ChartTooltip = { title?: string; rows: readonly { label: string; value: string }[] };
 export type ChartTooltipFormatter = (selection: ChartSelection) => ChartTooltip;
@@ -77,6 +80,28 @@ export function createChartInspection(options: {
     }
     return entries;
   };
+  const highlightColor = (item: Entry): string => {
+      // Read the actual paint before applying inspection styles, including
+      // custom series and threshold colors. Invisible points use their line.
+      const point = item.element.querySelector(".stdlib-chart-inspection-point");
+      const source = point
+        ? options.container()?.querySelector(options.kind() === "line"
+            ? `.stdlib-chart-line.stdlib-chart-series-${(item.datum.seriesIndex ?? 0) % 8}`
+            : ".stdlib-chart-sparkline, .stdlib-chart-stat-sparkline")
+        : item.element.querySelector(".stdlib-chart-bar-gauge-fill, .stdlib-chart-gauge-fill, .stdlib-chart-stat-value")
+          ?? item.element.querySelector("rect, path, circle");
+      const paint = source ? source.ownerDocument.defaultView?.getComputedStyle(source) : undefined;
+      const color = (point ? paint?.stroke : paint?.fill) || `var(--stdlib-chart-c${(item.datum.seriesIndex ?? 0) % 8 + 1})`;
+      return `color-mix(in srgb, ${color} 72%, var(--k2b-chart-highlight-mix))`;
+  };
+  const selectDatum = (selected: ChartDatumRef | null | undefined) => {
+    for (const entry of records()) {
+      const matches = selected != null && sameChartDatum(selected, entry.datum);
+      if (matches) entry.element.style.setProperty("--k2b-chart-selection-color", highlightColor(entry));
+      else entry.element.style.removeProperty("--k2b-chart-selection-color");
+      entry.element.toggleAttribute("data-selected", matches);
+    }
+  };
   const screenPoint = (entry: Entry) => {
     const matrix = entry.element.getScreenCTM?.();
     const [x, y] = entry.datum.anchor;
@@ -128,18 +153,7 @@ export function createChartInspection(options: {
     active = entry;
     highlighted = options.kind() === "line" ? records().filter((candidate) => rawX(candidate) === rawX(entry)) : [entry];
     for (const item of highlighted) {
-      // Read the actual paint before applying inspection styles, including
-      // custom series and threshold colors. Invisible points use their line.
-      const point = item.element.querySelector(".stdlib-chart-inspection-point");
-      const source = point
-        ? container.querySelector(options.kind() === "line"
-            ? `.stdlib-chart-line.stdlib-chart-series-${(item.datum.seriesIndex ?? 0) % 8}`
-            : ".stdlib-chart-sparkline, .stdlib-chart-stat-sparkline")
-        : item.element.querySelector(".stdlib-chart-bar-gauge-fill, .stdlib-chart-gauge-fill, .stdlib-chart-stat-value")
-          ?? item.element.querySelector("rect, path, circle");
-      const paint = source ? source.ownerDocument.defaultView?.getComputedStyle(source) : undefined;
-      const color = (point ? paint?.stroke : paint?.fill) || `var(--stdlib-chart-c${(item.datum.seriesIndex ?? 0) % 8 + 1})`;
-      item.element.style.setProperty("--k2b-chart-inspection-color", `color-mix(in srgb, ${color} 72%, var(--k2b-chart-highlight-mix))`);
+      item.element.style.setProperty("--k2b-chart-inspection-color", highlightColor(item));
       item.element.setAttribute("data-inspected", "true");
     }
     const contents = highlighted.map((item) => options.format({ kind: options.kind(), datum: item.datum }));
@@ -309,6 +323,7 @@ export function createChartInspection(options: {
     return true;
   };
   return {
+    selectDatum,
     move,
     down,
     click,
