@@ -22,6 +22,8 @@
 .artifact-runtime-workbench-full { grid-template-columns: minmax(0, 1fr); }
 .artifact-status[data-state="error"] { color: var(--k2b-danger-text); }
 .artifact-status { font-size: .875rem; color: var(--k2b-text-muted); }
+.assistant-apps-page { display: flex; flex-direction: column; gap: 1.5rem; width: 100%; min-width: 0; padding: 1.5rem; }
+.assistant-apps-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 17rem), 1fr)); gap: 1rem; }
 @container (max-width: 40rem) { .artifact-runtime-workbench { grid-template-columns: minmax(0, 1fr); } }
 
 .k2b-ui .assistant-empty-project-trigger > .k2b-button__label {
@@ -165,3 +167,46 @@
 .artifact-workspace .assistant-app-grid .k2b-detail-panel__action { border:1px solid var(--k2b-border); background:var(--k2b-surface); border-radius:1rem; padding:1rem; min-height:6rem; align-items:flex-start; }
 
 .artifact-workspace .assistant-app-grid .k2b-detail-panel__action-title { font-size:.875rem; font-weight:600; }
+.k2b-ui .assistant-studio-card {
+  --studio-accent: var(--studio-accent-light);
+  display: flex; flex-direction: column; gap: .875rem; padding: .9375rem; min-width: 0;
+  border-color: color-mix(in srgb, var(--studio-accent) 16%, var(--k2b-border));
+  background: radial-gradient(ellipse at 100% 0%, color-mix(in srgb, var(--studio-secondary) 19%, transparent), transparent 75%),
+    linear-gradient(125deg, color-mix(in srgb, var(--studio-accent) 7%, var(--k2b-surface)), var(--k2b-surface));
+}
+.k2b-ui[data-theme="dark"] .assistant-studio-card,
+.k2b-ui.k2b-dark .assistant-studio-card,
+.dark .k2b-ui .assistant-studio-card { --studio-accent: var(--studio-accent-dark); }
+.assistant-studio-card__top { display: flex; align-items: flex-start; gap: .75rem; }
+.assistant-studio-card__menu { flex: 0 0 auto; margin: -.25rem -.25rem 0 0; }
+.assistant-studio-card__icon { display: grid; place-items: center; flex: 0 0 auto; width: 1.75rem; height: 1.75rem; margin-top: .1875rem; color: var(--studio-accent); font-size: 1.5625rem; }
+.assistant-studio-card__copy { flex: 1; min-width: 0; }
+.assistant-studio-card__title { color: var(--k2b-text); margin: 0; font-size: .8125rem; line-height: 1.5; font-weight: 600; overflow-wrap: anywhere; }
+.assistant-studio-card__description { margin: .25rem 0 0; color: var(--k2b-text-secondary); font-size: .75rem; line-height: 1.55; overflow-wrap: anywhere; }
+.assistant-studio-card__description:empty { display: none; }
+.assistant-studio-card__footer { display: flex; align-items: center; justify-content: space-between; gap: .75rem; margin-top: auto; padding-top: .375rem; }
+.k2b-ui .k2b-button.assistant-studio-card__start { color: var(--studio-accent); border-color: color-mix(in srgb, var(--studio-accent) 15%, var(--k2b-border)); background: color-mix(in srgb, var(--k2b-surface) 70%, transparent); }
+.k2b-ui .k2b-button.assistant-studio-card__start:hover:not(:disabled) { background: color-mix(in srgb, var(--studio-accent) 10%, var(--k2b-surface)); }
+.assistant-studio-runner-header { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; }
+.assistant-studio-runner-header h1 { margin: 0; font-size: 1rem; font-weight: 600; overflow-wrap: anywhere; }
+.k2b-ui [data-assistant-context="compact"] .k2b-button.assistant-context-action { padding: .625rem .75rem; }
+
+.assistant-studio-card__footer .k2b-status-badge { font-size: .65rem; }
+.assistant-version-list { display:flex; flex-direction:column; gap:1rem; }
+
+
+.assistant-apps-page--runner { flex: 1; min-height: 0; }
+.assistant-apps-page--runner > .artifact-panel { flex: 1; min-height: 0; }
+.assistant-studio-card__top--title-only { align-items: center; }
+.assistant-studio-card__top--title-only .assistant-studio-card__icon { margin-top: 0; }
+.assistant-studio-card__menu { align-self: flex-start; }
+.assistant-version-rows { border: 1px solid var(--k2b-border); border-radius: var(--k2b-radius-surface); overflow: hidden; }
+.assistant-version-entry { display: flex; align-items: center; gap: .75rem; padding: .75rem; }
+.assistant-version-entry + .assistant-version-entry { border-top: 1px solid var(--k2b-border); }
+.assistant-version-entry p { flex: 1; min-width: 0; margin: 0; overflow-wrap: anywhere; font-size: .875rem; }
+.assistant-version-entry__actions { display: flex; gap: .25rem; flex-shrink: 0; }
+@media (max-width: 480px) { .assistant-version-entry { flex-wrap: wrap; } .assistant-version-entry__actions { margin-left: auto; } }
+
+.assistant-apps-page--runner .artifact-panel__preview { min-height: 0; overflow: auto; }
+
+.assistant-studio-card__start { margin-left: auto; }

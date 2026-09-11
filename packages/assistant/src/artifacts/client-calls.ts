@@ -2,7 +2,7 @@ import { sql } from "bun";
 import { aiConversations, CodeRuntimeInput, CODE_RUNTIME_TOOL_NAMES, parseCodeToolInput } from "@k2b/cloud/ai";
 import { userFromActor } from "@k2b/cloud/server";
 import { z } from "zod";
-import { ArtifactError, type ArtifactIdentity } from "./service";
+import { artifacts, ArtifactError, type ArtifactIdentity } from "./service";
 
 export const ClientCall = z.object({
   conversationId: z.string().min(1).max(80), turnId: z.string().min(1).max(80), callId: z.string().min(1).max(180),
@@ -25,6 +25,10 @@ async function authorize(call: z.infer<typeof ClientCall>, identity: ArtifactIde
     throw new ArtifactError("CONFLICT");
   // Schema parsing gives canonical property order and strips no unknown fields.
   if (JSON.stringify(CodeRuntimeInput.parse(parseCodeToolInput(block.name, block.args))) !== JSON.stringify(call.input)) throw new ArtifactError("INVALID_INPUT");
+  if (call.input.operation === "run" && call.input.id && call.input.inputPaths.length) {
+    const resource = await artifacts.get(call.input.id, {...identity,conversationId:conversation.id});
+    if (resource.kind !== "script") throw new ArtifactError("ACCESS_DENIED");
+  }
   return { user, turnId: active.turn.id };
 }
 
@@ -50,7 +54,7 @@ export const clientCalls = {
     const rows = await sql`UPDATE assistant.artifact_client_calls SET result=${JSON.stringify(call.result)}::jsonb
       WHERE user_id=${user.id}::uuid AND turn_id=${turnId}::uuid AND call_id=${call.callId}
       AND client_id=${call.clientId}::uuid AND input=${JSON.stringify(call.input)}::jsonb AND result IS NULL
-      AND created_at >= now() - interval '60 seconds' RETURNING call_id`;
+      AND created_at >= now() - interval '1 day' RETURNING call_id`;
     if (!rows.length) throw new ArtifactError("CONFLICT");
     return { saved: true };
   },

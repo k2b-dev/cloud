@@ -25,6 +25,15 @@ describe("buildAdminGroups", () => {
       });
     }
   });
+  it("places declared AI tools in the shared AI section without app-specific rules", () => {
+    const groups=buildAdminGroups([app({adminHref:"/admin/example",adminNav:[{
+      section:"ai",label:"Example tools",links:[{href:"/admin/example",icon:"ti ti-tool",label:"Script tools"}],
+    }]})]);
+    expect(groups.find(group=>group.label==="AI")?.links).toContainEqual({href:"/admin/example",icon:"ti-tool",label:"Script tools"});
+    expect(groups.some(group=>group.label==="Example tools")).toBe(false);
+    expect(groups.flatMap(group=>group.links).filter(link=>link.href==="/admin/example")).toHaveLength(1);
+  });
+
   it("renders app-declared groups in the existing core group order", () => {
     const groups = buildAdminGroups([
       app({

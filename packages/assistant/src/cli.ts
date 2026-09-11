@@ -1,3 +1,4 @@
+import { assistantCodeCommands } from "./cli/code";
 import { defineCliCommands } from "@k2b/cloud/cli";
 import { assistantChatCommands, assistantManagementCommands } from "./cli/chat";
 import { assistantRootCommand } from "./cli/interactive";
@@ -9,6 +10,8 @@ const module = defineCliCommands({
   name: "assistant",
   summary: "Chat with the Cloud Assistant and manage chats, scheduled tasks, files, personalization, and Projects.",
   groupSummaries: {
+    code: "Build and manage apps and saved scripts",
+    "studio-admin": "Administer Studio resources, data and database settings",
     actions: "Review and resolve pending turn actions",
     chats: "Create, inspect, and manage Assistant chats",
     files: "Manage files in Assistant chats",
@@ -22,6 +25,7 @@ const module = defineCliCommands({
   },
   commands: [
     assistantRootCommand,
+    ...assistantCodeCommands,
     ...assistantChatCommands,
     ...assistantManagementCommands,
     ...assistantPersonalizationCommands,

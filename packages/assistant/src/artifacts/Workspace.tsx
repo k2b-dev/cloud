@@ -39,7 +39,7 @@ function SourceFile(props: { tab: Extract<WorkspaceTab, { kind: "source" }>; dir
       if (!file) throw new Error(t().sourceMissing);
       return { encoding: "utf8", mediaType: "text/plain", content: file.content };
     }}
-    save={data().permission === "read" ? undefined : async (content) => {
+    save={data().permission !== "admin" ? undefined : async (content) => {
       const current = data();
       const updated = await artifactClient.update(current.id, {
         title: current.title, expectedRevision: current.revision,
@@ -64,7 +64,7 @@ function ChatFile(props: { tab: Extract<WorkspaceTab, { kind: "file" }>; refresh
 
 function SourceDirectory(props: { artifactId: string; open: (path: string) => void }) {
   const locale = useLocale(), t = () => artifactMessages.resolve([locale()]).t;
-  const [bundle, { refetch }] = createResource(() => props.artifactId, artifactClient.get);
+  const [bundle, { refetch }] = createResource(() => props.artifactId, id => artifactClient.get(id));
   return <Show when={bundle()} fallback={<Placeholder state={bundle.error ? "error" : "loading"} description={bundle.error?.message} action={bundle.error ? <Button onClick={() => void refetch()}>{t().refresh}</Button> : undefined} />}>
     {data => <FileTree label={t().source} entries={data().source.files.map(file => ({ path: file.path }))} onSelect={file => { if (file.kind !== "folder") props.open(file.path); }} />}
   </Show>;

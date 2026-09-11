@@ -43,6 +43,10 @@ Project, knowledge, file, and reference commands do not accept database UUIDs.
 Turn and message IDs are scoped to their chat. Access, knowledge, file, and
 reference IDs are scoped to their Project.
 
+Studio app and saved-script commands use the resource UUID returned by
+`assistant code list` or `assistant code create`. These are separate from the
+short chat and Project IDs above.
+
 Useful options:
 
 - `--title <title>` names a newly created chat.
@@ -67,6 +71,70 @@ cld assistant actions reject <chat-id> <turn-id> <call-id>
 cld assistant actions submit <chat-id> <turn-id> <call-id> --result-file result.json
 cld assistant turns watch <chat-id> <turn-id>
 ```
+
+## Code Mode and Studio
+
+Code Mode runs in an isolated browser worker hosted by the CLI. It does not need
+an open Assistant browser tab. Install Playwright Chromium, or set
+`CLOUD_CLI_CHROMIUM` to an existing Chromium executable.
+Streaming reconnects after transport interruptions and periodically reconciles
+the saved turn state. This keeps a missed completion event from leaving the CLI
+waiting indefinitely; it does not restart completed tool calls.
+Code has no Node/Bun environment, shell access, credentials, or unrestricted
+network access. This is separate from `--allow-bash`.
+
+```bash
+cld assistant code list --kind script --json
+cld assistant code list --search "sales totals" --json
+cld assistant code create "CSV totals" --kind script --description "Sum uploaded sales rows"
+cld assistant code write <resource-id> main.ts --content-file main.ts
+cld assistant code get <resource-id> --json
+cld assistant code run --chat <chat-id> --input-file run.json --json
+cld assistant code publish <resource-id>
+cld assistant code versions <resource-id>
+cld assistant code restore <resource-id> 1
+cld assistant code fork <resource-id>
+cld assistant code project-link <resource-id> <project-id>
+cld assistant code access <resource-id>
+cld assistant studio-admin list --json
+```
+
+`run.json` contains either `{"code":"export default () => 42"}` for a one-off,
+or `{"id":"<resource-id>"}` for saved code. Add `inputPaths` for explicitly
+selected files of the current chat. Only scripts can receive chat files; GUI
+apps use their own file picker. One-offs create no Studio resource. Optional
+`--steps-file` accepts an array of `{name,args}` steps using `code_interact`,
+`code_inspect`, or `code_export`; the CLI supplies the run ID. An export returns
+an absolute chat-file path for `assistant files download`.
+
+Agent/CLI runs use isolated local test storage. Shared storage changes are real
+and persist across runs and publications. Forks start with empty data. Use
+`code storage` with JSON input for direct shared file/KV operations. Use
+`code sql` with `{"sql":"SELECT title FROM todos LIMIT 20","params":[]}` for
+a direct read-only query. It never creates a database. `code database-connect`
+explicitly provisions one when the instance has rsql configured;
+`code database` accepts structured schema/row operations. `--conversation`
+supplies an authorized Project-chat context to read/run/storage/database
+commands; it never grants edit or fork rights.
+
+Normal capability approvals also apply inside scripts. Interactive Assistant
+sessions show the review and eligible Remember option. For a direct run or
+print-mode turn, repeat `--approve <exact-capability-name>` only for operations
+the user authorized. There is no approve-all option.
+
+Sharing and publication are separate. First publication uses `Initial release`;
+subsequent `code publish` calls require `--note` or `--note-file`. Restore creates
+a new publication and preserves user data. `code grant` and `code change-grant`
+take the same permission payloads as the resource API. `studio-admin` provides
+the corresponding administrator access/grant/change-grant commands and
+`delete <resource-id> --yes` for confirmed deletion.
+
+Read redacted connection state with `studio-admin settings`. Configure using
+`studio-admin configure --input-file <private-json-file>` with `url` and `token`;
+omit `token` to preserve it, or add `--test` to test without saving. Never put
+the token directly in command arguments. Settings cannot replace a server that
+still owns databases or pending cleanup. Central inventory covers shared data
+and Project associations, not browser-local storage.
 
 ## Chats and turns
 

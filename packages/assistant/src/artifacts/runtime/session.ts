@@ -1,3 +1,4 @@
+import { RuntimeStorage, localStorageCall } from "./shared-storage";
 import { LIMITS } from "../contracts";
 import { startArtifactRun } from "./host";
 import { ModalRequest } from "./modal-schema";
@@ -8,6 +9,7 @@ export type RunLog = { time: string; level: string; text: string };
 export type RunSnapshot = {
   status: "starting" | "ready" | "waiting" | "stopped" | "error";
   busy: boolean;
+  approvalPending?: boolean;
   nodes: UiNode[];
   logs: RunLog[];
   output?: unknown;
@@ -20,6 +22,8 @@ export type SessionOptions = {
   mode: "user" | "test";
   changed: (snapshot: RunSnapshot) => void;
   inputs?: File[];
+  capability?: (name:string,input:unknown,signal:AbortSignal) => Promise<unknown>;
+  database?: (request: unknown, signal: AbortSignal) => Promise<unknown>;
   storage?: (method: string, args: unknown[]) => Promise<unknown>;
   modal?: (request: ModalRequest, signal: AbortSignal) => Promise<unknown>;
   pick?: (multiple: boolean, folder: boolean, accept: string, signal: AbortSignal) => Promise<File[]>;
@@ -37,6 +41,7 @@ export function createArtifactSession(container: HTMLElement, source: { runtime:
   const memory = new Map<string, unknown>();
   const memoryBytes = new Map<string, number>();
   let modalSequence = 0;
+  let capabilityRequests = 0;
   let modal: { resolve: (value: unknown) => void; reject: (error: Error) => void } | undefined;
   let watchdog: ReturnType<typeof setTimeout> | undefined;
   let errorGeneration = 0;
@@ -116,6 +121,30 @@ export function createArtifactSession(container: HTMLElement, source: { runtime:
         outputFiles.set(name, file);
         emit({ files: [...outputFiles.values()].map((file) => ({ name: file.name, size: file.size, type: file.type })) });
         return null;
+      }
+      if (method === "capabilities.run") {
+        if(!options.capability || typeof args[0]!=="string")throw new Error("Capability execution unavailable");
+        clearTimeout(watchdog);capabilityRequests++;emit({approvalPending:true});
+        try {return await options.capability(args[0],args[1],signal);}
+        finally {capabilityRequests--;emit({approvalPending:capabilityRequests>0});if(!capabilityRequests&&state.status==="starting"&&!signal.aborted)arm();}
+      }
+      if (method === "database") {
+        if (!options.database) throw new Error("Database access requires a saved app or script");
+        clearTimeout(watchdog);
+        try {
+          const result=await options.database(args[0],signal);
+          if (typeof args[0] === "object" && args[0] !== null && "operation" in args[0] && args[0].operation === "connect") log("info","Database connected");
+          return result;
+        } finally { if (!capabilityRequests && state.status === "starting" && !signal.aborted) arm(); }
+      }
+      if (method === "storage") {
+        const request = RuntimeStorage.parse(args[0]);
+        if (request.scope === "shared" || options.mode === "user") {
+          if (!options.storage) throw new Error("Shared storage requires a saved app or script");
+          return options.storage(method,args);
+        }
+        const local = localStorageCall(request);
+        method = local.method; args = local.args;
       }
       if (method.startsWith("store.") || method.startsWith("opfs.")) {
         if (options.mode === "user") {

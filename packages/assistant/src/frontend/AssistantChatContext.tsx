@@ -346,11 +346,11 @@ function AssistantChatContextView(props: ContextNavigation & { state: AssistantC
             </Show>
 
             <Show when={section("apps") && apps().length > 0}>
-              <AssistantContextSection title={text("Apps")}>
+              <AssistantContextSection title={"Studio"}>
                 <AssistantContextRows>
-                  <div class={props.category === "apps" ? "assistant-app-grid" : ""}><For each={apps().filter(app => includes(app.title)).slice(0, limit())}>{app => <AssistantContextRow icon="ti ti-app-window" title={app.title} description={app.kind === "source" ? app.source.preview ?? undefined : undefined}
+                  <div class={props.category === "apps" ? "assistant-app-grid" : ""}><For each={apps().filter(app => includes(app.title)).slice(0, limit())}>{app => <AssistantContextRow icon={app.kind === "source" ? app.source.icon ?? "ti ti-app-window" : "ti ti-app-window"} title={app.title} description={app.kind === "source" ? app.source.preview ?? undefined : undefined}
                     onClick={() => props.onOpenApp ? props.onOpenApp(refOf(app)!.id, app.title) : void openAssistantCloudReference(app.title, refOf(app)!)} />}</For></div>
-                  <Show when={!props.category && apps().length > CONTEXT_PREVIEW_LIMIT}><AssistantContextViewAll count={apps().length} onClick={() => overview("apps", text("Apps"))} /></Show>
+                  <Show when={!props.category && apps().length > CONTEXT_PREVIEW_LIMIT}><AssistantContextViewAll count={apps().length} onClick={() => overview("apps", "Studio")} /></Show>
                 </AssistantContextRows>
               </AssistantContextSection>
             </Show>

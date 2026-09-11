@@ -112,6 +112,7 @@ export type AppOptions<S extends AppSettingsMap = {}, N extends NotificationDefi
   adminHref?: string;
   /** Multi-link admin navigation contributed by this app. */
   adminNav?: ReadonlyArray<{
+    section?: "ai";
     id?: string;
     label: string;
     links: ReadonlyArray<{ label: string; href: string; icon: string }>;
@@ -366,6 +367,7 @@ export const defineApp = <
     adminHref: opts.adminHref,
     adminNav: opts.adminNav?.map(
       (group): AppAdminNavigationGroup => ({
+        ...(group.section ? {section:group.section} : {}),
         id: group.id,
         label: group.label,
         links: group.links.map((link) => ({ ...link })),
@@ -455,6 +457,7 @@ export const defineApp = <
               }
             : undefined,
         adminNav: meta.adminNav?.map((group) => ({
+          ...(group.section ? {section:group.section} : {}),
           id: group.id,
           label: group.label,
           links: group.links.map((link) => ({ ...link })),

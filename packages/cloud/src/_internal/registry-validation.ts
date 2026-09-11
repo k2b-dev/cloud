@@ -66,6 +66,7 @@ export const validateAppRegistryEntry = (value: unknown): string | null => {
         (group) =>
           !isRecord(group) ||
           (group.id !== undefined && !isString(group.id)) ||
+          (group.section !== undefined && group.section !== "ai") ||
           !isString(group.label) ||
           !Array.isArray(group.links) ||
           group.links.some((link) => !isRecord(link) || !isString(link.label) || !isString(link.href) || !isString(link.icon)),

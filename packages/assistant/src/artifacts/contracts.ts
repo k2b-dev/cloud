@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-// Initial interactive budgets inherited from the proven Kit worker boundary.
+// Interactive source and worker budgets.
 export const LIMITS = {
   sourceBytes: 2 * 1024 * 1024,
   fileBytes: 1024 * 1024,
@@ -41,10 +41,23 @@ export const ArtifactSource = z.object({
 });
 export type ArtifactSource = z.infer<typeof ArtifactSource>;
 
+export const ArtifactKind = z.enum(["app", "script"]);
+export type ArtifactKind = z.infer<typeof ArtifactKind>;
+
+export const ArtifactIcon = z.string().regex(/^ti ti-[a-z0-9-]+$/).max(80);
+export const PublicationNote = z.string().trim().min(1).max(1000).describe("Concise user-facing explanation of this publication or rollback.");
+export const ArtifactMetadata = z.object({
+  title: z.string().trim().min(1).max(120).optional().describe("New working application title."),
+  description: z.string().trim().max(500).optional().describe("New working application description."),
+  icon: ArtifactIcon.optional().describe("Tabler icon class, for example ti ti-calculator."),
+}).strict();
+
 export const ArtifactCreate = z.object({
+  kind: ArtifactKind.default("app").describe("app for a GUI, script for a saved reusable script. One-off code_run needs no resource."),
   title: z.string().trim().min(1).max(120).describe("Short user-facing app title."),
   description: z.string().trim().max(500).optional().describe("One or two sentences explaining what this app does."),
+  icon: ArtifactIcon.optional().describe("Tabler icon class, for example ti ti-calculator."),
   source: ArtifactSource.describe("Initial source bundle. Creating an app does not execute it."),
 }).strict();
-export const ArtifactUpdate = ArtifactCreate.extend({ expectedRevision: z.number().int().positive() });
-export type ArtifactPermission = "use" | "edit" | "manage";
+export const ArtifactUpdate = ArtifactCreate.omit({ kind: true }).extend({ expectedRevision: z.number().int().positive() });
+export type ArtifactPermission = "use" | "manage";

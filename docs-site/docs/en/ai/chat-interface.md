@@ -246,6 +246,15 @@ Pass approval, frontend-tool, retry, fork, message-feedback, and file handlers t
 `AiChatActionsProvider`. Rich Cloud blocks remain Cloud-owned JSX inside the
 generic timeline.
 
+Applications hosting code-triggered approvals can render the same public
+`AiTurnBlockView` from `@k2b/cloud/ai/ui`, inside `AiChatActionsProvider`.
+Provide an active tool block in `awaiting_approval` state with the server-reviewed
+message, details, and `allowAlways` value. Route `onApproval` back to the
+permission-aware server operation. This renderer does not authorize execution:
+the server must correlate the request to its user and resource, enforce current
+permissions, and reject changed or already-resolved requests. Use this shared
+view in a chat or app dialog rather than inventing another approval interaction.
+
 Assistant messages may expose helpful and needs-improvement actions. Positive
 feedback saves immediately. Negative feedback collects one or more stable
 reason codes or an optional short comment in a shared prompt. The rating is
@@ -309,8 +318,17 @@ required source revision. `code_interact` accepts a control ID or the pending
 modal ID, including structured answers. `code_open` never starts the visible
 app. `code_export` copies a captured file into the originating chat.
 
-Assistant publishes `code_create`, `code_read`, `code_write`, `code_remove`,
-`code_list`, and `code_history` capabilities. Writes immediately persist one
+Assistant exposes direct server tools: `code_create`, `code_read`, `code_write`,
+`code_remove`, `code_list`, `code_history`, `code_update`, `code_fork`,
+`code_publish`, `code_versions`, `code_restore`, and `code_sql`. These are
+deferred built-ins with flat inputs, not application capabilities.
+`CODE_SOURCE_TOOLS` from `@k2b/cloud/ai` supplies their shared input contracts.
+Core forwards each operation to Assistant using an operation-bound invocation.
+The server derives the chat context and checks current user, conversation,
+Project and resource permissions. GUI and CLI use the same resource services.
+Writes reuse the platform replay guard; uncertain calls are not repeated.
+`capabilities.run` remains available for other applications, not these tools.
+Writes immediately persist one
 file, preserve other files, and report compilation diagnostics without rejecting
 incomplete source. Execution still requires compilable source. History remains
 available internally; file writes need no revision argument. Concurrent writes
@@ -324,6 +342,27 @@ Its test runs are separate from visible apps and persistent user data. A missing
 browser cannot perform execution; do not report an unexecuted test as successful.
 
 ### Assistant apps and browser work
+
+The Assistant **Studio** navigation sits above Personalize and opens a full-width
+gallery. Each tile has a large icon, publication badge, and direct Start action. Tile menus provide editing, publication, access, and copying;
+permissions use the Cloud editor in a dialog. Standalone URLs show the runner
+without an intermediate management page. Artifacts are independent of chats. Cloud `auth.access` grants are linked
+through `assistant.artifact_access`: `read` is presented as **Use**, `admin` as
+**Manage**. Existing artifact `write` grants migrate to `admin`. Person, nested
+group, and authenticated-user grants use the shared Cloud principal resolver.
+
+Admins see the working draft and can publish a specific source revision. Users
+only see published source and metadata; history and unpublished revisions require
+admin permission even through direct API calls. Saving never publishes. Publishing
+checks compilation and the expected draft revision, then atomically selects the
+publication. A concurrent save causes a conflict. Unpublishing removes the app
+from user discovery; code already loaded into a browser cannot be recalled.
+
+Edit creates an unsent chat draft with the artifact resource reference. Forking
+copies only the current publication into a new private artifact, preserving its
+source provenance but not grants, chat history, or local data. All admins share
+one working draft. Source-editor saves reject stale revisions; agent file writes
+replace that file, so coordinate overlapping edits instead of assuming branches.
 
 Assistant displays executable app references in a dedicated Apps context section,
 with current permission-checked titles. Selecting an app opens it beside the chat
@@ -370,3 +409,33 @@ a source-editor save, or window focus, the workspace checks for a newer version
 and offers an explicit restart. Starting or restarting fetches current code;
 agent test runs are separate from the user’s app. Status errors display the
 description supplied by the app and clear it when the app returns to ready.
+
+### Studio publication versions
+
+Sharing and publication are independent. Publishing a personal application never
+adds access grants. **Start** runs the current publication; before the first
+publication, administrators can start their working application normally.
+Use-level users only receive the latest publication, never working source or
+historical versions. There is no preview mode.
+
+Each publication receives a sequential number, author, date, and required change
+note. The agent can use `code_publish`, `code_versions`, and `code_restore`.
+Restoring copies published code, title, description, and icon into a new working
+revision and a new latest publication in one transaction. Its automatic note is
+"Restore version X". Historical publications and user data remain intact. Source save revisions and publication
+numbers are separate. Expected working revisions prevent stale publish/restore.
+
+Administrators can select a historical publication in the runner's **Versions**
+dialog and start it for themselves without changing the version other users get.
+Starting a different version restarts that local session. **Restore**
+atomically appends a new latest publication and updates the working source, with
+an automatic "Restore version X" note. It preserves history and user data.
+The compact Versions dialog sits in the bottom console toolbar. Before the first
+publication, it offers a Publish action.
+`code_update` changes working title, description, or Tabler icon. The code-mode
+skill includes a short icon list. The compact Studio cards expose publication
+status and put their action menu at the top right.
+
+Visible running sessions check for updates every 30 seconds and on window focus,
+with at most one background check in flight. Updates offer a restart instead of
+discarding current inputs. Historical selections stay on their selected version.

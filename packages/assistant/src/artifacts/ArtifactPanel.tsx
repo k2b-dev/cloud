@@ -1,3 +1,5 @@
+import { approveInModal } from "./CapabilityApproval";
+import { runCapability } from "./runtime/capabilities";
 import { Button, Paper, useLocale } from "@k2b/ui";
 import { files } from "@k2b/stdlib/browser";
 import { createEffect, createResource, createSignal, createUniqueId, For, on, onCleanup, onMount, Show } from "solid-js";
@@ -6,6 +8,7 @@ import { artifactMessages } from "./messages";
 import { openArtifactModal } from "./modal-host";
 import { RuntimeView } from "./RuntimeView";
 import { createArtifactSession, type ArtifactSession, type RunSnapshot } from "./runtime/session";
+import { RuntimeStorage, localStorageCall, sharedStorage } from "./runtime/shared-storage";
 import { ArtifactStorage } from "./runtime/storage";
 
 function pickFiles(multiple: boolean, folder: boolean, accept: string, signal: AbortSignal): Promise<File[]> {
@@ -22,20 +25,23 @@ function pickFiles(multiple: boolean, folder: boolean, accept: string, signal: A
   });
 }
 
-export function ArtifactPanel(props: { artifactId: string; refreshKey?: string; userId: string; browseSource: () => void; onTitle?: (title: string) => void }) {
+export function ArtifactPanel(props: { artifactId: string; refreshKey?: string; published?: boolean; version?: number; autoStart?: boolean; userId: string; browseSource?: () => void; browseVersions?: () => void; onTitle?: (title: string) => void }) {
   const locale = useLocale(), t = () => artifactMessages.resolve([locale()]).t;
-  const [metadata, { mutate }] = createResource(() => props.artifactId, artifactClient.get);
+  const [metadata, { mutate }] = createResource(() => props.artifactId, id => artifactClient.get(id, props.published, props.version));
   createEffect(() => { if (metadata()) props.onTitle?.(metadata()!.title); });
   // Background checks must never replace a running app with an error boundary.
-  const refresh = () => { void artifactClient.get(props.artifactId).then(bundle => {
-    if (bundle.revision > (metadata()?.revision ?? 0)) mutate(bundle);
-  }).catch(() => {}); };
+  let refreshing = false;
+  const refresh = () => { if (refreshing) return; refreshing = true; void artifactClient.get(props.artifactId, props.published, props.version).then(bundle => {
+    if (bundle.sourceRevision > (metadata()?.sourceRevision ?? 0)) mutate(bundle);
+  }).catch(() => {}).finally(() => { refreshing = false; }); };
   createEffect(on(() => props.refreshKey, refresh, { defer: true }));
   onMount(() => {
     const changed = () => refresh();
+    const timer = window.setInterval(() => { if (document.visibilityState === "visible") refresh(); }, 30_000);
     window.addEventListener("focus", changed);
     window.addEventListener("assistant-artifact-saved", changed);
     onCleanup(() => {
+      window.clearInterval(timer);
       window.removeEventListener("focus", changed);
       window.removeEventListener("assistant-artifact-saved", changed);
     });
@@ -44,29 +50,38 @@ export function ArtifactPanel(props: { artifactId: string; refreshKey?: string; 
   const [loading, setLoading] = createSignal(false);
   const [error, setError] = createSignal("");
   const [consoleOpen, setConsoleOpen] = createSignal(false);
+  createEffect(() => { if (metadata()?.kind === "script") setConsoleOpen(true); });
   const consoleId = `artifact-console-${createUniqueId()}`;
   createEffect(on(() => error() || state()?.error, (failure) => { if (failure) setConsoleOpen(true); }));
   const [revision, setRevision] = createSignal<number>();
   let container!: HTMLDivElement, session: ArtifactSession | undefined, generation = 0;
   const stop = () => { generation++; setLoading(false); void session?.stop(); session = undefined; };
   onCleanup(stop);
+  onMount(() => { if (props.autoStart) void start(); });
   async function start() {
     stop();
     const token = generation;
     setLoading(true); setError("");
     try {
-      const bundle = await artifactClient.get(props.artifactId);
+      const bundle = await artifactClient.get(props.artifactId, props.published, props.version);
       if (token !== generation) return;
-      const compiled = await artifactClient.compiled(props.artifactId, bundle.revision);
+      const compiled = await artifactClient.compiled(props.artifactId, bundle.sourceRevision);
       if (token !== generation) return;
       if (!("runtime" in compiled)) throw new Error(t().REQUEST_FAILED);
       mutate(bundle);
-      setRevision(bundle.revision);
+      setRevision(bundle.sourceRevision);
       const storage = new ArtifactStorage(props.userId, props.artifactId);
       session = createArtifactSession(container, compiled, {
         mode: "user", changed: setState,
         modal: (request, signal) => openArtifactModal(request, signal, locale()),
-        storage: (method, args) => storage.call(method, args),
+        capability:(name,input,signal)=>runCapability(name,input,{artifactId:props.artifactId},approveInModal,signal),
+        database: (request,signal) => artifactClient.database(props.artifactId,request,undefined,signal),
+        storage: (method, args) => {
+          if (method !== "storage") return storage.call(method,args);
+          const request = RuntimeStorage.parse(args[0]);
+          if (request.scope === "shared") return sharedStorage(props.artifactId,request);
+          const local = localStorageCall(request); return storage.call(local.method,local.args);
+        },
         pick: pickFiles,
         save: async (file, signal) => { if (!signal.aborted) files.downloadFileFromContent(file, file.name, file.type); },
       });
@@ -85,7 +100,7 @@ export function ArtifactPanel(props: { artifactId: string; refreshKey?: string; 
         }} />
       </Show>
     </div>
-    <Show when={revision() !== undefined && (metadata()?.revision ?? 0) > revision()!}>
+    <Show when={revision() !== undefined && (metadata()?.sourceRevision ?? 0) > revision()!}>
       <div role="status" class="flex items-center gap-2">
         <span class="text-sm text-muted">{t().staleSource}</span>
       </div>
@@ -96,7 +111,8 @@ export function ArtifactPanel(props: { artifactId: string; refreshKey?: string; 
           <i class={consoleOpen() ? "ti ti-chevron-down" : "ti ti-chevron-up"} aria-hidden="true" />
         </Button>
         <div class="flex items-center gap-1">
-          <Button size="sm" variant="ghost" onClick={() => props.browseSource()}>{t().source}</Button>
+          <Show when={props.browseSource}><Button size="sm" variant="ghost" onClick={() => props.browseSource?.()}>{t().source}</Button></Show>
+          <Show when={props.browseVersions}><Button size="sm" variant="ghost" onClick={() => props.browseVersions?.()}><i class="ti ti-git-branch" aria-hidden="true" />{t().versions}</Button></Show>
           <Button size="sm" variant="ghost" disabled={loading()} aria-busy={loading() ? "true" : undefined} onClick={() => void start()}><i class={`ti ti-refresh${loading() ? " k2b-spin" : ""}`} aria-hidden="true" />{t().restart}</Button>
           <Button size="sm" variant="ghost" disabled={!loading() && (!state() || state()?.status === "stopped")} onClick={stop}><i class="ti ti-player-stop" aria-hidden="true" />{t().stop}</Button>
         </div>

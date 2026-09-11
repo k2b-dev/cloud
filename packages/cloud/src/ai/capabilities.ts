@@ -1,3 +1,5 @@
+import { createCodeSourceTool } from "./code-source-tools";
+import { CODE_SOURCE_TOOLS } from "./code-source-contracts";
 import { createHash } from "node:crypto";
 import type { Tool, ToolContext, ToolResolver } from "@k2b/nessi";
 import { z } from "zod";
@@ -606,6 +608,11 @@ export const createAiResourceReaderTool = (input: {
     outputSchema: z.unknown(),
     approval: "never",
   }).server(async (ref, context) => {
+    if (ref.type === "assistant.artifact") {
+      const tool = createCodeSourceTool("code_read");
+      if (tool.location !== "server") throw new Error("Code reader must execute on the server.");
+      return tool.run(CODE_SOURCE_TOOLS.code_read.input.parse({ id: ref.id }), context);
+    }
     const appId = cloudResourceRefAppId(ref);
     const app = input.apps.find((candidate) => candidate.appId === appId);
     const reader = app ? resolveCapabilityResourceReader(app.manifest, ref) : null;
@@ -660,7 +667,7 @@ export const createAiToolResolver =
     const capabilityCatalog = buildAiCapabilityCatalog(registry).filter((entry) => !allowed || allowed.has(entry.name));
     const helpTools = input.listHelpRegistry ? createAiHelpTools(helpRegistry, input.locale) : [];
     const resourceTool =
-      input.execute && capabilityCatalog.length > 0
+      input.execute && (capabilityCatalog.length > 0 || input.staticTools.some(tool => tool.def.name === "code_read"))
         ? createAiResourceReaderTool({ apps: registry, catalog: capabilityCatalog, execute: input.execute })
         : null;
     const builtIns = [...input.staticTools, ...helpTools, ...(resourceTool ? [resourceTool] : [])].filter(

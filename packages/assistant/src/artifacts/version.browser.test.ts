@@ -24,7 +24,7 @@ test("status errors render and saved versions require explicit restart", async (
       return Response.json({ ...compiled, revision });
     }
     if (unavailable && url.pathname.startsWith("/api/")) return new Response("Unavailable", {status: 502});
-    if (url.pathname.startsWith("/api/")) return Response.json({ id: "test", title: "Test", revision });
+    if (url.pathname.startsWith("/api/")) return Response.json({ id: "test", title: "Test", revision, sourceRevision: revision });
     return new Response('<!doctype html><body class="k2b-ui"><div id="root"></div><script src="/bundle.js"></script>', { headers: { "content-type": "text/html" } });
   } });
   const browser = await chromium.launch({ channel: "chrome", headless: true });

@@ -1,99 +1,82 @@
 ---
 name: assistant-code-mode
-description: Use code to analyze, calculate, transform, and generate files or data, or build interactive apps in Assistant. Use for complex calculations, combining datasets, cleaning or converting files, custom analyses, simulations, calculators, trackers, and dashboards—even when the user does not mention programming. Also use to fix or extend an existing Assistant app. Prefer an existing Cloud feature when it already solves the task.
+description: Analyze and convert uploaded files, calculate results, build calculators and dashboards, or reuse and improve apps and saved scripts in Assistant Studio. Use for one-off code, SQL queries on an Assistant resource database, and combining Cloud operations through capabilities.run. Also use for complex data analysis, simulations, and file generation even when the user does not mention programming. This is Assistant Code Mode; it does not use the separate Kit app. Prefer an existing Cloud feature when it already solves the task.
 ---
 
 # Assistant code mode
 
-Choose the simplest useful result. For a one-off analysis, return findings and
-output files without building a UI or opening an app tab. Build an interactive
-app when controls or repeated use help the user. Both run in the same isolated
-JavaScript or TypeScript worker and require a connected Assistant browser.
+Use the smallest result that solves the user's task. Run a one-off script for
+calculations, file conversions, and analysis. Save a script for repeated use or
+sharing. Create an app when the user needs interactive controls.
 
-## Fast path
+The entry exports one function, optionally async. Return concise data for an
+analysis. Runtime namespaces are globals: do not import them or install packages.
+Only relative imports from your own source files are supported.
 
-The entry exports one function. `ui`, `files`, `sheet`, `store`, `opfs`, `ids`,
-and `money` are already available as globals: **do not import them**. Imports are
-only for relative helper files you wrote. There are no packages to install.
-Return plain data for an analysis. For a UI, create controls and layouts without
-returning their handles.
+## Choose your path
 
-Do not read every reference before starting. Choose one path:
+- **One-off calculation:** load `code_run` and pass `{"code":"export default () => ({ answer: 6 * 7 })"}`.
+  No app, title, icon, or save step is needed.
+- **Analyze uploaded files:** read [Runtime and files](references/runtime.md).
+  Pass the selected current chat file paths as `inputPaths` to `code_run`.
+  Scripts can read those inputs; GUI apps cannot read chat attachments.
+- **Check existing app data:** load `code_sql` for a direct SELECT.
+  Read [Database](references/database.md); no analysis script is needed.
+- **Combine Cloud operations in code:** read [Capability calls](references/capabilities.md).
+  `capabilities.run(name, input)` is a JavaScript API inside `code_run`, not a
+  separately discoverable tool. Discover the target Cloud capabilities normally,
+  then call them from the script. This also works for one-off scripts.
+- **Reusable script:** read [Source workflow](references/source-workflow.md).
+  Create once with `kind: "script"`, keep its ID, write source, and run it.
+- **Interactive app:** read [Source workflow](references/source-workflow.md) and
+  [UI and dialogs](references/ui.md). Create with `kind: "app"` and useful title,
+  description, and icon. Exercise its controls before opening it beside the chat.
+- **Use or change an existing resource:** load `code_list` and
+  `code_read` first. Keep its ID when editing; use
+  `code_fork` for an independent copy when you have direct access.
 
-- **Calculate or transform data:** read [Runtime and files](references/runtime.md)
-  only when using files. A complete entry can be as small as
-  `export default () => ({ answer: 6 * 7 });`.
-- **Build an interactive app:** read [UI and dialogs](references/ui.md).
-  Read charts or money only if the task needs them. Use
-  [Examples](references/examples.md) when a starter helps.
-- **Fix an existing app:** read its source first; keep the same app ID.
+Load only the tools needed for the chosen path through `load_tools`.
+All Code Mode tools use `code_*` names. They are direct Assistant tools, not
+Cloud capabilities. Load only the individual tools needed for the task.
+Use `capabilities.run(...)` for capabilities of other Cloud apps, not code tools.
+`code_write` saves immediately. Read existing source before editing;
+write complete file contents and preserve unrelated files.
+Keep the complete returned resource UUID. Do not shorten it or use Kit tools
+for an Assistant app or script.
 
-1. Load source and execution tools together:
-   `load_tools({"names":["assistant.code_create","assistant.code_read","assistant.code_write","code_run","code_interact","code_stop"]})`.
-   Source tools have an `assistant.` prefix; browser tools do not.
-2. Create once, retain the returned `id`, and write complete source to its entry
-   path. `code_write` saves immediately. There is no save, revision, or approval
-   step. Unrelated files remain unchanged. Compilation errors include source
-   locations: fix them before running, without creating another app.
-3. Run with `code_run`. Its result already contains output, errors, UI state,
-   and captured files. Do not call Inspect just to repeat that snapshot.
-   Exercise the main interaction using returned IDs; verify the requested
-   calculation or output. Fix script errors yourself and run the corrected source.
-4. Deliver findings directly for a one-off calculation. For output files, load
-   `code_export`, export the captured file, then inspect and present the chat file.
-   For an interactive app, load `code_open` and open it beside the chat.
-   Opening does not start the user's app. Stop obsolete test runs.
+## Verify and deliver
 
-Keep the first implementation small and complete. A simple calculation does
-not need a framework, a UI, or its own test framework. Do not add multiple
-exploratory tool rounds when the next action is already known.
+`code_run` returns output, errors, logs, UI state, and captured files. Do not
+inspect again just to repeat that snapshot. Correct compilation or runtime
+errors, rerun, and check the requested behavior. For interactive apps, use
+returned control IDs with `code_interact`. Stop obsolete runs.
 
-Load `code_inspect` only for additional detail, and read
-[Debugging](references/debugging.md) when needed. If a tool returns
-`kind: "host"`, the execution environment failed: do not rewrite source or
-repeat the same call unchanged. Report the concrete error. If tools are absent,
-report that execution could not be verified. After an uncertain create or write,
-read the existing resource before repeating it. Never claim compilation as a
-successful runtime test.
+Runs use temporary local storage. Shared data, database writes, and capability
+calls have real effects; test with suitable records and respect approvals.
 
-## Make the result useful
+For a one-off task, deliver findings directly. Export captured output using
+`code_export` and link the resulting chat file. Open GUI apps using `code_open`.
+Do not build a UI for a task that only needs a result or an output file.
 
-Put the user's primary task first. A calculator shows inputs and results; a
-tracker shows records and their actions. Avoid introductory marketing screens,
-placeholder rows, decorative headings, and controls that do nothing. Keep
-empty, loading, validation, and failure states understandable.
+Execution requires a connected browser host or the CLI's headless Chromium host.
+A background tab can continue; closing, reloading, or suspending its host can
+interrupt work. Never claim execution was verified when only compilation passed.
+If a tool reports `kind: "host"`, diagnose that error rather than rewriting
+working source or blindly repeating the call.
 
-Use the supplied components: selects for constrained choices, dialogs for short
-forms, lists for actionable records, tables for comparing rows, and charts for
-patterns. Choose components from the API reference rather than inventing APIs.
-Create controls once and update their handles; keep control and item IDs stable
-so interactions remain testable. Support narrow layouts with the supplied layout
-primitives. UI snapshots verify behavior; they are not proof of visual quality.
+## Read only what you need next
 
-Write app text in the user's language. Keep labels and messages short and useful;
-do not describe workers, source revisions, or implementation details to end users.
-Build the requested scope completely without adding speculative features. Use
-real supplied data when available; label sample data clearly and keep it separate.
+- [Runtime and files](references/runtime.md): inputs, outputs, CSV, return values.
+- [Storage](references/storage.md): local or shared files and key/value data.
+- [Database](references/database.md): lazy connections, SELECT, and structured records.
+- [Capability calls](references/capabilities.md): combine Cloud actions and queries.
+- [Publishing and access](references/publishing.md): metadata, sharing, versions, restore.
+- [UI and dialogs](references/ui.md): controls and forms; apps only.
+- [Charts](references/charts.md) and [Money](references/money.md): task-specific APIs.
+- [Debugging](references/debugging.md): additional inspection and recovery.
+- [Examples](references/examples.md): complete entries when a starter is useful.
 
-## Read the needed reference
-
-- [Source workflow](references/source-workflow.md): file tools, identity, writes,
-  removals, and recovery.
-- [Runtime and files](references/runtime.md): return values, inputs, outputs,
-  CSV processing, and local storage.
-- [UI and dialogs](references/ui.md): controls, tables, lists, layouts, and forms.
-- [Charts](references/charts.md): chart data shapes and updates.
-- [Money](references/money.md): exact amounts, tax, formatting, and allocation.
-- [Debugging](references/debugging.md): run, inspect, interact, and export.
-- [Examples](references/examples.md): complete headless and interactive scripts.
-
-The entry exports one function, optionally async. Use relative helper imports
-and the supplied `ui`, `files`, `sheet`, `store`, `opfs`, `ids`, and `money`
-namespaces. There is no package installation, generated DOM, or SQL API.
-
-Apps have independent permissions. A chat link does not share access. Local
-storage belongs to this user, app, and browser; test runs do not touch it. For a
-mostly single-person tool, use simple state and awaited operations. Add
-concurrency handling only for actual overlapping work. A background browser tab stays connected, but closing or reloading the browser
-ends its worker sessions. Browser suspension can delay execution. Do not promise
-execution after the Assistant browser closes.
+Use real supplied data, short labels in the user's language, and meaningful
+loading, empty, validation, and error states. Avoid decorative screens and
+controls that do nothing. Keep source, storage, and permission decisions small
+and explicit; do not invent APIs.

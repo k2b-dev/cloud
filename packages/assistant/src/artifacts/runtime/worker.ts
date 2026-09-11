@@ -137,6 +137,16 @@ type FilePickerOptions = ControlOptions & {
   multiple?: boolean;
   onChange: (files: File[]) => unknown;
 };
+function scopedStorage(scope: "local" | "shared", area: "kv" | "files") {
+  const call = (operation: string, key?: string, value?: unknown) => rpc("storage", [{scope,area,operation,key,value}]);
+  return area === "kv" ? {
+    get: (key: string) => call("read",key), set: (key: string,value: unknown) => call("write",key,value),
+    delete: (key: string) => call("delete",key), keys: () => call("list"),
+  } : {
+    read: (key: string) => call("read",key), write: (key: string,value: Blob | string) => call("write",key,value),
+    delete: (key: string) => call("delete",key), list: () => call("list"),
+  };
+}
 const api = {
   money,
   ids: { ulid: common.ulid },
@@ -247,7 +257,28 @@ const api = {
         children: children.map((c) => c.id),
       }),
   },
+  capabilities: {run:(name:string,input:unknown={}) => rpc("capabilities.run",[name,input])},
+  database: {connect: async () => {
+    await rpc("database",[{operation:"connect"}]);
+    const call = (request: unknown) => rpc("database",[request]);
+    return {
+      query:(sql: string,params: unknown[] = []) => call({operation:"query",sql,params}),
+      tables:() => call({operation:"tables.list"}),
+      createTable:(name: string,columns: unknown[]) => call({operation:"tables.create",name,columns}),
+      table:(table: string) => ({
+        schema:() => call({operation:"schema.get",table}),
+        alter:(changes: unknown) => call({operation:"tables.update",table,changes}),
+        list:(query: Record<string,unknown> = {}) => call({operation:"rows.list",table,query}),
+        get:(id: number) => call({operation:"rows.get",table,id}),
+        insert:(rows: unknown) => call({operation:"rows.insert",table,rows}),
+        update:(id: number,row: unknown) => call({operation:"rows.update",table,id,row}),
+        delete:(id: number) => call({operation:"rows.delete",table,id}),
+      }),
+    };
+  }},
+  kv: {local:scopedStorage("local","kv"),shared:scopedStorage("shared","kv")},
   files: {
+    local:scopedStorage("local","files"), shared:scopedStorage("shared","files"),
     list: () => rpc("file.list"),
     read: (path: string) => rpc("file.read", [path]),
     open: (options: { accept?: string } = {}) => rpc("file.open", [options]),

@@ -35,6 +35,8 @@ export type AppAdminNavigationLink = {
 };
 
 export type AppAdminNavigationGroup = {
+  /** Contribute links to the platform AI section instead of a separate group. */
+  section?: "ai";
   /** Stable key used only to localize this presentation group. */
   id?: string;
   label: string;

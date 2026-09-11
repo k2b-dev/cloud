@@ -1,18 +1,19 @@
 # Code files
 
-Use `load_tools` with these stable capability IDs. Cloud returns the callable
-function names; do not guess transport-specific names.
+Use `load_tools` with these exact Assistant tool names. Each tool has one
+small input schema; there is no app prefix or capability name to translate.
 
-| Capability | Input | Purpose |
+| Tool | Input | Purpose |
 | --- | --- | --- |
-| `assistant.code_create` | `title`, optional `description` | Create one private app; returns `id`, `entry`, and files |
-| `assistant.code_read` | `id`, optional `path`, `offset`, `revision` | Current directory without path; file content with path |
-| `assistant.code_write` | `id`, `path`, `content` | Create or overwrite one complete file and save immediately |
-| `assistant.code_remove` | `id`, `path` | Remove a source file, preserving history and the app |
-| `assistant.code_list` | optional `page` | Find accessible apps; follow `hasNext` |
-| `assistant.code_history` | `id`, optional `page` | List old saved versions for recovery |
+| `code_create` | `title`, `kind: "app"` or `"script"`, optional `description`, `icon` | Create one private resource; returns `id`, `entry`, and files |
+| `code_read` | `id`, optional `path`, `offset`, `revision` | Current directory without path; file content with path |
+| `code_write` | `id`, `path`, `content` | Create or overwrite one complete file and save immediately |
+| `code_remove` | `id`, `path` | Remove a source file, preserving history and the app |
+| `code_list` | optional `page`, `kind` | Find accessible apps or scripts; follow `hasNext` |
+| `code_history` | `id`, optional `page` | List old saved versions for recovery |
 
-`id` always means the app ID, including `code_run` and `code_open`. `runId`
+`id` means the saved resource ID. A one-off `code_run` supplies `code` instead
+and creates no saved resource. `code_open` is for GUI apps. `runId`
 identifies a particular execution. The resource reader follows Cloud's standard
 `id` contract. Source file paths are relative, such as `main.ts` or `lib/math.ts`.
 
@@ -47,14 +48,27 @@ is being changed concurrently, use a historical revision for a consistent read.
 For recovery, `code_history` returns revisions accepted by `code_read`; write the
 recovered content with `code_write`.
 
-Cloud capability requests and results are limited to 256 KiB, including JSON.
-Keep source files focused and within that transport budget. Only return concise
-metadata from tools; write large analysis results as output files.
+Keep source files focused; each file is limited to 1 MiB of UTF-8 content.
+Tool results are bounded to 256 KiB. Write large analysis results as output files.
 
 Creation and file mutations run without approval prompts, within the user's
-existing permissions. Cloud still requires idempotency keys. This does not grant
-sharing or app deletion. Reuse a key only for retrying the same logical operation, and
-inspect current state after an uncertain result before deciding to retry.
+existing permissions. Replay protection is handled internally; do not supply
+idempotency keys. This does not grant sharing or app deletion. Inspect current
+state after an uncertain result before deciding to retry.
 
 Give an app a concise title and an optional one- or two-sentence description of
 its purpose. Users see these in the chat context and app overview cards.
+
+## Work through the Cloud CLI
+
+Use `assistant code create TITLE --kind app|script` for a saved resource.
+`assistant code write ID main.ts --content-file ./main.ts` writes one complete
+file and preserves its siblings. `assistant code get ID` reads source and
+metadata. Source text may also come from stdin using the CLI input flags.
+Use `assistant code update` only when intentionally replacing a complete source
+bundle with its current revision check.
+
+Use `assistant code run` for execution, `code sql` for a direct SELECT, and the
+publication, access, and Project commands for their corresponding operations.
+`code_open` in a headless CLI host returns the app URL; it does not claim to open
+a user-visible tab.

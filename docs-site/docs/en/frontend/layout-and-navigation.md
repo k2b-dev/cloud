@@ -248,6 +248,10 @@ scrolling. For a bounded child such as `SettingsPage`, pass `scroll={false}` to
 The default remains `scroll={true}` for ordinary admin pages.
 
 App-owned admin groups come from `adminNav` in the application declaration.
+A group may declare `section: "ai"` to contribute its links to the shared AI
+section instead of creating a separate navigation group. This placement is
+available to any application and does not grant access; its routes and services
+still enforce their own permissions. Omit `section` for an independent group.
 
 ## Use anchors for navigation
 

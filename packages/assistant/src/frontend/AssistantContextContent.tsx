@@ -81,6 +81,7 @@ export function AssistantContextRow(props: {
   );
   return props.onClick && props.menuItems?.length ? (
     <DetailPanel.Action
+      class="assistant-context-action"
       title={props.title}
       description={props.description}
       leading={leading()}
@@ -91,6 +92,7 @@ export function AssistantContextRow(props: {
     />
   ) : props.onClick ? (
     <DetailPanel.Action
+      class="assistant-context-action"
       title={props.title}
       description={props.description}
       leading={leading()}

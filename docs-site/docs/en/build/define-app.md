@@ -120,6 +120,11 @@ Each group needs a `label` and `links`. Each link needs a `label`, `href`, and
 Tabler `icon`. Add a stable group `id` when its label is translated through
 `presentation`.
 
+An application contributing AI administration can set `section: "ai"` on its
+group. The layout adds those links to the existing AI administration section.
+Route and resource authorization still belong to the application; this field
+only selects where authorized navigation is displayed.
+
 ## Translate registered presentation
 
 Keep the complete base presentation in the normal application declaration.

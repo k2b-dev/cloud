@@ -11,3 +11,11 @@ test("code tools accept flat arguments and reject legacy envelopes", () => {
   expect(() => parseCodeToolInput("code_run", { id, revision: 1 })).toThrow();
   expect(() => parseCodeToolInput("browser_code", { operation: "run", id })).toThrow();
 });
+
+test("one-off scripts need no resource while historical runs require one", () => {
+  expect(parseCodeToolInput("code_run", {code:"export default () => 42"})).toMatchObject({operation:"run",inputPaths:[]});
+  expect(parseCodeToolInput("code_run", {id,version:2})).toMatchObject({operation:"run",id,version:2});
+  expect(() => parseCodeToolInput("code_run", {id,code:"export default () => 42"})).toThrow();
+  expect(() => parseCodeToolInput("code_run", {code:"export default () => 42",version:2})).toThrow();
+  expect(() => parseCodeToolInput("code_run", {})).toThrow();
+});

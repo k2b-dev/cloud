@@ -5,10 +5,26 @@ section: Work
 order: 100
 description: A personal AI workspace for conversations, files, Projects, and reusable preferences.
 tags: [assistant, ai, chats]
-updated: 2026-09-07
+updated: 2026-09-11
 ---
 
 # Assistant
+
+The **Studio** navigation opens a server-rendered, full-width gallery of apps you can access.
+The initial cards and page navigation use server data without a browser loading step. Launch
+a published app without opening a chat. Apps use Cloud person and group grants:
+**Use** allows running and copying the published version; **Manage** also allows
+editing, publishing, and changing access. Administrators can see unpublished drafts.
+
+The tile menu provides **Edit**, **Manage access**, and **Publish** for administrators.
+**Edit** opens a new chat with the app attached, ready for your instructions. It
+does not send a message. Saving code updates the working draft. **Publish** makes
+that tested version available to users; later edits do not change it. Running apps
+keep their inputs and offer a restart when a newer publication becomes available.
+
+**Create your own copy** copies published source into a private draft. Chats,
+access grants, and browser data are not copied. All administrators of one app edit
+the same working draft, so coordinate simultaneous changes to the same file.
 
 Assistant is a personal AI workspace for writing, explaining, planning, and
 working with supported files. Chats belong to the current user and remain
@@ -162,3 +178,103 @@ Recordings made with the composer microphone appear under **Voice inputs** in
 the context panel and file picker, labeled with their date and time. They remain
 stored conversation files that Assistant can read or transcribe again. Audio
 files you attach yourself remain in the regular chat files.
+
+### Studio publication versions
+
+Sharing and publication are independent. Publishing a personal application never
+adds access grants. **Start** runs the current publication; before the first
+publication, administrators can start their working application normally.
+Use-level users only receive the latest publication, never working source or
+historical versions. There is no preview mode.
+
+Each publication receives a sequential number, author, date, and required change
+note. The agent can use `code_publish`, `code_versions`, and `code_restore`.
+Restoring copies published code, title, description, and icon into a new working
+revision and a new latest publication in one transaction. Its automatic note is
+"Restore version X". Historical publications and user data remain intact. Source save revisions and publication
+numbers are separate. Expected working revisions prevent stale publish/restore.
+
+Administrators can select a historical publication in the runner's **Versions**
+dialog and start it for themselves without changing the version other users get.
+Starting a different version restarts that local session. **Restore**
+atomically appends a new latest publication and updates the working source, with
+an automatic "Restore version X" note. It preserves history and user data.
+The compact Versions dialog sits in the bottom console toolbar. Before the first
+publication, it offers a Publish action.
+`code_update` changes working title, description, or Tabler icon. The code-mode
+skill includes a short icon list. The compact Studio cards expose publication
+status and put their action menu at the top right. Each app has a stable, subtle
+color gradient, with its title and description beside its icon.
+
+The first publication uses the note "Initial release" without a change-note prompt.
+Later publications ask what changed. The access dialog warns that unpublished
+apps are visible and usable only by administrators, even when Use access is granted.
+
+### Analyze once or save a script
+
+Code Mode uses direct Assistant tools named `code_*`, loaded individually when
+needed. They are not Cloud capabilities and cannot be called through
+`capabilities.run`. Source operations and SQL execute on the server; code runs
+and UI interaction use the connected browser or CLI host. The GUI, tools, and
+CLI use the same permission-aware resource services.
+
+Ask for an analysis, calculation, or file conversion directly in the chat. Code
+mode can run a one-off script and return findings or output files without
+creating an app. Reusable scripts can instead be saved, published, shared, and
+copied. Studio separates **Apps** and **Scripts**; one-off runs do not appear in
+its galleries.
+
+Scripts can receive selected attachments from their current chat. Apps request
+files through their own upload controls and never gain implicit access to chat
+attachments. A Project administrator can associate a published script with a
+Project when they also manage the script. Current members can then use it in
+that Project's chats. This does not grant editing, copying, or global Studio
+visibility; those require separate resource access.
+
+### Store data and combine Cloud actions
+
+Saved resources can keep files and key/value data locally in the current browser
+or share them through server storage. Data belongs to the resource across
+publications. A copy starts empty. Agent test runs use temporary local storage,
+but shared writes and Cloud actions affect real resources.
+
+A resource can explicitly connect a database when it needs structured records.
+Creating an app does not create a database. Database support requires an
+administrator-configured rsql server and secret API token. Without it, connecting
+fails with an explanation; apps that do not use a database continue to work.
+SQL queries support SELECT; schema and record mutations use structured calls.
+The agent can inspect an existing database directly with `code_sql`
+without writing a script. The CLI equivalent is `assistant code sql`; neither
+creates a database nor bypasses resource permissions.
+
+Code can combine discovered Cloud capabilities through `capabilities.run`.
+Normal access checks and action approvals still apply. Required confirmations
+appear in the chat or app, with remembered approval when the action supports it.
+Code cannot approve its own actions.
+
+### Run code from the CLI
+
+`cld assistant code run --chat CHAT --input-file run.json` uses an isolated
+headless Chromium host without requiring a model turn or an open browser tab.
+The input contains either a saved resource `id` or a one-off `code` entry.
+Optional `inputPaths` select chat files for scripts; an admin can select a
+published `version` for a saved resource.
+
+Use `--steps-file` for subsequent inspect, interaction, or file-export steps in
+the same run. The host closes when the command ends. Exported files remain in
+the chat. Capability actions need explicit `--approve` authorization or the
+interactive chat approval flow. The CLI needs Chromium installed through
+Playwright, or `CLOUD_CLI_CHROMIUM` pointing to an installed Chromium executable.
+
+### Administer Studio
+
+The Assistant administration page lists all saved apps and scripts, their shared
+file and key/value counts, and whether they have a database. Administrators can
+manage access, delete resources, and configure or test the rsql connection.
+The stored API token is never returned. Removing or changing the server is
+blocked while databases or queued database cleanup still depend on it.
+
+Deleting a resource removes its source, publications, grants, and shared data;
+remote database deletion is queued for cleanup. The inventory cannot count or
+remove private browser-local files. The same management operations are available
+under `cld assistant studio-admin`.

@@ -23,7 +23,9 @@ data concise; write larger deliverables as files. `console.log`, `console.info`,
 
 ## Files
 
-All file operations return promises.
+All file operations return promises. For one-off and saved scripts, pass the
+selected current chat paths to `code_run` as `inputPaths`. GUI apps reject those
+inputs; create a file-picker control for their users instead.
 
 | Call | Result |
 | --- | --- |
@@ -44,6 +46,15 @@ Inputs and outputs each have a 16 MiB total budget and at most 64 files. Output
 names are plain file names. Saving the same output name replaces that captured
 output. Do not put directory separators in output names.
 
+## PDF and office documents
+
+For PDF or office documents, first use the chat's `read_file` tool to obtain
+extracted text. The worker receives original bytes, not an automatic PDF text
+extraction. Write the relevant extracted records to a chat JSON/CSV file with
+`write_file`, then pass that file through `inputPaths` for calculations. Keep
+source file and page references with extracted records; do not invent missing
+values or add an unsupported PDF parser.
+
 ## CSV
 
 - `await sheet.fromCsv(fileOrText, { delimiter? })` returns objects keyed by the
@@ -57,17 +68,6 @@ Use `ids.ulid()` for stable item identifiers. It returns a random, sortable ULID
 and works in the isolated worker. Do not use `crypto.randomUUID()`, which is not
 available in this execution context.
 
-## Local persistence
+## Persistence
 
-- `await store.get(key)` returns JSON data or `null`.
-- `await store.set(key, value)` persists JSON data.
-- `await store.delete(key)` removes one value.
-- `await store.keys()` lists keys.
-- `await opfs.read(path)` reads a local file or returns `null`.
-- `await opfs.write(path, blobOrText)` writes a local file.
-- `await opfs.delete(path)` removes one file.
-- `await opfs.list()` lists file paths.
-
-Paths are relative and cannot contain empty segments, `.` or `..`. Local values
-and files are scoped to the artifact and user. Test runs use fresh in-memory
-storage and cannot modify a visible run's persistent data. Always await writes.
+Read [Storage](storage.md) only when the task needs durable data.

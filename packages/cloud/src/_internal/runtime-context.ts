@@ -37,6 +37,7 @@ export const buildRuntimeFromRegistry = (entries: AppRegistryEntry[], capabiliti
       appearance: e.appearance,
       adminHref: e.nav?.adminHref,
       adminNav: e.adminNav?.map((group) => ({
+        ...(group.section ? {section:group.section} : {}),
         id: group.id,
         label: group.label,
         links: group.links.map((link) => ({ ...link })),

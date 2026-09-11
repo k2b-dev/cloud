@@ -19,13 +19,14 @@
     "hono": "catalog:",
     "solid-js": "catalog:",
     "zod": "catalog:",
-    "papaparse": "5.7.0"
+    "papaparse": "5.7.0",
+    "@k2b/rsql": "1.0.0",
+    "playwright": "catalog:"
   },
   "devDependencies": {
     "@types/bun": "catalog:",
     "typescript": "catalog:",
-    "@types/papaparse": "5.5.2",
-    "playwright": "catalog:"
+    "@types/papaparse": "5.5.2"
   },
   "license": "AGPL-3.0-or-later"
 }

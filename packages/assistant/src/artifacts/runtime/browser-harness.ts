@@ -54,7 +54,7 @@ globalThis.runArtifactAgentScenario = async (source) => {
     }
     if (path.includes("/compiled")) return Response.json({ ...source, revision: 1 });
     if (path.includes("/files")) return Response.json({ files: [] });
-    if (path.includes("/artifacts/")) return Response.json({ id, title: "Test", revision: 1 });
+    if (path.includes("/artifacts/")) return Response.json({ kind: "app", id, title: "Test", revision: 1 });
     return originalFetch(url, init);
   }, { preconnect: originalFetch.preconnect });
   let dispose = () => {};

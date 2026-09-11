@@ -1,0 +1,146 @@
+import { artifactDatabase, DatabaseError } from "./database";
+import { CODE_SOURCE_TOOLS } from "@k2b/cloud/ai";
+import { CAPABILITY_MAX_RESULT_BYTES } from "@k2b/cloud/contracts";
+import type { ArtifactIdentity } from "./service";
+import { fail, ok } from "@k2b/stdlib";
+import { z } from "zod";
+import { LIMITS } from "./contracts";
+import { artifacts, ArtifactError } from "./service";
+import { artifactMessages } from "./messages";
+import { sourceDiagnostics, sourceManifest } from "./source";
+
+export type CodeToolContext = ArtifactIdentity & { locale: string; signal: AbortSignal };
+const links = (id: string) => ({
+  refs: [{ type: "assistant.artifact", id }],
+  links: [{ rel: "open" as const, href: `/app/assistant?workspace=${encodeURIComponent(JSON.stringify(["app", id]))}` }],
+});
+async function result<T>(
+  context: CodeToolContext,
+  operation: () => Promise<{ data: T; refs?: { type: string; id: string }[]; links?: { rel: "open"; href: string }[] }>,
+) {
+  try {
+    return ok(await operation());
+  } catch (error) {
+    if (error instanceof DatabaseError) {
+      const t = artifactMessages.resolve([context.locale]).t;
+      const message =
+        error.code === "DB_UNREACHABLE"
+          ? t.DB_UNREACHABLE
+          : error.code === "DB_TIMEOUT"
+            ? t.DB_TIMEOUT
+            : error.code === "DB_AUTH_FAILED"
+              ? t.DB_AUTH_FAILED
+              : error.code === "DB_NOT_CONFIGURED"
+                ? t.DB_NOT_CONFIGURED
+                : error.code === "DB_NOT_CONNECTED"
+                  ? t.DB_NOT_CONNECTED
+                  : error.code === "DB_RESULT_TOO_LARGE"
+                    ? t.DB_RESULT_TOO_LARGE
+                    : error.code;
+      return fail({ code: error.code, status: error.status === 502 ? 500 : error.status, message });
+    }
+    if (error instanceof ArtifactError)
+      return fail({
+        code: error.code,
+        status:
+          error.code === "ACCESS_DENIED"
+            ? (403 as const)
+            : error.code === "NOT_FOUND"
+              ? (404 as const)
+              : error.code === "CONFLICT"
+                ? (409 as const)
+                : (400 as const),
+        message: artifactMessages.resolve([context.locale]).t[error.code],
+      });
+    if (error instanceof z.ZodError)
+      return fail({ code: "INVALID_INPUT", status: 400 as const, message: artifactMessages.resolve([context.locale]).t.INVALID_INPUT });
+    throw error;
+  }
+}
+
+export const artifactCodeHandlers = {
+  code_sql: ({ id, sql, params }, context) =>
+    result(context, async () => {
+      const data = await artifactDatabase.call(id, { operation: "query", sql, params }, context, context.signal);
+      if (new TextEncoder().encode(JSON.stringify({ data })).byteLength > CAPABILITY_MAX_RESULT_BYTES)
+        throw new DatabaseError("DB_RESULT_TOO_LARGE");
+      return { data };
+    }),
+  code_versions: ({ id, page }, context) => result(context, async () => ({ data: await artifacts.versions(id, context, page) })),
+  code_list: ({ page, kind, q }, context) =>
+    result(context, async () => {
+      const result = await artifacts.list(context, page, kind, q);
+      return {
+        data: {
+          ...result,
+          items: result.items.map(({ id, kind, title, description, permission, publishedRevision }) => ({
+            id,
+            kind,
+            title,
+            description,
+            permission,
+            publishedRevision,
+          })),
+        },
+      };
+    }),
+  code_read: ({ id, path, offset, revision }, context) =>
+    result<unknown>(context, async () => {
+      const bundle = await artifacts.get(id, context, revision);
+      if (!path) return { data: sourceManifest(bundle), ...links(id) };
+      const file = bundle.source.files.find((file) => file.path === path);
+      if (!file) throw new ArtifactError("NOT_FOUND");
+      if (offset > file.content.length) throw new ArtifactError("INVALID_INPUT");
+      const end = Math.min(file.content.length, offset + LIMITS.text);
+      return {
+        data: {
+          id,
+          path,
+          content: file.content.slice(offset, end),
+          nextOffset: end < file.content.length ? end : null,
+          complete: end === file.content.length,
+        },
+      };
+    }),
+  code_history: ({ id, page }, context) => result(context, async () => ({ data: await artifacts.history(id, context, page) })),
+  code_fork: ({ id }, context) =>
+    result(context, async () => {
+      const copy = await artifacts.fork(id, context);
+      return { data: sourceManifest(copy), ...links(copy.id) };
+    }),
+  code_publish: ({ id, expectedRevision, note }, context) =>
+    result(context, async () => ({ data: await artifacts.publish(id, expectedRevision, context, note), ...links(id) })),
+  code_restore: ({ id, version, expectedRevision }, context) =>
+    result(context, async () => ({ data: sourceManifest(await artifacts.restore(id, version, expectedRevision, context)), ...links(id) })),
+  code_update: ({ id, ...patch }, context) =>
+    result(context, async () => ({ data: sourceManifest(await artifacts.metadata(id, patch, context)), ...links(id) })),
+  code_create: ({ kind, title, description, icon }, context) =>
+    result(context, async () => {
+      const created = await artifacts.create(
+        {
+          kind,
+          title,
+          description,
+          icon,
+          source: { entry: "main.ts", files: [{ path: "main.ts", content: "export default () => {};\n" }] },
+        },
+        context,
+      );
+      return { data: sourceManifest(created), ...links(created.id) };
+    }),
+  code_write: ({ id, path, content }, context) =>
+    result(context, async () => {
+      const saved = await artifacts.writeFile(id, path, content, context);
+      return { data: { id, path, saved: true, diagnostics: await sourceDiagnostics(saved.source) } };
+    }),
+  code_remove: ({ id, path }, context) =>
+    result(context, async () => {
+      const saved = await artifacts.writeFile(id, path, null, context);
+      return { data: { id, path, removed: true, diagnostics: await sourceDiagnostics(saved.source) } };
+    }),
+} satisfies {
+  [K in keyof typeof CODE_SOURCE_TOOLS]: (
+    input: z.output<(typeof CODE_SOURCE_TOOLS)[K]["input"]>,
+    context: CodeToolContext,
+  ) => Promise<unknown>;
+};

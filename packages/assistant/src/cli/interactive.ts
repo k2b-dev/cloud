@@ -1,3 +1,4 @@
+import type { CapabilityApproval, CapabilityDecision } from "../artifacts/runtime/capabilities";
 import { basename } from "node:path";
 import { createInterface } from "node:readline";
 import type {
@@ -14,6 +15,7 @@ import {
   CloudAiTextEditorInputSchema,
 } from "@k2b/cloud/ai/browser";
 import { arg, type CloudCliContext, command, flag } from "@k2b/cloud/cli";
+import { closeCliCodeHost } from "./code-host";
 import { deniedLocalBashResult, parseLocalBashInput, runLocalBash } from "./local-bash";
 import { jsonRequest, readApi } from "./shared";
 import { type AssistantTurnStreamResult, streamAssistantTurn } from "./stream";
@@ -312,6 +314,7 @@ const resolveAttention = async (input: {
       conversationId: input.conversationId,
       turnId: input.turnId,
       signal: input.signal,
+      onCapabilityApproval:request=>collectCapabilityApproval(input.ctx,input.reader,request),
       onToolBlock: (block) => {
         if (block.name === "card" && block.status === "completed") printCard(input.ctx, block.args);
       },
@@ -321,6 +324,14 @@ const resolveAttention = async (input: {
   }
   return null;
 };
+
+export async function collectCapabilityApproval(ctx:CloudCliContext,reader:LineReader,request:CapabilityApproval):Promise<CapabilityDecision>{
+  ctx.print(terminalSafeText(request.review?.message??request.title));
+  ctx.print(terminalSafeText(JSON.stringify(request.input,null,2).slice(0,16000)));
+  const answer=(await reader.read(request.allowAlways ? "Approve? [y/N/always]: " : "Approve? [y/N]: "))?.trim().toLowerCase();
+  if(request.allowAlways && answer==="always")return {approved:true,remember:"always"};
+  return {approved:answer==="y"||answer==="yes"};
+}
 
 export const runInteractiveAssistant = async (
   ctx: CloudCliContext,
@@ -374,6 +385,7 @@ export const runInteractiveAssistant = async (
         },
         watch: true,
         signal: abort.signal,
+        onCapabilityApproval:request=>collectCapabilityApproval(ctx,reader,request),
         onToolBlock: (block) => {
           if (block.name === "card" && block.status === "completed") printCard(ctx, block.args);
         },
@@ -448,6 +460,7 @@ export const runInteractiveAssistant = async (
         conversationId: detail.conversation.id,
         turnId,
         signal: abort.signal,
+        onCapabilityApproval:request=>collectCapabilityApproval(ctx,reader,request),
         onToolBlock: (block) => {
           if (block.name === "card" && block.status === "completed") printCard(ctx, block.args);
         },
@@ -567,6 +580,7 @@ export const runInteractiveAssistant = async (
     }
     return 0;
   } finally {
+    await closeCliCodeHost(ctx);
     if (activeConversation) printResumeHint(ctx, activeConversation.id);
     removeInterrupt();
     reader.close();

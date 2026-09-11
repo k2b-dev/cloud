@@ -3,7 +3,12 @@ import { z } from "zod";
 const id = z.uuid().describe("App ID returned by code_create or code_list.");
 const runId = z.string().min(1).max(180).describe("Run ID returned by code_run in this browser.");
 export const CODE_RUNTIME_TOOL_NAMES = ["code_run", "code_inspect", "code_interact", "code_stop", "code_open", "code_export"] as const;
-export const CodeRunInput = z.object({ id, inputPaths: z.array(z.string().min(1).max(500)).max(64).default([]).describe("Chat file paths supplied to this isolated run.") }).strict();
+export const CodeRunInput = z.object({
+  id: id.optional(),
+  version: z.number().int().positive().optional().describe("Published version to run; resource admins only. Omit for the current accessible source."),
+  code: z.string().min(1).max(1024 * 1024).optional().describe("One-off JavaScript/TypeScript entry exporting one function. Use code OR a saved resource id; no title or icon needed."),
+  inputPaths: z.array(z.string().min(1).max(500)).max(64).default([]).describe("Current chat files for scripts only. GUI apps use their own file picker."),
+}).strict().refine(input => Number(input.id !== undefined) + Number(input.code !== undefined) === 1, "Provide exactly one of id or code").refine(input => input.version === undefined || input.id !== undefined,"A published version requires a saved resource id");
 export const CodeInspectInput = z.object({ runId, nodeId: z.string().min(1).max(80).optional(), offset: z.number().int().min(0).default(0), limit: z.number().int().min(1).max(100).default(20) }).strict();
 export const CodeInteractInput = z.object({ runId,
   id: z.string().min(1).max(80).describe("Control ID or pending modal ID returned by the snapshot."),
@@ -17,7 +22,7 @@ export const CodeExportInput = z.object({ runId, name: z.string().min(1).max(180
 
 // Internal bridge envelope. Each model-facing tool receives only its own flat schema.
 export const CodeRuntimeInput = z.discriminatedUnion("operation", [
-  CodeRunInput.extend({ operation: z.literal("run") }),
+  CodeRunInput.safeExtend({ operation: z.literal("run") }),
   CodeInspectInput.extend({ operation: z.literal("inspect") }),
   CodeInteractInput.extend({ operation: z.literal("interact") }),
   CodeStopInput.extend({ operation: z.literal("stop") }),

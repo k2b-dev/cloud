@@ -31,7 +31,7 @@ export const readAssistantApi = async <T>(ctx: CloudCliContext, path: string, in
   ctx.readJson<T>(await ctx.fetch(`${ASSISTANT_API}${path}`, init));
 
 export const readProjectsApi = async <T>(ctx: CloudCliContext, path: string, init?: RequestInit): Promise<T> =>
-  ctx.readJson<T>(await ctx.fetch(`${PROJECTS_API}${path}`, init));
+  ctx.readJson<T>(await ctx.fetch(`${PROJECTS_API}${path === "/" ? "" : path}`, init));
 
 export const printValue = (ctx: CloudCliContext, value: unknown, text?: string): void => {
   if (ctx.options.output === "json") ctx.json(value);

@@ -9,7 +9,7 @@ render(() => {
   const controller = createArtifactWorkspace();
   const open = (view: ContextView) => controller.open(view.context ? contextTab(view.context.conversationId, view.context.category, view.title) : view.file ? fileTab(view.file.conversationId, view.file.path) : { ...view, kind: "view" });
   const menuItems = [
-    { label: "Apps", action: () => controller.open(contextTab("chat-one", "apps", "Apps")) },
+    { label: "Studio", action: () => controller.open(contextTab("chat-one", "apps", "Studio")) },
     { label: "Files", action: () => controller.open(contextTab("chat-one", "files", "Files")) },
   ];
   return <AssistantLiveProvider value={live}>

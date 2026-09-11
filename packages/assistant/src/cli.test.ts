@@ -1,4 +1,5 @@
-import { describe, expect, test } from "bun:test";
+import { CODE_RUNTIME_TOOL_NAMES } from "@k2b/cloud/ai/browser";
+import { describe, expect, test, spyOn } from "bun:test";
 import type { CloudCliContext } from "@k2b/cloud/cli";
 import assistantCli from "./cli";
 import { printCapabilityTable } from "./cli/capability-table";
@@ -11,6 +12,55 @@ const sse = (...events: unknown[]) =>
   new Response(events.map((event) => `event: ${(event as { type: string }).type}\ndata: ${JSON.stringify(event)}\n\n`).join(""), {
     headers: { "Content-Type": "text/event-stream" },
   });
+
+test("CLI reconciles a completed turn when its completion event was lost", async () => {
+  const timeout=AbortSignal.timeout.bind(AbortSignal);
+  const timer=spyOn(AbortSignal,"timeout").mockImplementationOnce(()=>timeout(10));
+  let cancelled=false,reconnected=0;
+  const initialResponse=new Response(new ReadableStream<Uint8Array>({
+    start(controller){controller.enqueue(new TextEncoder().encode('data: {"type":"state","activeTurn":{"turnId":"turn-1","blocks":[]},"messages":[]}\n\n'));},
+    cancel(){cancelled=true;},
+  }));
+  const {ctx}=createContext([],async()=>{
+    reconnected++;
+    return sse({type:"state",activeTurn:null,messages:[{loopId:"turn-1",message:{role:"assistant",content:[{type:"text",text:"Done"}]}}]});
+  });
+  try {
+    expect(await streamAssistantTurn({ctx,conversationId:"chat-1",turnId:"turn-1",initialResponse}))
+      .toMatchObject({status:"completed",text:"Done"});
+    expect(cancelled).toBe(true);
+    expect(reconnected).toBe(1);
+  } finally {timer.mockRestore();}
+});
+
+test("CLI reconnects after a socket read and a failed reconnect without losing the turn", async () => {
+  let connections = 0;
+  const initialResponse = new Response(new ReadableStream<Uint8Array>({
+    start(controller) { controller.error(new Error("The socket connection was closed unexpectedly.")); },
+  }));
+  const {ctx} = createContext([], async () => {
+    connections++;
+    if (connections === 1) throw new TypeError("Connection refused");
+    return sse({type:"state",activeTurn:null,messages:[{loopId:"turn-1",message:{role:"assistant",content:[{type:"text",text:"Recovered"}]}}]});
+  });
+  expect(await streamAssistantTurn({ctx,conversationId:"chat-1",turnId:"turn-1",initialResponse}))
+    .toMatchObject({status:"completed",text:"Recovered"});
+  expect(connections).toBe(2);
+});
+
+test("CLI reports malformed stream payloads instead of reconnecting forever", async () => {
+  const {ctx} = createContext([], async () => { throw new Error("Unexpected reconnect"); });
+  await expect(streamAssistantTurn({ctx,conversationId:"chat-1",turnId:"turn-1",
+    initialResponse:new Response("data: invalid-json\n\n")})).rejects.toBeInstanceOf(SyntaxError);
+});
+
+test("CLI preserves the latest failed turn status when its completion event was lost", async () => {
+  const {ctx} = createContext([], async () => { throw new Error("Unexpected reconnect"); });
+  const initialResponse = sse({type:"state",conversation:{runStatus:"failed",runError:"Provider unavailable"},activeTurn:null,
+    messages:[{loopId:"turn-1",message:{role:"user",content:[{type:"text",text:"Calculate"}]}}]});
+  expect(await streamAssistantTurn({ctx,conversationId:"chat-1",turnId:"turn-1",initialResponse}))
+    .toMatchObject({status:"failed",error:"Provider unavailable"});
+});
 
 const createContext = (
   args: string[],
@@ -172,6 +222,24 @@ describe("assistant CLI", () => {
       }),
     });
     expect(tables).toBe(1);
+  });
+
+  test("Studio list and create use the mounted API path without a trailing slash", async () => {
+    const requests: {path:string;method:string}[]=[];
+    const fetcher:CloudCliContext["fetch"]=async(input,init)=>{
+      requests.push({path:String(input),method:init?.method??"GET"});
+      if(String(input).split("?")[0]!=="/api/assistant/artifacts")return json({message:"Not found"},404);
+      if(init?.method==="POST")expect(await new Response(init.body).json()).toMatchObject({kind:"script",source:{entry:"main.ts",files:[{path:"main.ts",content:"export default () => {};\n"}]}});
+      return json(init?.method==="POST" ? {id:"created",kind:"script"} : {items:[],page:1,hasNext:false});
+    };
+    const list=createContext(["code","list"],fetcher,"json");
+    list.ctx.flags={kind:"script"};
+    await assistantCli.run(list.ctx);
+    const create=createContext(["code","create","Reusable calculation"],fetcher,"json");
+    create.ctx.flags={kind:"script"};
+    await assistantCli.run(create.ctx);
+    expect(requests).toEqual([{path:"/api/assistant/artifacts?kind=script",method:"GET"},{path:"/api/assistant/artifacts",method:"POST"}]);
+    expect(JSON.parse(create.stdout.join(""))).toMatchObject({kind:"script"});
   });
 
   test("documents the one-shot and management surface", () => {
@@ -621,8 +689,8 @@ describe("assistant CLI", () => {
 
     expect(await runInteractiveAssistant(ctx, {}, reader)).toBe(0);
     expect(turnBodies).toEqual([
-      { draftRevision: 1, modelProfileId: "model-2" },
-      { draftRevision: 2, modelProfileId: "model-2" },
+      { draftRevision: 1, modelProfileId: "model-2", clientToolIds: [...CODE_RUNTIME_TOOL_NAMES] },
+      { draftRevision: 2, modelProfileId: "model-2", clientToolIds: [...CODE_RUNTIME_TOOL_NAMES] },
     ]);
     const output = stdout.join("");
     expect(output).toContain("Assistant · Model One · /help for commands");
@@ -829,7 +897,7 @@ describe("assistant CLI", () => {
     };
 
     expect(await runInteractiveAssistant(ctx, { allowBash: true }, reader)).toBe(0);
-    expect(turnBody?.clientToolIds).toEqual(["local_bash"]);
+    expect(turnBody?.clientToolIds).toEqual(["local_bash", ...CODE_RUNTIME_TOOL_NAMES]);
     expect(actionBody).toEqual({
       type: "tool_result",
       result: {
@@ -1057,7 +1125,7 @@ describe("assistant CLI", () => {
     expect(await assistantCli.run(ctx)).toBeUndefined();
     expect(requests).toEqual([
       {
-        path: "/api/ai/projects/",
+        path: "/api/ai/projects",
         method: "POST",
         body: {
           name: "Release notes",
@@ -1108,12 +1176,12 @@ describe("assistant CLI", () => {
     const requests: string[] = [];
     const { ctx } = createContext(["projects", "get", "release notes"], async (path) => {
       requests.push(String(path));
-      if (path === "/api/ai/projects/") return json({ projects: [project("pRk234", "Release notes"), project("pRk235", "release notes")] });
+      if (path === "/api/ai/projects") return json({ projects: [project("pRk234", "Release notes"), project("pRk235", "release notes")] });
       return json({ project: project("pRk235", "release notes") });
     });
 
     await assistantCli.run(ctx);
-    expect(requests).toEqual(["/api/ai/projects/", "/api/ai/projects/pRk235"]);
+    expect(requests).toEqual(["/api/ai/projects", "/api/ai/projects/pRk235"]);
   });
 
   test("creates a detached chat inside a Project", async () => {

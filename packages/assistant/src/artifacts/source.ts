@@ -9,7 +9,7 @@ export async function sourceDiagnostics(source: ArtifactSource) {
 
 export function sourceManifest(bundle: ArtifactBundle) {
   return {
-    id: bundle.id, title: bundle.title, description: bundle.description, permission: bundle.permission, entry: bundle.source.entry,
+    kind: bundle.kind, id: bundle.id, revision: bundle.revision, icon: bundle.icon, publishedVersion: bundle.publishedVersion, title: bundle.title, description: bundle.description, permission: bundle.permission, entry: bundle.source.entry,
     files: bundle.source.files.map((file) => ({ path: file.path, length: file.content.length })),
   };
 }

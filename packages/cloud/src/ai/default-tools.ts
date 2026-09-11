@@ -1,3 +1,5 @@
+import { CODE_SOURCE_TOOLS } from "./code-source-contracts";
+import { createCodeSourceTools } from "./code-source-tools";
 import { CODE_RUNTIME_TOOL_NAMES, CodeRunInput, CodeInspectInput, CodeInteractInput, CodeStopInput, CodeOpenInput, CodeExportInput } from "./browser-code-contracts";
 import { z } from "zod";
 import {
@@ -91,7 +93,7 @@ export const createCloudAiLocalBashTool = () =>
   }).client();
 
 export const createCloudAiCodeTools = () => [
-  defineAiTool({ name: "code_run", description: "Run the current saved code in an isolated browser worker. Supply chat input files if needed. Returns output, logs and UI state. Does not start the visible app or access its persistent data.", inputSchema: CodeRunInput, outputSchema: z.json(), approval: "never" }).client(),
+  defineAiTool({ name: "code_run", description: "Run a saved resource id OR one-off code in the isolated worker. Includes capabilities.run(name,input) to chain Cloud capabilities in JavaScript; load assistant-code-mode for its runtime APIs. Scripts accept current chat inputPaths; GUI apps do not. Returns output, logs and UI state. Local test storage is temporary; shared data, database writes and capability effects are real and keep normal permissions and approvals.", inputSchema: CodeRunInput, outputSchema: z.json(), approval: "never" }).client(),
   defineAiTool({ name: "code_inspect", description: "Inspect a test run: errors, logs, output, controls and pending modal. Use nodeId to inspect table rows or list items; follow pagination only as needed.", inputSchema: CodeInspectInput, outputSchema: z.json(), approval: "never" }).client(),
   defineAiTool({ name: "code_interact", description: "Operate a control or answer a pending modal using its exact snapshot ID. Buttons need only id; inputs need value; list actions also need action and item. Returns the resulting state. Use null to cancel a modal.", inputSchema: CodeInteractInput, outputSchema: z.json(), approval: "never" }).client(),
   defineAiTool({ name: "code_stop", description: "Stop and release an isolated test run.", inputSchema: CodeStopInput, outputSchema: z.json(), approval: "never" }).client(),
@@ -104,6 +106,7 @@ export const createDefaultCloudAiTools = () => [createCloudAiSurveyTool(), creat
 /** Built-ins advertised through discovery and loaded only when needed. */
 export const CLOUD_AI_DEFERRED_BUILTIN_TOOL_NAMES = new Set<string>([
   ...CODE_RUNTIME_TOOL_NAMES,
+  ...Object.keys(CODE_SOURCE_TOOLS),
   "survey",
   "text_editor",
   "list_files",
@@ -121,6 +124,7 @@ export const createConfiguredDefaultCloudAiTools = async (config?: {
 }) => {
   const tools: AiRuntimeTool[] = [
     ...createDefaultCloudAiTools(),
+    ...createCodeSourceTools(),
     createCloudAiListFilesTool(),
     createCloudAiReadFileTool(),
     createCloudAiFetchFileTool(),

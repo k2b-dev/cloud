@@ -11,6 +11,17 @@ export type AiToolCallLocation = "server" | "client" | "client_view" | "client_i
 export type AiToolApprovalState = "not_required" | "waiting" | "approved_once" | "approved_always" | "approved_by_preference" | "rejected";
 
 export const aiToolAudit = {
+  /** Resolve the current server-recorded invocation, never a model-supplied chat id. */
+  capabilityConversation: async (requestId: string, userId: string): Promise<string | null> => {
+    const [row] = await sql<{ conversation_id: string }[]>`SELECT call.conversation_id FROM ai.tool_calls call
+      JOIN ai.conversations conversation ON conversation.id=call.conversation_id
+      JOIN ai.turns turn ON turn.id=call.turn_id
+      WHERE call.request_id=${requestId} AND call.location='server'
+        AND conversation.created_by_user_id=${userId}::uuid AND conversation.archived_at IS NULL
+        AND turn.status IN ('running','waiting_for_action')
+      LIMIT 1`;
+    return row?.conversation_id ?? null;
+  },
   noteCapabilityDispatch: async (input: {
     conversationId: string;
     turnId: string;

@@ -10,11 +10,12 @@ import type { AssistantLiveHub } from "./assistant-live";
 import { assistantConversationHref, assistantProjectHref, shouldOpenProjectConversation } from "./assistant-navigation";
 import { ConversationStatusMeta } from "./conversation-status";
 import { assistantMessages } from "./messages";
+import { artifactMessages } from "../artifacts/messages";
 
 type AssistantSidebarProps = {
   conversations: Accessor<AiConversation[]>;
   activeConversationId?: Accessor<string | null>;
-  activeView?: "chat" | "all";
+  activeView?: "chat" | "all" | "apps";
   projects?: AiProject[];
   activeProjectId?: string | null;
   creatingConversation?: Accessor<boolean>;
@@ -322,6 +323,7 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
           <AppWorkspace.SidebarItem icon="ti ti-folder-plus" onClick={() => void props.onCreateProject?.()}>
             {t().newProject}
           </AppWorkspace.SidebarItem>
+          <AppWorkspace.SidebarItem icon="ti ti-app-window" href="/app/assistant/apps">{artifactMessages.resolve([locale()]).t.apps}</AppWorkspace.SidebarItem>
           <AppWorkspace.SidebarItem icon="ti ti-user-cog" onClick={() => void openAssistantPrefsModal()}>
             {t().personalize}
           </AppWorkspace.SidebarItem>
@@ -406,12 +408,14 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
           </AppWorkspace.SidebarSection>
         </AppWorkspace.SidebarBody>
         <AppWorkspace.SidebarFooter sidebarMode="expanded">
+          <AppWorkspace.SidebarItem sidebarMode="expanded" icon="ti ti-app-window" href="/app/assistant/apps" active={activeView() === "apps"}>{artifactMessages.resolve([locale()]).t.apps}</AppWorkspace.SidebarItem>
           <AppWorkspace.SidebarItem icon="ti ti-user-cog" onClick={() => void openAssistantPrefsModal()}>
             {t().personalize}
           </AppWorkspace.SidebarItem>
         </AppWorkspace.SidebarFooter>
         <AppWorkspace.SidebarFooter sidebarMode="collapsed">
           <AppWorkspace.SidebarIconGrid>
+            <AppWorkspace.SidebarIconAction icon="ti ti-app-window" label={artifactMessages.resolve([locale()]).t.apps} onClick={() => navigateTo("/app/assistant/apps")} />
             <AppWorkspace.SidebarIconAction icon="ti ti-user-cog" label={t().personalize} onClick={() => void openAssistantPrefsModal()} />
           </AppWorkspace.SidebarIconGrid>
         </AppWorkspace.SidebarFooter>

@@ -1,14 +1,11 @@
 import { expect, test } from "bun:test";
 import { sourceDiagnostics } from "./source";
-import { artifactCapabilities } from "./capabilities";
-import { compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
+import { CODE_SOURCE_TOOLS } from "@k2b/cloud/ai";
+import { artifactCodeHandlers } from "./code-tools";
 
-test("file tools compile through discovery without legacy operations or required revisions", () => {
-  const manifest = compileCapabilityManifest("assistant", artifactCapabilities);
-  expect(manifest.actions.every(action => action.approval === "none")).toBe(true);
-  expect(Object.keys(artifactCapabilities.actions)).toEqual(["code_create", "code_write", "code_remove"]);
-  expect(Object.keys(artifactCapabilities.queries)).toEqual(["code_list", "code_read", "code_history"]);
-  expect(artifactCapabilities.actions.code_write.input.parse({ id: "00000000-0000-4000-8000-000000000001", path: "main.ts", content: "export default !!!" })).toBeDefined();
+test("direct file tools have individual inputs without required revisions", () => {
+  expect(Object.keys(artifactCodeHandlers)).toEqual(Object.keys(CODE_SOURCE_TOOLS));
+  expect(CODE_SOURCE_TOOLS.code_write.input.parse({ id: "00000000-0000-4000-8000-000000000001", path: "main.ts", content: "export default !!!" })).toBeDefined();
 });
 
 test("missing helpers and invalid intermediate code produce diagnostics", async () => {

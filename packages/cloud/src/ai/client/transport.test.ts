@@ -10,6 +10,15 @@ afterEach(() => {
 });
 
 describe("AI stream transport lifecycle", () => {
+  test("abort cancels a reader even when the server sends no more chunks", async () => {
+    const abort=new AbortController();
+    let cancelled=false;
+    const stream=parseAiSse(new Response(new ReadableStream({cancel(){cancelled=true;}})),abort.signal);
+    const pending=stream.next();
+    abort.abort();
+    expect(await pending).toEqual({done:true,value:undefined});
+    expect(cancelled).toBe(true);
+  });
   test("parses split SSE chunks and ignores heartbeat comments", async () => {
     const encoder = new TextEncoder();
     const response = new Response(

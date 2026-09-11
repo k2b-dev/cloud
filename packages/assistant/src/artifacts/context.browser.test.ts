@@ -24,17 +24,19 @@ test("context overviews use workspace cards and one tab per item without launchi
   const browser = await chromium.launch({ channel: "chrome", headless: true });
   try {
     const page = await browser.newPage({ viewport: { width: 1500, height: 760 } });
+    page.setDefaultTimeout(5000);
     const errors: string[] = [];
     page.on("pageerror", error => errors.push(error.message));
     await page.goto(server.url.href);
     await page.getByRole("complementary", { name: "Chat context" }).waitFor();
+    expect(await page.locator('[data-assistant-context="compact"] .assistant-context-action').first().evaluate(element => getComputedStyle(element).paddingLeft)).toBe("12px");
     await page.getByRole("textbox", { name: "Message" }).fill("Keep this draft");
     // No workspace tab exists: narrowing just the pane must expose its opener.
     await page.locator('[data-workspace-main-region="chat"]').evaluate(element => { element.style.maxWidth = "700px"; });
     await page.locator('[data-assistant-context="compact"]').waitFor({ state: "hidden" });
     expect(await page.locator('.assistant-chat-layout').evaluate(element => getComputedStyle(element).getPropertyValue('--assistant-chat-context-width').trim())).toBe("0px");
     await page.locator(".assistant-context-open").getByRole("button", { name: "Open", exact: true }).click();
-    await page.getByRole("menuitem", { name: "Apps", exact: true }).click();
+    await page.getByRole("menuitem", { name: "Studio", exact: true }).click();
     await page.locator('[data-workspace-main-region="chat"]').evaluate(element => { element.style.maxWidth = ""; });
     expect(await page.getByRole("textbox", { name: "Message" }).inputValue()).toBe("Keep this draft");
     await page.setViewportSize({ width: 1900, height: 760 });
@@ -64,7 +66,7 @@ test("context overviews use workspace cards and one tab per item without launchi
     await page.getByRole("tab", { name: /^(Resolved app|App 4)$/ }).click();
     await page.getByRole("button", { name: "Start", exact: true }).waitFor();
     expect(requests.filter(path => path === "/api/assistant/artifacts/app-4").length).toBe(3);
-    await page.getByRole("tab", { name: "Apps", exact: true }).click();
+    await page.getByRole("tab", { name: "Studio", exact: true }).click();
     await page.locator(".assistant-app-grid").getByRole("button").click();
     expect(await page.getByRole("tab").count()).toBe(3);
     await page.locator(".artifact-workspace__tabs").getByRole("button", { name: "Open", exact: true }).click();
@@ -72,25 +74,26 @@ test("context overviews use workspace cards and one tab per item without launchi
     await page.getByText("No items yet.").waitFor();
     // Reopening after a tab change must use the same live dropdown instance.
     await page.locator(".artifact-workspace__tabs").getByRole("button", { name: "Open", exact: true }).click();
-    await page.getByRole("menuitem", { name: "Apps", exact: true }).waitFor();
+    await page.getByRole("menuitem", { name: "Studio", exact: true }).waitFor();
     await page.keyboard.press("Escape");
     expect(await page.getByRole("menu").count()).toBe(0);
     await page.locator(".artifact-workspace__tabs").getByRole("button", { name: "Open", exact: true }).click();
-    await page.getByRole("menuitem", { name: "Apps", exact: true }).click();
+    await page.getByRole("menuitem", { name: "Studio", exact: true }).click();
     expect(requests.some(path => path.endsWith("/compiled"))).toBe(false);
     expect(errors).toEqual([]);
-    await page.getByRole("tab", { name: "Apps", exact: true }).click();
+    await page.getByRole("tab", { name: "Studio", exact: true }).click();
     await page.getByRole("textbox", { name: "Search" }).fill("");
     await page.screenshot({ path: "/tmp/assistant-context-workspace.png" });
     await page.getByRole("tab", { name: /^(Resolved app|App 4)$/ }).click();
     let release!: () => void;
     const gate = new Promise<void>(resolve => { release = resolve; });
-    await page.route("**/api/assistant/artifacts/app-4", async route => {
+    const appRoute = /\/api\/assistant\/artifacts\/app-4(?:\?.*)?$/;
+    await page.route(appRoute, async route => {
       await gate;
       await route.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify({ error: "Test failure" }) });
     });
     const restart = page.getByRole("button", { name: "Restart", exact: true });
-    const pending = page.waitForRequest(request => request.url().endsWith("/api/assistant/artifacts/app-4"));
+    const pending = page.waitForRequest(request => new URL(request.url()).pathname.endsWith("/api/assistant/artifacts/app-4"));
     await restart.click();
     await pending;
     expect(await restart.isDisabled()).toBe(true);
@@ -101,15 +104,15 @@ test("context overviews use workspace cards and one tab per item without launchi
     release();
     await page.locator(".artifact-console [role=alert]").waitFor();
     expect(await consoleToggle.getAttribute("aria-expanded")).toBe("true");
-    await page.unroute("**/api/assistant/artifacts/app-4");
+    await page.unroute(appRoute);
     let releaseCancelled!: () => void;
     const cancelledGate = new Promise<void>(resolve => { releaseCancelled = resolve; });
-    await page.route("**/api/assistant/artifacts/app-4", async route => { await cancelledGate; await route.continue(); });
-    const cancelling = page.waitForRequest(request => request.url().endsWith("/api/assistant/artifacts/app-4"));
+    await page.route(appRoute, async route => { await cancelledGate; await route.continue(); });
+    const cancelling = page.waitForRequest(request => new URL(request.url()).pathname.endsWith("/api/assistant/artifacts/app-4"));
     await restart.click();
     await cancelling;
     await page.getByRole("button", { name: "Stop", exact: true }).click();
-    const cancelledResponse = page.waitForResponse(response => response.url().endsWith("/api/assistant/artifacts/app-4"));
+    const cancelledResponse = page.waitForResponse(response => new URL(response.url()).pathname.endsWith("/api/assistant/artifacts/app-4"));
     releaseCancelled();
     await cancelledResponse;
     expect(await restart.isEnabled()).toBe(true);

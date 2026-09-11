@@ -1,3 +1,4 @@
+import { createCodeApprovals } from "../artifacts/CapabilityApproval";
 import { useAssistantText } from "./ui-copy";
 import { CODE_RUNTIME_TOOL_NAMES } from "@k2b/cloud/ai/browser";
 import { createAssistantDictation } from "./assistant-dictation";
@@ -159,6 +160,7 @@ export default function AssistantWorkspace(props: Props) {
     onFatal: (error) => setLiveError(error.message),
   });
 
+  const codeApprovals=createCodeApprovals();
   const chat = createAiChatController({
     baseUrl: "/api/ai",
     initialConversationId: props.initialConversationId,
@@ -168,7 +170,7 @@ export default function AssistantWorkspace(props: Props) {
     trackViewedState: true,
     streamTransport: liveConnection.streamTransport,
     clientToolIds: [...CODE_RUNTIME_TOOL_NAMES],
-    frontendTools: createArtifactAgentRuntime(artifactWorkspace.open),
+    frontendTools: createArtifactAgentRuntime(artifactWorkspace.open,codeApprovals.ask),
   });
 
   const sidebar = query.create<string, AssistantSidebarSnapshot, AssistantLiveInvalidation>({
@@ -1316,6 +1318,7 @@ export default function AssistantWorkspace(props: Props) {
                               }}
                             >
                               <ConversationTimeline />
+                              <codeApprovals.View conversationId={chat.activeConversationId()}/>
                             </AiChatActionsProvider>
                           }
                         >

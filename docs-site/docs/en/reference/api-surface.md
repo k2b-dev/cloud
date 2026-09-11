@@ -253,3 +253,7 @@ Those paths are implementation details.
 
 `requiresAuth` and the other `requires*` values describe OpenAPI security. They
 do not protect a route. Use `auth` middleware.
+
+The `@k2b/cloud/ai` export `CODE_SOURCE_TOOLS` and its `CodeSourceToolName` type
+define the flat inputs for direct Assistant server tools. See
+[Assistant code tools](/en/docs/ai/chat-interface) for loading and execution.

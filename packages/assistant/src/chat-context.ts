@@ -23,11 +23,11 @@ export const loadAssistantChatContextSnapshot = async (userId: string, chatId: s
     sourcePage.nextCursor = next.nextCursor;
   }
   const appIds = [...new Set(sourcePage.sources.flatMap(source => source.ref?.type === "assistant.artifact" ? [source.ref.id] : []))];
-  const apps = new Map((await artifacts.describe(appIds, userId)).map(app => [app.id, app]));
+  const apps = new Map((await artifacts.describe(appIds, userId, conversation.id)).map(app => [app.id, app]));
   const sources = sourcePage.sources.flatMap(source => {
     if (source.ref?.type !== "assistant.artifact") return [source];
     const app = apps.get(source.ref.id);
-    return app ? [{ ...source, title: app.title, icon: "ti ti-app-window", preview: app.description || null }] : [];
+    return app ? [{ ...source, title: app.title, icon: app.icon, preview: app.description || null }] : [];
   });
   return {
     chatId,

@@ -7,3 +7,7 @@ const build = await Bun.build({
 });
 if (!build.success) throw new Error(build.logs.join("\n"));
 await Bun.write(resolve(output,"assistant-artifact-worker.js"),await build.outputs[0]!.text());
+
+const host = await Bun.build({entrypoints:[resolve(import.meta.dir,"../src/artifacts/runtime/cli-host.ts")],target:"browser",format:"iife",minify:true});
+if (!host.success) throw new Error(host.logs.join("\n"));
+await Bun.write(resolve(output,"assistant-cli-host.js"),await host.outputs[0]!.text());
