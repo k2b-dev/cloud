@@ -1,5 +1,6 @@
+import { requestCacheRedis } from "../request-cache-redis";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
-import { redis, sql } from "bun";
+import { sql } from "bun";
 import { HTTPException } from "hono/http-exception";
 import { hasRole, type User } from "../../contracts/shared";
 import { z } from "zod";
@@ -17,7 +18,7 @@ import { logger } from "../logging";
 
 const log = logger("announcements");
 const ACTIVE_CACHE_KEY = "appglobalcache:shared:announcements:v1";
-const invalidateActiveCache = () => redis.del(ACTIVE_CACHE_KEY);
+const invalidateActiveCache = async () => (await requestCacheRedis()).del(ACTIVE_CACHE_KEY);
 const invalidateAfterMutation = async () => {
   try {
     await invalidateActiveCache();
@@ -227,7 +228,7 @@ export const selectVisibleForState = (entries: AnnouncementEntry[], state: Annou
 const cachedActive = async (): Promise<AnnouncementDisplayEntry[]> => {
   let cached: string | null = null;
   try {
-    cached = await redis.get(ACTIVE_CACHE_KEY);
+    cached = await (await requestCacheRedis()).get(ACTIVE_CACHE_KEY);
   } catch {
     /* Read authoritative data below. */
   }

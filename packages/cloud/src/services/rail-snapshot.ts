@@ -1,4 +1,4 @@
-import { redis } from "bun";
+import { requestCacheRedis } from "./request-cache-redis";
 import { type RailSnapshot, RailSnapshotSchema } from "../contracts/rail-preferences";
 import type { User } from "../contracts/shared";
 import { railPreferences } from "./rail-preferences";
@@ -47,7 +47,7 @@ export const readRailSnapshot = createRailSnapshotReader(
     return { ...personal, managedShortcuts };
   },
   {
-    get: (key) => redis.get(key),
-    set: (key, value) => redis.set(key, value, "EX", CACHE_TTL_SECONDS),
+    get: async (key) => (await requestCacheRedis()).get(key),
+    set: async (key, value) => (await requestCacheRedis()).set(key, value, "EX", CACHE_TTL_SECONDS),
   },
 );

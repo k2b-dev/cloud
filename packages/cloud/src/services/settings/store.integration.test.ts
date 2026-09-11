@@ -3,7 +3,8 @@ import { redis, sql } from "bun";
 import { encryptValue } from "./crypto";
 import { registerSettings } from "./defaults";
 import { MISSING_SETTING } from "../cache-fill";
-import { bulkRead, invalidateSettingsCache, readKey } from "./store";
+import { buildProjectedUser } from "../session/user";
+import { bulkRead, invalidateSettingsCacheForAdmin, invalidateSettingsCache, readKey } from "./store";
 
 const enabled = process.env.CLOUD_CACHE_TEST === "1" && process.env.DATABASE_URL?.endsWith("/cloud_cache_test");
 const suite = enabled ? describe : describe.skip;
@@ -50,6 +51,22 @@ suite("settings cache upgrade compatibility", () => {
     expect(await redis.get(`settings:${fallbackKey}`)).toBe(MISSING_SETTING);
     fallback = "second environment";
     expect(await readKey(fallbackKey)).toBe("second environment");
+  });
+  test("admin clear includes discovered app keys and leaves unrelated Redis data intact", async () => {
+    const appKey = key + ".external-app";
+    const unrelated = `cache-test:unrelated:${key}`;
+    const actor = buildProjectedUser({ id: crypto.randomUUID(), provider: "local", profile: "user", effective_admin: true });
+    try {
+      await redis.set(`settings:${appKey}`, '"stale"');
+      await redis.set(`settings:${fallbackKey}`, '"stale"');
+      await redis.set(unrelated, "keep");
+      await invalidateSettingsCacheForAdmin(actor, [appKey, appKey]);
+      expect(await redis.get(`settings:${appKey}`)).toBeNull();
+      expect(await redis.get(`settings:${fallbackKey}`)).toBeNull();
+      expect(await redis.get(unrelated)).toBe("keep");
+    } finally {
+      await redis.del(`settings:${appKey}`, unrelated);
+    }
   });
   test("reads existing JSON cache values and recovers corrupt values", async () => {
     await redis.set(cacheKey, JSON.stringify("existing deployment"));

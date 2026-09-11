@@ -201,7 +201,7 @@ const app = new Hono<AuthContext>()
       responses: { 200: jsonResponse(z.object({ success: z.literal(true) }), "Cache invalidated") },
     }),
     async (c) => {
-      await invalidateSettingsCacheForAdmin(c.get("user"));
+      await invalidateSettingsCacheForAdmin(c.get("user"), await liveSettingKeys());
       c.header("Cache-Control", "no-store");
       return c.json({ success: true as const });
     },

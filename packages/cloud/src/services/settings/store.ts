@@ -15,7 +15,8 @@
 
 import { HTTPException } from "hono/http-exception";
 import { hasRole, type User } from "../../contracts/shared";
-import { redis, sql } from "bun";
+import { sql } from "bun";
+import { requestCacheRedis } from "../request-cache-redis";
 import { toPgTextArray } from "../postgres";
 import { claimCacheFill, completeCacheFill, MISSING_SETTING } from "../cache-fill";
 import { decryptValue, encryptValue } from "./crypto";
@@ -34,7 +35,7 @@ type SqlClient = typeof sql;
  * therefore invalidate after it commits.
  */
 export const invalidateSettingsCache = async (keys: readonly string[]): Promise<void> => {
-  if (keys.length > 0) await redis.del(...keys.map(REDIS_KEY));
+  if (keys.length > 0) await (await requestCacheRedis()).del(...keys.map(REDIS_KEY));
 };
 const REDIS_TTL_SEC = 300;
 
@@ -74,7 +75,7 @@ export const bulkRead = async (keys: readonly string[]): Promise<Map<string, unk
   if (keys.length === 0) return result;
   let cached: Array<string | null>;
   try {
-    cached = await redis.mget(...keys.map(REDIS_KEY));
+    cached = await (await requestCacheRedis()).mget(...keys.map(REDIS_KEY));
   } catch {
     cached = keys.map(() => null);
   }
@@ -171,7 +172,7 @@ export const deleteLegacyKeys = async (extraKnownKeys: readonly string[] = []): 
     RETURNING key
   `;
   const deleted = rows.map((row) => row.key);
-  if (deleted.length > 0) await redis.del(...deleted.map(REDIS_KEY));
+  if (deleted.length > 0) await (await requestCacheRedis()).del(...deleted.map(REDIS_KEY));
   return { deleted };
 };
 
@@ -208,7 +209,7 @@ export const deleteKey = async (key: string, db?: SqlClient): Promise<void> => {
 };
 
 /** Clear only registered settings, never sessions, signing keys or rate limits. */
-export const invalidateSettingsCacheForAdmin = async (actor: User | undefined): Promise<void> => {
+export const invalidateSettingsCacheForAdmin = async (actor: User | undefined, extraKnownKeys: readonly string[] = []): Promise<void> => {
   if (!actor || !hasRole(actor, "admin")) throw new HTTPException(403, { message: "Administrator access required" });
-  await invalidateSettingsCache(allKnownKeys());
+  await invalidateSettingsCache(knownKeysWith(extraKnownKeys));
 };

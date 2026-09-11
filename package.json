@@ -119,7 +119,8 @@
     "check:service-api-contracts": "bun run scripts/check-service-api-contracts.ts",
     "check:localization": "bun run scripts/check-localization.ts",
     "check:css": "bun run scripts/check-css-architecture.ts",
-    "test": "bun run scripts/run-tests.ts"
+    "test": "bun run scripts/run-tests.ts",
+    "test:request-cache": "bun run scripts/test-request-cache.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.6",

@@ -126,9 +126,14 @@ loads its settings with one bulk cache read. Missing database rows are cached
 too; each application still resolves its own environment fallback and default.
 Saving or removing an override invalidates that key after the database commit.
 A concurrent reader cannot refill an invalidated entry with its older value.
-If Valkey is unavailable, reads fall back to Postgres.
+After a Valkey connection is lost, request-cache commands fail without queuing
+and reads fall back to Postgres. The first cache operation waits for normal
+connection establishment using Bun's connection timeout. Reconnection allows
+subsequent requests to use the cache again. Other Redis consumers retain their
+own connection behavior.
 
-Administrators can clear Core's registered settings cache under
+Administrators can clear the settings cache for Core and applications currently
+registered in discovery under
 **Administration → Settings → General**. This removes cached values and missing-row
 markers; it does not reset stored settings, sign out users, or clear security
 state. The action uses `DELETE /api/admin/core/settings/cache` and requires an
@@ -136,4 +141,10 @@ administrator in both the route and service. A toast confirms completion.
 Existing pages keep their request snapshot until reloaded.
 
 Stored JSON cache values and encrypted database rows retain their existing
-formats. These cache optimizations require no database migration.
+formats. These cache optimizations require no database migration. Core's
+settings migration also invalidates its account-request setting after commit,
+so an earlier missing-row marker cannot hide an upgrade backfill. If
+invalidation fails, the next start retries it and cached values still expire.
+
+See [Verify request caches](/en/docs/contributing/request-cache-tests) for the
+isolated integration command and its CI coverage.

@@ -1,3 +1,4 @@
+import { invalidateSettingsCache } from "@k2b/cloud/services/settings";
 import { encryptValue } from "@k2b/cloud/services/settings/crypto";
 import { sql } from "bun";
 
@@ -25,4 +26,11 @@ export const migrate = async (db: typeof sql = sql): Promise<void> => {
       await tx`INSERT INTO settings.entries(key, value) VALUES ('user.account_requests.enabled', ${await encryptValue(true)}) ON CONFLICT DO NOTHING`;
     }
   });
+  // Also retry on later starts if a previous post-commit invalidation failed.
+  // Clearing the key never changes the durable opt-in/migration receipt.
+  try {
+    await invalidateSettingsCache(["user.account_requests.enabled"]);
+  } catch {
+    console.warn("[settings] Migration committed; cache invalidation unavailable (entries expire within five minutes)");
+  }
 };

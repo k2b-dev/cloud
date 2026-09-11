@@ -1,4 +1,4 @@
-import { redis } from "bun";
+import { requestCacheRedis } from "./request-cache-redis";
 
 // Non-JSON markers remain compatible with older readers: they discard them and
 // use Postgres. A marker can never be confused with a stored JSON setting value.
@@ -15,6 +15,7 @@ end return 0`;
 export const claimCacheFill = async (key: string, observed: string | null): Promise<string | null> => {
   try {
     if (observed?.startsWith(FILL_PREFIX)) return null;
+    const redis = await requestCacheRedis();
     if (observed !== null) await redis.send("EVAL", [DISCARD, "1", key, observed]);
     const token = FILL_PREFIX + crypto.randomUUID();
     // A slow loader may still return its value, but loses permission to cache it.
@@ -27,7 +28,7 @@ export const claimCacheFill = async (key: string, observed: string | null): Prom
 export const completeCacheFill = async (key: string, token: string | null, value: string, ttlSeconds: number): Promise<void> => {
   if (!token) return;
   try {
-    await redis.send("EVAL", [COMPLETE, "1", key, token, value, String(ttlSeconds)]);
+    await (await requestCacheRedis()).send("EVAL", [COMPLETE, "1", key, token, value, String(ttlSeconds)]);
   } catch {
     // A cache failure does not change a successful authoritative read.
   }
