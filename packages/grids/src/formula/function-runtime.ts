@@ -3,7 +3,7 @@ import { isNullish, toNumber } from "./numeric";
 import type { formulaError, Literal } from "./types";
 
 export type FormulaFunctionReturn = Literal | ReturnType<typeof formulaError>;
-export type FormulaRuntimeContext = { dateConfig?: DateContext; now?: Date };
+export type FormulaRuntimeContext = { dateConfig?: DateContext; now?: Date; maxStringLength?: number };
 export type FormulaFunction = (args: unknown[], context: FormulaRuntimeContext) => FormulaFunctionReturn;
 
 export const formulaNumber = (value: unknown): number | null => toNumber(value);

@@ -1,7 +1,7 @@
+import { cloudResourceClipboard } from "@k2b/cloud/browser/resource-clipboard";
 import type { DateContext } from "@k2b/stdlib";
 import { clipboard } from "@k2b/stdlib/solid";
 import { DescriptionList, DetailPanel, IconButton, Placeholder, StatusBadge, Tooltip, useLocale } from "@k2b/ui";
-import { cloudResourceClipboard } from "@k2b/cloud/browser/resource-clipboard";
 import { For, type JSX, Show } from "solid-js";
 import type { PublicField as Field, PublicGridRecord as GridRecord } from "../../../api/public-dto";
 import type { ColumnSpec, FormatSpec } from "../../../contracts";
@@ -66,10 +66,14 @@ export default function RecordReadView(props: RecordReadViewProps) {
   const barcodeFields = () => bodyFields().filter((field) => isBarcodeDisplayField(field, props.record));
   const barcodeFieldIds = () => new Set(barcodeFields().map((field) => field.id));
   const detailsFields = () =>
-    bodyFields().filter((field) => !barcodeFieldIds().has(field.id) && !["longtext", "json", "file", "relation"].includes(field.type));
+    bodyFields().filter(
+      (field) => !barcodeFieldIds().has(field.id) && !["longtext", "json", "object_list", "file", "relation"].includes(field.type),
+    );
   const relationFields = () => bodyFields().filter((field) => field.type === "relation");
   const textBlockFields = () =>
-    bodyFields().filter((field) => ["longtext", "json"].includes(field.type) && hasRecordDetailValue(props.record.data[field.id]));
+    bodyFields().filter(
+      (field) => ["longtext", "json", "object_list"].includes(field.type) && hasRecordDetailValue(props.record.data[field.id]),
+    );
   const fileFields = () => bodyFields().filter((field) => field.type === "file");
   const hasFieldSections = () =>
     barcodeFields().length > 0 || detailsFields().length > 0 || textBlockFields().length > 0 || fileFields().length > 0;

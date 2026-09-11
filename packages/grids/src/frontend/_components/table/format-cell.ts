@@ -71,7 +71,8 @@ const DEFAULT_RENDERERS: Record<string, CellRenderer> = {
   },
   select: (value, fieldConfig) => (Array.isArray(value) ? formatSelect(value, fieldConfig) : fallbackValue(value)),
   number: (value, fieldConfig) => formatNumberDefault(value, fieldConfig),
-  percent: (value) => (typeof value === "number" ? `${value}%` : fallbackValue(value)),
+  percent: (value, config) =>
+    typeof value === "number" ? `${config.range === "fraction" ? new Decimal(value).mul(100).toFixed() : value}%` : fallbackValue(value),
   duration: (value) => (typeof value === "number" ? formatDuration(value) : fallbackValue(value)),
 };
 

@@ -8,7 +8,7 @@ import type { ComputedFieldKind } from "./types";
 // expression is present, the superRefine parse-checks it so typos like
 // `1 +` get rejected at save-time rather than disappearing at record-
 // enrichment time.
-const FormulaConfigSchema = z
+export const FormulaConfigSchema = z
   .object({
     expression: z.string().optional(),
     format: FormatSpecSchema.optional(),

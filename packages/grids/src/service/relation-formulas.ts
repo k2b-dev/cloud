@@ -1,4 +1,5 @@
 import type { ComputedColumnSpec } from "../contracts";
+import { objectListFormulaColumns, validateObjectList } from "../field-types/object-list";
 import { evaluate, renderResult } from "../formula/evaluator";
 import type { FormulaRuntimeContext } from "../formula/functions";
 import { collectFieldRefs, parseFormula } from "../formula/parser";
@@ -74,26 +75,36 @@ const orderFormulasByDeps = (
   return { ordered, cycle };
 };
 
-export const enrichRecordsWithFormulas = <T extends Pick<GridRecord, "data">>(
+export const enrichRecordsWithFormulas = <T extends Pick<GridRecord, "data"> & { finalizedAt?: string | null }>(
   records: T[],
   fields: Field[],
-  options: FormulaRuntimeContext & { skipFormulaFieldIds?: ReadonlySet<string> } = {},
+  options: FormulaRuntimeContext & { skipFormulaFieldIds?: ReadonlySet<string>; useFinalizedFormulaValues?: boolean } = {},
 ): T[] => {
+  const objectLists = fields.filter((field) => !field.deletedAt && field.type === "object_list");
+  for (const record of records) {
+    if (record.finalizedAt) continue;
+    for (const field of objectLists) {
+      const calculated = validateObjectList(record.data[field.id], field.config, field.required, { stored: true, context: options });
+      record.data[field.id] = calculated.ok ? calculated.value : renderResult(formulaError(calculated.error));
+    }
+  }
   const formulaFields = fields.filter(
     (field) => !field.deletedAt && field.type === "formula" && !options.skipFormulaFieldIds?.has(field.id),
   );
   if (formulaFields.length === 0) return records;
 
   const slugToId = formulaSlugMap(fields);
+  const listColumns = objectListFormulaColumns(fields);
   const { ordered, cycle } = orderFormulasByDeps(formulaFields, slugToId);
 
   for (const record of records) {
+    if (record.finalizedAt && options.useFinalizedFormulaValues !== false) continue;
     // Keep raw evaluator values in scratch so errors propagate before display rendering.
     const scratch: Record<string, unknown> = { ...record.data };
     for (const id of cycle) scratch[id] = formulaError("CYCLE");
     for (const { field, ast } of ordered) {
       if (cycle.has(field.id)) continue;
-      scratch[field.id] = evaluate(ast, { fields: scratch, slugToId, dateConfig: options.dateConfig, now: options.now });
+      scratch[field.id] = evaluate(ast, { fields: scratch, slugToId, listColumns, dateConfig: options.dateConfig, now: options.now });
     }
     for (const { field } of ordered) record.data[field.id] = renderResult(scratch[field.id]);
     for (const id of cycle) record.data[id] = renderResult(scratch[id]);
@@ -111,6 +122,7 @@ export const enrichRecordsWithComputedColumns = (
   if (computedColumns.length === 0 || records.length === 0) return records;
 
   const slugToId = formulaSlugMap(fields);
+  const listColumns = objectListFormulaColumns(fields);
   const compiled = computedColumns.map((column) => ({ column, parsed: parseFormula(column.expression) }));
 
   for (const record of records) {
@@ -120,7 +132,7 @@ export const enrichRecordsWithComputedColumns = (
         record.data[column.id] = renderResult(formulaError("ERROR"));
         continue;
       }
-      const value = evaluate(parsed.ast, { fields: scratch, slugToId, dateConfig: options.dateConfig, now: options.now });
+      const value = evaluate(parsed.ast, { fields: scratch, slugToId, listColumns, dateConfig: options.dateConfig, now: options.now });
       scratch[column.id] = value;
       record.data[column.id] = renderResult(value);
     }

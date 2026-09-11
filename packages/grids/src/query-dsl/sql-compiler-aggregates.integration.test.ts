@@ -20,6 +20,68 @@ beforeAll(async () => {
 });
 
 describe("Query DSL Postgres smoke — computed, labels, and aggregates", () => {
+  postgresTest("uses canonical average precision for field and formula aggregates", async () => {
+    const fixture = await insertDslDbFixture();
+    try {
+      for (const [id, amount] of [
+        [fixture.orderAId, "0.000000000000000000000000000001"],
+        [fixture.orderBId, "0.999999999999999999999999999999"],
+        [fixture.orderCId, "0"],
+      ]) {
+        await sql`UPDATE grids.records SET data = jsonb_set(data, ARRAY[${fixture.amountId}], to_jsonb(${amount}::text)) WHERE id = ${id}::uuid`;
+      }
+      const result = await preview(fixture, "aggregate avg(AMT01x) as mean, avg(formula(AMT01x)) as calculated");
+      expect(result.rows).toHaveLength(1);
+      expect(result.rows[0]?.values[`${fixture.amountId}__avg`]).toBe("0.33333333333333333333");
+      expect(result.rows[0]?.values.calculated__avg).toBe("0.33333333333333333333");
+    } finally {
+      await cleanupFixture(fixture.baseId);
+    }
+  });
+  postgresTest("preserves exact medians for field and formula aggregates", async () => {
+    const fixture = await insertDslDbFixture();
+    try {
+      await sql`UPDATE grids.records SET data = jsonb_set(data, ARRAY[${fixture.amountId}], 'null'::jsonb)
+        WHERE table_id = ${fixture.orders.id}::uuid`;
+      for (const [id, amount] of [
+        [fixture.orderAId, "9007199254740993.25"],
+        [fixture.orderBId, "9007199254740993.35"],
+      ]) {
+        await sql`UPDATE grids.records SET data = jsonb_set(data, ARRAY[${fixture.amountId}], to_jsonb(${amount}::text)) WHERE id = ${id}::uuid`;
+      }
+      const result = await preview(
+        fixture,
+        "group by DATE1x by year\naggregate median(AMT01x) as middle, median(formula(AMT01x)) as calculated",
+      );
+      expect(result.rows).toHaveLength(1);
+      expect(result.rows[0]?.values[`${fixture.amountId}__median`]).toBe("9007199254740993.3");
+      expect(result.rows[0]?.values.calculated__median).toBe("9007199254740993.3");
+    } finally {
+      await cleanupFixture(fixture.baseId);
+    }
+  });
+  postgresTest("preserves exact numeric aggregates through JSON transport", async () => {
+    const fixture = await insertDslDbFixture();
+    try {
+      await sql`UPDATE grids.records SET data = jsonb_set(data, ARRAY[${fixture.amountId}], to_jsonb(${"9007199254740993.25"}::text))
+        WHERE id = ${fixture.orderAId}::uuid`;
+      await sql`UPDATE grids.records SET data = jsonb_set(data, ARRAY[${fixture.amountId}], to_jsonb(${"0.10"}::text))
+        WHERE id = ${fixture.orderBId}::uuid`;
+      const result = await preview(
+        fixture,
+        "aggregate sum(AMT01x) as total, sum(formula(AMT01x)) as calculated, min(AMT01x) as smallest, count(*) as rows",
+      );
+      expect(result.rows[0]?.values[`${fixture.amountId}__sum`]).toBe("9007199254740993.35");
+      expect(result.rows[0]?.values.calculated__sum).toBe("9007199254740993.35");
+      expect(result.rows[0]?.values[`${fixture.amountId}__min`]).toBe("0.1");
+      expect(result.rows[0]?.values["*__count"]).toBe(3);
+      const empty = await preview(fixture, "where AMT01x < 0\naggregate sum(AMT01x) as total, avg(AMT01x) as average");
+      expect(empty.rows[0]?.values[`${fixture.amountId}__avg`]).toBeNull();
+    } finally {
+      await cleanupFixture(fixture.baseId);
+    }
+  });
+
   postgresTest(
     "releases preview transactions after concurrent queries",
     async () => {

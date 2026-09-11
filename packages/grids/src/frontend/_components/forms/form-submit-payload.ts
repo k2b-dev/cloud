@@ -29,7 +29,8 @@ export const buildFormSubmitPayload = (
               Object.entries(draft.data).filter(([, value]) => {
                 if (draft.existing) return value !== undefined;
                 if (value === "" || value === undefined || value === null) return false;
-                if (Array.isArray(value) && value.length === 0) return false;
+                // New drafts start with {} and only contain edited/default values.
+                // An explicit [] must override defaults, not disappear as "untouched".
                 return true;
               }),
             ),

@@ -232,7 +232,7 @@ export const recordMessages = i18n.define({
       approveFinalize: "Approve and finalize",
       rejectRequest: "Reject request",
       approvalDetail:
-        "Approval immediately finalizes this exact record version. Its values, files, and relations can no longer be changed or removed.",
+        "Approval finalizes this version permanently, including calculated values. Values, files, and relations can no longer be changed or removed. Time-dependent formulas use the request time; changed source values require a new request.",
       rejectionDetail: "The record remains editable and can be submitted again later.",
       decisionContext: "Optional context recorded with this decision.",
       dangerZone: "Danger zone",
@@ -554,7 +554,7 @@ export const recordMessages = i18n.define({
       approveFinalize: "Genehmigen und finalisieren",
       rejectRequest: "Anfrage ablehnen",
       approvalDetail:
-        "Die Genehmigung finalisiert sofort genau diese Datensatzversion. Werte, Dateien und Beziehungen können danach nicht mehr geändert oder entfernt werden.",
+        "Die Genehmigung schreibt diese Version einschließlich berechneter Werte endgültig fest. Werte, Dateien und Beziehungen können danach nicht mehr geändert oder entfernt werden. Zeitabhängige Formeln verwenden den Antragszeitpunkt; geänderte Quellwerte erfordern einen neuen Antrag.",
       rejectionDetail: "Der Datensatz bleibt bearbeitbar und kann später erneut eingereicht werden.",
       decisionContext: "Optionaler Kontext zu dieser Entscheidung.",
       dangerZone: "Gefahrenbereich",

@@ -1,5 +1,5 @@
 import type { DateContext } from "@k2b/stdlib";
-import { Button, NoticeCard, PanelHeader, useLocale } from "@k2b/ui";
+import { Button, NoticeCard, PanelHeader, prompts, useLocale } from "@k2b/ui";
 import { createMemo, createSignal, For, onMount, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import { evaluateFormValidations } from "../../../form-validations";
@@ -51,10 +51,13 @@ export default function FormSubmit(props: Props) {
   const entries = userInputEntriesOf(props.form.config.fields);
   let formRef: HTMLFormElement | undefined;
 
-  const [values, setValues] = createSignal<Record<string, unknown>>(props.initialRecord?.values ?? buildInitialValues(entries));
+  const [values, setValues] = createSignal<Record<string, unknown>>(
+    props.initialRecord?.values ?? buildInitialValues(entries, props.fields),
+  );
   const [inlineCreates, setInlineCreates] = createSignal<InlineCreateState>(props.initialRecord?.inlineCreates ?? {});
   const [submitting, setSubmitting] = createSignal(false);
   const [pendingSubmission, setPendingSubmission] = createSignal<Record<string, unknown> | null>(null);
+  const [confirmedConflict, setConfirmedConflict] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
   const [done, setDone] = createSignal(false);
   const [clientReady, setClientReady] = createSignal(false);
@@ -122,6 +125,7 @@ export default function FormSubmit(props: Props) {
             json: submitPayload,
           });
       if (!res.ok) {
+        setConfirmedConflict(Boolean(props.initialRecord) && !retrying && res.status === 409);
         if (!retrying && [400, 401, 403, 404, 422].includes(res.status)) setPendingSubmission(null);
         setError(await errorMessage(res, t().submitFailed));
         return;
@@ -221,8 +225,23 @@ export default function FormSubmit(props: Props) {
               <i class="ti ti-alert-circle mt-0.5 shrink-0" />
               <span>{error()}</span>
             </NoticeCard>
-            <Show when={pendingSubmission()}>
+            <Show when={pendingSubmission() && !confirmedConflict()}>
               <p class="text-sm text-dimmed">{t().retrySubmission}</p>
+            </Show>
+            <Show when={confirmedConflict()}>
+              <Button
+                variant="input"
+                type="button"
+                onClick={async () => {
+                  if (
+                    await prompts.confirm(t().reloadEditWarning, { title: t().reloadCurrentValues, confirmText: t().reloadCurrentValues })
+                  ) {
+                    window.location.reload();
+                  }
+                }}
+              >
+                {t().reloadCurrentValues}
+              </Button>
             </Show>
           </Show>
 
@@ -230,7 +249,7 @@ export default function FormSubmit(props: Props) {
               stretching the full form width (flex-column children are
               `align-items: stretch` by default). */}
           <div class="mt-2 flex items-center justify-end">
-            <Button variant="primary" size="sm" type="submit" disabled={props.preview || submitting()}>
+            <Button variant="primary" size="sm" type="submit" disabled={props.preview || submitting() || confirmedConflict()}>
               <Show when={submitting()} fallback={<i class="ti ti-send" />}>
                 <i class="ti ti-loader-2 animate-spin" />
               </Show>

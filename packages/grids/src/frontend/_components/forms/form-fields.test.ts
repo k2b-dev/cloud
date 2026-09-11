@@ -25,6 +25,26 @@ const relationField = (id: string): Field =>
   }) as Field;
 
 describe("buildFormSubmitPayload", () => {
+  test("preserves explicitly cleared lists in new inline records while dropping untouched drafts", () => {
+    const relation = relationField("REL001");
+    const result = buildFormSubmitPayload(
+      [relation],
+      { REL001: ["tmp_cleared", "tmp_untouched"] },
+      {
+        REL001: [
+          { tempId: "tmp_cleared", data: { Items1: [], Select: [], Amount: "0.00" } },
+          { tempId: "tmp_untouched", data: {} },
+        ],
+      },
+      { idempotencyKey: "clear-list" },
+    );
+    expect(result).toEqual({
+      data: { REL001: ["tmp_cleared"] },
+      inlineCreates: { REL001: [{ tempId: "tmp_cleared", data: { Items1: [], Select: [], Amount: "0.00" } }] },
+      idempotencyKey: "clear-list",
+    });
+  });
+
   test("separates edited rows from new rows and replaces only their temporary UI identities", () => {
     const fieldId = "REL001";
     expect(

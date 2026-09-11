@@ -4,6 +4,10 @@ export const tableMessages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
+      listRows: ({ count }: { count: number }) => `${count} ${count === 1 ? "row" : "rows"}`,
+      listRow: ({ number }: { number: number }) => `Row ${number}`,
+      listShowMore: "Show more rows",
+      listUnavailable: "This list cannot be displayed.",
       records: "Records",
       noRecords: "No records",
       noVisibleFields: "No visible fields.",
@@ -65,6 +69,10 @@ export const tableMessages = i18n.define({
       no: "No",
     },
     de: {
+      listRows: ({ count }: { count: number }) => `${count} ${count === 1 ? "Zeile" : "Zeilen"}`,
+      listRow: ({ number }: { number: number }) => `Zeile ${number}`,
+      listShowMore: "Weitere Zeilen anzeigen",
+      listUnavailable: "Diese Liste kann nicht angezeigt werden.",
       records: "Datensätze",
       noRecords: "Keine Datensätze",
       noVisibleFields: "Keine sichtbaren Felder.",

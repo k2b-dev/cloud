@@ -104,6 +104,7 @@ const gridsServiceMessages = i18n.define({
             field_type_mismatch: "Mapped source field is not compatible with the canonical field",
             date_precision_mismatch: "Mapped source field has incompatible date precision",
             percent_range_mismatch: "Mapped source field uses an incompatible percent scale",
+            object_list_schema_mismatch: "Object-list mappings require identical column definitions, including IDs, types and calculations",
             relation_target_mismatch: "Mapped relation does not target the canonical relation table",
             relation_cardinality_mismatch: "Mapped relation has incompatible cardinality",
             source_access_revoked: "Access to a published source table has been revoked",
@@ -227,6 +228,8 @@ const gridsServiceMessages = i18n.define({
             field_type_mismatch: "Ein zugeordnetes Quellfeld ist nicht mit dem kanonischen Feld kompatibel",
             date_precision_mismatch: "Ein zugeordnetes Quellfeld hat eine inkompatible Datumsgenauigkeit",
             percent_range_mismatch: "Ein zugeordnetes Quellfeld verwendet eine inkompatible Prozentskala",
+            object_list_schema_mismatch:
+              "Objektlisten müssen dieselben Spaltendefinitionen einschließlich IDs, Typen und Berechnungen verwenden",
             relation_target_mismatch: "Eine zugeordnete Relation verweist nicht auf die kanonische Relationstabelle",
             relation_cardinality_mismatch: "Eine zugeordnete Relation hat eine inkompatible Kardinalität",
             source_access_revoked: "Der Zugriff auf eine veröffentlichte Quelltabelle wurde widerrufen",

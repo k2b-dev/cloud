@@ -23,6 +23,22 @@ export type FormSubmission = {
   idempotencyKey?: string;
 };
 
+/** Call only after resolving the authorized Form scope; writes recheck under row locks. */
+export const isExclusiveFormChild = async (
+  params: { parentId: string; parentTableId: string; relationFieldId: string; childId: string; childTableId: string },
+  client: typeof sql = sql,
+): Promise<boolean> => {
+  const [linked] = await client<{ exclusive: boolean }[]>`
+    SELECT NOT EXISTS (SELECT 1 FROM grids.record_links other WHERE other.to_record_id = ${params.childId}::uuid
+      AND other.from_record_id <> ${params.parentId}::uuid) AS exclusive
+    FROM grids.record_links link WHERE link.from_record_id = ${params.parentId}::uuid
+      AND link.from_field_id = ${params.relationFieldId}::uuid AND link.to_record_id = ${params.childId}::uuid
+      AND EXISTS (SELECT 1 FROM grids.tables source JOIN grids.tables target ON target.base_id = source.base_id
+        WHERE source.id = ${params.parentTableId}::uuid AND target.id = ${params.childTableId}::uuid)
+  `;
+  return linked?.exclusive === true;
+};
+
 const hash = (value: unknown) =>
   createHash("sha256")
     .update(
@@ -236,15 +252,19 @@ export const submitForm = async (params: {
             if (!Number.isSafeInteger(draft.version) || draft.version < 1 || updatedIds.has(draft.recordId))
               throw err.badInput(t.inlineUpdateInvalid);
             updatedIds.add(draft.recordId);
-            const [linked] = await tx<{ exclusive: boolean }[]>`
-              SELECT NOT EXISTS (SELECT 1 FROM grids.record_links other WHERE other.to_record_id = ${draft.recordId}::uuid
-                AND other.from_record_id <> ${params.record!.id}::uuid) AS exclusive
-              FROM grids.record_links link WHERE link.from_record_id = ${params.record!.id}::uuid
-                AND link.from_field_id = ${relationFieldId}::uuid AND link.to_record_id = ${draft.recordId}::uuid
-                AND EXISTS (SELECT 1 FROM grids.tables source JOIN grids.tables target ON target.base_id = source.base_id
-                  WHERE source.id = ${params.form.tableId}::uuid AND target.id = ${targetTableId}::uuid)
-            `;
-            if (!linked?.exclusive) throw err.badInput(t.inlineUpdateNotOwned);
+            if (
+              !(await isExclusiveFormChild(
+                {
+                  parentId: params.record!.id,
+                  parentTableId: params.form.tableId,
+                  relationFieldId,
+                  childId: draft.recordId,
+                  childTableId: targetTableId,
+                },
+                tx,
+              ))
+            )
+              throw err.badInput(t.inlineUpdateNotOwned);
           }
           for (const key of Object.keys(draft.data)) {
             if (!allowedFieldIds.has(key)) {
@@ -265,8 +285,11 @@ export const submitForm = async (params: {
         }
 
         const replacements = new Map<string, string>();
+        const rowIds = [...currentIds, ...draftIds.filter((id) => !currentIds.includes(id))];
         for (const draft of drafts) {
           if ("recordId" in draft && !existingIds.includes(draft.recordId)) throw err.badInput(t.inlineUpdateNotOwned);
+          const row = rowIds.indexOf("recordId" in draft ? draft.recordId : draft.tempId) + 1;
+          const rowMessage = (detail: string) => t.inlineRowFailed({ field: fieldName(relationFieldId), row, detail });
           const draftPayload: Record<string, unknown> = { ...draft.data };
           for (const inlineEntry of inlineEntries) {
             const targetField = targetFieldsById.get(inlineEntry.fieldId);
@@ -287,7 +310,7 @@ export const submitForm = async (params: {
                 draftPayload[inlineEntry.fieldId] === null ||
                 draftPayload[inlineEntry.fieldId] === "")
             ) {
-              throw err.badInput(t.fieldRequired({ field: inlineEntry.label?.trim() || targetField.name }));
+              throw err.badInput(rowMessage(t.fieldRequired({ field: inlineEntry.label?.trim() || targetField.name })));
             }
           }
           if ("recordId" in draft) {
@@ -305,7 +328,7 @@ export const submitForm = async (params: {
                 viewer: params.viewer,
               },
             );
-            if (!updated.ok) throw updated.error;
+            if (!updated.ok) throw { ...updated.error, message: rowMessage(updated.error.message) };
             if (updated.data.outboxId) outboxIds.push(updated.data.outboxId);
             continue;
           }
@@ -314,7 +337,7 @@ export const submitForm = async (params: {
             locale: params.dateConfig.locale,
             viewer: params.viewer,
           });
-          if (!created.ok) throw created.error;
+          if (!created.ok) throw { ...created.error, message: rowMessage(created.error.message) };
           replacements.set(draft.tempId, created.data.record.id);
           outboxIds.push(created.data.outboxId);
         }

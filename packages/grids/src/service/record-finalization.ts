@@ -1,11 +1,18 @@
-import { type DateContext, err, fail, ok, type Result } from "@k2b/stdlib";
 import { getEffectiveGroupIds } from "@k2b/cloud/server";
+import { type DateContext, err, fail, ok, type Result } from "@k2b/stdlib";
 import { type SQLQuery, sql } from "bun";
 import { getRecordWritableFieldType } from "../field-types";
+import { validateObjectList } from "../field-types/object-list";
 import { logAudit, type SqlClient } from "./audit";
 import { getGridsCrudMessages } from "./crud-messages";
 import { captureRecordRevision, prepareRecordMutation } from "./durable-history";
 import { listByTable as listFields } from "./fields";
+import {
+  calculationApprovalSnapshot,
+  captureFinalizationInputs,
+  evaluateFinalizationFormulas,
+  sameCalculationSnapshot,
+} from "./finalized-computed-values";
 import { assertMutationAllowed, type MutationOrigin } from "./mutation-policy";
 import { allocateNumberInTransaction, bindNumberAllocation } from "./number-series";
 import { requireStoredTableWritable } from "./parent-checks";
@@ -351,7 +358,10 @@ const requirements = async (
     }
     const handler = getRecordWritableFieldType(field.type);
     if (!handler) continue;
-    const result = handler.validate(data[field.id], field.config, field.required);
+    const result =
+      field.type === "object_list"
+        ? validateObjectList(data[field.id], field.config, field.required, { stored: true, context: { locale } })
+        : handler.validate(data[field.id], field.config, field.required, { locale });
     if (!result.ok) {
       missing.push({
         fieldId: field.id,
@@ -364,6 +374,7 @@ const requirements = async (
 };
 
 type FinalizationRequestRow = {
+  computed_snapshot: unknown;
   id: string;
   short_id: string;
   record_version: number;
@@ -396,7 +407,7 @@ const mapFinalizationRequest = (row: FinalizationRequestRow): RecordFinalization
 const finalizationRequestRows = (client: SqlClient, where: SQLQuery, lock = false): Promise<FinalizationRequestRow[]> => client<
   FinalizationRequestRow[]
 >`
-  SELECT request.id::text, request.short_id, request.record_version, request.policy_revision, request.status,
+  SELECT request.id::text, request.short_id, request.record_version, request.policy_revision, request.status, request.computed_snapshot,
          request.requested_by::text,
          COALESCE(NULLIF(requester.display_name, ''), requester.uid, 'Unknown user') AS requested_by_display_name,
          request.request_comment, request.requested_at, request.resolved_by::text,
@@ -475,6 +486,7 @@ export const requestFinalizationInTransaction = async (
     actorId: string | null;
     comment?: string | null;
     expectedPolicyRevision?: number;
+    dateConfig?: DateContext;
     locale?: string;
   },
 ): Promise<Result<RecordFinalizationRequest>> => {
@@ -509,17 +521,48 @@ export const requestFinalizationInTransaction = async (
     sql`request.table_id = ${params.tableId}::uuid AND request.record_id = ${params.recordId}::uuid AND request.status = 'pending'`,
     true,
   );
+  let calculationTime = pending ? new Date(pending.requested_at) : new Date();
+  const fields = await listFields(params.tableId, false, client);
+  let captured = await captureFinalizationInputs(client, params.tableId, params.recordId, fields, params.locale, {
+    now: calculationTime,
+    dateConfig: params.dateConfig,
+  });
+  if (!captured.ok) return captured;
+  const computed = await evaluateFinalizationFormulas(client, fields, captured.data.row, captured.data.data, captured.data.related, {
+    now: calculationTime,
+    dateConfig: params.dateConfig,
+    locale: params.locale,
+  });
+  if (!computed.ok) return computed;
+  let snapshot = calculationApprovalSnapshot(fields, computed.data);
   if (pending) {
+    const sameCalculation = await sameCalculationSnapshot(client, pending.computed_snapshot, snapshot);
     const currentRequest =
+      sameCalculation &&
       pending.requested_by === params.actorId &&
       Number(pending.record_version) === Number(record.version) &&
       Number(pending.policy_revision) === Number(activation.policy_revision);
     if (currentRequest) return ok(mapFinalizationRequest(pending));
     const staleRequest =
-      Number(pending.record_version) !== Number(record.version) || Number(pending.policy_revision) !== Number(activation.policy_revision);
+      !sameCalculation ||
+      Number(pending.record_version) !== Number(record.version) ||
+      Number(pending.policy_revision) !== Number(activation.policy_revision);
     if (!staleRequest) {
       return fail(err.conflict(messages.finalizationRequestPending));
     }
+    calculationTime = new Date();
+    captured = await captureFinalizationInputs(client, params.tableId, params.recordId, fields, params.locale, {
+      now: calculationTime,
+      dateConfig: params.dateConfig,
+    });
+    if (!captured.ok) return captured;
+    const refreshed = await evaluateFinalizationFormulas(client, fields, captured.data.row, captured.data.data, captured.data.related, {
+      now: calculationTime,
+      dateConfig: params.dateConfig,
+      locale: params.locale,
+    });
+    if (!refreshed.ok) return refreshed;
+    snapshot = calculationApprovalSnapshot(fields, refreshed.data);
     await client`
         UPDATE grids.record_finalization_requests
         SET status = 'superseded', resolved_by = ${params.actorId}::uuid, resolved_at = now(),
@@ -529,7 +572,6 @@ export const requestFinalizationInTransaction = async (
   }
   const loaded = await loadRecordValues(client, params.tableId, params.recordId);
   if (!loaded) return fail(err.notFound(messages.record));
-  const fields = await listFields(params.tableId, false, client);
   const checked = await requirements(client, params.recordId, fields, loaded.data, params.locale);
   if (checked.missing.length > 0) {
     return fail(err.badInput(messages.recordNotReady({ fields: checked.missing.map((item) => item.fieldName).join(", ") })));
@@ -537,10 +579,10 @@ export const requestFinalizationInTransaction = async (
   await insertWithShortIdForDb(client, "idx_grids_record_finalization_requests_short_id", async (attempt, shortId) => {
     await attempt`
         INSERT INTO grids.record_finalization_requests (
-          short_id, table_id, record_id, record_version, policy_revision, requested_by, request_comment
+          short_id, table_id, record_id, record_version, policy_revision, requested_by, request_comment, computed_snapshot, requested_at
         ) VALUES (
           ${shortId}, ${params.tableId}::uuid, ${params.recordId}::uuid, ${record.version}, ${activation.policy_revision},
-          ${params.actorId}::uuid, ${params.comment ?? null}
+          ${params.actorId}::uuid, ${params.comment ?? null}, ${snapshot}::jsonb, ${calculationTime.toISOString()}::timestamptz
         )
       `;
   });
@@ -564,6 +606,7 @@ export const requestFinalization = async (params: {
   actorId: string | null;
   comment?: string | null;
   expectedPolicyRevision?: number;
+  dateConfig?: DateContext;
   locale?: string;
 }): Promise<Result<RecordFinalizationRequest>> => sql.begin((tx) => requestFinalizationInTransaction(tx, params));
 
@@ -709,7 +752,37 @@ export const finalizeInTransaction = async (
     return fail(err.badInput(messages.recordNotReady({ fields: checked.missing.map((item) => item.fieldName).join(", ") })));
   }
 
-  const data = { ...mapRecordRow(record.row).data };
+  const request = params.approvalRequestId
+    ? (
+        await client<Array<{ computed_snapshot: unknown; requested_at: Date }>>`
+    SELECT computed_snapshot, requested_at FROM grids.record_finalization_requests WHERE id = ${params.approvalRequestId}::uuid
+  `
+      )[0]
+    : undefined;
+  // Approval captures the reviewed instant; direct finalization captures the current instant.
+  const now = request ? new Date(request.requested_at) : new Date();
+  const captured = await captureFinalizationInputs(client, params.tableId, params.recordId, fields, params.locale, {
+    now,
+    dateConfig: params.dateConfig,
+  });
+  if (!captured.ok) return captured;
+  const data = captured.data.data;
+  if (params.approvalRequestId) {
+    const reviewed = await evaluateFinalizationFormulas(client, fields, captured.data.row, data, captured.data.related, {
+      now,
+      dateConfig: params.dateConfig,
+      locale: params.locale,
+    });
+    if (!reviewed.ok) return reviewed;
+    if (
+      !request ||
+      !(await sameCalculationSnapshot(client, request.computed_snapshot, calculationApprovalSnapshot(fields, reviewed.data)))
+    ) {
+      return fail(err.conflict(messages.finalizationCalculationChanged));
+    }
+  }
+  // A rejected calculation must not consume a number, including workflow callers.
+  await client`SAVEPOINT grids_finalization_values`;
   const allocations: Array<{ id: string; fieldId: string; value: string }> = [];
   for (const field of fields) {
     if (field.type !== "id" || (field.config as { assignment?: string }).assignment !== "finalization" || data[field.id] != null) continue;
@@ -723,16 +796,32 @@ export const finalizeInTransaction = async (
     allocations.push({ id: allocation.id, fieldId: field.id, value: allocation.renderedValue });
   }
 
-  const changedFieldIds = allocations.map((allocation) => allocation.fieldId);
+  const computed = await evaluateFinalizationFormulas(client, fields, captured.data.row, data, captured.data.related, {
+    now,
+    dateConfig: params.dateConfig,
+    locale: params.locale,
+  });
+  if (!computed.ok) {
+    await client`ROLLBACK TO SAVEPOINT grids_finalization_values`;
+    await client`RELEASE SAVEPOINT grids_finalization_values`;
+    return computed;
+  }
+  Object.assign(data, computed.data.values);
+  const changedFieldIds = [...allocations.map((allocation) => allocation.fieldId), ...Object.keys(computed.data.values)];
   const nextVersion = Number(record.row.version) + 1;
   const [updated] = await client<Array<Record<string, unknown>>>`
     UPDATE grids.records
-    SET data = ${data}::jsonb, version = ${nextVersion}, updated_by = ${params.actorId}::uuid, updated_at = now()
+    SET data = ${data}::jsonb, finalized_computed_types = ${computed.data.types}::jsonb,
+        version = ${nextVersion}, updated_by = ${params.actorId}::uuid, updated_at = now()
     WHERE id = ${params.recordId}::uuid AND table_id = ${params.tableId}::uuid
       AND deleted_at IS NULL AND finalized_at IS NULL
     RETURNING *
   `;
-  if (!updated) return fail(finalizedRecordConflict(params.locale));
+  if (!updated) {
+    await client`ROLLBACK TO SAVEPOINT grids_finalization_values`;
+    await client`RELEASE SAVEPOINT grids_finalization_values`;
+    return fail(finalizedRecordConflict(params.locale));
+  }
   for (const allocation of allocations) await bindNumberAllocation(client, allocation.id, { kind: "record", id: params.recordId });
   const revision = await captureRecordRevision(client, {
     tableId: params.tableId,
@@ -767,6 +856,7 @@ export const finalizeInTransaction = async (
     eventType: "record.finalized",
   });
   await logAudit({ tableId: params.tableId, recordId: params.recordId, userId: params.actorId, action: "finalized" }, client);
+  await client`RELEASE SAVEPOINT grids_finalization_values`;
   return ok({
     record: mapRecordRow(finalized),
     outboxId,

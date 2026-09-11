@@ -20,6 +20,7 @@ const CORRECTION_PREFILL_FIELD_TYPES = [
   "percent",
   "duration",
   "json",
+  "object_list",
   "principal",
 ] as const;
 

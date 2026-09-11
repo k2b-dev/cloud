@@ -2318,6 +2318,37 @@ describe("grids CLI", () => {
     expect(lines).toEqual([`Created record ${recordId}.`]);
   });
 
+  test("edits through a Form with explicit target, versions and retry key", async () => {
+    const body = {
+      version: 2,
+      idempotencyKey: "edit-author-1",
+      data: { [fieldId]: "Updated author" },
+      inlineUpdates: { LINES1: [{ recordId: "CHILD1", version: 1, data: { TEXT01: "Updated line" } }] },
+    };
+    const { ctx, calls, lines } = createContext(
+      ["forms", "submit", baseId, "Authors", "Author intake"],
+      { body: JSON.stringify(body), record: recordId, yes: true },
+      [jsonResponse(basePage), jsonResponse([table]), jsonResponse([form]), jsonResponse({ recordId })],
+    );
+    await gridsCli.run(ctx);
+    expect(calls.at(-1)?.path).toBe(`/api/grids/forms/${formId}/records/${recordId}`);
+    expect(JSON.parse(String(calls.at(-1)?.init?.body))).toEqual(body);
+    expect(lines).toEqual([`Saved record ${recordId}.`]);
+  });
+
+  test("does not submit a Form edit without confirmation or a versioned payload", async () => {
+    const denied = createContext(["forms", "submit"], { record: recordId });
+    await expect(gridsCli.run(denied.ctx)).rejects.toThrow("Pass --yes");
+    expect(denied.calls).toHaveLength(0);
+    const stale = createContext(
+      ["forms", "submit", baseId, "Authors", "Author intake"],
+      { record: recordId, yes: true, body: JSON.stringify({ data: {} }) },
+      [jsonResponse(basePage), jsonResponse([table]), jsonResponse([form])],
+    );
+    await expect(gridsCli.run(stale.ctx)).rejects.toThrow("positive version");
+    expect(stale.calls.every((call) => !call.init?.method || call.init.method === "GET")).toBe(true);
+  });
+
   test("rejects form UUID references", async () => {
     const uuid = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
     const { ctx } = createContext(["forms", "get", baseId], { table: "Authors", form: uuid }, [

@@ -4,11 +4,12 @@ import { type Context, Hono, type MiddlewareHandler } from "hono";
 import { z } from "zod";
 import { type GridRecord, ShortIdSchema } from "../contracts";
 import { customAppPageRecordFieldIds } from "../custom-apps/conditions";
-import { CUSTOM_APP_REFERENCE, CustomAppDefinitionInputSchema } from "../custom-apps/contracts";
+import { CustomAppDefinitionInputSchema } from "../custom-apps/contracts";
 import { customAppDiagnostic } from "../custom-apps/diagnostics";
 import { customAppFileTokenMatchesContext, verifyCustomAppFileToken } from "../custom-apps/file-token";
 import { projectCustomAppRecord } from "../custom-apps/record-projection";
 import { customAppRecordsDisplayFieldHash, isSafeInlineCardImageMimeType } from "../custom-apps/records-display-capability";
+import { CUSTOM_APP_API_REFERENCE } from "../custom-apps/reference";
 import {
   customAppActionStatusUrl,
   customAppFormSuccessHref,
@@ -897,7 +898,7 @@ export const createCustomAppsApi = (
         return c.json(await projectWorkflowRunSummary(run));
       },
     )
-    .get("/reference", (c) => c.json(CUSTOM_APP_REFERENCE))
+    .get("/reference", (c) => c.json(CUSTOM_APP_API_REFERENCE))
     .get("/runtime/:shortId/:pageId/:blockId/comments", v("query", RecordCommentListQuerySchema), async (c) => {
       const resolved = await resolveRuntimeComments(c);
       if (!resolved) return c.json({ message: apiMessages(c).commentsNotFound }, 404);

@@ -3,6 +3,7 @@ import { normalizeRefKey } from "../ref-syntax";
 import { aggregateOutputKey } from "../service/aggregate-capabilities";
 import { compileFormulaPredicateAstToSql, type FormulaSqlFieldResolver, type FormulaSqlType } from "../service/formula-sql-compiler";
 import { compileDslKeyset, type DslKeysetColumn } from "../service/keyset-compiler";
+import { numericAverageSql } from "../service/numeric-division-sql";
 import { relationLabelFields } from "../service/relations";
 import { compileDirectFieldSearchClause, escapeSearchLikePattern, optionIdsMatchingSearch } from "../service/search";
 import { assertSqlIdentifier } from "../service/sql-ident";
@@ -407,9 +408,9 @@ const derivedAggregateExpression = (
     case "sum":
       return { ok: true, expr: sql`SUM((${value})::numeric)`, type: "numeric" };
     case "avg":
-      return { ok: true, expr: sql`AVG((${value})::numeric)`, type: "numeric" };
+      return { ok: true, expr: numericAverageSql(value), type: "numeric" };
     case "median":
-      return { ok: true, expr: sql`PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY (${value})::numeric)`, type: "numeric" };
+      return { ok: true, expr: numericMedianSql(value), type: "numeric" };
     case "min":
     case "earliest":
       return { ok: true, expr: sql`MIN(${value})`, type: typed };
@@ -756,3 +757,5 @@ export const compileDslDerivedViewSourcePlanToSql = (
     },
   };
 };
+
+import { numericMedianSql } from "../service/numeric-median-sql";

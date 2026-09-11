@@ -147,6 +147,16 @@ describe("formatCellForExport", () => {
     expect(formatCellForExport({ amount: "24.50", unit: "EUR" }, json)).toBe('{"amount":"24.50","unit":"EUR"}');
   });
 
+  test("typed object lists retain column ids, decimals, booleans, and empty-vs-null in CSV cells", () => {
+    const list = mkField({ id: "fld-list", type: "object_list" });
+    const rows = [{ Amount: "123456789012345678901234567890.12", Label1: "Line, one\nLine two", Active: false, Total1: "0.30" }];
+    const cell = formatCellForExport(rows, list);
+    expect(JSON.parse(cell)).toEqual(rows);
+    expect(csvQuote(cell)).toBe(`"${cell.replaceAll('"', '""')}"`);
+    expect(formatCellForExport([], list)).toBe("[]");
+    expect(formatCellForExport(null, list)).toBe("");
+  });
+
   test("array value stringifies (relation field stores uuid arrays)", () => {
     const rel = mkField({ id: "fld-rel", type: "relation" });
     expect(formatCellForExport(["a", "b"], rel)).toBe('["a","b"]');

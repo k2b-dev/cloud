@@ -1,4 +1,5 @@
 import type { PublicField as Field } from "../../../api/public-dto";
+import { ObjectListConfigSchema, objectListInputValue } from "../../../field-types/object-list";
 
 const SYSTEM_OR_COMPUTED_FIELD_TYPES = new Set([
   "id",
@@ -22,6 +23,7 @@ const USER_EDITABLE_FIELD_TYPES = new Set([
   "percent",
   "duration",
   "json",
+  "object_list",
   "principal",
 ]);
 export const RECORD_INPUT_FIELD_TYPES = new Set([...USER_EDITABLE_FIELD_TYPES, "relation"]);
@@ -42,6 +44,11 @@ const stringArray = (value: unknown): string[] => {
 };
 
 export const initialFieldInputValue = (field: Field, current?: unknown): unknown => {
+  if (field.type === "object_list") {
+    const value = current !== undefined ? current : (field.defaultValue ?? null);
+    const config = ObjectListConfigSchema.safeParse(field.config);
+    return config.success ? objectListInputValue(value, config.data) : value;
+  }
   if (current !== undefined && current !== null) {
     if (field.type === "relation" || field.type === "select") return stringArray(current);
     if (field.type === "principal") return Array.isArray(current) ? current : [];
@@ -72,6 +79,11 @@ export const sanitizeFieldValues = (
   const out: Record<string, unknown> = {};
   for (const field of fields) {
     const value = sanitizeFieldValue(field, values[field.id]);
+    // An explicitly emptied list is distinct from an absent value/default.
+    if (field.type === "object_list" && Array.isArray(value)) {
+      out[field.id] = value;
+      continue;
+    }
     if (isEmptyValue(value)) {
       if (!options.omitEmpty) out[field.id] = null;
       continue;

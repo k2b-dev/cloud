@@ -1,9 +1,12 @@
 import { type DateContext, dates, err, fail, ok, type Result } from "@k2b/stdlib";
 import { sql } from "bun";
 import { getFieldType, getRecordWritableFieldType } from "../field-types";
+import { ObjectListConfigSchema, objectListInputValue } from "../field-types/object-list";
 import { collectFieldRefs, parseFormula } from "../formula/parser";
 import { normalizeRefKey } from "../ref-syntax";
 import { getGridsCrudMessages } from "./crud-messages";
+import { compileFormulaAstToSql } from "./formula-sql-compiler";
+import { compileObjectListRow } from "./object-list-sql";
 import type { Field } from "./types";
 
 export const validateFieldConfig = (type: string, config: Record<string, unknown>, locale?: string): Result<unknown> => {
@@ -18,6 +21,14 @@ export const validateFieldConfig = (type: string, config: Record<string, unknown
     const firstIssue = parsed.error.issues[0];
     const detail = firstIssue?.message ?? messages.invalidFieldConfigDetail;
     return fail(err.badInput(messages.invalidFieldConfig({ type, detail })));
+  }
+  if (type === "object_list") {
+    // A list is read through SQL as well as the write validator. Reject
+    // unsupported calculations at authoring time, not on the first record read.
+    const compiled = compileObjectListRow(parsed.data, "item", (ast, resolveField) =>
+      compileFormulaAstToSql(ast, { fields: [], recordAlias: "item", resolveField }),
+    );
+    if (!compiled.ok) return fail(err.badInput(messages.invalidFieldConfig({ type, detail: compiled.error })));
   }
   return ok(parsed.data);
 };
@@ -44,8 +55,13 @@ export const validateDefaultValue = (type: string, config: Record<string, unknow
   }
   const fieldType = getRecordWritableFieldType(type);
   if (!fieldType) return fail(err.badInput(messages.defaultUnsupported({ type })));
-  const v = fieldType.validate(value, config, false);
+  const v = fieldType.validate(value, config, false, { locale });
   if (!v.ok) return fail(err.badInput(messages.invalidDefaultDetail({ detail: v.error })));
+  if (type === "object_list") {
+    const parsed = ObjectListConfigSchema.safeParse(config);
+    if (!parsed.success) return fail(err.badInput(messages.invalidFieldConfigDetail));
+    return ok(objectListInputValue(v.value, parsed.data));
+  }
   return ok(v.value);
 };
 

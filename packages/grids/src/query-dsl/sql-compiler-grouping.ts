@@ -12,6 +12,7 @@ import {
 import { groupSqlTypeForField, isMultiSelectField, storageOf } from "../service/field-storage";
 import { compileFormulaAstToSql, type FormulaSqlFieldResolver, type FormulaSqlType } from "../service/formula-sql-compiler";
 import type { GroupAggregationSpec } from "../service/group-compiler";
+import { numericAverageSql } from "../service/numeric-division-sql";
 import type { Field } from "../service/types";
 import type { DslFormulaAggregation, DslResolvedSqlAggregation, DslResolvedSqlGroupBy, DslResolvedSqlQueryPlan } from "./resolver";
 import { aliveFields, computedFieldSqlForScope, fieldProjection, outputTypeFor } from "./sql-compiler-fields";
@@ -125,9 +126,9 @@ export const compileFormulaAggregateColumn = (
     case "sum":
       return { ok: true, key, expr: sql`SUM((${expression})::numeric)` };
     case "avg":
-      return { ok: true, key, expr: sql`AVG((${expression})::numeric)` };
+      return { ok: true, key, expr: numericAverageSql(expression) };
     case "median":
-      return { ok: true, key, expr: sql`PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY (${expression})::numeric)` };
+      return { ok: true, key, expr: numericMedianSql(expression) };
     case "min":
     case "earliest":
       return { ok: true, key, expr: sql`MIN(${expression})` };
@@ -320,10 +321,10 @@ export const aggregateExprForField = (
       return { ok: true, expr: sql`SUM(${typedProjection})`, sqlType: "numeric" };
     case "avg":
       if (!typedProjection) return { ok: false, error: `field "${field.name}" cannot be aggregated` };
-      return { ok: true, expr: sql`AVG(${typedProjection})`, sqlType: "numeric" };
+      return { ok: true, expr: numericAverageSql(typedProjection), sqlType: "numeric" };
     case "median":
       if (!typedProjection) return { ok: false, error: `field "${field.name}" cannot be aggregated` };
-      return { ok: true, expr: sql`PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY ${typedProjection})`, sqlType: "numeric" };
+      return { ok: true, expr: numericMedianSql(typedProjection), sqlType: "numeric" };
     case "min":
     case "max": {
       if (!typedProjection) return { ok: false, error: `field "${field.name}" cannot be aggregated` };
@@ -338,3 +339,5 @@ export const aggregateExprForField = (
     }
   }
 };
+
+import { numericMedianSql } from "../service/numeric-median-sql";

@@ -59,8 +59,7 @@ export const compileDslAggregateQueryPlanToSql = (
     formulaColumns.push(compiled);
   }
   const allAggregateColumns = [...aggregateColumns, ...formulaColumns];
-  const jsonPairs = allAggregateColumns.map((column) => sql`${column.key}::text, ${column.expr}`);
-  if (jsonPairs.length === 0) return failAggregate("query has no aggregate output");
+  if (allAggregateColumns.length === 0) return failAggregate("query has no aggregate output");
   const columns: DslSqlAggregateOutputColumn[] = aggregations.map(
     (aggregation): DslSqlAggregateOutputColumn => ({
       key: aggregateOutputKey(aggregation.fieldId, aggregation.agg),
@@ -79,6 +78,16 @@ export const compileDslAggregateQueryPlanToSql = (
       sqlType: formulaAggregateSqlType(aggregation),
     });
   }
+  const columnsByKey = new Map(columns.map((column) => [column.key, column]));
+  // JSON numeric values are parsed as JavaScript numbers before preview normalization.
+  // Serialize exact numeric results as strings, just like numeric row/group projections.
+  // Counts retain their existing integer transport shape.
+  const jsonPairs = allAggregateColumns.map((column) => {
+    const output = columnsByKey.get(column.key);
+    const count = output?.agg === "count" || output?.agg === "countEmpty" || output?.agg === "countUnique";
+    const value = output?.sqlType === "numeric" && !count ? sql`(${column.expr})::text` : column.expr;
+    return sql`${column.key}::text, ${value}`;
+  });
 
   const where = sql`${dslRecordTableCondition(plan.tableId, options)}
     AND ${recordDeletedCondition(plan)}

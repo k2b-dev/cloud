@@ -4,8 +4,19 @@ import { CLOUD_GRIDS_INSTRUCTIONS, CLOUD_GRIDS_QUERY_REFERENCE } from "./grids-s
 
 test("Grids Skill examples use valid GQL rather than SQL or GraphQL", () => {
   const examples = [...`${CLOUD_GRIDS_INSTRUCTIONS}\n${CLOUD_GRIDS_QUERY_REFERENCE}`.matchAll(/```gql\n([\s\S]*?)```/g)];
-  expect(examples.length).toBe(5);
+  expect(examples.length).toBe(6);
   for (const [, query] of examples) expect(parseGridsQueryDsl(query!).ok).toBe(true);
+});
+
+test("Grids Skill explains typed values without expanding query-chat authority", () => {
+  expect(CLOUD_GRIDS_INSTRUCTIONS).toContain("same idempotency key and unchanged input");
+  expect(CLOUD_GRIDS_INSTRUCTIONS).not.toContain("is not retry-safe");
+  expect(CLOUD_GRIDS_QUERY_REFERENCE).toContain("Updating a list replaces the whole list");
+  expect(CLOUD_GRIDS_QUERY_REFERENCE).toContain("Omit calculated columns");
+  expect(CLOUD_GRIDS_QUERY_REFERENCE).toContain("not recursively finalized");
+  expect(CLOUD_GRIDS_QUERY_REFERENCE).toContain("not proof that its source record was finalized");
+  expect(CLOUD_GRIDS_QUERY_REFERENCE).toContain("grids-custom-app-api");
+  expect(CLOUD_GRIDS_INSTRUCTIONS).toContain("They cannot change records");
 });
 
 test("Grids Skill separates query results, context and turn-local reference loading", () => {

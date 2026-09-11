@@ -52,7 +52,8 @@ sort Name asc
 :::reference
 - **Relations:** A canonical relation must point to one common stored target or to another explicitly published Combined target containing the related records.
 - **Files:** Target Base readers and compiled Grids App capabilities can preview and download mapped files through the Combined publication boundary. Source file metadata and file mutation remain private.
-- **Computed data:** Canonical formulas can use the combined fields. A computed source field can be mapped only when its result is compatible with the canonical field.
+- **Computed data:** Mapped results need compatible types. Finalized source values stay frozen; canonical formulas still calculate from them.
+- **Object lists:** Source and target need identical column definitions, including IDs, types, units and calculations. There is no subcolumn mapping.
 - **Live data and export:** Source changes appear automatically. CSV and JSON exports can continue across all matching records.
 :::
 

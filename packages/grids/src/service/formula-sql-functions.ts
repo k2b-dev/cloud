@@ -1,7 +1,14 @@
-import { type DateContext, dates } from "@k2b/stdlib";
 import { normalizeTimeZone } from "@k2b/cloud/shared";
+import { type DateContext, dates } from "@k2b/stdlib";
 import { sql } from "bun";
-import { type FormulaFunctionName, formulaFunctionArity, formulaFunctionForName } from "../formula/function-catalog";
+import {
+  type FormulaFunctionName,
+  formulaFunctionArity,
+  formulaFunctionForName,
+  isListFormulaFunction,
+  type ListFormulaFunctionName,
+} from "../formula/function-catalog";
+import { FORMULA_ROUND_PLACES } from "../formula/numeric";
 import type { Expr } from "../formula/types";
 import {
   type FormulaSqlCompileResult,
@@ -19,12 +26,18 @@ import {
   formulaSqlOrErrors,
   joinFormulaSql,
 } from "./formula-sql-values";
+import { numericAverageSql, numericDivideSql } from "./numeric-division-sql";
+import { numericMedianSql } from "./numeric-median-sql";
 
 const DATE_UNITS = new Set(["day", "days", "month", "months", "year", "years", "hour", "hours", "minute", "minutes"]);
 const DIFF_UNITS = new Set(["day", "days", "hour", "hours", "minute", "minutes", "second", "seconds"]);
 
 const SHORT_CIRCUIT_FUNCTIONS = new Set<FormulaFunctionName>(["IF", "IFEMPTY", "IFERROR", "AND", "OR"]);
-type FunctionCompileContext = { dateConfig?: DateContext; now: Date };
+type FunctionCompileContext = {
+  dateConfig?: DateContext;
+  now: Date;
+  compileList?: (fn: ListFormulaFunctionName, args: Expr[]) => FormulaSqlCompileResult;
+};
 type FormulaFunctionContext = {
   sourceArgs: Expr[];
   compiled: FormulaSqlExpression[];
@@ -128,12 +141,13 @@ const numericValues = (args: FormulaSqlExpression[], aggregate: "AVG" | "MIN" | 
   );
   if (aggregate === "MEDIAN") {
     return sql`(
-      SELECT percentile_cont(0.5) WITHIN GROUP (ORDER BY v)::numeric
+      SELECT ${numericMedianSql(sql`v`)}
       FROM (VALUES ${rows}) AS formula_values(v)
       WHERE v IS NOT NULL
     )`;
   }
-  const fn = aggregate === "AVG" ? sql`AVG(v)` : aggregate === "MIN" ? sql`MIN(v)` : aggregate === "MAX" ? sql`MAX(v)` : sql`SUM(v)`;
+  const fn =
+    aggregate === "AVG" ? numericAverageSql(sql`v`) : aggregate === "MIN" ? sql`MIN(v)` : aggregate === "MAX" ? sql`MAX(v)` : sql`SUM(v)`;
   return sql`(SELECT ${fn} FROM (VALUES ${rows}) AS formula_values(v) WHERE v IS NOT NULL)`;
 };
 
@@ -177,14 +191,29 @@ const compileDateDiff = (
 
 const FORMULA_FUNCTION_COMPILERS = {
   ABS: ({ numericArg }) => formulaSqlOk(sql`ABS(${numericArg(0)})`, "numeric"),
-  ROUND: ({ numericArg }) => formulaSqlOk(sql`ROUND(${numericArg(0)}, COALESCE(FLOOR(${numericArg(1)})::int, 0))`, "numeric"),
+  ROUND: ({ numericArg }) => {
+    const value = numericArg(0);
+    const places = sql`COALESCE(TRUNC(${numericArg(1)}), 0)`;
+    const valid = sql`${places} BETWEEN ${FORMULA_ROUND_PLACES.min} AND ${FORMULA_ROUND_PLACES.max}`;
+    const safePlaces = sql`(CASE WHEN ${valid} THEN ${places} ELSE 0 END)::int`;
+    return formulaSqlOk(
+      sql`CASE WHEN ${valid} THEN ROUND(${value}, ${safePlaces}) ELSE NULL END`,
+      "numeric",
+      sql`(${value} IS NOT NULL AND NOT (${valid}))`,
+    );
+  },
   FLOOR: ({ numericArg }) => formulaSqlOk(sql`FLOOR(${numericArg(0)})`, "numeric"),
   CEIL: ({ numericArg }) => formulaSqlOk(sql`CEIL(${numericArg(0)})`, "numeric"),
   SQRT: ({ numericArg }) => {
     const value = numericArg(0);
-    return formulaSqlOk(sql`CASE WHEN ${value} < 0 THEN NULL ELSE SQRT(${value}) END`, "numeric", sql`(${value} < 0)`);
+    return formulaSqlOk(sql`CASE WHEN ${value} < 0 THEN NULL ELSE SQRT(trim_scale(${value})) END`, "numeric", sql`(${value} < 0)`);
   },
-  POW: ({ numericArg }) => formulaSqlOk(sql`POWER(${numericArg(0)}, ${numericArg(1)})`, "numeric"),
+  POW: ({ numericArg }) => {
+    const base = numericArg(0);
+    const exponent = numericArg(1);
+    const value = sql`grids.try_numeric_power(${base}, ${exponent})`;
+    return formulaSqlOk(value, "numeric", sql`(${base} IS NOT NULL AND ${exponent} IS NOT NULL AND ${value} IS NULL)`);
+  },
   MOD: ({ numericArg }) => {
     const dividend = numericArg(0);
     const divisor = numericArg(1);
@@ -206,7 +235,7 @@ const FORMULA_FUNCTION_COMPILERS = {
   PERCENT: ({ numericArg }) => {
     const part = numericArg(0);
     const total = numericArg(1);
-    return formulaSqlOk(sql`(${part} / NULLIF(${total}, 0) * 100)`, "numeric", sql`(${part} IS NOT NULL AND ${total} = 0)`);
+    return formulaSqlOk(sql`(${numericDivideSql(part, total)} * 100)`, "numeric", sql`(${part} IS NOT NULL AND ${total} = 0)`);
   },
   CONCAT: ({ compiled }) =>
     formulaSqlOk(compiled.length === 0 ? sql`''::text` : sql`CONCAT(${joinFormulaSql(compiled.map(formulaSqlAsText), sql`, `)})`, "text"),
@@ -286,7 +315,7 @@ const FORMULA_FUNCTION_COMPILERS = {
   },
   DATEADD: ({ sourceArgs, compiled, compileContext }) => compileDateAdd(sourceArgs, compiled, compileContext),
   DATEDIFF: ({ sourceArgs, compiled, compileContext }) => compileDateDiff(sourceArgs, compiled, compileContext),
-} satisfies Record<FormulaFunctionName, FormulaFunctionCompiler>;
+} satisfies Record<Exclude<FormulaFunctionName, ListFormulaFunctionName>, FormulaFunctionCompiler>;
 
 const formatArity = (spec: { min: number; max: number }): string => {
   if (spec.min === spec.max) return spec.min === 1 ? "1 argument" : `${spec.min} arguments`;
@@ -307,12 +336,16 @@ export const compileFormulaFunction = (
   if (args.length < arity.min || args.length > arity.max) {
     return formulaSqlFail(`${upper} needs ${formatArity(arity)}; got ${args.length}`);
   }
+  if (isListFormulaFunction(upper))
+    return compileContext.compileList?.(upper, args) ?? formulaSqlFail("Object-list context is not available");
   const results = compileArgs(args);
   const error = results.find((result): result is Extract<FormulaSqlCompileResult, { ok: false }> => !result.ok);
   if (error) return error;
   const compiled = results.map((result) => (result as Extract<FormulaSqlCompileResult, { ok: true }>).expression);
   const arg = (index: number): FormulaSqlExpression => compiled[index] ?? { sql: sql`NULL`, type: "unknown" };
-  const compiler = FORMULA_FUNCTION_COMPILERS[upper as FormulaFunctionName] as FormulaFunctionCompiler | undefined;
+  const compiler = FORMULA_FUNCTION_COMPILERS[upper as Exclude<FormulaFunctionName, ListFormulaFunctionName>] as
+    | FormulaFunctionCompiler
+    | undefined;
   if (!compiler) return formulaSqlFail(`Unsupported formula function ${fn}`);
   const result = compiler({
     sourceArgs: args,

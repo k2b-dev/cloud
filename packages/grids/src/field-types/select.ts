@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { fail, ok, type ValueFieldType } from "./types";
+import { fieldValidationMessages } from "./validation-messages";
 
 const SelectOptionSchema = z.object({
   id: z.string().min(1),
@@ -61,26 +62,27 @@ export const selectHandler: ValueFieldType = {
   type: "select",
   kind: "value",
   configSchema: SelectConfigSchema,
-  validate(raw, configRaw, required) {
+  validate(raw, configRaw, required, context) {
+    const t = fieldValidationMessages(context?.locale);
     const parsed = SelectConfigSchema.safeParse(configRaw ?? {});
-    if (!parsed.success) return fail("invalid field config");
+    if (!parsed.success) return fail(t.config);
     const config = parsed.data;
     const ids = new Set(config.options.map((o) => o.id));
     const normalized = normalizeIds(raw);
 
-    if (normalized === null) return required ? fail("required") : ok(null);
-    if (normalized === "invalid") return fail("must be an array of option ids");
-    if (normalized.length === 0) return required ? fail("required") : ok(null);
-    if (!config.multiple && normalized.length > 1) return fail("max 1 selected");
+    if (normalized === null) return required ? fail(t.required) : ok(null);
+    if (normalized === "invalid") return fail(t.options);
+    if (normalized.length === 0) return required ? fail(t.required) : ok(null);
+    if (!config.multiple && normalized.length > 1) return fail(t.maxSelected({ count: 1 }));
 
     for (const id of normalized) {
-      if (!ids.has(id)) return fail(`unknown option "${id}"`);
+      if (!ids.has(id)) return fail(t.option({ id }));
     }
     if (config.minSelected !== undefined && normalized.length < config.minSelected) {
-      return fail(`min ${config.minSelected} selected`);
+      return fail(t.minSelected({ count: config.minSelected }));
     }
     if (config.maxSelected !== undefined && normalized.length > config.maxSelected) {
-      return fail(`max ${config.maxSelected} selected`);
+      return fail(t.maxSelected({ count: config.maxSelected }));
     }
     return ok(normalized);
   },

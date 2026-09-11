@@ -1,5 +1,5 @@
-import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { isUniqueViolation, logger, toPgUuidArray } from "@k2b/cloud/services";
+import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { sql } from "bun";
 import { FieldColumnSpecSchema, RecordDisplayConfigSchema, ViewUiSettingsSchema } from "../contracts";
 import { isKnownFieldType } from "../field-types";
@@ -8,7 +8,7 @@ import { normalizeRefKey } from "../ref-syntax";
 import { logAudit, type SqlClient } from "./audit";
 import { buildFormulaSqlProjections } from "./computed-projections";
 import { getGridsCrudMessages } from "./crud-messages";
-import { degradeForTableSchemaChange, lockFederatedSchemaTables, refreshForTableSchemaChange } from "./federated-tables";
+import { degradeForTableSchemaChange, refreshForTableSchemaChange } from "./federated-tables";
 import { getFieldDependents, hasBlockingDependents } from "./field-dependents";
 import {
   dropFieldIndex,
@@ -21,9 +21,11 @@ import {
 import { get, listByTable, mapFieldRow } from "./field-read";
 import { cleanupPreparedUniqueIndex } from "./field-unique-index-lifecycle";
 import { materializeFieldDefault, validateDefaultValue, validateFieldConfig, validateLinkOrComputedConfig } from "./field-validation";
+import { assertFinalizedResultTypes, lockFinalizedSchema } from "./finalized-schema";
 import { emitTableMetadataEvent } from "./metadata-events";
 import { namedResourceConflict, writeNamedResource } from "./named-resource-conflict";
 import { numberSeriesFormatForField, provisionFieldNumberSeries, setNumberSeriesArchived, syncNumberSeriesFormat } from "./number-series";
+import { validateObjectListSchemaChange } from "./object-list-schema";
 import { rewriteFieldNameReferences } from "./reference-renames";
 import { insertWithShortId } from "./short-id";
 import type { CreateFieldInput, Field, UpdateFieldInput } from "./types";
@@ -254,6 +256,7 @@ const prepareFieldCreate = async (input: CreateFieldInput, locale?: string): Pro
 const insertPreparedField = async (state: FieldCreateState, actorId: string | null, locale?: string): Promise<Result<Field>> =>
   sql.begin(async (tx): Promise<Result<Field>> => {
     const field = state.candidate;
+    await lockFinalizedSchema(tx, field.tableId);
     const finalization = await requireFinalizationForIdConfig(tx, field.tableId, field.type, field.config, locale);
     if (!finalization.ok) return finalization;
     if (state.tableKind === "federated") await degradeForTableSchemaChange(field.tableId, actorId, tx);
@@ -597,6 +600,9 @@ export const update = async (id: string, input: UpdateFieldInput, actorId: strin
   try {
     txResult = await sql
       .begin(async (tx): Promise<Result<Field>> => {
+        await lockFinalizedSchema(tx, existing.tableId);
+        const listSchema = await validateObjectListSchemaChange(tx, existing, nextResult.data.config, nextResult.data.required, locale);
+        if (!listSchema.ok) return listSchema;
         await degradeForTableSchemaChange(existing.tableId, actorId, tx);
         const finalization = await requireFinalizationForIdConfig(tx, existing.tableId, existing.type, nextResult.data.config, locale);
         if (!finalization.ok) return finalization;
@@ -617,6 +623,9 @@ export const update = async (id: string, input: UpdateFieldInput, actorId: strin
         if (existing.name !== field.name) {
           await rewriteFieldNameReferences({ tableId: existing.tableId, oldName: existing.name, newName: field.name }, tx);
         }
+
+        const preserved = await assertFinalizedResultTypes(tx, existing.tableId, locale);
+        if (!preserved.ok) throw preserved;
 
         return ok(field);
       })
@@ -748,8 +757,15 @@ export const restore = async (id: string, actorId: string | null, locale?: strin
     }
   }
   let restored: Result<Field>;
+  let rejectedSchema: Result<Field> | undefined;
   try {
     restored = await sql.begin(async (tx): Promise<Result<Field>> => {
+      await lockFinalizedSchema(tx, existing.tableId);
+      const listSchema = await validateObjectListSchemaChange(tx, existing, existing.config, existing.required, locale);
+      if (!listSchema.ok) {
+        rejectedSchema = listSchema;
+        throw listSchema;
+      }
       await degradeForTableSchemaChange(existing.tableId, actorId, tx);
       const finalization = await requireFinalizationForIdConfig(tx, existing.tableId, existing.type, existing.config, locale);
       if (!finalization.ok) return finalization;
@@ -769,11 +785,17 @@ export const restore = async (id: string, actorId: string | null, locale?: strin
         messages.fieldNameUnique,
       );
       if (!result.ok) return result;
+      const preserved = await assertFinalizedResultTypes(tx, existing.tableId, locale);
+      if (!preserved.ok) {
+        rejectedSchema = preserved;
+        throw preserved;
+      }
       await logAudit({ tableId: existing.tableId, userId: actorId, action: "restored" }, tx);
       return result;
     });
   } catch (error) {
     if (restoreUniqueIndex) await dropFieldUniqueIndex(id);
+    if (rejectedSchema && error === rejectedSchema) return rejectedSchema;
     throw error;
   }
   if (!restored.ok) {
@@ -800,7 +822,7 @@ export const softDelete = async (id: string, actorId: string | null, locale?: st
     // Keep the same lock order as Combined-table publication: schema lock,
     // then table/revision rows. This prevents publish/delete deadlocks and
     // makes the dependent scan stable for the complete mutation.
-    await lockFederatedSchemaTables([existing.tableId], tx);
+    await lockFinalizedSchema(tx, existing.tableId);
     // Serialize policy edits and field deletion through the parent table.
     // This keeps selected-field audit requirements valid under concurrent
     // admin requests.

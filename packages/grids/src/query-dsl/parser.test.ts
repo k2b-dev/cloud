@@ -1,9 +1,18 @@
 import { describe, expect, test } from "bun:test";
+import { FORMULA_LIMITS } from "../formula/parser";
 import { parseGridsQueryDsl } from "./parser";
 
 const withoutSpans = <T>(value: T): T => JSON.parse(JSON.stringify(value, (key, item) => (key === "span" ? undefined : item)));
 
 describe("parseGridsQueryDsl", () => {
+  test("surfaces formula complexity diagnostics in a query", () => {
+    const source = `select formula(${Array(FORMULA_LIMITS.depth + 1)
+      .fill("1")
+      .join("+")}) as result`;
+    const result = parseGridsQueryDsl(source);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.diagnostics[0]?.message).toContain("levels of nesting");
+  });
   test.each([
     ["where IF(true, SUM(1, ), false)", 23],
     ["select formula(IF(true, SUM(1, ), 0)) as broken", 32],

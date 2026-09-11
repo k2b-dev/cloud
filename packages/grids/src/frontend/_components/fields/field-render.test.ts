@@ -22,9 +22,33 @@ const field = (patch: Partial<Field> & Pick<Field, "id" | "type">): Field => ({
 });
 
 describe("field-render helpers", () => {
+  test("object-list edits contain only input cells without changing the loaded snapshot", () => {
+    const list = field({
+      id: "Items1",
+      type: "object_list",
+      config: {
+        fields: [
+          { id: "Amount", name: "Amount", type: "number" },
+          { id: "Total1", name: "Total", type: "number", formula: { expression: "Amount * 2" } },
+        ],
+      },
+    });
+    const snapshot = [{ Amount: "9007199254740993.25", Total1: "18014398509481986.5" }];
+    expect(initialFieldInputValue(list, snapshot)).toEqual([{ Amount: "9007199254740993.25" }]);
+    expect(snapshot[0]?.Total1).toBe("18014398509481986.5");
+    expect(initialFieldInputValue({ ...list, defaultValue: snapshot })).toEqual([{ Amount: "9007199254740993.25" }]);
+    expect(initialFieldInputValue({ ...list, defaultValue: snapshot }, null)).toBeNull();
+    for (const omitEmpty of [false, true]) {
+      expect(sanitizeFieldValues([list], { Items1: [] }, { omitEmpty })).toEqual({ Items1: [] });
+    }
+    // Submission must not silently accept an attempted computed-cell write.
+    expect(sanitizeFieldValues([list], { Items1: snapshot })).toEqual({ Items1: snapshot });
+  });
+
   test("record input field support excludes computed and system fields", () => {
     expect(isRecordInputField("text")).toBe(true);
     expect(isRecordInputField("relation")).toBe(true);
+    expect(isRecordInputField("object_list")).toBe(true);
     expect(isRecordInputField("formula")).toBe(false);
     expect(isRecordInputField("created_at")).toBe(false);
   });

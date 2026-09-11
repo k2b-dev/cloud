@@ -2,10 +2,20 @@ import type { DateContext } from "@k2b/stdlib";
 import { sql } from "bun";
 import type { ComputedColumnSpec } from "../contracts";
 import { decimalStringToCanonical } from "../formula/numeric";
+import { collectFieldRefs, parseFormula } from "../formula/parser";
+import { normalizeRefKey } from "../ref-syntax";
 import type { SqlClient } from "./audit";
-import { get as getField } from "./field-read";
+import { get as getField, listByTable } from "./field-read";
 import { storageOf } from "./field-storage";
-import { compileFormulaSourceToSql, type FormulaSqlExpression, type FormulaSqlType } from "./formula-sql-compiler";
+import { finalizedFieldSql } from "./finalized-field-sql";
+import {
+  compileFormulaFieldToSql,
+  compileFormulaSourceToSql,
+  type FormulaSqlExpression,
+  type FormulaSqlType,
+  MAX_FORMULA_INLINE_DEPTH,
+} from "./formula-sql-compiler";
+import { numericAverageSql } from "./numeric-division-sql";
 import { liveRecordParentJoinSql } from "./parent-checks";
 import { type ExpansionViewer, resolveReadableTableIds } from "./relation-access";
 import { assertSqlIdentifier } from "./sql-ident";
@@ -35,6 +45,7 @@ import type { Field } from "./types";
 type ComputedProjectionOutputType = "text" | "numeric" | "decimal" | "int" | "date" | "timestamptz" | "boolean" | "json";
 
 export type ComputedProjection = {
+  errorSql?: unknown;
   /** The lookup/rollup field whose value this projection produces. */
   fieldId: string;
   /** SQL alias under which the value is exposed in the SELECT list. */
@@ -51,7 +62,7 @@ export type ComputedProjection = {
 
 /** Maps a projection output type onto the formula-compiler's SQL type system so
  *  GQL can treat lookup/rollup values like any other typed expression. */
-const computedOutputToFormulaType = (output: ComputedProjectionOutputType): FormulaSqlType => {
+export const computedOutputToFormulaType = (output: ComputedProjectionOutputType): FormulaSqlType => {
   switch (output) {
     case "numeric":
     case "decimal":
@@ -161,40 +172,117 @@ const lookupOutputType = (field: Field): ComputedProjectionOutputType => {
   return "text";
 };
 
+type ComputedOptions = {
+  client?: SqlClient;
+  recordAlias?: string;
+  authorizedTableIds?: ReadonlySet<string>;
+  now?: Date;
+  dateConfig?: DateContext;
+  /** Internal traversal guard; matches the formula compiler's supported inline depth. */
+  stack?: ReadonlySet<string>;
+  fieldIds?: ReadonlySet<string>;
+};
+
+const formulaComputedDependencies = (root: Field, fields: Field[]): Set<string> => {
+  const visited = new Set<string>();
+  const needed = new Set<string>();
+  const visit = (field: Field) => {
+    if (visited.has(field.id)) return;
+    visited.add(field.id);
+    if (field.type === "lookup" || field.type === "rollup") {
+      needed.add(field.id);
+      return;
+    }
+    if (field.type !== "formula" || typeof field.config.expression !== "string") return;
+    const parsed = parseFormula(field.config.expression);
+    if (!parsed.ok) return;
+    for (const ref of collectFieldRefs(parsed.ast)) {
+      for (const dependency of fields) {
+        if (!dependency.deletedAt && [dependency.shortId, dependency.name].some((key) => normalizeRefKey(key) === normalizeRefKey(ref)))
+          visit(dependency);
+      }
+    }
+  };
+  visit(root);
+  return needed;
+};
+
+const targetValue = async (
+  field: Field,
+  alias: string,
+  options: ComputedOptions,
+): Promise<{
+  sql: unknown;
+  errorSql?: unknown;
+  outputType: ComputedProjectionOutputType;
+} | null> => {
+  const descriptor = storageOf(field);
+  if (field.type === "formula") {
+    const fields = await listByTable(field.tableId, false, options.client);
+    const computedFieldSql = await buildComputedFieldSqlMap(fields, {
+      ...options,
+      recordAlias: alias,
+      fieldIds: formulaComputedDependencies(field, fields),
+    });
+    const compiled = compileFormulaFieldToSql(field, {
+      fields,
+      recordAlias: alias,
+      computedFieldSql,
+      now: options.now,
+      dateConfig: options.dateConfig,
+    });
+    return compiled.ok ? { ...compiled.expression, outputType: outputTypeForFormula(compiled.expression.type) } : null;
+  }
+  if (field.type === "lookup" || field.type === "rollup") {
+    const fields = await listByTable(field.tableId, false, options.client);
+    const projections = await buildComputedProjections(fields, { ...options, recordAlias: alias, fieldIds: new Set([field.id]) });
+    const projection = projections.find((item) => item.fieldId === field.id);
+    return projection ? { sql: projection.expr, errorSql: projection.errorSql, outputType: projection.outputType } : null;
+  }
+  const projected =
+    descriptor.kind === "jsonbArray" || descriptor.kind === "json"
+      ? sql`${sql.unsafe(alias)}.data->${field.id}`
+      : descriptor.project(field, alias);
+  return projected === null ? null : { sql: projected, outputType: lookupOutputType(field) };
+};
+
 const buildLookupProjection = async (options: {
+  targetTableId: string;
   config: RelationComputedConfig;
   field: Field;
   recordAlias: string;
   resolveTargetField: TargetFieldResolver;
+  context: ComputedOptions;
 }): Promise<ComputedProjection | null> => {
   const { config, field, recordAlias, resolveTargetField } = options;
   if (!config.relationFieldId || !config.targetFieldId) return null;
   const targetField = await resolveTargetField(config.targetFieldId);
-  if (!targetField || targetField.deletedAt) return null;
+  if (!targetField || targetField.deletedAt || targetField.tableId !== options.targetTableId) return null;
 
-  const descriptor = storageOf(targetField);
-  const projected =
-    descriptor.kind === "jsonbArray" || descriptor.kind === "json"
-      ? sql`t.data->${config.targetFieldId}`
-      : descriptor.project(targetField, "t");
-  if (!projected) return null;
-
-  const expr = sql`
-      (SELECT ${projected}
+  const targetAlias = `${recordAlias}_t`;
+  const value = await targetValue(targetField, targetAlias, options.context);
+  if (!value) return null;
+  const target = sql.unsafe(targetAlias);
+  const source = sql`
        FROM grids.record_links rl
-       JOIN grids.records t ON t.id = rl.to_record_id
-       ${liveRecordParentJoinSql("t", "tt", "tb")}
+       JOIN grids.records ${target} ON ${target}.id = rl.to_record_id
+       ${liveRecordParentJoinSql(targetAlias, "tt", "tb")}
        WHERE rl.from_record_id = ${sql.unsafe(recordAlias)}.id
          AND rl.from_field_id = ${config.relationFieldId}::uuid
-         AND t.deleted_at IS NULL
-         AND t.data->${config.targetFieldId} IS NOT NULL
+         AND ${target}.deleted_at IS NULL
+         AND ${target}.table_id = ${targetField.tableId}::uuid
+         AND (${value.sql} IS NOT NULL OR ${value.errorSql ?? sql`false`})
        ORDER BY rl.position
-       LIMIT 1)`;
+       LIMIT 1`;
+
+  const expr = sql`
+      (SELECT ${value.sql} ${source})`;
   const alias = lookupAlias(field.id);
   return {
     fieldId: field.id,
     alias,
-    outputType: lookupOutputType(targetField),
+    outputType: value.outputType,
+    ...(value.errorSql === undefined ? {} : { errorSql: sql`COALESCE((SELECT ${value.errorSql} ${source}), false)` }),
     expr,
     fragment: sql`${expr} AS ${sql.unsafe(alias)}`,
   };
@@ -209,23 +297,28 @@ const rollupAggregateSql = (agg: RelationComputedConfig["agg"]): unknown | null 
 };
 
 const buildRollupProjection = async (options: {
+  targetTableId: string;
   config: RelationComputedConfig;
   field: Field;
   recordAlias: string;
   resolveTargetField: TargetFieldResolver;
+  context: ComputedOptions;
 }): Promise<ComputedProjection | null> => {
   const { config, field, recordAlias, resolveTargetField } = options;
   if (!config.relationFieldId) return null;
   const alias = rollupAlias(field.id);
   if (config.agg === "count") {
+    const targetAlias = `${recordAlias}_t`;
+    const target = sql.unsafe(targetAlias);
     const expr = sql`
         (SELECT count(*)::bigint
          FROM grids.record_links rl
-         JOIN grids.records t ON t.id = rl.to_record_id
-         ${liveRecordParentJoinSql("t", "tt", "tb")}
+         JOIN grids.records ${target} ON ${target}.id = rl.to_record_id
+         ${liveRecordParentJoinSql(targetAlias, "tt", "tb")}
          WHERE rl.from_record_id = ${sql.unsafe(recordAlias)}.id
            AND rl.from_field_id = ${config.relationFieldId}::uuid
-           AND t.deleted_at IS NULL)`;
+           AND ${target}.deleted_at IS NULL
+           AND ${target}.table_id = ${options.targetTableId}::uuid)`;
     return {
       fieldId: field.id,
       alias,
@@ -239,22 +332,30 @@ const buildRollupProjection = async (options: {
   const aggregate = rollupAggregateSql(config.agg);
   if (!aggregate) return null;
   const targetField = await resolveTargetField(config.targetFieldId);
-  if (!targetField || targetField.deletedAt) return null;
-  const targetProjection = storageOf(targetField).project(targetField, "t");
-  if (!targetProjection) return null;
-
-  const expr = sql`
-      (SELECT ${aggregate}(${targetProjection})
+  if (!targetField || targetField.deletedAt || targetField.tableId !== options.targetTableId) return null;
+  const targetAlias = `${recordAlias}_t`;
+  const value = await targetValue(targetField, targetAlias, options.context);
+  if (!value) return null;
+  const numeric = ["numeric", "decimal", "int"].includes(value.outputType);
+  if (!numeric && (!(config.agg === "min" || config.agg === "max") || !["text", "date", "timestamptz"].includes(value.outputType)))
+    return null;
+  const target = sql.unsafe(targetAlias);
+  const source = sql`
        FROM grids.record_links rl
-       JOIN grids.records t ON t.id = rl.to_record_id
-       ${liveRecordParentJoinSql("t", "tt", "tb")}
+       JOIN grids.records ${target} ON ${target}.id = rl.to_record_id
+       ${liveRecordParentJoinSql(targetAlias, "tt", "tb")}
        WHERE rl.from_record_id = ${sql.unsafe(recordAlias)}.id
          AND rl.from_field_id = ${config.relationFieldId}::uuid
-         AND t.deleted_at IS NULL)`;
+         AND ${target}.deleted_at IS NULL
+         AND ${target}.table_id = ${targetField.tableId}::uuid`;
+
+  const aggregateValue = config.agg === "avg" ? numericAverageSql(value.sql) : sql`${aggregate}(${value.sql})`;
+  const expr = sql`(SELECT ${aggregateValue} ${source})`;
   return {
     fieldId: field.id,
     alias,
-    outputType: "numeric",
+    outputType: numeric ? "numeric" : value.outputType,
+    ...(value.errorSql === undefined ? {} : { errorSql: sql`COALESCE((SELECT bool_or(${value.errorSql}) ${source}), false)` }),
     expr,
     fragment: sql`${expr} AS ${sql.unsafe(alias)}`,
   };
@@ -276,14 +377,7 @@ const buildRollupProjection = async (options: {
  * aggregates. Without this lookup, cross-table rollup columns were
  * silently skipped.
  */
-export const buildComputedProjections = async (
-  fields: Field[],
-  options: {
-    client?: SqlClient;
-    recordAlias?: string;
-    authorizedTableIds?: ReadonlySet<string>;
-  } = {},
-): Promise<ComputedProjection[]> => {
+export const buildComputedProjections = async (fields: Field[], options: ComputedOptions = {}): Promise<ComputedProjection[]> => {
   const fieldsById = new Map(fields.map((f) => [f.id, f]));
   const out: ComputedProjection[] = [];
   const recordAlias = assertSqlIdentifier(options.recordAlias ?? "r");
@@ -292,39 +386,69 @@ export const buildComputedProjections = async (
   for (const field of fields) {
     if (field.deletedAt) continue;
     if (field.type !== "lookup" && field.type !== "rollup") continue;
+    if (options.fieldIds && !options.fieldIds.has(field.id)) continue;
+    if (options.stack?.has(field.id) || (options.stack?.size ?? 0) >= MAX_FORMULA_INLINE_DEPTH) continue;
+    const context = { ...options, stack: new Set([...(options.stack ?? []), field.id]) };
     const cfg = field.config as RelationComputedConfig;
     if (!cfg.relationFieldId) continue;
 
     const relationField = fieldsById.get(cfg.relationFieldId);
     if (!relationField || relationField.type !== "relation") continue;
     const targetTableId = (relationField.config as { targetTableId?: string }).targetTableId;
+    if (!targetTableId) continue;
     if (options.authorizedTableIds && (!targetTableId || !options.authorizedTableIds.has(targetTableId))) continue;
     const projection =
       field.type === "lookup"
-        ? await buildLookupProjection({ config: cfg, field, recordAlias, resolveTargetField })
-        : await buildRollupProjection({ config: cfg, field, recordAlias, resolveTargetField });
-    if (projection) out.push(projection);
+        ? await buildLookupProjection({ config: cfg, field, recordAlias, resolveTargetField, context, targetTableId })
+        : await buildRollupProjection({ config: cfg, field, recordAlias, resolveTargetField, context, targetTableId });
+    if (projection) {
+      const frozen =
+        projection.outputType === "json"
+          ? sql`CASE WHEN ${sql.unsafe(recordAlias)}.finalized_at IS NOT NULL THEN ${sql.unsafe(recordAlias)}.data->${field.id} ELSE ${projection.expr} END`
+          : finalizedFieldSql(field.id, { sql: projection.expr, type: computedOutputToFormulaType(projection.outputType) }, recordAlias)
+              .sql;
+      const errorSql =
+        projection.errorSql === undefined
+          ? undefined
+          : sql`CASE WHEN ${sql.unsafe(recordAlias)}.finalized_at IS NOT NULL THEN false ELSE ${projection.errorSql} END`;
+      out.push({ ...projection, errorSql, expr: frozen, fragment: sql`${frozen} AS ${sql.unsafe(projection.alias)}` });
+    }
   }
 
   return out;
 };
 
 /**
- * Builds a `fieldId → typed SQL expression` map for the lookup/rollup fields on
- * a table, for the GQL compiler to treat them like any other scalar expression
+ * Builds a `fieldId → typed SQL expression` map for lookup/rollup fields and
+ * optionally the live formulas owned by a virtual table. These allow
+ * the GQL compiler to treat them like any other scalar expression
  * (select / sort / filter / formula operand). Reuses the same correlated
  * subqueries as the records pipeline, so values match exactly.
  */
 export const buildComputedFieldSqlMap = async (
   fields: Field[],
-  options: {
-    client?: SqlClient;
-    recordAlias?: string;
-    authorizedTableIds?: ReadonlySet<string>;
-  } = {},
+  options: ComputedOptions & { useFinalizedFormulaValues?: boolean } = {},
 ): Promise<Map<string, FormulaSqlExpression>> => {
   const projections = await buildComputedProjections(fields, options);
-  return new Map(projections.map((p) => [p.fieldId, { sql: p.expr, type: computedOutputToFormulaType(p.outputType) }]));
+  const expressions = new Map<string, FormulaSqlExpression>(
+    projections.map((p) => [p.fieldId, { sql: p.expr, errorSql: p.errorSql, type: computedOutputToFormulaType(p.outputType) }]),
+  );
+  if (options.useFinalizedFormulaValues === false) {
+    // A Combined row carries the source's finalization status, not snapshots
+    // of the Combined table's formulas. Reuse this map in every GQL scope.
+    for (const field of fields) {
+      if (field.deletedAt || field.type !== "formula") continue;
+      const compiled = compileFormulaFieldToSql(field, {
+        fields,
+        recordAlias: options.recordAlias,
+        dateConfig: options.dateConfig,
+        now: options.now,
+        useFinalizedFormulaValues: false,
+      });
+      if (compiled.ok) expressions.set(field.id, compiled.expression);
+    }
+  }
+  return expressions;
 };
 
 /**
@@ -336,7 +460,7 @@ export const buildComputedFieldSqlMap = async (
  */
 export const buildFormulaSqlProjections = (
   fields: Field[],
-  options: { dateConfig?: DateContext; now?: Date; recordAlias?: string } = {},
+  options: { dateConfig?: DateContext; now?: Date; recordAlias?: string; useFinalizedFormulaValues?: boolean } = {},
 ): ComputedProjection[] => {
   const out: ComputedProjection[] = [];
   const now = options.now ?? new Date();
@@ -345,11 +469,12 @@ export const buildFormulaSqlProjections = (
     if (field.deletedAt || field.type !== "formula") continue;
     const expression = (field.config as { expression?: unknown }).expression;
     if (typeof expression !== "string" || expression.trim().length === 0) continue;
-    const compiled = compileFormulaSourceToSql(expression, {
+    const compiled = compileFormulaFieldToSql(field, {
       fields,
       recordAlias,
       dateConfig: options.dateConfig,
       now,
+      useFinalizedFormulaValues: options.useFinalizedFormulaValues,
     });
     if (!compiled.ok) continue;
     const alias = formulaAlias(field.id);
@@ -404,11 +529,11 @@ export const buildComputedColumnSqlProjections = (
   return { projections, sqlColumnIds };
 };
 
-const normalizeProjectionValue = (outputType: ComputedProjectionOutputType, raw: unknown): unknown => {
+export const normalizeProjectionValue = (outputType: ComputedProjectionOutputType, raw: unknown): unknown => {
   switch (outputType) {
     case "decimal":
-      return decimalProjectionValue(raw);
     case "numeric":
+      return decimalProjectionValue(raw);
     case "int": {
       const value = typeof raw === "number" ? raw : Number(raw as string);
       return Number.isFinite(value) ? value : null;

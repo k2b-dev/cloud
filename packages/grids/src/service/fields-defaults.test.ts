@@ -1,5 +1,23 @@
 import { describe, expect, test } from "bun:test";
+import { getRecordWritableFieldType } from "../field-types";
 import { materializeFieldDefault, validateDefaultValue } from "./fields";
+
+test("object-list defaults retain editable values, not calculated assignments", () => {
+  const config = {
+    fields: [
+      { id: "Amount", name: "Amount", type: "number" },
+      { id: "Total1", name: "Total", type: "number", formula: { expression: "Amount * 2" } },
+    ],
+  };
+  const validated = validateDefaultValue("object_list", config, [{ Amount: "0.10" }]);
+  expect(validated).toEqual({ ok: true, data: [{ Amount: "0.1" }] });
+  if (!validated.ok) throw validated.error;
+  expect(getRecordWritableFieldType("object_list")?.validate(validated.data, config, false)).toEqual({
+    ok: true,
+    value: [{ Amount: "0.1", Total1: "0.2" }],
+  });
+});
+
 import type { Field } from "./types";
 
 const dateField = (defaultValue: unknown, includeTime = false): Field => ({

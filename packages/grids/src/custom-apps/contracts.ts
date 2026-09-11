@@ -1163,7 +1163,7 @@ export const CUSTOM_APP_REFERENCE = {
   blocks: {
     markdown: { required: ["id", "type", "markdown"] },
     records: {
-      required: ["id", "type", "source", "display", "searchable", "pageSize"],
+      required: ["id", "type", "source", "display"],
       source: "Saved view or inline GQL with implicit typed request context",
       display: "Use an explicit App table projection or inherit the existing Cards configuration from a saved View",
       search: "Optional server-side PostgreSQL search over displayed result fields",
@@ -1171,8 +1171,8 @@ export const CUSTOM_APP_REFERENCE = {
       rowNavigate: "Optionally navigate a row id or selected single relation into a target page record parameter",
       rowActions: "Optionally invoke plural workflow actions with ROW.id and accessible label/icon presentation",
     },
-    referencedRecords: {
-      required: ["id", "type", "sourceTableId", "relationFieldId", "fieldIds", "display", "searchable", "pageSize"],
+    referenced_records: {
+      required: ["id", "type", "sourceTableId", "relationFieldId", "fieldIds", "display"],
       source: "One exact Source table and Relation field targeting the current Record page",
       display: "Render the explicitly selected Source fields as a table or cards",
       search: "Optional server-side PostgreSQL search over the selected fields",
@@ -1197,9 +1197,15 @@ export const CUSTOM_APP_REFERENCE = {
       note: "Displays allowlisted fields from the current page record and may edit values or attachments from an explicit subset",
     },
     comments: { required: ["id", "type"], note: "Shows the bounded comment thread for the current page record" },
+    html: {
+      required: ["id", "type", "fieldId"],
+      height: "compact, normal (default), or large",
+      note: "Displays an existing rendered HTML field from the current page record in an isolated frame",
+    },
     form: {
       required: ["id", "type", "formId"],
-      fixedValues: "Optionally supply trusted typed LITERAL values or compatible PARAMS and page RECORD relations",
+      mode: "create (default) or edit; edit requires a Record page for the Form's table",
+      fixedValues: "Optionally supply trusted typed LITERAL values, compatible PARAMS or page RECORD relations, or AUTH.currentUser",
       onSuccessNavigate: "Optionally replace-navigate using PARAMS and RESULT.recordId",
     },
     actions: {

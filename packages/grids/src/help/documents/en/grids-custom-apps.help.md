@@ -24,7 +24,7 @@ Run `cld grids apps runtime read <app-id> --json` with the ID from the App URL. 
 
 The `apps runtime` commands read paged records, submit page or sidebar Forms, update published editable fields, manage comments and attachments, download stored PDFs, invoke actions or scanners, and read their run status. Use `--help` for a command's inputs. Page-scoped commands require the same parameters as discovery.
 
-Submissions, updates, scans, and actions require `--yes`. Form submissions are not retry-idempotent. Reuse an action's operation ID only when retrying the same operation. **Queued** means accepted, not finished: read the returned run status before deciding to retry.
+Submissions, updates, scans, and actions require `--yes`. Retry Form submissions with the exact body and its explicit `idempotencyKey`; unkeyed creates can duplicate. Reuse an action's operation ID only for that same operation. **Queued** means accepted, not finished: inspect the run before retrying.
 
 These commands use the same published App permissions as the browser. They cannot bypass unavailable blocks. Missing, deleted, invalid, unavailable, or unauthorized detail records return **Not Found**.
 

@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { fail, ok, type ValueFieldType } from "./types";
+import { fieldValidationMessages } from "./validation-messages";
 
 // ─────────────────────────────────────────────────────────────────
 // Tier-2 field types with real non-text input semantics.
@@ -23,17 +24,18 @@ export const percentHandler: ValueFieldType = {
   type: "percent",
   kind: "value",
   configSchema: PercentConfigSchema,
-  validate(raw, configRaw, required) {
+  validate(raw, configRaw, required, context) {
+    const t = fieldValidationMessages(context?.locale);
     const parsed = PercentConfigSchema.safeParse(configRaw ?? {});
-    if (!parsed.success) return fail("invalid field config");
+    if (!parsed.success) return fail(t.config);
     const range = parsed.data.range ?? "percent";
     const decimals = parsed.data.decimals ?? 2;
     const upper = range === "fraction" ? 1 : 100;
 
-    if (raw === null || raw === undefined || raw === "") return required ? fail("required") : ok(null);
+    if (raw === null || raw === undefined || raw === "") return required ? fail(t.required) : ok(null);
     const n = typeof raw === "number" ? raw : Number(typeof raw === "string" ? raw.trim() : raw);
-    if (!Number.isFinite(n)) return fail("must be a number");
-    if (n < 0 || n > upper) return fail(`must be between 0 and ${upper}`);
+    if (!Number.isFinite(n)) return fail(t.percentNumber);
+    if (n < 0 || n > upper) return fail(t.percentRange({ upper }));
 
     return ok(Number(n.toFixed(decimals)));
   },
@@ -50,28 +52,30 @@ export const durationHandler: ValueFieldType = {
   type: "duration",
   kind: "value",
   configSchema: DurationConfigSchema,
-  validate(raw, _config, required) {
-    if (raw === null || raw === undefined || raw === "") return required ? fail("required") : ok(null);
+  validate(raw, _config, required, context) {
+    const t = fieldValidationMessages(context?.locale);
+    if (raw === null || raw === undefined || raw === "") return required ? fail(t.required) : ok(null);
     if (typeof raw === "number") {
-      if (!Number.isFinite(raw) || raw < 0) return fail("must be a non-negative duration");
+      if (!Number.isFinite(raw) || raw < 0) return fail(t.durationNonNegative);
       return ok(Math.round(raw));
     }
-    if (typeof raw !== "string") return fail("must be a number of seconds or HH:MM:SS");
+    if (typeof raw !== "string") return fail(t.durationInput);
     const v = raw.trim();
     // HH:MM:SS or MM:SS
     const parts = v.split(":").map((p) => p.trim());
     if (parts.length === 1) {
       const n = Number(parts[0]);
-      if (!Number.isFinite(n) || n < 0) return fail("must be a non-negative duration");
+      if (!Number.isFinite(n) || n < 0) return fail(t.durationNonNegative);
       return ok(Math.round(n));
     }
     if (parts.length === 2 || parts.length === 3) {
       const nums = parts.map((p) => Number(p));
-      if (nums.some((n) => !Number.isFinite(n) || n < 0)) return fail("invalid duration");
+      if (nums.some((n) => !Number.isFinite(n) || n < 0)) return fail(t.duration);
       const [h, m, s] = parts.length === 3 ? nums : [0, ...nums];
       const seconds = h! * 3600 + m! * 60 + s!;
+      if (!Number.isFinite(seconds)) return fail(t.durationNonNegative);
       return ok(seconds);
     }
-    return fail("invalid duration format");
+    return fail(t.durationFormat);
   },
 };

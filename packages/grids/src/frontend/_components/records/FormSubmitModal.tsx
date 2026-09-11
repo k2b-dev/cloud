@@ -59,7 +59,7 @@ function FormSubmitBody(props: {
   const fieldsById = new Map(props.fields.map((f) => [f.id, f]));
   const entries = userInputEntriesOf(props.form.config.fields);
 
-  const [values, setValues] = createSignal<Record<string, unknown>>(buildInitialValues(entries));
+  const [values, setValues] = createSignal<Record<string, unknown>>(buildInitialValues(entries, props.fields));
   const [inlineCreates, setInlineCreates] = createSignal<InlineCreateState>({});
   const [submitting, setSubmitting] = createSignal(false);
   const [pendingSubmission, setPendingSubmission] = createSignal<Record<string, unknown> | null>(null);
@@ -71,7 +71,8 @@ function FormSubmitBody(props: {
     if (
       done() ||
       (await confirmDiscardIfDirty(
-        () => JSON.stringify(values()) !== JSON.stringify(buildInitialValues(entries)) || Object.keys(inlineCreates()).length > 0,
+        () =>
+          JSON.stringify(values()) !== JSON.stringify(buildInitialValues(entries, props.fields)) || Object.keys(inlineCreates()).length > 0,
       ))
     )
       props.close();
@@ -133,7 +134,7 @@ function FormSubmitBody(props: {
 
   const handleAddAnother = () => {
     setPendingSubmission(null);
-    setValues(buildInitialValues(entries));
+    setValues(buildInitialValues(entries, props.fields));
     setInlineCreates({});
     setError(null);
     setDone(false);

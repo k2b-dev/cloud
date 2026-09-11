@@ -1,6 +1,7 @@
 import { CapabilitySemanticLinkSchema } from "@k2b/cloud/contracts";
 import { z } from "zod";
 import { ShortIdSchema } from "./contracts";
+import { ObjectListColumnSchema } from "./field-types/object-list";
 
 const TimestampSchema = z.string().datetime({ offset: true });
 const CursorSchema = z.string().min(1).max(16_384).optional().describe("Opaque cursor returned by the previous page.");
@@ -30,7 +31,7 @@ export const BaseListInputSchema = z
 
 export const BaseReadInputSchema = z.object({ id: ShortIdSchema.describe("Stable public Base ID.") }).strict();
 
-const ContextKindSchema = z.enum(["tables", "views", "fields", "options"]);
+const ContextKindSchema = z.enum(["tables", "views", "fields", "options", "list-columns"]);
 const GridsPermissionSchema = z.enum(["read", "write", "admin"]);
 
 export const TableCapabilityDataSchema = z
@@ -122,6 +123,9 @@ export const GqlContextItemSchema = z.discriminatedUnion("kind", [
   ViewCapabilityDataSchema.omit({ icon: true, links: true }),
   FieldContextItemSchema,
   OptionContextItemSchema,
+  // The service normalizes through ObjectListConfigSchema. The transport uses
+  // its same column shape without the transform, so the manifest is JSON Schema.
+  z.object({ kind: z.literal("list-column"), fieldId: ShortIdSchema, column: ObjectListColumnSchema.in }).strict(),
 ]);
 
 export const GqlContextDataSchema = z
@@ -130,15 +134,21 @@ export const GqlContextDataSchema = z
     kind: ContextKindSchema,
     items: z.array(GqlContextItemSchema).max(100),
     recordWrite: RecordWriteContextSchema.optional(),
+    list: z
+      .object({ fieldId: ShortIdSchema, minItems: z.number().int().nonnegative(), maxItems: z.number().int().positive() })
+      .strict()
+      .optional(),
   })
   .strict();
 
 export const GqlContextInputSchema = z
   .object({
     baseId: ShortIdSchema.describe("Public Base ID whose permission-shaped GQL context should be loaded."),
-    kind: ContextKindSchema.default("tables").describe("Catalog section: tables, views, fields, or exact select option IDs."),
-    tableId: ShortIdSchema.optional().describe("Public Table ID; required for fields and options, optional for views."),
-    fieldId: ShortIdSchema.optional().describe("Public Select Field ID; required when kind is options."),
+    kind: ContextKindSchema.default("tables").describe(
+      "Catalog section: tables, views, fields, select options, or typed object-list columns.",
+    ),
+    tableId: ShortIdSchema.optional().describe("Public Table ID; required for fields, options and list-columns, optional for views."),
+    fieldId: ShortIdSchema.optional().describe("Public Field ID; required for options or list-columns. Optional filter for fields."),
     includeWriteContext: z
       .boolean()
       .default(false)

@@ -268,6 +268,22 @@ file uploads, edits, deletes, and restores are unavailable.
 
 Use `--if-version` for optimistic concurrency when updating a previously read record. `records import` accepts an array or `{ "items": [...] }` and creates the batch in one transaction.
 
+### Typed rows inside a record
+
+Use `object_list` for a bounded list owned by one record, such as invoice positions. Use a related table instead when rows need independent permissions, links, or lifecycle. Inspect `fields type object_list --json` and `records shape <table> --json` before writing.
+
+- Each column has a stable six-character `id`, a `name`, a scalar `type`, optional `config`, and `required`. Supported scalar types are `text`, `longtext`, `number`, `boolean`, `date`, `select`, `percent`, and `duration`; their usual validation applies. Nested lists, relations, and arbitrary JSON columns are not supported.
+- A record value is an array of objects keyed by column IDs, not names: `{"Items1":[{"Label1":"Consulting","Amount":"42.50"}]}`. Send exact amounts as decimal strings. The field and column IDs in this example must be replaced with IDs from the actual schema.
+- A write replaces the entire list atomically. Omit the record field to leave it unchanged on update; send `[]` to clear it when its `required`/`minItems` constraints allow that. Use the record version for concurrent edits.
+- Workflows assign a YAML sequence to the list field in `createRecord.values` or `updateRecord.set`. Quote exact decimal amounts and omit calculated cells. The same validation runs at execution; use `atomicRecords` with its locks and checks when several record changes must succeed or roll back together.
+- A column with `formula: {"expression":"Amount * 2"}` is read-only. Its expression uses sibling columns. Omit calculated columns when creating, importing, or updating rows; do not send a read response back unchanged. `records shape` excludes them from its example, while retaining the full configuration for discovery.
+- Selection columns are inputs only. Regex constraints apply to text inputs, not calculated text. Field creation/update checks SQL compatibility of row calculations and rejects unsupported expressions before saving.
+- Record formulas can aggregate a numeric column with `LIST_SUM(Items, 'Amount')`, `LIST_AVG`, `LIST_MIN`, or `LIST_MAX`; `LIST_COUNT(Items)` counts rows. Empty lists sum/count to zero; other aggregates return null. A missing list returns null.
+- GQL formulas can reference a joined list through its table alias: `formula(LIST_SUM(customer.Items, 'Amount'))`. This sums one record's list; `sum(formula(LIST_SUM(customer.Items, 'Amount')))` aggregates those totals across query rows. A join that repeats a record also repeats its total; choose the query's row scope accordingly.
+- While a record is a draft, calculated cells follow the formula. Finalization freezes the list and its calculated values together, preserving their scalar types. Subsequent formula changes must not rewrite finalized values.
+
+The list config accepts `minItems` (default 0) and `maxItems` (default 100). Limits are 1,000 rows, 200 columns, and 256 KiB per value. Examples show structure, not a guarantee that they satisfy custom constraints such as a text pattern; inspect the actual configuration before submitting.
+
 For connector projections, `records upsert-external` binds the exact provider, provider account, resource kind, and external ID to one Record. Reuse its idempotency key only for an uncertain retry, and pass the current version for an existing binding. `records upsert-external-batch` accepts `{ "items": [...] }` with at most 100 independently committed items. Each item carries its own `idempotencyKey`, `externalRef`, `values`, optional `ifVersion`, and optional `audit`. The ordered response keeps per-item successes and errors. Retry an unchanged interrupted batch safely; completed items replay. Use `records import` only for an atomic all-create batch.
 
 ```bash
@@ -354,6 +370,10 @@ cld grids snapshots list Assets <record-id> --json
 ```
 
 ## Publish Combined tables
+
+Object-list mappings require identical source and target column definitions, including IDs, scalar configurations and calculations. Combined tables do not remap individual list columns. List-level minimum/maximum row settings do not change the source-owned rows.
+
+Finalized source values stay frozen, including mapped formula results. The Combined table's own formulas still calculate over those values; source finalization does not freeze the reporting schema.
 
 A Combined table exposes one canonical, read-only table over stored source tables from one or more bases. Readers need permission only on
 the Combined target. They do not gain source-base navigation, raw source schema, non-published field history, or mutation rights. Queries,
@@ -617,6 +637,16 @@ cld grids formulas check Authors --expression 'LEN(Name)' --json
 
 ### Formula language reference
 
+Numeric results may be JSON numbers or decimal strings. JavaScript evaluation retains a decimal string when conversion to a number would lose digits, including intermediate results of literal-only formulas. Treat these strings as numbers using decimal arithmetic, not `Number(...)`, when calculating further. `number` columns inside object lists always use decimal strings; a configured `decimalPlaces` preserves that scale. Non-finite math results are formula errors, not the text `NaN` or `Infinity`.
+
+Finite addition, subtraction, multiplication, remainder, and sums use operand-sized precision within the supported numeric range. `MEDIAN` also keeps exact numeric values in SQL; it does not convert amounts to floating point to select the middle values.
+
+Division and averages use PostgreSQL numeric precision in both preview and SQL, after removing insignificant trailing zeroes from operands. Non-terminating results are rounded half away from zero at the selected scale (0–1,000 fractional digits, based on operand magnitudes and fractional digits). This is finite decimal arithmetic, not exact rational arithmetic. For a monetary result, explicitly use `ROUND(expression, 2)` or the currency's required scale; setting a column's decimal places validates the result rather than rounding it for you.
+
+Expressions are bounded to 20,000 characters, 64 nesting levels and 1,024 AST nodes across JS and SQL parsing. Caller-specific limits still apply (for example, 5,000 characters for a computed column and 20,000 for the whole GQL query). Reduce expression complexity when validation reports a limit; do not retry unchanged input.
+
+`ROUND` truncates fractional places toward zero. Places must be between −131,072 and 16,383, matching PostgreSQL numeric's supported digit range. Outside that range, evaluation returns a formula error that `IFERROR` can handle; it does not clamp or wrap the argument.
+
 Field references are `Name`, `"Birth year"`, or `{field-id}`. Literals are single-quoted text, numbers, `true`, `false`, and `null`.
 Inside text, `\\'`, `\\\\`, `\\n`, `\\r`, and `\\t` escape a quote, backslash, or control character. Parentheses group expressions and
 a leading `=` is optional. Function names are case-insensitive.
@@ -651,6 +681,9 @@ DATEDIFF(from, to, unit?)
 `SUM`, `AVG`/`MEAN`, `MIN`, `MAX`, and `MEDIAN` use numeric arguments and return empty when none are numeric. `COUNT` counts values other
 than empty or empty text. `ABS`, `FLOOR`, `CEIL`, `SQRT`, `POW`, `MOD`, and `PERCENT` perform their named numeric operation. Numeric functions
 require numeric values; an invalid operation such as a negative square root or zero divisor produces an error.
+`SQRT` uses the same decimal rounding in previews and queries; trailing input zeroes do not change its precision.
+An overflowing `POW` result is a formula error in both runtimes; `IFERROR` can supply a replacement without aborting the SQL query. Query cancellation and resource failures still abort the query.
+For whole-number `POW` exponents from −2,147,483,648 through 2,147,483,647, all integer result digits are retained. The fractional part rounds half away from zero to the larger of 16 places or the base's significant fractional places, capped at 1,000. Other exponents use 80 significant digits, capped at 1,000 fractional places, in both formula evaluation and SQL. Trailing input zeroes do not change this scale. Use explicit `ROUND` for monetary amounts.
 
 `IF` chooses one branch. `IFEMPTY` handles empty or empty text, `IFERROR` handles formula errors, `ISBLANK` tests empty or empty text, and
 `AND`, `OR`, and `NOT` use formula truthiness. `CONTAINS`, `STARTSWITH`, and `ENDSWITH` are case-sensitive; their `I...` forms ignore case.
@@ -700,7 +733,37 @@ cld grids forms submit Orders Checkout --body-file submission.json --json
 
 Commands are `forms list|default|get|create|update|delete|restore|submit`. `--public` creates or retains a public submit token; `--private` removes it. Public form links allow form submission, not unrestricted table access.
 
+### Form submission contract
+
+Create accepts field values directly or `{data,inlineCreates?,idempotencyKey?}`. Prefer the envelope with a stable key for retryable operations. Each `inlineCreates` key is a relation Field ID and its value is `[{tempId,data}]`; include those temporary IDs in the root relation values. Only configured `inlineCreate.fields` are writable. Parent and children commit together.
+
+To edit an existing parent with its lines, use `forms submit BASE TABLE FORM --record REC001 --body-file edit.json --yes`. Read the parent and children with `records get` first. The body is `{data,version,idempotencyKey,inlineCreates?,inlineUpdates?}`. `inlineUpdates` is keyed by relation Field ID with `[{recordId,version,data}]`; retain edited child IDs in the root relation value. These are full Form values, not an arbitrary record patch: preserve required inputs and use explicit empty values to clear fields. Up to 20 creates/updates per relation and 50 total are accepted. Children must already belong to this parent, stay linked, belong to the same Base and not be shared with another parent. Removing a relation detaches rather than deletes its child. Finalization and mutation policy checks remain active.
+
+Published App Forms opt into editing with `mode: edit` on a Record page for the same table. `apps runtime read` returns `blocks[].form.initialRecord` with `version`, `values`, and `inlineCreates` drafts carrying `existing:{id,version}`. Replace those draft temp IDs in `data` with `existing.id` and send existing edits in `inlineUpdates`, not `inlineCreates`. Submit through the same discovered page/block and parameters; the server derives the target from the page, not a body Record ID. Sidebar and standalone public Forms remain create-only.
+
+Keys are nonblank strings up to 200 characters without NUL. Preserve the exact key and complete body after a timeout. A replay returns the original Record ID without another write; changed payloads, deleted results and stale versions conflict (`409`). An unkeyed create can duplicate. After a confirmed stale-version conflict, read current values and review them before a new logical attempt. A new key is not a safe remedy for an uncertain outcome.
+
 ## Publish a Grids App
+
+`apps reference --json` includes **`definitionSchema` generated from the installed input schema** and `validation` for cross-field rules. Inspect the relevant union branch before writing a block: `required` lists required input, while optional properties may have `default`. Do not confuse compiled publication capabilities with authoring input. The complete human reference is `/app/grids/help/grids-custom-app-api` (English and German); use the available in-app Help reader for explanations. The HTTP machine reference is `GET /api/grids/apps/reference`.
+
+For quick orientation, every block accepts `id`, `type`, optional `title` and `availableWhen:{query}`. Additional options are:
+
+| Block | Required besides id/type | Optional (defaults where defined) |
+| --- | --- | --- |
+| `markdown` | `markdown` | none |
+| `records` | `source`, `display` | `emptyText`, `searchable:true`, `pageSize:25`, `rowNavigate`, `rowActions` |
+| `referenced_records` | `sourceTableId`, `relationFieldId`, `fieldIds`, `display` | `emptyText`, `searchable:true`, `pageSize:25`, `rowActions` |
+| `metrics` | `source` | none |
+| `chart` | `source`, `chartType:donut\|bar\|line` | `subtitle`, `limit:100`, `valueFormat`, `xAxisLabel`, `yAxisLabel` |
+| `record` | `fieldIds` | `emptyText`, `editableFieldIds:[]`, `documents:{templateIds:[…]}` |
+| `html` | `fieldId` | `height:normal` (`compact\|normal\|large`) |
+| `comments` | none | none |
+| `form` | `formId` | `mode:create` (`create\|edit`), `fixedValues:{}`, `onSuccessNavigate` |
+| `actions` | `actions` | none |
+| `scanner` | `launcherId` | none |
+
+Read nested shapes, enum values and limits in `definitionSchema`; always run the compiler because JSON Schema cannot express permission checks, same-table rules, unique IDs, compatible navigation and query result shapes. Local IDs start with a lowercase letter and contain lowercase letters/digits/hyphens (up to 80); parameter names use underscores. Resource IDs are six case-sensitive letters/digits. `startPageId` must name a parameter-free page. A Record page has exactly its matching Record parameter, hidden navigation and at least one Record or HTML block. Column spans total at most 12. Omit optional values instead of sending null. Form success navigation replaces history; only normal/row navigation supports `history:push|replace`.
 
 Grids Apps are strict schema-v5 YAML definitions owned by one base. The current contract supports up to 12 pages containing responsive rows and
 columns plus Markdown, Records, Referenced records, Metrics, Chart, Record, Rendered HTML, Form, Comments, Actions, and Scanner blocks. Records and insight blocks can use a saved view
@@ -710,7 +773,7 @@ For signed-in readers, an editable displayed File field exposes App-scoped attac
 or page `RECORD` values. Records blocks may declare up to six workflow `rowActions`; compatible record inputs can receive `ROW.id`, and
 the runtime rechecks the selected id against the exact published query result. Run the live reference before authoring a definition:
 
-Saved-view Records blocks can use `display: { kind: table, columnIds: [...] }` or `display: { kind: cards }`. Cards reuse and pin the saved View's existing Cards fields and file cover. Row navigation is optional, and Cards reuse the same bounded workflow `rowActions` as tables. GQL Records blocks are table-only and display the query's selected ordinary-record columns, including aliases; use an empty `columnIds` list because no second column selection is applied. Use Metrics or Chart for aggregate output. Set `searchable: true` for parameterized PostgreSQL search over displayed fields and choose `pageSize` from 5 to 100. Cursor pagination stays server-side for both saved Views and GQL; use a GQL `limit` only to cap the complete result intentionally.
+Saved-view Records blocks can use `display: { kind: table, columnIds: [...] }` or `display: { kind: cards }`. Cards reuse and pin the saved View's existing Cards fields and file cover. Row navigation is optional, and Cards reuse the same bounded workflow `rowActions` as tables. GQL Records blocks are table-only. Use an empty `columnIds` list to display the query's selected ordinary-record columns, including aliases; a nonempty list narrows the displayed columns without removing selected fields needed for block behavior. Use Metrics or Chart for aggregate output. Set `searchable: true` for parameterized PostgreSQL search over displayed fields and choose `pageSize` from 5 to 100. Cursor pagination stays server-side for both saved Views and GQL; use a GQL `limit` only to cap the complete result intentionally.
 
 On a Record page, `referenced_records` pins one source table, one Relation field targeting the page record table, the exact displayed `fieldIds`, table or Cards display, search, page size, and optional row actions. The server derives and compiles the bounded GQL membership query from the page record parameter; do not add a second query or client-side reverse lookup.
 
@@ -991,7 +1054,8 @@ steps:
         - createRecord:
             table: Movements
             values:
-              Item: ${{ inputs.item }}
+              Item:
+                - ${{ inputs.item.recordId }}
               Type: Active loan
 ```
 
@@ -1178,6 +1242,8 @@ happened. Run commands are `workflow-runs list|get|cancel|steps|documents|downlo
 
 Run options expose a workflow as a scanner, bulk, Record, or Grids App interaction. The API and CLI call these resources launchers. The **Close selected Records** starter installs the dedicated bulk profile `closeSelection`; it accepts only exact public Record IDs and is rejected if the workflow no longer has the canonical close-only plan. The browser reviews up to 100 Records and supplies the current Finalization mode and policy revision. API and CLI callers must review and provide those two inputs themselves; every action verifies them again before changing anything. The linked follow-up Draft starter installs the Record profile `correctionDraft`; callers supply one finalized Record public ID, and the canonical action creates one normal Draft linked through the configured existing fields. Set action and launcher `intent` to the same `correction` or `cancellation` value; omitted intent remains `correction` for legacy workflows and launchers. A mismatch is rejected so user-facing wording cannot disagree with the workflow contract, while the selected type value remains the stored business meaning. Its optional `copyFields` list carries over at most 100 stored value fields. Unique fields, generated IDs, Files, other Relations, calculated fields, and Documents are not copied. Grids does not calculate cancellation amounts, taxes, or counter-bookings or generate a Document. Ordinary bulk options may use explicit IDs or a row-shaped query. A Grids App option uses `inputMode: "fixed"` with complete `inputBindings` for a one-click action, or `inputMode: "prompt"` to request the workflow's declared inputs when it runs. Fixed options reject runtime inputs; prompt options do not store fixed bindings. Their complete JSON shapes and invocation bodies are part of `workflows reference`.
 
+For an `object_list` in `copyFields`, only input cells are copied. Computed columns are recalculated using the current list configuration in the new Draft; frozen cells in the original remain unchanged. Review the new amounts before finalizing it.
+
 A Grids App definition may also embed an enabled Scanner run option as a `scanner` block. Embedded scanners require a signed-in App reader and pin the exact launcher configuration and workflow revision at publish time. They accept scalar session and after-scan prompts; use the full Workflow scanner when those prompts must select records.
 
 For actions published inside an App, bind every required Workflow input in the App definition. A `prompt` launcher accepts those runtime bindings; the App button does not open a free-input dialog. Use a Records row action with `ROW.id` and page `RECORD.id` when the user must choose a child item for the current parent. Publication rejects missing required inputs.
@@ -1232,7 +1298,7 @@ Use the exact page parameters on later commands. `records` accepts the returned 
 
 Direct published-runtime HTTP reads use `_search`, `_cursor`, and `_limit` for list controls, separate from page parameters such as `q`, `cursor`, or `limit`. The CLI keeps its `--search`, `--cursor`, and `--limit` flags. Base record APIs are unchanged.
 
-`update` takes `{values,audit?}`; only the published editable fields can change. `scan` takes `{operationId,expectedRevision,scannedText,inputs?}` using the discovered revision and prompt inputs. `submit` and `sidebar-submit` take form values keyed by public Field IDs; do not supply fixed fields. Submissions are not retry-idempotent. Commands that submit, update, scan or run actions require `--yes`.
+`update` takes `{values,audit?}`; only the published editable fields can change. `scan` takes `{operationId,expectedRevision,scannedText,inputs?}` using the discovered revision and prompt inputs. `submit` and `sidebar-submit` accept field values or `{data,inlineCreates?,idempotencyKey?}`. Do not supply fixed fields. Use an explicit stable `idempotencyKey` and the identical body on retries; unkeyed creates can duplicate. An edit Form additionally requires root `version` and may accept `inlineUpdates`; see the Form submission contract above. Commands that submit, update, scan or run actions require `--yes`.
 
 `comments create|update` takes `--body '{"body":"Markdown"}'`; update/delete also need `--comment <id>`. File commands take the discovered File field as the fourth argument: upload/replace use `--file <path>`, existing files use `--id <id>`, downloads use `--out <path>`. Delete and replace require `--yes`. `document` downloads the exact stored PDF with `--out`. All writes retain the published runtime's authentication, current availability and permission checks; App grants never grant raw Base access. JSONL keeps the complete page envelope, including cursors.
 

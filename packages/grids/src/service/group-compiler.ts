@@ -22,6 +22,7 @@ import {
   type FormulaSqlType,
 } from "./formula-sql-compiler";
 import { compileDslKeyset, type DslKeysetType } from "./keyset-compiler";
+import { numericAverageSql } from "./numeric-division-sql";
 import { assertSqlIdentifier } from "./sql-ident";
 import type { Field } from "./types";
 
@@ -239,9 +240,9 @@ const buildFormulaAggExpr = (
     case "sum":
       return { ok: true, expr: sql`SUM((${expr})::numeric)`, type: "numeric" };
     case "avg":
-      return { ok: true, expr: sql`AVG((${expr})::numeric)`, type: "numeric" };
+      return { ok: true, expr: numericAverageSql(expr), type: "numeric" };
     case "median":
-      return { ok: true, expr: sql`PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY (${expr})::numeric)`, type: "numeric" };
+      return { ok: true, expr: numericMedianSql(expr), type: "numeric" };
     case "min":
     case "earliest":
       return { ok: true, expr: sql`MIN(${expr})`, type: aggregateSqlTypeForFormula(compiled.expression.type, req.agg) };
@@ -318,11 +319,11 @@ const buildFieldAggExpr = (req: FieldAggregationSpec, field: Field | null): Buil
     case "sum":
       return { ok: true, expr: sql`SUM(${typedProj})`, type: "numeric" };
     case "avg":
-      return { ok: true, expr: sql`AVG(${typedProj})`, type: "numeric" };
+      return { ok: true, expr: numericAverageSql(typedProj), type: "numeric" };
     case "median":
       // Linear-interpolated 50th percentile per bucket — matches the flat
       // aggregate-compiler's median.
-      return { ok: true, expr: sql`PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY ${typedProj})`, type: "numeric" };
+      return { ok: true, expr: numericMedianSql(typedProj), type: "numeric" };
     case "min":
     case "max": {
       const fn = req.agg === "min" ? sql`MIN` : sql`MAX`;
@@ -718,3 +719,5 @@ export const compileGroupQuery = (params: CompileGroupParams): CompileGroupResul
     cursorValuesFromRow: sqlQuery.cursorValuesFromRow,
   };
 };
+
+import { numericMedianSql } from "./numeric-median-sql";

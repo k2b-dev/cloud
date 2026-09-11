@@ -110,6 +110,7 @@ const validateForCreate = async (
   }
 
   const out: Record<string, unknown> = {};
+  const calculationContext = { dateConfig: options.dateConfig, now: new Date(), locale: options.locale };
   for (const field of fields) {
     if (field.type === "id") {
       if ((field.config as { assignment?: string }).assignment === "finalization") continue;
@@ -123,7 +124,7 @@ const validateForCreate = async (
 
     const provided = Object.prototype.hasOwnProperty.call(payload, field.id);
     const raw = provided ? payload[field.id] : materializeFieldDefault(field, { dateConfig: options.dateConfig });
-    const result = handler.validate(raw, field.config, field.required);
+    const result = handler.validate(raw, field.config, field.required, calculationContext);
     if (!result.ok) return fail(err.badInput(formatFieldValidationError(field.name, result.error, options.locale)));
     if (result.value !== null && result.value !== undefined) {
       out[field.id] = result.value;
@@ -144,6 +145,7 @@ const validateForUpdate = async (
   fields: Field[],
   actorId: string | null,
   locale?: string,
+  dateConfig?: DateContext,
 ): Promise<Result<Record<string, unknown>>> => {
   const messages = getGridsCrudMessages(locale);
   const fieldsById = new Map(fields.map((f) => [f.id, f]));
@@ -153,13 +155,14 @@ const validateForUpdate = async (
   }
 
   const out: Record<string, unknown> = {};
+  const calculationContext = { dateConfig, now: new Date(), locale };
   for (const [fieldId, raw] of Object.entries(payload)) {
     const field = fieldsById.get(fieldId)!;
     const handler = getRecordWritableFieldType(field.type);
     if (!handler) {
       return fail(err.badInput(messages.fieldNotWritable({ field: field.name })));
     }
-    const result = handler.validate(raw, field.config, field.required);
+    const result = handler.validate(raw, field.config, field.required, calculationContext);
     if (!result.ok) return fail(err.badInput(formatFieldValidationError(field.name, result.error, locale)));
     out[fieldId] = result.value;
   }
@@ -471,7 +474,7 @@ export const updateInTransaction = async (
     return fail(recordVersionConflict(opts.locale));
   }
 
-  const validated = await validateForUpdate(tableId, payload, fields, actorId, opts.locale);
+  const validated = await validateForUpdate(tableId, payload, fields, actorId, opts.locale, opts.dateConfig);
   if (!validated.ok) return validated;
 
   const fieldsIncludingDeleted = await listFields(tableId, true, client);

@@ -137,25 +137,9 @@ Scanner blocks support scalar session and after-scan inputs. Record and record-l
 
 ## Keep navigation explicit {icon="arrow-right"}
 
-Navigation has a target page ID, history behavior, and a mapping for every target parameter:
+Use normal push navigation between pages and replacement navigation after Form success. Every target parameter needs a compatible binding. For repeated entry, keep the parent in a declared page parameter and bind the Form relation to it.
 
-```yaml
-kind: navigate
-pageId: request
-history: push
-params:
-  request_id: { source: ROW, path: id }
-```
-
-Use `push` for normal movement and `replace` after a successful create operation. A navigation target is valid only when all required target parameters are supplied with compatible types.
-
-For repeated entry, preserve the parent as a page parameter:
-
-```text
-/apps/<id>/add-article?list_id=<record-id>
-```
-
-The Form fixes its List relation from `PARAMS.list_id`. After success, one button navigates back to the same page with the same parameter; another navigates to the list detail. This needs no app-specific batch or wizard primitive.
+The [API reference](/app/grids/help/grids-custom-app-api) lists the exact navigation and success-binding shapes.
 
 ## Enforce availability with GQL {icon="adjustments"}
 

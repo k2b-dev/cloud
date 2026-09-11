@@ -40,6 +40,11 @@ export const gridsCapabilityMessages = i18n.define({
       readView: ({ name }: { name: string }) => `Read Grids View “${name}”.`,
       stringValueHint: "String; use null to clear an optional Field.",
       numberValueHint: "Finite number or numeric string; use null to clear an optional Field.",
+      listValueHint:
+        "Array of typed rows. Load gql.context kind list-columns with tableId and fieldId. Use column IDs, omit calculated cells; updates replace the whole list.",
+      listFieldNotFound: "Object-list Field not found",
+      listFieldRequired: "fieldId is required when kind is list-columns.",
+      listConfigInvalid: "The object-list column configuration is invalid.",
       fractionValueHint: "Number from 0 to 1.",
       percentValueHint: "Number from 0 to 100.",
       booleanValueHint: "Boolean true or false; use null to clear an optional Field.",
@@ -134,6 +139,11 @@ export const gridsCapabilityMessages = i18n.define({
       readView: ({ name }) => `Grids-Ansicht „${name}“ gelesen.`,
       stringValueHint: "Zeichenfolge; null leert ein optionales Feld.",
       numberValueHint: "Endliche Zahl oder numerische Zeichenfolge; null leert ein optionales Feld.",
+      listValueHint:
+        "Liste typisierter Zeilen. Lade gql.context mit kind list-columns, tableId und fieldId. Nutze Spalten-IDs, lasse berechnete Zellen weg; Updates ersetzen die ganze Liste.",
+      listFieldNotFound: "Objektlistenfeld nicht gefunden",
+      listFieldRequired: "fieldId ist für kind list-columns erforderlich.",
+      listConfigInvalid: "Die Spaltenkonfiguration der Objektliste ist ungültig.",
       fractionValueHint: "Zahl zwischen 0 und 1.",
       percentValueHint: "Zahl zwischen 0 und 100.",
       booleanValueHint: "Boolescher Wert true oder false; null leert ein optionales Feld.",

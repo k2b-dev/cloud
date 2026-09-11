@@ -34,6 +34,7 @@ import {
 } from "../custom-apps/routing";
 import { buildCustomAppRuntimeContext, customAppDefinitionWithAvailableNavigation } from "../custom-apps/runtime-context";
 import { customAppScannerConfigHash } from "../custom-apps/scanner-capability";
+import { objectListRecordInputValues } from "../field-types/object-list";
 import type { PublicDocument } from "../frontend/_components/documents/public-document-types";
 import type { FormEditState } from "../frontend/_components/forms/form-submit-payload";
 import type { WorkflowScannerState } from "../frontend/_components/workflows/WorkflowScannerSurface";
@@ -52,7 +53,7 @@ import { resolvePublishedCustomAppForm } from "../service/custom-app-published-f
 import { buildCustomAppRecordLabelCache, customAppRecordRelationsMatchPublished } from "../service/custom-app-record-relations";
 import { executePublishedCustomAppRecords } from "../service/custom-app-records-query";
 import { executePublishedCustomAppQuery, publishedCustomAppAvailability } from "../service/custom-app-runtime-query";
-import { MAX_INLINE_CREATES_PER_FIELD, MAX_INLINE_CREATES_PER_SUBMISSION } from "../service/form-submission";
+import { isExclusiveFormChild, MAX_INLINE_CREATES_PER_FIELD, MAX_INLINE_CREATES_PER_SUBMISSION } from "../service/form-submission";
 import type { PublicRenderableForm } from "../service/forms";
 import { projectPublicIds, resolvePublicId, resolvePublicIds } from "../service/public-resources";
 import { scannerLauncherPromptInputSources } from "../workflows/contracts";
@@ -118,9 +119,12 @@ const preparePublishedForm = async (
     const targetTableId = (relationField.config as { targetTableId?: unknown }).targetTableId;
     if (typeof targetTableId !== "string") continue;
     const allowedIds = new Set((entry.inlineCreate.fields ?? []).map((field) => field.fieldId));
-    inlineTargetFields[targetTableId] = resolved.inlineTargetFields.filter(
+    const targetFields = resolved.inlineTargetFields.filter(
       (field) => field.tableId === targetTableId && !field.deletedAt && allowedIds.has(field.id),
     );
+    inlineTargetFields[targetTableId] = [
+      ...new Map([...(inlineTargetFields[targetTableId] ?? []), ...targetFields].map((field) => [field.id, field])).values(),
+    ];
   }
   const publicTargetTableIds = await projectPublicIds("table", Object.keys(inlineTargetFields));
   if (publicTargetTableIds.size !== Object.keys(inlineTargetFields).length) return null;
@@ -138,7 +142,7 @@ const preparePublishedForm = async (
     if (!record || record.finalizedAt) return null;
     const projected = await toPublicRecord(
       projectCustomAppRecord(
-        record,
+        { ...record, data: objectListRecordInputValues(fields, record.data) },
         fields.map((field) => field.id),
       ),
       fields,
@@ -150,28 +154,45 @@ const preparePublishedForm = async (
       const field = fieldsById.get(entry.fieldId);
       const targetTableId = field?.type === "relation" ? field.config.targetTableId : null;
       if (!field || typeof targetTableId !== "string") return null;
-      const targetFields = inlineTargetFields[targetTableId];
-      if (!targetFields) return null;
+      const allowedIds = new Set(entry.inlineCreate.fields?.map((field) => field.fieldId) ?? []);
+      const targetFields = (inlineTargetFields[targetTableId] ?? []).filter((field) => allowedIds.has(field.id));
+      if (targetFields.length !== allowedIds.size) return null;
       const value = record.data[field.id];
       const ids = Array.isArray(value) ? value : typeof value === "string" ? [value] : [];
       count += ids.length;
       if (ids.length > MAX_INLINE_CREATES_PER_FIELD || count > MAX_INLINE_CREATES_PER_SUBMISSION) return null;
       const drafts: FormEditState["inlineCreates"][string] = [];
+      const relationValues: string[] = [];
       for (const id of ids) {
         if (typeof id !== "string") return null;
         const child = await gridsService.record.get(targetTableId, id);
-        if (!child || child.finalizedAt) return null;
+        if (!child) return null;
         const publicChild = await toPublicRecord(
           projectCustomAppRecord(
-            child,
+            { ...child, data: objectListRecordInputValues(targetFields, child.data) },
             targetFields.map((field) => field.id),
           ),
           targetFields,
         );
-        drafts.push({ tempId: `tmp_${publicChild.id}`, existing: { id: publicChild.id, version: child.version }, data: publicChild.data });
+        if (
+          child.finalizedAt ||
+          !(await isExclusiveFormChild({
+            parentId: recordId,
+            parentTableId: resolved.form.tableId,
+            relationFieldId: field.id,
+            childId: child.id,
+            childTableId: targetTableId,
+          }))
+        ) {
+          relationValues.push(publicChild.id);
+          continue;
+        }
+        const tempId = `tmp_${publicChild.id}`;
+        drafts.push({ tempId, existing: { id: publicChild.id, version: child.version }, data: publicChild.data });
+        relationValues.push(tempId);
       }
       initialRecord.inlineCreates[field.shortId] = drafts;
-      initialRecord.values[field.shortId] = drafts.map((draft) => draft.tempId);
+      initialRecord.values[field.shortId] = relationValues;
     }
   }
   return {

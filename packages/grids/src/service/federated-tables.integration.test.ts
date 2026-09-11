@@ -10,6 +10,7 @@ import { assertFederatedPublication, buildDslSqlRecordSource } from "../query-ds
 import { remove as removeBase, restore as restoreBase } from "./bases";
 import * as boundedQuery from "./bounded-query";
 import * as combinedAudit from "./combined-audit";
+import * as durableHistory from "./durable-history";
 import { exportRecords } from "./export";
 import {
   captureRevisionScope,
@@ -29,6 +30,7 @@ import {
 import { create as createField, update as updateField } from "./fields";
 import { getContent, listFirstImagePreviews, listForRecordField } from "./files";
 import { resolveFederatedTargetsForRecordEvent } from "./record-events";
+import * as finalization from "./record-finalization";
 import { listByRecord as listRecordHistory } from "./record-history";
 import { createReader } from "./record-read";
 import { create as createRecord } from "./record-write";
@@ -157,11 +159,52 @@ const createFixture = async (): Promise<Fixture> => {
 };
 
 const cleanupFixture = async (fixture: Fixture): Promise<void> => {
+  await sql`UPDATE grids.records SET finalized_at = NULL, finalized_by = NULL, final_revision_id = NULL WHERE table_id = ${fixture.sourceTableId}::uuid`;
+  await sql`DELETE FROM grids.file_protected_references WHERE base_id = ${fixture.sourceBaseId}::uuid`;
+  await sql`DELETE FROM grids.record_revisions WHERE table_id = ${fixture.sourceTableId}::uuid`;
+  await sql`DELETE FROM grids.record_finalization_requests WHERE table_id = ${fixture.sourceTableId}::uuid`;
+  await sql`DELETE FROM grids.table_finalization_activations WHERE table_id = ${fixture.sourceTableId}::uuid`;
+  await sql`DELETE FROM grids.durable_history_activations WHERE table_id = ${fixture.sourceTableId}::uuid`;
+  await sql`DELETE FROM grids.table_schema_revisions WHERE table_id = ${fixture.sourceTableId}::uuid`;
   await sql`DELETE FROM grids.audit_log WHERE table_id IN (${fixture.sourceTableId}::uuid, ${fixture.targetTableId}::uuid)`;
   await sql`DELETE FROM grids.federated_table_revisions WHERE table_id = ${fixture.targetTableId}::uuid`;
   await sql`DELETE FROM grids.bases WHERE id IN (${fixture.sourceBaseId}::uuid, ${fixture.targetBaseId}::uuid)`;
   await sql`DELETE FROM grids.files WHERE id = ${fixture.fileId}::uuid`;
 };
+
+postgresTest("requires matching typed object-list columns in combined mappings", async () => {
+  const fixture = await createFixture();
+  try {
+    const config = {
+      fields: [
+        { id: "Amount", name: "Amount", type: "number", config: { decimalPlaces: 2, unit: "EUR" } },
+        { id: "Total1", name: "Total", type: "number", formula: { expression: "Amount * 2" } },
+      ],
+    };
+    const source = await createField({ tableId: fixture.sourceTableId, name: "Source lines", type: "object_list", config }, null);
+    const target = await createField({ tableId: fixture.targetTableId, name: "Lines", type: "object_list", config }, null);
+    if (!source.ok) throw source.error;
+    if (!target.ok) throw target.error;
+    const input = {
+      sourceTableIds: [fixture.sourceTableId],
+      mappings: [{ sourceTableId: fixture.sourceTableId, sourceFieldId: source.data.id, targetFieldId: target.data.id }],
+    };
+    const valid = await validateDraft(fixture.targetTableId, input);
+    expect(valid.diagnostics).toEqual([]);
+    for (const fields of [
+      [{ ...config.fields[0], id: "Other1" }, config.fields[1]],
+      [{ ...config.fields[0], type: "text", config: {} }, config.fields[1]],
+      [{ ...config.fields[0], config: { decimalPlaces: 2, unit: "USD" } }, config.fields[1]],
+      [config.fields[0], { ...config.fields[1], formula: { expression: "Amount * 3" } }],
+    ]) {
+      await sql`UPDATE grids.fields SET config = ${{ fields }}::jsonb WHERE id = ${target.data.id}::uuid`;
+      const invalid = await validateDraft(fixture.targetTableId, input);
+      expect(invalid.diagnostics.some((issue) => issue.code === "object_list_schema_mismatch")).toBe(true);
+    }
+  } finally {
+    await cleanupFixture(fixture);
+  }
+});
 
 const previewCombined = async (
   fixture: Fixture,
@@ -195,6 +238,83 @@ beforeAll(async () => {
 });
 
 describe("combined table integration", () => {
+  postgresTest("maps live and finalized source formula values without recalculating snapshots", async () => {
+    const fixture = await createFixture();
+    try {
+      const sourceFormula = await createField(
+        { tableId: fixture.sourceTableId, name: "Display", type: "formula", config: { expression: 'UPPER("Source name")' } },
+        null,
+      );
+      if (!sourceFormula.ok) throw sourceFormula.error;
+      await sql`UPDATE grids.federated_field_mappings SET source_field_id = ${sourceFormula.data.id}::uuid
+        WHERE revision_id = ${fixture.revisionId}::uuid AND target_field_id = ${fixture.targetTextFieldId}::uuid`;
+      const draft = await previewCombined(fixture, "from table Combined\nselect Name");
+      expect(draft.rows[0]?.values.q_col_0).toBe("MAPPED VALUE");
+      const history = await durableHistory.enable(fixture.sourceTableId, null);
+      if (!history.ok) throw history.error;
+      const enabled = await finalization.enable(fixture.sourceTableId, { mode: "direct" }, null);
+      if (!enabled.ok) throw enabled.error;
+      const finalized = await finalization.finalize({
+        tableId: fixture.sourceTableId,
+        recordId: fixture.recordId,
+        actorId: null,
+        origin: "direct",
+      });
+      if (!finalized.ok) throw finalized.error;
+      const changed = await updateField(sourceFormula.data.id, { config: { expression: 'LOWER("Source name")' } }, null);
+      if (!changed.ok) throw changed.error;
+      const next = await createRecord(fixture.sourceTableId, { [fixture.sourceTextFieldId]: "Fresh VALUE" }, null, "direct");
+      if (!next.ok) throw next.error;
+      const mixed = await previewCombined(fixture, "from table Combined\nselect Name");
+      expect(mixed.rows.map((row) => row.values.q_col_0).sort()).toEqual(["MAPPED VALUE", "fresh value"]);
+    } finally {
+      await cleanupFixture(fixture);
+    }
+  });
+
+  postgresTest("evaluates canonical formulas over finalized source values", async () => {
+    const fixture = await createFixture();
+    try {
+      const formula = await createField(
+        { tableId: fixture.targetTableId, name: "Length", type: "formula", config: { expression: "LEN(Name)" } },
+        null,
+      );
+      if (!formula.ok) throw formula.error;
+      fixture.targetFields = await loadTableFields(fixture.targetTableId);
+      const query = "from table Combined\nselect Name, Length";
+      const draft = await previewCombined(fixture, query);
+      expect(draft.rows[0]?.values.q_col_1).toBe("12");
+      const history = await durableHistory.enable(fixture.sourceTableId, null);
+      if (!history.ok) throw history.error;
+      const enabled = await finalization.enable(fixture.sourceTableId, { mode: "direct" }, null);
+      if (!enabled.ok) throw enabled.error;
+      const finalized = await finalization.finalize({
+        tableId: fixture.sourceTableId,
+        recordId: fixture.recordId,
+        actorId: null,
+        origin: "direct",
+      });
+      if (!finalized.ok) throw finalized.error;
+      const frozen = await previewCombined(fixture, query);
+      expect(frozen.rows[0]?.values.q_col_1).toBe("12");
+      const filtered = await previewCombined(fixture, `${query}\nwhere Length = 12\nsort Length desc`);
+      expect(filtered.rows).toHaveLength(1);
+      const total = await previewCombined(fixture, "from table Combined\naggregate sum(Length) as total");
+      expect(Number(total.rows[0]?.values.total__sum)).toBe(12);
+      const scoped = await previewCombined(fixture, "from table Combined as combined\nselect formula(combined.Length * 2) as doubled");
+      expect(scoped.rows[0]?.values.q_col_0).toBe("24");
+      const changed = await updateField(formula.data.id, { config: { expression: "LEN(Name) + 1" } }, null);
+      if (!changed.ok) throw changed.error;
+      fixture.targetFields = await loadTableFields(fixture.targetTableId);
+      const revised = await previewCombined(fixture, query);
+      expect(revised.rows[0]?.values.q_col_1).toBe("13");
+      const read = await (await createReader(fixture.targetTableId)).get(fixture.recordId);
+      expect(read?.finalizedAt).not.toBeNull();
+      expect(read?.data[formula.data.id]).toBe("13");
+    } finally {
+      await cleanupFixture(fixture);
+    }
+  });
   postgresTest("projects source audit and declared mutation answers through the active Combined schema", async () => {
     const fixture = await createFixture();
     const hiddenFieldId = uuid();

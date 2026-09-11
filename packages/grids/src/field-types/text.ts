@@ -1,5 +1,6 @@
 import { z } from "zod";
-import { fail, ok, type ValueFieldType } from "./types";
+import { type FieldValidationContext, fail, ok, type ValueFieldType } from "./types";
+import { fieldValidationMessages } from "./validation-messages";
 
 const BaseTextConfigSchema = z.object({
   minLength: z.number().int().min(0).optional(),
@@ -13,39 +14,45 @@ const LongTextConfigSchema = BaseTextConfigSchema.extend({
   markdown: z.boolean().optional(),
 });
 
-const validateTextValue = (raw: unknown, config: z.infer<typeof BaseTextConfigSchema>, required: boolean) => {
+const validateTextValue = (
+  raw: unknown,
+  config: z.infer<typeof BaseTextConfigSchema>,
+  required: boolean,
+  context?: FieldValidationContext,
+) => {
+  const t = fieldValidationMessages(context?.locale);
   if (raw === null || raw === undefined) {
-    return required ? fail("required") : ok(null);
+    return required ? fail(t.required) : ok(null);
   }
-  if (typeof raw !== "string") return fail("must be a string");
+  if (typeof raw !== "string") return fail(t.text);
 
   // Trimming applies to single-line text only; longtext preserves whitespace.
   const value = config.multiline ? raw : raw.trim();
 
-  if (value.length === 0) return required ? fail("required") : ok(null);
+  if (value.length === 0) return required ? fail(t.required) : ok(null);
 
   if (config.minLength !== undefined && value.length < config.minLength) {
-    return fail(`min length ${config.minLength}`);
+    return fail(t.minLength({ count: config.minLength }));
   }
   if (config.maxLength !== undefined && value.length > config.maxLength) {
-    return fail(`max length ${config.maxLength}`);
+    return fail(t.maxLength({ count: config.maxLength }));
   }
   if (config.regex !== undefined) {
     let re: RegExp;
     try {
       re = new RegExp(config.regex);
     } catch {
-      return fail("invalid regex in field config");
+      return fail(t.regexConfig);
     }
-    if (!re.test(value)) return fail("regex mismatch");
+    if (!re.test(value)) return fail(t.regex);
   }
   return ok(value);
 };
 
-const validateText = (raw: unknown, configRaw: unknown, required: boolean) => {
+const validateText = (raw: unknown, configRaw: unknown, required: boolean, context?: FieldValidationContext) => {
   const parsed = TextConfigSchema.safeParse(configRaw ?? {});
-  if (!parsed.success) return fail("invalid field config");
-  return validateTextValue(raw, parsed.data, required);
+  if (!parsed.success) return fail(fieldValidationMessages(context?.locale).config);
+  return validateTextValue(raw, parsed.data, required, context);
 };
 
 export const textHandler: ValueFieldType = {
@@ -59,9 +66,9 @@ export const longtextHandler: ValueFieldType = {
   type: "longtext",
   kind: "value",
   configSchema: LongTextConfigSchema,
-  validate: (raw, configRaw, required) => {
+  validate: (raw, configRaw, required, context) => {
     const parsed = LongTextConfigSchema.safeParse(configRaw ?? {});
-    if (!parsed.success) return fail("invalid field config");
-    return validateTextValue(raw, { ...parsed.data, multiline: true }, required);
+    if (!parsed.success) return fail(fieldValidationMessages(context?.locale).config);
+    return validateTextValue(raw, { ...parsed.data, multiline: true }, required, context);
   },
 };

@@ -5,13 +5,9 @@ icon: ti ti-table
 description: Choose field types and manage the lifecycle of saved records.
 order: 110
 ---
-A table stores one kind of record. Its fields define which facts every record can hold and how Grids treats those values in tables, forms, filters, formulas, documents, workflows, and exports.
+A table stores one kind of record. Choose field types for their meaning, not just their appearance.
 
-Choose a field type for the meaning of the value, not merely for how it should look.
-
-Base admins can open **Base settings → Tables** to find Tables by name or public ID and compare their structure and protection settings in one
-place. The overview shows field, indexed-field, and unique-field counts together with Durable History, Finalization, and allowed write paths. It
-does not calculate Record totals; open the Table for its Records, schema, or **History and protection** settings.
+**Base settings → Tables** lets admins search by name or public ID and compare field/index/unique counts, history, finalization, and write paths. Open a table for its records and settings; this overview does not count records.
 
 ## Fields for entered values {icon="table"}
 
@@ -27,6 +23,7 @@ does not calculate Record totals; open the Table for its Records, schema, or **H
 | Select | A value from a controlled list | Options can have labels, colors, and descriptions; a select may allow several values |
 | Principal | One or several responsible people or groups | Stores typed Cloud user and group references; the picker shows only identities the current account may discover |
 | JSON | Structured data that does not need its own Grids fields | Use sparingly; individual properties are less convenient to filter and explain |
+| Object list | Typed rows owned by this record, such as invoice items | Shared validation, calculated columns, and atomic finalization |
 | File | Attachments and images | The field controls accepted file types and file count; Grids enforces the configured upload-size limit |
 
 Use **Required** when an empty value would make a record invalid. A **Default** fills a value only when a new record omits that field. Use **Unique** for identifiers that must not repeat, such as an asset code or invoice number.
@@ -36,10 +33,9 @@ Date-time display, date-based filters, formulas, exports, and document folders u
 ## Fields that connect or calculate {icon="table"}
 
 - **Relation** links one record to one or several records in another table. The target table's record label is shown in pickers and cells.
-- **Principal** assigns one or several Cloud users or groups to a record. Use it for participants, owners, reviewers, or responsible teams instead of copying names or email addresses into business data.
 - **Lookup** displays one field from a related record without copying it.
 - **Rollup** summarizes values reached through a relation.
-- **Formula** calculates a value from fields in the current record whenever the record is read.
+- **Formula** calculates from the current Draft's fields. Finalization freezes the result.
 - **HTML template** renders Liquid and optional CSS into one HTML string per record. It can use ordinary fields plus lookup, rollup, and formula results. Values are escaped by default; preview the result before using `raw`.
 - **ID** creates a stable generated identifier. Sequence and date-sequence IDs use a durable number series that Grids assigns when the record is created. Values increase atomically and are never reused; rollbacks and technical failures can leave gaps. Changing the prefix or format affects only future records.
 - **Created at, Created by, Updated at, and Updated by** are system-managed fields. They describe record activity and cannot be entered as ordinary business values.
@@ -50,35 +46,23 @@ The live record detail shows up to five **Referenced by** results beside its out
 
 In the CLI, use `cld grids records referenced-by <table-id> <record-id> --limit 5 --json`. Record comments are available through `records comments list|create|update|delete`; use `--body-file` for Markdown and `--yes` to delete. Both lists accept `--cursor` and return `nextCursor`. These commands use public IDs and preserve the same Base, author, and moderation permissions as the record detail.
 
-Principal values use the Cloud identity directory without becoming Cloud permissions. Full accounts can select from the directory. Guest accounts can select themselves and their direct or nested groups, but cannot discover other users or group members. The server applies the same visibility check again when saving, so a hidden UUID cannot be guessed through the API.
+Principal values do not grant access. Full accounts can use the directory; guests can select only themselves and their direct/nested groups, not other users or group members. Saving rechecks visibility, including API submissions.
 
-HTML template fields are read-only output columns, not Documents. Use them when each record needs an email body, article description, product snippet, or export value. Use Documents when the output needs an immutable snapshot, download, or PDF. Tables can show escaped source text; the record detail shows only a **Preview** action so long markup does not obscure the other fields. Previews open in a sandboxed frame, and Grids never inserts the value directly into the record page.
+HTML template fields are read-only per-record output, not immutable Documents or PDFs. Tables show escaped source; record details offer a sandboxed **Preview**, never injecting HTML into the record page.
 
-Templates read stable public field IDs such as `{{ record.data.aB12xZ }}`. The editor shows the matching field name in autocomplete. Other HTML template fields are intentionally unavailable, so templates cannot recurse. HTML template fields are available on stored tables only; they cannot be filtered, sorted, grouped, aggregated, used by formulas, or selected through a relation lookup.
+Templates use public field IDs, e.g. `{{ record.data.aB12xZ }}`, with names in autocomplete. Other HTML template fields are unavailable to prevent recursion. These fields require stored tables and do not support filters, sorting, grouping, aggregates, formulas, or relation lookups.
 
 ## Formulas in a table {icon="table"}
 
-Formula fields use the same expression language as computed query columns. Reference fields by name, quote names containing spaces with double quotes, and keep text literals in single quotes.
+Use the shared [formula reference](/app/grids/help/grids-formulas) for syntax, examples, and errors. A table formula belongs to each record; a computed query column belongs only to that query.
 
-**Line total**
+## Rows inside a record {icon="table"}
 
-```text
-"Unit price" * Quantity
-```
+Choose **Object list** for items without their own permissions or lifecycle; otherwise use a Relation. Expand **Rules and calculation** for constraints or formulas using sibling columns. Selection columns and regex constraints are input-only. Nested objects, relations, and lists are not allowed inside a row.
 
-**Readable fallback**
+Add, remove, or reorder rows in the editor. Lists show 25 rows per page; paging preserves edits. Valid rows retain their calculation previews while another row is incomplete. Saving validates and replaces the whole list; stale versions cannot overwrite newer edits. Defaults allow 0–100 rows; hard limits are 1,000 rows, 200 columns, and 256 KiB.
 
-```text
-IFEMPTY(Notes, 'No notes')
-```
-
-**Days until due**
-
-```text
-DATEDIFF(TODAY(), "Due date", 'days')
-```
-
-Open **Formulas** for the full function reference. Use `IFERROR` only when an error is an expected case, such as division by zero; otherwise let the error reveal a broken formula.
+Use `LIST_SUM(Items, 'Amount')` for a total. `LIST_AVG`, `LIST_MIN`, and `LIST_MAX` use the same arguments; `LIST_COUNT(Items)` counts rows. An empty list sums/counts to zero; other reductions and a missing list return null. Finalization freezes rows and calculated values together, preserving exact amounts and types.
 
 ## Search, filters, and indexes {icon="search"}
 
@@ -115,7 +99,7 @@ Choosing an approver group does not grant access. The mode and group are stored 
 
 Each request has a short public ID. CLI approval and rejection require that exact ID, so a confirmation can never apply to a newer replacement request.
 
-Finalization checks every required field, assigns any sequential ID configured for **On finalization**, stores the final version, and then permanently locks the record in one operation. Its fields, Relations, Files, trash state, and final number can no longer change. A retry returns the same finalized record and never allocates a second number.
+Finalization checks required fields, assigns **On finalization** IDs, freezes typed formula, lookup, rollup and list results, then locks the Record atomically. Exact decimals remain usable for arithmetic. Fields, Relations, Files, trash state and final numbers cannot change. Retries return the same Record without allocating another number.
 
 Before the first record is finalized, an admin can disable the feature after changing all finalization-assigned ID fields back to **On record creation**. After the first final record, the table setting is permanent. Grids does not add invoice, cancellation, correction, or compliance semantics; model those with ordinary fields, Relations, and Workflows.
 

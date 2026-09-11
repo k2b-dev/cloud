@@ -24,7 +24,7 @@ Führe `cld grids apps runtime read <app-id> --json` mit der ID aus der App-URL 
 
 Die Befehle unter `apps runtime` lesen Datensatzseiten, senden Seiten- oder Seitenleistenformulare, ändern veröffentlichte bearbeitbare Felder, verwalten Kommentare und Anhänge, laden gespeicherte PDFs herunter, starten Aktionen oder Scanner und lesen ihren Laufstatus. `--help` erklärt die Eingaben. Seitenbezogene Befehle benötigen dieselben Parameter wie die Discovery.
 
-Senden, Ändern, Scannen und Aktionen erfordern `--yes`. Formularübermittlungen sind nicht wiederholungssicher. Verwende dieselbe Operations-ID nur für die Wiederholung derselben Aktion. **Queued** bedeutet angenommen, nicht abgeschlossen: Lies den zurückgegebenen Laufstatus, bevor du über eine Wiederholung entscheidest.
+Senden, Ändern, Scannen und Aktionen erfordern `--yes`. Formulare mit exakt demselben Body und explizitem `idempotencyKey` wiederholen; ohne Schlüssel drohen Duplikate. Dieselbe Operations-ID nur für dieselbe Aktion verwenden. **Queued** bedeutet angenommen, nicht abgeschlossen: Vor Wiederholung den Lauf prüfen.
 
 Diese Befehle verwenden dieselben veröffentlichten App-Rechte wie der Browser. Sie umgehen keine nicht verfügbaren Blöcke. Fehlende, gelöschte, ungültige, nicht verfügbare oder nicht autorisierte Detaildatensätze liefern **Nicht gefunden**.
 

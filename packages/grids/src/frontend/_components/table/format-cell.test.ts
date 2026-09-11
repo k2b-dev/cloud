@@ -2,6 +2,11 @@ import { describe, expect, test } from "bun:test";
 import { formatCell, progressRatio } from "./format-cell";
 
 describe("formatCell", () => {
+  test("renders percentage scales without changing their stored values", () => {
+    expect(formatCell(25.125, "percent", {})).toBe("25.125%");
+    expect(formatCell(0.25125, "percent", { range: "fraction" })).toBe("25.125%");
+    expect(formatCell(0, "percent", { range: "fraction" })).toBe("0%");
+  });
   test("normalizes date timestamps to date-only by default", () => {
     expect(formatCell("2026-05-14T00:00:00+00:00", "date", {})).toBe("2026-05-14");
   });

@@ -175,7 +175,7 @@ describe("applyComputedProjections", () => {
     );
 
     expect(record.data).toEqual({
-      numeric: 42.5,
+      numeric: "42.5",
       date: "2026-07-12",
       datetime: "2026-07-12T14:30:00.000Z",
       boolean_true: true,

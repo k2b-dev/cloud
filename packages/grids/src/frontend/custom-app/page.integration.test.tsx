@@ -25,6 +25,12 @@ describe("published App SSR availability", () => {
     const recordId = testUuid();
     const childId = testUuid();
     const relationId = testUuid();
+    const otherRelationId = testUuid();
+    const otherRelationPublicId = testShortId("F");
+    const otherFieldId = testUuid();
+    const otherFieldPublicId = testShortId("F");
+    const listFieldId = testUuid();
+    const listFieldPublicId = testShortId("F");
     const childPublicId = testShortId("R");
     const relationPublicId = testShortId("F");
     const viewId = testUuid();
@@ -50,10 +56,22 @@ describe("published App SSR availability", () => {
         VALUES (${recordId}::uuid, ${recordPublicId}, ${tableId}::uuid, ${{ [fieldId]: "Public binding survives SSR" }}::jsonb)`;
       await sql`INSERT INTO grids.fields (id, short_id, table_id, name, type, config, position)
         VALUES (${relationId}::uuid, ${relationPublicId}, ${tableId}::uuid, 'Lines', 'relation', ${{ targetTableId: tableId, cardinality: "multiple" }}::jsonb, 1)`;
+      await sql`INSERT INTO grids.fields (id, short_id, table_id, name, type, config, position) VALUES
+        (${otherFieldId}::uuid, ${otherFieldPublicId}, ${tableId}::uuid, 'Other note', 'text', '{}'::jsonb, 2),
+        (${otherRelationId}::uuid, ${otherRelationPublicId}, ${tableId}::uuid, 'Other links', 'relation', ${{ targetTableId: tableId, cardinality: "multiple" }}::jsonb, 3)`;
       await sql`INSERT INTO grids.records (id, short_id, table_id, data)
-        VALUES (${childId}::uuid, ${childPublicId}, ${tableId}::uuid, ${{ [fieldId]: "Existing line" }}::jsonb)`;
+        VALUES (${childId}::uuid, ${childPublicId}, ${tableId}::uuid, ${{ [fieldId]: "Existing line", [otherFieldId]: "Not allowed through Lines" }}::jsonb)`;
       await sql`INSERT INTO grids.record_links (from_record_id, from_field_id, to_record_id)
         VALUES (${recordId}::uuid, ${relationId}::uuid, ${childId}::uuid)`;
+      await sql`INSERT INTO grids.fields (id, short_id, table_id, name, type, config, position)
+        VALUES (${listFieldId}::uuid, ${listFieldPublicId}, ${tableId}::uuid, 'Items', 'object_list', ${{
+          fields: [
+            { id: "Amount", name: "Amount", type: "number", config: { decimalPlaces: 2 } },
+            { id: "Total1", name: "Total", type: "number", formula: { expression: "Amount * 2" } },
+          ],
+        }}::jsonb, 4)`;
+      await sql`UPDATE grids.records SET data = data || ${{ [listFieldId]: [{ Amount: "0.10", Total1: "0.2" }] }}::jsonb
+        WHERE id IN (${recordId}::uuid, ${childId}::uuid)`;
       await sql`INSERT INTO grids.views (id, short_id, table_id, name, source) VALUES
         (${viewId}::uuid, ${viewPublicId}, ${tableId}::uuid, 'Requests', ${`from table {${tablePublicId}}`}),
         (${metricViewId}::uuid, ${metricViewPublicId}, ${tableId}::uuid, 'Count', ${`from table {${tablePublicId}}\naggregate count(*) as Requests`})`;
@@ -61,7 +79,9 @@ describe("published App SSR availability", () => {
         VALUES (${formId}::uuid, ${formPublicId}, ${tableId}::uuid, 'New request', ${{
           fields: [
             { kind: "user_input", fieldId },
-            { kind: "user_input", fieldId: relationId, inlineCreate: { enabled: true, fields: [{ fieldId }] } },
+            { kind: "user_input", fieldId: listFieldId },
+            { kind: "user_input", fieldId: relationId, inlineCreate: { enabled: true, fields: [{ fieldId }, { fieldId: listFieldId }] } },
+            { kind: "user_input", fieldId: otherRelationId, inlineCreate: { enabled: true, fields: [{ fieldId: otherFieldId }] } },
           ],
         }}::jsonb)`;
       const definition: CustomAppDefinition = {
@@ -165,12 +185,40 @@ describe("published App SSR availability", () => {
       for (const id of [baseId, tableId, fieldId, recordId, viewId, metricViewId, formId]) expect(html).not.toContain(id);
       expect(recordGet.mock.calls.some(([id, record]) => id === tableId && record === recordId)).toBe(true);
       const api = createCustomAppsApi();
+      const discovered = await api.request(`/runtime/${appPublicId}/detail?request_id=${recordPublicId}`);
+      expect(discovered.status).toBe(200);
+      const discoveredPage = await discovered.json();
+      const discoveredForm = discoveredPage.blocks.find((block: { id: string }) => block.id === "edit-form").form;
+      expect(discoveredForm.inlineTargetFields[tablePublicId].map((field: { id: string }) => field.id).sort()).toEqual(
+        [fieldPublicId, otherFieldPublicId, listFieldPublicId].sort(),
+      );
+      expect(discoveredForm.initialRecord.values[listFieldPublicId]).toEqual([{ Amount: "0.10" }]);
+      expect(discoveredForm.initialRecord.inlineCreates[relationPublicId][0].data).toEqual({
+        [fieldPublicId]: "Existing line",
+        [listFieldPublicId]: [{ Amount: "0.10" }],
+      });
+      expect(JSON.stringify(discoveredForm.initialRecord)).not.toContain("Not allowed through Lines");
       const editUrl = `/runtime/${appPublicId}/detail/edit-form/submit?request_id=${recordPublicId}`;
       const body = {
         version: 1,
         idempotencyKey: "published-edit",
-        data: { [fieldPublicId]: "Edited through the published form", [relationPublicId]: [childPublicId] },
-        inlineUpdates: { [relationPublicId]: [{ recordId: childPublicId, version: 1, data: { [fieldPublicId]: "Edited line" } }] },
+        data: {
+          [fieldPublicId]: "Edited through the published form",
+          [relationPublicId]: [childPublicId],
+          [listFieldPublicId]: discoveredForm.initialRecord.values[listFieldPublicId],
+        },
+        inlineUpdates: {
+          [relationPublicId]: [
+            {
+              recordId: childPublicId,
+              version: 1,
+              data: {
+                [fieldPublicId]: "Edited line",
+                [listFieldPublicId]: discoveredForm.initialRecord.inlineCreates[relationPublicId][0].data[listFieldPublicId],
+              },
+            },
+          ],
+        },
       };
       const send = (url: string, payload: unknown) =>
         api.request(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload) });
@@ -191,7 +239,32 @@ describe("published App SSR availability", () => {
         { data: Record<string, unknown>; version: number }[]
       >`SELECT data, version FROM grids.records WHERE id = ${childId}::uuid`;
       expect(child?.data[fieldId]).toBe("Edited line");
+      expect(child?.data[listFieldId]).toEqual([{ Amount: "0.10", Total1: "0.2" }]);
+      expect(saved?.data[listFieldId]).toEqual([{ Amount: "0.10", Total1: "0.2" }]);
       expect(child?.version).toBe(2);
+      // A shared customer/lookup target stays a selectable link, not an editor
+      // for data also used by another parent. Server writes still recheck this.
+      const otherParentId = testUuid();
+      await sql`INSERT INTO grids.records (id, short_id, table_id, data)
+        VALUES (${otherParentId}::uuid, ${testShortId("R")}, ${tableId}::uuid, '{}'::jsonb)`;
+      await sql`INSERT INTO grids.record_links (from_record_id, from_field_id, to_record_id)
+        VALUES (${otherParentId}::uuid, ${relationId}::uuid, ${childId}::uuid)`;
+      const sharedResponse = await api.request(`/runtime/${appPublicId}/detail?request_id=${recordPublicId}`);
+      expect(sharedResponse.status).toBe(200);
+      const sharedPage = await sharedResponse.json();
+      const editForm = sharedPage.blocks.find((block: { id: string }) => block.id === "edit-form").form;
+      expect(editForm.initialRecord.values[relationPublicId]).toEqual([childPublicId]);
+      expect(editForm.initialRecord.inlineCreates[relationPublicId]).toEqual([]);
+      expect(
+        (
+          await send(editUrl, {
+            version: 2,
+            idempotencyKey: "shared-link-only",
+            data: { [fieldPublicId]: "Parent only", [relationPublicId]: [childPublicId] },
+          })
+        ).status,
+      ).toBe(200);
+      expect((await send(editUrl, { ...body, version: 3, idempotencyKey: "shared-child-forged" })).status).toBe(400);
       expect((await app.request(`/${appPublicId}/detail?request_id=${recordId}`)).status).toBe(404);
       await sql`UPDATE grids.fields SET short_id = ${testShortId("F")} WHERE id = ${fieldId}::uuid`;
       expect((await app.request(`/${appPublicId}/detail?request_id=${recordPublicId}`)).status).toBe(404);

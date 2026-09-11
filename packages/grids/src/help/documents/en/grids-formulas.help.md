@@ -5,18 +5,18 @@ icon: ti ti-function
 description: Calculate values from fields with one shared expression language.
 order: 126
 ---
-Formulas calculate a value from fields in one record. Use them for totals, labels, date differences, conditions, and other results that should follow the saved inputs automatically.
+Formulas calculate totals, labels, dates, and conditions from record fields.
 
 Create a **Formula field** when the result belongs on every record. Add a **Computed column** when the calculation is only needed in one query. In GQL, the same expression language can filter records or create an output column.
 
 ## Where formulas run {icon="math-function"}
 
-- **Formula fields** recalculate when records are read and can appear in views, cards, detail panels, Grids Apps, and documents.
+- **Formula fields** recalculate for Draft records. Finalization freezes their values and types; later formula edits do not change them.
 - **Computed columns** are temporary query output and do not add a field to the table.
 - **GQL conditions** use an expression inside `where` or `having`.
 - **GQL output** uses `formula(expression) as alias`.
 
-Formulas use the complete query result, not only the records currently visible on screen. The same expression behaves consistently in tables, views, computed columns, and GQL.
+**Object-list columns** calculate within one row. Under **Rules and calculation**, enable calculation and reference sibling columns. Renamed columns need updated references; the column ID stays stable. Finalization freezes these results with the list. Use `LIST_SUM(Items, 'Amount')` in a record formula to total a list column.
 
 ## Expression rules {icon="book-2"}
 
@@ -27,7 +27,7 @@ Formulas use the complete query result, not only the records currently visible o
 - **Functions:** Function names are case-insensitive. Arguments are comma-separated and must match the function's documented count.
 :::
 
-Build a formula from a representative record and check empty, zero, and boundary values. If a field changes type or is removed, update dependent formulas before relying on their output.
+Check empty, zero, and boundary values. Each expression allows up to 20,000 characters, 64 nesting levels and 1,024 expression nodes (operators, values, references and calls). A query or computed-column input may impose a smaller text limit. Simplify an expression that exceeds these limits; adding parentheses does not shorten an operator chain.
 
 ### Operators and precedence
 
@@ -48,11 +48,11 @@ Higher rows bind more tightly. Parentheses override this order. Prefer the word 
 - Arithmetic and ordered comparisons return empty when either side is empty. Two empty values are equal.
 - `null`, `false`, `0`, and empty text are false in a condition; other non-empty values are true.
 - `and`, `or`, `AND`, and `OR` stop as soon as the result is known. `IF` evaluates only the selected branch.
-- Invalid calculations such as division or remainder by zero, a negative square root, or the wrong number of function arguments produce a visible formula error rather than a misleading value.
+- Division/remainder by zero, negative square roots, overflowing powers and wrong argument counts produce formula errors.
 - `IFEMPTY(value, fallback)` handles `null` and empty text. `IFERROR(value, fallback)` handles formula errors. Their fallback is evaluated only when needed.
 - `CONCAT(value, ...)` is the clearest way to combine text. Numeric-looking text participates in numeric arithmetic, so do not rely on `+` for labels.
 
-The functions named Aggregate below combine arguments from the current record, for example `SUM(Subtotal, Tax)`. They do not summarize several records. Use GQL `aggregate` when a report needs totals across rows.
+Aggregate functions combine arguments in one record, such as `SUM(Subtotal, Tax)`. GQL `aggregate` summarizes records. Division and averages use PostgreSQL decimal precision, ignoring trailing zeroes. Explicitly `ROUND` monetary results; column constraints only validate them.
 
 ## Common formulas {icon="math-function"}
 
@@ -107,8 +107,8 @@ IFERROR(total / quantity, 0)
 | Number    | ROUND(number, digits?)             | Round a number.                                                          | number  |
 | Number    | FLOOR(number)                      | Round down.                                                              | number  |
 | Number    | CEIL(number)                       | Round up.                                                                | number  |
-| Number    | SQRT(number)                       | Square root.                                                             | number  |
-| Number    | POW(base, exponent)                | Power.                                                                   | number  |
+| Number    | SQRT(number)                       | Square root; the same decimal rounding in previews and queries.           | number  |
+| Number    | POW(base, exponent)                | Power: 32-bit integer exponents retain integer digits; others use 80 significant digits (at most 1,000 decimal places). Round money explicitly. | number  |
 | Number    | MOD(a, b)                          | Remainder.                                                               | number  |
 | Number    | PERCENT(part, total)               | Part as percent of total.                                                | number  |
 | Logic     | IF(condition, then, else)          | Choose by condition.                                                     | any     |
@@ -141,7 +141,7 @@ IFERROR(total / quantity, 0)
 | Date      | DATEADD(date, count, unit?)        | Add time to a date; the unit defaults to days.                           | date    |
 | Date      | DATEDIFF(from, to, unit?)          | Difference between dates; the unit defaults to days.                     | number  |
 
-`ROUND` defaults to zero decimal places and accepts negative places for tens, hundreds, and larger positions. `LEFT`, `RIGHT`, and `SUBSTRING` treat negative lengths as zero; `SUBSTRING` starts at position 0. `REPLACE` replaces every match.
+`ROUND` defaults to zero places. Negative places round to tens, hundreds, etc. Fractional places truncate toward zero; values outside −131,072…16,383 produce a formula error. `LEFT`, `RIGHT`, and `SUBSTRING` treat negative lengths as zero; `SUBSTRING` starts at position 0. `REPLACE` replaces every match.
 
 `TODAY()` returns the current date and `NOW()` returns the current date and time. Date-time calendar operations use the request's display timezone; when none is supplied, Grids uses the Cloud application timezone. Date-only values remain calendar dates. `DATEADD` accepts day(s), hour(s), minute(s), month(s), and year(s); it defaults to days and keeps month-end dates valid when adding months or years. `DATEDIFF` accepts day(s), hour(s), minute(s), and second(s), defaults to days, and returns `to - from`, rounded down to whole units.
 

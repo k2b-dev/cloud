@@ -18,6 +18,7 @@ const withIsolatedDatabase = async (run: (database: SQL) => Promise<void>) => {
   databaseUrl.pathname = `/${databaseName}`;
 
   await sql.unsafe(`CREATE DATABASE "${databaseName}"`);
+  console.info(`[grids:migration-test] Isolated database: ${databaseName}`);
   const database = new SQL(databaseUrl);
   try {
     await database`CREATE SCHEMA auth`.simple();
@@ -436,9 +437,9 @@ describe("grids schema migration", () => {
           WHERE table_schema = 'grids'
             AND table_type = 'BASE TABLE'
         `;
-        // Durable History, external Record identity, and the evidence lifecycle
+        // Durable History, external Record identity, Form retry receipts and the evidence lifecycle
         // add explicit owners without replacing the lightweight live rows.
-        expect(row?.tableCount).toBe(54);
+        expect(row?.tableCount).toBe(55);
         const historyTables = await database<Array<{ tableName: string }>>`
           SELECT table_name AS "tableName"
           FROM information_schema.tables
@@ -515,6 +516,13 @@ describe("grids schema migration", () => {
           SELECT grids.try_numeric('not a number') AS value
         `;
         expect(invalidFormulaCoercion?.value).toBeNull();
+        const [powers] = await database<Array<{ overflow: null; invalid: null; missing: null; valid: string }>>`
+          SELECT grids.try_numeric_power(2, 2147483647) AS overflow,
+            grids.try_numeric_power(-1, 0.5) AS invalid,
+            grids.try_numeric_power(NULL, 2) AS missing,
+            trim_scale(grids.try_numeric_power(1.01, 37))::text AS valid
+        `;
+        expect(powers).toEqual({ overflow: null, invalid: null, missing: null, valid: "1.4450764714274963" });
         const functions = await database<Array<{ name: string; parallel: string; volatility: string; language: string }>>`
           SELECT p.proname AS name, p.proparallel AS parallel, p.provolatile AS volatility, l.lanname AS language
           FROM pg_proc p
@@ -584,7 +592,9 @@ describe("grids schema migration", () => {
         expect(health).toEqual({ status: "ok", outboxPending: 0 });
       });
     },
-    30_000,
+    // Three full migrations (two concurrent) plus isolated database setup and
+    // cleanup need the same budget as the other full migration regressions.
+    120_000,
   );
 
   postgresTest(

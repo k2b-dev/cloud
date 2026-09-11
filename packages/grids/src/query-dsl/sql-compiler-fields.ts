@@ -1,11 +1,13 @@
 import { sql } from "bun";
 import { outputSqlTypeForField, storageOf } from "../service/field-storage";
 import {
+  compileFormulaFieldToSql,
   compileFormulaSourceToSql,
   type FormulaSqlExpression,
   type FormulaSqlFieldResolver,
   type FormulaSqlType,
 } from "../service/formula-sql-compiler";
+import { compileObjectListProjection } from "../service/object-list-projection";
 import type { Field } from "../service/types";
 import type { DslJoinedColumn } from "./resolver";
 import type { DslSqlCompileOptions, DslSqlOutputColumn } from "./sql-compiler-types";
@@ -36,7 +38,7 @@ const compileFormulaFieldProjection = (params: {
   if (typeof expression !== "string" || expression.trim().length === 0) {
     return { ok: false, error: `formula field "${params.field.name}" has no expression` };
   }
-  const compiled = compileFormulaSourceToSql(expression, {
+  const compiled = compileFormulaFieldToSql(params.field, {
     fields: params.fields,
     recordAlias: params.recordAlias,
     dateConfig: params.timeZone ? { timeZone: params.timeZone } : undefined,
@@ -82,6 +84,12 @@ export const fieldProjection = (
     resolveField?: FormulaSqlFieldResolver;
   },
 ): { ok: true; projection: unknown; sqlType?: FormulaSqlType } | { ok: false; error: string } => {
+  if (field.type === "object_list") {
+    const compiled = compileObjectListProjection(field, recordAlias, {
+      dateConfig: options?.timeZone ? { timeZone: options.timeZone } : undefined,
+    });
+    return compiled.ok ? { ok: true, projection: compiled.expression.sql } : compiled;
+  }
   if (field.type === "formula") {
     return compileFormulaFieldProjection({
       field,

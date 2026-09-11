@@ -1,8 +1,17 @@
 import { normalizeRefKey } from "../ref-syntax";
-import { formulaFunctionArity, formulaFunctionForName } from "./function-catalog";
+import { formulaFunctionArity, formulaFunctionForName, isListFormulaFunction, type ListFormulaFunctionName } from "./function-catalog";
 import { FN_LIBRARY, type FormulaRuntimeContext, isFormulaError } from "./functions";
 import { formulaComparisonTimestamp, isFormulaComparisonDate } from "./functions-date";
-import { decimalToString, isExactShaped, isNullish, toDecimalValue, toNumber } from "./numeric";
+import {
+  decimalResult,
+  decimalToString,
+  divideDecimals,
+  exactDecimalOperation,
+  isExactShaped,
+  isNullish,
+  toDecimalValue,
+  toNumber,
+} from "./numeric";
 import { type BinOp, type Expr, formulaError, type Literal } from "./types";
 
 type EvalContext = FormulaRuntimeContext & {
@@ -10,6 +19,8 @@ type EvalContext = FormulaRuntimeContext & {
   fields: Record<string, unknown>;
   /** Public field reference to private field UUID map. */
   slugToId?: Record<string, string>;
+  /** Numeric column references for each available object-list field. */
+  listColumns?: Record<string, Record<string, string>>;
 };
 
 const truthy = (v: unknown): boolean => {
@@ -125,12 +136,15 @@ const evalExactArithmetic = (op: BinOp, left: unknown, right: unknown): unknown 
   const ld = toDecimalValue(left);
   const rd = toDecimalValue(right);
   if (ld === null || rd === null) return null;
-  if (op === "+") return decimalToString(ld.decimal.plus(rd.decimal));
-  if (op === "-") return decimalToString(ld.decimal.minus(rd.decimal));
-  if (op === "*") return decimalToString(ld.decimal.times(rd.decimal));
-  if (rd.decimal.isZero()) return formulaError("DIV_ZERO");
-  if (op === "/") return decimalToString(ld.decimal.div(rd.decimal));
-  if (op === "%") return decimalToString(ld.decimal.mod(rd.decimal));
+  if ((op === "/" || op === "%") && rd.decimal.isZero()) return formulaError("DIV_ZERO");
+  if (op === "+" || op === "-" || op === "*" || op === "%") {
+    const value = exactDecimalOperation(ld.decimal, rd.decimal, op);
+    return isFormulaError(value) ? value : decimalToString(value);
+  }
+  if (op === "/") {
+    const value = divideDecimals(ld.decimal, rd.decimal);
+    return isFormulaError(value) ? value : decimalToString(value);
+  }
   return null;
 };
 
@@ -143,13 +157,12 @@ const evalNumberArithmetic = (op: BinOp, left: unknown, right: unknown): unknown
   const ln = toNumber(left);
   const rn = toNumber(right);
   if (ln === null || rn === null) return null;
-  if (op === "+") return ln + rn;
-  if (op === "-") return ln - rn;
-  if (op === "*") return ln * rn;
-  if (rn === 0) return formulaError("DIV_ZERO");
-  if (op === "/") return ln / rn;
-  if (op === "%") return ln % rn;
-  return null;
+  // Preserve the existing numeric result shape, but calculate in decimal just
+  // like numeric field values and SQL. Binary float drift must not make an
+  // otherwise valid calculated cell fail its declared decimal-place constraint.
+  const result = evalExactArithmetic(op, ln, rn);
+  const decimal = typeof result === "string" ? toDecimalValue(result) : null;
+  return decimal === null ? result : decimalResult(decimal.decimal, false);
 };
 
 const evalBinary = (ast: Extract<Expr, { kind: "binop" }>, ctx: EvalContext): unknown => {
@@ -233,6 +246,7 @@ const evalCall = (ast: Extract<Expr, { kind: "call" }>, ctx: EvalContext): unkno
   if (!spec) return formulaError(`UNKNOWN_FN:${ast.fn}`);
   const arity = formulaFunctionArity(spec);
   if (ast.args.length < arity.min || ast.args.length > arity.max) return formulaError(`${ast.fn}_BAD_ARGS`);
+  if (isListFormulaFunction(ast.fn)) return evalListReduction(ast.fn, ast.args, ctx);
 
   const shortCircuit = evalShortCircuitCall(ast, ctx);
   if (shortCircuit !== undefined) return shortCircuit;
@@ -249,16 +263,47 @@ const evalCall = (ast: Extract<Expr, { kind: "call" }>, ctx: EvalContext): unkno
   }
 };
 
+const evalListReduction = (fn: ListFormulaFunctionName, args: Expr[], ctx: EvalContext): unknown => {
+  const listRef = args[0];
+  if (listRef?.kind !== "field") return formulaError("LIST_FIELD_REQUIRED");
+  const id = ctx.slugToId?.[listRef.fieldId] ?? ctx.slugToId?.[normalizeRefKey(listRef.fieldId)] ?? listRef.fieldId;
+  const columns = ctx.listColumns?.[id];
+  if (!columns) return formulaError("LIST_FIELD_REQUIRED");
+  const value = evalField(listRef.fieldId, ctx);
+  if (isNullish(value)) return null;
+  if (!Array.isArray(value)) return formulaError("INVALID_LIST_VALUE");
+  if (fn === "LIST_COUNT") return String(value.length);
+  const columnRef = args[1];
+  if (columnRef?.kind !== "literal" || typeof columnRef.value !== "string") return formulaError("LIST_COLUMN_REQUIRED");
+  const key = normalizeRefKey(columnRef.value);
+  const columnId = Object.hasOwn(columns, key) ? columns[key] : undefined;
+  if (!columnId) return formulaError("NUMERIC_LIST_COLUMN_REQUIRED");
+  const values: string[] = [];
+  for (const row of value) {
+    if (typeof row !== "object" || row === null || Array.isArray(row)) return formulaError("INVALID_LIST_VALUE");
+    const cell = Reflect.get(row, columnId);
+    if (isNullish(cell)) continue;
+    const numeric = toDecimalValue(cell);
+    if (numeric === null) return formulaError("INVALID_LIST_VALUE");
+    values.push(decimalToString(numeric.decimal));
+  }
+  if (values.length === 0) return fn === "LIST_SUM" ? "0" : null;
+  const reduced = FN_LIBRARY[fn.slice("LIST_".length)]!(values, ctx);
+  if (isFormulaError(reduced)) return reduced;
+  const numeric = toDecimalValue(reduced);
+  return numeric === null ? null : decimalToString(numeric.decimal);
+};
+
 /**
  * Walks the AST against the given record context. Null propagation: any
  * binary-op operand that resolves to null short-circuits the whole branch
  * to null (Excel-style). Division-by-zero produces a FORMULA_ERROR
  * sentinel rather than NaN/Infinity, so the renderer can show "#DIV/0".
  */
-export const evaluate = (ast: Expr, ctx: EvalContext): unknown => {
+const evaluateExpression = (ast: Expr, ctx: EvalContext): unknown => {
   switch (ast.kind) {
     case "literal":
-      return ast.value;
+      return ast.numericSource ?? ast.value;
     case "field":
       return evalField(ast.fieldId, ctx);
     case "unop":
@@ -268,6 +313,14 @@ export const evaluate = (ast: Expr, ctx: EvalContext): unknown => {
     case "call":
       return evalCall(ast, ctx);
   }
+};
+
+/** Bound intermediate string growth as well as the final serialized value. */
+export const evaluate = (ast: Expr, ctx: EvalContext): unknown => {
+  const value = evaluateExpression(ast, ctx);
+  return typeof value === "string" && ctx.maxStringLength !== undefined && value.length > ctx.maxStringLength
+    ? formulaError("VALUE_TOO_LARGE")
+    : value;
 };
 
 /**

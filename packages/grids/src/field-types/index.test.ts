@@ -19,6 +19,7 @@ test("registry: covers all field kinds", () => {
     "text",
     "longtext",
     "number",
+    "object_list",
     "boolean",
     "date",
     "select",
@@ -76,6 +77,7 @@ test("recordWritableFieldTypes: includes value and link fields only", () => {
   expect(writable).not.toContain("file");
   expect(writable).toContain("text");
   expect(writable).toContain("number");
+  expect(writable).toContain("object_list");
   expect(writable).toContain("principal");
   expect(writable).toContain("relation");
 });

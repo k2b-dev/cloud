@@ -137,7 +137,7 @@ export const list = async (params: {
   // subqueries over record_links. Single source of truth, single
   // round-trip.
   const authorizedTableIds = await readableComputedTargetTableIds(fields, params.viewer);
-  const computed = await buildComputedProjections(fields, { authorizedTableIds });
+  const computed = await buildComputedProjections(fields, { authorizedTableIds, dateConfig: params.dateConfig });
   const formulaSql = buildFormulaSqlProjections(fields, { dateConfig: params.dateConfig });
   // View computed columns evaluate in SQL when projectable (one semantics with
   // GQL preview + formula fields); the JS evaluator below only fills the rest.
@@ -201,7 +201,11 @@ export const list = async (params: {
   await hydrateRelationsFromLinks(items, fields, params.viewer);
   const recordsById = new Map(items.map((r) => [r.id, r]));
   applyComputedProjections(rows.slice(0, limit) as Array<Record<string, unknown>>, recordsById, projections);
-  await enrichFormulaLookups(items, fieldsWithLookupMeta, { dateConfig: params.dateConfig, viewer: params.viewer });
+  await enrichFormulaLookups(items, fieldsWithLookupMeta, {
+    dateConfig: params.dateConfig,
+    viewer: params.viewer,
+    projectedFieldIds: new Set(computed.map((projection) => projection.fieldId)),
+  });
 
   let nextCursor: string | null = null;
   if (hasMore) {

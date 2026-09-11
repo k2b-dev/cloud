@@ -1,12 +1,18 @@
 import { unquoteIdentifierBody } from "../ref-syntax";
+import { toDecimalValue } from "./numeric";
 import type { BinOp, Expr, SourceSpan } from "./types";
+
+// A formula can occupy at most the existing 20,000-character GQL source
+// envelope. Bound both recursive consumers (JS/SQL) and wide variadic calls:
+// source length alone does not bound expression depth or per-row evaluation.
+export const FORMULA_LIMITS = { sourceLength: 20_000, depth: 64, nodes: 1_024 } as const;
 
 // ─────────────────────────────────────────────────────────────────
 // Tokenizer
 // ─────────────────────────────────────────────────────────────────
 
 type RawToken =
-  | { kind: "num"; value: number }
+  | { kind: "num"; value: number; numericSource?: string }
   | { kind: "str"; value: string }
   | { kind: "ident"; value: string }
   | { kind: "field"; value: string }
@@ -87,7 +93,9 @@ const scanNumber: Scanner = (src, i) => {
   const j = readNumberEnd(src, i);
   const num = Number(src.slice(i, j));
   if (!Number.isFinite(num)) throw syntaxError("invalid number literal", i, j);
-  return { token: { kind: "num", value: num }, next: j };
+  const source = src.slice(i, j);
+  const rounded = String(num) !== source && !toDecimalValue(source)?.decimal.eq(String(num));
+  return { token: { kind: "num", value: num, ...(rounded ? { numericSource: source } : {}) }, next: j };
 };
 
 const escapedStringChar = (esc: string | undefined, quote: string): string => {
@@ -298,6 +306,7 @@ const BINDING: Record<string, [number, number]> = {
 
 class Parser {
   private pos = 0;
+  private depth = 0;
   constructor(private readonly tokens: Token[]) {}
 
   peek(): Token {
@@ -321,6 +330,17 @@ class Parser {
   }
 
   parseExpr(minBp = 0): Expr {
+    if (this.depth >= FORMULA_LIMITS.depth)
+      throw new FormulaSyntaxError(`Formula exceeds ${FORMULA_LIMITS.depth} levels of nesting`, this.peek().span);
+    this.depth++;
+    try {
+      return this.parseExpressionBody(minBp);
+    } finally {
+      this.depth--;
+    }
+  }
+
+  private parseExpressionBody(minBp: number): Expr {
     let left = this.parsePrefix();
     while (true) {
       const t = this.peek();
@@ -340,7 +360,10 @@ class Parser {
     const t = this.next();
     switch (t.kind) {
       case "num":
-        return withSpan({ kind: "literal", value: t.value }, t.span);
+        return withSpan(
+          { kind: "literal", value: t.value, ...(t.numericSource === undefined ? {} : { numericSource: t.numericSource }) },
+          t.span,
+        );
       case "str":
         return withSpan({ kind: "literal", value: t.value }, t.span);
       case "true":
@@ -425,6 +448,8 @@ const normalizeFormulaSource = (source: string): { source: string; offset: numbe
 
 export const parseFormula = (source: string, options: ParseFormulaOptions = {}): ParseFormulaResult => {
   try {
+    if (source.length > FORMULA_LIMITS.sourceLength)
+      throw syntaxError(`Formula exceeds ${FORMULA_LIMITS.sourceLength} characters`, FORMULA_LIMITS.sourceLength, source.length);
     const normalized = normalizeFormulaSource(source);
     const tokens = tokenize(normalized.source, normalized.offset, options);
     const parser = new Parser(tokens);
@@ -432,6 +457,26 @@ export const parseFormula = (source: string, options: ParseFormulaOptions = {}):
     if (parser.peek().kind !== "eof") {
       const diagnostic = { message: "trailing tokens after expression", span: parser.peek().span };
       return { ok: false, error: diagnostic.message, diagnostic };
+    }
+    // Pratt parsing is shallow for left-associative chains, but the resulting
+    // AST is not. Check iteratively before any recursive walker receives it.
+    const pending = [{ expression: ast, depth: 1 }];
+    let nodes = 0;
+    while (pending.length > 0) {
+      const entry = pending.pop()!;
+      const span = entry.expression.span ?? { start: 0, end: source.length };
+      if (++nodes > FORMULA_LIMITS.nodes) throw new FormulaSyntaxError(`Formula exceeds ${FORMULA_LIMITS.nodes} expression nodes`, span);
+      if (entry.depth > FORMULA_LIMITS.depth)
+        throw new FormulaSyntaxError(`Formula exceeds ${FORMULA_LIMITS.depth} levels of nesting`, span);
+      const children =
+        entry.expression.kind === "binop"
+          ? [entry.expression.left, entry.expression.right]
+          : entry.expression.kind === "unop"
+            ? [entry.expression.operand]
+            : entry.expression.kind === "call"
+              ? entry.expression.args
+              : [];
+      for (const expression of children) pending.push({ expression, depth: entry.depth + 1 });
     }
     return { ok: true, ast };
   } catch (e) {

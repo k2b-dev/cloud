@@ -67,10 +67,14 @@ const prepareFormulaLookupPlan = async (
   viewer?: ExpansionViewer,
   authorizeComputedTable?: (tableId: string) => Promise<boolean>,
   client?: SqlClient,
+  projectedFieldIds?: ReadonlySet<string>,
 ): Promise<FormulaLookupPlan> => {
   const authorizedTargetTableIds = await readableComputedTargetTableIds(fields, viewer, authorizeComputedTable, client);
   const specs = fields
-    .filter((field) => field.type === "lookup" && !field.deletedAt && lookupTargetMeta(field)?.type === "formula")
+    .filter(
+      (field) =>
+        field.type === "lookup" && !field.deletedAt && !projectedFieldIds?.has(field.id) && lookupTargetMeta(field)?.type === "formula",
+    )
     .map((lookupField) => {
       const cfg = lookupField.config as { relationFieldId?: string };
       const relationField = cfg.relationFieldId
@@ -156,6 +160,7 @@ const enrichFormulaLookupsWithPlan = async (
   for (const spec of plan.specs) {
     const targetRecords = targetsByTable.get(spec.targetTableId);
     for (const record of records) {
+      if (record.finalizedAt) continue;
       const firstId = relationIdsFor(record.data[spec.relationField.id])[0];
       record.data[spec.lookupField.id] = firstId ? (targetRecords?.get(firstId)?.data[spec.target.fieldId] ?? null) : null;
     }
@@ -170,10 +175,18 @@ export const enrichFormulaLookups = async (
     dateConfig?: DateContext;
     viewer?: ExpansionViewer;
     authorizeComputedTable?: (tableId: string) => Promise<boolean>;
+    projectedFieldIds?: ReadonlySet<string>;
   } = {},
 ): Promise<void> => {
   if (records.length === 0) return;
-  const plan = await prepareFormulaLookupPlan(fields, options.dateConfig, options.viewer, options.authorizeComputedTable, options.client);
+  const plan = await prepareFormulaLookupPlan(
+    fields,
+    options.dateConfig,
+    options.viewer,
+    options.authorizeComputedTable,
+    options.client,
+    options.projectedFieldIds,
+  );
   await enrichFormulaLookupsWithPlan(records, plan, options);
 };
 
@@ -208,7 +221,7 @@ const createFederatedReader = async (tableId: string, fields: Field[], opts: Rec
     opts.client,
   );
   if (!recordSource) throw new Error("Combined table source is not available");
-  const formulaSql = buildFormulaSqlProjections(fields, { dateConfig: opts.dateConfig });
+  const formulaSql = buildFormulaSqlProjections(fields, { dateConfig: opts.dateConfig, useFinalizedFormulaValues: false });
   const projectionFragments = projectionFragmentsFor(formulaSql);
   const formulaFieldIds = new Set(formulaSql.map((projection) => projection.fieldId));
   const fieldsWithLookupMeta = await withLookupTargetMetadata(fields, opts.client);
@@ -236,6 +249,7 @@ const createFederatedReader = async (tableId: string, fields: Field[], opts: Rec
     enrichRecordsWithFormulas(records, fieldsWithLookupMeta, {
       dateConfig: opts.dateConfig,
       skipFormulaFieldIds: formulaFieldIds,
+      useFinalizedFormulaValues: false,
     });
     if (opts.includeRelations) await attachRelationExpansion(records, fieldsWithLookupMeta, opts.viewer);
     return recordIds.flatMap((id) => {
@@ -258,7 +272,11 @@ export const createReader = async (tableId: string, opts: RecordReadOptions = {}
   if (table?.kind === "federated") return createFederatedReader(tableId, fields, opts);
   const fieldsWithLookupMeta = await withLookupTargetMetadata(fields, client);
   const authorizedTargetTableIds = await readableComputedTargetTableIds(fields, opts.viewer, opts.authorizeComputedTable, client);
-  const computed = await buildComputedProjections(fields, { authorizedTableIds: authorizedTargetTableIds, client });
+  const computed = await buildComputedProjections(fields, {
+    authorizedTableIds: authorizedTargetTableIds,
+    client,
+    dateConfig: opts.dateConfig,
+  });
   const formulaSql = buildFormulaSqlProjections(fields, { dateConfig: opts.dateConfig });
   const projections = [...computed, ...formulaSql];
   const projectionFragments = projectionFragmentsFor(projections);
@@ -269,6 +287,7 @@ export const createReader = async (tableId: string, opts: RecordReadOptions = {}
     opts.viewer,
     opts.authorizeComputedTable,
     client,
+    new Set(computed.map((projection) => projection.fieldId)),
   );
 
   const getMany = async (recordIds: string[]): Promise<GridRecord[]> => {

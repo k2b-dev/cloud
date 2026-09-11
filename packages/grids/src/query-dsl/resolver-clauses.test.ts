@@ -82,12 +82,15 @@ describe("GQL clauses: nulls, trash, grouped median/earliest/latest", () => {
     expect(earliest.query.aggregations).toEqual([{ fieldId: orderedAtFieldId, agg: "earliest", label: "first_at" }]);
   });
 
-  test("grouped median compiles to PERCENTILE_CONT in SQL", () => {
+  test("grouped median keeps the middle values numeric in SQL", () => {
     const compiled = compileDslGroupedQueryPlanToSql(planOf(`group by status\naggregate median(amount) as mid`), {
       fieldsByTableId: ctx().fieldsByTableId,
     });
     expect(compiled.ok).toBe(true);
-    if (compiled.ok) expect(normalizedSql(compiled.query.sql)).toContain("PERCENTILE_CONT(0.5) WITHIN GROUP");
+    if (compiled.ok) {
+      expect(normalizedSql(compiled.query.sql)).toContain("PERCENTILE_DISC");
+      expect(normalizedSql(compiled.query.sql)).not.toContain("PERCENTILE_CONT");
+    }
   });
 
   test("search resolves to a RecordQuery search spec (default and scoped fields)", () => {

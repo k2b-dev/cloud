@@ -169,7 +169,7 @@ const sourceFieldJson = (
   if (descriptor.kind === "json" || descriptor.kind === "jsonbArray") {
     return sql`${sql.unsafe(recordAlias)}.data->${field.id}`;
   }
-  if (field.type === "lookup" || field.type === "rollup") {
+  if (field.type === "formula" || field.type === "lookup" || field.type === "rollup") {
     const projection = computed.get(field.id)?.sql;
     return projection ? sql`to_jsonb(${projection})` : sql`NULL::jsonb`;
   }

@@ -52,7 +52,8 @@ sort Name asc
 :::reference
 - **Relationen:** Eine kanonische Relation muss auf ein gemeinsames gespeichertes Ziel oder auf ein anderes ausdrücklich veröffentlichtes kombiniertes Ziel mit den verknüpften Datensätzen verweisen.
 - **Dateien:** Personen mit Lesezugriff auf die Zielbasis und kompilierte Grids-App-Capabilities können zugeordnete Dateien innerhalb der Veröffentlichungsgrenze der kombinierten Tabelle ansehen und herunterladen. Dateimetadaten und Änderungen an Dateien in der Quelle bleiben privat.
-- **Berechnete Daten:** Kanonische Formeln können die kombinierten Felder verwenden. Ein berechnetes Quellfeld kann nur zugeordnet werden, wenn sein Ergebnis mit dem kanonischen Feld kompatibel ist.
+- **Berechnete Daten:** Zugeordnete Ergebnisse brauchen kompatible Typen. Finalisierte Quellwerte bleiben fest; kanonische Formeln rechnen darauf weiter.
+- **Objektlisten:** Quelle und Ziel benötigen identische Spaltendefinitionen, einschließlich IDs, Typen, Einheiten und Berechnungen. Einzelne Unterspalten werden nicht zugeordnet.
 - **Live-Daten und Exporte:** Änderungen an der Quelle erscheinen automatisch. CSV- und JSON-Exporte können über alle passenden Datensätze fortgesetzt werden.
 :::
 

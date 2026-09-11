@@ -137,25 +137,9 @@ Scannerblöcke unterstützen skalare Sitzungs- und Nach-dem-Scan-Eingaben. Einga
 
 ## Navigation ausdrücklich definieren {icon="arrow-right"}
 
-Navigation besitzt eine Zielseiten-ID, ein Verlaufsverhalten und eine Zuordnung für jeden Zielparameter:
+Zwischen Seiten normale Push-Navigation verwenden, nach Formularerfolg ersetzende Navigation. Jeder Zielparameter benötigt eine kompatible Bindung. Für wiederholte Eingaben den Eltern-Datensatz als Seitenparameter behalten und die Formularrelation daran binden.
 
-```yaml
-kind: navigate
-pageId: request
-history: push
-params:
-  request_id: { source: ROW, path: id }
-```
-
-Nutze `push` für normale Bewegung und `replace` nach einem erfolgreichen Erstellungsvorgang. Ein Navigationsziel ist nur gültig, wenn alle erforderlichen Zielparameter mit kompatiblen Typen bereitgestellt werden.
-
-Behalte bei wiederholter Eingabe das übergeordnete Element als Seitenparameter bei:
-
-```text
-/apps/<id>/add-article?list_id=<record-id>
-```
-
-Das Formular setzt seine Listenrelation fest aus `PARAMS.list_id`. Nach Erfolg navigiert eine Schaltfläche mit demselben Parameter zurück auf dieselbe Seite, eine andere zu den Listendetails. Dafür ist keine appspezifische Batch- oder Assistentenkomponente erforderlich.
+Die [API-Referenz](/app/grids/help/grids-custom-app-api) beschreibt die exakten Navigations- und Erfolgsbindungen.
 
 ## Verfügbarkeit mit GQL durchsetzen {icon="adjustments"}
 

@@ -4,6 +4,7 @@ import { AGGREGATE_KINDS } from "../src/aggregate-catalog";
 import { DOCUMENT_TEMPLATE_STARTERS } from "../src/document-template-starters";
 import { GRID_FORMULA_FUNCTIONS } from "../src/formula/function-catalog";
 import { parseFormula } from "../src/formula/parser";
+import { gridsHelp } from "../src/help";
 import {
   GROUP_GRANULARITIES,
   PREDICATE_COMPARISON_OPERATORS,
@@ -11,7 +12,6 @@ import {
   PREDICATE_OPERATORS,
 } from "../src/query-dsl/intelligence-grammar";
 import { parseGridsQueryDsl } from "../src/query-dsl/parser";
-import { gridsHelp } from "../src/help";
 
 test("registers the complete bilingual Help corpus within the platform budget", () => {
   const compiled = compileHelp({ appId: "grids", appName: "Grids", appIcon: "ti ti-table", basePath: "/app/grids", definition: gridsHelp });
@@ -48,6 +48,7 @@ const expectedTopics = [
   "grids-documents-pdfs",
   "grids-publish-custom-app",
   "grids-custom-app-yaml-cli",
+  "grids-custom-app-api",
   "grids-custom-apps",
   "grids-workflows",
   "grids-permissions",

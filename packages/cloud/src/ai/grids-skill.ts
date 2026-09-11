@@ -71,7 +71,7 @@ Chats launched through Query with AI are restricted to discovery, Help, reading,
 
 ## Daily work outside a restricted query chat
 
-Discover the exact available capability before promising a change. Before a record write, load \`grids.gql.context\` kind fields with includeWriteContext true for required/writable fields and audit questions; ordinary query context intentionally omits them. \`grids.record.read\` supplies the current version; \`grids.record.update\` needs ifVersion and only the intended writable field IDs. On conflict, re-read and reconcile rather than overwriting. \`grids.record.create\` is not retry-safe. \`grids.record.upsert-external\` uses its explicit external identity contract, not an arbitrary short-ID field.
+Discover the exact available capability before promising a change. Before a record write, load \`grids.gql.context\` kind fields with includeWriteContext true for required/writable fields and audit questions; ordinary query context omits them. \`grids.record.read\` supplies the current version; \`grids.record.update\` needs ifVersion and only intended writable field IDs. On conflict, re-read and reconcile. Retry \`grids.record.create\` only with the same idempotency key and unchanged input. \`grids.record.upsert-external\` uses its external identity contract, not an arbitrary short-ID field. For typed lists and frozen calculations, read the Typed values section in references/query-tasks.md and the cited Help.
 
 Use \`grids.document.templates\`, \`grids.document.list\` and \`grids.document.read\` to discover actual documents. \`grids.document.create\` requires the specified idempotency key and individual approval. Finalized documents and records remain unchanged; follow documented correction/draft workflows. \`grids.workflow.record-actions\` discovers supported record actions; \`grids.workflow.record-action\` is not an arbitrary workflow execution API. Explain failures using current state and Help, without weakening permissions or claiming legal conformity.
 
@@ -106,6 +106,26 @@ Use these as intent patterns, not executable queries against an unknown schema. 
 10. Missing relations: use the documented empty predicate on the relation. An unreadable target is not necessarily a missing relation.
 11. Stock below minimum: compare the two numeric fields using the documented field-comparison syntax; quoting a field name as a text literal changes its meaning.
 12. Reusable report: preview, execute, agree on name/visibility, then request View creation approval. If denied or unavailable, offer the editor link instead.
+13. Invoice items inside one record: first establish whether Items is an object_list or a relation. List reductions calculate within each record; ordinary aggregates combine records. Do not turn a list into a join or sum a parent total repeatedly.
+
+## Typed values
+
+Read grids-tables-fields for object lists and finalization, grids-formulas for LIST functions and rounding, and grids-custom-app-api for form payloads. Use Help search/read rather than copying the handbook into the chat.
+
+An object_list contains one level of parent-owned rows, not separate records. Use it for invoice positions that have no independent permissions or lifecycle; use a relation when the items need either. Load grids.gql.context kind list-columns with tableId and fieldId for the actual column IDs, scalar types, constraints and calculations; follow its cursors. The list metadata reports minimum and maximum row counts. If that discovery is unavailable, ask for the configuration or offer the existing editor link; names alone are not enough to invent writable IDs.
+
+Write a JSON array keyed by discovered six-character column IDs. Decimal amounts remain strings. Omit calculated columns even when record.read returned them. Updating a list replaces the whole list: retain all intended rows from the current record and use ifVersion; do not send just the edited row. An empty array clears a list only when its required/minimum-row rules allow it. Nested lists, per-item records and independent item permissions are not supported.
+
+Example using discovered column names, not JavaScript property access:
+\`\`\`gql
+from table Invoices
+select "Invoice number", formula(LIST_SUM(Items, 'Amount')) as items_total
+limit 25
+\`\`\`
+
+LIST_COUNT counts rows. LIST_SUM/AVG/MIN/MAX require a numeric column name or ID as the second string argument. For an empty list SUM and COUNT return zero; AVG/MIN/MAX return null. A missing list returns null. For totals across invoices, aggregate the numeric invoice-total field; do not sum only the displayed page. Agree on currency and explicit ROUND(..., 2) before treating a calculation as a monetary amount. Display units do not convert currencies; decimal-place constraints reject excess precision instead of silently rounding it.
+
+Finalizing a parent freezes its typed list cells and formula/lookup/rollup results atomically with final numbers. Numeric values remain queryable; a related record is not recursively finalized. A generated document is a separate immutable artifact, not proof that its source record was finalized. Follow the current record status and documented correction workflow, not edits to frozen values. Four-eyes approval applies to the reviewed version and requires another eligible person. Do not promise legal conformity or a finalization tool that is absent from the live catalog.
 
 Syntax examples from canonical GQL Help (replace names with discovered resources):
 

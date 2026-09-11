@@ -1,9 +1,12 @@
 import { normalizeTimeZone } from "@k2b/cloud/shared";
 import { sql } from "bun";
+import { ObjectListConfigSchema } from "../field-types/object-list";
+import type { ListFormulaFunctionName } from "../formula/function-catalog";
 import { parseFormula } from "../formula/parser";
 import type { BinOp, Expr } from "../formula/types";
 import { normalizeRefKey } from "../ref-syntax";
 import { scalarSqlTypeForField, storageOf } from "./field-storage";
+import { finalizedFieldSql } from "./finalized-field-sql";
 import { compileFormulaFunction } from "./formula-sql-functions";
 import {
   type FormulaSqlCompileResult,
@@ -21,12 +24,14 @@ import {
   formulaSqlOk,
   formulaSqlOrErrors,
 } from "./formula-sql-values";
+import { numericAverageSql, numericDivideSql } from "./numeric-division-sql";
+import { compileObjectListValue } from "./object-list-sql";
 import type { Field } from "./types";
 
 const SQL_ALIAS = /^[a-z_][a-z0-9_]*$/i;
-const MAX_FORMULA_INLINE_DEPTH = 8;
+export const MAX_FORMULA_INLINE_DEPTH = 8;
 
-export type FormulaSqlFieldResolver = (ref: string) => FormulaSqlExpression | string | null;
+export type FormulaSqlFieldResolver = (ref: string) => (FormulaSqlExpression & { objectListConfig?: Field["config"] }) | string | null;
 
 type FormulaSqlCompileOptions = {
   fields: Field[];
@@ -35,14 +40,16 @@ type FormulaSqlCompileOptions = {
   dateConfig?: import("@k2b/stdlib").DateContext;
   now?: Date;
   resolveField?: FormulaSqlFieldResolver;
-  /** Pre-built SQL for lookup/rollup fields (by field id). */
+  /** Pre-built typed SQL for computed fields (by field id). */
   computedFieldSql?: Map<string, FormulaSqlExpression>;
+  /** Virtual tables calculate their own formulas over already projected source values. */
+  useFinalizedFormulaValues?: boolean;
   /** GQL-only support for explicit scoped refs such as customer.name. */
   scopedRefs?: boolean;
 };
 
 type CompileContext = Required<Pick<FormulaSqlCompileOptions, "recordAlias" | "now">> &
-  Pick<FormulaSqlCompileOptions, "dateConfig" | "resolveField" | "computedFieldSql"> & {
+  Pick<FormulaSqlCompileOptions, "dateConfig" | "resolveField" | "computedFieldSql" | "useFinalizedFormulaValues"> & {
     fieldsByRef: Map<string, Field[]>;
     inlineStack: Set<string>;
     depth: number;
@@ -200,7 +207,7 @@ const compileArithmetic = (op: ArithmeticOperator, left: FormulaSqlExpression, r
   const ownError = sql`(${leftSql} IS NOT NULL AND ${rightSql} = 0)`;
   const errorSql = formulaSqlOrErrors([inheritedError, ownError]);
   if (op === "/") {
-    return formulaSqlOk(sql`(${leftSql} / NULLIF(${rightSql}, 0))`, "numeric", errorSql);
+    return formulaSqlOk(numericDivideSql(leftSql, rightSql), "numeric", errorSql);
   }
   return formulaSqlOk(sql`MOD(${leftSql}, NULLIF(${rightSql}, 0))`, "numeric", errorSql);
 };
@@ -238,7 +245,10 @@ const inlineFormulaField = (field: Field, context: CompileContext): FormulaSqlCo
   if (!parsed.ok) return formulaSqlFail(`Formula field "${field.name}": ${parsed.error}`);
   const inlineStack = new Set(context.inlineStack);
   inlineStack.add(field.id);
-  return compileExpression(parsed.ast, { ...context, inlineStack, depth: context.depth + 1 });
+  const compiled = compileExpression(parsed.ast, { ...context, inlineStack, depth: context.depth + 1 });
+  return compiled.ok && context.useFinalizedFormulaValues !== false
+    ? { ok: true, expression: finalizedFieldSql(field.id, compiled.expression, context.recordAlias) }
+    : compiled;
 };
 
 const compileFieldExpression = (expression: Extract<Expr, { kind: "field" }>, context: CompileContext): FormulaSqlCompileResult => {
@@ -247,11 +257,11 @@ const compileFieldExpression = (expression: Extract<Expr, { kind: "field" }>, co
   if (custom) return formulaSqlOk(custom.sql, custom.type, custom.errorSql);
   const field = fieldByRef(context.fieldsByRef, expression.fieldId);
   if (typeof field === "string") return formulaSqlFail(field);
-  if (field.type === "formula") return inlineFormulaField(field, context);
-  if (field.type === "lookup" || field.type === "rollup") {
+  if (field.type === "formula" || field.type === "lookup" || field.type === "rollup") {
     const computed = context.computedFieldSql?.get(field.id);
     if (computed) return formulaSqlOk(computed.sql, computed.type, computed.errorSql);
   }
+  if (field.type === "formula") return inlineFormulaField(field, context);
   const projection = storageOf(field).project(field, context.recordAlias);
   if (projection === null) return formulaSqlFail(`Field ${field.name} (${field.type}) cannot be compiled into SQL formulas yet`);
   return formulaSqlOk(projection, formulaSqlTypeForField(field));
@@ -274,9 +284,57 @@ const compileBinaryExpression = (expression: Extract<Expr, { kind: "binop" }>, c
   return compileBinaryOperator(expression.op, left.expression, right.expression, context);
 };
 
+const compileListReduction = (fn: ListFormulaFunctionName, args: Expr[], context: CompileContext): FormulaSqlCompileResult => {
+  const list = args[0];
+  if (list?.kind !== "field") return formulaSqlFail(`${fn} needs an object-list field reference`);
+  const custom = context.resolveField?.(list.fieldId);
+  if (typeof custom === "string") return formulaSqlFail(custom);
+  let configValue: Field["config"];
+  let value: FormulaSqlCompileResult;
+  if (custom) {
+    if (!custom.objectListConfig) return formulaSqlFail(`${list.fieldId} is not an object-list field`);
+    configValue = custom.objectListConfig;
+    value = { ok: true, expression: custom };
+  } else {
+    const field = fieldByRef(context.fieldsByRef, list.fieldId);
+    if (typeof field === "string") return formulaSqlFail(field);
+    if (field.type !== "object_list") return formulaSqlFail(`${field.name} is not an object-list field`);
+    configValue = field.config;
+    value = compileObjectListValue(field, context.recordAlias, (ast, resolveField, recordAlias) =>
+      compileExpression(ast, { ...context, fieldsByRef: new Map(), resolveField, recordAlias }),
+    );
+  }
+  if (!value.ok) return value;
+  const source = value.expression.sql;
+  let reduction: unknown;
+  if (fn === "LIST_COUNT") reduction = sql`jsonb_array_length(${source})::numeric`;
+  else {
+    const columnRef = args[1];
+    if (columnRef?.kind !== "literal" || typeof columnRef.value !== "string")
+      return formulaSqlFail(`${fn} needs a literal column name or ID`);
+    const config = ObjectListConfigSchema.safeParse(configValue);
+    if (!config.success) return formulaSqlFail("Invalid object-list configuration");
+    const key = normalizeRefKey(columnRef.value);
+    const column = config.data.fields.find((candidate) => normalizeRefKey(candidate.id) === key || normalizeRefKey(candidate.name) === key);
+    if (!column || !["number", "percent", "duration"].includes(column.type)) return formulaSqlFail(`${fn} needs a numeric list column`);
+    const aggregate = sql.unsafe(fn.slice("LIST_".length));
+    const rows = sql`jsonb_array_elements(${source}) AS list_value(data)`;
+    const numericValue = sql`grids.canonical_numeric(list_value.data->>${column.id})`;
+    const aggregateValue = fn === "LIST_AVG" ? numericAverageSql(numericValue) : sql`${aggregate}(${numericValue})`;
+    const aggregated = sql`(SELECT ${aggregateValue} FROM ${rows})`;
+    reduction = fn === "LIST_SUM" ? sql`COALESCE(${aggregated}, 0::numeric)` : aggregated;
+  }
+  return formulaSqlOk(
+    sql`CASE WHEN ${source} IS NULL OR ${source} = 'null'::jsonb THEN NULL ELSE ${reduction} END`,
+    "numeric",
+    value.expression.errorSql,
+  );
+};
+
 const compileExpression = (expression: Expr, context: CompileContext): FormulaSqlCompileResult => {
   switch (expression.kind) {
     case "literal": {
+      if (expression.numericSource !== undefined) return formulaSqlOk(sql`${expression.numericSource}::numeric`, "numeric");
       const literal = formulaSqlLiteral(expression.value);
       return formulaSqlOk(literal.sql, literal.type);
     }
@@ -287,8 +345,11 @@ const compileExpression = (expression: Expr, context: CompileContext): FormulaSq
     case "binop":
       return compileBinaryExpression(expression, context);
     case "call":
-      return compileFormulaFunction(expression.fn, expression.args, context, (args) =>
-        args.map((argument) => compileExpression(argument, context)),
+      return compileFormulaFunction(
+        expression.fn,
+        expression.args,
+        { ...context, compileList: (fn, args) => compileListReduction(fn, args, context) },
+        (args) => args.map((argument) => compileExpression(argument, context)),
       );
   }
 };
@@ -303,6 +364,7 @@ export const compileFormulaAstToSql = (ast: Expr, options: FormulaSqlCompileOpti
     now: options.now ?? new Date(),
     resolveField: options.resolveField,
     computedFieldSql: options.computedFieldSql,
+    useFinalizedFormulaValues: options.useFinalizedFormulaValues,
     inlineStack: new Set(),
     depth: 0,
   });
@@ -320,3 +382,6 @@ export const compileFormulaSourceToSql = (source: string, options: FormulaSqlCom
   if (!parsed.ok) return formulaSqlFail(parsed.error);
   return compileFormulaAstToSql(parsed.ast, options);
 };
+
+export const compileFormulaFieldToSql = (field: Field, options: FormulaSqlCompileOptions): FormulaSqlCompileResult =>
+  compileFormulaAstToSql({ kind: "field", fieldId: field.shortId }, { ...options, resolveField: undefined });

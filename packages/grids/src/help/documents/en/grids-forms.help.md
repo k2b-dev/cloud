@@ -38,3 +38,7 @@ A Grids App may render an existing active Form as one block. The Form keeps owne
 Use this composition when people need context before entering data, a repeated “add another” flow, or a detail page after creation. Keep the Form useful on its own and put multi-page navigation in the Grids App.
 
 The published capability and the Form block's optional `availableWhen` query are checked when the app renders and again when it submits. App access does not turn an inactive or undeclared Form into a writable endpoint.
+
+Choose **Edit this page's record** for a Form on a matching Record page when users should revise an existing draft and its configured related inputs together. Creation remains the default; public links and global sidebar Forms always create. Existing related edits require exclusive links to that parent within the same Base. Removing a related row detaches it, not deletes it. Finalized records remain read-only.
+
+Saving checks the current versions and commits the parent and related edits together. On a connection failure, keep the dialog open and retry the same attempt. After a confirmed version conflict, reload and review current values before saving again; do not overwrite someone else's changes. CLI/API users supply a stable idempotency key and versions explicitly. See the [Custom App API reference](/app/grids/help/grids-custom-app-api) for the exact payload and limits.

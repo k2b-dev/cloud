@@ -447,6 +447,14 @@ export const queryMessages = i18n.define({
       functionDescription: ({ description }) =>
         ({
           "Add numeric values.": "Addiert Zahlenwerte.",
+          "Add a numeric column within one object list; empty lists return zero.":
+            "Addiert eine Zahlenspalte innerhalb einer Objektliste. Leere Listen ergeben 0.",
+          "Average non-empty numeric values within one object list.":
+            "Berechnet den Durchschnitt der nicht leeren Zahlenwerte innerhalb einer Objektliste.",
+          "Smallest non-empty numeric value within one object list.": "Kleinster nicht leerer Zahlenwert innerhalb einer Objektliste.",
+          "Largest non-empty numeric value within one object list.": "Größter nicht leerer Zahlenwert innerhalb einer Objektliste.",
+          "Count rows within one object list; absent lists return null.":
+            "Zählt die Zeilen einer Objektliste. Nicht gesetzte Listen ergeben keinen Wert.",
           "Average numeric values.": "Berechnet den Durchschnitt von Zahlenwerten.",
           "Alias for AVG.": "Alias für AVG.",
           "Count non-empty values.": "Zählt nicht leere Werte.",

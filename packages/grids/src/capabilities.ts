@@ -67,6 +67,7 @@ import { capabilityMessagesFor } from "./capability-messages";
 import { gridsCapabilityPresentation } from "./capability-presentation";
 import { type DslQueryPreviewResponse, ShortIdSchema } from "./contracts";
 import { isRecordWritableFieldType } from "./field-types";
+import { ObjectListConfigSchema } from "./field-types/object-list";
 import { queryCapabilityHref } from "./query-capability-link";
 import { gridsService } from "./service";
 import { decodeDocumentCursor } from "./service/document-values";
@@ -581,6 +582,8 @@ const fieldValueHint = (field: Field, locale?: string): string | null => {
       return t.stringValueHint;
     case "number":
       return t.numberValueHint;
+    case "object_list":
+      return t.listValueHint;
     case "percent":
       return config.range === "fraction" ? t.fractionValueHint : t.percentValueHint;
     case "boolean":
@@ -698,6 +701,7 @@ const runGqlContext = async (input: z.infer<typeof GqlContextInputSchema>, conte
 
   let items: GqlContextItem[];
   let recordWrite: ReturnType<typeof recordWriteContext> | undefined;
+  let list: z.infer<typeof GqlContextDataSchema>["list"];
   if (input.kind === "tables") {
     const [resolver, tables] = await Promise.all([
       buildPermissionedGqlResolverContextForAccess(access, baseResult.data.id, undefined, undefined, emptyDslAst()),
@@ -721,13 +725,15 @@ const runGqlContext = async (input: z.infer<typeof GqlContextInputSchema>, conte
     });
     tableItems.sort((left, right) => left.name.localeCompare(right.name) || left.id.localeCompare(right.id));
     items = tableItems;
-  } else if (input.kind === "fields" || input.kind === "options") {
+  } else if (input.kind === "fields" || input.kind === "options" || input.kind === "list-columns") {
     if (!input.tableId) return fail(err.badInput(t.tableIdRequired({ kind: input.kind })));
     if (input.kind === "options" && !input.fieldId) return fail(err.badInput(t.fieldIdRequiredForOptions));
+    if (input.kind === "list-columns" && !input.fieldId) return fail(err.badInput(t.listFieldRequired));
     const tableResult = await requireTable(input.tableId, access, "read", context.locale);
     if (!tableResult.ok || tableResult.data.baseId !== baseResult.data.id) return fail(notFoundError(t.tableNotFound));
     const fieldResult = input.fieldId ? await gridsService.field.getByShortId(input.fieldId) : null;
-    if (input.fieldId && (!fieldResult || fieldResult.tableId !== tableResult.data.id)) return fail(notFoundError(t.selectFieldNotFound));
+    if (input.fieldId && (!fieldResult || fieldResult.tableId !== tableResult.data.id))
+      return fail(notFoundError(input.kind === "list-columns" ? t.listFieldNotFound : t.selectFieldNotFound));
     const resolver = await buildPermissionedGqlResolverContextForAccess(
       access,
       baseResult.data.id,
@@ -751,6 +757,7 @@ const runGqlContext = async (input: z.infer<typeof GqlContextInputSchema>, conte
       const writeContext = recordWriteContext(tableResult.data, fieldsById, permission);
       if (input.includeWriteContext) recordWrite = writeContext;
       items = fields
+        .filter((field) => !fieldResult || field.id === fieldResult.id)
         .sort((left, right) => left.position - right.position || left.id.localeCompare(right.id))
         .map((field) =>
           fieldContextItem(
@@ -762,6 +769,13 @@ const runGqlContext = async (input: z.infer<typeof GqlContextInputSchema>, conte
             context.locale,
           ),
         );
+    } else if (input.kind === "list-columns") {
+      const field = fields.find((candidate) => candidate.id === fieldResult?.id);
+      if (!field || field.type !== "object_list") return fail(notFoundError(t.listFieldNotFound));
+      const parsed = ObjectListConfigSchema.safeParse(field.config);
+      if (!parsed.success) return fail(err.badInput(t.listConfigInvalid));
+      list = { fieldId: field.shortId, minItems: Math.max(field.required ? 1 : 0, parsed.data.minItems), maxItems: parsed.data.maxItems };
+      items = parsed.data.fields.map((column) => ({ kind: "list-column" as const, fieldId: field.shortId, column }));
     } else {
       const field = fields.find((candidate) => candidate.id === fieldResult?.id);
       if (!field || field.type !== "select") return fail(notFoundError(t.selectFieldNotFound));
@@ -811,6 +825,7 @@ const runGqlContext = async (input: z.infer<typeof GqlContextInputSchema>, conte
       kind: input.kind,
       items: page.data,
       ...(recordWrite ? { recordWrite } : {}),
+      ...(list ? { list } : {}),
     },
     refs,
     page: page.page,
@@ -1412,7 +1427,7 @@ export const gridsCapabilities = defineCapabilities({
     "gql.context": {
       title: "Load Grids GQL context",
       description:
-        "Load compact schema for a known task. If the source is unknown, request tables first; otherwise request fields with tableId. Options need tableId and fieldId. Omit unused IDs, never send empty strings. Use includeWriteContext only before record writes. Views can feed gql.view.execute.",
+        "Load compact schema for a known task. If the source is unknown, request tables first; otherwise request fields with tableId. Options and list-columns need tableId and fieldId. List columns include typed constraints and calculations; follow pagination. Omit unused IDs, never send empty strings. Use includeWriteContext only before record writes. Views can feed gql.view.execute.",
       input: GqlContextInputSchema,
       data: GqlContextDataSchema,
       openWorld: false,

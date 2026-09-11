@@ -105,6 +105,51 @@ beforeAll(async () => {
 });
 
 describe("form submission integration", () => {
+  postgresTest("keeps empty inline object lists distinct from omitted defaults", async () => {
+    const item = fixture();
+    try {
+      await insertFixture(item);
+      const listId = uuid();
+      await sql`INSERT INTO grids.fields (id, short_id, table_id, name, type, config, default_value, position)
+        VALUES (${listId}::uuid, ${shortId("L")}, ${item.targetTableId}::uuid, 'Items', 'object_list',
+          ${{ fields: [{ id: "Amount", name: "Amount", type: "number" }] }}::jsonb,
+          '[{"Amount":"7"}]'::jsonb, 1)`;
+      const form = formFor(item);
+      form.config.fields = [
+        { kind: "user_input", fieldId: item.sourceNameFieldId },
+        {
+          kind: "user_input",
+          fieldId: item.relationFieldId,
+          inlineCreate: { enabled: true, fields: [{ fieldId: item.targetNameFieldId, required: true }, { fieldId: listId }] },
+        },
+      ];
+      const result = await submitForm({
+        form,
+        actorId: null,
+        dateConfig: {},
+        submission: {
+          idempotencyKey: "empty-versus-absent-list",
+          data: { [item.sourceNameFieldId]: "ORDER", [item.relationFieldId]: ["tmp_empty", "tmp_default"] },
+          inlineCreates: {
+            [item.relationFieldId]: [
+              { tempId: "tmp_empty", data: { [item.targetNameFieldId]: "Empty", [listId]: [] } },
+              { tempId: "tmp_default", data: { [item.targetNameFieldId]: "Default" } },
+            ],
+          },
+        },
+      });
+      if (!result.ok) throw result.error;
+      const rows = await sql<
+        { data: Record<string, unknown> }[]
+      >`SELECT data FROM grids.records WHERE table_id = ${item.targetTableId}::uuid`;
+      expect(rows).toHaveLength(2);
+      expect(rows.find((row) => row.data[item.targetNameFieldId] === "Empty")?.data[listId]).toEqual([]);
+      expect(rows.find((row) => row.data[item.targetNameFieldId] === "Default")?.data[listId]).toEqual([{ Amount: "7" }]);
+    } finally {
+      await cleanup(item);
+    }
+  });
+
   postgresTest("edits a parent and its inline rows atomically and replays the same save", async () => {
     const item = fixture();
     try {
@@ -511,7 +556,7 @@ describe("form submission integration", () => {
         },
       });
       expect(result.ok).toBe(false);
-      if (!result.ok) expect(result.error.message).toBe("Field “Name” is required.");
+      if (!result.ok) expect(result.error.message).toBe("Contact, row 2: Field “Name” is required.");
 
       const [{ records, links, events } = { records: 0, links: 0, events: 0 }] = await sql<
         Array<{ records: number; links: number; events: number }>

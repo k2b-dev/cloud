@@ -1,6 +1,10 @@
 import Decimal from "decimal.js";
 import { z } from "zod";
+import { fitsNumericRange } from "../formula/numeric";
 import { fail, ok, type ValueFieldType } from "./types";
+import { fieldValidationMessages } from "./validation-messages";
+
+type ValidationMessages = ReturnType<typeof fieldValidationMessages>;
 
 type NumberConfigInput = {
   min?: string | number;
@@ -40,7 +44,10 @@ const parseFiniteDecimal = (raw: string): Decimal | null => {
   }
 };
 
-const parseConfigDecimal = (value: unknown): Decimal | null => parseDecimal(value);
+const parseConfigDecimal = (value: unknown): Decimal | null => {
+  const decimal = parseDecimal(value);
+  return decimal && fitsNumericRange(decimal) ? decimal : null;
+};
 
 const configuredPlacesInput = (config: NumberConfigInput): number | undefined => (config.integerOnly ? 0 : config.decimalPlaces);
 
@@ -52,7 +59,9 @@ const decimalPlacesConfigIssue = (config: NumberConfigInput): ConfigIssue | null
 };
 
 const configDecimalIssue = (key: "min" | "max", value: string | number | undefined): ConfigIssue | null =>
-  value !== undefined && parseConfigDecimal(value) === null ? { message: `${key} must be a number`, path: [key] } : null;
+  value !== undefined && parseConfigDecimal(value) === null
+    ? { message: `${key} must be a number within the supported numeric range`, path: [key] }
+    : null;
 
 const minMaxConfigIssue = (config: NumberConfigInput): ConfigIssue | null => {
   const min = parseConfigDecimal(config.min);
@@ -84,52 +93,55 @@ const isEmptyInput = (raw: unknown): boolean => raw === null || raw === undefine
 
 const configuredDecimalPlaces = (config: NumberConfig): number | undefined => (config.integerOnly ? 0 : config.decimalPlaces);
 
-const decimalPlacesError = (dec: Decimal, places: number | undefined): string | null => {
+const decimalPlacesError = (dec: Decimal, places: number | undefined, t: ValidationMessages): string | null => {
   if (places === undefined || dec.decimalPlaces() <= places) return null;
-  return places === 0 ? "must be an integer" : `max ${places} decimal places`;
+  return places === 0 ? t.integer : t.places({ count: places });
 };
 
-const integerOnlyError = (dec: Decimal, config: NumberConfig): string | null =>
-  config.integerOnly && !dec.isInteger() ? "must be an integer" : null;
+const integerOnlyError = (dec: Decimal, config: NumberConfig, t: ValidationMessages): string | null =>
+  config.integerOnly && !dec.isInteger() ? t.integer : null;
 
 const integerDigitCount = (dec: Decimal): number => (dec.isZero() ? 0 : Math.max(0, dec.precision(true) - dec.decimalPlaces()));
 
-const precisionError = (dec: Decimal, config: NumberConfig, places: number | undefined): string | null => {
+const precisionError = (dec: Decimal, config: NumberConfig, places: number | undefined, t: ValidationMessages): string | null => {
   if (config.precision === undefined) return null;
   const maxPlaces = places ?? dec.decimalPlaces();
   const maxIntegerDigits = config.precision - maxPlaces;
-  return integerDigitCount(dec) > maxIntegerDigits
-    ? `exceeds precision ${config.precision} (max ${maxIntegerDigits} integer digits)`
-    : null;
+  return integerDigitCount(dec) > maxIntegerDigits ? t.precision({ precision: config.precision, digits: maxIntegerDigits }) : null;
 };
 
-const rangeError = (dec: Decimal, config: NumberConfig): string | null => {
+const rangeError = (dec: Decimal, config: NumberConfig, t: ValidationMessages): string | null => {
   const min = parseConfigDecimal(config.min);
-  if (min !== null && dec.lt(min)) return `min ${config.min}`;
+  if (config.min !== undefined && min !== null && dec.lt(min)) return t.min({ value: config.min });
   const max = parseConfigDecimal(config.max);
-  if (max !== null && dec.gt(max)) return `max ${config.max}`;
+  if (config.max !== undefined && max !== null && dec.gt(max)) return t.max({ value: config.max });
   return null;
 };
 
-const firstNumberError = (dec: Decimal, config: NumberConfig, places: number | undefined): string | null =>
-  decimalPlacesError(dec, places) ?? integerOnlyError(dec, config) ?? precisionError(dec, config, places) ?? rangeError(dec, config);
+const firstNumberError = (dec: Decimal, config: NumberConfig, places: number | undefined, t: ValidationMessages): string | null =>
+  decimalPlacesError(dec, places, t) ??
+  integerOnlyError(dec, config, t) ??
+  precisionError(dec, config, places, t) ??
+  rangeError(dec, config, t);
 
 export const numberHandler: ValueFieldType = {
   type: "number",
   kind: "value",
   configSchema: NumberConfigSchema,
-  validate(raw, configRaw, required) {
+  validate(raw, configRaw, required, context) {
+    const t = fieldValidationMessages(context?.locale);
     const parsed = NumberConfigSchema.safeParse(configRaw ?? {});
-    if (!parsed.success) return fail("invalid field config");
+    if (!parsed.success) return fail(t.config);
     const config = parsed.data;
 
-    if (isEmptyInput(raw)) return required ? fail("required") : ok(null);
+    if (isEmptyInput(raw)) return required ? fail(t.required) : ok(null);
 
     const dec = parseDecimal(raw);
-    if (dec === null) return fail("must be a finite number");
+    if (dec === null) return fail(t.number);
+    if (!fitsNumericRange(dec)) return fail(t.numericRange);
 
     const places = configuredDecimalPlaces(config);
-    const error = firstNumberError(dec, config, places);
+    const error = firstNumberError(dec, config, places, t);
     if (error) return fail(error);
 
     return ok(places !== undefined ? dec.toFixed(places) : dec.toFixed());

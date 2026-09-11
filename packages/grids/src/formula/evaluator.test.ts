@@ -9,6 +9,30 @@ const run = (src: string, fields: Record<string, unknown> = {}, ctx: FormulaRunt
   return evaluate(r.ast, { fields, ...ctx });
 };
 
+test("numeric literals retain digits beyond JavaScript precision", () => {
+  expect(run("9007199254740993.25 + 0.10")).toBe("9007199254740993.35");
+  expect(run("0.00")).toBe(0);
+});
+
+test("list reductions use typed row values, exact arithmetic and explicit empty semantics", () => {
+  const listColumns = { list: { amount: "Amount" } };
+  const reduce = (fn: string, value: unknown) => {
+    const parsed = parseFormula(`${fn}(Items${fn === "LIST_COUNT" ? "" : ", 'Amount'"})`);
+    if (!parsed.ok) throw new Error(parsed.error);
+    return evaluate(parsed.ast, { fields: { list: value }, slugToId: { items: "list" }, listColumns });
+  };
+  expect(reduce("LIST_SUM", [{ Amount: "9007199254740993.25" }, { Amount: "0.10" }])).toBe("9007199254740993.35");
+  expect(reduce("LIST_AVG", [{ Amount: "0.10" }, { Amount: "0.30" }])).toBe("0.2");
+  expect(reduce("LIST_MIN", [{ Amount: null }, { Amount: "0.30" }])).toBe("0.3");
+  expect(reduce("LIST_MAX", [{ Amount: "0.10" }, { Amount: "0.30" }])).toBe("0.3");
+  expect(reduce("LIST_COUNT", [{ Amount: null }, {}])).toBe("2");
+  expect(reduce("LIST_SUM", [])).toBe("0");
+  expect(reduce("LIST_SUM", null)).toBeNull();
+  expect(reduce("LIST_AVG", [])).toBeNull();
+  expect(reduce("LIST_COUNT", [])).toBe("0");
+  expect(renderResult(reduce("LIST_SUM", [{ Amount: "bad" }]))).toBe("#INVALID_LIST_VALUE");
+});
+
 const runWithPublicIds = (src: string, fields: Record<string, unknown>, publicIdToInternalId: Record<string, string>): unknown => {
   const r = parseFormula(src);
   if (!r.ok) throw new Error(r.error);
@@ -18,6 +42,73 @@ const runWithPublicIds = (src: string, fields: Record<string, unknown>, publicId
 // ── Math ────────────────────────────────────────────────────────
 test("arithmetic: 1 + 2 * 3 = 7", () => {
   expect(run("1 + 2 * 3")).toBe(7);
+});
+
+test("numeric literal arithmetic does not introduce binary floating-point drift", () => {
+  expect(run("0.1 + 0.2")).toBe(0.3);
+  expect(run("0.3 - 0.1")).toBe(0.2);
+  expect(run("0.1 * 0.2")).toBe(0.02);
+  expect(run("0.3 / 0.1")).toBe(3);
+  expect(run("0.3 % 0.1")).toBe(0);
+});
+
+test("numeric results promote to exact strings instead of rounding an intermediate value", () => {
+  expect(run("9007199254740992 + 1")).toBe("9007199254740993");
+  expect(run("9007199254740992 + 1 - 9007199254740992")).toBe("1");
+  expect(run("SUM(9007199254740992, 1)")).toBe("9007199254740993");
+  expect(run("SUM(9007199254740992, 1) - 9007199254740992")).toBe("1");
+  expect(run("POW(3, 35)")).toBe("50031545098999707");
+  expect(run("ROUND(9007199254740992 + 1, 0)")).toBe("9007199254740993");
+  expect(run("AVG(9007199254740992, 1)")).toBe("4503599627370496.5");
+  expect(run("2 * 3")).toBe(6);
+});
+
+test("non-finite math results are errors, not ordinary text values", () => {
+  expect(renderResult(run("POW(-1, 0.5)"))).toBe("#NON_NUMERIC");
+  expect(renderResult(run("POW(0, -1)"))).toBe("#NON_NUMERIC");
+  expect(run("IFERROR(POW(-1, 0.5), 42)")).toBe(42);
+});
+
+test("ROUND truncates fractional places and rejects scales outside the shared numeric range", () => {
+  expect(run("ROUND(125, -1.9)")).toBe(130);
+  expect(run("ROUND(1.25, 1.9)")).toBe(1.3);
+  expect(renderResult(run("ROUND(1, 2147483648)"))).toBe("#ROUND_BAD_PLACES");
+  expect(renderResult(run("ROUND(1, -131073)"))).toBe("#ROUND_BAD_PLACES");
+  expect(renderResult(run("ROUND(1, 16384)"))).toBe("#ROUND_BAD_PLACES");
+  expect(run("ROUND(1, -131072)")).toBe(0);
+  expect(run("ROUND(1, 16383)")).toBe(1);
+  expect(run("IFERROR(ROUND(1, 2147483648), 42)")).toBe(42);
+  expect(run("ROUND(null, 2147483648)")).toBeNull();
+  expect(renderResult(run("ROUND(1, Places)", { Places: "9".repeat(400) }))).toBe("#ROUND_BAD_PLACES");
+});
+
+test("arithmetic and reductions retain the declared 38-digit field precision", () => {
+  const fields = { Amount: "123456789012345678901234567890.12" };
+  expect(run("Amount + 1", fields)).toBe("123456789012345678901234567891.12");
+  expect(run("SUM(Amount, 1)", fields)).toBe("123456789012345678901234567891.12");
+  expect(run("AVG(Amount, Amount)", fields)).toBe(fields.Amount);
+  expect(run("ROUND(Amount, 2)", fields)).toBe(fields.Amount);
+});
+
+test("finite arithmetic and reductions retain digits beyond the default calculation precision", () => {
+  const amount = `1${"0".repeat(80)}`;
+  const fields = { Amount: amount, Small: "0.01" };
+  expect(run("Amount + 1 - Amount", fields)).toBe("1");
+  expect(run("SUM(Amount, 1) - Amount", fields)).toBe("1");
+  expect(run("Amount * (Amount + 1) - Amount * Amount", fields)).toBe(amount);
+  expect(run("MOD(Amount + 1, Amount)", fields)).toBe("1");
+  expect(run("(Amount + 1) % Amount", fields)).toBe("1");
+  expect(run("AVG(Amount, Amount + 2) - Amount", fields)).toBe("1");
+  expect(run("MEDIAN(Amount, Amount + 2) - Amount", fields)).toBe("1");
+  expect(run("Amount + Small - Amount", fields)).toBe("0.01");
+  expect(run("AVG(1, 2, 4)")).not.toBe(2.3);
+});
+test("negative ROUND places round once, including values beyond the working precision", () => {
+  const fields = { Amount: `1${"0".repeat(80)}` };
+  expect(run("ROUND(Amount + 149, -2) - Amount", fields)).toBe("100");
+  expect(run("ROUND(Amount + 150, -2) - Amount", fields)).toBe("200");
+  expect(run("ROUND(-Amount - 149, -2) + Amount", fields)).toBe("-100");
+  expect(run("ROUND(-Amount - 150, -2) + Amount", fields)).toBe("-200");
 });
 test("subtract + unary minus", () => {
   expect(run("5 - -3")).toBe(8);

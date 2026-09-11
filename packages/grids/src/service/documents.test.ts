@@ -17,6 +17,35 @@ import {
 } from "./documents";
 
 describe("document rendering", () => {
+  test("renders typed object-list rows and exact totals without flattening or numeric coercion", async () => {
+    const items = [{ Label1: "Consulting & support", Amount: "9007199254740993.25", Active: true }];
+    const total = "9007199254740993.25";
+    const data = { record: { data: { ITEMS1: items, TOTAL1: total } } };
+    const profile = await renderDocumentProfileInput(
+      {
+        renderer: {
+          kind: "profile",
+          id: "test.invoice",
+          version: 1,
+          inputTemplate: '{"items": {{ record.data.ITEMS1 | json }}, "total": {{ record.data.TOTAL1 | json }}}',
+        },
+      },
+      data,
+    );
+    expect(profile).toEqual({ ok: true, data: { items, total } });
+    const html = await renderDocumentHtml(
+      {
+        renderer: {
+          kind: "html",
+          numberTemplate: "TEST-001",
+          filenameTemplate: "typed-items.pdf",
+          body: "{% for item in record.data.ITEMS1 %}<p>{{ item.Label1 }}: {{ item.Amount }}</p>{% endfor %}<strong>{{ record.data.TOTAL1 }}</strong>",
+        },
+      },
+      data,
+    );
+    expect(html).toEqual({ ok: true, data: "<p>Consulting &amp; support: 9007199254740993.25</p><strong>9007199254740993.25</strong>" });
+  });
   test("exposes record fields and relation values through public IDs", () => {
     expect(
       documentRecordDataWithPublicIds(

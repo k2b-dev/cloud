@@ -1,4 +1,7 @@
 import type { z } from "zod";
+import type { FormulaRuntimeContext } from "../formula/function-runtime";
+
+export type FieldValidationContext = FormulaRuntimeContext & { locale?: string };
 
 type ValidateResult<T> = { ok: true; value: T } | { ok: false; error: string };
 
@@ -17,7 +20,7 @@ export type ValueFieldType = FieldTypeBase & {
    * Validate + normalize a raw API value to its canonical JSONB form.
    * `null` / `undefined` / empty strings collapse to `null` unless `required`.
    */
-  validate(raw: unknown, config: unknown, required: boolean): ValidateResult<unknown>;
+  validate(raw: unknown, config: unknown, required: boolean, context?: FieldValidationContext): ValidateResult<unknown>;
 };
 
 export type LinkFieldType = FieldTypeBase & {

@@ -24,6 +24,53 @@ export const formulaFunctionArity = (fn: FormulaFunction): FormulaFunctionArity 
 
 const FORMULA_FUNCTION_DEFINITIONS = [
   {
+    name: "LIST_SUM",
+    signature: "LIST_SUM(list, column)",
+    description: "Add a numeric column within one object list; empty lists return zero.",
+    args: [
+      { label: "list", type: "any" },
+      { label: "column", type: "text" },
+    ],
+    returnType: "number",
+  },
+  {
+    name: "LIST_AVG",
+    signature: "LIST_AVG(list, column)",
+    description: "Average non-empty numeric values within one object list.",
+    args: [
+      { label: "list", type: "any" },
+      { label: "column", type: "text" },
+    ],
+    returnType: "number",
+  },
+  {
+    name: "LIST_MIN",
+    signature: "LIST_MIN(list, column)",
+    description: "Smallest non-empty numeric value within one object list.",
+    args: [
+      { label: "list", type: "any" },
+      { label: "column", type: "text" },
+    ],
+    returnType: "number",
+  },
+  {
+    name: "LIST_MAX",
+    signature: "LIST_MAX(list, column)",
+    description: "Largest non-empty numeric value within one object list.",
+    args: [
+      { label: "list", type: "any" },
+      { label: "column", type: "text" },
+    ],
+    returnType: "number",
+  },
+  {
+    name: "LIST_COUNT",
+    signature: "LIST_COUNT(list)",
+    description: "Count rows within one object list; absent lists return null.",
+    args: [{ label: "list", type: "any" }],
+    returnType: "number",
+  },
+  {
     name: "SUM",
     signature: "SUM(value, ...)",
     description: "Add numeric values.",
@@ -349,6 +396,9 @@ const FORMULA_FUNCTION_DEFINITIONS = [
 ] as const satisfies readonly FormulaFunction[];
 
 export type FormulaFunctionName = (typeof FORMULA_FUNCTION_DEFINITIONS)[number]["name"];
+export type ListFormulaFunctionName = Extract<FormulaFunctionName, `LIST_${string}`>;
+export const isListFormulaFunction = (name: string): name is ListFormulaFunctionName =>
+  name === "LIST_SUM" || name === "LIST_AVG" || name === "LIST_MIN" || name === "LIST_MAX" || name === "LIST_COUNT";
 export const GRID_FORMULA_FUNCTIONS: readonly FormulaFunction[] = FORMULA_FUNCTION_DEFINITIONS;
 const FORMULA_FUNCTION_BY_NAME: ReadonlyMap<string, FormulaFunction> = new Map(GRID_FORMULA_FUNCTIONS.map((fn) => [fn.name, fn]));
 

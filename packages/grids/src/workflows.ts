@@ -16,13 +16,14 @@
  * sent twice.
  */
 
-import type { DateContext } from "@k2b/stdlib";
 import { get as settingsGet } from "@k2b/cloud/services/settings";
 import { normalizeTimeZone } from "@k2b/cloud/shared";
 import type { WorkflowActionContext, WorkflowActionResult, WorkflowJsonValue, WorkflowPlannedEffect } from "@k2b/cloud/workflows";
 import { workflowAction } from "@k2b/cloud/workflows";
+import type { DateContext } from "@k2b/stdlib";
 import { sql } from "bun";
 import type { RecordMutationAudit, Table } from "./contracts";
+import { objectListRecordInputValues } from "./field-types/object-list";
 import { logAudit, type SqlClient } from "./service/audit";
 import type { DocumentIssuanceActor } from "./service/document-issuance";
 import { summarizeDocument } from "./service/document-mappers";
@@ -290,7 +291,7 @@ const correctionDraftValues = async (
       return [fieldId, field.type === "json" && typeof value === "string" ? JSON.stringify(value) : (value ?? null)];
     }),
   );
-  return { ...values, [typeFieldId]: [typeValue], [originalFieldId]: originalRecordId };
+  return { ...objectListRecordInputValues(fields, values), [typeFieldId]: [typeValue], [originalFieldId]: originalRecordId };
 };
 
 const correctionCopyFieldIds = (ctx: WorkflowActionContext, copyFields: string[] | undefined): string[] =>
@@ -534,6 +535,8 @@ export const GRIDS_WORKFLOW_ACTIONS = {
               recordId: record.recordId,
               actorId: actorId(scope),
               expectedPolicyRevision,
+              dateConfig: await dateContext(ctx),
+              locale: invocationLocale(ctx),
             }),
           );
           await logAudit(
@@ -686,9 +689,12 @@ export const GRIDS_WORKFLOW_ACTIONS = {
         const scope = await workflowRunScope(ctx);
         await requireExecution(scope);
         const original = await recordReference(ctx, config.original, "original");
-        await readableRecord(ctx, scope, original, "write");
-        requireOk(await assertMutationAllowed(sql, original.tableId, "workflow", invocationLocale(ctx)));
+        if (original.planned) {
+          throw actionError("WORKFLOW_VALUE_INVALID", runtimeText(ctx).existingFinalizedRecordRequired({ path: "original" }));
+        }
+        await currentTable(ctx, scope, original.tableId);
         await requireTableAccess(scope, original.tableId, "write");
+        requireOk(await assertMutationAllowed(sql, original.tableId, "workflow", invocationLocale(ctx)));
         const readiness = requireOk(
           await inspectRecordFinalization({
             tableId: original.tableId,

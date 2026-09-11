@@ -5,11 +5,9 @@ icon: ti ti-table
 description: Wähle Feldtypen und verwalte den Lebenszyklus gespeicherter Datensätze.
 order: 110
 ---
-Eine Tabelle speichert eine bestimmte Art von Datensätzen. Ihre Felder bestimmen, welche Informationen jeder Datensatz enthalten kann und wie Grids diese Werte in Tabellen, Formularen, Filtern, Formeln, Dokumenten, Workflows und Exporten verarbeitet.
+Eine Tabelle speichert eine Art von Datensätzen. Wähle Feldtypen nach ihrer Bedeutung, nicht nur nach ihrem Aussehen.
 
-Wähle den Feldtyp nach der Bedeutung des Werts, nicht nur nach seinem gewünschten Aussehen.
-
-Personen mit Administratorrechten für eine Basis können **Basiseinstellungen → Tabellen** öffnen, Tabellen anhand ihres Namens oder ihrer öffentlichen ID finden und Struktur sowie Schutzeinstellungen an einer Stelle vergleichen. Die Übersicht zeigt die Anzahl aller Felder, indexierten Felder und eindeutigen Felder zusammen mit dem nachweisbaren Verlauf, der Finalisierung und den erlaubten Schreibwegen. Sie berechnet keine Anzahl der Datensätze. Öffne die Tabelle, um ihre Datensätze, ihr Schema oder die Einstellungen unter **Verlauf und Schutz** aufzurufen.
+Unter **Basiseinstellungen → Tabellen** suchen Administratoren nach Namen oder öffentlicher ID und vergleichen Feld-, Index- und Eindeutigkeitsanzahlen, Verlauf, Finalisierung und Schreibwege. Für Datensätze und Einstellungen öffnest du die Tabelle; die Übersicht zählt keine Datensätze.
 
 ## Felder für eingegebene Werte {icon="table"}
 
@@ -25,6 +23,7 @@ Personen mit Administratorrechten für eine Basis können **Basiseinstellungen �
 | Auswahl | Einen Wert aus einer festgelegten Liste | Optionen können Bezeichnungen, Farben und Beschreibungen haben; eine Auswahl kann mehrere Werte zulassen |
 | Personen und Gruppen | Eine oder mehrere verantwortliche Personen oder Gruppen | Speichert typisierte Verweise auf Cloud-Personen und -Gruppen; die Auswahl zeigt nur Identitäten, die das aktuelle Konto finden darf |
 | JSON | Strukturierte Daten, die keine eigenen Grids-Felder benötigen | Sparsam einsetzen; einzelne Eigenschaften lassen sich weniger bequem filtern und erklären |
+| Objektliste | Typisierte Zeilen dieses Datensatzes, etwa Rechnungspositionen | Gemeinsame Validierung, berechnete Spalten und atomare Finalisierung |
 | Datei | Anhänge und Bilder | Das Feld steuert akzeptierte Dateitypen und die Dateianzahl; Grids setzt die konfigurierte Obergrenze für Uploads durch |
 
 Nutze **Erforderlich**, wenn ein fehlender Wert einen Datensatz ungültig machen würde. Ein **Standardwert** ergänzt einen Wert nur, wenn ein neuer Datensatz dieses Feld auslässt. Nutze **Eindeutige Werte** für Kennungen, die sich nicht wiederholen dürfen, etwa eine Inventarnummer oder Rechnungsnummer.
@@ -34,10 +33,9 @@ Die Darstellung von Werten vom Typ Datum und Uhrzeit, datumsbezogene Filter, For
 ## Verknüpfte oder berechnete Felder {icon="table"}
 
 - **Relation** verknüpft einen Datensatz mit einem oder mehreren Datensätzen in einer anderen Tabelle. Die Datensatzbezeichnung der Zieltabelle erscheint in Auswahlfeldern und Zellen.
-- **Personen und Gruppen** weist einem Datensatz eine oder mehrere Cloud-Personen oder -Gruppen zu. Nutze das Feld für Beteiligte, Verantwortliche, Prüfende oder zuständige Teams, statt Namen oder E-Mail-Adressen in Geschäftsdaten zu kopieren.
 - **Lookup** zeigt ein Feld aus einem verknüpften Datensatz an, ohne es zu kopieren.
 - **Rollup** fasst Werte zusammen, die über eine Relation erreichbar sind.
-- **Formel** berechnet bei jedem Lesen eines Datensatzes einen Wert aus den Feldern dieses Datensatzes.
+- **Formel** berechnet aus den Feldern des aktuellen Entwurfs einen Wert. Die Finalisierung schreibt ihn fest.
 - **HTML-Vorlage** rendert Liquid und optionales CSS zu einem HTML-String je Datensatz. Sie kann normale Felder sowie Ergebnisse aus Lookup, Rollup und Formel verwenden. Werte werden standardmäßig maskiert. Prüfe die Vorschau, bevor du `raw` verwendest.
 - **ID** erstellt eine stabile, generierte Kennung. Sequence- und Date-sequence-IDs verwenden eine dauerhafte Zahlenreihe, die Grids beim Erstellen eines Datensatzes zuweist. Die Werte steigen atomar und werden nie wiederverwendet; Rollbacks und technische Fehler können Lücken hinterlassen. Änderungen an Präfix oder Format betreffen nur zukünftige Datensätze.
 - **Erstellt am, Erstellt von, Geändert am und Geändert von** sind systemverwaltete Felder. Sie beschreiben die Aktivität eines Datensatzes und können nicht wie gewöhnliche Geschäftswerte eingegeben werden.
@@ -48,35 +46,23 @@ Die Live-Detailansicht eines Datensatzes zeigt neben seinen ausgehenden Relation
 
 In der CLI nutzt du `cld grids records referenced-by <table-id> <record-id> --limit 5 --json`. Kommentare sind über `records comments list|create|update|delete` verfügbar: mit `--body-file` für Markdown und `--yes` zum Löschen. Beide Listen akzeptieren `--cursor` und liefern `nextCursor`. Diese Befehle verwenden öffentliche IDs und behalten die Base-, Autoren- und Moderationsberechtigungen der Detailansicht bei.
 
-Werte in Feldern für Personen und Gruppen verwenden das Cloud-Identitätsverzeichnis, werden dadurch aber nicht zu Cloud-Berechtigungen. Vollständige Konten können aus dem Verzeichnis auswählen. Gastkonten können sich selbst und ihre direkten oder verschachtelten Gruppen auswählen, aber keine anderen Personen oder Gruppenmitglieder finden. Der Server prüft dieselbe Sichtbarkeit beim Speichern erneut, sodass eine verborgene UUID nicht über die API erraten werden kann.
+Personen- und Gruppenwerte vergeben keine Zugriffsrechte. Vollständige Konten nutzen das Verzeichnis; Gäste wählen nur sich selbst und ihre direkten/verschachtelten Gruppen, keine anderen Personen oder Gruppenmitglieder. Speichern prüft die Sichtbarkeit erneut, auch über die API.
 
-HTML-Vorlagenfelder sind schreibgeschützte Ausgabespalten, keine Dokumente. Nutze sie, wenn jeder Datensatz einen E-Mail-Text, eine Artikelbeschreibung, einen Produktausschnitt oder einen Exportwert benötigt. Nutze Dokumente, wenn die Ausgabe einen unveränderlichen Snapshot, Download oder eine PDF-Datei braucht. Tabellen können den maskierten Quelltext zeigen. Damit langes Markup die anderen Felder nicht verdeckt, zeigt die Detailansicht eines Datensatzes nur die Aktion **Vorschau**. Vorschauen öffnen sich in einem isolierten Frame. Grids fügt den Wert nie direkt in die Datensatzseite ein.
+HTML-Vorlagenfelder sind schreibgeschützte Ausgaben je Datensatz, keine unveränderlichen Dokumente oder PDFs. Tabellen zeigen maskierten Quelltext; die Detailansicht bietet eine isolierte **Vorschau**, ohne HTML in die Datensatzseite einzufügen.
 
-Vorlagen lesen stabile öffentliche Feld-IDs wie `{{ record.data.aB12xZ }}`. Der Editor zeigt den zugehörigen Feldnamen in der Autovervollständigung. Andere HTML-Vorlagenfelder sind absichtlich nicht verfügbar, damit Vorlagen sich nicht rekursiv aufrufen können. HTML-Vorlagenfelder sind nur in gespeicherten Tabellen verfügbar. Sie können nicht gefiltert, sortiert, gruppiert, aggregiert, in Formeln verwendet oder über einen Relation-Lookup ausgewählt werden.
+Vorlagen nutzen öffentliche Feld-IDs wie `{{ record.data.aB12xZ }}`; die Autovervollständigung zeigt Namen. Andere HTML-Vorlagenfelder sind gegen Rekursion gesperrt. Diese Felder erfordern gespeicherte Tabellen und unterstützen keine Filter, Sortierung, Gruppierung, Aggregate, Formeln oder Relation-Lookups.
 
 ## Formeln in einer Tabelle {icon="table"}
 
-Formelfelder verwenden dieselbe Ausdruckssprache wie berechnete Abfragespalten. Verweise anhand ihres Namens auf Felder, setze Namen mit Leerzeichen in doppelte Anführungszeichen und Textliterale in einfache Anführungszeichen.
+Die [Formelreferenz](/app/grids/help/grids-formulas) erklärt Syntax, Beispiele und Fehler. Ein Formelfeld gehört zu jedem Datensatz; eine berechnete Abfragespalte nur zur jeweiligen Abfrage.
 
-**Zeilensumme**
+## Zeilen innerhalb eines Datensatzes {icon="table"}
 
-```text
-"Unit price" * Quantity
-```
+Wähle **Objektliste** für Positionen ohne eigene Berechtigungen oder eigenen Lebenszyklus, sonst eine Relation. Unter **Regeln und Berechnung** stehen Regeln und Formeln mit Geschwisterspalten. Auswahlspalten und Regex-Regeln sind nur für Eingaben verfügbar. Verschachtelte Objekte, Relationen und Listen sind nicht erlaubt.
 
-**Lesbarer Ersatzwert**
+Füge Zeilen hinzu, entferne oder verschiebe sie. Der Editor zeigt 25 Zeilen je Seite; Blättern erhält Eingaben. Gültige Zeilen behalten ihre Vorschau, während andere unvollständig sind. Speichern prüft und ersetzt die ganze Liste; alte Versionen überschreiben keine neueren Änderungen. Standard: 0–100 Zeilen; Grenzen: 1.000 Zeilen, 200 Spalten, 256 KiB.
 
-```text
-IFEMPTY(Notes, 'No notes')
-```
-
-**Tage bis zur Fälligkeit**
-
-```text
-DATEDIFF(TODAY(), "Due date", 'days')
-```
-
-Öffne **Formeln**, um die vollständige Funktionsreferenz zu sehen. Nutze `IFERROR` nur, wenn ein Fehler ein erwarteter Fall ist, etwa eine Division durch null. Lass den Fehler andernfalls auf eine fehlerhafte Formel hinweisen.
+`LIST_SUM(Items, 'Amount')` bildet eine Summe. `LIST_AVG`, `LIST_MIN` und `LIST_MAX` nutzen dieselben Argumente; `LIST_COUNT(Items)` zählt Zeilen. Eine leere Liste ergibt bei Summe/Anzahl `0`, sonst `null`; eine fehlende Liste ergibt immer `null`. Die Finalisierung schreibt Zeilen und berechnete Werte gemeinsam fest und erhält exakte Beträge und Typen.
 
 ## Suche, Filter und Indizes {icon="search"}
 
@@ -113,7 +99,7 @@ Die Auswahl einer Prüfgruppe gewährt keinen Zugriff. Modus und Gruppe werden b
 
 Jede Anfrage hat eine kurze öffentliche ID. Genehmigung und Ablehnung über die CLI erfordern genau diese ID. Eine Bestätigung kann sich daher nie auf eine neuere Ersatzanfrage beziehen.
 
-Bei der Finalisierung prüft Grids jedes Pflichtfeld, weist alle für **Bei Finalisierung** konfigurierten fortlaufenden IDs zu, speichert die endgültige Version und sperrt den Datensatz anschließend dauerhaft in einem Vorgang. Seine Felder, Relationen, Dateien, sein Papierkorbstatus und seine endgültige Nummer können nicht mehr geändert werden. Ein erneuter Versuch gibt denselben finalisierten Datensatz zurück und weist nie eine zweite Nummer zu.
+Die Finalisierung prüft Pflichtfelder, vergibt IDs für **Bei Finalisierung**, schreibt typisierte Formel-, Lookup-, Rollup- und Listenwerte fest und sperrt den Datensatz atomar. Exakte Dezimalwerte bleiben berechenbar. Felder, Relationen, Dateien, Papierkorbstatus und endgültige Nummer sind unveränderlich. Wiederholungen geben denselben Datensatz zurück, ohne eine weitere Nummer zu vergeben.
 
 Bevor der erste Datensatz finalisiert wurde, kann eine Person mit Administratorrechten die Funktion deaktivieren, nachdem alle bei der Finalisierung zugewiesenen ID-Felder wieder auf **Bei Erstellung des Datensatzes** umgestellt wurden. Nach dem ersten finalisierten Datensatz ist die Tabelleneinstellung dauerhaft. Grids ergänzt keine fachliche Bedeutung für Rechnungen, Stornierungen, Korrekturen oder Compliance. Bilde diese mit gewöhnlichen Feldern, Relationen und Workflows ab.
 

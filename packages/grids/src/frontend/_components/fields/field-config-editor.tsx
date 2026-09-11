@@ -19,6 +19,7 @@ import type { PublicField as Field } from "../../../api/public-dto";
 import { errorMessage } from "../utils/api-helpers";
 import { FormulaExpressionEditor } from "./FormulaExpressionEditor";
 import { gridsFieldMessages } from "./messages";
+import { ObjectListConfigEditor } from "./ObjectListConfigEditor";
 
 // =============================================================================
 // Type catalog
@@ -75,6 +76,7 @@ export const TYPE_OPTIONS = [
   { value: "duration", label: "Duration" },
   // Tier 3
   { value: "json", label: "JSON" },
+  { value: "object_list", label: "Object list" },
   { value: "file", label: "File" },
   { value: "relation", label: "Relation (link to another table)" },
   { value: "lookup", label: "Lookup (project a field through a relation)" },
@@ -86,6 +88,8 @@ export const TYPE_OPTIONS = [
 /** Default config blob for a brand-new field of `type`. */
 export const defaultConfigForType = (type: string): FieldConfigState => {
   switch (type) {
+    case "object_list":
+      return { fields: [], minItems: 0, maxItems: 100 };
     case "select":
       return { multiple: false, options: [] };
     case "principal":
@@ -132,11 +136,11 @@ const NON_ROLLUP_TARGET_TYPES = new Set(["relation", "lookup", "rollup", "formul
 // Set of types we know how to show a constraint form for. Anything outside
 // this set falls into the "no extra configuration" hint.
 const CONFIGURABLE = new Set([
+  "object_list",
   "text",
   "longtext",
   "number",
   "percent",
-  "duration",
   "date",
   "select",
   "principal",
@@ -166,11 +170,23 @@ export function FieldConfigEditor(props: EditorProps) {
   // purely on type-specific constraint forms.
   return (
     <div class="flex flex-col gap-3">
+      <Show when={props.type === "object_list"}>
+        <ObjectListConfigEditor
+          config={props.config}
+          onChange={props.onChange}
+          renderConstraints={(column, onChange) => (
+            <FieldConfigEditor {...props} type={column().type} config={() => column().config} onChange={onChange} />
+          )}
+        />
+      </Show>
       <Show when={props.type === "text" || props.type === "longtext"}>
         <TextConstraints config={props.config} onChange={props.onChange} markdown={props.type === "longtext"} />
       </Show>
-      <Show when={props.type === "number" || props.type === "percent" || props.type === "duration"}>
+      <Show when={props.type === "number"}>
         <NumberConstraints config={props.config} onChange={props.onChange} />
+      </Show>
+      <Show when={props.type === "percent"}>
+        <PercentConstraints config={props.config} onChange={props.onChange} />
       </Show>
       <Show when={props.type === "date"}>
         <DateConstraints config={props.config} onChange={props.onChange} />
@@ -338,6 +354,33 @@ function TextConstraints(props: { config: () => FieldConfigState; onChange: (nex
           />
         </div>
       </Show>
+    </div>
+  );
+}
+
+function PercentConstraints(props: { config: () => FieldConfigState; onChange: (next: FieldConfigState) => void }) {
+  const locale = useLocale();
+  const t = () => gridsFieldMessages.resolve([locale()]).t;
+  const update = (patch: FieldConfigState) => props.onChange({ ...props.config(), ...patch });
+  return (
+    <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+      <Select
+        label={t().percentScale}
+        value={() => (props.config().range === "fraction" ? "fraction" : "percent")}
+        onValueChange={(range) => update({ range })}
+        options={[
+          { id: "percent", label: t().percentScaleHundred },
+          { id: "fraction", label: t().percentScaleFraction },
+        ]}
+      />
+      <NumberInput
+        label={t().percentDecimals}
+        value={() => (typeof props.config().decimals === "number" ? Number(props.config().decimals) : 2)}
+        min={0}
+        max={8}
+        decimalPlaces={0}
+        onValueChange={(decimals) => update({ decimals: decimals ?? undefined })}
+      />
     </div>
   );
 }

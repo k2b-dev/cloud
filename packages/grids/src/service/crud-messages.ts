@@ -24,6 +24,10 @@ export const gridsCrudMessages = i18n.define({
       invalidFieldConfig: ({ type, detail }: { type: string; detail: string }) =>
         `The configuration for field type “${type}” is invalid: ${detail}`,
       invalidFieldConfigDetail: "The configuration is invalid.",
+      objectListSchemaInvalidatesValues: ({ field, detail }: { field: string; detail: string }) =>
+        `Existing values in “${field}” do not meet these settings: ${detail}. Update those values first.`,
+      objectListColumnMeaningChanged: ({ field }: { field: string }) =>
+        `The stored values in “${field}” cannot be reinterpreted. Keep its type and, for finalized records, its unit and date format.`,
       invalidDefault: "The default value is invalid.",
       defaultUnsupported: ({ type }: { type: string }) => `Field type “${type}” does not support default values.`,
       invalidDefaultDetail: ({ detail }: { detail: string }) => `The default value is invalid: ${detail}`,
@@ -134,6 +138,14 @@ export const gridsCrudMessages = i18n.define({
       directFinalizationOnly: "This Table uses Direct Finalization.",
       finalizationRequestPending: "This Record already has a pending Finalization request.",
       recordNotReady: ({ fields }: { fields: string }) => `The Record is not ready to finalize: ${fields}.`,
+      finalizationCalculationInvalid: ({ field }: { field: string }) =>
+        `“${field}” cannot be captured. Check its calculation and source fields before finalizing.`,
+      finalizationCalculationScope: "Calculated source values must belong to this Base before they can be captured.",
+      finalizationCalculationChanged: "Calculated values or their definitions changed after the request. Request approval again.",
+      finalizedResultTypeChanged: ({ field }: { field: string }) =>
+        `“${field}” has finalized values. Keep its result type or create a new field.`,
+      finalizedFieldMeaningChanged: ({ field }: { field: string }) =>
+        `“${field}” has finalized values. Create a new field to change its unit, percentage scale, or date type.`,
       finalizationSignInToResolve: "Sign in as a member of the approver group to resolve this request.",
       finalizationDifferentResolver: "Another person must resolve your Finalization request.",
       finalizationApproverGroupMissing: "The Table no longer has an approver group.",
@@ -177,6 +189,10 @@ export const gridsCrudMessages = i18n.define({
       unknownFieldType: ({ type }) => `Unbekannter Feldtyp „${type}“.`,
       invalidFieldConfig: ({ type, detail }) => `Die Konfiguration für den Feldtyp „${type}“ ist ungültig: ${detail}`,
       invalidFieldConfigDetail: "Die Konfiguration ist ungültig.",
+      objectListSchemaInvalidatesValues: ({ field, detail }) =>
+        `Vorhandene Werte in „${field}“ erfüllen diese Einstellungen nicht: ${detail}. Passe zuerst diese Werte an.`,
+      objectListColumnMeaningChanged: ({ field }) =>
+        `Die gespeicherten Werte in „${field}“ dürfen nicht umgedeutet werden. Behalte den Typ und bei abgeschlossenen Datensätzen auch Einheit und Datumsformat bei.`,
       invalidDefault: "Der Standardwert ist ungültig.",
       defaultUnsupported: ({ type }) => `Der Feldtyp „${type}“ unterstützt keine Standardwerte.`,
       invalidDefaultDetail: ({ detail }) => `Der Standardwert ist ungültig: ${detail}`,
@@ -294,6 +310,15 @@ export const gridsCrudMessages = i18n.define({
       directFinalizationOnly: "Diese Tabelle verwendet die direkte Finalisierung.",
       finalizationRequestPending: "Für diesen Datensatz liegt bereits eine offene Finalisierungsanfrage vor.",
       recordNotReady: ({ fields }) => `Der Datensatz ist noch nicht zur Finalisierung bereit: ${fields}.`,
+      finalizationCalculationInvalid: ({ field }) =>
+        `„${field}“ kann nicht festgeschrieben werden. Prüfe die Berechnung und ihre Quellfelder vor der Finalisierung.`,
+      finalizationCalculationScope: "Berechnete Quellwerte müssen zu dieser Base gehören, bevor sie festgeschrieben werden können.",
+      finalizationCalculationChanged:
+        "Berechnete Werte oder ihre Definitionen haben sich seit der Anfrage geändert. Fordere die Freigabe erneut an.",
+      finalizedResultTypeChanged: ({ field }) =>
+        `„${field}“ hat finalisierte Werte. Behalte den Ergebnistyp bei oder lege ein neues Feld an.`,
+      finalizedFieldMeaningChanged: ({ field }) =>
+        `„${field}“ hat finalisierte Werte. Lege ein neues Feld an, um die Einheit, Prozentskala oder den Datumstyp zu ändern.`,
       finalizationSignInToResolve: "Melde dich als Mitglied der Freigabegruppe an, um diese Anfrage zu bearbeiten.",
       finalizationDifferentResolver: "Eine andere Person muss deine Finalisierungsanfrage bearbeiten.",
       finalizationApproverGroupMissing: "Für die Tabelle ist keine Freigabegruppe mehr eingerichtet.",

@@ -714,13 +714,18 @@ export const previewDslQuery = async (
     // handed to the compilers so those fields work in select / sort / filter /
     // formulas — same values as the records pipeline.
     const authorizedComputedTableIds = new Set(plan.readableTableIds.filter((tableId) => options.authorizedTableIds?.has(tableId) ?? true));
+    const computedDateConfig = options.timeZone ? { timeZone: options.timeZone } : undefined;
     const computedFieldSql = await buildComputedFieldSqlMap(options.fieldsByTableId[plan.tableId] ?? [], {
+      useFinalizedFormulaValues: recordSource?.kind !== "federated",
+      dateConfig: computedDateConfig,
       client: options.client,
       authorizedTableIds: authorizedComputedTableIds,
     });
     const computedFieldSqlByJoinAlias = new Map<string, Awaited<ReturnType<typeof buildComputedFieldSqlMap>>>();
     for (const [index, join] of (plan.joins ?? []).entries()) {
       const map = await buildComputedFieldSqlMap(options.fieldsByTableId[join.tableId] ?? [], {
+        useFinalizedFormulaValues: recordSourcesByTableId.get(join.tableId)?.kind !== "federated",
+        dateConfig: computedDateConfig,
         client: options.client,
         recordAlias: dslJoinRecordAlias(index),
         authorizedTableIds: authorizedComputedTableIds,
@@ -729,6 +734,8 @@ export const previewDslQuery = async (
     }
     for (const [index, join] of (plan.derivedViewSource?.joins ?? []).entries()) {
       const map = await buildComputedFieldSqlMap(options.fieldsByTableId[join.tableId] ?? [], {
+        useFinalizedFormulaValues: recordSourcesByTableId.get(join.tableId)?.kind !== "federated",
+        dateConfig: computedDateConfig,
         client: options.client,
         recordAlias: dslDerivedJoinRecordAlias(index),
         authorizedTableIds: authorizedComputedTableIds,
@@ -737,6 +744,8 @@ export const previewDslQuery = async (
     }
     for (const [index, join] of (plan.derivedViewSource?.relationJoins ?? []).entries()) {
       const map = await buildComputedFieldSqlMap(options.fieldsByTableId[join.tableId] ?? [], {
+        useFinalizedFormulaValues: recordSourcesByTableId.get(join.tableId)?.kind !== "federated",
+        dateConfig: computedDateConfig,
         client: options.client,
         recordAlias: dslJoinRecordAlias(index),
         authorizedTableIds: authorizedComputedTableIds,

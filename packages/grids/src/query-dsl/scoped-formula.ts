@@ -2,11 +2,12 @@ import type { DateContext } from "@k2b/stdlib";
 import { normalizeRefKey, parseQualifiedIdentifierRef } from "../ref-syntax";
 import { storageOf } from "../service/field-storage";
 import {
-  compileFormulaSourceToSql,
+  compileFormulaFieldToSql,
   type FormulaSqlExpression,
   type FormulaSqlFieldResolver,
   formulaSqlTypeForField,
 } from "../service/formula-sql-compiler";
+import { compileObjectListProjection } from "../service/object-list-projection";
 import type { Field } from "../service/types";
 
 type DslFormulaRecordScope = {
@@ -47,11 +48,15 @@ const compileScopedField = (
   scope: DslFormulaRecordScope,
   options: DslScopedFormulaOptions,
   label: string,
-): FormulaSqlExpression | string => {
+): Exclude<ReturnType<FormulaSqlFieldResolver>, null> => {
+  if (field.type === "object_list") {
+    const compiled = compileObjectListProjection(field, scope.recordAlias, { dateConfig: options.dateConfig });
+    return compiled.ok ? { ...compiled.expression, objectListConfig: field.config } : compiled.error;
+  }
   if (field.type === "formula") {
     const expression = (field.config as { expression?: unknown }).expression;
     if (typeof expression !== "string" || expression.trim().length === 0) return `Formula field "${field.name}" has no expression`;
-    const compiled = compileFormulaSourceToSql(expression, {
+    const compiled = compileFormulaFieldToSql(field, {
       fields: scope.fields,
       recordAlias: scope.recordAlias,
       dateConfig: options.dateConfig,

@@ -87,6 +87,27 @@ describe("collectHydratedRelationTargetIds", () => {
 });
 
 describe("enrichRecordsWithFormulas — basic evaluation", () => {
+  test("virtual formulas calculate without changing frozen list cells or stored formula snapshots", () => {
+    const list = mkField({
+      id: "items",
+      shortId: "Items1",
+      type: "object_list",
+      config: {
+        fields: [
+          { id: "Amount", name: "Amount", type: "number", config: {}, required: false },
+          { id: "Total1", name: "Total", type: "number", config: {}, required: false, formula: { expression: "Amount * 3" } },
+        ],
+      },
+    });
+    const total = mkFormula("total", "Total2", "LIST_SUM(Items1, 'Total')");
+    const record = { ...mkRecord("record", { items: [{ Amount: "2", Total1: "4" }], total: "99" }), finalizedAt: "2026-09-11T00:00:00Z" };
+    enrichRecordsWithFormulas([record], [list, total]);
+    expect(record.data.total).toBe("99");
+    enrichRecordsWithFormulas([record], [list, total], { useFinalizedFormulaValues: false });
+    expect(record.data.total).toBe("4");
+    expect(record.data.items).toEqual([{ Amount: "2", Total1: "4" }]);
+  });
+
   test("computes a single formula referencing a public field id", () => {
     const price = mkField({ id: "fld-price", shortId: "PRICE1", type: "number" });
     const total = mkFormula("fld-total", "TOTAL1", "{PRICE1} * 1.19");

@@ -49,6 +49,7 @@ export const FIELD_TYPE_ICONS: Record<string, string> = {
   percent: "ti ti-percentage",
   duration: "ti ti-clock-hour-4",
   json: "ti ti-braces",
+  object_list: "ti ti-list-details",
   file: "ti ti-paperclip",
   relation: "ti ti-link",
   lookup: "ti ti-corner-down-right",

@@ -1,5 +1,36 @@
 import { expect, test } from "bun:test";
-import { collectFieldRefs, parseFormula } from "./parser";
+import { collectFieldRefs, FORMULA_LIMITS, parseFormula } from "./parser";
+
+test("bounds nested and left-associative expressions before recursive consumers run", () => {
+  for (const source of [
+    "(".repeat(FORMULA_LIMITS.depth) + "1" + ")".repeat(FORMULA_LIMITS.depth),
+    "-".repeat(FORMULA_LIMITS.depth) + "1",
+    Array(FORMULA_LIMITS.depth + 1)
+      .fill("1")
+      .join("+"),
+  ]) {
+    expect(parseFormula(source)).toMatchObject({ ok: false, error: `Formula exceeds ${FORMULA_LIMITS.depth} levels of nesting` });
+  }
+  expect(parseFormula(Array(FORMULA_LIMITS.depth).fill("1").join("+")).ok).toBe(true);
+});
+
+test("bounds source size and wide expressions with actionable diagnostics", () => {
+  expect(parseFormula("1".repeat(FORMULA_LIMITS.sourceLength + 1))).toMatchObject({
+    ok: false,
+    error: `Formula exceeds ${FORMULA_LIMITS.sourceLength} characters`,
+  });
+  expect(parseFormula(`CONCAT(${Array(FORMULA_LIMITS.nodes).fill("'a'").join(",")})`)).toMatchObject({
+    ok: false,
+    error: `Formula exceeds ${FORMULA_LIMITS.nodes} expression nodes`,
+  });
+  expect(
+    parseFormula(
+      `CONCAT(${Array(FORMULA_LIMITS.nodes - 1)
+        .fill("'a'")
+        .join(",")})`,
+    ).ok,
+  ).toBe(true);
+});
 
 test("parses literal", () => {
   const r = parseFormula("42");

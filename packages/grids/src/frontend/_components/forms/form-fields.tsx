@@ -15,10 +15,12 @@ import {
 import { createMemo, createSignal, For, Index, onMount, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { PublicField } from "../../../api/public-dto";
+import { objectListRecordInputValues } from "../../../field-types/object-list";
 import type { Field, FormFieldEntry } from "../../../service";
 import RelationPicker from "../records/RelationPicker";
 import type { InlineCreateDraft, InlineCreateState } from "./form-submit-payload";
 import { gridsFormMessages } from "./messages";
+import { ObjectListInput } from "./ObjectListInput";
 import PrincipalInput from "./PrincipalInput";
 
 export { buildFormSubmitPayload, type InlineCreateState } from "./form-submit-payload";
@@ -36,7 +38,7 @@ export const userInputEntriesOf = (entries: FormFieldEntry[]): UserInputEntry[] 
  * Build the initial value map from a list of user-input entries —
  * seeded with each entry's `defaultValue` when present.
  */
-export const buildInitialValues = (entries: UserInputEntry[]): Record<string, unknown> => {
+export const buildInitialValues = (entries: UserInputEntry[], fields: FrontendField[] = []): Record<string, unknown> => {
   const values: Record<string, unknown> = {};
   for (const entry of entries) {
     if (
@@ -47,7 +49,7 @@ export const buildInitialValues = (entries: UserInputEntry[]): Record<string, un
       values[entry.fieldId] = entry.defaultValue;
     }
   }
-  return values;
+  return objectListRecordInputValues(fields, values);
 };
 
 /**
@@ -85,7 +87,7 @@ export const buildInitialValues = (entries: UserInputEntry[]): Record<string, un
  * the rest of the platform's input convention.
  */
 export function FieldInput(props: {
-  field: FrontendField;
+  field: Pick<FrontendField, "id" | "name" | "type" | "config" | "required">;
   entry: UserInputEntry;
   value: unknown;
   onChange: (v: unknown) => void;
@@ -120,6 +122,30 @@ export function FieldInput(props: {
   const arrayValue = (): string[] => (Array.isArray(props.value) ? (props.value as string[]) : []);
 
   switch (props.field.type) {
+    case "object_list":
+      return (
+        <ObjectListInput
+          name={props.field.id}
+          label={label}
+          description={helpText}
+          required={required}
+          config={props.field.config}
+          value={props.value}
+          error={error()}
+          dateConfig={props.dateConfig}
+          onChange={props.onChange}
+          renderCell={(column, name, value, onChange, error) => (
+            <FieldInput
+              field={{ ...column, id: name }}
+              entry={{ kind: "user_input", fieldId: name, helpText: column.description }}
+              value={value()}
+              onChange={onChange}
+              error={error}
+              dateConfig={props.dateConfig}
+            />
+          )}
+        />
+      );
     case "longtext":
       const markdown = Boolean((props.field.config as { markdown?: boolean }).markdown);
       return (
@@ -192,11 +218,12 @@ export function FieldInput(props: {
           description={helpText}
           required={required}
           min={0}
-          max={100}
+          max={props.field.config.range === "fraction" ? 1 : 100}
+          step={10 ** -(typeof props.field.config.decimals === "number" ? props.field.config.decimals : 2)}
           value={numberValue}
           onValueChange={(v) => props.onChange(v)}
-          decimalPlaces={0}
-          suffix={<span class="font-mono">%</span>}
+          decimalPlaces={typeof props.field.config.decimals === "number" ? props.field.config.decimals : 2}
+          suffix={props.field.config.range === "fraction" ? undefined : <span class="font-mono">%</span>}
           error={error}
         />
       );
@@ -404,7 +431,6 @@ export function FieldInput(props: {
           </Show>
           <Show when={props.entry.inlineCreate?.enabled}>
             <InlineRelationCreate
-              field={props.field}
               entry={props.entry}
               targetTableId={cfg.targetTableId}
               multi={multi}
@@ -456,7 +482,6 @@ export function FieldInput(props: {
 }
 
 function InlineRelationCreate(props: {
-  field: FrontendField;
   entry: UserInputEntry;
   targetTableId: string;
   multi: boolean;

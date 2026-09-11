@@ -11,6 +11,7 @@ import {
   SYSTEM_FIELD_TYPES,
   VALUE_FIELD_TYPES,
 } from "../field-types";
+import { ObjectListConfigSchema, objectListInputValue } from "../field-types/object-list";
 import { displayValue } from "./views-gql-support";
 
 export type FieldDependentsResponse = { dependents: unknown[]; hasBlocking: boolean };
@@ -81,6 +82,13 @@ const FIELD_TYPE_DETAILS: Record<string, FieldReferenceDetails> = {
     config: EMPTY_CONFIG,
     recordValue: '{ "any": "json" }',
     notes: "Stores arbitrary JSON. Nested JSON paths are opaque to filter/sort.",
+  },
+  object_list: {
+    config:
+      '{ "fields": [{ "id": "Label1", "name": "Label", "type": "text", "required": true }, { "id": "Amount", "name": "Amount", "type": "number", "config": { "decimalPlaces": 2, "unit": "EUR" } }], "minItems": 0, "maxItems": 100 }',
+    recordValue: '[{ "Label1": "Consulting", "Amount": "42.50" }]',
+    notes:
+      "One-level typed rows, keyed by stable column ids. Column types: text, longtext, number, boolean, date, select, percent, duration. Reuses each scalar type's config and required validation. Send the whole list to replace it; [] clears it, subject to required/minItems. Omit columns with formula: they are read-only and calculated by the server. Use LIST_SUM/AVG/MIN/MAX(list, 'column name or id') or LIST_COUNT(list) in formulas. Finalization freezes the list and its calculated values together.",
   },
   relation: {
     config: '{ "targetTableId": "<table-id>", "cardinality": "multiple" }',
@@ -199,12 +207,14 @@ export const fieldTypeRows = (items: FieldTypeReference[]) =>
     config: item.config,
   }));
 
-const fieldConfig = (field: Field): Record<string, unknown> =>
+type ExampleField = Pick<Field, "type" | "config"> & { defaultValue?: unknown };
+
+const fieldConfig = (field: ExampleField): Record<string, unknown> =>
   typeof field.config === "object" && field.config !== null && !Array.isArray(field.config)
     ? (field.config as Record<string, unknown>)
     : {};
 
-const selectExampleValue = (field: Field): unknown => {
+const selectExampleValue = (field: ExampleField): unknown => {
   const options = fieldConfig(field).options;
   if (!Array.isArray(options)) return ["<option-id>"];
   const first = options.find(
@@ -213,9 +223,19 @@ const selectExampleValue = (field: Field): unknown => {
   return first ? [first.id] : ["<option-id>"];
 };
 
-const relationExampleValue = (field: Field): unknown => (fieldConfig(field).cardinality === "single" ? "<record-id>" : ["<record-id>"]);
+const relationExampleValue = (field: ExampleField): unknown =>
+  fieldConfig(field).cardinality === "single" ? "<record-id>" : ["<record-id>"];
 
-const fieldExampleValue = (field: Field): unknown => {
+const fieldExampleValue = (field: ExampleField): unknown => {
+  if (field.type === "object_list") {
+    const config = ObjectListConfigSchema.safeParse(field.config);
+    if (!config.success) return null;
+    if (field.defaultValue !== null && field.defaultValue !== undefined) return objectListInputValue(field.defaultValue, config.data);
+    const row = Object.fromEntries(
+      config.data.fields.filter((column) => !column.formula).map((column) => [column.id, fieldExampleValue(column)]),
+    );
+    return Array.from({ length: Math.max(1, config.data.minItems) }, () => ({ ...row }));
+  }
   if (field.defaultValue !== null && field.defaultValue !== undefined) return field.defaultValue;
   switch (field.type) {
     case "text":
@@ -233,7 +253,7 @@ const fieldExampleValue = (field: Field): unknown => {
     case "principal":
       return [{ type: "user", id: "<user-uuid>" }];
     case "percent":
-      return 42.5;
+      return fieldConfig(field).range === "fraction" ? 0.5 : 42.5;
     case "duration":
       return "01:30:00";
     case "json":
@@ -245,7 +265,10 @@ const fieldExampleValue = (field: Field): unknown => {
   }
 };
 
-export const recordShapeForFields = (table: Table, fields: Field[]) => {
+export const recordShapeForFields = (
+  table: Pick<Table, "id" | "name" | "kind">,
+  fields: Array<Pick<Field, "id" | "name" | "type" | "required" | "config" | "defaultValue" | "deletedAt">>,
+) => {
   const alive = fields.filter((field) => !field.deletedAt);
   const writable = table.kind === "stored" ? alive.filter((field) => field.type in RECORD_WRITABLE_FIELD_TYPES) : [];
   const readOnly = table.kind === "stored" ? alive.filter((field) => !(field.type in RECORD_WRITABLE_FIELD_TYPES)) : alive;

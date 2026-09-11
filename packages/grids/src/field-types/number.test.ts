@@ -1,5 +1,29 @@
-import { expect, test } from "bun:test";
+import { expect, spyOn, test } from "bun:test";
+import Decimal from "decimal.js";
 import { numberHandler } from "./number";
+
+test("number: rejects out-of-range exponents before expanding decimal text", () => {
+  const expanded = spyOn(Decimal.prototype, "toFixed").mockImplementation(() => {
+    throw new Error("Out-of-range decimal must not be expanded");
+  });
+  try {
+    for (const value of ["1e1000000000", "1e-1000000000", "1e131072", "1e-16384"]) {
+      expect(numberHandler.validate(value, {}, false)).toEqual({
+        ok: false,
+        error: "outside the supported numeric range (131072 integer digits, 16383 decimal places)",
+      });
+      expect(numberHandler.configSchema.safeParse({ min: value }).success).toBe(false);
+    }
+    expect(expanded).not.toHaveBeenCalled();
+  } finally {
+    expanded.mockRestore();
+  }
+});
+
+test("number: accepts values at the supported numeric boundaries", () => {
+  expect(numberHandler.validate("1e131071", {}, false)).toEqual({ ok: true, value: `1${"0".repeat(131071)}` });
+  expect(numberHandler.validate("1e-16383", {}, false)).toEqual({ ok: true, value: `0.${"0".repeat(16382)}1` });
+});
 
 test("number: accepts numeric input and string-of-number", () => {
   expect(numberHandler.validate(42, {}, false)).toEqual({ ok: true, value: "42" });

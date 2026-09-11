@@ -27,3 +27,10 @@ test("duration: MM:SS", () => {
 test("duration: rejects negatives", () => {
   expect(durationHandler.validate(-1, {}, false).ok).toBe(false);
 });
+
+test("duration: rejects overflow after converting clock components to seconds", () => {
+  for (const value of ["1e308:00:00", "1e308:00", "1e306:1e308:00"]) {
+    expect(durationHandler.validate(value, {}, false).ok).toBe(false);
+  }
+  expect(durationHandler.validate("1000000:00:00", {}, false)).toEqual({ ok: true, value: 3600000000 });
+});

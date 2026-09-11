@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { fail, ok, type ValueFieldType } from "./types";
+import { fieldValidationMessages } from "./validation-messages";
 
 const DateConfigSchema = z
   .object({
@@ -66,28 +67,29 @@ export const dateHandler: ValueFieldType = {
   type: "date",
   kind: "value",
   configSchema: DateConfigSchema,
-  validate(raw, configRaw, required) {
+  validate(raw, configRaw, required, context) {
+    const t = fieldValidationMessages(context?.locale);
     const parsed = DateConfigSchema.safeParse(configRaw ?? {});
-    if (!parsed.success) return fail("invalid field config");
+    if (!parsed.success) return fail(t.config);
     const config = parsed.data;
 
     if (raw === null || raw === undefined || raw === "") {
-      return required ? fail("required") : ok(null);
+      return required ? fail(t.required) : ok(null);
     }
-    if (typeof raw !== "string") return fail("must be an ISO 8601 string");
+    if (typeof raw !== "string") return fail(t.dateString);
 
     const canonical = parseAndCanonicalize(raw, config.includeTime ?? false);
-    if (canonical === null) return fail("invalid date");
+    if (canonical === null) return fail(t.date);
 
     if (config.min !== undefined) {
       const cMin = parseAndCanonicalize(config.min, config.includeTime ?? false);
-      if (cMin === null) return fail("invalid min in field config");
-      if (canonical < cMin) return fail(`min ${config.min}`);
+      if (cMin === null) return fail(t.minConfig);
+      if (canonical < cMin) return fail(t.min({ value: config.min }));
     }
     if (config.max !== undefined) {
       const cMax = parseAndCanonicalize(config.max, config.includeTime ?? false);
-      if (cMax === null) return fail("invalid max in field config");
-      if (canonical > cMax) return fail(`max ${config.max}`);
+      if (cMax === null) return fail(t.maxConfig);
+      if (canonical > cMax) return fail(t.max({ value: config.max }));
     }
 
     return ok(canonical);

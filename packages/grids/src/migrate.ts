@@ -238,7 +238,49 @@ const migrateSafeCastHelpers = async (sql: SQL): Promise<void> => {
       END IF;
     END $$
   `.simple();
-  console.log("  ✓ grids.try_* safe-cast helpers");
+  // Formula errors must remain values in the compiler's error channel. A
+  // CASE outside POWER cannot catch numeric overflow raised by the operation.
+  // Catch only arithmetic failures, never cancellation or resource failures.
+  await sql`
+    CREATE OR REPLACE FUNCTION grids.try_numeric_power(base numeric, exponent numeric) RETURNS numeric
+    LANGUAGE plpgsql IMMUTABLE STRICT PARALLEL UNSAFE AS $fn$
+    DECLARE
+      result numeric;
+      digits text;
+      weight integer;
+    BEGIN
+      IF base IN ('NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric)
+        OR exponent IN ('NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric)
+        OR (base = 0 AND exponent < 0)
+        OR (base < 0 AND exponent <> trunc(exponent)) THEN
+        RETURN NULL;
+      END IF;
+      base := trim_scale(base);
+      exponent := trim_scale(exponent);
+      IF exponent = trunc(exponent) AND exponent BETWEEN -2147483648 AND 2147483647 THEN
+        -- Request a stable minimum scale without changing the base's value.
+        -- PostgreSQL versions otherwise choose different integer-power scales.
+        RETURN round(power(base + 0.0000000000000000::numeric, exponent), least(1000, greatest(16, scale(base))));
+      END IF;
+      -- Native POWER gives a cheap first estimate of the result magnitude.
+      -- Then request 80 significant digits plus 16 guard digits, without
+      -- forcing every ordinary calculation to the 1000-place SQL limit.
+      result := power(base, exponent);
+      IF result = 0 THEN RETURN 0; END IF;
+      digits := abs(trim_scale(result))::text;
+      weight := CASE WHEN abs(result) >= 1 THEN length(split_part(digits, '.', 1)) - 1
+        ELSE -1 - length(substring(split_part(digits, '.', 2) FROM '^0*')) END;
+      result := power(base + round(0::numeric, least(1000, greatest(0, 96 - weight))), exponent);
+      IF result = 0 THEN RETURN 0; END IF;
+      digits := abs(trim_scale(result))::text;
+      weight := CASE WHEN abs(result) >= 1 THEN length(split_part(digits, '.', 1)) - 1
+        ELSE -1 - length(substring(split_part(digits, '.', 2) FROM '^0*')) END;
+      RETURN round(result, least(1000, 79 - weight));
+    EXCEPTION
+      WHEN numeric_value_out_of_range OR division_by_zero OR invalid_argument_for_power_function THEN RETURN NULL;
+    END $fn$
+  `.simple();
+  console.log("  ✓ grids.try_* safe scalar helpers");
 };
 
 type CanonicalScalarField = {
@@ -1142,6 +1184,7 @@ const migrateDurableHistory = async (sql: SQL): Promise<void> => {
 };
 
 const migrateRecordFinalization = async (sql: SQL): Promise<void> => {
+  await sql`ALTER TABLE grids.records ADD COLUMN IF NOT EXISTS finalized_computed_types JSONB`.simple();
   await sql`ALTER TABLE grids.tables ADD COLUMN IF NOT EXISTS finalization_policy_revision INT NOT NULL DEFAULT 0`.simple();
   await sql`
     CREATE TABLE IF NOT EXISTS grids.table_finalization_activations (
@@ -1192,6 +1235,7 @@ const migrateRecordFinalization = async (sql: SQL): Promise<void> => {
     )
   `.simple();
   await sql`ALTER TABLE grids.record_finalization_requests ADD COLUMN IF NOT EXISTS short_id TEXT`.simple();
+  await sql`ALTER TABLE grids.record_finalization_requests ADD COLUMN IF NOT EXISTS computed_snapshot JSONB`.simple();
   const finalizationRequests = await sql<Array<{ id: string; short_id: string | null }>>`
     SELECT id::text, short_id FROM grids.record_finalization_requests ORDER BY id FOR UPDATE
   `;

@@ -1,7 +1,7 @@
 import { isDeepStrictEqual } from "node:util";
-import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { buildAccessPrincipalCondition } from "@k2b/cloud/server";
 import { escapeLikePattern, toPgUuidArray } from "@k2b/cloud/services";
+import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { sql } from "bun";
 import type {
   FederatedDiagnostic,
@@ -14,6 +14,7 @@ import type {
   FederatedSourcePublication,
   FederatedValidation,
 } from "../contracts";
+import { ObjectListConfigSchema } from "../field-types/object-list";
 import { type BaseAdminAuthorization, hasTransactionalBaseAdmin, lockBaseAuthorization } from "./access";
 import { logAudit, type SqlClient } from "./audit";
 import { buildComputedProjections, buildFormulaSqlProjections } from "./computed-projections";
@@ -450,6 +451,9 @@ const validateCompatibleFields = (
     ];
   }
   if (COMPUTED_TYPES.has(source.type)) {
+    if (target.type === "object_list") {
+      return [mappingDiagnostic(mapping, "object_list_schema_mismatch", "Object-list mappings require a typed object-list source field")];
+    }
     if (!sourceComputedOutput) {
       return [
         mappingDiagnostic(
@@ -478,6 +482,19 @@ const validateCompatibleFields = (
     return [
       mappingDiagnostic(mapping, "field_type_mismatch", `Mapped source field is not compatible with canonical field "${target.name}"`),
     ];
+  }
+  if (target.type === "object_list") {
+    const targetList = ObjectListConfigSchema.safeParse(target.config);
+    const sourceList = ObjectListConfigSchema.safeParse(source.config);
+    if (!targetList.success || !sourceList.success || !isDeepStrictEqual(targetList.data.fields, sourceList.data.fields)) {
+      return [
+        mappingDiagnostic(
+          mapping,
+          "object_list_schema_mismatch",
+          `Mapped object list must use the same column definitions as "${target.name}"`,
+        ),
+      ];
+    }
   }
   if (target.type === "date") {
     const targetTime = (target.config as { includeTime?: boolean }).includeTime ?? false;

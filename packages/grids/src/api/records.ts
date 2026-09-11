@@ -1,6 +1,6 @@
-import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { ErrorResponseSchema } from "@k2b/cloud/contracts";
 import { type AuthContext, auth, getDateConfig, getLocale, jsonResponse, respond } from "@k2b/cloud/server";
+import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { Hono } from "hono";
 import { describeRoute } from "hono-openapi";
 import { z } from "zod";
@@ -446,6 +446,7 @@ export const recordsRoutes = new Hono<AuthContext>()
         actorId: currentActorUserId(c),
         comment: c.req.valid("json").comment,
         locale: getLocale(c),
+        dateConfig: await getDateConfig(c),
       });
       return result.ok ? c.json(result.data) : respond(c, () => Promise.resolve(result));
     },

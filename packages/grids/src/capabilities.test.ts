@@ -563,6 +563,125 @@ describe("Grids capabilities", () => {
         },
       });
 
+      const listFieldId = uuid();
+      const listFieldPublicId = shortId("L");
+      const listConfig = {
+        minItems: 0,
+        maxItems: 5,
+        fields: [
+          { id: "Amount", name: "Amount", type: "number", required: true, config: { decimalPlaces: 2 } },
+          { id: "Total1", name: "Total", type: "number", config: {}, formula: { expression: "Amount * 2" } },
+        ],
+      };
+      await sql`INSERT INTO grids.fields (id, short_id, table_id, name, type, config, required, position)
+        VALUES (${listFieldId}::uuid, ${listFieldPublicId}, ${tableId}::uuid, 'Items', 'object_list', ${listConfig}::jsonb, true, 4)`;
+      try {
+        const fieldPage = await invoke(
+          "query",
+          "gql.context",
+          { baseId: basePublicId, tableId: tablePublicId, kind: "fields", fieldId: listFieldPublicId },
+          context,
+        );
+        expect(fieldPage.ok && fieldPage.data.data.items).toHaveLength(1);
+        expect(fieldPage.ok && fieldPage.data.data.items[0].valueHint).toContain("list-columns");
+        const first = await invoke(
+          "query",
+          "gql.context",
+          { baseId: basePublicId, tableId: tablePublicId, kind: "list-columns", fieldId: listFieldPublicId, limit: 1 },
+          context,
+        );
+        expect(first.ok).toBeTrue();
+        if (!first.ok) throw first.error;
+        expect(first.data.data.list).toEqual({ fieldId: listFieldPublicId, minItems: 1, maxItems: 5 });
+        expect(first.data.data.items).toEqual([{ kind: "list-column", fieldId: listFieldPublicId, column: listConfig.fields[0] }]);
+        expect(first.data.page?.hasMore).toBeTrue();
+        if (!first.data.page?.hasMore) throw new Error("Expected another column page");
+        const next = await invoke(
+          "query",
+          "gql.context",
+          {
+            baseId: basePublicId,
+            tableId: tablePublicId,
+            kind: "list-columns",
+            fieldId: listFieldPublicId,
+            limit: 1,
+            cursor: first.data.page.nextCursor,
+          },
+          context,
+        );
+        expect(next.ok && next.data.data.items[0].column.formula.expression).toBe("Amount * 2");
+        expect(next.ok && next.data.page?.hasMore).toBeFalse();
+        const wrongTable = await invoke(
+          "query",
+          "gql.context",
+          { baseId: basePublicId, tableId: secretTablePublicId, kind: "list-columns", fieldId: listFieldPublicId },
+          context,
+        );
+        expect(wrongTable.ok).toBeFalse();
+        const wrongType = await invoke(
+          "query",
+          "gql.context",
+          { baseId: basePublicId, tableId: tablePublicId, kind: "list-columns", fieldId: selectFieldPublicId },
+          context,
+        );
+        expect(wrongType.ok).toBeFalse();
+        const denied = await invoke(
+          "query",
+          "gql.context",
+          {
+            baseId: basePublicId,
+            tableId: tablePublicId,
+            kind: "list-columns",
+            fieldId: listFieldPublicId,
+          },
+          userContext(testUser(uuid())),
+        );
+        expect(denied.ok).toBeFalse();
+        const largeFields = Array.from({ length: 15 }, (_, index) => ({
+          id: `Col${String(index).padStart(3, "0")}`,
+          name: `Column ${index}`,
+          type: "text",
+          config: { regex: "a".repeat(20_000) },
+        }));
+        await sql`UPDATE grids.fields SET config = ${{ fields: largeFields }}::jsonb WHERE id = ${listFieldId}::uuid`;
+        const bounded = await invoke(
+          "query",
+          "gql.context",
+          { baseId: basePublicId, tableId: tablePublicId, kind: "list-columns", fieldId: listFieldPublicId, limit: 100 },
+          context,
+        );
+        expect(bounded.ok).toBeTrue();
+        if (!bounded.ok) throw bounded.error;
+        expect(Buffer.byteLength(JSON.stringify(bounded.data))).toBeLessThan(CAPABILITY_MAX_RESULT_BYTES);
+        expect(bounded.data.page?.hasMore).toBeTrue();
+        if (!bounded.data.page?.hasMore) throw new Error("Expected byte-budget pagination");
+        const remainder = await invoke(
+          "query",
+          "gql.context",
+          {
+            baseId: basePublicId,
+            tableId: tablePublicId,
+            kind: "list-columns",
+            fieldId: listFieldPublicId,
+            limit: 100,
+            cursor: bounded.data.page.nextCursor,
+          },
+          context,
+        );
+        expect(remainder.ok && remainder.data.data.items.length + bounded.data.data.items.length).toBe(15);
+        await sql`UPDATE grids.fields SET config = ${{ fields: [{ ...largeFields[0], config: { regex: "a".repeat(CAPABILITY_MAX_RESULT_BYTES) } }] }}::jsonb WHERE id = ${listFieldId}::uuid`;
+        const oversized = await invoke(
+          "query",
+          "gql.context",
+          { baseId: basePublicId, tableId: tablePublicId, kind: "list-columns", fieldId: listFieldPublicId },
+          context,
+        );
+        expect(oversized.ok).toBeFalse();
+        if (!oversized.ok) expect(oversized.error.code).toBe("BAD_INPUT");
+      } finally {
+        await sql`DELETE FROM grids.fields WHERE id = ${listFieldId}::uuid`;
+      }
+
       const options = await invoke(
         "query",
         "gql.context",

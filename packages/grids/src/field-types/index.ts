@@ -3,6 +3,7 @@ import { dateHandler } from "./date";
 import { formulaHandler } from "./formula";
 import { htmlTemplateHandler } from "./html-template";
 import { numberHandler } from "./number";
+import { objectListHandler } from "./object-list";
 import { principalHandler } from "./principal";
 import { lookupHandler, relationHandler, rollupHandler } from "./relations";
 import { selectHandler } from "./select";
@@ -26,6 +27,7 @@ export const VALUE_FIELD_TYPES: Record<string, ValueFieldType> = Object.fromEntr
     textHandler,
     longtextHandler,
     numberHandler,
+    objectListHandler,
     booleanHandler,
     dateHandler,
     selectHandler,

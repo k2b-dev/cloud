@@ -7,6 +7,7 @@ const detailedHelpFiles = [
   "grids-custom-app-pages-blocks.help.md",
   "grids-publish-custom-app.help.md",
   "grids-custom-app-yaml-cli.help.md",
+  "grids-custom-app-api.help.md",
 ] as const;
 
 const exampleFiles = [

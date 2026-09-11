@@ -4,6 +4,7 @@ import buildBusinessAppDe from "./documents/de/grids-build-business-app.help.md"
 import buildCustomAppDe from "./documents/de/grids-build-custom-app.help.md" with { type: "text" };
 import combinedTablesDe from "./documents/de/grids-combined-tables.help.md" with { type: "text" };
 import coreModelDe from "./documents/de/grids-core-model.help.md" with { type: "text" };
+import customAppApiDe from "./documents/de/grids-custom-app-api.help.md" with { type: "text" };
 import customAppPagesBlocksDe from "./documents/de/grids-custom-app-pages-blocks.help.md" with { type: "text" };
 import customAppYamlCliDe from "./documents/de/grids-custom-app-yaml-cli.help.md" with { type: "text" };
 import customAppsDe from "./documents/de/grids-custom-apps.help.md" with { type: "text" };
@@ -25,6 +26,7 @@ import buildBusinessApp from "./documents/en/grids-build-business-app.help.md" w
 import buildCustomApp from "./documents/en/grids-build-custom-app.help.md" with { type: "text" };
 import combinedTables from "./documents/en/grids-combined-tables.help.md" with { type: "text" };
 import coreModel from "./documents/en/grids-core-model.help.md" with { type: "text" };
+import customAppApi from "./documents/en/grids-custom-app-api.help.md" with { type: "text" };
 import customAppPagesBlocks from "./documents/en/grids-custom-app-pages-blocks.help.md" with { type: "text" };
 import customAppYamlCli from "./documents/en/grids-custom-app-yaml-cli.help.md" with { type: "text" };
 import customApps from "./documents/en/grids-custom-apps.help.md" with { type: "text" };
@@ -60,6 +62,7 @@ export const gridsHelp = defineHelp({
       customAppPagesBlocks,
       publishCustomApp,
       customAppYamlCli,
+      customAppApi,
       customApps,
       documents,
       workflows,
@@ -83,6 +86,7 @@ export const gridsHelp = defineHelp({
       customAppPagesBlocksDe,
       publishCustomAppDe,
       customAppYamlCliDe,
+      customAppApiDe,
       customAppsDe,
       documentsDe,
       workflowsDe,

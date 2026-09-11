@@ -6,6 +6,7 @@ import type { FormatSpec } from "../../../contracts";
 import { BarcodeDisplay } from "./BarcodeCell";
 import { type FieldDisplayIntent, type RelationDisplayItem, relationIds, resolveFieldDisplay } from "./field-display";
 import { tableMessages } from "./messages";
+import { ObjectListValue } from "./ObjectListValue";
 import { RecordLink } from "./RecordLink";
 import { SelectValueBadges } from "./select-badges";
 
@@ -160,6 +161,8 @@ export function FieldValue(props: FieldValueProps) {
   const renderRawValue = () => {
     const intent = display();
     if (intent.kind === "empty") return emptyValue();
+    if (props.field.type === "object_list")
+      return <ObjectListValue value={props.value} config={props.field.config} detail={mode() === "detail"} dateConfig={props.dateConfig} />;
     if (intent.kind === "relation") {
       return <RelationValue {...props} items={intent.items} targetTableId={intent.targetTableId} emptyValue={emptyValue()} />;
     }

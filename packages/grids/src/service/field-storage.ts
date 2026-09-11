@@ -1,6 +1,9 @@
 import { sql } from "bun";
 import type { Field } from "./types";
 
+/** Stored scalar columns do not require a table-field lifecycle or record identity. */
+export type StoredValueField = Pick<Field, "id" | "type" | "config">;
+
 /**
  * Field-storage descriptor: single source of truth for "how does this
  * field type live in JSONB / record_links, and what shape do compilers
@@ -56,6 +59,7 @@ type FormatKind =
   | "percent"
   | "duration"
   | "json"
+  | "object_list"
   | "relation"
   | "file"
   | "computed"
@@ -71,7 +75,7 @@ type StorageDescriptor = {
    * `kind` first; `project()` is the convenience accessor for kinds
    * that DO have a scalar projection.
    */
-  project: (field: Field, alias: string) => unknown | null;
+  project: (field: StoredValueField, alias: string) => unknown | null;
   formatKind: FormatKind;
   sortable: boolean;
   filterable: boolean;
@@ -225,6 +229,19 @@ const STORAGE: Record<string, StorageDescriptor> = {
     cursorable: false,
     searchable: false,
   },
+  // A whole owned list has no scalar ordering or aggregate. Typed subfield
+  // projections and explicit list reductions handle those operations.
+  object_list: {
+    kind: "json",
+    project: () => null,
+    formatKind: "object_list",
+    sortable: false,
+    filterable: false,
+    groupable: false,
+    aggregatable: false,
+    cursorable: false,
+    searchable: false,
+  },
   file: {
     kind: "computed",
     project: () => null,
@@ -369,18 +386,18 @@ const UNKNOWN_DESCRIPTOR: StorageDescriptor = {
  * type as a compile error rather than emitting a SQL projection that
  * silently coerces.
  */
-export const storageOf = (field: Field): StorageDescriptor => STORAGE[field.type] ?? UNKNOWN_DESCRIPTOR;
+export const storageOf = (field: Pick<Field, "type">): StorageDescriptor => STORAGE[field.type] ?? UNKNOWN_DESCRIPTOR;
 
 export const isMultiSelectField = (field: Pick<Field, "type" | "config">): boolean =>
   field.type === "select" && (field.config as { multiple?: boolean }).multiple === true;
 
-const systemSqlTypeFor = (field: Field): FieldSqlScalarType => {
+const systemSqlTypeFor = (field: Pick<Field, "type">): FieldSqlScalarType => {
   if (field.type === "created_at" || field.type === "updated_at" || field.type === "deleted_at") return "datetime";
   if (field.type === "created_by" || field.type === "updated_by") return "text";
   return "unknown";
 };
 
-export const scalarSqlTypeForField = (field: Field): FieldSqlScalarType => {
+export const scalarSqlTypeForField = (field: StoredValueField): FieldSqlScalarType => {
   const descriptor = storageOf(field);
   if (descriptor.kind === "numeric") return "numeric";
   if (descriptor.kind === "text") return "text";
@@ -391,13 +408,13 @@ export const scalarSqlTypeForField = (field: Field): FieldSqlScalarType => {
   return "unknown";
 };
 
-export const outputSqlTypeForField = (field: Field): FieldSqlOutputType => {
+export const outputSqlTypeForField = (field: StoredValueField): FieldSqlOutputType => {
   const descriptor = storageOf(field);
   if (descriptor.kind === "json" || descriptor.kind === "jsonbArray" || descriptor.kind === "relationLink") return "json";
   return scalarSqlTypeForField(field);
 };
 
-export const groupSqlTypeForField = (field: Field): FieldSqlOutputType => {
+export const groupSqlTypeForField = (field: StoredValueField): FieldSqlOutputType => {
   const descriptor = storageOf(field);
   if (descriptor.kind === "relationLink" || descriptor.kind === "jsonbArray") return "text";
   return outputSqlTypeForField(field);

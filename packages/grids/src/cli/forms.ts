@@ -1,6 +1,6 @@
 import { arg, command, confirmFlag, flag } from "@k2b/cloud/cli";
 import { type Form, formFlag, formRows, listForms, resolveFormFromCommand } from "./forms-support";
-import { baseFlag, resolveBaseFromCommand, resolveTable, tableArgs, tableFlag } from "./resources";
+import { baseFlag, requirePublicId, resolveBaseFromCommand, resolveTable, tableArgs, tableFlag } from "./resources";
 import {
   applyDefined,
   JSON_BODY_INPUT,
@@ -145,18 +145,39 @@ export const formCommands = [
   }),
   command("forms submit", {
     summary: "Submit a form",
-    description: "Pass the same JSON payload the form UI submits. User-input keys are field public ids.",
+    description:
+      "Pass field public IDs or {data,inlineCreates?,idempotencyKey?}. Reuse the exact body and key after an uncertain result. --record edits an existing record through the Form and requires --yes, version and idempotencyKey in the body; inlineUpdates use each child's recordId, version and data.",
     args: tableArgs,
-    flags: { ...baseFlag, ...tableFlag, ...formFlag, body: JSON_BODY_INPUT },
+    flags: {
+      ...baseFlag,
+      ...tableFlag,
+      ...formFlag,
+      body: JSON_BODY_INPUT,
+      record: flag.string({ description: "Existing Record public ID to edit instead of creating; requires --yes and a versioned body" }),
+      yes: confirmFlag("Save the existing record through this form"),
+    },
     examples: [
       'cld grids forms submit Bookshop Orders Checkout --body \'{"<field-id>":"Ada"}\'',
       "cld grids forms submit --base Bookshop --table Orders --form Checkout --body-file submission.json",
+      "cld grids forms submit --base Bookshop --table Orders --form Checkout --record REC001 --body-file edit.json --yes",
     ],
     async run({ ctx, args, flags }) {
+      const recordId = flags.record === undefined ? undefined : requirePublicId(flags.record, "Record");
+      if (recordId && !flags.yes) throw new Error("Pass --yes to save an existing record.");
       const { form } = await resolveFormFromCommand(ctx, args.args, flags);
       const body = await readJsonInput<Record<string, unknown>>(flags.body, "form submission JSON", true);
-      const result = await readApi<{ recordId: string }>(ctx, `/forms/${encodeURIComponent(form.id)}/submit`, jsonRequest("POST", body));
-      printJsonOrMessage(ctx, result, `Created record ${result.recordId}.`);
+      if (
+        recordId &&
+        (!Number.isInteger(body?.version) ||
+          Number(body?.version) < 1 ||
+          typeof body?.idempotencyKey !== "string" ||
+          !body.idempotencyKey.trim())
+      ) {
+        throw new Error("Editing requires a positive version and an idempotencyKey in the submission body.");
+      }
+      const target = recordId ? `records/${encodeURIComponent(recordId)}` : "submit";
+      const result = await readApi<{ recordId: string }>(ctx, `/forms/${encodeURIComponent(form.id)}/${target}`, jsonRequest("POST", body));
+      printJsonOrMessage(ctx, result, `${recordId ? "Saved" : "Created"} record ${result.recordId}.`);
     },
   }),
 ];

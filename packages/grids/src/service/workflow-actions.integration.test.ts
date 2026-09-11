@@ -15,6 +15,7 @@ import { createWorkflowRun } from "@k2b/cloud/workflows/store";
 import { sql } from "bun";
 import { postgresTest, testShortId as shortId, testUuid as uuid } from "../integration-test-utils";
 import { migrate } from "../migrate";
+import { compileAndBindGridsWorkflowSource } from "../workflows/binder";
 import type { GridsWorkflowPrincipal } from "../workflows/contracts";
 import { gridsWorkflows } from "../workflows/module";
 import { enable as enableDurableHistory, listRecordRevisions } from "./durable-history";
@@ -27,6 +28,7 @@ import {
   setPolicy as setFinalizationPolicy,
 } from "./record-finalization";
 import { listReferencedBy } from "./referenced-by";
+import { loadWorkflowCatalog } from "./workflow-catalog";
 import { invokeRecordLauncher } from "./workflow-launcher-invocations";
 import { createLauncher } from "./workflow-launchers";
 import { getWorkflow } from "./workflow-read";
@@ -383,6 +385,76 @@ describe("declared Grids workflow actions", () => {
     }
   });
 
+  postgresTest("workflow list writes retain exact cells and reject invalid atomic changes", async () => {
+    const fixture = createFixture();
+    try {
+      await insertFixture(fixture);
+      const listId = uuid();
+      const config = {
+        fields: [
+          { id: "Label1", name: "Description", type: "text", required: true },
+          { id: "Amount", name: "Amount", type: "number", config: { decimalPlaces: 2 } },
+          { id: "Total1", name: "Total", type: "number", config: { decimalPlaces: 2 }, formula: { expression: "Amount * 2" } },
+        ],
+      };
+      await sql`INSERT INTO grids.fields (id, short_id, table_id, name, type, config)
+        VALUES (${listId}::uuid, ${shortId("F")}, ${fixture.tableId}::uuid, 'Items', 'object_list', ${config}::jsonb)`;
+      const items = [{ Label1: "Consulting", Amount: "9007199254740993.25" }];
+      const expected = [{ ...items[0], Total1: "18014398509481986.50" }];
+      const inputs = { record: { kind: "record", tableId: fixture.tableId, recordId: fixture.recordId } };
+      const catalog = await loadWorkflowCatalog(fixture.baseId);
+      const planFor = async (steps: WorkflowJsonValue[]) => {
+        const compiled = await compileAndBindGridsWorkflowSource(
+          JSON.stringify({
+            inputs: { record: { type: "record", table: "Tasks", required: true } },
+            steps,
+          }),
+          catalog,
+        );
+        if (!compiled.ok) throw new Error(compiled.diagnostics.map((issue) => issue.message).join("; "));
+        return compiled.plan;
+      };
+      const createRun = await queueRun(fixture, {
+        plan: await planFor([{ createRecord: { table: "Tasks", values: { Items: items } } }]),
+        inputs,
+      });
+      expect(await drive(createRun)).toBe("succeeded");
+      const [created] = await sql<Array<{ data: Record<string, unknown> }>>`
+        SELECT data FROM grids.records WHERE table_id = ${fixture.tableId}::uuid AND id <> ${fixture.recordId}::uuid`;
+      expect(created?.data[listId]).toEqual(expected);
+      const updateRun = await queueRun(fixture, {
+        plan: await planFor([{ updateRecord: { record: "inputs.record", set: { Items: items } } }]),
+        inputs,
+      });
+      expect(await drive(updateRun)).toBe("succeeded");
+      expect((await recordData(fixture.recordId))[listId]).toEqual(expected);
+      for (const invalid of [[{ Label1: "", Amount: "1" }], [{ Label1: "Forged", Amount: "1", Total1: "999" }]]) {
+        const run = await queueRun(fixture, {
+          plan: await planFor([
+            {
+              atomicRecords: {
+                locks: ["inputs.record"],
+                checks: [{ table: "Tasks", where: [{ field: "Status", op: "equals", value: "Open" }], assert: "notEmpty" }],
+                changes: [
+                  { updateRecord: { record: "inputs.record", set: { Status: "Must roll back" } } },
+                  { updateRecord: { record: "inputs.record", set: { Items: invalid } } },
+                ],
+              },
+            },
+          ]),
+          inputs,
+        });
+        expect(await drive(run)).toBe("failed");
+        expect((await runRow(run)).error).toMatchObject({ code: "BAD_INPUT", message: expect.stringContaining("Row 1") });
+        const data = await recordData(fixture.recordId);
+        expect(data[fixture.statusFieldId]).toBe("Open");
+        expect(data[listId]).toEqual(expected);
+      }
+    } finally {
+      await cleanupFixture(fixture);
+    }
+  });
+
   postgresTest("Record update workflows keep normalized no-ops free of Record side effects", async () => {
     const fixture = createFixture();
     try {
@@ -582,6 +654,17 @@ describe("declared Grids workflow actions", () => {
     const fixture = createFixture();
     try {
       await insertFixture(fixture);
+      const { create: createField, update: updateField } = await import("./fields");
+      const columns = [
+        { id: "Amount", name: "Amount", type: "number", config: { decimalPlaces: 2 } },
+        { id: "Total1", name: "Total", type: "number", config: { decimalPlaces: 2 }, formula: { expression: "Amount * 2" } },
+      ];
+      const list = await createField(
+        { tableId: fixture.tableId, name: "Items", type: "object_list", config: { fields: columns } },
+        fixture.actorId,
+      );
+      if (!list.ok) throw list.error;
+      await sql`UPDATE grids.records SET data = data || ${{ [list.data.id]: [{ Amount: "0.10" }] }}::jsonb WHERE id = ${fixture.recordId}::uuid`;
       const history = await enableDurableHistory(fixture.tableId, fixture.actorId);
       if (!history.ok) throw history.error;
       const activation = await enableFinalization(fixture.tableId, { mode: "direct" }, fixture.actorId);
@@ -601,6 +684,15 @@ describe("declared Grids workflow actions", () => {
         origin: "direct",
       });
       if (!finalized.ok) throw finalized.error;
+      expect(finalized.data.data[list.data.id]).toEqual([{ Amount: "0.10", Total1: "0.20" }]);
+      const changed = await updateField(
+        list.data.id,
+        {
+          config: { fields: [columns[0], { ...columns[1], formula: { expression: "Amount * 3" } }] },
+        },
+        fixture.actorId,
+      );
+      if (!changed.ok) throw changed.error;
       await sql`
         UPDATE grids.number_series SET baseline_floor = 1
         WHERE field_id = ${fixture.assetIdFieldId}::uuid
@@ -614,7 +706,7 @@ describe("declared Grids workflow actions", () => {
               typeField: "Document type",
               typeValue: "correction",
               originalField: "Corrects",
-              copyFields: ["Name", "Status", "Metadata"],
+              copyFields: ["Name", "Status", "Metadata", "Items"],
             }),
           ],
           {
@@ -623,6 +715,7 @@ describe("declared Grids workflow actions", () => {
             "steps.0.createCorrectionDraft.copyFields.0": fixture.nameFieldId,
             "steps.0.createCorrectionDraft.copyFields.1": fixture.statusFieldId,
             "steps.0.createCorrectionDraft.copyFields.2": fixture.jsonFieldId,
+            "steps.0.createCorrectionDraft.copyFields.3": list.data.id,
           },
         ),
         inputs: { original: { kind: "record", tableId: fixture.tableId, recordId: fixture.recordId } },
@@ -642,6 +735,8 @@ describe("declared Grids workflow actions", () => {
       expect(draft?.data[fixture.jsonFieldId]).toBe("123");
       expect(typeof draft?.data[fixture.jsonFieldId]).toBe("string");
       expect(draft?.data[fixture.assetIdFieldId]).toBe("ITEM-0002");
+      expect(draft?.data[list.data.id]).toEqual([{ Amount: "0.10", Total1: "0.30" }]);
+      expect((await recordData(fixture.recordId))[list.data.id]).toEqual([{ Amount: "0.10", Total1: "0.20" }]);
       const [link] = await sql<Array<{ target: string }>>`
         SELECT to_record_id::text AS target
         FROM grids.record_links

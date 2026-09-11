@@ -5,18 +5,18 @@ icon: ti ti-function
 description: Werte mit einer gemeinsamen Ausdruckssprache aus Feldern berechnen.
 order: 126
 ---
-Formeln berechnen einen Wert aus den Feldern eines Datensatzes. Nutze sie für Summen, Bezeichnungen, Datumsdifferenzen, Bedingungen und andere Ergebnisse, die automatisch den gespeicherten Eingaben folgen sollen.
+Formeln berechnen Summen, Bezeichnungen, Datumswerte und Bedingungen aus Datensatzfeldern.
 
 Erstelle ein **Formelfeld**, wenn das Ergebnis zu jedem Datensatz gehört. Füge eine **Berechnete Spalte** hinzu, wenn die Berechnung nur in einer Abfrage benötigt wird. In GQL kann dieselbe Ausdruckssprache Datensätze filtern oder eine Ausgabespalte erzeugen.
 
 ## Wo Formeln ausgeführt werden {icon="math-function"}
 
-- **Formelfelder** werden beim Lesen von Datensätzen neu berechnet und können in Ansichten, Karten, Detailbereichen, Grids Apps und Dokumenten erscheinen.
+- **Formelfelder** werden für Entwürfe neu berechnet. Die Finalisierung schreibt Werte und Typen fest; spätere Formeländerungen ändern diese Werte nicht.
 - **Berechnete Spalten** sind temporäre Abfrageausgaben und fügen der Tabelle kein Feld hinzu.
 - **GQL-Bedingungen** verwenden einen Ausdruck in `where` oder `having`.
 - **GQL-Ausgaben** verwenden `formula(expression) as alias`.
 
-Formeln verwenden das vollständige Abfrageergebnis, nicht nur die derzeit auf dem Bildschirm sichtbaren Datensätze. Derselbe Ausdruck verhält sich in Tabellen, Ansichten, berechneten Spalten und GQL gleich.
+**Objektlisten-Spalten** berechnen Werte innerhalb einer Zeile. Aktiviere dies unter **Regeln und Berechnung** und verweise auf andere Spalten. Passe Verweise nach Umbenennungen an; Spalten-IDs bleiben stabil. Die Finalisierung friert Ergebnisse mit der Liste ein. `LIST_SUM(Items, 'Amount')` summiert eine Listenspalte in einer Datensatzformel.
 
 ## Ausdrucksregeln {icon="book-2"}
 
@@ -27,7 +27,7 @@ Formeln verwenden das vollständige Abfrageergebnis, nicht nur die derzeit auf d
 - **Funktionen:** Bei Funktionsnamen spielt die Groß- und Kleinschreibung keine Rolle. Argumente werden durch Kommas getrennt und ihre Anzahl muss der dokumentierten Funktionssignatur entsprechen.
 :::
 
-Erstelle eine Formel anhand eines repräsentativen Datensatzes und prüfe leere Werte, Nullwerte und Grenzfälle. Wenn sich der Typ eines Felds ändert oder ein Feld entfernt wird, aktualisiere abhängige Formeln, bevor du dich auf deren Ausgabe verlässt.
+Prüfe leere Werte, Nullwerte und Grenzfälle. Pro Ausdruck sind bis zu 20.000 Zeichen, 64 Verschachtelungsebenen und 1.024 Ausdrucksknoten (Operatoren, Werte, Referenzen und Aufrufe) erlaubt. Abfragen oder berechnete Spalten können kleinere Textgrenzen haben. Vereinfache zu große Ausdrücke; zusätzliche Klammern verkürzen keine Operatorkette.
 
 ### Operatoren und Rangfolge
 
@@ -48,11 +48,11 @@ Weiter oben stehende Operatoren binden stärker. Klammern überschreiben diese R
 - Arithmetische Operationen und geordnete Vergleiche geben einen leeren Wert zurück, wenn eine Seite leer ist. Zwei leere Werte sind gleich.
 - `null`, `false`, `0` und leerer Text gelten in einer Bedingung als falsch; andere nicht leere Werte gelten als wahr.
 - `and`, `or`, `AND` und `OR` beenden die Auswertung, sobald das Ergebnis feststeht. `IF` wertet nur den gewählten Zweig aus.
-- Ungültige Berechnungen wie Division oder Rest durch null, eine Quadratwurzel aus einer negativen Zahl oder eine falsche Anzahl von Funktionsargumenten erzeugen einen sichtbaren Formelfehler statt eines irreführenden Werts.
+- Division oder Rest durch null, negative Quadratwurzeln, überlaufende Potenzen und eine falsche Argumentanzahl erzeugen sichtbare Formelfehler statt irreführender Werte.
 - `IFEMPTY(value, fallback)` behandelt `null` und leeren Text. `IFERROR(value, fallback)` behandelt Formelfehler. Der jeweilige Ersatzwert wird nur bei Bedarf ausgewertet.
 - `CONCAT(value, ...)` verbindet Text am eindeutigsten. Numerisch wirkender Text nimmt an numerischen Berechnungen teil. Verlasse dich deshalb bei Bezeichnungen nicht auf `+`.
 
-Die unten als Aggregate bezeichneten Funktionen kombinieren Argumente aus dem aktuellen Datensatz, zum Beispiel `SUM(Subtotal, Tax)`. Sie fassen nicht mehrere Datensätze zusammen. Nutze GQL `aggregate`, wenn ein Bericht Summen über mehrere Zeilen benötigt.
+Aggregatfunktionen kombinieren Argumente eines Datensatzes, etwa `SUM(Subtotal, Tax)`. GQL `aggregate` fasst Datensätze zusammen. Division und Mittelwerte nutzen PostgreSQL-Dezimalpräzision ohne Einfluss nachgestellter Nullen. Geldbeträge explizit mit `ROUND` runden; Spaltenregeln prüfen nur das Ergebnis.
 
 ## Häufige Formeln {icon="math-function"}
 
@@ -107,8 +107,8 @@ IFERROR(total / quantity, 0)
 | Zahl      | ROUND(number, digits?)             | Rundet eine Zahl.                                                                                      | Zahl     |
 | Zahl      | FLOOR(number)                      | Rundet ab.                                                                                             | Zahl     |
 | Zahl      | CEIL(number)                       | Rundet auf.                                                                                            | Zahl     |
-| Zahl      | SQRT(number)                       | Quadratwurzel.                                                                                         | Zahl     |
-| Zahl      | POW(base, exponent)                | Potenz.                                                                                                | Zahl     |
+| Zahl      | SQRT(number)                       | Quadratwurzel; gleiche Dezimalrundung in Vorschau und Abfragen.                                          | Zahl     |
+| Zahl      | POW(base, exponent)                | Potenz: Ganzzahlige 32-Bit-Exponenten erhalten Ganzzahlstellen, andere nutzen 80 signifikante Stellen (höchstens 1.000 Nachkommastellen). Geld explizit runden. | Zahl     |
 | Zahl      | MOD(a, b)                          | Rest.                                                                                                  | Zahl     |
 | Zahl      | PERCENT(part, total)               | Anteil in Prozent der Gesamtsumme.                                                                    | Zahl     |
 | Logik     | IF(condition, then, else)          | Wählt anhand einer Bedingung.                                                                          | beliebig |
@@ -141,7 +141,7 @@ IFERROR(total / quantity, 0)
 | Datum     | DATEADD(date, count, unit?)        | Addiert Zeit zu einem Datum; die Einheit ist standardmäßig Tage.                                       | Datum    |
 | Datum     | DATEDIFF(from, to, unit?)          | Differenz zwischen Datumswerten; die Einheit ist standardmäßig Tage.                                   | Zahl     |
 
-`ROUND` verwendet standardmäßig null Dezimalstellen und akzeptiert negative Stellen für Zehner, Hunderter und größere Positionen. `LEFT`, `RIGHT` und `SUBSTRING` behandeln negative Längen als null; `SUBSTRING` beginnt an Position 0. `REPLACE` ersetzt jeden Treffer.
+`ROUND` nutzt standardmäßig null Stellen; negative Stellen runden auf Zehner, Hunderter usw. Gebrochene Stellenzahlen werden Richtung null gekürzt. Außerhalb von −131.072…16.383 entsteht ein Formelfehler. `LEFT`, `RIGHT` und `SUBSTRING` behandeln negative Längen als null; `SUBSTRING` beginnt an Position 0. `REPLACE` ersetzt jeden Treffer.
 
 `TODAY()` gibt das aktuelle Datum und `NOW()` das aktuelle Datum mit Uhrzeit zurück. Kalenderberechnungen mit Datum und Uhrzeit verwenden die Anzeigezeitzone der Anfrage. Wenn keine angegeben ist, verwendet Grids die Zeitzone der Cloud-Anwendung. Reine Datumswerte bleiben Kalenderdaten. `DATEADD` akzeptiert Tag(e), Stunde(n), Minute(n), Monat(e) und Jahr(e), verwendet standardmäßig Tage und erhält beim Addieren von Monaten oder Jahren gültige Monatsenddaten. `DATEDIFF` akzeptiert Tag(e), Stunde(n), Minute(n) und Sekunde(n), verwendet standardmäßig Tage und gibt `to - from`, abgerundet auf ganze Einheiten, zurück.
 

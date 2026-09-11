@@ -92,12 +92,16 @@ configuration through `grids bases navigation get` and `grids bases navigation s
   single self-relation for the original. The protected run option must match
   the workflow intent, so cancellation wording cannot front a correction
   workflow. You can also choose up to 100 stored
-  value fields to carry over. The action creates a normal editable Draft that
+  value fields to carry over. Object lists copy their inputs and recalculate
+  computed columns using the current formulas; the original stays frozen.
+  The action creates a normal editable Draft that
   follows the Table's numbering rules. Unique fields, generated IDs, Files,
   other Relations, calculated fields, and Documents are not copied. A
   cancellation is named clearly, but Grids does not calculate amounts, taxes,
   or counter-bookings or generate a Document for it.
 ### Control record changes
+
+For Assistant discovery, `grids.gql.context` keeps the `fields` catalog compact. Request `kind: "list-columns"` with the parent `tableId` and `fieldId` to read an object list's column IDs, scalar settings, required flags and calculations. Follow the returned cursor; `data.list` contains its effective minimum and maximum row counts. Results use the same table permissions and byte budget as other context pages. An individual column that exceeds the result budget returns `BAD_INPUT`, not a silently truncated configuration. An optional `fieldId` also filters `kind: "fields"` to one field.
 
 - Keep the default open mutation policy, or let a Base admin limit record,
   Relation, and File changes to direct editing and APIs, Forms, or Workflows
@@ -135,6 +139,71 @@ configuration through `grids bases navigation get` and `grids bases navigation s
 
 Use formulas for derived values and workflows for multi-step effects that need
 inputs, permissions, revisions, and observable runs.
+
+Formula parsing is bounded to 20,000 characters, 64 nesting levels and 1,024 expression nodes before evaluation or SQL compilation. Input-specific limits can be smaller, including the 5,000-character computed-column limit. Oversized expressions return validation diagnostics instead of entering evaluation.
+
+`ROUND` truncates fractional places toward zero and accepts −131,072 through 16,383 places. These bounds follow PostgreSQL numeric's supported digit range. Both runtimes reject out-of-range places as a recoverable formula error before arithmetic or integer conversion.
+
+Numeric formula results can be JSON numbers or decimal strings. JavaScript evaluation preserves a decimal string when converting to a number would lose digits, including intermediate values. Consumers must use decimal arithmetic for further calculations rather than coercing these strings with `Number(...)`. Object-list `number` columns return decimal strings; configured decimal places preserve their scale. Non-finite math results are formula errors, not successful text values.
+
+An overflowing `POW` result also stays in the formula error channel in SQL. `IFERROR` can replace it without aborting the query; cancellation and database resource failures are not suppressed.
+Fractional `POW` exponents and integers outside the signed 32-bit range use 80 significant digits, capped at 1,000 fractional places, in both formula evaluation and SQL. Round monetary results explicitly.
+
+Finite addition, subtraction, multiplication, and remainder derive their working precision from the operands within the supported PostgreSQL numeric range. Summation uses the same operation, so a later subtraction cannot expose digits lost to a fixed precision. SQL medians retain the two middle values as numeric values instead of converting them to floating point.
+
+Number inputs and their minimum/maximum settings must fit within 131,072 integer digits and 16,383 decimal places. Compact exponent notation does not bypass these limits. Out-of-range inputs are rejected before expanding them into stored decimal text; an out-of-range formula result produces `VALUE_TOO_LARGE`.
+
+Division and averages share PostgreSQL numeric precision across previews and SQL. Insignificant trailing zeroes do not affect the result. Division rounds half away from zero at a scale based on the operands, between 0 and 1,000 fractional digits; it is not exact rational arithmetic. Use explicit `ROUND(expression, 2)` for a two-decimal monetary result. A column's decimal-place constraint validates the result instead of rounding it automatically.
+
+### Keep typed line items inside one record
+
+Use an `object_list` field for rows that belong entirely to their parent, such
+as invoice positions. The list is one atomic value: editing or finalizing the
+parent includes all its items. Use a related table when items need their own
+permissions, links, or lifecycle.
+
+Define scalar columns with stable six-character IDs, names, types, and the
+usual field constraints. Supported types are text, long text, number, boolean,
+date, select, percent, and duration. Lists cannot contain nested objects,
+relations, or further lists. The editor shows names and types first;
+**Rules and calculation** reveals validation and calculated-column options.
+
+The record editor shows 25 rows per page and preserves all edits when paging.
+Adding or moving a row opens the relevant page and keeps keyboard focus with
+that row. Only the edited row's calculation preview is recomputed; incomplete
+rows do not hide valid previews elsewhere. Saving still validates and replaces
+the entire list, including rows on other pages.
+
+A calculated column references sibling columns in the same row. Use names
+(double-quoted when they contain spaces) or column IDs. Renaming a column
+does not change its ID; update name-based formulas before saving. Do not send
+calculated cells in write payloads: Grids calculates them. Send exact amounts
+as decimal strings, such as `"42.50"`.
+
+Selection columns are inputs, not calculated columns. Regex constraints are
+supported on text inputs, not calculated text. Saving checks that row
+calculations can also run in SQL; unsupported expressions are rejected before
+they can make records unreadable.
+
+`LIST_SUM(Items, 'Amount')` totals one numeric column. `LIST_AVG`, `LIST_MIN`,
+and `LIST_MAX` use the same arguments; `LIST_COUNT(Items)` counts rows.
+An empty list has sum and count zero, while its other reductions return null.
+A missing list returns null. In GQL, `formula(LIST_SUM(customer.Items, 'Amount'))`
+also supports a joined table alias. Cross-record aggregates count
+query rows, so repeated joined records repeat their totals.
+
+Writes replace the entire list. Omitting the field leaves it unchanged during
+an update; `[]` clears it if the field's required/minimum constraints allow it.
+Use the record version to avoid overwriting concurrent edits. Configuration
+defaults to 0 minimum and 100 maximum rows, within limits of 1,000 rows,
+200 columns, and 256 KiB per list value.
+
+Document templates receive arrays and typed scalar values, not formatted
+table text. For example, iterate `record.data.ITEMS1` with Liquid and access
+`item.Amount` using the actual field and column IDs. HTML output is escaped
+by default. For a profile input template, use the `json` filter to retain
+arrays, booleans, nulls, and exact decimal strings. Finalized records supply
+their frozen calculated cells and totals even after formulas change.
 
 ## Understand the Grids model
 
@@ -195,6 +264,16 @@ available pages, data, forms and action IDs without Base access. The runtime
 commands support bounded record reads, form submission, editable record fields,
 comments, attachments, stored document downloads, actions, scanners and scoped
 run status. They retain the published App's permission and availability checks.
+
+Custom App authors can fetch `grids apps reference --json` for the generated
+input `definitionSchema`, including every option, enum, default and limit.
+Run `apps validate` for additional query, resource and permission checks.
+In-App Help's **Custom App API reference** explains the same contract for people.
+Forms may opt into `mode: edit` on a matching Record page, with versioned,
+all-or-nothing parent and related-row edits. Shared relation targets stay links,
+not inline editors. Base writers use `forms submit --record <id>`; App readers
+use `apps runtime read` and `submit`. Stable Form idempotency keys protect exact
+retries; unkeyed creates do not. Finalization and mutation policies still apply.
 
 Published-runtime HTTP list controls use `_search`, `_cursor`, and `_limit` so
 they cannot overwrite a page's Record parameters. CLI flags remain `--search`,

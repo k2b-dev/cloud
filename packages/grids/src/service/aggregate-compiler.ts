@@ -1,6 +1,8 @@
 import { sql } from "bun";
 import { type AggregateKind, aggregateOutputKey, isFieldAggregatable } from "./aggregate-capabilities";
 import { storageOf } from "./field-storage";
+import { numericAverageSql } from "./numeric-division-sql";
+import { numericMedianSql } from "./numeric-median-sql";
 import type { Field } from "./types";
 
 type AggKind = AggregateKind;
@@ -54,9 +56,9 @@ const aggregateExpression = (field: Field, agg: AggKind): any => {
     case "sum":
       return sql`SUM(${numericProjection(field)})`;
     case "avg":
-      return sql`AVG(${numericProjection(field)})`;
+      return numericAverageSql(numericProjection(field));
     case "median":
-      return sql`PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY ${numericProjection(field)})`;
+      return numericMedianSql(numericProjection(field));
     case "min":
     case "max": {
       const fn = agg === "min" ? sql`MIN` : sql`MAX`;

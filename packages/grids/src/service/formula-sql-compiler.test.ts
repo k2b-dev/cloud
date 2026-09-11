@@ -1,8 +1,18 @@
 import { describe, expect, test } from "bun:test";
 import { sql } from "bun";
-import { parseFormula } from "../formula/parser";
+import { FORMULA_LIMITS, parseFormula } from "../formula/parser";
 import { compileFormulaPredicateAstToSql, compileFormulaSourceToSql } from "./formula-sql-compiler";
 import type { Field } from "./types";
+
+test("SQL compilation rejects expressions beyond the shared complexity budget", () => {
+  const source = Array(FORMULA_LIMITS.depth + 1)
+    .fill("1")
+    .join("+");
+  expect(compileFormulaSourceToSql(source, { fields: [] })).toMatchObject({
+    ok: false,
+    error: expect.stringContaining("levels of nesting"),
+  });
+});
 
 const field = (overrides: Partial<Field> & Pick<Field, "id" | "shortId" | "name" | "type">): Field => ({
   id: overrides.id,
@@ -42,6 +52,35 @@ const fields = [
 ];
 
 describe("compileFormulaSourceToSql", () => {
+  test("list reductions respect resolved scopes and never fall back past resolver errors", () => {
+    const list = field({
+      id: "list_id",
+      shortId: "ITEMS1",
+      name: "Items",
+      type: "object_list",
+      config: {
+        fields: [{ id: "Amount", name: "Amount", type: "number" }],
+      },
+    });
+    expect(
+      compileFormulaSourceToSql("LIST_COUNT(ITEMS1)", {
+        fields: [list],
+        resolveField: () => "This scope is not available",
+      }),
+    ).toEqual({ ok: false, error: "This scope is not available" });
+    expect(
+      compileFormulaSourceToSql("LIST_COUNT(ITEMS1)", {
+        fields: [list],
+        resolveField: () => ({ sql: sql`1`, type: "numeric" }),
+      }),
+    ).toMatchObject({ ok: false, error: expect.stringContaining("not an object-list") });
+    expect(
+      compileFormulaSourceToSql("LIST_SUM(ITEMS1, 'Missing')", {
+        fields: [],
+        resolveField: () => ({ sql: sql`'[]'::jsonb`, type: "unknown", objectListConfig: list.config }),
+      }),
+    ).toMatchObject({ ok: false, error: expect.stringContaining("numeric list column") });
+  });
   test("compiles decimal arithmetic over named field refs", () => {
     const result = compileFormulaSourceToSql("Price * Quantity", { fields });
     expect(result.ok).toBe(true);
