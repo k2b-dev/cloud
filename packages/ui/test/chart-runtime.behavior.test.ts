@@ -123,7 +123,7 @@ describe("Chart runtime behavior", () => {
     );
     await nextTurn();
 
-    const landTransform = () => renderedSvg.read().match(/class="stdlib-chart-map-land"[^>]* transform="([^"]+)"/)?.[1];
+    const landTransform = () => renderedSvg.read().match(/class="k2b-chart-map-camera"[^>]* transform="([^"]+)"/)?.[1];
     const initialTransform = landTransform();
 
     setViewport({ latitude: 20, longitude: 40, zoom: 2 });
@@ -272,7 +272,7 @@ describe("Chart runtime behavior", () => {
         const writes = renderedSvg.writes();
         const chart = dom.root.querySelector<HTMLElement>(".k2b-chart")!;
         chart.dispatchEvent(new dom.window.FocusEvent("focusin", { bubbles: true }) as unknown as FocusEvent);
-        expect(chart.hasAttribute("aria-describedby")).toBe(true);
+        expect(chart.hasAttribute("aria-describedby"), sample.kind).toBe(true);
         expect(dom.root.querySelector("[data-inspected]")).not.toBeNull();
         expect(selections).toHaveLength(0);
         chart.dispatchEvent(new dom.window.KeyboardEvent("keydown", { key: "Enter", bubbles: true }) as unknown as KeyboardEvent);

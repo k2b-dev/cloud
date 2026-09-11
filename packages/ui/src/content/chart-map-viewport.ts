@@ -24,9 +24,14 @@ export const normalizeMapViewport = (viewport: MapViewport | undefined): MapView
   };
 };
 
-export const zoomMapViewport = (viewport: MapViewport, delta: number): MapViewport =>
+export const zoomMapViewport = (
+  viewport: MapViewport,
+  delta: number,
+  focus: Pick<MapViewport, "latitude" | "longitude"> = { latitude: 50, longitude: 10 },
+): MapViewport =>
   normalizeMapViewport({
     ...viewport,
+    ...(viewport.zoom === 0 && delta > 0 ? focus : {}),
     zoom: viewport.zoom + delta,
   });
 

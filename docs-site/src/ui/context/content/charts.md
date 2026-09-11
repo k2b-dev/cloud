@@ -107,7 +107,7 @@ Solid signal. Boolean options default to `false` unless stated otherwise.
 | `barGauge` | `data: { label: string; value: number; min?: number; max?: number; unit?: string }[]` | Shared `min=0`, `max=100`, `unit`, `format`, `thresholds`. Item min/max/unit override shared values. |
 | `stat` | `label: string`, `value: number \| string` | `unit`, `format`, `delta?: number \| string`, `deltaFormat?: (number) => string`, `trend?: "up" / "down" / "neutral"`, `sparkline?: number[] \| Point[]`. Trend derives from numeric delta; otherwise defaults to neutral. String values/deltas remain text; numeric delta gets a leading `+` when positive. |
 | `heatmap` | `data: { x: string; y: string; value: number }[]` | `xLabels?: string[]`, `yLabels?: string[]` control category order; otherwise first appearance. `min`/`max` default to the observed domain; `format`, `showValues=false`. Missing cells have no inspected datum; the last entry for a repeated X/Y pair wins. |
-| `map` | `series: { label?: string; data: { latitude: number; longitude: number; label?: string; size?: number }[] }[]` | `viewport?: { latitude: number; longitude: number; zoom: number }`, `sizeRange?: [number, number]` (default `[3, 12]` when sizes are present), `legend=false`. Use decimal degrees; zoom is normalized to 0–5. Omit viewport for the world view. No custom projection or map-layer prop. |
+| `map` | `series: { label?: string; data: { latitude: number; longitude: number; label?: string; size?: number }[] }[]` | `viewport?: { latitude: number; longitude: number; zoom: number }`, `sizeRange?: [number, number]` (default `[3, 12]` when sizes are present), `legend=false`. Use decimal degrees; zoom is normalized to 0–5. Omit viewport for the world view. `zoomFocus?: { latitude: number; longitude: number }` defaults to Europe (`{ latitude: 50, longitude: 10 }`) and sets the center only when zooming in from zoom 0. Coordinates are clamped to the bounds of the new zoom level. Further zooming preserves the current center, including after panning. Use `{ latitude: 0, longitude: 0 }` for a neutral target. Reset still restores `viewport` or the world view. No custom projection or map-layer prop. |
 | `stateTimeline` | `rows: StateTimelineRow[]` | `states?: StateTimelineState[]`, `domain?: readonly [number, number]`, `xAxis?: { format?: (number) => string; label?: string }`, `legend=true`. Height defaults to `max(160, 38 + 24 * rows.length + 28 + (legend ? 24 : 0))` pixels. |
 
 `Series` is `{ label?: string; data: Point[]; marker?: MarkerShape; lineStyle?: LineStyle }`.
@@ -341,7 +341,7 @@ Always provide the same conclusion in text. Do not make color, pointer hover, or
 
 The complete SVG renders on the server and fits its container before JavaScript loads. Hydration and resizing keep the same chart geometry, so range navigation does not briefly show a smaller chart.
 
-Cartesian plots fill the available width and height while labels and markers retain their size. Maps, pies, donuts, and gauges preserve their aspect ratio. Load `@k2b/ui/styles.css` in the page head so this layout applies to the first frame.
+Cartesian plots fill the available width and height while labels and markers retain their size. At zoom zero, maps fit the complete world without cropping or distortion; shallow containers leave space on either side. Each zoom level doubles the geographic scale from that fitted world view, without changing the fitting mode. Zoomed content can use the full plot width and is clipped only at its edges. Titles and legends stay outside the geographic crop. Pies, donuts, and gauges preserve their aspect ratio. Load `@k2b/ui/styles.css` in the page head so this layout applies to the first frame.
 
 Hover, focus, and selection only change inspection paint and the out-of-flow
 tooltip. Renderer-owned anchors are transformed through the actual SVG matrix,
@@ -628,7 +628,7 @@ the parent. Use a single shared selection action, with clearly named metrics.
 ### Three integration paths
 
 - **Client dashboard:** build the initial snapshot from local data and let `load`
-  synchronously rebuild it. The second live example uses thirteen time steps and
+  synchronously rebuild it. The second live example maps two synthetic delivery routes over thirteen time steps and
   no data endpoint. A fully client-rendered Solid entry can render the same
   component; its initial builder runs in the browser.
 - **SSR app:** build initial snapshots on the server and pass serializable data
@@ -639,7 +639,7 @@ the parent. Use a single shared selection action, with clearly named metrics.
   View and sort props can similarly be bound to an application's router.
 - **Static report:** prepare a deliberately bounded set of snapshots at build
   time. `load` finds the matching embedded snapshot without fetching or rendering.
-  The third example contains 24 states: two times, three reference choices
+  The third example contains 224 states: seven times, eight reference choices
   (including none), and four series subsets. Precomputing arbitrary combinations
   grows exponentially; use local computation or a server loader beyond such a
   small explicit domain.

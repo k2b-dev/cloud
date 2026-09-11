@@ -6,7 +6,7 @@ export const queueSteps = Array.from({ length: 13 }, (_, index) => ({
   key: String(index + 8).padStart(2, "0"),
   label: `${String(index + 8).padStart(2, "0")}:00`,
 }));
-export const staticQueueSteps = [queueSteps[0]!, queueSteps[12]!];
+export const staticQueueSteps = queueSteps.filter((_, index) => index % 2 === 0);
 export const queueSeries = [
   { key: "imports", label: "Imports", color: "var(--stdlib-chart-c1)" },
   { key: "exports", label: "Exports", color: "var(--stdlib-chart-c2)" },
@@ -35,6 +35,7 @@ export function queueSnapshot(request: ChartExplorerRequest): ChartExplorerSnaps
     {
       kind: "bar",
       colorByBar: true,
+      showValues: true,
       yAxis: { domain: [0, 60], label: "Completed jobs" },
       data: marks.map((mark) => ({
         label: mark.reference ? "" : mark.row.label,
@@ -61,7 +62,7 @@ export function queueSnapshot(request: ChartExplorerRequest): ChartExplorerSnaps
   );
   return { request, charts: { queues: { chart, rows } } };
 }
-/** 2 times × 3 reference choices × 4 series combinations = 24 bounded states. */
+/** 7 times × 8 reference choices × 4 series combinations = 224 bounded states. */
 export const staticQueueSnapshots = () =>
   staticQueueSteps.flatMap((step) =>
     [undefined, ...staticQueueSteps.map((item) => item.key)].flatMap((referenceStep) =>

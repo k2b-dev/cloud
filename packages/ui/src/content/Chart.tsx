@@ -16,7 +16,7 @@ import {
   zoomStateTimelineViewport,
 } from "./chart-state-timeline";
 import { isServer } from "solid-js/web";
-import { responsiveChartSvg, selectedChartSvg } from "./chart-svg";
+import { responsiveChartSvg, responsiveMapSvg, selectedChartSvg } from "./chart-svg";
 
 /**
  * Chart — minimal Solid wrapper around `stdlib.charts`.
@@ -30,7 +30,8 @@ import { responsiveChartSvg, selectedChartSvg } from "./chart-svg";
  *
  * **Sizing.** The server and browser render the same logical viewBox. CSS
  * fits Cartesian plots to the container and preserves text/marker sizes;
- * maps, pies, donuts and gauges retain their aspect ratio. No measurement
+ * maps fit the whole world and zoom uniformly across the full plot; pies, donuts and gauges retain
+ * their aspect ratio. No measurement
  * or hydration redraw is needed. The caller sizes the wrapper, for example
  * `style={{ height: "14rem" }}`. State timelines derive their default height
  * from the row count and legend via `stateTimelineHeight()`.
@@ -96,7 +97,13 @@ export type ChartProps = {
     /** Controlled highlight; indices belong to this exact input snapshot. */
     selected?: ChartDatumRef | null;
     tooltip?: ChartTooltipFormatter;
-  } & (K extends "stateTimeline" ? StateTimelineChartOptions : Omit<Parameters<(typeof charts)[K]>[0], "width" | "height" | "inspect">);
+  } & (K extends "map"
+    ? {
+        /** Target when zooming in from the world view. Defaults to Europe (50, 10). */
+        zoomFocus?: Pick<MapViewport, "latitude" | "longitude">;
+      }
+    : {}) &
+    (K extends "stateTimeline" ? StateTimelineChartOptions : Omit<Parameters<(typeof charts)[K]>[0], "width" | "height" | "inspect">);
 }[ChartKind];
 
 /** Pure renderer options: component layout, events and inspection are configured elsewhere. */
@@ -130,8 +137,9 @@ export const renderChartSvg = (
     onSelect: _onSelect,
     selected: _selected,
     tooltip: _tooltip,
+    zoomFocus: _zoomFocus,
     ...opts
-  } = props as ChartProps & { interactive?: boolean };
+  } = props as ChartProps & { interactive?: boolean; zoomFocus?: Pick<MapViewport, "latitude" | "longitude"> };
   if (kind === "stateTimeline") {
     return responsiveChartSvg(
       renderStateTimelineSvg({
@@ -146,11 +154,12 @@ export const renderChartSvg = (
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const svg = (charts[kind] as (o: unknown) => string)({
     ...(opts as any),
-    ...(kind === "map" && mapViewport ? { viewport: mapViewport } : {}),
+    ...(kind === "map" ? { viewport: DEFAULT_MAP_VIEWPORT } : {}),
     width,
     height,
     inspect: props.interactive === true,
   });
+  if (props.kind === "map") return responsiveMapSvg(svg, width, height, normalizeMapViewport(mapViewport ?? props.viewport));
   return preservesAspectRatio(kind) ? svg : responsiveChartSvg(svg);
 };
 
@@ -249,7 +258,12 @@ const Chart = (props: ChartProps): JSX.Element => {
   };
 
   const mapDimensions = () => {
-    const viewportElement = containerRef?.querySelector(".stdlib-chart-map-viewport");
+    const viewportElement = containerRef?.querySelector<SVGSVGElement>(".stdlib-chart-map-viewport");
+    const matrix = viewportElement?.getScreenCTM?.();
+    const box = viewportElement?.viewBox?.baseVal;
+    if (matrix && box?.width && box.height) {
+      return { width: box.width * Math.hypot(matrix.a, matrix.b), height: box.height * Math.hypot(matrix.c, matrix.d) };
+    }
     const rect = viewportElement?.getBoundingClientRect();
     if (rect && rect.width > 0 && rect.height > 0) {
       return { width: rect.width, height: rect.height };
@@ -260,7 +274,7 @@ const Chart = (props: ChartProps): JSX.Element => {
   const zoom = (delta: number) => {
     closeChartTooltip();
     if (interactiveMap()) {
-      setMapViewport((current) => zoomMapViewport(current, delta));
+      setMapViewport((current) => zoomMapViewport(current, delta, props.kind === "map" ? props.zoomFocus : undefined));
     } else if (interactiveTimeline()) {
       updateTimelineViewport((current) => zoomStateTimelineViewport(current, timelineFullDomain(), delta));
     }

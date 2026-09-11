@@ -95,6 +95,8 @@ const portableDemoFiles = [
   "../src/ui/demo-sections/charts.tsx",
   "../src/ui/ChartGroupDemo.island.tsx",
   "../src/ui/ChartLocalDemo.island.tsx",
+  "../src/ui/ChartStaticDemo.island.tsx",
+  "../src/ui/chart-map-data.ts",
   "../src/ui/chart-local-data.ts",
   "../src/ui/chart-explorer-data.ts",
   "../src/ui/chart-group-data.ts",

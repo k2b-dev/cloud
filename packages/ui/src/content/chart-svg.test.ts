@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { charts } from "@k2b/stdlib";
-import { responsiveChartSvg, selectedChartSvg } from "./chart-svg";
+import { responsiveChartSvg, responsiveMapSvg, selectedChartSvg } from "./chart-svg";
 
 describe("responsive SVG presentation", () => {
   test("retains escaped content and geometry while anchoring labels and rotated axes", () => {
@@ -40,4 +40,28 @@ test("SSR selects every mark of an entity without duplicating reference style at
   const groups = result.match(/<g[^>]*>/g)!;
   for (const group of groups) expect(group.match(/style=/g)).toHaveLength(1);
   expect(groups[1]).toContain("--reference:green;--k2b-chart-selection-color:");
+});
+
+test("map viewport fills its CSS box without changing geographic paths or cropping its header", () => {
+  const source = charts.map({
+    width: 480,
+    height: 280,
+    title: "Offices",
+    subtitle: "Today",
+    legend: true,
+    inspect: true,
+    series: [{ label: "Team", data: [{ latitude: 52, longitude: 13 }] }],
+  });
+  const svg = responsiveMapSvg(source, 480, 280, { latitude: 0, longitude: 0, zoom: 2 });
+  expect(svg.slice(0, svg.indexOf(">"))).not.toContain("viewBox");
+  expect(svg).toContain('preserveAspectRatio="xMidYMid meet"');
+  expect(svg).toMatch(/class="stdlib-chart-map-viewport" x="[\d.]+%" y="[\d.]+%" width="[\d.]+%" height="[\d.]+%"/);
+  expect(svg).toContain('class="stdlib-chart-title" x="50%"');
+  expect(svg.match(/<path[^>]*>/g)).toEqual(source.match(/<path[^>]*>/g));
+  expect(svg.match(/data-chart-datum="[^"]*"/g)).toEqual(source.match(/data-chart-datum="[^"]*"/g));
+  const overview = responsiveMapSvg(source, 480, 280, { latitude: 0, longitude: 0, zoom: 0 });
+  expect(overview).toContain('preserveAspectRatio="xMidYMid meet"');
+  expect(overview).toContain("--k2b-map-inverse-scale:calc(max(");
+  expect(svg).toContain("scale(4)");
+  expect(overview).toContain("scale(1)");
 });

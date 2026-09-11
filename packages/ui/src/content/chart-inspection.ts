@@ -116,6 +116,24 @@ export function createChartInspection(options: {
     const rect = entry.element.getBoundingClientRect();
     return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
   };
+  const visibleRecords = () => {
+    const nodes = records();
+    if (options.kind() !== "map") return nodes;
+    const viewport = options.container()?.querySelector<SVGSVGElement>(".stdlib-chart-map-viewport");
+    if (!viewport?.getScreenCTM?.()) return nodes;
+    const root = viewport.ownerSVGElement?.getBoundingClientRect();
+    if (!root?.width || !root.height) return nodes;
+    const width = viewport?.width?.baseVal.value;
+    const height = viewport?.height?.baseVal.value;
+    if (!width || !height) return nodes;
+    const left = root.left + viewport.x.baseVal.value;
+    const top = root.top + viewport.y.baseVal.value;
+    const clip = { left, top, right: left + width, bottom: top + height };
+    return nodes.filter((entry) => {
+      const point = screenPoint(entry);
+      return point.x >= clip.left && point.x <= clip.right && point.y >= clip.top && point.y <= clip.bottom;
+    });
+  };
   const rawX = (entry: Entry) => entry.datum.values.find((field) => field.key === "x")?.value;
   const seriesChart = () => options.kind() === "line" || options.kind() === "sparkline";
   const clearHighlight = () => {
@@ -183,10 +201,10 @@ export function createChartInspection(options: {
   };
   const nearest = (x: number, y: number, target: Element | null): Entry | undefined => {
     if (target?.closest("button,a") && !target.closest("[data-chart-datum]")) return;
-    const nodes = records();
+    const nodes = visibleRecords();
     const direct = target?.closest("[data-chart-datum]");
     const hit = direct ? byElement.get(direct) : undefined;
-    if (hit) return hit;
+    if (hit && nodes.includes(hit)) return hit;
     // Exact shapes win. A small physical hit radius also reaches tiny or
     // zero-sized marks; distant whitespace leaves the chart unselected.
     const points = seriesChart() ? sortedPoints : nodes;
@@ -263,7 +281,7 @@ export function createChartInspection(options: {
   };
   const focus = (event: FocusEvent) => {
     if (event.target !== options.container() || !options.enabled()) return;
-    const nodes = records();
+    const nodes = visibleRecords();
     const first = options.kind() === "line" ? sortedPoints.at(-1) : nodes[0];
     if (first) show(first);
   };
@@ -274,6 +292,10 @@ export function createChartInspection(options: {
       return true;
     }
     if (event.key === "Enter" && active) {
+      if (options.kind() === "map" && !visibleRecords().includes(active)) {
+        close();
+        return true;
+      }
       event.preventDefault();
       pinned = true;
       const link = active.element.closest("a");
@@ -284,7 +306,7 @@ export function createChartInspection(options: {
     const navigationChart = options.kind() === "map" || options.kind() === "stateTimeline";
     if (navigationChart && !event.altKey) return false;
     if (!["Home", "End", "ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key)) return false;
-    let nodes = records();
+    let nodes = visibleRecords();
     if (seriesChart()) nodes = [...nodes].sort((a, b) => a.datum.anchor[0] - b.datum.anchor[0]);
     if (options.kind() === "line") {
       const seen = new Set<string | number | undefined>();

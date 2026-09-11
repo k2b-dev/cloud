@@ -7648,3 +7648,10 @@
 /* Reserve the loader slot; brief chart requests never flash a visible indicator. */
 .k2b-ui .k2b-chart-group-controls__loading { display: inline-flex; align-items: center; justify-content: center; width: 1rem; height: 1rem; flex: 0 0 1rem; color: var(--k2b-text-muted); font-size: .875rem; opacity: 0; transition: opacity .15s; }
 .k2b-ui .k2b-chart-group-controls__loading[data-loading] { opacity: 1; transition-delay: .2s; }
+
+/* Maps use a full-width geographic viewport; headers and legends stay outside its crop. */
+.k2b-ui .k2b-chart[data-chart-kind="map"] .k2b-chart__svg { container-type: size; }
+.k2b-ui .k2b-chart[data-chart-kind="map"] .k2b-chart__svg > svg { overflow: hidden; }
+.k2b-ui .k2b-chart[data-chart-kind="map"] .stdlib-chart-legend { translate: calc((100cqw - var(--k2b-chart-width)) / 2) calc(100cqh - var(--k2b-chart-height)); }
+
+.k2b-ui .k2b-chart[data-chart-kind="map"] .stdlib-chart-map-point { transform-box: fill-box; transform-origin: center; scale: var(--k2b-map-inverse-scale); vector-effect: non-scaling-stroke; }
