@@ -15,16 +15,38 @@ export function responsiveChartSvg(svg: string): string {
 }
 
 /** Add initial controlled selection to our own renderer metadata during SSR. */
-export function selectedChartSvg(svg: string, selected: { role: string; index: number; seriesIndex?: number } | null | undefined): string {
+export function selectedChartSvg(
+  svg: string,
+  selected:
+    | { role: string; index: number; seriesIndex?: number }
+    | readonly { role: string; index: number; seriesIndex?: number }[]
+    | null
+    | undefined,
+): string {
   if (!selected) return svg;
-  return svg.replace(/data-chart-datum="([^"]*)"/g, (attribute, encoded: string, offset: number) => {
-    const raw = encoded.replace(/&quot;/g, '"').replace(/&apos;|&#39;/g, "'").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
+  const targets = "role" in selected ? [selected] : selected;
+  return svg.replace(/<g\b[^>]*\bdata-chart-datum="([^"]*)"[^>]*>/g, (attribute, encoded: string, offset: number) => {
+    const raw = encoded
+      .replace(/&quot;/g, '"')
+      .replace(/&apos;|&#39;/g, "'")
+      .replace(/&lt;/g, "<")
+      .replace(/&gt;/g, ">")
+      .replace(/&amp;/g, "&");
     const value: unknown = JSON.parse(raw);
     if (typeof value !== "object" || value === null || !("role" in value) || !("index" in value)) return attribute;
-    const matches = value.role === selected.role && value.index === selected.index && ("seriesIndex" in value ? value.seriesIndex : undefined) === selected.seriesIndex;
+    const matches = targets.find(
+      (target) =>
+        value.role === target.role &&
+        value.index === target.index &&
+        ("seriesIndex" in value ? value.seriesIndex : undefined) === target.seriesIndex,
+    );
     if (!matches) return attribute;
     const children = svg.slice(offset, svg.indexOf("</g>", offset));
-    const palette = Number(children.match(/stdlib-chart-series-(\d+)/)?.[1] ?? selected.seriesIndex ?? 0) % 8 + 1;
-    return `data-selected style="--k2b-chart-selection-color:color-mix(in srgb,var(--stdlib-chart-c${palette}) 72%,var(--k2b-chart-highlight-mix))" ${attribute}`;
+    const palette = (Number(children.match(/stdlib-chart-series-(\d+)/)?.[1] ?? matches.seriesIndex ?? 0) % 8) + 1;
+    const paint = `--k2b-chart-selection-color:color-mix(in srgb,var(--stdlib-chart-c${palette}) 72%,var(--k2b-chart-highlight-mix))`;
+    const opening = attribute.includes('style="')
+      ? attribute.replace(/style="([^"]*)"/, (_match: string, style: string) => `style="${style};${paint}"`)
+      : attribute.replace(">", ` style="${paint}">`);
+    return opening.replace(">", " data-selected>");
   });
 }

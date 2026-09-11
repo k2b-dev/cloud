@@ -93,8 +93,11 @@ const portableSectionIds = uiCatalogSections
 const portableDemoFiles = [
   ...portableSectionIds.map((section) => `../src/ui/demo-sections/${section}.tsx`),
   "../src/ui/demo-sections/charts.tsx",
-  "../src/ui/ChartExplorerDemo.island.tsx",
+  "../src/ui/ChartGroupDemo.island.tsx",
+  "../src/ui/ChartLocalDemo.island.tsx",
+  "../src/ui/chart-local-data.ts",
   "../src/ui/chart-explorer-data.ts",
+  "../src/ui/chart-group-data.ts",
   "../src/ui/DemoCard.tsx",
 ];
 const portableDemoSources = await Promise.all(

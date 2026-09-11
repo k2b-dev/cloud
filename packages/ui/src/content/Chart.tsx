@@ -99,6 +99,14 @@ export type ChartProps = {
   } & (K extends "stateTimeline" ? StateTimelineChartOptions : Omit<Parameters<(typeof charts)[K]>[0], "width" | "height" | "inspect">);
 }[ChartKind];
 
+/** Pure renderer options: component layout, events and inspection are configured elsewhere. */
+export type ChartRenderOptions = {
+  [K in ChartKind]: Omit<
+    Extract<ChartProps, { kind: K }>,
+    "class" | "style" | "labels" | "interactive" | "onSelect" | "selected" | "tooltip"
+  >;
+}[ChartKind];
+
 /**
  * Internal — strips wrapper-only keys from props and forwards the
  * rest (plus logical size) to `charts[kind]`. The `any` is the

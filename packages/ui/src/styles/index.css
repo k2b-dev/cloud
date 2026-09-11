@@ -7641,3 +7641,10 @@
 }
 
 .k2b-ui .k2b-chart-explorer__sort-icon { display: inline-block; width: 1em; text-align: center; flex-shrink: 0; }
+
+.k2b-ui .k2b-chart-group-controls { display: grid; gap: .75rem; padding: 1rem; }
+.k2b-ui .k2b-chart [data-chart-reference="true"] > :is(rect, circle, path) { fill: none !important; pointer-events: all; stroke: var(--k2b-chart-reference-color); stroke-width: 1.5px; vector-effect: non-scaling-stroke; }
+
+/* Reserve the loader slot; brief chart requests never flash a visible indicator. */
+.k2b-ui .k2b-chart-group-controls__loading { display: inline-flex; align-items: center; justify-content: center; width: 1rem; height: 1rem; flex: 0 0 1rem; color: var(--k2b-text-muted); font-size: .875rem; opacity: 0; transition: opacity .15s; }
+.k2b-ui .k2b-chart-group-controls__loading[data-loading] { opacity: 1; transition-delay: .2s; }

@@ -39,21 +39,48 @@ describe("SSR chart exploration", () => {
       createComponent(ChartExplorer, {
         title: "Queues",
         selectedKey: "exports",
-        snapshot: { chart: chart(), rows, request: { step: "08", visibleKeys: ["exports"] } },
-        steps: [
-          { key: "08", label: "08:00" },
-          { key: "14", label: "14:00" },
-        ],
+        data: { chart: chart(), rows },
         columns: [{ id: "label", label: "Queue", value: (row: (typeof rows)[number]) => row.label }],
-        getRowKey: (row: (typeof rows)[number]) => row.key,
       }),
     );
     expect(html).toContain('viewBox="0 0 480 280"');
-    expect(html).toContain('type="range"');
-    expect(html).toContain('aria-valuetext="08:00"');
     expect(html).toContain("height:18rem");
     expect(html).toContain("data-chart-datum");
     expect(html).toContain("Copy data");
-    expect(html).toContain('data-selected style="--k2b-chart-selection-color:');
+    expect(html).toContain("data-selected");
+    expect(html).toContain("--k2b-chart-selection-color:");
   });
+});
+
+test("reference glyphs and linked controls are present in the server output", async () => {
+  const { ChartExplorerControls } = await import("./ChartExplorerControls");
+  const { createChartExplorer } = await import("./chart-explorer");
+  const reference = prepareChartSnapshot(
+    { kind: "bar", data: [{ label: "A", value: 3, colorIndex: 1 }], colorByBar: true },
+    {
+      key: () => "a:reference",
+      rowKey: () => "a",
+      tooltip: () => ({ title: "Reference 08:00", rows: [] }),
+      reference: () => true,
+    },
+  );
+  expect(reference.marks[0]?.reference).toBe(true);
+  expect(reference.svg).toContain('data-chart-reference="true"');
+  expect(reference.svg).toContain("--k2b-chart-reference-color:var(--stdlib-chart-c2)");
+  const request = { step: "17", referenceStep: "08", visibleKeys: ["a"] };
+  const initial = { request, charts: { a: { chart: reference, rows: [{ key: "a" }] } } };
+  const html = renderToString(() => {
+    const group = createChartExplorer({ snapshot: () => initial, load: async () => initial });
+    return createComponent(ChartExplorerControls, {
+      explorer: group,
+      title: "Analysis",
+      steps: [
+        { key: "08", label: "08:00" },
+        { key: "17", label: "17:00" },
+      ],
+    });
+  });
+  expect(html).toContain('aria-label="Remove comparison: 08:00"');
+  expect(html).toContain("Current");
+  expect(html).toContain('aria-valuetext="17:00"');
 });

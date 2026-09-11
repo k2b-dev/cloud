@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { charts } from "@k2b/stdlib";
-import { responsiveChartSvg } from "./chart-svg";
+import { responsiveChartSvg, selectedChartSvg } from "./chart-svg";
 
 describe("responsive SVG presentation", () => {
   test("retains escaped content and geometry while anchoring labels and rotated axes", () => {
@@ -27,4 +27,17 @@ describe("responsive SVG presentation", () => {
     expect(responsive).toContain(";transform:rotate(-90deg)");
     expect(responsive.match(/style="transform-origin:/g)?.length).toBe(original.match(/<text\b/g)?.length);
   });
+});
+
+test("SSR selects every mark of an entity without duplicating reference style attributes", () => {
+  const svg =
+    '<svg><g data-chart-datum="{&quot;role&quot;:&quot;bar&quot;,&quot;index&quot;:0}"><rect /></g><g style="--reference:green" data-chart-datum="{&quot;role&quot;:&quot;bar&quot;,&quot;index&quot;:1}"><rect /></g></svg>';
+  const result = selectedChartSvg(svg, [
+    { role: "bar", index: 0 },
+    { role: "bar", index: 1 },
+  ]);
+  expect(result.match(/data-selected/g)).toHaveLength(2);
+  const groups = result.match(/<g[^>]*>/g)!;
+  for (const group of groups) expect(group.match(/style=/g)).toHaveLength(1);
+  expect(groups[1]).toContain("--reference:green;--k2b-chart-selection-color:");
 });

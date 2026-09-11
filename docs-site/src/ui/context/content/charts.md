@@ -406,37 +406,33 @@ Interactive charts require hydration. Static charts remain readable in the serve
 />
 ```
 
-## Explore snapshots with ChartExplorer
+## Explore data with ChartExplorer
 
-Use `ChartExplorer` for a dimension slider, switchable legend, persistent selection,
-details, and a sortable data view. It displays SVG prepared by `prepareChartSnapshot`
-on the server. Slider and legend changes replace one complete snapshot; the browser
-does not call a chart renderer. The existing `Chart` remains the smaller choice for
-ordinary reactive data and local map/timeline navigation.
+`ChartExplorer` presents one chart, a sortable table, copy action and selection
+Paper. `createChartExplorer` owns loading and shared selection for **one or more**
+charts. `ChartExplorerControls` adds the optional dimension slider, series filter
+and reference actions. All three work in Solid applications; they are not a
+Vanilla-JS widget that attaches itself to arbitrary HTML.
 
-```tsx
-import {
-  ChartExplorer, prepareChartSnapshot,
-  type ChartSnapshot, type ChartDatumRef,
-  type ChartExplorerProps, type ChartExplorerRequest,
-  type ChartExplorerSnapshot, type ChartExplorerColumn,
-} from "@k2b/ui";
-```
+Use the ordinary `Chart` for a small reactive plot or local map/timeline pan and
+zoom. Explorer snapshots support inspection and selection for every chart kind;
+their map/timeline viewports remain snapshot-owned.
 
-### Snapshot preparation
+### Prepare geometry and identify records
 
-`prepareChartSnapshot(options: ChartProps, inspection): ChartSnapshot` accepts the
-same data/options as `Chart`. `inspection` requires two synchronous functions:
+`prepareChartSnapshot(options: ChartRenderOptions, inspection)` returns a
+`ChartSnapshot`. This function runs in the server or browser runtime. An SSR app
+calls it on the server and sends only the result to its island. A client dashboard
+can call it locally. Its options are the renderer's `kind` and data/options, not
+component props: `style`, `class`, `labels`, `selected`, `onSelect`, `tooltip` and
+`interactive` are deliberately excluded. Inspection is always enabled.
 
-- `key(selection: ChartSelection): string`: a unique, nonempty application key for
-  each rendered mark. Use the same key for its table row. Duplicate or empty mark
-  keys throw. Source indices are lookup positions, not durable IDs.
-- `tooltip(selection: ChartSelection): ChartTooltip`: formatted title and text rows,
-  including domain labels, units, and time context. It runs on the server; its result
-  crosses the island boundary as text. It overrides `options.tooltip`.
-
-The helper enables inspection, uses a logical width of 480 and height of 280
-(timelines use their row-derived height), and returns serializable output:
+| Inspection option | Contract |
+| --- | --- |
+| `key(selection)` | Required unique, nonempty mark key. Indices locate source inputs but are not durable keys. |
+| `rowKey(selection)` | Optional nonempty row key; defaults to `key(selection)` for one-to-one data. Multiple marks may share a row key. |
+| `tooltip(selection)` | Required synchronous `ChartTooltip` formatter. Return meaningful labels, units and formatted strings. |
+| `reference(selection)` | Optional boolean; renders reference scatter points and bars hollow in their series color. Does not calculate or pair comparison values. |
 
 ```ts
 type ChartSnapshot = {
@@ -445,173 +441,224 @@ type ChartSnapshot = {
   width: number;
   height: number;
   stretch: boolean;
-  marks: readonly { key: string; datum: ChartDatum; tooltip: ChartTooltip }[];
+  marks: readonly {
+    key: string;
+    rowKey: string;
+    datum: ChartDatum;
+    tooltip: ChartTooltip;
+    reference?: boolean;
+  }[];
 };
-type ChartExplorerRequest = { step: string; visibleKeys: readonly string[] };
-type ChartExplorerSnapshot<T> = {
-  request: ChartExplorerRequest;
+type ChartExplorerRow = { key: string };
+type ChartExplorerData<T extends ChartExplorerRow = ChartExplorerRow> = {
   chart: ChartSnapshot;
   rows: readonly T[];
 };
+type ChartExplorerCharts = Readonly<Record<string, ChartExplorerData>>;
+type ChartExplorerRequest = {
+  step?: string;
+  visibleKeys?: readonly string[];
+  referenceStep?: string;
+};
+type ChartExplorerSnapshot<C extends ChartExplorerCharts> = {
+  request: ChartExplorerRequest;
+  charts: C;
+};
 ```
 
-Treat snapshots as trusted renderer output. Do not accept SVG supplied by an
-untrusted user. Create them in server code; do not invoke the helper inside an
-island to implement changes. Its `class`, `style`, `labels`, `selected`, and
-`onSelect` options do not configure the explorer. Set the explorer props instead.
-Prepared maps/timelines have snapshot-owned viewports: inspection works, but local
-pan/zoom controls belong to the ordinary `Chart` component.
+Each row describes one selectable entity. Its key is unique within its chart.
+Each mark key is also unique within its chart, and every `mark.rowKey` must resolve
+to a row. A row may have no mark, for example a missing observation. Selection
+highlights **all** marks of that row; tooltips still describe the individual mark.
+The same row key in different charts links the same entity, not equal values or a
+causal relationship. Different charts retain their own inferred row types.
 
-### Props reference
+For comparison, use one row such as
+`{ key: "cached:40", current: 30, reference: 24 }`. Give its two marks distinct keys
+`cached:40:current` and `cached:40:reference`, both with `rowKey: "cached:40"`.
+The table and copy output contain one row, independent of mark order. There is no
+implicit deduplication or aggregation in the explorer.
 
-`ChartExplorerProps<T>` accepts:
+Treat snapshots as immutable trusted renderer output. Never accept arbitrary
+user-supplied SVG for `chart.svg`. Across SSR/JSON boundaries, row data must also be
+serializable; TypeScript row types alone do not enforce JSON serialization. Layout
+uses a fixed logical width of 480 and height of 280, except row-derived timeline
+height. CSS sizes the SVG before hydration without measuring/rebuilding it.
 
-| Prop | Contract |
+### One controller for local and remote data
+
+```tsx
+import { createChartExplorer, ChartExplorer, ChartExplorerControls,
+  prepareChartSnapshot, type ChartExplorerRequest } from "@k2b/ui";
+
+const initialRequest = { visibleKeys: ["imports", "exports"] };
+function buildSnapshot(request: ChartExplorerRequest) {
+  const source = [{ key: "imports", label: "Imports", jobs: 42 },
+    { key: "exports", label: "Exports", jobs: 28 }];
+  const rows = source.filter(row => !request.visibleKeys || request.visibleKeys.includes(row.key));
+  const chart = prepareChartSnapshot({ kind: "bar", colorByBar: true,
+    data: rows.map(row => ({ label: row.label, value: row.jobs,
+      colorIndex: source.findIndex(item => item.key === row.key) })),
+    yAxis: { domain: [0, 60] },
+  }, {
+    key: ({ datum }) => rows[datum.index]!.key,
+    tooltip: ({ datum }) => ({ title: rows[datum.index]!.label,
+      rows: [{ label: "Jobs", value: String(rows[datum.index]!.jobs) }] }),
+  });
+  return { request, charts: { queues: { chart, rows } } };
+}
+
+export function QueueDashboard() {
+  const initial = buildSnapshot(initialRequest);
+  const explorer = createChartExplorer({ snapshot: () => initial,
+    load: buildSnapshot,
+  });
+  return <>
+    <ChartExplorerControls explorer={explorer} title="Queue dashboard"
+      series={[{ key: "imports", label: "Imports", color: "var(--stdlib-chart-c1)" },
+        { key: "exports", label: "Exports", color: "var(--stdlib-chart-c2)" }]} />
+    <ChartExplorer title="Completed jobs" data={explorer.snapshot().charts.queues}
+      selectedKey={explorer.selectedKey()} onSelectedKeyChange={explorer.select}
+      columns={[{ id: "queue", label: "Queue", value: row => row.label },
+        { id: "jobs", label: "Jobs", value: row => String(row.jobs), sortValue: row => row.jobs }]} />
+  </>;
+}
+```
+
+The initial object and every loaded response must contain exactly the configured
+chart IDs. Types preserve those names and each chart's row type; do not widen the
+initial charts to `Record<string, …>` if their names are known. Rows/marks are
+validated before adopting a response. All charts update together.
+
+`ChartExplorerOptions<C>` requires `snapshot: () => ChartExplorerSnapshot<C>` and
+`load: (request, signal) => ChartExplorerSnapshot<C> | Promise<ChartExplorerSnapshot<C>>`.
+Create the controller in a Solid owner. The initial snapshot is displayed without
+a fetch. Replacing the snapshot accessor's result cancels pending work, clears the
+error and adopts the replacement. Chart IDs cannot change during its lifetime.
+
+Optional `request: () => ChartExplorerRequest` enables controlled filters and
+requires `onRequestChange(request)`. `setRequest` then emits a proposal; loading
+starts when the owner updates that accessor. Without controlled filters,
+`setRequest` starts loading and optionally notifies `onRequestChange`. A controlled
+request differing from the supplied snapshot is loaded after mounting. Keep them
+equal for coherent initial SSR output. Replacements reapply controlled filters.
+
+Optional `selectedKey: () => string | null` enables controlled selection and
+requires `onSelectedKeyChange(key)`. Without it, selection is internal and starts
+at `null`. Unknown keys are ignored. Internal selection clears when its row is
+absent from every chart; controlled selection is not overwritten, but absent rows
+are not highlighted. The owner decides when to clear a controlled key.
+
+| Controller member | Behavior |
 | --- | --- |
-| `title` | Required string; labels the section and table. |
-| `snapshot` | Required `ChartExplorerSnapshot<T>`; supplies initial SSR content. Replacing it cancels pending work and adopts its filters and data. |
-| `columns` | Required `readonly ChartExplorerColumn<T>[]`; explicit table labels, formatting and optional sorting. |
-| `getRowKey` | Required `(row: T) => string`. Rows must have unique, nonempty keys. Every chart mark must have a corresponding row or the snapshot is rejected. Extra rows are readable but not selectable. |
-| `steps` | Optional `readonly { key: string; label: string }[]`; array order defines discrete slider positions. Keys must be unique and nonempty. |
-| `dimensionLabel` | Optional string; slider label, defaults to inherited “Range”. Step labels supply `aria-valuetext`. |
-| `legend` | Optional `readonly { key: string; label: string; color: string; marker?: "circle" \| "square" \| "triangle" \| "diamond" \| "plus" \| "cross" }[]`. Keys must be unique and nonempty. `color` is CSS; `marker` defaults to square. |
-| `load` | Optional `(request: ChartExplorerRequest, signal: AbortSignal) => Promise<ChartExplorerSnapshot<T>>`. Fetch a server-prepared state or look up a bounded precomputed state. Without it, slider and legend controls are disabled. |
-| `selectedKey` | Optional `string \| null`; omit for internal selection, pass a value for controlled selection. A missing mark is not highlighted. |
-| `onSelectedKeyChange` | Optional `(key: string \| null) => void`; selection, explicit clear, or removal of the selected mark emits a change. With controlled selection, update `selectedKey` here. |
-| `renderDetails` | Optional `(row: T) => JSX.Element`; replaces the default compact three-column `DescriptionList` inside the selection Paper. The header and clear action remain. |
-| `description` | Optional JSX below the title. |
-| `height` | CSS height string, default `"18rem"`; shared fixed viewport for diagram and scrolling table. |
-| `class` | Optional class added to the explorer section. |
+| `snapshot()` | Last successful complete snapshot. |
+| `desired()` | Filters currently being requested; may differ from displayed filters. |
+| `loading()` | Whether a request is pending. |
+| `error()` | Original `Error` or `null`; non-Error rejections are wrapped with `cause`. |
+| `selectedKey()`, `select(key)` | Read/propose entity selection, or clear with `null`. Selection does not filter or fetch. |
+| `setRequest(next)` | Replace requested filters; returns `void`. Equal displayed filters reuse existing data. |
+| `refresh()` | Force a fresh load of the desired filters, even when unchanged. Returns `Promise<void>`. |
+| `retry()` | Force another attempt for desired filters; same return contract as refresh. |
+| `pinReference()` | Set reference to the displayed step; no-op without a step. |
+| `clearReference()` | Remove the reference while retaining other desired filters. |
+
+Omit `step` when there is no dimension. Omit `visibleKeys` for no series filter;
+`[]` explicitly hides all series. Keys must be nonempty and unique. A reference
+requires a current step. Filters compare series as sets. `setRequest` replaces the
+whole request, so spread `explorer.desired()` when changing only one field.
+Additional domain filters, permissions, source queries and aggregation remain
+application-owned; change those dependencies and call `refresh()` as needed.
+
+Every new load aborts superseded work; stale responses are ignored even when the
+loader ignores the signal. Forward the signal to `fetch`. Invalid responses and
+loader errors retain every previous chart and set `error()`. Request promises
+settle after handling failures; they do not rethrow loader errors. Read `error()`
+for the outcome. Invalid caller-supplied request keys are programming errors and
+throw. Disposal aborts work; refresh after disposal does not load.
+
+### Chart presentation and controls
+
+| `ChartExplorerProps<T>` | Contract |
+| --- | --- |
+| `title`, `data`, `columns` | Required heading, `ChartExplorerData<T>`, and nonempty columns with unique nonempty IDs. |
+| `selectedKey`, `onSelectedKeyChange` | Optional controlled row selection. Omit key for local selection. A missing local row never clears a sibling's controlled selection. |
+| `view`, `onViewChange` | Optional controlled `"chart" \| "table"`. Otherwise, `defaultView` initializes local view; default `"chart"`. |
+| `sort`, `onSortChange` | Optional controlled `DataTableSort \| null`. Otherwise `defaultSort` initializes local sort; default `null`. |
+| `renderDetails` | Optional row renderer replacing the DescriptionList inside the selection Paper. `false` hides the whole local detail area, for a parent-owned shared Paper. |
+| `description`, `class` | Optional JSX below the heading and extra root class. |
+| `height` | CSS viewport height; default `"18rem"`, shared by chart and scrollable table. |
 
 ```ts
 type ChartExplorerColumn<T> = {
   id: string;
   label: string;
   value: (row: T) => string;
+  render?: (row: T) => JSX.Element;
   sortValue?: (row: T) => string | number | null;
   align?: "left" | "center" | "right";
 };
 ```
 
-`sortValue` opts a column into local sorting of the supplied rows. Numbers sort
-numerically, strings use the inherited locale with numeric comparison, and nulls
-stay last in both directions. Return finite numbers. The first click sorts ascending;
-the next reverses it. Sorting never changes chart geometry or record keys. Supply at least one column; column IDs
-must be unique and nonempty. Keep `value`, `sortValue`, `getRowKey`, and `renderDetails` inside the
-island; serialize only prepared data across its boundary.
+`value` is plain text for copy and default details. `render` optionally customizes
+the table cell, such as a current value with a muted reference and change below.
+Include the same reference information in `value` so copying remains complete.
+`sortValue` opts into sorting: finite numbers compare numerically, strings use the
+inherited locale, and nulls stay last in both directions. Default click order is
+ascending, then descending. Sort and view changes never load data. Controlled props
+stay owner-owned until the corresponding value is updated. Sorting only rearranges
+the supplied rows; copy includes all rows in that order, not just the scroll window,
+as escaped tab-separated text with column headings. Clipboard failures appear inline.
 
-“Copy data” copies all supplied rows in the current table order, with column labels
-and formatted values as tab-separated text. It includes cells outside the scroll
-viewport; it does not fetch additional records. Clipboard failures appear inline.
+`ChartExplorerControlsProps<C>` requires `explorer` and `title`; optional `steps`
+are ordered `{ key, label }` entries, optional `series` entries are
+`{ key, label, color }`, and `dimensionLabel` defaults to the inherited range label.
+Option keys must be nonempty and unique within each list.
+The slider is omitted without steps and disabled with fewer than two. Reference
+buttons appear only with configured steps and a displayed step. A multi-select
+series menu supports an empty selection; Reset restores all configured series.
+Series colors must match the renderer palette. During loading, a reserved spinner
+before the reference buttons appears after 200 ms; buttons do not shift. The
+accessible status names the old displayed step. Failures expose Retry. Pinning is
+disabled while loading, on failure, or when the displayed step is already pinned.
 
-### Loading, filtering, and selection
+For a shared Paper, set `renderDetails={false}` on the chart components and read
+`explorer.selectedKey()` and the matching rows in `explorer.snapshot().charts` in
+the parent. Use a single shared selection action, with clearly named metrics.
 
-The wrapper requests changes immediately, aborts the previous request, and ignores
-late responses even if the loader ignores cancellation. Forward the signal to your
-fetch. The returned `request` must match the requested step and visible-key set.
-A mismatch, invalid row mapping, or rejected loader retains the last successful
-snapshot and exposes Retry. While loading or on failure, controls show the requested
-filters, and the status explicitly identifies the last displayed step and old data.
+### Three integration paths
 
-The loader owns filtering and must return chart and rows from the same filtered
-source. The view SelectChip switches between Diagram and Table, next to Copy data. The selected step appears beside the slider. Hover the slider, drag on touch, or use keyboard focus to reveal all step labels without shifting the chart. Pointer interaction does not keep the labels open after leaving the slider; the current step is highlighted. During loading or failure, the status also names the last displayed step. A single series
-FilterChip opens a menu with independent checkboxes for all configured series.
-The menu stays open while selecting; Reset restores all series. An empty visible-key set means nothing is selected for display,
-not “use the default filters”. Return empty rows and an empty chart for that case.
+- **Client dashboard:** build the initial snapshot from local data and let `load`
+  synchronously rebuild it. The second live example uses thirteen time steps and
+  no data endpoint. A fully client-rendered Solid entry can render the same
+  component; its initial builder runs in the browser.
+- **SSR app:** build initial snapshots on the server and pass serializable data
+  into an island. Define `load` and UI callbacks inside that island. Its loader
+  fetches an application-owned endpoint that validates filters, enforces access
+  and calls the same server builder. The first example parses filters from the
+  URL before SSR; controlled filters preserve them through history and reload.
+  View and sort props can similarly be bound to an application's router.
+- **Static report:** prepare a deliberately bounded set of snapshots at build
+  time. `load` finds the matching embedded snapshot without fetching or rendering.
+  The third example contains 24 states: two times, three reference choices
+  (including none), and four series subsets. Precomputing arbitrary combinations
+  grows exponentially; use local computation or a server loader beyond such a
+  small explicit domain.
 
-For line/scatter/map, retain the original series slots and use empty data for hidden
-series to preserve colors and marker variants. For bar/pie/donut, retain an explicit
-`colorIndex` on each item when filtering or sorting. It must be a nonnegative integer
-and wraps through the eight palette slots. Bar uses it only with `colorByBar`.
-The HTML legend must use the corresponding palette colors; disable the SVG legend
-when the explorer already provides one. Pie/donut percentages use the visible total.
+The explorer does not provide a router, HTTP endpoint, database, automatic polling,
+or table pagination. It is intended for bounded chart datasets. Keep datasets and
+updates bounded for both SVG rendering and local table processing; use the
+application's data access layer for larger collections.
 
-Use `xAxis.domain` and `yAxis.domain` to keep comparisons on the same scale. Exact
-bounds must be finite and strictly increasing (positive for log axes) and contain
-all plotted values, error bounds, and applicable baselines. Invalid or insufficient
-bounds throw `RangeError` rather than silently changing the scale or hiding values.
-Explicit domains include endpoint ticks and currently omit minor ticks. They are
-comparison bounds, not a zoom or clipping API. Omit them for automatic scaling.
+### Comparison semantics
 
-Hover/focus only inspect; click, tap, or Enter selects. Pointer leave and Escape
-close transient inspection without clearing the persistent selection. “Clear
-selection” removes it. The same key survives step/filter/view changes only while
-its mark remains present. The selected row and details always come from the current
-snapshot, not the previous one. Each table row has a keyboard-focusable selection
-button in its first column. Native timeline links retain navigation behavior.
+Use identical units and explicit axis domains containing both periods. Retain
+series slots for line/scatter/map and explicit `colorIndex` for colored bar items
+so filtering does not recolor entities. For bars, place current/reference marks
+adjacently. For line comparisons, use separate series with `lineStyle: "dashed"`;
+the reference callback does not restyle line paths.
 
-Histogram rows should represent computed bins; use bin boundaries as stable keys.
-Boxplot rows should represent box summaries and separately keyed outliers. Do not
-use observation IDs for aggregate marks. A histogram's numeric bin index is not
-stable if its bin edges change.
-
-### Complete bounded example
-
-Prepare a small set of states in a server module. These are synthetic demo values.
-
-```tsx
-// server.tsx — call inside the server page's render path
-import { prepareChartSnapshot, type ChartExplorerRequest } from "@k2b/ui";
-import QueueExplorer from "./QueueExplorer.island";
-
-const steps = [{ key: "morning", label: "Morning" }, { key: "afternoon", label: "Afternoon" }];
-const legend = [
-  { key: "imports", label: "Imports", color: "var(--stdlib-chart-c1)" },
-  { key: "exports", label: "Exports", color: "var(--stdlib-chart-c2)" },
-];
-const masks = [[], ["imports"], ["exports"], ["imports", "exports"]];
-const snapshots = steps.flatMap((step) => masks.map((visibleKeys) => {
-  const request: ChartExplorerRequest = { step: step.key, visibleKeys };
-  const rows = legend.flatMap((item, colorIndex) => visibleKeys.includes(item.key)
-    ? [{ key: item.key, label: item.label, value: (colorIndex + 1) * (step.key === "morning" ? 12 : 18), colorIndex }]
-    : []);
-  const chart = prepareChartSnapshot({ kind: "bar", data: rows, colorByBar: true, yAxis: { domain: [0, 40] } }, {
-    key: ({ datum }) => rows[datum.index]!.key,
-    tooltip: ({ datum }) => ({ title: rows[datum.index]!.label, rows: [{ label: "Jobs", value: String(rows[datum.index]!.value) }] }),
-  });
-  return { request, chart, rows };
-}));
-
-export default function Example() {
-  return <QueueExplorer snapshots={snapshots} steps={steps} legend={legend} />;
-}
-```
-
-```tsx
-// QueueExplorer.island.tsx
-import { ChartExplorer, type ChartExplorerSnapshot } from "@k2b/ui";
-
-type Row = { key: string; label: string; value: number };
-export default function QueueExplorer(props: {
-  snapshots: ChartExplorerSnapshot<Row>[];
-  steps: { key: string; label: string }[];
-  legend: { key: string; label: string; color: string }[];
-}) {
-  return <ChartExplorer
-    title="Completed jobs"
-    snapshot={props.snapshots[3]!}
-    steps={props.steps}
-    dimensionLabel="Time of day"
-    legend={props.legend}
-    load={async (request) => {
-      const next = props.snapshots.find((item) => item.request.step === request.step
-        && item.request.visibleKeys.length === request.visibleKeys.length
-        && request.visibleKeys.every((key) => item.request.visibleKeys.includes(key)));
-      if (!next) throw new Error("Unknown chart state");
-      return next;
-    }}
-    getRowKey={(row) => row.key}
-    columns={[
-      { id: "label", label: "Queue", value: (row) => row.label, sortValue: (row) => row.label },
-      { id: "jobs", label: "Jobs", value: (row) => String(row.value), sortValue: (row) => row.value },
-    ]}
-  />;
-}
-```
-
-Precomputing every combination grows exponentially with legend entries. Use it only
-for explicitly small sets such as this example. For larger data, render the initial
-snapshot in the page and let `load` call an application-owned endpoint that validates
-the request, applies the filters, and calls the same snapshot builder. Forward its
-`AbortSignal`, check the HTTP result, and return the matching typed snapshot. The
-wrapper does not define routes, query the source, or aggregate records for you.
+Missing observations stay missing. A zero reference permits an absolute difference
+but no percentage change. The SSR example intentionally includes missing data at
+11:00 and zero requests for cached 10 KB at 08:00. Bar value labels make those
+zeros visible instead of looking like missing bars. Comparison arithmetic and
+formatted change text belong to the data builder, not the generic controller.

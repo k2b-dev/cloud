@@ -74,7 +74,7 @@ function ComponentShowcase(props: ComponentShowcaseProps) {
       </header>
       <section class="ui-reference-playground" aria-label="Live component example">
         <div class="k2b-ui ui-demo-scope" classList={{ "cloud-ui-scope": props.section === "cloud" }}>
-          {props.section === "content" && props.slug === "charts" ? <ChartExplorerShowcases /> : null}
+          {props.section === "content" && props.slug === "charts" ? <ChartExplorerShowcases search={props.search} /> : null}
           <CatalogDemo section={props.section} slug={props.slug} search={props.search} />
         </div>
       </section>

@@ -1,94 +1,74 @@
-import { createEffect, createMemo, createSignal, createUniqueId, For, onCleanup, Show, untrack, type JSX } from "solid-js";
+import { createEffect, createMemo, createSignal, createUniqueId, Show, type JSX } from "solid-js";
 import { Button } from "../actions/Button";
 import { CopyButton } from "../actions/CopyButton";
-import { FilterChip } from "../actions/FilterChip";
 import { Paper } from "../surfaces/Paper";
 import { DescriptionList } from "../surfaces/DescriptionList";
 import { SelectChip } from "../inputs/SelectChip";
-import { Slider } from "../inputs/ChoiceInputs";
 import { useUiMessages } from "../intl/messages";
 import { useLocale } from "../intl/locale";
 import DataTable, { type DataTableSort } from "./DataTable";
 import { ChartSnapshotView } from "./ChartSnapshotView";
-import type { ChartSnapshot } from "./chart-snapshot";
+import { validateChartExplorerData, type ChartExplorerData, type ChartExplorerRow } from "./chart-explorer";
 
-export type ChartExplorerRequest = { step: string; visibleKeys: readonly string[] };
-export type ChartExplorerSnapshot<T> = {
-  request: ChartExplorerRequest;
-  chart: ChartSnapshot;
-  rows: readonly T[];
-};
 export type ChartExplorerColumn<T> = {
   id: string;
   label: string;
   value: (row: T) => string;
+  /** Optional table cell presentation; value remains the plain text used for copy/details. */
+  render?: (row: T) => JSX.Element;
   /** Explicit comparable value. Omit to leave the column unsortable. */
   sortValue?: (row: T) => string | number | null;
   align?: "left" | "center" | "right";
 };
-export type ChartExplorerProps<T> = {
+export type ChartExplorerProps<T extends ChartExplorerRow> = {
   title: string;
   description?: JSX.Element;
-  snapshot: ChartExplorerSnapshot<T>;
-  steps?: readonly { key: string; label: string }[];
-  dimensionLabel?: string;
-  legend?: readonly {
-    key: string;
-    label: string;
-    color: string;
-    marker?: "circle" | "square" | "triangle" | "diamond" | "plus" | "cross";
-  }[];
-  /** Return an atomically prepared SVG and its matching rows. Aborted/stale results are ignored. */
-  load?: (request: ChartExplorerRequest, signal: AbortSignal) => Promise<ChartExplorerSnapshot<T>>;
+  data: ChartExplorerData<T>;
   columns: readonly ChartExplorerColumn<T>[];
-  getRowKey: (row: T) => string;
+  view?: "chart" | "table";
+  defaultView?: "chart" | "table";
+  onViewChange?: (view: "chart" | "table") => void;
+  sort?: DataTableSort | null;
+  defaultSort?: DataTableSort | null;
+  onSortChange?: (sort: DataTableSort | null) => void;
   selectedKey?: string | null;
   onSelectedKeyChange?: (key: string | null) => void;
-  renderDetails?: (row: T) => JSX.Element;
+  /** false hides the complete local detail area for a shared selection panel. */
+  renderDetails?: false | ((row: T) => JSX.Element);
   height?: string;
   class?: string;
 };
 
-const sameRequest = (a: ChartExplorerRequest, b: ChartExplorerRequest) =>
-  a.step === b.step && a.visibleKeys.length === b.visibleKeys.length && a.visibleKeys.every((k) => b.visibleKeys.includes(k));
 const tsvCell = (value: string) => (/[\t\r\n"]/.test(value) ? `"${value.replaceAll('"', '""')}"` : value);
 
-export function ChartExplorer<T>(props: ChartExplorerProps<T>) {
+export function ChartExplorer<T extends ChartExplorerRow>(props: ChartExplorerProps<T>) {
   const messages = useUiMessages();
   const locale = useLocale();
   const id = `k2b-chart-explorer-${createUniqueId()}`;
-  const [snapshot, setSnapshot] = createSignal(props.snapshot);
-  const [desired, setDesired] = createSignal(props.snapshot.request);
-  const [loading, setLoading] = createSignal(false);
-  const [failed, setFailed] = createSignal(false);
+  const data = () => props.data;
   const [copyFailed, setCopyFailed] = createSignal(false);
-  const [keyboardSteps, setKeyboardSteps] = createSignal(false);
-  let pointerFocus = false;
   const [localSelection, setLocalSelection] = createSignal<string | null>(null);
-  const [view, setView] = createSignal<"chart" | "table">("chart");
-  const [sort, setSort] = createSignal<DataTableSort | null>(null);
-  let pending: AbortController | undefined;
-  const marksByKey = createMemo(() => new Map(snapshot().chart.marks.map((mark) => [mark.key, mark])));
-  const rowsByKey = createMemo(() => new Map(snapshot().rows.map((row) => [props.getRowKey(row), row])));
+  const [localView, setLocalView] = createSignal(props.defaultView ?? "chart");
+  const [localSort, setLocalSort] = createSignal<DataTableSort | null>(props.defaultSort ?? null);
+  const view = () => props.view ?? localView();
+  const sort = () => (props.sort === undefined ? localSort() : props.sort);
+  const setView = (value: "chart" | "table") => {
+    if (props.view === undefined) setLocalView(value);
+    props.onViewChange?.(value);
+  };
+  const setSort = (value: DataTableSort | null) => {
+    if (props.sort === undefined) setLocalSort(value);
+    props.onSortChange?.(value);
+  };
+  const rowsByKey = createMemo(() => new Map(data().rows.map((row) => [row.key, row])));
   const rawSelected = () => (props.selectedKey !== undefined ? props.selectedKey : localSelection());
-  const selected = () => (marksByKey().has(rawSelected() ?? "") ? rawSelected() : null);
+  const selected = () => (rowsByKey().has(rawSelected() ?? "") ? rawSelected() : null);
   const selectedRow = () => rowsByKey().get(selected() ?? "");
   const select = (key: string | null) => {
-    if (key !== null && !marksByKey().has(key)) return;
+    if (key !== null && !rowsByKey().has(key)) return;
     setLocalSelection(key);
     props.onSelectedKeyChange?.(key);
   };
-  const validate = (next: ChartExplorerSnapshot<T>) => {
-    const keys = next.rows.map(props.getRowKey);
-    const keySet = new Set(keys);
-    if (keys.some((key) => !key) || keySet.size !== keys.length || next.chart.marks.some((m) => !keySet.has(m.key))) {
-      throw new Error("Chart rows require unique keys and a row for every chart mark");
-    }
-  };
-  const uniqueKeys = (items: readonly { key: string }[]) =>
-    items.every((item) => item.key.length > 0) && new Set(items.map((item) => item.key)).size === items.length;
-  if (!uniqueKeys(props.steps ?? []) || !uniqueKeys(props.legend ?? []))
-    throw new Error("Chart steps and legend entries require unique nonempty keys");
   if (
     !props.columns.length ||
     props.columns.some((column) => !column.id) ||
@@ -96,53 +76,13 @@ export function ChartExplorer<T>(props: ChartExplorerProps<T>) {
   ) {
     throw new Error("Chart columns require unique nonempty IDs and at least one column");
   }
-  validate(props.snapshot);
+  validateChartExplorerData(data());
+  createEffect(() => validateChartExplorerData(data()));
   createEffect(() => {
-    const next = props.snapshot;
-    untrack(() => {
-      validate(next);
-      pending?.abort();
-      pending = undefined;
-      setSnapshot(next);
-      setDesired(next.request);
-      setLoading(false);
-      setFailed(false);
-    });
+    if (props.selectedKey === undefined && rawSelected() !== null && selected() === null) select(null);
   });
-  createEffect(() => {
-    if (rawSelected() !== null && selected() === null) select(null);
-  });
-  onCleanup(() => pending?.abort());
-  const request = async (next: ChartExplorerRequest) => {
-    if (!props.load) return;
-    pending?.abort();
-    const controller = new AbortController();
-    pending = controller;
-    setDesired(next);
-    setFailed(false);
-    if (sameRequest(next, snapshot().request)) {
-      pending = undefined;
-      setLoading(false);
-      return;
-    }
-    setLoading(true);
-    try {
-      const result = await props.load(next, controller.signal);
-      if (controller.signal.aborted || pending !== controller) return;
-      if (!sameRequest(result.request, next)) throw new Error("Chart response does not match the requested filters");
-      validate(result);
-      setSnapshot(result);
-    } catch {
-      if (!controller.signal.aborted && pending === controller) setFailed(true);
-    } finally {
-      if (!controller.signal.aborted && pending === controller) {
-        setLoading(false);
-        pending = undefined;
-      }
-    }
-  };
   const rows = createMemo(() => {
-    const result = [...snapshot().rows];
+    const result = [...data().rows];
     const order = sort();
     const column = props.columns.find((c) => c.id === order?.key);
     const value = column?.sortValue;
@@ -162,7 +102,6 @@ export function ChartExplorer<T>(props: ChartExplorerProps<T>) {
       props.columns.map((c) => tsvCell(c.label)).join("\t"),
       ...rows().map((row) => props.columns.map((c) => tsvCell(c.value(row))).join("\t")),
     ].join("\n");
-  const stepLabel = (key: string) => props.steps?.find((step) => step.key === key)?.label ?? key;
   return (
     <section class={`k2b-chart-explorer ${props.class ?? ""}`} aria-labelledby={id}>
       <header class="k2b-chart-explorer__header">
@@ -194,88 +133,11 @@ export function ChartExplorer<T>(props: ChartExplorerProps<T>) {
           />
         </div>
       </header>
-      <Show when={props.steps?.length}>
-        <div
-          class="k2b-chart-explorer__dimension"
-          data-keyboard={keyboardSteps() ? "true" : undefined}
-          onPointerDown={() => {
-            pointerFocus = true;
-            setKeyboardSteps(false);
-          }}
-          onKeyDown={() => {
-            pointerFocus = false;
-            setKeyboardSteps(true);
-          }}
-          onFocusIn={(event) => {
-            if (!pointerFocus && event.target.matches(":focus-visible")) setKeyboardSteps(true);
-          }}
-          onFocusOut={() => {
-            pointerFocus = false;
-            setKeyboardSteps(false);
-          }}
-        >
-          <Slider
-            id={`${id}-dimension`}
-            showValue={false}
-            aria-describedby={`${id}-steps`}
-            label={props.dimensionLabel ?? messages().range}
-            min={0}
-            max={Math.max(0, (props.steps?.length ?? 1) - 1)}
-            step={1}
-            value={Math.max(0, props.steps?.findIndex((step) => step.key === desired().step) ?? 0)}
-            disabled={!props.load || (props.steps?.length ?? 0) < 2}
-            formatValue={(index) => props.steps?.[index]?.label ?? ""}
-            aria-valuetext={stepLabel(desired().step)}
-            onValueChange={(index) => {
-              const step = props.steps?.[index];
-              if (step) void request({ ...desired(), step: step.key });
-            }}
-          />
-          <output class="k2b-chart-explorer__dimension-value" for={`${id}-dimension`}>
-            {stepLabel(desired().step)}
-          </output>
-          <div id={`${id}-steps`} class="k2b-chart-explorer__steps">
-            <For each={props.steps}>
-              {(step) => <span data-current={step.key === desired().step ? "true" : undefined}>{step.label}</span>}
-            </For>
-          </div>
-        </div>
-      </Show>
-      <div class="k2b-chart-explorer__legend">
-        <Show when={props.legend?.length}>
-          <FilterChip
-            label={messages().chartSeries}
-            icon="ti ti-chart-dots"
-            disabled={!props.load}
-            value={desired().visibleKeys}
-            defaultValue={props.legend?.map((item) => item.key) ?? []}
-            isActive={desired().visibleKeys.length !== props.legend?.length}
-            options={[
-              { multiple: true, options: (props.legend ?? []).map((item) => ({ value: item.key, label: item.label, color: item.color })) },
-            ]}
-            onValueChange={(visibleKeys) => void request({ ...desired(), visibleKeys })}
-          />
-        </Show>
-        <div class="k2b-chart-explorer__status" role="status">
-          <Show when={loading()}>{messages().loading} </Show>
-          <Show when={failed()}>
-            {messages().couldNotLoadData}{" "}
-            <Button variant="text" size="sm" onClick={() => void request(desired())}>
-              {messages().retry}
-            </Button>
-          </Show>
-          <Show when={loading() || failed()}>
-            {" "}
-            · {messages().chartPreviousData}
-            <Show when={props.steps?.length}>: {stepLabel(snapshot().request.step)}</Show>
-          </Show>
-        </div>
-      </div>
       <Show when={copyFailed()}>
         <span role="alert">{messages().chartCopyFailed}</span>
       </Show>
-      <div class="k2b-chart-explorer__viewport" style={{ height: props.height ?? "18rem" }} aria-busy={loading()}>
-        <Show when={snapshot().rows.length > 0} fallback={<div class="k2b-chart__empty">{messages().noData}</div>}>
+      <div class="k2b-chart-explorer__viewport" style={{ height: props.height ?? "18rem" }}>
+        <Show when={data().rows.length > 0} fallback={<div class="k2b-chart__empty">{messages().noData}</div>}>
           <Show
             when={view() === "chart"}
             fallback={
@@ -289,33 +151,33 @@ export function ChartExplorer<T>(props: ChartExplorerProps<T>) {
                   sortable: Boolean(column.sortValue),
                 }))}
                 ariaLabelledBy={id}
-                getRowId={props.getRowKey}
+                getRowId={(row) => row.key}
                 selectedRowId={selected()}
                 sort={sort()}
                 fillHeight
                 surface="paper"
-                onRowClick={(row) => select(props.getRowKey(row))}
-                renderCell={({ row, col, value, render }) =>
-                  col.id === props.columns[0]?.id ? (
-                    <Button
-                      variant="text"
-                      size="sm"
-                      disabled={!marksByKey().has(props.getRowKey(row))}
-                      onClick={() => select(props.getRowKey(row))}
-                    >
-                      {render(value)}
+                onRowClick={(row) => select(row.key)}
+                renderCell={({ row, col, value, render }) => {
+                  const custom = props.columns.find((column) => column.id === col.id)?.render;
+                  const cell = () => (custom ? custom(row) : render(value));
+                  return col.id === props.columns[0]?.id ? (
+                    <Button variant="text" size="sm" onClick={() => select(row.key)}>
+                      {cell()}
                     </Button>
                   ) : (
-                    render(value)
-                  )
-                }
+                    cell()
+                  );
+                }}
                 renderHeader={({ col, render }) =>
                   col.sortable ? (
                     <Button
                       variant="text"
                       size="sm"
                       onClick={() =>
-                        setSort({ key: col.id, direction: sort()?.key === col.id && sort()?.direction === "asc" ? "desc" : "asc" })
+                        setSort({
+                          key: col.id,
+                          direction: sort()?.key === col.id && sort()?.direction === "asc" ? "desc" : "asc",
+                        })
                       }
                     >
                       {props.columns.find((column) => column.id === col.id)?.label}{" "}
@@ -330,39 +192,44 @@ export function ChartExplorer<T>(props: ChartExplorerProps<T>) {
               />
             }
           >
-            <ChartSnapshotView snapshot={snapshot().chart} selectedKey={selected()} onSelect={select} style={{ height: "100%" }} />
+            <ChartSnapshotView snapshot={data().chart} selectedKey={selected()} onSelect={select} style={{ height: "100%" }} />
           </Show>
         </Show>
       </div>
-      <div class="k2b-chart-explorer__details" aria-live="polite">
-        <Show when={selectedRow()}>
-          {(row) => (
-            <Paper class="k2b-chart-explorer__detail-paper">
-              <div class="k2b-chart-explorer__detail-header">
-                <span>{messages().chartSelectedDatum}</span>
-                <Button
-                  variant="text"
-                  size="sm"
-                  aria-label={messages().clearSelection}
-                  title={messages().clearSelection}
-                  onClick={() => select(null)}
-                >
-                  <i class="ti ti-x" aria-hidden="true" />
-                </Button>
-              </div>
-              {props.renderDetails ? (
-                props.renderDetails(row())
-              ) : (
-                <DescriptionList
-                  columns={3}
-                  size="sm"
-                  items={props.columns.map((column) => ({ term: column.label, description: column.value(row()) }))}
-                />
-              )}
-            </Paper>
-          )}
-        </Show>
-      </div>
+      <Show when={props.renderDetails !== false}>
+        <div class="k2b-chart-explorer__details" aria-live="polite">
+          <Show when={selectedRow()}>
+            {(row) => (
+              <Paper class="k2b-chart-explorer__detail-paper">
+                <div class="k2b-chart-explorer__detail-header">
+                  <span>{messages().chartSelectedDatum}</span>
+                  <Button
+                    variant="text"
+                    size="sm"
+                    aria-label={messages().clearSelection}
+                    title={messages().clearSelection}
+                    onClick={() => select(null)}
+                  >
+                    <i class="ti ti-x" aria-hidden="true" />
+                  </Button>
+                </div>
+                {props.renderDetails ? (
+                  props.renderDetails(row())
+                ) : (
+                  <DescriptionList
+                    columns={3}
+                    size="sm"
+                    items={props.columns.map((column) => ({
+                      term: column.label,
+                      description: column.value(row()),
+                    }))}
+                  />
+                )}
+              </Paper>
+            )}
+          </Show>
+        </div>
+      </Show>
     </section>
   );
 }

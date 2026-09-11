@@ -13,7 +13,7 @@ export type {
 } from "./Calendar";
 export { default as Calendar } from "./Calendar";
 
-export type { ChartKind, ChartLabels, ChartProps } from "./Chart";
+export type { ChartKind, ChartLabels, ChartProps, ChartRenderOptions } from "./Chart";
 export type { ChartDatumRef, ChartSelection, ChartTooltip, ChartTooltipFormatter } from "./chart-inspection";
 export { default as Chart } from "./Chart";
 export type { CodeDisplayLanguage, CodeDisplayProps } from "./CodeDisplay";
@@ -74,6 +74,18 @@ export type { StructuredDataPreviewMode, StructuredDataPreviewProps, StructuredD
 export { default as StructuredDataPreview, isStructuredDataValue } from "./StructuredDataPreview";
 
 export { ChartExplorer } from "./ChartExplorer";
-export type { ChartExplorerProps, ChartExplorerRequest, ChartExplorerSnapshot, ChartExplorerColumn } from "./ChartExplorer";
+export type { ChartExplorerProps, ChartExplorerColumn } from "./ChartExplorer";
 export { prepareChartSnapshot } from "./chart-snapshot";
 export type { ChartSnapshot } from "./chart-snapshot";
+export { createChartExplorer } from "./chart-explorer";
+export type {
+  ChartExplorerRequest,
+  ChartExplorerRow,
+  ChartExplorerData,
+  ChartExplorerCharts,
+  ChartExplorerSnapshot,
+  ChartExplorerOptions,
+  ChartExplorerController,
+} from "./chart-explorer";
+export { ChartExplorerControls } from "./ChartExplorerControls";
+export type { ChartExplorerControlsProps } from "./ChartExplorerControls";

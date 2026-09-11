@@ -26,14 +26,14 @@ export function ChartSnapshotView(props: {
     format: ({ datum }) => props.snapshot.marks.find((m) => sameChartDatum(m.datum, datum))?.tooltip ?? { rows: [] },
     select: ({ datum }) => {
       const mark = props.snapshot.marks.find((m) => sameChartDatum(m.datum, datum));
-      if (mark) props.onSelect(mark.key);
+      if (mark) props.onSelect(mark.rowKey);
     },
   });
   createEffect(() => {
     props.snapshot;
     inspection.invalidate();
   });
-  createEffect(() => inspection.selectDatum(props.snapshot.marks.find((m) => m.key === props.selectedKey)?.datum));
+  createEffect(() => inspection.selectData(props.snapshot.marks.filter((m) => m.rowKey === props.selectedKey).map((m) => m.datum)));
   onMount(() => {
     const outside = (event: Event) => {
       if (event.target instanceof Node && !container?.contains(event.target)) inspection.close();
@@ -74,7 +74,10 @@ export function ChartSnapshotView(props: {
         }}
         innerHTML={
           isServer
-            ? selectedChartSvg(props.snapshot.svg, props.snapshot.marks.find((m) => m.key === props.selectedKey)?.datum)
+            ? selectedChartSvg(
+                props.snapshot.svg,
+                props.snapshot.marks.filter((m) => m.rowKey === props.selectedKey).map((m) => m.datum),
+              )
             : props.snapshot.svg
         }
       />

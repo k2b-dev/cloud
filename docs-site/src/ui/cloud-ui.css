@@ -1,2 +1,51 @@
 /* Portable catalog pages load only the package-owned scoped stylesheet. */
 @import "@k2b/ui/global.css";
+
+.ui-demo-chart-group-grid {
+  display: grid;
+  gap: 1.5rem;
+  margin-top: 1.25rem;
+}
+.ui-demo-chart-group-selection {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+@media (min-width: 1400px) {
+  .ui-demo-chart-group-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.ui-demo-chart-group-details {
+  padding: 1rem;
+  margin-top: 1rem;
+}
+.ui-demo-chart-group-metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1.5rem;
+  margin-top: 1rem;
+}
+.ui-demo-chart-group-metrics section > strong {
+  display: block;
+  margin-bottom: 0.5rem;
+}
+@media (max-width: 640px) {
+  #chart-group .stdlib-chart-bar-value {
+    font-size: 8px;
+  }
+  .ui-demo-chart-group-metrics {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.ui-demo-chart-group-cell {
+  display: grid;
+  gap: 0.2rem;
+}
+.ui-demo-chart-group-cell small {
+  color: var(--k2b-text-muted);
+  font-size: 0.75rem;
+}

@@ -2,6 +2,7 @@ import { createFibelApp } from "@k2b/fibel";
 import { Hono } from "hono";
 import { dirname, extname, join, normalize, resolve } from "path";
 import fibelConfig from "../fibel.config";
+import { linkedChartSnapshot, parseGroupRequest } from "./ui/chart-group-data";
 import HomePage from "./home/HomePage";
 import { html, config as ssrConfig } from "./ssr";
 import { siteTheme } from "./site-config";
@@ -104,6 +105,11 @@ app.get("/en", (c) =>
   }),
 );
 app.get("/assets/:path{.+}", (c) => serveAsset(c.req.param("path")));
+app.get("/api/ui/chart-exploration", (c) => {
+  const request = parseGroupRequest(new URL(c.req.url));
+  if (!request) return c.json({ error: "Invalid chart filters" }, 400);
+  return c.json(linkedChartSnapshot(request));
+});
 app.get("/health", (c) => c.json({ status: "ok", surfaces: ["/en", "/en/docs", "/en/ui"] }));
 app.get("/humans.txt", (c) =>
   c.text(`Cloud
