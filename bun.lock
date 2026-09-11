@@ -694,6 +694,9 @@
       },
     },
   },
+  "patchedDependencies": {
+    "@k2b/stdlib@0.22.0": "patches/@k2b%2Fstdlib@0.22.0.patch",
+  },
   "overrides": {
     "@k2b/sync": "6.4.0",
     "@xmldom/xmldom": "0.9.12",

@@ -1,0 +1,388 @@
+diff --git a/src/charts.ts b/src/charts.ts
+index e5b2727617783963cc69494a16a03ff682ca2fe7..52ceb1f214316e198339cf2b17e3213d972c90a7 100644
+--- a/src/charts.ts
++++ b/src/charts.ts
+@@ -126,7 +126,40 @@ export type AxisOptions = {
+ 
+ export type Padding = { top: number; right: number; bottom: number; left: number };
+ 
++/** One selectable datum in an inspected SVG. Indices refer to the source arrays.
++ * `anchor` uses the containing SVG coordinate system, including nested map SVGs.
++ * Values are raw data; `formatted` contains the renderer's axis/value formatting.
++ */
++export type ChartDatum = {
++  index: number;
++  seriesIndex?: number;
++  role: "point" | "item" | "bin" | "box" | "outlier" | "value" | "cell" | "interval";
++  label?: string;
++  anchor: [number, number];
++  grid?: [number, number];
++  values: { key: string; value: string | number; formatted?: string }[];
++};
++
++/** Wrap renderer-owned geometry with escaped, inert inspection metadata. */
++export const chartDatumSvg = (svg: string, datum: ChartDatum, inspect?: boolean): string => {
++  if (!inspect || !datum.anchor.every(Number.isFinite)) return svg;
++  const title = [datum.label, ...datum.values.map((field) => `${field.key}: ${field.formatted ?? field.value}`)].filter(Boolean).join(" · ");
++  return `<g data-chart-role="${escapeXml(datum.role)}" data-chart-datum="${escapeXml(JSON.stringify(datum))}"><title>${escapeXml(title)}</title>${svg}</g>`;
++};
++
++const inspectionPoint = (datum: ChartDatum, inspect?: boolean): string => inspect
++  ? chartDatumSvg(`<circle class="stdlib-chart-inspection-point" cx="${fmt(datum.anchor[0])}" cy="${fmt(datum.anchor[1])}" r="3" fill="transparent" stroke="none"/>`, datum, true)
++  : "";
++
++const pointValues = (p: Point, xAxis?: AxisOptions, yAxis?: AxisOptions): ChartDatum["values"] => [
++  { key: "x", value: p.x, formatted: xAxis?.format?.(p.x) },
++  { key: "y", value: p.y, formatted: yAxis?.format?.(p.y) },
++  ...Object.entries(p).filter(([key, value]) => key !== "x" && key !== "y" && typeof value === "number" && Number.isFinite(value)).map(([key, value]) => ({ key, value })),
++];
++
+ export type ChartOptions = {
++  /** Emit inert datum metadata and SVG titles for progressive inspection. */
++  inspect?: boolean;
+   /** Default 400. */
+   width?: number;
+   /** Default 240. */
+@@ -1528,8 +1561,9 @@ export const scatter = (opts: ScatterOptions): string => {
+       s.marker ??
+       (opts.autoVariant ? DEFAULT_MARKERS[i % DEFAULT_MARKERS.length]! : "circle");
+     const elements = s.data
+-      .filter((p) => isOnAxis(xAxis, p.x) && isOnAxis(yAxis, p.y))
+-      .map((p) => {
++      .map((p, index) => ({ p, index }))
++      .filter(({ p }) => isOnAxis(xAxis, p.x) && isOnAxis(yAxis, p.y))
++      .map(({ p, index }) => {
+         const cx = xMap(p.x, xAxis.domain, [area.x0, area.x1]);
+         const cy = yMap(p.y, yAxis.domain, [area.y1, area.y0]);
+         const r = useSizes
+@@ -1537,10 +1571,11 @@ export const scatter = (opts: ScatterOptions): string => {
+             ? mapRange(p.size, sizeDomain, sizeRange)
+             : fallbackR
+           : 3;
++        const datum: ChartDatum = { index, seriesIndex: i, role: "point", label: s.label, anchor: [cx, cy], values: pointValues(p, opts.xAxis, opts.yAxis) };
+         if (shape === "circle") {
+-          return `<circle class="stdlib-chart-point" cx="${fmt(cx)}" cy="${fmt(cy)}" r="${fmt(r)}"/>`;
++          return chartDatumSvg(`<circle class="stdlib-chart-point" cx="${fmt(cx)}" cy="${fmt(cy)}" r="${fmt(r)}"/>`, datum, opts.inspect);
+         }
+-        return `<path class="stdlib-chart-point" d="${markerPath(shape, cx, cy, r)}"/>`;
++        return chartDatumSvg(`<path class="stdlib-chart-point" d="${markerPath(shape, cx, cy, r)}"/>`, datum, opts.inspect);
+       })
+       .join("");
+     if (elements) body.push(`<g class="${cls}">${elements}</g>`);
+@@ -1659,6 +1694,12 @@ export const line = (opts: LineOptions): string => {
+     const finite = s.data.filter(
+       (p) => isOnAxis(xAxis, p.x) && isOnAxis(yAxis, p.y),
+     );
++    if (opts.inspect) s.data.forEach((p, index) => {
++      if (!isOnAxis(xAxis, p.x) || !isOnAxis(yAxis, p.y)) return;
++      body.push(inspectionPoint({ index, seriesIndex: i, role: "point", label: s.label,
++        anchor: [xMap(p.x, xAxis.domain, [area.x0, area.x1]), yMap(p.y, yAxis.domain, [area.y1, area.y0])],
++        values: pointValues(p, opts.xAxis, opts.yAxis) }, opts.inspect));
++    });
+     if (finite.length < 2) return;
+     const sorted = [...finite].sort((a, b) => a.x - b.x);
+     const mapped = sorted.map((p) => ({
+@@ -1777,6 +1818,7 @@ export const bar = (opts: BarChartOptions): string => {
+   const padding = normalizePadding(opts.padding);
+   const header = renderHeader(width, opts.title, opts.subtitle);
+ 
++  const sourceIndices = opts.data.flatMap((d, index) => Number.isFinite(d.value) ? [index] : []);
+   const finite = opts.data.filter((d) => Number.isFinite(d.value));
+   if (finite.length === 0) return emptyChart(width, height, opts.className);
+ 
+@@ -1840,7 +1882,7 @@ export const bar = (opts: BarChartOptions): string => {
+     const h = Math.abs(valuePx - zeroPx);
+     const seriesIdx = opts.colorByBar ? i % 8 : 0;
+     body.push(
+-      `<rect class="stdlib-chart-bar stdlib-chart-series-${seriesIdx}" x="${fmt(x)}" y="${fmt(top)}" width="${fmt(barWidth)}" height="${fmt(h)}"/>`,
++      chartDatumSvg(`<rect class="stdlib-chart-bar stdlib-chart-series-${seriesIdx}" x="${fmt(x)}" y="${fmt(top)}" width="${fmt(barWidth)}" height="${fmt(h)}"/>`, { index: sourceIndices[i]!, role: "item", label: d.label, anchor: [x + barWidth / 2, top + h / 2], values: [{ key: "value", value: d.value, formatted: fmtValue(d.value) }] }, opts.inspect),
+     );
+     if (opts.showValues) {
+       const labelY = d.value < 0 ? top + h + 12 : top - 4;
+@@ -1898,6 +1940,7 @@ const renderPie = (opts: PieChartOptions, defaultInnerRadius: number): string =>
+   const height = opts.height ?? DEFAULT_HEIGHT;
+   const header = renderHeader(width, opts.title, opts.subtitle);
+ 
++  const sourceIndices = opts.data.flatMap((d, index) => Number.isFinite(d.value) && d.value > 0 ? [index] : []);
+   const finite = opts.data.filter(
+     (d) => Number.isFinite(d.value) && d.value > 0,
+   );
+@@ -1936,7 +1979,7 @@ const renderPie = (opts: PieChartOptions, defaultInnerRadius: number): string =>
+     const sweep = (d.value / total) * Math.PI * 2;
+     const a1 = a + sweep;
+     const cls = `stdlib-chart-slice stdlib-chart-series-${i % 8}`;
+-    body.push(`<path class="${cls}" d="${arcPathD(cx, cy, r, a, a1, innerR)}"/>`);
++    body.push(chartDatumSvg(`<path class="${cls}" d="${arcPathD(cx, cy, r, a, a1, innerR)}"/>`, { index: sourceIndices[i]!, role: "item", label: d.label, anchor: [cx + (r + innerR) / 2 * Math.cos(a + sweep / 2), cy + (r + innerR) / 2 * Math.sin(a + sweep / 2)], values: [{ key: "value", value: d.value }, { key: "percent", value: d.value / total * 100 }, { key: "total", value: total }] }, opts.inspect));
+     if (opts.showLabels) {
+       const mid = a + sweep / 2;
+       // Place label slightly outside the outer radius.
+@@ -2068,7 +2111,7 @@ export const histogram = (opts: HistogramOptions): string => {
+     if (yAxis.scale === "log" && c <= 0) continue;
+     const top = yMap(c, yAxis.domain, [area.y1, area.y0]);
+     body.push(
+-      `<rect class="stdlib-chart-bar stdlib-chart-series-0" x="${fmt(left)}" y="${fmt(top)}" width="${fmt(right - left)}" height="${fmt(zeroPx - top)}"/>`,
++      chartDatumSvg(`<rect class="stdlib-chart-bar stdlib-chart-series-0" x="${fmt(left)}" y="${fmt(top)}" width="${fmt(right - left)}" height="${fmt(zeroPx - top)}"/>`, { index: i, role: "bin", anchor: [(left + right) / 2, (top + zeroPx) / 2], values: [{ key: "from", value: edges[i]!, formatted: opts.xAxis?.format?.(edges[i]!) }, { key: "to", value: edges[i + 1]!, formatted: opts.xAxis?.format?.(edges[i + 1]!) }, { key: "upperInclusive", value: i === counts.length - 1 ? "true" : "false" }, { key: "count", value: c }] }, opts.inspect),
+     );
+   }
+ 
+@@ -2125,12 +2168,16 @@ export const boxplot = (opts: BoxPlotOptions): string => {
+ 
+   const showOutliers = opts.showOutliers ?? true;
+ 
+-  const stats = opts.groups.map((g) => ({
++  const stats = opts.groups.map((g, index) => ({
++    index,
++    count: g.values.filter(Number.isFinite).length,
+     label: g.label,
+     s: computeBoxStats(g.values),
+   }));
+   const valid = stats.filter((g) => g.s !== null) as Array<{
+     label: string;
++    index: number;
++    count: number;
+     s: NonNullable<ReturnType<typeof computeBoxStats>>;
+   }>;
+   if (valid.length === 0) return emptyChart(width, height, opts.className);
+@@ -2190,7 +2237,7 @@ export const boxplot = (opts: BoxPlotOptions): string => {
+     );
+     // Box (Q1 to Q3).
+     body.push(
+-      `<rect class="stdlib-chart-box ${seriesCls}" x="${fmt(x)}" y="${fmt(yQ3)}" width="${fmt(boxWidth)}" height="${fmt(yQ1 - yQ3)}"/>`,
++      chartDatumSvg(`<rect class="stdlib-chart-box ${seriesCls}" x="${fmt(x)}" y="${fmt(yQ3)}" width="${fmt(boxWidth)}" height="${fmt(yQ1 - yQ3)}"/>`, { index: g.index, role: "box", label: g.label, anchor: [cx, yQ2], values: [{ key: "count", value: g.count }, ...(["q1", "q2", "q3", "whiskerLow", "whiskerHigh"] as const).map((key) => ({ key, value: g.s[key] })).map((field) => ({ ...field, formatted: opts.yAxis?.format?.(field.value) }))] }, opts.inspect),
+     );
+     // Median line.
+     body.push(
+@@ -2198,10 +2245,16 @@ export const boxplot = (opts: BoxPlotOptions): string => {
+     );
+     // Outliers.
+     if (showOutliers) {
++      const sourceIndices = new Map<number, number[]>();
++      if (opts.inspect) opts.groups[g.index]!.values.forEach((value, index) => {
++        const indices = sourceIndices.get(value) ?? [];
++        indices.push(index); sourceIndices.set(value, indices);
++      });
+       for (const v of g.s.outliers) {
++        const sourceIndex = sourceIndices.get(v)?.shift() ?? 0;
+         const oy = yMap(v, yAxis.domain, [area.y1, area.y0]);
+         body.push(
+-          `<circle class="stdlib-chart-box-outlier ${seriesCls}" cx="${fmt(cx)}" cy="${fmt(oy)}" r="2.5"/>`,
++          chartDatumSvg(`<circle class="stdlib-chart-box-outlier ${seriesCls}" cx="${fmt(cx)}" cy="${fmt(oy)}" r="2.5"/>`, { index: sourceIndex, seriesIndex: g.index, role: "outlier", label: g.label, anchor: [cx, oy], values: [{ key: "value", value: v, formatted: opts.yAxis?.format?.(v) }] }, opts.inspect),
+         );
+       }
+     }
+@@ -2331,15 +2384,15 @@ const thresholdIndexForValue = (
+   return idx >= 0 ? idx : Math.max(0, sorted.length - 1);
+ };
+ 
+-const thresholdColorForIndex = (
++const thresholdForIndex = (
+   thresholds: readonly Threshold[] | undefined,
+   index: number,
+-): string | undefined => {
++): Threshold | undefined => {
+   if (!thresholds || thresholds.length === 0) return undefined;
+   const sorted = [...thresholds]
+     .filter((t) => Number.isFinite(t.value))
+     .sort((a, b) => a.value - b.value);
+-  return sorted[index]?.color;
++  return sorted[index];
+ };
+ 
+ /**
+@@ -2365,7 +2418,8 @@ export const gauge = (opts: GaugeOptions): string => {
+   const gaugePath = arcLinePathD(cx, cy, radius, startAngle, endAngle);
+   const gradientStops = gaugeThresholdStops(opts.thresholds, min, max);
+   const thresholdIdx = thresholdIndexForValue(clamped, opts.thresholds, min, max);
+-  const thresholdColor = thresholdColorForIndex(opts.thresholds, thresholdIdx);
++  const threshold = thresholdForIndex(opts.thresholds, thresholdIdx);
++  const thresholdColor = threshold?.color;
+   const valueText = formatNumberValue(value, opts.format, opts.unit);
+   const label = opts.label ?? opts.title;
+   const fillStroke = gradientStops.length > 0
+@@ -2439,7 +2493,7 @@ export const gauge = (opts: GaugeOptions): string => {
+     `<text class="stdlib-chart-gauge-unit" x="${fmt(endPoint.x)}" y="${fmt(endpointLabelY)}" text-anchor="middle">${escapeXml(formatNumberValue(max, opts.format, opts.unit))}</text>`,
+   );
+ 
+-  return svgRoot({ width, height, className: opts.className }, body.join(""));
++  return svgRoot({ width, height, className: opts.className }, chartDatumSvg(body.join(""), { index: 0, role: "value", label, anchor: [cx, cy], values: [{ key: "value", value, formatted: valueText }, { key: "min", value: min }, { key: "max", value: max }, ...(threshold ? [{ key: "threshold", value: threshold.label ?? threshold.value }] : [])] }, opts.inspect));
+ };
+ 
+ /** Render compact horizontal bar gauges for multiple reduced metrics. */
+@@ -2455,6 +2509,7 @@ export const barGauge = (opts: BarGaugeOptions): string => {
+   const trackX = labelW + 14;
+   const trackW = Math.max(24, width - trackX - valueW - 14);
+   const trackH = 10;
++  const sourceIndices = opts.data.flatMap((d, index) => Number.isFinite(d.value) ? [index] : []);
+   const data = opts.data.filter((d) => Number.isFinite(d.value));
+ 
+   if (data.length === 0) {
+@@ -2467,8 +2522,10 @@ export const barGauge = (opts: BarGaugeOptions): string => {
+     const pct = clamp((d.value - min) / (max - min), 0, 1);
+     const y = top + i * rowHeight;
+     const thresholdIdx = thresholdIndexForValue(d.value, opts.thresholds, min, max);
+-    const thresholdColor = thresholdColorForIndex(opts.thresholds, thresholdIdx);
++    const threshold = thresholdForIndex(opts.thresholds, thresholdIdx);
++    const thresholdColor = threshold?.color;
+     const unit = d.unit ?? opts.unit ?? "";
++    const start = body.length;
+     body.push(
+       `<text class="stdlib-chart-bar-gauge-label" x="12" y="${fmt(y + 12)}" dominant-baseline="middle">${escapeXml(d.label)}</text>`,
+     );
+@@ -2481,6 +2538,8 @@ export const barGauge = (opts: BarGaugeOptions): string => {
+     body.push(
+       `<text class="stdlib-chart-bar-gauge-value" x="${fmt(width - 12)}" y="${fmt(y + 12)}" text-anchor="end" dominant-baseline="middle">${escapeXml(formatNumberValue(d.value, opts.format, unit))}</text>`,
+     );
++    const shapes = body.splice(start).join("");
++    body.push(chartDatumSvg(shapes, { index: sourceIndices[i]!, role: "item", label: d.label, anchor: [trackX + trackW / 2, y + 12], values: [{ key: "value", value: d.value, formatted: formatNumberValue(d.value, opts.format, unit) }, { key: "min", value: min }, { key: "max", value: max }, ...(threshold ? [{ key: "threshold", value: threshold.label ?? threshold.value }] : [])] }, opts.inspect));
+   });
+ 
+   return svgRoot({ width, height, className: opts.className }, body.join(""));
+@@ -2492,9 +2551,11 @@ const renderInlineSparkline = (
+   y: number,
+   width: number,
+   height: number,
++  inspect?: boolean,
+ ): string => {
+   if (!values || values.length < 2) return "";
+-  const points = normalizeSparklineData(values);
++  const entries = sparklineEntries(values);
++  const points = entries.map((entry) => entry.point);
+   if (points.length < 2) return "";
+   const xs = points.map((p) => p.x);
+   const ys = points.map((p) => p.y);
+@@ -2512,7 +2573,8 @@ const renderInlineSparkline = (
+   const areaPath = `${linePath} L ${fmt(last.x)} ${fmt(y + height)} L ${fmt(first.x)} ${fmt(y + height)} Z`;
+   return (
+     `<path class="stdlib-chart-stat-sparkline-area" d="${areaPath}"/>` +
+-    `<path class="stdlib-chart-stat-sparkline" d="${linePath}"/>`
++    `<path class="stdlib-chart-stat-sparkline" d="${linePath}"/>` +
++    (inspect ? [...points].sort((a, b) => a.x - b.x).map((p, index) => inspectionPoint({ index: entries[index]!.index, role: "point", anchor: [mapped[index]!.x, mapped[index]!.y], values: pointValues(p) }, inspect)).join("") : "")
+   );
+ };
+ 
+@@ -2555,8 +2617,9 @@ export const stat = (opts: StatOptions): string => {
+       `<text class="stdlib-chart-stat-delta${deltaClass}" x="${fmt(width - 16)}" y="70" text-anchor="end">${escapeXml(String(deltaText))}</text>`,
+     );
+   }
+-  body.push(renderInlineSparkline(opts.sparkline, 16, height - 42, width - 32, 26));
+-  return svgRoot({ width, height, className: opts.className }, body.join(""));
++  const summary = chartDatumSvg((opts.inspect ? `<rect x="0" y="0" width="${fmt(width)}" height="${fmt(Math.max(80, height - 48))}" fill="transparent" stroke="none"/>` : "") + body.join(""), { index: 0, role: "value", label: opts.label, anchor: [width / 2, 50], values: [{ key: "value", value: opts.value, formatted: value }, ...(opts.delta !== undefined ? [{ key: "delta", value: opts.delta, formatted: deltaText }] : [])] }, opts.inspect);
++  return svgRoot({ width, height, className: opts.className }, summary + renderInlineSparkline(opts.sparkline, 16, height - 42, width - 32, 26, opts.inspect));
++
+ };
+ 
+ /**
+@@ -2581,6 +2644,7 @@ export const heatmap = (opts: HeatmapOptions): string => {
+   const [autoMin, autoMax] = computeDomain(values);
+   const min = Number.isFinite(opts.min) ? opts.min! : autoMin;
+   const max = Number.isFinite(opts.max) ? opts.max! : autoMax;
++  const indexMap = new Map(opts.data.map((d, index) => [`${d.x}\u0000${d.y}`, index]));
+   const valueMap = new Map(opts.data.map((d) => [`${d.x}\u0000${d.y}`, d.value]));
+   const cellW = (area.x1 - area.x0) / xLabels.length;
+   const cellH = (area.y1 - area.y0) / yLabels.length;
+@@ -2608,7 +2672,7 @@ export const heatmap = (opts: HeatmapOptions): string => {
+       const x = area.x0 + xi * cellW;
+       const y = area.y0 + yi * cellH;
+       body.push(
+-        `<rect class="stdlib-chart-heatmap-cell stdlib-chart-series-0" x="${fmt(x)}" y="${fmt(y)}" width="${fmt(Math.max(0, cellW - 1))}" height="${fmt(Math.max(0, cellH - 1))}" opacity="${fmt(intensity)}"/>`,
++        chartDatumSvg(`<rect class="stdlib-chart-heatmap-cell stdlib-chart-series-0" x="${fmt(x)}" y="${fmt(y)}" width="${fmt(Math.max(0, cellW - 1))}" height="${fmt(Math.max(0, cellH - 1))}" opacity="${fmt(intensity)}"/>`, { index: indexMap.get(`${xLabels[xi]}\u0000${yLabels[yi]}`)!, role: "cell", anchor: [x + cellW / 2, y + cellH / 2], grid: [xi, yi], values: [{ key: "x", value: xLabels[xi]! }, { key: "y", value: yLabels[yi]! }, { key: "value", value: valueAtCell!, formatted: format(valueAtCell!) }] }, opts.inspect),
+       );
+       if (opts.showValues) {
+         body.push(
+@@ -2708,8 +2772,8 @@ export const map = (opts: MapOptions): string => {
+ 
+   const finitePoints = opts.series.flatMap((series, seriesIndex) =>
+     series.data
+-      .filter(isMapPoint)
+-      .map((point) => ({ point, seriesIndex })),
++      .map((point, index) => ({ point, seriesIndex, index }))
++      .filter(({ point }) => isMapPoint(point)),
+   );
+ 
+   let sizeMin = Number.POSITIVE_INFINITY;
+@@ -2740,7 +2804,7 @@ export const map = (opts: MapOptions): string => {
+       `<path class="stdlib-chart-map-land" fill-rule="evenodd" transform="translate(${fmt(mapWidth / 2)} ${fmt(mapHeight / 2)}) scale(${fmt(projectedScale)}) translate(${fmt(-centerWorldX)} ${fmt(-centerWorldY)})" d="${WORLD_LAND_PATH}"/>`,
+     );
+ 
+-    for (const { point, seriesIndex } of finitePoints) {
++    for (const { point, seriesIndex, index } of finitePoints) {
+       const pointWorldX = ((point.longitude + 180) / 360) * WORLD_MAP_WIDTH;
+       const pointWorldY = ((90 - point.latitude) / 180) * WORLD_MAP_HEIGHT;
+       const x = mapWidth / 2 + (pointWorldX - centerWorldX) * projectedScale;
+@@ -2755,7 +2819,7 @@ export const map = (opts: MapOptions): string => {
+         ? `<title>${escapeXml(point.label)}</title>`
+         : "";
+       body.push(
+-        `<circle class="stdlib-chart-map-point stdlib-chart-series-${seriesIndex % 8}" cx="${fmt(x)}" cy="${fmt(y)}" r="${fmt(radius)}">${title}</circle>`,
++        chartDatumSvg(`<circle class="stdlib-chart-map-point stdlib-chart-series-${seriesIndex % 8}" cx="${fmt(x)}" cy="${fmt(y)}" r="${fmt(radius)}">${title}</circle>`, { index, seriesIndex, role: "point", label: point.label ?? opts.series[seriesIndex]?.label, anchor: [x, y], values: [{ key: "latitude", value: point.latitude }, { key: "longitude", value: point.longitude }, ...(point.size !== undefined && Number.isFinite(point.size) ? [{ key: "size", value: point.size }] : [])] }, opts.inspect && x >= 0 && y >= 0 && x <= mapWidth && y <= mapHeight),
+       );
+     }
+     body.push("</svg>");
+@@ -2815,7 +2879,7 @@ export const stateTimeline = (opts: StateTimelineOptions): string => {
+     body.push(
+       `<text class="stdlib-chart-state-label" x="${fmt(area.x0 - 8)}" y="${fmt(y + rowHeight / 2)}" text-anchor="end" dominant-baseline="middle">${escapeXml(row.label)}</text>`,
+     );
+-    for (const interval of row.intervals) {
++    for (const [index, interval] of row.intervals.entries()) {
+       if (!Number.isFinite(interval.from) || !Number.isFinite(interval.to)) continue;
+       const from = clamp(Math.min(interval.from, interval.to), minT, maxT);
+       const to = clamp(Math.max(interval.from, interval.to), minT, maxT);
+@@ -2824,7 +2888,7 @@ export const stateTimeline = (opts: StateTimelineOptions): string => {
+       const idx = stateIndex(interval.state);
+       const color = stateStyles.get(interval.state)?.color;
+       body.push(
+-        `<rect class="stdlib-chart-state-region stdlib-chart-series-${idx % 8}"${thresholdFillAttr(color)} x="${fmt(x)}" y="${fmt(y + 3)}" width="${fmt(Math.max(1, x2 - x))}" height="${fmt(rowHeight - 6)}" rx="2"/>`,
++        chartDatumSvg(`<rect class="stdlib-chart-state-region stdlib-chart-series-${idx % 8}"${thresholdFillAttr(color)} x="${fmt(x)}" y="${fmt(y + 3)}" width="${fmt(Math.max(1, x2 - x))}" height="${fmt(rowHeight - 6)}" rx="2"/>`, { index, seriesIndex: rowIdx, role: "interval", label: row.label, anchor: [(x + x2) / 2, y + rowHeight / 2], grid: [index, rowIdx], values: [{ key: "state", value: interval.state, formatted: stateStyles.get(interval.state)?.label }, { key: "from", value: from, formatted: format(from) }, { key: "to", value: to, formatted: format(to) }, { key: "duration", value: to - from }] }, opts.inspect),
+       );
+     }
+   });
+@@ -2853,6 +2917,7 @@ export const stateTimeline = (opts: StateTimelineOptions): string => {
+ // ==========================
+ 
+ type SparklineOptions = {
++  inspect?: boolean;
+   /** Series of values. Bare numbers auto-x to their array index. */
+   data: number[] | Point[];
+   /** Default 80. */
+@@ -2882,19 +2947,10 @@ type SparklineOptions = {
+ // while still being unique within a document.
+ let sparklineGradientCounter = 0;
+ 
+-const normalizeSparklineData = (data: number[] | Point[]): Point[] => {
+-  if (data.length === 0) return [];
+-  if (typeof data[0] === "number") {
+-    // Assign x BEFORE filtering so a NaN/Infinity gap in the middle stays a
+-    // gap in the indices (don't pretend index N+1 came right after N-1).
+-    return (data as number[])
+-      .map((y, x) => ({ x, y }))
+-      .filter((p) => Number.isFinite(p.y));
+-  }
+-  return (data as Point[]).filter(
+-    (p) => Number.isFinite(p.x) && Number.isFinite(p.y),
+-  );
+-};
++const sparklineEntries = (data: readonly (number | Point)[]) => data
++  .map((value, index) => ({ point: typeof value === "number" ? { x: index, y: value } : value, index }))
++  .filter(({ point }) => Number.isFinite(point.x) && Number.isFinite(point.y))
++  .sort((a, b) => a.point.x - b.point.x);
+ 
+ /**
+  * Render a minimalist sparkline — a tiny inline chart with no axes, no
+@@ -2922,7 +2978,8 @@ const normalizeSparklineData = (data: number[] | Point[]): Point[] => {
+ export const sparkline = (opts: SparklineOptions): string => {
+   const width = opts.width ?? 80;
+   const height = opts.height ?? 20;
+-  const points = normalizeSparklineData(opts.data);
++  const entries = sparklineEntries(opts.data);
++  const points = entries.map((entry) => entry.point);
+ 
+   if (points.length < 2) {
+     // Empty spark — return a same-sized invisible svg so layout stays stable.
+@@ -3007,6 +3064,7 @@ export const sparkline = (opts: SparklineOptions): string => {
+     );
+   }
+ 
++  if (opts.inspect) sorted.forEach((p, index) => body.push(inspectionPoint({ index: entries[index]!.index, role: "point", anchor: [mapped[index]!.x, mapped[index]!.y], values: pointValues(p) }, opts.inspect)));
+   return svgRoot({ width, height, className: opts.className }, body.join(""));
+ };
+ 

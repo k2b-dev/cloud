@@ -1,6 +1,5 @@
 import {
   Button,
-  Chart,
   CodeDisplay,
   DataTable,
   type DataTableColumn,
@@ -22,7 +21,6 @@ import {
   MarkdownView,
   Pagination,
   PdfPreview,
-  RangePicker,
   StatusBadge,
   StructuredDataPreview,
   TemplateEditor,
@@ -33,81 +31,10 @@ import {
 } from "@k2b/ui";
 import { createMemo, createSignal, Show } from "solid-js";
 import { DemoCard } from "../DemoCard";
+import { ChartDemo } from "./charts";
 import { PaginationDemo } from "./layout";
 import { CalendarDemo } from "./surfaces";
 import { DemoGrid, type DemoSection } from "./types";
-
-const ChartDemo = () => (
-  <DemoCard
-    id="charts"
-    chip={{ kind: "component", name: "Chart", from: "@k2b/ui" }}
-    description="Typed SSR charts with bounded line inspection, map pan and zoom, and state-timeline navigation. The wrapper is a plain block, so the caller owns the height — except for stateTimeline, which derives its own from the row count."
-    code={`<RangePicker value="24h" options={rangeOptions} />
-<Chart kind="line" style={{ height: "14rem" }} series={series} legend smooth interactive />
-<Chart kind="map" style={{ height: "14rem" }} series={locations} interactive />
-<Chart kind="stateTimeline" rows={rows} states={states} domain={[0, 10]} interactive />`}
-  >
-    <RangePicker
-      value="24h"
-      options={[
-        { value: "1h", href: "?window=1h" },
-        { value: "24h", href: "?window=24h" },
-      ]}
-    />
-    <div class="ui-chart-demo">
-      <Chart
-        kind="line"
-        style={{ height: "14rem" }}
-        series={[
-          {
-            label: "Requests",
-            data: [
-              { x: 1, y: 12 },
-              { x: 2, y: 28 },
-              { x: 3, y: 24 },
-              { x: 4, y: 42 },
-            ],
-          },
-        ]}
-        legend
-        smooth
-        interactive
-      />
-      <Chart
-        kind="map"
-        style={{ height: "14rem" }}
-        series={[
-          {
-            label: "Requests",
-            data: [
-              { latitude: 52.52, longitude: 13.405, label: "Berlin" },
-              { latitude: 48.137, longitude: 11.575, label: "Munich" },
-            ],
-          },
-        ]}
-        interactive
-      />
-      <Chart
-        kind="stateTimeline"
-        rows={[
-          {
-            label: "Worker",
-            intervals: [
-              { from: 0, to: 4, state: "ok", tooltip: "Succeeded" },
-              { from: 5, to: 8, state: "running", tooltip: "Running" },
-            ],
-          },
-        ]}
-        states={[
-          { state: "ok", label: "Healthy", color: "#10b981" },
-          { state: "running", label: "Running", color: "#3b82f6" },
-        ]}
-        domain={[0, 10]}
-        interactive
-      />
-    </div>
-  </DemoCard>
-);
 
 type Row = { id: string; name: string; owner: string; requests: number };
 const rows: Row[] = [
@@ -684,9 +611,9 @@ const IntlDemo = () => (
 );
 
 const demos: DemoSection = {
-  charts: () => (
+  charts: (props) => (
     <DemoGrid columns="one">
-      <ChartDemo />
+      <ChartDemo window={new URLSearchParams(props.search).get("window") === "1h" ? "1h" : "24h"} />
     </DemoGrid>
   ),
   tables: () => (

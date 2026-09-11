@@ -26,6 +26,7 @@ type ComponentShowcaseProps = DocumentationProps & {
   packageName: string;
   section: UiCatalogSectionId;
   slug: string;
+  search?: string;
 };
 
 const sectionDescriptions: Record<string, string> = {
@@ -47,14 +48,14 @@ export const catalogDemoRenderers = {
   layout: (props) => <LayoutCatalogDemo slug={props.slug} />,
   surfaces: (props) => <SurfacesCatalogDemo slug={props.slug} />,
   feedback: (props) => <FeedbackCatalogDemo slug={props.slug} />,
-  content: (props) => <ContentCatalogDemo slug={props.slug} />,
+  content: (props) => <ContentCatalogDemo slug={props.slug} search={props.search} />,
   widgets: (props) => <WidgetsCatalogDemo slug={props.slug} />,
   cloud: (props) => <CloudCatalogDemo slug={props.slug} />,
-} satisfies Record<UiCatalogSectionId, Component<{ slug: string }>>;
+} satisfies Record<UiCatalogSectionId, Component<{ slug: string; search?: string }>>;
 
-function CatalogDemo(props: { section: UiCatalogSectionId; slug: string }) {
+function CatalogDemo(props: { section: UiCatalogSectionId; slug: string; search?: string }) {
   const Renderer = catalogDemoRenderers[props.section];
-  return <Renderer slug={props.slug} />;
+  return <Renderer slug={props.slug} search={props.search} />;
 }
 
 function ComponentShowcase(props: ComponentShowcaseProps) {
@@ -71,11 +72,8 @@ function ComponentShowcase(props: ComponentShowcaseProps) {
         <p>{props.description}</p>
       </header>
       <section class="ui-reference-playground" aria-label="Live component example">
-        <div
-          class="k2b-ui ui-demo-scope"
-          classList={{ "cloud-ui-scope": props.section === "cloud" }}
-        >
-          <CatalogDemo section={props.section} slug={props.slug} />
+        <div class="k2b-ui ui-demo-scope" classList={{ "cloud-ui-scope": props.section === "cloud" }}>
+          <CatalogDemo section={props.section} slug={props.slug} search={props.search} />
         </div>
       </section>
       <section class="ui-reference-body" aria-label="Component reference">
@@ -183,6 +181,7 @@ export function UiComponentShowcase(
     packageName: string;
     section: UiCatalogSectionId;
     slug: string;
+    search?: string;
   },
 ) {
   return (
@@ -193,6 +192,7 @@ export function UiComponentShowcase(
       packageName={props.packageName}
       section={props.section}
       slug={props.slug}
+      search={props.search}
     />
   );
 }

@@ -2,6 +2,7 @@ import type { JSX } from "solid-js";
 
 export type DemoRenderProps = {
   markdownHtml: string;
+  search?: string;
 };
 
 export type DemoSection = Record<string, (props: DemoRenderProps) => JSX.Element>;

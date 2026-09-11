@@ -14,6 +14,7 @@ export type {
 export { default as Calendar } from "./Calendar";
 
 export type { ChartKind, ChartLabels, ChartProps } from "./Chart";
+export type { ChartSelection, ChartTooltip, ChartTooltipFormatter } from "./chart-inspection";
 export { default as Chart } from "./Chart";
 export type { CodeDisplayLanguage, CodeDisplayProps } from "./CodeDisplay";
 export { default as CodeDisplay } from "./CodeDisplay";

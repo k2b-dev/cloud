@@ -131,5 +131,8 @@
     "typescript": "5.9.3"
   },
   "license": "AGPL-3.0-or-later",
-  "trustedDependencies": []
+  "trustedDependencies": [],
+  "patchedDependencies": {
+    "@k2b/stdlib@0.22.0": "patches/@k2b%2Fstdlib@0.22.0.patch"
+  }
 }

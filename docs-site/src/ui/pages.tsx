@@ -12,7 +12,8 @@ export const uiPages = [
     path: "/",
     title: "UI components",
     navTitle: "Overview",
-    description: "A standalone SolidJS component library with accessible interactions, scoped styles, design tokens, and browser and server builds.",
+    description:
+      "A standalone SolidJS component library with accessible interactions, scoped styles, design tokens, and browser and server builds.",
     section: "Start",
     order: 1,
     layout: "full",
@@ -56,7 +57,7 @@ export const uiPages = [
       order: entry.order,
       layout: "full",
       content: entry.context,
-      component: ({ content, page }) => (
+      component: ({ content, page, request }) => (
         <UiComponentShowcase
           title={page.meta.title}
           description={page.meta.description}
@@ -64,6 +65,7 @@ export const uiPages = [
           packageName={entry.packageName}
           section={entry.section}
           slug={entry.page.slug}
+          search={new URL(request.url).search}
         />
       ),
     }),

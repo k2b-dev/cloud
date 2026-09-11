@@ -6,7 +6,7 @@ const markdownExample = `
   <pre><code>const source = "repository";</code></pre>
 `;
 
-export function CatalogSectionDemo(props: { demos: DemoSection; slug: string }) {
+export function CatalogSectionDemo(props: { demos: DemoSection; slug: string; search?: string }) {
   const render = props.demos[props.slug];
 
   if (!render) {
@@ -17,6 +17,7 @@ export function CatalogSectionDemo(props: { demos: DemoSection; slug: string }) 
     <div class="ui-demo-grid">
       {render({
         markdownHtml: markdownExample,
+        search: props.search,
       })}
     </div>
   );

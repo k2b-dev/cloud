@@ -92,6 +92,7 @@ const portableSectionIds = uiCatalogSections
   .map((section) => section.id);
 const portableDemoFiles = [
   ...portableSectionIds.map((section) => `../src/ui/demo-sections/${section}.tsx`),
+  "../src/ui/demo-sections/charts.tsx",
   "../src/ui/DemoCard.tsx",
 ];
 const portableDemoSources = await Promise.all(

@@ -1,4 +1,4 @@
-import { computeDomain, escapeXml, extendDomainToNice, mapRange, niceStep, svgRoot } from "@k2b/stdlib";
+import { chartDatumSvg, computeDomain, escapeXml, extendDomainToNice, mapRange, niceStep, svgRoot } from "@k2b/stdlib";
 
 export type StateTimelineDomain = readonly [number, number];
 
@@ -108,7 +108,7 @@ const interactiveGroup = (body: string, href: string | undefined, tooltip: strin
   const title = tooltip ? `<title>${escapeXml(tooltip)}</title>` : "";
   return safe
     ? `<a href="${escapeXml(safe)}" ${attrs}>${title}${body}</a>`
-    : `<g ${attrs}${tooltip ? ' tabindex="0" role="img"' : ""}>${title}${body}</g>`;
+    : `<g ${attrs}${tooltip ? ' role="img"' : ""}>${title}${body}</g>`;
 };
 
 export const renderStateTimelineSvg = (
@@ -145,7 +145,7 @@ export const renderStateTimelineSvg = (
     )}" text-anchor="end" dominant-baseline="middle">${escapeXml(label)}</text>`;
     body.push(interactiveGroup(labelBody, row.href, row.tooltip ?? row.label, row.label));
 
-    for (const interval of row.intervals) {
+    for (const [index, interval] of row.intervals.entries()) {
       if (!Number.isFinite(interval.from) || !Number.isFinite(interval.to)) continue;
       const intervalFrom = Math.min(interval.from, interval.to);
       const intervalTo = Math.max(interval.from, interval.to);
@@ -163,7 +163,25 @@ export const renderStateTimelineSvg = (
       const stateLabel = style?.label ?? interval.state;
       body.push(
         interactiveGroup(
-          rect,
+          chartDatumSvg(
+            rect,
+            {
+              index,
+              seriesIndex: rowIndex,
+              role: "interval",
+              label: row.label,
+              anchor: [(x + x2) / 2, y + ROW_HEIGHT / 2],
+              grid: [index, rowIndex],
+              values: [
+                { key: "state", value: interval.state, formatted: stateLabel },
+                { key: "from", value: intervalFrom, formatted: opts.xAxis?.format?.(intervalFrom) },
+                { key: "to", value: intervalTo, formatted: opts.xAxis?.format?.(intervalTo) },
+                { key: "duration", value: intervalTo - intervalFrom },
+                ...((interval.tooltip ?? interval.label) ? [{ key: "detail", value: interval.tooltip ?? interval.label ?? "" }] : []),
+              ],
+            },
+            opts.interactive,
+          ),
           interval.href,
           interval.tooltip ?? interval.label,
           [row.label, interval.label, stateLabel].filter(Boolean).join(", "),
@@ -195,6 +213,7 @@ export const renderStateTimelineSvg = (
   }
 
   if (showLegend) {
+    body.push('<g class="stdlib-chart-legend">');
     let x = plotLeft;
     const y = height - 9;
     for (const [index, state] of (opts.states ?? []).entries()) {
@@ -206,6 +225,7 @@ export const renderStateTimelineSvg = (
       );
       x += 20 + label.length * 6.2;
     }
+    body.push("</g>");
   }
 
   return svgRoot({ width, height, className: opts.className }, body.join(""));

@@ -2,6 +2,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { dirname, extname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Hono } from "hono";
+import chartPage from "./chart-page";
 import { config, routes } from "./config";
 import intlPage from "./intl-page";
 import page from "./page";
@@ -35,6 +36,7 @@ export const app = new Hono()
   .route("/_ssr", routes(config))
   .get("/styles.css", (context) => context.body(styles, 200, { "Content-Type": "text/css; charset=utf-8" }))
   .get("/intl", ...intlPage)
+  .get("/charts", ...chartPage)
   .get("/:asset", (context) => {
     const asset = fontAssets.get(context.req.param("asset"));
     if (!asset) return context.notFound();

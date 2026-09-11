@@ -508,6 +508,14 @@
   }
 }
 
+.k2b-ui [popover].k2b-tooltip.k2b-chart__tooltip {
+  white-space: pre-line;
+  max-width: min(24rem, calc(100vw - 1rem));
+  max-height: calc(100dvh - 1rem);
+  overflow: auto;
+  overflow-wrap: anywhere;
+}
+
 /* ----------------------------------------------------------------- toast */
 
 .k2b-ui [data-k2b-toast-container] > .k2b-toast {

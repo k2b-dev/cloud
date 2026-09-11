@@ -96,6 +96,7 @@
   --stdlib-chart-c6: #06b6d4;
   --stdlib-chart-c7: #84cc16;
   --stdlib-chart-c8: #f97316;
+  --k2b-chart-highlight-mix: black;
 
   color: var(--k2b-text);
   background: var(--k2b-surface-canvas);
@@ -152,6 +153,7 @@
   --k2b-shadow-float: 0 22px 56px rgb(0 0 0 / 0.52);
   --k2b-shadow-toast: 0 10px 28px -14px rgb(0 0 0 / 0.58);
   color-scheme: dark;
+  --k2b-chart-highlight-mix: white;
 }
 
 .k2b-ui,
@@ -998,6 +1000,83 @@
 .k2b-ui .k2b-chart__svg,
 .k2b-ui .k2b-chart__svg > svg {
   @apply block h-full w-full;
+}
+
+/* CSS owns the responsive layout, including the first server-rendered frame.
+ * atan2/tan expresses a length ratio without CSS typed division. Text and
+ * markers retain their pixel size while Cartesian geometry fills the box. */
+.k2b-ui .k2b-chart__svg[data-stretch] {
+  container-type: size;
+  --k2b-chart-inverse-x: tan(atan2(var(--k2b-chart-width), 100cqw));
+  --k2b-chart-inverse-y: tan(atan2(var(--k2b-chart-height), 100cqh));
+}
+
+.k2b-ui .k2b-chart__svg[data-stretch] text {
+  scale: var(--k2b-chart-inverse-x) var(--k2b-chart-inverse-y);
+}
+
+.k2b-ui .k2b-chart__svg[data-stretch] :is(circle, .stdlib-chart-point, .stdlib-chart-legend) {
+  transform-box: fill-box;
+  transform-origin: center;
+  scale: var(--k2b-chart-inverse-x) var(--k2b-chart-inverse-y);
+}
+
+/* Keep each legend together: shrinking the gaps while retaining full-size
+ * text would make labels overlap in narrow containers. */
+.k2b-ui .k2b-chart__svg[data-stretch] .stdlib-chart-legend text {
+  scale: none;
+}
+
+/* Scatter marks need enough visible fill around their separating outline.
+ * Keep the increase in CSS pixels, independent of the responsive plot size. */
+.k2b-ui .k2b-chart[data-chart-kind="scatter"] .k2b-chart__svg[data-stretch] .stdlib-chart-point {
+  scale: calc(var(--k2b-chart-inverse-x) * 1.75) calc(var(--k2b-chart-inverse-y) * 1.75);
+}
+
+.k2b-ui .k2b-chart__svg[data-stretch] :is(path, line, rect, circle) {
+  vector-effect: non-scaling-stroke;
+}
+
+/* Reserve four CSS pixels for sparkline inspection markers and their stroke so
+ * a short sparkline cannot clip them when its logical padding is scaled. */
+.k2b-ui .k2b-chart[data-chart-kind="sparkline"] .k2b-chart__svg {
+  padding: 4px;
+}
+
+.k2b-ui .k2b-chart[data-chart-kind="sparkline"] .k2b-chart__svg > svg {
+  overflow: visible;
+}
+
+/* Labels and guide strokes leave hit testing to the data geometry below. */
+.k2b-ui .k2b-chart[data-interactive] .k2b-chart__svg :is(.stdlib-chart-heatmap-label, .stdlib-chart-box-median, .stdlib-chart-box-whisker, .stdlib-chart-box-cap) {
+  pointer-events: none;
+}
+
+/* Inspection changes only paint and the out-of-flow tooltip. */
+.k2b-ui .k2b-chart [data-chart-datum] {
+  cursor: crosshair;
+}
+.k2b-ui .k2b-chart [data-inspected]:not([data-chart-role="value"]) > :is(rect, path, circle) {
+  stroke: var(--k2b-chart-inspection-color) !important;
+  stroke-width: 2px;
+  vector-effect: non-scaling-stroke;
+}
+.k2b-ui .k2b-chart [data-inspected] > .stdlib-chart-inspection-point {
+  fill: var(--k2b-chart-inspection-color);
+}
+.k2b-ui .k2b-chart [data-inspected][data-chart-role="value"] > :is(.stdlib-chart-gauge-value, .stdlib-chart-stat-value) {
+  text-decoration: underline;
+}
+
+.k2b-ui .k2b-chart[data-inspecting="series"]::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: var(--k2b-chart-inspection-x);
+  border-left: 1px dashed currentColor;
+  opacity: 0.3;
+  pointer-events: none;
 }
 
 /* stdlib embeds `color: #1f2937` in the SVG's own <style>; three classes beat
