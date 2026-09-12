@@ -1,6 +1,10 @@
 import { i18n } from "@k2b/stdlib";
 export const artifactMessages = i18n.define({ baseLocale: "en", messages: {
   en: {
+    DB_SQL_UNSUPPORTED:"Only read-only SELECT queries using supported functions are available. Writes and internal tables are not allowed.",
+    DB_SQL_PARAMS:"The number of query parameters does not match the placeholders.",
+    DB_LIMIT:"The database response is too large. Select fewer columns or use a smaller LIMIT.",
+    DB_CHANGED:"The database connection changed. Refresh its status before resetting it.",
     sharedCodeTitle:"Cloud access by this app", sharedCodeHelp:"This app runs with your Cloud access. Data returned to it may be stored in shared files or its database and read by other people with access. Apps you do not manage ask for each capability call; your personal remembered approvals do not apply.",
     approvalChat:({title}:{title:string})=>`Approval for chat: ${title}`, otherChat:"Another chat",
     sourceConflict:"The source has changed. Your draft is still in the editor. Download it before loading the latest version; review the changes before saving again.", downloadDraft:"Download my draft", loadLatest:"Load latest source",
@@ -45,6 +49,10 @@ export const artifactMessages = i18n.define({ baseLocale: "en", messages: {
     REQUEST_FAILED: "The artifact request failed. Please try again.",
   },
   de: {
+    DB_SQL_UNSUPPORTED:"Nur lesende SELECT-Abfragen mit unterstützten Funktionen sind verfügbar. Schreibzugriffe und interne Tabellen sind nicht erlaubt.",
+    DB_SQL_PARAMS:"Die Anzahl der Abfrageparameter passt nicht zu den Platzhaltern.",
+    DB_LIMIT:"Die Datenbankantwort ist zu groß. Wähle weniger Spalten oder ein kleineres LIMIT.",
+    DB_CHANGED:"Die Datenbankverbindung wurde geändert. Aktualisiere ihren Status vor dem Zurücksetzen.",
     sharedCodeTitle:"Cloud-Zugriff dieser App", sharedCodeHelp:"Diese App nutzt deine Cloud-Rechte. Abgerufene Daten können in geteilten Dateien oder ihrer Datenbank gespeichert und von anderen Zugriffsberechtigten gelesen werden. Apps, die du nicht verwaltest, fragen vor jedem Capability-Aufruf; deine persönlich gemerkten Freigaben gelten dort nicht.",
     approvalChat:({title})=>`Freigabe für Chat: ${title}`, otherChat:"Anderer Chat",
     sourceConflict:"Der Quelltext wurde geändert. Dein Entwurf bleibt im Editor. Lade ihn herunter, bevor du die aktuelle Version lädst; prüfe die Änderungen vor dem erneuten Speichern.", downloadDraft:"Meinen Entwurf herunterladen", loadLatest:"Aktuellen Quelltext laden",

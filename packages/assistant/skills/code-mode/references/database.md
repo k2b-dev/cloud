@@ -1,5 +1,12 @@
 # Resource database
 
+Resource managers can inspect tables and run SELECT in Studio's Advanced → SQL
+console. Opening it never creates a database. Advanced → Manage database offers
+a streamed SQLite backup and an explicit reset. A reset removes schema/data,
+preserving source, publications and files/KV; the next connect creates an empty
+database. All code versions use the same current database. Restoring source does
+not restore data. Never propose a reset as a routine fix for a query error.
+
 Use a database when the saved app or script needs structured records and SQL
 analysis. A resource does not get a database automatically. Connect explicitly:
 

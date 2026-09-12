@@ -98,12 +98,12 @@
         "playwright": "catalog:",
         "read-excel-file": "9.3.10",
         "solid-js": "catalog:",
+        "typescript": "catalog:",
         "zod": "catalog:",
       },
       "devDependencies": {
         "@types/bun": "catalog:",
         "@types/papaparse": "5.5.2",
-        "typescript": "catalog:",
       },
     },
     "packages/capabilities": {

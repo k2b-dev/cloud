@@ -282,7 +282,15 @@ export const artifacts = {
       return { publishedRevision: row.revision, publishedVersion: version };
     });
   },
-  async storage(id: string, input: unknown, identity: ArtifactIdentity) {
+  async clearStorage(id: string, area: "files" | "kv" | "all", identity: ArtifactIdentity) {
+    z.enum(["files", "kv", "all"]).parse(area);
+    return sql.begin(async db => {
+      await requireArtifact(db,id,identity,"admin");
+      await db`DELETE FROM assistant.artifact_storage WHERE artifact_id=${id}::uuid AND (${area} = 'all' OR area=${area})`;
+      return {cleared:true};
+    });
+  },
+  async storage(id: string, input: unknown, identity: ArtifactIdentity, management = false) {
     const request = StorageRequest.parse(input);
     if (request.operation !== "list" && !request.key) throw new ArtifactError("INVALID_INPUT");
     let bytes = 0;
@@ -300,7 +308,7 @@ export const artifacts = {
     return sql.begin(async db => {
       // App use includes its runtime data effects. Code administration remains
       // separate. Lock the resource so quota checks and writes serialize.
-      await requireArtifact(db,id,identity,"read");
+      await requireArtifact(db,id,identity,management ? "admin" : "read");
       if (request.operation === "list") {
         const items = await db<{key:string;bytes:number;mediaType:string}[]>`SELECT key,bytes,media_type AS "mediaType"
           FROM assistant.artifact_storage WHERE artifact_id=${id}::uuid AND area=${request.area} AND key > ${request.after} ORDER BY key LIMIT ${request.limit}`;

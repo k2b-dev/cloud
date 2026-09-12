@@ -14,6 +14,28 @@ const jsonInput=async(input:Parameters<typeof readCliInput>[0])=>parseJson(await
 const inputFlag=()=>flag.input({description:"JSON input; use --input-file or stdin, especially for secrets"});
 
 export const assistantCodeCommands=[
+  command("code database-status",{summary:"Read resource database status without creating it (Manage access)",args:{id:resource},async run({ctx,args}){
+    printValue(ctx,await readAssistantApi(ctx,path(args.id,"/database/status")));
+  }}),
+  command("code database-reset",{summary:"Detach the database and queue deletion; source and files/KV are preserved",args:{id:resource},flags:{yes:flag.boolean()},async run({ctx,args,flags}){
+    requireConfirmation(flags.yes,"Resetting the shared database");
+    const status=await readAssistantApi<{generation:string|null}>(ctx,path(args.id,"/database/status"));
+    printValue(ctx,await readAssistantApi(ctx,path(args.id,"/database/reset"),jsonRequest("POST",{confirmed:true,expectedGeneration:status.generation})));
+  }}),
+  command("code database-export",{summary:"Download a SQLite backup (Manage access)",args:{id:resource},flags:{out:flag.string({required:true})},async run({ctx,args,flags}){
+    const response=await ctx.fetch("/api/assistant"+path(args.id,"/database/export"));
+    if(!response.ok)await ctx.readJson(response);
+    if(!flags.out)throw new Error("Provide --out for the SQLite backup.");
+    await Bun.write(flags.out,response);
+    printValue(ctx,{out:flags.out});
+  }}),
+  command("code storage-manage",{summary:"Inspect or delete shared files/KV as a resource manager",args:{id:resource},flags:{input:inputFlag()},async run({ctx,args,flags}){
+    printValue(ctx,await readAssistantApi(ctx,path(args.id,"/storage/manage"),jsonRequest("POST",await jsonInput(flags.input))));
+  }}),
+  command("code storage-clear",{summary:"Clear shared files, KV or both; database and source stay unchanged",args:{id:resource},flags:{area:flag.string({required:true}),yes:flag.boolean()},async run({ctx,args,flags}){
+    requireConfirmation(flags.yes,"Clearing shared storage");
+    printValue(ctx,await readAssistantApi(ctx,path(args.id,"/storage/clear"),jsonRequest("POST",{area:z.enum(["files","kv","all"]).parse(flags.area),confirmed:true})));
+  }}),
   command("code run",{summary:"Execute code in an isolated CLI worker, optionally with UI interactions and output exports",flags:{
     chat:flag.string({description:"Existing chat ID for authorized inputs, outputs and Project context"}),
     input:inputFlag(),steps:flag.input({description:"Optional JSON array of {name,args} steps: code_interact, code_inspect, code_export"}),

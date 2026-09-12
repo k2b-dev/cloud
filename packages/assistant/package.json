@@ -23,11 +23,11 @@
     "playwright": "catalog:",
     "read-excel-file": "9.3.10",
     "solid-js": "catalog:",
-    "zod": "catalog:"
+    "zod": "catalog:",
+    "typescript": "catalog:"
   },
   "devDependencies": {
     "@types/bun": "catalog:",
-    "typescript": "catalog:",
     "@types/papaparse": "5.5.2"
   },
   "license": "AGPL-3.0-or-later"

@@ -210,6 +210,47 @@ The first publication uses the note "Initial release" without a change-note prom
 Later publications ask what changed. The access dialog warns that unpublished
 apps are visible and usable only by administrators, even when Use access is granted.
 
+### Studio advanced tools
+
+Open an app's action menu and choose **Advanced**. The same menu is available
+on the Studio card and in the running app. **Edit with Assistant** starts an
+editing chat. Resource managers can also choose **Edit manually** or **SQL
+console**. These views keep the Assistant navigation and use a compact view
+selector; no separate editor navigation replaces your chats.
+
+The manual editor supports multiple files, adding, renaming, deleting and
+choosing the entry file. Save explicitly with the button or Ctrl/Cmd+S.
+Renaming rewrites parsed relative imports. Invalid syntax must be fixed before
+renaming. A conflicting save keeps your draft; download it before explicitly
+loading the latest source. Saving does not publish or run code.
+
+**Save and run** executes the acknowledged saved revision beside the editor.
+Local test storage is temporary; shared files/KV, database operations and
+approved Cloud actions affect real data. Select **Test files** to supply file
+picker inputs. On narrow screens, switch between Code and Execution.
+
+The SQL console runs SELECT only, with Ctrl/Cmd+Enter or Start. Choose a table
+to inspect its data or schema. CSV exports contain the displayed rows and
+escape spreadsheet formulas. SQL drafts stay in this browser profile per user
+and resource. Opening the console does not create a database: use **Connect
+database** explicitly. An unconfigured instance explains why it is unavailable.
+
+**Local data** is available to everyone who can use the app. It lists only the
+current user's files and KV in this browser profile. Deleting stops this page's
+app runs and waits for accepted writes. Other tabs can create data again.
+Resource managers can inspect and clear **Shared data**, and use **Manage
+database** to download a SQLite backup or reset the database. Reset preserves
+source, publications and files/KV. The next connection creates an empty database.
+All source and publication versions use the same current data; restoring code
+does not restore a database backup.
+
+Remote administration is also available through `assistant code
+database-status`, `database-export ID --out backup.sqlite`, `database-reset ID
+--yes`, `storage-manage ID --input-file request.json`, and `storage-clear ID
+--area files|kv|all --yes`. These operations require the same resource Manage
+grant as the UI. CLI processes cannot purge another browser profile's local
+storage. Global rsql credentials remain restricted to AI administration.
+
 ### Analyze once or save a script
 
 Code Mode uses direct Assistant tools named `code_*`, loaded individually when

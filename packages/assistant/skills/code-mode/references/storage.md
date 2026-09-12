@@ -50,3 +50,10 @@ Local item writes have a 16 MiB per-item budget and use the browser's storage
 quota. Shared files and KV together have 16 MiB and 1,000 entries per resource.
 Shared transport accounts separately for base64/JSON expansion. Neither quota
 limits the number or total size of documents selected for local processing.
+
+Studio's Advanced → Local data lets each user inspect, download or delete their
+own files/KV in the current browser profile. It stops this page's runs before
+deletion; other tabs may create data again. Advanced → Shared data requires
+resource Manage access and affects everyone. These administrative controls do
+not change normal app runtime data permissions. A CLI process cannot inspect or
+clear the user's existing browser profile; guide them to Local data instead.

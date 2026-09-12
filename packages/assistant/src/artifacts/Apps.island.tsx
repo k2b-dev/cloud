@@ -11,9 +11,15 @@ import { artifactMessages } from "./messages";
 import { ArtifactPanel } from "./ArtifactPanel";
 import { assistantApi } from "../api/client";
 import { openAssistantCreateProjectDialog } from "../frontend/AssistantProjectsDialog";
+import { advancedMessages } from "./advanced-messages";
+import { ManualEditor } from "./ManualEditor";
+import { SqlConsole } from "./SqlConsole";
+import { openDataDialog, openDatabaseDialog } from "./DataDialogs";
 
 type Props = { kind?: "app" | "script"; userId: string; conversations: AiConversation[]; projects: AiProject[];
-  initialList: Awaited<ReturnType<typeof artifacts.list>>; initialApp?: ArtifactBundle };
+  initialList: Awaited<ReturnType<typeof artifacts.list>>; initialApp?: ArtifactBundle;
+  view?:"app"|"edit"|"database"; selectedFile?:string;selectedTable?:string;
+  databaseStatus?:Awaited<ReturnType<typeof artifactClient.databaseStatus>> };
 
 const studioPalette = [
   ["#4266a8", "#6ab5cd", "#9bbbf6"],
@@ -33,6 +39,7 @@ function studioColor(id: string) {
 
 export default function Apps(props: Props) {
   const locale = useLocale(), t = () => artifactMessages.resolve([locale()]).t;
+  const a=()=>advancedMessages.resolve([locale()]).t;
   const live = createAssistantLiveInvalidationHub({ onApplied: () => {} });
   const [selectedVersion, setSelectedVersion] = createSignal<number>();
   const page = () => props.initialList.page;
@@ -40,6 +47,7 @@ export default function Apps(props: Props) {
   const reloadList = async () => setList(await artifactClient.list(page(), props.kind ?? "app"));
   const setPage = (next: (page: number) => number) => navigateTo(`/app/assistant/apps?kind=${props.kind ?? "app"}&page=${next(page())}`);
   const [app, setApp] = createSignal(props.initialApp);
+  const [editorDirty,setEditorDirty]=createSignal(false);
   const [sharing, setSharing] = createSignal<ArtifactSummary>();
   const [busy, setBusy] = createSignal(false), [error, setError] = createSignal("");
   const [access] = createResource(() => sharing()?.id, artifactClient.access);
@@ -77,6 +85,7 @@ export default function Apps(props: Props) {
     await reloadList();
   };
   const publish = async (item: ArtifactSummary) => {
+    if(app()?.id===item.id&&editorDirty()){await prompts.alert(a().saveBeforePublish,{title:t().publish});return;}
     const firstRelease = !item.publishedVersion && !(await artifactClient.versions(item.id)).items.length;
     const values = firstRelease ? { note: "Initial release" } : await prompts.form({ title: t().publish, confirmText: t().publish, fields: {
       note: { type:"text", label:t().changeNote, required:true, maxLength:1000, multiline:true },
@@ -141,7 +150,7 @@ export default function Apps(props: Props) {
           if(app()?.id===item.id)navigateTo(`/app/assistant/apps?kind=${item.kind}`);
         });
       }},
-      { label: t().edit, icon: "ti ti-edit", action: () => edit(item.id) },
+      { label: a().assistantEdit, icon: "ti ti-edit", action: () => edit(item.id) },
       { label: t().share, icon: "ti ti-users", action: () => share(item) },
       ...(item.kind === "script" ? [{label:t().projects,icon:"ti ti-folders",action:()=>projectLinks(item)}] : []),
       { label: item.publishedRevision ? t().publishUpdate : t().publish, icon: "ti ti-upload",
@@ -153,13 +162,24 @@ export default function Apps(props: Props) {
       const copy = await artifactClient.fork(item.id);
       navigateTo((await artifactClient.editChat(copy.id)).href);
     }) }] : []),
+    {sectionLabel:a().advanced,items:[
+      ...(item.permission==="admin"?[
+        {label:a().manualEdit,icon:"ti ti-code",action:()=>navigateTo(`/app/assistant/apps/${item.id}/edit`)},
+        {label:a().sql,icon:"ti ti-database",action:()=>navigateTo(`/app/assistant/apps/${item.id}/database`)},
+      ]:[]),
+      {label:a().local,icon:"ti ti-device-desktop",action:()=>openDataDialog(item.id,props.userId,"local",a().local)},
+      ...(item.permission==="admin"?[
+        {label:a().shared,icon:"ti ti-cloud",action:()=>openDataDialog(item.id,props.userId,"shared",a().shared)},
+        {label:a().database,icon:"ti ti-database-cog",action:()=>openDatabaseDialog(item.id,a().database)},
+      ]:[]),
+    ]},
   ];
   return <AssistantLiveProvider value={live}><AppWorkspace class="flex-1 min-h-0">
     <AssistantSidebar conversations={() => props.conversations} projects={props.projects} activeView="apps" live={live}
       creatingConversation={busy}
       onNewConversation={() => action(async () => navigateTo(`/app/assistant?conversation=${(await assistantApi.createConversation()).shortId}`))}
       onCreateProject={async () => { const project = await openAssistantCreateProjectDialog(); if (project) navigateTo(`/app/assistant?project=${project.id}`); }} />
-    <AppWorkspace.Content><AppWorkspace.Main>
+    <AppWorkspace.Content><AppWorkspace.Main scroll={!app()}>
       <div class="assistant-apps-page" classList={{ "assistant-apps-page--runner": !!app() }}>
         <Show when={app()} fallback={<>
           <h1 class="text-xl font-semibold">{t().apps}</h1>
@@ -193,14 +213,24 @@ export default function Apps(props: Props) {
         </>}>
           {selected => <>
             <div class="assistant-studio-runner-header">
-              <h1>{selected().title}</h1>
+              <h1><i class={selected().icon??"ti ti-app-window"}/>{selected().title}</h1>
+              <div class="flex gap-2">
+                <Show when={selected().permission==="admin"}><Dropdown.Root items={[
+                  {label:a().app,action:()=>navigateTo(`/app/assistant/apps/${selected().id}`)},
+                  {label:a().code,action:()=>navigateTo(`/app/assistant/apps/${selected().id}/edit`)},
+                  {label:a().sql,action:()=>navigateTo(`/app/assistant/apps/${selected().id}/database`)},
+                ]}><Dropdown.Trigger variant="secondary" label={a().view}>{props.view==="edit"?a().code:props.view==="database"?a().sql:a().app}</Dropdown.Trigger></Dropdown.Root></Show>
+                <Dropdown.Root items={menu(selected())}><Dropdown.Trigger iconOnly variant="ghost" label={t().actions} disabled={busy()}><i class="ti ti-dots"/></Dropdown.Trigger></Dropdown.Root>
+              </div>
             </div>
             <Show when={error()}><Placeholder state="error" title={t().REQUEST_FAILED} description={error()} /></Show>
-            <Show when={selectedVersion() ?? "current"} keyed>{version =>
+            <Show when={props.view==="edit"}><ManualEditor bundle={selected()} userId={props.userId} selectedFile={props.selectedFile} onSaved={setApp} onDirtyChange={setEditorDirty}/></Show>
+            <Show when={props.view==="database"&&props.databaseStatus} keyed>{status=><SqlConsole id={selected().id} userId={props.userId} initialTable={props.selectedTable} initialStatus={status}/>}</Show>
+            <Show when={!props.view||props.view==="app"}><Show when={selectedVersion() ?? "current"} keyed>{version =>
               <ArtifactPanel artifactId={selected().id} userId={props.userId} version={typeof version === "number" ? version : undefined}
                 published={typeof version !== "number" && !!selected().publishedRevision} autoStart
                 browseVersions={selected().permission === "admin" ? () => void versions(selected()) : undefined} />
-            }</Show>
+            }</Show></Show>
           </>}
         </Show>
       </div>

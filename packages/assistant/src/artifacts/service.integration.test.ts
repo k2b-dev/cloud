@@ -411,6 +411,55 @@ const isolated = /\/cloud_assistant_artifacts_test(?:\?|$)/.test(process.env.DAT
     } finally { settings.mockRestore(); await upstream.stop(true); }
   });
 
+  test("Studio management preserves runtime access and scopes shared clears",async()=>{
+    const resource=await artifacts.create({title:"Manage data",source},owner);
+    await artifacts.publish(resource.id,1,owner,"Initial release");
+    const [grant]=await sql<{id:string}[]>`INSERT INTO auth.access(user_id,permission) VALUES(${reader.user.id}::uuid,'read') RETURNING id`;
+    await sql`INSERT INTO assistant.artifact_access VALUES(${resource.id}::uuid,${grant!.id}::uuid)`;
+    await artifacts.storage(resource.id,{area:"kv",operation:"write",key:"counter",content:"2"},reader);
+    await artifacts.storage(resource.id,{area:"files",operation:"write",key:"keep.txt",content:"YQ=="},owner);
+    await expect(artifacts.clearStorage(resource.id,"all",reader)).rejects.toMatchObject({code:"ACCESS_DENIED"});
+    await expect(artifacts.storage(resource.id,{area:"kv",operation:"list"},reader,true)).rejects.toMatchObject({code:"ACCESS_DENIED"});
+    await expect(artifactDatabase.status(resource.id,reader)).rejects.toMatchObject({code:"ACCESS_DENIED"});
+    await expect(artifactDatabase.reset(resource.id,null,reader)).rejects.toMatchObject({code:"ACCESS_DENIED"});
+    await expect(artifactDatabase.export(resource.id,reader)).rejects.toMatchObject({code:"ACCESS_DENIED"});
+    await expect(artifactDatabase.call(resource.id,{operation:"tables.list"},reader,undefined,true)).rejects.toMatchObject({code:"ACCESS_DENIED"});
+    await artifacts.clearStorage(resource.id,"kv",owner);
+    expect(await artifacts.storage(resource.id,{area:"kv",operation:"list"},reader)).toEqual({items:[]});
+    expect(await artifacts.storage(resource.id,{area:"files",operation:"read",key:"keep.txt"},reader)).toMatchObject({item:{content:"YQ=="}});
+    expect((await artifacts.get(resource.id,owner)).publishedRevision).toBe(1);
+  });
+
+  (process.env.RSQL_TEST_URL ? test : test.skip)("Studio database backup and reset preserve source and rotate namespace generations",async()=>{
+    const resource=await artifacts.create({title:"Reset lifecycle",source},owner);
+    const settings=spyOn(app.settings,"get").mockImplementation(async key=>key==="assistant.rsql_url"?process.env.RSQL_TEST_URL!:"artifact-test-only");
+    try{
+      expect(await artifactDatabase.status(resource.id,owner)).toMatchObject({configured:true,connected:false});
+      expect(await sql`SELECT 1 FROM assistant.artifact_databases WHERE artifact_id=${resource.id}::uuid`).toHaveLength(0);
+      await artifactDatabase.connect(resource.id,owner);
+      await artifactDatabase.call(resource.id,{operation:"tables.create",name:"ledger",columns:[{name:"amount",type:"integer"}]},owner);
+      await artifactDatabase.call(resource.id,{operation:"rows.insert",table:"ledger",rows:[{amount:1200}]},owner);
+      const backup=await artifactDatabase.export(resource.id,owner);
+      const bytes=new Uint8Array(await backup.arrayBuffer());
+      expect(new TextDecoder().decode(bytes.slice(0,15))).toBe("SQLite format 3");
+      expect(await artifactDatabase.status(resource.id,owner)).toMatchObject({connected:true});
+      const [old]=await sql<{namespace:string}[]>`SELECT namespace FROM assistant.artifact_databases WHERE artifact_id=${resource.id}::uuid`;
+      const oldGeneration=(await artifactDatabase.status(resource.id,owner)).generation;
+      await Promise.all([artifactDatabase.reset(resource.id,oldGeneration,owner),artifactDatabase.reset(resource.id,oldGeneration,owner)]);
+      expect(await artifactDatabase.status(resource.id,owner)).toMatchObject({connected:false});
+      expect(await sql`SELECT 1 FROM assistant.database_cleanup WHERE namespace=${old!.namespace}`).toHaveLength(1);
+      await artifactDatabase.connect(resource.id,owner);
+      const [next]=await sql<{namespace:string}[]>`SELECT namespace FROM assistant.artifact_databases WHERE artifact_id=${resource.id}::uuid`;
+      expect(next!.namespace).not.toBe(old!.namespace);
+      await expect(artifactDatabase.reset(resource.id,oldGeneration,owner)).rejects.toMatchObject({code:"CONFLICT"});
+      expect(await artifactDatabase.call(resource.id,{operation:"tables.list"},owner)).toEqual([]);
+      expect((await artifacts.get(resource.id,owner)).source).toEqual(source);
+      // Draining old generations must not remove the new connection.
+      for(let i=0;i<10;i++)await artifactDatabase.cleanup();
+      expect(await artifactDatabase.status(resource.id,owner)).toMatchObject({connected:true});
+    }finally{settings.mockRestore();}
+  });
+
   test("database settings redact credentials and reject changing an in-use server", async () => {
     const administrator={...stranger,actor:{kind:"user" as const,user:{...stranger.user,roles:["admin" as const]}}};
     const upstream=Bun.serve({hostname:"127.0.0.1",port:0,fetch:request=>{

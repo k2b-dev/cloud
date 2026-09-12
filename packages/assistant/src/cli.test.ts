@@ -261,6 +261,21 @@ describe("assistant CLI", () => {
     expect(help).not.toMatch(/^\s+\w+\s+Commands$/m);
   });
 
+  test("Studio reset requires confirmation and sends the inspected connection generation",async()=>{
+    const id="00000000-0000-4000-8000-000000000001",generation="a".repeat(64),requests:string[]=[];
+    const fetcher:CloudCliContext["fetch"]=async(path,init)=>{
+      requests.push(String(path));
+      if(String(path).endsWith("/status"))return json({generation,connected:true});
+      expect(await new Response(init?.body).json()).toEqual({confirmed:true,expectedGeneration:generation});return json({connected:false});
+    };
+    const denied=createContext(["code","database-reset",id],fetcher);
+    await expect(assistantCli.run(denied.ctx)).rejects.toThrow("--yes");
+    expect(requests).toHaveLength(0);
+    const confirmed=createContext(["code","database-reset",id],fetcher);confirmed.ctx.flags={yes:true};
+    await assistantCli.run(confirmed.ctx);
+    expect(requests).toEqual([`/api/assistant/artifacts/${id}/database/status`,`/api/assistant/artifacts/${id}/database/reset`]);
+  });
+
   test("creates and manually runs chat-bound scheduled tasks", async () => {
     const requests: Array<{ path: string; method: string; body: unknown; idempotencyKey: string | null }> = [];
     const task = {

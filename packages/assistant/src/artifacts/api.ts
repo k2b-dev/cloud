@@ -13,6 +13,7 @@ import { artifacts, ArtifactError } from "./service";
 import { artifactMessages } from "./messages";
 import { compilationDiagnostic, compileArtifact } from "./runtime/compile";
 import { cliHostBundle } from "./runtime/cli-bundle";
+import { renameSource } from "./rename-source";
 import { ClientCall, ClientCallResult, clientCalls } from "./client-calls";
 
 const capabilityCaller=(c:Context<AuthContext>)=>({authorization:c.req.header("authorization"),cookie:c.req.header("cookie"),locale:getLocale(c),signal:c.req.raw.signal});
@@ -41,7 +42,7 @@ export const artifactApi = new Hono<AuthContext>()
   .onError((error,c) => {
     if (error instanceof DatabaseError) {
       const t=artifactMessages.resolve([getLocale(c)]).t;
-      const message=error.code === "DB_UNREACHABLE" ? t.DB_UNREACHABLE : error.code === "DB_TIMEOUT" ? t.DB_TIMEOUT : error.code === "DB_AUTH_FAILED" ? t.DB_AUTH_FAILED : error.code === "DB_NOT_CONFIGURED" ? t.DB_NOT_CONFIGURED : error.code === "DB_NOT_CONNECTED" ? t.DB_NOT_CONNECTED : error.code === "DB_SERVER_IN_USE" ? t.DB_SERVER_IN_USE : error.code;
+      const message=error.code === "DB_SQL_UNSUPPORTED" ? t.DB_SQL_UNSUPPORTED : error.code === "DB_SQL_PARAMS" ? t.DB_SQL_PARAMS : error.code === "DB_LIMIT" ? t.DB_LIMIT : error.code === "CONFLICT" ? t.DB_CHANGED : error.code === "DB_UNREACHABLE" ? t.DB_UNREACHABLE : error.code === "DB_TIMEOUT" ? t.DB_TIMEOUT : error.code === "DB_AUTH_FAILED" ? t.DB_AUTH_FAILED : error.code === "DB_NOT_CONFIGURED" ? t.DB_NOT_CONFIGURED : error.code === "DB_NOT_CONNECTED" ? t.DB_NOT_CONNECTED : error.code === "DB_SERVER_IN_USE" ? t.DB_SERVER_IN_USE : error.code;
       return respond(c,{ok:false,code:error.code,status:error.status,error:message});
     }
     const code = error instanceof ArtifactError ? error.code : error instanceof z.ZodError ? "INVALID_INPUT" : "REQUEST_FAILED";
@@ -60,7 +61,14 @@ export const artifactApi = new Hono<AuthContext>()
   .put("/admin/database/settings",v("json",DatabaseSettings),async c => respond(c,ok(await artifactDatabase.configure(c.req.valid("json"),identity(c)))))
   .post("/admin/database/test",v("json",DatabaseSettings),async c => respond(c,ok(await artifactDatabase.configure(c.req.valid("json"),identity(c),true))))
   .post("/:id/database/connect",async c => respond(c,ok(await artifactDatabase.connect(id(c),identity(c),c.req.raw.signal))))
+  .get("/:id/database/status",async c => respond(c,ok(await artifactDatabase.status(id(c),identity(c),c.req.raw.signal))))
+  .post("/:id/database/reset",v("json",z.object({confirmed:z.literal(true),expectedGeneration:z.string().length(64).nullable()}).strict()),async c => respond(c,ok(await artifactDatabase.reset(id(c),c.req.valid("json").expectedGeneration,identity(c)))))
+  .get("/:id/database/export",async c => {
+    const response = await artifactDatabase.export(id(c),identity(c),c.req.raw.signal);
+    return new Response(response.body,{headers:{"Content-Type":"application/vnd.sqlite3","Content-Disposition":`attachment; filename="studio-${id(c)}.sqlite"`,"Cache-Control":"private, no-store"}});
+  })
   .post("/:id/database",v("json",DatabaseRequest),async c => respond(c,ok(await artifactDatabase.call(id(c),c.req.valid("json"),identity(c),c.req.raw.signal))))
+  .post("/:id/database/inspect",v("json",DatabaseRequest),async c => respond(c,ok(await artifactDatabase.call(id(c),c.req.valid("json"),identity(c),c.req.raw.signal,true))))
   .post("/runtime/capabilities",v("json",RuntimeCapabilityRequest),async c=>respond(c,ok(await runtimeCapabilities.prepare(c.req.valid("json"),identity(c),capabilityCaller(c)))))
   .post("/runtime/capabilities/:callId/resolve",v("json",z.object({approved:z.boolean(),remember:z.literal("always").optional()}).strict()),async c=>respond(c,ok(await runtimeCapabilities.resolve(z.uuid().parse(c.req.param("callId")),c.req.valid("json"),identity(c),capabilityCaller(c)))))
   .get("/runtime/host.js", async c => c.body(await cliHostBundle(), 200, { "Content-Type": "application/javascript; charset=utf-8" }))
@@ -68,6 +76,11 @@ export const artifactApi = new Hono<AuthContext>()
   .post("/runtime/complete", v("json", ClientCallResult), async (c) => respond(c, ok(await clientCalls.complete(c.req.valid("json"), identity(c)))))
   .post("/", v("json",ArtifactCreate), async (c) => respond(c,ok(await artifacts.create(c.req.valid("json"),identity(c))),201))
   .post("/runtime/compile", v("json", ArtifactSource), async c => respond(c,ok(await compileArtifact(c.req.valid("json")))))
+  .post("/runtime/rename",v("json",z.object({source:ArtifactSource,from:z.string().max(180),to:z.string().max(180)}).strict()),async c=>{
+    const input=c.req.valid("json");
+    try{return respond(c,ok(renameSource(input.source,input.from,input.to)));}
+    catch{return respond(c,{ok:false,status:400,code:"INVALID_INPUT",error:artifactMessages.resolve([getLocale(c)]).t.INVALID_INPUT});}
+  })
   .post("/validate", v("json",ArtifactSource), async (c) => {
     try { await compileArtifact(c.req.valid("json")); return respond(c,ok({ valid: true, diagnostics: [] })); }
     catch (error) { return respond(c,ok({ valid: false, diagnostics: [compilationDiagnostic(error)] })); }
@@ -91,6 +104,8 @@ export const artifactApi = new Hono<AuthContext>()
     catch (error) { return respond(c,{ ok: false, status: 400, code: "COMPILE_FAILED", error: compilationDiagnostic(error) }); }
   })
   .post("/:id/storage", v("query",z.object({conversationId:z.string().max(80).optional()})), v("json",StorageRequest), async c => respond(c,ok(await artifacts.storage(id(c),c.req.valid("json"),identity(c)))))
+  .post("/:id/storage/manage",v("json",StorageRequest),async c => respond(c,ok(await artifacts.storage(id(c),c.req.valid("json"),identity(c),true))))
+  .post("/:id/storage/clear",v("json",z.object({area:z.enum(["files","kv","all"]),confirmed:z.literal(true)}).strict()),async c => respond(c,ok(await artifacts.clearStorage(id(c),c.req.valid("json").area,identity(c)))))
   .get("/:id/projects", async c => respond(c,ok(await artifacts.projects(id(c),identity(c)))))
   .put("/:id/projects/:projectId", v("json",z.object({linked:z.boolean()}).strict()), async c => respond(c,ok(await artifacts.linkProject(id(c),z.string().min(1).max(80).parse(c.req.param("projectId")),c.req.valid("json").linked,identity(c)))))
   .get("/:id/access", async (c) => respond(c,ok(await artifacts.access(id(c),identity(c)))))

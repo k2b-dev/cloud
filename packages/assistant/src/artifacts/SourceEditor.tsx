@@ -13,6 +13,8 @@ export function SourceEditor(props: {
   content: string;
   onChange: (text: string) => void;
   onSave: () => void;
+  language?: "sql";
+  onRun?: () => void;
 }) {
   let textarea: HTMLTextAreaElement;
   let known = props.content;
@@ -63,6 +65,9 @@ export function SourceEditor(props: {
       }}
       onKeyDown={(event) => {
         if (event.isComposing) return;
+        if ((event.metaKey || event.ctrlKey) && event.key === "Enter" && props.onRun) {
+          event.preventDefault(); props.onRun(); return;
+        }
         if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s") {
           event.preventDefault();
           props.onSave();
@@ -103,7 +108,7 @@ export function SourceEditor(props: {
           known = text;
           props.onChange(text);
         }}
-        highlight={highlight.presets.code}
+        highlight={props.language === "sql" ? highlight.presets.sql : highlight.presets.code}
         fill
         spellcheck={false}
         variant="paper"

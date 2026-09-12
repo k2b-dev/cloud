@@ -58,7 +58,7 @@ test("Studio tile menus publish and edit; launch opens the runner directly", asy
     expect(publishedRevision).toBe(2);
     expect(compiledVersions).toEqual([]);
     await page.getByRole("button", { name: "Actions · Tip calculator", exact: true }).click();
-    await page.getByRole("menuitem", { name: "Edit", exact: true }).click();
+    await page.getByRole("menuitem", { name: "Edit with Assistant", exact: true }).click();
     await page.waitForURL("**/edited");
     await page.goto(new URL("/view", server.url).href);
     await page.getByText("Published calculator", { exact: true }).waitFor();

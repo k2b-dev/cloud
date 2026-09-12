@@ -196,6 +196,33 @@
 
 
 .assistant-apps-page--runner { flex: 1; min-height: 0; }
+.assistant-apps-page--runner { height: 100%; gap: .75rem; padding: .75rem; }
+.assistant-studio-runner-header { display:flex; align-items:center; justify-content:space-between; gap:.75rem; flex-wrap:wrap; }
+.assistant-studio-runner-header h1 { display:flex; align-items:center; gap:.5rem; min-width:0; overflow-wrap:anywhere; }
+.assistant-advanced-toolbar { display:flex; align-items:center; flex-wrap:wrap; gap:.5rem; flex-shrink:0; }
+.assistant-manual-editor, .assistant-sql-console { display:flex; flex-direction:column; flex:1; min-height:0; gap:.75rem; overflow:auto; }
+.assistant-editor-split { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:.75rem; flex:1; min-height:320px; }
+.assistant-editor-code, .assistant-editor-execution { display:flex; flex-direction:column; min-width:0; min-height:0; overflow:auto; }
+.assistant-editor-file { display:flex; flex:1; min-height:0; }
+.assistant-editor-file[hidden] { display:none; }
+.assistant-editor-file .artifact-code { flex:1; min-height:0; }
+.assistant-editor-execution > .artifact-panel { flex:1; min-height:0; }
+.assistant-editor-mobile-tabs { display:none; }
+.assistant-sql-editor { height:180px; flex-shrink:0; }
+.assistant-sql-editor[hidden] { display:none; }
+.assistant-sql-editor > .artifact-code { height:100%; }
+.assistant-sql-results { flex:1; min-height:200px; overflow:auto; }
+.assistant-data-dialog { display:flex; flex-direction:column; gap:1rem; min-width:0; }
+.assistant-data-entries { max-height:50vh; overflow:auto; }
+.assistant-data-entry { display:flex; justify-content:space-between; align-items:center; gap:.75rem; padding:.5rem 0; border-bottom:1px solid var(--k2b-border, #8883); }
+@media (max-width:1000px) {
+  .assistant-editor-mobile-tabs { display:block; }
+  .assistant-editor-split { display:flex; }
+  .assistant-editor-code, .assistant-editor-execution { flex:1; }
+  .assistant-editor-split[data-mobile="code"] .assistant-editor-execution,
+  .assistant-editor-split[data-mobile="execution"] .assistant-editor-code { display:none; }
+  .assistant-data-entry { align-items:flex-start; flex-direction:column; }
+}
 .assistant-apps-page--runner > .artifact-panel { flex: 1; min-height: 0; }
 .assistant-studio-card__top--title-only { align-items: center; }
 .assistant-studio-card__top--title-only .assistant-studio-card__icon { margin-top: 0; }

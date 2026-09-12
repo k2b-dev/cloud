@@ -2,7 +2,7 @@ import { approveInModal } from "./CapabilityApproval";
 import { runCapability } from "./runtime/capabilities";
 import { Button, Paper, useLocale } from "@k2b/ui";
 import { files } from "@k2b/stdlib/browser";
-import { createEffect, createResource, createSignal, createUniqueId, For, on, onCleanup, onMount, Show } from "solid-js";
+import { createEffect, createMemo, createResource, createSignal, createUniqueId, For, on, onCleanup, onMount, Show } from "solid-js";
 import { artifactClient } from "./client";
 import { artifactMessages } from "./messages";
 import { openArtifactModal } from "./modal-host";
@@ -10,6 +10,7 @@ import { RuntimeView } from "./RuntimeView";
 import { createArtifactSession, type ArtifactSession, type RunSnapshot } from "./runtime/session";
 import { RuntimeStorage, localStorageCall, sharedStorage } from "./runtime/shared-storage";
 import { ArtifactStorage } from "./runtime/storage";
+import { registerLocalRun } from "./local-runs";
 
 export function pickFiles(multiple: boolean, folder: boolean, accept: string, signal: AbortSignal): Promise<File[]> {
   return new Promise((resolve) => {
@@ -25,7 +26,7 @@ export function pickFiles(multiple: boolean, folder: boolean, accept: string, si
   });
 }
 
-export function ArtifactPanel(props: { artifactId: string; refreshKey?: string; published?: boolean; version?: number; autoStart?: boolean; userId: string; browseSource?: () => void; browseVersions?: () => void; onTitle?: (title: string) => void }) {
+export function ArtifactPanel(props: { artifactId: string; refreshKey?: string; published?: boolean; version?: number; sourceRevision?:number; test?:boolean; pickerInputs?:File[]; autoStart?: boolean; userId: string; browseSource?: () => void; browseVersions?: () => void; onTitle?: (title: string) => void }) {
   const locale = useLocale(), t = () => artifactMessages.resolve([locale()]).t;
   const [metadata, { mutate }] = createResource(() => props.artifactId, id => artifactClient.get(id, props.published, props.version));
   createEffect(() => { if (metadata()) props.onTitle?.(metadata()!.title); });
@@ -55,24 +56,38 @@ export function ArtifactPanel(props: { artifactId: string; refreshKey?: string; 
   createEffect(on(() => error() || state()?.error, (failure) => { if (failure) setConsoleOpen(true); }));
   const [revision, setRevision] = createSignal<number>();
   let container!: HTMLDivElement, session: ArtifactSession | undefined, generation = 0;
-  const stop = () => { generation++; setLoading(false); void session?.stop(); session = undefined; };
-  onCleanup(stop);
+  const activeModalId=createMemo(()=>props.test?state()?.modalId:undefined);
+  createEffect(on(activeModalId,modalId=>{
+    const request=state()?.modal;
+    if(!props.test||!request||!modalId)return;
+    const current=session,abort=new AbortController();
+    void openArtifactModal(request,abort.signal,locale()).then(value=>{
+      if(!abort.signal.aborted&&session===current&&state()?.modalId===modalId)current?.respond(value);
+    }).catch(e=>{if(!abort.signal.aborted)setError(e instanceof Error?e.message:t().REQUEST_FAILED);});
+    onCleanup(()=>abort.abort());
+  }));
+  const stop = async () => { generation++; setLoading(false); const previous=session; session = undefined; await previous?.stop(); };
+  onCleanup(() => {void stop();});
+  onMount(() => {onCleanup(registerLocalRun(props.userId,props.artifactId,stop));});
   onMount(() => { if (props.autoStart) void start(); });
   async function start() {
-    stop();
+    const stopping=stop();
     const token = generation;
+    await stopping;
+    if(token!==generation)return;
     setLoading(true); setError("");
     try {
       const bundle = await artifactClient.get(props.artifactId, props.published, props.version);
       if (token !== generation) return;
-      const compiled = await artifactClient.compiled(props.artifactId, bundle.sourceRevision);
+      const runRevision=props.sourceRevision ?? bundle.sourceRevision;
+      const compiled = await artifactClient.compiled(props.artifactId, runRevision);
       if (token !== generation) return;
       if (!("runtime" in compiled)) throw new Error(t().REQUEST_FAILED);
       mutate(bundle);
-      setRevision(bundle.sourceRevision);
+      setRevision(runRevision);
       const storage = new ArtifactStorage(props.userId, props.artifactId);
       session = createArtifactSession(container, compiled, {
-        mode: "user", changed: setState,
+        mode: props.test ? "test" : "user", changed: setState, pickerInputs:props.pickerInputs,
         modal: (request, signal) => openArtifactModal(request, signal, locale()),
         capability:(name,input,signal)=>runCapability(name,input,{artifactId:props.artifactId},approveInModal,signal),
         database: (request,signal) => artifactClient.database(props.artifactId,request,undefined,signal),
@@ -130,6 +145,10 @@ export function ArtifactPanel(props: { artifactId: string; refreshKey?: string; 
           </div>}</For>
         </Show>
         <Show when={state()?.output !== undefined}><pre>{JSON.stringify(state()?.output, null, 2)}</pre></Show>
+        <Show when={props.test}><For each={state()?.files}>{file=><Button size="sm" variant="ghost" onClick={()=>{
+          const value=session?.files().find(output=>output.name===file.name);
+          if(value)files.downloadFileFromContent(value,value.name,value.type);
+        }}><i class="ti ti-download"/>{file.name}</Button>}</For></Show>
       </div>
     </Paper>
   </div>;

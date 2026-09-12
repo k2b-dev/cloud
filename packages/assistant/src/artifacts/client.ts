@@ -3,7 +3,7 @@ import { api } from "@k2b/cloud/browser";
 import { z } from "zod";
 import type { ApiType } from "../api";
 import type { StorageRequest } from "./storage-contracts";
-import { ArtifactUpdate, type ArtifactKind, type ArtifactSource } from "./contracts";
+import { ArtifactUpdate, ArtifactSource, type ArtifactKind } from "./contracts";
 const client = api.create<ApiType>({ baseUrl: "/api/assistant" }).artifacts;
 async function checked(response: Response): Promise<void> {
   if (!response.ok) {
@@ -14,6 +14,12 @@ async function checked(response: Response): Promise<void> {
   }
 }
 export const artifactClient = {
+  databaseInspect:async(id:string,input:unknown,signal?:AbortSignal)=>{const response=await client[":id"].database.inspect.$post({param:{id},json:DatabaseRequest.parse(input)},{init:{signal}});await checked(response);return response.json();},
+  renameSource:async(source:ArtifactSource,from:string,to:string)=>{const response=await client.runtime.rename.$post({json:{source,from,to}});await checked(response);return ArtifactSource.parse(await response.json());},
+  databaseStatus: async (id:string) => {const response=await client[":id"].database.status.$get({param:{id}});await checked(response);return response.json();},
+  databaseReset: async (id:string,expectedGeneration:string|null) => {const response=await client[":id"].database.reset.$post({param:{id},json:{confirmed:true,expectedGeneration}});await checked(response);return response.json();},
+  storageManage: async (id:string,input:StorageRequest) => {const response=await client[":id"].storage.manage.$post({param:{id},json:input});await checked(response);return response.json();},
+  storageClear: async (id:string,area:"files"|"kv"|"all") => {const response=await client[":id"].storage.clear.$post({param:{id},json:{area,confirmed:true}});await checked(response);return response.json();},
   remove: async (id:string) => {const response=await client[":id"].$delete({param:{id}});await checked(response);return response.json();},
   capabilityPrepare:async(input:{id:string;name:string;input:unknown;artifactId?:string;conversationId?:string},signal?:AbortSignal)=>{
     const response=await client.runtime.capabilities.$post({json:{...input,input:z.json().parse(input.input)}},{init:{signal}});await checked(response);return response.json();

@@ -74,6 +74,20 @@ cld assistant turns watch <chat-id> <turn-id>
 
 ## Code Mode and Studio
 
+Resource managers can use `assistant code database-status ID` without creating
+a database, `database-export ID --out backup.sqlite` for a streamed backup,
+and `database-reset ID --yes` to detach the current database and queue its
+deletion. Reset preserves source, publications and shared files/KV. The next
+connection creates a new empty database; retries cannot delete a replacement
+created after the confirmed generation.
+
+`assistant code storage-manage ID --input-file request.json` uses the existing
+`area`, `operation`, `key`, `after`, `limit` storage contract with Manage access.
+Use `assistant code storage-clear ID --area files|kv|all --yes` for bulk cleanup.
+These commands share the Studio Advanced menu's permission-aware services.
+Browser-local OPFS and KV belong to that browser profile. A CLI process cannot
+purge them remotely; direct the user to Studio → Advanced → Local data.
+
 Code Mode runs in an isolated browser worker hosted by the CLI. It does not need
 an open Assistant browser tab. Install Playwright Chromium, or set
 `CLOUD_CLI_CHROMIUM` to an existing Chromium executable.
