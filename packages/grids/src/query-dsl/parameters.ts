@@ -1,5 +1,38 @@
-import type { Expr } from "../formula/types";
+import { z } from "zod";
+import type { Expr, Literal } from "../formula/types";
 import type { DslQueryAst } from "./types";
+
+export const GQL_PARAMETER_LIMITS = { names: 100, characters: 20_000, listItems: 10_000 } as const;
+export const GqlParameterNameSchema = z.string().regex(/^[a-z][a-z0-9_]*$/);
+const parameterScalarSchema = z.union([
+  z
+    .string()
+    .max(GQL_PARAMETER_LIMITS.characters)
+    .refine((value) => !value.includes("\0")),
+  z
+    .number()
+    .finite()
+    .refine((value) => !Number.isInteger(value) || Number.isSafeInteger(value)),
+  z.boolean(),
+  z.null(),
+  z
+    .object({
+      decimal: z
+        .string()
+        .max(GQL_PARAMETER_LIMITS.characters)
+        .regex(/^-?(?:0|[1-9]\d*)(?:\.\d+)?$/)
+        .refine((value) => Number.isFinite(Number(value))),
+    })
+    .strict(),
+]);
+/** Shared transport and binder budget: parameters cannot bypass GQL's source limit. */
+export const GqlParametersSchema = z
+  .record(GqlParameterNameSchema, z.union([parameterScalarSchema, z.array(parameterScalarSchema).max(GQL_PARAMETER_LIMITS.listItems)]))
+  .refine((value) => Object.keys(value).length <= GQL_PARAMETER_LIMITS.names, "At most 100 query parameters are allowed")
+  .refine(
+    (value) => JSON.stringify(value).length <= GQL_PARAMETER_LIMITS.characters,
+    "Query parameter JSON must fit within 20000 characters",
+  );
 
 export type DslQueryContextKey =
   | "auth.id"
@@ -19,6 +52,12 @@ export type DslQueryContextKey =
   | "time.today"
   | "time.timeZone";
 
+/** Explicit numeric binding without converting an exact decimal to a JS number.
+ * Ordinary strings remain text; this is internal context data, not GQL syntax. */
+export type DslDecimalParameter = { decimal: string };
+/** Arrays are accepted only by membership predicates. */
+export type DslQueryParameterValue = Literal | DslDecimalParameter | readonly (Literal | DslDecimalParameter)[];
+
 export type DslQueryContextValues = {
   "auth.id": string | null;
   "auth.name": string | null;
@@ -35,7 +74,7 @@ export type DslQueryContextValues = {
   "time.now": string;
   "time.today": string;
   "time.timeZone": string;
-} & Partial<Record<`params.${string}`, string>>;
+} & Partial<Record<`params.${string}`, DslQueryParameterValue>>;
 
 type BindDslQueryContextResult = { ok: true; ast: DslQueryAst } | { ok: false; error: string };
 
@@ -63,7 +102,27 @@ const PARAM_CONTEXT_KEY = /^params\.[a-z][a-z0-9_]*$/;
 export const isDslQueryContextKey = (value: string): value is DslQueryContextKey =>
   FIXED_CONTEXT_KEYS.has(value as DslQueryContextKey) || PARAM_CONTEXT_KEY.test(value);
 
-const isContextValue = (value: unknown): value is string | null => value === null || typeof value === "string";
+const isContextValue = (value: unknown): value is string | null => value === null || (typeof value === "string" && !value.includes("\0"));
+const isParameterScalar = (value: unknown): value is Literal =>
+  isContextValue(value) ||
+  typeof value === "boolean" ||
+  (typeof value === "number" && Number.isFinite(value) && (!Number.isInteger(value) || Number.isSafeInteger(value)));
+const parameterLiteral = (value: unknown): Extract<Expr, { kind: "literal" }> | null => {
+  if (isParameterScalar(value)) return { kind: "literal", value };
+  if (
+    value &&
+    typeof value === "object" &&
+    !Array.isArray(value) &&
+    "decimal" in value &&
+    Object.keys(value).length === 1 &&
+    typeof value.decimal === "string" &&
+    /^-?(?:0|[1-9]\d*)(?:\.\d+)?$/.test(value.decimal) &&
+    Number.isFinite(Number(value.decimal))
+  ) {
+    return { kind: "literal", value: Number(value.decimal), numericSource: value.decimal };
+  }
+  return null;
+};
 const MEMBERSHIP_FUNCTIONS = new Set(["ONEOF", "NONEOF", "CONTAINSALL"]);
 
 const contextPath = (expression: Extract<Expr, { kind: "call" }>): string | null => {
@@ -103,7 +162,12 @@ export const dslQueryContextKeys = (ast: DslQueryAst): DslQueryContextKey[] => {
   return [...keys].sort();
 };
 
-const bindExpression = (expression: Expr, values: DslQueryContextInput): Expr | string => {
+export type BindDslQueryContextOptions = {
+  /** Publication only: check parameter types without treating samples as actual option values. */
+  parameterTypesOnly?: boolean;
+};
+
+const bindExpression = (expression: Expr, values: DslQueryContextInput, options: BindDslQueryContextOptions): Expr | string => {
   if (expression.kind === "call" && expression.fn === "PARAM") {
     return "param() is not supported; use @params.<name>";
   }
@@ -113,45 +177,80 @@ const bindExpression = (expression: Expr, values: DslQueryContextInput): Expr | 
     if (!Object.hasOwn(values, path)) return `Missing query context value "@${path}"`;
     const value = values[path as keyof DslQueryContextValues];
     if (Array.isArray(value)) return `Query context reference "@${path}" is only valid inside oneof, noneof, or containsall`;
-    if (!isContextValue(value)) return `Invalid query context value "@${path}"`;
-    return { kind: "literal", value, ...(expression.span ? { span: expression.span } : {}) };
+    const literal = parameterLiteral(value);
+    if (!literal || (!path.startsWith("params.") && !isContextValue(value))) {
+      return `Invalid query context value "@${path}"`;
+    }
+    return {
+      ...literal,
+      ...(options.parameterTypesOnly && path.startsWith("params.") ? { parameterTypeOnly: true as const } : {}),
+      ...(expression.span ? { span: expression.span } : {}),
+    };
   }
   if (expression.kind === "call") {
     const args: Expr[] = [];
     for (const argument of expression.args) {
-      if (argument.kind === "call" && argument.fn === "@" && contextPath(argument) === "auth.subjects") {
+      const path = argument.kind === "call" && argument.fn === "@" ? contextPath(argument) : null;
+      const contextValue = path && isDslQueryContextKey(path) ? values[path] : undefined;
+      if (path && (path === "auth.subjects" || (path.startsWith("params.") && Array.isArray(contextValue)))) {
         if (!MEMBERSHIP_FUNCTIONS.has(expression.fn)) {
-          return 'Query context reference "@auth.subjects" is only valid inside oneof, noneof, or containsall';
+          return `Query context reference "@${path}" is only valid inside oneof, noneof, or containsall`;
         }
-        const subjects = values["auth.subjects"];
-        if (!Array.isArray(subjects) || subjects.some((value) => typeof value !== "string")) {
-          return 'Invalid query context value "@auth.subjects"';
+        if (!Array.isArray(contextValue)) return `Invalid query context value "@${path}"`;
+        // Array.from also exposes sparse entries, which must not become missing operands.
+        const entries = Array.from(contextValue);
+        for (const value of entries) {
+          const literal = parameterLiteral(value);
+          if (!literal || (path === "auth.subjects" && typeof value !== "string")) {
+            return `Invalid query context value "@${path}"`;
+          }
+          args.push({
+            ...literal,
+            ...(options.parameterTypesOnly && path.startsWith("params.") ? { parameterTypeOnly: true as const } : {}),
+            ...(argument.span ? { span: argument.span } : {}),
+          });
         }
-        args.push(...subjects.map((value) => ({ kind: "literal" as const, value, ...(argument.span ? { span: argument.span } : {}) })));
         continue;
       }
-      const bound = bindExpression(argument, values);
+      const bound = bindExpression(argument, values, options);
       if (typeof bound === "string") return bound;
       args.push(bound);
     }
     return { ...expression, args };
   }
   if (expression.kind === "binop") {
-    const left = bindExpression(expression.left, values);
+    const left = bindExpression(expression.left, values, options);
     if (typeof left === "string") return left;
-    const right = bindExpression(expression.right, values);
+    const right = bindExpression(expression.right, values, options);
     if (typeof right === "string") return right;
     return { ...expression, left, right };
   }
   if (expression.kind === "unop") {
-    const operand = bindExpression(expression.operand, values);
+    const operand = bindExpression(expression.operand, values, options);
     return typeof operand === "string" ? operand : { ...expression, operand };
   }
   return expression;
 };
 
-export const bindDslQueryContext = (ast: DslQueryAst, values: DslQueryContextInput = {}): BindDslQueryContextResult => {
-  const bind = (expression: Expr): Expr | string => bindExpression(expression, values);
+export const bindDslQueryContext = (
+  ast: DslQueryAst,
+  values: DslQueryContextInput = {},
+  options: BindDslQueryContextOptions = {},
+): BindDslQueryContextResult => {
+  const parameters = Object.fromEntries(
+    Object.entries(values)
+      .filter(([key]) => key.startsWith("params."))
+      .map(([key, value]) => [key.slice(7), value]),
+  );
+  const checked = GqlParametersSchema.safeParse(parameters);
+  if (!checked.success) {
+    const name = checked.error.issues[0]?.path[0];
+    return {
+      ok: false,
+      error: typeof name === "string" ? `Invalid query context value "@params.${name}"` : "Query parameters exceed the shared input budget",
+    };
+  }
+  const bind = (expression: Expr): Expr | string => bindExpression(expression, values, options);
 
   const select: DslQueryAst["select"] = [];
   for (const item of ast.select) {

@@ -14,6 +14,7 @@ export const documentServiceMessages = i18n.define({
       documentTemplateNotFound: "Document template",
       documentArtifactNotFound: "Document artifact",
       noCanonicalPdf: "Document has no canonical PDF artifact.",
+      publicLinksPdfOnly: "Public links are available only for PDF documents. Use an authorized download for this file.",
       artifactIntegrityFailed: "Stored document artifact failed its integrity check.",
       artifactMetadataIntegrityFailed: "Stored document artifact metadata failed its integrity check.",
       noWorkflowDocuments: "The workflow run did not generate any documents.",
@@ -23,6 +24,14 @@ export const documentServiceMessages = i18n.define({
       sourceTooLarge: "GQL source is too large.",
       sourceInvalid: "The GQL source is invalid.",
       sourceExecutionFailed: "The GQL source could not be executed.",
+      workflowQueryInlineRequired: "Use an inline GQL query with an explicit table source. Live Views are not supported as workflow data.",
+      workflowQuerySchemaChanged: "The query schema changed. Review and save the workflow again before generating documents.",
+      workflowQueryAccessDenied: "You no longer have access to all tables used by this query.",
+      workflowQueryIntegrityFailed: "Stored workflow query data failed its integrity check. No document was generated.",
+      workflowQueryNotFound: "Workflow query data",
+      workflowCaptureBudget:
+        "This run exceeds the shared 5 MiB source-data budget. Select fewer rows or fields, or split the work into separate runs.",
+      workflowQueryIncomplete: "The query exceeds the workflow data limit. Narrow its selection; no partial export was created.",
       invalidRenderer: "Invalid document renderer.",
       unknownProfile: ({ profile }: { profile: string }) => `Unknown document profile ${profile}.`,
       partTooLarge: ({ part }: { part: string }) => `${part} is too large.`,
@@ -41,6 +50,37 @@ export const documentServiceMessages = i18n.define({
       templatesChanged: "Document templates changed. Reload and try reordering again.",
       linkCreateFailed: "Document link could not be created.",
       artifactsMissing: "Document artifacts are missing.",
+      tableOutputInvalid: "The output options are invalid. Check the selected file format and its settings.",
+      financialColumnsInvalid: "Financial export columns must have unique names.",
+      financialConfirmationRequired: "Review and confirm the financial export before creating its file.",
+      financialActorMismatch:
+        "Confirm with the same account and access method that started this export. A browser session cannot replace an API credential.",
+      financialRunChanged: "This export run is no longer current. Start a new export and review its data before confirming.",
+      sourceVersionsUnavailable:
+        "Automatic source versions require a new single-source Record query with unique rows. Use explicit versions for other sources.",
+      sourceVersionsEmpty: "No records were found for this export. Check the selection and query filters before starting a new export.",
+      sourceVersionChanged: "A source record changed or is no longer available. Start a new export and review its current data.",
+      financialAccessDenied: "You no longer have permission to confirm this export. Check your workflow and source access.",
+      sepaExtendedCharacters:
+        "Names or payment references contain characters outside the SEPA basic character set. Check whether your bank accepts them. Grids preserves these characters.",
+      sepaPastExecutionDate:
+        "The execution date is in the past and will not be changed automatically. To use another date, cancel this run and start a new export with the correct date.",
+      financialAlreadyReserved:
+        "At least one transaction has already been reserved or exported to this destination. No partial file was created.",
+      financialColumnMissing: ({ column }: { column: string }) => `The export column “${column}” is missing. Check the query and mapping.`,
+      financialAmountInvalid: ({ row }: { row: number }) =>
+        `Row ${row}: use a positive exact amount with at most two decimal places. Floating-point amounts are not supported.`,
+      financialValuesInvalid: ({ fields }: { fields: string }) => `Some export values are invalid. Check these fields: ${fields}.`,
+      xmlTemplateContextInvalid:
+        "Use XML values only in text or quoted attributes. Keep names and namespaces static; DTDs, CDATA, raw/capture blocks and dynamic markup are not supported.",
+      xmlOutputInvalid:
+        "The result is not valid XML 1.0. Check the root element, namespaces, characters and UTF-8 declaration. DTDs and external entities are not supported.",
+      tableOutputColumnsInvalid: "Output columns need non-empty, unique keys and names. Use distinct GQL aliases.",
+      tableOutputDataInvalid: "The output data is invalid or exceeds the document input limit. Select fewer rows or columns.",
+      tableOutputCellInvalid: ({ row, column }: { row: number; column: string }) =>
+        `Row ${row}, column “${column}” does not match its declared type. Check the query output.`,
+      tableOutputNestedValue: ({ row, column }: { row: number; column: string }) =>
+        `Row ${row}, column “${column}” contains nested data. Select a scalar value or enable JSON cells for CSV.`,
       liquidUnknownVariable: ({ label, root }: { label: string; root: string }) => `${label} uses unknown Liquid variable "${root}".`,
       templateTooLarge: "The template is too large.",
       renderedTemplateTooLarge: "The rendered template is too large.",
@@ -70,6 +110,7 @@ export const documentServiceMessages = i18n.define({
       baseMismatch: "The record does not belong to this base.",
       snapshotRecordLimit: ({ limit }: { limit: number }) => `The snapshot exceeds the limit of ${limit} records.`,
       snapshotRootMissing: "The snapshot root was not captured.",
+      snapshotInvalidFields: "A source record contains invalid fields. Open the source record, correct the marked fields and try again.",
       snapshotCreateFailed: "The record snapshot could not be created.",
       combinedReadonly: "Combined tables are read-only.",
       invalidFileField: "The field is not an active file field on this table.",
@@ -100,6 +141,8 @@ export const documentServiceMessages = i18n.define({
       artifactEmpty: ({ key }: { key: string }) => `Document artifact ${key} is empty.`,
       artifactBytesExceeded: ({ limit }: { limit: number }) => `Document artifacts exceed the ${limit}-byte limit.`,
       pdfArtifactRequired: "A document renderer must produce a valid “pdf” artifact.",
+      primaryArtifactRequired: ({ key, mediaType }: { key: string; mediaType: string }) =>
+        `The renderer must produce the primary artifact “${key}” as ${mediaType}. Check the output configuration.`,
       profilePreviewFailed: "The document profile preview failed.",
       actorInvalid: "The document actor is invalid.",
       workflowBindingIncomplete: "The document workflow binding is incomplete.",
@@ -116,6 +159,41 @@ export const documentServiceMessages = i18n.define({
       createdDocumentReadFailed: "The created document could not be read.",
     },
     de: {
+      tableOutputInvalid: "Die Ausgabeoptionen sind ungültig. Prüfe das gewählte Dateiformat und seine Einstellungen.",
+      financialColumnsInvalid: "Spalten für den Finanzexport müssen eindeutige Namen haben.",
+      financialConfirmationRequired: "Prüfe und bestätige den Finanzexport, bevor seine Datei erstellt wird.",
+      financialActorMismatch:
+        "Bestätige mit demselben Konto und Zugangsweg, mit dem dieser Export gestartet wurde. Eine Browsersitzung kann keinen API-Zugang ersetzen.",
+      financialRunChanged: "Dieser Exportlauf ist nicht mehr aktuell. Starte einen neuen Export und prüfe seine Daten vor der Bestätigung.",
+      sourceVersionsUnavailable:
+        "Automatische Quellversionen benötigen eine neue Abfrage mit eindeutigen Datensatzzeilen aus einer Quelle. Verwende für andere Quellen explizite Versionen.",
+      sourceVersionsEmpty:
+        "Für diesen Export wurden keine Datensätze gefunden. Prüfe die Auswahl und Abfragefilter, bevor du einen neuen Export startest.",
+      sourceVersionChanged:
+        "Ein Quelldatensatz wurde geändert oder ist nicht mehr verfügbar. Starte einen neuen Export und prüfe die aktuellen Daten.",
+      financialAccessDenied: "Du darfst diesen Export nicht mehr bestätigen. Prüfe deinen Zugriff auf den Workflow und seine Quellen.",
+      sepaExtendedCharacters:
+        "Namen oder Verwendungszwecke enthalten Zeichen außerhalb des SEPA-Basiszeichensatzes. Prüfe, ob deine Bank diese akzeptiert. Grids behält die Zeichen bei.",
+      sepaPastExecutionDate:
+        "Das Ausführungsdatum liegt in der Vergangenheit und wird nicht automatisch geändert. Für ein anderes Datum brich diesen Lauf ab und starte einen neuen Export mit dem richtigen Datum.",
+      financialAlreadyReserved:
+        "Mindestens ein Vorgang wurde für dieses Ziel bereits reserviert oder exportiert. Es wurde keine Teildatei erstellt.",
+      financialColumnMissing: ({ column }: { column: string }) => `Die Exportspalte „${column}“ fehlt. Prüfe die Abfrage und Zuordnung.`,
+      financialAmountInvalid: ({ row }: { row: number }) =>
+        `Zeile ${row}: Verwende einen positiven exakten Betrag mit höchstens zwei Nachkommastellen. Gleitkommabeträge werden nicht unterstützt.`,
+      financialValuesInvalid: ({ fields }: { fields: string }) => `Einige Exportwerte sind ungültig. Prüfe diese Felder: ${fields}.`,
+      xmlTemplateContextInvalid:
+        "XML-Werte nur in Text oder gequoteten Attributen einsetzen. Namen und Namespaces müssen statisch bleiben; DTDs, CDATA, Raw-/Capture-Blöcke und dynamisches Markup werden nicht unterstützt.",
+      xmlOutputInvalid:
+        "Das Ergebnis ist kein gültiges XML 1.0. Prüfe Wurzelelement, Namespaces, Zeichen und UTF-8-Deklaration. DTDs und externe Entities werden nicht unterstützt.",
+      tableOutputColumnsInvalid:
+        "Ausgabespalten benötigen eindeutige, nicht leere Schlüssel und Namen. Verwende unterschiedliche GQL-Aliase.",
+      tableOutputDataInvalid:
+        "Die Ausgabedaten sind ungültig oder überschreiten die Dokument-Eingabegrenze. Wähle weniger Zeilen oder Spalten.",
+      tableOutputCellInvalid: ({ row, column }) =>
+        `Zeile ${row}, Spalte „${column}“ passt nicht zum deklarierten Typ. Prüfe das Abfrageergebnis.`,
+      tableOutputNestedValue: ({ row, column }) =>
+        `Zeile ${row}, Spalte „${column}“ enthält verschachtelte Daten. Wähle einen skalaren Wert oder aktiviere JSON-Zellen für CSV.`,
       templateDisabled: "Die Dokumentvorlage ist deaktiviert.",
       templateWrongTable: "Die Dokumentvorlage gehört nicht zu dieser Tabelle.",
       recordNotFound: "Datensatz",
@@ -126,6 +204,7 @@ export const documentServiceMessages = i18n.define({
       documentTemplateNotFound: "Dokumentvorlage",
       documentArtifactNotFound: "Dokumentartefakt",
       noCanonicalPdf: "Das Dokument enthält kein kanonisches PDF-Artefakt.",
+      publicLinksPdfOnly: "Freigabelinks sind nur für PDF-Dokumente verfügbar. Lade diese Datei mit deinen Zugriffsrechten herunter.",
       artifactIntegrityFailed: "Die Integritätsprüfung des gespeicherten Dokumentartefakts ist fehlgeschlagen.",
       artifactMetadataIntegrityFailed: "Die Integritätsprüfung der Metadaten des gespeicherten Dokumentartefakts ist fehlgeschlagen.",
       noWorkflowDocuments: "Der Workflow-Lauf hat keine Dokumente erzeugt.",
@@ -134,6 +213,17 @@ export const documentServiceMessages = i18n.define({
       sourceTooLarge: "Die GQL-Quelle ist zu groß.",
       sourceInvalid: "Die GQL-Quelle ist ungültig.",
       sourceExecutionFailed: "Die GQL-Quelle konnte nicht ausgeführt werden.",
+      workflowQueryInlineRequired:
+        "Verwende eine direkte GQL-Abfrage mit expliziter Tabelle. Live-Ansichten sind als Workflow-Daten nicht unterstützt.",
+      workflowQuerySchemaChanged: "Das Abfrageschema wurde geändert. Prüfe und speichere den Workflow erneut, bevor du Dokumente erzeugst.",
+      workflowQueryAccessDenied: "Du hast nicht mehr auf alle Tabellen dieser Abfrage Zugriff.",
+      workflowQueryIntegrityFailed:
+        "Die Integritätsprüfung der gespeicherten Workflow-Daten ist fehlgeschlagen. Es wurde kein Dokument erzeugt.",
+      workflowQueryNotFound: "Workflow-Abfragedaten",
+      workflowCaptureBudget:
+        "Dieser Lauf überschreitet das gemeinsame Quelldatenbudget von 5 MiB. Wähle weniger Zeilen oder Felder oder teile die Arbeit auf mehrere Läufe auf.",
+      workflowQueryIncomplete:
+        "Die Abfrage überschreitet das Workflow-Datenlimit. Grenze die Auswahl ein; es wurde kein Teilexport erzeugt.",
       invalidRenderer: "Der Dokument-Renderer ist ungültig.",
       unknownProfile: ({ profile }) => `Unbekanntes Dokumentprofil ${profile}.`,
       partTooLarge: ({ part }) => `${part} ist zu groß.`,
@@ -181,6 +271,8 @@ export const documentServiceMessages = i18n.define({
       baseMismatch: "Der Datensatz gehört nicht zu dieser Base.",
       snapshotRecordLimit: ({ limit }) => `Der Snapshot überschreitet das Limit von ${limit} Datensätzen.`,
       snapshotRootMissing: "Der Ausgangsdatensatz des Snapshots wurde nicht erfasst.",
+      snapshotInvalidFields:
+        "Ein Quelldatensatz enthält ungültige Felder. Öffne den Datensatz, korrigiere die markierten Felder und versuche es erneut.",
       snapshotCreateFailed: "Der Datensatz-Snapshot konnte nicht erstellt werden.",
       combinedReadonly: "Combined-Tabellen sind schreibgeschützt.",
       invalidFileField: "Das Feld ist kein aktives Dateifeld dieser Tabelle.",
@@ -210,6 +302,8 @@ export const documentServiceMessages = i18n.define({
       artifactEmpty: ({ key }) => `Das Dokumentartefakt ${key} ist leer.`,
       artifactBytesExceeded: ({ limit }) => `Die Dokumentartefakte überschreiten das Limit von ${limit} Byte.`,
       pdfArtifactRequired: "Ein Dokument-Renderer muss ein gültiges „pdf“-Artefakt erzeugen.",
+      primaryArtifactRequired: ({ key, mediaType }) =>
+        `Der Renderer muss die Hauptdatei „${key}“ als ${mediaType} erzeugen. Prüfe die Ausgabekonfiguration.`,
       profilePreviewFailed: "Die Vorschau des Dokumentprofils ist fehlgeschlagen.",
       actorInvalid: "Der Dokumentakteur ist ungültig.",
       workflowBindingIncomplete: "Die Workflow-Bindung des Dokuments ist unvollständig.",

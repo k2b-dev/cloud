@@ -882,7 +882,7 @@ export const CustomAppCapabilitiesSchema = z
           })
           .strict(),
       )
-      .max(4),
+      .max(24),
     insights: z
       .array(
         z
@@ -937,7 +937,7 @@ export const CustomAppCapabilitiesSchema = z
           })
           .strict(),
       )
-      .max(4)
+      .max(24)
       .default([]),
     records: z
       .array(

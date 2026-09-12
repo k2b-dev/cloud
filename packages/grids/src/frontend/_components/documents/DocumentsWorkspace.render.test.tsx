@@ -42,6 +42,7 @@ test("All documents renders its initial folders and search field on the server",
   const html = renderToString(() =>
     createComponent(DocumentsWorkspace, {
       baseId: "BASE01",
+      canWriteDocuments: false,
       documentTemplateLevels: {},
       initialBrowserPage: {
         items: [],

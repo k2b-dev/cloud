@@ -21,7 +21,9 @@ const deDetailsByStableLabel: Readonly<Record<string, string>> = {
   updateRecord: "Ändert Felder eines Datensatzes nach einer aktuellen Berechtigungsprüfung.",
   createRecord: "Erstellt nach einer aktuellen Berechtigungsprüfung einen Datensatz in einer Tabelle.",
   atomicRecords: "Sperrt Datensätze, prüft aktuelle Grids-Daten und schreibt begrenzte Änderungen gemeinsam oder gar nicht.",
-  generateDocument: "Erstellt aus einer konfigurierten Vorlage einen unveränderlichen Dokument-Snapshot.",
+  query:
+    "Speichert ein vollständiges, typisiertes GQL-Ergebnis einmalig für spätere Dokumentschritte. Parameter sind Werte, kein Abfragetext.",
+  generateDocument: "Erstellt ein unveränderliches Dokument aus einer Datensatzvorlage oder einem erfassten Abfrageergebnis.",
   createDocumentLink: "Erstellt einen widerrufbaren öffentlichen Download-Link für ein erzeugtes Dokument.",
   sendEmail: "Rendert eine Grids-E-Mail-Vorlage und stellt sie jedem Empfänger genau einmal zu.",
   httpRequest: "Sendet eine explizite JSON-HTTP-Anfrage. Unklare entfernte Ergebnisse werden nicht blind erneut versucht.",

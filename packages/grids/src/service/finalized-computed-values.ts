@@ -4,6 +4,7 @@ import { validateObjectList } from "../field-types/object-list";
 import type { SqlClient } from "./audit";
 import { buildComputedProjections, normalizeProjectionValue } from "./computed-projections";
 import { getGridsCrudMessages } from "./crud-messages";
+import { buildFinalizedComputedDependencies } from "./finalized-computed-dependencies";
 import { compileFormulaFieldToSql, type FormulaSqlExpression, type FormulaSqlType } from "./formula-sql-compiler";
 import { joinFormulaSql } from "./formula-sql-values";
 import { mapRecordRow } from "./record-persistence";
@@ -12,6 +13,7 @@ import type { Field } from "./types";
 export type ComputedValueSnapshot = {
   values: Record<string, unknown>;
   types: Record<string, FormulaSqlType | "json">;
+  dependencies: Record<string, string[]>;
 };
 
 export const calculationApprovalSnapshot = (fields: Field[], computed: ComputedValueSnapshot) => ({
@@ -69,7 +71,11 @@ export const evaluateFinalizationFormulas = async (
     if (!compiled.ok) return fail(err.badInput(messages.finalizationCalculationInvalid({ field: field.name })));
     expressions.push({ field, expression: compiled.expression });
   }
-  const snapshot: ComputedValueSnapshot = { values: { ...related.values }, types: { ...related.types } };
+  const snapshot: ComputedValueSnapshot = {
+    values: { ...related.values },
+    types: { ...related.types },
+    dependencies: related.dependencies,
+  };
   if (!expressions.length) return ok(snapshot);
   const fragments = expressions.flatMap(({ expression }, index) => [
     sql`${expression.sql} AS ${sql.unsafe(`v${index}`)}`,
@@ -140,18 +146,31 @@ export const captureFinalizationInputs = async (
       return fail(err.badInput(messages.finalizationCalculationInvalid({ field: field.name })));
     }
   }
-  const fragments = projections.length
-    ? sql`, ${joinFormulaSql(
-        projections.flatMap((p, index) => [p.fragment, sql`${p.errorSql ?? sql`false`} AS ${sql.unsafe(`ce${index}`)}`]),
-        sql`, `,
-      )}`
-    : sql``;
+  const dependencySql = [...(await buildFinalizedComputedDependencies(fields, client))];
+  const dependencyFragments = dependencySql.map(([, expression], index) => sql`${expression} AS ${sql.unsafe(`cd${index}`)}`);
+  const fragments =
+    projections.length || dependencyFragments.length
+      ? sql`, ${joinFormulaSql(
+          [
+            ...projections.flatMap((p, index) => [p.fragment, sql`${p.errorSql ?? sql`false`} AS ${sql.unsafe(`ce${index}`)}`]),
+            ...dependencyFragments,
+          ],
+          sql`, `,
+        )}`
+      : sql``;
   const [row] = await client<Array<Record<string, unknown>>>`
     SELECT r.*${fragments} FROM grids.records r WHERE r.id = ${recordId}::uuid AND r.table_id = ${tableId}::uuid
   `;
   if (!row) return fail(err.notFound(messages.record));
   const data = { ...mapRecordRow(row).data };
-  const related: ComputedValueSnapshot = { values: {}, types: {} };
+  const related: ComputedValueSnapshot = { values: {}, types: {}, dependencies: {} };
+  for (const [index, [fieldId]] of dependencySql.entries()) {
+    const required = row[`cd${index}`];
+    if (!Array.isArray(required) || !required.every((id): id is string => typeof id === "string")) {
+      return fail(err.badInput(messages.finalizationCalculationInvalid({ field: fields.find((field) => field.id === fieldId)!.name })));
+    }
+    related.dependencies[fieldId] = [...new Set(required)].sort();
+  }
   for (const field of fields) {
     if (field.deletedAt || field.type !== "object_list") continue;
     const value = validateObjectList(data[field.id], field.config, field.required, { stored: true, context: options });

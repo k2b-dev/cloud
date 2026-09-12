@@ -75,7 +75,7 @@ const orderFormulasByDeps = (
   return { ordered, cycle };
 };
 
-export const enrichRecordsWithFormulas = <T extends Pick<GridRecord, "data"> & { finalizedAt?: string | null }>(
+export const enrichRecordsWithFormulas = <T extends Pick<GridRecord, "data" | "fieldErrors"> & { finalizedAt?: string | null }>(
   records: T[],
   fields: Field[],
   options: FormulaRuntimeContext & { skipFormulaFieldIds?: ReadonlySet<string>; useFinalizedFormulaValues?: boolean } = {},
@@ -85,7 +85,16 @@ export const enrichRecordsWithFormulas = <T extends Pick<GridRecord, "data"> & {
     if (record.finalizedAt) continue;
     for (const field of objectLists) {
       const calculated = validateObjectList(record.data[field.id], field.config, field.required, { stored: true, context: options });
-      record.data[field.id] = calculated.ok ? calculated.value : renderResult(formulaError(calculated.error));
+      if (calculated.ok) {
+        record.data[field.id] = calculated.value;
+        if (record.fieldErrors) {
+          delete record.fieldErrors[field.id];
+          if (Object.keys(record.fieldErrors).length === 0) delete record.fieldErrors;
+        }
+      } else {
+        // Retain the editable source value. A diagnostic is not a list value.
+        record.fieldErrors = { ...record.fieldErrors, [field.id]: calculated.error };
+      }
     }
   }
   const formulaFields = fields.filter(
@@ -101,6 +110,7 @@ export const enrichRecordsWithFormulas = <T extends Pick<GridRecord, "data"> & {
     if (record.finalizedAt && options.useFinalizedFormulaValues !== false) continue;
     // Keep raw evaluator values in scratch so errors propagate before display rendering.
     const scratch: Record<string, unknown> = { ...record.data };
+    for (const [id, error] of Object.entries(record.fieldErrors ?? {})) scratch[id] = formulaError(error);
     for (const id of cycle) scratch[id] = formulaError("CYCLE");
     for (const { field, ast } of ordered) {
       if (cycle.has(field.id)) continue;
@@ -127,6 +137,7 @@ export const enrichRecordsWithComputedColumns = (
 
   for (const record of records) {
     const scratch: Record<string, unknown> = { ...record.data };
+    for (const [id, error] of Object.entries(record.fieldErrors ?? {})) scratch[id] = formulaError(error);
     for (const { column, parsed } of compiled) {
       if (!parsed.ok) {
         record.data[column.id] = renderResult(formulaError("ERROR"));

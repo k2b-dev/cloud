@@ -134,7 +134,7 @@ type WorkspaceEmptyRoute = {
   kind: "empty";
 };
 
-type WorkspaceDocumentsRoute = { kind: "documents"; initialBrowserPage: DocumentBrowseResponse };
+type WorkspaceDocumentsRoute = { kind: "documents"; canWriteDocuments: boolean; initialBrowserPage: DocumentBrowseResponse };
 
 type WorkspaceWorkflowsRoute = {
   kind: "workflows";

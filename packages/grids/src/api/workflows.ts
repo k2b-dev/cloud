@@ -1,6 +1,7 @@
 import { type AuthContext, auth } from "@k2b/cloud/server";
 import { Hono, type MiddlewareHandler } from "hono";
 import { createWorkflowCatalogRoutes } from "./workflow-catalog-routes";
+import { createWorkflowDocumentConfirmationRoutes } from "./workflow-document-confirmations";
 import { createWorkflowRunRoutes } from "./workflow-run-routes";
 import { createWorkflowTriggerRoutes } from "./workflow-trigger-routes";
 
@@ -11,6 +12,7 @@ const createWorkflowsApi = (deps: { requireAuthenticated?: MiddlewareHandler<Aut
     .use(deps.requireAuthenticated ?? auth.requireRole("authenticated"))
     .route("/", createWorkflowCatalogRoutes())
     .route("/", createWorkflowRunRoutes())
+    .route("/", createWorkflowDocumentConfirmationRoutes())
     .route("/", createWorkflowTriggerRoutes());
 
 export default createWorkflowsApi();

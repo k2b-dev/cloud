@@ -22,6 +22,8 @@ const document = (id: string): PublicDocument => ({
   tags: [],
   artifacts: [{ key: "pdf", filename: `${id}.pdf`, mimeType: "application/pdf", sizeBytes: 4, sha256: "a".repeat(64) }],
   renderer: { kind: "html" },
+  primaryArtifactKey: "pdf",
+  dataSnapshot: null,
   validationStatus: null,
   createdBy: null,
   createdAt: "2026-01-01T00:00:00.000Z",

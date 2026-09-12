@@ -9,6 +9,7 @@ import { presentDslQueryCompletions } from "../query-dsl/intelligence-presentati
 import { parseGridsQueryDsl } from "../query-dsl/parser";
 import { resolveDslQueryToQueryPlan } from "../query-dsl/resolver";
 import { gridsService } from "../service";
+import { toPublicGqlResponse } from "../service/gql-public-result";
 import { projectPublicId, type resolvePublicId } from "../service/public-resources";
 import {
   fromPublicGqlScope,
@@ -19,7 +20,7 @@ import {
   PublicDslQueryExecuteResponseSchema,
   PublicDslQueryPreviewBodySchema,
   PublicDslQueryPreviewResponseSchema,
-  toPublicGqlResponse,
+  publicGqlParameterContext,
 } from "./gql-public";
 import {
   buildPermissionedGqlResolverContext,
@@ -131,7 +132,7 @@ export const createGqlApi = (options: GqlApiOptions = {}) =>
           c,
           baseId,
           { ...body, ...scope.data, surface: body.surface ?? "query-explorer" },
-          { operation: "preview" },
+          { operation: "preview", context: publicGqlParameterContext(body.parameters) },
         );
         return c.json(await toPublicGqlResponse(result.response));
       },
@@ -155,7 +156,12 @@ export const createGqlApi = (options: GqlApiOptions = {}) =>
         const body = c.req.valid("json");
         const scope = await fromPublicGqlScope(baseId, body, { locale: getLocale(c) });
         if (!scope.ok) return c.json({ message: scope.error.message }, scope.error.status);
-        const result = await executeGqlSource(c, baseId, { ...body, ...scope.data }, { maxRows: 10_000, operation: "execute" });
+        const result = await executeGqlSource(
+          c,
+          baseId,
+          { ...body, ...scope.data },
+          { maxRows: 10_000, operation: "execute", context: publicGqlParameterContext(body.parameters) },
+        );
         return c.json(await toPublicGqlResponse(result.response));
       },
     )

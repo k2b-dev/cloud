@@ -12,6 +12,16 @@ export type FormulaSqlExpression = {
 
 export type FormulaSqlCompileResult = { ok: true; expression: FormulaSqlExpression } | { ok: false; error: string };
 
+export const isInvalidCalculationError = (error: unknown): boolean =>
+  error instanceof Error && error.message === "grids: invalid calculation";
+
+/** At a query boundary, errors must not become NULLs that aggregates silently omit.
+ * Apply only after compiling the complete expression, so IFERROR can handle errors. */
+export const requireValidCalculationSql = (expression: FormulaSqlExpression): unknown =>
+  expression.errorSql === undefined
+    ? expression.sql
+    : sql`grids.require_valid_calculation(${expression.errorSql}, ${expression.type === "unknown" ? sql`(${expression.sql})::jsonb` : expression.sql})`;
+
 export const formulaSqlOk = (sqlFragment: unknown, type: FormulaSqlType, errorSql?: unknown): FormulaSqlCompileResult => {
   const valueSql = errorSql === undefined ? sqlFragment : sql`CASE WHEN ${errorSql} THEN NULL ELSE ${sqlFragment} END`;
   return { ok: true, expression: { sql: valueSql, type, ...(errorSql === undefined ? {} : { errorSql }) } };

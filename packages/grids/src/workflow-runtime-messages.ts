@@ -1,10 +1,12 @@
-import { i18n } from "@k2b/stdlib";
 import { normalizeLocale } from "@k2b/cloud/shared";
+import { i18n } from "@k2b/stdlib";
 
 export const workflowRuntimeMessages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
+      queryParametersInvalid: "Query parameters do not match their declared types. Check the step inputs.",
+      captureQuery: "Capture the complete query result for subsequent document steps. Data is read when the workflow executes.",
       tableUnavailable: "Workflow table is no longer available",
       recordReferenceRequired: ({ path }: { path: string }) => `${path} must resolve to a record`,
       recordUnavailable: "Workflow record is no longer available",
@@ -49,13 +51,19 @@ export const workflowRuntimeMessages = i18n.define({
       checkDoesNotPass: ({ index }: { index: number }) => `Check ${index} does not currently pass.`,
       atomicPlan: ({ checks, changes }: { checks: number; changes: number }) =>
         `Run ${checks} check(s), then commit ${changes} record change(s) atomically. Record state can change before execution; checks run again while locks are held.`,
-      generateDocument: ({ name }: { name: string }) => `Generate "${name}" for one record`,
+      generateDocument: ({ name }: { name: string }) => `Generate "${name}"`,
+      plannedDocumentData: "Source Documents are planned; their saved values can only be checked during execution.",
+      plannedSourceVersions:
+        "Source versions will be taken from the query capture and checked during execution; this dry-run does not prove source freshness.",
       createDocumentLink: ({ expiresIn }: { expiresIn: string }) => `Create a ${expiresIn} download link for one document`,
       sendEmail: ({ name, count }: { name: string; count: number }) => `Send "${name}" to ${count} recipient(s)`,
       httpFailed: ({ status }: { status: number }) => `httpRequest returned HTTP ${status}`,
       httpOutcomeUnknown: "A previous HTTP attempt may have reached the remote service; it is not repeated automatically.",
     },
     de: {
+      queryParametersInvalid: "Die Abfrageparameter entsprechen nicht ihren deklarierten Typen. Prüfe die Eingaben des Schritts.",
+      captureQuery:
+        "Das vollständige Abfrageergebnis für spätere Dokumentschritte speichern. Die Daten werden beim Ausführen des Workflows gelesen.",
       tableUnavailable: "Die Workflow-Tabelle ist nicht mehr verfügbar",
       recordReferenceRequired: ({ path }) => `${path} muss in einen Datensatz aufgelöst werden`,
       recordUnavailable: "Der Workflow-Datensatz ist nicht mehr verfügbar",
@@ -103,7 +111,10 @@ export const workflowRuntimeMessages = i18n.define({
       checkDoesNotPass: ({ index }) => `Prüfung ${index} ist derzeit nicht erfüllt.`,
       atomicPlan: ({ checks, changes }) =>
         `${checks === 1 ? "Eine Prüfung ausführen" : `${checks} Prüfungen ausführen`} und anschließend ${changes === 1 ? "eine Datensatzänderung" : `${changes} Datensatzänderungen`} atomar übernehmen. Der Zustand der Datensätze kann sich vor der Ausführung ändern; die Prüfungen werden unter Sperre erneut ausgeführt.`,
-      generateDocument: ({ name }) => `„${name}“ für einen Datensatz erzeugen`,
+      generateDocument: ({ name }) => `„${name}“ erzeugen`,
+      plannedDocumentData: "Quelldokumente sind geplant; ihre gespeicherten Werte können erst bei der Ausführung geprüft werden.",
+      plannedSourceVersions:
+        "Quellversionen werden aus der erfassten Abfrage übernommen und bei Ausführung geprüft; dieser Testlauf bestätigt keine Aktualität.",
       createDocumentLink: ({ expiresIn }) => `Einen für ${expiresIn} gültigen Downloadlink für ein Dokument erstellen`,
       sendEmail: ({ name, count }) => `„${name}“ an ${count === 1 ? "einen Empfänger" : `${count} Empfänger`} senden`,
       httpFailed: ({ status }) => `httpRequest hat HTTP ${status} zurückgegeben`,

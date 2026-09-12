@@ -61,6 +61,7 @@ const valueUsesJoinAlias = (value: unknown, aliases: ReadonlySet<string>): boole
   if (Array.isArray(value)) return value.some((item) => valueUsesJoinAlias(item, aliases));
   if (!value || typeof value !== "object") return false;
   const node = value as Record<string, unknown>;
+  if (node.kind === "scoped" && typeof node.joinAlias === "string" && aliases.has(normalizeRefKey(node.joinAlias))) return true;
   if (node.kind === "field" && typeof node.fieldId === "string") {
     const scope = parseQualifiedIdentifierRef(node.fieldId)?.scope;
     if (scope && aliases.has(normalizeRefKey(scope))) return true;
@@ -356,6 +357,9 @@ export const compileDslQueryPlanToSql = (
   if (viewScope.condition) conditions.push(viewScope.condition);
   if (plan.wherePredicate) {
     const compiled = compileWherePredicate(plan.wherePredicate, baseFields, {
+      joinAliases,
+      fieldsByTableId: options.fieldsByTableId,
+      recordSourcesByTableId: options.recordSourcesByTableId,
       timeZone: options.timeZone,
       computedFieldSql: options.computedFieldSql,
       resolveField: resolveFormulaField,
@@ -375,7 +379,7 @@ export const compileDslQueryPlanToSql = (
     sql: sql`
       SELECT ${joinFragments(selectFragments, sql`, `)}
       FROM ${dslRecordRelation(options)}
-      JOIN grids.tables t ON t.id = r.table_id AND t.deleted_at IS NULL
+      JOIN grids.tables t ON t.id = r.table_id AND t.id = ${plan.tableId}::uuid AND t.deleted_at IS NULL
       JOIN grids.bases b ON b.id = t.base_id AND b.deleted_at IS NULL
       ${joinFragments(joinSql, sql` `)}
       WHERE ${where}

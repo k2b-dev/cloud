@@ -117,6 +117,49 @@ const basePage = { items: [{ id: baseId, name: "Bookshop" }], total: 1, limit: 5
 const resolutionResponses = () => [jsonResponse(basePage), jsonResponse([workflow])];
 
 describe("Grids workflow CLI", () => {
+  test("financial confirmation needs an explicitly reviewed hash and never refreshes it implicitly", async () => {
+    const hash = "a".repeat(64);
+    const missingApproval = createContext(["workflow-runs", "confirm-export", runId, "Doc001"], { sha256: hash });
+    await expect(cli.run(missingApproval.ctx)).rejects.toThrow("--yes");
+    expect(missingApproval.calls).toHaveLength(0);
+    const invalidHash = createContext(["workflow-runs", "confirm-export", runId, "Doc001"], { sha256: "invalid", yes: true });
+    await expect(cli.run(invalidHash.ctx)).rejects.toThrow("SHA-256");
+    expect(invalidHash.calls).toHaveLength(0);
+    const confirmed = createContext(["workflow-runs", "confirm-export", runId, "Doc001"], { sha256: hash, yes: true }, [
+      jsonResponse({ confirmed: true }),
+    ]);
+    await cli.run(confirmed.ctx);
+    expect(confirmed.calls).toHaveLength(1);
+    expect(confirmed.calls[0]?.path).toBe(`/api/grids/workflows/runs/${runId}/document-confirmations/Doc001/confirm`);
+    expect(JSON.parse(String(confirmed.calls[0]?.init?.body))).toEqual({ sha256: hash });
+  });
+
+  test("financial preview prints all normalized rows and the explicit selection limit", async () => {
+    const rows = [
+      { businessId: "A", amount: "12.30" },
+      { businessId: "B", amount: "0.01" },
+    ];
+    const preview = {
+      receiptId: "Doc001",
+      sha256: "a".repeat(64),
+      kind: "datev-csv",
+      version: 1,
+      filename: "EXTF_test.csv",
+      number: "DATEV-1",
+      confirmedAt: null,
+      input: { destinationKey: "accounting", rows },
+      source: { capturedAt: "2026-09-11T12:00:00.000Z", rowCount: 2, selectionLimit: 2, query: "example" },
+    };
+    const request = createContext(["workflow-runs", "preview-export", runId, "Doc001"], {}, [jsonResponse(preview)]);
+    await cli.run(request.ctx);
+    expect(request.tables).toEqual([rows]);
+    expect(request.lines.join("\n")).toContain("datev-csv (profile 1): EXTF_test.csv");
+    expect(request.lines.join("\n")).toContain("limits the selection to 2 rows");
+    expect(request.lines.join("\n")).toContain(`--sha256 ${preview.sha256} --yes`);
+    expect(request.lines.join("\n")).toContain("does not submit a payment");
+    expect(request.calls).toHaveLength(1);
+  });
+
   test("advertises condition operators accepted by the workflow compiler", async () => {
     const unary = new Set(["exists", "not", "all", "any"]);
     for (const operator of Object.keys(WORKFLOW_REFERENCE.language.conditions)) {

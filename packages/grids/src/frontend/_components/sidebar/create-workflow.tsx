@@ -16,6 +16,8 @@ import { apiClient } from "../../../api/client";
 import type { PublicField as Field, PublicTable as Table } from "../../../api/public-dto";
 import { type CorrectionDraftIntent, isCorrectionPrefillFieldType, MAX_CORRECTION_PREFILL_FIELDS } from "../../../workflows/contracts";
 import { errorMessage } from "../utils/api-helpers";
+import { FinancialWorkflowStarter, financialStarterMessages } from "../workflows/FinancialWorkflowStarter";
+import { QueryExportStarter, queryExportMessages } from "../workflows/QueryExportStarter";
 import { WorkflowEditor } from "../workflows/WorkflowEditor";
 import { closeSelectionWorkflowStarter, correctionDraftWorkflowStarter, type WorkflowStarter } from "../workflows/workflow-starters";
 import type { PublicWorkflow } from "../workspace/workspace-public-state-model";
@@ -23,6 +25,7 @@ import { type SidebarMessages, sidebarMessages } from "./messages";
 
 type StarterChoice =
   | { kind: "blank" }
+  | { kind: "configured"; starter: WorkflowStarter }
   | { kind: "closeSelection"; tableId: string }
   | {
       kind: "correctionDraft";
@@ -44,6 +47,7 @@ const selectOptions = (field: Field | undefined): Array<{ id: string; label: str
 };
 
 function WorkflowStarterDialog(props: {
+  baseId: string;
   tables: Table[];
   fieldsByTable: Record<string, Field[]>;
   close: (choice?: StarterChoice) => void;
@@ -51,7 +55,13 @@ function WorkflowStarterDialog(props: {
   t: SidebarMessages;
 }) {
   const t = props.t;
-  const [starter, setStarter] = createSignal<"closeSelection" | "correctionDraft">();
+  const locale = useLocale();
+  const financialText = financialStarterMessages.resolve([locale()]).t;
+  const exportText = queryExportMessages.resolve([locale()]).t;
+  const [starter, setStarter] = createSignal<
+    "closeSelection" | "correctionDraft" | "invoiceAccounting" | "expensePayment" | "queryExport"
+  >();
+  const [configuredDirty, setConfiguredDirty] = createSignal(false);
   const storedTables = () => props.tables.filter((table) => table.kind === "stored");
   const [tableId, setTableId] = createSignal(storedTables()[0]?.id ?? "");
   const tableFields = () => props.fieldsByTable[tableId()] ?? [];
@@ -79,7 +89,7 @@ function WorkflowStarterDialog(props: {
   const snapshot = () => JSON.stringify([tableId(), typeFieldId(), correctionIntent(), typeValue(), originalFieldId(), copyFieldIds()]);
   const initialSnapshot = snapshot();
   const closeIfClean = async () => {
-    if (await confirmDiscardIfDirty(() => snapshot() !== initialSnapshot)) props.close();
+    if (await confirmDiscardIfDirty(() => configuredDirty() || snapshot() !== initialSnapshot)) props.close();
   };
   props.setDismissHandler(closeIfClean);
   return (
@@ -88,6 +98,27 @@ function WorkflowStarterDialog(props: {
       <PanelDialog.Body>
         <div class="flex flex-col gap-4">
           <Show when={!starter()}>
+            <Button variant="input" class="grids-workflow-choice" onClick={() => setStarter("queryExport")}>
+              <i class="ti ti-file-export" />
+              <span class="flex min-w-0 flex-col gap-1">
+                <span>{exportText.title}</span>
+                <span class="text-sm font-normal text-dimmed">{exportText.hint}</span>
+              </span>
+            </Button>
+            <Button variant="input" class="grids-workflow-choice" onClick={() => setStarter("invoiceAccounting")}>
+              <i class="ti ti-file-invoice" />
+              <span class="flex min-w-0 flex-col gap-1">
+                <span>{financialText.invoice}</span>
+                <span class="text-sm font-normal text-dimmed">{financialText.invoiceHint}</span>
+              </span>
+            </Button>
+            <Button variant="input" class="grids-workflow-choice" onClick={() => setStarter("expensePayment")}>
+              <i class="ti ti-transfer" />
+              <span class="flex min-w-0 flex-col gap-1">
+                <span>{financialText.expense}</span>
+                <span class="text-sm font-normal text-dimmed">{financialText.expenseHint}</span>
+              </span>
+            </Button>
             <Button variant="input" class="grids-workflow-choice" onClick={() => props.close({ kind: "blank" })}>
               <i class="ti ti-file-plus" />
               <span class="flex min-w-0 flex-col gap-1">
@@ -111,10 +142,37 @@ function WorkflowStarterDialog(props: {
             </Button>
           </Show>
           <Show when={starter()}>
-            <Button variant="ghost" class="self-start" onClick={() => setStarter(undefined)}>
+            <Button
+              variant="ghost"
+              class="self-start"
+              onClick={async () => {
+                if (await confirmDiscardIfDirty(configuredDirty)) {
+                  setConfiguredDirty(false);
+                  setStarter(undefined);
+                }
+              }}
+            >
               <i class="ti ti-arrow-left" />
               {t.changeStarter}
             </Button>
+          </Show>
+          <Show when={starter() === "invoiceAccounting" || starter() === "expensePayment"}>
+            <FinancialWorkflowStarter
+              kind={starter() === "invoiceAccounting" ? "invoiceAccounting" : "expensePayment"}
+              tables={props.tables}
+              fieldsByTable={props.fieldsByTable}
+              onDirty={() => setConfiguredDirty(true)}
+              onComplete={(value) => props.close({ kind: "configured", starter: value })}
+            />
+          </Show>
+          <Show when={starter() === "queryExport"}>
+            <QueryExportStarter
+              baseId={props.baseId}
+              tables={props.tables}
+              fieldsByTable={props.fieldsByTable}
+              onDirty={() => setConfiguredDirty(true)}
+              onComplete={(value) => props.close({ kind: "configured", starter: value })}
+            />
           </Show>
           <Show when={starter() === "closeSelection"}>
             <section class="flex flex-col gap-3">
@@ -310,6 +368,7 @@ export function createWorkflowAction(props: { baseId: string; tables: Table[]; f
     const choice = await dialogCore.open<StarterChoice | undefined>(
       (close, context) => (
         <WorkflowStarterDialog
+          baseId={props.baseId}
           tables={props.tables}
           fieldsByTable={props.fieldsByTable}
           close={close}
@@ -322,21 +381,23 @@ export function createWorkflowAction(props: { baseId: string; tables: Table[]; f
     if (!choice) return;
     const table = "tableId" in choice ? props.tables.find((candidate) => candidate.id === choice.tableId) : undefined;
     const starter =
-      choice.kind === "closeSelection" && table
-        ? closeSelectionWorkflowStarter(table, locale())
-        : choice.kind === "correctionDraft" && table
-          ? correctionDraftWorkflowStarter(
-              {
-                table,
-                intent: choice.intent,
-                typeField: { id: choice.typeFieldId },
-                typeValue: choice.typeValue,
-                originalField: { id: choice.originalFieldId },
-                copyFields: choice.copyFieldIds.map((id) => ({ id })),
-              },
-              locale(),
-            )
-          : undefined;
+      choice.kind === "configured"
+        ? choice.starter
+        : choice.kind === "closeSelection" && table
+          ? closeSelectionWorkflowStarter(table, locale())
+          : choice.kind === "correctionDraft" && table
+            ? correctionDraftWorkflowStarter(
+                {
+                  table,
+                  intent: choice.intent,
+                  typeField: { id: choice.typeFieldId },
+                  typeValue: choice.typeValue,
+                  originalField: { id: choice.originalFieldId },
+                  copyFields: choice.copyFieldIds.map((id) => ({ id })),
+                },
+                locale(),
+              )
+            : undefined;
     await dialogCore.open<void>(
       (close, context) => (
         <WorkflowEditor

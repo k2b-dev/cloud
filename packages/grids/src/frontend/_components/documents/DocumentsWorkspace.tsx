@@ -40,6 +40,7 @@ const loadPage = async (
 
 export default function DocumentsWorkspace(props: {
   baseId: string;
+  canWriteDocuments: boolean;
   documentTemplateLevels: Record<string, PermissionLevel>;
   initialBrowserPage: PublicDocumentBrowseResponse;
 }) {
@@ -72,6 +73,7 @@ export default function DocumentsWorkspace(props: {
     })),
   ];
   const canWrite = (document: PublicDocument) => {
+    if (document.templateId === null) return props.canWriteDocuments;
     const level = props.documentTemplateLevels[document.templateId] ?? "none";
     return level === "write" || level === "admin";
   };

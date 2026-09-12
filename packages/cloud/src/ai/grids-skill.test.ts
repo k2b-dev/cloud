@@ -9,6 +9,9 @@ test("Grids Skill examples use valid GQL rather than SQL or GraphQL", () => {
 });
 
 test("Grids Skill explains typed values without expanding query-chat authority", () => {
+  expect(CLOUD_GRIDS_INSTRUCTIONS).toContain("read grids-workflows before proposing query captures");
+  expect(CLOUD_GRIDS_INSTRUCTIONS).toContain("generateDocument.data/output");
+  expect(CLOUD_GRIDS_INSTRUCTIONS).toContain("generating a file does not execute a payment or import bookings");
   expect(CLOUD_GRIDS_INSTRUCTIONS).toContain("same idempotency key and unchanged input");
   expect(CLOUD_GRIDS_INSTRUCTIONS).not.toContain("is not retry-safe");
   expect(CLOUD_GRIDS_QUERY_REFERENCE).toContain("Updating a list replaces the whole list");

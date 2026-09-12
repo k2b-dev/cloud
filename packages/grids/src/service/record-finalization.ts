@@ -3,6 +3,7 @@ import { type DateContext, err, fail, ok, type Result } from "@k2b/stdlib";
 import { type SQLQuery, sql } from "bun";
 import { getRecordWritableFieldType } from "../field-types";
 import { validateObjectList } from "../field-types/object-list";
+import { fieldValidationMessages } from "../field-types/validation-messages";
 import { logAudit, type SqlClient } from "./audit";
 import { getGridsCrudMessages } from "./crud-messages";
 import { captureRecordRevision, prepareRecordMutation } from "./durable-history";
@@ -366,7 +367,7 @@ const requirements = async (
       missing.push({
         fieldId: field.id,
         fieldName: field.name,
-        message: result.error === "required" ? messages.valueRequired : result.error,
+        message: result.error === fieldValidationMessages(locale).required ? messages.valueRequired : result.error,
       });
     }
   }
@@ -812,6 +813,7 @@ export const finalizeInTransaction = async (
   const [updated] = await client<Array<Record<string, unknown>>>`
     UPDATE grids.records
     SET data = ${data}::jsonb, finalized_computed_types = ${computed.data.types}::jsonb,
+        finalized_computed_dependencies = ${computed.data.dependencies}::jsonb,
         version = ${nextVersion}, updated_by = ${params.actorId}::uuid, updated_at = now()
     WHERE id = ${params.recordId}::uuid AND table_id = ${params.tableId}::uuid
       AND deleted_at IS NULL AND finalized_at IS NULL

@@ -9,6 +9,7 @@ import {
   GridsWorkflowStepStatusSchema,
   WorkflowDiagnosticSchema,
 } from "../workflows/contracts";
+import { WorkflowDocumentConfirmationSchema } from "../workflows/query-contracts";
 import { PublicDocumentSchema } from "./document-public-contracts";
 
 export const WorkflowValidateSchema = z.object({ source: z.string().min(1).max(200_000) });
@@ -216,6 +217,7 @@ export const PublicGridsWorkflowRunSchema = z
     result: z.json().nullable(),
     error: WorkflowErrorSchema.nullable(),
     resultMessage: z.string().nullable(),
+    documentConfirmation: WorkflowDocumentConfirmationSchema.optional(),
     createdAt: z.string().datetime(),
     startedAt: z.string().datetime().nullable(),
     finishedAt: z.string().datetime().nullable(),
@@ -238,6 +240,7 @@ export const PublicGridsWorkflowStepRunSchema = z
     action: z.string().nullable(),
     status: GridsWorkflowStepStatusSchema,
     outcome: z.json().nullable(),
+    documentConfirmation: WorkflowDocumentConfirmationSchema.optional(),
     executionGeneration: z.number().int().nonnegative(),
     startedAt: z.string().datetime().nullable(),
     finishedAt: z.string().datetime().nullable(),

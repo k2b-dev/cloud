@@ -27,6 +27,7 @@ import { get as getBase } from "./bases";
 import { executePublishedCustomAppRecords } from "./custom-app-records-query";
 import { publishedCustomAppAvailability } from "./custom-app-runtime-query";
 import { get as getCustomApp } from "./custom-apps";
+import type { DocumentIssuanceActor } from "./document-issuance";
 import { hasAtLeast, hasGrantsForResource, loadCustomAppGrantsForSubject, resolveEffectivePermission } from "./permission-resolver";
 import {
   authorizeWorkflowBase,
@@ -48,6 +49,18 @@ export type GridsWorkflowActionScope = {
   principal: GridsWorkflowPrincipal;
   authorization: GridsWorkflowAuthorization;
   launcherId: string | null;
+};
+
+export const documentActorForScope = (scope: Pick<GridsWorkflowActionScope, "principal">): DocumentIssuanceActor => {
+  const serviceAccountId = scope.principal.actorServiceAccountId ?? scope.principal.serviceAccountId;
+  if (serviceAccountId)
+    return {
+      kind: "service_account",
+      serviceAccountId,
+      delegatedUserId: scope.principal.userId,
+      credentialId: scope.principal.credential?.id ?? null,
+    };
+  return scope.principal.userId ? { kind: "user", userId: scope.principal.userId } : { kind: "system" };
 };
 
 /**

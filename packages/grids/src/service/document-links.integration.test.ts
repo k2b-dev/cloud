@@ -61,12 +61,12 @@ const insertFixture = async (): Promise<DocumentLinkFixture> => {
   `;
   const artifact = await insertTestDocumentArtifact({ documentId, baseId, tableId, recordId, filename: "invoice-1.pdf" });
   await sql`
-    INSERT INTO grids.documents (
+    INSERT INTO grids.documents (primary_artifact_key,
       id, short_id, template_id, snapshot_id, base_id, table_id, record_id,
       document_number, filename, tags, template_snapshot, render_data,
       renderer_kind, renderer_version, template_revision, issued_actor
     )
-    VALUES (
+    VALUES ('pdf',
       ${documentId}::uuid,
       ${shortId("D")},
       ${templateId}::uuid,
@@ -101,6 +101,19 @@ describe("document links integration", () => {
     try {
       const document = await getDocument(fixture.documentId);
       if (!document) throw new Error("Fixture Document missing");
+
+      const rejectedExport = await createDocumentLink({
+        document: {
+          ...document,
+          primaryArtifactKey: "csv",
+          artifacts: [{ ...document.artifacts[0]!, key: "csv", mimeType: "text/csv" }],
+        },
+        input: { expiresIn: "30d" },
+        actorId: null,
+      });
+      expect(rejectedExport.ok).toBe(false);
+      if (!rejectedExport.ok) expect(rejectedExport.error.code).toBe("BAD_INPUT");
+      expect(await listDocumentLinksForDocument(document.id)).toEqual([]);
 
       const created = await createDocumentLink({
         document,

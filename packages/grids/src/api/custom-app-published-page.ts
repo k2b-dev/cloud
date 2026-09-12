@@ -3,7 +3,6 @@ import { projectPublishedRecords } from "../api/custom-app-public-dto";
 import { resolvePublishedCustomAppRuntime } from "../api/custom-app-published-runtime";
 import { projectDocuments } from "../api/documents-api-shared";
 import { toPublicForm } from "../api/form-api-shared";
-import { toPublicGqlResponse } from "../api/gql-public";
 import { accessActorUser, actorViewerFor, gridsAccessContext } from "../api/permissions";
 import {
   type PublicField,
@@ -55,6 +54,7 @@ import { executePublishedCustomAppRecords } from "../service/custom-app-records-
 import { executePublishedCustomAppQuery, publishedCustomAppAvailability } from "../service/custom-app-runtime-query";
 import { isExclusiveFormChild, MAX_INLINE_CREATES_PER_FIELD, MAX_INLINE_CREATES_PER_SUBMISSION } from "../service/form-submission";
 import type { PublicRenderableForm } from "../service/forms";
+import { toPublicGqlResponse } from "../service/gql-public-result";
 import { projectPublicIds, resolvePublicId, resolvePublicIds } from "../service/public-resources";
 import { scannerLauncherPromptInputSources } from "../workflows/contracts";
 
@@ -474,7 +474,7 @@ export async function loadPublishedCustomAppPage<T extends AuthContext>(c: impor
         block.id,
         documentSummaries.flatMap((documentSummary, index) => {
           const document = projectedDocuments[index];
-          return document && allowed.has(documentSummary.templateId)
+          return document && documentSummary.templateId !== null && allowed.has(documentSummary.templateId)
             ? [
                 {
                   ...document,

@@ -60,7 +60,7 @@ Use the shared [formula reference](/app/grids/help/grids-formulas) for syntax, e
 
 Choose **Object list** for items without their own permissions or lifecycle; otherwise use a Relation. Expand **Rules and calculation** for constraints or formulas using sibling columns. Selection columns and regex constraints are input-only. Nested objects, relations, and lists are not allowed inside a row.
 
-Add, remove, or reorder rows in the editor. Lists show 25 rows per page; paging preserves edits. Valid rows retain their calculation previews while another row is incomplete. Saving validates and replaces the whole list; stale versions cannot overwrite newer edits. Defaults allow 0–100 rows; hard limits are 1,000 rows, 200 columns, and 256 KiB.
+Edit rows across 25-row pages without losing changes or valid previews. Saving validates and replaces the list with version protection. Default: 0–100 rows; limits: 1,000 rows, 200 columns, 256 KiB. Removed columns are hidden in drafts without rewriting stored history. Columns containing finalized values cannot be removed.
 
 Use `LIST_SUM(Items, 'Amount')` for a total. `LIST_AVG`, `LIST_MIN`, and `LIST_MAX` use the same arguments; `LIST_COUNT(Items)` counts rows. An empty list sums/counts to zero; other reductions and a missing list return null. Finalization freezes rows and calculated values together, preserving exact amounts and types.
 
@@ -78,13 +78,13 @@ If another user or tab changes a record before your edit is saved, Grids rejects
 
 Moving a record to trash is reversible. Restoring it creates a new history event; it does not erase the deletion event.
 
-Files have a separate lifecycle from their current field placement. **Replace** swaps the current attachment atomically. **Remove from record** detaches it and records the actor, time, field, and immutable file metadata in history. A protected revision or generated artifact can retain the exact bytes after detachment; an unprotected file can be cleaned up. Removing an attachment is therefore not a promise of physical erasure or permanent retention, and Grids does not claim that file history alone establishes legal compliance.
+**Replace** swaps an attachment atomically. **Remove from record** detaches it and logs the actor, time, field and immutable file metadata. Protected revisions or artifacts retain its bytes; unprotected files may be cleaned up. Detachment promises neither physical erasure nor permanent retention. File history alone does not establish legal compliance.
 
 ### Keep durable record versions
 
-A Base admin can open **Table settings → History and protection** and enable **Durable history** for a stored table. Enabling is permanent. It creates a baseline of the records that exist at that moment, then keeps every later create, update, trash, restore, Relation, and File state as an append-only version.
+A Base admin can enable **Durable history** in **Table settings → History and protection**. This permanent opt-in captures existing records, then appends every create, update, trash, restore, Relation and File state.
 
-The baseline is the earliest state Grids can prove. It does not reconstruct changes from before activation. Larger tables protect their baseline in resumable batches; normal writes remain available and are captured atomically while that baseline is running.
+The baseline cannot reconstruct earlier changes. Large tables use resumable batches; ordinary writes remain available and are captured atomically throughout.
 
 Readers of a current Record can open **Versions** in its detail panel. A version shows the field meanings that applied then and can download the exact files retained by that version. Durable history increases storage use, has no disable action, and is not by itself a claim of legal or regulatory compliance. It is not exposed through normal Record lists or Custom Apps.
 
@@ -95,11 +95,13 @@ After Durable History has finished its baseline, a Base admin can enable **Recor
 - **Direct:** someone with Write access can finalize the Record themselves.
 - **Four-eyes:** someone with Write access requests Finalization for the exact current Record version. A different person must still have Write access and be a current member of the configured approver group to approve and finalize it.
 
-Choosing an approver group does not grant access. The mode and group are stored atomically when Finalization is enabled, so a Table intended for Four-eyes review is never briefly available in Direct mode. Changing the mode or approver group invalidates open requests so that an old review cannot authorize work under a new policy. Changing values, Relations, attached Files, or moving the Record through trash invalidates its request; submit the current state again. Request, approval, rejection, and the final Record lock remain visible in audit history.
+The approver group grants no access. Mode and group activate atomically, without an interim Direct mode. Policy changes invalidate open requests. Changed values, Relations, Files, trash state, or live field definitions also require a new request. This includes field names: the reviewer approves the whole record's meaning, not only its totals. Requests, decisions, and finalization remain in audit history.
 
 Each request has a short public ID. CLI approval and rejection require that exact ID, so a confirmation can never apply to a newer replacement request.
 
 Finalization checks required fields, assigns **On finalization** IDs, freezes typed formula, lookup, rollup and list results, then locks the Record atomically. Exact decimals remain usable for arithmetic. Fields, Relations, Files, trash state and final numbers cannot change. Retries return the same Record without allocating another number.
+
+Only captured calculations are historical values. Fields added later, and older finalizations without captures, have no saved result. Grids does not reconstruct them using current formulas. Do not interpret missing results as zero or use incomplete totals for financial exports.
 
 Before the first record is finalized, an admin can disable the feature after changing all finalization-assigned ID fields back to **On record creation**. After the first final record, the table setting is permanent. Grids does not add invoice, cancellation, correction, or compliance semantics; model those with ordinary fields, Relations, and Workflows.
 

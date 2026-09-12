@@ -11,6 +11,14 @@ test("percent: fraction range 0..1", () => {
   expect(percentHandler.validate(0.5, { range: "fraction" }, false)).toEqual({ ok: true, value: 0.5 });
   expect(percentHandler.validate(2, { range: "fraction" }, false).ok).toBe(false);
 });
+test("percent: decimal ties round like PostgreSQL numeric without binary floating point drift", () => {
+  for (const value of [1.075, "1.075", 2.675, "2.675"]) {
+    expect(percentHandler.validate(value, { decimals: 2 }, false)).toEqual({ ok: true, value: Number(value) < 2 ? 1.08 : 2.68 });
+  }
+  for (const value of [true, [], {}, " ", "NaN", "Infinity"]) {
+    expect(percentHandler.validate(value, {}, false).ok).toBe(false);
+  }
+});
 
 // ── duration ──────────────────────────────────────────────────────
 test("duration: plain seconds", () => {

@@ -114,7 +114,7 @@ For Assistant discovery, `grids.gql.context` keeps the `fields` catalog compact.
 ### Generate documents and evidence
 
 - Generate documents or PDFs from reviewed templates and record data.
-- Download exact stored PDF bytes for completed Documents. **Generate again** creates a new immutable Document.
+- Download the exact stored primary file or an additional artifact of a completed Document. `primaryArtifactKey` identifies the main file and its MIME type determines the format. Public links share only a primary PDF. **Generate again** creates a new immutable Document.
 - If generation has an uncertain result, keep its dialog open and retry that
   attempt. Closing loses the retry context; check All documents before creating
   another Document.
@@ -233,6 +233,12 @@ participation without exposing group membership. Public apps receive
 `@auth.id = null` and `@auth.subjects = []`; Workflow actions still require an
 authenticated account.
 
+GQL membership predicates also accept joined fields, for example
+`oneof(cost.Responsible, @auth.subjects)`. They retain the direct field's typed
+values and the joined table's access checks. For stored tables,
+`Receipts != null` checks for current attachments; `Receipts = null` checks for
+none. Combined-table file presence is not supported.
+
 ## How Grids fits Cloud
 
 Grids owns its bases, schema, records, queries, views, forms, dashboards,
@@ -323,9 +329,14 @@ Run `cld grids help` for bases, schema, records, views, forms, Custom Apps,
 documents, templates, and workflows. Run `cld grids <area> <command> --help`
 before changing schema, data, access, or automation.
 
-Document automation is available through `documents renderers|list|list-by-template|browse|by-record|generate|get|download|download-artifact`. Every completed Document belongs to one template and Record and uses the same API shape, whether its renderer produces only a PDF or PDF plus structured artifacts. Generation requires Base Write and an explicit stable idempotency key; reads and artifact downloads require Base Read. Public resource arguments use six-character IDs, never internal UUIDs. Base- and table-scoped evidence packages include the covered Documents and their exact artifacts.
+Document automation is available through `documents renderers|list|list-by-template|browse|by-record|generate|get|download|download-artifact`. Template-generated Documents bind a template and Record; workflow Documents can instead use a captured GQL result containing multiple records or aggregates. Both use the same immutable Document and artifact API. Workflow Documents expose a `dataSnapshot` summary with row count and capture time, not the captured rows. Output can be PDF, CSV, JSON, XML or a supported financial profile. Template generation requires Base Write and an explicit stable idempotency key; reads and artifact downloads require Base Read. Public resource arguments use six-character IDs, never internal UUIDs. Base- and table-scoped evidence packages include the covered Documents and their exact artifacts.
 
 ## Deployment requirements
+
+The historical alpha workflow reset refuses to run when retained documents
+reference runs or stored workflow profiles exist. Do not remove the migration
+ledger to force a reset: such a schema change needs an explicit preserving
+migration. Normal restarts retain the applied workflow schema version.
 
 Record events are committed in PostgreSQL before background publication.
 Workflow dispatch failures retry up to 20 times and remain in PostgreSQL for

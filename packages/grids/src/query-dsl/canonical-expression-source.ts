@@ -188,7 +188,7 @@ export const formulaSource = (
 ): { ok: true; text: string } | { ok: false; diagnostic: DslResolverDiagnostic } => {
   switch (expr.kind) {
     case "literal":
-      return { ok: true, text: gqlLiteralSource(expr.value) };
+      return { ok: true, text: expr.numericSource ?? gqlLiteralSource(expr.value) };
     case "field":
       return resolveFormulaFieldRef(expr.fieldId, scope, options);
     case "call":
@@ -205,11 +205,20 @@ const formulaCallSource = (
   scope: CanonicalScope,
   options: FormulaPrintOptions,
 ): { ok: true; text: string } | { ok: false; diagnostic: DslResolverDiagnostic } => {
+  if (expr.fn === "@" && expr.args.length === 1 && expr.args[0]?.kind === "literal" && typeof expr.args[0].value === "string") {
+    return { ok: true, text: `@${expr.args[0].value}` };
+  }
   const args: string[] = [];
   const fieldArg = expr.args[0]?.kind === "field" ? fieldForFormulaFieldRef(expr.args[0].fieldId, scope, options) : null;
   if (fieldArg && !fieldArg.ok) return fieldArg;
   for (const [index, arg] of expr.args.entries()) {
-    if (index > 0 && SELECT_MEMBERSHIP_FUNCTIONS.has(expr.fn) && fieldArg?.ok && fieldArg.field && arg.kind === "literal") {
+    if (
+      index > 0 &&
+      SELECT_MEMBERSHIP_FUNCTIONS.has(expr.fn) &&
+      fieldArg?.ok &&
+      fieldArg.field?.type === "select" &&
+      arg.kind === "literal"
+    ) {
       const stable = canonicalSelectValue(fieldArg.field, arg.value);
       if (!stable.ok) return stable;
       args.push(gqlLiteralSource(stable.value));
@@ -264,11 +273,11 @@ const stableComparisonText = (
   if (leftField && !leftField.ok) return leftField;
   const rightField = expr.right.kind === "field" ? fieldForFormulaFieldRef(expr.right.fieldId, scope, options) : null;
   if (rightField && !rightField.ok) return rightField;
-  if (leftField?.ok && leftField.field && expr.right.kind === "literal") {
+  if (leftField?.ok && leftField.field?.type === "select" && expr.right.kind === "literal") {
     const stable = canonicalSelectValue(leftField.field, expr.right.value);
     return stable.ok ? { ok: true, leftText, rightText: gqlLiteralSource(stable.value) } : stable;
   }
-  if (rightField?.ok && rightField.field && expr.left.kind === "literal") {
+  if (rightField?.ok && rightField.field?.type === "select" && expr.left.kind === "literal") {
     const stable = canonicalSelectValue(rightField.field, expr.left.value);
     return stable.ok ? { ok: true, leftText: gqlLiteralSource(stable.value), rightText } : stable;
   }

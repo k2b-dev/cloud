@@ -75,7 +75,7 @@ export const compileViewSourceRecordScope = (
     condition: sql`r.id IN (
       SELECT r.id
       FROM ${dslRecordRelation(options)}
-      JOIN grids.tables t ON t.id = r.table_id AND t.deleted_at IS NULL
+      JOIN grids.tables t ON t.id = r.table_id AND t.id = ${plan.tableId}::uuid AND t.deleted_at IS NULL
       JOIN grids.bases b ON b.id = t.base_id AND b.deleted_at IS NULL
       WHERE ${where}
       ORDER BY ${orderBy}

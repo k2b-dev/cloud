@@ -493,7 +493,7 @@ export const documentCommands = [
       filename: flag.string({ description: "Optional generated filename override" }),
       idempotencyKey: flag.string({ name: "idempotency-key", description: "Required stable retry key" }),
       tag: flag.stringList({ description: "Generated document tag. Repeatable." }),
-      out: flag.string({ description: "Output PDF path" }),
+      out: flag.string({ description: "Output file path" }),
     },
     examples: [
       "cld grids documents generate Bookshop Invoices Invoice --record <record-id> --idempotency-key invoice-2026-001 --out invoice.pdf",
@@ -516,9 +516,9 @@ export const documentCommands = [
     },
   }),
   command("documents download", {
-    summary: "Download a generated document PDF from its stored snapshot",
+    summary: "Download a generated document's stored primary file",
     args: { document: arg.required({ description: "Document public id" }) },
-    flags: { out: flag.string({ description: "Output PDF path" }) },
+    flags: { out: flag.string({ description: "Output file path" }) },
     async run({ ctx, args, flags }) {
       await writeApiFile(
         ctx,

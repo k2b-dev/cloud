@@ -77,7 +77,7 @@ export const buildTrustedGqlResolverContext = async (
     baseId: string;
     currentTableId?: string;
     ast: DslQueryAst;
-    purpose: "custom-app-render" | "document-template-render" | "saved-view-render";
+    purpose: "custom-app-render" | "document-template-render" | "saved-view-render" | "workflow-query";
     client?: SqlClient;
   },
   loaders: TrustedGqlResolverContextLoaders = params.client ? transactionLoaders(params.client) : defaultLoaders,
@@ -93,7 +93,7 @@ export const buildTrustedGqlResolverContext = async (
   const viewsCatalog = needsDslViewCatalog(params.ast) ? await loaders.listViewsByBase(params.baseId) : [];
   const currentTable = params.currentTableId ? dslTables.find((table) => table.id === params.currentTableId) : undefined;
   const fieldTableIds =
-    viewsCatalog.length > 0
+    viewsCatalog.length > 0 || params.purpose === "workflow-query"
       ? dslTables.map((table) => table.id)
       : collectDslFieldTableIds({
           ast: params.ast,

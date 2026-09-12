@@ -85,7 +85,7 @@ const document = {
   createdAt: "2026-01-01T00:00:00.000Z",
 };
 
-let baseLevel: "none" | "read" | "write" = "none";
+let baseLevel: "none" | "read" | "write" | "admin" = "none";
 
 describe("loadGridsWorkspaceState — document templates use Base access", () => {
   beforeEach(() => {
@@ -135,6 +135,23 @@ describe("loadGridsWorkspaceState — document templates use Base access", () =>
   });
 
   afterEach(() => mock.restore());
+
+  test("All documents derives workflow-document actions from Base write access", async () => {
+    spyOn(gridsService.document, "browseDocumentsForBase").mockResolvedValue({ path: [], folders: [], items: [] });
+    spyOn(gridsService.customApp, "listSummariesByBase").mockResolvedValue([]);
+    for (const level of ["read", "write", "admin"] as const) {
+      baseLevel = level;
+      const state = await loadWorkspaceState({
+        user: { id: "44444444-4444-4444-8444-444444444444", memberofGroupIds: [] },
+        baseShortId: base.shortId,
+        href: "http://localhost/app/grids/BASE01/documents",
+        documentsRequested: true,
+      });
+      expect(state.kind).toBe("ok");
+      if (state.kind !== "ok") throw new Error("Missing document workspace");
+      expect(state.route).toMatchObject({ kind: "documents", canWriteDocuments: level !== "read" });
+    }
+  });
 
   test("rejects a document template route without Base read access", async () => {
     const state = await loadWorkspaceState({

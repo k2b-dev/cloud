@@ -13,7 +13,6 @@
  * CLI, or a browser.
  */
 
-import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { toPgUuidArray } from "@k2b/cloud/services";
 import type { WorkflowInvocationMode, WorkflowInvocationReceipt, WorkflowJsonValue } from "@k2b/cloud/workflows";
 import {
@@ -23,6 +22,7 @@ import {
   requestWorkflowRunCancel,
   type WorkflowStepSummary,
 } from "@k2b/cloud/workflows/store";
+import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { sql } from "bun";
 import type {
   GridsWorkflowChannel,
@@ -34,6 +34,7 @@ import type {
   GridsWorkflowStepRun,
 } from "../workflows/contracts";
 import { toWorkflowRevision } from "../workflows/contracts";
+import { documentConfirmationFromDependency } from "../workflows/query-contracts";
 import type { SqlClient } from "./audit";
 import { logAudit } from "./audit";
 import { parseJsonbRow } from "./jsonb";
@@ -293,19 +294,23 @@ const asNumbers = (value: WorkflowJsonValue): number[] =>
 const asPath = (value: WorkflowJsonValue): Array<string | number> =>
   Array.isArray(value) ? value.flatMap((item) => (typeof item === "string" || typeof item === "number" ? [item] : [])) : [];
 
-const mapStepRun = (runId: string, step: WorkflowStepSummary): GridsWorkflowStepRun => ({
-  runId,
-  key: step.stepKey,
-  sourcePath: asPath(step.sourcePath),
-  iterationPath: asNumbers(step.iterationPath),
-  kind: step.kind,
-  action: step.action,
-  status: step.state as GridsWorkflowStepRun["status"],
-  outcome: redactStepOutcome(unwrapStepOutcome(step.outcome)),
-  executionGeneration: step.attempt,
-  startedAt: toIsoString(step.startedAt),
-  finishedAt: step.finishedAt ? toIsoString(step.finishedAt) : null,
-});
+const mapStepRun = (runId: string, step: WorkflowStepSummary): GridsWorkflowStepRun => {
+  const confirmation = step.state === "waiting" ? documentConfirmationFromDependency(step.dependency) : undefined;
+  return {
+    runId,
+    key: step.stepKey,
+    sourcePath: asPath(step.sourcePath),
+    iterationPath: asNumbers(step.iterationPath),
+    kind: step.kind,
+    action: step.action,
+    status: step.state as GridsWorkflowStepRun["status"],
+    outcome: redactStepOutcome(unwrapStepOutcome(step.outcome)),
+    ...(confirmation ? { documentConfirmation: confirmation } : {}),
+    executionGeneration: step.attempt,
+    startedAt: toIsoString(step.startedAt),
+    finishedAt: step.finishedAt ? toIsoString(step.finishedAt) : null,
+  };
+};
 
 export const listWorkflowStepRunsPage = async (runId: string): Promise<{ items: GridsWorkflowStepRun[]; truncated: boolean }> => {
   const steps = await listWorkflowRunSteps(runId);
@@ -318,6 +323,17 @@ export const listWorkflowStepRunsPage = async (runId: string): Promise<{ items: 
 export const getWorkflowStepRun = async (runId: string, stepKey: string): Promise<GridsWorkflowStepRun | null> => {
   const [step] = await listWorkflowRunSteps(runId, { stepKeys: [stepKey] });
   return step ? mapStepRun(runId, step) : null;
+};
+
+/** Caller authorizes the run first. No query rows or journal payloads escape. */
+export const getWorkflowDocumentConfirmation = async (runId: string) => {
+  const [step] = await sql<Array<{ dependency: unknown }>>`
+    SELECT dependency FROM workflows.step_outcome
+    WHERE run_id = ${runId}::uuid AND state = 'waiting'
+      AND dependency->>'kind' = 'grids.document-confirmation'
+    ORDER BY started_at, step_key LIMIT 1
+  `;
+  return step ? documentConfirmationFromDependency(step.dependency) : undefined;
 };
 
 // ─── The scope an action or a value resolver works in ────────────────────────

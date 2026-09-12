@@ -185,8 +185,12 @@ export const validateObjectList = (
   const tooLarge = () => fail(t.bytes({ count: OBJECT_LIST_LIMITS.bytes }));
   for (const [index, item] of raw.entries()) {
     if (!isRow(item)) return fail(t.row({ row: index + 1, detail: t.object }));
-    for (const key in item)
-      if (Object.hasOwn(item, key) && !ids.has(key)) return fail(t.row({ row: index + 1, detail: t.unknownField({ field: key }) }));
+    // Stored rows can retain columns removed from the current schema. Project
+    // the active columns below without rewriting history; new writes are strict.
+    if (!options.stored) {
+      for (const key in item)
+        if (Object.hasOwn(item, key) && !ids.has(key)) return fail(t.row({ row: index + 1, detail: t.unknownField({ field: key }) }));
+    }
     inputBytes += 2 + (index > 0 ? 1 : 0);
     const row: Record<string, unknown> = {};
     for (const [fieldIndex, field] of config.fields.entries()) {
@@ -222,7 +226,10 @@ export const validateObjectList = (
         fields: row,
         slugToId: calculations.plan.references,
       });
-      if (isFormulaError(value)) return calculationFailure(value.code === "DIV_ZERO" ? t.divideByZero : value.code);
+      if (isFormulaError(value))
+        return calculationFailure(
+          value.code === "DIV_ZERO" ? t.divideByZero : value.code === "VALUE_TOO_LARGE" ? t.calculationTooLarge : t.calculationFailed,
+        );
       const result = objectListScalarHandlers[field.type].validate(value, field.config, field.required, options.context);
       if (!result.ok) return calculationFailure(result.error);
       row[field.id] = result.value;

@@ -87,6 +87,34 @@ describe("collectHydratedRelationTargetIds", () => {
 });
 
 describe("enrichRecordsWithFormulas — basic evaluation", () => {
+  test("invalid lists retain their editable values with separate errors and poison dependent calculations", () => {
+    const list = mkField({
+      id: "items",
+      shortId: "Items1",
+      type: "object_list",
+      config: {
+        fields: [{ id: "Amount", name: "Amount", type: "number", required: true, config: {} }],
+      },
+    });
+    const total = mkFormula("total", "Total1", "LIST_SUM(Items1, 'Amount')");
+    const record = mkRecord("record", { items: [{ Amount: "invalid" }] });
+    enrichRecordsWithFormulas([record], [list, total]);
+    expect(record.data.items).toEqual([{ Amount: "invalid" }]);
+    expect(record.fieldErrors?.items).toBeString();
+    expect(record.data.total).not.toBe("0");
+    expect(String(record.data.total)).toStartWith("#");
+    enrichRecordsWithComputedColumns(
+      [record],
+      [list],
+      [{ kind: "computed", id: "virtual", label: "Virtual", expression: "LIST_SUM(Items1, 'Amount')" }],
+    );
+    expect(String(record.data.virtual)).toStartWith("#");
+    record.data.items = [{ Amount: "12.30" }];
+    enrichRecordsWithFormulas([record], [list, total]);
+    expect(record.fieldErrors).toBeUndefined();
+    expect(record.data.total).toBe("12.3");
+  });
+
   test("virtual formulas calculate without changing frozen list cells or stored formula snapshots", () => {
     const list = mkField({
       id: "items",

@@ -344,13 +344,17 @@
         "@k2b/sync": "catalog:",
         "@k2b/ui": "workspace:*",
         "@stackforge-eu/factur-x": "1.2.0",
+        "@xmldom/xmldom": "0.9.12",
         "decimal.js": "10.6.0",
         "hono": "catalog:",
         "hono-openapi": "catalog:",
+        "ibantools": "4.5.4",
         "juice": "catalog:",
         "lean-qr": "catalog:",
+        "libxml2-wasm": "0.6.0",
         "postcss": "catalog:",
         "solid-js": "catalog:",
+        "yaml": "catalog:",
         "zod": "catalog:",
         "zxing-wasm": "3.1.2",
       },
@@ -1920,6 +1924,8 @@
     "http_ece": ["http_ece@1.2.0", "", {}, "sha512-JrF8SSLVmcvc5NducxgyOrKXe3EsyHMgBFgSaIUGmArKe+rwr0uphRkRXvwiom3I+fpIfoItveHrfudL8/rxuA=="],
 
     "https-proxy-agent": ["https-proxy-agent@7.0.6", "", { "dependencies": { "agent-base": "^7.1.2", "debug": "4" } }, "sha512-vK9P5/iUfdl95AI+JVyUuIcVtd4ofvtrOr3HNtM2yxC9bnMbEdp3x01OhQNnjb8IJYi38VlTE3mBXwcfvywuSw=="],
+
+    "ibantools": ["ibantools@4.5.4", "", {}, "sha512-6jX1gh4aH6XH+o0ey+wtkMTzkcvsEta7DakIOZSng9voZYpMw3U+gK1+tZChk3aRcPcloEt0NOzksjaRZiqXbw=="],
 
     "ical-generator": ["ical-generator@10.2.0", "", { "peerDependencies": { "@touch4it/ical-timezones": ">=1.6.0", "@types/luxon": ">= 1.26.0", "@types/mocha": ">= 8.2.1", "@types/node": "*", "dayjs": ">= 1.10.0", "luxon": ">= 1.26.0", "moment": ">= 2.29.0", "moment-timezone": ">= 0.5.33", "rrule": ">= 2.6.8" }, "optionalPeers": ["@touch4it/ical-timezones", "@types/luxon", "@types/mocha", "@types/node", "dayjs", "luxon", "moment", "moment-timezone", "rrule"] }, "sha512-XR5FsiDWCsz5MwBwMA/sQqR3A9H240xkXIeXOabV7uNAiieP+TA9rleVvlwPLRXMz+CXME8cGuDd7cdnE5At6w=="],
 

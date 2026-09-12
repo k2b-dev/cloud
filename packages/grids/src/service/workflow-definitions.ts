@@ -20,7 +20,6 @@
  * has no activation to carry it.
  */
 
-import { err, fail, ok, type Result } from "@k2b/stdlib";
 import type { WorkflowBoundPlan, WorkflowDiagnostic } from "@k2b/cloud/workflows";
 import type { WorkflowActivationInput } from "@k2b/cloud/workflows/store";
 import {
@@ -29,6 +28,7 @@ import {
   renameWorkflow as renameKernelWorkflow,
   setWorkflowEnabled,
 } from "@k2b/cloud/workflows/store";
+import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { type SQL, sql } from "bun";
 import { compileAndBindGridsWorkflowSource } from "../workflows/binder";
 import type {
@@ -45,6 +45,7 @@ import { emitMetadataEvent } from "./metadata-events";
 import { insertWithShortId } from "./short-id";
 import { loadWorkflowCatalog } from "./workflow-catalog";
 import { assertWorkflowEmailTemplatesAvailable, lockWorkflowCatalogMutation } from "./workflow-catalog-mutation";
+import { workflowQueryBinder } from "./workflow-query-binding";
 import { getWorkflow } from "./workflow-read";
 import { emitWorkflowRuntimeEvent } from "./workflow-runtime-events";
 import { workflowServiceText } from "./workflow-service-messages";
@@ -81,7 +82,8 @@ const compileAndBind = async (
   source: string,
   db: SQL = sql,
 ): Promise<Result<{ plan: WorkflowBoundPlan; source: string }>> => {
-  const bound = await compileAndBindGridsWorkflowSource(source, await loadWorkflowCatalog(baseId, db));
+  const catalog = await loadWorkflowCatalog(baseId, db);
+  const bound = await compileAndBindGridsWorkflowSource(source, catalog, workflowQueryBinder(baseId, catalog, db));
   return bound.ok
     ? ok({ plan: bound.plan, source: bound.source ?? source })
     : fail(err.badInput(bound.diagnostics.map((diagnostic) => diagnostic.message).join("; ")));
@@ -91,7 +93,8 @@ export const validateWorkflowSource = async (
   baseId: string,
   source: string,
 ): Promise<{ ok: true; plan: WorkflowBoundPlan } | { ok: false; diagnostics: WorkflowDiagnostic[] }> => {
-  const bound = await compileAndBindGridsWorkflowSource(source, await loadWorkflowCatalog(baseId));
+  const catalog = await loadWorkflowCatalog(baseId);
+  const bound = await compileAndBindGridsWorkflowSource(source, catalog, workflowQueryBinder(baseId, catalog));
   return bound.ok ? { ok: true, plan: bound.plan } : bound;
 };
 

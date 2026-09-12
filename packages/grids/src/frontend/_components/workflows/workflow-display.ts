@@ -150,6 +150,7 @@ const workflowStateSummary = (value: JsonRecord, locale: string): string | null 
   }
   if (value.state !== "waiting") return null;
   const dependency = objectValue(value.dependency);
+  if (dependency?.kind === "grids.document-confirmation") return t.waitingForExportConfirmation;
   return dependency && typeof dependency.kind === "string" ? t.waitingForKind({ kind: dependency.kind }) : t.waiting;
 };
 

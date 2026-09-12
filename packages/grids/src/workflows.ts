@@ -22,11 +22,19 @@ import type { WorkflowActionContext, WorkflowActionResult, WorkflowJsonValue, Wo
 import { workflowAction } from "@k2b/cloud/workflows";
 import type { DateContext } from "@k2b/stdlib";
 import { sql } from "bun";
-import type { RecordMutationAudit, Table } from "./contracts";
+import type { Document, RecordMutationAudit, Table } from "./contracts";
+import { documentAllowsPublicLinks } from "./document-sharing";
 import { objectListRecordInputValues } from "./field-types/object-list";
 import { logAudit, type SqlClient } from "./service/audit";
-import type { DocumentIssuanceActor } from "./service/document-issuance";
+import { documentIssuanceService } from "./service/document-issuance";
 import { summarizeDocument } from "./service/document-mappers";
+import { documentServiceText } from "./service/document-messages";
+import { DocumentQueryOutputSchema } from "./service/document-query-output";
+import {
+  DocumentSourceVersionsInputSchema,
+  DocumentSourceVersionsSchema,
+  requireDocumentSourceVersions,
+} from "./service/document-source-versions";
 import {
   createDocumentForRecord,
   createDocumentLink,
@@ -44,6 +52,7 @@ import {
   inspect as inspectRecordFinalization,
   requestFinalizationInTransaction,
 } from "./service/record-finalization";
+import { publicIdsForRecords } from "./service/record-read";
 import { createInTransaction as createRecordInTransaction, updateInTransaction as updateRecordInTransaction } from "./service/record-write";
 import { get as getRecord } from "./service/records";
 import { get as getTable } from "./service/tables";
@@ -52,6 +61,7 @@ import {
   actorId,
   canAccessWorkflowRunTable,
   canExecuteRun,
+  documentActorForScope,
   GridsWorkflowActionError,
   type GridsWorkflowActionScope,
   requireExecution,
@@ -69,11 +79,27 @@ import {
   requireWorkflowTable,
   resolveWorkflowRecordValues,
 } from "./service/workflow-atomic-records";
+import { loadWorkflowCatalog } from "./service/workflow-catalog";
+import {
+  captureWorkflowDocumentSource,
+  captureWorkflowRecordSource,
+  planWorkflowDocumentSource,
+} from "./service/workflow-document-sources";
+import { captureWorkflowDocumentValues } from "./service/workflow-document-values";
 import { sendWorkflowEmail, type WorkflowEmailRecipient } from "./service/workflow-email-send";
 import { preflightWorkflowHttp, requestWorkflowHttp } from "./service/workflow-http-client";
+import { workflowQueryBinder } from "./service/workflow-query-binding";
+import { captureWorkflowQueryData } from "./service/workflow-query-data";
+import {
+  findWorkflowDocumentDataForStep,
+  persistWorkflowQueryDataInTransaction,
+  WorkflowDocumentDataReferenceSchema,
+  WorkflowQueryReferenceSchema,
+} from "./service/workflow-query-store";
 import { workflowInvocationLocale, workflowRuntimeText } from "./workflow-runtime-messages";
 import { GRIDS_WORKFLOW_ACTION_METADATA } from "./workflows/action-metadata";
 import { isCorrectionPrefillFieldType, MAX_CORRECTION_PREFILL_FIELDS } from "./workflows/contracts";
+import { resolveWorkflowQueryParameters, WorkflowQueryParametersSchema } from "./workflows/query-parameters";
 
 // ─── Shared config fragments ─────────────────────────────────────────────────
 
@@ -112,19 +138,6 @@ const viewerForScope = (scope: GridsWorkflowActionScope) => ({
   userGroups: scope.principal.groupIds,
   serviceAccountId: scope.principal.serviceAccountId,
 });
-
-const documentActorForScope = (scope: GridsWorkflowActionScope): DocumentIssuanceActor => {
-  const serviceAccountId = scope.principal.actorServiceAccountId ?? scope.principal.serviceAccountId;
-  if (serviceAccountId) {
-    return {
-      kind: "service_account",
-      serviceAccountId,
-      delegatedUserId: scope.principal.userId,
-      credentialId: scope.principal.credential?.id ?? null,
-    };
-  }
-  return scope.principal.userId ? { kind: "user", userId: scope.principal.userId } : { kind: "system" };
-};
 
 /**
  * Domain refusals are results, not exceptions.
@@ -365,6 +378,52 @@ const transaction = (ctx: WorkflowActionContext): SqlClient => {
   return ctx.tx;
 };
 
+const workflowQueryInput = async (ctx: WorkflowActionContext, rawParameters: unknown, planning = false) => {
+  const scope = await workflowRunScope(ctx);
+  await requireExecution(scope);
+  const binding = ctx.binding("$query");
+  if (
+    !binding ||
+    typeof binding !== "object" ||
+    Array.isArray(binding) ||
+    typeof binding.source !== "string" ||
+    typeof binding.schemaHash !== "string" ||
+    (binding.schemaHashVersion !== undefined &&
+      binding.schemaHashVersion !== 1 &&
+      binding.schemaHashVersion !== 2 &&
+      binding.schemaHashVersion !== 3)
+  ) {
+    throw actionError("WORKFLOW_VALUE_INVALID", runtimeText(ctx).stableBindingMissing({ path: "query" }));
+  }
+  const parameters = WorkflowQueryParametersSchema.safeParse(rawParameters ?? {});
+  if (!parameters.success) throw actionError("BAD_INPUT", runtimeText(ctx).queryParametersInvalid);
+  const resolved = await resolveWorkflowQueryParameters(
+    parameters.data,
+    async (references) => {
+      const idsByTable = new Map<string, Map<string, string>>();
+      for (const tableId of new Set(references.map((reference) => reference.tableId))) {
+        await currentTable(ctx, scope, tableId);
+        await requireTableAccess(scope, tableId, "read");
+        const ids = references
+          .filter((reference) => reference.tableId === tableId && !(planning && "planned" in reference))
+          .map((reference) => reference.recordId);
+        idsByTable.set(tableId, await publicIdsForRecords(tableId, ids));
+      }
+      return references.map((reference) => {
+        // Planned IDs remain type-checking placeholders, never SQL identities.
+        if (planning && "planned" in reference) return "REC001";
+        const id = idsByTable.get(reference.tableId)?.get(reference.recordId);
+        if (!id) throw actionError("NOT_FOUND", runtimeText(ctx).recordUnavailable);
+        return id;
+      });
+    },
+    { allowPlannedRecords: planning },
+  );
+  if (!resolved.ok) throw actionError("BAD_INPUT", runtimeText(ctx).queryParametersInvalid);
+  const schemaHashVersion: 1 | 2 | 3 = binding.schemaHashVersion === 3 ? 3 : binding.schemaHashVersion === 2 ? 2 : 1;
+  return { scope, binding: { source: binding.source, schemaHash: binding.schemaHash, schemaHashVersion }, values: resolved.values };
+};
+
 const documentTemplate = async (ctx: WorkflowActionContext, resume = false) => {
   const template = await (resume ? getStoredTemplate : getTemplate)(boundId(ctx, "template"));
   if (!template || (!resume && !template.enabled)) throw actionError("NOT_FOUND", runtimeText(ctx).documentTemplateUnavailable);
@@ -390,7 +449,7 @@ const documentTags = (tags: WorkflowJsonValue[] | undefined): string[] =>
 const linkExpiry = (value: string | undefined): "1d" | "7d" | "30d" | "90d" =>
   value === "1d" || value === "7d" || value === "30d" || value === "90d" ? value : "30d";
 
-type LinkableDocument = { id: string; baseId: string; tableId: string; templateId: string | null; recordId: string };
+type LinkableDocument = Pick<Document, "id" | "baseId" | "tableId" | "templateId" | "recordId">;
 
 const documentReferenceId = (
   ctx: WorkflowActionContext,
@@ -408,6 +467,7 @@ const documentToLink = async (ctx: WorkflowActionContext, scope: GridsWorkflowAc
   const { id } = documentReferenceId(ctx, await ctx.resolveReference(reference, "document"));
   const document = await getDocument(id);
   if (!document || document.baseId !== scope.baseId) throw actionError("NOT_FOUND", runtimeText(ctx).generatedDocumentUnavailable);
+  if (!documentAllowsPublicLinks(document)) throw actionError("BAD_INPUT", documentServiceText(invocationLocale(ctx)).publicLinksPdfOnly);
   return document;
 };
 
@@ -424,9 +484,14 @@ const plannedDocumentToLink = async (
   const { id, document: referenceDocument } = documentReferenceId(ctx, await ctx.resolveReference(reference, "document"));
   if (
     referenceDocument.planned === true &&
-    typeof referenceDocument.tableId === "string" &&
-    typeof referenceDocument.recordId === "string"
+    id.startsWith("dry-run:") &&
+    referenceDocument.kind === "document" &&
+    referenceDocument.baseId === scope.baseId &&
+    (typeof referenceDocument.tableId === "string" || referenceDocument.tableId === null) &&
+    (typeof referenceDocument.recordId === "string" || referenceDocument.recordId === null)
   ) {
+    if (referenceDocument.primaryArtifactMimeType !== "application/pdf")
+      throw actionError("BAD_INPUT", documentServiceText(invocationLocale(ctx)).publicLinksPdfOnly);
     return {
       id,
       baseId: scope.baseId,
@@ -437,6 +502,7 @@ const plannedDocumentToLink = async (
   }
   const document = await getDocument(id);
   if (!document || document.baseId !== scope.baseId) throw actionError("NOT_FOUND", runtimeText(ctx).generatedDocumentUnavailable);
+  if (!documentAllowsPublicLinks(document)) throw actionError("BAD_INPUT", documentServiceText(invocationLocale(ctx)).publicLinksPdfOnly);
   return document;
 };
 
@@ -492,9 +558,94 @@ const httpInput = (
   };
 };
 
+const workflowDocumentOutput = (document: Document) => {
+  const summary = summarizeDocument(document);
+  return {
+    id: summary.id,
+    shortId: summary.shortId,
+    baseId: summary.baseId,
+    tableId: summary.tableId,
+    recordId: summary.recordId,
+    templateId: summary.templateId,
+    number: summary.documentNumber,
+    filename: summary.filename,
+    createdAt: summary.createdAt,
+    tags: summary.tags,
+    createdBy: summary.createdBy,
+    primaryArtifactKey: summary.primaryArtifactKey,
+    renderer: summary.profile ? { kind: "profile", ...summary.profile } : { kind: "html" },
+    validationStatus: summary.validationStatus,
+    artifacts: summary.artifacts.map(({ key, filename, mimeType, sizeBytes, sha256 }) => ({ key, filename, mimeType, sizeBytes, sha256 })),
+  };
+};
+
 // ─── Actions ─────────────────────────────────────────────────────────────────
 
 export const GRIDS_WORKFLOW_ACTIONS = {
+  query: workflowAction.transactional({
+    ...GRIDS_WORKFLOW_ACTION_METADATA.query,
+    authorize: mayExecute,
+    run: (ctx, config) =>
+      attempt(async () => {
+        const tx = transaction(ctx);
+        await ctx.heartbeat();
+        const input = await workflowQueryInput(ctx, config.parameters);
+        const captured = requireOk(
+          await captureWorkflowQueryData({
+            baseId: input.scope.baseId,
+            binding: input.binding,
+            values: input.values,
+            timeZone: (await dateContext(ctx)).timeZone ?? "UTC",
+            locale: invocationLocale(ctx),
+            canReadTable: (tableId, client) => canAccessWorkflowRunTable(input.scope, tableId, "read", client),
+          }),
+        );
+        // Reading and committing are separate transactions. Recheck current
+        // credentials and all dependencies before the kernel journals success.
+        await ctx.heartbeat();
+        const currentScope = await workflowRunScope(ctx, tx);
+        await requireExecution(currentScope, tx);
+        for (const tableId of captured.payload.tableIds) await requireTableAccess(currentScope, tableId, "read", tx);
+        const output = requireOk(
+          await persistWorkflowQueryDataInTransaction(
+            {
+              baseId: currentScope.baseId,
+              runId: ctx.runId,
+              stepKey: ctx.stepKey,
+              capture: captured,
+              locale: invocationLocale(ctx),
+            },
+            tx,
+          ),
+        );
+        return { state: "succeeded", output };
+      }),
+    plan: (ctx, config) =>
+      planned(async () => {
+        const input = await workflowQueryInput(ctx, config.parameters, true);
+        const catalog = await loadWorkflowCatalog(input.scope.baseId);
+        const visible = new Set<string>();
+        for (const tableId of new Set([...catalog.tables.refs.values()].map((table) => table.id))) {
+          if (await canAccessWorkflowRunTable(input.scope, tableId, "read")) visible.add(tableId);
+        }
+        catalog.tables.refs = new Map([...catalog.tables.refs].filter(([, table]) => visible.has(table.id)));
+        const binding = requireOk(
+          await workflowQueryBinder(
+            input.scope.baseId,
+            catalog,
+            sql,
+            invocationLocale(ctx),
+            input.binding.schemaHashVersion,
+          )(input.binding.source, input.values),
+        );
+        if (binding.schemaHash !== input.binding.schemaHash)
+          throw actionError("CONFLICT", documentServiceText(invocationLocale(ctx)).workflowQuerySchemaChanged);
+        return {
+          summary: runtimeText(ctx).captureQuery,
+          output: { kind: "queryResult", id: `dry-run:${ctx.stepKey}`, planned: true },
+        };
+      }),
+  }),
   closeRecord: workflowAction.transactional({
     ...GRIDS_WORKFLOW_ACTION_METADATA.closeRecord,
 
@@ -1084,6 +1235,85 @@ export const GRIDS_WORKFLOW_ACTIONS = {
       attempt(async () => {
         await ctx.heartbeat();
         const scope = await workflowRunScope(ctx);
+        if (config.data !== undefined) {
+          if (!config.output || config.template !== undefined || config.record !== undefined)
+            throw actionError("BAD_INPUT", documentServiceText(invocationLocale(ctx)).requestInvalidJson);
+          const data =
+            typeof config.data === "string"
+              ? await ctx.resolveReference(config.data, "data")
+              : await sql.begin(async (tx) => {
+                  await ctx.heartbeat(tx);
+                  const current = await workflowRunScope(ctx, tx);
+                  await requireExecution(current, tx);
+                  await requirePermission(current, "write", tx);
+                  const input = { baseId: scope.baseId, runId: scope.runId, stepKey: ctx.stepKey, locale: invocationLocale(ctx) };
+                  const saved = requireOk(await findWorkflowDocumentDataForStep(input, tx));
+                  if (saved) return saved.reference;
+                  const source = config.data;
+                  if (!source || typeof source !== "object")
+                    throw actionError("BAD_INPUT", documentServiceText(input.locale).tableOutputDataInvalid);
+                  const capture = requireOk(
+                    "documents" in source
+                      ? await captureWorkflowDocumentSource(
+                          { source, baseId: scope.baseId, capturedAt: new Date().toISOString(), locale: input.locale },
+                          tx,
+                        )
+                      : "snapshots" in source
+                        ? await captureWorkflowRecordSource(
+                            {
+                              source,
+                              baseId: scope.baseId,
+                              capturedAt: new Date().toISOString(),
+                              locale: input.locale,
+                              canReadTable: ({ tableId }, client) => canAccessWorkflowRunTable(current, tableId, "read", client),
+                            },
+                            tx,
+                          )
+                        : captureWorkflowDocumentValues(source, new Date().toISOString(), input.locale),
+                  );
+                  return requireOk(await persistWorkflowQueryDataInTransaction({ ...input, capture }, tx));
+                });
+          const reference = WorkflowDocumentDataReferenceSchema.safeParse(data);
+          if (!reference.success) throw actionError("BAD_INPUT", documentServiceText(invocationLocale(ctx)).requestInvalidJson);
+          const output = DocumentQueryOutputSchema.safeParse(config.output);
+          if (!output.success) throw actionError("BAD_INPUT", documentServiceText(invocationLocale(ctx)).tableOutputInvalid);
+          const document = requireOk(
+            await documentIssuanceService.issueQueryDocument({
+              baseId: scope.baseId,
+              runId: scope.runId,
+              stepKey: ctx.stepKey,
+              data: reference.data,
+              output: output.data,
+              ...(config.sourceVersions === undefined
+                ? {}
+                : { sourceVersions: DocumentSourceVersionsInputSchema.parse(config.sourceVersions) }),
+              filename: typeof config.filename === "string" ? config.filename : null,
+              tags: documentTags(config.tags),
+              actor: documentActorForScope(scope),
+              idempotencyKey: ctx.effectKey,
+              locale: invocationLocale(ctx),
+              authorize: async (tableIds, client) => {
+                await ctx.heartbeat(client);
+                const current = await workflowRunScope(ctx, client);
+                await requireExecution(current, client);
+                await requirePermission(current, "write", client);
+                for (const tableId of tableIds) await requireTableAccess(current, tableId, "read", client);
+              },
+            }),
+          );
+          if ("kind" in document)
+            return {
+              state: "waiting",
+              dependency: {
+                kind: "grids.document-confirmation",
+                key: document.receiptId,
+                data: { receiptId: document.receiptId, sha256: document.sha256 },
+              },
+            };
+          return { state: "succeeded", output: workflowDocumentOutput(document) };
+        }
+        if (!config.record || !config.template || config.output !== undefined || config.sourceVersions !== undefined)
+          throw actionError("BAD_INPUT", documentServiceText(invocationLocale(ctx)).requestInvalidJson);
         const template = await documentTemplate(ctx, true);
         const table = await currentTable(ctx, scope, template.tableId);
         const record = await documentRecord(ctx, scope, table.id, config.record, "read");
@@ -1112,30 +1342,9 @@ export const GRIDS_WORKFLOW_ACTIONS = {
         // Only the summary. The Document already carries the rendered
         // record content, so copying it into the step outcome would duplicate
         // a potentially large immutable payload.
-        const summary = summarizeDocument(document);
         return {
           state: "succeeded",
-          output: {
-            id: summary.id,
-            baseId: summary.baseId,
-            tableId: summary.tableId,
-            recordId: summary.recordId,
-            templateId: summary.templateId,
-            number: summary.documentNumber,
-            filename: summary.filename,
-            createdAt: summary.createdAt,
-            tags: summary.tags,
-            createdBy: summary.createdBy,
-            renderer: summary.profile ? { kind: "profile", ...summary.profile } : { kind: "html" },
-            validationStatus: summary.validationStatus,
-            artifacts: summary.artifacts.map(({ key, filename, mimeType, sizeBytes, sha256 }) => ({
-              key,
-              filename,
-              mimeType,
-              sizeBytes,
-              sha256,
-            })),
-          } as WorkflowJsonValue,
+          output: workflowDocumentOutput(document),
         };
       }),
 
@@ -1143,7 +1352,85 @@ export const GRIDS_WORKFLOW_ACTIONS = {
       planned(async () => {
         const scope = await workflowRunScope(ctx);
         await requireExecution(scope);
+        if (config.data !== undefined) {
+          if (!config.output || config.template !== undefined || config.record !== undefined)
+            throw actionError("BAD_INPUT", documentServiceText(invocationLocale(ctx)).requestInvalidJson);
+          await requirePermission(scope, "write");
+          const reference = typeof config.data === "string" ? await ctx.resolveReference(config.data, "data") : null;
+          let plannedDocuments = 0;
+          if (typeof config.data !== "string") {
+            if ("documents" in config.data) {
+              plannedDocuments = requireOk(
+                await planWorkflowDocumentSource({ source: config.data, baseId: scope.baseId, locale: invocationLocale(ctx) }, sql),
+              ).plannedDocuments;
+            } else if ("snapshots" in config.data) {
+              requireOk(
+                await captureWorkflowRecordSource(
+                  {
+                    source: config.data,
+                    baseId: scope.baseId,
+                    capturedAt: new Date().toISOString(),
+                    locale: invocationLocale(ctx),
+                    canReadTable: ({ tableId }, client) => canAccessWorkflowRunTable(scope, tableId, "read", client),
+                  },
+                  sql,
+                ),
+              );
+            } else requireOk(captureWorkflowDocumentValues(config.data, new Date().toISOString(), invocationLocale(ctx)));
+          }
+          const plannedQuery =
+            reference &&
+            typeof reference === "object" &&
+            !Array.isArray(reference) &&
+            reference.kind === "queryResult" &&
+            reference.planned === true &&
+            typeof reference.id === "string" &&
+            reference.id.startsWith("dry-run:");
+          if (typeof config.data === "string" && !plannedQuery && !WorkflowQueryReferenceSchema.safeParse(reference).success)
+            throw actionError("BAD_INPUT", documentServiceText(invocationLocale(ctx)).requestInvalidJson);
+          if (config.sourceVersions !== undefined) {
+            if (config.output.kind !== "datev-csv" && config.output.kind !== "sepa-xml")
+              throw actionError("BAD_INPUT", documentServiceText(invocationLocale(ctx)).requestInvalidJson);
+            if (config.sourceVersions !== "data")
+              await sql.begin(async (tx) => {
+                await tx`SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY`;
+                return requireDocumentSourceVersions(
+                  {
+                    baseId: scope.baseId,
+                    sourceVersions: DocumentSourceVersionsSchema.parse(config.sourceVersions),
+                    lock: false,
+                    locale: invocationLocale(ctx),
+                    authorize: async (tableIds, client) => {
+                      for (const tableId of tableIds) await requireTableAccess(scope, tableId, "read", client);
+                    },
+                  },
+                  tx,
+                );
+              });
+          }
+          return {
+            summary:
+              runtimeText(ctx).generateDocument({ name: config.output.kind.toUpperCase() }) +
+              (plannedDocuments ? ` ${runtimeText(ctx).plannedDocumentData}` : "") +
+              (config.sourceVersions === "data" ? ` ${runtimeText(ctx).plannedSourceVersions}` : ""),
+            consumes: { documents: 1 },
+            output: {
+              kind: "document",
+              id: `dry-run:${ctx.stepKey}`,
+              shortId: `dry-run:${ctx.stepKey}`,
+              baseId: scope.baseId,
+              tableId: null,
+              templateId: null,
+              recordId: null,
+              primaryArtifactMimeType: config.output.kind === "pdf" ? "application/pdf" : null,
+              planned: true,
+            },
+          };
+        }
+        if (!config.record || !config.template || config.output !== undefined || config.sourceVersions !== undefined)
+          throw actionError("BAD_INPUT", documentServiceText(invocationLocale(ctx)).requestInvalidJson);
         const template = await documentTemplate(ctx);
+        const renderer = template.renderer;
         await currentTable(ctx, scope, template.tableId);
         const record = await documentRecord(ctx, scope, template.tableId, config.record, "read");
         await requirePermission(scope, "write");
@@ -1153,10 +1440,16 @@ export const GRIDS_WORKFLOW_ACTIONS = {
           output: {
             kind: "document",
             id: `dry-run:${ctx.stepKey}`,
+            shortId: `dry-run:${ctx.stepKey}`,
             baseId: scope.baseId,
             tableId: template.tableId,
             templateId: template.id,
             recordId: record.recordId,
+            primaryArtifactMimeType:
+              renderer.kind === "html"
+                ? "application/pdf"
+                : (documentIssuanceService.profiles().find((profile) => profile.id === renderer.id && profile.version === renderer.version)
+                    ?.primaryArtifact.mediaType ?? null),
             planned: true,
           },
         };
@@ -1172,7 +1465,7 @@ export const GRIDS_WORKFLOW_ACTIONS = {
         const scope = await workflowRunScope(ctx, tx);
         await requireExecution(scope, tx);
         const document = await documentToLink(ctx, scope, config.document);
-        await currentTable(ctx, scope, document.tableId);
+        if (document.tableId) await currentTable(ctx, scope, document.tableId);
         await requirePermission(scope, "write", tx);
         const expiresIn = linkExpiry(config.expiresIn);
         const baseUrl = await publicDocumentLinkBaseUrl();
@@ -1222,7 +1515,7 @@ export const GRIDS_WORKFLOW_ACTIONS = {
         const scope = await workflowRunScope(ctx);
         await requireExecution(scope);
         const document = await plannedDocumentToLink(ctx, scope, config.document);
-        await currentTable(ctx, scope, document.tableId);
+        if (document.tableId) await currentTable(ctx, scope, document.tableId);
         await requirePermission(scope, "write");
         const expiresIn = linkExpiry(config.expiresIn);
         return {

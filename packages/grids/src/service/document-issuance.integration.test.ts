@@ -5,19 +5,33 @@ import { z } from "zod";
 import { migrate as migrateCoreWorkflows } from "../../../core/src/migrate/core/workflows";
 import type { DocumentTemplate } from "../contracts";
 import type { DocumentProfile } from "../document-profiles";
+import { renderDatevBatch } from "../document-profiles/datev-csv";
+import { createGermanBillingProfile } from "../document-profiles/einvoice-de";
+import { invoiceAccountingStarterSource } from "../frontend/_components/workflows/financial-workflow-starters";
 import { postgresTest, testShortId, testUuid } from "../integration-test-utils";
 import { migrate } from "../migrate";
-import { getDocumentPdf } from "./document-core";
+import { compileAndBindGridsWorkflowSource } from "../workflows/binder";
+import { grantAccess } from "./access";
+import { getDocumentPdf, getDocumentPrimaryArtifact, renderWorkflowDocumentsPdf } from "./document-core";
+import { type FinancialDocumentOutput, normalizeFinancialDocumentOutput } from "./document-financial-output";
 import { createDocumentIssuanceService, type IssueDocumentInput } from "./document-issuance";
+import { MAX_DOCUMENT_PROFILE_INPUT_BYTES } from "./document-json";
 import { type DocumentDbRow, mapDocumentTemplate } from "./document-mappers";
 import { createTemplate, getTemplate } from "./document-templates";
 import { provisionDocumentNumberSeries } from "./number-series";
+import { canExecuteRun, documentActorForScope } from "./workflow-action-scope";
+import { loadWorkflowCatalog } from "./workflow-catalog";
+import { captureWorkflowDocumentSource } from "./workflow-document-sources";
+import { persistWorkflowQueryDataInTransaction } from "./workflow-query-store";
+import { getWorkflowDocumentConfirmation, getWorkflowRunScope } from "./workflow-runs";
+import { invokeGridsWorkflow, runGridsWorkflowRun } from "./workflow-runtime";
+import { insertTestWorkflow, insertTestWorkflowRun } from "./workflow-test-fixture";
 
 const pdf = (label: string) => new TextEncoder().encode(`%PDF-1.7\n${label}`);
 
 beforeAll(async () => {
   if (process.env.GRIDS_DB_TEST === "1") await migrate();
-});
+}, 30_000);
 
 const createScope = async (database: SQL = sql) => {
   const baseId = testUuid();
@@ -89,7 +103,478 @@ const insertProfileTemplate = async (
   return template;
 };
 
+postgresTest(
+  "issued invoice totals remain exact immutable workflow source values",
+  async () => {
+    const scope = await createScope();
+    let renderedXml = "";
+    const profile = createGermanBillingProfile({
+      render: async ({ xml }) => {
+        renderedXml = xml;
+        return { pdf: pdf("issued invoice totals") };
+      },
+      extractEmbedded: async () => ({ filename: "factur-x.xml", xml: renderedXml }),
+    });
+    const template = await insertProfileTemplate(scope.tableId, {
+      kind: "profile",
+      id: profile.id,
+      version: profile.version,
+      inputTemplate: JSON.stringify({
+        billing: { kind: "invoice" },
+        invoiceDate: "2026-09-11",
+        dueDate: "2026-09-25",
+        serviceDate: "2026-09-11",
+        currency: "EUR",
+        seller: {
+          name: "Seller GmbH",
+          vatId: "DE123456789",
+          address: { line1: "Strasse 1", city: "Ulm", postalCode: "89073", countryCode: "DE" },
+        },
+        buyer: {
+          name: "Buyer GmbH",
+          vatId: "DE987654321",
+          address: { line1: "Strasse 2", city: "Ulm", postalCode: "89073", countryCode: "DE" },
+        },
+        buyerReference: "ORDER-1",
+        payment: { iban: "DE89370400440532013000", accountName: "Seller GmbH" },
+        lines: [
+          { name: "First", quantity: "1.0000", unitPrice: "0.0050", taxRate: "19.00" },
+          { name: "Second", quantity: "1.0000", unitPrice: "0.0050", taxRate: "19.00" },
+        ],
+      }),
+    });
+    const service = createDocumentIssuanceService({ profiles: [profile] });
+    const baseInput = inputFor(template, scope);
+    const input = {
+      ...baseInput,
+      renderData: {
+        ...baseInput.renderData,
+        record: {
+          id: scope.recordShortId,
+          shortId: scope.recordShortId,
+          version: 1,
+          updatedAt: "2026-08-22T10:00:00.000Z",
+          data: { DIR001: "S", ACC001: "10000", CTR001: "8400" },
+        },
+      },
+    };
+    const issued = await service.issueDocument(input);
+    if (!issued.ok) throw issued.error;
+    const document = issued.data.document;
+    expect(renderedXml).toContain("<ram:GrandTotalAmount>0.02</ram:GrandTotalAmount>");
+    const capture = () =>
+      captureWorkflowDocumentSource(
+        {
+          baseId: scope.baseId,
+          capturedAt: "2026-09-11T12:00:00.000Z",
+          source: { documents: [document.shortId], columns: [{ key: "amount", type: "decimal", path: ["output", "grossAmount"] }] },
+        },
+        sql,
+      );
+    const exported = await capture();
+    if (!exported.ok) throw exported.error;
+    expect(exported.data.payload.rows).toEqual([{ amount: "0.02" }]);
+    const accounting = await captureWorkflowDocumentSource(
+      {
+        baseId: scope.baseId,
+        capturedAt: "2026-09-11T12:00:00.000Z",
+        source: {
+          documents: [document.shortId],
+          columns: [
+            { key: "businessId", type: "text", path: ["data", "record", "id"] },
+            { key: "entryId", type: "text", path: ["number"] },
+            { key: "amount", type: "decimal", path: ["output", "grossAmount"] },
+            { key: "direction", type: "text", path: ["data", "record", "data", "DIR001"] },
+            { key: "account", type: "text", path: ["data", "record", "data", "ACC001"] },
+            { key: "counterAccount", type: "text", path: ["data", "record", "data", "CTR001"] },
+            { key: "documentDate", type: "date", path: ["profile", "invoiceDate"] },
+            { key: "documentNumber", type: "text", path: ["number"] },
+          ],
+        },
+      },
+      sql,
+    );
+    if (!accounting.ok) throw accounting.error;
+    const financialOutput: FinancialDocumentOutput = {
+      kind: "datev-csv",
+      version: 1,
+      header: {
+        destinationKey: "company-ledger",
+        consultantNumber: "12345",
+        clientNumber: "1",
+        fiscalYearStart: "2026-01-01",
+        accountLength: 4,
+        periodStart: "2026-09-01",
+        periodEnd: "2026-09-30",
+        label: "Invoices",
+        finalize: false,
+      },
+      mapping: {
+        businessId: "businessId",
+        entryId: "entryId",
+        amount: "amount",
+        direction: "direction",
+        account: "account",
+        counterAccount: "counterAccount",
+        documentDate: "documentDate",
+        documentNumber: "documentNumber",
+      },
+    };
+    const normalized = normalizeFinancialDocumentOutput(financialOutput, accounting.data.payload, {
+      messageId: "unused",
+      paymentInformationId: "unused",
+    });
+    if (!normalized.ok) throw normalized.error;
+    if (normalized.data.kind !== "datev-csv") throw new Error("Expected DATEV output");
+    expect(normalized.data.input.rows[0]).toMatchObject({ businessId: scope.recordShortId, amount: "0.02", direction: "S" });
+    const datev = renderDatevBatch(normalized.data.input, new Date("2026-09-11T12:00:00.000Z"));
+    expect(new TextDecoder().decode(datev.bytes)).toContain('0,02;"S";"EUR"');
+    const workflowId = await insertTestWorkflow({ baseId: scope.baseId, shortId: testShortId("W") });
+    const runId = await insertTestWorkflowRun({
+      baseId: scope.baseId,
+      workflowId,
+      shortId: testShortId("R"),
+      state: "waiting",
+      channel: "api",
+    });
+    const storedCapture = await sql.begin((tx) =>
+      persistWorkflowQueryDataInTransaction({ baseId: scope.baseId, runId, stepKey: "invoices", capture: accounting.data }, tx),
+    );
+    if (!storedCapture.ok) throw storedCapture.error;
+    const exportRequest = {
+      baseId: scope.baseId,
+      runId,
+      stepKey: "accounting",
+      data: storedCapture.data,
+      output: financialOutput,
+      actor: { kind: "service_account" as const, serviceAccountId: testUuid(), delegatedUserId: null, credentialId: null },
+      filename: null,
+      tags: [],
+      idempotencyKey: `${runId}:accounting`,
+      authorize: async () => {},
+    };
+    const pending = await service.issueQueryDocument(exportRequest);
+    if (!pending.ok) throw pending.error;
+    if (!("kind" in pending.data)) throw new Error("Expected financial confirmation");
+    const [beforeConfirmation] = await sql<Array<{ count: number }>>`
+      SELECT count(*)::int AS count FROM grids.documents WHERE base_id = ${scope.baseId}::uuid
+    `;
+    expect(beforeConfirmation?.count).toBe(1);
+    const confirmed = await service.confirmQueryDocument({
+      ...exportRequest,
+      receiptId: pending.data.receiptId,
+      sha256: pending.data.sha256,
+    });
+    if (!confirmed.ok) throw confirmed.error;
+    const financialDocument = await service.issueQueryDocument(exportRequest);
+    if (!financialDocument.ok) throw financialDocument.error;
+    if ("kind" in financialDocument.data) throw new Error("Expected issued financial document");
+    const financialArtifact = await service.getDocumentArtifact(financialDocument.data.id, "csv");
+    if (!financialArtifact.ok) throw financialArtifact.error;
+    expect(new TextDecoder().decode(financialArtifact.data.bytes)).toContain('0,02;"S";"EUR"');
+    const exportReplay = await service.issueQueryDocument(exportRequest);
+    if (!exportReplay.ok) throw exportReplay.error;
+    expect(exportReplay.data).toEqual(financialDocument.data);
+    await sql`UPDATE grids.records SET data = ${{ amount: "999.00" }}::jsonb WHERE id = ${scope.recordId}::uuid`;
+    const unchanged = await capture();
+    if (!unchanged.ok) throw unchanged.error;
+    expect(unchanged.data.sha256).toBe(exported.data.sha256);
+    await expect(
+      Promise.resolve(sql`UPDATE grids.documents SET profile_output = '{}'::jsonb WHERE id = ${document.id}::uuid`),
+    ).rejects.toThrow("immutable");
+    const replay = await service.issueDocument(input);
+    if (!replay.ok) throw replay.error;
+    expect(replay.data.document.id).toBe(document.id);
+    expect(replay.data.replayed).toBe(true);
+
+    // Run the exact UI starter through the compiler and real workflow kernel.
+    // A separate destination represents a separate ledger, not a dedupe bypass.
+    const actorId = testUuid();
+    await sql`INSERT INTO auth.users (id, uid, provider, profile, display_name)
+      VALUES (${actorId}::uuid, ${`invoice-starter-${actorId}`}, 'local', 'user', 'Invoice author')`;
+    const access = await grantAccess({
+      resourceType: "base",
+      resourceId: scope.baseId,
+      principal: { type: "user", userId: actorId },
+      permission: "write",
+    });
+    if (!access.ok) throw access.error;
+    const starterSource = invoiceAccountingStarterSource({
+      header: { ...financialOutput.header, destinationKey: "starter-ledger" },
+      fields: { direction: "DIR001", account: "ACC001", counterAccount: "CTR001" },
+    });
+    const compiled = await compileAndBindGridsWorkflowSource(starterSource, await loadWorkflowCatalog(scope.baseId));
+    if (!compiled.ok) throw new Error(JSON.stringify(compiled.diagnostics));
+    const starterWorkflow = await insertTestWorkflow({
+      baseId: scope.baseId,
+      shortId: testShortId("W"),
+      source: starterSource,
+      plan: compiled.plan,
+      enabled: true,
+      ownerUserId: actorId,
+    });
+    const principal = { userId: actorId, groupIds: [], serviceAccountId: null };
+    const invoked = await invokeGridsWorkflow({
+      workflowId: starterWorkflow,
+      principal,
+      inputs: { document: document.shortId },
+      mode: "execute",
+      channel: "api",
+      idempotencyKey: testUuid(),
+    });
+    if (!invoked.ok) throw invoked.error;
+    const starterRun = invoked.data.runId;
+    await runGridsWorkflowRun(starterRun);
+    const starterPending = await getWorkflowDocumentConfirmation(starterRun);
+    const starterScope = await getWorkflowRunScope(starterRun);
+    if (!starterPending || !starterScope) throw new Error("Starter did not reach financial confirmation");
+    const confirmationRequest = {
+      baseId: scope.baseId,
+      runId: starterRun,
+      receiptId: starterPending.receiptId,
+      actor: documentActorForScope(starterScope),
+      authorize: async () => {
+        if (!(await canExecuteRun(starterScope))) throw err.forbidden("Workflow access lost");
+      },
+    };
+    const starterPreview = await service.inspectQueryDocumentConfirmation(confirmationRequest);
+    if (!starterPreview.ok) throw starterPreview.error;
+    expect(starterPreview.data.input.rows[0]).toMatchObject({ amount: "0.02", direction: "S", account: "10000" });
+    const starterConfirmed = await service.confirmQueryDocument({ ...confirmationRequest, sha256: starterPending.sha256 });
+    if (!starterConfirmed.ok) throw starterConfirmed.error;
+    await runGridsWorkflowRun(starterRun);
+    const [starterState] = await sql<Array<{ state: string }>>`SELECT state FROM workflows.run WHERE id = ${starterRun}::uuid`;
+    expect(starterState?.state).toBe("succeeded");
+    const starterDocuments = await sql<Array<{ id: string }>>`SELECT id FROM grids.documents WHERE workflow_run_id = ${starterRun}::uuid`;
+    expect(starterDocuments).toHaveLength(1);
+    const starterDocument = starterDocuments[0];
+    if (!starterDocument) throw new Error("Missing starter export");
+    const starterArtifact = await service.getDocumentArtifact(starterDocument.id, "csv");
+    if (!starterArtifact.ok) throw starterArtifact.error;
+    expect(new TextDecoder().decode(starterArtifact.data.bytes)).toContain('0,02;"S";"EUR"');
+  },
+  30_000,
+);
+
 describe("Document issuance", () => {
+  postgresTest("rejects a mixed-format run PDF download instead of silently omitting its CSV", async () => {
+    const scope = await createScope();
+    const workflowId = await insertTestWorkflow({ baseId: scope.baseId, shortId: testShortId("W") });
+    const runId = await insertTestWorkflowRun({ baseId: scope.baseId, workflowId, shortId: testShortId("R"), state: "succeeded" });
+    const profiles: DocumentProfile<Record<string, never>>[] = ["pdf", "csv"].map((key) => ({
+      id: `test.run-${key}`,
+      version: 1,
+      title: key,
+      description: "Mixed run fixture",
+      rendererVersion: "test-v1",
+      validatorVersion: "test-v1",
+      primaryArtifact: { key, mediaType: key === "pdf" ? "application/pdf" : "text/csv" },
+      input: z.object({}).strict(),
+      formatNumber: ({ value }) => `RUN-${key}-${value}`,
+      issue: () => ({
+        artifacts: [
+          {
+            key,
+            filename: `output.${key}`,
+            mediaType: key === "pdf" ? "application/pdf" : "text/csv",
+            bytes: key === "pdf" ? pdf("run") : new TextEncoder().encode("amount\r\n12.30\r\n"),
+          },
+        ],
+        validationStatus: "valid",
+        validationReport: { valid: true },
+      }),
+    }));
+    const service = createDocumentIssuanceService({ profiles });
+    for (const profile of profiles) {
+      const template = await insertProfileTemplate(scope.tableId, { kind: "profile", id: profile.id, version: 1, inputTemplate: "{}" });
+      const issued = await service.issueDocument(inputFor(template, scope, { workflowRunId: runId, workflowStepKey: profile.id }));
+      if (!issued.ok) throw issued.error;
+      if (profile.primaryArtifact.key === "pdf") {
+        const single = await renderWorkflowDocumentsPdf(runId, async () => true);
+        if (!single.ok) throw single.error;
+        expect(single.data.documentCount).toBe(1);
+        expect(single.data.pdf).toEqual(pdf("run"));
+      }
+    }
+    const mixed = await renderWorkflowDocumentsPdf(runId, async () => true);
+    expect(mixed.ok).toBe(false);
+    if (!mixed.ok) {
+      expect(mixed.error.code).toBe("BAD_INPUT");
+      expect(mixed.error.message).toContain("PDF");
+    }
+  });
+
+  postgresTest("rejects invalid derived profile output without issuing a document and permits a corrected retry", async () => {
+    const scope = await createScope();
+    let output: Record<string, unknown> = { amount: Number.NaN };
+    const profile: DocumentProfile<Record<string, never>> = {
+      id: "test.derived-output",
+      version: 1,
+      title: "Derived values",
+      description: "Derived output boundary fixture",
+      rendererVersion: "test-v1",
+      validatorVersion: "test-v1",
+      primaryArtifact: { key: "csv", mediaType: "text/csv" },
+      input: z.object({}).strict(),
+      formatNumber: ({ value }) => `OUTPUT-${value}`,
+      issue: () => ({
+        output,
+        artifacts: [{ key: "csv", filename: "output.csv", mediaType: "text/csv", bytes: new TextEncoder().encode("amount\r\n0.02\r\n") }],
+        validationStatus: "valid",
+        validationReport: { valid: true },
+      }),
+    };
+    const template = await insertProfileTemplate(scope.tableId, { kind: "profile", id: profile.id, version: 1, inputTemplate: "{}" });
+    const service = createDocumentIssuanceService({ profiles: [profile] });
+    const request = inputFor(template, scope);
+    const cyclic: Record<string, unknown> = {};
+    cyclic.self = cyclic;
+    for (const invalid of [{ amount: Number.NaN }, { amount: undefined }, cyclic, { text: "x".repeat(MAX_DOCUMENT_PROFILE_INPUT_BYTES) }]) {
+      output = invalid;
+      const rejected = await service.issueDocument(request);
+      expect(rejected.ok).toBe(false);
+      if (!rejected.ok) expect(rejected.error.code).toBe("BAD_INPUT");
+      const [count] = await sql<
+        Array<{ count: number }>
+      >`SELECT count(*)::int AS count FROM grids.documents WHERE base_id = ${scope.baseId}::uuid`;
+      expect(count?.count).toBe(0);
+    }
+    output = { amount: "0.02" };
+    const issued = await service.issueDocument(request);
+    if (!issued.ok) throw issued.error;
+    output.amount = "999.00";
+    const [stored] = await sql<
+      Array<{ profile_output: Record<string, unknown> }>
+    >`SELECT profile_output FROM grids.documents WHERE id = ${issued.data.document.id}::uuid`;
+    expect(stored?.profile_output).toEqual({ amount: "0.02" });
+    expect(issued.data.document.documentNumber).toBe("OUTPUT-1");
+  });
+
+  for (const kind of ["csv", "json", "xml"] as const) {
+    postgresTest(`built-in ${kind} profile issues and replays from a record template`, async () => {
+      const scope = await createScope();
+      const created = await createTemplate(
+        scope.tableId,
+        {
+          name: `${kind} statement`,
+          source: "from table Invoices",
+          renderer: {
+            kind: "profile",
+            id: `grids.${kind}`,
+            version: 1,
+            inputTemplate: JSON.stringify({
+              columns: [{ key: "amount", label: "Amount", type: "number", sqlType: "numeric" }],
+              rows: [{ amount: "9007199254740993.01" }],
+              ...(kind === "xml"
+                ? { body: "{% raw %}<report>{% for row in rows %}<amount>{{ row.amount }}</amount>{% endfor %}</report>{% endraw %}" }
+                : {}),
+            }),
+          },
+        },
+        null,
+      );
+      if (!created.ok) throw created.error;
+      const service = createDocumentIssuanceService();
+      const input = inputFor(created.data, scope);
+      const issued = await service.issueDocument(input);
+      if (!issued.ok) throw issued.error;
+      expect(issued.data.document.primaryArtifactKey).toBe(kind);
+      expect(issued.data.document.filename.endsWith(`.${kind}`)).toBe(true);
+      const artifact = await service.getDocumentArtifact(issued.data.document.id, kind);
+      if (!artifact.ok) throw artifact.error;
+      expect(artifact.data.mimeType).toBe(kind === "csv" ? "text/csv" : `application/${kind}`);
+      expect(new TextDecoder().decode(artifact.data.bytes)).toContain("9007199254740993.01");
+      const replayed = await service.issueDocument(input);
+      if (!replayed.ok) throw replayed.error;
+      expect(replayed.data.document.id).toBe(issued.data.document.id);
+      const [count] = await sql<
+        Array<{ count: number }>
+      >`SELECT count(*)::int AS count FROM grids.documents WHERE base_id = ${scope.baseId}::uuid`;
+      expect(count?.count).toBe(1);
+    });
+  }
+
+  postgresTest("stores and replays a non-PDF primary artifact through the same issuance owner", async () => {
+    const scope = await createScope();
+    let renders = 0;
+    let validOutput = false;
+    const profile: DocumentProfile<{ amount: string }> = {
+      id: "test.csv-statement",
+      version: 1,
+      title: "CSV statement",
+      description: "Non-PDF primary artifact fixture",
+      rendererVersion: "test-csv-v1",
+      validatorVersion: "test-csv-v1",
+      primaryArtifact: { key: "csv", mediaType: "text/csv" },
+      input: z.object({ amount: z.string() }).strict(),
+      formatNumber: ({ value }) => `CSV-${value}`,
+      issue: (data, context) => {
+        renders++;
+        return {
+          artifacts: [
+            {
+              key: "csv",
+              filename: `${context.number}.csv`,
+              mediaType: validOutput ? "text/csv" : "text/plain",
+              bytes: new TextEncoder().encode(`amount\r\n${data.amount}\r\n`),
+            },
+          ],
+          validationStatus: "valid",
+          validationReport: { valid: true },
+        };
+      },
+    };
+    const template = await insertProfileTemplate(scope.tableId, {
+      kind: "profile",
+      id: profile.id,
+      version: profile.version,
+      inputTemplate: '{"amount":"12.30"}',
+    });
+    const service = createDocumentIssuanceService({ profiles: [profile] });
+    expect(service.profiles()[0]?.primaryArtifact).toEqual({ key: "csv", mediaType: "text/csv" });
+    const input = inputFor(template, scope);
+    const invalid = await service.issueDocument(input);
+    expect(invalid.ok).toBe(false);
+    if (!invalid.ok) expect(invalid.error.code).toBe("BAD_INPUT");
+    const [empty] = await sql<
+      Array<{ count: number }>
+    >`SELECT count(*)::int AS count FROM grids.documents WHERE base_id = ${scope.baseId}::uuid`;
+    expect(empty?.count).toBe(0);
+    validOutput = true;
+    const issued = await service.issueDocument(input);
+    if (!issued.ok) throw issued.error;
+    expect(issued.data.document.primaryArtifactKey).toBe("csv");
+    expect(issued.data.document.documentNumber).toBe("CSV-1");
+    expect(issued.data.document.filename).toBe("CSV-1.csv");
+    expect(issued.data.document.renderData.document).toMatchObject({ filename: null });
+    expect(issued.data.document.artifacts.map((artifact) => artifact.key)).toEqual(["csv"]);
+    const noDerivedOutput = await captureWorkflowDocumentSource(
+      {
+        baseId: scope.baseId,
+        capturedAt: "2026-09-11T12:00:00.000Z",
+        source: {
+          documents: [issued.data.document.shortId],
+          columns: [{ key: "amount", type: "decimal", path: ["output", "grossAmount"] }],
+        },
+      },
+      sql,
+    );
+    expect(noDerivedOutput.ok).toBe(false);
+    if (!noDerivedOutput.ok) expect(noDerivedOutput.error.code).toBe("BAD_INPUT");
+    const primary = await getDocumentPrimaryArtifact(issued.data.document);
+    if (!primary.ok) throw primary.error;
+    expect(primary.data.mimeType).toBe("text/csv");
+    expect(new TextDecoder().decode(primary.data.bytes)).toBe("amount\r\n12.30\r\n");
+    const notPdf = await getDocumentPdf(issued.data.document);
+    expect(notPdf.ok).toBe(false);
+    if (!notPdf.ok) expect(notPdf.error.code).toBe("BAD_INPUT");
+    const replayed = await service.issueDocument(input);
+    if (!replayed.ok) throw replayed.error;
+    expect(replayed.data.replayed).toBe(true);
+    expect(replayed.data.document).toEqual(issued.data.document);
+    expect(renders).toBe(2);
+  });
+
   postgresTest(
     "retries retained historical HTML and profile receipts without rewriting or reallocating",
     async () => {
@@ -139,6 +624,7 @@ describe("Document issuance", () => {
             description: "Historical receipt fixture",
             rendererVersion: "test-v1",
             validatorVersion: "test-v1",
+            primaryArtifact: { key: "pdf", mediaType: "application/pdf" },
             input: z.object({ title: z.string() }).strict(),
             formatNumber: ({ value }) => `HIST-${value}`,
             issue: (_value, context) => {
@@ -230,7 +716,8 @@ describe("Document issuance", () => {
         await sql.unsafe(`DROP DATABASE "${databaseName}" WITH (FORCE)`);
       }
     },
-    30_000,
+    // This case migrates an isolated historical database repeatedly.
+    60_000,
   );
 
   postgresTest("replays delayed HTML issuance and freezes its real public ID", async () => {
@@ -305,6 +792,7 @@ describe("Document issuance", () => {
       description: "Test profile",
       rendererVersion: "test-renderer-v1",
       validatorVersion: "test-validator-v1",
+      primaryArtifact: { key: "pdf", mediaType: "application/pdf" },
       input: z.object({ title: z.string(), issuedAt: z.iso.datetime() }).strict(),
       formatNumber: ({ value }) => `STAT-${value}`,
       issue: (value, context) => ({

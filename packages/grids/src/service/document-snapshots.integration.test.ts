@@ -1,7 +1,9 @@
 import { beforeAll, describe, expect, test } from "bun:test";
 import { sql } from "bun";
+import { toPublicRecord } from "../api/public-dto";
 import { migrate } from "../migrate";
 import { createRecordSnapshot, filterSnapshotRelatedRecords } from "./document-snapshots";
+import { createReader } from "./record-read";
 
 const postgresTest = process.env.GRIDS_DB_TEST === "1" ? test : test.skip;
 const uuid = () => Bun.randomUUIDv7();
@@ -12,6 +14,57 @@ beforeAll(async () => {
 });
 
 describe("record snapshot relation access", () => {
+  postgresTest("retains invalid list input for repair, projects its error and refuses to capture it", async () => {
+    const baseId = uuid();
+    const tableId = uuid();
+    const recordId = uuid();
+    const fieldId = uuid();
+    const fieldShortId = shortId("F");
+    const totalId = uuid();
+    const fallbackId = uuid();
+    const branchId = uuid();
+    const config = { fields: [{ id: "Amount", name: "Amount", type: "number", required: true, config: {} }] };
+    try {
+      await sql`INSERT INTO grids.bases (id, short_id, name) VALUES (${baseId}::uuid, ${shortId("B")}, 'Invalid list')`;
+      await sql`INSERT INTO grids.tables (id, short_id, base_id, name, position) VALUES (${tableId}::uuid, ${shortId("T")}, ${baseId}::uuid, 'Root', 0)`;
+      await sql`INSERT INTO grids.fields (id, short_id, table_id, name, type, config, position) VALUES (${fieldId}::uuid, ${fieldShortId}, ${tableId}::uuid, 'Items', 'object_list', ${config}::jsonb, 0)`;
+      for (const [id, name, expression] of [
+        [totalId, "Total", "LIST_SUM(Items, 'Amount')"],
+        [fallbackId, "Fallback", "IFERROR(LIST_SUM(Items, 'Amount'), 42)"],
+        [branchId, "Branch", "IF(false, LIST_SUM(Items, 'Amount'), 7)"],
+      ]) {
+        await sql`INSERT INTO grids.fields (id, short_id, table_id, name, type, config, position)
+          VALUES (${id!}::uuid, ${shortId("F")}, ${tableId}::uuid, ${name!}, 'formula', ${{ expression }}::jsonb, 1)`;
+      }
+      // Represents a retained row after its column constraints became stricter.
+      const value = [{ Amount: null }];
+      await sql`INSERT INTO grids.records (id, short_id, table_id, data) VALUES (${recordId}::uuid, ${shortId("R")}, ${tableId}::uuid, ${{ [fieldId]: value }}::jsonb)`;
+      const reader = await createReader(tableId);
+      const record = await reader.get(recordId);
+      if (!record) throw new Error("Missing record");
+      expect(record.data[fieldId]).toEqual(value);
+      expect(record.data[totalId]).toBeNull();
+      expect(record.fieldErrors?.[totalId]).toContain("could not be calculated");
+      expect(record.data[fallbackId]).toBe("42");
+      expect(record.data[branchId]).toBe("7");
+      expect(record.fieldErrors?.[fallbackId]).toBeUndefined();
+      expect(record.fieldErrors?.[branchId]).toBeUndefined();
+      const message = record.fieldErrors?.[fieldId];
+      if (!message) throw new Error("Missing field diagnostic");
+      const projected = await toPublicRecord(record, reader.fields);
+      expect(projected.data[fieldShortId]).toEqual(value);
+      expect(projected.fieldErrors?.[fieldShortId]).toBe(message);
+      expect(JSON.stringify(projected)).not.toContain(fieldId);
+      const snapshot = await createRecordSnapshot({ baseId, tableId, recordId, actorId: null, canReadTable: async () => true });
+      expect(snapshot.ok).toBe(false);
+      if (snapshot.ok) throw new Error("Expected invalid field rejection");
+      expect(snapshot.error.code).toBe("BAD_INPUT");
+      expect(await sql`SELECT id FROM grids.record_snapshots WHERE record_id = ${recordId}::uuid`).toHaveLength(0);
+    } finally {
+      await sql`DELETE FROM grids.bases WHERE id = ${baseId}::uuid`;
+    }
+  });
+
   postgresTest("rejects a snapshot base that does not own the root table", async () => {
     const baseId = uuid();
     const wrongBaseId = uuid();

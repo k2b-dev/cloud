@@ -1,10 +1,11 @@
 import { createHash } from "node:crypto";
-import { type DateContext, dates, err, fail, ok, type Result } from "@k2b/stdlib";
 import { markdown as markdownRenderer } from "@k2b/cloud/shared";
+import { type DateContext, dates, err, fail, ok, type Result } from "@k2b/stdlib";
 import type { ExportFieldSpec, RecordQuery, SearchSpec } from "../contracts";
 import { previewDslQuery } from "../query-dsl/preview";
 import { recordQueryPlan } from "../query-dsl/record-query-plan";
 import { type DslResultCursor, decodeDslResultCursor } from "../query-dsl/result-cursor";
+import { csvQuote } from "./export-csv";
 import { type FederatedRevisionScope, verifyRevisionScope } from "./federated-tables";
 import { listByTable as listFields } from "./fields";
 import { createHtmlTemplateRenderBudget, type HtmlTemplateRenderBudget } from "./html-template-fields";
@@ -199,15 +200,6 @@ export const formatCellForExport = (value: unknown, field: Field, options: Expor
   }
   if (typeof value === "object") return JSON.stringify(value);
   return String(value);
-};
-
-/** Spreadsheet-safe RFC 4180 cell encoding. A leading apostrophe keeps
- * formula-like user values inert in common spreadsheet applications. */
-export const csvQuote = (s: string, delimiter = ","): string => {
-  const safe = /^[\t\r ]*[=+\-@]/.test(s) || /^[\t\r]/.test(s) ? `'${s}` : s;
-  const mustQuote = safe.includes(delimiter) || /[\r\n"]/.test(safe);
-  if (mustQuote) return `"${safe.replace(/"/g, '""')}"`;
-  return safe;
 };
 
 type ExportFormat = "csv" | "json";

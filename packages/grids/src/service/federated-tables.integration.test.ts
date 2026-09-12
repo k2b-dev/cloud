@@ -32,7 +32,7 @@ import { getContent, listFirstImagePreviews, listForRecordField } from "./files"
 import { resolveFederatedTargetsForRecordEvent } from "./record-events";
 import * as finalization from "./record-finalization";
 import { listByRecord as listRecordHistory } from "./record-history";
-import { createReader } from "./record-read";
+import { createReader, publicIdsForRecords } from "./record-read";
 import { create as createRecord } from "./record-write";
 import { buildRelationLabelCache, lookupRecords } from "./relation-labels";
 import { remove as removeTable, restore as restoreTable, update as updateTable } from "./tables";
@@ -238,6 +238,30 @@ beforeAll(async () => {
 });
 
 describe("combined table integration", () => {
+  postgresTest("batch record identities retain stored and Combined source boundaries", async () => {
+    const fixture = await createFixture();
+    try {
+      const [stored] = await sql<Array<{ short_id: string }>>`SELECT short_id FROM grids.records WHERE id = ${fixture.recordId}::uuid`;
+      if (!stored) throw new Error("Missing source record");
+      const requested = [fixture.recordId, uuid(), fixture.recordId];
+      expect(await publicIdsForRecords(fixture.sourceTableId, requested)).toEqual(new Map([[fixture.recordId, stored.short_id]]));
+      expect(await publicIdsForRecords(fixture.targetTableId, requested)).toEqual(new Map([[fixture.recordId, stored.short_id]]));
+      expect(await publicIdsForRecords(uuid(), requested)).toEqual(new Map());
+      expect(await publicIdsForRecords(fixture.sourceTableId, [])).toEqual(new Map());
+
+      await sql`UPDATE grids.records SET deleted_at = now() WHERE id = ${fixture.recordId}::uuid`;
+      expect(await publicIdsForRecords(fixture.sourceTableId, requested)).toEqual(new Map());
+      expect(await publicIdsForRecords(fixture.targetTableId, requested)).toEqual(new Map());
+      await sql`UPDATE grids.records SET deleted_at = NULL WHERE id = ${fixture.recordId}::uuid`;
+      const removed = await removeBase(fixture.sourceBaseId, null);
+      if (!removed.ok) throw removed.error;
+      expect(await publicIdsForRecords(fixture.sourceTableId, requested)).toEqual(new Map());
+      await expect(publicIdsForRecords(fixture.targetTableId, requested)).rejects.toThrow();
+    } finally {
+      await cleanupFixture(fixture);
+    }
+  });
+
   postgresTest("maps live and finalized source formula values without recalculating snapshots", async () => {
     const fixture = await createFixture();
     try {

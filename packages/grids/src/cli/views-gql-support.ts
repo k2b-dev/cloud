@@ -67,6 +67,7 @@ export const GQL_REFERENCE = {
     "limit caps the complete logical result across all cursor pages.",
     "gql run --page-size N reads one page; --cursor continues from an opaque server cursor.",
     "gql run --all follows cursors up to --max-rows (default 10000).",
+    'gql run and gql preview accept --parameters, --parameters-file or --parameters-stdin with a JSON map for @params.name; use {"decimal":"12.30"} for exact decimals. Parameters cannot override auth or App context.',
   ],
 };
 

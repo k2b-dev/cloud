@@ -10,7 +10,7 @@ import {
   type User,
 } from "@k2b/cloud/contracts";
 import { sql } from "bun";
-import { PublicDocumentSchema } from "./api/document-public-contracts";
+import { DocumentCapabilityDataSchema } from "./api/document-public-contracts";
 import { gridsCapabilities } from "./capabilities";
 import {
   BaseListDataSchema,
@@ -24,7 +24,7 @@ import { gridsService } from "./service";
 import { enable as enableDurableHistory } from "./service/durable-history";
 import { enable as enableFinalization, finalize as finalizeRecord } from "./service/record-finalization";
 
-const zDocument = (value: unknown) => PublicDocumentSchema.omit({ tags: true, createdBy: true }).parse(value);
+const zDocument = (value: unknown) => DocumentCapabilityDataSchema.parse(value);
 
 const postgresTest = process.env.GRIDS_DB_TEST === "1" ? test : test.skip;
 if (process.env.GRIDS_DB_TEST === "1") setDefaultTimeout(60_000);
@@ -871,6 +871,24 @@ describe("Grids capabilities", () => {
       if (!relationColumn || !singleRelationColumn) throw new Error("Expected both relation GQL columns");
       expect(relationQuery.data.data.rows[0]?.values[relationColumn.key]).toEqual([relatedBId]);
       expect(relationQuery.data.data.rows[0]?.values[singleRelationColumn.key]).toEqual([relatedBId]);
+
+      for (const operation of ["gql.preview", "gql.execute"] as const) {
+        const parameterized = await invoke(
+          "query",
+          operation,
+          {
+            baseId: basePublicId,
+            query: `from table {${tablePublicId}}\nselect {${relationFieldPublicId}}\nwhere record.id = @params.selected`,
+            parameters: { selected: relationCreated.data.data.id },
+          },
+          context,
+        );
+        expect(parameterized.ok).toBe(true);
+        if (!parameterized.ok || !parameterized.data.data.ok) throw new Error("Expected parameterized capability rows");
+        expect(parameterized.data.data.rows).toHaveLength(1);
+        expect(parameterized.data.data.rows[0]?.recordId).toBe(relationCreated.data.data.id);
+        expect(parameterized.data.links?.some((link: { href: string }) => link.href.includes("/query?"))).not.toBe(true);
+      }
 
       const groupedRelationQuery = await invoke(
         "query",

@@ -1064,12 +1064,29 @@ export const toPublicRecords = async (records: readonly GridRecord[], fields: re
   );
   const recordIds = await projectPublicIds("record", relationRecordIds);
   return records.map((record) => {
-    const { expanded: _, finalRevisionId: _finalRevisionId, finalizedAt, finalizedBy, ...withoutExpanded } = omitShortId(record);
+    const {
+      expanded: _,
+      finalRevisionId: _finalRevisionId,
+      finalizedAt,
+      finalizedBy,
+      fieldErrors,
+      ...withoutExpanded
+    } = omitShortId(record);
     return {
       ...withoutExpanded,
       ...(finalizedAt ? { finalizedAt, finalizedBy: finalizedBy ?? null } : {}),
       id: record.shortId,
       tableId: publicId(tableIds, record.tableId, "table"),
+      ...(fieldErrors
+        ? {
+            fieldErrors: Object.fromEntries(
+              Object.entries(fieldErrors).flatMap(([fieldId, message]) => {
+                const id = publicFieldKey(fieldIds, fieldId);
+                return id ? [[id, message]] : [];
+              }),
+            ),
+          }
+        : {}),
       data: Object.fromEntries(
         Object.entries(record.data).flatMap(([fieldId, value]) => {
           const publicFieldId = publicFieldKey(fieldIds, fieldId);

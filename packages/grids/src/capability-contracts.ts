@@ -2,6 +2,7 @@ import { CapabilitySemanticLinkSchema } from "@k2b/cloud/contracts";
 import { z } from "zod";
 import { ShortIdSchema } from "./contracts";
 import { ObjectListColumnSchema } from "./field-types/object-list";
+import { GqlParametersSchema } from "./query-dsl/parameters";
 
 const TimestampSchema = z.string().datetime({ offset: true });
 const CursorSchema = z.string().min(1).max(16_384).optional().describe("Opaque cursor returned by the previous page.");
@@ -181,6 +182,9 @@ const GqlInputShape = {
   currentTableId: ShortIdSchema.optional().describe("Optional public Table ID used when the source omits an explicit from clause."),
   currentSource: CurrentSourceSchema.optional().describe("Optional current Table or View source used when GQL omits from."),
   cursor: CursorSchema,
+  parameters: GqlParametersSchema.optional().describe(
+    "Values for @params.name only; scalars, exact {decimal: string} values or flat lists. No auth/page context. Parameterized results omit the editor link.",
+  ),
 };
 
 export const ViewCreateInputSchema = z

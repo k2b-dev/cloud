@@ -27,6 +27,7 @@
     "pdf-previews": "bun run scripts/render-document-template-previews.ts"
   },
   "dependencies": {
+    "@xmldom/xmldom": "0.9.12",
     "@bwip-js/generic": "4.11.1",
     "@k2b/ssr": "catalog:",
     "@k2b/stdlib": "catalog:",
@@ -37,10 +38,13 @@
     "decimal.js": "10.6.0",
     "hono": "catalog:",
     "hono-openapi": "catalog:",
+    "ibantools": "4.5.4",
     "juice": "catalog:",
     "lean-qr": "catalog:",
+    "libxml2-wasm": "0.6.0",
     "postcss": "catalog:",
     "solid-js": "catalog:",
+    "yaml": "catalog:",
     "zod": "catalog:",
     "zxing-wasm": "3.1.2"
   },

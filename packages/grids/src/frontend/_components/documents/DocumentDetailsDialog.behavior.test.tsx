@@ -3,6 +3,48 @@ import { isServer } from "solid-js/web";
 import { createDomTestHarness } from "../../../../../ui/test/dom";
 
 const domTest = isServer ? test.skip : test;
+domTest("stored CSV and XML previews load authorized bytes and never activate markup", async () => {
+  const dom = createDomTestHarness();
+  const originalFetch = globalThis.fetch;
+  const paths: string[] = [];
+  const source = '<img src=x onerror="alert(1)">;12,30';
+  globalThis.fetch = Object.assign(
+    async (input: RequestInfo | URL) => {
+      paths.push(String(input));
+      return new Response(source);
+    },
+    { preconnect: originalFetch.preconnect },
+  );
+  const { openDocumentArtifactPreview } = await import("./DocumentArtifactPreviewDialog");
+  const { dialogCore } = await import("@k2b/ui");
+  try {
+    for (const [key, mimeType] of [
+      ["csv", "text/csv"],
+      ["xml", "application/xml"],
+    ]) {
+      void openDocumentArtifactPreview("DOC001", {
+        key: key!,
+        filename: `export.${key}`,
+        mimeType: mimeType!,
+        sizeBytes: source.length,
+        sha256: "a".repeat(64),
+      });
+      await Bun.sleep(50);
+      expect(paths.at(-1)).toContain(`/documents/DOC001/artifacts/${key}`);
+      expect(dom.document.body.textContent).toContain(source);
+      expect(dom.document.querySelector("img")).toBeNull();
+      expect(dom.document.querySelector("iframe")).toBeNull();
+      dialogCore.close();
+      await Bun.sleep(20);
+    }
+    expect(paths).toHaveLength(2);
+  } finally {
+    dialogCore.close();
+    globalThis.fetch = originalFetch;
+    dom.cleanup();
+  }
+});
+
 domTest("a newly created link explains that it cannot be displayed again", async () => {
   const dom = createDomTestHarness();
   const originalFetch = globalThis.fetch;
@@ -30,8 +72,10 @@ domTest("a newly created link explains that it cannot be displayed again", async
         createdBy: null,
         tags: [],
         renderer: { kind: "html" },
+        primaryArtifactKey: "pdf",
+        dataSnapshot: null,
         validationStatus: null,
-        artifacts: [],
+        artifacts: [{ key: "pdf", filename: "demo.pdf", mimeType: "application/pdf", sizeBytes: 100, sha256: "a".repeat(64) }],
       },
     });
     const create = Array.from(dom.document.querySelectorAll("button")).find((node) => node.textContent?.trim() === "Create link");
@@ -79,6 +123,8 @@ domTest("subdialogs preserve the document dialog and share its link read", async
         createdBy: null,
         tags: [],
         renderer: { kind: "html" },
+        primaryArtifactKey: "pdf",
+        dataSnapshot: null,
         validationStatus: null,
         artifacts: [{ key: "pdf", filename: "invoice.pdf", mimeType: "application/pdf", sizeBytes: 1024, sha256: "a".repeat(64) }],
       },
@@ -145,8 +191,10 @@ domTest("read-only details resolve the source name without loading share links",
         createdBy: null,
         tags: [],
         renderer: { kind: "html" },
+        primaryArtifactKey: "pdf",
+        dataSnapshot: null,
         validationStatus: null,
-        artifacts: [],
+        artifacts: [{ key: "pdf", filename: "demo.pdf", mimeType: "application/pdf", sizeBytes: 100, sha256: "a".repeat(64) }],
       },
     });
     await Bun.sleep(100);
@@ -218,8 +266,10 @@ domTest("link summary is honest during loading and errors, then follows revocati
         createdBy: null,
         tags: [],
         renderer: { kind: "html" },
+        primaryArtifactKey: "pdf",
+        dataSnapshot: null,
         validationStatus: null,
-        artifacts: [],
+        artifacts: [{ key: "pdf", filename: "demo.pdf", mimeType: "application/pdf", sizeBytes: 100, sha256: "a".repeat(64) }],
       },
     });
     await Bun.sleep(30);

@@ -15,7 +15,7 @@ import { listByTable as listFields } from "./fields";
 import { enrichRecordsWithHtmlTemplates } from "./html-template-fields";
 import { withLookupTargetMetadata } from "./lookup-display";
 import { liveRecordParentJoinSql } from "./parent-checks";
-import { mapRecordRow } from "./record-persistence";
+import { applyFinalizedComputedAccess, mapRecordRow } from "./record-persistence";
 import { attachRelationExpansion, type ExpansionViewer, enrichRecordsWithFormulas, hydrateRelationsFromLinks } from "./relations";
 import { get as getTable } from "./tables";
 import type { DocumentTemplateAppData } from "./template-context";
@@ -31,6 +31,22 @@ export const findTableId = async (recordId: string): Promise<string | null> => {
     WHERE r.id = ${recordId}::uuid AND r.deleted_at IS NULL
   `;
   return row?.table_id ?? null;
+};
+
+/** Identity-only read after the caller authorizes the table. Combined tables
+ * still use their published source and its revision guard, not raw source IDs. */
+export const publicIdsForRecords = async (tableId: string, recordIds: readonly string[]): Promise<Map<string, string>> => {
+  if (recordIds.length === 0) return new Map();
+  const source = await buildDslSqlRecordSource(tableId, {});
+  if (source) await assertFederatedPublication(source);
+  const rows = await sql<Array<{ id: string; short_id: string }>>`
+    SELECT r.id::text, r.short_id FROM ${source?.relation ?? sql`grids.records`} r
+    ${liveRecordParentJoinSql("r", "rt", "rb")}
+    WHERE r.table_id = ${tableId}::uuid
+      AND r.id = ANY(${sql.array([...new Set(recordIds)], "UUID")}::uuid[])
+      AND r.deleted_at IS NULL
+  `;
+  return new Map(rows.map((row) => [row.id, row.short_id]));
 };
 
 const relationIdsFor = (value: unknown): string[] =>
@@ -49,6 +65,7 @@ type FormulaLookupSpec = {
 };
 
 type FormulaLookupTargetPlan = {
+  authorizedTableIds?: ReadonlySet<string>;
   fields: Field[];
   projections: ComputedProjection[];
   projectionFragments: unknown;
@@ -98,9 +115,10 @@ const prepareFormulaLookupPlan = async (
       client,
       authorizedTableIds: authorizedNestedTableIds,
     });
-    const targetFormulaSql = buildFormulaSqlProjections(targetFields, { dateConfig });
+    const targetFormulaSql = buildFormulaSqlProjections(targetFields, { dateConfig, authorizedTableIds: authorizedNestedTableIds });
     const targetProjections = [...targetComputed, ...targetFormulaSql];
     targets.set(targetTableId, {
+      authorizedTableIds: authorizedNestedTableIds,
       fields: targetFields,
       projections: targetProjections,
       projectionFragments: projectionFragmentsFor(targetProjections),
@@ -149,7 +167,8 @@ const enrichFormulaLookupsWithPlan = async (
     const targetRecords = rows.map(mapRecordRow);
     await hydrateRelationsFromLinks(targetRecords, target.fields, plan.viewer, options);
     const recordsById = new Map(targetRecords.map((record) => [record.id, record]));
-    applyComputedProjections(rows as Array<Record<string, unknown>>, recordsById, target.projections);
+    applyComputedProjections(rows as Array<Record<string, unknown>>, recordsById, target.projections, options.dateConfig?.locale);
+    applyFinalizedComputedAccess(rows, recordsById, target.authorizedTableIds, target.fields, options.dateConfig?.locale);
     enrichRecordsWithFormulas(targetRecords, target.fields, {
       dateConfig: options.dateConfig,
       skipFormulaFieldIds: target.formulaFieldIds,
@@ -245,7 +264,7 @@ const createFederatedReader = async (tableId: string, fields: Field[], opts: Rec
     opts.signal?.throwIfAborted();
     const records = rows.map(mapRecordRow);
     const recordsById = new Map(records.map((record) => [record.id, record]));
-    applyComputedProjections(rows as Array<Record<string, unknown>>, recordsById, formulaSql);
+    applyComputedProjections(rows as Array<Record<string, unknown>>, recordsById, formulaSql, opts.dateConfig?.locale);
     enrichRecordsWithFormulas(records, fieldsWithLookupMeta, {
       dateConfig: opts.dateConfig,
       skipFormulaFieldIds: formulaFieldIds,
@@ -277,7 +296,7 @@ export const createReader = async (tableId: string, opts: RecordReadOptions = {}
     client,
     dateConfig: opts.dateConfig,
   });
-  const formulaSql = buildFormulaSqlProjections(fields, { dateConfig: opts.dateConfig });
+  const formulaSql = buildFormulaSqlProjections(fields, { dateConfig: opts.dateConfig, authorizedTableIds: authorizedTargetTableIds });
   const projections = [...computed, ...formulaSql];
   const projectionFragments = projectionFragmentsFor(projections);
   const formulaFieldIds = new Set(formulaSql.map((projection) => projection.fieldId));
@@ -317,7 +336,8 @@ export const createReader = async (tableId: string, opts: RecordReadOptions = {}
     });
     opts.signal?.throwIfAborted();
     const recordsById = new Map(records.map((record) => [record.id, record]));
-    applyComputedProjections(rows as Array<Record<string, unknown>>, recordsById, projections);
+    applyComputedProjections(rows as Array<Record<string, unknown>>, recordsById, projections, opts.dateConfig?.locale);
+    applyFinalizedComputedAccess(rows, recordsById, authorizedTargetTableIds, fields, opts.dateConfig?.locale);
     await enrichFormulaLookupsWithPlan(records, formulaLookupPlan, {
       client,
       dateConfig: opts.dateConfig,

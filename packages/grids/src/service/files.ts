@@ -30,8 +30,6 @@ type DbRow = {
   created_at: Date | string;
 };
 
-type FileProtectionOwnerKind = "record_revision" | "document_artifact";
-
 type ProtectedFileContent = {
   id: string;
   shortId: string;
@@ -756,15 +754,17 @@ export const remove = async (params: {
   });
 };
 
-type ProtectParams = {
+type ProtectionSource =
+  | { ownerKind: "record_revision"; tableId: string; recordId: string }
+  | { ownerKind: "document_artifact"; tableId: string | null; recordId: string | null };
+
+type ProtectionFields = {
   fileId: string;
-  ownerKind: FileProtectionOwnerKind;
   ownerId: string;
   baseId: string;
-  tableId: string;
-  recordId: string;
   userId: string | null;
 };
+type ProtectParams = ProtectionFields & ProtectionSource;
 
 const protectWithClient = async (params: ProtectParams, client: SqlClient, locale?: string): Promise<Result<void>> => {
   const t = documentServiceText(locale);
@@ -790,7 +790,7 @@ export const protect = async (params: ProtectParams, client?: SqlClient, locale?
   client ? protectWithClient(params, client, locale) : sql.begin((tx) => protectWithClient(params, tx, locale));
 
 export const createProtected = async (
-  params: Omit<ProtectParams, "fileId"> & { filename: string; mimeType: string; bytes: Uint8Array; locale?: string },
+  params: Omit<ProtectionFields, "fileId"> & ProtectionSource & { filename: string; mimeType: string; bytes: Uint8Array; locale?: string },
   client: SqlClient,
 ): Promise<Result<ProtectedFileAsset>> => {
   const filename = normalizeFilename(params.filename);

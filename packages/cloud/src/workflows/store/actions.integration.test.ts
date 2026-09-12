@@ -10,7 +10,7 @@ import { sql } from "bun";
 import { migrate } from "../../../../core/src/migrate/core/workflows";
 import { createWorkflowIntegrationFixture } from "../../../test/workflows/integration-fixture";
 import type { WorkflowBoundPlan, WorkflowIrStep } from "../contracts";
-import { workflowAction, type WorkflowActionMap } from "../definition";
+import { type WorkflowActionMap, workflowAction } from "../definition";
 import { hashWorkflowJson } from "../language/canonical";
 import { defineWorkflowModule } from "../module";
 import { createWorkflowActionPort, createWorkflowDryRunPort } from "./actions";
@@ -21,6 +21,7 @@ import {
   beginWorkflowEffect,
   claimWorkflowRun,
   createWorkflowRuntimeRepository,
+  requestWorkflowRunCancel,
   resolveWorkflowRunAttention,
   WORKFLOW_RUN_MAX_CONSECUTIVE_FAILURES,
   wakeWorkflowRunsWaitingOn,
@@ -113,6 +114,69 @@ const effectRow = async (runId: string) => {
 };
 
 describe("declared actions", () => {
+  test("transactional heartbeat rejects cancellation before application writes", async () => {
+    expect(await ready()).toBe(true);
+    const { runId } = await queued("probe.cancelFence");
+    let reachedWrite = false;
+    const actions = {
+      "probe.cancelFence": workflowAction.idempotent({
+        label: "Canceled write",
+        description: "Checks cancellation in the application's transaction.",
+        config: CONFIG,
+        plan: async () => ({ summary: "canceled write" }),
+        run: async (ctx) => {
+          expect(await requestWorkflowRunCancel(runId)).toBe(true);
+          await sql.begin(async (tx) => {
+            await ctx.heartbeat(tx);
+            reachedWrite = true;
+          });
+          return { state: "succeeded", output: null };
+        },
+      }),
+    };
+    await runOneWorkflow({ worker: "cancel-fence-test", runId, actions: createWorkflowActionPort(workflowModule(actions)) });
+    expect(reachedWrite).toBe(false);
+    expect((await getWorkflowRun(runId))?.state).toBe("canceled");
+  });
+
+  test("transactional heartbeat locks domain writes against takeover and refuses a stale worker", async () => {
+    expect(await ready()).toBe(true);
+    const { runId } = await queued("probe.fenced");
+    let checked = false;
+    const actions = {
+      "probe.fenced": workflowAction.idempotent({
+        label: "Fenced write",
+        description: "Fences the application's own transaction.",
+        config: CONFIG,
+        plan: async () => ({ summary: "fenced write" }),
+        run: async (ctx) => {
+          await sql.begin(async (tx) => {
+            await ctx.heartbeat(tx);
+            // A second connection cannot change ownership before this commits.
+            await expect(
+              sql.begin(async (other) => {
+                await other`SET LOCAL lock_timeout = '200ms'`;
+                await other`UPDATE workflows.run SET execution_generation = execution_generation + 1 WHERE id = ${runId}::uuid`;
+              }),
+            ).rejects.toThrow("lock timeout");
+          });
+          await sql`UPDATE workflows.run SET execution_generation = execution_generation + 1 WHERE id = ${runId}::uuid`;
+          await expect(
+            sql.begin(async (tx) => {
+              await ctx.heartbeat(tx);
+            }),
+          ).rejects.toThrow("workflow execution lease was lost");
+          checked = true;
+          return { state: "succeeded", output: null };
+        },
+      }),
+    };
+    expect((await runOneWorkflow({ worker: "fence-test", runId, actions: createWorkflowActionPort(workflowModule(actions)) })).state).toBe(
+      "lost",
+    );
+    expect(checked).toBe(true);
+  });
+
   test("a pure action runs with its config resolved and no effect recorded", async () => {
     if (!(await ready())) return;
     const { runId } = await queued("probe.format");

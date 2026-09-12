@@ -9,7 +9,7 @@ const SelectOptionSchema = z.object({
   description: z.string().optional(),
 });
 
-const SelectConfigSchema = z
+export const SelectConfigSchema = z
   .object({
     multiple: z.boolean().default(false),
     options: z.array(SelectOptionSchema),

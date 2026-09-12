@@ -208,6 +208,7 @@ export default function GridsRoute(props: { state: PublicOkWorkspaceState; cloud
               return (
                 <DocumentsWorkspace
                   baseId={state.base.id}
+                  canWriteDocuments={route.canWriteDocuments}
                   documentTemplateLevels={state.catalog.documentTemplateLevels}
                   initialBrowserPage={route.initialBrowserPage}
                 />

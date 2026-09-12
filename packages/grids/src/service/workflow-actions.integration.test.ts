@@ -8,17 +8,37 @@
  * plan, the run and the grants are real, the run is carried by the worker's own
  * ports, and the assertions are about rows.
  */
-import { beforeAll, describe, expect } from "bun:test";
+import { beforeAll, describe, expect, spyOn } from "bun:test";
+import type { User } from "@k2b/cloud/contracts";
+import type { AuthContext } from "@k2b/cloud/server";
 import type { WorkflowBoundPlan, WorkflowIrStep, WorkflowJsonValue } from "@k2b/cloud/workflows";
 import { hashWorkflowJson } from "@k2b/cloud/workflows/language";
 import { createWorkflowRun } from "@k2b/cloud/workflows/store";
-import { sql } from "bun";
+import { type SQL, sql } from "bun";
+import type { MiddlewareHandler } from "hono";
+import { Hono } from "hono";
+import { z } from "zod";
+import { createCustomAppsApi } from "../api/custom-apps";
+import { createDocumentResourceRoutes } from "../api/document-resource-routes";
+import { createWorkflowDocumentConfirmationRoutes, FinancialExportPreviewSchema } from "../api/workflow-document-confirmations";
+import { PublicGridsWorkflowRunSchema } from "../api/workflow-public-contracts";
+import { createWorkflowRunRoutes } from "../api/workflow-run-routes";
+import { jsonDocumentProfile } from "../document-profiles/table";
+import { expensePaymentStarterSource } from "../frontend/_components/workflows/financial-workflow-starters";
 import { postgresTest, testShortId as shortId, testUuid as uuid } from "../integration-test-utils";
 import { migrate } from "../migrate";
+import { canonicalizeDslQuery } from "../query-dsl/canonical";
+import { parseGridsQueryDsl } from "../query-dsl/parser";
 import { compileAndBindGridsWorkflowSource } from "../workflows/binder";
 import type { GridsWorkflowPrincipal } from "../workflows/contracts";
 import { gridsWorkflows } from "../workflows/module";
+import { grantAccess, revokeAccess } from "./access";
+import { apply as applyCustomApp, publish as publishCustomApp } from "./custom-apps";
+import { documentIssuanceService, readDocumentArtifact } from "./document-issuance";
+import * as documentRendering from "./document-rendering";
+import { createRecordSnapshot } from "./document-snapshots";
 import { enable as enableDurableHistory, listRecordRevisions } from "./durable-history";
+import { buildTrustedGqlResolverContext } from "./gql-resolver-context";
 import { update as updateMutationPolicy } from "./mutation-policy";
 import { provisionFieldNumberSeries } from "./number-series";
 import {
@@ -28,11 +48,14 @@ import {
   setPolicy as setFinalizationPolicy,
 } from "./record-finalization";
 import { listReferencedBy } from "./referenced-by";
+import { canAccessWorkflowRunTable, canExecuteRun, documentActorForScope } from "./workflow-action-scope";
 import { loadWorkflowCatalog } from "./workflow-catalog";
+import { captureWorkflowDocumentSource, captureWorkflowRecordSource } from "./workflow-document-sources";
 import { invokeRecordLauncher } from "./workflow-launcher-invocations";
 import { createLauncher } from "./workflow-launchers";
+import { workflowQueryBinder } from "./workflow-query-binding";
 import { getWorkflow } from "./workflow-read";
-import { GRIDS_APP_ID, gridsAuthorizationSnapshot } from "./workflow-runs";
+import { GRIDS_APP_ID, getWorkflowDocumentConfirmation, getWorkflowRunScope, gridsAuthorizationSnapshot } from "./workflow-runs";
 import { dryRunGridsWorkflowRun, runGridsWorkflowRun } from "./workflow-runtime";
 import { deleteTestWorkflowScope, insertTestWorkflow, publishTestWorkflowVersion } from "./workflow-test-fixture";
 
@@ -152,6 +175,12 @@ const insertFixture = async (fixture: Fixture): Promise<void> => {
 };
 
 const cleanupFixture = async (fixture: Fixture): Promise<void> => {
+  // Issued documents, snapshots and reserved numbers retain their base. Keep these
+  // uniquely scoped fixtures, just like the document issuance integration suite.
+  const retained = await sql`SELECT id FROM grids.documents WHERE base_id = ${fixture.baseId}::uuid
+    UNION ALL SELECT id FROM grids.record_snapshots WHERE base_id = ${fixture.baseId}::uuid
+    UNION ALL SELECT base_id FROM grids.document_profile_counters WHERE base_id = ${fixture.baseId}::uuid LIMIT 1`;
+  if (retained.length > 0) return;
   await sql`
     UPDATE grids.records SET finalized_at = NULL, finalized_by = NULL, final_revision_id = NULL
     WHERE table_id = ${fixture.tableId}::uuid
@@ -326,9 +355,1075 @@ const reopenForReplay = async (runId: string): Promise<void> => {
 
 beforeAll(async () => {
   if (process.env.GRIDS_DB_TEST === "1") await migrate();
-});
+}, 30_000);
 
 describe("declared Grids workflow actions", () => {
+  postgresTest("a stale manifest cannot capture data or issue a document", async () => {
+    const fixture = createFixture();
+    try {
+      await insertFixture(fixture);
+      const plan = boundPlan([actionStep(0, "query", {})], {});
+      const runId = await queueRun(fixture, { plan: { ...plan, manifestHash: "0".repeat(64) } });
+      await runGridsWorkflowRun(runId);
+      expect(await runRow(runId)).toMatchObject({ state: "needs_attention", error: { code: "WORKFLOW_MODULE_MISMATCH" } });
+      expect(await stepRuns(runId)).toHaveLength(0);
+      expect(await sql`SELECT id FROM grids.workflow_query_data WHERE run_id = ${runId}::uuid`).toHaveLength(0);
+      expect(await sql`SELECT id FROM grids.document_issuances WHERE base_id = ${fixture.baseId}::uuid`).toHaveLength(0);
+      expect(await sql`SELECT id FROM grids.documents WHERE base_id = ${fixture.baseId}::uuid`).toHaveLength(0);
+    } finally {
+      await cleanupFixture(fixture);
+    }
+  });
+
+  postgresTest(
+    "embedded scanner exposes financial confirmation and rechecks app access before issuance",
+    async () => {
+      const fixture = createFixture();
+      try {
+        await insertFixture(fixture);
+        await sql`UPDATE grids.fields SET unique_constraint = true WHERE id = ${fixture.nameFieldId}::uuid`;
+        const catalog = await loadWorkflowCatalog(fixture.baseId);
+        const source = `inputs:
+  item:
+    type: record
+    table: Tasks
+    required: true
+steps:
+  - query:
+      source: |
+        from table Tasks
+        select Name as payee, formula('scan-expense-1') as business, formula('12.30') as amount, formula('DE89370400440532013000') as iban
+        where record.id = @params.selected
+      parameters:
+        selected:
+          type: record
+          value: '\${{ inputs.item }}'
+      saveAs: report
+  - generateDocument:
+      data: report
+      output:
+        kind: sepa-xml
+        version: 1
+        header:
+          destinationKey: scanner-bank
+          debtorName: Example
+          debtorIban: DE89370400440532013000
+          executionDate: '2026-09-14'
+        mapping:
+          businessId: business
+          amount: amount
+          endToEndId: business
+          creditorName: payee
+          creditorIban: iban
+          remittance: business
+      saveAs: exported
+`;
+        const compiled = await compileAndBindGridsWorkflowSource(source, catalog, workflowQueryBinder(fixture.baseId, catalog));
+        if (!compiled.ok) throw new Error(JSON.stringify(compiled.diagnostics));
+        await publishTestWorkflowVersion(fixture.workflowId, source, compiled.plan);
+        const workflow = await getWorkflow(fixture.workflowId);
+        if (!workflow) throw new Error("Missing scanner workflow");
+        const launcher = await createLauncher(
+          workflow,
+          {
+            name: "Scan expense",
+            enabled: true,
+            config: { kind: "scanner", input: "item", resolve: { by: "field", field: "Name" } },
+          },
+          fixture.actorId,
+        );
+        if (!launcher.ok) throw launcher.error;
+        const [base] = await sql<Array<{ short_id: string }>>`SELECT short_id FROM grids.bases WHERE id = ${fixture.baseId}::uuid`;
+        if (!base) throw new Error("Missing base");
+        const app = await applyCustomApp(
+          {
+            schemaVersion: 5,
+            kind: "grids.custom-app",
+            id: shortId("A"),
+            baseId: base.short_id,
+            name: "Expense scanner",
+            startPageId: "home",
+            sidebar: { actions: [] },
+            pages: [
+              {
+                id: "home",
+                title: "Scan",
+                navigation: { visible: true },
+                parameters: {},
+                rows: [
+                  {
+                    id: "content",
+                    columns: [{ id: "main", span: 12, blocks: [{ id: "scan", type: "scanner", launcherId: launcher.data.shortId }] }],
+                  },
+                ],
+              },
+            ],
+          },
+          fixture.actorId,
+        );
+        if (!app.ok) throw app.error;
+        const published = await publishCustomApp(app.data.id, fixture.actorId);
+        if (!published.ok) throw published.error;
+        const grant = () =>
+          grantAccess({
+            resourceType: "customApp",
+            resourceId: app.data.id,
+            principal: { type: "user", userId: fixture.actorId },
+            permission: "read",
+            actorId: fixture.actorId,
+          });
+        const access = await grant();
+        if (!access.ok) throw access.error;
+        const user: User = {
+          id: fixture.actorId,
+          uid: `workflow-action-${fixture.actorId}`,
+          roles: ["user"],
+          provider: "local",
+          profile: "user",
+          givenname: "Workflow",
+          sn: "Actor",
+          displayName: "Workflow Actor",
+          mail: "workflow@example.test",
+          avatarHash: null,
+          accountExpires: null,
+          lastLoginLocal: null,
+          memberofGroup: [],
+          memberofGroupIds: [],
+          manages: [],
+          managesGroupIds: [],
+          ipa: null,
+        };
+        const authenticate: MiddlewareHandler<AuthContext> = async (c, next) => {
+          c.set("actor", { kind: "user", user });
+          c.set("user", user);
+          c.set("accessSubject", { type: "user", userId: fixture.actorId });
+          await next();
+        };
+        const api = new Hono<AuthContext>()
+          .use("*", authenticate)
+          .route("/apps", createCustomAppsApi({ requireAuthenticated: authenticate, loadOptionalActor: authenticate }))
+          .route("/", createWorkflowDocumentConfirmationRoutes());
+        const response = await api.request(`/apps/runtime/${app.data.shortId}/home/scan/scanner`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ operationId: uuid(), expectedRevision: workflow.revision, scannedText: "Draft task", inputs: {} }),
+        });
+        expect(response.status, await response.clone().text()).toBe(202);
+        const invocation = z.object({ statusUrl: z.string() }).parse(await response.json());
+        const statusPath = invocation.statusUrl.replace(/^\/api\/grids/, "");
+        const publicRunId = statusPath.split("/").at(-1);
+        const [run] = await sql<Array<{ run_id: string }>>`SELECT run_id FROM grids.workflow_run_profile WHERE short_id = ${publicRunId}`;
+        if (!run) throw new Error("Missing scanner run");
+        await runGridsWorkflowRun(run.run_id);
+        expect((await runRow(run.run_id)).state).toBe("waiting");
+        const pending = await getWorkflowDocumentConfirmation(run.run_id);
+        if (!pending) throw new Error(JSON.stringify(await stepRuns(run.run_id)));
+        const status = await api.request(statusPath);
+        expect(status.status).toBe(200);
+        expect(await status.json()).toMatchObject({ documentConfirmation: pending });
+        const confirmationPath = `/runs/${publicRunId}/document-confirmations/${pending.receiptId}`;
+        const preview = await api.request(confirmationPath);
+        expect(preview.status, await preview.clone().text()).toBe(200);
+        expect(FinancialExportPreviewSchema.parse(await preview.json()).input.rows[0]).toMatchObject({ amount: "12.30" });
+        const revoked = await revokeAccess(access.data.accessId, fixture.actorId);
+        if (!revoked.ok) throw revoked.error;
+        const confirm = () =>
+          api.request(`${confirmationPath}/confirm`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ sha256: pending.sha256 }),
+          });
+        expect((await confirm()).status).toBe(403);
+        expect(await sql`SELECT id FROM grids.documents WHERE workflow_run_id = ${run.run_id}::uuid`).toHaveLength(0);
+        const restored = await grant();
+        if (!restored.ok) throw restored.error;
+        expect((await confirm()).status).toBe(200);
+        expect(await drive(run.run_id)).toBe("succeeded");
+        const done = await api.request(statusPath);
+        expect(done.status).toBe(200);
+        expect(await done.json()).not.toHaveProperty("documentConfirmation");
+        expect(await sql`SELECT id FROM grids.documents WHERE workflow_run_id = ${run.run_id}::uuid`).toHaveLength(1);
+      } finally {
+        await cleanupFixture(fixture);
+      }
+    },
+    30_000,
+  );
+
+  postgresTest("query publication and execution refuse inaccessible tables and incompatible schemas", async () => {
+    const fixture = createFixture();
+    try {
+      await insertFixture(fixture);
+      const source = "steps:\n  - query:\n      source: |\n        from table Tasks\n        select Name\n";
+      const catalog = await loadWorkflowCatalog(fixture.baseId);
+      const deniedCatalog = { ...catalog, tables: { refs: new Map(), ambiguous: new Set<string>() } };
+      expect((await compileAndBindGridsWorkflowSource(source, deniedCatalog, workflowQueryBinder(fixture.baseId, deniedCatalog))).ok).toBe(
+        false,
+      );
+      const bound = await compileAndBindGridsWorkflowSource(source, catalog, workflowQueryBinder(fixture.baseId, catalog));
+      if (!bound.ok) throw new Error(JSON.stringify(bound.diagnostics));
+      await sql`UPDATE grids.fields SET config = '{"maxLength":12}'::jsonb WHERE id = ${fixture.nameFieldId}::uuid`;
+      const runId = await queueRun(fixture, { plan: bound.plan });
+      expect(await drive(runId)).toBe("failed");
+      expect((await runRow(runId)).error?.code).toBe("CONFLICT");
+      const [count] = await sql`SELECT count(*)::int AS count FROM grids.workflow_query_data WHERE run_id = ${runId}::uuid`;
+      expect(count.count).toBe(0);
+    } finally {
+      await cleanupFixture(fixture);
+    }
+  });
+
+  postgresTest("query binds a workflow record input as an authorized public ID", async () => {
+    const fixture = createFixture();
+    try {
+      await insertFixture(fixture);
+      const catalog = await loadWorkflowCatalog(fixture.baseId);
+      const bound = await compileAndBindGridsWorkflowSource(
+        "inputs:\n  selected:\n    type: record\n    table: Tasks\n    required: true\nsteps:\n  - query:\n      source: |\n        from table Tasks\n        select Name\n        where record.id = @params.selected\n      parameters:\n        selected:\n          type: record\n          value: ${{ inputs.selected }}\n",
+        catalog,
+        workflowQueryBinder(fixture.baseId, catalog),
+      );
+      if (!bound.ok) throw new Error(JSON.stringify(bound.diagnostics));
+      const runId = await queueRun(fixture, {
+        plan: bound.plan,
+        inputs: { selected: { kind: "record", tableId: fixture.tableId, recordId: fixture.recordId } },
+      });
+      expect(await drive(runId)).toBe("succeeded");
+      const [captured] = await sql`SELECT payload FROM grids.workflow_query_data WHERE run_id = ${runId}::uuid`;
+      expect(captured.payload.rows).toHaveLength(1);
+      expect(captured.payload.context["params.selected"]).toMatch(/^[a-zA-Z0-9]{6}$/);
+      expect(captured.payload.context["params.selected"]).not.toBe(fixture.recordId);
+    } finally {
+      await cleanupFixture(fixture);
+    }
+  });
+
+  postgresTest(
+    "a create-then-query dry run validates without reading a planned record or capturing rows",
+    async () => {
+      const fixture = createFixture();
+      try {
+        await insertFixture(fixture);
+        const catalog = await loadWorkflowCatalog(fixture.baseId);
+        const compiled = await compileAndBindGridsWorkflowSource(
+          "steps:\n  - createRecord:\n      table: Tasks\n      values:\n        Name: Created for query\n      saveAs: created\n  - query:\n      source: |\n        from table Tasks\n        select Name\n        where record.id = @params.selected\n      parameters:\n        selected:\n          type: record\n          value: ${{ created }}\n",
+          catalog,
+          workflowQueryBinder(fixture.baseId, catalog),
+        );
+        if (!compiled.ok) throw new Error(JSON.stringify(compiled.diagnostics));
+        const dryRunId = await queueRun(fixture, { plan: compiled.plan, mode: "dryRun" });
+        expect(await drive(dryRunId, "dryRun")).toBe("succeeded");
+        expect((await stepRuns(dryRunId)).map((step) => step.state)).toEqual(["planned", "planned"]);
+        const [count] = await sql`SELECT count(*)::int AS count FROM grids.records WHERE table_id = ${fixture.tableId}::uuid`;
+        expect(count.count).toBe(1);
+        const [captured] = await sql`SELECT count(*)::int AS count FROM grids.workflow_query_data WHERE run_id = ${dryRunId}::uuid`;
+        expect(captured.count).toBe(0);
+        const runId = await queueRun(fixture, { plan: compiled.plan });
+        expect(await drive(runId)).toBe("succeeded");
+        const [actual] = await sql`SELECT payload FROM grids.workflow_query_data WHERE run_id = ${runId}::uuid`;
+        expect(actual.payload.rows).toEqual([{ q_col_0: "Created for query" }]);
+        expect(actual.payload.context["params.selected"]).toMatch(/^[a-zA-Z0-9]{6}$/);
+      } finally {
+        await cleanupFixture(fixture);
+      }
+    },
+    30_000,
+  );
+
+  postgresTest("query captures once with its journal and dry runs do not persist rows", async () => {
+    const fixture = createFixture();
+    try {
+      await insertFixture(fixture);
+      const catalog = await loadWorkflowCatalog(fixture.baseId);
+      const compiled = await compileAndBindGridsWorkflowSource(
+        "steps:\n  - query:\n      source: |\n        from table Tasks\n        select Name as task_name\n      saveAs: report\n",
+        catalog,
+        workflowQueryBinder(fixture.baseId, catalog),
+      );
+      if (!compiled.ok) throw new Error(JSON.stringify(compiled.diagnostics));
+      const dryRunId = await queueRun(fixture, { plan: compiled.plan, mode: "dryRun" });
+      expect(await drive(dryRunId, "dryRun")).toBe("succeeded");
+      const [dryCount] = await sql`SELECT count(*)::int AS count FROM grids.workflow_query_data WHERE run_id = ${dryRunId}::uuid`;
+      expect(dryCount.count).toBe(0);
+
+      const runId = await queueRun(fixture, { plan: compiled.plan });
+      expect(await drive(runId)).toBe("succeeded");
+      const [captured] = await sql`SELECT id::text, payload, sha256 FROM grids.workflow_query_data WHERE run_id = ${runId}::uuid`;
+      expect(captured.payload.rows).toEqual([{ q_col_0: "Draft task" }]);
+      expect(captured.payload.columns).toMatchObject([{ key: "q_col_0", label: "task_name" }]);
+      expect((await stepRuns(runId))[0]?.effect_output).toMatchObject({
+        kind: "queryResult",
+        id: captured.id,
+        sha256: captured.sha256,
+        rowCount: 1,
+      });
+      expect((await stepRuns(runId))[0]?.effect_output).not.toHaveProperty("rows");
+      await sql`UPDATE grids.records SET data = data || ${{ [fixture.nameFieldId]: "Changed later" }}::jsonb WHERE id = ${fixture.recordId}::uuid`;
+      await reopenForReplay(runId);
+      expect(await drive(runId)).toBe("succeeded");
+      const rows = await sql`SELECT id::text, payload, sha256 FROM grids.workflow_query_data WHERE run_id = ${runId}::uuid`;
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toEqual(captured);
+
+      const deniedRun = await queueRun(fixture, { plan: compiled.plan });
+      await sql`DELETE FROM grids.base_access WHERE base_id = ${fixture.baseId}::uuid`;
+      expect(await drive(deniedRun)).toBe("failed");
+      const [deniedCount] = await sql`SELECT count(*)::int AS count FROM grids.workflow_query_data WHERE run_id = ${deniedRun}::uuid`;
+      expect(deniedCount.count).toBe(0);
+    } finally {
+      await cleanupFixture(fixture);
+    }
+  });
+
+  postgresTest(
+    "query documents produce PDF, CSV, JSON and XML through one frozen capture and survive replay",
+    async () => {
+      const fixture = createFixture();
+      const renderPdf = documentRendering.renderDocumentHtmlPdf;
+      const pdfBodies: string[] = [];
+      const renderer = spyOn(documentRendering, "renderDocumentHtmlPdf").mockImplementation((document, locale) =>
+        renderPdf(document, locale, {
+          config: { url: "http://renderer.invalid", timeoutMs: 1000, maxHtmlBytes: 10_000, maxPdfBytes: 10_000 },
+          fetch: async (_url, init) => {
+            if (!(init?.body instanceof FormData)) throw new Error("Expected PDF form data");
+            const file = init.body.getAll("files").find((value) => value instanceof File && value.name === "index.html");
+            if (!(file instanceof File)) throw new Error("Expected PDF body");
+            pdfBodies.push(await file.text());
+            return new Response("%PDF-frozen-query", { headers: { "content-type": "application/pdf" } });
+          },
+        }),
+      );
+      try {
+        await insertFixture(fixture);
+        const catalog = await loadWorkflowCatalog(fixture.baseId);
+        const compiled = await compileAndBindGridsWorkflowSource(
+          'inputs:\n  approved:\n    type: boolean\nsteps:\n  - query:\n      source: |\n        from table Tasks\n        select Name as task_name\n      saveAs: report\n  - generateDocument:\n      data: report\n      output: { kind: csv, columns: [{ source: task_name, label: Task }] }\n      saveAs: csvFile\n  - generateDocument:\n      data: report\n      output: { kind: json, wrapper: { rowsKey: items, values: { approved: "${{ inputs.approved }}" } } }\n      saveAs: jsonFile\n  - generateDocument:\n      data: report\n      output:\n        kind: xml\n        body: "<report>{% for row in rows %}{% for column in columns %}<value>{{ row[column.key] }}</value>{% endfor %}{% endfor %}</report>"\n      saveAs: xmlFile\n' +
+            '  - generateDocument:\n      data: report\n      output:\n        kind: pdf\n        body: "{% for row in rows %}<p>{{ row.q_col_0 }}</p>{% endfor %}"\n      saveAs: pdfFile\n',
+          catalog,
+          workflowQueryBinder(fixture.baseId, catalog),
+        );
+        if (!compiled.ok) throw new Error(JSON.stringify(compiled.diagnostics));
+        const dry = await queueRun(fixture, { plan: compiled.plan, mode: "dryRun", inputs: { approved: true } });
+        expect(await drive(dry, "dryRun")).toBe("succeeded");
+        expect(await sql`SELECT id FROM grids.documents WHERE workflow_run_id = ${dry}::uuid`).toHaveLength(0);
+        const runId = await queueRun(fixture, { plan: compiled.plan, inputs: { approved: true } });
+        expect(await drive(runId)).toBe("succeeded");
+        const documents = await sql<
+          Array<{ id: string; query_data_id: string; primary_artifact_key: string; render_data: unknown; profile_snapshot: unknown }>
+        >`
+        SELECT id::text, query_data_id::text, primary_artifact_key, render_data, profile_snapshot
+        FROM grids.documents WHERE workflow_run_id = ${runId}::uuid ORDER BY primary_artifact_key
+      `;
+        expect(documents).toHaveLength(4);
+        expect(new Set(documents.map((document) => document.query_data_id)).size).toBe(1);
+        for (const document of documents) {
+          const content = await readDocumentArtifact(document.id, document.primary_artifact_key);
+          expect(content.ok).toBe(true);
+          if (!content.ok) throw content.error;
+          const text = new TextDecoder().decode(content.data.bytes);
+          const expected: Record<string, string> = {
+            csv: "Task\r\nDraft task\r\n",
+            json: '{"approved":true,"items":[{"task_name":"Draft task"}]}',
+            xml: "<report><value>Draft task</value></report>",
+            pdf: "%PDF-frozen-query",
+          };
+          const expectedText = expected[document.primary_artifact_key];
+          if (expectedText === undefined) throw new Error(`Unexpected artifact ${document.primary_artifact_key}`);
+          expect(text).toBe(expectedText);
+          expect(JSON.stringify(document.render_data)).not.toContain("Draft task");
+          expect(JSON.stringify(document.profile_snapshot)).not.toContain("Draft task");
+        }
+        const outcomes = await stepRuns(runId);
+        expect(outcomes[1]?.outcome?.output).toMatchObject({ tableId: null, recordId: null, templateId: null, primaryArtifactKey: "csv" });
+        await sql`UPDATE grids.records SET data = data || ${{ [fixture.nameFieldId]: "Changed later" }}::jsonb WHERE id = ${fixture.recordId}::uuid`;
+        await reopenForReplay(runId);
+        expect(await drive(runId)).toBe("succeeded");
+        expect(await sql`SELECT id FROM grids.documents WHERE workflow_run_id = ${runId}::uuid`).toHaveLength(4);
+        expect(pdfBodies).toEqual(["<p>Draft task</p>"]);
+        const nextReport = await queueRun(fixture, { plan: compiled.plan, inputs: { approved: true } });
+        await sql`UPDATE grids.workflow_run_profile SET channel = 'schedule' WHERE run_id = ${nextReport}::uuid`;
+        expect(await drive(nextReport)).toBe("succeeded");
+        const nextDocuments = await sql<Array<{ query_data_id: string }>>`
+          SELECT query_data_id::text FROM grids.documents WHERE workflow_run_id = ${nextReport}::uuid`;
+        expect(nextDocuments).toHaveLength(4);
+        expect(new Set(nextDocuments.map((document) => document.query_data_id)).size).toBe(1);
+        expect(nextDocuments[0]?.query_data_id).not.toBe(documents[0]?.query_data_id);
+        expect(pdfBodies).toEqual(["<p>Draft task</p>", "<p>Changed later</p>"]);
+        await expect(
+          (async () => {
+            await sql`DELETE FROM grids.workflow_query_data WHERE run_id = ${runId}::uuid`;
+          })(),
+        ).rejects.toMatchObject({ errno: "23503" });
+      } finally {
+        renderer.mockRestore();
+        await cleanupFixture(fixture);
+      }
+    },
+    30000,
+  );
+
+  postgresTest("lease takeover during rendering prevents issuance and reuses the captured data on recovery", async () => {
+    const fixture = createFixture();
+    const issue = jsonDocumentProfile.issue.bind(jsonDocumentProfile);
+    const render = spyOn(jsonDocumentProfile, "issue");
+    try {
+      await insertFixture(fixture);
+      const catalog = await loadWorkflowCatalog(fixture.baseId);
+      const compiled = await compileAndBindGridsWorkflowSource(
+        "steps:\n  - query:\n      source: |\n        from table Tasks\n        select Name\n      saveAs: report\n  - generateDocument:\n      data: report\n      output: { kind: json }\n",
+        catalog,
+        workflowQueryBinder(fixture.baseId, catalog),
+      );
+      if (!compiled.ok) throw new Error(JSON.stringify(compiled.diagnostics));
+      const runId = await queueRun(fixture, { plan: compiled.plan });
+      render.mockImplementationOnce(async (input, context) => {
+        const result = await issue(input, context);
+        await sql`UPDATE workflows.run SET execution_generation = execution_generation + 1 WHERE id = ${runId}::uuid`;
+        return result;
+      });
+      expect((await runGridsWorkflowRun(runId)).state).toBe("lost");
+      expect(render).toHaveBeenCalledTimes(1);
+      expect(await sql`SELECT id FROM grids.documents WHERE workflow_run_id = ${runId}::uuid`).toHaveLength(0);
+      const captures = await sql`SELECT id, sha256 FROM grids.workflow_query_data WHERE run_id = ${runId}::uuid`;
+      expect(captures).toHaveLength(1);
+      render.mockRestore();
+      await reopenForReplay(runId);
+      expect(await drive(runId)).toBe("succeeded");
+      expect(await sql`SELECT id, sha256 FROM grids.workflow_query_data WHERE run_id = ${runId}::uuid`).toEqual(captures);
+      const documents = await sql`SELECT id FROM grids.documents WHERE workflow_run_id = ${runId}::uuid`;
+      expect(documents).toHaveLength(1);
+      await reopenForReplay(runId);
+      expect(await drive(runId)).toBe("succeeded");
+      expect(await sql`SELECT id FROM grids.documents WHERE workflow_run_id = ${runId}::uuid`).toEqual(documents);
+    } finally {
+      render.mockRestore();
+      await cleanupFixture(fixture);
+    }
+  });
+
+  postgresTest("query document links can be planned without looking up placeholder IDs", async () => {
+    const fixture = createFixture();
+    try {
+      await insertFixture(fixture);
+      const catalog = await loadWorkflowCatalog(fixture.baseId);
+      for (const kind of ["pdf", "json", "csv", "xml"] as const) {
+        const compiled = await compileAndBindGridsWorkflowSource(
+          [
+            "steps:",
+            "  - query:",
+            "      source: |",
+            "        from table Tasks",
+            "        select Name as task_name",
+            "      saveAs: report",
+            "  - generateDocument:",
+            "      data: report",
+            `      output: ${JSON.stringify(kind === "pdf" || kind === "xml" ? { kind, body: "<report>Test</report>" } : { kind })}`,
+            "      saveAs: reportFile",
+            "  - createDocumentLink:",
+            "      document: reportFile",
+            "      expiresIn: 7d",
+            "      saveAs: reportLink",
+          ].join("\n"),
+          catalog,
+          workflowQueryBinder(fixture.baseId, catalog),
+        );
+        if (!compiled.ok) throw new Error(JSON.stringify(compiled.diagnostics));
+        const runId = await queueRun(fixture, { plan: compiled.plan, mode: "dryRun" });
+        expect(await drive(runId, "dryRun")).toBe(kind === "pdf" ? "succeeded" : "failed");
+        const steps = await stepRuns(runId);
+        if (kind === "pdf") expect(steps.at(-1)?.outcome?.output).toMatchObject({ kind: "documentLink", planned: true, expiresIn: "7d" });
+        else
+          expect(steps.at(-1)?.outcome).toMatchObject({
+            output: null,
+            issues: [{ reason: "Public links are available only for PDF documents. Use an authorized download for this file." }],
+          });
+        expect(await sql`SELECT id FROM grids.documents WHERE workflow_run_id = ${runId}::uuid`).toHaveLength(0);
+        expect(await sql`SELECT id FROM grids.workflow_query_data WHERE run_id = ${runId}::uuid`).toHaveLength(0);
+      }
+    } finally {
+      await cleanupFixture(fixture);
+    }
+  });
+
+  postgresTest(
+    "record snapshot export keeps historical values and rechecks current source access",
+    async () => {
+      const fixture = createFixture();
+      try {
+        await insertFixture(fixture);
+        const relatedTable = uuid();
+        const relatedField = uuid();
+        const relatedRecord = uuid();
+        await sql`INSERT INTO grids.tables (id, short_id, base_id, name, position) VALUES (${relatedTable}::uuid, ${shortId("T")}, ${fixture.baseId}::uuid, 'Related', 1)`;
+        await sql`INSERT INTO grids.fields (id, short_id, table_id, name, type, config, position) VALUES (${relatedField}::uuid, ${shortId("F")}, ${relatedTable}::uuid, 'Secret', 'text', '{}'::jsonb, 0)`;
+        await sql`INSERT INTO grids.records (id, short_id, table_id, data) VALUES (${relatedRecord}::uuid, ${shortId("R")}, ${relatedTable}::uuid, ${{ [relatedField]: "Historical related secret" }}::jsonb)`;
+        await sql`UPDATE grids.fields SET config = ${{ targetTableId: relatedTable, cardinality: "single" }}::jsonb WHERE id = ${fixture.originalRelationFieldId}::uuid`;
+        await sql`INSERT INTO grids.record_links (from_record_id, from_field_id, to_record_id, position)
+          VALUES (${fixture.recordId}::uuid, ${fixture.originalRelationFieldId}::uuid, ${relatedRecord}::uuid, 0)`;
+        const snapshot = await createRecordSnapshot({
+          baseId: fixture.baseId,
+          tableId: fixture.tableId,
+          recordId: fixture.recordId,
+          actorId: fixture.actorId,
+          canReadTable: async () => true,
+        });
+        if (!snapshot.ok) throw snapshot.error;
+        await sql`UPDATE grids.records SET data = ${{ [relatedField]: "New related value" }}::jsonb WHERE id = ${relatedRecord}::uuid`;
+        const [field] = await sql<Array<{ short_id: string }>>`SELECT short_id FROM grids.fields WHERE id = ${fixture.nameFieldId}::uuid`;
+        if (!field) throw new Error("Missing field");
+        const source = {
+          snapshots: [snapshot.data.shortId],
+          columns: [{ key: "name", type: "text", path: ["root", "data", field.short_id] }],
+        };
+        await sql`UPDATE grids.records SET data = data || ${{ [fixture.nameFieldId]: "New live name" }}::jsonb WHERE id = ${fixture.recordId}::uuid`;
+        const denied = await captureWorkflowRecordSource(
+          { source, baseId: fixture.baseId, capturedAt: new Date().toISOString(), canReadTable: async () => false },
+          sql,
+        );
+        expect(denied.ok).toBe(false);
+        const captured = await captureWorkflowRecordSource(
+          { source, baseId: fixture.baseId, capturedAt: new Date().toISOString(), canReadTable: async () => true },
+          sql,
+        );
+        if (!captured.ok) throw captured.error;
+        expect(captured.data.payload.rows).toEqual([{ name: "Draft task" }]);
+        expect(captured.data.payload.tableIds).toEqual([fixture.tableId, relatedTable].sort());
+        expect(captured.data.payload.source).toEqual({ kind: "recordSnapshots", ids: [snapshot.data.shortId] });
+        const graphSource = { ...source, columns: [{ key: "graph", type: "json", path: ["graph", "records"] }] };
+        const visible = await captureWorkflowRecordSource(
+          { source: graphSource, baseId: fixture.baseId, capturedAt: new Date().toISOString(), canReadTable: async () => true },
+          sql,
+        );
+        if (!visible.ok) throw visible.error;
+        expect(JSON.stringify(visible.data.payload.rows)).toContain("Historical related secret");
+        expect(JSON.stringify(visible.data.payload.rows)).not.toContain("New related value");
+        expect(JSON.stringify(visible.data.payload.rows)).not.toContain(relatedRecord);
+        const redacted = await captureWorkflowRecordSource(
+          {
+            source: graphSource,
+            baseId: fixture.baseId,
+            capturedAt: new Date().toISOString(),
+            canReadTable: async ({ tableId }) => tableId === fixture.tableId,
+          },
+          sql,
+        );
+        if (!redacted.ok) throw redacted.error;
+        expect(JSON.stringify(redacted.data.payload.rows)).not.toContain("Historical related secret");
+        expect(JSON.stringify(redacted.data.payload.rows)).not.toContain(relatedRecord);
+        expect(redacted.data.payload.tableIds).toEqual([fixture.tableId]);
+        const compiled = await compileAndBindGridsWorkflowSource(
+          `steps:
+  - generateDocument:
+      data:
+        snapshots: [${snapshot.data.shortId}]
+        columns: [{ key: name, type: text, path: [root, data, ${field.short_id}] }]
+      output: { kind: json }
+`,
+          await loadWorkflowCatalog(fixture.baseId),
+        );
+        if (!compiled.ok) throw new Error(JSON.stringify(compiled.diagnostics));
+        const run = await queueRun(fixture, { plan: compiled.plan });
+        expect(await drive(run)).toBe("succeeded");
+        const [document] = await sql<Array<{ id: string }>>`SELECT id::text FROM grids.documents WHERE workflow_run_id = ${run}::uuid`;
+        if (!document) throw new Error("Missing export");
+        const content = await readDocumentArtifact(document.id, "json");
+        if (!content.ok) throw content.error;
+        expect(JSON.parse(new TextDecoder().decode(content.data.bytes))).toEqual([{ name: "Draft task" }]);
+      } finally {
+        await cleanupFixture(fixture);
+      }
+    },
+    30000,
+  );
+
+  postgresTest(
+    "generate then export a document snapshot is plannable without querying placeholder IDs",
+    async () => {
+      const fixture = createFixture();
+      try {
+        await insertFixture(fixture);
+        const compiled = await compileAndBindGridsWorkflowSource(
+          `steps:
+  - generateDocument:
+      data:
+        columns: [{ key: amount, type: decimal }]
+        rows: [{ amount: "12.30" }]
+      output: { kind: json }
+      saveAs: source
+  - generateDocument:
+      data:
+        documents: ["\${{ source.shortId }}"]
+        columns: [{ key: number, type: text, path: [number] }]
+      output: { kind: json }
+`,
+          await loadWorkflowCatalog(fixture.baseId),
+        );
+        if (!compiled.ok) throw new Error(JSON.stringify(compiled.diagnostics));
+        const dry = await queueRun(fixture, { plan: compiled.plan, mode: "dryRun" });
+        expect(await drive(dry, "dryRun")).toBe("succeeded");
+        expect(await sql`SELECT id FROM grids.workflow_query_data WHERE run_id = ${dry}::uuid`).toHaveLength(0);
+        expect(await sql`SELECT id FROM grids.documents WHERE workflow_run_id = ${dry}::uuid`).toHaveLength(0);
+        const run = await queueRun(fixture, { plan: compiled.plan });
+        expect(await drive(run)).toBe("succeeded");
+        const documents = await sql<
+          Array<{ id: string; document_number: string }>
+        >`SELECT id::text, document_number FROM grids.documents WHERE workflow_run_id = ${run}::uuid ORDER BY created_at`;
+        expect(documents).toHaveLength(2);
+        const exported = documents[1];
+        if (!exported) throw new Error("Missing export");
+        const content = await readDocumentArtifact(exported.id, "json");
+        if (!content.ok) throw content.error;
+        expect(JSON.parse(new TextDecoder().decode(content.data.bytes))).toEqual([{ number: documents[0]?.document_number }]);
+      } finally {
+        await cleanupFixture(fixture);
+      }
+    },
+    30000,
+  );
+
+  postgresTest(
+    "typed workflow values generate an exact immutable document and survive replay without GQL",
+    async () => {
+      const fixture = createFixture();
+      try {
+        await insertFixture(fixture);
+        const compiled = await compileAndBindGridsWorkflowSource(
+          `inputs:
+  amount:
+    type: text
+  approved:
+    type: boolean
+steps:
+  - generateDocument:
+      data:
+        columns:
+          - { key: amount, type: decimal }
+          - { key: approved, type: boolean }
+        rows:
+          - amount: "\${{ inputs.amount }}"
+            approved: "\${{ inputs.approved }}"
+      output: { kind: json }
+`,
+          await loadWorkflowCatalog(fixture.baseId),
+        );
+        if (!compiled.ok) throw new Error(JSON.stringify(compiled.diagnostics));
+        const inputs = { amount: "9007199254740993.01", approved: true };
+        const dry = await queueRun(fixture, { plan: compiled.plan, mode: "dryRun", inputs });
+        expect(await drive(dry, "dryRun")).toBe("succeeded");
+        expect(await sql`SELECT id FROM grids.workflow_query_data WHERE run_id = ${dry}::uuid`).toHaveLength(0);
+        const runId = await queueRun(fixture, { plan: compiled.plan, inputs });
+        expect(await drive(runId)).toBe("succeeded");
+        const documents = await sql<Array<{ id: string }>>`SELECT id::text FROM grids.documents WHERE workflow_run_id = ${runId}::uuid`;
+        expect(documents).toHaveLength(1);
+        const document = documents[0];
+        if (!document) throw new Error("Missing document");
+        const content = await readDocumentArtifact(document.id, "json");
+        if (!content.ok) throw content.error;
+        expect(JSON.parse(new TextDecoder().decode(content.data.bytes))).toEqual([inputs]);
+        const frozen = await sql`SELECT * FROM grids.workflow_query_data WHERE run_id = ${runId}::uuid`;
+        expect(frozen).toHaveLength(1);
+        expect(JSON.stringify(frozen)).toContain('"kind":"values"');
+        await reopenForReplay(runId);
+        expect(await drive(runId)).toBe("succeeded");
+        expect(await sql`SELECT * FROM grids.workflow_query_data WHERE run_id = ${runId}::uuid`).toEqual(frozen);
+        expect(await sql`SELECT id FROM grids.documents WHERE workflow_run_id = ${runId}::uuid`).toHaveLength(1);
+        const [original] = await sql<
+          Array<{ short_id: string; document_number: string }>
+        >`SELECT short_id, document_number FROM grids.documents WHERE id = ${document.id}::uuid`;
+        if (!original) throw new Error("Missing source document");
+        const snapshotSource = { documents: [original.short_id], columns: [{ key: "number", type: "text", path: ["number"] }] };
+        const foreign = await captureWorkflowDocumentSource(
+          { source: snapshotSource, baseId: uuid(), capturedAt: new Date().toISOString() },
+          sql,
+        );
+        expect(foreign.ok).toBe(false);
+        if (foreign.ok) throw new Error("Cross-base snapshot leaked");
+        expect(foreign.error.code).toBe("NOT_FOUND");
+        const missing = await captureWorkflowDocumentSource(
+          {
+            source: { ...snapshotSource, documents: [original.short_id, "ZZZZZZ"] },
+            baseId: fixture.baseId,
+            capturedAt: new Date().toISOString(),
+          },
+          sql,
+        );
+        expect(missing.ok).toBe(false);
+        const snapshotPlan = await compileAndBindGridsWorkflowSource(
+          `steps:
+  - generateDocument:
+      data:
+        documents: [${original.short_id}]
+        columns: [{ key: number, type: text, path: [number] }]
+      output: { kind: json }
+`,
+          await loadWorkflowCatalog(fixture.baseId),
+        );
+        if (!snapshotPlan.ok) throw new Error(JSON.stringify(snapshotPlan.diagnostics));
+        const snapshotRun = await queueRun(fixture, { plan: snapshotPlan.plan });
+        expect(await drive(snapshotRun)).toBe("succeeded");
+        const [exported] = await sql<
+          Array<{ id: string }>
+        >`SELECT id::text FROM grids.documents WHERE workflow_run_id = ${snapshotRun}::uuid`;
+        if (!exported) throw new Error("Missing snapshot export");
+        const snapshotContent = await readDocumentArtifact(exported.id, "json");
+        if (!snapshotContent.ok) throw snapshotContent.error;
+        expect(JSON.parse(new TextDecoder().decode(snapshotContent.data.bytes))).toEqual([{ number: original.document_number }]);
+        await reopenForReplay(snapshotRun);
+        expect(await drive(snapshotRun)).toBe("succeeded");
+        expect(await sql`SELECT id FROM grids.documents WHERE workflow_run_id = ${snapshotRun}::uuid`).toHaveLength(1);
+      } finally {
+        await cleanupFixture(fixture);
+      }
+    },
+    30000,
+  );
+
+  postgresTest(
+    "expense payment starter rejects drafts and exports finalized records through real GQL",
+    async () => {
+      const fixture = createFixture();
+      try {
+        await insertFixture(fixture);
+        const fields = {
+          businessId: { id: uuid(), shortId: shortId("F"), value: "AE-2026-001", type: "text" },
+          amount: { id: uuid(), shortId: shortId("F"), value: "12.30", type: "number" },
+          creditorName: { id: uuid(), shortId: shortId("F"), value: "Example Payee", type: "text" },
+          creditorIban: { id: uuid(), shortId: shortId("F"), value: "DE89370400440532013000", type: "text" },
+          remittance: { id: uuid(), shortId: shortId("F"), value: "Expense reimbursement", type: "text" },
+        };
+        for (const [key, field] of Object.entries(fields)) {
+          await sql`INSERT INTO grids.fields (id, short_id, table_id, name, type, config, required, unique_constraint)
+          VALUES (${field.id}::uuid, ${field.shortId}, ${fixture.tableId}::uuid, ${key}, ${field.type}, '{}'::jsonb, true, ${key === "businessId"})`;
+        }
+        await sql`UPDATE grids.records SET data = data || ${Object.fromEntries(Object.values(fields).map((field) => [field.id, field.value]))}::jsonb WHERE id = ${fixture.recordId}::uuid`;
+        const history = await enableDurableHistory(fixture.tableId, fixture.actorId);
+        if (!history.ok) throw history.error;
+        const activation = await enableFinalization(fixture.tableId, { mode: "direct" }, fixture.actorId);
+        if (!activation.ok) throw activation.error;
+        const [table] = await sql<Array<{ short_id: string }>>`SELECT short_id FROM grids.tables WHERE id = ${fixture.tableId}::uuid`;
+        if (!table) throw new Error("Missing table");
+        const source = expensePaymentStarterSource({
+          tableId: table.short_id,
+          fieldReferences: Object.keys(fields),
+          fields: {
+            businessId: fields.businessId.shortId,
+            amount: fields.amount.shortId,
+            creditorName: fields.creditorName.shortId,
+            creditorIban: fields.creditorIban.shortId,
+            remittance: fields.remittance.shortId,
+          },
+          header: {
+            destinationKey: "reimbursements",
+            debtorName: "Example",
+            debtorIban: "DE89370400440532013000",
+            executionDate: "2026-09-15",
+          },
+          notFinalizedMessage: "Finalize all selected reimbursements first.",
+        });
+        const catalog = await loadWorkflowCatalog(fixture.baseId);
+        const compiled = await compileAndBindGridsWorkflowSource(source, catalog, async (query, values) => {
+          const parsed = parseGridsQueryDsl(query);
+          if (!parsed.ok) throw new Error(JSON.stringify(parsed.diagnostics));
+          const context = await buildTrustedGqlResolverContext({
+            baseId: fixture.baseId,
+            ast: parsed.ast,
+            purpose: "workflow-query",
+            client: sql,
+          });
+          const canonical = canonicalizeDslQuery(parsed.ast, context, values);
+          if (!canonical.ok) throw new Error(JSON.stringify(canonical));
+          return workflowQueryBinder(fixture.baseId, catalog)(query, values);
+        });
+        if (!compiled.ok) throw new Error(JSON.stringify(compiled.diagnostics));
+        const inputs = { records: [{ kind: "record", tableId: fixture.tableId, recordId: fixture.recordId }] };
+        const draftRun = await queueRun(fixture, { plan: compiled.plan, inputs });
+        expect(await drive(draftRun)).toBe("failed");
+        expect(await getWorkflowDocumentConfirmation(draftRun)).toBeUndefined();
+        expect(await sql`SELECT id FROM grids.document_issuances WHERE base_id = ${fixture.baseId}::uuid`).toHaveLength(0);
+        const finalized = await finalizeRecord({
+          tableId: fixture.tableId,
+          recordId: fixture.recordId,
+          actorId: fixture.actorId,
+          origin: "direct",
+        });
+        if (!finalized.ok) throw finalized.error;
+        const runId = await queueRun(fixture, { plan: compiled.plan, inputs });
+        await runGridsWorkflowRun(runId);
+        expect((await runRow(runId)).state).toBe("waiting");
+        const pending = await getWorkflowDocumentConfirmation(runId);
+        const scope = await getWorkflowRunScope(runId);
+        if (!pending || !scope) throw new Error(JSON.stringify(await stepRuns(runId)));
+        const request = {
+          baseId: fixture.baseId,
+          runId,
+          receiptId: pending.receiptId,
+          actor: documentActorForScope(scope),
+          authorize: async () => {},
+        };
+        const preview = await documentIssuanceService.inspectQueryDocumentConfirmation(request);
+        if (!preview.ok) throw preview.error;
+        expect(preview.data.input.rows[0]).toMatchObject({ businessId: "AE-2026-001", amount: "12.30" });
+        const confirmed = await documentIssuanceService.confirmQueryDocument({ ...request, sha256: pending.sha256 });
+        if (!confirmed.ok) throw confirmed.error;
+        expect(await drive(runId)).toBe("succeeded");
+        const [document] = await sql<Array<{ id: string }>>`SELECT id FROM grids.documents WHERE workflow_run_id = ${runId}::uuid`;
+        if (!document) throw new Error("Missing export");
+        const artifact = await documentIssuanceService.getDocumentArtifact(document.id, "xml");
+        if (!artifact.ok) throw artifact.error;
+        expect(new TextDecoder().decode(artifact.data.bytes)).toContain('<InstdAmt Ccy="EUR">12.30</InstdAmt>');
+      } finally {
+        await cleanupFixture(fixture);
+      }
+    },
+    30_000,
+  );
+
+  postgresTest(
+    "financial query combines two cost centers but restricts confirmation and aggregate download",
+    async () => {
+      const fixture = createFixture();
+      try {
+        await insertFixture(fixture);
+        await sql`UPDATE grids.records SET data = data || ${{ [fixture.statusFieldId]: "COST-A" }}::jsonb WHERE id = ${fixture.recordId}::uuid`;
+        await sql`INSERT INTO grids.records (id, short_id, table_id, data, created_by, updated_by)
+          VALUES (${uuid()}::uuid, ${shortId("R")}, ${fixture.tableId}::uuid,
+            ${{ [fixture.assetIdFieldId]: "ITEM-0002", [fixture.nameFieldId]: "Cost B payee", [fixture.statusFieldId]: "COST-B" }}::jsonb,
+            ${fixture.actorId}::uuid, ${fixture.actorId}::uuid)`;
+        const catalog = await loadWorkflowCatalog(fixture.baseId);
+        const source = [
+          "inputs:",
+          "  executionDate:",
+          "    type: date",
+          "steps:",
+          "  - query:",
+          "      source: |",
+          "        from table Tasks",
+          "        select Name as payee, Status as business, formula('12.30') as amount, formula('DE89370400440532013000') as iban, Status as payment, Status as purpose",
+          "        sort Status asc",
+          "      saveAs: report",
+          "  - generateDocument:",
+          "      data: report",
+          "      output:",
+          "        kind: sepa-xml",
+          "        version: 1",
+          "        header:",
+          "          destinationKey: main-bank",
+          "          debtorName: Example",
+          "          debtorIban: DE89370400440532013000",
+          "          executionDate: '${{ inputs.executionDate }}'",
+          "        mapping:",
+          "          businessId: business",
+          "          amount: amount",
+          "          endToEndId: payment",
+          "          creditorName: payee",
+          "          creditorIban: iban",
+          "          remittance: purpose",
+          "      saveAs: paymentFile",
+        ].join("\n");
+        const compiled = await compileAndBindGridsWorkflowSource(source, catalog, workflowQueryBinder(fixture.baseId, catalog));
+        if (!compiled.ok) throw new Error(JSON.stringify(compiled.diagnostics));
+        const inputs = { executionDate: "2000-01-01" };
+        const dry = await queueRun(fixture, { plan: compiled.plan, inputs, mode: "dryRun" });
+        expect(await drive(dry, "dryRun")).toBe("succeeded");
+        expect(await sql`SELECT id FROM grids.document_issuances WHERE base_id = ${fixture.baseId}::uuid`).toHaveLength(0);
+        const runId = await queueRun(fixture, { plan: compiled.plan, inputs });
+        await runGridsWorkflowRun(runId);
+        expect((await runRow(runId)).state).toBe("waiting");
+        expect(await sql`SELECT id FROM grids.documents WHERE workflow_run_id = ${runId}::uuid`).toHaveLength(0);
+        const pending = await getWorkflowDocumentConfirmation(runId);
+        if (!pending) throw new Error(JSON.stringify(await stepRuns(runId)));
+        const scope = await getWorkflowRunScope(runId);
+        if (!scope) throw new Error("Missing run scope");
+        const authorizeRun = (id: string) => async (tableIds: readonly string[], db: SQL) => {
+          const current = await getWorkflowRunScope(id, db);
+          if (!current || !(await canExecuteRun(current, db))) throw new Error("Run access denied");
+          for (const tableId of tableIds) {
+            if (!(await canAccessWorkflowRunTable(current, tableId, "read", db))) throw new Error("Source access denied");
+          }
+        };
+        const request = {
+          baseId: fixture.baseId,
+          runId,
+          receiptId: pending.receiptId,
+          actor: documentActorForScope(scope),
+          authorize: authorizeRun(runId),
+        };
+        const preview = await documentIssuanceService.inspectQueryDocumentConfirmation(request);
+        if (!preview.ok) throw preview.error;
+        if (preview.data.kind !== "sepa-xml") throw new Error("Expected SEPA preview");
+        expect(preview.data.version).toBe(1);
+        expect(preview.data.input.rows[0]?.amount).toBe("12.30");
+        expect(preview.data.input.rows[0]?.creditorName).toBe("Draft task");
+        expect(preview.data.input.rows.map((row) => row.remittance)).toEqual(["COST-A", "COST-B"]);
+        const apiFor = (userId: string) => {
+          const user: User = {
+            id: userId,
+            uid: `workflow-action-${userId}`,
+            roles: ["user"],
+            provider: "local",
+            profile: "user",
+            givenname: "Workflow",
+            sn: "Actor",
+            displayName: "Workflow Actor",
+            mail: "workflow@example.test",
+            avatarHash: null,
+            accountExpires: null,
+            lastLoginLocal: null,
+            memberofGroup: [],
+            memberofGroupIds: [],
+            manages: [],
+            managesGroupIds: [],
+            ipa: null,
+          };
+          return new Hono<AuthContext>()
+            .use("*", async (c, next) => {
+              c.set("actor", { kind: "user", user });
+              c.set("user", user);
+              c.set("accessSubject", { type: "user", userId });
+              await next();
+            })
+            .route("/", createWorkflowDocumentConfirmationRoutes())
+            .route("/", createWorkflowRunRoutes())
+            .route("/documents", createDocumentResourceRoutes({ requireAuthenticated: async (_c, next) => next() }));
+        };
+        const [publicRun] = await sql<
+          Array<{ short_id: string }>
+        >`SELECT short_id FROM grids.workflow_run_profile WHERE run_id = ${runId}::uuid`;
+        if (!publicRun) throw new Error("Missing public run");
+        const path = `/runs/${publicRun.short_id}/document-confirmations/${pending.receiptId}`;
+        const api = apiFor(fixture.actorId);
+        const runPath = `/runs/${publicRun.short_id}`;
+        const waitingResponse = await api.request(runPath);
+        expect(waitingResponse.status).toBe(200);
+        expect(PublicGridsWorkflowRunSchema.parse(await waitingResponse.json()).documentConfirmation).toEqual(pending);
+        const hiddenRun = await apiFor(uuid()).request(runPath);
+        expect(hiddenRun.status).toBe(403);
+        expect(await hiddenRun.text()).not.toContain(pending.receiptId);
+        const response = await api.request(path);
+        expect(response.status).toBe(200);
+        expect(response.headers.get("Cache-Control")).toBe("private, no-store");
+        expect(FinancialExportPreviewSchema.parse(await response.json())).toEqual({
+          ...preview.data,
+          timeZone: expect.any(String),
+          warnings: [{ code: "pastExecutionDate", message: expect.stringContaining("past") }],
+        });
+        const denied = await apiFor(uuid()).request(path);
+        expect(denied.status).toBe(403);
+        expect(await denied.text()).not.toContain("Draft task");
+        const confirm = (sha256: string) =>
+          api.request(`${path}/confirm`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ sha256 }),
+          });
+        expect((await confirm("0".repeat(64))).status).toBe(409);
+        expect((await runRow(runId)).state).toBe("waiting");
+        await sql`UPDATE grids.records SET data = data || ${{ [fixture.nameFieldId]: "Changed after preview" }}::jsonb WHERE id = ${fixture.recordId}::uuid`;
+        const confirmed = await confirm(pending.sha256);
+        expect(confirmed.status).toBe(200);
+        expect(await confirmed.json()).toEqual({ confirmed: true });
+        expect(await drive(runId)).toBe("succeeded");
+        const documents = await sql<
+          Array<{ id: string; short_id: string }>
+        >`SELECT id::text, short_id FROM grids.documents WHERE workflow_run_id = ${runId}::uuid`;
+        expect(documents).toHaveLength(1);
+        const document = documents[0];
+        if (!document) throw new Error("Missing SEPA document");
+        const file = await readDocumentArtifact(document.id, "xml");
+        if (!file.ok) throw file.error;
+        const xml = new TextDecoder().decode(file.data.bytes);
+        expect(xml).toContain("Draft task");
+        expect(xml).not.toContain("Changed after preview");
+        expect(xml).toContain('<InstdAmt Ccy="EUR">12.30</InstdAmt>');
+        expect(xml).toContain("Cost B payee");
+        expect(xml).toContain("<CtrlSum>24.60</CtrlSum>");
+        const downloadPath = `/documents/${document.short_id}/download`;
+        const download = await api.request(downloadPath);
+        expect(download.status).toBe(200);
+        expect(await download.text()).toBe(xml);
+        const deniedDownload = await apiFor(uuid()).request(downloadPath);
+        expect(deniedDownload.status).toBe(403);
+        expect(await deniedDownload.text()).not.toContain("Cost B payee");
+        expect(await getWorkflowDocumentConfirmation(runId)).toBeUndefined();
+        const completedResponse = await api.request(runPath);
+        expect(completedResponse.status).toBe(200);
+        expect(PublicGridsWorkflowRunSchema.parse(await completedResponse.json()).documentConfirmation).toBeUndefined();
+        await reopenForReplay(runId);
+        expect(await drive(runId)).toBe("succeeded");
+        expect(await sql`SELECT id FROM grids.documents WHERE workflow_run_id = ${runId}::uuid`).toHaveLength(1);
+        // A new run and workflow revision are not permission to pay the same
+        // business event again. The real action must enforce the shared claim.
+        const duplicateRun = await queueRun(fixture, { plan: compiled.plan, inputs });
+        await runGridsWorkflowRun(duplicateRun);
+        expect((await runRow(duplicateRun)).state).toBe("waiting");
+        const duplicatePending = await getWorkflowDocumentConfirmation(duplicateRun);
+        if (!duplicatePending) throw new Error("Missing duplicate export preview");
+        const duplicateConfirmation = await documentIssuanceService.confirmQueryDocument({
+          ...request,
+          runId: duplicateRun,
+          ...duplicatePending,
+          authorize: authorizeRun(duplicateRun),
+        });
+        if (!duplicateConfirmation.ok) throw duplicateConfirmation.error;
+        expect(await drive(duplicateRun)).toBe("failed");
+        expect(await sql`SELECT id FROM grids.documents WHERE base_id = ${fixture.baseId}::uuid`).toHaveLength(1);
+        expect(await sql`SELECT business_id FROM grids.document_export_claims WHERE base_id = ${fixture.baseId}::uuid`).toHaveLength(2);
+      } finally {
+        await cleanupFixture(fixture);
+      }
+    },
+    30000,
+  );
+
+  postgresTest(
+    "query-derived source versions reject changes before financial confirmation",
+    async () => {
+      const fixture = createFixture();
+      try {
+        await insertFixture(fixture);
+        const catalog = await loadWorkflowCatalog(fixture.baseId);
+        const compiled = await compileAndBindGridsWorkflowSource(
+          `steps:
+  - query:
+      source: |
+        from table Tasks
+        select Name as payee, formula('expense-1') as business, formula('12.30') as amount, formula('DE89370400440532013000') as iban, formula('AE-1') as payment, formula('Expenses') as purpose
+      saveAs: report
+  - generateDocument:
+      data: report
+      sourceVersions: data
+      output:
+        kind: sepa-xml
+        version: 1
+        header: {destinationKey: main-bank, debtorName: Example, debtorIban: DE89370400440532013000, executionDate: '2026-09-14'}
+        mapping: {businessId: business, amount: amount, endToEndId: payment, creditorName: payee, creditorIban: iban, remittance: purpose}
+`,
+          catalog,
+          workflowQueryBinder(fixture.baseId, catalog),
+        );
+        if (!compiled.ok) throw new Error(JSON.stringify(compiled.diagnostics));
+        const dry = await queueRun(fixture, { plan: compiled.plan, mode: "dryRun" });
+        expect(await drive(dry, "dryRun")).toBe("succeeded");
+        const runId = await queueRun(fixture, { plan: compiled.plan });
+        await runGridsWorkflowRun(runId);
+        expect((await runRow(runId)).state).toBe("waiting");
+        const pending = await getWorkflowDocumentConfirmation(runId);
+        const scope = await getWorkflowRunScope(runId);
+        if (!pending || !scope) throw new Error(JSON.stringify(await stepRuns(runId)));
+        const request = { baseId: fixture.baseId, runId, ...pending, actor: documentActorForScope(scope), authorize: async () => {} };
+        expect((await documentIssuanceService.inspectQueryDocumentConfirmation(request)).ok).toBe(true);
+        await sql`UPDATE grids.records SET version = version + 1 WHERE id = ${fixture.recordId}::uuid`;
+        const changed = await documentIssuanceService.confirmQueryDocument(request);
+        expect(changed.ok).toBe(false);
+        if (!changed.ok) expect(changed.error.code).toBe("CONFLICT");
+        expect(await sql`SELECT id FROM grids.documents WHERE workflow_run_id = ${runId}::uuid`).toHaveLength(0);
+      } finally {
+        await cleanupFixture(fixture);
+      }
+    },
+    30000,
+  );
+
   postgresTest("kernel builtin actions are wired into the Grids worker", async () => {
     const fixture = createFixture();
     try {
@@ -468,6 +1563,7 @@ describe("declared Grids workflow actions", () => {
         }),
         inputs: recordInput,
       });
+      expect(await drive(updateRunId)).toBe("succeeded");
       const atomicRunId = await queueRun(fixture, {
         plan: boundPlan(
           [
@@ -482,8 +1578,10 @@ describe("declared Grids workflow actions", () => {
         inputs: recordInput,
       });
 
-      expect(await drive(updateRunId)).toBe("succeeded");
-      expect(await drive(atomicRunId)).toBe("succeeded");
+      expect({ state: await drive(atomicRunId), error: (await runRow(atomicRunId)).error }).toEqual({
+        state: "succeeded",
+        error: null,
+      });
 
       const [state] = await sql<Array<{ version: number; revisions: number; audits: number; events: number }>>`
         SELECT
@@ -1638,6 +2736,38 @@ describe("declared Grids workflow actions", () => {
       // dead-end at the first step that has not really run.
       expect(steps[0]?.outcome).toMatchObject({ state: "planned", output: { kind: "document", planned: true } });
       expect(steps[1]?.outcome).toMatchObject({ state: "planned", output: { kind: "documentLink", expiresIn: "7d", planned: true } });
+    } finally {
+      await cleanupFixture(fixture);
+    }
+  });
+
+  postgresTest("record-template generation rejects financial version guards in execution and dry run", async () => {
+    const fixture = createFixture();
+    try {
+      await insertFixture(fixture);
+      for (const mode of ["execute", "dryRun"] as const) {
+        const runId = await queueRun(fixture, {
+          mode,
+          plan: boundPlan(
+            [
+              actionStep(0, "generateDocument", {
+                template: "Task sheet",
+                record: "inputs.record",
+                sourceVersions: "data",
+              }),
+            ],
+            { "steps.0.generateDocument.template": fixture.documentTemplateId },
+          ),
+          inputs: { record: { kind: "record", tableId: fixture.tableId, recordId: fixture.recordId } },
+        });
+        expect(await drive(runId, mode)).toBe("failed");
+        expect((await stepRuns(runId))[0]?.outcome).toMatchObject(
+          mode === "execute"
+            ? { error: { code: "BAD_INPUT" } }
+            : { state: "planned", output: null, issues: [{ reason: "The document request contains invalid JSON." }] },
+        );
+        expect(await sql`SELECT id FROM grids.documents WHERE workflow_run_id = ${runId}::uuid`).toHaveLength(0);
+      }
     } finally {
       await cleanupFixture(fixture);
     }

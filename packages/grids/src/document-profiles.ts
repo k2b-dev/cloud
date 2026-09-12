@@ -2,6 +2,7 @@ import Decimal from "decimal.js";
 import { z } from "zod";
 import { type DocumentProfileSummary, DocumentProfileSummarySchema } from "./document-profile-contracts";
 import { germanBillingProfile, germanEInvoiceProfile } from "./document-profiles/einvoice-de";
+import { csvDocumentProfile, jsonDocumentProfile, pdfTableDocumentProfile, xmlTableDocumentProfile } from "./document-profiles/table";
 
 export type DocumentArtifactDraft = {
   key: string;
@@ -11,6 +12,8 @@ export type DocumentArtifactDraft = {
 };
 
 type DocumentProfileResult = {
+  /** Derived machine-readable values, stored with the issued artifacts. */
+  output?: Record<string, unknown>;
   artifacts: DocumentArtifactDraft[];
   validationStatus: "valid" | "warning";
   validationReport: Record<string, unknown>;
@@ -48,7 +51,14 @@ export const exactDecimalSchema = (options: { scale?: number; nonnegative?: bool
       }
     });
 
-export const documentProfiles: readonly DocumentProfile[] = [germanEInvoiceProfile, germanBillingProfile];
+export const documentProfiles: readonly DocumentProfile[] = [
+  germanEInvoiceProfile,
+  germanBillingProfile,
+  csvDocumentProfile,
+  jsonDocumentProfile,
+  pdfTableDocumentProfile,
+  xmlTableDocumentProfile,
+];
 
 export const profileKey = (id: string, version: number): string => `${id}@${version}`;
 
@@ -62,6 +72,7 @@ export const profileRegistry = (profiles: readonly DocumentProfile[]) => {
       description: profile.description,
       rendererVersion: profile.rendererVersion,
       validatorVersion: profile.validatorVersion,
+      primaryArtifact: profile.primaryArtifact,
     });
     if (!summary.success) throw new Error(`Invalid profiled Document profile: ${summary.error.issues[0]?.message ?? "unknown error"}`);
     const key = profileKey(profile.id, profile.version);

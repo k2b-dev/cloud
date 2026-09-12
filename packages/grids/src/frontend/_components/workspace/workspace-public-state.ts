@@ -5,7 +5,6 @@ import {
   projectDocumentTemplates,
   projectRecordSnapshotSummaries,
 } from "../../../api/documents-api-shared";
-import { toPublicGqlResponse } from "../../../api/gql-public";
 import { toPublicAuditEntries } from "../../../api/public-audit";
 import {
   toPublicBase,
@@ -30,6 +29,7 @@ import {
 import type { Field } from "../../../contracts";
 import { navigationReferenceKey, visibleNavigationGroups } from "../../../navigation-contracts";
 import { getBaseNavigation } from "../../../service/base-navigation";
+import { toPublicGqlResponse } from "../../../service/gql-public-result";
 import { projectPublicId, projectPublicIds } from "../../../service/public-resources";
 import { navigationResources } from "./navigation-catalog";
 import type { PublicOkWorkspaceState, PublicWorkspaceCatalog, PublicWorkspaceRoute } from "./workspace-public-state-model";

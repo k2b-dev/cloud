@@ -44,12 +44,17 @@ type FormulaSqlCompileOptions = {
   computedFieldSql?: Map<string, FormulaSqlExpression>;
   /** Virtual tables calculate their own formulas over already projected source values. */
   useFinalizedFormulaValues?: boolean;
+  requireCapturedValues?: boolean;
+  authorizedTableIds?: ReadonlySet<string>;
   /** GQL-only support for explicit scoped refs such as customer.name. */
   scopedRefs?: boolean;
 };
 
 type CompileContext = Required<Pick<FormulaSqlCompileOptions, "recordAlias" | "now">> &
-  Pick<FormulaSqlCompileOptions, "dateConfig" | "resolveField" | "computedFieldSql" | "useFinalizedFormulaValues"> & {
+  Pick<
+    FormulaSqlCompileOptions,
+    "dateConfig" | "resolveField" | "computedFieldSql" | "useFinalizedFormulaValues" | "authorizedTableIds" | "requireCapturedValues"
+  > & {
     fieldsByRef: Map<string, Field[]>;
     inlineStack: Set<string>;
     depth: number;
@@ -247,7 +252,16 @@ const inlineFormulaField = (field: Field, context: CompileContext): FormulaSqlCo
   inlineStack.add(field.id);
   const compiled = compileExpression(parsed.ast, { ...context, inlineStack, depth: context.depth + 1 });
   return compiled.ok && context.useFinalizedFormulaValues !== false
-    ? { ok: true, expression: finalizedFieldSql(field.id, compiled.expression, context.recordAlias) }
+    ? {
+        ok: true,
+        expression: finalizedFieldSql(
+          field.id,
+          compiled.expression,
+          context.recordAlias,
+          context.authorizedTableIds,
+          context.requireCapturedValues,
+        ),
+      }
     : compiled;
 };
 
@@ -365,6 +379,8 @@ export const compileFormulaAstToSql = (ast: Expr, options: FormulaSqlCompileOpti
     resolveField: options.resolveField,
     computedFieldSql: options.computedFieldSql,
     useFinalizedFormulaValues: options.useFinalizedFormulaValues,
+    requireCapturedValues: options.requireCapturedValues,
+    authorizedTableIds: options.authorizedTableIds,
     inlineStack: new Set(),
     depth: 0,
   });

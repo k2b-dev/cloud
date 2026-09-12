@@ -18,6 +18,8 @@ const document: PublicDocument = {
   createdBy: "creator-uuid",
   tags: [],
   renderer: { kind: "html" },
+  primaryArtifactKey: "pdf",
+  dataSnapshot: null,
   validationStatus: "warning",
   artifacts: [
     { key: "pdf", filename: "invoice.pdf", mimeType: "application/pdf", sizeBytes: 1024, sha256: "a".repeat(64) },
@@ -56,5 +58,77 @@ test("read-only document summary has no link management or generation action", (
   );
   expect(html).not.toContain("Share links");
   expect(html).not.toContain("More actions");
+  expect(html).toContain("Download PDF");
+});
+
+test("CSV primary is shown once with an authorized download and no public sharing", () => {
+  const html = renderToString(() =>
+    createComponent(DocumentDetailsDialog, {
+      args: {
+        document: {
+          ...document,
+          filename: "report.csv",
+          primaryArtifactKey: "csv",
+          artifacts: [{ key: "csv", filename: "report.csv", mimeType: "text/csv", sizeBytes: 200, sha256: "c".repeat(64) }],
+        },
+        canWrite: true,
+        onDownload: () => {},
+      },
+      close: () => {},
+    }),
+  );
+  expect(html).toContain("CSV");
+  expect(html).toContain("Preview");
+  expect(html.match(/report.csv/g)).toHaveLength(1);
+  expect(html).toContain("Download");
+  expect(html).not.toContain("Download PDF");
+  expect(html).not.toContain("Share links");
+});
+
+test("large text artifacts remain downloadable without an unbounded preview", () => {
+  const html = renderToString(() =>
+    createComponent(DocumentDetailsDialog, {
+      args: {
+        document: {
+          ...document,
+          primaryArtifactKey: "json",
+          filename: "large.json",
+          artifacts: [
+            { key: "json", filename: "large.json", mimeType: "application/json", sizeBytes: 3 * 1024 * 1024, sha256: "c".repeat(64) },
+          ],
+        },
+        canWrite: false,
+        onDownload: () => {},
+      },
+      close: () => {},
+    }),
+  );
+  expect(html).not.toContain(">Preview<");
+  expect(html).toContain("Download");
+});
+
+test("workflow documents do not invent record and template navigation", () => {
+  const html = renderToString(() =>
+    createComponent(DocumentDetailsDialog, {
+      args: {
+        document: {
+          ...document,
+          tableId: null,
+          recordId: null,
+          templateId: null,
+          dataSnapshot: { capturedAt: "2026-09-08T12:00:00Z", rowCount: 42 },
+        },
+        canWrite: false,
+        onDownload: () => {},
+      },
+      close: () => {},
+    }),
+  );
+  expect(html).not.toContain("/table/");
+  expect(html).not.toContain("/document/");
+  expect(html).not.toContain("Source record");
+  expect(html).toContain("Workflow data");
+  expect(html).toContain("42 rows");
+  expect(html).toContain("Data captured");
   expect(html).toContain("Download PDF");
 });

@@ -5,12 +5,11 @@ import {
   DslQueryCompileViewBodySchema,
   DslQueryExecuteBodySchema,
   DslQueryPreviewBodySchema,
-  type DslQueryPreviewResponse,
   DslQueryPreviewResponseSchema,
   ShortIdSchema,
 } from "../contracts";
+import { type DslQueryContextInput, type DslQueryParameterValue, GqlParametersSchema } from "../query-dsl/parameters";
 import { gridsService } from "../service";
-import { projectPublicIds } from "../service/public-resources";
 import type { DslCurrentSource } from "./gql-runtime";
 import { apiMessagesForLocale } from "./messages";
 
@@ -26,14 +25,30 @@ const publicScope = {
   currentSource: PublicDslCurrentSourceSchema,
 };
 
-export const PublicDslQueryPreviewBodySchema = DslQueryPreviewBodySchema.omit({ currentTableId: true, currentSource: true }).extend(
-  publicScope,
-);
+// Names use the same namespace as GQL autocomplete. Values are data, never
+// expression source or trusted auth/page context. Literal text shares GQL's
+// 20,000-character source budget; membership lists share its 10,000-row cap.
+export const PublicGqlParametersSchema = GqlParametersSchema;
+
+export const publicGqlParameterContext = (parameters?: z.infer<typeof PublicGqlParametersSchema>): DslQueryContextInput => {
+  const context: Partial<Record<`params.${string}`, DslQueryParameterValue>> = {};
+  for (const [name, value] of Object.entries(parameters ?? {})) context[`params.${name}`] = value;
+  return context;
+};
+
+export const PublicDslQueryPreviewBodySchema = DslQueryPreviewBodySchema.omit({ currentTableId: true, currentSource: true }).extend({
+  ...publicScope,
+  parameters: PublicGqlParametersSchema.optional(),
+});
 export const PublicDslQueryExecuteBodySchema = DslQueryExecuteBodySchema.omit({
   currentTableId: true,
   currentSource: true,
   filePreviewFieldIds: true,
-}).extend({ ...publicScope, filePreviewFieldIds: z.array(ShortIdSchema).max(3).optional() });
+}).extend({
+  ...publicScope,
+  parameters: PublicGqlParametersSchema.optional(),
+  filePreviewFieldIds: z.array(ShortIdSchema).max(3).optional(),
+});
 export const PublicDslQueryCompileViewBodySchema = DslQueryCompileViewBodySchema.omit({ currentTableId: true, currentSource: true }).extend(
   publicScope,
 );
@@ -128,69 +143,4 @@ export const fromPublicGqlScope = async (
     ...(currentSource ? { currentSource } : {}),
     ...(filePreviewFieldIds ? { filePreviewFieldIds } : {}),
   });
-};
-
-const requiredPublicId = (ids: ReadonlyMap<string, string>, internalId: string, resource: string): string => {
-  const id = ids.get(internalId);
-  if (!id) throw new Error(`Missing public ID for ${resource}`);
-  return id;
-};
-
-export const toPublicGqlResponse = async (response: DslQueryPreviewResponse, deps: { projectIds?: typeof projectPublicIds } = {}) => {
-  if (!response.ok) return response;
-  const tableIds = [
-    ...response.rows.flatMap((row) => (row.tableId ? [row.tableId] : [])),
-    ...response.columns.flatMap((column) => (column.tableId ? [column.tableId] : [])),
-  ];
-  const fieldIds = response.columns.flatMap((column) => (column.fieldId ? [column.fieldId] : []));
-  const recordIds = response.rows.flatMap((row) => (row.recordId ? [row.recordId] : []));
-  const relationRecordIds = response.rows.flatMap((row) =>
-    response.columns.flatMap((column) => {
-      if (column.type !== "relation" || (column.sqlType !== "uuid" && column.sqlType !== "uuid[]")) return [];
-      const value = row.values[column.key];
-      return Array.isArray(value)
-        ? value.filter((item): item is string => typeof item === "string")
-        : typeof value === "string"
-          ? [value]
-          : [];
-    }),
-  );
-  const projectIds = deps.projectIds ?? projectPublicIds;
-  const [tables, fields, records] = await Promise.all([
-    projectIds("table", tableIds),
-    projectIds("field", fieldIds),
-    projectIds("record", [...recordIds, ...relationRecordIds]),
-  ]);
-  const columns = response.columns.map((column) => {
-    const fieldId = column.fieldId ? requiredPublicId(fields, column.fieldId, "field") : undefined;
-    const tableId = column.tableId ? requiredPublicId(tables, column.tableId, "table") : undefined;
-    const key =
-      column.fieldId && fieldId && (column.key === column.fieldId || column.key.startsWith(`${column.fieldId}__`))
-        ? `${fieldId}${column.key.slice(column.fieldId.length)}`
-        : column.key;
-    return { ...column, key, ...(tableId ? { tableId } : {}), ...(fieldId ? { fieldId } : {}) };
-  });
-  return {
-    ...response,
-    columns,
-    rows: response.rows.map((row) => ({
-      ...row,
-      ...(row.recordId ? { recordId: requiredPublicId(records, row.recordId, "record") } : {}),
-      ...(row.tableId ? { tableId: requiredPublicId(tables, row.tableId, "table") } : {}),
-      values: Object.fromEntries(
-        response.columns.map((column, index) => {
-          const value = row.values[column.key];
-          const projected =
-            column.type === "relation" && (column.sqlType === "uuid" || column.sqlType === "uuid[]")
-              ? Array.isArray(value)
-                ? value.map((item) => (typeof item === "string" ? requiredPublicId(records, item, "record") : item))
-                : typeof value === "string"
-                  ? requiredPublicId(records, value, "record")
-                  : value
-              : value;
-          return [columns[index]!.key, projected];
-        }),
-      ),
-    })),
-  };
 };

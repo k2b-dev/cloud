@@ -3,6 +3,9 @@ import { createHash } from "node:crypto";
 import { sql } from "bun";
 import { postgresTest, testShortId, testUuid } from "../integration-test-utils";
 import { migrate } from "../migrate";
+import { startGridsTestSync } from "../sync-test-utils";
+import { documentIssuanceService } from "./document-issuance";
+import { canonicalDocumentJson } from "./document-json";
 import { EvidenceExportBoundError } from "./evidence-archive";
 import {
   cancel,
@@ -14,6 +17,8 @@ import {
   retry,
   runEvidenceExportJob,
 } from "./evidence-exports";
+import { persistWorkflowQueryDataInTransaction } from "./workflow-query-store";
+import { insertTestWorkflow, insertTestWorkflowRun } from "./workflow-test-fixture";
 
 const collect = async (stream: ReadableStream<Uint8Array>): Promise<Uint8Array> => {
   const chunks: Uint8Array[] = [];
@@ -52,6 +57,93 @@ beforeAll(async () => {
 });
 
 describe("evidence export integration", () => {
+  postgresTest(
+    "includes workflow-only documents and one shared query payload in a Base evidence package",
+    async () => {
+      const baseId = testUuid();
+      const tableId = testUuid();
+      const tableShortId = testShortId("T");
+      await sql`INSERT INTO grids.bases (id, short_id, name) VALUES (${baseId}::uuid, ${testShortId("B")}, 'Query evidence')`;
+      await sql`INSERT INTO grids.tables (id, short_id, base_id, name) VALUES (${tableId}::uuid, ${tableShortId}, ${baseId}::uuid, 'Source')`;
+      const workflowId = await insertTestWorkflow({ baseId, shortId: testShortId("W") });
+      const runId = await insertTestWorkflowRun({ baseId, workflowId, shortId: testShortId("R"), state: "succeeded" });
+      const capturedAt = new Date().toISOString();
+      const payload = {
+        version: 1 as const,
+        columns: [{ key: "amount", label: "Amount", type: "number", sqlType: "numeric" }],
+        rows: [{ amount: "12.30" }],
+        rowOrigins: [{ recordId: null, tableId: null }],
+        rowCount: 1,
+        capturedAt,
+        complete: true as const,
+        selectionLimit: null,
+        source: `from table {${tableShortId}}\nselect 12.30 as amount`,
+        schemaHash: "a".repeat(64),
+        context: {},
+        tableIds: [tableId],
+      };
+      const reference = await sql.begin((tx) =>
+        persistWorkflowQueryDataInTransaction(
+          {
+            baseId,
+            runId,
+            stepKey: "query",
+            capture: { payload, sha256: canonicalDocumentJson(payload).sha256, rowCount: 1, capturedAt },
+          },
+          tx,
+        ),
+      );
+      if (!reference.ok) throw reference.error;
+      const documents = [];
+      for (const kind of ["csv", "json"] as const) {
+        const issued = await documentIssuanceService.issueQueryDocument({
+          baseId,
+          runId,
+          stepKey: kind,
+          data: reference.data,
+          output: { kind },
+          filename: `report.${kind}`,
+          tags: [],
+          actor: { kind: "system" },
+          idempotencyKey: `${runId}:${kind}`,
+          authorize: async () => {},
+        });
+        if (!issued.ok) throw issued.error;
+        if ("kind" in issued.data) throw new Error("General formats must not require financial confirmation");
+        documents.push(issued.data);
+      }
+      const preview = await preflight({ baseId, tableId: null, from: null, to: null, sections: ["documents"] });
+      expect(preview.known).toMatchObject({ documents: 2, documentEntries: 5 });
+      const tablePreview = await preflight({ baseId, tableId, from: null, to: null, sections: ["documents"] });
+      expect(tablePreview.known.documents).toBe(0);
+      const exportId = testUuid();
+      const exportShortId = testShortId("E");
+      await sql`INSERT INTO grids.evidence_exports (id, short_id, base_id, sections)
+      VALUES (${exportId}::uuid, ${exportShortId}, ${baseId}::uuid, ARRAY['documents'])`;
+      await processExport(exportId);
+      const result = await download(exportShortId);
+      if (!result.ok) throw result.error;
+      const entries = readTar(await collect(result.data.body));
+      const queryPaths = [...entries.keys()].filter((path) => path.startsWith("documents/queries/"));
+      expect(queryPaths).toHaveLength(1);
+      for (const document of documents) {
+        expect(entries.has(`documents/${document.shortId}/${document.filename}`)).toBe(true);
+        const metadata = JSON.parse(new TextDecoder().decode(entries.get(`documents/metadata/${document.shortId}.json`)));
+        expect(metadata.query_source_path).toBe(queryPaths[0]);
+        expect(metadata.query_sha256).toBe(reference.data.sha256);
+      }
+      const path = queryPaths[0];
+      if (!path) throw new Error("Query payload missing");
+      const queryText = new TextDecoder().decode(entries.get(path));
+      const query = JSON.parse(queryText);
+      expect(query.payload.rows).toEqual([{ amount: "12.30" }]);
+      expect(query.sourceSha256).toBe(reference.data.sha256);
+      expect(query.sourceHashVersion).toBe(1); // This fixture intentionally uses the original unversioned capture contract.
+      expect(queryText).not.toContain(tableId);
+    },
+    30_000,
+  );
+
   postgresTest("includes profile metadata and exact artifacts through the common record-bound Document evidence path", async () => {
     const baseId = testUuid();
     const tableId = testUuid();
@@ -94,15 +186,15 @@ describe("evidence export integration", () => {
           (${structuredFileId}::uuid, ${testShortId("F")}, 'statement.json', 'application/json', ${structured.byteLength}, ${digest(structured)}, ${structured})
       `;
       await sql`
-        INSERT INTO grids.documents (
+        INSERT INTO grids.documents (primary_artifact_key,
           id, short_id, template_id, snapshot_id, base_id, table_id, record_id, renderer_kind, profile_id, profile_version,
-          profile_snapshot, snapshot_sha256, document_number, filename, tags,
+          profile_snapshot, profile_output, snapshot_sha256, document_number, filename, tags,
           template_snapshot, render_data,
           renderer_version, template_revision, validator_version, validation_status, validation_report, issued_actor, created_at
-        ) VALUES (
+        ) VALUES ('pdf',
           ${documentId}::uuid, ${documentShortId}, ${templateId}::uuid, ${snapshotId}::uuid,
           ${baseId}::uuid, ${tableId}::uuid, ${recordId}::uuid, 'profile', 'test.statement', 1,
-          ${{ number: "STAT-0001", total: "119.00" }}::jsonb, ${"c".repeat(64)}, 'STAT-0001', 'statement.pdf', '{}',
+          ${{ number: "STAT-0001", total: "119.00" }}::jsonb, ${{ total: "119.00", currency: "EUR" }}::jsonb, ${"c".repeat(64)}, 'STAT-0001', 'statement.pdf', '{}',
           ${{ renderer: { kind: "profile", id: "test.statement", version: 1, inputTemplate: "{}" } }}::jsonb, '{}'::jsonb,
           'renderer-v1', ${"d".repeat(64)}, 'validator-v1', 'valid', ${{ arithmetic: "exact-decimal" }}::jsonb,
           ${{ kind: "service_account", serviceAccountId, delegatedUserId: null, credentialId: null }}::jsonb,
@@ -133,6 +225,8 @@ describe("evidence export integration", () => {
       expect(entries.get(`documents/${documentShortId}/statement.pdf`)).toEqual(pdf);
       expect(entries.get(`documents/${documentShortId}/statement.json`)).toEqual(structured);
       const metadata = new TextDecoder().decode(entries.get(`documents/metadata/${documentShortId}.json`));
+      expect(JSON.parse(metadata).profile_output).toEqual({ total: "119.00", currency: "EUR" });
+      expect(JSON.parse(metadata).hash_version).toBe(1);
       expect(metadata).toContain('"total": "119.00"');
       expect(metadata).toContain('"document_number": "STAT-0001"');
       expect(metadata).toContain('"kind": "service_account"');
@@ -271,10 +365,10 @@ describe("evidence export integration", () => {
           ${{ rootId: recordId, records: { [recordId]: { id: recordId } } }}::jsonb, ${actorId}::uuid)
       `;
       await sql`
-        INSERT INTO grids.documents (
+        INSERT INTO grids.documents (primary_artifact_key,
           id, short_id, template_id, snapshot_id, base_id, table_id, record_id, document_number, filename,
           template_snapshot, render_data, renderer_kind, renderer_version, template_revision, issued_actor, created_by
-        ) VALUES (
+        ) VALUES ('pdf',
           ${documentId}::uuid, ${documentShortId}, ${templateId}::uuid, ${snapshotId}::uuid, ${baseId}::uuid, ${tableId}::uuid,
           ${recordId}::uuid, 'CASE-1', 'case.pdf',
           ${{ renderer: { kind: "html", body: "<p>Case</p>", numberTemplate: "CASE-{{ series.value }}", filenameTemplate: "{{ document.number }}.pdf" } }}::jsonb,
@@ -455,6 +549,7 @@ describe("evidence export integration", () => {
   });
 
   postgresTest("cancels queued work, retries terminal work once, and removes expired package bytes", async () => {
+    const stopSync = await startGridsTestSync();
     const baseId = testUuid();
     const baseShortId = testShortId("B");
     const canceledId = testUuid();
@@ -494,8 +589,12 @@ describe("evidence export integration", () => {
       `;
       expect(expiredRow).toEqual({ status: "expired", chunk_count: 0 });
     } finally {
-      await sql`DELETE FROM grids.evidence_exports WHERE base_id = ${baseId}::uuid`;
-      await sql`DELETE FROM grids.bases WHERE id = ${baseId}::uuid`;
+      try {
+        await sql`DELETE FROM grids.evidence_exports WHERE base_id = ${baseId}::uuid`;
+        await sql`DELETE FROM grids.bases WHERE id = ${baseId}::uuid`;
+      } finally {
+        await stopSync();
+      }
     }
   });
 

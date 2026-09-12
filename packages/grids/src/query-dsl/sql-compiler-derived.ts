@@ -2,6 +2,7 @@ import { sql } from "bun";
 import { normalizeRefKey } from "../ref-syntax";
 import { aggregateOutputKey } from "../service/aggregate-capabilities";
 import { compileFormulaPredicateAstToSql, type FormulaSqlFieldResolver, type FormulaSqlType } from "../service/formula-sql-compiler";
+import { requireValidCalculationSql } from "../service/formula-sql-values";
 import { compileDslKeyset, type DslKeysetColumn } from "../service/keyset-compiler";
 import { numericAverageSql } from "../service/numeric-division-sql";
 import { relationLabelFields } from "../service/relations";
@@ -437,7 +438,7 @@ const compileDslDerivedGroupedViewSourcePlanToSql = (
       resolveField: createDerivedSqlFieldResolver(derived.columns, { derived, joinAliases: joins.joinAliases, compileOptions: options }),
     });
     if (!compiled.ok) return failGroup(`where: ${compiled.error}`);
-    conditions.push(compiled.expression.sql);
+    conditions.push(requireValidCalculationSql(compiled.expression));
   }
   const searchCondition = compileDerivedSearchCondition(derived, options, plan.tableId, options.searchClause, plan.readableTableIds);
   if (searchCondition) conditions.push(searchCondition);
@@ -681,7 +682,7 @@ export const compileDslDerivedViewSourcePlanToSql = (
       resolveField: createDerivedSqlFieldResolver(derived.columns, { derived, joinAliases, compileOptions: options }),
     });
     if (!compiled.ok) return failGroup(`where: ${compiled.error}`);
-    conditions.push(compiled.expression.sql);
+    conditions.push(requireValidCalculationSql(compiled.expression));
   }
   const searchCondition = compileDerivedSearchCondition(derived, options, plan.tableId, options.searchClause, plan.readableTableIds);
   if (searchCondition) conditions.push(searchCondition);

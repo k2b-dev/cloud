@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { DocumentProfileSummarySchema } from "./document-profile-contracts";
 import { exactDecimalSchema } from "./document-profiles";
-import { canonicalDocumentJson, MAX_DOCUMENT_PROFILE_INPUT_BYTES } from "./service/document-issuance";
+import { canonicalDocumentJson, MAX_DOCUMENT_PROFILE_INPUT_BYTES } from "./service/document-json";
 
 describe("Document renderer contracts", () => {
   test("canonicalizes object key order and bounds exact JSON input", () => {
@@ -18,6 +18,7 @@ describe("Document renderer contracts", () => {
         description: "EN 16931 invoice renderer",
         rendererVersion: "1",
         validatorVersion: "1",
+        primaryArtifact: { key: "pdf", mediaType: "application/pdf" },
       }).success,
     ).toBe(true);
     expect(
@@ -28,6 +29,7 @@ describe("Document renderer contracts", () => {
         description: "EN 16931 invoice renderer",
         rendererVersion: "1",
         validatorVersion: "1",
+        primaryArtifact: { key: "pdf", mediaType: "application/pdf" },
       }).success,
     ).toBe(false);
   });

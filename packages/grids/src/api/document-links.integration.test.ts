@@ -114,12 +114,12 @@ const insertFixture = async (userId: string): Promise<DocumentLinkApiFixture> =>
   `;
   const artifact = await insertTestDocumentArtifact({ documentId, baseId, tableId, recordId, filename: "invoice-api-1.pdf" });
   await sql`
-    INSERT INTO grids.documents (
+    INSERT INTO grids.documents (primary_artifact_key,
       id, short_id, template_id, snapshot_id, base_id, table_id, record_id,
       document_number, filename, tags, template_snapshot, render_data,
       renderer_kind, renderer_version, template_revision, issued_actor
     )
-    VALUES (
+    VALUES ('pdf',
       ${documentId}::uuid,
       ${documentShortId},
       ${templateId}::uuid,

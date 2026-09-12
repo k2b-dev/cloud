@@ -35,7 +35,7 @@ import {
 } from "../service/public-resources";
 import type { RecordComment } from "../service/record-comments";
 import type { GridFile } from "../service/types";
-import { getWorkflowRunScope } from "../service/workflow-runs";
+import { getWorkflowDocumentConfirmation, getWorkflowRunScope } from "../service/workflow-runs";
 import { projectGridRecord, projectPublishedRecords, requiredProjected } from "./custom-app-public-dto";
 import { loadPublishedCustomAppPage } from "./custom-app-published-page";
 import { resolvePublishedCustomAppGlobalRuntime, resolvePublishedCustomAppRuntime } from "./custom-app-published-runtime";
@@ -43,7 +43,14 @@ import { projectCustomAppRuntimePage } from "./custom-app-runtime-dto";
 import { encodeHeaderValue, pdfResponse } from "./download-response";
 import { FormSubmitSchema, fromPublicFormSubmission } from "./form-api-shared";
 import { apiMessages } from "./messages";
-import { accessActorUser, currentActorUserId, currentWorkflowPrincipal, gateAt, gridsAccessContext } from "./permissions";
+import {
+  accessActorUser,
+  currentActorUserId,
+  currentWorkflowPrincipal,
+  gateAt,
+  gateCredentialScope,
+  gridsAccessContext,
+} from "./permissions";
 import { internalIdParam, requirePublicIdParam } from "./route-params";
 import { v } from "./validator";
 import { ScannerLauncherRequestSchema } from "./workflow-api-shared";
@@ -638,6 +645,11 @@ export const createCustomAppsApi = (
   const getDocumentPdf = deps.getDocumentPdf ?? gridsService.document.getPdf;
   const loadWorkflowRunScope = deps.getWorkflowRunScope ?? getWorkflowRunScope;
   const getWorkflowRun = deps.getWorkflowRun ?? gridsService.workflow.getRun;
+  const requireRuntimeWrite: MiddlewareHandler<AuthContext> = async (c, next) => {
+    const scope = await gateCredentialScope(c, "write");
+    if (!scope.ok) return respond(c, () => Promise.resolve(scope));
+    await next();
+  };
   return new Hono<AuthContext>()
     .get("/runtime/:shortId", loadOptionalActor, async (c) => {
       const page = await loadPublishedCustomAppPage(c);
@@ -680,10 +692,10 @@ export const createCustomAppsApi = (
       const payload = await projectPublishedRecords(published);
       return c.json(payload, published.response.ok ? 200 : 400);
     })
-    .post("/runtime/:shortId/:pageId/:blockId/submit", loadOptionalActor, v("json", FormSubmitSchema), (c) =>
+    .post("/runtime/:shortId/:pageId/:blockId/submit", loadOptionalActor, requireRuntimeWrite, v("json", FormSubmitSchema), (c) =>
       submitPublishedCustomAppForm(c, c.req.valid("json")),
     )
-    .post("/runtime/:shortId/sidebar/forms/:actionId/submit", loadOptionalActor, v("json", FormSubmitSchema), (c) =>
+    .post("/runtime/:shortId/sidebar/forms/:actionId/submit", loadOptionalActor, requireRuntimeWrite, v("json", FormSubmitSchema), (c) =>
       submitPublishedSidebarForm(c, c.req.valid("json")),
     )
     .get(
@@ -723,6 +735,7 @@ export const createCustomAppsApi = (
           document.baseId !== runtime.app.baseId ||
           document.tableId !== capability.tableId ||
           document.recordId !== record.id ||
+          document.templateId === null ||
           !templateIds.includes(document.templateId)
         ) {
           return c.json({ message: apiMessages(c).documentNotFound }, 404);
@@ -815,6 +828,10 @@ export const createCustomAppsApi = (
       });
     })
     .use(deps.requireAuthenticated ?? auth.requireRole("authenticated"))
+    .use("/runtime/*", async (c, next) => {
+      if (["POST", "PUT", "PATCH", "DELETE"].includes(c.req.method)) return requireRuntimeWrite(c, next);
+      await next();
+    })
     .post("/runtime/:shortId/:pageId/:blockId/scanner", v("json", ScannerLauncherRequestSchema), async (c) => {
       const resolved = await resolveRuntimeScanner(c);
       if (!resolved) return c.json({ message: apiMessages(c).scannerNotFound }, 404);
@@ -895,7 +912,8 @@ export const createCustomAppsApi = (
         ) {
           return c.json({ message: apiMessages(c).workflowRunNotFound }, 404);
         }
-        return c.json(await projectWorkflowRunSummary(run));
+        const documentConfirmation = run.status === "waiting" ? await getWorkflowDocumentConfirmation(run.id) : undefined;
+        return c.json({ ...(await projectWorkflowRunSummary(run)), ...(documentConfirmation ? { documentConfirmation } : {}) });
       },
     )
     .get("/reference", (c) => c.json(CUSTOM_APP_API_REFERENCE))
@@ -1370,7 +1388,16 @@ export const createCustomAppsApi = (
         }
         const status =
           run.status === "succeeded" ? "succeeded" : ["failed", "canceled", "needs_attention"].includes(run.status) ? "failed" : "running";
-        return c.json({ status, message: run.resultMessage });
+        const confirmation = run.status === "waiting" ? await getWorkflowDocumentConfirmation(run.id) : undefined;
+        return c.json({
+          status,
+          message: run.resultMessage,
+          ...(confirmation
+            ? {
+                documentConfirmation: { ...confirmation, runId: await requiredPublicId("workflowRun", run.id) },
+              }
+            : {}),
+        });
       },
     )
     .get("/by-base/:baseId", requirePublicIdParam("baseId", "base", "Base"), async (c) => {

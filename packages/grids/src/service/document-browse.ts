@@ -5,7 +5,7 @@ import { type DocumentDbRow, hydrateDocumentSummaries } from "./document-mappers
 import { decodeDocumentCursor, encodeDocumentCursor, normalizeDocumentTags } from "./document-values";
 
 const summaryColumns = sql`id, short_id, template_id, workflow_run_id, snapshot_id, base_id, table_id, record_id,
-  document_number, filename, tags, profile_id, profile_version, validation_status, created_by, created_at`;
+  document_number, filename, primary_artifact_key, tags, profile_id, profile_version, validation_status, created_by, created_at`;
 
 type DocumentPage = {
   items: DocumentSummary[];
@@ -29,16 +29,33 @@ type DocumentBrowsePage = {
 
 export type DocumentReadAuthorizer = (document: Pick<Document, "baseId" | "tableId" | "templateId">) => Promise<boolean>;
 
+/** Presentation metadata for an already-authorized, bounded document page.
+ * Never load rows or re-query the live source to describe a frozen export. */
+export const loadDocumentDataSnapshots = async (documentIds: readonly string[]) => {
+  if (documentIds.length === 0) return new Map<string, { rowCount: number; capturedAt: string }>();
+  const rows = await sql<Array<{ id: string; row_count: number; captured_at: Date }>>`
+    SELECT document.id::text, data.row_count, data.captured_at
+    FROM grids.documents document
+    JOIN grids.workflow_query_data data ON data.id = document.query_data_id
+    WHERE document.id = ANY(${toPgUuidArray([...documentIds])}::uuid[])
+  `;
+  return new Map(
+    rows.map((row) => {
+      return [row.id, { rowCount: row.row_count, capturedAt: row.captured_at.toISOString() }] as const;
+    }),
+  );
+};
+
 type WorkflowRunDocumentScope = {
-  tableId: string;
-  templateId: string;
+  tableId: string | null;
+  templateId: string | null;
 };
 
 export const loadReadableWorkflowRunDocumentScopes = async (
   workflowRunId: string,
   canRead: DocumentReadAuthorizer,
 ): Promise<WorkflowRunDocumentScope[]> => {
-  const scopes = await sql<Array<{ base_id: string; table_id: string; template_id: string }>>`
+  const scopes = await sql<Array<{ base_id: string; table_id: string | null; template_id: string | null }>>`
     SELECT DISTINCT base_id, table_id, template_id
     FROM grids.documents
     WHERE workflow_run_id = ${workflowRunId}::uuid
@@ -63,7 +80,9 @@ export const loadReadableWorkflowRunDocumentScopes = async (
 export const workflowRunDocumentAccessWhere = (allowed: WorkflowRunDocumentScope[]) => {
   if (allowed.length === 0) return sql`FALSE`;
   return allowed
-    .map((scope) => sql`(table_id = ${scope.tableId}::uuid AND template_id = ${scope.templateId}::uuid)`)
+    .map(
+      (scope) => sql`(table_id IS NOT DISTINCT FROM ${scope.tableId}::uuid AND template_id IS NOT DISTINCT FROM ${scope.templateId}::uuid)`,
+    )
     .reduce((where, scope) => sql`${where} OR ${scope}`);
 };
 
@@ -176,8 +195,16 @@ const documentWhere = (
 ) => {
   const timeZone = params.timeZone || "UTC";
   const conditions = params.baseId ? [sql`base_id = ${params.baseId}::uuid`] : [sql`template_id = ${params.templateId}::uuid`];
-  if (params.templateShortId)
+  if (params.templateShortId?.startsWith("workflow:")) {
+    const workflowShortId = params.templateShortId.slice("workflow:".length);
+    conditions.push(sql`template_id IS NULL AND workflow_run_id IN (
+      SELECT run.run_id FROM grids.workflow_run_profile run
+      JOIN grids.workflow_profile workflow ON workflow.id = run.workflow_id AND workflow.base_id = run.base_id
+      WHERE workflow.short_id = ${workflowShortId}
+    )`);
+  } else if (params.templateShortId) {
     conditions.push(sql`template_id IN (SELECT id FROM grids.document_templates WHERE short_id = ${params.templateShortId})`);
+  }
   const q = params.q?.trim();
   if (q) {
     const pattern = `%${escapeLikePattern(q)}%`;
@@ -264,17 +291,26 @@ export const browseDocumentsForBase = async (params: {
   }
   const where = documentWhere({ baseId: params.baseId, templateShortId });
   if (!templateShortId) {
-    const rows = await sql<Array<{ short_id: string; name: string; count: number }>>`
-      SELECT t.short_id, t.name, count(*)::int AS count
+    const rows = await sql<Array<{ kind: "template" | "workflow"; short_id: string; name: string; count: number }>>`
+      SELECT 'template' AS kind, t.short_id, t.name, count(*)::int AS count
       FROM grids.documents d JOIN grids.document_templates t ON t.id = d.template_id
       WHERE d.base_id = ${params.baseId}::uuid
-      GROUP BY t.id, t.short_id, t.name ORDER BY t.name, t.short_id
+      GROUP BY t.id, t.short_id, t.name
+      UNION ALL
+      SELECT 'workflow' AS kind, 'workflow:' || workflow.short_id, definition.name, count(*)::int AS count
+      FROM grids.documents d
+      JOIN grids.workflow_run_profile run ON run.run_id = d.workflow_run_id AND run.base_id = d.base_id
+      JOIN grids.workflow_profile workflow ON workflow.id = run.workflow_id AND workflow.base_id = run.base_id
+      JOIN workflows.workflow definition ON definition.id = workflow.id
+      WHERE d.base_id = ${params.baseId}::uuid AND d.template_id IS NULL
+      GROUP BY workflow.id, workflow.short_id, definition.name
+      ORDER BY name, short_id
     `;
     return {
       path: [],
       items: [],
       folders: rows.map((row) => ({
-        kind: "template",
+        kind: row.kind,
         key: row.short_id,
         label: row.name,
         path: [row.short_id],

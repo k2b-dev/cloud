@@ -36,6 +36,8 @@ describe("Document resource API", () => {
       createdAt: "2026-08-22T10:00:00.000Z",
       tags: ["invoice"],
       createdBy: null,
+      primaryArtifactKey: "pdf",
+      dataSnapshot: null,
       validationStatus: null,
       artifacts: [{ key: "pdf", filename: "invoice.pdf", mimeType: "application/pdf", sizeBytes: 4, sha256: "a".repeat(64) }],
     };
@@ -44,6 +46,7 @@ describe("Document resource API", () => {
       PublicDocumentSchema.safeParse({
         ...base,
         renderer: { kind: "profile", id: "de.zugferd.en16931", version: 1 },
+        primaryArtifactKey: "pdf",
         validationStatus: "valid",
         artifacts: [
           ...base.artifacts,
@@ -53,5 +56,8 @@ describe("Document resource API", () => {
     ).toBe(true);
     expect(PublicDocumentSchema.safeParse({ ...base, renderer: { kind: "html" }, documentNumber: base.number }).success).toBe(false);
     expect(PublicDocumentSchema.safeParse({ ...base, renderer: { kind: "html" }, recordId: null }).success).toBe(false);
+    expect(
+      PublicDocumentSchema.safeParse({ ...base, renderer: { kind: "html" }, recordId: null, tableId: null, templateId: null }).success,
+    ).toBe(true);
   });
 });

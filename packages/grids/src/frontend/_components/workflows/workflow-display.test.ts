@@ -66,6 +66,12 @@ describe("workflowStepErrorMessage", () => {
 
 describe("workflow step outcomes", () => {
   test("describes waiting dependencies and selected control-flow branches", () => {
+    expect(workflowStepOutcomeSummary({ state: "waiting", dependency: { kind: "grids.document-confirmation" } }, "de")).toBe(
+      "Wartet auf Exportbestätigung",
+    );
+    expect(workflowStepOutcomeSummary({ state: "waiting", dependency: { kind: "grids.document-confirmation" } }, "en")).toBe(
+      "Waiting for export confirmation",
+    );
     expect(workflowStepOutcomeSummary({ state: "waiting", dependency: { kind: "approval", key: "loan-42" } })).toBe("Waiting for approval");
     expect(workflowStepOutcomeSummary({ state: "completed", control: { kind: "if", branches: ["then"] } })).toBe("if: then");
   });

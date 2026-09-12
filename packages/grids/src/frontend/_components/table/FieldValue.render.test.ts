@@ -37,6 +37,15 @@ const record = (data: Record<string, unknown>, expanded?: GridRecord["expanded"]
 });
 
 describe("FieldValue rendering", () => {
+  test("shows a separate list diagnostic instead of presenting invalid rows as usable", () => {
+    const list = field({ id: "Items1", name: "Items", type: "object_list" });
+    const source = { ...record({ Items1: [{ Amount: null }] }), fieldErrors: { Items1: "Amount is required." } };
+    const html = renderToString(() => createComponent(FieldValue, { field: list, value: source.data.Items1, record: source }));
+    expect(html).toContain("Amount is required.");
+    expect(html).not.toContain("1 row");
+    expect(source.data.Items1).toEqual([{ Amount: null }]);
+  });
+
   test("keeps HTML template values escaped and exposes a tall preview action", async () => {
     const htmlField = field({ id: "html01", name: "Email body", type: "html_template" });
     const html = renderToString(() => createComponent(FieldValue, { field: htmlField, value: "<strong>Ada</strong>" }));

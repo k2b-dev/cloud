@@ -14,7 +14,7 @@ import {
   PublicDocumentSchema,
   projectDocuments,
 } from "./documents-api-shared";
-import { pdfResponse } from "./download-response";
+import { fileResponse } from "./download-response";
 import { apiMessages } from "./messages";
 import { gateAt } from "./permissions";
 import { internalIdParam, requirePublicIdParam } from "./route-params";
@@ -128,20 +128,20 @@ export const createDocumentResourceRoutes = (deps: { requireAuthenticated?: Midd
       requirePublicIdParam("documentId", "document", "Document"),
       describeRoute({
         tags: ["Grids:Document"],
-        summary: "Download the primary PDF artifact",
-        responses: { 200: { description: "Stored PDF bytes" }, 404: jsonResponse(ErrorResponseSchema, "Unavailable") },
+        summary: "Download the primary Document artifact",
+        responses: { 200: { description: "Stored primary artifact bytes" }, 404: jsonResponse(ErrorResponseSchema, "Unavailable") },
       }),
       async (c) => {
         const document = await gridsService.document.getDocument(internalIdParam(c, "documentId")!);
         if (!document) return c.json({ message: apiMessages(c).documentNotFound }, 404);
         const gate = await gateDocument(c, document, "read");
         if (!gate.ok) return respond(c, () => Promise.resolve(gate));
-        const artifact = await gridsService.document.getDocumentArtifact(document.id, "pdf", getLocale(c));
+        const artifact = await gridsService.document.getDocumentArtifact(document.id, document.primaryArtifactKey, getLocale(c));
         if (!artifact.ok) return respond(c, () => Promise.resolve(artifact));
-        return pdfResponse(artifact.data.bytes, artifact.data.filename, {
+        return fileResponse(artifact.data.bytes, artifact.data.filename, artifact.data.mimeType, {
           "X-Grids-Document-Id": document.shortId,
           "X-Grids-Document-Number": document.documentNumber,
-          "X-Grids-Document-Artifact": "pdf",
+          "X-Grids-Document-Artifact": document.primaryArtifactKey,
         });
       },
     )

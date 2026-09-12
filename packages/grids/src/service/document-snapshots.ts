@@ -180,6 +180,7 @@ const buildRecordSnapshotGraph = async (
           if (depth === 0) return fail(err.notFound(t.recordNotFound));
           continue;
         }
+        if (record.fieldErrors && Object.keys(record.fieldErrors).length > 0) return fail(err.badInput(t.snapshotInvalidFields));
         seen.add(`${currentTableId}:${id}`);
         records[`${currentTableId}:${id}`] = snapshotRecord(table, reader.fields, record);
         capturedAtDepth.push({ record, reader });

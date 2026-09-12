@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "idempotencyKey": "expense-demo-edit-20260911-1",
+  "data": {
+    "JzxN6G": "Demo · Veranstaltungsmaterial",
+    "L2x8Za": ["GxJW7k"],
+    "rju6Nq": [{"Date01":"2026-09-11","Vendor":"Demo Bürobedarf","Reason":"Veranstaltungsmaterial","Amount":"24.90"}],
+    "ebZw6k": "Demo Person – nicht überweisen",
+    "tZuyRZ": "DEMO – KEINE ECHTE IBAN"
+  }
+}

@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { Field } from "../service/types";
+import { canonicalizeDslQuery } from "./canonical";
 import { type DslResolverContext, resolveDslQueryToQueryPlan, resolveDslQueryToRecordQuery } from "./resolver";
 import {
   amountFieldId,
@@ -19,13 +20,30 @@ import {
 import { compileDslQueryPlanToSql } from "./sql-compiler";
 
 describe("GQL where predicates — first-class per field type", () => {
-  test("explains unsupported joined membership instead of implying the field is missing", () => {
+  test("retains exact decimal AST values for direct and joined numeric membership", () => {
+    for (const source of [
+      "where amount = 9007199254740993.42",
+      "where oneof(amount, 9007199254740993.42, 42)",
+      "where noneof(amount, 9007199254740993.42)",
+      "join table Custs as customer on customer_link = customer.id\nwhere oneof(customer.Score, 9007199254740993.42)",
+    ]) {
+      const result = resolveDslQueryToQueryPlan(parseOk(source), ctx());
+      expect(result.ok).toBe(true);
+      if (!result.ok) throw new Error(JSON.stringify(result.diagnostics));
+      expect(JSON.stringify(result.plan.wherePredicate)).toContain('"numericSource":"9007199254740993.42"');
+      expect(compileDslQueryPlanToSql(result.plan, { fieldsByTableId: ctx().fieldsByTableId }).ok).toBe(true);
+    }
+  });
+  test("compiles joined membership with the joined record alias", () => {
     const result = resolveDslQueryToQueryPlan(
       parseOk("join table Custs as customer on customer_link = customer.id\nwhere oneof(customer.Name, 'Ada')\nselect customer.Name"),
       ctx(),
     );
-    expect(result.ok).toBeFalse();
-    if (!result.ok) expect(result.diagnostics[0]?.message).toContain("membership predicate ONEOF on joined field");
+    expect(result.ok).toBeTrue();
+    if (!result.ok) throw new Error(JSON.stringify(result.diagnostics));
+    const compiled = compileDslQueryPlanToSql(result.plan, { fieldsByTableId: ctx().fieldsByTableId });
+    expect(compiled.ok).toBeTrue();
+    if (compiled.ok) expect(normalizedSql(compiled.query.sql)).toContain("jq0.data->>");
   });
   const statusOptions = {
     options: [
@@ -39,6 +57,36 @@ describe("GQL where predicates — first-class per field type", () => {
   optionFields.push(field({ id: principalFieldId, shortId: "participants", name: "Participants", type: "principal", position: 8 }));
   const optCtx = (overrides: Partial<DslResolverContext> = {}): DslResolverContext =>
     ctx({ fieldsByTableId: { ...ctx().fieldsByTableId, [orders.id]: optionFields }, ...overrides });
+
+  test("publication checks select parameter types, while execution checks actual options", () => {
+    for (const predicate of [
+      "status = @params.status",
+      "@params.status != status",
+      "oneof(status, @params.status, 'Open')",
+      "noneof(status, @params.status)",
+      "containsall(status, @params.status)",
+      "oneof(status, @params.statuses)",
+    ]) {
+      const ast = parseOk(`where ${predicate}`);
+      const published = canonicalizeDslQuery(ast, optCtx(), { "params.status": "", "params.statuses": [""] }, { parameterTypesOnly: true });
+      expect(published.ok).toBe(true);
+      if (published.ok) {
+        expect(published.source).toContain("@params.");
+        expect(published.source).not.toContain("parameterTypeOnly");
+      }
+      expect(canonicalizeDslQuery(ast, optCtx(), { "params.status": "Unknown", "params.statuses": ["Unknown"] }).ok).toBe(false);
+      expect(canonicalizeDslQuery(ast, optCtx(), { "params.status": "Open", "params.statuses": ["Closed"] }).ok).toBe(true);
+      expect(canonicalizeDslQuery(ast, optCtx(), { "params.status": 0, "params.statuses": [0] }, { parameterTypesOnly: true }).ok).toBe(
+        false,
+      );
+    }
+    // Deferring one parameter must not waive validation of static literals or operators.
+    for (const predicate of ["oneof(status, @params.status, 'Unknown')", "status = 'Unknown'", "status > @params.status"]) {
+      expect(canonicalizeDslQuery(parseOk(`where ${predicate}`), optCtx(), { "params.status": "" }, { parameterTypesOnly: true }).ok).toBe(
+        false,
+      );
+    }
+  });
 
   const filterOf = (source: string, context = optCtx()) => {
     const result = resolveDslQueryToRecordQuery(parseOk(source), context);
@@ -200,6 +248,39 @@ describe("GQL where predicates — first-class per field type", () => {
     });
     const compiled = planSql(`where oneof(Participants, '${user}')`);
     expect(compiled).toContain("@>");
+  });
+
+  test("joined principal membership reuses typed validation for rows and aggregates", () => {
+    const context = ctx({
+      fieldsByTableId: {
+        ...ctx().fieldsByTableId,
+        [customers.id]: [
+          ...ctx().fieldsByTableId[customers.id]!,
+          field({ id: principalFieldId, tableId: customers.id, shortId: "people", name: "People", type: "principal" }),
+        ],
+      },
+    });
+    const join = "join table Custs as customer on customer_link = customer.id";
+    for (const fn of ["oneof", "noneof", "containsall"]) {
+      const source = `${join}\nwhere ${fn}(customer.People, '99999999-9999-4999-8999-999999999991')`;
+      expect(planSql(source, context)).toContain("jq0.data->");
+      expect(planSql(source, context)).toContain("@>");
+      expect(errorOf(`${join}\nwhere ${fn}(customer.People, 'bad-id')`, context)[0]).toContain("expects ids (uuid)");
+    }
+    expect(errorOf(`${join}\nwhere oneof(missing.People, 'bad-id')`, context)[0]).toContain("unknown join alias");
+  });
+
+  test("file null comparisons inspect current attachments, not record JSON", () => {
+    const context = ctx({
+      fieldsByTableId: {
+        ...ctx().fieldsByTableId,
+        [orders.id]: [...fields, field({ id: principalFieldId, shortId: "files", name: "Files", type: "file" })],
+      },
+    });
+    expect(predicateOf("where Files != null", context)).toEqual({ kind: "filePresence", fieldId: principalFieldId, empty: false });
+    expect(planSql("where Files != null", context)).toContain("grids.file_attachments");
+    expect(planSql("where Files = null", context)).toContain("NOT (EXISTS");
+    expect(errorOf("where Files = 'file-id'", context)[0]).toContain("cannot be compiled");
   });
 
   test("text matching functions map to like-style filter ops", () => {

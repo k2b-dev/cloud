@@ -49,6 +49,18 @@ const definition = () => ({
 });
 
 describe("Grids App definition contract", () => {
+  test("publication keeps the existing 24-query total instead of applying the four-per-page limit globally", () => {
+    const query = { pageId: "page", blockId: "list", primaryTableId: uuid(1), planHash: "a".repeat(64), tableIds: [uuid(1)] };
+    expect(
+      CustomAppCapabilitiesSchema.safeParse({
+        views: [],
+        recordQueries: Array.from({ length: 24 }, (_, i) => ({ ...query, pageId: `page-${i}` })),
+      }).success,
+    ).toBe(true);
+    expect(CustomAppCapabilitiesSchema.safeParse({ views: [], recordQueries: Array.from({ length: 25 }, () => query) }).success).toBe(
+      false,
+    );
+  });
   test("edit forms require a record-bound page; existing forms remain create-only", () => {
     const source = CustomAppDefinitionSchema.parse(definition());
     const page = source.pages[0]!;

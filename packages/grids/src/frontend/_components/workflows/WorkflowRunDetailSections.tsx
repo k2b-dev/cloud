@@ -2,6 +2,7 @@ import { Button, DetailPanel, IconButton, NoticeCard, Placeholder, StatusBadge, 
 import { For, Show } from "solid-js";
 import type { PublicDocument } from "../documents/public-document-types";
 import type { PublicWorkflowRun, PublicWorkflowStepRun, PublicWorkspaceWorkflowRunDetail } from "../workspace/workspace-public-state-model";
+import { financialExportMessages } from "./financial-export-messages";
 import { workflowMessages } from "./messages";
 import {
   formatWorkflowRunDate as formatDate,
@@ -111,7 +112,12 @@ export function WorkflowRunInputsSection(props: { inputs: WorkflowRunInputRow[] 
   );
 }
 
-export function WorkflowRunStepsSection(props: { steps: PublicWorkflowStepRun[]; truncated: boolean; loading: boolean }) {
+export function WorkflowRunStepsSection(props: {
+  steps: PublicWorkflowStepRun[];
+  truncated: boolean;
+  loading: boolean;
+  onInspectExport?: (receiptId: string) => void;
+}) {
   const locale = useLocale();
   const t = () => workflowMessages.resolve([locale()]).t;
   return (
@@ -141,6 +147,19 @@ export function WorkflowRunStepsSection(props: { steps: PublicWorkflowStepRun[];
                   {(message) => (
                     <p class={`col-span-3 ${unresolved() ? "text-amber-600 dark:text-amber-400" : "text-dimmed"}`}>{message()}</p>
                   )}
+                </Show>
+                <Show when={step.documentConfirmation && props.onInspectExport}>
+                  <div class="col-span-3">
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => {
+                        if (step.documentConfirmation) props.onInspectExport?.(step.documentConfirmation.receiptId);
+                      }}
+                    >
+                      <i class="ti ti-file-check" aria-hidden="true" /> {financialExportMessages.resolve([locale()]).t.title}
+                    </Button>
+                  </div>
                 </Show>
                 <For each={step.action ? workflowStepPlannedEffects(step.outcome, locale()) : []}>
                   {(effect) => (

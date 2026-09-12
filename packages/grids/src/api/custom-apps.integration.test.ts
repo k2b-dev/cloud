@@ -31,7 +31,11 @@ const authenticateAs =
     await next();
   };
 
-const authenticateAsDelegatedServiceAccount = (user: User, serviceAccountId: string): MiddlewareHandler<AuthContext> => {
+const authenticateAsDelegatedServiceAccount = (
+  user: User,
+  serviceAccountId: string,
+  scopes = ["grids:write"],
+): MiddlewareHandler<AuthContext> => {
   const credentialId = testUuid();
   return async (c, next) => {
     c.set("actor", {
@@ -49,7 +53,7 @@ const authenticateAsDelegatedServiceAccount = (user: User, serviceAccountId: str
         createdAt: "2026-01-01T00:00:00.000Z",
       },
       delegatedUser: user,
-      scopes: ["grids:write"],
+      scopes,
       credentialId,
     });
     c.set("accessSubject", { type: "user", userId: user.id, delegatedByServiceAccountId: serviceAccountId });
@@ -80,6 +84,31 @@ const userFor = (id: string): User => ({
 
 beforeAll(async () => {
   if (process.env.GRIDS_DB_TEST === "1") await migrate();
+});
+
+describe("Grids App credential scope", () => {
+  postgresTest("rejects read-only credentials on every runtime mutation before evaluating published permissions", async () => {
+    const authenticate = authenticateAsDelegatedServiceAccount(userFor(testUuid()), testUuid(), ["grids:read"]);
+    const api = createCustomAppsApi({ loadOptionalActor: authenticate, requireAuthenticated: authenticate });
+    const routes = [
+      ["POST", "/runtime/ABC123/page/block/submit"],
+      ["POST", "/runtime/ABC123/sidebar/forms/action/submit"],
+      ["POST", "/runtime/ABC123/page/block/scanner"],
+      ["POST", "/runtime/ABC123/page/block/comments"],
+      ["PATCH", "/runtime/ABC123/page/block/comments/COM001"],
+      ["DELETE", "/runtime/ABC123/page/block/comments/COM001"],
+      ["PATCH", "/runtime/ABC123/page/block/record"],
+      ["POST", "/runtime/ABC123/page/block/record/files/DEF123"],
+      ["PUT", "/runtime/ABC123/page/block/record/files/DEF123/FIL001"],
+      ["DELETE", "/runtime/ABC123/page/block/record/files/DEF123/FIL001"],
+      ["POST", "/runtime/ABC123/page/block/actions/action"],
+      ["POST", "/runtime/ABC123/page/block/row-actions/action"],
+    ];
+    for (const [method, path] of routes) {
+      const response = await api.request(path!, { method, headers: { "Content-Type": "application/json" }, body: "{}" });
+      expect(response.status).toBe(403);
+    }
+  });
 });
 
 describe("Grids App Form runtime", () => {
@@ -916,11 +945,11 @@ describe("Grids App Form runtime", () => {
           filename: "internal-certificate.pdf",
         });
         await sql`
-        INSERT INTO grids.documents (
+        INSERT INTO grids.documents (primary_artifact_key,
           id, short_id, template_id, snapshot_id, base_id, table_id, record_id,
           document_number, filename, template_snapshot, render_data,
           renderer_kind, renderer_version, template_revision, issued_actor
-        ) VALUES (
+        ) VALUES ('pdf',
           ${documentId}::uuid,
           ${documentPublicId},
           ${documentTemplateId}::uuid,
@@ -937,11 +966,11 @@ describe("Grids App Form runtime", () => {
       `;
         await documentArtifact.attach();
         await sql`
-        INSERT INTO grids.documents (
+        INSERT INTO grids.documents (primary_artifact_key,
           id, short_id, template_id, snapshot_id, base_id, table_id, record_id,
           document_number, filename, template_snapshot, render_data,
           renderer_kind, renderer_version, template_revision, issued_actor
-        ) VALUES (
+        ) VALUES ('pdf',
           ${otherDocumentId}::uuid,
           ${otherDocumentPublicId},
           ${otherDocumentTemplateId}::uuid,

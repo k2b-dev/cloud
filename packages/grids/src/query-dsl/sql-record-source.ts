@@ -92,6 +92,8 @@ const compileWherePushdown = (
       return translated?.exact ? { clause: { kind: "not", inner: translated.clause }, exact: true } : null;
     }
     case "formula":
+    case "scoped":
+    case "filePresence":
     case "recordMeta":
     case "publicRecordIds":
     case "publicRelationIds":
@@ -215,6 +217,7 @@ const branchForSource = async (params: {
   return {
     relation: sql`
       SELECT source_record.id,
+             source_record.short_id,
              ${params.targetTableId}::uuid AS table_id,
              ${params.sourceTableId}::uuid AS source_table_id,
              source_table.base_id AS source_base_id,

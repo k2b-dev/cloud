@@ -5,9 +5,10 @@ import type { Field, GridRecord } from "./types";
 const resolveExpansionByTargetTable = async (
   idsByTargetTable: Map<string, Set<string>>,
   authorizedTableIds?: ReadonlySet<string>,
+  viewer?: ExpansionViewer,
 ): Promise<Record<string, Record<string, unknown>>> => {
   const expansion: Record<string, Record<string, unknown>> = {};
-  const targetsByTable = await loadRelationTargetsBatch(idsByTargetTable, authorizedTableIds);
+  const targetsByTable = await loadRelationTargetsBatch(idsByTargetTable, authorizedTableIds, undefined, undefined, viewer);
   for (const targets of targetsByTable.values()) {
     for (const record of targets.records) {
       const visibleFields: Record<string, unknown> = {};
@@ -30,7 +31,7 @@ export const buildRelationExpansionCache = async (
   if (!viewer) return resolveExpansionByTargetTable(idsByTargetTable);
   const authorizedTableIds = await resolveReadableTableIds(idsByTargetTable.keys(), viewer);
   const visibleTargets = new Map([...idsByTargetTable].filter(([tableId]) => authorizedTableIds.has(tableId)));
-  return resolveExpansionByTargetTable(visibleTargets, authorizedTableIds);
+  return resolveExpansionByTargetTable(visibleTargets, authorizedTableIds, viewer);
 };
 
 export const attachRelationExpansion = async (records: GridRecord[], fields: Field[], viewer?: ExpansionViewer): Promise<void> => {

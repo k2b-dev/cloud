@@ -6,9 +6,12 @@ import { decimalStringToCanonical } from "../formula/numeric";
 import { normalizeRefKey } from "../ref-syntax";
 import type { SqlClient } from "../service/audit";
 import { runBoundedQuery } from "../service/bounded-query";
-import { buildComputedFieldSqlMap } from "../service/computed-projections";
+import { buildComputedFieldSqlMap, readableComputedTargetTableIds } from "../service/computed-projections";
+import { getGridsCrudMessages } from "../service/crud-messages";
 import { type FederatedRevisionScope, verifyRevisionScope } from "../service/federated-tables";
 import { isMultiSelectField, storageOf } from "../service/field-storage";
+import { isMissingCapturedCalculationError } from "../service/finalized-field-sql";
+import { isInvalidCalculationError } from "../service/formula-sql-values";
 import { buildPrincipalLabelCache, principalReferencesFromValue } from "../service/principal-values";
 import { createReader } from "../service/record-read";
 import { buildRelationLabelCacheForIds, type ExpansionViewer } from "../service/relations";
@@ -34,6 +37,7 @@ type DslQueryPreviewSuccess = Extract<DslQueryPreviewResponse, { ok: true }>;
 type DslQueryPreviewRow = DslQueryPreviewSuccess["rows"][number];
 
 type DslQueryPreviewOptions = {
+  locale?: string;
   client?: SqlClient;
   templateApp?: DocumentTemplateAppData;
   fieldsByTableId: Record<string, Field[]>;
@@ -129,15 +133,18 @@ const asIso = (value: unknown): string | null => {
   return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
 };
 
-const normalizeValue = (value: unknown, column?: { sqlType?: string }): unknown => {
-  if (typeof value === "bigint") return Number(value);
+export const normalizeDslResultValue = (value: unknown, column?: { sqlType?: string }): unknown => {
+  if (typeof value === "bigint") {
+    const number = Number(value);
+    return Number.isSafeInteger(number) ? number : value.toString();
+  }
   if (value instanceof Date) return value.toISOString();
   if (typeof value === "string" && column?.sqlType === "numeric") return decimalStringToCanonical(value) ?? value;
   return value;
 };
 
 const rowValue = (row: Record<string, unknown>, column: { key: string; sqlType?: string }): unknown =>
-  normalizeValue(row[column.key], column);
+  normalizeDslResultValue(row[column.key], column);
 
 const rowColumns = (columns: DslSqlOutputColumn[]): DslQueryPreviewColumn[] =>
   columns.map((column) => ({
@@ -713,9 +720,25 @@ export const previewDslQuery = async (
     // Lookup/rollup SQL (cross-table correlated subqueries) is built once and
     // handed to the compilers so those fields work in select / sort / filter /
     // formulas — same values as the records pipeline.
-    const authorizedComputedTableIds = new Set(plan.readableTableIds.filter((tableId) => options.authorizedTableIds?.has(tableId) ?? true));
+    // A captured value can depend on a table no longer mentioned by today's
+    // expression. Use the authorized scope, not the current plan's dependency list.
+    let authorizedComputedTableIds = options.authorizedTableIds;
+    if (authorizedComputedTableIds === undefined && options.viewer) {
+      const scopes = await Promise.all(
+        sourceTableIds.map((tableId) =>
+          readableComputedTargetTableIds(options.fieldsByTableId[tableId] ?? [], options.viewer, undefined, options.client),
+        ),
+      );
+      authorizedComputedTableIds = new Set(scopes.flatMap((scope) => [...(scope ?? [])]));
+    }
+    if (authorizedComputedTableIds && options.viewer?.readableTableIds) {
+      authorizedComputedTableIds = new Set(
+        [...authorizedComputedTableIds].filter((tableId) => options.viewer!.readableTableIds!.has(tableId)),
+      );
+    }
     const computedDateConfig = options.timeZone ? { timeZone: options.timeZone } : undefined;
     const computedFieldSql = await buildComputedFieldSqlMap(options.fieldsByTableId[plan.tableId] ?? [], {
+      requireCapturedValues: true,
       useFinalizedFormulaValues: recordSource?.kind !== "federated",
       dateConfig: computedDateConfig,
       client: options.client,
@@ -724,6 +747,7 @@ export const previewDslQuery = async (
     const computedFieldSqlByJoinAlias = new Map<string, Awaited<ReturnType<typeof buildComputedFieldSqlMap>>>();
     for (const [index, join] of (plan.joins ?? []).entries()) {
       const map = await buildComputedFieldSqlMap(options.fieldsByTableId[join.tableId] ?? [], {
+        requireCapturedValues: true,
         useFinalizedFormulaValues: recordSourcesByTableId.get(join.tableId)?.kind !== "federated",
         dateConfig: computedDateConfig,
         client: options.client,
@@ -734,6 +758,7 @@ export const previewDslQuery = async (
     }
     for (const [index, join] of (plan.derivedViewSource?.joins ?? []).entries()) {
       const map = await buildComputedFieldSqlMap(options.fieldsByTableId[join.tableId] ?? [], {
+        requireCapturedValues: true,
         useFinalizedFormulaValues: recordSourcesByTableId.get(join.tableId)?.kind !== "federated",
         dateConfig: computedDateConfig,
         client: options.client,
@@ -744,6 +769,7 @@ export const previewDslQuery = async (
     }
     for (const [index, join] of (plan.derivedViewSource?.relationJoins ?? []).entries()) {
       const map = await buildComputedFieldSqlMap(options.fieldsByTableId[join.tableId] ?? [], {
+        requireCapturedValues: true,
         useFinalizedFormulaValues: recordSourcesByTableId.get(join.tableId)?.kind !== "federated",
         dateConfig: computedDateConfig,
         client: options.client,
@@ -868,7 +894,9 @@ export const previewDslQuery = async (
         columns,
         rows: [
           {
-            values: Object.fromEntries(columns.map((column) => [column.key, normalizeValue(rows[0]?.result?.[column.key], column)])),
+            values: Object.fromEntries(
+              columns.map((column) => [column.key, normalizeDslResultValue(rows[0]?.result?.[column.key], column)]),
+            ),
           },
         ],
         limit: 1,
@@ -944,6 +972,9 @@ export const previewDslQuery = async (
     );
     return bounded.ok ? finish(bounded.data) : bounded;
   } catch (error) {
+    if (isMissingCapturedCalculationError(error))
+      return fail(err.badInput(getGridsCrudMessages(options.locale).missingCapturedCalculation));
+    if (isInvalidCalculationError(error)) return fail(err.badInput(getGridsCrudMessages(options.locale).calculationFailed));
     if (isTimeout(error)) return fail(err.badInput("This query took too long (over 5s). Add a filter or a smaller limit and try again."));
     const revisionMessage = federatedRevisionMessage(error);
     if (revisionMessage) return fail(err.badInput(revisionMessage));

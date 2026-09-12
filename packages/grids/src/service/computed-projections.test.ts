@@ -4,9 +4,8 @@ import {
   buildComputedColumnSqlProjections,
   buildComputedProjections,
   buildFormulaSqlProjections,
-  readableComputedTargetTableIds,
 } from "./computed-projections";
-import type { Field } from "./types";
+import type { Field, GridRecord } from "./types";
 
 const field = (overrides: Partial<Field> & Pick<Field, "id" | "shortId" | "name" | "type">): Field => ({
   id: overrides.id,
@@ -120,35 +119,21 @@ describe("buildComputedProjections", () => {
     expect(await buildComputedProjections([relation, count], { authorizedTableIds: new Set() })).toEqual([]);
     expect(await buildComputedProjections([relation, count], { authorizedTableIds: new Set(["target_table"]) })).toHaveLength(1);
   });
-
-  test("uses a caller-provided table policy for credential-scoped reads", async () => {
-    const relation = field({
-      id: "relation_id",
-      shortId: "RELAT1",
-      name: "Relation",
-      type: "relation",
-      config: { targetTableId: "target_table" },
-    });
-    const lookup = field({
-      id: "lookup_id",
-      shortId: "LOOK01",
-      name: "Lookup",
-      type: "lookup",
-      config: { relationFieldId: relation.id, targetFieldId: "target_field" },
-    });
-    const checked: string[] = [];
-
-    const readable = await readableComputedTargetTableIds([relation, lookup], undefined, async (tableId) => {
-      checked.push(tableId);
-      return false;
-    });
-
-    expect(checked).toEqual(["target_table"]);
-    expect(readable).toEqual(new Set());
-  });
 });
 
 describe("applyComputedProjections", () => {
+  test("keeps a SQL calculation error separate from the typed value", () => {
+    const record: Pick<GridRecord, "data" | "fieldErrors"> = { data: {} };
+    applyComputedProjections(
+      [{ id: "record_1", total: "0", e_total: true }],
+      new Map([["record_1", record]]),
+      [{ fieldId: "Total1", alias: "total", outputType: "numeric", fragment: null, errorSql: true }],
+      "de",
+    );
+    expect(record.data.Total1).toBeNull();
+    expect(record.fieldErrors?.Total1).toBe("Dieser Wert konnte nicht berechnet werden. Prüfe die Formel und ihre Eingabewerte.");
+  });
+
   test("normalizes database scalar values for the record JSON contract", () => {
     const record = { data: {} as Record<string, unknown> };
     const projections = [

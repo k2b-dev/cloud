@@ -107,59 +107,59 @@ describe("built-in template instantiation", () => {
     },
     90_000,
   );
-  postgresTest(
-    "creates complete product resources through production services",
-    async () => {
-      await migrate();
-      const expectations = [
-        {
-          templateId: "bookshop",
-          documentNames: ["Order invoice"],
-          emailName: "Order invoice ready",
-          workflows: [{ name: "Send order invoice", steps: 10 }],
-          launchers: ["Choose order to send invoice"],
-          workflowCapabilities: 2,
-          scannerCapabilities: 0,
-        },
-        {
-          templateId: "finance",
-          documentNames: ["Transaction receipt"],
-          emailName: "Transaction receipt ready",
-          workflows: [{ name: "Clear and send receipt", steps: 10 }],
-          launchers: ["Choose transaction to process receipt"],
-          workflowCapabilities: 2,
-          scannerCapabilities: 0,
-        },
-        {
-          templateId: "inventory",
-          documentNames: ["Asset label", "Loan agreement"],
-          emailName: "Loan agreement ready",
-          workflows: [
-            { name: "Cancel requested loan", steps: 3 },
-            { name: "Approve equipment loan", steps: 5 },
-            { name: "Send approved loan agreement", steps: 12 },
-            { name: "Report damaged item", steps: 3 },
-            { name: "Mark loan item as returned", steps: 4 },
-            { name: "Issue loan position", steps: 4 },
-            { name: "Close returned loan", steps: 2 },
-            { name: "Add loan position", steps: 2 },
-          ],
-          launchers: [
-            "Cancel requested loan",
-            "Approve equipment loan",
-            "Choose loan to send agreement",
-            "Scan damaged inventory item",
-            "Scan returned inventory item",
-            "Issue loan position",
-            "Close returned loan",
-            "Add loan position",
-          ],
-          workflowCapabilities: 6,
-          scannerCapabilities: 2,
-        },
-      ];
+  const expectations = [
+    {
+      templateId: "bookshop",
+      documentNames: ["Order invoice"],
+      emailName: "Order invoice ready",
+      workflows: [{ name: "Send order invoice", steps: 10 }],
+      launchers: ["Choose order to send invoice"],
+      workflowCapabilities: 2,
+      scannerCapabilities: 0,
+    },
+    {
+      templateId: "finance",
+      documentNames: ["Transaction receipt"],
+      emailName: "Transaction receipt ready",
+      workflows: [{ name: "Clear and send receipt", steps: 10 }],
+      launchers: ["Choose transaction to process receipt"],
+      workflowCapabilities: 2,
+      scannerCapabilities: 0,
+    },
+    {
+      templateId: "inventory",
+      documentNames: ["Asset label", "Loan agreement"],
+      emailName: "Loan agreement ready",
+      workflows: [
+        { name: "Cancel requested loan", steps: 3 },
+        { name: "Approve equipment loan", steps: 5 },
+        { name: "Send approved loan agreement", steps: 12 },
+        { name: "Report damaged item", steps: 3 },
+        { name: "Mark loan item as returned", steps: 4 },
+        { name: "Issue loan position", steps: 4 },
+        { name: "Close returned loan", steps: 2 },
+        { name: "Add loan position", steps: 2 },
+      ],
+      launchers: [
+        "Cancel requested loan",
+        "Approve equipment loan",
+        "Choose loan to send agreement",
+        "Scan damaged inventory item",
+        "Scan returned inventory item",
+        "Issue loan position",
+        "Close returned loan",
+        "Add loan position",
+      ],
+      workflowCapabilities: 6,
+      scannerCapabilities: 2,
+    },
+  ];
 
-      for (const expected of expectations) {
+  for (const expected of expectations) {
+    postgresTest(
+      `${expected.templateId}: creates complete product resources through production services`,
+      async () => {
+        await migrate();
         const created = await instantiate(
           expected.templateId,
           { name: `${expected.templateId} integration ${Bun.randomUUIDv7()}`, withSampleData: true },
@@ -268,8 +268,8 @@ describe("built-in template instantiation", () => {
           await deleteTestWorkflowScope(empty.data.id);
           await sql`DELETE FROM grids.bases WHERE id = ${empty.data.id}::uuid`;
         }
-      }
-    },
-    90_000,
-  );
+      },
+      90_000,
+    );
+  }
 });

@@ -1,3 +1,4 @@
+import Decimal from "decimal.js";
 import { z } from "zod";
 import { fail, ok, type ValueFieldType } from "./types";
 import { fieldValidationMessages } from "./validation-messages";
@@ -33,11 +34,18 @@ export const percentHandler: ValueFieldType = {
     const upper = range === "fraction" ? 1 : 100;
 
     if (raw === null || raw === undefined || raw === "") return required ? fail(t.required) : ok(null);
-    const n = typeof raw === "number" ? raw : Number(typeof raw === "string" ? raw.trim() : raw);
-    if (!Number.isFinite(n)) return fail(t.percentNumber);
-    if (n < 0 || n > upper) return fail(t.percentRange({ upper }));
-
-    return ok(Number(n.toFixed(decimals)));
+    if (typeof raw !== "number" && typeof raw !== "string") return fail(t.percentNumber);
+    let n: Decimal;
+    try {
+      n = new Decimal(typeof raw === "string" ? raw.trim() : raw);
+    } catch {
+      return fail(t.percentNumber);
+    }
+    if (!n.isFinite()) return fail(t.percentNumber);
+    if (n.lessThan(0) || n.greaterThan(upper)) return fail(t.percentRange({ upper }));
+    // Match PostgreSQL numeric rounding before converting the bounded result
+    // to the existing percent JSON number representation.
+    return ok(n.toDecimalPlaces(decimals, Decimal.ROUND_HALF_UP).toNumber());
   },
 };
 

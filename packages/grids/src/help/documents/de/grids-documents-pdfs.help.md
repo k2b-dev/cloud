@@ -15,7 +15,7 @@ Nutze eine Dokumentvorlage, wenn die Ausgabe für Personen formatiert, gedruckt,
 
 Agents finden mit `document.templates` Vorlagen, lesen mit `document.list` und `document.read` gespeicherte Dokumente und stellen mit `document.create` ein Dokument für einen ausgewählten Record aus. Dafür sind Schreibzugriff, ein Idempotenzschlüssel und eine einzelne ausdrückliche Bestätigung nötig. Die Ausstellung ist nicht rückgängig zu machen und erlaubt keine dauerhafte Pauschalfreigabe. Der Download-Link benötigt weiterhin deine Berechtigungen; er erstellt keinen öffentlichen Freigabelink und versendet das Dokument nicht.
 
-Jedes abgeschlossene Dokument ist unveränderlich. Es gehört zu einer Vorlage und einem ausgewählten Datensatz. Dasselbe Dokument erscheint in Datensatzdetails, Vorlagenarbeitsbereich und **Alle Dokumente**. Eine wiederholte Generierung mit demselben Idempotenzschlüssel gibt dasselbe Dokument zurück; die Wiederverwendung dieses Schlüssels mit anderer Eingabe scheitert.
+Eine wiederholte Generierung mit demselben Idempotenzschlüssel gibt dasselbe unveränderliche Dokument zurück; die Wiederverwendung mit anderer Eingabe scheitert.
 
 Scheitert die Erzeugung, sendet **Erzeugung wiederholen** die ursprünglichen Eingaben erneut. Hat die Erzeugung ihre Quelldaten bereits gespeichert, verwenden Wiederholungen diese Daten auch nach Änderungen am Datensatz oder an der Vorlage. Der Dialog sperrt die Eingaben und blendet die Live-Vorschau aus. Wähle **Neuen Versuch starten**, um Eingaben zu korrigieren oder aktuelle Daten zu verwenden, und erstelle die Vorschau erneut. Prüfe zuerst **Alle Dokumente**: Der vorherige Versuch hat möglicherweise bereits ein Dokument erstellt, und ein neuer Versuch kann ein weiteres erzeugen. Personen mit Schreibzugriff können vorhandene Dokumentlinks auch verwalten, wenn die Vorlage deaktiviert oder nicht mehr verfügbar ist.
 
@@ -84,13 +84,13 @@ Starter sind bearbeitbare Vorlagen und keine festen Dokumenttypen. Wähle die n�
 
 Eine Vorlage besitzt einen Datenteil und bis zu vier Layoutteile. Die GQL-Quelle wird zuerst mit Liquid gerendert. Dadurch kann sie Werte des ausgewählten `record`, der öffentlichen `app` und der gemeinsamen Basiswerte `business` verwenden, bevor die Abfrage geparst wird.
 
-| Teil       | Sprache       | Zweck                                                                                                   | Häufige Verwendung                                                                     |
-| ---------- | ------------- | ------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| GQL-Quelle | Liquid + GQL  | Wählt die für das Dokument verfügbaren Zeilen und Spalten aus. Liquid wird vor dem Parsen von GQL gerendert. | Aktueller Datensatz, verbundene Zeilen, Elementlisten, gruppierte Zusammenfassungen.    |
-| Inhalt     | Liquid + HTML | Hauptinhalt zum Drucken für den HTML-Renderer.                                                           | Rechnungsinhalt, Vertragsklauseln, Etikettenlayout, Tabellen mit Datensatzdetails.      |
-| Kopfzeile  | Liquid + HTML | Optionale Kopfzeile auf jeder Seite.                                                                    | Briefkopf, Absenderidentität, Dokumentklasse, Kontaktblock.                             |
-| Fußzeile   | Liquid + HTML | Optionale Fußzeile auf jeder Seite.                                                                     | Rechtliche Fußzeile, Bankdaten und Seitenplatzhalter wie `<span class="pageNumber"></span>` und `<span class="totalPages"></span>`. |
-| Seiten-CSS | Liquid + CSS  | Optionales CSS, das in den PDF-Inhalt eingefügt wird.                                                   | @page-Größe/-Ränder, Tabellenköpfe, Seitenumbrüche, Drucktypografie.                    |
+| Teil | Sprache | Zweck | Häufige Verwendung |
+| --- | --- | --- | --- |
+| GQL-Quelle | Liquid + GQL | Wählt die für das Dokument verfügbaren Zeilen und Spalten aus. Liquid wird vor dem Parsen von GQL gerendert. | Aktueller Datensatz, verbundene Zeilen, Elementlisten, gruppierte Zusammenfassungen. |
+| Inhalt | Liquid + HTML | Hauptinhalt zum Drucken für den HTML-Renderer. | Rechnungsinhalt, Vertragsklauseln, Etikettenlayout, Tabellen mit Datensatzdetails. |
+| Kopfzeile | Liquid + HTML | Optionale Kopfzeile auf jeder Seite. | Briefkopf, Absenderidentität, Dokumentklasse, Kontaktblock. |
+| Fußzeile | Liquid + HTML | Optionale Fußzeile auf jeder Seite. | Rechtliche Fußzeile, Bankdaten und Seitenplatzhalter wie `<span class="pageNumber"></span>` und `<span class="totalPages"></span>`. |
+| Seiten-CSS | Liquid + CSS | Optionales CSS, das in den PDF-Inhalt eingefügt wird. | @page-Größe/-Ränder, Tabellenköpfe, Seitenumbrüche, Drucktypografie. |
 
 ## Verfügbare Daten verstehen {icon="layout-grid"}
 
@@ -243,30 +243,30 @@ Nutze den Filter `barcode_data_url` in einem `<img>`-Tag. Barcode-IDs sind klein
 <img src='{{ document.number | default: table.name | barcode_data_url: "qrcode" }}' alt="Document QR code">
 ```
 
-| Typ-ID            | Bezeichnung         | Verwendung                              |
-| ----------------- | ------------------- | --------------------------------------- |
-| `code128`         | Code 128            | Allgemeiner linearer Barcode.           |
-| `qrcode`          | QR Code             | Kompakter 2D-Code für Mobilgeräte.      |
-| `datamatrix`      | Data Matrix         | Kleiner 2D-Code für Etiketten.          |
-| `pdf417`          | PDF417              | Gestapelter 2D-Code für Dokumente.      |
-| `azteccode`       | Aztec Code          | Dichter 2D-Code ohne Ruhezone.          |
-| `ean13`           | EAN-13              | Produktcode für den Einzelhandel, 13 Ziffern. |
-| `ean8`            | EAN-8               | Kurzer Produktcode für den Einzelhandel. |
-| `upca`            | UPC-A               | US-Produktcode für den Einzelhandel.    |
-| `upce`            | UPC-E               | Komprimierter UPC-Code.                 |
-| `itf14`           | ITF-14              | Code für Kartons und Verpackungen.      |
-| `gs1datamatrix`   | GS1 Data Matrix     | GS1-2D-Code mit Anwendungs-IDs.         |
-| `sscc18`          | SSCC-18             | Code für Versandbehälter.               |
-| `isbn`            | ISBN                | Barcode für Buchkennungen.              |
-| `issn`            | ISSN                | Barcode für fortlaufende Publikationen. |
-| `ismn`            | ISMN                | Barcode für gedruckte Musik.            |
-| `code39`          | Code 39             | Einfacher alphanumerischer Barcode.     |
-| `code93`          | Code 93             | Kompakter alphanumerischer Barcode.     |
-| `interleaved2of5` | Interleaved 2 of 5  | Numerischer Lagerbarcode.               |
-| `micropdf417`     | MicroPDF417         | Kompakter gestapelter 2D-Code.          |
-| `microqrcode`     | Micro QR Code       | Kleine QR-Variante.                     |
-| `maxicode`        | MaxiCode            | 2D-Code für Pakete und Logistik.        |
-| `dotcode`         | DotCode             | Punktbasierter Produktionscode.         |
+| Typ-ID | Bezeichnung | Verwendung |
+| --- | --- | --- |
+| `code128` | Code 128 | Allgemeiner linearer Barcode. |
+| `qrcode` | QR Code | Kompakter 2D-Code für Mobilgeräte. |
+| `datamatrix` | Data Matrix | Kleiner 2D-Code für Etiketten. |
+| `pdf417` | PDF417 | Gestapelter 2D-Code für Dokumente. |
+| `azteccode` | Aztec Code | Dichter 2D-Code ohne Ruhezone. |
+| `ean13` | EAN-13 | Produktcode für den Einzelhandel, 13 Ziffern. |
+| `ean8` | EAN-8 | Kurzer Produktcode für den Einzelhandel. |
+| `upca` | UPC-A | US-Produktcode für den Einzelhandel. |
+| `upce` | UPC-E | Komprimierter UPC-Code. |
+| `itf14` | ITF-14 | Code für Kartons und Verpackungen. |
+| `gs1datamatrix` | GS1 Data Matrix | GS1-2D-Code mit Anwendungs-IDs. |
+| `sscc18` | SSCC-18 | Code für Versandbehälter. |
+| `isbn` | ISBN | Barcode für Buchkennungen. |
+| `issn` | ISSN | Barcode für fortlaufende Publikationen. |
+| `ismn` | ISMN | Barcode für gedruckte Musik. |
+| `code39` | Code 39 | Einfacher alphanumerischer Barcode. |
+| `code93` | Code 93 | Kompakter alphanumerischer Barcode. |
+| `interleaved2of5` | Interleaved 2 of 5 | Numerischer Lagerbarcode. |
+| `micropdf417` | MicroPDF417 | Kompakter gestapelter 2D-Code. |
+| `microqrcode` | Micro QR Code | Kleine QR-Variante. |
+| `maxicode` | MaxiCode | 2D-Code für Pakete und Logistik. |
+| `dotcode` | DotCode | Punktbasierter Produktionscode. |
 
 Zusätzliche BWIP-Symbol-IDs
 
@@ -428,9 +428,15 @@ Die Dokumentseite listet jedes generierte Dokument einer Vorlage auf. Nutze **Ta
 
 **Alle Dokumente** öffnet sich in der Ansicht **Ordner**, gruppiert nach Dokumentvorlage und anschließend Jahr. Die Suche durchsucht Dateinamen, Dokumentnummern und Tags der gesamten Base, unabhängig vom geöffneten Ordner. Beide Dokumentseiten zeigen ihre ersten Ergebnisse bereits beim Laden der Seite.
 
-Öffne ein Dokument, um sein PDF oder zusätzliche Dateien herunterzuladen. **Freigabelinks** zeigt die Anzahl aktiver Links und öffnet die Linkverwaltung. **Technische Details** öffnet IDs und Prüfsummen. Nach dem Schließen bist du wieder beim Dokument. Mit Schreibzugriff kannst du über **Weitere Aktionen → Erneut erzeugen** ein neues Dokument erstellen. Das vorhandene bleibt unverändert.
+Öffne ein Dokument, um seine gespeicherten Dateien herunterzuladen. Workflow-Ausgaben zeigen die übernommene Zeilenanzahl und den Datenstand. **Vorschau** zeigt CSV, JSON und XML bis 2 MiB; größere Dateien bleiben herunterladbar. CSV zeigt den Originaltext, ohne Trennzeichen zu erraten. **Freigabelinks** gibt es nur für PDFs. **Technische Details** öffnet IDs und Prüfsummen. Unterdialoge führen zum Dokument zurück. Mit Schreibzugriff erstellt **Weitere Aktionen → Erneut erzeugen** ein neues Dokument; das Original bleibt unverändert.
 
 Vor der Generierung kannst du Tags ergänzen und bei einer HTML-Vorlage den Dateinamen überschreiben. Ein E-Rechnungsrenderer bestimmt seine Artefaktdateinamen selbst. Nummer, Dateiname, Tags und Artefakte eines abgeschlossenen Dokuments sind unveränderlich.
+
+Der Hauptdownload behält das gespeicherte Dateiformat bei. Freigabelinks gibt es
+nur für eine PDF-Hauptdatei; andere Formate benötigen einen Download mit
+Zugriffsrechten. Im Input eines Profil-Renderers ist `document.filename` noch
+`null`, weil die Dateien erst erzeugt werden. Den Dateinamen kannst du danach
+am abgeschlossenen Dokument ablesen.
 
 Leseberechtigung auf die Basis erlaubt das Durchsuchen und erneute Herunterladen generierter Dokumente. Schreibberechtigung erlaubt zusätzlich Generierung. Personen mit Verwaltungsrechten verwalten Vorlagen. Eine lesende Person einer Grids App darf nur ein Dokument für den aktuellen Seitendatensatz herunterladen, dessen Vorlage in der veröffentlichten Capability dieses Datensatzblocks enthalten ist. Dieser App-begrenzte Download gewährt keinen allgemeinen Dokumentzugriff auf die Basis.
 

@@ -5,21 +5,19 @@ icon: ti ti-route
 description: Automate repeatable work with typed inputs, safe actions, and observable runs.
 order: 140
 ---
-Workflows carry out repeatable operations in Grids. Use one when a person or event should run the same checked sequence of record changes, document generation, email delivery, or JSON HTTP requests.
+Workflows run record changes, documents, email and HTTP steps. Runs retain their published revision and outcomes; edits do not change active runs.
 
-A workflow is more than a hidden automation. It has typed inputs, a reviewed YAML definition, permissions, a published revision history, and a run history that shows what happened at each step. Every run pins the revision it started on, so editing a workflow never changes a run that is already in flight.
+Use formulas for values, forms for creation, and workflows for multi-step operations. Give each workflow one outcome.
 
-## Decide whether to use a workflow {icon="route"}
-
-For agents, `workflow.record-actions` discovers configured correction/cancellation Draft actions and their expected revisions. `workflow.record-action` creates a linked Draft for one finalized original with explicit approval and an idempotency key. The original remains unchanged; no document is issued or sent. Reuse the key only for retries of the same request. Follow the returned run reference with `workflow.run.read`; acceptance is not completion. These capabilities do not author workflows, supply arbitrary extra inputs or run bulk selections. Use the CLI for those tasks, other workflow kinds and App-only runtime actions.
-
-Use a normal field or formula when you only need to store or calculate one value. Use a form when you only need guided record creation. Use a workflow when the operation has several steps, must be run consistently, needs a scanner or bulk action, contacts another system, or needs an observable success or failure.
-
-A small workflow is preferable to a large one with unrelated branches. Give it one outcome-oriented name, such as **Return item** or **Send approved invoice**.
+Agents use `workflow.record-actions` and `workflow.record-action` for approved correction Drafts; `workflow.run.read` tracks completion. Other workflow authoring and operations use the CLI.
 
 ## Create and test a first workflow {icon="route"}
 
-The normal Name and Description fields explain the workflow to users. YAML defines only executable behavior: inputs, optional automatic triggers, and steps.
+**New workflow → Create a file from a query:** preview GQL, choose CSV/JSON/PDF/XML, then review the disabled draft. **Run inputs** binds `@params.name`; preview values are not saved. Capture happens when the workflow runs.
+
+DATEV starters need issued totals and accounting fields; SEPA starters need finalized reimbursements with required unique numbers. Configure the destination and check dates. Files are not imported bookings or payments.
+
+Name and Description explain the workflow. YAML defines inputs, optional triggers, and steps.
 
 This workflow asks for one Items record and changes its status:
 
@@ -51,12 +49,6 @@ steps:
 
 Workflow YAML is deliberately strict. The root accepts only `inputs`, `triggers`, and `steps`. Inputs and triggers are optional; `steps` is required and must contain at least one step. Omit an unused section instead of writing an empty `triggers: {}` block.
 
-| Root key | Shape | Purpose |
-| --- | --- | --- |
-| `inputs` | Object keyed by input name | Declares values supplied when a run starts |
-| `triggers` | Object keyed by trigger kind | Starts runs automatically and binds trigger values to inputs |
-| `steps` | Non-empty list | Executes actions and control flow in order |
-
 Input names, `saveAs` names, `setVariable.name`, and `forEach.as` aliases are identifiers: start with a letter or underscore, then use only letters, digits, and underscores. Names are case-sensitive. A saved name cannot reuse an input, another saved value, a loop alias, or the reserved roots `inputs`, `trigger`, `bindings`, and `context`.
 
 Each action step contains exactly one action. Control-flow steps use their documented keys, such as `if` with `then` and optional `else`. Unknown root keys, input properties, trigger properties, action fields, and control-flow keys are errors. The editor reports them with a line and column rather than ignoring them.
@@ -65,22 +57,11 @@ YAML maps must not repeat a key. Indentation defines nesting, so use spaces cons
 
 ## How runs start {icon="square-plus"}
 
-Everything that starts an execute run is an **event**: something happened, Grids records that occurrence, and the workflow's published revision decides whether to answer it. There are four kinds.
+Execute runs start through direct UI/API/CLI requests, saved run options (scanner, bulk, Record or Grids App), `schedule`, or `recordEvent`. Direct requests and run options need no YAML trigger. Automatic triggers must be declared and published. Disabled workflows reject execution; unhandled occurrences create no run.
 
-:::reference
-- **Run requested:** Someone asked for this workflow directly — from the workflow page, the authenticated API, or the CLI.
-- **Run option used:** A scanner, bulk action, or Grids App button started it.
-- **Schedule fired:** A scheduled slot came due.
-- **Record changed:** A row was created, updated, or deleted in a table this workflow watches.
-:::
+A **dry run is not an event**: it plans the newest published revision without consulting triggers, including for disabled workflows.
 
-A run exists only when the workflow's published revision is listening for that event. Publishing always listens for **Run requested** and **Run option used** — being runnable is not a trigger anyone writes — and additionally for **Schedule fired** or **Record changed** when the YAML declares those triggers. Disabling the workflow stops every one of them, direct invocation included.
-
-This is why an occurrence that nothing is listening for produces no run at all rather than a failed one: nothing was ever accepted. A schedule that fires while the workflow is disabled, or a record change that arrives before its trigger was published, leaves no run to open.
-
-A **dry run is not an event**. Nothing happened; somebody is asking what would. It is created directly against the workflow's newest published revision and never consults a trigger, which is why a disabled workflow can still be dry-run while its execute runs are refused.
-
-Scanner, bulk, Record, and Grids App run options are saved separately and remain outside workflow YAML. One workflow can therefore have several named surfaces without duplicating its executable definition. A scanner maps one input to scanned text or a resolved record and can collect other inputs once before scanning, after every scan, or from fixed values. Bulk supplies one record-list input. A Record option runs from one open Record. A Grids App option either keeps fixed values for one-click use or asks for the declared inputs when it runs.
+The run options are saved separately, outside workflow YAML. Scanners map scanned text or a resolved Record to one input; other inputs may be fixed, requested once or requested after each scan. Bulk supplies a record list. Record options use the open Record. Grids App options supply fixed values or request declared inputs.
 
 ## Understand a run {icon="layout-grid"}
 
@@ -247,13 +228,14 @@ Run options are configured separately from the workflow source. One workflow can
 
 | Step | Required fields | Optional fields and defaults | Dry run |
 | --- | --- | --- | --- |
+| `query` | GQL `source` | Typed `parameters`, `saveAs` | Checks schema and access without capturing rows |
 | `closeRecord` | `record` | `expectedMode`, `expectedPolicyRevision` | Predicts Direct Finalization or a Four-eyes request from the Table's current policy |
 | `createCorrectionDraft` | `original`, `typeField`, `typeValue`, `originalField` | `intent` (`correction` default), `copyFields` | Validates the finalized original and predicts one linked Draft |
 | `finalizeRecord` | `record` | None | Validates Write access and predicts one permanent finalization |
 | `updateRecord` | `record`, non-empty `set` | `audit` answers keyed by audit-question UUID | Validates and predicts the record update |
 | `createRecord` | `table`, non-empty `values` | `saveAs` | Validates and predicts the new record |
 | `atomicRecords` | 1–100 `locks`, 1–50 `checks`, 1–50 `changes` | Check `message`; update `ifVersion` and `audit` | Evaluates current checks and predicts the bounded record changes without locking or writing |
-| `generateDocument` | `template`, `record` | `filename`, up to 20 `tags`, `saveAs` | Validates access and values; does not generate |
+| `generateDocument` | `template` + `record`, or `data` + `output` | `filename`, up to 20 `tags`, `saveAs` | Validates access and values; does not generate |
 | `createDocumentLink` | `document` output reference | `expiresIn` (`1d`, `7d`, `30d`, `90d`; default `30d`), `comment`, `saveAs` | Validates the document and access; does not create a link |
 | `sendEmail` | `template`, 1–50 `to` recipients | `data` with up to 200 keys, `saveAs` | Validates template, recipients, data, and access; does not send |
 | `httpRequest` | Absolute HTTP or HTTPS `url` | `method` (default `POST`), `headers`, `json`, `timeoutMs` (default 15,000; range 1,000–60,000), `saveAs` | Resolves and checks the target; does not send |
@@ -261,15 +243,81 @@ Run options are configured separately from the workflow source. One workflow can
 | `succeed` | `message` | None | Stops planning with a successful terminal result |
 | `fail` | `message` | None | Stops planning with the failure that execution would produce |
 
-`closeRecord` follows the Table's current Finalization mode: Direct mode finalizes the Record, while Four-eyes mode creates an exact request for another eligible person. The optional expected mode and policy revision can pin a prior review. The **Close selected Records** starter reviews and closes up to 100 exact Records at once. Its protected profile ensures that the confirmed public Record IDs are never replaced by a later View or query result and a policy change stops later steps. Records are rechecked when each step runs; a changed or incomplete Record stops the run and remains editable. Open the run to see completed steps and the exact failure.
+`query` captures at most 10,000 rows/5 MiB or fails atomically; GQL `limit` selects a subset. Parameters: `{type, value}` via `@params.name`; types: text, number, decimal (exact string), boolean, date, dateTime, record, recordList. Records use workflow references. Empty `oneof(record.id, @params.selected)` matches nothing. Dry-runs accept planned records but capture nothing. Pass `saveAs` metadata, not rows, to `generateDocument.data`.
 
-`createCorrectionDraft` keeps the finalized original unchanged and creates an editable Record in the same Table. It sets an existing single-select value and single self-relation to the original. `copyFields` carries over up to 100 stored value fields. Object lists copy inputs; calculated columns use the current formulas in the new Draft. Selected empty values stay empty; defaults apply only to unselected fields. Unique fields, generated IDs, Files, other Relations, calculated fields, and Documents are not copied. Number Series, mutation policy, access, Durable History and later Finalization still apply. Replaying the same operation returns the same Draft without duplication.
+### Create files from a query
 
-The starter asks whether people should see a **Correction** or **Cancellation** action and stores that intent in both the workflow and its run option. Grids rejects a mismatched run option, so cancellation wording cannot front a correction workflow. The selected single-select value remains the stored business meaning. A cancellation still creates an ordinary linked Draft that a person completes. Grids does not infer reversed amounts, taxes, or counter-bookings or generate a Document.
+All source captures share 5 MiB per run, including loop iterations. Reusing a capture does not count twice. Reduce rows/fields or split larger exports into separate runs.
+
+New query publications tolerate column reordering. Republish older workflows to adopt this binding; incompatible calculation changes still require review.
+
+At `generateDocument.data`, the editor suggests prior query results in scope. Reuse a name for several files.
+
+Saved values: `data: { documents: [DOC001], columns: [{ key: number, type: text, path: [number] }] }` reads issued `id`, `number`, `createdAt`, `data`, `profile` or `output`. Invoice `[output, grossAmount]` is the saved exact decimal total. Missing paths fail, including older Documents without output. Manual snapshots use `snapshots: [SNP001]`, path `[root, data, FLD001]`. One row per ID; no live values or array expansion. Related Records are permission-redacted. Limit: 5 MiB.
+
+For workflow values instead of GQL, use `data: { columns: [{ key: amount, type: decimal }], rows: [{ amount: "12.30" }] }`.
+Column `key`, optional `label`, and `type` are literal; rows accept workflow expressions. Types: text, decimal (plain string), boolean, date, dateTime, json. Keys and labels must be unique; every row must contain exactly those keys. Null is allowed, missing cells are not. Capture retains types, is bounded to 10,000 rows/5 MiB, and is reused on retry. This source implies no Record identity.
+
+**Capture and export query data**
+
+```yaml
+steps:
+  - query:
+      source: from table Items select Name
+      saveAs: report
+  - generateDocument:
+      data: report
+      output: { kind: csv }
+      filename: report.csv
+      saveAs: reportDocument
+```
+
+Do not combine `data`/`output` with `template`/`record`. Multiple file steps can use the same captured result; repeating a step returns its existing Document. Generation requires current execution permission, Base write access and source-table access. Find the resulting file in **All Documents** or the workflow run. Dry-runs do not render files.
+
+- **CSV:** UTF-8, CRLF, ordered aliases as headers. `delimiter` accepts comma (default), semicolon, tab (`"\t"`) or pipe. Null becomes an empty cell; nested values require `nestedValues: json`. Default `textProtection: spreadsheet` prefixes risky text, including `+`/`-` phone numbers, with an apostrophe; the report counts changed cells. Use `raw` only when the recipient handles unmodified text safely.
+- **CSV column selection:** Optional `columns: [{ source: Amount, label: Total }, { source: Name }]` selects and orders exact GQL aliases. Omit `label` to keep the alias. Unknown or repeated sources, empty selections and duplicate headings fail. Use aliases, not internal column keys.
+- **JSON:** `output: { kind: json }` creates row objects using unique aliases. Exact decimals remain strings; arrays, booleans and null keep their types.
+- **JSON wrapper:** Optional `wrapper: { rowsKey: items, values: { approved: "${{ inputs.approved }}" } }` adds typed root properties beside the row array. `values` defaults to `{}` and must not contain `rowsKey`. The property name is literal; values use workflow expressions. Combined output must fit 5 MiB.
+- **PDF:** `output.kind: pdf` requires a Liquid `body`; optional `header`, `footer` and `css` use the same template language. The body allows 200,000 characters; each other part allows 50,000. Use `rows`, `columns` and `document.number`/`document.createdAt`. Read cells as `row[column.key]`; `column.label` is the heading. Loops can render multiple rows and their object-list items in one PDF. No live queries or implicit Record are available in this context. The operator must configure the PDF service.
+
+- **XML:** `output.kind: xml` requires a Liquid `body` (up to 200,000 characters), using the same data roots as PDF. Output is UTF-8 XML 1.0 with one root. Values are allowed in text or quoted attributes; names and namespaces must be static. DTDs, CDATA, raw/capture/comment Liquid blocks and dynamic markup are rejected. Static XML comments and an optional static XML declaration are allowed. The shared rendered-template limit is 300,000 bytes. Malformed XML, unknown entities, invalid namespaces or illegal characters fail the step.
+
+Public download links support PDF only. Free XML does not validate a financial format.
+
+**Review a financial export**
+
+IBANs are masked; choose **Show bank details** to inspect them.
+
+`generateDocument` also accepts `output: { kind: datev-csv, version: 1, header: ..., mapping: ... }`
+or `kind: sepa-xml`. These create EUR booking or payment files, not imported bookings or executed payments.
+The DATEV profile targets 700/13; SEPA targets SCT pain.001.001.09 (DK GBIC 5). Acceptance by the receiving system is not guaranteed.
+SEPA previews warn about past dates and extended characters. Values stay unchanged; cancel and restart to correct them.
+
+Start manually; automatic triggers cannot create financial exports. Choose **Review export** in the run, Custom App action or scanner log.
+Check destination, date, rows, totals and query limit. Confirmation has no automatic expiry; cancel unwanted runs explicitly.
+Optional `sourceVersions: [{tableId: TBL001, recordId: REC001, version: 3}]` beside `data` pins author-selected Records.
+`sourceVersions: data` derives versions from a new, single-source query with unique Record rows. Joins and missing metadata fail.
+Changes conflict at confirmation and issuance. Child/lookup dependencies are not recursive; without this option, frozen data is used.
+
+Map exact GQL aliases to the fields below; use the workflow reference for limits. Dates: `YYYY-MM-DD`; fractional cents fail.
+Keep `header.destinationKey` stable per ledger/account and `businessId` per event: together they prevent duplicate exports.
+Download the existing Document again; never change those identities to evade the check. Authors own queries, joins, accounting
+and approval logic. Grids rechecks current permissions before creation.
+
+| Profile | Required header | Required mapping | Optional mapping |
+| --- | --- | --- | --- |
+| `datev-csv`, `version: 1` | `destinationKey`, `consultantNumber`, `clientNumber`, `fiscalYearStart`, `accountLength`, `periodStart`, `periodEnd`, `label`, `finalize` | `businessId`, `entryId`, `amount`, `direction`, `account`, `counterAccount`, `documentDate`, `documentNumber` | `text`, `taxKey`, `costCenter1`, `costCenter2` |
+| `sepa-xml`, `version: 1` | `destinationKey`, `debtorName`, `debtorIban`, `executionDate`; optional `debtorBic` | `businessId`, `endToEndId`, `amount`, `creditorName`, `creditorIban`, `remittance` | `creditorBic` |
+
+`closeRecord` follows the Table's mode: Direct finalizes; Four-eyes requests another eligible person's approval. Optional expected mode and policy revision pin a review. **Close selected Records** reviews up to 100 exact Records; its protected profile retains confirmed IDs instead of refreshing a View or query. Changed policy or changed/incomplete Records stop later steps and leave affected Records editable. The run shows completed steps and failures.
+
+`createCorrectionDraft` creates an editable same-Table Record, linking the unchanged finalized original through a single self-relation and setting an existing single-select value. `copyFields` copies up to 100 stored fields, including empty values and object-list inputs; defaults apply only elsewhere. Unique fields, generated IDs, Files, other Relations, calculations and Documents are excluded. Calculated columns use current formulas. Number Series, mutation policy, access, Durable History and Finalization still apply. Replay returns the same Draft.
+
+The starter labels the action **Correction** or **Cancellation**; its run option must match. The selected single-select value stores that meaning. Both create linked Drafts for a person to complete, without reversing amounts, taxes or bookings or generating Documents.
 
 `finalizeRecord` uses the table's generic Finalization contract: it validates the complete record, assigns final IDs, stores the final Durable History version, and permanently locks the record atomically. Retrying the same workflow step is safe. `updateRecord` and `createRecord` field keys accept exact field names or public IDs. If a table requires change context, `updateRecord.audit` must answer the applicable questions by their question UUID. `generateDocument.template` and `sendEmail.template` accept an enabled template exact name or public ID. Ambiguous and inaccessible references are rejected during validation.
 
-When a Table requires **Four-eyes Finalization**, a generic `finalizeRecord` workflow action cannot bypass it. A person requests Finalization from the Record, and a different current member of the configured approver group approves through the Finalization request. Switch the Table to Direct mode only when writers should again be able to finalize through ordinary Workflows, API, CLI, and Record actions.
+**Four-eyes Finalization** cannot be bypassed by `finalizeRecord`: request it from the Record; a different current approver-group member approves. Direct mode instead permits writers to finalize through Workflows, API, CLI and Record actions.
 
 ### Commit related record changes together
 
@@ -506,7 +554,7 @@ steps:
 :::
 
 :::note Saved output paths
-Saved outputs expose structured paths. Documents provide `id`, `templateId`, `baseId`, `tableId`, `recordId`, `number`, `filename`, `createdAt`, `createdBy`, `tags`, `renderer`, `validationStatus`, and `artifacts`. Document links provide `kind`, `id`, `url`, `expiresAt`, and `documentId`. Email results provide `subject`, `templateId`, and `recipients`; each recipient provides `id`, `deliveryId`, `kind`, `recipient`, and `status`. HTTP results provide `status`, `ok`, and `body`. Read them with expressions such as `${{ link.url }}`, `${{ emailResult.recipients }}`, or `${{ hook.status }}`.
+Saved outputs expose structured paths. Documents provide `id`, `shortId`, `templateId`, `baseId`, `tableId`, `recordId`, `number`, `filename`, `createdAt`, `createdBy`, `tags`, and `primaryArtifactKey`. Document links provide `kind`, `id`, `url`, `expiresAt`, and `documentId`. Email results provide `subject`, `templateId`, and `recipients`; each recipient provides `id`, `deliveryId`, `kind`, `recipient`, and `status`. HTTP results provide `status`, `ok`, and `body`. Read them with expressions such as `${{ link.url }}`, `${{ emailResult.recipients }}`, or `${{ hook.status }}`.
 :::
 
 ## Email templates {icon="file-description"}
@@ -560,44 +608,27 @@ steps:
 
 ## Run modes and observability {icon="route"}
 
-:::reference
-- **execute:** Runs the pinned revision, changes records, generates documents, starts email delivery, and sends external requests.
-- **dryRun:** Plans the workflow, checks current references and permissions, and records predicted effects without applying changes or sending external requests.
-- **Channels:** Direct UI, API, and CLI calls use `api`. Run options use `customApp`, `scanner`, or `bulk`. Automatic triggers use `schedule` or `recordEvent`.
-- **Run detail:** Inspect revision, channel, mode, input, start and finish times, duration, result message or structured error, each step outcome, and generated documents.
-- **Automatic triggers:** The workflow page shows whether a schedule is reconciled and its next run, or which record event and table are active. A degraded schedule includes a persistent problem description.
-- **Run statistics:** The counts and error rate above the run list cover execute runs in the selected window. Dry-run failures stay visible in run history without making real execution look unhealthy.
-:::
+- `execute` performs effects on the pinned revision; `dryRun` records predicted effects without changes or external requests.
+- Channels: `api` for direct UI/API/CLI; `customApp`, `scanner`, `bulk` for run options; `schedule`, `recordEvent` for automatic triggers.
+- Run details show revision, inputs, timing, result/error, steps and Documents. Statistics count execute runs; dry-run failures remain in history.
+- The workflow page shows schedule reconciliation, next execution or a persistent schedule problem, and active record-event/table bindings.
+- Cloud administrators inspect initiating occurrences and individual external effects under **Observability → Workflows** or `cld admin workflows`.
 
-A run and a step do not share a vocabulary. Both lists are complete:
+Run statuses: `queued`, `running`, `waiting`, `succeeded`, `failed`, `canceled`, `needs_attention`.
+Step statuses: `running`, `completed`, `waiting`, `failed`, `needs_attention`, `terminal`, `planned`, `unsupported`, `indeterminate`, `canceled`.
 
-:::reference
-- **Run statuses:** `queued`, `running`, `waiting`, `succeeded`, `failed`, `canceled`, `needs_attention`.
-- **Step statuses:** `running`, `completed`, `waiting`, `failed`, `needs_attention`, `terminal`, `planned`, `unsupported`, `indeterminate`, `canceled`.
-:::
-
-`terminal` marks the step that stopped the run: a `succeed` in either mode, and a `fail` in a dry run. A `fail` in an execute run reads `failed` instead, because it is one. `planned`, `indeterminate`, and `unsupported` only ever appear in a dry run — `planned` is a step that was described rather than performed, and the other two say the plan could not be decided, not that anything went wrong at run time.
-
-:::note Dry runs are recorded
-A dry run is a normal observable run with mode `dryRun`. Its step report describes the records, templates, recipient counts, and HTTP hosts that execution would affect without exposing request payloads. Review every predicted effect; a dry run does not prove that a later execute run will see unchanged records, permissions, or external systems.
-:::
-
-The workflow page covers the runs in this base, which is what a workflow author needs. Two things live one level up, with a Cloud administrator: the occurrence that caused each run, and the individual external effects a run performed. Both are under **Observability → Workflows** in Cloud administration, and in `cld admin workflows`. Ask for them when a run's own detail does not explain what started it or what escaped it.
+`terminal` is a stopping `succeed`, or `fail` in dry-run mode; execute-mode `fail` is `failed`.
+`planned`, `unsupported` and `indeterminate` are dry-run results, not runtime failures.
+Review predicted records, templates, recipient counts and HTTP hosts. Payloads remain hidden; a dry run cannot guarantee unchanged data, permissions or external systems later.
 
 ## Understand an interrupted run {icon="alert-triangle"}
 
-A run that is interrupted — a restart, a lost connection, a worker replaced mid-step — is resumed from the outcomes already recorded rather than started again. What that means for a step depends on the kind of effect the action performs, and it is the reason a run can end `needs_attention` instead of simply failing.
+Interrupted runs resume from recorded outcomes, not from the beginning:
 
-:::reference
-- **Record changes:** `finalizeRecord`, `updateRecord`, `createRecord`, `atomicRecords`, and `createDocumentLink` commit their work and the record of it together. An interruption means the change did not happen, so resuming performs it once.
-- **Documents and email:** `generateDocument` and `sendEmail` are keyed to the run and the step. Resuming after an interruption does not generate a second document or send a recipient a second copy.
-- **HTTP requests:** `httpRequest` is the one action nothing can verify afterwards. If a request left Grids and no complete response came back, the outcome is genuinely unknown.
-- **Decisions and variables:** `setVariable`, `succeed`, `fail`, and the control-flow steps perform no external effect and are simply re-evaluated.
-:::
-
-An `httpRequest` whose outcome is unknown is not retried and not reported as a failure. Repeating it is how a receiver is charged twice or a webhook fires twice; calling it a failure would claim it did not arrive. Instead the step ends `needs_attention` and the run stops there, so a person decides. Check the receiving system, then start a new run if the request has to be made again.
-
-Because of that, an `httpRequest` inside a workflow is worth pointing at a receiver that tolerates a repeated `Idempotency-Key`. That turns the ambiguous case into a safe one.
+- Record changes and `createDocumentLink` commit atomically with their recorded outcome; committed changes are not repeated.
+- `generateDocument` and `sendEmail` reuse their run/step identity, preventing duplicate Documents and recipient deliveries.
+- `setVariable`, `succeed`, `fail` and control flow have no external effects and can be reevaluated.
+- An `httpRequest` without a complete response may already have reached its receiver. Grids stops with `needs_attention`, rather than retrying or claiming failure. Check the receiving system before starting a new run. Prefer receivers that honor `Idempotency-Key`.
 
 ## Permissions and limits {icon="shield-lock"}
 

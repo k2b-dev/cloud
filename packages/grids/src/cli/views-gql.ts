@@ -49,6 +49,13 @@ import {
   writeOrPrint,
 } from "./views-gql-support";
 
+const gqlParametersInput = flag.input({
+  name: "parameters",
+  fileName: "parameters-file",
+  stdinName: "parameters-stdin",
+  valueLabel: "json",
+});
+
 export const gqlCommands = [
   command("gql reference", {
     summary: "Show Grids Query Language syntax, refs, and examples",
@@ -87,6 +94,7 @@ export const gqlCommands = [
       ...tableFlag,
       ...viewFlag,
       query: GQL_INPUT,
+      parameters: gqlParametersInput,
       pageSize: flag.int({ name: "page-size", min: 1, max: 1000, description: "Rows in one result page" }),
       cursor: flag.string({ description: "Pagination cursor" }),
       all: flag.boolean({ description: "Follow result cursors until the query ends or --max-rows is reached" }),
@@ -99,6 +107,7 @@ export const gqlCommands = [
       const view = await resolveOptionalView(ctx, table, flags.view);
       const body = {
         query: await readGql(flags.query),
+        parameters: await readJsonInput<unknown>(flags.parameters, "query parameters", false),
         ...(table ? { currentTableId: table.id, currentSource: { kind: "table", tableId: table.id } } : {}),
         ...(view
           ? {
@@ -130,6 +139,7 @@ export const gqlCommands = [
       ...tableFlag,
       ...viewFlag,
       query: GQL_INPUT,
+      parameters: gqlParametersInput,
       limit: flag.int({ min: 1, max: 500, description: "Maximum preview rows" }),
     },
     async run({ ctx, args, flags }) {
@@ -138,6 +148,7 @@ export const gqlCommands = [
       const view = await resolveOptionalView(ctx, table, flags.view);
       const body = {
         query: await readGql(flags.query),
+        parameters: await readJsonInput<unknown>(flags.parameters, "query parameters", false),
         ...(flags.limit !== undefined ? { limit: flags.limit } : {}),
         ...(table ? { currentTableId: table.id, currentSource: { kind: "table", tableId: table.id } } : {}),
         ...(view

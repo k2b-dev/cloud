@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { compileWorkflow } from "@k2b/cloud/workflows/language";
+import { ok } from "@k2b/stdlib";
 import {
   buildWorkflowCatalog,
   restoreWorkflowCatalog,
@@ -71,6 +72,229 @@ const compile = async (source: string) => {
 };
 
 describe("Grids workflow binder", () => {
+  test("binds document snapshot sources with literal paths", async () => {
+    const source = `steps:
+  - generateDocument:
+      data:
+        documents: [DOC001]
+        columns: [{ key: number, type: text, path: [number] }]
+      output: { kind: json }
+`;
+    expect((await compileAndBindGridsWorkflowSource(source, catalog())).ok).toBe(true);
+    expect((await compileAndBindGridsWorkflowSource(source.replace("[number]", '["${{ inputs.path }}"]'), catalog())).ok).toBe(false);
+    const recordSource = source
+      .replace("documents: [DOC001]", "snapshots: [SNP001]")
+      .replace("path: [number]", "path: [root, data, FLD001]");
+    expect((await compileAndBindGridsWorkflowSource(recordSource, catalog())).ok).toBe(true);
+    expect(
+      (await compileAndBindGridsWorkflowSource(recordSource.replace("[root, data, FLD001]", '["${{ inputs.path }}"]'), catalog())).ok,
+    ).toBe(false);
+    expect(
+      (
+        await compileAndBindGridsWorkflowSource(
+          recordSource.replace("snapshots: [SNP001]", "snapshots: [SNP001]\n        documents: [DOC001]"),
+          catalog(),
+        )
+      ).ok,
+    ).toBe(false);
+  });
+
+  test("document expression fields match the actual small action result", async () => {
+    const source = `steps:
+  - generateDocument:
+      data: { columns: [{ key: amount, type: decimal }], rows: [{ amount: "1.00" }] }
+      output: { kind: json }
+      saveAs: issued
+  - generateDocument:
+      data: { columns: [{ key: value, type: text }], rows: [{ value: "\${{ issued.number }}" }] }
+      output: { kind: json }
+`;
+    for (const field of ["number", "shortId", "primaryArtifactKey"])
+      expect((await compileAndBindGridsWorkflowSource(source.replace("issued.number", `issued.${field}`), catalog())).ok).toBe(true);
+    for (const field of ["documentNumber", "snapshotId", "workflowRunId"])
+      expect((await compileAndBindGridsWorkflowSource(source.replace("issued.number", `issued.${field}`), catalog())).ok).toBe(false);
+  });
+  test("binds typed inline data and rejects dynamic column definitions and unknown inputs", async () => {
+    const source = `inputs:
+  amount:
+    type: text
+steps:
+  - generateDocument:
+      data:
+        columns: [{ key: amount, type: decimal }]
+        rows: [{ amount: "\${{ inputs.amount }}" }]
+      output: { kind: json }
+`;
+    const bind = (yaml: string) => compileAndBindGridsWorkflowSource(yaml, catalog());
+    expect((await bind(source)).ok).toBe(true);
+    expect((await bind(source.replace("inputs.amount", "inputs.missing"))).ok).toBe(false);
+    expect((await bind(source.replace("key: amount", 'key: "${{ inputs.amount }}"'))).ok).toBe(false);
+    expect((await bind(source.replace("type: decimal", "type: imaginary"))).ok).toBe(false);
+  });
+  test("binds typed JSON wrapper values and rejects dynamic structural names", async () => {
+    const source = `inputs:
+  approved:
+    type: boolean
+steps:
+  - query:
+      source: from table Items select Name
+      saveAs: report
+  - generateDocument:
+      data: report
+      output:
+        kind: json
+        wrapper:
+          rowsKey: items
+          values:
+            approved: "\${{ inputs.approved }}"
+            source: Grids
+`;
+    const bind = (yaml: string) =>
+      compileAndBindGridsWorkflowSource(yaml, catalog(), async () =>
+        ok({ source: "from table {TBL001} select {FLD001}", schemaHash: "a".repeat(64) }),
+      );
+    expect((await bind(source)).ok).toBe(true);
+    expect((await bind(source.replace("inputs.approved", "inputs.unknown"))).ok).toBe(false);
+    expect((await bind(source.replace("rowsKey: items", 'rowsKey: "${{ inputs.approved }}"'))).ok).toBe(false);
+    expect((await bind(source.replace('approved: "${{ inputs.approved }}"', "items: forbidden"))).ok).toBe(false);
+    const csv =
+      source.slice(0, source.indexOf("        kind: json")) +
+      `        kind: csv
+        columns:
+          - source: Name
+            label: Item
+`;
+    expect((await bind(csv)).ok).toBe(true);
+    expect((await bind(csv.replace("label: Item", 'label: "${{ inputs.approved }}"'))).ok).toBe(false);
+    expect((await bind(csv.replace("source: Name", 'source: "${{ inputs.approved }}"'))).ok).toBe(false);
+  });
+
+  test("financial output uses existing header expressions but pins destination and column mappings", async () => {
+    const source = `inputs:
+  executionDate:
+    type: text
+steps:
+  - query:
+      source: from table Items select Name
+      saveAs: report
+  - generateDocument:
+      data: report
+      output:
+        kind: sepa-xml
+        version: 1
+        header:
+          destinationKey: finance-main
+          debtorName: Example
+          debtorIban: DE89370400440532013000
+          executionDate: "\${{ inputs.executionDate }}"
+        mapping:
+          businessId: id
+          endToEndId: reference
+          amount: amount
+          creditorName: name
+          creditorIban: iban
+          remittance: purpose
+`;
+    const bind = (yaml: string) =>
+      compileAndBindGridsWorkflowSource(yaml, catalog(), async () =>
+        ok({ source: "from table {TBL001} select {FLD001}", schemaHash: "a".repeat(64) }),
+      );
+    const valid = await bind(source);
+    expect(valid.ok).toBe(true);
+    expect(
+      (
+        await bind(
+          source.replace(
+            "      data: report",
+            "      data: report\n      sourceVersions: [{tableId: TBL001, recordId: REC001, version: 1}]",
+          ),
+        )
+      ).ok,
+    ).toBe(true);
+    expect((await bind(source.replace("type: text", "type: date"))).ok).toBe(true);
+    for (const invalid of [
+      source.replace("destinationKey: finance-main", 'destinationKey: "${{ inputs.executionDate }}"'),
+      source.replace("amount: amount", 'amount: "${{ inputs.executionDate }}"'),
+      source.replace("inputs.executionDate }}", "inputs.missing }}"),
+      source.replace("type: text", "type: number"),
+      source.replace("DE89370400440532013000", "DE00370400440532013000"),
+      source.replace("version: 1", "version: 2"),
+      source.replace('"${{ inputs.executionDate }}"', "2026-02-30"),
+    ])
+      expect((await bind(invalid)).ok).toBe(false);
+  });
+
+  test("rejects invalid literal query parameters before loading a schema", async () => {
+    for (const [type, value] of [
+      ["decimal", "not-a-number"],
+      ["date", "2026-02-30"],
+    ]) {
+      let called = false;
+      const source = `steps:\n  - query:\n      source: from table Items\n      parameters:\n        invalid:\n          type: ${type}\n          value: "${value}"\n`;
+      const bound = await compileAndBindGridsWorkflowSource(source, catalog(), async () => {
+        called = true;
+        return ok({ source: "unused", schemaHash: "a".repeat(64) });
+      });
+      expect(bound.ok).toBe(false);
+      expect(called).toBe(false);
+      if (!bound.ok) expect(bound.diagnostics[0]?.code).toBe("query.parameterValue");
+    }
+  });
+  test("query publication pins canonical source and exposes only a small typed result reference", async () => {
+    const source = `inputs:\n  minimum:\n    type: text\nsteps:\n  - query:\n      source: from table Items select Name\n      parameters:\n        minimum:\n          type: decimal\n          value: \${{ inputs.minimum }}\n      saveAs: report\n  - setVariable:\n      name: count\n      value: \${{ report.rowCount }}\n`;
+    const result = await compileAndBindGridsWorkflowSource(source, catalog(), async (_query, values) => {
+      expect(values["params.minimum"]).toEqual({ decimal: "0" });
+      return ok({ source: "from table {TBL001} select {FLD001}", schemaHash: "a".repeat(64) });
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.source).toContain("from table {TBL001} select {FLD001}");
+    expect(result.plan.bindings["steps.0.query.$query"]).toEqual({
+      source: "from table {TBL001} select {FLD001}",
+      schemaHash: "a".repeat(64),
+    });
+    const rows = await compileAndBindGridsWorkflowSource(source.replace("report.rowCount", "report.rows"), catalog(), async () =>
+      ok({ source: "unused", schemaHash: "a".repeat(64) }),
+    );
+    expect(rows.ok).toBe(false);
+  });
+
+  test("document generation consumes typed query references and rejects mixed source modes", async () => {
+    const prefix = "steps:\n  - query:\n      source: from table Items select Name\n      saveAs: report\n";
+    for (const kind of ["csv", "json", "pdf", "xml"]) {
+      const result = await compileAndBindGridsWorkflowSource(
+        `${prefix}  - generateDocument:\n      data: report\n      output:\n        kind: ${kind}\n${kind === "pdf" || kind === "xml" ? '        body: "<report>{% for row in rows %}<p>{{ row.name }}</p>{% endfor %}</report>"\n' : ""}      saveAs: document\n`,
+        catalog(),
+        async () => ok({ source: "from table {TBL001} select {FLD001}", schemaHash: "a".repeat(64) }),
+      );
+      expect(result.ok).toBe(true);
+    }
+    for (const invalid of [
+      "data: missing\n      output: { kind: csv }",
+      "data: report\n      template: Invoice\n      record: inputs.record\n      output: { kind: csv }",
+      "data: report\n      output: { kind: json, delimiter: ';' }",
+      "data: report\n      output: { kind: pdf }",
+      'data: report\n      output: { kind: pdf, body: "{{ record.name }}" }',
+      'data: report\n      output: { kind: pdf, body: "{% for row in rows %}" }',
+      'data: report\n      output: { kind: xml, body: "<{{ document.number }}/>" }',
+    ]) {
+      const result = await compileAndBindGridsWorkflowSource(`${prefix}  - generateDocument:\n      ${invalid}\n`, catalog(), async () =>
+        ok({ source: "from table {TBL001} select {FLD001}", schemaHash: "a".repeat(64) }),
+      );
+      expect(result.ok).toBe(false);
+    }
+  });
+
+  test("queries fail closed without authorized schema or with interpolated source and incompatible parameter types", async () => {
+    for (const source of [
+      "steps:\n  - query:\n      source: from table Items select Name\n",
+      'steps:\n  - query:\n      source: "${{ inputs.query }}"\n',
+      "steps:\n  - query:\n      source: from table Items select Name\n      parameters:\n        minimum:\n          type: decimal\n          value: 12\n",
+    ]) {
+      const result = await compileAndBindGridsWorkflowSource(source, catalog());
+      expect(result.ok).toBe(false);
+    }
+  });
   test("binds a Close selection profile to one stable Table", async () => {
     const result = await compileAndBindGridsWorkflowSource(
       `inputs:

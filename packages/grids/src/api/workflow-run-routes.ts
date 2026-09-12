@@ -7,6 +7,7 @@ import { getWorkflow } from "../service/workflow-definitions";
 import { listWorkflowEmailDeliveriesPage } from "../service/workflow-email-deliveries";
 import {
   cancelWorkflowRun,
+  getWorkflowDocumentConfirmation,
   getWorkflowRun,
   getWorkflowRunStats,
   listWorkflowRunsPage,
@@ -48,7 +49,7 @@ const loadReadableRun = async (c: Parameters<typeof gateAt>[0], runId: string) =
   return gate.ok ? { run, workflow } : gate;
 };
 
-const canReadDocument = (c: Parameters<typeof gateAt>[0]) => async (document: { baseId: string; tableId: string; templateId: string }) =>
+const canReadDocument = (c: Parameters<typeof gateAt>[0]) => async (document: { baseId: string }) =>
   (await gateAt(c, { baseId: document.baseId }, "read")).ok;
 
 export const createWorkflowRunRoutes = () =>
@@ -210,7 +211,11 @@ export const createWorkflowRunRoutes = () =>
         const loaded = await loadReadableRun(c, runId);
         if (!loaded) return c.json({ message: apiMessages(c).workflowRunNotFound }, 404);
         if (!("run" in loaded)) return respond(c, () => Promise.resolve(loaded));
-        return c.json(await toPublicWorkflowRun(loaded.run));
+        const documentConfirmation = loaded.run.status === "waiting" ? await getWorkflowDocumentConfirmation(loaded.run.id) : undefined;
+        return c.json({
+          ...(await toPublicWorkflowRun(loaded.run)),
+          ...(documentConfirmation ? { documentConfirmation } : {}),
+        });
       },
     )
     .post(

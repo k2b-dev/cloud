@@ -1,3 +1,4 @@
+import type { WorkflowJsonValue } from "@k2b/cloud/workflows";
 import { mutation as mutations } from "@k2b/stdlib/solid";
 import {
   Button,
@@ -12,7 +13,6 @@ import {
   toast,
   useLocale,
 } from "@k2b/ui";
-import type { WorkflowJsonValue } from "@k2b/cloud/workflows";
 import { createEffect, createMemo, createSignal, onCleanup, Show } from "solid-js";
 import { apiClient } from "../../../api/client";
 import type { PublicTable } from "../../../api/public-dto";
@@ -26,6 +26,7 @@ import type {
   PublicWorkflowStepRun,
   PublicWorkspaceWorkflowRunDetail,
 } from "../workspace/workspace-public-state-model";
+import { openFinancialExportDialog } from "./FinancialExportDialog";
 import { workflowMessages } from "./messages";
 import { WorkflowRevisionHistory } from "./WorkflowRevisionHistory";
 import {
@@ -100,6 +101,7 @@ export function WorkflowRunDetailPanel(props: {
 }) {
   const locale = useLocale();
   const t = () => workflowMessages.resolve([locale()]).t;
+  let exportReviewController: AbortController | undefined;
   const [run, setRun] = createSignal<PublicWorkflowRun | null>(props.initialDetail?.run ?? null);
   const [inputLabels, setInputLabels] = createSignal(props.initialDetail?.inputLabels ?? {});
   const [steps, setSteps] = createSignal<PublicWorkflowStepRun[]>(props.initialDetail?.steps ?? []);
@@ -226,6 +228,7 @@ export function WorkflowRunDetailPanel(props: {
   });
 
   onCleanup(() => {
+    exportReviewController?.abort();
     loadMut.abort();
     loadMoreDocumentsMut.abort();
   });
@@ -250,6 +253,7 @@ export function WorkflowRunDetailPanel(props: {
   createEffect(() => {
     const runId = props.runId;
     if (loadedRunId === runId) return;
+    exportReviewController?.abort();
     loadedRunId = runId;
     setPendingLiveRefreshRunId(null);
     setRun(null);
@@ -329,6 +333,10 @@ export function WorkflowRunDetailPanel(props: {
             }
             if (isTerminalWorkflowRunStatus(event.run.status)) {
               stopFallback();
+              refreshSelectedRun();
+            } else if (event.run.status === "waiting") {
+              // Stream summaries do not carry permission-checked confirmation
+              // details. Reload the detail endpoint when a step parks.
               refreshSelectedRun();
             }
           },
@@ -578,7 +586,23 @@ export function WorkflowRunDetailPanel(props: {
                 onInspectRevision={() => void inspectRevision()}
               />
               <WorkflowRunInputsSection inputs={inputRows()} />
-              <WorkflowRunStepsSection steps={steps()} truncated={stepsTruncated()} loading={loadMut.loading()} />
+              <WorkflowRunStepsSection
+                steps={steps()}
+                truncated={stepsTruncated()}
+                loading={loadMut.loading()}
+                onInspectExport={async (receiptId) => {
+                  const runId = props.runId;
+                  exportReviewController?.abort();
+                  const controller = new AbortController();
+                  exportReviewController = controller;
+                  try {
+                    const confirmed = await openFinancialExportDialog({ runId, receiptId }, controller.signal);
+                    if (confirmed && !controller.signal.aborted && props.runId === runId) refresh(runId);
+                  } finally {
+                    if (exportReviewController === controller) exportReviewController = undefined;
+                  }
+                }}
+              />
               <WorkflowRunDocumentsSection
                 documents={documents()}
                 downloadingDocumentId={downloadingDocumentId()}

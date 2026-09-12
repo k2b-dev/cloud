@@ -8,6 +8,7 @@ import { customAppRowHref } from "../../custom-apps/routing";
 import type { GridFilePreview } from "../../service";
 import { RecordCardsView } from "../_components/records-view/RecordCardsView";
 import { FieldValue } from "../_components/table/FieldValue";
+import { openFinancialExportDialog } from "../_components/workflows/FinancialExportDialog";
 import { customAppCardFileUrl } from "./records-card-url";
 import { customAppRecordsResultColumns } from "./records-table-model";
 import { useCustomAppRuntimeMessages } from "./runtime-messages";
@@ -217,6 +218,7 @@ export default function RecordsTable(props: {
       const outcome = await invokeCustomAppWorkflow({
         endpoint: action.endpoint,
         operation: active.operation,
+        onConfirmExport: openFinancialExportDialog,
         body: active.body,
         signal: controller.signal,
         messages: {
@@ -225,6 +227,7 @@ export default function RecordsTable(props: {
           completed: messages().workflowCompleted,
           failed: messages().workflowFailed,
           stillRunning: messages().workflowStillRunning,
+          awaitingExport: messages().workflowAwaitingExport,
         },
       });
       if (outcome.kind !== "running") setOperations((current) => Object.fromEntries(Object.entries(current).filter(([id]) => id !== key)));

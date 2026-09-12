@@ -5,9 +5,10 @@ import { decimalStringToCanonical } from "../formula/numeric";
 import { collectFieldRefs, parseFormula } from "../formula/parser";
 import { normalizeRefKey } from "../ref-syntax";
 import type { SqlClient } from "./audit";
+import { getGridsCrudMessages } from "./crud-messages";
 import { get as getField, listByTable } from "./field-read";
 import { storageOf } from "./field-storage";
-import { finalizedFieldSql } from "./finalized-field-sql";
+import { capturedCalculationJsonSql, finalizedFieldSql } from "./finalized-field-sql";
 import {
   compileFormulaFieldToSql,
   compileFormulaSourceToSql,
@@ -19,7 +20,7 @@ import { numericAverageSql } from "./numeric-division-sql";
 import { liveRecordParentJoinSql } from "./parent-checks";
 import { type ExpansionViewer, resolveReadableTableIds } from "./relation-access";
 import { assertSqlIdentifier } from "./sql-ident";
-import type { Field } from "./types";
+import type { Field, GridRecord } from "./types";
 
 /**
  * Per-row SELECT-list projections for lookup and rollup fields.
@@ -59,6 +60,14 @@ export type ComputedProjection = {
   /** The full SQL fragment to embed AFTER `r.*,` in the SELECT list. */
   fragment: any;
 };
+
+const withErrorProjection = (projection: ComputedProjection): ComputedProjection =>
+  projection.errorSql === undefined
+    ? projection
+    : {
+        ...projection,
+        fragment: sql`${projection.fragment}, COALESCE(${projection.errorSql}, false) AS ${sql.unsafe(`e_${projection.alias}`)}`,
+      };
 
 /** Maps a projection output type onto the formula-compiler's SQL type system so
  *  GQL can treat lookup/rollup values like any other typed expression. */
@@ -140,7 +149,15 @@ export const readableComputedTargetTableIds = async (
   authorizeTable?: (tableId: string) => Promise<boolean>,
   client?: SqlClient,
 ): Promise<ReadonlySet<string> | undefined> => {
-  const targetTableIds = [...new Set(computedTargetTableIds(fields))];
+  if (!viewer && !authorizeTable) return undefined;
+  // Historical captures can reference tables absent from today's expression.
+  // Resolve the Base's candidates once, still respecting narrowed viewers.
+  const scope =
+    fields[0] && fields.some((field) => ["formula", "lookup", "rollup"].includes(field.type))
+      ? await (client ?? sql)<Array<{ id: string }>>`SELECT id::text FROM grids.tables
+        WHERE base_id = (SELECT base_id FROM grids.tables WHERE id = ${fields[0].tableId}::uuid) AND deleted_at IS NULL`
+      : [];
+  const targetTableIds = [...new Set([...computedTargetTableIds(fields), ...scope.map((table) => table.id)])];
   if (authorizeTable) {
     const verdicts = await Promise.all(targetTableIds.map(async (tableId) => ((await authorizeTable(tableId)) ? tableId : null)));
     return new Set(verdicts.filter((tableId): tableId is string => tableId !== null));
@@ -173,6 +190,8 @@ const lookupOutputType = (field: Field): ComputedProjectionOutputType => {
 };
 
 type ComputedOptions = {
+  /** Query/export evaluation must not turn absent historical captures into incomplete totals. */
+  requireCapturedValues?: boolean;
   client?: SqlClient;
   recordAlias?: string;
   authorizedTableIds?: ReadonlySet<string>;
@@ -228,6 +247,8 @@ const targetValue = async (
       fields,
       recordAlias: alias,
       computedFieldSql,
+      authorizedTableIds: options.authorizedTableIds,
+      requireCapturedValues: options.requireCapturedValues,
       now: options.now,
       dateConfig: options.dateConfig,
     });
@@ -404,9 +425,14 @@ export const buildComputedProjections = async (fields: Field[], options: Compute
     if (projection) {
       const frozen =
         projection.outputType === "json"
-          ? sql`CASE WHEN ${sql.unsafe(recordAlias)}.finalized_at IS NOT NULL THEN ${sql.unsafe(recordAlias)}.data->${field.id} ELSE ${projection.expr} END`
-          : finalizedFieldSql(field.id, { sql: projection.expr, type: computedOutputToFormulaType(projection.outputType) }, recordAlias)
-              .sql;
+          ? sql`CASE WHEN ${sql.unsafe(recordAlias)}.finalized_at IS NOT NULL THEN ${capturedCalculationJsonSql(field.id, recordAlias, options.requireCapturedValues, options.authorizedTableIds)} ELSE ${projection.expr} END`
+          : finalizedFieldSql(
+              field.id,
+              { sql: projection.expr, type: computedOutputToFormulaType(projection.outputType) },
+              recordAlias,
+              options.authorizedTableIds,
+              options.requireCapturedValues,
+            ).sql;
       const errorSql =
         projection.errorSql === undefined
           ? undefined
@@ -415,7 +441,7 @@ export const buildComputedProjections = async (fields: Field[], options: Compute
     }
   }
 
-  return out;
+  return out.map(withErrorProjection);
 };
 
 /**
@@ -433,20 +459,21 @@ export const buildComputedFieldSqlMap = async (
   const expressions = new Map<string, FormulaSqlExpression>(
     projections.map((p) => [p.fieldId, { sql: p.expr, errorSql: p.errorSql, type: computedOutputToFormulaType(p.outputType) }]),
   );
-  if (options.useFinalizedFormulaValues === false) {
-    // A Combined row carries the source's finalization status, not snapshots
-    // of the Combined table's formulas. Reuse this map in every GQL scope.
-    for (const field of fields) {
-      if (field.deletedAt || field.type !== "formula") continue;
-      const compiled = compileFormulaFieldToSql(field, {
-        fields,
-        recordAlias: options.recordAlias,
-        dateConfig: options.dateConfig,
-        now: options.now,
-        useFinalizedFormulaValues: false,
-      });
-      if (compiled.ok) expressions.set(field.id, compiled.expression);
-    }
+  // Reuse the same captured-value authorization in projections, predicates and
+  // aggregates. Combined rows explicitly opt out of their own frozen formulas.
+  for (const field of fields) {
+    if (field.deletedAt || field.type !== "formula") continue;
+    const compiled = compileFormulaFieldToSql(field, {
+      fields,
+      recordAlias: options.recordAlias,
+      dateConfig: options.dateConfig,
+      now: options.now,
+      useFinalizedFormulaValues: options.useFinalizedFormulaValues,
+      requireCapturedValues: options.requireCapturedValues,
+      authorizedTableIds: options.authorizedTableIds,
+      computedFieldSql: expressions,
+    });
+    if (compiled.ok) expressions.set(field.id, compiled.expression);
   }
   return expressions;
 };
@@ -460,7 +487,13 @@ export const buildComputedFieldSqlMap = async (
  */
 export const buildFormulaSqlProjections = (
   fields: Field[],
-  options: { dateConfig?: DateContext; now?: Date; recordAlias?: string; useFinalizedFormulaValues?: boolean } = {},
+  options: {
+    dateConfig?: DateContext;
+    now?: Date;
+    recordAlias?: string;
+    useFinalizedFormulaValues?: boolean;
+    authorizedTableIds?: ReadonlySet<string>;
+  } = {},
 ): ComputedProjection[] => {
   const out: ComputedProjection[] = [];
   const now = options.now ?? new Date();
@@ -475,6 +508,7 @@ export const buildFormulaSqlProjections = (
       dateConfig: options.dateConfig,
       now,
       useFinalizedFormulaValues: options.useFinalizedFormulaValues,
+      authorizedTableIds: options.authorizedTableIds,
     });
     if (!compiled.ok) continue;
     const alias = formulaAlias(field.id);
@@ -483,10 +517,11 @@ export const buildFormulaSqlProjections = (
       alias,
       outputType: outputTypeForFormula(compiled.expression.type),
       expr: compiled.expression.sql,
+      errorSql: compiled.expression.errorSql,
       fragment: sql`${compiled.expression.sql} AS ${sql.unsafe(alias)}`,
     });
   }
-  return out;
+  return out.map(withErrorProjection);
 };
 
 /**
@@ -503,7 +538,12 @@ export const buildFormulaSqlProjections = (
 export const buildComputedColumnSqlProjections = (
   columns: ComputedColumnSpec[] | undefined,
   fields: Field[],
-  options: { dateConfig?: DateContext; now?: Date } = {},
+  options: {
+    dateConfig?: DateContext;
+    now?: Date;
+    computedFieldSql?: Map<string, FormulaSqlExpression>;
+    authorizedTableIds?: ReadonlySet<string>;
+  } = {},
 ): { projections: ComputedProjection[]; sqlColumnIds: Set<string> } => {
   const projections: ComputedProjection[] = [];
   const sqlColumnIds = new Set<string>();
@@ -513,6 +553,8 @@ export const buildComputedColumnSqlProjections = (
     const compiled = compileFormulaSourceToSql(column.expression, {
       fields,
       recordAlias: "r",
+      computedFieldSql: options.computedFieldSql,
+      authorizedTableIds: options.authorizedTableIds,
       dateConfig: options.dateConfig,
       now,
     });
@@ -522,11 +564,12 @@ export const buildComputedColumnSqlProjections = (
       fieldId: column.id,
       alias,
       outputType: outputTypeForFormula(compiled.expression.type),
+      errorSql: compiled.expression.errorSql,
       fragment: sql`${compiled.expression.sql} AS ${sql.unsafe(alias)}`,
     });
     sqlColumnIds.add(column.id);
   }
-  return { projections, sqlColumnIds };
+  return { projections: projections.map(withErrorProjection), sqlColumnIds };
 };
 
 export const normalizeProjectionValue = (outputType: ComputedProjectionOutputType, raw: unknown): unknown => {
@@ -559,8 +602,9 @@ export const normalizeProjectionValue = (outputType: ComputedProjectionOutputTyp
  */
 export const applyComputedProjections = (
   rows: Array<Record<string, unknown>>,
-  recordsById: Map<string, { data: Record<string, unknown> }>,
+  recordsById: Map<string, Pick<GridRecord, "data" | "fieldErrors">>,
   projections: ComputedProjection[],
+  locale?: string,
 ): void => {
   if (projections.length === 0) return;
   for (const row of rows) {
@@ -568,6 +612,12 @@ export const applyComputedProjections = (
     const rec = recordsById.get(id);
     if (!rec) continue;
     for (const p of projections) {
+      if (p.errorSql !== undefined && row[`e_${p.alias}`] === true) {
+        rec.data[p.fieldId] = null;
+        rec.fieldErrors ??= {};
+        rec.fieldErrors[p.fieldId] = getGridsCrudMessages(locale).calculationFailed;
+        continue;
+      }
       const raw = row[p.alias];
       if (raw === null || raw === undefined) {
         rec.data[p.fieldId] = null;

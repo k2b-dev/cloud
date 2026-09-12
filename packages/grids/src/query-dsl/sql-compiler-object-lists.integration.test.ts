@@ -58,6 +58,22 @@ postgresTest("joined list reductions use typed calculated cells and preserve fro
     const [stored] = await sql`SELECT (${frozen.expression.sql})::text AS total
       FROM (SELECT data, NOW() AS finalized_at FROM grids.records WHERE id = ${fixture.customerAId}::uuid) customer`;
     expect(stored.total).toBe("9.99");
+    await sql`UPDATE grids.records SET data = data || ${{ [list.id]: [{ Amount: "invalid" }] }}::jsonb
+      WHERE id = ${fixture.customerAId}::uuid`;
+    const calculationError = "This value could not be calculated. Check the formula and its input values.";
+    await expect(preview(fixture, query)).rejects.toThrow(calculationError);
+    await expect(preview(fixture, `${source}\n select customer.ITEMS1\n where customer.NAME1x = 'Alice'`)).rejects.toThrow(
+      calculationError,
+    );
+    await expect(
+      preview(fixture, `${source}\n group by customer.NAME1x\n aggregate sum(formula(LIST_SUM(customer.ITEMS1, 'Total'))) as total`),
+    ).rejects.toThrow(calculationError);
+    const recovered = await preview(
+      fixture,
+      `${source}\n select formula(IFERROR(LIST_SUM(customer.ITEMS1, 'Total'), 42)) as total, formula(IF(false, LIST_SUM(customer.ITEMS1, 'Total'), 7)) as unused
+        where customer.NAME1x = 'Alice'`,
+    );
+    expect(recovered.rows[0]?.values).toMatchObject({ q_col_0: "42", q_col_1: "7" });
   } finally {
     await cleanupFixture(fixture.baseId);
   }

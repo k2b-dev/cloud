@@ -35,9 +35,10 @@ const resolveLabelsByTargetTable = async (
   authorizedTableIds?: ReadonlySet<string>,
   labelFieldIdsByTableId?: ReadonlyMap<string, readonly string[]>,
   client?: SqlClient,
+  viewer?: ExpansionViewer,
 ): Promise<Record<string, string>> => {
   const labels: Record<string, string> = {};
-  const targetsByTable = await loadRelationTargetsBatch(idsByTargetTable, authorizedTableIds, labelFieldIdsByTableId, client);
+  const targetsByTable = await loadRelationTargetsBatch(idsByTargetTable, authorizedTableIds, labelFieldIdsByTableId, client, viewer);
   for (const targets of targetsByTable.values()) {
     for (const record of targets.records) {
       const parts = targets.fields.map((field) => formatLabelPart(record.data[field.id])).filter((part) => part.length > 0);
@@ -64,7 +65,7 @@ export const buildRelationLabelCache = async (
 ): Promise<Record<string, string>> => {
   const idsByTargetTable = await collectRelationTargetIds(records, fields);
   const visible = await visibleTargets(idsByTargetTable, viewer);
-  return resolveLabelsByTargetTable(visible.ids, visible.authorizedTableIds);
+  return resolveLabelsByTargetTable(visible.ids, visible.authorizedTableIds, undefined, undefined, viewer);
 };
 
 export const buildPinnedRelationLabelCache = async (
@@ -75,7 +76,7 @@ export const buildPinnedRelationLabelCache = async (
 ): Promise<Record<string, string>> => {
   const idsByTargetTable = await collectRelationTargetIds(records, fields);
   const visible = await visibleTargets(idsByTargetTable, viewer);
-  return resolveLabelsByTargetTable(visible.ids, visible.authorizedTableIds, labelFieldIdsByTableId);
+  return resolveLabelsByTargetTable(visible.ids, visible.authorizedTableIds, labelFieldIdsByTableId, undefined, viewer);
 };
 
 export const buildLabelCacheForGroupedKeys = async (
@@ -100,7 +101,7 @@ export const buildLabelCacheForGroupedKeys = async (
     idsByTargetTable.set(targetTableId, ids);
   }
   const visible = await visibleTargets(idsByTargetTable, viewer);
-  return resolveLabelsByTargetTable(visible.ids, visible.authorizedTableIds);
+  return resolveLabelsByTargetTable(visible.ids, visible.authorizedTableIds, undefined, undefined, viewer);
 };
 
 export const buildRelationLabelCacheForIds = async (
@@ -109,7 +110,7 @@ export const buildRelationLabelCacheForIds = async (
   client?: SqlClient,
 ): Promise<Record<string, string>> => {
   const visible = await visibleTargets(idsByTargetTable, viewer, client);
-  return resolveLabelsByTargetTable(visible.ids, visible.authorizedTableIds, undefined, client);
+  return resolveLabelsByTargetTable(visible.ids, visible.authorizedTableIds, undefined, client, viewer);
 };
 
 export const lookupRecords = async (params: {
@@ -155,21 +156,25 @@ export const lookupRecords = async (params: {
   if (recordSource) await assertFederatedPublication(recordSource);
   const rows = recordSource
     ? await sql<DbRow[]>`
-        SELECT r.id, r.data
+        SELECT r.id, r.data, NULL::text AS finalized_at
         FROM ${recordSource.relation} r
         WHERE ${where}
         ORDER BY r.created_at DESC, r.source_table_id, r.id
         LIMIT ${limit}
       `
     : await sql<DbRow[]>`
-        SELECT r.id, r.data
+        SELECT r.id, r.data, r.finalized_at::text
         FROM grids.records r
         ${liveRecordParentJoinSql("r", "rt", "rb")}
         WHERE ${where}
         ORDER BY r.created_at DESC
         LIMIT ${limit}
       `;
-  const records = rows.map((row) => ({ id: row.id as string, data: parseJsonbRow<Record<string, unknown>>(row.data, {}) }));
+  const records = rows.map((row) => ({
+    id: row.id as string,
+    data: parseJsonbRow<Record<string, unknown>>(row.data, {}),
+    finalizedAt: typeof row.finalized_at === "string" ? row.finalized_at : null,
+  }));
   enrichRecordsWithFormulas(records, fields);
   return {
     items: records.map((record) => {

@@ -198,6 +198,7 @@ const document: Document = {
   renderData: { ...liveData, snapshot },
   artifacts: [{ key: "pdf", fileId, filename: "Invoice July.pdf", mimeType: "application/pdf", sizeBytes: 4, sha256: "a".repeat(64) }],
   profile: null,
+  primaryArtifactKey: "pdf",
   validationStatus: null,
   createdBy: userId,
   createdAt: "2026-07-11T08:00:00.000Z",
@@ -287,7 +288,7 @@ const draftRequestSchema = {
             numberTemplate: { type: "string", minLength: 1, maxLength: 5_000 },
             filenameTemplate: { type: "string", minLength: 1, maxLength: 5_000 },
           },
-          required: ["kind", "body", "numberTemplate", "filenameTemplate"],
+          required: ["body", "kind", "numberTemplate", "filenameTemplate"],
         },
         {
           type: "object",
@@ -363,7 +364,7 @@ const renderRoutes = [
   ],
   ["/templates/{templateId}/preview", recordRequestSchema, jsonSchemaResponse("Rendered HTML preview", previewResponseSchema)],
   ["/templates/{templateId}/preview-pdf", recordRequestSchema, { description: "PDF preview" }],
-  ["/templates/{templateId}/generate", generateRequestSchema, { description: "Generated PDF" }],
+  ["/templates/{templateId}/generate", generateRequestSchema, { description: "Generated primary artifact" }],
 ] as const;
 
 const requestRoutes = [
@@ -700,6 +701,22 @@ describe("document render routes", () => {
     expect(callOrder).toEqual(["create"]);
   });
 
+  test("generation downloads the actual primary artifact rather than assuming PDF", async () => {
+    baseLevel = "write";
+    const csv = new TextEncoder().encode("amount\n12.30\n");
+    createResult = { ok: true, data: { ...document, primaryArtifactKey: "csv", filename: "export.csv" } };
+    const artifact = spyOn(gridsService.document, "getDocumentArtifact").mockResolvedValue({
+      ok: true,
+      data: { ...document.artifacts[0]!, key: "csv", bytes: csv, filename: "export.csv", mimeType: "text/csv" },
+    });
+    const response = await app().request(path(`/templates/${templatePublicId}/generate`), postJson(generateBody));
+    expect(response.status).toBe(200);
+    expect(artifact).toHaveBeenCalledWith(documentId, "csv", expect.anything());
+    expect(response.headers.get("content-type")).toBe("text/csv");
+    expect(response.headers.get("content-disposition")).toContain("export.csv");
+    expect(await response.text()).toBe("amount\n12.30\n");
+  });
+
   test("issues an immutable Document with actor and idempotency inputs", async () => {
     baseLevel = "write";
     const response = await app().request(path(`/templates/${templatePublicId}/generate`), postJson(generateBody));
@@ -743,6 +760,7 @@ describe("document render routes", () => {
       documentNumber: "STAT-0001",
       filename: "STAT-0001.pdf",
       profile: { id: "test.statement", version: 1 },
+      primaryArtifactKey: "pdf",
       validationStatus: "valid" as const,
       artifacts: [{ ...document.artifacts[0]!, filename: "STAT-0001.pdf" }],
     };

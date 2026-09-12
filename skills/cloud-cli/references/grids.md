@@ -238,6 +238,10 @@ Important encodings:
 
 `html_template` renders Liquid and CSS per record. Inspect `fields type html_template --json` for its configuration. Use stable public field IDs in `record.data`, and preview before using `raw`. HTML fields are stored-table output only: no filtering, sorting, grouping, aggregation, formula use, relation lookup, or recursive HTML templates. Default exports omit them; explicit HTML exports require a query limit of at most 1,000 records. One read renders at most 2,000 HTML cells and 32 MB total. A Rendered HTML App block displays one such field in a non-interactive sandbox; immutable downloadable output belongs in Documents.
 
+Record reads can include `fieldErrors`, keyed by public Field ID, when a stored object list no longer validates. The original
+list remains in `data` for repair, not as validated calculation input. Correct the indicated fields before creating a Document
+snapshot; snapshots reject invalid source fields instead of freezing their errors as data.
+
 Create a field only after inspecting its type:
 
 ```bash
@@ -282,7 +286,7 @@ Use `object_list` for a bounded list owned by one record, such as invoice positi
 - GQL formulas can reference a joined list through its table alias: `formula(LIST_SUM(customer.Items, 'Amount'))`. This sums one record's list; `sum(formula(LIST_SUM(customer.Items, 'Amount')))` aggregates those totals across query rows. A join that repeats a record also repeats its total; choose the query's row scope accordingly.
 - While a record is a draft, calculated cells follow the formula. Finalization freezes the list and its calculated values together, preserving their scalar types. Subsequent formula changes must not rewrite finalized values.
 
-The list config accepts `minItems` (default 0) and `maxItems` (default 100). Limits are 1,000 rows, 200 columns, and 256 KiB per value. Examples show structure, not a guarantee that they satisfy custom constraints such as a text pattern; inspect the actual configuration before submitting.
+The list config accepts `minItems` (default 0) and `maxItems` (default 100). Limits are 1,000 rows, 200 columns, and 256 KiB per value. Examples show structure, not a guarantee that they satisfy custom constraints such as a text pattern; inspect the actual configuration before submitting. Removing a column hides it in draft reads without rewriting stored history. A column containing finalized values cannot be removed. New writes still reject unknown columns; submit only the current writable columns.
 
 For connector projections, `records upsert-external` binds the exact provider, provider account, resource kind, and external ID to one Record. Reuse its idempotency key only for an uncertain retry, and pass the current version for an existing binding. `records upsert-external-batch` accepts `{ "items": [...] }` with at most 100 independently committed items. Each item carries its own `idempotencyKey`, `externalRef`, `values`, optional `ifVersion`, and optional `audit`. The ordered response keeps per-item successes and errors. Retry an unchanged interrupted batch safely; completed items replay. Use `records import` only for an atomic all-create batch.
 
@@ -331,6 +335,8 @@ cld grids records versions download Authors <record-id> <revision-id> <file-id> 
 `records versions` returns append-only states captured after opt-in, including the baseline and exact retained file metadata. The download
 command reads bytes only through the selected record version. This feature increases storage use, cannot be disabled, and does not by itself
 provide legal or regulatory compliance.
+
+Finalization captures typed formula, lookup, rollup and object-list results. New fields added after finalization and older finalized records without captures have no historical calculated result; Grids does not fill that gap with current formulas. Missing results are not zero. Do not use incomplete totals for financial exports. Four-eyes requests bind all live field definitions, including names, because approval covers the record's meaning; after a schema change, submit a new request.
 
 `records audit` shows one stored or Combined record's history. `records audit list` browses the published lifecycle history across an
 entire Combined table and accepts record, source, action, time-range, cursor, and limit filters. Combined audit entries expose only
@@ -509,6 +515,8 @@ cld grids tables delete Reporting "All inventory" --yes
 
 ## Query data with GQL
 
+`gql run` and `gql preview` accept `--parameters '<json>'`, `--parameters-file <path>` or `--parameters-stdin`. Supply a name-to-value map, for example `{"minimum":{"decimal":"123.45"}}`, and reference it as `@params.minimum`. Preview/execute API bodies and capabilities use the same `parameters` object. Values may be strings, finite numbers, booleans, null, exact `{decimal: "..."}` values or flat lists of those values. Names start with a lowercase letter and contain only lowercase letters, digits and underscores. Limits: 100 names, 10,000 list entries, and 20,000 characters for serialized parameter JSON. Unsafe integer numbers and NUL strings are rejected; use exact decimals instead of unsafe numbers. Parameters cannot provide `@auth`, `@page` or other trusted context. Changed values invalidate pagination cursors. Capabilities omit editor links when parameters are supplied: the editor URL does not carry runtime values. Parameterized workflow starters save input bindings, not their preview values.
+
 GQL is a line-oriented query language compiled and executed by Grids. The static language contract is documented below. These commands return the same contract in machine-readable form plus the visible schema of one base:
 
 ```bash
@@ -662,6 +670,8 @@ The complete function catalog is:
 SUM(value, ...)                 AVG(value, ...)                  MEAN(value, ...)
 COUNT(value, ...)               MIN(value, ...)                  MAX(value, ...)
 MEDIAN(value, ...)
+LIST_SUM(list, column)          LIST_AVG(list, column)           LIST_COUNT(list)
+LIST_MIN(list, column)          LIST_MAX(list, column)
 ABS(number)                     ROUND(number, digits?)           FLOOR(number)
 CEIL(number)                    SQRT(number)                     POW(base, exponent)
 MOD(a, b)                       PERCENT(part, total)
@@ -682,7 +692,7 @@ DATEDIFF(from, to, unit?)
 than empty or empty text. `ABS`, `FLOOR`, `CEIL`, `SQRT`, `POW`, `MOD`, and `PERCENT` perform their named numeric operation. Numeric functions
 require numeric values; an invalid operation such as a negative square root or zero divisor produces an error.
 `SQRT` uses the same decimal rounding in previews and queries; trailing input zeroes do not change its precision.
-An overflowing `POW` result is a formula error in both runtimes; `IFERROR` can supply a replacement without aborting the SQL query. Query cancellation and resource failures still abort the query.
+Unhandled calculation errors abort GQL and workflow captures with `BAD_INPUT`, rather than becoming nulls that aggregates omit. `IFERROR` can explicitly supply a replacement; valid empty values remain empty. Query cancellation and resource failures still abort the query.
 For whole-number `POW` exponents from −2,147,483,648 through 2,147,483,647, all integer result digits are retained. The fractional part rounds half away from zero to the larger of 16 places or the base's significant fractional places, capped at 1,000. Other exponents use 80 significant digits, capped at 1,000 fractional places, in both formula evaluation and SQL. Trailing input zeroes do not change this scale. Use explicit `ROUND` for monetary amounts.
 
 `IF` chooses one branch. `IFEMPTY` handles empty or empty text, `IFERROR` handles formula errors, `ISBLANK` tests empty or empty text, and
@@ -779,6 +789,8 @@ On a Record page, `referenced_records` pins one source table, one Relation field
 
 Pages, blocks, Forms, and actions may use one `availableWhen.query`. At least one returned row means available. An empty result, invalid query, missing context, timeout, or cancellation means unavailable. The server rechecks Forms and actions before execution.
 
+For dynamic responsibility, join the owning table and use `oneof(cost.Responsible, @auth.subjects)` on its Principal field. Joined `oneof`, `noneof`, and `containsall` keep the direct field's typed membership rules. On stored tables, `Receipts != null` requires a current attachment; `Receipts = null` checks for none. Combined-table file presence is unsupported. Keep these conditions server-side rather than copying group assignments onto requests.
+
 The optional root `sidebar.actions` list adds ordered app-global Form launchers to the AppWorkspace navigation. Fixed values accept `LITERAL` and `AUTH.currentUser` for Principal inputs. They never inherit `PARAMS`, page `RECORD`, or `ROW`. Global availability receives only `@auth.*`, `@app.*`, `@base.*`, and `@time.*`. Form launchers can serve public app readers in a large dialog, while `AUTH.currentUser` requires sign-in. Visible pages follow their array order and may set `navigation.icon`; the runtime hides the whole sidebar when it would contain neither another page nor a Form action.
 
 ```bash
@@ -848,7 +860,7 @@ cld grids documents by-record Invoices <record-id> --json
 
 Document commands are `documents renderers|list|list-by-template|browse|by-record|generate|get|download|download-artifact`. `documents list` is the Base-wide immutable catalog. Every generation requires an explicit idempotency key; reuse it after an uncertain response to receive the same Document. An E-Invoice renderer owns its number and artifact filenames. `documents browse --mode folders --path 2026/07` traverses one template's generated Documents by year and month. Search matches filenames, numbers, or tags; tag filters are repeatable.
 
-Every completed Document has one template and one source record. It appears in the record detail, the template workspace, and **All documents**. `documents get` returns the same Document shape from every list, including all stored artifacts. Download the primary PDF with `documents download`, or choose an exact artifact:
+A record-template Document appears in its record detail, template workspace, and **All documents**. Workflow outputs use a frozen data source instead; their `tableId`, `recordId`, and `templateId` are null. `dataSnapshot` reports `rowCount` and `capturedAt` for these outputs and is null for record-template Documents. It never contains source rows. `documents get` and lists return the same Document shape, including all stored artifacts. `primaryArtifactKey` identifies the main file in `artifacts`; use its `mimeType`, not the key or filename, to determine the format. Download that file with `documents download`, or choose an exact artifact:
 
 ```bash
 cld grids documents get <document-id> --json
@@ -861,6 +873,11 @@ List the installed renderers before creating an E-Invoice template:
 ```bash
 cld grids documents renderers --json
 ```
+
+Each renderer declares `primaryArtifact: { key, mediaType }`. Public share links
+are available only for a primary PDF; other formats require authorized downloads.
+Profile renderers own filenames, so `document.filename` is `null` while building
+their input. Read the completed Document's `filename` after generation.
 
 The installed `de.zugferd.en16931@1` renderer accepts outgoing German EUR invoices with German seller and buyer addresses, standard VAT rates, bank transfer, and exact string decimals. It emits both the hybrid PDF/A-3b and `factur-x.xml`, validates the XML against the pinned XSD, then verifies the embedded XML. Use four decimal places for quantities and unit prices and two for tax rates. Version 1 excludes corrections, replacements, tax exemptions, allowances, charges, prepayments, discounts, foreign currencies, incoming invoices, and filings. These technical checks are not tax or legal approval. The invoice issuer is responsible for the content and for checking whether this renderer fits the intended use. Do not interpret a valid report as a compliance certificate.
 
@@ -902,6 +919,9 @@ Creation queues work; cancellation may be a request rather than immediate comple
 
 `evidence verify` checks a downloaded Grids evidence TAR locally. It does not
 contact Cloud, require a profile, extract files, or upload package contents.
+Captured query entries also carry `sourceSha256` and `sourceHashVersion`: version 1 retains historical locale-based canonicalization; version 2 uses recursively sorted UTF-16 keys and JavaScript JSON serialization without Unicode normalization. These source hashes are distinct from the archive-file hashes checked by `evidence verify`. Existing capture hashes are not rewritten.
+
+Document metadata uses `hash_version` for `template_revision` and `snapshot_sha256`, with the same algorithms. New issuance receipts and documents use version 2; retained receipts keep version 1 for confirmation and replay. Verify each source with its recorded version, not the current default.
 Pass the hashes shown beside the completed export when they are available:
 
 ```bash
@@ -946,7 +966,7 @@ Workflow YAML stores `inputs`, optional `triggers`, and `steps`; name and descri
 cld grids workflows reference --json
 ```
 
-The shipped inputs are `record`, `recordList`, `text`, `number`, `boolean`, `date`, `dateTime`, and `select`. Triggers are `schedule` and `recordEvent`. Actions are `closeRecord`, `createCorrectionDraft`, `finalizeRecord`, `updateRecord`, `createRecord`, `atomicRecords`, `generateDocument`, `createDocumentLink`, `sendEmail`, `httpRequest`, `setVariable`, `fail`, and `succeed`. Control flow supports `if/then/else`, `switch/cases/default`, and `forEach/as/do`.
+The shipped inputs are `record`, `recordList`, `text`, `number`, `boolean`, `date`, `dateTime`, and `select`. Triggers are `schedule` and `recordEvent`. Actions are `query`, `closeRecord`, `createCorrectionDraft`, `finalizeRecord`, `updateRecord`, `createRecord`, `atomicRecords`, `generateDocument`, `createDocumentLink`, `sendEmail`, `httpRequest`, `setVariable`, `fail`, and `succeed`. Control flow supports `if/then/else`, `switch/cases/default`, and `forEach/as/do`.
 
 `schedule` and `recordEvent` are the only triggers written in YAML. A direct invocation and a launcher press are API and CLI operations, not
 YAML — but they are still events, and a workflow is always listening for them, so nothing has to be declared to make it invocable.
@@ -995,13 +1015,14 @@ Action fields are:
 
 | Action | Required | Optional and defaults | Saved output |
 | --- | --- | --- | --- |
+| `query` | Inline GQL `source` (up to 20,000 characters) | Typed `parameters`, `saveAs` | frozen query reference and metadata |
 | `closeRecord` | `record` | `expectedMode`, `expectedPolicyRevision` | none |
 | `createCorrectionDraft` | `original`, `typeField`, `typeValue`, `originalField` | `intent` (`correction` default), `copyFields` | created linked Draft |
 | `finalizeRecord` | `record` | none | none |
 | `updateRecord` | `record`, non-empty `set` | `audit` answers by question UUID | none |
 | `createRecord` | `table`, non-empty `values` | `saveAs` | created record |
 | `atomicRecords` | 1–100 `locks`, 1–50 `checks`, 1–50 `changes` | check `message`; update `ifVersion` and `audit` | none |
-| `generateDocument` | `template`, `record` | `filename`, up to 20 `tags`, `saveAs` | document |
+| `generateDocument` | `template` + `record`, or `data` + `output` | `filename`, up to 20 `tags`, `saveAs` | document |
 | `createDocumentLink` | `document` | `expiresIn: 1d|7d|30d|90d` default `30d`, `comment`, `saveAs` | public link |
 | `sendEmail` | `template`, `to` with 1–50 recipients | `data` with at most 200 keys, `saveAs` | email result |
 | `httpRequest` | absolute HTTP(S) `url` | `method` default `POST`, up to 100 `headers`, `json`, `timeoutMs` default 15,000 and range 1,000–60,000, `saveAs` | response |
@@ -1011,6 +1032,200 @@ Action fields are:
 
 `sendEmail.to` entries contain exactly one of `email` or `user`. HTTP methods are `GET`, `POST`, `PUT`, `PATCH`, and `DELETE`; requests
 carry optional JSON only. Field, table, document-template, and email-template references accept an exact name or public ID.
+
+`query.parameters` maps lowercase names (`[a-z][a-z0-9_]*`) to `{type, value}`. Types are `text`, `number`, `decimal`, `boolean`,
+`date`, `dateTime`, `record`, and `recordList`. Decimal values are exact strings, not JSON numbers. Record values are workflow references,
+not manually constructed IDs. Bind them as `@params.name` in GQL, never interpolate workflow expressions into `source`.
+Use an explicit `from table` source; live View bindings are not supported.
+In the workflow editor, `generateDocument.data` suggests prior query result names in the current scope. Reuse one name for multiple files; results declared inside a branch or loop stay inside it.
+
+```yaml
+inputs:
+  selected:
+    type: recordList
+    table: Tasks
+    required: true
+steps:
+  - query:
+      source: |
+        from table Tasks
+        select Name
+        where oneof(record.id, @params.selected)
+      parameters:
+        selected:
+          type: recordList
+          value: ${{ inputs.selected }}
+      saveAs: report
+```
+
+An empty selection captures zero rows, not every record. Query execution rechecks current access and the published schema, then freezes
+at most 10,000 rows and 5 MiB including metadata. Technical truncation fails; explicit GQL `limit` means an intentional subset.
+All source captures also share a total 5 MiB budget per run, including loops. Reusing a stored capture does not charge it again. Reduce selected rows/fields or split larger work into separate runs. Existing captures remain readable; older stored JSON counts conservatively toward the budget when adding a new capture.
+
+Newly published query bindings ignore column position and, without search, presentation flags and select-option additions. Search still pins option labels and presentation fields; calculation/type configuration remains checked. Existing bindings retain their original hash contract until explicitly republished. Do not edit stored hashes to suppress a schema conflict.
+Retries retain the successful capture. The saved reference exposes `rowCount`, `sha256`, and `capturedAt`, not row payloads.
+Dry-runs validate without capturing data and accept records planned by earlier steps; they do not predict a result count.
+Pass the saved query reference as `generateDocument.data`, without `template` or `record`:
+
+```yaml
+steps:
+  - query:
+      source: from table Items select Name
+      saveAs: report
+  - generateDocument:
+      data: report
+      output: { kind: csv }
+      filename: tasks.csv
+      saveAs: csvDocument
+  - generateDocument:
+      data: report
+      output: { kind: json }
+      saveAs: jsonDocument
+```
+
+Both steps use the same captured rows. Each creates one immutable Document; a retry of that step returns its existing Document.
+Generation rechecks execution permission, Base write access and source-table access. Dry-runs validate but do not render files.
+The Document belongs to the workflow, not a dummy Record; find it under **All Documents** or the workflow run.
+Downloads use the stored primary artifact; public download links currently support PDF only.
+
+Instead of a query reference, `data` accepts typed workflow values:
+`{ columns: [{ key: amount, type: decimal }], rows: [{ amount: "${{ inputs.amount }}" }] }`.
+Declare that amount input as `text` to preserve exact decimal digits. Columns have literal `key`, optional `label`
+(defaults to key), and `type`: `text`, `decimal`, `boolean`, `date`, `dateTime`, or `json`.
+Keys and labels must be unique. Each row must contain exactly those keys; all cells allow null, but not missing values.
+Decimals are plain decimal strings (no exponent); dates are ISO dates and date-times include a timezone.
+Rows accept existing typed workflow expressions, not Liquid. Capture is bounded to 10,000 rows and 5 MiB and reused on retry.
+This source has no implied Record identity or GQL provenance. Financial exports still require explicit business IDs and confirmation.
+
+For already issued Documents, select their saved data, not current Records:
+`data: { documents: [DOC001], columns: [{ key: number, type: text, path: [number] }] }`.
+`documents` is an ordered list of 1–10,000 unique public Document IDs from this Base, or a workflow expression producing that list.
+Each Document contributes exactly one row. Column `path` is a literal array of property names rooted at `id`, `number`,
+`createdAt`, `data` (stored render data), `profile` (stored profile input, nullable), or `output` (stored derived profile values, nullable).
+For example, `[profile, amount]` reads a saved profile's `amount` property only if that profile actually has it.
+German invoice profiles now store `output.currency`, `netAmount`, `taxAmount`, `grossAmount` and `taxGroups`
+(each group has `taxRate`, `netAmount`, `taxAmount`). Amounts are exact two-place decimal strings calculated by
+the same rounding rules as PDF/XML. Use `[output, grossAmount]` with `type: decimal`, not an independently
+recalculated sum of live Records. Invoice corrections still carry positive amounts: derive booking direction from
+the saved `profile.billing.kind`, not the sign of the total. Older Documents without these saved outputs fail the
+path lookup; they are never silently regenerated. Arrays remain explicit JSON cells, not implicit booking rows.
+Paths neither expand arrays nor query live Records. Missing Documents, paths or incompatible cell types fail the entire step.
+All selected render/profile snapshots together must fit 5 MiB before loading; the projected capture has the same limit.
+Use exact issued IDs for invoice exports; a later live invoice query is not equivalent to the issued snapshot.
+After `generateDocument` with `saveAs: issued`, use `documents: ["${{ issued.shortId }}"]` to consume it in a later step.
+Its result exposes `id` (internal identity), `shortId` (public identity), `number`, `filename` and `primaryArtifactKey`;
+do not use `documentNumber`, `snapshotId` or `workflowRunId` as expression fields.
+A dry-run accepts earlier planned Documents without looking up placeholder IDs. Their saved values can only be checked
+during execution; the dry-run summary states this limitation. Existing source Documents are still checked.
+
+For manual Record snapshots, use `snapshots` instead of `documents`:
+`data: { snapshots: [SNP001], columns: [{ key: name, type: text, path: [root, data, FLD001] }] }`.
+Use public snapshot IDs returned by `snapshots list|create|get` and public Field IDs in `root.data` paths.
+The context is the public snapshot returned by `snapshots get`: `root` holds the historical Record,
+and `[graph, records]` selects the related-record map as a `json` cell. Paths do not expand arrays or map entries.
+Each selected snapshot contributes one row; IDs must be unique and belong to this Base. The same row and byte limits apply.
+Current root access and existence are required. Related Records are redacted using the snapshot API's current access checks;
+lost access never falls back to live values. Issuance rechecks the captured source-table permissions.
+This is a manual Record snapshot, not an issued invoice: use `documents` when the issued Document is the authority.
+
+For financial outputs, optional `sourceVersions: [{ tableId: TBL001, recordId: REC001, version: 3 }]`
+pins explicitly selected live Records. This property belongs beside `data` and `output`, not inside either.
+For a newly captured, single-source Record query, prefer `sourceVersions: data`: Grids derives the list from
+the frozen row identities and versions, without accepting a caller-supplied list. Rows must be unique and retain
+their Record identity. Multiple table dependencies, aggregates without row identity, empty results and older captures
+without version metadata are rejected. Capture a new query or provide explicit versions for those cases.
+Joins, including self-joins, are rejected. Only the selected root Records are protected: lookup or formula dependencies
+are not recursively versioned, even if they refer to another Record in the same table. Guard those Records explicitly.
+A dry-run checks the workflow but cannot promise which versions the later query will capture; it states that limitation.
+The array can come from a workflow expression; provide 1–10,000 unique Record identities, public IDs,
+and positive integer versions. All must belong to this Base and remain readable and undeleted.
+Grids checks them when reserving the preview, reading/confirming it, and creating the file. The final check locks
+those Records through issuance. Any version change conflicts; start a new export and review its data.
+To protect approvals, first select only approved Records and pass the versions observed with that selection.
+Derive the guard set in the authored workflow; do not let an untrusted caller omit approval Records or choose arbitrary versions.
+Include child or approval Records separately when their changes matter: a header version does not cover its relations.
+This is not automatic freshness detection for arbitrary joins or aggregates, nor proof that your approval filter is correct.
+Omitting `sourceVersions` deliberately exports the frozen data despite later source changes. Completed exports retain
+their original bytes and replay normally. The option is rejected for free formats and record-template generation.
+
+`output.kind` supports:
+
+- `csv`: ordered aliases as headers, UTF-8 and CRLF. `delimiter` accepts comma (default), semicolon, tab or pipe.
+  For a tab separator, write `delimiter: "\t"` in YAML.
+  Null becomes an empty cell. `nestedValues` is `reject` (default) or explicit `json`.
+  `textProtection` is `spreadsheet` (default); dangerous text cells receive a leading apostrophe, reported in validation results.
+  `raw` deliberately disables that protection. Exact numeric values are not rewritten.
+  Optional `columns: [{ source: Amount, label: Total }, { source: Name }]` selects and orders exact GQL aliases and renames headings.
+  Omit `label` to keep the alias. Unknown sources, repeated sources, empty selections and duplicate headings fail; internal `q_col_*` keys are not aliases.
+- `json`: an array of row objects keyed by unique column aliases. Decimal strings, arrays, booleans and null retain their types.
+  Optional `wrapper: { rowsKey: items, values: { approved: "${{ inputs.approved }}" } }` produces an object containing `items`
+  and the additional typed `values`. `values` defaults to `{}` and cannot contain `rowsKey`; the row array is never stringified twice.
+  `rowsKey` is a literal property name. Values use the existing workflow expression syntax and the combined output must fit 5 MiB.
+- `pdf`: requires `body` (HTML/Liquid, at most 200,000 characters); optional `header`, `footer`, and `css` each allow 50,000.
+  The template receives `rows`, ordered `columns` (`key`, `label`, `type`, `sqlType`), and `document.number`/`document.createdAt`.
+  Read row values using the column's `key`, not its label. Iterate nested object-list values inside each row.
+  There is no implicit `record`, live query, or relation expansion. Rendering uses the existing configured PDF service.
+
+For example, a PDF body independent of field names is
+`{% for row in rows %}{% for column in columns %}<p>{{ column.label }}: {{ row[column.key] }}</p>{% endfor %}{% endfor %}`.
+Liquid values are escaped. Invalid syntax or unavailable root variables fail publication.
+For XML, use `output: { kind: xml, body: '...' }` with the same data roots and a 200,000-character source limit.
+The output is UTF-8 XML 1.0 with exactly one root. Place values only in text or quoted attribute values; names and namespace declarations
+must be static. Loops, conditions and scalar assignments use Liquid. DTDs, CDATA, processing instructions (except a static XML declaration),
+raw/capture/comment Liquid blocks and dynamic markup are rejected. XML comments must be static. Escaping preserves text and attribute
+whitespace; a parser rejects malformed output, unknown entities, unbound namespaces and illegal characters. Rendered output uses the
+shared 300,000-byte template limit. Free XML is not a SEPA or E-Invoice profile.
+
+#### Review and create financial export files
+
+The UI's **New workflow** offers invoice-accounting and reimbursement-payment starters. Both produce an ordinary disabled workflow for review; enable it only after checking fields, destination and dates. Invoice accounting takes one issued Document public ID as `document`, reads `output.grossAmount` and the saved Record's explicitly selected direction/account/counter-account fields. It does not recalculate invoice totals. Reimbursement payments take a `records` selection, reject unfinished finalization, capture finalized rows and set `sourceVersions: data`. The required unique reimbursement number supplies the stable business and payment identity. Dates are literal saved configuration: review them before each batch. These are editable starting points, not automatic accounting decisions.
+
+Use the same `generateDocument` action with `data: report` and `output: { kind, version: 1, header, mapping }`.
+`kind` is `datev-csv` (DATEV 700/13, EUR booking batch) or `sepa-xml` (SCT pain.001.001.09, DK GBIC 5, EUR).
+These profiles require manual invocation and explicit preview confirmation; scheduled and record-event triggers are rejected.
+They create files, not payments or imported bookings. Bank and accounting-system acceptance is not guaranteed.
+
+`mapping` values are exact GQL aliases, never cell values or internal compiler keys. `header` accepts literal values and existing
+workflow expressions such as `${{ inputs.executionDate }}`. The exception is `header.destinationKey`: choose a stable literal
+identity for the target accounting ledger or payment account, never a run ID or date. Changing that identity bypasses the separation
+between previously exported and new business events, so do not change it to retry an export.
+
+| Profile | Required header fields | Required mapping aliases | Optional mapping aliases |
+| --- | --- | --- | --- |
+| DATEV | `destinationKey`, `consultantNumber`, `clientNumber`, `fiscalYearStart`, `accountLength`, `periodStart`, `periodEnd`, `label`, `finalize` | `businessId`, `entryId`, `amount`, `direction`, `account`, `counterAccount`, `documentDate`, `documentNumber` | `text`, `taxKey`, `costCenter1`, `costCenter2` |
+| SEPA | `destinationKey`, `debtorName`, `debtorIban`, `executionDate`; optional `debtorBic` | `businessId`, `endToEndId`, `amount`, `creditorName`, `creditorIban`, `remittance` | `creditorBic` |
+
+Use `cld grids workflows reference` for the current field descriptions and constraints before authoring YAML.
+DATEV consultant/client numbers and account numbers are digit **strings**; `accountLength` is an integer from 4 to 8.
+`finalize` is a required boolean controlling finalization on import, not Grids Record finalization. Dates are `YYYY-MM-DD`;
+DATEV dates must fall in 2000–2099 and within the configured fiscal period. SEPA IBANs must be valid uppercase electronic values
+without spaces; QR-IBANs are rejected. Amounts must be positive exact decimal values with at most two effective decimal places.
+Grids does not round fractional cents. DATEV represents the direction separately as `S` or `H`.
+SEPA preview `warnings` flag extended characters requiring bank support and a past execution date in the request timezone.
+Warnings are advisory metadata, not part of the confirmation hash. Names and dates remain unchanged; cancel and restart with
+corrected inputs to change them. Local XML validation does not guarantee bank acceptance.
+
+`businessId` identifies the business event across runs, not a generated export row. DATEV may have multiple postings per event,
+each with a unique `entryId`. SEPA requires one row per event and unique `endToEndId` values. Grids reserves event identities
+per Base, destination and accounting/payment purpose. A completed export prevents a new export of the same events to that target;
+download its stored Document again instead. A replay of the same step returns the same Document. Query joins and accounting
+correctness remain the workflow author's responsibility; identifiers do not prove that sums or approval rules are correct.
+
+When the run waits for confirmation:
+
+```bash
+cld grids workflow-runs steps RUN_ID
+cld grids workflow-runs preview-export RUN_ID RECEIPT_ID --json
+cld grids workflow-runs confirm-export RUN_ID RECEIPT_ID --sha256 REVIEWED_HASH --yes
+cld grids workflow-runs get RUN_ID
+```
+
+Replace the uppercase placeholders with the public IDs and exact hash returned by the preview. Review the profile/version, destination, all mapped
+rows, dates, totals and any explicit query limit before confirming. Use the same account and access method that launched the run,
+with current permissions: a browser session cannot substitute for an API credential. The preview supplies the viewer's `timeZone`
+for date display; exact amounts remain decimal strings. Never fetch a new hash silently or confirm without the user's approval. Confirmation resumes generation; it does not
+mean the file already exists. Inspect the completed run and download its Document. The UI offers the same review from the waiting
+step or a Custom App action's status. Confirmation has no automatic expiry: closing the review leaves the run waiting until confirmation or explicit cancellation. The frozen data and reserved number remain retained; current permissions and source-version guards are rechecked at confirmation and issuance.
 
 `atomicRecords` is a bounded Grids-only transaction. `locks` contains existing record references acquired in stable order. Each `checks`
 entry selects a bound `table`, has 1–20 `where` predicates combined with AND, and uses `assert: empty|notEmpty`; predicates contain
@@ -1126,8 +1341,8 @@ Lists and objects may contain dynamic values recursively.
 
 A single relation field is a typed record reference in raw record slots, for example `record: inputs.asset.Current loan item`. A multiple relation field is a typed record list and may drive `forEach`, for example `forEach: inputs.loan.Items`. Resolution verifies the target table, current access, and every referenced record before the step runs.
 
-Saved document outputs expose `id`, `templateId`, `baseId`, `tableId`, `recordId`,
-`number`, `filename`, `createdAt`, `createdBy`, `tags`, `renderer`, `validationStatus`, and `artifacts`. Link outputs expose `kind`, `id`, `url`, `expiresAt`, and
+Saved document outputs expose `id`, `shortId`, `templateId`, `baseId`, `tableId`, `recordId`,
+`number`, `filename`, `createdAt`, `createdBy`, `tags`, and `primaryArtifactKey`. Link outputs expose `kind`, `id`, `url`, `expiresAt`, and
 `documentId`. Email outputs expose `subject`, `templateId`, and `recipients`, whose entries include `id`, `deliveryId`, `kind`, `recipient`,
 and `status`. HTTP outputs expose `status`, `ok`, and `body`.
 
@@ -1245,6 +1460,10 @@ Run options expose a workflow as a scanner, bulk, Record, or Grids App interacti
 For an `object_list` in `copyFields`, only input cells are copied. Computed columns are recalculated using the current list configuration in the new Draft; frozen cells in the original remain unchanged. Review the new amounts before finalizing it.
 
 A Grids App definition may also embed an enabled Scanner run option as a `scanner` block. Embedded scanners require a signed-in App reader and pin the exact launcher configuration and workflow revision at publish time. They accept scalar session and after-scan prompts; use the full Workflow scanner when those prompts must select records.
+
+A waiting financial export appears as **Review export** in either scanner's log. Opening it reviews and confirms the existing run;
+closing it does not rescan or create another run. Run-detail and embedded-scanner status responses optionally include
+`documentConfirmation: {receiptId, sha256}` while waiting. Use that run's confirmation endpoints; list responses need not include this metadata.
 
 For actions published inside an App, bind every required Workflow input in the App definition. A `prompt` launcher accepts those runtime bindings; the App button does not open a free-input dialog. Use a Records row action with `ROW.id` and page `RECORD.id` when the user must choose a child item for the current parent. Publication rejects missing required inputs.
 

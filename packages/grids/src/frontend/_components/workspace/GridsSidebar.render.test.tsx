@@ -99,7 +99,11 @@ describe("GridsSidebar workflows", () => {
 
     expect(html).toContain("Documents");
     expect(html).toContain('aria-expanded="false"');
-    state.route = { kind: "documents", initialBrowserPage: { items: [], folders: [], path: [], cursor: null, hasMore: false } };
+    state.route = {
+      kind: "documents",
+      canWriteDocuments: false,
+      initialBrowserPage: { items: [], folders: [], path: [], cursor: null, hasMore: false },
+    };
     const active = renderToString(() => createComponent(GridsSidebar, { state }));
     expect(active).toContain('aria-expanded="true"');
     expect(active).toContain("All documents");

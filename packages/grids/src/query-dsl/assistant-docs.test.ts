@@ -1,6 +1,5 @@
 import { describe, expect, test } from "bun:test";
 import { GRID_FORMULA_FUNCTIONS } from "../formula/function-catalog";
-import { FN_LIBRARY } from "../formula/functions";
 import type { Field } from "../service/types";
 import { renderGqlAssistantContext, renderGqlAssistantSkill } from "./assistant-docs";
 import { parseGridsQueryDsl } from "./parser";
@@ -136,9 +135,8 @@ describe("GQL assistant docs", () => {
 
   test("skill covers every formula function supported by the formula engine", () => {
     const skill = renderGqlAssistantSkill();
-    const catalogNames = GRID_FORMULA_FUNCTIONS.map((fn) => fn.name).sort();
-
-    expect(catalogNames).toEqual(Object.keys(FN_LIBRARY).sort());
+    // Engine/catalog parity belongs to formula/function-catalog.test.ts;
+    // list reducers are evaluated separately from the scalar FN_LIBRARY.
     for (const fn of GRID_FORMULA_FUNCTIONS) {
       expect(skill).toContain(`\`${fn.signature}\``);
     }

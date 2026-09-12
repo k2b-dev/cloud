@@ -200,6 +200,9 @@ const compileJoinedGroupedQueryPlanToSql = (plan: DslResolvedSqlQueryPlan, optio
   if (viewScope.condition) conditions.push(viewScope.condition);
   if (plan.wherePredicate) {
     const extraWhere = compileWherePredicate(plan.wherePredicate, fields, {
+      joinAliases,
+      fieldsByTableId: options.fieldsByTableId,
+      recordSourcesByTableId: options.recordSourcesByTableId,
       timeZone: options.timeZone,
       computedFieldSql: options.computedFieldSql,
       resolveField: resolveFormulaField,
@@ -218,7 +221,7 @@ const compileJoinedGroupedQueryPlanToSql = (plan: DslResolvedSqlQueryPlan, optio
   const groupedSql = sql`
     SELECT ${joinFragments(selectParts, sql`, `)}
     FROM ${dslRecordRelation(options)}
-    JOIN grids.tables t ON t.id = r.table_id AND t.deleted_at IS NULL
+      JOIN grids.tables t ON t.id = r.table_id AND t.id = ${plan.tableId}::uuid AND t.deleted_at IS NULL
     JOIN grids.bases b ON b.id = t.base_id AND b.deleted_at IS NULL
     ${joinFragments(joinSql, sql` `)}
     WHERE ${where}

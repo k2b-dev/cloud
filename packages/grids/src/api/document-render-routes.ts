@@ -22,7 +22,7 @@ import {
   resolveDocumentRecordId,
   snapshotTableReadAuthorizer,
 } from "./documents-api-shared";
-import { encodeHeaderValue, pdfResponse } from "./download-response";
+import { encodeHeaderValue, fileResponse, pdfResponse } from "./download-response";
 import { apiMessages } from "./messages";
 import { currentActorViewer, gateAt } from "./permissions";
 import { resolvePublicIdParam } from "./route-params";
@@ -245,9 +245,9 @@ export const createDocumentRenderRoutes = () =>
       "/templates/:templateId/generate",
       describeRoute({
         tags: ["Grids:Document"],
-        summary: "Generate and store an immutable PDF Document for one record",
+        summary: "Generate and store an immutable Document for one record",
         responses: {
-          200: { description: "Generated PDF" },
+          200: { description: "Generated primary artifact" },
           403: jsonResponse(ErrorResponseSchema, "Forbidden"),
         },
       }),
@@ -275,9 +275,9 @@ export const createDocumentRenderRoutes = () =>
           tags: body.tags,
         });
         if (!issued.ok) return c.json({ message: issued.error.message }, issued.error.status);
-        const artifact = await gridsService.document.getDocumentArtifact(issued.data.id, "pdf", getLocale(c));
+        const artifact = await gridsService.document.getDocumentArtifact(issued.data.id, issued.data.primaryArtifactKey, getLocale(c));
         if (!artifact.ok) return c.json({ message: artifact.error.message }, artifact.error.status);
-        return pdfResponse(artifact.data.bytes, artifact.data.filename, {
+        return fileResponse(artifact.data.bytes, artifact.data.filename, artifact.data.mimeType, {
           "X-Grids-Document-Id": issued.data.shortId,
           "X-Grids-Document-Number": issued.data.documentNumber,
           "X-Grids-Document-Filename": encodeHeaderValue(artifact.data.filename),

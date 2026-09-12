@@ -57,6 +57,16 @@ describe("German E-Invoice profile", () => {
       expect(profile.version).toBe(2);
       const issued = await profile.issue(input, context);
       expect(issued.validationStatus).toBe("valid");
+      expect(issued.output).toEqual({
+        currency: "EUR",
+        netAmount: "120.00",
+        taxAmount: "20.40",
+        grossAmount: "140.40",
+        taxGroups: [
+          { taxRate: "19.00", netAmount: "100.00", taxAmount: "19.00" },
+          { taxRate: "7.00", netAmount: "20.00", taxAmount: "1.40" },
+        ],
+      });
       expect(xml).toContain(`<ram:TypeCode>${code}</ram:TypeCode>`);
       expect(xml).toContain("20260815");
       expect(xml).toContain("<ram:GrandTotalAmount>140.40</ram:GrandTotalAmount>");

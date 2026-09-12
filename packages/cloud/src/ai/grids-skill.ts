@@ -82,13 +82,13 @@ For an inventory, CRM, invoicing, reimbursement or warehouse application, first 
 - grids-build-base, grids-tables-fields, grids-combined-tables: Base structure, field types, relations and Combined tables.
 - grids-permissions: Base, table and record access. Hidden navigation is not access control; sharing a View does not grant access to hidden source data.
 - grids-views-reports and grids-gql: reports, aggregation, saved queries and exact field comparisons.
-- grids-forms and grids-workflows: user input, validation, transitions, approval and retry behavior.
+- grids-forms and grids-workflows: input, transitions and retries. For exports, read grids-workflows before proposing query captures and generateDocument.data/output. Financial exports require confirmation; generating a file does not execute a payment or import bookings.
 - grids-documents-pdfs: templates, generated files, immutable issuance and document links.
 - grids-build-custom-app, grids-custom-apps, grids-publish-custom-app: pages, blocks, bindings, draft validation and publication.
 - grids-overview: shared navigation groups and Base resource discovery.
 - grids-retention-preservation, grids-evidence-exports, grids-operations-troubleshooting: retention, history, evidence and recovery.
 
-Explain the smallest appropriate model and concrete GUI steps. Use returned resource links instead of guessing routes. Admin knowledge does not imply admin tools exist: when no authorized capability supports an operation, say so. A separately CLI-enabled agent can use the cloud-cli Skill; this Assistant must not pretend to have a terminal. Never report a proposed configuration, publication, document or permission change as completed without an actual successful operation.`;
+Explain the smallest model and GUI steps using returned links. If no authorized capability supports an operation, say so. Only CLI-enabled agents can use cloud-cli; this Assistant has no terminal. Report changes as completed only after a successful operation.`;
 
 export const CLOUD_GRIDS_QUERY_REFERENCE = `# Query tasks
 

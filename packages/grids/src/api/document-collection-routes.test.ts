@@ -4,8 +4,10 @@ import type { User } from "@k2b/cloud/contracts";
 import type { AuthContext, PermissionLevel } from "@k2b/cloud/server";
 import { Hono, type MiddlewareHandler } from "hono";
 import { generateSpecs } from "hono-openapi";
+import type { z } from "zod";
 import { gridsService } from "../service";
 import * as publicResources from "../service/public-resources";
+import type { PublicDocumentSchema } from "./document-public-contracts";
 import { createDocumentsApi } from "./documents";
 import { projectDocuments } from "./documents-api-shared";
 
@@ -81,6 +83,7 @@ type DocumentFixture = {
   tableId: string;
   recordId: string;
   documentNumber: string;
+  primaryArtifactKey: string;
   filename: string;
   tags: string[];
   templateSnapshot: { html: string };
@@ -125,6 +128,7 @@ const document: DocumentFixture = {
   ],
   profile: null,
   validationStatus: null,
+  primaryArtifactKey: "pdf",
   createdBy: userId,
   createdAt: "2026-07-11T08:00:00.000Z",
 };
@@ -150,10 +154,11 @@ const summarizeDocument = (row: DocumentFixture) => ({
   artifacts: row.artifacts,
   profile: row.profile,
   validationStatus: row.validationStatus,
+  primaryArtifactKey: "pdf",
   createdBy: row.createdBy,
   createdAt: row.createdAt,
 });
-const publicDocument = (row: DocumentFixture) => ({
+const publicDocument = (row: DocumentFixture): z.infer<typeof PublicDocumentSchema> => ({
   id: row.shortId,
   baseId: basePublicId,
   tableId: tablePublicId,
@@ -166,6 +171,8 @@ const publicDocument = (row: DocumentFixture) => ({
   createdBy: row.createdBy,
   renderer: row.profile ? { kind: "profile", ...row.profile } : { kind: "html" },
   validationStatus: row.validationStatus,
+  primaryArtifactKey: "pdf",
+  dataSnapshot: null,
   artifacts: row.artifacts.map(({ fileId: _fileId, ...artifact }) => artifact),
 });
 
@@ -269,7 +276,7 @@ describe("document routes", () => {
     spyOn(gridsService.document, "getDocument").mockImplementation(async (id) => (id === documentId ? currentDocument : null) as never);
     spyOn(gridsService.document, "getDocumentArtifact").mockImplementation(async (documentId, key) => {
       artifactInput = { documentId, key };
-      return key === "pdf"
+      return key === currentDocument?.primaryArtifactKey
         ? (artifactResult as never)
         : ({ ok: false, error: { code: "NOT_FOUND", message: "Document artifact not found", status: 404 } } as never);
     });
@@ -306,6 +313,13 @@ describe("document routes", () => {
     } finally {
       internalToPublic.set(templateId, templatePublicId);
     }
+  });
+
+  test("projects workflow document sources without requesting fabricated public record IDs", async () => {
+    const projected = await projectDocuments([
+      { ...summarizeDocument(document), tableId: null, recordId: null, templateId: null, snapshotId: null, workflowRunId: userId },
+    ]);
+    expect(projected[0]).toMatchObject({ id: documentPublicId, baseId: basePublicId, tableId: null, recordId: null, templateId: null });
   });
 
   for (const [method, suffix] of [
@@ -352,6 +366,9 @@ describe("document routes", () => {
       const response = await app().request(path(`/by-base/${basePublicId}/browse?path=${templatePublicId}/2026&q=demo&limit=2`));
       expect(response.status).toBe(200);
       expect(browseBaseInput).toMatchObject({ baseId, path: [templatePublicId, "2026"], q: "demo", limit: 2 });
+      const workflowResponse = await app().request(path(`/by-base/${basePublicId}/browse?path=workflow:FLOW01/2026`));
+      expect(workflowResponse.status).toBe(200);
+      expect(browseBaseInput).toMatchObject({ baseId, path: ["workflow:FLOW01", "2026"] });
     });
     test("requires base read permission before listing Documents", async () => {
       tableLevel = "none";
@@ -559,6 +576,20 @@ describe("document routes", () => {
   });
 
   describe("GET /:documentId/download", () => {
+    test("downloads the explicitly selected non-PDF primary file with its own media type", async () => {
+      currentDocument = { ...document, primaryArtifactKey: "csv", filename: "report.csv" };
+      const bytes = new TextEncoder().encode("name\r\nExample\r\n");
+      artifactResult = {
+        ok: true,
+        data: { ...document.artifacts[0]!, key: "csv", filename: "report.csv", mimeType: "text/csv", bytes, sizeBytes: bytes.length },
+      };
+      const response = await app().request(path(`/${documentPublicId}/download`));
+      expect(response.status).toBe(200);
+      expect(artifactInput).toEqual({ documentId, key: "csv" });
+      expect(response.headers.get("content-type")).toBe("text/csv");
+      expect(response.headers.get("x-grids-document-artifact")).toBe("csv");
+      expect(await response.text()).toBe("name\r\nExample\r\n");
+    });
     test("returns the exact 404 contract", async () => {
       currentDocument = null;
       const response = await app().request(path(`/${documentPublicId}/download`));

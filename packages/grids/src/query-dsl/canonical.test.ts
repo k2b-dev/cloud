@@ -152,6 +152,48 @@ const canonicalUiQuery = (query: RecordQuery, tableId = orders.id): string => {
 };
 
 describe("canonicalizeDslQuery", () => {
+  test("canonical source retains exact numeric literals in calculations and comparisons", () => {
+    for (const literal of ["9007199254740993", "1.00000000000000001", "9007199254740993.42"]) {
+      const result = canonical(`from table Orders\nselect formula(Amount + ${literal}) as total\nwhere Amount > ${literal}`);
+      expect(result).toContain(`+ ${literal}`);
+      expect(result).toContain(`> ${literal}`);
+    }
+  });
+  test("pins resource IDs without baking private parameter values into stored GQL", () => {
+    const parsed = parseGridsQueryDsl("from table Orders\nselect Amount as total\nwhere Notes = @params.note and Paid = @params.paid");
+    if (!parsed.ok) throw new Error("fixture query is invalid");
+    const result = canonicalizeDslQuery(parsed.ast, ctx(), { "params.note": "private ' or true --", "params.paid": true });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.source).toContain("{Orders}");
+    expect(result.source).toContain("{notes} = @params.note");
+    expect(result.source).toContain("{paid} = @params.paid");
+    expect(result.source).not.toContain("private");
+    const reparsed = parseGridsQueryDsl(result.source);
+    if (!reparsed.ok) throw new Error("canonical query is invalid");
+    const renamed = ctx();
+    renamed.tables = renamed.tables.map((table) => ({ ...table, name: `Renamed ${table.name}` }));
+    renamed.fieldsByTableId = Object.fromEntries(
+      Object.entries(renamed.fieldsByTableId).map(([id, fields]) => [
+        id,
+        fields.map((field) => ({ ...field, name: `Renamed ${field.name}` })),
+      ]),
+    );
+    const rebound = canonicalizeDslQuery(reparsed.ast, renamed, { "params.note": "other", "params.paid": false });
+    expect(rebound.ok && rebound.source).toBe(result.source);
+  });
+
+  test("keeps list parameters and rejects missing parameter values", () => {
+    const parsed = parseGridsQueryDsl("from table Orders\nwhere oneof(Stage, @params.stages)");
+    if (!parsed.ok) throw new Error("fixture query is invalid");
+    const result = canonicalizeDslQuery(parsed.ast, ctx(), { "params.stages": ["open", "closed"] });
+    expect(result.ok && result.source).toContain("oneof({stage}, @params.stages)");
+    expect(canonicalizeDslQuery(parsed.ast, ctx(), {})).toMatchObject({
+      ok: false,
+      diagnostics: [{ message: 'Missing query context value "@params.stages"' }],
+    });
+  });
+
   test("emits an explicit stable source for implicit table queries", () => {
     expect(
       canonical(`

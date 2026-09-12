@@ -1,8 +1,42 @@
 import { isRecordWritableFieldType } from "../field-types";
+import { getGridsCrudMessages } from "./crud-messages";
 import { parseJsonbRow } from "./jsonb";
 import type { Field, GridRecord } from "./types";
 
 type DbRecordRow = Record<string, unknown>;
+
+/** The JSON read path uses the same captured dependencies as SQL projections.
+ * In particular, an omitted live lookup projection must not expose raw capture data. */
+export const applyFinalizedComputedAccess = (
+  rows: DbRecordRow[],
+  recordsById: ReadonlyMap<string, Pick<GridRecord, "data" | "fieldErrors">>,
+  authorizedTableIds: ReadonlySet<string> | undefined,
+  fields: Field[],
+  locale?: string,
+): void => {
+  const computed = fields.filter((field) => !field.deletedAt && ["formula", "lookup", "rollup", "object_list"].includes(field.type));
+  for (const row of rows) {
+    if (!row.finalized_at || typeof row.id !== "string") continue;
+    const record = recordsById.get(row.id);
+    if (!record) continue;
+    const types = parseJsonbRow<Record<string, unknown>>(row.finalized_computed_types, {});
+    const stored = parseJsonbRow<Record<string, unknown>>(row.data, {});
+    for (const field of computed) {
+      if (Object.hasOwn(types, field.id) && Object.hasOwn(stored, field.id)) continue;
+      record.data[field.id] = null;
+      record.fieldErrors ??= {};
+      record.fieldErrors[field.id] = getGridsCrudMessages(locale).missingCapturedCalculation;
+    }
+    if (authorizedTableIds === undefined) continue;
+    const dependencies = parseJsonbRow<Record<string, unknown>>(row.finalized_computed_dependencies, {});
+    for (const fieldId of Object.keys(types)) {
+      const required = dependencies[fieldId];
+      if (!Array.isArray(required) || !required.every((id) => typeof id === "string" && authorizedTableIds.has(id))) {
+        record.data[fieldId] = null;
+      }
+    }
+  }
+};
 
 export const mapRecordRow = (row: DbRecordRow): GridRecord => ({
   id: row.id as string,

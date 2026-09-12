@@ -1,11 +1,12 @@
 import { Buffer } from "node:buffer";
-import { type DateContext, err, fail, ok, type Result } from "@k2b/stdlib";
 import {
   type GotenbergConfig,
   type RenderHtmlToPdfResult,
+  type RenderTemplatePdfPreviewOptions,
   renderTemplatePdfPreview,
   type TemplatePdfPreviewResult,
 } from "@k2b/cloud/services";
+import { type DateContext, err, fail, ok, type Result } from "@k2b/stdlib";
 import { type Document, type DocumentTemplate, DocumentTemplateRendererSchema } from "../contracts";
 import { parseGridsQueryDsl } from "../query-dsl/parser";
 import { previewDslQuery } from "../query-dsl/preview";
@@ -497,7 +498,7 @@ export const buildDocumentRenderData = async (params: {
   tags?: string[];
   documentNumber?: string;
   numberSeries?: { id: string; value: number };
-}): Promise<Result<{ documentNumber: string; filename: string; tags: string[]; data: Record<string, unknown> }>> => {
+}): Promise<Result<{ documentNumber: string; filename: string | null; tags: string[]; data: Record<string, unknown> }>> => {
   const t = documentServiceText(params.dateConfig?.locale);
   const createdAt = params.createdAt ?? new Date();
   const documentNumber = params.documentNumber
@@ -530,16 +531,24 @@ export const buildDocumentRenderData = async (params: {
     },
   };
   const requestedFilename = params.filename?.trim() ?? "";
+  // A profile owns its artifact filenames. Do not invent a PDF filename before
+  // the profile has rendered (CSV/XML profiles have no PDF at all).
+  if (params.template.renderer.kind === "profile") {
+    return ok({
+      documentNumber: documentNumber.data,
+      filename: null,
+      tags,
+      data: { ...renderDataBase, document: { ...renderDataBase.document, filename: null, tags } },
+    });
+  }
   const renderedFilename = requestedFilename
     ? ok(requestedFilename)
-    : params.template.renderer.kind === "html"
-      ? await renderLiquidText(
-          params.template.renderer.filenameTemplate,
-          renderDataBase,
-          FILENAME_TEMPLATE_MAX_BYTES,
-          params.dateConfig?.locale,
-        )
-      : ok(`${documentNumber.data}.pdf`);
+    : await renderLiquidText(
+        params.template.renderer.filenameTemplate,
+        renderDataBase,
+        FILENAME_TEMPLATE_MAX_BYTES,
+        params.dateConfig?.locale,
+      );
   if (!renderedFilename.ok) return fail(renderedFilename.error);
 
   const filename = safePdfFilename(renderedFilename.data, `${documentNumber.data}.pdf`);
@@ -561,15 +570,32 @@ export const renderDocumentPdf = async (
   const t = documentServiceText(locale);
   const renderer = DocumentTemplateRendererSchema.safeParse(document.templateSnapshot.renderer);
   if (!renderer.success || renderer.data.kind !== "html") return fail(err.badInput(t.snapshotHtmlRendererRequired));
-  const rendered = await renderTemplatePdfPreview({
-    htmlTemplate: renderer.data.body,
-    headerHtmlTemplate: renderer.data.header,
-    footerHtmlTemplate: renderer.data.footer,
-    pageCssTemplate: renderer.data.css,
-    data: document.renderData,
-    filters: documentLiquidFilters,
-    filename: document.filename.replace(/\.pdf$/i, ".html"),
-  });
+  return renderDocumentHtmlPdf({ content: renderer.data, data: document.renderData, filename: document.filename }, locale);
+};
+
+/** Record and query documents share the same bounded Liquid/PDF renderer. */
+export const renderDocumentHtmlPdf = async (
+  input: {
+    content: { body: string; header?: string; footer?: string; css?: string };
+    data: Record<string, unknown>;
+    filename: string;
+  },
+  locale?: string,
+  options?: RenderTemplatePdfPreviewOptions,
+): Promise<Result<RenderHtmlToPdfResult>> => {
+  const t = documentServiceText(locale);
+  const rendered = await renderTemplatePdfPreview(
+    {
+      htmlTemplate: input.content.body,
+      headerHtmlTemplate: input.content.header,
+      footerHtmlTemplate: input.content.footer,
+      pageCssTemplate: input.content.css,
+      data: input.data,
+      filters: documentLiquidFilters,
+      filename: input.filename.replace(/\.pdf$/i, ".html"),
+    },
+    options,
+  );
   if (rendered.ok) return ok(rendered.pdf);
   const message = rendered.error.phase === "template" ? t.templateRenderFailed : t.pdfRenderFailed;
   return fail(rendered.error.status === 400 ? err.badInput(message) : err.internal(message));

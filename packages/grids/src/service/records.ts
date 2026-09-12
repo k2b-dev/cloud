@@ -9,6 +9,7 @@ import { runBoundedQuery } from "./bounded-query";
 import {
   applyComputedProjections,
   buildComputedColumnSqlProjections,
+  buildComputedFieldSqlMap,
   buildComputedProjections,
   buildFormulaSqlProjections,
   readableComputedTargetTableIds,
@@ -18,13 +19,15 @@ import { isMultiSelectField, storageOf } from "./field-storage";
 import { listByTable as listFields } from "./fields";
 import { listFirstImagePreviews } from "./files";
 import { compileFilter, renderClause } from "./filter-compiler";
+import { isMissingCapturedCalculationError } from "./finalized-field-sql";
 import { compileFormulaPredicateAstToSql } from "./formula-sql-compiler";
+import { isInvalidCalculationError } from "./formula-sql-values";
 import { compileGroupQuery, type GroupAggregationSpec, type GroupBucket, type GroupHavingRef } from "./group-compiler";
 import { enrichRecordsWithHtmlTemplates, type HtmlTemplateRenderBudget } from "./html-template-fields";
 import { parseJsonbRow } from "./jsonb";
 import { withLookupTargetMetadata } from "./lookup-display";
 import { cleanRecordMeta, compileRecordMetaFilter, listRecordActors, recordMetaRequiresDeletedRows } from "./record-metadata";
-import { mapRecordRow } from "./record-persistence";
+import { applyFinalizedComputedAccess, mapRecordRow } from "./record-persistence";
 import { enrichFormulaLookups, findTableId, get, projectionFragmentsFor } from "./record-read";
 import {
   attachRelationExpansion,
@@ -39,6 +42,20 @@ import type { Field, RecordList } from "./types";
 
 type DbRow = Record<string, unknown>;
 const RECORD_QUERY_TIMEOUT_MS = 5_000;
+
+const runRecordQuery = async <T>(
+  query: unknown,
+  options: { signal?: AbortSignal; dedupeKey?: string; locale?: string },
+): Promise<Result<T[]>> => {
+  try {
+    return ok(await runBoundedQuery<T>(query, RECORD_QUERY_TIMEOUT_MS, options.signal, options.dedupeKey));
+  } catch (error) {
+    if (isMissingCapturedCalculationError(error))
+      return fail(err.badInput(getGridsCrudMessages(options.locale).missingCapturedCalculation));
+    if (isInvalidCalculationError(error)) return fail(err.badInput(getGridsCrudMessages(options.locale).calculationFailed));
+    throw error;
+  }
+};
 
 /** Resolves the only public record identifier to a live internal record. */
 export const getByShortId = async (shortId: string) => {
@@ -138,10 +155,19 @@ export const list = async (params: {
   // round-trip.
   const authorizedTableIds = await readableComputedTargetTableIds(fields, params.viewer);
   const computed = await buildComputedProjections(fields, { authorizedTableIds, dateConfig: params.dateConfig });
-  const formulaSql = buildFormulaSqlProjections(fields, { dateConfig: params.dateConfig });
+  const formulaSql = buildFormulaSqlProjections(fields, { dateConfig: params.dateConfig, authorizedTableIds });
+  const computedFieldSql = await buildComputedFieldSqlMap(fields, {
+    authorizedTableIds,
+    dateConfig: params.dateConfig,
+    requireCapturedValues: true,
+  });
   // View computed columns evaluate in SQL when projectable (one semantics with
   // GQL preview + formula fields); the JS evaluator below only fills the rest.
-  const computedColumnSql = buildComputedColumnSqlProjections(params.computedColumns, fields, { dateConfig: params.dateConfig });
+  const computedColumnSql = buildComputedColumnSqlProjections(params.computedColumns, fields, {
+    dateConfig: params.dateConfig,
+    computedFieldSql,
+    authorizedTableIds,
+  });
   const projections = [...computed, ...formulaSql, ...computedColumnSql.projections];
   const projectionFragments = projectionFragmentsFor(projections);
 
@@ -160,6 +186,7 @@ export const list = async (params: {
     },
     {
       fieldsByTableId: { [params.tableId]: fields },
+      computedFieldSql,
       timeZone: params.dateConfig?.timeZone,
       limit: limit + 1,
       cursorValues: decodedCursor ? [...decodedCursor.values, decodedCursor.id] : undefined,
@@ -185,12 +212,13 @@ export const list = async (params: {
   // predicate still pins r.table_id = ${tableId}, so the JOIN's table
   // row is uniquely identified — Postgres treats this as a cheap
   // semi-join.
-  const rows = await runBoundedQuery<DbRow>(
-    compiled.query.sql,
-    RECORD_QUERY_TIMEOUT_MS,
-    params.signal,
-    params.dedupeKey ? `${params.dedupeKey}:rows` : undefined,
-  );
+  const queried = await runRecordQuery<DbRow>(compiled.query.sql, {
+    signal: params.signal,
+    locale: params.locale,
+    dedupeKey: params.dedupeKey ? `${params.dedupeKey}:rows` : undefined,
+  });
+  if (!queried.ok) return queried;
+  const rows = queried.data;
   const hasMore = rows.length > limit;
   const items = rows.slice(0, limit).map(mapRecordRow);
 
@@ -200,7 +228,8 @@ export const list = async (params: {
   // record.data[fieldId] alongside the JSONB-derived columns.
   await hydrateRelationsFromLinks(items, fields, params.viewer);
   const recordsById = new Map(items.map((r) => [r.id, r]));
-  applyComputedProjections(rows.slice(0, limit) as Array<Record<string, unknown>>, recordsById, projections);
+  applyComputedProjections(rows.slice(0, limit) as Array<Record<string, unknown>>, recordsById, projections, params.dateConfig?.locale);
+  applyFinalizedComputedAccess(rows.slice(0, limit), recordsById, authorizedTableIds, fields, params.locale);
   await enrichFormulaLookups(items, fieldsWithLookupMeta, {
     dateConfig: params.dateConfig,
     viewer: params.viewer,
@@ -263,6 +292,7 @@ export const list = async (params: {
         viewer: params.viewer,
         dateConfig: params.dateConfig,
         fields,
+        locale: params.locale,
         dedupeKey: params.dedupeKey ? `${params.dedupeKey}:default-aggregates` : undefined,
       })
     : ok<Record<string, unknown>>({});
@@ -328,6 +358,12 @@ export const group = async (params: {
   const searchClause = searchCompiled.clause;
   const recordMetaClause = compileRecordMetaFilter(params.recordMeta ?? null);
   const needsDeletedRows = recordMetaRequiresDeletedRows(params.recordMeta ?? null);
+  const authorizedTableIds = await readableComputedTargetTableIds(fields, params.viewer);
+  const computedFieldSql = await buildComputedFieldSqlMap(fields, {
+    authorizedTableIds,
+    dateConfig: params.dateConfig,
+    requireCapturedValues: true,
+  });
   const compiled = compileGroupQuery({
     tableId: params.tableId,
     groupBy: params.groupBy,
@@ -346,10 +382,13 @@ export const group = async (params: {
     deletedOnly: params.deletedOnly || needsDeletedRows,
     timeZone: params.dateConfig?.timeZone,
     dateConfig: params.dateConfig,
+    computedFieldSql,
   });
   if (!compiled.ok) return fail(err.badInput(messages.groupInvalid({ detail: compiled.error })));
 
-  const rows = await runBoundedQuery<DbRow>(compiled.query, RECORD_QUERY_TIMEOUT_MS, params.signal, params.dedupeKey);
+  const queried = await runRecordQuery<DbRow>(compiled.query, params);
+  if (!queried.ok) return queried;
+  const rows = queried.data;
   const hasMore = rows.length > limit;
   const visible = params.fromEnd && hasMore ? rows.slice(-limit) : rows.slice(0, limit);
 
@@ -423,6 +462,12 @@ export const aggregate = async (params: {
 }): Promise<Result<Record<string, unknown>>> => {
   const messages = getGridsCrudMessages(params.locale);
   const fields = params.fields ?? (await listFields(params.tableId));
+  const authorizedTableIds = await readableComputedTargetTableIds(fields, params.viewer);
+  const computedFieldSql = await buildComputedFieldSqlMap(fields, {
+    authorizedTableIds,
+    dateConfig: params.dateConfig,
+    requireCapturedValues: true,
+  });
 
   const filterCompiled = compileFilter(params.filter ?? null, fields, { timeZone: params.dateConfig?.timeZone });
   if (!filterCompiled.ok) return fail(err.badInput(messages.filterInvalid({ detail: filterCompiled.error })));
@@ -431,6 +476,8 @@ export const aggregate = async (params: {
     ? compileFormulaPredicateAstToSql(params.formulaWhere, {
         fields,
         recordAlias: "r",
+        computedFieldSql,
+        authorizedTableIds,
         dateConfig: params.dateConfig,
       })
     : null;
@@ -447,7 +494,7 @@ export const aggregate = async (params: {
   const recordMetaClause = compileRecordMetaFilter(params.recordMeta ?? null);
   const needsDeletedRows = recordMetaRequiresDeletedRows(params.recordMeta ?? null);
 
-  const aggCompiled = compileAggregates(params.requests, fields);
+  const aggCompiled = compileAggregates(params.requests, fields, computedFieldSql);
   if (!aggCompiled.ok) return fail(err.badInput(messages.aggregateInvalid({ detail: aggCompiled.error })));
 
   if (aggCompiled.columns.length === 0) return ok({});
@@ -461,7 +508,7 @@ export const aggregate = async (params: {
   const jsonPairs = aggCompiled.columns.map((col) => sql`${col.key}::text, ${col.expr}`).reduce((acc, cur) => sql`${acc}, ${cur}`);
 
   // Live-parent JOIN — see records.list comment for rationale.
-  const rows = await runBoundedQuery<{ result: Record<string, unknown> }>(
+  const queried = await runRecordQuery<{ result: Record<string, unknown> }>(
     sql`
       SELECT jsonb_build_object(${jsonPairs}) AS result
       FROM grids.records r
@@ -474,10 +521,10 @@ export const aggregate = async (params: {
         AND ${searchClause}
         AND ${recordMetaClause}
     `,
-    RECORD_QUERY_TIMEOUT_MS,
-    params.signal,
-    params.dedupeKey,
+    params,
   );
+  if (!queried.ok) return queried;
+  const rows = queried.data;
   return ok(parseJsonbRow<Record<string, unknown>>(rows[0]?.result, {}));
 };
 

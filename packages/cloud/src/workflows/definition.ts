@@ -202,8 +202,10 @@ export type WorkflowActionContext = {
   tx?: SQL;
   /** Stable across replays of the same step — the key an idempotent effect uses. */
   effectKey: string;
-  /** Keeps a long-running action's lease alive. */
-  heartbeat(): Promise<void>;
+  /** Keeps a long-running action's lease alive. Pass the application's current
+   * transaction to fence its writes against cancellation and worker takeover
+   * until commit. Do not call an ambient heartbeat while holding that fence. */
+  heartbeat(tx?: SQL): Promise<void>;
 };
 
 // ─── Action definition ───────────────────────────────────────────────────────

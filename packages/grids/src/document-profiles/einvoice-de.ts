@@ -261,6 +261,7 @@ export const createGermanEInvoiceProfile = (
     "Outgoing EUR invoices using ZUGFeRD 2.5 / Factur-X 1.09 EN 16931. Technical validation is not tax or legal approval. The issuer is responsible for invoice content and suitability for the intended use.",
   rendererVersion: "gotenberg-8.36.0-factur-x",
   validatorVersion: "stackforge-factur-x-1.2.0-xsd-en16931",
+  primaryArtifact: { key: "pdf", mediaType: "application/pdf" },
   input: germanEInvoiceSnapshotSchema,
   formatNumber: ({ value, issuedAt }) => `RE-${issuedAt.getUTCFullYear()}-${String(value).padStart(6, "0")}`,
   issue: async (snapshot, context) => {
@@ -275,7 +276,19 @@ export const createGermanEInvoiceProfile = (
       throw new Error("Rendered E-Invoice does not contain the generated Factur-X XML.");
     }
     const safeNumber = context.number.replaceAll(/[^A-Za-z0-9._-]/g, "_");
+    const totals = calculate(snapshot);
     return {
+      output: {
+        currency: snapshot.currency,
+        netAmount: money(totals.net),
+        taxAmount: money(totals.tax),
+        grossAmount: money(totals.total),
+        taxGroups: [...totals.groups].map(([taxRate, group]) => ({
+          taxRate,
+          netAmount: money(group.basis),
+          taxAmount: money(group.tax),
+        })),
+      },
       artifacts: [
         { key: "pdf", filename: `${safeNumber}.pdf`, mediaType: "application/pdf", bytes: rendered.pdf },
         { key: "structured", filename: "factur-x.xml", mediaType: "application/xml", bytes: new TextEncoder().encode(xml) },

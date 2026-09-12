@@ -9,8 +9,8 @@ export const testShortId = (prefix: string) => `${prefix}${Math.random().toStrin
 export const insertTestDocumentArtifact = async (params: {
   documentId: string;
   baseId: string;
-  tableId: string;
-  recordId: string;
+  tableId: string | null;
+  recordId: string | null;
   filename?: string;
   db?: SQL;
 }) => {

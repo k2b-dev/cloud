@@ -11,8 +11,10 @@ import {
 } from "../service/aggregate-capabilities";
 import { groupSqlTypeForField, isMultiSelectField, storageOf } from "../service/field-storage";
 import { compileFormulaAstToSql, type FormulaSqlFieldResolver, type FormulaSqlType } from "../service/formula-sql-compiler";
+import { requireValidCalculationSql } from "../service/formula-sql-values";
 import type { GroupAggregationSpec } from "../service/group-compiler";
 import { numericAverageSql } from "../service/numeric-division-sql";
+import { compileRecordMetaFilter } from "../service/record-metadata";
 import type { Field } from "../service/types";
 import type { DslFormulaAggregation, DslResolvedSqlAggregation, DslResolvedSqlGroupBy, DslResolvedSqlQueryPlan } from "./resolver";
 import { aliveFields, computedFieldSqlForScope, fieldProjection, outputTypeFor } from "./sql-compiler-fields";
@@ -68,7 +70,7 @@ export const compileGroupExtraWhere = (
   options: DslSqlCompileOptions,
   resolveField?: FormulaSqlFieldResolver,
 ): { ok: true; where?: unknown } | { ok: false; error: string } => {
-  const parts: unknown[] = [];
+  const parts: unknown[] = [compileRecordMetaFilter(plan.query.recordMeta ?? null)];
   const viewScope = compileViewSourceRecordScope(plan, fields, options);
   if (!viewScope.ok) return viewScope;
   if (viewScope.condition) parts.push(viewScope.condition);
@@ -77,6 +79,7 @@ export const compileGroupExtraWhere = (
       timeZone: options.timeZone,
       computedFieldSql: options.computedFieldSql,
       resolveField,
+      relationSource: options.recordSource ? "recordData" : "links",
     });
     if (!compiled.ok) return { ok: false, error: `where: ${compiled.error}` };
     parts.push(compiled.sql);
@@ -105,7 +108,7 @@ export const compileFormulaAggregateColumn = (
       error: `formula aggregate "${aggregation.id}": agg "${aggregation.agg}" not compatible with SQL type "${compiled.expression.type}"`,
     };
   }
-  const expression = compiled.expression.sql;
+  const expression = requireValidCalculationSql(compiled.expression);
   const key = aggregateKey(aggregation);
 
   switch (aggregation.agg) {

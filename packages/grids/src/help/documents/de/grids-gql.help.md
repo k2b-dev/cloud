@@ -265,8 +265,6 @@ limit 1
 
 ### Kompatibilität von Prädikaten
 
-Die folgenden einfachen Feldprädikate sind am klarsten, wenn sie passen. Eine boolesche Formel kann Felder oder berechnete Ausdrücke vergleichen, wenn ein direktes Prädikat nicht ausreicht.
-
 | Feldwert | Unterstützte direkte Prädikate |
 | --- | --- |
 | Text, Langtext, ID | `=`, `!=`, `contains`, `startswith`, `endswith`, `icontains`, `istartswith`, `iendswith` |
@@ -276,7 +274,9 @@ Die folgenden einfachen Feldprädikate sind am klarsten, wenn sie passen. Eine b
 | Auswahl | `=`, `!=`, `oneof`, `noneof`, `containsall`; Werte können Optionsbezeichnungen oder Options-IDs sein |
 | Relation | `=`, `!=`, `oneof`, `noneof`, `containsall`; Werte sind öffentliche IDs verknüpfter Datensätze |
 
-Der Vergleich eines filterbaren Felds mit `null` verwendet `=` für leer und `!=` für nicht leer. Andere Vergleiche mit `null` sind ungültig. Skalare Ausgaben von Formeln, Lookups und Rollups können an einer unterstützten Wahr/Falsch-Formel teilnehmen. JSON- und Dateifelder können nicht direkt gefiltert werden.
+`Feld = null` prüft auf leer, `!= null` auf nicht leer. Dateifelder gespeicherter Tabellen unterstützen nur diese Existenzprüfung; kombinierte Tabellen nicht. JSON ist nicht filterbar; berechnete Skalare können boolesche Formeln verwenden.
+
+Verknüpfte `oneof`, `noneof` und `containsall` behalten Typ- und Zugriffsprüfungen bei: `oneof(cost.Verantwortliche, @auth.subjects)` prüft Principal-Mitgliedschaft.
 
 ### Datensatzmetadaten
 

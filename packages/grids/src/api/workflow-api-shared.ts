@@ -17,6 +17,7 @@ import { type PublicResourceType, projectPublicIds, resolvePublicId, resolvePubl
 import { listByBase as listTablesByBase } from "../service/tables";
 import { buildWorkflowCatalog, type WorkflowCatalog, type WorkflowCatalogEntry } from "../service/workflow-catalog";
 import { listWorkflowScopes, listWorkflows } from "../service/workflow-definitions";
+import { workflowQueryBinder } from "../service/workflow-query-binding";
 import { bindGridsWorkflow } from "../workflows/binder";
 import { presentWorkflowCompletions } from "../workflows/completion-presentation";
 import type {
@@ -31,6 +32,7 @@ import type {
   WorkflowTriggerRuntimeState,
 } from "../workflows/contracts";
 import { gridsWorkflows } from "../workflows/module";
+import { queryResultCompletions } from "../workflows/query-result-completions";
 import { projectDocuments } from "./documents-api-shared";
 import { currentWorkflowPrincipal, gateAt } from "./permissions";
 import {
@@ -322,6 +324,7 @@ export const toPublicWorkflowSteps = async (
       action: step.action,
       status: step.status,
       outcome: z.json().nullable().parse(outcomes[index]),
+      ...(step.documentConfirmation ? { documentConfirmation: step.documentConfirmation } : {}),
       executionGeneration: step.executionGeneration,
       startedAt: step.startedAt,
       finishedAt: step.finishedAt,
@@ -530,7 +533,8 @@ export const validatePermissionedWorkflowSource = async (
 ) => {
   const compiled = await compileWorkflow(source, gridsWorkflows);
   if (!compiled.ok) return compiled;
-  return bindGridsWorkflow(compiled.ir, catalog ?? (await permissionedWorkflowCatalog(c, baseId)));
+  const authorizedCatalog = catalog ?? (await permissionedWorkflowCatalog(c, baseId));
+  return bindGridsWorkflow(compiled.ir, authorizedCatalog, undefined, workflowQueryBinder(baseId, authorizedCatalog));
 };
 
 const uniqueEntries = <T extends WorkflowCatalogEntry>(index: { refs: Map<string, T> }): T[] =>
@@ -545,6 +549,10 @@ export const buildWorkflowCompletions = (
   locale?: string,
 ): WorkflowCompletionItem[] => {
   const context = workflowCompletionContext(source, caret);
+
+  if (context.key === "data") {
+    return queryResultCompletions(source, caret).map((name) => workflowCompletionItem(context, "source", name, name));
+  }
 
   if (context.key === "table") {
     return presentWorkflowCompletions(

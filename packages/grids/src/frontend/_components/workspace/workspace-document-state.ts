@@ -60,5 +60,8 @@ export const loadDocumentsState = async (common: WorkspaceCommon): Promise<Grids
     limit: PUBLIC_DOCUMENT_PAGE_LIMIT,
     timeZone: common.params.dateConfig?.timeZone,
   });
-  return okState(common, { kind: "documents", initialBrowserPage }, [...common.chrome.titleBase, { title: t.documents }]);
+  return okState(common, { kind: "documents", canWriteDocuments: gridsService.permission.hasAtLeast(level, "write"), initialBrowserPage }, [
+    ...common.chrome.titleBase,
+    { title: t.documents },
+  ]);
 };

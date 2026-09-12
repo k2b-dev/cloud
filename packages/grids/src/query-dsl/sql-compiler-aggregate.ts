@@ -100,7 +100,7 @@ export const compileDslAggregateQueryPlanToSql = (
       sql: sql`
         SELECT jsonb_build_object(${joinFragments(jsonPairs, sql`, `)}) AS result
         FROM ${dslRecordRelation(options)}
-        JOIN grids.tables t ON t.id = r.table_id AND t.deleted_at IS NULL
+      JOIN grids.tables t ON t.id = r.table_id AND t.id = ${plan.tableId}::uuid AND t.deleted_at IS NULL
         JOIN grids.bases b ON b.id = t.base_id AND b.deleted_at IS NULL
         WHERE ${where}
       `,

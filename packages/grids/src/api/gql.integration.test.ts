@@ -328,6 +328,42 @@ beforeAll(async () => {
 });
 
 describe("GQL API route contract", () => {
+  postgresTest("binds public query parameters and rejects cursors after parameter changes", async () => {
+    const user = testUser({ id: await existingAuthUserId(), roles: ["user"] });
+    const fixture = await insertRelationFixture(user.id);
+    const app = apiFor(user);
+    try {
+      const query = `from table Orders\nselect {${fixture.amountId}} as export_amount\nwhere {${fixture.amountId}} > @params.minimum\nsort export_amount asc`;
+      const path = `/gql/by-base/${fixture.baseId}/execute`;
+      const body = { query, parameters: { minimum: { decimal: "0.00" } }, pageSize: 1 };
+      const response = await app.request(path, jsonRequest("POST", body));
+      const first = (await response.json()) as DslQueryExecuteResponse;
+      expect(first.ok, JSON.stringify(first)).toBe(true);
+      if (!first.ok) throw new Error(JSON.stringify(first.diagnostics));
+      expect(first.rows).toHaveLength(1);
+      expect(first.page?.nextCursor).toBeTruthy();
+      const changed = await app.request(
+        path,
+        jsonRequest("POST", { ...body, parameters: { minimum: { decimal: "5.00" } }, cursor: first.page?.nextCursor }),
+      );
+      expect(await changed.json()).toMatchObject({ ok: false, diagnostics: [{ code: "gql.cursor" }] });
+      const preview = await app.request(
+        `/gql/by-base/${fixture.baseId}/preview`,
+        jsonRequest("POST", { query, parameters: { minimum: { decimal: "10.00" } } }),
+      );
+      const previewBody = (await preview.json()) as DslQueryExecuteResponse;
+      expect(previewBody.ok).toBe(true);
+      if (!previewBody.ok) throw new Error(JSON.stringify(previewBody.diagnostics));
+      expect(previewBody.columns[0]).toMatchObject({ label: "export_amount", sqlType: "numeric" });
+      expect(previewBody.rows).toHaveLength(1);
+      expect(previewBody.rows[0]?.values[previewBody.columns[0]!.key]).toBe("12.5");
+      await sql`DELETE FROM auth.access WHERE id = ${fixture.accessId}::uuid`;
+      const denied = await app.request(path, jsonRequest("POST", body));
+      expect(denied.status).toBe(403);
+    } finally {
+      await cleanupFixture(fixture.internalBaseId, fixture.accessId);
+    }
+  });
   postgresTest("exposes GQL under /gql and leaves the legacy /query-dsl alias removed", async () => {
     const baseId = uuid();
 

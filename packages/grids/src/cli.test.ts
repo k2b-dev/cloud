@@ -976,6 +976,19 @@ describe("grids CLI", () => {
     expect(tables[0]).toEqual([{ recordId, Name: "Ursula K. Le Guin" }]);
   });
 
+  test("forwards typed GQL parameters without rounding decimal text", async () => {
+    const parameters = { minimum: { decimal: "9007199254740993.01" } };
+    for (const operation of ["run", "preview"]) {
+      const { ctx, calls } = createContext(
+        ["gql", operation, baseId],
+        { query: "from table Authors", parameters: JSON.stringify(parameters) },
+        [jsonResponse({ items: [base], total: 1, limit: 500, offset: 0 }), jsonResponse({ ok: false, diagnostics: [] })],
+      );
+      await gridsCli.run(ctx);
+      expect(JSON.parse(String(calls[1]?.init?.body)).parameters).toEqual(parameters);
+    }
+  });
+
   test("prints compiled GQL as one structured JSONL value", async () => {
     const query = "from table Authors select Name";
     const payload = { ok: true as const, tableId, source: "from table #auth1A select #name1A" };

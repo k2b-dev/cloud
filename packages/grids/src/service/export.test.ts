@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { csvQuote, formatCellForExport, validateHtmlTemplateExportLimit } from "./export";
+import { formatCellForExport, validateHtmlTemplateExportLimit } from "./export";
+import { csvQuote } from "./export-csv";
 import type { Field } from "./types";
 
 const mkField = (overrides: Partial<Field> & Pick<Field, "id" | "type">): Field => ({

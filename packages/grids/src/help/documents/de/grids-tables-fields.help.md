@@ -60,7 +60,7 @@ Die [Formelreferenz](/app/grids/help/grids-formulas) erklärt Syntax, Beispiele 
 
 Wähle **Objektliste** für Positionen ohne eigene Berechtigungen oder eigenen Lebenszyklus, sonst eine Relation. Unter **Regeln und Berechnung** stehen Regeln und Formeln mit Geschwisterspalten. Auswahlspalten und Regex-Regeln sind nur für Eingaben verfügbar. Verschachtelte Objekte, Relationen und Listen sind nicht erlaubt.
 
-Füge Zeilen hinzu, entferne oder verschiebe sie. Der Editor zeigt 25 Zeilen je Seite; Blättern erhält Eingaben. Gültige Zeilen behalten ihre Vorschau, während andere unvollständig sind. Speichern prüft und ersetzt die ganze Liste; alte Versionen überschreiben keine neueren Änderungen. Standard: 0–100 Zeilen; Grenzen: 1.000 Zeilen, 200 Spalten, 256 KiB.
+Bearbeite Zeilen auf Seiten mit je 25 Zeilen; Eingaben und gültige Vorschauen bleiben erhalten. Speichern prüft und ersetzt die Liste mit Versionsschutz. Standard: 0–100 Zeilen; Grenzen: 1.000 Zeilen, 200 Spalten, 256 KiB. Entfernte Spalten werden in Entwürfen ausgeblendet; gespeicherte Historie bleibt erhalten. Spalten mit finalisierten Werten können nicht entfernt werden.
 
 `LIST_SUM(Items, 'Amount')` bildet eine Summe. `LIST_AVG`, `LIST_MIN` und `LIST_MAX` nutzen dieselben Argumente; `LIST_COUNT(Items)` zählt Zeilen. Eine leere Liste ergibt bei Summe/Anzahl `0`, sonst `null`; eine fehlende Liste ergibt immer `null`. Die Finalisierung schreibt Zeilen und berechnete Werte gemeinsam fest und erhält exakte Beträge und Typen.
 
@@ -78,13 +78,13 @@ Wähle für jede Tabelle eine kurze, verständliche **Datensatzbezeichnung**. Si
 
 Das Verschieben eines Datensatzes in den Papierkorb ist umkehrbar. Beim Wiederherstellen entsteht ein neuer Verlaufseintrag; der Eintrag zur Löschung bleibt erhalten.
 
-Dateien haben unabhängig von ihrer aktuellen Zuordnung zu einem Feld einen eigenen Lebenszyklus. **Datei ersetzen** tauscht den aktuellen Anhang atomar aus. **Aus Datensatz entfernen** trennt ihn vom Datensatz und speichert handelnde Person, Zeitpunkt, Feld sowie unveränderliche Dateimetadaten im Verlauf. Eine geschützte Revision oder ein erzeugtes Artefakt kann die exakten Bytes nach der Trennung aufbewahren; eine ungeschützte Datei kann bereinigt werden. Das Entfernen eines Anhangs verspricht daher weder eine physische Löschung noch eine dauerhafte Aufbewahrung. Grids behauptet nicht, dass der Dateiverlauf allein rechtliche Vorgaben erfüllt.
+**Datei ersetzen** tauscht einen Anhang atomar aus. **Aus Datensatz entfernen** trennt ihn und protokolliert Person, Zeitpunkt, Feld und unveränderliche Dateimetadaten. Geschützte Revisionen oder Artefakte bewahren seine Bytes; ungeschützte Dateien können bereinigt werden. Die Trennung verspricht weder physische Löschung noch dauerhafte Aufbewahrung. Der Dateiverlauf allein belegt keine rechtliche Konformität.
 
 ### Dauerhafte Datensatz-Versionen aufbewahren
 
-Eine Person mit Administratorrechten für eine Basis kann **Tabelleneinstellungen → Verlauf und Schutz** öffnen und **Nachweisbarer Verlauf** für eine gespeicherte Tabelle aktivieren. Die Aktivierung ist dauerhaft. Sie erstellt einen Ausgangsstand der zu diesem Zeitpunkt vorhandenen Datensätze und bewahrt danach jeden Erstellungs-, Änderungs-, Lösch-, Wiederherstellungs-, Relations- und Dateizustand als nur anfügbaren Versionsstand auf.
+Basis-Administratoren können unter **Tabelleneinstellungen → Verlauf und Schutz** den **Nachweisbaren Verlauf** dauerhaft aktivieren. Er erfasst bestehende Datensätze und fügt danach jeden Erstellungs-, Änderungs-, Lösch-, Wiederherstellungs-, Relations- und Dateizustand als Version an.
 
-Dieser Ausgangsstand ist der früheste Zustand, den Grids belegen kann. Er rekonstruiert keine Änderungen vor der Aktivierung. Bei größeren Tabellen schützt Grids den Ausgangsstand in fortsetzbaren Batches. Gewöhnliche Schreibvorgänge bleiben verfügbar und werden atomar erfasst, während der Ausgangsstand erstellt wird.
+Der Ausgangsstand rekonstruiert keine früheren Änderungen. Große Tabellen verwenden fortsetzbare Batches; gewöhnliche Schreibvorgänge bleiben verfügbar und werden währenddessen atomar erfasst.
 
 Personen mit Lesezugriff auf einen aktuellen Datensatz können in seiner Detailansicht **Datensatzversionen** öffnen. Eine Version zeigt die damals gültigen Bedeutungen der Felder und ermöglicht den Download genau der Dateien, die diese Version aufbewahrt. Der nachweisbare Verlauf erhöht den Speicherbedarf, kann nicht deaktiviert werden und ist für sich genommen kein Nachweis der Einhaltung rechtlicher oder regulatorischer Vorgaben. Er ist nicht über normale Datensatzlisten oder Grids Apps verfügbar.
 
@@ -95,11 +95,13 @@ Nachdem der nachweisbare Verlauf seinen Ausgangsstand fertiggestellt hat, kann e
 - **Direkt:** Eine Person mit Schreibzugriff kann den Datensatz selbst finalisieren.
 - **Vier-Augen-Prinzip:** Eine Person mit Schreibzugriff fordert die Finalisierung der exakt aktuellen Datensatzversion an. Eine andere Person benötigt weiterhin Schreibzugriff und muss aktuell Mitglied der konfigurierten Prüfgruppe sein, um die Anfrage zu genehmigen und den Datensatz zu finalisieren.
 
-Die Auswahl einer Prüfgruppe gewährt keinen Zugriff. Modus und Gruppe werden bei der Aktivierung der Finalisierung atomar gespeichert. Eine für das Vier-Augen-Prinzip vorgesehene Tabelle ist daher nie vorübergehend im direkten Modus verfügbar. Eine Änderung des Modus oder der Prüfgruppe macht offene Anfragen ungültig, damit eine alte Prüfung keine Arbeit nach einer neuen Richtlinie genehmigt. Änderungen an Werten, Relationen oder angehängten Dateien sowie das Verschieben eines Datensatzes in oder aus dem Papierkorb machen seine Anfrage ebenfalls ungültig. Reiche den aktuellen Stand erneut ein. Anfrage, Genehmigung, Ablehnung und die endgültige Sperre des Datensatzes bleiben im Audit-Verlauf sichtbar.
+Die Prüfgruppe gewährt keinen Zugriff. Modus und Gruppe werden atomar aktiviert, ohne zwischenzeitlichen Direktmodus. Richtlinienänderungen machen offene Anfragen ungültig. Geänderte Werte, Relationen, Dateien, Papierkorbzustände oder aktive Felddefinitionen erfordern ebenfalls eine neue Anfrage. Das gilt auch für Feldnamen: Geprüft wird die Bedeutung des ganzen Datensatzes, nicht nur seine Summe. Anfragen, Entscheidungen und Finalisierung bleiben im Audit-Verlauf sichtbar.
 
 Jede Anfrage hat eine kurze öffentliche ID. Genehmigung und Ablehnung über die CLI erfordern genau diese ID. Eine Bestätigung kann sich daher nie auf eine neuere Ersatzanfrage beziehen.
 
 Die Finalisierung prüft Pflichtfelder, vergibt IDs für **Bei Finalisierung**, schreibt typisierte Formel-, Lookup-, Rollup- und Listenwerte fest und sperrt den Datensatz atomar. Exakte Dezimalwerte bleiben berechenbar. Felder, Relationen, Dateien, Papierkorbstatus und endgültige Nummer sind unveränderlich. Wiederholungen geben denselben Datensatz zurück, ohne eine weitere Nummer zu vergeben.
+
+Nur gespeicherte Berechnungen sind historische Werte. Später hinzugefügte Felder und ältere Finalisierungen ohne Berechnungsstand haben kein gespeichertes Ergebnis. Grids rekonstruiert es nicht mit heutigen Formeln. Fehlende Ergebnisse sind keine Nullbeträge; verwende unvollständige Summen nicht für Finanzexporte.
 
 Bevor der erste Datensatz finalisiert wurde, kann eine Person mit Administratorrechten die Funktion deaktivieren, nachdem alle bei der Finalisierung zugewiesenen ID-Felder wieder auf **Bei Erstellung des Datensatzes** umgestellt wurden. Nach dem ersten finalisierten Datensatz ist die Tabelleneinstellung dauerhaft. Grids ergänzt keine fachliche Bedeutung für Rechnungen, Stornierungen, Korrekturen oder Compliance. Bilde diese mit gewöhnlichen Feldern, Relationen und Workflows ab.
 

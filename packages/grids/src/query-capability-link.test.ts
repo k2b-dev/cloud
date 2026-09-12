@@ -1,6 +1,11 @@
 import { expect, test } from "bun:test";
 import { queryCapabilityHref } from "./query-capability-link";
 
+test("parameter values never become incomplete editor links or URL secrets", () => {
+  expect(queryCapabilityHref({ baseId: "Base01", query: "from table {Table1}", parameters: { name: "private" } })).toBeUndefined();
+  expect(queryCapabilityHref({ baseId: "Base01", query: "from table {Table1}", parameters: {} })).toBeDefined();
+});
+
 test("query links preserve explicit source and punctuation", () => {
   const query = "from table {Table1}\nsearch 'a & b'\nlimit 10";
   const href = queryCapabilityHref({ baseId: "Base01", query });

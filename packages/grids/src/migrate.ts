@@ -185,6 +185,26 @@ const migrateSchema = async (sql: SQL): Promise<void> => {
 };
 
 const migrateSafeCastHelpers = async (sql: SQL): Promise<void> => {
+  await sql`
+    CREATE OR REPLACE FUNCTION grids.require_valid_calculation(failed boolean, value anyelement) RETURNS anyelement
+    LANGUAGE plpgsql VOLATILE AS $fn$
+    BEGIN
+      IF failed IS TRUE THEN
+        RAISE EXCEPTION 'grids: invalid calculation' USING ERRCODE = '22023';
+      END IF;
+      RETURN value;
+    END $fn$
+  `.simple();
+  await sql`
+    CREATE OR REPLACE FUNCTION grids.require_captured_calculation(captured boolean, value jsonb) RETURNS jsonb
+    LANGUAGE plpgsql IMMUTABLE PARALLEL SAFE AS $fn$
+    BEGIN
+      IF captured IS NOT TRUE THEN
+        RAISE EXCEPTION 'grids: missing captured calculation' USING ERRCODE = '22023';
+      END IF;
+      RETURN value;
+    END $fn$
+  `.simple();
   // ──────────────────────────────────────────────────────────────────
   // Safe-cast helpers
   // ──────────────────────────────────────────────────────────────────
@@ -1185,6 +1205,7 @@ const migrateDurableHistory = async (sql: SQL): Promise<void> => {
 
 const migrateRecordFinalization = async (sql: SQL): Promise<void> => {
   await sql`ALTER TABLE grids.records ADD COLUMN IF NOT EXISTS finalized_computed_types JSONB`.simple();
+  await sql`ALTER TABLE grids.records ADD COLUMN IF NOT EXISTS finalized_computed_dependencies JSONB`.simple();
   await sql`ALTER TABLE grids.tables ADD COLUMN IF NOT EXISTS finalization_policy_revision INT NOT NULL DEFAULT 0`.simple();
   await sql`
     CREATE TABLE IF NOT EXISTS grids.table_finalization_activations (
@@ -1608,6 +1629,36 @@ const migrateDocumentIssuance = async (sql: SQL): Promise<void> => {
   `.simple();
   await sql`ALTER TABLE grids.document_issuances ADD COLUMN IF NOT EXISTS request_identity_hash TEXT
     CHECK (request_identity_hash ~ '^[a-f0-9]{64}$')`.simple();
+  await sql`ALTER TABLE grids.document_issuances ADD COLUMN IF NOT EXISTS hash_version SMALLINT NOT NULL DEFAULT 1
+    CHECK (hash_version IN (1, 2))`.simple();
+  await sql`
+    ALTER TABLE grids.document_issuances
+      ADD COLUMN IF NOT EXISTS confirmation_hash TEXT CHECK (confirmation_hash ~ '^[a-f0-9]{64}$'),
+      ADD COLUMN IF NOT EXISTS confirmed_actor JSONB,
+      ADD COLUMN IF NOT EXISTS confirmed_at TIMESTAMPTZ;
+    DO $$ BEGIN
+      IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'grids.document_issuances'::regclass AND conname = 'document_issuances_confirmation_chk') THEN
+        ALTER TABLE grids.document_issuances ADD CONSTRAINT document_issuances_confirmation_chk CHECK (
+          ((confirmed_actor IS NULL AND confirmed_at IS NULL)
+            OR (confirmation_hash IS NOT NULL AND confirmed_actor IS NOT NULL AND confirmed_at IS NOT NULL
+              AND jsonb_typeof(confirmed_actor) = 'object' AND confirmed_at >= created_at))
+          AND (confirmation_hash IS NULL OR document_id IS NULL OR confirmed_at IS NOT NULL)
+        );
+      END IF;
+    END $$;
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_grids_document_issuance_base ON grids.document_issuances(id, base_id);
+    CREATE TABLE IF NOT EXISTS grids.document_export_claims (
+      base_id UUID NOT NULL,
+      destination_key TEXT NOT NULL CHECK (length(destination_key) BETWEEN 1 AND 200),
+      purpose TEXT NOT NULL CHECK (purpose IN ('accounting', 'payment')),
+      business_id TEXT NOT NULL CHECK (length(business_id) BETWEEN 1 AND 200),
+      receipt_id UUID NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      PRIMARY KEY (base_id, destination_key, purpose, business_id),
+      FOREIGN KEY (receipt_id, base_id) REFERENCES grids.document_issuances(id, base_id) ON DELETE RESTRICT
+    );
+    CREATE INDEX IF NOT EXISTS idx_grids_document_export_claims_receipt ON grids.document_export_claims(receipt_id);
+  `.simple();
   await sql`
     CREATE INDEX IF NOT EXISTS idx_grids_document_issuances_pending
     ON grids.document_issuances(created_at, id) WHERE document_id IS NULL
@@ -1621,6 +1672,11 @@ const migrateDocumentIssuance = async (sql: SQL): Promise<void> => {
           RAISE EXCEPTION 'Completed Document issuance receipts are immutable' USING ERRCODE = '55000';
         END IF;
         RETURN OLD;
+      END IF;
+      IF OLD.document_id IS NULL AND OLD.confirmation_hash IS NOT NULL AND OLD.confirmed_at IS NULL
+        AND NEW.confirmed_at IS NOT NULL AND NEW.confirmed_actor IS NOT NULL
+        AND (to_jsonb(NEW) - 'confirmed_actor' - 'confirmed_at') = (to_jsonb(OLD) - 'confirmed_actor' - 'confirmed_at') THEN
+        RETURN NEW;
       END IF;
       IF OLD.document_id IS NOT NULL
         OR NEW.document_id IS NULL
@@ -1726,6 +1782,7 @@ const migrateDocumentArtifacts = async (sql: SQL): Promise<void> => {
   await sql`
     DO $$ BEGIN
       -- Keep immutable legacy data; replace only the obsolete validation.
+      ALTER TABLE grids.documents ADD COLUMN IF NOT EXISTS hash_version SMALLINT NOT NULL DEFAULT 1 CHECK (hash_version IN (1, 2));
       IF EXISTS (
         SELECT 1 FROM pg_constraint
         WHERE conrelid = 'grids.documents'::regclass AND conname = 'documents_renderer_chk'
@@ -1762,8 +1819,27 @@ const migrateDocumentArtifacts = async (sql: SQL): Promise<void> => {
     END $$
   `.simple();
   await sql`
+    ALTER TABLE grids.documents ADD COLUMN IF NOT EXISTS profile_output JSONB
+      CHECK (profile_output IS NULL OR (renderer_kind = 'profile' AND jsonb_typeof(profile_output) = 'object'))
+  `.simple();
+  await sql`
     CREATE UNIQUE INDEX IF NOT EXISTS idx_grids_documents_short_id
     ON grids.documents(short_id)
+  `.simple();
+  await sql`
+    ALTER TABLE grids.documents
+      ALTER COLUMN template_id DROP NOT NULL,
+      ALTER COLUMN snapshot_id DROP NOT NULL,
+      ALTER COLUMN table_id DROP NOT NULL,
+      ALTER COLUMN record_id DROP NOT NULL;
+    DO $$ BEGIN
+      IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'grids.documents'::regclass AND conname = 'documents_source_binding_chk') THEN
+        ALTER TABLE grids.documents ADD CONSTRAINT documents_source_binding_chk CHECK (
+          (template_id IS NOT NULL AND snapshot_id IS NOT NULL AND table_id IS NOT NULL AND record_id IS NOT NULL)
+          OR (template_id IS NULL AND snapshot_id IS NULL AND table_id IS NULL AND record_id IS NULL AND workflow_run_id IS NOT NULL)
+        );
+      END IF;
+    END $$;
   `.simple();
   await sql`
     CREATE INDEX IF NOT EXISTS idx_grids_documents_template
@@ -1813,6 +1889,11 @@ const migrateDocumentArtifacts = async (sql: SQL): Promise<void> => {
     FOR EACH ROW EXECUTE FUNCTION grids.reject_document_artifact_mutation()
   `.simple();
   console.log("  ✓ grids.document_artifacts");
+  // Existing completed Documents were required to contain the canonical PDF.
+  // ADD COLUMN supplies that historical value without rewriting immutable rows.
+  // New issuance must explicitly select its primary artifact.
+  await sql`ALTER TABLE grids.documents ADD COLUMN IF NOT EXISTS primary_artifact_key TEXT NOT NULL DEFAULT 'pdf'`.simple();
+  await sql`ALTER TABLE grids.documents ALTER COLUMN primary_artifact_key DROP DEFAULT`.simple();
 
   await sql`
     CREATE TABLE IF NOT EXISTS grids.document_links (
@@ -1842,6 +1923,18 @@ const migrateDocumentArtifacts = async (sql: SQL): Promise<void> => {
   await sql`
     CREATE UNIQUE INDEX IF NOT EXISTS idx_grids_document_links_short_id
     ON grids.document_links(short_id)
+  `.simple();
+  await sql`
+    ALTER TABLE grids.document_links ALTER COLUMN table_id DROP NOT NULL, ALTER COLUMN record_id DROP NOT NULL;
+    DO $$ BEGIN
+      IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'grids.document_links'::regclass AND conname = 'document_links_base_binding_fkey') THEN
+        ALTER TABLE grids.document_links ADD CONSTRAINT document_links_base_binding_fkey
+          FOREIGN KEY (document_id, base_id) REFERENCES grids.documents(id, base_id) ON DELETE RESTRICT;
+      END IF;
+      IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'grids.document_links'::regclass AND conname = 'document_links_record_pair_chk') THEN
+        ALTER TABLE grids.document_links ADD CONSTRAINT document_links_record_pair_chk CHECK ((table_id IS NULL) = (record_id IS NULL));
+      END IF;
+    END $$;
   `.simple();
   await sql`
     CREATE UNIQUE INDEX IF NOT EXISTS idx_grids_document_links_token_hash

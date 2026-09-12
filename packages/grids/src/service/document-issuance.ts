@@ -1,28 +1,36 @@
 import { createHash } from "node:crypto";
-import { type DateContext, err, fail, ok, type Result, type ServiceError } from "@k2b/stdlib";
 import type { RenderHtmlToPdfResult } from "@k2b/cloud/services";
+import { wakeWorkflowRunsWaitingOn } from "@k2b/cloud/workflows/store";
+import { type DateContext, err, fail, ok, type Result, type ServiceError } from "@k2b/stdlib";
 import { sql as defaultSql, type SQL } from "bun";
 import { z } from "zod";
 import { type Document, type DocumentArtifact, type DocumentTemplate, DocumentTemplateSchema } from "../contracts";
-import type { DocumentProfileSummary } from "../document-profile-contracts";
+import type { DocumentProfileSummary, PrimaryDocumentArtifact } from "../document-profile-contracts";
 import { type DocumentArtifactDraft, type DocumentProfile, documentProfiles, profileKey, profileRegistry } from "../document-profiles";
-import { logAudit } from "./audit";
+import { financialQueryProfiles } from "../document-profiles/financial";
+import { validateDocumentArtifactDrafts } from "./document-artifact-drafts";
+import { reserveDocumentExportClaims } from "./document-export-claims";
+import { normalizeFinancialDocumentOutput } from "./document-financial-output";
+import { persistIssuedDocument } from "./document-issuance-storage";
+import { type CanonicalJsonVersion, canonicalDocumentJson, canonicalJson } from "./document-json";
 import { documentNumberFor } from "./document-liquid";
 import { type DocumentDbRow, hydrateDocuments } from "./document-mappers";
 import { documentServiceText, isGermanDocumentLocale } from "./document-messages";
+import { DocumentQueryOutputSchema, validateDocumentQueryOutput } from "./document-query-output";
 import { buildDocumentRenderData, renderDocumentPdf, renderDocumentProfileInput } from "./document-rendering";
 import { persistRecordSnapshot, type RecordSnapshotDraft } from "./document-snapshots";
+import {
+  DocumentSourceVersionsInputSchema,
+  DocumentSourceVersionsSchema,
+  requireDocumentSourceVersions,
+  sourceVersionsFromData,
+} from "./document-source-versions";
 import { normalizeDocumentTags } from "./document-values";
-import { createProtected } from "./files";
-import { allocateNumberInTransaction, bindNumberAllocation } from "./number-series";
+import { allocateNumberInTransaction } from "./number-series";
 import { insertWithShortIdForDb } from "./short-id";
+import { loadWorkflowQueryData, WorkflowDocumentDataReferenceSchema } from "./workflow-query-store";
 
-const MAX_ARTIFACTS = 8;
-const MAX_TOTAL_ARTIFACT_BYTES = 100 * 1024 * 1024;
-export const MAX_DOCUMENT_PROFILE_INPUT_BYTES = 5 * 1024 * 1024;
 const DOCUMENT_HTML_RENDERER_VERSION = "grids-liquid-gotenberg-v1";
-
-type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
 
 export type DocumentIssuanceActor =
   | { kind: "user"; userId: string }
@@ -58,6 +66,78 @@ type FrozenDocumentRequest = {
 };
 
 const JsonObjectSchema = z.record(z.string(), z.unknown());
+const QueryDocumentRequestSchema = z
+  .object({
+    baseId: z.uuid(),
+    runId: z.uuid(),
+    stepKey: z.string().min(1),
+    data: WorkflowDocumentDataReferenceSchema,
+    output: DocumentQueryOutputSchema,
+    sourceVersions: DocumentSourceVersionsSchema.optional(),
+    filename: z.string().trim().min(1).max(255).nullable(),
+    tags: z.array(z.string().trim().min(1)).max(20),
+    actor: DocumentIssuanceActorSchema,
+  })
+  .strict();
+const FrozenQueryDocumentSchema = QueryDocumentRequestSchema.extend({
+  kind: z.literal("query"),
+  issuedAt: z.iso.datetime(),
+  number: z.string().min(1).max(200),
+  financial: z
+    .object({
+      identifiers: z.object({ messageId: z.string(), paymentInformationId: z.string() }).strict(),
+      normalizedSha256: z.string().regex(/^[a-f0-9]{64}$/),
+      runBindingHash: z.string().regex(/^[a-f0-9]{64}$/),
+    })
+    .strict()
+    .optional(),
+});
+
+const QueryDocumentInputSchema = QueryDocumentRequestSchema.extend({ sourceVersions: DocumentSourceVersionsInputSchema.optional() });
+
+export type QueryDocumentConfirmationRequired = { kind: "confirmationRequired"; receiptId: string; sha256: string };
+type QueryDocumentConfirmationInput = {
+  baseId: string;
+  runId: string;
+  receiptId: string;
+  actor: DocumentIssuanceActor;
+  locale?: string;
+  /** The authenticated caller must still be allowed to execute this run and
+   * read every source table; never derive this from the request's actor value. */
+  authorize: (tableIds: readonly string[], client: SQL) => Promise<void>;
+};
+const validateConfirmationInput = (input: QueryDocumentConfirmationInput) => {
+  if (
+    !z.uuid().safeParse(input.baseId).success ||
+    !z.uuid().safeParse(input.runId).success ||
+    !/^[A-Za-z0-9]{6}$/.test(input.receiptId) ||
+    !DocumentIssuanceActorSchema.safeParse(input.actor).success
+  )
+    throw err.badInput(documentServiceText(input.locale).requestInvalidJson);
+};
+type QueryIssuanceRow = IssuanceRow & {
+  confirmation_hash: string | null;
+  confirmed_actor: DocumentIssuanceActor | null;
+  confirmed_at: Date | null;
+};
+
+/** Pin the manual invocation, revision and authorization snapshot. Current
+ * permissions are checked separately by the caller at every boundary. */
+const financialRunBinding = async (baseId: string, runId: string, client: SQL, locale?: string, lock = true) => {
+  const [run] = await client<Array<{ workflow_version_id: string; authorization_snapshot: unknown; channel: string }>>`
+    SELECT run.workflow_version_id::text, run.authorization_snapshot, profile.channel
+    FROM workflows.run run
+    JOIN grids.workflow_run_profile profile ON profile.run_id = run.id
+    JOIN workflows.workflow workflow ON workflow.id = run.workflow_id
+    WHERE run.id = ${runId}::uuid AND profile.base_id = ${baseId}::uuid AND run.app_id = 'grids'
+      AND run.mode = 'execute' AND run.state IN ('queued', 'running', 'waiting') AND run.cancel_requested_at IS NULL
+      AND profile.channel NOT IN ('schedule', 'recordEvent')
+      AND workflow.active_version_id = run.workflow_version_id
+    ${lock ? client`FOR UPDATE OF run FOR SHARE OF workflow` : client``}
+  `;
+  if (!run) throw err.conflict(documentServiceText(locale).financialRunChanged);
+  return { baseId, runId, ...run };
+};
 const FrozenDocumentRequestSchema = z
   .object({
     template: DocumentTemplateSchema,
@@ -99,6 +179,7 @@ const FrozenDocumentRequestSchema = z
 
 type IssuanceRow = {
   id: string;
+  hash_version: CanonicalJsonVersion;
   base_id: string;
   request_hash: string;
   request_identity_hash: string | null;
@@ -169,7 +250,7 @@ export type RecordDocumentRequest = Pick<
   "actor" | "idempotencyKey" | "tags" | "workflowRunId" | "workflowStepKey" | "dateConfig" | "filename" | "renderPdf"
 > & { baseId: string; tableId: string; recordId: string; templateId: string };
 
-const recordRequestIdentityHash = (input: RecordDocumentRequest): string =>
+const recordRequestIdentityHash = (input: RecordDocumentRequest, version: CanonicalJsonVersion): string =>
   canonicalJson(
     {
       baseId: input.baseId,
@@ -183,66 +264,10 @@ const recordRequestIdentityHash = (input: RecordDocumentRequest): string =>
       filename: input.filename?.trim() || null,
     },
     input.dateConfig?.locale,
+    version,
   ).sha256;
 
-const actorUserId = (actor: DocumentIssuanceActor): string | null =>
-  actor.kind === "user" ? actor.userId : actor.kind === "service_account" ? actor.delegatedUserId : null;
-
 const sha256Hex = (value: string | Uint8Array): string => createHash("sha256").update(value).digest("hex");
-
-const canonicalJsonValue = (value: unknown, path = "$", seen = new Set<object>(), locale?: string): JsonValue => {
-  const t = documentServiceText(locale);
-  if (value === null || typeof value === "boolean" || typeof value === "string") {
-    if (typeof value === "string" && value.includes("\0")) throw err.badInput(t.jsonNoNul({ path }));
-    return value;
-  }
-  if (typeof value === "number") {
-    if (!Number.isFinite(value)) throw err.badInput(t.jsonFiniteNumbers({ path }));
-    return value;
-  }
-  if (typeof value !== "object") throw err.badInput(t.jsonValuesOnly({ path }));
-  if (seen.has(value)) throw err.badInput(t.jsonNoCycles({ path }));
-  seen.add(value);
-  try {
-    if (Array.isArray(value)) return value.map((item, index) => canonicalJsonValue(item, `${path}[${index}]`, seen, locale));
-    if (Object.getPrototypeOf(value) !== Object.prototype && Object.getPrototypeOf(value) !== null) {
-      throw err.badInput(t.jsonPlainObjects({ path }));
-    }
-    return Object.fromEntries(
-      Object.entries(value as Record<string, unknown>)
-        .sort(([left], [right]) => left.localeCompare(right))
-        .map(([key, item]) => {
-          if (key.includes("\0")) throw err.badInput(t.jsonKeyNoNul({ path }));
-          return [key, canonicalJsonValue(item, `${path}.${key}`, seen, locale)];
-        }),
-    );
-  } finally {
-    seen.delete(value);
-  }
-};
-
-const canonicalJson = (
-  value: Record<string, unknown>,
-  locale?: string,
-): { value: Record<string, JsonValue>; json: string; sha256: string } => {
-  const t = documentServiceText(locale);
-  const canonical = canonicalJsonValue(value, "$", new Set(), locale);
-  if (!canonical || Array.isArray(canonical) || typeof canonical !== "object") throw err.badInput(t.documentJsonObject);
-  const json = JSON.stringify(canonical);
-  return { value: canonical, json, sha256: sha256Hex(json) };
-};
-
-export const canonicalDocumentJson = (
-  value: Record<string, unknown>,
-  locale?: string,
-): { value: Record<string, JsonValue>; json: string; sha256: string } => {
-  const t = documentServiceText(locale);
-  const canonical = canonicalJson(value, locale);
-  if (new TextEncoder().encode(canonical.json).byteLength > MAX_DOCUMENT_PROFILE_INPUT_BYTES) {
-    throw err.badInput(t.documentJsonTooLarge({ limit: MAX_DOCUMENT_PROFILE_INPUT_BYTES }));
-  }
-  return canonical;
-};
 
 const serviceError = (error: unknown): ServiceError | null => {
   if (
@@ -278,7 +303,7 @@ const semanticRenderData = (renderData: Record<string, unknown>) => {
   return stable;
 };
 
-const requestHashFor = (input: IssueDocumentInput): Result<string> => {
+const requestHashFor = (input: IssueDocumentInput, version: CanonicalJsonVersion = 2): Result<string> => {
   try {
     return ok(
       canonicalJson(
@@ -294,6 +319,7 @@ const requestHashFor = (input: IssueDocumentInput): Result<string> => {
           filename: input.filename?.trim() || null,
         },
         input.dateConfig?.locale,
+        version,
       ).sha256,
     );
   } catch (error) {
@@ -361,44 +387,6 @@ const parseFrozenRequest = (value: unknown): FrozenDocumentRequest => {
   return parsed.data;
 };
 
-const validateArtifactDrafts = (
-  drafts: DocumentArtifactDraft[],
-  minimum: number,
-  locale?: string,
-): Result<Array<DocumentArtifactDraft & { sha256: string }>> => {
-  const t = documentServiceText(locale);
-  if (drafts.length < minimum || drafts.length > MAX_ARTIFACTS) {
-    return fail(err.badInput(t.artifactCount({ minimum, maximum: MAX_ARTIFACTS })));
-  }
-  const keys = new Set<string>();
-  let totalBytes = 0;
-  for (const artifact of drafts) {
-    if (!/^[a-z][a-z0-9._-]{0,63}$/.test(artifact.key) || keys.has(artifact.key)) {
-      return fail(err.badInput(t.artifactKeysInvalid));
-    }
-    keys.add(artifact.key);
-    if (
-      !artifact.filename.trim() ||
-      artifact.filename !== artifact.filename.trim() ||
-      artifact.filename.length > 255 ||
-      /[\\/\u0000-\u001f\u007f]/.test(artifact.filename)
-    ) {
-      return fail(err.badInput(t.artifactFilenameInvalid({ key: artifact.key })));
-    }
-    if (!artifact.mediaType.trim() || artifact.mediaType.length > 255 || artifact.mediaType.includes("\0")) {
-      return fail(err.badInput(t.artifactMediaTypeInvalid({ key: artifact.key })));
-    }
-    if (artifact.bytes.byteLength === 0) return fail(err.badInput(t.artifactEmpty({ key: artifact.key })));
-    totalBytes += artifact.bytes.byteLength;
-  }
-  if (totalBytes > MAX_TOTAL_ARTIFACT_BYTES) return fail(err.badInput(t.artifactBytesExceeded({ limit: MAX_TOTAL_ARTIFACT_BYTES })));
-  const pdf = drafts.find((artifact) => artifact.key === "pdf");
-  if (!pdf || pdf.mediaType !== "application/pdf" || new TextDecoder().decode(pdf.bytes.subarray(0, 4)) !== "%PDF") {
-    return fail(err.badInput(t.pdfArtifactRequired));
-  }
-  return ok(drafts.map((artifact) => ({ ...artifact, sha256: sha256Hex(artifact.bytes) })));
-};
-
 const profileInputFor = async (template: DocumentTemplate, renderData: Record<string, unknown>, locale?: string) => {
   if (template.renderer.kind !== "profile") return ok(null);
   const input = await renderDocumentProfileInput(template, renderData, locale);
@@ -408,16 +396,18 @@ const profileInputFor = async (template: DocumentTemplate, renderData: Record<st
 export const createDocumentIssuanceService = (options: { profiles?: readonly DocumentProfile[]; db?: SQL } = {}) => {
   const db = options.db ?? defaultSql;
   const profiles = profileRegistry(options.profiles ?? documentProfiles);
+  const queryProfiles = profileRegistry([...(options.profiles ?? documentProfiles), ...financialQueryProfiles]);
 
   const summaries = (): DocumentProfileSummary[] =>
     [...profiles.values()]
-      .map(({ id, version, title, description, rendererVersion, validatorVersion }) => ({
+      .map(({ id, version, title, description, rendererVersion, validatorVersion, primaryArtifact }) => ({
         id,
         version,
         title,
         description,
         rendererVersion,
         validatorVersion,
+        primaryArtifact,
       }))
       .sort((left, right) => left.id.localeCompare(right.id) || left.version - right.version);
 
@@ -448,8 +438,8 @@ export const createDocumentIssuanceService = (options: { profiles?: readonly Doc
         number: "PREVIEW",
         issuedAt: input.issuedAt ?? new Date(),
       });
-      const artifacts = validateArtifactDrafts(rendered.artifacts, 1, input.locale);
-      return artifacts.ok ? ok(artifacts.data) : artifacts;
+      const artifacts = validateDocumentArtifactDrafts(rendered.artifacts, profile.primaryArtifact, input.locale);
+      return artifacts.ok ? ok(artifacts.data.artifacts) : artifacts;
     } catch (error) {
       const known = serviceError(error);
       if (known) return fail(isGermanDocumentLocale(input.locale) ? { ...known, message: t.profilePreviewFailed } : known);
@@ -465,7 +455,7 @@ export const createDocumentIssuanceService = (options: { profiles?: readonly Doc
 
   const issueDocument = async (
     input: IssueDocumentInput,
-    requestIdentityHash?: string,
+    requestIdentity?: RecordDocumentRequest,
   ): Promise<Result<{ document: Document; artifacts: DocumentArtifact[]; replayed: boolean }>> => {
     const t = documentServiceText(input.dateConfig?.locale);
     const idempotency = validateIdempotencyKey(input.idempotencyKey, input.dateConfig?.locale);
@@ -490,15 +480,17 @@ export const createDocumentIssuanceService = (options: { profiles?: readonly Doc
       const receipt = await db.begin(async (tx) => {
         await tx`SELECT pg_advisory_xact_lock(hashtextextended(${`grids:document-issuance:${input.snapshot.baseId}:${operationKeyHash}`}, 0))`;
         const [existing] = await tx<IssuanceRow[]>`
-          SELECT id::text, base_id::text, request_hash, request_identity_hash, document_short_id, frozen_request, document_id::text, created_at
+          SELECT id::text, hash_version, base_id::text, request_hash, request_identity_hash, document_short_id, frozen_request, document_id::text, created_at
           FROM grids.document_issuances
           WHERE base_id = ${input.snapshot.baseId}::uuid AND operation_key_hash = ${operationKeyHash}
         `;
         if (existing) {
+          const existingRequestHash = requestHashFor(input, existing.hash_version);
+          if (!existingRequestHash.ok) throw existingRequestHash.error;
           if (
             existing.request_identity_hash
-              ? existing.request_identity_hash !== requestIdentityHash
-              : existing.request_hash !== requestHash.data
+              ? !requestIdentity || existing.request_identity_hash !== recordRequestIdentityHash(requestIdentity, existing.hash_version)
+              : existing.request_hash !== existingRequestHash.data
           )
             throw err.conflict(t.idempotencyConflict);
           return existing;
@@ -697,9 +689,9 @@ export const createDocumentIssuanceService = (options: { profiles?: readonly Doc
             profileInput,
           };
           const [created] = await attempt<IssuanceRow[]>`
-          INSERT INTO grids.document_issuances (base_id, operation_key_hash, request_hash, request_identity_hash, document_short_id, frozen_request)
-          VALUES (${input.snapshot.baseId}::uuid, ${operationKeyHash}, ${requestHash.data}, ${requestIdentityHash ?? null}, ${documentShortId}, ${canonicalJson({ ...frozen }, input.dateConfig?.locale).value}::jsonb)
-          RETURNING id::text, base_id::text, request_hash, request_identity_hash, document_short_id, frozen_request, document_id::text, created_at
+          INSERT INTO grids.document_issuances (base_id, hash_version, operation_key_hash, request_hash, request_identity_hash, document_short_id, frozen_request)
+          VALUES (${input.snapshot.baseId}::uuid, 2, ${operationKeyHash}, ${requestHash.data}, ${requestIdentity ? recordRequestIdentityHash(requestIdentity, 2) : null}, ${documentShortId}, ${canonicalJson({ ...frozen }, input.dateConfig?.locale, 2).value}::jsonb)
+          RETURNING id::text, hash_version, base_id::text, request_hash, request_identity_hash, document_short_id, frozen_request, document_id::text, created_at
         `;
           if (!created) throw err.internal(t.receiptCreateFailed);
           return created;
@@ -712,6 +704,8 @@ export const createDocumentIssuanceService = (options: { profiles?: readonly Doc
       }
       const frozen = parseFrozenRequest(receipt.frozen_request);
       let rendered: {
+        output?: Record<string, unknown>;
+        primaryArtifact: PrimaryDocumentArtifact;
         artifacts: DocumentArtifactDraft[];
         validationStatus: "valid" | "warning" | null;
         validationReport: Record<string, unknown> | null;
@@ -725,7 +719,13 @@ export const createDocumentIssuanceService = (options: { profiles?: readonly Doc
           number: frozen.documentNumber,
           issuedAt: new Date(frozen.issuedAt),
         });
-        rendered = { artifacts: output.artifacts, validationStatus: output.validationStatus, validationReport: output.validationReport };
+        rendered = {
+          ...(output.output === undefined ? {} : { output: canonicalDocumentJson(output.output, input.dateConfig?.locale).value }),
+          primaryArtifact: selected.primaryArtifact,
+          artifacts: output.artifacts,
+          validationStatus: output.validationStatus,
+          validationReport: output.validationReport,
+        };
       } else {
         const renderInput = {
           templateSnapshot: templateSnapshot(frozen.template),
@@ -738,6 +738,7 @@ export const createDocumentIssuanceService = (options: { profiles?: readonly Doc
           return fail(err.badInput(t.rendererNoPdf));
         }
         rendered = {
+          primaryArtifact: { key: "pdf", mediaType: "application/pdf" },
           artifacts: [
             {
               key: "pdf",
@@ -750,15 +751,17 @@ export const createDocumentIssuanceService = (options: { profiles?: readonly Doc
           validationReport: null,
         };
       }
-      const artifactDrafts = validateArtifactDrafts(rendered.artifacts, 1, input.dateConfig?.locale);
+      const artifactDrafts = validateDocumentArtifactDrafts(rendered.artifacts, rendered.primaryArtifact, input.dateConfig?.locale);
       if (!artifactDrafts.ok) return artifactDrafts;
-      const pdf = artifactDrafts.data.find((artifact) => artifact.key === "pdf")!;
-      const snapshotHash = frozen.profileInput ? canonicalDocumentJson(frozen.profileInput, input.dateConfig?.locale).sha256 : null;
+      const primary = artifactDrafts.data.primary;
+      const snapshotHash = frozen.profileInput
+        ? canonicalDocumentJson(frozen.profileInput, input.dateConfig?.locale, receipt.hash_version).sha256
+        : null;
       const templateData = templateSnapshot(frozen.template);
-      const templateRevision = canonicalDocumentJson(templateData, input.dateConfig?.locale).sha256;
+      const templateRevision = canonicalDocumentJson(templateData, input.dateConfig?.locale, receipt.hash_version).sha256;
       const finalized = await db.begin(async (tx) => {
         const [locked] = await tx<IssuanceRow[]>`
-          SELECT id::text, base_id::text, request_hash, request_identity_hash, document_short_id, frozen_request, document_id::text, created_at
+          SELECT id::text, hash_version, base_id::text, request_hash, request_identity_hash, document_short_id, frozen_request, document_id::text, created_at
           FROM grids.document_issuances WHERE id = ${receipt.id}::uuid FOR UPDATE
         `;
         if (!locked) throw err.internal(t.receiptMissing);
@@ -770,76 +773,491 @@ export const createDocumentIssuanceService = (options: { profiles?: readonly Doc
         }
         const persisted = await persistRecordSnapshot(frozen.snapshot, tx, input.dateConfig?.locale);
         if (!persisted.ok) throw persisted.error;
-        const documentId = Bun.randomUUIDv7();
-        const files: Array<{ draft: (typeof artifactDrafts.data)[number]; fileId: string }> = [];
-        for (const draft of artifactDrafts.data) {
-          const file = await createProtected(
-            {
-              ownerKind: "document_artifact",
-              ownerId: documentId,
-              baseId: frozen.snapshot.baseId,
-              tableId: frozen.snapshot.tableId,
-              recordId: frozen.snapshot.recordId,
-              userId: actorUserId(frozen.actor),
-              filename: draft.filename,
-              mimeType: draft.mediaType,
-              bytes: draft.bytes,
-            },
-            tx,
-          );
-          if (!file.ok) throw file.error;
-          files.push({ draft, fileId: file.data.id });
-        }
         const selectedProfile =
           frozen.template.renderer.kind === "profile"
             ? profiles.get(profileKey(frozen.template.renderer.id, frozen.template.renderer.version))!
             : null;
-        const [row] = await tx<DocumentDbRow[]>`
-          INSERT INTO grids.documents (
-            id, short_id, template_id, workflow_run_id, workflow_step_key, snapshot_id, base_id, table_id, record_id,
-            document_number, filename, tags, template_snapshot, render_data, renderer_kind, renderer_version, template_revision,
-            profile_id, profile_version, profile_snapshot, snapshot_sha256,
-            validator_version, validation_status, validation_report, issued_actor, created_by, created_at
-          ) VALUES (
-            ${documentId}::uuid, ${receipt.document_short_id}, ${frozen.template.id}::uuid, ${frozen.workflowRunId}::uuid, ${frozen.workflowStepKey},
-            ${frozen.snapshot.id}::uuid, ${frozen.snapshot.baseId}::uuid, ${frozen.snapshot.tableId}::uuid, ${frozen.snapshot.recordId}::uuid,
-            ${frozen.documentNumber}, ${pdf.filename}, ${tx.array(frozen.tags, "TEXT")}, ${templateData}::jsonb,
-            ${frozen.renderData}::jsonb, ${frozen.template.renderer.kind},
-            ${selectedProfile?.rendererVersion ?? DOCUMENT_HTML_RENDERER_VERSION}, ${templateRevision},
-            ${selectedProfile?.id ?? null}, ${selectedProfile?.version ?? null},
-            ${frozen.profileInput}::jsonb, ${snapshotHash},
-            ${selectedProfile?.validatorVersion ?? null}, ${rendered.validationStatus}, ${rendered.validationReport}::jsonb,
-            ${frozen.actor}::jsonb, ${actorUserId(frozen.actor)}::uuid, ${frozen.issuedAt}
-          ) RETURNING *
-        `;
-        if (!row) throw err.internal(t.documentInsertFailed);
-        for (const file of files)
-          await tx`
-          INSERT INTO grids.document_artifacts (document_id, artifact_key, file_id)
-          VALUES (${documentId}::uuid, ${file.draft.key}, ${file.fileId}::uuid)
-        `;
-        if (frozen.allocationId) await bindNumberAllocation(tx, frozen.allocationId, { kind: "document", id: documentId });
-        await tx`
-          UPDATE grids.document_issuances
-          SET document_id = ${documentId}::uuid, completed_at = now(), frozen_request = NULL
-          WHERE id = ${receipt.id}::uuid
-        `;
-        await logAudit(
+        if (selectedProfile && (!frozen.profileInput || !snapshotHash || !rendered.validationStatus || !rendered.validationReport)) {
+          throw err.internal(t.profileInputMissing);
+        }
+        const document = await persistIssuedDocument(
           {
+            receiptId: receipt.id,
+            hashVersion: receipt.hash_version,
+            shortId: receipt.document_short_id,
             baseId: frozen.snapshot.baseId,
-            tableId: frozen.snapshot.tableId,
-            recordId: frozen.snapshot.recordId,
-            userId: actorUserId(frozen.actor),
-            action: "document.created",
-            diff: { documentId: { old: null, new: receipt.document_short_id }, documentNumber: { old: null, new: frozen.documentNumber } },
+            queryDataId: null,
+            record: {
+              templateId: frozen.template.id,
+              snapshotId: frozen.snapshot.id,
+              tableId: frozen.snapshot.tableId,
+              recordId: frozen.snapshot.recordId,
+            },
+            workflowRunId: frozen.workflowRunId,
+            workflowStepKey: frozen.workflowStepKey,
+            number: frozen.documentNumber,
+            tags: frozen.tags,
+            templateSnapshot: templateData,
+            templateRevision,
+            renderData: frozen.renderData,
+            rendererVersion: selectedProfile?.rendererVersion ?? DOCUMENT_HTML_RENDERER_VERSION,
+            profile:
+              selectedProfile && frozen.profileInput && snapshotHash && rendered.validationStatus && rendered.validationReport
+                ? {
+                    id: selectedProfile.id,
+                    version: selectedProfile.version,
+                    input: frozen.profileInput,
+                    ...(rendered.output === undefined ? {} : { output: rendered.output }),
+                    sha256: snapshotHash,
+                    validatorVersion: selectedProfile.validatorVersion,
+                    validationStatus: rendered.validationStatus,
+                    validationReport: rendered.validationReport,
+                  }
+                : null,
+            primary,
+            artifacts: artifactDrafts.data.artifacts,
+            actor: frozen.actor,
+            issuedAt: frozen.issuedAt,
+            allocationId: frozen.allocationId,
+            locale: input.dateConfig?.locale,
           },
           tx,
         );
-        const [document] = await hydrateDocuments([row], tx);
-        if (!document) throw err.internal(t.createdDocumentReadFailed);
         return { document, replayed: false };
       });
       return ok({ document: finalized.document, artifacts: finalized.document.artifacts, replayed: finalized.replayed });
+    } catch (error) {
+      const known = serviceError(error);
+      if (known) return fail(known);
+      throw error;
+    }
+  };
+
+  const issueQueryDocument = async (
+    input: z.input<typeof QueryDocumentInputSchema> & {
+      idempotencyKey: string;
+      locale?: string;
+      /** Recheck run execution, Base write and every source table's read access. */
+      authorize: (tableIds: readonly string[], client: SQL) => Promise<void>;
+    },
+  ): Promise<Result<Document | QueryDocumentConfirmationRequired>> => {
+    const t = documentServiceText(input.locale);
+    const validKey = validateIdempotencyKey(input.idempotencyKey, input.locale);
+    if (!validKey.ok) return validKey;
+    const { idempotencyKey, authorize, locale, ...raw } = input;
+    const parsed = QueryDocumentInputSchema.safeParse(raw);
+    if (!parsed.success) return fail(err.badInput(t.requestInvalidJson));
+    const pendingRequest = parsed.data;
+    if (pendingRequest.sourceVersions && pendingRequest.output.kind !== "datev-csv" && pendingRequest.output.kind !== "sepa-xml")
+      return fail(err.badInput(t.requestInvalidJson));
+    const validOutput = validateDocumentQueryOutput(pendingRequest.output, input.locale);
+    if (!validOutput.ok) return validOutput;
+    const profile = queryProfiles.get(profileKey(`grids.${pendingRequest.output.kind}`, 1));
+    if (!profile) return fail(err.badInput(t.unknownProfile({ profile: `grids.${pendingRequest.output.kind}@1` })));
+    try {
+      await authorize([], db);
+      const captured = await loadWorkflowQueryData(
+        {
+          baseId: pendingRequest.baseId,
+          runId: pendingRequest.runId,
+          id: pendingRequest.data.id,
+          sha256: pendingRequest.data.sha256,
+          locale,
+        },
+        db,
+      );
+      if (!captured.ok) return captured;
+      const request = QueryDocumentRequestSchema.parse({
+        ...pendingRequest,
+        ...(pendingRequest.sourceVersions === "data" ? { sourceVersions: sourceVersionsFromData(captured.data.payload, locale) } : {}),
+      });
+      if (canonicalJson(captured.data.reference, locale).sha256 !== canonicalJson(request.data, locale).sha256) {
+        return fail(err.conflict(t.workflowQueryIntegrityFailed));
+      }
+      const tableIds = captured.data.payload.tableIds;
+      await authorize(tableIds, db);
+      const operationHash = sha256Hex(idempotencyKey);
+      const requestHash = canonicalJson(request, locale, 2).sha256;
+      const receipt = await db.begin(async (tx) => {
+        await tx`SELECT pg_advisory_xact_lock(hashtextextended(${`grids:document-issuance:${request.baseId}:${operationHash}`}, 0))`;
+        await authorize(tableIds, tx);
+        const [existing] = await tx<QueryIssuanceRow[]>`
+          SELECT id::text, hash_version, base_id::text, request_hash, request_identity_hash, document_short_id, frozen_request, document_id::text, created_at,
+            confirmation_hash, confirmed_actor, confirmed_at
+          FROM grids.document_issuances WHERE base_id = ${request.baseId}::uuid AND operation_key_hash = ${operationHash}
+        `;
+        if (existing) {
+          if (
+            existing.request_hash !== canonicalJson(request, locale, existing.hash_version).sha256 ||
+            existing.request_identity_hash !== null
+          )
+            throw err.conflict(t.idempotencyConflict);
+          return existing;
+        }
+        await requireDocumentSourceVersions({ ...request, authorize, locale }, tx);
+        return insertWithShortIdForDb(tx, "document_issuances_document_short_id_key", async (attempt, shortId) => {
+          await attempt`INSERT INTO grids.document_profile_counters (base_id, profile_id)
+            VALUES (${request.baseId}::uuid, ${profile.id}) ON CONFLICT DO NOTHING`;
+          const [counter] = await attempt<Array<{ next_value: number | string | bigint }>>`
+            SELECT next_value FROM grids.document_profile_counters WHERE base_id = ${request.baseId}::uuid AND profile_id = ${profile.id} FOR UPDATE
+          `;
+          const value = Number(counter?.next_value);
+          if (!Number.isSafeInteger(value) || value < 1) throw err.internal(t.seriesExhausted);
+          const issuedAt = new Date();
+          const number = profile.formatNumber({ value, issuedAt });
+          let financial: z.infer<typeof FrozenQueryDocumentSchema>["financial"];
+          if (request.output.kind === "datev-csv" || request.output.kind === "sepa-xml") {
+            if (request.actor.kind === "system") throw err.forbidden(t.financialConfirmationRequired);
+            const seed = Bun.randomUUIDv7().replaceAll("-", "");
+            const identifiers = { messageId: `M${seed}`, paymentInformationId: `P${seed}` };
+            const normalized = normalizeFinancialDocumentOutput(request.output, captured.data.payload, identifiers, locale);
+            if (!normalized.ok) throw normalized.error;
+            financial = {
+              identifiers,
+              normalizedSha256: normalized.data.sha256,
+              runBindingHash: canonicalJson(await financialRunBinding(request.baseId, request.runId, attempt, locale), locale, 2).sha256,
+            };
+          }
+          const filename =
+            request.filename ??
+            (request.output.kind === "datev-csv"
+              ? `EXTF_${number}.csv`
+              : request.output.kind === "sepa-xml"
+                ? `${number}.xml`
+                : `${number}.${request.output.kind}`);
+          if (
+            (request.output.kind === "datev-csv" && !/^EXTF_.+\.csv$/.test(filename)) ||
+            (request.output.kind === "sepa-xml" && !filename.endsWith(".xml"))
+          )
+            throw err.badInput(t.profileInputInvalid);
+          const frozen = {
+            ...request,
+            kind: "query" as const,
+            number,
+            issuedAt: issuedAt.toISOString(),
+            filename,
+            ...(financial ? { financial } : {}),
+          };
+          const confirmationHash = financial ? canonicalJson(frozen, locale, 2).sha256 : null;
+          await attempt`UPDATE grids.document_profile_counters SET next_value = ${value + 1}
+            WHERE base_id = ${request.baseId}::uuid AND profile_id = ${profile.id}`;
+          const [created] = await attempt<QueryIssuanceRow[]>`
+            INSERT INTO grids.document_issuances (base_id, hash_version, operation_key_hash, request_hash, document_short_id, frozen_request, query_data_id, confirmation_hash)
+            VALUES (${request.baseId}::uuid, 2, ${operationHash}, ${requestHash}, ${shortId}, ${canonicalJson(frozen, locale, 2).value}::jsonb, ${request.data.id}::uuid, ${confirmationHash})
+            RETURNING id::text, hash_version, base_id::text, request_hash, request_identity_hash, document_short_id, frozen_request, document_id::text, created_at,
+              confirmation_hash, confirmed_actor, confirmed_at
+          `;
+          if (!created) throw err.internal(t.receiptCreateFailed);
+          return created;
+        });
+      });
+      if (receipt.document_id) {
+        const document = await getDocument(receipt.document_id);
+        return document ? ok(document) : fail(err.internal(t.receiptReadFailed));
+      }
+      const frozen = FrozenQueryDocumentSchema.parse(receipt.frozen_request);
+      const { kind: _kind, issuedAt: _issuedAt, number: _number, filename: _filename, financial, ...identity } = frozen;
+      // filename may have been generated after reservation; the request hash
+      // authenticates all caller-controlled inputs before frozen data is used.
+      if (canonicalJson({ ...identity, filename: request.filename }, locale, receipt.hash_version).sha256 !== receipt.request_hash)
+        throw err.conflict(t.idempotencyConflict);
+      const financialOutput = frozen.output.kind === "datev-csv" || frozen.output.kind === "sepa-xml" ? frozen.output : null;
+      const normalized =
+        financialOutput && financial
+          ? normalizeFinancialDocumentOutput(financialOutput, captured.data.payload, financial.identifiers, locale, receipt.hash_version)
+          : null;
+      if (financialOutput) {
+        if (
+          !financial ||
+          !receipt.confirmation_hash ||
+          !normalized?.ok ||
+          normalized.data.sha256 !== financial.normalizedSha256 ||
+          canonicalJson(frozen, locale, receipt.hash_version).sha256 !== receipt.confirmation_hash
+        )
+          throw normalized && !normalized.ok ? normalized.error : err.conflict(t.workflowQueryIntegrityFailed);
+        if (!receipt.confirmed_at)
+          return ok({ kind: "confirmationRequired", receiptId: receipt.document_short_id, sha256: receipt.confirmation_hash });
+        const concurrentDocument = await db.begin(async (tx) => {
+          await authorize(tableIds, tx);
+          if (
+            canonicalJson(await financialRunBinding(frozen.baseId, frozen.runId, tx, locale), locale, receipt.hash_version).sha256 !==
+            financial.runBindingHash
+          )
+            throw err.conflict(t.financialConfirmationRequired);
+          const [current] = await tx<Array<{ document_id: string | null }>>`SELECT document_id::text FROM grids.document_issuances
+            WHERE id = ${receipt.id}::uuid FOR UPDATE`;
+          if (!current) throw err.internal(t.receiptMissing);
+          if (current.document_id) {
+            const [document] = await hydrateDocuments(
+              await tx<DocumentDbRow[]>`SELECT * FROM grids.documents WHERE id = ${current.document_id}::uuid`,
+              tx,
+            );
+            if (!document) throw err.internal(t.receiptReadFailed);
+            return document;
+          }
+          await requireDocumentSourceVersions({ ...frozen, authorize, locale }, tx);
+          return null;
+        });
+        if (concurrentDocument) return ok(concurrentDocument);
+      } else if (financial || receipt.confirmation_hash) throw err.conflict(t.workflowQueryIntegrityFailed);
+      const { kind: outputKind, ...outputOptions } = frozen.output;
+      const profileInput = profile.input.safeParse(
+        normalized?.ok
+          ? { ...normalized.data.input, filename: frozen.filename }
+          : {
+              columns: captured.data.payload.columns,
+              rows: captured.data.payload.rows,
+              filename: frozen.filename,
+              ...(outputKind === "csv" || outputKind === "json" ? { options: outputOptions } : {}),
+              ...(outputKind === "pdf" ? { content: outputOptions } : {}),
+              ...(outputKind === "xml" ? outputOptions : {}),
+            },
+      );
+      if (!profileInput.success) return fail(err.badInput(t.profileInputInvalid));
+      const rendered = await profile.issue(profileInput.data, { number: frozen.number, issuedAt: new Date(frozen.issuedAt) });
+      const profileOutput = rendered.output === undefined ? undefined : canonicalDocumentJson(rendered.output, locale).value;
+      const checked = validateDocumentArtifactDrafts(rendered.artifacts, profile.primaryArtifact, locale);
+      if (!checked.ok) return checked;
+      const source = {
+        data: frozen.data,
+        output: frozen.output,
+        filename: frozen.filename,
+        ...(financial
+          ? {
+              financial,
+              confirmation: { sha256: receipt.confirmation_hash, actor: receipt.confirmed_actor, at: receipt.confirmed_at?.toISOString() },
+            }
+          : {}),
+      };
+      const template = { renderer: { kind: "profile", id: profile.id, version: profile.version }, output: frozen.output };
+      return await db.begin(async (tx) => {
+        await authorize(tableIds, tx);
+        if (
+          financial &&
+          canonicalJson(await financialRunBinding(frozen.baseId, frozen.runId, tx, locale), locale, receipt.hash_version).sha256 !==
+            financial.runBindingHash
+        )
+          throw err.conflict(t.financialConfirmationRequired);
+        const [locked] = await tx<Array<{ document_id: string | null }>>`
+          SELECT document_id::text FROM grids.document_issuances WHERE id = ${receipt.id}::uuid FOR UPDATE
+        `;
+        if (!locked) throw err.internal(t.receiptMissing);
+        if (locked.document_id) {
+          const [document] = await hydrateDocuments(
+            await tx<DocumentDbRow[]>`SELECT * FROM grids.documents WHERE id = ${locked.document_id}::uuid`,
+            tx,
+          );
+          if (!document) throw err.internal(t.receiptReadFailed);
+          return ok(document);
+        }
+        if (financial && normalized?.ok) {
+          // Rendering happens outside this transaction. Approval/source state
+          // must still match when the document and its claims become durable.
+          await requireDocumentSourceVersions({ ...frozen, authorize, locale }, tx);
+          await reserveDocumentExportClaims(
+            tx,
+            {
+              baseId: frozen.baseId,
+              receiptId: receipt.id,
+              destinationKey: normalized.data.input.destinationKey,
+              purpose: normalized.data.purpose,
+              businessIds: normalized.data.input.rows.map((row) => row.businessId),
+            },
+            locale,
+          );
+        }
+        const document = await persistIssuedDocument(
+          {
+            receiptId: receipt.id,
+            hashVersion: receipt.hash_version,
+            shortId: receipt.document_short_id,
+            baseId: frozen.baseId,
+            queryDataId: frozen.data.id,
+            record: null,
+            workflowRunId: frozen.runId,
+            workflowStepKey: frozen.stepKey,
+            number: frozen.number,
+            tags: frozen.tags,
+            templateSnapshot: template,
+            templateRevision: canonicalJson(template, locale, receipt.hash_version).sha256,
+            renderData: { query: frozen.data },
+            rendererVersion: profile.rendererVersion,
+            profile: {
+              id: profile.id,
+              version: profile.version,
+              input: source,
+              ...(profileOutput === undefined ? {} : { output: profileOutput }),
+              sha256: canonicalJson(source, locale, receipt.hash_version).sha256,
+              validatorVersion: profile.validatorVersion,
+              validationStatus: rendered.validationStatus,
+              validationReport: rendered.validationReport,
+            },
+            primary: checked.data.primary,
+            artifacts: checked.data.artifacts,
+            actor: frozen.actor,
+            issuedAt: frozen.issuedAt,
+            allocationId: null,
+            locale,
+          },
+          tx,
+        );
+        return ok(document);
+      });
+    } catch (error) {
+      const known = serviceError(error);
+      if (known) return fail(known);
+      throw error;
+    }
+  };
+
+  const loadQueryDocumentConfirmation = async (input: QueryDocumentConfirmationInput, tx: SQL, lock = true) => {
+    const t = documentServiceText(input.locale);
+    validateConfirmationInput(input);
+    await input.authorize([], tx);
+    const runBinding = await financialRunBinding(input.baseId, input.runId, tx, input.locale, lock);
+    const [receipt] = await tx<QueryIssuanceRow[]>`
+      SELECT receipt.id::text, receipt.hash_version, receipt.base_id::text, receipt.request_hash, receipt.request_identity_hash,
+        receipt.document_short_id, receipt.frozen_request, receipt.document_id::text, receipt.created_at,
+        receipt.confirmation_hash, receipt.confirmed_actor, receipt.confirmed_at
+      FROM grids.document_issuances receipt
+      JOIN grids.workflow_query_data data ON data.id = receipt.query_data_id
+      WHERE receipt.base_id = ${input.baseId}::uuid AND data.run_id = ${input.runId}::uuid
+        AND receipt.document_short_id = ${input.receiptId} AND receipt.confirmation_hash IS NOT NULL
+      ${lock ? tx`FOR UPDATE OF receipt` : tx``}
+    `;
+    if (!receipt?.confirmation_hash || receipt.document_id) throw err.notFound(t.receiptMissing);
+    const parsed = FrozenQueryDocumentSchema.safeParse(receipt.frozen_request);
+    if (!parsed.success) throw err.conflict(t.workflowQueryIntegrityFailed);
+    const frozen = parsed.data;
+    if (
+      !frozen.financial ||
+      (frozen.output.kind !== "datev-csv" && frozen.output.kind !== "sepa-xml") ||
+      frozen.baseId !== input.baseId ||
+      frozen.runId !== input.runId ||
+      canonicalJson(frozen, input.locale, receipt.hash_version).sha256 !== receipt.confirmation_hash
+    )
+      throw err.conflict(t.workflowQueryIntegrityFailed);
+    if (
+      input.actor.kind === "system" ||
+      canonicalJson(input.actor, input.locale).sha256 !== canonicalJson(frozen.actor, input.locale).sha256
+    )
+      throw err.forbidden(t.financialActorMismatch);
+    if (canonicalJson(runBinding, input.locale, receipt.hash_version).sha256 !== frozen.financial.runBindingHash)
+      throw err.conflict(t.financialRunChanged);
+    const capture = await loadWorkflowQueryData(
+      { baseId: input.baseId, runId: input.runId, id: frozen.data.id, sha256: frozen.data.sha256, locale: input.locale },
+      tx,
+    );
+    if (!capture.ok) throw capture.error;
+    await input.authorize(capture.data.payload.tableIds, tx);
+    await requireDocumentSourceVersions({ ...frozen, authorize: input.authorize, locale: input.locale, lock }, tx);
+    const normalized = normalizeFinancialDocumentOutput(
+      frozen.output,
+      capture.data.payload,
+      frozen.financial.identifiers,
+      input.locale,
+      receipt.hash_version,
+    );
+    if (!normalized.ok) throw normalized.error;
+    if (normalized.data.sha256 !== frozen.financial.normalizedSha256) throw err.conflict(t.workflowQueryIntegrityFailed);
+    return {
+      receipt,
+      confirmationHash: receipt.confirmation_hash,
+      frozen,
+      version: frozen.output.version,
+      normalized: normalized.data,
+      capture: capture.data,
+    };
+  };
+
+  const inspectQueryDocumentConfirmation = async (input: QueryDocumentConfirmationInput) => {
+    try {
+      return ok(
+        await db.begin(async (tx) => {
+          await tx`SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY`;
+          const { receipt, confirmationHash, frozen, version, normalized, capture } = await loadQueryDocumentConfirmation(input, tx, false);
+          const preview = {
+            receiptId: receipt.document_short_id,
+            sha256: confirmationHash,
+            confirmedAt: receipt.confirmed_at?.toISOString() ?? null,
+            number: frozen.number,
+            filename: frozen.filename,
+            version,
+            source: {
+              capturedAt: capture.reference.capturedAt,
+              rowCount: capture.reference.rowCount,
+              selectionLimit: capture.payload.selectionLimit,
+              kind:
+                capture.payload.version === 1
+                  ? ("query" as const)
+                  : capture.payload.version === 2
+                    ? ("values" as const)
+                    : capture.payload.version === 3
+                      ? ("documents" as const)
+                      : ("recordSnapshots" as const),
+              query: capture.payload.version === 1 ? capture.payload.source : null,
+            },
+          };
+          return normalized.kind === "datev-csv"
+            ? { ...preview, kind: normalized.kind, input: normalized.input }
+            : { ...preview, kind: normalized.kind, input: normalized.input };
+        }),
+      );
+    } catch (error) {
+      const known = serviceError(error);
+      if (known) return fail(known);
+      throw error;
+    }
+  };
+
+  const confirmQueryDocument = async (input: QueryDocumentConfirmationInput & { sha256: string }): Promise<Result<void>> => {
+    const t = documentServiceText(input.locale);
+    if (!/^[a-f0-9]{64}$/.test(input.sha256)) return fail(err.badInput(t.requestInvalidJson));
+    try {
+      validateConfirmationInput(input);
+      await db.begin(async (tx) => {
+        await input.authorize([], tx);
+        // Same run-before-receipt lock order as the issuing worker, including
+        // replay of a completed confirmation whose run is already terminal.
+        await tx`SELECT id FROM workflows.run WHERE id = ${input.runId}::uuid FOR UPDATE`;
+        const [completed] = await tx<
+          Array<{ document_id: string | null; confirmation_hash: string; confirmed_actor: unknown; query_data_id: string; sha256: string }>
+        >`
+          SELECT receipt.document_id::text, receipt.confirmation_hash, receipt.confirmed_actor, receipt.query_data_id::text, data.sha256
+          FROM grids.document_issuances receipt JOIN grids.workflow_query_data data ON data.id = receipt.query_data_id
+          WHERE receipt.base_id = ${input.baseId}::uuid AND data.run_id = ${input.runId}::uuid
+            AND receipt.document_short_id = ${input.receiptId}
+            AND receipt.confirmation_hash IS NOT NULL
+          FOR UPDATE OF receipt
+        `;
+        if (completed?.document_id) {
+          const confirmedActor = DocumentIssuanceActorSchema.safeParse(completed.confirmed_actor);
+          if (
+            completed.confirmation_hash !== input.sha256 ||
+            !confirmedActor.success ||
+            canonicalJson(confirmedActor.data, input.locale).sha256 !== canonicalJson(input.actor, input.locale).sha256
+          )
+            throw err.conflict(t.financialConfirmationRequired);
+          const capture = await loadWorkflowQueryData(
+            { baseId: input.baseId, runId: input.runId, id: completed.query_data_id, sha256: completed.sha256, locale: input.locale },
+            tx,
+          );
+          if (!capture.ok) throw capture.error;
+          await input.authorize(capture.data.payload.tableIds, tx);
+          // A lost confirmation response must not turn a completed export into
+          // an error or wake its run again. The original actor/hash still bind it.
+          return;
+        }
+        const { receipt } = await loadQueryDocumentConfirmation(input, tx);
+        if (receipt.confirmation_hash !== input.sha256) throw err.conflict(t.financialConfirmationRequired);
+        if (!receipt.confirmed_at) {
+          await tx`UPDATE grids.document_issuances SET confirmed_actor = ${input.actor}::jsonb, confirmed_at = now()
+            WHERE id = ${receipt.id}::uuid`;
+        }
+        // The kernel persists the signal even if confirmation races parking.
+        await wakeWorkflowRunsWaitingOn({ appId: "grids", kind: "grids.document-confirmation", key: input.receiptId }, { db: tx });
+      });
+      return ok();
     } catch (error) {
       const known = serviceError(error);
       if (known) return fail(known);
@@ -858,19 +1276,19 @@ export const createDocumentIssuanceService = (options: { profiles?: readonly Doc
     const validKey = validateIdempotencyKey(request.idempotencyKey, request.dateConfig?.locale);
     if (!validKey.ok) return validKey;
     if (!DocumentIssuanceActorSchema.safeParse(request.actor).success) return fail(err.badInput(t.actorInvalid));
-    let identityHash: string;
     try {
-      identityHash = recordRequestIdentityHash(request);
+      recordRequestIdentityHash(request, 2);
     } catch (error) {
       return fail(serviceError(error) ?? err.badInput(t.requestInvalidJson));
     }
     const [receipt] = await db<IssuanceRow[]>`
-      SELECT id::text, base_id::text, request_hash, request_identity_hash, document_short_id, frozen_request, document_id::text, created_at
+      SELECT id::text, hash_version, base_id::text, request_hash, request_identity_hash, document_short_id, frozen_request, document_id::text, created_at
       FROM grids.document_issuances
       WHERE base_id = ${request.baseId}::uuid AND operation_key_hash = ${sha256Hex(request.idempotencyKey)}
     `;
     if (receipt?.request_identity_hash) {
-      if (receipt.request_identity_hash !== identityHash) return fail(err.conflict(t.idempotencyConflict));
+      if (receipt.request_identity_hash !== recordRequestIdentityHash(request, receipt.hash_version))
+        return fail(err.conflict(t.idempotencyConflict));
       if (receipt.document_id) {
         const document = await getDocument(receipt.document_id);
         return document ? ok(document) : fail(err.internal(t.receiptReadFailed));
@@ -883,17 +1301,26 @@ export const createDocumentIssuanceService = (options: { profiles?: readonly Doc
           snapshot: frozen.snapshot,
           renderData: frozen.renderData,
         },
-        identityHash,
+        request,
       );
       return resumed.ok ? ok(resumed.data.document) : resumed;
     }
     const captured = await capture();
     if (!captured.ok) return captured;
-    const issued = await issueDocument({ ...request, ...captured.data }, identityHash);
+    const issued = await issueDocument({ ...request, ...captured.data }, request);
     return issued.ok ? ok(issued.data.document) : issued;
   };
 
-  return { profiles: summaries, preview, issueDocument, issueRecordDocument, getDocumentArtifact };
+  return {
+    profiles: summaries,
+    preview,
+    issueDocument,
+    issueRecordDocument,
+    issueQueryDocument,
+    inspectQueryDocumentConfirmation,
+    confirmQueryDocument,
+    getDocumentArtifact,
+  };
 };
 
 export const documentIssuanceService = createDocumentIssuanceService();

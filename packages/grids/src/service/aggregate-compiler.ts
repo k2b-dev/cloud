@@ -1,6 +1,8 @@
 import { sql } from "bun";
 import { type AggregateKind, aggregateOutputKey, isFieldAggregatable } from "./aggregate-capabilities";
 import { storageOf } from "./field-storage";
+import type { FormulaSqlExpression } from "./formula-sql-compiler";
+import { requireValidCalculationSql } from "./formula-sql-values";
 import { numericAverageSql } from "./numeric-division-sql";
 import { numericMedianSql } from "./numeric-median-sql";
 import type { Field } from "./types";
@@ -27,7 +29,8 @@ const numericProjection = (field: Field): any => {
 
 const dateProjection = (field: Field): any => storageOf(field).project(field, "r") ?? sql`NULL::date`;
 
-const existsProjection = (field: Field): { ref: any; system: boolean } => {
+const existsProjection = (field: Field, computed?: FormulaSqlExpression): { ref: any; system: boolean } => {
+  if (computed) return { ref: requireValidCalculationSql(computed), system: computed.type !== "text" };
   const storage = storageOf(field);
   if (storage.kind === "system") return { ref: storage.project(field, "r"), system: true };
   return { ref: sql`r.data->>${field.id}`, system: false };
@@ -36,9 +39,9 @@ const existsProjection = (field: Field): { ref: any; system: boolean } => {
 type CompileAggResult = { ok: true; columns: AggregateColumn[] } | { ok: false; error: string };
 type CompileAggregateResult = { ok: true; column: AggregateColumn } | { ok: false; error: string };
 
-const aggregateExpression = (field: Field, agg: AggKind): any => {
+const aggregateExpression = (field: Field, agg: AggKind, computed?: FormulaSqlExpression): any => {
   const storage = storageOf(field);
-  const exists = existsProjection(field);
+  const exists = existsProjection(field, computed);
 
   switch (agg) {
     case "count":
@@ -74,7 +77,11 @@ const aggregateExpression = (field: Field, agg: AggKind): any => {
   }
 };
 
-const compileAggregate = (request: AggregateRequest, fieldsById: Map<string, Field>): CompileAggregateResult => {
+const compileAggregate = (
+  request: AggregateRequest,
+  fieldsById: Map<string, Field>,
+  computedFieldSql?: Map<string, FormulaSqlExpression>,
+): CompileAggregateResult => {
   if (request.fieldId === "*") {
     if (request.agg !== "count") {
       return { ok: false, error: `agg "${request.agg}" requires a field; only count works on "*"` };
@@ -91,7 +98,10 @@ const compileAggregate = (request: AggregateRequest, fieldsById: Map<string, Fie
 
   return {
     ok: true,
-    column: { key: aggregateOutputKey(field.id, request.agg), expr: aggregateExpression(field, request.agg) },
+    column: {
+      key: aggregateOutputKey(field.id, request.agg),
+      expr: aggregateExpression(field, request.agg, computedFieldSql?.get(field.id)),
+    },
   };
 };
 
@@ -104,7 +114,11 @@ const compileAggregate = (request: AggregateRequest, fieldsById: Map<string, Fie
  * For hot footer aggregates the field can be opt-in indexed (`indexed=true`)
  * so Postgres uses the expression index for these casts.
  */
-export const compileAggregates = (requests: AggregateRequest[], fields: Field[]): CompileAggResult => {
+export const compileAggregates = (
+  requests: AggregateRequest[],
+  fields: Field[],
+  computedFieldSql?: Map<string, FormulaSqlExpression>,
+): CompileAggResult => {
   const fieldsById = new Map(fields.map((f) => [f.id, f]));
   const columns: AggregateColumn[] = [];
   // Reject duplicate (fieldId, agg) requests instead of silently
@@ -119,7 +133,7 @@ export const compileAggregates = (requests: AggregateRequest[], fields: Field[])
       return { ok: false, error: `duplicate aggregate "${req.agg}" on the same field` };
     }
     seen.add(dupKey);
-    const compiled = compileAggregate(req, fieldsById);
+    const compiled = compileAggregate(req, fieldsById, computedFieldSql);
     if (!compiled.ok) return compiled;
     columns.push(compiled.column);
   }

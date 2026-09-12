@@ -10,6 +10,78 @@ afterEach(() => {
 });
 
 describe("Grids App workflow action client", () => {
+  test("closing export review preserves the operation; retry reviews the same receipt and never invokes twice", async () => {
+    const operation = { operationId: crypto.randomUUID() };
+    let starts = 0;
+    let polls = 0;
+    const pending = { runId: "RUN123", receiptId: "DOC123", sha256: "a".repeat(64) };
+    globalThis.fetch = (async (input) => {
+      if (String(input) === "/invoke") {
+        starts++;
+        return Response.json({ statusUrl: "/status" });
+      }
+      polls++;
+      return Response.json(polls < 4 ? { status: "running", documentConfirmation: pending } : { status: "succeeded" });
+    }) as typeof fetch;
+    const review = mock(async () => false);
+    const args = { endpoint: "/invoke", operation, signal: new AbortController().signal, onConfirmExport: review };
+    expect((await invokeCustomAppWorkflow(args)).kind).toBe("running");
+    expect(review).toHaveBeenCalledWith(pending, args.signal);
+    review.mockImplementation(async () => true);
+    expect((await invokeCustomAppWorkflow(args)).kind).toBe("success");
+    expect(starts).toBe(1);
+    expect(review).toHaveBeenCalledTimes(2);
+    expect(polls).toBe(4);
+  });
+
+  test("leaving the app aborts an open review and preserves the same server operation", async () => {
+    const operation: CustomAppWorkflowOperation = { operationId: crypto.randomUUID(), statusUrl: "/status" };
+    const controller = new AbortController();
+    const reason = new Error("App disposed");
+    let requests = 0;
+    globalThis.fetch = Object.assign(
+      async () => {
+        requests++;
+        return Response.json({
+          status: "running",
+          documentConfirmation: { runId: "RUN123", receiptId: "DOC123", sha256: "a".repeat(64) },
+        });
+      },
+      { preconnect: originalFetch.preconnect },
+    );
+    await expect(
+      invokeCustomAppWorkflow({
+        endpoint: "/invoke",
+        operation,
+        signal: controller.signal,
+        onConfirmExport: async (_, signal) => {
+          expect(signal).toBe(controller.signal);
+          controller.abort(reason);
+          return undefined;
+        },
+      }),
+    ).rejects.toBe(reason);
+    expect(requests).toBe(1);
+    expect(operation.statusUrl).toBe("/status");
+  });
+
+  test("malformed confirmation metadata never opens a review or confirms anything", async () => {
+    globalThis.fetch = (async (input) =>
+      Response.json(
+        String(input) === "/invoke"
+          ? { statusUrl: "/status" }
+          : {
+              status: "running",
+              documentConfirmation: { runId: "not-a-public-id", receiptId: "DOC123", sha256: "a".repeat(64) },
+            },
+      )) as typeof fetch;
+    const review = mock(async () => true);
+    expect(
+      (await invokeCustomAppWorkflow({ endpoint: "/invoke", signal: new AbortController().signal, onConfirmExport: review })).kind,
+    ).toBe("running");
+    expect(review).not.toHaveBeenCalled();
+  });
+
   test("status recovery polls the same run instead of posting a second operation", async () => {
     const operation: CustomAppWorkflowOperation = { operationId: crypto.randomUUID() };
     const requests: string[] = [];

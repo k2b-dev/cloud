@@ -125,19 +125,26 @@ export const mapRecordSnapshotSummary = (row: DocumentDbRow): RecordSnapshotSumm
 });
 
 export const mapDocumentSummary = (row: DocumentDbRow, artifacts: DocumentArtifact[]): DocumentSummary => {
-  const pdf = artifacts.find((artifact) => artifact.key === "pdf");
-  if (!pdf || pdf.mimeType !== "application/pdf" || pdf.filename !== row.filename) throw new Error("document artifact invariant violated");
+  const primary = artifacts.find((artifact) => artifact.key === row.primary_artifact_key);
+  if (!primary || primary.filename !== row.filename) throw new Error("document artifact invariant violated");
+  const binding = [row.template_id, row.snapshot_id, row.table_id, row.record_id];
+  if (
+    !binding.every((value) => typeof value === "string") &&
+    !(binding.every((value) => value === null) && typeof row.workflow_run_id === "string")
+  )
+    throw new Error("document source invariant violated");
   return {
     id: row.id as string,
     shortId: row.short_id as string,
-    templateId: row.template_id as string,
+    templateId: row.template_id as string | null,
     workflowRunId: (row.workflow_run_id as string | null) ?? null,
-    snapshotId: row.snapshot_id as string,
+    snapshotId: row.snapshot_id as string | null,
     baseId: row.base_id as string,
-    tableId: row.table_id as string,
-    recordId: row.record_id as string,
+    tableId: row.table_id as string | null,
+    recordId: row.record_id as string | null,
     documentNumber: row.document_number as string,
-    filename: (row.filename as string | null) ?? `${row.document_number as string}.pdf`,
+    filename: primary.filename,
+    primaryArtifactKey: primary.key,
     tags: Array.isArray(row.tags) ? (row.tags as string[]) : [],
     artifacts,
     profile:
@@ -177,8 +184,8 @@ export const mapDocumentLink = (row: DocumentDbRow): DocumentLink => ({
   shortId: row.short_id as string,
   documentId: row.document_id as string,
   baseId: row.base_id as string,
-  tableId: row.table_id as string,
-  recordId: row.record_id as string,
+  tableId: row.table_id as string | null,
+  recordId: row.record_id as string | null,
   comment: (row.comment as string | null) ?? null,
   createdBy: (row.created_by as string | null) ?? null,
   createdAt: (row.created_at as Date).toISOString(),
@@ -218,6 +225,7 @@ export const summarizeDocument = (document: Document): DocumentSummary => ({
   filename: document.filename,
   tags: document.tags,
   artifacts: document.artifacts,
+  primaryArtifactKey: document.primaryArtifactKey,
   profile: document.profile,
   validationStatus: document.validationStatus,
   createdBy: document.createdBy,

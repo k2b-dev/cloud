@@ -5,6 +5,7 @@ import { migrate } from "../migrate";
 import { decodeDslResultCursor } from "./result-cursor";
 import {
   cleanupFixture,
+  field,
   insertDslDbFixture,
   integrationCursorSigningKey,
   postgresTest,
@@ -18,6 +19,39 @@ beforeAll(async () => {
 });
 
 describe("Query DSL Postgres smoke — joins and grouped joins", () => {
+  postgresTest("joined principal membership and receipt presence use their actual owners", async () => {
+    const fixture = await insertDslDbFixture();
+    const person = uuid();
+    const people = field({ id: uuid(), shortId: "PEOPLE", tableId: fixture.customers.id, name: "People", type: "principal" });
+    const receipt = field({ id: uuid(), shortId: "FILESx", tableId: fixture.orders.id, name: "Receipts", type: "file" });
+    const fileId = uuid();
+    try {
+      for (const item of [people, receipt]) {
+        fixture.fieldsByTableId[item.tableId]!.push(item);
+        await sql`INSERT INTO grids.fields (id, short_id, table_id, name, type, config, position)
+          VALUES (${item.id}::uuid, ${item.shortId}, ${item.tableId}::uuid, ${item.name}, ${item.type}, '{}'::jsonb, 100)`;
+      }
+      await sql`UPDATE grids.records SET data = data || ${{ [people.id]: [{ type: "group", id: person }] }}::jsonb WHERE id = ${fixture.customerAId}::uuid`;
+      const source = `join table Customers as customer on Customer = customer.id\nwhere oneof(customer.People, '${person}')`;
+      expect((await preview(fixture, source)).rows.map((row) => row.recordId)).toEqual([fixture.orderAId]);
+      expect((await preview(fixture, `${source}\naggregate sum(Amount) as total`)).rows).toHaveLength(1);
+      expect((await preview(fixture, source.replace("oneof", "noneof"))).rows.map((row) => row.recordId)).toEqual([fixture.orderBId]);
+      expect((await preview(fixture, "where Receipts != null")).rows).toHaveLength(0);
+      await sql`INSERT INTO grids.files (id, short_id, filename, mime_type, size_bytes, sha256, bytes)
+        VALUES (${fileId}::uuid, ${testShortId("F")}, 'demo.txt', 'text/plain', 4, 'fixture', ${new TextEncoder().encode("demo")})`;
+      await sql`INSERT INTO grids.file_attachments (file_id, record_id, field_id, position)
+        VALUES (${fileId}::uuid, ${fixture.orderAId}::uuid, ${receipt.id}::uuid, 0)`;
+      expect((await preview(fixture, "where Receipts != null")).rows.map((row) => row.recordId)).toEqual([fixture.orderAId]);
+      expect((await preview(fixture, "where Receipts = null")).rows.map((row) => row.recordId).sort()).toEqual(
+        [fixture.orderBId, fixture.orderCId].sort(),
+      );
+      await sql`DELETE FROM grids.file_attachments WHERE file_id = ${fileId}::uuid`;
+      expect((await preview(fixture, "where Receipts != null")).rows).toHaveLength(0);
+    } finally {
+      await cleanupFixture(fixture.baseId);
+      await sql`DELETE FROM grids.files WHERE id = ${fileId}::uuid`;
+    }
+  });
   postgresTest("filters, sorts and pages every linked record beyond the first fifty", async () => {
     const fixture = await insertDslDbFixture();
     try {

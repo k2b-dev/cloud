@@ -7,6 +7,7 @@ import type {
   WorkflowRunState,
 } from "@k2b/cloud/workflows";
 import { z } from "zod";
+import type { WorkflowDocumentConfirmationSchema } from "./query-contracts";
 
 export const GRIDS_WORKFLOW_CHANNELS = ["api", "customApp", "scanner", "bulk", "record", "schedule", "recordEvent"] as const;
 
@@ -331,6 +332,7 @@ export type GridsWorkflowStepRun = {
   action: string | null;
   status: GridsWorkflowStepStatus;
   outcome: WorkflowJsonValue | null;
+  documentConfirmation?: z.infer<typeof WorkflowDocumentConfirmationSchema>;
   executionGeneration: number;
   startedAt: string | null;
   finishedAt: string | null;

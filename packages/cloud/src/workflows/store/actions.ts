@@ -30,7 +30,9 @@ import {
   markWorkflowStepBudgetCharged,
   readWorkflowEffect,
   recordWorkflowEffect,
+  renewWorkflowRunLease,
   settleWorkflowEffect,
+  WorkflowLeaseLostError,
   workflowStepBudgetCharged,
 } from "./runs";
 import { withTransaction } from "./transaction";
@@ -106,8 +108,14 @@ const actionContext = (
     resolveReference: (reference: string, ...path: Array<string | number>): Promise<WorkflowJsonValue | undefined> =>
       ctx.resolveReference(reference, configPath(path)),
     variableSnapshot: (): Record<string, WorkflowJsonValue> => ctx.variables.snapshot?.() ?? {},
-    heartbeat: async (): Promise<void> => {
+    heartbeat: async (transaction?: SQL): Promise<void> => {
+      if (!transaction) return ctx.heartbeat();
+      // The generation check and UPDATE lock live on the caller's transaction,
+      // so takeover/cancellation cannot interleave with its domain writes.
+      const lease = await renewWorkflowRunLease(ctx.run, { db: transaction });
+      if (lease.state === "active") return;
       await ctx.heartbeat();
+      throw new WorkflowLeaseLostError();
     },
   };
 };

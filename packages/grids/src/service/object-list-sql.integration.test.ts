@@ -4,9 +4,10 @@ import { validateObjectList } from "../field-types/object-list";
 import { FORMULA_LIMITS } from "../formula/parser";
 import { postgresTest } from "../integration-test-utils";
 import { migrate } from "../migrate";
+import { applyComputedProjections, buildComputedColumnSqlProjections } from "./computed-projections";
 import { compileFormulaAstToSql, compileFormulaSourceToSql } from "./formula-sql-compiler";
-import { compileObjectListRow } from "./object-list-sql";
-import type { Field } from "./types";
+import { compileObjectListRow, compileObjectListValue } from "./object-list-sql";
+import type { Field, GridRecord } from "./types";
 
 beforeAll(async () => {
   if (process.env.GRIDS_DB_TEST === "1") await migrate();
@@ -18,6 +19,95 @@ const rowPlan = (fields: unknown[]) =>
   );
 
 describe("object-list SQL calculation", () => {
+  postgresTest("matches select membership, cardinality and normalization after schema changes", async () => {
+    for (const required of [false, true]) {
+      for (const multiple of [false, true]) {
+        const fields = [
+          {
+            id: "Choice",
+            name: "Choice",
+            type: "select",
+            required,
+            config: {
+              multiple,
+              options: [
+                { id: "a", label: "A" },
+                { id: "b", label: "B" },
+              ],
+              minSelected: 1,
+              maxSelected: multiple ? 2 : 1,
+            },
+          },
+        ];
+        const compiled = rowPlan(fields);
+        if (!compiled.ok) throw new Error(compiled.error);
+        for (const value of [null, "", [], [""], ["a"], ["b", "a", "b", ""], ["removed"], [null], [1], "a"]) {
+          const expected = validateObjectList([{ Choice: value }], { fields }, false, { stored: true });
+          const [row] = await sql<
+            Array<{ value: unknown; error: boolean }>
+          >`SELECT ${compiled.plan.json} AS value, ${compiled.plan.errorSql} AS error
+            FROM (SELECT ${{ Choice: value }}::jsonb AS data) item ${compiled.plan.joins}`;
+          expect(row?.error).toBe(!expected.ok);
+          if (expected.ok) expect(row?.value).toEqual(expected.value?.[0]);
+        }
+      }
+    }
+  });
+
+  postgresTest("rechecks tightened numeric input constraints through the shared scalar checks", async () => {
+    const fields = [{ id: "Amount", name: "Amount", type: "number", required: true, config: { min: "1", max: "10", decimalPlaces: 2 } }];
+    const compiled = rowPlan(fields);
+    if (!compiled.ok) throw new Error(compiled.error);
+    for (const value of [null, "0.99", "10.01", "1.001", "1.25", "not a number", "NaN", "Infinity", true, {}]) {
+      const expected = validateObjectList([{ Amount: value }], { fields }, false, { stored: true });
+      const [row] = await sql<Array<{ error: boolean }>>`SELECT ${compiled.plan.errorSql} AS error
+        FROM (SELECT ${{ Amount: value }}::jsonb AS data) item ${compiled.plan.joins}`;
+      expect(row?.error).toBe(!expected.ok);
+    }
+  });
+
+  postgresTest("reports invalid list containers and cardinality without throwing or changing frozen lists", async () => {
+    const config = { fields: [{ id: "Amount", name: "Amount", type: "number", config: {} }], minItems: 1, maxItems: 2 };
+    const compiled = compileObjectListValue({ id: "Items1", config }, "r", (ast, resolveField, recordAlias) =>
+      compileFormulaAstToSql(ast, { fields: [], recordAlias, resolveField }),
+    );
+    if (!compiled.ok) throw new Error(compiled.error);
+    for (const [value, expected] of [
+      [null, true],
+      [[], true],
+      ["invalid", true],
+      [[null], true],
+      [[{}], false],
+      [[{}, {}, {}], true],
+    ] as const) {
+      const [row] = await sql<Array<{ error: boolean }>>`SELECT ${compiled.expression.errorSql} AS error
+        FROM (SELECT ${{ Items1: value }}::jsonb AS data, NULL::timestamptz AS finalized_at) r`;
+      expect(row?.error).toBe(expected);
+    }
+    const original = [{ Amount: "1" }, { Amount: "2" }, { Amount: "3" }];
+    const [frozen] = await sql<
+      Array<{ value: unknown; error: boolean }>
+    >`SELECT ${compiled.expression.sql} AS value, ${compiled.expression.errorSql} AS error
+      FROM (SELECT ${{ Items1: original }}::jsonb AS data, now() AS finalized_at) r`;
+    expect(frozen).toEqual({ value: original, error: false });
+  });
+
+  postgresTest("rounds calculated percentages identically in JavaScript and PostgreSQL", async () => {
+    for (const [expression, expected] of [
+      ["1.075", 1.08],
+      ["2.675", 2.68],
+      ["0.125", 0.13],
+    ] as const) {
+      const fields = [{ id: "Result", name: "Result", type: "percent", config: { decimals: 2 }, formula: { expression } }];
+      expect(validateObjectList([{}], { fields }, false)).toEqual({ ok: true, value: [{ Result: expected }] });
+      const compiled = rowPlan(fields);
+      if (!compiled.ok) throw new Error(compiled.error);
+      const [row] = await sql<Array<{ value: unknown; error: boolean }>>`
+        SELECT ${compiled.plan.json} AS value, ${compiled.plan.errorSql} AS error
+        FROM (SELECT '{}'::jsonb AS data) item ${compiled.plan.joins}`;
+      expect(row).toEqual({ value: { Result: expected }, error: false });
+    }
+  });
   postgresTest("uses the same canonical decimal division scale in JS and SQL", async () => {
     for (const [expression, expected] of [
       ["1 / 3", "0.33333333333333333333"],
@@ -263,6 +353,28 @@ describe("object-list SQL calculation", () => {
     }
     const sum = compileFormulaSourceToSql("LIST_SUM(Items, 'Total')", { fields: [field] });
     if (!sum.ok) throw new Error(sum.error);
+    const { projections } = buildComputedColumnSqlProjections(
+      [{ kind: "computed", id: "computed_View01", label: "Total", expression: "LIST_SUM(Items, 'Total')" }],
+      [field],
+    );
+    expect(projections).toHaveLength(1);
+    const rows = await sql<Array<Record<string, unknown>>>`SELECT 'record_1' AS id, ${projections[0]!.fragment}
+      FROM (SELECT ${{ [field.id]: "invalid" }}::jsonb AS data, NULL::timestamptz AS finalized_at) r`;
+    const record: Pick<GridRecord, "data" | "fieldErrors"> = { data: {} };
+    applyComputedProjections(rows, new Map([["record_1", record]]), projections);
+    expect(record.data.computed_View01).toBeNull();
+    expect(record.fieldErrors?.computed_View01).toContain("could not be calculated");
+    for (const [expression, expected] of [
+      ["IFERROR(LIST_SUM(Items, 'Total'), 42)", "42"],
+      ["IF(false, LIST_SUM(Items, 'Total'), 7)", "7"],
+    ]) {
+      const checked = compileFormulaSourceToSql(expression!, { fields: [field] });
+      if (!checked.ok) throw new Error(checked.error);
+      const [row] = await sql<Array<{ value: string; error: boolean }>>`SELECT (${checked.expression.sql})::text AS value,
+        COALESCE(${checked.expression.errorSql ?? sql`false`}, false) AS error
+        FROM (SELECT ${{ [field.id]: "invalid" }}::jsonb AS data, NULL::timestamptz AS finalized_at) r`;
+      expect(row).toEqual({ value: expected!, error: false });
+    }
     for (const [value, expected] of [
       [null, null],
       [[], "0"],

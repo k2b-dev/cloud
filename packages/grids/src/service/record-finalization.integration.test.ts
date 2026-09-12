@@ -1,5 +1,6 @@
 import { beforeAll, describe, expect } from "bun:test";
 import { sql } from "bun";
+import { parseFormula } from "../formula/parser";
 import { postgresTest, testShortId, testUuid } from "../integration-test-utils";
 import { migrate } from "../migrate";
 import { parseGridsQueryDsl } from "../query-dsl/parser";
@@ -9,9 +10,12 @@ import { createRecordSnapshotDraft } from "./document-snapshots";
 import * as durableHistory from "./durable-history";
 import * as fields from "./fields";
 import * as files from "./files";
+import { checkFormula } from "./formula-preview";
 import * as finalization from "./record-finalization";
 import { get as getRecord } from "./record-read";
 import * as records from "./record-write";
+import { aggregate as aggregateRecords, group as groupRecords, list as listRecords } from "./records";
+import { buildRelationLabelCacheForIds, lookupRecords } from "./relation-labels";
 
 beforeAll(async () => {
   if (process.env.GRIDS_DB_TEST === "1") await migrate();
@@ -82,6 +86,295 @@ const recordsInFinalizationState = async (
 };
 
 describe("record finalization Postgres integration", () => {
+  postgresTest("GQL refuses missing captures instead of silently producing an incomplete total", async () => {
+    const item = await fixture();
+    try {
+      const created = await records.create(item.tableId, { [item.name.id]: "Historical" }, null, "direct");
+      if (!created.ok) throw created.error;
+      const finalized = await finalization.finalize({ tableId: item.tableId, recordId: created.data.id, actorId: null, origin: "direct" });
+      if (!finalized.ok) throw finalized.error;
+      const later = await fields.create({ tableId: item.tableId, name: "Later", type: "formula", config: { expression: "42" } }, null);
+      if (!later.ok) throw later.error;
+      const draft = await records.create(item.tableId, { [item.name.id]: "Draft" }, null, "direct");
+      if (!draft.ok) throw draft.error;
+      const tableFields = await fields.listByTable(item.tableId);
+      const run = async (selection: string, filter = "") => {
+        const parsed = parseGridsQueryDsl(`from table {${item.tableShortId}}\n${selection}\n${filter}`);
+        if (!parsed.ok) throw new Error(JSON.stringify(parsed.diagnostics));
+        const resolved = resolveDslQueryToQueryPlan(parsed.ast, {
+          tables: [{ kind: "table", id: item.tableId, shortId: item.tableShortId, name: "Cases" }],
+          views: [],
+          fieldsByTableId: { [item.tableId]: tableFields },
+        });
+        if (!resolved.ok) throw new Error(JSON.stringify(resolved.diagnostics));
+        return previewDslQuery(resolved.plan, {
+          fieldsByTableId: { [item.tableId]: tableFields },
+          authorizedTableIds: new Set([item.tableId]),
+          limit: 100,
+        });
+      };
+      for (const selection of ["select Later", "aggregate sum(Later) as total"]) {
+        const result = await run(selection);
+        expect(result.ok).toBe(false);
+        if (!result.ok) expect(result.error).toMatchObject({ code: "BAD_INPUT", status: 400 });
+      }
+      for (const selection of ["aggregate sum(Later) as total", "group by Name\naggregate sum(Later) as total"]) {
+        const selectedDraft = await run(selection, "where record.finalizationState = 'draft'");
+        if (!selectedDraft.ok) throw selectedDraft.error;
+        expect(selectedDraft.data.rows).toHaveLength(1);
+        expect(Object.values(selectedDraft.data.rows[0]!.values)).toContain("42");
+      }
+      expect((await run("select Name")).ok).toBe(true);
+      const aggregate = await aggregateRecords({
+        tableId: item.tableId,
+        requests: [{ fieldId: later.data.id, agg: "countEmpty" }],
+        locale: "de",
+      });
+      expect(aggregate.ok).toBe(false);
+      if (!aggregate.ok) {
+        expect(aggregate.error.code).toBe("BAD_INPUT");
+        expect(aggregate.error.message).toContain("historische Werte");
+      }
+      const grouped = await groupRecords({
+        tableId: item.tableId,
+        groupBy: [{ fieldId: item.name.id }],
+        aggregations: [{ fieldId: later.data.id, agg: "countEmpty" }],
+      });
+      expect(grouped.ok).toBe(false);
+      if (!grouped.ok) expect(grouped.error.code).toBe("BAD_INPUT");
+      const draftAggregate = await aggregateRecords({
+        tableId: item.tableId,
+        recordMeta: { finalizationStates: ["draft"] },
+        requests: [{ fieldId: later.data.id, agg: "countEmpty" }],
+      });
+      expect(draftAggregate.ok).toBe(true);
+      const displayed = await listRecords({ tableId: item.tableId, includeAggregates: false });
+      expect(displayed.ok).toBe(true);
+      if (!displayed.ok) throw displayed.error;
+      expect(displayed.data.items.find((record) => record.id === created.data.id)?.fieldErrors?.[later.data.id]).toContain(
+        "no captured value",
+      );
+      const historical = await getRecord(item.tableId, created.data.id);
+      expect(historical?.data[later.data.id]).toBeNull();
+      expect(historical?.fieldErrors?.[later.data.id]).toContain("no captured value");
+    } finally {
+      await cleanup(item.baseId);
+    }
+  });
+
+  postgresTest("field deletion protects live formula dependencies and preserves the final revision", async () => {
+    const item = await fixture();
+    try {
+      const amount = await fields.create({ tableId: item.tableId, name: "Amount", type: "number" }, null);
+      if (!amount.ok) throw amount.error;
+      const total = await fields.create(
+        { tableId: item.tableId, name: "Total", type: "formula", config: { expression: "Amount * 2" } },
+        null,
+      );
+      if (!total.ok) throw total.error;
+      const created = await records.create(item.tableId, { [item.name.id]: "Deletion", [amount.data.id]: "12.5" }, null, "direct");
+      if (!created.ok) throw created.error;
+      const finalized = await finalization.finalize({ tableId: item.tableId, recordId: created.data.id, actorId: null, origin: "direct" });
+      if (!finalized.ok) throw finalized.error;
+      const blocked = await fields.softDelete(amount.data.id, null);
+      expect(blocked.ok).toBe(false);
+      if (!blocked.ok) expect(blocked.error.status).toBe(409);
+      expect((await fields.get(amount.data.id))?.deletedAt).toBeNull();
+      expect((await getRecord(item.tableId, created.data.id))?.data[total.data.id]).toBe("25");
+
+      // Deleting the calculated column itself is supported: history retains its
+      // original schema and typed value, independently of the live table layout.
+      expect((await fields.softDelete(total.data.id, null)).ok).toBe(true);
+      expect((await fields.softDelete(amount.data.id, null)).ok).toBe(true);
+      const [revision] = await sql<Array<{ data: Record<string, unknown>; fields: Array<{ id: string; type: string }> }>>`
+        SELECT revision.data, schema.fields FROM grids.record_revisions revision
+        JOIN grids.table_schema_revisions schema ON schema.id = revision.schema_revision_id
+        WHERE revision.id = ${finalized.data.finalRevisionId}::uuid
+      `;
+      expect(revision?.data[total.data.id]).toBe("25");
+      expect(revision?.data[amount.data.id]).toBe("12.5");
+      expect(revision?.fields.find((field) => field.id === total.data.id)?.type).toBe("formula");
+      expect(revision?.fields.find((field) => field.id === amount.data.id)?.type).toBe("number");
+    } finally {
+      await cleanup(item.baseId);
+    }
+  });
+
+  postgresTest(
+    "captures transitive historical calculation dependencies with the values",
+    async () => {
+      const item = await fixture();
+      try {
+        const targetId = testUuid();
+        const originalId = testUuid();
+        await sql`INSERT INTO grids.tables (id, short_id, base_id, name) VALUES
+        (${targetId}::uuid, ${testShortId("T")}, ${item.baseId}::uuid, 'Intermediate'),
+        (${originalId}::uuid, ${testShortId("T")}, ${item.baseId}::uuid, 'Original')`;
+        const amount = await fields.create({ tableId: originalId, name: "Amount", type: "number" }, null);
+        if (!amount.ok) throw amount.error;
+        const source = await records.create(originalId, { [amount.data.id]: "12.5" }, null, "direct");
+        if (!source.ok) throw source.error;
+        const relation = await fields.create(
+          { tableId: targetId, name: "Original", type: "relation", config: { targetTableId: originalId, cardinality: "single" } },
+          null,
+        );
+        if (!relation.ok) throw relation.error;
+        const lookup = await fields.create(
+          {
+            tableId: targetId,
+            name: "Imported",
+            type: "lookup",
+            config: { relationFieldId: relation.data.id, targetFieldId: amount.data.id },
+          },
+          null,
+        );
+        if (!lookup.ok) throw lookup.error;
+        const calculated = await fields.create(
+          { tableId: targetId, name: "Calculated", type: "formula", config: { expression: "Imported * 2" } },
+          null,
+        );
+        if (!calculated.ok) throw calculated.error;
+        const history = await durableHistory.enable(targetId, null);
+        if (!history.ok) throw history.error;
+        const enabled = await finalization.enable(targetId, { mode: "direct" }, null);
+        if (!enabled.ok) throw enabled.error;
+        const target = await records.create(targetId, { [relation.data.id]: [source.data.id] }, null, "direct");
+        if (!target.ok) throw target.error;
+        const frozenTarget = await finalization.finalize({ tableId: targetId, recordId: target.data.id, actorId: null, origin: "direct" });
+        if (!frozenTarget.ok) throw frozenTarget.error;
+        // The current definition no longer reveals the original dependency.
+        const changed = await fields.update(calculated.data.id, { config: { expression: "25" } }, null);
+        if (!changed.ok) throw changed.error;
+        const parentRelation = await fields.create(
+          { tableId: item.tableId, name: "Intermediate", type: "relation", config: { targetTableId: targetId, cardinality: "single" } },
+          null,
+        );
+        if (!parentRelation.ok) throw parentRelation.error;
+        const parentLookup = await fields.create(
+          {
+            tableId: item.tableId,
+            name: "Imported",
+            type: "lookup",
+            config: { relationFieldId: parentRelation.data.id, targetFieldId: calculated.data.id },
+          },
+          null,
+        );
+        if (!parentLookup.ok) throw parentLookup.error;
+        const total = await fields.create(
+          { tableId: item.tableId, name: "Total", type: "formula", config: { expression: "Imported + 1" } },
+          null,
+        );
+        if (!total.ok) throw total.error;
+        const parent = await records.create(
+          item.tableId,
+          { [item.name.id]: "Parent", [parentRelation.data.id]: [target.data.id] },
+          null,
+          "direct",
+        );
+        if (!parent.ok) throw parent.error;
+        const frozen = await finalization.finalize({ tableId: item.tableId, recordId: parent.data.id, actorId: null, origin: "direct" });
+        if (!frozen.ok) throw frozen.error;
+        expect(frozen.data.data[total.data.id]).toBe("26");
+        const [stored] = await sql<
+          Array<{ dependencies: Record<string, string[]> }>
+        >`SELECT finalized_computed_dependencies AS dependencies FROM grids.records WHERE id = ${parent.data.id}::uuid`;
+        expect(stored?.dependencies[parentLookup.data.id]).toEqual([targetId, originalId].sort());
+        expect(stored?.dependencies[total.data.id]).toEqual([targetId, originalId].sort());
+        const localDefinition = await fields.update(total.data.id, { config: { expression: "26" }, presentable: true }, null);
+        if (!localDefinition.ok) throw localDefinition.error;
+        for (const includeOriginal of [false, true]) {
+          const ids = includeOriginal ? [item.tableId, targetId, originalId] : [item.tableId, targetId];
+          const viewer = {
+            userId: null,
+            userGroups: [],
+            readableTableIds: new Set(ids),
+            tableReadAccess: new Map(ids.map((id) => [id, true])),
+          };
+          const read = await getRecord(item.tableId, parent.data.id, { viewer });
+          expect(read?.data[parentLookup.data.id]).toBe(includeOriginal ? "25" : null);
+          expect(read?.data[total.data.id]).toBe(includeOriginal ? "26" : null);
+          const preview = await checkFormula({ tableId: item.tableId, expression: "Total", viewer });
+          if (!preview.ok) throw preview.error;
+          expect(preview.data.rows.find((row) => row.recordId === parent.data.id)?.values[total.data.id]).toBe(
+            includeOriginal ? "26" : null,
+          );
+          const list = await listRecords({ tableId: item.tableId, viewer });
+          if (!list.ok) throw list.error;
+          const listed = list.data.items.find((record) => record.id === parent.data.id);
+          expect(listed?.data[parentLookup.data.id]).toBe(includeOriginal ? "25" : null);
+          expect(listed?.data[total.data.id]).toBe(includeOriginal ? "26" : null);
+          const predicate = parseFormula("Total = 26");
+          if (!predicate.ok) throw new Error("Invalid test expression");
+          const filtered = await listRecords({ tableId: item.tableId, viewer, formulaWhere: predicate.ast });
+          if (!filtered.ok) throw filtered.error;
+          expect(filtered.data.items.some((record) => record.id === parent.data.id)).toBe(includeOriginal);
+          const labels = await buildRelationLabelCacheForIds(new Map([[item.tableId, new Set([parent.data.id])]]), viewer);
+          expect(labels[parent.data.id]?.includes("26")).toBe(includeOriginal);
+          const aggregates = await aggregateRecords({
+            tableId: item.tableId,
+            viewer,
+            requests: [{ fieldId: total.data.id, agg: "count" }],
+          });
+          if (!aggregates.ok) throw aggregates.error;
+          expect(Object.values(aggregates.data)).toEqual([includeOriginal ? 1 : 0]);
+          const grouped = await groupRecords({
+            tableId: item.tableId,
+            viewer,
+            groupBy: [{ fieldId: item.name.id }],
+            aggregations: [{ fieldId: total.data.id, agg: "count" }],
+          });
+          if (!grouped.ok) throw grouped.error;
+          expect(grouped.data.buckets.map((bucket) => bucket.values[`${total.data.id}__count`])).toEqual([includeOriginal ? 1 : 0]);
+          const tableFields = await fields.listByTable(item.tableId);
+          for (const suffix of ["", "\nwhere Total = 26"]) {
+            const ast = parseGridsQueryDsl(`from table {${item.tableShortId}}\nselect Total${suffix}`);
+            if (!ast.ok) throw new Error("Invalid test GQL");
+            const plan = resolveDslQueryToQueryPlan(ast.ast, {
+              tables: [{ kind: "table", id: item.tableId, shortId: item.tableShortId, name: "Cases" }],
+              fieldsByTableId: { [item.tableId]: tableFields },
+            });
+            if (!plan.ok) throw new Error(JSON.stringify(plan.diagnostics));
+            const result = await previewDslQuery(plan.plan, {
+              fieldsByTableId: { [item.tableId]: tableFields },
+              viewer,
+              authorizedTableIds: new Set(ids),
+            });
+            if (!result.ok) throw result.error;
+            expect(result.data.rows.map((row) => Object.values(row.values))).toEqual(
+              suffix && !includeOriginal ? [] : [[includeOriginal ? "26" : null]],
+            );
+          }
+        }
+      } finally {
+        await cleanup(item.baseId);
+      }
+    },
+    15_000,
+  );
+
+  postgresTest("relation labels and picker results preserve captured presentable formulas", async () => {
+    const item = await fixture();
+    try {
+      const label = await fields.create(
+        { tableId: item.tableId, name: "Frozen label", type: "formula", config: { expression: "'Before'" }, presentable: true },
+        null,
+      );
+      if (!label.ok) throw label.error;
+      const record = await records.create(item.tableId, { [item.name.id]: "Record" }, null, "direct");
+      if (!record.ok) throw record.error;
+      const finalized = await finalization.finalize({ tableId: item.tableId, recordId: record.data.id, actorId: null, origin: "direct" });
+      if (!finalized.ok) throw finalized.error;
+      const changed = await fields.update(label.data.id, { config: { expression: "'After'" } }, null);
+      if (!changed.ok) throw changed.error;
+      const labels = await buildRelationLabelCacheForIds(new Map([[item.tableId, new Set([record.data.id])]]));
+      expect(labels[record.data.id]).toContain("Before");
+      expect(labels[record.data.id]).not.toContain("After");
+      const picker = await lookupRecords({ targetTableId: item.tableId });
+      expect(picker.items.find((entry) => entry.id === record.data.id)?.label).toBe(labels[record.data.id]);
+    } finally {
+      await cleanup(item.baseId);
+    }
+  });
   postgresTest(
     "recalculates list formulas while draft and freezes their typed results at finalization",
     async () => {
@@ -250,8 +543,27 @@ describe("record finalization Postgres integration", () => {
         expect((await getRecord(item.tableId, record.data.id))?.version).toBe(record.data.version);
         const renamedColumns = columns.map((column) => ({ ...column, name: column.id === "Label1" ? "Item description" : column.name }));
         expect((await fields.update(list.data.id, { config: { fields: renamedColumns } }, null)).ok).toBe(true);
+        for (const [regex, accepted] of [
+          ["^Consulting$", true],
+          ["^Other$", false],
+        ] as const) {
+          const result = await fields.update(
+            list.data.id,
+            { config: { fields: columns.map((column) => (column.id === "Label1" ? { ...column, config: { regex } } : column)) } },
+            null,
+          );
+          expect(result.ok).toBe(accepted);
+          if (!accepted && !result.ok) expect(result.error.code).toBe("CONFLICT");
+          expect((await getRecord(item.tableId, record.data.id))?.data[list.data.id]).toEqual(data);
+        }
         const removedColumn = await fields.update(list.data.id, { config: { fields: [columns[0]] } }, null);
-        expect(removedColumn.ok).toBe(false);
+        expect(removedColumn.ok).toBe(true);
+        expect((await getRecord(item.tableId, record.data.id))?.data[list.data.id]).toEqual([{ Label1: "Consulting" }]);
+        const [storedBefore] = await sql<Array<{ data: Record<string, unknown>; version: number }>>`
+          SELECT data, version FROM grids.records WHERE id = ${record.data.id}::uuid`;
+        expect(storedBefore?.data[list.data.id]).toEqual(data);
+        expect(storedBefore?.version).toBe(record.data.version);
+        expect((await fields.update(list.data.id, { config: { fields: columns } }, null)).ok).toBe(true);
         const retypedColumn = await fields.update(
           list.data.id,
           { config: { fields: columns.map((column) => (column.id === "Amount" ? { ...column, type: "text", config: {} } : column)) } },
@@ -260,6 +572,7 @@ describe("record finalization Postgres integration", () => {
         expect(retypedColumn.ok).toBe(false);
         const finalized = await finalization.finalize({ tableId: item.tableId, recordId: record.data.id, actorId: null, origin: "direct" });
         if (!finalized.ok) throw finalized.error;
+        expect((await fields.update(list.data.id, { config: { fields: [columns[0]] } }, null)).ok).toBe(false);
         const updated = await records.update(item.tableId, record.data.id, { [list.data.id]: [] }, null, "direct");
         expect(updated.ok).toBe(false);
         const changedCurrency = await fields.update(
@@ -701,6 +1014,10 @@ describe("record finalization Postgres integration", () => {
       const readiness = await finalization.inspect({ tableId: item.tableId, recordId: incomplete.data.id });
       expect(readiness.ok && readiness.data.missing).toEqual([
         { fieldId: item.name.id, fieldName: "Name", message: "A value is required." },
+      ]);
+      const germanReadiness = await finalization.inspect({ tableId: item.tableId, recordId: incomplete.data.id, locale: "de" });
+      expect(germanReadiness.ok && germanReadiness.data.missing).toEqual([
+        { fieldId: item.name.id, fieldName: "Name", message: "Ein Wert ist erforderlich." },
       ]);
       expect(
         (await finalization.finalize({ tableId: item.tableId, recordId: incomplete.data.id, actorId: null, origin: "direct" })).ok,

@@ -25,13 +25,22 @@ Every hook receives:
 | `tx` | Transaction for a transactional action |
 | `binding()` | Stable IDs pinned during publication |
 | `resolveReference()` | Values produced by inputs and earlier steps |
-| `heartbeat()` | Keep a long action's lease alive |
+| `heartbeat(tx?)` | Keep the lease alive; optionally fence an application transaction |
 
 Transactional work must use `ctx.tx`. An ambient database connection breaks the
 atomic journal guarantee.
 
 Idempotent external work must pass `ctx.effectKey` to the provider or its own
 deduplication store.
+
+When an idempotent action stores its result in its own database transaction,
+call `await ctx.heartbeat(tx)` on that transaction before writing. It checks
+the execution generation and cancellation state and locks the run until commit,
+so a stale worker cannot commit domain data after another worker takes over.
+A heartbeat on a separate connection before opening the transaction does not
+provide this guarantee. Keep fenced transactions short and do not call an
+ambient `heartbeat()` while holding the run lock. This does not replace the
+action's idempotency key or current permission checks.
 
 Run `authorize` immediately before an effect when access may have changed. See
 [Resource authorization](/en/docs/identity/authorization).

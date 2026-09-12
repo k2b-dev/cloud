@@ -23,7 +23,8 @@ const resetAlphaWorkflowSchema = async (sql: SQL): Promise<boolean> => {
    * grids.workflows is gone for good: identity, versions and activations belong
    * to the kernel now. What it leaves behind — access grants, run options — is
    * re-keyed onto grids.workflow_profile below. Documents and scan records are
-   * real user data and survive; only their link back to a run is cleared.
+   * real user data and survive. Retained document/run links forbid this reset;
+   * changing their schema requires an explicit preserving migration.
    *
    * grids.workflow_runs and grids.workflow_step_runs follow: runs execute on
    * workflows.run, and a step's outcome — its effect included — is journaled on
@@ -34,7 +35,21 @@ const resetAlphaWorkflowSchema = async (sql: SQL): Promise<boolean> => {
    * it to every reader from here on.
    */
   await sql`
-    UPDATE grids.documents SET workflow_run_id = NULL, workflow_step_key = NULL WHERE workflow_run_id IS NOT NULL;
+    -- A reset must never detach immutable evidence. Keep this check in the
+    -- same transaction and lock as the reset, including against other replicas.
+    LOCK TABLE grids.documents IN ACCESS EXCLUSIVE MODE;
+    DO $$ DECLARE has_workflows boolean; BEGIN
+      IF EXISTS (SELECT 1 FROM grids.documents WHERE workflow_run_id IS NOT NULL) THEN
+        RAISE EXCEPTION 'Grids workflow reset refused: retained documents reference workflow runs. An explicit preserving migration is required.';
+      END IF;
+      IF to_regclass('grids.workflow_profile') IS NOT NULL THEN
+        LOCK TABLE grids.workflow_profile IN ACCESS EXCLUSIVE MODE;
+        SELECT EXISTS (SELECT 1 FROM grids.workflow_profile) INTO has_workflows;
+        IF has_workflows THEN
+          RAISE EXCEPTION 'Grids workflow reset refused: stored workflows require an explicit preserving migration.';
+        END IF;
+      END IF;
+    END $$;
     DROP TABLE IF EXISTS grids.workflow_effect_intents CASCADE;
     DROP TABLE IF EXISTS grids.workflow_email_deliveries CASCADE;
     DROP TABLE IF EXISTS grids.workflow_step_runs CASCADE;
@@ -244,11 +259,90 @@ const migrateDeliveries = async (sql: SQL): Promise<void> => {
   `.simple();
 };
 
+const migrateQueryData = async (sql: SQL): Promise<void> => {
+  await sql`
+    ALTER TABLE grids.workflow_run_profile ADD COLUMN IF NOT EXISTS captured_bytes BIGINT CHECK (captured_bytes >= 0);
+    CREATE TABLE IF NOT EXISTS grids.workflow_query_data (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      run_id UUID NOT NULL REFERENCES grids.workflow_run_profile(run_id) ON DELETE CASCADE,
+      step_key TEXT NOT NULL CHECK (length(step_key) > 0),
+      payload JSONB NOT NULL CHECK (jsonb_typeof(payload) = 'object'),
+      sha256 TEXT NOT NULL CHECK (sha256 ~ '^[a-f0-9]{64}$'),
+      row_count INT NOT NULL CHECK (row_count BETWEEN 0 AND 10000),
+      captured_at TIMESTAMPTZ NOT NULL,
+      UNIQUE (run_id, step_key)
+    );
+    ALTER TABLE grids.workflow_query_data ADD COLUMN IF NOT EXISTS hash_version SMALLINT NOT NULL DEFAULT 1 CHECK (hash_version IN (1, 2));
+    CREATE OR REPLACE FUNCTION grids.reject_workflow_query_data_update()
+    RETURNS trigger LANGUAGE plpgsql AS $$
+    BEGIN
+      RAISE EXCEPTION 'captured workflow query data is immutable' USING ERRCODE = '55000';
+    END
+    $$;
+    DROP TRIGGER IF EXISTS workflow_query_data_immutable ON grids.workflow_query_data;
+    CREATE TRIGGER workflow_query_data_immutable
+      BEFORE UPDATE ON grids.workflow_query_data
+      FOR EACH ROW EXECUTE FUNCTION grids.reject_workflow_query_data_update();
+  `.simple();
+  await sql`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_grids_query_data_run_identity ON grids.workflow_query_data(id, run_id);
+    ALTER TABLE grids.documents ADD COLUMN IF NOT EXISTS query_data_id UUID;
+    ALTER TABLE grids.document_issuances ADD COLUMN IF NOT EXISTS query_data_id UUID REFERENCES grids.workflow_query_data(id) ON DELETE RESTRICT;
+    DO $$ BEGIN
+      IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'grids.documents'::regclass AND conname = 'documents_query_data_binding_fkey') THEN
+        ALTER TABLE grids.documents ADD CONSTRAINT documents_query_data_binding_fkey
+          FOREIGN KEY (query_data_id, workflow_run_id) REFERENCES grids.workflow_query_data(id, run_id) ON DELETE RESTRICT;
+      END IF;
+      IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'grids.documents'::regclass AND conname = 'documents_query_source_chk') THEN
+        ALTER TABLE grids.documents ADD CONSTRAINT documents_query_source_chk
+          CHECK (query_data_id IS NULL OR (template_id IS NULL AND workflow_run_id IS NOT NULL));
+      END IF;
+    END $$;
+  `.simple();
+  await sql`
+    CREATE OR REPLACE FUNCTION grids.guard_document_export_claim()
+    RETURNS trigger LANGUAGE plpgsql AS $$
+    DECLARE source RECORD;
+    BEGIN
+      IF TG_OP = 'UPDATE' THEN
+        RAISE EXCEPTION 'Financial export claims are immutable' USING ERRCODE = '55000';
+      END IF;
+      SELECT receipt.document_id, run.state INTO source
+      FROM grids.document_issuances receipt
+      JOIN grids.workflow_query_data data ON data.id = receipt.query_data_id
+      JOIN workflows.run run ON run.id = data.run_id
+      WHERE receipt.id = OLD.receipt_id
+      FOR UPDATE OF receipt, run;
+      IF NOT FOUND OR source.document_id IS NOT NULL OR source.state NOT IN ('failed', 'canceled') THEN
+        RAISE EXCEPTION 'Financial export claims can only be released after an effect-free terminal run' USING ERRCODE = '55000';
+      END IF;
+      RETURN OLD;
+    END $$;
+    DROP TRIGGER IF EXISTS document_export_claim_guard ON grids.document_export_claims;
+    CREATE TRIGGER document_export_claim_guard BEFORE UPDATE OR DELETE ON grids.document_export_claims
+      FOR EACH ROW EXECUTE FUNCTION grids.guard_document_export_claim();
+  `.simple();
+};
+
 export const migrateGridsWorkflowTables = async (sql: SQL): Promise<void> => {
   const didReset = await resetAlphaWorkflowSchema(sql);
   await migrateKernelProfile(sql);
   await migrateDefinitionLinks(sql);
   await migrateDeliveries(sql);
+  await migrateQueryData(sql);
+  await sql`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_grids_workflow_run_profile_base_identity
+      ON grids.workflow_run_profile(run_id, base_id);
+    DO $$ BEGIN
+      IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'grids.documents'::regclass AND conname = 'documents_workflow_base_fkey') THEN
+        -- Retained historical documents may predate the current run ledger.
+        -- Enforce all new bindings without rewriting that evidence.
+        ALTER TABLE grids.documents ADD CONSTRAINT documents_workflow_base_fkey
+          FOREIGN KEY (workflow_run_id, base_id) REFERENCES grids.workflow_run_profile(run_id, base_id)
+          ON DELETE RESTRICT NOT VALID;
+      END IF;
+    END $$;
+  `.simple();
   if (didReset) {
     await sql`
       INSERT INTO grids.workflow_migrations (version)

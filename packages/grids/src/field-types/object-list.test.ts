@@ -9,6 +9,26 @@ const fields = [
 const config = { fields };
 
 describe("typed object-list values", () => {
+  test("localizes calculation failures without exposing evaluator codes", () => {
+    for (const [expression, detail] of [
+      ["1 / 0", "Durch null kann nicht geteilt werden."],
+      ["POW(10, 1000000)", "Der berechnete Wert ist zu groß. Verkleinere die Werte oder vereinfache die Formel."],
+      ["SQRT(-1)", "Der Wert konnte nicht berechnet werden. Prüfe die Formel und ihre Eingabewerte."],
+    ] as const) {
+      const result = validateObjectList(
+        [{}],
+        { fields: [{ id: "Result", name: "Ergebnis", type: "number", formula: { expression } }] },
+        false,
+        { context: { locale: "de" } },
+      );
+      expect(result).toEqual({
+        ok: false,
+        error: `Zeile 1, Ergebnis: ${detail}`,
+        calculationError: { field: "Ergebnis", detail },
+      });
+    }
+  });
+
   test("rejects duration overflow through the shared scalar validator", () => {
     const result = validateObjectList(
       [{ Time01: "1e308:00:00" }],
@@ -117,8 +137,8 @@ describe("typed object-list values", () => {
     );
     expect(result).toEqual({
       ok: false,
-      error: "Row 1, Short: VALUE_TOO_LARGE",
-      calculationError: { field: "Short", detail: "VALUE_TOO_LARGE" },
+      error: "Row 1, Short: The calculated value is too large. Reduce the values or simplify the formula.",
+      calculationError: { field: "Short", detail: "The calculated value is too large. Reduce the values or simplify the formula." },
     });
   });
 
@@ -134,6 +154,16 @@ describe("typed object-list values", () => {
     expect(validateObjectList([], config, true).ok).toBe(false);
     expect(validateObjectList(null, { ...config, minItems: 1 }, false).ok).toBe(false);
     expect(validateObjectList([{ Label1: "A" }], config, true)).toEqual({ ok: true, value: [{ Label1: "A", Amount: null }] });
+  });
+
+  test("projects removed stored columns without accepting unknown columns in new writes", () => {
+    const original = [{ Label1: "Valid", Amount: "12.30", Removed: "Keep in history" }];
+    expect(validateObjectList(original, config, false).ok).toBe(false);
+    expect(validateObjectList(original, config, false, { stored: true })).toEqual({
+      ok: true,
+      value: [{ Label1: "Valid", Amount: "12.30" }],
+    });
+    expect(original[0]?.Removed).toBe("Keep in history");
   });
 
   test("reports the affected row and field, rejecting the entire value", () => {

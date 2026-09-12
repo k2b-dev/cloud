@@ -450,6 +450,7 @@ export const GridRecordSchema = z.object({
   shortId: ShortIdSchema,
   tableId: z.string().uuid(),
   data: z.record(z.string(), z.unknown()),
+  fieldErrors: z.record(z.string(), z.string()).optional(),
   expanded: z.record(z.string(), z.record(z.string(), z.unknown())).optional(),
   version: z.number().int(),
   finalizedAt: z.string().datetime().nullable().optional(),
@@ -1087,17 +1088,19 @@ export const UpdateViewSchema = z.object({
 });
 
 // ── Documents ─────────────────────────────────────────────────────────────
-const HtmlDocumentTemplateRendererSchema = z
+export const DocumentHtmlContentSchema = z
   .object({
-    kind: z.literal("html"),
     body: z.string().trim().min(1).max(200_000),
     header: z.string().trim().min(1).max(50_000).optional(),
     footer: z.string().trim().min(1).max(50_000).optional(),
     css: z.string().trim().min(1).max(50_000).optional(),
-    numberTemplate: z.string().trim().min(1).max(5_000),
-    filenameTemplate: z.string().trim().min(1).max(5_000),
   })
   .strict();
+const HtmlDocumentTemplateRendererSchema = DocumentHtmlContentSchema.extend({
+  kind: z.literal("html"),
+  numberTemplate: z.string().trim().min(1).max(5_000),
+  filenameTemplate: z.string().trim().min(1).max(5_000),
+});
 export type HtmlDocumentTemplateRenderer = z.infer<typeof HtmlDocumentTemplateRendererSchema>;
 
 const ProfileDocumentTemplateRendererSchema = z
@@ -1213,18 +1216,19 @@ export type DocumentArtifact = z.infer<typeof DocumentArtifactSchema>;
 const DocumentSchema = z.object({
   id: z.string().uuid(),
   shortId: ShortIdSchema,
-  templateId: z.string().uuid(),
+  templateId: z.string().uuid().nullable(),
   workflowRunId: z.string().uuid().nullable(),
-  snapshotId: z.string().uuid(),
+  snapshotId: z.string().uuid().nullable(),
   baseId: z.string().uuid(),
-  tableId: z.string().uuid(),
-  recordId: z.string().uuid(),
+  tableId: z.string().uuid().nullable(),
+  recordId: z.string().uuid().nullable(),
   documentNumber: z.string(),
   filename: z.string(),
   tags: z.array(z.string()),
   templateSnapshot: z.record(z.string(), z.unknown()),
   renderData: z.record(z.string(), z.unknown()),
   artifacts: z.array(DocumentArtifactSchema).min(1).max(8),
+  primaryArtifactKey: DocumentArtifactSchema.shape.key,
   profile: z.object({ id: z.string(), version: z.number().int().positive() }).strict().nullable(),
   validationStatus: z.enum(["valid", "warning"]).nullable(),
   createdBy: z.string().uuid().nullable(),
@@ -1245,6 +1249,7 @@ const DocumentSummarySchema = DocumentSchema.pick({
   filename: true,
   tags: true,
   artifacts: true,
+  primaryArtifactKey: true,
   profile: true,
   validationStatus: true,
   createdBy: true,
@@ -1271,8 +1276,8 @@ const DocumentLinkSchema = z.object({
   shortId: ShortIdSchema,
   documentId: z.string().uuid(),
   baseId: z.string().uuid(),
-  tableId: z.string().uuid(),
-  recordId: z.string().uuid(),
+  tableId: z.string().uuid().nullable(),
+  recordId: z.string().uuid().nullable(),
   comment: z.string().nullable(),
   createdBy: z.string().uuid().nullable(),
   createdAt: z.string().datetime(),
@@ -1362,7 +1367,7 @@ export const UpdateEmailTemplateSchema = z.object({
 export type UpdateEmailTemplateInput = z.infer<typeof UpdateEmailTemplateSchema>;
 
 const DocumentFolderSchema = z.object({
-  kind: z.enum(["template", "year", "month"]),
+  kind: z.enum(["template", "workflow", "year", "month"]),
   key: z.string(),
   label: z.string(),
   path: z.array(z.string()),

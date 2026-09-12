@@ -1,6 +1,7 @@
 import { beforeAll, describe, expect } from "bun:test";
 import { sql } from "bun";
 import { migrate } from "../migrate";
+import { readableComputedTargetTableIds } from "../service/computed-projections";
 import type { ExpansionViewer } from "../service/relations";
 import { decodeDslResultCursor } from "./result-cursor";
 import {
@@ -20,6 +21,21 @@ beforeAll(async () => {
 });
 
 describe("Query DSL Postgres smoke — computed, labels, and aggregates", () => {
+  postgresTest("applies the caller policy to current and historical dependency candidates", async () => {
+    const fixture = await insertDslDbFixture();
+    try {
+      const checked: string[] = [];
+      const readable = await readableComputedTargetTableIds(fixture.fieldsByTableId[fixture.orders.id]!, undefined, async (tableId) => {
+        checked.push(tableId);
+        return tableId === fixture.orders.id;
+      });
+      expect(new Set(checked)).toEqual(new Set([fixture.orders.id, fixture.customers.id]));
+      expect(checked).toHaveLength(2);
+      expect(readable).toEqual(new Set([fixture.orders.id]));
+    } finally {
+      await cleanupFixture(fixture.baseId);
+    }
+  });
   postgresTest("uses canonical average precision for field and formula aggregates", async () => {
     const fixture = await insertDslDbFixture();
     try {
@@ -262,13 +278,14 @@ describe("Query DSL Postgres smoke — computed, labels, and aggregates", () => 
       expect(blockedLabels.mode).toBe("rows");
       expect(blockedLabels.rows.map((row) => row.values.q_col_0)).toEqual([["Unknown record"], ["Unknown record"]]);
 
-      const visibleSearch = await preview(fixture, `search 'Alice' in CUSTLx`, ctx(fixture), 10, adminViewer);
+      const visibleSearch = await preview(fixture, `search 'Alice' in CUSTLx\nselect CUSTLx`, ctx(fixture), 10, adminViewer);
       expect(visibleSearch.mode).toBe("rows");
       expect(visibleSearch.rows.map((row) => row.recordId)).toEqual([fixture.orderAId]);
 
-      const blockedSearch = await preview(fixture, `search 'Alice' in CUSTLx`, ctx(fixture), 10, blockedViewer);
+      const blockedSearch = await preview(fixture, `search 'Alice' in CUSTLx\nselect CUSTLx`, ctx(fixture), 10, blockedViewer);
       expect(blockedSearch.mode).toBe("rows");
       expect(blockedSearch.rows).toHaveLength(0);
+      await expect(preview(fixture, "select CSCORx", ctx(fixture), 10, blockedViewer)).rejects.toThrow("not available in this query");
     } finally {
       await cleanupFixture(fixture.baseId);
     }

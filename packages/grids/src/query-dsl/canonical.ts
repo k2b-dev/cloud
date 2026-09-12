@@ -1,5 +1,6 @@
 import { normalizeRefKey } from "../ref-syntax";
 import { type CanonicalScope, formulaSource, recordMetaRef, resolveFieldRef } from "./canonical-expression-source";
+import { type BindDslQueryContextOptions, bindDslQueryContext, type DslQueryContextInput } from "./parameters";
 import {
   type DslResolvedRelationJoin,
   type DslResolvedSqlQueryPlan,
@@ -178,8 +179,16 @@ const staticLines = (ast: DslQueryAst): string[] => [
   ...(ast.deletedOnly ? ["deleted only"] : ast.includeDeleted ? ["include deleted"] : []),
 ];
 
-export const canonicalizeDslQuery = (ast: DslQueryAst, ctx: DslResolverContext): CanonicalResult => {
-  const resolved = resolveDslQueryToQueryPlan(ast, ctx);
+/** Validate using bound values, while retaining parameter references in stored source. */
+export const canonicalizeDslQuery = (
+  ast: DslQueryAst,
+  ctx: DslResolverContext,
+  values?: DslQueryContextInput,
+  options: BindDslQueryContextOptions = {},
+): CanonicalResult => {
+  const bound = values === undefined ? { ok: true as const, ast } : bindDslQueryContext(ast, values, options);
+  if (!bound.ok) return { ok: false, diagnostics: [{ message: bound.error }] };
+  const resolved = resolveDslQueryToQueryPlan(bound.ast, ctx);
   if (!resolved.ok) return resolved;
   const plan = resolved.plan;
   const scope: CanonicalScope = {

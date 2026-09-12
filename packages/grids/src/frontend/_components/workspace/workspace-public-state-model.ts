@@ -180,7 +180,7 @@ export type PublicWorkspaceRoute =
       initialDocumentViewMode: GridsDocumentViewMode;
       initialBrowserPage: PublicDocumentBrowseResponse;
     }
-  | { kind: "documents"; initialBrowserPage: PublicDocumentBrowseResponse }
+  | { kind: "documents"; canWriteDocuments: boolean; initialBrowserPage: PublicDocumentBrowseResponse }
   | { kind: "overview" }
   | { kind: "empty" };
 

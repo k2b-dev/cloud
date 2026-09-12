@@ -17,12 +17,13 @@ describe("Grids workflow manifest", () => {
     }
   });
 
-  test("preserves the published manifest hash", async () => {
-    expect(await hashWorkflowJson(gridsWorkflowManifest)).toBe("6169c1b2f0689f6a20ed8919bb5e3c664ac900001bfd1ebc181013578016185f");
+  test("pins the query-enabled manifest hash; older plans require republication", async () => {
+    expect(await hashWorkflowJson(gridsWorkflowManifest)).toBe("e5744d4e3966745d6c7b6fa4db5b3a58d4c57e10670384dac50e790563ec1c7e");
   });
 
   test("classifies every effectful action explicitly", () => {
     expect(Object.fromEntries(gridsWorkflowManifest.actions.map((action) => [action.kind, action.effect]))).toMatchObject({
+      query: "transactional",
       finalizeRecord: "transactional",
       closeRecord: "transactional",
       createCorrectionDraft: "transactional",
@@ -36,11 +37,13 @@ describe("Grids workflow manifest", () => {
     });
   });
 
-  test("does not advertise unsupported document batching", () => {
+  test("exposes query outputs and record templates without a second batch action", () => {
     const action = gridsWorkflowManifest.actions.find((candidate) => candidate.kind === "generateDocument");
 
     expect(action?.config.kind).toBe("object");
     if (action?.config.kind !== "object") throw new Error("generateDocument config is not an object");
     expect(action.config.properties).not.toHaveProperty("batch");
+    expect(action.config.properties).toHaveProperty("data");
+    expect(action.config.properties).toHaveProperty("output");
   });
 });

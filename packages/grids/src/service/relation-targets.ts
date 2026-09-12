@@ -2,9 +2,12 @@ import { toPgUuidArray } from "@k2b/cloud/services";
 import { sql } from "bun";
 import { assertFederatedPublication, buildDslSqlRecordSource } from "../query-dsl/sql-record-source";
 import type { SqlClient } from "./audit";
+import { readableComputedTargetTableIds } from "./computed-projections";
 import { mapFieldRow } from "./field-read";
 import { parseJsonbRow } from "./jsonb";
 import { liveRecordParentJoinSql } from "./parent-checks";
+import { applyFinalizedComputedAccess } from "./record-persistence";
+import type { ExpansionViewer } from "./relation-access";
 import { enrichRecordsWithFormulas } from "./relation-formulas";
 import { readRecordLinksBatch } from "./relation-links";
 import { get as getTable } from "./tables";
@@ -14,7 +17,7 @@ const LABEL_TEXT_TYPES = new Set(["text"]);
 
 type RelationTargets = {
   fields: Field[];
-  records: Array<{ id: string; data: Record<string, unknown> }>;
+  records: Array<{ id: string; data: Record<string, unknown>; finalizedAt?: string | null }>;
 };
 
 export const relationLabelFields = (fields: Field[]): Field[] => {
@@ -82,6 +85,7 @@ export const loadRelationTargetsBatch = async (
   authorizedTableIds?: ReadonlySet<string>,
   labelFieldIdsByTableId?: ReadonlyMap<string, readonly string[]>,
   client: SqlClient = sql,
+  viewer?: ExpansionViewer,
 ): Promise<Map<string, RelationTargets>> => {
   const targetTableIds = [...idsByTargetTable.keys()];
   if (targetTableIds.length === 0) return new Map();
@@ -126,8 +130,17 @@ export const loadRelationTargetsBatch = async (
   }
 
   if (storedTableIds.length > 0 && storedRecordIds.size > 0) {
-    const storedRows = await client<Array<{ id: string; table_id: string; data: unknown }>>`
-      SELECT r.id, r.table_id, r.data
+    const storedRows = await client<
+      Array<{
+        id: string;
+        table_id: string;
+        data: unknown;
+        finalized_at: string | null;
+        finalized_computed_types: unknown;
+        finalized_computed_dependencies: unknown;
+      }>
+    >`
+      SELECT r.id, r.table_id, r.data, r.finalized_at::text, r.finalized_computed_types, r.finalized_computed_dependencies
       FROM grids.records r
       ${liveRecordParentJoinSql("r", "rt", "rb")}
       WHERE r.id = ANY(${toPgUuidArray([...storedRecordIds])}::uuid[])
@@ -140,7 +153,19 @@ export const loadRelationTargetsBatch = async (
       targets.records.push({
         id: row.id,
         data: parseJsonbRow<Record<string, unknown>>(row.data, {}),
+        finalizedAt: row.finalized_at,
       });
+    }
+    for (const tableId of storedTableIds) {
+      const requiredScope = viewer
+        ? await readableComputedTargetTableIds(fieldsByTable.get(tableId) ?? [], viewer, undefined, client)
+        : authorizedTableIds;
+      applyFinalizedComputedAccess(
+        storedRows.filter((row) => row.table_id === tableId),
+        new Map((targetsByTable.get(tableId)?.records ?? []).map((record) => [record.id, record])),
+        requiredScope,
+        fieldsByTable.get(tableId) ?? [],
+      );
     }
   }
 

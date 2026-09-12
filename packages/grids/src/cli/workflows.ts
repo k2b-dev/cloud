@@ -2,6 +2,7 @@ import { arg, command, confirmFlag, flag } from "@k2b/cloud/cli";
 import type { WorkflowInvocationReceipt } from "@k2b/cloud/workflows";
 import type { z } from "zod";
 import { PUBLIC_DOCUMENT_PAGE_LIMIT } from "../api/document-public-contracts";
+import type { FinancialExportPreview } from "../api/workflow-document-confirmations";
 import type { PublicWorkflowDocumentListSchema } from "../api/workflow-public-contracts";
 import type { EmailTemplate } from "../contracts";
 import {
@@ -658,7 +659,7 @@ export const workflowRunCommands = [
       status: flag.enum(["queued", "running", "waiting", "succeeded", "failed", "canceled", "needs_attention"] as const, {
         description: "Run state",
       }),
-      channel: flag.enum(["api", "customApp", "scanner", "bulk", "schedule", "recordEvent"] as const, {
+      channel: flag.enum(["api", "customApp", "scanner", "bulk", "record", "schedule", "recordEvent"] as const, {
         description: "What asked for the run",
       }),
       mode: flag.enum(["execute", "dryRun"] as const, { description: "execute performs the run; dryRun plans it" }),
@@ -713,6 +714,59 @@ export const workflowRunCommands = [
       }
     },
   }),
+  command("workflow-runs preview-export", {
+    summary: "Inspect the complete normalized financial export waiting for confirmation",
+    description:
+      "Shows the frozen destination, mapped rows, data timestamp and confirmation hash. Does not create or submit a file. Use --json for structured data.",
+    args: {
+      run: arg.required({ description: "Workflow run public id" }),
+      receipt: arg.required({ description: "Pending Document receipt public id" }),
+    },
+    async run({ ctx, args }) {
+      const runId = requirePublicId(args.run, "Workflow run id");
+      const receiptId = requirePublicId(args.receipt, "Document receipt id");
+      const preview = await readApi<FinancialExportPreview>(ctx, `/workflows/runs/${runId}/document-confirmations/${receiptId}`);
+      if (printCliStructured(ctx, preview)) return;
+      ctx.print(`${preview.kind} (profile ${preview.version}): ${preview.filename ?? preview.number}`);
+      ctx.print(`Captured: ${preview.source.capturedAt}; rows: ${preview.source.rowCount}`);
+      if (preview.source.selectionLimit !== null)
+        ctx.print(`The query explicitly limits the selection to ${preview.source.selectionLimit} rows.`);
+      const { rows, ...header } = preview.input;
+      for (const [key, value] of Object.entries(header)) ctx.print(`${key}: ${String(value)}`);
+      const columns = [...new Set(rows.flatMap((row) => Object.keys(row)))].map((key) => ({ key, label: key }));
+      ctx.table<Record<string, unknown>>(rows, columns);
+      ctx.print(
+        `Confirm only after reviewing all rows: cld grids workflow-runs confirm-export ${runId} ${receiptId} --sha256 ${preview.sha256} --yes`,
+      );
+      ctx.print("This creates an export file. It does not submit a payment or import accounting entries.");
+    },
+  }),
+  command("workflow-runs confirm-export", {
+    summary: "Confirm the exact inspected financial export and resume its workflow",
+    description:
+      "Requires the hash returned by preview-export and --yes. Never fetches a new preview hash implicitly. An explicit query limit is part of the confirmed selection.",
+    args: {
+      run: arg.required({ description: "Workflow run public id" }),
+      receipt: arg.required({ description: "Pending Document receipt public id" }),
+    },
+    flags: {
+      sha256: flag.string({ required: true, description: "SHA-256 returned by the reviewed preview" }),
+      yes: confirmFlag("Confirm this financial export"),
+    },
+    async run({ ctx, args, flags }) {
+      if (!flags.yes) throw new Error("Review preview-export first, then pass --yes to confirm.");
+      if (typeof flags.sha256 !== "string" || !/^[a-f0-9]{64}$/.test(flags.sha256))
+        throw new Error("Pass the exact SHA-256 returned by preview-export.");
+      const runId = requirePublicId(args.run, "Workflow run id");
+      const receiptId = requirePublicId(args.receipt, "Document receipt id");
+      const confirmed = await readApi<{ confirmed: true }>(
+        ctx,
+        `/workflows/runs/${runId}/document-confirmations/${receiptId}/confirm`,
+        jsonRequest("POST", { sha256: flags.sha256 }),
+      );
+      printJsonOrMessage(ctx, confirmed, `Export confirmed. Workflow ${runId} may continue; check its status before downloading.`);
+    },
+  }),
   command("workflow-runs cancel", {
     summary: "Cancel a queued, running, or waiting workflow run",
     description:
@@ -756,6 +810,10 @@ export const workflowRunCommands = [
         { key: "outcome", label: "OUTCOME" },
       ]);
       if (ctx.options.output === "text" && payload.truncated) ctx.print(`showing the first ${payload.items.length} steps`);
+      if (ctx.options.output === "text")
+        for (const step of payload.items)
+          if (step.documentConfirmation)
+            ctx.print(`Review export: cld grids workflow-runs preview-export ${args.run} ${step.documentConfirmation.receiptId}`);
     },
   }),
   command("workflow-runs documents", {

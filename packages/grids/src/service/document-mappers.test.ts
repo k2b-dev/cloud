@@ -13,6 +13,7 @@ const row = {
   record_id: "record-id",
   document_number: "INV-1",
   filename: "invoice.pdf",
+  primary_artifact_key: "pdf",
   tags: ["paid"],
   profile_id: "invoice",
   profile_version: 1,
@@ -31,6 +32,21 @@ const pdf: DocumentArtifact = {
 const artifacts = [pdf, { ...pdf, key: "xml", fileId: "xml-file-id", filename: "invoice.xml", mimeType: "application/xml" }];
 
 describe("document summary mapping", () => {
+  test("workflow sources have no fabricated record binding and partial bindings are rejected", () => {
+    const workflow = { ...row, template_id: null, snapshot_id: null, table_id: null, record_id: null, workflow_run_id: Bun.randomUUIDv7() };
+    expect(mapDocumentSummary(workflow, artifacts)).toMatchObject({
+      templateId: null,
+      snapshotId: null,
+      tableId: null,
+      recordId: null,
+      workflowRunId: workflow.workflow_run_id,
+    });
+    expect(() => mapDocumentSummary({ ...workflow, workflow_run_id: null }, artifacts)).toThrow("document source invariant");
+    for (const key of ["template_id", "snapshot_id", "table_id", "record_id"]) {
+      expect(() => mapDocumentSummary({ ...row, [key]: null }, artifacts)).toThrow("document source invariant");
+      expect(() => mapDocumentSummary({ ...workflow, [key]: Bun.randomUUIDv7() }, artifacts)).toThrow("document source invariant");
+    }
+  });
   test("matches full document summaries including structured artifact metadata", () => {
     const full = mapDocument({ ...row, template_snapshot: { renderer: "test" }, render_data: '{"record":{}}' }, artifacts);
     expect(mapDocumentSummary(row, artifacts)).toEqual(summarizeDocument(full));
@@ -61,12 +77,20 @@ describe("document summary mapping", () => {
     expect(() => mapDocument({ ...row, template_snapshot: {}, render_data: "invalid" }, artifacts)).toThrow("Document render data");
   });
 
-  test("keeps the canonical PDF invariant for both read shapes", () => {
-    for (const invalid of [[], [{ ...pdf, key: "xml" }], [{ ...pdf, mimeType: "text/plain" }], [{ ...pdf, filename: "wrong.pdf" }]]) {
+  test("requires the declared primary artifact and filename for both read shapes", () => {
+    for (const invalid of [[], [{ ...pdf, key: "xml" }], [{ ...pdf, filename: "wrong.pdf" }]]) {
       expect(() => mapDocumentSummary(row, invalid)).toThrow("document artifact invariant violated");
       expect(() => mapDocument({ ...row, template_snapshot: {}, render_data: {} }, invalid)).toThrow(
         "document artifact invariant violated",
       );
     }
+  });
+  test("supports a non-PDF primary artifact without fallback or artifact-order assumptions", () => {
+    const summary = mapDocumentSummary({ ...row, primary_artifact_key: "xml", filename: "invoice.xml" }, artifacts);
+    expect(summary.primaryArtifactKey).toBe("xml");
+    expect(summary.filename).toBe("invoice.xml");
+    expect(() => mapDocumentSummary({ ...row, primary_artifact_key: undefined }, artifacts)).toThrow(
+      "document artifact invariant violated",
+    );
   });
 });

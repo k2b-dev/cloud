@@ -49,7 +49,11 @@ const workspaceState = (): PublicOkWorkspaceState => ({
 describe("GridsWorkspace", () => {
   test("All documents preserves resolved template access without granting extra rights", () => {
     const state = workspaceState();
-    state.route = { kind: "documents", initialBrowserPage: { items: [], folders: [], path: [], cursor: null, hasMore: false } };
+    state.route = {
+      kind: "documents",
+      canWriteDocuments: false,
+      initialBrowserPage: { items: [], folders: [], path: [], cursor: null, hasMore: false },
+    };
     state.catalog.documentTemplateLevels = { TMPL01: "admin", TMPL02: "write", TMPL03: "read" };
     expect(routeClientState(state).catalog.documentTemplateLevels).toEqual(state.catalog.documentTemplateLevels);
     expect(routeClientState(state).catalog.documentTemplateLevels.MISSING).toBeUndefined();

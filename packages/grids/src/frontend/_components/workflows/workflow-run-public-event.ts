@@ -17,6 +17,7 @@ export type PublicWorkflowRunEventSummary = Pick<
   | "finishedAt"
 > & {
   operatorMessage?: string | null;
+  documentConfirmation?: PublicWorkflowRun["documentConfirmation"];
 };
 
 export type PublicWorkflowRunStepSummary = Pick<

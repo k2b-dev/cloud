@@ -1,5 +1,5 @@
-import { type DateContext, err, fail, ok, type Result } from "@k2b/stdlib";
 import { GotenbergRenderError, mergePdfs, type RenderHtmlToPdfResult } from "@k2b/cloud/services";
+import { type DateContext, err, fail, ok, type Result } from "@k2b/stdlib";
 import { sql } from "bun";
 import type { Document, DocumentArtifact, DocumentTemplate } from "../contracts";
 import { type DocumentReadAuthorizer, loadReadableWorkflowRunDocumentScopes, workflowRunDocumentAccessWhere } from "./document-browse";
@@ -125,20 +125,28 @@ export const getDocumentArtifacts = async (documentId: string): Promise<Document
 export const getDocumentArtifact = (documentId: string, key: string, locale?: string): Promise<Result<DocumentArtifactContent>> =>
   documentIssuanceService.getDocumentArtifact(documentId, key, locale);
 
-export const getDocumentPdf = async (document: Document, locale?: string): Promise<Result<RenderHtmlToPdfResult>> => {
+export const getDocumentPrimaryArtifact = async (document: Document, locale?: string): Promise<Result<DocumentArtifactContent>> => {
   const t = documentServiceText(locale);
-  const pdf = document.artifacts.find((artifact) => artifact.key === "pdf");
-  if (!pdf || pdf.mimeType !== "application/pdf") return fail(err.internal(t.noCanonicalPdf));
-  const stored = await getDocumentArtifact(document.id, "pdf", locale);
+  const primary = document.artifacts.find((artifact) => artifact.key === document.primaryArtifactKey);
+  if (!primary) return fail(err.internal(t.artifactMetadataIntegrityFailed));
+  const stored = await getDocumentArtifact(document.id, primary.key, locale);
   if (!stored.ok) return stored;
   if (
-    stored.data.fileId !== pdf.fileId ||
-    stored.data.filename !== pdf.filename ||
-    stored.data.mimeType !== pdf.mimeType ||
-    stored.data.sizeBytes !== pdf.sizeBytes ||
-    stored.data.sha256 !== pdf.sha256
+    stored.data.fileId !== primary.fileId ||
+    stored.data.filename !== primary.filename ||
+    stored.data.mimeType !== primary.mimeType ||
+    stored.data.sizeBytes !== primary.sizeBytes ||
+    stored.data.sha256 !== primary.sha256
   )
     return fail(err.internal(t.artifactMetadataIntegrityFailed));
+  return stored;
+};
+
+/** PDF-only consumers (merge and PDF sharing) keep an explicit format check. */
+export const getDocumentPdf = async (document: Document, locale?: string): Promise<Result<RenderHtmlToPdfResult>> => {
+  const stored = await getDocumentPrimaryArtifact(document, locale);
+  if (!stored.ok) return stored;
+  if (stored.data.mimeType !== "application/pdf") return fail(err.badInput(documentServiceText(locale).noCanonicalPdf));
   return ok({ pdf: stored.data.bytes, contentType: "application/pdf" });
 };
 

@@ -19,6 +19,10 @@ import {
   workflowMessageExpressions,
 } from "@k2b/cloud/workflows/language";
 import { normalizeWorkflowSchedule } from "@k2b/cloud/workflows/runtime";
+import type { Result } from "@k2b/stdlib";
+import type { DslQueryContextInput } from "../query-dsl/parameters";
+import { FinancialDocumentOutputSchema } from "../service/document-financial-output";
+import { validateDocumentQueryOutput } from "../service/document-query-output";
 import {
   getWorkflowCatalogRef,
   snapshotWorkflowCatalog,
@@ -27,9 +31,19 @@ import {
   type WorkflowCatalogIndex,
   type WorkflowFieldCatalogEntry,
 } from "../service/workflow-catalog";
+import { WorkflowDocumentSourceSchema, WorkflowRecordSourceSchema } from "../service/workflow-document-sources";
+import { captureWorkflowDocumentValues } from "../service/workflow-document-values";
+import type { WorkflowQueryBinding } from "../service/workflow-query-data";
 import { gridsWorkflows } from "./module";
+import {
+  resolveWorkflowQueryParameters,
+  type WorkflowQueryParameters,
+  WorkflowQueryParametersSchema,
+  workflowQueryParameterSamples,
+} from "./query-parameters";
 
 type BindGridsWorkflowResult = { ok: true; plan: WorkflowBoundPlan; source?: string } | { ok: false; diagnostics: WorkflowDiagnostic[] };
+export type WorkflowQueryBinder = (source: string, values: DslQueryContextInput) => Promise<Result<WorkflowQueryBinding>>;
 
 type CanonicalEdit =
   | { kind: "value" | "key"; path: Array<string | number>; value: string }
@@ -44,6 +58,17 @@ const gridsValueDescriptors: Record<string, WorkflowValuePathDescriptor> = {
   "core.textArray": { kind: "array", type: "core.textArray", items: textValue },
   "grids.record": recordValue,
   "grids.recordList": { kind: "array", type: "grids.recordList", items: recordValue },
+  "grids.queryResult": {
+    kind: "object",
+    type: "grids.queryResult",
+    properties: {
+      kind: textValue,
+      id: textValue,
+      sha256: textValue,
+      rowCount: { kind: "scalar", type: "core.number" },
+      capturedAt: dateTimeValue,
+    },
+  },
   "grids.document": {
     kind: "object",
     type: "grids.document",
@@ -51,12 +76,11 @@ const gridsValueDescriptors: Record<string, WorkflowValuePathDescriptor> = {
       id: textValue,
       shortId: textValue,
       templateId: textValue,
-      workflowRunId: textValue,
-      snapshotId: textValue,
       baseId: textValue,
       tableId: textValue,
       recordId: textValue,
-      documentNumber: textValue,
+      number: textValue,
+      primaryArtifactKey: textValue,
       filename: textValue,
       tags: { kind: "array", type: "core.array", items: textValue },
       createdBy: textValue,
@@ -96,6 +120,7 @@ type BindingContext = {
   bindings: Record<string, WorkflowJsonValue>;
   diagnostics: WorkflowDiagnostic[];
   canonicalEdits: CanonicalEdit[];
+  queries: Array<{ source: string; values: DslQueryContextInput; parameters: WorkflowQueryParameters; path: Array<string | number> }>;
 };
 
 const locationForPath = (
@@ -275,6 +300,82 @@ const bindValue = (
   return { kind: "object", type: "core.object", properties };
 };
 
+const bindFinancialOutput = (
+  output: Record<string, WorkflowJsonValue>,
+  path: Array<string | number>,
+  scope: ReadonlyMap<string, ValueInfo>,
+  context: BindingContext,
+): void => {
+  const schema = FinancialDocumentOutputSchema.options.find((option) => option.shape.kind.value === output.kind);
+  if (!schema) return;
+  const { header, ...literal } = output;
+  const config = schema.omit({ header: true }).safeParse(literal);
+  if (!config.success) {
+    addDiagnostic(context, "binding.output", "Use financial output version 1 and exact, literal GQL column aliases", path);
+    return;
+  }
+  for (const [key, alias] of Object.entries(config.data.mapping)) {
+    if (alias !== undefined && parseWorkflowValueString(alias).kind !== "literal")
+      addDiagnostic(context, "binding.output", "Column mappings must be literal GQL aliases, not workflow expressions", [
+        ...path,
+        "mapping",
+        key,
+      ]);
+  }
+  if (!header || typeof header !== "object" || Array.isArray(header)) {
+    addDiagnostic(context, "binding.output", "Financial output requires header settings", [...path, "header"]);
+    return;
+  }
+  const shape = schema.shape.header.shape;
+  for (const key of Object.keys(header)) {
+    if (!Object.hasOwn(shape, key))
+      addDiagnostic(context, "binding.output", `Unknown financial header setting "${key}"`, [...path, "header", key]);
+  }
+  for (const [key, validator] of Object.entries(shape)) {
+    const value = header[key];
+    const fieldPath = [...path, "header", key];
+    if (typeof value === "string" && parseWorkflowValueString(value).kind !== "literal") {
+      if (key === "destinationKey") {
+        addDiagnostic(context, "binding.output", "destinationKey must be a stable literal target, never a per-run expression", fieldPath);
+        continue;
+      }
+      const actual = bindValue(value, fieldPath, scope, context);
+      const expected =
+        key === "finalize"
+          ? "core.boolean"
+          : key === "accountLength"
+            ? "core.number"
+            : ["executionDate", "fiscalYearStart", "periodStart", "periodEnd"].includes(key)
+              ? "core.date"
+              : "core.text";
+      if (!typesCompatible(expected, actual.type) && actual.type !== "core.value")
+        addDiagnostic(context, "reference.type", `Financial header "${key}" expects ${expected}, received ${actual.type}`, fieldPath);
+    } else {
+      const checked = validator.safeParse(value);
+      if (!checked.success)
+        addDiagnostic(
+          context,
+          "binding.output",
+          `Invalid financial header setting "${key}": ${checked.error.issues[0]?.message}`,
+          fieldPath,
+        );
+    }
+  }
+  // Headers with expressions receive the same complete cross-field validation
+  // after the kernel evaluates them; no invented sample values at publication.
+  if (!Object.values(header).some((value) => typeof value === "string" && parseWorkflowValueString(value).kind !== "literal")) {
+    const checked = validateDocumentQueryOutput(output);
+    if (!checked.ok) addDiagnostic(context, "binding.output", checked.error.message, path);
+  }
+  if (context.ir.triggers.some((trigger) => trigger.kind === "schedule" || trigger.kind === "recordEvent"))
+    addDiagnostic(
+      context,
+      "binding.output",
+      "Financial exports require a manual invocation and preview confirmation; remove automatic triggers",
+      path,
+    );
+};
+
 const expectReference = (
   value: WorkflowJsonValue | undefined,
   expectedType: string,
@@ -386,7 +487,49 @@ const bindAction = (step: Extract<WorkflowIrStep, { kind: "action" }>, scope: Ma
   const outputType = gridsWorkflows.manifest.actions.find((action) => action.kind === step.action)?.outputType;
   let output: ValueInfo | undefined = outputType ? valueDescriptor(outputType) : undefined;
 
-  if (step.action === "finalizeRecord" || step.action === "closeRecord") {
+  if (step.action === "query") {
+    const parameters = WorkflowQueryParametersSchema.safeParse(config.parameters ?? {});
+    if (!parameters.success) {
+      addDiagnostic(context, "query.parameters", "Use typed query parameters with lowercase names", [...path, "parameters"]);
+    } else {
+      for (const [name, parameter] of Object.entries(parameters.data)) {
+        const value = bindValue(parameter.value, [...path, "parameters", name, "value"], scope, context);
+        const expected =
+          parameter.type === "record" || parameter.type === "recordList"
+            ? `grids.${parameter.type}`
+            : parameter.type === "decimal"
+              ? "core.text"
+              : `core.${parameter.type}`;
+        // Record fields carry core.value: their declared parameter type is
+        // checked against the actual value at execution, without coercion.
+        if (
+          value.type !== expected &&
+          value.type !== "core.value" &&
+          !(value.type === "core.text" && (parameter.type === "date" || parameter.type === "dateTime"))
+        ) {
+          addDiagnostic(context, "query.parameterType", `Parameter "${name}" requires ${parameter.type}, received ${value.type}`, [
+            ...path,
+            "parameters",
+            name,
+            "value",
+          ]);
+        }
+      }
+      if (typeof config.source === "string") {
+        // The kernel evaluates config expressions; never let an expression
+        // replace the published query. All dynamic data belongs in parameters.
+        if (config.source.includes("${{"))
+          addDiagnostic(context, "query.source", "Use @params.name instead of workflow expressions in GQL", [...path, "source"]);
+        else
+          context.queries.push({
+            source: config.source,
+            values: workflowQueryParameterSamples(parameters.data),
+            parameters: parameters.data,
+            path,
+          });
+      }
+    }
+  } else if (step.action === "finalizeRecord" || step.action === "closeRecord") {
     expectReference(config.record, "grids.record", "record", [...path, "record"], scope, context);
     if (step.action === "closeRecord" && config.expectedMode !== undefined) {
       expectReference(config.expectedMode, "core.text", "expectedMode", [...path, "expectedMode"], scope, context);
@@ -482,13 +625,106 @@ const bindAction = (step: Extract<WorkflowIrStep, { kind: "action" }>, scope: Ma
       });
     }
   } else if (step.action === "generateDocument") {
-    const template =
-      typeof config.template === "string"
-        ? resolveCatalogRef(context, context.catalog.templates, config.template, "document template", [...path, "template"])
-        : null;
-    const record = expectReference(config.record, "grids.record", "record", [...path, "record"], scope, context);
-    if (template && record?.tableId && template.tableId !== record.tableId) {
-      addDiagnostic(context, "binding.scope", "Record table does not match the document template table", [...path, "record"]);
+    if (config.sourceVersions !== undefined) {
+      if (config.sourceVersions === "data" && typeof config.data !== "string")
+        addDiagnostic(context, "binding.source", "sourceVersions: data requires a captured query reference", [...path, "sourceVersions"]);
+      const output = config.output;
+      if (!output || typeof output !== "object" || Array.isArray(output) || (output.kind !== "datev-csv" && output.kind !== "sepa-xml"))
+        addDiagnostic(context, "binding.source", "sourceVersions requires a financial data/output source", [...path, "sourceVersions"]);
+      bindValue(config.sourceVersions, [...path, "sourceVersions"], scope, context);
+    }
+    if (config.data !== undefined) {
+      if (config.output === undefined || config.template !== undefined || config.record !== undefined) {
+        addDiagnostic(context, "binding.source", "Use data with output, or template with record; do not mix sources", path);
+      }
+      if (typeof config.data === "string") expectReference(config.data, "grids.queryResult", "data", [...path, "data"], scope, context);
+      else if (config.data && typeof config.data === "object" && !Array.isArray(config.data)) {
+        if (Array.isArray(config.data.columns)) {
+          config.data.columns.forEach((column, index) => {
+            if (!column || typeof column !== "object" || Array.isArray(column)) return;
+            for (const key of ["key", "label", "type"] as const) {
+              if (typeof column[key] === "string" && parseWorkflowValueString(column[key]).kind !== "literal")
+                addDiagnostic(context, "binding.value", "Column definitions must be literal", [...path, "data", "columns", index, key]);
+            }
+            if (
+              Array.isArray(column.path) &&
+              column.path.some((part) => typeof part !== "string" || parseWorkflowValueString(part).kind !== "literal")
+            )
+              addDiagnostic(context, "binding.value", "Snapshot paths must be literal", [...path, "data", "columns", index, "path"]);
+          });
+        }
+        if ("documents" in config.data) {
+          const shape = WorkflowDocumentSourceSchema.safeParse({ ...config.data, documents: ["DOC001"] });
+          if (!shape.success) addDiagnostic(context, "binding.value", "Invalid document snapshot columns", [...path, "data"]);
+          bindValue(config.data.documents, [...path, "data", "documents"], scope, context);
+        } else if ("snapshots" in config.data) {
+          const shape = WorkflowRecordSourceSchema.safeParse({ ...config.data, snapshots: ["SNP001"] });
+          if (!shape.success) addDiagnostic(context, "binding.value", "Invalid record snapshot columns", [...path, "data"]);
+          bindValue(config.data.snapshots, [...path, "data", "snapshots"], scope, context);
+        } else {
+          const shape = captureWorkflowDocumentValues({ ...config.data, rows: [] }, "2000-01-01T00:00:00.000Z");
+          if (!shape.ok) addDiagnostic(context, "binding.value", shape.error.message, [...path, "data"]);
+          if (config.data.rows !== undefined) bindValue(config.data.rows, [...path, "data", "rows"], scope, context);
+        }
+      }
+      if (
+        config.output &&
+        typeof config.output === "object" &&
+        !Array.isArray(config.output) &&
+        (config.output.kind === "datev-csv" || config.output.kind === "sepa-xml")
+      ) {
+        bindFinancialOutput(config.output, [...path, "output"], scope, context);
+      } else {
+        const output = validateDocumentQueryOutput(config.output);
+        if (!output.ok) addDiagnostic(context, "binding.output", output.error.message, [...path, "output"]);
+        if (
+          config.output &&
+          typeof config.output === "object" &&
+          !Array.isArray(config.output) &&
+          config.output.kind === "csv" &&
+          Array.isArray(config.output.columns)
+        ) {
+          config.output.columns.forEach((column, index) => {
+            if (!column || typeof column !== "object" || Array.isArray(column)) return;
+            for (const key of ["source", "label"] as const) {
+              const value = column[key];
+              if (typeof value === "string" && parseWorkflowValueString(value).kind !== "literal")
+                addDiagnostic(context, "binding.output", "CSV column sources and headings must be literal", [
+                  ...path,
+                  "output",
+                  "columns",
+                  index,
+                  key,
+                ]);
+            }
+          });
+        }
+        if (config.output && typeof config.output === "object" && !Array.isArray(config.output) && config.output.kind === "json") {
+          const wrapper = config.output.wrapper;
+          if (wrapper && typeof wrapper === "object" && !Array.isArray(wrapper)) {
+            if (typeof wrapper.rowsKey === "string" && parseWorkflowValueString(wrapper.rowsKey).kind !== "literal")
+              addDiagnostic(context, "binding.output", "JSON wrapper rowsKey must be a literal property name", [
+                ...path,
+                "output",
+                "wrapper",
+                "rowsKey",
+              ]);
+            if (wrapper.values !== undefined) bindValue(wrapper.values, [...path, "output", "wrapper", "values"], scope, context);
+          }
+        }
+      }
+    } else {
+      if (config.template === undefined || config.record === undefined || config.output !== undefined) {
+        addDiagnostic(context, "binding.source", "Use data with output, or template with record", path);
+      }
+      const template =
+        typeof config.template === "string"
+          ? resolveCatalogRef(context, context.catalog.templates, config.template, "document template", [...path, "template"])
+          : null;
+      const record = expectReference(config.record, "grids.record", "record", [...path, "record"], scope, context);
+      if (template && record?.tableId && template.tableId !== record.tableId) {
+        addDiagnostic(context, "binding.scope", "Record table does not match the document template table", [...path, "record"]);
+      }
     }
     if (config.filename !== undefined) bindValue(config.filename, [...path, "filename"], scope, context);
     if (config.tags !== undefined) bindValue(config.tags, [...path, "tags"], scope, context);
@@ -740,7 +976,12 @@ const canonicalizeWorkflowSource = (source: string, edits: CanonicalEdit[]): str
   return Bun.YAML.stringify(root);
 };
 
-export const bindGridsWorkflow = async (ir: WorkflowIr, catalog: WorkflowCatalog, source?: string): Promise<BindGridsWorkflowResult> => {
+export const bindGridsWorkflow = async (
+  ir: WorkflowIr,
+  catalog: WorkflowCatalog,
+  source?: string,
+  bindQuery?: WorkflowQueryBinder,
+): Promise<BindGridsWorkflowResult> => {
   const manifest = gridsWorkflows.manifest;
   if (ir.languageId !== manifest.id || ir.languageVersion !== manifest.version) {
     return {
@@ -755,10 +996,40 @@ export const bindGridsWorkflow = async (ir: WorkflowIr, catalog: WorkflowCatalog
       ],
     };
   }
-  const context: BindingContext = { ir, catalog, inputs: new Map(), bindings: {}, diagnostics: [], canonicalEdits: [] };
+  const context: BindingContext = { ir, catalog, inputs: new Map(), bindings: {}, diagnostics: [], canonicalEdits: [], queries: [] };
   bindInputs(context);
   bindTriggers(context);
   bindSteps(ir.steps, new Map(), context);
+  if (context.diagnostics.length > 0) return { ok: false, diagnostics: context.diagnostics };
+  for (const query of context.queries) {
+    const literals = Object.fromEntries(
+      Object.entries(query.parameters).filter(
+        ([, parameter]) => typeof parameter.value !== "string" || parseWorkflowValueString(parameter.value).kind === "literal",
+      ),
+    );
+    const valid = await resolveWorkflowQueryParameters(literals, async () => {
+      throw new Error("Literal record parameters must have been rejected by workflow type binding");
+    });
+    if (!valid.ok) {
+      addDiagnostic(context, "query.parameterValue", `Parameter "${valid.parameter}" does not match its declared type`, [
+        ...query.path,
+        "parameters",
+        valid.parameter,
+        "value",
+      ]);
+      continue;
+    }
+    if (!bindQuery) {
+      addDiagnostic(context, "query.context", "Query publication requires the current authorized table schema", query.path);
+      continue;
+    }
+    const bound = await bindQuery(query.source, query.values);
+    if (!bound.ok) addDiagnostic(context, "query.invalid", bound.error.message, [...query.path, "source"]);
+    else {
+      context.bindings[workflowPathKey([...query.path, "$query"])] = bound.data;
+      context.canonicalEdits.push({ kind: "value", path: [...query.path, "source"], value: bound.data.source });
+    }
+  }
   if (context.diagnostics.length > 0) return { ok: false, diagnostics: context.diagnostics };
 
   const plan = await bindWorkflow(ir, gridsWorkflows, () => ({
@@ -769,14 +1040,18 @@ export const bindGridsWorkflow = async (ir: WorkflowIr, catalog: WorkflowCatalog
 };
 
 /** Compile, bind, and structurally rewrite every Grids resource reference to its public short ID. */
-export const compileAndBindGridsWorkflowSource = async (source: string, catalog: WorkflowCatalog): Promise<BindGridsWorkflowResult> => {
+export const compileAndBindGridsWorkflowSource = async (
+  source: string,
+  catalog: WorkflowCatalog,
+  bindQuery?: WorkflowQueryBinder,
+): Promise<BindGridsWorkflowResult> => {
   const compiled = await compileWorkflow(source, gridsWorkflows);
   if (!compiled.ok) return compiled;
-  const bound = await bindGridsWorkflow(compiled.ir, catalog, source);
+  const bound = await bindGridsWorkflow(compiled.ir, catalog, source, bindQuery);
   if (!bound.ok || bound.source === undefined || bound.source === source) return bound;
   const canonical = await compileWorkflow(bound.source, gridsWorkflows);
   if (!canonical.ok) return canonical;
-  return bindGridsWorkflow(canonical.ir, catalog, bound.source);
+  return bindGridsWorkflow(canonical.ir, catalog, bound.source, bindQuery);
 };
 
 const workflowCatalogIndexWithMigrationAliases = <T extends WorkflowCatalogEntry>(

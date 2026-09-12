@@ -12,6 +12,7 @@ import {
   listDocumentsForWorkflow,
 } from "./document-browse";
 import { getDocument } from "./document-core";
+import { createDocumentLink, resolveDocumentLinkDownload, revokeDocumentLink } from "./document-links";
 import { summarizeDocument } from "./document-mappers";
 import { insertTestWorkflow, insertTestWorkflowRun } from "./workflow-test-fixture";
 
@@ -83,11 +84,11 @@ const insertFixture = async (): Promise<Fixture> => {
     const artifact = await insertTestDocumentArtifact({ documentId: row.id, baseId, tableId, recordId, filename: row.filename });
     artifactFileIds.push(artifact.fileId);
     await sql`
-      INSERT INTO grids.documents (
+      INSERT INTO grids.documents (primary_artifact_key,
         id, short_id, template_id, snapshot_id, base_id, table_id, record_id,
         workflow_run_id, workflow_step_key, document_number, filename, tags, template_snapshot, render_data,
         renderer_kind, renderer_version, template_revision, issued_actor, created_at
-      ) VALUES (
+      ) VALUES ('pdf',
         ${row.id}::uuid, ${testShortId("R")}, ${templateId}::uuid, ${snapshotId}::uuid, ${baseId}::uuid,
         ${tableId}::uuid, ${recordId}::uuid, ${workflowRunId}::uuid, ${`step-${row.number}`}, ${row.number}, ${row.filename}, ${sql.array(row.tags, "TEXT")},
         '{}'::jsonb, '{}'::jsonb,
@@ -104,6 +105,105 @@ const cleanupFixture = async (fixture: Fixture): Promise<void> => {
 };
 
 describe("document browsing integration", () => {
+  postgresTest("workflow-only documents keep their source, authorization and folders without a root record", async () => {
+    const fixture = await insertFixture();
+    const id = testUuid();
+    const artifact = await insertTestDocumentArtifact({
+      documentId: id,
+      baseId: fixture.baseId,
+      tableId: null,
+      recordId: null,
+      filename: "report.pdf",
+    });
+    await sql`
+      INSERT INTO grids.documents (
+        id, short_id, base_id, workflow_run_id, workflow_step_key, template_id, snapshot_id, table_id, record_id,
+        document_number, filename, primary_artifact_key, template_snapshot, render_data, renderer_kind, renderer_version, template_revision, issued_actor
+      ) VALUES (
+        ${id}::uuid, ${testShortId("D")}, ${fixture.baseId}::uuid, ${fixture.workflowRunId}::uuid, 'summary', NULL, NULL, NULL, NULL,
+        'SUMMARY', 'report.pdf', 'pdf', '{}'::jsonb, '{}'::jsonb, 'html', ${artifact.rendererVersion}, ${artifact.templateRevision}, '{"kind":"system"}'::jsonb
+      )
+    `;
+    await artifact.attach();
+    expect(await getDocument(id)).toMatchObject({
+      tableId: null,
+      recordId: null,
+      templateId: null,
+      snapshotId: null,
+      workflowRunId: fixture.workflowRunId,
+    });
+    const document = await getDocument(id);
+    if (!document) throw new Error("Missing workflow document");
+    const shared = await createDocumentLink({ document, input: { expiresIn: "1d" }, actorId: null });
+    expect(shared.ok).toBe(true);
+    if (!shared.ok) throw new Error(shared.error.message);
+    expect(shared.data.link).toMatchObject({ baseId: fixture.baseId, tableId: null, recordId: null });
+    expect((await resolveDocumentLinkDownload(shared.data.token)).ok).toBe(true);
+    expect((await revokeDocumentLink({ linkId: shared.data.link.id, actorId: null })).ok).toBe(true);
+    expect((await resolveDocumentLinkDownload(shared.data.token)).ok).toBe(false);
+    const allowed = await listDocumentsForWorkflow(fixture.workflowRunId, {}, async (source) => source.tableId === null);
+    expect(allowed.items.map((document) => document.id)).toEqual([id]);
+    expect((await listDocumentsForWorkflow(fixture.workflowRunId, {}, async () => false)).items).toEqual([]);
+    const root = await browseDocumentsForBase({ baseId: fixture.baseId });
+    const folder = root.folders.find((entry) => entry.kind === "workflow");
+    expect(folder?.label).toBe("Invoice workflow");
+    if (!folder) throw new Error("Missing workflow folder");
+    const years = await browseDocumentsForBase({ baseId: fixture.baseId, path: folder.path });
+    const year = years.folders[0];
+    if (!year) throw new Error("Missing year folder");
+    expect((await browseDocumentsForBase({ baseId: fixture.baseId, path: year.path })).items.map((document) => document.id)).toEqual([id]);
+    const other = await insertFixture();
+    expect((await browseDocumentsForBase({ baseId: other.baseId, path: year.path })).items).toEqual([]);
+    await expect(
+      (async () => {
+        await sql`DELETE FROM grids.workflow_run_profile WHERE run_id = ${fixture.workflowRunId}::uuid`;
+      })(),
+    ).rejects.toMatchObject({ code: "ERR_POSTGRES_SERVER_ERROR", errno: "23503" });
+    for (const binding of [
+      {
+        templateId: fixture.templateId,
+        tableId: null,
+        recordId: null,
+        snapshotId: null,
+        runId: fixture.workflowRunId,
+        baseId: fixture.baseId,
+        constraint: "documents_source_binding_chk",
+      },
+      {
+        templateId: null,
+        tableId: null,
+        recordId: null,
+        snapshotId: null,
+        runId: null,
+        baseId: fixture.baseId,
+        constraint: "documents_source_binding_chk",
+      },
+      {
+        templateId: null,
+        tableId: null,
+        recordId: null,
+        snapshotId: null,
+        runId: fixture.workflowRunId,
+        baseId: other.baseId,
+        constraint: "documents_workflow_base_fkey",
+      },
+    ]) {
+      await expect(
+        (async () => {
+          await sql`
+          INSERT INTO grids.documents (
+            id, short_id, base_id, workflow_run_id, workflow_step_key, template_id, snapshot_id, table_id, record_id,
+            document_number, filename, primary_artifact_key, template_snapshot, render_data, renderer_kind, renderer_version, template_revision, issued_actor
+          ) VALUES (
+            ${testUuid()}::uuid, ${testShortId("D")}, ${binding.baseId}::uuid, ${binding.runId}::uuid,
+            ${binding.runId ? testShortId("S") : null}, ${binding.templateId}::uuid, ${binding.snapshotId}::uuid, ${binding.tableId}::uuid, ${binding.recordId}::uuid,
+            'INVALID', 'report.pdf', 'pdf', '{}'::jsonb, '{}'::jsonb, 'html', ${artifact.rendererVersion}, ${artifact.templateRevision}, '{"kind":"system"}'::jsonb
+          )
+        `;
+        })(),
+      ).rejects.toMatchObject({ constraint: binding.constraint });
+    }
+  });
   postgresTest("base folders group by public template id then local year, with bounded global search", async () => {
     const fixture = await insertFixture();
     const root = await browseDocumentsForBase({ baseId: fixture.baseId });

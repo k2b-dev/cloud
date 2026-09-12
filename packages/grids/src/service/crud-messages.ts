@@ -90,6 +90,9 @@ export const gridsCrudMessages = i18n.define({
       sortInvalid: ({ detail }: { detail: string }) => `The sort is invalid: ${detail}`,
       groupInvalid: ({ detail }: { detail: string }) => `The grouping is invalid: ${detail}`,
       aggregateInvalid: ({ detail }: { detail: string }) => `The aggregation is invalid: ${detail}`,
+      calculationFailed: "This value could not be calculated. Check the formula and its input values.",
+      missingCapturedCalculation:
+        "A finalized record has no captured value for a requested calculation. Exclude that record or calculation; historical values cannot be recalculated.",
       fieldNameUnique: "The field name must be unique within this Table.",
       htmlFieldConstraints: "HTML template fields cannot define write constraints, defaults, indexes, uniqueness, or Record labels.",
       combinedHtmlUnsupported: "Combined Tables do not support HTML template fields.",
@@ -256,6 +259,9 @@ export const gridsCrudMessages = i18n.define({
       sortInvalid: ({ detail }) => `Die Sortierung ist ungültig: ${detail}`,
       groupInvalid: ({ detail }) => `Die Gruppierung ist ungültig: ${detail}`,
       aggregateInvalid: ({ detail }) => `Die Aggregation ist ungültig: ${detail}`,
+      calculationFailed: "Dieser Wert konnte nicht berechnet werden. Prüfe die Formel und ihre Eingabewerte.",
+      missingCapturedCalculation:
+        "Für eine angeforderte Berechnung fehlt der gespeicherte Wert eines abgeschlossenen Datensatzes. Schließe diesen Datensatz oder die Berechnung aus; historische Werte können nicht nachträglich berechnet werden.",
       fieldNameUnique: "Der Feldname muss innerhalb dieser Tabelle eindeutig sein.",
       htmlFieldConstraints:
         "HTML-Vorlagenfelder können keine Schreibregeln, Standardwerte, Indizes, Eindeutigkeit oder Datensatzbezeichnungen festlegen.",

@@ -16,9 +16,9 @@ import { get as settingsGet } from "@k2b/cloud/services/settings";
 import { normalizeTimeZone } from "@k2b/cloud/shared";
 import { err, fail, ok } from "@k2b/stdlib";
 import { z } from "zod";
-import { PublicDocumentSchema } from "./api/document-public-contracts";
+import { DocumentCapabilityDataSchema } from "./api/document-public-contracts";
 import { documentActor, loadTemplateAndTable, projectDocuments } from "./api/documents-api-shared";
-import { toPublicGqlResponse } from "./api/gql-public";
+import { publicGqlParameterContext } from "./api/gql-public";
 import {
   buildPermissionedGqlResolverContextForAccess,
   canonicalGqlSourceForContext,
@@ -71,6 +71,7 @@ import { ObjectListConfigSchema } from "./field-types/object-list";
 import { queryCapabilityHref } from "./query-capability-link";
 import { gridsService } from "./service";
 import { decodeDocumentCursor } from "./service/document-values";
+import { toPublicGqlResponse } from "./service/gql-public-result";
 import { projectPublicId, resolvePublicId, resolvePublicIds } from "./service/public-resources";
 import { buildRelationLabelCacheForIds } from "./service/relation-labels";
 import type { Base, Field, GridRecord, Table } from "./service/types";
@@ -92,7 +93,7 @@ const pageInput = {
     .describe("Next offset from discovery; zero for the first page."),
   limit: z.number().int().min(1).max(20).default(10).describe("Maximum candidates inspected on this page."),
 };
-const documentData = PublicDocumentSchema.omit({ tags: true, createdBy: true }).strip();
+const documentData = DocumentCapabilityDataSchema;
 const templateData = z.object({ id: ShortIdSchema, tableId: ShortIdSchema, name: z.string(), enabled: z.boolean() }).strict();
 const recordActionInput = z
   .object({
@@ -132,7 +133,12 @@ const documentResult = async (document: Parameters<typeof projectDocuments>[0][n
   return {
     data: documentData.parse(value),
     refs: [{ type: "grids.document", id: document.shortId }],
-    links: [{ rel: "open" as const, href: `/api/grids/documents/${document.shortId}/artifacts/pdf` }],
+    links: [
+      {
+        rel: "open" as const,
+        href: `/api/grids/documents/${document.shortId}/artifacts/${encodeURIComponent(document.primaryArtifactKey)}`,
+      },
+    ],
   };
 };
 const loadIssuance = async (input: z.infer<typeof createInput>, context: CapabilityExecutionContext, resume = false) => {
@@ -1003,7 +1009,13 @@ const runGqlPreview = async (input: z.infer<typeof GqlPreviewInputSchema>, conte
         cursor: input.cursor,
         pageSize: input.pageSize,
       },
-      { maxRows: 25, maxResultBytes: GQL_CAPABILITY_RESULT_BUDGET_BYTES, operation: "preview", labelRelationValues: false },
+      {
+        maxRows: 25,
+        maxResultBytes: GQL_CAPABILITY_RESULT_BUDGET_BYTES,
+        operation: "preview",
+        labelRelationValues: false,
+        context: publicGqlParameterContext(input.parameters),
+      },
     );
     return await gqlCapabilityResult(result.response, base.data, { kind: "preview", queryLink: queryCapabilityHref(input) }, context);
   } catch (error) {
@@ -1030,6 +1042,7 @@ const runGqlExecute = async (input: z.infer<typeof GqlExecuteInputSchema>, conte
       },
       {
         resultLimit: input.limit,
+        context: publicGqlParameterContext(input.parameters),
         maxRows: 1_000,
         maxResultBytes: GQL_CAPABILITY_RESULT_BUDGET_BYTES,
         operation: "execute",

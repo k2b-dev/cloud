@@ -7,7 +7,7 @@ import { normalizeRefKey } from "../ref-syntax";
 import { authoringText } from "./authoring-messages";
 import { applyComputedProjections, buildComputedProjections, readableComputedTargetTableIds } from "./computed-projections";
 import { listByTable as listFields } from "./fields";
-import { parseJsonbRow } from "./jsonb";
+import { applyFinalizedComputedAccess, mapRecordRow } from "./record-persistence";
 import { type ExpansionViewer, enrichRecordsWithFormulas, hydrateRelationsFromLinks } from "./relations";
 import type { Field, GridRecord } from "./types";
 
@@ -39,19 +39,6 @@ type FormulaPreviewResult = {
   rows: FormulaPreviewRow[];
 };
 
-const mapRow = (row: DbRow): GridRecord => ({
-  id: row.id as string,
-  shortId: row.short_id as string,
-  tableId: row.table_id as string,
-  data: parseJsonbRow<Record<string, unknown>>(row.data, {}),
-  version: row.version as number,
-  deletedAt: row.deleted_at ? (row.deleted_at as Date).toISOString() : null,
-  createdBy: (row.created_by as string | null) ?? null,
-  updatedBy: (row.updated_by as string | null) ?? null,
-  createdAt: (row.created_at as Date).toISOString(),
-  updatedAt: (row.updated_at as Date).toISOString(),
-});
-
 const resolveFormulaRefs = (refs: Set<string>, fields: Field[]) => {
   const byId = new Map(fields.map((field) => [field.id, field]));
   const byRef = new Map<string, Field[]>();
@@ -82,7 +69,11 @@ const resolveFormulaRefs = (refs: Set<string>, fields: Field[]) => {
   return { resolved, missing };
 };
 
-const loadLatestRows = async (tableId: string, fields: Field[], options: { viewer?: ExpansionViewer }): Promise<GridRecord[]> => {
+const loadLatestRows = async (
+  tableId: string,
+  fields: Field[],
+  options: { viewer?: ExpansionViewer; dateConfig?: DateContext },
+): Promise<GridRecord[]> => {
   const authorizedTargetTableIds = await readableComputedTargetTableIds(fields, options.viewer);
   const computed = await buildComputedProjections(fields, { authorizedTableIds: authorizedTargetTableIds });
   const projectionFragments =
@@ -99,10 +90,11 @@ const loadLatestRows = async (tableId: string, fields: Field[], options: { viewe
     LIMIT 5
   `;
 
-  const items = rows.map(mapRow);
+  const items = rows.map(mapRecordRow);
   await hydrateRelationsFromLinks(items, fields, options.viewer);
   const recordsById = new Map(items.map((record) => [record.id, record]));
-  applyComputedProjections(rows, recordsById, computed);
+  applyComputedProjections(rows, recordsById, computed, options.dateConfig?.locale);
+  applyFinalizedComputedAccess(rows, recordsById, authorizedTargetTableIds, fields, options.dateConfig?.locale);
   return items;
 };
 
@@ -153,6 +145,7 @@ export const checkFormula = async (params: {
 
   const rows = await loadLatestRows(params.tableId, usableFields, {
     viewer: params.viewer,
+    dateConfig: params.dateConfig,
   });
   const formulaFields = params.currentFieldId ? usableFields.filter((field) => field.id !== params.currentFieldId) : usableFields;
   enrichRecordsWithFormulas(rows, formulaFields, { dateConfig: params.dateConfig });

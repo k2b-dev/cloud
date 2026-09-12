@@ -1,6 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import type { DslQueryPreviewResponse } from "../contracts";
-import { fromPublicGqlScope, PublicDslQueryExecuteBodySchema, PublicDslQueryPreviewBodySchema, toPublicGqlResponse } from "./gql-public";
+import { toPublicGqlResponse } from "../service/gql-public-result";
+import {
+  fromPublicGqlScope,
+  PublicDslQueryExecuteBodySchema,
+  PublicDslQueryPreviewBodySchema,
+  publicGqlParameterContext,
+} from "./gql-public";
 
 const baseId = "11111111-1111-4111-8111-111111111111";
 const tableId = "22222222-2222-4222-8222-222222222222";
@@ -9,6 +15,31 @@ const recordId = "44444444-4444-4444-8444-444444444444";
 const relatedRecordId = "55555555-5555-4555-8555-555555555555";
 
 describe("GQL public ID boundary", () => {
+  test("binds public parameters only in the params namespace and preserves exact decimals", () => {
+    const input = PublicDslQueryExecuteBodySchema.parse({
+      query: "from table Items",
+      parameters: { amount: { decimal: "9007199254740993.01" }, status: ["Open", "Paid"], auth: "not an actor" },
+    });
+    expect(publicGqlParameterContext(input.parameters)).toEqual({
+      "params.amount": { decimal: "9007199254740993.01" },
+      "params.status": ["Open", "Paid"],
+      "params.auth": "not an actor",
+    });
+    for (const parameters of [
+      { "auth.id": "other" },
+      { x: { sql: "SELECT *" } },
+      { x: { decimal: "NaN" } },
+      { x: Number.MAX_SAFE_INTEGER + 1 },
+      { x: "a".repeat(10_001), y: "b".repeat(10_001) },
+      { x: Array(10_001).fill("id") },
+      Object.fromEntries(Array.from({ length: 101 }, (_, i) => [`p${i}`, i])),
+    ]) {
+      expect(PublicDslQueryExecuteBodySchema.safeParse({ query: "from table Items", parameters }).success).toBe(false);
+    }
+    expect(PublicDslQueryPreviewBodySchema.parse({ query: "from table Items", parameters: { limit: 12 } }).parameters).toEqual({
+      limit: 12,
+    });
+  });
   test("rejects UUID and five-character scope ids", () => {
     for (const id of [tableId, "TABL1"]) {
       expect(PublicDslQueryPreviewBodySchema.safeParse({ query: "from table Items", currentTableId: id }).success).toBe(false);

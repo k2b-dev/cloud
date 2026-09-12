@@ -15,8 +15,10 @@ import {
 } from "@k2b/ui";
 import { type Accessor, createEffect, createSignal, For, onCleanup, Show } from "solid-js";
 import { apiClient } from "../../../api/client";
+import { documentAllowsPublicLinks } from "../../../document-sharing";
 import { recordDisplayTitle } from "../records/record-display";
 import { errorMessage } from "../utils/api-helpers";
+import { canPreviewDocumentArtifact, openDocumentArtifactPreview } from "./DocumentArtifactPreviewDialog";
 import { openDocumentLinkDialog } from "./DocumentLinkDialog";
 import { formatDocumentDateTime, formatDocumentRelativeTime } from "./document-workspace-utils";
 import { documentMessages } from "./messages";
@@ -41,11 +43,28 @@ export function DocumentDetailsDialog(props: { args: DocumentDetailsDialogArgs; 
   const locale = useLocale();
   const t = () => documentMessages.resolve([locale()]).t;
   const document = () => props.args.document;
+  const primaryArtifact = () => document().artifacts.find((artifact) => artifact.key === document().primaryArtifactKey);
+  const format = () => {
+    switch (primaryArtifact()?.mimeType) {
+      case "application/pdf":
+        return "PDF";
+      case "text/csv":
+        return "CSV";
+      case "application/json":
+        return "JSON";
+      case "application/xml":
+        return "XML";
+      default:
+        return primaryArtifact()?.mimeType ?? "";
+    }
+  };
+  const canManageLinks = () => props.args.canWrite && documentAllowsPublicLinks(document());
   const dateConfig = () => ({ ...props.args.dateConfig, locale: locale() });
   const sourceRecord = query.create({
     source: () => document().recordId,
     load: async (recordId, { abortSignal }) => {
       const tableId = document().tableId;
+      if (recordId === null || tableId === null) return null;
       const res = await apiClient.records[":tableId"][":recordId"].$get(
         { param: { tableId, recordId }, query: {} },
         { init: { signal: abortSignal } },
@@ -58,9 +77,21 @@ export function DocumentDetailsDialog(props: { args: DocumentDetailsDialogArgs; 
       return { record: await res.json(), fields: await fields.json() };
     },
   });
+  const sourceRecordHref = () => {
+    const { baseId, tableId, recordId } = document();
+    return tableId && recordId
+      ? `/app/grids/${encodeURIComponent(baseId)}/table/${encodeURIComponent(tableId)}?record=${encodeURIComponent(recordId)}`
+      : null;
+  };
+  const templateHref = () => {
+    const { baseId, tableId, templateId } = document();
+    return tableId && templateId
+      ? `/app/grids/${encodeURIComponent(baseId)}/document/${encodeURIComponent(tableId)}/${encodeURIComponent(templateId)}`
+      : null;
+  };
   const links = query.create({
     source: () => document().id,
-    enabled: () => props.args.canWrite,
+    enabled: canManageLinks,
     load: async (documentId, { abortSignal }): Promise<PublicDocumentLink[]> => {
       const res = await apiClient.documents[":documentId"].links.$get({ param: { documentId } }, { init: { signal: abortSignal } });
       if (!res.ok) throw new Error(await errorMessage(res, t().couldNotLoadDocumentLinks));
@@ -90,7 +121,7 @@ export function DocumentDetailsDialog(props: { args: DocumentDetailsDialogArgs; 
   const openTechnical = () =>
     dialogCore.open<void>((close) => <DocumentTechnicalDialog args={props.args} close={close} />, panelDialogOptions);
   const openLinks = () => {
-    if (!props.args.canWrite) return;
+    if (!canManageLinks()) return;
     void links.refresh();
     return dialogCore.open<void>(
       (close) => <DocumentLinksDialog args={props.args} links={links} now={now} close={close} />,
@@ -108,50 +139,69 @@ export function DocumentDetailsDialog(props: { args: DocumentDetailsDialogArgs; 
         <div class="flex flex-col gap-6">
           <div class="flex items-center gap-3">
             <span class="grids-document-file-icon shrink-0 rounded-lg px-3 py-4 text-xs font-semibold text-dimmed" aria-hidden="true">
-              PDF
+              {format()}
             </span>
             <div class="min-w-0">
               <p class="break-words text-sm font-medium text-primary">{document().filename}</p>
               <p class="text-xs text-dimmed">
-                PDF ·{" "}
-                {text.pprintBytes(document().artifacts.find((artifact) => artifact.key === "pdf")?.sizeBytes ?? 0, { locale: locale() })}
+                {format()} · {text.pprintBytes(primaryArtifact()?.sizeBytes ?? 0, { locale: locale() })}
               </p>
             </div>
           </div>
-          <dl class="grid gap-4 text-sm sm:grid-cols-2">
-            <div>
-              <dt class="mb-1 text-xs text-dimmed">{t().sourceRecord}</dt>
-              <dd>
-                <Show when={sourceRecord.data() !== null} fallback={<span class="text-dimmed">{t().sourceUnavailable}</span>}>
-                  <ButtonLink
-                    variant="text"
-                    class="grids-document-source-link"
-                    size="sm"
-                    navigation="document"
-                    href={`/app/grids/${encodeURIComponent(document().baseId)}/table/${encodeURIComponent(document().tableId)}?record=${encodeURIComponent(document().recordId)}`}
-                  >
-                    {sourceRecord.data() ? recordDisplayTitle({ ...sourceRecord.data()!, dateConfig: dateConfig() }) : t().openSourceRecord}
-                    <i class="ti ti-arrow-up-right" />
-                  </ButtonLink>
-                </Show>
-              </dd>
-            </div>
-            <div>
-              <dt class="mb-1 text-xs text-dimmed">{t().template}</dt>
-              <dd>
-                <ButtonLink
-                  variant="text"
-                  class="grids-document-source-link"
-                  size="sm"
-                  navigation="document"
-                  href={`/app/grids/${encodeURIComponent(document().baseId)}/document/${encodeURIComponent(document().tableId)}/${encodeURIComponent(document().templateId)}`}
-                >
-                  {props.args.templateName ?? t().openTemplate}
-                  <i class="ti ti-arrow-up-right" />
-                </ButtonLink>
-              </dd>
-            </div>
-          </dl>
+          <Show when={sourceRecordHref() || templateHref()}>
+            <dl class="grid gap-4 text-sm sm:grid-cols-2">
+              <Show when={sourceRecordHref()}>
+                {(href) => (
+                  <div>
+                    <dt class="mb-1 text-xs text-dimmed">{t().sourceRecord}</dt>
+                    <dd>
+                      <Show when={sourceRecord.data() !== null} fallback={<span class="text-dimmed">{t().sourceUnavailable}</span>}>
+                        <ButtonLink variant="text" class="grids-document-source-link" size="sm" navigation="document" href={href()}>
+                          {sourceRecord.data()
+                            ? recordDisplayTitle({ ...sourceRecord.data()!, dateConfig: dateConfig() })
+                            : t().openSourceRecord}
+                          <i class="ti ti-arrow-up-right" />
+                        </ButtonLink>
+                      </Show>
+                    </dd>
+                  </div>
+                )}
+              </Show>
+              <Show when={templateHref()}>
+                {(href) => (
+                  <div>
+                    <dt class="mb-1 text-xs text-dimmed">{t().template}</dt>
+                    <dd>
+                      <ButtonLink variant="text" class="grids-document-source-link" size="sm" navigation="document" href={href()}>
+                        {props.args.templateName ?? t().openTemplate}
+                        <i class="ti ti-arrow-up-right" />
+                      </ButtonLink>
+                    </dd>
+                  </div>
+                )}
+              </Show>
+            </dl>
+          </Show>
+          <Show when={document().dataSnapshot}>
+            {(snapshot) => (
+              <dl class="grid gap-4 text-sm sm:grid-cols-2">
+                <div>
+                  <dt class="mb-1 text-xs text-dimmed">{t().source}</dt>
+                  <dd>
+                    {t().workflowDataSource} ·{" "}
+                    {t().snapshotRows({
+                      count: snapshot().rowCount,
+                      formatted: new Intl.NumberFormat(locale()).format(snapshot().rowCount),
+                    })}
+                  </dd>
+                </div>
+                <div>
+                  <dt class="mb-1 text-xs text-dimmed">{t().dataCapturedAt}</dt>
+                  <dd>{formatDocumentDateTime(snapshot().capturedAt, dateConfig())}</dd>
+                </div>
+              </dl>
+            )}
+          </Show>
           <p class="flex items-center gap-2 text-xs text-dimmed">
             <i class="ti ti-lock" aria-hidden="true" />
             {t().immutableSummary}
@@ -164,9 +214,9 @@ export function DocumentDetailsDialog(props: { args: DocumentDetailsDialogArgs; 
               </div>
             )}
           </Show>
-          <Show when={document().artifacts.some((artifact) => artifact.key !== "pdf")}>
+          <Show when={document().artifacts.some((artifact) => artifact.key !== document().primaryArtifactKey)}>
             <div class="flex flex-col gap-3">
-              <For each={document().artifacts.filter((artifact) => artifact.key !== "pdf")}>
+              <For each={document().artifacts.filter((artifact) => artifact.key !== document().primaryArtifactKey)}>
                 {(artifact) => (
                   <div class="flex flex-wrap items-center justify-between gap-2">
                     <div class="min-w-0">
@@ -190,7 +240,21 @@ export function DocumentDetailsDialog(props: { args: DocumentDetailsDialogArgs; 
             </div>
           </Show>
           <div class="flex flex-col gap-1">
-            <Show when={props.args.canWrite}>
+            <Show when={primaryArtifact()}>
+              {(artifact) => (
+                <Show when={canPreviewDocumentArtifact(artifact())}>
+                  <Button
+                    variant="ghost"
+                    class="grids-document-detail-row"
+                    onClick={() => openDocumentArtifactPreview(document().id, artifact())}
+                  >
+                    <span class="min-w-0">{t().preview}</span>
+                    <i class="ti ti-chevron-right ml-auto shrink-0 text-dimmed" aria-hidden="true" />
+                  </Button>
+                </Show>
+              )}
+            </Show>
+            <Show when={canManageLinks()}>
               <Button variant="ghost" class="grids-document-detail-row" onClick={openLinks}>
                 <span class="min-w-0">{t().publicLinks}</span>
                 <span class="ml-auto text-right text-xs font-normal text-dimmed" aria-live="polite">
@@ -233,7 +297,7 @@ export function DocumentDetailsDialog(props: { args: DocumentDetailsDialogArgs; 
         </div>
         <Button variant="primary" loading={download.loading()} onClick={() => void download.mutate(undefined)}>
           <i class="ti ti-download" />
-          {t().downloadPdf}
+          {primaryArtifact()?.mimeType === "application/pdf" ? t().downloadPdf : t().download}
         </Button>
       </PanelDialog.Footer>
     </PanelDialog>

@@ -234,6 +234,7 @@ const previewResolvedGqlPlan = async (
   },
 ): Promise<DslQueryPreviewResponse> => {
   const result = await previewDslQuery(plan, {
+    locale: runtime.dateConfig.locale,
     fieldsByTableId: await fieldsWithPlanExtras(fieldsByTableId, plan),
     timeZone: runtime.dateConfig.timeZone,
     limit: options.limit,

@@ -16,7 +16,7 @@ Erstelle ein **Formelfeld**, wenn das Ergebnis zu jedem Datensatz gehört. Füge
 - **GQL-Bedingungen** verwenden einen Ausdruck in `where` oder `having`.
 - **GQL-Ausgaben** verwenden `formula(expression) as alias`.
 
-**Objektlisten-Spalten** berechnen Werte innerhalb einer Zeile. Aktiviere dies unter **Regeln und Berechnung** und verweise auf andere Spalten. Passe Verweise nach Umbenennungen an; Spalten-IDs bleiben stabil. Die Finalisierung friert Ergebnisse mit der Liste ein. `LIST_SUM(Items, 'Amount')` summiert eine Listenspalte in einer Datensatzformel.
+**Objektlisten-Spalten** berechnen innerhalb einer Zeile: Aktiviere **Regeln und Berechnung** und verweise auf andere Spalten. Finalisierung friert Ergebnisse ein. Datensatzformeln nutzen `LIST_SUM(list, column)`, `LIST_AVG(list, column)`, `LIST_MIN(list, column)`, `LIST_MAX(list, column)` oder `LIST_COUNT(list)`. Spaltennamen in Anführungszeichen: `LIST_SUM(Items, 'Amount')`.
 
 ## Ausdrucksregeln {icon="book-2"}
 
@@ -48,11 +48,11 @@ Weiter oben stehende Operatoren binden stärker. Klammern überschreiben diese R
 - Arithmetische Operationen und geordnete Vergleiche geben einen leeren Wert zurück, wenn eine Seite leer ist. Zwei leere Werte sind gleich.
 - `null`, `false`, `0` und leerer Text gelten in einer Bedingung als falsch; andere nicht leere Werte gelten als wahr.
 - `and`, `or`, `AND` und `OR` beenden die Auswertung, sobald das Ergebnis feststeht. `IF` wertet nur den gewählten Zweig aus.
-- Division oder Rest durch null, negative Quadratwurzeln, überlaufende Potenzen und eine falsche Argumentanzahl erzeugen sichtbare Formelfehler statt irreführender Werte.
+- Nulldivisoren, negative Quadratwurzeln, überlaufende Potenzen und falsche Argumentanzahlen erzeugen Formelfehler. Unbehandelte Fehler brechen GQL und Workflow-Captures mit `BAD_INPUT` ab, statt Summen unbemerkt zu verkürzen.
 - `IFEMPTY(value, fallback)` behandelt `null` und leeren Text. `IFERROR(value, fallback)` behandelt Formelfehler. Der jeweilige Ersatzwert wird nur bei Bedarf ausgewertet.
 - `CONCAT(value, ...)` verbindet Text am eindeutigsten. Numerisch wirkender Text nimmt an numerischen Berechnungen teil. Verlasse dich deshalb bei Bezeichnungen nicht auf `+`.
 
-Aggregatfunktionen kombinieren Argumente eines Datensatzes, etwa `SUM(Subtotal, Tax)`. GQL `aggregate` fasst Datensätze zusammen. Division und Mittelwerte nutzen PostgreSQL-Dezimalpräzision ohne Einfluss nachgestellter Nullen. Geldbeträge explizit mit `ROUND` runden; Spaltenregeln prüfen nur das Ergebnis.
+Aggregatfunktionen kombinieren Argumente eines Datensatzes, etwa `SUM(Subtotal, Tax)`. GQL `aggregate` fasst Datensätze zusammen. Division und Mittelwerte nutzen Dezimalpräzision ohne Einfluss nachgestellter Nullen. Geldbeträge explizit mit `ROUND` runden; Spaltenregeln prüfen nur das Ergebnis.
 
 ## Häufige Formeln {icon="math-function"}
 
@@ -94,57 +94,57 @@ IFERROR(total / quantity, 0)
 
 ## Vollständige Funktionsreferenz {icon="book-2"}
 
-| Gruppe    | Funktion                           | Wirkung                                                                                               | Rückgabe |
+| Gruppe | Funktion | Wirkung | Rückgabe |
 | --------- | ---------------------------------- | ----------------------------------------------------------------------------------------------------- | -------- |
-| Aggregat  | SUM(value, ...)                    | Addiert numerische Werte.                                                                             | Zahl     |
-| Aggregat  | AVG(value, ...)                    | Bildet den Durchschnitt numerischer Werte.                                                            | Zahl     |
-| Aggregat  | MEAN(value, ...)                   | Alias für AVG.                                                                                         | Zahl     |
-| Aggregat  | COUNT(value, ...)                  | Zählt nicht leere Werte.                                                                               | Zahl     |
-| Aggregat  | MIN(value, ...)                    | Ermittelt den kleinsten numerischen Wert.                                                              | Zahl     |
-| Aggregat  | MAX(value, ...)                    | Ermittelt den größten numerischen Wert.                                                               | Zahl     |
-| Aggregat  | MEDIAN(value, ...)                 | Ermittelt den mittleren numerischen Wert.                                                             | Zahl     |
-| Zahl      | ABS(number)                        | Absolutwert.                                                                                           | Zahl     |
-| Zahl      | ROUND(number, digits?)             | Rundet eine Zahl.                                                                                      | Zahl     |
-| Zahl      | FLOOR(number)                      | Rundet ab.                                                                                             | Zahl     |
-| Zahl      | CEIL(number)                       | Rundet auf.                                                                                            | Zahl     |
-| Zahl      | SQRT(number)                       | Quadratwurzel; gleiche Dezimalrundung in Vorschau und Abfragen.                                          | Zahl     |
-| Zahl      | POW(base, exponent)                | Potenz: Ganzzahlige 32-Bit-Exponenten erhalten Ganzzahlstellen, andere nutzen 80 signifikante Stellen (höchstens 1.000 Nachkommastellen). Geld explizit runden. | Zahl     |
-| Zahl      | MOD(a, b)                          | Rest.                                                                                                  | Zahl     |
-| Zahl      | PERCENT(part, total)               | Anteil in Prozent der Gesamtsumme.                                                                    | Zahl     |
-| Logik     | IF(condition, then, else)          | Wählt anhand einer Bedingung.                                                                          | beliebig |
-| Logik     | IFEMPTY(value, fallback)           | Ersatzwert für leere Werte.                                                                            | beliebig |
-| Logik     | IFERROR(value, fallback)           | Ersatzwert für Formelfehler.                                                                           | beliebig |
-| Logik     | AND(value, ...)                    | Alle Werte sind wahr. Nutze in GQL where/having bevorzugt den Operator \`and\`.                       | Boolean  |
-| Logik     | OR(value, ...)                     | Mindestens ein Wert ist wahr. Nutze in GQL where/having bevorzugt den Operator \`or\`.                | Boolean  |
-| Logik     | NOT(value)                         | Kehrt den Wahrheitswert um. Nutze in GQL where/having bevorzugt den Operator \`not\`.                 | Boolean  |
-| Logik     | ISBLANK(value)                     | Wahr, wenn leer.                                                                                       | Boolean  |
-| Text      | CONTAINS(text, search)             | Prüft auf eine Teilzeichenfolge.                                                                       | Boolean  |
-| Text      | STARTSWITH(text, prefix)           | Wahr, wenn der Text mit dem Präfix beginnt.                                                            | Boolean  |
-| Text      | ENDSWITH(text, suffix)             | Wahr, wenn der Text mit dem Suffix endet.                                                              | Boolean  |
-| Text      | ICONTAINS(text, search)            | Prüft ohne Beachtung der Groß- und Kleinschreibung auf eine Teilzeichenfolge.                           | Boolean  |
-| Text      | ISTARTSWITH(text, prefix)          | Prüft ohne Beachtung der Groß- und Kleinschreibung, ob der Text mit dem Präfix beginnt.                 | Boolean  |
-| Text      | IENDSWITH(text, suffix)            | Prüft ohne Beachtung der Groß- und Kleinschreibung, ob der Text mit dem Suffix endet.                   | Boolean  |
-| Text      | CONCAT(value, ...)                 | Verbindet Werte als Text.                                                                              | Text     |
-| Text      | LEN(text)                          | Textlänge.                                                                                             | Zahl     |
-| Text      | LOWER(text)                        | Text in Kleinbuchstaben.                                                                               | Text     |
-| Text      | UPPER(text)                        | Text in Großbuchstaben.                                                                                | Text     |
-| Text      | TRIM(text)                         | Entfernt Leerraum am Anfang und Ende.                                                                 | Text     |
-| Text      | LEFT(text, n)                      | Die ersten n Zeichen.                                                                                  | Text     |
-| Text      | RIGHT(text, n)                     | Die letzten n Zeichen.                                                                                 | Text     |
-| Text      | SUBSTRING(text, start, length)     | Textausschnitt mit Startindex 0.                                                                       | Text     |
-| Text      | REPLACE(text, search, replacement) | Ersetzt alle Treffer.                                                                                  | Text     |
-| Datum     | TODAY()                            | Aktuelles Datum.                                                                                       | Datum    |
-| Datum     | NOW()                              | Aktuelles Datum und aktuelle Uhrzeit.                                                                 | Datum    |
-| Datum     | YEAR(date)                         | Jahreszahl.                                                                                            | Zahl     |
-| Datum     | MONTH(date)                        | Monatszahl.                                                                                            | Zahl     |
-| Datum     | DAY(date)                          | Tageszahl.                                                                                             | Zahl     |
-| Datum     | DATEADD(date, count, unit?)        | Addiert Zeit zu einem Datum; die Einheit ist standardmäßig Tage.                                       | Datum    |
-| Datum     | DATEDIFF(from, to, unit?)          | Differenz zwischen Datumswerten; die Einheit ist standardmäßig Tage.                                   | Zahl     |
+| Aggregat | SUM(value, ...) | Addiert numerische Werte. | Zahl |
+| Aggregat | AVG(value, ...) | Bildet den Durchschnitt numerischer Werte. | Zahl |
+| Aggregat | MEAN(value, ...) | Alias für AVG. | Zahl |
+| Aggregat | COUNT(value, ...) | Zählt nicht leere Werte. | Zahl |
+| Aggregat | MIN(value, ...) | Ermittelt den kleinsten numerischen Wert. | Zahl |
+| Aggregat | MAX(value, ...) | Ermittelt den größten numerischen Wert. | Zahl |
+| Aggregat | MEDIAN(value, ...) | Ermittelt den mittleren numerischen Wert. | Zahl |
+| Zahl | ABS(number) | Absolutwert. | Zahl |
+| Zahl | ROUND(number, digits?) | Rundet eine Zahl. | Zahl |
+| Zahl | FLOOR(number) | Rundet ab. | Zahl |
+| Zahl | CEIL(number) | Rundet auf. | Zahl |
+| Zahl | SQRT(number) | Quadratwurzel; gleiche Dezimalrundung in Vorschau und Abfragen. | Zahl |
+| Zahl | POW(base, exponent) | Potenz: Ganzzahlige 32-Bit-Exponenten erhalten Ganzzahlstellen, andere nutzen 80 signifikante Stellen (höchstens 1.000 Nachkommastellen). Geld explizit runden. | Zahl |
+| Zahl | MOD(a, b) | Rest. | Zahl |
+| Zahl | PERCENT(part, total) | Anteil in Prozent der Gesamtsumme. | Zahl |
+| Logik | IF(condition, then, else) | Wählt anhand einer Bedingung. | beliebig |
+| Logik | IFEMPTY(value, fallback) | Ersatzwert für leere Werte. | beliebig |
+| Logik | IFERROR(value, fallback) | Ersatzwert für Formelfehler. | beliebig |
+| Logik | AND(value, ...) | Alle Werte sind wahr. Nutze in GQL where/having bevorzugt den Operator \`and\`. | Boolean |
+| Logik | OR(value, ...) | Mindestens ein Wert ist wahr. Nutze in GQL where/having bevorzugt den Operator \`or\`. | Boolean |
+| Logik | NOT(value) | Kehrt den Wahrheitswert um. Nutze in GQL where/having bevorzugt den Operator \`not\`. | Boolean |
+| Logik | ISBLANK(value) | Wahr, wenn leer. | Boolean |
+| Text | CONTAINS(text, search) | Prüft auf eine Teilzeichenfolge. | Boolean |
+| Text | STARTSWITH(text, prefix) | Wahr, wenn der Text mit dem Präfix beginnt. | Boolean |
+| Text | ENDSWITH(text, suffix) | Wahr, wenn der Text mit dem Suffix endet. | Boolean |
+| Text | ICONTAINS(text, search) | Prüft ohne Beachtung der Groß- und Kleinschreibung auf eine Teilzeichenfolge. | Boolean |
+| Text | ISTARTSWITH(text, prefix) | Prüft ohne Beachtung der Groß- und Kleinschreibung, ob der Text mit dem Präfix beginnt. | Boolean |
+| Text | IENDSWITH(text, suffix) | Prüft ohne Beachtung der Groß- und Kleinschreibung, ob der Text mit dem Suffix endet. | Boolean |
+| Text | CONCAT(value, ...) | Verbindet Werte als Text. | Text |
+| Text | LEN(text) | Textlänge. | Zahl |
+| Text | LOWER(text) | Text in Kleinbuchstaben. | Text |
+| Text | UPPER(text) | Text in Großbuchstaben. | Text |
+| Text | TRIM(text) | Entfernt Leerraum am Anfang und Ende. | Text |
+| Text | LEFT(text, n) | Die ersten n Zeichen. | Text |
+| Text | RIGHT(text, n) | Die letzten n Zeichen. | Text |
+| Text | SUBSTRING(text, start, length) | Textausschnitt mit Startindex 0. | Text |
+| Text | REPLACE(text, search, replacement) | Ersetzt alle Treffer. | Text |
+| Datum | TODAY() | Aktuelles Datum. | Datum |
+| Datum | NOW() | Aktuelles Datum und aktuelle Uhrzeit. | Datum |
+| Datum | YEAR(date) | Jahreszahl. | Zahl |
+| Datum | MONTH(date) | Monatszahl. | Zahl |
+| Datum | DAY(date) | Tageszahl. | Zahl |
+| Datum | DATEADD(date, count, unit?) | Addiert Zeit zu einem Datum; die Einheit ist standardmäßig Tage. | Datum |
+| Datum | DATEDIFF(from, to, unit?) | Differenz zwischen Datumswerten; die Einheit ist standardmäßig Tage. | Zahl |
 
 `ROUND` nutzt standardmäßig null Stellen; negative Stellen runden auf Zehner, Hunderter usw. Gebrochene Stellenzahlen werden Richtung null gekürzt. Außerhalb von −131.072…16.383 entsteht ein Formelfehler. `LEFT`, `RIGHT` und `SUBSTRING` behandeln negative Längen als null; `SUBSTRING` beginnt an Position 0. `REPLACE` ersetzt jeden Treffer.
 
 `TODAY()` gibt das aktuelle Datum und `NOW()` das aktuelle Datum mit Uhrzeit zurück. Kalenderberechnungen mit Datum und Uhrzeit verwenden die Anzeigezeitzone der Anfrage. Wenn keine angegeben ist, verwendet Grids die Zeitzone der Cloud-Anwendung. Reine Datumswerte bleiben Kalenderdaten. `DATEADD` akzeptiert Tag(e), Stunde(n), Minute(n), Monat(e) und Jahr(e), verwendet standardmäßig Tage und erhält beim Addieren von Monaten oder Jahren gültige Monatsenddaten. `DATEDIFF` akzeptiert Tag(e), Stunde(n), Minute(n) und Sekunde(n), verwendet standardmäßig Tage und gibt `to - from`, abgerundet auf ganze Einheiten, zurück.
 
-:::note Formelfelder speichern keinen zweiten Wert
-Sie werden beim Lesen aus dem aktuellen Datensatz berechnet. Ändere die Quellfelder, wenn das Ergebnis falsch ist, statt das dargestellte Formelergebnis zu bearbeiten.
+:::note Formelwerte
+Entwürfe berechnen beim Lesen; abgeschlossene Datensätze behalten eingefrorene Werte. Korrigiere die Quellfelder, nicht das angezeigte Ergebnis.
 :::

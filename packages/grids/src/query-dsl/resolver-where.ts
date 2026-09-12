@@ -6,13 +6,15 @@ import { compileFormulaAstToSql } from "../service/formula-sql-compiler";
 import type { Field } from "../service/types";
 import { type DslResolverDiagnostic, diagnostic, isResolverDiagnostic as isDiagnostic, spanForExpr } from "./resolver-diagnostics";
 import { scopedFormulaResolverForScope } from "./resolver-formula-scope";
-import { fieldByRef, type Scope } from "./resolver-scope";
+import { fieldByRef, resolveScopedField, type Scope } from "./resolver-scope";
 import { isScopedFormulaFieldRef } from "./scoped-formula";
 import type { DslQualifiedRef, DslQueryAst, DslSourceSpan } from "./types";
 
 type DslFilterLeaf = { fieldId: string; op: string; value?: unknown; caseInsensitive?: boolean };
 
 export type DslWherePredicate =
+  | { kind: "filePresence"; fieldId: string; empty: boolean }
+  | { kind: "scoped"; joinAlias: string; tableId: string; predicate: DslWherePredicate }
   | { kind: "and"; parts: DslWherePredicate[] }
   | { kind: "or"; parts: DslWherePredicate[] }
   | { kind: "not"; part: DslWherePredicate }
@@ -100,7 +102,9 @@ const recordIdPredicate = (values: Literal[], span?: DslSourceSpan): DslWherePre
     if (typeof value !== "string" || !SHORT_ID_RE.test(value)) return diagnostic("record.id expects public record ids", span);
     ids.push(value);
   }
-  if (ids.length === 0) return diagnostic("record.id needs at least one record id", span);
+  // A bound record-list parameter may legitimately be empty. ANY over an empty
+  // array matches no records; rejecting it would turn an empty selection into
+  // a failed workflow rather than an empty result.
   return { kind: "publicRecordIds", ids: [...new Set(ids)] };
 };
 
@@ -209,7 +213,9 @@ const unsupportedOp = (field: Field, op: string, span?: DslSourceSpan): DslResol
   diagnostic(`operator "${op}" is not supported for ${field.type} field "${field.name}"`, span);
 
 const emptinessLeaf = (field: Field, empty: boolean, span?: DslSourceSpan): DslWherePredicate | DslResolverDiagnostic => {
-  if (!FILTERABLE_TYPES.has(field.type)) return diagnostic(`field "${field.name}" (type "${field.type}") cannot be filtered`, span);
+  if (field.type === "file") return { kind: "filePresence", fieldId: field.id, empty };
+  if (!FILTERABLE_TYPES.has(field.type) && field.type !== "file")
+    return diagnostic(`field "${field.name}" (type "${field.type}") cannot be filtered`, span);
   return filterLeaf(field.id, empty ? "isEmpty" : "isNotEmpty");
 };
 
@@ -236,6 +242,7 @@ const typedComparisonLeaf = (
   value: Literal,
   scope: Scope,
   span?: DslSourceSpan,
+  parameterTypeOnly = false,
 ): DslWherePredicate | DslResolverDiagnostic => {
   if (value === null) {
     if (op === "=") return emptinessLeaf(field, true, span);
@@ -263,7 +270,7 @@ const typedComparisonLeaf = (
   if (field.type === "select") {
     if (op !== "=" && op !== "!=") return unsupportedOp(field, op, span);
     if (typeof value !== "string") return diagnostic(`"${field.name}" expects an option label or id, got ${literalKind(value)}`, span);
-    const optionId = resolveSelectOption(field, value, span);
+    const optionId = parameterTypeOnly ? value : resolveSelectOption(field, value, span);
     if (isDiagnostic(optionId)) return optionId;
     return filterLeaf(field.id, op === "=" ? "is" : "isNot", optionId);
   }
@@ -312,14 +319,15 @@ const membershipLeaf = (
   scope: Scope,
   mode: "any" | "all" | "none",
   span?: DslSourceSpan,
+  parameterTypesOnly: readonly boolean[] = [],
 ): DslWherePredicate | DslResolverDiagnostic => {
   if (!FILTERABLE_TYPES.has(field.type)) return diagnostic(`field "${field.name}" (type "${field.type}") cannot be filtered`, span);
 
   if (field.type === "select") {
     const ids: string[] = [];
-    for (const value of values) {
+    for (const [index, value] of values.entries()) {
       if (typeof value !== "string") return diagnostic(`"${field.name}" options must be text`, span);
-      const id = resolveSelectOption(field, value, span);
+      const id = parameterTypesOnly[index] ? value : resolveSelectOption(field, value, span);
       if (isDiagnostic(id)) return id;
       ids.push(id);
     }
@@ -393,6 +401,21 @@ const buildPredicateFunction = (
   if (!PREDICATE_FNS.has(expr.fn)) return null;
   const [first, ...rest] = expr.args;
   if (!first || first.kind !== "field") return null;
+  if ((expr.fn === "ONEOF" || expr.fn === "NONEOF") && rest.some((arg) => arg.kind === "literal" && arg.numericSource !== undefined)) {
+    // Preserve each decimal AST node before the ordinary membership path
+    // extracts JS values. The existing comparison owner still validates types.
+    const parts: DslWherePredicate[] = [];
+    for (const value of rest) {
+      const part = buildComparisonPredicate(
+        { kind: "binop", op: expr.fn === "ONEOF" ? "=" : "!=", left: first, right: value },
+        scope,
+        baseSpan,
+      );
+      if (isDiagnostic(part)) return part;
+      parts.push(part);
+    }
+    return { kind: expr.fn === "ONEOF" ? "or" : "and", parts };
+  }
   const metaKey = recordMetaUserKeyForRef(first.fieldId);
   if (isRecordIdRef(first.fieldId)) {
     if (expr.fn !== "ONEOF") return diagnostic("record.id supports oneof(record.id, ...) only", spanForExpr(baseSpan, expr));
@@ -426,7 +449,24 @@ const buildPredicateFunction = (
   }
   if (isScopedFormulaFieldRef(first.fieldId)) {
     if (expr.fn === "ONEOF" || expr.fn === "NONEOF" || expr.fn === "CONTAINSALL") {
-      return diagnostic(`membership predicate ${expr.fn} on joined field "${first.fieldId}" is not supported`, spanForExpr(baseSpan, expr));
+      const ref = parseQualifiedIdentifierRef(first.fieldId)!;
+      const resolved = resolveScopedField(scope, ref);
+      if (isDiagnostic(resolved)) return resolved;
+      const values: Literal[] = [];
+      for (const arg of rest) {
+        if (arg.kind !== "literal") return diagnostic("membership expects literal values", spanForExpr(baseSpan, arg));
+        values.push(arg.value);
+      }
+      const predicate = membershipLeaf(
+        resolved.field,
+        values,
+        scope,
+        expr.fn === "ONEOF" ? "any" : expr.fn === "NONEOF" ? "none" : "all",
+        spanForExpr(baseSpan, expr),
+        rest.map((arg) => arg.kind === "literal" && arg.parameterTypeOnly === true),
+      );
+      if (isDiagnostic(predicate) || !resolved.joinAlias) return predicate;
+      return { kind: "scoped", joinAlias: resolved.joinAlias, tableId: resolved.tableId, predicate };
     }
     return null;
   }
@@ -444,13 +484,14 @@ const buildPredicateFunction = (
     values.push(arg.value);
   }
 
+  const parameterTypesOnly = rest.map((arg) => arg.kind === "literal" && arg.parameterTypeOnly === true);
   switch (expr.fn) {
     case "ONEOF":
-      return membershipLeaf(field, values, scope, "any", callSpan);
+      return membershipLeaf(field, values, scope, "any", callSpan, parameterTypesOnly);
     case "NONEOF":
-      return membershipLeaf(field, values, scope, "none", callSpan);
+      return membershipLeaf(field, values, scope, "none", callSpan, parameterTypesOnly);
     case "CONTAINSALL":
-      return membershipLeaf(field, values, scope, "all", callSpan);
+      return membershipLeaf(field, values, scope, "all", callSpan, parameterTypesOnly);
     case "CONTAINS": {
       if (values.length !== 1) return diagnostic("CONTAINS takes a field and one value", callSpan);
       const value = values[0]!;
@@ -520,12 +561,16 @@ const buildComparisonPredicate = (
     const valueSpan = spanForExpr(baseSpan, valueExpr);
     const field = fieldByRef(scope, fieldExpr.fieldId, fieldSpan);
     if (isDiagnostic(field)) return field;
+    // RecordQuery's numeric filter values are JS numbers. Keep a precise
+    // decimal literal in the typed formula path instead of rounding it there.
+    if (valueExpr.numericSource !== undefined && NUMBER_TYPES.has(field.type)) return formulaLeaf(expr, scope, baseSpan);
     // Computed / unstorable fields (formula, lookup, rollup, json) have no
     // typed filter leaf; let the formula compiler handle them in SQL. Formula
     // fields inline their own expression, so `computed > 5` works.
-    if (!FILTERABLE_TYPES.has(field.type)) return formulaLeaf(expr, scope, baseSpan);
+    if (!FILTERABLE_TYPES.has(field.type) && !(field.type === "file" && valueExpr.value === null))
+      return formulaLeaf(expr, scope, baseSpan);
     const op = leftField ? expr.op : invertComparison(expr.op);
-    return typedComparisonLeaf(field, op, valueExpr.value, scope, valueSpan);
+    return typedComparisonLeaf(field, op, valueExpr.value, scope, valueSpan, valueExpr.parameterTypeOnly);
   }
   // field vs field, literal vs literal, expression vs expression -> formula.
   return formulaLeaf(expr, scope, baseSpan);

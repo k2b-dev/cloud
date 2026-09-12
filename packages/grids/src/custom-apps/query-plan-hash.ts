@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import type { DslQueryContextInput, DslQueryContextValues } from "../query-dsl/parameters";
+import { dslQueryReferencedFieldIds } from "../query-dsl/plan-dependencies";
 import type { DslResolvedSqlQueryPlan } from "../query-dsl/resolver";
-import { isImplicitlySelectableField, relationTargetIsReadable } from "../query-dsl/sql-compiler-fields";
 import type { Field } from "../service/types";
 import { stableCustomAppValue } from "./stable-value";
 
@@ -32,65 +32,12 @@ export const canonicalCustomAppQueryContext = (context: DslQueryContextInput): D
   ),
 });
 
-const walkStrings = (value: unknown, visit: (value: string) => void): void => {
-  if (typeof value === "string") {
-    visit(value);
-    return;
-  }
-  if (Array.isArray(value)) {
-    for (const item of value) walkStrings(item, visit);
-    return;
-  }
-  if (!value || typeof value !== "object") return;
-  for (const item of Object.values(value)) walkStrings(item, visit);
-};
-
 const fieldMap = (fieldsByTableId: Record<string, Field[]>): Map<string, Field> =>
   new Map(
     Object.values(fieldsByTableId)
       .flat()
       .map((field) => [field.id, field]),
   );
-
-const referencedFieldIds = (plan: DslResolvedSqlQueryPlan, fieldsByTableId: Record<string, Field[]>): Set<string> => {
-  const byId = fieldMap(fieldsByTableId);
-  const ids = new Set<string>();
-  walkStrings(plan, (value) => {
-    if (byId.has(value)) ids.add(value);
-  });
-
-  const hasRowOutput =
-    (plan.query.aggregations?.length ?? 0) === 0 &&
-    (plan.sqlAggregations?.length ?? 0) === 0 &&
-    (plan.formulaAggregations?.length ?? 0) === 0 &&
-    (plan.query.groupBy?.length ?? 0) === 0 &&
-    (plan.sqlGroupBy?.length ?? 0) === 0;
-  if (hasRowOutput && (plan.outputColumns?.length ?? 0) === 0 && (plan.query.columns?.length ?? 0) === 0) {
-    for (const field of fieldsByTableId[plan.tableId] ?? []) {
-      if (!field.deletedAt && isImplicitlySelectableField(field) && relationTargetIsReadable(field, plan.readableTableIds))
-        ids.add(field.id);
-    }
-  }
-  if (plan.query.search && !plan.query.search.fieldIds) {
-    for (const field of fieldsByTableId[plan.tableId] ?? []) if (!field.deletedAt) ids.add(field.id);
-  }
-
-  let added = true;
-  while (added) {
-    added = false;
-    for (const id of [...ids]) {
-      const field = byId.get(id);
-      if (!field) continue;
-      walkStrings(field.config, (value) => {
-        if (byId.has(value) && !ids.has(value)) {
-          ids.add(value);
-          added = true;
-        }
-      });
-    }
-  }
-  return ids;
-};
 
 const relationTargetId = (field: Field): string | null => {
   if (field.type !== "relation") return null;
@@ -112,7 +59,7 @@ export const customAppQueryPlanRelationTargetTableIds = (
 ): string[] => {
   const byId = fieldMap(fieldsByTableId);
   const targets = new Set<string>();
-  for (const fieldId of referencedFieldIds(plan, fieldsByTableId)) {
+  for (const fieldId of dslQueryReferencedFieldIds(plan, fieldsByTableId)) {
     const target = relationTargetId(byId.get(fieldId)!);
     if (target) targets.add(target);
   }
@@ -122,7 +69,7 @@ export const customAppQueryPlanRelationTargetTableIds = (
 /** Hash the resolved plan and the field metadata that can change what it reads. */
 export const customAppQueryPlanHash = (plan: DslResolvedSqlQueryPlan, fieldsByTableId: Record<string, Field[]>): string => {
   const byId = fieldMap(fieldsByTableId);
-  const ids = referencedFieldIds(plan, fieldsByTableId);
+  const ids = dslQueryReferencedFieldIds(plan, fieldsByTableId);
   const relationTargets: Array<{ fieldId: string; targetTableId: string; labelFieldIds: string[] }> = [];
 
   for (const fieldId of ids) {

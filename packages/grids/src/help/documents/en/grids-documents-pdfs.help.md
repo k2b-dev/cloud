@@ -15,7 +15,7 @@ Use a document template when output must be formatted for people, printed, share
 
 Agents can use `document.templates` to find templates, `document.list` and `document.read` to inspect stored documents, and `document.create` to issue one document for a selected Record. Issuance requires write access, an idempotency key and individual approval. It cannot be undone or remembered as blanket approval. The returned download link requires your existing permissions; it does not create a public share link or send the document.
 
-Every completed Document is immutable. It belongs to one template and one selected record, and the same Document appears in the record detail, the template workspace, and **All documents**. Retrying generation with the same idempotency key returns the same Document; reusing that key with different input fails.
+Retrying generation with the same idempotency key returns the same immutable Document; reusing that key with different input fails.
 
 If generation fails, **Retry generation** resends the original inputs. Once generation has saved its source data, retries use that data even if the record or template changes. The dialog locks the inputs and hides the live preview during retries. To correct inputs or use current data, choose **Start a new attempt** and preview again. Check **All documents** first: the previous attempt may already have created a Document, and a new attempt can create another one. Writers can still manage existing Document links when its template is disabled or no longer available.
 
@@ -83,13 +83,13 @@ Starters are editable templates, not fixed document types. Pick the closest stru
 
 A template has one data part and up to four layout parts. The GQL source is rendered with Liquid first, so it can use the selected `record`, public `app`, and base `business` values before the query is parsed.
 
-| Part       | Language      | Purpose                                                                                          | Common use                                                                |
-| ---------- | ------------- | ------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------- |
-| GQL source | Liquid + GQL  | Selects the rows and columns available to the document. Liquid is rendered before GQL is parsed. | Current record, joined rows, item lists, grouped summaries.               |
-| Body       | Liquid + HTML | Main printable content for the HTML renderer.                                                     | Invoice body, contract clauses, label layout, record detail tables.       |
-| Header     | Liquid + HTML | Optional header shown on each page.                                                              | Letterhead, sender identity, document class, contact block.               |
-| Footer     | Liquid + HTML | Optional footer shown on each page.                                                              | Legal footer, bank data, and page placeholders such as `<span class="pageNumber"></span>` and `<span class="totalPages"></span>`. |
-| Page CSS   | Liquid + CSS  | Optional CSS injected into the PDF body document.                                                | @page size/margins, table headers, page breaks, print typography.         |
+| Part | Language | Purpose | Common use |
+| --- | --- | --- | --- |
+| GQL source | Liquid + GQL | Selects the rows and columns available to the document. Liquid is rendered before GQL is parsed. | Current record, joined rows, item lists, grouped summaries. |
+| Body | Liquid + HTML | Main printable content for the HTML renderer. | Invoice body, contract clauses, label layout, record detail tables. |
+| Header | Liquid + HTML | Optional header shown on each page. | Letterhead, sender identity, document class, contact block. |
+| Footer | Liquid + HTML | Optional footer shown on each page. | Legal footer, bank data, and page placeholders such as `<span class="pageNumber"></span>` and `<span class="totalPages"></span>`. |
+| Page CSS | Liquid + CSS | Optional CSS injected into the PDF body document. | @page size/margins, table headers, page breaks, print typography. |
 
 ## Understand the available data {icon="layout-grid"}
 
@@ -242,30 +242,30 @@ Use the `barcode_data_url` filter in an `<img>` tag. Barcode ids are lowercase s
 <img src='{{ document.number | default: table.name | barcode_data_url: "qrcode" }}' alt="Document QR code">
 ```
 
-| Type id           | Label              | Use                               |
-| ----------------- | ------------------ | --------------------------------- |
-| `code128`         | Code 128           | General-purpose linear barcode.   |
-| `qrcode`          | QR Code            | Compact 2D code for phones.       |
-| `datamatrix`      | Data Matrix        | Small 2D code for labels.         |
-| `pdf417`          | PDF417             | Stacked 2D code for documents.    |
-| `azteccode`       | Aztec Code         | Dense 2D code without quiet zone. |
-| `ean13`           | EAN-13             | Retail product code, 13 digits.   |
-| `ean8`            | EAN-8              | Short retail product code.        |
-| `upca`            | UPC-A              | US retail product code.           |
-| `upce`            | UPC-E              | Compressed UPC code.              |
-| `itf14`           | ITF-14             | Carton and package code.          |
-| `gs1datamatrix`   | GS1 Data Matrix    | GS1 2D code with application IDs. |
-| `sscc18`          | SSCC-18            | Shipping container code.          |
-| `isbn`            | ISBN               | Book identifier barcode.          |
-| `issn`            | ISSN               | Serial publication barcode.       |
-| `ismn`            | ISMN               | Printed music barcode.            |
-| `code39`          | Code 39            | Simple alphanumeric barcode.      |
-| `code93`          | Code 93            | Compact alphanumeric barcode.     |
-| `interleaved2of5` | Interleaved 2 of 5 | Numeric warehouse barcode.        |
-| `micropdf417`     | MicroPDF417        | Compact stacked 2D code.          |
-| `microqrcode`     | Micro QR Code      | Tiny QR variant.                  |
-| `maxicode`        | MaxiCode           | Parcel and logistics 2D code.     |
-| `dotcode`         | DotCode            | Dot-based production code.        |
+| Type id | Label | Use |
+| --- | --- | --- |
+| `code128` | Code 128 | General-purpose linear barcode. |
+| `qrcode` | QR Code | Compact 2D code for phones. |
+| `datamatrix` | Data Matrix | Small 2D code for labels. |
+| `pdf417` | PDF417 | Stacked 2D code for documents. |
+| `azteccode` | Aztec Code | Dense 2D code without quiet zone. |
+| `ean13` | EAN-13 | Retail product code, 13 digits. |
+| `ean8` | EAN-8 | Short retail product code. |
+| `upca` | UPC-A | US retail product code. |
+| `upce` | UPC-E | Compressed UPC code. |
+| `itf14` | ITF-14 | Carton and package code. |
+| `gs1datamatrix` | GS1 Data Matrix | GS1 2D code with application IDs. |
+| `sscc18` | SSCC-18 | Shipping container code. |
+| `isbn` | ISBN | Book identifier barcode. |
+| `issn` | ISSN | Serial publication barcode. |
+| `ismn` | ISMN | Printed music barcode. |
+| `code39` | Code 39 | Simple alphanumeric barcode. |
+| `code93` | Code 93 | Compact alphanumeric barcode. |
+| `interleaved2of5` | Interleaved 2 of 5 | Numeric warehouse barcode. |
+| `micropdf417` | MicroPDF417 | Compact stacked 2D code. |
+| `microqrcode` | Micro QR Code | Tiny QR variant. |
+| `maxicode` | MaxiCode | Parcel and logistics 2D code. |
+| `dotcode` | DotCode | Dot-based production code. |
 
 Additional BWIP symbol ids
 
@@ -427,9 +427,14 @@ The document page lists every generated Document for a template. Use **Table** f
 
 **All documents** opens in **Folders**, grouped by document template and then year. Its search covers filenames, document numbers, and tags across the Base, regardless of the open folder. Both document pages include their first results when the page loads.
 
-Open a document to download its PDF or additional files. **Share links** shows the number of active links and opens link management. **Technical details** opens IDs and checksums. Closing either dialog returns to the document. Writers can use **More actions → Generate again** to create a new document without changing the existing one.
+Open a document to download its stored files. Workflow outputs show the captured row count and data timestamp. **Preview** displays CSV, JSON and XML up to 2 MiB; larger files remain downloadable. CSV shows the original text, without guessing its delimiter. **Share links** is available only for PDFs. **Technical details** opens IDs and checksums. Subdialogs return to the document. Writers can use **More actions → Generate again** without changing the original.
 
 Before generation you can add tags and, for an HTML template, override the filename. An E-Invoice renderer owns its artifact filenames. A completed Document's number, filename, tags, and artifacts are immutable.
+
+The main download preserves the stored file format. Share links require a primary
+PDF; other formats require an authorized download.
+In a profile renderer's input, `document.filename` is `null`: the renderer has
+not produced its files yet. Read the completed Document's filename after generation.
 
 Base Read allows browsing and redownloading generated documents. Base Write also allows generation. Base Admin manages templates. A Grids App reader may download only a Document for the current page record whose template is in that Record block's published capability. This App-scoped download does not grant the reader generic Base document access.
 

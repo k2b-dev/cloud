@@ -159,6 +159,8 @@ export function FieldValue(props: FieldValueProps) {
   );
 
   const renderRawValue = () => {
+    const error = props.record?.fieldErrors?.[props.field.id];
+    if (error) return <span class="text-danger break-words">{error}</span>;
     const intent = display();
     if (intent.kind === "empty") return emptyValue();
     if (props.field.type === "object_list")

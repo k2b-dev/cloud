@@ -7,6 +7,7 @@ import {
   type FormulaSqlFieldResolver,
   type FormulaSqlType,
 } from "../service/formula-sql-compiler";
+import { requireValidCalculationSql } from "../service/formula-sql-values";
 import { compileObjectListProjection } from "../service/object-list-projection";
 import type { Field } from "../service/types";
 import type { DslJoinedColumn } from "./resolver";
@@ -46,7 +47,7 @@ const compileFormulaFieldProjection = (params: {
     resolveField: params.resolveField,
   });
   if (!compiled.ok) return { ok: false, error: `formula field "${params.field.name}": ${compiled.error}` };
-  return { ok: true, projection: compiled.expression.sql, sqlType: compiled.expression.type };
+  return { ok: true, projection: requireValidCalculationSql(compiled.expression), sqlType: compiled.expression.type };
 };
 
 const relationTargetTableId = (field: Field): string | null => {
@@ -88,7 +89,7 @@ export const fieldProjection = (
     const compiled = compileObjectListProjection(field, recordAlias, {
       dateConfig: options?.timeZone ? { timeZone: options.timeZone } : undefined,
     });
-    return compiled.ok ? { ok: true, projection: compiled.expression.sql } : compiled;
+    return compiled.ok ? { ok: true, projection: requireValidCalculationSql(compiled.expression) } : compiled;
   }
   if (field.type === "formula") {
     return compileFormulaFieldProjection({
@@ -105,7 +106,7 @@ export const fieldProjection = (
       return { ok: false, error: `${field.type} field "${field.name}" target table is not available` };
     }
     const computed = options?.computedFieldSql?.get(field.id);
-    if (computed) return { ok: true, projection: computed.sql, sqlType: computed.type };
+    if (computed) return { ok: true, projection: requireValidCalculationSql(computed), sqlType: computed.type };
     return { ok: false, error: `field "${field.name}" (type "${field.type}") is not available in this query` };
   }
   if (!relationTargetIsReadable(field, options?.readableTableIds)) {
@@ -206,10 +207,11 @@ export const compileFormulaColumn = (params: {
   });
   if (!compiled.ok) return { ok: false, error: compiled.error };
   const key = safeColumnAlias(params.index);
+  const projection = requireValidCalculationSql(compiled.expression);
   return {
     ok: true,
-    fragment: sql`${compiled.expression.sql} AS ${sql.unsafe(key)}`,
-    projection: compiled.expression.sql,
+    fragment: sql`${projection} AS ${sql.unsafe(key)}`,
+    projection,
     column: {
       key,
       label: params.label,

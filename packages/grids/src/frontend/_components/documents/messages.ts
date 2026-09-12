@@ -16,6 +16,10 @@ export const documentMessages = i18n.define({
       documentId: "Document ID",
       openSourceRecord: "Open source record",
       sourceUnavailable: "Source record unavailable",
+      dataCapturedAt: "Data captured",
+      workflowDataSource: "Workflow data",
+      snapshotRows: ({ count, formatted }: { count: number; formatted: string }) =>
+        i18n.plural(count, "en", { one: "1 row", other: `${formatted} rows` }),
       openTemplate: "Open template",
       immutableSummary: "Completed · This document stays unchanged.",
       moreActions: "More actions",
@@ -257,6 +261,10 @@ export const documentMessages = i18n.define({
       documentId: "Dokument-ID",
       openSourceRecord: "Quelldatensatz öffnen",
       sourceUnavailable: "Quelldatensatz nicht verfügbar",
+      dataCapturedAt: "Datenstand",
+      workflowDataSource: "Workflow-Daten",
+      snapshotRows: ({ count, formatted }: { count: number; formatted: string }) =>
+        i18n.plural(count, "de", { one: "1 Zeile", other: `${formatted} Zeilen` }),
       openTemplate: "Vorlage öffnen",
       immutableSummary: "Abgeschlossen · Dieses Dokument bleibt unverändert.",
       moreActions: "Weitere Aktionen",

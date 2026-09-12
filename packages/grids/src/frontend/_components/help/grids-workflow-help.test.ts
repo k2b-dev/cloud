@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { compileWorkflow } from "@k2b/cloud/workflows/language";
+import { ok } from "@k2b/stdlib";
 import { buildWorkflowCatalog } from "../../../service/workflow-catalog";
 import { bindGridsWorkflow } from "../../../workflows/binder";
 import { GRIDS_WORKFLOW_CHANNELS, GRIDS_WORKFLOW_LAUNCHER_KINDS, GridsWorkflowRunStatusSchema } from "../../../workflows/contracts";
@@ -118,7 +119,10 @@ describe("Grids workflow help", () => {
       }
 
       for (const term of new Set(configTerms)) {
-        expect(reference, `${label} reference missing workflow property or enum ${term}`).toMatch(new RegExp(`\\b${term}\\b`));
+        const printed = /[\x00-\x1f]/.test(term) ? JSON.stringify(term).slice(1, -1) : term;
+        const escaped = printed.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        const pattern = /^\w+$/.test(term) ? `\\b${escaped}\\b` : escaped;
+        expect(reference, `${label} reference missing workflow property or enum ${JSON.stringify(term)}`).toMatch(new RegExp(pattern));
       }
     }
   });
@@ -159,7 +163,15 @@ describe("Grids workflow help", () => {
       const compiled = await compileWorkflow(source, gridsWorkflows);
       expect(compiled.ok, title).toBe(true);
       if (!compiled.ok) continue;
-      expect((await bindGridsWorkflow(compiled.ir, catalog)).ok, title).toBe(true);
+      expect(
+        (
+          await bindGridsWorkflow(compiled.ir, catalog, source, async (query) => {
+            expect(query).toBe("from table Items select Name");
+            return ok({ source: "from table {ITEM01} select {NAME01}", schemaHash: "a".repeat(64) });
+          })
+        ).ok,
+        title,
+      ).toBe(true);
     }
   });
 

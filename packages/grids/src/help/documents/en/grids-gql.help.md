@@ -262,8 +262,6 @@ limit 1
 
 ### Predicate compatibility
 
-The simple field predicates below are the clearest choice when they fit. A boolean formula can compare fields or calculated expressions when a direct predicate is not enough.
-
 | Field value | Supported direct predicates |
 | --- | --- |
 | Text, long text, ID | `=`, `!=`, `contains`, `startswith`, `endswith`, `icontains`, `istartswith`, `iendswith` |
@@ -273,7 +271,9 @@ The simple field predicates below are the clearest choice when they fit. A boole
 | Select | `=`, `!=`, `oneof`, `noneof`, `containsall`; values may be option labels or option ids |
 | Relation | `=`, `!=`, `oneof`, `noneof`, `containsall`; values are related record public IDs |
 
-Comparing a filterable field with `null` uses `=` for empty and `!=` for not empty. Other comparisons with `null` are invalid. Scalar formula, lookup, and rollup outputs can participate in a supported true/false formula. JSON and file fields cannot be filtered directly.
+`field = null` means empty; `!= null` means not empty. Stored-table Files support only these presence checks, not Combined-table Files. JSON is not filterable; computed scalars can use boolean formulas.
+
+Joined `oneof`, `noneof` and `containsall` retain typed values and access checks: `oneof(cost.Responsible, @auth.subjects)` checks Principal membership.
 
 ### Record metadata
 

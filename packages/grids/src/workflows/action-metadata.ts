@@ -1,5 +1,26 @@
-import type { WorkflowActionMap } from "@k2b/cloud/workflows";
+import type { WorkflowActionMap, WorkflowFieldSchema } from "@k2b/cloud/workflows";
 import { MAX_CORRECTION_PREFILL_FIELDS } from "./contracts";
+import { FINANCIAL_WORKFLOW_OUTPUTS } from "./financial-output-metadata";
+import { WORKFLOW_QUERY_PARAMETER_TYPES } from "./query-parameters";
+
+const snapshotColumns = {
+  kind: "array",
+  minItems: 1,
+  items: {
+    kind: "object",
+    properties: {
+      key: { kind: "string", minLength: 1 },
+      label: { kind: "string", minLength: 1, optional: true },
+      type: { kind: "string", enum: ["text", "decimal", "boolean", "date", "dateTime", "json"] },
+      path: {
+        kind: "array",
+        minItems: 1,
+        items: { kind: "string", minLength: 1 },
+        description: "Literal own-property path in the public snapshot. No live values or array expansion.",
+      },
+    },
+  },
+} satisfies WorkflowFieldSchema;
 
 const saveAs = {
   kind: "string",
@@ -17,6 +38,40 @@ const auditAnswers = {
 } as const;
 
 export const GRIDS_WORKFLOW_ACTION_METADATA = {
+  query: {
+    effect: "transactional",
+    label: "Capture query data",
+    description: "Captures a complete, typed GQL result once for later document generation. Parameters are values, not query text.",
+    outputType: "grids.queryResult",
+    config: {
+      kind: "object",
+      properties: {
+        source: {
+          kind: "string",
+          minLength: 1,
+          maxLength: 20_000,
+          description: "Inline GQL with an explicit table source and optional @params.name values.",
+        },
+        parameters: {
+          kind: "record",
+          optional: true,
+          description: "Typed values keyed by lowercase parameter names; reference them in GQL as @params.name.",
+          values: {
+            kind: "object",
+            properties: {
+              type: {
+                kind: "string",
+                enum: [...WORKFLOW_QUERY_PARAMETER_TYPES],
+                description: "Parameter type. Decimal values must be exact decimal strings.",
+              },
+              value: { kind: "value", description: "Literal or workflow expression. Record values use existing record inputs or outputs." },
+            },
+          },
+        },
+        saveAs,
+      },
+    },
+  },
   closeRecord: {
     effect: "transactional",
     label: "Close record",
@@ -238,13 +293,163 @@ export const GRIDS_WORKFLOW_ACTION_METADATA = {
   generateDocument: {
     effect: "idempotent",
     label: "Generate document",
-    description: "Creates a frozen document snapshot from a configured template.",
+    description: "Creates an immutable document from a record template or captured query data.",
     outputType: "grids.document",
     config: {
       kind: "object",
       properties: {
-        template: { kind: "string", minLength: 1, maxLength: 200, description: "Document template name or ID." },
-        record: { kind: "string", minLength: 1, maxLength: 500, description: "Record input or output reference." },
+        sourceVersions: {
+          kind: "value",
+          optional: true,
+          description:
+            "Financial outputs only: data pins unique single-source GQL Record versions from the capture; otherwise use a nonempty unique array of {tableId, recordId, version} with public IDs and positive integer versions. Rechecks and locks these records at confirmation and issuance. Include every approval or child Record whose changes matter.",
+        },
+        template: {
+          kind: "string",
+          minLength: 1,
+          maxLength: 200,
+          optional: true,
+          description: "Document template; requires record and excludes data/output.",
+        },
+        record: { kind: "string", minLength: 1, maxLength: 500, optional: true, description: "Record reference for the template source." },
+        data: {
+          kind: "union",
+          optional: true,
+          description: "Captured query reference or typed rows; requires output and excludes template/record.",
+          variants: [
+            { kind: "string", minLength: 1, maxLength: 500, description: "Captured query reference." },
+            {
+              kind: "object",
+              properties: {
+                documents: { kind: "value", description: "Ordered unique public IDs of issued Documents in this Base (1–10,000)." },
+                columns: snapshotColumns,
+              },
+            },
+            {
+              kind: "object",
+              properties: {
+                snapshots: {
+                  kind: "value",
+                  description:
+                    "Ordered unique public Record snapshot IDs in this Base. Read public snapshot properties such as root.data.FIELD1; relations use current access.",
+                },
+                columns: snapshotColumns,
+              },
+            },
+            {
+              kind: "object",
+              properties: {
+                columns: {
+                  kind: "array",
+                  minItems: 1,
+                  items: {
+                    kind: "object",
+                    properties: {
+                      key: { kind: "string", minLength: 1, description: "Literal row property key." },
+                      label: { kind: "string", minLength: 1, optional: true, description: "Optional literal column label." },
+                      type: {
+                        kind: "string",
+                        enum: ["text", "decimal", "boolean", "date", "dateTime", "json"],
+                        description: "Exact column type; decimal cells are strings.",
+                      },
+                    },
+                  },
+                },
+                rows: {
+                  kind: "value",
+                  description:
+                    "Array of row objects. Values may use workflow expressions; every declared cell is required, null is allowed.",
+                },
+              },
+            },
+          ],
+        },
+        output: {
+          kind: "union",
+          optional: true,
+          variants: [
+            ...FINANCIAL_WORKFLOW_OUTPUTS,
+            {
+              kind: "object",
+              properties: {
+                kind: { kind: "string", enum: ["xml"], description: "UTF-8 XML 1.0; not a financial profile." },
+                body: {
+                  kind: "string",
+                  minLength: 1,
+                  maxLength: 200_000,
+                  description: "XML/Liquid using rows, columns and document. Static names and namespaces only.",
+                },
+              },
+            },
+            {
+              kind: "object",
+              properties: {
+                kind: { kind: "string", enum: ["pdf"], description: "One PDF from all captured rows." },
+                body: { kind: "string", minLength: 1, maxLength: 200_000, description: "HTML/Liquid using rows, columns and document." },
+                header: { kind: "string", minLength: 1, maxLength: 50_000, optional: true },
+                footer: { kind: "string", minLength: 1, maxLength: 50_000, optional: true },
+                css: { kind: "string", minLength: 1, maxLength: 50_000, optional: true },
+              },
+            },
+            {
+              kind: "object",
+              properties: {
+                kind: { kind: "string", enum: ["json"], description: "JSON row objects." },
+                wrapper: {
+                  kind: "object",
+                  optional: true,
+                  description: "Optional root object containing rows and additional typed values. No text template.",
+                  properties: {
+                    rowsKey: { kind: "string", minLength: 1, description: "Root property holding the row array." },
+                    values: {
+                      kind: "record",
+                      values: { kind: "value" },
+                      optional: true,
+                      description: "Other root properties; literals or workflow values. Must not contain rowsKey.",
+                    },
+                  },
+                },
+              },
+            },
+            {
+              kind: "object",
+              properties: {
+                kind: { kind: "string", enum: ["csv"], description: "UTF-8 CSV." },
+                columns: {
+                  kind: "array",
+                  optional: true,
+                  minItems: 1,
+                  description: "Optional ordered selection by exact GQL alias. Omitted columns are not exported; labels may be renamed.",
+                  items: {
+                    kind: "object",
+                    properties: {
+                      source: { kind: "string", minLength: 1, description: "Exact captured GQL column alias, not its internal key." },
+                      label: { kind: "string", minLength: 1, optional: true, description: "Export heading; defaults to the source alias." },
+                    },
+                  },
+                },
+                delimiter: {
+                  kind: "string",
+                  enum: [",", ";", "\t", "|"],
+                  optional: true,
+                  description: "Column separator; defaults to comma.",
+                },
+                nestedValues: {
+                  kind: "string",
+                  enum: ["reject", "json"],
+                  optional: true,
+                  description: "Nested cell handling; defaults to rejection.",
+                },
+                textProtection: {
+                  kind: "string",
+                  enum: ["spreadsheet", "raw"],
+                  optional: true,
+                  description: "Spreadsheet-safe text by default; raw keeps unsafe formula-like text.",
+                },
+              },
+            },
+          ],
+        },
         filename: { kind: "value", optional: true, description: "Optional filename override." },
         tags: { kind: "array", items: { kind: "value", description: "Tag value." }, maxItems: 20, optional: true },
         saveAs,

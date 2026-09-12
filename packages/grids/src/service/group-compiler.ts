@@ -21,6 +21,7 @@ import {
   type FormulaSqlFieldResolver,
   type FormulaSqlType,
 } from "./formula-sql-compiler";
+import { requireValidCalculationSql } from "./formula-sql-values";
 import { compileDslKeyset, type DslKeysetType } from "./keyset-compiler";
 import { numericAverageSql } from "./numeric-division-sql";
 import { assertSqlIdentifier } from "./sql-ident";
@@ -225,7 +226,7 @@ const buildFormulaAggExpr = (
     return { ok: false, error: `agg "${req.agg}" not compatible with formula type "${compiled.expression.type}"` };
   }
 
-  const expr = compiled.expression.sql;
+  const expr = requireValidCalculationSql(compiled.expression);
   switch (req.agg) {
     case "count":
       return { ok: true, expr: sql`count(${expr}) FILTER (WHERE ${expr} IS NOT NULL AND (${expr})::text <> '')::bigint`, type: "numeric" };
@@ -286,7 +287,11 @@ const buildExistenceAggExpr = (req: FieldAggregationSpec, existsRef: any, system
   }
 };
 
-const buildFieldAggExpr = (req: FieldAggregationSpec, field: Field | null): BuiltAggregation => {
+const buildFieldAggExpr = (
+  req: FieldAggregationSpec,
+  field: Field | null,
+  computedFieldSql?: Map<string, FormulaSqlExpression>,
+): BuiltAggregation => {
   if (req.fieldId === "*") {
     if (req.agg !== "count") {
       return { ok: false, error: `agg "${req.agg}" requires a fieldId (only count works on "*")` };
@@ -306,12 +311,13 @@ const buildFieldAggExpr = (req: FieldAggregationSpec, field: Field | null): Buil
   // an unparseable number), not rows where the typed projection
   // happens to be non-null.
   const desc = storageOf(field);
-  const typedProj = desc.project(field, "r") as any;
+  const computed = computedFieldSql?.get(field.id);
+  const typedProj = computed ? requireValidCalculationSql(computed) : desc.project(field, "r");
   // Existence-shaped reference used by count*. For JSONB-backed kinds
   // we read the raw text; for system kinds we use the column itself
   // (no '' check — columns are typed, "" is meaningless).
-  const existsRef = desc.kind === "system" ? typedProj : sql`r.data->>${field.id}`;
-  const isSystem = desc.kind === "system";
+  const existsRef = computed || desc.kind === "system" ? typedProj : sql`r.data->>${field.id}`;
+  const isSystem = computed ? computed.type !== "text" : desc.kind === "system";
   const existenceAggregate = buildExistenceAggExpr(req, existsRef, isSystem);
   if (existenceAggregate) return existenceAggregate;
 
@@ -352,7 +358,9 @@ const buildAggExpr = (
   computedFieldSql?: Map<string, FormulaSqlExpression>,
   resolveField?: FormulaSqlFieldResolver,
 ): { ok: true; expr: any; type: FormulaSqlType } | { ok: false; error: string } =>
-  isFormulaAggregation(req) ? buildFormulaAggExpr(req, fields, dateConfig, computedFieldSql, resolveField) : buildFieldAggExpr(req, field);
+  isFormulaAggregation(req)
+    ? buildFormulaAggExpr(req, fields, dateConfig, computedFieldSql, resolveField)
+    : buildFieldAggExpr(req, field, computedFieldSql);
 
 type ResolvedAggregations = {
   aggKeys: string[];
@@ -453,7 +461,7 @@ const buildUserHavingClause = (
     resolveField: buildHavingRefResolver(refs, aggExprs, fieldsById),
   });
   if (!compiled.ok) return { ok: false, error: `having: ${compiled.error}` };
-  return { ok: true, clause: compiled.expression.sql };
+  return { ok: true, clause: requireValidCalculationSql(compiled.expression) };
 };
 
 const joinSql = (parts: any[]): any => parts.reduce((acc, cur) => sql`${acc}, ${cur}`);

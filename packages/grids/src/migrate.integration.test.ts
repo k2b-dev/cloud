@@ -3,7 +3,7 @@ import { SQL, sql } from "bun";
 import { migrate as migrateCoreWorkflows } from "../../core/src/migrate/core/workflows";
 import { GRIDS_SCHEMA_BASELINE, gridsPublicIdsReady, migrate } from "./migrate";
 import { insertTestWorkflow, insertTestWorkflowRun } from "./service/workflow-test-fixture";
-import { GRIDS_WORKFLOW_SCHEMA_VERSION } from "./workflows/migrate";
+import { GRIDS_WORKFLOW_SCHEMA_VERSION, migrateGridsWorkflowTables } from "./workflows/migrate";
 
 const postgresTest = process.env.GRIDS_DB_TEST === "1" ? test : test.skip;
 
@@ -33,6 +33,31 @@ const withIsolatedDatabase = async (run: (database: SQL) => Promise<void>) => {
 };
 
 describe("grids schema migration", () => {
+  postgresTest("refuses an alpha workflow reset before detaching retained documents", async () => {
+    await withIsolatedDatabase(async (database) => {
+      await database`CREATE SCHEMA grids`.simple();
+      await database`CREATE TABLE grids.documents (workflow_run_id UUID, workflow_step_key TEXT)`.simple();
+      await database`CREATE TABLE grids.workflow_run_profile (run_id UUID PRIMARY KEY)`.simple();
+      const runId = uuid();
+      await database`INSERT INTO grids.workflow_run_profile VALUES (${runId}::uuid)`;
+      await database`INSERT INTO grids.documents VALUES (${runId}::uuid, 'export')`;
+      await expect(migrateGridsWorkflowTables(database)).rejects.toThrow("Grids workflow reset refused");
+      expect(
+        await database<
+          Array<{ workflow_run_id: string; workflow_step_key: string }>
+        >`SELECT workflow_run_id::text, workflow_step_key FROM grids.documents`,
+      ).toEqual([{ workflow_run_id: runId, workflow_step_key: "export" }]);
+      expect(await database<Array<{ run_id: string }>>`SELECT run_id::text FROM grids.workflow_run_profile`).toEqual([{ run_id: runId }]);
+      expect(await database<Array<{ version: number }>>`SELECT version FROM grids.workflow_migrations`).toEqual([]);
+      await database`DELETE FROM grids.documents`;
+      await database`CREATE TABLE grids.workflow_profile (id UUID PRIMARY KEY)`.simple();
+      await database`INSERT INTO grids.workflow_profile VALUES (${runId}::uuid)`;
+      await expect(migrateGridsWorkflowTables(database)).rejects.toThrow("stored workflows require an explicit preserving migration");
+      expect(await database<Array<{ id: string }>>`SELECT id::text FROM grids.workflow_profile`).toEqual([{ id: runId }]);
+      expect(await database<Array<{ run_id: string }>>`SELECT run_id::text FROM grids.workflow_run_profile`).toEqual([{ run_id: runId }]);
+    });
+  });
+
   postgresTest(
     "records the baseline only after all migration postconditions pass",
     async () => {
@@ -437,9 +462,9 @@ describe("grids schema migration", () => {
           WHERE table_schema = 'grids'
             AND table_type = 'BASE TABLE'
         `;
-        // Durable History, external Record identity, Form retry receipts and the evidence lifecycle
+        // Durable History, frozen workflow query data, external Record identity, Form retry receipts and the evidence lifecycle
         // add explicit owners without replacing the lightweight live rows.
-        expect(row?.tableCount).toBe(55);
+        expect(row?.tableCount).toBe(57);
         const historyTables = await database<Array<{ tableName: string }>>`
           SELECT table_name AS "tableName"
           FROM information_schema.tables
@@ -719,22 +744,22 @@ describe("grids schema migration", () => {
             (${snapshotB}::uuid, ${shortId("O")}, ${baseB}::uuid, ${tableB}::uuid, ${recordB}::uuid, '{}'::jsonb, '{}'::jsonb)
         `;
         await database`
-          INSERT INTO grids.documents (
+          INSERT INTO grids.documents (primary_artifact_key,
             id, short_id, template_id, snapshot_id, base_id, table_id, record_id, document_number, filename,
             template_snapshot, render_data, renderer_kind, renderer_version, template_revision, issued_actor
           ) VALUES
-            (${documentA}::uuid, ${documentAShortId}, ${templateA}::uuid, ${snapshotA}::uuid, ${baseA}::uuid, ${tableA}::uuid,
+            ('pdf', ${documentA}::uuid, ${documentAShortId}, ${templateA}::uuid, ${snapshotA}::uuid, ${baseA}::uuid, ${tableA}::uuid,
               ${recordA}::uuid, 'INV-1', 'INV-1.pdf', '{}'::jsonb, '{}'::jsonb, 'html', 'html-v1', ${"a".repeat(64)}, '{"kind":"system"}'::jsonb),
-            (${documentB}::uuid, ${documentBShortId}, ${templateB}::uuid, ${snapshotB}::uuid, ${baseB}::uuid, ${tableB}::uuid,
+            ('pdf', ${documentB}::uuid, ${documentBShortId}, ${templateB}::uuid, ${snapshotB}::uuid, ${baseB}::uuid, ${tableB}::uuid,
               ${recordB}::uuid, 'INV-1', 'INV-1.pdf', '{}'::jsonb, '{}'::jsonb, 'html', 'html-v1', ${"b".repeat(64)}, '{"kind":"system"}'::jsonb)
         `;
         await expect(
           (async () => {
             await database`
-              INSERT INTO grids.documents (
+              INSERT INTO grids.documents (primary_artifact_key,
                 id, short_id, template_id, snapshot_id, base_id, table_id, record_id, document_number, filename,
                 template_snapshot, render_data, renderer_kind, renderer_version, template_revision, issued_actor
-              ) VALUES (
+              ) VALUES ('pdf',
                 ${uuid()}::uuid, ${shortId("H")}, ${templateA}::uuid, ${snapshotA}::uuid, ${baseA}::uuid, ${tableA}::uuid,
                 ${recordA}::uuid, 'INV-1', 'duplicate.pdf', '{}'::jsonb, '{}'::jsonb, 'html', 'html-v1', ${"c".repeat(64)}, '{"kind":"system"}'::jsonb
               )
@@ -744,10 +769,10 @@ describe("grids schema migration", () => {
         await expect(
           (async () => {
             await database`
-              INSERT INTO grids.documents (
+              INSERT INTO grids.documents (primary_artifact_key,
                 id, short_id, template_id, workflow_run_id, snapshot_id, base_id, table_id, record_id, document_number, filename,
                 template_snapshot, render_data, renderer_kind, renderer_version, template_revision, issued_actor
-              ) VALUES (
+              ) VALUES ('pdf',
                 ${uuid()}::uuid, ${shortId("I")}, ${templateA}::uuid, ${uuid()}::uuid, ${snapshotA}::uuid, ${baseA}::uuid,
                 ${tableA}::uuid, ${recordA}::uuid, 'INV-2', 'INV-2.pdf', '{}'::jsonb, '{}'::jsonb, 'html', 'html-v1', ${"d".repeat(64)}, '{"kind":"system"}'::jsonb
               )
@@ -993,12 +1018,12 @@ describe("grids schema migration", () => {
             )
         `.simple();
         await database`
-          INSERT INTO grids.documents (
+          INSERT INTO grids.documents (primary_artifact_key,
             id, short_id, template_id, snapshot_id, base_id, table_id, record_id, document_number, filename,
             template_snapshot, render_data, renderer_kind, renderer_version, template_revision, issued_actor,
             profile_id, profile_version, profile_snapshot, snapshot_sha256, validator_version, validation_status,
             validation_report, source, source_revision, relationship_kind
-          ) VALUES (
+          ) VALUES ('pdf',
             ${uuid()}::uuid, ${shortId("Z")}, ${templateA}::uuid, ${snapshotA}::uuid, ${baseA}::uuid,
             ${tableA}::uuid, ${recordA}::uuid, 'LEGACY-1', 'legacy.pdf', '{}'::jsonb, '{}'::jsonb,
             'profile', 'v1', ${"a".repeat(64)}, '{"kind":"system"}'::jsonb,
@@ -1009,11 +1034,19 @@ describe("grids schema migration", () => {
         const documentsBefore = await database`SELECT * FROM grids.documents ORDER BY id`;
         const artifactsBefore = await database`SELECT * FROM grids.document_artifacts ORDER BY document_id, artifact_key`;
         const filesBefore = await database`SELECT * FROM grids.files ORDER BY id`;
+        // Simulate a stored PDF document from before primary-artifact metadata.
+        // The migration adds the key without updating immutable rows or bytes.
+        await database`ALTER TABLE grids.documents DROP COLUMN primary_artifact_key`.simple();
         await migrate(database);
         await migrate(database);
         expect(await database`SELECT * FROM grids.documents ORDER BY id`).toEqual(documentsBefore);
         expect(await database`SELECT * FROM grids.document_artifacts ORDER BY document_id, artifact_key`).toEqual(artifactsBefore);
         expect(await database`SELECT * FROM grids.files ORDER BY id`).toEqual(filesBefore);
+        const [primaryColumn] = await database`
+          SELECT is_nullable, column_default FROM information_schema.columns
+          WHERE table_schema = 'grids' AND table_name = 'documents' AND column_name = 'primary_artifact_key'
+        `;
+        expect(primaryColumn).toEqual({ is_nullable: "NO", column_default: null });
         const [upgradedConstraint] = await database`
           SELECT pg_get_constraintdef(oid) AS definition FROM pg_constraint
           WHERE conrelid = 'grids.documents'::regclass AND conname = 'documents_renderer_chk'
@@ -1933,11 +1966,11 @@ describe("grids schema migration", () => {
           )
         `;
         await database`
-          INSERT INTO grids.documents (
+          INSERT INTO grids.documents (primary_artifact_key,
             id, short_id, template_id, workflow_run_id, workflow_step_key, snapshot_id, base_id, table_id, record_id,
             document_number, filename, tags, template_snapshot, render_data, renderer_kind, renderer_version,
             template_revision, issued_actor, created_by
-          ) VALUES (
+          ) VALUES ('pdf',
             ${documentId}::uuid,
             ${shortId("R")},
             ${documentTemplateId}::uuid,

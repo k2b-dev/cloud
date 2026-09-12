@@ -1,5 +1,5 @@
-import { Button, dialogCore, IconButtonLink, PanelDialog, panelDialogOptions, ScrollArea, TextInput, Tooltip, useLocale } from "@k2b/ui";
 import type { WorkflowBoundPlan, WorkflowJsonValue } from "@k2b/cloud/workflows";
+import { Button, dialogCore, IconButtonLink, PanelDialog, panelDialogOptions, ScrollArea, TextInput, Tooltip, useLocale } from "@k2b/ui";
 import { createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "../../../api/client";
 import type { PublicTable } from "../../../api/public-dto";
@@ -24,6 +24,8 @@ type WorkflowRunsApi = {
 
 const workflowRunsApi = apiClient.workflows.runs as unknown as WorkflowRunsApi;
 
+import { openFinancialExportDialog } from "./FinancialExportDialog";
+import { financialExportMessages } from "./financial-export-messages";
 import { workflowMessages } from "./messages";
 import { requestWorkflowRunInput } from "./WorkflowRunInputDialog";
 import { createWorkflowRunEventsProvider, isTerminalWorkflowRunLiveErrorCode } from "./workflow-run-events-provider";
@@ -175,6 +177,8 @@ async function openScanDetails(item: ScanLogItem, retry?: () => void) {
 export default function WorkflowScannerSurface(props: Props) {
   const locale = useLocale();
   const t = () => workflowMessages.resolve([locale()]).t;
+  const exportText = () => financialExportMessages.resolve([locale()]).t;
+  let exportReviewController: AbortController | undefined;
   let cameraFrame: HTMLElement | undefined;
   let video: HTMLVideoElement | undefined;
   let stream: MediaStream | null = null;
@@ -332,6 +336,7 @@ export default function WorkflowScannerSurface(props: Props) {
   };
 
   const applyRun = (logId: string, run: PublicWorkflowRunEventSummary, steps?: PublicWorkflowRunStepSummary[]) => {
+    if (disposed) return;
     const status: ScanStatus =
       run.status === "succeeded"
         ? "succeeded"
@@ -343,6 +348,7 @@ export default function WorkflowScannerSurface(props: Props) {
       status,
       runId: run.id,
       message:
+        (run.documentConfirmation ? exportText().title : undefined) ??
         run.resultMessage ??
         run.error?.message ??
         run.operatorMessage ??
@@ -364,6 +370,23 @@ export default function WorkflowScannerSurface(props: Props) {
       }
     }
     applyRun(logId, run, steps);
+  };
+
+  const reviewExport = async (item: ScanLogItem) => {
+    const confirmation = item.run?.documentConfirmation;
+    if (!item.runId || !confirmation || disposed) return;
+    exportReviewController?.abort();
+    const controller = new AbortController();
+    exportReviewController = controller;
+    try {
+      await openFinancialExportDialog({ runId: item.runId, receiptId: confirmation.receiptId }, controller.signal);
+      if (!controller.signal.aborted && !disposed) await refreshRun(item.id, item.runId);
+    } catch (error) {
+      if (!controller.signal.aborted && !disposed)
+        updateLog(item.id, { message: error instanceof Error ? error.message : t().requestFailed });
+    } finally {
+      if (exportReviewController === controller) exportReviewController = undefined;
+    }
   };
 
   const refreshActiveRuns = async () => {
@@ -441,6 +464,7 @@ export default function WorkflowScannerSurface(props: Props) {
       const item = logs().find((candidate) => candidate.runId === event.run.id);
       if (item) {
         applyRun(item.id, event.run, event.steps);
+        if (event.run.status === "waiting") void refreshRun(item.id, event.run.id).catch(() => undefined);
         return;
       }
       pendingRunEvents.push(event);
@@ -684,6 +708,7 @@ export default function WorkflowScannerSurface(props: Props) {
 
   onCleanup(() => {
     disposed = true;
+    exportReviewController?.abort();
     if (typeof window === "undefined") return;
     window.removeEventListener("resize", updateVideoBox);
     document.removeEventListener("visibilitychange", syncLiveVisibility);
@@ -861,19 +886,23 @@ export default function WorkflowScannerSurface(props: Props) {
                     type="button"
                     class="grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 rounded-[var(--ui-radius-control)] px-3 py-2 text-left transition-colors hover:bg-[var(--ui-surface-subtle)]"
                     onClick={() =>
-                      void openScanDetails(
-                        item,
-                        item.status === "failed" && !item.runId && !pauseReason() ? () => retryScan(item) : undefined,
-                      )
+                      item.run?.documentConfirmation
+                        ? void reviewExport(item)
+                        : void openScanDetails(
+                            item,
+                            item.status === "failed" && !item.runId && !pauseReason() ? () => retryScan(item) : undefined,
+                          )
                     }
                   >
                     <i
                       class={`ti ${
-                        item.status === "succeeded"
-                          ? "ti-circle-check"
-                          : item.status === "failed"
-                            ? "ti-alert-circle"
-                            : "ti-loader-2 animate-spin"
+                        item.run?.documentConfirmation
+                          ? "ti-file-check"
+                          : item.status === "succeeded"
+                            ? "ti-circle-check"
+                            : item.status === "failed"
+                              ? "ti-alert-circle"
+                              : "ti-loader-2 animate-spin"
                       } ${statusClass(item.status)}`}
                     />
                     <span class="min-w-0">

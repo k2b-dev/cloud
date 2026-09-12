@@ -1,5 +1,6 @@
 import { Button, ButtonLink, prompts } from "@k2b/ui";
 import { createSignal, For, onCleanup, Show } from "solid-js";
+import { openFinancialExportDialog } from "../_components/workflows/FinancialExportDialog";
 import { useCustomAppRuntimeMessages } from "./runtime-messages";
 import { type CustomAppWorkflowOperation, invokeCustomAppWorkflow } from "./workflow-action-client";
 
@@ -55,6 +56,7 @@ export default function Actions(props: { actions: CustomAppRenderedAction[] }) {
       setOperations((current) => ({ ...current, [action.id]: operation }));
       const outcome = await invokeCustomAppWorkflow({
         operation,
+        onConfirmExport: openFinancialExportDialog,
         endpoint: action.endpoint,
         signal: controller.signal,
         onRunning: () => setStatus({ kind: "running", message: messages().workflowRunning }),
@@ -64,6 +66,7 @@ export default function Actions(props: { actions: CustomAppRenderedAction[] }) {
           completed: messages().workflowCompleted,
           failed: messages().workflowFailed,
           stillRunning: messages().workflowStillRunning,
+          awaitingExport: messages().workflowAwaitingExport,
         },
       });
       setStatus(outcome);

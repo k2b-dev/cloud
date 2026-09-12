@@ -1,3 +1,4 @@
+import { closeSync, openSync } from "node:fs";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -26,6 +27,9 @@ if (process.argv.includes("--bootstrap")) {
     VALUES ('grids-verification', 'local', 'user', 'Grids', 'Verification', 'Grids Verification')`;
   await sql.close();
 } else {
+  if (!Bun.which(process.env.PDFTOTEXT ?? "pdftotext")) {
+    throw new Error("Grids verification requires Poppler pdftotext on PATH or an executable PDFTOTEXT path");
+  }
   const name = `grids_verify_${crypto.randomUUID().replaceAll("-", "")}`;
   const adminUrl = new URL(databaseUrl);
   adminUrl.pathname = "/postgres";
@@ -40,6 +44,7 @@ if (process.argv.includes("--bootstrap")) {
     GRIDS_SYNC_TEST: "1",
     GRIDS_RECORD_EVENTS_DB_TEST: "1",
     GRIDS_EVIDENCE_CLEANUP_DB_TEST: "1",
+    GRIDS_PDF_TEST: "1",
   };
   let created = false;
   try {
@@ -74,39 +79,72 @@ if (process.argv.includes("--bootstrap")) {
       "src/frontend/_components/settings/settings-creation.behavior.test.tsx",
       "src/frontend/_components/records/RecordDialogs.behavior.test.tsx",
       "src/frontend/_components/workflows/WorkflowLauncherManager.behavior.test.tsx",
+      "src/frontend/_components/workflows/WorkflowRunDetailPanel.behavior.test.tsx",
+      "src/frontend/_components/workflows/FinancialWorkflowStarter.behavior.test.tsx",
+      "src/frontend/_components/workflows/FinancialExportDialog.behavior.test.tsx",
+      "src/frontend/_components/workflows/QueryExportStarter.behavior.test.tsx",
+      "src/frontend/_components/fields/ObjectListConfigEditor.behavior.test.tsx",
+      "src/frontend/_components/forms/ObjectListInput.behavior.test.tsx",
+      "src/frontend/_components/forms/percent-input.behavior.test.tsx",
     ];
+    const ownSync = ["src/service/evidence-exports.integration.test.ts"];
+    const bundleChecks = ["src/frontend/_components/dialogs/AuditPolicyDialog.bundle.test.ts"];
+    const pdf = ["src/service/document-query-pdf.integration.test.ts"];
     const packageRoot = join(root, "packages/grids");
     const all = [...new Bun.Glob("{src,scripts}/**/*.test.{ts,tsx}").scanSync(packageRoot)].sort();
     const phases = [
       // The outbox reconciler claims database-wide work, so test it before other suites enqueue events.
-      { name: "outbox", files: special.slice(6), flags: ["--preload", "./packages/grids/scripts/verify-sync-preload.ts"] },
+      // This suite owns its Sync lifecycle for the live burst test.
+      { name: "outbox", files: special.slice(6), flags: [] },
       {
         name: "database-and-standard",
-        files: all.filter((file) => !special.includes(file) && !dom.includes(file)),
-        flags: ["--preload", "./packages/grids/scripts/verify-sync-preload.ts"],
+        files: all.filter(
+          (file) =>
+            !special.includes(file) &&
+            !dom.includes(file) &&
+            !ownSync.includes(file) &&
+            !bundleChecks.includes(file) &&
+            !pdf.includes(file),
+        ),
+        // These suites include multi-step migrations and history baselines;
+        // their timeout is not a single-request latency budget.
+        flags: ["--timeout", "30000", "--preload", "./packages/grids/scripts/verify-sync-preload.ts"],
       },
       { name: "sync", files: special.slice(0, 3), flags: [] },
+      { name: "evidence-exports", files: ownSync, flags: ["--timeout", "30000"] },
+      // Keep browser bundling isolated from process-global test plugins.
+      { name: "browser-bundle", files: bundleChecks, flags: [] },
+      { name: "pdf", files: pdf, flags: [] },
       { name: "recovery-and-cleanup", files: special.slice(3, 5), flags: [] },
       { name: "dom", files: dom, flags: ["--isolate", "--conditions=browser", "--preload", "./packages/ui/test/solid-dom-preload.ts"] },
     ];
     for (const phase of phases) {
       const report = join(reports, `${phase.name}.xml`);
-      console.log(`\nGrids verification: ${phase.name} (${phase.files.length} files)`);
-      const child = Bun.spawn(
-        [
-          process.execPath,
-          "test",
-          ...phase.flags,
-          "--max-concurrency",
-          "1",
-          "--reporter=junit",
-          `--reporter-outfile=${report}`,
-          ...phase.files.map((file) => `./packages/grids/${file}`),
-        ],
-        { cwd: root, env, stdout: "inherit", stderr: "inherit" },
-      );
-      const code = await child.exited;
-      if (code !== 0) throw new Error(`${phase.name} failed (exit ${code}); report: ${report}`);
+      const log = join(reports, `${phase.name}.log`);
+      console.log(`\nGrids verification: ${phase.name} (${phase.files.length} files); log: ${log}`);
+      // Bun's JUnit output omits errors outside test cases. Keep the complete
+      // process output as well, including module-load and unhandled errors.
+      const output = openSync(log, "wx");
+      let code: number;
+      try {
+        const child = Bun.spawn(
+          [
+            process.execPath,
+            "test",
+            ...phase.flags,
+            "--max-concurrency",
+            "1",
+            "--reporter=junit",
+            `--reporter-outfile=${report}`,
+            ...phase.files.map((file) => `./packages/grids/${file}`),
+          ],
+          { cwd: root, env, stdout: output, stderr: output },
+        );
+        code = await child.exited;
+      } finally {
+        closeSync(output);
+      }
+      if (code !== 0) throw new Error(`${phase.name} failed (exit ${code}); report: ${report}; log: ${log}`);
       const xml = await Bun.file(report).text();
       if (!xml.includes("<testcase") || /<skipped[\s/>]/.test(xml)) {
         throw new Error(`${phase.name} ran no tests or skipped tests; report: ${report}`);

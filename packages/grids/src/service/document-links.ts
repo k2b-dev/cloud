@@ -1,8 +1,9 @@
 import { createHash, randomBytes } from "node:crypto";
-import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { coreSettings } from "@k2b/cloud/services";
+import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { sql } from "bun";
 import type { CreateDocumentLinkInput, Document, DocumentLink, DocumentLinkTtl } from "../contracts";
+import { documentAllowsPublicLinks } from "../document-sharing";
 import { logAudit, type SqlClient } from "./audit";
 import { type DocumentDbRow, hydrateDocuments, mapDocumentLink } from "./document-mappers";
 import { documentServiceText } from "./document-messages";
@@ -93,6 +94,7 @@ export const createDocumentLink = async (params: {
   locale?: string;
 }): Promise<Result<{ link: DocumentLink; token: string }>> => {
   const t = documentServiceText(params.locale);
+  if (!documentAllowsPublicLinks(params.document)) return fail(err.badInput(t.publicLinksPdfOnly));
   const token = generateDocumentLinkToken();
   const expiresAt = documentLinkExpiresAt(params.input.expiresIn);
   const comment = normalizeDocumentLinkComment(params.input.comment);
@@ -208,6 +210,7 @@ export const resolveDocumentLinkDownload = async (
   `;
   if (!documentRow) return fail(err.notFound(t.documentNotFound));
   const [document] = await hydrateDocuments([documentRow]);
+  if (document && !documentAllowsPublicLinks(document)) return fail(err.notFound(t.documentLinkNotFound));
   return document ? ok({ link, document }) : fail(err.internal(t.artifactsMissing));
 };
 
