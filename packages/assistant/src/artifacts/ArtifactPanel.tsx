@@ -11,7 +11,7 @@ import { createArtifactSession, type ArtifactSession, type RunSnapshot } from ".
 import { RuntimeStorage, localStorageCall, sharedStorage } from "./runtime/shared-storage";
 import { ArtifactStorage } from "./runtime/storage";
 
-function pickFiles(multiple: boolean, folder: boolean, accept: string, signal: AbortSignal): Promise<File[]> {
+export function pickFiles(multiple: boolean, folder: boolean, accept: string, signal: AbortSignal): Promise<File[]> {
   return new Promise((resolve) => {
     const input = document.createElement("input");
     input.type = "file"; input.multiple = multiple; input.webkitdirectory = folder; input.accept = accept; input.hidden = true;

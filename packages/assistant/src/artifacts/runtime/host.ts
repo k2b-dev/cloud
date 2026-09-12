@@ -5,6 +5,7 @@ import { sandboxDocument } from "./sandbox";
 
 export type RuntimeHooks = {
   work?: (state: WorkState) => void;
+  pending?: (count: number) => void;
   ui: (nodes: UiNode[]) => void;
   log: (level: string, text: string) => void;
   error: (message: string) => void;
@@ -101,10 +102,11 @@ export function startArtifactRun(container: HTMLElement, source: { runtime: stri
       } else if (m.type === "rpc") {
         if (queued >= LIMITS.pendingRequests) throw new Error("Too many pending host requests");
         queued++;
+        hooks.pending?.(queued);
         chain = chain.then(async () => {
           try {
             if (stopped) return;
-            if (["ui.modal","file.open","file.openMultiple","file.openFolder","capabilities.run"].includes(m.method)) {
+            if (["ui.modal","file.read","file.open","file.openMultiple","file.openFolder","capabilities.run"].includes(m.method)) {
               waitingForModal = true;
               for (const event of events.values()) clearTimeout(event.timer);
             }
@@ -114,11 +116,12 @@ export function startArtifactRun(container: HTMLElement, source: { runtime: stri
             const code = error && typeof error === "object" && "code" in error && typeof error.code === "string" ? error.code.slice(0,128) : undefined;
             post({ type: "result",id: m.id,error: String(error instanceof Error ? error.message : error).slice(0,LIMITS.text),code });
           } finally {
-            if (["ui.modal","file.open","file.openMultiple","file.openFolder","capabilities.run"].includes(m.method)) {
+            if (["ui.modal","file.read","file.open","file.openMultiple","file.openFolder","capabilities.run"].includes(m.method)) {
               waitingForModal = false;
               if (!stopped) for (const event of events.values()) event.timer = setTimeout(event.expire, event.timeoutMs);
             }
             queued--;
+            hooks.pending?.(queued);
           }
         });
       }

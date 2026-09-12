@@ -355,11 +355,11 @@ Do not fabricate organizer/attendee addresses, regenerate the returned calendar 
 const BUILTIN_CLOUD_AI_SKILLS: AiSkillTemplate[] = [
   ASSISTANT_CODE_MODE_SKILL,
   {
-    version: 2,
+    version: 3,
     key: "kit:cloud-kit",
     name: "cloud-kit",
     description:
-      "Use for Cloud Kit: programming or improving browser mini apps, file converters, JavaScript tools, workbench UIs, CSV processing, exact money calculations, SQL queries or shared database workflows in an existing Kit app. Read current Kit Help before choosing SDK methods.",
+      "Use when working in an existing Cloud Kit app: improve its browser UI, file conversion, JavaScript, CSV processing, exact money calculations or database workflow. General analysis and new Assistant apps belong to assistant-code-mode. Read current Kit Help before choosing SDK methods.",
     instructions: CLOUD_KIT_INSTRUCTIONS,
   },
   {

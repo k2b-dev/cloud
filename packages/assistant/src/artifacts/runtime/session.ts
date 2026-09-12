@@ -13,6 +13,8 @@ export type RunSnapshot = {
   busy: boolean;
   work?: WorkState;
   approvalPending?: boolean;
+  inputPending?: boolean;
+  pendingRequests?: number;
   nodes: UiNode[];
   logs: RunLog[];
   output?: unknown;
@@ -68,7 +70,8 @@ export function createArtifactSession(container: HTMLElement, source: { runtime:
   };
   const run = startArtifactRun(container, source, {
     ui: (nodes) => emit({ nodes }),
-    work: work => { clearTimeout(watchdog); emit({work}); if (work.status !== "running" && state.status === "starting") arm(); },
+    pending: pendingRequests => emit({pendingRequests}),
+    work: work => { clearTimeout(watchdog); emit({work}); if (work.status !== "running" && state.status === "starting" && !state.inputPending) arm(); },
     busy: (busy) => emit({ busy }),
     log,
     output: (output) => emit({ output }),
@@ -109,20 +112,37 @@ export function createArtifactSession(container: HTMLElement, source: { runtime:
       if (method === "file.list") return inputFiles;
       if (method === "file.read") {
         if (typeof args[0] !== "string" || !inputFiles.some(file=>file.name===args[0])) throw new Error("Input file not found; use files.list() first");
-        const file = options.readInput ? await options.readInput(args[0],signal) : inputs.find(file=>(file.webkitRelativePath || file.name)===args[0]);
-        if (!file) throw new Error("Input file not found");
-        return wrap(file);
+        clearTimeout(watchdog); emit({inputPending:true});
+        try {
+          const file = options.readInput ? await options.readInput(args[0],signal) : inputs.find(file=>(file.webkitRelativePath || file.name)===args[0]);
+          if (!file) throw new Error("Input file not found");
+          return wrap(file);
+        } finally {
+          emit({inputPending:false});
+          if (state.status === "starting" && !signal.aborted) arm();
+        }
       }
       if (method === "file.open" || method === "file.openMultiple" || method === "file.openFolder") {
         if (options.mode === "test") {
-          const selected = typeof options.pickerInputs === "function" ? await options.pickerInputs(signal) : options.pickerInputs ?? inputs;
-          return method === "file.open" ? selected[0] ? wrap(selected[0]) : null : selected.map(wrap);
+          clearTimeout(watchdog); emit({inputPending:true});
+          try {
+            const selected = typeof options.pickerInputs === "function" ? await options.pickerInputs(signal) : options.pickerInputs ?? inputs;
+            return method === "file.open" ? selected[0] ? wrap(selected[0]) : null : selected.map(wrap);
+          } finally {
+            emit({inputPending:false});
+            if (state.status === "starting" && !signal.aborted) arm();
+          }
         }
         const accept = typeof args[0] === "object" && args[0] !== null && "accept" in args[0] && typeof args[0].accept === "string" ? args[0].accept : "";
-        const files = await options.pick?.(method !== "file.open", method === "file.openFolder", accept, signal) ?? [];
-        // Structured clone carries immutable file references, not eagerly read bytes.
-        // Local selection is independent of chat upload and server storage quotas.
-        return method === "file.open" ? files[0] ? wrap(files[0]) : null : files.map(wrap);
+        const previous = state.status;
+        clearTimeout(watchdog); emit({status:"waiting"});
+        try {
+          const files = await options.pick?.(method !== "file.open", method === "file.openFolder", accept, signal) ?? [];
+          // File references cross the bridge; local selection does not upload bytes.
+          return method === "file.open" ? files[0] ? wrap(files[0]) : null : files.map(wrap);
+        } finally {
+          if (!signal.aborted) { emit({status:previous}); if (previous === "starting") arm(); }
+        }
       }
       if (method === "file.save") {
         const [data, name] = args;

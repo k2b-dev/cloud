@@ -1,6 +1,8 @@
 # Background work and cancellation
 
-Normal control callbacks and startup have a 15-second watchdog. For folder
+Normal control callbacks and startup have a 15-second watchdog. Input reads and
+file pickers pause it; agent tool calls still have a bounded outer deadline
+([details](debugging.md)). For folder
 processing, long computations, and imports, start one background job. Ordinary
 controls remain available while it runs; a second job is rejected until it ends.
 

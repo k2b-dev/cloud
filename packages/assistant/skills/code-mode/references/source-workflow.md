@@ -14,7 +14,7 @@ small input schema; there is no app prefix or capability name to translate.
 | `code_read` | `id`, optional `path`, `offset`, `revision` | Current directory without path; file content with path |
 | `code_write` | `id`, `path`, `content` | Create or overwrite one complete file and save immediately |
 | `code_remove` | `id`, `path` | Remove a source file, preserving history and the app |
-| `code_list` | optional `page`, `kind` | Find accessible apps or scripts; follow `hasNext` |
+| `code_list` | optional `page`, `kind`, `q` | Find accessible apps or scripts; follow `hasNext` |
 | `code_history` | `id`, optional `page` | List old saved versions for recovery |
 
 `id` means the saved resource ID. A one-off `code_run` supplies `code` instead

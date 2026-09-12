@@ -171,3 +171,15 @@ globalThis.runArtifactStoragePages=async()=>{
     return {counts,unique:new Set(keys).size,first:keys[0]!,last:keys.at(-1)!};
   }finally{await storage.clear();}
 };
+
+
+declare global { var prepareLocalScriptPicker: (source: {runtime:string;code:string}) => void; var localScriptPickerResult: RunSnapshot | undefined; }
+globalThis.prepareLocalScriptPicker = source => {
+  const button=document.createElement("button");button.id="start-local-script";button.textContent="Start script";
+  button.onclick=async()=>{
+    const {pickFiles}=await import("../ArtifactPanel");
+    createArtifactSession(document.body,source,{mode:"user",pick:pickFiles,changed:state=>{globalThis.localScriptPickerResult=state;}});
+    // Host cleanup is the page lifetime in this focused picker scenario.
+  };
+  document.body.append(button);
+};

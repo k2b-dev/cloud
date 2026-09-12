@@ -43,17 +43,31 @@ then inspect/present them with the normal chat file tools.
 
 Each agent run has fresh local memory and captures downloads. It cannot read
 the user’s persistent browser storage or open a native file picker. Scripts
-can receive selected authorized chat files through `inputPaths`; GUI apps
-cannot. Shared storage, database writes, and capabilities affect real resources,
+receive selected chat files through `inputPaths`; app tests use those paths
+only as isolated picker fixtures. Shared storage, database writes, and capabilities affect real resources,
 even in agent runs. Read the corresponding reference before using them.
 
 The execution host must stay connected. Each tool call has a server execution claim:
 a second tab can reuse its completed result, but cannot execute the same call.
 An interrupted or uncertain call is not replayed. After reload, an old run may
-be gone; inspect external effects before deliberately starting another run. Calls have a 45-second
-execution budget, paused while waiting for capability approval. Background jobs
-return a running snapshot and continue independently; see [Background work](work.md). Timed-out
-execution is stopped. Stop obsolete runs explicitly.
+be gone; inspect external effects before deliberately starting another run. The deadlines protect different boundaries:
+
+- Startup and short callbacks: 15 seconds of readiness/execution time. Pending
+  input reads pause startup; file reads/pickers pause callback timers.
+- The agent host has a 20-second readiness guard, also paused during input
+  reads and capability waits. It must not expire just because input downloads
+  exceed 15 seconds.
+- A tool call has a 45-second outer budget, including compilation and file
+  transfer. Capability approval waits pause this budget. Hanging input transfers
+  are therefore still bounded and stopped; inspect the input/network error.
+- `work.run` has no total-duration limit while the worker heartbeat responds;
+  15 seconds without a heartbeat terminates it. Use checkpoints for CPU loops.
+  `code_inspect` waits at most 30 seconds per call and returns current progress.
+
+Runtime stack positions refer to the compiled bundle, not original source
+lines. Use the message and source to locate the issue; compilation diagnostics
+already identify original files/positions. `outputTruncated` marks incomplete
+snapshot output; do not parse or report a shortened result as complete.
 
 If copying output had an uncertain outcome, inspect the returned or
 deterministic chat path before requesting another copy. Never report an

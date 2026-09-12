@@ -304,7 +304,11 @@ invoice parsers still need representative document validation.
 
 Chat test inputs and captured outputs use the existing 50 MiB-per-file and
 250 MiB-total chat budgets, with at most 64 selected/captured files. Script
-inputs are fetched on demand. Large exports use Blob rather than JSON strings.
+inputs are fetched on demand. Input reads pause the 15-second startup watchdog
+and the agent host readiness guard. A tool call still has a 45-second outer
+budget including compilation and transfers; capability approval waits pause
+that budget. Native file-picker waits do not consume the startup watchdog.
+Large exports use Blob rather than JSON strings.
 User downloads are not accumulated as captured outputs. Browser-local storage,
 shared storage, chat uploads, and source history are separate budgets. Shared
 storage counts decoded data and allows transport encoding overhead. Local/shared
@@ -321,3 +325,9 @@ Database and other coded host errors preserve `error.code` in scripts as well
 as a readable message. For example, handle `DB_NOT_CONFIGURED` by explaining
 that the instance administrator must configure rsql; do not parse translated
 error text or silently select another database.
+
+Finished one-off runs without UI, exports, pending requests, or running jobs are
+reclaimed automatically when the host reaches its 32-run limit. Saved resources
+and retained runs require explicit stopping. Snapshot output previews are capped
+at 16,000 characters and include `outputTruncated`; use file export for complete
+results. Invalid tool arguments return `kind: "input"` before source execution.

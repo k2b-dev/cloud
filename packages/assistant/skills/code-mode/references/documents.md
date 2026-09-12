@@ -11,7 +11,8 @@ Inspect representative supplied files with a one-off script: sheet names and
 headers for Excel, or text/positions from relevant PDF pages. Keep output small.
 Test extraction and validation before building the surrounding app. If examples
 are missing, request an anonymized sample only when upload fits the user's
-requirements; use a local inspection flow when originals must stay local.
+requirements; offer a small saved script started by the user in Studio when
+originals must stay local. Its picker and console can suffice without a custom UI.
 Follow [Investigation patterns](investigation.md) for the general workflow.
 
 ## PDF

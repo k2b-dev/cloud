@@ -1,106 +1,98 @@
 ---
 name: assistant-code-mode
-description: Analyze local PDF/Excel folders and uploaded files, calculate results, build calculators and dashboards, or reuse and improve apps and saved scripts in Assistant Studio. Use for quick experiments, inspecting unfamiliar data, comparing results across Cloud apps, one-off code, SQL queries on an Assistant resource database, and combining Cloud operations through capabilities.run. Also use for complex data analysis, simulations, and file generation even when the user does not mention programming. This is Assistant Code Mode; it does not use the separate Kit app. Prefer an existing Cloud feature when it already solves the task.
+description: Inspect and transform unfamiliar data, analyze files, compare results across Cloud apps, or build and improve interactive apps and reusable scripts in Assistant Studio. Use for quick code experiments, data analysis, file generation, resource SQL queries and combining discovered Cloud capabilities. For plain arithmetic or date offsets, answer directly or use calculate. Work on existing Kit resources belongs to cloud-kit.
 ---
 
 # Assistant code mode
 
-Use the smallest result that solves the user's task. Run a one-off script for
-calculations, file conversions, and analysis. Save a script for repeated use or
-sharing. Create an app when the user needs interactive controls.
+Choose the smallest useful result: direct answer, one-off script, exported file,
+saved script for reuse/sharing, or app for interactive controls. Use an existing
+Cloud feature when it already answers the question. For a quick look at an
+uploaded PDF or Office file, `read_file` can return converted Markdown without
+code. Use the original with code when exact cells, types, or PDF positions matter.
 
-The entry exports one function, optionally async. Return concise data for an
-analysis. Runtime namespaces are globals: do not import them or install packages.
-Only relative imports from your own source files are supported.
+## Explore quickly, build from evidence
 
-## Work from evidence, keep exploration quick
+For a clear small experiment, load `code_run` through `load_tools` and pass
+`{"code":"export default () => ({ unique: [...new Set([3, 8, 8, 12])] })"}`.
+No written plan, app creation, title, save step or GUI reference is required.
+Write a fresh short script for the next question when that is simpler. Variables
+are not shared between runs. Pass inputs again; preserve useful files with
+`code_export`. Its returned chat path can be the next run's `inputPaths` entry.
 
-For a clear calculation or small experiment, load `code_run` and run it directly.
-No written plan, app creation, saved script, or GUI reference is required.
-One-off code is a scratchpad: write a fresh small script for the next question
-when that is simpler than extending the previous one. Each run starts fresh;
-pass inputs again and export only files worth keeping. Stop obsolete runs.
+Before substantial implementation, identify the desired result and consequential
+unknowns. Inspect existing files, source, contracts, or a small read-only sample.
+Ask only for missing examples or decisions you cannot resolve yourself. Choose
+reasonable reversible defaults for minor details; do not wait for every possible
+question to disappear. Use failed experiments to change the hypothesis, not to
+repeat the same call. Read [Investigation](references/investigation.md) only when
+unfamiliar data or a cross-app workflow needs more guidance.
 
-Before substantial implementation, identify the desired result and uncertainties
-that could change it. Inspect available files, source, contracts, or a small
-read-only sample first. Use one-off code to discover facts, not only to build
-final deliverables. Ask only for missing representative input or consequential
-choices you cannot resolve yourself. Choose reasonable reversible defaults for
-minor details. Do not wait for every possible question to disappear.
+## First file script
 
-Use the smallest useful experiment, inspect its result, then build or answer.
-If it fails, use the evidence to change the hypothesis instead of repeating it.
-For unfamiliar data or cross-app workflows, read
-[Investigation patterns](references/investigation.md). Simple tasks can skip it.
+Use exact current-chat paths from the supplied file manifest as `inputPaths`.
+For a small CSV, pass this entry as `code`:
 
-## Choose your path
+```js
+export default async () => {
+  const [input] = await files.list();
+  if (!input) throw new Error("Select a CSV input.");
+  const rows = await sheet.fromCsv(await files.read(input.name));
+  return { rows: rows.length, columns: Object.keys(rows[0] ?? {}), sample: rows.slice(0, 3) };
+};
+```
 
-- **One-off calculation:** load `code_run` and pass `{"code":"export default () => ({ answer: 6 * 7 })"}`.
-  No app, title, icon, or save step is needed.
-- **Analyze uploaded files:** read [Runtime and files](references/runtime.md).
-  Pass the selected current chat file paths as `inputPaths` to `code_run`.
-  Scripts can read those inputs; GUI apps cannot read chat attachments.
-- **Local PDF/Excel folder:** read [Documents](references/documents.md) and [Background work](references/work.md). Keep originals local, process files sequentially, preserve paths and PDF pages.
-- **Check existing app data:** load `code_sql` for a direct SELECT.
-  Read [Database](references/database.md); no analysis script is needed.
-- **Combine Cloud operations in code:** read [Capability calls](references/capabilities.md).
-  `capabilities.run(name, input)` is a JavaScript API inside `code_run`, not a
-  separately discoverable tool. Discover the target Cloud capabilities normally,
-  then call them from the script. This also works for one-off scripts.
-- **Reusable script:** read [Source workflow](references/source-workflow.md).
-  Create once with `kind: "script"`, keep its ID, write source, and run it.
-- **Interactive app:** read [Source workflow](references/source-workflow.md) and
-  [UI and dialogs](references/ui.md). Create with `kind: "app"` and useful title,
-  description, and icon. Exercise its controls before opening it beside the chat.
-- **Use or change an existing resource:** load `code_list` and
-  `code_read` first. Keep its ID when editing; use
-  `code_fork` for an independent copy when you have direct access.
+For XLSX use `sheet.openExcel(file)`; for PDF use `pdf.open(file)`. Read
+[Documents](references/documents.md) for their small handle APIs and close them
+in `finally`. [Runtime and files](references/runtime.md) covers limits/exports.
+Chat attachments are already uploaded. Local originals stay local through the
+user's picker; never require upload when it contradicts the request.
+In app tests, explicit `inputPaths` supply picker fixtures; app `files.list/read`
+still cannot access chat files.
 
-Load only the tools needed for the chosen path through `load_tools`.
-All Code Mode tools use `code_*` names. They are direct Assistant tools, not
-Cloud capabilities.
-Use `capabilities.run(...)` for capabilities of other Cloud apps, not code tools.
-`code_write` saves immediately. Read existing source before editing;
-write complete file contents and preserve unrelated files.
-Keep the complete returned resource UUID. Do not shorten it or use Kit tools
-for an Assistant app or script.
+Short entries have a 15-second readiness watchdog, excluding pending input
+reads. For long processing, use `const job = work.run(async context => { /* ... */ });
+return await job.done;` in a script; read [Background work](references/work.md).
+GUI callbacks launch the job without awaiting `done`. The tool-call budget is
+separate; [Debugging](references/debugging.md) explains deadlines and I/O waits.
+
+## Load only what the task needs
+
+- **Resource data:** `code_sql` runs SELECT directly; [Database](references/database.md).
+- **Cloud operations:** discover the actual capabilities and contracts, then
+  use `capabilities.run` in code; [Capability calls](references/capabilities.md).
+- **Saved script or app:** [Source workflow](references/source-workflow.md).
+  Read existing source before editing; `code_write` saves immediately and
+  preserves sibling files. Keep full resource UUIDs. Use `code_list` with `q`
+  and `code_read` to find/reuse existing work; fork only for an independent copy.
+- **Interactive app:** additionally read [UI and dialogs](references/ui.md).
+  Test returned control IDs with `code_interact`, including file-picker fixtures.
+- **Optional APIs:** [Storage](references/storage.md), [Charts](references/charts.md),
+  [Money](references/money.md), [Publishing and access](references/publishing.md).
+  [Examples](references/examples.md) provides complete starters when needed.
+
+Runtime namespaces are globals; only relative imports of your own source files
+are supported. No package installation. All `code_*` tools are direct Assistant
+tools, not capabilities; load them individually. Use `capabilities.run` for
+other Cloud apps. Shared writes and capability actions are real even in tests,
+with normal permissions and approvals. Temporary local storage does not undo them.
 
 ## Verify and deliver
 
-`code_run` returns output, errors, logs, UI state, and captured files. A `work.status` of `running` needs `code_inspect` with `waitMs` until completion. Do not
-inspect again just to repeat that snapshot. Correct compilation or runtime
-errors, rerun, and check the requested behavior. For interactive apps, use
-returned control IDs with `code_interact`. Stop obsolete runs.
+Run/interact return errors, logs, UI state, output and captured files. When
+`work.status` is `running`, use `code_inspect` with `waitMs` until completion;
+do not inspect merely to repeat a finished snapshot. Correct failures and check
+that the result actually answers the user's question, with relevant sources,
+units, and limitations. A sample does not prove full coverage. `outputTruncated`
+means the displayed output is incomplete; return a summary or export a file.
 
-Runs use temporary local storage. Shared data, database writes, and capability
-calls have real effects; test with suitable records and respect approvals.
+For a one-off, deliver findings or `code_export` and link the returned file.
+Load `present` before using it. Open GUI apps with `code_open`; saved scripts
+are available in Studio. Old finished one-offs without files/UI are reclaimed
+when slots are needed. Stop unneeded runs holding UI, jobs or captured files.
 
-For a one-off task, deliver findings directly. Export captured output using
-`code_export` and link the resulting chat file. If using `present`, load that
-tool before calling it. Open GUI apps using `code_open`.
-Do not build a UI for a task that only needs a result or an output file.
-
-Execution requires a connected browser host or the CLI's headless Chromium host.
-A background tab can continue; closing, reloading, or suspending its host can
-interrupt work. Never claim execution was verified when only compilation passed.
-If a tool reports `kind: "host"`, diagnose that error rather than rewriting
-working source or blindly repeating the call.
-
-## Read only what you need next
-
-- [Runtime and files](references/runtime.md): inputs, outputs, CSV, return values.
-- [Documents](references/documents.md): local PDF text/pages and XLSX rows.
-- [Background work](references/work.md): large folders, progress, cancellation.
-- [Storage](references/storage.md): local or shared files and key/value data.
-- [Database](references/database.md): lazy connections, SELECT, and structured records.
-- [Capability calls](references/capabilities.md): combine Cloud actions and queries.
-- [Publishing and access](references/publishing.md): metadata, sharing, versions, restore.
-- [UI and dialogs](references/ui.md): controls and forms; apps only.
-- [Charts](references/charts.md) and [Money](references/money.md): task-specific APIs.
-- [Debugging](references/debugging.md): additional inspection and recovery.
-- [Examples](references/examples.md): complete entries when a starter is useful.
-
-Use real supplied data, short labels in the user's language, and meaningful
-loading, empty, validation, and error states. Avoid decorative screens and
-controls that do nothing. Keep source, storage, and permission decisions small
-and explicit; do not invent APIs.
+A connected browser or CLI host is required. Closing/reloading/suspending it
+can interrupt work. For `kind: "input"`, fix the tool arguments. For `kind: "host"`,
+diagnose the host rather than rewriting app source. Never claim an unexecuted
+or incomplete result is verified. Keep user-facing progress, errors, and labels
+clear; do not introduce decorative UI or a saved resource just to explore.

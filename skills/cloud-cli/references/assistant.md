@@ -107,7 +107,14 @@ explicit GUI test runs, the same paths supply isolated picker fixtures;
 their own local picker and receive no implicit chat files. One-offs create no Studio resource. Optional
 `--steps-file` accepts an array of `{name,args}` steps using `code_interact`,
 `code_inspect`, or `code_export`; the CLI supplies the run ID. An export returns
-an absolute chat-file path for `assistant files download`.
+an absolute chat-file path for `assistant files download` or a later run's
+`inputPaths`. Snapshot output includes `outputTruncated`; export full results
+instead of parsing a shortened preview. Pending input downloads pause startup
+and readiness watchdogs, but still count toward the tool call's 45-second outer
+budget. Capability approval waits pause that outer budget. At host capacity,
+finished one-offs without UI, exports, pending requests, or running jobs are
+reclaimed automatically. Invalid tool arguments return `kind: "input"` before
+source execution.
 
 For long work, use `work.run`, cooperative checkpoints, and progress.
 `code_inspect` accepts `waitMs` up to 30000. After explicit steps, the CLI keeps

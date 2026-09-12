@@ -19,6 +19,7 @@ const text = (value: string, max = 1000) => value.length > max ? `${value.slice(
 
 function inspect(runId: string, entry: Entry, options: { nodeId?: string; offset: number; limit: number } = { offset: 0, limit: 20 }) {
   const state = entry.session.snapshot();
+  const output = state.output === undefined ? null : JSON.stringify(state.output);
   const { offset, limit, nodeId } = options;
   const selected = nodeId ? state.nodes.filter((node) => node.id === nodeId) : state.nodes.slice(offset, offset + limit);
   if (nodeId && !selected.length) throw new Error("UI node not found");
@@ -34,7 +35,7 @@ function inspect(runId: string, entry: Entry, options: { nodeId?: string; offset
       ...(node.kind === "table" ? { columns: node.columns, rows: nodeId ? node.rows.slice(offset, offset + limit) : [], totalRows: node.rows.length } : {}),
     })),
     logs: state.logs.slice(-20).map((log) => ({ ...log, text: text(log.text, 2000) })),
-    output: state.output === undefined ? null : text(JSON.stringify(state.output), 16000), files: state.files,
+    output: output === null ? null : text(output, 16000), outputTruncated: output !== null && output.length > 16000, files: state.files,
   };
 }
 
@@ -58,7 +59,7 @@ export function createArtifactAgentRuntime(open: ((tab: WorkspaceTab) => void) |
   async function waitFor(entry: Entry, condition: () => boolean) {
     let deadline = Date.now() + 20000;
     while (!condition() || entry.session.snapshot().approvalPending) {
-      if(entry.session.snapshot().approvalPending)deadline=Date.now()+20000;
+      if(entry.session.snapshot().approvalPending || entry.session.snapshot().inputPending)deadline=Date.now()+20000;
       if (abort.signal.aborted) throw new Error("Browser workspace disconnected");
       if (Date.now() >= deadline) { await entry.session.stop(); throw new Error("Test run timed out and was stopped"); }
       await pause(20);
@@ -75,7 +76,19 @@ export function createArtifactAgentRuntime(open: ((tab: WorkspaceTab) => void) |
       return { opened: app.id, started: false };
     }
     if (input.operation === "run") {
-      if (runs.size >= LIMITS.pendingRequests) throw new Error("Stop an existing test run before starting another");
+      if (runs.size >= LIMITS.pendingRequests) {
+        for (const [id, entry] of runs) {
+          const state = entry.session.snapshot();
+          if (entry.artifactId || state.status !== "ready" || state.busy || state.inputPending || state.pendingRequests
+            || state.approvalPending || state.modal || state.nodes.length || state.files.length || state.work?.status === "running") continue;
+          // Under pressure reclaim only finished disposable runs. Captured exports
+          // and any active effects belong to the caller until explicitly stopped.
+          runs.delete(id);
+          await entry.session.stop(); entry.container.remove();
+          break;
+        }
+        if (runs.size >= LIMITS.pendingRequests) throw new Error("Stop an existing test run before starting another; remaining runs hold active work or retained resources");
+      }
       const current = input.id ? await artifactClient.get(input.id, false, input.version, conversationId) : undefined;
       const source = conversationFileSource("/api/ai", conversationId);
       const listed = input.inputPaths.length ? await source.list() : [];
@@ -178,7 +191,12 @@ export function createArtifactAgentRuntime(open: ((tab: WorkspaceTab) => void) |
   }
 
   const handler: AiFrontendToolHandler = async ({ name, args, callId, turnId, conversationId }) => {
-    const input = parseCodeToolInput(name, args);
+    let input: CodeRuntimeInput;
+    try { input = parseCodeToolInput(name, args); }
+    catch (error) {
+      if (!(error instanceof z.ZodError)) throw error;
+      return {kind:"input",error:text(error.message,6000),guidance:"Correct the tool arguments using its schema. The app source was not executed."};
+    }
     const call = { input, callId, turnId, conversationId, clientId };
     if (execution === "chat-tool") {
       let claim = Claim.parse(await request("claim", call));

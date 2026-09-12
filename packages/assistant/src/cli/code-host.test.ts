@@ -145,3 +145,46 @@ test("database error codes survive HTTP and the worker bridge",async()=>{
     expect(result).toMatchObject({status:"ready",output:JSON.stringify({code:"DB_NOT_CONFIGURED",message:"Configure rsql first"})});
   }finally{await host.close();}
 },30000);
+
+test("slow chat input crosses startup deadlines and invalid arguments remain input errors",async()=>{
+  const bundle=await cliHostBundle();
+  let reads=0;
+  const host=await createCliCodeHost({fetch:async(input,init)=>{
+    const path=String(input);
+    if(path.endsWith("host.js"))return new Response(bundle);
+    if(path.endsWith("/compile"))return Response.json(await compileArtifact(await new Response(init?.body).json()));
+    if(path.endsWith("/files"))return Response.json({files:[{path:"/slow.csv",size:4,mediaType:"text/csv"}]});
+    if(path.includes("/files/content?")){reads++;await Bun.sleep(22000);return new Response("x\n1\n");}
+    throw new Error(`Unexpected request ${path}`);
+  }});
+  const ids={conversationId:"00000000-0000-4000-8000-000000000001",turnId:"00000000-0000-4000-8000-000000000001"};
+  try{
+    const invalid=await host.execute({...ids,name:"code_run",callId:"invalid",args:{code:"export default()=>42",id:ids.conversationId}});
+    expect(invalid).toMatchObject({kind:"input"});expect(reads).toBe(0);
+    const result=await host.execute({...ids,name:"code_run",callId:"slow",args:{code:'export default async()=>({rows:(await sheet.fromCsv(await files.read("/slow.csv"),{delimiter:","})).length})',inputPaths:["/slow.csv"]}});
+    expect(result).toMatchObject({status:"ready",output:'{"rows":1}',outputTruncated:false});expect(reads).toBe(1);
+  }finally{await host.close();}
+},35000);
+
+test("scratchpad pressure preserves exports and interactive runs while reclaiming old results",async()=>{
+  const bundle=await cliHostBundle();
+  const host=await createCliCodeHost({fetch:async(input,init)=>{
+    const path=String(input);
+    if(path.endsWith("host.js"))return new Response(bundle);
+    if(path.endsWith("/compile"))return Response.json(await compileArtifact(await new Response(init?.body).json()));
+    throw new Error(`Unexpected request ${path}`);
+  }});
+  const ids={conversationId:"00000000-0000-4000-8000-000000000001",turnId:"00000000-0000-4000-8000-000000000001"};
+  const run=(callId:string,code:string)=>host.execute({...ids,name:"code_run",callId,args:{code}});
+  try{
+    await run("retained",'export default async()=>{await files.save("important","result.csv");return 1;}');
+    await run("interactive",'export default()=>{ui.button("Keep",()=>{}, {id:"keep"});}');
+    await run("retained-work",'export default()=>{work.run(async job=>{await new Promise(r=>setTimeout(r,30000));await job.checkpoint();});}');
+    for(let i=0;i<32;i++)expect(await run(`probe-${i}`,`export default()=>${i}`)).toMatchObject({status:"ready"});
+    expect(await host.execute({...ids,name:"code_inspect",callId:"files",args:{runId:"retained"}})).toMatchObject({files:[{name:"result.csv"}]});
+    expect(await host.execute({...ids,name:"code_inspect",callId:"ui",args:{runId:"interactive"}})).toMatchObject({nodes:[{id:"keep"}]});
+    expect(await host.execute({...ids,name:"code_inspect",callId:"work",args:{runId:"retained-work"}})).toMatchObject({work:{status:"running"}});
+    expect(await host.execute({...ids,name:"code_inspect",callId:"old",args:{runId:"probe-0"}})).toHaveProperty("error");
+    expect(await run("truncated",'export default()=>"x".repeat(20000)')).toMatchObject({outputTruncated:true});
+  }finally{await host.close();}
+},60000);

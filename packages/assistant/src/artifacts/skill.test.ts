@@ -42,3 +42,11 @@ test("chart reference uses accepted chart options", async () => {
   callbacks[0]!();
   expect(options).toHaveLength(2);
 });
+
+test("first-file skill entry compiles without loading GUI references", async () => {
+  const document = await Bun.file(new URL("../../skills/code-mode/SKILL.md", import.meta.url)).text();
+  const content = document.match(/```js\n([\s\S]*?)\n```/)?.[1];
+  expect(content).toBeDefined();
+  const compiled = await compileArtifact({entry:"main.js",files:[{path:"main.js",content:content!}]});
+  expect(compiled.code).toContain("__artifactStart");
+});

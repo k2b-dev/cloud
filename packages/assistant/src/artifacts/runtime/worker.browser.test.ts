@@ -164,5 +164,16 @@ test("real opaque worker returns data, reuses list actions and remains terminabl
     expect(agent[4]).toMatchObject({ nodes: [{ id: "tasks", totalItems: 1, items: [{ title: "Example" }] }] });
     expect(agent[5]).toEqual({ runId: "start", stopped: true });
     expect(agent[6]).toHaveLength(1);
+    const pickerSource=await compile('export default async()=>{const file=await files.open();return {name:file.name,text:await file.text()};}');
+    await page.evaluate(source=>prepareLocalScriptPicker(source),pickerSource);
+    const chooserPromise=page.waitForEvent("filechooser");
+    await page.click("#start-local-script");
+    const chooser=await chooserPromise;
+    // Choosing a local file is human waiting time, not a 15-second startup budget.
+    await new Promise(resolve=>setTimeout(resolve,16000));
+    expect(await page.evaluate(()=>localScriptPickerResult?.status)).toBe("waiting");
+    await chooser.setFiles({name:"local.csv",mimeType:"text/csv",buffer:Buffer.from("amount\n42")});
+    await page.waitForFunction(()=>localScriptPickerResult?.status==="ready");
+    expect(await page.evaluate(()=>localScriptPickerResult?.output)).toEqual({name:"local.csv",text:"amount\n42"});
   } finally { await browser.close(); await server.stop(true); }
-},60000);
+},75000);

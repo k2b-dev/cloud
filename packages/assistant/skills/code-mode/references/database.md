@@ -80,3 +80,14 @@ Use parameter bindings for values, not string interpolation. Test against
 appropriate records: agent runs affect the real database. Restoring source
 never rolls back records or schema. Handle overlapping writes only when the
 actual workflow requires it.
+
+## Restart-safe imports
+
+Give each source record a stable unique import key (for example file path,
+sheet, and original row), enforced by a unique column. Validate and count rows
+before writing; insert small batches. On retry, skip identical committed rows
+and stop on changed payloads instead of silently overwriting. After an uncertain
+write inspect committed keys, then retry deliberately with the same keys.
+Return inserted/skipped/rejected counts and partial progress; cancellation does
+not roll back earlier batches. Keys must match the actual source identity, not
+just a name or amount that may be duplicated.
