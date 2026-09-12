@@ -82,10 +82,11 @@ export const conversationFileSource = (baseUrl: string, conversationId: string):
       await request(filesUrl("/rename"), { method: "POST", body: JSON.stringify({ from, to }) }, "Failed to rename file");
     },
 
-    async upload(_dirPath, files) {
+    async upload(dirPath, files) {
       for (const file of files) {
         const form = new FormData();
         form.append("file", file);
+        form.append("directory", dirPath);
         const response = await fetch(filesUrl(), { method: "POST", body: form });
         if (!response.ok) throw new Error(await readError(response, `Failed to upload ${file.name}`));
       }

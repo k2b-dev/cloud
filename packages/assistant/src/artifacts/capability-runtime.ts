@@ -13,6 +13,7 @@ export const RuntimeCapabilityRequest=z.object({
 const Prepared=z.object({
   appId:z.string(),localId:z.string(),kind:z.enum(["query","action"]),schemaHash:z.string(),
   approval:z.enum(["none","rememberable"]).nullable(),
+  resource:z.object({id:z.uuid(),title:z.string()}).optional(),
   title:z.string(),review:CapabilityActionReviewSchema.nullable(),allowAlways:z.boolean(),scope:z.string().nullable(),
 });
 type Request=z.infer<typeof RuntimeCapabilityRequest>;
@@ -24,7 +25,7 @@ const decoded = (value: unknown): unknown => typeof value === "string" ? JSON.pa
 // and a currently executing call; resource access is still checked by the target.
 async function authorize(request:Request,identity:ArtifactIdentity) {
   const actor=user(identity);
-  if(request.artifactId)await artifacts.get(request.artifactId,{...identity,conversationId:request.conversationId});
+  const resource=request.artifactId ? await artifacts.get(request.artifactId,{...identity,conversationId:request.conversationId}) : undefined;
   if(request.conversationId){
     const conversation=z.uuid().safeParse(request.conversationId).success
       ? await aiConversations.getConversation({conversationId:request.conversationId,ownerUserId:actor.id})
@@ -32,6 +33,7 @@ async function authorize(request:Request,identity:ArtifactIdentity) {
     if(!conversation||conversation.archivedAt)throw new ArtifactError("ACCESS_DENIED");
     if(conversation.allowedTools && !conversation.allowedTools.includes(request.name))throw new ArtifactError("ACCESS_DENIED");
   }
+  return resource;
 }
 async function operation(name:string,locale?:string|null){
   const split=name.indexOf("."),appId=name.slice(0,split),localId=name.slice(split+1);
@@ -47,7 +49,8 @@ async function operation(name:string,locale?:string|null){
 export const runtimeCapabilities={
   async prepare(input:unknown,identity:ArtifactIdentity,caller:CapabilityCaller){
     const request=RuntimeCapabilityRequest.parse(input),actor=user(identity);
-    await authorize(request,identity);
+    const resource=await authorize(request,identity);
+    const untrusted=resource && resource.permission!=="admin";
     const target=await operation(request.name,caller.locale);
     let review:z.infer<typeof CapabilityActionReviewSchema>|null=null;
     if(target.action?.review){
@@ -57,7 +60,8 @@ export const runtimeCapabilities={
     }
     const scope=target.action?.approval==="rememberable" ? review?.approvalScope??null : null;
     const prepared=Prepared.parse({appId:target.appId,localId:target.localId,kind:target.kind,schemaHash:target.operation.schemaHash,
-      approval:target.action?.approval??null,title:target.operation.title,review,allowAlways:scope!==null,scope});
+      approval:target.action?.approval??null,title:target.operation.title,review,allowAlways:!untrusted && scope!==null,scope,
+      ...(untrusted ? {resource:{id:resource.id,title:resource.title}} : {})});
     await sql.begin(async db=>{
       await db`SELECT pg_advisory_xact_lock(hashtext(${"assistant-capabilities:"+actor.id}))`;
       await db`UPDATE assistant.capability_calls SET status='abandoned' WHERE user_id=${actor.id}::uuid
@@ -71,8 +75,8 @@ export const runtimeCapabilities={
       await db`DELETE FROM assistant.capability_calls WHERE id IN (SELECT id FROM assistant.capability_calls
         WHERE user_id=${actor.id}::uuid AND status IN ('completed','denied','abandoned') ORDER BY created_at DESC OFFSET ${LIMITS.logs})`;
     });
-    const remembered=scope!==null && await hasRememberedAiToolApproval({actorUserId:actor.id},{toolName:request.name,approvalScope:scope});
-    if(!target.action||target.action.approval==="none"||remembered)
+    const remembered=!untrusted && scope!==null && await hasRememberedAiToolApproval({actorUserId:actor.id},{toolName:request.name,approvalScope:scope});
+    if(!untrusted && (!target.action||target.action.approval==="none"||remembered))
       return runtimeCapabilities.resolve(request.id,{approved:true},identity,caller);
     return {status:"approval" as const,id:request.id,name:request.name,input:request.input,...prepared};
   },
@@ -89,7 +93,8 @@ export const runtimeCapabilities={
       return {status:"denied" as const};
     }
     const request=RuntimeCapabilityRequest.parse(decoded(row.request)),prepared=Prepared.parse(decoded(row.prepared));
-    await authorize(request,identity);
+    const resource=await authorize(request,identity);
+    if(resource && resource.permission!=="admin" && !prepared.resource)throw new ArtifactError("CONFLICT");
     if(row.status==="completed")return {status:"completed" as const,result:decoded(row.result)};
     if(row.status!=="pending")throw new ArtifactError("CONFLICT");
     const target=await operation(request.name,caller.locale);
@@ -105,7 +110,7 @@ export const runtimeCapabilities={
       }
       if (JSON.stringify(currentReview)!==JSON.stringify(prepared.review)) throw new ArtifactError("CONFLICT");
     }
-    if(decision.remember && !prepared.allowAlways)throw new ArtifactError("INVALID_INPUT");
+    if(decision.remember && (!prepared.allowAlways || (resource && resource.permission!=="admin")))throw new ArtifactError("INVALID_INPUT");
     const updated=await sql`UPDATE assistant.capability_calls SET status=${decision.approved?"running":"denied"}
       WHERE id=${id}::uuid AND user_id=${actor.id}::uuid AND status='pending' RETURNING id`;
     if(!updated.length)throw new ArtifactError("CONFLICT");

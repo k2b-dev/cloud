@@ -331,3 +331,30 @@ reclaimed automatically when the host reaches its 32-run limit. Saved resources
 and retained runs require explicit stopping. Snapshot output previews are capped
 at 16,000 characters and include `outputTruncated`; use file export for complete
 results. Invalid tool arguments return `kind: "input"` before source execution.
+
+### Consent and resource cleanup
+
+When you run an app or script you do not manage, every Cloud capability call
+asks for consent, including reads. The dialog identifies the resource and warns
+that returned data can be stored in shared files or its database. Personal
+remembered approvals are not reused or created for these calls. Denial prevents
+execution; existing access and action-review checks still apply.
+
+Resource managers can permanently delete an app or script from its Studio menu
+or with `cld assistant code delete ID --yes`. Publications, grants and shared
+storage are removed; database cleanup is queued and retried. Browser-local data
+cannot be erased remotely. Platform administrators retain the administration
+surface for operator cleanup.
+
+Chat starters prepare editable prompts for file analysis, app creation,
+capability discovery and mail follow-up. Code starters attach the readable,
+enabled Code Mode skill as a removable chip; unavailable skills leave a text
+prompt. Existing draft text and attachments remain intact. No tools or extra
+permissions are granted by choosing a starter.
+
+CSV reads accept an explicit `encoding`, such as `windows-1252` for older Excel
+exports. Invalid UTF-8 fails with a decoding error instead of corrupting names.
+Database and shared-storage requests pause the short execution/readiness timers
+but remain subject to the outer tool budget. Exported files use readable names
+under `/files`; collisions receive a suffix and the tool returns the actual
+stored path. Pending code approvals remain visible when switching chats.

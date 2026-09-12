@@ -181,11 +181,12 @@ export function createArtifactAgentRuntime(open: ((tab: WorkspaceTab) => void) |
     } else if (input.operation === "export") {
       const file = entry.session.files().find((file) => file.name === input.name);
       if (!file) throw new Error("Captured output not found");
-      const path = `artifact-${input.runId.replace(/[^a-zA-Z0-9]/g, "").slice(-20)}-${file.name}`;
-      const source = conversationFileSource("/api/ai", conversationId);
-      if (!source.upload) throw new Error("Chat file upload unavailable");
-      await source.upload("/", [new File([file], path, { type: file.type })]);
-      return { path: `/${path}`, size: file.size, mediaType: file.type };
+      const form=new FormData();form.append("file",file);form.append("directory","/files");
+      const response=await fetch(`/api/ai/conversations/${encodeURIComponent(conversationId)}/files`,{method:"POST",body:form,signal});
+      if(!response.ok)throw new Error(`Could not export ${file.name}: HTTP ${response.status}`);
+      const stored=z.object({file:z.object({path:z.string()})}).parse(await response.json());
+      const result={path:stored.file.path,size:file.size,mediaType:file.type};
+      return result;
     }
     return inspect(input.runId, entry, input.operation === "inspect" ? input : undefined);
   }

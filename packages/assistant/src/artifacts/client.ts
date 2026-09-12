@@ -14,6 +14,7 @@ async function checked(response: Response): Promise<void> {
   }
 }
 export const artifactClient = {
+  remove: async (id:string) => {const response=await client[":id"].$delete({param:{id}});await checked(response);return response.json();},
   capabilityPrepare:async(input:{id:string;name:string;input:unknown;artifactId?:string;conversationId?:string},signal?:AbortSignal)=>{
     const response=await client.runtime.capabilities.$post({json:{...input,input:z.json().parse(input.input)}},{init:{signal}});await checked(response);return response.json();
   },

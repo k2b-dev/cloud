@@ -1166,7 +1166,9 @@ export const aiRoutes = (() => {
           return respond(c, fail(err.badInput(`File exceeds the ${Math.floor(AI_FILES_MAX_FILE_BYTES_DEFAULT / (1024 * 1024))} MB limit`)));
         }
         const name = (file.name || "upload").replaceAll("/", "_").replaceAll("\\", "_").replaceAll("\0", "").slice(0, 160) || "upload";
-        const path = normalizeAiFilePath(`/${name}`);
+        const directory=form?.get("directory") ?? "/";
+        if(typeof directory!=="string")return respond(c,fail(err.badInput("Invalid directory")));
+        const path = normalizeAiFilePath(`${directory.replace(/\/$/,"")}/${name}`);
         if (!path) return respond(c, fail(err.badInput("Invalid file name")));
         if (aiProjectFilePathFromMount(path) !== null) return respond(c, fail(err.badInput("The /project namespace is reserved.")));
 

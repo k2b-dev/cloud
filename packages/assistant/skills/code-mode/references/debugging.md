@@ -53,9 +53,10 @@ An interrupted or uncertain call is not replayed. After reload, an old run may
 be gone; inspect external effects before deliberately starting another run. The deadlines protect different boundaries:
 
 - Startup and short callbacks: 15 seconds of readiness/execution time. Pending
-  input reads pause startup; file reads/pickers pause callback timers.
-- The agent host has a 20-second readiness guard, also paused during input
-  reads and capability waits. It must not expire just because input downloads
+  input reads pause startup; file reads/pickers and database/shared-storage
+  requests pause callback timers.
+- The agent host has a 20-second readiness guard, also paused during input, database and shared-storage
+  requests and capability waits. It must not expire just because input downloads
   exceed 15 seconds.
 - A tool call has a 45-second outer budget, including compilation and file
   transfer. Capability approval waits pause this budget. Hanging input transfers

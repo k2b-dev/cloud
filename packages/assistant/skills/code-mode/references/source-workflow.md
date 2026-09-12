@@ -87,3 +87,14 @@ are never pruned automatically. If protected history itself fills the budget,
 the save fails atomically with STORAGE_FULL. An independent copy starts with
 fresh source history, but also without the original's data or access grants;
 explain that tradeoff before proposing it as recovery.
+
+For saved scripts intended to be started by a person, show a short readable
+summary with `ui.markdown` or a compact `ui.table` and offer detailed results
+with `files.save`. Keep structured return values for agent inspection. Read the
+UI reference only for the presentation controls you need; a full app is optional.
+
+Before editing source while the user is also using the editor, announce the
+change. Saves reject stale revisions rather than overwriting either draft. The
+user can download their current editor draft and explicitly load the latest
+source before reconciling changes. Resource managers can delete apps/scripts in
+Studio or with `assistant code delete ID --yes`; no agent deletion tool exists.

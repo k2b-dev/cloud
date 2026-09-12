@@ -315,13 +315,17 @@ const api = {
   pdf,
   sheet: {
     openExcel: excel.open,
-    fromCsv: async (file: File | string, options: { delimiter?: string } = {}) => {
-      const result = Papa.parse<Record<string, string>>(typeof file === "string" ? file : await file.text(), {
+    fromCsv: async (file: File | string, options: { delimiter?: string; encoding?: string } = {}) => {
+      let content: string;
+      try { content = typeof file === "string" ? file : new TextDecoder(options.encoding ?? "utf-8",{fatal:true}).decode(await file.arrayBuffer()); }
+      catch { throw new Error("CSV decoding failed. Specify encoding, for example windows-1252 for older Excel exports."); }
+      const result = Papa.parse<Record<string, string>>(content, {
         header: true,
         skipEmptyLines: true,
         delimiter: options.delimiter,
       });
-      if (result.errors.length) throw new Error(result.errors[0]?.message ?? "Invalid CSV");
+      const error=result.errors.find(error=>error.code!=="UndetectableDelimiter");
+      if (error) throw new Error(error.message);
       return result.data;
     },
     toCsv: (rows: Record<string, unknown>[], options: { delimiter?: string; bom?: boolean } = {}) =>

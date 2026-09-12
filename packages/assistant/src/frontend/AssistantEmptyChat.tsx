@@ -7,30 +7,18 @@ export type AssistantStarterAction = {
   label: string;
   prompt: string;
   icon: string;
+  skill?: string;
 };
 
-export const assistantStarterActions: readonly AssistantStarterAction[] = [
-  {
-    label: "Follow up on mail",
-    prompt: "Help me follow up on the mail about ",
-    icon: "ti ti-mail-forward",
-  },
-  {
-    label: "Set a daily schedule",
-    prompt: "Set up a daily schedule that ",
-    icon: "ti ti-calendar-repeat",
-  },
-  {
-    label: "Find something in Cloud",
-    prompt: "Find information in Cloud about ",
-    icon: "ti ti-ai-gateway",
-  },
-  {
-    label: "Turn notes into next steps",
-    prompt: "Turn these notes into clear next steps:\n\n",
-    icon: "ti ti-list-check",
-  },
-];
+export const assistantStarterActions: readonly AssistantStarterAction[] = (() => {
+  const t=assistantMessages.resolve(["en"]).t;
+  return [
+    {label:t.analyzeFiles,prompt:t.analyzeFilesPrompt,icon:"ti ti-file-analytics",skill:"assistant-code-mode"},
+    {label:t.buildApp,prompt:t.buildAppPrompt,icon:"ti ti-app-window",skill:"assistant-code-mode"},
+    {label:t.discover,prompt:t.discoverPrompt,icon:"ti ti-sparkles"},
+    {label:t.followMail,prompt:t.followMailPrompt,icon:"ti ti-mail-forward"},
+  ];
+})();
 
 export default function AssistantEmptyChat(props: {
   composer: JSX.Element;
@@ -44,10 +32,10 @@ export default function AssistantEmptyChat(props: {
   const locale = useLocale();
   const t = () => assistantMessages.resolve([locale()]).t;
   const starters = (): readonly AssistantStarterAction[] => [
-    { label: t().followMail, prompt: t().followMailPrompt, icon: "ti ti-mail-forward" },
-    { label: t().dailySchedule, prompt: t().dailySchedulePrompt, icon: "ti ti-calendar-repeat" },
-    { label: t().findCloud, prompt: t().findCloudPrompt, icon: "ti ti-ai-gateway" },
-    { label: t().notesNext, prompt: t().notesNextPrompt, icon: "ti ti-list-check" },
+    {label:t().analyzeFiles,prompt:t().analyzeFilesPrompt,icon:"ti ti-file-analytics",skill:"assistant-code-mode"},
+    {label:t().buildApp,prompt:t().buildAppPrompt,icon:"ti ti-app-window",skill:"assistant-code-mode"},
+    {label:t().discover,prompt:t().discoverPrompt,icon:"ti ti-sparkles"},
+    {label:t().followMail,prompt:t().followMailPrompt,icon:"ti ti-mail-forward"},
   ];
   const selectedProject = () => props.projects.find((project) => project.id === props.selectedProjectId) ?? null;
 

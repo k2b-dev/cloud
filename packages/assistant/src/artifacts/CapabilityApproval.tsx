@@ -1,14 +1,17 @@
 import { AiChatActionsProvider, AiTurnBlockView } from "@k2b/cloud/ai/ui";
-import { prompts } from "@k2b/ui";
-import { createSignal, For, onCleanup } from "solid-js";
+import { NoticeCard, prompts, useLocale } from "@k2b/ui";
+import { createSignal, For, Show, onCleanup } from "solid-js";
 import type { ApproveCapability, CapabilityApproval, CapabilityDecision } from "./runtime/capabilities";
 
+import { artifactMessages } from "./messages";
+
 function Approval(props:{request:CapabilityApproval;respond:(value:CapabilityDecision)=>void}){
-  return <AiChatActionsProvider actions={{onApproval:(_request,input)=>props.respond(input)}}>
+  const locale=useLocale(),t=()=>artifactMessages.resolve([locale()]).t;
+  return <><Show when={props.request.resource}>{resource=><NoticeCard tone="warning" title={resource().title} detail={t().sharedCodeHelp}/>}</Show><AiChatActionsProvider actions={{onApproval:(_request,input)=>props.respond(input)}}>
     <AiTurnBlockView active turnId={props.request.id} block={{id:props.request.id,kind:"tool",callId:props.request.id,
       name:props.request.name,args:props.request.input,status:"awaiting_approval",
       approval:{message:props.request.review?.message??props.request.title,review:props.request.review??undefined,allowAlways:props.request.allowAlways}}}/>
-  </AiChatActionsProvider>;
+  </AiChatActionsProvider></>;
 }
 
 export const approveInModal:ApproveCapability=async(request,signal)=>{
@@ -18,7 +21,7 @@ export const approveInModal:ApproveCapability=async(request,signal)=>{
     onCleanup(()=>signal.removeEventListener("abort",abort));
     if(signal.aborted)close();
     return <Approval request={request} respond={value=>{decision=value;signal.removeEventListener("abort",abort);close();}}/>;
-  },{title:request.title,size:"medium"});
+  },{title:request.resource ? `${request.resource.title} · ${request.title}` : request.title,size:"medium"});
   return decision;
 };
 
@@ -32,6 +35,12 @@ export function createCodeApprovals(){
     if(signal.aborted)return abort();
     setPending(items=>[...items,{request,conversationId,respond:value=>{signal.removeEventListener("abort",abort);remove();resolve(value);}}]);
   });
-  const View=(props:{conversationId:string|null|undefined})=><For each={pending().filter(item=>item.conversationId===props.conversationId)}>{item=><Approval request={item.request} respond={item.respond}/>}</For>;
+  const View=(props:{conversationTitle:(id:string)=>string|undefined})=>{
+    const locale=useLocale(),t=()=>artifactMessages.resolve([locale()]).t;
+    return <For each={pending()}>{item=><section>
+      <p>{t().approvalChat({title:item.conversationId ? props.conversationTitle(item.conversationId) ?? t().otherChat : t().otherChat})}</p>
+      <Approval request={item.request} respond={item.respond}/>
+    </section>}</For>;
+  };
   return {ask,View};
 }

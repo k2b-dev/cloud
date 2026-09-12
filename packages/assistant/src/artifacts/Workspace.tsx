@@ -1,7 +1,7 @@
 import { AssistantChatContextContent, type ContextView } from "../frontend/AssistantChatContext";
 import type { AiProject } from "@k2b/cloud/ai";
 import { conversationFileSource } from "@k2b/cloud/ai/solid";
-import { Button, Dropdown, Placeholder, FileTree, FileView, prompts, Tabs, useLocale } from "@k2b/ui";
+import { Button, Dropdown, NoticeCard, Placeholder, FileTree, FileView, prompts, Tabs, useLocale } from "@k2b/ui";
 import { createEffect, createResource, createSignal, ErrorBoundary, For, onCleanup, Show, type JSX } from "solid-js";
 import { ArtifactPanel } from "./ArtifactPanel";
 import { artifactClient } from "./client";
@@ -31,8 +31,22 @@ export type ArtifactWorkspaceController = ReturnType<typeof createArtifactWorksp
 function SourceFile(props: { tab: Extract<WorkspaceTab, { kind: "source" }>; dirty: (value: boolean) => void }) {
   const locale = useLocale(), t = () => artifactMessages.resolve([locale()]).t;
   const [bundle, { mutate }] = createResource(() => artifactClient.get(props.tab.artifactId));
-  return <Show when={bundle()}>{(data) => <FileView
-    file={{ path: props.tab.path }}
+  const [conflict,setConflict]=createSignal(false);
+  const [refresh,setRefresh]=createSignal(0);
+  const [loading,setLoading]=createSignal(false);
+  const [loadError,setLoadError]=createSignal("");
+  return <><Show when={conflict()}><NoticeCard tone="warning" title={t().CONFLICT} detail={t().sourceConflict}/>
+    <Show when={loadError()}><NoticeCard tone="danger" title={t().loadFailed} detail={loadError()}/></Show>
+    <div class="flex gap-2">
+      <Button loading={loading()} onClick={async()=>{
+        if(!await prompts.confirm(t().unsavedMessage,{title:t().loadLatest,variant:"danger"}))return;
+        setLoading(true);setLoadError("");
+        try {mutate(await artifactClient.get(props.tab.artifactId));setRefresh(value=>value+1);setConflict(false);}
+        catch(error){setLoadError(error instanceof Error ? error.message : t().REQUEST_FAILED);}
+        finally{setLoading(false);}
+      }}>{t().loadLatest}</Button>
+    </div></Show><Show when={bundle()}>{(data) => <FileView
+    file={{ path: props.tab.path }} revision={refresh()}
     renderers={artifactSourceRenderers}
     load={async () => {
       const file = data().source.files.find((file) => file.path === props.tab.path);
@@ -41,14 +55,15 @@ function SourceFile(props: { tab: Extract<WorkspaceTab, { kind: "source" }>; dir
     }}
     save={data().permission !== "admin" ? undefined : async (content) => {
       const current = data();
-      const updated = await artifactClient.update(current.id, {
+      try { const updated = await artifactClient.update(current.id, {
         title: current.title, expectedRevision: current.revision,
         source: { ...current.source, files: current.source.files.map((file) => file.path === props.tab.path ? { ...file, content } : file) },
       });
-      mutate(updated);
+      mutate(updated); setConflict(false);
+      } catch(error) { if(error && typeof error==="object" && "code" in error && error.code==="CONFLICT")setConflict(true); throw error; }
     }}
     onDirtyChange={props.dirty}
-  />}</Show>;
+  />}</Show></>;
 }
 
 function ChatFile(props: { tab: Extract<WorkspaceTab, { kind: "file" }>; refreshKey: string; dirty: (value: boolean) => void }) {

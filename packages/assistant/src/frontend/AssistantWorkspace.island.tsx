@@ -777,9 +777,16 @@ export default function AssistantWorkspace(props: Props) {
     }
   };
 
-  const useStarter = (starter: AssistantStarterAction) => {
-    setComposerDraft(composerSessionKey(), starter.prompt);
+  const useStarter = async (starter: AssistantStarterAction) => {
+    const key=composerSessionKey();
+    const current=composerDraft(key);
+    setComposerDraft(key,current.trim() ? `${current}\n\n${starter.prompt}` : starter.prompt);
     focusComposer();
+    if(starter.skill) try {
+      const skill=(await assistantApi.listSkills()).find(skill=>skill.enabled && skill.name===starter.skill);
+      if(!skill || composerSessionKey()!==key || composerAttachmentsFor(key).some(item=>item.kind==="resource" && item.ref.type==="core.ai.skill" && item.ref.id===skill.id))return;
+      await addResolvedComposerResource(key,{type:"core.ai.skill",id:skill.id});
+    } catch { chat.setError(t().attachResourceFailed); }
   };
   const addComposerFiles = async (sessionKey: string, files: readonly File[]) => {
     const current = composerAttachmentsFor(sessionKey);
@@ -1318,7 +1325,6 @@ export default function AssistantWorkspace(props: Props) {
                               }}
                             >
                               <ConversationTimeline />
-                              <codeApprovals.View conversationId={chat.activeConversationId()}/>
                             </AiChatActionsProvider>
                           }
                         >
@@ -1332,6 +1338,7 @@ export default function AssistantWorkspace(props: Props) {
                             onStarter={useStarter}
                           />
                         </Show>
+                        <codeApprovals.View conversationTitle={id=>conversations().find(c=>c.id===id || c.shortId===id)?.title}/>
                       </section>
 
                       <Show when={!emptyChat()}>

@@ -326,6 +326,10 @@ const resolveAttention = async (input: {
 };
 
 export async function collectCapabilityApproval(ctx:CloudCliContext,reader:LineReader,request:CapabilityApproval):Promise<CapabilityDecision>{
+  if(request.resource){
+    ctx.print(terminalSafeText(`App: ${request.resource.title}`));
+    ctx.print("Returned Cloud data may be stored in this app and read by others with access. Personal remembered approvals do not apply.");
+  }
   ctx.print(terminalSafeText(request.review?.message??request.title));
   ctx.print(terminalSafeText(JSON.stringify(request.input,null,2).slice(0,16000)));
   const answer=(await reader.read(request.allowAlways ? "Approve? [y/N/always]: " : "Approve? [y/N]: "))?.trim().toLowerCase();

@@ -359,3 +359,8 @@ attempt and sequence are current. Older snapshots cannot restore obsolete
 streaming block IDs. Pending local steering remains visible until acknowledged.
 In-attempt continuations publish a complete turn baseline before incremental
 updates, so persisted and streamed representations do not appear together.
+
+Conversation multipart uploads accept an optional `directory` form field
+(default `/`). The normal path validation and reserved Project namespace apply.
+Collisions receive a suffix; use the returned `file.path` rather than deriving
+a path from the original filename.

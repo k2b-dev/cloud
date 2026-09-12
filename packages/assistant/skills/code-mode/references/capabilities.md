@@ -40,3 +40,10 @@ in app source.
 
 Use the user's current request to decide which effects are appropriate. The
 availability of a tool is not a reason to invoke unrelated actions.
+
+When the user runs a saved resource they do not manage, every capability call
+requires explicit consent, including queries and actions normally needing no
+approval. The dialog identifies the resource and explains that returned data
+can be stored in shared files or its database. Personal remembered approvals
+do not apply, and these calls cannot create a personal always-allow rule.
+Denial must leave a useful message; do not retry unchanged or bypass consent.

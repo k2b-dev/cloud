@@ -84,3 +84,8 @@ Ask the user about consequential business rules you cannot infer, such as
 whether duplicates should be rejected or merged. Resolve technical questions
 with evidence yourself. State only assumptions and limitations that matter to
 the result; keep independent work moving while an essential answer is pending.
+
+When an example is essential, keep the request concrete: "I checked X; Y is
+missing because it determines Z. An anonymized sample is enough; if originals
+must stay local, you can run this small inspection script instead." Do not ask
+users to solve API or implementation questions you can investigate yourself.

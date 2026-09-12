@@ -55,6 +55,7 @@ export default function Apps(props: Props) {
   const share = async (item: ArtifactSummary) => {
     setSharing(item);
     await prompts.dialog<void>(() => <div class="assistant-version-list">
+      <NoticeCard tone="info" title={t().sharedCodeTitle} detail={t().sharedCodeHelp} />
       <Show when={!item.publishedRevision}><NoticeCard tone="warning" title={t().unpublishedAccess} detail={t().unpublishedAccessHelp} /></Show>
       <Show when={!access.loading} fallback={<Placeholder state="loading" title={t().loading} />}>
       <Show when={!access.error && access()} keyed fallback={<Placeholder state="error" title={t().loadFailed} />}>
@@ -134,6 +135,12 @@ export default function Apps(props: Props) {
   });
   const menu = (item: ArtifactSummary) => [
     ...(item.permission === "admin" ? [
+      {label:t().remove,icon:"ti ti-trash",action:async()=>{
+        if(await prompts.confirm(t().removeConfirm,{title:t().remove,variant:"danger"})) await action(async()=>{
+          await artifactClient.remove(item.id);
+          if(app()?.id===item.id)navigateTo(`/app/assistant/apps?kind=${item.kind}`);
+        });
+      }},
       { label: t().edit, icon: "ti ti-edit", action: () => edit(item.id) },
       { label: t().share, icon: "ti ti-users", action: () => share(item) },
       ...(item.kind === "script" ? [{label:t().projects,icon:"ti ti-folders",action:()=>projectLinks(item)}] : []),

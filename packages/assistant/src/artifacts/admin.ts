@@ -1,8 +1,7 @@
 import { sql } from "bun";
 import { z } from "zod";
 import { hasRole } from "@k2b/cloud/contracts";
-import { ArtifactError, requireArtifact, user, type ArtifactIdentity } from "./service";
-import { databaseConfigLock } from "./database";
+import { ArtifactError, artifacts, user, type ArtifactIdentity } from "./service";
 
 export function adminIdentity(identity: ArtifactIdentity): ArtifactIdentity {
   if (!hasRole(user(identity),"admin")) throw new ArtifactError("ACCESS_DENIED");
@@ -24,15 +23,6 @@ export const artifactAdmin = {
     return {items:rows.slice(0,30),hasNext:rows.length>30,page};
   },
   async remove(id: string,identity: ArtifactIdentity) {
-    const actor=adminIdentity(identity);
-    return sql.begin(async db => {
-      await databaseConfigLock(db);
-      await requireArtifact(db,id,actor,"admin");
-      const cleanup = await db`INSERT INTO assistant.database_cleanup(namespace)
-        SELECT namespace FROM assistant.artifact_databases WHERE artifact_id=${id}::uuid ON CONFLICT DO NOTHING RETURNING namespace`;
-      await db`DELETE FROM auth.access WHERE id IN (SELECT access_id FROM assistant.artifact_access WHERE artifact_id=${id}::uuid)`;
-      await db`DELETE FROM assistant.artifacts WHERE id=${id}::uuid`;
-      return {deleted:true,databaseCleanupQueued:cleanup.length>0};
-    });
+    return artifacts.remove(id,adminIdentity(identity));
   },
 };

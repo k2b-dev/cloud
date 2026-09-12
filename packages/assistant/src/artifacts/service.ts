@@ -110,6 +110,18 @@ async function writeRevision(db: SQL, id: string, number: number, source: Artifa
 }
 
 export const artifacts = {
+  async remove(id: string, identity: ArtifactIdentity) {
+    const { databaseConfigLock } = await import("./database");
+    return sql.begin(async db => {
+      await databaseConfigLock(db);
+      await requireArtifact(db,id,identity,"admin");
+      const cleanup = await db`INSERT INTO assistant.database_cleanup(namespace)
+        SELECT namespace FROM assistant.artifact_databases WHERE artifact_id=${id}::uuid ON CONFLICT DO NOTHING RETURNING namespace`;
+      await db`DELETE FROM auth.access WHERE id IN (SELECT access_id FROM assistant.artifact_access WHERE artifact_id=${id}::uuid)`;
+      await db`DELETE FROM assistant.artifacts WHERE id=${id}::uuid`;
+      return {deleted:true,databaseCleanupQueued:cleanup.length>0};
+    });
+  },
   async describe(ids: string[], userId: string, conversationId?: string): Promise<Array<{ id: string; title: string; description: string; icon: string }>> {
     if (!ids.length) return [];
     const valid = ids.filter(id => z.uuid().safeParse(id).success);

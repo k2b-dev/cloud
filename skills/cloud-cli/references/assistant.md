@@ -94,6 +94,7 @@ cld assistant code publish <resource-id>
 cld assistant code versions <resource-id>
 cld assistant code restore <resource-id> 1
 cld assistant code fork <resource-id>
+cld assistant code delete <resource-id> --yes
 cld assistant code project-link <resource-id> <project-id>
 cld assistant code access <resource-id>
 cld assistant studio-admin list --json
@@ -284,3 +285,8 @@ cld assistant chats create --project <project-id>
 Project names and short IDs are accepted by management commands. Access grants use `read`, `write`, or `admin`; the Project owner is always an administrator.
 
 Run `cld assistant <group> help` or `cld assistant <group> <command> --help` for the complete accepted flags.
+
+Resource deletion requires Manage access and removes publications, grants and
+shared data; remote database cleanup is queued. It does not erase browser-local
+data. Running resources without Manage access requires per-call capability
+consent, including reads; personal remembered approvals do not apply.

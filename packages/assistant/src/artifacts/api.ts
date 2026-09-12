@@ -72,6 +72,7 @@ export const artifactApi = new Hono<AuthContext>()
     try { await compileArtifact(c.req.valid("json")); return respond(c,ok({ valid: true, diagnostics: [] })); }
     catch (error) { return respond(c,ok({ valid: false, diagnostics: [compilationDiagnostic(error)] })); }
   })
+  .delete("/:id",async c => respond(c,ok(await artifacts.remove(id(c),identity(c)))))
   .get("/:id", v("query", RevisionQuery), async (c) => respond(c,ok(await artifacts.get(id(c),identity(c),revision(c),c.req.query("published") === "true", c.req.query("version") === undefined ? undefined : z.coerce.number().int().positive().parse(c.req.query("version"))))))
   .post("/:id/publish", v("json", z.object({ expectedRevision: z.number().int().positive(), note: PublicationNote }).strict()), async c =>
     respond(c, ok(await artifacts.publish(id(c), c.req.valid("json").expectedRevision, identity(c), c.req.valid("json").note))))

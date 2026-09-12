@@ -42,6 +42,11 @@ export default async () => {
 };
 ```
 
+`files.read` returns a `File`, not bytes. `sheet.fromCsv` returns **data rows**
+keyed by header names: `rows[0]` is the first record, not the header; do not
+remove it with `slice(1)`. For older Excel CSVs use
+`await sheet.fromCsv(file, { encoding: "windows-1252" })`.
+[Runtime and files](references/runtime.md) covers other decoding options.
 For XLSX use `sheet.openExcel(file)`; for PDF use `pdf.open(file)`. Read
 [Documents](references/documents.md) for their small handle APIs and close them
 in `finally`. [Runtime and files](references/runtime.md) covers limits/exports.
@@ -86,8 +91,13 @@ that the result actually answers the user's question, with relevant sources,
 units, and limitations. A sample does not prove full coverage. `outputTruncated`
 means the displayed output is incomplete; return a summary or export a file.
 
-For a one-off, deliver findings or `code_export` and link the returned file.
-Load `present` before using it. Open GUI apps with `code_open`; saved scripts
+To deliver a CSV, call `await files.save(sheet.toCsv(rows), "result.csv")`
+**inside** the script. Then load and call the **tool** `code_export` with the
+returned `runId` and file name; finally `present` its returned chat path.
+`files.save` returns no path; `code_export` is not a function inside scripts.
+CSV export defaults to semicolon, UTF-8 BOM and safe spreadsheet cells.
+For analysis, reconcile input/output row counts and exclusions before reporting totals.
+Open GUI apps with `code_open`; saved scripts
 are available in Studio. Old finished one-offs without files/UI are reclaimed
 when slots are needed. Stop unneeded runs holding UI, jobs or captured files.
 

@@ -8,12 +8,17 @@ test("CLI runs one-off code in the existing isolated worker without a GUI chat",
   const bundle = await cliHostBundle();
   const compiled = await compileArtifact({entry:"main.ts",files:[{path:"main.ts",content:code}]});
   const requests: string[] = [];
-  const host = await createCliCodeHost({fetch: async (input) => {
+  const host = await createCliCodeHost({fetch: async (input,init) => {
     const path = String(input); requests.push(path);
     if (path.endsWith("host.js")) return new Response(bundle);
     if (path.endsWith("/claim")) return Response.json({status:"execute"});
     if (path.endsWith("/complete")) return Response.json({saved:true});
     if (path.endsWith("/compile")) return Response.json(compiled);
+    if (path.includes("/files") && init?.method==="POST"){
+      const form=await new Response(init.body,{headers:{"content-type":new Headers(init.headers).get("content-type")!}}).formData();
+      expect(form.get("directory")).toBe("/files");
+      return Response.json({file:{path:"/files/answer-2.txt"}});
+    }
     if (path.includes("/files")) return Response.json({files:[]});
     if (path.includes("/artifacts/")) return Response.json({id:"00000000-0000-4000-8000-000000000001",kind:"app",revision:1});
     throw new Error(`Unexpected host request ${path}`);
@@ -30,7 +35,7 @@ test("CLI runs one-off code in the existing isolated worker without a GUI chat",
     const inspected = await host.execute({...ids,name:"code_inspect",callId:"inspect",args:{runId:"standalone"}});
     expect(inspected).toMatchObject({runId:"standalone",status:"ready"});
     const exported = await host.execute({...ids,name:"code_export",callId:"export",args:{runId:"standalone",name:"answer.txt"}});
-    expect(exported).toMatchObject({path:"/artifact-standalone-answer.txt",size:2});
+    expect(exported).toMatchObject({path:"/files/answer-2.txt",size:2});
     const rejected = await host.call({...ids,name:"code_run",callId:"app-files",args:{id:ids.conversationId,inputPaths:["private.csv"]}});
     expect(rejected).toMatchObject({error:"Input not found: private.csv"});
   } finally { await host.close(); }
@@ -188,3 +193,24 @@ test("scratchpad pressure preserves exports and interactive runs while reclaimin
     expect(await run("truncated",'export default()=>"x".repeat(20000)')).toMatchObject({outputTruncated:true});
   }finally{await host.close();}
 },60000);
+
+test("slow database and shared storage calls do not consume the short callback deadline",async()=>{
+  const id="00000000-0000-4000-8000-000000000001";
+  const code='export default()=>{ui.button("Import",async()=>{await database.connect();await kv.shared.set("done",true);ui.text("Finished");},{id:"import"});}';
+  const compiled=await compileArtifact({entry:"main.ts",files:[{path:"main.ts",content:code}]});
+  const bundle=await cliHostBundle();
+  const host=await createCliCodeHost({fetch:async input=>{
+    const path=String(input);
+    if(path.endsWith("host.js"))return new Response(bundle);
+    if(path.includes("/compiled"))return Response.json({...compiled,revision:1});
+    if(path.includes("/database/connect")){await Bun.sleep(17000);return Response.json({connected:true});}
+    if(path.includes("/storage")){await Bun.sleep(17000);return Response.json({written:true});}
+    if(path.includes("/artifacts/"))return Response.json({id,kind:"app",revision:1,sourceRevision:1});
+    throw new Error(`Unexpected request ${path}`);
+  }});
+  try{
+    const ids={conversationId:id,turnId:id};
+    expect(await host.execute({...ids,name:"code_run",callId:"slow-io",args:{id}})).toMatchObject({status:"ready"});
+    expect(await host.execute({...ids,name:"code_interact",callId:"import",args:{runId:"slow-io",id:"import"}})).toMatchObject({status:"ready",nodes:[{id:"import"},{kind:"text",label:"Finished"}]});
+  }finally{await host.close();}
+},45000);

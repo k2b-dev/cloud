@@ -100,6 +100,26 @@ test("real opaque worker returns data, reuses list actions and remains terminabl
     await page.goto(server.url.href);
     await page.addScriptTag({ content: harness });
     expect(await page.evaluate(()=>runArtifactStoragePages())).toEqual({counts:[500,500,5],unique:1005,first:"file-00000.txt",last:"file-01004.txt"});
+    const encoded=await compile(`export default async()=>{
+      const file=new File([new Uint8Array([110,97,109,101,59,97,109,111,117,110,116,10,77,252,108,108,101,114,59,52,50])],"legacy.csv");
+      let rejected=false;try{await sheet.fromCsv(file);}catch{rejected=true;}
+      return {rejected,rows:await sheet.fromCsv(file,{encoding:"windows-1252"}),single:await sheet.fromCsv("amount\\n42")};
+    }`);
+    const decoded=await page.evaluate(source=>runArtifactScenario({source}),encoded);
+    expect(decoded.errors).toEqual([]);
+    expect(decoded.output).toEqual({rejected:true,rows:[{name:"Müller",amount:"42"}],single:[{amount:"42"}]});
+    const largeCsv=await compile(`export default async()=>{
+      const job=work.run(async job=>{
+        const text="month;amount;description\\n"+("2026-01;42;"+"x".repeat(70)+"\\n").repeat(500000);
+        const start=performance.now();const rows=await sheet.fromCsv(text);let sum=0;
+        for(let i=0;i<rows.length;i++){sum+=Number(rows[i].amount);if(i%5000===0)await job.checkpoint();}
+        return {bytes:text.length,rows:rows.length,sum,elapsedMs:performance.now()-start};
+      });return await job.done;
+    }`);
+    const large=await page.evaluate(source=>runArtifactScenario({source}),largeCsv);
+    expect(large.errors).toEqual([]);
+    expect(large.output).toMatchObject({rows:500000,sum:21000000});
+    console.info("Large CSV browser measurement",large.output);
     const headless = await page.evaluate((source) => runArtifactScenario({ source }),headlessSource);
     expect(headless.errors).toEqual([]);
     expect(headless.output).toEqual({ answer: 42 });

@@ -87,6 +87,10 @@ export const assistantCodeCommands=[
   command("code fork",{summary:"Copy a publication into a private draft with empty storage",args:{id:resource},async run({ctx,args}){
     printValue(ctx,await readAssistantApi(ctx,path(args.id,"/fork"),jsonRequest("POST")));
   }}),
+  command("code delete",{summary:"Permanently delete a resource you manage and its shared data",args:{id:resource},flags:{yes:flag.boolean()},async run({ctx,args,flags}){
+    requireConfirmation(flags.yes,"Deleting a resource");
+    printValue(ctx,await readAssistantApi(ctx,path(args.id),jsonRequest("DELETE")));
+  }}),
   command("code edit-chat",{summary:"Create a new unsent editing chat for a resource",args:{id:resource},async run({ctx,args}){
     printValue(ctx,await readAssistantApi(ctx,path(args.id,"/edit-chat"),jsonRequest("POST")));
   }}),

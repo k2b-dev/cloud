@@ -167,18 +167,20 @@ export function createArtifactSession(container: HTMLElement, source: { runtime:
       }
       if (method === "database") {
         if (!options.database) throw new Error("Database access requires a saved app or script");
-        clearTimeout(watchdog);
+        clearTimeout(watchdog); emit({inputPending:true});
         try {
           const result=await options.database(args[0],signal);
           if (typeof args[0] === "object" && args[0] !== null && "operation" in args[0] && args[0].operation === "connect") log("info","Database connected");
           return result;
-        } finally { if (!capabilityRequests && state.status === "starting" && !signal.aborted) arm(); }
+        } finally { emit({inputPending:false}); if (!capabilityRequests && state.status === "starting" && !signal.aborted) arm(); }
       }
       if (method === "storage") {
         const request = RuntimeStorage.parse(args[0]);
         if (request.scope === "shared" || options.mode === "user") {
           if (!options.storage) throw new Error("Shared storage requires a saved app or script");
-          return options.storage(method,args);
+          clearTimeout(watchdog); emit({inputPending:true});
+          try { return await options.storage(method,args); }
+          finally { emit({inputPending:false}); if(state.status==="starting" && !signal.aborted)arm(); }
         }
         const local = localStorageCall(request);
         method = local.method; args = local.args;

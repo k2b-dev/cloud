@@ -61,8 +61,12 @@ need the normal chat extraction workflow only when uploading is acceptable.
 
 ## CSV
 
-- `await sheet.fromCsv(fileOrText, { delimiter? })` returns objects keyed by the
-  header row. Blank lines are skipped and parse errors throw.
+- `await sheet.fromCsv(fileOrText, { delimiter?, encoding? })` returns objects keyed by the
+  header row; the first returned object is already a data record (do not drop it). Blank lines are skipped and parse errors throw. File bytes default
+  to strict UTF-8: invalid bytes fail instead of silently corrupting names. For
+  older Excel exports use `{ encoding: "windows-1252" }`; verify representative
+  names and headings. String inputs are already decoded. A valid single-column
+  CSV needs no delimiter override.
 - `sheet.toCsv(rows, { delimiter?, bom? })` returns CSV text. Defaults: semicolon,
   UTF-8 BOM, CRLF, and escaped spreadsheet formulas.
 

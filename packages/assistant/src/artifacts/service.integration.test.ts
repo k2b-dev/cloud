@@ -306,6 +306,53 @@ const isolated = /\/cloud_assistant_artifacts_test(?:\?|$)/.test(process.env.DAT
     } finally {catalog.mockRestore();review.mockRestore();execute.mockRestore();}
   });
 
+  test("shared resources require consent for queries and ignore personal remembered actions",async()=>{
+    const resource=await artifacts.create({title:"Shared data app",source},owner);
+    await artifacts.publish(resource.id,1,owner,"Initial release");
+    await artifacts.grant(resource.id,{type:"user",userId:reader.user.id},"read",owner);
+    const input=z.object({}).strict();
+    const definitions=defineCapabilities({protocolVersion:1,
+      queries:{read:{title:"Read private data",description:"Read test data",input,data:z.unknown(),openWorld:false,run:async()=>ok({data:[]})}},
+      actions:{write:{title:"Write private data",description:"Write test data",input,data:z.unknown(),approval:"rememberable",idempotency:"required",destructive:false,openWorld:false,review:async()=>ok({message:"Write?",approvalScope:"private"}),run:async()=>ok({data:{}})}}});
+    const manifest=compileCapabilityManifest("consent",definitions);
+    const catalog=spyOn(capabilityClient,"getCapabilityCatalogApp").mockResolvedValue({ok:true,data:{appId:"consent",appName:"Consent",appDescription:"",appIcon:"ti ti-app-window",manifest}});
+    const review=spyOn(capabilityClient,"reviewCapabilityAction").mockResolvedValue({ok:true,data:{message:"Write?",approvalScope:"private"}});
+    const execute=spyOn(capabilityClient,"invokeCapability").mockResolvedValue({ok:true,data:{data:{private:true}}});
+    await sql`INSERT INTO ai.tool_approval_preferences(actor_user_id,tool_name,approval_scope) VALUES(${reader.user.id}::uuid,'consent.write','private')`;
+    const request=(name:string)=>({id:crypto.randomUUID(),name,input:{},artifactId:resource.id});
+    try {
+      const read=request("consent.read");
+      expect(await runtimeCapabilities.prepare(read,reader,{})).toMatchObject({status:"approval",allowAlways:false,resource:{title:"Shared data app"}});
+      expect(execute).not.toHaveBeenCalled();
+      await expect(runtimeCapabilities.resolve(read.id,{approved:true,remember:"always"},reader,{})).rejects.toMatchObject({code:"INVALID_INPUT"});
+      expect(await runtimeCapabilities.resolve(read.id,{approved:false},reader,{})).toEqual({status:"denied"});
+      expect(execute).not.toHaveBeenCalled();
+      const write=request("consent.write");
+      expect(await runtimeCapabilities.prepare(write,reader,{})).toMatchObject({status:"approval",allowAlways:false});
+      expect(execute).not.toHaveBeenCalled();
+      expect(await runtimeCapabilities.resolve(write.id,{approved:true},reader,{})).toMatchObject({status:"completed"});
+      await runtimeCapabilities.resolve(write.id,{approved:true},reader,{});
+      expect(execute).toHaveBeenCalledTimes(1);
+      expect(await runtimeCapabilities.prepare(request("consent.write"),reader,{})).toMatchObject({status:"approval"});
+      expect(await runtimeCapabilities.prepare(request("consent.read"),owner,{})).toMatchObject({status:"completed"});
+    }finally{catalog.mockRestore();review.mockRestore();execute.mockRestore();}
+  });
+
+  test("resource managers can delete shared data and queue database cleanup; use access cannot",async()=>{
+    const resource=await artifacts.create({title:"Disposable",source},owner);
+    await artifacts.publish(resource.id,1,owner,"Initial release");
+    await artifacts.grant(resource.id,{type:"user",userId:reader.user.id},"read",owner);
+    await artifacts.storage(resource.id,{area:"kv",operation:"write",key:"x",content:"1"},owner);
+    await sql`INSERT INTO assistant.artifact_databases VALUES(${resource.id}::uuid,'manager_cleanup_test',false)`;
+    await expect(artifacts.remove(resource.id,reader)).rejects.toMatchObject({code:"ACCESS_DENIED"});
+    await expect(artifactAdmin.remove(resource.id,owner)).rejects.toMatchObject({code:"ACCESS_DENIED"});
+    expect(await artifacts.remove(resource.id,owner)).toMatchObject({deleted:true,databaseCleanupQueued:true});
+    expect(await sql`SELECT 1 FROM assistant.artifact_storage WHERE artifact_id=${resource.id}::uuid`).toHaveLength(0);
+    expect(await sql`SELECT 1 FROM assistant.artifact_publications WHERE artifact_id=${resource.id}::uuid`).toHaveLength(0);
+    expect(await sql`SELECT 1 FROM assistant.database_cleanup WHERE namespace='manager_cleanup_test'`).toHaveLength(1);
+    await expect(artifacts.get(resource.id,owner)).rejects.toMatchObject({code:"NOT_FOUND"});
+  });
+
   test("databases are lazy, reconnect idempotently and reject writes through SQL", async () => {
     const applet=await artifacts.create({title:"Lazy DB",source},owner);
     let url="", token="", creates=0;
