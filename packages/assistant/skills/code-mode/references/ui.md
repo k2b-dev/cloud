@@ -122,3 +122,8 @@ do not destroy the control or remove a layout from the UI.
 Status descriptions passed to `setState("error", message)` are displayed instead
 of the label. Calling `setState("ready")` clears the status description.
 When testing validation, check the visible description as well as the state.
+
+The fourth argument to `ui.select(label, options, initialValue, id)` is an ID
+string, not an options object. Read its returned `getValue()` in an action.
+For continuous input validation use `ui.input` with `onChange` in its creation
+options, not a method added to the returned handle.

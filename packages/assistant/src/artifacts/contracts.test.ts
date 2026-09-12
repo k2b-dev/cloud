@@ -30,3 +30,18 @@ describe("Assistant artifact boundaries", () => {
     expect(WorkerMessage.safeParse({ type: "rpc", id: 0, method: "db.import", args: [] }).success).toBe(false);
   });
 });
+
+test("storage transport accommodates a full decoded file without increasing its storage quota", async () => {
+  const {StorageRequest,STORAGE_TRANSPORT_BYTES}=await import("./storage-contracts");
+  const content=Buffer.alloc(LIMITS.rpcBytes,120).toString("base64");
+  const input={area:"files",operation:"write",key:"full.bin",content};
+  expect(StorageRequest.safeParse(input).success).toBe(true);
+  expect(Buffer.byteLength(JSON.stringify(input))).toBeLessThan(STORAGE_TRANSPORT_BYTES);
+  expect(Buffer.from(content,"base64").length).toBe(LIMITS.rpcBytes);
+});
+
+test("selected-input and captured-output budgets agree with chat storage",async()=>{
+  const limits=await import("@k2b/cloud/ai");
+  expect(LIMITS.inputFileBytes).toBe(limits.AI_FILES_MAX_FILE_BYTES_DEFAULT);
+  expect(LIMITS.inputBytes).toBe(limits.AI_FILES_MAX_CONVERSATION_BYTES_DEFAULT);
+});

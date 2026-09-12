@@ -43,6 +43,19 @@ export const assistantCodeCommands=[
         results.push(result);
         if(result && typeof result==="object" && "error" in result && result.error)throw new Error(JSON.stringify(result));
       }
+      // Keep the CLI host alive for a background job, including jobs started by
+      // the last interaction. Intermediate snapshots are not completed results.
+      const running = (value: unknown) => value && typeof value === "object" && "work" in value
+        && value.work && typeof value.work === "object" && "status" in value.work && value.work.status === "running";
+      let latest = results.at(-1);
+      if (running(latest)) {
+        do {
+          latest = await host.execute({...base,callId:crypto.randomUUID(),name:"code_inspect",args:{runId,waitMs:30000}});
+          if(latest && typeof latest==="object" && "error" in latest && latest.error)throw new Error(JSON.stringify(latest));
+          if(latest && typeof latest==="object" && "modal" in latest && latest.modal)throw new Error("Background job is waiting for a dialog. Supply a code_interact step to answer it.");
+        } while (running(latest));
+        results.push(latest);
+      }
       printValue(ctx,results.length===1 ? first : results);
     } finally {await host.close();}
   }}),

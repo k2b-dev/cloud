@@ -1,3 +1,4 @@
+import {importRows} from "../../examples/accounting/import-rows";
 import * as capabilityClient from "@k2b/cloud/capabilities/server";
 import { compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 import { defineCapabilities } from "@k2b/cloud/contracts";
@@ -199,14 +200,31 @@ const isolated = /\/cloud_assistant_artifacts_test(?:\?|$)/.test(process.env.DAT
       expect(await clientCalls.claim(loser, owner)).toEqual({ status: "done", result: { opened: id } });
       await expect(clientCalls.claim(first, stranger)).rejects.toMatchObject({ code: "NOT_FOUND" });
       await expect(clientCalls.claim({ ...first, input: { ...input, id: crypto.randomUUID() } }, owner)).rejects.toMatchObject({ code: "INVALID_INPUT" });
-      await sql`UPDATE assistant.artifact_client_calls SET result=NULL, created_at=now()-interval '61 seconds' WHERE turn_id=${turnId}::uuid`;
-      expect(await clientCalls.claim(first, owner)).toEqual({ status: "interrupted" });
-      await expect(clientCalls.complete({ ...loser, result: {} }, owner)).rejects.toMatchObject({ code: "CONFLICT" });
-      // The original host may finish after a human approval; another host may
-      // never take over or replay the uncertain execution.
+      await sql`UPDATE assistant.artifact_client_calls SET result=NULL, created_at=now()-interval '10 minutes' WHERE turn_id=${turnId}::uuid`;
+      // Human approval can take longer than the old fixed execution timeout.
+      expect(await clientCalls.claim(winner, owner)).toEqual({ status: "pending" });
+      expect(await clientCalls.claim(loser, owner)).toEqual({ status: "pending" });
       await clientCalls.complete({ ...winner, result: {late:true} }, owner);
       expect(await clientCalls.claim(loser,owner)).toEqual({status:"done",result:{late:true}});
+      await sql`UPDATE assistant.artifact_client_calls SET result=NULL, heartbeat_at=now()-interval '3 minutes' WHERE turn_id=${turnId}::uuid`;
+      expect(await clientCalls.claim(loser, owner)).toEqual({ status: "interrupted" });
+      expect(await clientCalls.claim(winner, owner)).toEqual({ status: "interrupted" });
+      await expect(clientCalls.complete({ ...winner, result: {} }, owner)).rejects.toMatchObject({ code: "CONFLICT" });
     } finally { conversation.mockRestore(); turn.mockRestore(); }
+  });
+
+  test("source pressure prunes only unpublished history and preserves publications atomically", async () => {
+    const app = await artifacts.create({title:"Retention",source},owner);
+    await artifacts.publish(app.id,1,owner,"Initial release");
+    await artifacts.writeFile(app.id,"main.js","export default () => 2",owner);
+    await artifacts.writeFile(app.id,"main.js","export default () => 3",owner);
+    await sql`UPDATE assistant.artifact_revisions SET source_bytes=262144000 WHERE artifact_id=${app.id}::uuid AND revision=2`;
+    await artifacts.writeFile(app.id,"main.js","export default () => 4",owner);
+    expect((await artifacts.history(app.id,owner)).items.map(item=>item.revision)).toEqual([4,3,1]);
+    await sql`UPDATE assistant.artifact_revisions SET source_bytes=262144000 WHERE artifact_id=${app.id}::uuid AND revision=1`;
+    await expect(artifacts.writeFile(app.id,"main.js","export default () => 5",owner)).rejects.toMatchObject({code:"STORAGE_FULL"});
+    expect((await artifacts.history(app.id,owner)).items.map(item=>item.revision)).toEqual([4,3,1]);
+    expect((await artifacts.get(app.id,owner)).revision).toBe(4);
   });
 
   test("publication versions preserve metadata, rollback atomically publishes, and sharing is independent", async () => {
@@ -317,6 +335,22 @@ const isolated = /\/cloud_assistant_artifacts_test(?:\?|$)/.test(process.env.DAT
       const fork=await artifacts.fork(applet.id,owner);
       expect(await sql`SELECT 1 FROM assistant.artifact_databases WHERE artifact_id=${fork.id}::uuid`).toHaveLength(0);
     } finally { settings.mockRestore(); await upstream.stop(true); }
+  });
+
+  (process.env.RSQL_TEST_URL ? test : test.skip)("real rsql imports and rejoins 2500 rows without duplicating retries", async () => {
+    const resource=await artifacts.create({title:"Excel import",kind:"script",source},owner);
+    const settings=spyOn(app.settings,"get").mockImplementation(async key=>key==="assistant.rsql_url" ? process.env.RSQL_TEST_URL! : "artifact-test-only");
+    try {
+      await artifactDatabase.connect(resource.id,owner);
+      const call=(input:unknown)=>artifactDatabase.call(resource.id,input,owner);
+      await call({operation:"tables.create",name:"ledger_rows",columns:[{name:"import_key",type:"text",unique:true,not_null:true},{name:"payload",type:"text",not_null:true}]});
+      const db={query:async(sql:string,params:string[])=>z.object({data:z.array(z.object({import_key:z.string(),payload:z.string()}))}).parse(await call({operation:"query",sql,params})),table:()=>({insert:(rows:unknown)=>call({operation:"rows.insert",table:"ledger_rows",rows})})};
+      const rows=Array.from({length:2500},(_,i)=>({import_key:`folder/book.xlsx::Ledger::${i+2}`,payload:JSON.stringify([i,"12.34"])}));
+      expect(await importRows(db,rows,async()=>{})).toEqual({inserted:2500,skipped:0});
+      expect(await importRows(db,rows,async()=>{})).toEqual({inserted:0,skipped:2500});
+      expect(await call({operation:"query",sql:"SELECT count(*) AS total FROM ledger_rows",params:[]})).toMatchObject({data:[{total:2500}]});
+      expect(await artifactCodeHandlers.code_sql({id:resource.id,sql:"SELECT count(*) AS total FROM ledger_rows a JOIN ledger_rows b ON a.import_key = b.import_key",params:[]},{...owner,locale:"en",signal:new AbortController().signal})).toMatchObject({ok:true,data:{data:{data:[{total:2500}]}}});
+    } finally {settings.mockRestore();}
   });
 
   test("database connection errors distinguish invalid credentials from an unavailable server", async () => {

@@ -10,7 +10,7 @@ executed the code. There is no browser setup or technical switch for the user.
 | Tool | Input | Result |
 | --- | --- | --- |
 | `code_run` | `id` or `code`, optional `inputPaths`, `version` | Starts saved source or a one-off entry; returns `runId` and snapshot |
-| `code_inspect` | `runId`, optional `nodeId`, `offset`, `limit` | UI, logs, errors, modal, output, and files |
+| `code_inspect` | `runId`, optional `nodeId`, `offset`, `limit`, `waitMs` | UI, logs, errors, modal, output, and files |
 | `code_interact` | `runId`, `id`, optional `value`, `action`, `item` | Performs an interaction and returns the resulting state |
 | `code_stop` | `runId` | Stops and releases a test run |
 | `code_export` | `runId`, `name` | Copies a captured output file into the chat; returns its path |
@@ -50,8 +50,9 @@ even in agent runs. Read the corresponding reference before using them.
 The execution host must stay connected. Each tool call has a server execution claim:
 a second tab can reuse its completed result, but cannot execute the same call.
 An interrupted or uncertain call is not replayed. After reload, an old run may
-be gone; start a new one and repeat the needed steps. Calls have a 45-second
-execution budget, paused while waiting for capability approval; timed-out
+be gone; inspect external effects before deliberately starting another run. Calls have a 45-second
+execution budget, paused while waiting for capability approval. Background jobs
+return a running snapshot and continue independently; see [Background work](work.md). Timed-out
 execution is stopped. Stop obsolete runs explicitly.
 
 If copying output had an uncertain outcome, inspect the returned or
@@ -78,3 +79,13 @@ Upload inputs with the normal chat file commands, then select them in
 
 Actions requiring approval need an explicitly authorized `--approve` capability
 name or an interactive Assistant chat. Source code cannot grant approval.
+
+The CLI keeps its host alive until a background job finishes; `--steps-file` can
+inspect or interact before that final wait. A pending unanswered dialog needs an
+explicit interaction step. Ctrl+C closes the host. The final result must show
+completion before an export or a success claim.
+
+`code_update` changes metadata only. The existing CLI command `assistant code
+update` instead replaces a complete source bundle and metadata with a revision
+check. Prefer `assistant code write` for ordinary file edits; do not confuse
+that CLI command with the agent's metadata tool.

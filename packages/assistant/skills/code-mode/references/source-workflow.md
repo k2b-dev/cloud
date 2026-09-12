@@ -1,5 +1,10 @@
 # Code files
 
+This workflow is for saved resources. For exploration or a one-time result,
+pass code directly to `code_run`; no create/write sequence is needed. Before
+building an app around unfamiliar data, test its processing core with a small
+one-off and representative inputs. Then use the learned structure here.
+
 Use `load_tools` with these exact Assistant tool names. Each tool has one
 small input schema; there is no app prefix or capability name to translate.
 
@@ -72,3 +77,13 @@ Use `assistant code run` for execution, `code sql` for a direct SELECT, and the
 publication, access, and Project commands for their corresponding operations.
 `code_open` in a headless CLI host returns the app URL; it does not claim to open
 a user-visible tab.
+
+## Source history storage
+
+Saving preserves the current revision and all publications. When retained source
+history reaches 250 MiB, the oldest unpublished revisions can be removed to make
+room for a save. A pruned historical revision returns NOT_FOUND. Publications
+are never pruned automatically. If protected history itself fills the budget,
+the save fails atomically with STORAGE_FULL. An independent copy starts with
+fresh source history, but also without the original's data or access grants;
+explain that tradeoff before proposing it as recovery.

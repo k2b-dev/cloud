@@ -1,3 +1,5 @@
+import { createWork } from "./work";
+import { pdf, excel } from "./documents";
 import { z } from "zod";
 import Papa from "papaparse";
 import { common, money } from "@k2b/stdlib";
@@ -30,6 +32,19 @@ let seq = 0,
   requestId = 0,
   scheduled = false,
   busy = false;
+const filePaths = new WeakMap<File, string>();
+function picked(value: unknown): File | null {
+  if (value === null) return null;
+  if (!value || typeof value !== "object" || !("file" in value) || !(value.file instanceof File)
+    || !("path" in value) || typeof value.path !== "string") throw new Error("Invalid picker result");
+  filePaths.set(value.file, value.path);
+  return value.file;
+}
+async function pickMany(method: string, options?: unknown) {
+  const value = await rpc(method, options === undefined ? [] : [options]);
+  if (!Array.isArray(value)) throw new Error("Invalid picker result");
+  return value.map(item => picked(item)).filter((file): file is File => file !== null);
+}
 const pending = new Map<number, { resolve: (v: unknown) => void; reject: (e: Error) => void }>();
 function rpc(method: string, args: unknown[] = []) {
   if (pending.size >= LIMITS.pendingRequests) return Promise.reject(new Error("Too many pending host requests"));
@@ -50,7 +65,7 @@ function flushNow() {
 function flush() {
   if (scheduled) return;
   scheduled = true;
-  flushTimer = setTimeout(flushNow, 16);
+  flushTimer = setTimeout(flushNow, 100);
 }
 function node(kind: UiNode["kind"], label = "", extra: Partial<UiNode> = {}, callback?: (value: string) => unknown): Handle {
   if (nodes.size >= LIMITS.nodes) throw new Error("UI node limit reached");
@@ -100,8 +115,16 @@ function node(kind: UiNode["kind"], label = "", extra: Partial<UiNode> = {}, cal
   };
 }
 const textError = (e: unknown) => (e instanceof Error ? (e.stack ?? e.message) : String(e));
+let logWindow = Date.now(), logCount = 0, suppressedLogs = 0;
 for (const level of ["log", "info", "warn", "error"] as const) {
   console[level] = (...args: unknown[]) => {
+    if (Date.now() - logWindow >= 1000) {
+      logWindow = Date.now(); logCount = 0;
+      if (suppressedLogs) { send({type:"log",level:"warn",text:`Suppressed ${suppressedLogs} repetitive log messages`}); suppressedLogs = 0; }
+    }
+    // Leave transport capacity for UI/RPC. Errors remain visible; the host still
+    // terminates a malicious stream that exceeds its overall message budget.
+    if (level !== "error" && logCount++ >= LIMITS.logs) { suppressedLogs++; return; }
     const seen = new WeakSet();
     let text = "";
     try {
@@ -139,12 +162,13 @@ type FilePickerOptions = ControlOptions & {
 };
 function scopedStorage(scope: "local" | "shared", area: "kv" | "files") {
   const call = (operation: string, key?: string, value?: unknown) => rpc("storage", [{scope,area,operation,key,value}]);
+  const list = (options: {after?:string;limit?:number} = {}) => rpc("storage",[{scope,area,operation:"list",...options}]);
   return area === "kv" ? {
     get: (key: string) => call("read",key), set: (key: string,value: unknown) => call("write",key,value),
-    delete: (key: string) => call("delete",key), keys: () => call("list"),
+    delete: (key: string) => call("delete",key), keys: list,
   } : {
     read: (key: string) => call("read",key), write: (key: string,value: Blob | string) => call("write",key,value),
-    delete: (key: string) => call("delete",key), list: () => call("list"),
+    delete: (key: string) => call("delete",key), list,
   };
 }
 const api = {
@@ -223,10 +247,10 @@ const api = {
       const { accept, multiple = false, onChange, ...display } = options;
       const handle = node("filePicker", label, display, async () => {
         const result = await rpc(multiple ? "file.openMultiple" : "file.open", [{ accept }]);
-        const files = (Array.isArray(result) ? result : [result]).filter((file): file is File => file instanceof File);
+        const files = (Array.isArray(result) ? result : [result]).map(picked).filter((file): file is File => file !== null);
         if (!files.length) return;
         const n = nodes.get(handle.id)!;
-        n.value = files.map((file) => file.name).join(", ");
+        n.value = (files.length > 3 ? `${files.length} · ${files.slice(0,3).map(file=>file.name).join(", ")} …` : files.map(file=>file.name).join(", ")).slice(0,LIMITS.text);
         flush();
         await onChange(files);
       });
@@ -280,13 +304,17 @@ const api = {
   files: {
     local:scopedStorage("local","files"), shared:scopedStorage("shared","files"),
     list: () => rpc("file.list"),
-    read: (path: string) => rpc("file.read", [path]),
-    open: (options: { accept?: string } = {}) => rpc("file.open", [options]),
-    openMultiple: (options: { accept?: string } = {}) => rpc("file.openMultiple", [options]),
-    openFolder: () => rpc("file.openFolder"),
+    read: async (path: string) => picked(await rpc("file.read", [path])),
+    open: async (options: { accept?: string } = {}) => picked(await rpc("file.open", [options])),
+    openMultiple: (options: { accept?: string } = {}) => pickMany("file.openMultiple", options),
+    openFolder: () => pickMany("file.openFolder"),
+    path: (file: File) => filePaths.get(file) ?? file.name,
     save: (data: Blob | string, name: string) => rpc("file.save", [data, name]),
   },
+  work: createWork(state => send({type:"work",...state}), value => send({type:"output",value}), error => send({type:"error",text:textError(error).slice(0,LIMITS.text)})),
+  pdf,
   sheet: {
+    openExcel: excel.open,
     fromCsv: async (file: File | string, options: { delimiter?: string } = {}) => {
       const result = Papa.parse<Record<string, string>>(typeof file === "string" ? file : await file.text(), {
         header: true,
@@ -324,7 +352,7 @@ globalThis.addEventListener("message", async (event: MessageEvent) => {
   if (m.type === "result") {
     const p = pending.get(m.id);
     pending.delete(m.id);
-    if (m.error) p?.reject(new Error(m.error));
+    if (m.error) p?.reject(Object.assign(new Error(m.error), {code: typeof m.code === "string" ? m.code.slice(0,128) : undefined}));
     else p?.resolve(m.value);
     return;
   }

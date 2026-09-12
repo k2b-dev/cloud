@@ -11,6 +11,9 @@ export const LIMITS = {
   text: 16000,
   pendingRequests: 32,
   rpcBytes: 16 * 1024 * 1024,
+  // Match the existing Assistant chat-file defaults (checked in contracts.test).
+  inputFileBytes: 50 * 1024 * 1024,
+  inputBytes: 250 * 1024 * 1024,
 } as const;
 
 export const ArtifactPath = z.string().min(1).max(180).refine(

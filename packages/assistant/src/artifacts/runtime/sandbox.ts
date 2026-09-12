@@ -11,7 +11,8 @@ export function sandboxDocument() {
      const runtime=URL.createObjectURL(new Blob(['(()=>{',e.data.runtime,'\\n})();\\n(()=>{',e.data.code,'\\n})();'],{type:'text/javascript'}));
      urls=[runtime];
      worker=new Worker(runtime);
-     worker.onmessage=m=>parent.postMessage(m.data,'*');
+     // PDF.js announces its bundled handler before the application protocol starts.
+     worker.onmessage=m=>{if(m.data?.sourceName==='worker'&&m.data?.targetName==='main'&&m.data?.action==='ready')return;parent.postMessage(m.data,'*');};
      worker.onerror=m=>parent.postMessage({type:'error',text:m.message||'Worker failed to start'},'*');
 
    } else if(e.data.type==='stop'){worker?.terminate();urls.forEach(u=>URL.revokeObjectURL(u));worker=null;}

@@ -24,8 +24,9 @@ data concise; write larger deliverables as files. `console.log`, `console.info`,
 ## Files
 
 All file operations return promises. For one-off and saved scripts, pass the
-selected current chat paths to `code_run` as `inputPaths`. GUI apps reject those
-inputs; create a file-picker control for their users instead.
+selected current chat paths to `code_run` as `inputPaths`. For app test runs,
+these are explicit picker fixtures only; `files.list/read` cannot see them.
+User apps use their own picker and never receive chat inputs.
 
 | Call | Result |
 | --- | --- |
@@ -34,6 +35,7 @@ inputs; create a file-picker control for their users instead.
 | `files.open({ accept })` | A selected `File`, or `null` |
 | `files.openMultiple({ accept })` | Selected `File[]` |
 | `files.openFolder()` | Selected `File[]` |
+| `files.path(file)` | Relative path retained across the worker bridge (synchronous) |
 | `files.save(blobOrText, name)` | Produces an output file; await completion |
 
 `list` and `read` see only files supplied to this run, not arbitrary files in the
@@ -42,18 +44,20 @@ files. In a test run they use supplied inputs without opening a native picker.
 A visible run's `save` downloads directly. A test run captures the output for
 inspection without downloading it to the user's device.
 
-Inputs and outputs each have a 16 MiB total budget and at most 64 files. Output
+Selected chat inputs and captured test outputs follow the existing chat-file
+budgets: 50 MiB per file, 250 MiB total, and at most 64 selected/captured files.
+Script inputs are fetched only when read, not all before execution. Local user folder selection has neither of these
+limits. User downloads are released after saving, not accumulated in test capture. Output
 names are plain file names. Saving the same output name replaces that captured
-output. Do not put directory separators in output names.
+output. For exports over the 16 MiB JSON-message budget, pass a `Blob` rather
+than a raw string: `await files.save(new Blob([csv]), "results.csv")`. Do not
+put directory separators in output names.
 
 ## PDF and office documents
 
-For PDF or office documents, first use the chat's `read_file` tool to obtain
-extracted text. The worker receives original bytes, not an automatic PDF text
-extraction. Write the relevant extracted records to a chat JSON/CSV file with
-`write_file`, then pass that file through `inputPaths` for calculations. Keep
-source file and page references with extracted records; do not invent missing
-values or add an unsupported PDF parser.
+For local PDF and XLSX processing, read [Documents](documents.md). These APIs
+parse original files in the worker without upload. Other office formats may
+need the normal chat extraction workflow only when uploading is acceptable.
 
 ## CSV
 

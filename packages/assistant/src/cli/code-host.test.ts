@@ -32,7 +32,7 @@ test("CLI runs one-off code in the existing isolated worker without a GUI chat",
     const exported = await host.execute({...ids,name:"code_export",callId:"export",args:{runId:"standalone",name:"answer.txt"}});
     expect(exported).toMatchObject({path:"/artifact-standalone-answer.txt",size:2});
     const rejected = await host.call({...ids,name:"code_run",callId:"app-files",args:{id:ids.conversationId,inputPaths:["private.csv"]}});
-    expect(rejected).toMatchObject({error:"GUI apps cannot access chat files. Use the app file picker."});
+    expect(rejected).toMatchObject({error:"Input not found: private.csv"});
   } finally { await host.close(); }
 }, 60000);
 
@@ -100,3 +100,48 @@ test("CLI worker chains capabilities through host approvals and keeps denial out
     expect(pending.size).toBe(2);
   } finally {await host.close();}
 },90000);
+
+test("chat inputs load on demand and app fixtures are visible only to the picker",async()=>{
+  const appCode='export default async()=>{const hidden=await files.list();const picked=await files.openFolder();return {hidden:hidden.length,path:files.path(picked[0]),text:await picked[0].text()};}';
+  const appSource=await compileArtifact({entry:"main.ts",files:[{path:"main.ts",content:appCode}]});
+  const bundle=await cliHostBundle();let reads=0;
+  const host=await createCliCodeHost({fetch:async(input,init)=>{
+    const path=String(input);
+    if(path.endsWith("host.js"))return new Response(bundle);
+    if(path.endsWith("/compile"))return Response.json(await compileArtifact(await new Response(init?.body).json()));
+    if(path.includes("/files/content?")){reads++;return new Response("hello",{headers:{"content-type":"text/plain"}});}
+    if(path.endsWith("/files"))return Response.json({files:[{path:"/folder/report.csv",size:5,mediaType:"text/plain"}]});
+    if(path.includes("/compiled"))return Response.json({...appSource,revision:1});
+    if(path.includes("/artifacts/"))return Response.json({id:"00000000-0000-4000-8000-000000000001",kind:"app",revision:1,sourceRevision:1});
+    throw new Error(`Unexpected request ${path}`);
+  }});
+  const ids={conversationId:"00000000-0000-4000-8000-000000000001",turnId:"00000000-0000-4000-8000-000000000001"};
+  try {
+    const listed=await host.execute({...ids,name:"code_run",callId:"list-only",args:{code:"export default async()=>({count:(await files.list()).length})",inputPaths:["/folder/report.csv"]}});
+    expect(listed).toMatchObject({output:'{"count":1}'});expect(reads).toBe(0);
+    const picked=await host.execute({...ids,name:"code_run",callId:"picker",args:{id:ids.conversationId,inputPaths:["/folder/report.csv"]}});
+    expect(picked).toMatchObject({output:JSON.stringify({hidden:0,path:"/folder/report.csv",text:"hello"})});expect(reads).toBe(1);
+    const denied=await host.execute({...ids,name:"code_run",callId:"unselected",args:{code:'export default async()=>await files.read("/not-selected.csv")',inputPaths:["/folder/report.csv"]}});
+    expect(denied).toMatchObject({status:"error"});expect(reads).toBe(1);
+  }finally{await host.close();}
+},30000);
+
+test("database error codes survive HTTP and the worker bridge",async()=>{
+  const id="00000000-0000-4000-8000-000000000001";
+  const code='export default async()=>{try{await database.connect();return "unexpected success";}catch(error){return {code:error.code,message:error.message};}}';
+  const source=await compileArtifact({entry:"main.ts",files:[{path:"main.ts",content:code}]});
+  const bundle=await cliHostBundle();
+  const host=await createCliCodeHost({fetch:async(input)=>{
+    const path=String(input);
+    if(path.endsWith("host.js"))return new Response(bundle);
+    if(path.endsWith("/files"))return Response.json({files:[]});
+    if(path.includes("/database/connect"))return Response.json({code:"DB_NOT_CONFIGURED",message:"Configure rsql first"},{status:503});
+    if(path.includes("/compiled"))return Response.json({...source,revision:1});
+    if(path.includes("/artifacts/"))return Response.json({id,kind:"script",revision:1,sourceRevision:1});
+    throw new Error(`Unexpected request ${path}`);
+  }});
+  try{
+    const result=await host.execute({name:"code_run",callId:"db-error",conversationId:id,turnId:id,args:{id}});
+    expect(result).toMatchObject({status:"ready",output:JSON.stringify({code:"DB_NOT_CONFIGURED",message:"Configure rsql first"})});
+  }finally{await host.close();}
+},30000);

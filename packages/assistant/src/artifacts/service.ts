@@ -13,7 +13,7 @@ import { compileArtifact } from "./runtime/compile";
 
 export type ArtifactIdentity = { actor: AuthContext["Variables"]["actor"]; accessSubject: AccessSubject; conversationId?: string; administrative?: boolean };
 export class ArtifactError extends Error {
-  constructor(readonly code: "NOT_FOUND" | "ACCESS_DENIED" | "CONFLICT" | "STORAGE_FULL" | "INVALID_INPUT" | "LAST_MANAGER") {
+  constructor(readonly code: "NOT_FOUND" | "ACCESS_DENIED" | "CONFLICT" | "STORAGE_FULL" | "INVALID_INPUT" | "LAST_MANAGER" | "TOO_MANY_REQUESTS") {
     super(code);
   }
 }
@@ -85,8 +85,26 @@ async function writeRevision(db: SQL, id: string, number: number, source: Artifa
   const size = new TextEncoder().encode(encoded).byteLength;
   const [stored] = await db<{ total: number }[]>`SELECT coalesce(sum(source_bytes),0)::bigint AS total
     FROM assistant.artifact_revisions WHERE artifact_id=${id}::uuid`;
-  // Use the existing Assistant workspace storage budget for retained source history.
-  if (Number(stored?.total ?? 0) + size > AI_FILES_MAX_CONVERSATION_BYTES_DEFAULT) throw new ArtifactError("STORAGE_FULL");
+  // Reclaim oldest unpublished history only when the existing source budget is full.
+  // The caller holds the artifact lock; pruning and the new revision commit together.
+  const excess = Number(stored?.total ?? 0) + size - AI_FILES_MAX_CONVERSATION_BYTES_DEFAULT;
+  if (excess > 0) {
+    const candidates = await db<{ revision: number; source_bytes: number }[]>`SELECT r.revision,r.source_bytes
+      FROM assistant.artifact_revisions r JOIN assistant.artifacts a ON a.id=r.artifact_id
+      WHERE r.artifact_id=${id}::uuid AND r.revision<>a.revision
+      AND NOT EXISTS (SELECT 1 FROM assistant.artifact_publications p WHERE p.artifact_id=r.artifact_id AND p.revision=r.revision)
+      ORDER BY r.revision`;
+    const remove: number[] = [];
+    let reclaimed = 0;
+    for (const candidate of candidates) {
+      if (reclaimed >= excess) break;
+      remove.push(candidate.revision);
+      reclaimed += Number(candidate.source_bytes);
+    }
+    // Published versions are never silently removed to make room.
+    if (reclaimed < excess) throw new ArtifactError("STORAGE_FULL");
+    await db`DELETE FROM assistant.artifact_revisions WHERE artifact_id=${id}::uuid AND revision IN ${db(remove)}`;
+  }
   await db`INSERT INTO assistant.artifact_revisions(artifact_id,revision,source,source_bytes)
     VALUES(${id}::uuid,${number},${encoded}::jsonb,${size})`;
 }
@@ -273,7 +291,7 @@ export const artifacts = {
       await requireArtifact(db,id,identity,"read");
       if (request.operation === "list") {
         const items = await db<{key:string;bytes:number;mediaType:string}[]>`SELECT key,bytes,media_type AS "mediaType"
-          FROM assistant.artifact_storage WHERE artifact_id=${id}::uuid AND area=${request.area} ORDER BY key`;
+          FROM assistant.artifact_storage WHERE artifact_id=${id}::uuid AND area=${request.area} AND key > ${request.after} ORDER BY key LIMIT ${request.limit}`;
         return {items};
       }
       if (request.operation === "delete") {

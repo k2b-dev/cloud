@@ -18,6 +18,8 @@ test("real opaque worker returns data, reuses list actions and remains terminabl
   const invalidOutputSource = await compile('export default () => ui.text("Output");');
   const headlessSource = await compile("export default () => ({ answer: 42 });");
   const csvSource = await compile(`export default async () => {
+    for(let i=0;i<250;i++) console.info("row",i);
+    console.error("late diagnostic");
     const totals = {};
     for (const input of await files.list()) {
       for (const row of await sheet.fromCsv(await files.read(input.name), {delimiter:","})) {
@@ -56,18 +58,73 @@ test("real opaque worker returns data, reuses list actions and remains terminabl
       if(title!==null && await ui.modal.confirm({title:"Confirm task",message:"Add this task?"})) tasks.upsert([{id:ids.ulid(),title}]);
     },{id:"add"});
   };`);
+  const pdfBytes = Buffer.from(await Bun.file(new URL("./fixtures/invoice.pdf", import.meta.url)).arrayBuffer()).toString("base64");
+  const xlsxBytes = Buffer.from(await Bun.file(new URL("./fixtures/ledger.xlsx", import.meta.url)).arrayBuffer()).toString("base64");
+  const documentsSource = await compile(`export default async () => {
+    const blob = b64 => new Blob([Uint8Array.from(atob(b64), c=>c.charCodeAt(0))]);
+    const document = await pdf.open(blob(${JSON.stringify(pdfBytes)}));
+    const page = await document.readPage(1);
+    await document.close();
+    const workbook = await sheet.openExcel(blob(${JSON.stringify(xlsxBytes)}), {numbers:"string"});
+    const names = workbook.sheetNames;
+    const rows = workbook.readSheet(names[0]);
+    workbook.close();
+    const failures = [];
+    for (const read of [() => document.readPage(1), () => workbook.readSheet(names[0]),
+      () => pdf.open(new Blob(["invalid pdf"])), () => sheet.openExcel(new Blob(["not zip"]))]) {
+      try { await read(); failures.push("unexpected success"); } catch (error) { failures.push(error.message); }
+    }
+    const malicious = new Uint8Array(await blob(${JSON.stringify(xlsxBytes)}).arrayBuffer());
+    const zip = new DataView(malicious.buffer);
+    for (let i=0;i<malicious.length-46;i++) if(zip.getUint32(i,true)===0x02014b50) {
+      zip.setUint32(i+24,129*1024*1024,true); break;
+    }
+    try { await sheet.openExcel(new Blob([malicious])); failures.push("unexpected success"); }
+    catch (error) { failures.push(error.message); }
+    return {page, names, rows, failures};
+  };`);
+  const folderSource=await compile(`export default async()=>{
+    const selected=await files.openFolder();
+    const hidden=await files.list();
+    await files.save("done","result.csv");
+    return {count:selected.length,total:selected.reduce((sum,file)=>sum+file.size,0),paths:[files.path(selected[0]),files.path(selected[2999])],hidden:hidden.length};
+  };`);
+  const workSource=await compile(`export default()=>{
+    ui.button("Start",()=>{work.run(async job=>{for(let i=0;i<17;i++){await new Promise(resolve=>setTimeout(resolve,1000));await job.checkpoint();job.progress(i+1,17);}return "finished";});},{id:"start"});
+    ui.button("Cancel",()=>work.cancel(),{id:"cancel"});
+  };`);
   const browser = await chromium.launch({ headless: true, channel: "chrome" });
   const server = Bun.serve({ hostname: "127.0.0.1",port: 0,fetch: () => new Response("<!doctype html><body></body>",{ headers: { "Content-Type": "text/html" } }) });
   try {
     const page = await browser.newPage();
     await page.goto(server.url.href);
     await page.addScriptTag({ content: harness });
+    expect(await page.evaluate(()=>runArtifactStoragePages())).toEqual({counts:[500,500,5],unique:1005,first:"file-00000.txt",last:"file-01004.txt"});
     const headless = await page.evaluate((source) => runArtifactScenario({ source }),headlessSource);
+    expect(headless.errors).toEqual([]);
     expect(headless.output).toEqual({ answer: 42 });
     expect(headless.nodes).toHaveLength(0);
     expect(headless.errors).toEqual([]);
+    const documents = await page.evaluate(source => runArtifactScenario({source}), documentsSource);
+    expect(documents.errors).toEqual([]);
+    expect(documents.output).toMatchObject({page:{page:1,width:612,height:792},names:["Ledger"],rows:[["Reference","Amount"],["DHL-001","12.34"],["Cached formula","24.68"]]});
+    expect(JSON.stringify(documents.output)).toContain("DHL-001 EUR 12.34");
+    expect(documents.output).toMatchObject({failures:["PDF is closed","Workbook is closed",expect.any(String),expect.stringContaining("XLSX ZIP"),expect.stringContaining("128 MiB")]});
+    expect(JSON.stringify(documents.output)).not.toContain("unexpected success");
+    for(const mode of ["user","test"] as const){
+      const folder=await page.evaluate(({source,mode})=>runArtifactFolderScenario(source,mode),{source:folderSource,mode});
+      expect(folder.output).toEqual({count:3000,total:3000*8192,paths:["folder-0/ledger.csv","folder-2999/ledger.csv"],hidden:0});
+      expect(folder.files).toHaveLength(mode==="user"?0:1);
+    }
+    const jobs=await page.evaluate(source=>runArtifactWorkScenario(source),workSource);
+    expect(jobs.finished.work?.status).toBe("completed");
+    expect(jobs.finished.output).toBe("finished");
+    expect(jobs.cancelled.work?.status).toBe("cancelled");
+    expect(jobs.cancelled.busy).toBe(false);
     const csv = await page.evaluate(source => runArtifactCsvScenario(source), csvSource);
     expect(csv.state.output).toEqual({people:2,total:25});
+    expect(csv.state.logs).toHaveLength(200);
+    expect(csv.state.logs.at(-1)?.text).toBe("late diagnostic");
     expect(csv.state.nodes).toHaveLength(0);
     expect(csv.content).toContain("Alice;17");
     expect(csv.content).toContain("Bob;8");
@@ -108,4 +165,4 @@ test("real opaque worker returns data, reuses list actions and remains terminabl
     expect(agent[5]).toEqual({ runId: "start", stopped: true });
     expect(agent[6]).toHaveLength(1);
   } finally { await browser.close(); await server.stop(true); }
-},30000);
+},60000);

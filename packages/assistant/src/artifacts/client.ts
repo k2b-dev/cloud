@@ -8,7 +8,9 @@ const client = api.create<ApiType>({ baseUrl: "/api/assistant" }).artifacts;
 async function checked(response: Response): Promise<void> {
   if (!response.ok) {
     const error: unknown = await response.json().catch(() => null);
-    throw new Error(error && typeof error === "object" && "message" in error && typeof error.message === "string" ? error.message : `HTTP ${response.status}`);
+    const message = error && typeof error === "object" && "message" in error && typeof error.message === "string" ? error.message : `HTTP ${response.status}`;
+    const code = error && typeof error === "object" && "code" in error && typeof error.code === "string" ? error.code : undefined;
+    throw Object.assign(new Error(message), { code });
   }
 }
 export const artifactClient = {

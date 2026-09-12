@@ -2,7 +2,7 @@ import { sql } from "bun";
 import { aiConversations, CodeRuntimeInput, CODE_RUNTIME_TOOL_NAMES, parseCodeToolInput } from "@k2b/cloud/ai";
 import { userFromActor } from "@k2b/cloud/server";
 import { z } from "zod";
-import { artifacts, ArtifactError, type ArtifactIdentity } from "./service";
+import { ArtifactError, type ArtifactIdentity } from "./service";
 
 export const ClientCall = z.object({
   conversationId: z.string().min(1).max(80), turnId: z.string().min(1).max(80), callId: z.string().min(1).max(180),
@@ -25,10 +25,6 @@ async function authorize(call: z.infer<typeof ClientCall>, identity: ArtifactIde
     throw new ArtifactError("CONFLICT");
   // Schema parsing gives canonical property order and strips no unknown fields.
   if (JSON.stringify(CodeRuntimeInput.parse(parseCodeToolInput(block.name, block.args))) !== JSON.stringify(call.input)) throw new ArtifactError("INVALID_INPUT");
-  if (call.input.operation === "run" && call.input.id && call.input.inputPaths.length) {
-    const resource = await artifacts.get(call.input.id, {...identity,conversationId:conversation.id});
-    if (resource.kind !== "script") throw new ArtifactError("ACCESS_DENIED");
-  }
   return { user, turnId: active.turn.id };
 }
 
@@ -42,7 +38,12 @@ export const clientCalls = {
         VALUES(${user.id}::uuid,${turnId}::uuid,${call.callId},${call.clientId}::uuid,${JSON.stringify(call.input)}::jsonb)
         ON CONFLICT DO NOTHING RETURNING call_id`;
       if (inserted.length) return { status: "execute" as const };
-      const [row] = await db<{ result: unknown; completed: boolean; expired: boolean }[]>`SELECT result, result IS NOT NULL AS completed, created_at < now() - interval '60 seconds' AS expired
+      // Only the original host can renew ownership. A waiting tab never extends it.
+      await db`UPDATE assistant.artifact_client_calls SET heartbeat_at=now()
+        WHERE user_id=${user.id}::uuid AND turn_id=${turnId}::uuid AND call_id=${call.callId}
+        AND client_id=${call.clientId}::uuid AND result IS NULL
+        AND heartbeat_at >= now() - interval '2 minutes'`;
+      const [row] = await db<{ result: unknown; completed: boolean; expired: boolean }[]>`SELECT result, result IS NOT NULL AS completed, heartbeat_at < now() - interval '2 minutes' AS expired
         FROM assistant.artifact_client_calls WHERE user_id=${user.id}::uuid AND turn_id=${turnId}::uuid AND call_id=${call.callId}`;
       if (row?.completed) return { status: "done" as const, result: Output.parse(decoded(row.result)) };
       // Never replay an execution with an uncertain outcome, including after reload.
@@ -54,7 +55,7 @@ export const clientCalls = {
     const rows = await sql`UPDATE assistant.artifact_client_calls SET result=${JSON.stringify(call.result)}::jsonb
       WHERE user_id=${user.id}::uuid AND turn_id=${turnId}::uuid AND call_id=${call.callId}
       AND client_id=${call.clientId}::uuid AND input=${JSON.stringify(call.input)}::jsonb AND result IS NULL
-      AND created_at >= now() - interval '1 day' RETURNING call_id`;
+      AND heartbeat_at >= now() - interval '2 minutes' RETURNING call_id`;
     if (!rows.length) throw new ArtifactError("CONFLICT");
     return { saved: true };
   },

@@ -8,12 +8,13 @@ const db = await database.connect();
 ```
 
 Connecting is idempotent and lazily creates this resource's database. The host
-logs a successful connection. An unconfigured Cloud instance throws
-`DB_NOT_CONFIGURED`; explain that an administrator must configure the Assistant
-rsql connection. Do not invent credentials or fall back to Kit settings.
+logs a successful connection. An unconfigured Cloud instance throws an error with
+`error.code === "DB_NOT_CONFIGURED"`; explain that an administrator must
+configure the Assistant rsql connection. Do not invent credentials or fall back to Kit settings.
 `DB_AUTH_FAILED` means the stored server token was rejected; `DB_UNREACHABLE`
 means the server could not be reached. Ask an administrator to check the
-connection. For `DB_TIMEOUT`, retry once before escalating.
+connection. For `DB_TIMEOUT`, a read can be retried once. For a write, inspect
+its effects before retrying; a timeout does not prove that nothing changed.
 
 The database belongs to the resource across edits, publications, and restores.
 A fork starts without one. One-off scripts must be saved before using a resource
@@ -43,7 +44,8 @@ const todos = db.table("todos");
 await todos.insert({ title: "Check totals", done: false });
 ```
 
-`query(sql, params)` accepts bounded SELECT queries with positional parameters.
+`query(sql, params)` returns `{data: rows}` (an empty array for no matches) and
+accepts bounded SELECT queries with positional parameters.
 It rejects SQL writes, CTEs, comments, and internal database objects. Use
 structured methods for mutations. Query results are bounded to 1,000 rows;
 read the returned result shape and paginate structured row lists when needed.

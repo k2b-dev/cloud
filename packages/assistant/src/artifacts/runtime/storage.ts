@@ -1,3 +1,6 @@
+import { z } from "zod";
+import { LIMITS } from "../contracts";
+export const StoragePage = z.object({after:z.string().max(240).default(""),limit:z.number().int().min(1).max(1000).default(1000)});
 const STORAGE_BYTES = 16 * 1024 * 1024;
 function segments(path: unknown) {
   if (
@@ -35,16 +38,23 @@ export class ArtifactStorage {
     const kv = method.startsWith("store.");
     const root = await this.root(kv ? "kv" : "files");
     if (method === "store.keys" || method === "opfs.list") {
+      const page = StoragePage.parse(args[0] ?? {});
       const paths: string[] = [];
+      let metadataBytes = 0;
       const walk = async (dir: FileSystemDirectoryHandle, prefix = "") => {
         for await (const [name, h] of dir.entries()) {
-          if (paths.length >= 1000) throw new Error("List exceeds 1000 entries");
-          if (h.kind === "file") paths.push(kv ? decodeURIComponent(name) : prefix + name);
+          if (h.kind === "file") {
+            const path = kv ? decodeURIComponent(name) : prefix + name;
+            if (path <= page.after) continue;
+            metadataBytes += new TextEncoder().encode(JSON.stringify(path)).byteLength;
+            if (metadataBytes > LIMITS.rpcBytes) throw new Error("Local listing exceeds metadata budget; organize files into smaller resources");
+            paths.push(path);
+          }
           else await walk(await dir.getDirectoryHandle(name), prefix + name + "/");
         }
       };
       await walk(root);
-      return paths.sort();
+      return paths.sort().slice(0,page.limit);
     }
     const parts = kv ? [encodeURIComponent(segments(args[0]).join("/"))] : segments(args[0]);
     const filename = parts.pop()!;

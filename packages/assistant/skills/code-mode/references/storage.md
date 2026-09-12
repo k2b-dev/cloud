@@ -36,3 +36,17 @@ per resource across files and key/value data.
 Chat inputs are separate from persistent resource files. A script gets only
 selected current-chat inputs through `inputPaths`. A GUI app requests uploads
 through its own file-picker controls and decides whether to retain them.
+
+## Listing many keys
+
+`keys({after?, limit?})` and `list({after?, limit?})` return a sorted page of keys,
+with a default and maximum limit of 1,000. For another page, pass its last key as
+`after`; stop when a page is shorter than the limit. Deleting or inserting keys
+while listing can change subsequent pages. Local listings no longer fail merely
+because the resource contains over 1,000 files. Metadata collection itself is
+bounded to 16 MiB; split enormous local stores into resources when necessary.
+
+Local item writes have a 16 MiB per-item budget and use the browser's storage
+quota. Shared files and KV together have 16 MiB and 1,000 entries per resource.
+Shared transport accounts separately for base64/JSON expansion. Neither quota
+limits the number or total size of documents selected for local processing.

@@ -59,6 +59,7 @@ export async function migrateArtifacts() {
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     PRIMARY KEY(user_id, turn_id, call_id)
   )`.simple();
+  await sql`ALTER TABLE assistant.artifact_client_calls ADD COLUMN IF NOT EXISTS heartbeat_at TIMESTAMPTZ NOT NULL DEFAULT now()`.simple();
   await sql`CREATE TABLE IF NOT EXISTS assistant.artifact_projects (
     artifact_id UUID NOT NULL REFERENCES assistant.artifacts(id) ON DELETE CASCADE,
     project_id UUID NOT NULL,

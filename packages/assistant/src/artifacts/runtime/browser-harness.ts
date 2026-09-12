@@ -120,3 +120,54 @@ globalThis.runArtifactScenario = async (scenario) => {
   } finally { clearTimeout(watchdog); await run.stop(); }
   return { nodes,output,errors,responsive,stopped: run.stopped };
 };
+
+declare global { var runArtifactFolderScenario: (source: {code:string;runtime:string}, mode: "user" | "test") => Promise<RunSnapshot>; }
+globalThis.runArtifactFolderScenario = async (source, mode) => {
+  const ready = Promise.withResolvers<void>();
+  const files = Array.from({length:3000},(_,index) => {
+    const file = new File(["x".repeat(8192)],"ledger.csv");
+    Object.defineProperty(file,"webkitRelativePath",{value:`folder-${index}/ledger.csv`});
+    return file;
+  });
+  const run = createArtifactSession(document.body,source,{mode,inputs:[],pickerInputs:files,
+    pick:async()=>files,save:async()=>{},changed:state=>{
+      if(state.status==="ready")ready.resolve();
+      if(state.status==="error")ready.reject(new Error(state.error));
+    }});
+  const timer=setTimeout(()=>ready.reject(new Error("Folder scenario timed out")),20000);
+  try { await ready.promise; return run.snapshot(); }
+  finally { clearTimeout(timer); await run.stop(); }
+};
+
+declare global { var runArtifactWorkScenario: (source: {code:string;runtime:string}) => Promise<{finished:RunSnapshot;cancelled:RunSnapshot}>; }
+globalThis.runArtifactWorkScenario = async source => {
+  const ready=Promise.withResolvers<void>();
+  const run=createArtifactSession(document.body,source,{mode:"test",changed:state=>{if(state.status==="ready")ready.resolve();}});
+  const wait=async(check:()=>boolean)=>{const deadline=Date.now()+22000;while(!check()){if(Date.now()>deadline)throw new Error("Job scenario timed out");await new Promise(resolve=>setTimeout(resolve,20));}};
+  try {
+    await ready.promise;
+    await run.event({id:"start"});
+    await wait(()=>run.snapshot().work?.status==="completed");
+    const finished=run.snapshot();
+    await run.event({id:"start"});
+    await run.event({id:"cancel"});
+    await wait(()=>run.snapshot().work?.status==="cancelled");
+    return {finished,cancelled:run.snapshot()};
+  } finally {await run.stop();}
+};
+
+declare global {var runArtifactStoragePages:()=>Promise<{counts:number[];unique:number;first:string;last:string}>;}
+globalThis.runArtifactStoragePages=async()=>{
+  const {ArtifactStorage}=await import("./storage");
+  const storage=new ArtifactStorage("fixture-user","fixture-resource");
+  try {
+    for(let i=0;i<1005;i++)await storage.call("opfs.write",[`file-${String(i).padStart(5,"0")}.txt`,""]);
+    const keys:string[]=[],counts:number[]=[];let after="";
+    for(;;){
+      const page=await storage.call("opfs.list",[{after,limit:500}]);
+      if(!Array.isArray(page)||page.some(key=>typeof key!=="string"))throw new Error("Invalid key page");
+      counts.push(page.length);keys.push(...page);if(page.length<500)break;after=page.at(-1);
+    }
+    return {counts,unique:new Set(keys).size,first:keys[0]!,last:keys.at(-1)!};
+  }finally{await storage.clear();}
+};

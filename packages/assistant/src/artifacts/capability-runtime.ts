@@ -63,7 +63,7 @@ export const runtimeCapabilities={
       await db`UPDATE assistant.capability_calls SET status='abandoned' WHERE user_id=${actor.id}::uuid
         AND status IN ('pending','running') AND created_at < now()-interval '1 day'`;
       const [pending]=await db<{count:number}[]>`SELECT count(*)::int AS count FROM assistant.capability_calls WHERE user_id=${actor.id}::uuid AND status IN ('pending','running')`;
-      if(pending!.count>=LIMITS.pendingRequests)throw new ArtifactError("STORAGE_FULL");
+      if(pending!.count>=LIMITS.pendingRequests)throw new ArtifactError("TOO_MANY_REQUESTS");
       await db`INSERT INTO assistant.capability_calls(id,user_id,artifact_id,conversation_id,request,prepared)
         VALUES(${request.id}::uuid,${actor.id}::uuid,${request.artifactId??null}::uuid,${request.conversationId??null},${JSON.stringify(request)}::jsonb,${JSON.stringify(prepared)}::jsonb)`;
       // Only recent completed transport results are needed; canonical execution

@@ -23,7 +23,7 @@ function inspect(runId: string, entry: Entry, options: { nodeId?: string; offset
   const selected = nodeId ? state.nodes.filter((node) => node.id === nodeId) : state.nodes.slice(offset, offset + limit);
   if (nodeId && !selected.length) throw new Error("UI node not found");
   return {
-    runId, id: entry.artifactId, status: state.status, busy: state.busy,
+    runId, id: entry.artifactId, status: state.status, busy: state.busy, work: state.work,
     error: state.error ? text(state.error, 6000) : null, modal: state.modal ? { ...state.modal, id: state.modalId } : null,
     totalNodes: state.nodes.length, nextNodeOffset: !nodeId && offset + limit < state.nodes.length ? offset + limit : null,
     nodes: selected.map((node) => ({
@@ -77,7 +77,6 @@ export function createArtifactAgentRuntime(open: ((tab: WorkspaceTab) => void) |
     if (input.operation === "run") {
       if (runs.size >= LIMITS.pendingRequests) throw new Error("Stop an existing test run before starting another");
       const current = input.id ? await artifactClient.get(input.id, false, input.version, conversationId) : undefined;
-      if (current?.kind === "app" && input.inputPaths.length) throw new Error("GUI apps cannot access chat files. Use the app file picker.");
       const source = conversationFileSource("/api/ai", conversationId);
       const listed = input.inputPaths.length ? await source.list() : [];
       const selected = input.inputPaths.map((path) => {
@@ -85,14 +84,25 @@ export function createArtifactAgentRuntime(open: ((tab: WorkspaceTab) => void) |
         if (!file) throw new Error(`Input not found: ${path}`);
         return file;
       });
-      if (selected.reduce((size, file) => size + (file.size ?? 0), 0) > LIMITS.rpcBytes) throw new Error("Input files exceed 16 MiB");
-      const inputs: File[] = [];
-      for (const file of selected) {
-        const content = await source.read(file.path);
-        signal.throwIfAborted();
-        const bytes = content.encoding === "utf8" ? new TextEncoder().encode(content.content) : Uint8Array.from(atob(content.content), (char) => char.charCodeAt(0));
-        inputs.push(new File([bytes], file.path.split("/").pop()!, { type: content.mediaType }));
-      }
+      if (selected.reduce((size,file)=>size+(file.size??0),0)>LIMITS.inputBytes) throw new Error("Selected inputs exceed the 250 MiB chat-file budget");
+      const inputFiles=selected.map(file=>({name:file.path,size:file.size??0,type:file.mediaType??""}));
+      const readInput=async(path:string,readSignal:AbortSignal)=>{
+        const file=selected.find(file=>file.path===path);
+        if(!file)throw new Error("Input was not selected for this run");
+        const response=await fetch(`/api/ai/conversations/${encodeURIComponent(conversationId)}/files/content?${new URLSearchParams({path:file.path})}`,{signal:readSignal});
+        if(!response.ok)throw new Error(`Input could not be read: ${file.path} (HTTP ${response.status})`);
+        const blob=await response.blob();
+        readSignal.throwIfAborted();
+        if(blob.size>LIMITS.inputFileBytes)throw new Error("Input exceeds the 50 MiB chat-file budget");
+        const inputFile=new File([blob],file.path.split("/").pop()!,{type:blob.type});
+        Object.defineProperty(inputFile,"webkitRelativePath",{value:file.path});
+        return inputFile;
+      };
+      const pickerInputs=async(readSignal:AbortSignal)=>{
+        const files:File[]=[];
+        for(const file of selected)files.push(await readInput(file.path,readSignal));
+        return files;
+      };
       const compiled = current
         ? await artifactClient.compiled(current.id, current.sourceRevision, conversationId)
         : await artifactClient.compile({entry:"main.ts",files:[{path:"main.ts",content:input.code!}]});
@@ -101,7 +111,7 @@ export function createArtifactAgentRuntime(open: ((tab: WorkspaceTab) => void) |
       const container = document.createElement("div"); container.hidden = true; document.body.append(container);
       let session: ArtifactSession;
       try {
-        session = createArtifactSession(container, compiled, { mode: "test", inputs, changed: () => {}, capability: (name,input,signal) => {
+        session = createArtifactSession(container, compiled, { mode: "test", inputFiles: current?.kind === "app" ? [] : inputFiles, readInput, pickerInputs, changed: () => {}, capability: (name,input,signal) => {
           if(!approve)throw new Error("Capability approval UI unavailable");
           return runCapability(name,input,{artifactId:current?.id,conversationId},approve,signal);
         }, database: async (request,signal) => {
@@ -118,7 +128,7 @@ export function createArtifactAgentRuntime(open: ((tab: WorkspaceTab) => void) |
       const runId = callId;
       const entry = { session, container, artifactId: input.id, revision: current?.sourceRevision ?? 0, conversationId };
       runs.set(runId, entry);
-      await waitFor(entry, () => session.snapshot().status !== "starting");
+      await waitFor(entry, () => session.snapshot().status !== "starting" || session.snapshot().work?.status === "running");
       return inspect(runId, entry);
     }
     const entry = runs.get(input.runId);
@@ -126,6 +136,14 @@ export function createArtifactAgentRuntime(open: ((tab: WorkspaceTab) => void) |
     // Re-check current permissions even when the test run was started earlier.
     if (entry.artifactId) await artifactClient.get(entry.artifactId, false, undefined, conversationId);
     signal.throwIfAborted();
+    if (input.operation === "inspect" && input.waitMs) {
+      const until = Date.now() + input.waitMs;
+      while (entry.session.snapshot().work?.status === "running" && Date.now() < until) {
+        signal.throwIfAborted();
+        if (entry.session.snapshot().modal || entry.session.snapshot().approvalPending) break;
+        await pause(100);
+      }
+    }
     if (input.operation === "stop") {
       await entry.session.stop(); entry.container.remove(); runs.delete(input.runId);
       return { runId: input.runId, stopped: true };
@@ -144,7 +162,7 @@ export function createArtifactAgentRuntime(open: ((tab: WorkspaceTab) => void) |
         let settled = false, failure: unknown;
         void entry.session.event({ id: input.id, value: input.value, action: input.action, item: input.item })
           .then(() => { settled = true; }, (error) => { failure = error; settled = true; });
-        await waitFor(entry, () => settled || entry.session.snapshot().status === "waiting");
+        await waitFor(entry, () => settled || entry.session.snapshot().status === "waiting" || entry.session.snapshot().work?.status === "running");
         if (failure) throw failure;
       }
     } else if (input.operation === "export") {
@@ -164,17 +182,35 @@ export function createArtifactAgentRuntime(open: ((tab: WorkspaceTab) => void) |
     const call = { input, callId, turnId, conversationId, clientId };
     if (execution === "chat-tool") {
       let claim = Claim.parse(await request("claim", call));
-      const deadline = Date.now() + 61000;
-      while (claim.status === "pending" && Date.now() < deadline) {
+      while (claim.status === "pending" && !abort.signal.aborted) {
         await pause(1000);
         claim = Claim.parse(await request("claim", call));
       }
       if (claim.status === "done") return claim.result;
-      if (claim.status !== "execute") return { error: "Browser execution was interrupted. No action was replayed. Start a new test run." };
+      if (claim.status !== "execute") return { error: "Browser execution was interrupted. No action was replayed. Inspect effects before deliberately starting another run." };
     }
     let result: unknown;
     const callAbort = new AbortController();
     const signal = AbortSignal.any([abort.signal, callAbort.signal]);
+    // Renew while executing or awaiting approval; duplicate tabs only observe.
+    let renewing = false, leaseUntil = Date.now() + 120000;
+    const heartbeat = execution === "chat-tool" ? setInterval(async () => {
+      if (renewing || abort.signal.aborted) return;
+      renewing = true;
+      try {
+        const claim = Claim.parse(await request("claim", call));
+        if (claim.status === "interrupted") leaseUntil = 0;
+        else leaseUntil = Date.now() + 120000;
+      } catch { /* A transient failure does not immediately lose the lease. */ }
+      finally {
+        renewing = false;
+        if (Date.now() >= leaseUntil) {
+          callAbort.abort(new Error("Execution ownership expired; inspect effects before retrying"));
+          const entry = runs.get(input.operation === "run" ? callId : "runId" in input ? input.runId : "");
+          if (entry) void entry.session.stop();
+        }
+      }
+    }, 15000) : undefined;
     let timer: ReturnType<typeof setInterval> | undefined;
     let operationDeadline = Date.now() + 45000;
     try {
@@ -193,7 +229,7 @@ export function createArtifactAgentRuntime(open: ((tab: WorkspaceTab) => void) |
       ]);
     }
     catch (error) { result = { error: error instanceof Error ? error.message : String(error) }; }
-    finally { clearInterval(timer); }
+    finally { clearInterval(timer); clearInterval(heartbeat); }
     // The model receives only bounded JSON, never Blob or Solid proxy objects.
     const encoded = JSON.stringify(result);
     const bounded: unknown = new TextEncoder().encode(encoded).byteLength <= 256 * 1024

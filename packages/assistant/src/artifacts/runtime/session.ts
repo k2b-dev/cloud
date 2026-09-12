@@ -1,3 +1,5 @@
+import { StoragePage } from "./storage";
+import type { WorkState } from "./work";
 import { RuntimeStorage, localStorageCall } from "./shared-storage";
 import { LIMITS } from "../contracts";
 import { startArtifactRun } from "./host";
@@ -9,6 +11,7 @@ export type RunLog = { time: string; level: string; text: string };
 export type RunSnapshot = {
   status: "starting" | "ready" | "waiting" | "stopped" | "error";
   busy: boolean;
+  work?: WorkState;
   approvalPending?: boolean;
   nodes: UiNode[];
   logs: RunLog[];
@@ -22,6 +25,9 @@ export type SessionOptions = {
   mode: "user" | "test";
   changed: (snapshot: RunSnapshot) => void;
   inputs?: File[];
+  inputFiles?: {name:string;size:number;type:string}[];
+  readInput?: (name:string,signal:AbortSignal)=>Promise<File>;
+  pickerInputs?: File[] | ((signal:AbortSignal)=>Promise<File[]>);
   capability?: (name:string,input:unknown,signal:AbortSignal) => Promise<unknown>;
   database?: (request: unknown, signal: AbortSignal) => Promise<unknown>;
   storage?: (method: string, args: unknown[]) => Promise<unknown>;
@@ -34,9 +40,11 @@ export type SessionOptions = {
 export function createArtifactSession(container: HTMLElement, source: { runtime: string; code: string }, options: SessionOptions) {
   let state: RunSnapshot = { status: "starting", busy: false, nodes: [], logs: [], files: [] };
   const inputs = options.inputs ?? [];
-  if (inputs.length > LIMITS.files || inputs.reduce((size, file) => size + file.size, 0) > LIMITS.rpcBytes)
-    throw new Error("Input files exceed the run budget");
-  if (new Set(inputs.map((file) => file.name)).size !== inputs.length) throw new Error("Input file names must be unique");
+  const inputFiles = options.inputFiles ?? inputs.map(file=>({name:file.webkitRelativePath || file.name,size:file.size,type:file.type}));
+  if (inputFiles.length > LIMITS.files || inputFiles.some(file=>file.size>LIMITS.inputFileBytes) || inputFiles.reduce((size,file)=>size+file.size,0)>LIMITS.inputBytes)
+    throw new Error("Selected inputs exceed the chat-file budget (50 MiB per file, 250 MiB total, 64 selected paths)");
+  if (new Set(inputFiles.map(file=>file.name)).size!==inputFiles.length) throw new Error("Input paths must be unique");
+  const wrap = (file: File) => ({ file, path: file.webkitRelativePath || file.name });
   const outputFiles = new Map<string, File>();
   const memory = new Map<string, unknown>();
   const memoryBytes = new Map<string, number>();
@@ -52,6 +60,7 @@ export function createArtifactSession(container: HTMLElement, source: { runtime:
   const log = (level: string, text: string) => emit({ logs: [...state.logs, { time: new Date().toISOString(), level, text }].slice(-LIMITS.logs) });
   const arm = () => {
     clearTimeout(watchdog);
+    if (state.work?.status === "running") return;
     watchdog = setTimeout(() => {
       emit({ status: "error", error: "Run timed out before becoming ready", busy: false });
       void run.stop();
@@ -59,6 +68,7 @@ export function createArtifactSession(container: HTMLElement, source: { runtime:
   };
   const run = startArtifactRun(container, source, {
     ui: (nodes) => emit({ nodes }),
+    work: work => { clearTimeout(watchdog); emit({work}); if (work.status !== "running" && state.status === "starting") arm(); },
     busy: (busy) => emit({ busy }),
     log,
     output: (output) => emit({ output }),
@@ -96,28 +106,35 @@ export function createArtifactSession(container: HTMLElement, source: { runtime:
           }
         }
       }
-      if (method === "file.list") return inputs.map((file) => ({ name: file.name, size: file.size, type: file.type }));
+      if (method === "file.list") return inputFiles;
       if (method === "file.read") {
-        const file = inputs.find((file) => file.name === args[0]);
-        if (!file) throw new Error("Input file not found; use files.list() first");
-        return file;
+        if (typeof args[0] !== "string" || !inputFiles.some(file=>file.name===args[0])) throw new Error("Input file not found; use files.list() first");
+        const file = options.readInput ? await options.readInput(args[0],signal) : inputs.find(file=>(file.webkitRelativePath || file.name)===args[0]);
+        if (!file) throw new Error("Input file not found");
+        return wrap(file);
       }
       if (method === "file.open" || method === "file.openMultiple" || method === "file.openFolder") {
-        if (options.mode === "test") return method === "file.open" ? inputs[0] ?? null : inputs;
+        if (options.mode === "test") {
+          const selected = typeof options.pickerInputs === "function" ? await options.pickerInputs(signal) : options.pickerInputs ?? inputs;
+          return method === "file.open" ? selected[0] ? wrap(selected[0]) : null : selected.map(wrap);
+        }
         const accept = typeof args[0] === "object" && args[0] !== null && "accept" in args[0] && typeof args[0].accept === "string" ? args[0].accept : "";
         const files = await options.pick?.(method !== "file.open", method === "file.openFolder", accept, signal) ?? [];
-        if (files.length > LIMITS.files || files.reduce((size, file) => size + file.size, 0) > LIMITS.rpcBytes)
-          throw new Error("Selected files exceed the run budget");
-        return method === "file.open" ? files[0] ?? null : files;
+        // Structured clone carries immutable file references, not eagerly read bytes.
+        // Local selection is independent of chat upload and server storage quotas.
+        return method === "file.open" ? files[0] ? wrap(files[0]) : null : files.map(wrap);
       }
       if (method === "file.save") {
         const [data, name] = args;
         if ((typeof data !== "string" && !(data instanceof Blob)) || typeof name !== "string" || !name || name.length > 180 || /[\/\\\x00]/.test(name))
           throw new Error("Invalid output file");
         const file = new File([data], name, { type: data instanceof Blob ? data.type : "text/plain" });
+        if (options.mode === "user") {
+          await options.save?.(file, signal);
+          return null;
+        }
         const total = [...outputFiles.values()].reduce((size, item) => size + (item.name === name ? 0 : item.size), file.size);
-        if (total > LIMITS.rpcBytes || (!outputFiles.has(name) && outputFiles.size >= LIMITS.files)) throw new Error("Output files exceed the run budget");
-        if (options.mode === "user") await options.save?.(file, signal);
+        if (file.size > LIMITS.inputFileBytes || total > LIMITS.inputBytes || (!outputFiles.has(name) && outputFiles.size >= LIMITS.files)) throw new Error("Output files exceed the run budget");
         outputFiles.set(name, file);
         emit({ files: [...outputFiles.values()].map((file) => ({ name: file.name, size: file.size, type: file.type })) });
         return null;
@@ -152,7 +169,10 @@ export function createArtifactSession(container: HTMLElement, source: { runtime:
           return options.storage(method, args);
         }
         const [area, operation] = method.split(".");
-        if (operation === "keys" || operation === "list") return [...memory.keys()].filter((key) => key.startsWith(`${area}:`)).map((key) => key.slice(area!.length + 1)).sort();
+        if (operation === "keys" || operation === "list") {
+          const page = StoragePage.parse(args[0] ?? {});
+          return [...memory.keys()].filter((key) => key.startsWith(`${area}:`)).map((key) => key.slice(area!.length + 1)).filter(key=>key>page.after).sort().slice(0,page.limit);
+        }
         if (typeof args[0] !== "string" || !args[0] || args[0].length > 240) throw new Error("Invalid storage key");
         const key = `${area}:${args[0]}`;
         if (operation === "delete") { memory.delete(key); memoryBytes.delete(key); return null; }

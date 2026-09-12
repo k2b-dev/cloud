@@ -80,6 +80,12 @@ import {
 This entry point contains Hono context types, middleware, actor helpers,
 validation, resource access, and response helpers.
 
+For an internal endpoint using signed Cloud invocations, the same barrel exports
+`requireInvocation` and `InvocationExpectation`. Supply the expected target app,
+operation, and schema hash. The middleware verifies the invocation and resolves
+current authority into the request context; the handler must still authorize
+access to its domain resources. It does not replace operation idempotency.
+
 See [Server APIs](/en/docs/server) for the request path.
 
 ## Use platform services

@@ -4,6 +4,13 @@ Discover the actual capability through the normal capability search and load its
 input contract before writing code. Try a read query directly when that helps
 understand its result. Never guess a capability name, input field, or result path.
 
+For comparisons or analysis, a one-off script can call several discovered read
+capabilities, normalize their results, and return a compact comparison. Inspect
+pagination, identifiers, units and date ranges before joining or totaling data.
+Use a fresh short script for another question; no saved app is required. A
+sample is not evidence that all records were fetched. Shared writes and actions
+remain real even when the script is exploratory.
+
 Inside a script or app, call:
 
 ```ts

@@ -1,8 +1,10 @@
+import type { WorkState } from "./work";
 import { LIMITS } from "../contracts";
 import { RuntimeEvent, WorkerMessage, type UiNode } from "./protocol";
 import { sandboxDocument } from "./sandbox";
 
 export type RuntimeHooks = {
+  work?: (state: WorkState) => void;
   ui: (nodes: UiNode[]) => void;
   log: (level: string, text: string) => void;
   error: (message: string) => void;
@@ -49,15 +51,17 @@ export function startArtifactRun(container: HTMLElement, source: { runtime: stri
   frame.title = "Isolated artifact runtime";
   frame.srcdoc = sandboxDocument();
   const abort = new AbortController();
-  let stopped = false, windowStart = Date.now(), messages = 0, logs = 0, queued = 0, eventId = 0;
+  let stopped = false, windowStart = Date.now(), messages = 0, queued = 0, eventId = 0;
   let chain = Promise.resolve();
   let waitingForModal = false;
+  let workWatchdog: ReturnType<typeof setTimeout> | undefined;
   const events = new Map<number,{ resolve: () => void; reject: (error: Error) => void; timer?: ReturnType<typeof setTimeout>; expire: () => void; timeoutMs: number }>();
   const post = (message: unknown) => { if (!stopped) frame.contentWindow?.postMessage(message,"*"); };
   const stop = () => {
     if (stopped) return chain;
     post({ type: "stop" });
     stopped = true;
+    clearTimeout(workWatchdog);
     abort.abort();
     window.removeEventListener("message",receive);
     frame.remove();
@@ -77,11 +81,20 @@ export function startArtifactRun(container: HTMLElement, source: { runtime: stri
       if (!encoded || new TextEncoder().encode(encoded).byteLength > LIMITS.rpcBytes) throw new Error("Runtime message exceeds byte budget");
       const m = WorkerMessage.parse(event.data);
       if (m.type === "ui") { validateTree(m.nodes); hooks.ui(m.nodes); }
-      else if (m.type === "log") { if (logs++ < LIMITS.logs) hooks.log(m.level,m.text); }
+      else if (m.type === "log") hooks.log(m.level,m.text);
       else if (m.type === "error") hooks.error(m.text);
       else if (m.type === "output") hooks.output(m.value);
       else if (m.type === "busy") hooks.busy(m.value);
       else if (m.type === "ready") hooks.ready();
+      else if (m.type === "work") {
+        clearTimeout(workWatchdog);
+        if (m.status === "running") {
+          workWatchdog = setTimeout(() => { hooks.error("Background worker stopped responding; run stopped"); void stop(); }, 15000);
+          if (!waitingForModal) for (const event of events.values()) { clearTimeout(event.timer); event.timer=setTimeout(event.expire,event.timeoutMs); }
+        }
+        const {type,...state}=m;
+        hooks.work?.(state);
+      }
       else if (m.type === "settled") {
         const pending = events.get(m.id);
         if (pending) { clearTimeout(pending.timer); events.delete(m.id); m.error ? pending.reject(new Error(m.error)) : pending.resolve(); }
@@ -91,16 +104,17 @@ export function startArtifactRun(container: HTMLElement, source: { runtime: stri
         chain = chain.then(async () => {
           try {
             if (stopped) return;
-            if (m.method === "ui.modal") {
+            if (["ui.modal","file.open","file.openMultiple","file.openFolder","capabilities.run"].includes(m.method)) {
               waitingForModal = true;
               for (const event of events.values()) clearTimeout(event.timer);
             }
             const value = await hooks.request(m.method,m.args,abort.signal);
             post({ type: "result",id: m.id,value });
           } catch (error) {
-            post({ type: "result",id: m.id,error: String(error instanceof Error ? error.message : error).slice(0,LIMITS.text) });
+            const code = error && typeof error === "object" && "code" in error && typeof error.code === "string" ? error.code.slice(0,128) : undefined;
+            post({ type: "result",id: m.id,error: String(error instanceof Error ? error.message : error).slice(0,LIMITS.text),code });
           } finally {
-            if (m.method === "ui.modal") {
+            if (["ui.modal","file.open","file.openMultiple","file.openFolder","capabilities.run"].includes(m.method)) {
               waitingForModal = false;
               if (!stopped) for (const event of events.values()) event.timer = setTimeout(event.expire, event.timeoutMs);
             }

@@ -9,6 +9,7 @@ export { DEFAULT_LOCALE, getLocale, LOCALE_COOKIE, LOCALE_HEADER, locale, prefer
 export type {
   AuthContext,
   InvocationProvenance,
+  InvocationExpectation,
   RateLimitConfig,
   RateLimitRouteOverride,
   RequestActor,
@@ -25,6 +26,7 @@ export {
   openApiMeta,
   rateLimit,
   rejectReservedWorkloadCredential,
+  requireInvocation,
   requestLogger,
   requiresAdmin,
   requiresAuth,

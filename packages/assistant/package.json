@@ -12,16 +12,18 @@
     "typecheck": "tsc -p tsconfig.json --noEmit --pretty false 2>&1 | grep -v node_modules | (! grep -q 'error TS')"
   },
   "dependencies": {
-    "@k2b/stdlib": "catalog:",
     "@k2b/cloud": "workspace:*",
+    "@k2b/rsql": "1.0.0",
     "@k2b/ssr": "catalog:",
+    "@k2b/stdlib": "catalog:",
     "@k2b/ui": "workspace:*",
     "hono": "catalog:",
-    "solid-js": "catalog:",
-    "zod": "catalog:",
     "papaparse": "5.7.0",
-    "@k2b/rsql": "1.0.0",
-    "playwright": "catalog:"
+    "pdfjs-dist": "6.3.289",
+    "playwright": "catalog:",
+    "read-excel-file": "9.3.10",
+    "solid-js": "catalog:",
+    "zod": "catalog:"
   },
   "devDependencies": {
     "@types/bun": "catalog:",

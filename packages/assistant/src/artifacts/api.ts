@@ -8,7 +8,7 @@ import { z } from "zod";
 import { ArtifactKind, ArtifactMetadata, PublicationNote, ArtifactCreate, ArtifactFile, ArtifactSource, ArtifactUpdate, LIMITS } from "./contracts";
 import { artifactDatabase, DatabaseError } from "./database";
 import { DatabaseRequest, DatabaseSettings } from "./database-contracts";
-import { StorageRequest } from "./storage-contracts";
+import { StorageRequest, STORAGE_TRANSPORT_BYTES } from "./storage-contracts";
 import { artifacts, ArtifactError } from "./service";
 import { artifactMessages } from "./messages";
 import { compilationDiagnostic, compileArtifact } from "./runtime/compile";
@@ -36,7 +36,7 @@ const Grant = z.object({
 export const artifactApi = new Hono<AuthContext>()
   .use("*", auth.requireRole("authenticated"))
   .use("*", auth.requireUser())
-  .use("*", bodyLimit({ maxSize: LIMITS.rpcBytes }))
+  .use("*", (c,next) => bodyLimit({ maxSize: c.req.path.endsWith("/storage") ? STORAGE_TRANSPORT_BYTES : LIMITS.rpcBytes })(c,next))
   .use("*", async (c,next) => { c.header("Cache-Control","private, no-store"); await next(); })
   .onError((error,c) => {
     if (error instanceof DatabaseError) {
@@ -45,7 +45,7 @@ export const artifactApi = new Hono<AuthContext>()
       return respond(c,{ok:false,code:error.code,status:error.status,error:message});
     }
     const code = error instanceof ArtifactError ? error.code : error instanceof z.ZodError ? "INVALID_INPUT" : "REQUEST_FAILED";
-    const status = code === "NOT_FOUND" ? 404 : code === "ACCESS_DENIED" ? 403
+    const status = code === "TOO_MANY_REQUESTS" ? 429 : code === "NOT_FOUND" ? 404 : code === "ACCESS_DENIED" ? 403
       : code === "CONFLICT" || code === "LAST_MANAGER" ? 409 : code === "REQUEST_FAILED" ? 500 : 400;
     if (code === "REQUEST_FAILED") console.error("Assistant artifact request failed", error);
     return respond(c,{ ok: false, code, status, error: artifactMessages.resolve([getLocale(c)]).t[code] });

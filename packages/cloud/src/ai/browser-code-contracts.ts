@@ -7,9 +7,9 @@ export const CodeRunInput = z.object({
   id: id.optional(),
   version: z.number().int().positive().optional().describe("Published version to run; resource admins only. Omit for the current accessible source."),
   code: z.string().min(1).max(1024 * 1024).optional().describe("One-off JavaScript/TypeScript entry exporting one function. Use code OR a saved resource id; no title or icon needed."),
-  inputPaths: z.array(z.string().min(1).max(500)).max(64).default([]).describe("Current chat files for scripts only. GUI apps use their own file picker."),
+  inputPaths: z.array(z.string().min(1).max(500)).max(64).default([]).describe("Explicit current-chat input files. Scripts can read them; app test runs expose them only through the simulated picker. User apps never receive chat files."),
 }).strict().refine(input => Number(input.id !== undefined) + Number(input.code !== undefined) === 1, "Provide exactly one of id or code").refine(input => input.version === undefined || input.id !== undefined,"A published version requires a saved resource id");
-export const CodeInspectInput = z.object({ runId, nodeId: z.string().min(1).max(80).optional(), offset: z.number().int().min(0).default(0), limit: z.number().int().min(1).max(100).default(20) }).strict();
+export const CodeInspectInput = z.object({ runId, waitMs: z.number().int().min(0).max(30000).default(0).describe("Wait up to this duration for background work to finish before returning its real state; never restarts work."), nodeId: z.string().min(1).max(80).optional(), offset: z.number().int().min(0).default(0), limit: z.number().int().min(1).max(100).default(20) }).strict();
 export const CodeInteractInput = z.object({ runId,
   id: z.string().min(1).max(80).describe("Control ID or pending modal ID returned by the snapshot."),
   value: z.json().optional().describe("Input value or modal answer. Use null to cancel a modal."),

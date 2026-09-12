@@ -261,7 +261,8 @@ Optional `inputPaths` select chat files for scripts; an admin can select a
 published `version` for a saved resource.
 
 Use `--steps-file` for subsequent inspect, interaction, or file-export steps in
-the same run. The host closes when the command ends. Exported files remain in
+the same run. The host waits for background work to finish before the command ends; a pending
+app dialog needs an explicit interaction step. The host closes when the command ends. Exported files remain in
 the chat. Capability actions need explicit `--approve` authorization or the
 interactive chat approval flow. The CLI needs Chromium installed through
 Playwright, or `CLOUD_CLI_CHROMIUM` pointing to an installed Chromium executable.
@@ -278,3 +279,45 @@ Deleting a resource removes its source, publications, grants, and shared data;
 remote database deletion is queued for cleanup. The inventory cannot count or
 remove private browser-local files. The same management operations are available
 under `cld assistant studio-admin`.
+
+### Process large local document folders
+
+Code Mode includes bundled PDF.js text extraction and read-only XLSX parsing.
+Apps can select thousands of files, including subfolders, without uploading
+original documents. File references cross the worker bridge; bytes are read on
+demand. Relative paths distinguish equal basenames. Scripts may instead select
+existing chat attachments; app tests can use those only as explicit picker
+fixtures, never through implicit access to chat files.
+
+Background work reports progress and supports cooperative cancellation. A stuck
+worker is terminated after 15 seconds without a responsive heartbeat; this is
+not a total processing timeout. Closing, reloading, or suspending the execution
+host can interrupt work. Completed external writes are not undone by stopping.
+Agents and CLI steps can wait with `code_inspect` and `waitMs` (up to 30 seconds).
+The returned work status distinguishes running, completed, cancelled, and failed.
+
+Parsing budgets apply per document: 64 MiB input and, for XLSX, 128 MiB expanded
+ZIP entries. Process and close documents sequentially to bound memory. There is
+no OCR, Excel formula execution, XLS/XLSB support, or Excel writer. Use CSV for
+exports. PDF text includes page and position information; format-specific
+invoice parsers still need representative document validation.
+
+Chat test inputs and captured outputs use the existing 50 MiB-per-file and
+250 MiB-total chat budgets, with at most 64 selected/captured files. Script
+inputs are fetched on demand. Large exports use Blob rather than JSON strings.
+User downloads are not accumulated as captured outputs. Browser-local storage,
+shared storage, chat uploads, and source history are separate budgets. Shared
+storage counts decoded data and allows transport encoding overhead. Local/shared
+key listings accept `after` and `limit` for pagination.
+
+Source history reclaims oldest unpublished revisions when its 250 MiB budget
+fills. Current source and published versions remain protected. If these alone
+fill the budget, saves fail atomically; a separate copy starts fresh but does not
+copy data or grants. Active runtime calls renew their execution ownership, so a
+long human approval does not make a second tab report a fixed-time interruption.
+An expired host is never replaced by automatic replay of an uncertain action.
+
+Database and other coded host errors preserve `error.code` in scripts as well
+as a readable message. For example, handle `DB_NOT_CONFIGURED` by explaining
+that the instance administrator must configure rsql; do not parse translated
+error text or silently select another database.

@@ -101,11 +101,26 @@ cld assistant studio-admin list --json
 
 `run.json` contains either `{"code":"export default () => 42"}` for a one-off,
 or `{"id":"<resource-id>"}` for saved code. Add `inputPaths` for explicitly
-selected files of the current chat. Only scripts can receive chat files; GUI
-apps use their own file picker. One-offs create no Studio resource. Optional
+selected files of the current chat. Scripts read those inputs on demand. In
+explicit GUI test runs, the same paths supply isolated picker fixtures;
+`files.list()` and `files.read()` remain unavailable to the app. User apps use
+their own local picker and receive no implicit chat files. One-offs create no Studio resource. Optional
 `--steps-file` accepts an array of `{name,args}` steps using `code_interact`,
 `code_inspect`, or `code_export`; the CLI supplies the run ID. An export returns
 an absolute chat-file path for `assistant files download`.
+
+For long work, use `work.run`, cooperative checkpoints, and progress.
+`code_inspect` accepts `waitMs` up to 30000. After explicit steps, the CLI keeps
+its host alive until active background work finishes. Closing the CLI interrupts
+the worker. An unresolved modal requires an explicit interaction step.
+
+Bundled `pdf.open` reads PDF pages/text/positions; `sheet.openExcel` reads XLSX
+workbooks without running formulas. No package imports or Excel writer are
+needed. Local folders have no 64-file/16-MiB aggregate cap: read one document
+at a time and close it afterward. Parser budgets are 64 MiB per document and
+128 MiB expanded XLSX XML. Selected chat inputs and captured exports retain
+64 paths, 50 MiB per file, and 250 MiB total; use Blob for large exports.
+Those are separate from persistent shared storage quotas.
 
 Agent/CLI runs use isolated local test storage. Shared storage changes are real
 and persist across runs and publications. Forks start with empty data. Use

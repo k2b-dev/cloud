@@ -161,6 +161,9 @@ export const artifactDatabase = {
             throw new DatabaseError(error instanceof Error && error.message === "DB_SQL_PARAMS" ? "DB_SQL_PARAMS" : "DB_SQL_UNSUPPORTED");
           }
           data = result(await client.query.run({ sql: query, params: req.params }));
+          // rsql 1.0 returns null for an empty Go result slice. The runtime's
+          // row collection remains an array, including before the first import.
+          if (data && typeof data === "object" && "data" in data && data.data === null) data = {...data,data:[]};
           break;
         }
       }

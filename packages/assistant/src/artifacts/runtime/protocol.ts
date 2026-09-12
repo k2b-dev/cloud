@@ -110,6 +110,7 @@ export const UiNode = z
   .strict();
 export type UiNode = z.infer<typeof UiNode>;
 export const WorkerMessage = z.discriminatedUnion("type", [
+  z.object({type:z.literal("work"),status:z.enum(["running","completed","cancelled","error"]),completed:z.number().nonnegative(),total:z.number().nonnegative().optional(),label:z.string().max(1000).optional()}),
   z.object({ type: z.literal("ui"), nodes: z.array(UiNode).max(LIMITS.nodes) }),
   z.object({
     type: z.literal("log"),

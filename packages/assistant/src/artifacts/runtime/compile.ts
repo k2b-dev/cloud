@@ -23,6 +23,7 @@ export function runtimeSource(): Promise<string> {
   if (!runtime) runtime = Bun.build({
     entrypoints: [new URL("./worker.ts", import.meta.url).pathname],
     target: "browser", format: "iife", minify: true,
+    define: { "import.meta.url": JSON.stringify("about:blank") },
   }).then(async (build) => {
     if (!build.success) throw new Error(build.logs.join("\n"));
     return build.outputs[0]!.text();
