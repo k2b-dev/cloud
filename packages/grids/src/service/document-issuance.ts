@@ -12,7 +12,7 @@ import { validateDocumentArtifactDrafts } from "./document-artifact-drafts";
 import { reserveDocumentExportClaims } from "./document-export-claims";
 import { normalizeFinancialDocumentOutput } from "./document-financial-output";
 import { persistIssuedDocument } from "./document-issuance-storage";
-import { type CanonicalJsonVersion, canonicalDocumentJson, canonicalJson } from "./document-json";
+import { canonicalDocumentJson, canonicalJson } from "./document-json";
 import { documentNumberFor } from "./document-liquid";
 import { type DocumentDbRow, hydrateDocuments } from "./document-mappers";
 import { documentServiceText, isGermanDocumentLocale } from "./document-messages";
@@ -163,23 +163,12 @@ const FrozenDocumentRequestSchema = z
     filename: z.string().min(1).max(255).nullable(),
     allocationId: z.uuid().nullable(),
     profileInput: JsonObjectSchema.nullable(),
-    // Bridge support for retained pending receipts: read their historical provenance
-    // without rewriting frozen evidence or reallocating a number. New receipts omit it.
-    source: z
-      .object({ appId: z.string().min(1), resourceType: z.string().min(1), resourceId: z.string().min(1) })
-      .strict()
-      .optional(),
-    sourceRevision: z
-      .object({ id: z.string().min(1), observedAt: z.iso.datetime(), evidence: JsonObjectSchema })
-      .strict()
-      .optional(),
   })
   .strict()
   .refine((value) => (value.workflowRunId === null) === (value.workflowStepKey === null), "workflow binding must be complete");
 
 type IssuanceRow = {
   id: string;
-  hash_version: CanonicalJsonVersion;
   base_id: string;
   request_hash: string;
   request_identity_hash: string | null;
@@ -250,7 +239,7 @@ export type RecordDocumentRequest = Pick<
   "actor" | "idempotencyKey" | "tags" | "workflowRunId" | "workflowStepKey" | "dateConfig" | "filename" | "renderPdf"
 > & { baseId: string; tableId: string; recordId: string; templateId: string };
 
-const recordRequestIdentityHash = (input: RecordDocumentRequest, version: CanonicalJsonVersion): string =>
+const recordRequestIdentityHash = (input: RecordDocumentRequest): string =>
   canonicalJson(
     {
       baseId: input.baseId,
@@ -264,7 +253,6 @@ const recordRequestIdentityHash = (input: RecordDocumentRequest, version: Canoni
       filename: input.filename?.trim() || null,
     },
     input.dateConfig?.locale,
-    version,
   ).sha256;
 
 const sha256Hex = (value: string | Uint8Array): string => createHash("sha256").update(value).digest("hex");
@@ -303,7 +291,7 @@ const semanticRenderData = (renderData: Record<string, unknown>) => {
   return stable;
 };
 
-const requestHashFor = (input: IssueDocumentInput, version: CanonicalJsonVersion = 2): Result<string> => {
+const requestHashFor = (input: IssueDocumentInput): Result<string> => {
   try {
     return ok(
       canonicalJson(
@@ -319,7 +307,6 @@ const requestHashFor = (input: IssueDocumentInput, version: CanonicalJsonVersion
           filename: input.filename?.trim() || null,
         },
         input.dateConfig?.locale,
-        version,
       ).sha256,
     );
   } catch (error) {
@@ -480,16 +467,16 @@ export const createDocumentIssuanceService = (options: { profiles?: readonly Doc
       const receipt = await db.begin(async (tx) => {
         await tx`SELECT pg_advisory_xact_lock(hashtextextended(${`grids:document-issuance:${input.snapshot.baseId}:${operationKeyHash}`}, 0))`;
         const [existing] = await tx<IssuanceRow[]>`
-          SELECT id::text, hash_version, base_id::text, request_hash, request_identity_hash, document_short_id, frozen_request, document_id::text, created_at
+          SELECT id::text, base_id::text, request_hash, request_identity_hash, document_short_id, frozen_request, document_id::text, created_at
           FROM grids.document_issuances
           WHERE base_id = ${input.snapshot.baseId}::uuid AND operation_key_hash = ${operationKeyHash}
         `;
         if (existing) {
-          const existingRequestHash = requestHashFor(input, existing.hash_version);
+          const existingRequestHash = requestHashFor(input);
           if (!existingRequestHash.ok) throw existingRequestHash.error;
           if (
             existing.request_identity_hash
-              ? !requestIdentity || existing.request_identity_hash !== recordRequestIdentityHash(requestIdentity, existing.hash_version)
+              ? !requestIdentity || existing.request_identity_hash !== recordRequestIdentityHash(requestIdentity)
               : existing.request_hash !== existingRequestHash.data
           )
             throw err.conflict(t.idempotencyConflict);
@@ -690,8 +677,8 @@ export const createDocumentIssuanceService = (options: { profiles?: readonly Doc
           };
           const [created] = await attempt<IssuanceRow[]>`
           INSERT INTO grids.document_issuances (base_id, hash_version, operation_key_hash, request_hash, request_identity_hash, document_short_id, frozen_request)
-          VALUES (${input.snapshot.baseId}::uuid, 2, ${operationKeyHash}, ${requestHash.data}, ${requestIdentity ? recordRequestIdentityHash(requestIdentity, 2) : null}, ${documentShortId}, ${canonicalJson({ ...frozen }, input.dateConfig?.locale, 2).value}::jsonb)
-          RETURNING id::text, hash_version, base_id::text, request_hash, request_identity_hash, document_short_id, frozen_request, document_id::text, created_at
+          VALUES (${input.snapshot.baseId}::uuid, 2, ${operationKeyHash}, ${requestHash.data}, ${requestIdentity ? recordRequestIdentityHash(requestIdentity) : null}, ${documentShortId}, ${canonicalJson({ ...frozen }, input.dateConfig?.locale).value}::jsonb)
+          RETURNING id::text, base_id::text, request_hash, request_identity_hash, document_short_id, frozen_request, document_id::text, created_at
         `;
           if (!created) throw err.internal(t.receiptCreateFailed);
           return created;
@@ -754,14 +741,12 @@ export const createDocumentIssuanceService = (options: { profiles?: readonly Doc
       const artifactDrafts = validateDocumentArtifactDrafts(rendered.artifacts, rendered.primaryArtifact, input.dateConfig?.locale);
       if (!artifactDrafts.ok) return artifactDrafts;
       const primary = artifactDrafts.data.primary;
-      const snapshotHash = frozen.profileInput
-        ? canonicalDocumentJson(frozen.profileInput, input.dateConfig?.locale, receipt.hash_version).sha256
-        : null;
+      const snapshotHash = frozen.profileInput ? canonicalDocumentJson(frozen.profileInput, input.dateConfig?.locale).sha256 : null;
       const templateData = templateSnapshot(frozen.template);
-      const templateRevision = canonicalDocumentJson(templateData, input.dateConfig?.locale, receipt.hash_version).sha256;
+      const templateRevision = canonicalDocumentJson(templateData, input.dateConfig?.locale).sha256;
       const finalized = await db.begin(async (tx) => {
         const [locked] = await tx<IssuanceRow[]>`
-          SELECT id::text, hash_version, base_id::text, request_hash, request_identity_hash, document_short_id, frozen_request, document_id::text, created_at
+          SELECT id::text, base_id::text, request_hash, request_identity_hash, document_short_id, frozen_request, document_id::text, created_at
           FROM grids.document_issuances WHERE id = ${receipt.id}::uuid FOR UPDATE
         `;
         if (!locked) throw err.internal(t.receiptMissing);
@@ -783,7 +768,6 @@ export const createDocumentIssuanceService = (options: { profiles?: readonly Doc
         const document = await persistIssuedDocument(
           {
             receiptId: receipt.id,
-            hashVersion: receipt.hash_version,
             shortId: receipt.document_short_id,
             baseId: frozen.snapshot.baseId,
             queryDataId: null,
@@ -877,20 +861,17 @@ export const createDocumentIssuanceService = (options: { profiles?: readonly Doc
       const tableIds = captured.data.payload.tableIds;
       await authorize(tableIds, db);
       const operationHash = sha256Hex(idempotencyKey);
-      const requestHash = canonicalJson(request, locale, 2).sha256;
+      const requestHash = canonicalJson(request, locale).sha256;
       const receipt = await db.begin(async (tx) => {
         await tx`SELECT pg_advisory_xact_lock(hashtextextended(${`grids:document-issuance:${request.baseId}:${operationHash}`}, 0))`;
         await authorize(tableIds, tx);
         const [existing] = await tx<QueryIssuanceRow[]>`
-          SELECT id::text, hash_version, base_id::text, request_hash, request_identity_hash, document_short_id, frozen_request, document_id::text, created_at,
+          SELECT id::text, base_id::text, request_hash, request_identity_hash, document_short_id, frozen_request, document_id::text, created_at,
             confirmation_hash, confirmed_actor, confirmed_at
           FROM grids.document_issuances WHERE base_id = ${request.baseId}::uuid AND operation_key_hash = ${operationHash}
         `;
         if (existing) {
-          if (
-            existing.request_hash !== canonicalJson(request, locale, existing.hash_version).sha256 ||
-            existing.request_identity_hash !== null
-          )
+          if (existing.request_hash !== canonicalJson(request, locale).sha256 || existing.request_identity_hash !== null)
             throw err.conflict(t.idempotencyConflict);
           return existing;
         }
@@ -915,7 +896,7 @@ export const createDocumentIssuanceService = (options: { profiles?: readonly Doc
             financial = {
               identifiers,
               normalizedSha256: normalized.data.sha256,
-              runBindingHash: canonicalJson(await financialRunBinding(request.baseId, request.runId, attempt, locale), locale, 2).sha256,
+              runBindingHash: canonicalJson(await financialRunBinding(request.baseId, request.runId, attempt, locale), locale).sha256,
             };
           }
           const filename =
@@ -938,13 +919,13 @@ export const createDocumentIssuanceService = (options: { profiles?: readonly Doc
             filename,
             ...(financial ? { financial } : {}),
           };
-          const confirmationHash = financial ? canonicalJson(frozen, locale, 2).sha256 : null;
+          const confirmationHash = financial ? canonicalJson(frozen, locale).sha256 : null;
           await attempt`UPDATE grids.document_profile_counters SET next_value = ${value + 1}
             WHERE base_id = ${request.baseId}::uuid AND profile_id = ${profile.id}`;
           const [created] = await attempt<QueryIssuanceRow[]>`
             INSERT INTO grids.document_issuances (base_id, hash_version, operation_key_hash, request_hash, document_short_id, frozen_request, query_data_id, confirmation_hash)
-            VALUES (${request.baseId}::uuid, 2, ${operationHash}, ${requestHash}, ${shortId}, ${canonicalJson(frozen, locale, 2).value}::jsonb, ${request.data.id}::uuid, ${confirmationHash})
-            RETURNING id::text, hash_version, base_id::text, request_hash, request_identity_hash, document_short_id, frozen_request, document_id::text, created_at,
+            VALUES (${request.baseId}::uuid, 2, ${operationHash}, ${requestHash}, ${shortId}, ${canonicalJson(frozen, locale).value}::jsonb, ${request.data.id}::uuid, ${confirmationHash})
+            RETURNING id::text, base_id::text, request_hash, request_identity_hash, document_short_id, frozen_request, document_id::text, created_at,
               confirmation_hash, confirmed_actor, confirmed_at
           `;
           if (!created) throw err.internal(t.receiptCreateFailed);
@@ -959,12 +940,12 @@ export const createDocumentIssuanceService = (options: { profiles?: readonly Doc
       const { kind: _kind, issuedAt: _issuedAt, number: _number, filename: _filename, financial, ...identity } = frozen;
       // filename may have been generated after reservation; the request hash
       // authenticates all caller-controlled inputs before frozen data is used.
-      if (canonicalJson({ ...identity, filename: request.filename }, locale, receipt.hash_version).sha256 !== receipt.request_hash)
+      if (canonicalJson({ ...identity, filename: request.filename }, locale).sha256 !== receipt.request_hash)
         throw err.conflict(t.idempotencyConflict);
       const financialOutput = frozen.output.kind === "datev-csv" || frozen.output.kind === "sepa-xml" ? frozen.output : null;
       const normalized =
         financialOutput && financial
-          ? normalizeFinancialDocumentOutput(financialOutput, captured.data.payload, financial.identifiers, locale, receipt.hash_version)
+          ? normalizeFinancialDocumentOutput(financialOutput, captured.data.payload, financial.identifiers, locale)
           : null;
       if (financialOutput) {
         if (
@@ -972,17 +953,14 @@ export const createDocumentIssuanceService = (options: { profiles?: readonly Doc
           !receipt.confirmation_hash ||
           !normalized?.ok ||
           normalized.data.sha256 !== financial.normalizedSha256 ||
-          canonicalJson(frozen, locale, receipt.hash_version).sha256 !== receipt.confirmation_hash
+          canonicalJson(frozen, locale).sha256 !== receipt.confirmation_hash
         )
           throw normalized && !normalized.ok ? normalized.error : err.conflict(t.workflowQueryIntegrityFailed);
         if (!receipt.confirmed_at)
           return ok({ kind: "confirmationRequired", receiptId: receipt.document_short_id, sha256: receipt.confirmation_hash });
         const concurrentDocument = await db.begin(async (tx) => {
           await authorize(tableIds, tx);
-          if (
-            canonicalJson(await financialRunBinding(frozen.baseId, frozen.runId, tx, locale), locale, receipt.hash_version).sha256 !==
-            financial.runBindingHash
-          )
+          if (canonicalJson(await financialRunBinding(frozen.baseId, frozen.runId, tx, locale), locale).sha256 !== financial.runBindingHash)
             throw err.conflict(t.financialConfirmationRequired);
           const [current] = await tx<Array<{ document_id: string | null }>>`SELECT document_id::text FROM grids.document_issuances
             WHERE id = ${receipt.id}::uuid FOR UPDATE`;
@@ -1034,8 +1012,7 @@ export const createDocumentIssuanceService = (options: { profiles?: readonly Doc
         await authorize(tableIds, tx);
         if (
           financial &&
-          canonicalJson(await financialRunBinding(frozen.baseId, frozen.runId, tx, locale), locale, receipt.hash_version).sha256 !==
-            financial.runBindingHash
+          canonicalJson(await financialRunBinding(frozen.baseId, frozen.runId, tx, locale), locale).sha256 !== financial.runBindingHash
         )
           throw err.conflict(t.financialConfirmationRequired);
         const [locked] = await tx<Array<{ document_id: string | null }>>`
@@ -1069,7 +1046,6 @@ export const createDocumentIssuanceService = (options: { profiles?: readonly Doc
         const document = await persistIssuedDocument(
           {
             receiptId: receipt.id,
-            hashVersion: receipt.hash_version,
             shortId: receipt.document_short_id,
             baseId: frozen.baseId,
             queryDataId: frozen.data.id,
@@ -1079,7 +1055,7 @@ export const createDocumentIssuanceService = (options: { profiles?: readonly Doc
             number: frozen.number,
             tags: frozen.tags,
             templateSnapshot: template,
-            templateRevision: canonicalJson(template, locale, receipt.hash_version).sha256,
+            templateRevision: canonicalJson(template, locale).sha256,
             renderData: { query: frozen.data },
             rendererVersion: profile.rendererVersion,
             profile: {
@@ -1087,7 +1063,7 @@ export const createDocumentIssuanceService = (options: { profiles?: readonly Doc
               version: profile.version,
               input: source,
               ...(profileOutput === undefined ? {} : { output: profileOutput }),
-              sha256: canonicalJson(source, locale, receipt.hash_version).sha256,
+              sha256: canonicalJson(source, locale).sha256,
               validatorVersion: profile.validatorVersion,
               validationStatus: rendered.validationStatus,
               validationReport: rendered.validationReport,
@@ -1116,7 +1092,7 @@ export const createDocumentIssuanceService = (options: { profiles?: readonly Doc
     await input.authorize([], tx);
     const runBinding = await financialRunBinding(input.baseId, input.runId, tx, input.locale, lock);
     const [receipt] = await tx<QueryIssuanceRow[]>`
-      SELECT receipt.id::text, receipt.hash_version, receipt.base_id::text, receipt.request_hash, receipt.request_identity_hash,
+      SELECT receipt.id::text, receipt.base_id::text, receipt.request_hash, receipt.request_identity_hash,
         receipt.document_short_id, receipt.frozen_request, receipt.document_id::text, receipt.created_at,
         receipt.confirmation_hash, receipt.confirmed_actor, receipt.confirmed_at
       FROM grids.document_issuances receipt
@@ -1134,7 +1110,7 @@ export const createDocumentIssuanceService = (options: { profiles?: readonly Doc
       (frozen.output.kind !== "datev-csv" && frozen.output.kind !== "sepa-xml") ||
       frozen.baseId !== input.baseId ||
       frozen.runId !== input.runId ||
-      canonicalJson(frozen, input.locale, receipt.hash_version).sha256 !== receipt.confirmation_hash
+      canonicalJson(frozen, input.locale).sha256 !== receipt.confirmation_hash
     )
       throw err.conflict(t.workflowQueryIntegrityFailed);
     if (
@@ -1142,8 +1118,7 @@ export const createDocumentIssuanceService = (options: { profiles?: readonly Doc
       canonicalJson(input.actor, input.locale).sha256 !== canonicalJson(frozen.actor, input.locale).sha256
     )
       throw err.forbidden(t.financialActorMismatch);
-    if (canonicalJson(runBinding, input.locale, receipt.hash_version).sha256 !== frozen.financial.runBindingHash)
-      throw err.conflict(t.financialRunChanged);
+    if (canonicalJson(runBinding, input.locale).sha256 !== frozen.financial.runBindingHash) throw err.conflict(t.financialRunChanged);
     const capture = await loadWorkflowQueryData(
       { baseId: input.baseId, runId: input.runId, id: frozen.data.id, sha256: frozen.data.sha256, locale: input.locale },
       tx,
@@ -1151,13 +1126,7 @@ export const createDocumentIssuanceService = (options: { profiles?: readonly Doc
     if (!capture.ok) throw capture.error;
     await input.authorize(capture.data.payload.tableIds, tx);
     await requireDocumentSourceVersions({ ...frozen, authorize: input.authorize, locale: input.locale, lock }, tx);
-    const normalized = normalizeFinancialDocumentOutput(
-      frozen.output,
-      capture.data.payload,
-      frozen.financial.identifiers,
-      input.locale,
-      receipt.hash_version,
-    );
+    const normalized = normalizeFinancialDocumentOutput(frozen.output, capture.data.payload, frozen.financial.identifiers, input.locale);
     if (!normalized.ok) throw normalized.error;
     if (normalized.data.sha256 !== frozen.financial.normalizedSha256) throw err.conflict(t.workflowQueryIntegrityFailed);
     return {
@@ -1277,18 +1246,17 @@ export const createDocumentIssuanceService = (options: { profiles?: readonly Doc
     if (!validKey.ok) return validKey;
     if (!DocumentIssuanceActorSchema.safeParse(request.actor).success) return fail(err.badInput(t.actorInvalid));
     try {
-      recordRequestIdentityHash(request, 2);
+      recordRequestIdentityHash(request);
     } catch (error) {
       return fail(serviceError(error) ?? err.badInput(t.requestInvalidJson));
     }
     const [receipt] = await db<IssuanceRow[]>`
-      SELECT id::text, hash_version, base_id::text, request_hash, request_identity_hash, document_short_id, frozen_request, document_id::text, created_at
+      SELECT id::text, base_id::text, request_hash, request_identity_hash, document_short_id, frozen_request, document_id::text, created_at
       FROM grids.document_issuances
       WHERE base_id = ${request.baseId}::uuid AND operation_key_hash = ${sha256Hex(request.idempotencyKey)}
     `;
     if (receipt?.request_identity_hash) {
-      if (receipt.request_identity_hash !== recordRequestIdentityHash(request, receipt.hash_version))
-        return fail(err.conflict(t.idempotencyConflict));
+      if (receipt.request_identity_hash !== recordRequestIdentityHash(request)) return fail(err.conflict(t.idempotencyConflict));
       if (receipt.document_id) {
         const document = await getDocument(receipt.document_id);
         return document ? ok(document) : fail(err.internal(t.receiptReadFailed));

@@ -388,10 +388,7 @@ const workflowQueryInput = async (ctx: WorkflowActionContext, rawParameters: unk
     Array.isArray(binding) ||
     typeof binding.source !== "string" ||
     typeof binding.schemaHash !== "string" ||
-    (binding.schemaHashVersion !== undefined &&
-      binding.schemaHashVersion !== 1 &&
-      binding.schemaHashVersion !== 2 &&
-      binding.schemaHashVersion !== 3)
+    binding.schemaHashVersion !== 3
   ) {
     throw actionError("WORKFLOW_VALUE_INVALID", runtimeText(ctx).stableBindingMissing({ path: "query" }));
   }
@@ -420,8 +417,11 @@ const workflowQueryInput = async (ctx: WorkflowActionContext, rawParameters: unk
     { allowPlannedRecords: planning },
   );
   if (!resolved.ok) throw actionError("BAD_INPUT", runtimeText(ctx).queryParametersInvalid);
-  const schemaHashVersion: 1 | 2 | 3 = binding.schemaHashVersion === 3 ? 3 : binding.schemaHashVersion === 2 ? 2 : 1;
-  return { scope, binding: { source: binding.source, schemaHash: binding.schemaHash, schemaHashVersion }, values: resolved.values };
+  return {
+    scope,
+    binding: { source: binding.source, schemaHash: binding.schemaHash, schemaHashVersion: 3 as const },
+    values: resolved.values,
+  };
 };
 
 const documentTemplate = async (ctx: WorkflowActionContext, resume = false) => {
@@ -630,13 +630,7 @@ export const GRIDS_WORKFLOW_ACTIONS = {
         }
         catalog.tables.refs = new Map([...catalog.tables.refs].filter(([, table]) => visible.has(table.id)));
         const binding = requireOk(
-          await workflowQueryBinder(
-            input.scope.baseId,
-            catalog,
-            sql,
-            invocationLocale(ctx),
-            input.binding.schemaHashVersion,
-          )(input.binding.source, input.values),
+          await workflowQueryBinder(input.scope.baseId, catalog, sql, invocationLocale(ctx))(input.binding.source, input.values),
         );
         if (binding.schemaHash !== input.binding.schemaHash)
           throw actionError("CONFLICT", documentServiceText(invocationLocale(ctx)).workflowQuerySchemaChanged);

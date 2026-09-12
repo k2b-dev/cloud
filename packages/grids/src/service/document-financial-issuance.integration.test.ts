@@ -1,5 +1,4 @@
 import { beforeAll, describe, expect, spyOn } from "bun:test";
-import { createHash } from "node:crypto";
 import { err } from "@k2b/stdlib";
 import { sql } from "bun";
 import type { z } from "zod";
@@ -10,12 +9,12 @@ import { postgresTest, testShortId, testUuid } from "../integration-test-utils";
 import { migrate } from "../migrate";
 import type { WorkflowQueryPayloadSchema } from "../workflows/query-contracts";
 import { loadDocumentDataSnapshots } from "./document-browse";
-import { type FinancialDocumentOutput, normalizeFinancialDocumentOutput } from "./document-financial-output";
+import type { FinancialDocumentOutput } from "./document-financial-output";
 import { documentIssuanceService as service } from "./document-issuance";
 import { canonicalDocumentJson, canonicalJson } from "./document-json";
 import { summarizeDocument } from "./document-mappers";
 import { requireDocumentSourceVersions } from "./document-source-versions";
-import { loadWorkflowQueryData, persistWorkflowQueryDataInTransaction } from "./workflow-query-store";
+import { persistWorkflowQueryDataInTransaction } from "./workflow-query-store";
 import { deleteTestWorkflowScope, insertTestWorkflow, insertTestWorkflowRun, publishTestWorkflowVersion } from "./workflow-test-fixture";
 
 beforeAll(async () => {
@@ -87,7 +86,12 @@ const fixture = async () => {
     };
     const reference = await sql.begin((tx) =>
       persistWorkflowQueryDataInTransaction(
-        { baseId, runId, stepKey: "query", capture: { payload, sha256: canonicalDocumentJson(payload).sha256, rowCount: 1, capturedAt } },
+        {
+          baseId,
+          runId,
+          stepKey: "query",
+          capture: { payload, sha256: canonicalDocumentJson(payload).sha256, hashVersion: 2, rowCount: 1, capturedAt },
+        },
         tx,
       ),
     );
@@ -121,68 +125,6 @@ const fixture = async () => {
 };
 
 describe("financial query Document issuance", () => {
-  postgresTest("retained v1 financial receipts can be inspected, confirmed, completed and replayed without rehashing", async () => {
-    const scope = await fixture();
-    try {
-      const { idempotencyKey, authorize, ...request } = await scope.capture();
-      const capture = await loadWorkflowQueryData(
-        { baseId: request.baseId, runId: request.runId, id: request.data.id, sha256: request.data.sha256 },
-        sql,
-      );
-      if (!capture.ok) throw capture.error;
-      const identifiers = { messageId: "HistoricalMessage", paymentInformationId: "HistoricalPayment" };
-      const normalized = normalizeFinancialDocumentOutput(request.output, capture.data.payload, identifiers, undefined, 1);
-      if (!normalized.ok) throw normalized.error;
-      const [run] = await sql<Array<{ workflow_version_id: string; authorization_snapshot: unknown; channel: string }>>`
-        SELECT run.workflow_version_id::text, run.authorization_snapshot, profile.channel
-        FROM workflows.run run JOIN grids.workflow_run_profile profile ON profile.run_id = run.id
-        WHERE run.id = ${request.runId}::uuid
-      `;
-      if (!run) throw new Error("Missing fixture run");
-      const frozen = {
-        ...request,
-        kind: "query",
-        number: "HIST-1",
-        filename: "EXTF_HIST-1.csv",
-        issuedAt: new Date().toISOString(),
-        financial: {
-          identifiers,
-          normalizedSha256: normalized.data.sha256,
-          runBindingHash: canonicalJson({ baseId: request.baseId, runId: request.runId, ...run }, undefined, 1).sha256,
-        },
-      };
-      const receiptId = testShortId("D");
-      const sha256 = canonicalJson(frozen, undefined, 1).sha256;
-      // Reproduce the old writer, omitting the new column. Do not rewrite an
-      // immutable receipt, disable its trigger, or recompute its approval.
-      await sql`INSERT INTO grids.document_issuances (base_id, operation_key_hash, request_hash, document_short_id, frozen_request, query_data_id, confirmation_hash)
-        VALUES (${request.baseId}::uuid, ${createHash("sha256").update(idempotencyKey).digest("hex")}, ${canonicalJson(request, undefined, 1).sha256},
-          ${receiptId}, ${frozen}::jsonb, ${request.data.id}::uuid, ${sha256})`;
-      const confirmation = { ...request, authorize, receiptId, sha256 };
-      const preview = await service.inspectQueryDocumentConfirmation(confirmation);
-      expect(preview.ok).toBe(true);
-      expect(await service.issueQueryDocument({ ...request, authorize, idempotencyKey })).toMatchObject({
-        ok: true,
-        data: { kind: "confirmationRequired", receiptId, sha256 },
-      });
-      expect((await service.confirmQueryDocument(confirmation)).ok).toBe(true);
-      const issued = await service.issueQueryDocument({ ...request, authorize, idempotencyKey });
-      if (!issued.ok) throw issued.error;
-      expect(issued.data).toHaveProperty("shortId", receiptId);
-      expect(await service.issueQueryDocument({ ...request, authorize, idempotencyKey })).toEqual(issued);
-      const [retained] =
-        await sql`SELECT hash_version, confirmation_hash FROM grids.document_issuances WHERE base_id = ${scope.baseId}::uuid`;
-      expect(retained).toEqual({ hash_version: 1, confirmation_hash: sha256 });
-      const [document] = await sql`SELECT hash_version, template_snapshot, template_revision, profile_snapshot, snapshot_sha256
-        FROM grids.documents WHERE base_id = ${scope.baseId}::uuid`;
-      expect(document.hash_version).toBe(1);
-      expect(document.template_revision).toBe(canonicalJson(document.template_snapshot, undefined, 1).sha256);
-      expect(document.snapshot_sha256).toBe(canonicalJson(document.profile_snapshot, undefined, 1).sha256);
-    } finally {
-      await scope.cleanup();
-    }
-  });
-
   postgresTest("a render failure retains no claims and retries the same confirmed receipt", async () => {
     const scope = await fixture();
     const profile = financialQueryProfiles.find((item) => item.id === "grids.datev-csv")!;
@@ -207,8 +149,8 @@ describe("financial query Document issuance", () => {
       const [document] = await sql`SELECT hash_version, template_snapshot, template_revision, profile_snapshot, snapshot_sha256
         FROM grids.documents WHERE base_id = ${scope.baseId}::uuid`;
       expect(document.hash_version).toBe(2);
-      expect(document.template_revision).toBe(canonicalJson(document.template_snapshot, undefined, 2).sha256);
-      expect(document.snapshot_sha256).toBe(canonicalJson(document.profile_snapshot, undefined, 2).sha256);
+      expect(document.template_revision).toBe(canonicalJson(document.template_snapshot).sha256);
+      expect(document.snapshot_sha256).toBe(canonicalJson(document.profile_snapshot).sha256);
       expect(await sql`SELECT business_id FROM grids.document_export_claims WHERE base_id = ${scope.baseId}::uuid`).toHaveLength(1);
     } finally {
       render.mockRestore();

@@ -74,7 +74,7 @@ export const projectDocumentSnapshotRows = (
       version: 3,
       source: { kind: "documents", ids: source.documents },
     });
-    return ok({ ...values.data, payload, sha256: canonicalDocumentJson(payload, locale, 2).sha256 });
+    return ok({ ...values.data, payload, sha256: canonicalDocumentJson(payload, locale).sha256 });
   } catch {
     return fail(err.badInput(documentServiceText(locale).tableOutputDataInvalid));
   }
@@ -127,7 +127,7 @@ export const captureWorkflowRecordSource = async (
     source: { kind: "recordSnapshots", ids: parsed.data.snapshots },
     tableIds: [...tables].sort(),
   });
-  return ok({ ...values.data, payload, sha256: canonicalDocumentJson(payload, input.locale, 2).sha256 });
+  return ok({ ...values.data, payload, sha256: canonicalDocumentJson(payload, input.locale).sha256 });
 };
 
 /** Internal: caller must authorize the current workflow's Base before calling.

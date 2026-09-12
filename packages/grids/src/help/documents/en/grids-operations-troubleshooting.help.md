@@ -101,6 +101,8 @@ If all six hold and there is still nothing, ask a Cloud administrator to check *
 
 ## A workflow run needs attention {icon="alert-triangle"}
 
+If a query reports an incompatible schema or binding, review its source and the referenced fields, then publish the workflow again. Start a new run with the new revision; existing runs keep their original plan. Reordering columns alone does not invalidate a query. Do not edit stored hashes or version markers to bypass the check.
+
 Platform administrators can inspect retained delivery failures with `cld grids record-events failures <base-id> --json`. Continue with the returned `nextOffset` using `--offset`. After fixing the cause, `cld grids record-events replay <base-id> <failure-id> --yes` replays one stopped event using its original retained data. Use the exact failure UUID from the list. Acceptance does not mean processing completed; Base Admin access alone does not grant this operator action.
 
 `needs_attention` is not a failure. It means a step performed something outside Grids and nothing can establish whether it landed — in practice, an `httpRequest` that left the process without a complete response coming back. Grids deliberately neither retries it nor calls it failed: retrying is how a receiver is charged twice, and calling it failed would claim it did not arrive.

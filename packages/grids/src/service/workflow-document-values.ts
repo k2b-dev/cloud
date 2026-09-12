@@ -67,7 +67,7 @@ export const captureWorkflowDocumentValues = (input: unknown, capturedAt: string
       capturedAt,
       complete: true,
     });
-    return ok({ payload, sha256: canonicalDocumentJson(payload, locale, 2).sha256, hashVersion: 2, rowCount: rows.length, capturedAt });
+    return ok({ payload, sha256: canonicalDocumentJson(payload, locale).sha256, hashVersion: 2, rowCount: rows.length, capturedAt });
   } catch {
     return fail(err.badInput(t.tableOutputDataInvalid));
   }

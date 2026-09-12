@@ -47,7 +47,7 @@ test("expense payment starter validates its GQL and refuses unfinished selection
     const parsed = parseGridsQueryDsl(query);
     expect(parsed.ok, parsed.ok ? undefined : JSON.stringify(parsed.diagnostics)).toBe(true);
     queries.add(query);
-    return ok({ source: query, schemaHash: "a".repeat(64) });
+    return ok({ source: query, schemaHash: "a".repeat(64), schemaHashVersion: 3 as const });
   });
   expect(result.ok, result.ok ? undefined : JSON.stringify(result.diagnostics)).toBe(true);
   expect(queries.size).toBe(2);

@@ -167,7 +167,7 @@ describe("Grids workflow help", () => {
         (
           await bindGridsWorkflow(compiled.ir, catalog, source, async (query) => {
             expect(query).toBe("from table Items select Name");
-            return ok({ source: "from table {ITEM01} select {NAME01}", schemaHash: "a".repeat(64) });
+            return ok({ source: "from table {ITEM01} select {NAME01}", schemaHash: "a".repeat(64), schemaHashVersion: 3 as const });
           })
         ).ok,
         title,

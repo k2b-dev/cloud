@@ -41,19 +41,15 @@ postgresTest("refuses to capture an incomplete formula result and preserves an e
   }
 });
 
-postgresTest("versions schema bindings so presentation changes spare new queries without reinterpreting old hashes", async () => {
+postgresTest("semantic bindings tolerate presentation changes but reject old contracts and changed calculation types", async () => {
   const fixture = await insertDslDbFixture();
   try {
     const source = "from table Orders\nselect Amount as exported_amount";
     const modern = bindWorkflowQueryData(source, ctx(fixture), {});
-    const historical = bindWorkflowQueryData(source, ctx(fixture), {}, undefined, { schemaHashVersion: 1 });
-    const previous = bindWorkflowQueryData(source, ctx(fixture), {}, undefined, { schemaHashVersion: 2 });
     const searched = bindWorkflowQueryData(`${source}\nsearch 'open'`, ctx(fixture), {});
-    if (!modern.ok || !historical.ok || !previous.ok || !searched.ok) throw new Error("fixture binding failed");
+    if (!modern.ok || !searched.ok) throw new Error("fixture binding failed");
     expect(modern.data.binding.schemaHashVersion).toBe(3);
-    expect(previous.data.binding.schemaHashVersion).toBe(2);
-    const legacy = { source: historical.data.binding.source, schemaHash: historical.data.binding.schemaHash };
-    const capture = (binding: typeof legacy) =>
+    const capture = (binding: typeof modern.data.binding) =>
       captureWorkflowQueryData({
         baseId: fixture.baseId,
         binding,
@@ -61,19 +57,20 @@ postgresTest("versions schema bindings so presentation changes spare new queries
         timeZone: "UTC",
         canReadTable: async () => true,
       });
-    expect((await capture(legacy)).ok).toBe(true);
-    expect((await capture(previous.data.binding)).ok).toBe(true);
+    // Even an otherwise matching digest cannot opt into an obsolete algorithm.
+    for (const schemaHashVersion of [undefined, 1, 2]) {
+      // @ts-expect-error Intentionally exercise stored pre-cut bindings.
+      const rejected = await capture({ ...modern.data.binding, schemaHashVersion });
+      expect(rejected.ok).toBe(false);
+      if (!rejected.ok) expect(rejected.error.code).toBe("CONFLICT");
+    }
     expect((await capture(modern.data.binding)).ok).toBe(true);
     expect((await capture(searched.data.binding)).ok).toBe(true);
     await sql`UPDATE grids.fields SET position = position + 20, presentable = NOT presentable WHERE id = ${fixture.amountId}::uuid`;
-    expect((await capture(previous.data.binding)).ok).toBe(true);
     expect((await capture(modern.data.binding)).ok).toBe(true);
     const changedSearch = await capture(searched.data.binding);
     expect(changedSearch.ok).toBe(false);
     if (!changedSearch.ok) expect(changedSearch.error.code).toBe("CONFLICT");
-    const oldChanged = await capture(legacy);
-    expect(oldChanged.ok).toBe(false);
-    if (!oldChanged.ok) expect(oldChanged.error.code).toBe("CONFLICT");
     await sql`UPDATE grids.fields SET config = '{"decimalPlaces": 3}'::jsonb WHERE id = ${fixture.amountId}::uuid`;
     const incompatible = await capture(modern.data.binding);
     expect(incompatible.ok).toBe(false);

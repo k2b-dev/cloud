@@ -30,20 +30,6 @@ export const reserveDocumentExportClaims = async (client: SQL, raw: z.input<type
   `;
   if (!receipt?.confirmed || !receipt.matches) throw err.conflict(t.financialConfirmationRequired);
   const ids = [...new Set(input.businessIds)].sort();
-  // Older receipts could reserve before rendering. Reclaim only the identities
-  // needed by this issuance, and only from effect-free terminal runs. The DB
-  // guard locks/rechecks the old receipt and run; issued evidence is never freed.
-  // This is part of the same transaction, so a later failure restores the claims.
-  await client`
-    DELETE FROM grids.document_export_claims claim
-    USING grids.document_issuances old_receipt, grids.workflow_query_data data, workflows.run old_run
-    WHERE claim.base_id = ${input.baseId}::uuid AND claim.destination_key = ${input.destinationKey}
-      AND claim.purpose = ${input.purpose} AND claim.business_id = ANY(${client.array(ids, "TEXT")})
-      AND claim.receipt_id <> ${input.receiptId}::uuid
-      AND old_receipt.id = claim.receipt_id AND old_receipt.document_id IS NULL
-      AND data.id = old_receipt.query_data_id AND old_run.id = data.run_id
-      AND old_run.state IN ('failed', 'canceled')
-  `;
   // A stable lock order prevents overlapping batches from locking A/B and B/A.
   await client`
     INSERT INTO grids.document_export_claims (base_id, destination_key, purpose, business_id, receipt_id)

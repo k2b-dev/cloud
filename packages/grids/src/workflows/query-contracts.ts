@@ -56,7 +56,7 @@ export const WorkflowQueryPayloadSchema = z
 export type WorkflowQueryCapture = {
   payload: z.infer<typeof WorkflowQueryPayloadSchema>;
   sha256: string;
-  hashVersion?: 1 | 2;
+  hashVersion: 2;
   rowCount: number;
   capturedAt: string;
 };

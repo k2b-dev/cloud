@@ -919,9 +919,9 @@ Creation queues work; cancellation may be a request rather than immediate comple
 
 `evidence verify` checks a downloaded Grids evidence TAR locally. It does not
 contact Cloud, require a profile, extract files, or upload package contents.
-Captured query entries also carry `sourceSha256` and `sourceHashVersion`: version 1 retains historical locale-based canonicalization; version 2 uses recursively sorted UTF-16 keys and JavaScript JSON serialization without Unicode normalization. These source hashes are distinct from the archive-file hashes checked by `evidence verify`. Existing capture hashes are not rewritten.
+Captured query entries also carry `sourceSha256` and `sourceHashVersion: 2`: recursively sorted UTF-16 keys and JavaScript JSON serialization without Unicode normalization. These source hashes are distinct from the archive-file hashes checked by `evidence verify`.
 
-Document metadata uses `hash_version` for `template_revision` and `snapshot_sha256`, with the same algorithms. New issuance receipts and documents use version 2; retained receipts keep version 1 for confirmation and replay. Verify each source with its recorded version, not the current default.
+Document metadata uses `hash_version: 2` for `template_revision` and `snapshot_sha256`, with the same canonicalization. Old alpha hashes are not supported or rewritten. If startup reports `Unsupported Grids alpha`, stop and involve the operator: preserve the old installation and its workflow sources before deciding whether to archive or explicitly discard incompatible state. Do not change hashes, version markers or journals to make old data pass validation.
 Pass the hashes shown beside the completed export when they are available:
 
 ```bash
@@ -1062,7 +1062,7 @@ An empty selection captures zero rows, not every record. Query execution recheck
 at most 10,000 rows and 5 MiB including metadata. Technical truncation fails; explicit GQL `limit` means an intentional subset.
 All source captures also share a total 5 MiB budget per run, including loops. Reusing a stored capture does not charge it again. Reduce selected rows/fields or split larger work into separate runs. Existing captures remain readable; older stored JSON counts conservatively toward the budget when adding a new capture.
 
-Newly published query bindings ignore column position and, without search, presentation flags and select-option additions. Search still pins option labels and presentation fields; calculation/type configuration remains checked. Existing bindings retain their original hash contract until explicitly republished. Do not edit stored hashes to suppress a schema conflict.
+Query bindings use semantic schema contract 3. They ignore column position and, without search, presentation flags and select-option additions. Search still pins option labels and presentation fields; calculation/type configuration remains checked. Old or missing binding versions are rejected. Review and publish the workflow source again, then start a new run; never edit a stored binding or hash to suppress a conflict.
 Retries retain the successful capture. The saved reference exposes `rowCount`, `sha256`, and `capturedAt`, not row payloads.
 Dry-runs validate without capturing data and accept records planned by earlier steps; they do not predict a result count.
 Pass the saved query reference as `generateDocument.data`, without `template` or `record`:

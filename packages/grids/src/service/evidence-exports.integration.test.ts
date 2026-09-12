@@ -88,7 +88,7 @@ describe("evidence export integration", () => {
             baseId,
             runId,
             stepKey: "query",
-            capture: { payload, sha256: canonicalDocumentJson(payload).sha256, rowCount: 1, capturedAt },
+            capture: { payload, sha256: canonicalDocumentJson(payload).sha256, hashVersion: 2, rowCount: 1, capturedAt },
           },
           tx,
         ),
@@ -138,7 +138,7 @@ describe("evidence export integration", () => {
       const query = JSON.parse(queryText);
       expect(query.payload.rows).toEqual([{ amount: "12.30" }]);
       expect(query.sourceSha256).toBe(reference.data.sha256);
-      expect(query.sourceHashVersion).toBe(1); // This fixture intentionally uses the original unversioned capture contract.
+      expect(query.sourceHashVersion).toBe(2);
       expect(queryText).not.toContain(tableId);
     },
     30_000,
@@ -226,7 +226,7 @@ describe("evidence export integration", () => {
       expect(entries.get(`documents/${documentShortId}/statement.json`)).toEqual(structured);
       const metadata = new TextDecoder().decode(entries.get(`documents/metadata/${documentShortId}.json`));
       expect(JSON.parse(metadata).profile_output).toEqual({ total: "119.00", currency: "EUR" });
-      expect(JSON.parse(metadata).hash_version).toBe(1);
+      expect(JSON.parse(metadata).hash_version).toBe(2);
       expect(metadata).toContain('"total": "119.00"');
       expect(metadata).toContain('"document_number": "STAT-0001"');
       expect(metadata).toContain('"kind": "service_account"');

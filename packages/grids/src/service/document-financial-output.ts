@@ -4,7 +4,7 @@ import { z } from "zod";
 import { DatevBatchSchema, DatevHeaderSchema } from "../document-profiles/datev-csv-contracts";
 import { SepaBatchSchema, SepaHeaderSchema } from "../document-profiles/sepa-xml-contracts";
 import type { WorkflowDocumentDataCapture } from "../workflows/query-contracts";
-import { type CanonicalJsonVersion, canonicalDocumentJson } from "./document-json";
+import { canonicalDocumentJson } from "./document-json";
 import { documentServiceText } from "./document-messages";
 
 const column = z.string().min(1).max(200);
@@ -64,7 +64,6 @@ export const normalizeFinancialDocumentOutput = (
   data: WorkflowDocumentDataCapture["payload"],
   identifiers: { messageId: string; paymentInformationId: string },
   locale?: string,
-  hashVersion: CanonicalJsonVersion = 2,
 ): Result<NormalizedFinancialOutput> => {
   const t = documentServiceText(locale);
   const parsed = FinancialDocumentOutputSchema.safeParse(output);
@@ -107,7 +106,7 @@ export const normalizeFinancialDocumentOutput = (
       .join(", ");
     return fail(err.badInput(t.financialValuesInvalid({ fields: paths })));
   }
-  const sha256 = canonicalDocumentJson(candidate.data, locale, hashVersion).sha256;
+  const sha256 = canonicalDocumentJson(candidate.data, locale).sha256;
   // Keep the discriminant correlated with its parsed input rather than casting
   // one financial schema into the other.
   if (config.kind === "datev-csv") {

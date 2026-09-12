@@ -16,9 +16,9 @@ import { toPublicGqlResponse } from "./gql-public-result";
 import { buildTrustedGqlResolverContext } from "./gql-resolver-context";
 import { projectPublicIds } from "./public-resource-ids";
 
-export type WorkflowQueryBinding = { source: string; schemaHash: string; schemaHashVersion?: 1 | 2 | 3 };
+export type WorkflowQueryBinding = { source: string; schemaHash: string; schemaHashVersion: 3 };
 
-const queryDependencies = (plan: DslResolvedSqlQueryPlan, context: DslResolverContext, version: 1 | 2 | 3) => {
+const queryDependencies = (plan: DslResolvedSqlQueryPlan, context: DslResolverContext) => {
   const byId = new Map(
     Object.values(context.fieldsByTableId)
       .flat()
@@ -49,7 +49,7 @@ const queryDependencies = (plan: DslResolvedSqlQueryPlan, context: DslResolverCo
     // predicates are rebound to stable option IDs, and runtime validation still
     // rejects removed options. Search does depend on these labels.
     const config =
-      version >= 2 && field.type === "select" && !usesSearch
+      field.type === "select" && !usesSearch
         ? Object.fromEntries(Object.entries(field.config).filter(([key]) => key !== "options" && key !== "defaultValue"))
         : field.config;
     return [
@@ -58,11 +58,7 @@ const queryDependencies = (plan: DslResolvedSqlQueryPlan, context: DslResolverCo
         tableId: field.tableId,
         type: field.type,
         config,
-        ...(version === 1
-          ? { presentable: field.presentable, position: field.position }
-          : usesSearch
-            ? { presentable: field.presentable }
-            : {}),
+        ...(usesSearch ? { presentable: field.presentable } : {}),
       },
     ];
   });
@@ -75,7 +71,7 @@ export const bindWorkflowQueryData = (
   context: DslResolverContext,
   values: DslQueryContextInput,
   locale?: string,
-  options: { parameterTypesOnly?: boolean; schemaHashVersion?: 1 | 2 | 3 } = {},
+  options: { parameterTypesOnly?: boolean } = {},
 ): Result<{ binding: WorkflowQueryBinding; plan: DslResolvedSqlQueryPlan; tableIds: string[] }> => {
   const t = documentServiceText(locale);
   const validSource = DslQueryExecuteBodySchema.shape.query.safeParse(source);
@@ -87,13 +83,10 @@ export const bindWorkflowQueryData = (
   if (!parsed.ast.source || needsDslViewCatalog(parsed.ast)) return fail(err.badInput(t.workflowQueryInlineRequired));
   const canonical = canonicalizeDslQuery(parsed.ast, context, values, options);
   if (!canonical.ok) return fail(err.badInput(t.sourceInvalid));
-  const schemaHashVersion = options.schemaHashVersion ?? 3;
-  const dependencies = queryDependencies(canonical.plan, context, schemaHashVersion);
-  // Versions 1 and 2 retain their persisted locale-based ordering. Version 3
-  // keeps v2 dependencies but makes canonicalization independent of the host.
-  const schemaHash = canonicalJson({ source: canonical.source, ...dependencies }, locale, schemaHashVersion === 3 ? 2 : 1).sha256;
+  const dependencies = queryDependencies(canonical.plan, context);
+  const schemaHash = canonicalJson({ source: canonical.source, ...dependencies }, locale).sha256;
   return ok({
-    binding: { source: canonical.source, schemaHash, schemaHashVersion },
+    binding: { source: canonical.source, schemaHash, schemaHashVersion: 3 },
     plan: canonical.plan,
     tableIds: dependencies.tableIds,
   });
@@ -111,6 +104,7 @@ export const captureWorkflowQueryData = async (input: {
   canReadTable: (tableId: string, client: SqlClient) => Promise<boolean>;
 }): Promise<Result<WorkflowQueryCapture>> => {
   const t = documentServiceText(input.locale);
+  if (input.binding.schemaHashVersion !== 3) return fail(err.conflict(t.workflowQuerySchemaChanged));
   return sql.begin(async (client) => {
     await client`SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY`;
     input.signal?.throwIfAborted();
@@ -122,9 +116,7 @@ export const captureWorkflowQueryData = async (input: {
       purpose: "workflow-query",
       client,
     });
-    const bound = bindWorkflowQueryData(input.binding.source, context, input.values, input.locale, {
-      schemaHashVersion: input.binding.schemaHashVersion ?? 1,
-    });
+    const bound = bindWorkflowQueryData(input.binding.source, context, input.values, input.locale);
     if (!bound.ok) return bound;
     if (bound.data.binding.schemaHash !== input.binding.schemaHash) return fail(err.conflict(t.workflowQuerySchemaChanged));
     const authorizedTableIds = new Set<string>();
@@ -180,7 +172,6 @@ export const captureWorkflowQueryData = async (input: {
           tableIds: bound.data.tableIds,
         },
         input.locale,
-        2,
       );
     } catch {
       return fail(err.badInput(t.tableOutputDataInvalid));

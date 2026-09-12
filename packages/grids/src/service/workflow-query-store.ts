@@ -21,17 +21,18 @@ export const WorkflowDocumentDataReferenceSchema = z.union([
   WorkflowQueryReferenceSchema.extend({ kind: z.literal("recordSnapshots") }),
 ]);
 export type WorkflowDocumentDataReference = z.infer<typeof WorkflowDocumentDataReferenceSchema>;
-type QueryRow = { id: string; payload: Record<string, unknown>; sha256: string; hash_version: 1 | 2; row_count: number; captured_at: Date };
+type QueryRow = { id: string; payload: Record<string, unknown>; sha256: string; hash_version: 2; row_count: number; captured_at: Date };
 
 const validateCapture = (
-  input: { payload: Record<string, unknown>; sha256: string; hashVersion?: 1 | 2; rowCount: number; capturedAt: string },
+  input: { payload: Record<string, unknown>; sha256: string; hashVersion: 2; rowCount: number; capturedAt: string },
   locale?: string,
 ): Result<WorkflowDocumentDataCapture> => {
   const t = documentServiceText(locale);
   try {
-    const canonical = canonicalDocumentJson(input.payload, locale, input.hashVersion ?? 1);
+    const canonical = canonicalDocumentJson(input.payload, locale);
     const parsed = WorkflowDocumentDataPayloadSchema.safeParse(canonical.value);
     if (
+      input.hashVersion !== 2 ||
       !parsed.success ||
       canonical.sha256 !== input.sha256 ||
       input.payload.complete !== true ||
@@ -119,16 +120,11 @@ export const persistWorkflowQueryDataInTransaction = async (
   const checked = validateCapture(input.capture, input.locale);
   if (!checked.ok) return checked;
   // One input budget for the run, not a fresh budget for every loop iteration.
-  // Updating the profile also fences concurrent/repeatable-read writers. Old
-  // captures count conservatively by their stored JSON size; never rewrite them.
+  // Lock the profile before replay checks so concurrent writers share a budget.
   const [profile] = await db<Array<{ run_id: string }>>`
-    UPDATE grids.workflow_run_profile profile
-    SET captured_bytes = COALESCE(profile.captured_bytes, (
-      SELECT COALESCE(sum(octet_length(data.payload::text)), 0)
-      FROM grids.workflow_query_data data WHERE data.run_id = profile.run_id
-    ))
+    SELECT run_id::text FROM grids.workflow_run_profile profile
     WHERE profile.run_id = ${input.runId}::uuid AND profile.base_id = ${input.baseId}::uuid
-    RETURNING run_id::text
+    FOR UPDATE
   `;
   if (!profile) return fail(err.notFound(t.workflowQueryNotFound));
   const existing = await findWorkflowDocumentDataForStep(input, db);
@@ -148,7 +144,7 @@ export const persistWorkflowQueryDataInTransaction = async (
   if (!reserved) return fail(err.badInput(t.workflowCaptureBudget));
   await db`
     INSERT INTO grids.workflow_query_data (run_id, step_key, payload, sha256, hash_version, row_count, captured_at)
-    SELECT profile.run_id, ${input.stepKey}, ${checked.data.payload}::jsonb, ${input.capture.sha256}, ${input.capture.hashVersion ?? 1},
+    SELECT profile.run_id, ${input.stepKey}, ${checked.data.payload}::jsonb, ${input.capture.sha256}, 2,
       ${input.capture.rowCount}, ${input.capture.capturedAt}::timestamptz
     FROM grids.workflow_run_profile profile
     WHERE profile.run_id = ${input.runId}::uuid AND profile.base_id = ${input.baseId}::uuid

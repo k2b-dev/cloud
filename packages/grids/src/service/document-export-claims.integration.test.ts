@@ -17,20 +17,13 @@ const fixture = async () => {
   const queryId = testUuid();
   await sql`INSERT INTO grids.workflow_query_data (id, run_id, step_key, payload, sha256, row_count, captured_at)
     VALUES (${queryId}::uuid, ${runId}::uuid, 'query', '{}'::jsonb, ${"a".repeat(64)}, 0, now())`;
-  const receipt = async (confirmed = true, separateRun = false) => {
-    let receiptQueryId = queryId;
-    if (separateRun) {
-      const nextRunId = await insertTestWorkflowRun({ baseId, workflowId, shortId: testShortId("R"), state: "waiting" });
-      receiptQueryId = testUuid();
-      await sql`INSERT INTO grids.workflow_query_data (id, run_id, step_key, payload, sha256, row_count, captured_at)
-        VALUES (${receiptQueryId}::uuid, ${nextRunId}::uuid, 'query', '{}'::jsonb, ${"a".repeat(64)}, 0, now())`;
-    }
+  const receipt = async (confirmed = true) => {
     const receiptId = testUuid();
     const frozen = { output: { kind: "datev-csv", header: { destinationKey: "accounting" } } };
     await sql`INSERT INTO grids.document_issuances (id, base_id, document_short_id, operation_key_hash, request_hash,
       frozen_request, query_data_id, confirmation_hash, confirmed_actor, confirmed_at)
       VALUES (${receiptId}::uuid, ${baseId}::uuid, ${testShortId("D")}, ${new Bun.CryptoHasher("sha256").update(receiptId).digest("hex")},
-        ${"b".repeat(64)}, ${frozen}::jsonb, ${receiptQueryId}::uuid, ${"c".repeat(64)},
+        ${"b".repeat(64)}, ${frozen}::jsonb, ${queryId}::uuid, ${"c".repeat(64)},
         ${confirmed ? { kind: "user", userId: testUuid() } : null}::jsonb, CASE WHEN ${confirmed} THEN now() ELSE NULL END)`;
     return receiptId;
   };
@@ -55,37 +48,6 @@ const fixture = async () => {
 };
 
 describe("financial export claims", () => {
-  postgresTest("reclaims only requested identities from unissued terminal receipts and rolls reclamation back on conflict", async () => {
-    const scope = await fixture();
-    try {
-      const old = await scope.receipt();
-      const next = await scope.receipt(true, true);
-      const active = await scope.receipt(true, true);
-      await scope.reserve(old, ["A", "Unrelated"]);
-      await scope.reserve(active, ["B"]);
-      await expect(scope.reserve(next, ["A"])).rejects.toThrow();
-      await sql`UPDATE workflows.run SET state = 'failed' WHERE id = ${scope.runId}::uuid`;
-      await expect(scope.reserve(next, ["A", "B"])).rejects.toThrow();
-      expect(
-        await sql<
-          Array<{ receipt_id: string }>
-        >`SELECT receipt_id::text FROM grids.document_export_claims WHERE base_id = ${scope.baseId}::uuid AND business_id = 'A'`,
-      ).toEqual([{ receipt_id: old }]);
-      await scope.reserve(next, ["A"]);
-      expect(
-        await sql<
-          Array<{ business_id: string; receipt_id: string }>
-        >`SELECT business_id, receipt_id::text FROM grids.document_export_claims WHERE base_id = ${scope.baseId}::uuid ORDER BY business_id`,
-      ).toEqual([
-        { business_id: "A", receipt_id: next },
-        { business_id: "B", receipt_id: active },
-        { business_id: "Unrelated", receipt_id: old },
-      ]);
-    } finally {
-      await scope.cleanup();
-    }
-  });
-
   postgresTest("overlapping batches reserve all identities or none and replay the same receipt", async () => {
     const scope = await fixture();
     try {

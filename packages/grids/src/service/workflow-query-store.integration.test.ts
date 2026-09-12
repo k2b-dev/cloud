@@ -53,27 +53,32 @@ postgresTest("query payload is immutable, scoped, deduplicated and rolls back wi
       Array<{ hash_version: number }>
     >`SELECT hash_version FROM grids.workflow_query_data WHERE id = ${stored.data.id}::uuid`;
     expect(version?.hash_version).toBe(2);
-    const oldHash = canonicalDocumentJson(captured.data.payload, undefined, 1).sha256;
-    const [legacy] = await sql<Array<{ id: string; hash_version: number }>>`
-      INSERT INTO grids.workflow_query_data (run_id, step_key, payload, sha256, row_count, captured_at)
-      VALUES (${runId}::uuid, 'legacy', ${captured.data.payload}::jsonb, ${oldHash}, ${captured.data.rowCount}, ${captured.data.capturedAt}::timestamptz)
-      RETURNING id::text, hash_version
-    `;
-    expect(legacy?.hash_version).toBe(1);
-    const oldLoaded = await loadWorkflowQueryData({ baseId: fixture.baseId, runId, id: legacy!.id, sha256: oldHash }, sql);
-    expect(oldLoaded.ok).toBe(true);
-    if (!oldLoaded.ok) throw oldLoaded.error;
-    expect(oldLoaded.data.payload).toEqual(captured.data.payload);
-    // Additive migration leaves pre-counter runs null; account for retained
-    // captures without altering their payloads or their historical hashes.
-    await sql`UPDATE grids.workflow_run_profile SET captured_bytes = NULL WHERE run_id = ${runId}::uuid`;
+    await expect(
+      Promise.resolve(sql`
+      INSERT INTO grids.workflow_query_data (run_id, step_key, payload, sha256, hash_version, row_count, captured_at)
+      VALUES (${runId}::uuid, 'unsupported', ${captured.data.payload}::jsonb, ${captured.data.sha256}, 1, ${captured.data.rowCount}, ${captured.data.capturedAt}::timestamptz)
+    `),
+    ).rejects.toThrow("workflow_query_data_hash_version_check");
+    await expect(
+      Promise.resolve(sql`UPDATE grids.workflow_run_profile SET captured_bytes = NULL WHERE run_id = ${runId}::uuid`),
+    ).rejects.toThrow("null");
+    const unsupported = await sql.begin((tx) =>
+      persistWorkflowQueryDataInTransaction(
+        {
+          ...input,
+          // @ts-expect-error Old persisted input must also be rejected at runtime.
+          capture: { ...captured.data, hashVersion: 1 },
+        },
+        tx,
+      ),
+    );
+    expect(unsupported.ok).toBe(false);
     expect(await sql.begin((tx) => persistWorkflowQueryDataInTransaction(input, tx))).toEqual(stored);
     const [accounted] = await sql`
-      SELECT profile.captured_bytes::text AS bytes,
-        (SELECT sum(octet_length(payload::text))::text FROM grids.workflow_query_data WHERE run_id = profile.run_id) AS expected
+      SELECT profile.captured_bytes::text AS bytes
       FROM grids.workflow_run_profile profile WHERE run_id = ${runId}::uuid
     `;
-    expect(accounted.bytes).toBe(accounted.expected);
+    expect(accounted.bytes).toBe(String(new TextEncoder().encode(JSON.stringify(captured.data.payload)).byteLength));
     for (const scope of [
       { baseId: Bun.randomUUIDv7(), runId },
       { baseId: fixture.baseId, runId: Bun.randomUUIDv7() },
@@ -104,7 +109,7 @@ postgresTest("query payload is immutable, scoped, deduplicated and rolls back wi
     if (!conflict.ok) expect(conflict.error.code).toBe("CONFLICT");
 
     const largePayload = { ...captured.data.payload, context: { padding: "x".repeat(3 * 1024 * 1024) } };
-    const largeCanonical = canonicalDocumentJson(largePayload, undefined, 2);
+    const largeCanonical = canonicalDocumentJson(largePayload);
     const large = {
       ...input,
       capture: { ...captured.data, payload: largePayload, sha256: largeCanonical.sha256, hashVersion: 2 as const },

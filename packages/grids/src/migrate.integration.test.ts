@@ -33,7 +33,31 @@ const withIsolatedDatabase = async (run: (database: SQL) => Promise<void>) => {
 };
 
 describe("grids schema migration", () => {
-  postgresTest("refuses an alpha workflow reset before detaching retained documents", async () => {
+  postgresTest("rejects every obsolete hash store before changing schema or saved bytes", async () => {
+    await withIsolatedDatabase(async (database) => {
+      await migrateCoreWorkflows(database);
+      await database`CREATE SCHEMA grids`.simple();
+      for (const table of ["documents", "document_issuances", "workflow_query_data"]) {
+        await database.unsafe(`CREATE TABLE grids.${table} (hash_version SMALLINT, payload TEXT NOT NULL)`);
+        for (const version of [1, null, 99]) {
+          await database.unsafe(`INSERT INTO grids.${table} VALUES ($1, $2)`, [version, '{"é":1,"é":2}']);
+          await expect(migrate(database)).rejects.toThrow(`Unsupported Grids alpha data in ${table}`);
+          expect(
+            await database.unsafe<Array<{ hash_version: number | null; payload: string }>>(
+              `SELECT hash_version, payload FROM grids.${table}`,
+            ),
+          ).toEqual([{ hash_version: version, payload: '{"é":1,"é":2}' }]);
+          expect(await database<Array<{ untouched: boolean }>>`SELECT to_regclass('grids.bases') IS NULL AS untouched`).toEqual([
+            { untouched: true },
+          ]);
+          await database.unsafe(`DELETE FROM grids.${table}`);
+        }
+        await database.unsafe(`DROP TABLE grids.${table}`);
+      }
+    });
+  });
+
+  postgresTest("rejects unsupported alpha data without creating a ledger or resetting workflows", async () => {
     await withIsolatedDatabase(async (database) => {
       await database`CREATE SCHEMA grids`.simple();
       await database`CREATE TABLE grids.documents (workflow_run_id UUID, workflow_step_key TEXT)`.simple();
@@ -41,18 +65,19 @@ describe("grids schema migration", () => {
       const runId = uuid();
       await database`INSERT INTO grids.workflow_run_profile VALUES (${runId}::uuid)`;
       await database`INSERT INTO grids.documents VALUES (${runId}::uuid, 'export')`;
-      await expect(migrateGridsWorkflowTables(database)).rejects.toThrow("Grids workflow reset refused");
+      await expect(migrateGridsWorkflowTables(database)).rejects.toThrow("Unsupported Grids alpha data");
       expect(
         await database<
           Array<{ workflow_run_id: string; workflow_step_key: string }>
         >`SELECT workflow_run_id::text, workflow_step_key FROM grids.documents`,
       ).toEqual([{ workflow_run_id: runId, workflow_step_key: "export" }]);
       expect(await database<Array<{ run_id: string }>>`SELECT run_id::text FROM grids.workflow_run_profile`).toEqual([{ run_id: runId }]);
-      expect(await database<Array<{ version: number }>>`SELECT version FROM grids.workflow_migrations`).toEqual([]);
+      const [ledger] = await database<Array<{ absent: boolean }>>`SELECT to_regclass('grids.workflow_migrations') IS NULL AS absent`;
+      expect(ledger?.absent).toBe(true);
       await database`DELETE FROM grids.documents`;
       await database`CREATE TABLE grids.workflow_profile (id UUID PRIMARY KEY)`.simple();
       await database`INSERT INTO grids.workflow_profile VALUES (${runId}::uuid)`;
-      await expect(migrateGridsWorkflowTables(database)).rejects.toThrow("stored workflows require an explicit preserving migration");
+      await expect(migrateGridsWorkflowTables(database)).rejects.toThrow("Unsupported Grids alpha workflows");
       expect(await database<Array<{ id: string }>>`SELECT id::text FROM grids.workflow_profile`).toEqual([{ id: runId }]);
       expect(await database<Array<{ run_id: string }>>`SELECT run_id::text FROM grids.workflow_run_profile`).toEqual([{ run_id: runId }]);
     });
@@ -1722,7 +1747,7 @@ describe("grids schema migration", () => {
       await withIsolatedDatabase(async (database) => {
         await migrateCoreWorkflows(database);
         await migrate(database);
-        expect(GRIDS_WORKFLOW_SCHEMA_VERSION).toBe(8);
+        expect(GRIDS_WORKFLOW_SCHEMA_VERSION).toBe(9);
 
         const userId = uuid();
         const serviceAccountId = uuid();

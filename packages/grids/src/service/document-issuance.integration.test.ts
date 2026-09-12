@@ -576,7 +576,7 @@ describe("Document issuance", () => {
   });
 
   postgresTest(
-    "retries retained historical HTML and profile receipts without rewriting or reallocating",
+    "retries current pending HTML and profile receipts across restarts and rejects old provenance fields",
     async () => {
       const sourceUrl = process.env.DATABASE_URL;
       if (!sourceUrl) throw new Error("DATABASE_URL is required for issuance integration tests");
@@ -592,26 +592,25 @@ describe("Document issuance", () => {
         await database`CREATE TABLE auth.service_accounts (id UUID PRIMARY KEY)`.simple();
         await migrateCoreWorkflows(database);
         await migrate(database);
-        // Simulate the historical writer only in this disposable database. Never
-        // disable the immutable receipt guard or mutate a previously frozen request.
+        // Simulate an unsupported writer only in this disposable database.
+        // Never disable the immutable guard or change a saved receipt.
         await database`
-        CREATE FUNCTION grids.test_historical_receipt() RETURNS trigger LANGUAGE plpgsql AS $$
+        CREATE FUNCTION grids.test_obsolete_receipt() RETURNS trigger LANGUAGE plpgsql AS $$
         BEGIN
-          NEW.frozen_request = NEW.frozen_request || jsonb_build_object(
-            'source', jsonb_build_object('appId', 'grids', 'resourceType', 'document_template',
-              'resourceId', NEW.frozen_request #>> '{template,shortId}'),
-            'sourceRevision', jsonb_build_object('id', 'record@1',
-              'observedAt', '2026-08-22T10:00:00.000Z', 'evidence', '{}'::jsonb)
-          );
           IF NEW.frozen_request->'tags' ? 'malformed' THEN
-            NEW.frozen_request = NEW.frozen_request || '{"unexpected":true}'::jsonb;
+            NEW.frozen_request = NEW.frozen_request || jsonb_build_object(
+              'source', jsonb_build_object('appId', 'grids', 'resourceType', 'document_template',
+                'resourceId', NEW.frozen_request #>> '{template,shortId}'),
+              'sourceRevision', jsonb_build_object('id', 'record@1',
+                'observedAt', '2026-08-22T10:00:00.000Z', 'evidence', '{}'::jsonb)
+            );
           END IF;
           RETURN NEW;
         END $$
       `.simple();
         await database`
-        CREATE TRIGGER test_historical_receipt BEFORE INSERT ON grids.document_issuances
-        FOR EACH ROW EXECUTE FUNCTION grids.test_historical_receipt()
+        CREATE TRIGGER test_obsolete_receipt BEFORE INSERT ON grids.document_issuances
+        FOR EACH ROW EXECUTE FUNCTION grids.test_obsolete_receipt()
       `.simple();
         for (const kind of ["html", "profile"] as const) {
           const scope = await createScope(database);
@@ -666,7 +665,8 @@ describe("Document issuance", () => {
           const readReceipts = () => database`SELECT * FROM grids.document_issuances WHERE base_id = ${scope.baseId}::uuid ORDER BY id`;
           const before = await readReceipts();
           expect(before).toHaveLength(1);
-          expect(before[0]?.frozen_request.source.appId).toBe("grids");
+          expect(before[0]?.frozen_request).not.toHaveProperty("source");
+          expect(before[0]?.frozen_request).not.toHaveProperty("sourceRevision");
           expect(before[0]?.frozen_request.documentNumber).toBe("HIST-1");
           const readAllocations = () => database<Array<{ id: string; consumer_kind: string | null; consumer_id: string | null }>>`
           SELECT allocation.* FROM grids.number_allocations allocation
@@ -716,7 +716,7 @@ describe("Document issuance", () => {
         await sql.unsafe(`DROP DATABASE "${databaseName}" WITH (FORCE)`);
       }
     },
-    // This case migrates an isolated historical database repeatedly.
+    // This case migrates an isolated database repeatedly.
     60_000,
   );
 

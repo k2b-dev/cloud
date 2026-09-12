@@ -151,7 +151,7 @@ steps:
 `;
     const bind = (yaml: string) =>
       compileAndBindGridsWorkflowSource(yaml, catalog(), async () =>
-        ok({ source: "from table {TBL001} select {FLD001}", schemaHash: "a".repeat(64) }),
+        ok({ source: "from table {TBL001} select {FLD001}", schemaHash: "a".repeat(64), schemaHashVersion: 3 as const }),
       );
     expect((await bind(source)).ok).toBe(true);
     expect((await bind(source.replace("inputs.approved", "inputs.unknown"))).ok).toBe(false);
@@ -197,7 +197,7 @@ steps:
 `;
     const bind = (yaml: string) =>
       compileAndBindGridsWorkflowSource(yaml, catalog(), async () =>
-        ok({ source: "from table {TBL001} select {FLD001}", schemaHash: "a".repeat(64) }),
+        ok({ source: "from table {TBL001} select {FLD001}", schemaHash: "a".repeat(64), schemaHashVersion: 3 as const }),
       );
     const valid = await bind(source);
     expect(valid.ok).toBe(true);
@@ -233,7 +233,7 @@ steps:
       const source = `steps:\n  - query:\n      source: from table Items\n      parameters:\n        invalid:\n          type: ${type}\n          value: "${value}"\n`;
       const bound = await compileAndBindGridsWorkflowSource(source, catalog(), async () => {
         called = true;
-        return ok({ source: "unused", schemaHash: "a".repeat(64) });
+        return ok({ source: "unused", schemaHash: "a".repeat(64), schemaHashVersion: 3 as const });
       });
       expect(bound.ok).toBe(false);
       expect(called).toBe(false);
@@ -244,7 +244,7 @@ steps:
     const source = `inputs:\n  minimum:\n    type: text\nsteps:\n  - query:\n      source: from table Items select Name\n      parameters:\n        minimum:\n          type: decimal\n          value: \${{ inputs.minimum }}\n      saveAs: report\n  - setVariable:\n      name: count\n      value: \${{ report.rowCount }}\n`;
     const result = await compileAndBindGridsWorkflowSource(source, catalog(), async (_query, values) => {
       expect(values["params.minimum"]).toEqual({ decimal: "0" });
-      return ok({ source: "from table {TBL001} select {FLD001}", schemaHash: "a".repeat(64) });
+      return ok({ source: "from table {TBL001} select {FLD001}", schemaHash: "a".repeat(64), schemaHashVersion: 3 as const });
     });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
@@ -252,9 +252,10 @@ steps:
     expect(result.plan.bindings["steps.0.query.$query"]).toEqual({
       source: "from table {TBL001} select {FLD001}",
       schemaHash: "a".repeat(64),
+      schemaHashVersion: 3,
     });
     const rows = await compileAndBindGridsWorkflowSource(source.replace("report.rowCount", "report.rows"), catalog(), async () =>
-      ok({ source: "unused", schemaHash: "a".repeat(64) }),
+      ok({ source: "unused", schemaHash: "a".repeat(64), schemaHashVersion: 3 as const }),
     );
     expect(rows.ok).toBe(false);
   });
@@ -265,7 +266,7 @@ steps:
       const result = await compileAndBindGridsWorkflowSource(
         `${prefix}  - generateDocument:\n      data: report\n      output:\n        kind: ${kind}\n${kind === "pdf" || kind === "xml" ? '        body: "<report>{% for row in rows %}<p>{{ row.name }}</p>{% endfor %}</report>"\n' : ""}      saveAs: document\n`,
         catalog(),
-        async () => ok({ source: "from table {TBL001} select {FLD001}", schemaHash: "a".repeat(64) }),
+        async () => ok({ source: "from table {TBL001} select {FLD001}", schemaHash: "a".repeat(64), schemaHashVersion: 3 as const }),
       );
       expect(result.ok).toBe(true);
     }
@@ -279,7 +280,7 @@ steps:
       'data: report\n      output: { kind: xml, body: "<{{ document.number }}/>" }',
     ]) {
       const result = await compileAndBindGridsWorkflowSource(`${prefix}  - generateDocument:\n      ${invalid}\n`, catalog(), async () =>
-        ok({ source: "from table {TBL001} select {FLD001}", schemaHash: "a".repeat(64) }),
+        ok({ source: "from table {TBL001} select {FLD001}", schemaHash: "a".repeat(64), schemaHashVersion: 3 as const }),
       );
       expect(result.ok).toBe(false);
     }

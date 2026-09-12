@@ -11,13 +11,7 @@ import { bindWorkflowQueryData } from "./workflow-query-data";
 /** The same catalog that authorizes ordinary workflow bindings restricts GQL.
  * Loading metadata internally does not grant access to hidden tables or fields. */
 export const workflowQueryBinder =
-  (
-    baseId: string,
-    catalog: WorkflowCatalog,
-    client: SqlClient = sql,
-    locale?: string,
-    schemaHashVersion: 1 | 2 | 3 = 3,
-  ): WorkflowQueryBinder =>
+  (baseId: string, catalog: WorkflowCatalog, client: SqlClient = sql, locale?: string): WorkflowQueryBinder =>
   async (source, values) => {
     const t = documentServiceText(locale);
     const parsed = parseGridsQueryDsl(source);
@@ -34,7 +28,7 @@ export const workflowQueryBinder =
           return [id, fields.filter((field) => allowed.has(field.id))];
         }),
     );
-    const bound = bindWorkflowQueryData(source, context, values, locale, { parameterTypesOnly: true, schemaHashVersion });
+    const bound = bindWorkflowQueryData(source, context, values, locale, { parameterTypesOnly: true });
     if (!bound.ok) return bound;
     if (bound.data.tableIds.some((id) => !tables.has(id))) return fail(err.forbidden(t.workflowQueryAccessDenied));
     return ok(bound.data.binding);

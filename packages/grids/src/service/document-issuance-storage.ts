@@ -4,7 +4,6 @@ import type { Document } from "../contracts";
 import type { DocumentArtifactDraft } from "../document-profiles";
 import { logAudit } from "./audit";
 import type { DocumentIssuanceActor } from "./document-issuance";
-import type { CanonicalJsonVersion } from "./document-json";
 import { type DocumentDbRow, hydrateDocuments } from "./document-mappers";
 import { documentServiceText } from "./document-messages";
 import { createProtected } from "./files";
@@ -16,7 +15,6 @@ import { bindNumberAllocation } from "./number-series";
 export const persistIssuedDocument = async (
   input: {
     receiptId: string;
-    hashVersion: CanonicalJsonVersion;
     shortId: string;
     baseId: string;
     queryDataId: string | null;
@@ -85,7 +83,7 @@ export const persistIssuedDocument = async (
       ${input.number}, ${input.primary.filename}, ${input.primary.key}, ${tx.array(input.tags, "TEXT")}, ${input.templateSnapshot}::jsonb,
       ${input.renderData}::jsonb, ${input.profile ? "profile" : "html"}, ${input.rendererVersion}, ${input.templateRevision},
       ${input.profile?.id ?? null}, ${input.profile?.version ?? null}, ${input.profile?.input ?? null}::jsonb,
-      ${input.profile?.output ?? null}::jsonb, ${input.profile?.sha256 ?? null}, ${input.hashVersion},
+      ${input.profile?.output ?? null}::jsonb, ${input.profile?.sha256 ?? null}, 2,
       ${input.profile?.validatorVersion ?? null}, ${input.profile?.validationStatus ?? null}, ${input.profile?.validationReport ?? null}::jsonb,
       ${input.actor}::jsonb, ${actorId}::uuid, ${input.issuedAt}
     ) RETURNING *

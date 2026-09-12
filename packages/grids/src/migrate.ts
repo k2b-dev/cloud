@@ -4,7 +4,7 @@ import { parseJsonbRow } from "./service/jsonb";
 import { numberSeriesFormatForField, numberSeriesSequenceName } from "./service/number-series";
 import { migratePersistedPublicIdReferences } from "./service/public-id-source-migration";
 import { newShortId, SHORT_ID_REGEX } from "./service/short-id";
-import { GRIDS_WORKFLOW_SCHEMA_VERSION, migrateGridsWorkflowTables } from "./workflows/migrate";
+import { assertGridsAlphaContract, GRIDS_WORKFLOW_SCHEMA_VERSION, migrateGridsWorkflowTables } from "./workflows/migrate";
 
 const MIGRATION_LOCK_NAME = "grids:migrate";
 const CANONICAL_SCALAR_STORAGE_CONTRACT = "canonical_scalar_values_v1";
@@ -1629,8 +1629,11 @@ const migrateDocumentIssuance = async (sql: SQL): Promise<void> => {
   `.simple();
   await sql`ALTER TABLE grids.document_issuances ADD COLUMN IF NOT EXISTS request_identity_hash TEXT
     CHECK (request_identity_hash ~ '^[a-f0-9]{64}$')`.simple();
-  await sql`ALTER TABLE grids.document_issuances ADD COLUMN IF NOT EXISTS hash_version SMALLINT NOT NULL DEFAULT 1
-    CHECK (hash_version IN (1, 2))`.simple();
+  await sql`ALTER TABLE grids.document_issuances ADD COLUMN IF NOT EXISTS hash_version SMALLINT NOT NULL DEFAULT 2
+    CHECK (hash_version = 2);
+    ALTER TABLE grids.document_issuances ALTER COLUMN hash_version SET DEFAULT 2;
+    ALTER TABLE grids.document_issuances DROP CONSTRAINT IF EXISTS document_issuances_hash_version_check;
+    ALTER TABLE grids.document_issuances ADD CONSTRAINT document_issuances_hash_version_check CHECK (hash_version = 2)`.simple();
   await sql`
     ALTER TABLE grids.document_issuances
       ADD COLUMN IF NOT EXISTS confirmation_hash TEXT CHECK (confirmation_hash ~ '^[a-f0-9]{64}$'),
@@ -1781,8 +1784,10 @@ const migrateDocumentArtifacts = async (sql: SQL): Promise<void> => {
   `.simple();
   await sql`
     DO $$ BEGIN
-      -- Keep immutable legacy data; replace only the obsolete validation.
-      ALTER TABLE grids.documents ADD COLUMN IF NOT EXISTS hash_version SMALLINT NOT NULL DEFAULT 1 CHECK (hash_version IN (1, 2));
+      ALTER TABLE grids.documents ADD COLUMN IF NOT EXISTS hash_version SMALLINT NOT NULL DEFAULT 2 CHECK (hash_version = 2);
+      ALTER TABLE grids.documents ALTER COLUMN hash_version SET DEFAULT 2;
+      ALTER TABLE grids.documents DROP CONSTRAINT IF EXISTS documents_hash_version_check;
+      ALTER TABLE grids.documents ADD CONSTRAINT documents_hash_version_check CHECK (hash_version = 2);
       IF EXISTS (
         SELECT 1 FROM pg_constraint
         WHERE conrelid = 'grids.documents'::regclass AND conname = 'documents_renderer_chk'
@@ -3076,6 +3081,7 @@ export const migrate = async (sql: SQL = defaultSql): Promise<void> => {
     await assertNoDuplicateLiveTableNames(connection);
     await connection`BEGIN`.simple();
     transactionStarted = true;
+    await assertGridsAlphaContract(connection);
     await migrateSchema(connection);
     await migrateSafeCastHelpers(connection);
     await migrateCoreRecords(connection);
