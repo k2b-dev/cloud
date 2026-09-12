@@ -35,3 +35,9 @@ const module = defineCliCommands({
 });
 
 export default module;
+
+/** Internal subprocess entry for the standalone Cloud CLI. Requires parent IPC. */
+export async function startCliCodeHostProcess() {
+  if (!process.send) throw new Error("Code host requires a parent CLI connection");
+  (await import("./cli/code-host-process")).startCliCodeHostProcess();
+}

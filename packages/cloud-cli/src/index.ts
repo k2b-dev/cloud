@@ -20,7 +20,7 @@ import appsCliModule from "@k2b/cloud/cli/apps";
 import capabilitiesCliModule from "@k2b/cloud/cli/capabilities";
 import accountsCliModule from "@k2b/cloud-app-accounts/cli";
 import apiDocsCliModule from "@k2b/cloud-app-api-docs/cli";
-import assistantCliModule from "@k2b/cloud-app-assistant/cli";
+import assistantCliModule, { startCliCodeHostProcess } from "@k2b/cloud-app-assistant/cli";
 import contactsCliModule from "@k2b/cloud-app-contacts/cli";
 import kitCliModule from "@k2b/cloud-app-kit/cli";
 import faqCliModule from "@k2b/cloud-app-faq/cli";
@@ -1633,7 +1633,9 @@ const errorPayload = (error: unknown, exitCode: number) => {
   };
 };
 
-if (import.meta.main) {
+if (import.meta.main && Bun.argv[2] === "--internal-code-host" && process.send) {
+  await startCliCodeHostProcess();
+} else if (import.meta.main) {
   main().then(
     (code) => {
       process.exitCode = code;

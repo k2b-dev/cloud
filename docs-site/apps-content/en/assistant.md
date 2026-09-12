@@ -262,8 +262,9 @@ published `version` for a saved resource.
 
 Use `--steps-file` for subsequent inspect, interaction, or file-export steps in
 the same run. The host waits for background work to finish before the command ends; a pending
-app dialog needs an explicit interaction step. The host closes when the command ends. Exported files remain in
-the chat. Capability actions need explicit `--approve` authorization or the
+app dialog needs an explicit interaction step. The host closes when the command ends and cancels pending server requests.
+Exported files remain in the chat. If the host exits unexpectedly, pending calls
+fail without automatically repeating code or actions. Capability actions need explicit `--approve` authorization or the
 interactive chat approval flow. The CLI needs Chromium installed through
 Playwright, or `CLOUD_CLI_CHROMIUM` pointing to an installed Chromium executable.
 

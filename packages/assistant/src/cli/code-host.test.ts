@@ -214,3 +214,26 @@ test("slow database and shared storage calls do not consume the short callback d
     expect(await host.execute({...ids,name:"code_interact",callId:"import",args:{runId:"slow-io",id:"import"}})).toMatchObject({status:"ready",nodes:[{id:"import"},{kind:"text",label:"Finished"}]});
   }finally{await host.close();}
 },45000);
+
+test("replacing CLI hosts survives garbage collection without losing the new browser", async () => {
+  const bundle = await cliHostBundle();
+  const code = "export default () => 42";
+  const compiled = await compileArtifact({entry:"main.ts",files:[{path:"main.ts",content:code}]});
+  for (let cycle = 0; cycle < 3; cycle++) {
+    const host = await createCliCodeHost({fetch: async input => {
+      if (String(input).endsWith("host.js")) return new Response(bundle);
+      if (String(input).endsWith("/compile")) return Response.json(compiled);
+      throw new Error(`Unexpected host request ${input}`);
+    }});
+    try {
+      for (let probe = 0; probe < 8; probe++) {
+        // The old shared-process launcher loses its new Chromium pipe when
+        // finalizers from a previously closed browser run here.
+        Bun.gc(true);
+        expect(await host.execute({name:"code_run",callId:`gc-${probe}`,conversationId:crypto.randomUUID(),turnId:crypto.randomUUID(),args:{code}}))
+          .toMatchObject({status:"ready",output:"42"});
+      }
+    } finally { await host.close(); }
+    await host.close();
+  }
+}, 30000);

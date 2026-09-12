@@ -40,6 +40,8 @@ for (const target of selectedTargets) {
       __CLD_COMMIT__: JSON.stringify(commit),
       __CLD_STANDALONE__: "true",
     },
+    // Playwright references this optional BiDi adapter lazily; Code Mode uses CDP.
+    external: ["chromium-bidi/*"],
     minify: true,
   });
 

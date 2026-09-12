@@ -103,3 +103,29 @@ den offenen UI-Abnahmen freigeben. Die CSV-Agenten-Wiederholung ist bestanden.
 
 Der lokale Entwicklungsstack ist nach dem Refresh wieder vollständig gesund:
 24 Apps bereit, keine gestoppt oder ungesund.
+
+## CLI host timeout resolution
+
+The pressure timeout was reproduced, then reduced to plain Playwright: close a
+Chromium browser, create another, force Bun garbage collection and evaluate
+JavaScript. No Assistant runtime, compiler, worker, or approval was needed. Under
+Bun 1.3.14, Chromium logged `Connection terminated while reading from pipe` and
+exited while the pending Playwright call remained unresolved. The isolated
+pressure test passed because it did not recycle a browser in the same process.
+
+Each CLI host now owns a separate Bun subprocess containing exactly one
+Playwright browser lifetime. Authenticated requests and approval decisions stay
+in the parent CLI and cross a private IPC channel. Closing the host aborts its
+requests and closes the subprocess; process exit rejects pending calls without
+replaying actions. The existing iframe, worker, CSP, permission checks and
+execution budgets are unchanged. No debug port or Node installation is needed.
+The compiled CLI starts the same helper through its internal IPC entry point.
+
+The regression test replaces hosts three times while forcing collection and
+running code. The full host file passed repeatedly, including the original
+approval/pressure sequence and slow input/database tests. The final combined run
+passed all 11 tests with 112 assertions. The standalone regression builds the
+executable and runs code against a local fixture server from outside the checkout.
+Raw Assistant and Cloud CLI typechecks and `git diff --check` passed. No browser
+helper processes remained after completion. This resolves the host-specific
+rollout blocker; the separate user-flow acceptance criteria above still apply.
