@@ -509,7 +509,13 @@
 }
 
 .k2b-ui [popover].k2b-tooltip.k2b-chart__tooltip {
-  white-space: pre-line;
+  white-space: normal;
+  pointer-events: none;
+  background: var(--k2b-surface-elevated);
+  color: var(--k2b-text);
+  border: 1px solid var(--k2b-border);
+  border-radius: .5rem;
+  padding: .625rem .75rem;
   max-width: min(24rem, calc(100vw - 1rem));
   max-height: calc(100dvh - 1rem);
   overflow: auto;

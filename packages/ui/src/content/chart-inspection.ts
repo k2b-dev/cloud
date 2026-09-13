@@ -1,3 +1,5 @@
+import { createEffect, onCleanup } from "solid-js";
+import type { ChartCursor, ChartCursorState } from "./chart-cursor";
 import type { ChartDatum } from "@k2b/stdlib";
 import { positionTooltipSurface } from "../feedback/tooltip-position";
 import type { ChartKind } from "./Chart";
@@ -42,6 +44,7 @@ export function isChartDatum(value: unknown): value is ChartDatum {
 /** Enhances existing SVG nodes. Pointer/focus changes never rebuild the chart. */
 export function createChartInspection(options: {
   container: () => HTMLDivElement | undefined;
+  cursor?: () => ChartCursor | undefined;
   tooltip: () => HTMLSpanElement | undefined;
   anchor: () => HTMLSpanElement | undefined;
   kind: () => ChartKind;
@@ -49,6 +52,7 @@ export function createChartInspection(options: {
   format: ChartTooltipFormatter;
   select: (selection: ChartSelection) => void;
 }) {
+  const source = Symbol("chart cursor");
   let entries: Entry[] | undefined;
   let sortedPoints: Entry[] = [];
   const byElement = new Map<Element, Entry>();
@@ -144,7 +148,11 @@ export function createChartInspection(options: {
     }
     highlighted = [];
   };
-  const close = () => {
+  const close = (broadcast = true, cancelPending = true) => {
+    const state = options.cursor?.()?.read();
+    if (broadcast && state && state.source !== source) return;
+    if (broadcast) options.cursor?.()?.clear(source);
+    options.container()?.removeAttribute("data-cursor-source");
     pinned = false;
     active = undefined;
     clearHighlight();
@@ -158,17 +166,23 @@ export function createChartInspection(options: {
         /* Detached during navigation. */
       }
     }
-    if (frame !== undefined) cancelAnimationFrame(frame);
-    frame = undefined;
-    pending = undefined;
+    if (cancelPending) {
+      if (frame !== undefined) cancelAnimationFrame(frame);
+      frame = undefined;
+      pending = undefined;
+    }
   };
   const invalidate = () => {
-    close();
+    options.cursor?.()?.clear(source);
+    close(false);
     entries = undefined;
     sortedPoints = [];
     byElement.clear();
+    receive(options.cursor?.()?.read() ?? null);
   };
-  const show = (entry: Entry) => {
+  const show = (entry: Entry, broadcast = true) => {
+    const x = rawX(entry);
+    if (broadcast && options.kind() === "line" && typeof x === "number") options.cursor?.()?.move(source, x);
     const tooltip = options.tooltip(),
       anchor = options.anchor(),
       container = options.container();
@@ -181,14 +195,64 @@ export function createChartInspection(options: {
       item.element.style.setProperty("--k2b-chart-inspection-color", highlightColor(item));
       item.element.setAttribute("data-inspected", "true");
     }
-    const contents = highlighted.map((item) => options.format({ kind: options.kind(), datum: item.datum }));
-    tooltip.textContent = contents
-      .map((content) => [content.title, ...content.rows.map((row) => `${row.label}: ${row.value}`)].filter(Boolean).join("\n"))
-      .join("\n\n");
+    const document = tooltip.ownerDocument;
+    const contents = highlighted.map((item) => ({
+      item,
+      content: options.format({ kind: options.kind(), datum: item.datum }),
+      missing: false,
+    }));
+    if (options.cursor?.() && options.kind() === "line") {
+      const present = new Set(highlighted.map((item) => item.datum.seriesIndex));
+      for (const item of records()) {
+        if (present.has(item.datum.seriesIndex)) continue;
+        present.add(item.datum.seriesIndex);
+        contents.push({ item, content: options.format({ kind: options.kind(), datum: item.datum }), missing: true });
+      }
+      contents.sort((a, b) => (a.item.datum.seriesIndex ?? 0) - (b.item.datum.seriesIndex ?? 0));
+    }
+    tooltip.replaceChildren();
+    const sharedTitle = typeof x === "number" ? options.cursor?.()?.formatX?.(x) : undefined;
+    const commonTitle =
+      sharedTitle ??
+      (contents.every(({ content }) => content.title === contents[0]?.content.title) ? contents[0]?.content.title : undefined);
+    if (commonTitle) {
+      const title = document.createElement("strong");
+      title.className = "k2b-chart__tooltip-title";
+      title.textContent = commonTitle;
+      tooltip.append(title);
+    }
+    for (const { item, content, missing } of contents) {
+      if (content.title && !commonTitle) {
+        const title = document.createElement("strong");
+        title.className = "k2b-chart__tooltip-title";
+        title.textContent = content.title;
+        tooltip.append(title);
+      }
+      for (const row of content.rows) {
+        const line = document.createElement("span");
+        line.className = "k2b-chart__tooltip-row";
+        if (options.kind() === "line") {
+          const swatch = document.createElement("i");
+          swatch.setAttribute("aria-hidden", "true");
+          const series = container.querySelector(`.stdlib-chart-line.stdlib-chart-series-${(item.datum.seriesIndex ?? 0) % 8}`);
+          swatch.style.background = series
+            ? getComputedStyle(series).stroke
+            : `var(--stdlib-chart-c${((item.datum.seriesIndex ?? 0) % 8) + 1})`;
+          line.append(swatch);
+        }
+        const label = document.createElement("span");
+        label.textContent = `${row.label}: `;
+        const value = document.createElement("b");
+        value.textContent = missing ? "—" : row.value;
+        line.append(label, value);
+        tooltip.append(line);
+      }
+    }
     const rect = container.getBoundingClientRect(),
       point = screenPoint(entry);
     anchor.style.left = `${point.x - rect.left}px`;
     anchor.style.top = `${point.y - rect.top}px`;
+    updatePlotBounds();
     container.style.setProperty("--k2b-chart-inspection-x", `${point.x - rect.left}px`);
     container.setAttribute("data-inspecting", seriesChart() ? "series" : "datum");
     container.setAttribute("aria-describedby", tooltip.id);
@@ -199,8 +263,48 @@ export function createChartInspection(options: {
       /* SVG titles remain available without the Popover API. */
     }
   };
+  const updatePlotBounds = () => {
+    const container = options.container();
+    if (!container) return;
+    const axes = Array.from(container.querySelectorAll(".stdlib-chart-axis")).map((axis) => axis.getBoundingClientRect());
+    if (axes.length < 2) return;
+    const left = Math.min(...axes.map((a) => a.left)),
+      right = Math.max(...axes.map((a) => a.right));
+    const top = Math.min(...axes.map((a) => a.top)),
+      bottom = Math.max(...axes.map((a) => a.bottom));
+    if (right <= left || bottom <= top) return;
+    const rect = container.getBoundingClientRect();
+    for (const [name, value] of Object.entries({
+      left: left - rect.left,
+      right: rect.right - right,
+      top: top - rect.top,
+      bottom: rect.bottom - bottom,
+    }))
+      container.style.setProperty(`--k2b-chart-plot-${name}`, `${value}px`);
+    return { left, right, top, bottom };
+  };
+  const receive = (state: ChartCursorState) => {
+    if (state?.source === source) return;
+    close(false, false);
+    if (!state || options.kind() !== "line") return;
+    const entry = records().find((item) => rawX(item) === state.x);
+    if (entry) show(entry, false);
+  };
+  createEffect(() => {
+    const cursor = options.cursor?.();
+    const unsubscribe = cursor?.subscribe(receive);
+    onCleanup(() => {
+      unsubscribe?.();
+      cursor?.clear(source);
+    });
+  });
+  onCleanup(() => close(false));
   const nearest = (x: number, y: number, target: Element | null): Entry | undefined => {
     if (target?.closest("button,a") && !target.closest("[data-chart-datum]")) return;
+    if (seriesChart()) {
+      const plot = updatePlotBounds();
+      if (plot && (x < plot.left || x > plot.right || y < plot.top || y > plot.bottom)) return;
+    }
     const nodes = visibleRecords();
     const direct = target?.closest("[data-chart-datum]");
     const hit = direct ? byElement.get(direct) : undefined;
@@ -260,8 +364,14 @@ export function createChartInspection(options: {
       pending = undefined;
       if (!sample) return;
       const entry = nearest(sample.x, sample.y, sample.target);
-      if (entry) show(entry);
-      else close();
+      if (entry) {
+        show(entry);
+        if (seriesChart()) {
+          const container = options.container();
+          container?.setAttribute("data-cursor-source", "true");
+          container?.style.setProperty("--k2b-chart-inspection-y", `${sample.y - container.getBoundingClientRect().top}px`);
+        }
+      } else close();
     });
   };
   const down = (event: PointerEvent) => {
@@ -359,7 +469,7 @@ export function createChartInspection(options: {
     click,
     focus,
     key,
-    close,
+    close: () => close(),
     invalidate,
     leave: () => {
       if (!pinned) close();

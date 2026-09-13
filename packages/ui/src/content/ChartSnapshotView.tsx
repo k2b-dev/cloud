@@ -1,3 +1,4 @@
+import type { ChartCursor } from "./chart-cursor";
 import { createEffect, createUniqueId, onCleanup, onMount, type JSX } from "solid-js";
 import { isServer } from "solid-js/web";
 import { selectedChartSvg } from "./chart-svg";
@@ -8,6 +9,7 @@ import type { ChartSnapshot } from "./chart-snapshot";
 /** Internal display for server-prepared geometry. Viewports are snapshot-owned. */
 export function ChartSnapshotView(props: {
   snapshot: ChartSnapshot;
+  cursor?: ChartCursor;
   selectedKey: string | null;
   onSelect: (key: string) => void;
   style?: JSX.CSSProperties;
@@ -19,6 +21,7 @@ export function ChartSnapshotView(props: {
   const id = `k2b-chart-tooltip-${createUniqueId()}`;
   const inspection = createChartInspection({
     container: () => container,
+    cursor: () => props.cursor,
     tooltip: () => tooltip,
     anchor: () => anchor,
     kind: () => props.snapshot.kind,

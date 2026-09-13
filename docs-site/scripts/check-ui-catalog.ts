@@ -94,6 +94,7 @@ const portableDemoFiles = [
   ...portableSectionIds.map((section) => `../src/ui/demo-sections/${section}.tsx`),
   "../src/ui/demo-sections/charts.tsx",
   "../src/ui/ChartGroupDemo.island.tsx",
+  "../src/ui/ChartMonitoringDemo.island.tsx",
   "../src/ui/ChartLocalDemo.island.tsx",
   "../src/ui/ChartStaticDemo.island.tsx",
   "../src/ui/chart-map-data.ts",

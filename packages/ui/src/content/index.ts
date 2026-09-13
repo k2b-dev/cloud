@@ -89,3 +89,5 @@ export type {
 } from "./chart-explorer";
 export { ChartExplorerControls } from "./ChartExplorerControls";
 export type { ChartExplorerControlsProps } from "./ChartExplorerControls";
+
+export { createChartCursor, type ChartCursor } from "./chart-cursor";

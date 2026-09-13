@@ -1,3 +1,4 @@
+import type { ChartCursor } from "./chart-cursor";
 import type { MapViewport } from "@k2b/stdlib";
 import { charts } from "@k2b/stdlib";
 import type { JSX } from "solid-js";
@@ -97,6 +98,8 @@ export type ChartProps = {
     /** Controlled highlight; indices belong to this exact input snapshot. */
     selected?: ChartDatumRef | null;
     tooltip?: ChartTooltipFormatter;
+    /** Optional shared X cursor for line charts. */
+    cursor?: ChartCursor;
   } & (K extends "map"
     ? {
         /** Target when zooming in from the world view. Defaults to Europe (50, 10). */
@@ -110,7 +113,7 @@ export type ChartProps = {
 export type ChartRenderOptions = {
   [K in ChartKind]: Omit<
     Extract<ChartProps, { kind: K }>,
-    "class" | "style" | "labels" | "interactive" | "onSelect" | "selected" | "tooltip"
+    "class" | "style" | "labels" | "interactive" | "onSelect" | "selected" | "tooltip" | "cursor"
   >;
 }[ChartKind];
 
@@ -137,6 +140,7 @@ export const renderChartSvg = (
     onSelect: _onSelect,
     selected: _selected,
     tooltip: _tooltip,
+    cursor: _cursor,
     zoomFocus: _zoomFocus,
     ...opts
   } = props as ChartProps & { interactive?: boolean; zoomFocus?: Pick<MapViewport, "latitude" | "longitude"> };
@@ -189,7 +193,7 @@ const isEmpty = (props: ChartProps): boolean => {
 };
 
 const Chart = (props: ChartProps): JSX.Element => {
-  const [, drawingProps] = splitProps(props, ["selected", "onSelect", "tooltip"]);
+  const [, drawingProps] = splitProps(props, ["selected", "onSelect", "tooltip", "cursor"]);
   const messages = useUiMessages();
   const locale = useLocale();
   let containerRef: HTMLDivElement | undefined;
@@ -437,6 +441,7 @@ const Chart = (props: ChartProps): JSX.Element => {
 
   const inspection = createChartInspection({
     container: () => containerRef,
+    cursor: () => props.cursor,
     tooltip: () => chartTooltipRef,
     anchor: () => lineAnchorRef,
     kind: () => props.kind,

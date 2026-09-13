@@ -7658,3 +7658,11 @@
 .k2b-ui .k2b-chart[data-chart-kind="map"] .stdlib-chart-legend { translate: calc((100cqw - var(--k2b-chart-width)) / 2) calc(100cqh - var(--k2b-chart-height)); }
 
 .k2b-ui .k2b-chart[data-chart-kind="map"] .stdlib-chart-map-point { transform-box: fill-box; transform-origin: center; scale: var(--k2b-map-inverse-scale); vector-effect: non-scaling-stroke; }
+
+.k2b-ui .k2b-chart[data-inspecting="series"]::after { top: var(--k2b-chart-plot-top, 0); bottom: var(--k2b-chart-plot-bottom, 0); }
+.k2b-ui .k2b-chart[data-cursor-source="true"][data-inspecting="series"]::before { content: ""; position: absolute; left: var(--k2b-chart-plot-left, 0); right: var(--k2b-chart-plot-right, 0); top: var(--k2b-chart-inspection-y); border-top: 1px dashed currentColor; opacity: .3; pointer-events: none; }
+.k2b-ui .k2b-chart__tooltip-title { display: block; margin-bottom: .375rem; font-weight: 600; }
+.k2b-ui .k2b-chart__tooltip-row { display: flex; align-items: center; gap: .5rem; line-height: 1.6; }
+.k2b-ui .k2b-chart__tooltip-row > i { width: .625rem; height: .625rem; border-radius: .125rem; flex: none; }
+.k2b-ui .k2b-chart__tooltip-row > span { flex: 1; opacity: .75; }
+.k2b-ui .k2b-chart__tooltip-row > b { margin-left: .75rem; font-variant-numeric: tabular-nums; font-weight: 500; }

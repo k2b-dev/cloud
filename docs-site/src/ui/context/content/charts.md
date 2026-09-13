@@ -70,6 +70,7 @@ All kinds accept these wrapper props:
 | `style` | Solid `JSX.CSSProperties` or a CSS string on the wrapper. Set height here, not with a `height` prop. |
 | `labels` | Optional `ChartLabels` overrides. Keys: `empty`, `series`, `interactiveMap`, `interactiveTimeline`, `interactiveLine`, `interactiveChart`, `zoomIn`, `zoomOut`, `resetMap`, `resetTimeline`. Omitted keys use the inherited UI messages. These do not rename tooltip fields; use `tooltip` for domain labels. |
 | `interactive` | Boolean, default `false`. Enables inspection; additionally enables navigation on maps and timelines. |
+| `cursor` | Optional `ChartCursor` from `createChartCursor()`. Connects line charts by numeric X value; other kinds ignore it. Hover is independent of `selected` and does not reload data or rebuild SVG. |
 | `selected` | Optional `ChartDatumRef \| null`: `{ role, index, seriesIndex? }` using the current input snapshot. Highlights a datum without selecting it or opening a tooltip. Missing references paint nothing. Map stable application IDs to these indices after every data replacement. |
 | `tooltip` | Synchronous `(selection: ChartSelection) => ChartTooltip`. Used only with `interactive`. Omit for the built-in tooltip. Does not accept JSX, HTML, or a promise. |
 | `onSelect` | Optional synchronous `(selection: ChartSelection) => void`. Click, tap, and Enter emit selection; hover and focus do not. Use `selected` for a controlled highlight. |
@@ -586,6 +587,7 @@ throw. Disposal aborts work; refresh after disposal does not load.
 | `sort`, `onSortChange` | Optional controlled `DataTableSort \| null`. Otherwise `defaultSort` initializes local sort; default `null`. |
 | `renderDetails` | Optional row renderer replacing the DescriptionList inside the selection Paper. `false` hides the whole local detail area, for a parent-owned shared Paper. |
 | `description`, `class` | Optional JSX below the heading and extra root class. |
+| `cursor` | Optional shared `ChartCursor` for a line snapshot. Same matching and lifecycle as `Chart.cursor`; table mode does not participate. |
 | `height` | CSS viewport height; default `"18rem"`, shared by chart and scrollable table. |
 
 ```ts
@@ -624,6 +626,49 @@ disabled while loading, on failure, or when the displayed step is already pinned
 For a shared Paper, set `renderDetails={false}` on the chart components and read
 `explorer.selectedKey()` and the matching rows in `explorer.snapshot().charts` in
 the parent. Use a single shared selection action, with clearly named metrics.
+
+### Synchronized inspection
+
+Create one cursor per group in the Solid component owner and pass it to each
+`Chart` or `ChartExplorer`. Do not create it inside a reactive expression or pass
+it through an SSR JSON boundary. The server still renders complete SVGs; the
+client cursor only coordinates inspection. Independent groups use separate cursors.
+
+```tsx
+import { Chart, createChartCursor } from "@k2b/ui";
+
+const cursor = createChartCursor({
+  formatX: (timestamp) => new Date(timestamp).toISOString(),
+});
+
+<Chart kind="line" series={latency} cursor={cursor} interactive />
+<Chart kind="line" series={requests} cursor={cursor} interactive />
+// Existing server-prepared explorer data works with the same cursor:
+<ChartExplorer title="Errors" data={errors} columns={columns} cursor={cursor} />
+```
+
+`createChartCursor({ formatX? })` returns a controller to pass as `cursor`.
+`formatX` optionally formats the shared numeric X value as each tooltip's heading.
+Use the same X units in the group, for example, Unix milliseconds. Chart sizes,
+Y domains and Y units may differ. Existing `tooltip` formatters and snapshot
+`marks[].tooltip` provide the rows; return only the metric rows when `formatX`
+already supplies the time heading. Series colors are taken from the chart.
+
+The active plot snaps to its nearest sample. Other charts match that exact X;
+there is no interpolation or nearest-value substitution across gaps. Missing
+series values appear as `—`. A chart with no matching sample hides its tooltip
+and guide rather than showing a value from another time. Entirely absent series
+have no metadata and are omitted. Use aligned samples for a continuous shared
+cursor, as the monitoring showcase does.
+
+Each participating chart shows a vertical guide at its own matching data point.
+A horizontal guide follows the pointer only in the active plot. Pointer movement
+is restricted to the plot, excluding axes and legends. Arrow keys also share the
+inspected X value; Escape or leaving the active chart dismisses inspection.
+Existing click/tap selection and tooltip pinning remain separate from transient
+hover. Updating or unmounting the active chart clears the shared cursor; updating
+a follower rechecks the current X against its new data. Hover never changes
+selection, reference, sorting, filters, or URL state.
 
 ### Three integration paths
 

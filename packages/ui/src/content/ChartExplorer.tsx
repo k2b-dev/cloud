@@ -1,3 +1,4 @@
+import type { ChartCursor } from "./chart-cursor";
 import { createEffect, createMemo, createSignal, createUniqueId, Show, type JSX } from "solid-js";
 import { Button } from "../actions/Button";
 import { CopyButton } from "../actions/CopyButton";
@@ -21,6 +22,7 @@ export type ChartExplorerColumn<T> = {
   align?: "left" | "center" | "right";
 };
 export type ChartExplorerProps<T extends ChartExplorerRow> = {
+  cursor?: ChartCursor;
   title: string;
   description?: JSX.Element;
   data: ChartExplorerData<T>;
@@ -192,7 +194,13 @@ export function ChartExplorer<T extends ChartExplorerRow>(props: ChartExplorerPr
               />
             }
           >
-            <ChartSnapshotView snapshot={data().chart} selectedKey={selected()} onSelect={select} style={{ height: "100%" }} />
+            <ChartSnapshotView
+              cursor={props.cursor}
+              snapshot={data().chart}
+              selectedKey={selected()}
+              onSelect={select}
+              style={{ height: "100%" }}
+            />
           </Show>
         </Show>
       </div>

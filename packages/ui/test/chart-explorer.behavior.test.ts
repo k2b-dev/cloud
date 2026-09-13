@@ -56,6 +56,34 @@ describe("chart explorer presentation", () => {
   ];
   const button = (text: string) =>
     Array.from(dom.root.querySelectorAll<HTMLButtonElement>("button")).find((b) => b.textContent?.trim() === text)!;
+  test("server-prepared line explorer follows a shared cursor without selecting rows", async () => {
+    const { createChartCursor } = await import("../src/content/chart-cursor");
+    const cursor = createChartCursor({ formatX: x => `Time ${x}` });
+    const source = Symbol();
+    const chart = prepare({ kind: "line", series: [{ label: "Rate", data: [{x: 1, y: 10}, {x: 2, y: 20}] }] }, {
+      key: ({datum}) => String(datum.index),
+      tooltip: ({datum}) => ({ rows: [{label: "Rate", value: String(datum.values.find(v => v.key === "y")?.value)}] }),
+    });
+    chart.svg = chart.svg.replace(/<style>[\s\S]*?<\/style>/g, "");
+    let selected = 0;
+    const dispose = render(() => createComponent(Explorer<Row>, {
+      title: "Rate", cursor, columns,
+      data: { chart, rows: [{key: "0", label: "First", value: 10}, {key: "1", label: "Second", value: 20}] },
+      onSelectedKeyChange: () => selected++,
+    }), dom.root);
+    try {
+      await tick();
+      const svg = dom.root.querySelector(".k2b-chart__svg")?.innerHTML;
+      cursor.move(source, 2);
+      expect(dom.root.querySelector('[role="tooltip"]')?.textContent).toContain("Time 2");
+      expect(dom.root.querySelector('[role="tooltip"]')?.textContent).toContain("20");
+      expect(dom.root.querySelector(".k2b-chart__svg")?.innerHTML).not.toBeUndefined();
+      cursor.clear(source);
+      expect(dom.root.querySelector(".k2b-chart__svg")?.innerHTML).toBe(svg);
+      expect(selected).toBe(0);
+    } finally { dispose(); }
+  });
+
   test("one entity selects all its marks and has exactly one table row; sorting and clearing preserve the contract", async () => {
     const dispose = render(() => createComponent(Explorer<Row>, { title: "Queues", data: data(), columns }), dom.root);
     try {
