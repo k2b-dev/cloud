@@ -22,6 +22,7 @@ import { get, listByTable, mapFieldRow } from "./field-read";
 import { cleanupPreparedUniqueIndex } from "./field-unique-index-lifecycle";
 import { materializeFieldDefault, validateDefaultValue, validateFieldConfig, validateLinkOrComputedConfig } from "./field-validation";
 import { assertFinalizedResultTypes, lockFinalizedSchema } from "./finalized-schema";
+import { assertFormulaSchema } from "./formula-schema-validation";
 import { emitTableMetadataEvent } from "./metadata-events";
 import { namedResourceConflict, writeNamedResource } from "./named-resource-conflict";
 import { numberSeriesFormatForField, provisionFieldNumberSeries, setNumberSeriesArchived, syncNumberSeriesFormat } from "./number-series";
@@ -289,6 +290,8 @@ const insertPreparedField = async (state: FieldCreateState, actorId: string | nu
     );
     if (!created.ok) return created;
     const inserted = mapFieldRow(created.data);
+    const formulas = await assertFormulaSchema(tx, inserted.tableId, inserted.id, locale);
+    if (!formulas.ok) throw formulas;
     if (inserted.type === "id") await provisionFieldNumberSeries(tx, inserted.id, inserted.config);
     await logAudit(
       {
@@ -324,9 +327,11 @@ const insertWithUniqueIndexCleanup = async (
     const cleanup = await cleanupPreparedUniqueIndex(state.candidate.id);
     return cleanup.ok ? inserted : fail(cleanup.error);
   } catch (error) {
-    if (!uniqueIndexCreated) throw error;
-    const cleanup = await cleanupPreparedUniqueIndex(state.candidate.id);
-    if (!cleanup.ok) throw new AggregateError([error, cleanup.error], cleanup.error.message);
+    if (uniqueIndexCreated) {
+      const cleanup = await cleanupPreparedUniqueIndex(state.candidate.id);
+      if (!cleanup.ok) throw new AggregateError([error, cleanup.error], cleanup.error.message);
+    }
+    if (typeof error === "object" && error !== null && "ok" in error && error.ok === false) return error as Result<Field>;
     throw error;
   }
 };
@@ -624,6 +629,9 @@ export const update = async (id: string, input: UpdateFieldInput, actorId: strin
           await rewriteFieldNameReferences({ tableId: existing.tableId, oldName: existing.name, newName: field.name }, tx);
         }
 
+        const formulas = await assertFormulaSchema(tx, field.tableId, field.id, locale);
+        if (!formulas.ok) throw formulas;
+
         const preserved = await assertFinalizedResultTypes(tx, existing.tableId, locale);
         if (!preserved.ok) throw preserved;
 
@@ -785,6 +793,11 @@ export const restore = async (id: string, actorId: string | null, locale?: strin
         messages.fieldNameUnique,
       );
       if (!result.ok) return result;
+      const formulas = await assertFormulaSchema(tx, existing.tableId, id, locale);
+      if (!formulas.ok) {
+        rejectedSchema = formulas;
+        throw formulas;
+      }
       const preserved = await assertFinalizedResultTypes(tx, existing.tableId, locale);
       if (!preserved.ok) {
         rejectedSchema = preserved;

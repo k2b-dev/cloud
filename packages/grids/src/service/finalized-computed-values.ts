@@ -68,7 +68,7 @@ export const evaluateFinalizationFormulas = async (
   for (const field of fields) {
     if (field.deletedAt || field.type !== "formula") continue;
     const compiled = compileFormulaFieldToSql(field, { fields, computedFieldSql, now: options.now, dateConfig: options.dateConfig });
-    if (!compiled.ok) return fail(err.badInput(messages.finalizationCalculationInvalid({ field: field.name })));
+    if (!compiled.ok) return fail(err.badInput(messages.finalizationCalculationInvalid({ field: field.name, detail: compiled.error })));
     expressions.push({ field, expression: compiled.expression });
   }
   const snapshot: ComputedValueSnapshot = {

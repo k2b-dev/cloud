@@ -141,8 +141,8 @@ export const gridsCrudMessages = i18n.define({
       directFinalizationOnly: "This Table uses Direct Finalization.",
       finalizationRequestPending: "This Record already has a pending Finalization request.",
       recordNotReady: ({ fields }: { fields: string }) => `The Record is not ready to finalize: ${fields}.`,
-      finalizationCalculationInvalid: ({ field }: { field: string }) =>
-        `“${field}” cannot be captured. Check its calculation and source fields before finalizing.`,
+      finalizationCalculationInvalid: ({ field, detail }: { field: string; detail?: string }) =>
+        `“${field}” cannot be captured. ${detail ?? "Check its calculation and source fields before finalizing."}`,
       finalizationCalculationScope: "Calculated source values must belong to this Base before they can be captured.",
       finalizationCalculationChanged: "Calculated values or their definitions changed after the request. Request approval again.",
       finalizedResultTypeChanged: ({ field }: { field: string }) =>
@@ -316,8 +316,8 @@ export const gridsCrudMessages = i18n.define({
       directFinalizationOnly: "Diese Tabelle verwendet die direkte Finalisierung.",
       finalizationRequestPending: "Für diesen Datensatz liegt bereits eine offene Finalisierungsanfrage vor.",
       recordNotReady: ({ fields }) => `Der Datensatz ist noch nicht zur Finalisierung bereit: ${fields}.`,
-      finalizationCalculationInvalid: ({ field }) =>
-        `„${field}“ kann nicht festgeschrieben werden. Prüfe die Berechnung und ihre Quellfelder vor der Finalisierung.`,
+      finalizationCalculationInvalid: ({ field, detail }) =>
+        `„${field}“ kann nicht festgeschrieben werden. ${detail ?? "Prüfe die Berechnung und ihre Quellfelder vor der Finalisierung."}`,
       finalizationCalculationScope: "Berechnete Quellwerte müssen zu dieser Base gehören, bevor sie festgeschrieben werden können.",
       finalizationCalculationChanged:
         "Berechnete Werte oder ihre Definitionen haben sich seit der Anfrage geändert. Fordere die Freigabe erneut an.",

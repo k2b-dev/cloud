@@ -190,6 +190,7 @@ const compileDateDiff = (
 };
 
 const FORMULA_FUNCTION_COMPILERS = {
+  HAS_OPTION: () => formulaSqlFail("HAS_OPTION needs a Select field and a literal option ID or label"),
   ABS: ({ numericArg }) => formulaSqlOk(sql`ABS(${numericArg(0)})`, "numeric"),
   ROUND: ({ numericArg }) => {
     const value = numericArg(0);

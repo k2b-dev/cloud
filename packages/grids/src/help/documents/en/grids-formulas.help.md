@@ -43,6 +43,30 @@ Check empty, zero, and boundary values. Each expression allows up to 20,000 char
 
 Higher rows bind more tightly. Parentheses override this order. Prefer the word forms `and`, `or`, and `not` in formulas that people maintain directly.
 
+### Select conditions
+
+Formula checks validate SQL support even without sample records. Dependency
+plans exceeding 800 calculation stages per expression are rejected before
+execution. Simplify repeated conditional branches if this limit is reached.
+
+For a single-select field, use `Tax = '19 %'` or `Tax = 'ust-19'`.
+Option IDs match exactly; labels match without case sensitivity and must be
+unambiguous. Unknown options are rejected. Prefer stable option IDs in automation.
+
+Use `HAS_OPTION(Tags, 'approved')` for exact membership in a single- or
+multiple-select field. It does not match partial IDs: `ust-1` does not match
+`ust-19`. Use `ISBLANK(Tax)` or `Tax = null` for an empty selection.
+Multiple-select equality with a text value is rejected; use `HAS_OPTION`.
+`CONTAINS` and other text functions are not Select membership tests.
+
+For example: `IF(Tax = 'ust-19', ROUND(Net / 100 * 19, 2), 0)`.
+These rules also apply to Select inputs in object-list calculations.
+
+Formula checks validate supported operations before loading sample records,
+including on an empty table. A successful check does not verify every record
+or the business meaning of the calculation. Review the sample results and
+test empty values and each relevant option.
+
 ### Empty values, truth, and errors
 
 - Arithmetic and ordered comparisons return empty when either side is empty. Two empty values are equal.
@@ -119,6 +143,7 @@ IFERROR(total / quantity, 0)
 | Logic | NOT(value) | Invert truthiness. In GQL where/having, prefer the \`not\` operator. | boolean |
 | Logic | ISBLANK(value) | True when empty. | boolean |
 | Text | CONTAINS(text, search) | Substring match. | boolean |
+| Logic | HAS_OPTION(field, option) | Exact Select option membership by ID or unambiguous label. | boolean |
 | Text | STARTSWITH(text, prefix) | True when text starts with prefix. | boolean |
 | Text | ENDSWITH(text, suffix) | True when text ends with suffix. | boolean |
 | Text | ICONTAINS(text, search) | Case-insensitive substring match. | boolean |

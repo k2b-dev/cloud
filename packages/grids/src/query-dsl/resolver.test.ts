@@ -2014,7 +2014,8 @@ sort missing desc`),
     if (!compiled.ok) return;
     expect(compiled.query.columns.map((column) => column.label)).toEqual(["Amount", "margin"]);
     const text = normalizedSql(compiled.query.sql);
-    expect(text).toContain("ORDER BY ((grids.canonical_numeric");
+    expect(text).toContain("ORDER BY (SELECT r_formula_0.value");
+    expect(text).toContain("CROSS JOIN LATERAL");
     expect(text).toContain("DESC NULLS LAST, grids.canonical_numeric");
     expect(text).toContain("ASC NULLS LAST, r.id DESC NULLS LAST");
   });
@@ -2959,6 +2960,6 @@ sort missing desc`),
     if (!nonProjectableComputed.ok) return;
     const nonProjectableSql = compileDslGroupedQueryPlanToSql(nonProjectableComputed.plan, { fieldsByTableId: context.fieldsByTableId });
     expect(nonProjectableSql.ok).toBe(false);
-    if (!nonProjectableSql.ok) expect(nonProjectableSql.error).toContain("cannot be compiled into SQL formulas yet");
+    if (!nonProjectableSql.ok) expect(nonProjectableSql.error).toContain("text functions are not membership tests");
   });
 });

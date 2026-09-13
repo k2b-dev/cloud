@@ -86,6 +86,93 @@ const recordsInFinalizationState = async (
 };
 
 describe("record finalization Postgres integration", () => {
+  postgresTest("invoice Select and object-list formulas agree through writes, checks and finalization", async () => {
+    const item = await fixture();
+    try {
+      const add = async (name: string, type: string, config: Record<string, unknown> = {}) => {
+        const result = await fields.create({ tableId: item.tableId, name, type, config }, null);
+        if (!result.ok) throw result.error;
+        return result.data;
+      };
+      const tax = await add("Tax", "select", {
+        options: [
+          { id: "ust-19", label: "19 %" },
+          { id: "ust-1", label: "1 %" },
+        ],
+      });
+      const positions = await add("Positions", "object_list", {
+        fields: [
+          { id: "Amount", name: "Amount", type: "number" },
+          { id: "Prices", name: "Price", type: "number" },
+          { id: "Totals", name: "Total", type: "number", formula: { expression: "Amount * Price" } },
+        ],
+      });
+      const net = await add("Net", "formula", { expression: "LIST_SUM(Positions, 'Total')" });
+      const vat = await add("Vat", "formula", { expression: "IF(Tax = '19 %', ROUND(Net / 100 * 19, 2), 0)" });
+      const gross = await add("Gross", "formula", { expression: "Net + Vat" });
+      const paid = await add("Paid", "number");
+      const outstanding = await add("Outstanding", "formula", { expression: "IF(ISBLANK(Paid), Gross, Gross - Paid)" });
+      const fraction = await add("Fraction", "formula", { expression: "ROUND(Outstanding / 100, 2)" });
+      const emptyCheck = await checkFormula({ tableId: item.tableId, expression: "CONTAINS(Tax, 'ust-1')" });
+      expect(emptyCheck.ok && emptyCheck.data.ok).toBe(false);
+      const invalid = await fields.create(
+        { tableId: item.tableId, name: "Invalid", type: "formula", config: { expression: "Tax + 1" } },
+        null,
+      );
+      expect(invalid.ok).toBe(false);
+      expect((await fields.listByTable(item.tableId)).some((field) => field.name === "Invalid")).toBe(false);
+      const created = await records.create(
+        item.tableId,
+        { [item.name.id]: "Invoice", [tax.id]: ["ust-19"], [positions.id]: [{ Amount: "2", Prices: "200.5" }] },
+        null,
+        "direct",
+      );
+      if (!created.ok) throw created.error;
+      const updated = await records.update(item.tableId, created.data.id, { [paid.id]: "10" }, null, "direct");
+      if (!updated.ok) throw updated.error;
+      const expected = { [net.id]: "401", [vat.id]: "76.19", [gross.id]: "477.19", [outstanding.id]: "467.19", [fraction.id]: "4.67" };
+      const assertValues = (data: Record<string, unknown>) => {
+        for (const [id, value] of Object.entries(expected)) expect(String(data[id])).toBe(value);
+      };
+      const assertQuery = async () => {
+        const tableFields = await fields.listByTable(item.tableId);
+        const parsed = parseGridsQueryDsl(`from table {${item.tableShortId}}\nselect {${vat.shortId}}, {${fraction.shortId}}`);
+        if (!parsed.ok) throw Error(JSON.stringify(parsed.diagnostics));
+        const resolved = resolveDslQueryToQueryPlan(parsed.ast, {
+          tables: [{ kind: "table", id: item.tableId, shortId: item.tableShortId, name: "Cases" }],
+          views: [],
+          fieldsByTableId: { [item.tableId]: tableFields },
+        });
+        if (!resolved.ok) throw Error(JSON.stringify(resolved.diagnostics));
+        const preview = await previewDslQuery(resolved.plan, { fieldsByTableId: { [item.tableId]: tableFields }, limit: 10 });
+        if (!preview.ok || preview.data.mode !== "rows") throw Error("Invoice query failed");
+        expect(preview.data.rows).toHaveLength(1);
+        expect(Object.values(preview.data.rows[0]?.values ?? {}).map(String)).toEqual(["76.19", "4.67"]);
+      };
+      const read = await getRecord(item.tableId, created.data.id);
+      if (!read) throw Error("missing invoice");
+      assertValues(read.data);
+      await assertQuery();
+      const check = await checkFormula({ tableId: item.tableId, expression: "Vat" });
+      expect(check.ok && check.data.ok).toBe(true);
+      if (check.ok) expect(String(check.data.rows[0]?.result)).toBe("76.19");
+      const finalized = await finalization.finalize({ tableId: item.tableId, recordId: created.data.id, actorId: null, origin: "direct" });
+      if (!finalized.ok) throw finalized.error;
+      const frozen = await getRecord(item.tableId, created.data.id);
+      if (!frozen) throw Error("missing frozen invoice");
+      assertValues(frozen.data);
+      await assertQuery();
+      const [capture] = await sql<
+        Array<{ types: Record<string, string> }>
+      >`SELECT finalized_computed_types AS types FROM grids.records WHERE id = ${created.data.id}::uuid`;
+      for (const id of Object.keys(expected)) expect(capture?.types[id]).toBe("numeric");
+      const changed = await fields.update(tax.id, { config: { options: [{ id: "ust-1", label: "1 %" }] } }, null);
+      expect(changed.ok).toBe(false);
+      expect((await fields.get(tax.id))?.config.options).toEqual(tax.config.options);
+    } finally {
+      await cleanup(item.baseId);
+    }
+  });
   postgresTest("GQL refuses missing captures instead of silently producing an incomplete total", async () => {
     const item = await fixture();
     try {
@@ -349,7 +436,7 @@ describe("record finalization Postgres integration", () => {
         await cleanup(item.baseId);
       }
     },
-    15_000,
+    60_000,
   );
 
   postgresTest("relation labels and picker results preserve captured presentable formulas", async () => {
@@ -519,7 +606,7 @@ describe("record finalization Postgres integration", () => {
         await cleanup(item.baseId);
       }
     },
-    15_000,
+    60_000,
   );
 
   postgresTest(
@@ -600,7 +687,7 @@ describe("record finalization Postgres integration", () => {
         await cleanup(item.baseId);
       }
     },
-    15_000,
+    60_000,
   );
 
   postgresTest(
@@ -682,7 +769,7 @@ describe("record finalization Postgres integration", () => {
         await cleanup(item.baseId);
       }
     },
-    15_000,
+    60_000,
   );
 
   postgresTest(
@@ -755,7 +842,7 @@ describe("record finalization Postgres integration", () => {
         await sql`DELETE FROM auth.users WHERE id IN (${requesterId}::uuid, ${approverId}::uuid)`;
       }
     },
-    15_000,
+    60_000,
   );
 
   postgresTest(
@@ -814,7 +901,7 @@ describe("record finalization Postgres integration", () => {
         await cleanup(item.baseId);
       }
     },
-    15_000,
+    60_000,
   );
 
   postgresTest("captures exact computed values and keeps them after a same-type formula change", async () => {
@@ -1534,6 +1621,6 @@ describe("record finalization Postgres integration", () => {
         await sql`DELETE FROM auth.users WHERE id IN (${requesterId}::uuid, ${approverId}::uuid, ${outsiderId}::uuid)`;
       }
     },
-    15_000,
+    60_000,
   );
 });

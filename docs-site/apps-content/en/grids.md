@@ -140,6 +140,14 @@ For Assistant discovery, `grids.gql.context` keeps the `fields` catalog compact.
 Use formulas for derived values and workflows for multi-step effects that need
 inputs, permissions, revisions, and observable runs.
 
+Single-select formula conditions accept an exact option ID or an unambiguous
+case-insensitive label: `IF(Tax = 'ust-19', ROUND(Net / 100 * 19, 2), 0)`.
+Use `HAS_OPTION(Tags, 'approved')` for exact membership, including multiple
+selections; `CONTAINS` is a text search, not a Select test. Unknown options and
+unsupported operations are rejected. Formula checks validate support even on
+empty tables, then preview up to five records; review their results rather than
+treating a successful check as proof of business correctness.
+
 Formula parsing is bounded to 20,000 characters, 64 nesting levels and 1,024 expression nodes before evaluation or SQL compilation. Input-specific limits can be smaller, including the 5,000-character computed-column limit. Oversized expressions return validation diagnostics instead of entering evaluation.
 
 `ROUND` truncates fractional places toward zero and accepts −131,072 through 16,383 places. These bounds follow PostgreSQL numeric's supported digit range. Both runtimes reject out-of-range places as a recoverable formula error before arithmetic or integer conversion.

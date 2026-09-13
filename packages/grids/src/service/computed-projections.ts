@@ -459,6 +459,7 @@ export const buildComputedFieldSqlMap = async (
   const expressions = new Map<string, FormulaSqlExpression>(
     projections.map((p) => [p.fieldId, { sql: p.expr, errorSql: p.errorSql, type: computedOutputToFormulaType(p.outputType) }]),
   );
+  const dependencies = new Map(expressions);
   // Reuse the same captured-value authorization in projections, predicates and
   // aggregates. Combined rows explicitly opt out of their own frozen formulas.
   for (const field of fields) {
@@ -471,7 +472,7 @@ export const buildComputedFieldSqlMap = async (
       useFinalizedFormulaValues: options.useFinalizedFormulaValues,
       requireCapturedValues: options.requireCapturedValues,
       authorizedTableIds: options.authorizedTableIds,
-      computedFieldSql: expressions,
+      computedFieldSql: dependencies,
     });
     if (compiled.ok) expressions.set(field.id, compiled.expression);
   }
@@ -481,9 +482,8 @@ export const buildComputedFieldSqlMap = async (
 /**
  * Emits SQL projections for formula fields that can be represented from
  * the current record row alone. Non-projectable formulas are skipped
- * deliberately; the read path keeps the JS evaluator as a compatibility
- * fallback for formulas that reference relations, lookup/rollup values,
- * select arrays, files, or other formula fields.
+ * here; lookup/rollup dependencies are supplied by the computed-field map.
+ * Schema authoring validates complete formulas before accepting changes.
  */
 export const buildFormulaSqlProjections = (
   fields: Field[],

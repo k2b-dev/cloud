@@ -12,6 +12,7 @@ import {
   toDecimalValue,
   toNumber,
 } from "./numeric";
+import { bindFormulaSelects, type FormulaSelect } from "./select-binding";
 import { type BinOp, type Expr, formulaError, type Literal } from "./types";
 
 type EvalContext = FormulaRuntimeContext & {
@@ -21,6 +22,8 @@ type EvalContext = FormulaRuntimeContext & {
   slugToId?: Record<string, string>;
   /** Numeric column references for each available object-list field. */
   listColumns?: Record<string, Record<string, string>>;
+  selectFields?: Record<string, FormulaSelect>;
+  bound?: true;
 };
 
 const truthy = (v: unknown): boolean => {
@@ -317,6 +320,10 @@ const evaluateExpression = (ast: Expr, ctx: EvalContext): unknown => {
 
 /** Bound intermediate string growth as well as the final serialized value. */
 export const evaluate = (ast: Expr, ctx: EvalContext): unknown => {
+  if (ctx.selectFields && !ctx.bound) {
+    const bound = bindFormulaSelects(ast, (ref) => ctx.selectFields?.[ctx.slugToId?.[ref] ?? ctx.slugToId?.[normalizeRefKey(ref)] ?? ref]);
+    return bound.ok ? evaluate(bound.ast, { ...ctx, bound: true }) : formulaError(bound.error);
+  }
   const value = evaluateExpression(ast, ctx);
   return typeof value === "string" && ctx.maxStringLength !== undefined && value.length > ctx.maxStringLength
     ? formulaError("VALUE_TOO_LARGE")

@@ -24,6 +24,15 @@ describe("formula preview integration", () => {
         INSERT INTO grids.fields (id, short_id, table_id, name, type, config, position)
         VALUES (${nameFieldId}::uuid, 'NAME01', ${tableId}::uuid, 'Name', 'text', '{}'::jsonb, 0)
       `;
+      const unsupported = await checkFormula({ tableId, expression: "DOES_NOT_EXIST(Name)" });
+      expect(unsupported.ok && unsupported.data.ok).toBe(false);
+      if (unsupported.ok) expect(unsupported.data.diagnostics[0]?.code).toBe("formula.unsupported");
+      const formulaId = testUuid();
+      await sql`INSERT INTO grids.fields (id, short_id, table_id, name, type, config, position)
+        VALUES (${formulaId}::uuid, 'TOTAL1', ${tableId}::uuid, 'Total', 'formula', ${{ expression: "1" }}::jsonb, 1)`;
+      const cycle = await checkFormula({ tableId, currentFieldId: formulaId, expression: "Total + 1" });
+      expect(cycle.ok && cycle.data.ok).toBe(false);
+      if (cycle.ok) expect(cycle.data.diagnostics[0]?.message).toContain("cycle");
       await sql`
         INSERT INTO grids.records (short_id, id, table_id, data)
         VALUES (${testShortId("R")}, ${recordId}::uuid, ${tableId}::uuid, ${{ [nameFieldId]: "Ada" }}::jsonb)

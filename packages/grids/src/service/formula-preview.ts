@@ -1,12 +1,19 @@
 import { type DateContext, ok, type Result } from "@k2b/stdlib";
 import { sql } from "bun";
+import { objectListFormulaColumns } from "../field-types/object-list";
 import { evaluate, renderResult } from "../formula/evaluator";
 import { isFormulaError } from "../formula/functions";
 import { collectFieldRefs, parseFormula } from "../formula/parser";
 import { normalizeRefKey } from "../ref-syntax";
 import { authoringText } from "./authoring-messages";
-import { applyComputedProjections, buildComputedProjections, readableComputedTargetTableIds } from "./computed-projections";
+import {
+  applyComputedProjections,
+  buildComputedProjections,
+  computedOutputToFormulaType,
+  readableComputedTargetTableIds,
+} from "./computed-projections";
 import { listByTable as listFields } from "./fields";
+import { compileFormulaSourceToSql } from "./formula-sql-compiler";
 import { applyFinalizedComputedAccess, mapRecordRow } from "./record-persistence";
 import { type ExpansionViewer, enrichRecordsWithFormulas, hydrateRelationsFromLinks } from "./relations";
 import type { Field, GridRecord } from "./types";
@@ -14,7 +21,7 @@ import type { Field, GridRecord } from "./types";
 type DbRow = Record<string, unknown>;
 
 type FormulaPreviewDiagnostic = {
-  code: "formula.empty" | "formula.syntax" | "formula.unknown_field" | "formula.evaluation";
+  code: "formula.empty" | "formula.syntax" | "formula.unknown_field" | "formula.evaluation" | "formula.unsupported";
   severity: "error" | "info";
   message: string;
 };
@@ -127,7 +134,9 @@ export const checkFormula = async (params: {
   }
 
   const fields = await listFields(params.tableId);
-  const usableFields = fields.filter((field) => !field.deletedAt);
+  const usableFields = fields
+    .filter((field) => !field.deletedAt)
+    .map((field) => (field.id === params.currentFieldId ? { ...field, config: { ...field.config, expression } } : field));
   const refs = collectFieldRefs(parsed.ast);
   const { resolved, missing } = resolveFormulaRefs(refs, usableFields);
   if (missing.length > 0) {
@@ -142,6 +151,24 @@ export const checkFormula = async (params: {
       rows: [],
     });
   }
+
+  const authorizedTableIds = await readableComputedTargetTableIds(usableFields, params.viewer);
+  const projections = await buildComputedProjections(usableFields, { authorizedTableIds });
+  const compiled = compileFormulaSourceToSql(expression, {
+    fields: usableFields,
+    dateConfig: params.dateConfig,
+    authorizedTableIds,
+    computedFieldSql: new Map(
+      projections.map((p) => [p.fieldId, { sql: p.expr, type: computedOutputToFormulaType(p.outputType), errorSql: p.errorSql }]),
+    ),
+  });
+  if (!compiled.ok)
+    return ok({
+      ok: false,
+      diagnostics: [{ code: "formula.unsupported", severity: "error", message: t.formulaUnsupported({ detail: compiled.error }) }],
+      fields: [],
+      rows: [],
+    });
 
   const rows = await loadLatestRows(params.tableId, usableFields, {
     viewer: params.viewer,
@@ -160,7 +187,13 @@ export const checkFormula = async (params: {
   );
   let hasPreviewError = false;
   const previewRows = rows.map((record) => {
-    const rawResult = evaluate(parsed.ast, { fields: record.data, slugToId, dateConfig: params.dateConfig });
+    const rawResult = evaluate(parsed.ast, {
+      fields: record.data,
+      slugToId,
+      dateConfig: params.dateConfig,
+      listColumns: objectListFormulaColumns(usableFields),
+      selectFields: Object.fromEntries(usableFields.filter((field) => field.type === "select").map((field) => [field.id, field])),
+    });
     if (isFormulaError(rawResult)) hasPreviewError = true;
     return {
       recordId: record.id,

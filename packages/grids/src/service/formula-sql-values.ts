@@ -1,4 +1,5 @@
 import { sql } from "bun";
+import type { FormulaSelect } from "../formula/select-binding";
 import type { Literal } from "../formula/types";
 
 export type FormulaSqlType = "numeric" | "text" | "boolean" | "date" | "datetime" | "unknown";
@@ -8,6 +9,7 @@ export type FormulaSqlExpression = {
   type: FormulaSqlType;
   /** True when evaluating this expression produced a formula error rather than a legitimate NULL. */
   errorSql?: unknown;
+  select?: FormulaSelect;
 };
 
 export type FormulaSqlCompileResult = { ok: true; expression: FormulaSqlExpression } | { ok: false; error: string };

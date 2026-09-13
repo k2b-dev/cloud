@@ -24,6 +24,16 @@ export const formulaFunctionArity = (fn: FormulaFunction): FormulaFunctionArity 
 
 const FORMULA_FUNCTION_DEFINITIONS = [
   {
+    name: "HAS_OPTION",
+    signature: "HAS_OPTION(select, option)",
+    description: "Test exact Select membership using an option ID or unambiguous label.",
+    args: [
+      { label: "select", type: "any" },
+      { label: "option", type: "text" },
+    ],
+    returnType: "boolean",
+  },
+  {
     name: "LIST_SUM",
     signature: "LIST_SUM(list, column)",
     description: "Add a numeric column within one object list; empty lists return zero.",

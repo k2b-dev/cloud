@@ -134,7 +134,7 @@ export const compileObjectListRow = (
     if (column.type === "select") {
       const checked = normalizedSelect(column, expression.sql);
       if (!checked.ok) return checked;
-      columns.set(column.id, checked.expression);
+      columns.set(column.id, { ...checked.expression, select: column });
       continue;
     }
     // Stored values can become invalid after tightening a column's constraints.
@@ -151,7 +151,7 @@ export const compileObjectListRow = (
       const key = normalizeRefKey(ref);
       const id = Object.hasOwn(calculations.plan.references, key) ? calculations.plan.references[key] : undefined;
       const expression = id ? columns.get(id) : undefined;
-      return expression?.type === "unknown"
+      return expression?.type === "unknown" && !expression.select
         ? `List column ${ref} has no scalar formula value`
         : (expression ?? `Unknown list column ${ref}`);
     });

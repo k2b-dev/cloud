@@ -52,6 +52,29 @@ const fields = [
 ];
 
 describe("compileFormulaSourceToSql", () => {
+  test("rejects oversized branch dependency plans before submitting SQL", () => {
+    const branches = Array.from({ length: 8 }, (_, index) =>
+      field({
+        id: `branch_${index}`,
+        shortId: `BRANC${index}`,
+        name: `Branch${index}`,
+        type: "formula",
+        config: { expression: index === 0 ? "1 + 2 + 3 + 4 + 5" : `IF(true, Branch${index - 1}, Branch${index - 1})` },
+      }),
+    );
+    expect(compileFormulaSourceToSql("Branch7", { fields: branches })).toMatchObject({
+      ok: false,
+      error: expect.stringContaining("calculation stages"),
+    });
+  });
+  test("Select binding also applies to scoped resolver fields", () => {
+    const select = { name: "Status", config: { options: [{ id: "ready", label: "Ready" }] } };
+    const resolveField = () => ({ sql: sql`'[]'::jsonb`, type: "unknown" as const, select });
+    expect(compileFormulaSourceToSql("customer.Status = 'Ready'", { fields: [], resolveField, scopedRefs: true }).ok).toBe(true);
+    expect(compileFormulaSourceToSql("CONTAINS(customer.Status, 'read')", { fields: [], resolveField, scopedRefs: true })).toMatchObject({
+      ok: false,
+    });
+  });
   test("list reductions respect resolved scopes and never fall back past resolver errors", () => {
     const list = field({
       id: "list_id",

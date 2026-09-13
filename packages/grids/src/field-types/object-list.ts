@@ -225,6 +225,7 @@ export const validateObjectList = (
         maxStringLength: OBJECT_LIST_LIMITS.bytes,
         fields: row,
         slugToId: calculations.plan.references,
+        selectFields: Object.fromEntries(config.fields.filter((column) => column.type === "select").map((column) => [column.id, column])),
       });
       if (isFormulaError(value))
         return calculationFailure(

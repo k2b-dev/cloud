@@ -104,6 +104,7 @@ export const enrichRecordsWithFormulas = <T extends Pick<GridRecord, "data" | "f
 
   const slugToId = formulaSlugMap(fields);
   const listColumns = objectListFormulaColumns(fields);
+  const selectFields = Object.fromEntries(fields.filter((field) => field.type === "select").map((field) => [field.id, field]));
   const { ordered, cycle } = orderFormulasByDeps(formulaFields, slugToId);
 
   for (const record of records) {
@@ -114,7 +115,14 @@ export const enrichRecordsWithFormulas = <T extends Pick<GridRecord, "data" | "f
     for (const id of cycle) scratch[id] = formulaError("CYCLE");
     for (const { field, ast } of ordered) {
       if (cycle.has(field.id)) continue;
-      scratch[field.id] = evaluate(ast, { fields: scratch, slugToId, listColumns, dateConfig: options.dateConfig, now: options.now });
+      scratch[field.id] = evaluate(ast, {
+        fields: scratch,
+        slugToId,
+        listColumns,
+        selectFields,
+        dateConfig: options.dateConfig,
+        now: options.now,
+      });
     }
     for (const { field } of ordered) record.data[field.id] = renderResult(scratch[field.id]);
     for (const id of cycle) record.data[id] = renderResult(scratch[id]);
@@ -133,6 +141,7 @@ export const enrichRecordsWithComputedColumns = (
 
   const slugToId = formulaSlugMap(fields);
   const listColumns = objectListFormulaColumns(fields);
+  const selectFields = Object.fromEntries(fields.filter((field) => field.type === "select").map((field) => [field.id, field]));
   const compiled = computedColumns.map((column) => ({ column, parsed: parseFormula(column.expression) }));
 
   for (const record of records) {
@@ -143,7 +152,14 @@ export const enrichRecordsWithComputedColumns = (
         record.data[column.id] = renderResult(formulaError("ERROR"));
         continue;
       }
-      const value = evaluate(parsed.ast, { fields: scratch, slugToId, listColumns, dateConfig: options.dateConfig, now: options.now });
+      const value = evaluate(parsed.ast, {
+        fields: scratch,
+        slugToId,
+        listColumns,
+        selectFields,
+        dateConfig: options.dateConfig,
+        now: options.now,
+      });
       scratch[column.id] = value;
       record.data[column.id] = renderResult(value);
     }

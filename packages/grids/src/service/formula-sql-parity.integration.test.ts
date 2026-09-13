@@ -60,6 +60,7 @@ const expectParity = async (
     slugToId,
     dateConfig: options.dateConfig,
     now: options.now,
+    selectFields: Object.fromEntries((options.fields ?? []).filter((field) => field.type === "select").map((field) => [field.id, field])),
   });
   const compiled = compileFormulaSourceToSql(source, {
     fields: options.fields ?? [],
@@ -88,6 +89,43 @@ beforeAll(async () => {
 });
 
 describe("formula evaluator and PostgreSQL parity", () => {
+  postgresTest("Select equality and membership retain exact IDs, labels and empty semantics", async () => {
+    for (const multiple of [false, true]) {
+      const tax = formulaField("55555555-5555-4555-8555-555555555555", "Tax", "select", {
+        multiple,
+        options: [
+          { id: "ust-19", label: "19 %" },
+          { id: "ust-1", label: "1 %" },
+        ],
+      });
+      for (const value of [null, [], ["ust-19"]]) {
+        for (const source of [
+          "HAS_OPTION(Tax, 'ust-1')",
+          "HAS_OPTION(Tax, '19 %')",
+          "ISBLANK(Tax)",
+          "Tax = null",
+          "Tax != null",
+          ...(multiple ? [] : ["Tax = '19 %'", "Tax != 'ust-19'"]),
+        ])
+          await expectParity(source, { fields: [tax], values: { [tax.id]: value } });
+      }
+    }
+  });
+  postgresTest("staged branches do not execute unused failing SQL expressions", async () => {
+    for (const source of [
+      "IF(true, 'ok', LEFT('x', 999999999999))",
+      "IF(false, LEFT('x', 999999999999), 'ok')",
+      "IFERROR('ok', LEFT('x', 999999999999))",
+      "IFEMPTY('ok', LEFT('x', 999999999999))",
+      "AND(false, LEN(LEFT('x', 999999999999)) > 0)",
+      "OR(true, LEN(LEFT('x', 999999999999)) > 0)",
+      "false && LEN(LEFT('x', 999999999999)) > 0",
+      "true || LEN(LEFT('x', 999999999999)) > 0",
+      "IF(true, IF(false, 1, null), 2)",
+      "IFERROR(1 / 0, 42)",
+    ])
+      await expectParity(source);
+  });
   const berlin = { timeZone: "Europe/Berlin" } satisfies DateContext;
   const due = formulaField("11111111-1111-4111-8111-111111111111", "Due", "date");
   const timestamp = formulaField("22222222-2222-4222-8222-222222222222", "Timestamp", "date", { includeTime: true });

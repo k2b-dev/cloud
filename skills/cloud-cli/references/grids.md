@@ -668,6 +668,24 @@ cld grids formulas check Authors --expression 'LEN(Name)' --json
 
 ### Formula language reference
 
+The SQL compiler rejects dependency plans exceeding 800 calculation stages per
+expression before execution. Simplify repeated conditional branches rather than
+changing division into multiplication as a workaround.
+
+Single-select conditions accept exact option IDs or unambiguous case-insensitive labels:
+`IF(Tax = 'ust-19', ROUND(Net / 100 * 19, 2), 0)`.
+Use `HAS_OPTION(Tags, 'approved')` for exact single/multiple-select membership;
+`ust-1` does not match `ust-19`. Unknown or ambiguous options are rejected.
+Use `ISBLANK(Tax)` or `Tax = null` for an empty selection. Multiple-select
+equality against text is rejected. `CONTAINS` is for text, not Select fields.
+The same rules apply to object-list Select inputs. Prefer stable option IDs.
+
+`formulas check` validates supported operations even without records, then
+previews at most five recent records. `ok: true` does not prove the business
+calculation or all data correct. Inspect results and test every relevant option.
+Saving a field also checks the affected formula dependencies; an unsupported
+change is rejected atomically instead of failing later during finalization.
+
 Numeric results may be JSON numbers or decimal strings. JavaScript evaluation retains a decimal string when conversion to a number would lose digits, including intermediate results of literal-only formulas. Treat these strings as numbers using decimal arithmetic, not `Number(...)`, when calculating further. `number` columns inside object lists always use decimal strings; a configured `decimalPlaces` preserves that scale. Non-finite math results are formula errors, not the text `NaN` or `Infinity`.
 
 Finite addition, subtraction, multiplication, remainder, and sums use operand-sized precision within the supported numeric range. `MEDIAN` also keeps exact numeric values in SQL; it does not convert amounts to floating point to select the middle values.
@@ -693,6 +711,7 @@ The complete function catalog is:
 SUM(value, ...)                 AVG(value, ...)                  MEAN(value, ...)
 COUNT(value, ...)               MIN(value, ...)                  MAX(value, ...)
 MEDIAN(value, ...)
+HAS_OPTION(select, option)
 LIST_SUM(list, column)          LIST_AVG(list, column)           LIST_COUNT(list)
 LIST_MIN(list, column)          LIST_MAX(list, column)
 ABS(number)                     ROUND(number, digits?)           FLOOR(number)

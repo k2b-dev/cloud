@@ -74,7 +74,10 @@ describe("GQL lookup/rollup fields (C3)", () => {
       computedFieldSql,
     });
     expect(whereSql.ok).toBe(true);
-    if (whereSql.ok) expect(normalizedSql(whereSql.query.sql)).toContain("((SELECT 7))::numeric >");
+    if (whereSql.ok) {
+      expect(normalizedSql(whereSql.query.sql)).toContain("(SELECT 7) AS value");
+      expect(normalizedSql(whereSql.query.sql)).toContain("(r_formula_0.value)::numeric >");
+    }
 
     const sortSql = compileDslQueryPlanToSql(planOf(`select amount\nsort total desc`), {
       fieldsByTableId: rollupCtx().fieldsByTableId,

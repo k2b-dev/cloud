@@ -1,4 +1,5 @@
 import type { DateContext } from "@k2b/stdlib";
+import { sql } from "bun";
 import { normalizeRefKey, parseQualifiedIdentifierRef } from "../ref-syntax";
 import { storageOf } from "../service/field-storage";
 import {
@@ -49,6 +50,7 @@ const compileScopedField = (
   options: DslScopedFormulaOptions,
   label: string,
 ): Exclude<ReturnType<FormulaSqlFieldResolver>, null> => {
+  if (field.type === "select") return { sql: sql`${sql.unsafe(scope.recordAlias)}.data->${field.id}`, type: "unknown", select: field };
   if (field.type === "object_list") {
     const compiled = compileObjectListProjection(field, scope.recordAlias, { dateConfig: options.dateConfig });
     return compiled.ok ? { ...compiled.expression, objectListConfig: field.config } : compiled.error;

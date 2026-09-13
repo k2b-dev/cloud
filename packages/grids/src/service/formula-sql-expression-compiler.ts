@@ -3,6 +3,7 @@ import { sql } from "bun";
 import { ObjectListConfigSchema } from "../field-types/object-list";
 import type { ListFormulaFunctionName } from "../formula/function-catalog";
 import { parseFormula } from "../formula/parser";
+import { bindFormulaSelects, type FormulaSelect } from "../formula/select-binding";
 import type { BinOp, Expr } from "../formula/types";
 import { normalizeRefKey } from "../ref-syntax";
 import { compileDocumentQueryExpression, DOCUMENT_QUERY_FUNCTIONS } from "./document-query-expression";
@@ -24,6 +25,7 @@ import {
   formulaSqlLiteral,
   formulaSqlOk,
   formulaSqlOrErrors,
+  joinFormulaSql,
 } from "./formula-sql-values";
 import { numericAverageSql, numericDivideSql } from "./numeric-division-sql";
 import { compileObjectListValue } from "./object-list-sql";
@@ -32,7 +34,9 @@ import type { Field } from "./types";
 const SQL_ALIAS = /^[a-z_][a-z0-9_]*$/i;
 export const MAX_FORMULA_INLINE_DEPTH = 8;
 
-export type FormulaSqlFieldResolver = (ref: string) => (FormulaSqlExpression & { objectListConfig?: Field["config"] }) | string | null;
+export type FormulaSqlFieldResolver = (
+  ref: string,
+) => (FormulaSqlExpression & { objectListConfig?: Field["config"]; select?: FormulaSelect }) | string | null;
 
 type FormulaSqlCompileOptions = {
   /** Only authorized GQL row queries may inspect current document metadata. */
@@ -67,7 +71,49 @@ type CompileContext = Required<Pick<FormulaSqlCompileOptions, "recordAlias" | "n
     fieldsByRef: Map<string, Field[]>;
     inlineStack: Set<string>;
     depth: number;
+    steps: unknown[];
+    fieldValues: Map<string, FormulaSqlCompileResult>;
+    condition?: unknown;
   };
+
+// PostgreSQL allows 1,664 columns in an intermediate result. Each stage owns
+// a value/error pair; reserve the remaining columns for the surrounding row.
+const MAX_SQL_STAGES = 800;
+
+const stageExpression = (result: FormulaSqlCompileResult, context: CompileContext, liveOnly = false): FormulaSqlCompileResult => {
+  if (!result.ok) return result;
+  if (context.steps.length >= MAX_SQL_STAGES) return formulaSqlFail("Formula SQL plan exceeds 800 calculation stages");
+  const alias = sql.unsafe(`${context.recordAlias}_formula_${context.steps.length}`);
+  const value = result.expression;
+  const live = sql`${sql.unsafe(context.recordAlias)}.finalized_at IS NULL`;
+  const condition =
+    liveOnly && context.useFinalizedFormulaValues !== false
+      ? context.condition === undefined
+        ? live
+        : sql`(${context.condition} AND ${live})`
+      : context.condition;
+  context.steps.push(sql`CROSS JOIN LATERAL (SELECT
+    ${condition === undefined ? value.sql : sql`CASE WHEN ${condition} THEN ${value.sql} END`} AS value,
+    ${condition === undefined ? (value.errorSql ?? sql`false`) : sql`CASE WHEN ${condition} THEN ${value.errorSql ?? sql`false`} ELSE false END`} AS error
+    OFFSET 0) ${alias}`);
+  return {
+    ok: true,
+    expression: { ...value, sql: sql`${alias}.value`, ...(value.errorSql === undefined ? {} : { errorSql: sql`${alias}.error` }) },
+  };
+};
+
+const finishPlan = (result: FormulaSqlCompileResult, context: CompileContext): FormulaSqlCompileResult => {
+  if (!result.ok || context.steps.length === 0) return result;
+  const from = sql`FROM (SELECT 1) AS formula_seed ${joinFormulaSql(context.steps, sql` `)}`;
+  return {
+    ok: true,
+    expression: {
+      ...result.expression,
+      sql: sql`(SELECT ${result.expression.sql} ${from})`,
+      ...(result.expression.errorSql === undefined ? {} : { errorSql: sql`(SELECT ${result.expression.errorSql} ${from})` }),
+    },
+  };
+};
 
 const addFieldRef = (map: Map<string, Field[]>, ref: string | null | undefined, field: Field): void => {
   if (!ref) return;
@@ -259,7 +305,9 @@ const inlineFormulaField = (field: Field, context: CompileContext): FormulaSqlCo
   if (!parsed.ok) return formulaSqlFail(`Formula field "${field.name}": ${parsed.error}`);
   const inlineStack = new Set(context.inlineStack);
   inlineStack.add(field.id);
-  const compiled = compileExpression(parsed.ast, { ...context, inlineStack, depth: context.depth + 1 });
+  const bound = bindSelects(parsed.ast, context);
+  if (!bound.ok) return formulaSqlFail(bound.error);
+  const compiled = compileExpression(bound.ast, { ...context, inlineStack, depth: context.depth + 1 });
   return compiled.ok && context.useFinalizedFormulaValues !== false
     ? {
         ok: true,
@@ -277,14 +325,33 @@ const inlineFormulaField = (field: Field, context: CompileContext): FormulaSqlCo
 const compileFieldExpression = (expression: Extract<Expr, { kind: "field" }>, context: CompileContext): FormulaSqlCompileResult => {
   const custom = context.resolveField?.(expression.fieldId);
   if (typeof custom === "string") return formulaSqlFail(custom);
-  if (custom) return formulaSqlOk(custom.sql, custom.type, custom.errorSql);
+  if (custom) {
+    const key = `scope:${expression.fieldId}`;
+    const cached = context.fieldValues.get(key);
+    if (cached) return cached;
+    const result = stageExpression(formulaSqlOk(custom.sql, custom.type, custom.errorSql), context);
+    context.fieldValues.set(key, result);
+    return result;
+  }
   const field = fieldByRef(context.fieldsByRef, expression.fieldId);
   if (typeof field === "string") return formulaSqlFail(field);
   if (field.type === "formula" || field.type === "lookup" || field.type === "rollup") {
     const computed = context.computedFieldSql?.get(field.id);
-    if (computed) return formulaSqlOk(computed.sql, computed.type, computed.errorSql);
+    if (computed) {
+      const cached = context.fieldValues.get(field.id);
+      if (cached) return cached;
+      const result = stageExpression({ ok: true, expression: computed }, context);
+      context.fieldValues.set(field.id, result);
+      return result;
+    }
   }
-  if (field.type === "formula") return inlineFormulaField(field, context);
+  if (field.type === "formula") {
+    const cached = context.fieldValues.get(field.id);
+    if (cached) return cached;
+    const compiled = stageExpression(inlineFormulaField(field, context), context);
+    context.fieldValues.set(field.id, compiled);
+    return compiled;
+  }
   const projection = storageOf(field).project(field, context.recordAlias);
   if (projection === null) return formulaSqlFail(`Field ${field.name} (${field.type}) cannot be compiled into SQL formulas yet`);
   return formulaSqlOk(projection, formulaSqlTypeForField(field));
@@ -302,9 +369,53 @@ const compileUnaryExpression = (expression: Extract<Expr, { kind: "unop" }>, con
 const compileBinaryExpression = (expression: Extract<Expr, { kind: "binop" }>, context: CompileContext): FormulaSqlCompileResult => {
   const left = compileExpression(expression.left, context);
   if (!left.ok) return left;
-  const right = compileExpression(expression.right, context);
+  const rightContext =
+    expression.op === "&&" || expression.op === "||"
+      ? conditionalContext(
+          context,
+          sql`NOT ${formulaSqlError(left.expression)} AND ${expression.op === "&&" ? formulaSqlAsBoolean(left.expression) : sql`NOT ${formulaSqlAsBoolean(left.expression)}`}`,
+        )
+      : context;
+  const right = compileExpression(expression.right, rightContext);
   if (!right.ok) return right;
   return compileBinaryOperator(expression.op, left.expression, right.expression, context);
+};
+
+const conditionalContext = (context: CompileContext, condition: unknown): CompileContext => ({
+  ...context,
+  condition: context.condition === undefined ? condition : sql`(${context.condition} AND ${condition})`,
+  // A result calculated only in one branch must not serve another branch.
+  fieldValues: new Map(context.fieldValues),
+});
+
+const compileCallArguments = (fn: string, args: Expr[], context: CompileContext): FormulaSqlCompileResult[] => {
+  const results: FormulaSqlCompileResult[] = [];
+  let branch = context;
+  for (const [index, arg] of args.entries()) {
+    if (index > 0) {
+      const first = results[0];
+      if (!first?.ok) return results;
+      const value = first.expression;
+      if (fn === "IF")
+        branch = conditionalContext(
+          context,
+          sql`NOT ${formulaSqlError(value)} AND ${index === 1 ? formulaSqlAsBoolean(value) : sql`NOT ${formulaSqlAsBoolean(value)}`}`,
+        );
+      else if (fn === "IFERROR") branch = conditionalContext(context, formulaSqlError(value));
+      else if (fn === "IFEMPTY")
+        branch = conditionalContext(context, sql`NOT ${formulaSqlError(value)} AND (${value.sql} IS NULL OR (${value.sql})::text = '')`);
+      else if (fn === "AND" || fn === "OR") {
+        const previous = results[index - 1];
+        if (!previous?.ok) return results;
+        branch = conditionalContext(
+          branch,
+          sql`NOT ${formulaSqlError(previous.expression)} AND ${fn === "AND" ? formulaSqlAsBoolean(previous.expression) : sql`NOT ${formulaSqlAsBoolean(previous.expression)}`}`,
+        );
+      }
+    }
+    results.push(compileExpression(arg, branch));
+  }
+  return results;
 };
 
 const compileListReduction = (fn: ListFormulaFunctionName, args: Expr[], context: CompileContext): FormulaSqlCompileResult => {
@@ -314,18 +425,36 @@ const compileListReduction = (fn: ListFormulaFunctionName, args: Expr[], context
   if (typeof custom === "string") return formulaSqlFail(custom);
   let configValue: Field["config"];
   let value: FormulaSqlCompileResult;
+  const listKey = `list:${normalizeRefKey(list.fieldId)}`;
   if (custom) {
     if (!custom.objectListConfig) return formulaSqlFail(`${list.fieldId} is not an object-list field`);
     configValue = custom.objectListConfig;
-    value = { ok: true, expression: custom };
+    value = context.fieldValues.get(listKey) ?? { ok: true, expression: custom };
   } else {
     const field = fieldByRef(context.fieldsByRef, list.fieldId);
     if (typeof field === "string") return formulaSqlFail(field);
     if (field.type !== "object_list") return formulaSqlFail(`${field.name} is not an object-list field`);
     configValue = field.config;
-    value = compileObjectListValue(field, context.recordAlias, (ast, resolveField, recordAlias) =>
-      compileExpression(ast, { ...context, fieldsByRef: new Map(), resolveField, recordAlias }),
-    );
+    value =
+      context.fieldValues.get(listKey) ??
+      compileObjectListValue(field, context.recordAlias, (ast, resolveField, recordAlias) => {
+        const rowContext = {
+          ...context,
+          fieldsByRef: new Map<string, Field[]>(),
+          resolveField,
+          recordAlias,
+          steps: [],
+          fieldValues: new Map<string, FormulaSqlCompileResult>(),
+          useFinalizedFormulaValues: false,
+        };
+        const bound = bindSelects(ast, rowContext);
+        return bound.ok ? finishPlan(compileExpression(bound.ast, rowContext), rowContext) : formulaSqlFail(bound.error);
+      });
+  }
+  if (!value.ok) return value;
+  if (!context.fieldValues.has(listKey)) {
+    value = stageExpression(value, context, context.depth > 0);
+    context.fieldValues.set(listKey, value);
   }
   if (!value.ok) return value;
   const source = value.expression.sql;
@@ -354,7 +483,7 @@ const compileListReduction = (fn: ListFormulaFunctionName, args: Expr[], context
   );
 };
 
-const compileExpression = (expression: Expr, context: CompileContext): FormulaSqlCompileResult => {
+const compileNode = (expression: Expr, context: CompileContext): FormulaSqlCompileResult => {
   switch (expression.kind) {
     case "literal": {
       if (expression.numericSource !== undefined) return formulaSqlOk(sql`${expression.numericSource}::numeric`, "numeric");
@@ -368,6 +497,24 @@ const compileExpression = (expression: Expr, context: CompileContext): FormulaSq
     case "binop":
       return compileBinaryExpression(expression, context);
     case "call":
+      if ((expression.fn === "HAS_OPTION" || expression.fn === "ISBLANK") && expression.args[0]?.kind === "field") {
+        const ref = expression.args[0].fieldId;
+        const custom = context.resolveField?.(ref);
+        const field = fieldByRef(context.fieldsByRef, ref);
+        if ((custom && typeof custom !== "string" && custom.select) || (typeof field !== "string" && field.type === "select")) {
+          const source =
+            custom && typeof custom !== "string"
+              ? custom.sql
+              : sql`${sql.unsafe(context.recordAlias)}.data->${typeof field === "string" ? ref : field.id}`;
+          return formulaSqlOk(
+            expression.fn === "ISBLANK"
+              ? sql`(${source} IS NULL OR ${source} = 'null'::jsonb OR ${source} = '[]'::jsonb)`
+              : sql`COALESCE(${source} @> ${[expression.args[1]?.kind === "literal" ? expression.args[1].value : null]}::jsonb, false)`,
+            "boolean",
+            custom && typeof custom !== "string" ? custom.errorSql : undefined,
+          );
+        }
+      }
       if (DOCUMENT_QUERY_FUNCTIONS.has(expression.fn)) {
         if (!context.documentMetadata || context.depth > 0)
           return formulaSqlFail("Document metadata requires an authorized Grids row query");
@@ -377,15 +524,30 @@ const compileExpression = (expression: Expr, context: CompileContext): FormulaSq
         expression.fn,
         expression.args,
         { ...context, compileList: (fn, args) => compileListReduction(fn, args, context) },
-        (args) => args.map((argument) => compileExpression(argument, context)),
+        (args) => compileCallArguments(expression.fn, args, context),
       );
   }
 };
 
+const compileExpression = (expression: Expr, context: CompileContext): FormulaSqlCompileResult => {
+  const result = compileNode(expression, context);
+  // Leaves are cheap. Materialize each operation before its consumers repeat
+  // value/error checks, keeping expansion linear in the dependency graph.
+  return expression.kind === "literal" || expression.kind === "field" ? result : stageExpression(result, context, context.depth > 0);
+};
+
+const bindSelects = (ast: Expr, context: CompileContext) =>
+  bindFormulaSelects(ast, (ref) => {
+    const custom = context.resolveField?.(ref);
+    if (custom && typeof custom !== "string") return custom.select;
+    const field = fieldByRef(context.fieldsByRef, ref);
+    return typeof field !== "string" && field.type === "select" ? field : undefined;
+  });
+
 export const compileFormulaAstToSql = (ast: Expr, options: FormulaSqlCompileOptions): FormulaSqlCompileResult => {
   const recordAlias = options.recordAlias ?? "r";
   if (!SQL_ALIAS.test(recordAlias)) return formulaSqlFail(`Unsafe SQL record alias ${recordAlias}`);
-  return compileExpression(ast, {
+  const context: CompileContext = {
     documentMetadata: options.documentMetadata,
     fieldsByRef: buildFieldMap(options.fields),
     recordAlias,
@@ -398,7 +560,11 @@ export const compileFormulaAstToSql = (ast: Expr, options: FormulaSqlCompileOpti
     authorizedTableIds: options.authorizedTableIds,
     inlineStack: new Set(),
     depth: 0,
-  });
+    steps: [],
+    fieldValues: new Map(),
+  };
+  const bound = bindSelects(ast, context);
+  return bound.ok ? finishPlan(compileExpression(bound.ast, context), context) : formulaSqlFail(bound.error);
 };
 
 export const compileFormulaPredicateAstToSql = (ast: Expr, options: FormulaSqlCompileOptions): FormulaSqlCompileResult => {
