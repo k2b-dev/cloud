@@ -22,7 +22,12 @@ export const natsMetricSamples = (cluster: NatsDiagnostics["cluster"], inventory
       "cloud_nats_cluster_up",
       "Whether the configured cluster snapshot is complete.",
       cluster.status === "available" &&
-        cluster.nodes.every((node) => !node.jetstreamEnabled || (node.meta && (!node.meta.leader || metadataSnapshot(node, cluster.nodes))))
+        cluster.nodes.every(
+          (node) =>
+            !node.jetstreamEnabled ||
+            (!node.clusterName && !node.meta) ||
+            (node.meta && (!node.meta.leader || metadataSnapshot(node, cluster.nodes))),
+        )
         ? 1
         : 0,
     ),

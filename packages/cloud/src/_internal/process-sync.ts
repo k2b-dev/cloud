@@ -82,7 +82,7 @@ export const startProcessSync = async ({ application }: { application: string })
         connection,
         namespace: env.SYNC_NAMESPACE,
         application,
-        defaults: { replicas: 3 },
+        defaults: { replicas: env.SYNC_REPLICAS },
         observe: (event) => observeSyncEvent(event, application),
       });
       bindProcessSync(sync);

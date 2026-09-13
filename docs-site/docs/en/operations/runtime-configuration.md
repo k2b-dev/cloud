@@ -27,6 +27,7 @@ encrypted with `APP_SECRET`.
 | `REDIS_URL` | Valkey connection used by Bun Redis for caches and rate limits |
 | `NATS_SERVERS` | Comma-separated NATS JetStream bootstrap URLs |
 | `SYNC_NAMESPACE` | Deployment namespace shared by all application processes |
+| `SYNC_REPLICAS` | JetStream replica count: 1, 3, or 5; default 3. Dev Compose sets 1. Keep consistent across processes; migrate existing resources before changing it. |
 | `NATS_CREDS_FILE` | Optional mounted NATS credentials file |
 | `NATS_TLS_CA_FILE` | Optional trusted CA file for NATS TLS |
 | `NATS_IGNORE_CLUSTER_UPDATES` | Keep reachable seed addresses when advertised Docker hostnames are inaccessible |

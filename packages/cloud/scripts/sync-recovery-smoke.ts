@@ -7,6 +7,7 @@
  * No provider or application-domain effects; successful recovery deletes only
  * the exact test streams after checking their broker identity metadata.
  */
+import { env } from "../src/config/env";
 import { createSync, type SyncResourceSummary, type Worker } from "@k2b/sync";
 import { connect, type NatsConnection } from "@nats-io/transport-node";
 
@@ -57,7 +58,7 @@ export const main = async (): Promise<void> => {
     .map((value) => value.trim())
     .filter(Boolean);
   const connection = await connect({ servers, name: `${APPLICATION}-${phase}`, ignoreClusterUpdates: true });
-  const sync = createSync({ connection, namespace, application: APPLICATION, defaults: { replicas: 3 } });
+  const sync = createSync({ connection, namespace, application: APPLICATION, defaults: { replicas: env.SYNC_REPLICAS } });
   const job = sync.job<{ preparedAt: string }>({
     id: JOB_ID,
     delivery: { ackWaitMs: 30_000, maxAttempts: 3, backoffMs: [1_000, 2_000] },

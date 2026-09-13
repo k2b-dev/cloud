@@ -38,6 +38,18 @@ const node = (name: string): NatsNode => ({
   meta: { name: "test", leader: "n1", replicas: name === "n1" ? [peer, { ...peer, name: "n3" }] : [] },
 });
 
+test("standalone JetStream is healthy without inventing metadata replication metrics", () => {
+  const standalone = { ...node("single"), clusterName: null, meta: null, expectedNodes: null };
+  expect(nodeReplicaStatus(standalone, [standalone])).toBe("synchronized");
+  const samples = natsMetricSamples(
+    { status: "available", nodes: [standalone] },
+    { status: "available", streams: [], total: 0, sampledAt: "" },
+  );
+  expect(samples.find((item) => item.name === "cloud_nats_cluster_up")?.value).toBe(1);
+  expect(samples.some((item) => item.name === "cloud_nats_meta_replicas_unhealthy")).toBe(false);
+  expect(nodeReplicaStatus({ ...standalone, clusterName: "cluster" }, [standalone])).toBe("unknown");
+});
+
 test("follower reports without replica lists use the elected leader snapshot", () => {
   const nodes = [node("n1"), node("n2"), node("n3")];
   expect(nodes.map((n) => nodeReplicaStatus(n, nodes))).toEqual(Array(3).fill("synchronized"));

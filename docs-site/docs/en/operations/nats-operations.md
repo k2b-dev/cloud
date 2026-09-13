@@ -110,6 +110,9 @@ The node table shows process RAM from VARZ, including buffers and caches.
 JetStream memory-storage metrics measure memory-backed streams separately;
 these can be zero when streams use file storage.
 Storage columns combine usage, the configured limit, and percentage used.
+Standalone JetStream nodes have no metadata Raft group. A complete standalone
+snapshot is healthy and emits no metadata replication metrics.
+
 Metadata replication status comes from the elected leader: followers omit the
 replica list. Green means synchronized, orange means behind or unknown, and red
 means a reported missing leader, missing replica, or offline replica. If the

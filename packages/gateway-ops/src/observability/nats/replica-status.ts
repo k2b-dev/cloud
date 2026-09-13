@@ -23,6 +23,8 @@ export const metadataSnapshot = (node: NatsNode, nodes: NatsNode[]) =>
 
 export const nodeReplicaStatus = (node: NatsNode, nodes: NatsNode[]) => {
   if (!node.jetstreamEnabled) return "disabled";
+  // Standalone JetStream has no metadata Raft group or followers.
+  if (!node.clusterName && !node.meta) return "synchronized";
   if (!node.meta) return "unknown";
   if (!node.meta.leader) return "noLeader";
   const metadata = metadataSnapshot(node, nodes);

@@ -1,8 +1,7 @@
 # Infrastructure services – run with: bun run dev:infra
 
-# Three-node NATS JetStream cluster (@k2b/sync v6). Every node shares the same
-# config below; only `--name` differs. Apps inside the compose network dial all
-# three nodes; the host reaches node 1 on :4222 (clients) and :8222 (monitoring).
+# Persistent single-node JetStream for local development. Cluster failure tests
+# belong to the dedicated Sync test cluster, not the everyday app stack.
 x-nats: &nats
   image: nats:2.14.3-alpine
   restart: unless-stopped
@@ -72,21 +71,7 @@ services:
       - "4222:4222"
       - "8222:8222"
     volumes:
-      - ipa_nats_1_data:/data
-
-  nats-2:
-    <<: *nats
-    container_name: ipa_nats_2
-    command: --config /etc/nats/nats.conf --name ipa_nats_2
-    volumes:
-      - ipa_nats_2_data:/data
-
-  nats-3:
-    <<: *nats
-    container_name: ipa_nats_3
-    command: --config /etc/nats/nats.conf --name ipa_nats_3
-    volumes:
-      - ipa_nats_3_data:/data
+      - ipa_nats_data:/data
 
   geo:
     image: ghcr.io/valentinkolb/geo:latest
@@ -133,22 +118,11 @@ configs:
       jetstream {
         store_dir: /data
       }
-      cluster {
-        name: ipa
-        listen: 0.0.0.0:6222
-        routes: [
-          nats-route://ipa_nats_1:6222
-          nats-route://ipa_nats_2:6222
-          nats-route://ipa_nats_3:6222
-        ]
-      }
 
 volumes:
   kit_rsql_data:
   ipa_postgres_data:
   ipa_valkey_data:
-  ipa_nats_1_data:
-  ipa_nats_2_data:
-  ipa_nats_3_data:
+  ipa_nats_data:
   filegate_homes:
   filegate_groups:

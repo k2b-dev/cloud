@@ -27,7 +27,7 @@ suite("process Sync lifecycle", () => {
     const runtime = await startProcessSync({ application: "test-app" });
     const drainSpy = spyOn(runtime.sync, "drain");
     try {
-      expect(config?.defaults?.replicas).toBe(3);
+      expect(config?.defaults?.replicas).toBe(env.SYNC_REPLICAS);
       expect(calls).toBe(0);
       expect(primitive()).toBe(primitive());
       expect(calls).toBe(1);
@@ -70,7 +70,7 @@ suite("process Sync lifecycle", () => {
 });
 
 // Run only by explicit coordination: this stops one named local Compose node.
-// Example: CLOUD_SYNC_FAILOVER_CONTAINER=ipa_nats_2 NATS_SERVERS=nats://127.0.0.1:4222 bun test <this-file>
+// Example: SYNC_REPLICAS=3 CLOUD_SYNC_FAILOVER_CONTAINER=sync-test-nats-2 NATS_SERVERS=nats://127.0.0.1:4222 bun test <this-file>
 const failoverTest = process.env.CLOUD_SYNC_FAILOVER_CONTAINER ? test : test.skip;
 failoverTest(
   "retains accepted topic events during one explicitly selected node outage",

@@ -28,7 +28,7 @@ Open `http://localhost:3000`.
 The local administrator login is `/auth/login?method=admin` with token
 `dev-admin`.
 
-`bun run dev` starts Postgres, Valkey, a three-node NATS JetStream cluster, Geo, Filegate, and Gotenberg in the
+`bun run dev` starts Postgres, Valkey, a persistent single-node NATS JetStream server, Geo, Filegate, and Gotenberg in the
 background. It then stays in the foreground and runs the gateway, Gateway Ops,
 Core, Dashboard, Accounts, and Assistant.
 
@@ -303,3 +303,19 @@ and Geo images keep their own repositories and release paths.
 The CLI installer and updater verify releases signed by
 `k2b-dev/cloud/.github/workflows/cli.yml`. No CLI GitHub releases existed
 under the former repository owner at transfer time.
+
+## Single-node development JetStream
+
+The local stack uses `ipa_nats_1` with `SYNC_REPLICAS=1`. Production keeps the
+platform default of three replicas. Set the same replica count on every process
+in one installation. A different replica count does not migrate existing streams;
+Sync reports configuration drift rather than silently rewriting durable state.
+
+Before moving an existing three-node dev installation, stop the application
+fleet, back up all streams with their consumers, and restore into the new
+`ipa_nats_data` volume with one replica. Convert explicitly replicated consumer
+configurations to one replica as well. Preserve stream metadata, sequences and
+durable consumer acknowledgment state; verify before restarting applications.
+The old `ipa_nats_1_data`, `ipa_nats_2_data`, and `ipa_nats_3_data` volumes must
+remain available until migration verification succeeds. Do not use `down -v`.
+Use a separate three-node cluster for replication and failover tests.

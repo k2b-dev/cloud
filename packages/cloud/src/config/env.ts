@@ -13,6 +13,14 @@ const bool = (key: string, fallback: boolean): boolean => {
   return value === "true" || value === "1";
 };
 
+const syncReplicas = (): 1 | 3 | 5 => {
+  const value = str("SYNC_REPLICAS", "3").trim();
+  if (value === "1") return 1;
+  if (value === "3") return 3;
+  if (value === "5") return 5;
+  throw new Error("SYNC_REPLICAS must be 1, 3, or 5");
+};
+
 const list = (key: string): string[] =>
   (process.env[key] ?? "")
     .split(",")
@@ -32,6 +40,8 @@ export const env = {
   NATS_SERVERS: list("NATS_SERVERS"),
   /** Sync namespace shared by every app of one Cloud installation (e.g. `dev`, `prod`). Required. */
   SYNC_NAMESPACE: str("SYNC_NAMESPACE"),
+  /** Persistent stream replica count; consistent across the installation. */
+  SYNC_REPLICAS: syncReplicas(),
   /** Path to a mounted NATS `.creds` file (JWT + NKey). Unset = server-side no-auth. */
   NATS_CREDS_FILE: optional("NATS_CREDS_FILE"),
   /** Path to a mounted CA certificate; enables TLS with that CA. Unset = plain TCP. */
