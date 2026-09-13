@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { LocaleProvider } from "@k2b/ui";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
+import { katexStylesHref } from "../../../../lib/katex-assets";
 import { bookMessages } from "./messages";
 import "../detail/ssr-test-plugin";
 
@@ -38,6 +39,10 @@ const render = (
   );
 
 describe("Book surface", () => {
+  test("loads math styles even when entering through an empty or tag reading surface", () => {
+    expect(render()).toContain(`rel="stylesheet" href="${katexStylesHref}"`);
+    expect(render(false, false, "en", null)).toContain(`rel="stylesheet" href="${katexStylesHref}"`);
+  });
   test("keeps the incomplete-history warning visible to readers", () => {
     const recovered = render(false, false, "en", "<p>Recovered content</p>", true);
     expect(recovered).toContain("Some note changes could not be recovered");

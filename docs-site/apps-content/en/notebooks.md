@@ -252,6 +252,11 @@ running a snapshot.
 
 ## Deployment requirements
 
+Notebooks serves its math stylesheet and WOFF2 fonts below
+`/public/notebooks/katex-<version>/`. The app's development and production
+asset hooks copy these files together. Book and editor pages load the
+stylesheet; the overview does not need it.
+
 If retained editing history is missing or damaged, Notebooks preserves the
 available changes and the previous saved version. The editor and Book view show
 an incomplete-history warning. Contact your administrator and compare the

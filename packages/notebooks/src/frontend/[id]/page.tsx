@@ -1,8 +1,9 @@
-import { AppWorkspace, Placeholder } from "@k2b/ui";
 import type { AuthContext } from "@k2b/cloud/server";
 import { getLocale } from "@k2b/cloud/server";
 import { Layout } from "@k2b/cloud/ssr";
+import { AppWorkspace, Placeholder } from "@k2b/ui";
 import { ssr } from "../../config";
+import { katexStylesHref } from "../../lib/katex-assets";
 import { notebooksPageMessages } from "../messages";
 import BookSurface from "./_components/book/BookSurface";
 import FloatingEditButton from "./_components/book/FloatingEditButton.island";
@@ -89,6 +90,7 @@ export default ssr<AuthContext>(async (c) => {
         ...(selectedNote ? [{ title: selectedNote.title }] : []),
       ]}
     >
+      <link rel="stylesheet" href={katexStylesHref} />
       <AppWorkspace class="flex-1 min-h-0">
         <NotebookHotkeys notebookId={notebook.id} notebookName={notebook.name} canWrite={canWrite} />
         {!editorOwnsWorkspaceSocket && (

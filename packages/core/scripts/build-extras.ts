@@ -5,7 +5,6 @@
  *   fonts/*      IBM Plex WOFF2 files
  *   tabler-icons.css / .woff2  icon font stylesheet + font
  *   logo.svg     default branding fallback
- *   katex.css    consumed by any app rendering math (e.g. notebooks)
  *
  * Invoked by packages/cloud/scripts/build.ts when APP_ID=core.
  */
@@ -33,6 +32,5 @@ if (!css.success) {
 }
 
 await cp(resolve(root, "packages/cloud/public/logo.svg"), resolve(publicDir, "logo.svg"));
-await cp(Bun.resolveSync("katex/dist/katex.min.css", resolve(root, "packages/cloud")), resolve(publicDir, "katex.css"));
 await buildFontAssets(publicDir);
 await buildTablerIconAssets(publicDir);

@@ -127,15 +127,6 @@ if (appId === "core" && existsSync(globalCssEntry)) {
   await cp(resolve(frameworkDir, "public/logo.svg"), resolve(publicDir, "logo.svg"));
 }
 
-// katex.css is only needed by notebooks (served by core via Traefik /public/katex.css)
-if (appId === "notebooks") {
-  try {
-    await cp(resolve(root, "node_modules/katex/dist/katex.min.css"), resolve(publicDir, "katex.css"));
-  } catch {
-    console.warn("[preload] katex.css not found, skipping");
-  }
-}
-
 // Each app builds its own app.css
 const appPublicDir = resolve(publicDir, appId);
 await mkdir(appPublicDir, { recursive: true });

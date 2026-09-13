@@ -1,4 +1,5 @@
 import { AppWorkspace, NoticeCard, Placeholder, useLocale } from "@k2b/ui";
+import { katexStylesHref } from "../../../../lib/katex-assets";
 import { notebookWorkspaceMessages } from "../../messages";
 import WorkspaceEventBridge from "../sidebar/WorkspaceEventBridge.island";
 import BookController from "./BookController.island";
@@ -24,6 +25,7 @@ export default function BookSurface(props: BookSurfaceProps) {
   const noteText = () => notebookWorkspaceMessages.resolve([locale()]).t;
   return (
     <div class="notebook-book-shell">
+      <link rel="stylesheet" href={katexStylesHref} />
       <AppWorkspace class="notebook-book-workspace">
         <BookNavigator
           notebookId={props.notebookId}
