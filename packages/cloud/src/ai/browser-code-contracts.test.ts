@@ -19,3 +19,10 @@ test("one-off scripts need no resource while historical runs require one", () =>
   expect(() => parseCodeToolInput("code_run", {code:"export default () => 42",version:2})).toThrow();
   expect(() => parseCodeToolInput("code_run", {})).toThrow();
 });
+
+ test("one-off resource context cannot replace saved source identity", () => {
+  const resourceId = "00000000-0000-4000-8000-000000000001";
+  expect(parseCodeToolInput("code_run", { code: "export default () => 1", resourceId })).toMatchObject({ resourceId });
+  expect(() => parseCodeToolInput("code_run", { id: resourceId, resourceId })).toThrow();
+  expect(() => parseCodeToolInput("code_run", { resourceId })).toThrow();
+});

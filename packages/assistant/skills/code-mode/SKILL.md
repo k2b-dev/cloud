@@ -63,7 +63,9 @@ separate; [Debugging](references/debugging.md) explains deadlines and I/O waits.
 
 ## Load only what the task needs
 
-- **Resource data:** `code_sql` runs SELECT directly; [Database](references/database.md).
+- **Resource data:** `code_sql` runs SELECT directly. For an app-specific experiment,
+  import, migration or export, use `code_run({ code, resourceId })` with Manage access;
+  [Database](references/database.md). Combine scripts and apps without saving helper scripts.
 - **Cloud operations:** discover the actual capabilities and contracts, then
   use `capabilities.run` in code; [Capability calls](references/capabilities.md).
 - **Saved script or app:** [Source workflow](references/source-workflow.md).
@@ -73,7 +75,7 @@ separate; [Debugging](references/debugging.md) explains deadlines and I/O waits.
 - **Interactive app:** additionally read [UI and dialogs](references/ui.md).
   Test returned control IDs with `code_interact`, including file-picker fixtures.
 - **Optional APIs:** [Storage](references/storage.md), [Charts](references/charts.md),
-  [Money](references/money.md), [Publishing and access](references/publishing.md).
+  [Money](references/money.md), [DATEV and SEPA](references/finance.md), [Publishing and access](references/publishing.md).
   [Examples](references/examples.md) provides complete starters when needed.
 
 Runtime namespaces are globals; only relative imports of your own source files

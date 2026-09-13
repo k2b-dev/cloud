@@ -15,7 +15,7 @@ export function localStorageCall(request: z.infer<typeof RuntimeStorage>) {
   return {method:operations[request.operation],args:request.operation === "list" ? [{after:request.after,limit:request.limit}] : [request.key,request.value]};
 }
 
-export async function sharedStorage(id: string, request: z.infer<typeof RuntimeStorage>, conversationId?: string) {
+export async function sharedStorage(id: string, request: z.infer<typeof RuntimeStorage>, conversationId?: string, management = false) {
   let content: string | undefined, mediaType = "";
   if (request.operation === "write") {
     if (request.area === "kv") content = JSON.stringify(request.value);
@@ -29,7 +29,8 @@ export async function sharedStorage(id: string, request: z.infer<typeof RuntimeS
       content = btoa(binary);
     }
   }
-  const result = await artifactClient.storage(id,{area:request.area,operation:request.operation,key:request.key,after:request.after,limit:request.limit,content,mediaType},conversationId);
+  const input = {area:request.area,operation:request.operation,key:request.key,after:request.after,limit:request.limit,content,mediaType};
+  const result = await (management ? artifactClient.storageManage(id,input) : artifactClient.storage(id,input,conversationId));
   if ("items" in result) return result.items?.map(item=>item.key) ?? [];
   if ("item" in result && result.item) {
     if (request.area === "kv") return JSON.parse(result.item.content);

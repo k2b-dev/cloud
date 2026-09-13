@@ -123,19 +123,19 @@ export const artifactDatabase = {
       return {url:next.url,tokenSet:Boolean(token)};
     });
   },
-  async connect(id: string, identity: ArtifactIdentity, signal?: AbortSignal) {
+  async connect(id: string, identity: ArtifactIdentity, signal?: AbortSignal, requireManage = false) {
     // Persist the intended namespace before any remote effect. A failed call
     // can be retried, and deletion can always find a partially created DB.
     await sql.begin(async db => {
       await databaseConfigLock(db);
-      await requireArtifact(db,id,identity,"read");
+      await requireArtifact(db,id,identity,requireManage ? "admin" : "read");
       connection(await config(),signal);
       await db`INSERT INTO assistant.artifact_databases(artifact_id,namespace)
         VALUES(${id}::uuid,${"assistant_"+crypto.randomUUID().replaceAll("-","")}) ON CONFLICT DO NOTHING`;
     });
     return sql.begin(async db => {
       await databaseConfigLock(db);
-      await requireArtifact(db,id,identity,"read");
+      await requireArtifact(db,id,identity,requireManage ? "admin" : "read");
       const [mapping]=await db<{namespace:string;connected:boolean}[]>`SELECT * FROM assistant.artifact_databases WHERE artifact_id=${id}::uuid`;
       if (!mapping) throw new DatabaseError("DB_NOT_CONNECTED",409);
       if (!mapping.connected) {
@@ -148,12 +148,12 @@ export const artifactDatabase = {
       return {connected:true};
     });
   },
-  async call(id: string, input: unknown, identity: ArtifactIdentity, signal?: AbortSignal, management = false) {
+  async call(id: string, input: unknown, identity: ArtifactIdentity, signal?: AbortSignal, mode: "runtime" | "inspect" | "maintenance" = "runtime") {
     const req=DatabaseRequest.parse(input);
-    if(management && !["tables.list","schema.get","rows.list","query"].includes(req.operation)) throw new DatabaseError("DB_SQL_UNSUPPORTED");
+    if(mode === "inspect" && !["tables.list","schema.get","rows.list","query"].includes(req.operation)) throw new DatabaseError("DB_SQL_UNSUPPORTED");
     return sql.begin(async db => {
       await databaseConfigLock(db);
-      await requireArtifact(db,id,identity,management || (req.operation.startsWith("tables.") && req.operation !== "tables.list") ? "admin" : "read");
+      await requireArtifact(db,id,identity,mode !== "runtime" || (req.operation.startsWith("tables.") && req.operation !== "tables.list") ? "admin" : "read");
       const c=await config(); connection(c,signal);
       const [mapping]=await db<{namespace:string;connected:boolean}[]>`SELECT * FROM assistant.artifact_databases WHERE artifact_id=${id}::uuid`;
       if (!mapping?.connected) throw new DatabaseError("DB_NOT_CONNECTED",409);

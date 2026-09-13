@@ -13,7 +13,7 @@ const Claim = z.discriminatedUnion("status", [
   z.object({ status: z.literal("execute") }), z.object({ status: z.literal("pending") }),
   z.object({ status: z.literal("interrupted") }), z.object({ status: z.literal("done"), result: z.json() }),
 ]);
-type Entry = { session: ArtifactSession; container: HTMLElement; artifactId?: string; revision: number; conversationId: string };
+type Entry = { session: ArtifactSession; container: HTMLElement; artifactId?: string; revision: number; conversationId: string; resourceId?: string };
 const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 const text = (value: string, max = 1000) => value.length > max ? `${value.slice(0, max)}…` : value;
 
@@ -24,7 +24,7 @@ function inspect(runId: string, entry: Entry, options: { nodeId?: string; offset
   const selected = nodeId ? state.nodes.filter((node) => node.id === nodeId) : state.nodes.slice(offset, offset + limit);
   if (nodeId && !selected.length) throw new Error("UI node not found");
   return {
-    runId, id: entry.artifactId, status: state.status, busy: state.busy, work: state.work,
+    runId, id: entry.artifactId, resourceId: entry.resourceId, status: state.status, busy: state.busy, work: state.work,
     error: state.error ? text(state.error, 6000) : null, modal: state.modal ? { ...state.modal, id: state.modalId } : null,
     totalNodes: state.nodes.length, nextNodeOffset: !nodeId && offset + limit < state.nodes.length ? offset + limit : null,
     nodes: selected.map((node) => ({
@@ -89,6 +89,8 @@ export function createArtifactAgentRuntime(open: ((tab: WorkspaceTab) => void) |
         }
         if (runs.size >= LIMITS.pendingRequests) throw new Error("Stop an existing test run before starting another; remaining runs hold active work or retained resources");
       }
+      if (input.resourceId) await artifactClient.access(input.resourceId);
+      const dataId = input.resourceId ?? input.id;
       const current = input.id ? await artifactClient.get(input.id, false, input.version, conversationId) : undefined;
       const source = conversationFileSource("/api/ai", conversationId);
       const listed = input.inputPaths.length ? await source.list() : [];
@@ -128,18 +130,18 @@ export function createArtifactAgentRuntime(open: ((tab: WorkspaceTab) => void) |
           if(!approve)throw new Error("Capability approval UI unavailable");
           return runCapability(name,input,{artifactId:current?.id,conversationId},approve,signal);
         }, database: async (request,signal) => {
-          if (!current) throw new Error("Database access requires a saved app or script");
-          return artifactClient.database(current.id,request,conversationId,signal);
+          if (!dataId) throw new Error("Database access requires a saved resource or resourceId");
+          return artifactClient.database(dataId,request,conversationId,signal,Boolean(input.resourceId));
         }, storage: async (_method,args) => {
-          if (!current) throw new Error("Shared storage requires a saved app or script");
-          return sharedStorage(current.id,RuntimeStorage.parse(args[0]),conversationId);
+          if (!dataId) throw new Error("Shared storage requires a saved resource or resourceId");
+          return sharedStorage(dataId,RuntimeStorage.parse(args[0]),conversationId,Boolean(input.resourceId));
         } });
       } catch (error) {
         container.remove();
         throw error;
       }
       const runId = callId;
-      const entry = { session, container, artifactId: input.id, revision: current?.sourceRevision ?? 0, conversationId };
+      const entry = { session, container, artifactId: input.id, resourceId: input.resourceId, revision: current?.sourceRevision ?? 0, conversationId };
       runs.set(runId, entry);
       await waitFor(entry, () => session.snapshot().status !== "starting" || session.snapshot().work?.status === "running");
       return inspect(runId, entry);
@@ -147,6 +149,7 @@ export function createArtifactAgentRuntime(open: ((tab: WorkspaceTab) => void) |
     const entry = runs.get(input.runId);
     if (!entry || entry.conversationId !== conversationId) throw new Error("Test run is no longer available in this chat/browser. Start a new run.");
     // Re-check current permissions even when the test run was started earlier.
+    if (entry.resourceId && input.operation !== "stop") await artifactClient.access(entry.resourceId);
     if (entry.artifactId) await artifactClient.get(entry.artifactId, false, undefined, conversationId);
     signal.throwIfAborted();
     if (input.operation === "inspect" && input.waitMs) {

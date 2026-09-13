@@ -24,8 +24,9 @@ connection. For `DB_TIMEOUT`, a read can be retried once. For a write, inspect
 its effects before retrying; a timeout does not prove that nothing changed.
 
 The database belongs to the resource across edits, publications, and restores.
-A fork starts without one. One-off scripts must be saved before using a resource
-database. Database calls always use the current user's permissions.
+A fork starts without one. A one-off can use an existing resource database with
+`code_run({ code, resourceId: "RESOURCE_UUID" })`; this requires Manage. Without
+a resourceId, save the script only if it needs its own durable database. Database calls always use the current user's permissions.
 
 ## Inspect data without a script
 
@@ -98,3 +99,17 @@ write inspect committed keys, then retry deliberately with the same keys.
 Return inserted/skipped/rejected counts and partial progress; cancellation does
 not roll back earlier batches. Keys must match the actual source identity, not
 just a name or amount that may be duplicated.
+
+## Work on an existing app without changing its source
+
+Use `code_sql` for a simple SELECT. Use `code_run({code, resourceId})` for a
+short analysis, import, export, or structured migration against that resource.
+`database.connect()` and shared files/KV bind to this explicit resource; its
+source and publications stay unchanged. Manage permission is checked again for
+each remote data operation. Local storage is temporary, not the user's app data.
+Chat inputs are still explicit `inputPaths`. The same run input works in the CLI.
+
+Inspect before writing. Use existing structured schema/row methods for migrations,
+check whether each change is already applied, and verify the result. Do not add
+migration controls to the user app just to perform a one-time task. Data changes
+are real and are not undone by code restore, cancellation, or a new script.

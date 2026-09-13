@@ -18,6 +18,7 @@
     "@k2b/stdlib": "catalog:",
     "@k2b/ui": "workspace:*",
     "hono": "catalog:",
+    "ibantools": "4.5.4",
     "papaparse": "5.7.0",
     "pdfjs-dist": "6.3.289",
     "playwright": "catalog:",

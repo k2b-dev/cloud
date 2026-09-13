@@ -2,8 +2,8 @@
 
 Choose local storage for data belonging to this user and browser. Choose shared
 storage for data that users of the saved app or script need together. One-off
-scripts have no shared resource; save a script first if durable shared data is
-part of the task.
+scripts can explicitly use an existing resource with `code_run({code, resourceId})`
+and Manage access. Save a script only when it needs its own durable shared data.
 
 All operations are asynchronous. Await writes before reading their result or
 reporting success.

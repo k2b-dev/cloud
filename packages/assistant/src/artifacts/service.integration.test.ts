@@ -420,10 +420,13 @@ const isolated = /\/cloud_assistant_artifacts_test(?:\?|$)/.test(process.env.DAT
     await artifacts.storage(resource.id,{area:"files",operation:"write",key:"keep.txt",content:"YQ=="},owner);
     await expect(artifacts.clearStorage(resource.id,"all",reader)).rejects.toMatchObject({code:"ACCESS_DENIED"});
     await expect(artifacts.storage(resource.id,{area:"kv",operation:"list"},reader,true)).rejects.toMatchObject({code:"ACCESS_DENIED"});
+    await expect(artifactDatabase.connect(resource.id,reader,undefined,true)).rejects.toMatchObject({code:"ACCESS_DENIED"});
+    for (const operation of [{operation:"tables.list"}, {operation:"rows.insert",table:"ledger",rows:[{amount:1}]}])
+      await expect(artifactDatabase.call(resource.id,operation,reader,undefined,"maintenance")).rejects.toMatchObject({code:"ACCESS_DENIED"});
     await expect(artifactDatabase.status(resource.id,reader)).rejects.toMatchObject({code:"ACCESS_DENIED"});
     await expect(artifactDatabase.reset(resource.id,null,reader)).rejects.toMatchObject({code:"ACCESS_DENIED"});
     await expect(artifactDatabase.export(resource.id,reader)).rejects.toMatchObject({code:"ACCESS_DENIED"});
-    await expect(artifactDatabase.call(resource.id,{operation:"tables.list"},reader,undefined,true)).rejects.toMatchObject({code:"ACCESS_DENIED"});
+    await expect(artifactDatabase.call(resource.id,{operation:"tables.list"},reader,undefined,"inspect")).rejects.toMatchObject({code:"ACCESS_DENIED"});
     await artifacts.clearStorage(resource.id,"kv",owner);
     expect(await artifacts.storage(resource.id,{area:"kv",operation:"list"},reader)).toEqual({items:[]});
     expect(await artifacts.storage(resource.id,{area:"files",operation:"read",key:"keep.txt"},reader)).toMatchObject({item:{content:"YQ=="}});
@@ -436,9 +439,9 @@ const isolated = /\/cloud_assistant_artifacts_test(?:\?|$)/.test(process.env.DAT
     try{
       expect(await artifactDatabase.status(resource.id,owner)).toMatchObject({configured:true,connected:false});
       expect(await sql`SELECT 1 FROM assistant.artifact_databases WHERE artifact_id=${resource.id}::uuid`).toHaveLength(0);
-      await artifactDatabase.connect(resource.id,owner);
+      await artifactDatabase.connect(resource.id,owner,undefined,true);
       await artifactDatabase.call(resource.id,{operation:"tables.create",name:"ledger",columns:[{name:"amount",type:"integer"}]},owner);
-      await artifactDatabase.call(resource.id,{operation:"rows.insert",table:"ledger",rows:[{amount:1200}]},owner);
+      await artifactDatabase.call(resource.id,{operation:"rows.insert",table:"ledger",rows:[{amount:1200}]},owner,undefined,"maintenance");
       const backup=await artifactDatabase.export(resource.id,owner);
       const bytes=new Uint8Array(await backup.arrayBuffer());
       expect(new TextDecoder().decode(bytes.slice(0,15))).toBe("SQLite format 3");
@@ -448,7 +451,7 @@ const isolated = /\/cloud_assistant_artifacts_test(?:\?|$)/.test(process.env.DAT
       await Promise.all([artifactDatabase.reset(resource.id,oldGeneration,owner),artifactDatabase.reset(resource.id,oldGeneration,owner)]);
       expect(await artifactDatabase.status(resource.id,owner)).toMatchObject({connected:false});
       expect(await sql`SELECT 1 FROM assistant.database_cleanup WHERE namespace=${old!.namespace}`).toHaveLength(1);
-      await artifactDatabase.connect(resource.id,owner);
+      await artifactDatabase.connect(resource.id,owner,undefined,true);
       const [next]=await sql<{namespace:string}[]>`SELECT namespace FROM assistant.artifact_databases WHERE artifact_id=${resource.id}::uuid`;
       expect(next!.namespace).not.toBe(old!.namespace);
       await expect(artifactDatabase.reset(resource.id,oldGeneration,owner)).rejects.toMatchObject({code:"CONFLICT"});

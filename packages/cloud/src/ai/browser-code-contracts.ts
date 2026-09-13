@@ -5,10 +5,11 @@ const runId = z.string().min(1).max(180).describe("Run ID returned by code_run i
 export const CODE_RUNTIME_TOOL_NAMES = ["code_run", "code_inspect", "code_interact", "code_stop", "code_open", "code_export"] as const;
 export const CodeRunInput = z.object({
   id: id.optional(),
+  resourceId: id.optional().describe("Optional data context for one-off code. Requires Manage; uses this resource database and shared files/KV without changing its source. Local storage stays temporary."),
   version: z.number().int().positive().optional().describe("Published version to run; resource admins only. Omit for the current accessible source."),
   code: z.string().min(1).max(1024 * 1024).optional().describe("One-off JavaScript/TypeScript entry exporting one function. Use code OR a saved resource id; no title or icon needed."),
   inputPaths: z.array(z.string().min(1).max(500)).max(64).default([]).describe("Explicit current-chat input files. Scripts can read them; app test runs expose them only through the simulated picker. User apps never receive chat files."),
-}).strict().refine(input => Number(input.id !== undefined) + Number(input.code !== undefined) === 1, "Provide exactly one of id or code").refine(input => input.version === undefined || input.id !== undefined,"A published version requires a saved resource id");
+}).strict().refine(input => Number(input.id !== undefined) + Number(input.code !== undefined) === 1, "Provide exactly one of id or code").refine(input => input.version === undefined || input.id !== undefined,"A published version requires a saved resource id").refine(input => input.resourceId === undefined || input.code !== undefined, "resourceId requires one-off code");
 export const CodeInspectInput = z.object({ runId, waitMs: z.number().int().min(0).max(30000).default(0).describe("Wait up to this duration for background work to finish before returning its real state; never restarts work."), nodeId: z.string().min(1).max(80).optional(), offset: z.number().int().min(0).default(0), limit: z.number().int().min(1).max(100).default(20) }).strict();
 export const CodeInteractInput = z.object({ runId,
   id: z.string().min(1).max(80).describe("Control ID or pending modal ID returned by the snapshot."),

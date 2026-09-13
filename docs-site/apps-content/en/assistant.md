@@ -405,3 +405,16 @@ Database and shared-storage requests pause the short execution/readiness timers
 but remain subject to the outer tool budget. Exported files use readable names
 under `/files`; collisions receive a suffix and the tool returns the actual
 stored path. Pending code approvals remain visible when switching chats.
+
+### Finance exports and app maintenance scripts
+
+Code Mode bundles pure-JavaScript DATEV CSV and SEPA SCT XML generation through
+`datev.validate/serialize` and `sepa.validate/serialize`. Export bytes through the
+normal file workflow. No WASM/XSD validator is included. Input validation does
+not guarantee bank acceptance; creating an export never submits a payment.
+
+Use `code_run({code, resourceId})` to inspect, import, migrate or export an existing
+app's database and shared files/KV without editing its source. This requires
+Manage access, checked on every remote data operation. Local storage stays
+temporary; chat files still require explicit inputPaths. Source restoration does
+not undo database or storage changes. The CLI accepts the same run input.

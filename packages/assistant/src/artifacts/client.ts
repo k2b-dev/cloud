@@ -42,11 +42,11 @@ export const artifactClient = {
       const response=await client.admin.resources[":id"].access[":accessId"].$put({param:{id,accessId},json:{permission}});await checked(response);return response.json();
     },
   },
-  database: async (id: string,request: unknown,conversationId?: string,signal?: AbortSignal) => {
+  database: async (id: string,request: unknown,conversationId?: string,signal?: AbortSignal, management = false) => {
     const parsed = DatabaseRequest.safeParse(request);
     const connect = !parsed.success && typeof request === "object" && request !== null && "operation" in request && request.operation === "connect";
     if (!connect && !parsed.success) throw new Error("Invalid database operation");
-    const response = await fetch(`/api/assistant/artifacts/${encodeURIComponent(id)}/database${connect ? "/connect" : ""}${conversationId ? "?conversationId="+encodeURIComponent(conversationId) : ""}`,{
+    const response = await fetch(`/api/assistant/artifacts/${encodeURIComponent(id)}/database${management ? "/maintenance" : ""}${connect ? "/connect" : ""}${conversationId ? "?conversationId="+encodeURIComponent(conversationId) : ""}`,{
       method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(request),signal,
     });
     await checked(response); return response.json();

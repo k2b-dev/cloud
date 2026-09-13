@@ -237,3 +237,43 @@ test("replacing CLI hosts survives garbage collection without losing the new bro
     await host.close();
   }
 }, 30000);
+
+test("finance exports and resource-scoped one-offs use the existing worker and management routes", async () => {
+  const id = "00000000-0000-4000-8000-000000000001";
+  const bundle = await cliHostBundle();
+  const document = await Bun.file(new URL("../../skills/code-mode/references/finance.md", import.meta.url)).text();
+  const example = document.match(/```js\n([\s\S]*?)```/)![1]!;
+  const code = example.replace("return { bookings:", `const db = await database.connect();
+    const tables = await db.tables();
+    await kv.shared.set("probe", {ok:true});
+    return { tables, invalid: datev.validate({}).ok, local: await kv.local.get("probe"), bookings:`);
+  const requests: string[] = [];
+  let denied = false;
+  const host = await createCliCodeHost({ fetch: async (input, init) => {
+    const path = String(input); requests.push(path);
+    if (path.endsWith("host.js")) return new Response(bundle);
+    if (path.endsWith("/access")) return denied ? Response.json({code:"ACCESS_DENIED",message:"Manage required"},{status:403}) : Response.json([]);
+    if (path.endsWith("/compile")) {
+      const compiled = await compileArtifact(await new Response(init?.body).json());
+      expect(compiled.runtime).not.toContain("libxml2");
+      return Response.json(compiled);
+    }
+    if (path.includes("/database/maintenance/connect")) return Response.json({connected:true});
+    if (path.includes("/database/maintenance")) return Response.json({tables:[]});
+    if (path.endsWith("/storage/manage")) return Response.json({saved:true});
+    throw new Error(`Unexpected request ${path}`);
+  }});
+  try {
+    const args = {code, resourceId:id};
+    const result = await host.execute({name:"code_run",callId:"finance",conversationId:id,turnId:id,args});
+    expect(result).toMatchObject({status:"ready"});
+    if (!result || typeof result !== "object" || !("output" in result)) throw new Error("Missing output");
+    expect(JSON.parse(String(result.output))).toMatchObject({bookings:2,transfers:2,total:"12.31",debit:"123.45",credit:"3.00",invalid:false,local:null});
+    expect(JSON.stringify(result)).toContain("buchungen.csv");
+    expect(JSON.stringify(result)).toContain("ueberweisungen.xml");
+    expect(requests.some(path=>path.endsWith("/storage/manage"))).toBe(true);
+    denied = true;
+    const rejected = await host.execute({name:"code_run",callId:"denied-context",conversationId:id,turnId:id,args});
+    expect(rejected).toMatchObject({error:"Manage required"});
+  } finally { await host.close(); }
+}, 30000);

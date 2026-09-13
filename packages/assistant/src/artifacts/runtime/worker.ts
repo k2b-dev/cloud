@@ -2,6 +2,7 @@ import { createWork } from "./work";
 import { pdf, excel } from "./documents";
 import { z } from "zod";
 import Papa from "papaparse";
+import { datev, sepa } from "@k2b/stdlib/finance";
 import { common, money } from "@k2b/stdlib";
 import { LIMITS } from "../contracts";
 import { UiNode } from "./protocol";
@@ -173,6 +174,8 @@ function scopedStorage(scope: "local" | "shared", area: "kv" | "files") {
 }
 const api = {
   money,
+  datev,
+  sepa,
   ids: { ulid: common.ulid },
   ui: {
     modal: {

@@ -15,7 +15,8 @@ Write a fresh one-off for the next question when that is simpler. Runs do not
 share JavaScript variables; pass selected inputs again or explicitly export a
 useful intermediate file. Do not create a Studio resource, title, icon, helper
 framework, or UI just to explore. Save only when reuse/sharing requires it or
-the operation needs resource-owned storage. Finished one-offs without retained
+the operation needs its own resource-owned storage. Existing app data can be
+used with an explicit `resourceId` and Manage access; see [Database](database.md). Finished one-offs without retained
 resources are reclaimed under slot pressure.
 
 Prefer read-only probes. Temporary local test storage does not make shared
@@ -89,3 +90,21 @@ When an example is essential, keep the request concrete: "I checked X; Y is
 missing because it determines Z. An anonymized sample is enough; if originals
 must stay local, you can run this small inspection script instead." Do not ask
 users to solve API or implementation questions you can investigate yourself.
+
+## Combine apps and scripts freely
+
+A script can investigate one part of an app workflow without becoming part of
+its saved source. Prefer a fresh short experiment over a reusable framework:
+
+- Inspect representative PDF/Excel files, test mappings, then put the verified
+  processing logic into an app with a file picker.
+- Read app records with `code_sql`; use a resource-scoped script for distributions,
+  duplicate analysis, imports, structured migrations or DATEV/SEPA exports.
+- Inventory an app's shared files/KV, inspect formats or propose cleanup before
+  making authorized changes. Browser-local user data is not available this way.
+- Compare discovered capability results with uploaded files or app records;
+  normalize keys, summarize mismatches, then add a reusable UI only if useful.
+- Reproduce a parsing or calculation bug in a tiny script, correct the app and
+  test the failing case. Explicitly export intermediate files for later runs.
+
+Neither a new script nor resourceId grants extra capabilities or bypasses approvals.
