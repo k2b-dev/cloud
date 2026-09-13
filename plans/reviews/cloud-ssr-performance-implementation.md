@@ -1,8 +1,9 @@
 # Cloud SSR performance implementation
 
-Status: 14 September 2026. Implementation is committed; SSR dependency delivery
-and representative production browser measurements remain open. No deployment
-or publication was performed. Grids was excluded from changes.
+Status: 14 September 2026. The local implementation is committed. The maintainer
+explicitly excluded release and deployment from this epic. Representative
+production browser measurements have not been performed. Grids was excluded
+from changes.
 
 ## Implemented behavior
 
@@ -76,25 +77,21 @@ three reports passed the production API schema. A second load transferred
 zero network bytes for the cached script. Fixture timings are intentionally
 not presented as Cloud page-speed measurements.
 
-## Remaining delivery and measurement
+## Scope and remaining measurement
 
-1. Authorize publication of SSR 0.13.2 from commit 6955d3a. The existing tag
-   workflow sets the package version and publishes with provenance. The clean
-   commit archive packs the expected adapter source (14 files, 25,776 bytes).
-   Registry and local tags currently end at 0.13.1. No local dependency patch,
-   symlink, or Cloud compression compatibility layer is needed.
-2. After publication, update Cloud's SSR dependency and lockfile, verify the
-   consumer path, and commit that integration separately.
-3. Deploy through the normal authorized release process, then compare cold
-   and warm document visits on the same build across Core/Dashboard, Contacts,
-   Mail, Notebooks, and Spaces. Measure LCP/INP/CLS alongside Server-Timing and
-   transfer sizes under quiet, comparable client conditions. Record missing
-   interaction measurements as missing, not zero.
-4. Keep Dashboard widget deferral, Contacts permission batching, and Help-body
-   lazy loading measurement-gated. Existing development timings on an
-   overloaded laptop do not establish their production benefit. Global search
-   must retain immediate keyboard input; independent islands do not justify
-   introducing a cross-island Solid Context bridge.
+The maintainer requested local commits only. Publication, tags, pushes,
+deployment, and a release-dependent Cloud dependency update are outside this
+epic. The SSR compression fix is committed in its owning repository; Cloud
+continues to consume SSR 0.13.1. No local dependency patch, symlink, or
+compatibility layer was introduced to bypass normal dependency delivery.
 
-Production LCP improvement and the laptop/server contribution are not yet
-quantified. The goal remains open for delivery and representative measurement.
+The local code changes and their focused verification are complete. Dashboard
+widget deferral, Contacts permission batching, and Help-body lazy loading stay
+measurement-gated. Global search retains immediate keyboard input and no
+cross-island Solid Context bridge was introduced.
+
+A representative production cold/warm comparison remains unperformed. The
+four production builds and the isolated browser fixture do not quantify Cloud
+LCP improvement or separate laptop load from server latency. That measurement
+requires an appropriate running build and comparable client conditions; it
+does not authorize releasing or deploying anything as part of this epic.
