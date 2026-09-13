@@ -24,3 +24,19 @@ test("Markdown resource policy suppresses images and limits link navigation with
   expect(isolated).toContain('target="_blank" rel="noopener noreferrer"');
   expect(isolated).toContain("&lt;img");
 });
+
+
+test("empty Markdown table headers are omitted while alignment and emphasis survive", () => {
+  const html = renderSafeMarkdown("| | |\n| --- | ---: |\n| Tip | **12,30 €** |\n| Total | **135,30 €** |");
+  expect(html).not.toContain("<thead>");
+  expect(html).not.toContain("<th>");
+  expect(html).toContain('class="k2b-content-markdown__table"');
+  expect(html).toContain('<td align="right"><strong>12,30 €</strong>');
+  expect(html.match(/<tr>/g)).toHaveLength(2);
+});
+
+test("partially filled Markdown headers remain semantic headers", () => {
+  const html = renderSafeMarkdown("| Name | |\n| --- | ---: |\n| Item | 1 |");
+  expect(html).toContain("<thead>");
+  expect(html).toContain("<th>Name</th>");
+});

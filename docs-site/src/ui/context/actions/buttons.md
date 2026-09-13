@@ -92,3 +92,8 @@ All matching native button or anchor attributes pass through. The default button
 ## Runtime
 
 Buttons render complete server HTML. Click and reactive loading behavior require hydration only when their state or handlers are client-owned.
+
+For a selection with related actions (for example, an open file and file actions),
+provide `primaryItems` and `primaryMenuLabel` to make the primary segment a
+dropdown instead of an immediate action. `menuIcon` optionally replaces the
+secondary chevron. Both menus use the same `DropdownItem` contract.

@@ -129,6 +129,14 @@ const ButtonsDemo = () => (
       >
         <i class="ti ti-send" aria-hidden="true" /> Send
       </SplitButton>
+      <SplitButton
+        variant="secondary"
+        primaryMenuLabel="Choose file"
+        primaryItems={[{ label: "main.ts", action: () => {} }, { label: "helpers.ts", action: () => {} }]}
+        menuLabel="File actions"
+        menuIcon={<i class="ti ti-dots" aria-hidden="true" />}
+        items={[{ label: "Rename file", icon: "ti ti-pencil", action: () => {} }]}
+      >main.ts</SplitButton>
     </div>
   </DemoCard>
 );

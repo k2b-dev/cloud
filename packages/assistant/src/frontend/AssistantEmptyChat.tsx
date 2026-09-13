@@ -73,19 +73,16 @@ export default function AssistantEmptyChat(props: {
           </div>
         </div>
 
-        <div class="mt-8 grid grid-cols-2 gap-2 sm:mt-12 sm:grid-cols-4" role="group" aria-label={t().starters}>
+        <div class="assistant-starters" role="group" aria-label={t().starters}>
           {starters().map((starter) => (
-            <button
-              type="button"
-              class="group flex min-h-24 flex-col items-start justify-between gap-4 rounded-xl border border-[var(--k2b-border)] bg-[var(--k2b-surface)] p-4 text-left text-sm font-medium text-[var(--k2b-text-muted)] transition-colors hover:border-[var(--k2b-ai-border)] hover:text-[var(--k2b-ai-accent)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--k2b-focus-ring)]"
+            <Button
+              variant="subtle"
+              class="assistant-starter"
               onClick={() => props.onStarter(starter)}
             >
-              <i
-                class={`${starter.icon} text-base text-[var(--k2b-text-muted)] transition-colors group-hover:text-[var(--k2b-ai-accent)]`}
-                aria-hidden="true"
-              />
+              <i class={starter.icon} aria-hidden="true" />
               <span>{starter.label}</span>
-            </button>
+            </Button>
           ))}
         </div>
       </div>

@@ -1,4 +1,4 @@
-import { Button, Dropdown, NoticeCard, Placeholder, Tabs, prompts, useLocale } from "@k2b/ui";
+import { Button, SplitButton, NoticeCard, Tabs, prompts, useLocale } from "@k2b/ui";
 import { files } from "@k2b/stdlib/browser";
 import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { artifactMessages } from "./messages";
@@ -12,6 +12,8 @@ import { ArtifactPanel } from "./ArtifactPanel";
 export function ManualEditor(props: {
   bundle: ArtifactBundle;
   userId: string;
+  onPublish: () => void;
+  publishing: boolean;
   selectedFile?: string;
   onSaved: (bundle: ArtifactBundle) => void;
   onDirtyChange?:(dirty:boolean)=>void;
@@ -31,10 +33,7 @@ export function ManualEditor(props: {
     [error, setError] = createSignal(""),
     [conflict, setConflict] = createSignal(false);
   const [renaming, setRenaming] = createSignal(false);
-  const [run, setRun] = createSignal<{ revision: number; key: number; fixtures: File[] }>(),
-    [fixtures, setFixtures] = createSignal<File[]>([]);
   const [mobile, setMobile] = createSignal("code");
-  let fixtureInput:HTMLInputElement|undefined;
   const dirty = createMemo(() => JSON.stringify(source()) !== JSON.stringify(base().source));
   createEffect(()=>props.onDirtyChange?.(dirty()));
   onMount(() => {
@@ -81,13 +80,6 @@ export function ManualEditor(props: {
       setBusy(false);
     }
   }
-  async function start() {
-    const saved = await save();
-    if (saved) {
-      setRun({ revision: saved.sourceRevision, key: Date.now(), fixtures: fixtures().slice() });
-      setMobile("execution");
-    }
-  }
   async function fileAction(rename = false) {
     if (busy()) return;
     const value = await prompts.form({
@@ -131,14 +123,10 @@ export function ManualEditor(props: {
   }
   return (
     <div class="assistant-manual-editor">
-      <NoticeCard tone="info" title={a().manualEdit} detail={a().testHelp} />
       <div class="assistant-advanced-toolbar">
-        <Dropdown.Root items={paths().map((path) => ({ label: path, action: () => choose(path) }))}>
-          <Dropdown.Trigger variant="secondary" label={a().path}>
-            {selected()}
-          </Dropdown.Trigger>
-        </Dropdown.Root>
-        <Dropdown.Root
+        <SplitButton variant="secondary" size="sm" disabled={busy()}
+          primaryItems={paths().map(path => ({label:path,action:()=>choose(path)}))}
+          primaryMenuLabel={a().path} menuLabel={t().actions} menuIcon={<i class="ti ti-dots" aria-hidden="true" />} menuWidth="16rem"
           items={[
             { label: a().newFile, icon: "ti ti-plus", action: () => fileAction() },
             { label: a().rename, icon: "ti ti-pencil", action: () => fileAction(true) },
@@ -149,33 +137,20 @@ export function ManualEditor(props: {
               action: () => setSource({ ...source(), entry: selected() }),
             },
             { label: t().remove, icon: "ti ti-trash", action: remove },
+            { label: a().exportDraft, icon: "ti ti-download", action: () => files.downloadFileFromContent(JSON.stringify(source(), null, 2), "source-draft.json", "application/json") },
           ]}
-        >
-          <Dropdown.Trigger iconOnly variant="ghost" label={t().actions} disabled={busy()}>
-            <i class="ti ti-dots" />
-          </Dropdown.Trigger>
-        </Dropdown.Root>
+        >{selected()}</SplitButton>
         <Show when={dirty()}>
           <small role="status">{a().unsaved}</small>
         </Show>
-        <Button size="sm" loading={busy()} disabled={!dirty()} onClick={() => void save()}>
+        <Button size="sm" variant="secondary" loading={busy()} disabled={!dirty()} onClick={() => void save()}>
           {t().save}
         </Button>
-        <Button size="sm" disabled={busy()} onClick={() => void start()}>
-          <i class="ti ti-player-play" />
-          {a().run}
+        <Button class="assistant-editor-publish" size="sm" loading={props.publishing}
+          disabled={busy() || dirty() || props.bundle.publishedRevision === props.bundle.revision}
+          onClick={props.onPublish}>
+          <i class="ti ti-upload" aria-hidden="true" />{t().publish}
         </Button>
-        <Button
-          size="sm"
-          variant="ghost"
-          onClick={() => {
-            files.downloadFileFromContent(JSON.stringify(source(), null, 2), "source-draft.json", "application/json");
-          }}
-        >
-          {a().exportDraft}
-        </Button>
-      <input ref={fixtureInput} type="file" multiple hidden onChange={(event) => setFixtures(Array.from(event.currentTarget.files ?? []))} />
-      <Button size="sm" variant="ghost" onClick={()=>fixtureInput?.click()}><i class="ti ti-file-upload"/>{a().fixtures}{fixtures().length?` (${fixtures().length})`:""}</Button>
       </div>
       <Show when={error()}>
         <NoticeCard tone="danger" title={error()} />
@@ -226,7 +201,6 @@ export function ManualEditor(props: {
                     path={path}
                     content={source().files.find((f) => f.path === path)?.content ?? ""}
                     onSave={() => void save()}
-                    onRun={() => void start()}
                     onChange={(content) =>
                       setSource((current) => ({ ...current, files: current.files.map((f) => (f.path === path ? { ...f, content } : f)) }))
                     }
@@ -237,22 +211,7 @@ export function ManualEditor(props: {
           </For>
         </div>
         <div class="assistant-editor-execution">
-          <Show
-            when={run()}
-            keyed
-            fallback={<Placeholder title={a().execution} action={<Button onClick={() => void start()}>{t().start}</Button>} />}
-          >
-            {(execution) => (
-              <ArtifactPanel
-                artifactId={base().id}
-                userId={props.userId}
-                sourceRevision={execution.revision}
-                test
-                pickerInputs={execution.fixtures}
-                autoStart
-              />
-            )}
-          </Show>
+          <ArtifactPanel artifactId={base().id} userId={props.userId} refreshKey={String(base().sourceRevision)} />
         </div>
       </div>
     </div>

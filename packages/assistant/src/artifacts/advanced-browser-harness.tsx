@@ -1,5 +1,6 @@
 import { render } from "solid-js/web";
 import Apps from "./Apps.island";
+import AssistantEmptyChat from "../frontend/AssistantEmptyChat";
 import { ArtifactStorage } from "./runtime/storage";
 const source = {
   entry: "main.ts",
@@ -23,7 +24,7 @@ const item = {
 };
 const view = location.pathname.endsWith("/edit") ? "edit" : location.pathname.endsWith("/database") ? "database" : "app";
 render(
-  () => (
+  () => location.pathname === "/starters" ? <AssistantEmptyChat composer={<div>Ask the Assistant</div>} projects={[]} selectedProjectId={null} onChooseProject={()=>{}} onStarter={()=>{}} /> : (
     <Apps
       userId="test"
       conversations={[]}

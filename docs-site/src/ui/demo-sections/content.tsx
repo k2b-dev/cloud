@@ -547,7 +547,7 @@ const DocsDemo = () => (
 );
 
 const MarkdownDemo = (props: { html: string }) => {
-  const [value, setValue] = createSignal("# Hello @auth.name");
+  const [value, setValue] = createSignal("# Hello @auth.name\n\n| Item | Amount |\n| --- | ---: |\n| Subtotal | 123.00 |\n| Tip | 12.30 |\n\n| | |\n| --- | ---: |\n| Tip | **12.30** |\n| Total | **135.30** |");
   return (
     <DemoCard
       id="markdown"

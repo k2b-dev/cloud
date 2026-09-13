@@ -96,3 +96,10 @@ const [source, setSource] = createSignal("# Release notes");
   </section>
 </div>;
 ```
+
+## Tables
+
+Markdown tables omit the header row when all header cells are blank. Partially
+filled headers stay visible. Tables use rounded borders, alternating row
+backgrounds and horizontal separators. Column alignment and inline formatting
+are preserved. Wide tables scroll within a keyboard-focusable container.

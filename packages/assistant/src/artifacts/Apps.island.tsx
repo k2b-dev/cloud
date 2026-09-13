@@ -18,7 +18,7 @@ import { openDataDialog, openDatabaseDialog } from "./DataDialogs";
 
 type Props = { kind?: "app" | "script"; userId: string; conversations: AiConversation[]; projects: AiProject[];
   initialList: Awaited<ReturnType<typeof artifacts.list>>; initialApp?: ArtifactBundle;
-  view?:"app"|"edit"|"database"; selectedFile?:string;selectedTable?:string;
+  view?:"app"|"edit"|"database"; selectedFile?:string;
   databaseStatus?:Awaited<ReturnType<typeof artifactClient.databaseStatus>> };
 
 const studioPalette = [
@@ -86,16 +86,17 @@ export default function Apps(props: Props) {
   };
   const publish = async (item: ArtifactSummary) => {
     if(app()?.id===item.id&&editorDirty()){await prompts.alert(a().saveBeforePublish,{title:t().publish});return;}
-    const firstRelease = !item.publishedVersion && !(await artifactClient.versions(item.id)).items.length;
-    const values = firstRelease ? { note: "Initial release" } : await prompts.form({ title: t().publish, confirmText: t().publish, fields: {
-      note: { type:"text", label:t().changeNote, required:true, maxLength:1000, multiline:true },
-    } });
-    if (values) await action(async () => {
-      const draft = await artifactClient.get(item.id);
-      await artifactClient.publish(item.id,draft.revision,values.note);
+    await action(async () => {
+      const firstRelease = !item.publishedVersion && !(await artifactClient.versions(item.id)).items.length;
+      const values = firstRelease ? { note: "Initial release" } : await prompts.form({ title: t().publish, confirmText: t().publish, fields: {
+        note: { type:"text", label:t().changeNote, required:true, maxLength:1000, multiline:true },
+      } });
+      if (!values) return;
+      await artifactClient.publish(item.id,item.revision,values.note);
       if (app()) { setApp(await artifactClient.get(item.id)); setSelectedVersion(undefined); }
     });
   };
+
   const versions = (item: ArtifactSummary) => prompts.dialog<void>((close) => {
     const [page,setPage] = createSignal(1);
     const [entries] = createResource(page,p => artifactClient.versions(item.id,p));
@@ -143,6 +144,7 @@ export default function Apps(props: Props) {
     },{title:t().projects,size:"medium"});
   });
   const menu = (item: ArtifactSummary) => [
+    ...(app() && props.view && props.view!=="app" ? [{label:a().app,icon:"ti ti-app-window",action:()=>open(item.id)}] : []),
     ...(item.permission === "admin" ? [
       {label:t().remove,icon:"ti ti-trash",action:async()=>{
         if(await prompts.confirm(t().removeConfirm,{title:t().remove,variant:"danger"})) await action(async()=>{
@@ -215,17 +217,12 @@ export default function Apps(props: Props) {
             <div class="assistant-studio-runner-header">
               <h1><i class={selected().icon??"ti ti-app-window"}/>{selected().title}</h1>
               <div class="flex gap-2">
-                <Show when={selected().permission==="admin"}><Dropdown.Root items={[
-                  {label:a().app,action:()=>navigateTo(`/app/assistant/apps/${selected().id}`)},
-                  {label:a().code,action:()=>navigateTo(`/app/assistant/apps/${selected().id}/edit`)},
-                  {label:a().sql,action:()=>navigateTo(`/app/assistant/apps/${selected().id}/database`)},
-                ]}><Dropdown.Trigger variant="secondary" label={a().view}>{props.view==="edit"?a().code:props.view==="database"?a().sql:a().app}</Dropdown.Trigger></Dropdown.Root></Show>
                 <Dropdown.Root items={menu(selected())}><Dropdown.Trigger iconOnly variant="ghost" label={t().actions} disabled={busy()}><i class="ti ti-dots"/></Dropdown.Trigger></Dropdown.Root>
               </div>
             </div>
             <Show when={error()}><Placeholder state="error" title={t().REQUEST_FAILED} description={error()} /></Show>
-            <Show when={props.view==="edit"}><ManualEditor bundle={selected()} userId={props.userId} selectedFile={props.selectedFile} onSaved={setApp} onDirtyChange={setEditorDirty}/></Show>
-            <Show when={props.view==="database"&&props.databaseStatus} keyed>{status=><SqlConsole id={selected().id} userId={props.userId} initialTable={props.selectedTable} initialStatus={status}/>}</Show>
+            <Show when={props.view==="edit"}><ManualEditor bundle={selected()} userId={props.userId} selectedFile={props.selectedFile} onSaved={setApp} onDirtyChange={setEditorDirty} onPublish={()=>void publish(selected())} publishing={busy()}/></Show>
+            <Show when={props.view==="database"&&props.databaseStatus} keyed>{status=><SqlConsole id={selected().id} userId={props.userId} initialStatus={status}/>}</Show>
             <Show when={!props.view||props.view==="app"}><Show when={selectedVersion() ?? "current"} keyed>{version =>
               <ArtifactPanel artifactId={selected().id} userId={props.userId} version={typeof version === "number" ? version : undefined}
                 published={typeof version !== "number" && !!selected().publishedRevision} autoStart

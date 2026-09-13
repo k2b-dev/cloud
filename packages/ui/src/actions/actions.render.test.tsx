@@ -233,6 +233,22 @@ describe("@k2b/ui complete action migrations", () => {
     expect(rule(".k2b-ui .k2b-dropdown.k2b-split-button")).toContain("gap: 0");
   });
 
+  test("renders separate file selection and file action menus", () => {
+    const html = renderToString(() => createComponent(SplitButton, {
+      primaryItems: [{ label: "other.ts", action: () => {} }],
+      primaryMenuLabel: "Choose file",
+      items: [{ label: "Rename file", action: () => {} }],
+      menuLabel: "File actions",
+      menuIcon: "...",
+      children: "main.ts",
+    }));
+    expect(html).toContain('aria-label="Choose file"');
+    expect(html).toContain('aria-label="File actions"');
+    expect(html.match(/aria-haspopup="menu"/g)).toHaveLength(2);
+    expect(html).toContain("other.ts");
+    expect(html).toContain("Rename file");
+  });
+
   test("disables both split button actions while loading", () => {
     const html = renderToString(() =>
       createComponent(SplitButton, {

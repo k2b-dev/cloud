@@ -237,3 +237,12 @@
 .assistant-apps-page--runner .artifact-panel__preview { min-height: 0; overflow: auto; }
 
 .assistant-studio-card__start { margin-left: auto; }
+
+.assistant-editor-publish { margin-inline-start: auto; }
+
+.assistant-starters { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:.75rem; margin-block-start:2rem; }
+.k2b-ui .k2b-button.assistant-starter { height:auto; min-width:0; justify-content:flex-start; align-items:flex-start; gap:.875rem; padding:1.125rem; text-align:start; white-space:normal; font-size:.875rem; line-height:1.5; font-weight:400; border-radius:.625rem; }
+.assistant-starter > i { flex-shrink:0; font-size:1.125rem; line-height:1.5; color:var(--k2b-text-muted); }
+.assistant-starter > span { min-width:0; overflow-wrap:anywhere; }
+.assistant-sql-hint { color:var(--k2b-text-muted); font-size:.75rem; }
+@media(max-width:540px) { .assistant-starters { grid-template-columns:1fr; } }

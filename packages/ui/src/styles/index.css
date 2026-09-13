@@ -1323,10 +1323,13 @@
   scale: 0.98;
 }
 
-.k2b-ui .k2b-split-button > .k2b-split-button__primary {
+.k2b-ui .k2b-split-button > .k2b-split-button__primary,
+.k2b-ui .k2b-split-button__primary-menu > .k2b-split-button__primary {
   border-start-end-radius: 0;
   border-end-end-radius: 0;
 }
+
+.k2b-ui .k2b-split-button__primary-menu { gap: 0; }
 
 .k2b-ui .k2b-split-button > .k2b-split-button__menu-trigger {
   margin-inline-start: -1px;

@@ -1,4 +1,4 @@
-import { Button, DataTable, Dropdown, NoticeCard, Placeholder, Tabs, useLocale } from "@k2b/ui";
+import { Button, DataTable, NoticeCard, Placeholder, Tabs, useLocale } from "@k2b/ui";
 import { files } from "@k2b/stdlib/browser";
 import Papa from "papaparse";
 import { createResource, createSignal, onCleanup, onMount, Show } from "solid-js";
@@ -19,22 +19,13 @@ const cell = (value: unknown) =>
 export function SqlConsole(props: {
   id: string;
   userId: string;
-  initialTable?: string;
   initialStatus: Awaited<ReturnType<typeof artifactClient.databaseStatus>>;
 }) {
   const locale = useLocale(),
     t = () => artifactMessages.resolve([locale()]).t,
     a = () => advancedMessages.resolve([locale()]).t;
   const [status, { refetch }] = createResource(() => artifactClient.databaseStatus(props.id), { initialValue: props.initialStatus });
-  const [tables, { refetch: reloadTables }] = createResource(
-    () => status()?.connected,
-    async (ready) =>
-      ready
-        ? z.array(z.object({ name: z.string() })).parse(await artifactClient.databaseInspect(props.id, { operation: "tables.list" }))
-        : [],
-  );
-  const [text, setText] = createSignal("SELECT 1 AS example"),
-    [table, setTable] = createSignal(props.initialTable ?? "");
+  const [text, setText] = createSignal("SELECT 1 AS example");
   const [view, setView] = createSignal("query"),
     [rows, setRows] = createSignal<Record<string, unknown>[]>(),
     [columns, setColumns] = createSignal<string[]>([]);
@@ -55,7 +46,7 @@ export function SqlConsole(props: {
       localStorage.setItem(key, value);
     } catch {}
   }
-  async function run(mode = view(), selected = table()) {
+  async function run(mode = view()) {
     controller?.abort();
     const current = new AbortController();
     controller = current;
@@ -65,18 +56,24 @@ export function SqlConsole(props: {
     setColumns([]);
     const began = performance.now();
     try {
-      const request =
-        mode === "query"
-          ? { operation: "query", sql: text(), params: [] }
-          : mode === "schema"
-            ? { operation: "schema.get", table: selected }
-            : { operation: "rows.list", table: selected, query: { limit: 100 } };
-      const result = await artifactClient.databaseInspect(props.id, request, current.signal);
+      let data: Record<string, unknown>[];
+      if (mode === "schema") {
+        const tables = z.array(z.object({ name: z.string() })).parse(
+          await artifactClient.databaseInspect(props.id, { operation: "tables.list" }, current.signal),
+        );
+        data = [];
+        for (const table of tables) {
+          current.signal.throwIfAborted();
+          const schema = z.object({ columns: z.array(z.record(z.string(), z.unknown())) }).parse(
+            await artifactClient.databaseInspect(props.id, { operation: "schema.get", table: table.name }, current.signal),
+          );
+          data.push(...schema.columns.map(column => ({ [a().table]: table.name, ...column })));
+        }
+      } else {
+        data = Rows.parse(await artifactClient.databaseInspect(props.id,
+          { operation: "query", sql: text(), params: [] }, current.signal)).data;
+      }
       if (current !== controller) return;
-      const data =
-        mode === "schema"
-          ? z.object({ columns: z.array(z.record(z.string(), z.unknown())) }).parse(result).columns
-          : Rows.parse(result).data;
       setRows(data);
       setColumns([...new Set(data.flatMap((row) => Object.keys(row)))]);
       setElapsed(performance.now() - began);
@@ -88,7 +85,7 @@ export function SqlConsole(props: {
   }
   return (
     <div class="assistant-sql-console">
-      <NoticeCard tone="info" title={a().sql} detail={a().queryHelp + " " + a().databaseHelp} />
+      <Show when={view() === "query"}><p class="assistant-sql-hint">{a().queryHelp}</p></Show>
       <Show
         when={!status.error}
         fallback={
@@ -133,48 +130,27 @@ export function SqlConsole(props: {
           >
             <div class="assistant-advanced-toolbar">
               <Tabs
+                variant="pill"
                 value={view}
                 onValueChange={(next) => {
                   setView(next);
-                  if (next !== "query" && table()) void run(next);
+                  if (next === "schema") void run(next);
                   else {
                     controller?.abort();
+                    controller = undefined;
+                    setBusy(false);
+                    setError("");
                     setRows(undefined);
                     setColumns([]);
                   }
                 }}
                 ariaLabel={a().view}
                 options={[
-                  { value: "query", label: a().sql },
-                  { value: "data", label: a().table },
+                  { value: "query", label: "SQL" },
                   { value: "schema", label: a().schema },
                 ]}
               />
-              <Dropdown.Root
-                items={(tables() ?? []).map((item) => ({
-                  label: item.name,
-                  action: () => {
-                    setTable(item.name);
-                    const url = new URL(location.href);
-                    url.searchParams.set("table", item.name);
-                    history.replaceState(null, "", url);
-                    if (view() === "query") draft(`SELECT * FROM "${item.name.replaceAll('"', '""')}" LIMIT 100`);
-                    else void run(view(), item.name);
-                  },
-                }))}
-              >
-                <Dropdown.Trigger variant="secondary" label={a().table} disabled={tables.loading}>
-                  {table() || a().table}
-                </Dropdown.Trigger>
-              </Dropdown.Root>
-              <Button size="sm" variant="ghost" onClick={() => void reloadTables()}>
-                <i class="ti ti-refresh" />
-                {t().refresh}
-              </Button>
             </div>
-            <Show when={tables.error}>
-              <NoticeCard tone="danger" title={String(tables.error)} />
-            </Show>
             <div hidden={view() !== "query"} class="assistant-sql-editor">
               <SourceEditor
                 path="query.sql"
@@ -186,15 +162,15 @@ export function SqlConsole(props: {
               />
             </div>
             <div class="assistant-advanced-toolbar">
-              <Button disabled={busy() || (view() !== "query" && !table())} onClick={() => void run()}>
-                <i class="ti ti-player-play" />
-                {t().start}
+              <Button size="sm" loading={busy()} disabled={busy()} onClick={() => void run()}>
+                <i class={view() === "query" ? "ti ti-player-play" : "ti ti-refresh"} />
+                {view() === "query" ? t().start : t().refresh}
               </Button>
-              <Button variant="ghost" disabled={!busy()} onClick={() => controller?.abort()}>
+              <Show when={busy()}><Button size="sm" variant="ghost" onClick={() => controller?.abort()}>
                 {t().stop}
-              </Button>
-              <Button
-                variant="ghost"
+              </Button></Show>
+              <Show when={view() === "query"}><Button
+                size="sm" variant="ghost"
                 disabled={!rows()?.length}
                 onClick={() =>
                   files.downloadFileFromContent(
@@ -210,25 +186,27 @@ export function SqlConsole(props: {
               >
                 <i class="ti ti-download" />
                 CSV
-              </Button>
+              </Button></Show>
               <Show when={rows()}>
                 <small>
                   {rows()!.length} {a().rows} · {elapsed().toFixed(0)} ms
                 </small>
               </Show>
             </div>
-            <Show when={rows()?.length === (view() === "data" ? 100 : 1000)}>
+            <Show when={view() === "query" && rows()?.length === 1000}>
               <NoticeCard tone="info" title={a().moreRows} />
             </Show>
             <div class="assistant-sql-results">
               <Show when={!busy()} fallback={<Placeholder state="loading" title={t().loading} />}>
-                <Show when={rows()} fallback={<Placeholder title={a().noResults} />}>
+                <Show when={rows()} fallback={<Show when={view() === "query"}><Placeholder title={a().noResults} /></Show>}>
+                  <Show when={view() !== "schema" || rows()?.length} fallback={<Placeholder title={a().noTables} />}>
                   <DataTable
                     surface="paper"
                     rows={rows() ?? []}
                     columns={columns().map((key) => ({ id: key, header: key, value: (row: Record<string, unknown>) => cell(row[key]) }))}
                     empty={a().empty}
                   />
+                  </Show>
                 </Show>
               </Show>
             </div>

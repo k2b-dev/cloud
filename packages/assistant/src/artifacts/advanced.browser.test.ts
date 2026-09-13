@@ -33,7 +33,8 @@ test("Studio editor keeps pending edits and file sessions; SQL and local data ar
       errors.push(e.message);
       console.error(e.message);
     });
-    let revision = 1, compileCalls = 0;
+    let revision = 1, publishedRevision = 1, compileCalls = 0;
+    let hasTables = true;
     const saves: (()=>void)[]=[];
     async function finishSave(){
       const until=Date.now()+5000;
@@ -57,12 +58,16 @@ test("Studio editor keeps pending edits and file sessions; SQL and local data ar
       } else if (path.endsWith("/compiled")) {
         compileCalls++;
         data = { ...(await compileArtifact(source)), revision };
+      } else if (path.endsWith("/versions")) data = { items: [] };
+      else if (path.endsWith("/publish")) {
+        expect(request.postDataJSON().expectedRevision).toBe(revision);
+        publishedRevision = revision;
       } else if (path.endsWith("/database/status")) data = { configured: true, connected: true, overview: null, unavailable: null };
       else if (path.endsWith("/database/inspect")) {
         const input = request.postDataJSON();
         data =
           input.operation === "tables.list"
-            ? [{ name: "ledger" }]
+            ? (hasTables ? [{ name: "ledger" }] : [])
             : input.operation === "schema.get"
               ? { columns: [{ name: "amount", type: "integer" }] }
               : { data: [{ amount: 1250 }] };
@@ -78,6 +83,7 @@ test("Studio editor keeps pending edits and file sessions; SQL and local data ar
           kind: "app",
           permission: "admin",
           revision,
+          publishedRevision,
           sourceRevision: revision,
           source,
         };
@@ -89,14 +95,20 @@ test("Studio editor keeps pending edits and file sessions; SQL and local data ar
           kind: "app",
           permission: "admin",
           revision,
+          publishedRevision,
           sourceRevision: revision,
           source,
         };
       await route.fulfill({ json: data });
     });
     await page.goto(server.url + "app/assistant/apps/00000000-0000-4000-8000-000000000001/edit");
+    expect(await page.locator(".k2b-split-button__primary").evaluate(el => ({
+      top: getComputedStyle(el).borderTopRightRadius,
+      bottom: getComputedStyle(el).borderBottomRightRadius,
+    }))).toEqual({top:"0px",bottom:"0px"});
     const editor = page.getByRole("textbox", { name: "main.ts", exact: true });
-    await editor.fill('export default () => { ui.text("Changed"); ui.button("Ask", async () => { setTimeout(() => console.info("Waiting"), 30); if(await ui.modal.confirm({title:"Test dialog",message:"Continue?"})) await files.save("ok", "result.txt"); }); };');
+    expect(await page.getByRole("button", {name:"Publish", exact:true}).isDisabled()).toBe(true);
+    await editor.fill('export default () => { ui.text("Changed"); ui.button("Pick", async () => { const file = await files.open(); if(file) ui.text(file.name); }); ui.button("Ask", async () => { setTimeout(() => console.info("Waiting"), 30); if(await ui.modal.confirm({title:"Test dialog",message:"Continue?"})) await files.save("ok", "result.txt"); }); };');
     await page.getByRole("button", { name: "Save", exact: true }).click();
     await page.waitForFunction(() => document.querySelector('[aria-busy="true"]') !== null);
     await editor.fill('export default () => { ui.text("Typed while saving"); };');
@@ -112,15 +124,24 @@ test("Studio editor keeps pending edits and file sessions; SQL and local data ar
     expect(await editor.inputValue()).toContain("Typed while saving");
     await editor.press("Control+z");
     expect(await editor.inputValue()).toContain("Changed");
-    await page.getByRole("button", { name: "Save and run", exact: true }).click();
+    await page.getByRole("button", { name: "Save", exact: true }).click();
     await finishSave();
+    await page.getByRole("button", {name:"Publish",exact:true}).click();
+    await page.waitForFunction(() => { const b = Array.from(document.querySelectorAll("button")).find(b=>b.textContent?.trim()==="Publish"); return b?.disabled && b.getAttribute("aria-busy") !== "true"; });
+    expect(publishedRevision).toBe(revision);
+    expect(compileCalls).toBe(0);
+    await page.getByRole("button", {name:"Start",exact:true}).click();
     await page.getByText("Changed", { exact: true }).waitFor();
     expect(compileCalls).toBe(1);
+    const chooser = page.waitForEvent("filechooser");
+    await page.getByRole("button", {name:"Pick",exact:true}).click();
+    await (await chooser).setFiles({name:"local-example.csv",mimeType:"text/csv",buffer:Buffer.from("a;b\n1;2")});
+    await page.getByText("local-example.csv", {exact:true}).waitFor();
     await page.getByRole("button",{name:"Ask",exact:true}).click();
     await page.getByText("Continue?",{exact:true}).waitFor();
+    const download = page.waitForEvent("download");
     await page.getByRole("button",{name:"Confirm",exact:true}).click();
-    await page.getByRole("button",{name:"Console",exact:true}).click();
-    await page.getByRole("button",{name:"result.txt",exact:true}).waitFor();
+    expect((await download).suggestedFilename()).toBe("result.txt");
     await page.screenshot({path:"/tmp/assistant-advanced-editor.png"});
     await page.setViewportSize({width:800,height:900});
     await page.getByRole("tab",{name:"Code",exact:true}).click();
@@ -135,6 +156,16 @@ test("Studio editor keeps pending edits and file sessions; SQL and local data ar
     await page.getByRole("button", { name: "Start", exact: true }).click();
     await page.getByText("1250", { exact: true }).waitFor();
     expect(await page.getByRole("button", { name: "CSV", exact: true }).isEnabled()).toBe(true);
+    expect(await page.getByRole("tab", {name:"Table", exact:true}).count()).toBe(0);
+    expect(await page.getByRole("button", {name:"Table", exact:true}).count()).toBe(0);
+    await page.getByRole("tab", {name:"Schema", exact:true}).click();
+    await page.getByText("integer", {exact:true}).waitFor();
+    await page.screenshot({path:"/tmp/assistant-sql-simplified.png"});
+    hasTables = false;
+    await page.getByRole("button", {name:"Refresh", exact:true}).click();
+    await page.getByText("This database has no tables yet.", {exact:true}).waitFor();
+    await page.getByRole("tab", {name:"SQL", exact:true}).click();
+    expect(await page.getByRole("textbox", {name:"query.sql"}).inputValue()).toBe("SELECT amount FROM ledger LIMIT 100");
     await page.goto(server.url + "gallery?reader");
     await page.getByRole("button", { name: "Actions · Advanced fixture" }).click();
     expect(await page.getByRole("menuitem", { name: "Edit manually" }).count()).toBe(0);
@@ -153,6 +184,12 @@ test("Studio editor keeps pending edits and file sessions; SQL and local data ar
       return (await (await (await user.getDirectoryHandle("kv")).getFileHandle("private-fixture")).getFile()).text();
     });
     expect(privateRemains).toBe("99");
+    await page.goto(server.url + "starters");
+    await page.locator(".assistant-starter").first().waitFor();
+    expect(await page.locator(".assistant-starter").count()).toBe(4);
+    await page.screenshot({path:"/tmp/assistant-starters-live.png"});
+    await page.setViewportSize({width:390,height:844});
+    expect(await page.evaluate(()=>document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     expect(errors).toEqual([]);
   } finally {
     await browser.close();

@@ -101,8 +101,9 @@ Studio or with `assistant code delete ID --yes`; no agent deletion tool exists.
 
 Studio's Advanced menu offers a manual multi-file editor for resource managers.
 It is optional: continue doing normal work with `code_read` and `code_write`.
-Manual Save and run executes a fixed saved revision with isolated local test
-storage; shared data and approved capabilities remain real. Test files supply
-picker fixtures. Saving manually never publishes or starts code automatically.
+Save stores the draft without starting or publishing it. Start in the adjacent
+app panel runs the saved source as a normal user run, with normal local storage
+and file selection. Publish creates a release from saved changes. Agent test
+runs still support isolated picker fixtures through `code_run.inputPaths`.
 If a person edits at the same time, read the latest source before your next
 write; do not overwrite changes you have not inspected.

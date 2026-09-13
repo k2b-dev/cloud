@@ -215,8 +215,8 @@ apps are visible and usable only by administrators, even when Use access is gran
 Open an app's action menu and choose **Advanced**. The same menu is available
 on the Studio card and in the running app. **Edit with Assistant** starts an
 editing chat. Resource managers can also choose **Edit manually** or **SQL
-console**. These views keep the Assistant navigation and use a compact view
-selector; no separate editor navigation replaces your chats.
+console**. These views keep the Assistant navigation. Switch views through the app action
+menu; no separate editor navigation replaces your chats.
 
 The manual editor supports multiple files, adding, renaming, deleting and
 choosing the entry file. Save explicitly with the button or Ctrl/Cmd+S.
@@ -224,13 +224,18 @@ Renaming rewrites parsed relative imports. Invalid syntax must be fixed before
 renaming. A conflicting save keeps your draft; download it before explicitly
 loading the latest source. Saving does not publish or run code.
 
-**Save and run** executes the acknowledged saved revision beside the editor.
-Local test storage is temporary; shared files/KV, database operations and
-approved Cloud actions affect real data. Select **Test files** to supply file
-picker inputs. On narrow screens, switch between Code and Execution.
+**Start** in the adjacent app panel runs the saved source with normal user
+storage and file selection. Use the file split-button to switch files and open
+file actions, including downloading the current source draft. **Publish** on
+the right creates a release from saved changes and is disabled until changes
+are saved or when the saved revision is already published. On narrow screens,
+switch between Code and Execution.
 
-The SQL console runs SELECT only, with Ctrl/Cmd+Enter or Start. Choose a table
-to inspect its data or schema. CSV exports contain the displayed rows and
+The SQL console has two views: **SQL** for SELECT queries (Ctrl/Cmd+Enter or
+Start), and **Schema** for the tables and their columns. Schema loads the whole
+database structure automatically; no table selection is required. Refresh
+reloads it. An empty database is identified explicitly. Stop appears while an
+operation is running. CSV exports contain the displayed rows and
 escape spreadsheet formulas. SQL drafts stay in this browser profile per user
 and resource. Opening the console does not create a database: use **Connect
 database** explicitly. An unconfigured instance explains why it is unavailable.
