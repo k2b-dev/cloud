@@ -46,7 +46,7 @@ export async function compileArtifact(input: unknown) {
       }));
       builder.onLoad({ filter: /.*/, namespace: "artifact" }, (args) => {
         const contents = args.path === "__artifact_entry__"
-          ? `import * as entry from ${JSON.stringify("./" + source.entry)}; globalThis.__artifactStart(entry.default, entry.uiVersion);`
+          ? `import entry from ${JSON.stringify("./" + source.entry)}; globalThis.__artifactStart(entry);`
           : files.get(args.path);
         if (contents === undefined) throw new Error(`Missing source file: ${args.path}`);
         if (args.path !== "__artifact_entry__" && !/\.(?:js|ts)$/.test(args.path))

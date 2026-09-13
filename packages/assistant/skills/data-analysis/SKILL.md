@@ -8,7 +8,7 @@ description: Analyze source data, explain metrics and comparisons, and build evi
 Start with the question the reader needs to answer. Choose a direct answer,
 a one-off analysis, an exported file, or a reusable Studio app accordingly.
 Load `assistant-code-mode` for execution and read its `references/analytics.md`
-for UI version 2. Loading this skill does not install a library or grant access.
+for the built-in UI. Loading this skill does not install a library or grant access.
 
 ## Establish the data
 

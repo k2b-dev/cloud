@@ -1,27 +1,25 @@
 # Charts
 
-For version 2, pass these options as `ui.chart({data:{options}})`.
+Pass these options as `ui.chart({data:{options}})`.
 See [Analytics UI](analytics.md) for formats, selection, and Chart Explorer.
 
-Use `ui.chart(options)` for charts rendered by the host. Values must be finite
+Use `ui.chart({data:{options}})` for charts rendered by the host. Values must be finite
 numbers. The host handles sizing and theme colors; do not generate SVG or HTML.
 
 ```js
 export default () => {
-  const chart = ui.chart({
-    kind: "bar", title: "Tasks by status", showValues: true,
-    data: [{ label: "Open", value: 4 }, { label: "Done", value: 7 }]
-  });
-  ui.button("Refresh", () => chart.set({
-    kind: "bar", title: "Tasks by status", showValues: true,
-    data: [{ label: "Open", value: 3 }, { label: "Done", value: 8 }]
-  }), { id: "refresh" });
+  const chart = ui.chart({data:{options:{
+    kind:"bar", data:[{label:"North",value:12},{label:"South",value:8}]
+  }}});
+  ui.button({label:"Refresh", onClick: () => chart.setData({options:{
+    kind:"bar", data:[{label:"North",value:16},{label:"South",value:10}]
+  }})});
 };
 ```
 
-`chart.set(options)` replaces the complete chart configuration. Keep the handle
+`chart.setData({options})` replaces the complete chart configuration. Keep the handle
 instead of creating a chart on every refresh. Charts do not use `upsert` or
-`remove`; update their data through `set`.
+`remove`; update their data through `setData`.
 
 | Kind | Required data |
 | --- | --- |
@@ -51,7 +49,7 @@ The 1,000-entry budget also applies to the total across nested arrays.
 
 ## Additional accepted options
 
-These options apply to both versions unless the version 2 wrapper supplies a
+These options apply unless the presentation supplies a
 format or selection behavior. Omit properties that are not listed for the kind.
 
 - Cartesian axes (`line`, `scatter`, `histogram`) accept `xAxis` and `yAxis`;
@@ -78,6 +76,6 @@ format or selection behavior. Omit properties that are not listed for the kind.
   (a number or `{top?,right?,bottom?,left?}`, each 0–200). Prefer surrounding UI
   sections for consistently placed titles. Host layout owns width and height.
 
-Version 2 uses `data.formats` instead of transporting formatting functions.
+The UI uses `data.formats` instead of transporting formatting functions.
 Use explicit mark tooltips for domain labels or derived values. An Explorer
 with field mappings derives tooltip labels and formats from its columns.

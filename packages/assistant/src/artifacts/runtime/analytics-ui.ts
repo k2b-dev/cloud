@@ -38,7 +38,7 @@ export function createAnalyticsUi(
     return parsed;
   }
   function create<T extends { id?: string }>(type: AnalyticsNode["type"], options: T, callback?: Callback) {
-    const id = options.id ?? `ui2-${sequence++}`;
+    const id = options.id ?? `node-${sequence++}`;
     if (nodes.has(id) || nodes.size >= LIMITS.nodes) throw new Error("Duplicate UI id or node limit reached");
     commit({ ...options, type, id });
     if (callback) callbacks.set(id, callback);

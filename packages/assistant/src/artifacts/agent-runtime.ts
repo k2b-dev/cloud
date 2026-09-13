@@ -30,14 +30,7 @@ function inspect(runId: string, entry: Entry, options: { nodeId?: string; offset
     runId, id: entry.artifactId, resourceId: entry.resourceId, status: state.status, busy: state.busy, work: state.work,
     error: state.error ? text(state.error, 6000) : null, modal: state.modal ? { ...state.modal, id: state.modalId } : null,
     totalNodes: state.nodes.length, nextNodeOffset: !nodeId && offset + limit < state.nodes.length ? offset + limit : null,
-    nodes: selected.map((node) => ({
-      id: node.id, kind: node.kind, label: text(node.label, 250), value: text(node.value, 500), disabled: node.disabled, loading: node.loading,
-      description: text(node.description, 1000), state: node.state, children: node.children, actions: node.actions.map((action) => ({ ...action, label: text(action.label, 120) })),
-      ...(node.analytics ? { analytics: inspectAnalytics(node.analytics, offset, limit, Boolean(nodeId)) } : {}),
-      ...(node.kind === "select" ? { options: nodeId ? node.options.slice(offset, offset + limit).map((option) => ({ value: option.value, label: text(option.label, 250) })) : [], totalOptions: node.options.length } : {}),
-      ...(node.kind === "list" ? { items: node.items.slice(nodeId ? offset : 0, nodeId ? offset + limit : 3).map((item) => ({ id: item.id, title: text(item.title, 250) })), totalItems: node.items.length } : {}),
-      ...(node.kind === "table" ? { columns: node.columns, rows: nodeId ? node.rows.slice(offset, offset + limit) : [], totalRows: node.rows.length } : {}),
-    })),
+    nodes: selected.map(node => ({ id: node.id, ...inspectAnalytics(node, offset, limit, Boolean(nodeId)) })),
     logs: state.logs.slice(-20).map((log) => ({ ...log, text: text(log.text, 2000) })),
     output: output === null ? null : text(output, 16000), outputTruncated: output !== null && output.length > 16000, files: state.files,
   };
@@ -185,10 +178,9 @@ export function createArtifactAgentRuntime(open: ((tab: WorkspaceTab) => void) |
             || (!["starting", "waiting"].includes(current.status) && !current.busy);
         });
       } else {
-        const analytics = state.nodes.find(node => node.id === input.id)?.kind === "analytics" ? AnalyticsEvent.parse(input.value ?? { type: "change", value: null }) : undefined;
-        if (!analytics && input.value !== undefined && typeof input.value !== "string") throw new Error("Control values must be strings; use the modal ID for structured answers");
+        const event = AnalyticsEvent.parse(input.value ?? { type: "change", value: null });
         let settled = false, failure: unknown;
-        void entry.session.event({ id: input.id, value: typeof input.value === "string" ? input.value : undefined, analytics, action: input.action, item: input.item })
+        void entry.session.event({ id: input.id, event })
           .then(() => { settled = true; }, (error) => { failure = error; settled = true; });
         await waitFor(entry, () => settled || entry.session.snapshot().status === "waiting" || entry.session.snapshot().work?.status === "running");
         if (failure) throw failure;

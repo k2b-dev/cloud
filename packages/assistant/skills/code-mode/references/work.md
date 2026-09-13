@@ -8,8 +8,8 @@ controls remain available while it runs; a second job is rejected until it ends.
 
 ```js
 export default () => {
-  const status = ui.status("Choose a folder");
-  ui.button("Start", async () => {
+  const status = ui.text({value:"Choose a folder"});
+  ui.button({label:"Start", onClick: async () => {
     const selected = await files.openFolder();
     if (!selected.length) return;
     work.run(async job => {
@@ -17,17 +17,16 @@ export default () => {
         await job.checkpoint();
         // Process selected[index]; close documents in finally.
         job.progress(index + 1, selected.length, files.path(selected[index]));
-        status.set(`Processed ${index + 1} of ${selected.length}`);
+        status.setValue(`Processed ${index + 1} of ${selected.length}`);
       }
       return { processed: selected.length };
     });
-  });
-  ui.button("Cancel", () => work.cancel());
+  }});
+  ui.button({label:"Cancel", onClick: () => work.cancel()});
 };
 ```
 
-Do not await `job.done` in a GUI button: its callback would remain busy and block
-the Cancel control. For a headless script, use
+Do not await `job.done` in a GUI button: its callback would remain pending for the entire job. For a headless script, use
 `const job = work.run(async context => { /* ... */ }); return await job.done;`.
 A job's returned value becomes the run output. Do not return the job handle.
 

@@ -44,7 +44,7 @@ test("Studio editor keeps pending edits and file sessions; SQL and local data ar
     let source = {
       entry: "main.ts",
       files: [
-        { path: "main.ts", content: 'export default () => { ui.text("Hello"); };' },
+        { path: "main.ts", content: 'export default () => { ui.text({value:"Hello"}); };' },
         { path: "other.ts", content: "export const amount = 10;" },
       ],
     };
@@ -108,10 +108,10 @@ test("Studio editor keeps pending edits and file sessions; SQL and local data ar
     }))).toEqual({top:"0px",bottom:"0px"});
     const editor = page.getByRole("textbox", { name: "main.ts", exact: true });
     expect(await page.getByRole("button", {name:"Publish", exact:true}).isDisabled()).toBe(true);
-    await editor.fill('export default () => { ui.text("Changed"); ui.button("Pick", async () => { const file = await files.open(); if(file) ui.text(file.name); }); ui.button("Ask", async () => { setTimeout(() => console.info("Waiting"), 30); if(await ui.modal.confirm({title:"Test dialog",message:"Continue?"})) await files.save("ok", "result.txt"); }); };');
+    await editor.fill('export default () => { ui.text({value:"Changed"}); ui.button({label:"Pick", onClick: async () => { const file = await files.open(); if(file) ui.text({value:file.name}); }}); ui.button({label:"Ask", onClick: async () => { setTimeout(() => console.info("Waiting"), 30); if(await ui.modal.confirm({title:"Test dialog",message:"Continue?"})) await files.save("ok", "result.txt"); }}); };');
     await page.getByRole("button", { name: "Save", exact: true }).click();
     await page.waitForFunction(() => document.querySelector('[aria-busy="true"]') !== null);
-    await editor.fill('export default () => { ui.text("Typed while saving"); };');
+    await editor.fill('export default () => { ui.text({value:"Typed while saving"}); };');
     await finishSave();
     await page.getByText("Unsaved changes", { exact: true }).waitFor();
     expect(await editor.inputValue()).toContain("Typed while saving");

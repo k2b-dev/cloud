@@ -13,9 +13,7 @@ export const CodeRunInput = z.object({
 export const CodeInspectInput = z.object({ runId, waitMs: z.number().int().min(0).max(30000).default(0).describe("Wait up to this duration for background work to finish before returning its real state; never restarts work."), nodeId: z.string().min(1).max(80).optional(), offset: z.number().int().min(0).default(0), limit: z.number().int().min(1).max(100).default(20) }).strict();
 export const CodeInteractInput = z.object({ runId,
   id: z.string().min(1).max(80).describe("Control ID or pending modal ID returned by the snapshot."),
-  value: z.json().optional().describe("Input value or modal answer. Use null to cancel a modal."),
-  action: z.string().max(80).optional().describe("List action ID, when acting on a list item."),
-  item: z.string().max(180).optional().describe("Current list item ID."),
+  value: z.json().optional().describe("Structured UI event or modal answer. Omit for button activation; use {type:change,value:...} for controls, {type:select,key:...} for selection. Use null to cancel a modal."),
 }).strict();
 export const CodeStopInput = z.object({ runId }).strict();
 export const CodeOpenInput = z.object({ id }).strict();

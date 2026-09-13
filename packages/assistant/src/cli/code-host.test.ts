@@ -183,7 +183,7 @@ test("scratchpad pressure preserves exports and interactive runs while reclaimin
   const run=(callId:string,code:string)=>host.execute({...ids,name:"code_run",callId,args:{code}});
   try{
     await run("retained",'export default async()=>{await files.save("important","result.csv");return 1;}');
-    await run("interactive",'export default()=>{ui.button("Keep",()=>{}, {id:"keep"});}');
+    await run("interactive",'export default()=>{ui.button({label:"Keep",onClick:()=>{},id:"keep"});}');
     await run("retained-work",'export default()=>{work.run(async job=>{await new Promise(r=>setTimeout(r,30000));await job.checkpoint();});}');
     for(let i=0;i<32;i++)expect(await run(`probe-${i}`,`export default()=>${i}`)).toMatchObject({status:"ready"});
     expect(await host.execute({...ids,name:"code_inspect",callId:"files",args:{runId:"retained"}})).toMatchObject({files:[{name:"result.csv"}]});
@@ -196,7 +196,7 @@ test("scratchpad pressure preserves exports and interactive runs while reclaimin
 
 test("slow database and shared storage calls do not consume the short callback deadline",async()=>{
   const id="00000000-0000-4000-8000-000000000001";
-  const code='export default()=>{ui.button("Import",async()=>{await database.connect();await kv.shared.set("done",true);ui.text("Finished");},{id:"import"});}';
+  const code='export default()=>{ui.button({label:"Import",onClick:async()=>{await database.connect();await kv.shared.set("done",true);ui.text({value:"Finished"});},id:"import"});}';
   const compiled=await compileArtifact({entry:"main.ts",files:[{path:"main.ts",content:code}]});
   const bundle=await cliHostBundle();
   const host=await createCliCodeHost({fetch:async input=>{
@@ -211,7 +211,7 @@ test("slow database and shared storage calls do not consume the short callback d
   try{
     const ids={conversationId:id,turnId:id};
     expect(await host.execute({...ids,name:"code_run",callId:"slow-io",args:{id}})).toMatchObject({status:"ready"});
-    expect(await host.execute({...ids,name:"code_interact",callId:"import",args:{runId:"slow-io",id:"import"}})).toMatchObject({status:"ready",nodes:[{id:"import"},{kind:"text",label:"Finished"}]});
+    expect(await host.execute({...ids,name:"code_interact",callId:"import",args:{runId:"slow-io",id:"import"}})).toMatchObject({status:"ready",nodes:[{id:"import"},{type:"text",value:"Finished"}]});
   }finally{await host.close();}
 },45000);
 
@@ -304,8 +304,8 @@ test("HTTP crosses the real CLI worker bridge as secret references and waits for
   }finally{await host.close();}
 },60000);
 
-test("CLI uses UI version 2 typed controls and bounded explorer inspection", async () => {
-  const code = `export const uiVersion=2; export default()=>{
+test("CLI uses UI typed controls and bounded explorer inspection", async () => {
+  const code = `export default()=>{
     const output=ui.text({id:"output",value:"Before"});
     ui.number({id:"count",label:"Count",value:1,onChange(value){output.setValue("Count: "+value);}});
     ui.chartExplorer({id:"chart",label:"Chart",columns:[{key:"value",label:"Value"}],data:{rowKey:"id",rows:[{id:"a",value:4}],chart:{kind:"bar",category:"id",value:"value"}}});
@@ -322,7 +322,7 @@ test("CLI uses UI version 2 typed controls and bounded explorer inspection", asy
   const ids={conversationId:"00000000-0000-4000-8000-000000000001",turnId:"00000000-0000-4000-8000-000000000001"};
   try{
     expect(await host.execute({...ids,name:"code_run",callId:"analytics",args:{code}})).toMatchObject({status:"ready"});
-    expect(await host.execute({...ids,name:"code_interact",callId:"change",args:{runId:"analytics",id:"count",value:{type:"change",value:7}}})).toMatchObject({status:"ready",nodes:expect.arrayContaining([expect.objectContaining({id:"output",analytics:expect.objectContaining({value:"Count: 7"})})])});
-    expect(await host.execute({...ids,name:"code_inspect",callId:"inspect",args:{runId:"analytics",nodeId:"chart",limit:1}})).toMatchObject({nodes:[expect.objectContaining({analytics:expect.objectContaining({rows:[{id:"a",value:4}],totalRows:1})})]});
+    expect(await host.execute({...ids,name:"code_interact",callId:"change",args:{runId:"analytics",id:"count",value:{type:"change",value:7}}})).toMatchObject({status:"ready",nodes:expect.arrayContaining([expect.objectContaining({id:"output",value:"Count: 7"})])});
+    expect(await host.execute({...ids,name:"code_inspect",callId:"inspect",args:{runId:"analytics",nodeId:"chart",limit:1}})).toMatchObject({nodes:[expect.objectContaining({rows:[{id:"a",value:4}],totalRows:1})]});
   }finally{await host.close();}
 },60000);

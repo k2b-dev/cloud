@@ -466,12 +466,7 @@ for the same user and chat or app before using the CLI.
 
 ## Explore data with Code Mode
 
-New analysis apps can opt in to UI version 2 by exporting `uiVersion = 2` from
-their entry module. Existing source without that export continues to use UI
-version 1; changing the version does not migrate calls automatically. Saved and
-published source retain the selected version.
-
-Version 2 offers object-based controls, numeric and date-range inputs, multiple
+Code Mode offers object-based controls, numeric and date-range inputs, multiple
 selection, responsive grids, and Chart Explorer views. An Explorer combines a
 chart, sortable table, copy action, and selection details from the same rows.
 Multiple Explorers can share filters, comparison state, selection, and a line

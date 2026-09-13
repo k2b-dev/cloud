@@ -32,15 +32,16 @@ test("chart reference uses accepted chart options", async () => {
   const document = await Bun.file(new URL("../../skills/code-mode/references/charts.md", import.meta.url)).text();
   const source = document.match(/```js\n([\s\S]*?)\n```/)?.[1];
   expect(source).toBeDefined();
-  const callbacks: Array<() => void> = [];
-  const options: unknown[] = [];
-  const start = new Function("ui", source!.replace("export default", "return"));
-  start({
-    chart: (value: unknown) => { options.push(ChartOptions.parse(value)); return { set: (next: unknown) => options.push(ChartOptions.parse(next)) }; },
-    button: (_label: string, callback: () => void) => callbacks.push(callback),
-  })();
-  callbacks[0]!();
-  expect(options).toHaveLength(2);
+  const { createAnalyticsUi } = await import("./runtime/analytics-ui");
+  const runtime = createAnalyticsUi(() => {});
+  new Function("ui", source!.replace("export default", "return"))(runtime.ui)();
+  const before = runtime.snapshot().find(node => node.type === "chart");
+  expect(before?.type).toBe("chart");
+  const button = runtime.snapshot().find(node => node.type === "button")!;
+  await runtime.event(button.id, {type:"change",value:null});
+  const after = runtime.snapshot().find(node => node.type === "chart");
+  expect(after?.type === "chart" && ChartOptions.safeParse(after.data.options).success).toBe(true);
+  expect(after).not.toEqual(before);
 });
 
 test("first-file skill entry compiles without loading GUI references", async () => {
@@ -51,13 +52,13 @@ test("first-file skill entry compiles without loading GUI references", async () 
   expect(compiled.code).toContain("__artifactStart");
 });
 
-test("analytics reference executes its version 2 example with the real UI builder", async () => {
+test("analytics reference executes its example with the real UI builder", async () => {
   const { createAnalyticsUi } = await import("./runtime/analytics-ui");
   const document = await Bun.file(new URL("../../skills/code-mode/references/analytics.md", import.meta.url)).text();
   const code = document.match(/```js\n([\s\S]*?)\n```/)?.[1];
   expect(code).toBeDefined();
   const runtime = createAnalyticsUi(() => {});
-  new Function("ui", code!.replace("export const uiVersion = 2;", "").replace("export default", "return"))(runtime.ui)();
+  new Function("ui", code!.replace("export default", "return"))(runtime.ui)();
   expect(runtime.snapshot().filter(node => node.type === "explorer")).toHaveLength(1);
   await compileArtifact({entry:"main.ts",files:[{path:"main.ts",content:code!}]});
 });

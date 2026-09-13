@@ -63,7 +63,7 @@ separate; [Debugging](references/debugging.md) explains deadlines and I/O waits.
 
 ## Load only what the task needs
 
-For new interactive analysis views, use UI version 2 from
+For new interactive analysis views, use the built-in UI from
 [Analytics UI](references/analytics.md). Load `assistant-data-analysis` for
 source validation, metric interpretation, and report/dashboard delivery.
 

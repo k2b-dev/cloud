@@ -5,7 +5,7 @@ import { ArtifactStorage } from "./runtime/storage";
 const source = {
   entry: "main.ts",
   files: [
-    { path: "main.ts", content: 'export default () => { ui.text("Hello"); };' },
+    { path: "main.ts", content: 'export default () => { ui.text({value:"Hello"}); };' },
     { path: "other.ts", content: "export const amount = 10;" },
   ],
 };

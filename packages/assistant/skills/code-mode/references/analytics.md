@@ -1,9 +1,8 @@
-# Analytics UI version 2
+# Analytics UI
 
-Opt in per entry module:
+Create an interactive analysis with the built-in UI API:
 
 ```js
-export const uiVersion = 2;
 export default () => {
   const rows = [{ id: "north", region: "North", revenue: 1200 }];
   const explorer = ui.chartExplorer({
@@ -27,15 +26,9 @@ export default () => {
 };
 ```
 
-The module export is stored with the source and each published version. Omission
-selects the existing version 1 API. Unknown versions fail explicitly. To migrate,
-edit the source to the version 2 signatures, add the export, test, then publish.
-Changing the export alone does not translate calls. Both versions use the same
-files, HTTP, capabilities, storage, and permission boundaries.
-
 ## Controls and handles
 
-Version 2 uses one options object per control. Common options: `id`, `label`,
+The UI uses one options object per control. Common options: `id`, `label`,
 `description`, `disabled`, `loading`. IDs must be unique, at most 80 characters.
 
 | Constructor | Required options / callbacks | Handle updates |
@@ -53,7 +46,7 @@ Version 2 uses one options object per control. Common options: `id`, `label`,
 | `ui.chart` | `data: {options, marks?, formats?}`; optional `onSelect(key)` | `setData`, `select`, `setLoading` |
 | `ui.chartExplorer` | `data`, `columns`; optional `onSelect(row or null)`, `onViewChange` | `setData`, `setOptions`, `select`, `setLoading` |
 
-Setters never invoke user callbacks. Handles do not have the version 1 generic
+Setters never invoke user callbacks. Handles do not have generic
 `set`, `upsert`, or `remove`. Replace reviewed row arrays with `setData`.
 Date ranges are calendar dates, not timestamps; choose timezone and inclusivity
 explicitly when translating a range into a query.
@@ -62,7 +55,7 @@ explicitly when translating a range into a query.
 Grid additionally accepts `minWidth` in pixels (160–1200; default 320), wrapping
 to fit narrow viewports. `ui.section` adds `label` and optional `description`.
 Each handle belongs to one layout. UI handles are not serializable entry output.
-The existing `ui.modal` remains available.
+Use `ui.modal` for trusted dialogs.
 
 ## Data, formats, and charts
 
@@ -149,7 +142,6 @@ Read the `assistant-data-analysis` skill for analytical validation and delivery.
 ## Local shared-filter example
 
 ```js
-export const uiVersion = 2;
 export default () => {
   const source = [
     { id: "north", name: "North", january: 10, february: 12 },

@@ -18,25 +18,27 @@ export default async () => {
 };
 ```
 
-## Interactive list with a modal
+## Interactive table with a modal
 
 ```js
 export default () => {
-  const tasks = ui.list({
-    id: "tasks",
-    empty: { title: "No tasks yet", description: "Add your first task." },
-    actions: [{
-      id: "complete", label: "Complete", icon: "ti ti-check",
-      onClick(item) { tasks.remove([item.id]); }
-    }]
+  let rows = [];
+  let selected = null;
+  const tasks = ui.table({
+    id:"tasks", rows, rowKey:"id", columns:[{key:"title",label:"Task"}],
+    onSelect(row) { selected = row?.id ?? null; }
   });
-  const add = ui.button("Add task", async () => {
-    const title = await ui.modal.text({
-      title: "Add task", label: "Task", required: true, maxLength: 200
-    });
+  const add = ui.button({label:"Add task", id:"add", variant:"primary", async onClick() {
+    const title = await ui.modal.text({title:"Add task", label:"Task", required:true, maxLength:200});
     if (title === null) return;
-    tasks.upsert([{ id: ids.ulid(), title }]);
-  }, { id: "add", icon: "ti ti-plus", variant: "primary" });
-  ui.column({ gap: "md" }, [add, tasks]);
+    rows = [...rows, {id:ids.ulid(), title}];
+    tasks.setData(rows);
+  }});
+  const complete = ui.button({label:"Complete selected", onClick() {
+    rows = rows.filter(row => row.id !== selected);
+    selected = null;
+    tasks.setData(rows);
+  }});
+  ui.column({children:[add, tasks, complete]});
 };
 ```

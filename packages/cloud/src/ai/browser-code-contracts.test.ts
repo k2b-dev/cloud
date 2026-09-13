@@ -2,6 +2,10 @@ import { expect, test } from "bun:test";
 import { CODE_RUNTIME_TOOL_NAMES, parseCodeToolInput } from "./browser-code-contracts";
 
 const id = "00000000-0000-4000-8000-000000000001";
+test("UI interactions use structured events without legacy list action fields", () => {
+  expect(parseCodeToolInput("code_interact", {runId:"run", id:"count", value:{type:"change",value:7}})).toMatchObject({value:{type:"change",value:7}});
+  expect(() => parseCodeToolInput("code_interact", {runId:"run", id:"tasks", action:"delete",item:"one"})).toThrow();
+});
 test("code tools accept flat arguments and reject legacy envelopes", () => {
   const inputs = [{ id }, { runId: "run" }, { runId: "run", id: "@modal:1", value: { count: 2 } }, { runId: "run" }, { id }, { runId: "run", name: "report.csv" }, {name:"crm",origin:"https://api.example.com"}];
   for (const [index, name] of CODE_RUNTIME_TOOL_NAMES.entries()) {

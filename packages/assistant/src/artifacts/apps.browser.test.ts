@@ -6,7 +6,7 @@ test("Studio tile menus publish and edit; launch opens the runner directly", asy
   const build = Bun.spawn(["bun", new URL("./workspace-browser-build.ts", import.meta.url).pathname, "./apps-browser-harness.tsx"], { stdout: "pipe", stderr: "pipe" });
   const code = await new Response(build.stdout).text();
   if (await build.exited) throw new Error(await new Response(build.stderr).text());
-  const compiled = await compileArtifact({ entry: "main.js", files: [{ path: "main.js", content: 'export default () => { ui.text("Published calculator"); };' }] });
+  const compiled = await compileArtifact({ entry: "main.js", files: [{ path: "main.js", content: 'export default () => { ui.text({value:"Published calculator"}); };' }] });
   let publishedRevision = 1;
   let emptyHistory = false;
   let listRequests = 0;

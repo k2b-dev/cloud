@@ -6,7 +6,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-test("real opaque worker returns data, reuses list actions and remains terminable", async () => {
+test("real opaque worker returns data, reuses table selection callbacks and remains terminable", async () => {
   const directory = await mkdtemp(join(tmpdir(),"assistant-worker-test-"));
   const output = join(directory,"harness.js");
   const build = Bun.spawn(["bun","build",new URL("./browser-harness.ts",import.meta.url).pathname,"--target","browser","--format","iife","--outfile",output],{ stdout: "pipe",stderr: "pipe" });
@@ -14,8 +14,8 @@ test("real opaque worker returns data, reuses list actions and remains terminabl
   const harness = await Bun.file(output).text();
   await rm(directory,{ recursive: true });
   const compile = (content: string) => compileArtifact({ entry: "main.js", files: [{ path: "main.js",content }] });
-  const invalidLayoutSource = await compile('export default () => { ui.workbench({ controls: ui.text("Input"), content: [] }); };');
-  const invalidOutputSource = await compile('export default () => ui.text("Output");');
+  const invalidLayoutSource = await compile('export default () => { const text=ui.text({value:"Input"}); ui.column({children:[text,text]}); };');
+  const invalidOutputSource = await compile('export default () => ui.text({value:"Output"});');
   const headlessSource = await compile("export default () => ({ answer: 42 });");
   const csvSource = await compile(`export default async () => {
     for(let i=0;i<250;i++) console.info("row",i);
@@ -31,15 +31,15 @@ test("real opaque worker returns data, reuses list actions and remains terminabl
   };`);
   const listSource = await compile(`export default () => {
     let count=0;
-    const list=ui.list({id:"tasks",actions:[{id:"increment",label:"Increment",onClick(item){
-      count++; list.set([{id:item.id,title:String(count)}]);
-    }}]},[{id:"one",title:"0"}]);
+    const table=ui.table({id:"tasks",rowKey:"id",columns:[{key:"title",label:"Count"}],rows:[{id:"one",title:"0"}],onSelect(item){
+      if(item){count++;table.setData([{id:item.id,title:String(count)}]);}
+    }});
   };`);
   const errorSource = await compile('export default () => { throw new Error("deliberate"); };');
   const recoverySource = await compile(`export default () => {
     let attempts=0;
-    const message=ui.text("Waiting");
-    ui.button("Retry",()=>{ if(++attempts===1) throw new Error("First attempt failed"); message.set("Recovered"); },{id:"retry"});
+    const message=ui.text({value:"Waiting"});
+    ui.button({label:"Retry",id:"retry",onClick(){ if(++attempts===1) throw new Error("First attempt failed"); message.setValue("Recovered"); }});
   };`);
   const infiniteSource = await compile("export default () => { while(true){} };");
   const sessionSource = await compile(`export default async () => {
@@ -52,11 +52,11 @@ test("real opaque worker returns data, reuses list actions and remains terminabl
     return {before, count:await store.get("count")};
   };`);
   const agentSource = await compile(`export default () => {
-    const tasks=ui.list({id:"tasks"});
-    ui.button("Add",async()=>{
+    const rows=[]; const tasks=ui.table({id:"tasks",rows,rowKey:"id",columns:[{key:"title",label:"Task"}]});
+    ui.button({label:"Add",id:"add",onClick:async()=>{
       const title=await ui.modal.text({title:"Add task",label:"Task",required:true});
-      if(title!==null && await ui.modal.confirm({title:"Confirm task",message:"Add this task?"})) tasks.upsert([{id:ids.ulid(),title}]);
-    },{id:"add"});
+      if(title!==null && await ui.modal.confirm({title:"Confirm task",message:"Add this task?"})) {rows.push({id:ids.ulid(),title}); tasks.setData(rows);}
+    }});
   };`);
   const pdfBytes = Buffer.from(await Bun.file(new URL("./fixtures/invoice.pdf", import.meta.url)).arrayBuffer()).toString("base64");
   const xlsxBytes = Buffer.from(await Bun.file(new URL("./fixtures/ledger.xlsx", import.meta.url)).arrayBuffer()).toString("base64");
@@ -90,8 +90,8 @@ test("real opaque worker returns data, reuses list actions and remains terminabl
     return {count:selected.length,total:selected.reduce((sum,file)=>sum+file.size,0),paths:[files.path(selected[0]),files.path(selected[2999])],hidden:hidden.length};
   };`);
   const workSource=await compile(`export default()=>{
-    ui.button("Start",()=>{work.run(async job=>{for(let i=0;i<17;i++){await new Promise(resolve=>setTimeout(resolve,1000));await job.checkpoint();job.progress(i+1,17);}return "finished";});},{id:"start"});
-    ui.button("Cancel",()=>work.cancel(),{id:"cancel"});
+    ui.button({label:"Start",id:"start",onClick:()=>{work.run(async job=>{for(let i=0;i<17;i++){await new Promise(resolve=>setTimeout(resolve,1000));await job.checkpoint();job.progress(i+1,17);}return "finished";});}});
+    ui.button({label:"Cancel",id:"cancel",onClick:()=>work.cancel()});
   };`);
   const browser = await chromium.launch({ headless: true, channel: "chrome" });
   const server = Bun.serve({ hostname: "127.0.0.1",port: 0,fetch: () => new Response("<!doctype html><body></body>",{ headers: { "Content-Type": "text/html" } }) });
@@ -149,15 +149,15 @@ test("real opaque worker returns data, reuses list actions and remains terminabl
     expect(csv.content).toContain("Alice;17");
     expect(csv.content).toContain("Bob;8");
     const list = await page.evaluate((source) => runArtifactScenario({ source,
-      events: Array.from({ length: 320 },() => ({ id: "tasks",action: "increment",item: "one" })),
+      events: Array.from({ length: 320 },() => ({ id: "tasks",event: {type:"select" as const,key:"one"} })),
     }),listSource);
     expect(list.nodes).toHaveLength(1);
-    expect(list.nodes[0]!.items[0]!.title).toBe("320");
+    expect(list.nodes[0]).toMatchObject({type:"table",rows:[{id:"one",title:"320"}]});
     expect(list.errors).toEqual([]);
     const failure = await page.evaluate((source) => runArtifactScenario({ source }),errorSource);
     expect(failure.errors.join(" ")).toContain("deliberate");
     const invalidLayout = await page.evaluate(source => runArtifactScenario({ source }), invalidLayoutSource);
-    expect(invalidLayout.errors.join(" ")).toContain("controls and content arrays");
+    expect(invalidLayout.errors.join(" ")).toContain("exactly one layout");
     const invalidOutput = await page.evaluate(source => runArtifactScenario({ source }), invalidOutputSource);
     expect(invalidOutput.errors.join(" ")).toContain("Do not return UI handles");
     const recovery = await page.evaluate((source) => runArtifactRecoveryScenario(source), recoverySource);
@@ -165,7 +165,7 @@ test("real opaque worker returns data, reuses list actions and remains terminabl
     expect(recovery.recovered.status).toBe("ready");
     expect(recovery.recovered.error).toBeUndefined();
     expect(recovery.recovered.logs.some((log) => log.text.includes("First attempt failed"))).toBe(true);
-    expect(recovery.recovered.nodes.some((node) => node.label === "Recovered")).toBe(true);
+    expect(recovery.recovered.nodes.some((node) => node.type === "text" && node.value === "Recovered")).toBe(true);
     const infinite = await page.evaluate((source) => runArtifactScenario({ source,stopAfterMs: 150 }),infiniteSource);
     expect(infinite.responsive).toBe(true);
     expect(infinite.stopped).toBe(true);
@@ -181,7 +181,7 @@ test("real opaque worker returns data, reuses list actions and remains terminabl
     expect(agent[1]).toMatchObject({ status: "waiting", modal: { kind: "text", title: "Add task" } });
     expect(agent[2]).toEqual(agent[3]);
     expect(agent[2]).toMatchObject({ status: "waiting", modal: { id: "@modal:2", kind: "confirm" } });
-    expect(agent[4]).toMatchObject({ nodes: [{ id: "tasks", totalItems: 1, items: [{ title: "Example" }] }] });
+    expect(agent[4]).toMatchObject({ nodes: [{ id: "tasks", totalRows: 1, rows: [{ title: "Example" }] }] });
     expect(agent[5]).toEqual({ runId: "start", stopped: true });
     expect(agent[6]).toHaveLength(1);
     const pickerSource=await compile('export default async()=>{const file=await files.open();return {name:file.name,text:await file.text()};}');
@@ -196,4 +196,5 @@ test("real opaque worker returns data, reuses list actions and remains terminabl
     await page.waitForFunction(()=>localScriptPickerResult?.status==="ready");
     expect(await page.evaluate(()=>localScriptPickerResult?.output)).toEqual({name:"local.csv",text:"amount\n42"});
   } finally { await browser.close(); await server.stop(true); }
-},75000);
+// Includes 3,000-file storage fixtures and deliberate 17s job / 16s picker waits.
+},180000);

@@ -2,12 +2,12 @@ import { expect, test } from "bun:test";
 import { chromium } from "playwright";
 import { compileArtifact } from "./runtime/compile";
 
-test("status errors render and saved versions require explicit restart", async () => {
+test("validation text renders and saved versions require explicit restart", async () => {
   const compiled = await compileArtifact({ entry: "main.js", files: [{ path: "main.js", content: `export default () => {
-    const status = ui.status("Ready");
-    ui.input("Amount", { onChange: value => {
-      if (value === "abc") status.setState("error", "Enter a valid amount");
-      else { status.set("Valid"); status.setState("ready"); }
+    const status = ui.text({value:"Ready"});
+    ui.input({label:"Amount",value:"", onChange: value => {
+      if (value === "abc") status.setValue("Enter a valid amount");
+      else { status.setValue("Valid"); }
     }});
   };` }] });
   const build = Bun.spawn(["bun", new URL("./workspace-browser-build.ts", import.meta.url).pathname, "./version-browser-harness.tsx"], { stdout: "pipe", stderr: "pipe" });
@@ -25,7 +25,7 @@ test("status errors render and saved versions require explicit restart", async (
     }
     if (unavailable && url.pathname.startsWith("/api/")) return new Response("Unavailable", {status: 502});
     if (url.pathname.startsWith("/api/")) return Response.json({ id: "test", title: "Test", revision, sourceRevision: revision });
-    return new Response('<!doctype html><body class="k2b-ui"><div id="root"></div><script src="/bundle.js"></script>', { headers: { "content-type": "text/html" } });
+    return new Response('<!doctype html><meta charset="utf-8"><body class="k2b-ui"><div id="root"></div><script src="/bundle.js"></script>', { headers: { "content-type": "text/html" } });
   } });
   const browser = await chromium.launch({ channel: "chrome", headless: true });
   try {

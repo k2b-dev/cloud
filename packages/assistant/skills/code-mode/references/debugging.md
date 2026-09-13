@@ -11,7 +11,7 @@ executed the code. There is no browser setup or technical switch for the user.
 | --- | --- | --- |
 | `code_run` | `id` or `code`, optional `inputPaths`, `version` | Starts saved source or a one-off entry; returns `runId` and snapshot |
 | `code_inspect` | `runId`, optional `nodeId`, `offset`, `limit`, `waitMs` | UI, logs, errors, modal, output, and files |
-| `code_interact` | `runId`, `id`, optional `value`, `action`, `item` | Performs an interaction and returns the resulting state |
+| `code_interact` | `runId`, `id`, optional `value` | Performs an interaction and returns the resulting state |
 | `code_stop` | `runId` | Stops and releases a test run |
 | `code_export` | `runId`, `name` | Copies a captured output file into the chat; returns its path |
 | `code_open` | `id` | Opens the user's app tab without starting code |
@@ -24,8 +24,9 @@ For interactive apps, exercise the main action and invalid input. Fix source
 and start another run when needed. No revision argument is required.
 
 Use IDs returned in the snapshot. A button needs only its control `id`; an input
-or select also needs a string `value`. A list action needs its control `id`,
-`action`, and current `item` ID. Do not guess IDs from visible labels.
+or select uses `value: {type:"change", value:...}`. Table/chart selection uses
+`value: {type:"select", key:...}`. See [Analytics UI](analytics.md) for all events.
+Do not guess IDs from visible labels.
 
 A pending modal has its own `id` and schema. Answer it through `code_interact`
 with that ID and a `value`: boolean for confirm, scalar for text/number, a field
@@ -34,7 +35,7 @@ correction. Do not reuse an ID from an earlier modal.
 
 Run and Interact already include a compact snapshot. Inspect only when you need
 more detail. Nodes are paginated (20 by default); follow `nextNodeOffset`.
-Use `nodeId` to page through rows, items, or options. Counts describe the full
+Use `nodeId` to page through rows or options. Counts describe the full
 collection. Logs include the latest 20 entries; long text and output previews
 are truncated. Use `files.save` and `code_export` for complete deliverables,
 then inspect/present them with the normal chat file tools.

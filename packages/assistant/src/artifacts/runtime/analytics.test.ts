@@ -141,7 +141,7 @@ test("comparisons are explicit and pending buttons cannot execute twice", async 
   expect(calls).toBe(1);
 });
 
-test("version 2 file picker uses the host and returns typed files only to its callback", async () => {
+test("file picker uses the host and returns typed files only to its callback", async () => {
   const file = new File(["hello"], "input.csv");
   let selected: File[] = [];
   const runtime = createAnalyticsUi(

@@ -20,15 +20,7 @@ export function validateTree(nodes: UiNode[]) {
   if (by.size !== nodes.length) throw new Error("Duplicate UI ids");
   const parents = new Set<string>();
   for (const node of nodes) {
-    if (node.children.length && !["row","column","section","workbench"].includes(node.kind) && node.analytics?.type !== "layout") throw new Error("Invalid layout children");
-    if (node.kind === "analytics" && (!node.analytics || node.analytics.id !== node.id || JSON.stringify(node.children) !== JSON.stringify(node.analytics.type === "layout" ? node.analytics.children : []))) throw new Error("Invalid analytics node envelope");
-    if (node.kind === "workbench") {
-      const expected = [...node.controls,...node.content,...(node.footer?.status ? [node.footer.status] : []),...(node.footer?.actions ?? [])];
-      if (JSON.stringify(expected) !== JSON.stringify(node.children)) throw new Error("Invalid workbench references");
-    }
-    if (new Set(node.items.map((item) => item.id)).size !== node.items.length) throw new Error("Duplicate list item ids");
-    if (new Set(node.actions.map((action) => action.id)).size !== node.actions.length) throw new Error("Duplicate action ids");
-    for (const id of node.children) {
+    for (const id of node.type === "layout" ? node.children : []) {
       if (!by.has(id) || parents.has(id)) throw new Error("Missing or multiply owned UI child");
       parents.add(id);
     }
@@ -38,12 +30,12 @@ export function validateTree(nodes: UiNode[]) {
     if (visiting.has(id)) throw new Error("Cyclic UI tree");
     if (seen.has(id)) return;
     visiting.add(id);
-    for (const child of by.get(id)!.children) visit(child);
+    const node = by.get(id)!;
+    if (node.type === "layout") for (const child of node.children) visit(child);
     visiting.delete(id); seen.add(id);
   };
   for (const id of by.keys()) visit(id);
-  const workbenches = nodes.filter((node) => node.kind === "workbench");
-  if (workbenches.length > 1 || workbenches.some((node) => parents.has(node.id))) throw new Error("Workbench must be a single root layout");
+
 }
 
 export function startArtifactRun(container: HTMLElement, source: { runtime: string; code: string }, hooks: RuntimeHooks) {

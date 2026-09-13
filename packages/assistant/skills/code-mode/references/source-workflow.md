@@ -89,7 +89,7 @@ fresh source history, but also without the original's data or access grants;
 explain that tradeoff before proposing it as recovery.
 
 For saved scripts intended to be started by a person, show a short readable
-summary with `ui.markdown` or a compact `ui.table` and offer detailed results
+summary with `ui.text({value, markdown:true})` or a compact `ui.table` and offer detailed results
 with `files.save`. Keep structured return values for agent inspection. Read the
 UI reference only for the presentation controls you need; a full app is optional.
 

@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { chromium } from "playwright";
 import { compileArtifact } from "./runtime/compile";
 
-test("version 2 opaque worker drives ChartExplorer, controls, tables and responsive layouts", async () => {
+test("opaque worker drives ChartExplorer, controls, tables and responsive layouts", async () => {
   const build = Bun.spawn(["bun", new URL("./workspace-browser-build.ts", import.meta.url).pathname, "./analytics-browser-harness.tsx"], {
     stdout: "pipe",
     stderr: "pipe",
@@ -15,7 +15,7 @@ test("version 2 opaque worker drives ChartExplorer, controls, tables and respons
       {
         path: "main.ts",
         content: `
-    export const uiVersion = 2;
+
     export default () => {
       const result = ui.text({ id: "result", value: "No selection" });
       const view = ui.chartExplorer({id:"revenue", label:"Revenue", columns:[{key:"name",label:"Region"},{key:"value",label:"Revenue",format:{type:"currency",currency:"EUR"},sortable:true}],
@@ -74,7 +74,7 @@ test("version 2 opaque worker drives ChartExplorer, controls, tables and respons
     await page.waitForFunction(() => document.querySelector('[data-artifact-id="result"]')?.textContent?.trim() === "Scale: 2");
     await page.getByRole("button", { name: "Refresh", exact: true }).click();
     await page.waitForFunction(() =>
-      document.querySelector('[data-artifact-id="ui2-0"] [data-chart-datum]')?.getAttribute("data-chart-datum")?.includes('"value":3'),
+      document.querySelector('[data-artifact-id="node-0"] [data-chart-datum]')?.getAttribute("data-chart-datum")?.includes('"value":3'),
     );
     expect(await page.locator("#errors").textContent()).toBe("");
     await page.setViewportSize({ width: 390, height: 844 });
