@@ -25,23 +25,11 @@ import {
 import { createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { Space } from "@/contracts";
+import type { OverviewView, OverviewWork } from "../overview-contracts";
 import { setLastSpaceId, setPinnedSpaceIds, type ViewType, writeSpaceSettings } from "./[id]/_components/settings/SpaceSettingsStore";
 import { readResponseError } from "./lib/response";
 
-type OverviewView = "mine" | "today" | "upcoming";
-type WorkItem = {
-  id: string;
-  shortId: string;
-  spaceId: string;
-  spaceShortId: string;
-  spaceName: string;
-  spaceColor: string | null;
-  title: string;
-  priority: "low" | "medium" | "high" | "urgent" | null;
-  startsAt?: string | null;
-  endsAt?: string | null;
-  deadline: string | null;
-};
+type WorkItem = OverviewWork["items"][number];
 type ActivityItem = {
   id: string;
   space: { id: string; name: string; color: string };
@@ -58,10 +46,7 @@ type Props = {
   spaces: Space[];
   initialView: OverviewView;
   initialPinnedSpaceIds: string[];
-  mine: WorkItem[];
-  today: WorkItem[];
-  upcoming: WorkItem[];
-  counts: { mine: number; today: number; upcoming: number };
+  initialWork: OverviewWork;
   initialActivity: { items: ActivityItem[]; nextCursor: string | null };
   initialActivityError: string | null;
   dateConfig: DateContext;
@@ -106,6 +91,8 @@ export const overviewMessages = i18n.define({
       searchFailed: "Spaces could not be searched. Try again.",
       space: "Space",
       activityLoadFailed: "Failed to load Spaces activity",
+      workLoadFailed: "Could not load work",
+      loadingWork: "Loading work",
       couldNotLoadActivity: "Could not load activity",
       retry: "Retry",
       loadingActivity: "Loading activity",
@@ -194,6 +181,8 @@ export const overviewMessages = i18n.define({
       searchFailed: "Spaces konnte nicht durchsucht werden. Versuche es erneut.",
       space: "Space",
       activityLoadFailed: "Die Aktivitäten konnten nicht geladen werden",
+      workLoadFailed: "Aufgaben konnten nicht geladen werden",
+      loadingWork: "Aufgaben werden geladen",
       couldNotLoadActivity: "Aktivitäten konnten nicht geladen werden",
       retry: "Erneut versuchen",
       loadingActivity: "Aktivitäten werden geladen",
@@ -417,7 +406,18 @@ export default function SpacesOverview(props: Props) {
       return a - b;
     }),
   );
-  const workItems = () => (view() === "mine" ? props.mine : view() === "today" ? props.today : props.upcoming);
+  const work = queries.create<OverviewView, OverviewWork>({
+    source: view,
+    initial: { source: props.initialView, data: props.initialWork },
+    load: async (view, { abortSignal }) => {
+      const response = await apiClient.overview.work.$get({ query: { view } }, { init: { signal: abortSignal } });
+      if (!response.ok) throw new Error(await readResponseError(response, t.workLoadFailed));
+      return response.json();
+    },
+  });
+  const activeWork = () => (work.data()?.view === view() ? work.data() : undefined);
+  const workItems = () => activeWork()?.items ?? [];
+  const counts = () => work.data()?.counts ?? props.initialWork.counts;
   const priorityLabel = (priority: NonNullable<WorkItem["priority"]>) =>
     ({ urgent: t.urgent, high: t.high, medium: t.medium, low: t.low })[priority];
 
@@ -656,9 +656,26 @@ export default function SpacesOverview(props: Props) {
       when={workItems().length > 0}
       fallback={
         <Placeholder
-          state="empty"
-          title={view() === "mine" ? t.nothingAssigned : view() === "today" ? t.nothingToday : t.nothingUpcoming}
-          description={t.allCaughtUp}
+          state={work.error() ? "error" : !activeWork() ? "loading" : "empty"}
+          title={
+            work.error()
+              ? t.workLoadFailed
+              : !activeWork()
+                ? t.loadingWork
+                : view() === "mine"
+                  ? t.nothingAssigned
+                  : view() === "today"
+                    ? t.nothingToday
+                    : t.nothingUpcoming
+          }
+          description={work.error()?.message ?? (activeWork() ? t.allCaughtUp : undefined)}
+          action={
+            work.error() ? (
+              <Button variant="secondary" size="sm" onClick={() => void work.refresh()}>
+                {t.retry}
+              </Button>
+            ) : undefined
+          }
           icon="ti ti-circle-check"
           class="min-h-64"
         />
@@ -779,7 +796,7 @@ export default function SpacesOverview(props: Props) {
                     }}
                   >
                     {next === "mine" ? t.forMe : next === "today" ? t.today : t.upcoming}
-                    <span class="spaces-overview-tab-count">{props.counts[next]}</span>
+                    <span class="spaces-overview-tab-count">{counts()[next]}</span>
                   </ButtonLink>
                 )}
               </For>

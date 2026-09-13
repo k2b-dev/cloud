@@ -1,6 +1,6 @@
-import { type DateContext, dates } from "@k2b/stdlib";
 import { type AccessSubject, type AccessUser, listUsersWithAccess } from "@k2b/cloud/server";
 import { logger, toPgTextArray, toPgUuidArray } from "@k2b/cloud/services";
+import { type DateContext, dates } from "@k2b/stdlib";
 import { sql } from "bun";
 import type {
   AssignedToFilter,
@@ -661,6 +661,8 @@ export const dashboardSnapshot = async (params: {
   userId: string;
   todoLimit: number;
   dateConfig?: DateContext;
+  /** Omit for the dashboard widget; overview routes load only their selected list. */
+  view?: "today" | "upcoming" | "counts";
 }): Promise<{
   openTodoCount: number;
   assignedToMeCount: number;
@@ -728,7 +730,10 @@ export const dashboardSnapshot = async (params: {
   };
 
   // Today's events: starts_at within today's window OR deadline within today.
-  const eventRows = await sql<DbWidget[]>`
+  const eventRows =
+    params.view && params.view !== "today"
+      ? []
+      : await sql<DbWidget[]>`
     SELECT i.id, i.short_id, i.space_id, s.short_id AS space_short_id, s.name AS space_name, s.color AS space_color, s.ical_token AS space_ical,
            i.title, i.priority,
            i.starts_at::text AS starts_at, i.ends_at::text AS ends_at, i.deadline::text AS deadline
@@ -751,7 +756,10 @@ export const dashboardSnapshot = async (params: {
   `;
 
   // Next-up todos: open, not in is_done columns, ordered by deadline.
-  const todoRows = await sql<DbWidget[]>`
+  const todoRows =
+    params.view && params.view !== "upcoming"
+      ? []
+      : await sql<DbWidget[]>`
     SELECT i.id, i.short_id, i.space_id, s.short_id AS space_short_id, s.name AS space_name, s.color AS space_color, s.ical_token AS space_ical,
            i.title, i.priority,
            i.starts_at::text AS starts_at, i.ends_at::text AS ends_at, i.deadline::text AS deadline

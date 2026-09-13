@@ -32,22 +32,23 @@ const render = (initialActivityError: string | null = null, locale = "en") =>
           ],
           initialView: "mine",
           initialPinnedSpaceIds: ["Space1"],
-          mine: [
-            {
-              id: "i",
-              shortId: "Item01",
-              spaceId: "s",
-              spaceShortId: "Space1",
-              spaceName: "Launch",
-              spaceColor: "#3b82f6",
-              title: "Ship overview",
-              priority: "urgent",
-              deadline: "2026-08-21T08:00:00.000Z",
-            },
-          ],
-          today: [],
-          upcoming: [],
-          counts: { mine: 1, today: 0, upcoming: 0 },
+          initialWork: {
+            view: "mine",
+            items: [
+              {
+                shortId: "Item01",
+                spaceShortId: "Space1",
+                spaceName: "Launch",
+                spaceColor: "#3b82f6",
+                title: "Ship overview",
+                priority: "urgent",
+                deadline: "2026-08-21T08:00:00.000Z",
+                startsAt: null,
+                endsAt: null,
+              },
+            ],
+            counts: { mine: 1, today: 0, upcoming: 0 },
+          },
           initialActivity: {
             items: [
               {

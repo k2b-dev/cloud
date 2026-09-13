@@ -3,6 +3,7 @@ import { expectUserBackedActor, getDateConfig, getLocale } from "@k2b/cloud/serv
 import { logger } from "@k2b/cloud/services";
 import { Layout } from "@k2b/cloud/ssr";
 import { spacesService } from "@/service";
+import { loadOverviewWork } from "@/service/overview";
 import { spacesPublicResources } from "@/service/public-resources";
 import { ssr } from "../config";
 import { parseLastSpaceId, parsePinnedSpaceIds } from "./[id]/_components/settings/SpaceSettingsStore";
@@ -22,10 +23,9 @@ export default ssr<AuthContext>(async (c) => {
   const cookieHeader = c.req.raw.headers.get("Cookie") ?? undefined;
 
   const subject = { type: "user" as const, userId: user.id };
-  const [spacesPage, mine, dashboard, activityResult] = await Promise.all([
+  const [spacesPage, initialWork, activityResult] = await Promise.all([
     spacesService.space.list({ subject }),
-    spacesService.item.tasks.listMine({ userId: user.id, limit: 100 }),
-    spacesService.item.dashboardSnapshot({ userId: user.id, todoLimit: 30, dateConfig: getDateConfig(c) }),
+    loadOverviewWork({ userId: user.id, view, dateConfig: getDateConfig(c) }),
     spacesService.activity
       .list({ subject, limit: 30 })
       .then((page) => ({ page, error: null }))
@@ -50,14 +50,7 @@ export default ssr<AuthContext>(async (c) => {
         spaces={userSpaces}
         initialView={view}
         initialPinnedSpaceIds={parsePinnedSpaceIds(cookieHeader)}
-        mine={mine}
-        today={dashboard.events}
-        upcoming={dashboard.todos}
-        counts={{
-          mine: dashboard.assignedToMeCount,
-          today: dashboard.todayCount,
-          upcoming: dashboard.upcomingCount,
-        }}
+        initialWork={initialWork}
         initialActivity={{
           items: activityResult.page.items.map((item) => ({
             ...item,

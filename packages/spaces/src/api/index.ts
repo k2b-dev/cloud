@@ -1,4 +1,3 @@
-import { err, fail, ok, type Result } from "@k2b/stdlib";
 import {
   type AccessSubject,
   type AuthContext,
@@ -13,6 +12,7 @@ import {
   v,
 } from "@k2b/cloud/server";
 import { coreSettings } from "@k2b/cloud/services";
+import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { type Context, Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { describeRoute } from "hono-openapi";
@@ -79,10 +79,12 @@ import {
   SpacesViewSnapshotSchema,
 } from "../frontend/[id]/_components/workspace/workspace-types";
 import { CreateEventInvitationDraftInputSchema, EventInvitationContextSchema, EventInvitationDraftSchema } from "../integration";
+import { OverviewViewSchema, OverviewWorkSchema } from "../overview-contracts";
 import { spacesService } from "../service";
 import { isSpaceResourceId, SPACE_RESOURCE_TYPE, SPACES_APP_ID } from "../service/access";
 import { InvalidActivityCursorError } from "../service/activity";
 import { type SpacesMessages, spacesApiErrorMessage, spacesMessages } from "../service/messages";
+import { loadOverviewWork } from "../service/overview";
 import {
   projectCalendarItems,
   projectColumns,
@@ -483,6 +485,33 @@ const app = new Hono<AuthContext>()
   .route("/widget", widgetRoutes)
   .route("/ws", wsRoutes)
   .use(auth.requireRole("authenticated"))
+
+  .get(
+    "/overview/work",
+    describeRoute({
+      tags: ["Spaces"],
+      summary: "Load the selected overview work view",
+      description: "Load selected work and counters for an unbound user-backed actor, using the same permission checks as SSR.",
+      ...requiresAuth,
+      responses: {
+        200: jsonResponse(OverviewWorkSchema, "Selected overview work"),
+        400: jsonResponse(ErrorResponseSchema, "Invalid view"),
+        403: jsonResponse(ErrorResponseSchema, "Access denied"),
+      },
+    }),
+    v("query", z.object({ view: OverviewViewSchema })),
+    async (c) => {
+      const access = getScopedSpaceAccess(c);
+      if (!access.ok) return respond(c, access);
+      if (access.data.boundSpaceId) return respond(c, fail(err.forbidden("This overview requires an unbound user-backed actor")));
+      const user = requireUserBackedActor(c);
+      if (!user.ok) return respond(c, user);
+      return respond(
+        c,
+        ok(await loadOverviewWork({ userId: user.data.id, view: c.req.valid("query").view, dateConfig: getDateConfig(c) })),
+      );
+    },
+  )
 
   .get(
     "/overview/activity",

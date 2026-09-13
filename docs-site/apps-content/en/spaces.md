@@ -31,6 +31,12 @@ and switch between **For me**, **Today**, and **Upcoming**. On larger screens,
 the Activity panel shows recent Space and item changes; on mobile it opens
 from the Activity button.
 
+The selected work view and its counters arrive with the page. Switching work
+views loads the selected list on demand; Back and Forward restore the view
+from the URL. A failed load shows a retry action instead of an empty list.
+The app's `/api/spaces/overview/work?view=mine|today|upcoming` endpoint uses the
+same permission-filtered reads as SSR and requires an unbound user-backed actor.
+
 Activity is recorded by the Spaces service, so authorized changes made through
 the web interface, CLI, or capabilities appear consistently. Repeated edits
 to the same item are grouped to keep the feed useful.
