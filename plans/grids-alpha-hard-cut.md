@@ -1,5 +1,9 @@
 # Grids: gezielter Alpha-Hard-Cut
 
+> Historischer Plan, abgelöst durch den vollständigen lokalen Reset und die
+> [einheitliche Schemadefinition](grids-fresh-schema-reset.md). Die folgenden
+> Angaben dokumentieren nur die damalige Entscheidung und Prüfung.
+
 Stand: 12. September 2026. Implementierung freigegeben; keine Lösch- oder Rollout-Freigabe.
 Ausgangspunkt: Commit `191486f21`; Review-Remediation vollständig geprüft.
 

@@ -1,9 +1,9 @@
 import { expect, test } from "bun:test";
 import { createHash } from "node:crypto";
+import { bindProcessSync, unbindProcessSync } from "@k2b/cloud";
 import { createSync } from "@k2b/sync";
 import { jetstreamManager } from "@nats-io/jetstream";
 import { connect } from "@nats-io/transport-node";
-import { bindProcessSync, unbindProcessSync } from "@k2b/cloud";
 import { startGridsTestSync } from "../sync-test-utils";
 import type { RecordEventDeliveryFailureInput } from "./record-event-delivery-failures";
 import { type GridsRecordEvent, RECORD_EVENT_WORK_PARTITIONS, recordEventWorkQueue, requeueRecordEventWork } from "./record-events";
@@ -105,8 +105,8 @@ natsTest(
   async () => {
     const connection = await connect({ servers: process.env.SYNC_TEST_SERVERS ?? "nats://127.0.0.1:4222", ignoreClusterUpdates: true });
     const namespace = `grids-cutover-${crypto.randomUUID()}`;
-    const previous = createSync({ connection, namespace, application: "grids" });
-    const current = createSync({ connection, namespace, application: "grids" });
+    const previous = createSync({ connection, namespace, application: "grids", defaults: { replicas: 1 } });
+    const current = createSync({ connection, namespace, application: "grids", defaults: { replicas: 1 } });
     try {
       const input = event(crypto.randomUUID(), 1);
       const oldQueue = previous.queue<GridsRecordEvent>({

@@ -71,7 +71,10 @@ if (process.argv.includes("--bootstrap")) {
       special[5]!,
       "src/frontend/_components/custom-apps/CustomAppBlockPreview.behavior.test.tsx",
       "src/frontend/_components/workspace/BaseOverview.behavior.test.tsx",
+      "src/frontend/_components/workspace/WorkspaceMetadataRefresh.behavior.test.tsx",
+      "src/frontend/_components/records-view/records-data-controller.behavior.test.tsx",
       "src/frontend/_components/documents/DocumentDetailsDialog.behavior.test.tsx",
+      "src/frontend/_components/documents/DocumentSourcesDialog.behavior.test.tsx",
       "src/frontend/_components/documents/DocumentGenerateDialog.behavior.test.tsx",
       "src/frontend/_components/dialogs/PolicyDialogs.behavior.test.tsx",
       "src/frontend/_components/dialogs/ViewSettingsDialogs.behavior.test.tsx",
@@ -91,7 +94,7 @@ if (process.argv.includes("--bootstrap")) {
     const bundleChecks = ["src/frontend/_components/dialogs/AuditPolicyDialog.bundle.test.ts"];
     const pdf = ["src/service/document-query-pdf.integration.test.ts"];
     const packageRoot = join(root, "packages/grids");
-    const all = [...new Bun.Glob("{src,scripts}/**/*.test.{ts,tsx}").scanSync(packageRoot)].sort();
+    const all = [...new Bun.Glob("{src,scripts,test}/**/*.test.{ts,tsx}").scanSync(packageRoot)].sort();
     const phases = [
       // The outbox reconciler claims database-wide work, so test it before other suites enqueue events.
       // This suite owns its Sync lifecycle for the live burst test.
