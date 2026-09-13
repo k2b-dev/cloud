@@ -16,7 +16,7 @@ import { toPublicGqlResponse } from "./gql-public-result";
 import { buildTrustedGqlResolverContext } from "./gql-resolver-context";
 import { projectPublicIds } from "./public-resource-ids";
 
-export type WorkflowQueryBinding = { source: string; schemaHash: string; schemaHashVersion: 3 };
+export type WorkflowQueryBinding = { source: string; schemaHash: string };
 
 const queryDependencies = (plan: DslResolvedSqlQueryPlan, context: DslResolverContext) => {
   const byId = new Map(
@@ -86,7 +86,7 @@ export const bindWorkflowQueryData = (
   const dependencies = queryDependencies(canonical.plan, context);
   const schemaHash = canonicalJson({ source: canonical.source, ...dependencies }, locale).sha256;
   return ok({
-    binding: { source: canonical.source, schemaHash, schemaHashVersion: 3 },
+    binding: { source: canonical.source, schemaHash },
     plan: canonical.plan,
     tableIds: dependencies.tableIds,
   });
@@ -104,7 +104,6 @@ export const captureWorkflowQueryData = async (input: {
   canReadTable: (tableId: string, client: SqlClient) => Promise<boolean>;
 }): Promise<Result<WorkflowQueryCapture>> => {
   const t = documentServiceText(input.locale);
-  if (input.binding.schemaHashVersion !== 3) return fail(err.conflict(t.workflowQuerySchemaChanged));
   return sql.begin(async (client) => {
     await client`SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY`;
     input.signal?.throwIfAborted();
@@ -178,6 +177,6 @@ export const captureWorkflowQueryData = async (input: {
     }
     const checked = WorkflowQueryPayloadSchema.safeParse(payload.value);
     if (!checked.success) return fail(err.badInput(t.tableOutputDataInvalid));
-    return ok({ payload: checked.data, sha256: payload.sha256, hashVersion: 2, rowCount: projected.rows.length, capturedAt });
+    return ok({ payload: checked.data, sha256: payload.sha256, rowCount: projected.rows.length, capturedAt });
   });
 };

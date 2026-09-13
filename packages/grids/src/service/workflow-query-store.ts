@@ -13,18 +13,17 @@ export const WorkflowQueryReferenceSchema = z
     capturedAt: z.iso.datetime(),
   })
   .strict();
-export type WorkflowQueryReference = z.infer<typeof WorkflowQueryReferenceSchema>;
 export const WorkflowDocumentDataReferenceSchema = z.union([
   WorkflowQueryReferenceSchema,
   WorkflowQueryReferenceSchema.extend({ kind: z.literal("workflowValues") }),
   WorkflowQueryReferenceSchema.extend({ kind: z.literal("documentSnapshots") }),
   WorkflowQueryReferenceSchema.extend({ kind: z.literal("recordSnapshots") }),
 ]);
-export type WorkflowDocumentDataReference = z.infer<typeof WorkflowDocumentDataReferenceSchema>;
-type QueryRow = { id: string; payload: Record<string, unknown>; sha256: string; hash_version: 2; row_count: number; captured_at: Date };
+type WorkflowDocumentDataReference = z.infer<typeof WorkflowDocumentDataReferenceSchema>;
+type QueryRow = { id: string; payload: Record<string, unknown>; sha256: string; row_count: number; captured_at: Date };
 
 const validateCapture = (
-  input: { payload: Record<string, unknown>; sha256: string; hashVersion: 2; rowCount: number; capturedAt: string },
+  input: { payload: Record<string, unknown>; sha256: string; rowCount: number; capturedAt: string },
   locale?: string,
 ): Result<WorkflowDocumentDataCapture> => {
   const t = documentServiceText(locale);
@@ -32,7 +31,6 @@ const validateCapture = (
     const canonical = canonicalDocumentJson(input.payload, locale);
     const parsed = WorkflowDocumentDataPayloadSchema.safeParse(canonical.value);
     if (
-      input.hashVersion !== 2 ||
       !parsed.success ||
       canonical.sha256 !== input.sha256 ||
       input.payload.complete !== true ||
@@ -56,7 +54,6 @@ const decode = (row: QueryRow, locale?: string) => {
     {
       payload: row.payload,
       sha256: row.sha256,
-      hashVersion: row.hash_version,
       rowCount: row.row_count,
       capturedAt: row.captured_at.toISOString(),
     },
@@ -77,7 +74,7 @@ const decode = (row: QueryRow, locale?: string) => {
     rowCount: row.row_count,
     capturedAt: capture.data.capturedAt,
   };
-  return ok({ reference, payload: capture.data.payload, hashVersion: row.hash_version });
+  return ok({ reference, payload: capture.data.payload });
 };
 
 /** Internal only: callers reauthorize the run and the payload's tables before
@@ -87,7 +84,7 @@ export const loadWorkflowQueryData = async (
   db: SQL,
 ) => {
   const [row] = await db<QueryRow[]>`
-    SELECT data.id::text, data.payload, data.sha256, data.hash_version, data.row_count, data.captured_at
+    SELECT data.id::text, data.payload, data.sha256, data.row_count, data.captured_at
     FROM grids.workflow_query_data data
     JOIN grids.workflow_run_profile profile ON profile.run_id = data.run_id
     WHERE data.id = ${input.id}::uuid AND data.run_id = ${input.runId}::uuid AND profile.base_id = ${input.baseId}::uuid
@@ -103,7 +100,7 @@ export const findWorkflowDocumentDataForStep = async (
   db: SQL,
 ) => {
   const [row] = await db<QueryRow[]>`
-    SELECT data.id::text, data.payload, data.sha256, data.hash_version, data.row_count, data.captured_at
+    SELECT data.id::text, data.payload, data.sha256, data.row_count, data.captured_at
     FROM grids.workflow_query_data data JOIN grids.workflow_run_profile profile ON profile.run_id = data.run_id
     WHERE data.run_id = ${input.runId}::uuid AND data.step_key = ${input.stepKey} AND profile.base_id = ${input.baseId}::uuid
   `;
@@ -143,15 +140,15 @@ export const persistWorkflowQueryDataInTransaction = async (
   `;
   if (!reserved) return fail(err.badInput(t.workflowCaptureBudget));
   await db`
-    INSERT INTO grids.workflow_query_data (run_id, step_key, payload, sha256, hash_version, row_count, captured_at)
-    SELECT profile.run_id, ${input.stepKey}, ${checked.data.payload}::jsonb, ${input.capture.sha256}, 2,
+    INSERT INTO grids.workflow_query_data (run_id, step_key, payload, sha256, row_count, captured_at)
+    SELECT profile.run_id, ${input.stepKey}, ${checked.data.payload}::jsonb, ${input.capture.sha256},
       ${input.capture.rowCount}, ${input.capture.capturedAt}::timestamptz
     FROM grids.workflow_run_profile profile
     WHERE profile.run_id = ${input.runId}::uuid AND profile.base_id = ${input.baseId}::uuid
     ON CONFLICT (run_id, step_key) DO NOTHING
   `;
   const [row] = await db<QueryRow[]>`
-    SELECT data.id::text, data.payload, data.sha256, data.hash_version, data.row_count, data.captured_at
+    SELECT data.id::text, data.payload, data.sha256, data.row_count, data.captured_at
     FROM grids.workflow_query_data data
     JOIN grids.workflow_run_profile profile ON profile.run_id = data.run_id
     WHERE data.run_id = ${input.runId}::uuid AND data.step_key = ${input.stepKey} AND profile.base_id = ${input.baseId}::uuid

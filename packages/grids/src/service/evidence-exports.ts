@@ -757,7 +757,7 @@ const addDocuments = async (ctx: BuildContext): Promise<number> => {
              snapshot.short_id AS snapshot_public_id, record.short_id AS record_public_id, table_info.short_id AS table_public_id,
              doc.document_number, doc.filename, doc.primary_artifact_key, doc.tags, doc.template_snapshot, doc.render_data,
              doc.renderer_kind, doc.renderer_version, doc.template_revision, doc.profile_id, doc.profile_version,
-             doc.profile_snapshot, doc.profile_output, doc.snapshot_sha256, doc.hash_version, doc.record_sources_complete,
+             doc.profile_snapshot, doc.profile_output, doc.snapshot_sha256, doc.record_sources_complete,
              doc.associated_query_data_id::text AS associated_query_id,
              associated_query.sha256 AS associated_query_sha256,
              doc.validator_version, doc.validation_status, doc.validation_report, doc.issued_actor,
@@ -838,7 +838,6 @@ const addDocuments = async (ctx: BuildContext): Promise<number> => {
           if (!query.ok) throw query.error;
           await addRow(ctx, "documents/queries", name, {
             sourceSha256: query.data.reference.sha256,
-            sourceHashVersion: query.data.hashVersion,
             payload: query.data.payload,
           });
           includedQueries.add(source.id);
@@ -885,7 +884,7 @@ const addNumbers = async (ctx: BuildContext): Promise<number> => {
   const series = await ctx.db<DbRow[]>`
     SELECT series.short_id AS public_id, series.owner_kind, field.short_id AS field_public_id,
            template.short_id AS document_template_public_id, series.assignment, series.current_version,
-           series.baseline_floor, series.migration_status, series.migration_note, series.archived_at, series.created_at, series.updated_at
+           series.archived_at, series.created_at, series.updated_at
     FROM grids.number_series series
     LEFT JOIN grids.fields field ON field.id = series.field_id
     LEFT JOIN grids.document_templates template ON template.id = series.document_template_id

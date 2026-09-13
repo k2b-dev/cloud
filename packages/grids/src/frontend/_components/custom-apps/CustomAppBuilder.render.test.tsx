@@ -8,7 +8,6 @@ import "../ssr-test-plugin";
 
 const {
   default: CustomAppBuilder,
-  blankCustomAppDefinition,
   customAppStarterGqlSources,
   isCustomAppAvailabilityDiagnostic,
   isCustomAppBlockSourceDiagnostic,
@@ -221,19 +220,6 @@ describe("CustomAppBuilder", () => {
     expect(html).toContain("FIELD1");
     expect(html).toContain("Unavailable field");
     expect(html).toContain("Large");
-  });
-
-  test("creates a blank schema v5 draft without legacy condition inputs", () => {
-    const blank = blankCustomAppDefinition(app());
-
-    expect(blank.schemaVersion).toBe(5);
-    expect(blank.pages[0]?.rows[0]?.columns[0]?.blocks[0]).toEqual({
-      id: "intro",
-      type: "markdown",
-      markdown: "",
-    });
-    expect(JSON.stringify(blank)).not.toContain("visibleWhen");
-    expect(JSON.stringify(blank)).not.toContain('"inputs"');
   });
 
   test("keeps a valid definition editable when its stored capabilities are unavailable", () => {
@@ -599,7 +585,7 @@ describe("CustomAppBuilder", () => {
     expect(html).toContain("Open large editor");
   });
 
-  test("renders fail-closed recovery for an incompatible stored draft", () => {
+  test("fails closed when the stored draft cannot be read", () => {
     const legacy = app();
     legacy.draftDefinition = null;
     legacy.draftDiagnostics = [
@@ -619,12 +605,8 @@ describe("CustomAppBuilder", () => {
     );
 
     expect(html).toContain("This draft cannot be opened");
-    expect(html).toContain("schemaVersion 1");
     expect(html).not.toContain("Download stored JSON");
-    expect(html).toContain("Restore live version");
-    expect(html).toContain("Replace with blank schema v5 draft");
-    expect(html).toContain("Unpublish app");
-    expect(html).toContain("Delete app");
+    expect(html).not.toContain("Replace with blank");
     expect(html).not.toContain("App canvas");
   });
 

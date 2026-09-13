@@ -18,8 +18,8 @@ export const capturedCalculationJsonSql = (
     : value;
 };
 
-/** Unknown legacy provenance is not a grant in a restricted read. */
-export const authorizedFinalizedValueSql = (
+/** Missing captured provenance is not a grant in a restricted read. */
+const authorizedFinalizedValueSql = (
   fieldId: string,
   value: unknown,
   recordAlias: string,

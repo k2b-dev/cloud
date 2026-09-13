@@ -1,5 +1,5 @@
-import { type DateContext, dates } from "@k2b/stdlib";
 import { toPgUuidArray } from "@k2b/cloud/services";
+import { type DateContext, dates } from "@k2b/stdlib";
 import { SQL, sql } from "bun";
 import type { SqlClient } from "./audit";
 import { insertWithShortIdForDb } from "./short-id";
@@ -33,8 +33,6 @@ export type NumberSeriesSummary = {
   currentVersion: number;
   lastValue: number;
   preview: string | null;
-  migrationStatus: string;
-  migrationNote: string | null;
 };
 
 type SeriesRow = {
@@ -42,7 +40,6 @@ type SeriesRow = {
   short_id: string;
   assignment: NumberSeriesAssignment;
   current_version: number;
-  baseline_floor: bigint | number | string;
   archived_at: Date | null;
 };
 
@@ -80,7 +77,7 @@ export const numberSeriesFormatForField = (config: Record<string, unknown>): Num
   };
 };
 
-export const numberSeriesSequenceName = (seriesId: string, scope: string): string => {
+const numberSeriesSequenceName = (seriesId: string, scope: string): string => {
   const id = seriesId.replaceAll("-", "");
   const safeScope = scope.replace(/[^a-zA-Z0-9_]/g, "").slice(0, 16) || "global";
   if (!/^[a-f0-9]{32}$/i.test(id)) throw new Error("invalid number series id");
@@ -117,7 +114,7 @@ const provision = async (
 ): Promise<SeriesRow> => {
   const ownerColumn = owner.kind === "field" ? "field_id" : "document_template_id";
   const [existing] = await client<SeriesRow[]>`
-    SELECT id::text, short_id, assignment, current_version, baseline_floor, archived_at
+    SELECT id::text, short_id, assignment, current_version, archived_at
     FROM grids.number_series
     WHERE ${owner.kind === "field" ? sql`field_id = ${owner.id}::uuid` : sql`document_template_id = ${owner.id}::uuid`}
     FOR UPDATE
@@ -136,7 +133,7 @@ const provision = async (
         ${owner.kind === "document_template" ? owner.id : null}::uuid,
         ${assignment}
       )
-      RETURNING id::text, short_id, assignment, current_version, baseline_floor, archived_at
+      RETURNING id::text, short_id, assignment, current_version, archived_at
     `;
     if (!row) throw new Error(`number series insert for ${ownerColumn} returned no row`);
     return row;
@@ -168,7 +165,7 @@ export const syncNumberSeriesFormat = async (
   assignment: NumberSeriesAssignment = "creation",
 ): Promise<void> => {
   const [series] = await client<SeriesRow[]>`
-    SELECT id::text, short_id, assignment, current_version, baseline_floor, archived_at
+    SELECT id::text, short_id, assignment, current_version, archived_at
     FROM grids.number_series
     WHERE ${ownerPredicate(owner)}
     FOR UPDATE
@@ -233,8 +230,6 @@ type SummaryRow = SeriesRow &
   VersionRow & {
     field_id: string | null;
     document_template_id: string | null;
-    migration_status: string;
-    migration_note: string | null;
     last_value: bigint | number | string | null;
   };
 
@@ -252,8 +247,6 @@ const mapSummary = (row: SummaryRow): NumberSeriesSummary => {
     currentVersion: row.current_version,
     lastValue,
     preview,
-    migrationStatus: row.migration_status,
-    migrationNote: row.migration_note,
   };
 };
 
@@ -264,7 +257,7 @@ const loadSummaries = async (
   if (ownerIds.length === 0) return new Map();
   const rows = (await sql.unsafe(
     `SELECT ns.id::text, ns.short_id, ns.assignment, ns.current_version, ns.archived_at,
-            ns.field_id::text, ns.document_template_id::text, ns.migration_status, ns.migration_note,
+            ns.field_id::text, ns.document_template_id::text,
             version.version, version.strategy, version.prefix, version.padding, version.period, version.number_template,
             COALESCE(max(pg_sequence.last_value), 0) AS last_value
        FROM grids.number_series ns
@@ -295,7 +288,7 @@ export const allocateNumberInTransaction = async (params: {
   expectedAssignment?: NumberSeriesAssignment;
 }): Promise<NumberSeriesAllocation> => {
   const [series] = await params.client<SeriesRow[]>`
-    SELECT id::text, short_id, assignment, current_version, baseline_floor, archived_at
+    SELECT id::text, short_id, assignment, current_version, archived_at
     FROM grids.number_series
     WHERE ${ownerPredicate(params.owner)}
   `;
@@ -335,8 +328,6 @@ export const allocateNumberInTransaction = async (params: {
   `;
   if (!existingSequence?.name) {
     await params.client.unsafe(`CREATE SEQUENCE grids.${sequenceName} AS BIGINT INCREMENT 1 MINVALUE 1`);
-    const baselineFloor = Number(series.baseline_floor);
-    if (baselineFloor > 0) await params.client.unsafe(`SELECT setval('grids.${sequenceName}', $1, true)`, [baselineFloor]);
   }
   const rows = await params.client.unsafe(`SELECT nextval('grids.${sequenceName}') AS next`);
   const value = Number((rows as Array<{ next: bigint | number | string }>)[0]?.next);

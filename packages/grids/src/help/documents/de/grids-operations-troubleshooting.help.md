@@ -101,9 +101,9 @@ Wenn alle sechs Bedingungen erfüllt sind und weiterhin nichts erscheint, bitte 
 
 ## Eine Workflow-Abfrage meldet ein inkompatibles Schema {icon="alert-triangle"}
 
-Meldet eine Abfrage ein inkompatibles Schema oder eine inkompatible Bindung, prüfe ihre Quelle und die referenzierten Felder und veröffentliche den Workflow erneut. Starte eine neue Ausführung mit der neuen Revision; bestehende Ausführungen behalten ihren ursprünglichen Plan. Das reine Umsortieren von Spalten macht eine Abfrage nicht ungültig. Ändere keine gespeicherten Hashes oder Versionsmarker, um die Prüfung zu umgehen.
+Meldet eine Abfrage ein inkompatibles Schema oder eine inkompatible Bindung, prüfe ihre Quelle und die referenzierten Felder und veröffentliche den Workflow erneut. Starte eine neue Ausführung mit der neuen Revision; bestehende Ausführungen behalten ihren ursprünglichen Plan. Das reine Umsortieren von Spalten macht eine Abfrage nicht ungültig. Ändere keine gespeicherten Hashes, um die Prüfung zu umgehen.
 
-Das ist eine fehlgeschlagene Abfrage, nicht der unten beschriebene Status `needs_attention`. Startet Grids selbst wegen nicht unterstützter Alpha-Daten nicht, bitte den Betreiber, die [Grids-Alpha-Upgrade-Anleitung](https://cloud.k2b.dev/en/docs/operations/grids-alpha-upgrade) zu nutzen. Diese Prüfung gehört vor das Deployment; ein nicht verfügbarer Editor kann den Startfehler nicht beheben.
+Das ist eine fehlgeschlagene Abfrage, nicht der unten beschriebene Status `needs_attention`.
 
 ## Eine Workflow-Ausführung benötigt Aufmerksamkeit {icon="alert-triangle"}
 

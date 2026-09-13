@@ -18,7 +18,7 @@ describe("Grids workflow manifest", () => {
   });
 
   test("pins the query-enabled manifest hash; older plans require republication", async () => {
-    expect(await hashWorkflowJson(gridsWorkflowManifest)).toBe("e5744d4e3966745d6c7b6fa4db5b3a58d4c57e10670384dac50e790563ec1c7e");
+    expect(await hashWorkflowJson(gridsWorkflowManifest)).toBe("c2c315518060ff185daaaf7a40cf0deaad1862914a1f459b93e08bcebce7b60c");
   });
 
   test("classifies every effectful action explicitly", () => {

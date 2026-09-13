@@ -250,7 +250,7 @@ limit 2`);
 
     const functionName = parseGridsQueryDsl(`where MYFORMULA(#x) = 1`);
     expect(functionName.ok).toBe(false);
-    if (!functionName.ok) expect(functionName.diagnostics.map((d) => d.message)[0]).toContain("legacy # field references");
+    if (!functionName.ok) expect(functionName.diagnostics.map((d) => d.message)[0]).toContain('unexpected character "#"');
   });
 
   test("rejects logical function calls in GQL expressions", () => {
@@ -282,10 +282,10 @@ limit 2`);
         `having formula(revenue > 0)`,
         `where and having clauses already use formula syntax; write the expression directly without formula(...)`,
       ],
-      [`from table #Orders`, `legacy # references are not valid in GQL`],
-      [`select #Amount`, `legacy # references are not valid in GQL`],
-      [`aggregate sum(#Amount) as revenue`, `legacy # references are not valid in GQL`],
-      [`search 'open' in #Status`, `legacy # references are not valid in GQL`],
+      [`from table #Orders`, `invalid from source`],
+      [`select #Amount`, `invalid select item`],
+      [`aggregate sum(#Amount) as revenue`, `invalid aggregate argument`],
+      [`search 'open' in #Status`, `invalid search field`],
     ] as const;
 
     for (const [source, message] of cases) {

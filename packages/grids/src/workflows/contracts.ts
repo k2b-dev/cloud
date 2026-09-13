@@ -156,24 +156,14 @@ export type GridsScannerInputSource =
 
 export type GridsScannerPromptInputSource = Extract<GridsScannerInputSource, { kind: "session" | "afterScan" }>;
 
-type GridsScannerLauncherConfig =
-  | {
-      /** Legacy single-record scanner config. Kept readable for stored launchers. */
-      kind: "scanner";
-      input: string;
-      resolve: GridsScannerResolve;
-    }
-  | {
-      kind: "scanner";
-      inputSources: Record<string, GridsScannerInputSource>;
-    };
-
-export const scannerLauncherInputSources = (config: GridsScannerLauncherConfig): Record<string, GridsScannerInputSource> =>
-  "inputSources" in config ? config.inputSources : { [config.input]: { kind: "scan", value: "record", resolve: config.resolve } };
+type GridsScannerLauncherConfig = {
+  kind: "scanner";
+  inputSources: Record<string, GridsScannerInputSource>;
+};
 
 export const scannerLauncherPromptInputSources = (config: GridsScannerLauncherConfig): Record<string, GridsScannerPromptInputSource> =>
   Object.fromEntries(
-    Object.entries(scannerLauncherInputSources(config)).filter(
+    Object.entries(config.inputSources).filter(
       (entry): entry is [string, GridsScannerPromptInputSource] => entry[1].kind === "session" || entry[1].kind === "afterScan",
     ),
   );
@@ -434,14 +424,6 @@ const ScannerResolveSchema = z
     }
   });
 
-const LegacyScannerLauncherConfigSchema = z
-  .object({
-    kind: z.literal("scanner"),
-    input: z.string().trim().min(1).max(120),
-    resolve: ScannerResolveSchema,
-  })
-  .strict();
-
 const ScannerInputSourceSchema = z.union([
   z.object({ kind: z.literal("scan"), value: z.literal("text") }).strict(),
   z.object({ kind: z.literal("scan"), value: z.literal("record"), resolve: ScannerResolveSchema }).strict(),
@@ -450,7 +432,7 @@ const ScannerInputSourceSchema = z.union([
   z.object({ kind: z.literal("fixed"), value: z.json() }).strict(),
 ]);
 
-const StagedScannerLauncherConfigSchema = z
+const ScannerLauncherConfigSchema = z
   .object({
     kind: z.literal("scanner"),
     inputSources: z.record(z.string().trim().min(1).max(120), ScannerInputSourceSchema),
@@ -468,8 +450,6 @@ const StagedScannerLauncherConfigSchema = z
       ctx.addIssue({ code: "custom", path: ["inputSources"], message: "scanner requires exactly one scan input source" });
     }
   });
-
-const ScannerLauncherConfigSchema = z.union([LegacyScannerLauncherConfigSchema, StagedScannerLauncherConfigSchema]);
 
 const StandardBulkLauncherConfigSchema = z
   .object({

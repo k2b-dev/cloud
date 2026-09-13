@@ -14,7 +14,7 @@ test("editor result suggestions insert a reference accepted by the normal workfl
   expect(source.slice(edit.start, edit.end)).toBe('"re');
   const completed = source.slice(0, edit.start) + edit.text + source.slice(edit.end);
   const result = await compileAndBindGridsWorkflowSource(completed, catalog, async (query) =>
-    ok({ source: query, schemaHash: "a".repeat(64), schemaHashVersion: 3 as const }),
+    ok({ source: query, schemaHash: "a".repeat(64) }),
   );
   expect(result.ok, result.ok ? undefined : JSON.stringify(result.diagnostics)).toBe(true);
 });

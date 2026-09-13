@@ -1,5 +1,5 @@
-import { err, fail, ok, type Result } from "@k2b/stdlib";
 import type { WorkflowDiagnostic, WorkflowIrInput } from "@k2b/cloud/workflows";
+import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { sql } from "bun";
 import type {
   CreateGridsWorkflowLauncherInput,
@@ -13,7 +13,6 @@ import {
   correctionDraftPlanIntent,
   GridsWorkflowLauncherConfigSchema,
   isCanonicalCloseSelectionPlan,
-  scannerLauncherInputSources,
 } from "../workflows/contracts";
 import { logAudit, type SqlClient } from "./audit";
 import { parseJsonbRow } from "./jsonb";
@@ -94,10 +93,9 @@ export const validateLauncherConfig = (workflow: GridsWorkflow, config: GridsWor
     }
   }
   if (config.kind === "scanner") {
-    const sources = scannerLauncherInputSources(config);
+    const sources = config.inputSources;
     const sourceEntries = Object.entries(sources);
-    const sourcePath = (name: string): Array<string | number> =>
-      "inputSources" in config ? ["config", "inputSources", name] : ["config", "input"];
+    const sourcePath = (name: string): Array<string | number> => ["config", "inputSources", name];
     const scanEntries = sourceEntries.filter(([, source]) => source.kind === "scan");
     if (scanEntries.length !== 1) {
       add("launcher.scan.count", "Scanner launchers require exactly one scan input source", ["config", "inputSources"]);

@@ -10,8 +10,6 @@ export const PublicNumberSeriesSummarySchema = z
     currentVersion: z.number().int().positive(),
     lastValue: z.number().int().nonnegative(),
     preview: z.string().nullable(),
-    migrationStatus: z.string(),
-    migrationNote: z.string().nullable(),
   })
   .strict();
 
@@ -23,6 +21,4 @@ export const toPublicNumberSeries = (series: NumberSeriesSummary) =>
     currentVersion: series.currentVersion,
     lastValue: series.lastValue,
     preview: series.preview,
-    migrationStatus: series.migrationStatus,
-    migrationNote: series.migrationNote,
   });

@@ -49,20 +49,9 @@ const deCopy = {
   "App unpublished. The draft is unchanged.": "Die App ist nicht mehr veröffentlicht. Der Entwurf bleibt unverändert.",
   "Delete app": "App löschen",
   "Could not delete the App.": "Die App konnte nicht gelöscht werden.",
-  "Replace incompatible draft": "Inkompatiblen Entwurf ersetzen",
-  "Replace the incompatible draft with a new blank schema v5 definition? This cannot be undone.":
-    "Inkompatiblen Entwurf durch eine neue leere Schema-v5-Definition ersetzen? Dies kann nicht rückgängig gemacht werden.",
-  "Replace draft": "Entwurf ersetzen",
-  "Could not replace the incompatible draft.": "Der inkompatible Entwurf konnte nicht ersetzt werden.",
-  "Could not restore the live version.": "Die veröffentlichte Version konnte nicht wiederhergestellt werden.",
   "This draft cannot be opened": "Dieser Entwurf kann nicht geöffnet werden",
-  "This editor only accepts App schema v5. The incompatible draft cannot run or publish until you restore the live version or replace it.":
-    "Dieser Editor unterstützt nur App-Schema v5. Stelle die veröffentlichte Version wieder her oder ersetze den Entwurf, bevor du ihn ausführst oder veröffentlichst.",
   "Restore live version": "Veröffentlichte Version wiederherstellen",
-  "Replace with blank schema v5 draft": "Durch leeren Schema-v5-Entwurf ersetzen",
   "App lifecycle": "App-Lebenszyklus",
-  "You can still take the live app offline or delete it without replacing the incompatible draft.":
-    "Du kannst die veröffentlichte App weiterhin offline nehmen oder löschen, ohne den inkompatiblen Entwurf zu ersetzen.",
   "The saved draft must be fixed before it can be published.": "Der gespeicherte Entwurf muss vor der Veröffentlichung korrigiert werden.",
   "Loading preview": "Vorschau wird geladen",
   "Running this block's data source.": "Die Datenquelle dieses Blocks wird ausgeführt.",
@@ -171,6 +160,7 @@ const deCopy = {
   "Remove page": "Seite entfernen",
   "The live version is not a valid schema v5 definition.": "Die veröffentlichte Version ist keine gültige Schema-v5-Definition.",
   "Draft restored to the live version.": "Der Entwurf wurde auf die veröffentlichte Version zurückgesetzt.",
+  "Could not restore the live version.": "Die veröffentlichte Version konnte nicht wiederhergestellt werden.",
   "Discard every autosaved draft change and replace it with the current live version? This cannot be undone.":
     "Alle automatisch gespeicherten Entwurfsänderungen verwerfen und durch die aktuelle veröffentlichte Version ersetzen? Dies kann nicht rückgängig gemacht werden.",
   "Discard draft changes": "Entwurfsänderungen verwerfen",

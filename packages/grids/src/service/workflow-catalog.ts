@@ -107,11 +107,11 @@ export const getWorkflowCatalogRef = <T extends WorkflowCatalogEntry>(index: Wor
   return index.refs.get(key) ?? null;
 };
 
-const loadWorkflowCatalogWithDeleted = async (baseId: string, db: SQL, includeDeleted: boolean): Promise<WorkflowCatalog> => {
+export const loadWorkflowCatalog = async (baseId: string, db: SQL = sql): Promise<WorkflowCatalog> => {
   const tableRows = await db<{ id: string; short_id: string; name: string; kind: string }[]>`
     SELECT id::text AS id, short_id, name, kind
     FROM grids.tables
-    WHERE base_id = ${baseId}::uuid AND (${includeDeleted} OR deleted_at IS NULL)
+    WHERE base_id = ${baseId}::uuid AND deleted_at IS NULL
   `;
   const tables = createCatalogIndex<WorkflowTableCatalogEntry>();
   for (const row of tableRows) {
@@ -123,8 +123,8 @@ const loadWorkflowCatalogWithDeleted = async (baseId: string, db: SQL, includeDe
   >`
     SELECT f.id::text AS id, f.short_id, f.table_id::text AS table_id, f.name, f.type, f.config
     FROM grids.fields f
-    JOIN grids.tables t ON t.id = f.table_id AND (${includeDeleted} OR t.deleted_at IS NULL)
-    WHERE t.base_id = ${baseId}::uuid AND (${includeDeleted} OR f.deleted_at IS NULL)
+    JOIN grids.tables t ON t.id = f.table_id AND t.deleted_at IS NULL
+    WHERE t.base_id = ${baseId}::uuid AND f.deleted_at IS NULL
   `;
   const fieldsByTable = new Map<string, WorkflowCatalogIndex<WorkflowFieldCatalogEntry>>();
   for (const row of fieldRows) {
@@ -147,8 +147,8 @@ const loadWorkflowCatalogWithDeleted = async (baseId: string, db: SQL, includeDe
   const templateRows = await db<{ id: string; short_id: string; table_id: string; name: string }[]>`
     SELECT dt.id::text AS id, dt.short_id, dt.table_id::text AS table_id, dt.name
     FROM grids.document_templates dt
-    JOIN grids.tables t ON t.id = dt.table_id AND (${includeDeleted} OR t.deleted_at IS NULL)
-    WHERE t.base_id = ${baseId}::uuid AND (${includeDeleted} OR dt.deleted_at IS NULL)
+    JOIN grids.tables t ON t.id = dt.table_id AND t.deleted_at IS NULL
+    WHERE t.base_id = ${baseId}::uuid AND dt.deleted_at IS NULL
   `;
   const templates = createCatalogIndex<WorkflowCatalogEntry & { tableId: string }>();
   for (const row of templateRows) {
@@ -158,21 +158,14 @@ const loadWorkflowCatalogWithDeleted = async (baseId: string, db: SQL, includeDe
   const emailTemplateRows = await db<{ id: string; short_id: string; name: string }[]>`
     SELECT et.id::text AS id, et.short_id, et.name
     FROM grids.email_templates et
-    JOIN grids.bases b ON b.id = et.base_id AND (${includeDeleted} OR b.deleted_at IS NULL)
-    WHERE et.base_id = ${baseId}::uuid AND (${includeDeleted} OR et.deleted_at IS NULL)
+    JOIN grids.bases b ON b.id = et.base_id AND b.deleted_at IS NULL
+    WHERE et.base_id = ${baseId}::uuid AND et.deleted_at IS NULL
   `;
   const emailTemplates = createCatalogIndex<WorkflowCatalogEntry>();
   for (const row of emailTemplateRows) addRefAliases(emailTemplates, { id: row.id, shortId: row.short_id, name: row.name });
 
   return { tables, fieldsByTable, templates, emailTemplates };
 };
-
-export const loadWorkflowCatalog = (baseId: string, db: SQL = sql): Promise<WorkflowCatalog> =>
-  loadWorkflowCatalogWithDeleted(baseId, db, false);
-
-/** One-shot public-ID migration catalog; runtime resolution remains live-only. */
-export const loadWorkflowCatalogForMigration = (baseId: string, db: SQL): Promise<WorkflowCatalog> =>
-  loadWorkflowCatalogWithDeleted(baseId, db, true);
 
 export const resolveWorkflowFieldRef = (catalog: WorkflowCatalog, tableId: string, ref: string): WorkflowFieldCatalogEntry | null => {
   const fields = catalog.fieldsByTable.get(tableId);

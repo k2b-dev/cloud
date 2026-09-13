@@ -28,7 +28,7 @@ for (const output of outputs) {
     const result = await compileAndBindGridsWorkflowSource(source, catalog, async (value) => {
       expect(value).toBe(query);
       expect(parseGridsQueryDsl(value).ok).toBe(true);
-      return ok({ source: value, schemaHash: "a".repeat(64), schemaHashVersion: 3 as const });
+      return ok({ source: value, schemaHash: "a".repeat(64) });
     });
     expect(result.ok, result.ok ? undefined : JSON.stringify(result.diagnostics)).toBe(true);
     expect(parse(source)).toEqual({
@@ -52,7 +52,7 @@ test("query export run inputs bind exact decimals as text without saving preview
     { name: "minimum", type: "decimal" },
   ]);
   const result = await compileAndBindGridsWorkflowSource(source, catalog, async (query) =>
-    ok({ source: query, schemaHash: "a".repeat(64), schemaHashVersion: 3 as const }),
+    ok({ source: query, schemaHash: "a".repeat(64) }),
   );
   expect(result.ok, result.ok ? undefined : JSON.stringify(result.diagnostics)).toBe(true);
   expect(parse(source).inputs.minimum).toEqual({ type: "text", required: true });

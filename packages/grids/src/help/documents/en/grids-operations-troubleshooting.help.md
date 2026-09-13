@@ -101,9 +101,9 @@ If all six hold and there is still nothing, ask a Cloud administrator to check *
 
 ## A workflow query reports an incompatible schema {icon="alert-triangle"}
 
-If a query reports an incompatible schema or binding, review its source and the referenced fields, then publish the workflow again. Start a new run with the new revision; existing runs keep their original plan. Reordering columns alone does not invalidate a query. Do not edit stored hashes or version markers to bypass the check.
+If a query reports an incompatible schema or binding, review its source and the referenced fields, then publish the workflow again. Start a new run with the new revision; existing runs keep their original plan. Reordering columns alone does not invalidate a query. Do not edit stored hashes to bypass the check.
 
-This is a failed query, not the `needs_attention` state below. If Grids itself refuses to start with an unsupported alpha-data message, ask the operator to follow the [Grids alpha upgrade guide](https://cloud.k2b.dev/en/docs/operations/grids-alpha-upgrade). That check must happen before deployment; it cannot be fixed in an unavailable editor.
+This is a failed query, not the `needs_attention` state below.
 
 ## A workflow run needs attention {icon="alert-triangle"}
 

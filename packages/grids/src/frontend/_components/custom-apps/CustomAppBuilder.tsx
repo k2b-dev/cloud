@@ -164,30 +164,6 @@ export const isCustomAppBlockSourceDiagnostic = (diagnostic: CustomAppDiagnostic
 export const isCustomAppAvailabilityDiagnostic = (diagnostic: CustomAppDiagnostic, targetId: string): boolean =>
   diagnostic.path.includes(targetId) && diagnostic.path.includes("availableWhen");
 
-export const blankCustomAppDefinition = (app: PublicCustomApp, homeTitle = "Home"): CustomAppDefinition => ({
-  schemaVersion: 5,
-  kind: "grids.custom-app",
-  id: app.id,
-  baseId: app.baseId,
-  name: app.name,
-  ...(app.icon ? { icon: app.icon } : {}),
-  startPageId: "home",
-  pages: [
-    {
-      id: "home",
-      title: homeTitle,
-      navigation: { visible: true },
-      parameters: {},
-      rows: [
-        {
-          id: "content",
-          columns: [{ id: "main", span: 12, blocks: [{ id: "intro", type: "markdown", markdown: "" }] }],
-        },
-      ],
-    },
-  ],
-});
-
 function PageParameterIdInput(props: { id: string; existingIds: readonly string[]; onRename: (id: string) => void }) {
   const messages = useCustomAppBuilderMessages();
   const text = (value: CustomAppBuilderText) => messages().text({ value });
@@ -376,86 +352,6 @@ export function CustomAppLifecycleActions(props: {
   );
 }
 
-function InvalidCustomAppDraft(props: { app: PublicCustomApp; baseId: string }) {
-  const messages = useCustomAppBuilderMessages();
-  const text = (value: CustomAppBuilderText) => messages().text({ value });
-  const replaceMutation = mutations.create<void, void>({
-    mutation: async (_, { abortSignal }) => {
-      const confirmed = await prompts.confirm(
-        text("Replace the incompatible draft with a new blank schema v5 definition? This cannot be undone."),
-        {
-          title: text("Replace incompatible draft"),
-          icon: "ti ti-file-plus",
-          confirmText: text("Replace draft"),
-          variant: "danger",
-        },
-      );
-      if (!confirmed) return;
-      const response = await apiClient.apps[":appId"].draft.$put(
-        { param: { appId: props.app.id }, json: { definition: blankCustomAppDefinition(props.app, text("Home")) } },
-        { init: { signal: abortSignal } },
-      );
-      if (!response.ok) throw new Error(await errorMessage(response, text("Could not replace the incompatible draft.")));
-      window.location.reload();
-    },
-    onError: (error) => prompts.error(error.message),
-  });
-  const restoreMutation = mutations.create<void, void>({
-    mutation: async (_, { abortSignal }) => {
-      const response = await apiClient.apps[":appId"].restore.$post({ param: { appId: props.app.id } }, { init: { signal: abortSignal } });
-      if (!response.ok) throw new Error(await errorMessage(response, text("Could not restore the live version.")));
-      window.location.reload();
-    },
-    onError: (error) => prompts.error(error.message),
-  });
-
-  return (
-    <AppWorkspace.Main class="p-4" mobilePane="main">
-      <div class="mx-auto flex w-full max-w-2xl flex-col gap-4">
-        <NoticeCard
-          tone="danger"
-          title={text("This draft cannot be opened")}
-          detail={text(
-            "This editor only accepts App schema v5. The incompatible draft cannot run or publish until you restore the live version or replace it.",
-          )}
-          role="alert"
-        >
-          <ul class="list-disc space-y-1 pl-4 text-sm">
-            <For each={props.app.draftDiagnostics}>{(diagnostic) => <li>{diagnostic.message}</li>}</For>
-          </ul>
-        </NoticeCard>
-        <div class="flex flex-wrap gap-2">
-          <Show when={props.app.publishedDefinition}>
-            <Button
-              variant="secondary"
-              loading={restoreMutation.loading()}
-              disabled={replaceMutation.loading()}
-              onClick={() => restoreMutation.mutate(undefined)}
-            >
-              <i class="ti ti-restore" aria-hidden="true" /> {text("Restore live version")}
-            </Button>
-          </Show>
-          <Button
-            variant="danger"
-            loading={replaceMutation.loading()}
-            disabled={restoreMutation.loading()}
-            onClick={() => replaceMutation.mutate(undefined)}
-          >
-            <i class="ti ti-file-plus" aria-hidden="true" /> {text("Replace with blank schema v5 draft")}
-          </Button>
-        </div>
-        <NoticeCard
-          tone="warning"
-          title={text("App lifecycle")}
-          detail={text("You can still take the live app offline or delete it without replacing the incompatible draft.")}
-        >
-          <CustomAppLifecycleActions app={props.app} baseId={props.baseId} onUnpublished={() => window.location.reload()} />
-        </NoticeCard>
-      </div>
-    </AppWorkspace.Main>
-  );
-}
-
 const newPage = (definition: CustomAppDefinition, title: string): CustomAppPage => {
   const _pageNumber = definition.pages.length + 1;
   return {
@@ -488,7 +384,14 @@ type CustomAppBuilderProps = {
 };
 
 export default function CustomAppBuilder(props: CustomAppBuilderProps) {
-  if (!props.app.draftDefinition) return <InvalidCustomAppDraft app={props.app} baseId={props.baseId} />;
+  const messages = useCustomAppBuilderMessages();
+  if (!props.app.draftDefinition) {
+    return (
+      <AppWorkspace.Main class="p-4">
+        <NoticeCard tone="danger" title={messages().text({ value: "This draft cannot be opened" })} />
+      </AppWorkspace.Main>
+    );
+  }
   return <CustomAppBuilderEditor {...props} initialDefinition={props.app.draftDefinition} />;
 }
 

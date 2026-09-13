@@ -15,10 +15,10 @@ const removedPublicSyntax = [
     query: "having formula(revenue > 0)",
     diagnostic: "where and having clauses already use formula syntax; write the expression directly without formula(...)",
   },
-  { query: "from table #Orders", diagnostic: "legacy # references are not valid in GQL" },
-  { query: "select #Amount", diagnostic: "legacy # references are not valid in GQL" },
-  { query: "aggregate sum(#Amount) as revenue", diagnostic: "legacy # references are not valid in GQL" },
-  { query: "search 'open' in #Status", diagnostic: "legacy # references are not valid in GQL" },
+  { query: "from table #Orders", diagnostic: "invalid from source" },
+  { query: "select #Amount", diagnostic: "invalid select item" },
+  { query: "aggregate sum(#Amount) as revenue", diagnostic: "invalid aggregate argument" },
+  { query: "search 'open' in #Status", diagnostic: "invalid search field" },
 ] as const;
 
 describe("public GQL syntax golden contract", () => {

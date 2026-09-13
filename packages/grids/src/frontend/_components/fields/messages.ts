@@ -219,8 +219,8 @@ export const gridsFieldMessages = i18n.define({
       typeSettings: "Type settings",
       typeSettingsDescription: "Constraints and options specific to this datatype.",
       numberSeries: "Number series",
-      numberSeriesDetail: ({ assignment, last, next, note }: { assignment: string; last: string | number; next?: string; note?: string }) =>
-        `Numbers are assigned when the record is ${assignment}. Last number: ${last}.${next ? ` Next number: ${next}.` : ""}${note ? ` ${note}` : ""}`,
+      numberSeriesDetail: ({ assignment, last, next }: { assignment: string; last: string | number; next?: string }) =>
+        `Numbers are assigned when the record is ${assignment}. Last number: ${last}.${next ? ` Next number: ${next}.` : ""}`,
       created: "created",
       finalized: "finalized",
       savingField: "Saving field",
@@ -483,8 +483,8 @@ export const gridsFieldMessages = i18n.define({
       typeSettings: "Typeinstellungen",
       typeSettingsDescription: "Einschränkungen und Optionen für diesen Datentyp.",
       numberSeries: "Nummernserie",
-      numberSeriesDetail: ({ assignment, last, next, note }) =>
-        `Die Nummer wird beim ${assignment} des Datensatzes vergeben. Letzte Nummer: ${last}.${next ? ` Nächste Nummer: ${next}.` : ""}${note ? ` ${note}` : ""}`,
+      numberSeriesDetail: ({ assignment, last, next }) =>
+        `Die Nummer wird beim ${assignment} des Datensatzes vergeben. Letzte Nummer: ${last}.${next ? ` Nächste Nummer: ${next}.` : ""}`,
       created: "Erstellen",
       finalized: "Finalisieren",
       savingField: "Feld wird gespeichert",

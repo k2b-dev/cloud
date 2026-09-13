@@ -1,6 +1,6 @@
 import { describe, expect, mock, test } from "bun:test";
-import { err, fail, ok } from "@k2b/stdlib";
 import type { WorkflowInvocationReceipt } from "@k2b/cloud/workflows";
+import { err, fail, ok } from "@k2b/stdlib";
 import type { GridsWorkflow, GridsWorkflowLauncher, GridsWorkflowLauncherConfig } from "../workflows/contracts";
 import {
   admitBulkLauncher,
@@ -201,7 +201,13 @@ describe("workflow kernel scanner launchers", () => {
   });
 
   test("uses only the configured unique-field resolver", async () => {
-    const item = setup(launcher({ kind: "scanner", input: "record", resolve: { by: "field", field: "Asset code" } }), workflow());
+    const item = setup(
+      launcher({
+        kind: "scanner",
+        inputSources: { ["record"]: { kind: "scan", value: "record", resolve: { by: "field", field: "Asset code" } } },
+      }),
+      workflow(),
+    );
 
     const result = await invokeScannerLauncher(scannerInput({ scannedText: "A-42" }), item.deps);
 
@@ -247,9 +253,13 @@ describe("workflow kernel scanner launchers", () => {
   });
 
   test("checks current workflow and table permissions before resolution", async () => {
-    const item = setup(launcher({ kind: "scanner", input: "record", resolve: { by: "scanCode" } }), workflow(), {
-      authorize: mock(async () => fail(err.forbidden("denied"))),
-    });
+    const item = setup(
+      launcher({ kind: "scanner", inputSources: { ["record"]: { kind: "scan", value: "record", resolve: { by: "scanCode" } } } }),
+      workflow(),
+      {
+        authorize: mock(async () => fail(err.forbidden("denied"))),
+      },
+    );
 
     const result = await invokeScannerLauncher(scannerInput(), item.deps);
 
@@ -260,8 +270,20 @@ describe("workflow kernel scanner launchers", () => {
   });
 
   test("rejects stale and structurally invalid launcher configs", async () => {
-    const stale = setup(launcher({ kind: "scanner", input: "record", resolve: { by: "scanCode" } }, { validatedRevision: 2 }), workflow());
-    const invalid = setup(launcher({ kind: "scanner", input: "record", resolve: { by: "scanCode", field: "unexpected" } }), workflow());
+    const stale = setup(
+      launcher(
+        { kind: "scanner", inputSources: { ["record"]: { kind: "scan", value: "record", resolve: { by: "scanCode" } } } },
+        { validatedRevision: 2 },
+      ),
+      workflow(),
+    );
+    const invalid = setup(
+      launcher({
+        kind: "scanner",
+        inputSources: { ["record"]: { kind: "scan", value: "record", resolve: { by: "scanCode", field: "unexpected" } } },
+      }),
+      workflow(),
+    );
 
     const staleResult = await invokeScannerLauncher(scannerInput(), stale.deps);
     const invalidResult = await invokeScannerLauncher(scannerInput(), invalid.deps);
@@ -273,7 +295,10 @@ describe("workflow kernel scanner launchers", () => {
   });
 
   test("strictly rejects unknown invocation properties", async () => {
-    const item = setup(launcher({ kind: "scanner", input: "record", resolve: { by: "scanCode" } }), workflow());
+    const item = setup(
+      launcher({ kind: "scanner", inputSources: { ["record"]: { kind: "scan", value: "record", resolve: { by: "scanCode" } } } }),
+      workflow(),
+    );
 
     const result = await invokeScannerLauncher(scannerInput({ unexpected: true }), item.deps);
 
@@ -283,7 +308,10 @@ describe("workflow kernel scanner launchers", () => {
   });
 
   test("passes exact Grids App scanner provenance to authorization", async () => {
-    const item = setup(launcher({ kind: "scanner", input: "record", resolve: { by: "scanCode" } }), workflow());
+    const item = setup(
+      launcher({ kind: "scanner", inputSources: { ["record"]: { kind: "scan", value: "record", resolve: { by: "scanCode" } } } }),
+      workflow(),
+    );
     const authorization = {
       kind: "custom-app-scanner" as const,
       customAppId: "90000000-0000-4000-8000-000000000009",

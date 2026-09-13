@@ -24,7 +24,7 @@ import type { Field } from "../service/types";
 import { buildWorkflowCatalog } from "../service/workflow-catalog";
 import { validateLauncherConfig } from "../service/workflow-launchers";
 import { bindGridsWorkflow } from "../workflows/binder";
-import { CreateGridsWorkflowSchema, scannerLauncherInputSources } from "../workflows/contracts";
+import { CreateGridsWorkflowSchema } from "../workflows/contracts";
 import { gridsWorkflows } from "../workflows/module";
 import { getTemplates, templates } from ".";
 import type { GridTemplate, TemplateDateExpression, TemplateField, TemplateRef } from "./types";
@@ -605,8 +605,7 @@ describe("built-in grid templates", () => {
     const defectLauncher = template.workflowLaunchers?.find((item) => item.key === "report_item_defect_scanner");
     expect(defectLauncher?.config).toEqual({
       kind: "scanner",
-      input: "item",
-      resolve: { by: "field", field: "Asset ID" },
+      inputSources: { ["item"]: { kind: "scan", value: "record", resolve: { by: "field", field: "Asset ID" } } },
     });
     expect(template.documentTemplates?.find((item) => item.key === "asset_label")).toMatchObject({
       table: "items",
@@ -681,7 +680,10 @@ describe("built-in grid templates", () => {
       {
         template: "inventory",
         key: "report_item_defect_scanner",
-        config: { kind: "scanner", input: "item", resolve: { by: "field", field: "Asset ID" } },
+        config: {
+          kind: "scanner",
+          inputSources: { ["item"]: { kind: "scan", value: "record", resolve: { by: "field", field: "Asset ID" } } },
+        },
       },
       {
         template: "inventory",
@@ -1279,9 +1281,7 @@ describe("built-in grid templates", () => {
         // from this template while everything above still passes.
         const config = launcher.config;
         if (config.kind !== "scanner") continue;
-        const scanned = Object.entries(scannerLauncherInputSources(config)).find(
-          ([, source]) => source.kind === "scan" && source.value === "record",
-        );
+        const scanned = Object.entries(config.inputSources).find(([, source]) => source.kind === "scan" && source.value === "record");
         if (!scanned) continue;
         const [scannedInputName, source] = scanned;
         if (source.kind !== "scan" || source.value !== "record" || source.resolve.by !== "field") continue;

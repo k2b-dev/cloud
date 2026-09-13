@@ -580,7 +580,11 @@ describe("Grids App lifecycle", () => {
       const bulkLauncherId = bulkLauncherResult.data.id;
       const scannerLauncherResult = await createLauncher(
         workflow,
-        { name: "Scan request", config: { kind: "scanner", input: "request", resolve: { by: "scanCode" } }, enabled: true },
+        {
+          name: "Scan request",
+          config: { kind: "scanner", inputSources: { ["request"]: { kind: "scan", value: "record", resolve: { by: "scanCode" } } } },
+          enabled: true,
+        },
         null,
       );
       if (!scannerLauncherResult.ok) throw new Error(scannerLauncherResult.error.message);
@@ -945,7 +949,10 @@ describe("Grids App lifecycle", () => {
             launcherId: scannerLauncherId,
             workflowId,
             revision: 1,
-            configHash: customAppScannerConfigHash({ kind: "scanner", input: "request", resolve: { by: "scanCode" } }),
+            configHash: customAppScannerConfigHash({
+              kind: "scanner",
+              inputSources: { ["request"]: { kind: "scan", value: "record", resolve: { by: "scanCode" } } },
+            }),
           },
         ],
       });
@@ -1060,15 +1067,17 @@ describe("Grids App lifecycle", () => {
           timeZone: "UTC",
           blockId: "scan-request",
           revision: 1,
-          configHash: customAppScannerConfigHash({ kind: "scanner", input: "request", resolve: { by: "scanCode" } }),
+          configHash: customAppScannerConfigHash({
+            kind: "scanner",
+            inputSources: { ["request"]: { kind: "scan", value: "record", resolve: { by: "scanCode" } } },
+          }),
         },
         launcherId: scannerLauncherId,
       };
       expect(await canExecuteWorkflow(scannerExecutionClaim)).toBe(true);
       await sql`UPDATE grids.workflow_launchers SET config = ${JSON.stringify({
         kind: "scanner",
-        input: "request",
-        resolve: { by: "field", field: "Title" },
+        inputSources: { ["request"]: { kind: "scan", value: "record", resolve: { by: "field", field: "Title" } } },
       })}::jsonb WHERE id = ${scannerLauncherId}::uuid`;
       expect(await canExecuteWorkflow(scannerExecutionClaim)).toBe(false);
       await sql`

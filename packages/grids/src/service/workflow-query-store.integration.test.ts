@@ -49,30 +49,9 @@ postgresTest("query payload is immutable, scoped, deduplicated and rolls back wi
     const loaded = await loadWorkflowQueryData({ baseId: fixture.baseId, runId, id: stored.data.id, sha256: stored.data.sha256 }, sql);
     if (!loaded.ok) throw new Error(loaded.error.message);
     expect(loaded.data.payload).toEqual(captured.data.payload);
-    const [version] = await sql<
-      Array<{ hash_version: number }>
-    >`SELECT hash_version FROM grids.workflow_query_data WHERE id = ${stored.data.id}::uuid`;
-    expect(version?.hash_version).toBe(2);
-    await expect(
-      Promise.resolve(sql`
-      INSERT INTO grids.workflow_query_data (run_id, step_key, payload, sha256, hash_version, row_count, captured_at)
-      VALUES (${runId}::uuid, 'unsupported', ${captured.data.payload}::jsonb, ${captured.data.sha256}, 1, ${captured.data.rowCount}, ${captured.data.capturedAt}::timestamptz)
-    `),
-    ).rejects.toThrow("workflow_query_data_hash_version_check");
     await expect(
       Promise.resolve(sql`UPDATE grids.workflow_run_profile SET captured_bytes = NULL WHERE run_id = ${runId}::uuid`),
     ).rejects.toMatchObject({ errno: "23502" });
-    const unsupported = await sql.begin((tx) =>
-      persistWorkflowQueryDataInTransaction(
-        {
-          ...input,
-          // @ts-expect-error Old persisted input must also be rejected at runtime.
-          capture: { ...captured.data, hashVersion: 1 },
-        },
-        tx,
-      ),
-    );
-    expect(unsupported.ok).toBe(false);
     expect(await sql.begin((tx) => persistWorkflowQueryDataInTransaction(input, tx))).toEqual(stored);
     const [accounted] = await sql`
       SELECT profile.captured_bytes::text AS bytes
@@ -112,7 +91,7 @@ postgresTest("query payload is immutable, scoped, deduplicated and rolls back wi
     const largeCanonical = canonicalDocumentJson(largePayload);
     const large = {
       ...input,
-      capture: { ...captured.data, payload: largePayload, sha256: largeCanonical.sha256, hashVersion: 2 as const },
+      capture: { ...captured.data, payload: largePayload, sha256: largeCanonical.sha256 },
     };
     await expect(
       sql.begin(async (tx) => {

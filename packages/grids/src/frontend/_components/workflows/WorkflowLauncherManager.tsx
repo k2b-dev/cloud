@@ -31,7 +31,6 @@ import {
   correctionDraftPlanIntent,
   isCanonicalCloseSelectionPlan,
   isCanonicalCorrectionDraftPlan,
-  scannerLauncherInputSources,
 } from "../../../workflows/contracts";
 import { errorMessage } from "../utils/api-helpers";
 import type { PublicWorkflow, PublicWorkflowLauncher } from "../workspace/workspace-public-state-model";
@@ -82,7 +81,7 @@ const launcherKindLabel = (kind: GridsWorkflowLauncherKind, locale: string) =>
 const launcherConfigurationSummary = (launcher: PublicWorkflowLauncher, locale: string): string => {
   const t = workflowMessages.resolve([locale]).t;
   if (launcher.config.kind === "scanner") {
-    const sources = Object.values(scannerLauncherInputSources(launcher.config));
+    const sources = Object.values(launcher.config.inputSources);
     return t.scannerInputsSummary({
       before: sources.filter((source) => source.kind === "session").length,
       after: sources.filter((source) => source.kind === "afterScan").length,
@@ -146,7 +145,7 @@ function LauncherEditor(props: {
       : "correction",
   );
   const initialScannerSources =
-    initial.config.kind === "scanner" ? scannerLauncherInputSources(initial.config) : ({} as Record<string, GridsScannerInputSource>);
+    initial.config.kind === "scanner" ? initial.config.inputSources : ({} as Record<string, GridsScannerInputSource>);
   const [scannerSources, setScannerSources] = createSignal<Record<string, ScannerSourceDraft>>(
     Object.fromEntries(
       props.workflow.plan.inputs.map((candidate) => [candidate.name, scannerSourceDraft(initialScannerSources[candidate.name])]),

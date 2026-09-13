@@ -4,7 +4,7 @@ import { MAX_WORKFLOW_QUERY_ROWS, type WorkflowDocumentDataCapture, WorkflowValu
 import { canonicalDocumentJson } from "./document-json";
 import { documentServiceText } from "./document-messages";
 
-export const WORKFLOW_DOCUMENT_VALUE_TYPES = ["text", "decimal", "boolean", "date", "dateTime", "json"] as const;
+const WORKFLOW_DOCUMENT_VALUE_TYPES = ["text", "decimal", "boolean", "date", "dateTime", "json"] as const;
 export const WorkflowDocumentValuesSchema = z
   .object({
     columns: z
@@ -67,7 +67,7 @@ export const captureWorkflowDocumentValues = (input: unknown, capturedAt: string
       capturedAt,
       complete: true,
     });
-    return ok({ payload, sha256: canonicalDocumentJson(payload, locale).sha256, hashVersion: 2, rowCount: rows.length, capturedAt });
+    return ok({ payload, sha256: canonicalDocumentJson(payload, locale).sha256, rowCount: rows.length, capturedAt });
   } catch {
     return fail(err.badInput(t.tableOutputDataInvalid));
   }

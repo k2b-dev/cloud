@@ -41,14 +41,13 @@ postgresTest("refuses to capture an incomplete formula result and preserves an e
   }
 });
 
-postgresTest("semantic bindings tolerate presentation changes but reject old contracts and changed calculation types", async () => {
+postgresTest("semantic bindings tolerate presentation changes but reject changed calculation types", async () => {
   const fixture = await insertDslDbFixture();
   try {
     const source = "from table Orders\nselect Amount as exported_amount";
     const modern = bindWorkflowQueryData(source, ctx(fixture), {});
     const searched = bindWorkflowQueryData(`${source}\nsearch 'open'`, ctx(fixture), {});
     if (!modern.ok || !searched.ok) throw new Error("fixture binding failed");
-    expect(modern.data.binding.schemaHashVersion).toBe(3);
     const capture = (binding: typeof modern.data.binding) =>
       captureWorkflowQueryData({
         baseId: fixture.baseId,
@@ -57,13 +56,6 @@ postgresTest("semantic bindings tolerate presentation changes but reject old con
         timeZone: "UTC",
         canReadTable: async () => true,
       });
-    // Even an otherwise matching digest cannot opt into an obsolete algorithm.
-    for (const schemaHashVersion of [undefined, 1, 2]) {
-      // @ts-expect-error Intentionally exercise stored pre-cut bindings.
-      const rejected = await capture({ ...modern.data.binding, schemaHashVersion });
-      expect(rejected.ok).toBe(false);
-      if (!rejected.ok) expect(rejected.error.code).toBe("CONFLICT");
-    }
     expect((await capture(modern.data.binding)).ok).toBe(true);
     expect((await capture(searched.data.binding)).ok).toBe(true);
     await sql`UPDATE grids.fields SET position = position + 20, presentable = NOT presentable WHERE id = ${fixture.amountId}::uuid`;

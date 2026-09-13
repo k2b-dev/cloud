@@ -181,8 +181,8 @@ const ensureFieldIndexOnConnection = async (
 
   const idx = fieldPerformanceIndexName(fieldId);
   const reverseSortIdx = fieldReverseSortIndexName(fieldId);
-  // Recreate by name so old alpha indexes with narrower predicates are
-  // replaced the next time ensureFieldIndex runs.
+  // Rebuild when the caller changes the index shape (for example select
+  // cardinality or date precision). These are normal field edits.
   for (const name of [idx, reverseSortIdx, trgmIndexName(fieldId)]) {
     try {
       await db.unsafe(`DROP INDEX CONCURRENTLY IF EXISTS grids.${name}`);

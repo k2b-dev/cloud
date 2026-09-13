@@ -256,7 +256,7 @@ detail distinguishes unique source records from captured output rows.
 
 All source captures share 5 MiB per run, including loop iterations. Reusing a capture does not count twice. Reduce rows/fields or split larger exports into separate runs.
 
-Reordering columns does not invalidate a published query. Changing calculation types can invalidate it: review the query and publish a new workflow revision before starting a new run. Upgrading an installation from unsupported alpha storage requires an operator check before deployment; republishing cannot repair an application that refuses to start.
+Reordering columns does not invalidate a published query. Changing calculation types can invalidate it: review the query and publish a new workflow revision before starting a new run.
 
 At `generateDocument.data`, the editor suggests prior query results in scope. Reuse a name for several files.
 

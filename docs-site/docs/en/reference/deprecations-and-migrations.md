@@ -43,36 +43,14 @@ Pulse is included in production Compose and the release image set. Fresh Core
 installations use an explicitly supplied temporary `ADMIN_LOGIN_TOKEN` for
 first access; see [Deployment requirements](/en/docs/operations/deployment-requirements).
 
-## Grids schema baseline: bridge update
+## Grids starts with a fresh schema
 
-This update retains the existing Grids migration paths and records
-`grids_schema_baseline_v1` after they finish successfully. Fresh databases
-receive the same marker. It uses the existing `grids.storage_contracts` table
-and commits with the schema changes; repeated startup preserves its original
-`activated_at` timestamp.
-
-Before updating an older installation, back up PostgreSQL and stop old Grids
-replicas and writers. Existing alpha migrations still include intentional
-removal of obsolete workflow, dashboard, and access structures; this update
-does not make those old transitions lossless. Start the bridge version after
-Core has prepared its authentication and workflow schemas, then verify:
-
-```sql
-SELECT name, activated_at
-FROM grids.storage_contracts
-WHERE name = 'grids_schema_baseline_v1';
-```
-
-One row confirms that the migration completed and checked the public-ID schema,
-the scalar contract, the workflow contract, and App definition versions. It does not certify
-artifact contents, business validity, or recovery of previously lost data.
-Missing resources can still leave a v5 App draft editable but invalid.
-An older App definition, including an archived one, prevents the first baseline
-activation; recover that definition and retry rather than inserting the marker
-manually. A failed migration does not create the marker.
-
-Keep a verified backup and the bridge build available. Do not run older Grids
-binaries against the marked schema.
+Grids creates its current schema at startup. There is no in-place migration
+from older Grids schemas. Before switching an existing installation, the
+operator must stop Grids and explicitly reset its schema and Grids-owned
+shared workflow and access data. This discards the existing Grids content;
+keep any required backups or exports separately. Never reset other applications.
+Start Core before Grids. Subsequent Grids starts preserve the current data.
 
 ## Mail automation authority is mandate-only
 

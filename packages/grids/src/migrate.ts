@@ -1,3134 +1,2024 @@
-import { toPgTextArray, toPgUuidArray } from "@k2b/cloud/services";
 import { sql as defaultSql, type SQL } from "bun";
-import { parseJsonbRow } from "./service/jsonb";
-import { numberSeriesFormatForField, numberSeriesSequenceName } from "./service/number-series";
-import { migratePersistedPublicIdReferences } from "./service/public-id-source-migration";
-import { newShortId, SHORT_ID_REGEX } from "./service/short-id";
-import { assertGridsAlphaContract, GRIDS_WORKFLOW_SCHEMA_VERSION, migrateGridsWorkflowTables } from "./workflows/migrate";
 
-const MIGRATION_LOCK_NAME = "grids:migrate";
-const CANONICAL_SCALAR_STORAGE_CONTRACT = "canonical_scalar_values_v1";
-export const GRIDS_SCHEMA_BASELINE = "grids_schema_baseline_v1";
-
-const PUBLIC_ID_RESOURCES = [
-  { table: "bases", key: "id", parent: null, index: "idx_grids_bases_short_id" },
-  { table: "tables", key: "id", parent: "base_id", index: "idx_grids_tables_short_id" },
-  { table: "fields", key: "id", parent: "table_id", index: "idx_grids_fields_short_id" },
-  { table: "records", key: "id", parent: "table_id", index: "idx_grids_records_short_id" },
-  { table: "record_revisions", key: "id", parent: "table_id", index: "idx_grids_record_revisions_short_id" },
-  { table: "record_comments", key: "id", parent: "record_id", index: "idx_grids_record_comments_short_id" },
-  { table: "files", key: "id", parent: null, index: "idx_grids_files_short_id" },
-  { table: "views", key: "id", parent: "table_id", index: "idx_grids_views_short_id" },
-  { table: "forms", key: "id", parent: "table_id", index: "idx_grids_forms_short_id" },
-  { table: "document_templates", key: "id", parent: "table_id", index: "idx_grids_document_templates_short_id" },
-  { table: "number_series", key: "id", parent: null, index: "idx_grids_number_series_short_id" },
-  { table: "email_templates", key: "id", parent: "base_id", index: "idx_grids_email_templates_short_id" },
-  { table: "record_snapshots", key: "id", parent: "table_id", index: "idx_grids_record_snapshots_short_id" },
-  { table: "documents", key: "id", parent: "table_id", index: "idx_grids_documents_short_id" },
-  { table: "document_links", key: "id", parent: "document_id", index: "idx_grids_document_links_short_id" },
-  { table: "evidence_exports", key: "id", parent: "base_id", index: "idx_grids_evidence_exports_short_id" },
-  { table: "preservation_holds", key: "id", parent: "base_id", index: "idx_grids_preservation_holds_short_id" },
-  { table: "controlled_destruction_runs", key: "id", parent: "base_id", index: "idx_grids_controlled_destruction_runs_short_id" },
-  { table: "custom_apps", key: "id", parent: "base_id", index: "idx_grids_custom_apps_short_id" },
-  { table: "workflow_profile", key: "id", parent: "base_id", index: "idx_grids_workflow_profile_short_id" },
-  { table: "workflow_launchers", key: "id", parent: "workflow_id", index: "idx_grids_workflow_launchers_short_id" },
-  { table: "workflow_run_profile", key: "run_id", parent: "workflow_id", index: "idx_grids_workflow_run_profile_short_id" },
-] as const;
-
-const DECLARATIVE_REFERENCE_RESOURCES = new Set([
-  "bases",
-  "tables",
-  "fields",
-  "views",
-  "forms",
-  "document_templates",
-  "documents",
-  "email_templates",
-  "custom_apps",
-  "workflow_profile",
-  "workflow_launchers",
-]);
-
-const publicIdConstraint = (table: string): string => `${table}_short_id_format_chk`;
-
-const allocateMigrationShortId = (allocated: ReadonlySet<string>, table: string): string => {
-  for (let attempt = 0; attempt < 10; attempt++) {
-    const shortId = newShortId();
-    if (!allocated.has(shortId)) return shortId;
-  }
-  throw new Error(`cannot allocate a unique Grids public ID for ${table} after 10 attempts`);
-};
-
-export const gridsPublicIdsReady = async (sql: SQL = defaultSql): Promise<boolean> => {
-  for (const resource of PUBLIC_ID_RESOURCES) {
-    const [schema] = await sql<Array<{ nullable: string; constraintReady: boolean; indexReady: boolean }>>`
-      SELECT column_info.is_nullable AS nullable,
-        EXISTS (
-          SELECT 1
-          FROM pg_constraint constraint_info
-          WHERE constraint_info.conrelid = to_regclass(${`grids.${resource.table}`})
-            AND constraint_info.conname = ${publicIdConstraint(resource.table)}
-            AND constraint_info.convalidated
-            AND pg_get_constraintdef(constraint_info.oid) LIKE '%[A-Za-z0-9]{6}%'
-        ) AS "constraintReady",
-        EXISTS (
-          SELECT 1
-          FROM pg_indexes index_info
-          WHERE index_info.schemaname = 'grids'
-            AND index_info.tablename = ${resource.table}
-            AND index_info.indexname = ${resource.index}
-            AND index_info.indexdef LIKE 'CREATE UNIQUE INDEX % USING btree (short_id)'
-        ) AS "indexReady"
-      FROM information_schema.columns column_info
-      WHERE column_info.table_schema = 'grids'
-        AND column_info.table_name = ${resource.table}
-        AND column_info.column_name = 'short_id'
-    `;
-    if (schema?.nullable !== "NO" || !schema.constraintReady || !schema.indexReady) return false;
-  }
-  return true;
-};
-
-const migratePublicIds = async (sql: SQL): Promise<void> => {
-  if (await gridsPublicIdsReady(sql)) return;
-
+// Current Grids schema only. Existing installations must be reset before adopting
+// this definition; startup never converts data or repairs historical schemas.
+const defineSchema = async (sql: SQL): Promise<void> => {
   await sql`
-      CREATE TEMP TABLE public_id_migration (
-        resource TEXT NOT NULL,
-        id UUID NOT NULL,
-        parent_id UUID,
-        old_short_id TEXT,
-        new_short_id TEXT NOT NULL,
-        PRIMARY KEY (resource, id)
-      ) ON COMMIT DROP
-    `;
-  for (const resource of PUBLIC_ID_RESOURCES) {
-    await sql.unsafe(`ALTER TABLE grids.${resource.table} ADD COLUMN IF NOT EXISTS short_id TEXT`);
-  }
-
-  await sql.unsafe(`LOCK TABLE ${PUBLIC_ID_RESOURCES.map((resource) => `grids.${resource.table}`).join(", ")} IN ACCESS EXCLUSIVE MODE`);
-
-  for (const resource of PUBLIC_ID_RESOURCES) {
-    await sql.unsafe(`ALTER TABLE grids.${resource.table} DROP CONSTRAINT IF EXISTS ${publicIdConstraint(resource.table)}`);
-    await sql.unsafe(`DROP INDEX IF EXISTS grids.${resource.index}`);
-  }
-
-  for (const resource of PUBLIC_ID_RESOURCES) {
-    const rows = (await sql.unsafe(
-      `SELECT ${resource.key}::text AS id, ${resource.parent ?? "NULL::uuid"}::text AS "parentId", short_id AS "shortId"
-         FROM grids.${resource.table} ORDER BY ${resource.key} FOR UPDATE`,
-    )) as Array<{ id: string; parentId: string | null; shortId: string | null }>;
-    const validOwners = new Map<string, string>();
-    for (const row of rows) {
-      if (row.shortId !== null && SHORT_ID_REGEX.test(row.shortId) && !validOwners.has(row.shortId)) {
-        validOwners.set(row.shortId, row.id);
-      }
-    }
-    const allocated = new Set(validOwners.keys());
-    const updates: Array<{ id: string; shortId: string }> = [];
-    for (const row of rows) {
-      let shortId: string;
-      if (row.shortId !== null && validOwners.get(row.shortId) === row.id) {
-        shortId = row.shortId;
-      } else {
-        shortId = allocateMigrationShortId(allocated, resource.table);
-        updates.push({ id: row.id, shortId });
-        allocated.add(shortId);
-      }
-      if (DECLARATIVE_REFERENCE_RESOURCES.has(resource.table)) {
-        await sql`
-            INSERT INTO pg_temp.public_id_migration (resource, id, parent_id, old_short_id, new_short_id)
-            VALUES (${resource.table}, ${row.id}::uuid, ${row.parentId}::uuid, ${row.shortId}, ${shortId})
-          `;
-      }
-    }
-    if (updates.length > 0) {
-      await sql.unsafe(
-        `UPDATE grids.${resource.table} target SET short_id = source.short_id
-         FROM unnest($1::uuid[], $2::text[]) AS source(id, short_id)
-         WHERE target.${resource.key} = source.id`,
-        [toPgUuidArray(updates.map((update) => update.id)), toPgTextArray(updates.map((update) => update.shortId))],
-      );
-    }
-  }
-
-  await migratePersistedPublicIdReferences(sql);
-
-  for (const resource of PUBLIC_ID_RESOURCES) {
-    await sql.unsafe(`ALTER TABLE grids.${resource.table} ALTER COLUMN short_id SET NOT NULL`);
-    await sql.unsafe(
-      `ALTER TABLE grids.${resource.table} ADD CONSTRAINT ${publicIdConstraint(resource.table)} CHECK (short_id ~ '^[A-Za-z0-9]{6}$')`,
-    );
-    await sql.unsafe(`CREATE UNIQUE INDEX ${resource.index} ON grids.${resource.table}(short_id)`);
-  }
-
-  if (!(await gridsPublicIdsReady(sql))) throw new Error("grids public short IDs are not ready after migration");
-  console.log("  ✓ grids public short IDs (6 chars, globally unique per resource, tombstones included)");
-};
-
-/**
- * Schema for the Grids app: bases → tables → fields, records, views, forms,
- * document templates, Grids Apps, workflows, and generated artifacts.
- *
- * Storage strategy: records use JSONB keyed by stable field IDs. Per-field
- * expression indexes are opt-in (`fields.indexed=true`). No GIN on `data` by
- * default — ad-hoc filter performance is the user's call when they enable
- * indexing per field.
- *
- * Permission model: raw Grids resources inherit one base grant. Published
- * Grids Apps have an independent read grant and execute only their compiled
- * capabilities.
- */
-const migrateSchema = async (sql: SQL): Promise<void> => {
-  await sql`CREATE SCHEMA IF NOT EXISTS grids`.simple();
-  console.log("  ✓ grids schema");
-};
-
-const migrateSafeCastHelpers = async (sql: SQL): Promise<void> => {
-  await sql`
-    CREATE OR REPLACE FUNCTION grids.require_valid_calculation(failed boolean, value anyelement) RETURNS anyelement
-    LANGUAGE plpgsql VOLATILE AS $fn$
-    BEGIN
-      IF failed IS TRUE THEN
-        RAISE EXCEPTION 'grids: invalid calculation' USING ERRCODE = '22023';
-      END IF;
-      RETURN value;
-    END $fn$
+    CREATE SCHEMA IF NOT EXISTS grids
   `.simple();
   await sql`
-    CREATE OR REPLACE FUNCTION grids.require_captured_calculation(captured boolean, value jsonb) RETURNS jsonb
-    LANGUAGE plpgsql IMMUTABLE PARALLEL SAFE AS $fn$
-    BEGIN
-      IF captured IS NOT TRUE THEN
-        RAISE EXCEPTION 'grids: missing captured calculation' USING ERRCODE = '22023';
-      END IF;
-      RETURN value;
-    END $fn$
+    CREATE OR REPLACE FUNCTION grids.assert_federated_revision(p_table_id uuid, p_revision_id uuid, p_revision_token text, p_source_count integer)
+     RETURNS boolean
+     LANGUAGE plpgsql
+    AS $function$
+        DECLARE
+          valid_sources INT;
+          invalid_mappings INT;
+        BEGIN
+          SELECT COUNT(*)::int INTO valid_sources
+          FROM grids.federated_table_revisions revision
+          JOIN grids.tables target
+            ON target.id = revision.table_id
+           AND target.kind = 'federated'
+           AND target.deleted_at IS NULL
+          JOIN grids.bases target_base
+            ON target_base.id = target.base_id
+           AND target_base.deleted_at IS NULL
+          JOIN grids.federated_table_sources source
+            ON source.revision_id = revision.id
+           AND source.authorized_at IS NOT NULL
+           AND source.revoked_at IS NULL
+          JOIN grids.tables source_table
+            ON source_table.id = source.source_table_id
+           AND source_table.kind = 'stored'
+           AND source_table.deleted_at IS NULL
+          JOIN grids.bases source_base
+            ON source_base.id = source_table.base_id
+           AND source_base.deleted_at IS NULL
+          WHERE revision.id = p_revision_id
+            AND revision.table_id = p_table_id
+            AND extract(epoch FROM revision.updated_at)::numeric::text = p_revision_token
+            AND revision.status = 'active';
+
+          IF valid_sources <> p_source_count THEN
+            RAISE EXCEPTION 'combined table publication changed; reload the query'
+              USING ERRCODE = 'P0001';
+          END IF;
+          SELECT COUNT(*)::int INTO invalid_mappings
+          FROM grids.federated_field_mappings mapping
+          JOIN grids.federated_table_revisions revision ON revision.id = mapping.revision_id
+          LEFT JOIN grids.fields target_field
+            ON target_field.id = mapping.target_field_id
+           AND target_field.table_id = revision.table_id
+           AND target_field.deleted_at IS NULL
+          LEFT JOIN grids.fields source_field
+            ON source_field.id = mapping.source_field_id
+           AND source_field.table_id = mapping.source_table_id
+           AND source_field.deleted_at IS NULL
+          WHERE mapping.revision_id = p_revision_id
+            AND (target_field.id IS NULL OR source_field.id IS NULL);
+          IF invalid_mappings <> 0 THEN
+            RAISE EXCEPTION 'combined table publication mapping changed; reload the query'
+              USING ERRCODE = 'P0001';
+          END IF;
+          RETURN TRUE;
+        END;
+        $function$
   `.simple();
-  // ──────────────────────────────────────────────────────────────────
-  // Safe-cast helpers
-  // ──────────────────────────────────────────────────────────────────
-  // Existing expression indexes depend on these function OIDs. The canonical
-  // storage migration renames the indexed helpers in place, then recreates
-  // only the tolerant conversions that formulas still need for arbitrary text.
   await sql`
-    DO $$
-    BEGIN
-      IF to_regprocedure('grids.canonical_numeric(text)') IS NULL THEN
-        CREATE OR REPLACE FUNCTION grids.try_numeric(t text) RETURNS numeric
-        LANGUAGE plpgsql IMMUTABLE STRICT PARALLEL UNSAFE AS $fn$
-        BEGIN RETURN t::numeric; EXCEPTION WHEN others THEN RETURN NULL; END $fn$;
-      END IF;
-    END $$
+    CREATE OR REPLACE FUNCTION grids.canonical_boolean(t text)
+     RETURNS boolean
+     LANGUAGE sql
+     IMMUTABLE PARALLEL SAFE STRICT
+    AS $function$ SELECT t::boolean $function$
   `.simple();
-  // Immutable ISO date parser for expression indexes. We only accept the
-  // canonical app-written date shape (YYYY-MM-DD); anything else returns NULL
-  // instead of depending on session DateStyle.
   await sql`
-    DO $$
-    BEGIN
-      IF to_regprocedure('grids.canonical_date(text)') IS NULL THEN
-        CREATE OR REPLACE FUNCTION grids.try_iso_date(t text) RETURNS date
-        LANGUAGE plpgsql IMMUTABLE STRICT PARALLEL UNSAFE AS $fn$
+    CREATE OR REPLACE FUNCTION grids.canonical_date(t text)
+     RETURNS date
+     LANGUAGE sql
+     IMMUTABLE PARALLEL SAFE STRICT
+    AS $function$ SELECT t::date $function$
+  `.simple();
+  await sql`
+    CREATE OR REPLACE FUNCTION grids.canonical_numeric(t text)
+     RETURNS numeric
+     LANGUAGE sql
+     IMMUTABLE PARALLEL SAFE STRICT
+    AS $function$ SELECT t::numeric $function$
+  `.simple();
+  await sql`
+    CREATE OR REPLACE FUNCTION grids.canonical_timestamptz(t text)
+     RETURNS timestamp with time zone
+     LANGUAGE sql
+     IMMUTABLE PARALLEL SAFE STRICT
+    AS $function$ SELECT t::timestamptz $function$
+  `.simple();
+  await sql`
+    CREATE OR REPLACE FUNCTION grids.enqueue_record_event(p_table_id uuid, p_record_id uuid, p_payload jsonb)
+     RETURNS uuid
+     LANGUAGE plpgsql
+    AS $function$
+        DECLARE
+          outbox_id uuid := gen_random_uuid();
+          event_base_id uuid;
+        BEGIN
+          SELECT base_id INTO event_base_id FROM grids.tables WHERE id = p_table_id;
+          IF event_base_id IS NULL THEN
+            RAISE EXCEPTION 'record event table does not exist';
+          END IF;
+          INSERT INTO grids.record_event_outbox (id, base_id, table_id, record_id, payload)
+          VALUES (
+            outbox_id,
+            event_base_id,
+            p_table_id,
+            p_record_id,
+            p_payload || jsonb_build_object(
+              'baseId', event_base_id::text,
+              'tableId', p_table_id::text,
+              'recordId', p_record_id::text,
+              'occurredAt', now()
+            )
+          );
+          RETURN outbox_id;
+        END;
+        $function$
+  `.simple();
+  await sql`
+    CREATE OR REPLACE FUNCTION grids.guard_document_export_claim()
+     RETURNS trigger
+     LANGUAGE plpgsql
+    AS $function$
+        BEGIN
+          -- Claims commit with the issued document, never with its preview.
+          RAISE EXCEPTION 'Financial export claims are immutable' USING ERRCODE = '55000';
+        END $function$
+  `.simple();
+  await sql`
+    CREATE OR REPLACE FUNCTION grids.guard_document_issuance()
+     RETURNS trigger
+     LANGUAGE plpgsql
+    AS $function$
+        BEGIN
+          IF TG_OP = 'DELETE' THEN
+            IF OLD.document_id IS NOT NULL THEN
+              RAISE EXCEPTION 'Completed Document issuance receipts are immutable' USING ERRCODE = '55000';
+            END IF;
+            RETURN OLD;
+          END IF;
+          IF OLD.document_id IS NULL AND OLD.confirmation_hash IS NOT NULL AND OLD.confirmed_at IS NULL
+            AND NEW.confirmed_at IS NOT NULL AND NEW.confirmed_actor IS NOT NULL
+            AND (to_jsonb(NEW) - 'confirmed_actor' - 'confirmed_at') = (to_jsonb(OLD) - 'confirmed_actor' - 'confirmed_at') THEN
+            RETURN NEW;
+          END IF;
+          IF OLD.document_id IS NOT NULL
+            OR NEW.document_id IS NULL
+            OR NEW.completed_at IS NULL
+            OR NEW.frozen_request IS NOT NULL
+            OR (to_jsonb(NEW) - 'document_id' - 'completed_at' - 'frozen_request')
+              <> (to_jsonb(OLD) - 'document_id' - 'completed_at' - 'frozen_request') THEN
+            RAISE EXCEPTION 'Document issuance receipt is immutable' USING ERRCODE = '55000';
+          END IF;
+          RETURN NEW;
+        END
+        $function$
+  `.simple();
+  await sql`
+    CREATE OR REPLACE FUNCTION grids.guard_file_protected_reference_mutation()
+     RETURNS trigger
+     LANGUAGE plpgsql
+    AS $function$
+        BEGIN
+          IF OLD.owner_kind = 'document_artifact'
+            OR (TG_OP = 'UPDATE' AND NEW.owner_kind = 'document_artifact') THEN
+            RAISE EXCEPTION 'Document artifact protection is immutable' USING ERRCODE = '55000';
+          END IF;
+          IF TG_OP = 'DELETE' THEN
+            RETURN OLD;
+          END IF;
+          RETURN NEW;
+        END
+        $function$
+  `.simple();
+  await sql`
+    CREATE OR REPLACE FUNCTION grids.reject_document_artifact_mutation()
+     RETURNS trigger
+     LANGUAGE plpgsql
+    AS $function$
+        BEGIN
+          RAISE EXCEPTION 'Rows in grids.% are immutable', TG_TABLE_NAME USING ERRCODE = '55000';
+        END
+        $function$
+  `.simple();
+  await sql`
+    CREATE OR REPLACE FUNCTION grids.reject_document_mutation()
+     RETURNS trigger
+     LANGUAGE plpgsql
+    AS $function$
+        BEGIN
+          RAISE EXCEPTION 'completed Documents are immutable' USING ERRCODE = '55000';
+        END
+        $function$
+  `.simple();
+  await sql`
+    CREATE OR REPLACE FUNCTION grids.reject_file_content_mutation()
+     RETURNS trigger
+     LANGUAGE plpgsql
+    AS $function$
+        BEGIN
+          IF EXISTS (SELECT 1 FROM grids.document_artifacts WHERE file_id = OLD.id) THEN
+            RAISE EXCEPTION 'Document artifact File content is immutable' USING ERRCODE = '55000';
+          END IF;
+          RETURN NEW;
+        END
+        $function$
+  `.simple();
+  await sql`
+    CREATE OR REPLACE FUNCTION grids.reject_workflow_query_data_update()
+     RETURNS trigger
+     LANGUAGE plpgsql
+    AS $function$
+        BEGIN
+          RAISE EXCEPTION 'captured workflow query data is immutable' USING ERRCODE = '55000';
+        END
+        $function$
+  `.simple();
+  await sql`
+    CREATE OR REPLACE FUNCTION grids.require_captured_calculation(captured boolean, value jsonb)
+     RETURNS jsonb
+     LANGUAGE plpgsql
+     IMMUTABLE PARALLEL SAFE
+    AS $function$
+        BEGIN
+          IF captured IS NOT TRUE THEN
+            RAISE EXCEPTION 'grids: missing captured calculation' USING ERRCODE = '22023';
+          END IF;
+          RETURN value;
+        END $function$
+  `.simple();
+  await sql`
+    CREATE OR REPLACE FUNCTION grids.require_valid_calculation(failed boolean, value anyelement)
+     RETURNS anyelement
+     LANGUAGE plpgsql
+    AS $function$
+        BEGIN
+          IF failed IS TRUE THEN
+            RAISE EXCEPTION 'grids: invalid calculation' USING ERRCODE = '22023';
+          END IF;
+          RETURN value;
+        END $function$
+  `.simple();
+  await sql`
+    CREATE OR REPLACE FUNCTION grids.sync_view_base_id()
+     RETURNS trigger
+     LANGUAGE plpgsql
+    AS $function$
+        BEGIN
+          SELECT base_id INTO NEW.base_id
+          FROM grids.tables
+          WHERE id = NEW.table_id;
+          RETURN NEW;
+        END
+        $function$
+  `.simple();
+  await sql`
+    CREATE OR REPLACE FUNCTION grids.try_iso_date(t text)
+     RETURNS date
+     LANGUAGE plpgsql
+     IMMUTABLE STRICT
+    AS $function$
         BEGIN
           IF t !~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' THEN RETURN NULL; END IF;
           RETURN make_date(substring(t, 1, 4)::int, substring(t, 6, 2)::int, substring(t, 9, 2)::int);
         EXCEPTION WHEN others THEN RETURN NULL;
-        END $fn$;
-      END IF;
-    END $$
+        END $function$
   `.simple();
   await sql`
-    DO $$
-    BEGIN
-      IF to_regprocedure('grids.canonical_timestamptz(text)') IS NULL THEN
-        CREATE OR REPLACE FUNCTION grids.try_timestamptz(t text) RETURNS timestamptz
-        LANGUAGE plpgsql STABLE STRICT PARALLEL UNSAFE AS $fn$
-        BEGIN RETURN t::timestamptz; EXCEPTION WHEN others THEN RETURN NULL; END $fn$;
-      END IF;
-    END $$
+    CREATE OR REPLACE FUNCTION grids.try_numeric(t text)
+     RETURNS numeric
+     LANGUAGE plpgsql
+     IMMUTABLE STRICT
+    AS $function$
+        BEGIN RETURN t::numeric; EXCEPTION WHEN others THEN RETURN NULL; END $function$
   `.simple();
   await sql`
-    DO $$
-    BEGIN
-      IF to_regprocedure('grids.canonical_boolean(text)') IS NULL THEN
-        CREATE OR REPLACE FUNCTION grids.try_boolean(t text) RETURNS boolean
-        LANGUAGE plpgsql IMMUTABLE STRICT PARALLEL UNSAFE AS $fn$
-        BEGIN RETURN t::boolean; EXCEPTION WHEN others THEN RETURN NULL; END $fn$;
-      END IF;
-    END $$
-  `.simple();
-  // Formula errors must remain values in the compiler's error channel. A
-  // CASE outside POWER cannot catch numeric overflow raised by the operation.
-  // Catch only arithmetic failures, never cancellation or resource failures.
-  await sql`
-    CREATE OR REPLACE FUNCTION grids.try_numeric_power(base numeric, exponent numeric) RETURNS numeric
-    LANGUAGE plpgsql IMMUTABLE STRICT PARALLEL UNSAFE AS $fn$
-    DECLARE
-      result numeric;
-      digits text;
-      weight integer;
-    BEGIN
-      IF base IN ('NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric)
-        OR exponent IN ('NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric)
-        OR (base = 0 AND exponent < 0)
-        OR (base < 0 AND exponent <> trunc(exponent)) THEN
-        RETURN NULL;
-      END IF;
-      base := trim_scale(base);
-      exponent := trim_scale(exponent);
-      IF exponent = trunc(exponent) AND exponent BETWEEN -2147483648 AND 2147483647 THEN
-        -- Request a stable minimum scale without changing the base's value.
-        -- PostgreSQL versions otherwise choose different integer-power scales.
-        RETURN round(power(base + 0.0000000000000000::numeric, exponent), least(1000, greatest(16, scale(base))));
-      END IF;
-      -- Native POWER gives a cheap first estimate of the result magnitude.
-      -- Then request 80 significant digits plus 16 guard digits, without
-      -- forcing every ordinary calculation to the 1000-place SQL limit.
-      result := power(base, exponent);
-      IF result = 0 THEN RETURN 0; END IF;
-      digits := abs(trim_scale(result))::text;
-      weight := CASE WHEN abs(result) >= 1 THEN length(split_part(digits, '.', 1)) - 1
-        ELSE -1 - length(substring(split_part(digits, '.', 2) FROM '^0*')) END;
-      result := power(base + round(0::numeric, least(1000, greatest(0, 96 - weight))), exponent);
-      IF result = 0 THEN RETURN 0; END IF;
-      digits := abs(trim_scale(result))::text;
-      weight := CASE WHEN abs(result) >= 1 THEN length(split_part(digits, '.', 1)) - 1
-        ELSE -1 - length(substring(split_part(digits, '.', 2) FROM '^0*')) END;
-      RETURN round(result, least(1000, 79 - weight));
-    EXCEPTION
-      WHEN numeric_value_out_of_range OR division_by_zero OR invalid_argument_for_power_function THEN RETURN NULL;
-    END $fn$
-  `.simple();
-  console.log("  ✓ grids.try_* safe scalar helpers");
-};
-
-type CanonicalScalarField = {
-  id: string;
-  shortId: string;
-  tableId: string;
-  type: string;
-  config: unknown;
-};
-
-const scalarInvalidCondition = (sql: SQL, field: CanonicalScalarField): unknown => {
-  const value = sql`r.data->${field.id}`;
-  const text = sql`r.data->>${field.id}`;
-  const present = sql`r.data ? ${field.id} AND ${value} <> 'null'::jsonb`;
-  switch (field.type) {
-    case "number":
-      return sql`${present} AND NOT (
-        jsonb_typeof(${value}) = 'number'
-        OR (
-          jsonb_typeof(${value}) = 'string'
-          AND ${text} ~ '^-?(0|[1-9][0-9]*)(\.[0-9]+)?$'
-          AND grids.try_numeric(${text}) IS NOT NULL
-        )
-      )`;
-    case "percent":
-      return sql`${present} AND jsonb_typeof(${value}) IS DISTINCT FROM 'number'`;
-    case "duration":
-      return sql`${present} AND NOT (jsonb_typeof(${value}) = 'number' AND ${text} ~ '^[0-9]+$')`;
-    case "boolean":
-      return sql`${present} AND jsonb_typeof(${value}) IS DISTINCT FROM 'boolean'`;
-    case "date": {
-      const config = parseJsonbRow<{ includeTime?: boolean }>(field.config, {});
-      return config.includeTime
-        ? sql`${present} AND NOT (
-            jsonb_typeof(${value}) = 'string'
-            AND ${text} ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{3}Z$'
-            AND grids.try_timestamptz(${text}) IS NOT NULL
-          )`
-        : sql`${present} AND NOT (
-            jsonb_typeof(${value}) = 'string'
-            AND ${text} ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'
-            AND grids.try_iso_date(${text}) IS NOT NULL
-          )`;
-    }
-    default:
-      throw new Error(`unsupported canonical scalar field type ${field.type}`);
-  }
-};
-
-const assertCanonicalScalarStorage = async (sql: SQL): Promise<void> => {
-  const fields = await sql<Array<CanonicalScalarField>>`
-    SELECT id::text AS id, short_id AS "shortId", table_id::text AS "tableId", type, config
-    FROM grids.fields
-    WHERE deleted_at IS NULL AND type IN ('number', 'percent', 'duration', 'boolean', 'date')
-    ORDER BY table_id, position, id
-  `;
-  const byTable = Map.groupBy(fields, (field) => field.tableId);
-  for (const [tableId, tableFields] of byTable) {
-    const conditions = tableFields.map((field) => scalarInvalidCondition(sql, field));
-    const invalid = conditions.slice(1).reduce((combined, condition) => sql`${combined} OR ${condition}`, conditions[0]!);
-    const fieldCases = tableFields.map((field) => sql`WHEN ${scalarInvalidCondition(sql, field)} THEN ${field.shortId}`);
-    const fieldCase = fieldCases.slice(1).reduce((combined, item) => sql`${combined} ${item}`, fieldCases[0]!);
-    const [row] = await sql<Array<{ recordShortId: string; fieldShortId: string }>>`
-      SELECT r.short_id AS "recordShortId", CASE ${fieldCase} END AS "fieldShortId"
-      FROM grids.records r
-      WHERE r.table_id = ${tableId}::uuid AND (${invalid})
-      LIMIT 1
-    `;
-    if (row) {
-      throw new Error(
-        `cannot enable canonical scalar storage: Record ${row.recordShortId} has a non-canonical value in Field ${row.fieldShortId}`,
-      );
-    }
-  }
-};
-
-const migrateCanonicalScalarStorage = async (sql: SQL): Promise<void> => {
-  await sql`
-    CREATE TABLE IF NOT EXISTS grids.storage_contracts (
-      name TEXT PRIMARY KEY,
-      activated_at TIMESTAMPTZ NOT NULL DEFAULT now()
-    )
-  `.simple();
-  const [contract] = await sql<Array<{ active: boolean }>>`
-    SELECT EXISTS (
-      SELECT 1 FROM grids.storage_contracts WHERE name = ${CANONICAL_SCALAR_STORAGE_CONTRACT}
-    ) AS active
-  `;
-  if (!contract?.active) await assertCanonicalScalarStorage(sql);
-
-  await sql`
-    DO $$
-    BEGIN
-      IF to_regprocedure('grids.canonical_numeric(text)') IS NULL THEN
-        ALTER FUNCTION grids.try_numeric(text) RENAME TO canonical_numeric;
-      END IF;
-      IF to_regprocedure('grids.canonical_date(text)') IS NULL THEN
-        ALTER FUNCTION grids.try_iso_date(text) RENAME TO canonical_date;
-      END IF;
-      IF to_regprocedure('grids.canonical_timestamptz(text)') IS NULL THEN
-        ALTER FUNCTION grids.try_timestamptz(text) RENAME TO canonical_timestamptz;
-      END IF;
-      IF to_regprocedure('grids.canonical_boolean(text)') IS NULL THEN
-        ALTER FUNCTION grids.try_boolean(text) RENAME TO canonical_boolean;
-      END IF;
-    END $$
+    CREATE OR REPLACE FUNCTION grids.try_numeric_power(base numeric, exponent numeric)
+     RETURNS numeric
+     LANGUAGE plpgsql
+     IMMUTABLE STRICT
+    AS $function$
+        DECLARE
+          result numeric;
+          digits text;
+          weight integer;
+        BEGIN
+          IF base IN ('NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric)
+            OR exponent IN ('NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric)
+            OR (base = 0 AND exponent < 0)
+            OR (base < 0 AND exponent <> trunc(exponent)) THEN
+            RETURN NULL;
+          END IF;
+          base := trim_scale(base);
+          exponent := trim_scale(exponent);
+          IF exponent = trunc(exponent) AND exponent BETWEEN -2147483648 AND 2147483647 THEN
+            -- Request a stable minimum scale without changing the base's value.
+            -- PostgreSQL versions otherwise choose different integer-power scales.
+            RETURN round(power(base + 0.0000000000000000::numeric, exponent), least(1000, greatest(16, scale(base))));
+          END IF;
+          -- Native POWER gives a cheap first estimate of the result magnitude.
+          -- Then request 80 significant digits plus 16 guard digits, without
+          -- forcing every ordinary calculation to the 1000-place SQL limit.
+          result := power(base, exponent);
+          IF result = 0 THEN RETURN 0; END IF;
+          digits := abs(trim_scale(result))::text;
+          weight := CASE WHEN abs(result) >= 1 THEN length(split_part(digits, '.', 1)) - 1
+            ELSE -1 - length(substring(split_part(digits, '.', 2) FROM '^0*')) END;
+          result := power(base + round(0::numeric, least(1000, greatest(0, 96 - weight))), exponent);
+          IF result = 0 THEN RETURN 0; END IF;
+          digits := abs(trim_scale(result))::text;
+          weight := CASE WHEN abs(result) >= 1 THEN length(split_part(digits, '.', 1)) - 1
+            ELSE -1 - length(substring(split_part(digits, '.', 2) FROM '^0*')) END;
+          RETURN round(result, least(1000, 79 - weight));
+        EXCEPTION
+          WHEN numeric_value_out_of_range OR division_by_zero OR invalid_argument_for_power_function THEN RETURN NULL;
+        END $function$
   `.simple();
   await sql`
-    CREATE OR REPLACE FUNCTION grids.canonical_numeric(t text) RETURNS numeric
-    LANGUAGE sql IMMUTABLE STRICT PARALLEL SAFE AS $$ SELECT t::numeric $$;
-    CREATE OR REPLACE FUNCTION grids.canonical_date(t text) RETURNS date
-    LANGUAGE sql IMMUTABLE STRICT PARALLEL SAFE AS $$ SELECT t::date $$;
-    CREATE OR REPLACE FUNCTION grids.canonical_timestamptz(t text) RETURNS timestamptz
-    LANGUAGE sql IMMUTABLE STRICT PARALLEL SAFE AS $$ SELECT t::timestamptz $$;
-    CREATE OR REPLACE FUNCTION grids.canonical_boolean(t text) RETURNS boolean
-    LANGUAGE sql IMMUTABLE STRICT PARALLEL SAFE AS $$ SELECT t::boolean $$
-  `.simple();
-
-  // Formula coercion accepts arbitrary text and intentionally keeps NULL-on-error
-  // semantics. These new OIDs are not used by stored-field indexes or hot reads.
-  await sql`
-    CREATE OR REPLACE FUNCTION grids.try_numeric(t text) RETURNS numeric
-    LANGUAGE plpgsql IMMUTABLE STRICT PARALLEL UNSAFE AS $$
-    BEGIN RETURN t::numeric; EXCEPTION WHEN others THEN RETURN NULL; END $$;
-    CREATE OR REPLACE FUNCTION grids.try_iso_date(t text) RETURNS date
-    LANGUAGE plpgsql IMMUTABLE STRICT PARALLEL UNSAFE AS $$
-    BEGIN
-      IF t !~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' THEN RETURN NULL; END IF;
-      RETURN make_date(substring(t, 1, 4)::int, substring(t, 6, 2)::int, substring(t, 9, 2)::int);
-    EXCEPTION WHEN others THEN RETURN NULL;
-    END $$;
-    CREATE OR REPLACE FUNCTION grids.try_timestamptz(t text) RETURNS timestamptz
-    LANGUAGE plpgsql STABLE STRICT PARALLEL UNSAFE AS $$
-    BEGIN RETURN t::timestamptz; EXCEPTION WHEN others THEN RETURN NULL; END $$
-  `.simple();
-  await sql`DROP FUNCTION IF EXISTS grids.try_boolean(text)`.simple();
-  await sql`DROP FUNCTION IF EXISTS grids.try_date(text)`.simple();
-  await sql`DROP FUNCTION IF EXISTS grids.try_timestamp(text)`.simple();
-  await sql`
-    INSERT INTO grids.storage_contracts (name)
-    VALUES (${CANONICAL_SCALAR_STORAGE_CONTRACT})
-    ON CONFLICT (name) DO NOTHING
-  `;
-  console.log("  ✓ canonical scalar storage");
-};
-
-const assertNoDuplicateLiveTableNames = async (sql: SQL): Promise<void> => {
-  const [schema] = await sql<Array<{ tables: string | null }>>`SELECT to_regclass('grids.tables')::text AS tables`;
-  if (!schema?.tables) return;
-  const [duplicateTableName] = await sql<Array<{ baseId: string; name: string }>>`
-    SELECT base_id::text AS "baseId", lower(btrim(name)) AS name
-    FROM grids.tables
-    WHERE deleted_at IS NULL
-    GROUP BY base_id, lower(btrim(name))
-    HAVING count(*) > 1
-    LIMIT 1
-  `;
-  if (duplicateTableName) {
-    throw new Error(
-      `cannot enforce unique table names: grid ${duplicateTableName.baseId} contains multiple live tables named "${duplicateTableName.name}"`,
-    );
-  }
-};
-
-const migrateCoreRecords = async (sql: SQL): Promise<void> => {
-  // ──────────────────────────────────────────────────────────────────
-  // bases
-  // ──────────────────────────────────────────────────────────────────
-  await sql`
-    CREATE TABLE IF NOT EXISTS grids.bases (
-      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      short_id TEXT NOT NULL,
-      name TEXT NOT NULL,
-      description TEXT,
-      document_defaults JSONB NOT NULL DEFAULT '{}'::jsonb,
-      created_by UUID REFERENCES auth.users(id) ON DELETE SET NULL,
-      deleted_at TIMESTAMPTZ,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-      CONSTRAINT bases_short_id_format_chk CHECK (short_id ~ '^[A-Za-z0-9]{6}$')
-    )
-  `.simple();
-  console.log("  ✓ grids.bases");
-  await sql`ALTER TABLE grids.bases ADD COLUMN IF NOT EXISTS navigation_groups JSONB NOT NULL DEFAULT '[]'::jsonb`.simple();
-  await sql`ALTER TABLE grids.bases ADD COLUMN IF NOT EXISTS navigation_revision INTEGER NOT NULL DEFAULT 0`.simple();
-
-  await sql`
-    CREATE TABLE IF NOT EXISTS grids.base_access (
-      base_id UUID NOT NULL REFERENCES grids.bases(id) ON DELETE CASCADE,
-      access_id UUID NOT NULL REFERENCES auth.access(id) ON DELETE CASCADE,
-      PRIMARY KEY (base_id, access_id)
-    )
-  `.simple();
-  await sql`CREATE INDEX IF NOT EXISTS idx_grids_base_access_access ON grids.base_access(access_id)`.simple();
-  console.log("  ✓ grids.base_access");
-
-  // ──────────────────────────────────────────────────────────────────
-  // tables
-  // ──────────────────────────────────────────────────────────────────
-  await sql`
-    CREATE TABLE IF NOT EXISTS grids.tables (
-      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      short_id TEXT NOT NULL,
-      base_id UUID NOT NULL REFERENCES grids.bases(id) ON DELETE CASCADE,
-      kind TEXT NOT NULL DEFAULT 'stored',
-      name TEXT NOT NULL,
-      description TEXT,
-      icon TEXT,
-      columns JSONB NOT NULL DEFAULT '[]'::jsonb,
-      display_config JSONB NOT NULL DEFAULT '{"mode":"table"}'::jsonb,
-      audit_policy JSONB NOT NULL DEFAULT '{}'::jsonb,
-      mutation_policy JSONB NOT NULL DEFAULT '{"mode":"all"}'::jsonb,
-      position INT NOT NULL DEFAULT 0,
-      disable_direct_insert BOOLEAN NOT NULL DEFAULT FALSE,
-      deleted_at TIMESTAMPTZ,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-      CONSTRAINT tables_short_id_format_chk CHECK (short_id ~ '^[A-Za-z0-9]{6}$'),
-      CONSTRAINT tables_kind_chk CHECK (kind IN ('stored', 'federated'))
-    )
-  `.simple();
-  await sql`ALTER TABLE grids.tables ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL DEFAULT 'stored'`.simple();
-  await sql`
-    DO $$
-    BEGIN
-      IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'tables_kind_chk' AND conrelid = 'grids.tables'::regclass) THEN
-        ALTER TABLE grids.tables ADD CONSTRAINT tables_kind_chk CHECK (kind IN ('stored', 'federated'));
-      END IF;
-    END $$
-  `.simple();
-  await sql`ALTER TABLE grids.tables ADD COLUMN IF NOT EXISTS audit_policy JSONB NOT NULL DEFAULT '{}'::jsonb`.simple();
-  await sql`ALTER TABLE grids.tables ADD COLUMN IF NOT EXISTS mutation_policy JSONB NOT NULL DEFAULT '{"mode":"all"}'::jsonb`.simple();
-  await sql`
-    UPDATE grids.tables
-    SET disable_direct_insert = TRUE,
-        audit_policy = '{}'::jsonb,
-        mutation_policy = '{"mode":"all"}'::jsonb
-    WHERE kind = 'federated'
-      AND (disable_direct_insert IS NOT TRUE OR audit_policy <> '{}'::jsonb OR mutation_policy <> '{"mode":"all"}'::jsonb)
-  `.simple();
-  await sql`
-    DO $$
-    BEGIN
-      IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'tables_federated_read_only_chk' AND conrelid = 'grids.tables'::regclass) THEN
-        ALTER TABLE grids.tables
-          ADD CONSTRAINT tables_federated_read_only_chk
-          CHECK (kind <> 'federated' OR (disable_direct_insert AND audit_policy = '{}'::jsonb));
-      END IF;
-      IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'tables_federated_mutation_policy_chk' AND conrelid = 'grids.tables'::regclass) THEN
-        ALTER TABLE grids.tables
-          ADD CONSTRAINT tables_federated_mutation_policy_chk
-          CHECK (kind <> 'federated' OR mutation_policy = '{"mode":"all"}'::jsonb);
-      END IF;
-    END $$
-  `.simple();
-  // Hot-path index: list live tables of a base in order.
-  await sql`CREATE INDEX IF NOT EXISTS idx_grids_tables_base_live ON grids.tables(base_id, position) WHERE deleted_at IS NULL`.simple();
-  await assertNoDuplicateLiveTableNames(sql);
-  await sql`
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_grids_tables_live_name
-    ON grids.tables(base_id, lower(btrim(name)))
-    WHERE deleted_at IS NULL
-  `.simple();
-  await sql`CREATE UNIQUE INDEX IF NOT EXISTS uq_grids_tables_id_base ON grids.tables(id, base_id)`.simple();
-  console.log("  ✓ grids.tables");
-
-  // ──────────────────────────────────────────────────────────────────
-  // fields
-  // ──────────────────────────────────────────────────────────────────
-  // `type` is a free TEXT (not enum) so we can introduce new field types
-  // without DDL. The application layer rejects unknown types at write time.
-  // `config` carries type-specific validation (regex/min/max/options/etc).
-  await sql`
-    CREATE TABLE IF NOT EXISTS grids.fields (
-      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      short_id TEXT NOT NULL,
-      table_id UUID NOT NULL REFERENCES grids.tables(id) ON DELETE CASCADE,
-      name TEXT NOT NULL,
-      description TEXT,
-      icon TEXT,
-      type TEXT NOT NULL,
-      config JSONB NOT NULL DEFAULT '{}'::jsonb,
-      position INT NOT NULL DEFAULT 0,
-      required BOOLEAN NOT NULL DEFAULT FALSE,
-      default_value JSONB,
-      indexed BOOLEAN NOT NULL DEFAULT FALSE,
-      unique_constraint BOOLEAN NOT NULL DEFAULT FALSE,
-      presentable BOOLEAN NOT NULL DEFAULT FALSE,
-      hide_in_table BOOLEAN NOT NULL DEFAULT FALSE,
-      deleted_at TIMESTAMPTZ,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-      CONSTRAINT fields_short_id_format_chk CHECK (short_id ~ '^[A-Za-z0-9]{6}$')
-    )
-  `.simple();
-  await sql`CREATE INDEX IF NOT EXISTS idx_grids_fields_table ON grids.fields(table_id, position) WHERE deleted_at IS NULL`.simple();
-  await sql`
-    CREATE INDEX IF NOT EXISTS idx_grids_fields_relation_target
-    ON grids.fields ((config->>'targetTableId'), table_id)
-    WHERE deleted_at IS NULL AND type = 'relation'
-  `.simple();
-  const [duplicateFieldName] = await sql<Array<{ tableId: string; name: string }>>`
-    SELECT table_id::text AS "tableId", lower(btrim(name)) AS name
-    FROM grids.fields
-    WHERE deleted_at IS NULL
-    GROUP BY table_id, lower(btrim(name))
-    HAVING count(*) > 1
-    LIMIT 1
-  `;
-  if (duplicateFieldName) {
-    throw new Error(
-      `cannot enforce unique field names: table ${duplicateFieldName.tableId} contains multiple live fields named "${duplicateFieldName.name}"`,
-    );
-  }
-  await sql`
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_grids_fields_live_name
-    ON grids.fields(table_id, lower(btrim(name)))
-    WHERE deleted_at IS NULL
-  `.simple();
-  // Alpha cleanup: number precision used to persist as `scale`. Normalize once
-  // so runtime and UI only have one decimal-place config key.
-  await sql`
-    UPDATE grids.fields
-    SET config = (config - 'scale') || jsonb_build_object('decimalPlaces', (config->>'scale')::int)
-    WHERE type = 'number'
-      AND config ? 'scale'
-      AND NOT (config ? 'decimalPlaces')
-      AND jsonb_typeof(config->'scale') = 'number'
-      AND config->>'scale' ~ '^[0-9]+$'
-      AND (config->>'scale')::int BETWEEN 0 AND 20
-  `.simple();
-  await sql`
-    UPDATE grids.fields
-    SET config = config - 'scale'
-    WHERE type = 'number'
-      AND config ? 'scale'
-  `.simple();
-  console.log("  ✓ grids.fields");
-
-  // ──────────────────────────────────────────────────────────────────
-  // federated table revisions — draft configuration is isolated from
-  // the single active revision consumed by readers.
-  // ──────────────────────────────────────────────────────────────────
-  await sql`
-    CREATE TABLE IF NOT EXISTS grids.federated_table_revisions (
-      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      table_id UUID NOT NULL REFERENCES grids.tables(id) ON DELETE CASCADE,
-      revision INT NOT NULL CHECK (revision > 0),
-      status TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft', 'active', 'degraded', 'superseded')),
-      diagnostics JSONB NOT NULL DEFAULT '[]'::jsonb,
-      created_by UUID REFERENCES auth.users(id) ON DELETE SET NULL,
-      published_by UUID REFERENCES auth.users(id) ON DELETE SET NULL,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-      published_at TIMESTAMPTZ,
-      UNIQUE (table_id, revision)
-    )
-  `.simple();
-  await sql`
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_grids_federated_revision_draft
-    ON grids.federated_table_revisions(table_id)
-    WHERE status = 'draft'
-  `.simple();
-  await sql`
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_grids_federated_revision_current
-    ON grids.federated_table_revisions(table_id)
-    WHERE status IN ('active', 'degraded')
-  `.simple();
-  await sql`
-    CREATE TABLE IF NOT EXISTS grids.federated_table_sources (
-      id UUID NOT NULL DEFAULT gen_random_uuid(),
-      revision_id UUID NOT NULL REFERENCES grids.federated_table_revisions(id) ON DELETE CASCADE,
-      source_table_id UUID NOT NULL REFERENCES grids.tables(id) ON DELETE RESTRICT,
-      position INT NOT NULL DEFAULT 0 CHECK (position >= 0),
-      authorized_by UUID REFERENCES auth.users(id) ON DELETE SET NULL,
-      authorized_at TIMESTAMPTZ,
-      revoked_by UUID REFERENCES auth.users(id) ON DELETE SET NULL,
-      revoked_at TIMESTAMPTZ,
-      PRIMARY KEY (revision_id, source_table_id)
-    )
-  `.simple();
-  await sql`ALTER TABLE grids.federated_table_sources ADD COLUMN IF NOT EXISTS id UUID`.simple();
-  await sql`UPDATE grids.federated_table_sources SET id = gen_random_uuid() WHERE id IS NULL`.simple();
-  await sql`ALTER TABLE grids.federated_table_sources ALTER COLUMN id SET DEFAULT gen_random_uuid()`.simple();
-  await sql`ALTER TABLE grids.federated_table_sources ALTER COLUMN id SET NOT NULL`.simple();
-  await sql`
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_grids_federated_sources_id
-    ON grids.federated_table_sources(id)
-  `.simple();
-  await sql`
-    CREATE INDEX IF NOT EXISTS idx_grids_federated_sources_source
-    ON grids.federated_table_sources(source_table_id, revision_id)
-  `.simple();
-  await sql`
-    CREATE TABLE IF NOT EXISTS grids.federated_field_mappings (
-      revision_id UUID NOT NULL,
-      target_field_id UUID NOT NULL REFERENCES grids.fields(id) ON DELETE RESTRICT,
-      source_table_id UUID NOT NULL,
-      source_field_id UUID NOT NULL REFERENCES grids.fields(id) ON DELETE RESTRICT,
-      config JSONB NOT NULL DEFAULT '{}'::jsonb,
-      PRIMARY KEY (revision_id, target_field_id, source_table_id),
-      FOREIGN KEY (revision_id, source_table_id)
-        REFERENCES grids.federated_table_sources(revision_id, source_table_id)
-        ON DELETE CASCADE
-    )
-  `.simple();
-  await sql`
-    CREATE INDEX IF NOT EXISTS idx_grids_federated_mappings_source_field
-    ON grids.federated_field_mappings(source_field_id)
-  `.simple();
-  await sql`
-    CREATE INDEX IF NOT EXISTS idx_grids_federated_mappings_target_field
-    ON grids.federated_field_mappings(target_field_id)
-  `.simple();
-  await sql`
-    CREATE OR REPLACE FUNCTION grids.validate_federated_revision_target()
-    RETURNS trigger
-    LANGUAGE plpgsql
-    AS $$
-    BEGIN
-      IF NOT EXISTS (
-        SELECT 1 FROM grids.tables target
-        WHERE target.id = NEW.table_id AND target.kind = 'federated'
-      ) THEN
-        RAISE EXCEPTION 'federated revision target must be a combined table';
-      END IF;
-      RETURN NEW;
-    END;
-    $$
-  `.simple();
-  await sql`DROP TRIGGER IF EXISTS trg_grids_validate_federated_revision_target ON grids.federated_table_revisions`.simple();
-  await sql`
-    CREATE TRIGGER trg_grids_validate_federated_revision_target
-    BEFORE INSERT OR UPDATE OF table_id ON grids.federated_table_revisions
-    FOR EACH ROW EXECUTE FUNCTION grids.validate_federated_revision_target()
-  `.simple();
-  await sql`
-    CREATE OR REPLACE FUNCTION grids.validate_federated_source()
-    RETURNS trigger
-    LANGUAGE plpgsql
-    AS $$
-    BEGIN
-      IF NOT EXISTS (
-        SELECT 1
-        FROM grids.federated_table_revisions revision
-        JOIN grids.tables source_table ON source_table.id = NEW.source_table_id
-        WHERE revision.id = NEW.revision_id
-          AND source_table.kind = 'stored'
-          AND source_table.id <> revision.table_id
-      ) THEN
-        RAISE EXCEPTION 'federated source must be a distinct stored table';
-      END IF;
-      RETURN NEW;
-    END;
-    $$
-  `.simple();
-  await sql`DROP TRIGGER IF EXISTS trg_grids_validate_federated_source ON grids.federated_table_sources`.simple();
-  await sql`
-    CREATE TRIGGER trg_grids_validate_federated_source
-    BEFORE INSERT OR UPDATE OF revision_id, source_table_id ON grids.federated_table_sources
-    FOR EACH ROW EXECUTE FUNCTION grids.validate_federated_source()
+    CREATE OR REPLACE FUNCTION grids.try_timestamptz(t text)
+     RETURNS timestamp with time zone
+     LANGUAGE plpgsql
+     STABLE STRICT
+    AS $function$
+        BEGIN RETURN t::timestamptz; EXCEPTION WHEN others THEN RETURN NULL; END $function$
   `.simple();
   await sql`
     CREATE OR REPLACE FUNCTION grids.validate_federated_mapping()
-    RETURNS trigger
-    LANGUAGE plpgsql
-    AS $$
-    BEGIN
-      IF NOT EXISTS (
-        SELECT 1
-        FROM grids.federated_table_revisions revision
-        JOIN grids.fields target_field
-          ON target_field.id = NEW.target_field_id
-         AND target_field.table_id = revision.table_id
-        JOIN grids.fields source_field
-          ON source_field.id = NEW.source_field_id
-         AND source_field.table_id = NEW.source_table_id
-        WHERE revision.id = NEW.revision_id
-      ) THEN
-        RAISE EXCEPTION 'federated mapping fields must belong to their declared tables';
-      END IF;
-      RETURN NEW;
-    END;
-    $$
+     RETURNS trigger
+     LANGUAGE plpgsql
+    AS $function$
+        BEGIN
+          IF NOT EXISTS (
+            SELECT 1
+            FROM grids.federated_table_revisions revision
+            JOIN grids.fields target_field
+              ON target_field.id = NEW.target_field_id
+             AND target_field.table_id = revision.table_id
+            JOIN grids.fields source_field
+              ON source_field.id = NEW.source_field_id
+             AND source_field.table_id = NEW.source_table_id
+            WHERE revision.id = NEW.revision_id
+          ) THEN
+            RAISE EXCEPTION 'federated mapping fields must belong to their declared tables';
+          END IF;
+          RETURN NEW;
+        END;
+        $function$
+  `.simple();
+  await sql`
+    CREATE OR REPLACE FUNCTION grids.validate_federated_revision_target()
+     RETURNS trigger
+     LANGUAGE plpgsql
+    AS $function$
+        BEGIN
+          IF NOT EXISTS (
+            SELECT 1 FROM grids.tables target
+            WHERE target.id = NEW.table_id AND target.kind = 'federated'
+          ) THEN
+            RAISE EXCEPTION 'federated revision target must be a combined table';
+          END IF;
+          RETURN NEW;
+        END;
+        $function$
+  `.simple();
+  await sql`
+    CREATE OR REPLACE FUNCTION grids.validate_federated_source()
+     RETURNS trigger
+     LANGUAGE plpgsql
+    AS $function$
+        BEGIN
+          IF NOT EXISTS (
+            SELECT 1
+            FROM grids.federated_table_revisions revision
+            JOIN grids.tables source_table ON source_table.id = NEW.source_table_id
+            WHERE revision.id = NEW.revision_id
+              AND source_table.kind = 'stored'
+              AND source_table.id <> revision.table_id
+          ) THEN
+            RAISE EXCEPTION 'federated source must be a distinct stored table';
+          END IF;
+          RETURN NEW;
+        END;
+        $function$
   `.simple();
-  await sql`DROP TRIGGER IF EXISTS trg_grids_validate_federated_mapping ON grids.federated_field_mappings`.simple();
-  await sql`
-    CREATE TRIGGER trg_grids_validate_federated_mapping
-    BEFORE INSERT OR UPDATE OF revision_id, target_field_id, source_table_id, source_field_id
-    ON grids.federated_field_mappings
-    FOR EACH ROW EXECUTE FUNCTION grids.validate_federated_mapping()
-  `.simple();
-  await sql`DROP FUNCTION IF EXISTS grids.assert_federated_revision(UUID, UUID, INT)`.simple();
-  await sql`DROP FUNCTION IF EXISTS grids.assert_federated_revision(UUID, UUID, TIMESTAMPTZ, INT)`.simple();
-  await sql`
-    CREATE OR REPLACE FUNCTION grids.assert_federated_revision(
-      p_table_id UUID,
-      p_revision_id UUID,
-      p_revision_token TEXT,
-      p_source_count INT
-    ) RETURNS BOOLEAN
-    LANGUAGE plpgsql
-    AS $$
-    DECLARE
-      valid_sources INT;
-      invalid_mappings INT;
-    BEGIN
-      SELECT COUNT(*)::int INTO valid_sources
-      FROM grids.federated_table_revisions revision
-      JOIN grids.tables target
-        ON target.id = revision.table_id
-       AND target.kind = 'federated'
-       AND target.deleted_at IS NULL
-      JOIN grids.bases target_base
-        ON target_base.id = target.base_id
-       AND target_base.deleted_at IS NULL
-      JOIN grids.federated_table_sources source
-        ON source.revision_id = revision.id
-       AND source.authorized_at IS NOT NULL
-       AND source.revoked_at IS NULL
-      JOIN grids.tables source_table
-        ON source_table.id = source.source_table_id
-       AND source_table.kind = 'stored'
-       AND source_table.deleted_at IS NULL
-      JOIN grids.bases source_base
-        ON source_base.id = source_table.base_id
-       AND source_base.deleted_at IS NULL
-      WHERE revision.id = p_revision_id
-        AND revision.table_id = p_table_id
-        AND extract(epoch FROM revision.updated_at)::numeric::text = p_revision_token
-        AND revision.status = 'active';
-
-      IF valid_sources <> p_source_count THEN
-        RAISE EXCEPTION 'combined table publication changed; reload the query'
-          USING ERRCODE = 'P0001';
-      END IF;
-      SELECT COUNT(*)::int INTO invalid_mappings
-      FROM grids.federated_field_mappings mapping
-      JOIN grids.federated_table_revisions revision ON revision.id = mapping.revision_id
-      LEFT JOIN grids.fields target_field
-        ON target_field.id = mapping.target_field_id
-       AND target_field.table_id = revision.table_id
-       AND target_field.deleted_at IS NULL
-      LEFT JOIN grids.fields source_field
-        ON source_field.id = mapping.source_field_id
-       AND source_field.table_id = mapping.source_table_id
-       AND source_field.deleted_at IS NULL
-      WHERE mapping.revision_id = p_revision_id
-        AND (target_field.id IS NULL OR source_field.id IS NULL);
-      IF invalid_mappings <> 0 THEN
-        RAISE EXCEPTION 'combined table publication mapping changed; reload the query'
-          USING ERRCODE = 'P0001';
-      END IF;
-      RETURN TRUE;
-    END;
-    $$
-  `.simple();
-  console.log("  ✓ grids.federated_table_revisions");
-
-  // ──────────────────────────────────────────────────────────────────
-  // records (JSONB-keyed by field ID)
-  // ──────────────────────────────────────────────────────────────────
-  await sql`
-    CREATE TABLE IF NOT EXISTS grids.records (
-      id UUID PRIMARY KEY,
-      short_id TEXT NOT NULL,
-      table_id UUID NOT NULL REFERENCES grids.tables(id) ON DELETE CASCADE,
-      data JSONB NOT NULL DEFAULT '{}'::jsonb,
-      version INT NOT NULL DEFAULT 1,
-      deleted_at TIMESTAMPTZ,
-      created_by UUID REFERENCES auth.users(id) ON DELETE SET NULL,
-      updated_by UUID REFERENCES auth.users(id) ON DELETE SET NULL,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-      CONSTRAINT records_short_id_format_chk CHECK (short_id ~ '^[A-Za-z0-9]{6}$')
-    )
-  `.simple();
-  // Composite index for the hot path: list live rows of a table in id order.
-  await sql`CREATE INDEX IF NOT EXISTS idx_grids_records_table_live ON grids.records(table_id, id) WHERE deleted_at IS NULL`.simple();
-  await sql`CREATE INDEX IF NOT EXISTS idx_grids_records_table_creator_live ON grids.records(table_id, created_by, id) WHERE deleted_at IS NULL`.simple();
-  // Trash queries: list soft-deleted rows of a table (ordered by deletion time).
-  await sql`CREATE INDEX IF NOT EXISTS idx_grids_records_table_trash ON grids.records(table_id, deleted_at) WHERE deleted_at IS NOT NULL`.simple();
-  await sql`CREATE UNIQUE INDEX IF NOT EXISTS uq_grids_records_id_table ON grids.records(id, table_id)`.simple();
-  console.log("  ✓ grids.records");
-
-  // Connector identities are durable bindings, not user-editable Record
-  // fields. Operations keep only a hash of the caller's idempotency key.
-  await sql`
-    CREATE TABLE IF NOT EXISTS grids.record_external_bindings (
-      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      provider TEXT NOT NULL CHECK (char_length(provider) BETWEEN 1 AND 100),
-      provider_account TEXT NOT NULL CHECK (char_length(provider_account) BETWEEN 1 AND 200),
-      resource_kind TEXT NOT NULL CHECK (char_length(resource_kind) BETWEEN 1 AND 100),
-      external_id TEXT NOT NULL CHECK (char_length(external_id) BETWEEN 1 AND 500),
-      table_id UUID NOT NULL REFERENCES grids.tables(id) ON DELETE CASCADE,
-      record_id UUID NOT NULL,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-      UNIQUE (provider, provider_account, resource_kind, external_id),
-      CONSTRAINT record_external_bindings_record_table_fkey
-        FOREIGN KEY (record_id, table_id) REFERENCES grids.records(id, table_id) ON DELETE CASCADE
-    )
-  `.simple();
-  await sql`
-    CREATE INDEX IF NOT EXISTS idx_grids_record_external_bindings_record
-    ON grids.record_external_bindings(record_id)
-  `.simple();
-  await sql`
-    CREATE TABLE IF NOT EXISTS grids.record_external_operations (
-      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      operation_scope_hash TEXT NOT NULL CHECK (char_length(operation_scope_hash) = 64),
-      operation_key_hash TEXT NOT NULL CHECK (char_length(operation_key_hash) = 64),
-      binding_id UUID NOT NULL REFERENCES grids.record_external_bindings(id) ON DELETE CASCADE,
-      request_hash TEXT NOT NULL CHECK (char_length(request_hash) = 64),
-      result_version INT NOT NULL CHECK (result_version > 0),
-      created BOOLEAN NOT NULL,
-      changed BOOLEAN NOT NULL,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-    )
-  `.simple();
-  // The pre-release receipt shape cannot preserve exact replay: it scoped
-  // callers differently and hashed schema-resolved UUID values. Expire those
-  // receipts explicitly while retaining their durable identity bindings.
-  await sql`ALTER TABLE grids.record_external_operations ADD COLUMN IF NOT EXISTS operation_scope_hash TEXT`.simple();
-  await sql`ALTER TABLE grids.record_external_operations ADD COLUMN IF NOT EXISTS result_version INT`.simple();
-  await sql`
-    DO $$
-    BEGIN
-      IF EXISTS (
-        SELECT 1 FROM information_schema.columns
-        WHERE table_schema = 'grids' AND table_name = 'record_external_operations' AND column_name = 'provider'
-      ) THEN
-        DELETE FROM grids.record_external_operations;
-      END IF;
-    END
-    $$
-  `.simple();
-  await sql`ALTER TABLE grids.record_external_operations ALTER COLUMN operation_scope_hash SET NOT NULL`.simple();
-  await sql`ALTER TABLE grids.record_external_operations ALTER COLUMN result_version SET NOT NULL`.simple();
-  await sql`ALTER TABLE grids.record_external_operations DROP COLUMN IF EXISTS provider`.simple();
-  await sql`ALTER TABLE grids.record_external_operations DROP COLUMN IF EXISTS provider_account`.simple();
-  await sql`ALTER TABLE grids.record_external_operations DROP COLUMN IF EXISTS resource_kind`.simple();
-  await sql`
-    CREATE UNIQUE INDEX IF NOT EXISTS uq_grids_record_external_operations_scope_key
-    ON grids.record_external_operations(operation_scope_hash, operation_key_hash)
-  `.simple();
-  await sql`
-    CREATE INDEX IF NOT EXISTS idx_grids_record_external_operations_created
-    ON grids.record_external_operations(created_at, id)
-  `.simple();
-  await sql`
-    DO $$
-    BEGIN
-      IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint
-        WHERE conname = 'record_external_bindings_record_table_fkey'
-          AND conrelid = 'grids.record_external_bindings'::regclass
-      ) THEN
-        ALTER TABLE grids.record_external_bindings
-          ADD CONSTRAINT record_external_bindings_record_table_fkey
-          FOREIGN KEY (record_id, table_id) REFERENCES grids.records(id, table_id) ON DELETE CASCADE;
-      END IF;
-    END
-    $$
-  `.simple();
-  console.log("  ✓ grids.record_external_bindings");
-
-  // Record comments inherit the record's live access policy. The repeated
-  // base/table keys keep bounded thread reads indexed without copying ACLs.
-  await sql`
-    CREATE TABLE IF NOT EXISTS grids.record_comments (
-      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      short_id TEXT NOT NULL,
-      base_id UUID NOT NULL REFERENCES grids.bases(id) ON DELETE CASCADE,
-      table_id UUID NOT NULL REFERENCES grids.tables(id) ON DELETE CASCADE,
-      record_id UUID NOT NULL REFERENCES grids.records(id) ON DELETE CASCADE,
-      author_user_id UUID REFERENCES auth.users(id) ON DELETE SET NULL,
-      body TEXT NOT NULL CHECK (char_length(body) BETWEEN 1 AND 10000),
-      deleted_at TIMESTAMPTZ,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-      CONSTRAINT record_comments_short_id_format_chk CHECK (short_id ~ '^[A-Za-z0-9]{6}$')
-    )
-  `.simple();
-  await sql`
-    CREATE INDEX IF NOT EXISTS idx_grids_record_comments_thread
-    ON grids.record_comments(base_id, table_id, record_id, created_at DESC, id DESC)
-    INCLUDE (author_user_id, updated_at, deleted_at)
-  `.simple();
-  console.log("  ✓ grids.record_comments");
-
-  // ──────────────────────────────────────────────────────────────────
-  // files — durable byte assets plus explicit current/protected references
-  // ──────────────────────────────────────────────────────────────────
-  // File field values do not live in records.data. `files` owns immutable
-  // bytes and their public identity; attachment/protection rows own lifecycle.
-  await sql`
-    CREATE TABLE IF NOT EXISTS grids.files (
-      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      short_id TEXT NOT NULL,
-      filename TEXT NOT NULL,
-      mime_type TEXT NOT NULL,
-      size_bytes INT NOT NULL CHECK (size_bytes >= 0),
-      sha256 TEXT NOT NULL,
-      bytes BYTEA NOT NULL,
-      created_by UUID REFERENCES auth.users(id) ON DELETE SET NULL,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-      CONSTRAINT files_short_id_format_chk CHECK (short_id ~ '^[A-Za-z0-9]{6}$'),
-      CHECK (octet_length(bytes) = size_bytes)
-    )
-  `.simple();
-  await sql`
-    CREATE TABLE IF NOT EXISTS grids.file_attachments (
-      file_id UUID PRIMARY KEY REFERENCES grids.files(id) ON DELETE RESTRICT,
-      record_id UUID NOT NULL REFERENCES grids.records(id) ON DELETE CASCADE,
-      field_id UUID NOT NULL REFERENCES grids.fields(id) ON DELETE CASCADE,
-      position INT NOT NULL DEFAULT 0,
-      attached_by UUID REFERENCES auth.users(id) ON DELETE SET NULL,
-      attached_at TIMESTAMPTZ NOT NULL DEFAULT now()
-    )
-  `.simple();
-  await sql`
-    CREATE INDEX IF NOT EXISTS idx_grids_file_attachments_record_field
-    ON grids.file_attachments(record_id, field_id, position, attached_at, file_id)
-  `.simple();
-  await sql`
-    CREATE INDEX IF NOT EXISTS idx_grids_file_attachments_field
-    ON grids.file_attachments(field_id)
-  `.simple();
-  await sql`
-    CREATE TABLE IF NOT EXISTS grids.file_protected_references (
-      file_id UUID NOT NULL REFERENCES grids.files(id) ON DELETE RESTRICT,
-      owner_kind TEXT NOT NULL CHECK (owner_kind IN ('record_revision', 'document_artifact')),
-      owner_id UUID NOT NULL,
-      base_id UUID NOT NULL,
-      table_id UUID,
-      record_id UUID,
-      created_by UUID REFERENCES auth.users(id) ON DELETE SET NULL,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-      PRIMARY KEY (file_id, owner_kind, owner_id)
-    )
-  `.simple();
-  await sql`
-    CREATE INDEX IF NOT EXISTS idx_grids_file_protected_references_owner
-    ON grids.file_protected_references(owner_kind, owner_id, file_id)
-  `.simple();
-  await sql`
-    CREATE OR REPLACE FUNCTION grids.guard_file_protected_reference_mutation()
-    RETURNS trigger LANGUAGE plpgsql AS $$
-    BEGIN
-      IF OLD.owner_kind = 'document_artifact'
-        OR (TG_OP = 'UPDATE' AND NEW.owner_kind = 'document_artifact') THEN
-        RAISE EXCEPTION 'Document artifact protection is immutable' USING ERRCODE = '55000';
-      END IF;
-      IF TG_OP = 'DELETE' THEN
-        RETURN OLD;
-      END IF;
-      RETURN NEW;
-    END
-    $$
-  `.simple();
-  await sql`DROP TRIGGER IF EXISTS file_protected_references_guard ON grids.file_protected_references`.simple();
-  await sql`
-    CREATE TRIGGER file_protected_references_guard
-    BEFORE UPDATE OR DELETE ON grids.file_protected_references
-    FOR EACH ROW EXECUTE FUNCTION grids.guard_file_protected_reference_mutation()
-  `.simple();
-  // Hard-cut legacy rows into the single attachment source of truth. Dynamic
-  // SQL keeps this migration valid for both legacy and fresh installations.
-  await sql`
-    DO $$
-    BEGIN
-      IF EXISTS (
-        SELECT 1 FROM information_schema.columns
-        WHERE table_schema = 'grids' AND table_name = 'files' AND column_name = 'record_id'
-      ) THEN
-        EXECUTE $migration$
-          INSERT INTO grids.file_attachments (
-            file_id, record_id, field_id, position, attached_by, attached_at
-          )
-          SELECT id, record_id, field_id, position, created_by, created_at
-          FROM grids.files
-          ON CONFLICT (file_id) DO NOTHING
-        $migration$;
-        IF EXISTS (
-          SELECT 1
-          FROM grids.files file
-          LEFT JOIN grids.file_attachments attachment
-            ON attachment.file_id = file.id
-           AND attachment.record_id = file.record_id
-           AND attachment.field_id = file.field_id
-           AND attachment.position = file.position
-          WHERE attachment.file_id IS NULL
-        ) THEN
-          RAISE EXCEPTION 'grids file attachment backfill did not preserve every legacy owner';
-        END IF;
-        EXECUTE 'DROP INDEX IF EXISTS grids.idx_grids_files_record_field';
-        EXECUTE 'DROP INDEX IF EXISTS grids.idx_grids_files_field';
-        EXECUTE 'ALTER TABLE grids.files DROP COLUMN record_id, DROP COLUMN field_id, DROP COLUMN position';
-      END IF;
-    END
-    $$
-  `.simple();
-  console.log("  ✓ grids.files");
-
-  // ──────────────────────────────────────────────────────────────────
-  // record_links — junction table for relation fields
-  // ──────────────────────────────────────────────────────────────────
-  // Relation values live in a junction table instead of records.data so
-  // Postgres enforces link integrity and reverse lookups stay indexed.
-  // `position` preserves user order for multi-relation fields.
-  await sql`
-    CREATE TABLE IF NOT EXISTS grids.record_links (
-      from_record_id UUID NOT NULL REFERENCES grids.records(id) ON DELETE CASCADE,
-      from_field_id  UUID NOT NULL REFERENCES grids.fields(id)  ON DELETE CASCADE,
-      to_record_id   UUID NOT NULL REFERENCES grids.records(id) ON DELETE CASCADE,
-      position       INT NOT NULL DEFAULT 0,
-      created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
-      PRIMARY KEY (from_record_id, from_field_id, to_record_id)
-    )
-  `.simple();
-  // Forward read: "all targets of (record, field)" — used on every record fetch.
-  await sql`CREATE INDEX IF NOT EXISTS idx_grids_record_links_forward ON grids.record_links(from_field_id, from_record_id, position)`.simple();
-  // Reverse read: "all records linking to X via field F".
-  await sql`
-    CREATE INDEX IF NOT EXISTS idx_grids_record_links_reverse_page
-    ON grids.record_links(to_record_id, from_field_id, from_record_id)
-  `.simple();
-  await sql`DROP INDEX IF EXISTS grids.idx_grids_record_links_reverse`.simple();
-  console.log("  ✓ grids.record_links");
-};
-
-const migrateDurableHistory = async (sql: SQL): Promise<void> => {
-  await sql`
-    CREATE TABLE IF NOT EXISTS grids.table_schema_revisions (
-      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      table_id UUID NOT NULL REFERENCES grids.tables(id) ON DELETE RESTRICT,
-      schema_hash TEXT NOT NULL,
-      fields JSONB NOT NULL,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-      UNIQUE (table_id, schema_hash)
-    )
-  `.simple();
-
-  await sql`
-    CREATE TABLE IF NOT EXISTS grids.durable_history_activations (
-      table_id UUID PRIMARY KEY REFERENCES grids.tables(id) ON DELETE RESTRICT,
-      baseline_schema_revision_id UUID NOT NULL REFERENCES grids.table_schema_revisions(id) ON DELETE RESTRICT,
-      status TEXT NOT NULL DEFAULT 'activating',
-      activated_by UUID REFERENCES auth.users(id) ON DELETE SET NULL,
-      activated_at TIMESTAMPTZ NOT NULL,
-      baseline_completed_at TIMESTAMPTZ,
-      CONSTRAINT durable_history_activations_status_chk CHECK (status IN ('activating', 'active'))
-    )
-  `.simple();
-
-  await sql`
-    CREATE TABLE IF NOT EXISTS grids.record_revisions (
-      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      short_id TEXT NOT NULL,
-      table_id UUID NOT NULL REFERENCES grids.tables(id) ON DELETE RESTRICT,
-      record_id UUID NOT NULL,
-      schema_revision_id UUID NOT NULL REFERENCES grids.table_schema_revisions(id) ON DELETE RESTRICT,
-      revision_no INT NOT NULL,
-      action TEXT NOT NULL,
-      record_version INT NOT NULL,
-      data JSONB NOT NULL,
-      relations JSONB NOT NULL DEFAULT '{}'::jsonb,
-      files JSONB NOT NULL DEFAULT '[]'::jsonb,
-      changed_field_ids UUID[] NOT NULL DEFAULT '{}',
-      deleted_at TIMESTAMPTZ,
-      actor_id UUID REFERENCES auth.users(id) ON DELETE SET NULL,
-      actor_display_name TEXT,
-      actor_avatar_hash TEXT,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-      CONSTRAINT record_revisions_short_id_format_chk CHECK (short_id ~ '^[A-Za-z0-9]{6}$'),
-      CONSTRAINT record_revisions_action_chk CHECK (
-        action IN ('baseline', 'created', 'updated', 'deleted', 'restored', 'finalized', 'file.added', 'file.replaced', 'file.removed')
-      ),
-      UNIQUE (table_id, record_id, revision_no)
-    )
-  `.simple();
-  await sql`ALTER TABLE grids.record_revisions ADD COLUMN IF NOT EXISTS actor_display_name TEXT`.simple();
-  await sql`ALTER TABLE grids.record_revisions ADD COLUMN IF NOT EXISTS actor_avatar_hash TEXT`.simple();
-  await sql`ALTER TABLE grids.record_revisions DROP CONSTRAINT IF EXISTS record_revisions_action_chk`.simple();
-  await sql`
-    ALTER TABLE grids.record_revisions ADD CONSTRAINT record_revisions_action_chk CHECK (
-      action IN ('baseline', 'created', 'updated', 'deleted', 'restored', 'finalized', 'file.added', 'file.replaced', 'file.removed')
-    )
-  `.simple();
-  await sql`
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_grids_record_revisions_short_id
-    ON grids.record_revisions(short_id)
-  `.simple();
-  await sql`
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_grids_record_revisions_baseline
-    ON grids.record_revisions(table_id, record_id)
-    WHERE action = 'baseline'
-  `.simple();
-  await sql`DROP INDEX IF EXISTS grids.idx_grids_record_revisions_record_page`.simple();
-  console.log("  ✓ grids durable history");
-};
-
-const migrateRecordFinalization = async (sql: SQL): Promise<void> => {
-  await sql`ALTER TABLE grids.records ADD COLUMN IF NOT EXISTS finalized_computed_types JSONB`.simple();
-  await sql`ALTER TABLE grids.records ADD COLUMN IF NOT EXISTS finalized_computed_dependencies JSONB`.simple();
-  await sql`ALTER TABLE grids.tables ADD COLUMN IF NOT EXISTS finalization_policy_revision INT NOT NULL DEFAULT 0`.simple();
-  await sql`
-    CREATE TABLE IF NOT EXISTS grids.table_finalization_activations (
-      table_id UUID PRIMARY KEY REFERENCES grids.tables(id) ON DELETE RESTRICT,
-      enabled_by UUID REFERENCES auth.users(id) ON DELETE SET NULL,
-      enabled_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-      mode TEXT NOT NULL DEFAULT 'direct',
-      approver_group_id UUID,
-      policy_revision INT NOT NULL DEFAULT 1
-    )
-  `.simple();
-  await sql`ALTER TABLE grids.table_finalization_activations ADD COLUMN IF NOT EXISTS mode TEXT NOT NULL DEFAULT 'direct'`.simple();
-  await sql`ALTER TABLE grids.table_finalization_activations ADD COLUMN IF NOT EXISTS approver_group_id UUID`.simple();
-  await sql`ALTER TABLE grids.table_finalization_activations ADD COLUMN IF NOT EXISTS policy_revision INT NOT NULL DEFAULT 1`.simple();
-  await sql`
-    UPDATE grids.tables table_ref
-    SET finalization_policy_revision = GREATEST(table_ref.finalization_policy_revision, activation.policy_revision)
-    FROM grids.table_finalization_activations activation
-    WHERE activation.table_id = table_ref.id
-  `.simple();
-  await sql`ALTER TABLE grids.table_finalization_activations DROP CONSTRAINT IF EXISTS table_finalization_activations_policy_chk`.simple();
-  await sql`
-    ALTER TABLE grids.table_finalization_activations ADD CONSTRAINT table_finalization_activations_policy_chk CHECK (
-      (mode = 'direct' AND approver_group_id IS NULL)
-      OR (mode = 'four_eyes' AND approver_group_id IS NOT NULL)
-    )
-  `.simple();
-  await sql`
-    CREATE TABLE IF NOT EXISTS grids.record_finalization_requests (
-      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      short_id TEXT,
-      table_id UUID NOT NULL REFERENCES grids.tables(id) ON DELETE RESTRICT,
-      record_id UUID NOT NULL REFERENCES grids.records(id) ON DELETE RESTRICT,
-      record_version INT NOT NULL,
-      policy_revision INT NOT NULL,
-      status TEXT NOT NULL DEFAULT 'pending',
-      requested_by UUID NOT NULL REFERENCES auth.users(id) ON DELETE RESTRICT,
-      request_comment TEXT,
-      requested_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-      resolved_by UUID REFERENCES auth.users(id) ON DELETE SET NULL,
-      resolution_comment TEXT,
-      resolved_at TIMESTAMPTZ,
-      CONSTRAINT record_finalization_requests_status_chk CHECK (status IN ('pending', 'approved', 'rejected', 'superseded')),
-      CONSTRAINT record_finalization_requests_resolution_chk CHECK (
-        (status = 'pending' AND resolved_by IS NULL AND resolved_at IS NULL)
-        OR (status <> 'pending' AND resolved_at IS NOT NULL)
-      )
-    )
-  `.simple();
-  await sql`ALTER TABLE grids.record_finalization_requests ADD COLUMN IF NOT EXISTS short_id TEXT`.simple();
-  await sql`ALTER TABLE grids.record_finalization_requests ADD COLUMN IF NOT EXISTS computed_snapshot JSONB`.simple();
-  const finalizationRequests = await sql<Array<{ id: string; short_id: string | null }>>`
-    SELECT id::text, short_id FROM grids.record_finalization_requests ORDER BY id FOR UPDATE
-  `;
-  const validOwners = new Map<string, string>();
-  for (const request of finalizationRequests) {
-    if (request.short_id && SHORT_ID_REGEX.test(request.short_id) && !validOwners.has(request.short_id)) {
-      validOwners.set(request.short_id, request.id);
-    }
-  }
-  const allocated = new Set(validOwners.keys());
-  for (const request of finalizationRequests) {
-    if (request.short_id && validOwners.get(request.short_id) === request.id) continue;
-    const shortId = allocateMigrationShortId(allocated, "record_finalization_requests");
-    allocated.add(shortId);
-    await sql`UPDATE grids.record_finalization_requests SET short_id = ${shortId} WHERE id = ${request.id}::uuid`;
-  }
-  const [requestIdConstraint] = await sql<Array<{ ready: boolean }>>`
-    SELECT EXISTS (
-      SELECT 1 FROM pg_constraint
-      WHERE conrelid = 'grids.record_finalization_requests'::regclass
-        AND conname = 'record_finalization_requests_short_id_format_chk'
-        AND convalidated
-    ) AS ready
-  `;
-  if (!requestIdConstraint?.ready) {
-    await sql`
-      ALTER TABLE grids.record_finalization_requests
-      ADD CONSTRAINT record_finalization_requests_short_id_format_chk CHECK (short_id ~ '^[A-Za-z0-9]{6}$')
-    `.simple();
-  }
-  const [requestIdColumn] = await sql<Array<{ nullable: string }>>`
-    SELECT is_nullable AS nullable
-    FROM information_schema.columns
-    WHERE table_schema = 'grids' AND table_name = 'record_finalization_requests' AND column_name = 'short_id'
-  `;
-  if (requestIdColumn?.nullable !== "NO") {
-    await sql`ALTER TABLE grids.record_finalization_requests ALTER COLUMN short_id SET NOT NULL`.simple();
-  }
-  await sql`
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_grids_record_finalization_requests_short_id
-    ON grids.record_finalization_requests(short_id)
-  `.simple();
-  await sql`
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_grids_record_finalization_requests_pending
-    ON grids.record_finalization_requests(record_id) WHERE status = 'pending'
-  `.simple();
-  await sql`
-    CREATE INDEX IF NOT EXISTS idx_grids_record_finalization_requests_table
-    ON grids.record_finalization_requests(table_id, requested_at DESC)
-  `.simple();
-  await sql`
-    CREATE INDEX IF NOT EXISTS idx_grids_record_finalization_requests_pending_table
-    ON grids.record_finalization_requests(table_id, record_id, record_version, policy_revision)
-    WHERE status = 'pending'
-  `.simple();
-  await sql`ALTER TABLE grids.records ADD COLUMN IF NOT EXISTS finalized_at TIMESTAMPTZ`.simple();
-  await sql`ALTER TABLE grids.records ADD COLUMN IF NOT EXISTS finalized_by UUID REFERENCES auth.users(id) ON DELETE SET NULL`.simple();
-  await sql`
-    ALTER TABLE grids.records ADD COLUMN IF NOT EXISTS final_revision_id UUID REFERENCES grids.record_revisions(id) ON DELETE RESTRICT
-  `.simple();
-  await sql`ALTER TABLE grids.records DROP CONSTRAINT IF EXISTS records_finalization_marker_chk`.simple();
-  await sql`
-    ALTER TABLE grids.records ADD CONSTRAINT records_finalization_marker_chk CHECK (
-      (finalized_at IS NULL AND final_revision_id IS NULL)
-      OR (finalized_at IS NOT NULL AND final_revision_id IS NOT NULL)
-    )
-  `.simple();
-  await sql`
-    CREATE INDEX IF NOT EXISTS idx_grids_records_table_finalized
-    ON grids.records(table_id, finalized_at) WHERE finalized_at IS NOT NULL
-  `.simple();
-  console.log("  ✓ grids record finalization");
-};
-
-const migrateViews = async (sql: SQL): Promise<void> => {
-  // ──────────────────────────────────────────────────────────────────
-  // views
-  // ──────────────────────────────────────────────────────────────────
-  // owner_user_id NULL = shared (visible to anyone with table-read).
-  // `source` carries the canonical GQL query. `ui` carries view-owned
-  // presentation settings; data semantics are never persisted as RecordQuery.
-  await sql`
-    CREATE TABLE IF NOT EXISTS grids.views (
-      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      short_id TEXT NOT NULL,
-      table_id UUID NOT NULL REFERENCES grids.tables(id) ON DELETE CASCADE,
-      base_id UUID NOT NULL REFERENCES grids.bases(id) ON DELETE CASCADE,
-      name TEXT NOT NULL,
-      description TEXT,
-      icon TEXT,
-      source TEXT NOT NULL,
-      ui JSONB NOT NULL DEFAULT '{}'::jsonb,
-      owner_user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
-      position INT NOT NULL DEFAULT 0,
-      deleted_at TIMESTAMPTZ,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-      CONSTRAINT views_short_id_format_chk CHECK (short_id ~ '^[A-Za-z0-9]{6}$'),
-      CONSTRAINT views_source_length_chk CHECK (length(source) BETWEEN 1 AND 20000)
-    )
-  `.simple();
-  await sql`ALTER TABLE grids.views ADD COLUMN IF NOT EXISTS base_id UUID REFERENCES grids.bases(id) ON DELETE CASCADE`.simple();
-  await sql`
-    CREATE OR REPLACE FUNCTION grids.sync_view_base_id() RETURNS trigger
-    LANGUAGE plpgsql AS $$
-    BEGIN
-      SELECT base_id INTO NEW.base_id
-      FROM grids.tables
-      WHERE id = NEW.table_id;
-      RETURN NEW;
-    END
-    $$
-  `.simple();
-  await sql`
-    CREATE OR REPLACE TRIGGER grids_views_sync_base_id
-    BEFORE INSERT OR UPDATE OF table_id, base_id ON grids.views
-    FOR EACH ROW EXECUTE FUNCTION grids.sync_view_base_id()
-  `.simple();
-  await sql`
-    UPDATE grids.views v
-    SET base_id = t.base_id
-    FROM grids.tables t
-    WHERE t.id = v.table_id
-      AND v.base_id IS DISTINCT FROM t.base_id
-  `.simple();
-  await sql`ALTER TABLE grids.views ALTER COLUMN base_id SET NOT NULL`.simple();
-  await sql`ALTER TABLE grids.views ADD COLUMN IF NOT EXISTS description TEXT`.simple();
-  await sql`ALTER TABLE grids.views ADD COLUMN IF NOT EXISTS ui JSONB NOT NULL DEFAULT '{}'::jsonb`.simple();
-  await sql`CREATE INDEX IF NOT EXISTS idx_grids_views_table_live ON grids.views(table_id, position) WHERE deleted_at IS NULL`.simple();
-  const [duplicateViewName] = await sql<Array<{ baseId: string; name: string }>>`
-    SELECT base_id::text AS "baseId", lower(btrim(name)) AS name
-    FROM grids.views
-    WHERE deleted_at IS NULL
-    GROUP BY base_id, lower(btrim(name))
-    HAVING count(*) > 1
-    LIMIT 1
-  `;
-  if (duplicateViewName) {
-    throw new Error(
-      `cannot enforce unique view names: grid ${duplicateViewName.baseId} contains multiple live views named "${duplicateViewName.name}"`,
-    );
-  }
-  await sql`
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_grids_views_live_name
-    ON grids.views(base_id, lower(btrim(name)))
-    WHERE deleted_at IS NULL
-  `.simple();
-  console.log("  ✓ grids.views");
-};
-
-const migrateDocumentTemplates = async (sql: SQL): Promise<void> => {
-  // ──────────────────────────────────────────────────────────────────
-  // document templates / snapshots / runs
-  // ──────────────────────────────────────────────────────────────────
-  // Templates are table-level render definitions. Every completed Document
-  // freezes the template and render data and stores its exact artifact Files.
-  await sql`
-    CREATE TABLE IF NOT EXISTS grids.document_templates (
-      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      short_id TEXT NOT NULL,
-      table_id UUID NOT NULL REFERENCES grids.tables(id) ON DELETE CASCADE,
-      name TEXT NOT NULL,
-      description TEXT,
-      source TEXT NOT NULL,
-      renderer_kind TEXT NOT NULL,
-      html TEXT,
-      header_html TEXT,
-      footer_html TEXT,
-      page_css TEXT,
-      number_template TEXT,
-      filename_template TEXT,
-      profile_id TEXT,
-      profile_version INT,
-      profile_input_template TEXT,
-      enabled BOOLEAN NOT NULL DEFAULT TRUE,
-      position INT NOT NULL DEFAULT 0,
-      created_by UUID REFERENCES auth.users(id) ON DELETE SET NULL,
-      updated_by UUID REFERENCES auth.users(id) ON DELETE SET NULL,
-      deleted_at TIMESTAMPTZ,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-      CONSTRAINT document_templates_short_id_format_chk CHECK (short_id ~ '^[A-Za-z0-9]{6}$'),
-      CONSTRAINT document_templates_source_length_chk CHECK (length(source) BETWEEN 1 AND 20000),
-      CONSTRAINT document_templates_renderer_kind_chk CHECK (renderer_kind IN ('html', 'profile')),
-      CONSTRAINT document_templates_html_length_chk CHECK (html IS NULL OR length(html) BETWEEN 1 AND 200000),
-      CONSTRAINT document_templates_renderer_chk CHECK (
-        (
-          renderer_kind = 'html'
-          AND html IS NOT NULL
-          AND number_template IS NOT NULL
-          AND filename_template IS NOT NULL
-          AND profile_id IS NULL
-          AND profile_version IS NULL
-          AND profile_input_template IS NULL
-        )
-        OR
-        (
-          renderer_kind = 'profile'
-          AND html IS NULL
-          AND header_html IS NULL
-          AND footer_html IS NULL
-          AND page_css IS NULL
-          AND number_template IS NULL
-          AND filename_template IS NULL
-          AND profile_id IS NOT NULL
-          AND profile_version > 0
-          AND profile_input_template IS NOT NULL
-        )
-      ),
-      CONSTRAINT document_templates_header_html_length_chk
-        CHECK (header_html IS NULL OR length(header_html) BETWEEN 1 AND 50000),
-      CONSTRAINT document_templates_footer_html_length_chk
-        CHECK (footer_html IS NULL OR length(footer_html) BETWEEN 1 AND 50000),
-      CONSTRAINT document_templates_page_css_length_chk
-        CHECK (page_css IS NULL OR length(page_css) BETWEEN 1 AND 50000),
-      CONSTRAINT document_templates_number_template_length_chk CHECK (number_template IS NULL OR length(number_template) BETWEEN 1 AND 5000),
-      CONSTRAINT document_templates_filename_template_length_chk CHECK (filename_template IS NULL OR length(filename_template) BETWEEN 1 AND 5000),
-      UNIQUE (id, table_id)
-    )
-  `.simple();
-  await sql`
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_grids_document_templates_short_id
-    ON grids.document_templates(short_id)
-  `.simple();
-  await sql`
-    CREATE INDEX IF NOT EXISTS idx_grids_document_templates_table_live
-    ON grids.document_templates(table_id, position) WHERE deleted_at IS NULL
-  `.simple();
-  console.log("  ✓ grids.document_templates");
-
-  // ──────────────────────────────────────────────────────────────────
-  // email templates
-  // ──────────────────────────────────────────────────────────────────
-  // Email templates are base-level Liquid templates used by workflows. They
-  // intentionally stay separate from document templates: no GQL source, no PDF
-  // page parts, no record snapshot ownership.
-  await sql`
-    CREATE TABLE IF NOT EXISTS grids.email_templates (
-      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      short_id TEXT NOT NULL,
-      base_id UUID NOT NULL REFERENCES grids.bases(id) ON DELETE CASCADE,
-      name TEXT NOT NULL,
-      description TEXT,
-      subject TEXT NOT NULL,
-      html TEXT NOT NULL,
-      sample_data JSONB NOT NULL DEFAULT '{}'::jsonb,
-      enabled BOOLEAN NOT NULL DEFAULT TRUE,
-      position INT NOT NULL DEFAULT 0,
-      created_by UUID REFERENCES auth.users(id) ON DELETE SET NULL,
-      updated_by UUID REFERENCES auth.users(id) ON DELETE SET NULL,
-      deleted_at TIMESTAMPTZ,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-      CONSTRAINT email_templates_short_id_format_chk CHECK (short_id ~ '^[A-Za-z0-9]{6}$'),
-      CONSTRAINT email_templates_subject_length_chk CHECK (length(subject) BETWEEN 1 AND 1000),
-      CONSTRAINT email_templates_html_length_chk CHECK (length(html) BETWEEN 1 AND 200000),
-      CONSTRAINT email_templates_sample_data_object_chk CHECK (jsonb_typeof(sample_data) = 'object')
-    )
-  `.simple();
-  await sql`ALTER TABLE grids.email_templates ADD COLUMN IF NOT EXISTS sample_data JSONB`.simple();
-  await sql`
-    UPDATE grids.email_templates
-    SET sample_data = CASE
-      WHEN html LIKE '%data.requesterName%' AND html LIKE '%data.agreement.url%' THEN
-        '{"requesterName":"Alex Morgan","loanNumber":"LOAN-2026-0001","dueDate":"31 July 2026","agreement":{"url":"https://cloud.example.org/share/grids/documents/example"}}'::jsonb
-      WHEN html LIKE '%data.customerName%' AND html LIKE '%data.invoice.url%' THEN
-        '{"customerName":"Ada Lovelace","orderNumber":"ORD-2026-0042","invoice":{"url":"https://cloud.example.org/share/grids/documents/example"}}'::jsonb
-      WHEN html LIKE '%data.reference%' AND html LIKE '%data.receipt.url%' THEN
-        '{"reference":"TX-2026-0042","merchant":"Office Supply GmbH","receipt":{"url":"https://cloud.example.org/share/grids/documents/example"}}'::jsonb
-      ELSE '{}'::jsonb
-    END
-    WHERE sample_data IS NULL
-  `.simple();
-  await sql`
-    ALTER TABLE grids.email_templates
-    ALTER COLUMN sample_data SET DEFAULT '{}'::jsonb,
-    ALTER COLUMN sample_data SET NOT NULL
-  `.simple();
-  await sql`
-    DO $$
-    BEGIN
-      IF NOT EXISTS (
-        SELECT 1
-        FROM pg_constraint
-        WHERE conname = 'email_templates_sample_data_object_chk'
-          AND conrelid = 'grids.email_templates'::regclass
-      ) THEN
-        ALTER TABLE grids.email_templates
-        ADD CONSTRAINT email_templates_sample_data_object_chk CHECK (jsonb_typeof(sample_data) = 'object');
-      END IF;
-    END
-    $$
-  `.simple();
-  await sql`
-    CREATE INDEX IF NOT EXISTS idx_grids_email_templates_base_live
-    ON grids.email_templates(base_id, position) WHERE deleted_at IS NULL
-  `.simple();
-  console.log("  ✓ grids.email_templates");
-};
-
-const migrateDocumentIssuance = async (sql: SQL): Promise<void> => {
-  await sql`
-    CREATE TABLE IF NOT EXISTS grids.document_profile_counters (
-      base_id UUID NOT NULL REFERENCES grids.bases(id) ON DELETE RESTRICT,
-      profile_id TEXT NOT NULL,
-      next_value BIGINT NOT NULL DEFAULT 1 CHECK (next_value > 0),
-      PRIMARY KEY (base_id, profile_id),
-      CONSTRAINT document_profile_counters_profile_id_chk
-        CHECK (profile_id ~ '^[a-z][a-z0-9.-]{2,99}$')
-    )
-  `.simple();
-  // Older renderers allocated per profile version. Continue above every old
-  // allocation, including failed/reserved numbers, without parsing document labels.
-  await sql`
-    DO $$ BEGIN
-      IF EXISTS (
-        SELECT 1 FROM information_schema.columns
-        WHERE table_schema = 'grids' AND table_name = 'document_profile_counters'
-          AND column_name = 'profile_version'
-      ) THEN
-        LOCK TABLE grids.document_profile_counters IN ACCESS EXCLUSIVE MODE;
-        UPDATE grids.document_profile_counters counter
-        SET next_value = high_water.next_value
-        FROM (
-          SELECT base_id, profile_id, MAX(next_value) AS next_value
-          FROM grids.document_profile_counters GROUP BY base_id, profile_id
-        ) high_water
-        WHERE counter.base_id = high_water.base_id AND counter.profile_id = high_water.profile_id;
-        DELETE FROM grids.document_profile_counters older
-        USING grids.document_profile_counters newer
-        WHERE older.base_id = newer.base_id AND older.profile_id = newer.profile_id
-          AND older.profile_version < newer.profile_version;
-        ALTER TABLE grids.document_profile_counters DROP COLUMN profile_version;
-        ALTER TABLE grids.document_profile_counters ADD PRIMARY KEY (base_id, profile_id);
-      END IF;
-    END $$
-  `.simple();
-  await sql`
-    CREATE TABLE IF NOT EXISTS grids.document_issuances (
-      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      base_id UUID NOT NULL REFERENCES grids.bases(id) ON DELETE RESTRICT,
-      document_short_id TEXT NOT NULL UNIQUE,
-      operation_key_hash TEXT NOT NULL CHECK (operation_key_hash ~ '^[a-f0-9]{64}$'),
-      request_hash TEXT NOT NULL CHECK (request_hash ~ '^[a-f0-9]{64}$'),
-      request_identity_hash TEXT CHECK (request_identity_hash ~ '^[a-f0-9]{64}$'),
-      frozen_request JSONB,
-      document_id UUID UNIQUE,
-      completed_at TIMESTAMPTZ,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-      CONSTRAINT document_issuances_short_id_format_chk CHECK (document_short_id ~ '^[A-Za-z0-9]{6}$'),
-      CONSTRAINT document_issuances_state_chk CHECK (
-        (
-          document_id IS NULL
-          AND completed_at IS NULL
-          AND jsonb_typeof(frozen_request) = 'object'
-        )
-        OR
-        (
-          document_id IS NOT NULL
-          AND completed_at IS NOT NULL
-          AND completed_at >= created_at
-          AND frozen_request IS NULL
-        )
-      ),
-      UNIQUE (base_id, operation_key_hash),
-      CONSTRAINT document_issuances_document_base_fkey
-        FOREIGN KEY (document_id, base_id, document_short_id)
-        REFERENCES grids.documents(id, base_id, short_id) ON DELETE RESTRICT
-    )
-  `.simple();
-  await sql`ALTER TABLE grids.document_issuances ADD COLUMN IF NOT EXISTS request_identity_hash TEXT
-    CHECK (request_identity_hash ~ '^[a-f0-9]{64}$')`.simple();
-  await sql`ALTER TABLE grids.document_issuances ADD COLUMN IF NOT EXISTS hash_version SMALLINT NOT NULL DEFAULT 2
-    CHECK (hash_version = 2);
-    ALTER TABLE grids.document_issuances ALTER COLUMN hash_version SET DEFAULT 2`.simple();
-  await sql`
-    ALTER TABLE grids.document_issuances
-      ADD COLUMN IF NOT EXISTS confirmation_hash TEXT CHECK (confirmation_hash ~ '^[a-f0-9]{64}$'),
-      ADD COLUMN IF NOT EXISTS confirmed_actor JSONB,
-      ADD COLUMN IF NOT EXISTS confirmed_at TIMESTAMPTZ;
-    DO $$ BEGIN
-      IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'grids.document_issuances'::regclass AND conname = 'document_issuances_confirmation_chk') THEN
-        ALTER TABLE grids.document_issuances ADD CONSTRAINT document_issuances_confirmation_chk CHECK (
-          ((confirmed_actor IS NULL AND confirmed_at IS NULL)
-            OR (confirmation_hash IS NOT NULL AND confirmed_actor IS NOT NULL AND confirmed_at IS NOT NULL
-              AND jsonb_typeof(confirmed_actor) = 'object' AND confirmed_at >= created_at))
-          AND (confirmation_hash IS NULL OR document_id IS NULL OR confirmed_at IS NOT NULL)
-        );
-      END IF;
-    END $$;
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_grids_document_issuance_base ON grids.document_issuances(id, base_id);
-    CREATE TABLE IF NOT EXISTS grids.document_export_claims (
-      base_id UUID NOT NULL,
-      destination_key TEXT NOT NULL CHECK (length(destination_key) BETWEEN 1 AND 200),
-      purpose TEXT NOT NULL CHECK (purpose IN ('accounting', 'payment')),
-      business_id TEXT NOT NULL CHECK (length(business_id) BETWEEN 1 AND 200),
-      receipt_id UUID NOT NULL,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-      PRIMARY KEY (base_id, destination_key, purpose, business_id),
-      FOREIGN KEY (receipt_id, base_id) REFERENCES grids.document_issuances(id, base_id) ON DELETE RESTRICT
-    );
-    CREATE INDEX IF NOT EXISTS idx_grids_document_export_claims_receipt ON grids.document_export_claims(receipt_id);
-  `.simple();
-  await sql`
-    CREATE INDEX IF NOT EXISTS idx_grids_document_issuances_pending
-    ON grids.document_issuances(created_at, id) WHERE document_id IS NULL
-  `.simple();
-  await sql`
-    CREATE OR REPLACE FUNCTION grids.guard_document_issuance()
-    RETURNS trigger LANGUAGE plpgsql AS $$
-    BEGIN
-      IF TG_OP = 'DELETE' THEN
-        IF OLD.document_id IS NOT NULL THEN
-          RAISE EXCEPTION 'Completed Document issuance receipts are immutable' USING ERRCODE = '55000';
-        END IF;
-        RETURN OLD;
-      END IF;
-      IF OLD.document_id IS NULL AND OLD.confirmation_hash IS NOT NULL AND OLD.confirmed_at IS NULL
-        AND NEW.confirmed_at IS NOT NULL AND NEW.confirmed_actor IS NOT NULL
-        AND (to_jsonb(NEW) - 'confirmed_actor' - 'confirmed_at') = (to_jsonb(OLD) - 'confirmed_actor' - 'confirmed_at') THEN
-        RETURN NEW;
-      END IF;
-      IF OLD.document_id IS NOT NULL
-        OR NEW.document_id IS NULL
-        OR NEW.completed_at IS NULL
-        OR NEW.frozen_request IS NOT NULL
-        OR (to_jsonb(NEW) - 'document_id' - 'completed_at' - 'frozen_request')
-          <> (to_jsonb(OLD) - 'document_id' - 'completed_at' - 'frozen_request') THEN
-        RAISE EXCEPTION 'Document issuance receipt is immutable' USING ERRCODE = '55000';
-      END IF;
-      RETURN NEW;
-    END
-    $$
-  `.simple();
-  await sql`DROP TRIGGER IF EXISTS document_issuances_guard ON grids.document_issuances`.simple();
-  await sql`
-    CREATE TRIGGER document_issuances_guard
-    BEFORE UPDATE OR DELETE ON grids.document_issuances
-    FOR EACH ROW EXECUTE FUNCTION grids.guard_document_issuance()
-  `.simple();
-  console.log("  ✓ grids.document_issuances");
-};
-
-const migrateDocumentArtifacts = async (sql: SQL): Promise<void> => {
-  await sql`
-    CREATE TABLE IF NOT EXISTS grids.record_snapshots (
-      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      short_id TEXT NOT NULL,
-      base_id UUID NOT NULL REFERENCES grids.bases(id) ON DELETE RESTRICT,
-      table_id UUID NOT NULL REFERENCES grids.tables(id) ON DELETE RESTRICT,
-      record_id UUID NOT NULL,
-      root JSONB NOT NULL,
-      graph JSONB NOT NULL,
-      created_by UUID REFERENCES auth.users(id) ON DELETE SET NULL,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-      CONSTRAINT record_snapshots_short_id_format_chk CHECK (short_id ~ '^[A-Za-z0-9]{6}$'),
-      CONSTRAINT record_snapshots_table_base_fkey
-        FOREIGN KEY (table_id, base_id) REFERENCES grids.tables(id, base_id) ON DELETE RESTRICT,
-      CONSTRAINT record_snapshots_record_table_fkey
-        FOREIGN KEY (record_id, table_id) REFERENCES grids.records(id, table_id) ON DELETE RESTRICT,
-      UNIQUE (id, base_id, table_id, record_id)
-    )
-  `.simple();
-  await sql`
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_grids_record_snapshots_short_id
-    ON grids.record_snapshots(short_id)
-  `.simple();
-  await sql`
-    CREATE INDEX IF NOT EXISTS idx_grids_record_snapshots_record
-    ON grids.record_snapshots(table_id, record_id, created_at DESC)
-  `.simple();
-  console.log("  ✓ grids.record_snapshots");
-
-  await sql`
-    CREATE TABLE IF NOT EXISTS grids.documents (
-      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      short_id TEXT NOT NULL,
-      template_id UUID NOT NULL,
-      workflow_run_id UUID,
-      workflow_step_key TEXT,
-      snapshot_id UUID NOT NULL REFERENCES grids.record_snapshots(id) ON DELETE RESTRICT,
-      base_id UUID NOT NULL REFERENCES grids.bases(id) ON DELETE RESTRICT,
-      table_id UUID NOT NULL REFERENCES grids.tables(id) ON DELETE RESTRICT,
-      record_id UUID NOT NULL,
-      document_number TEXT NOT NULL,
-      filename TEXT NOT NULL,
-      tags TEXT[] NOT NULL DEFAULT '{}',
-      template_snapshot JSONB NOT NULL,
-      render_data JSONB NOT NULL,
-      renderer_kind TEXT NOT NULL,
-      renderer_version TEXT NOT NULL,
-      template_revision TEXT NOT NULL,
-      profile_id TEXT,
-      profile_version INTEGER,
-      profile_snapshot JSONB,
-      snapshot_sha256 TEXT,
-      validator_version TEXT,
-      validation_status TEXT,
-      validation_report JSONB,
-      issued_actor JSONB NOT NULL,
-      created_by UUID REFERENCES auth.users(id) ON DELETE SET NULL,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-      CONSTRAINT documents_short_id_format_chk CHECK (short_id ~ '^[A-Za-z0-9]{6}$'),
-      CONSTRAINT documents_filename_length_chk CHECK (length(filename) BETWEEN 1 AND 255),
-      CONSTRAINT documents_tags_count_chk CHECK (cardinality(tags) <= 20),
-      CONSTRAINT documents_number_length_chk CHECK (length(document_number) BETWEEN 1 AND 200),
-      CONSTRAINT documents_renderer_kind_chk CHECK (renderer_kind IN ('html', 'profile')),
-      CONSTRAINT documents_template_snapshot_object_chk CHECK (jsonb_typeof(template_snapshot) = 'object'),
-      CONSTRAINT documents_render_data_object_chk CHECK (jsonb_typeof(render_data) = 'object'),
-      CONSTRAINT documents_issued_actor_object_chk CHECK (jsonb_typeof(issued_actor) = 'object'),
-      CONSTRAINT documents_workflow_pair_chk CHECK ((workflow_run_id IS NULL) = (workflow_step_key IS NULL)),
-      CONSTRAINT documents_template_table_fkey
-        FOREIGN KEY (template_id, table_id)
-        REFERENCES grids.document_templates(id, table_id) ON DELETE RESTRICT,
-      CONSTRAINT documents_snapshot_binding_fkey
-        FOREIGN KEY (snapshot_id, base_id, table_id, record_id)
-        REFERENCES grids.record_snapshots(id, base_id, table_id, record_id) ON DELETE RESTRICT,
-      UNIQUE (id, base_id),
-      UNIQUE (id, base_id, short_id),
-      UNIQUE (id, base_id, table_id, record_id),
-      UNIQUE (base_id, document_number)
-    )
-  `.simple();
-  await sql`
-    DO $$ BEGIN
-      ALTER TABLE grids.documents ADD COLUMN IF NOT EXISTS hash_version SMALLINT NOT NULL DEFAULT 2 CHECK (hash_version = 2);
-      ALTER TABLE grids.documents ALTER COLUMN hash_version SET DEFAULT 2;
-      IF EXISTS (
-        SELECT 1 FROM pg_constraint
-        WHERE conrelid = 'grids.documents'::regclass AND conname = 'documents_renderer_chk'
-          AND pg_get_constraintdef(oid) LIKE '%relationship_kind%'
-      ) THEN
-        ALTER TABLE grids.documents DROP CONSTRAINT documents_renderer_chk;
-      END IF;
-      IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint
-        WHERE conrelid = 'grids.documents'::regclass AND conname = 'documents_renderer_chk'
-      ) THEN
-        ALTER TABLE grids.documents ADD CONSTRAINT documents_renderer_chk CHECK (
-          (
-            renderer_kind = 'html'
-            AND profile_id IS NULL
-            AND profile_version IS NULL
-            AND profile_snapshot IS NULL
-            AND snapshot_sha256 IS NULL
-            AND validator_version IS NULL
-            AND validation_status IS NULL
-            AND validation_report IS NULL
-          ) OR (
-            renderer_kind = 'profile'
-            AND profile_id IS NOT NULL
-            AND profile_version > 0
-            AND jsonb_typeof(profile_snapshot) = 'object'
-            AND snapshot_sha256 ~ '^[a-f0-9]{64}$'
-            AND validator_version IS NOT NULL
-            AND validation_status IN ('valid', 'warning')
-            AND jsonb_typeof(validation_report) = 'object'
-          )
-        );
-      END IF;
-    END $$
-  `.simple();
-  await sql`
-    ALTER TABLE grids.documents ADD COLUMN IF NOT EXISTS profile_output JSONB
-      CHECK (profile_output IS NULL OR (renderer_kind = 'profile' AND jsonb_typeof(profile_output) = 'object'))
-  `.simple();
-  await sql`
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_grids_documents_short_id
-    ON grids.documents(short_id)
-  `.simple();
-  await sql`
-    ALTER TABLE grids.documents
-      ALTER COLUMN template_id DROP NOT NULL,
-      ALTER COLUMN snapshot_id DROP NOT NULL,
-      ALTER COLUMN table_id DROP NOT NULL,
-      ALTER COLUMN record_id DROP NOT NULL;
-    DO $$ BEGIN
-      IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'grids.documents'::regclass AND conname = 'documents_source_binding_chk') THEN
-        ALTER TABLE grids.documents ADD CONSTRAINT documents_source_binding_chk CHECK (
-          (template_id IS NOT NULL AND snapshot_id IS NOT NULL AND table_id IS NOT NULL AND record_id IS NOT NULL)
-          OR (template_id IS NULL AND snapshot_id IS NULL AND table_id IS NULL AND record_id IS NULL AND workflow_run_id IS NOT NULL)
-        );
-      END IF;
-    END $$;
-  `.simple();
-  await sql`
-    CREATE INDEX IF NOT EXISTS idx_grids_documents_template
-    ON grids.documents(template_id, created_at DESC)
-  `.simple();
-  await sql`
-    CREATE INDEX IF NOT EXISTS idx_grids_documents_template_cursor
-    ON grids.documents(template_id, created_at DESC, id DESC)
-  `.simple();
-  await sql`
-    CREATE INDEX IF NOT EXISTS idx_grids_documents_record
-    ON grids.documents(table_id, record_id, created_at DESC)
-  `.simple();
-  await sql`
-    CREATE INDEX IF NOT EXISTS idx_grids_documents_workflow_run
-    ON grids.documents(workflow_run_id, created_at DESC, id DESC)
-    WHERE workflow_run_id IS NOT NULL
-  `.simple();
-  await sql`
-    CREATE INDEX IF NOT EXISTS idx_grids_documents_tags
-    ON grids.documents USING GIN(tags)
-  `.simple();
-  console.log("  ✓ grids.documents");
-
-  await sql`
-    CREATE TABLE IF NOT EXISTS grids.document_artifacts (
-      document_id UUID NOT NULL REFERENCES grids.documents(id) ON DELETE RESTRICT,
-      artifact_key TEXT NOT NULL,
-      file_id UUID NOT NULL UNIQUE REFERENCES grids.files(id) ON DELETE RESTRICT,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-      PRIMARY KEY (document_id, artifact_key),
-      CONSTRAINT document_artifacts_key_chk CHECK (artifact_key ~ '^[a-z][a-z0-9._-]{0,63}$')
-    )
-  `.simple();
-  await sql`
-    CREATE OR REPLACE FUNCTION grids.reject_document_artifact_mutation()
-    RETURNS trigger LANGUAGE plpgsql AS $$
-    BEGIN
-      RAISE EXCEPTION 'Rows in grids.% are immutable', TG_TABLE_NAME USING ERRCODE = '55000';
-    END
-    $$
-  `.simple();
-  await sql`DROP TRIGGER IF EXISTS document_artifacts_immutable ON grids.document_artifacts`.simple();
-  await sql`
-    CREATE TRIGGER document_artifacts_immutable
-    BEFORE UPDATE OR DELETE ON grids.document_artifacts
-    FOR EACH ROW EXECUTE FUNCTION grids.reject_document_artifact_mutation()
-  `.simple();
-  console.log("  ✓ grids.document_artifacts");
-  await sql`ALTER TABLE grids.documents ADD COLUMN IF NOT EXISTS record_sources_complete BOOLEAN NOT NULL DEFAULT false`.simple();
-  await sql`
-    CREATE TABLE IF NOT EXISTS grids.document_record_sources (
-      document_id UUID NOT NULL REFERENCES grids.documents(id) ON DELETE RESTRICT,
-      table_id UUID NOT NULL REFERENCES grids.tables(id) ON DELETE RESTRICT,
-      record_id UUID NOT NULL REFERENCES grids.records(id) ON DELETE RESTRICT,
-      version BIGINT NOT NULL CHECK (version > 0),
-      PRIMARY KEY (document_id, table_id, record_id)
-    )
-  `.simple();
-  await sql`CREATE INDEX IF NOT EXISTS idx_document_record_sources_record
-    ON grids.document_record_sources(table_id, record_id, document_id)`.simple();
-  await sql`DROP TRIGGER IF EXISTS document_record_sources_immutable ON grids.document_record_sources`.simple();
-  await sql`CREATE TRIGGER document_record_sources_immutable BEFORE UPDATE OR DELETE ON grids.document_record_sources
-    FOR EACH ROW EXECUTE FUNCTION grids.reject_document_artifact_mutation()`.simple();
-  // Existing completed Documents were required to contain the canonical PDF.
-  // ADD COLUMN supplies that historical value without rewriting immutable rows.
-  // New issuance must explicitly select its primary artifact.
-  await sql`ALTER TABLE grids.documents ADD COLUMN IF NOT EXISTS primary_artifact_key TEXT NOT NULL DEFAULT 'pdf'`.simple();
-  await sql`ALTER TABLE grids.documents ALTER COLUMN primary_artifact_key DROP DEFAULT`.simple();
-
-  await sql`
-    CREATE TABLE IF NOT EXISTS grids.document_links (
-      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      short_id TEXT NOT NULL,
-      document_id UUID NOT NULL REFERENCES grids.documents(id) ON DELETE RESTRICT,
-      base_id UUID NOT NULL,
-      table_id UUID NOT NULL,
-      record_id UUID NOT NULL,
-      token_hash TEXT NOT NULL,
-      comment TEXT,
-      created_by UUID REFERENCES auth.users(id) ON DELETE SET NULL,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-      expires_at TIMESTAMPTZ NOT NULL,
-      revoked_at TIMESTAMPTZ,
-      revoked_by UUID REFERENCES auth.users(id) ON DELETE SET NULL,
-      last_accessed_at TIMESTAMPTZ,
-      access_count INTEGER NOT NULL DEFAULT 0,
-      CONSTRAINT document_links_short_id_format_chk CHECK (short_id ~ '^[A-Za-z0-9]{6}$'),
-      CONSTRAINT document_links_comment_length_chk CHECK (comment IS NULL OR length(comment) <= 500),
-      CONSTRAINT document_links_access_count_chk CHECK (access_count >= 0),
-      CONSTRAINT document_links_document_binding_fkey
-        FOREIGN KEY (document_id, base_id, table_id, record_id)
-        REFERENCES grids.documents(id, base_id, table_id, record_id) ON DELETE RESTRICT
-    )
-  `.simple();
-  await sql`
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_grids_document_links_short_id
-    ON grids.document_links(short_id)
-  `.simple();
-  await sql`
-    ALTER TABLE grids.document_links ALTER COLUMN table_id DROP NOT NULL, ALTER COLUMN record_id DROP NOT NULL;
-    DO $$ BEGIN
-      IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'grids.document_links'::regclass AND conname = 'document_links_base_binding_fkey') THEN
-        ALTER TABLE grids.document_links ADD CONSTRAINT document_links_base_binding_fkey
-          FOREIGN KEY (document_id, base_id) REFERENCES grids.documents(id, base_id) ON DELETE RESTRICT;
-      END IF;
-      IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'grids.document_links'::regclass AND conname = 'document_links_record_pair_chk') THEN
-        ALTER TABLE grids.document_links ADD CONSTRAINT document_links_record_pair_chk CHECK ((table_id IS NULL) = (record_id IS NULL));
-      END IF;
-    END $$;
-  `.simple();
-  await sql`
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_grids_document_links_token_hash
-    ON grids.document_links(token_hash)
-  `.simple();
-  await sql`
-    CREATE INDEX IF NOT EXISTS idx_grids_document_links_document
-    ON grids.document_links(document_id, created_at DESC)
-  `.simple();
-  await sql`
-    CREATE INDEX IF NOT EXISTS idx_grids_document_links_active
-    ON grids.document_links(expires_at)
-    WHERE revoked_at IS NULL
-  `.simple();
-  console.log("  ✓ grids.document_links");
-};
-
-const finalizeDocumentImmutability = async (sql: SQL): Promise<void> => {
-  await sql`
-    CREATE OR REPLACE FUNCTION grids.reject_document_mutation()
-    RETURNS trigger LANGUAGE plpgsql AS $$
-    BEGIN
-      RAISE EXCEPTION 'completed Documents are immutable' USING ERRCODE = '55000';
-    END
-    $$
-  `.simple();
-  await sql`DROP TRIGGER IF EXISTS documents_immutable ON grids.documents`.simple();
-  await sql`
-    CREATE TRIGGER documents_immutable
-    BEFORE UPDATE OR DELETE ON grids.documents
-    FOR EACH ROW EXECUTE FUNCTION grids.reject_document_mutation()
-  `.simple();
-  await sql`
-    CREATE OR REPLACE FUNCTION grids.reject_file_content_mutation()
-    RETURNS trigger LANGUAGE plpgsql AS $$
-    BEGIN
-      IF EXISTS (SELECT 1 FROM grids.document_artifacts WHERE file_id = OLD.id) THEN
-        RAISE EXCEPTION 'Document artifact File content is immutable' USING ERRCODE = '55000';
-      END IF;
-      RETURN NEW;
-    END
-    $$
-  `.simple();
-  await sql`DROP TRIGGER IF EXISTS files_content_immutable ON grids.files`.simple();
-  await sql`
-    CREATE TRIGGER files_content_immutable
-    BEFORE UPDATE OF filename, mime_type, size_bytes, sha256, bytes ON grids.files
-    FOR EACH ROW EXECUTE FUNCTION grids.reject_file_content_mutation()
-  `.simple();
-};
-
-const migrateNumberSeries = async (sql: SQL): Promise<void> => {
-  const allocateSeriesShortId = async (): Promise<string> => {
-    for (let attempt = 0; attempt < 10; attempt += 1) {
-      const candidate = newShortId();
-      const [used] = await sql<Array<{ used: boolean }>>`
-        SELECT true AS used FROM grids.number_series WHERE short_id = ${candidate}
-      `;
-      if (!used) return candidate;
-    }
-    throw new Error("number series migration could not allocate a public id");
-  };
-  await sql`
-    CREATE TABLE IF NOT EXISTS grids.number_series (
-      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      short_id TEXT NOT NULL,
-      owner_kind TEXT NOT NULL CHECK (owner_kind IN ('field', 'document_template')),
-      field_id UUID UNIQUE REFERENCES grids.fields(id) ON DELETE CASCADE,
-      document_template_id UUID UNIQUE REFERENCES grids.document_templates(id) ON DELETE CASCADE,
-      assignment TEXT NOT NULL DEFAULT 'creation' CHECK (assignment IN ('creation', 'finalization')),
-      current_version INT NOT NULL DEFAULT 1 CHECK (current_version >= 1),
-      baseline_floor BIGINT NOT NULL DEFAULT 0 CHECK (baseline_floor >= 0),
-      migration_status TEXT NOT NULL DEFAULT 'native',
-      migration_note TEXT,
-      archived_at TIMESTAMPTZ,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-      CONSTRAINT number_series_short_id_format_chk CHECK (short_id ~ '^[A-Za-z0-9]{6}$'),
-      CONSTRAINT number_series_owner_chk CHECK (
-        (owner_kind = 'field' AND field_id IS NOT NULL AND document_template_id IS NULL)
-        OR (owner_kind = 'document_template' AND document_template_id IS NOT NULL AND field_id IS NULL)
-      )
-    )
-  `.simple();
-  await sql`
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_grids_number_series_short_id
-    ON grids.number_series(short_id)
-  `.simple();
-  await sql`
-    CREATE TABLE IF NOT EXISTS grids.number_series_versions (
-      series_id UUID NOT NULL REFERENCES grids.number_series(id) ON DELETE CASCADE,
-      version INT NOT NULL CHECK (version >= 1),
-      strategy TEXT NOT NULL CHECK (strategy IN ('sequence', 'date_sequence', 'document')),
-      prefix TEXT NOT NULL DEFAULT '',
-      padding INT NOT NULL DEFAULT 1 CHECK (padding BETWEEN 1 AND 16),
-      period TEXT CHECK (period IN ('year', 'month', 'day')),
-      number_template TEXT,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-      PRIMARY KEY (series_id, version)
-    )
-  `.simple();
-  await sql`
-    CREATE TABLE IF NOT EXISTS grids.number_series_scopes (
-      series_id UUID NOT NULL REFERENCES grids.number_series(id) ON DELETE CASCADE,
-      scope TEXT NOT NULL,
-      sequence_name TEXT NOT NULL UNIQUE,
-      baseline BIGINT NOT NULL DEFAULT 0 CHECK (baseline >= 0),
-      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-      PRIMARY KEY (series_id, scope)
-    )
-  `.simple();
-  await sql`
-    CREATE TABLE IF NOT EXISTS grids.number_allocations (
-      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      series_id UUID NOT NULL REFERENCES grids.number_series(id) ON DELETE CASCADE,
-      version INT NOT NULL,
-      scope TEXT NOT NULL,
-      value BIGINT NOT NULL CHECK (value >= 1),
-      rendered_value TEXT NOT NULL,
-      consumer_kind TEXT CHECK (consumer_kind IN ('record', 'document')),
-      consumer_id UUID,
-      allocated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-      FOREIGN KEY (series_id, version) REFERENCES grids.number_series_versions(series_id, version) ON DELETE CASCADE,
-      CONSTRAINT number_allocations_consumer_chk CHECK (
-        (consumer_kind IS NULL AND consumer_id IS NULL) OR (consumer_kind IS NOT NULL AND consumer_id IS NOT NULL)
-      ),
-      UNIQUE (series_id, scope, value),
-      UNIQUE (series_id, rendered_value)
-    )
-  `.simple();
-  await sql`
-    CREATE INDEX IF NOT EXISTS idx_grids_number_allocations_consumer
-    ON grids.number_allocations(consumer_kind, consumer_id)
-    WHERE consumer_id IS NOT NULL
-  `.simple();
-
-  const fields = await sql<Array<{ id: string; config: Record<string, unknown>; deletedAt: Date | null }>>`
-    SELECT id::text, config, deleted_at AS "deletedAt"
-    FROM grids.fields
-    WHERE type = 'id'
-    ORDER BY id
-  `;
-  for (const field of fields) {
-    const format = numberSeriesFormatForField(parseJsonbRow(field.config, {}));
-    if (!format) continue;
-    let [series] = await sql<Array<{ id: string }>>`
-      SELECT id::text FROM grids.number_series WHERE field_id = ${field.id}::uuid
-    `;
-    if (!series) {
-      const seriesId = Bun.randomUUIDv7();
-      const seriesShortId = await allocateSeriesShortId();
-      [series] = await sql<Array<{ id: string }>>`
-        INSERT INTO grids.number_series (id, short_id, owner_kind, field_id, archived_at, migration_status)
-        VALUES (${seriesId}::uuid, ${seriesShortId}, 'field', ${field.id}::uuid, ${field.deletedAt}, 'pending')
-        RETURNING id::text
-      `;
-      await sql`
-        INSERT INTO grids.number_series_versions (series_id, version, strategy, prefix, padding, period)
-        VALUES (
-          ${seriesId}::uuid,
-          1,
-          ${format.strategy},
-          ${format.prefix ?? ""},
-          ${format.padding ?? 1},
-          ${format.period ?? null}
-        )
-      `;
-    }
-    if (!series) throw new Error(`number series migration could not create field series ${field.id}`);
-    const [{ count: scopeCount } = { count: 0 }] = await sql<Array<{ count: number }>>`
-      SELECT count(*)::int AS count FROM grids.number_series_scopes WHERE series_id = ${series.id}::uuid
-    `;
-    if (scopeCount > 0) continue;
-
-    const legacyPrefix = `grids_id_${field.id.replaceAll("-", "")}`;
-    const legacy = await sql<Array<{ sequenceName: string; lastValue: bigint | number | string | null }>>`
-      SELECT sequencename AS "sequenceName", last_value AS "lastValue"
-      FROM pg_sequences
-      WHERE schemaname = 'grids' AND sequencename LIKE ${`${legacyPrefix}%`}
-      ORDER BY sequencename
-    `;
-    let diagnostic = "active_sequence";
-    let note: string | null = null;
-    let conservativeFloor = 0;
-    const scopes = new Map<string, number>();
-    for (const row of legacy) {
-      const suffix = row.sequenceName.slice(legacyPrefix.length).replace(/^_/, "");
-      scopes.set(suffix || "global", Number(row.lastValue ?? 0));
-      conservativeFloor = Math.max(conservativeFloor, Number(row.lastValue ?? 0));
-    }
-    const hasLegacySequences = scopes.size > 0;
-    if (!hasLegacySequences) {
-      const values = await sql<Array<{ value: string }>>`
-        SELECT data->>${field.id} AS value
-        FROM grids.records
-        WHERE data ? ${field.id}
-      `;
-      const prefix = format.prefix ?? "";
-      const paddingPattern = "([0-9]+)";
-      const escapedPrefix = prefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-      const matcher =
-        format.strategy === "date_sequence"
-          ? new RegExp(`^${escapedPrefix}([0-9]{4}|[0-9]{6}|[0-9]{8})-${paddingPattern}$`)
-          : new RegExp(`^${escapedPrefix}${paddingPattern}$`);
-      let ambiguous = false;
-      for (const row of values) {
-        const trailing = row.value.match(/([0-9]+)$/)?.[1];
-        if (trailing) conservativeFloor = Math.max(conservativeFloor, Number(trailing));
-        const match = row.value.match(matcher);
-        if (!match) {
-          ambiguous = true;
-          continue;
-        }
-        const scope = format.strategy === "date_sequence" ? match[1]! : "global";
-        const value = Number(match[format.strategy === "date_sequence" ? 2 : 1]);
-        if (!Number.isSafeInteger(value) || value < 1) {
-          ambiguous = true;
-          continue;
-        }
-        scopes.set(scope, Math.max(scopes.get(scope) ?? 0, value));
-      }
-      if (scopes.size === 0) scopes.set("global", 0);
-      diagnostic = ambiguous ? "inferred_with_unmatched_values" : values.length > 0 ? "inferred_from_values" : "inferred_empty";
-      note = ambiguous ? "Some legacy values did not match the current format; matching high-water marks were preserved." : null;
-    }
-    for (const [scope, baseline] of scopes) {
-      const safeBaseline = hasLegacySequences ? baseline : Math.max(baseline, conservativeFloor);
-      const sequenceName = numberSeriesSequenceName(series.id, scope);
-      await sql.unsafe(`CREATE SEQUENCE IF NOT EXISTS grids.${sequenceName} AS BIGINT INCREMENT 1 MINVALUE 1`);
-      if (safeBaseline > 0) await sql.unsafe(`SELECT setval('grids.${sequenceName}', $1, true)`, [safeBaseline]);
-      await sql`
-        INSERT INTO grids.number_series_scopes (series_id, scope, sequence_name, baseline)
-        VALUES (${series.id}::uuid, ${scope}, ${sequenceName}, ${safeBaseline})
-        ON CONFLICT (series_id, scope) DO NOTHING
-      `;
-    }
-    await sql`
-      UPDATE grids.number_series
-      SET migration_status = ${diagnostic}, migration_note = ${note}, baseline_floor = ${conservativeFloor}, updated_at = now()
-      WHERE id = ${series.id}::uuid
-    `;
-  }
-
-  await sql`ALTER TABLE grids.number_series ALTER COLUMN short_id SET NOT NULL`.simple();
-  await sql`
-    DO $$
-    BEGIN
-      IF NOT EXISTS (
-        SELECT 1
-        FROM pg_constraint
-        WHERE conrelid = 'grids.number_series'::regclass
-          AND conname = 'number_series_short_id_format_chk'
-      ) THEN
-        ALTER TABLE grids.number_series
-          ADD CONSTRAINT number_series_short_id_format_chk CHECK (short_id ~ '^[A-Za-z0-9]{6}$');
-      END IF;
-    END $$
-  `.simple();
-
-  const legacySequences = await sql<Array<{ sequenceName: string }>>`
-    SELECT sequencename AS "sequenceName"
-    FROM pg_sequences
-    WHERE schemaname = 'grids' AND sequencename LIKE 'grids_id_%'
-  `;
-  for (const sequence of legacySequences) {
-    if (!/^grids_id_[a-f0-9_]+$/i.test(sequence.sequenceName)) throw new Error("unsafe legacy number sequence name");
-    await sql.unsafe(`DROP SEQUENCE grids.${sequence.sequenceName}`);
-  }
-  console.log("  ✓ grids durable number series");
-};
-
-// Intentional alpha hard cut: these surfaces predate canonical GQL views and
-// HTML-only workflow email templates. They are removed instead of migrated so
-// the runtime has one query and one email-template representation.
-const cleanupAlphaSchema = async (sql: SQL): Promise<void> => {
-  await sql`ALTER TABLE grids.views DROP COLUMN IF EXISTS query`.simple();
-  await sql`ALTER TABLE grids.views DROP COLUMN IF EXISTS display_config`.simple();
-  await sql`DROP TABLE IF EXISTS grids.gql_queries CASCADE`.simple();
-  await sql`ALTER TABLE grids.email_templates DROP CONSTRAINT IF EXISTS email_templates_text_length_chk`.simple();
-  await sql`ALTER TABLE grids.email_templates DROP COLUMN IF EXISTS text`.simple();
-  console.log("  ✓ grids alpha schema cleanup");
-};
-
-const migrateFormsAndEvents = async (sql: SQL): Promise<void> => {
-  // ──────────────────────────────────────────────────────────────────
-  // forms — record-entry surface for internal users + optional public URLs
-  // ──────────────────────────────────────────────────────────────────
-  // The "default form" per table is virtual (computed from active fields)
-  // and not stored here. Only user-customized forms live in grids.forms.
-  // Public forms have a non-null `public_token` that anonymous callers
-  // pass in the URL.
-  await sql`
-    CREATE TABLE IF NOT EXISTS grids.forms (
-      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      short_id TEXT NOT NULL,
-      table_id UUID NOT NULL REFERENCES grids.tables(id) ON DELETE CASCADE,
-      name TEXT NOT NULL,
-      config JSONB NOT NULL DEFAULT '{}'::jsonb,
-      public_token TEXT,
-      is_active BOOLEAN NOT NULL DEFAULT TRUE,
-      owner_user_id UUID REFERENCES auth.users(id) ON DELETE SET NULL,
-      position INT NOT NULL DEFAULT 0,
-      deleted_at TIMESTAMPTZ,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-      CONSTRAINT forms_short_id_format_chk CHECK (short_id ~ '^[A-Za-z0-9]{6}$')
-    )
-  `.simple();
-  await sql`CREATE INDEX IF NOT EXISTS idx_grids_forms_table_live ON grids.forms(table_id, position) WHERE deleted_at IS NULL`.simple();
-  // Public-token lookup is the public form's hot path; partial index keeps
-  // it scoped to forms that are actually public AND alive.
-  await sql`CREATE UNIQUE INDEX IF NOT EXISTS idx_grids_forms_public_token ON grids.forms(public_token) WHERE public_token IS NOT NULL AND deleted_at IS NULL`.simple();
-  console.log("  ✓ grids.forms");
-
-  // Keep retry receipts independently of the created Record: deleting a
-  // Record must not turn a retry into another submission.
-  await sql`
-    CREATE TABLE IF NOT EXISTS grids.form_submissions (
-      scope_hash TEXT NOT NULL,
-      key_hash TEXT NOT NULL,
-      request_hash TEXT NOT NULL,
-      table_id UUID NOT NULL REFERENCES grids.tables(id) ON DELETE CASCADE,
-      record_id UUID NOT NULL,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-      PRIMARY KEY (scope_hash, key_hash)
-    )
-  `.simple();
-
-  // ──────────────────────────────────────────────────────────────────
-  // audit log
-  // ──────────────────────────────────────────────────────────────────
-  // No FK on record_id: audit history remains readable independently from
-  // the record lifecycle.
   await sql`
     CREATE TABLE IF NOT EXISTS grids.audit_log (
-      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      base_id UUID,
-      table_id UUID,
-      record_id UUID,
-      user_id UUID REFERENCES auth.users(id) ON DELETE SET NULL,
-      action TEXT NOT NULL,
-      diff JSONB,
-      context JSONB,
-      ip TEXT,
-      user_agent TEXT,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-    )
-  `.simple();
-  await sql`ALTER TABLE grids.audit_log ADD COLUMN IF NOT EXISTS context JSONB`.simple();
-  await sql`CREATE INDEX IF NOT EXISTS idx_grids_audit_record ON grids.audit_log(record_id, created_at DESC) WHERE record_id IS NOT NULL`.simple();
-  await sql`CREATE INDEX IF NOT EXISTS idx_grids_audit_table ON grids.audit_log(table_id, created_at DESC) WHERE table_id IS NOT NULL`.simple();
-  await sql`
-    CREATE INDEX IF NOT EXISTS idx_grids_audit_table_records_page
-    ON grids.audit_log(table_id, created_at DESC, id DESC)
-    WHERE record_id IS NOT NULL
-  `.simple();
-  console.log("  ✓ grids.audit_log");
-
-  await sql`
-    CREATE TABLE IF NOT EXISTS grids.record_event_outbox (
-      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      base_id UUID NOT NULL REFERENCES grids.bases(id) ON DELETE CASCADE,
-      table_id UUID NOT NULL REFERENCES grids.tables(id) ON DELETE CASCADE,
-      record_id UUID NOT NULL,
-      payload JSONB NOT NULL,
-      status TEXT NOT NULL DEFAULT 'pending',
-      attempts INT NOT NULL DEFAULT 0 CHECK (attempts >= 0),
-      next_attempt_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-      last_error TEXT,
-      delivered_at TIMESTAMPTZ,
-      dead_at TIMESTAMPTZ,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-      CONSTRAINT record_event_outbox_status_check CHECK (status IN ('pending', 'failed', 'delivered', 'dead'))
-    )
-  `.simple();
-  await sql`ALTER TABLE grids.record_event_outbox ADD COLUMN IF NOT EXISTS dead_at TIMESTAMPTZ`.simple();
-  await sql`
-    DO $$
-    BEGIN
-      IF EXISTS (
-        SELECT 1
-        FROM pg_constraint
-        WHERE conname = 'record_event_outbox_status_check'
-          AND connamespace = 'grids'::regnamespace
-          AND pg_get_constraintdef(oid) NOT LIKE '%dead%'
-      ) THEN
-        ALTER TABLE grids.record_event_outbox DROP CONSTRAINT record_event_outbox_status_check;
-        ALTER TABLE grids.record_event_outbox
-          ADD CONSTRAINT record_event_outbox_status_check CHECK (status IN ('pending', 'failed', 'delivered', 'dead'));
-      END IF;
-    END $$
-  `.simple();
-  await sql`
-    CREATE INDEX IF NOT EXISTS idx_grids_record_event_outbox_pending
-    ON grids.record_event_outbox(next_attempt_at, created_at)
-    WHERE status IN ('pending', 'failed')
-  `.simple();
-  await sql`
-    CREATE INDEX IF NOT EXISTS idx_grids_record_event_outbox_record_pending
-    ON grids.record_event_outbox(record_id, created_at, id)
-    WHERE status IN ('pending', 'failed')
-  `.simple();
-  await sql`
-    CREATE INDEX IF NOT EXISTS idx_grids_record_event_outbox_delivered
-    ON grids.record_event_outbox(delivered_at)
-    WHERE status = 'delivered'
-  `.simple();
-  await sql`
-    CREATE INDEX IF NOT EXISTS idx_grids_record_event_outbox_dead
-    ON grids.record_event_outbox(dead_at)
-    WHERE status = 'dead'
-  `.simple();
-  await sql`
-    CREATE INDEX IF NOT EXISTS idx_grids_record_event_outbox_feed_base
-    ON grids.record_event_outbox(base_id, created_at, id)
-  `.simple();
-  await sql`
-    CREATE INDEX IF NOT EXISTS idx_grids_record_event_outbox_feed_table
-    ON grids.record_event_outbox(base_id, table_id, created_at, id)
-  `.simple();
-
-  await sql`
-    CREATE TABLE IF NOT EXISTS grids.record_event_snapshots (
-      id UUID PRIMARY KEY REFERENCES grids.record_event_outbox(id) ON DELETE CASCADE,
-      base_id UUID NOT NULL REFERENCES grids.bases(id) ON DELETE CASCADE,
-      table_id UUID NOT NULL REFERENCES grids.tables(id) ON DELETE CASCADE,
-      record_id UUID NOT NULL,
-      event_type TEXT NOT NULL CHECK (event_type IN ('record.created', 'record.updated', 'record.deleted', 'record.restored', 'record.finalized', 'comment.created')),
-      record_version INT NOT NULL CHECK (record_version > 0),
-      data JSONB NOT NULL,
-      deleted_at TIMESTAMPTZ,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      id uuid DEFAULT gen_random_uuid() NOT NULL,
+      base_id uuid,
+      table_id uuid,
+      record_id uuid,
+      user_id uuid,
+      action text NOT NULL,
+      diff jsonb,
+      context jsonb,
+      ip text,
+      user_agent text,
+      created_at timestamp with time zone DEFAULT now() NOT NULL,
+      CONSTRAINT audit_log_pkey PRIMARY KEY (id),
+      CONSTRAINT audit_log_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE SET NULL
     )
   `.simple();
   await sql`
-    DO $$
-    DECLARE constraint_name text;
-    BEGIN
-      SELECT conname INTO constraint_name
-      FROM pg_constraint
-      WHERE conrelid = 'grids.record_event_snapshots'::regclass
-        AND contype = 'c'
-        AND pg_get_constraintdef(oid) LIKE '%event_type%';
-      IF constraint_name IS NOT NULL
-         AND NOT EXISTS (
-           SELECT 1 FROM pg_constraint
-           WHERE conrelid = 'grids.record_event_snapshots'::regclass
-             AND conname = constraint_name
-             AND pg_get_constraintdef(oid) LIKE '%record.finalized%'
-         ) THEN
-        EXECUTE format('ALTER TABLE grids.record_event_snapshots DROP CONSTRAINT %I', constraint_name);
-        ALTER TABLE grids.record_event_snapshots
-          ADD CONSTRAINT record_event_snapshots_event_type_check
-          CHECK (event_type IN ('record.created', 'record.updated', 'record.deleted', 'record.restored', 'record.finalized', 'comment.created'));
-      END IF;
-    END $$
+    CREATE INDEX IF NOT EXISTS idx_grids_audit_record ON grids.audit_log USING btree (record_id, created_at DESC) WHERE (record_id IS NOT NULL)
   `.simple();
   await sql`
-    CREATE INDEX IF NOT EXISTS idx_grids_record_event_snapshots_record
-    ON grids.record_event_snapshots(record_id, record_version, created_at DESC)
+    CREATE INDEX IF NOT EXISTS idx_grids_audit_table ON grids.audit_log USING btree (table_id, created_at DESC) WHERE (table_id IS NOT NULL)
   `.simple();
-
   await sql`
-    CREATE TABLE IF NOT EXISTS grids.record_event_delivery_failures (
-      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      base_id UUID NOT NULL REFERENCES grids.bases(id) ON DELETE CASCADE,
-      consumer_group TEXT NOT NULL,
-      event_id TEXT NOT NULL,
-      payload TEXT,
-      error TEXT NOT NULL,
-      attempts INTEGER NOT NULL DEFAULT 1 CHECK (attempts > 0),
-      status TEXT NOT NULL DEFAULT 'retrying' CHECK (status IN ('retrying', 'dead')),
-      first_seen_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-      last_seen_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-      dead_at TIMESTAMPTZ,
-      UNIQUE (base_id, consumer_group, event_id),
-      CHECK ((status = 'dead') = (dead_at IS NOT NULL))
+    CREATE INDEX IF NOT EXISTS idx_grids_audit_table_records_page ON grids.audit_log USING btree (table_id, created_at DESC, id DESC) WHERE (record_id IS NOT NULL)
+  `.simple();
+  await sql`
+    CREATE TABLE IF NOT EXISTS grids.bases (
+      id uuid DEFAULT gen_random_uuid() NOT NULL,
+      short_id text NOT NULL,
+      name text NOT NULL,
+      description text,
+      document_defaults jsonb DEFAULT '{}'::jsonb NOT NULL,
+      created_by uuid,
+      deleted_at timestamp with time zone,
+      created_at timestamp with time zone DEFAULT now() NOT NULL,
+      updated_at timestamp with time zone DEFAULT now() NOT NULL,
+      navigation_groups jsonb DEFAULT '[]'::jsonb NOT NULL,
+      navigation_revision integer DEFAULT 0 NOT NULL,
+      CONSTRAINT bases_created_by_fkey FOREIGN KEY (created_by) REFERENCES auth.users(id) ON DELETE SET NULL,
+      CONSTRAINT bases_pkey PRIMARY KEY (id),
+      CONSTRAINT bases_short_id_format_chk CHECK ((short_id ~ '^[A-Za-z0-9]{6}$'::text))
     )
   `.simple();
   await sql`
-    CREATE INDEX IF NOT EXISTS idx_grids_record_event_delivery_failures_dead
-    ON grids.record_event_delivery_failures(base_id, dead_at DESC)
-    WHERE status = 'dead'
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_grids_bases_short_id ON grids.bases USING btree (short_id)
   `.simple();
   await sql`
-    CREATE OR REPLACE FUNCTION grids.enqueue_record_event(p_table_id uuid, p_record_id uuid, p_payload jsonb)
-    RETURNS uuid
-    LANGUAGE plpgsql
-    VOLATILE
-    AS $$
-    DECLARE
-      outbox_id uuid := gen_random_uuid();
-      event_base_id uuid;
-    BEGIN
-      SELECT base_id INTO event_base_id FROM grids.tables WHERE id = p_table_id;
-      IF event_base_id IS NULL THEN
-        RAISE EXCEPTION 'record event table does not exist';
-      END IF;
-      INSERT INTO grids.record_event_outbox (id, base_id, table_id, record_id, payload)
-      VALUES (
-        outbox_id,
-        event_base_id,
-        p_table_id,
-        p_record_id,
-        p_payload || jsonb_build_object(
-          'baseId', event_base_id::text,
-          'tableId', p_table_id::text,
-          'recordId', p_record_id::text,
-          'occurredAt', now()
-        )
-      );
-      RETURN outbox_id;
-    END;
-    $$
-  `.simple();
-  console.log("  ✓ grids.record_event_outbox + delivery failures");
-};
-
-const migrateCustomApps = async (sql: SQL): Promise<void> => {
-  await sql`
-    CREATE TABLE IF NOT EXISTS grids.custom_apps (
-      id UUID PRIMARY KEY,
-      short_id TEXT NOT NULL,
-      base_id UUID NOT NULL REFERENCES grids.bases(id) ON DELETE CASCADE,
-      name TEXT NOT NULL,
-      icon TEXT,
-      draft_definition JSONB NOT NULL,
-      draft_capabilities JSONB NOT NULL,
-      published_definition JSONB,
-      published_capabilities JSONB,
-      published_at TIMESTAMPTZ,
-      deleted_at TIMESTAMPTZ,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-      CONSTRAINT custom_apps_short_id_format_chk CHECK (short_id ~ '^[A-Za-z0-9]{6}$')
-    )
-  `.simple();
-  await sql`ALTER TABLE grids.custom_apps ALTER COLUMN draft_capabilities DROP NOT NULL`.simple();
-  await sql`
-    CREATE INDEX IF NOT EXISTS idx_grids_custom_apps_base
-    ON grids.custom_apps(base_id, name) WHERE deleted_at IS NULL
-  `.simple();
-  // v3 makes Records paging an explicit presentation concern and removes the
-  // old author-facing execution cap. Rewrite stored JSON losslessly before
-  // strict v3 parsing; no compatibility parser remains in the runtime.
-  await sql`
-    CREATE OR REPLACE FUNCTION grids.custom_app_definition_v3(value JSONB)
-    RETURNS JSONB
-    LANGUAGE plpgsql
-    IMMUTABLE
-    AS $$
-    DECLARE
-      result JSONB;
-      legacy_page_size INTEGER;
-    BEGIN
-      IF jsonb_typeof(value) = 'array' THEN
-        SELECT COALESCE(jsonb_agg(grids.custom_app_definition_v3(item)), '[]'::jsonb)
-        INTO result
-        FROM jsonb_array_elements(value) AS entries(item);
-      ELSIF jsonb_typeof(value) = 'object' THEN
-        legacy_page_size := CASE
-          WHEN value->>'type' = 'records' AND value#>>'{source,maxRows}' ~ '^[0-9]+$'
-            THEN LEAST(100, GREATEST(5, (value#>>'{source,maxRows}')::integer))
-          ELSE 100
-        END;
-        SELECT COALESCE(jsonb_object_agg(key, grids.custom_app_definition_v3(item)), '{}'::jsonb)
-        INTO result
-        FROM jsonb_each(value) AS entries(key, item)
-        WHERE key <> 'maxRows';
-
-        IF result->>'type' = 'records' THEN
-          result := jsonb_build_object('searchable', false, 'pageSize', legacy_page_size) || result;
-        END IF;
-        IF result->>'kind' = 'grids.custom-app' AND result->>'schemaVersion' = '2' THEN
-          result := jsonb_set(result, '{schemaVersion}', '3'::jsonb, false);
-        END IF;
-      ELSE
-        result := value;
-      END IF;
-      RETURN result;
-    END
-    $$
-  `.simple();
-  await sql`
-    UPDATE grids.custom_apps
-    SET
-      draft_definition = CASE
-        WHEN draft_definition->>'schemaVersion' = '2' THEN grids.custom_app_definition_v3(draft_definition)
-        ELSE draft_definition
-      END,
-      published_definition = CASE
-        WHEN published_definition->>'schemaVersion' = '2' THEN grids.custom_app_definition_v3(published_definition)
-        ELSE published_definition
-      END
-    WHERE draft_definition->>'schemaVersion' = '2'
-       OR published_definition->>'schemaVersion' = '2'
-  `.simple();
-  await sql`DROP FUNCTION grids.custom_app_definition_v3(JSONB)`.simple();
-  // v4 removes server-owned route identity and duplicate navigation ordering
-  // from authoring JSON. Definitions using intentionally removed features stay
-  // recoverable as raw drafts, but are unpublished instead of being changed
-  // silently. Domain records are not part of this migration.
-  await sql`
-    CREATE OR REPLACE FUNCTION grids.custom_app_definition_v4_supported(value JSONB)
-    RETURNS BOOLEAN
-    LANGUAGE plpgsql
-    IMMUTABLE
-    AS $$
-    DECLARE
-      item JSONB;
-    BEGIN
-      IF jsonb_typeof(value) = 'array' THEN
-        FOR item IN SELECT entry FROM jsonb_array_elements(value) AS entries(entry) LOOP
-          IF NOT grids.custom_app_definition_v4_supported(item) THEN RETURN false; END IF;
-        END LOOP;
-      ELSIF jsonb_typeof(value) = 'object' THEN
-        IF value->>'type' = 'chart' AND value->>'chartType' IN ('scatter', 'sparkline') THEN RETURN false; END IF;
-        IF value ? 'bulkActions'
-           AND jsonb_typeof(value->'bulkActions') = 'array'
-           AND jsonb_array_length(value->'bulkActions') > 0 THEN
-          RETURN false;
-        END IF;
-        IF value->>'kind' = 'grids.custom-app'
-           AND jsonb_typeof(value#>'{sidebar,actions}') = 'array'
-           AND EXISTS (
-             SELECT 1 FROM jsonb_array_elements(value#>'{sidebar,actions}') AS actions(action)
-             WHERE action->>'kind' = 'workflow'
-           ) THEN
-          RETURN false;
-        END IF;
-        FOR item IN SELECT entry FROM jsonb_each(value) AS entries(key, entry) LOOP
-          IF NOT grids.custom_app_definition_v4_supported(item) THEN RETURN false; END IF;
-        END LOOP;
-      END IF;
-      RETURN true;
-    END
-    $$
-  `.simple();
-  await sql`
-    CREATE OR REPLACE FUNCTION grids.custom_app_definition_v4(value JSONB)
-    RETURNS JSONB
-    LANGUAGE plpgsql
-    IMMUTABLE
-    AS $$
-    DECLARE
-      pages JSONB;
-      result JSONB;
-    BEGIN
-      IF value->>'schemaVersion' <> '3' OR NOT grids.custom_app_definition_v4_supported(value) THEN RETURN NULL; END IF;
-      SELECT COALESCE(
-        jsonb_agg(
-          CASE
-            WHEN jsonb_typeof(page->'navigation') = 'object'
-              THEN jsonb_set(page, '{navigation}', (page->'navigation') - 'order', false)
-            ELSE page
-          END
-          ORDER BY ordinal
-        ),
-        '[]'::jsonb
-      )
-      INTO pages
-      FROM jsonb_array_elements(COALESCE(value->'pages', '[]'::jsonb)) WITH ORDINALITY AS entries(page, ordinal);
-      result := jsonb_set((value - 'shortId'), '{schemaVersion}', '4'::jsonb, false);
-      RETURN jsonb_set(result, '{pages}', pages, false);
-    END
-    $$
-  `.simple();
-  await sql`
-    UPDATE grids.custom_apps
-    SET
-      draft_definition = CASE
-        WHEN draft_definition->>'schemaVersion' = '3'
-             AND NOT grids.custom_app_definition_v4_supported(draft_definition)
-          THEN draft_definition
-        ELSE published_definition
-      END,
-      draft_capabilities = NULL,
-      published_definition = NULL,
-      published_capabilities = NULL,
-      published_at = NULL,
-      updated_at = now()
-    WHERE (draft_definition->>'schemaVersion' = '3' AND NOT grids.custom_app_definition_v4_supported(draft_definition))
-       OR (published_definition->>'schemaVersion' = '3' AND NOT grids.custom_app_definition_v4_supported(published_definition))
-  `.simple();
-  await sql`
-    UPDATE grids.custom_apps
-    SET
-      draft_definition = CASE
-        WHEN draft_definition->>'schemaVersion' = '3' AND grids.custom_app_definition_v4_supported(draft_definition)
-          THEN grids.custom_app_definition_v4(draft_definition)
-        ELSE draft_definition
-      END,
-      published_definition = CASE
-        WHEN published_definition->>'schemaVersion' = '3' AND grids.custom_app_definition_v4_supported(published_definition)
-          THEN grids.custom_app_definition_v4(published_definition)
-        ELSE published_definition
-      END
-    WHERE draft_definition->>'schemaVersion' = '3'
-       OR published_definition->>'schemaVersion' = '3'
-  `.simple();
-  // Completed v5 installations also run this startup migration. Their live
-  // snapshots are not unsupported legacy definitions and must remain intact.
-  await sql`
-    UPDATE grids.custom_apps
-    SET
-      draft_definition = CASE
-        WHEN draft_definition->>'schemaVersion' = '4' THEN published_definition
-        ELSE draft_definition
-      END,
-      draft_capabilities = NULL,
-      published_definition = NULL,
-      published_capabilities = NULL,
-      published_at = NULL,
-      updated_at = now()
-    WHERE published_definition IS NOT NULL
-      AND published_definition->>'schemaVersion' IS DISTINCT FROM '4'
-      AND published_definition->>'schemaVersion' IS DISTINCT FROM '5'
-  `.simple();
-  await sql`DROP FUNCTION grids.custom_app_definition_v4(JSONB)`.simple();
-  await sql`DROP FUNCTION grids.custom_app_definition_v4_supported(JSONB)`.simple();
-  await sql`
-    CREATE TABLE IF NOT EXISTS grids.custom_app_access (
-      custom_app_id UUID NOT NULL REFERENCES grids.custom_apps(id) ON DELETE CASCADE,
-      access_id UUID NOT NULL REFERENCES auth.access(id) ON DELETE CASCADE,
-      PRIMARY KEY (custom_app_id, access_id)
-    )
-  `.simple();
-  await sql`CREATE INDEX IF NOT EXISTS idx_grids_custom_app_access_access ON grids.custom_app_access(access_id)`.simple();
-  console.log("  ✓ grids.custom_apps + grids.custom_app_access");
-};
-
-const removeLegacyDashboards = async (sql: SQL): Promise<void> => {
-  await sql`
-    DROP TABLE IF EXISTS grids.dashboard_access;
-    DROP TABLE IF EXISTS grids.dashboards;
-    ALTER TABLE grids.bases DROP COLUMN IF EXISTS default_dashboard_id;
-  `.simple();
-  console.log("  ✓ removed legacy Grids dashboards");
-};
-
-const removeObsoleteAccess = async (sql: SQL): Promise<void> => {
-  await sql`
-    ALTER TABLE grids.base_access DROP CONSTRAINT IF EXISTS base_access_record_scope_chk;
-    ALTER TABLE grids.base_access DROP COLUMN IF EXISTS record_scope;
-    DROP TABLE IF EXISTS grids.table_access;
-    DROP TABLE IF EXISTS grids.view_access;
-    DROP TABLE IF EXISTS grids.form_access;
-    DROP TABLE IF EXISTS grids.document_template_access;
-    DROP TABLE IF EXISTS grids.workflow_access;
-  `.simple();
-  console.log("  ✓ removed obsolete Grids access metadata");
-};
-
-const migrateRecordScanCodes = async (sql: SQL): Promise<void> => {
-  // Opaque scan codes are lazy-generated record lookup keys. A code does not
-  // grant access; scanner workflows still resolve and run through permissions.
-  await sql`
-    CREATE TABLE IF NOT EXISTS grids.record_scan_codes (
-      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      base_id UUID NOT NULL REFERENCES grids.bases(id) ON DELETE CASCADE,
-      table_id UUID NOT NULL REFERENCES grids.tables(id) ON DELETE CASCADE,
-      record_id UUID NOT NULL REFERENCES grids.records(id) ON DELETE CASCADE,
-      code TEXT NOT NULL,
-      active BOOLEAN NOT NULL DEFAULT TRUE,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-      rotated_at TIMESTAMPTZ,
-      CONSTRAINT record_scan_codes_code_length_chk CHECK (length(code) BETWEEN 16 AND 200)
+    CREATE TABLE IF NOT EXISTS grids.files (
+      id uuid DEFAULT gen_random_uuid() NOT NULL,
+      short_id text NOT NULL,
+      filename text NOT NULL,
+      mime_type text NOT NULL,
+      size_bytes integer NOT NULL,
+      sha256 text NOT NULL,
+      bytes bytea NOT NULL,
+      created_by uuid,
+      created_at timestamp with time zone DEFAULT now() NOT NULL,
+      CONSTRAINT files_check CHECK ((octet_length(bytes) = size_bytes)),
+      CONSTRAINT files_created_by_fkey FOREIGN KEY (created_by) REFERENCES auth.users(id) ON DELETE SET NULL,
+      CONSTRAINT files_pkey PRIMARY KEY (id),
+      CONSTRAINT files_short_id_format_chk CHECK ((short_id ~ '^[A-Za-z0-9]{6}$'::text)),
+      CONSTRAINT files_size_bytes_check CHECK ((size_bytes >= 0))
     )
   `.simple();
   await sql`
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_grids_record_scan_codes_code
-    ON grids.record_scan_codes(code)
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_grids_files_short_id ON grids.files USING btree (short_id)
   `.simple();
   await sql`
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_grids_record_scan_codes_active_record
-    ON grids.record_scan_codes(record_id) WHERE active = TRUE
-  `.simple();
-  await sql`
-    CREATE INDEX IF NOT EXISTS idx_grids_record_scan_codes_table
-    ON grids.record_scan_codes(table_id, record_id) WHERE active = TRUE
-  `.simple();
-  console.log("  ✓ grids.record_scan_codes");
-};
-
-const migrateEvidenceExports = async (sql: SQL): Promise<void> => {
-  await sql`
-    CREATE TABLE IF NOT EXISTS grids.evidence_exports (
-      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      short_id TEXT NOT NULL,
-      base_id UUID NOT NULL REFERENCES grids.bases(id) ON DELETE CASCADE,
-      table_id UUID REFERENCES grids.tables(id) ON DELETE RESTRICT,
-      requested_by UUID REFERENCES auth.users(id) ON DELETE SET NULL,
-      requested_by_display_name TEXT,
-      sections TEXT[] NOT NULL,
-      range_from TIMESTAMPTZ,
-      range_to TIMESTAMPTZ,
-      status TEXT NOT NULL DEFAULT 'queued',
-      attempt INT NOT NULL DEFAULT 1 CHECK (attempt >= 1),
-      estimated_entries INT,
-      processed_entries INT NOT NULL DEFAULT 0 CHECK (processed_entries >= 0),
-      cut_at TIMESTAMPTZ,
-      package_filename TEXT,
-      package_size_bytes BIGINT,
-      package_sha256 TEXT,
-      manifest_sha256 TEXT,
-      manifest JSONB,
-      last_error TEXT,
-      requested_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-      started_at TIMESTAMPTZ,
-      completed_at TIMESTAMPTZ,
-      expires_at TIMESTAMPTZ,
-      CONSTRAINT evidence_exports_short_id_format_chk CHECK (short_id ~ '^[A-Za-z0-9]{6}$'),
-      CONSTRAINT evidence_exports_status_chk CHECK (
-        status IN ('queued', 'running', 'cancel_requested', 'completed', 'failed', 'canceled', 'expired')
-      ),
-      CONSTRAINT evidence_exports_range_chk CHECK (range_from IS NULL OR range_to IS NULL OR range_from <= range_to),
-      CONSTRAINT evidence_exports_package_chk CHECK (
-        (status <> 'completed' AND package_filename IS NULL AND package_size_bytes IS NULL AND package_sha256 IS NULL AND manifest_sha256 IS NULL)
-        OR (status = 'completed' AND package_filename IS NOT NULL AND package_size_bytes IS NOT NULL
-          AND package_sha256 ~ '^[a-f0-9]{64}$' AND manifest_sha256 ~ '^[a-f0-9]{64}$' AND manifest IS NOT NULL)
-      )
+    CREATE TABLE IF NOT EXISTS grids.base_access (
+      base_id uuid NOT NULL,
+      access_id uuid NOT NULL,
+      CONSTRAINT base_access_access_id_fkey FOREIGN KEY (access_id) REFERENCES auth.access(id) ON DELETE CASCADE,
+      CONSTRAINT base_access_base_id_fkey FOREIGN KEY (base_id) REFERENCES grids.bases(id) ON DELETE CASCADE,
+      CONSTRAINT base_access_pkey PRIMARY KEY (base_id, access_id)
     )
   `.simple();
   await sql`
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_grids_evidence_exports_short_id
-    ON grids.evidence_exports(short_id)
-  `.simple();
-  await sql`
-    CREATE INDEX IF NOT EXISTS idx_grids_evidence_exports_base_page
-    ON grids.evidence_exports(base_id, requested_at DESC, id DESC)
-  `.simple();
-  await sql`
-    CREATE TABLE IF NOT EXISTS grids.evidence_export_chunks (
-      export_id UUID NOT NULL REFERENCES grids.evidence_exports(id) ON DELETE CASCADE,
-      sequence INT NOT NULL CHECK (sequence >= 0),
-      bytes BYTEA NOT NULL,
-      PRIMARY KEY (export_id, sequence),
-      CHECK (octet_length(bytes) BETWEEN 1 AND 1048576)
-    )
-  `.simple();
-  console.log("  ✓ grids.evidence_exports");
-};
-
-const migrateRetentionPolicies = async (sql: SQL): Promise<void> => {
-  await sql`
-    CREATE TABLE IF NOT EXISTS grids.retention_policies (
-      base_id UUID PRIMARY KEY REFERENCES grids.bases(id) ON DELETE CASCADE,
-      minimum_days INT NOT NULL CHECK (minimum_days BETWEEN 1 AND 36500),
-      updated_by UUID REFERENCES auth.users(id) ON DELETE SET NULL,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
-    )
-  `.simple();
-  await sql`
-    CREATE TABLE IF NOT EXISTS grids.file_retention_candidates (
-      file_id UUID PRIMARY KEY REFERENCES grids.files(id) ON DELETE CASCADE,
-      base_id UUID NOT NULL,
-      table_id UUID,
-      table_short_id TEXT,
-      table_name TEXT,
-      unreferenced_at TIMESTAMPTZ NOT NULL DEFAULT now()
-    )
-  `.simple();
-  await sql`ALTER TABLE grids.file_retention_candidates ADD COLUMN IF NOT EXISTS table_id UUID`.simple();
-  await sql`ALTER TABLE grids.file_retention_candidates ADD COLUMN IF NOT EXISTS table_short_id TEXT`.simple();
-  await sql`ALTER TABLE grids.file_retention_candidates ADD COLUMN IF NOT EXISTS table_name TEXT`.simple();
-  await sql`
-    CREATE TABLE IF NOT EXISTS grids.preservation_holds (
-      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      short_id TEXT NOT NULL,
-      base_id UUID NOT NULL REFERENCES grids.bases(id) ON DELETE CASCADE,
-      scope_type TEXT NOT NULL DEFAULT 'base',
-      table_id UUID,
-      table_short_id TEXT,
-      table_name TEXT,
-      reason TEXT NOT NULL CHECK (char_length(reason) BETWEEN 1 AND 1000 AND reason = btrim(reason)),
-      created_by UUID REFERENCES auth.users(id) ON DELETE SET NULL,
-      created_by_display_name TEXT,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-      release_reason TEXT CHECK (release_reason IS NULL OR (char_length(release_reason) BETWEEN 1 AND 1000 AND release_reason = btrim(release_reason))),
-      released_by UUID REFERENCES auth.users(id) ON DELETE SET NULL,
-      released_by_display_name TEXT,
-      released_at TIMESTAMPTZ,
-      CONSTRAINT preservation_holds_short_id_format_chk CHECK (short_id ~ '^[A-Za-z0-9]{6}$'),
-      CONSTRAINT preservation_holds_scope_chk CHECK (
-        (scope_type = 'base' AND table_id IS NULL AND table_short_id IS NULL AND table_name IS NULL)
-        OR (scope_type = 'table' AND table_id IS NOT NULL AND table_short_id IS NOT NULL AND table_name IS NOT NULL)
-      ),
-      CONSTRAINT preservation_holds_release_chk CHECK (
-        (released_at IS NULL AND release_reason IS NULL AND released_by IS NULL AND released_by_display_name IS NULL)
-        OR (released_at IS NOT NULL AND release_reason IS NOT NULL)
-      )
-    )
-  `.simple();
-  await sql`ALTER TABLE grids.preservation_holds ADD COLUMN IF NOT EXISTS scope_type TEXT NOT NULL DEFAULT 'base'`.simple();
-  await sql`ALTER TABLE grids.preservation_holds ADD COLUMN IF NOT EXISTS table_id UUID`.simple();
-  await sql`ALTER TABLE grids.preservation_holds ADD COLUMN IF NOT EXISTS table_short_id TEXT`.simple();
-  await sql`ALTER TABLE grids.preservation_holds ADD COLUMN IF NOT EXISTS table_name TEXT`.simple();
-  await sql`
-    UPDATE grids.preservation_holds hold
-    SET table_short_id = table_info.short_id, table_name = table_info.name
-    FROM grids.tables table_info
-    WHERE hold.scope_type = 'table' AND hold.table_id = table_info.id
-      AND (hold.table_short_id IS NULL OR hold.table_name IS NULL)
-  `.simple();
-  await sql`
-    ALTER TABLE grids.preservation_holds
-      DROP CONSTRAINT IF EXISTS preservation_holds_table_id_fkey,
-      DROP CONSTRAINT IF EXISTS preservation_holds_scope_chk,
-      ADD CONSTRAINT preservation_holds_scope_chk CHECK (
-        (scope_type = 'base' AND table_id IS NULL AND table_short_id IS NULL AND table_name IS NULL)
-        OR (scope_type = 'table' AND table_id IS NOT NULL AND table_short_id IS NOT NULL AND table_name IS NOT NULL)
-      )
-  `.simple();
-  await sql`
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_grids_preservation_holds_short_id
-    ON grids.preservation_holds(short_id)
-  `.simple();
-  await sql`
-    CREATE INDEX IF NOT EXISTS idx_grids_preservation_holds_active_base
-    ON grids.preservation_holds(base_id, created_at DESC, id DESC) WHERE released_at IS NULL
-  `.simple();
-  await sql`
-    CREATE INDEX IF NOT EXISTS idx_grids_preservation_holds_active_table
-    ON grids.preservation_holds(base_id, table_id, created_at DESC, id DESC)
-    WHERE released_at IS NULL AND scope_type = 'table'
+    CREATE INDEX IF NOT EXISTS idx_grids_base_access_access ON grids.base_access USING btree (access_id)
   `.simple();
   await sql`
     CREATE TABLE IF NOT EXISTS grids.controlled_destruction_runs (
-      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      short_id TEXT NOT NULL,
-      base_id UUID NOT NULL REFERENCES grids.bases(id) ON DELETE CASCADE,
-      status TEXT NOT NULL CHECK (status IN ('queued', 'running', 'cancel_requested', 'completed', 'partial', 'canceled', 'failed')),
-      requested_by UUID REFERENCES auth.users(id) ON DELETE SET NULL,
-      requested_by_display_name TEXT,
-      requested_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-      started_at TIMESTAMPTZ,
-      completed_at TIMESTAMPTZ,
-      last_error TEXT,
-      CONSTRAINT controlled_destruction_runs_short_id_format_chk CHECK (short_id ~ '^[A-Za-z0-9]{6}$')
+      id uuid DEFAULT gen_random_uuid() NOT NULL,
+      short_id text NOT NULL,
+      base_id uuid NOT NULL,
+      status text NOT NULL,
+      requested_by uuid,
+      requested_by_display_name text,
+      requested_at timestamp with time zone DEFAULT now() NOT NULL,
+      started_at timestamp with time zone,
+      completed_at timestamp with time zone,
+      last_error text,
+      CONSTRAINT controlled_destruction_runs_base_id_fkey FOREIGN KEY (base_id) REFERENCES grids.bases(id) ON DELETE CASCADE,
+      CONSTRAINT controlled_destruction_runs_pkey PRIMARY KEY (id),
+      CONSTRAINT controlled_destruction_runs_requested_by_fkey FOREIGN KEY (requested_by) REFERENCES auth.users(id) ON DELETE SET NULL,
+      CONSTRAINT controlled_destruction_runs_short_id_format_chk CHECK ((short_id ~ '^[A-Za-z0-9]{6}$'::text)),
+      CONSTRAINT controlled_destruction_runs_status_check CHECK ((status = ANY (ARRAY['queued'::text, 'running'::text, 'cancel_requested'::text, 'completed'::text, 'partial'::text, 'canceled'::text, 'failed'::text])))
     )
   `.simple();
   await sql`
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_grids_controlled_destruction_runs_short_id
-    ON grids.controlled_destruction_runs(short_id)
+    CREATE INDEX IF NOT EXISTS idx_grids_controlled_destruction_runs_base ON grids.controlled_destruction_runs USING btree (base_id, requested_at DESC, id DESC)
   `.simple();
   await sql`
-    CREATE INDEX IF NOT EXISTS idx_grids_controlled_destruction_runs_base
-    ON grids.controlled_destruction_runs(base_id, requested_at DESC, id DESC)
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_grids_controlled_destruction_runs_short_id ON grids.controlled_destruction_runs USING btree (short_id)
+  `.simple();
+  await sql`
+    CREATE TABLE IF NOT EXISTS grids.custom_apps (
+      id uuid NOT NULL,
+      short_id text NOT NULL,
+      base_id uuid NOT NULL,
+      name text NOT NULL,
+      icon text,
+      draft_definition jsonb NOT NULL,
+      draft_capabilities jsonb,
+      published_definition jsonb,
+      published_capabilities jsonb,
+      published_at timestamp with time zone,
+      deleted_at timestamp with time zone,
+      created_at timestamp with time zone DEFAULT now() NOT NULL,
+      updated_at timestamp with time zone DEFAULT now() NOT NULL,
+      CONSTRAINT custom_apps_base_id_fkey FOREIGN KEY (base_id) REFERENCES grids.bases(id) ON DELETE CASCADE,
+      CONSTRAINT custom_apps_pkey PRIMARY KEY (id),
+      CONSTRAINT custom_apps_short_id_format_chk CHECK ((short_id ~ '^[A-Za-z0-9]{6}$'::text))
+    )
+  `.simple();
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_grids_custom_apps_base ON grids.custom_apps USING btree (base_id, name) WHERE (deleted_at IS NULL)
+  `.simple();
+  await sql`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_grids_custom_apps_short_id ON grids.custom_apps USING btree (short_id)
+  `.simple();
+  await sql`
+    CREATE TABLE IF NOT EXISTS grids.document_profile_counters (
+      base_id uuid NOT NULL,
+      profile_id text NOT NULL,
+      next_value bigint DEFAULT 1 NOT NULL,
+      CONSTRAINT document_profile_counters_base_id_fkey FOREIGN KEY (base_id) REFERENCES grids.bases(id) ON DELETE RESTRICT,
+      CONSTRAINT document_profile_counters_next_value_check CHECK ((next_value > 0)),
+      CONSTRAINT document_profile_counters_pkey PRIMARY KEY (base_id, profile_id),
+      CONSTRAINT document_profile_counters_profile_id_chk CHECK ((profile_id ~ '^[a-z][a-z0-9.-]{2,99}$'::text))
+    )
+  `.simple();
+  await sql`
+    CREATE TABLE IF NOT EXISTS grids.email_templates (
+      id uuid DEFAULT gen_random_uuid() NOT NULL,
+      short_id text NOT NULL,
+      base_id uuid NOT NULL,
+      name text NOT NULL,
+      description text,
+      subject text NOT NULL,
+      html text NOT NULL,
+      sample_data jsonb DEFAULT '{}'::jsonb NOT NULL,
+      enabled boolean DEFAULT true NOT NULL,
+      position integer DEFAULT 0 NOT NULL,
+      created_by uuid,
+      updated_by uuid,
+      deleted_at timestamp with time zone,
+      created_at timestamp with time zone DEFAULT now() NOT NULL,
+      updated_at timestamp with time zone DEFAULT now() NOT NULL,
+      CONSTRAINT email_templates_base_id_fkey FOREIGN KEY (base_id) REFERENCES grids.bases(id) ON DELETE CASCADE,
+      CONSTRAINT email_templates_created_by_fkey FOREIGN KEY (created_by) REFERENCES auth.users(id) ON DELETE SET NULL,
+      CONSTRAINT email_templates_html_length_chk CHECK (((length(html) >= 1) AND (length(html) <= 200000))),
+      CONSTRAINT email_templates_pkey PRIMARY KEY (id),
+      CONSTRAINT email_templates_sample_data_object_chk CHECK ((jsonb_typeof(sample_data) = 'object'::text)),
+      CONSTRAINT email_templates_short_id_format_chk CHECK ((short_id ~ '^[A-Za-z0-9]{6}$'::text)),
+      CONSTRAINT email_templates_subject_length_chk CHECK (((length(subject) >= 1) AND (length(subject) <= 1000))),
+      CONSTRAINT email_templates_updated_by_fkey FOREIGN KEY (updated_by) REFERENCES auth.users(id) ON DELETE SET NULL
+    )
+  `.simple();
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_grids_email_templates_base_live ON grids.email_templates USING btree (base_id, "position") WHERE (deleted_at IS NULL)
+  `.simple();
+  await sql`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_grids_email_templates_short_id ON grids.email_templates USING btree (short_id)
+  `.simple();
+  await sql`
+    CREATE TABLE IF NOT EXISTS grids.file_protected_references (
+      file_id uuid NOT NULL,
+      owner_kind text NOT NULL,
+      owner_id uuid NOT NULL,
+      base_id uuid NOT NULL,
+      table_id uuid,
+      record_id uuid,
+      created_by uuid,
+      created_at timestamp with time zone DEFAULT now() NOT NULL,
+      CONSTRAINT file_protected_references_created_by_fkey FOREIGN KEY (created_by) REFERENCES auth.users(id) ON DELETE SET NULL,
+      CONSTRAINT file_protected_references_file_id_fkey FOREIGN KEY (file_id) REFERENCES grids.files(id) ON DELETE RESTRICT,
+      CONSTRAINT file_protected_references_owner_kind_check CHECK ((owner_kind = ANY (ARRAY['record_revision'::text, 'document_artifact'::text]))),
+      CONSTRAINT file_protected_references_pkey PRIMARY KEY (file_id, owner_kind, owner_id)
+    )
+  `.simple();
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_grids_file_protected_references_owner ON grids.file_protected_references USING btree (owner_kind, owner_id, file_id)
+  `.simple();
+  await sql`
+    CREATE TABLE IF NOT EXISTS grids.file_retention_candidates (
+      file_id uuid NOT NULL,
+      base_id uuid NOT NULL,
+      table_id uuid,
+      table_short_id text,
+      table_name text,
+      unreferenced_at timestamp with time zone DEFAULT now() NOT NULL,
+      CONSTRAINT file_retention_candidates_file_id_fkey FOREIGN KEY (file_id) REFERENCES grids.files(id) ON DELETE CASCADE,
+      CONSTRAINT file_retention_candidates_pkey PRIMARY KEY (file_id)
+    )
+  `.simple();
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_grids_file_retention_candidates_base ON grids.file_retention_candidates USING btree (base_id, unreferenced_at, file_id)
+  `.simple();
+  await sql`
+    CREATE TABLE IF NOT EXISTS grids.preservation_holds (
+      id uuid DEFAULT gen_random_uuid() NOT NULL,
+      short_id text NOT NULL,
+      base_id uuid NOT NULL,
+      scope_type text DEFAULT 'base'::text NOT NULL,
+      table_id uuid,
+      table_short_id text,
+      table_name text,
+      reason text NOT NULL,
+      created_by uuid,
+      created_by_display_name text,
+      created_at timestamp with time zone DEFAULT now() NOT NULL,
+      release_reason text,
+      released_by uuid,
+      released_by_display_name text,
+      released_at timestamp with time zone,
+      CONSTRAINT preservation_holds_base_id_fkey FOREIGN KEY (base_id) REFERENCES grids.bases(id) ON DELETE CASCADE,
+      CONSTRAINT preservation_holds_created_by_fkey FOREIGN KEY (created_by) REFERENCES auth.users(id) ON DELETE SET NULL,
+      CONSTRAINT preservation_holds_pkey PRIMARY KEY (id),
+      CONSTRAINT preservation_holds_reason_check CHECK ((((char_length(reason) >= 1) AND (char_length(reason) <= 1000)) AND (reason = btrim(reason)))),
+      CONSTRAINT preservation_holds_release_chk CHECK ((((released_at IS NULL) AND (release_reason IS NULL) AND (released_by IS NULL) AND (released_by_display_name IS NULL)) OR ((released_at IS NOT NULL) AND (release_reason IS NOT NULL)))),
+      CONSTRAINT preservation_holds_release_reason_check CHECK (((release_reason IS NULL) OR (((char_length(release_reason) >= 1) AND (char_length(release_reason) <= 1000)) AND (release_reason = btrim(release_reason))))),
+      CONSTRAINT preservation_holds_released_by_fkey FOREIGN KEY (released_by) REFERENCES auth.users(id) ON DELETE SET NULL,
+      CONSTRAINT preservation_holds_scope_chk CHECK ((((scope_type = 'base'::text) AND (table_id IS NULL) AND (table_short_id IS NULL) AND (table_name IS NULL)) OR ((scope_type = 'table'::text) AND (table_id IS NOT NULL) AND (table_short_id IS NOT NULL) AND (table_name IS NOT NULL)))),
+      CONSTRAINT preservation_holds_short_id_format_chk CHECK ((short_id ~ '^[A-Za-z0-9]{6}$'::text))
+    )
+  `.simple();
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_grids_preservation_holds_active_base ON grids.preservation_holds USING btree (base_id, created_at DESC, id DESC) WHERE (released_at IS NULL)
+  `.simple();
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_grids_preservation_holds_active_table ON grids.preservation_holds USING btree (base_id, table_id, created_at DESC, id DESC) WHERE ((released_at IS NULL) AND (scope_type = 'table'::text))
+  `.simple();
+  await sql`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_grids_preservation_holds_short_id ON grids.preservation_holds USING btree (short_id)
+  `.simple();
+  await sql`
+    CREATE TABLE IF NOT EXISTS grids.record_event_delivery_failures (
+      id uuid DEFAULT gen_random_uuid() NOT NULL,
+      base_id uuid NOT NULL,
+      consumer_group text NOT NULL,
+      event_id text NOT NULL,
+      payload text,
+      error text NOT NULL,
+      attempts integer DEFAULT 1 NOT NULL,
+      status text DEFAULT 'retrying'::text NOT NULL,
+      first_seen_at timestamp with time zone DEFAULT now() NOT NULL,
+      last_seen_at timestamp with time zone DEFAULT now() NOT NULL,
+      dead_at timestamp with time zone,
+      CONSTRAINT record_event_delivery_failure_base_id_consumer_group_event__key UNIQUE (base_id, consumer_group, event_id),
+      CONSTRAINT record_event_delivery_failures_attempts_check CHECK ((attempts > 0)),
+      CONSTRAINT record_event_delivery_failures_base_id_fkey FOREIGN KEY (base_id) REFERENCES grids.bases(id) ON DELETE CASCADE,
+      CONSTRAINT record_event_delivery_failures_check CHECK (((status = 'dead'::text) = (dead_at IS NOT NULL))),
+      CONSTRAINT record_event_delivery_failures_pkey PRIMARY KEY (id),
+      CONSTRAINT record_event_delivery_failures_status_check CHECK ((status = ANY (ARRAY['retrying'::text, 'dead'::text])))
+    )
+  `.simple();
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_grids_record_event_delivery_failures_dead ON grids.record_event_delivery_failures USING btree (base_id, dead_at DESC) WHERE (status = 'dead'::text)
+  `.simple();
+  await sql`
+    CREATE TABLE IF NOT EXISTS grids.retention_policies (
+      base_id uuid NOT NULL,
+      minimum_days integer NOT NULL,
+      updated_by uuid,
+      created_at timestamp with time zone DEFAULT now() NOT NULL,
+      updated_at timestamp with time zone DEFAULT now() NOT NULL,
+      CONSTRAINT retention_policies_base_id_fkey FOREIGN KEY (base_id) REFERENCES grids.bases(id) ON DELETE CASCADE,
+      CONSTRAINT retention_policies_minimum_days_check CHECK (((minimum_days >= 1) AND (minimum_days <= 36500))),
+      CONSTRAINT retention_policies_pkey PRIMARY KEY (base_id),
+      CONSTRAINT retention_policies_updated_by_fkey FOREIGN KEY (updated_by) REFERENCES auth.users(id) ON DELETE SET NULL
+    )
+  `.simple();
+  await sql`
+    CREATE TABLE IF NOT EXISTS grids.tables (
+      id uuid DEFAULT gen_random_uuid() NOT NULL,
+      short_id text NOT NULL,
+      base_id uuid NOT NULL,
+      kind text DEFAULT 'stored'::text NOT NULL,
+      name text NOT NULL,
+      description text,
+      icon text,
+      columns jsonb DEFAULT '[]'::jsonb NOT NULL,
+      display_config jsonb DEFAULT '{"mode": "table"}'::jsonb NOT NULL,
+      audit_policy jsonb DEFAULT '{}'::jsonb NOT NULL,
+      mutation_policy jsonb DEFAULT '{"mode": "all"}'::jsonb NOT NULL,
+      position integer DEFAULT 0 NOT NULL,
+      disable_direct_insert boolean DEFAULT false NOT NULL,
+      deleted_at timestamp with time zone,
+      created_at timestamp with time zone DEFAULT now() NOT NULL,
+      updated_at timestamp with time zone DEFAULT now() NOT NULL,
+      finalization_policy_revision integer DEFAULT 0 NOT NULL,
+      CONSTRAINT tables_base_id_fkey FOREIGN KEY (base_id) REFERENCES grids.bases(id) ON DELETE CASCADE,
+      CONSTRAINT tables_federated_mutation_policy_chk CHECK (((kind <> 'federated'::text) OR (mutation_policy = '{"mode": "all"}'::jsonb))),
+      CONSTRAINT tables_federated_read_only_chk CHECK (((kind <> 'federated'::text) OR (disable_direct_insert AND (audit_policy = '{}'::jsonb)))),
+      CONSTRAINT tables_kind_chk CHECK ((kind = ANY (ARRAY['stored'::text, 'federated'::text]))),
+      CONSTRAINT tables_pkey PRIMARY KEY (id),
+      CONSTRAINT tables_short_id_format_chk CHECK ((short_id ~ '^[A-Za-z0-9]{6}$'::text))
+    )
+  `.simple();
+  await sql`
+    CREATE UNIQUE INDEX IF NOT EXISTS uq_grids_tables_id_base ON grids.tables USING btree (id, base_id)
+  `.simple();
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_grids_tables_base_live ON grids.tables USING btree (base_id, "position") WHERE (deleted_at IS NULL)
+  `.simple();
+  await sql`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_grids_tables_live_name ON grids.tables USING btree (base_id, lower(btrim(name))) WHERE (deleted_at IS NULL)
+  `.simple();
+  await sql`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_grids_tables_short_id ON grids.tables USING btree (short_id)
+  `.simple();
+  await sql`
+    CREATE TABLE IF NOT EXISTS grids.workflow_profile (
+      id uuid NOT NULL,
+      base_id uuid NOT NULL,
+      short_id text NOT NULL,
+      position integer DEFAULT 0 NOT NULL,
+      owner_user_id uuid,
+      enabled boolean DEFAULT false NOT NULL,
+      record_event_active_since timestamp with time zone,
+      deleted_at timestamp with time zone,
+      created_at timestamp with time zone DEFAULT now() NOT NULL,
+      updated_at timestamp with time zone DEFAULT now() NOT NULL,
+      CONSTRAINT workflow_profile_base_id_fkey FOREIGN KEY (base_id) REFERENCES grids.bases(id) ON DELETE CASCADE,
+      CONSTRAINT workflow_profile_owner_user_id_fkey FOREIGN KEY (owner_user_id) REFERENCES auth.users(id) ON DELETE SET NULL,
+      CONSTRAINT workflow_profile_pkey PRIMARY KEY (id),
+      CONSTRAINT workflow_profile_short_id_format_chk CHECK ((short_id ~ '^[A-Za-z0-9]{6}$'::text))
+    )
+  `.simple();
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_grids_workflow_profile_base_live ON grids.workflow_profile USING btree (base_id, "position", created_at, id) WHERE (deleted_at IS NULL)
+  `.simple();
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_grids_workflow_profile_record_events ON grids.workflow_profile USING btree (base_id, record_event_active_since) WHERE ((deleted_at IS NULL) AND enabled AND (record_event_active_since IS NOT NULL))
+  `.simple();
+  await sql`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_grids_workflow_profile_short_id ON grids.workflow_profile USING btree (short_id)
+  `.simple();
+  await sql`
+    CREATE TABLE IF NOT EXISTS grids.workflow_run_profile (
+      run_id uuid NOT NULL,
+      short_id text NOT NULL,
+      base_id uuid NOT NULL,
+      workflow_id uuid NOT NULL,
+      launcher_id uuid,
+      launcher_kind text,
+      channel text NOT NULL,
+      actor_user_id uuid,
+      service_account_id uuid,
+      request_fingerprint text NOT NULL,
+      created_at timestamp with time zone DEFAULT now() NOT NULL,
+      captured_bytes bigint DEFAULT 0 NOT NULL,
+      CONSTRAINT workflow_run_profile_actor_user_id_fkey FOREIGN KEY (actor_user_id) REFERENCES auth.users(id) ON DELETE SET NULL,
+      CONSTRAINT workflow_run_profile_base_id_fkey FOREIGN KEY (base_id) REFERENCES grids.bases(id) ON DELETE CASCADE,
+      CONSTRAINT workflow_run_profile_captured_bytes_check CHECK ((captured_bytes >= 0)),
+      CONSTRAINT workflow_run_profile_channel_check CHECK ((channel = ANY (ARRAY['api'::text, 'customApp'::text, 'scanner'::text, 'bulk'::text, 'record'::text, 'schedule'::text, 'recordEvent'::text]))),
+      CONSTRAINT workflow_run_profile_launcher_kind_check CHECK (((launcher_kind IS NULL) OR (launcher_kind = ANY (ARRAY['scanner'::text, 'bulk'::text, 'record'::text, 'customApp'::text])))),
+      CONSTRAINT workflow_run_profile_pkey PRIMARY KEY (run_id),
+      CONSTRAINT workflow_run_profile_service_account_id_fkey FOREIGN KEY (service_account_id) REFERENCES auth.service_accounts(id) ON DELETE SET NULL,
+      CONSTRAINT workflow_run_profile_short_id_format_chk CHECK ((short_id ~ '^[A-Za-z0-9]{6}$'::text))
+    )
+  `.simple();
+  await sql`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_grids_workflow_run_profile_base_identity ON grids.workflow_run_profile USING btree (run_id, base_id)
+  `.simple();
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_grids_workflow_run_profile_base ON grids.workflow_run_profile USING btree (base_id, channel, created_at DESC, run_id DESC)
+  `.simple();
+  await sql`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_grids_workflow_run_profile_short_id ON grids.workflow_run_profile USING btree (short_id)
+  `.simple();
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_grids_workflow_run_profile_workflow ON grids.workflow_run_profile USING btree (workflow_id, created_at DESC, run_id DESC)
   `.simple();
   await sql`
     CREATE TABLE IF NOT EXISTS grids.controlled_destruction_items (
-      run_id UUID NOT NULL REFERENCES grids.controlled_destruction_runs(id) ON DELETE CASCADE,
-      position INT NOT NULL,
-      file_id UUID NOT NULL,
-      file_short_id TEXT NOT NULL,
-      table_id UUID NOT NULL,
-      table_short_id TEXT NOT NULL,
-      table_name TEXT NOT NULL,
-      filename TEXT NOT NULL,
-      size_bytes BIGINT NOT NULL CHECK (size_bytes >= 0),
-      status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'destroyed', 'skipped', 'failed')),
-      message TEXT,
-      processed_at TIMESTAMPTZ,
-      PRIMARY KEY (run_id, position),
-      UNIQUE (run_id, file_id)
+      run_id uuid NOT NULL,
+      position integer NOT NULL,
+      file_id uuid NOT NULL,
+      file_short_id text NOT NULL,
+      table_id uuid NOT NULL,
+      table_short_id text NOT NULL,
+      table_name text NOT NULL,
+      filename text NOT NULL,
+      size_bytes bigint NOT NULL,
+      status text DEFAULT 'pending'::text NOT NULL,
+      message text,
+      processed_at timestamp with time zone,
+      CONSTRAINT controlled_destruction_items_pkey PRIMARY KEY (run_id, "position"),
+      CONSTRAINT controlled_destruction_items_run_id_file_id_key UNIQUE (run_id, file_id),
+      CONSTRAINT controlled_destruction_items_run_id_fkey FOREIGN KEY (run_id) REFERENCES grids.controlled_destruction_runs(id) ON DELETE CASCADE,
+      CONSTRAINT controlled_destruction_items_size_bytes_check CHECK ((size_bytes >= 0)),
+      CONSTRAINT controlled_destruction_items_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'destroyed'::text, 'skipped'::text, 'failed'::text])))
     )
   `.simple();
   await sql`
-    CREATE INDEX IF NOT EXISTS idx_grids_file_retention_candidates_base
-    ON grids.file_retention_candidates(base_id, unreferenced_at, file_id)
+    CREATE TABLE IF NOT EXISTS grids.custom_app_access (
+      custom_app_id uuid NOT NULL,
+      access_id uuid NOT NULL,
+      CONSTRAINT custom_app_access_access_id_fkey FOREIGN KEY (access_id) REFERENCES auth.access(id) ON DELETE CASCADE,
+      CONSTRAINT custom_app_access_custom_app_id_fkey FOREIGN KEY (custom_app_id) REFERENCES grids.custom_apps(id) ON DELETE CASCADE,
+      CONSTRAINT custom_app_access_pkey PRIMARY KEY (custom_app_id, access_id)
+    )
   `.simple();
-  console.log("  ✓ grids.retention_policies");
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_grids_custom_app_access_access ON grids.custom_app_access USING btree (access_id)
+  `.simple();
+  await sql`
+    CREATE TABLE IF NOT EXISTS grids.document_templates (
+      id uuid DEFAULT gen_random_uuid() NOT NULL,
+      short_id text NOT NULL,
+      table_id uuid NOT NULL,
+      name text NOT NULL,
+      description text,
+      source text NOT NULL,
+      renderer_kind text NOT NULL,
+      html text,
+      header_html text,
+      footer_html text,
+      page_css text,
+      number_template text,
+      filename_template text,
+      profile_id text,
+      profile_version integer,
+      profile_input_template text,
+      enabled boolean DEFAULT true NOT NULL,
+      position integer DEFAULT 0 NOT NULL,
+      created_by uuid,
+      updated_by uuid,
+      deleted_at timestamp with time zone,
+      created_at timestamp with time zone DEFAULT now() NOT NULL,
+      updated_at timestamp with time zone DEFAULT now() NOT NULL,
+      CONSTRAINT document_templates_created_by_fkey FOREIGN KEY (created_by) REFERENCES auth.users(id) ON DELETE SET NULL,
+      CONSTRAINT document_templates_filename_template_length_chk CHECK (((filename_template IS NULL) OR ((length(filename_template) >= 1) AND (length(filename_template) <= 5000)))),
+      CONSTRAINT document_templates_footer_html_length_chk CHECK (((footer_html IS NULL) OR ((length(footer_html) >= 1) AND (length(footer_html) <= 50000)))),
+      CONSTRAINT document_templates_header_html_length_chk CHECK (((header_html IS NULL) OR ((length(header_html) >= 1) AND (length(header_html) <= 50000)))),
+      CONSTRAINT document_templates_html_length_chk CHECK (((html IS NULL) OR ((length(html) >= 1) AND (length(html) <= 200000)))),
+      CONSTRAINT document_templates_id_table_id_key UNIQUE (id, table_id),
+      CONSTRAINT document_templates_number_template_length_chk CHECK (((number_template IS NULL) OR ((length(number_template) >= 1) AND (length(number_template) <= 5000)))),
+      CONSTRAINT document_templates_page_css_length_chk CHECK (((page_css IS NULL) OR ((length(page_css) >= 1) AND (length(page_css) <= 50000)))),
+      CONSTRAINT document_templates_pkey PRIMARY KEY (id),
+      CONSTRAINT document_templates_renderer_chk CHECK ((((renderer_kind = 'html'::text) AND (html IS NOT NULL) AND (number_template IS NOT NULL) AND (filename_template IS NOT NULL) AND (profile_id IS NULL) AND (profile_version IS NULL) AND (profile_input_template IS NULL)) OR ((renderer_kind = 'profile'::text) AND (html IS NULL) AND (header_html IS NULL) AND (footer_html IS NULL) AND (page_css IS NULL) AND (number_template IS NULL) AND (filename_template IS NULL) AND (profile_id IS NOT NULL) AND (profile_version > 0) AND (profile_input_template IS NOT NULL)))),
+      CONSTRAINT document_templates_renderer_kind_chk CHECK ((renderer_kind = ANY (ARRAY['html'::text, 'profile'::text]))),
+      CONSTRAINT document_templates_short_id_format_chk CHECK ((short_id ~ '^[A-Za-z0-9]{6}$'::text)),
+      CONSTRAINT document_templates_source_length_chk CHECK (((length(source) >= 1) AND (length(source) <= 20000))),
+      CONSTRAINT document_templates_table_id_fkey FOREIGN KEY (table_id) REFERENCES grids.tables(id) ON DELETE CASCADE,
+      CONSTRAINT document_templates_updated_by_fkey FOREIGN KEY (updated_by) REFERENCES auth.users(id) ON DELETE SET NULL
+    )
+  `.simple();
+  await sql`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_grids_document_templates_short_id ON grids.document_templates USING btree (short_id)
+  `.simple();
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_grids_document_templates_table_live ON grids.document_templates USING btree (table_id, "position") WHERE (deleted_at IS NULL)
+  `.simple();
+  await sql`
+    CREATE TABLE IF NOT EXISTS grids.evidence_exports (
+      id uuid DEFAULT gen_random_uuid() NOT NULL,
+      short_id text NOT NULL,
+      base_id uuid NOT NULL,
+      table_id uuid,
+      requested_by uuid,
+      requested_by_display_name text,
+      sections text[] NOT NULL,
+      range_from timestamp with time zone,
+      range_to timestamp with time zone,
+      status text DEFAULT 'queued'::text NOT NULL,
+      attempt integer DEFAULT 1 NOT NULL,
+      estimated_entries integer,
+      processed_entries integer DEFAULT 0 NOT NULL,
+      cut_at timestamp with time zone,
+      package_filename text,
+      package_size_bytes bigint,
+      package_sha256 text,
+      manifest_sha256 text,
+      manifest jsonb,
+      last_error text,
+      requested_at timestamp with time zone DEFAULT now() NOT NULL,
+      started_at timestamp with time zone,
+      completed_at timestamp with time zone,
+      expires_at timestamp with time zone,
+      CONSTRAINT evidence_exports_attempt_check CHECK ((attempt >= 1)),
+      CONSTRAINT evidence_exports_base_id_fkey FOREIGN KEY (base_id) REFERENCES grids.bases(id) ON DELETE CASCADE,
+      CONSTRAINT evidence_exports_package_chk CHECK ((((status <> 'completed'::text) AND (package_filename IS NULL) AND (package_size_bytes IS NULL) AND (package_sha256 IS NULL) AND (manifest_sha256 IS NULL)) OR ((status = 'completed'::text) AND (package_filename IS NOT NULL) AND (package_size_bytes IS NOT NULL) AND (package_sha256 ~ '^[a-f0-9]{64}$'::text) AND (manifest_sha256 ~ '^[a-f0-9]{64}$'::text) AND (manifest IS NOT NULL)))),
+      CONSTRAINT evidence_exports_pkey PRIMARY KEY (id),
+      CONSTRAINT evidence_exports_processed_entries_check CHECK ((processed_entries >= 0)),
+      CONSTRAINT evidence_exports_range_chk CHECK (((range_from IS NULL) OR (range_to IS NULL) OR (range_from <= range_to))),
+      CONSTRAINT evidence_exports_requested_by_fkey FOREIGN KEY (requested_by) REFERENCES auth.users(id) ON DELETE SET NULL,
+      CONSTRAINT evidence_exports_short_id_format_chk CHECK ((short_id ~ '^[A-Za-z0-9]{6}$'::text)),
+      CONSTRAINT evidence_exports_status_chk CHECK ((status = ANY (ARRAY['queued'::text, 'running'::text, 'cancel_requested'::text, 'completed'::text, 'failed'::text, 'canceled'::text, 'expired'::text]))),
+      CONSTRAINT evidence_exports_table_id_fkey FOREIGN KEY (table_id) REFERENCES grids.tables(id) ON DELETE RESTRICT
+    )
+  `.simple();
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_grids_evidence_exports_base_page ON grids.evidence_exports USING btree (base_id, requested_at DESC, id DESC)
+  `.simple();
+  await sql`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_grids_evidence_exports_short_id ON grids.evidence_exports USING btree (short_id)
+  `.simple();
+  await sql`
+    CREATE TABLE IF NOT EXISTS grids.federated_table_revisions (
+      id uuid DEFAULT gen_random_uuid() NOT NULL,
+      table_id uuid NOT NULL,
+      revision integer NOT NULL,
+      status text DEFAULT 'draft'::text NOT NULL,
+      diagnostics jsonb DEFAULT '[]'::jsonb NOT NULL,
+      created_by uuid,
+      published_by uuid,
+      created_at timestamp with time zone DEFAULT now() NOT NULL,
+      updated_at timestamp with time zone DEFAULT now() NOT NULL,
+      published_at timestamp with time zone,
+      CONSTRAINT federated_table_revisions_created_by_fkey FOREIGN KEY (created_by) REFERENCES auth.users(id) ON DELETE SET NULL,
+      CONSTRAINT federated_table_revisions_pkey PRIMARY KEY (id),
+      CONSTRAINT federated_table_revisions_published_by_fkey FOREIGN KEY (published_by) REFERENCES auth.users(id) ON DELETE SET NULL,
+      CONSTRAINT federated_table_revisions_revision_check CHECK ((revision > 0)),
+      CONSTRAINT federated_table_revisions_status_check CHECK ((status = ANY (ARRAY['draft'::text, 'active'::text, 'degraded'::text, 'superseded'::text]))),
+      CONSTRAINT federated_table_revisions_table_id_fkey FOREIGN KEY (table_id) REFERENCES grids.tables(id) ON DELETE CASCADE,
+      CONSTRAINT federated_table_revisions_table_id_revision_key UNIQUE (table_id, revision)
+    )
+  `.simple();
+  await sql`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_grids_federated_revision_current ON grids.federated_table_revisions USING btree (table_id) WHERE (status = ANY (ARRAY['active'::text, 'degraded'::text]))
+  `.simple();
+  await sql`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_grids_federated_revision_draft ON grids.federated_table_revisions USING btree (table_id) WHERE (status = 'draft'::text)
+  `.simple();
+  await sql`
+    CREATE TABLE IF NOT EXISTS grids.fields (
+      id uuid DEFAULT gen_random_uuid() NOT NULL,
+      short_id text NOT NULL,
+      table_id uuid NOT NULL,
+      name text NOT NULL,
+      description text,
+      icon text,
+      type text NOT NULL,
+      config jsonb DEFAULT '{}'::jsonb NOT NULL,
+      position integer DEFAULT 0 NOT NULL,
+      required boolean DEFAULT false NOT NULL,
+      default_value jsonb,
+      indexed boolean DEFAULT false NOT NULL,
+      unique_constraint boolean DEFAULT false NOT NULL,
+      presentable boolean DEFAULT false NOT NULL,
+      hide_in_table boolean DEFAULT false NOT NULL,
+      deleted_at timestamp with time zone,
+      created_at timestamp with time zone DEFAULT now() NOT NULL,
+      updated_at timestamp with time zone DEFAULT now() NOT NULL,
+      CONSTRAINT fields_pkey PRIMARY KEY (id),
+      CONSTRAINT fields_short_id_format_chk CHECK ((short_id ~ '^[A-Za-z0-9]{6}$'::text)),
+      CONSTRAINT fields_table_id_fkey FOREIGN KEY (table_id) REFERENCES grids.tables(id) ON DELETE CASCADE
+    )
+  `.simple();
+  await sql`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_grids_fields_live_name ON grids.fields USING btree (table_id, lower(btrim(name))) WHERE (deleted_at IS NULL)
+  `.simple();
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_grids_fields_relation_target ON grids.fields USING btree (((config ->> 'targetTableId'::text)), table_id) WHERE ((deleted_at IS NULL) AND (type = 'relation'::text))
+  `.simple();
+  await sql`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_grids_fields_short_id ON grids.fields USING btree (short_id)
+  `.simple();
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_grids_fields_table ON grids.fields USING btree (table_id, "position") WHERE (deleted_at IS NULL)
+  `.simple();
+  await sql`
+    CREATE TABLE IF NOT EXISTS grids.form_submissions (
+      scope_hash text NOT NULL,
+      key_hash text NOT NULL,
+      request_hash text NOT NULL,
+      table_id uuid NOT NULL,
+      record_id uuid NOT NULL,
+      created_at timestamp with time zone DEFAULT now() NOT NULL,
+      CONSTRAINT form_submissions_pkey PRIMARY KEY (scope_hash, key_hash),
+      CONSTRAINT form_submissions_table_id_fkey FOREIGN KEY (table_id) REFERENCES grids.tables(id) ON DELETE CASCADE
+    )
+  `.simple();
+  await sql`
+    CREATE TABLE IF NOT EXISTS grids.forms (
+      id uuid DEFAULT gen_random_uuid() NOT NULL,
+      short_id text NOT NULL,
+      table_id uuid NOT NULL,
+      name text NOT NULL,
+      config jsonb DEFAULT '{}'::jsonb NOT NULL,
+      public_token text,
+      is_active boolean DEFAULT true NOT NULL,
+      owner_user_id uuid,
+      position integer DEFAULT 0 NOT NULL,
+      deleted_at timestamp with time zone,
+      created_at timestamp with time zone DEFAULT now() NOT NULL,
+      updated_at timestamp with time zone DEFAULT now() NOT NULL,
+      CONSTRAINT forms_owner_user_id_fkey FOREIGN KEY (owner_user_id) REFERENCES auth.users(id) ON DELETE SET NULL,
+      CONSTRAINT forms_pkey PRIMARY KEY (id),
+      CONSTRAINT forms_short_id_format_chk CHECK ((short_id ~ '^[A-Za-z0-9]{6}$'::text)),
+      CONSTRAINT forms_table_id_fkey FOREIGN KEY (table_id) REFERENCES grids.tables(id) ON DELETE CASCADE
+    )
+  `.simple();
+  await sql`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_grids_forms_public_token ON grids.forms USING btree (public_token) WHERE ((public_token IS NOT NULL) AND (deleted_at IS NULL))
+  `.simple();
+  await sql`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_grids_forms_short_id ON grids.forms USING btree (short_id)
+  `.simple();
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_grids_forms_table_live ON grids.forms USING btree (table_id, "position") WHERE (deleted_at IS NULL)
+  `.simple();
+  await sql`
+    CREATE TABLE IF NOT EXISTS grids.record_event_outbox (
+      id uuid DEFAULT gen_random_uuid() NOT NULL,
+      base_id uuid NOT NULL,
+      table_id uuid NOT NULL,
+      record_id uuid NOT NULL,
+      payload jsonb NOT NULL,
+      status text DEFAULT 'pending'::text NOT NULL,
+      attempts integer DEFAULT 0 NOT NULL,
+      next_attempt_at timestamp with time zone DEFAULT now() NOT NULL,
+      last_error text,
+      delivered_at timestamp with time zone,
+      dead_at timestamp with time zone,
+      created_at timestamp with time zone DEFAULT now() NOT NULL,
+      CONSTRAINT record_event_outbox_attempts_check CHECK ((attempts >= 0)),
+      CONSTRAINT record_event_outbox_base_id_fkey FOREIGN KEY (base_id) REFERENCES grids.bases(id) ON DELETE CASCADE,
+      CONSTRAINT record_event_outbox_pkey PRIMARY KEY (id),
+      CONSTRAINT record_event_outbox_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'failed'::text, 'delivered'::text, 'dead'::text]))),
+      CONSTRAINT record_event_outbox_table_id_fkey FOREIGN KEY (table_id) REFERENCES grids.tables(id) ON DELETE CASCADE
+    )
+  `.simple();
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_grids_record_event_outbox_dead ON grids.record_event_outbox USING btree (dead_at) WHERE (status = 'dead'::text)
+  `.simple();
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_grids_record_event_outbox_delivered ON grids.record_event_outbox USING btree (delivered_at) WHERE (status = 'delivered'::text)
+  `.simple();
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_grids_record_event_outbox_feed_base ON grids.record_event_outbox USING btree (base_id, created_at, id)
+  `.simple();
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_grids_record_event_outbox_feed_table ON grids.record_event_outbox USING btree (base_id, table_id, created_at, id)
+  `.simple();
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_grids_record_event_outbox_pending ON grids.record_event_outbox USING btree (next_attempt_at, created_at) WHERE (status = ANY (ARRAY['pending'::text, 'failed'::text]))
+  `.simple();
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_grids_record_event_outbox_record_pending ON grids.record_event_outbox USING btree (record_id, created_at, id) WHERE (status = ANY (ARRAY['pending'::text, 'failed'::text]))
+  `.simple();
+  await sql`
+    CREATE TABLE IF NOT EXISTS grids.table_finalization_activations (
+      table_id uuid NOT NULL,
+      enabled_by uuid,
+      enabled_at timestamp with time zone DEFAULT now() NOT NULL,
+      mode text DEFAULT 'direct'::text NOT NULL,
+      approver_group_id uuid,
+      policy_revision integer DEFAULT 1 NOT NULL,
+      CONSTRAINT table_finalization_activations_enabled_by_fkey FOREIGN KEY (enabled_by) REFERENCES auth.users(id) ON DELETE SET NULL,
+      CONSTRAINT table_finalization_activations_pkey PRIMARY KEY (table_id),
+      CONSTRAINT table_finalization_activations_policy_chk CHECK ((((mode = 'direct'::text) AND (approver_group_id IS NULL)) OR ((mode = 'four_eyes'::text) AND (approver_group_id IS NOT NULL)))),
+      CONSTRAINT table_finalization_activations_table_id_fkey FOREIGN KEY (table_id) REFERENCES grids.tables(id) ON DELETE RESTRICT
+    )
+  `.simple();
+  await sql`
+    CREATE TABLE IF NOT EXISTS grids.table_schema_revisions (
+      id uuid DEFAULT gen_random_uuid() NOT NULL,
+      table_id uuid NOT NULL,
+      schema_hash text NOT NULL,
+      fields jsonb NOT NULL,
+      created_at timestamp with time zone DEFAULT now() NOT NULL,
+      CONSTRAINT table_schema_revisions_pkey PRIMARY KEY (id),
+      CONSTRAINT table_schema_revisions_table_id_fkey FOREIGN KEY (table_id) REFERENCES grids.tables(id) ON DELETE RESTRICT,
+      CONSTRAINT table_schema_revisions_table_id_schema_hash_key UNIQUE (table_id, schema_hash)
+    )
+  `.simple();
+  await sql`
+    CREATE TABLE IF NOT EXISTS grids.views (
+      id uuid DEFAULT gen_random_uuid() NOT NULL,
+      short_id text NOT NULL,
+      table_id uuid NOT NULL,
+      base_id uuid NOT NULL,
+      name text NOT NULL,
+      description text,
+      icon text,
+      source text NOT NULL,
+      ui jsonb DEFAULT '{}'::jsonb NOT NULL,
+      owner_user_id uuid,
+      position integer DEFAULT 0 NOT NULL,
+      deleted_at timestamp with time zone,
+      created_at timestamp with time zone DEFAULT now() NOT NULL,
+      updated_at timestamp with time zone DEFAULT now() NOT NULL,
+      CONSTRAINT views_base_id_fkey FOREIGN KEY (base_id) REFERENCES grids.bases(id) ON DELETE CASCADE,
+      CONSTRAINT views_owner_user_id_fkey FOREIGN KEY (owner_user_id) REFERENCES auth.users(id) ON DELETE CASCADE,
+      CONSTRAINT views_pkey PRIMARY KEY (id),
+      CONSTRAINT views_short_id_format_chk CHECK ((short_id ~ '^[A-Za-z0-9]{6}$'::text)),
+      CONSTRAINT views_source_length_chk CHECK (((length(source) >= 1) AND (length(source) <= 20000))),
+      CONSTRAINT views_table_id_fkey FOREIGN KEY (table_id) REFERENCES grids.tables(id) ON DELETE CASCADE
+    )
+  `.simple();
+  await sql`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_grids_views_live_name ON grids.views USING btree (base_id, lower(btrim(name))) WHERE (deleted_at IS NULL)
+  `.simple();
+  await sql`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_grids_views_short_id ON grids.views USING btree (short_id)
+  `.simple();
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_grids_views_table_live ON grids.views USING btree (table_id, "position") WHERE (deleted_at IS NULL)
+  `.simple();
+  await sql`
+    CREATE TABLE IF NOT EXISTS grids.workflow_email_deliveries (
+      id uuid DEFAULT gen_random_uuid() NOT NULL,
+      base_id uuid NOT NULL,
+      workflow_id uuid,
+      workflow_run_id uuid,
+      workflow_step_key text NOT NULL,
+      template_id uuid,
+      recipient_kind text NOT NULL,
+      recipient_value text,
+      recipient_summary text NOT NULL,
+      idempotency_key text NOT NULL,
+      notification_id uuid,
+      provider_status text,
+      status text NOT NULL,
+      subject text,
+      rendered_html text,
+      error text,
+      recipient_index integer NOT NULL,
+      created_at timestamp with time zone DEFAULT now() NOT NULL,
+      updated_at timestamp with time zone DEFAULT now() NOT NULL,
+      CONSTRAINT workflow_email_deliveries_base_id_fkey FOREIGN KEY (base_id) REFERENCES grids.bases(id) ON DELETE CASCADE,
+      CONSTRAINT workflow_email_deliveries_idempotency_key_key UNIQUE (idempotency_key),
+      CONSTRAINT workflow_email_deliveries_pkey PRIMARY KEY (id),
+      CONSTRAINT workflow_email_deliveries_recipient_index_check CHECK ((recipient_index > 0)),
+      CONSTRAINT workflow_email_deliveries_recipient_kind_check CHECK ((recipient_kind = ANY (ARRAY['email'::text, 'user'::text]))),
+      CONSTRAINT workflow_email_deliveries_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'sent'::text, 'failed'::text]))),
+      CONSTRAINT workflow_email_deliveries_template_id_fkey FOREIGN KEY (template_id) REFERENCES grids.email_templates(id) ON DELETE SET NULL,
+      CONSTRAINT workflow_email_deliveries_workflow_run_id_workflow_step_key_key UNIQUE (workflow_run_id, workflow_step_key, recipient_index)
+    )
+  `.simple();
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_grids_workflow_email_deliveries_base ON grids.workflow_email_deliveries USING btree (base_id, created_at DESC, id DESC)
+  `.simple();
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_grids_workflow_email_deliveries_run ON grids.workflow_email_deliveries USING btree (workflow_run_id, created_at, id) WHERE (workflow_run_id IS NOT NULL)
+  `.simple();
+  await sql`
+    CREATE TABLE IF NOT EXISTS grids.workflow_launchers (
+      id uuid DEFAULT gen_random_uuid() NOT NULL,
+      short_id text NOT NULL,
+      base_id uuid NOT NULL,
+      workflow_id uuid NOT NULL,
+      name text NOT NULL,
+      kind text NOT NULL,
+      config jsonb NOT NULL,
+      enabled boolean DEFAULT true NOT NULL,
+      validated_revision integer NOT NULL,
+      diagnostics jsonb DEFAULT '[]'::jsonb NOT NULL,
+      deleted_at timestamp with time zone,
+      created_at timestamp with time zone DEFAULT now() NOT NULL,
+      updated_at timestamp with time zone DEFAULT now() NOT NULL,
+      CONSTRAINT workflow_launchers_base_id_fkey FOREIGN KEY (base_id) REFERENCES grids.bases(id) ON DELETE CASCADE,
+      CONSTRAINT workflow_launchers_diagnostics_array_chk CHECK ((jsonb_typeof(diagnostics) = 'array'::text)),
+      CONSTRAINT workflow_launchers_kind_check CHECK ((kind = ANY (ARRAY['scanner'::text, 'bulk'::text, 'record'::text, 'customApp'::text]))),
+      CONSTRAINT workflow_launchers_pkey PRIMARY KEY (id),
+      CONSTRAINT workflow_launchers_short_id_format_chk CHECK ((short_id ~ '^[A-Za-z0-9]{6}$'::text)),
+      CONSTRAINT workflow_launchers_validated_revision_check CHECK ((validated_revision >= 1)),
+      CONSTRAINT workflow_launchers_workflow_id_fkey FOREIGN KEY (workflow_id) REFERENCES grids.workflow_profile(id) ON DELETE CASCADE
+    )
+  `.simple();
+  await sql`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_grids_workflow_launchers_short_id ON grids.workflow_launchers USING btree (short_id)
+  `.simple();
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_grids_workflow_launchers_workflow ON grids.workflow_launchers USING btree (workflow_id, kind, created_at, id) WHERE (deleted_at IS NULL)
+  `.simple();
+  await sql`
+    CREATE TABLE IF NOT EXISTS grids.workflow_query_data (
+      id uuid DEFAULT gen_random_uuid() NOT NULL,
+      run_id uuid NOT NULL,
+      step_key text NOT NULL,
+      payload jsonb NOT NULL,
+      sha256 text NOT NULL,
+      row_count integer NOT NULL,
+      captured_at timestamp with time zone NOT NULL,
+      CONSTRAINT workflow_query_data_payload_check CHECK ((jsonb_typeof(payload) = 'object'::text)),
+      CONSTRAINT workflow_query_data_pkey PRIMARY KEY (id),
+      CONSTRAINT workflow_query_data_row_count_check CHECK (((row_count >= 0) AND (row_count <= 10000))),
+      CONSTRAINT workflow_query_data_run_id_fkey FOREIGN KEY (run_id) REFERENCES grids.workflow_run_profile(run_id) ON DELETE CASCADE,
+      CONSTRAINT workflow_query_data_run_id_step_key_key UNIQUE (run_id, step_key),
+      CONSTRAINT workflow_query_data_sha256_check CHECK ((sha256 ~ '^[a-f0-9]{64}$'::text)),
+      CONSTRAINT workflow_query_data_step_key_check CHECK ((length(step_key) > 0))
+    )
+  `.simple();
+  await sql`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_grids_query_data_run_identity ON grids.workflow_query_data USING btree (id, run_id)
+  `.simple();
+  await sql`
+    CREATE TABLE IF NOT EXISTS grids.durable_history_activations (
+      table_id uuid NOT NULL,
+      baseline_schema_revision_id uuid NOT NULL,
+      status text DEFAULT 'activating'::text NOT NULL,
+      activated_by uuid,
+      activated_at timestamp with time zone NOT NULL,
+      baseline_completed_at timestamp with time zone,
+      CONSTRAINT durable_history_activations_activated_by_fkey FOREIGN KEY (activated_by) REFERENCES auth.users(id) ON DELETE SET NULL,
+      CONSTRAINT durable_history_activations_baseline_schema_revision_id_fkey FOREIGN KEY (baseline_schema_revision_id) REFERENCES grids.table_schema_revisions(id) ON DELETE RESTRICT,
+      CONSTRAINT durable_history_activations_pkey PRIMARY KEY (table_id),
+      CONSTRAINT durable_history_activations_status_chk CHECK ((status = ANY (ARRAY['activating'::text, 'active'::text]))),
+      CONSTRAINT durable_history_activations_table_id_fkey FOREIGN KEY (table_id) REFERENCES grids.tables(id) ON DELETE RESTRICT
+    )
+  `.simple();
+  await sql`
+    CREATE TABLE IF NOT EXISTS grids.evidence_export_chunks (
+      export_id uuid NOT NULL,
+      sequence integer NOT NULL,
+      bytes bytea NOT NULL,
+      CONSTRAINT evidence_export_chunks_bytes_check CHECK (((octet_length(bytes) >= 1) AND (octet_length(bytes) <= 1048576))),
+      CONSTRAINT evidence_export_chunks_export_id_fkey FOREIGN KEY (export_id) REFERENCES grids.evidence_exports(id) ON DELETE CASCADE,
+      CONSTRAINT evidence_export_chunks_pkey PRIMARY KEY (export_id, sequence),
+      CONSTRAINT evidence_export_chunks_sequence_check CHECK ((sequence >= 0))
+    )
+  `.simple();
+  await sql`
+    CREATE TABLE IF NOT EXISTS grids.federated_table_sources (
+      id uuid DEFAULT gen_random_uuid() NOT NULL,
+      revision_id uuid NOT NULL,
+      source_table_id uuid NOT NULL,
+      position integer DEFAULT 0 NOT NULL,
+      authorized_by uuid,
+      authorized_at timestamp with time zone,
+      revoked_by uuid,
+      revoked_at timestamp with time zone,
+      CONSTRAINT federated_table_sources_authorized_by_fkey FOREIGN KEY (authorized_by) REFERENCES auth.users(id) ON DELETE SET NULL,
+      CONSTRAINT federated_table_sources_pkey PRIMARY KEY (revision_id, source_table_id),
+      CONSTRAINT federated_table_sources_position_check CHECK (("position" >= 0)),
+      CONSTRAINT federated_table_sources_revision_id_fkey FOREIGN KEY (revision_id) REFERENCES grids.federated_table_revisions(id) ON DELETE CASCADE,
+      CONSTRAINT federated_table_sources_revoked_by_fkey FOREIGN KEY (revoked_by) REFERENCES auth.users(id) ON DELETE SET NULL,
+      CONSTRAINT federated_table_sources_source_table_id_fkey FOREIGN KEY (source_table_id) REFERENCES grids.tables(id) ON DELETE RESTRICT
+    )
+  `.simple();
+  await sql`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_grids_federated_sources_id ON grids.federated_table_sources USING btree (id)
+  `.simple();
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_grids_federated_sources_source ON grids.federated_table_sources USING btree (source_table_id, revision_id)
+  `.simple();
+  await sql`
+    CREATE TABLE IF NOT EXISTS grids.number_series (
+      id uuid DEFAULT gen_random_uuid() NOT NULL,
+      short_id text NOT NULL,
+      owner_kind text NOT NULL,
+      field_id uuid,
+      document_template_id uuid,
+      assignment text DEFAULT 'creation'::text NOT NULL,
+      current_version integer DEFAULT 1 NOT NULL,
+      archived_at timestamp with time zone,
+      created_at timestamp with time zone DEFAULT now() NOT NULL,
+      updated_at timestamp with time zone DEFAULT now() NOT NULL,
+      CONSTRAINT number_series_assignment_check CHECK ((assignment = ANY (ARRAY['creation'::text, 'finalization'::text]))),
+      CONSTRAINT number_series_current_version_check CHECK ((current_version >= 1)),
+      CONSTRAINT number_series_document_template_id_fkey FOREIGN KEY (document_template_id) REFERENCES grids.document_templates(id) ON DELETE CASCADE,
+      CONSTRAINT number_series_document_template_id_key UNIQUE (document_template_id),
+      CONSTRAINT number_series_field_id_fkey FOREIGN KEY (field_id) REFERENCES grids.fields(id) ON DELETE CASCADE,
+      CONSTRAINT number_series_field_id_key UNIQUE (field_id),
+      CONSTRAINT number_series_owner_chk CHECK ((((owner_kind = 'field'::text) AND (field_id IS NOT NULL) AND (document_template_id IS NULL)) OR ((owner_kind = 'document_template'::text) AND (document_template_id IS NOT NULL) AND (field_id IS NULL)))),
+      CONSTRAINT number_series_owner_kind_check CHECK ((owner_kind = ANY (ARRAY['field'::text, 'document_template'::text]))),
+      CONSTRAINT number_series_pkey PRIMARY KEY (id),
+      CONSTRAINT number_series_short_id_format_chk CHECK ((short_id ~ '^[A-Za-z0-9]{6}$'::text))
+    )
+  `.simple();
+  await sql`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_grids_number_series_short_id ON grids.number_series USING btree (short_id)
+  `.simple();
+  await sql`
+    CREATE TABLE IF NOT EXISTS grids.record_event_snapshots (
+      id uuid NOT NULL,
+      base_id uuid NOT NULL,
+      table_id uuid NOT NULL,
+      record_id uuid NOT NULL,
+      event_type text NOT NULL,
+      record_version integer NOT NULL,
+      data jsonb NOT NULL,
+      deleted_at timestamp with time zone,
+      created_at timestamp with time zone DEFAULT now() NOT NULL,
+      CONSTRAINT record_event_snapshots_base_id_fkey FOREIGN KEY (base_id) REFERENCES grids.bases(id) ON DELETE CASCADE,
+      CONSTRAINT record_event_snapshots_event_type_check CHECK ((event_type = ANY (ARRAY['record.created'::text, 'record.updated'::text, 'record.deleted'::text, 'record.restored'::text, 'record.finalized'::text, 'comment.created'::text]))),
+      CONSTRAINT record_event_snapshots_id_fkey FOREIGN KEY (id) REFERENCES grids.record_event_outbox(id) ON DELETE CASCADE,
+      CONSTRAINT record_event_snapshots_pkey PRIMARY KEY (id),
+      CONSTRAINT record_event_snapshots_record_version_check CHECK ((record_version > 0)),
+      CONSTRAINT record_event_snapshots_table_id_fkey FOREIGN KEY (table_id) REFERENCES grids.tables(id) ON DELETE CASCADE
+    )
+  `.simple();
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_grids_record_event_snapshots_record ON grids.record_event_snapshots USING btree (record_id, record_version, created_at DESC)
+  `.simple();
+  await sql`
+    CREATE TABLE IF NOT EXISTS grids.record_revisions (
+      id uuid DEFAULT gen_random_uuid() NOT NULL,
+      short_id text NOT NULL,
+      table_id uuid NOT NULL,
+      record_id uuid NOT NULL,
+      schema_revision_id uuid NOT NULL,
+      revision_no integer NOT NULL,
+      action text NOT NULL,
+      record_version integer NOT NULL,
+      data jsonb NOT NULL,
+      relations jsonb DEFAULT '{}'::jsonb NOT NULL,
+      files jsonb DEFAULT '[]'::jsonb NOT NULL,
+      changed_field_ids uuid[] DEFAULT '{}'::uuid[] NOT NULL,
+      deleted_at timestamp with time zone,
+      actor_id uuid,
+      actor_display_name text,
+      actor_avatar_hash text,
+      created_at timestamp with time zone DEFAULT now() NOT NULL,
+      CONSTRAINT record_revisions_action_chk CHECK ((action = ANY (ARRAY['baseline'::text, 'created'::text, 'updated'::text, 'deleted'::text, 'restored'::text, 'finalized'::text, 'file.added'::text, 'file.replaced'::text, 'file.removed'::text]))),
+      CONSTRAINT record_revisions_actor_id_fkey FOREIGN KEY (actor_id) REFERENCES auth.users(id) ON DELETE SET NULL,
+      CONSTRAINT record_revisions_pkey PRIMARY KEY (id),
+      CONSTRAINT record_revisions_schema_revision_id_fkey FOREIGN KEY (schema_revision_id) REFERENCES grids.table_schema_revisions(id) ON DELETE RESTRICT,
+      CONSTRAINT record_revisions_short_id_format_chk CHECK ((short_id ~ '^[A-Za-z0-9]{6}$'::text)),
+      CONSTRAINT record_revisions_table_id_fkey FOREIGN KEY (table_id) REFERENCES grids.tables(id) ON DELETE RESTRICT,
+      CONSTRAINT record_revisions_table_id_record_id_revision_no_key UNIQUE (table_id, record_id, revision_no)
+    )
+  `.simple();
+  await sql`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_grids_record_revisions_baseline ON grids.record_revisions USING btree (table_id, record_id) WHERE (action = 'baseline'::text)
+  `.simple();
+  await sql`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_grids_record_revisions_short_id ON grids.record_revisions USING btree (short_id)
+  `.simple();
+  await sql`
+    CREATE TABLE IF NOT EXISTS grids.federated_field_mappings (
+      revision_id uuid NOT NULL,
+      target_field_id uuid NOT NULL,
+      source_table_id uuid NOT NULL,
+      source_field_id uuid NOT NULL,
+      config jsonb DEFAULT '{}'::jsonb NOT NULL,
+      CONSTRAINT federated_field_mappings_pkey PRIMARY KEY (revision_id, target_field_id, source_table_id),
+      CONSTRAINT federated_field_mappings_revision_id_source_table_id_fkey FOREIGN KEY (revision_id, source_table_id) REFERENCES grids.federated_table_sources(revision_id, source_table_id) ON DELETE CASCADE,
+      CONSTRAINT federated_field_mappings_source_field_id_fkey FOREIGN KEY (source_field_id) REFERENCES grids.fields(id) ON DELETE RESTRICT,
+      CONSTRAINT federated_field_mappings_target_field_id_fkey FOREIGN KEY (target_field_id) REFERENCES grids.fields(id) ON DELETE RESTRICT
+    )
+  `.simple();
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_grids_federated_mappings_source_field ON grids.federated_field_mappings USING btree (source_field_id)
+  `.simple();
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_grids_federated_mappings_target_field ON grids.federated_field_mappings USING btree (target_field_id)
+  `.simple();
+  await sql`
+    CREATE TABLE IF NOT EXISTS grids.number_series_scopes (
+      series_id uuid NOT NULL,
+      scope text NOT NULL,
+      sequence_name text NOT NULL,
+      created_at timestamp with time zone DEFAULT now() NOT NULL,
+      CONSTRAINT number_series_scopes_pkey PRIMARY KEY (series_id, scope),
+      CONSTRAINT number_series_scopes_sequence_name_key UNIQUE (sequence_name),
+      CONSTRAINT number_series_scopes_series_id_fkey FOREIGN KEY (series_id) REFERENCES grids.number_series(id) ON DELETE CASCADE
+    )
+  `.simple();
+  await sql`
+    CREATE TABLE IF NOT EXISTS grids.number_series_versions (
+      series_id uuid NOT NULL,
+      version integer NOT NULL,
+      strategy text NOT NULL,
+      prefix text DEFAULT ''::text NOT NULL,
+      padding integer DEFAULT 1 NOT NULL,
+      period text,
+      number_template text,
+      created_at timestamp with time zone DEFAULT now() NOT NULL,
+      CONSTRAINT number_series_versions_padding_check CHECK (((padding >= 1) AND (padding <= 16))),
+      CONSTRAINT number_series_versions_period_check CHECK ((period = ANY (ARRAY['year'::text, 'month'::text, 'day'::text]))),
+      CONSTRAINT number_series_versions_pkey PRIMARY KEY (series_id, version),
+      CONSTRAINT number_series_versions_series_id_fkey FOREIGN KEY (series_id) REFERENCES grids.number_series(id) ON DELETE CASCADE,
+      CONSTRAINT number_series_versions_strategy_check CHECK ((strategy = ANY (ARRAY['sequence'::text, 'date_sequence'::text, 'document'::text]))),
+      CONSTRAINT number_series_versions_version_check CHECK ((version >= 1))
+    )
+  `.simple();
+  await sql`
+    CREATE TABLE IF NOT EXISTS grids.records (
+      id uuid NOT NULL,
+      short_id text NOT NULL,
+      table_id uuid NOT NULL,
+      data jsonb DEFAULT '{}'::jsonb NOT NULL,
+      version integer DEFAULT 1 NOT NULL,
+      deleted_at timestamp with time zone,
+      created_by uuid,
+      updated_by uuid,
+      created_at timestamp with time zone DEFAULT now() NOT NULL,
+      updated_at timestamp with time zone DEFAULT now() NOT NULL,
+      finalized_computed_types jsonb,
+      finalized_computed_dependencies jsonb,
+      finalized_at timestamp with time zone,
+      finalized_by uuid,
+      final_revision_id uuid,
+      CONSTRAINT records_created_by_fkey FOREIGN KEY (created_by) REFERENCES auth.users(id) ON DELETE SET NULL,
+      CONSTRAINT records_final_revision_id_fkey FOREIGN KEY (final_revision_id) REFERENCES grids.record_revisions(id) ON DELETE RESTRICT,
+      CONSTRAINT records_finalization_marker_chk CHECK ((((finalized_at IS NULL) AND (final_revision_id IS NULL)) OR ((finalized_at IS NOT NULL) AND (final_revision_id IS NOT NULL)))),
+      CONSTRAINT records_finalized_by_fkey FOREIGN KEY (finalized_by) REFERENCES auth.users(id) ON DELETE SET NULL,
+      CONSTRAINT records_pkey PRIMARY KEY (id),
+      CONSTRAINT records_short_id_format_chk CHECK ((short_id ~ '^[A-Za-z0-9]{6}$'::text)),
+      CONSTRAINT records_table_id_fkey FOREIGN KEY (table_id) REFERENCES grids.tables(id) ON DELETE CASCADE,
+      CONSTRAINT records_updated_by_fkey FOREIGN KEY (updated_by) REFERENCES auth.users(id) ON DELETE SET NULL
+    )
+  `.simple();
+  await sql`
+    CREATE UNIQUE INDEX IF NOT EXISTS uq_grids_records_id_table ON grids.records USING btree (id, table_id)
+  `.simple();
+  await sql`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_grids_records_short_id ON grids.records USING btree (short_id)
+  `.simple();
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_grids_records_table_creator_live ON grids.records USING btree (table_id, created_by, id) WHERE (deleted_at IS NULL)
+  `.simple();
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_grids_records_table_finalized ON grids.records USING btree (table_id, finalized_at) WHERE (finalized_at IS NOT NULL)
+  `.simple();
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_grids_records_table_live ON grids.records USING btree (table_id, id) WHERE (deleted_at IS NULL)
+  `.simple();
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_grids_records_table_trash ON grids.records USING btree (table_id, deleted_at) WHERE (deleted_at IS NOT NULL)
+  `.simple();
+  await sql`
+    CREATE TABLE IF NOT EXISTS grids.file_attachments (
+      file_id uuid NOT NULL,
+      record_id uuid NOT NULL,
+      field_id uuid NOT NULL,
+      position integer DEFAULT 0 NOT NULL,
+      attached_by uuid,
+      attached_at timestamp with time zone DEFAULT now() NOT NULL,
+      CONSTRAINT file_attachments_attached_by_fkey FOREIGN KEY (attached_by) REFERENCES auth.users(id) ON DELETE SET NULL,
+      CONSTRAINT file_attachments_field_id_fkey FOREIGN KEY (field_id) REFERENCES grids.fields(id) ON DELETE CASCADE,
+      CONSTRAINT file_attachments_file_id_fkey FOREIGN KEY (file_id) REFERENCES grids.files(id) ON DELETE RESTRICT,
+      CONSTRAINT file_attachments_pkey PRIMARY KEY (file_id),
+      CONSTRAINT file_attachments_record_id_fkey FOREIGN KEY (record_id) REFERENCES grids.records(id) ON DELETE CASCADE
+    )
+  `.simple();
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_grids_file_attachments_field ON grids.file_attachments USING btree (field_id)
+  `.simple();
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_grids_file_attachments_record_field ON grids.file_attachments USING btree (record_id, field_id, "position", attached_at, file_id)
+  `.simple();
+  await sql`
+    CREATE TABLE IF NOT EXISTS grids.number_allocations (
+      id uuid DEFAULT gen_random_uuid() NOT NULL,
+      series_id uuid NOT NULL,
+      version integer NOT NULL,
+      scope text NOT NULL,
+      value bigint NOT NULL,
+      rendered_value text NOT NULL,
+      consumer_kind text,
+      consumer_id uuid,
+      allocated_at timestamp with time zone DEFAULT now() NOT NULL,
+      CONSTRAINT number_allocations_consumer_chk CHECK ((((consumer_kind IS NULL) AND (consumer_id IS NULL)) OR ((consumer_kind IS NOT NULL) AND (consumer_id IS NOT NULL)))),
+      CONSTRAINT number_allocations_consumer_kind_check CHECK ((consumer_kind = ANY (ARRAY['record'::text, 'document'::text]))),
+      CONSTRAINT number_allocations_pkey PRIMARY KEY (id),
+      CONSTRAINT number_allocations_series_id_fkey FOREIGN KEY (series_id) REFERENCES grids.number_series(id) ON DELETE CASCADE,
+      CONSTRAINT number_allocations_series_id_rendered_value_key UNIQUE (series_id, rendered_value),
+      CONSTRAINT number_allocations_series_id_scope_value_key UNIQUE (series_id, scope, value),
+      CONSTRAINT number_allocations_series_id_version_fkey FOREIGN KEY (series_id, version) REFERENCES grids.number_series_versions(series_id, version) ON DELETE CASCADE,
+      CONSTRAINT number_allocations_value_check CHECK ((value >= 1))
+    )
+  `.simple();
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_grids_number_allocations_consumer ON grids.number_allocations USING btree (consumer_kind, consumer_id) WHERE (consumer_id IS NOT NULL)
+  `.simple();
+  await sql`
+    CREATE TABLE IF NOT EXISTS grids.record_comments (
+      id uuid DEFAULT gen_random_uuid() NOT NULL,
+      short_id text NOT NULL,
+      base_id uuid NOT NULL,
+      table_id uuid NOT NULL,
+      record_id uuid NOT NULL,
+      author_user_id uuid,
+      body text NOT NULL,
+      deleted_at timestamp with time zone,
+      created_at timestamp with time zone DEFAULT now() NOT NULL,
+      updated_at timestamp with time zone DEFAULT now() NOT NULL,
+      CONSTRAINT record_comments_author_user_id_fkey FOREIGN KEY (author_user_id) REFERENCES auth.users(id) ON DELETE SET NULL,
+      CONSTRAINT record_comments_base_id_fkey FOREIGN KEY (base_id) REFERENCES grids.bases(id) ON DELETE CASCADE,
+      CONSTRAINT record_comments_body_check CHECK (((char_length(body) >= 1) AND (char_length(body) <= 10000))),
+      CONSTRAINT record_comments_pkey PRIMARY KEY (id),
+      CONSTRAINT record_comments_record_id_fkey FOREIGN KEY (record_id) REFERENCES grids.records(id) ON DELETE CASCADE,
+      CONSTRAINT record_comments_short_id_format_chk CHECK ((short_id ~ '^[A-Za-z0-9]{6}$'::text)),
+      CONSTRAINT record_comments_table_id_fkey FOREIGN KEY (table_id) REFERENCES grids.tables(id) ON DELETE CASCADE
+    )
+  `.simple();
+  await sql`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_grids_record_comments_short_id ON grids.record_comments USING btree (short_id)
+  `.simple();
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_grids_record_comments_thread ON grids.record_comments USING btree (base_id, table_id, record_id, created_at DESC, id DESC) INCLUDE (author_user_id, updated_at, deleted_at)
+  `.simple();
+  await sql`
+    CREATE TABLE IF NOT EXISTS grids.record_external_bindings (
+      id uuid DEFAULT gen_random_uuid() NOT NULL,
+      provider text NOT NULL,
+      provider_account text NOT NULL,
+      resource_kind text NOT NULL,
+      external_id text NOT NULL,
+      table_id uuid NOT NULL,
+      record_id uuid NOT NULL,
+      created_at timestamp with time zone DEFAULT now() NOT NULL,
+      CONSTRAINT record_external_bindings_external_id_check CHECK (((char_length(external_id) >= 1) AND (char_length(external_id) <= 500))),
+      CONSTRAINT record_external_bindings_pkey PRIMARY KEY (id),
+      CONSTRAINT record_external_bindings_provider_account_check CHECK (((char_length(provider_account) >= 1) AND (char_length(provider_account) <= 200))),
+      CONSTRAINT record_external_bindings_provider_check CHECK (((char_length(provider) >= 1) AND (char_length(provider) <= 100))),
+      CONSTRAINT record_external_bindings_provider_provider_account_resource_key UNIQUE (provider, provider_account, resource_kind, external_id),
+      CONSTRAINT record_external_bindings_record_table_fkey FOREIGN KEY (record_id, table_id) REFERENCES grids.records(id, table_id) ON DELETE CASCADE,
+      CONSTRAINT record_external_bindings_resource_kind_check CHECK (((char_length(resource_kind) >= 1) AND (char_length(resource_kind) <= 100))),
+      CONSTRAINT record_external_bindings_table_id_fkey FOREIGN KEY (table_id) REFERENCES grids.tables(id) ON DELETE CASCADE
+    )
+  `.simple();
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_grids_record_external_bindings_record ON grids.record_external_bindings USING btree (record_id)
+  `.simple();
+  await sql`
+    CREATE TABLE IF NOT EXISTS grids.record_finalization_requests (
+      id uuid DEFAULT gen_random_uuid() NOT NULL,
+      short_id text NOT NULL,
+      table_id uuid NOT NULL,
+      record_id uuid NOT NULL,
+      record_version integer NOT NULL,
+      policy_revision integer NOT NULL,
+      status text DEFAULT 'pending'::text NOT NULL,
+      requested_by uuid NOT NULL,
+      request_comment text,
+      requested_at timestamp with time zone DEFAULT now() NOT NULL,
+      resolved_by uuid,
+      resolution_comment text,
+      resolved_at timestamp with time zone,
+      computed_snapshot jsonb,
+      CONSTRAINT record_finalization_requests_pkey PRIMARY KEY (id),
+      CONSTRAINT record_finalization_requests_record_id_fkey FOREIGN KEY (record_id) REFERENCES grids.records(id) ON DELETE RESTRICT,
+      CONSTRAINT record_finalization_requests_requested_by_fkey FOREIGN KEY (requested_by) REFERENCES auth.users(id) ON DELETE RESTRICT,
+      CONSTRAINT record_finalization_requests_resolution_chk CHECK ((((status = 'pending'::text) AND (resolved_by IS NULL) AND (resolved_at IS NULL)) OR ((status <> 'pending'::text) AND (resolved_at IS NOT NULL)))),
+      CONSTRAINT record_finalization_requests_resolved_by_fkey FOREIGN KEY (resolved_by) REFERENCES auth.users(id) ON DELETE SET NULL,
+      CONSTRAINT record_finalization_requests_short_id_format_chk CHECK ((short_id ~ '^[A-Za-z0-9]{6}$'::text)),
+      CONSTRAINT record_finalization_requests_status_chk CHECK ((status = ANY (ARRAY['pending'::text, 'approved'::text, 'rejected'::text, 'superseded'::text]))),
+      CONSTRAINT record_finalization_requests_table_id_fkey FOREIGN KEY (table_id) REFERENCES grids.tables(id) ON DELETE RESTRICT
+    )
+  `.simple();
+  await sql`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_grids_record_finalization_requests_pending ON grids.record_finalization_requests USING btree (record_id) WHERE (status = 'pending'::text)
+  `.simple();
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_grids_record_finalization_requests_pending_table ON grids.record_finalization_requests USING btree (table_id, record_id, record_version, policy_revision) WHERE (status = 'pending'::text)
+  `.simple();
+  await sql`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_grids_record_finalization_requests_short_id ON grids.record_finalization_requests USING btree (short_id)
+  `.simple();
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_grids_record_finalization_requests_table ON grids.record_finalization_requests USING btree (table_id, requested_at DESC)
+  `.simple();
+  await sql`
+    CREATE TABLE IF NOT EXISTS grids.record_links (
+      from_record_id uuid NOT NULL,
+      from_field_id uuid NOT NULL,
+      to_record_id uuid NOT NULL,
+      position integer DEFAULT 0 NOT NULL,
+      created_at timestamp with time zone DEFAULT now() NOT NULL,
+      CONSTRAINT record_links_from_field_id_fkey FOREIGN KEY (from_field_id) REFERENCES grids.fields(id) ON DELETE CASCADE,
+      CONSTRAINT record_links_from_record_id_fkey FOREIGN KEY (from_record_id) REFERENCES grids.records(id) ON DELETE CASCADE,
+      CONSTRAINT record_links_pkey PRIMARY KEY (from_record_id, from_field_id, to_record_id),
+      CONSTRAINT record_links_to_record_id_fkey FOREIGN KEY (to_record_id) REFERENCES grids.records(id) ON DELETE CASCADE
+    )
+  `.simple();
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_grids_record_links_forward ON grids.record_links USING btree (from_field_id, from_record_id, "position")
+  `.simple();
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_grids_record_links_reverse_page ON grids.record_links USING btree (to_record_id, from_field_id, from_record_id)
+  `.simple();
+  await sql`
+    CREATE TABLE IF NOT EXISTS grids.record_scan_codes (
+      id uuid DEFAULT gen_random_uuid() NOT NULL,
+      base_id uuid NOT NULL,
+      table_id uuid NOT NULL,
+      record_id uuid NOT NULL,
+      code text NOT NULL,
+      active boolean DEFAULT true NOT NULL,
+      created_at timestamp with time zone DEFAULT now() NOT NULL,
+      rotated_at timestamp with time zone,
+      CONSTRAINT record_scan_codes_base_id_fkey FOREIGN KEY (base_id) REFERENCES grids.bases(id) ON DELETE CASCADE,
+      CONSTRAINT record_scan_codes_code_length_chk CHECK (((length(code) >= 16) AND (length(code) <= 200))),
+      CONSTRAINT record_scan_codes_pkey PRIMARY KEY (id),
+      CONSTRAINT record_scan_codes_record_id_fkey FOREIGN KEY (record_id) REFERENCES grids.records(id) ON DELETE CASCADE,
+      CONSTRAINT record_scan_codes_table_id_fkey FOREIGN KEY (table_id) REFERENCES grids.tables(id) ON DELETE CASCADE
+    )
+  `.simple();
+  await sql`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_grids_record_scan_codes_active_record ON grids.record_scan_codes USING btree (record_id) WHERE (active = true)
+  `.simple();
+  await sql`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_grids_record_scan_codes_code ON grids.record_scan_codes USING btree (code)
+  `.simple();
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_grids_record_scan_codes_table ON grids.record_scan_codes USING btree (table_id, record_id) WHERE (active = true)
+  `.simple();
+  await sql`
+    CREATE TABLE IF NOT EXISTS grids.record_snapshots (
+      id uuid DEFAULT gen_random_uuid() NOT NULL,
+      short_id text NOT NULL,
+      base_id uuid NOT NULL,
+      table_id uuid NOT NULL,
+      record_id uuid NOT NULL,
+      root jsonb NOT NULL,
+      graph jsonb NOT NULL,
+      created_by uuid,
+      created_at timestamp with time zone DEFAULT now() NOT NULL,
+      CONSTRAINT record_snapshots_base_id_fkey FOREIGN KEY (base_id) REFERENCES grids.bases(id) ON DELETE RESTRICT,
+      CONSTRAINT record_snapshots_created_by_fkey FOREIGN KEY (created_by) REFERENCES auth.users(id) ON DELETE SET NULL,
+      CONSTRAINT record_snapshots_id_base_id_table_id_record_id_key UNIQUE (id, base_id, table_id, record_id),
+      CONSTRAINT record_snapshots_pkey PRIMARY KEY (id),
+      CONSTRAINT record_snapshots_record_table_fkey FOREIGN KEY (record_id, table_id) REFERENCES grids.records(id, table_id) ON DELETE RESTRICT,
+      CONSTRAINT record_snapshots_short_id_format_chk CHECK ((short_id ~ '^[A-Za-z0-9]{6}$'::text)),
+      CONSTRAINT record_snapshots_table_base_fkey FOREIGN KEY (table_id, base_id) REFERENCES grids.tables(id, base_id) ON DELETE RESTRICT,
+      CONSTRAINT record_snapshots_table_id_fkey FOREIGN KEY (table_id) REFERENCES grids.tables(id) ON DELETE RESTRICT
+    )
+  `.simple();
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_grids_record_snapshots_record ON grids.record_snapshots USING btree (table_id, record_id, created_at DESC)
+  `.simple();
+  await sql`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_grids_record_snapshots_short_id ON grids.record_snapshots USING btree (short_id)
+  `.simple();
+  await sql`
+    CREATE TABLE IF NOT EXISTS grids.documents (
+      id uuid DEFAULT gen_random_uuid() NOT NULL,
+      short_id text NOT NULL,
+      template_id uuid,
+      workflow_run_id uuid,
+      workflow_step_key text,
+      snapshot_id uuid,
+      base_id uuid NOT NULL,
+      table_id uuid,
+      record_id uuid,
+      document_number text NOT NULL,
+      filename text NOT NULL,
+      tags text[] DEFAULT '{}'::text[] NOT NULL,
+      template_snapshot jsonb NOT NULL,
+      render_data jsonb NOT NULL,
+      renderer_kind text NOT NULL,
+      renderer_version text NOT NULL,
+      template_revision text NOT NULL,
+      profile_id text,
+      profile_version integer,
+      profile_snapshot jsonb,
+      snapshot_sha256 text,
+      validator_version text,
+      validation_status text,
+      validation_report jsonb,
+      issued_actor jsonb NOT NULL,
+      created_by uuid,
+      created_at timestamp with time zone DEFAULT now() NOT NULL,
+      profile_output jsonb,
+      record_sources_complete boolean DEFAULT false NOT NULL,
+      primary_artifact_key text NOT NULL,
+      query_data_id uuid,
+      associated_query_data_id uuid,
+      CONSTRAINT documents_associated_query_binding_fkey FOREIGN KEY (associated_query_data_id, workflow_run_id) REFERENCES grids.workflow_query_data(id, run_id) ON DELETE RESTRICT,
+      CONSTRAINT documents_associated_query_source_chk CHECK (((associated_query_data_id IS NULL) OR ((query_data_id IS NOT NULL) AND (workflow_run_id IS NOT NULL)))),
+      CONSTRAINT documents_base_id_document_number_key UNIQUE (base_id, document_number),
+      CONSTRAINT documents_base_id_fkey FOREIGN KEY (base_id) REFERENCES grids.bases(id) ON DELETE RESTRICT,
+      CONSTRAINT documents_check CHECK (((profile_output IS NULL) OR ((renderer_kind = 'profile'::text) AND (jsonb_typeof(profile_output) = 'object'::text)))),
+      CONSTRAINT documents_created_by_fkey FOREIGN KEY (created_by) REFERENCES auth.users(id) ON DELETE SET NULL,
+      CONSTRAINT documents_filename_length_chk CHECK (((length(filename) >= 1) AND (length(filename) <= 255))),
+      CONSTRAINT documents_id_base_id_key UNIQUE (id, base_id),
+      CONSTRAINT documents_id_base_id_short_id_key UNIQUE (id, base_id, short_id),
+      CONSTRAINT documents_id_base_id_table_id_record_id_key UNIQUE (id, base_id, table_id, record_id),
+      CONSTRAINT documents_issued_actor_object_chk CHECK ((jsonb_typeof(issued_actor) = 'object'::text)),
+      CONSTRAINT documents_number_length_chk CHECK (((length(document_number) >= 1) AND (length(document_number) <= 200))),
+      CONSTRAINT documents_pkey PRIMARY KEY (id),
+      CONSTRAINT documents_query_data_binding_fkey FOREIGN KEY (query_data_id, workflow_run_id) REFERENCES grids.workflow_query_data(id, run_id) ON DELETE RESTRICT,
+      CONSTRAINT documents_query_source_chk CHECK (((query_data_id IS NULL) OR ((template_id IS NULL) AND (workflow_run_id IS NOT NULL)))),
+      CONSTRAINT documents_render_data_object_chk CHECK ((jsonb_typeof(render_data) = 'object'::text)),
+      CONSTRAINT documents_renderer_chk CHECK ((((renderer_kind = 'html'::text) AND (profile_id IS NULL) AND (profile_version IS NULL) AND (profile_snapshot IS NULL) AND (snapshot_sha256 IS NULL) AND (validator_version IS NULL) AND (validation_status IS NULL) AND (validation_report IS NULL)) OR ((renderer_kind = 'profile'::text) AND (profile_id IS NOT NULL) AND (profile_version > 0) AND (jsonb_typeof(profile_snapshot) = 'object'::text) AND (snapshot_sha256 ~ '^[a-f0-9]{64}$'::text) AND (validator_version IS NOT NULL) AND (validation_status = ANY (ARRAY['valid'::text, 'warning'::text])) AND (jsonb_typeof(validation_report) = 'object'::text)))),
+      CONSTRAINT documents_renderer_kind_chk CHECK ((renderer_kind = ANY (ARRAY['html'::text, 'profile'::text]))),
+      CONSTRAINT documents_short_id_format_chk CHECK ((short_id ~ '^[A-Za-z0-9]{6}$'::text)),
+      CONSTRAINT documents_snapshot_binding_fkey FOREIGN KEY (snapshot_id, base_id, table_id, record_id) REFERENCES grids.record_snapshots(id, base_id, table_id, record_id) ON DELETE RESTRICT,
+      CONSTRAINT documents_snapshot_id_fkey FOREIGN KEY (snapshot_id) REFERENCES grids.record_snapshots(id) ON DELETE RESTRICT,
+      CONSTRAINT documents_source_binding_chk CHECK ((((template_id IS NOT NULL) AND (snapshot_id IS NOT NULL) AND (table_id IS NOT NULL) AND (record_id IS NOT NULL)) OR ((template_id IS NULL) AND (snapshot_id IS NULL) AND (table_id IS NULL) AND (record_id IS NULL) AND (workflow_run_id IS NOT NULL)))),
+      CONSTRAINT documents_table_id_fkey FOREIGN KEY (table_id) REFERENCES grids.tables(id) ON DELETE RESTRICT,
+      CONSTRAINT documents_tags_count_chk CHECK ((cardinality(tags) <= 20)),
+      CONSTRAINT documents_template_snapshot_object_chk CHECK ((jsonb_typeof(template_snapshot) = 'object'::text)),
+      CONSTRAINT documents_template_table_fkey FOREIGN KEY (template_id, table_id) REFERENCES grids.document_templates(id, table_id) ON DELETE RESTRICT,
+      CONSTRAINT documents_workflow_base_fkey FOREIGN KEY (workflow_run_id, base_id) REFERENCES grids.workflow_run_profile(run_id, base_id) ON DELETE RESTRICT,
+      CONSTRAINT documents_workflow_pair_chk CHECK (((workflow_run_id IS NULL) = (workflow_step_key IS NULL)))
+    )
+  `.simple();
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_grids_documents_record ON grids.documents USING btree (table_id, record_id, created_at DESC)
+  `.simple();
+  await sql`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_grids_documents_short_id ON grids.documents USING btree (short_id)
+  `.simple();
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_grids_documents_tags ON grids.documents USING gin (tags)
+  `.simple();
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_grids_documents_template ON grids.documents USING btree (template_id, created_at DESC)
+  `.simple();
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_grids_documents_template_cursor ON grids.documents USING btree (template_id, created_at DESC, id DESC)
+  `.simple();
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_grids_documents_workflow_run ON grids.documents USING btree (workflow_run_id, created_at DESC, id DESC) WHERE (workflow_run_id IS NOT NULL)
+  `.simple();
+  await sql`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_grids_documents_workflow_step ON grids.documents USING btree (workflow_run_id, workflow_step_key) WHERE ((workflow_run_id IS NOT NULL) AND (workflow_step_key IS NOT NULL))
+  `.simple();
+  await sql`
+    CREATE TABLE IF NOT EXISTS grids.record_external_operations (
+      id uuid DEFAULT gen_random_uuid() NOT NULL,
+      operation_scope_hash text NOT NULL,
+      operation_key_hash text NOT NULL,
+      binding_id uuid NOT NULL,
+      request_hash text NOT NULL,
+      result_version integer NOT NULL,
+      created boolean NOT NULL,
+      changed boolean NOT NULL,
+      created_at timestamp with time zone DEFAULT now() NOT NULL,
+      CONSTRAINT record_external_operations_binding_id_fkey FOREIGN KEY (binding_id) REFERENCES grids.record_external_bindings(id) ON DELETE CASCADE,
+      CONSTRAINT record_external_operations_operation_key_hash_check CHECK ((char_length(operation_key_hash) = 64)),
+      CONSTRAINT record_external_operations_operation_scope_hash_check CHECK ((char_length(operation_scope_hash) = 64)),
+      CONSTRAINT record_external_operations_pkey PRIMARY KEY (id),
+      CONSTRAINT record_external_operations_request_hash_check CHECK ((char_length(request_hash) = 64)),
+      CONSTRAINT record_external_operations_result_version_check CHECK ((result_version > 0))
+    )
+  `.simple();
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_grids_record_external_operations_created ON grids.record_external_operations USING btree (created_at, id)
+  `.simple();
+  await sql`
+    CREATE UNIQUE INDEX IF NOT EXISTS uq_grids_record_external_operations_scope_key ON grids.record_external_operations USING btree (operation_scope_hash, operation_key_hash)
+  `.simple();
+  await sql`
+    CREATE TABLE IF NOT EXISTS grids.document_artifacts (
+      document_id uuid NOT NULL,
+      artifact_key text NOT NULL,
+      file_id uuid NOT NULL,
+      created_at timestamp with time zone DEFAULT now() NOT NULL,
+      CONSTRAINT document_artifacts_document_id_fkey FOREIGN KEY (document_id) REFERENCES grids.documents(id) ON DELETE RESTRICT,
+      CONSTRAINT document_artifacts_file_id_fkey FOREIGN KEY (file_id) REFERENCES grids.files(id) ON DELETE RESTRICT,
+      CONSTRAINT document_artifacts_file_id_key UNIQUE (file_id),
+      CONSTRAINT document_artifacts_key_chk CHECK ((artifact_key ~ '^[a-z][a-z0-9._-]{0,63}$'::text)),
+      CONSTRAINT document_artifacts_pkey PRIMARY KEY (document_id, artifact_key)
+    )
+  `.simple();
+  await sql`
+    CREATE TABLE IF NOT EXISTS grids.document_issuances (
+      id uuid DEFAULT gen_random_uuid() NOT NULL,
+      base_id uuid NOT NULL,
+      document_short_id text NOT NULL,
+      operation_key_hash text NOT NULL,
+      request_hash text NOT NULL,
+      request_identity_hash text,
+      frozen_request jsonb,
+      document_id uuid,
+      completed_at timestamp with time zone,
+      created_at timestamp with time zone DEFAULT now() NOT NULL,
+      confirmation_hash text,
+      confirmed_actor jsonb,
+      confirmed_at timestamp with time zone,
+      query_data_id uuid,
+      CONSTRAINT document_issuances_base_id_fkey FOREIGN KEY (base_id) REFERENCES grids.bases(id) ON DELETE RESTRICT,
+      CONSTRAINT document_issuances_base_id_operation_key_hash_key UNIQUE (base_id, operation_key_hash),
+      CONSTRAINT document_issuances_confirmation_chk CHECK (((((confirmed_actor IS NULL) AND (confirmed_at IS NULL)) OR ((confirmation_hash IS NOT NULL) AND (confirmed_actor IS NOT NULL) AND (confirmed_at IS NOT NULL) AND (jsonb_typeof(confirmed_actor) = 'object'::text) AND (confirmed_at >= created_at))) AND ((confirmation_hash IS NULL) OR (document_id IS NULL) OR (confirmed_at IS NOT NULL)))),
+      CONSTRAINT document_issuances_confirmation_hash_check CHECK ((confirmation_hash ~ '^[a-f0-9]{64}$'::text)),
+      CONSTRAINT document_issuances_document_base_fkey FOREIGN KEY (document_id, base_id, document_short_id) REFERENCES grids.documents(id, base_id, short_id) ON DELETE RESTRICT,
+      CONSTRAINT document_issuances_document_id_key UNIQUE (document_id),
+      CONSTRAINT document_issuances_document_short_id_key UNIQUE (document_short_id),
+      CONSTRAINT document_issuances_operation_key_hash_check CHECK ((operation_key_hash ~ '^[a-f0-9]{64}$'::text)),
+      CONSTRAINT document_issuances_pkey PRIMARY KEY (id),
+      CONSTRAINT document_issuances_query_data_id_fkey FOREIGN KEY (query_data_id) REFERENCES grids.workflow_query_data(id) ON DELETE RESTRICT,
+      CONSTRAINT document_issuances_request_hash_check CHECK ((request_hash ~ '^[a-f0-9]{64}$'::text)),
+      CONSTRAINT document_issuances_request_identity_hash_check CHECK ((request_identity_hash ~ '^[a-f0-9]{64}$'::text)),
+      CONSTRAINT document_issuances_short_id_format_chk CHECK ((document_short_id ~ '^[A-Za-z0-9]{6}$'::text)),
+      CONSTRAINT document_issuances_state_chk CHECK ((((document_id IS NULL) AND (completed_at IS NULL) AND (jsonb_typeof(frozen_request) = 'object'::text)) OR ((document_id IS NOT NULL) AND (completed_at IS NOT NULL) AND (completed_at >= created_at) AND (frozen_request IS NULL))))
+    )
+  `.simple();
+  await sql`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_grids_document_issuance_base ON grids.document_issuances USING btree (id, base_id)
+  `.simple();
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_grids_document_issuances_pending ON grids.document_issuances USING btree (created_at, id) WHERE (document_id IS NULL)
+  `.simple();
+  await sql`
+    CREATE TABLE IF NOT EXISTS grids.document_links (
+      id uuid DEFAULT gen_random_uuid() NOT NULL,
+      short_id text NOT NULL,
+      document_id uuid NOT NULL,
+      base_id uuid NOT NULL,
+      table_id uuid,
+      record_id uuid,
+      token_hash text NOT NULL,
+      comment text,
+      created_by uuid,
+      created_at timestamp with time zone DEFAULT now() NOT NULL,
+      expires_at timestamp with time zone NOT NULL,
+      revoked_at timestamp with time zone,
+      revoked_by uuid,
+      last_accessed_at timestamp with time zone,
+      access_count integer DEFAULT 0 NOT NULL,
+      CONSTRAINT document_links_access_count_chk CHECK ((access_count >= 0)),
+      CONSTRAINT document_links_base_binding_fkey FOREIGN KEY (document_id, base_id) REFERENCES grids.documents(id, base_id) ON DELETE RESTRICT,
+      CONSTRAINT document_links_comment_length_chk CHECK (((comment IS NULL) OR (length(comment) <= 500))),
+      CONSTRAINT document_links_created_by_fkey FOREIGN KEY (created_by) REFERENCES auth.users(id) ON DELETE SET NULL,
+      CONSTRAINT document_links_document_binding_fkey FOREIGN KEY (document_id, base_id, table_id, record_id) REFERENCES grids.documents(id, base_id, table_id, record_id) ON DELETE RESTRICT,
+      CONSTRAINT document_links_document_id_fkey FOREIGN KEY (document_id) REFERENCES grids.documents(id) ON DELETE RESTRICT,
+      CONSTRAINT document_links_pkey PRIMARY KEY (id),
+      CONSTRAINT document_links_record_pair_chk CHECK (((table_id IS NULL) = (record_id IS NULL))),
+      CONSTRAINT document_links_revoked_by_fkey FOREIGN KEY (revoked_by) REFERENCES auth.users(id) ON DELETE SET NULL,
+      CONSTRAINT document_links_short_id_format_chk CHECK ((short_id ~ '^[A-Za-z0-9]{6}$'::text))
+    )
+  `.simple();
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_grids_document_links_active ON grids.document_links USING btree (expires_at) WHERE (revoked_at IS NULL)
+  `.simple();
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_grids_document_links_document ON grids.document_links USING btree (document_id, created_at DESC)
+  `.simple();
+  await sql`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_grids_document_links_short_id ON grids.document_links USING btree (short_id)
+  `.simple();
+  await sql`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_grids_document_links_token_hash ON grids.document_links USING btree (token_hash)
+  `.simple();
+  await sql`
+    CREATE TABLE IF NOT EXISTS grids.document_record_sources (
+      document_id uuid NOT NULL,
+      table_id uuid NOT NULL,
+      record_id uuid NOT NULL,
+      version bigint NOT NULL,
+      CONSTRAINT document_record_sources_document_id_fkey FOREIGN KEY (document_id) REFERENCES grids.documents(id) ON DELETE RESTRICT,
+      CONSTRAINT document_record_sources_pkey PRIMARY KEY (document_id, table_id, record_id),
+      CONSTRAINT document_record_sources_record_id_fkey FOREIGN KEY (record_id) REFERENCES grids.records(id) ON DELETE RESTRICT,
+      CONSTRAINT document_record_sources_table_id_fkey FOREIGN KEY (table_id) REFERENCES grids.tables(id) ON DELETE RESTRICT,
+      CONSTRAINT document_record_sources_version_check CHECK ((version > 0))
+    )
+  `.simple();
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_document_record_sources_record ON grids.document_record_sources USING btree (table_id, record_id, document_id)
+  `.simple();
+  await sql`
+    CREATE TABLE IF NOT EXISTS grids.document_export_claims (
+      base_id uuid NOT NULL,
+      destination_key text NOT NULL,
+      purpose text NOT NULL,
+      business_id text NOT NULL,
+      receipt_id uuid NOT NULL,
+      created_at timestamp with time zone DEFAULT now() NOT NULL,
+      CONSTRAINT document_export_claims_business_id_check CHECK (((length(business_id) >= 1) AND (length(business_id) <= 200))),
+      CONSTRAINT document_export_claims_destination_key_check CHECK (((length(destination_key) >= 1) AND (length(destination_key) <= 200))),
+      CONSTRAINT document_export_claims_pkey PRIMARY KEY (base_id, destination_key, purpose, business_id),
+      CONSTRAINT document_export_claims_purpose_check CHECK ((purpose = ANY (ARRAY['accounting'::text, 'payment'::text]))),
+      CONSTRAINT document_export_claims_receipt_id_base_id_fkey FOREIGN KEY (receipt_id, base_id) REFERENCES grids.document_issuances(id, base_id) ON DELETE RESTRICT
+    )
+  `.simple();
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_grids_document_export_claims_receipt ON grids.document_export_claims USING btree (receipt_id)
+  `.simple();
+  await sql`
+    DROP TRIGGER IF EXISTS document_artifacts_immutable ON grids.document_artifacts
+  `.simple();
+  await sql`
+    CREATE TRIGGER document_artifacts_immutable BEFORE DELETE OR UPDATE ON grids.document_artifacts FOR EACH ROW EXECUTE FUNCTION grids.reject_document_artifact_mutation()
+  `.simple();
+  await sql`
+    DROP TRIGGER IF EXISTS document_export_claim_guard ON grids.document_export_claims
+  `.simple();
+  await sql`
+    CREATE TRIGGER document_export_claim_guard BEFORE DELETE OR UPDATE ON grids.document_export_claims FOR EACH ROW EXECUTE FUNCTION grids.guard_document_export_claim()
+  `.simple();
+  await sql`
+    DROP TRIGGER IF EXISTS document_issuances_guard ON grids.document_issuances
+  `.simple();
+  await sql`
+    CREATE TRIGGER document_issuances_guard BEFORE DELETE OR UPDATE ON grids.document_issuances FOR EACH ROW EXECUTE FUNCTION grids.guard_document_issuance()
+  `.simple();
+  await sql`
+    DROP TRIGGER IF EXISTS document_record_sources_immutable ON grids.document_record_sources
+  `.simple();
+  await sql`
+    CREATE TRIGGER document_record_sources_immutable BEFORE DELETE OR UPDATE ON grids.document_record_sources FOR EACH ROW EXECUTE FUNCTION grids.reject_document_artifact_mutation()
+  `.simple();
+  await sql`
+    DROP TRIGGER IF EXISTS documents_immutable ON grids.documents
+  `.simple();
+  await sql`
+    CREATE TRIGGER documents_immutable BEFORE DELETE OR UPDATE ON grids.documents FOR EACH ROW EXECUTE FUNCTION grids.reject_document_mutation()
+  `.simple();
+  await sql`
+    DROP TRIGGER IF EXISTS trg_grids_validate_federated_mapping ON grids.federated_field_mappings
+  `.simple();
+  await sql`
+    CREATE TRIGGER trg_grids_validate_federated_mapping BEFORE INSERT OR UPDATE OF revision_id, target_field_id, source_table_id, source_field_id ON grids.federated_field_mappings FOR EACH ROW EXECUTE FUNCTION grids.validate_federated_mapping()
+  `.simple();
+  await sql`
+    DROP TRIGGER IF EXISTS trg_grids_validate_federated_revision_target ON grids.federated_table_revisions
+  `.simple();
+  await sql`
+    CREATE TRIGGER trg_grids_validate_federated_revision_target BEFORE INSERT OR UPDATE OF table_id ON grids.federated_table_revisions FOR EACH ROW EXECUTE FUNCTION grids.validate_federated_revision_target()
+  `.simple();
+  await sql`
+    DROP TRIGGER IF EXISTS trg_grids_validate_federated_source ON grids.federated_table_sources
+  `.simple();
+  await sql`
+    CREATE TRIGGER trg_grids_validate_federated_source BEFORE INSERT OR UPDATE OF revision_id, source_table_id ON grids.federated_table_sources FOR EACH ROW EXECUTE FUNCTION grids.validate_federated_source()
+  `.simple();
+  await sql`
+    DROP TRIGGER IF EXISTS file_protected_references_guard ON grids.file_protected_references
+  `.simple();
+  await sql`
+    CREATE TRIGGER file_protected_references_guard BEFORE DELETE OR UPDATE ON grids.file_protected_references FOR EACH ROW EXECUTE FUNCTION grids.guard_file_protected_reference_mutation()
+  `.simple();
+  await sql`
+    DROP TRIGGER IF EXISTS files_content_immutable ON grids.files
+  `.simple();
+  await sql`
+    CREATE TRIGGER files_content_immutable BEFORE UPDATE OF filename, mime_type, size_bytes, sha256, bytes ON grids.files FOR EACH ROW EXECUTE FUNCTION grids.reject_file_content_mutation()
+  `.simple();
+  await sql`
+    DROP TRIGGER IF EXISTS grids_views_sync_base_id ON grids.views
+  `.simple();
+  await sql`
+    CREATE TRIGGER grids_views_sync_base_id BEFORE INSERT OR UPDATE OF table_id, base_id ON grids.views FOR EACH ROW EXECUTE FUNCTION grids.sync_view_base_id()
+  `.simple();
+  await sql`
+    DROP TRIGGER IF EXISTS workflow_query_data_immutable ON grids.workflow_query_data
+  `.simple();
+  await sql`
+    CREATE TRIGGER workflow_query_data_immutable BEFORE UPDATE ON grids.workflow_query_data FOR EACH ROW EXECUTE FUNCTION grids.reject_workflow_query_data_update()
+  `.simple();
+  await sql`
+    CREATE OR REPLACE VIEW grids.operational_health AS
+     WITH outbox AS (
+             SELECT (count(*) FILTER (WHERE (record_event_outbox.status = 'pending'::text)))::integer AS pending,
+                (count(*) FILTER (WHERE (record_event_outbox.status = 'failed'::text)))::integer AS failed,
+                (count(*) FILTER (WHERE (record_event_outbox.status = 'dead'::text)))::integer AS dead,
+                (COALESCE(EXTRACT(epoch FROM (now() - min(record_event_outbox.created_at) FILTER (WHERE (record_event_outbox.status = ANY (ARRAY['pending'::text, 'failed'::text]))))), (0)::numeric))::double precision AS oldest_active_age_seconds
+               FROM grids.record_event_outbox
+            ), workflow_runs AS (
+             SELECT (count(*) FILTER (WHERE (run.state = 'queued'::text)))::integer AS queued,
+                (count(*) FILTER (WHERE (run.state = 'running'::text)))::integer AS running,
+                (count(*) FILTER (WHERE (run.state = 'waiting'::text)))::integer AS waiting,
+                (count(*) FILTER (WHERE (run.state = 'needs_attention'::text)))::integer AS needs_attention,
+                (count(*) FILTER (WHERE ((run.state = 'needs_attention'::text) AND (run.finished_at >= (now() - '24:00:00'::interval)))))::integer AS needs_attention_recent,
+                (count(*) FILTER (WHERE ((run.state = 'running'::text) AND ((run.lease_expires_at IS NULL) OR (run.lease_expires_at < now())))))::integer AS stale_running,
+                (COALESCE(EXTRACT(epoch FROM (now() - min(run.created_at) FILTER (WHERE (run.state = 'queued'::text)))), (0)::numeric))::double precision AS oldest_queued_age_seconds
+               FROM workflows.run
+              WHERE ((run.app_id = 'grids'::text) AND (run.mode = 'execute'::text))
+            ), effects AS (
+             SELECT (count(*) FILTER (WHERE (s.effect_state = 'executing'::text)))::integer AS executing,
+                (count(*) FILTER (WHERE (s.effect_state = 'ambiguous'::text)))::integer AS needs_attention,
+                (count(*) FILTER (WHERE ((s.effect_state = 'ambiguous'::text) AND (COALESCE(s.finished_at, s.effect_started_at) >= (now() - '24:00:00'::interval)))))::integer AS needs_attention_recent,
+                (COALESCE(EXTRACT(epoch FROM (now() - min(s.effect_started_at) FILTER (WHERE (s.effect_state = ANY (ARRAY['executing'::text, 'ambiguous'::text]))))), (0)::numeric))::double precision AS oldest_active_age_seconds
+               FROM (workflows.step_outcome s
+                 JOIN workflows.run r ON (((r.id = s.run_id) AND (r.app_id = 'grids'::text))))
+            ), federation AS (
+             SELECT (count(*) FILTER (WHERE (federated_table_revisions.status = 'degraded'::text)))::integer AS degraded
+               FROM grids.federated_table_revisions
+            ), email_deliveries AS (
+             SELECT (count(*) FILTER (WHERE ((workflow_email_deliveries.status = 'failed'::text) AND (workflow_email_deliveries.created_at >= (now() - '24:00:00'::interval)))))::integer AS failed_24h
+               FROM grids.workflow_email_deliveries
+            )
+     SELECT
+            CASE
+                WHEN ((outbox.dead > 0) OR (workflow_runs.needs_attention_recent > 0) OR (workflow_runs.stale_running > 0) OR (effects.needs_attention_recent > 0)) THEN 'error'::text
+                WHEN ((outbox.failed > 0) OR (outbox.oldest_active_age_seconds > (60)::double precision) OR (workflow_runs.oldest_queued_age_seconds > (60)::double precision) OR (effects.oldest_active_age_seconds > (300)::double precision) OR (federation.degraded > 0) OR (email_deliveries.failed_24h > 0) OR (workflow_runs.needs_attention > 0) OR (effects.needs_attention > 0)) THEN 'warn'::text
+                ELSE 'ok'::text
+            END AS status,
+        outbox.pending AS outbox_pending,
+        outbox.failed AS outbox_failed,
+        outbox.dead AS outbox_dead,
+        outbox.oldest_active_age_seconds AS outbox_oldest_active_age_seconds,
+        workflow_runs.queued AS workflow_queued,
+        workflow_runs.running AS workflow_running,
+        workflow_runs.waiting AS workflow_waiting,
+        workflow_runs.needs_attention AS workflow_needs_attention,
+        workflow_runs.stale_running AS workflow_stale_running,
+        workflow_runs.oldest_queued_age_seconds AS workflow_oldest_queued_age_seconds,
+        effects.executing AS effects_executing,
+        effects.needs_attention AS effects_needs_attention,
+        effects.oldest_active_age_seconds AS effects_oldest_active_age_seconds,
+        federation.degraded AS federated_degraded,
+        email_deliveries.failed_24h AS email_failed_24h,
+        now() AS observed_at
+       FROM outbox,
+        workflow_runs,
+        effects,
+        federation,
+        email_deliveries;
+  `.simple();
 };
 
 const assertWorkflowKernelReady = async (sql: SQL): Promise<void> => {
-  /*
-   * Public-reference migration and operational health read kernel tables that
-   * app-core creates. Nothing declares an ordering between the app containers — they all
-   * start at once and each migrates itself — so on an empty database Grids can
-   * get here first, and Postgres would refuse the view with a bare "relation
-   * does not exist" naming a table nobody would think to look for.
-   *
-   * Refusing loudly is right: the container restarts, and by then app-core has
-   * been through. Creating the view without its workflow counters instead would
-   * leave a Grids that reports its own health as fine while knowing nothing
-   * about the runs it depends on.
-   */
-  const [kernel] = await sql<Array<{ run: string | null; version: string | null }>>`
-    SELECT to_regclass('workflows.run')::text AS run,
-           to_regclass('workflows.version')::text AS version
+  const [kernel] = await sql<Array<{ ready: boolean }>>`
+    SELECT to_regclass('workflows.run') IS NOT NULL
+      AND to_regclass('workflows.version') IS NOT NULL AS ready
   `;
-  if (!kernel?.run || !kernel.version) {
-    throw new Error(
-      "grids migration needs the workflows schema, which app-core has not migrated yet. " +
-        "This is expected on a cold database: start app-core, or wait for this container's restart.",
-    );
+  if (!kernel?.ready) {
+    throw new Error("Grids requires the workflow kernel schema. Start Core before Grids.");
   }
-};
-
-const migrateOperationalHealth = async (sql: SQL): Promise<void> => {
-  await assertWorkflowKernelReady(sql);
-
-  await sql`
-    CREATE OR REPLACE VIEW grids.operational_health AS
-    WITH outbox AS (
-      SELECT
-        count(*) FILTER (WHERE status = 'pending')::int AS pending,
-        count(*) FILTER (WHERE status = 'failed')::int AS failed,
-        count(*) FILTER (WHERE status = 'dead')::int AS dead,
-        COALESCE(EXTRACT(EPOCH FROM (now() - min(created_at) FILTER (WHERE status IN ('pending', 'failed')))), 0)::float AS oldest_active_age_seconds
-      FROM grids.record_event_outbox
-    ), workflow_runs AS (
-      -- Runs live in the kernel, which serves every app, so everything below is
-      -- narrowed to the Grids ones: this view reports on Grids alone.
-      SELECT
-        count(*) FILTER (WHERE state = 'queued')::int AS queued,
-        count(*) FILTER (WHERE state = 'running')::int AS running,
-        count(*) FILTER (WHERE state = 'waiting')::int AS waiting,
-        count(*) FILTER (WHERE state = 'needs_attention')::int AS needs_attention,
-        count(*) FILTER (WHERE state = 'needs_attention' AND finished_at >= now() - interval '24 hours')::int AS needs_attention_recent,
-        count(*) FILTER (WHERE state = 'running' AND (lease_expires_at IS NULL OR lease_expires_at < now()))::int AS stale_running,
-        COALESCE(EXTRACT(EPOCH FROM (now() - min(created_at) FILTER (WHERE state = 'queued'))), 0)::float AS oldest_queued_age_seconds
-      FROM workflows.run
-      WHERE app_id = 'grids' AND mode = 'execute'
-    ), effects AS (
-      -- An effect is journaled on its own step row, and only from the moment it
-      -- starts: there is no queue of intended effects to count, only ones in
-      -- flight and ones that escaped without saying whether they landed.
-      SELECT
-        count(*) FILTER (WHERE s.effect_state = 'executing')::int AS executing,
-        count(*) FILTER (WHERE s.effect_state = 'ambiguous')::int AS needs_attention,
-        count(*) FILTER (
-          WHERE s.effect_state = 'ambiguous' AND COALESCE(s.finished_at, s.effect_started_at) >= now() - interval '24 hours'
-        )::int AS needs_attention_recent,
-        COALESCE(
-          EXTRACT(EPOCH FROM (now() - min(s.effect_started_at) FILTER (WHERE s.effect_state IN ('executing', 'ambiguous')))),
-          0
-        )::float AS oldest_active_age_seconds
-      FROM workflows.step_outcome AS s
-      JOIN workflows.run AS r ON r.id = s.run_id AND r.app_id = 'grids'
-    ), federation AS (
-      SELECT count(*) FILTER (WHERE status = 'degraded')::int AS degraded
-      FROM grids.federated_table_revisions
-    ), email_deliveries AS (
-      SELECT count(*) FILTER (WHERE status = 'failed' AND created_at >= now() - interval '24 hours')::int AS failed_24h
-      FROM grids.workflow_email_deliveries
-    )
-    SELECT
-      -- Needs-attention is terminal and has no acknowledge path, so an unbounded
-      -- count would pin the status to 'error' forever after a single incident.
-      -- Recent ones raise 'error'; older unresolved ones stay visible as 'warn'
-      -- and in the full counts below, which are the operator's worklist.
-      CASE
-        WHEN outbox.dead > 0 OR workflow_runs.needs_attention_recent > 0 OR workflow_runs.stale_running > 0
-          OR effects.needs_attention_recent > 0
-          THEN 'error'
-        WHEN outbox.failed > 0 OR outbox.oldest_active_age_seconds > 60
-          OR workflow_runs.oldest_queued_age_seconds > 60 OR effects.oldest_active_age_seconds > 300
-          OR federation.degraded > 0 OR email_deliveries.failed_24h > 0
-          OR workflow_runs.needs_attention > 0 OR effects.needs_attention > 0
-          THEN 'warn'
-        ELSE 'ok'
-      END AS status,
-      outbox.pending AS outbox_pending,
-      outbox.failed AS outbox_failed,
-      outbox.dead AS outbox_dead,
-      outbox.oldest_active_age_seconds AS outbox_oldest_active_age_seconds,
-      workflow_runs.queued AS workflow_queued,
-      workflow_runs.running AS workflow_running,
-      workflow_runs.waiting AS workflow_waiting,
-      workflow_runs.needs_attention AS workflow_needs_attention,
-      workflow_runs.stale_running AS workflow_stale_running,
-      workflow_runs.oldest_queued_age_seconds AS workflow_oldest_queued_age_seconds,
-      effects.executing AS effects_executing,
-      effects.needs_attention AS effects_needs_attention,
-      effects.oldest_active_age_seconds AS effects_oldest_active_age_seconds,
-      federation.degraded AS federated_degraded,
-      email_deliveries.failed_24h AS email_failed_24h,
-      now() AS observed_at
-    FROM outbox, workflow_runs, effects, federation, email_deliveries
-  `.simple();
-  console.log("  ✓ grids.operational_health view");
-};
-
-/**
- * Record create receipts are now a platform concern: the capability dispatcher
- * claims every `idempotency: "required"` Action in
- * `capabilities.idempotency_claims` before it forwards the call.
- */
-const dropRecordCreateClaims = async (sql: SQL): Promise<void> => {
-  await sql`DROP TABLE IF EXISTS grids.record_create_claims`.simple();
-};
-
-const recordSchemaBaseline = async (sql: SQL): Promise<void> => {
-  const [baseline] = await sql<Array<{ present: boolean }>>`
-    SELECT EXISTS (SELECT 1 FROM grids.storage_contracts WHERE name = ${GRIDS_SCHEMA_BASELINE}) AS present
-  `;
-  if (baseline?.present) return;
-
-  if (!(await gridsPublicIdsReady(sql))) throw new Error("cannot record Grids schema baseline: public IDs are not ready");
-  const [contracts] = await sql<Array<{ scalar: boolean; workflow: boolean }>>`
-    SELECT
-      EXISTS (SELECT 1 FROM grids.storage_contracts WHERE name = ${CANONICAL_SCALAR_STORAGE_CONTRACT}) AS scalar,
-      EXISTS (SELECT 1 FROM grids.workflow_migrations WHERE version = ${GRIDS_WORKFLOW_SCHEMA_VERSION}) AS workflow
-  `;
-  if (!contracts?.scalar || !contracts.workflow) throw new Error("cannot record Grids schema baseline: storage contracts are not ready");
-
-  // Check version boundaries, not business validity: unavailable resources may
-  // leave a v5 draft invalid but editable. Include archived Apps in the cutover.
-  const [legacyApp] = await sql<Array<{ shortId: string }>>`
-    SELECT short_id AS "shortId" FROM grids.custom_apps
-    WHERE draft_definition->>'schemaVersion' IS DISTINCT FROM '5'
-       OR (published_definition IS NOT NULL AND published_definition->>'schemaVersion' IS DISTINCT FROM '5')
-    LIMIT 1
-  `;
-  if (legacyApp)
-    throw new Error(
-      `cannot record Grids schema baseline: App ${legacyApp.shortId} still has a legacy definition; recover it before retrying`,
-    );
-
-  // Written last in the migration transaction. This is a completed upgrade
-  // checkpoint, not a replacement for constraints or a data-integrity audit.
-  await sql`
-    INSERT INTO grids.storage_contracts (name) VALUES (${GRIDS_SCHEMA_BASELINE})
-    ON CONFLICT (name) DO NOTHING
-  `;
 };
 
 export const migrate = async (sql: SQL = defaultSql): Promise<void> => {
   const connection = await sql.reserve();
   let locked = false;
   let transactionStarted = false;
-  let migrationError: unknown;
   try {
-    await connection`SELECT pg_advisory_lock(hashtextextended(${MIGRATION_LOCK_NAME}, 0))`;
+    await connection`SELECT pg_advisory_lock(hashtextextended('grids:migrate', 0))`;
     locked = true;
     await assertWorkflowKernelReady(connection);
-    await assertNoDuplicateLiveTableNames(connection);
     await connection`BEGIN`.simple();
     transactionStarted = true;
-    await assertGridsAlphaContract(connection);
-    await migrateSchema(connection);
-    await migrateSafeCastHelpers(connection);
-    await migrateCoreRecords(connection);
-    await migrateDurableHistory(connection);
-    await migrateViews(connection);
-    await migrateDocumentTemplates(connection);
-    await migrateDocumentArtifacts(connection);
-    await migrateDocumentIssuance(connection);
-    await migrateNumberSeries(connection);
-    await migrateRecordFinalization(connection);
-    await migrateEvidenceExports(connection);
-    await migrateRetentionPolicies(connection);
-    await cleanupAlphaSchema(connection);
-    await migrateFormsAndEvents(connection);
-    await migrateCustomApps(connection);
-    await removeLegacyDashboards(connection);
-    await migrateGridsWorkflowTables(connection);
-    await migratePublicIds(connection);
-    await finalizeDocumentImmutability(connection);
-    await migrateCanonicalScalarStorage(connection);
-    await removeObsoleteAccess(connection);
-    await migrateRecordScanCodes(connection);
-    await migrateOperationalHealth(connection);
-    await dropRecordCreateClaims(connection);
-    await recordSchemaBaseline(connection);
+    await defineSchema(connection);
     await connection`COMMIT`.simple();
     transactionStarted = false;
-    console.log("  ✓ grids schema ready");
   } catch (error) {
     if (transactionStarted) await connection`ROLLBACK`.simple().catch(() => undefined);
-    migrationError = error;
+    throw error;
   } finally {
-    if (locked) {
-      await connection`SELECT pg_advisory_unlock(hashtextextended(${MIGRATION_LOCK_NAME}, 0))`.catch(() => undefined);
-    }
+    if (locked) await connection`SELECT pg_advisory_unlock(hashtextextended('grids:migrate', 0))`.catch(() => undefined);
     connection.release();
   }
-  if (migrationError) throw migrationError;
 };

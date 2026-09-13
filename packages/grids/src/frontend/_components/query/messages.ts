@@ -480,6 +480,8 @@ export const queryMessages = i18n.define({
             "Kehrt den Wahrheitswert um. Verwende in GQL where/having bevorzugt den Operator `not`.",
           "True when empty.": "Wahr, wenn leer.",
           "Substring match.": "Sucht eine Teilzeichenfolge.",
+          "Test exact Select membership using an option ID or unambiguous label.":
+            "Prüft die exakte Zugehörigkeit zu einer Auswahloption anhand ihrer ID oder einer eindeutigen Beschriftung.",
           "True when text starts with prefix.": "Wahr, wenn der Text mit dem Präfix beginnt.",
           "True when text ends with suffix.": "Wahr, wenn der Text mit dem Suffix endet.",
           "Case-insensitive substring match.": "Sucht ohne Beachtung der Groß- und Kleinschreibung eine Teilzeichenfolge.",

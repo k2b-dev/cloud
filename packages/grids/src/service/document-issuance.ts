@@ -677,8 +677,8 @@ export const createDocumentIssuanceService = (options: { profiles?: readonly Doc
             profileInput,
           };
           const [created] = await attempt<IssuanceRow[]>`
-          INSERT INTO grids.document_issuances (base_id, hash_version, operation_key_hash, request_hash, request_identity_hash, document_short_id, frozen_request)
-          VALUES (${input.snapshot.baseId}::uuid, 2, ${operationKeyHash}, ${requestHash.data}, ${requestIdentity ? recordRequestIdentityHash(requestIdentity) : null}, ${documentShortId}, ${canonicalJson({ ...frozen }, input.dateConfig?.locale).value}::jsonb)
+          INSERT INTO grids.document_issuances (base_id, operation_key_hash, request_hash, request_identity_hash, document_short_id, frozen_request)
+          VALUES (${input.snapshot.baseId}::uuid, ${operationKeyHash}, ${requestHash.data}, ${requestIdentity ? recordRequestIdentityHash(requestIdentity) : null}, ${documentShortId}, ${canonicalJson({ ...frozen }, input.dateConfig?.locale).value}::jsonb)
           RETURNING id::text, base_id::text, request_hash, request_identity_hash, document_short_id, frozen_request, document_id::text, created_at
         `;
           if (!created) throw err.internal(t.receiptCreateFailed);
@@ -934,8 +934,8 @@ export const createDocumentIssuanceService = (options: { profiles?: readonly Doc
           await attempt`UPDATE grids.document_profile_counters SET next_value = ${value + 1}
             WHERE base_id = ${request.baseId}::uuid AND profile_id = ${profile.id}`;
           const [created] = await attempt<QueryIssuanceRow[]>`
-            INSERT INTO grids.document_issuances (base_id, hash_version, operation_key_hash, request_hash, document_short_id, frozen_request, query_data_id, confirmation_hash)
-            VALUES (${request.baseId}::uuid, 2, ${operationHash}, ${requestHash}, ${shortId}, ${canonicalJson(frozen, locale).value}::jsonb, ${request.data.id}::uuid, ${confirmationHash})
+            INSERT INTO grids.document_issuances (base_id, operation_key_hash, request_hash, document_short_id, frozen_request, query_data_id, confirmation_hash)
+            VALUES (${request.baseId}::uuid, ${operationHash}, ${requestHash}, ${shortId}, ${canonicalJson(frozen, locale).value}::jsonb, ${request.data.id}::uuid, ${confirmationHash})
             RETURNING id::text, base_id::text, request_hash, request_identity_hash, document_short_id, frozen_request, document_id::text, created_at,
               confirmation_hash, confirmed_actor, confirmed_at
           `;

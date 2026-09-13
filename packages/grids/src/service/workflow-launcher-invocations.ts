@@ -1,7 +1,7 @@
-import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { get as settingsGet } from "@k2b/cloud/services/settings";
 import { normalizeLocale, normalizeTimeZone } from "@k2b/cloud/shared";
 import type { WorkflowInvocationMode, WorkflowInvocationReceipt, WorkflowJsonValue } from "@k2b/cloud/workflows";
+import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { sql } from "bun";
 import { z } from "zod";
 import { type RecordQuery, RecordQuerySchema } from "../contracts";
@@ -14,7 +14,6 @@ import {
   GridsWorkflowLauncherConfigSchema,
   type GridsWorkflowPrincipal,
   GridsWorkflowPrincipalSchema,
-  scannerLauncherInputSources,
 } from "../workflows/contracts";
 import { hasAtLeast } from "./permission-resolver";
 import { list as listRecords } from "./records";
@@ -389,7 +388,7 @@ const loadLauncherContext = async (
 
   let tableId: string | null = null;
   if (config.data.kind === "scanner") {
-    const scanEntries = Object.entries(scannerLauncherInputSources(config.data)).filter(([, source]) => source.kind === "scan");
+    const scanEntries = Object.entries(config.data.inputSources).filter(([, source]) => source.kind === "scan");
     const [scanEntry] = scanEntries;
     if (!scanEntry || scanEntries.length !== 1) return fail(err.badInput(t.scannerInputCount));
     const [inputName, source] = scanEntry;
@@ -493,7 +492,7 @@ export const invokeScannerLauncher = async (
   if (!loaded.ok) return loaded;
   const ctx = loaded.data;
   if (ctx.config.kind !== "scanner") return fail(err.internal(t.launcherContextInvalid));
-  const sources = scannerLauncherInputSources(ctx.config);
+  const sources = ctx.config.inputSources;
   const scanEntry = Object.entries(sources).find(([, source]) => source.kind === "scan");
   if (!scanEntry) return fail(err.internal(t.launcherContextInvalid));
   const [scanInputName, scanSource] = scanEntry;

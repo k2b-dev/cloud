@@ -562,7 +562,7 @@ limit 2`);
       const legacyBody = (await legacySyntax.json()) as CompileViewResponse;
       expect(legacyBody.ok).toBe(false);
       if (legacyBody.ok) throw new Error("expected parser diagnostics");
-      expect(legacyBody.diagnostics[0]?.message.startsWith("legacy # references are not valid in GQL")).toBe(true);
+      expect(legacyBody.diagnostics[0]?.message).toBe("invalid from source");
 
       const unknownOption = await app.request(
         `/gql/by-base/${fixture.baseId}/compile-view`,
@@ -574,7 +574,7 @@ limit 2`);
       const optionBody = (await unknownOption.json()) as CompileViewResponse;
       expect(optionBody.ok).toBe(false);
       if (optionBody.ok) throw new Error("expected canonicalization diagnostics");
-      expect(optionBody.diagnostics[0]?.message).toBe('unknown option "Missing" for "Stage"; expected one of: Open, Closed, On hold');
+      expect(optionBody.diagnostics[0]?.message).toBe('Unknown option "Missing" in "Stage". Available options: Open, Closed, On hold.');
     } finally {
       await cleanupFixture(fixture.internalBaseId, fixture.accessId);
     }

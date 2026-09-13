@@ -96,7 +96,6 @@ describe("GQL assistant docs", () => {
 
     expect(skill).toContain("# Grids GQL Assistant Skill");
     expect(skill).toContain("Use only sources and fields listed in `context.md`.");
-    expect(skill).toContain("Do not use legacy `#field` references in GQL.");
     expect(skill).toContain("```gql");
     expect(skill).toContain("from table ...");
     expect(skill).toContain(["from table ...", "join table ... as alias on ... = ...", "select ..."].join("\n"));

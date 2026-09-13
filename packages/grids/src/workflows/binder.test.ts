@@ -8,7 +8,7 @@ import {
   type WorkflowCatalog,
   WorkflowCatalogSnapshotSchema,
 } from "../service/workflow-catalog";
-import { bindGridsWorkflow, canonicalizeGridsWorkflowSourceForMigration, compileAndBindGridsWorkflowSource } from "./binder";
+import { bindGridsWorkflow, compileAndBindGridsWorkflowSource } from "./binder";
 import { gridsWorkflows } from "./module";
 
 const ids = {
@@ -77,7 +77,7 @@ describe("Grids workflow binder", () => {
       const result = await compileAndBindGridsWorkflowSource(
         `steps:\n  - query:\n      source: |\n        ${source.replaceAll("\n", "\n        ")}\n      saveAs: report\n  - generateDocument:\n      data: report\n      associatedData: report\n      output: { kind: json }\n`,
         catalog(),
-        async () => ok({ source, schemaHash: "a".repeat(64), schemaHashVersion: 3 as const }),
+        async () => ok({ source, schemaHash: "a".repeat(64) }),
       );
       expect(result.ok).toBe(!source.includes("aggregate"));
       if (!result.ok) expect(result.diagnostics.some((diagnostic) => diagnostic.message.includes("single-table row query"))).toBe(true);
@@ -162,7 +162,7 @@ steps:
 `;
     const bind = (yaml: string) =>
       compileAndBindGridsWorkflowSource(yaml, catalog(), async () =>
-        ok({ source: "from table {TBL001} select {FLD001}", schemaHash: "a".repeat(64), schemaHashVersion: 3 as const }),
+        ok({ source: "from table {TBL001} select {FLD001}", schemaHash: "a".repeat(64) }),
       );
     expect((await bind(source)).ok).toBe(true);
     expect((await bind(source.replace("inputs.approved", "inputs.unknown"))).ok).toBe(false);
@@ -208,7 +208,7 @@ steps:
 `;
     const bind = (yaml: string) =>
       compileAndBindGridsWorkflowSource(yaml, catalog(), async () =>
-        ok({ source: "from table {TBL001} select {FLD001}", schemaHash: "a".repeat(64), schemaHashVersion: 3 as const }),
+        ok({ source: "from table {TBL001} select {FLD001}", schemaHash: "a".repeat(64) }),
       );
     const valid = await bind(source);
     expect(valid.ok).toBe(true);
@@ -244,7 +244,7 @@ steps:
       const source = `steps:\n  - query:\n      source: from table Items\n      parameters:\n        invalid:\n          type: ${type}\n          value: "${value}"\n`;
       const bound = await compileAndBindGridsWorkflowSource(source, catalog(), async () => {
         called = true;
-        return ok({ source: "unused", schemaHash: "a".repeat(64), schemaHashVersion: 3 as const });
+        return ok({ source: "unused", schemaHash: "a".repeat(64) });
       });
       expect(bound.ok).toBe(false);
       expect(called).toBe(false);
@@ -255,7 +255,7 @@ steps:
     const source = `inputs:\n  minimum:\n    type: text\nsteps:\n  - query:\n      source: from table Items select Name\n      parameters:\n        minimum:\n          type: decimal\n          value: \${{ inputs.minimum }}\n      saveAs: report\n  - setVariable:\n      name: count\n      value: \${{ report.rowCount }}\n`;
     const result = await compileAndBindGridsWorkflowSource(source, catalog(), async (_query, values) => {
       expect(values["params.minimum"]).toEqual({ decimal: "0" });
-      return ok({ source: "from table {TBL001} select {FLD001}", schemaHash: "a".repeat(64), schemaHashVersion: 3 as const });
+      return ok({ source: "from table {TBL001} select {FLD001}", schemaHash: "a".repeat(64) });
     });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
@@ -263,10 +263,9 @@ steps:
     expect(result.plan.bindings["steps.0.query.$query"]).toEqual({
       source: "from table {TBL001} select {FLD001}",
       schemaHash: "a".repeat(64),
-      schemaHashVersion: 3,
     });
     const rows = await compileAndBindGridsWorkflowSource(source.replace("report.rowCount", "report.rows"), catalog(), async () =>
-      ok({ source: "unused", schemaHash: "a".repeat(64), schemaHashVersion: 3 as const }),
+      ok({ source: "unused", schemaHash: "a".repeat(64) }),
     );
     expect(rows.ok).toBe(false);
   });
@@ -277,7 +276,7 @@ steps:
       const result = await compileAndBindGridsWorkflowSource(
         `${prefix}  - generateDocument:\n      data: report\n      output:\n        kind: ${kind}\n${kind === "pdf" || kind === "xml" ? '        body: "<report>{% for row in rows %}<p>{{ row.name }}</p>{% endfor %}</report>"\n' : ""}      saveAs: document\n`,
         catalog(),
-        async () => ok({ source: "from table {TBL001} select {FLD001}", schemaHash: "a".repeat(64), schemaHashVersion: 3 as const }),
+        async () => ok({ source: "from table {TBL001} select {FLD001}", schemaHash: "a".repeat(64) }),
       );
       expect(result.ok).toBe(true);
     }
@@ -292,7 +291,7 @@ steps:
       'data: report\n      output: { kind: xml, body: "<{{ document.number }}/>" }',
     ]) {
       const result = await compileAndBindGridsWorkflowSource(`${prefix}  - generateDocument:\n      ${invalid}\n`, catalog(), async () =>
-        ok({ source: "from table {TBL001} select {FLD001}", schemaHash: "a".repeat(64), schemaHashVersion: 3 as const }),
+        ok({ source: "from table {TBL001} select {FLD001}", schemaHash: "a".repeat(64) }),
       );
       expect(result.ok).toBe(false);
     }
@@ -432,23 +431,6 @@ steps:
     if (!result.ok) return;
     expect(result.source).toContain("inputs.item.FLD003.recordId");
     expect(result.source).not.toContain("Current archive.recoFLD003");
-  });
-
-  test("migrates only binder-known legacy references", async () => {
-    const literalUuid = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
-    const source = `inputs:
-  item:
-    type: record
-    table: ${ids.items}
-steps:
-  - succeed:
-      message: ${literalUuid}
-`;
-    const result = await canonicalizeGridsWorkflowSourceForMigration(source, catalog(), new Map([[ids.items, [ids.items, "old-items"]]]));
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-    expect(result.source).toContain("table: TBL001");
-    expect(result.source).toContain(literalUuid);
   });
 
   test("accepts the commented record-event trigger", async () => {

@@ -95,7 +95,7 @@ const fixture = async () => {
           baseId,
           runId,
           stepKey: "query",
-          capture: { payload, sha256: canonicalDocumentJson(payload).sha256, hashVersion: 2, rowCount: 1, capturedAt },
+          capture: { payload, sha256: canonicalDocumentJson(payload).sha256, rowCount: 1, capturedAt },
         },
         tx,
       ),
@@ -165,7 +165,7 @@ describe("financial query Document issuance", () => {
           baseId: scope.baseId,
           runId: request.runId,
           stepKey: "members",
-          capture: { payload, sha256: canonicalDocumentJson(payload).sha256, hashVersion: 2, rowCount: 2, capturedAt },
+          capture: { payload, sha256: canonicalDocumentJson(payload).sha256, rowCount: 2, capturedAt },
         },
         tx,
       ),
@@ -235,8 +235,6 @@ describe("financial query Document issuance", () => {
       const pending = await service.issueQueryDocument(request);
       if (!pending.ok) throw pending.error;
       if (!("kind" in pending.data)) throw new Error("Expected confirmation");
-      const [receipt] = await sql`SELECT hash_version FROM grids.document_issuances WHERE base_id = ${scope.baseId}::uuid`;
-      expect(receipt.hash_version).toBe(2);
       const confirmed = await service.confirmQueryDocument({ ...request, receiptId: pending.data.receiptId, sha256: pending.data.sha256 });
       if (!confirmed.ok) throw confirmed.error;
       await expect(service.issueQueryDocument(request)).rejects.toThrow("Renderer temporarily unavailable");
@@ -245,9 +243,8 @@ describe("financial query Document issuance", () => {
       const retry = await service.issueQueryDocument(request);
       if (!retry.ok) throw retry.error;
       expect(retry.data).toHaveProperty("shortId", pending.data.receiptId);
-      const [document] = await sql`SELECT hash_version, template_snapshot, template_revision, profile_snapshot, snapshot_sha256
+      const [document] = await sql`SELECT template_snapshot, template_revision, profile_snapshot, snapshot_sha256
         FROM grids.documents WHERE base_id = ${scope.baseId}::uuid`;
-      expect(document.hash_version).toBe(2);
       expect(document.template_revision).toBe(canonicalJson(document.template_snapshot).sha256);
       expect(document.snapshot_sha256).toBe(canonicalJson(document.profile_snapshot).sha256);
       expect(await sql`SELECT business_id FROM grids.document_export_claims WHERE base_id = ${scope.baseId}::uuid`).toHaveLength(1);

@@ -327,14 +327,13 @@ function FieldEditor(props: {
             <Show when={props.field.type === "id" && props.field.numberSeries} keyed>
               {(series) => (
                 <NoticeCard
-                  tone={series.migrationNote ? "warning" : "info"}
+                  tone="info"
                   role="status"
                   title={t().numberSeries}
                   detail={t().numberSeriesDetail({
                     assignment: series.assignment === "finalization" ? t().finalized : t().created,
                     last: series.lastValue,
                     next: series.preview ?? undefined,
-                    note: series.migrationNote ?? undefined,
                   })}
                 />
               )}

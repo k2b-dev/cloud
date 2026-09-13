@@ -463,7 +463,10 @@ steps:
           {
             name: "Scan expense",
             enabled: true,
-            config: { kind: "scanner", input: "item", resolve: { by: "field", field: "Name" } },
+            config: {
+              kind: "scanner",
+              inputSources: { ["item"]: { kind: "scan", value: "record", resolve: { by: "field", field: "Name" } } },
+            },
           },
           fixture.actorId,
         );
@@ -1826,10 +1829,8 @@ steps:
         fixture.actorId,
       );
       if (!changed.ok) throw changed.error;
-      await sql`
-        UPDATE grids.number_series SET baseline_floor = 1
-        WHERE field_id = ${fixture.assetIdFieldId}::uuid
-      `;
+      const { allocateNumberInTransaction } = await import("./number-series");
+      await sql.begin((client) => allocateNumberInTransaction({ client, owner: { kind: "field", id: fixture.assetIdFieldId } }));
 
       const runId = await queueRun(fixture, {
         plan: boundPlan(

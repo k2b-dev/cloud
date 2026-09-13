@@ -239,8 +239,8 @@ Keep retired broker resources through verification. Grids resumes publication
 from its retained Postgres outbox; historical workflow failures keep their
 explicit replay path.
 
-Before upgrading Grids from alpha document/workflow storage, complete the
-[Grids alpha upgrade checks](/en/docs/operations/grids-alpha-upgrade).
+Grids requires a fresh schema when replacing an older Grids storage layout;
+there is no in-place upgrade. See [Grids schema reset](/en/docs/reference/deprecations-and-migrations#grids-starts-with-a-fresh-schema).
 
 If Sync reports a legacy pending claim without queued input, reconcile that
 specific job against its application's durable state before clearing its

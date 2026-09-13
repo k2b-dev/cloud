@@ -30,7 +30,6 @@ import { getRecordWritableFieldType, isRecordWritableFieldType } from "../field-
 import type { DslQueryContextValues } from "../query-dsl/parameters";
 import { isDslAggregateOnlyPlan } from "../query-dsl/resolver";
 import { collectDslPlanTableIds } from "../query-dsl/source-plan";
-import { scannerLauncherInputSources } from "../workflows/contracts";
 import { logAudit, type SqlClient } from "./audit";
 import { customAppMessagesFor } from "./custom-app-messages";
 import { compileCustomAppQuery } from "./custom-app-query";
@@ -1275,7 +1274,7 @@ export const compile = async (input: unknown, client: SqlClient = sql, locale?: 
         );
         continue;
       }
-      const sources = scannerLauncherInputSources(launcher.config);
+      const sources = launcher.config.inputSources;
       const promptRecordInput = workflow.plan.inputs.find((input) => {
         const source = sources[input.name];
         return (source?.kind === "session" || source?.kind === "afterScan") && (input.type === "record" || input.type === "recordList");

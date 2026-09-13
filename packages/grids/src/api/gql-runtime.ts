@@ -334,7 +334,7 @@ export const canonicalGqlSource = (
 ) => canonicalGqlSourceForContext(httpGqlRuntimeContext(c, c.req.raw.signal), baseId, body);
 
 type ExecuteGqlSourceOptions = {
-  /** Logical GQL result cap, independent of the legacy preview page limit. */
+  /** Logical GQL result cap, independent of the preview page limit. */
   resultLimit?: number;
   maxRows?: number;
   maxResultBytes?: number;

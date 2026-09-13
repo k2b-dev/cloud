@@ -32,8 +32,6 @@ const numberSeries = {
   currentVersion: 1,
   lastValue: 12,
   preview: null,
-  migrationStatus: "native",
-  migrationNote: null,
 };
 
 const publicToInternal = new Map([
@@ -146,8 +144,6 @@ const publicTemplate = (row: typeof template) => {
       currentVersion: 1,
       lastValue: 12,
       preview: null,
-      migrationStatus: "native",
-      migrationNote: null,
     },
   };
 };

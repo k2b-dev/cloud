@@ -35,9 +35,6 @@ const error = (line: number, message: string, column?: number, length?: number):
   message,
 });
 
-const LEGACY_HASH_REF_MESSAGE =
-  'legacy # references are not valid in GQL; use a field or source name like Amount, a quoted name like "Line total", or a stable id like {fieldId}';
-
 const sourceSpan = (line: number, column: number, text: string): DslSourceSpan => ({
   line,
   column,
@@ -231,24 +228,6 @@ const sameAlias = (left: string | undefined, right: string): boolean => Boolean(
 
 const isIdentifierPart = (c: string | undefined): boolean => !!c && /[A-Za-z0-9_]/.test(c);
 
-const legacyHashRefDiagnostic = (input: string, line: number, column: number): DslParseDiagnostic | null => {
-  const trimmed = input.trim();
-  if (!/^#[A-Za-z0-9_][A-Za-z0-9_-]*/.test(trimmed)) return null;
-  return error(
-    line,
-    LEGACY_HASH_REF_MESSAGE,
-    column + input.indexOf(trimmed),
-    trimmed.match(/^#[A-Za-z0-9_][A-Za-z0-9_-]*/)?.[0].length ?? 1,
-  );
-};
-
-const legacySourceHashRefDiagnostic = (input: string, line: number, column: number): DslParseDiagnostic | null => {
-  const trimmed = input.trim();
-  const typed = trimmed.match(/^(?:table|view)\s+(?<ref>[\s\S]+)$/i);
-  const ref = typed?.groups?.ref ?? trimmed;
-  return legacyHashRefDiagnostic(ref, line, column + input.indexOf(ref));
-};
-
 const parseRef = (input: string, line?: number, column?: number): DslQualifiedRef | null => {
   const parsed = parseQualifiedIdentifierRef(input);
   if (!parsed) return null;
@@ -291,9 +270,7 @@ const parseFromSource = (
   if (!source) {
     const startsWithSourceKind = /^(?:table|view)(?:\s|$)/i.test(sourceRaw.trim());
     return {
-      diagnostic:
-        legacySourceHashRefDiagnostic(sourceRaw, line, column + input.indexOf(sourceRaw)) ??
-        error(line, startsWithSourceKind ? "invalid from source" : 'from source must start with "table" or "view"'),
+      diagnostic: error(line, startsWithSourceKind ? "invalid from source" : 'from source must start with "table" or "view"'),
     };
   }
   if (!aliasRaw) return { source };
@@ -357,16 +334,6 @@ const gqlExpressionSyntaxIssue = (input: string): { message: string; offset: num
       continue;
     }
     if (braceDepth > 0) continue;
-    if (c === "#") {
-      const match = input.slice(i + 1).match(/^[A-Za-z0-9_][A-Za-z0-9_-]*/);
-      if (match) {
-        return {
-          message: `legacy # field references are not valid in GQL; use a field name like Amount, a quoted name like "Line total", or a stable id like {fieldId}`,
-          offset: i,
-          length: match[0].length + 1,
-        };
-      }
-    }
     if (input.startsWith("&&", i)) return { message: `use "and" instead of "&&" in GQL predicates`, offset: i, length: 2 };
     if (input.startsWith("||", i)) return { message: `use "or" instead of "||" in GQL predicates`, offset: i, length: 2 };
     if (c === "!" && input[i + 1] !== "=") return { message: `use "not" instead of "!" in GQL predicates`, offset: i, length: 1 };
@@ -460,7 +427,7 @@ const parseSelectItem = (input: string, line: number, column: number): { item?: 
   }
   const fieldColumn = column + input.indexOf(value);
   const field = parseRef(value, line, fieldColumn);
-  if (!field) return { diagnostic: legacyHashRefDiagnostic(value, line, fieldColumn) ?? error(line, `invalid select item "${input}"`) };
+  if (!field) return { diagnostic: error(line, `invalid select item "${input}"`) };
   if (alias) {
     const aliasError = validateAlias(alias, line);
     if (aliasError) return { diagnostic: aliasError };
@@ -492,7 +459,7 @@ const parseAggregateItem = (input: string, line: number, column: number): { item
   }
   const argColumn = column + input.indexOf(argRaw) + argRaw.indexOf(arg);
   const ref = parseRef(arg, line, argColumn);
-  if (!ref) return { diagnostic: legacyHashRefDiagnostic(arg, line, argColumn) ?? error(line, `invalid aggregate argument "${arg}"`) };
+  if (!ref) return { diagnostic: error(line, `invalid aggregate argument "${arg}"`) };
   return { item: { fn, argument: ref, alias, span } };
 };
 
@@ -501,7 +468,7 @@ const parseGroupItem = (input: string, line: number, column: number): { item?: D
   const fieldRaw = split ? split[0] : input.trim();
   const fieldColumn = column + input.indexOf(fieldRaw);
   const field = parseRef(fieldRaw, line, fieldColumn);
-  if (!field) return { diagnostic: legacyHashRefDiagnostic(fieldRaw, line, fieldColumn) ?? error(line, `invalid group field "${input}"`) };
+  if (!field) return { diagnostic: error(line, `invalid group field "${input}"`) };
   const granularity = split?.[1]?.toLowerCase();
   if (granularity && !GROUP_GRANULARITIES.has(granularity))
     return { diagnostic: error(line, `unsupported group granularity "${granularity}"`) };
@@ -529,17 +496,17 @@ const parseSortItem = (input: string, line: number, column: number): { item?: Ds
     nullsFirst = true;
   }
 
-  const legacyDirection =
+  const longDirection =
     (["ascending", "descending"] as const)
       .map((direction) => ({ direction, split: splitTrailingKeywordOutsideQuotes(working, direction) }))
       .find((item) => item.split && item.split[1] === "") ?? null;
-  if (legacyDirection) {
+  if (longDirection) {
     return {
       diagnostic: error(
         line,
-        `use "${legacyDirection.direction === "ascending" ? "asc" : "desc"}" instead of "${legacyDirection.direction}"`,
-        column + input.lastIndexOf(legacyDirection.direction),
-        legacyDirection.direction.length,
+        `use "${longDirection.direction === "ascending" ? "asc" : "desc"}" instead of "${longDirection.direction}"`,
+        column + input.lastIndexOf(longDirection.direction),
+        longDirection.direction.length,
       ),
     };
   }
@@ -557,8 +524,6 @@ const parseSortItem = (input: string, line: number, column: number): { item?: Ds
   const span = sourceSpan(line, column, input);
   const ref = parseRef(target, line, targetColumn);
   if (ref) return { item: { target: ref, direction, ...nulls, span } };
-  const legacyRef = legacyHashRefDiagnostic(target, line, targetColumn);
-  if (legacyRef) return { diagnostic: legacyRef };
   const aliasError = validateAlias(target, line);
   if (aliasError) return { diagnostic: aliasError };
   return { item: { target: { kind: "alias", alias: target }, direction, ...nulls, span } };
@@ -609,10 +574,7 @@ const parseJoin = (lineSource: string, line: number, column: number): { item?: D
   const aliasError = validateAlias(alias, line);
   if (aliasError) return { diagnostic: aliasError };
   if (!source || !left || !right) {
-    const sourceDiagnostic = legacySourceHashRefDiagnostic(sourceRaw, line, column + lineSource.indexOf(sourceRaw));
-    const leftDiagnostic = legacyHashRefDiagnostic(leftRaw, line, column + lineSource.indexOf(leftRaw));
-    const rightDiagnostic = legacyHashRefDiagnostic(rightRaw, line, column + lineSource.lastIndexOf(rightRaw));
-    return { diagnostic: sourceDiagnostic ?? leftDiagnostic ?? rightDiagnostic ?? error(line, "invalid join refs") };
+    return { diagnostic: error(line, "invalid join refs") };
   }
   return {
     item: {
@@ -704,8 +666,7 @@ const parseSearch = (
       const ref = parseRef(part.text, line, fieldListColumn + part.start);
       if (!ref)
         return {
-          diagnostic:
-            legacyHashRefDiagnostic(part.text, line, fieldListColumn + part.start) ?? error(line, `invalid search field "${part.text}"`),
+          diagnostic: error(line, `invalid search field "${part.text}"`),
         };
       fields.push(ref);
     }

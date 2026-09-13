@@ -78,7 +78,7 @@ export const persistIssuedDocument = async (
     INSERT INTO grids.documents (
       id, short_id, template_id, workflow_run_id, workflow_step_key, snapshot_id, base_id, table_id, record_id, query_data_id, associated_query_data_id,
       document_number, filename, primary_artifact_key, record_sources_complete, tags, template_snapshot, render_data, renderer_kind, renderer_version, template_revision,
-      profile_id, profile_version, profile_snapshot, profile_output, snapshot_sha256, hash_version,
+      profile_id, profile_version, profile_snapshot, profile_output, snapshot_sha256,
       validator_version, validation_status, validation_report, issued_actor, created_by, created_at
     ) VALUES (
       ${documentId}::uuid, ${input.shortId}, ${input.record?.templateId ?? null}::uuid, ${input.workflowRunId}::uuid, ${input.workflowStepKey},
@@ -86,7 +86,7 @@ export const persistIssuedDocument = async (
       ${input.number}, ${input.primary.filename}, ${input.primary.key}, ${input.record !== null || input.sources != null}, ${tx.array(input.tags, "TEXT")}, ${input.templateSnapshot}::jsonb,
       ${input.renderData}::jsonb, ${input.profile ? "profile" : "html"}, ${input.rendererVersion}, ${input.templateRevision},
       ${input.profile?.id ?? null}, ${input.profile?.version ?? null}, ${input.profile?.input ?? null}::jsonb,
-      ${input.profile?.output ?? null}::jsonb, ${input.profile?.sha256 ?? null}, 2,
+      ${input.profile?.output ?? null}::jsonb, ${input.profile?.sha256 ?? null},
       ${input.profile?.validatorVersion ?? null}, ${input.profile?.validationStatus ?? null}, ${input.profile?.validationReport ?? null}::jsonb,
       ${input.actor}::jsonb, ${actorId}::uuid, ${input.issuedAt}
     ) RETURNING *

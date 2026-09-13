@@ -5,7 +5,7 @@ import { documentServiceText } from "./document-messages";
 export const MAX_DOCUMENT_PROFILE_INPUT_BYTES = 5 * 1024 * 1024;
 type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
 // The only supported algorithm: UTF-16 code-unit order, without locale
-// collation or Unicode normalization. Persisted format marker: 2.
+// collation or Unicode normalization. JSON serialization followed by SHA-256.
 
 const canonicalJsonValue = (value: unknown, path = "$", seen = new Set<object>(), locale?: string): JsonValue => {
   const t = documentServiceText(locale);

@@ -387,8 +387,7 @@ const workflowQueryInput = async (ctx: WorkflowActionContext, rawParameters: unk
     typeof binding !== "object" ||
     Array.isArray(binding) ||
     typeof binding.source !== "string" ||
-    typeof binding.schemaHash !== "string" ||
-    binding.schemaHashVersion !== 3
+    typeof binding.schemaHash !== "string"
   ) {
     throw actionError("WORKFLOW_VALUE_INVALID", runtimeText(ctx).queryBindingInvalid);
   }
@@ -419,7 +418,7 @@ const workflowQueryInput = async (ctx: WorkflowActionContext, rawParameters: unk
   if (!resolved.ok) throw actionError("BAD_INPUT", runtimeText(ctx).queryParametersInvalid);
   return {
     scope,
-    binding: { source: binding.source, schemaHash: binding.schemaHash, schemaHashVersion: 3 as const },
+    binding: { source: binding.source, schemaHash: binding.schemaHash },
     values: resolved.values,
   };
 };

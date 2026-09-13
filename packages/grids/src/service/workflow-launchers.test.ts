@@ -157,8 +157,7 @@ describe("workflow launcher validation", () => {
     expect(
       validateLauncherConfig(scannerWorkflow, {
         kind: "scanner",
-        input: "record",
-        resolve: { by: "scanCode" },
+        inputSources: { ["record"]: { kind: "scan", value: "record", resolve: { by: "scanCode" } } },
       }),
     ).toEqual([
       expect.objectContaining({

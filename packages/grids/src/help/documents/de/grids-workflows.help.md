@@ -247,7 +247,7 @@ Ausführungsoptionen werden getrennt von der Workflow-Quelle konfiguriert. Ein W
 
 Alle Quellerfassungen teilen sich 5 MiB pro Lauf, auch in Schleifen. Wiederverwendung zählt nicht doppelt. Reduziere Zeilen/Felder oder verteile größere Exporte auf mehrere Läufe.
 
-Spaltenumsortierung macht eine veröffentlichte Abfrage nicht ungültig. Geänderte Berechnungstypen können sie ungültig machen: Prüfe die Abfrage und veröffentliche eine neue Workflow-Revision, bevor du eine neue Ausführung startest. Ein Upgrade von nicht unterstützten Alpha-Speicherständen benötigt vor dem Deployment eine Prüfung durch den Betreiber; erneutes Veröffentlichen repariert keine Anwendung, die nicht startet.
+Spaltenumsortierung macht eine veröffentlichte Abfrage nicht ungültig. Geänderte Berechnungstypen können sie ungültig machen: Prüfe die Abfrage und veröffentliche eine neue Workflow-Revision, bevor du eine neue Ausführung startest.
 
 ### Dateien aus einer Abfrage erstellen
 

@@ -1,7 +1,7 @@
+import { bindProcessSync, unbindProcessSync } from "@k2b/cloud";
 import { createSync } from "@k2b/sync";
 import { jetstreamManager } from "@nats-io/jetstream";
 import { connect } from "@nats-io/transport-node";
-import { bindProcessSync, unbindProcessSync } from "@k2b/cloud";
 
 /** Isolated broker resources; the returned stop removes only this namespace's streams. */
 export const startGridsTestSync = async () => {
@@ -10,7 +10,7 @@ export const startGridsTestSync = async () => {
     ignoreClusterUpdates: true,
   });
   const namespace = `grids-test-${Bun.randomUUIDv7()}`;
-  const sync = createSync({ connection, namespace, application: "grids" });
+  const sync = createSync({ connection, namespace, application: "grids", defaults: { replicas: 1 } });
   bindProcessSync(sync);
   return async () => {
     await sync.drain({ timeoutMs: 5_000 });

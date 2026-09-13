@@ -1,5 +1,5 @@
-import { i18n } from "@k2b/stdlib";
 import { createMockCover } from "@k2b/cloud/shared";
+import { i18n } from "@k2b/stdlib";
 import {
   currentMonthDate,
   documentTemplate,
@@ -2799,8 +2799,7 @@ ${returnPosition("available")
         name: t.scanDamagedInventoryItem,
         config: {
           kind: "scanner",
-          input: "item",
-          resolve: { by: "field", field: t.assetId },
+          inputSources: { ["item"]: { kind: "scan", value: "record", resolve: { by: "field", field: t.assetId } } },
         },
         enabled: true,
       },

@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { canonicalJson } from "./document-json";
 
-test("canonical JSON v2 orders Unicode keys without locale or insertion-order ties", () => {
+test("canonical JSON orders Unicode keys without locale or insertion-order ties", () => {
   const entries: Array<[string, unknown]> = [
     ["é", 1],
     ["é", 2],
