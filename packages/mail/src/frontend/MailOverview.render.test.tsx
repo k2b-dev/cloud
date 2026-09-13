@@ -33,8 +33,6 @@ const renderOverview = (initialFocusError: string | null = null, initialPinnedMa
           receivingAddress: "support@example.test",
         },
       ],
-      deletedMailboxes: [],
-      initialDeletedCursor: null,
       initialView: "mine",
       initialSelection: null,
       initialDetail: null,

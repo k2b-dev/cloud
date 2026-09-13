@@ -46,8 +46,6 @@ const avatarTone = (summary: string): string =>
 
 export default function MailOverview(props: {
   mailboxes: MailboxWithPermission[];
-  deletedMailboxes: Array<DeletedMailbox & { permission: "admin" }>;
-  initialDeletedCursor: string | null;
   initialFocus: MailFocusPage;
   initialFocusError: string | null;
   initialView: MailFocusView;
@@ -194,9 +192,10 @@ export default function MailOverview(props: {
     void focusResults.refresh();
   };
 
+  const [deletedOpen, setDeletedOpen] = createSignal(false);
   const deletedResults = queries.createInfinite<string, DeletedMailboxPage, string>({
     source: () => "deleted-mailboxes",
-    initial: { source: "deleted-mailboxes", pages: [{ items: props.deletedMailboxes, nextCursor: props.initialDeletedCursor }] },
+    enabled: deletedOpen,
     loadPage: async (_source, { cursor, abortSignal }) => {
       const response = await apiClient.mailboxes.deleted.$get({ query: { limit: "100", cursor } }, { init: { signal: abortSignal } });
       if (!response.ok) throw new Error(await readApiError(response, messages().failedLoadDeletedMailboxes));
@@ -260,7 +259,7 @@ export default function MailOverview(props: {
     },
     onSuccess: (mailbox) => {
       if (!mailbox) return;
-      void deletedResults.invalidate();
+      void deletedResults.refresh();
       toast.success(messages().mailboxRestored);
       void openMailboxHealthDialog({ mailboxId: mailbox.id }).then(() => navigateTo(`/app/mail/${mailbox.id}`));
     },
@@ -463,9 +462,37 @@ export default function MailOverview(props: {
             <span class="sr-only" aria-live="polite">
               {pinAnnouncement()}
             </span>
-            <Show when={deletedMailboxes().length > 0}>
-              <div class="mail-focus-deleted" role="group" aria-label={messages().recentlyDeletedMailboxes}>
-                <span>{messages().recentlyDeleted}</span>
+            <Button
+              variant="text"
+              size="sm"
+              aria-expanded={deletedOpen()}
+              aria-controls="mail-deleted-mailboxes"
+              onClick={() => setDeletedOpen((open) => !open)}
+            >
+              {messages().recentlyDeletedMailboxes}
+            </Button>
+            <Show when={deletedOpen()}>
+              <div id="mail-deleted-mailboxes" class="mail-focus-deleted" role="group" aria-label={messages().recentlyDeletedMailboxes}>
+                <Show when={deletedResults.error()}>
+                  {(error) => (
+                    <Placeholder
+                      state="error"
+                      title={messages().failedLoadDeletedMailboxes}
+                      description={error().message}
+                      action={
+                        <Button variant="secondary" size="sm" onClick={() => void deletedResults.refresh()}>
+                          {messages().retry}
+                        </Button>
+                      }
+                    />
+                  )}
+                </Show>
+                <Show when={!deletedResults.error() && deletedMailboxes().length === 0}>
+                  <Placeholder
+                    state={deletedResults.loading() ? "loading" : "empty"}
+                    title={deletedResults.loading() ? messages().loadingDeletedMailboxes : messages().noDeletedMailboxes}
+                  />
+                </Show>
                 <For each={deletedMailboxes()}>
                   {(mailbox) => (
                     <Button
@@ -479,6 +506,16 @@ export default function MailOverview(props: {
                     </Button>
                   )}
                 </For>
+                <Show when={deletedResults.hasMore()}>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    loading={deletedResults.loadingMore()}
+                    onClick={() => void deletedResults.loadMore()}
+                  >
+                    {messages().loadMore}
+                  </Button>
+                </Show>
               </div>
             </Show>
           </header>
