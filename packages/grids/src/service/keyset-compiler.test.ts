@@ -46,6 +46,7 @@ describe("compileDslKeyset", () => {
   });
 
   test("rejects malformed, incomplete, and non-orderable cursor values", () => {
+    expect(compileDslKeyset([{ expression: sql`payload`, type: "json", direction: "asc" }], null).ok).toBe(false);
     expect(compileDslKeyset([{ expression: sql`id`, type: "uuid", direction: "asc" }], ["not-a-uuid"])).toEqual({
       ok: false,
       error: "cursor values do not match this query ordering",

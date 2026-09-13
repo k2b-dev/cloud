@@ -250,6 +250,13 @@ const evalCall = (ast: Extract<Expr, { kind: "call" }>, ctx: EvalContext): unkno
   const arity = formulaFunctionArity(spec);
   if (ast.args.length < arity.min || ast.args.length > arity.max) return formulaError(`${ast.fn}_BAD_ARGS`);
   if (isListFormulaFunction(ast.fn)) return evalListReduction(ast.fn, ast.args, ctx);
+  if ((ast.fn === "HAS_OPTION" || ast.fn === "ISBLANK") && ast.args[0]?.kind === "field") {
+    const ref = ast.args[0].fieldId;
+    const id = ctx.slugToId?.[ref] ?? ctx.slugToId?.[normalizeRefKey(ref)] ?? ref;
+    if (ctx.selectFields?.[id]) {
+      return FN_LIBRARY[ast.fn]!([evalField(ref, ctx), ast.args[1]?.kind === "literal" ? ast.args[1].value : null], ctx);
+    }
+  }
 
   const shortCircuit = evalShortCircuitCall(ast, ctx);
   if (shortCircuit !== undefined) return shortCircuit;
@@ -307,8 +314,10 @@ const evaluateExpression = (ast: Expr, ctx: EvalContext): unknown => {
   switch (ast.kind) {
     case "literal":
       return ast.numericSource ?? ast.value;
-    case "field":
-      return evalField(ast.fieldId, ctx);
+    case "field": {
+      const value = evalField(ast.fieldId, ctx);
+      return Array.isArray(value) ? formulaError("NON_SCALAR") : value;
+    }
     case "unop":
       return evalUnary(ast, ctx);
     case "binop":
@@ -322,7 +331,7 @@ const evaluateExpression = (ast: Expr, ctx: EvalContext): unknown => {
 export const evaluate = (ast: Expr, ctx: EvalContext): unknown => {
   if (ctx.selectFields && !ctx.bound) {
     const bound = bindFormulaSelects(ast, (ref) => ctx.selectFields?.[ctx.slugToId?.[ref] ?? ctx.slugToId?.[normalizeRefKey(ref)] ?? ref]);
-    return bound.ok ? evaluate(bound.ast, { ...ctx, bound: true }) : formulaError(bound.error);
+    return bound.ok ? evaluate(bound.ast, { ...ctx, bound: true }) : formulaError("SELECT_INVALID");
   }
   const value = evaluateExpression(ast, ctx);
   return typeof value === "string" && ctx.maxStringLength !== undefined && value.length > ctx.maxStringLength

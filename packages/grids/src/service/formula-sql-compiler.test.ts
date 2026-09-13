@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { sql } from "bun";
 import { FORMULA_LIMITS, parseFormula } from "../formula/parser";
+import { normalizedSqlParts } from "../sql-test-utils";
 import { compileFormulaPredicateAstToSql, compileFormulaSourceToSql } from "./formula-sql-compiler";
 import type { Field } from "./types";
 
@@ -52,7 +53,7 @@ const fields = [
 ];
 
 describe("compileFormulaSourceToSql", () => {
-  test("rejects oversized branch dependency plans before submitting SQL", () => {
+  test("shared branch dependencies compile through eight levels", () => {
     const branches = Array.from({ length: 8 }, (_, index) =>
       field({
         id: `branch_${index}`,
@@ -63,9 +64,18 @@ describe("compileFormulaSourceToSql", () => {
       }),
     );
     expect(compileFormulaSourceToSql("Branch7", { fields: branches })).toMatchObject({
-      ok: false,
-      error: expect.stringContaining("calculation stages"),
+      ok: true,
     });
+    const size = (source: string) => {
+      const compiled = compileFormulaSourceToSql(source, { fields: branches, useFinalizedFormulaValues: false });
+      if (!compiled.ok) throw Error(compiled.error);
+      return normalizedSqlParts(sql`SELECT ${compiled.expression.sql}, ${compiled.expression.errorSql ?? sql`false`}`);
+    };
+    const four = size("Branch3");
+    const eight = size("Branch7");
+    expect(eight.text.length).toBeLessThan(four.text.length * 3);
+    expect(eight.values.length).toBeLessThan(four.values.length * 3);
+    expect(eight.values.length).toBeLessThan(65535);
   });
   test("Select binding also applies to scoped resolver fields", () => {
     const select = { name: "Status", config: { options: [{ id: "ready", label: "Ready" }] } };

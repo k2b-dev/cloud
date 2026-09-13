@@ -1,4 +1,5 @@
 import type { FilterTree, RecordFinalizationState, RecordMetaQuery, RecordMetaSortKey, RecordMetaUserKey } from "../contracts";
+import { resolveFormulaOption } from "../formula/select-binding";
 import type { Expr, Literal } from "../formula/types";
 import { normalizeRefKey, parseQualifiedIdentifierRef } from "../ref-syntax";
 import { validateFilterValue } from "../service/filter-compiler-validation";
@@ -220,20 +221,10 @@ const emptinessLeaf = (field: Field, empty: boolean, span?: DslSourceSpan): DslW
   return filterLeaf(field.id, empty ? "isEmpty" : "isNotEmpty");
 };
 
-/** Resolve a select literal (option id or case-insensitive label) to its
- *  stored option id. Fields without configured options accept the raw value
- *  (forward-compatible for templated/empty configs). */
+/** Use the same exact option binding as record formulas. */
 const resolveSelectOption = (field: Field, raw: string, span?: DslSourceSpan): string | DslResolverDiagnostic => {
-  const options = (field.config as { options?: Array<{ id: string; label?: string }> }).options;
-  if (!options || options.length === 0) return raw;
-  const byId = options.find((option) => option.id === raw);
-  if (byId) return byId.id;
-  const key = normalizeRefKey(raw);
-  const byLabel = options.filter((option) => normalizeRefKey(option.label ?? "") === key);
-  if (byLabel.length === 1) return byLabel[0]!.id;
-  if (byLabel.length > 1) return diagnostic(`option "${raw}" is ambiguous in "${field.name}"`, span);
-  const labels = options.map((option) => option.label || option.id).join(", ");
-  return diagnostic(`unknown option "${raw}" for "${field.name}"; expected one of: ${labels}`, span);
+  const result = resolveFormulaOption(field, raw);
+  return result.ok ? result.id : diagnostic(result.error, span);
 };
 
 /** `field <op> literal` -> typed filter leaf, per field type. */

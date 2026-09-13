@@ -137,7 +137,7 @@ describe("GQL where predicates — first-class per field type", () => {
   });
 
   test("unknown select option errors with the valid options", () => {
-    expect(errorOf(`where Status = 'Nope'`)).toEqual(['unknown option "Nope" for "Status"; expected one of: Open, Closed, On hold']);
+    expect(errorOf(`where Status = 'Nope'`)).toEqual(['Unknown option "Nope" in "Status". Available options: Open, Closed, On hold.']);
   });
 
   test("oneof / noneof on a select map to isAnyOf / isNoneOf with resolved ids", () => {
@@ -405,7 +405,8 @@ describe("GQL where predicates — first-class per field type", () => {
 
     const sql = planSql(`where margin > 0`, context);
     // The margin formula is inlined into the WHERE as a numeric comparison.
-    expect(sql).toContain(")::numeric - (grids.canonical_numeric(r.data->>");
+    expect(sql).toContain("(r_formula_0.value)::numeric - (r_formula_1.value)::numeric");
+    expect(sql).toContain("grids.canonical_numeric(r.data->>");
     expect(sql).toMatch(/::numeric > \(\$\d+ ::numeric\)/);
   });
 });

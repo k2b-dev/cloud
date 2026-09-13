@@ -7,54 +7,15 @@ order: 134
 ---
 A Grids App is a small composition of existing Grids resources. Its page tree controls layout and navigation; its blocks control which resources appear and which already-defined operations a person may start.
 
-## Use stable definition IDs {icon="id"}
+## Set up pages and layout {icon="layout-grid"}
 
-Apps, pages, rows, columns, blocks, and actions have stable IDs. Labels may change without breaking links or state.
+Use stable IDs, not labels, for links. A page URL is `/apps/<id>/<pageId>`; declared Record parameters go in the query string. The [API reference](/app/grids/help/grids-custom-app-api) lists ID rules, layout limits and every binding shape.
 
-- The app ID is one immutable 6-character public ID.
-- Page, row, column, block, and action IDs are lowercase local identifiers unique inside their parent.
-- Resource references use canonical Grids public IDs, never display names.
+This release supports required Record parameters only. Each parameter declares a table in the same Base; its URL and `@params.<name>` value are record public IDs.
 
-A page route is `/apps/<id>/<pageId>`. Declared page parameters are query parameters, for example `/apps/a1b2c3/request?request_id=<record-id>`.
+Under **Route parameters**, choose a parameter ID and its table. Adding a Record or Rendered HTML block binds that parameter automatically. A route-only page can also use the authorized parameter in GQL or fixed Form values without displaying the record. Required-parameter pages stay out of navigation and cannot be the start page. Missing or inaccessible records show the standard unavailable state.
 
-App identity is intentionally restrained to a name and supported icon. Pages and blocks use standard Cloud typography, spacing, colors, and interaction patterns. Custom CSS and arbitrary branding are not part of the definition.
-
-## Declare page context {icon="brackets"}
-
-A page declares every URL parameter before a block can use it. This release supports required Record parameters only. Each parameter declares one table in the same Base; its URL and `@params.<name>` value are record public IDs, and the server verifies that the referenced record belongs to that table before loading page data.
-
-A page may load one **page record** from a Record parameter. In the visual builder, add the parameter ID and Record table under **Route parameters**, then add a Record or Rendered HTML block; Grids binds that same parameter automatically instead of exposing a second Page Record control. The load is permission-checked and fail-closed. An invalid, missing, deleted, or inaccessible record shows the page's standard unavailable state without disclosing which case occurred.
-
-A route-only page may instead keep the declared Record parameter as context without rendering that record. Records GQL and Form fixed values can then reuse the same authorized parent ID. Pages with required parameters never appear in navigation and cannot be the app's start page. The visual builder therefore disables **Add record parameter** on the current start page and explains that another parameter-free page must become the start page first.
-
-Implemented blocks bind contextual record values through a typed reference:
-
-```yaml
-source: PARAMS
-path: request_id
-```
-
-| Source | Available in | Example path |
-| --- | --- | --- |
-| `PARAMS` | Current page | `request_id` |
-| `RECORD` | Current page record | `id` |
-| `ROW` | One Records row link or row action | `id` |
-| `RESULT` | Form success navigation | `recordId` |
-
-The builder shows only references valid in the current location. YAML validation applies the same scope and type rules. References cannot read arbitrary URL values, another block's internal state, or undeclared data.
-
-## Build responsive rows and columns {icon="columns"}
-
-Each page contains rows; each row contains columns; each column contains blocks. A column span is an integer from 1 to 12. Columns keep their order and stack to full width when the available space is too narrow.
-
-Use the simplest layout that preserves task order:
-
-- 12 for one primary task;
-- 8 + 4 for main content and supporting context;
-- 6 + 6 for two peers;
-- several small columns for compact metrics.
-
-Do not encode separate desktop and mobile layouts. Check the same draft at wide and narrow workspace widths before publication.
+Pages contain rows, columns and blocks. Use width 12 for one task, 8 + 4 for main content and context, or 6 + 6 for peers. Columns stack in order on narrow screens. Check both widths before publishing; do not create separate mobile layouts.
 
 ## Configure resource-backed blocks {icon="blocks"}
 
@@ -159,11 +120,7 @@ In the visual builder, optional availability stays collapsed until you add a rul
 
 ## Design local states {icon="info-circle"}
 
-Every data-backed block owns its local loading, empty, and recoverable error state. Standard denied and unavailable states are supplied by Grids and deliberately do not reveal whether a resource or record exists.
-
-Customize empty copy only when it can tell the person what to do next. Do not replace a local empty state with a page-wide spinner or make unrelated blocks wait for one slow source.
-
-Only the active page resolves. Within that request, identical authorized resource reads are deduplicated and every source remains bounded.
+Blocks show their own loading, empty and error states. Give empty states a useful next step; do not block the whole page. Unavailable states never reveal whether a record exists. Only the active page loads, with bounded sources and deduplicated authorized reads.
 
 ## Know the deliberate limits {icon="barrier-block"}
 

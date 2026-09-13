@@ -166,6 +166,7 @@ export const renderGqlAssistantSkill = (): string =>
     "- Use only sources and fields listed in `context.md`.",
     "- Never invent table names, field names, view names, select options, or relations.",
     "- In formulas, single-select equality accepts an exact option ID or unambiguous label. Use HAS_OPTION(Tags, 'option-id') for exact membership, including multiple selections. CONTAINS is for text, not Select fields. Check actual results; successful validation is not proof of business correctness.",
+    "- Saved formula fields, object-list calculations and computed view columns bind option labels to IDs. Label renames preserve meaning. Collection-valued lookups are not scalar formula inputs: join the related table and test its typed Select field instead of searching JSON as text.",
     "- GQL is read-only. Do not generate create, update, delete, insert, or schema changes.",
     "- GQL is not SQL. Do not generate SQL syntax such as `select ... from ...`, arbitrary join predicates, subqueries, CTEs, window functions, or raw SQL expressions.",
     '- If a name contains spaces or punctuation, quote it with double quotes, for example `"Line total"`.',

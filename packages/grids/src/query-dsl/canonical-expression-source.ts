@@ -1,3 +1,4 @@
+import { resolveFormulaOption } from "../formula/select-binding";
 import type { Expr, Literal } from "../formula/types";
 import { normalizeRefKey, parseQualifiedIdentifierRef } from "../ref-syntax";
 import type { Field } from "../service/types";
@@ -141,16 +142,8 @@ const canonicalSelectValue = (
   value: Literal,
 ): { ok: true; value: Literal } | { ok: false; diagnostic: DslResolverDiagnostic } => {
   if (field.type !== "select" || typeof value !== "string") return { ok: true, value };
-  const options = (field.config as { options?: Array<{ id: string; label?: string }> }).options;
-  if (!options || options.length === 0) return { ok: true, value };
-  const byId = options.find((option) => option.id === value);
-  if (byId) return { ok: true, value: byId.id };
-  const key = normalizeRefKey(value);
-  const byLabel = options.filter((option) => normalizeRefKey(option.label ?? "") === key);
-  if (byLabel.length === 1) return { ok: true, value: byLabel[0]!.id };
-  if (byLabel.length > 1) return { ok: false, diagnostic: { message: `option "${value}" is ambiguous in "${field.name}"` } };
-  const labels = options.map((option) => option.label || option.id).join(", ");
-  return { ok: false, diagnostic: { message: `unknown option "${value}" for "${field.name}"; expected one of: ${labels}` } };
+  const result = resolveFormulaOption(field, value);
+  return result.ok ? { ok: true, value: result.id } : { ok: false, diagnostic: { message: result.error } };
 };
 
 const BINOP_PRECEDENCE: Record<string, number> = {

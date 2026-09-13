@@ -22,6 +22,7 @@ import { get, listByTable, mapFieldRow } from "./field-read";
 import { cleanupPreparedUniqueIndex } from "./field-unique-index-lifecycle";
 import { materializeFieldDefault, validateDefaultValue, validateFieldConfig, validateLinkOrComputedConfig } from "./field-validation";
 import { assertFinalizedResultTypes, lockFinalizedSchema } from "./finalized-schema";
+import { bindAuthoredField } from "./formula-authoring";
 import { assertFormulaSchema } from "./formula-schema-validation";
 import { emitTableMetadataEvent } from "./metadata-events";
 import { namedResourceConflict, writeNamedResource } from "./named-resource-conflict";
@@ -256,8 +257,10 @@ const prepareFieldCreate = async (input: CreateFieldInput, locale?: string): Pro
 
 const insertPreparedField = async (state: FieldCreateState, actorId: string | null, locale?: string): Promise<Result<Field>> =>
   sql.begin(async (tx): Promise<Result<Field>> => {
-    const field = state.candidate;
-    await lockFinalizedSchema(tx, field.tableId);
+    await lockFinalizedSchema(tx, state.candidate.tableId);
+    const bound = await bindAuthoredField(tx, state.candidate, locale);
+    if (!bound.ok) return bound;
+    const field = bound.data;
     const finalization = await requireFinalizationForIdConfig(tx, field.tableId, field.type, field.config, locale);
     if (!finalization.ok) return finalization;
     if (state.tableKind === "federated") await degradeForTableSchemaChange(field.tableId, actorId, tx);
@@ -606,12 +609,15 @@ export const update = async (id: string, input: UpdateFieldInput, actorId: strin
     txResult = await sql
       .begin(async (tx): Promise<Result<Field>> => {
         await lockFinalizedSchema(tx, existing.tableId);
-        const listSchema = await validateObjectListSchemaChange(tx, existing, nextResult.data.config, nextResult.data.required, locale);
+        const bound = await bindAuthoredField(tx, { ...existing, ...nextResult.data }, locale);
+        if (!bound.ok) return bound;
+        const next = fieldUpdateState(bound.data);
+        const listSchema = await validateObjectListSchemaChange(tx, existing, next.config, next.required, locale);
         if (!listSchema.ok) return listSchema;
         await degradeForTableSchemaChange(existing.tableId, actorId, tx);
-        const finalization = await requireFinalizationForIdConfig(tx, existing.tableId, existing.type, nextResult.data.config, locale);
+        const finalization = await requireFinalizationForIdConfig(tx, existing.tableId, existing.type, next.config, locale);
         if (!finalization.ok) return finalization;
-        const fieldResult = await persistFieldUpdate(id, nextResult.data, tx, locale);
+        const fieldResult = await persistFieldUpdate(id, next, tx, locale);
         if (!fieldResult.ok) throw fieldResult;
         const field = fieldResult.data;
         if (field.type === "id") {
@@ -623,7 +629,7 @@ export const update = async (id: string, input: UpdateFieldInput, actorId: strin
           );
         }
 
-        await logFieldUpdateDiff(existing, nextResult.data, actorId, tx);
+        await logFieldUpdateDiff(existing, next, actorId, tx);
 
         if (existing.name !== field.name) {
           await rewriteFieldNameReferences({ tableId: existing.tableId, oldName: existing.name, newName: field.name }, tx);

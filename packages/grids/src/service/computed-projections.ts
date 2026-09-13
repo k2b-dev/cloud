@@ -84,7 +84,7 @@ export const computedOutputToFormulaType = (output: ComputedProjectionOutputType
     case "boolean":
       return "boolean";
     case "json":
-      return "unknown";
+      return "json";
     default:
       return "text";
   }

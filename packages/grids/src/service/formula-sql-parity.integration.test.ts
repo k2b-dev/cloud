@@ -89,6 +89,59 @@ beforeAll(async () => {
 });
 
 describe("formula evaluator and PostgreSQL parity", () => {
+  postgresTest("row-dependent named branches stay lazy across repeated executions", async () => {
+    const amount = formulaField("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "Amount", "number");
+    const bad = formulaField("bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", "Bad", "formula", { expression: "LEFT('x', Amount)" });
+    for (const mode of ["force_custom_plan", "force_generic_plan"]) {
+      await sql.begin(async (tx) => {
+        await tx.unsafe(`SET LOCAL plan_cache_mode = ${mode}`);
+        for (const source of ["IF(Amount > 1, 'ok', Bad)", "IFERROR(IF(Amount > 1, 'ok', Bad), 'fallback')"]) {
+          const compiled = compileFormulaSourceToSql(source, { fields: [amount, bad], useFinalizedFormulaValues: false });
+          if (!compiled.ok) throw Error(compiled.error);
+          for (let repeat = 0; repeat < 6; repeat++) {
+            const [row] = await tx`SELECT ${compiled.expression.sql} AS value, ${compiled.expression.errorSql ?? sql`false`} AS error
+              FROM (SELECT ${{ [amount.id]: 999999999999 }}::jsonb AS data) r`;
+            expect(row).toMatchObject({ value: "ok", error: false });
+          }
+        }
+      });
+    }
+  });
+  postgresTest("measures bounded scalar filter and shared dependency plans", async () => {
+    const amount = formulaField("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "Amount", "number");
+    const branches = Array.from({ length: 8 }, (_, index) =>
+      formulaField(`branch-${index}`, `Branch${index}`, "formula", {
+        expression: index === 0 ? "Amount / 100" : `IF(Amount > 0, Branch${index - 1} + 1, Branch${index - 1} - 1)`,
+      }),
+    );
+    for (const source of ["Amount", "Branch7"]) {
+      const compiled = compileFormulaSourceToSql(source, { fields: [amount, ...branches], useFinalizedFormulaValues: false });
+      if (!compiled.ok) throw Error(compiled.error);
+      const plan = await sql`EXPLAIN (ANALYZE, FORMAT JSON, TIMING OFF)
+        SELECT ${compiled.expression.sql}, ${compiled.expression.errorSql ?? sql`false`}
+        FROM (SELECT jsonb_build_object(${amount.id}::text, n) AS data FROM generate_series(1, 25) n) r
+        WHERE ${compiled.expression.sql} > 0`;
+      const report = plan[0]?.["QUERY PLAN"]?.[0];
+      expect(report?.Plan?.["Actual Rows"]).toBe(25);
+      expect(Number.isFinite(report?.["Planning Time"])).toBe(true);
+      expect(Number.isFinite(report?.["Execution Time"])).toBe(true);
+      console.info("formula-plan", source, { planningMs: report["Planning Time"], executionMs: report["Execution Time"] });
+    }
+  });
+  postgresTest("shared named dependencies stay lazy with custom and generic plans", async () => {
+    const bad = formulaField("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "Bad", "formula", { expression: "LEFT('x', 999999999999)" });
+    for (const mode of ["force_custom_plan", "force_generic_plan"]) {
+      await sql.begin(async (tx) => {
+        await tx.unsafe(`SET LOCAL plan_cache_mode = ${mode}`);
+        for (const source of ["IF(true, 'ok', Bad)", "IF(false, Bad, 'ok')", "IFERROR('ok', Bad)", "IFEMPTY('ok', Bad)"]) {
+          const compiled = compileFormulaSourceToSql(source, { fields: [bad], useFinalizedFormulaValues: false });
+          if (!compiled.ok) throw Error(compiled.error);
+          const [row] = await tx`SELECT ${compiled.expression.sql} AS value, ${compiled.expression.errorSql ?? sql`false`} AS error`;
+          expect(row).toMatchObject({ value: "ok", error: false });
+        }
+      });
+    }
+  });
   postgresTest("Select equality and membership retain exact IDs, labels and empty semantics", async () => {
     for (const multiple of [false, true]) {
       const tax = formulaField("55555555-5555-4555-8555-555555555555", "Tax", "select", {

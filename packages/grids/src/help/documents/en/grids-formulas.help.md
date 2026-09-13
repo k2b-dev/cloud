@@ -45,13 +45,12 @@ Higher rows bind more tightly. Parentheses override this order. Prefer the word 
 
 ### Select conditions
 
-Formula checks validate SQL support even without sample records. Dependency
-plans exceeding 800 calculation stages per expression are rejected before
-execution. Simplify repeated conditional branches if this limit is reached.
-
 For a single-select field, use `Tax = '19 %'` or `Tax = 'ust-19'`.
 Option IDs match exactly; labels match without case sensitivity and must be
-unambiguous. Unknown options are rejected. Prefer stable option IDs in automation.
+unambiguous. Unknown options are rejected, including on fields without options.
+Saving a formula field, object-list calculation or computed view column stores
+the option ID, so renaming the option label does not change its meaning.
+Removing an option still used by these formulas is rejected.
 
 Use `HAS_OPTION(Tags, 'approved')` for exact membership in a single- or
 multiple-select field. It does not match partial IDs: `ust-1` does not match
@@ -61,6 +60,12 @@ Multiple-select equality with a text value is rejected; use `HAS_OPTION`.
 
 For example: `IF(Tax = 'ust-19', ROUND(Net / 100 * 19, 2), 0)`.
 These rules also apply to Select inputs in object-list calculations.
+
+A lookup returning a collection is not a scalar formula input. In GQL, join
+the related table and test its Select field directly, for example
+`HAS_OPTION(customer.Status, 'approved')`. Do not use text search on JSON.
+Formula errors use stable codes such as `#SELECT_INVALID` and `#NON_SCALAR`;
+the authoring check explains the invalid expression.
 
 Formula checks validate supported operations before loading sample records,
 including on an empty table. A successful check does not verify every record
@@ -143,7 +148,7 @@ IFERROR(total / quantity, 0)
 | Logic | NOT(value) | Invert truthiness. In GQL where/having, prefer the \`not\` operator. | boolean |
 | Logic | ISBLANK(value) | True when empty. | boolean |
 | Text | CONTAINS(text, search) | Substring match. | boolean |
-| Logic | HAS_OPTION(field, option) | Exact Select option membership by ID or unambiguous label. | boolean |
+| Logic | HAS_OPTION(select, option) | Exact Select option membership by ID or unambiguous label. | boolean |
 | Text | STARTSWITH(text, prefix) | True when text starts with prefix. | boolean |
 | Text | ENDSWITH(text, suffix) | True when text ends with suffix. | boolean |
 | Text | ICONTAINS(text, search) | Case-insensitive substring match. | boolean |

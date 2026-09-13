@@ -47,6 +47,7 @@ const validValue = (type: DslKeysetType, value: unknown): boolean => {
     case "text":
       return typeof value === "string" && !value.includes("\0");
     case "unknown":
+    case "json":
       return false;
   }
 };
@@ -66,6 +67,7 @@ const castValue = (type: DslKeysetType, value: unknown): unknown => {
         return sql`NULL::uuid`;
       case "text":
       case "unknown":
+      case "json":
         return sql`NULL::text`;
     }
   }
@@ -82,6 +84,7 @@ const castValue = (type: DslKeysetType, value: unknown): unknown => {
       return sql`${value}::uuid`;
     case "text":
     case "unknown":
+    case "json":
       return sql`${value}::text`;
   }
 };
@@ -109,7 +112,7 @@ export const compileDslKeyset = (
   | { ok: true; orderBy: unknown; where: unknown; select: unknown; valuesFromRow: (row: Record<string, unknown>) => unknown[] }
   | { ok: false; error: string } => {
   if (columns.length === 0) return { ok: false, error: "query result has no stable cursor columns" };
-  if (columns.some((column) => column.type === "unknown"))
+  if (columns.some((column) => column.type === "unknown" || column.type === "json"))
     return { ok: false, error: "query sort contains a value that cannot be cursor-paginated" };
   if (values && (values.length !== columns.length || values.some((value, index) => !validValue(columns[index]!.type, value)))) {
     return { ok: false, error: "cursor values do not match this query ordering" };

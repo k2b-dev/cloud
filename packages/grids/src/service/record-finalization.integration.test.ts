@@ -109,6 +109,13 @@ describe("record finalization Postgres integration", () => {
       });
       const net = await add("Net", "formula", { expression: "LIST_SUM(Positions, 'Total')" });
       const vat = await add("Vat", "formula", { expression: "IF(Tax = '19 %', ROUND(Net / 100 * 19, 2), 0)" });
+      expect(vat.config.expression).toBe("IF(Tax = 'ust-19', ROUND(Net / 100 * 19, 2), 0)");
+      const renamedOptions = [
+        { id: "ust-19", label: "Standard" },
+        { id: "ust-1", label: "Reduced" },
+      ];
+      const renamed = await fields.update(tax.id, { config: { options: renamedOptions } }, null);
+      if (!renamed.ok) throw renamed.error;
       const gross = await add("Gross", "formula", { expression: "Net + Vat" });
       const paid = await add("Paid", "number");
       const outstanding = await add("Outstanding", "formula", { expression: "IF(ISBLANK(Paid), Gross, Gross - Paid)" });
@@ -168,7 +175,7 @@ describe("record finalization Postgres integration", () => {
       for (const id of Object.keys(expected)) expect(capture?.types[id]).toBe("numeric");
       const changed = await fields.update(tax.id, { config: { options: [{ id: "ust-1", label: "1 %" }] } }, null);
       expect(changed.ok).toBe(false);
-      expect((await fields.get(tax.id))?.config.options).toEqual(tax.config.options);
+      expect((await fields.get(tax.id))?.config.options).toEqual(renamedOptions);
     } finally {
       await cleanup(item.baseId);
     }

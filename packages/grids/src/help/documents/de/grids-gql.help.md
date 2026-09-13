@@ -379,8 +379,8 @@ liefert deren letzten Erstellungszeitpunkt oder null. Als optionales Format sind
 `pdf`, `csv`, `json`, `xml`, `sepa-xml` und `datev-csv` möglich.
 
 ```gql
-from table Auslagen
-select Beschreibung, documentCount('sepa-xml') as Exporte
+from table Expenses
+select Description, documentCount('sepa-xml') as exports
 where documentCount('sepa-xml') = 0
 ```
 

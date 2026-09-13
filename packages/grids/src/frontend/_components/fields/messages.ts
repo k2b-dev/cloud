@@ -121,6 +121,7 @@ const deFormulaDescriptions: Record<string, string> = {
   OR: "Wahr, wenn mindestens ein Wert wahr ist. Verwende in GQL where/having bevorzugt den Operator `or`.",
   NOT: "Kehrt den Wahrheitswert um. Verwende in GQL where/having bevorzugt den Operator `not`.",
   ISBLANK: "Wahr, wenn der Wert leer ist.",
+  HAS_OPTION: "Prüft eine Auswahl exakt anhand einer Options-ID oder einer eindeutigen Beschriftung.",
   CONTAINS: "Prüft auf eine enthaltene Zeichenfolge.",
   STARTSWITH: "Wahr, wenn der Text mit dem Präfix beginnt.",
   ENDSWITH: "Wahr, wenn der Text mit dem Suffix endet.",

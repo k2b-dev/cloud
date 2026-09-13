@@ -45,16 +45,15 @@ Weiter oben stehende Operatoren binden stärker. Klammern überschreiben diese R
 
 ### Bedingungen mit Auswahlfeldern
 
-Die Formelprüfung kontrolliert die SQL-Unterstützung auch ohne Beispieldatensätze.
-Abhängigkeitspläne mit mehr als 800 Berechnungsschritten pro Ausdruck werden vor
-der Ausführung abgelehnt. Vereinfache wiederholte bedingte Zweige, wenn diese
-Grenze erreicht wird.
-
 Bei einer Einzelauswahl kannst du `Steuersatz = '19 %'` oder
 `Steuersatz = 'ust-19'` verwenden. Options-IDs müssen exakt passen.
 Bezeichnungen werden ohne Beachtung der Groß- und Kleinschreibung aufgelöst
 und müssen eindeutig sein. Unbekannte Optionen werden abgelehnt.
-Nutze für Automatisierungen bevorzugt stabile Options-IDs.
+Beim Speichern von Formelfeldern, Objektlisten-Berechnungen und berechneten
+Ansichtsspalten wird die Options-ID hinterlegt. Eine spätere Umbenennung der
+Beschriftung verändert die Formel deshalb nicht. Das Entfernen einer noch
+verwendeten Option wird abgelehnt. Ein Auswahlfeld ohne Optionen akzeptiert
+keine beliebigen Optionswerte.
 
 `HAS_OPTION(Tags, 'approved')` prüft die exakte Mitgliedschaft bei Einzel-
 und Mehrfachauswahl. `ust-1` trifft nicht auf `ust-19` zu.
@@ -64,6 +63,12 @@ Bei Mehrfachauswahl ist Gleichheit mit Text nicht erlaubt; nutze `HAS_OPTION`.
 
 Beispiel: `IF(Steuersatz = 'ust-19', ROUND(Netto / 100 * 19, 2), 0)`.
 Diese Regeln gelten auch für Auswahlspalten in Objektlisten-Berechnungen.
+
+Ein Lookup mit einer Liste als Ergebnis ist kein skalarer Formelwert. Verknüpfe
+in GQL die zugehörige Tabelle und prüfe ihr Auswahlfeld direkt, beispielsweise
+`HAS_OPTION(customer.Status, 'approved')`. Nutze keine Textsuche auf JSON.
+Formelfehler verwenden stabile Codes wie `#SELECT_INVALID` und `#NON_SCALAR`.
+Die Formelprüfung erklärt, welche Bedingung ungültig ist.
 
 Die Formelprüfung prüft die unterstützten Operationen vor dem Laden von
 Beispieldatensätzen, auch bei einer leeren Tabelle. Ein erfolgreicher Check
@@ -146,7 +151,7 @@ IFERROR(total / quantity, 0)
 | Logik | NOT(value) | Kehrt den Wahrheitswert um. Nutze in GQL where/having bevorzugt den Operator \`not\`. | Boolean |
 | Logik | ISBLANK(value) | Wahr, wenn leer. | Boolean |
 | Text | CONTAINS(text, search) | Prüft auf eine Teilzeichenfolge. | Boolean |
-| Logik | HAS_OPTION(field, option) | Exakte Auswahlprüfung per Options-ID oder eindeutigem Namen. | Boolean |
+| Logik | HAS_OPTION(select, option) | Exakte Auswahlprüfung per Options-ID oder eindeutigem Namen. | Boolean |
 | Text | STARTSWITH(text, prefix) | Wahr, wenn der Text mit dem Präfix beginnt. | Boolean |
 | Text | ENDSWITH(text, suffix) | Wahr, wenn der Text mit dem Suffix endet. | Boolean |
 | Text | ICONTAINS(text, search) | Prüft ohne Beachtung der Groß- und Kleinschreibung auf eine Teilzeichenfolge. | Boolean |

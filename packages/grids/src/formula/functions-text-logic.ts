@@ -36,9 +36,7 @@ export const TEXT_LOGIC_FORMULA_FUNCTIONS: Record<string, FormulaFunction> = {
         ? value.includes(option)
         : formulaError("HAS_OPTION_BAD_ARGS"),
   CONTAINS: ([haystack, needle]) =>
-    Array.isArray(haystack)
-      ? formulaError("Use HAS_OPTION for Select membership")
-      : formulaString(haystack).includes(formulaString(needle)),
+    Array.isArray(haystack) ? formulaError("NON_SCALAR") : formulaString(haystack).includes(formulaString(needle)),
   STARTSWITH: ([haystack, needle]) => formulaString(haystack).startsWith(formulaString(needle)),
   ENDSWITH: ([haystack, needle]) => formulaString(haystack).endsWith(formulaString(needle)),
   ICONTAINS: ([haystack, needle]) => formulaString(haystack).toLowerCase().includes(formulaString(needle).toLowerCase()),

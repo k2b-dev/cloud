@@ -106,6 +106,7 @@ const functionExample = (name: string): string => {
     OR: "OR(Active, Units > 0)",
     NOT: "NOT(Active)",
     ISBLANK: "ISBLANK(Notes)",
+    HAS_OPTION: "HAS_OPTION(Status, 'Ready')",
     CONTAINS: "CONTAINS(Name, 'Pro')",
     STARTSWITH: "STARTSWITH(Name, 'A')",
     ENDSWITH: "ENDSWITH(Name, 'Ltd')",

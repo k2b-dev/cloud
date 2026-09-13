@@ -148,6 +148,12 @@ unsupported operations are rejected. Formula checks validate support even on
 empty tables, then preview up to five records; review their results rather than
 treating a successful check as proof of business correctness.
 
+Saving formula fields, object-list calculations and computed view columns binds
+Select labels to option IDs. Renaming labels preserves their meaning; deleting
+an option used by these formulas is rejected. Collection-valued lookups are not
+scalar formula inputs: join the target table in GQL and use its typed fields.
+Runtime errors carry stable codes; authoring diagnostics explain the problem.
+
 Formula parsing is bounded to 20,000 characters, 64 nesting levels and 1,024 expression nodes before evaluation or SQL compilation. Input-specific limits can be smaller, including the 5,000-character computed-column limit. Oversized expressions return validation diagnostics instead of entering evaluation.
 
 `ROUND` truncates fractional places toward zero and accepts −131,072 through 16,383 places. These bounds follow PostgreSQL numeric's supported digit range. Both runtimes reject out-of-range places as a recoverable formula error before arithmetic or integer conversion.

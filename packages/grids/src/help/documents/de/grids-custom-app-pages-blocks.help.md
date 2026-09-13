@@ -7,54 +7,15 @@ order: 134
 ---
 Eine Grids App ist eine kleine Zusammenstellung vorhandener Grids-Ressourcen. Ihr Seitenbaum steuert Layout und Navigation. Ihre Blöcke legen fest, welche Ressourcen erscheinen und welche bereits definierten Operationen eine Person starten darf.
 
-## Stabile Definitions-IDs verwenden {icon="id"}
+## Seiten und Layout einrichten {icon="layout-grid"}
 
-Apps, Seiten, Zeilen, Spalten, Blöcke und Aktionen besitzen stabile IDs. Bezeichnungen dürfen sich ändern, ohne Links oder Zustand zu beschädigen.
+Verwende stabile IDs statt Bezeichnungen für Links. Eine Seiten-URL lautet `/apps/<id>/<pageId>`; deklarierte Record-Parameter stehen im Query-String. Die [API-Referenz](/app/grids/help/grids-custom-app-api) beschreibt ID-Regeln, Layoutgrenzen und alle Bindungen.
 
-- Die App-ID ist eine unveränderliche öffentliche ID aus sechs Zeichen.
-- IDs von Seiten, Zeilen, Spalten, Blöcken und Aktionen sind lokale Bezeichner in Kleinschreibung, die innerhalb ihres übergeordneten Elements eindeutig sind.
-- Ressourcenreferenzen verwenden kanonische öffentliche Grids-IDs und niemals Anzeigenamen.
+Diese Version unterstützt nur erforderliche Record-Parameter. Jeder Parameter deklariert eine Tabelle derselben Base; seine URL und sein Wert `@params.<name>` sind öffentliche Datensatz-IDs.
 
-Eine Seitenroute lautet `/apps/<id>/<pageId>`. Deklarierte Seitenparameter sind Abfrageparameter, zum Beispiel `/apps/a1b2c3/request?request_id=<record-id>`.
+Wähle unter **Routenparameter** eine Parameter-ID und ihre Tabelle. Ein Datensatz- oder Gerendertes-HTML-Block bindet diesen Parameter automatisch. Eine reine Routenseite kann den autorisierten Parameter auch in GQL oder festen Formularwerten nutzen, ohne den Datensatz darzustellen. Seiten mit Pflichtparametern erscheinen nicht in der Navigation und können nicht die Startseite sein. Fehlende oder unzugängliche Datensätze zeigen den einheitlichen Nicht-verfügbar-Zustand.
 
-Die App-Identität ist bewusst auf einen Namen und ein unterstütztes Symbol begrenzt. Seiten und Blöcke verwenden die üblichen Schrift-, Abstands-, Farb- und Interaktionsmuster von Cloud. Eigenes CSS und beliebiges Branding gehören nicht zur Definition.
-
-## Seitenkontext deklarieren {icon="brackets"}
-
-Eine Seite deklariert jeden URL-Parameter, bevor ein Block ihn verwenden kann. Diese Version unterstützt nur erforderliche Record-Parameter. Jeder Parameter deklariert eine Tabelle derselben Basis. Seine URL und sein Wert `@params.<name>` sind öffentliche Datensatz-IDs. Der Server prüft vor dem Laden der Seitendaten, ob der referenzierte Datensatz zu dieser Tabelle gehört.
-
-Eine Seite kann einen **Seitendatensatz** aus einem Record-Parameter laden. Füge im visuellen Builder die Parameter-ID und Record-Tabelle unter **Routenparameter** hinzu und anschließend einen Datensatz- oder Gerendertes-HTML-Block. Grids bindet denselben Parameter automatisch, statt ein zweites Steuerelement für den Seitendatensatz anzubieten. Das Laden wird auf Berechtigungen geprüft und schließt im Fehlerfall. Ein ungültiger, fehlender, gelöschter oder unzugänglicher Datensatz zeigt den einheitlichen Nicht-verfügbar-Zustand der Seite, ohne den konkreten Fall offenzulegen.
-
-Eine reine Routenseite kann den deklarierten Record-Parameter stattdessen als Kontext behalten, ohne den Datensatz darzustellen. GQL für Datensätze und feste Formularwerte können dann dieselbe autorisierte übergeordnete ID wiederverwenden. Seiten mit erforderlichen Parametern erscheinen nie in der Navigation und können nicht die Startseite der App sein. Der visuelle Builder deaktiviert deshalb **Record-Parameter hinzufügen** auf der aktuellen Startseite und erklärt, dass zuerst eine andere Seite ohne Parameter zur Startseite werden muss.
-
-Implementierte Blöcke binden kontextbezogene Datensatzwerte über eine typisierte Referenz:
-
-```yaml
-source: PARAMS
-path: request_id
-```
-
-| Quelle | Verfügbar in | Beispielpfad |
-| --- | --- | --- |
-| `PARAMS` | Aktuelle Seite | `request_id` |
-| `RECORD` | Aktueller Seitendatensatz | `id` |
-| `ROW` | Zeilenlink oder Zeilenaktion eines Datensatzblocks | `id` |
-| `RESULT` | Navigation nach erfolgreichem Formular | `recordId` |
-
-Der Builder zeigt nur Referenzen, die am aktuellen Ort gültig sind. Die YAML-Validierung wendet dieselben Bereichs- und Typregeln an. Referenzen können weder beliebige URL-Werte noch den internen Zustand eines anderen Blocks oder nicht deklarierte Daten lesen.
-
-## Responsive Zeilen und Spalten erstellen {icon="columns"}
-
-Jede Seite enthält Zeilen, jede Zeile Spalten und jede Spalte Blöcke. Eine Spaltenbreite ist eine ganze Zahl von 1 bis 12. Spalten behalten ihre Reihenfolge und werden in voller Breite untereinander angeordnet, wenn der verfügbare Platz zu schmal ist.
-
-Nutze das einfachste Layout, das die Reihenfolge der Aufgabe erhält:
-
-- 12 für eine primäre Aufgabe;
-- 8 + 4 für Hauptinhalt und ergänzenden Kontext;
-- 6 + 6 für zwei gleichrangige Inhalte;
-- mehrere kleine Spalten für kompakte Kennzahlen.
-
-Definiere keine getrennten Desktop- und Mobil-Layouts. Prüfe denselben Entwurf vor der Veröffentlichung bei breiten und schmalen Arbeitsbereichsgrößen.
+Seiten enthalten Zeilen, Spalten und Blöcke. Nutze Breite 12 für eine Aufgabe, 8 + 4 für Hauptinhalt und Kontext oder 6 + 6 für gleichrangige Inhalte. Auf schmalen Bildschirmen stehen Spalten in derselben Reihenfolge untereinander. Prüfe beide Breiten vor dem Veröffentlichen; separate mobile Layouts sind nicht nötig.
 
 ## Ressourcenbasierte Blöcke konfigurieren {icon="blocks"}
 
@@ -159,11 +120,7 @@ Im visuellen Builder bleibt die optionale Verfügbarkeit eingeklappt, bis du ein
 
 ## Lokale Zustände gestalten {icon="info-circle"}
 
-Jeder datenbasierte Block besitzt einen eigenen Lade-, Leer- und behebbaren Fehlerzustand. Grids stellt einheitliche Zustände für verweigerten und nicht verfügbaren Zugriff bereit. Sie verraten bewusst nicht, ob eine Ressource oder ein Datensatz existiert.
-
-Passe einen Leertext nur an, wenn er der Person den nächsten Schritt erklärt. Ersetze keinen lokalen Leerzustand durch einen seitenweiten Ladeindikator und lasse unabhängige Blöcke nicht auf eine langsame Quelle warten.
-
-Nur die aktive Seite wird aufgelöst. Innerhalb dieser Anfrage werden identische autorisierte Ressourcenlesevorgänge dedupliziert. Jede Quelle bleibt begrenzt.
+Blöcke zeigen eigene Lade-, Leer- und Fehlerzustände. Gib im Leerzustand einen sinnvollen nächsten Schritt an; blockiere nicht die ganze Seite. Nicht-verfügbar-Zustände verraten nie, ob ein Datensatz existiert. Nur die aktive Seite lädt, mit begrenzten Quellen und deduplizierten autorisierten Zugriffen.
 
 ## Bewusste Grenzen kennen {icon="barrier-block"}
 

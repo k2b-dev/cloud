@@ -2,7 +2,7 @@ import { sql } from "bun";
 import type { FormulaSelect } from "../formula/select-binding";
 import type { Literal } from "../formula/types";
 
-export type FormulaSqlType = "numeric" | "text" | "boolean" | "date" | "datetime" | "unknown";
+export type FormulaSqlType = "numeric" | "text" | "boolean" | "date" | "datetime" | "json" | "unknown";
 
 export type FormulaSqlExpression = {
   sql: unknown;

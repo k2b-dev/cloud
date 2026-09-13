@@ -1,11 +1,16 @@
-import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { toPgUuidArray } from "@k2b/cloud/services";
+import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { sql } from "bun";
 import { type View, type ViewUiSettings, ViewUiSettingsSchema } from "../contracts";
 import { groupedColumnFieldId } from "../presentation-ids";
 import { normalizeRefKey } from "../ref-syntax";
 import { logAudit, type SqlClient } from "./audit";
+import { authoringText } from "./authoring-messages";
+import { buildComputedProjections, computedOutputToFormulaType } from "./computed-projections";
 import { getGridsCrudMessages } from "./crud-messages";
+import { mapFieldRow } from "./field-read";
+import { bindAuthoredFormula } from "./formula-authoring";
+import { compileFormulaSourceToSql } from "./formula-sql-compiler";
 import { parseJsonbRow } from "./jsonb";
 import { emitTableMetadataEvent } from "./metadata-events";
 import { writeNamedResource } from "./named-resource-conflict";
@@ -33,17 +38,36 @@ const validateViewUiFields = async (
   ui: ViewUiSettings,
   client: SqlClient = sql,
   locale?: string,
-): Promise<Result<void>> => {
+): Promise<Result<ViewUiSettings>> => {
   const messages = getGridsCrudMessages(locale);
   const references = [...new Set(viewUiFieldReferences(ui))];
-  if (references.length === 0) return ok();
-  const rows = await client<{ id: string }[]>`
-    SELECT id::text AS id
+  if (references.length === 0 && !ui.columns?.some((column) => "expression" in column)) return ok(ui);
+  const rows = await client<DbRow[]>`
+    SELECT *
     FROM grids.fields
     WHERE table_id = ${tableId}::uuid AND deleted_at IS NULL
   `;
-  const live = new Set(rows.map((row) => row.id));
-  return references.every((fieldId) => live.has(fieldId)) ? ok() : fail(err.badInput(messages.viewUnknownField));
+  const fields = rows.map(mapFieldRow);
+  const live = new Set(fields.map((field) => field.id));
+  if (!references.every((fieldId) => live.has(fieldId))) return fail(err.badInput(messages.viewUnknownField));
+  const projections = await buildComputedProjections(fields, { client });
+  const computedFieldSql = new Map(
+    projections.map((p) => [p.fieldId, { sql: p.expr, type: computedOutputToFormulaType(p.outputType), errorSql: p.errorSql }]),
+  );
+  const columns = [];
+  for (const column of ui.columns ?? []) {
+    if (!("expression" in column)) {
+      columns.push(column);
+      continue;
+    }
+    const bound = bindAuthoredFormula(column.expression, fields, locale);
+    if (!bound.ok) return fail(err.badInput(authoringText(locale).formulaUnsupported({ detail: bound.error })));
+    const compiled = compileFormulaSourceToSql(bound.source, { fields, computedFieldSql, dateConfig: { locale }, documentMetadata: true });
+    if (!compiled.ok) return fail(err.badInput(authoringText(locale).formulaUnsupported({ detail: compiled.error })));
+    columns.push({ ...column, expression: bound.source });
+  }
+  const validated = ViewUiSettingsSchema.safeParse({ ...ui, ...(ui.columns ? { columns } : {}) });
+  return validated.success ? ok(validated.data) : fail(err.badInput(messages.invalidViewUi));
 };
 
 const mapRow = (row: DbRow): View => {
@@ -217,7 +241,7 @@ export const create = async (input: CreateViewServiceInput, actorId: string | nu
           ${input.description ?? null},
           ${input.icon ?? null},
           ${source},
-          ${uiParsed.data}::jsonb,
+          ${validUi.data}::jsonb,
           ${input.ownerUserId ?? null}::uuid,
           COALESCE((SELECT MAX(position) + 1 FROM grids.views WHERE table_id = ${input.tableId}::uuid), 0)
         )
@@ -304,7 +328,7 @@ export const update = async (id: string, input: UpdateViewServiceInput, actorId:
             description = ${next.description},
             icon = ${next.icon},
             source = ${next.source},
-            ui = ${next.ui}::jsonb,
+            ui = ${validUi.data}::jsonb,
             position = ${next.position},
             owner_user_id = ${ownerUserId}::uuid,
             updated_at = now()

@@ -668,17 +668,21 @@ cld grids formulas check Authors --expression 'LEN(Name)' --json
 
 ### Formula language reference
 
-The SQL compiler rejects dependency plans exceeding 800 calculation stages per
-expression before execution. Simplify repeated conditional branches rather than
-changing division into multiplication as a workaround.
-
 Single-select conditions accept exact option IDs or unambiguous case-insensitive labels:
 `IF(Tax = 'ust-19', ROUND(Net / 100 * 19, 2), 0)`.
 Use `HAS_OPTION(Tags, 'approved')` for exact single/multiple-select membership;
 `ust-1` does not match `ust-19`. Unknown or ambiguous options are rejected.
 Use `ISBLANK(Tax)` or `Tax = null` for an empty selection. Multiple-select
 equality against text is rejected. `CONTAINS` is for text, not Select fields.
-The same rules apply to object-list Select inputs. Prefer stable option IDs.
+The same rules apply to object-list Select inputs. Saving formula fields,
+object-list calculations and computed view columns binds labels to option IDs.
+Renaming an option label preserves the calculation; deleting a referenced
+option is rejected. Empty option configurations do not accept arbitrary values.
+
+Collection-valued lookups cannot be used as scalar formula operands. Join the
+target table in GQL and use its typed Select field, e.g.
+`HAS_OPTION(customer.Status, 'approved')`, instead of searching JSON as text.
+Runtime errors have stable codes (`SELECT_INVALID`, `NON_SCALAR`), not prose.
 
 `formulas check` validates supported operations even without records, then
 previews at most five recent records. `ok: true` does not prove the business

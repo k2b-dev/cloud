@@ -55,7 +55,19 @@ export const fields: Field[] = [
   field({ id: customerFieldId, shortId: "customer", name: "Customer", type: "text", position: 1 }),
   field({ id: amountFieldId, shortId: "amount", name: "Amount", type: "number", position: 2 }),
   field({ id: costFieldId, shortId: "cost", name: "Cost", type: "number", position: 3 }),
-  field({ id: statusFieldId, shortId: "status", name: "Status", type: "select", position: 4 }),
+  field({
+    id: statusFieldId,
+    shortId: "status",
+    name: "Status",
+    type: "select",
+    position: 4,
+    config: {
+      options: [
+        { id: "open", label: "Open" },
+        { id: "closed", label: "Closed" },
+      ],
+    },
+  }),
   field({ id: orderedAtFieldId, shortId: "ordered_at", name: "Ordered at", type: "date", position: 5 }),
   field({ id: paidFieldId, shortId: "paid", name: "Paid", type: "boolean", position: 6 }),
   field({

@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { evaluate } from "./evaluator";
 import { parseFormula } from "./parser";
-import { bindFormulaSelects, type FormulaSelect } from "./select-binding";
+import { bindFormulaSelects, canonicalizeFormulaOptions, type FormulaSelect, resolveFormulaOption } from "./select-binding";
 import { isFormulaError } from "./types";
 
 const select: FormulaSelect = {
@@ -52,4 +52,43 @@ test("unknown and ambiguous Select labels fail without sample data", () => {
       },
     })),
   ).toMatchObject({ ok: false, error: expect.stringContaining("Ambiguous") });
+});
+
+test("authoring persists option IDs without rewriting other literals or formatting", () => {
+  const source = "= IF(Tax = ('19 %'), '19 %', IF(HAS_OPTION(Tax, '1 %'), 1, 0))";
+  const result = canonicalizeFormulaOptions(source, () => select);
+  expect(result).toEqual({ ok: true, source: "= IF(Tax = 'ust-19', '19 %', IF(HAS_OPTION(Tax, 'ust-1'), 1, 0))" });
+  if (!result.ok) return;
+  const renamed = {
+    ...select,
+    config: {
+      options: [
+        { id: "ust-19", label: "Standard" },
+        { id: "ust-1", label: "Reduced" },
+      ],
+    },
+  };
+  expect(canonicalizeFormulaOptions(result.source, () => renamed)).toEqual(result);
+  expect(canonicalizeFormulaOptions(result.source, () => ({ ...renamed, config: { options: [] } })).ok).toBe(false);
+});
+
+test("empty strings do not select an option with an empty label", () => {
+  expect(resolveFormulaOption({ name: "Tax", config: { options: [{ id: "empty", label: "" }] } }, "").ok).toBe(false);
+  expect(resolveFormulaOption({ name: "Tax", config: {} }, "anything").ok).toBe(false);
+});
+
+test("runtime errors contain a stable code, not a field name or sentence", () => {
+  expect(run("Tax = 'missing'", [])).toMatchObject({ code: "SELECT_INVALID" });
+});
+
+test("collection values are not silently coerced by scalar functions", () => {
+  for (const source of ["CONTAINS(Lookup, 'ust')", "LEN(Lookup)", "Lookup = 'ust-19'"]) {
+    const parsed = parseFormula(source);
+    if (!parsed.ok) throw Error(parsed.error);
+    expect(evaluate(parsed.ast, { fields: { Lookup: ["ust-19"] } })).toMatchObject({ code: "NON_SCALAR" });
+  }
+  expect(canonicalizeFormulaOptions("Tax = 'missing'", () => select, "de")).toMatchObject({
+    ok: false,
+    error: expect.stringContaining("Unbekannte Option"),
+  });
 });

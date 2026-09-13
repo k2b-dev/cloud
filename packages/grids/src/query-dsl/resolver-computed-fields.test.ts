@@ -76,7 +76,7 @@ describe("GQL lookup/rollup fields (C3)", () => {
     expect(whereSql.ok).toBe(true);
     if (whereSql.ok) {
       expect(normalizedSql(whereSql.query.sql)).toContain("(SELECT 7) AS value");
-      expect(normalizedSql(whereSql.query.sql)).toContain("(r_formula_0.value)::numeric >");
+      expect(normalizedSql(whereSql.query.sql)).toContain("((SELECT value FROM r_named_0))::numeric >");
     }
 
     const sortSql = compileDslQueryPlanToSql(planOf(`select amount\nsort total desc`), {
