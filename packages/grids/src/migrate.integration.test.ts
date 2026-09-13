@@ -3,7 +3,7 @@ import { SQL, sql } from "bun";
 import { migrate as migrateCoreWorkflows } from "../../core/src/migrate/core/workflows";
 import { GRIDS_SCHEMA_BASELINE, gridsPublicIdsReady, migrate } from "./migrate";
 import { insertTestWorkflow, insertTestWorkflowRun } from "./service/workflow-test-fixture";
-import { GRIDS_WORKFLOW_SCHEMA_VERSION, migrateGridsWorkflowTables } from "./workflows/migrate";
+import { GRIDS_WORKFLOW_SCHEMA_VERSION } from "./workflows/migrate";
 
 const postgresTest = process.env.GRIDS_DB_TEST === "1" ? test : test.skip;
 
@@ -30,6 +30,19 @@ const withIsolatedDatabase = async (run: (database: SQL) => Promise<void>) => {
     await database.close({ timeout: 5 });
     await sql.unsafe(`DROP DATABASE "${databaseName}" WITH (FORCE)`);
   }
+};
+
+const checkUpgrade = async (database: SQL) => {
+  const [row] = await database<Array<{ name: string }>>`SELECT current_database() AS name`;
+  if (!row) throw new Error("Missing isolated database identity");
+  const url = new URL(process.env.DATABASE_URL!);
+  url.pathname = `/${row.name}`;
+  const child = Bun.spawn([process.execPath, `${import.meta.dir}/../scripts/check-alpha-upgrade.ts`], {
+    env: { ...process.env, DATABASE_URL: url.toString() },
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  return { exitCode: await child.exited, output: await new Response(child.stdout).text(), error: await new Response(child.stderr).text() };
 };
 
 describe("grids schema migration", () => {
@@ -59,13 +72,14 @@ describe("grids schema migration", () => {
 
   postgresTest("rejects unsupported alpha data without creating a ledger or resetting workflows", async () => {
     await withIsolatedDatabase(async (database) => {
+      await migrateCoreWorkflows(database);
       await database`CREATE SCHEMA grids`.simple();
       await database`CREATE TABLE grids.documents (workflow_run_id UUID, workflow_step_key TEXT)`.simple();
       await database`CREATE TABLE grids.workflow_run_profile (run_id UUID PRIMARY KEY)`.simple();
       const runId = uuid();
       await database`INSERT INTO grids.workflow_run_profile VALUES (${runId}::uuid)`;
       await database`INSERT INTO grids.documents VALUES (${runId}::uuid, 'export')`;
-      await expect(migrateGridsWorkflowTables(database)).rejects.toThrow("Unsupported Grids alpha data");
+      await expect(migrate(database)).rejects.toThrow("Unsupported Grids alpha data");
       expect(
         await database<
           Array<{ workflow_run_id: string; workflow_step_key: string }>
@@ -77,9 +91,129 @@ describe("grids schema migration", () => {
       await database`DELETE FROM grids.documents`;
       await database`CREATE TABLE grids.workflow_profile (id UUID PRIMARY KEY)`.simple();
       await database`INSERT INTO grids.workflow_profile VALUES (${runId}::uuid)`;
-      await expect(migrateGridsWorkflowTables(database)).rejects.toThrow("Unsupported Grids alpha workflows");
+      await expect(migrate(database)).rejects.toThrow("Unsupported Grids alpha capture budget");
       expect(await database<Array<{ id: string }>>`SELECT id::text FROM grids.workflow_profile`).toEqual([{ id: runId }]);
       expect(await database<Array<{ run_id: string }>>`SELECT run_id::text FROM grids.workflow_run_profile`).toEqual([{ run_id: runId }]);
+    });
+  });
+
+  postgresTest("preserves compatible v8 plans and budgets and tightens hash constraints only once", async () => {
+    await withIsolatedDatabase(async (database) => {
+      await migrateCoreWorkflows(database);
+      await migrate(database);
+      const baseId = uuid();
+      await database`INSERT INTO grids.bases (id, short_id, name) VALUES (${baseId}::uuid, 'BASE01', 'Upgrade')`;
+      const workflowId = await insertTestWorkflow({
+        db: database,
+        baseId,
+        shortId: "FLOW01",
+        plan: {
+          schemaVersion: 2,
+          bindings: { "steps.0.query.$query": { source: "from table Items", schemaHash: "a".repeat(64), schemaHashVersion: 3 } },
+        },
+      });
+      const runId = await insertTestWorkflowRun({ db: database, baseId, workflowId, shortId: "RUN001" });
+      await database`UPDATE grids.workflow_run_profile SET captured_bytes = 123 WHERE run_id = ${runId}::uuid`;
+      await database`UPDATE grids.workflow_profile SET deleted_at = now() WHERE id = ${workflowId}::uuid`;
+      await database`DELETE FROM grids.workflow_migrations`;
+      await database`INSERT INTO grids.workflow_migrations (version) VALUES (8)`;
+      const before = await database`SELECT plan::text, source FROM workflows.version WHERE workflow_id = ${workflowId}::uuid`;
+      for (const table of ["documents", "document_issuances", "workflow_query_data"]) {
+        await database.unsafe(`ALTER TABLE grids.${table} DROP CONSTRAINT ${table}_hash_version_check`);
+        await database.unsafe(`ALTER TABLE grids.${table} ADD CONSTRAINT ${table}_hash_version_check CHECK (hash_version IN (1, 2))`);
+      }
+      await migrate(database);
+      expect(await database`SELECT plan::text, source FROM workflows.version WHERE workflow_id = ${workflowId}::uuid`).toEqual(before);
+      expect(await checkUpgrade(database)).toMatchObject({
+        exitCode: 0,
+        error: "",
+        output: expect.stringContaining("No data or schema was changed"),
+      });
+      expect(
+        await database<
+          Array<{ bytes: string }>
+        >`SELECT captured_bytes::text AS bytes FROM grids.workflow_run_profile WHERE run_id = ${runId}::uuid`,
+      ).toEqual([{ bytes: "123" }]);
+      expect(await database<Array<{ version: number }>>`SELECT version FROM grids.workflow_migrations ORDER BY version`).toEqual([
+        { version: 8 },
+        { version: GRIDS_WORKFLOW_SCHEMA_VERSION },
+      ]);
+      const constraints = await database<
+        Array<{ oid: string; definition: string }>
+      >`SELECT oid::text, pg_get_constraintdef(oid) AS definition FROM pg_constraint
+        WHERE connamespace = 'grids'::regnamespace AND conname IN ('documents_hash_version_check', 'document_issuances_hash_version_check', 'workflow_query_data_hash_version_check') ORDER BY conname`;
+      expect(constraints).toHaveLength(3);
+      expect(constraints.every((constraint) => constraint.definition === "CHECK ((hash_version = 2))")).toBe(true);
+      await migrate(database);
+      expect(
+        await database<
+          Array<{ oid: string; definition: string }>
+        >`SELECT oid::text, pg_get_constraintdef(oid) AS definition FROM pg_constraint
+        WHERE connamespace = 'grids'::regnamespace AND conname IN ('documents_hash_version_check', 'document_issuances_hash_version_check', 'workflow_query_data_hash_version_check') ORDER BY conname`,
+      ).toEqual(constraints);
+    });
+  });
+
+  postgresTest("a migration marker cannot bless a missing capture budget or obsolete query binding", async () => {
+    await withIsolatedDatabase(async (database) => {
+      await migrateCoreWorkflows(database);
+      await migrate(database);
+      expect(await database<Array<{ version: number }>>`SELECT version FROM grids.workflow_migrations`).toEqual([
+        { version: GRIDS_WORKFLOW_SCHEMA_VERSION },
+      ]);
+      const baseId = uuid();
+      await database`INSERT INTO grids.bases (id, short_id, name) VALUES (${baseId}::uuid, 'BASE01', 'Invalid upgrade')`;
+      const workflowId = await insertTestWorkflow({ db: database, baseId, shortId: "FLOW01" });
+      const runId = await insertTestWorkflowRun({ db: database, baseId, workflowId, shortId: "RUN001" });
+      await database`ALTER TABLE grids.workflow_run_profile ALTER COLUMN captured_bytes DROP NOT NULL`.simple();
+      await database`UPDATE grids.workflow_run_profile SET captured_bytes = NULL WHERE run_id = ${runId}::uuid`;
+      await expect(migrate(database)).rejects.toThrow("Unsupported Grids alpha capture budget");
+      expect(await checkUpgrade(database)).toMatchObject({
+        exitCode: 1,
+        error: expect.stringContaining("Unsupported Grids alpha capture budget"),
+      });
+      expect(
+        await database<
+          Array<{ captured_bytes: string | null }>
+        >`SELECT captured_bytes FROM grids.workflow_run_profile WHERE run_id = ${runId}::uuid`,
+      ).toEqual([{ captured_bytes: null }]);
+      await database`UPDATE grids.workflow_run_profile SET captured_bytes = 0 WHERE run_id = ${runId}::uuid`;
+      await insertTestWorkflow({
+        db: database,
+        id: workflowId,
+        baseId,
+        shortId: "FLOW01",
+        plan: {
+          schemaVersion: 2,
+          bindings: { "steps.0.query.$query": { source: "from table Items", schemaHash: "a".repeat(64), schemaHashVersion: 2 } },
+        },
+      });
+      const before = await database`SELECT plan::text FROM workflows.version WHERE workflow_id = ${workflowId}::uuid ORDER BY revision`;
+      await expect(migrate(database)).rejects.toThrow("Unsupported Grids alpha workflow binding");
+      expect(await database`SELECT plan::text FROM workflows.version WHERE workflow_id = ${workflowId}::uuid ORDER BY revision`).toEqual(
+        before,
+      );
+    });
+  });
+
+  postgresTest("rejects old workflow tables without dropping them", async () => {
+    await withIsolatedDatabase(async (database) => {
+      await migrateCoreWorkflows(database);
+      await database`CREATE SCHEMA grids`.simple();
+      for (const table of [
+        "workflows",
+        "workflow_runs",
+        "workflow_effect_intents",
+        "workflow_step_runs",
+        "workflow_revisions",
+        "workflow_kernel_migrations",
+      ]) {
+        await database.unsafe(`CREATE TABLE grids.${table} (payload TEXT)`);
+        await database.unsafe(`INSERT INTO grids.${table} VALUES ('keep')`);
+        await expect(migrate(database)).rejects.toThrow(`Unsupported Grids alpha workflow schema: ${table}`);
+        expect(await database.unsafe<Array<{ payload: string }>>(`SELECT payload FROM grids.${table}`)).toEqual([{ payload: "keep" }]);
+        await database.unsafe(`DROP TABLE grids.${table}`);
+      }
     });
   });
 

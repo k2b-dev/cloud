@@ -6,6 +6,8 @@ export const workflowRuntimeMessages = i18n.define({
   messages: {
     en: {
       queryParametersInvalid: "Query parameters do not match their declared types. Check the step inputs.",
+      queryBindingInvalid:
+        "This query has an unsupported saved binding. Review its source and publish the workflow again, then start a new run.",
       captureQuery: "Capture the complete query result for subsequent document steps. Data is read when the workflow executes.",
       tableUnavailable: "Workflow table is no longer available",
       recordReferenceRequired: ({ path }: { path: string }) => `${path} must resolve to a record`,
@@ -62,6 +64,8 @@ export const workflowRuntimeMessages = i18n.define({
     },
     de: {
       queryParametersInvalid: "Die Abfrageparameter entsprechen nicht ihren deklarierten Typen. Prüfe die Eingaben des Schritts.",
+      queryBindingInvalid:
+        "Die gespeicherte Bindung dieser Abfrage wird nicht unterstützt. Prüfe die Quelle, veröffentliche den Workflow erneut und starte eine neue Ausführung.",
       captureQuery:
         "Das vollständige Abfrageergebnis für spätere Dokumentschritte speichern. Die Daten werden beim Ausführen des Workflows gelesen.",
       tableUnavailable: "Die Workflow-Tabelle ist nicht mehr verfügbar",

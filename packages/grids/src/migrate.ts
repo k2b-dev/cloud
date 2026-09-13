@@ -1631,9 +1631,7 @@ const migrateDocumentIssuance = async (sql: SQL): Promise<void> => {
     CHECK (request_identity_hash ~ '^[a-f0-9]{64}$')`.simple();
   await sql`ALTER TABLE grids.document_issuances ADD COLUMN IF NOT EXISTS hash_version SMALLINT NOT NULL DEFAULT 2
     CHECK (hash_version = 2);
-    ALTER TABLE grids.document_issuances ALTER COLUMN hash_version SET DEFAULT 2;
-    ALTER TABLE grids.document_issuances DROP CONSTRAINT IF EXISTS document_issuances_hash_version_check;
-    ALTER TABLE grids.document_issuances ADD CONSTRAINT document_issuances_hash_version_check CHECK (hash_version = 2)`.simple();
+    ALTER TABLE grids.document_issuances ALTER COLUMN hash_version SET DEFAULT 2`.simple();
   await sql`
     ALTER TABLE grids.document_issuances
       ADD COLUMN IF NOT EXISTS confirmation_hash TEXT CHECK (confirmation_hash ~ '^[a-f0-9]{64}$'),
@@ -1786,8 +1784,6 @@ const migrateDocumentArtifacts = async (sql: SQL): Promise<void> => {
     DO $$ BEGIN
       ALTER TABLE grids.documents ADD COLUMN IF NOT EXISTS hash_version SMALLINT NOT NULL DEFAULT 2 CHECK (hash_version = 2);
       ALTER TABLE grids.documents ALTER COLUMN hash_version SET DEFAULT 2;
-      ALTER TABLE grids.documents DROP CONSTRAINT IF EXISTS documents_hash_version_check;
-      ALTER TABLE grids.documents ADD CONSTRAINT documents_hash_version_check CHECK (hash_version = 2);
       IF EXISTS (
         SELECT 1 FROM pg_constraint
         WHERE conrelid = 'grids.documents'::regclass AND conname = 'documents_renderer_chk'
@@ -1894,6 +1890,21 @@ const migrateDocumentArtifacts = async (sql: SQL): Promise<void> => {
     FOR EACH ROW EXECUTE FUNCTION grids.reject_document_artifact_mutation()
   `.simple();
   console.log("  ✓ grids.document_artifacts");
+  await sql`ALTER TABLE grids.documents ADD COLUMN IF NOT EXISTS record_sources_complete BOOLEAN NOT NULL DEFAULT false`.simple();
+  await sql`
+    CREATE TABLE IF NOT EXISTS grids.document_record_sources (
+      document_id UUID NOT NULL REFERENCES grids.documents(id) ON DELETE RESTRICT,
+      table_id UUID NOT NULL REFERENCES grids.tables(id) ON DELETE RESTRICT,
+      record_id UUID NOT NULL REFERENCES grids.records(id) ON DELETE RESTRICT,
+      version BIGINT NOT NULL CHECK (version > 0),
+      PRIMARY KEY (document_id, table_id, record_id)
+    )
+  `.simple();
+  await sql`CREATE INDEX IF NOT EXISTS idx_document_record_sources_record
+    ON grids.document_record_sources(table_id, record_id, document_id)`.simple();
+  await sql`DROP TRIGGER IF EXISTS document_record_sources_immutable ON grids.document_record_sources`.simple();
+  await sql`CREATE TRIGGER document_record_sources_immutable BEFORE UPDATE OR DELETE ON grids.document_record_sources
+    FOR EACH ROW EXECUTE FUNCTION grids.reject_document_artifact_mutation()`.simple();
   // Existing completed Documents were required to contain the canonical PDF.
   // ADD COLUMN supplies that historical value without rewriting immutable rows.
   // New issuance must explicitly select its primary artifact.

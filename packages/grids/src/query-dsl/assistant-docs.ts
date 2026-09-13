@@ -272,6 +272,7 @@ export const renderGqlAssistantSkill = (): string =>
     "- Sort defaults to ascending with nulls last; use `desc`, `nulls first`, or `nulls last` when needed.",
     "",
     "## Formula Expressions",
+    "Base queries can select documentCount() as documents or latestDocumentAt('sepa-xml') as exportedAt, and filter with where formula(documentCount('sepa-xml')) = 0. These return a number and a nullable datetime. Formats: pdf, csv, json, xml, sepa-xml, datev-csv. They count unique issued Documents explicitly associated with the source record, not relation targets, payments, or failed runs. Metadata remains live after finalization. Not available in stored Formula fields or Custom App queries.",
     "- `where`, `having`, `select formula(...) as alias`, and `aggregate fn(formula(...)) as alias` use the formula expression engine.",
     "- Use field names directly, quoted field names for spaces, scoped refs after joins such as `author.Name`, and stable refs like `{fieldId}`.",
     "- In GQL expressions, use `and`, `or`, and `not` operators instead of `AND(...)`, `OR(...)`, or `NOT(...)` calls.",

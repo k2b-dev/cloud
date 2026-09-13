@@ -20,6 +20,7 @@ describe("Document resource API", () => {
       "/{documentId}",
       "/{documentId}/artifacts/{artifactKey}",
       "/{documentId}/download",
+      "/{documentId}/sources",
     ]);
     expect(spec.paths?.["/by-base/{baseId}"]?.post).toBeUndefined();
   });
@@ -38,6 +39,7 @@ describe("Document resource API", () => {
       createdBy: null,
       primaryArtifactKey: "pdf",
       dataSnapshot: null,
+      sourceRecordCount: 1,
       validationStatus: null,
       artifacts: [{ key: "pdf", filename: "invoice.pdf", mimeType: "application/pdf", sizeBytes: 4, sha256: "a".repeat(64) }],
     };

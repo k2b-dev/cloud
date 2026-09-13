@@ -5,6 +5,7 @@ import type { ListFormulaFunctionName } from "../formula/function-catalog";
 import { parseFormula } from "../formula/parser";
 import type { BinOp, Expr } from "../formula/types";
 import { normalizeRefKey } from "../ref-syntax";
+import { compileDocumentQueryExpression, DOCUMENT_QUERY_FUNCTIONS } from "./document-query-expression";
 import { scalarSqlTypeForField, storageOf } from "./field-storage";
 import { finalizedFieldSql } from "./finalized-field-sql";
 import { compileFormulaFunction } from "./formula-sql-functions";
@@ -34,6 +35,8 @@ export const MAX_FORMULA_INLINE_DEPTH = 8;
 export type FormulaSqlFieldResolver = (ref: string) => (FormulaSqlExpression & { objectListConfig?: Field["config"] }) | string | null;
 
 type FormulaSqlCompileOptions = {
+  /** Only authorized GQL row queries may inspect current document metadata. */
+  documentMetadata?: boolean;
   fields: Field[];
   /** Trusted SQL alias for the records table. Defaults to `r`. */
   recordAlias?: string;
@@ -53,7 +56,13 @@ type FormulaSqlCompileOptions = {
 type CompileContext = Required<Pick<FormulaSqlCompileOptions, "recordAlias" | "now">> &
   Pick<
     FormulaSqlCompileOptions,
-    "dateConfig" | "resolveField" | "computedFieldSql" | "useFinalizedFormulaValues" | "authorizedTableIds" | "requireCapturedValues"
+    | "dateConfig"
+    | "resolveField"
+    | "computedFieldSql"
+    | "useFinalizedFormulaValues"
+    | "authorizedTableIds"
+    | "requireCapturedValues"
+    | "documentMetadata"
   > & {
     fieldsByRef: Map<string, Field[]>;
     inlineStack: Set<string>;
@@ -359,6 +368,11 @@ const compileExpression = (expression: Expr, context: CompileContext): FormulaSq
     case "binop":
       return compileBinaryExpression(expression, context);
     case "call":
+      if (DOCUMENT_QUERY_FUNCTIONS.has(expression.fn)) {
+        if (!context.documentMetadata || context.depth > 0)
+          return formulaSqlFail("Document metadata requires an authorized Grids row query");
+        return compileDocumentQueryExpression(expression.fn, expression.args, context.recordAlias);
+      }
       return compileFormulaFunction(
         expression.fn,
         expression.args,
@@ -372,6 +386,7 @@ export const compileFormulaAstToSql = (ast: Expr, options: FormulaSqlCompileOpti
   const recordAlias = options.recordAlias ?? "r";
   if (!SQL_ALIAS.test(recordAlias)) return formulaSqlFail(`Unsafe SQL record alias ${recordAlias}`);
   return compileExpression(ast, {
+    documentMetadata: options.documentMetadata,
     fieldsByRef: buildFieldMap(options.fields),
     recordAlias,
     dateConfig: options.dateConfig,

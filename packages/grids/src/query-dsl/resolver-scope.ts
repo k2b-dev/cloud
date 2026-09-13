@@ -8,6 +8,7 @@ import { type DslResolverDiagnostic, diagnostic, isResolverDiagnostic as isDiagn
 import type { DslQualifiedRef, DslSourceSpan } from "./types";
 
 export type Scope = {
+  documentMetadata: boolean;
   tableId: string;
   sourceAlias?: string;
   fields: Field[];
@@ -59,6 +60,7 @@ export const buildComputedStub = (fields: Field[]): Map<string, FormulaSqlExpres
   );
 
 export const createScope = (fields: Field[], ctx: DslResolverContext, tableId: string, sourceAlias?: string): Scope => ({
+  documentMetadata: ctx.documentMetadata !== false,
   tableId,
   ...(sourceAlias ? { sourceAlias } : {}),
   fields,

@@ -371,3 +371,20 @@ Nutze eine gespeicherte Ansicht, wenn Personen das Ergebnis im unmittelbaren Arb
 :::note GQL ist kein zweites Datenmodell
 GQL strukturiert gespeicherte Daten. Es kopiert keine Datensätze und umgeht keine Zugriffs-, Feld- oder Relationsregeln der Basis.
 :::
+
+## Datensätze anhand erzeugter Dokumente finden
+
+`documentCount()` zählt eindeutig zugeordnete Dokumente. `latestDocumentAt()`
+liefert deren letzten Erstellungszeitpunkt oder null. Als optionales Format sind
+`pdf`, `csv`, `json`, `xml`, `sepa-xml` und `datev-csv` möglich.
+
+```gql
+from table Auslagen
+select Beschreibung, documentCount('sepa-xml') as Exporte
+where formula(documentCount('sepa-xml')) = 0
+```
+
+Eine Sammeldatei zählt bei jedem ausdrücklich zugeordneten Datensatz einmal.
+Relations werden nicht verfolgt. Die Angaben bleiben nach dem Finalisieren
+aktuell und belegen keine Zahlung. Verfügbar in Abfragen gespeicherter Tabellen
+der Base, nicht in gespeicherten Formelfeldern oder Custom-App-Abfragen.

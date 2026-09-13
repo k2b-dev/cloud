@@ -235,7 +235,7 @@ Ausführungsoptionen werden getrennt von der Workflow-Quelle konfiguriert. Ein W
 | `updateRecord` | `record`, nicht leeres `set` | Nach UUID der Audit-Frage indizierte `audit`-Antworten | Validiert die Datensatzaktualisierung und sagt sie vorher |
 | `createRecord` | `table`, nicht leere `values` | `saveAs` | Validiert den neuen Datensatz und sagt ihn vorher |
 | `atomicRecords` | 1–100 `locks`, 1–50 `checks`, 1–50 `changes` | `message` der Prüfung; `ifVersion` und `audit` der Aktualisierung | Wertet aktuelle Prüfungen aus und sagt begrenzte Datensatzänderungen ohne Sperren oder Schreiben vorher |
-| `generateDocument` | `template` + `record` oder `data` + `output` | `filename`, bis zu 20 `tags`, `saveAs` | Validiert Zugriff und Werte; generiert nichts |
+| `generateDocument` | `template` + `record` oder `data` + `output` | `filename`, bis zu 20 `tags`, `associatedData`, `saveAs` | Validiert Zugriff und Werte; generiert nichts |
 | `createDocumentLink` | Ausgabereferenz `document` | `expiresIn` (`1d`, `7d`, `30d`, `90d`; Standard `30d`), `comment`, `saveAs` | Validiert Dokument und Zugriff; erstellt keinen Link |
 | `sendEmail` | `template`, 1–50 Empfänger unter `to` | `data` mit bis zu 200 Schlüsseln, `saveAs` | Validiert Vorlage, Empfänger, Daten und Zugriff; sendet nichts |
 | `httpRequest` | Absolute HTTP- oder HTTPS-`url` | `method` (Standard `POST`), `headers`, `json`, `timeoutMs` (Standard 15.000; Bereich 1.000–60.000), `saveAs` | Löst das Ziel auf und prüft es; sendet nichts |
@@ -247,9 +247,16 @@ Ausführungsoptionen werden getrennt von der Workflow-Quelle konfiguriert. Ein W
 
 Alle Quellerfassungen teilen sich 5 MiB pro Lauf, auch in Schleifen. Wiederverwendung zählt nicht doppelt. Reduziere Zeilen/Felder oder verteile größere Exporte auf mehrere Läufe.
 
-Neue Veröffentlichungen tolerieren Spaltenumsortierung. Veröffentliche ältere Workflows dafür erneut; geänderte Berechnungen bleiben prüfpflichtig.
+Spaltenumsortierung macht eine veröffentlichte Abfrage nicht ungültig. Geänderte Berechnungstypen können sie ungültig machen: Prüfe die Abfrage und veröffentliche eine neue Workflow-Revision, bevor du eine neue Ausführung startest. Ein Upgrade von nicht unterstützten Alpha-Speicherständen benötigt vor dem Deployment eine Prüfung durch den Betreiber; erneutes Veröffentlichen repariert keine Anwendung, die nicht startet.
 
 ### Dateien aus einer Abfrage erstellen
+
+Für eine Datei aus Joins oder Gruppen verweist `associatedData: auswahl` auf
+eine vorherige einfache Tabellenabfrage mit `saveAs: auswahl`. Deren eingefrorene
+Datensatz-Identitäten bestimmen, bei welchen Datensätzen die Datei erscheint.
+Ohne diese Angabe wird die Zuordnung nur aus eindeutigen Zeilenquellen abgeleitet.
+Sie verfolgt keine Relations und ersetzt nicht die finanzielle Aktualitätsprüfung
+mit `sourceVersions`. Dokumentdetails unterscheiden Datensätze und Ergebniszeilen.
 
 Bei `generateDocument.data` schlägt der Editor vorherige Abfrageergebnisse im aktuellen Bereich vor. Nutze denselben Namen für mehrere Dateien.
 

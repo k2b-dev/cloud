@@ -20,6 +20,7 @@ import { recordDisplayTitle } from "../records/record-display";
 import { errorMessage } from "../utils/api-helpers";
 import { canPreviewDocumentArtifact, openDocumentArtifactPreview } from "./DocumentArtifactPreviewDialog";
 import { openDocumentLinkDialog } from "./DocumentLinkDialog";
+import DocumentSourcesDialog from "./DocumentSourcesDialog";
 import { formatDocumentDateTime, formatDocumentRelativeTime } from "./document-workspace-utils";
 import { documentMessages } from "./messages";
 import type { PublicDocument, PublicDocumentLink, PublicDocumentLinkListResponse } from "./public-document-types";
@@ -201,6 +202,20 @@ export function DocumentDetailsDialog(props: { args: DocumentDetailsDialogArgs; 
                 </div>
               </dl>
             )}
+          </Show>
+          <Show when={(document().sourceRecordCount ?? 0) > 0}>
+            <Button
+              variant="ghost"
+              class="grids-document-detail-row"
+              onClick={() =>
+                dialogCore.open<void>((close) => <DocumentSourcesDialog document={document()} close={close} />, panelDialogOptions)
+              }
+            >
+              <span>{t().sourceRecords}</span>
+              <span class="text-dimmed">
+                {t().sourceRecordCount({ count: document().sourceRecordCount! })} <i class="ti ti-chevron-right" aria-hidden="true" />
+              </span>
+            </Button>
           </Show>
           <p class="flex items-center gap-2 text-xs text-dimmed">
             <i class="ti ti-lock" aria-hidden="true" />

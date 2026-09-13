@@ -272,6 +272,7 @@ steps:
     }
     for (const invalid of [
       "data: missing\n      output: { kind: csv }",
+      "data: report\n      associatedData: missing\n      output: { kind: csv }",
       "data: report\n      template: Invoice\n      record: inputs.record\n      output: { kind: csv }",
       "data: report\n      output: { kind: json, delimiter: ';' }",
       "data: report\n      output: { kind: pdf }",

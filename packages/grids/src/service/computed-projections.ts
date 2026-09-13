@@ -551,6 +551,7 @@ export const buildComputedColumnSqlProjections = (
   for (const column of columns ?? []) {
     if (column.expression.trim().length === 0) continue;
     const compiled = compileFormulaSourceToSql(column.expression, {
+      documentMetadata: true,
       fields,
       recordAlias: "r",
       computedFieldSql: options.computedFieldSql,

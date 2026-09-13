@@ -114,6 +114,45 @@ cld grids use Bookshop
 cld grids tables list --json
 ```
 
+### Inspect document membership and export history
+
+`documents sources <document-id> --limit 50 --offset 0` returns the frozen record associations of an authorized Document. `documents by-record` includes multi-record workflow outputs. `sourceRecordCount` counts distinct associated Records, while `dataSnapshot.rowCount` counts captured result rows. Null source count means membership is unknown; it is not zero. References open current Records; `version` identifies the captured version.
+
+For `generateDocument` with `data`/`output`, optional `associatedData: selection` names a saved, single-table row-query result. Use it when a joined/aggregate output should appear at specific Records. Default membership is inferred only from unambiguous row origins; Document and Record snapshot sources preserve their known associations. Relations do not propagate membership. `associatedData` is not a freshness check: financial `sourceVersions` retains its separate approval/version contract.
+
+GQL row queries support `documentCount(format?)` and `latestDocumentAt(format?)` in SELECT (with an alias) and WHERE. Formats are `pdf`, `csv`, `json`, `xml`, `sepa-xml`, `datev-csv`; omission includes all outputs. One Document with several artifacts counts once. No matches yields count zero and date null. These are live metadata, not stored Formula fields; they do not change finalized business values. Custom App queries cannot access these Base-level metadata.
+
+```sql
+from table Auslagen
+select Auslagennummer, documentCount('sepa-xml') as Exports,
+  latestDocumentAt('sepa-xml') as LastExport
+where documentCount('sepa-xml') = 0
+```
+
+Use stable business identities and export targets for duplicate protection. A read-time count cannot replace atomic export claims, and a generated file is not evidence of a completed bank transfer.
+
+Example: associate one summary file with the selected expense records:
+
+```yaml
+steps:
+  - query:
+      source: from table Expenses select Description, Amount
+      saveAs: selection
+  - query:
+      source: from table Expenses aggregate sum(Amount) as Total
+      saveAs: summary
+  - generateDocument:
+      data: summary
+      associatedData: selection
+      output: { kind: csv }
+      saveAs: export
+```
+
+`associatedData` is an explicit association chosen by the workflow author. It
+does not prove that separately captured summary rows contain exactly those
+records or the same amounts. Keep both selections consistent; for financial
+exports retain the existing confirmation, business-identity and freshness checks.
+
 A base reference can be an exact name or 6-character public ID. Table, field, view, form, Grids App, document-template, workflow, and launcher commands resolve the same two forms inside their parent scope. Prefer public IDs from JSON output in unattended automation.
 
 ### Structured input
@@ -1060,7 +1099,7 @@ steps:
 
 An empty selection captures zero rows, not every record. Query execution rechecks current access and the published schema, then freezes
 at most 10,000 rows and 5 MiB including metadata. Technical truncation fails; explicit GQL `limit` means an intentional subset.
-All source captures also share a total 5 MiB budget per run, including loops. Reusing a stored capture does not charge it again. Reduce selected rows/fields or split larger work into separate runs. Existing captures remain readable; older stored JSON counts conservatively toward the budget when adding a new capture.
+All source captures also share a total 5 MiB budget per run, including loops. Reusing a stored capture does not charge it again. Reduce selected rows/fields or split larger work into separate runs. Every run records its cumulative capture bytes; startup rejects missing historical budgets instead of estimating them. For upgrades from unsupported alpha state, follow [Grids alpha upgrade](https://cloud.k2b.dev/en/docs/operations/grids-alpha-upgrade) before replacing the application.
 
 Query bindings use semantic schema contract 3. They ignore column position and, without search, presentation flags and select-option additions. Search still pins option labels and presentation fields; calculation/type configuration remains checked. Old or missing binding versions are rejected. Review and publish the workflow source again, then start a new run; never edit a stored binding or hash to suppress a conflict.
 Retries retain the successful capture. The saved reference exposes `rowCount`, `sha256`, and `capturedAt`, not row payloads.

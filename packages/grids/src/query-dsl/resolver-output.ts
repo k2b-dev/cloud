@@ -113,6 +113,7 @@ export const resolveQueryPlanSelect = (
     }
 
     const compiled = compileFormulaAstToSql(item.expression, {
+      documentMetadata: scope.documentMetadata,
       fields: scope.fields,
       computedFieldSql: scope.computedStub,
       resolveField: scopedFormulaResolverForScope(scope),

@@ -17,6 +17,7 @@ import { openDocumentDetailsDialog } from "../documents/DocumentDetailsDialog";
 import { openDocumentGenerateDialog } from "../documents/DocumentGenerateDialog";
 import { downloadPdfResponse } from "../documents/document-download";
 import { requestDocumentDownload } from "../documents/document-transfer-client";
+import { documentMessages } from "../documents/messages";
 import type {
   PublicDocument,
   PublicDocumentTemplateSummary,
@@ -48,6 +49,7 @@ export default function RecordDocumentsSection(props: {
 }) {
   const locale = useLocale();
   const t = () => recordMessages.resolve([locale()]).t;
+  const dt = () => documentMessages.resolve([locale()]).t;
   const [documents, setDocuments] = createSignal<PublicDocument[]>(props.initialDocuments.items);
   const [documentCursor, setDocumentCursor] = createSignal(props.initialDocuments.cursor);
   const [hasMoreDocuments, setHasMoreDocuments] = createSignal(props.initialDocuments.hasMore);
@@ -311,7 +313,7 @@ export default function RecordDocumentsSection(props: {
                 <DetailPanel.Action
                   type="button"
                   title={document.filename}
-                  description={formatRecordRelativeTime(document.createdAt)}
+                  description={`${formatRecordRelativeTime(document.createdAt)}${document.sourceRecordCount == null ? "" : ` · ${dt().sourceRecordCount({ count: document.sourceRecordCount })}`}`}
                   leading={
                     <i
                       aria-hidden="true"
@@ -321,7 +323,7 @@ export default function RecordDocumentsSection(props: {
                           : `ti ${fileIcons.getFileIcon({
                               name: document.filename,
                               type: "file",
-                              mimeType: "application/pdf",
+                              mimeType: document.artifacts.find((artifact) => artifact.key === document.primaryArtifactKey)?.mimeType,
                             })}`
                       }
                     />

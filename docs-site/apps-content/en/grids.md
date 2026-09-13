@@ -370,3 +370,25 @@ the same settings. These values are no longer environment variables.
 
 Values must be whole numbers. Budget database connections across all replicas,
 including each process's other database connections.
+
+## Document source records
+
+Workflow Documents can belong to multiple records, regardless of output format.
+The association is captured at issuance, not recalculated from current data.
+Simple single-table row queries supply the association automatically. Joined or
+grouped outputs need `generateDocument.associatedData`, a reference to a separate
+frozen single-table row query. Relations do not add members automatically.
+
+Base record panels show associated Documents. The Document's source inspector
+lists captured record versions; `sourceRecordCount` counts distinct records,
+whereas `dataSnapshot.rowCount` counts output rows. A null source count means
+membership is unknown, not zero. `GET /documents/:documentId/sources` returns
+`items` and `hasMore`, with `offset` and `limit` pagination (default 50, maximum
+100). Access requires permission to read the complete Document, not just one
+member record. Custom App template-scoped document access is not broadened.
+
+Base GQL supports `documentCount(format?)` and `latestDocumentAt(format?)` in
+row projections and formula filters. Formats are `pdf`, `csv`, `json`, `xml`,
+`sepa-xml`, and `datev-csv`. Metadata stays live after record finalization and
+is unavailable in stored Formula fields and Custom App queries. An issued
+SEPA export is not evidence that a transfer was executed.

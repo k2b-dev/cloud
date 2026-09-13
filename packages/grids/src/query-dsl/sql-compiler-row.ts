@@ -1,6 +1,7 @@
 import { sql } from "bun";
 import type { RecordQuery } from "../contracts";
 import { normalizeRefKey, parseQualifiedIdentifierRef } from "../ref-syntax";
+import { containsDocumentMetadata } from "../service/document-query-expression";
 import { compileFilter, renderClause } from "../service/filter-compiler";
 import type { FormulaSqlExpression } from "../service/formula-sql-compiler";
 import { compileDslKeyset, type DslKeysetColumn } from "../service/keyset-compiler";
@@ -214,6 +215,8 @@ export const compileDslQueryPlanToSql = (
     recordProjection?: unknown;
   },
 ): DslSqlCompileResult => {
+  if (options.recordSource?.kind === "federated" && containsDocumentMetadata(plan))
+    return fail("Document metadata requires a stored table, not a Combined table");
   if (
     (plan.query.groupBy?.length ?? 0) > 0 ||
     (plan.query.aggregations?.length ?? 0) > 0 ||

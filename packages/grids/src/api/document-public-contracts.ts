@@ -40,6 +40,7 @@ const DocumentShapeSchema = z
     validationStatus: z.enum(["valid", "warning"]).nullable(),
     artifacts: z.array(PublicDocumentArtifactSchema).min(1).max(8),
     primaryArtifactKey: PublicDocumentArtifactSchema.shape.key,
+    sourceRecordCount: z.number().int().nonnegative().nullable(),
     dataSnapshot: z
       .object({
         rowCount: z.number().int().nonnegative(),

@@ -13,6 +13,7 @@ import {
   type EvidenceExportStatus,
 } from "../evidence-export-contracts";
 import { readDocumentArtifact } from "./document-issuance";
+import { listDocumentRecordSources } from "./document-record-sources";
 import {
   EVIDENCE_EXPORT_MAX_ENTRIES,
   EVIDENCE_EXPORT_MAX_PACKAGE_BYTES,
@@ -207,15 +208,17 @@ export const preflight = async (params: {
       FROM grids.file_protected_references protection
       WHERE protection.owner_kind = 'record_revision' AND protection.owner_id IN (SELECT id FROM selected_revisions)
     ), selected_documents AS (
-      SELECT id, query_data_id
+      SELECT id, query_data_id, associated_query_data_id AS associated_query_id
       FROM grids.documents
       WHERE base_id = ${params.baseId}::uuid
-        AND (${params.tableId}::uuid IS NULL OR table_id IN (SELECT id FROM selected_tables))
+        AND (${params.tableId}::uuid IS NULL OR table_id IN (SELECT id FROM selected_tables)
+          OR EXISTS (SELECT 1 FROM grids.document_record_sources source WHERE source.document_id = grids.documents.id
+            AND source.table_id IN (SELECT id FROM selected_tables)))
         AND (${params.from}::timestamptz IS NULL OR created_at >= ${params.from}::timestamptz)
         AND (${params.to}::timestamptz IS NULL OR created_at <= ${params.to}::timestamptz)
     ), selected_queries AS (
       SELECT id, payload FROM grids.workflow_query_data
-      WHERE id IN (SELECT query_data_id FROM selected_documents)
+      WHERE id IN (SELECT query_data_id FROM selected_documents UNION SELECT associated_query_id FROM selected_documents)
     )
     SELECT
       (SELECT count(*) FROM grids.records WHERE table_id IN (SELECT id FROM selected_tables))::int AS records,
@@ -754,7 +757,9 @@ const addDocuments = async (ctx: BuildContext): Promise<number> => {
              snapshot.short_id AS snapshot_public_id, record.short_id AS record_public_id, table_info.short_id AS table_public_id,
              doc.document_number, doc.filename, doc.primary_artifact_key, doc.tags, doc.template_snapshot, doc.render_data,
              doc.renderer_kind, doc.renderer_version, doc.template_revision, doc.profile_id, doc.profile_version,
-             doc.profile_snapshot, doc.profile_output, doc.snapshot_sha256, doc.hash_version,
+             doc.profile_snapshot, doc.profile_output, doc.snapshot_sha256, doc.hash_version, doc.record_sources_complete,
+             doc.associated_query_data_id::text AS associated_query_id,
+             doc.profile_snapshot->'associatedData'->>'sha256' AS associated_query_sha256,
              doc.validator_version, doc.validation_status, doc.validation_report, doc.issued_actor,
              doc.created_at, snapshot.root AS record_snapshot_root, snapshot.graph AS record_snapshot_graph, snapshot.created_at AS snapshot_created_at
       FROM grids.documents doc
@@ -763,7 +768,8 @@ const addDocuments = async (ctx: BuildContext): Promise<number> => {
       LEFT JOIN grids.record_snapshots snapshot ON snapshot.id = doc.snapshot_id
       LEFT JOIN grids.workflow_query_data query_data ON query_data.id = doc.query_data_id AND query_data.run_id = doc.workflow_run_id
       LEFT JOIN grids.records record ON record.id = doc.record_id
-      WHERE doc.base_id = ${ctx.scope.baseId}::uuid AND (${ctx.scope.tableId}::uuid IS NULL OR doc.table_id = ${ctx.scope.tableId}::uuid)
+      WHERE doc.base_id = ${ctx.scope.baseId}::uuid AND (${ctx.scope.tableId}::uuid IS NULL OR doc.table_id = ${ctx.scope.tableId}::uuid
+        OR EXISTS (SELECT 1 FROM grids.document_record_sources source WHERE source.document_id = doc.id AND source.table_id = ${ctx.scope.tableId}::uuid))
         AND ${timeRangeSql(ctx.scope, sql`doc.created_at`)}
         AND (${cursor}::uuid IS NULL OR doc.id > ${cursor}::uuid)
       ORDER BY doc.id
@@ -774,18 +780,25 @@ const addDocuments = async (ctx: BuildContext): Promise<number> => {
         throw new EvidenceExportBoundError(`Evidence export exceeds the ${MAX_SOURCE_ROWS} Document-row budget.`);
       cursor = row.id;
       let querySourcePath: string | null = null;
-      if (typeof row.query_data_id === "string") {
-        if (typeof row.workflow_run_id !== "string" || typeof row.query_sha256 !== "string")
+      let associatedSourcePath: string | null = null;
+      for (const source of [
+        { id: row.query_data_id, sha256: row.query_sha256, membership: false },
+        { id: row.associated_query_id, sha256: row.associated_query_sha256, membership: true },
+      ]) {
+        if (typeof source.id !== "string") continue;
+        if (typeof row.workflow_run_id !== "string" || typeof source.sha256 !== "string")
           throw err.internal("Document query source is unavailable.");
-        const name = privateRef(row.query_data_id);
-        querySourcePath = `documents/queries/${safeArchiveSegment(name)}.json`;
-        if (!includedQueries.has(row.query_data_id)) {
+        const name = privateRef(source.id);
+        const path = `documents/queries/${safeArchiveSegment(name)}.json`;
+        if (source.membership) associatedSourcePath = path;
+        else querySourcePath = path;
+        if (!includedQueries.has(source.id)) {
           const query = await loadWorkflowQueryData(
             {
               baseId: ctx.scope.baseId,
               runId: row.workflow_run_id,
-              id: row.query_data_id,
-              sha256: row.query_sha256,
+              id: source.id,
+              sha256: source.sha256,
             },
             ctx.db,
           );
@@ -795,7 +808,7 @@ const addDocuments = async (ctx: BuildContext): Promise<number> => {
             sourceHashVersion: query.data.hashVersion,
             payload: query.data.payload,
           });
-          includedQueries.add(row.query_data_id);
+          includedQueries.add(source.id);
         }
       }
       const artifacts = await ctx.db<EvidenceDocumentArtifactRow[]>`
@@ -805,9 +818,13 @@ const addDocuments = async (ctx: BuildContext): Promise<number> => {
         WHERE artifact.document_id = ${row.id}::uuid
         ORDER BY artifact.artifact_key
       `;
+      const sources = await listDocumentRecordSources(row.id, 0, MAX_SOURCE_ROWS, ctx.db);
+      if (sources.hasMore) throw new EvidenceExportBoundError("Document source membership exceeds the evidence source-row budget.");
       await addRow(ctx, "documents/metadata", row.public_id, {
         ...withoutPrivateColumns(row),
         query_source_path: querySourcePath,
+        associated_source_path: associatedSourcePath,
+        source_records: sources.items,
         artifacts: artifacts.map(({ file_id: _fileId, ...artifact }) => artifact),
       });
       for (const artifact of artifacts) {

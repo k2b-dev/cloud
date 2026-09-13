@@ -625,6 +625,11 @@ const bindAction = (step: Extract<WorkflowIrStep, { kind: "action" }>, scope: Ma
       });
     }
   } else if (step.action === "generateDocument") {
+    if (config.associatedData !== undefined) {
+      if (config.data === undefined)
+        addDiagnostic(context, "binding.source", "associatedData requires data/output", [...path, "associatedData"]);
+      expectReference(config.associatedData, "grids.queryResult", "associatedData", [...path, "associatedData"], scope, context);
+    }
     if (config.sourceVersions !== undefined) {
       if (config.sourceVersions === "data" && typeof config.data !== "string")
         addDiagnostic(context, "binding.source", "sourceVersions: data requires a captured query reference", [...path, "sourceVersions"]);

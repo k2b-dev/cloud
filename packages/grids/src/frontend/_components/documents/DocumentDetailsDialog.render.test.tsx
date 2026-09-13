@@ -19,6 +19,7 @@ const document: PublicDocument = {
   tags: [],
   renderer: { kind: "html" },
   primaryArtifactKey: "pdf",
+  sourceRecordCount: null,
   dataSnapshot: null,
   validationStatus: "warning",
   artifacts: [

@@ -99,9 +99,13 @@ An automatic run only exists if the workflow's published revision was listening 
 
 If all six hold and there is still nothing, ask a Cloud administrator to check **Observability → Workflows**, which lists recorded occurrences that never became runs.
 
-## A workflow run needs attention {icon="alert-triangle"}
+## A workflow query reports an incompatible schema {icon="alert-triangle"}
 
 If a query reports an incompatible schema or binding, review its source and the referenced fields, then publish the workflow again. Start a new run with the new revision; existing runs keep their original plan. Reordering columns alone does not invalidate a query. Do not edit stored hashes or version markers to bypass the check.
+
+This is a failed query, not the `needs_attention` state below. If Grids itself refuses to start with an unsupported alpha-data message, ask the operator to follow the [Grids alpha upgrade guide](https://cloud.k2b.dev/en/docs/operations/grids-alpha-upgrade). That check must happen before deployment; it cannot be fixed in an unavailable editor.
+
+## A workflow run needs attention {icon="alert-triangle"}
 
 Platform administrators can inspect retained delivery failures with `cld grids record-events failures <base-id> --json`. Continue with the returned `nextOffset` using `--offset`. After fixing the cause, `cld grids record-events replay <base-id> <failure-id> --yes` replays one stopped event using its original retained data. Use the exact failure UUID from the list. Acceptance does not mean processing completed; Base Admin access alone does not grant this operator action.
 

@@ -60,6 +60,16 @@ For an E-Invoice template, choose its renderer and map the preview data in **Ren
 7. **Enable and test:** Base users with Write access can then select a record and generate a saved document.
 :::
 
+## Documents shared by several records
+
+A workflow can create one file from several records. The file is stored once and appears in each associated record's Documents section, regardless of whether it is PDF, CSV, JSON, XML, SEPA or DATEV. Open **Source records** in its details to inspect the captured record versions.
+
+Source records and result rows are different counts: a join can repeat a record, and a total can combine many records into one row. A missing source count means no complete record association was captured, not zero source records. Related addresses, customers and other relations are not automatically associated.
+
+A simple stored-table row query captures its record identities automatically. For an aggregate or joined export, a workflow author can set `associatedData` to a previously captured row query. This selection is not re-run after generation. Source versions describe the captured state; open record links show the current record.
+
+Membership never grants access to an entire batch. Base readers can inspect these documents; Custom App record grants continue to expose only the documents explicitly allowed by the published App. Creating a SEPA file does not mean its transfers have been paid.
+
 The selected preview record is only test context. Generating later prompts the user to select the actual record and can override the filename or add tags.
 
 ## Starters {icon="square-plus"}

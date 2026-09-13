@@ -9,6 +9,7 @@ import {
 } from "../contracts";
 import { gridsService } from "../service";
 import { loadDocumentDataSnapshots } from "../service/document-browse";
+import { loadDocumentRecordCounts } from "../service/document-record-sources";
 import { projectRecordSnapshot } from "../service/document-snapshot-projection";
 import type { SnapshotTableReadAuthorizer } from "../service/document-snapshots";
 import { decodeDocumentCursor } from "../service/document-values";
@@ -282,7 +283,7 @@ export const projectRecordSnapshotSummaries = async (snapshots: InternalRecordSn
 };
 
 export const projectDocuments = async (documents: InternalDocumentSummary[]) => {
-  const [templates, bases, tables, records, dataSnapshots] = await Promise.all([
+  const [templates, bases, tables, records, dataSnapshots, sourceCounts] = await Promise.all([
     projectPublicIds(
       "documentTemplate",
       documents.flatMap((document) => (document.templateId ? [document.templateId] : [])),
@@ -300,6 +301,7 @@ export const projectDocuments = async (documents: InternalDocumentSummary[]) => 
       documents.flatMap((document) => (document.recordId ? [document.recordId] : [])),
     ),
     loadDocumentDataSnapshots(documents.filter((document) => document.tableId === null).map((document) => document.id)),
+    loadDocumentRecordCounts(documents.map((document) => document.id)),
   ]);
   return documents.map(
     ({ id, shortId, templateId, workflowRunId: _workflowRunId, snapshotId: _snapshotId, baseId, tableId, recordId, ...document }) => ({
@@ -318,6 +320,7 @@ export const projectDocuments = async (documents: InternalDocumentSummary[]) => 
       artifacts: document.artifacts.map(({ fileId: _fileId, ...artifact }) => artifact),
       primaryArtifactKey: document.primaryArtifactKey,
       dataSnapshot: dataSnapshots.get(id) ?? null,
+      sourceRecordCount: sourceCounts.get(id) ?? (recordId ? 1 : null),
     }),
   );
 };

@@ -99,9 +99,13 @@ Eine automatische Ausführung existiert nur, wenn die veröffentlichte Revision 
 
 Wenn alle sechs Bedingungen erfüllt sind und weiterhin nichts erscheint, bitte eine Person mit Cloud-Administrationsrechten, **Observability → Workflows** zu prüfen. Dort werden aufgezeichnete Ereignisse angezeigt, aus denen keine Ausführung entstand.
 
-## Eine Workflow-Ausführung benötigt Aufmerksamkeit {icon="alert-triangle"}
+## Eine Workflow-Abfrage meldet ein inkompatibles Schema {icon="alert-triangle"}
 
 Meldet eine Abfrage ein inkompatibles Schema oder eine inkompatible Bindung, prüfe ihre Quelle und die referenzierten Felder und veröffentliche den Workflow erneut. Starte eine neue Ausführung mit der neuen Revision; bestehende Ausführungen behalten ihren ursprünglichen Plan. Das reine Umsortieren von Spalten macht eine Abfrage nicht ungültig. Ändere keine gespeicherten Hashes oder Versionsmarker, um die Prüfung zu umgehen.
+
+Das ist eine fehlgeschlagene Abfrage, nicht der unten beschriebene Status `needs_attention`. Startet Grids selbst wegen nicht unterstützter Alpha-Daten nicht, bitte den Betreiber, die [Grids-Alpha-Upgrade-Anleitung](https://cloud.k2b.dev/en/docs/operations/grids-alpha-upgrade) zu nutzen. Diese Prüfung gehört vor das Deployment; ein nicht verfügbarer Editor kann den Startfehler nicht beheben.
+
+## Eine Workflow-Ausführung benötigt Aufmerksamkeit {icon="alert-triangle"}
 
 Plattformadministratoren prüfen gespeicherte Zustellfehler mit `cld grids record-events failures <base-id> --json`. Weitere Seiten liest du mit dem zurückgegebenen `nextOffset` über `--offset`. Nach Behebung der Ursache spielt `cld grids record-events replay <base-id> <failure-id> --yes` ein gestopptes Ereignis mit seinen ursprünglichen Daten erneut ein. Verwende die genaue Fehler-UUID aus der Liste. Die Annahme bestätigt noch keine abgeschlossene Verarbeitung; Base-Admin-Zugriff allein erlaubt diese Betreiberaktion nicht.
 

@@ -199,6 +199,7 @@ const filterLeaf = (fieldId: string, op: string, value?: unknown, options: { cas
 
 const formulaLeaf = (expr: Expr, scope: Scope, baseSpan?: DslSourceSpan): DslWherePredicate | DslResolverDiagnostic => {
   const compiled = compileFormulaAstToSql(expr, {
+    documentMetadata: scope.documentMetadata,
     fields: scope.fields,
     computedFieldSql: scope.computedStub,
     resolveField: scopedFormulaResolverForScope(scope),

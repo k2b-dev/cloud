@@ -14,6 +14,9 @@ import {
 import { getDocument } from "./document-core";
 import { createDocumentLink, resolveDocumentLinkDownload, revokeDocumentLink } from "./document-links";
 import { summarizeDocument } from "./document-mappers";
+import { listDocumentRecordSources } from "./document-record-sources";
+import { compileFormulaSourceToSql } from "./formula-sql-compiler";
+import { list as listRecords } from "./records";
 import { insertTestWorkflow, insertTestWorkflowRun } from "./workflow-test-fixture";
 
 type Fixture = {
@@ -262,6 +265,46 @@ describe("document browsing integration", () => {
     const second = await listDocumentsForBase({ baseId: fixture.baseId, limit: 2, cursor: first.nextCursor });
     expect(first.items).toEqual(expected.slice(0, 2));
     expect(second.items).toEqual(expected.slice(2, 4));
+  });
+  postgresTest("associates one immutable document with multiple records without widening template-scoped reads", async () => {
+    const fixture = await insertFixture();
+    const second = testUuid();
+    await sql`INSERT INTO grids.records (id, short_id, table_id, data) VALUES (${second}::uuid, ${testShortId("R")}, ${fixture.tableId}::uuid, '{}'::jsonb)`;
+    const document = fixture.documentIds[0]!;
+    await sql`INSERT INTO grids.document_record_sources (document_id, table_id, record_id, version)
+      VALUES (${document}::uuid, ${fixture.tableId}::uuid, ${fixture.recordId}::uuid, 1),
+        (${document}::uuid, ${fixture.tableId}::uuid, ${second}::uuid, 2)`;
+    const page = await listDocumentsForRecord({ baseId: fixture.baseId, tableId: fixture.tableId, recordId: second });
+    expect(page.items.map((item) => item.id)).toEqual([document]);
+    expect((await listDocumentSummariesForRecordByTemplates(fixture.tableId, second, [fixture.templateId])).length).toBe(0);
+    expect((await listDocumentRecordSources(document, 0, 1)).hasMore).toBe(true);
+    expect((await listDocumentRecordSources(document)).items.map((item) => item.version).sort()).toEqual([1, 2]);
+    const compiled = compileFormulaSourceToSql("documentCount()", { fields: [], documentMetadata: true });
+    if (!compiled.ok) throw new Error(compiled.error);
+    const [row] = await sql`SELECT ${compiled.expression.sql} AS count FROM grids.records r WHERE r.id = ${second}::uuid`;
+    expect(Number(row.count)).toBe(1);
+    const [original] = await sql`SELECT ${compiled.expression.sql} AS count FROM grids.records r WHERE r.id = ${fixture.recordId}::uuid`;
+    expect(Number(original.count)).toBe(5);
+    const records = await listRecords({
+      tableId: fixture.tableId,
+      computedColumns: [
+        { kind: "computed", id: "computed_count", label: "Documents", expression: "documentCount()" },
+        { kind: "computed", id: "computed_lastsepa", label: "Last SEPA", expression: "latestDocumentAt('sepa-xml')" },
+      ],
+    });
+    if (!records.ok) throw records.error;
+    expect(Number(records.data.items.find((item) => item.id === second)?.data.computed_count)).toBe(1);
+    expect(records.data.items.find((item) => item.id === second)?.data.computed_lastsepa).toBeNull();
+    await expect(
+      (async () => {
+        await sql`UPDATE grids.document_record_sources SET version = 3 WHERE document_id = ${document}::uuid`;
+      })(),
+    ).rejects.toMatchObject({ errno: "55000" });
+    await expect(
+      (async () => {
+        await sql`DELETE FROM grids.document_record_sources WHERE document_id = ${document}::uuid`;
+      })(),
+    ).rejects.toMatchObject({ errno: "55000" });
   });
 
   postgresTest("escapes literal search patterns and applies all requested tags", async () => {

@@ -19,6 +19,7 @@ export type DslViewSource = {
 };
 
 export type DslResolverContext = {
+  documentMetadata?: boolean;
   currentTable?: DslTableSource;
   tables: DslTableSource[];
   views?: DslViewSource[];

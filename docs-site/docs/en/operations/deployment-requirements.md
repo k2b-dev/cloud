@@ -239,6 +239,9 @@ Keep retired broker resources through verification. Grids resumes publication
 from its retained Postgres outbox; historical workflow failures keep their
 explicit replay path.
 
+Before upgrading Grids from alpha document/workflow storage, complete the
+[Grids alpha upgrade checks](/en/docs/operations/grids-alpha-upgrade).
+
 If Sync reports a legacy pending claim without queued input, reconcile that
 specific job against its application's durable state before clearing its
 claim and resubmitting it. Do not clear claims in bulk or fabricate lost input.

@@ -448,7 +448,7 @@ const normalizeAggregateFn = (fn: string): DslAggregateFn | null => {
 const parseSelectItem = (input: string, line: number, column: number): { item?: DslSelectItem; diagnostic?: DslParseDiagnostic } => {
   const { value, alias } = splitAlias(input);
   const span = sourceSpan(line, column, input);
-  const formulaSource = unwrapFormulaCall(value);
+  const formulaSource = /^(documentCount|latestDocumentAt)\s*\(/i.test(value) ? value : unwrapFormulaCall(value);
   if (formulaSource !== null) {
     if (!alias) return { diagnostic: error(line, "formula select items need an alias") };
     const aliasError = validateAlias(alias, line);

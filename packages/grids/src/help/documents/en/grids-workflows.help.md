@@ -235,7 +235,7 @@ Run options are configured separately from the workflow source. One workflow can
 | `updateRecord` | `record`, non-empty `set` | `audit` answers keyed by audit-question UUID | Validates and predicts the record update |
 | `createRecord` | `table`, non-empty `values` | `saveAs` | Validates and predicts the new record |
 | `atomicRecords` | 1–100 `locks`, 1–50 `checks`, 1–50 `changes` | Check `message`; update `ifVersion` and `audit` | Evaluates current checks and predicts the bounded record changes without locking or writing |
-| `generateDocument` | `template` + `record`, or `data` + `output` | `filename`, up to 20 `tags`, `saveAs` | Validates access and values; does not generate |
+| `generateDocument` | `template` + `record`, or `data` + `output` | `filename`, up to 20 `tags`, `associatedData`, `saveAs` | Validates access and values; does not generate |
 | `createDocumentLink` | `document` output reference | `expiresIn` (`1d`, `7d`, `30d`, `90d`; default `30d`), `comment`, `saveAs` | Validates the document and access; does not create a link |
 | `sendEmail` | `template`, 1–50 `to` recipients | `data` with up to 200 keys, `saveAs` | Validates template, recipients, data, and access; does not send |
 | `httpRequest` | Absolute HTTP or HTTPS `url` | `method` (default `POST`), `headers`, `json`, `timeoutMs` (default 15,000; range 1,000–60,000), `saveAs` | Resolves and checks the target; does not send |
@@ -247,9 +247,16 @@ Run options are configured separately from the workflow source. One workflow can
 
 ### Create files from a query
 
+For a joined or grouped file, `associatedData: selection` names an earlier
+single-table row query saved as `selection`. Those frozen record identities
+determine where the completed file appears. Without it, only unambiguous row
+captures infer membership. Membership is distinct from financial
+`sourceVersions` freshness checks and does not follow relations. The document
+detail distinguishes unique source records from captured output rows.
+
 All source captures share 5 MiB per run, including loop iterations. Reusing a capture does not count twice. Reduce rows/fields or split larger exports into separate runs.
 
-New query publications tolerate column reordering. Republish older workflows to adopt this binding; incompatible calculation changes still require review.
+Reordering columns does not invalidate a published query. Changing calculation types can invalidate it: review the query and publish a new workflow revision before starting a new run. Upgrading an installation from unsupported alpha storage requires an operator check before deployment; republishing cannot repair an application that refuses to start.
 
 At `generateDocument.data`, the editor suggests prior query results in scope. Reuse a name for several files.
 

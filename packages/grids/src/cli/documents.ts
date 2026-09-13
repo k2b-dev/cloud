@@ -460,6 +460,26 @@ export const documentCommands = [
       if (payload.cursor) ctx.print(`next cursor: ${payload.cursor}`);
     },
   }),
+  command("documents sources", {
+    summary: "List the frozen record associations of a Document",
+    args: { document: arg.required({ description: "Document public id" }) },
+    flags: { offset: flag.string({ description: "Page offset" }), limit: flag.string({ description: "Page size, maximum 100" }) },
+    async run({ ctx, args, flags }) {
+      const params = new URLSearchParams();
+      if (flags.offset) params.set("offset", flags.offset);
+      if (flags.limit) params.set("limit", flags.limit);
+      const payload = await readApi<{
+        items: Array<{ tableId: string; recordId: string; tableName: string; label: string; version: number; deleted: boolean }>;
+        hasMore: boolean;
+      }>(ctx, `/documents/${encodeURIComponent(requirePublicId(args.document, "Document id"))}/sources?${params}`);
+      printJsonOrTable(ctx, payload, payload.items, [
+        { key: "tableName", label: "TABLE" },
+        { key: "label", label: "RECORD" },
+        { key: "recordId", label: "ID" },
+        { key: "version", label: "CAPTURED VERSION" },
+      ]);
+    },
+  }),
   command("documents by-record", {
     summary: "List generated documents for one record",
     args: tableArgs,

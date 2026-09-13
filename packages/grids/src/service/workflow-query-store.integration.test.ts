@@ -61,7 +61,7 @@ postgresTest("query payload is immutable, scoped, deduplicated and rolls back wi
     ).rejects.toThrow("workflow_query_data_hash_version_check");
     await expect(
       Promise.resolve(sql`UPDATE grids.workflow_run_profile SET captured_bytes = NULL WHERE run_id = ${runId}::uuid`),
-    ).rejects.toThrow("null");
+    ).rejects.toMatchObject({ errno: "23502" });
     const unsupported = await sql.begin((tx) =>
       persistWorkflowQueryDataInTransaction(
         {
@@ -137,6 +137,12 @@ postgresTest("query payload is immutable, scoped, deduplicated and rolls back wi
     const winningResult = outcomes[winner];
     if (!winningResult?.ok) throw new Error("expected one successful capture");
     const [beforeReplay] = await sql`SELECT captured_bytes::text AS bytes FROM grids.workflow_run_profile WHERE run_id = ${runId}::uuid`;
+    expect(beforeReplay.bytes).toBe(
+      String(
+        new TextEncoder().encode(JSON.stringify(captured.data.payload)).byteLength +
+          new TextEncoder().encode(JSON.stringify(largePayload)).byteLength,
+      ),
+    );
     expect(
       await sql.begin((tx) => persistWorkflowQueryDataInTransaction({ ...large, stepKey: winner === 0 ? "large-a" : "large-b" }, tx)),
     ).toEqual(winningResult);

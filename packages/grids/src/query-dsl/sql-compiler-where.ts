@@ -119,6 +119,7 @@ export const compileWherePredicate = (
     }
     case "formula": {
       const compiled = compileFormulaPredicateAstToSql(node.expression, {
+        documentMetadata: true,
         fields,
         recordAlias: "r",
         dateConfig: options.timeZone ? { timeZone: options.timeZone } : undefined,

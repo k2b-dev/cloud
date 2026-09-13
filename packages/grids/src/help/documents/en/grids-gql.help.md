@@ -356,6 +356,23 @@ Use a saved View when people revisit the result in the raw Base workspace. Keep 
 
 ## Troubleshoot a query {icon="lifebuoy"}
 
+### Find records with issued documents
+
+In Base queries, `documentCount()` returns the number of distinct associated
+Documents. `latestDocumentAt()` returns their latest creation time, or null.
+An optional format selects `pdf`, `csv`, `json`, `xml`, `sepa-xml`, or `datev-csv`.
+
+```gql
+from table Expenses
+select Description, documentCount('sepa-xml') as exports
+where formula(documentCount('sepa-xml')) = 0
+```
+
+These values remain live after a record is finalized. They do not follow
+relations and do not prove payment. A multi-record Document counts once for
+each explicitly associated record. These functions are not available in stored
+Formula fields or Custom App queries.
+
 :::reference
 - **Unknown source or field:** Check spelling, quoting, current base, and access.
 - **Ambiguous name:** Add a source alias or use a scoped field such as `customer.Name`.

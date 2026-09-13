@@ -298,6 +298,12 @@ export const GRIDS_WORKFLOW_ACTION_METADATA = {
     config: {
       kind: "object",
       properties: {
+        associatedData: {
+          kind: "string",
+          optional: true,
+          minLength: 1,
+          description: "Saved single-table row query defining the records associated with this document. Uses frozen IDs and versions, never re-runs the query. Only with data/output. Without this, simple row queries associate their own records; joins and aggregates imply no membership. Does not replace sourceVersions freshness checks.",
+        },
         sourceVersions: {
           kind: "value",
           optional: true,

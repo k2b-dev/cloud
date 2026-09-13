@@ -474,6 +474,7 @@ export const aggregate = async (params: {
   const filterClause = renderClause(filterCompiled.clause);
   const formulaWhereCompiled = params.formulaWhere
     ? compileFormulaPredicateAstToSql(params.formulaWhere, {
+        documentMetadata: true,
         fields,
         recordAlias: "r",
         computedFieldSql,

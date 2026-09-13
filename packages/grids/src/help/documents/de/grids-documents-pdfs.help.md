@@ -60,6 +60,16 @@ Wähle bei einer E-Rechnungsvorlage den Renderer aus und ordne die Vorschaudaten
 7. **Aktivieren und testen:** Personen mit Schreibzugriff auf die Basis können anschließend einen Datensatz auswählen und ein gespeichertes Dokument generieren.
 :::
 
+## Ein Dokument für mehrere Datensätze
+
+Ein Workflow kann aus mehreren Datensätzen eine Datei erstellen. Sie wird einmal gespeichert und erscheint bei jedem zugeordneten Datensatz unter Dokumente – auch als CSV, JSON, XML, SEPA oder DATEV. Öffne im Dokumentdialog **Quelldatensätze**, um die erfassten Datensatzversionen anzusehen.
+
+Quelldatensätze und Ergebniszeilen sind unterschiedliche Angaben: Ein Join kann einen Datensatz wiederholen; eine Summe kann viele Datensätze in einer Zeile zusammenfassen. Fehlt die Anzahl der Quelldatensätze, wurde keine vollständige Zuordnung erfasst. Das bedeutet nicht null Quelldatensätze. Verknüpfte Kunden, Adressen und andere Relations werden nicht automatisch zugeordnet.
+
+Einfache Zeilenabfragen auf gespeicherten Tabellen übernehmen ihre Datensatzidentitäten automatisch. Für eine gruppierte oder verknüpfte Auswertung kann der Workflow mit `associatedData` eine zuvor erfasste Zeilenabfrage als Zuordnung angeben. Diese Auswahl wird nach der Erstellung nicht erneut abgefragt. Die Version bezeichnet den erfassten Stand; Datensatzlinks öffnen den aktuellen Datensatz.
+
+Die Zuordnung gewährt keinen Zugriff auf eine gesamte Sammeldatei. Base-Leser können diese Dokumente ansehen. Custom Apps zeigen weiterhin nur die ausdrücklich freigegebenen Dokumente. Eine erstellte SEPA-Datei bedeutet noch nicht, dass die Überweisungen ausgeführt wurden.
+
 Der ausgewählte Vorschaudatensatz ist nur Testkontext. Beim späteren Generieren wählen Personen den tatsächlichen Datensatz aus und können Dateinamen überschreiben oder Tags ergänzen.
 
 ## Starter {icon="square-plus"}

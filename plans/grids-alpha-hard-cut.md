@@ -98,6 +98,50 @@ bewusst bestehen. Es geht um weniger Zustände, nicht um eine Löschquote.
 
 ## Freigabegrenze
 
+### Review-Nachtrag: Startvertrag und Upgrade-Vorprüfung
+
+- Der Workflow-Ledger ist kein Kompatibilitätsnachweis mehr. Unterstützte
+  v8-Daten bleiben erhalten; Marker 9 wird erst nach erfolgreicher Migration
+  ergänzt. Auch soft-gelöschte, kompatible Workflows bleiben unverändert.
+- Die gemeinsame Start-/Vorprüfung kontrolliert Hashmarker, fehlende oder
+  NULL-Capture-Budgets, alte Workflow-Tabellen, Launcher und gespeicherte
+  Grids-Kernel-Pläne. Ein manuell eingefügter Marker umgeht diese Prüfung nicht.
+- `packages/grids/scripts/check-alpha-upgrade.ts` prüft vor einem Deployment
+  eine wiederhergestellte Kopie ohne Schema-/Datenänderung und ohne App-Start.
+  Die verbindliche Betreiberanleitung steht in
+  `docs-site/docs/en/operations/grids-alpha-upgrade.md`.
+- Unvereinbare Installationen bleiben auf ihrem bisherigen Stand oder werden
+  vollständig archiviert und durch eine getrennte frische Installation ersetzt.
+  Es gibt keinen pauschalen Löschpfad und keine Zusage einer verlustfreien
+  Übernahme alter Journale durch Quellenexport.
+- Hash-Constraints werden nur bei abweichender Definition ersetzt. Der doppelte
+  Start-Assert, die Dashboard-Launcher-Konvertierung und die unerreichbare
+  Claim-Freigabe entfallen. DB-Unveränderlichkeit und Runtime-Prüfungen bleiben.
+- Help und CLI-Skill unterscheiden fehlgeschlagene Abfragen, `needs_attention`
+  und abgelehnte App-Starts. Fehlende Budgets werden nicht mehr als rekonstruierbar
+  beschrieben.
+
+Verifiziert am 12. September 2026:
+
+- Acht isolierte Testphasen: **2.920 Tests, 21.075 Assertions, keine Fehler/Skips**.
+  JUnit-/Log-Verzeichnis: `grids-verification-yzuRdu` im temporären Systemverzeichnis.
+- Feste Unicode- und Query-Schema-Digests, Ledger `[8]`, Marker-Bypass,
+  Constraint-OID-Stabilität, unveränderte veröffentlichte Pläne, CLI-Vorprüfung,
+  kumulatives Capture-Budget und bestätigte Finanz-Receipts nach Migration geprüft.
+- Roher Grids-Typecheck, Biome für alle betroffenen TS-/Manifest-Dateien und
+  `git diff --check` erfolgreich. Harper geprüft; Satz- statt Titelgroßschreibung
+  folgt den vorhandenen Dokumentationskonventionen.
+- Fallow 2.52.0: Zwei nachweislich nur intern verwendete Typ-Exports entfernt.
+  Danach erneut Typecheck und Fallow; **keine Dead-Code-Findings** im geprüften
+  Grids-Diff. Das Audit bleibt mit Exit 1 bei 57 Komplexitäts- und 63
+  Duplikationshinweisen in den betroffenen Dateien, einschließlich bestehender
+  Issuance-Funktionen und ähnlich aufgebauter SQL-/Testblöcke. Kein pauschales
+  Refactoring oder Unterdrücken dieser Hinweise. Fallow hat keine Laufzeitabdeckung
+  erhalten; seine Coverage-basierten Risikowerte ersetzen nicht die Testberichte.
+- Nach dem Gesamttest wurden nur die beiden `export`-Schlüsselwörter an Typen
+  entfernt. Keine Laufzeitänderung, keine bestehenden App-Daten verändert und
+  keine Dienste neu gestartet. Noch nicht committet.
+
 Die Umsetzung und Prüfung erfolgt gegen isolierte Testdatenbanken. Ein Start gegen
 bestehende Installationen, eine Bereinigung oder ein Commit sind getrennte Schritte.
 Vor dem Rollout muss klar sein, welche Daten verworfen werden dürfen und ob es zu

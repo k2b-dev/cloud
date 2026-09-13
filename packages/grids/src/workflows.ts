@@ -390,7 +390,7 @@ const workflowQueryInput = async (ctx: WorkflowActionContext, rawParameters: unk
     typeof binding.schemaHash !== "string" ||
     binding.schemaHashVersion !== 3
   ) {
-    throw actionError("WORKFLOW_VALUE_INVALID", runtimeText(ctx).stableBindingMissing({ path: "query" }));
+    throw actionError("WORKFLOW_VALUE_INVALID", runtimeText(ctx).queryBindingInvalid);
   }
   const parameters = WorkflowQueryParametersSchema.safeParse(rawParameters ?? {});
   if (!parameters.success) throw actionError("BAD_INPUT", runtimeText(ctx).queryParametersInvalid);
@@ -1277,6 +1277,13 @@ export const GRIDS_WORKFLOW_ACTIONS = {
               runId: scope.runId,
               stepKey: ctx.stepKey,
               data: reference.data,
+              ...(config.associatedData === undefined
+                ? {}
+                : {
+                    associatedData: WorkflowDocumentDataReferenceSchema.parse(
+                      await ctx.resolveReference(config.associatedData, "associatedData"),
+                    ),
+                  }),
               output: output.data,
               ...(config.sourceVersions === undefined
                 ? {}
@@ -1306,7 +1313,13 @@ export const GRIDS_WORKFLOW_ACTIONS = {
             };
           return { state: "succeeded", output: workflowDocumentOutput(document) };
         }
-        if (!config.record || !config.template || config.output !== undefined || config.sourceVersions !== undefined)
+        if (
+          !config.record ||
+          !config.template ||
+          config.output !== undefined ||
+          config.sourceVersions !== undefined ||
+          config.associatedData !== undefined
+        )
           throw actionError("BAD_INPUT", documentServiceText(invocationLocale(ctx)).requestInvalidJson);
         const template = await documentTemplate(ctx, true);
         const table = await currentTable(ctx, scope, template.tableId);
@@ -1351,6 +1364,17 @@ export const GRIDS_WORKFLOW_ACTIONS = {
             throw actionError("BAD_INPUT", documentServiceText(invocationLocale(ctx)).requestInvalidJson);
           await requirePermission(scope, "write");
           const reference = typeof config.data === "string" ? await ctx.resolveReference(config.data, "data") : null;
+          if (config.associatedData !== undefined) {
+            const associated = await ctx.resolveReference(config.associatedData, "associatedData");
+            const planned =
+              associated &&
+              typeof associated === "object" &&
+              !Array.isArray(associated) &&
+              associated.kind === "queryResult" &&
+              associated.planned === true;
+            if (!planned && !WorkflowQueryReferenceSchema.safeParse(associated).success)
+              throw actionError("BAD_INPUT", documentServiceText(invocationLocale(ctx)).requestInvalidJson);
+          }
           let plannedDocuments = 0;
           if (typeof config.data !== "string") {
             if ("documents" in config.data) {
@@ -1421,7 +1445,13 @@ export const GRIDS_WORKFLOW_ACTIONS = {
             },
           };
         }
-        if (!config.record || !config.template || config.output !== undefined || config.sourceVersions !== undefined)
+        if (
+          !config.record ||
+          !config.template ||
+          config.output !== undefined ||
+          config.sourceVersions !== undefined ||
+          config.associatedData !== undefined
+        )
           throw actionError("BAD_INPUT", documentServiceText(invocationLocale(ctx)).requestInvalidJson);
         const template = await documentTemplate(ctx);
         const renderer = template.renderer;

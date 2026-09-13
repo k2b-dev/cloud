@@ -17,6 +17,7 @@ import { documentNumberFor } from "./document-liquid";
 import { type DocumentDbRow, hydrateDocuments } from "./document-mappers";
 import { documentServiceText, isGermanDocumentLocale } from "./document-messages";
 import { DocumentQueryOutputSchema, validateDocumentQueryOutput } from "./document-query-output";
+import { capturedDocumentRecords, resolveCapturedDocumentRecords } from "./document-record-sources";
 import { buildDocumentRenderData, renderDocumentPdf, renderDocumentProfileInput } from "./document-rendering";
 import { persistRecordSnapshot, type RecordSnapshotDraft } from "./document-snapshots";
 import {
@@ -72,6 +73,7 @@ const QueryDocumentRequestSchema = z
     runId: z.uuid(),
     stepKey: z.string().min(1),
     data: WorkflowDocumentDataReferenceSchema,
+    associatedData: WorkflowDocumentDataReferenceSchema.optional(),
     output: DocumentQueryOutputSchema,
     sourceVersions: DocumentSourceVersionsSchema.optional(),
     filename: z.string().trim().min(1).max(255).nullable(),
@@ -95,7 +97,7 @@ const FrozenQueryDocumentSchema = QueryDocumentRequestSchema.extend({
 
 const QueryDocumentInputSchema = QueryDocumentRequestSchema.extend({ sourceVersions: DocumentSourceVersionsInputSchema.optional() });
 
-export type QueryDocumentConfirmationRequired = { kind: "confirmationRequired"; receiptId: string; sha256: string };
+type QueryDocumentConfirmationRequired = { kind: "confirmationRequired"; receiptId: string; sha256: string };
 type QueryDocumentConfirmationInput = {
   baseId: string;
   runId: string;
@@ -234,7 +236,7 @@ export type IssueDocumentInput = {
   renderPdf?: (document: Pick<Document, "templateSnapshot" | "renderData" | "filename">) => Promise<Result<RenderHtmlToPdfResult>>;
 };
 
-export type RecordDocumentRequest = Pick<
+type RecordDocumentRequest = Pick<
   IssueDocumentInput,
   "actor" | "idempotencyKey" | "tags" | "workflowRunId" | "workflowStepKey" | "dateConfig" | "filename" | "renderPdf"
 > & { baseId: string; tableId: string; recordId: string; templateId: string };
@@ -472,12 +474,10 @@ export const createDocumentIssuanceService = (options: { profiles?: readonly Doc
           WHERE base_id = ${input.snapshot.baseId}::uuid AND operation_key_hash = ${operationKeyHash}
         `;
         if (existing) {
-          const existingRequestHash = requestHashFor(input);
-          if (!existingRequestHash.ok) throw existingRequestHash.error;
           if (
             existing.request_identity_hash
               ? !requestIdentity || existing.request_identity_hash !== recordRequestIdentityHash(requestIdentity)
-              : existing.request_hash !== existingRequestHash.data
+              : existing.request_hash !== requestHash.data
           )
             throw err.conflict(t.idempotencyConflict);
           return existing;
@@ -860,6 +860,17 @@ export const createDocumentIssuanceService = (options: { profiles?: readonly Doc
       }
       const tableIds = captured.data.payload.tableIds;
       await authorize(tableIds, db);
+      if (request.associatedData) {
+        const associated = await loadWorkflowQueryData(
+          { baseId: request.baseId, runId: request.runId, id: request.associatedData.id, sha256: request.associatedData.sha256, locale },
+          db,
+        );
+        if (!associated.ok) return associated;
+        if (canonicalJson(associated.data.reference, locale).sha256 !== canonicalJson(request.associatedData, locale).sha256)
+          return fail(err.conflict(t.workflowQueryIntegrityFailed));
+        await authorize(associated.data.payload.tableIds, db);
+        if (capturedDocumentRecords(associated.data.payload) === null) return fail(err.badInput(t.sourceVersionsUnavailable));
+      }
       const operationHash = sha256Hex(idempotencyKey);
       const requestHash = canonicalJson(request, locale).sha256;
       const receipt = await db.begin(async (tx) => {
@@ -871,8 +882,7 @@ export const createDocumentIssuanceService = (options: { profiles?: readonly Doc
           FROM grids.document_issuances WHERE base_id = ${request.baseId}::uuid AND operation_key_hash = ${operationHash}
         `;
         if (existing) {
-          if (existing.request_hash !== canonicalJson(request, locale).sha256 || existing.request_identity_hash !== null)
-            throw err.conflict(t.idempotencyConflict);
+          if (existing.request_hash !== requestHash || existing.request_identity_hash !== null) throw err.conflict(t.idempotencyConflict);
           return existing;
         }
         await requireDocumentSourceVersions({ ...request, authorize, locale }, tx);
@@ -998,6 +1008,7 @@ export const createDocumentIssuanceService = (options: { profiles?: readonly Doc
       if (!checked.ok) return checked;
       const source = {
         data: frozen.data,
+        ...(frozen.associatedData ? { associatedData: frozen.associatedData } : {}),
         output: frozen.output,
         filename: frozen.filename,
         ...(financial
@@ -1010,6 +1021,17 @@ export const createDocumentIssuanceService = (options: { profiles?: readonly Doc
       const template = { renderer: { kind: "profile", id: profile.id, version: profile.version }, output: frozen.output };
       return await db.begin(async (tx) => {
         await authorize(tableIds, tx);
+        let sources = await resolveCapturedDocumentRecords(captured.data.payload, frozen.baseId, tx);
+        if (frozen.associatedData) {
+          const associated = await loadWorkflowQueryData(
+            { baseId: frozen.baseId, runId: frozen.runId, id: frozen.associatedData.id, sha256: frozen.associatedData.sha256, locale },
+            tx,
+          );
+          if (!associated.ok) throw associated.error;
+          await authorize(associated.data.payload.tableIds, tx);
+          sources = capturedDocumentRecords(associated.data.payload);
+          if (sources === null) throw err.badInput(t.sourceVersionsUnavailable);
+        }
         if (
           financial &&
           canonicalJson(await financialRunBinding(frozen.baseId, frozen.runId, tx, locale), locale).sha256 !== financial.runBindingHash
@@ -1049,6 +1071,8 @@ export const createDocumentIssuanceService = (options: { profiles?: readonly Doc
             shortId: receipt.document_short_id,
             baseId: frozen.baseId,
             queryDataId: frozen.data.id,
+            associatedQueryDataId: frozen.associatedData?.id,
+            sources,
             record: null,
             workflowRunId: frozen.runId,
             workflowStepKey: frozen.stepKey,

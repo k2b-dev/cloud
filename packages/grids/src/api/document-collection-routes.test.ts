@@ -6,6 +6,7 @@ import { Hono, type MiddlewareHandler } from "hono";
 import { generateSpecs } from "hono-openapi";
 import type { z } from "zod";
 import { gridsService } from "../service";
+import * as documentSources from "../service/document-record-sources";
 import * as publicResources from "../service/public-resources";
 import type { PublicDocumentSchema } from "./document-public-contracts";
 import { createDocumentsApi } from "./documents";
@@ -172,6 +173,7 @@ const publicDocument = (row: DocumentFixture): z.infer<typeof PublicDocumentSche
   renderer: row.profile ? { kind: "profile", ...row.profile } : { kind: "html" },
   validationStatus: row.validationStatus,
   primaryArtifactKey: "pdf",
+  sourceRecordCount: 1,
   dataSnapshot: null,
   artifacts: row.artifacts.map(({ fileId: _fileId, ...artifact }) => artifact),
 });
@@ -216,6 +218,8 @@ const expectForbidden = async (response: Response) => {
 
 describe("document routes", () => {
   beforeEach(() => {
+    spyOn(documentSources, "loadDocumentRecordCounts").mockResolvedValue(new Map());
+    spyOn(documentSources, "listDocumentRecordSources").mockResolvedValue({ items: [], hasMore: false });
     spyOn(publicResources, "resolvePublicId").mockImplementation(publicResourceMocks.resolvePublicId);
     spyOn(publicResources, "resolvePublicIds").mockImplementation(publicResourceMocks.resolvePublicIds);
     spyOn(publicResources, "projectPublicIds").mockImplementation(publicResourceMocks.projectPublicIds);
@@ -332,6 +336,7 @@ describe("document routes", () => {
     ["GET", `/${documentPublicId}`],
     ["GET", `/${documentPublicId}/artifacts/pdf`],
     ["GET", `/${documentPublicId}/download`],
+    ["GET", `/${documentPublicId}/sources`],
   ] as const) {
     test(`parent auth protects ${method} ${suffix}`, async () => {
       const response = await deniedApp().request(path(suffix), { method });
@@ -342,6 +347,20 @@ describe("document routes", () => {
   }
 
   describe("GET /by-base/:baseId", () => {
+    test("source inspection requires complete Document access before reading associations", async () => {
+      tableLevel = "none";
+      await expectForbidden(await app().request(path(`/${documentPublicId}/sources`)));
+      expect(documentSources.listDocumentRecordSources).not.toHaveBeenCalled();
+    });
+
+    test("source inspection validates paging and returns a bounded page", async () => {
+      const response = await app().request(path(`/${documentPublicId}/sources?offset=2&limit=1`));
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual({ items: [], hasMore: false });
+      expect(documentSources.listDocumentRecordSources).toHaveBeenCalledWith(documentId, 2, 1, undefined, expect.any(Object));
+      expect((await app().request(path(`/${documentPublicId}/sources?limit=101`))).status).toBe(400);
+    });
+
     test("base browser defaults to folders and exposes only public template ids", async () => {
       const response = await app().request(path(`/by-base/${basePublicId}/browse`));
       expect(response.status).toBe(200);

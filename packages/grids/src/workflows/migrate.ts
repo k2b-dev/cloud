@@ -17,23 +17,54 @@ export const assertGridsAlphaContract = async (sql: SQL): Promise<void> => {
           EXECUTE format('SELECT EXISTS (SELECT 1 FROM grids.%I)', relation_name) INTO has_rows;
         END IF;
         IF has_rows THEN
-          RAISE EXCEPTION 'Unsupported Grids alpha data in %. Preserve or explicitly discard it before this cut; startup does not convert hashes or delete data.', relation_name;
+          RAISE EXCEPTION 'Unsupported Grids alpha data in %. Preserve this installation on its previous version; see the Grids alpha upgrade guide. Startup does not convert hashes or delete data.', relation_name;
         END IF;
       END LOOP;
-      FOREACH relation_name IN ARRAY ARRAY['workflow_profile', 'workflow_run_profile'] LOOP
-        IF to_regclass('grids.' || relation_name) IS NULL THEN CONTINUE; END IF;
-        EXECUTE format('LOCK TABLE grids.%I IN SHARE ROW EXCLUSIVE MODE', relation_name);
-        EXECUTE format('SELECT EXISTS (SELECT 1 FROM grids.%I)', relation_name) INTO has_rows;
-        has_version := false;
-        IF to_regclass('grids.workflow_migrations') IS NOT NULL THEN
-          SELECT EXISTS (SELECT 1 FROM grids.workflow_migrations WHERE version = 9) INTO has_version;
+      IF to_regclass('grids.workflow_run_profile') IS NOT NULL THEN
+        LOCK TABLE grids.workflow_run_profile IN SHARE ROW EXCLUSIVE MODE;
+        SELECT EXISTS (SELECT 1 FROM pg_attribute WHERE attrelid = 'grids.workflow_run_profile'::regclass
+          AND attname = 'captured_bytes' AND NOT attisdropped) INTO has_version;
+        IF has_version THEN
+          EXECUTE 'SELECT EXISTS (SELECT 1 FROM grids.workflow_run_profile WHERE captured_bytes IS NULL)' INTO has_rows;
+        ELSE
+          SELECT EXISTS (SELECT 1 FROM grids.workflow_run_profile) INTO has_rows;
         END IF;
-        IF has_rows AND NOT has_version THEN
-          RAISE EXCEPTION 'Unsupported Grids alpha workflows. Preserve their sources and republish explicitly; startup does not reset workflows.';
+        IF has_rows THEN
+          RAISE EXCEPTION 'Unsupported Grids alpha capture budget in workflow_run_profile. Preserve this installation on its previous version; see the Grids alpha upgrade guide. Startup does not reconstruct capture budgets.';
+        END IF;
+      END IF;
+      FOREACH relation_name IN ARRAY ARRAY['workflows', 'workflow_runs', 'workflow_effect_intents',
+        'workflow_step_runs', 'workflow_revisions', 'workflow_kernel_migrations'] LOOP
+        IF to_regclass('grids.' || relation_name) IS NOT NULL THEN
+          RAISE EXCEPTION 'Unsupported Grids alpha workflow schema: %. Preserve this installation on its previous version; see the Grids alpha upgrade guide. Startup does not delete old workflow tables.', relation_name;
         END IF;
       END LOOP;
-      IF to_regclass('grids.workflows') IS NOT NULL OR to_regclass('grids.workflow_runs') IS NOT NULL THEN
-        RAISE EXCEPTION 'Unsupported Grids alpha workflow schema. Startup does not delete old workflow tables.';
+      IF to_regclass('grids.workflow_launchers') IS NOT NULL THEN
+        LOCK TABLE grids.workflow_launchers IN SHARE ROW EXCLUSIVE MODE;
+        IF EXISTS (SELECT 1 FROM grids.workflow_launchers WHERE kind NOT IN ('scanner', 'bulk', 'record', 'customApp')) THEN
+          RAISE EXCEPTION 'Unsupported Grids alpha workflow launcher. Preserve this installation on its previous version; see the Grids alpha upgrade guide.';
+        END IF;
+      END IF;
+      IF to_regclass('workflows.version') IS NOT NULL THEN
+        LOCK TABLE workflows.version IN SHARE ROW EXCLUSIVE MODE;
+        IF EXISTS (
+          SELECT 1 FROM workflows.version version JOIN workflows.workflow workflow ON workflow.id = version.workflow_id
+          WHERE workflow.app_id = 'grids' AND (
+            version.plan->'schemaVersion' IS DISTINCT FROM '2'::jsonb OR
+            jsonb_typeof(version.plan->'bindings') IS DISTINCT FROM 'object' OR
+            EXISTS (
+              SELECT 1 FROM jsonb_each(CASE WHEN jsonb_typeof(version.plan->'bindings') = 'object'
+                THEN version.plan->'bindings' ELSE '{}'::jsonb END) binding
+              WHERE binding.key LIKE '%.$query' AND (
+                binding.value->'schemaHashVersion' IS DISTINCT FROM '3'::jsonb OR
+                jsonb_typeof(binding.value->'source') IS DISTINCT FROM 'string' OR
+                jsonb_typeof(binding.value->'schemaHash') IS DISTINCT FROM 'string'
+              )
+            )
+          )
+        ) THEN
+          RAISE EXCEPTION 'Unsupported Grids alpha workflow binding. Preserve this installation on its previous version; see the Grids alpha upgrade guide. Startup does not rewrite published plans.';
+        END IF;
       END IF;
     END $$;
   `.simple();
@@ -168,12 +199,14 @@ const migrateDefinitionLinks = async (sql: SQL): Promise<void> => {
     )
   `.simple();
   await sql`
-    ALTER TABLE grids.workflow_launchers DROP CONSTRAINT IF EXISTS workflow_launchers_kind_check;
-    UPDATE grids.workflow_launchers
-    SET kind = 'customApp', config = jsonb_set(config, '{kind}', '"customApp"'::jsonb)
-    WHERE kind = 'dashboard';
-    ALTER TABLE grids.workflow_launchers
-      ADD CONSTRAINT workflow_launchers_kind_check CHECK (kind IN ('scanner', 'bulk', 'record', 'customApp'));
+    DO $$ BEGIN
+      IF EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'grids.workflow_launchers'::regclass
+        AND conname = 'workflow_launchers_kind_check' AND pg_get_constraintdef(oid) LIKE '%dashboard%') THEN
+        ALTER TABLE grids.workflow_launchers DROP CONSTRAINT workflow_launchers_kind_check;
+        ALTER TABLE grids.workflow_launchers
+          ADD CONSTRAINT workflow_launchers_kind_check CHECK (kind IN ('scanner', 'bulk', 'record', 'customApp'));
+      END IF;
+    END $$;
   `.simple();
   await sql`
     CREATE INDEX IF NOT EXISTS idx_grids_workflow_launchers_workflow
@@ -245,8 +278,17 @@ const migrateQueryData = async (sql: SQL): Promise<void> => {
     );
     ALTER TABLE grids.workflow_query_data ADD COLUMN IF NOT EXISTS hash_version SMALLINT NOT NULL DEFAULT 2 CHECK (hash_version = 2);
     ALTER TABLE grids.workflow_query_data ALTER COLUMN hash_version SET DEFAULT 2;
-    ALTER TABLE grids.workflow_query_data DROP CONSTRAINT IF EXISTS workflow_query_data_hash_version_check;
-    ALTER TABLE grids.workflow_query_data ADD CONSTRAINT workflow_query_data_hash_version_check CHECK (hash_version = 2);
+    DO $$ DECLARE relation_name text; constraint_name text; BEGIN
+      FOREACH relation_name IN ARRAY ARRAY['documents', 'document_issuances', 'workflow_query_data'] LOOP
+        constraint_name := relation_name || '_hash_version_check';
+        IF NOT EXISTS (SELECT 1 FROM pg_constraint
+          WHERE conrelid = to_regclass('grids.' || relation_name) AND conname = constraint_name
+            AND pg_get_constraintdef(oid) = 'CHECK ((hash_version = 2))' AND convalidated) THEN
+          EXECUTE format('ALTER TABLE grids.%I DROP CONSTRAINT IF EXISTS %I', relation_name, constraint_name);
+          EXECUTE format('ALTER TABLE grids.%I ADD CONSTRAINT %I CHECK (hash_version = 2)', relation_name, constraint_name);
+        END IF;
+      END LOOP;
+    END $$;
     CREATE OR REPLACE FUNCTION grids.reject_workflow_query_data_update()
     RETURNS trigger LANGUAGE plpgsql AS $$
     BEGIN
@@ -261,8 +303,15 @@ const migrateQueryData = async (sql: SQL): Promise<void> => {
   await sql`
     CREATE UNIQUE INDEX IF NOT EXISTS idx_grids_query_data_run_identity ON grids.workflow_query_data(id, run_id);
     ALTER TABLE grids.documents ADD COLUMN IF NOT EXISTS query_data_id UUID;
+    ALTER TABLE grids.documents ADD COLUMN IF NOT EXISTS associated_query_data_id UUID;
     ALTER TABLE grids.document_issuances ADD COLUMN IF NOT EXISTS query_data_id UUID REFERENCES grids.workflow_query_data(id) ON DELETE RESTRICT;
     DO $$ BEGIN
+      IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'grids.documents'::regclass AND conname = 'documents_associated_query_binding_fkey') THEN
+        ALTER TABLE grids.documents ADD CONSTRAINT documents_associated_query_binding_fkey
+          FOREIGN KEY (associated_query_data_id, workflow_run_id) REFERENCES grids.workflow_query_data(id, run_id) ON DELETE RESTRICT;
+        ALTER TABLE grids.documents ADD CONSTRAINT documents_associated_query_source_chk
+          CHECK (associated_query_data_id IS NULL OR (query_data_id IS NOT NULL AND workflow_run_id IS NOT NULL));
+      END IF;
       IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'grids.documents'::regclass AND conname = 'documents_query_data_binding_fkey') THEN
         ALTER TABLE grids.documents ADD CONSTRAINT documents_query_data_binding_fkey
           FOREIGN KEY (query_data_id, workflow_run_id) REFERENCES grids.workflow_query_data(id, run_id) ON DELETE RESTRICT;
@@ -276,21 +325,9 @@ const migrateQueryData = async (sql: SQL): Promise<void> => {
   await sql`
     CREATE OR REPLACE FUNCTION grids.guard_document_export_claim()
     RETURNS trigger LANGUAGE plpgsql AS $$
-    DECLARE source RECORD;
     BEGIN
-      IF TG_OP = 'UPDATE' THEN
-        RAISE EXCEPTION 'Financial export claims are immutable' USING ERRCODE = '55000';
-      END IF;
-      SELECT receipt.document_id, run.state INTO source
-      FROM grids.document_issuances receipt
-      JOIN grids.workflow_query_data data ON data.id = receipt.query_data_id
-      JOIN workflows.run run ON run.id = data.run_id
-      WHERE receipt.id = OLD.receipt_id
-      FOR UPDATE OF receipt, run;
-      IF NOT FOUND OR source.document_id IS NOT NULL OR source.state NOT IN ('failed', 'canceled') THEN
-        RAISE EXCEPTION 'Financial export claims can only be released after an effect-free terminal run' USING ERRCODE = '55000';
-      END IF;
-      RETURN OLD;
+      -- Claims commit with the issued document, never with its preview.
+      RAISE EXCEPTION 'Financial export claims are immutable' USING ERRCODE = '55000';
     END $$;
     DROP TRIGGER IF EXISTS document_export_claim_guard ON grids.document_export_claims;
     CREATE TRIGGER document_export_claim_guard BEFORE UPDATE OR DELETE ON grids.document_export_claims
@@ -299,7 +336,6 @@ const migrateQueryData = async (sql: SQL): Promise<void> => {
 };
 
 export const migrateGridsWorkflowTables = async (sql: SQL): Promise<void> => {
-  await assertGridsAlphaContract(sql);
   await initializeWorkflowSchema(sql);
   await migrateKernelProfile(sql);
   await migrateDefinitionLinks(sql);

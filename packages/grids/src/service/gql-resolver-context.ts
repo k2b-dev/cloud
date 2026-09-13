@@ -109,6 +109,7 @@ export const buildTrustedGqlResolverContext = async (
   const views = hydrateDslViewQueries({ tables: dslTables, views: viewsCatalog, fieldsByTableId });
 
   return {
+    documentMetadata: params.purpose !== "custom-app-render",
     ...(currentTable ? { currentTable } : {}),
     tables: dslTables,
     views,

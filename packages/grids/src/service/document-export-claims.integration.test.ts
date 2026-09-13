@@ -38,6 +38,9 @@ const fixture = async () => {
       }),
     );
   const cleanup = async () => {
+    // Retain immutable evidence until the isolated verification DB is dropped.
+    const claims = await sql`SELECT 1 FROM grids.document_export_claims WHERE base_id = ${baseId}::uuid LIMIT 1`;
+    if (claims.length) return;
     await sql`UPDATE workflows.run SET state = 'canceled' WHERE app_id = 'grids' AND scope_id = ${baseId}`;
     await sql`DELETE FROM grids.document_export_claims WHERE base_id = ${baseId}::uuid`;
     await sql`DELETE FROM grids.document_issuances WHERE base_id = ${baseId}::uuid`;
@@ -106,7 +109,7 @@ describe("financial export claims", () => {
     }
   });
 
-  postgresTest("pending claims cannot be edited or released while the run may still execute", async () => {
+  postgresTest("committed claims cannot be edited or released, even after cancellation", async () => {
     const scope = await fixture();
     try {
       const receiptId = await scope.receipt();
@@ -118,10 +121,12 @@ describe("financial export claims", () => {
       await expect(
         Promise.resolve(sql`DELETE FROM grids.document_export_claims
         WHERE receipt_id = ${receiptId}::uuid`),
-      ).rejects.toThrow("terminal");
+      ).rejects.toThrow("immutable");
       await sql`UPDATE workflows.run SET state = 'canceled' WHERE id = ${scope.runId}::uuid`;
-      await sql`DELETE FROM grids.document_export_claims WHERE receipt_id = ${receiptId}::uuid`;
-      expect(await sql`SELECT * FROM grids.document_export_claims WHERE receipt_id = ${receiptId}::uuid`).toHaveLength(0);
+      await expect(Promise.resolve(sql`DELETE FROM grids.document_export_claims WHERE receipt_id = ${receiptId}::uuid`)).rejects.toThrow(
+        "immutable",
+      );
+      expect(await sql`SELECT * FROM grids.document_export_claims WHERE receipt_id = ${receiptId}::uuid`).toHaveLength(1);
     } finally {
       await scope.cleanup();
     }

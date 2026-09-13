@@ -8,6 +8,7 @@ import { parseGridsQueryDsl } from "../query-dsl/parser";
 import { type DslResolvedSqlQueryPlan, resolveDslQueryToQueryPlan } from "../query-dsl/resolver";
 import { collectDslPlanExtraFieldTableIds } from "../query-dsl/source-plan";
 import type { SqlClient } from "./audit";
+import { containsDocumentMetadata } from "./document-query-expression";
 import * as fields from "./fields";
 import { buildTrustedGqlResolverContext } from "./gql-resolver-context";
 import type { Field } from "./types";
@@ -53,6 +54,8 @@ export const compileCustomAppQuery = async (params: {
   });
   const resolved = resolveDslQueryToQueryPlan(bound.ast, context);
   if (!resolved.ok) return { ok: false, error: diagnosticMessage(resolved.diagnostics, "invalid GQL source") };
+  if (containsDocumentMetadata(resolved.plan))
+    return { ok: false, error: "Document metadata requires Base access and is not available in Custom App queries" };
   const canonicalResolved = resolveDslQueryToQueryPlan(canonicalBound.ast, context);
   if (!canonicalResolved.ok) return { ok: false, error: diagnosticMessage(canonicalResolved.diagnostics, "invalid GQL source") };
 

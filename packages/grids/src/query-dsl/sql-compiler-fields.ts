@@ -198,6 +198,7 @@ export const compileFormulaColumn = (params: {
   resolveField?: FormulaSqlFieldResolver;
 }): { ok: true; fragment: unknown; column: DslSqlOutputColumn; projection: unknown } | { ok: false; error: string } => {
   const compiled = compileFormulaSourceToSql(params.expression, {
+    documentMetadata: true,
     fields: params.fields,
     recordAlias: params.recordAlias,
     dateConfig: params.timeZone ? { timeZone: params.timeZone } : undefined,

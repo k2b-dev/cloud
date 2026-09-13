@@ -7,12 +7,13 @@ import { projectDocuments } from "../api/documents-api-shared";
 import { financialQueryProfiles } from "../document-profiles/financial";
 import { postgresTest, testShortId, testUuid } from "../integration-test-utils";
 import { migrate } from "../migrate";
-import type { WorkflowQueryPayloadSchema } from "../workflows/query-contracts";
+import { WorkflowDocumentSnapshotPayloadSchema, type WorkflowQueryPayloadSchema } from "../workflows/query-contracts";
 import { loadDocumentDataSnapshots } from "./document-browse";
 import type { FinancialDocumentOutput } from "./document-financial-output";
 import { documentIssuanceService as service } from "./document-issuance";
 import { canonicalDocumentJson, canonicalJson } from "./document-json";
 import { summarizeDocument } from "./document-mappers";
+import { listDocumentRecordSources, resolveCapturedDocumentRecords } from "./document-record-sources";
 import { requireDocumentSourceVersions } from "./document-source-versions";
 import { persistWorkflowQueryDataInTransaction } from "./workflow-query-store";
 import { deleteTestWorkflowScope, insertTestWorkflow, insertTestWorkflowRun, publishTestWorkflowVersion } from "./workflow-test-fixture";
@@ -125,6 +126,86 @@ const fixture = async () => {
 };
 
 describe("financial query Document issuance", () => {
+  postgresTest("explicit frozen membership survives record edits and replay without changing output row counts", async () => {
+    const scope = await fixture();
+    const request = await scope.capture();
+    const tableId = testUuid();
+    const tableShortId = testShortId("T");
+    await sql`INSERT INTO grids.tables (id, short_id, base_id, name, position)
+      VALUES (${tableId}::uuid, ${tableShortId}, ${scope.baseId}::uuid, 'Export members', 0)`;
+    const members = [
+      { id: testUuid(), shortId: testShortId("R") },
+      { id: testUuid(), shortId: testShortId("R") },
+    ];
+    for (const member of members)
+      await sql`INSERT INTO grids.records (id, short_id, table_id, data)
+      VALUES (${member.id}::uuid, ${member.shortId}, ${tableId}::uuid, '{}'::jsonb)`;
+    const capturedAt = new Date().toISOString();
+    const payload: z.infer<typeof WorkflowQueryPayloadSchema> = {
+      version: 1,
+      columns: [],
+      rows: [{}, {}],
+      rowCount: 2,
+      rowOrigins: members.map((member) => ({ tableId: tableShortId, recordId: member.shortId, version: 1 })),
+      source: `from table {${tableShortId}}`,
+      schemaHash: "b".repeat(64),
+      context: {},
+      tableIds: [tableId],
+      capturedAt,
+      complete: true,
+      selectionLimit: null,
+    };
+    const selection = await sql.begin((tx) =>
+      persistWorkflowQueryDataInTransaction(
+        {
+          baseId: scope.baseId,
+          runId: request.runId,
+          stepKey: "members",
+          capture: { payload, sha256: canonicalDocumentJson(payload).sha256, hashVersion: 2, rowCount: 2, capturedAt },
+        },
+        tx,
+      ),
+    );
+    if (!selection.ok) throw selection.error;
+    const associated = { ...request, associatedData: selection.data };
+    expect((await service.issueQueryDocument({ ...associated, associatedData: { ...selection.data, rowCount: 3 } })).ok).toBe(false);
+    const pending = await service.issueQueryDocument(associated);
+    if (!pending.ok) throw pending.error;
+    if (!("kind" in pending.data)) throw new Error("Expected confirmation");
+    const confirmed = await service.confirmQueryDocument({ ...associated, receiptId: pending.data.receiptId, sha256: pending.data.sha256 });
+    if (!confirmed.ok) throw confirmed.error;
+    await sql`UPDATE grids.records SET version = 2 WHERE table_id = ${tableId}::uuid`;
+    const issued = await service.issueQueryDocument(associated);
+    if (!issued.ok) throw issued.error;
+    if ("kind" in issued.data) throw new Error("Expected issued document");
+    const sources = await listDocumentRecordSources(issued.data.id);
+    expect(sources.items.map((item) => item.recordId).sort()).toEqual(members.map((member) => member.shortId).sort());
+    expect(sources.items.map((item) => item.version)).toEqual([1, 1]);
+    const [projected] = await projectDocuments([summarizeDocument(issued.data)]);
+    expect(projected?.sourceRecordCount).toBe(2);
+    expect(projected?.dataSnapshot?.rowCount).toBe(1);
+    const documentSource = WorkflowDocumentSnapshotPayloadSchema.parse({
+      ...payload,
+      version: 3,
+      source: { kind: "documents", ids: [issued.data.shortId] },
+      schemaHash: null,
+      tableIds: [],
+      rows: [{}],
+      rowOrigins: [{ recordId: null, tableId: null }],
+      rowCount: 1,
+    });
+    expect((await sql.begin((tx) => resolveCapturedDocumentRecords(documentSource, scope.baseId, tx)))?.length).toBe(2);
+    expect(await sql.begin((tx) => resolveCapturedDocumentRecords(documentSource, testUuid(), tx))).toBeNull();
+    const replay = await service.issueQueryDocument(associated);
+    if (!replay.ok) throw replay.error;
+    expect(replay.data).toHaveProperty("id", issued.data.id);
+    await expect(
+      (async () => {
+        await sql`DELETE FROM grids.workflow_query_data WHERE id = ${selection.data.id}::uuid`;
+      })(),
+    ).rejects.toMatchObject({ errno: "23503" });
+  });
+
   postgresTest("a render failure retains no claims and retries the same confirmed receipt", async () => {
     const scope = await fixture();
     const profile = financialQueryProfiles.find((item) => item.id === "grids.datev-csv")!;
@@ -501,6 +582,15 @@ describe("financial query Document issuance", () => {
       const confirmed = await service.confirmQueryDocument(confirmation);
       if (!confirmed.ok) throw confirmed.error;
       expect((await service.confirmQueryDocument(confirmation)).ok).toBe(true);
+      // Startup must retain a confirmed-but-not-issued financial receipt.
+      const receiptBeforeRestart = await sql`SELECT frozen_request::text, confirmation_hash, confirmed_actor::text, confirmed_at
+        FROM grids.document_issuances WHERE base_id = ${scope.baseId}::uuid AND document_short_id = ${confirmation.receiptId}`;
+      expect(receiptBeforeRestart).toHaveLength(1);
+      await migrate();
+      expect(
+        await sql`SELECT frozen_request::text, confirmation_hash, confirmed_actor::text, confirmed_at
+          FROM grids.document_issuances WHERE base_id = ${scope.baseId}::uuid AND document_short_id = ${confirmation.receiptId}`,
+      ).toEqual(receiptBeforeRestart);
       const [issued, raced, reconfirmed] = await Promise.all([
         service.issueQueryDocument(request),
         service.issueQueryDocument(request),
@@ -529,7 +619,7 @@ describe("financial query Document issuance", () => {
       expect((await service.confirmQueryDocument({ ...confirmation, sha256: "b".repeat(64) })).ok).toBe(false);
       await sql`UPDATE workflows.run SET state = 'failed' WHERE id = ${request.runId}::uuid`;
       await expect(Promise.resolve(sql`DELETE FROM grids.document_export_claims WHERE base_id = ${scope.baseId}::uuid`)).rejects.toThrow(
-        "terminal",
+        "immutable",
       );
       const other = await scope.capture();
       const duplicate = await service.issueQueryDocument(other);

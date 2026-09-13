@@ -5,6 +5,7 @@ import { describeRoute } from "hono-openapi";
 import { z } from "zod";
 import { DocumentProfileSummarySchema } from "../document-profile-contracts";
 import { gridsService } from "../service";
+import { listDocumentRecordSources } from "../service/document-record-sources";
 import {
   BaseDocumentBrowseQuerySchema,
   gateDocument,
@@ -16,7 +17,7 @@ import {
 } from "./documents-api-shared";
 import { fileResponse } from "./download-response";
 import { apiMessages } from "./messages";
-import { gateAt } from "./permissions";
+import { currentActorViewer, gateAt } from "./permissions";
 import { internalIdParam, requirePublicIdParam } from "./route-params";
 import { v } from "./validator";
 
@@ -101,6 +102,46 @@ export const createDocumentResourceRoutes = (deps: { requireAuthenticated?: Midd
           cursor: page.nextCursor,
           hasMore: page.hasMore,
         });
+      },
+    )
+    .get(
+      "/:documentId/sources",
+      describeRoute({
+        tags: ["Grids:Document"],
+        summary: "List frozen source record identities and versions for a Document",
+        responses: {
+          200: jsonResponse(
+            z.object({
+              items: z.array(
+                z.object({
+                  tableId: z.string(),
+                  recordId: z.string(),
+                  tableName: z.string(),
+                  label: z.string(),
+                  version: z.number(),
+                  deleted: z.boolean(),
+                }),
+              ),
+              hasMore: z.boolean(),
+            }),
+            "Source records page",
+          ),
+          403: jsonResponse(ErrorResponseSchema, "Forbidden"),
+          404: jsonResponse(ErrorResponseSchema, "Document not found"),
+        },
+      }),
+      requirePublicIdParam("documentId", "document", "Document"),
+      v(
+        "query",
+        z.object({ offset: z.coerce.number().int().min(0).default(0), limit: z.coerce.number().int().min(1).max(100).default(50) }),
+      ),
+      async (c) => {
+        const document = await gridsService.document.getDocument(internalIdParam(c, "documentId")!);
+        if (!document) return c.json({ message: apiMessages(c).documentNotFound }, 404);
+        const gate = await gateDocument(c, document, "read");
+        if (!gate.ok) return respond(c, () => Promise.resolve(gate));
+        const { offset, limit } = c.req.valid("query");
+        return c.json(await listDocumentRecordSources(document.id, offset, limit, undefined, currentActorViewer(c)));
       },
     )
     .get(
