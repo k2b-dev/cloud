@@ -72,6 +72,17 @@ const compile = async (source: string) => {
 };
 
 describe("Grids workflow binder", () => {
+  test("rejects non-row associatedData at publication", async () => {
+    for (const source of ["from table Items\nselect Name", "from table Items\naggregate count(*) as total"]) {
+      const result = await compileAndBindGridsWorkflowSource(
+        `steps:\n  - query:\n      source: |\n        ${source.replaceAll("\n", "\n        ")}\n      saveAs: report\n  - generateDocument:\n      data: report\n      associatedData: report\n      output: { kind: json }\n`,
+        catalog(),
+        async () => ok({ source, schemaHash: "a".repeat(64), schemaHashVersion: 3 as const }),
+      );
+      expect(result.ok).toBe(!source.includes("aggregate"));
+      if (!result.ok) expect(result.diagnostics.some((diagnostic) => diagnostic.message.includes("single-table row query"))).toBe(true);
+    }
+  });
   test("binds document snapshot sources with literal paths", async () => {
     const source = `steps:
   - generateDocument:

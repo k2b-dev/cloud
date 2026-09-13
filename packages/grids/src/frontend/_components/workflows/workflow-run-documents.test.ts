@@ -15,8 +15,8 @@ const document = (id: string): PublicDocument => ({
   createdBy: null,
   renderer: { kind: "html" },
   primaryArtifactKey: "pdf",
-    sourceRecordCount: null,
-    dataSnapshot: null,
+  sourceRecordCount: null,
+  dataSnapshot: null,
   validationStatus: null,
   artifacts: [
     {

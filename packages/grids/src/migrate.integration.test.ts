@@ -46,6 +46,33 @@ const checkUpgrade = async (database: SQL) => {
 };
 
 describe("grids schema migration", () => {
+  postgresTest("ignores inactive historical bindings but rejects them while a run is unfinished", async () => {
+    await withIsolatedDatabase(async (database) => {
+      await migrateCoreWorkflows(database);
+      await migrate(database);
+      const baseId = uuid();
+      await database`INSERT INTO grids.bases (id, short_id, name) VALUES (${baseId}::uuid, 'BASE01', 'Historical plans')`;
+      const workflowId = await insertTestWorkflow({
+        db: database,
+        baseId,
+        shortId: "FLOW01",
+        plan: {
+          schemaVersion: 2,
+          bindings: { "steps.0.query.$query": { source: "from table Items", schemaHash: "a".repeat(64), schemaHashVersion: 2 } },
+        },
+      });
+      const runId = await insertTestWorkflowRun({ db: database, baseId, workflowId, shortId: "RUN001", state: "waiting" });
+      await insertTestWorkflow({ db: database, id: workflowId, baseId, shortId: "FLOW01" });
+      const before = await database`SELECT plan::text FROM workflows.version WHERE workflow_id = ${workflowId}::uuid ORDER BY revision`;
+      await expect(migrate(database)).rejects.toThrow("Unsupported Grids alpha workflow binding");
+      await database`UPDATE workflows.run SET state = 'succeeded', finished_at = now() WHERE id = ${runId}::uuid`;
+      await migrate(database);
+      expect(await database`SELECT plan::text FROM workflows.version WHERE workflow_id = ${workflowId}::uuid ORDER BY revision`).toEqual(
+        before,
+      );
+      expect((await checkUpgrade(database)).exitCode).toBe(0);
+    });
+  });
   postgresTest("rejects every obsolete hash store before changing schema or saved bytes", async () => {
     await withIsolatedDatabase(async (database) => {
       await migrateCoreWorkflows(database);
@@ -117,6 +144,7 @@ describe("grids schema migration", () => {
       await database`UPDATE grids.workflow_profile SET deleted_at = now() WHERE id = ${workflowId}::uuid`;
       await database`DELETE FROM grids.workflow_migrations`;
       await database`INSERT INTO grids.workflow_migrations (version) VALUES (8)`;
+      await database`ALTER TABLE grids.documents DROP CONSTRAINT documents_associated_query_source_chk`.simple();
       const before = await database`SELECT plan::text, source FROM workflows.version WHERE workflow_id = ${workflowId}::uuid`;
       for (const table of ["documents", "document_issuances", "workflow_query_data"]) {
         await database.unsafe(`ALTER TABLE grids.${table} DROP CONSTRAINT ${table}_hash_version_check`);
@@ -143,6 +171,10 @@ describe("grids schema migration", () => {
       >`SELECT oid::text, pg_get_constraintdef(oid) AS definition FROM pg_constraint
         WHERE connamespace = 'grids'::regnamespace AND conname IN ('documents_hash_version_check', 'document_issuances_hash_version_check', 'workflow_query_data_hash_version_check') ORDER BY conname`;
       expect(constraints).toHaveLength(3);
+      expect(
+        await database`SELECT conname FROM pg_constraint WHERE conrelid = 'grids.documents'::regclass
+        AND conname = 'documents_associated_query_source_chk'`,
+      ).toHaveLength(1);
       expect(constraints.every((constraint) => constraint.definition === "CHECK ((hash_version = 2))")).toBe(true);
       await migrate(database);
       expect(
@@ -623,7 +655,7 @@ describe("grids schema migration", () => {
         `;
         // Durable History, frozen workflow query data, external Record identity, Form retry receipts and the evidence lifecycle
         // add explicit owners without replacing the lightweight live rows.
-        expect(row?.tableCount).toBe(57);
+        expect(row?.tableCount).toBe(58);
         const historyTables = await database<Array<{ tableName: string }>>`
           SELECT table_name AS "tableName"
           FROM information_schema.tables

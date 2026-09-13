@@ -62,6 +62,23 @@ test("read-only document summary has no link management or generation action", (
   expect(html).toContain("Download PDF");
 });
 
+test("source inspection avoids duplicating a direct single-record link", () => {
+  for (const [recordId, count, visible] of [
+    ["RECORD", 1, false],
+    ["RECORD", 2, true],
+    [null, 1, true],
+    [null, 0, false],
+  ] as const) {
+    const html = renderToString(() =>
+      createComponent(DocumentDetailsDialog, {
+        args: { document: { ...document, recordId, sourceRecordCount: count }, canWrite: false, onDownload: () => {} },
+        close: () => {},
+      }),
+    );
+    expect(html.includes("Source records")).toBe(visible);
+  }
+});
+
 test("CSV primary is shown once with an authorized download and no public sharing", () => {
   const html = renderToString(() =>
     createComponent(DocumentDetailsDialog, {

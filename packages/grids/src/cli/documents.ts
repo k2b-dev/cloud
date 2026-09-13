@@ -466,17 +466,26 @@ export const documentCommands = [
     flags: { offset: flag.string({ description: "Page offset" }), limit: flag.string({ description: "Page size, maximum 100" }) },
     async run({ ctx, args, flags }) {
       const params = new URLSearchParams();
-      if (flags.offset) params.set("offset", flags.offset);
-      if (flags.limit) params.set("limit", flags.limit);
+      for (const [key, value, minimum, maximum] of [
+        ["offset", flags.offset, 0, Number.MAX_SAFE_INTEGER],
+        ["limit", flags.limit, 1, 100],
+      ] as const) {
+        if (value === undefined) continue;
+        const number = Number(value);
+        if (!value.trim() || !Number.isSafeInteger(number) || number < minimum || number > maximum)
+          throw new Error(`--${key} must be an integer between ${minimum} and ${maximum}`);
+        params.set(key, String(number));
+      }
       const payload = await readApi<{
-        items: Array<{ tableId: string; recordId: string; tableName: string; label: string; version: number; deleted: boolean }>;
+        items: Array<{ tableId: string; recordId: string; tableName: string; label: string; version: number | null; deleted: boolean }>;
         hasMore: boolean;
-      }>(ctx, `/documents/${encodeURIComponent(requirePublicId(args.document, "Document id"))}/sources?${params}`);
+      }>(ctx, `/documents/${encodeURIComponent(requirePublicId(args.document, "Document id"))}/sources${params.size ? `?${params}` : ""}`);
       printJsonOrTable(ctx, payload, payload.items, [
         { key: "tableName", label: "TABLE" },
         { key: "label", label: "RECORD" },
         { key: "recordId", label: "ID" },
         { key: "version", label: "CAPTURED VERSION" },
+        { key: "deleted", label: "DELETED" },
       ]);
     },
   }),

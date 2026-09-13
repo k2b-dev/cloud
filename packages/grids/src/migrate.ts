@@ -1879,7 +1879,7 @@ const migrateDocumentArtifacts = async (sql: SQL): Promise<void> => {
     CREATE OR REPLACE FUNCTION grids.reject_document_artifact_mutation()
     RETURNS trigger LANGUAGE plpgsql AS $$
     BEGIN
-      RAISE EXCEPTION 'Document artifacts are immutable' USING ERRCODE = '55000';
+      RAISE EXCEPTION 'Rows in grids.% are immutable', TG_TABLE_NAME USING ERRCODE = '55000';
     END
     $$
   `.simple();

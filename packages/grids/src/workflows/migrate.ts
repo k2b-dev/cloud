@@ -49,7 +49,13 @@ export const assertGridsAlphaContract = async (sql: SQL): Promise<void> => {
         LOCK TABLE workflows.version IN SHARE ROW EXCLUSIVE MODE;
         IF EXISTS (
           SELECT 1 FROM workflows.version version JOIN workflows.workflow workflow ON workflow.id = version.workflow_id
-          WHERE workflow.app_id = 'grids' AND (
+          WHERE workflow.app_id = 'grids'
+          AND (version.id = workflow.active_version_id
+            OR EXISTS (SELECT 1 FROM workflows.activation activation
+              WHERE activation.workflow_version_id = version.id AND activation.enabled)
+            OR EXISTS (SELECT 1 FROM workflows.run run WHERE run.workflow_version_id = version.id
+              AND run.state NOT IN ('succeeded', 'failed', 'canceled')))
+          AND (
             version.plan->'schemaVersion' IS DISTINCT FROM '2'::jsonb OR
             jsonb_typeof(version.plan->'bindings') IS DISTINCT FROM 'object' OR
             EXISTS (
@@ -309,6 +315,8 @@ const migrateQueryData = async (sql: SQL): Promise<void> => {
       IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'grids.documents'::regclass AND conname = 'documents_associated_query_binding_fkey') THEN
         ALTER TABLE grids.documents ADD CONSTRAINT documents_associated_query_binding_fkey
           FOREIGN KEY (associated_query_data_id, workflow_run_id) REFERENCES grids.workflow_query_data(id, run_id) ON DELETE RESTRICT;
+      END IF;
+      IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'grids.documents'::regclass AND conname = 'documents_associated_query_source_chk') THEN
         ALTER TABLE grids.documents ADD CONSTRAINT documents_associated_query_source_chk
           CHECK (associated_query_data_id IS NULL OR (query_data_id IS NOT NULL AND workflow_run_id IS NOT NULL));
       END IF;

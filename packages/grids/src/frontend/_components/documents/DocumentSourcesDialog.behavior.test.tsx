@@ -3,6 +3,11 @@ import { isServer } from "solid-js/web";
 import { createDomTestHarness } from "../../../../../ui/test/dom";
 
 const domTest = isServer ? test.skip : test;
+const until = async (condition: () => boolean) => {
+  const deadline = Date.now() + 2000;
+  while (!condition() && Date.now() < deadline) await Bun.sleep(5);
+  expect(condition()).toBe(true);
+};
 
 domTest("source inspection shows readable labels, pages and keeps deleted sources non-navigable", async () => {
   const dom = createDomTestHarness();
@@ -20,7 +25,7 @@ domTest("source inspection shows readable labels, pages and keeps deleted source
             recordId: second ? "RECD02" : "RECD01",
             tableName: "Expenses",
             label: second ? "Archived expense" : "Train ticket",
-            version: 4,
+            version: second ? null : 4,
             deleted: second,
           },
         ],
@@ -56,15 +61,16 @@ domTest("source inspection shows readable labels, pages and keeps deleted source
     });
     const button = (label: string) => Array.from(dom.document.querySelectorAll("button")).find((node) => node.textContent?.includes(label));
     button("Source records")!.click();
-    await Bun.sleep(50);
+    await until(() => dom.document.body.textContent?.includes("Train ticket") === true);
     expect(dom.document.body.textContent).toContain("Train ticket");
     expect(dom.document.body.textContent).toContain("Captured version 4");
     expect(dom.document.querySelector('a[href*="RECD01"]')?.getAttribute("target")).toBe("_blank");
     button("Load more")!.click();
-    await Bun.sleep(50);
+    await until(() => dom.document.body.textContent?.includes("Archived expense") === true);
     expect(paths.at(-1)).toContain("offset=1");
     expect(dom.document.body.textContent).toContain("Archived expense");
     expect(dom.document.querySelector('a[href*="RECD02"]')).toBeNull();
+    expect(dom.document.body.textContent).not.toContain("Captured version 0");
     expect(button("Load more")).toBeUndefined();
   } finally {
     dialogCore.close();

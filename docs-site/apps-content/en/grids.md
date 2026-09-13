@@ -392,3 +392,7 @@ row projections and formula filters. Formats are `pdf`, `csv`, `json`, `xml`,
 `sepa-xml`, and `datev-csv`. Metadata stays live after record finalization and
 is unavailable in stored Formula fields and Custom App queries. An issued
 SEPA export is not evidence that a transfer was executed.
+
+For example, `where documentCount('sepa-xml') = 0` selects records without an
+associated SEPA export. Do not wrap `where` expressions in `formula(...)`.
+Generic `csv`/`xml` exclude financial profiles; `pdf` includes e-invoice PDFs.

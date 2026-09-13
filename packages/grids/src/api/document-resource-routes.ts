@@ -118,7 +118,7 @@ export const createDocumentResourceRoutes = (deps: { requireAuthenticated?: Midd
                   recordId: z.string(),
                   tableName: z.string(),
                   label: z.string(),
-                  version: z.number(),
+                  version: z.number().int().positive().nullable(),
                   deleted: z.boolean(),
                 }),
               ),

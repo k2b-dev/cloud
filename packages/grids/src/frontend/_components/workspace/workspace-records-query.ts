@@ -93,6 +93,7 @@ const buildResolverContext = (catalog: WorkspaceCatalog, currentTableId: string,
   >;
   const currentTable = tables.find((table) => table.id === currentTableId);
   return {
+    documentMetadata: true,
     ...(currentTable ? { currentTable } : {}),
     tables,
     views,

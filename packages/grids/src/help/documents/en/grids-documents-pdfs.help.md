@@ -62,6 +62,11 @@ For an E-Invoice template, choose its renderer and map the preview data in **Ren
 
 ## Documents shared by several records
 
+The source inspector shows current readable names in stable public-ID order.
+A missing captured version is left blank rather than shown as version zero.
+Evidence packages retain only source IDs and captured versions, not current
+names or deletion status, with a maximum of 10,000 source entries per package.
+
 A workflow can create one file from several records. The file is stored once and appears in each associated record's Documents section, regardless of whether it is PDF, CSV, JSON, XML, SEPA or DATEV. Open **Source records** in its details to inspect the captured record versions.
 
 Source records and result rows are different counts: a join can repeat a record, and a total can combine many records into one row. A missing source count means no complete record association was captured, not zero source records. Related addresses, customers and other relations are not automatically associated.

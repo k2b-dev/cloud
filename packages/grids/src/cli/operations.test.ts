@@ -1,10 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import type { CloudCliContext } from "@k2b/cloud/cli";
+import { documentCommands } from "./documents";
 import { evidenceCommands } from "./evidence";
 import { recordDiscussionCommands } from "./record-discussion";
 import { recordEventCommands } from "./record-events";
 
-const commands = [...evidenceCommands, ...recordDiscussionCommands, ...recordEventCommands];
+const commands = [...evidenceCommands, ...recordDiscussionCommands, ...recordEventCommands, ...documentCommands];
 const command = (path: string) => {
   const value = commands.find((item) => item.path.join(" ") === path);
   if (!value) throw new Error(`Missing command: ${path}`);
@@ -45,6 +46,20 @@ const context = (responses: Response[]) => {
 const record = { table: "TABLE1", record: "REC001" };
 
 describe("Grids operational CLI", () => {
+  test("document sources validate pagination locally and preserve source metadata", async () => {
+    const page = {
+      items: [{ tableId: "TABLE1", recordId: "REC001", tableName: "Expenses", label: "Ticket", version: null, deleted: true }],
+      hasMore: false,
+    };
+    const { ctx, calls, values } = context([Response.json(page)]);
+    for (const flags of [{ limit: "101" }, { offset: "-1" }, { limit: "1.5" }, { offset: "" }]) {
+      await expect(command("documents sources").run({ ctx, args: { document: "DOC001" }, flags })).rejects.toThrow("must be an integer");
+    }
+    expect(calls).toHaveLength(0);
+    await command("documents sources").run({ ctx, args: { document: "DOC001" }, flags: {} });
+    expect(calls[0]?.path).toBe("/api/grids/documents/DOC001/sources");
+    expect(values).toEqual([page]);
+  });
   test("keeps the skill command index aligned with operational commands", async () => {
     const reference = await Bun.file(new URL("../../../../skills/cloud-cli/references/grids.md", import.meta.url)).text();
     const index = reference.split("```text").at(-1)!.split("```")[0]!;

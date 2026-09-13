@@ -1269,6 +1269,12 @@ export const GRIDS_WORKFLOW_ACTIONS = {
                 });
           const reference = WorkflowDocumentDataReferenceSchema.safeParse(data);
           if (!reference.success) throw actionError("BAD_INPUT", documentServiceText(invocationLocale(ctx)).requestInvalidJson);
+          const associatedData =
+            config.associatedData === undefined
+              ? undefined
+              : WorkflowDocumentDataReferenceSchema.safeParse(await ctx.resolveReference(config.associatedData, "associatedData"));
+          if (associatedData && !associatedData.success)
+            throw actionError("BAD_INPUT", documentServiceText(invocationLocale(ctx)).associatedDataInvalid);
           const output = DocumentQueryOutputSchema.safeParse(config.output);
           if (!output.success) throw actionError("BAD_INPUT", documentServiceText(invocationLocale(ctx)).tableOutputInvalid);
           const document = requireOk(
@@ -1277,13 +1283,7 @@ export const GRIDS_WORKFLOW_ACTIONS = {
               runId: scope.runId,
               stepKey: ctx.stepKey,
               data: reference.data,
-              ...(config.associatedData === undefined
-                ? {}
-                : {
-                    associatedData: WorkflowDocumentDataReferenceSchema.parse(
-                      await ctx.resolveReference(config.associatedData, "associatedData"),
-                    ),
-                  }),
+              ...(associatedData?.success ? { associatedData: associatedData.data } : {}),
               output: output.data,
               ...(config.sourceVersions === undefined
                 ? {}

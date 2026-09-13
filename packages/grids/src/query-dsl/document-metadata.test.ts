@@ -1,8 +1,25 @@
 import { expect, test } from "bun:test";
 import { compileFormulaSourceToSql } from "../service/formula-sql-compiler";
 import { resolveDslQueryToQueryPlan } from "./resolver";
-import { ctx, fields, normalizedSql, orders, parseOk } from "./resolver-fixtures";
+import { ctx as defaultContext, fields, normalizedSql, orders, parseOk } from "./resolver-fixtures";
 import { compileDslQueryPlanToSql } from "./sql-compiler";
+
+const ctx = () => ({ ...defaultContext(), documentMetadata: true });
+
+test("document metadata requires explicit resolver opt-in", () => {
+  expect(resolveDslQueryToQueryPlan(parseOk("from table Orders\nselect documentCount() as docs"), defaultContext()).ok).toBe(false);
+});
+
+test("published GQL help examples parse without a formula wrapper in filters", async () => {
+  for (const locale of ["en", "de"]) {
+    const source = await Bun.file(`${import.meta.dir}/../help/documents/${locale}/grids-gql.help.md`).text();
+    const blocks = [...source.matchAll(/```gql\n([\s\S]*?)```/g)]
+      .map((match) => match[1]!)
+      .filter((block) => block.includes("documentCount("));
+    expect(blocks.length).toBeGreaterThan(0);
+    for (const block of blocks) parseOk(block);
+  }
+});
 
 test("document metadata selects and predicates compile as indexed record membership subqueries", () => {
   const ast = parseOk(

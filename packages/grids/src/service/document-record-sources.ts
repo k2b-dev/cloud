@@ -86,7 +86,7 @@ export const persistDocumentRecordSources = async (
     JOIN grids.tables t ON t.short_id = requested."tableId" AND t.base_id = ${input.baseId}::uuid
     JOIN grids.records r ON r.table_id = t.id AND r.short_id = requested."recordId"
   `;
-  if (rows.length !== input.sources.length) throw err.conflict(documentServiceText(input.locale).sourceVersionsUnavailable);
+  if (rows.length !== input.sources.length) throw err.badInput(documentServiceText(input.locale).associatedRecordUnavailable);
   await tx`INSERT INTO grids.document_record_sources ${tx(rows.map((row) => ({ document_id: input.documentId, ...row })))}`;
 };
 
@@ -99,7 +99,7 @@ export const listDocumentRecordSources = async (documentId: string, offset = 0, 
       tableId: string;
       recordId: string;
       tableName: string;
-      version: number;
+      version: number | null;
       deleted: boolean;
     }>
   >`
@@ -115,7 +115,7 @@ export const listDocumentRecordSources = async (documentId: string, offset = 0, 
     FROM sources source
     JOIN grids.records r ON r.id = source.record_id
     JOIN grids.tables t ON t.id = source.table_id
-    ORDER BY source.table_id, source.record_id
+    ORDER BY t.short_id, r.short_id
     LIMIT ${limit + 1} OFFSET ${offset}
   `;
   const page = rows.slice(0, limit);
@@ -131,7 +131,7 @@ export const listDocumentRecordSources = async (documentId: string, offset = 0, 
     items: page.map(({ internalTableId: _table, internalRecordId, ...row }) => ({
       ...row,
       label: labels[internalRecordId] ?? row.recordId,
-      version: Number(row.version),
+      version: row.version == null ? null : Number(row.version),
     })),
     hasMore: rows.length > limit,
   };

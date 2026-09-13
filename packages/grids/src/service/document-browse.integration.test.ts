@@ -285,6 +285,30 @@ describe("document browsing integration", () => {
     expect(Number(row.count)).toBe(1);
     const [original] = await sql`SELECT ${compiled.expression.sql} AS count FROM grids.records r WHERE r.id = ${fixture.recordId}::uuid`;
     expect(Number(original.count)).toBe(5);
+    const seen: string[] = [];
+    let cursor: string | null = null;
+    do {
+      const page = await listDocumentsForRecord({
+        baseId: fixture.baseId,
+        tableId: fixture.tableId,
+        recordId: fixture.recordId,
+        limit: 2,
+        cursor,
+      });
+      seen.push(...page.items.map((item) => item.id));
+      cursor = page.nextCursor;
+    } while (cursor);
+    expect(seen).toHaveLength(5);
+    expect(new Set(seen)).toEqual(new Set(fixture.documentIds));
+    for (const format of ["pdf", "csv", "sepa-xml"]) {
+      const latest = compileFormulaSourceToSql(`latestDocumentAt('${format}')`, { fields: [], documentMetadata: true });
+      if (!latest.ok) throw new Error(latest.error);
+      const [value] = await sql`SELECT ${latest.expression.sql} AS latest FROM grids.records r WHERE r.id = ${second}::uuid`;
+      if (format === "pdf") {
+        const [expected] = await sql`SELECT created_at FROM grids.documents WHERE id = ${document}::uuid`;
+        expect(value.latest).toEqual(expected.created_at);
+      } else expect(value.latest).toBeNull();
+    }
     const records = await listRecords({
       tableId: fixture.tableId,
       computedColumns: [

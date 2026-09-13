@@ -51,6 +51,7 @@ const transactionLoaders = (client: SqlClient): TrustedGqlResolverContextLoaders
 });
 
 export const hydrateDslViewQueries = (params: {
+  documentMetadata?: boolean;
   tables: DslTableSource[];
   views: DslViewSource[];
   fieldsByTableId: Record<string, Field[]>;
@@ -61,6 +62,7 @@ export const hydrateDslViewQueries = (params: {
     if (!parsed.ok) return [];
     const currentTable = params.tables.find((table) => table.id === view.tableId);
     const resolved = resolveDslQueryToRecordQuery(parsed.ast, {
+      documentMetadata: params.documentMetadata === true,
       ...(currentTable ? { currentTable } : {}),
       tables: params.tables,
       views: [],
@@ -82,7 +84,6 @@ export const buildTrustedGqlResolverContext = async (
   },
   loaders: TrustedGqlResolverContextLoaders = params.client ? transactionLoaders(params.client) : defaultLoaders,
 ): Promise<DslResolverContext> => {
-  void params.purpose;
   const baseTables = await loaders.listTablesByBase(params.baseId);
   const dslTables: DslTableSource[] = baseTables.map((table) => ({
     kind: "table",
@@ -106,10 +107,11 @@ export const buildTrustedGqlResolverContext = async (
     string,
     Field[]
   >;
-  const views = hydrateDslViewQueries({ tables: dslTables, views: viewsCatalog, fieldsByTableId });
+  const documentMetadata = params.purpose !== "custom-app-render";
+  const views = hydrateDslViewQueries({ tables: dslTables, views: viewsCatalog, fieldsByTableId, documentMetadata });
 
   return {
-    documentMetadata: params.purpose !== "custom-app-render",
+    documentMetadata,
     ...(currentTable ? { currentTable } : {}),
     tables: dslTables,
     views,

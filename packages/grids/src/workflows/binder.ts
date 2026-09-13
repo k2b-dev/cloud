@@ -21,6 +21,7 @@ import {
 import { normalizeWorkflowSchedule } from "@k2b/cloud/workflows/runtime";
 import type { Result } from "@k2b/stdlib";
 import type { DslQueryContextInput } from "../query-dsl/parameters";
+import { parseGridsQueryDsl } from "../query-dsl/parser";
 import { FinancialDocumentOutputSchema } from "../service/document-financial-output";
 import { validateDocumentQueryOutput } from "../service/document-query-output";
 import {
@@ -49,7 +50,7 @@ type CanonicalEdit =
   | { kind: "value" | "key"; path: Array<string | number>; value: string }
   | { kind: "reference"; path: Array<string | number>; from: string; to: string };
 
-type ValueInfo = WorkflowValuePathDescriptor & { tableId?: string };
+type ValueInfo = WorkflowValuePathDescriptor & { tableId?: string; documentRowQuery?: boolean };
 
 const textValue: WorkflowValuePathDescriptor = { kind: "scalar", type: "core.text" };
 const dateTimeValue: WorkflowValuePathDescriptor = { kind: "scalar", type: "core.dateTime" };
@@ -516,6 +517,16 @@ const bindAction = (step: Extract<WorkflowIrStep, { kind: "action" }>, scope: Ma
         }
       }
       if (typeof config.source === "string") {
+        const parsed = parseGridsQueryDsl(config.source);
+        if (output && parsed.ok)
+          output = {
+            ...output,
+            documentRowQuery:
+              parsed.ast.source?.kind === "table" &&
+              !parsed.ast.joins.length &&
+              !parsed.ast.groupBy.length &&
+              !parsed.ast.aggregations.length,
+          };
         // The kernel evaluates config expressions; never let an expression
         // replace the published query. All dynamic data belongs in parameters.
         if (config.source.includes("${{"))
@@ -628,7 +639,19 @@ const bindAction = (step: Extract<WorkflowIrStep, { kind: "action" }>, scope: Ma
     if (config.associatedData !== undefined) {
       if (config.data === undefined)
         addDiagnostic(context, "binding.source", "associatedData requires data/output", [...path, "associatedData"]);
-      expectReference(config.associatedData, "grids.queryResult", "associatedData", [...path, "associatedData"], scope, context);
+      const associated = expectReference(
+        config.associatedData,
+        "grids.queryResult",
+        "associatedData",
+        [...path, "associatedData"],
+        scope,
+        context,
+      );
+      if (associated?.documentRowQuery === false)
+        addDiagnostic(context, "binding.source", "associatedData requires a single-table row query without joins, grouping or aggregates", [
+          ...path,
+          "associatedData",
+        ]);
     }
     if (config.sourceVersions !== undefined) {
       if (config.sourceVersions === "data" && typeof config.data !== "string")

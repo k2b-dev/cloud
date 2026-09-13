@@ -96,16 +96,18 @@ const listDocuments = async (params: {
 }): Promise<{ items: DocumentSummary[]; nextCursor: string | null; hasMore: boolean }> => {
   const limit = Math.min(Math.max(params.limit ?? 100, 1), 500);
   const cursor = decodeDocumentCursor(params.cursor);
+  const scope = params.recordId
+    ? sql`id IN (
+        SELECT id FROM grids.documents WHERE table_id = ${params.tableId ?? null}::uuid AND record_id = ${params.recordId}::uuid
+        UNION
+        SELECT document_id FROM grids.document_record_sources
+        WHERE table_id = ${params.tableId ?? null}::uuid AND record_id = ${params.recordId}::uuid
+      )`
+    : sql`(${params.tableId ?? null}::uuid IS NULL OR table_id = ${params.tableId ?? null}::uuid)`;
   const rows = await sql<DocumentDbRow[]>`
     SELECT ${summaryColumns} FROM grids.documents
     WHERE base_id = ${params.baseId}::uuid
-      AND (
-        (${params.recordId ?? null}::uuid IS NULL AND (${params.tableId ?? null}::uuid IS NULL OR table_id = ${params.tableId ?? null}::uuid))
-        OR (table_id = ${params.tableId ?? null}::uuid AND record_id = ${params.recordId ?? null}::uuid)
-        OR EXISTS (SELECT 1 FROM grids.document_record_sources source
-          WHERE source.document_id = grids.documents.id
-            AND source.table_id = ${params.tableId ?? null}::uuid AND source.record_id = ${params.recordId ?? null}::uuid)
-      )
+      AND ${scope}
       AND (${params.templateId ?? null}::uuid IS NULL OR template_id = ${params.templateId ?? null}::uuid)
       AND (
         ${cursor?.createdAt ?? null}::timestamptz IS NULL

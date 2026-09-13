@@ -381,8 +381,13 @@ liefert deren letzten Erstellungszeitpunkt oder null. Als optionales Format sind
 ```gql
 from table Auslagen
 select Beschreibung, documentCount('sepa-xml') as Exporte
-where formula(documentCount('sepa-xml')) = 0
+where documentCount('sepa-xml') = 0
 ```
+
+Nutze diese Funktionen in Zeilenprojektionen und `where`, nicht in Aggregaten
+oder `having`. `xml` und `csv` schließen SEPA- und DATEV-Exporte aus; `pdf`
+enthält auch E-Rechnungs-PDFs. Metadatenfilter prüfen die Dokumente pro
+Datensatz. Grenze große Auswahlen möglichst mit normalen Feldfiltern ein.
 
 Eine Sammeldatei zählt bei jedem ausdrücklich zugeordneten Datensatz einmal.
 Relations werden nicht verfolgt. Die Angaben bleiben nach dem Finalisieren

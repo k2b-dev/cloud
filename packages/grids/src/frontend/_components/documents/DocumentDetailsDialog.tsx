@@ -203,7 +203,7 @@ export function DocumentDetailsDialog(props: { args: DocumentDetailsDialogArgs; 
               </dl>
             )}
           </Show>
-          <Show when={(document().sourceRecordCount ?? 0) > 0}>
+          <Show when={(document().sourceRecordCount ?? 0) > 0 && (!document().recordId || document().sourceRecordCount! > 1)}>
             <Button
               variant="ghost"
               class="grids-document-detail-row"

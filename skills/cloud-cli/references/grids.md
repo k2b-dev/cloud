@@ -120,6 +120,13 @@ cld grids tables list --json
 
 For `generateDocument` with `data`/`output`, optional `associatedData: selection` names a saved, single-table row-query result. Use it when a joined/aggregate output should appear at specific Records. Default membership is inferred only from unambiguous row origins; Document and Record snapshot sources preserve their known associations. Relations do not propagate membership. `associatedData` is not a freshness check: financial `sourceVersions` retains its separate approval/version contract.
 
+The sources list uses stable public-ID ordering and current readable labels.
+An unavailable captured version is `null`, never version zero. Inherited sources
+with conflicting versions have unknown membership; use a separate row-query
+selection for explicit `associatedData` in that case. Evidence exports contain
+only source `tableId`, `recordId`, and captured `version`, without live names or
+deletion state, and allow at most 10,000 document-source entries per package.
+
 GQL row queries support `documentCount(format?)` and `latestDocumentAt(format?)` in SELECT (with an alias) and WHERE. Formats are `pdf`, `csv`, `json`, `xml`, `sepa-xml`, `datev-csv`; omission includes all outputs. One Document with several artifacts counts once. No matches yields count zero and date null. These are live metadata, not stored Formula fields; they do not change finalized business values. Custom App queries cannot access these Base-level metadata.
 
 ```sql
@@ -1600,7 +1607,7 @@ apps runtime comments list|create|update|delete
 apps runtime files list|upload|replace|download|delete
 document-templates reference|list|get|create|update|delete
 document-templates preview-data|preview-pdf|preview-draft-data|preview-draft-pdf
-documents renderers|list|list-by-template|browse|by-record|generate|get|download|download-artifact
+documents renderers|list|list-by-template|browse|by-record|sources|generate|get|download|download-artifact
 documents links list|create|revoke
 evidence preflight|list|create|get|retry|cancel|download|verify
 email-templates reference|list|get|create|update|delete

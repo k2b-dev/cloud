@@ -7,7 +7,11 @@ import { projectDocuments } from "../api/documents-api-shared";
 import { financialQueryProfiles } from "../document-profiles/financial";
 import { postgresTest, testShortId, testUuid } from "../integration-test-utils";
 import { migrate } from "../migrate";
-import { WorkflowDocumentSnapshotPayloadSchema, type WorkflowQueryPayloadSchema } from "../workflows/query-contracts";
+import {
+  WorkflowDocumentSnapshotPayloadSchema,
+  type WorkflowQueryPayloadSchema,
+  WorkflowRecordSnapshotPayloadSchema,
+} from "../workflows/query-contracts";
 import { loadDocumentDataSnapshots } from "./document-browse";
 import type { FinancialDocumentOutput } from "./document-financial-output";
 import { documentIssuanceService as service } from "./document-issuance";
@@ -196,6 +200,20 @@ describe("financial query Document issuance", () => {
     });
     expect((await sql.begin((tx) => resolveCapturedDocumentRecords(documentSource, scope.baseId, tx)))?.length).toBe(2);
     expect(await sql.begin((tx) => resolveCapturedDocumentRecords(documentSource, testUuid(), tx))).toBeNull();
+    const snapshotShortId = testShortId("S");
+    await sql`INSERT INTO grids.record_snapshots (id, short_id, base_id, table_id, record_id, root, graph)
+      VALUES (${testUuid()}::uuid, ${snapshotShortId}, ${scope.baseId}::uuid, ${tableId}::uuid, ${members[0]!.id}::uuid,
+        '{"version":7}'::jsonb, '{}'::jsonb)`;
+    const snapshotSource = WorkflowRecordSnapshotPayloadSchema.parse({
+      ...documentSource,
+      version: 4,
+      source: { kind: "recordSnapshots", ids: [snapshotShortId] },
+      tableIds: [tableId],
+    });
+    expect(await sql.begin((tx) => resolveCapturedDocumentRecords(snapshotSource, scope.baseId, tx))).toEqual([
+      { tableId: tableShortId, recordId: members[0]!.shortId, version: 7 },
+    ]);
+    expect(await sql.begin((tx) => resolveCapturedDocumentRecords(snapshotSource, testUuid(), tx))).toBeNull();
     const replay = await service.issueQueryDocument(associated);
     if (!replay.ok) throw replay.error;
     expect(replay.data).toHaveProperty("id", issued.data.id);

@@ -62,6 +62,11 @@ Wähle bei einer E-Rechnungsvorlage den Renderer aus und ordne die Vorschaudaten
 
 ## Ein Dokument für mehrere Datensätze
 
+Die Quellenliste zeigt aktuelle lesbare Namen, sortiert nach stabilen öffentlichen
+IDs. Eine fehlende erfasste Version bleibt leer statt als Version 0 zu erscheinen.
+Nachweispakete enthalten nur Quell-IDs und erfasste Versionen, keine aktuellen
+Namen oder Löschzustände. Pro Paket sind höchstens 10.000 Quellzuordnungen möglich.
+
 Ein Workflow kann aus mehreren Datensätzen eine Datei erstellen. Sie wird einmal gespeichert und erscheint bei jedem zugeordneten Datensatz unter Dokumente – auch als CSV, JSON, XML, SEPA oder DATEV. Öffne im Dokumentdialog **Quelldatensätze**, um die erfassten Datensatzversionen anzusehen.
 
 Quelldatensätze und Ergebniszeilen sind unterschiedliche Angaben: Ein Join kann einen Datensatz wiederholen; eine Summe kann viele Datensätze in einer Zeile zusammenfassen. Fehlt die Anzahl der Quelldatensätze, wurde keine vollständige Zuordnung erfasst. Das bedeutet nicht null Quelldatensätze. Verknüpfte Kunden, Adressen und andere Relations werden nicht automatisch zugeordnet.

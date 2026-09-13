@@ -58,6 +58,11 @@ export const documentServiceMessages = i18n.define({
       financialRunChanged: "This export run is no longer current. Start a new export and review its data before confirming.",
       sourceVersionsUnavailable:
         "Automatic source versions require a new single-source Record query with unique rows. Use explicit versions for other sources.",
+      associatedDataInvalid: "associatedData must reference the captured result of an earlier query step.",
+      associatedDataNotRowQuery:
+        "associatedData requires a single-table row query without joins, grouping or aggregates. Capture the source records in a separate query step.",
+      associatedRecordUnavailable:
+        "A document source record could not be found in this base. Check the captured selection before starting a new export.",
       sourceVersionsEmpty: "No records were found for this export. Check the selection and query filters before starting a new export.",
       sourceVersionChanged: "A source record changed or is no longer available. Start a new export and review its current data.",
       financialAccessDenied: "You no longer have permission to confirm this export. Check your workflow and source access.",
@@ -159,6 +164,11 @@ export const documentServiceMessages = i18n.define({
       createdDocumentReadFailed: "The created document could not be read.",
     },
     de: {
+      associatedDataInvalid: "associatedData muss auf das gespeicherte Ergebnis eines vorherigen Abfrageschritts verweisen.",
+      associatedDataNotRowQuery:
+        "associatedData benötigt eine Zeilenabfrage aus einer Tabelle ohne Joins, Gruppierung oder Aggregate. Erfasse die Quelldatensätze in einem eigenen Abfrageschritt.",
+      associatedRecordUnavailable:
+        "Ein Dokument-Quelldatensatz wurde in dieser Base nicht gefunden. Prüfe die gespeicherte Auswahl, bevor du einen neuen Export startest.",
       tableOutputInvalid: "Die Ausgabeoptionen sind ungültig. Prüfe das gewählte Dateiformat und seine Einstellungen.",
       financialColumnsInvalid: "Spalten für den Finanzexport müssen eindeutige Namen haben.",
       financialConfirmationRequired: "Prüfe und bestätige den Finanzexport, bevor seine Datei erstellt wird.",

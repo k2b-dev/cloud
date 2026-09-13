@@ -60,7 +60,7 @@ export const buildComputedStub = (fields: Field[]): Map<string, FormulaSqlExpres
   );
 
 export const createScope = (fields: Field[], ctx: DslResolverContext, tableId: string, sourceAlias?: string): Scope => ({
-  documentMetadata: ctx.documentMetadata !== false,
+  documentMetadata: ctx.documentMetadata === true,
   tableId,
   ...(sourceAlias ? { sourceAlias } : {}),
   fields,

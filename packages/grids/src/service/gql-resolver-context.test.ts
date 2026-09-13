@@ -101,6 +101,27 @@ describe("buildTrustedGqlResolverContext", () => {
     expect(views[0]?.query.filter).toBeDefined();
   });
 
+  test("view hydration requires document metadata permission too", () => {
+    for (const documentMetadata of [false, true]) {
+      const views = hydrateDslViewQueries({
+        ...ctx(),
+        documentMetadata,
+        views: [
+          {
+            kind: "view",
+            id: "33333333-3333-4333-8333-333333333333",
+            shortId: "Profit",
+            name: "Profit",
+            tableId: orders.id,
+            source: "from table Orders\nselect documentCount() as documents",
+            query: {},
+          },
+        ],
+      });
+      expect(views.length).toBe(documentMetadata ? 1 : 0);
+    }
+  });
+
   test("exposes all base tables for service-level document and Grids App renderers", async () => {
     const parsed = parseGridsQueryDsl("from table Hidden\nselect Secret");
     expect(parsed.ok).toBe(true);

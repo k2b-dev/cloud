@@ -94,6 +94,33 @@ describe("evidence export integration", () => {
         ),
       );
       if (!reference.ok) throw reference.error;
+      const recordId = testUuid();
+      const recordShortId = testShortId("R");
+      await sql`INSERT INTO grids.records (id, short_id, table_id, data)
+        VALUES (${recordId}::uuid, ${recordShortId}, ${tableId}::uuid, '{}'::jsonb)`;
+      const selectionPayload = {
+        ...payload,
+        source: `from table {${tableShortId}}`,
+        rowOrigins: [{ recordId: recordShortId, tableId: tableShortId, version: 1 }],
+      };
+      const selection = await sql.begin((tx) =>
+        persistWorkflowQueryDataInTransaction(
+          {
+            baseId,
+            runId,
+            stepKey: "selection",
+            capture: {
+              payload: selectionPayload,
+              sha256: canonicalDocumentJson(selectionPayload).sha256,
+              hashVersion: 2,
+              rowCount: 1,
+              capturedAt,
+            },
+          },
+          tx,
+        ),
+      );
+      if (!selection.ok) throw selection.error;
       const documents = [];
       for (const kind of ["csv", "json"] as const) {
         const issued = await documentIssuanceService.issueQueryDocument({
@@ -101,6 +128,7 @@ describe("evidence export integration", () => {
           runId,
           stepKey: kind,
           data: reference.data,
+          associatedData: selection.data,
           output: { kind },
           filename: `report.${kind}`,
           tags: [],
@@ -113,9 +141,11 @@ describe("evidence export integration", () => {
         documents.push(issued.data);
       }
       const preview = await preflight({ baseId, tableId: null, from: null, to: null, sections: ["documents"] });
-      expect(preview.known).toMatchObject({ documents: 2, documentEntries: 5 });
+      expect(preview.known).toMatchObject({ documents: 2, documentEntries: 6 });
       const tablePreview = await preflight({ baseId, tableId, from: null, to: null, sections: ["documents"] });
-      expect(tablePreview.known.documents).toBe(0);
+      expect(tablePreview.known.documents).toBe(2);
+      await sql`UPDATE grids.tables SET name = 'Renamed later' WHERE id = ${tableId}::uuid`;
+      await sql`UPDATE grids.records SET deleted_at = now() WHERE id = ${recordId}::uuid`;
       const exportId = testUuid();
       const exportShortId = testShortId("E");
       await sql`INSERT INTO grids.evidence_exports (id, short_id, base_id, sections)
@@ -125,14 +155,22 @@ describe("evidence export integration", () => {
       if (!result.ok) throw result.error;
       const entries = readTar(await collect(result.data.body));
       const queryPaths = [...entries.keys()].filter((path) => path.startsWith("documents/queries/"));
-      expect(queryPaths).toHaveLength(1);
+      expect(queryPaths).toHaveLength(2);
       for (const document of documents) {
         expect(entries.has(`documents/${document.shortId}/${document.filename}`)).toBe(true);
         const metadata = JSON.parse(new TextDecoder().decode(entries.get(`documents/metadata/${document.shortId}.json`)));
-        expect(metadata.query_source_path).toBe(queryPaths[0]);
+        expect(queryPaths).toContain(metadata.query_source_path);
+        expect(queryPaths).toContain(metadata.associated_source_path);
+        expect(metadata.associated_source_path).not.toBe(metadata.query_source_path);
+        expect(metadata.associated_query_sha256).toBe(selection.data.sha256);
+        expect(metadata.source_records).toEqual([{ tableId: tableShortId, recordId: recordShortId, version: 1 }]);
+        const associated = JSON.parse(new TextDecoder().decode(entries.get(metadata.associated_source_path)));
+        expect(associated.sourceSha256).toBe(selection.data.sha256);
+        expect(associated.payload.rowOrigins).toEqual(selectionPayload.rowOrigins);
         expect(metadata.query_sha256).toBe(reference.data.sha256);
       }
-      const path = queryPaths[0];
+      const first = documents[0]!;
+      const path = JSON.parse(new TextDecoder().decode(entries.get(`documents/metadata/${first.shortId}.json`))).query_source_path;
       if (!path) throw new Error("Query payload missing");
       const queryText = new TextDecoder().decode(entries.get(path));
       const query = JSON.parse(queryText);

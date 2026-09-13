@@ -176,7 +176,7 @@ export const buildPermissionedGqlResolverContextForAccess = async (
     string,
     Field[]
   >;
-  const hydratedViews = hydrateDslViewQueries({ tables: dslTables, views, fieldsByTableId });
+  const hydratedViews = hydrateDslViewQueries({ tables: dslTables, views, fieldsByTableId, documentMetadata: true });
   const authorizedViewIds = new Set(hydratedViews.map((view) => view.id));
 
   return {
@@ -187,6 +187,7 @@ export const buildPermissionedGqlResolverContextForAccess = async (
     tablePermissionsById,
     authorizedTableIds,
     authorizedViewIds,
+    documentMetadata: true,
   };
 };
 

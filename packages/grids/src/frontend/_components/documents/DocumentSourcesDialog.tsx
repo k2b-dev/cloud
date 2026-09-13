@@ -69,7 +69,8 @@ export default function DocumentSourcesDialog(props: { document: PublicDocument;
                     </ButtonLink>
                   </Show>
                   <p class="text-xs text-dimmed">
-                    {item.tableName} · {t().sourceRecordVersion({ version: item.version })}
+                    {item.tableName}
+                    {item.version == null ? "" : ` · ${t().sourceRecordVersion({ version: item.version })}`}
                   </p>
                 </div>
               </div>

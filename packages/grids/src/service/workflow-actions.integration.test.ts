@@ -358,6 +358,41 @@ beforeAll(async () => {
 }, 30_000);
 
 describe("declared Grids workflow actions", () => {
+  postgresTest("associatedData captures real records and rejects malformed references without retrying", async () => {
+    const fixture = createFixture();
+    try {
+      await insertFixture(fixture);
+      const catalog = await loadWorkflowCatalog(fixture.baseId);
+      const compiled = await compileAndBindGridsWorkflowSource(
+        "steps:\n  - query:\n      source: |\n        from table Tasks\n        select Name\n      saveAs: report\n  - generateDocument:\n      data: report\n      associatedData: report\n      output: { kind: json }\n",
+        catalog,
+        workflowQueryBinder(fixture.baseId, catalog),
+      );
+      if (!compiled.ok) throw new Error(JSON.stringify(compiled.diagnostics));
+      const dry = await queueRun(fixture, { plan: compiled.plan, mode: "dryRun" });
+      expect(await drive(dry, "dryRun")).toBe("succeeded");
+      expect(await sql`SELECT id FROM grids.documents WHERE workflow_run_id = ${dry}::uuid`).toHaveLength(0);
+      const runId = await queueRun(fixture, { plan: compiled.plan });
+      expect(await drive(runId)).toBe("succeeded");
+      const sources = await sql`SELECT s.record_id::text, s.version::int FROM grids.document_record_sources s
+        JOIN grids.documents d ON d.id = s.document_id WHERE d.workflow_run_id = ${runId}::uuid`;
+      expect(sources).toEqual([{ record_id: fixture.recordId, version: 1 }]);
+      const broken = {
+        ...compiled.plan,
+        steps: compiled.plan.steps.map((step) =>
+          step.kind === "action" && step.action === "generateDocument"
+            ? { ...step, config: { ...step.config, associatedData: "report.rowCount" } }
+            : step,
+        ),
+      };
+      const badRun = await queueRun(fixture, { plan: broken });
+      expect(await drive(badRun)).toBe("failed");
+      expect(await runRow(badRun)).toMatchObject({ error: { code: "BAD_INPUT" } });
+      expect(await sql`SELECT id FROM grids.documents WHERE workflow_run_id = ${badRun}::uuid`).toHaveLength(0);
+    } finally {
+      await cleanupFixture(fixture);
+    }
+  });
   postgresTest("a stale manifest cannot capture data or issue a document", async () => {
     const fixture = createFixture();
     try {

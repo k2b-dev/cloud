@@ -869,7 +869,7 @@ export const createDocumentIssuanceService = (options: { profiles?: readonly Doc
         if (canonicalJson(associated.data.reference, locale).sha256 !== canonicalJson(request.associatedData, locale).sha256)
           return fail(err.conflict(t.workflowQueryIntegrityFailed));
         await authorize(associated.data.payload.tableIds, db);
-        if (capturedDocumentRecords(associated.data.payload) === null) return fail(err.badInput(t.sourceVersionsUnavailable));
+        if (capturedDocumentRecords(associated.data.payload) === null) return fail(err.badInput(t.associatedDataNotRowQuery));
       }
       const operationHash = sha256Hex(idempotencyKey);
       const requestHash = canonicalJson(request, locale).sha256;
@@ -1030,7 +1030,7 @@ export const createDocumentIssuanceService = (options: { profiles?: readonly Doc
           if (!associated.ok) throw associated.error;
           await authorize(associated.data.payload.tableIds, tx);
           sources = capturedDocumentRecords(associated.data.payload);
-          if (sources === null) throw err.badInput(t.sourceVersionsUnavailable);
+          if (sources === null) throw err.badInput(t.associatedDataNotRowQuery);
         }
         if (
           financial &&

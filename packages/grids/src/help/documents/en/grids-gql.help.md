@@ -365,13 +365,18 @@ An optional format selects `pdf`, `csv`, `json`, `xml`, `sepa-xml`, or `datev-cs
 ```gql
 from table Expenses
 select Description, documentCount('sepa-xml') as exports
-where formula(documentCount('sepa-xml')) = 0
+where documentCount('sepa-xml') = 0
 ```
 
 These values remain live after a record is finalized. They do not follow
 relations and do not prove payment. A multi-record Document counts once for
 each explicitly associated record. These functions are not available in stored
 Formula fields or Custom App queries.
+
+Use these functions in row projections and `where`, not aggregates or `having`.
+Generic `xml` and `csv` exclude SEPA and DATEV exports; `pdf` includes e-invoice
+PDFs. Metadata filters inspect associated documents for each candidate record.
+Narrow large selections with ordinary field filters when possible.
 
 :::reference
 - **Unknown source or field:** Check spelling, quoting, current base, and access.

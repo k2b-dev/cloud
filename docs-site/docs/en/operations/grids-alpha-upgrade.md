@@ -20,6 +20,12 @@ The supported formats are document/receipt/query-capture hash version **2**,
 workflow plan schema **2**, query binding **3**, and recorded capture-byte budgets
 for every existing run. Older workflow tables are not supported.
 
+Workflow plan and query-binding checks cover the active version, versions used
+by enabled activations, and versions pinned by unfinished runs (including runs
+that need attention). Inactive historical versions with only finished runs do
+not block startup and are not rewritten. They do not become executable under
+the new contract; publish a current definition before starting new work.
+
 ## Check before deploying
 
 1. Record the current application images and configuration. Arrange a maintenance

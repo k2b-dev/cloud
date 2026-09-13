@@ -313,7 +313,7 @@ export default function RecordDocumentsSection(props: {
                 <DetailPanel.Action
                   type="button"
                   title={document.filename}
-                  description={`${formatRecordRelativeTime(document.createdAt)}${document.sourceRecordCount == null ? "" : ` · ${dt().sourceRecordCount({ count: document.sourceRecordCount })}`}`}
+                  description={`${formatRecordRelativeTime(document.createdAt)}${(document.sourceRecordCount ?? 0) > 1 ? ` · ${dt().sourceRecordCount({ count: document.sourceRecordCount! })}` : ""}`}
                   leading={
                     <i
                       aria-hidden="true"
