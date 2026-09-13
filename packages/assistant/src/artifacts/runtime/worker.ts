@@ -1,3 +1,5 @@
+import { createAnalyticsUi } from "./analytics-ui";
+import { createHttp, secret } from "./http";
 import { createWork } from "./work";
 import { pdf, excel } from "./documents";
 import { z } from "zod";
@@ -172,6 +174,13 @@ function scopedStorage(scope: "local" | "shared", area: "kv" | "files") {
     delete: (key: string) => call("delete",key), list,
   };
 }
+const analytics = createAnalyticsUi(values => {
+  for (const value of values) nodes.set(value.id, UiNode.parse({ id: value.id, kind: "analytics", label: value.label, analytics: value, children: value.type === "layout" ? value.children : [] }));
+  flush();
+}, async ({ accept, multiple }) => {
+  const result = await rpc(multiple ? "file.openMultiple" : "file.open", [{ accept }]);
+  return (Array.isArray(result) ? result : [result]).map(picked).filter((file): file is File => file !== null);
+});
 const api = {
   money,
   datev,
@@ -284,6 +293,8 @@ const api = {
         children: children.map((c) => c.id),
       }),
   },
+  http: createHttp(rpc),
+  secret,
   capabilities: {run:(name:string,input:unknown={}) => rpc("capabilities.run",[name,input])},
   database: {connect: async () => {
     await rpc("database",[{operation:"connect"}]);
@@ -352,7 +363,7 @@ const api = {
     list: () => rpc("opfs.list"),
   },
 };
-for (const [name, value] of Object.entries(api)) Object.defineProperty(globalThis, name, { value, writable: false });
+for (const [name, value] of Object.entries(api)) Object.defineProperty(globalThis, name, { value, writable: false, configurable: name === "ui" });
 let started = false;
 globalThis.addEventListener("message", async (event: MessageEvent) => {
   const m = event.data;
@@ -368,6 +379,10 @@ globalThis.addEventListener("message", async (event: MessageEvent) => {
     let ownsBusy = false;
     try {
       const n = nodes.get(m.id);
+      if (n?.kind === "analytics") {
+        await analytics.event(m.id, m.analytics ?? { type: "change", value: null });
+        return;
+      }
       if (!n || n.disabled || n.loading || busy) throw new Error("Control is unavailable or busy");
       if (m.action !== undefined) {
         const action = listActions.get(n.id)?.get(m.action);
@@ -405,10 +420,12 @@ globalThis.addEventListener("unhandledrejection", (e: PromiseRejectionEvent) =>
 );
 
 Object.defineProperty(globalThis, "__artifactStart", {
-  value: async (definition: Definition) => {
+  value: async (definition: Definition, uiVersion: unknown = 1) => {
     if (started) return;
     started = true;
     try {
+      if (uiVersion !== 1 && uiVersion !== 2) throw new Error("Unsupported UI runtime version. Use export const uiVersion = 2.");
+      if (uiVersion === 2) Object.defineProperty(globalThis, "ui", { value: { ...analytics.ui, modal: api.ui.modal }, writable: false });
       const result = await definition();
       if (result !== undefined) {
         try { send({ type: "output", value: result }); }

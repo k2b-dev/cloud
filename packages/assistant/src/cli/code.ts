@@ -39,7 +39,7 @@ export const assistantCodeCommands=[
   command("code run",{summary:"Execute code in an isolated CLI worker, optionally with UI interactions and output exports",flags:{
     chat:flag.string({description:"Existing chat ID for authorized inputs, outputs and Project context"}),
     input:inputFlag(),steps:flag.input({description:"Optional JSON array of {name,args} steps: code_interact, code_inspect, code_export"}),
-    approve:flag.stringList({description:"Explicitly approve this exact capability name for this run"}),
+    approve:flag.stringList({description:"Approve an exact capability name or http.fetch:https://origin for this run"}),
   },async run({ctx,flags}){
     if(!flags.chat)throw new Error("Provide --chat with an existing chat ID for the run context.");
     const input=await jsonInput(flags.input);

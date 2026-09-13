@@ -277,3 +277,52 @@ test("finance exports and resource-scoped one-offs use the existing worker and m
     expect(rejected).toMatchObject({error:"Manage required"});
   } finally { await host.close(); }
 }, 30000);
+
+
+test("HTTP crosses the real CLI worker bridge as secret references and waits for trusted consent",async()=>{
+  const code='export default async()=>{const response=await http.fetch("https://api.example.com/data",{headers:{Authorization:secret("crm",{prefix:"Bearer "})}});return {status:response.status,data:await response.json()};}';
+  const bundle=await cliHostBundle(), compiled=await compileArtifact({entry:"main.ts",files:[{path:"main.ts",content:code}]});
+  let sent=0,approved=0;
+  const host=await createCliCodeHost({fetch:async(input,init)=>{
+    const path=String(input);
+    if(path.endsWith("host.js"))return new Response(bundle);
+    if(path.endsWith("/compile"))return Response.json(compiled);
+    const body=await new Response(init?.body).json();
+    if(path.endsWith("/runtime/http")){
+      expect(body.request.headers.authorization).toEqual({secret:"crm",prefix:"Bearer "});
+      return Response.json({id:body.id,url:body.request.url,method:"GET",headers:body.request.headers,bodyBytes:0,bodyPreview:"",bodyTruncated:false});
+    }
+    if(path.includes("/runtime/http/")){
+      expect(approved).toBe(1);expect(body.approved).toBe(true);sent++;
+      return Response.json({status:200,headers:{"content-type":"application/json"},body:btoa('{"count":7}')});
+    }
+    throw new Error(`Unexpected path ${path}`);
+  }},async request=>{expect("type" in request && request.type).toBe("http");expect(request.name).toBe("http.fetch:https://api.example.com");approved++;return {approved:true};});
+  try{
+    const result=await host.execute({name:"code_run",callId:"http-test",conversationId:crypto.randomUUID(),turnId:crypto.randomUUID(),args:{code}});
+    expect(result).toMatchObject({status:"ready",output:JSON.stringify({status:200,data:{count:7}})});expect(sent).toBe(1);
+  }finally{await host.close();}
+},60000);
+
+test("CLI uses UI version 2 typed controls and bounded explorer inspection", async () => {
+  const code = `export const uiVersion=2; export default()=>{
+    const output=ui.text({id:"output",value:"Before"});
+    ui.number({id:"count",label:"Count",value:1,onChange(value){output.setValue("Count: "+value);}});
+    ui.chartExplorer({id:"chart",label:"Chart",columns:[{key:"value",label:"Value"}],data:{rowKey:"id",rows:[{id:"a",value:4}],chart:{kind:"bar",category:"id",value:"value"}}});
+  };`;
+  const bundle=await cliHostBundle();
+  const compiled=await compileArtifact({entry:"main.ts",files:[{path:"main.ts",content:code}]});
+  const host=await createCliCodeHost({fetch:async input=>{
+    const path=String(input);
+    if(path.endsWith("host.js"))return new Response(bundle);
+    if(path.endsWith("/compile"))return Response.json(compiled);
+    if(path.includes("/files"))return Response.json({files:[]});
+    throw new Error(`Unexpected request ${path}`);
+  }});
+  const ids={conversationId:"00000000-0000-4000-8000-000000000001",turnId:"00000000-0000-4000-8000-000000000001"};
+  try{
+    expect(await host.execute({...ids,name:"code_run",callId:"analytics",args:{code}})).toMatchObject({status:"ready"});
+    expect(await host.execute({...ids,name:"code_interact",callId:"change",args:{runId:"analytics",id:"count",value:{type:"change",value:7}}})).toMatchObject({status:"ready",nodes:expect.arrayContaining([expect.objectContaining({id:"output",analytics:expect.objectContaining({value:"Count: 7"})})])});
+    expect(await host.execute({...ids,name:"code_inspect",callId:"inspect",args:{runId:"analytics",nodeId:"chart",limit:1}})).toMatchObject({nodes:[expect.objectContaining({analytics:expect.objectContaining({rows:[{id:"a",value:4}],totalRows:1})})]});
+  }finally{await host.close();}
+},60000);

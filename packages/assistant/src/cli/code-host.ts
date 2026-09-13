@@ -1,4 +1,4 @@
-import type { CapabilityApproval, CapabilityDecision } from "../artifacts/runtime/capabilities";
+import type { CodeApproval, CapabilityDecision } from "../artifacts/runtime/capabilities";
 import type { CloudCliContext } from "@k2b/cloud/cli";
 import type { AiFrontendToolHandler } from "@k2b/cloud/ai/solid";
 import { fileURLToPath } from "node:url";
@@ -11,7 +11,7 @@ type Call = Parameters<AiFrontendToolHandler>[0];
 // Each host owns one Bun process and one browser. Bun's child_process pipe
 // finalizers must never outlive a browser and close a replacement's descriptors.
 // Credentials and approval decisions stay in this parent CLI process.
-export async function createCliCodeHost(ctx: Pick<CloudCliContext, "fetch">, approve?: (request: CapabilityApproval) => Promise<CapabilityDecision>) {
+export async function createCliCodeHost(ctx: Pick<CloudCliContext, "fetch">, approve?: (request: CodeApproval) => Promise<CapabilityDecision>) {
   const lifetime = new AbortController();
   const ipc = hostIpc(message => child.send(message), async request => {
     if (request.operation === "approve") {
@@ -55,7 +55,7 @@ export async function createCliCodeHost(ctx: Pick<CloudCliContext, "fetch">, app
 }
 
 const hosts = new WeakMap<CloudCliContext, ReturnType<typeof createCliCodeHost>>();
-export function cliCodeHost(ctx: CloudCliContext,approve?:(request:CapabilityApproval)=>Promise<CapabilityDecision>) {
+export function cliCodeHost(ctx: CloudCliContext,approve?:(request:CodeApproval)=>Promise<CapabilityDecision>) {
   let host = hosts.get(ctx);
   if (!host) { host = createCliCodeHost(ctx,approve); hosts.set(ctx, host); }
   return host;

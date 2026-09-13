@@ -1,3 +1,4 @@
+import { httpService } from "./artifacts/http-service";
 import adminPages from "./artifacts/admin-page";
 import { artifactDatabase } from "./artifacts/database";
 import { type AuthContext, middleware, auth } from "@k2b/cloud/server";
@@ -12,7 +13,7 @@ import { migrateArtifacts } from "./artifacts/migrate";
 
 let databaseTimer: ReturnType<typeof setInterval> | undefined;
 let databaseCleanup: Promise<unknown> | undefined;
-const sweep = () => databaseCleanup ??= artifactDatabase.cleanup().catch(() => console.warn("Assistant database cleanup deferred")).finally(() => {databaseCleanup=undefined;});
+const sweep = () => databaseCleanup ??= Promise.all([artifactDatabase.cleanup(), httpService.cleanup()]).catch(() => console.warn("Assistant storage cleanup deferred")).finally(() => {databaseCleanup=undefined;});
 
 const router = new Hono<AuthContext>()
   .use("*", middleware.runtime())

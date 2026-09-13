@@ -1,3 +1,4 @@
+import { openSecretsDialog } from "./SecretsDialog";
 import { AppWorkspace, Button, Dropdown, NoticeCard, Paper, Placeholder, StatusBadge, Tabs, prompts, useLocale } from "@k2b/ui";
 import { PermissionEditor } from "@k2b/cloud/access/ui";
 import { navigateTo } from "@k2b/ssr/nav";
@@ -165,6 +166,7 @@ export default function Apps(props: Props) {
       navigateTo((await artifactClient.editChat(copy.id)).href);
     }) }] : []),
     {sectionLabel:a().advanced,items:[
+      {label:"Secrets",icon:"ti ti-key",action:()=>openSecretsDialog({resourceId:item.id})},
       ...(item.permission==="admin"?[
         {label:a().manualEdit,icon:"ti ti-code",action:()=>navigateTo(`/app/assistant/apps/${item.id}/edit`)},
         {label:a().sql,icon:"ti ti-database",action:()=>navigateTo(`/app/assistant/apps/${item.id}/database`)},

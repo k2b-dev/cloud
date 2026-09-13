@@ -1,3 +1,6 @@
+import { httpService } from "./http-service";
+import { secrets } from "@k2b/cloud/services";
+import { HttpPrepare } from "./http-contracts";
 import {importRows} from "../../examples/accounting/import-rows";
 import * as capabilityClient from "@k2b/cloud/capabilities/server";
 import { compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
@@ -50,6 +53,55 @@ const isolated = /\/cloud_assistant_artifacts_test(?:\?|$)/.test(process.env.DAT
     }
   });
   afterAll(async () => { await sql.close(); });
+
+  test("personal HTTP secrets stay encrypted, scoped and bound; requests execute only once", async () => {
+    const resource=await artifacts.create({title:"HTTP test",source},owner);
+    const scope={resourceId:resource.id};
+    await artifacts.publish(resource.id,resource.revision,owner,"HTTP fixture");
+    await artifacts.grant(resource.id,{type:"user",userId:reader.user.id},"read",owner);
+    const saved=await httpService.save(scope,{name:"crm",origin:"https://api.example.com",header:"authorization",prefix:"Bearer ",value:"fixture-key-not-public",expectedRevision:null},owner);
+    expect(JSON.stringify(saved)).not.toContain("fixture-key");
+    expect(JSON.stringify(await httpService.list(scope,owner))).not.toContain("encrypted");
+    expect(await httpService.list(scope,reader)).toEqual([]);
+    const [stored]=await sql<{encrypted:string}[]>`SELECT encrypted FROM assistant.http_secrets WHERE user_id=${owner.user.id}::uuid AND scope=${"resource:"+resource.id}`;
+    expect(stored!.encrypted).not.toContain("fixture-key");
+    expect(await secrets.decrypt<string>(stored!.encrypted)).toBe("fixture-key-not-public");
+    const make=()=>HttpPrepare.parse({id:crypto.randomUUID(),createdAt:Date.now(),scope,request:{url:"https://api.example.com/v1/items",method:"POST",headers:{Authorization:{secret:"crm",prefix:"Bearer "}},body:btoa("hello")}});
+    await expect(httpService.prepare(make(),reader)).rejects.toMatchObject({code:"HTTP_SECRET"});
+    await expect(httpService.list(scope,stranger)).rejects.toMatchObject({code:"ACCESS_DENIED"});
+    const other=await artifacts.create({title:"Other context",source},owner);
+    await expect(httpService.prepare({...make(),scope:{resourceId:other.id}},owner)).rejects.toMatchObject({code:"HTTP_SECRET"});
+    for (const request of [
+      {...make().request,url:"https://other.example.com/v1/items"},
+      {...make().request,headers:{"x-api-key":{secret:"crm",prefix:"Bearer "}}},
+      {...make().request,headers:{authorization:{secret:"crm",prefix:""}}},
+    ]) await expect(httpService.prepare({...make(),request},owner)).rejects.toMatchObject({code:"HTTP_SECRET"});
+    const call=make();
+    expect(JSON.stringify(await httpService.prepare(call,owner))).not.toContain("fixture-key");
+    expect(await httpService.prepare(call,owner)).toMatchObject({id:call.id});
+    await expect(httpService.prepare({...call,request:{...call.request,url:"https://api.example.com/different"}},owner)).rejects.toMatchObject({code:"HTTP_UNKNOWN"});
+    let sent=0;
+    const send:Parameters<typeof httpService.execute>[4]=async request=>{
+      sent++;expect(request.headers.authorization).toBe("Bearer fixture-key-not-public");
+      expect(new TextDecoder().decode(request.body)).toBe("hello");
+      return {status:429,headers:{"retry-after":"2"},body:new TextEncoder().encode("rate limited")};
+    };
+    const results=await Promise.allSettled([httpService.execute(call.id,true,owner,new AbortController().signal,send),httpService.execute(call.id,true,owner,new AbortController().signal,send)]);
+    expect(results.filter(result=>result.status==="fulfilled")).toHaveLength(1);expect(sent).toBe(1);
+    await expect(httpService.execute(call.id,true,owner,new AbortController().signal,send)).rejects.toMatchObject({code:"HTTP_UNKNOWN"});
+    const uncertain=make();await httpService.prepare(uncertain,owner);
+    await expect(httpService.execute(uncertain.id,true,owner,new AbortController().signal,async()=>{sent++;throw new Error("fixture-key-not-public");})).rejects.toMatchObject({message:"HTTP_UNKNOWN"});
+    await expect(httpService.execute(uncertain.id,true,owner,new AbortController().signal,send)).rejects.toMatchObject({code:"HTTP_UNKNOWN"});expect(sent).toBe(2);
+    const denied=make();await httpService.prepare(denied,owner);
+    await expect(httpService.execute(denied.id,false,owner,new AbortController().signal,send)).rejects.toMatchObject({code:"HTTP_DENIED"});expect(sent).toBe(2);
+    const changed=make();await httpService.prepare(changed,owner);
+    const replacement=await httpService.save(scope,{...saved,value:"replacement",expectedRevision:saved.revision},owner);
+    await expect(httpService.execute(changed.id,true,owner,new AbortController().signal,send)).rejects.toMatchObject({code:"HTTP_CONFLICT"});
+    await expect(httpService.remove(scope,"crm",saved.revision,owner)).rejects.toMatchObject({code:"HTTP_CONFLICT"});
+    await httpService.remove(scope,"crm",replacement.revision,owner);
+    await expect(httpService.prepare(make(),owner)).rejects.toMatchObject({code:"HTTP_SECRET"});
+    await artifacts.remove(resource.id,owner);await artifacts.remove(other.id,owner);
+  });
 
   test("context titles expose only currently accessible apps", async () => {
     expect(await artifacts.describe([id, "invalid"], owner.user.id)).toEqual([{ id, title: "Analysis", description: "", icon: "ti ti-app-window" }]);

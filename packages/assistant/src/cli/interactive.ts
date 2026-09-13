@@ -1,4 +1,4 @@
-import type { CapabilityApproval, CapabilityDecision } from "../artifacts/runtime/capabilities";
+import type { CodeApproval, CapabilityDecision } from "../artifacts/runtime/capabilities";
 import { basename } from "node:path";
 import { createInterface } from "node:readline";
 import type {
@@ -325,7 +325,17 @@ const resolveAttention = async (input: {
   return null;
 };
 
-export async function collectCapabilityApproval(ctx:CloudCliContext,reader:LineReader,request:CapabilityApproval):Promise<CapabilityDecision>{
+export async function collectCapabilityApproval(ctx:CloudCliContext,reader:LineReader,request:CodeApproval):Promise<CapabilityDecision>{
+  if ("type" in request) {
+    ctx.print(terminalSafeText(`External HTTP: ${request.method} ${request.url}`));
+    ctx.print("This request may change external data or incur charges. Secret values are injected only by the server.");
+    ctx.print(terminalSafeText(JSON.stringify(request.headers,null,2)));
+    if(request.bodyBytes)ctx.print(terminalSafeText(`${request.bodyBytes} bytes: ${request.bodyPreview}`));
+    if(request.bodyTruncated)ctx.print("Body preview is incomplete; review source and inputs before approving.");
+    const answer=(await reader.read("Send request? [y/N]: "))?.trim().toLowerCase();
+    return {approved:answer==="y"||answer==="yes"};
+  }
+
   if(request.resource){
     ctx.print(terminalSafeText(`App: ${request.resource.title}`));
     ctx.print("Returned Cloud data may be stored in this app and read by others with access. Personal remembered approvals do not apply.");

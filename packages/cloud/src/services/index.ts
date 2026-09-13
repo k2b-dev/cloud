@@ -5,6 +5,7 @@ export { accountsAppService } from "./accounts";
 export { posix as linuxIdentities, PosixError } from "./accounts/posix";
 export type { PosixCandidate } from "./accounts/posix";
 export { providers } from "./providers";
+export { requestPublicHttps, type PublicHttpInput } from "./public-http";
 export { authFlows } from "./auth-flows";
 export { toPgIntArray, toPgTextArray, toPgUuidArray, escapeLikePattern, isUniqueViolation } from "./postgres";
 

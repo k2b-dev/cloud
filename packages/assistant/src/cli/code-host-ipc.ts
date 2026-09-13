@@ -1,4 +1,4 @@
-import type { CapabilityApproval, CapabilityDecision } from "../artifacts/runtime/capabilities";
+import type { CodeApproval, CapabilityDecision } from "../artifacts/runtime/capabilities";
 import type { AiFrontendToolHandler } from "@k2b/cloud/ai/solid";
 
 type Call = Parameters<AiFrontendToolHandler>[0];
@@ -7,7 +7,7 @@ export type HostRequest =
   | { operation: "close" }
   | { operation: "execute" | "call"; call: Call }
   | { operation: "fetch"; path: string; method: string; headers: Record<string, string>; body: ArrayBuffer | null }
-  | { operation: "approve"; approval: CapabilityApproval };
+  | { operation: "approve"; approval: CodeApproval };
 export type HostResponse = { status: number; headers: Record<string, string>; body: ArrayBuffer };
 export type HostResult = Awaited<ReturnType<AiFrontendToolHandler>> | HostResponse | CapabilityDecision | null;
 type Message = { id: number; request: HostRequest } | { id: number; result: HostResult; error?: never } | { id: number; error: string };

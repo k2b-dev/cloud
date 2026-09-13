@@ -7,7 +7,7 @@ import {
   type RequestActor,
   type Result,
 } from "@k2b/cloud/server";
-import { escapeLikePattern, isUniqueViolation, secrets, toPgTextArray, toPgUuidArray } from "@k2b/cloud/services";
+import { escapeLikePattern, isUniqueViolation, secrets, requestPublicHttps, toPgTextArray, toPgUuidArray } from "@k2b/cloud/services";
 import { sql } from "bun";
 
 type InventoryItem = {
@@ -221,3 +221,12 @@ export const readIntegrationCredential = async (id: string): Promise<{ apiKey: s
   `;
   return row ? secrets.decrypt<{ apiKey: string }>(row.value_encrypted) : null;
 };
+
+// The application authorizes the operation before this bounded public request.
+export async function readExternalInventoryStatus(signal: AbortSignal) {
+  return requestPublicHttps({
+    url: "https://api.example.com/status", method: "GET",
+    headers: { accept: "application/json" }, maxBytes: 64 * 1024,
+    signal: AbortSignal.any([signal, AbortSignal.timeout(5000)]),
+  });
+}

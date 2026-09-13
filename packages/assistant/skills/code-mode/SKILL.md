@@ -63,9 +63,14 @@ separate; [Debugging](references/debugging.md) explains deadlines and I/O waits.
 
 ## Load only what the task needs
 
+For new interactive analysis views, use UI version 2 from
+[Analytics UI](references/analytics.md). Load `assistant-data-analysis` for
+source validation, metric interpretation, and report/dashboard delivery.
+
 - **Resource data:** `code_sql` runs SELECT directly. For an app-specific experiment,
   import, migration or export, use `code_run({ code, resourceId })` with Manage access;
   [Database](references/database.md). Combine scripts and apps without saving helper scripts.
+- **External HTTPS APIs and secrets:** [HTTP and personal secrets](/skills/assistant-code-mode/references/http.md). Use `http.fetch` and `secret()` references; collect keys only with the trusted `code_secret` tool.
 - **Cloud operations:** discover the actual capabilities and contracts, then
   use `capabilities.run` in code; [Capability calls](references/capabilities.md).
 - **Saved script or app:** [Source workflow](references/source-workflow.md).

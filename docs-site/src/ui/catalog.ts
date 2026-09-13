@@ -280,7 +280,7 @@ const cloudEntries = cloudPages.map((page, pageIndex) => entry("cloud", "Cloud c
 export const uiCatalogEntries: UiCatalogEntry[] = [...portableEntries, ...cloudEntries];
 
 /** Runtime component exports from @k2b/ui. Kept honest by check-ui-catalog.ts. */
-export const portableUiComponentCount = 109;
+export const portableUiComponentCount = 111;
 
 export const uiCatalogSections: UiCatalogSection[] = [
   ...portableSections.map((section) => ({
@@ -320,6 +320,8 @@ export const hiddenUiCatalogExports = {
  * inferred from arbitrary prose mentions.
  */
 export const documentedOnlyUiCatalogExports = {
+  ChartSnapshotView: "Documented prepared-chart surface composed by ChartExplorer.",
+  ChartFilterControls: "Documented filter surface composed by ChartExplorerControls.",
   APP_WORKSPACE_DETAIL_DEFAULT: "Documented AppWorkspace detail sizing constant.",
   APP_WORKSPACE_DETAIL_MAX: "Documented AppWorkspace detail sizing constant.",
   APP_WORKSPACE_DETAIL_MIN: "Documented AppWorkspace detail sizing constant.",

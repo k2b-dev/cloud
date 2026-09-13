@@ -1,3 +1,5 @@
+import { browserHttpHost } from "./SecretsDialog";
+import { runHttp } from "./http-host";
 import { approveInModal } from "./CapabilityApproval";
 import { runCapability } from "./runtime/capabilities";
 import { Button, Paper, useLocale } from "@k2b/ui";

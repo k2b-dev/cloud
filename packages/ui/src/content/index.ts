@@ -91,3 +91,6 @@ export { ChartExplorerControls } from "./ChartExplorerControls";
 export type { ChartExplorerControlsProps } from "./ChartExplorerControls";
 
 export { createChartCursor, type ChartCursor } from "./chart-cursor";
+
+export { ChartSnapshotView } from "./ChartSnapshotView";
+export { ChartFilterControls, type ChartFilterControlsProps } from "./ChartFilterControls";

@@ -707,3 +707,21 @@ but no percentage change. The SSR example intentionally includes missing data at
 11:00 and zero requests for cached 10 KB at 08:00. Bar value labels make those
 zeros visible instead of looking like missing bars. Comparison arithmetic and
 formatted change text belong to the data builder, not the generic controller.
+
+### Compose a prepared chart or filter surface
+
+`ChartSnapshotView` and `ChartFilterControls` are public composition primitives
+for hosts that already own validated data and loading. Import them from
+`@k2b/ui`. Prefer `ChartExplorer` for the complete chart/table surface.
+
+`ChartSnapshotView` accepts `snapshot: ChartSnapshot`, required
+`selectedKey: string | null`, required `onSelect(key: string)`, optional
+`cursor: ChartCursor`, and optional `style: JSX.CSSProperties`. Only pass output
+from `prepareChartSnapshot`; never accept arbitrary SVG from a script or network
+response. Selection uses the snapshot row keys. Its viewport is snapshot-owned.
+
+`ChartFilterControls` accepts `request`, `displayedRequest`, `onRequest`, optional
+`steps: {key,label}[]`, `series: {key,label,color}[]`, `dimensionLabel`, `disabled`,
+`failed`, and `onRetry`. It does not load data. Keep the displayed request tied to
+the last committed snapshot while a new desired request is pending. Its exported
+`ChartFilterControlsProps` type describes the same contract.

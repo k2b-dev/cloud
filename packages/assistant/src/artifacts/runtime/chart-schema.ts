@@ -5,7 +5,7 @@ const text = z.string().max(LIMITS.text);
 const flag = z.boolean().optional();
 const values = <T extends z.ZodType>(schema: T) => z.array(schema).max(LIMITS.rows);
 const axis = z
-  .object({ ticks: num.min(1).max(100).optional(), label: text.optional(), scale: z.enum(["linear", "log"]).optional(), minorTicks: flag })
+  .object({ ticks: num.min(1).max(100).optional(), label: text.optional(), scale: z.enum(["linear", "log"]).optional(), minorTicks: flag, domain: z.tuple([num, num]).refine(([min, max]) => min < max, "Axis domain must increase").optional() })
   .strict();
 const point = z
   .object({

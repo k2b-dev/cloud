@@ -1,4 +1,5 @@
-import { For, Switch, Match, Show, createMemo, createEffect, type JSX } from "solid-js";
+import { AnalyticsView, createAnalyticsCursors } from "./AnalyticsView";
+import { For, Switch, Match, Show, createMemo, createEffect, type JSX, ErrorBoundary, onMount } from "solid-js";
 import {
   Chart,
   Button,
@@ -17,6 +18,7 @@ import { createStore, reconcile } from "solid-js/store";
 import { artifactMessages as messages } from "./messages";
 import type { UiNode, RuntimeEvent } from "./runtime/protocol";
 export function RuntimeView(props: { nodes: UiNode[]; busy: boolean; event: (event: RuntimeEvent) => void }) {
+  const cursor = createAnalyticsCursors();
   const locale = useLocale(),
     t = () => messages.resolve([locale()]).t;
   const by = createMemo(() => new Map(props.nodes.map((n) => [n.id, n])));
@@ -44,6 +46,11 @@ export function RuntimeView(props: { nodes: UiNode[]; busy: boolean; event: (eve
       />
     );
   }
+  function AnalyticsFailure(p: { id: string; error: unknown }) {
+    const message = () => p.error instanceof Error ? p.error.message : "Invalid chart data";
+    onMount(() => props.event({ id: p.id, analytics: { type: "renderError", message: message().slice(0, 16000) } }));
+    return <p role="alert">{message()}</p>;
+  }
   function NodeView(p: { id: string }): JSX.Element {
     const n = () => by().get(p.id)!;
     const disabled = () => props.busy || n().disabled || n().loading;
@@ -65,6 +72,7 @@ export function RuntimeView(props: { nodes: UiNode[]; busy: boolean; event: (eve
     return (
       <div data-artifact-id={p.id} class={`artifact-node artifact-node-${n().kind}`}>
         <Switch>
+          <Match when={n().kind === "analytics"}><Show when={n().analytics}>{node => <ErrorBoundary fallback={error => <AnalyticsFailure id={p.id} error={error} />}><AnalyticsView node={node()} busy={props.busy} cursor={cursor} event={analytics => props.event({ id: p.id, analytics })} children={ids => <Children ids={ids()} />} /></ErrorBoundary>}</Show></Match>
           <Match when={n().kind === "text"}>
             <p class="whitespace-pre-wrap">{n().label}</p>
           </Match>

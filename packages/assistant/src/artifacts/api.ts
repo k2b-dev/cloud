@@ -1,3 +1,5 @@
+import { httpService, HttpError } from "./http-service";
+import { HttpScope, SecretSave, HttpPrepare } from "./http-contracts";
 import { runtimeCapabilities, RuntimeCapabilityRequest } from "./capability-runtime";
 import { artifactAdmin, adminIdentity } from "./admin";
 import { type AuthContext, auth, getLocale, respond, v } from "@k2b/cloud/server";
@@ -40,6 +42,10 @@ export const artifactApi = new Hono<AuthContext>()
   .use("*", (c,next) => bodyLimit({ maxSize: c.req.path.endsWith("/storage") ? STORAGE_TRANSPORT_BYTES : LIMITS.rpcBytes })(c,next))
   .use("*", async (c,next) => { c.header("Cache-Control","private, no-store"); await next(); })
   .onError((error,c) => {
+    if (error instanceof HttpError) {
+      const t = artifactMessages.resolve([getLocale(c)]).t;
+      return respond(c, { ok: false, code: error.code, status: error.code === "HTTP_DENIED" ? 403 : 409, error: t[error.code] });
+    }
     if (error instanceof DatabaseError) {
       const t=artifactMessages.resolve([getLocale(c)]).t;
       const message=error.code === "DB_SQL_UNSUPPORTED" ? t.DB_SQL_UNSUPPORTED : error.code === "DB_SQL_PARAMS" ? t.DB_SQL_PARAMS : error.code === "DB_LIMIT" ? t.DB_LIMIT : error.code === "CONFLICT" ? t.DB_CHANGED : error.code === "DB_UNREACHABLE" ? t.DB_UNREACHABLE : error.code === "DB_TIMEOUT" ? t.DB_TIMEOUT : error.code === "DB_AUTH_FAILED" ? t.DB_AUTH_FAILED : error.code === "DB_NOT_CONFIGURED" ? t.DB_NOT_CONFIGURED : error.code === "DB_NOT_CONNECTED" ? t.DB_NOT_CONNECTED : error.code === "DB_SERVER_IN_USE" ? t.DB_SERVER_IN_USE : error.code;
@@ -51,6 +57,11 @@ export const artifactApi = new Hono<AuthContext>()
     if (code === "REQUEST_FAILED") console.error("Assistant artifact request failed", error);
     return respond(c,{ ok: false, code, status, error: artifactMessages.resolve([getLocale(c)]).t[code] });
   })
+  .post("/runtime/secrets/list",v("json",HttpScope),async c=>respond(c,ok(await httpService.list(c.req.valid("json"),identity(c)))))
+  .put("/runtime/secrets",v("json",z.object({scope:HttpScope,secret:SecretSave}).strict()),async c=>{const input=c.req.valid("json");return respond(c,ok(await httpService.save(input.scope,input.secret,identity(c))));})
+  .post("/runtime/secrets/remove",v("json",z.object({scope:HttpScope,name:z.string(),revision:z.uuid()}).strict()),async c=>{const input=c.req.valid("json");return respond(c,ok(await httpService.remove(input.scope,input.name,input.revision,identity(c))));})
+  .post("/runtime/http",v("json",HttpPrepare),async c=>respond(c,ok(await httpService.prepare(c.req.valid("json"),identity(c)))))
+  .post("/runtime/http/:callId",v("json",z.object({approved:z.boolean()}).strict()),async c=>respond(c,ok(await httpService.execute(z.uuid().parse(c.req.param("callId")),c.req.valid("json").approved,identity(c),c.req.raw.signal))))
   .get("/", v("query", PageQuery), async (c) => respond(c,ok(await artifacts.list(identity(c),page(c),c.req.valid("query").kind,c.req.valid("query").q))))
   .get("/admin/resources",v("query",PageQuery.extend({search:z.string().max(120).optional()})),async c => respond(c,ok(await artifactAdmin.list(identity(c),page(c),c.req.valid("query").search))))
   .delete("/admin/resources/:id",async c => respond(c,ok(await artifactAdmin.remove(id(c),identity(c)))))

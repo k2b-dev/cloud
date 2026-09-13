@@ -1,3 +1,4 @@
+import { HttpScope, SecretSave, HttpPrepare, HttpReview, HttpResult, SecretView } from "./http-contracts";
 import { DatabaseRequest } from "./database-contracts";
 import { api } from "@k2b/cloud/browser";
 import { z } from "zod";
@@ -14,6 +15,11 @@ async function checked(response: Response): Promise<void> {
   }
 }
 export const artifactClient = {
+  secrets: async(scope:HttpScope) => {const response=await client.runtime.secrets.list.$post({json:scope});await checked(response);return z.array(SecretView).parse(await response.json());},
+  saveSecret: async(scope:HttpScope,secret:z.infer<typeof SecretSave>) => {const response=await client.runtime.secrets.$put({json:{scope,secret}});await checked(response);return SecretView.parse(await response.json());},
+  removeSecret: async(scope:HttpScope,name:string,revision:string) => {const response=await client.runtime.secrets.remove.$post({json:{scope,name,revision}});await checked(response);},
+  httpPrepare:async(input:HttpPrepare,signal?:AbortSignal)=>{const response=await client.runtime.http.$post({json:input},{init:{signal}});await checked(response);return HttpReview.parse(await response.json());},
+  httpExecute:async(id:string,approved:boolean,signal?:AbortSignal)=>{const response=await client.runtime.http[":callId"].$post({param:{callId:id},json:{approved}},{init:{signal}});await checked(response);return HttpResult.parse(await response.json());},
   databaseInspect:async(id:string,input:unknown,signal?:AbortSignal)=>{const response=await client[":id"].database.inspect.$post({param:{id},json:DatabaseRequest.parse(input)},{init:{signal}});await checked(response);return response.json();},
   renameSource:async(source:ArtifactSource,from:string,to:string)=>{const response=await client.runtime.rename.$post({json:{source,from,to}});await checked(response);return ArtifactSource.parse(await response.json());},
   databaseStatus: async (id:string) => {const response=await client[":id"].database.status.$get({param:{id}});await checked(response);return response.json();},

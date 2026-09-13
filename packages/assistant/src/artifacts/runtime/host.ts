@@ -20,7 +20,8 @@ export function validateTree(nodes: UiNode[]) {
   if (by.size !== nodes.length) throw new Error("Duplicate UI ids");
   const parents = new Set<string>();
   for (const node of nodes) {
-    if (node.children.length && !["row","column","section","workbench"].includes(node.kind)) throw new Error("Invalid layout children");
+    if (node.children.length && !["row","column","section","workbench"].includes(node.kind) && node.analytics?.type !== "layout") throw new Error("Invalid layout children");
+    if (node.kind === "analytics" && (!node.analytics || node.analytics.id !== node.id || JSON.stringify(node.children) !== JSON.stringify(node.analytics.type === "layout" ? node.analytics.children : []))) throw new Error("Invalid analytics node envelope");
     if (node.kind === "workbench") {
       const expected = [...node.controls,...node.content,...(node.footer?.status ? [node.footer.status] : []),...(node.footer?.actions ?? [])];
       if (JSON.stringify(expected) !== JSON.stringify(node.children)) throw new Error("Invalid workbench references");
@@ -106,7 +107,7 @@ export function startArtifactRun(container: HTMLElement, source: { runtime: stri
         chain = chain.then(async () => {
           try {
             if (stopped) return;
-            if (["database","storage","ui.modal","file.read","file.open","file.openMultiple","file.openFolder","capabilities.run"].includes(m.method)) {
+            if (["http.fetch","database","storage","ui.modal","file.read","file.open","file.openMultiple","file.openFolder","capabilities.run"].includes(m.method)) {
               waitingForModal = true;
               for (const event of events.values()) clearTimeout(event.timer);
             }
@@ -116,7 +117,7 @@ export function startArtifactRun(container: HTMLElement, source: { runtime: stri
             const code = error && typeof error === "object" && "code" in error && typeof error.code === "string" ? error.code.slice(0,128) : undefined;
             post({ type: "result",id: m.id,error: String(error instanceof Error ? error.message : error).slice(0,LIMITS.text),code });
           } finally {
-            if (["database","storage","ui.modal","file.read","file.open","file.openMultiple","file.openFolder","capabilities.run"].includes(m.method)) {
+            if (["http.fetch","database","storage","ui.modal","file.read","file.open","file.openMultiple","file.openFolder","capabilities.run"].includes(m.method)) {
               waitingForModal = false;
               if (!stopped) for (const event of events.values()) event.timer = setTimeout(event.expire, event.timeoutMs);
             }

@@ -76,6 +76,12 @@ Use `ids.ulid()` for stable item identifiers. It returns a random, sortable ULID
 and works in the isolated worker. Do not use `crypto.randomUUID()`, which is not
 available in this execution context.
 
+## External HTTP
+
+Use `http.fetch` with server-resolved `secret()` header references. See
+[HTTP and personal secrets](http.md) for consent, scopes, limits, and recovery.
+Native worker networking remains blocked.
+
 ## Persistence
 
 Read [Storage](storage.md) only when the task needs durable data.

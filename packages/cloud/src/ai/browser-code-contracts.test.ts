@@ -3,7 +3,7 @@ import { CODE_RUNTIME_TOOL_NAMES, parseCodeToolInput } from "./browser-code-cont
 
 const id = "00000000-0000-4000-8000-000000000001";
 test("code tools accept flat arguments and reject legacy envelopes", () => {
-  const inputs = [{ id }, { runId: "run" }, { runId: "run", id: "@modal:1", value: { count: 2 } }, { runId: "run" }, { id }, { runId: "run", name: "report.csv" }];
+  const inputs = [{ id }, { runId: "run" }, { runId: "run", id: "@modal:1", value: { count: 2 } }, { runId: "run" }, { id }, { runId: "run", name: "report.csv" }, {name:"crm",origin:"https://api.example.com"}];
   for (const [index, name] of CODE_RUNTIME_TOOL_NAMES.entries()) {
     expect(String(parseCodeToolInput(name, inputs[index]).operation)).toEqual(name.slice(5));
     expect(() => parseCodeToolInput(name, { ...inputs[index], operation: name.slice(5) })).toThrow();

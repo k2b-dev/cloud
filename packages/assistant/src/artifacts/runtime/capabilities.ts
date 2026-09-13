@@ -1,3 +1,4 @@
+import type { HttpApproval } from "../http-host";
 import { artifactClient } from "../client";
 export type CapabilityApproval=Extract<Awaited<ReturnType<typeof artifactClient.capabilityPrepare>>,{status:"approval"}>;
 export type CapabilityDecision={approved:boolean;remember?:"always"};
@@ -27,3 +28,5 @@ export async function runCapability(name:string,input:unknown,context:{artifactI
   }
   return "data" in result ? result.data : null;
 }
+
+export type CodeApproval = CapabilityApproval | HttpApproval;

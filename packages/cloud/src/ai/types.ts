@@ -419,7 +419,7 @@ export type AiPendingTurnActionRecord = {
 
 export type AiTurnToolSource = { kind: "none" } | { kind: "default"; appTools?: boolean };
 
-export type AiClientToolId = "local_bash" | "code_run" | "code_inspect" | "code_interact" | "code_stop" | "code_open" | "code_export";
+export type AiClientToolId = "local_bash" | "code_run" | "code_inspect" | "code_interact" | "code_stop" | "code_open" | "code_export" | "code_secret";
 
 /** Immutable project instructions and context manifest captured for one turn. */
 export type AiProjectPromptSnapshot = {

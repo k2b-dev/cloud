@@ -31,6 +31,7 @@ export type SessionOptions = {
   readInput?: (name:string,signal:AbortSignal)=>Promise<File>;
   pickerInputs?: File[] | ((signal:AbortSignal)=>Promise<File[]>);
   capability?: (name:string,input:unknown,signal:AbortSignal) => Promise<unknown>;
+  http?: (request: unknown, signal: AbortSignal) => Promise<unknown>;
   database?: (request: unknown, signal: AbortSignal) => Promise<unknown>;
   storage?: (method: string, args: unknown[]) => Promise<unknown>;
   modal?: (request: ModalRequest, signal: AbortSignal) => Promise<unknown>;
@@ -164,6 +165,12 @@ export function createArtifactSession(container: HTMLElement, source: { runtime:
         clearTimeout(watchdog);capabilityRequests++;emit({approvalPending:true});
         try {return await options.capability(args[0],args[1],signal);}
         finally {capabilityRequests--;emit({approvalPending:capabilityRequests>0});if(!capabilityRequests&&state.status==="starting"&&!signal.aborted)arm();}
+      }
+      if (method === "http.fetch") {
+        if (!options.http) throw new Error("Server HTTP unavailable");
+        clearTimeout(watchdog); capabilityRequests++; emit({approvalPending:true});
+        try { return await options.http(args[0],signal); }
+        finally { capabilityRequests--; emit({approvalPending:capabilityRequests>0}); if (!capabilityRequests && state.status === "starting" && !signal.aborted) arm(); }
       }
       if (method === "database") {
         if (!options.database) throw new Error("Database access requires a saved app or script");

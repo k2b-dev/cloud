@@ -2,7 +2,7 @@ import { z } from "zod";
 
 const id = z.uuid().describe("App ID returned by code_create or code_list.");
 const runId = z.string().min(1).max(180).describe("Run ID returned by code_run in this browser.");
-export const CODE_RUNTIME_TOOL_NAMES = ["code_run", "code_inspect", "code_interact", "code_stop", "code_open", "code_export"] as const;
+export const CODE_RUNTIME_TOOL_NAMES = ["code_run", "code_inspect", "code_interact", "code_stop", "code_open", "code_export", "code_secret"] as const;
 export const CodeRunInput = z.object({
   id: id.optional(),
   resourceId: id.optional().describe("Optional data context for one-off code. Requires Manage; uses this resource database and shared files/KV without changing its source. Local storage stays temporary."),
@@ -21,6 +21,14 @@ export const CodeStopInput = z.object({ runId }).strict();
 export const CodeOpenInput = z.object({ id }).strict();
 export const CodeExportInput = z.object({ runId, name: z.string().min(1).max(180).describe("Captured output filename returned by the snapshot.") }).strict();
 
+export const CodeSecretInput = z.object({
+  resourceId:id.optional().describe("Scope to this app/script; omit to configure the current chat only."),
+  name:z.string().regex(/^[a-zA-Z][a-zA-Z0-9_-]{0,79}$/),
+  origin:z.string().url().max(2000).describe("Exact HTTPS origin allowed to receive the secret."),
+  header:z.string().min(1).max(80).default("authorization"),
+  prefix:z.string().max(160).default("Bearer "),
+}).strict();
+
 // Internal bridge envelope. Each model-facing tool receives only its own flat schema.
 export const CodeRuntimeInput = z.discriminatedUnion("operation", [
   CodeRunInput.safeExtend({ operation: z.literal("run") }),
@@ -28,11 +36,13 @@ export const CodeRuntimeInput = z.discriminatedUnion("operation", [
   CodeInteractInput.extend({ operation: z.literal("interact") }),
   CodeStopInput.extend({ operation: z.literal("stop") }),
   CodeOpenInput.extend({ operation: z.literal("open") }),
+  CodeSecretInput.extend({ operation: z.literal("secret") }),
   CodeExportInput.extend({ operation: z.literal("export") }),
 ]);
 export type CodeRuntimeInput = z.infer<typeof CodeRuntimeInput>;
 export function parseCodeToolInput(name: string, args: unknown): CodeRuntimeInput {
   switch (name) {
+    case "code_secret": return { operation: "secret", ...CodeSecretInput.parse(args) };
     case "code_run": return { operation: "run", ...CodeRunInput.parse(args) };
     case "code_inspect": return { operation: "inspect", ...CodeInspectInput.parse(args) };
     case "code_interact": return { operation: "interact", ...CodeInteractInput.parse(args) };

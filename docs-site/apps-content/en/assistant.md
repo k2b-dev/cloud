@@ -418,3 +418,73 @@ app's database and shared files/KV without editing its source. This requires
 Manage access, checked on every remote data operation. Local storage stays
 temporary; chat files still require explicit inputPaths. Source restoration does
 not undo database or storage changes. The CLI accepts the same run input.
+
+### Call external APIs with personal secrets
+
+Code Mode supports server-side `http.fetch()` with `secret()` references in
+headers. The server injects the saved value after checking the current user's
+access and the secret's exact HTTPS origin, header and prefix. The worker and
+chat receive references, not saved values. Public requests work without a
+secret. Every request asks for confirmation and can affect real external data.
+
+Ask Assistant to configure a secret through `code_secret`. A trusted dialog
+collects the value directly; the chat receives only a confirmation. Never paste
+keys into chat or generated app controls. In Studio, use **Advanced → Secrets**
+to add, replace or delete your personal secrets for that app. Chat secrets are
+available through the workspace context menu. Values are not shown again.
+
+Secrets belong to the current user and one chat or resource. Shared apps use
+each user's own credentials. Publications keep the same personal secrets;
+copies do not inherit them. One-off code bound to a resource uses that resource's
+secrets. There is no fallback across contexts. HTTP is unavailable in chats
+with a restricted tool scope.
+
+```js
+const response = await http.fetch("https://api.example.com/customers", {
+  headers: { Authorization: secret("crm", { prefix: "Bearer " }) },
+});
+if (!response.ok) throw new Error(`API returned HTTP ${response.status}`);
+const customers = await response.json();
+```
+
+The first version supports public HTTPS, header authentication and bodies up
+to 4 MiB in each direction. Redirects, cookies, internal network access and
+streaming are unavailable. Each external request has a 20-second deadline;
+confirmation time does not count. HTTP failures still expose their status and
+body. Network failures can leave the external outcome unknown: inspect the
+service before deliberately retrying. Stopping a run cannot undo completed
+external actions.
+
+The external API receives the credential and may return sensitive information,
+including reflected headers. Configure only trusted API origins. Source and
+HTTP results may be visible to the agent or other app users if code shares them.
+
+The CLI uses the same execution path and prompts for HTTP confirmation in
+interactive mode. Unattended runs can authorize an exact origin with
+`--approve http.fetch:https://api.example.com`. Configure secrets in the web UI
+for the same user and chat or app before using the CLI.
+
+## Explore data with Code Mode
+
+New analysis apps can opt in to UI version 2 by exporting `uiVersion = 2` from
+their entry module. Existing source without that export continues to use UI
+version 1; changing the version does not migrate calls automatically. Saved and
+published source retain the selected version.
+
+Version 2 offers object-based controls, numeric and date-range inputs, multiple
+selection, responsive grids, and Chart Explorer views. An Explorer combines a
+chart, sortable table, copy action, and selection details from the same rows.
+Multiple Explorers can share filters, comparison state, selection, and a line
+cursor. New data replaces all linked charts together; stale responses are ignored
+and failed loads retain the previous visible data.
+
+The `assistant-data-analysis` Skill guides source inspection, metric definitions,
+reconciliation, chart choice, and delivery. The API is available without loading
+the Skill. Source context shows the retrieval timestamp and whether data is a
+snapshot, partial, or a fixture. A live loader is explicit; publishing source does
+not create a frozen data snapshot or a continuously refreshing dashboard.
+
+Shared access and published source versions use the normal Studio lifecycle.
+Personal secrets remain personal. External loads still follow HTTP approval and
+uncertain-outcome rules. The canonical Code Mode analytics reference contains
+executable examples, formatting rules, limits, and structured interaction events.

@@ -1,11 +1,11 @@
-import type { CapabilityApproval, CapabilityDecision } from "../artifacts/runtime/capabilities";
+import type { CodeApproval, CapabilityDecision } from "../artifacts/runtime/capabilities";
 import type { CloudCliContext } from "@k2b/cloud/cli";
 import type { AiFrontendToolHandler } from "@k2b/cloud/ai/solid";
 import { chromium, type Browser } from "playwright";
 import type {} from "../artifacts/runtime/cli-host";
 
 type Call = Parameters<AiFrontendToolHandler>[0];
-export async function createBrowserCodeHost(ctx: Pick<CloudCliContext, "fetch">,approve?:(request:CapabilityApproval)=>Promise<CapabilityDecision>) {
+export async function createBrowserCodeHost(ctx: Pick<CloudCliContext, "fetch">,approve?:(request:CodeApproval)=>Promise<CapabilityDecision>) {
   const browser: Browser = await chromium.launch({
     headless: true,
     ...(process.env.CLOUD_CLI_CHROMIUM ? { executablePath: process.env.CLOUD_CLI_CHROMIUM } : {}),
@@ -31,7 +31,7 @@ export async function createBrowserCodeHost(ctx: Pick<CloudCliContext, "fetch">,
         await route.fulfill({ status: response.status, contentType: response.headers.get("content-type") ?? "application/json", body: Buffer.from(await response.arrayBuffer()) });
       } catch { await route.abort(); }
     });
-    await page.exposeFunction("assistantCodeApprove",(request:CapabilityApproval)=>{
+    await page.exposeFunction("assistantCodeApprove",(request:CodeApproval)=>{
       if(!approve)throw new Error("Capability requires approval. Use an interactive Assistant CLI chat or explicitly allow this capability with --approve.");
       return approve(request);
     });

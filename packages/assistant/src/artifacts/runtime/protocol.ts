@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { AnalyticsNode, AnalyticsEvent } from "./analytics-contracts";
 import { ChartOptions } from "./chart-schema";
 import { LIMITS } from "../contracts";
 export const Value = z.union([z.string().max(LIMITS.text), z.number().finite(), z.boolean(), z.null()]);
@@ -55,6 +56,7 @@ export const UiNode = z
       "linkButton",
       "markdown",
       "chart",
+      "analytics",
     ]),
     label: z.string().max(LIMITS.text).default(""),
     value: z.string().max(LIMITS.text).default(""),
@@ -62,6 +64,7 @@ export const UiNode = z
     columns: z.array(UiColumn).max(64).default([]),
     rowKey: z.string().min(1).max(120).optional(),
     chart: ChartOptions.optional(),
+    analytics: AnalyticsNode.optional(),
     rows: z.array(z.record(z.string(), Value)).max(LIMITS.rows).default([]),
     options: z.array(SelectOption).max(200).default([]),
     description: z.string().max(LIMITS.text).default(""),
@@ -134,6 +137,7 @@ export const WorkerMessage = z.discriminatedUnion("type", [
       "file.openFolder",
       "file.save",
       "capabilities.run",
+      "http.fetch",
       "database",
       "storage",
       "store.get",
@@ -151,6 +155,7 @@ export const WorkerMessage = z.discriminatedUnion("type", [
 
 export const RuntimeEvent = z.object({
   id: z.string().min(1).max(80), value: z.string().max(LIMITS.text).optional(),
+  analytics: AnalyticsEvent.optional(),
   action: z.string().min(1).max(80).optional(), item: z.string().min(1).max(180).optional(),
 }).strict();
 export type RuntimeEvent = z.infer<typeof RuntimeEvent>;

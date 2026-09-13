@@ -1,3 +1,4 @@
+import { browserHttpHost, openSecretsDialog } from "../artifacts/SecretsDialog";
 import { createCodeApprovals } from "../artifacts/CapabilityApproval";
 import { useAssistantText } from "./ui-copy";
 import { CODE_RUNTIME_TOOL_NAMES } from "@k2b/cloud/ai/browser";
@@ -129,6 +130,7 @@ export default function AssistantWorkspace(props: Props) {
   const artifactCopy = () => artifactMessages.resolve([locale()]).t;
   const t = () => assistantMessages.resolve([locale()]).t;
   const contextMenuItems = () => ([
+    {label:"Secrets",icon:"ti ti-key",action:()=>{const conversationId=chat.activeConversationId();if(conversationId)void openSecretsDialog({conversationId});}},
     { label: artifactCopy().apps, icon: "ti ti-app-window", action: () => openContextOverview("apps", artifactCopy().apps) },
     { label: artifactCopy().files, icon: "ti ti-files", action: () => openContextOverview("files", artifactCopy().files) },
     { label: contextText("Sources"), icon: "ti ti-link", action: () => openContextOverview("sources", contextText("Sources")) },
@@ -170,7 +172,7 @@ export default function AssistantWorkspace(props: Props) {
     trackViewedState: true,
     streamTransport: liveConnection.streamTransport,
     clientToolIds: [...CODE_RUNTIME_TOOL_NAMES],
-    frontendTools: createArtifactAgentRuntime(artifactWorkspace.open,codeApprovals.ask),
+    frontendTools: createArtifactAgentRuntime(artifactWorkspace.open,codeApprovals.ask,"chat-tool",browserHttpHost),
   });
 
   const sidebar = query.create<string, AssistantSidebarSnapshot, AssistantLiveInvalidation>({

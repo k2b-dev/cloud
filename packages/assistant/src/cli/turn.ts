@@ -1,4 +1,4 @@
-import type { CapabilityApproval, CapabilityDecision } from "../artifacts/runtime/capabilities";
+import type { CodeApproval, CapabilityDecision } from "../artifacts/runtime/capabilities";
 import { basename } from "node:path";
 import type { AiConversation, AiDraftContentPart, AiFileStat, AiTurnBlock, AiTurnContentPart } from "@k2b/cloud/ai";
 import {
@@ -120,7 +120,7 @@ export const submitAssistantTurn = async (input: {
   body: unknown;
   watch: boolean;
   approveTools?: readonly string[];
-  onCapabilityApproval?:(request:CapabilityApproval)=>Promise<CapabilityDecision>;
+  onCapabilityApproval?:(request:CodeApproval)=>Promise<CapabilityDecision>;
   signal?: AbortSignal;
   onToolBlock?: (block: Extract<AiTurnBlock, { kind: "tool" }>) => void;
 }): Promise<{ submitted: TurnSubmission; result?: AssistantTurnStreamResult }> => {
@@ -162,7 +162,7 @@ export const submitAndMaybeWatch = async (input: {
   body: unknown;
   watch: boolean;
   approveTools?: readonly string[];
-  onCapabilityApproval?:(request:CapabilityApproval)=>Promise<CapabilityDecision>;
+  onCapabilityApproval?:(request:CodeApproval)=>Promise<CapabilityDecision>;
 }): Promise<number> => {
   const { submitted, result } = await submitAssistantTurn(input);
   if (!result) {

@@ -1,4 +1,4 @@
-import type { CapabilityApproval, CapabilityDecision } from "../artifacts/runtime/capabilities";
+import type { CodeApproval, CapabilityDecision } from "../artifacts/runtime/capabilities";
 import type { AiStoredMessage, AiStreamSseEvent, AiTurnBlock } from "@k2b/cloud/ai";
 import { CODE_RUNTIME_TOOL_NAMES, parseAiSse } from "@k2b/cloud/ai/browser";
 import type { CloudCliContext } from "@k2b/cloud/cli";
@@ -36,7 +36,7 @@ export const streamAssistantTurn = async (input: {
   turnId?: string;
   initialResponse?: Response;
   approveTools?: readonly string[];
-  onCapabilityApproval?:(request:CapabilityApproval)=>Promise<CapabilityDecision>;
+  onCapabilityApproval?:(request:CodeApproval)=>Promise<CapabilityDecision>;
   signal?: AbortSignal;
   onToolBlock?: (block: Extract<AiTurnBlock, { kind: "tool" }>) => void;
 }): Promise<AssistantTurnStreamResult> => {

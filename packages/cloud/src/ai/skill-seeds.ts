@@ -1,3 +1,4 @@
+import { ASSISTANT_DATA_ANALYSIS_SKILL } from "./data-analysis-skill";
 import { CLOUD_KIT_INSTRUCTIONS } from "./kit-skill";
 import { ASSISTANT_CODE_MODE_SKILL } from "./code-mode-skill";
 import { CLOUD_GRIDS_INSTRUCTIONS, CLOUD_GRIDS_QUERY_REFERENCE } from "./grids-skill";
@@ -354,6 +355,7 @@ Do not fabricate organizer/attendee addresses, regenerate the returned calendar 
 
 const BUILTIN_CLOUD_AI_SKILLS: AiSkillTemplate[] = [
   ASSISTANT_CODE_MODE_SKILL,
+  ASSISTANT_DATA_ANALYSIS_SKILL,
   {
     version: 3,
     key: "kit:cloud-kit",

@@ -50,3 +50,14 @@ test("first-file skill entry compiles without loading GUI references", async () 
   const compiled = await compileArtifact({entry:"main.js",files:[{path:"main.js",content:content!}]});
   expect(compiled.code).toContain("__artifactStart");
 });
+
+test("analytics reference executes its version 2 example with the real UI builder", async () => {
+  const { createAnalyticsUi } = await import("./runtime/analytics-ui");
+  const document = await Bun.file(new URL("../../skills/code-mode/references/analytics.md", import.meta.url)).text();
+  const code = document.match(/```js\n([\s\S]*?)\n```/)?.[1];
+  expect(code).toBeDefined();
+  const runtime = createAnalyticsUi(() => {});
+  new Function("ui", code!.replace("export const uiVersion = 2;", "").replace("export default", "return"))(runtime.ui)();
+  expect(runtime.snapshot().filter(node => node.type === "explorer")).toHaveLength(1);
+  await compileArtifact({entry:"main.ts",files:[{path:"main.ts",content:code!}]});
+});

@@ -85,6 +85,20 @@ export async function migrateArtifacts() {
     request JSONB NOT NULL, prepared JSONB NOT NULL,
     status TEXT NOT NULL DEFAULT 'pending', result JSONB, created_at TIMESTAMPTZ NOT NULL DEFAULT now()
   )`.simple();
+  await sql`CREATE TABLE IF NOT EXISTS assistant.http_secrets (
+    user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+    scope TEXT NOT NULL, name TEXT NOT NULL,
+    resource_id UUID REFERENCES assistant.artifacts(id) ON DELETE CASCADE,
+    origin TEXT NOT NULL, header TEXT NOT NULL, prefix TEXT NOT NULL,
+    encrypted TEXT NOT NULL, revision UUID NOT NULL,
+    PRIMARY KEY(user_id,scope,name)
+  )`.simple();
+  await sql`CREATE TABLE IF NOT EXISTS assistant.http_calls (
+    id UUID NOT NULL, user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+    hash TEXT NOT NULL, encrypted TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(), PRIMARY KEY(user_id,id)
+  )`.simple();
+  await sql`CREATE INDEX IF NOT EXISTS assistant_http_calls_created ON assistant.http_calls(created_at)`.simple();
   // Project membership is checked through the public AI project service.
   // No conversation foreign key owns an artifact. Chat references are ordinary URLs.
 }

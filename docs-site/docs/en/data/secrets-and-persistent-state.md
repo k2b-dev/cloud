@@ -157,3 +157,35 @@ recoverable retry when one side fails.
 The complete
 [Inventory data example](https://github.com/k2b-dev/cloud/blob/main/docs-site/examples/cloud-docs/data.ts)
 shows encrypted application credentials.
+
+## Send an authorized credential to a public API
+
+An application can use `requestPublicHttps` from `@k2b/cloud/services` for one
+bounded public HTTPS request. It resolves and validates the destination, pins
+the connection to a checked address, and preserves TLS hostname verification.
+It never follows redirects or retries. The caller must authorize the request
+and credential destination, supply a deadline, and bound the request body.
+
+```ts
+import { requestPublicHttps } from "@k2b/cloud/services";
+
+const response = await requestPublicHttps({
+  url: "https://api.example.com/status",
+  method: "GET",
+  headers: { accept: "application/json" },
+  maxBytes: 64 * 1024,
+  signal: AbortSignal.timeout(5000),
+});
+```
+
+The result contains `status`, a bounded `body` as bytes, and selected response
+headers: content-type, retry-after, etag and last-modified. HTTP errors retain
+status and body; redirects return an empty body. Encoded responses are rejected.
+Network failures throw a generic error without outgoing credentials. A timeout
+does not prove that an external mutation failed. Do not forward Cloud cookies
+or invocation tokens, and do not automatically retry uncertain writes.
+
+This transport does not grant access to an application's secrets. Applications
+own their authorization and must treat remote response content as untrusted.
+An external API can reflect the credential it receives; encryption and
+server-side injection do not make arbitrary external services trustworthy.

@@ -246,3 +246,11 @@
 .assistant-starter > span { min-width:0; overflow-wrap:anywhere; }
 .assistant-sql-hint { color:var(--k2b-text-muted); font-size:.75rem; }
 @media(max-width:540px) { .assistant-starters { grid-template-columns:1fr; } }
+
+.artifact-analysis-layout { display: flex; flex-direction: column; gap: 1rem; min-width: 0; }
+.artifact-analysis-row { flex-direction: row; flex-wrap: wrap; }
+.artifact-analysis-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, var(--analysis-min-width)), 1fr)); }
+.artifact-analysis-layout > header { grid-column: 1 / -1; }
+.artifact-analysis-context { font-size: .875rem; margin-block: .5rem; overflow-wrap: anywhere; }
+
+.artifact-analysis-context > strong { margin-inline-start: .5rem; }
