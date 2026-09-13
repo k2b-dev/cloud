@@ -40,7 +40,7 @@
     "catalog": {
       "@firecrawl/anydoc": "0.1.9",
       "@k2b/ssr": "0.12.0",
-      "@k2b/stdlib": "0.22.0",
+      "@k2b/stdlib": "0.23.0",
       "@k2b/sync": "6.4.0",
       "@nats-io/jetstream": "3.4.0",
       "@nats-io/transport-node": "3.4.0",
@@ -132,8 +132,5 @@
     "typescript": "5.9.3"
   },
   "license": "AGPL-3.0-or-later",
-  "trustedDependencies": [],
-  "patchedDependencies": {
-    "@k2b/stdlib@0.22.0": "patches/@k2b%2Fstdlib@0.22.0.patch"
-  }
+  "trustedDependencies": []
 }

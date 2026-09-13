@@ -131,7 +131,7 @@
         "@hono/standard-validator": "0.2.2",
         "@k2b/nessi": "0.12.0",
         "@k2b/ssr": "0.12.0",
-        "@k2b/stdlib": "0.22.0",
+        "@k2b/stdlib": "0.23.0",
         "@k2b/sync": "6.4.0",
         "@k2b/ui": "0.2.0",
         "@modelcontextprotocol/sdk": "1.30.0",
@@ -621,7 +621,7 @@
       "dependencies": {
         "@fontsource/ibm-plex-mono": "5.3.0",
         "@fontsource/ibm-plex-sans": "5.3.0",
-        "@k2b/stdlib": "0.22.0",
+        "@k2b/stdlib": "0.23.0",
         "@tabler/icons-webfont": "3.46.0",
         "marked": "17.0.6",
       },
@@ -704,9 +704,6 @@
       },
     },
   },
-  "patchedDependencies": {
-    "@k2b/stdlib@0.22.0": "patches/@k2b%2Fstdlib@0.22.0.patch",
-  },
   "overrides": {
     "@k2b/sync": "6.4.0",
     "@xmldom/xmldom": "0.9.12",
@@ -725,7 +722,7 @@
     "@codemirror/view": "6.43.7",
     "@firecrawl/anydoc": "0.1.9",
     "@k2b/ssr": "0.12.0",
-    "@k2b/stdlib": "0.22.0",
+    "@k2b/stdlib": "0.23.0",
     "@k2b/sync": "6.4.0",
     "@nats-io/jetstream": "3.4.0",
     "@nats-io/transport-node": "3.4.0",
@@ -1065,7 +1062,7 @@
 
     "@k2b/ssr": ["@k2b/ssr@0.12.0", "", { "dependencies": { "@babel/core": "^7.29.7", "@babel/preset-typescript": "^7.29.7", "@types/babel__core": "^7.20.5", "babel-preset-solid": "^1.9.12", "seroval": "^1.5.5" }, "peerDependencies": { "elysia": "^1.0.0", "hono": "^4.0.0", "solid-js": "^1.9.0" }, "optionalPeers": ["elysia", "hono"] }, "sha512-71Yg65mfkpVuBSaq0m+QZyvw5KL4uvFVKnZREjNmXVf0K4+IpNWbCcM+fVXbPnzVMr48+FEM9n0/c1E6Jq7yPA=="],
 
-    "@k2b/stdlib": ["@k2b/stdlib@0.22.0", "", { "dependencies": { "@types/big.js": "^7.0.0", "big.js": "^7.0.1", "dayjs": "^1.11.0" }, "peerDependencies": { "lean-qr": "", "solid-js": "" }, "optionalPeers": ["lean-qr", "solid-js"] }, "sha512-HP3XsijDZJsGaLC90AgC2d1XiyiCYpMdHIr9sCg8gdOn5DCDwT1Ko453j4Y4JGCF/BPKzQ4wnz5h4T3IZF2qFw=="],
+    "@k2b/stdlib": ["@k2b/stdlib@0.23.0", "", { "dependencies": { "@types/big.js": "^7.0.0", "big.js": "^7.0.1", "dayjs": "^1.11.0" }, "peerDependencies": { "ibantools": "^4.5.4", "lean-qr": "", "libxml2-wasm": "0.6.0", "solid-js": "", "zod": "^4.4.3" }, "optionalPeers": ["ibantools", "lean-qr", "libxml2-wasm", "solid-js", "zod"] }, "sha512-mKSZL22PWUXe7M6sbqRQxKIm9A9Nf8QfUEn8WfyaaZzOUZo6bPzCzWnR++yZpnvlZy+Rmg+mGwBNSUWOsCYiUA=="],
 
     "@k2b/sync": ["@k2b/sync@6.4.0", "", { "dependencies": { "@nats-io/jetstream": "3.4.0", "@nats-io/kv": "3.4.0", "@nats-io/nats-core": "3.4.0", "@nats-io/obj": "3.4.0" } }, "sha512-EkoaVKZ6V34lOx+zk3huGNqpRnWY21s00Z/pFHPCBHDeGUFTtmLspdx8ejyM+rFpPs9z6opIS1Efy8JFCLJjgg=="],
 
