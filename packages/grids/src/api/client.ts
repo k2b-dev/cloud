@@ -1,4 +1,7 @@
-import { api } from "@k2b/cloud/browser";
+import { hc } from "hono/client";
+import { workspaceFetch } from "../frontend/_components/workspace/workspace-live-state";
 import type { ApiType } from ".";
 
-export const apiClient = api.create<ApiType>({ baseUrl: "/api/grids" });
+// The public Cloud client has no transport hook. Keep this workspace-specific
+// stale-write guard in Grids, using Hono's supported typed fetch adapter.
+export const apiClient = hc<ApiType>("/api/grids", { fetch: workspaceFetch });

@@ -9,6 +9,7 @@ import {
 import { loadRecordDetailData } from "../frontend/_components/workspace/workspace-record-detail-state";
 import { loadWorkflowRunDetail } from "../frontend/_components/workspace/workspace-workflow-state";
 import { gridsService } from "../service";
+import { loadWorkspaceRevision } from "../service/workspace-revision";
 import { apiMessages } from "./messages";
 import { currentActorViewer, gateAt } from "./permissions";
 import { v } from "./validator";
@@ -25,6 +26,8 @@ export const createWorkspaceApi = (
     loadRecordDetail?: typeof loadRecordDetailData;
     projectRecordDetail?: typeof projectPublicWorkspaceRecordDetail;
     viewer?: typeof currentActorViewer;
+    getBase?: typeof gridsService.base.getByShortId;
+    loadRevision?: typeof loadWorkspaceRevision;
     getWorkflowRun?: typeof gridsService.workflow.getRun;
     getWorkflowRunByShortId?: typeof gridsService.workflow.getRunByShortId;
     getWorkflow?: typeof gridsService.workflow.get;
@@ -36,6 +39,18 @@ export const createWorkspaceApi = (
 
   return new Hono<AuthContext>()
     .use(deps.requireAuthenticated ?? auth.requireRole("authenticated"))
+    .get("/revision", v("query", z.object({ baseId: ShortIdSchema })), async (c) => {
+      const base = await (deps.getBase ?? gridsService.base.getByShortId)(c.req.valid("query").baseId);
+      if (!base) return c.json({ message: apiMessages(c).baseNotFound }, 404);
+      const access = await gate(c, { baseId: base.id }, "read");
+      if (!access.ok) return c.json({ message: apiMessages(c).baseNotFound }, 404);
+      c.header("Cache-Control", "no-store");
+      return c.json({
+        ...(await (deps.loadRevision ?? loadWorkspaceRevision)(base.id)),
+        canWrite: gridsService.permission.hasAtLeast(access.data, "write"),
+        canAdmin: access.data === "admin",
+      });
+    })
     .get(
       "/record-detail",
       v(

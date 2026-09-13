@@ -74,7 +74,7 @@ const metadataTopic = lazySync((sync) =>
 
 export const publishMetadataEvent = async (event: GridsMetadataEvent): Promise<void> => {
   // Metadata events invalidate an SSR workspace; canonical state remains in
-  // PostgreSQL. Consumers reload after reconnect as a fallback for a failed
+  // PostgreSQL. Consumers compare the revision after reconnect to cover a failed
   // best-effort publication, so this path must not turn a committed mutation
   // into a misleading API failure.
   try {

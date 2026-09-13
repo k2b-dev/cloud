@@ -4,6 +4,7 @@ import { loadGridsWorkspaceState } from "./workspace-state";
 
 const loadWorkspaceState = (params: Parameters<typeof loadGridsWorkspaceState>[0]) =>
   loadGridsWorkspaceState(params, {
+    loadRevision: async () => ({ revision: "fixture", resources: {} }),
     latestMetadataEventCursor: async () => null,
     latestRecordEventCursor: async () => null,
   });

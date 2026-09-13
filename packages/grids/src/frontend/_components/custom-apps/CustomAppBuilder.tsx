@@ -43,6 +43,7 @@ import { type CustomAppBlockDragMeta, type CustomAppBlockDropMeta, CustomAppPage
 import { isRecordInputField } from "../fields/field-render";
 import { errorMessage } from "../utils/api-helpers";
 import { WorkflowEditor } from "../workflows/WorkflowEditor";
+import { acknowledgeWorkspaceResource } from "../workspace/workspace-live-state";
 import type { PublicCustomApp } from "../workspace/workspace-public-state-model";
 import { type CustomAppBuilderText, useCustomAppBuilderMessages } from "./builder-messages";
 import CustomAppBlockPreview from "./CustomAppBlockPreview";
@@ -1416,9 +1417,12 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
         if (!saved.app.draftDefinition) {
           throw new Error(saved.app.draftDiagnostics[0]?.message ?? text("The saved draft is not a valid schema v5 definition."));
         }
+        const chromeUnchanged = saved.app.name === app().name && saved.app.icon === app().icon;
         setApp(saved.app);
         setDiagnostics(saved.diagnostics);
         draft.markSaved(saved.app.draftDefinition);
+        if (chromeUnchanged)
+          acknowledgeWorkspaceResource(saved.app.baseId, `app:${saved.app.id}`, response.headers.get("X-Grids-Workspace-Revision"));
         setSaveState(saved.valid ? "saved" : "invalid");
         setSaveError(saved.valid ? null : text("The draft was saved, but it must be fixed before it can be published."));
         if (draft.version() !== version) saveQueued = true;

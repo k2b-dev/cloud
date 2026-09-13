@@ -5,9 +5,9 @@ icon: ti ti-bolt
 description: Diagnose common problems without guessing or losing work.
 order: 150
 ---
-When Grids behaves differently than expected, identify the surface first: table, view, form, Grids App, document, workflow, or Combined table. Then check its current query, state, and access before changing the underlying data.
+## The Base structure changed {icon="refresh"}
 
-Grids rejects ambiguous queries, stale writes, invalid automation, and unauthorized access rather than silently choosing a different result.
+Structure changes show one **Reload** notice, never an automatic page reload. Open inputs stay intact. If the active area changed, saving pauses: keep your draft elsewhere before confirming Reload. Unrelated changes do not block editing. Lost access or a deleted active resource hides the affected workspace immediately.
 
 ## A resource is missing or will not open {icon="lifebuoy"}
 
@@ -21,7 +21,7 @@ Read the active search, filters, source view, deleted-record mode, and `limit`. 
 
 Use exact filters for calculated values, lookups, rollups, files, dates, and empty values. Add a meaningful sort before relying on page order or `offset`. Pages are live reads; changes made between page requests can move matching records.
 
-If a change is not visible, reload once. Live updates keep the current query rules: a changed record can legitimately disappear when it no longer matches.
+Record results refresh in place, including after reconnect. Filters, sorting, and totals are recalculated; records can leave the result. Open edit dialogs keep their drafts and flag competing changes. If live updates stop, use the refresh action.
 
 ## A record edit was rejected {icon="table"}
 

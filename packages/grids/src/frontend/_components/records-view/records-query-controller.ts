@@ -93,6 +93,7 @@ export const createRecordsQueryController = (options: RecordsQueryControllerOpti
     latest,
     failure,
     refetch: actions.refetch,
+    cancel: requests.abort,
     mutate: actions.mutate,
     fetchEpoch: () => fetchEpoch,
   };

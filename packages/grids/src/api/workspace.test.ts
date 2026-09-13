@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { User } from "@k2b/cloud/contracts";
 import type { AuthContext } from "@k2b/cloud/server";
+import { err, fail, ok } from "@k2b/stdlib";
 import type { MiddlewareHandler } from "hono";
 import { createWorkspaceApi } from "./workspace";
 
@@ -39,6 +40,51 @@ const authenticated: MiddlewareHandler<AuthContext> = async (c, next) => {
   c.set("user", user);
   await next();
 };
+
+describe("workspace revision access", () => {
+  const base = {
+    id: baseId,
+    shortId: "BASE01",
+    name: "Base",
+    description: null,
+    documentDefaults: {},
+    createdBy: null,
+    deletedAt: null,
+    createdAt: "2026-01-01T00:00:00Z",
+    updatedAt: "2026-01-01T00:00:00Z",
+  };
+  test("does not load or expose structure after access is denied", async () => {
+    let loads = 0;
+    const app = createWorkspaceApi({
+      requireAuthenticated: authenticated,
+      getBase: async () => base,
+      gate: async () => fail(err.forbidden("denied")),
+      loadRevision: async () => {
+        loads++;
+        return { revision: "secret", resources: {} };
+      },
+    });
+    const response = await app.request("/revision?baseId=BASE01");
+    expect(response.status).toBe(404);
+    expect(loads).toBe(0);
+    expect(await response.json()).toEqual({ message: "Base not found" });
+  });
+  test("returns a non-cacheable authorized snapshot with current write capabilities", async () => {
+    const app = createWorkspaceApi({
+      requireAuthenticated: authenticated,
+      getBase: async () => base,
+      gate: async () => ok("read"),
+      loadRevision: async (id) => {
+        expect(id).toBe(baseId);
+        return { revision: "one", resources: { "table:TABLE1": "hash" } };
+      },
+    });
+    const response = await app.request("/revision?baseId=BASE01");
+    expect(response.status).toBe(200);
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    expect(await response.json()).toEqual({ revision: "one", resources: { "table:TABLE1": "hash" }, canWrite: false, canAdmin: false });
+  });
+});
 
 describe("Grids workspace record detail", () => {
   const detail = {

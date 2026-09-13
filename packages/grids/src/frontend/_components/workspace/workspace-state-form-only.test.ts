@@ -5,6 +5,7 @@ import { loadGridsWorkspaceState } from "./workspace-state";
 
 const loadWorkspaceState = (params: Parameters<typeof loadGridsWorkspaceState>[0]) =>
   loadGridsWorkspaceState(params, {
+    loadRevision: async () => ({ revision: "fixture", resources: {} }),
     latestMetadataEventCursor: async () => null,
     latestRecordEventCursor: async () => null,
   });
@@ -105,6 +106,7 @@ describe("loadGridsWorkspaceState — Base access boundary", () => {
         href: `/app/grids/${base.shortId}`,
       },
       {
+        loadRevision: async () => ({ revision: "fixture", resources: {} }),
         latestMetadataEventCursor: async (baseId) => {
           loadedStreams.push(`metadata:${baseId}`);
           return "metadata-cursor";
@@ -135,6 +137,7 @@ describe("loadGridsWorkspaceState — Base access boundary", () => {
         href: `/app/grids/${base.shortId}`,
       },
       {
+        loadRevision: async () => ({ revision: "fixture", resources: {} }),
         latestMetadataEventCursor: async () => {
           throw new Error("metadata stream unavailable");
         },

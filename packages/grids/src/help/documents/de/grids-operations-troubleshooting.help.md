@@ -5,9 +5,9 @@ icon: ti ti-bolt
 description: Häufige Probleme ohne Vermutungen oder Arbeitsverlust untersuchen.
 order: 150
 ---
-Wenn sich Grids anders als erwartet verhält, bestimme zuerst die betroffene Oberfläche: Tabelle, Ansicht, Formular, Grids App, Dokument, Workflow oder Kombinierte Tabelle. Prüfe anschließend die aktuelle Abfrage, den Zustand und den Zugriff, bevor du die zugrunde liegenden Daten änderst.
+## Die Basisstruktur wurde geändert {icon="refresh"}
 
-Grids lehnt mehrdeutige Abfragen, veraltete Schreibvorgänge, ungültige Automatisierungen und nicht autorisierte Zugriffe ab, statt unbemerkt ein anderes Ergebnis zu wählen.
+Strukturänderungen zeigen einen Hinweis **Neu laden**, laden die Seite aber nie automatisch neu. Offene Eingaben bleiben erhalten. Hat sich der aktive Bereich geändert, pausiert das Speichern: Sichere deinen Entwurf anderweitig, bevor du das Neuladen bestätigst. Änderungen anderswo sperren die Bearbeitung nicht. Bei Zugriffsentzug oder gelöschter aktiver Ressource wird der betroffene Arbeitsbereich sofort ausgeblendet.
 
 ## Eine Ressource fehlt oder lässt sich nicht öffnen {icon="lifebuoy"}
 
@@ -21,7 +21,7 @@ Lies die aktive Suche, Filter, Quellansicht, den Modus für gelöschte Datensät
 
 Nutze exakte Filter für berechnete Werte, Lookups, Rollups, Dateien, Datumswerte und leere Werte. Ergänze eine aussagekräftige Sortierung, bevor du dich auf die Seitenreihenfolge oder `offset` verlässt. Seiten sind aktuelle Lesevorgänge; Änderungen zwischen Seitenanfragen können passende Datensätze verschieben.
 
-Wenn eine Änderung nicht sichtbar ist, lade die Seite einmal neu. Live-Aktualisierungen behalten die aktuellen Abfrageregeln bei: Ein geänderter Datensatz kann berechtigt verschwinden, wenn er nicht mehr passt.
+Datensatzergebnisse aktualisieren sich an Ort und Stelle, auch nach Wiederverbindung. Filter, Sortierung und Summen werden neu berechnet; Datensätze können das Ergebnis verlassen. Offene Bearbeitungsdialoge behalten ihre Entwürfe und melden konkurrierende Änderungen. Stoppen Live-Updates, nutze die Aktualisieren-Aktion.
 
 ## Die Bearbeitung eines Datensatzes wurde abgelehnt {icon="table"}
 

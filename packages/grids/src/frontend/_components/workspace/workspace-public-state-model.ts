@@ -206,6 +206,7 @@ type PublicWorkspaceState =
       canUseEditMode: boolean;
       canUseQueryWorkspace: boolean;
       metadataEventCursor: string | null;
+      workspaceRevision?: import("../../../service/workspace-revision").WorkspaceRevision;
       recordEventCursor: string | null;
       dateConfig?: DateContext;
       catalog: PublicWorkspaceCatalog;

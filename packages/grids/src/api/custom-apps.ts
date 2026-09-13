@@ -255,7 +255,10 @@ export const projectCustomAppSummaries = async (apps: readonly CustomAppSummary[
   }));
 };
 
-const projectDraftSave = async (saved: CustomAppDraftSave) => ({ ...saved, app: await projectCustomApp(saved.app) });
+const projectDraftSave = async ({ workspaceRevision: _revision, ...saved }: CustomAppDraftSave) => ({
+  ...saved,
+  app: await projectCustomApp(saved.app),
+});
 
 const projectRecordParams = async (params: Readonly<Record<string, string>>): Promise<Record<string, string>> => {
   const recordIds = await projectPublicIds("record", Object.values(params));
@@ -1455,6 +1458,7 @@ export const createCustomAppsApi = (
       if (!gate.ok) return respond(c, () => Promise.resolve(gate));
       const result = await gridsService.customApp.saveDraft(app.id, c.req.valid("json").definition, getLocale(c));
       if (!result.ok) return respond(c, () => Promise.resolve(result));
+      c.header("X-Grids-Workspace-Revision", result.data.workspaceRevision);
       return c.json(await projectDraftSave(result.data));
     })
     .post("/:appId/restore", requirePublicIdParam("appId", "customApp", "Grids App"), async (c) => {

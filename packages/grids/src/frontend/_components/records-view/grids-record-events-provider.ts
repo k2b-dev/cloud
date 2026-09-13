@@ -13,7 +13,7 @@ type GridsRecordEventsProviderOptions = {
   tableId: string;
   initialCursor?: string | null;
   locale?: string;
-  onReady?: () => void;
+  onReady?: (cursor: string | null) => void;
   onEvent?: (event: LiveRecordEvent | null, cursor: string | null) => void;
   onError?: (error: LiveProviderError) => void;
   onRevoked?: (error: LiveProviderError) => void;
@@ -63,8 +63,7 @@ export const createGridsRecordEventsProvider = (opts: GridsRecordEventsProviderO
       if (message.type === gridsWorkspace.wsType.recordsReady) {
         const payload = message.payload as { tableId?: unknown; cursor?: unknown } | undefined;
         if (payload?.tableId !== opts.tableId) return;
-        opts.onReady?.();
-        controls.markApplied(isGridsStreamCursor(payload.cursor) ? payload.cursor : null);
+        opts.onReady?.(isGridsStreamCursor(payload.cursor) ? payload.cursor : null);
         return;
       }
 
@@ -82,7 +81,14 @@ export const createGridsRecordEventsProvider = (opts: GridsRecordEventsProviderO
       if (message.type === gridsWorkspace.wsType.recordsError) {
         const error = errorFromPayload(message.payload, { code: "internal_error", message: t.liveUnavailable });
         if (error.code === "resync_required") controls.resetCursor();
-        if (isTerminalLiveErrorCode(error.code)) controls.terminate(error);
+        if (["login_required", "access_denied", "not_found"].includes(error.code)) {
+          revoked = true;
+          try {
+            opts.onRevoked?.(error);
+          } finally {
+            controls.terminate(error);
+          }
+        } else if (isTerminalLiveErrorCode(error.code)) controls.terminate(error);
         else opts.onError?.(error);
         return;
       }

@@ -2,6 +2,7 @@ import { logger } from "@k2b/cloud/services";
 import { gridsService } from "../../../service";
 import { latestMetadataEventCursor } from "../../../service/metadata-events";
 import { latestRecordEventCursor } from "../../../service/record-events";
+import { loadWorkspaceRevision } from "../../../service/workspace-revision";
 import { resolveWorkspaceMessages } from "./messages";
 import { loadWorkspaceRequest } from "./workspace-request-state";
 import { loadWorkspaceRoute } from "./workspace-route-state";
@@ -14,6 +15,7 @@ const log = logger("grids:workspace-state");
 type WorkspaceStateDeps = {
   latestMetadataEventCursor: (baseId: string) => Promise<string | null>;
   latestRecordEventCursor: (baseId: string) => Promise<string | null>;
+  loadRevision?: typeof loadWorkspaceRevision;
 };
 
 const defaultDeps: WorkspaceStateDeps = {
@@ -44,7 +46,10 @@ export const loadGridsWorkspaceState = async (
     loadEventCursor("metadata", () => deps.latestMetadataEventCursor(base.id)),
     loadEventCursor("records", () => deps.latestRecordEventCursor(base.id)),
   ]);
+  // Capture before loading the catalog: a concurrent schema edit must remain detectable.
+  const revision = await (deps.loadRevision ?? loadWorkspaceRevision)(base.id);
   const request = await loadWorkspaceRequest(params, base, { metadata: metadataCursor, records: recordCursor });
   if ("kind" in request) return request;
-  return loadWorkspaceRoute(request);
+  const state = await loadWorkspaceRoute(request);
+  return state.kind === "ok" ? { ...state, workspaceRevision: revision } : state;
 };

@@ -70,16 +70,46 @@ export const routeClientState = (state: PublicOkWorkspaceState): PublicOkWorkspa
 };
 
 export default function GridsWorkspace(props: { state: PublicOkWorkspaceState; cloudUrl: string }) {
+  const route = props.state.route;
+  const activeKeys = (() => {
+    switch (route.kind) {
+      case "records":
+      case "queryResultView":
+        return [`table:${route.activeTable.id}`, ...(route.activeView ? [`view:${route.activeView.id}`] : [])];
+      case "customApp":
+        return [`app:${route.app.id}`];
+      case "workflows":
+        return route.activeWorkflow ? [`workflow:${route.activeWorkflow.id}`] : [];
+      case "documentTemplate":
+        return [`table:${route.table.id}`, `document:${route.template.id}`];
+      case "query":
+        if (!route.currentSource) return [];
+        return [route.currentSource.kind === "table" ? `table:${route.currentSource.tableId}` : `view:${route.currentSource.viewId}`];
+      case "overview":
+        return [`base:${props.state.base.id}`];
+      default:
+        return [];
+    }
+  })();
   return (
     <>
       <RememberGridsPath path={props.state.rememberPath} />
-      <WorkspaceMetadataRefresh baseId={props.state.base.id} initialCursor={props.state.metadataEventCursor} />
-      <AppWorkspace class={workspaceRootClass(props.state.adminModeRequested)}>
-        <GridsSidebar state={props.state} />
-        <AppWorkspace.Content>
-          <GridsRoute state={routeClientState(props.state)} cloudUrl={props.cloudUrl} />
-        </AppWorkspace.Content>
-      </AppWorkspace>
+      <WorkspaceMetadataRefresh
+        baseId={props.state.base.id}
+        initialCursor={props.state.metadataEventCursor}
+        revision={props.state.workspaceRevision}
+        activeKeys={activeKeys}
+        canWrite={props.state.canCreateTables}
+        canAdmin={props.state.canManageBase}
+      />
+      <div id={`grids-workspace-${props.state.base.id}`} class="contents">
+        <AppWorkspace class={workspaceRootClass(props.state.adminModeRequested)}>
+          <GridsSidebar state={props.state} />
+          <AppWorkspace.Content>
+            <GridsRoute state={routeClientState(props.state)} cloudUrl={props.cloudUrl} />
+          </AppWorkspace.Content>
+        </AppWorkspace>
+      </div>
     </>
   );
 }

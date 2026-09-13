@@ -242,6 +242,55 @@ domTest("record drafts survive validation and conflict failures, and pending sub
   }
 });
 
+for (const type of ["record.updated", "record.deleted", "record.finalized"]) {
+  domTest(`${type} preserves an open draft and blocks a blind save`, async () => {
+    const dom = createDomTestHarness();
+    const { openRecordUpsertDialog } = await import("./RecordUpsertDialog");
+    const { dialogCore } = await import("@k2b/ui");
+    const record: PublicGridRecord = {
+      id: "RECORD",
+      tableId: "TABLE1",
+      data: { FIELD1: "old" },
+      version: 1,
+      createdAt: "2026-01-01T00:00:00Z",
+      updatedAt: "2026-01-01T00:00:00Z",
+      createdBy: null,
+      updatedBy: null,
+      deletedAt: null,
+    };
+    let saves = 0;
+    void openRecordUpsertDialog({
+      mode: "edit",
+      fields: [field()],
+      baseId: "BASE01",
+      record,
+      onSubmit: async () => {
+        saves++;
+      },
+    });
+    try {
+      const input = dom.document.querySelector<HTMLInputElement>('input[name="FIELD1"]')!;
+      input.value = "my draft";
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      document.dispatchEvent(
+        new CustomEvent("grids:record-live-change", { detail: { tableId: "OTHER1", recordId: "RECORD", type, version: 2 } }),
+      );
+      expect(dom.document.querySelector<HTMLButtonElement>('button[type="submit"]')!.disabled).toBe(false);
+      document.dispatchEvent(
+        new CustomEvent("grids:record-live-change", { detail: { tableId: "TABLE1", recordId: "RECORD", type, version: 2 } }),
+      );
+      expect(input.value).toBe("my draft");
+      expect(dom.document.querySelector<HTMLButtonElement>('button[type="submit"]')!.disabled).toBe(true);
+      dom.document.querySelector("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+      await Bun.sleep(0);
+      expect(saves).toBe(0);
+    } finally {
+      dialogCore.close();
+      dom.cleanup();
+    }
+  });
+}
+
 domTest("Escape asks before discarding a record draft", async () => {
   const dom = createDomTestHarness();
   const { openRecordUpsertDialog } = await import("./RecordUpsertDialog");

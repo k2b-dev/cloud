@@ -161,7 +161,7 @@ describe("Grids record live events adapter", () => {
     expect(call.connectCount).toBe(1);
   });
 
-  test("marks the server baseline only after accepting the ready message", () => {
+  test("leaves the baseline acknowledgement to the covering refresh", () => {
     const order: string[] = [];
     createGridsRecordEventsProvider({ tableId: TABLE_ID, onReady: () => order.push("ready") });
     const call = providerCalls[0]!;
@@ -169,8 +169,8 @@ describe("Grids record live events adapter", () => {
     deliver(call, { type: "grids.records.ready", payload: { tableId: OTHER_TABLE_ID, cursor: "s6t.test.6" } }, order);
     deliver(call, { type: "grids.records.ready", payload: { tableId: TABLE_ID, cursor: "s6t.test.6" } }, order);
 
-    expect(order).toEqual(["ready", "mark:s6t.test.6"]);
-    expect(call.controlCursors).toEqual(["s6t.test.6"]);
+    expect(order).toEqual(["ready"]);
+    expect(call.controlCursors).toEqual([]);
   });
 
   test("does not mark a ready baseline rejected by the consumer", () => {
@@ -199,7 +199,7 @@ describe("Grids record live events adapter", () => {
     deliver(call, { type: "grids.records.ready", payload: { tableId: TABLE_ID, cursor: "invalid" } });
     deliver(call, recordEvent(TABLE_ID, "invalid"));
 
-    expect(call.controlCursors).toEqual([null]);
+    expect(call.controlCursors).toEqual([]);
     expect(cursors).toEqual([null]);
   });
 
@@ -257,7 +257,7 @@ describe("Grids record live events adapter", () => {
 });
 
 describe("Grids metadata live events adapter", () => {
-  test("marks a matching ready baseline after the consumer accepts it", () => {
+  test("leaves a matching baseline unacknowledged until reconciliation", () => {
     const order: string[] = [];
     createGridsMetadataEventsProvider({ baseId: BASE_ID, onReady: () => order.push("ready") });
     const call = providerCalls[0]!;
@@ -265,8 +265,8 @@ describe("Grids metadata live events adapter", () => {
     deliver(call, { type: "grids.metadata.ready", payload: { baseId: OTHER_BASE_ID, cursor: "s6t.test.7" } }, order);
     deliver(call, { type: "grids.metadata.ready", payload: { baseId: BASE_ID, cursor: "s6t.test.7" } }, order);
 
-    expect(order).toEqual(["ready", "mark:s6t.test.7"]);
-    expect(call.controlCursors).toEqual(["s6t.test.7"]);
+    expect(order).toEqual(["ready"]);
+    expect(call.controlCursors).toEqual([]);
   });
 
   test("subscribes by base and accepts only matching metadata without implicit acknowledgement", () => {

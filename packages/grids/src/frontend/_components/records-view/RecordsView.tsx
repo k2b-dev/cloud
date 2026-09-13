@@ -298,12 +298,17 @@ export default function RecordsView(props: Props) {
     cursor,
     setCursor,
     isGrouped,
-    hasBlockingDialog: () => dialogCore.isOpen(),
+    // Record dialogs own draft values and optimistic versions, not this result set.
+    hasBlockingDialog: () => false,
     onOptimisticDelete: (recordId) => {
       if (recordId === selectedRecordId()) selectionController?.close();
     },
     onRefreshed: (result) => selectionController?.verifyAfterRefresh(result),
-    onRevoked: (error) => prompts.error(error.message || t().accessChanged),
+    onRevoked: (error) => {
+      selectionController?.close();
+      dialogCore.close();
+      prompts.error(error.message || t().accessChanged);
+    },
     onFatal: (error) => prompts.error(error.message || t().liveUnavailable),
   });
   const {

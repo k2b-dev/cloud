@@ -39,7 +39,7 @@ export const workspaceMessages = i18n.define({
       noTablesWriteAccess: "No tables. You don't have write access to create one.",
       invalidViewSource: "Invalid view GQL source",
       invalidGqlSource: "Invalid GQL source",
-      workspaceUpdated: "Workspace updated",
+      workspaceChanged: "Workspace changed",
       liveUpdatesStopped: "Live updates stopped",
       liveUpdatesStoppedDetail: "Some workspace data may now be out of date.",
       reload: "Reload",
@@ -53,7 +53,9 @@ export const workspaceMessages = i18n.define({
       limitedAccess: ({ forms, documents }: { forms: number; documents: number }) =>
         `You have access to ${[forms ? `${forms} form${forms === 1 ? "" : "s"}` : "", documents ? `${documents} document template${documents === 1 ? "" : "s"}` : ""].filter(Boolean).join(" and ")}. Choose one in the sidebar.`,
       noTablesCreate: "No tables yet. Choose “New table” in the sidebar.",
-      pageRefreshAfterDialog: "The page will refresh after the open dialog closes.",
+      structureChanged: "The structure of this base has changed. Reload when you are ready; your current inputs stay open.",
+      structureWriteBlocked: "This area has changed. Your inputs are preserved, but saving is paused. Reload before editing further.",
+      reloadDraftWarning: "Reload this page? Unsaved inputs will be discarded.",
     },
     de: {
       start: "Start",
@@ -91,7 +93,7 @@ export const workspaceMessages = i18n.define({
       noTablesWriteAccess: "Keine Tabellen vorhanden. Dir fehlt die Schreibberechtigung zum Erstellen einer Tabelle.",
       invalidViewSource: "Ungültige GQL-Quelle der Ansicht",
       invalidGqlSource: "Ungültige GQL-Quelle",
-      workspaceUpdated: "Arbeitsbereich aktualisiert",
+      workspaceChanged: "Arbeitsbereich geändert",
       liveUpdatesStopped: "Live-Aktualisierungen beendet",
       liveUpdatesStoppedDetail: "Einige Daten im Arbeitsbereich sind möglicherweise nicht mehr aktuell.",
       reload: "Neu laden",
@@ -105,7 +107,10 @@ export const workspaceMessages = i18n.define({
       limitedAccess: ({ forms, documents }) =>
         `Du hast Zugriff auf ${[forms ? `${forms} ${forms === 1 ? "Formular" : "Formulare"}` : "", documents ? `${documents} ${documents === 1 ? "Dokumentvorlage" : "Dokumentvorlagen"}` : ""].filter(Boolean).join(" und ")}. Wähle einen Eintrag in der Seitenleiste aus.`,
       noTablesCreate: "Noch keine Tabellen. Wähle „Neue Tabelle“ in der Seitenleiste aus.",
-      pageRefreshAfterDialog: "Die Seite wird aktualisiert, sobald der geöffnete Dialog geschlossen wurde.",
+      structureChanged: "Die Struktur dieser Base wurde geändert. Lade neu, wenn du bereit bist. Deine aktuellen Eingaben bleiben offen.",
+      structureWriteBlocked:
+        "Dieser Bereich wurde geändert. Deine Eingaben bleiben erhalten, Speichern ist aber pausiert. Lade vor weiteren Änderungen neu.",
+      reloadDraftWarning: "Seite neu laden? Ungespeicherte Eingaben werden verworfen.",
     },
   },
 });

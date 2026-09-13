@@ -1414,6 +1414,8 @@ export type CustomAppDraftSave = {
   app: CustomApp;
   valid: boolean;
   diagnostics: CustomAppDiagnostic[];
+  /** Exact row written by this transaction, for workspace reconciliation. */
+  workspaceRevision: string;
 };
 
 export const saveDraft = async (id: string, input: unknown, locale?: string): Promise<Result<CustomAppDraftSave>> => {
@@ -1433,29 +1435,34 @@ export const saveDraft = async (id: string, input: unknown, locale?: string): Pr
     if (parsed.data.id !== existing.shortId || parsed.data.baseId !== locked.base_short_id) return fail(err.badInput(t.identityImmutable));
     const compilation = await compile(parsed.data, tx, locale);
     if (!compilation.ok) {
-      const [updated] = await tx<DbRow[]>`
+      const [updated] = await tx<Array<DbRow & { workspace_revision: string }>>`
         UPDATE grids.custom_apps
         SET name = ${parsed.data.name}, icon = ${parsed.data.icon ?? null}, draft_definition = ${parsed.data}::jsonb,
             draft_capabilities = NULL, updated_at = now()
         WHERE id = ${id}::uuid AND deleted_at IS NULL
-        RETURNING *
+        RETURNING *, md5(to_jsonb(custom_apps)::text) AS workspace_revision
       `;
       if (!updated) return fail({ ...err.notFound("Grids App"), message: t.customAppNotFound });
-      return ok({ app: mapRow(updated), valid: false, diagnostics: compilation.diagnostics });
+      return ok({
+        app: mapRow(updated),
+        valid: false,
+        diagnostics: compilation.diagnostics,
+        workspaceRevision: updated.workspace_revision,
+      });
     }
     const definition = parsed.data;
     const capabilities = compilation.compiled.capabilities;
     const diagnostics: CustomAppDiagnostic[] = [];
-    const [updated] = await tx<DbRow[]>`
+    const [updated] = await tx<Array<DbRow & { workspace_revision: string }>>`
       UPDATE grids.custom_apps
       SET name = ${definition.name}, icon = ${definition.icon ?? null}, draft_definition = ${definition}::jsonb,
           draft_capabilities = ${capabilities}::jsonb, updated_at = now()
       WHERE id = ${id}::uuid AND deleted_at IS NULL
-      RETURNING *
+      RETURNING *, md5(to_jsonb(custom_apps)::text) AS workspace_revision
     `;
     if (!updated) return fail({ ...err.notFound("Grids App"), message: t.customAppNotFound });
     const app = mapRow(updated);
-    return ok({ app, valid: compilation.ok, diagnostics });
+    return ok({ app, valid: compilation.ok, diagnostics, workspaceRevision: updated.workspace_revision });
   });
 };
 

@@ -43,8 +43,8 @@ export const createRecordsSelectionController = (options: RecordsSelectionContro
     const fetched = fetchedRecord();
     return (
       options.items().find((item) => item.id === id) ??
-      (options.initialRecord?.id === id ? options.initialRecord : null) ??
-      (fetched?.id === id ? fetched : null)
+      (fetched?.id === id ? fetched : null) ??
+      (options.initialRecord?.id === id ? options.initialRecord : null)
     );
   });
 
@@ -136,7 +136,12 @@ export const createRecordsSelectionController = (options: RecordsSelectionContro
 
   const verifyAfterRefresh = async (result: TableQueryResult) => {
     const recordId = options.selectedRecordId();
-    if (!recordId || visibleIdsFromResult(result).includes(recordId)) return;
+    if (!recordId) return;
+    if (visibleIdsFromResult(result).includes(recordId)) {
+      const next = await loadDetail(recordId);
+      if (options.selectedRecordId() === recordId) setDetail(next);
+      return;
+    }
     const response = await apiClient.records[":tableId"][":recordId"].$get({
       param: { tableId: options.tableId, recordId },
       query: options.mode() === "trash" ? { deletedOnly: "true" } : {},
@@ -145,9 +150,12 @@ export const createRecordsSelectionController = (options: RecordsSelectionContro
     if (response.ok) {
       const next = await response.json();
       if (options.selectedRecordId() === recordId) setFetchedRecord(() => next);
+      const nextDetail = await loadDetail(recordId);
+      if (options.selectedRecordId() === recordId) setDetail(nextDetail);
       return;
     }
     if (response.status === 403 || response.status === 404) close();
+    else throw new Error(await errorMessage(response, t().loadRecordFailed));
   };
 
   const selectRecord = (next: GridRecord) => {

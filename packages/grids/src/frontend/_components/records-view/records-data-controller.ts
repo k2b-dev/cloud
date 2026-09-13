@@ -95,6 +95,8 @@ export const fetchVisibleFlatRecords = async (options: {
   let firstPage: TableQueryResult | null = null;
   const combinedItems: GridRecord[] = [];
   const combinedFilePreviews: FilePreviews = {};
+  const relationLabels: NonNullable<TableQueryResult["relationLabels"]> = {};
+  const cursors = new Set<string>();
 
   do {
     const page = await fetchRecords(
@@ -110,7 +112,10 @@ export const fetchVisibleFlatRecords = async (options: {
     firstPage ??= page;
     combinedItems.push(...((page.items ?? []) as GridRecord[]));
     Object.assign(combinedFilePreviews, page.filePreviews ?? {});
+    Object.assign(relationLabels, page.relationLabels ?? {});
     nextCursor = page.nextCursor ?? null;
+    if (nextCursor && cursors.has(nextCursor)) throw new Error("Repeated records cursor");
+    if (nextCursor) cursors.add(nextCursor);
   } while (
     shouldLoadNextLiveRefreshPage({
       loadedCount: combinedItems.length,
@@ -122,6 +127,7 @@ export const fetchVisibleFlatRecords = async (options: {
   return {
     ...(firstPage ?? { nextCursor: null }),
     items: combinedItems,
+    relationLabels,
     filePreviews: Object.keys(combinedFilePreviews).length > 0 ? combinedFilePreviews : undefined,
     nextCursor,
   };
@@ -137,6 +143,8 @@ export const fetchVisibleGroupedRecords = async (options: {
   const fetchRecords = options.fetchRecords ?? fetchTableQuery;
   let page: GroupedRecordsPage = { buckets: [], nextCursor: null, relationLabels: {}, explode: false };
   let cursor: string | null = null;
+  let firstPage: TableQueryResult | undefined;
+  const cursors = new Set<string>();
 
   do {
     const response = await fetchRecords(
@@ -149,11 +157,15 @@ export const fetchVisibleGroupedRecords = async (options: {
       },
       { signal: options.signal },
     );
+    firstPage ??= response;
     page = reconcileGroupedRecordsPage(page, response, page.buckets.length > 0, options.source.query.limit);
     cursor = page.nextCursor;
+    if (cursor && cursors.has(cursor)) throw new Error("Repeated records cursor");
+    if (cursor) cursors.add(cursor);
   } while (shouldLoadNextLiveRefreshPage({ loadedCount: page.buckets.length, targetCount: desiredCount, nextCursor: cursor }));
 
   return {
+    ...firstPage,
     buckets: page.buckets,
     nextCursor: page.nextCursor,
     relationLabels: page.relationLabels,
@@ -215,6 +227,8 @@ export const createRecordsDataController = (options: RecordsDataControllerOption
   let pendingLiveRecordIds = new Set<string>();
   let staleResourceEpochFloor = -1;
   let liveCommitId = 0;
+  let revoked = false;
+  const [refreshFailed, setRefreshFailed] = createSignal(false);
 
   const invalidate = () => {
     refreshRequestId++;
@@ -231,6 +245,7 @@ export const createRecordsDataController = (options: RecordsDataControllerOption
   };
 
   createEffect(() => {
+    if (revoked) return;
     const response = recordsQuery.latest();
     if (!response) return;
     const isLiveCommit = typeof response.__liveCommitId === "number" && response.__liveCommitId === liveCommitId;
@@ -251,8 +266,9 @@ export const createRecordsDataController = (options: RecordsDataControllerOption
 
   const items = () => (options.isGrouped() ? [] : flatPage().items);
   const buckets = () => groupedPage().buckets;
-  const aggregates = () => recordsQuery.latest()?.aggregates ?? {};
-  const relationLabels = () => (options.isGrouped() ? groupedPage().relationLabels : (recordsQuery.latest()?.relationLabels ?? {}));
+  const aggregates = () => (revoked ? {} : (recordsQuery.latest()?.aggregates ?? {}));
+  const relationLabels = () =>
+    revoked ? {} : options.isGrouped() ? groupedPage().relationLabels : (recordsQuery.latest()?.relationLabels ?? {});
 
   const replaceRecord = (record: GridRecord) => {
     if (options.isGrouped()) return;
@@ -288,11 +304,32 @@ export const createRecordsDataController = (options: RecordsDataControllerOption
     options.setCursor(next);
   };
 
+  const revoke = (error: LiveProviderError) => {
+    revoked = true;
+    recordsQuery.cancel();
+    invalidate();
+    setLivePending(false);
+    liveCommitId++;
+    staleResourceEpochFloor = recordsQuery.fetchEpoch();
+    setFlatPage({ items: [], nextCursor: null, filePreviews: {} });
+    setGroupedPage({ buckets: [], nextCursor: null, relationLabels: {}, explode: false });
+    recordsQuery.mutate({
+      items: [],
+      buckets: [],
+      aggregates: {},
+      nextCursor: null,
+      __liveCommitId: liveCommitId,
+    } as RecordsTableQueryResult);
+    options.onRevoked(error);
+  };
+
   function scheduleLiveRefresh() {
-    if (options.trashMode) return;
-    setLivePending(true);
-    if (options.hasBlockingDialog()) return;
-    if (liveRefreshTimer) clearTimeout(liveRefreshTimer);
+    if (revoked) return;
+    setRefreshFailed(false);
+    if (options.hasBlockingDialog() || liveRefreshing() || liveRefreshTimer) {
+      setLivePending(true);
+      return;
+    }
     liveRefreshTimer = setTimeout(() => {
       liveRefreshTimer = undefined;
       if (options.hasBlockingDialog()) {
@@ -301,9 +338,11 @@ export const createRecordsDataController = (options: RecordsDataControllerOption
       }
       void refreshVisibleRecords();
     }, 250);
+    setLivePending(true);
   }
 
   async function refreshVisibleRecords(config: { recordIds?: Iterable<string>; force?: boolean } = {}) {
+    if (revoked) return;
     if (!config.force && (recordsQuery.data.loading || options.hasBlockingDialog())) {
       if (config.recordIds) {
         for (const id of config.recordIds) pendingLiveRecordIds.add(id);
@@ -336,7 +375,7 @@ export const createRecordsDataController = (options: RecordsDataControllerOption
             targetCount: flatPage().items.length,
             signal: abort.signal,
           });
-      if (requestId !== refreshRequestId) return;
+      if (requestId !== refreshRequestId || revoked) return;
 
       if (!options.isGrouped()) {
         setFlatPage((current) => reconcileFlatRecordsPage(current, next, false, source.query.limit));
@@ -347,6 +386,7 @@ export const createRecordsDataController = (options: RecordsDataControllerOption
       staleResourceEpochFloor = recordsQuery.fetchEpoch();
       recordsQuery.mutate({ ...next, __liveCommitId: liveCommitId } as RecordsTableQueryResult);
       await options.onRefreshed(next);
+      if (requestId !== refreshRequestId || revoked) return;
       liveProvider?.markApplied(cursorToApply);
       if (pendingLiveCursor === cursorToApply) pendingLiveCursor = null;
 
@@ -366,11 +406,16 @@ export const createRecordsDataController = (options: RecordsDataControllerOption
         setLivePending(true);
         scheduleLiveRefresh();
       }
-    } catch {
+    } catch (error) {
       if (abort.signal.aborted) return;
+      if (error instanceof Error && "status" in error && [401, 403, 404].includes(Number(error.status))) {
+        revoke({ message: error.message });
+        return;
+      }
       if (requestId === refreshRequestId) {
         pendingLiveRecordIds = new Set([...eventRecordIds, ...pendingLiveRecordIds]);
         setLivePending(true);
+        setRefreshFailed(true);
       }
     } finally {
       if (liveRefreshAbort === abort) liveRefreshAbort = undefined;
@@ -379,13 +424,13 @@ export const createRecordsDataController = (options: RecordsDataControllerOption
   }
 
   createEffect(() => {
-    if (options.trashMode || !livePending()) return;
+    if (revoked || refreshFailed() || !livePending()) return;
     if (liveRefreshing() || recordsQuery.data.loading || options.hasBlockingDialog() || liveRefreshTimer) return;
     void refreshVisibleRecords();
   });
 
   onMount(() => {
-    if (options.trashMode || typeof document === "undefined") return;
+    if (typeof document === "undefined") return;
 
     const drainAfterDialogClose = () => {
       requestAnimationFrame(() => {
@@ -399,37 +444,33 @@ export const createRecordsDataController = (options: RecordsDataControllerOption
   });
 
   onMount(() => {
-    if (options.trashMode) return;
     liveProvider = createGridsRecordEventsProvider({
       tableId: options.tableId,
       initialCursor: options.initialEventCursor,
       locale: options.locale,
+      onReady: (cursor) => {
+        pendingLiveCursor = cursor;
+        scheduleLiveRefresh();
+      },
       onEvent: (event, cursor) => {
-        if (!event) return;
         if (cursor) pendingLiveCursor = cursor;
+        if (!event) {
+          scheduleLiveRefresh();
+          return;
+        }
         pendingLiveRecordIds.add(event.recordId);
-        if (event.type === "record.deleted" && shouldOptimisticallyRemoveDeletedRecord(options.source().query)) {
+        document.dispatchEvent(new CustomEvent("grids:record-live-change", { detail: event }));
+        if (!options.trashMode && event.type === "record.deleted" && shouldOptimisticallyRemoveDeletedRecord(options.source().query)) {
           removeRecord(event.recordId);
           options.onOptimisticDelete(event.recordId);
         }
         scheduleLiveRefresh();
       },
-      onError: () => setLivePending(true),
-      onRevoked: (error) => {
-        setLivePending(false);
-        liveCommitId++;
-        staleResourceEpochFloor = recordsQuery.fetchEpoch();
-        setFlatPage({ items: [], nextCursor: null, filePreviews: {} });
-        setGroupedPage({ buckets: [], nextCursor: null, relationLabels: {}, explode: false });
-        recordsQuery.mutate({
-          items: [],
-          buckets: [],
-          aggregates: {},
-          nextCursor: null,
-          __liveCommitId: liveCommitId,
-        } as RecordsTableQueryResult);
-        options.onRevoked(error);
+      onError: (error) => {
+        if (error.code === "resync_required") invalidate();
+        scheduleLiveRefresh();
       },
+      onRevoked: revoke,
       onFatal: (error) => {
         setLivePending(false);
         options.onFatal(error);

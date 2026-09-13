@@ -1,9 +1,11 @@
 import type { DateContext } from "@k2b/stdlib";
 import { Button, confirmDiscardIfDirty, dialogCore, NoticeCard, PanelDialog, panelDialogOptions, useLocale } from "@k2b/ui";
-import { createSignal, For, Show } from "solid-js";
+import { createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import type { PublicField as Field, PublicGridRecord as GridRecord } from "../../../api/public-dto";
 import { initialFieldInputValue, isRecordInputField, sanitizeFieldValues } from "../fields/field-render";
 import { FieldInput, type UserInputEntry } from "../forms/form-fields";
+import type { LiveRecordEvent } from "../records-view/live-refresh";
+import { workspaceLiveStatus } from "../workspace/workspace-live-state";
 import { recordMessages } from "./messages";
 
 /**
@@ -75,6 +77,21 @@ export const openRecordUpsertDialog = (args: OpenArgs): Promise<Record<string, u
       const [conflict, setConflict] = createSignal(false);
       let version = args.record?.version;
       let baselineData = args.record?.data ?? {};
+      onMount(() => {
+        const changed = (raw: Event) => {
+          const event = (raw as CustomEvent<LiveRecordEvent>).detail;
+          if (!args.record || event.tableId !== args.record.tableId || event.recordId !== args.record.id || submitting()) return;
+          if (event.version !== null && version !== undefined && event.version <= version) return;
+          setConflict(true);
+          setSubmitError(
+            event.type === "record.deleted" || event.type === "record.finalized"
+              ? t().conflictRecordUnavailable
+              : t().compareCurrentRecordDetail,
+          );
+        };
+        document.addEventListener("grids:record-live-change", changed);
+        onCleanup(() => document.removeEventListener("grids:record-live-change", changed));
+      });
       const requestClose = async () => {
         if (submitting()) return;
         if (await confirmDiscardIfDirty(() => JSON.stringify(values()) !== JSON.stringify(initial))) close(null);
@@ -186,7 +203,7 @@ export const openRecordUpsertDialog = (args: OpenArgs): Promise<Record<string, u
 
       const handleSubmit = async (e: Event) => {
         e.preventDefault();
-        if (submitting() || conflict()) return;
+        if (submitting() || conflict() || workspaceLiveStatus().blocked) return;
         if (!validate()) {
           if (e.currentTarget instanceof HTMLElement) e.currentTarget.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus();
           return;
@@ -258,6 +275,9 @@ export const openRecordUpsertDialog = (args: OpenArgs): Promise<Record<string, u
                   <For each={editableFields}>{(f) => renderField(f)}</For>
                 </fieldset>
               </Show>
+              <Show when={workspaceLiveStatus().blocked}>
+                <NoticeCard tone="warning">{workspaceLiveStatus().message}</NoticeCard>
+              </Show>
               <Show when={submitError()}>{(message) => <NoticeCard tone="danger">{message()}</NoticeCard>}</Show>
               <Show when={conflict() && args.reloadRecord}>
                 <Button variant="secondary" onClick={() => void compareCurrent()} disabled={submitting()}>
@@ -271,7 +291,12 @@ export const openRecordUpsertDialog = (args: OpenArgs): Promise<Record<string, u
                 <Button variant="ghost" size="sm" type="button" onClick={requestClose} disabled={submitting()}>
                   {t().cancel}
                 </Button>
-                <Button variant="primary" size="sm" type="submit" disabled={editableFields.length === 0 || submitting() || conflict()}>
+                <Button
+                  variant="primary"
+                  size="sm"
+                  type="submit"
+                  disabled={editableFields.length === 0 || submitting() || conflict() || workspaceLiveStatus().blocked}
+                >
                   {args.mode === "create" ? t().create : t().save}
                 </Button>
               </div>

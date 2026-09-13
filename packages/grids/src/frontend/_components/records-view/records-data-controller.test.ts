@@ -123,14 +123,22 @@ describe("fetchVisibleFlatRecords", () => {
       fetchRecords: async (args) => {
         cursors.push(args.cursor);
         return args.cursor
-          ? ({ items: [record("b")], nextCursor: null, filePreviews: { b: {} } } as TableQueryResult)
-          : ({ items: [record("a")], nextCursor: "page-2", filePreviews: { a: {} } } as TableQueryResult);
+          ? ({ items: [record("b")], nextCursor: null, filePreviews: { b: {} }, relationLabels: { second: "Second" } } as TableQueryResult)
+          : ({
+              items: [record("a")],
+              nextCursor: "page-2",
+              filePreviews: { a: {} },
+              relationLabels: { first: "First" },
+              aggregates: { total: "120.50" },
+            } as TableQueryResult);
       },
     });
 
     expect(cursors).toEqual([null, "page-2"]);
     expect(result.items).toEqual([record("a"), record("b")]);
     expect(result.filePreviews).toEqual({ a: {}, b: {} });
+    expect(result.relationLabels).toEqual({ first: "First", second: "Second" });
+    expect(result.aggregates).toEqual({ total: "120.50" });
   });
 });
 
@@ -150,7 +158,7 @@ describe("fetchVisibleGroupedRecords", () => {
         cursors.push(args.cursor);
         return args.cursor
           ? ({ buckets: [{ keys: ["b"], values: {} }], nextCursor: null } as TableQueryResult)
-          : ({ buckets: [{ keys: ["a"], values: {} }], nextCursor: "page-2" } as TableQueryResult);
+          : ({ buckets: [{ keys: ["a"], values: {} }], nextCursor: "page-2", aggregates: { total: "120.50" } } as TableQueryResult);
       },
     });
 
@@ -159,10 +167,41 @@ describe("fetchVisibleGroupedRecords", () => {
       { keys: ["a"], values: {} },
       { keys: ["b"], values: {} },
     ]);
+    expect(result.aggregates).toEqual({ total: "120.50" });
   });
 });
 
 describe("records pagination limits", () => {
+  test("live paging refuses repeating cursors rather than looping", async () => {
+    let calls = 0;
+    const source = { tableId: "table-1", query: {} as RecordQuery, cursor: null, calendar: { view: "month" as const, date: "2026-07-01" } };
+    await expect(
+      fetchVisibleFlatRecords({
+        source,
+        targetCount: 3,
+        signal: new AbortController().signal,
+        fetchRecords: async () => {
+          calls++;
+          return { items: [], nextCursor: "repeat" };
+        },
+      }),
+    ).rejects.toThrow("Repeated records cursor");
+    expect(calls).toBe(2);
+    calls = 0;
+    await expect(
+      fetchVisibleGroupedRecords({
+        source,
+        targetCount: 3,
+        signal: new AbortController().signal,
+        fetchRecords: async () => {
+          calls++;
+          return { buckets: [], nextCursor: "repeat" };
+        },
+      }),
+    ).rejects.toThrow("Repeated records cursor");
+    expect(calls).toBe(2);
+  });
+
   test("loads large explicit limits in bounded pages and exposes a cursor until the limit is reached", () => {
     expect(queryForRecordsPage({ limit: 2_500 } as RecordQuery, 0).limit).toBe(100);
     expect(queryForRecordsPage({ limit: 2_500 } as RecordQuery, 2_450).limit).toBe(50);

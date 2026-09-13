@@ -11,7 +11,7 @@ type GridsMetadataEventsProviderOptions = {
   baseId: string;
   initialCursor?: string | null;
   locale?: string;
-  onReady?: () => void;
+  onReady?: (cursor: string | null) => void;
   onEvent?: (cursor: string | null) => void;
   onError?: (error: LiveProviderError) => void;
   onRevoked?: (error: LiveProviderError) => void;
@@ -71,8 +71,7 @@ export const createGridsMetadataEventsProvider = (opts: GridsMetadataEventsProvi
       if (message.type === gridsWorkspace.wsType.metadataReady) {
         const payload = message.payload as { baseId?: unknown; cursor?: unknown } | undefined;
         if (payload?.baseId !== opts.baseId) return;
-        opts.onReady?.();
-        controls.markApplied(isGridsStreamCursor(payload.cursor) ? payload.cursor : null);
+        opts.onReady?.(isGridsStreamCursor(payload.cursor) ? payload.cursor : null);
         return;
       }
 
@@ -90,7 +89,14 @@ export const createGridsMetadataEventsProvider = (opts: GridsMetadataEventsProvi
       if (message.type === gridsWorkspace.wsType.metadataError) {
         const error = errorFromPayload(message.payload, { code: "internal_error", message: t.liveMetadataFailed });
         if (error.code === "resync_required") controls.resetCursor();
-        if (TERMINAL_ERROR_CODES.has(error.code)) controls.terminate(error);
+        if (["login_required", "access_denied", "not_found"].includes(error.code)) {
+          revoked = true;
+          try {
+            opts.onRevoked?.(error);
+          } finally {
+            controls.terminate(error);
+          }
+        } else if (TERMINAL_ERROR_CODES.has(error.code)) controls.terminate(error);
         else opts.onError?.(error);
         return;
       }
