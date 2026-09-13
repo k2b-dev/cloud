@@ -319,3 +319,15 @@ durable consumer acknowledgment state; verify before restarting applications.
 The old `ipa_nats_1_data`, `ipa_nats_2_data`, and `ipa_nats_3_data` volumes must
 remain available until migration verification succeeds. Do not use `down -v`.
 Use a separate three-node cluster for replication and failover tests.
+
+## Application-scoped SSR builds
+
+Development and production use SSR 0.13.1 component roots: the selected app's
+`src/` and Cloud's framework `src/`. The build scripts resolve `APP_DIR` before
+loading the app configuration. The workspace root stays the base for island IDs
+and development assets. Other apps and UI test fixtures are not scanned.
+Production builds no longer compile every app and then discard unrelated island
+entries. Imported dependencies still participate in the selected app's bundle.
+
+An SSR dependency update requires rebuilding affected application images;
+restarting source-mounted containers alone keeps their old installed dependency.

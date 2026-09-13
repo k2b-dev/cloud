@@ -22,20 +22,19 @@
  * it ships a `scripts/build-extras.ts` that this script runs at the end.
  */
 import { existsSync } from "node:fs";
-import { cp, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, extname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { brotliCompress, gzip, constants as zlibConstants } from "node:zlib";
-import { CryptoHasher, Glob } from "bun";
+import { Glob } from "bun";
 import tailwind from "bun-plugin-tailwind";
 import { writeAppFavicon } from "./app-favicon";
 
 const appId = process.env.APP_ID;
 if (!appId) throw new Error("APP_ID env var required");
 
-// `root` = wherever the user is building from. SSR plugin's rootDir is
-// process.cwd() (set in defineApp), so we use the same here for hash parity.
+// Build output is relative to the consuming project, including npm consumers.
 const root = process.cwd();
 
 // Framework dir — works whether this script is in packages/cloud/scripts/
@@ -59,6 +58,8 @@ const syncVersion = syncPackage.version;
 // convention. Resolved against cwd if relative.
 const appDir = process.env.APP_DIR ? resolve(root, process.env.APP_DIR) : resolve(root, "packages", appId);
 if (!existsSync(appDir)) throw new Error(`Unknown app dir: ${appDir} (set APP_DIR or check APP_ID)`);
+// Share the resolved source directory with defineApp before importing config.
+process.env.APP_DIR = appDir;
 
 const dist = resolve(root, "dist");
 const distPublic = resolve(dist, "public");
@@ -67,14 +68,6 @@ const compressGzip = promisify(gzip);
 
 await rm(dist, { recursive: true, force: true });
 await mkdir(distPublic, { recursive: true });
-
-// Mirrors @k2b/ssr's island-id (md5 of POSIX path relative to the
-// SSR plugin's rootDir, truncated to 12 chars). Both this script and the
-// plugin use process.cwd() as the rootDir, so hashes match.
-const islandId = (file: string): string => {
-  const rel = file.slice(root.length + 1).replace(/\\/g, "/");
-  return new CryptoHasher("md5").update(rel).digest("hex").slice(0, 12);
-};
 
 const compressibleExtensions = new Set([".css", ".html", ".js", ".json", ".map", ".svg", ".txt", ".xml"]);
 
@@ -136,27 +129,6 @@ try {
 if (!server.success) {
   for (const m of server.logs) console.error(m);
   throw new Error("Server bundle failed");
-}
-
-// 1b. The SSR plugin scans the project root and emits one chunk per island
-//     across every reachable package (including any island-shaped files in
-//     other workspace packages or in node_modules). Keep only this app's own
-//     islands plus the framework's; drop the rest. chunk-* files are shared
-//     splits and always kept.
-const ssrDir = resolve(dist, "_ssr");
-if (existsSync(ssrDir)) {
-  const allowedDirs = [frameworkDir, appDir];
-  const allowedIds = new Set<string>();
-  for (const dir of allowedDirs) {
-    for await (const file of new Glob("**/*.{island,client}.tsx").scan({ cwd: dir, absolute: true })) {
-      allowedIds.add(islandId(file));
-    }
-  }
-  for (const entry of await readdir(ssrDir)) {
-    if (entry.startsWith("chunk-") || !entry.endsWith(".js")) continue;
-    const id = entry.slice(0, -3);
-    if (!allowedIds.has(id)) await rm(resolve(ssrDir, entry));
-  }
 }
 
 // 2. Per-app Tailwind stylesheet.

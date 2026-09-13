@@ -242,8 +242,13 @@ optional projection of a capability Query; see
 
 ## Override the project root only when required
 
-`appRoot` controls where the SSR build looks for application files. It defaults
+`appRoot` is the SSR base for component IDs and development assets. It defaults
 to `process.cwd()`, which is the standalone project root in the normal setup.
+Island discovery scans `APP_DIR/src` (or `appRoot/src` when `APP_DIR` is unset)
+and the installed Cloud framework source. Development and production scripts
+resolve `APP_DIR` before importing application configuration, so sibling apps
+are not scanned. Ordinary `@k2b/ui` components are bundled through imports;
+the UI package and its fixtures do not need a discovery root.
 
 Set it only when the process starts from another directory:
 

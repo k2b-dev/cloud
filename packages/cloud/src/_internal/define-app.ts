@@ -6,6 +6,8 @@ import { bindProcessApplicationId, clearProcessApplicationId } from "./process-i
  * Returns `{ ssr, plugin, config, meta, start }`.
  */
 
+import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import type { SsrConfig } from "@k2b/ssr";
 import { createConfig as createSsrConfig } from "@k2b/ssr";
 import { routes } from "@k2b/ssr/hono";
@@ -187,9 +189,10 @@ export type AppOptions<S extends AppSettingsMap = {}, N extends NotificationDefi
    */
   openapi?: string;
   /**
-   * Project root used by the SSR plugin to discover island/client files.
+   * Project root used for SSR component IDs and development assets.
    * Defaults to `process.cwd()`. Override only if you run the entrypoint
-   * from a directory other than the project root.
+   * from a directory other than the project root. Discovery uses APP_DIR/src
+   * (or appRoot/src) plus the installed Cloud framework source.
    */
   appRoot?: string;
 };
@@ -303,10 +306,15 @@ export const defineApp = <
   }
 
   // ── 1. SSR config ─────────────────────────────────────────────────────
+  const rootDir = opts.appRoot ?? process.cwd();
   const { config, plugin, html } = createSsrConfig<PageOptions>({
     dev: isDevelopment,
     verbose: true,
-    rootDir: opts.appRoot ?? process.cwd(),
+    rootDir,
+    componentRoots: [
+      resolve(process.env.APP_DIR ?? rootDir, "src"),
+      fileURLToPath(new URL("../", import.meta.url)),
+    ],
     basePath: opts.basePath,
     template: ({ body, scripts, title, description, theme, lang }) => {
       const themeFixed = theme !== undefined;

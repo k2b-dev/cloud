@@ -38,7 +38,11 @@ bun run --preload=node_modules/@k2b/cloud/scripts/preload.ts \
 src/index.ts
 ```
 
-`APP_DIR` is the directory containing `src/`.
+`APP_DIR` is the directory containing `src/`. The preload resolves it before
+loading your app configuration. SSR scans that source directory and the installed
+Cloud framework source, including when Cloud is installed through npm. The
+production build uses the same selection. Keep the working directory and any
+`appRoot` override consistent between the SSR configuration and its adapter.
 
 ## Provide the shared platform
 

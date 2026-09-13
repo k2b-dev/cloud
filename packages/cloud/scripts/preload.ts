@@ -38,6 +38,8 @@ const frameworkDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 // convention. Resolved against cwd if relative.
 const appDir = process.env.APP_DIR ? resolve(root, process.env.APP_DIR) : resolve(root, "packages", appId);
 if (!existsSync(appDir)) throw new Error(`Unknown app dir: ${appDir} (set APP_DIR or check APP_ID)`);
+// Share the resolved source directory with defineApp before importing config.
+process.env.APP_DIR = appDir;
 
 const { app, plugin } = await import(resolve(appDir, "src/config"));
 Bun.plugin(plugin());
