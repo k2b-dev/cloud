@@ -84,7 +84,17 @@ export const normalizeFinancialDocumentOutput = (
       if (alias === undefined) continue;
       const column = columns.get(alias);
       if (!column || !Object.hasOwn(source, column.key)) return fail(err.badInput(t.financialColumnMissing({ column: alias })));
-      if (source[column.key] !== null) row[key] = source[column.key];
+      const value = source[column.key];
+      // Bun serializes SQL DATE cells as UTC-midnight timestamps. Preserve the
+      // calendar date for DATEV, but never truncate an actual timestamp or text.
+      if (value !== null)
+        row[key] =
+          key === "documentDate" &&
+          column.sqlType === "date" &&
+          typeof value === "string" &&
+          /^\d{4}-\d{2}-\d{2}T00:00:00\.000Z$/.test(value)
+            ? value.slice(0, 10)
+            : value;
     }
     const raw = row.amount;
     const amount = typeof raw === "string" ? raw : typeof raw === "number" && Number.isSafeInteger(raw) ? String(raw) : null;

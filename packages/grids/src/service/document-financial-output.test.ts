@@ -57,6 +57,28 @@ const capture = (amount: string | number | null = "12.3000"): WorkflowQueryCaptu
 const ids = { messageId: "receipt-1", paymentInformationId: "receipt-1" };
 
 describe("financial export normalization", () => {
+  test("uses the calendar day of a serialized SQL date without truncating timestamps", () => {
+    const original = capture();
+    const source = {
+      ...original,
+      columns: original.columns.map((column) => (column.key === "date" ? { ...column, type: "date", sqlType: "date" } : column)),
+      rows: original.rows.map((row) => ({ ...row, date: "2026-09-11T00:00:00.000Z" })),
+    };
+    expect(normalizeFinancialDocumentOutput(config, source, ids)).toEqual(normalizeFinancialDocumentOutput(config, original, ids));
+    expect(source.rows[0]?.date).toBe("2026-09-11T00:00:00.000Z");
+    for (const sqlType of ["text", "timestamptz"]) {
+      expect(
+        normalizeFinancialDocumentOutput(
+          config,
+          { ...source, columns: source.columns.map((column) => (column.key === "date" ? { ...column, sqlType } : column)) },
+          ids,
+        ).ok,
+      ).toBe(false);
+    }
+    expect(
+      normalizeFinancialDocumentOutput(config, { ...source, rows: [{ ...source.rows[0], date: "2026-09-11T12:00:00.000Z" }] }, ids).ok,
+    ).toBe(false);
+  });
   test("declared identities reject duplicate join rows but do not infer economic equivalence", () => {
     const source = capture();
     const first = source.rows[0]!;
