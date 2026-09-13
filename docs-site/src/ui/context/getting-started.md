@@ -59,6 +59,11 @@ import "@k2b/ui/icons/tabler.css";
 
 Omit either preset when your application already provides that asset.
 
+The Plex preset references separate WOFF2 files in its adjacent `fonts/`
+directory. Keep these assets with the stylesheet when copying it for direct
+serving. Their filenames contain a content hash, so they can be cached
+independently. CSS bundlers resolve the relative URLs normally.
+
 ## Theme the package
 
 Override tokens on your scoped root. Components derive focus, selection, and action colors from the accent stack while retaining accessible light and dark surfaces:

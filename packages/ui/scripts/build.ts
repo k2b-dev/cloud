@@ -4,6 +4,7 @@ import { transformAsync } from "@babel/core";
 import tsPreset from "@babel/preset-typescript";
 import solidPreset from "babel-preset-solid";
 import tailwind from "bun-plugin-tailwind";
+import { buildPlexFonts } from "./plex-fonts";
 
 const root = resolve(import.meta.dir, "..");
 const dist = resolve(root, "dist");
@@ -75,11 +76,6 @@ const builds = [
     entrypoint: resolve(root, "src/icons/tabler.css"),
     plugins: [],
   },
-  {
-    name: "plex",
-    entrypoint: resolve(root, "src/fonts/plex.css"),
-    plugins: [],
-  },
 ] as const;
 
 for (const build of builds) {
@@ -96,6 +92,8 @@ for (const build of builds) {
     throw new Error(`@k2b/ui ${build.name} stylesheet build failed`);
   }
 }
+
+await buildPlexFonts(dist);
 
 await writeFile(resolve(dist, "global.css"), '@import "./styles.css";\n@import "./plex.css";\n@import "./tabler.css";\n');
 
