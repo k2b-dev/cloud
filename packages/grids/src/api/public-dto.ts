@@ -41,6 +41,7 @@ import { projectPublicIds, resolvePublicIds } from "../service/public-resources"
 import type { RecordComment } from "../service/record-comments";
 import type { GridFile } from "../service/types";
 import { PublicNumberSeriesSummarySchema, toPublicNumberSeries } from "./number-series-dto";
+import { PublicLookupConfigSchema, PublicRelationConfigSchema, PublicRollupConfigSchema } from "./public-field-config";
 
 export const PublicBaseSchema = BaseSchema.omit({ id: true, shortId: true }).extend({ id: ShortIdSchema });
 const PublicRecordDisplayConfigSchema = z.object({
@@ -99,18 +100,6 @@ export const PublicMutationPolicyImpactSchema = z
     complete: z.boolean(),
   })
   .strict();
-const PublicRelationConfigSchema = z.object({
-  targetTableId: ShortIdSchema.optional(),
-  cardinality: z.enum(["single", "multiple"]).optional(),
-});
-const PublicLookupConfigSchema = z.object({
-  relationFieldId: ShortIdSchema.optional(),
-  targetFieldId: ShortIdSchema.optional(),
-  format: FormatSpecSchema.optional(),
-});
-const PublicRollupConfigSchema = PublicLookupConfigSchema.extend({
-  agg: z.enum(["count", "sum", "avg", "min", "max"]).optional(),
-});
 const PublicRelationDefaultSchema = z.union([ShortIdSchema, z.array(ShortIdSchema)]).nullable();
 
 const validatePublicFieldReferences = (

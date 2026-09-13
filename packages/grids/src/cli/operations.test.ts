@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { CloudCliContext } from "@k2b/cloud/cli";
+import { gridsCommands } from "../cli.ts";
 import { documentCommands } from "./documents";
 import { evidenceCommands } from "./evidence";
 import { recordDiscussionCommands } from "./record-discussion";
@@ -68,7 +69,7 @@ describe("Grids operational CLI", () => {
       const tail = parts.pop() ?? "";
       return tail.split("|").map((verb) => [...parts, verb].join(" "));
     });
-    for (const item of commands) expect(paths).toContain(item.path.join(" "));
+    for (const item of gridsCommands) expect(paths).toContain(item.path.join(" "));
     expect(reference).toContain("records files list|upload|replace|download|delete");
     expect(reference).not.toMatch(/\\\ncld grids/);
   });

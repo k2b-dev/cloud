@@ -33,3 +33,8 @@ export const DocumentProfileSummarySchema = z
   })
   .strict();
 export type DocumentProfileSummary = z.infer<typeof DocumentProfileSummarySchema>;
+
+export const DocumentProfileReferenceSchema = DocumentProfileSummarySchema.extend({
+  inputSchema: z.record(z.string(), z.unknown()),
+});
+export type DocumentProfileReference = z.infer<typeof DocumentProfileReferenceSchema>;

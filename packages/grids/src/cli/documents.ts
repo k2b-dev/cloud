@@ -61,6 +61,7 @@ export const documentTemplateCommands = [
           "",
           "Fields:",
           ...Object.entries(DOCUMENT_TEMPLATE_REFERENCE.fields).map(([key, value]) => `  ${key}: ${value}`),
+          "Read --json for createSchema/updateSchema; documents renderers --json includes each profile inputSchema.",
           "",
           "Liquid data:",
           ...DOCUMENT_TEMPLATE_REFERENCE.liquidData.map((item) => `  ${item}`),
@@ -129,7 +130,7 @@ export const documentTemplateCommands = [
       disabled: flag.boolean({ description: "Create the template disabled" }),
     },
     examples: [
-      "cld grids document-templates create Bookshop Invoices --name Invoice --source 'from table Invoices' --html '<h1>{{ document.number }}</h1>'",
+      "cld grids document-templates create Bookshop Invoices --name Invoice --source 'from table Invoices' --html '<h1>{{ document.number }}</h1>' --number-template '{{ document.id }}' --filename-template '{{ document.number }}.pdf' --disabled",
       "cld grids document-templates create --base Bookshop --table Labels --body-file label-template.json",
     ],
     async run({ ctx, args, flags }) {

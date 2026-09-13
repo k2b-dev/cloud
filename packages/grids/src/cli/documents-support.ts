@@ -1,6 +1,6 @@
 import type { CliInputFlagValue, CloudCliContext } from "@k2b/cloud/cli";
 import { flag } from "@k2b/cloud/cli";
-import type { z } from "zod";
+import { z } from "zod";
 import type {
   PublicDocumentBrowseResponseSchema,
   PublicDocumentSchema,
@@ -8,7 +8,7 @@ import type {
   PublicDocumentTemplateSummarySchema,
 } from "../api/documents-api-shared";
 import type { PublicBase as Base, PublicTable as Table } from "../api/public-dto";
-import type { DocumentLink, DocumentTemplateRenderer } from "../contracts";
+import { CreateDocumentTemplateSchema, type DocumentLink, type DocumentTemplateRenderer, UpdateDocumentTemplateSchema } from "../contracts";
 import { resolveBaseFromCommand, resolveNamedResource, resolveTable } from "./resources";
 import { applyDefined, queryString, readApi, readJsonInput, readTextInput } from "./runtime";
 
@@ -17,12 +17,16 @@ export const documentTemplateFlag = {
 };
 
 export const DOCUMENT_TEMPLATE_REFERENCE = {
+  createSchema: z.toJSONSchema(CreateDocumentTemplateSchema, { io: "input" }),
+  updateSchema: z.toJSONSchema(UpdateDocumentTemplateSchema, { io: "input" }),
   fields: {
     name: "Template label shown in Grids.",
+    description: "Optional description; null clears it.",
     source: "GQL source. Use {{ record.id }} in the where clause for per-record templates.",
     renderer:
       "Renderer definition. Use {kind:'html', body, header?, footer?, css?, numberTemplate, filenameTemplate} or {kind:'profile', id, version, inputTemplate}.",
     enabled: "Disabled templates are hidden from normal generation flows.",
+    position: "Optional integer order on update, not on create.",
   },
   liquidData: [
     "record.id",
@@ -36,11 +40,18 @@ export const DOCUMENT_TEMPLATE_REFERENCE = {
     "document.id",
     "document.createdAt",
     "app.name",
-    "app.logo",
+    "app.logoDataUri",
+    "series.id",
+    "series.value",
+    "date",
     "business.legalName",
   ],
+  exampleNotes:
+    "Authoring examples only. Replace sample parties, bank details, dates and field mappings with reviewed business data before enabling a template.",
   examples: [
     {
+      name: "Invoice PDF",
+      enabled: false,
       source: "from table Invoices\nwhere record.id = '{{ record.id }}'\nlimit 1",
       renderer: {
         kind: "html",
@@ -50,12 +61,31 @@ export const DOCUMENT_TEMPLATE_REFERENCE = {
       },
     },
     {
+      name: "E-invoice mapping example",
+      enabled: false,
       source: "from table Invoices\nwhere record.id = '{{ record.id }}'\nlimit 1",
       renderer: {
         kind: "profile",
         id: "de.zugferd.en16931",
         version: 1,
-        inputTemplate: '{"invoiceDate": {{ record.data.InvoiceDate | json }}, "currency": "EUR"}',
+        inputTemplate: JSON.stringify({
+          invoiceDate: "2026-09-01",
+          dueDate: "2026-09-15",
+          currency: "EUR",
+          seller: {
+            name: "Example seller",
+            vatId: "DE123456789",
+            address: { line1: "Example street 1", city: "Berlin", postalCode: "10115", countryCode: "DE" },
+          },
+          buyer: {
+            name: "Example buyer",
+            vatId: "DE987654321",
+            address: { line1: "Example street 2", city: "Berlin", postalCode: "10115", countryCode: "DE" },
+          },
+          buyerReference: "REPLACE-WITH-BUYER-REFERENCE",
+          payment: { iban: "DE89370400440532013000", accountName: "Example seller" },
+          lines: [{ name: "Example service", quantity: "1.0000", unitPrice: "100.0000", taxRate: "19.00" }],
+        }),
       },
     },
   ],

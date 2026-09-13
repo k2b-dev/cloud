@@ -3,7 +3,7 @@ import { type AuthContext, auth, getDateConfig, getLocale, jsonResponse, respond
 import { Hono, type MiddlewareHandler } from "hono";
 import { describeRoute } from "hono-openapi";
 import { z } from "zod";
-import { DocumentProfileSummarySchema } from "../document-profile-contracts";
+import { DocumentProfileReferenceSchema } from "../document-profile-contracts";
 import { gridsService } from "../service";
 import { listDocumentRecordSources } from "../service/document-record-sources";
 import {
@@ -43,7 +43,7 @@ export const createDocumentResourceRoutes = (deps: { requireAuthenticated?: Midd
       describeRoute({
         tags: ["Grids:Document"],
         summary: "List installed Document renderers",
-        responses: { 200: jsonResponse(z.array(DocumentProfileSummarySchema), "Document renderers") },
+        responses: { 200: jsonResponse(z.array(DocumentProfileReferenceSchema), "Document renderers with input schemas") },
       }),
       (c) => c.json(gridsService.document.profiles()),
     )

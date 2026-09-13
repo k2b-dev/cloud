@@ -1,6 +1,8 @@
 import type { CloudCliContext } from "@k2b/cloud/cli";
 import { printStructured } from "@k2b/cloud/cli";
+import { z } from "zod";
 import type { PublicField as Field, PublicTable as Table } from "../api/public-dto";
+import { publicFieldConfigSchema } from "../api/public-field-config";
 import {
   COMPUTED_FIELD_TYPES,
   EXTERNAL_FIELD_TYPES,
@@ -22,11 +24,12 @@ type FieldTypeReference = {
   category: string;
   recordWritable: boolean;
   config: string;
+  configSchema: Record<string, unknown>;
   recordValue: string;
   notes: string;
 };
 
-type FieldReferenceDetails = Omit<FieldTypeReference, "type" | "kind" | "category" | "recordWritable">;
+type FieldReferenceDetails = Pick<FieldTypeReference, "config" | "recordValue" | "notes">;
 
 const EMPTY_CONFIG = "{}";
 
@@ -96,10 +99,10 @@ const FIELD_TYPE_DETAILS: Record<string, FieldReferenceDetails> = {
     notes: "Links records by public id. Use a single id string for single-cardinality fields if preferred.",
   },
   id: {
-    config: '{ "strategy": "date_sequence", "prefix": "INV-", "padding": 5, "period": "year" }',
+    config: '{ "strategy": "date_sequence", "prefix": "INV-", "padding": 5, "period": "year", "assignment": "finalization" }',
     recordValue: "(server generated)",
     notes:
-      "Generated on record create. Sequence values use a durable atomic series, are never reused, and may have technical gaps. Strategies: sequence, date_sequence, short_code, random_code, uuid, uuidv7, and ulid. Do not send id fields in record payloads.",
+      "Server generated; never send in record payloads. Strategies: sequence (default), date_sequence, short_code, random_code, uuid, uuidv7, ulid. Only sequence/date_sequence support assignment: creation (default) or finalization. Finalization assignment requires enabled Table finalization; Drafts have no number until finalized. Atomic series never reuse values, but technical gaps remain possible. configSchema shows the canonical explicit strategy; an omitted strategy is accepted as sequence. Semantic defaults and lifecycle rules are in the Grids schema skill reference.",
   },
   formula: {
     config: '{ "expression": "LEN(Name)" }',
@@ -174,6 +177,7 @@ export const fieldTypeReferences = (): FieldTypeReference[] =>
         kind: definition.kind,
         category: fieldTypeCategory(type),
         recordWritable: type in RECORD_WRITABLE_FIELD_TYPES,
+        configSchema: z.toJSONSchema(publicFieldConfigSchema(type), { io: "input" }),
         ...details,
       };
     });
@@ -196,6 +200,8 @@ export const printFieldTypeReference = (ctx: CloudCliContext, ref: FieldTypeRefe
   ctx.print(`config: ${ref.config}`);
   ctx.print(`record value: ${ref.recordValue}`);
   ctx.print(`notes: ${ref.notes}`);
+  ctx.print("configSchema (input; cross-field and permission checks still apply):");
+  ctx.print(JSON.stringify(ref.configSchema, null, 2));
 };
 
 export const fieldTypeRows = (items: FieldTypeReference[]) =>

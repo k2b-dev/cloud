@@ -4,7 +4,9 @@ Grids stores structured operational data in bases made of tables, fields, record
 
 ## Contents
 
+- [Exact options and specialized references](#exact-options-and-specialized-references)
 - [Core model](#core-model)
+- [Shared base navigation](#shared-base-navigation)
 - [Agent workflow](#agent-workflow)
 - [Resolve resources and pass input](#resolve-resources-and-pass-input)
 - [Build schema and records](#build-schema-and-records)
@@ -16,7 +18,26 @@ Grids stores structured operational data in bases made of tables, fields, record
 - [Verify evidence packages](#verify-evidence-packages)
 - [Manage access](#manage-access)
 - [Build and operate workflows](#build-and-operate-workflows)
+- [Additional API and operator discovery](#additional-api-and-operator-discovery)
+- [Runtime and operational access](#runtime-and-operational-access)
 - [Command index](#command-index)
+
+## Exact options and specialized references
+
+Read the relevant reference before constructing configuration; examples are not the complete option set.
+
+| Task | Reference and authoritative discovery |
+| --- | --- |
+| Tables, all field types, generated IDs, formats, Views, Forms, finalization | [Schema and records](grids-schema.md); `cld grids fields type <type> --json` includes `configSchema`; `records shape <table> --json` gives writable values |
+| Documents, HTML/Liquid, numbering, PDF, CSV, JSON, XML, SEPA and DATEV | [Documents and exports](grids-documents.md); `document-templates reference --json` includes create/update schemas; `documents renderers --json` includes each installed profile's `inputSchema` |
+| Custom App pages, blocks, bindings and runtime operations | [Publish a Grids App](#publish-a-grids-app); `cld grids apps reference --json` includes the complete recursive `definitionSchema` and semantic checks |
+| GQL clauses, joins, formulas, metadata and query context | [Query data with GQL](#query-data-with-gql); `cld grids gql reference --json`, `cld grids formulas reference --json` |
+| Workflow inputs, triggers, actions, expressions, captures and export confirmation | [Build and operate workflows](#build-and-operate-workflows); `cld grids workflows reference --json` |
+| Whole business process and audience isolation | [Build a business application](grids-build-apps.md) |
+
+For full request/response schemas, including nested table, View and Form options, use [API Docs](api-docs.md): `cld api-docs operations grids --json`, then `cld api-docs show grids <METHOD> <PATH> --json` with the exact returned method/path. Do not infer writable fields from a GET response. JSON Schema describes structural constraints; permission, lifecycle, cross-field and publication checks still apply. Run the matching validation/preview operation before applying a definition.
+
+The installed server and CLI may have different versions. If a reference command or property is unavailable, inspect that installation's help and API schema; do not silently substitute an invented option. These references cover administrative CLI operations as well as daily tasks; the Assistant's narrower capabilities are not the CLI feature boundary.
 
 ## Core model
 
@@ -113,52 +134,6 @@ cld grids tables list --base Bookshop --json
 cld grids use Bookshop
 cld grids tables list --json
 ```
-
-### Inspect document membership and export history
-
-`documents sources <document-id> --limit 50 --offset 0` returns the frozen record associations of an authorized Document. `documents by-record` includes multi-record workflow outputs. `sourceRecordCount` counts distinct associated Records, while `dataSnapshot.rowCount` counts captured result rows. Null source count means membership is unknown; it is not zero. References open current Records; `version` identifies the captured version.
-
-For `generateDocument` with `data`/`output`, optional `associatedData: selection` names a saved, single-table row-query result. Use it when a joined/aggregate output should appear at specific Records. Default membership is inferred only from unambiguous row origins; Document and Record snapshot sources preserve their known associations. Relations do not propagate membership. `associatedData` is not a freshness check: financial `sourceVersions` retains its separate approval/version contract.
-
-The sources list uses stable public-ID ordering and current readable labels.
-An unavailable captured version is `null`, never version zero. Inherited sources
-with conflicting versions have unknown membership; use a separate row-query
-selection for explicit `associatedData` in that case. Evidence exports contain
-only source `tableId`, `recordId`, and captured `version`, without live names or
-deletion state, and allow at most 10,000 document-source entries per package.
-
-GQL row queries support `documentCount(format?)` and `latestDocumentAt(format?)` in SELECT (with an alias) and WHERE. Formats are `pdf`, `csv`, `json`, `xml`, `sepa-xml`, `datev-csv`; omission includes all outputs. One Document with several artifacts counts once. No matches yields count zero and date null. These are live metadata, not stored Formula fields; they do not change finalized business values. Custom App queries cannot access these Base-level metadata.
-
-```sql
-from table Auslagen
-select Auslagennummer, documentCount('sepa-xml') as Exports,
-  latestDocumentAt('sepa-xml') as LastExport
-where documentCount('sepa-xml') = 0
-```
-
-Use stable business identities and export targets for duplicate protection. A read-time count cannot replace atomic export claims, and a generated file is not evidence of a completed bank transfer.
-
-Example: associate one summary file with the selected expense records:
-
-```yaml
-steps:
-  - query:
-      source: from table Expenses select Description, Amount
-      saveAs: selection
-  - query:
-      source: from table Expenses aggregate sum(Amount) as Total
-      saveAs: summary
-  - generateDocument:
-      data: summary
-      associatedData: selection
-      output: { kind: csv }
-      saveAs: export
-```
-
-`associatedData` is an explicit association chosen by the workflow author. It
-does not prove that separately captured summary rows contain exactly those
-records or the same amounts. Keep both selections consistent; for financial
-exports retain the existing confirmation, business-identity and freshness checks.
 
 A base reference can be an exact name or 6-character public ID. Table, field, view, form, Grids App, document-template, workflow, and launcher commands resolve the same two forms inside their parent scope. Prefer public IDs from JSON output in unattended automation.
 
@@ -266,7 +241,7 @@ cld grids fields type select --json
 
 The shipped field types are:
 
-- Writable values: `boolean`, `date`, `duration`, `json`, `longtext`, `number`, `percent`, `principal`, `select`, `text`.
+- Writable values: `boolean`, `date`, `duration`, `json`, `longtext`, `number`, `object_list`, `percent`, `principal`, `select`, `text`.
 - Writable links: `relation`.
 - Read-only computed values: `formula`, `lookup`, `rollup`, `html_template`.
 - Read-only system or generated values: `created_at`, `created_by`, `id`, `updated_at`, `updated_by`.
@@ -281,6 +256,8 @@ Important encodings:
 - `date` uses `YYYY-MM-DD` unless `includeTime` is enabled; date-time values must include a timezone.
 - `duration` accepts seconds, `MM:SS`, or `HH:MM:SS` and stores integer seconds.
 - `id`, formula, lookup, rollup, HTML template, and timestamp fields must not be sent in record writes.
+
+For every configuration property, defaults and constraints, see [Schema and records](grids-schema.md). In particular, generated `id` supports seven strategies; sequential strategies support `assignment: "finalization"` after enabling table Finalization. It is not merely a system metadata field.
 
 `html_template` renders Liquid and CSS per record. Inspect `fields type html_template --json` for its configuration. Use stable public field IDs in `record.data`, and preview before using `raw`. HTML fields are stored-table output only: no filtering, sorting, grouping, aggregation, formula use, relation lookup, or recursive HTML templates. Default exports omit them; explicit HTML exports require a query limit of at most 1,000 records. One read renders at most 2,000 HTML cells and 32 MB total. A Rendered HTML App block displays one such field in a non-interactive sandbox; immutable downloadable output belongs in Documents.
 
@@ -699,7 +676,7 @@ Division and averages use PostgreSQL numeric precision in both preview and SQL, 
 
 Expressions are bounded to 20,000 characters, 64 nesting levels and 1,024 AST nodes across JS and SQL parsing. Caller-specific limits still apply (for example, 5,000 characters for a computed column and 20,000 for the whole GQL query). Reduce expression complexity when validation reports a limit; do not retry unchanged input.
 
-`ROUND` truncates fractional places toward zero. Places must be between −131,072 and 16,383, matching PostgreSQL numeric's supported digit range. Outside that range, evaluation returns a formula error that `IFERROR` can handle; it does not clamp or wrap the argument.
+`ROUND` rounds the value half away from zero. A fractional **places argument** is truncated toward zero before rounding the value. Places must be between −131,072 and 16,383, matching PostgreSQL numeric's supported digit range. Outside that range, evaluation returns a formula error that `IFERROR` can handle; it does not clamp or wrap the argument.
 
 Field references are `Name`, `"Birth year"`, or `{field-id}`. Literals are single-quoted text, numbers, `true`, `false`, and `null`.
 Inside text, `\\'`, `\\\\`, `\\n`, `\\r`, and `\\t` escape a quote, backslash, or control character. Parentheses group expressions and
@@ -826,7 +803,7 @@ columns plus Markdown, Records, Referenced records, Metrics, Chart, Record, Rend
 or GQL. A Records block can navigate its row id or one selected single relation into one required
 record parameter on a detail page. Record and Comments blocks use that page record; Record renders only its explicit field allowlist.
 For signed-in readers, an editable displayed File field exposes App-scoped attachment controls without granting raw Base API access. File validation and limits remain owned by the field and file service. A published Comments block lets signed-in App readers comment without Base access; authors manage their own comments and Base administrators moderate. Form blocks submit existing Grids forms and may carry trusted typed `LITERAL`, `PARAMS`,
-or page `RECORD` values. Records blocks may declare up to six workflow `rowActions`; compatible record inputs can receive `ROW.id`, and
+page `RECORD`, or `AUTH.currentUser` values. Records blocks may declare up to six workflow `rowActions`; compatible record inputs can receive `ROW.id`, and
 the runtime rechecks the selected id against the exact published query result. Run the live reference before authoring a definition:
 
 Saved-view Records blocks can use `display: { kind: table, columnIds: [...] }` or `display: { kind: cards }`. Cards reuse and pin the saved View's existing Cards fields and file cover. Row navigation is optional, and Cards reuse the same bounded workflow `rowActions` as tables. GQL Records blocks are table-only. Use an empty `columnIds` list to display the query's selected ordinary-record columns, including aliases; a nonempty list narrows the displayed columns without removing selected fields needed for block behavior. Use Metrics or Chart for aggregate output. Set `searchable: true` for parameterized PostgreSQL search over displayed fields and choose `pageSize` from 5 to 100. Cursor pagination stays server-side for both saved Views and GQL; use a GQL `limit` only to cap the complete result intentionally.
@@ -838,6 +815,12 @@ Pages, blocks, Forms, and actions may use one `availableWhen.query`. At least on
 For dynamic responsibility, join the owning table and use `oneof(cost.Responsible, @auth.subjects)` on its Principal field. Joined `oneof`, `noneof`, and `containsall` keep the direct field's typed membership rules. On stored tables, `Receipts != null` requires a current attachment; `Receipts = null` checks for none. Combined-table file presence is unsupported. Keep these conditions server-side rather than copying group assignments onto requests.
 
 The optional root `sidebar.actions` list adds ordered app-global Form launchers to the AppWorkspace navigation. Fixed values accept `LITERAL` and `AUTH.currentUser` for Principal inputs. They never inherit `PARAMS`, page `RECORD`, or `ROW`. Global availability receives only `@auth.*`, `@app.*`, `@base.*`, and `@time.*`. Form launchers can serve public app readers in a large dialog, while `AUTH.currentUser` requires sign-in. Visible pages follow their array order and may set `navigation.icon`; the runtime hides the whole sidebar when it would contain neither another page nor a Form action.
+
+For a signed-in claimant, both a page Form block and a sidebar Form action can set
+`fixedValues: { "Claim1": { "source": "AUTH", "path": "currentUser" } }`.
+Replace `Claim1` with the actual Principal field ID. This supplies the current
+user on the server; it is not an editable default. An anonymous reader cannot
+submit this binding. Standalone stored Forms do not evaluate these App bindings.
 
 ```bash
 cld grids apps reference
@@ -946,6 +929,52 @@ cld grids documents links revoke <link-id> --json
 ```
 
 Supported lifetimes are `1d`, `7d`, `30d`, and `90d`; the default is `30d`.
+
+### Inspect document membership and export history
+
+`documents sources <document-id> --limit 50 --offset 0` returns the frozen record associations of an authorized Document. `documents by-record` includes multi-record workflow outputs. `sourceRecordCount` counts distinct associated Records, while `dataSnapshot.rowCount` counts captured result rows. Null source count means membership is unknown; it is not zero. References open current Records; `version` identifies the captured version.
+
+For `generateDocument` with `data`/`output`, optional `associatedData: selection` names a saved, single-table row-query result. Use it when a joined/aggregate output should appear at specific Records. Default membership is inferred only from unambiguous row origins; Document and Record snapshot sources preserve their known associations. Relations do not propagate membership. `associatedData` is not a freshness check: financial `sourceVersions` retains its separate approval/version contract.
+
+The sources list uses stable public-ID ordering and current readable labels.
+An unavailable captured version is `null`, never version zero. Inherited sources
+with conflicting versions have unknown membership; use a separate row-query
+selection for explicit `associatedData` in that case. Evidence exports contain
+only source `tableId`, `recordId`, and captured `version`, without live names or
+deletion state, and allow at most 10,000 document-source entries per package.
+
+GQL row queries support `documentCount(format?)` and `latestDocumentAt(format?)` in SELECT (with an alias) and WHERE. Formats are `pdf`, `csv`, `json`, `xml`, `sepa-xml`, `datev-csv`; omission includes all outputs. One Document with several artifacts counts once. No matches yields count zero and date null. These are live metadata, not stored Formula fields; they do not change finalized business values. Custom App queries cannot access these Base-level metadata.
+
+```sql
+from table Auslagen
+select Auslagennummer, documentCount('sepa-xml') as Exports,
+  latestDocumentAt('sepa-xml') as LastExport
+where documentCount('sepa-xml') = 0
+```
+
+Use stable business identities and export targets for duplicate protection. A read-time count cannot replace atomic export claims, and a generated file is not evidence of a completed bank transfer.
+
+Example: associate one summary file with the selected expense records:
+
+```yaml
+steps:
+  - query:
+      source: from table Expenses; select Description, Amount
+      saveAs: selection
+  - query:
+      source: from table Expenses; aggregate sum(Amount) as Total
+      saveAs: summary
+  - generateDocument:
+      data: summary
+      associatedData: selection
+      output: { kind: csv }
+      saveAs: export
+```
+
+`associatedData` is an explicit association chosen by the workflow author. It
+does not prove that separately captured summary rows contain exactly those
+records or the same amounts. Keep both selections consistent; for financial
+exports retain the existing confirmation, business-identity and freshness checks.
 
 ## Verify evidence packages
 
@@ -1116,7 +1145,7 @@ Pass the saved query reference as `generateDocument.data`, without `template` or
 ```yaml
 steps:
   - query:
-      source: from table Items select Name
+      source: from table Items; select Name
       saveAs: report
   - generateDocument:
       data: report
@@ -1532,7 +1561,29 @@ cld grids email-templates create \
 
 Email-template commands are `email-templates reference|list|get|create|update|delete`. A referenced template cannot be deleted; update the dependent workflows first.
 
-## Command index
+## Additional API and operator discovery
+
+Some GUI operations have HTTP APIs but no dedicated CLI verb. Discover them with
+`cld api-docs operations grids --json`, then inspect the exact request schema with
+`api-docs show` before calling it through the documented authenticated API tooling.
+Do not invent a Grids command or use direct SQL to fill the gap.
+
+- HTML field validation/preview: `POST /api/grids/html-template-fields/by-table/{tableId}/check`.
+- Workflow trigger status: `GET /api/grids/workflows/{workflowId}/trigger-state`;
+  trigger configuration remains in workflow YAML. Retained event failures and
+  replay use `record-events failures|replay` and require platform administration.
+- Base-wide Document folder browsing and template restore/reorder: use the
+  document API catalog; the dedicated `documents browse` is template-scoped.
+- Built-in Base templates (`templates list|instantiate`) are distinct from GUI
+  Document layout and Workflow starters. Those starters are editable examples,
+  not additional renderer types or hidden workflow actions.
+- Operator settings: `grids.max_file_size_mb` controls uploads; query resource
+  settings are `grids.query_pool_size`, `grids.query_concurrency`,
+  `grids.query_queue_limit`, and `grids.query_queue_timeout_ms`. Inspect the
+  installed settings contract and restart requirements through the
+  [Administration reference](admin.md); these are not table or App properties.
+
+## Runtime and operational access
 
 Platform administrators can inspect and replay retained event delivery failures. This is not a Base-admin privilege:
 
@@ -1573,12 +1624,17 @@ Agents can discover templates with `document.templates`, list stored results wit
 
 `workflow.record-actions` lists existing correction/cancellation Draft actions, including their intent. Use its table ID to find a finalized original with GQL, then call `workflow.record-action` with the exact revision and explicit approval. This creates a linked Draft, leaves the original unchanged, and does not issue or send a document. Reuse the same idempotency key for a retry and follow the returned `grids.workflow-run` reference with `workflow.run.read`. Creation/editing of workflows, other workflow kinds, bulk operations and App-only actions stay in the CLI.
 
+## Command index
+
 Use `cld grids <command> --help` for every flag, positional form, constraint, and built-in example.
 
 ```text
-list, use, current
+list
+use
+current
 templates list|instantiate
 bases list|get|create|update|delete|restore|trash|retention
+bases navigation get|set
 bases retention preview|set|remove
 bases retention records list
 bases retention files list|download
@@ -1586,11 +1642,14 @@ bases preservation-holds list|create|release
 bases destruction preview|run|status|cancel
 access reference|list|grant|set|revoke|search-principals
 tables list|get|create|update|delete|restore|history|finalization|mutation-policy
-tables history enable|finalization enable|finalization disable|finalization policy
+tables history enable
+tables finalization enable|disable|policy
 tables mutation-policy impact|set
 tables combined get|candidates|publications|validate|draft|publish|revoke
 fields types|type|list|get|create|update|delete|restore|dependents|reorder
-records changes|shape|list|query|get|create|upsert-external|upsert-external-batch|import|export|update|finalize|finalization request|finalization approve|finalization reject|delete|restore|audit|audit list|versions
+records changes|shape|list|query|get|create|upsert-external|upsert-external-batch|import|export|update|finalize|delete|restore|audit|versions
+records finalization request|approve|reject
+records audit list
 records versions download
 records files list|upload|replace|download|delete
 records comments list|create|update|delete
@@ -1613,6 +1672,6 @@ evidence preflight|list|create|get|retry|cancel|download|verify
 email-templates reference|list|get|create|update|delete
 workflows reference|list|get|create|update|history|restore|delete|validate|autocomplete|invoke
 workflow-launchers list|create|update|delete|invoke
-workflow-runs list|get|cancel|steps|documents|download-documents
+workflow-runs list|get|cancel|steps|documents|download-documents|preview-export|confirm-export
 workflow-emails list
 ```

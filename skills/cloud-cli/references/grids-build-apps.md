@@ -25,6 +25,15 @@ For stock quantities, an append-only movement table can preserve receipts, issue
 
 ## Discover and build in dependency order
 
+For parent-owned invoice/claim lines, consider a typed `object_list` instead of a
+separate table. It keeps input cells, computed line totals and parent formulas in
+one finalization boundary. Use related records when lines need independent
+identity or lifecycle. Read [schema configuration](grids-schema.md) for exact
+decimal types, `LIST_SUM`, and ID strategies: enable Durable History and
+Finalization before an invoice number with `assignment: "finalization"`.
+Read [document profiles](grids-documents.md) before choosing invoice or export
+formats; display settings and HTML layout do not implement financial validation.
+
 1. Run `cld apps list --json`, then `cld grids list --json`. Confirm the intended Base or create a dedicated one with the user's authorization. Avoid changing a similarly named production Base by assumption.
 2. Inspect `cld grids templates list --json`. `templates instantiate inventory --empty --json` creates the complete configuration without sample records. Read the resulting tables, fields, Forms, Workflows and Apps; template updates do not rewrite previously created Bases.
 3. Read `fields types`, `fields type <type>`, `records shape <table>`, `gql reference`, `workflows reference`, `apps reference`, and the document reference only as each becomes relevant. Keep the returned public IDs in a small local resource map; names are labels and can be ambiguous.

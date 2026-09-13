@@ -4,6 +4,15 @@ import { createDocumentIssuanceService } from "../service/document-issuance";
 import { validateTemplateWrite } from "../service/document-templates";
 import { financialQueryProfiles } from "./financial";
 
+test("renderer discovery exposes every installed input schema", () => {
+  const references = createDocumentIssuanceService().profiles();
+  expect(references).toHaveLength(documentProfiles.length);
+  for (const reference of references) {
+    expect(reference.inputSchema.$schema).toContain("json-schema.org");
+    expect(reference.inputSchema.type).toBe("object");
+  }
+});
+
 test("financial profiles cannot be selected by ordinary templates or the artifact preview API", async () => {
   const service = createDocumentIssuanceService();
   expect(profileRegistry(financialQueryProfiles).size).toBe(2);

@@ -15,6 +15,19 @@ const config = {
 const field = { id: "Items1", name: "Items", type: "object_list", required: true, config, defaultValue: null, deletedAt: null };
 
 describe("CLI typed list discovery", () => {
+  test("exposes input schemas for every field and public relation IDs", () => {
+    for (const reference of fieldTypeReferences()) {
+      expect(reference.configSchema.$schema).toContain("json-schema.org");
+    }
+    const idSchema = JSON.stringify(fieldTypeReference("id").configSchema);
+    for (const strategy of ["sequence", "date_sequence", "short_code", "random_code", "uuid", "uuidv7", "ulid"]) {
+      expect(idSchema).toContain(strategy);
+    }
+    expect(idSchema).toContain("finalization");
+    const relationSchema = JSON.stringify(fieldTypeReference("relation").configSchema);
+    expect(relationSchema).toContain("targetTableId");
+    expect(relationSchema).not.toContain('"format":"uuid"');
+  });
   test("describes every registered type, with a usable object-list config and value", () => {
     expect(fieldTypeReferences().filter((type) => type.recordValue === "(unknown)")).toEqual([]);
     const reference = fieldTypeReference("object_list");

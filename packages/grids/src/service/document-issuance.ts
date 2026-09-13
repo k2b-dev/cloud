@@ -5,7 +5,7 @@ import { type DateContext, err, fail, ok, type Result, type ServiceError } from 
 import { sql as defaultSql, type SQL } from "bun";
 import { z } from "zod";
 import { type Document, type DocumentArtifact, type DocumentTemplate, DocumentTemplateSchema } from "../contracts";
-import type { DocumentProfileSummary, PrimaryDocumentArtifact } from "../document-profile-contracts";
+import type { DocumentProfileReference, PrimaryDocumentArtifact } from "../document-profile-contracts";
 import { type DocumentArtifactDraft, type DocumentProfile, documentProfiles, profileKey, profileRegistry } from "../document-profiles";
 import { financialQueryProfiles } from "../document-profiles/financial";
 import { validateDocumentArtifactDrafts } from "./document-artifact-drafts";
@@ -387,9 +387,9 @@ export const createDocumentIssuanceService = (options: { profiles?: readonly Doc
   const profiles = profileRegistry(options.profiles ?? documentProfiles);
   const queryProfiles = profileRegistry([...(options.profiles ?? documentProfiles), ...financialQueryProfiles]);
 
-  const summaries = (): DocumentProfileSummary[] =>
+  const summaries = (): DocumentProfileReference[] =>
     [...profiles.values()]
-      .map(({ id, version, title, description, rendererVersion, validatorVersion, primaryArtifact }) => ({
+      .map(({ id, version, title, description, rendererVersion, validatorVersion, primaryArtifact, input }) => ({
         id,
         version,
         title,
@@ -397,6 +397,7 @@ export const createDocumentIssuanceService = (options: { profiles?: readonly Doc
         rendererVersion,
         validatorVersion,
         primaryArtifact,
+        inputSchema: z.toJSONSchema(input, { io: "input" }),
       }))
       .sort((left, right) => left.id.localeCompare(right.id) || left.version - right.version);
 
