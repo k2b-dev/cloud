@@ -61,6 +61,32 @@ Use one trace to answer:
 
 See [Tracing](/en/docs/platform/tracing) for span APIs.
 
+## Diagnose page speed
+
+SSR responses expose `Server-Timing` durations in milliseconds for `auth`,
+`settings`, `runtime`, `ssr_data`, `ssr_finalize`, and `ssr_render`. Each phase
+measures its own work; `ssr_render` includes HTML serialization and the
+template. Phases absent from a request remain absent. These timings exclude
+network transfer and browser work.
+
+Authenticated SSR pages also report LCP, INP, and CLS through the locally
+bundled `web-vitals` library to `/api/me/web-vitals`. Find these client-reported
+diagnostics in the existing logs with source **web-vitals**. Reports contain
+the application ID, route template, metric ID, value, navigation type, and
+server timings. They contain no concrete URL, query string, DOM attribution,
+page text, or user ID. The endpoint shares the authenticated self-service
+API's rate limit and accepts at most 4096 bytes per report.
+
+LCP and INP use milliseconds; CLS is unitless. Missing INP means no supported
+interaction measurement, not zero latency. Reports may arrive when the page
+is hidden. Keep the latest value per metric ID before aggregating; returning
+from the back-forward cache produces a new measurement. These are document
+navigation metrics, not separate measurements for every in-page tab change.
+
+Compare cold and warm visits to the same production build, including its
+precompressed assets, on a machine without competing builds. Keep browser
+metrics separate from gateway duration and development-server timings.
+
 ## Inspect routes and background work
 
 Route telemetry uses the route template, not the concrete URL. This keeps one

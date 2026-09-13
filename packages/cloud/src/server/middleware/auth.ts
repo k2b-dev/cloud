@@ -1,5 +1,6 @@
 import type { Context } from "hono";
 import { createMiddleware } from "hono/factory";
+import { measureServerPhase } from "../../_internal/server-timing";
 import type { MessageResponse, Role, RoleOrSpecial, User, UserProfile, UserProvider } from "../../contracts/shared";
 import { isAccountExpired } from "../../services/account-model";
 import { isReservedWorkloadApiCredential } from "../../services/identity/workload-auth";
@@ -215,10 +216,10 @@ const loadAuthenticatedActor = (
   c: Context<AuthContext>,
   options: Pick<RoleOptions, "oauthAudience"> = {},
 ): Promise<AuthenticatedActorResult> => {
-  if (options.oauthAudience) return loadAuthenticatedActorUncached(c, options);
+  if (options.oauthAudience) return measureServerPhase(c, "auth", () => loadAuthenticatedActorUncached(c, options));
   const existing = actorResolutionByRequest.get(c);
   if (existing) return existing;
-  const pending = loadAuthenticatedActorUncached(c, options);
+  const pending = measureServerPhase(c, "auth", () => loadAuthenticatedActorUncached(c, options));
   actorResolutionByRequest.set(c, pending);
   return pending;
 };

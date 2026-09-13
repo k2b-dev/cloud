@@ -13,6 +13,7 @@
  * `.use()` path instead.
  */
 import { createMiddleware } from "hono/factory";
+import { measureServerPhase } from "../../_internal/server-timing";
 import {
   type ActiveAnnouncementsResponse,
   type AnnouncementCookieState,
@@ -38,7 +39,7 @@ export const settings = (opts?: { skipPrefixes?: readonly string[] }) => {
   return createMiddleware(async (c, next) => {
     const path = c.req.path;
     if (!skip.some((p) => path.startsWith(p))) {
-      (c as unknown as { set: (k: string, v: unknown) => void }).set("settings", await loadSnapshot());
+      (c as unknown as { set: (k: string, v: unknown) => void }).set("settings", await measureServerPhase(c, "settings", loadSnapshot));
     }
     await next();
   });

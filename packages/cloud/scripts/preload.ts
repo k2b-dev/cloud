@@ -23,6 +23,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import tailwind from "bun-plugin-tailwind";
 import { writeAppFavicon } from "./app-favicon";
+import { buildBrowserPerformance } from "./browser-performance";
 
 const appId = process.env.APP_ID ?? "core";
 
@@ -140,6 +141,7 @@ if (appId !== "core" && app) {
 }
 
 await buildAppCss();
+await buildBrowserPerformance(publicDir, appId);
 
 watchDevCss("app.css", [resolve(appCssPath, "..")], buildAppCss);
 if (appId === "core" && existsSync(globalCssEntry)) {

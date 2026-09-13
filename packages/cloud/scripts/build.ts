@@ -30,6 +30,7 @@ import { brotliCompress, gzip, constants as zlibConstants } from "node:zlib";
 import { Glob } from "bun";
 import tailwind from "bun-plugin-tailwind";
 import { writeAppFavicon } from "./app-favicon";
+import { buildBrowserPerformance } from "./browser-performance";
 
 const appId = process.env.APP_ID;
 if (!appId) throw new Error("APP_ID env var required");
@@ -171,6 +172,7 @@ if (existsSync(extras)) {
   await import(extras);
 }
 
+await buildBrowserPerformance(distPublic, appId);
 await precompressDistAssets(resolve(dist, "public"));
 await precompressDistAssets(resolve(dist, "_ssr"));
 

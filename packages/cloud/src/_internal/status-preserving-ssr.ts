@@ -4,6 +4,7 @@ import type { Context, Env, MiddlewareHandler, TypedResponse } from "hono";
 import type { StatusCode } from "hono/utils/http-status";
 import type { RailSnapshot } from "../contracts/rail-preferences";
 import type { User } from "../contracts/shared";
+import { measureServerPhase } from "./server-timing";
 
 type PageEnv<T extends object> = { Variables: { page: Partial<T>; user?: User; railPreferences?: RailSnapshot } };
 type SsrHandlerResult = RenderFn | Response | TypedResponse;
@@ -30,15 +31,17 @@ export const createStatusPreservingSsrHandler = <T extends object>(
     const handler = args[args.length - 1] as SsrHandler<E, T>;
 
     return createHandler<E>(...middlewares, async (context) => {
-      const result = await handler(context as Context<E & PageEnv<T>>);
+      const result = await measureServerPhase(context, "ssr_data", () => handler(context as Context<E & PageEnv<T>>));
       if (result instanceof Response) return result;
-      await finalizePage?.(context as unknown as Context<PageEnv<T>>);
+      await measureServerPhase(context, "ssr_finalize", () => finalizePage?.(context as unknown as Context<PageEnv<T>>));
       if (typeof result !== "function") return result;
 
       const status = context.newResponse(null).status;
-      if (status === 200) return result;
+      if (result.constructor.name === "AsyncFunction") {
+        throw new Error("[ssr] ssr() render functions must be synchronous: return () => <Page />");
+      }
 
-      const response = await html(result, context.get("page") as T);
+      const response = await measureServerPhase(context, "ssr_render", () => html(result, context.get("page") as T));
       const headers: Record<string, string> = {};
       response.headers.forEach((value, key) => {
         headers[key] = value;

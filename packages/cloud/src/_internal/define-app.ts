@@ -39,9 +39,9 @@ import type { HelpDefinition } from "../server/help";
 import { getLocale, resolveLocale } from "../server/locale";
 import { type AuthContext, auth } from "../server/middleware/auth";
 import { requireInvocation } from "../server/middleware/invocation";
-import { routeTemplate } from "../server/middleware/route-template";
+import { matchedRouteTemplate, routeTemplate } from "../server/middleware/route-template";
 import { runtime as runtimeMiddleware } from "../server/middleware/runtime";
-import { settings as settingsMiddleware } from "../server/middleware/settings";
+import { preloadLayoutAnnouncements, settings as settingsMiddleware } from "../server/middleware/settings";
 import {
   capabilityInvocationOperation,
   searchInvocationOperation,
@@ -51,7 +51,6 @@ import {
 import { normalizeInvocationRequestId } from "../services/identity/invocation-token";
 import { logger } from "../services/logging";
 import { startNotificationDefinitionRegistration } from "../services/notifications/catalog";
-import { preloadLayoutAnnouncements } from "../server/middleware/settings";
 import { readRailSnapshot } from "../services/rail-snapshot";
 import { get, loadCache as loadSettingsCache, set } from "../services/settings";
 import { createSettingsAPI, type SettingsAPI } from "../services/settings/api";
@@ -86,6 +85,8 @@ export type PageOptions = {
   /** Framework-resolved BCP 47 document language — always the canonical request locale, never a page override. */
   lang?: string;
 };
+
+type ResolvedPageOptions = PageOptions & { performanceRoute?: string };
 
 // ── Public types ────────────────────────────────────────────────────────────
 
@@ -307,16 +308,13 @@ export const defineApp = <
 
   // ── 1. SSR config ─────────────────────────────────────────────────────
   const rootDir = opts.appRoot ?? process.cwd();
-  const { config, plugin, html } = createSsrConfig<PageOptions>({
+  const { config, plugin, html } = createSsrConfig<ResolvedPageOptions>({
     dev: isDevelopment,
     verbose: true,
     rootDir,
-    componentRoots: [
-      resolve(process.env.APP_DIR ?? rootDir, "src"),
-      fileURLToPath(new URL("../", import.meta.url)),
-    ],
+    componentRoots: [resolve(process.env.APP_DIR ?? rootDir, "src"), fileURLToPath(new URL("../", import.meta.url))],
     basePath: opts.basePath,
-    template: ({ body, scripts, title, description, theme, lang }) => {
+    template: ({ body, scripts, title, description, theme, lang, performanceRoute }) => {
       const themeFixed = theme !== undefined;
       return `<!DOCTYPE html>
 <html lang="${normalizeLocale(lang)}" class="${theme ?? "light"}"${themeFixed ? " data-theme-fixed" : ""}>
@@ -339,6 +337,7 @@ export const defineApp = <
     ${body}
   </body>
   ${scripts}
+  ${performanceRoute ? `<script type="module" src="/public/${opts.id}/web-vitals.js?v=${v}" data-cloud-web-vitals data-app-id="${escapeHtml(opts.id)}" data-route-template="${escapeHtml(performanceRoute)}"></script>` : ""}
 </html>`;
     },
   });
@@ -354,9 +353,10 @@ export const defineApp = <
   // `getDateConfig` share one canonical `getLocale(c)` that page handlers
   // cannot override.
   const ssr = Object.assign(
-    createStatusPreservingSsrHandler<PageOptions>(html, async (c) => {
+    createStatusPreservingSsrHandler<ResolvedPageOptions>(html, async (c) => {
       c.get("page").lang = getLocale(c);
       const user = c.get("user");
+      c.get("page").performanceRoute = user ? (matchedRouteTemplate(c) ?? undefined) : undefined;
       await Promise.all([
         preloadLayoutAnnouncements(c),
         user ? readRailSnapshot(user).then((snapshot) => c.set("railPreferences", snapshot)) : undefined,
@@ -375,7 +375,7 @@ export const defineApp = <
     adminHref: opts.adminHref,
     adminNav: opts.adminNav?.map(
       (group): AppAdminNavigationGroup => ({
-        ...(group.section ? {section:group.section} : {}),
+        ...(group.section ? { section: group.section } : {}),
         id: group.id,
         label: group.label,
         links: group.links.map((link) => ({ ...link })),
@@ -465,7 +465,7 @@ export const defineApp = <
               }
             : undefined,
         adminNav: meta.adminNav?.map((group) => ({
-          ...(group.section ? {section:group.section} : {}),
+          ...(group.section ? { section: group.section } : {}),
           id: group.id,
           label: group.label,
           links: group.links.map((link) => ({ ...link })),

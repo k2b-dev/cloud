@@ -9,11 +9,12 @@
  */
 import { createMiddleware } from "hono/factory";
 import { ensureRuntimeWatcher, getCurrentRuntime } from "../../_internal/runtime-watcher";
+import { measureServerPhase } from "../../_internal/server-timing";
 import { routeTemplate } from "./route-template";
 
 export const runtime = () =>
   createMiddleware(async (c, next) => {
-    await ensureRuntimeWatcher();
+    await measureServerPhase(c, "runtime", ensureRuntimeWatcher);
     (c as unknown as { set: (k: string, v: unknown) => void }).set("runtime", getCurrentRuntime());
     // Piggybacks on the middleware every proxied app already installs, so
     // gateway telemetry gets per-endpoint route templates without any app

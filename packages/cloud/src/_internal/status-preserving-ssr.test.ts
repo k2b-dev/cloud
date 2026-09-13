@@ -36,6 +36,23 @@ test("SSR redirects remain passthrough responses", async () => {
   const response = await app.request("/old");
   expect(response.status).toBe(302);
   expect(response.headers.get("location")).toBe("/new");
+  expect(response.headers.get("Server-Timing") ?? "").not.toContain("ssr_render");
+});
+
+test("measures each rendered phase once while retaining middleware headers", async () => {
+  const app = new Hono().get(
+    "/",
+    ...ssr((context) => {
+      context.header("Server-Timing", "custom;dur=1");
+      return () => "Page";
+    }),
+  );
+  const response = await app.request("/");
+  expect(await response.text()).toContain("Page");
+  const timing = response.headers.get("Server-Timing")!;
+  for (const phase of ["custom", "ssr_data", "ssr_finalize", "ssr_render"]) {
+    expect(timing.match(new RegExp(`${phase};dur=`, "g"))).toHaveLength(1);
+  }
 });
 
 test("awaits async page preparation before rendering and skips redirects", async () => {

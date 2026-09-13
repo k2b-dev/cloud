@@ -16,6 +16,8 @@
  * Templates only: the request path itself never leaves the app, so ids
  * and query strings stay out of telemetry by construction.
  */
+
+import type { Context } from "hono";
 import { createMiddleware } from "hono/factory";
 import { routePath } from "hono/route";
 import { ROUTE_TEMPLATE_HEADER } from "../../services/gateway";
@@ -32,14 +34,18 @@ const MAX_TEMPLATE_LENGTH = 200;
  */
 const stripParamConstraints = (template: string): string => template.replace(/\{[^}]*\}/g, "");
 
+export const matchedRouteTemplate = (c: Context): string | null => {
+  const template = routePath(c);
+  return !template || template === UNMATCHED ? null : stripParamConstraints(template).slice(0, MAX_TEMPLATE_LENGTH);
+};
+
 export const routeTemplate = createMiddleware(async (c, next) => {
   await next();
 
   // Best-effort: telemetry enrichment must never break a response.
   try {
-    const template = routePath(c);
-    if (!template || template === UNMATCHED) return;
-    c.res.headers.set(ROUTE_TEMPLATE_HEADER, stripParamConstraints(template).slice(0, MAX_TEMPLATE_LENGTH));
+    const template = matchedRouteTemplate(c);
+    if (template) c.res.headers.set(ROUTE_TEMPLATE_HEADER, template);
   } catch {
     // Immutable response headers or an unrouted context — nothing to report.
   }

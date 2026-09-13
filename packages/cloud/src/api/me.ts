@@ -50,6 +50,7 @@ import {
 import { MandatePolicyV1Schema } from "../services/mandates";
 
 import { createMeRailRoutes } from "./me-rail";
+import { createMeWebVitalsRoutes } from "./me-web-vitals";
 
 const toAccountsActor = (user: AuthContext["Variables"]["user"]) => ({
   userId: user.id,
@@ -187,6 +188,7 @@ const app = new Hono<AuthContext>()
   .use(auth.requireUser())
   .route("/", mandateRoutes)
   .route("/", createMeRailRoutes())
+  .route("/", createMeWebVitalsRoutes())
 
   .get(
     "/activity",
