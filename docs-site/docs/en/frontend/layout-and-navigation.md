@@ -147,7 +147,10 @@ so that those changes are not overwritten. Close and reopen to load them.
 App and shortcut hints open immediately to the right on hover or keyboard
 focus. The app list scrolls when space is limited, keeping the launcher and
 global controls reachable. On mobile, app bar shortcuts remain available in
-the app launcher.
+the app launcher. Shortcuts occupy a separate first row of icon tiles, with
+labels below the icons and a subtle divider before the app catalog. The row
+has no visible heading. Pinned apps retain their app icons and colors; custom
+links use neutral icon surfaces without button borders.
 
 Core stores these preferences per user; the platform loads them before SSR
 through a shared Valkey cache. Applications do not need to fetch or
