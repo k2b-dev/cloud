@@ -585,3 +585,5 @@ and a smaller column gap, keeping each label visually paired with its value.
 Use `preview.onOpenChange` to load authorized detail data only while the preview
 is open. Cancel an outstanding request when it closes; the preview content
 remains mounted so local input state is preserved.
+
+`SidebarSection.icon` optionally adds a leading decorative icon beside the section title.

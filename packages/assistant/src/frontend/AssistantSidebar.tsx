@@ -139,18 +139,13 @@ function ConversationSidebarItem(props: {
       onNavigate={props.open ? handleNavigate : undefined}
       active={props.active}
       description={
-        <Show
-          when={props.conversation.doneAt}
-          fallback={
-            <Show
-              when={props.conversation.runStatus !== "idle" || props.conversation.unreadCompletion || props.conversation.pinnedAt}
-              fallback={<span>{text("Ready")}</span>}
-            >
-              <ConversationStatusMeta conversation={props.conversation} active={props.active} labels />
-            </Show>
-          }
-        >
-          <span>{text("Done")}</span>
+        <Show when={!props.conversation.doneAt}>
+          <Show
+            when={props.conversation.runStatus !== "idle" || props.conversation.unreadCompletion || props.conversation.pinnedAt}
+            fallback={<span>{text("Ready")}</span>}
+          >
+            <ConversationStatusMeta conversation={props.conversation} active={props.active} labels />
+          </Show>
         </Show>
       }
       preview={{
@@ -337,6 +332,7 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
   const DoneSection = () => (
     <AppWorkspace.SidebarSection
       title={text("Done")}
+      icon="ti ti-check"
       class="max-h-[40vh] overflow-y-auto"
       count={props.doneCount ?? doneConversations().length}
       collapsible
@@ -357,7 +353,7 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
       <Show when={!doneConversations().length}>
         <p class="px-2 py-1 text-xs text-dimmed">{text("No done chats.")}</p>
       </Show>
-      <Show when={(props.doneCount ?? 0) > doneConversations().length}>
+      <Show when={(props.doneCount ?? doneConversations().length) > 0}>
         <AppWorkspace.SidebarItem onClick={() => openAllChats(true)}>{t().seeAll}</AppWorkspace.SidebarItem>
       </Show>
     </AppWorkspace.SidebarSection>

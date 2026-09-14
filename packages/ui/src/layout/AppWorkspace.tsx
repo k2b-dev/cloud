@@ -238,6 +238,7 @@ export type AppWorkspaceSidebarBodyProps = {
 };
 export type AppWorkspaceSidebarSectionProps = AppWorkspaceSidebarBodyProps & {
   title?: string;
+  icon?: string;
   count?: number;
   collapsible?: boolean;
   open?: boolean;
@@ -658,7 +659,7 @@ const AppWorkspaceSidebarSection = (props: AppWorkspaceSidebarSectionProps) => {
   const [expanded, setExpanded] = createSignal(props.defaultOpen ?? true);
   const open = () => !props.collapsible || (props.open ?? expanded());
   const id = `sidebar-section-${createUniqueId()}`;
-  const title = () => <>{props.title}<Show when={props.count !== undefined}><span class="k2b-app-workspace__sidebar-section-count">{props.count}</span></Show></>;
+  const title = () => <><Show when={props.icon}><span aria-hidden="true"><i class={iconClass(props.icon)} /></span></Show>{props.title}<Show when={props.count !== undefined}><span class="k2b-app-workspace__sidebar-section-count">{props.count}</span></Show></>;
   return <section class={`k2b-app-workspace__sidebar-section ${props.class ?? ""}`} data-collapsible={props.collapsible ? "true" : undefined} {...modeAttrs(props.sidebarMode)}>
     <Show when={props.title || props.actions}>
       <header class="k2b-app-workspace__sidebar-section-header">
