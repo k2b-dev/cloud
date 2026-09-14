@@ -2,6 +2,7 @@ FROM --platform=$BUILDPLATFORM oven/bun:1.3.14@sha256:e10577f0db68676a7024391c6e
 
 WORKDIR /workspace
 COPY package.json bun.lock bunfig.toml ./
+COPY patches/ patches/
 COPY pwas/pwa-auth/package.json pwas/pwa-auth/
 COPY docs-site/package.json docs-site/
 COPY packages/accounts/package.json packages/accounts/

@@ -1,0 +1,22 @@
+diff --git a/src/client.ts b/src/client.ts
+index aae886a1853309a09326c42aeb76c1d16c7d66d1..4453e4ef6988beceee0362b2afe94c3d6e2c6dd5 100644
+--- a/src/client.ts
++++ b/src/client.ts
+@@ -201,7 +201,7 @@ class UploadClient {
+     const res = await this._fetch(`${this.url}/files/content`, {
+       method: "PUT",
+       headers: uploadHdrs,
+-      body: opts.data,
++      body: opts.data instanceof Uint8Array ? new Uint8Array(opts.data) : opts.data,
+     });
+     return this.handleResponse(res);
+   }
+@@ -241,7 +241,7 @@ class UploadClient {
+       const res = await this._fetch(`${this.url}/files/upload/chunk`, {
+         method: "POST",
+         headers,
+-        body: opts.data,
++        body: opts.data instanceof Uint8Array ? new Uint8Array(opts.data) : opts.data,
+       });
+       return this.handleResponse(res);
+     },

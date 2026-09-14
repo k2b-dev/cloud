@@ -136,5 +136,8 @@
     "typescript": "5.9.3"
   },
   "license": "AGPL-3.0-or-later",
-  "trustedDependencies": []
+  "trustedDependencies": [],
+  "patchedDependencies": {
+    "@valentinkolb/filegate@2.4.0": "patches/@valentinkolb%2Ffilegate@2.4.0.patch"
+  }
 }

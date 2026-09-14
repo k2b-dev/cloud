@@ -710,6 +710,9 @@
       },
     },
   },
+  "patchedDependencies": {
+    "@valentinkolb/filegate@2.4.0": "patches/@valentinkolb%2Ffilegate@2.4.0.patch",
+  },
   "overrides": {
     "@k2b/sync": "6.4.0",
     "@xmldom/xmldom": "0.9.12",
