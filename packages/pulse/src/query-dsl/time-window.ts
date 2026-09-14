@@ -1,4 +1,4 @@
-import { err, fail, ok, type Result } from "@k2b/cloud/server";
+import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { z } from "zod";
 import { intervalToMs } from "./interval";
 

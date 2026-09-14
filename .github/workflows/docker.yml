@@ -13,8 +13,8 @@ env:
 #                             Pushes :v0.1.2 and :latest.
 #   workflow_dispatch       → build everything on demand.
 #
-# Pulse is intentionally skipped because it is not release-ready yet. Everything
-# else in the workspace ships. The expeditions app moved out to the cloud-template
+# All listed application images participate in the release matrix.
+# The expeditions app moved out to the cloud-template
 # repo as the standalone reference app.
 
 on:
