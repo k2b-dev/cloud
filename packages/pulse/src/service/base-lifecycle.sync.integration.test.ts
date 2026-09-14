@@ -22,7 +22,7 @@ syncTest(
       name: "pulse-deletion-test",
     });
     const namespace = `pulse-test-${crypto.randomUUID()}`;
-    const sync = createSync({ connection, namespace, application: "pulse", observe: observeSyncEvent });
+    const sync = createSync({ connection, namespace, application: "pulse", defaults: { replicas: 1 }, observe: observeSyncEvent });
     const baseId = crypto.randomUUID();
     const publicBaseId = newShortId();
     bindProcessSync(sync);
