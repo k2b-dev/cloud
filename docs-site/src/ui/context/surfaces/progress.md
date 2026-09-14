@@ -1,6 +1,7 @@
 # Progress
 
-`ProgressBar` presents determinate progress from 0 to 100.
+`ProgressBar` presents determinate progress from 0 to 100. Its neutral track stays
+visible against muted surfaces in both themes, so the full length remains clear.
 
 ## Use progress
 
