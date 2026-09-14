@@ -100,7 +100,7 @@ export function AssistantContextRow(props: {
       onClick={props.onClick}
     />
   ) : (
-    <div class="k2b-detail-panel__action min-w-0">
+    <div class="k2b-detail-panel__action assistant-context-action min-w-0">
       <span class="k2b-button__label">
         <Show when={leading()}>{(value) => <span class="k2b-detail-panel__action-leading">{value()}</span>}</Show>
         <span class="k2b-detail-panel__action-copy">

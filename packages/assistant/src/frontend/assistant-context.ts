@@ -3,7 +3,8 @@ import type { CloudResourceRef } from "@k2b/cloud/contracts";
 import type { AssistantChatContextSnapshot } from "../chat-context";
 
 export const splitAssistantConversationSources = (items: AiConversationSource[]) => ({
-  sources: items.filter((item) => item.kind === "web" || item.kind === "activity"),
+  sources: items.filter((item) => item.kind === "web" || item.kind === "activity")
+    .map(item => item.kind === "activity" && item.key === "web_search" ? { ...item, icon: "ti ti-search" } : item),
   references: items.filter((item) => item.kind === "resource"),
 });
 

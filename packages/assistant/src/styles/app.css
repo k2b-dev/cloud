@@ -176,7 +176,7 @@
 .k2b-ui .k2b-button.assistant-studio-card__start:hover:not(:disabled) { background: color-mix(in srgb, var(--studio-accent) 10%, var(--k2b-surface)); }
 .assistant-studio-runner-header { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; }
 .assistant-studio-runner-header h1 { margin: 0; font-size: 1rem; font-weight: 600; overflow-wrap: anywhere; }
-.k2b-ui [data-assistant-context="compact"] .k2b-button.assistant-context-action { padding: .625rem .75rem; }
+
 
 .assistant-studio-card__footer .k2b-status-badge { font-size: .65rem; }
 .assistant-version-list { display:flex; flex-direction:column; gap:1rem; }
@@ -242,7 +242,8 @@
 
 .artifact-analysis-context > strong { margin-inline-start: .5rem; }
 
-.k2b-ui [data-assistant-context="compact"] .k2b-button.assistant-context-action { padding: .3rem .5rem; min-height: 2rem; }
+.k2b-ui .assistant-context-action { color: var(--k2b-text-muted); }
+.k2b-ui [data-assistant-context="compact"] .k2b-detail-panel__action.assistant-context-action { padding: .3rem .5rem; min-height: 2rem; }
 .k2b-ui [data-assistant-context="compact"] .k2b-detail-panel__action-copy { display: flex; flex-direction: row; align-items: baseline; gap: .4rem; min-width: 0; overflow: hidden; }
 .k2b-ui [data-assistant-context="compact"] .k2b-detail-panel__action-title { flex-shrink: 0; max-width: 70%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .8125rem; }
 .k2b-ui [data-assistant-context="compact"] .k2b-detail-panel__action-description { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .6875rem; }

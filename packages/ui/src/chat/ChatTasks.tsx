@@ -14,7 +14,7 @@ export type ChatTasksProps = {
 export function ChatTasks(props: ChatTasksProps) {
   const id = createUniqueId();
   const active = () => props.items.find(item => item.status === "in_progress");
-  const icon = (status: ChatTask["status"]) => status === "completed" ? "ti ti-check" : status === "cancelled" ? "ti ti-minus" : status === "in_progress" ? "ti ti-circle-filled" : "ti ti-circle";
+  const icon = (status: ChatTask["status"]) => status === "completed" ? "ti ti-check" : status === "cancelled" ? "ti ti-minus" : status === "in_progress" ? "ti ti-wave-saw-tool" : "ti ti-circle";
   return <Show when={props.items.length}>
     <section class="k2b-chat-tasks">
       <button type="button" class="k2b-chat-tasks__header" aria-expanded={props.open} aria-controls={id} onClick={() => props.onOpenChange(!props.open)}>
