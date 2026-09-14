@@ -20,6 +20,66 @@ Interactive submissions and retries enforce the caller's
 The model list and status return only permitted models. A denied explicit model
 selection returns HTTP 403 before a retry changes the conversation.
 
+## Queue follow-up messages
+
+Add a client-generated UUID `queueId` to `POST /api/ai/conversations/:id/turns`
+together with the saved `draftRevision` to queue a follow-up. Acceptance consumes
+that draft revision and preserves its text, resource references, model selection,
+and exact attachment bytes. Repeating the same `queueId` is idempotent, including
+after the message has started. A later composer draft remains independent.
+
+Each conversation accepts up to 32 pending or failed messages. Queued attachment
+snapshots share a 250 MiB budget. The existing turn worker processes messages in
+acceptance order, one active turn per conversation. Queues survive navigation,
+reloads and worker restarts. Completion, failure or cancellation of a turn allows
+the next queued message to start; a dispatch failure keeps the failed entry at the
+head until the user retries or removes it. Approval waits keep the current turn
+active and do not advance the queue.
+
+The owner-authorized queue API provides:
+
+- `GET /conversations/:id/queue`: ordered pending and failed entries.
+- `PATCH /conversations/:id/queue/:messageId` with `{ text }`: edit queued text
+  while retaining attachments and resource references.
+- `DELETE /conversations/:id/queue/:messageId`: remove an entry that has not started.
+- `POST /conversations/:id/queue/:messageId/retry`: retry a failed dispatch.
+
+All paths above use the `/api/ai` prefix. Editing or deleting races safely with
+promotion: once an entry becomes a turn, the queue endpoint returns not found.
+Normal submissions cannot overtake the queue. Chats with pending entries cannot
+be archived or marked done and do not become done through inactivity.
+
+## Observe work across conversations
+
+Sidebar snapshots include a compact `activity` projection: completed and total
+task counts, the current task, and the last tool label. Cancelled tasks do not
+count toward progress. Tool arguments, outputs and conversation history are not
+included in this projection. The same owner checks apply to initial and live
+reads, and live updates do not change activity-based ordering.
+
+The existing live connection invalidates this snapshot on task and tool changes.
+Text tokens alone do not invalidate the sidebar. Reconnection reloads authorized
+state before acknowledging its cursor; no per-conversation socket is required.
+
+## Diagnose runtime failures
+
+Use the existing Core log and trace views. Filter logs by `ai:runtime`,
+`ai:message-queue`, `ai:executor`, `ai:transcription`, or `ai:live-routes`.
+Queue dispatch errors carry `conversationId`, `messageId` and
+`queue_dispatch_failed`. Heartbeat, recovery and completion-publication warnings
+carry conversation and turn IDs. A heartbeat warning is emitted once per failure
+streak; recovery uses the existing durable turn state.
+
+Tool-audit write failures are warnings with turn and call IDs. Expected audio
+cancellation is informational; retryable dictation failures are warnings and
+terminal failures are errors. Provider/transcription traces retain their existing
+status, duration and accounting. Diagnostic metadata does not add prompt,
+attachment or audio contents.
+
+Gateway registry notifications are supplemented by reconciliation every five
+seconds. This repairs stale routing after a missed application restart event.
+A failed refresh retains the last usable route table and logs its failure.
+
 ## Create a conversation draft
 
 ```ts

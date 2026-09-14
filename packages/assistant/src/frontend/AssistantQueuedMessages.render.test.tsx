@@ -14,11 +14,11 @@ afterAll(() => rmSync(root, { recursive: true, force: true }));
 const { default: AssistantQueuedMessages } = await import("./AssistantQueuedMessages");
 
 describe("Assistant queued messages", () => {
-  test("renders the pending text, immediate action, and always-visible edit menu", () => {
+  test("renders queued text and editing without an accidental immediate send", () => {
     const html = renderToString(() =>
       createComponent(AssistantQueuedMessages, {
         messages: [{ id: "next", text: "Please check the next issue" }],
-        onSendNow: () => undefined,
+        onRetry: () => undefined,
         onEdit: () => undefined,
         onDelete: () => undefined,
       }),
@@ -26,7 +26,7 @@ describe("Assistant queued messages", () => {
 
     expect(html).toContain('aria-label="Queued messages"');
     expect(html).toContain("Please check the next issue");
-    expect(html).toContain("Send now");
+    expect(html).not.toContain("Send now");
     expect(html).toContain('aria-label="Queued message actions"');
     expect(html).not.toContain("opacity-0");
   });
@@ -36,7 +36,7 @@ describe("Assistant queued messages", () => {
       createComponent(AssistantQueuedMessages, {
         messages: [{ id: "failed", text: "Try this again", failed: true }],
         sendingId: "failed",
-        onSendNow: () => undefined,
+        onRetry: () => undefined,
         onEdit: () => undefined,
         onDelete: () => undefined,
       }),

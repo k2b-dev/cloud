@@ -725,6 +725,36 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
     return queueDraftOperation(async () => persistComposerDraft(input, await targetConversation));
   };
 
+  const queuedAttempts = new Map<string, {key:string;files?:File[];id:string;saved:{revision:number}}>();
+  const queueMessage = (input: ComposerDraftInput & { modelProfileId?: string }): Promise<boolean> => {
+    if (!input.conversationId || !isComposerDraftSendable(input)) return Promise.resolve(false);
+    const conversationId = input.conversationId;
+    const key = JSON.stringify({message:input.message,content:input.content,resources:input.resources,storedFiles:input.storedFiles,model:input.modelProfileId});
+    return queueDraftOperation(async () => {
+      try {
+        const previous = queuedAttempts.get(conversationId);
+        const same = previous?.key === key && (previous.files ?? []).length === (input.files ?? []).length && (previous.files ?? []).every((file,index)=>file === input.files?.[index]);
+        const saved = same ? previous.saved : await persistComposerDraft(input, conversationId);
+        if (!saved) return false;
+        const queueId = same ? previous.id : crypto.randomUUID();
+        queuedAttempts.set(conversationId,{key,files:input.files,id:queueId,saved});
+        await request(`/conversations/${conversationId}/turns`, {method:"POST", body:JSON.stringify({
+          draftRevision:saved.revision, queueId, modelProfileId:input.modelProfileId,
+          clientToolIds:options.clientToolIds?.filter(id => options.frontendTools?.[id]),
+        })}, "Failed to queue message");
+        if (isActiveConversation(conversationId)) {
+          if ((state.conversation?.draft.revision ?? 0) <= saved.revision) setState("conversation", "draft", {content:[],revision:saved.revision+1,updatedAt:new Date().toISOString()});
+        } else invalidateInactiveCache(conversationId);
+        queuedAttempts.delete(conversationId);
+        if (isActiveConversation(conversationId)) setGlobalError(null);
+        return true;
+      } catch (error) {
+        setConversationError(conversationId,error instanceof Error ? error.message : "Failed to queue message");
+        return false;
+      }
+    });
+  };
+
   const send = (input: ComposerDraftInput & { modelProfileId?: string }): Promise<boolean> => {
     if (!isComposerDraftSendable(input)) return Promise.resolve(false);
     const targetConversation = input.conversationId ? Promise.resolve(input.conversationId) : ensureConversation();
@@ -1219,6 +1249,7 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
     refreshActiveConversation,
     createConversation,
     saveDraft,
+    queueMessage,
     send,
     steer,
     retrySteer,

@@ -45,11 +45,11 @@ describe("Assistant frontend contracts", () => {
       read("./AssistantProjectSettingsDialog.tsx"),
     ]);
 
-    expect(sidebar).toContain("AppWorkspace.NavTree");
+    expect(sidebar).toContain("AppWorkspace.SidebarSection");
     expect(sidebar).toContain('title={t().projects}');
     expect(sidebar).toContain('label={t().createProject}');
     expect(sidebar).not.toContain("onOpenProjects");
-    expect(sidebar).toContain("t().noRecentChats");
+    expect(sidebar).toContain("t().noProjects");
     expect(projectsDialog).toContain("prompts.form");
     expect(projectsDialog).not.toContain("divide-y");
     expect(projectsDialog).not.toContain("rounded-lg border");
@@ -69,7 +69,6 @@ describe("Assistant frontend contracts", () => {
     expect(workspace).toContain("AssistantChatContextPanel");
     expect(workspace).toContain('class="assistant-chat-layout"');
     expect(workspace).toContain('class="assistant-chat-messages min-h-0 overflow-hidden"');
-    expect(workspace).toContain('class="flex justify-end lg:hidden"');
     expect(workspace).not.toContain("<AppWorkspace.Detail");
     expect(context).toContain("AssistantChatContextContent");
     expect(context).toContain("openAssistantContextFiles");
@@ -96,7 +95,7 @@ describe("Assistant frontend contracts", () => {
     expect(workspace).not.toContain("commands={");
     expect(workspace).not.toContain("type / ...");
     expect(workspace).toContain('id: "attach-resource"');
-    expect(workspace).toContain('id: "paste-resource"');
+    expect(workspace).toContain("onPaste={(event) => pasteComposerContent");
     expect(workspace).toContain("openCloudResourcePicker");
     expect(workspace).toContain("cloudResourceClipboard.parse(structured, props.cloudUrl)");
     expect(workspace).toContain("createAiPastedTextFile(text)");
@@ -113,13 +112,14 @@ describe("Assistant frontend contracts", () => {
     expect(messageSearch).not.toContain("listResources");
   });
 
-  test("queues follow-up messages locally and presents one minimal connection notice", async () => {
+  test("queues complete follow-up messages durably and presents one minimal connection notice", async () => {
     const workspace = await read("./AssistantWorkspace.island.tsx");
 
     expect(workspace).toContain('runningSubmitIntent={!projectComposer() ? "queue" : undefined}');
     expect(workspace).toContain('input.intent === "queue"');
     expect(workspace).toContain("<AssistantQueuedMessages");
-    expect(workspace).toContain('chat.runStatus() !== "idle"');
+    expect(workspace).toContain("chat.queueMessage");
+    expect(workspace).not.toContain("queueMicrotask(() => void sendQueuedMessage");
     expect(workspace).toContain("message: t().reconnecting");
     expect(workspace).toContain('"animation-direction": "reverse"');
     expect(workspace).not.toContain("bg-red-50");

@@ -20,7 +20,7 @@ export const createAssistantLiveInvalidationHub = (options: {
   retryBaseMs?: number;
   retryMaxMs?: number;
   onApplied: (cursor: string | null) => void;
-  onFailed?: (attempt: number) => void;
+  onFailed?: (attempt: number, error: unknown) => void;
 }) => {
   const invalidators = new Set<Invalidator>();
   let pending: PendingInvalidation | null = null;
@@ -59,11 +59,11 @@ export const createAssistantLiveInvalidationHub = (options: {
       if (disposed) return;
       failedAttempts = 0;
       options.onApplied(current.cursor);
-    } catch {
+    } catch (error) {
       if (disposed) return;
       pending = merge(pending, current);
       failedAttempts += 1;
-      options.onFailed?.(failedAttempts);
+      options.onFailed?.(failedAttempts, error);
       running = false;
       const base = options.retryBaseMs ?? 1_000;
       const maximum = options.retryMaxMs ?? 15_000;

@@ -1,3 +1,5 @@
+import { enqueueChatMessage, listQueuedMessages, updateQueuedMessage, editQueuedMessage, queuedMessageAccepted, AiMessageQueueConflict } from "./message-queue";
+import { prepareAiChatTurn, wakeAiMessageQueue } from "./runtime";
 import { bodyLimit } from "hono/body-limit";
 import { AI_AUDIO_MAX_BYTES } from "./audio-format";
 import { aiDictations, AiDictationConflict, AiDictationStartSchema, AiDictationListSchema } from "./dictations";
@@ -565,7 +567,7 @@ export const aiRoutes = (() => {
         if (ctx instanceof Response) return ctx;
         const conversation = await loadConversation(c, ctx);
         if (!conversation) return notFound(c);
-        const messageId = c.req.param("messageId");
+        const messageId = (c.req.param("messageId") ?? "");
         if (!messageId) return respond(c, fail(err.badInput("Invalid message id.")));
         const input = c.req.valid("json");
         const feedback = await aiConversations.setMessageFeedback({
@@ -584,7 +586,7 @@ export const aiRoutes = (() => {
         if (ctx instanceof Response) return ctx;
         const conversation = await loadConversation(c, ctx);
         if (!conversation) return notFound(c);
-        const messageId = c.req.param("messageId");
+        const messageId = (c.req.param("messageId") ?? "");
         if (!messageId) return respond(c, fail(err.badInput("Invalid message id.")));
         return (await aiConversations.clearMessageFeedback({
           conversationId: conversation.id,
@@ -749,6 +751,37 @@ export const aiRoutes = (() => {
         });
         return viewed ? respond(c, ok({ ok: true })) : notFound(c);
       })
+      .get("/conversations/:conversationId/queue", async (c) => {
+        const ctx = await resolveContext(c);
+        if (ctx instanceof Response) return ctx;
+        const conversation = await loadConversation(c, ctx);
+        return conversation ? respond(c, ok(await listQueuedMessages(conversation.id))) : notFound(c);
+      })
+      .patch("/conversations/:conversationId/queue/:messageId", v("json", z.object({text:z.string().trim().min(1).max(20000)}).strict()), async (c) => {
+        const ctx = await resolveContext(c);
+        if (ctx instanceof Response) return ctx;
+        const conversation = await loadConversation(c, ctx);
+        if (!conversation || !z.uuid().safeParse(c.req.param("messageId")).success) return notFound(c);
+        return await editQueuedMessage(conversation.id,(c.req.param("messageId") ?? ""),c.req.valid("json").text) ? respond(c,ok({ok:true})) : notFound(c);
+      })
+      .delete("/conversations/:conversationId/queue/:messageId", async (c) => {
+        const ctx = await resolveContext(c);
+        if (ctx instanceof Response) return ctx;
+        const conversation = await loadConversation(c, ctx);
+        if (!conversation || !z.uuid().safeParse(c.req.param("messageId")).success) return notFound(c);
+        if (!await updateQueuedMessage(conversation.id, (c.req.param("messageId") ?? ""), "cancel")) return notFound(c);
+        wakeAiMessageQueue(conversation.id);
+        return respond(c, ok({ok:true}));
+      })
+      .post("/conversations/:conversationId/queue/:messageId/retry", async (c) => {
+        const ctx = await resolveContext(c);
+        if (ctx instanceof Response) return ctx;
+        const conversation = await loadConversation(c, ctx);
+        if (!conversation || !z.uuid().safeParse(c.req.param("messageId")).success) return notFound(c);
+        if (!await updateQueuedMessage(conversation.id, (c.req.param("messageId") ?? ""), "retry")) return notFound(c);
+        wakeAiMessageQueue(conversation.id);
+        return respond(c, ok({ok:true}));
+      })
       .put("/conversations/:conversationId/draft", v("json", AiSaveConversationDraftInputSchema), async (c) => {
         const ctx = await resolveContext(c);
         if (ctx instanceof Response) return ctx;
@@ -778,6 +811,7 @@ export const aiRoutes = (() => {
         const conversation = await loadConversation(c, ctx);
         if (!conversation) return notFound(c);
         const body = c.req.valid("json");
+        if (body.queueId && await queuedMessageAccepted(conversation.id, body.queueId)) return respond(c,ok({queued:true}));
         if (conversation.draft.revision !== body.draftRevision) {
           return respond(c, fail(err.conflict("The conversation draft changed in another session.")));
         }
@@ -797,8 +831,8 @@ export const aiRoutes = (() => {
         const project = conversation.projectId ? await aiProjects.snapshot(conversation.projectId, c.get("accessSubject")) : null;
         if (conversation.projectId && !project) return respond(c, fail(err.notFound("Project")));
         try {
-          const result = await submitAiChatTurn({
-            assistantChat: true,
+          const submission = {
+            assistantChat: true as const,
             conversationId: conversation.id,
             chatId: conversation.shortId,
             input,
@@ -809,7 +843,7 @@ export const aiRoutes = (() => {
             modelPolicy: ctx.modelPolicy,
             project: project ?? undefined,
             clientToolIds: body.clientToolIds,
-            toolSource: { kind: "default", appTools: true },
+            toolSource: { kind: "default" as const, appTools: true },
             toolApprovalContext: ctx.toolApprovalContext,
             expectedDraftRevision: body.draftRevision,
             expectedProjectId: conversation.projectId,
@@ -817,7 +851,13 @@ export const aiRoutes = (() => {
             expectedFiles: conversation.draft.content.flatMap((part) =>
               part.type === "file" ? [{ path: part.path, version: part.version }] : [],
             ),
-          });
+          };
+          if (body.queueId) {
+            await enqueueChatMessage(body.queueId, await prepareAiChatTurn(submission), conversation.draft.content);
+            wakeAiMessageQueue(conversation.id);
+            return respond(c, ok({ queued: true }));
+          }
+          const result = await submitAiChatTurn(submission);
           rememberLastUsedModel(ctx.actor, result.turn.modelProfileId);
           return respond(
             c,
@@ -832,6 +872,7 @@ export const aiRoutes = (() => {
             201,
           );
         } catch (error) {
+          if (error instanceof AiMessageQueueConflict || (error instanceof Error && error.message === "Queued messages must be sent first.")) return respond(c,fail(err.conflict(error.message)));
           return toAiErrorResponse(c, error);
         }
       })
@@ -861,7 +902,7 @@ export const aiRoutes = (() => {
         if (ctx instanceof Response) return ctx;
         const conversation = await loadConversation(c, ctx);
         if (!conversation) return notFound(c);
-        const messageId = c.req.param("messageId");
+        const messageId = (c.req.param("messageId") ?? "");
 
         const messages = await aiConversations.listMessages({ conversationId: conversation.id });
         const target = messages.find((m) => m.shortId === messageId);
@@ -934,7 +975,7 @@ export const aiRoutes = (() => {
         if (ctx instanceof Response) return ctx;
         const conversation = await loadConversation(c, ctx);
         if (!conversation) return notFound(c);
-        const messageId = c.req.param("messageId");
+        const messageId = (c.req.param("messageId") ?? "");
 
         const messages = await aiConversations.listMessages({ conversationId: conversation.id });
         const target = messages.find((m) => m.shortId === messageId);

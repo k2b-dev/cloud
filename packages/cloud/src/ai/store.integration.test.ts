@@ -76,6 +76,32 @@ const assistantMessage = (text: string): Message => ({
 const runConfig = { kind: "chat" as const, input: "hi", toolSource: { kind: "none" as const } };
 
 suite("AI conversation store integration", () => {
+  test("sidebar projects compact task progress without exposing tool arguments", async () => {
+    const userId = await insertUser();
+    const otherUserId = await insertUser();
+    const chat = await aiConversations.createConversation({ownerUserId:userId});
+    try {
+      const session = aiConversations.createSessionStore({conversationId:chat.id,modelProfileId:"test-model"});
+      await session.append({role:"tool_result",callId:"plan",name:"todo_write",result:{todos:[
+        {id:"1",content:"Read sources",status:"completed"},
+        {id:"2",content:"Check totals",status:"in_progress"},
+        {id:"3",content:"Cancelled step",status:"cancelled"},
+      ]}});
+      const {turn} = await aiConversations.submitChatTurn({conversationId:chat.id,modelProfileId:"test-model",runConfig,userMessage:userMessage("Continue")});
+      const blocks = [{kind:"tool",name:"read_file",status:"running",args:{secret:"private payload"},presentation:{title:"Reading sources"}}];
+      await sql`UPDATE ai.turns SET live_blocks=(${JSON.stringify(blocks)}::text)::jsonb WHERE id=${turn.id}::uuid`;
+      const [summary] = await aiConversations.listSidebarConversations({ownerUserId:userId});
+      expect(summary?.activity).toEqual({completed:1,total:2,step:"Check totals",tool:"Reading sources"});
+      expect(JSON.stringify(summary?.activity)).not.toContain("private payload");
+      expect(await aiConversations.listSidebarConversations({ownerUserId:otherUserId})).toEqual([]);
+      const [comparison] = await sql<{same:boolean}[]>`SELECT ai.sidebar_tool_label((${JSON.stringify(blocks)}::text)::jsonb) = ai.sidebar_tool_label((${JSON.stringify([...blocks,{kind:"text",text:"token"}])}::text)::jsonb) AS same`;
+      expect(comparison?.same).toBe(true);
+    } finally {
+      await cleanupFixture({userId,conversationIds:[chat.id]});
+      await cleanupFixture({userId:otherUserId,conversationIds:[]});
+    }
+  });
+
   test("automatic completion uses activity, respects overrides and pending work, and does not cap active chats", async () => {
     const userId = await insertUser();
     const conversationIds: string[] = [];

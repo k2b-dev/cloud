@@ -119,6 +119,23 @@ export const assistantApi = {
     if (!response.ok) throw new Error(await readError(response, "Failed to revoke skill access"));
   },
 
+  loadQueuedMessages: async (conversationId:string, signal?:AbortSignal) => {
+    const response = await client.conversations[":conversationId"].queue.$get({param:{conversationId}}, {init:{signal}});
+    if (!response.ok) throw new Error(await readError(response,"Failed to load queued messages"));
+    return response.json();
+  },
+  editQueuedMessage: async (conversationId:string,messageId:string,text:string) => {
+    const response = await client.conversations[":conversationId"].queue[":messageId"].$patch({param:{conversationId,messageId},json:{text}});
+    if (!response.ok) throw new Error(await readError(response,"Failed to edit queued message"));
+  },
+  cancelQueuedMessage: async (conversationId:string,messageId:string) => {
+    const response = await client.conversations[":conversationId"].queue[":messageId"].$delete({param:{conversationId,messageId}});
+    if (!response.ok) throw new Error(await readError(response,"Failed to remove queued message"));
+  },
+  retryQueuedMessage: async (conversationId:string,messageId:string) => {
+    const response = await client.conversations[":conversationId"].queue[":messageId"].retry.$post({param:{conversationId,messageId}});
+    if (!response.ok) throw new Error(await readError(response,"Failed to retry queued message"));
+  },
   loadSidebar: async (signal?: AbortSignal): Promise<AssistantSidebarSnapshot> => {
     const response = await assistantClient.workspace.sidebar.$get({}, { init: { signal } });
     if (!response.ok) throw new Error(await readError(response, "Failed to load Assistant navigation"));

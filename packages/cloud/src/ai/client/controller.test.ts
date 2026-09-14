@@ -314,6 +314,41 @@ const conversation = (id: string): AiConversation => ({
 });
 
 describe("AI controller conversation transitions", () => {
+  test("queues full content during a run and reuses the receipt after a lost response", async () => {
+    const requests:Array<{path:string;body:Record<string,unknown>}>=[];
+    let fail=true;
+    globalThis.fetch = Object.assign(async (request:RequestInfo | URL, init?:RequestInit) => {
+      const path=String(request);
+      const body=typeof init?.body === "string" ? JSON.parse(init.body) : {};
+      requests.push({path,body});
+      if (path.endsWith("/draft")) return Response.json({content:body.content,revision:1,updatedAt:null});
+      if (path.endsWith("/turns")) {
+        if (fail) { fail=false; throw new Error("lost response"); }
+        return Response.json({queued:true});
+      }
+      return Response.json([]);
+    }, {preconnect:originalFetch.preconnect});
+    let dispose!:()=>void;
+    const current=conversation("queued-chat");
+    const controller=createRoot(cleanup=>{dispose=cleanup;return createAiChatController({
+      baseUrl:"/api/ai",initialConversationId:current.id,
+      initialDetail:{conversation:current,messages:[],activeTurn:{turnId:"running",attempt:1,seq:1,status:"running",blocks:[],modelProfileId:null,createdAt:"2026-09-14T00:00:00.000Z"}},
+    });});
+    const input={conversationId:current.id,message:"Follow up",storedFiles:[{path:"/source.csv",mediaType:"text/csv",size:12,version:3}]};
+    expect(await controller.queueMessage(input)).toBe(false);
+    expect(await controller.queueMessage(input)).toBe(true);
+    expect(controller.error()).toBeNull();
+    const submissions=requests.filter(request=>request.path.endsWith("/turns"));
+    expect(submissions).toHaveLength(2);
+    expect(submissions[0]!.body.queueId).toBe(submissions[1]!.body.queueId);
+    const drafts=requests.filter(request=>request.path.endsWith("/draft"));
+    expect(drafts).toHaveLength(1);
+    expect(drafts[0]!.body.content).toEqual([{type:"text",text:"Follow up"},{type:"file",path:"/source.csv",mediaType:"text/csv",size:12,version:3}]);
+    expect(controller.messages()).toHaveLength(0);
+    expect(controller.activeTurn()?.turnId).toBe("running");
+    dispose();
+  });
+
   test("ignores an older refresh arriving after the latest draft", async () => {
     const pending: Array<(response: Response) => void> = [];
     globalThis.fetch = Object.assign(

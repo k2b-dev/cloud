@@ -103,7 +103,7 @@ export const runAiTranscription = async (input: RunAiTranscriptionInput): Promis
         return { text: result.text, modelProfileId: resolved.profile.id };
       } catch (error) {
         failure = describeTranscriptionFailure(error, stage, signal.aborted);
-        logger("ai:transcription").error(failure.message, {
+        logger("ai:transcription")[input.signal?.aborted ? "info" : "error"](failure.message, {
           traceId: span.traceId,
           task: input.task,
           modelProfileId: resolved?.profile.id ?? input.requestedModelId,

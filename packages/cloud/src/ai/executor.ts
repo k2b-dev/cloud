@@ -1173,9 +1173,9 @@ export class AiTurnExecutor {
               location: prepared.frontendModes.get(event.name) ?? "server",
             })
             .catch(() => undefined);
-          if (!prepared.frontendModes.has(event.name)) await aiToolAudit.noteToolStarted({conversationId,turnId,callId:event.callId,toolName}).catch(() => undefined);
+          if (!prepared.frontendModes.has(event.name)) await aiToolAudit.noteToolStarted({conversationId,turnId,callId:event.callId,toolName}).catch(() => log.warn("AI tool audit write failed", {code:"tool_audit_start_failed",conversationId,turnId,callId:event.callId}));
         } else if (event.type === "tool_execution_end") {
-          await aiToolAudit.noteToolCompleted({ turnId, callId: event.callId, isError: event.isError }).catch(() => undefined);
+          await aiToolAudit.noteToolCompleted({ turnId, callId: event.callId, isError: event.isError }).catch(() => log.warn("AI tool audit write failed", {code:"tool_audit_complete_failed",turnId,callId:event.callId}));
           const toolBlock = pipeline.blocks.find((block) => block.kind === "tool" && block.callId === event.callId);
           await indexConversationToolSource({
             conversationId,
@@ -1269,7 +1269,7 @@ export class AiTurnExecutor {
         result: { displayed: true },
         isError: false,
       } as OutboundEvent);
-      await aiToolAudit.noteToolCompleted({ turnId, callId: event.callId, isError: false }).catch(() => undefined);
+      await aiToolAudit.noteToolCompleted({ turnId, callId: event.callId, isError: false }).catch(() => log.warn("AI tool audit write failed", {code:"tool_audit_complete_failed",turnId,callId:event.callId}));
       return false;
     }
 

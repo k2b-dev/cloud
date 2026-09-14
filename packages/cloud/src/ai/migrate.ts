@@ -1,3 +1,4 @@
+import { migrateAiMessageQueue } from "./message-queue";
 import { sql } from "bun";
 import { migrateAiModelAccess } from "./model-access-migrate";
 import { withAiShortId } from "./short-id";
@@ -2187,5 +2188,19 @@ export const migrateCloudAi = async (): Promise<void> => {
   await migrateAiTurnUsage();
   await migrateAiModelAccess();
 
+  await sql`CREATE OR REPLACE FUNCTION ai.sidebar_tool_label(blocks jsonb) RETURNS jsonb AS $$
+    SELECT jsonb_build_object('label', left(COALESCE(block->'presentation'->>'title', block->>'name'),200), 'status', block->>'status')
+    FROM jsonb_array_elements(CASE WHEN jsonb_typeof(blocks) = 'array' THEN blocks ELSE '[]'::jsonb END) WITH ORDINALITY AS entries(block, n)
+    WHERE block->>'kind' = 'tool' ORDER BY n DESC LIMIT 1
+  $$ LANGUAGE sql IMMUTABLE`.simple();
+  await sql`DROP TRIGGER IF EXISTS ai_live_sidebar_tool_changed ON ai.turns`.simple();
+  await sql`CREATE TRIGGER ai_live_sidebar_tool_changed AFTER UPDATE OF live_blocks ON ai.turns
+    FOR EACH ROW WHEN (ai.sidebar_tool_label(OLD.live_blocks) IS DISTINCT FROM ai.sidebar_tool_label(NEW.live_blocks))
+    EXECUTE FUNCTION ai.live_conversation_child_changed('conversation-list')`.simple();
+  await sql`DROP TRIGGER IF EXISTS ai_live_sidebar_plan_changed ON ai.messages`.simple();
+  await sql`CREATE TRIGGER ai_live_sidebar_plan_changed AFTER INSERT ON ai.messages
+    FOR EACH ROW WHEN (NEW.role = 'tool_result' OR NEW.meta IS NOT NULL)
+    EXECUTE FUNCTION ai.live_conversation_child_changed('conversation-list')`.simple();
+  await migrateAiMessageQueue();
   console.log("  ✓ ai conversation tables");
 };

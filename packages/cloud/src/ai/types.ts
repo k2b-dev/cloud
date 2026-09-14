@@ -133,6 +133,7 @@ export type AiConversationRunStatus = "idle" | "queued" | "running" | "needs_att
 export type AiConversationStatusFilter = Exclude<AiConversationRunStatus, "idle" | "queued" | "waiting_for_browser"> | "unread";
 
 export type AiConversation = {
+  activity?: { completed: number; total: number; step: string | null; tool: string | null };
   todoPlan?: { seq: number; todos: import("./todo-contracts").AiTodoPlan["todos"] };
   id: string;
   shortId: string;
@@ -822,6 +823,7 @@ export type AiConversationService = {
   createCompactionTurn(input: { conversationId: string; modelProfileId: string; runConfig: AiCompactionTurnRunConfig }): Promise<AiTurn>;
   /** Persist the user message and create its turn in one transaction. */
   submitChatTurn(input: {
+    queuedMessageId?: string;
     conversationId: string;
     modelProfileId: string;
     runConfig: AiChatTurnRunConfig;

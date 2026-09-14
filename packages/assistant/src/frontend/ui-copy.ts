@@ -2,6 +2,8 @@ import { i18n } from "@k2b/stdlib";
 import { useLocale } from "@k2b/ui";
 
 const germanText: Record<string, string> = {
+  "Current task": "Aktuelle Aufgabe",
+  "Last tool": "Letzter Werkzeugaufruf",
   "Pin chat": "Anheften",
   "Unpin chat": "Anheftung lösen",
   "Could not update pin.": "Anheftung konnte nicht geändert werden.",

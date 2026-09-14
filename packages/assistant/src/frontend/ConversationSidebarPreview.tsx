@@ -49,6 +49,8 @@ export function ConversationSidebarPreview(props: { conversation: AiConversation
         layout="compact"
         size="sm"
         items={[
+          ...(props.conversation.activity?.step ? [{ term: term("ti ti-list-check", text("Current task")), description: props.conversation.activity.step }] : []),
+          ...(props.conversation.activity?.tool ? [{ term: term("ti ti-tool", text("Last tool")), description: props.conversation.activity.tool }] : []),
           ...(props.project ? [{ term: term("ti ti-folder", text("Project")), description: props.project.name }] : []),
           ...(details() ? [{ term: term("ti ti-brain", text("Model")), description: details()!.model ?? text("Not used yet") }] : []),
         ]}

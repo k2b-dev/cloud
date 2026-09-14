@@ -5,14 +5,15 @@ import { assistantMessages } from "./messages";
 export type AssistantQueuedMessage = {
   id: string;
   text: string;
+  editableText?: string;
   failed?: boolean;
 };
 
 export default function AssistantQueuedMessages(props: {
   messages: readonly AssistantQueuedMessage[];
   sendingId?: string | null;
-  onSendNow: (message: AssistantQueuedMessage) => void;
-  onEdit: (message: AssistantQueuedMessage) => void;
+  onRetry: (message: AssistantQueuedMessage) => void;
+  onEdit?: (message: AssistantQueuedMessage) => void;
   onDelete: (message: AssistantQueuedMessage) => void;
 }) {
   const locale = useLocale();
@@ -37,20 +38,22 @@ export default function AssistantQueuedMessages(props: {
               <span class="min-w-0 flex-1 truncate" title={message.text}>
                 {message.text}
               </span>
-              <button
-                type="button"
-                class="shrink-0 rounded-md px-1.5 py-1 text-[0.6875rem] font-medium text-[var(--k2b-text-muted)] transition-colors hover:text-[var(--k2b-ai-accent)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--k2b-focus-ring)] disabled:cursor-wait disabled:opacity-50"
-                disabled={props.sendingId === message.id}
-                onClick={() => props.onSendNow(message)}
-              >
-                {props.sendingId === message.id ? t().sending : t().sendNow}
-              </button>
+              <Show when={message.failed}>
+                <button
+                  type="button"
+                  class="shrink-0 rounded-md px-1.5 py-1 text-[0.6875rem] font-medium text-[var(--k2b-text-muted)] transition-colors hover:text-[var(--k2b-ai-accent)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--k2b-focus-ring)] disabled:cursor-wait disabled:opacity-50"
+                  disabled={props.sendingId === message.id}
+                  onClick={() => props.onRetry(message)}
+                >
+                  {props.sendingId === message.id ? t().sending : t().retryQueued}
+                </button>
+              </Show>
               <Dropdown.Root
                 position="bottom-left"
                 width="10rem"
                 label={t().queuedActions}
                 items={[
-                  { label: t().edit, icon: "ti ti-pencil", action: () => props.onEdit(message) },
+                  ...(props.onEdit ? [{ label: t().edit, icon: "ti ti-pencil", action: () => props.onEdit?.(message) }] : []),
                   { label: t().delete, icon: "ti ti-trash", variant: "danger", action: () => props.onDelete(message) },
                 ]}
               >

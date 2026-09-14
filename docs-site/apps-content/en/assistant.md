@@ -121,6 +121,23 @@ images can be inspected again through `view_image`. Retry reruns a message in
 the current branch. Fork copies the conversation through a selected message
 into a new chat.
 
+## Follow ongoing work
+
+Chat cards show the current task and completed-task count while an agent works.
+Open the chat preview to see its last tool. Reading a chat does not move it to the
+top of the list.
+
+Send another message while a response is running to add it to that chat's queue.
+It starts after the current response ends, even if you switch chats or reload.
+You can edit queued text or remove a message before it starts. Attachments and
+resource references stay with the queued message. A failed dispatch offers
+**Retry** and holds later messages until you retry or remove it. Each chat can
+hold up to 32 messages with at most 250 MiB of queued attachments.
+
+Use the separate steering action when you want to influence the current response.
+Stopping a response does not remove messages already in its queue; remove those
+entries if you no longer want them to run.
+
 ## How Assistant fits Cloud
 
 Assistant owns its chat workspace and user experience. It uses Cloud's shared

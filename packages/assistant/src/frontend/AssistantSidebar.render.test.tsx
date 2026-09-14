@@ -58,6 +58,16 @@ const conversation = (id: string, title: string, projectId: string | null): AiCo
 });
 
 describe("Assistant sidebar", () => {
+  test("shows compact progress for an unopened running chat", () => {
+    const html = renderToString(() => createComponent(AssistantSidebar, {
+      conversations: () => [{...conversation("working", "Import", null),runStatus:"running",activity:{completed:1,total:3,step:"Check totals",tool:"Read file"}}],
+      activeConversationId: () => null, live,
+    }));
+    expect(html).toContain("Check totals");
+    expect(html).toContain('role="progressbar"');
+    expect(html).toContain('aria-valuenow="33"');
+  });
+
   test("selects only the visible project or Studio despite a retained chat", () => {
     for (const activeView of ["chat", "apps"] as const) {
       const html = renderToString(() => createComponent(AssistantSidebar, {

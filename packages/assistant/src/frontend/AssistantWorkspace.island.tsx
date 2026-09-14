@@ -150,7 +150,10 @@ export default function AssistantWorkspace(props: Props) {
       setLiveError(null);
       liveConnection?.markApplied(cursor);
     },
-    onFailed: () => setLiveError(t().liveRetry),
+    onFailed: (attempt, error) => {
+      setLiveError(t().liveRetry);
+      if (attempt === 1) console.warn("Assistant live refresh failed", {code:"live_refresh_failed",errorType:error instanceof Error ? error.name : "unknown"});
+    },
   });
   liveConnection = createAiLiveConnection({
     initialCursor: props.initialLiveCursor,
@@ -211,7 +214,7 @@ export default function AssistantWorkspace(props: Props) {
       const conversationId = chat.activeConversationId();
       return Boolean(conversationId && (!invalidation.conversationIds || invalidation.conversationIds.has(conversationId)));
     },
-    invalidate: () => chat.refreshActiveConversation(),
+    invalidate: async () => { await Promise.all([chat.refreshActiveConversation(), queuedMessages.refresh()]); },
   });
   onMount(() => liveConnection?.connect());
   onCleanup(() => {
@@ -253,10 +256,12 @@ export default function AssistantWorkspace(props: Props) {
   const [composerFocusToken, setComposerFocusToken] = createSignal(0);
   const [composerDrafts, setComposerDrafts] = createSignal<Record<string, string>>({});
   const [composerAttachments, setComposerAttachments] = createSignal<Record<string, AiComposerAttachment[]>>({});
-  const [queuedMessages, setQueuedMessages] = createSignal<Record<string, AssistantQueuedMessage[]>>({});
+  const queuedMessages = query.create({
+    source: () => chat.activeConversationId(),
+    load: (conversationId, {abortSignal}) => conversationId ? assistantApi.loadQueuedMessages(conversationId, abortSignal) : Promise.resolve([]),
+  });
   const [sendingQueuedId, setSendingQueuedId] = createSignal<string | null>(null);
   const [composerSubmitting, setComposerSubmitting] = createSignal(false);
-  let queuedMessageSequence = 0;
   const [pendingProjectChats, setPendingProjectChats] = createSignal<Record<string, AiConversation>>({});
   const [filesDialogOpen, setFilesDialogOpen] = createSignal(false);
   const [timelineViewport, setTimelineViewport] = createSignal<HTMLDivElement>();
@@ -644,71 +649,48 @@ export default function AssistantWorkspace(props: Props) {
     return chat.steer(message);
   };
 
-  const queuedMessagesFor = (conversationId: string) => queuedMessages()[conversationId] ?? [];
-  const setQueuedMessagesFor = (conversationId: string, update: (messages: AssistantQueuedMessage[]) => AssistantQueuedMessage[]) =>
-    setQueuedMessages((current) => ({
-      ...current,
-      [conversationId]: update(current[conversationId] ?? []),
-    }));
-  const removeQueuedMessage = (conversationId: string, messageId: string) =>
-    setQueuedMessagesFor(conversationId, (messages) => messages.filter((message) => message.id !== messageId));
-  const queueMessage = (text: string) => {
+  const queuedMessagesFor = (conversationId: string): AssistantQueuedMessage[] =>
+    conversationId === chat.activeConversationId() ? (queuedMessages.data() ?? []).map(message => ({
+      ...message, editableText:message.content.filter(part=>part.type === "text").map(part=>part.text).join("\n"), text:message.content.map(part => part.type === "text" ? part.text : part.type === "file" ? part.path : part.title ?? part.ref.id).join(" · "),
+    })) : [];
+  const queueMessage = async (input: AiComposerSendInput) => {
     const conversationId = chat.activeConversationId();
-    const message = text.trim();
-    if (!conversationId || !chat.activeTurn() || !message) return false;
-    setQueuedMessagesFor(conversationId, (messages) => [
-      ...messages,
-      { id: `queued-${Date.now()}-${++queuedMessageSequence}`, text: message },
-    ]);
-    return true;
+    if (!conversationId || composerSubmitting()) return false;
+    setComposerSubmitting(true);
+    try {
+      return await serializeComposer(conversationId, async () => {
+        const local = session(conversationId);
+        if (local.conflict) return false;
+        local.saving = true;
+        try {
+          const accepted = await chat.queueMessage({...input,conversationId,expectedDraftRevision:local.baseRevision,modelProfileId:selectedModelId() || undefined});
+          if (accepted && chat.conversation()?.id === conversationId) local.baseRevision = chat.conversation()!.draft.revision;
+          // Acceptance is durable even if refreshing the visible queue fails.
+          void queuedMessages.refresh().catch(() => chat.setError(t().chatActionFailed));
+          return accepted;
+        } finally {
+          local.saving = false;
+          touchSession();
+        }
+      });
+    } finally { setComposerSubmitting(false); }
   };
-  const sendQueuedMessage = async (message: AssistantQueuedMessage) => {
+  const changeQueuedMessage = async (message:AssistantQueuedMessage, action:"cancel"|"retry"|"edit") => {
     const conversationId = chat.activeConversationId();
-    if (
-      !conversationId ||
-      chat.runStatus() === "stopping" ||
-      sendingQueuedId() ||
-      !queuedMessagesFor(conversationId).some((item) => item.id === message.id)
-    ) {
-      return;
-    }
+    if (!conversationId || sendingQueuedId()) return;
     setSendingQueuedId(message.id);
     try {
-      const sent = chat.activeTurn() ? await steer(message.text) : await send({ message: message.text });
-      if (sent) {
-        removeQueuedMessage(conversationId, message.id);
-      } else {
-        setQueuedMessagesFor(conversationId, (messages) =>
-          messages.map((item) => (item.id === message.id ? { ...item, failed: true } : item)),
-        );
+      if (action === "edit") {
+        const text = await prompts.prompt(t().editQueued, message.editableText ?? message.text);
+        if (!text?.trim()) return;
+        await assistantApi.editQueuedMessage(conversationId,message.id,text.trim());
       }
-    } finally {
-      setSendingQueuedId(null);
-    }
+      else if (action === "cancel") await assistantApi.cancelQueuedMessage(conversationId,message.id);
+      else await assistantApi.retryQueuedMessage(conversationId,message.id);
+      await queuedMessages.refresh();
+    } catch (error) { chat.setError(error instanceof Error ? error.message : t().chatActionFailed); }
+    finally {setSendingQueuedId(null);}
   };
-  const editQueuedMessage = async (message: AssistantQueuedMessage) => {
-    const conversationId = chat.activeConversationId();
-    if (!conversationId) return;
-    const draft = composerDraft(conversationId).trim();
-    if (
-      draft &&
-      !(await prompts.confirm(t().replaceDraft, {
-        title: t().editQueued,
-      }))
-    ) {
-      return;
-    }
-    setComposerDraft(conversationId, message.text);
-    removeQueuedMessage(conversationId, message.id);
-    focusComposer();
-  };
-
-  createEffect(() => {
-    const conversationId = chat.activeConversationId();
-    const next = conversationId ? queuedMessagesFor(conversationId)[0] : undefined;
-    if (!next || next.failed || sendingQueuedId() || chat.activeTurn() || chat.runStatus() !== "idle") return;
-    queueMicrotask(() => void sendQueuedMessage(next));
-  });
 
   const activeConversation = () =>
     conversations().find((conversation) => conversation.id === chat.activeConversationId()) ?? chat.conversation();
@@ -1030,9 +1012,9 @@ export default function AssistantWorkspace(props: Props) {
             <AssistantQueuedMessages
               messages={queuedMessagesFor(conversationId())}
               sendingId={sendingQueuedId()}
-              onSendNow={(message) => void sendQueuedMessage(message)}
-              onEdit={(message) => void editQueuedMessage(message)}
-              onDelete={(message) => removeQueuedMessage(conversationId(), message.id)}
+              onRetry={(message) => void changeQueuedMessage(message, "retry")}
+              onDelete={(message) => void changeQueuedMessage(message, "cancel")}
+              onEdit={(message) => void changeQueuedMessage(message, "edit")}
             />
           )}
         </Show>
@@ -1130,8 +1112,8 @@ export default function AssistantWorkspace(props: Props) {
           onSubmit={(input) =>
             composerProps.projectId
               ? sendProjectMessage(composerProps.projectId, aiComposerSendInput(input))
-              : input.intent === "queue"
-                ? queueMessage(input.text)
+              : (input.intent === "queue" || (input.intent === "send" && Boolean(queuedMessages.data()?.length)))
+                ? queueMessage(aiComposerSendInput(input))
                 : input.intent === "steer"
                   ? steer(input.text)
                   : send(aiComposerSendInput(input))
@@ -1237,11 +1219,6 @@ export default function AssistantWorkspace(props: Props) {
       return next;
     });
     setModelChoices((current) => {
-      const next = { ...current };
-      delete next[archived.id];
-      return next;
-    });
-    setQueuedMessages((current) => {
       const next = { ...current };
       delete next[archived.id];
       return next;

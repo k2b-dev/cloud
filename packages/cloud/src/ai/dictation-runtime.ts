@@ -106,7 +106,7 @@ export const processAiDictation = async (
     failure = describeTranscriptionFailure(error, "configuration", combined.aborted);
     const interrupted = signal.aborted;
     const retry = !canceled.signal.aborted && task.attempts < MAX_ATTEMPTS && (interrupted || isRetryableDictationError(error));
-    log.error(failure.message, {
+    log[combined.aborted ? "info" : retry ? "warn" : "error"](failure.message, {
       dictationId: id,
       traceId: span.traceId,
       modelProfileId: task.model_profile_id,

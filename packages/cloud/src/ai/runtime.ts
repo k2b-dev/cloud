@@ -1,3 +1,4 @@
+import { drainQueuedMessages } from "./message-queue";
 import { coreSettings } from "../services/settings/api";
 import { startAiDictationRuntime } from "./dictation-runtime";
 import { isDeepStrictEqual } from "node:util";
@@ -69,6 +70,13 @@ const aiTurnQueue = lazySync((sync) => {
 // continuation, stale-sweep) are always allowed and never silently swallowed.
 const enqueueAiTurn = (job: AiTurnJob): Promise<unknown> => aiTurnQueue().send({ data: job, orderingKey: job.conversationId });
 
+/** Wake the durable queue promptly; the periodic sweep retries a failed wake-up. */
+export const wakeAiMessageQueue = (conversationId: string): void => {
+  void drainQueuedMessages(enqueueAiTurn, conversationId).catch(() =>
+    log.warn("AI message queue wake-up failed", { code: "queue_wakeup_failed", conversationId }),
+  );
+};
+
 /** Enqueue a turn created atomically by another durable AI workflow. */
 export const enqueueExistingAiTurn = (input: AiTurnJob): Promise<unknown> => enqueueAiTurn(input);
 
@@ -105,7 +113,7 @@ export type SubmitAiChatTurnInput = {
   retrySourceTurnId?: string;
 };
 
-export const submitAiChatTurn = async (input: SubmitAiChatTurnInput): Promise<{ turn: AiTurn; message: AiStoredMessage }> => {
+export const prepareAiChatTurn = async (input: SubmitAiChatTurnInput) => {
   if (input.clientToolIds?.length && input.toolSource?.kind !== "default") {
     throw new Error("Optional client tools require the default tool source.");
   }
@@ -148,7 +156,7 @@ export const submitAiChatTurn = async (input: SubmitAiChatTurnInput): Promise<{ 
     toolApprovalContext: input.toolApprovalContext,
   };
 
-  const submitted = await aiConversations.submitChatTurn({
+  return {
     conversationId: input.conversationId,
     modelProfileId: resolved.profile.id,
     runConfig,
@@ -158,8 +166,11 @@ export const submitAiChatTurn = async (input: SubmitAiChatTurnInput): Promise<{ 
     expectedProjectId: input.expectedProjectId,
     resources: input.resources,
     retrySourceTurnId: input.retrySourceTurnId,
-  });
+  };
+};
 
+export const submitAiChatTurn = async (input: SubmitAiChatTurnInput): Promise<{ turn: AiTurn; message: AiStoredMessage }> => {
+  const submitted = await aiConversations.submitChatTurn(await prepareAiChatTurn(input));
   await enqueueAiTurn({ conversationId: input.conversationId, turnId: submitted.turn.id });
   return submitted;
 };
@@ -399,7 +410,17 @@ const processMessage = async (
   onTurnFinalized?: (event: AiTurnFinalizedEvent) => Promise<void>,
 ): Promise<void> => {
   const leaseOwner = `${AI_WORKER_ID}:${message.messageId}:${crypto.randomUUID()}`;
-  const touch = setInterval(() => void message.heartbeat().catch(() => undefined), AI_TURN_HEARTBEAT_MS);
+  let heartbeatFailed = false;
+  const touch = setInterval(() => {
+    void message.heartbeat().then(() => { heartbeatFailed = false; }).catch(() => {
+      if (!heartbeatFailed && !signal.aborted) {
+        log.warn("AI queue heartbeat failed", {
+          code: "queue_heartbeat_failed", conversationId: message.data.conversationId, turnId: message.data.turnId,
+        });
+      }
+      heartbeatFailed = true;
+    });
+  }, AI_TURN_HEARTBEAT_MS);
   if (typeof touch === "object" && "unref" in touch) touch.unref();
   try {
     await runClaimedTurn(message.data, signal, leaseOwner, onTurnFinalized);
@@ -411,6 +432,7 @@ const processMessage = async (
     });
   } finally {
     clearInterval(touch);
+    if (!signal.aborted) wakeAiMessageQueue(message.data.conversationId);
   }
 };
 
@@ -424,13 +446,14 @@ const publishSweepFinished = async (turn: AiTurnFinalizedAction & { error?: stri
     type: "turn_finished",
     status,
     error: status === "failed" ? (turn.error ?? "AI turn failed.") : null,
-  }).catch(() => undefined);
+  }).catch(() => log.warn("AI completion notification failed", {code:"completion_publish_failed",conversationId:turn.conversationId,turnId:turn.turnId}));
 };
 
 export const sweepAiRuntime = async (onTurnFinalized?: (event: AiTurnFinalizedEvent) => Promise<void>): Promise<void> => {
+  await drainQueuedMessages(enqueueAiTurn);
   const sweep = await aiConversations.sweepTurns({ maxAttempts: AI_TURN_MAX_ATTEMPTS });
   await Promise.all([
-    ...sweep.requeued.map((job) => enqueueAiTurn(job).catch(() => undefined)),
+    ...sweep.requeued.map((job) => enqueueAiTurn(job).catch(() => log.warn("AI recovery enqueue failed", {code:"recovery_enqueue_failed",...job}))),
     ...sweep.failed.map((turn) => publishSweepFinished(turn, "failed")),
     ...sweep.aborted.map((turn) => publishSweepFinished(turn, "aborted")),
   ]);

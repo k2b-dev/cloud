@@ -90,6 +90,7 @@ const isSearchCapabilityError = (error: unknown): boolean =>
   typeof error === "object" && error !== null && "code" in error && SEARCH_CAPABILITY_ERROR_CODES.has(String(error.code));
 
 type ConversationRow = {
+  activity?: AiConversation["activity"];
   id: string;
   short_id: string;
   title: string;
@@ -483,7 +484,8 @@ const effectiveDone = sql`(conversation.pinned_at IS NULL AND COALESCE(conversat
   conversation.last_used_at <= now() - interval '7 days'
   AND NOT EXISTS (SELECT 1 FROM ai.turns active_turn
     WHERE active_turn.conversation_id = conversation.id
-      AND active_turn.status IN ('queued', 'running', 'waiting_for_action'))))`;
+      AND active_turn.status IN ('queued', 'running', 'waiting_for_action'))
+  AND NOT EXISTS (SELECT 1 FROM ai.queued_messages pending WHERE pending.conversation_id = conversation.id AND pending.status IN ('pending','failed'))))`;
 
 const browserWorkPending = sql`(
   latest.status = 'waiting_for_action'
@@ -513,6 +515,7 @@ const todoMessageJson = sql`(CASE WHEN jsonb_typeof(message) = 'string' THEN (me
 const todoMetaJson = sql`(CASE WHEN jsonb_typeof(meta) = 'string' THEN (meta #>> '{}')::jsonb ELSE meta END)`;
 
 const rowToConversation = (row: ConversationRow): AiConversation => ({
+  ...(row.activity ? {activity:row.activity} : {}),
   id: row.id,
   shortId: row.short_id,
   title: row.title,
@@ -1130,12 +1133,26 @@ export const aiConversations: AiConversationService = {
     const rows = await sql<ConversationRow[]>`
       SELECT conversation.*, ${effectiveDone} AS is_done,
         latest.status AS latest_turn_status, ${browserWorkPending} AS latest_browser_pending,
-        latest.error AS latest_turn_error, latest.completed_at AS latest_turn_completed_at
+        latest.error AS latest_turn_error, latest.completed_at AS latest_turn_completed_at,
+        jsonb_build_object('completed', COALESCE(progress.completed,0), 'total', COALESCE(progress.total,0),
+          'step', progress.step, 'tool', ai.sidebar_tool_label(latest.live_blocks)->>'label') AS activity
       FROM ai.conversations conversation
       LEFT JOIN LATERAL (
         SELECT status, error, completed_at, live_blocks FROM ai.turns
         WHERE conversation_id = conversation.id ORDER BY created_at DESC, id DESC LIMIT 1
       ) latest ON TRUE
+      LEFT JOIN LATERAL (
+        SELECT CASE WHEN role = 'tool_result' THEN ${todoMessageJson}->'result' ELSE ${todoMetaJson}->'todoPlan' END AS plan
+        FROM ai.messages WHERE conversation_id = conversation.id
+          AND ((role = 'tool_result' AND ${todoMessageJson}->>'name' = 'todo_write' AND COALESCE(${todoMessageJson}->>'isError','false') = 'false') OR ${todoMetaJson} ? 'todoPlan')
+        ORDER BY seq DESC, id DESC LIMIT 1
+      ) working ON TRUE
+      LEFT JOIN LATERAL (
+        SELECT count(*) FILTER (WHERE task->>'status' = 'completed')::int AS completed,
+          count(*) FILTER (WHERE task->>'status' <> 'cancelled')::int AS total,
+          max(task->>'content') FILTER (WHERE task->>'status' = 'in_progress') AS step
+        FROM jsonb_array_elements(CASE WHEN jsonb_typeof(working.plan->'todos') = 'array' THEN working.plan->'todos' ELSE '[]'::jsonb END) task
+      ) progress ON TRUE
       WHERE conversation.created_by_user_id = ${input.ownerUserId}::uuid
         AND conversation.archived_at IS NULL AND NOT ${effectiveDone}
       ORDER BY conversation.pinned_at DESC NULLS LAST, conversation.last_used_at DESC, conversation.id
@@ -1724,7 +1741,8 @@ export const aiConversations: AiConversationService = {
           SELECT id FROM ai.turns WHERE conversation_id = ${input.conversationId}::uuid
             AND status IN ('queued', 'running', 'waiting_for_action') LIMIT 1
         `;
-        if (active) return { ok: false as const, reason: "active_turn" as const };
+        const [pending] = await tx`SELECT id FROM ai.queued_messages WHERE conversation_id = ${input.conversationId}::uuid AND status IN ('pending','failed') LIMIT 1`;
+        if (active || pending) return { ok: false as const, reason: "active_turn" as const };
       }
       await tx`UPDATE ai.conversations
         SET done = ${input.done}::boolean,
@@ -1750,6 +1768,7 @@ export const aiConversations: AiConversationService = {
           WHERE conversation_id = ai.conversations.id
             AND status IN ('queued', 'running', 'waiting_for_action')
         )
+        AND NOT EXISTS (SELECT 1 FROM ai.queued_messages WHERE conversation_id = ai.conversations.id AND status IN ('pending','failed'))
       RETURNING id
     `;
     return Boolean(rows[0]);
@@ -2352,6 +2371,15 @@ export const aiConversations: AiConversationService = {
         SELECT draft_revision, project_id FROM ai.conversations WHERE id = ${input.conversationId} FOR UPDATE
       `;
       if (!conversation) throw new Error("Conversation not found.");
+      if (input.queuedMessageId) {
+        const [head] = await tx<{id:string;status:string}[]>`SELECT id, status FROM ai.queued_messages WHERE conversation_id = ${input.conversationId}::uuid AND status IN ('pending','failed') ORDER BY position LIMIT 1`;
+        const [busy] = await tx`SELECT id FROM ai.turns WHERE conversation_id = ${input.conversationId}::uuid AND status IN ('queued','running','waiting_for_action') LIMIT 1`;
+        if (!head || head.id !== input.queuedMessageId || head.status !== 'pending' || busy) throw new Error("Queued message is no longer ready.");
+      }
+      if (!input.queuedMessageId) {
+        const [queued] = await tx`SELECT id FROM ai.queued_messages WHERE conversation_id = ${input.conversationId}::uuid AND status IN ('pending','failed') LIMIT 1`;
+        if (queued) throw new Error("Queued messages must be sent first.");
+      }
       if (input.expectedDraftRevision !== undefined && Number(conversation.draft_revision) !== input.expectedDraftRevision) {
         throw new Error("Conversation draft changed before the turn was submitted.");
       }
@@ -2391,7 +2419,11 @@ export const aiConversations: AiConversationService = {
       const turn = rowToTurn(turnRows[0]!);
       const attachedFiles = input.runConfig.files?.attached ?? [];
       for (const file of attachedFiles) {
-        const copied = input.retrySourceTurnId
+        const copied = input.queuedMessageId
+          ? await tx<{path:string}[]>`INSERT INTO ai.turn_files(turn_id,path,bytes,media_type,size,origin,dictation_recorded_at,updated_at,version)
+              SELECT ${turn.id}::uuid,path,bytes,media_type,size,origin,dictation_recorded_at,updated_at,version FROM ai.queued_message_files
+              WHERE message_id = ${input.queuedMessageId}::uuid AND path = ${file.path} RETURNING path`
+          : input.retrySourceTurnId
           ? await tx<{ path: string }[]>`
           INSERT INTO ai.turn_files (turn_id, path, bytes, media_type, size, origin, dictation_recorded_at, updated_at, version)
           SELECT ${turn.id}::uuid, path, bytes, media_type, size, origin, dictation_recorded_at, updated_at, version
@@ -2454,6 +2486,10 @@ export const aiConversations: AiConversationService = {
               draft_updated_at = now()
           WHERE id = ${input.conversationId}::uuid
         `;
+      }
+      if (input.queuedMessageId) {
+        await tx`UPDATE ai.queued_messages SET status = 'submitted', submission = '{}'::jsonb, content = '[]'::jsonb WHERE id = ${input.queuedMessageId}::uuid`;
+        await tx`DELETE FROM ai.queued_message_files WHERE message_id = ${input.queuedMessageId}::uuid`;
       }
       return { turn, message: rowToMessage(messageRow) };
     });

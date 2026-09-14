@@ -142,6 +142,7 @@ export const AiTurnInputSchema = z
 export type AiTurnInput = z.infer<typeof AiTurnInputSchema>;
 
 export const AiSubmitConversationDraftInputSchema = z.object({
+  queueId: z.uuid().optional(),
   draftRevision: z.number().int().min(1),
   modelProfileId: z.string().trim().min(1).optional(),
   clientToolIds: z.array(AiClientToolIdSchema).max(1 + CODE_RUNTIME_TOOL_NAMES.length).refine((ids) => new Set(ids).size === ids.length, "Client tool IDs must be unique").optional(),
