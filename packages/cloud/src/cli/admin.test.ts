@@ -455,3 +455,83 @@ describe("app credential administration", () => {
     expect(write.calls[0]?.init?.method).toBe("DELETE");
   });
 });
+
+describe("Assistant quota administration", () => {
+  const id = "00000000-0000-4000-8000-000000000001";
+  const requestId = "00000000-0000-4000-8000-000000000002";
+  const config = { enabled: true, revision: 3, rules: [{ scope: "*", hours: 168, anchor: "2026-09-14T00:00:00Z", grants: [
+    { principal: { type: "authenticated" }, limit: 100000 },
+    { principal: { type: "group", groupId: id }, limit: null },
+  ] }] };
+
+  test("quota configuration round trips through file input with revision and unlimited grants", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "quota-cli-"));
+    try {
+      const read = createContext(["ai", "quotas", "config", "get"], {}, [jsonResponse(config)]);
+      read.ctx.options.output = "json";
+      await adminCli.run(read.ctx);
+      const file = join(dir, "config.json");
+      await writeFile(file, read.lines[0]!);
+      const write = createContext(["ai", "quotas", "config", "set"], { "config-file": file, yes: true }, [jsonResponse({ ...config, revision: 4 })]);
+      write.ctx.options.output = "jsonl";
+      await adminCli.run(write.ctx);
+      expect(write.calls).toHaveLength(1);
+      expect(write.calls[0]?.path).toBe("/api/admin/core/ai-quotas");
+      expect(write.calls[0]?.init?.method).toBe("PUT");
+      expect(JSON.parse(String(write.calls[0]?.init?.body))).toEqual(config);
+      expect(JSON.parse(write.lines[0]!)).toEqual({ ...config, revision: 4 });
+      expect(write.lines[0]).not.toContain("\n");
+    } finally { await rm(dir, { recursive: true, force: true }); }
+  });
+
+  test("quota writes reject missing confirmation, malformed rules and stale revisions", async () => {
+    const unconfirmed = createContext(["ai", "quotas", "config", "set"], { config: JSON.stringify(config) });
+    await expect(adminCli.run(unconfirmed.ctx)).rejects.toThrow("--yes");
+    expect(unconfirmed.calls).toHaveLength(0);
+    const invalid = createContext(["ai", "quotas", "config", "set"], { config: JSON.stringify({ ...config, rules: [...config.rules, ...config.rules] }), yes: true });
+    await expect(adminCli.run(invalid.ctx)).rejects.toThrow("Duplicate quota scope");
+    expect(invalid.calls).toHaveLength(0);
+    const conflict = createContext(["ai", "quotas", "config", "set"], { config: JSON.stringify(config), yes: true }, [jsonResponse({ message: "Revision conflict" }, 409)]);
+    await expect(adminCli.run(conflict.ctx)).rejects.toThrow("Revision conflict");
+    expect(conflict.calls).toHaveLength(1);
+    expect(conflict.lines).toHaveLength(0);
+  });
+
+  test("quota discovery retains pagination and supports service account balances", async () => {
+    const page = { items: [{ type: "user", id, label: "User", lastUsed: null }], page: 2, perPage: 50, total: 51 };
+    const users = createContext(["ai", "quotas", "users"], { search: "A & B", page: "2" }, [jsonResponse(page)]);
+    users.ctx.options.output = "json";
+    await adminCli.run(users.ctx);
+    expect(users.calls[0]?.path).toBe("/api/admin/core/ai-quotas/users?search=A+%26+B&page=2");
+    expect(JSON.parse(users.lines[0]!)).toEqual(page);
+    const models = createContext(["ai", "quotas", "models"], {}, [jsonResponse({ models: [{ id: "chat", label: "Chat" }] })]);
+    await adminCli.run(models.ctx);
+    expect(models.calls[0]?.path).toBe("/api/admin/core/ai-quotas/models");
+    expect(models.tables[0]).toEqual([{ id: "chat", label: "Chat" }]);
+    const balance = createContext(["ai", "quotas", "balance"], { type: "service_account", id }, [jsonResponse({ enabled: false, balances: [], usage: [] })]);
+    await adminCli.run(balance.ctx);
+    expect(balance.calls[0]?.path).toBe(`/api/admin/core/ai-quotas/balance?type=service_account&id=${id}`);
+  });
+
+  test("reset preserves explicit retry identity and rejects unsafe input before any request", async () => {
+    const invalidInputs: CloudCliFlags[] = [{ id, scope: "*", "request-id": requestId }, { id, scope: "*", yes: true }, { id: "bad", scope: "*", "request-id": requestId, yes: true }];
+    for (const flags of invalidInputs) {
+      const invalid = createContext(["ai", "quotas", "reset"], flags);
+      await expect(adminCli.run(invalid.ctx)).rejects.toThrow();
+      expect(invalid.calls).toHaveLength(0);
+    }
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const reset = createContext(["ai", "quotas", "reset"], { id, scope: "*", "request-id": requestId, yes: true }, [jsonResponse({ enabled: true, balances: [], usage: [] })]);
+      await adminCli.run(reset.ctx);
+      expect(reset.calls[0]?.path).toBe("/api/admin/core/ai-quotas/reset");
+      expect(reset.calls[0]?.init?.method).toBe("POST");
+      expect(JSON.parse(String(reset.calls[0]?.init?.body))).toEqual({ type: "user", id, scope: "*", requestId });
+    }
+  });
+
+  test("quota API authorization errors do not become successful output", async () => {
+    const read = createContext(["ai", "quotas", "config", "get"], {}, [jsonResponse({ message: "Admin required" }, 403)]);
+    await expect(adminCli.run(read.ctx)).rejects.toThrow("Admin required");
+    expect(read.lines).toHaveLength(0);
+  });
+});

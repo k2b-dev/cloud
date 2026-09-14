@@ -209,3 +209,34 @@ the server remains authoritative and a rejected submission preserves the draft.
 `AiChatQuotaSnapshot` type is exported from `@k2b/cloud/shared`. The view omits
 grant identities, historical usage, and specific model profiles the caller
 cannot use. The endpoint takes no target-user parameter and uses `no-store`.
+
+### Manage Assistant limits with the CLI
+
+Administrators can use `cld admin ai quotas` instead of the Admin page:
+
+```sh
+cld admin ai quotas config get --json > quotas.json
+cld admin ai quotas models --json
+cld admin ai quotas users --page 1 --json
+cld admin ai quotas balance --type user --id <user-uuid> --json
+cld admin ai quotas config set --config-file quotas.json --yes --json
+cld admin ai quotas reset --type user --id <user-uuid> --scope '*' \
+  --request-id <reset-operation-uuid> --yes --json
+```
+
+Edit the exported configuration before saving. `config set` replaces the whole
+configuration and requires the current `revision`; conflicts require a fresh
+read and deliberate reconciliation. `--stdin` accepts the same JSON document.
+Set `enabled: false` to disable enforcement without removing rules. Rules carry
+`scope`, reset `hours` and `anchor`, and permission principals with token `limit`
+(`null` means unlimited). The CLI uses the same validated Admin API and quota
+semantics as the GUI; it does not calculate grants locally. Changing `hours`
+retains the submitted `anchor`. Also update `anchor` when deliberately starting
+a new reset period, as the GUI does for interval changes.
+
+The users response includes pagination and identities with direct chat activity;
+`--search` also finds identities that have not used chat yet.
+Use `--type service_account` for a service account. Retain the reset operation's
+UUID and reuse it when retrying an uncertain response. A new reset requires a
+new UUID. Reset applies only to the selected identity and scope; historical
+usage remains available. All commands support JSON and JSONL output.

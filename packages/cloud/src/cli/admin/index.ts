@@ -11,6 +11,7 @@ import { accountAdministrationCommands } from "./account-administration";
 import { accountCategoryCommands } from "./account-categories";
 import { appSignInCommands } from "./app-sign-in";
 import { aiSkillCommands } from "./ai-skills";
+import { aiQuotaCommands } from "./ai-quotas";
 import { aiUsageCommands } from "./ai-usage";
 import { dataCommands } from "./data";
 import { documentationCommands } from "./documentation";
@@ -36,6 +37,8 @@ export default defineCliCommands({
     "app-sign-in config": "Manage the trusted app website and pairing policy.",
     "accounts config": "Manage account types and sign-in visibility.",
     "accounts administration": "Manage account requests and account/group follow-up notices.",
+    "ai quotas": "Manage direct Assistant chat limits and consumption.",
+    "ai quotas config": "Export and replace quota policies with revision checks.",
     legal: "Manage Terms, Privacy, and Imprint.",
     linux: "Prepare Linux identities.",
     "linux config": "Manage Linux identity defaults and allocation range.",
@@ -47,6 +50,7 @@ export default defineCliCommands({
     ...accountCategoryCommands,
     ...accountAdministrationCommands,
     ...aiUsageCommands,
+    ...aiQuotaCommands,
     ...aiSkillCommands,
     ...instanceCommands,
     ...gatewayCommands,

@@ -310,3 +310,88 @@ Unmodified linked Skills receive newer templates automatically. Customized Skill
 stay intact. Identity, grants, personal activation, and loaded turn snapshots are
 preserved. Deleted linked Skills stay deleted; there is no automatic recreation,
 merge, or version history.
+
+## Assistant token quotas
+
+Use `cld admin ai quotas` for the same controls as **Admin → AI → Assistant limits**.
+All commands require a platform administrator. These limits apply only to direct
+Assistant chat input and output tokens. They exclude workflows, background AI,
+and separate image or audio model calls. Enforcement is off by default.
+
+```bash
+cld admin ai quotas config get --json > quotas.json
+cld admin ai quotas models --json
+cld admin ai quotas users --search "Alex" --page 1 --json
+cld admin ai quotas balance --type user --id <user-uuid> --json
+```
+
+Without a search, `users` lists identities with direct chat activity, including
+service accounts. `--search` also finds identities that have not used chat yet.
+Follow `page`, `perPage`, and `total` to read further pages. Use `--type service_account`
+for a service account's balance or reset. Resolve grant identities using
+`cld accounts users list`, `cld accounts groups list`, or
+`cld accounts service-accounts list`; inspect their help for search options.
+
+Edit the exported `quotas.json`, preserving its `revision`, then save it:
+
+```bash
+cld admin ai quotas config set --config-file quotas.json --yes --json
+# Alternatively, provide the same complete document through stdin:
+cat quotas.json | cld admin ai quotas config set --stdin --yes --json
+```
+
+This replaces the entire configuration, including `enabled` and all rules.
+To disable enforcement, set `enabled` to `false` and keep the rules. To remove a
+rule or grant, omit it from the edited document. A stale revision fails with a
+conflict: fetch again, reconcile the edits, and deliberately resubmit. Do not
+retry a write by silently replacing its revision.
+
+Each rule has this shape (the exported configuration wraps rules in
+`{"enabled":false,"revision":0,"rules":[]}`; use the actual revision):
+
+```json
+{
+  "scope": "*",
+  "hours": 168,
+  "anchor": "2026-09-14T00:00:00Z",
+  "grants": [
+    { "principal": { "type": "authenticated" }, "limit": 100000 },
+    {
+      "principal": { "type": "group", "groupId": "00000000-0000-4000-8000-000000000001" },
+      "limit": null
+    }
+  ]
+}
+```
+
+Replace sample UUIDs with real IDs. `scope` is a model profile ID from `models`,
+or `*` for all direct chat models. `hours` is an integer from 1 to 8760;
+`anchor` is a UTC ISO timestamp defining fixed reset windows. Changing `hours`
+alone keeps that anchor and recalculates the periods from it. To begin a new
+period when changing the interval, also set `anchor` to the intended start time
+(the GUI uses the current time for this change). One rule per scope
+is allowed. Each grant has a nonnegative integer token `limit`, or `null` for
+unlimited. Supported principals are `authenticated`, `user` with `userId`,
+`group` with `groupId`, and `service_account` with `serviceAccountId`.
+An optional `displayName` labels the grant; it does not determine identity.
+Public grants are not supported.
+
+Matching grants use the maximum allowance, not the sum. An unlimited wildcard
+grant overrides all model limits. Finite wildcard and model limits both apply;
+a model-specific unlimited grant does not remove a finite wildcard limit.
+A configured scope with no matching grant has a zero allowance. An absent scope
+imposes no limit. Quotas do not grant model
+access, and saving configuration does not reset recorded usage.
+
+To reset one identity and scope, create a UUID for that operation and retain it:
+
+```bash
+cld admin ai quotas reset --type user --id <user-uuid> --scope '*' \
+  --request-id <reset-operation-uuid> --yes --json
+```
+
+Reuse that request ID after a timeout or uncertain response. A later, distinct
+reset needs a new UUID. Quote `*` to prevent shell expansion. Resetting one scope
+does not reset the other scopes or delete usage history. The response contains
+the updated balance. Reads and writes also support `--jsonl`; list responses
+retain their response envelope and pagination fields.
