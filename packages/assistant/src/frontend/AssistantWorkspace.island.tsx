@@ -478,10 +478,10 @@ export default function AssistantWorkspace(props: Props) {
   let navigationRequest = 0;
   const openAndFocusConversation = async (conversationId: string) => {
     const requestId = ++navigationRequest;
+    setProjectView(null);
     const result = await chat.openConversation(conversationId);
     if (result === "failed") throw new Error(t().openConversationFailed);
     if (result === "stale" || requestId !== navigationRequest) return false;
-    setProjectView(null);
     if (chat.activeConversationId() === conversationId) focusComposer();
     return true;
   };

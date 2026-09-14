@@ -1,6 +1,6 @@
 import { ConversationSidebarPreview } from "./ConversationSidebarPreview";
 import { useAssistantText } from "./ui-copy";
-import { type LinkNavigateEvent, navigate, navigateTo } from "@k2b/ssr/nav";
+import { navigate, navigateTo } from "@k2b/ssr/nav";
 import {
   AppWorkspace,
   Dropdown,
@@ -123,13 +123,16 @@ function ConversationSidebarItem(props: {
     }
   };
   const href = () => assistantConversationHref("/app/assistant", props.conversation.id);
-  const handleNavigate = async (nav: LinkNavigateEvent) => {
-    if (props.active || !props.open) return;
-    try {
-      if (await props.open(props.conversation)) nav.push(undefined, { scroll: "manual" });
-    } catch {
-      nav.fallback();
-    }
+  const handleClick = (event: MouseEvent) => {
+    // Keep modified clicks native. Plain clicks must not put the network request
+    // inside Link's view transition, which freezes rendering until it resolves.
+    if (!props.open || event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    event.preventDefault();
+    if (props.active) return;
+    const target = href();
+    void props.open(props.conversation).then((opened) => {
+      if (opened) navigate(target, { scroll: "manual", viewTransition: false });
+    }).catch(() => navigateTo(target));
   };
 
   return (
@@ -139,9 +142,7 @@ function ConversationSidebarItem(props: {
       variant={props.conversation.isDone ? "row" : "card"}
       context={!props.conversation.isDone ? <span><i class={props.project?.icon || "ti ti-message"} aria-hidden="true" /> {props.project?.name ?? text("Chat")}</span> : undefined}
       contextMeta={!props.conversation.isDone ? <span class="inline-flex items-center gap-1.5"><Show when={props.conversation.pinnedAt}><i class="ti ti-pin-filled" aria-label={text("Unpin chat")} /></Show><Format.RelativeTime value={props.conversation.lastUsedAt} /></span> : undefined}
-      navigation={props.open ? "enhanced" : "document"}
-      scroll="manual"
-      onNavigate={props.open ? handleNavigate : undefined}
+      onClick={handleClick}
       active={props.active}
       description={!props.conversation.isDone && conversationStatusPresentation(props.conversation, locale(), props.active)
         ? <ConversationStatusMeta conversation={props.conversation} active={props.active} labels hidePin />

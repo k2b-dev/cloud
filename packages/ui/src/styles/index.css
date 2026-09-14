@@ -7813,9 +7813,9 @@
 .k2b-ui .k2b-app-workspace__sidebar-item[data-variant="card"] {
   position: relative;
   margin-block: 0.15625rem;
-  border: 1px solid var(--k2b-border);
+  border: 1px solid transparent;
   border-radius: var(--k2b-radius-control);
-  background: var(--k2b-surface);
+  background: transparent;
 }
 .k2b-ui .k2b-app-workspace__sidebar-item[data-variant="card"]:hover {
   background: var(--k2b-hover);

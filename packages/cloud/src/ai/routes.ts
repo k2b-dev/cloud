@@ -222,12 +222,13 @@ const rememberLastUsedModel = (actor: RequestActor, modelProfileId: string | nul
 };
 
 const conversationDetail = async (conversation: AiConversation, subject: AccessSubject) => {
-  const [state, timeline] = await Promise.all([
+  const [state, timeline, publicView] = await Promise.all([
     loadAiStreamState(conversation),
     aiConversations.listConversationTimeline({ conversationId: conversation.id }),
+    publicConversationFor(conversation, subject),
   ]);
   return {
-    conversation: await publicConversationFor(conversation, subject),
+    conversation: publicView,
     messages: state.messages.map((message) => ({ ...message, id: message.shortId })),
     hasMoreMessages: state.hasMoreMessages ?? false,
     activeTurn: state.activeTurn,

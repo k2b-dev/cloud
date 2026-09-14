@@ -81,6 +81,8 @@ The CLI supports `cld assistant chats done CHAT`, `chats reopen CHAT`, and
 
 Pinned chats always remain active, overriding explicit or automatic completion. Unpinning reveals the underlying completion choice again. The sidebar hides the Done action for pinned chats; pinning and unpinning are available directly in the chat preview.
 
+Chat selection responds immediately while details load. Previously opened chats reuse their cached content while refreshing; switching does not wait behind a page transition.
+
 Active chats use context cards with an ellipsized title. Completed chats remain simple rows. New responses and requests for input use accent colors.
 
 ## Understand the Assistant model
