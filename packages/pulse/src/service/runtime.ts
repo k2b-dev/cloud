@@ -9,7 +9,9 @@ import {
   stopPulseBaseDataClearJob,
   stopPulseBaseDeletionJob,
 } from "./base-lifecycle";
+import { pruneCatalogBatch } from "./catalog-retention";
 import { scrapeMetricsSource } from "./index";
+import { runHourlyRollup, sealExpiredMetricHour } from "./metric-rollups";
 
 type ScrapeInput = {
   baseId: string;
@@ -29,6 +31,7 @@ type RetentionResult = {
   events: number;
   stateChanges: number;
   idempotencyRecords: number;
+  catalogRecords: number;
   done: boolean;
 };
 
@@ -45,7 +48,6 @@ const clearExpiredEventSensitiveChunk = async (baseId?: string): Promise<number>
         AND (
           b.data_clear_started_at IS NULL
           OR b.data_clear_completed_at IS NOT NULL
-          OR b.data_clear_failed_at IS NOT NULL
         )
         AND (${scopedBaseId}::uuid IS NULL OR b.id = ${scopedBaseId}::uuid)
       LIMIT ${RETENTION_DELETE_BATCH_SIZE}
@@ -81,12 +83,12 @@ const deleteExpiredMetricSamplesChunk = async (baseId?: string): Promise<number>
       SELECT ms.series_id, ms.ts
       FROM pulse.metric_samples ms
       JOIN pulse.bases b ON b.id = ms.base_id
-      WHERE ms.ts < now() - (b.retention_days * interval '1 day')
+      JOIN pulse.metric_hours h ON h.base_id=ms.base_id AND h.hour=date_bin('1 hour',ms.ts,'1970-01-01'::timestamptz)
+      WHERE h.state='sealed' AND ms.ts < date_bin('1 hour',now() - (b.retention_days * interval '1 day'),'1970-01-01'::timestamptz)
         AND b.deletion_started_at IS NULL
         AND (
           b.data_clear_started_at IS NULL
           OR b.data_clear_completed_at IS NOT NULL
-          OR b.data_clear_failed_at IS NOT NULL
         )
         AND (${scopedBaseId}::uuid IS NULL OR b.id = ${scopedBaseId}::uuid)
       LIMIT ${RETENTION_DELETE_BATCH_SIZE}
@@ -106,12 +108,11 @@ const deleteExpiredMetricRollupsChunk = async (baseId?: string): Promise<number>
       SELECT mr.series_id, mr.bucket
       FROM pulse.metric_rollups_hourly mr
       JOIN pulse.bases b ON b.id = mr.base_id
-      WHERE mr.bucket < now() - (b.rollup_retention_days * interval '1 day')
+      WHERE mr.bucket < date_bin('1 hour',now() - (b.rollup_retention_days * interval '1 day'),'1970-01-01'::timestamptz)
         AND b.deletion_started_at IS NULL
         AND (
           b.data_clear_started_at IS NULL
           OR b.data_clear_completed_at IS NOT NULL
-          OR b.data_clear_failed_at IS NOT NULL
         )
         AND (${scopedBaseId}::uuid IS NULL OR b.id = ${scopedBaseId}::uuid)
       LIMIT ${RETENTION_DELETE_BATCH_SIZE}
@@ -136,7 +137,6 @@ const deleteExpiredEventsChunk = async (baseId?: string): Promise<number> => {
         AND (
           b.data_clear_started_at IS NULL
           OR b.data_clear_completed_at IS NOT NULL
-          OR b.data_clear_failed_at IS NOT NULL
         )
         AND (${scopedBaseId}::uuid IS NULL OR b.id = ${scopedBaseId}::uuid)
       LIMIT ${RETENTION_DELETE_BATCH_SIZE}
@@ -161,7 +161,6 @@ const deleteExpiredStateChangesChunk = async (baseId?: string): Promise<number> 
         AND (
           b.data_clear_started_at IS NULL
           OR b.data_clear_completed_at IS NOT NULL
-          OR b.data_clear_failed_at IS NOT NULL
         )
         AND (${scopedBaseId}::uuid IS NULL OR b.id = ${scopedBaseId}::uuid)
       LIMIT ${RETENTION_DELETE_BATCH_SIZE}
@@ -194,11 +193,13 @@ const deleteExpiredIdempotencyChunk = async (baseId?: string): Promise<number> =
 
 export const runRetentionBatch = async (baseId?: string): Promise<RetentionResult> => {
   const sensitiveEvents = await clearExpiredEventSensitiveChunk(baseId);
+  const sealedHours = await sealExpiredMetricHour(baseId);
   const metricSamples = await deleteExpiredMetricSamplesChunk(baseId);
   const metricRollups = await deleteExpiredMetricRollupsChunk(baseId);
   const events = await deleteExpiredEventsChunk(baseId);
   const stateChanges = await deleteExpiredStateChangesChunk(baseId);
   const idempotencyRecords = await deleteExpiredIdempotencyChunk(baseId);
+  const catalogRecords = await pruneCatalogBatch(baseId, RETENTION_DELETE_BATCH_SIZE);
   const phases = [
     ["event_sensitive", sensitiveEvents],
     ["metric_samples", metricSamples],
@@ -206,6 +207,7 @@ export const runRetentionBatch = async (baseId?: string): Promise<RetentionResul
     ["events", events],
     ["state_changes", stateChanges],
     ["ingest_idempotency", idempotencyRecords],
+    ["catalog", catalogRecords],
   ] as const;
   const backlog = phases.find(([, count]) => count >= RETENTION_DELETE_BATCH_SIZE);
   const work = phases.find(([, count]) => count > 0);
@@ -217,7 +219,8 @@ export const runRetentionBatch = async (baseId?: string): Promise<RetentionResul
     events,
     stateChanges,
     idempotencyRecords,
-    done: !backlog,
+    catalogRecords,
+    done: !backlog && sealedHours === 0 && catalogRecords === 0,
   };
 };
 
@@ -233,43 +236,6 @@ const hourlyRollupJob = lazySync((sync) =>
     delivery: { ackWaitMs: 5 * 60_000, maxAttempts: 3, backoffMs: [60_000, 120_000] },
   }),
 );
-const runHourlyRollup = async () => {
-  const result = await sql`
-      INSERT INTO pulse.metric_rollups_hourly (
-        base_id,
-        series_id,
-        bucket,
-        sample_count,
-        value_sum,
-        value_min,
-        value_max,
-        last_value,
-        updated_at
-      )
-      SELECT
-        base_id,
-        series_id,
-        date_bin('1 hour'::interval, ts, '1970-01-01'::timestamptz) AS bucket,
-        COUNT(*)::bigint AS sample_count,
-        SUM(value) AS value_sum,
-        MIN(value) AS value_min,
-        MAX(value) AS value_max,
-        (array_agg(value ORDER BY ts DESC))[1] AS last_value,
-        now() AS updated_at
-      FROM pulse.metric_samples
-      WHERE ts >= now() - interval '48 hours'
-      GROUP BY base_id, series_id, bucket
-      ON CONFLICT (series_id, bucket)
-      DO UPDATE SET
-        sample_count = EXCLUDED.sample_count,
-        value_sum = EXCLUDED.value_sum,
-        value_min = EXCLUDED.value_min,
-        value_max = EXCLUDED.value_max,
-        last_value = EXCLUDED.last_value,
-        updated_at = now()
-    `;
-  return { buckets: result.count ?? 0 };
-};
 const pulseScheduler = lazySync((sync) =>
   sync.scheduler({
     id: "pulse",
@@ -364,7 +330,7 @@ export const pulseRuntime = {
     );
     workers.push(
       await hourlyRollupJob().process({}, async (context) => {
-        await trace.withSpan(
+        const result = await trace.withSpan(
           {
             spanKey: trace.syncSpanKey("job", "pulse:rollup:hourly", context.jobId),
             name: "Pulse hourly rollup",
@@ -372,9 +338,10 @@ export const pulseRuntime = {
             appId: "pulse",
             category: "job",
           },
-          runHourlyRollup,
+          () => runHourlyRollup(),
           { summarize: (result) => result },
         );
+        if (!result.done) context.resubmit();
       }),
     );
     await pulseScheduler().create({

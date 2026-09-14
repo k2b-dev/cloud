@@ -5,6 +5,7 @@ import type { PulseIngestBatch } from "../contracts";
 import { explicitPulseResource, type PulseResourceIdentity } from "../resource-model";
 import { type PulseTelemetryValueKind, telemetryValueKind } from "../telemetry-contract";
 import { enforceMetricSeriesBudget } from "./metric-cardinality";
+import { markMetricHoursDirty } from "./metric-rollups";
 import { lockStateIdentities } from "./state-transitions";
 import { normalizeDimensions } from "./telemetry-values";
 
@@ -430,6 +431,11 @@ export const writePreparedIngestBatchInTransaction = async (params: {
   batch: PreparedIngestBatch;
   db: PulseSqlClient;
 }): Promise<void> => {
+  await markMetricHoursDirty(
+    params.baseId,
+    params.batch.metrics.map((metric) => metric.ts),
+    params.db,
+  );
   await writeMetrics(params.baseId, params.sourceId, params.batch.metrics, params.db);
   await writeEvents(params.baseId, params.sourceId, params.batch.events, params.db);
   await writeStates(params.baseId, params.sourceId, params.batch.states, params.db);

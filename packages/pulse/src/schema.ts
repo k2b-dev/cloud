@@ -230,6 +230,16 @@ export const initializeSchema = async (): Promise<void> => {
     await sql`CREATE INDEX idx_pulse_metric_samples_base_ts ON pulse.metric_samples(base_id, ts DESC)`.simple();
 
     await sql`
+    CREATE TABLE pulse.metric_hours (
+      base_id UUID NOT NULL REFERENCES pulse.bases(id) ON DELETE CASCADE,
+      hour TIMESTAMPTZ NOT NULL,
+      state TEXT NOT NULL CHECK (state IN ('dirty','clean','sealed')),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      PRIMARY KEY (base_id,hour)
+    )`.simple();
+    await sql`CREATE INDEX idx_pulse_metric_hours_work ON pulse.metric_hours(state,hour,base_id)`.simple();
+
+    await sql`
     CREATE TABLE pulse.metric_rollups_hourly (
       base_id UUID NOT NULL REFERENCES pulse.bases(id) ON DELETE CASCADE,
       series_id UUID NOT NULL REFERENCES pulse.metric_series(id) ON DELETE CASCADE,
@@ -239,6 +249,7 @@ export const initializeSchema = async (): Promise<void> => {
       value_min DOUBLE PRECISION NOT NULL,
       value_max DOUBLE PRECISION NOT NULL,
       last_value DOUBLE PRECISION NOT NULL,
+      last_ts TIMESTAMPTZ NOT NULL,
       updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
       PRIMARY KEY (series_id, bucket)
     )

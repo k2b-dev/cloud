@@ -114,7 +114,7 @@ const resolveMetricWindow = (query: MetricQuery): Result<MetricWindow> => {
   });
 };
 
-const resolveMetricSeries = async (query: MetricQuery): Promise<MetricSeriesMatch[]> => {
+const resolveMetricSeries = async (query: MetricQuery, db: typeof sql): Promise<MetricSeriesMatch[]> => {
   const dimensionConditions = Object.entries(normalizeDimensions(query.dimensions)).map(
     ([key, value]) => sql`
       EXISTS (
@@ -129,7 +129,7 @@ const resolveMetricSeries = async (query: MetricQuery): Promise<MetricSeriesMatc
   const dimensionsMatch = dimensionConditions
     .slice(1)
     .reduce((condition, next) => sql`${condition} AND ${next}`, dimensionConditions[0] ?? sql`TRUE`);
-  const rows = await sql<MetricSeriesMatch[]>`
+  const rows = await db<MetricSeriesMatch[]>`
     SELECT ms.id, md.type, ms.resource_key, ms.resource_id, ms.resource_type, ms.resource_label, ms.dimensions
     FROM pulse.metric_series ms
     JOIN pulse.metric_defs md ON md.id = ms.metric_id
@@ -145,8 +145,7 @@ const resolveMetricSeries = async (query: MetricQuery): Promise<MetricSeriesMatc
 };
 
 const canUseHourlyRollup = (query: MetricQuery, window: MetricWindow): boolean =>
-  window.sinceMs >= 7 * 24 * 60 * 60_000 &&
-  window.bucketMs >= 60 * 60_000 &&
+  window.bucketMs % 3_600_000 === 0 &&
   (query.aggregation === "avg" ||
     query.aggregation === "sum" ||
     query.aggregation === "min" ||
@@ -165,36 +164,55 @@ const hourlyRollupAggregateSql = (aggregation: MetricQuery["aggregation"]) => {
     case "count":
       return sql`SUM(sample_count)::double precision`;
     case "latest":
-      return sql`(array_agg(last_value ORDER BY bucket DESC))[1]`;
+      return sql`(array_agg(last_value ORDER BY last_ts DESC))[1]`;
     default:
       return sql`SUM(value_sum) / NULLIF(SUM(sample_count), 0)`;
   }
 };
 
-const queryHourlyRollupRows = async (query: MetricQuery, window: MetricWindow, seriesIds: string[]): Promise<MetricValueRow[] | null> => {
+const queryHourlyRollupRows = async (
+  query: MetricQuery,
+  window: MetricWindow,
+  seriesIds: string[],
+  db: typeof sql,
+): Promise<MetricValueRow[] | null> => {
   if (!canUseHourlyRollup(query, window)) return null;
 
-  const rows = await sql<MetricValueRow[]>`
-    SELECT series_id, date_bin(${window.bucketInterval}::interval, bucket, '1970-01-01'::timestamptz) AS bucket,
+  // Both paths share a statement snapshot. Only complete hours replace their raw samples.
+  return await db<MetricValueRow[]>`
+    WITH complete AS MATERIALIZED (
+      SELECT h.hour FROM pulse.metric_hours h JOIN pulse.bases b ON b.id=h.base_id
+      WHERE h.base_id=${query.baseId}::uuid AND h.state IN ('clean','sealed')
+        AND h.hour>=${window.since} AND h.hour+interval '1 hour'<=now()
+        AND h.hour>=date_bin('1 hour',now()-b.rollup_retention_days*interval '1 day','1970-01-01'::timestamptz)
+    ), retained AS MATERIALIZED (
+      SELECT r.series_id,r.bucket,r.sample_count,r.value_sum,r.value_min,r.value_max,r.last_value,r.last_ts
+      FROM pulse.metric_rollups_hourly r JOIN complete c ON c.hour=r.bucket
+      WHERE r.base_id=${query.baseId}::uuid AND r.series_id=ANY(${toPgUuidArray(seriesIds)}::uuid[])
+    ), parts AS (
+      SELECT * FROM retained
+      UNION ALL
+      SELECT s.series_id,date_bin('1 hour',s.ts,'1970-01-01'::timestamptz),count(*)::bigint,
+        sum(s.value),min(s.value),max(s.value),(array_agg(s.value ORDER BY s.ts DESC))[1],max(s.ts)
+      FROM pulse.metric_samples s
+      WHERE s.base_id=${query.baseId}::uuid AND s.series_id=ANY(${toPgUuidArray(seriesIds)}::uuid[])
+        AND s.ts>=${window.since} AND s.ts<=now()
+        AND NOT EXISTS(SELECT 1 FROM retained r WHERE r.series_id=s.series_id AND s.ts>=r.bucket AND s.ts<r.bucket+interval '1 hour')
+      GROUP BY s.series_id,2
+    )
+    SELECT series_id,date_bin(${window.bucketInterval}::interval,bucket,'1970-01-01'::timestamptz) AS bucket,
       ${hourlyRollupAggregateSql(query.aggregation)} AS value
-    FROM pulse.metric_rollups_hourly
-    WHERE base_id = ${query.baseId}::uuid
-      AND series_id = ANY(${toPgUuidArray(seriesIds)}::uuid[])
-      AND bucket >= ${window.since}
-    GROUP BY series_id, 2
-    ORDER BY bucket ASC, series_id ASC
-    LIMIT ${MAX_METRIC_POINTS}
+    FROM parts GROUP BY series_id,2 ORDER BY bucket,series_id LIMIT ${MAX_METRIC_POINTS}
   `;
-
-  const firstRollup = rows[0];
-  if (!firstRollup) return null;
-  const firstBucketMs = new Date(firstRollup.bucket).getTime();
-  if (!Number.isFinite(firstBucketMs) || firstBucketMs > window.since.getTime() + window.bucketMs) return null;
-  return rows;
 };
 
-const queryLatestMetric = async (query: MetricQuery, window: MetricWindow, seriesIds: string[]): Promise<MetricValueRow[]> => {
-  const rows = await sql<MetricValueRow[]>`
+const queryLatestMetric = async (
+  query: MetricQuery,
+  window: MetricWindow,
+  seriesIds: string[],
+  db: typeof sql,
+): Promise<MetricValueRow[]> => {
+  const rows = await db<MetricValueRow[]>`
     WITH bucketed AS (
       SELECT
         date_bin(${window.bucketInterval}::interval, ts, '1970-01-01'::timestamptz) AS bucket,
@@ -222,10 +240,15 @@ const queryLatestMetric = async (query: MetricQuery, window: MetricWindow, serie
   return rows;
 };
 
-const queryCounterDeltaMetric = async (query: MetricQuery, window: MetricWindow, seriesIds: string[]): Promise<MetricValueRow[]> => {
+const queryCounterDeltaMetric = async (
+  query: MetricQuery,
+  window: MetricWindow,
+  seriesIds: string[],
+  db: typeof sql,
+): Promise<MetricValueRow[]> => {
   const valueSql =
     query.aggregation === "rate" ? sql`SUM(delta) / NULLIF(SUM(seconds) FILTER (WHERE delta IS NOT NULL), 0)` : sql`SUM(delta)`;
-  return await sql<MetricValueRow[]>`
+  return await db<MetricValueRow[]>`
     WITH samples AS (
       SELECT sample.series_id, sample.ts, sample.value
       FROM unnest(${toPgUuidArray(seriesIds)}::uuid[]) AS selected(id)
@@ -276,8 +299,13 @@ const sampleAggregateSql = (aggregation: MetricQuery["aggregation"]) => {
   }
 };
 
-const querySampleAggregateMetric = async (query: MetricQuery, window: MetricWindow, seriesIds: string[]): Promise<MetricValueRow[]> => {
-  const rows = await sql<MetricValueRow[]>`
+const querySampleAggregateMetric = async (
+  query: MetricQuery,
+  window: MetricWindow,
+  seriesIds: string[],
+  db: typeof sql,
+): Promise<MetricValueRow[]> => {
+  const rows = await db<MetricValueRow[]>`
     SELECT series_id, date_bin(${window.bucketInterval}::interval, ts, '1970-01-01'::timestamptz) AS bucket,
       ${sampleAggregateSql(query.aggregation)} AS value
     FROM pulse.metric_samples
@@ -303,14 +331,35 @@ const boundedMetricPoints = (
     : fail(err.badInput("This query creates too many grouped points. Use a larger bucket, shorter range, or narrower filter."));
 };
 
-export const queryMetricData = async (
+export const queryMetricData = async (query: MetricQuery, limits: { maxOutputPoints?: number } = {}): Promise<Result<MetricQueryPoint[]>> =>
+  sql.begin(async (tx) => {
+    await tx`SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY`;
+    return queryMetricDataInSnapshot(query, limits, tx);
+  });
+
+const queryMetricDataInSnapshot = async (
   query: MetricQuery,
-  limits: { maxOutputPoints?: number } = {},
+  limits: { maxOutputPoints?: number },
+  db: typeof sql,
 ): Promise<Result<MetricQueryPoint[]>> => {
   const window = resolveMetricWindow(query);
   if (!window.ok) return window;
 
-  const series = await resolveMetricSeries(query);
+  const [policy] = await db<{ raw_from: Date; rollup_from: Date }[]>`
+    SELECT date_bin('1 hour',now()-retention_days*interval '1 day','1970-01-01'::timestamptz) AS raw_from,
+      date_bin('1 hour',now()-rollup_retention_days*interval '1 day','1970-01-01'::timestamptz) AS rollup_from
+    FROM pulse.bases WHERE id=${query.baseId}::uuid`;
+  if (!policy) return fail(err.notFound("Pulse base"));
+  if (window.data.since.getTime() < policy.raw_from.getTime()) {
+    if (!canUseHourlyRollup(query, window.data))
+      return fail(err.badInput("This aggregation and bucket require a range within raw retention"));
+    if (window.data.since.getTime() < policy.rollup_from.getTime())
+      return fail(err.badInput("Query starts before retained metric history"));
+    if (window.data.since.getTime() % 3_600_000 !== 0)
+      return fail(err.badInput("Historical metric ranges must start on an exact UTC hour; partial hours require raw data"));
+  }
+
+  const series = await resolveMetricSeries(query, db);
   if (series.length === 0) return ok([]);
   if (series.length > MAX_MATCHED_SERIES) {
     return fail(err.badInput("This query matches too many series. Add a source or dimension filter."));
@@ -332,17 +381,17 @@ export const queryMetricData = async (
   }
   const seriesIds = series.map((item) => item.id);
 
-  const rollupRows = await queryHourlyRollupRows(query, window.data, seriesIds);
+  const rollupRows = await queryHourlyRollupRows(query, window.data, seriesIds, db);
   if (rollupRows) return boundedMetricPoints(query, rollupRows, series, maxOutputPoints);
 
   if (query.aggregation === "latest") {
-    return boundedMetricPoints(query, await queryLatestMetric(query, window.data, seriesIds), series, maxOutputPoints);
+    return boundedMetricPoints(query, await queryLatestMetric(query, window.data, seriesIds, db), series, maxOutputPoints);
   }
   if (query.aggregation === "rate" || query.aggregation === "increase") {
-    return boundedMetricPoints(query, await queryCounterDeltaMetric(query, window.data, seriesIds), series, maxOutputPoints);
+    return boundedMetricPoints(query, await queryCounterDeltaMetric(query, window.data, seriesIds, db), series, maxOutputPoints);
   }
 
-  return boundedMetricPoints(query, await querySampleAggregateMetric(query, window.data, seriesIds), series, maxOutputPoints);
+  return boundedMetricPoints(query, await querySampleAggregateMetric(query, window.data, seriesIds, db), series, maxOutputPoints);
 };
 
 export const queryEventsData = async (query: EventQuery): Promise<Result<PulseRecordedEvent[]>> => {

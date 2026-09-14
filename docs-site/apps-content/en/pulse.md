@@ -89,3 +89,30 @@ Metrics support gauges and nonnegative counters. Type and unit are fixed per met
 Prometheus sources accept declared gauge/counter families and expose skipped samples in source diagnostics. Scrapes use whole-minute intervals (minimum 60 seconds), one collection timestamp, and a 15-second timeout covering both headers and body. Sources with no instance, host, or node label use the endpoint host and port as their target resource.
 
 The initial operator scenario is 20–50 servers, approximately ten websites, 60-second sampling and 30-day raw retention. Website backends send events using secret source tokens. This is a test scenario, not a measured production capacity guarantee.
+
+## Retention and complete metric hours
+
+Pulse records whether each metric hour is dirty, complete or sealed. The hourly
+worker resumes unfinished hours after downtime without a fixed lookback limit.
+Late samples and corrections inside raw retention mark the hour dirty again;
+queries use its raw samples until recomputation completes. Each query combines
+complete rollups with remaining raw samples in one database snapshot.
+
+Raw metric retention preserves the entire boundary hour. Older raw hours are
+removed only after successful rollup and sealing. Sealed hours reject later
+writes, including after an operator extends retention: deleted samples cannot be
+reconstructed. Metric ingestion rejects timestamps older than raw retention.
+Rollup retention also applies to full hours.
+
+Hourly rollups retain sample count, sum, minimum, maximum and the last value with
+its actual timestamp. They support count, sum, average, minimum, maximum and
+latest in whole-hour bucket sizes. Counter rate/increase and sample percentiles
+require raw data. Queries outside available retention fail explicitly; partial
+historical hours cannot be reconstructed from an hourly aggregate.
+
+Retention also removes expired scrape history and unreferenced metric series,
+definitions, resources and field metadata. Current state persists until replaced
+or explicitly cleared, independently of history retention. A resource or field
+still needed by current state or retained observations remains in its catalog.
+Continuously creating new state identities therefore requires an explicit
+operator lifecycle; raw retention does not bound that inventory.

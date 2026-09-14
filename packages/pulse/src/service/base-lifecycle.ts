@@ -298,9 +298,16 @@ const deleteBaseAccessChunk = async (baseId: string): Promise<number> => {
   return result.count ?? 0;
 };
 
+const deleteMetricHoursChunk = async (baseId: string): Promise<number> => {
+  const result = await sql`WITH victim AS(SELECT hour FROM pulse.metric_hours WHERE base_id=${baseId}::uuid LIMIT ${BASE_DELETE_BATCH_SIZE})
+ DELETE FROM pulse.metric_hours h USING victim WHERE h.base_id=${baseId}::uuid AND h.hour=victim.hour`;
+  return result.count ?? 0;
+};
+
 const BASE_DELETE_STEPS: Array<{ phase: string; run: (baseId: string) => Promise<number> }> = [
   { phase: "metric_samples", run: deleteMetricSamplesChunk },
   { phase: "metric_rollups_hourly", run: deleteMetricRollupsChunk },
+  { phase: "metric_hours", run: deleteMetricHoursChunk },
   { phase: "state_changes", run: deleteStateChangesChunk },
   { phase: "events", run: deleteEventsChunk },
   { phase: "states_current", run: deleteCurrentStatesChunk },
@@ -320,6 +327,7 @@ const BASE_DELETE_STEPS: Array<{ phase: string; run: (baseId: string) => Promise
 const BASE_DATA_CLEAR_STEPS: Array<{ phase: string; run: (baseId: string) => Promise<number> }> = [
   { phase: "metric_samples", run: deleteMetricSamplesChunk },
   { phase: "metric_rollups_hourly", run: deleteMetricRollupsChunk },
+  { phase: "metric_hours", run: deleteMetricHoursChunk },
   { phase: "state_changes", run: deleteStateChangesChunk },
   { phase: "events", run: deleteEventsChunk },
   { phase: "states_current", run: deleteCurrentStatesChunk },

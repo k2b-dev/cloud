@@ -102,6 +102,9 @@ const insertTelemetryFixture = async (baseId: string, sourceId: string, age: "ac
     INSERT INTO pulse.metric_samples (base_id, series_id, ts, value)
     VALUES (${baseId}::uuid, ${seriesId}::uuid, ${ts}::timestamptz, 42)
   `;
+  await sql`INSERT INTO pulse.metric_hours(base_id,hour,state)
+    VALUES (${baseId}::uuid,date_bin('1 hour',${ts}::timestamptz,'1970-01-01'::timestamptz),'clean')
+    ON CONFLICT DO NOTHING`;
   await sql`
     INSERT INTO pulse.metric_rollups_hourly (
       base_id,
@@ -111,9 +114,10 @@ const insertTelemetryFixture = async (baseId: string, sourceId: string, age: "ac
       value_sum,
       value_min,
       value_max,
-      last_value
+      last_value,
+      last_ts
     )
-    VALUES (${baseId}::uuid, ${seriesId}::uuid, ${ts}::timestamptz, 1, 42, 42, 42, 42)
+    VALUES (${baseId}::uuid, ${seriesId}::uuid, ${ts}::timestamptz, 1, 42, 42, 42, 42, ${ts}::timestamptz)
   `;
   await sql`
     INSERT INTO pulse.events (
@@ -283,6 +287,7 @@ const runUntilDone = async (run: () => Promise<{ done: boolean }>, maxBatches = 
 };
 
 const expectBaseTelemetryCleared = async (baseId: string) => {
+  await expect(countRows("pulse.metric_hours", baseId)).resolves.toBe(0);
   await expect(countRows("pulse.metric_samples", baseId)).resolves.toBe(0);
   await expect(countRows("pulse.metric_rollups_hourly", baseId)).resolves.toBe(0);
   await expect(countRows("pulse.state_changes", baseId)).resolves.toBe(0);
@@ -402,7 +407,7 @@ describe("Pulse lifecycle Postgres smoke", () => {
       expect(first.metricSamples).toBe(1);
       expect(first.events).toBe(1);
       expect(first.stateChanges).toBe(1);
-      expect(first.done).toBe(true);
+      expect(first.done).toBe(false);
       await runUntilDone(() => runRetentionBatch(baseId));
 
       await expect(countRows("pulse.metric_samples", baseId)).resolves.toBe(2);
