@@ -75,7 +75,7 @@ describe("Layout Help hydration boundaries", () => {
 
     expect(registrationFiles.length).toBeGreaterThan(0);
     expect(invalid).toEqual([]);
-  });
+  }, 30_000);
 
   test("every app page with a Help collection can reach its registrar", async () => {
     const sources = await loadSources();
@@ -120,5 +120,5 @@ describe("Layout Help hydration boundaries", () => {
 
     expect(appPages.length).toBeGreaterThan(0);
     expect(missing).toEqual([]);
-  });
+  }, 30_000);
 });

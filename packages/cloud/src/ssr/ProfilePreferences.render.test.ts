@@ -1,4 +1,5 @@
-import { describe, expect, test } from "bun:test";
+import { stubRailSnapshot } from "../../../../tests/fixtures/rail-snapshot";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
@@ -89,3 +90,7 @@ describe("ProfilePreferences SSR", () => {
     expect(html).not.toContain("undefined");
   });
 });
+
+let railSnapshot: ReturnType<typeof stubRailSnapshot>;
+beforeEach(() => { railSnapshot = stubRailSnapshot(); });
+afterEach(() => railSnapshot.mockRestore());

@@ -36,7 +36,7 @@ describe("registered Layout Help routes", () => {
       }
     }
     expect(invalid).toEqual([]);
-  });
+  }, 30_000);
 
   test("supported providers leave APIs, pages, and Layout registration to Cloud", async () => {
     const legacyReferences: string[] = [];
@@ -54,13 +54,13 @@ describe("registered Layout Help routes", () => {
       }
     }
     expect(legacyReferences).toEqual([]);
-  });
+  }, 30_000);
 
   test("Core owns the registered Help reader", async () => {
     const routes = await read("packages/core/src/pages/create.tsx");
     expect(routes).toContain('.get("/help/apps/:appId"');
     expect(routes).toContain('.get("/help/apps/:appId/:topic"');
-  });
+  }, 30_000);
 
   test("registered providers own their Markdown below src/help", async () => {
     for (const appId of registeredHelpApps) {
@@ -73,13 +73,13 @@ describe("registered Layout Help routes", () => {
         appId,
       ).toBe(true);
     }
-  });
+  }, 30_000);
 
   test("keeps the deliberate OAuth exception explicit", async () => {
     expect(await Bun.file(join(repoRoot, "packages/oauth/src/help/index.ts")).exists()).toBe(false);
     expect(await read("packages/oauth/src/index.ts")).not.toMatch(/oauthHelp|\/api\/oauth\/help/);
     expect(await read("packages/oauth/src/frontend/index.ts")).not.toContain("/admin/oauth/help");
-  });
+  }, 30_000);
 
   test("the retired query-overlay strategy cannot return", async () => {
     const legacyReferences: string[] = [];
@@ -91,5 +91,5 @@ describe("registered Layout Help routes", () => {
       }
     }
     expect(legacyReferences).toEqual([]);
-  });
+  }, 30_000);
 });

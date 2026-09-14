@@ -121,7 +121,7 @@ describe("Notebook note detail panel", () => {
     expect(html).toContain('aria-label="Related content"');
     expect(html).toContain('aria-label="Note context"');
     expect(html).toContain('style="padding-left: 0.75rem"');
-    expect(html.match(/<details class="k2b-detail-panel__section" open/g)).toHaveLength(4);
+    expect(html.match(/<section class="k2b-detail-panel__section"[^>]*data-open="true"/g)).toHaveLength(4);
     expect(html).toContain('data-layout="rows"');
     expect(html).toContain('data-size="sm"');
     expect(html).toContain('data-scroll-preserve="notebook-detail"');

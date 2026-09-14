@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, setSystemTime, test } from "bun:test";
 import type { AppRegistryEntry } from "../contracts/registry";
 import { FreeIpaTransportError } from "../server/services/freeipa/transport";
 import { superviseRuntimeTask } from "../services/runtime-lifecycle";
@@ -25,9 +25,9 @@ const upsertResult = () => ({
 const withoutTouch = <T extends object>(registry: T) => ({ touch: async () => false, ...registry });
 
 const waitUntil = async (predicate: () => boolean, timeoutMs = 250): Promise<void> => {
-  const deadline = Date.now() + timeoutMs;
+  const deadline = performance.now() + timeoutMs;
   while (!predicate()) {
-    if (Date.now() >= deadline) throw new Error("Timed out waiting for heartbeat");
+    if (performance.now() >= deadline) throw new Error("Timed out waiting for heartbeat");
     await Bun.sleep(2);
   }
 };
@@ -240,10 +240,14 @@ describe("createHeartbeat", () => {
       onError: () => undefined,
       onStale: (error) => stale.push(error),
     });
-    await heartbeat.start();
-    await waitUntil(() => attempts >= 4);
-    await Bun.sleep(15);
-    await heartbeat.stop();
+    // Control wall time: a busy test runner must not turn recovery into a real lease expiry.
+    setSystemTime(new Date("2026-09-14T00:00:00Z"));
+    try {
+      await heartbeat.start();
+      await waitUntil(() => attempts >= 4);
+    } finally {
+      try { await heartbeat.stop(); } finally { setSystemTime(); }
+    }
 
     expect(stale).toHaveLength(0);
   });

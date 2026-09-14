@@ -1,4 +1,5 @@
-import { afterEach, expect, spyOn, test } from "bun:test";
+import { stubRailSnapshot } from "../../../../../../tests/fixtures/rail-snapshot";
+import { afterEach, beforeEach, expect, spyOn, test } from "bun:test";
 import type { CloudRuntime, User } from "@k2b/cloud/contracts";
 import type { AuthContext } from "@k2b/cloud/server";
 import * as cloudServices from "@k2b/cloud/services";
@@ -103,3 +104,7 @@ test("attachment search and pagination preserve an author's explicit presentatio
     expect(html).toContain(`/app/notebooks/book01/attachments?mode=${mode}`);
   }
 });
+
+let railSnapshot: ReturnType<typeof stubRailSnapshot>;
+beforeEach(() => { railSnapshot = stubRailSnapshot(); });
+afterEach(() => railSnapshot.mockRestore());

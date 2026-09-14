@@ -53,6 +53,7 @@ mock.module("../../config", () => ({
   ],
 }));
 mock.module("@k2b/cloud/server", () => ({
+  getUserBackedActor: () => ({ id: "local-id", uid: "admin", roles: ["admin"], provider: "local" }),
   expectUserBackedActor: () => ({ id: "local-id", uid: "admin", roles: ["admin"], provider: "local" }),
   getLocale: () => "en",
 }));

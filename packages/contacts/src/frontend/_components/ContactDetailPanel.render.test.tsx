@@ -170,7 +170,7 @@ describe("Contacts detail panels", () => {
     expect(html).toContain('class="k2b-detail-panel__summary"');
     expect(html).toContain('aria-label="Contact information"');
     expect(html).toContain('aria-label="Additional details"');
-    expect(html.match(/<details class="k2b-detail-panel__section" open/g)).toHaveLength(2);
+    expect(html.match(/<section class="k2b-detail-panel__section"[^>]*data-open="true"/g)).toHaveLength(2);
     expect(html).toContain('aria-label="Organization context"');
     expect(html).toContain('class="k2b-detail-panel__section-icon" data-tone="accent"');
     expect(html).toContain('data-scroll-preserve="contacts-detail"');

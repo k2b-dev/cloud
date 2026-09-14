@@ -1,4 +1,5 @@
-import { afterEach, describe, expect, spyOn, test } from "bun:test";
+import { stubRailSnapshot } from "../../../../../../../tests/fixtures/rail-snapshot";
+import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import type { CloudRuntime, PermissionLevel, User } from "@k2b/cloud/contracts";
 import type { AuthContext } from "@k2b/cloud/server";
 import * as cloudServices from "@k2b/cloud/services";
@@ -156,3 +157,7 @@ describe("Book tag page SSR", () => {
     for (const call of Object.values(calls)) expect(call).not.toHaveBeenCalled();
   });
 });
+
+let railSnapshot: ReturnType<typeof stubRailSnapshot>;
+beforeEach(() => { railSnapshot = stubRailSnapshot(); });
+afterEach(() => railSnapshot.mockRestore());

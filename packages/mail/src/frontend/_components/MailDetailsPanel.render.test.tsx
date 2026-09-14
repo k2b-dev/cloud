@@ -284,7 +284,7 @@ describe("Mail conversation detail panel", () => {
     expect(html).toContain('download="review.pdf"');
     expect(html).toContain("Recent activity");
     expect(html).toContain("Mail details");
-    expect(html.match(/<details class="k2b-detail-panel__section"/g)).toHaveLength(2);
+    expect(html.match(/<section class="k2b-detail-panel__section"[^>]*data-open="false"/g)).toHaveLength(2);
     expect(html).toContain('data-visibility="progressive"');
     expect(html).not.toContain('data-visibility="always"');
     expect(html.indexOf('aria-label="Edit comment"')).toBeLessThan(html.indexOf('aria-label="Delete comment"'));
