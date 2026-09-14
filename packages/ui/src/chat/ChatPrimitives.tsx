@@ -199,7 +199,7 @@ export function ChatMessage(props: ChatMessageProps): JSX.Element {
                 <Show
                   when={attachment.href}
                   fallback={
-                    <div class="k2b-chat-message__attachment" role="listitem" title={attachment.name}>
+                    <div class="k2b-chat-message__attachment" data-kind={attachment.kind} role="listitem" title={attachment.name}>
                       {content()}
                     </div>
                   }
@@ -207,6 +207,7 @@ export function ChatMessage(props: ChatMessageProps): JSX.Element {
                   {(href) => (
                     <a
                       class="k2b-chat-message__attachment"
+                      data-kind={attachment.kind}
                       role="listitem"
                       title={attachment.name}
                       href={href()}

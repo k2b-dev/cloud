@@ -494,3 +494,7 @@ the exact `Bearer ` prefix. API-key and custom-header modes remain available.
 The target is an HTTPS origin: URL paths and query parameters do not narrow the
 secret's destination. Only metadata is returned when listing or replacing;
 existing secret values are never loaded into the browser.
+
+The Studio console aligns timestamps, readable severity labels, and messages in
+compact columns. Info, warning, and error labels use themed color badges; long
+messages wrap within their column. The header identifies the executed revision.

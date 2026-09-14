@@ -40,7 +40,7 @@ export const artifactMessages = i18n.define({ baseLocale: "en", messages: {
     noLogs: "App messages appear here.", started: "Started", loading: "Loading…", emptyApps: "No apps yet. Ask Assistant to build one.",
     save: "Save", refresh: "Refresh", next: "Next", back: "Back", open: "Open", unsavedTitle: "Discard changes?",
     unsavedMessage: "This file has unsaved changes. Close it anyway?", noFiles: "No files in this chat yet.",
-    revision: "Revision", runningRevision: "Running revision", output: "Output", staleSource: "A newer revision is available. Restart to use it.",
+    revision: "Revision", logInfo: "Info", logWarning: "Warning", logError: "Error", output: "Output", staleSource: "A newer revision is available. Restart to use it.",
 
     modalInvalid: "Choose a valid value.", modalNumberRange: "Enter a number within the allowed range.", modalRequired: "Enter a value.", modalTextLength: "Check the text length.",
     results: "Results", progress: "Progress",
@@ -93,7 +93,7 @@ export const artifactMessages = i18n.define({ baseLocale: "en", messages: {
     noLogs: "Meldungen der App erscheinen hier.", started: "Gestartet", loading: "Wird geladen…", emptyApps: "Noch keine Apps. Bitte Assistant, eine zu erstellen.",
     save: "Speichern", refresh: "Aktualisieren", next: "Weiter", back: "Zurück", open: "Öffnen", unsavedTitle: "Änderungen verwerfen?",
     unsavedMessage: "Diese Datei hat ungespeicherte Änderungen. Trotzdem schließen?", noFiles: "In diesem Chat gibt es noch keine Dateien.",
-    revision: "Version", runningRevision: "Ausgeführte Version", output: "Ausgabe", staleSource: "Eine neuere Version ist verfügbar. Starte neu, um sie zu verwenden.",
+    revision: "Version", logInfo: "Info", logWarning: "Warnung", logError: "Fehler", output: "Ausgabe", staleSource: "Eine neuere Version ist verfügbar. Starte neu, um sie zu verwenden.",
 
     modalInvalid: "Wähle einen gültigen Wert.", modalNumberRange: "Gib eine Zahl im erlaubten Bereich ein.", modalRequired: "Gib einen Wert ein.", modalTextLength: "Prüfe die Textlänge.",
     results: "Ergebnisse", progress: "Fortschritt",

@@ -2,7 +2,7 @@ import { browserHttpHost } from "./SecretsDialog";
 import { runHttp } from "./http-host";
 import { approveInModal } from "./CapabilityApproval";
 import { runCapability } from "./runtime/capabilities";
-import { Button, Paper, useLocale } from "@k2b/ui";
+import { Button, Paper, Tag, useLocale } from "@k2b/ui";
 import { files } from "@k2b/stdlib/browser";
 import { createEffect, createMemo, createResource, createSignal, createUniqueId, For, on, onCleanup, onMount, Show } from "solid-js";
 import { artifactClient } from "./client";
@@ -136,15 +136,15 @@ export function ArtifactPanel(props: { artifactId: string; refreshKey?: string; 
         </div>
       </div>
     <Paper id={consoleId} class="artifact-console" hidden={!consoleOpen()}>
-      <Show when={revision()}><small class="text-muted">{t().runningRevision} {revision()}</small></Show>
+      <Show when={revision()}><div class="artifact-console__caption">{t().console} · {t().revision} {revision()}</div></Show>
       <div class="artifact-console__output" aria-live="polite">
         <Show when={error()}><div class="text-red-600" role="alert">{error()}</div></Show>
         <Show when={state()?.error && !state()?.logs.some((log) => log.text === state()?.error)}><div class="text-red-600">{state()?.error}</div></Show>
         <Show when={state()?.logs.length} fallback={<p class="text-muted">{t().noLogs}</p>}>
           <For each={state()?.logs}>{(log) => <div class="artifact-console__line" data-level={log.level}>
-            <time>{new Date(log.time).toLocaleTimeString(locale())}</time>
-            <span class="artifact-console__level">{{ error: "err", warn: "wrn", info: "inf" }[log.level] ?? "log"}:</span>
-            <span>{log.text === "Started" ? t().started : log.text}</span>
+            <time dateTime={log.time}>{new Date(log.time).toLocaleTimeString(locale(), { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</time>
+            <Tag class="artifact-console__level">{{ error: t().logError, warn: t().logWarning, info: t().logInfo, debug: "Debug" }[log.level] ?? "Log"}</Tag>
+            <span class="artifact-console__message">{log.text === "Started" ? t().started : log.text}</span>
           </div>}</For>
         </Show>
         <Show when={state()?.output !== undefined}><pre>{JSON.stringify(state()?.output, null, 2)}</pre></Show>

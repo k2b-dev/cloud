@@ -261,3 +261,7 @@ color; cancelled work has a striped segment and a struck-through description.
 The host decides when a plan exists, persists it, counts cancelled work
 separately, and translates execution state into labels. Do not label a paused
 current step as running. This component does not start tasks or infer progress.
+
+Message file attachments use compact horizontal chips with an icon and a single
+filename line. Long filenames truncate; the attachment row wraps when needed.
+Image attachments retain their thumbnail presentation.
