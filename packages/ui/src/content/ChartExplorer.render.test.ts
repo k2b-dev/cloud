@@ -46,7 +46,7 @@ describe("SSR chart exploration", () => {
     expect(html).toContain('viewBox="0 0 480 280"');
     expect(html).toContain("height:18rem");
     expect(html).toContain("data-chart-datum");
-    expect(html).toContain("Copy data");
+    expect(html).toContain('aria-label="Copy data"');
     expect(html).toContain("data-selected");
     expect(html).toContain("--k2b-chart-selection-color:");
   });

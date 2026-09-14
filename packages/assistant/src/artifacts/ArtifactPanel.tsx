@@ -118,6 +118,7 @@ export function ArtifactPanel(props: { artifactId: string; refreshKey?: string; 
         }} />
       </Show>
     </div>
+    <div class="artifact-panel__console">
     <Show when={loading() || (revision() !== undefined && (metadata()?.sourceRevision ?? 0) > revision()!)}>
       <InlineGuidance role="status" loading={loading()} icon={loading() ? undefined : "ti ti-info-circle"} class="px-2 py-1">
         {loading() ? t().loading : t().staleSource}
@@ -154,5 +155,6 @@ export function ArtifactPanel(props: { artifactId: string; refreshKey?: string; 
         }}><i class="ti ti-download"/>{file.name}</Button>}</For></Show>
       </div>
     </Paper>
+    </div>
   </div>;
 }

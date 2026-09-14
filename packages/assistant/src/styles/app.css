@@ -112,13 +112,15 @@
 .artifact-workspace__tabs > .k2b-tabs { min-width: 0; flex: 1; overflow-x: auto; }
 .artifact-workspace__tab { display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: auto; padding: .5rem; }
 .artifact-workspace__tab[hidden] { display: none; }
-.artifact-panel { display: flex; flex-direction: column; gap: .5rem; min-height: 100%; }
-.artifact-panel__preview { flex: 1; padding: .5rem; border-radius: var(--ui-radius-frame); background: var(--k2b-surface-subtle, var(--k2b-surface)); }
+.artifact-panel { display: flex; flex: 1; flex-direction: column; gap: .5rem; min-height: 0; min-width: 0; overflow: hidden; }
+.artifact-panel__preview { flex: 1; min-height: 0; overflow: auto; padding: .5rem; border-radius: var(--ui-radius-frame); background: var(--k2b-surface-subtle, var(--k2b-surface)); }
 .artifact-panel__launch { display: grid; place-content: center; justify-items: center; gap: 1rem; min-height: 12rem; }
+.artifact-panel__console { display: flex; flex-direction: column; gap: .5rem; flex: 0 1 auto; min-height: 0; max-height: 60%; }
+.artifact-panel__console > .k2b-inline-guidance, .artifact-console__header, .artifact-console__caption { flex-shrink: 0; }
 .artifact-console[hidden] { display: none; }
-.artifact-console { flex-shrink: 0; padding: .75rem; }
+.artifact-console { display: flex; flex-direction: column; flex: 0 1 auto; min-height: 0; overflow: hidden; padding: .75rem; }
 .artifact-console__header { display: flex; align-items: center; justify-content: space-between; gap: .5rem; flex-wrap: wrap; }
-.artifact-console__output { font-family: var(--k2b-font-mono); font-size: .8125rem; line-height: 1.6; min-height: 6rem; max-height: 18rem; overflow: auto; margin-top: .5rem; }
+.artifact-console__output { font-family: var(--k2b-font-mono); font-size: .8125rem; line-height: 1.6; min-height: 0; max-height: 18rem; overflow: auto; margin-top: .5rem; }
 .artifact-console__output, .artifact-console__output :where(time, span, pre) { font-family: var(--k2b-font-mono, ui-monospace, monospace); }
 .artifact-console__caption { color: var(--k2b-text-muted); font-size: .75rem; }
 .artifact-console__line { display: grid; grid-template-columns: max-content max-content minmax(0, 1fr); align-items: baseline; gap: .5rem; padding-block: .2rem; }

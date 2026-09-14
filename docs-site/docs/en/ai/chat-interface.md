@@ -498,3 +498,7 @@ existing secret values are never loaded into the browser.
 The Studio console aligns timestamps, readable severity labels, and messages in
 compact columns. Info, warning, and error labels use themed color badges; long
 messages wrap within their column. The header identifies the executed revision.
+
+The Studio app preview scrolls independently of its bottom console controls.
+Expanded console output scrolls within its own bounded area, keeping controls
+visible while browsing a long app.

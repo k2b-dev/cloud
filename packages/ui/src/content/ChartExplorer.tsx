@@ -117,9 +117,9 @@ export function ChartExplorer<T extends ChartExplorerRow>(props: ChartExplorerPr
           <CopyButton
             text={copyText()}
             label={messages().chartCopyData}
-            iconOnly={false}
+            iconOnly
             size="sm"
-            variant="secondary"
+            variant="ghost"
             disabled={!rows().length}
             onCopyError={() => setCopyFailed(true)}
             onCopied={() => setCopyFailed(false)}
