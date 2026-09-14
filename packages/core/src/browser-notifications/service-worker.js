@@ -57,12 +57,14 @@ self.addEventListener("notificationclick", (event) => {
         const url = new URL(client.url);
         return `${url.pathname}${url.search}${url.hash}` === target;
       });
-      if (exact) return exact.focus();
-
-      const existing = windows[0];
+      const existing = exact ?? windows[0];
       if (existing) {
-        await existing.navigate(target);
-        return existing.focus();
+        try {
+          const destination = exact ? existing : await existing.navigate(target);
+          if (destination) return await destination.focus();
+        } catch {
+          // A tab can close or stop being controlled while the click is handled.
+        }
       }
       return self.clients.openWindow(target);
     })(),

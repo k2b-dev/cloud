@@ -139,13 +139,19 @@ describe("browser notification service worker", () => {
 
   test("navigates and focuses an existing window when its target differs", async () => {
     const actions: string[] = [];
+    const destination = {
+      focus: async () => {
+        actions.push("focus");
+      },
+    };
     const client = {
       url: "https://cloud.example/other",
       navigate: async (href: string) => {
         actions.push(`navigate:${href}`);
+        return destination;
       },
       focus: async () => {
-        actions.push("focus");
+        throw new Error("Must focus the destination returned by navigation");
       },
     };
     const { listeners, opened } = loadWorker([client]);
@@ -155,6 +161,30 @@ describe("browser notification service worker", () => {
     expect(actions).toEqual(["navigate:/app/assistant?conversation=two", "focus"]);
     expect(opened).toEqual([]);
   });
+
+  test.each(["navigation rejects", "navigation returns null", "focus rejects", "exact target closes"])(
+    "opens the target if the existing tab cannot be used: %s",
+    async (failure) => {
+      const target = "/me/notifications";
+      const focus = async () => {
+        throw new TypeError("Client is no longer available");
+      };
+      const client = {
+        url: `https://cloud.example${failure === "exact target closes" ? target : "/other"}`,
+        navigate: async () => {
+          if (failure === "navigation rejects") throw new TypeError("Client is not controlled by this worker");
+          return failure === "navigation returns null" ? null : { focus };
+        },
+        focus,
+      };
+      const { listeners, opened } = loadWorker([client]);
+      const click = notificationClickEvent(target);
+      listeners.get("notificationclick")!(click.event);
+      await click.completion();
+      expect(click.closed()).toBe(true);
+      expect(opened).toEqual([target]);
+    },
+  );
 
   test("opens the safe root for malformed stored click targets", async () => {
     const { listeners, opened } = loadWorker([]);
