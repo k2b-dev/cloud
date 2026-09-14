@@ -105,7 +105,7 @@ metric http_requests_total rate every 1m reduce sum group by resource since 1h
 metric orders.created increase every 1h since 7d where channel=web
 ```
 
-Use increase when the question is how many new things happened inside each time window.
+Use increase for the observed counter growth assigned to each time window. Use events when you need exact counts by event time.
 
 Pulse computes increase per matched variant, then averages matched variants by default. Add `reduce sum` when the variants form one total.
 
@@ -194,8 +194,8 @@ Choose aggregation from the shape of the data, not from the chart you want. Gaug
 | `min / max` | Smallest or largest value in each time window. | Dips, peaks, and capacity checks. | `metric inventory.stock_level max every 1h since 30d` |
 | `sum` | Add samples per variant in each time window. | Values whose temporal sum is meaningful. | `metric sales.revenue sum every 1h since 7d` |
 | `count` | Count samples per variant, not their values. | Sample presence and collection checks. | `metric website.visitors count every 1h since 7d` |
-| `rate` | Compute change per second per variant and ignore counter resets. | Requests/sec, bytes/sec, and throughput. | `metric http_requests_total rate every 1m since 1h` |
-| `increase` | Compute increase per variant and ignore counter resets. | Orders, visitors, requests, or bytes per time window. | `metric sales.orders increase every 1h since 7d` |
+| `rate` | Compute change per second per variant with reset correction. | Requests/sec, bytes/sec, and throughput. | `metric http_requests_total rate every 1m since 1h` |
+| `increase` | Compute increase per variant with reset correction. | Orders, visitors, requests, or bytes per time window. | `metric sales.orders increase every 1h since 7d` |
 | `p50 / p90 / p95 / p99` | Find a percentile in each time window. | Latency and distribution metrics. | `metric http_request_duration_seconds p95 every 5m since 24h` |
 | `events count / sum` | Count events or sum their numeric value in each time window. | Visits, orders, errors, revenue, and other point-in-time facts. | `events order.created sum every 1h since 7d group by currency` |
 | `events unique actor / session` | Count distinct actorId or sessionId values in each time window. | Visitors, active users, sessions, and engagement without unique identities in dimensions. | `events page.viewed unique actor every 1d since 30d` |
@@ -221,3 +221,9 @@ Use `*` or omit the name for all events or all states. `source` accepts a six-ch
 :::warning Performance limits
 Query text is limited to 2,000 characters. Metric queries stop when more than 250 variants match, when the requested range creates more than 2,000 time windows, or when grouped output would exceed 100,000 points. Add `source`, `resource`, or `where` filters, shorten `since`, or increase `every`. Event and state results are capped at 1,000 rows; event summaries accept at most four group keys and return at most 1,000 points.
 :::
+
+### Counter observations and gaps
+
+`rate` and `increase` require a nonnegative counter. Pulse compares consecutive samples within each variant, including one predecessor before the query starts. A decrease is treated as a reset to zero: `100 → 110 → 3 → 8` contributes `10 + 3 + 5 = 18`. Each delta belongs to the bucket of its newer sample. `rate` divides the sum of these deltas by their total observed elapsed seconds; irregular intervals are weighted by time. Reduction across variants happens afterward.
+
+A sample without a predecessor produces `null`, and empty buckets remain missing. Across a longer gap, the next pair reports average growth across that gap; Pulse cannot infer when individual increments happened. Values are not extrapolated to bucket boundaries and are not PromQL estimates. Percentiles (`p50` through `p99`) describe gauge samples only; histogram and summary quantiles are unsupported.

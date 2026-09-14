@@ -16,6 +16,7 @@ type ScrapeInput = {
   publicBaseId: string;
   sourceId: string;
   publicSourceId: string;
+  slotTs: number;
 };
 
 const RETENTION_DELETE_BATCH_SIZE = 50_000;
@@ -278,8 +279,7 @@ const pulseScheduler = lazySync((sync) =>
 let workers: Worker[] = [];
 let started = false;
 
-const submitDueScrapes = async (slotTs: number): Promise<{ submitted: number }> => {
-  const rows = await sql<{ id: string; short_id: string; base_id: string; base_short_id: string }[]>`
+export const dueMetricsSources = async (slotTs: number) => sql<{ id: string; short_id: string; base_id: string; base_short_id: string }[]>`
     SELECT s.id, s.short_id, s.base_id, b.short_id AS base_short_id
     FROM pulse.sources s
     JOIN pulse.bases b ON b.id = s.base_id
@@ -292,21 +292,14 @@ const submitDueScrapes = async (slotTs: number): Promise<{ submitted: number }> 
         b.data_clear_started_at IS NULL
         OR b.data_clear_completed_at IS NOT NULL
       )
-      AND (
-        GREATEST(
-          COALESCE(s.last_seen_at, '-infinity'::timestamptz),
-          COALESCE(s.last_error_at, '-infinity'::timestamptz)
-        ) <= now() - (s.scrape_interval_seconds * interval '1 second')
-      )
-    ORDER BY
-      GREATEST(
-        COALESCE(s.last_seen_at, '-infinity'::timestamptz),
-        COALESCE(s.last_error_at, '-infinity'::timestamptz)
-      ) ASC,
+      AND (s.last_scrape_slot_at IS NULL OR s.last_scrape_slot_at <= ${new Date(slotTs)}::timestamptz - (s.scrape_interval_seconds * interval '1 second'))
+    ORDER BY s.last_scrape_slot_at ASC NULLS FIRST,
       s.created_at ASC
     LIMIT 200
   `;
 
+const submitDueScrapes = async (slotTs: number): Promise<{ submitted: number }> => {
+  const rows = await dueMetricsSources(slotTs);
   for (const row of rows) {
     await scrapeJob().submit({
       key: `source:${row.id}:slot:${slotTs}`,
@@ -315,6 +308,7 @@ const submitDueScrapes = async (slotTs: number): Promise<{ submitted: number }> 
         publicBaseId: row.base_short_id,
         sourceId: row.id,
         publicSourceId: row.short_id,
+        slotTs,
       },
     });
   }

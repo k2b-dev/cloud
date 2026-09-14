@@ -158,7 +158,7 @@ export const CreateSourceSchema = z.strictObject({
   name: z.string().trim().min(1).max(120),
   endpointUrl: z.string().trim().min(1).max(2_000).nullable().optional(),
   bearerToken: z.string().trim().min(1).nullable().optional(),
-  scrapeIntervalSeconds: z.number().int().min(10).max(86_400).nullable().optional(),
+  scrapeIntervalSeconds: z.number().int().min(60).max(86_400).multipleOf(60).nullable().optional(),
 });
 
 export const CreateSourceApiKeySchema = z.object({
@@ -172,7 +172,7 @@ export const UpdateSourceSchema = z.strictObject({
   enabled: z.boolean().optional(),
   endpointUrl: z.string().trim().min(1).max(2_000).nullable().optional(),
   bearerToken: z.string().trim().min(1).nullable().optional(),
-  scrapeIntervalSeconds: z.number().int().min(10).max(86_400).nullable().optional(),
+  scrapeIntervalSeconds: z.number().int().min(60).max(86_400).multipleOf(60).nullable().optional(),
 });
 
 const DashboardMetricWidgetSchema = z.object({

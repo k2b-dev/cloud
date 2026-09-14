@@ -49,8 +49,8 @@ describe("Pulse grouped metric query Postgres smoke", () => {
         if (!row) throw new Error("Metric series fixture was not created");
         series.push(row.id);
       }
-      const first = new Date(Date.now() - 120_000);
-      const second = new Date(Date.now() - 60_000);
+      const first = new Date(Math.floor(Date.now() / 3_600_000) * 3_600_000 - 3_000_000);
+      const second = new Date(first.getTime() + 60_000);
       for (const [seriesId, values] of [
         [series[0]!, [10, 20]],
         [series[1]!, [5, 15]],
@@ -68,7 +68,7 @@ describe("Pulse grouped metric query Postgres smoke", () => {
         metric: "docker.compose.service.cpu.usage",
         aggregation: "avg",
         bucket: "1h",
-        since: "1h",
+        since: "1d",
         dimensions: {},
       };
       const grouped = await queryMetricData({ ...baseQuery, groupBy: "resource" });
@@ -85,9 +85,7 @@ describe("Pulse grouped metric query Postgres smoke", () => {
       expect(totalLatest.data[0]?.value).toBe(35);
 
       const totalRate = await queryMetricData({ ...baseQuery, aggregation: "rate", bucket: "1d", reduce: "sum" });
-      expect(totalRate.ok).toBe(true);
-      if (!totalRate.ok) return;
-      expect(totalRate.data[0]?.value).toBeCloseTo(1 / 3);
+      expect(totalRate.ok).toBe(false);
     } finally {
       await sql`DELETE FROM pulse.bases WHERE id = ${baseId}::uuid`;
     }

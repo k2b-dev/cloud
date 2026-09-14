@@ -105,7 +105,7 @@ metric http_requests_total rate every 1m reduce sum group by resource since 1h
 metric orders.created increase every 1h since 7d where channel=web
 ```
 
-Nutze `increase`, wenn du wissen möchtest, wie viele neue Vorgänge in jedem Zeitfenster stattgefunden haben.
+Nutze `increase` für den beobachteten Zähleranstieg pro Zeitfenster. Für exakte Zählungen nach Ereigniszeit nutze Events.
 
 Pulse berechnet `increase` für jede passende Variante und bildet anschließend standardmäßig den Durchschnitt der Varianten. Ergänze `reduce sum`, wenn die Varianten zusammen eine Gesamtsumme bilden.
 
@@ -194,8 +194,8 @@ Wähle die Aggregation nach der Form der Daten, nicht nach dem gewünschten Diag
 | `min / max` | Verwendet den kleinsten oder größten Wert in jedem Zeitfenster. | Einbrüche, Spitzen und Kapazitätsprüfungen. | `metric inventory.stock_level max every 1h since 30d` |
 | `sum` | Addiert die Messwerte jeder Variante in jedem Zeitfenster. | Werte, deren zeitliche Summe aussagekräftig ist. | `metric sales.revenue sum every 1h since 7d` |
 | `count` | Zählt die Messwerte jeder Variante, nicht ihre Werte. | Prüfungen auf vorhandene Messwerte und Datenerfassung. | `metric website.visitors count every 1h since 7d` |
-| `rate` | Berechnet die Änderung pro Sekunde und Variante und ignoriert Zählerrücksetzungen. | Anfragen pro Sekunde, Bytes pro Sekunde und Durchsatz. | `metric http_requests_total rate every 1m since 1h` |
-| `increase` | Berechnet den Anstieg pro Variante und ignoriert Zählerrücksetzungen. | Bestellungen, Besucher, Anfragen oder Bytes pro Zeitfenster. | `metric sales.orders increase every 1h since 7d` |
+| `rate` | Berechnet die Änderung pro Sekunde und Variante mit Korrektur von Zählerrücksetzungen. | Anfragen pro Sekunde, Bytes pro Sekunde und Durchsatz. | `metric http_requests_total rate every 1m since 1h` |
+| `increase` | Berechnet den Anstieg pro Variante mit Korrektur von Zählerrücksetzungen. | Bestellungen, Besucher, Anfragen oder Bytes pro Zeitfenster. | `metric sales.orders increase every 1h since 7d` |
 | `p50 / p90 / p95 / p99` | Ermittelt ein Perzentil in jedem Zeitfenster. | Latenzen und Verteilungsmetriken. | `metric http_request_duration_seconds p95 every 5m since 24h` |
 | `events count / sum` | Zählt Ereignisse oder summiert ihren numerischen Wert in jedem Zeitfenster. | Besuche, Bestellungen, Fehler, Umsatz und andere zeitpunktbezogene Fakten. | `events order.created sum every 1h since 7d group by currency` |
 | `events unique actor / session` | Zählt unterschiedliche `actorId`- oder `sessionId`-Werte in jedem Zeitfenster. | Besucher, aktive Personen, Sitzungen und Interaktionen ohne eindeutige Identitäten in Dimensionen. | `events page.viewed unique actor every 1d since 30d` |
@@ -221,3 +221,9 @@ Nutze `*` oder lasse den Namen weg, um alle Ereignisse oder Zustände auszuwähl
 :::warning Leistungsgrenzen
 Abfragetext ist auf 2.000 Zeichen begrenzt. Metrikabfragen brechen ab, wenn mehr als 250 Varianten übereinstimmen, der angeforderte Zeitraum mehr als 2.000 Zeitfenster erzeugt oder die gruppierte Ausgabe 100.000 Punkte überschreiten würde. Ergänze Filter für `source`, `resource` oder `where`, verkürze `since` oder vergrößere `every`. Ereignis- und Zustandsergebnisse sind auf 1.000 Zeilen begrenzt. Ereigniszusammenfassungen akzeptieren höchstens vier Gruppierungsschlüssel und geben höchstens 1.000 Punkte zurück.
 :::
+
+### Zählerbeobachtungen und Datenlücken
+
+`rate` und `increase` benötigen einen nichtnegativen Counter. Pulse vergleicht aufeinanderfolgende Messwerte je Variante und lädt einen Vorgänger vor dem Abfragebeginn. Ein Rückgang gilt als Neustart bei null: `100 → 110 → 3 → 8` ergibt `10 + 3 + 5 = 18`. Das Delta gehört zum Zeitfenster des neueren Messwerts. `rate` teilt die Summe der Deltas durch die gesamte beobachtete Zeit zwischen den Messungen; unregelmäßige Abstände werden zeitlich gewichtet. Erst danach werden Varianten zusammengefasst.
+
+Ohne Vorgänger entsteht `null`; leere Zeitfenster bleiben leer. Nach einer längeren Lücke beschreibt das nächste Wertepaar den mittleren Anstieg über diese Lücke. Wann einzelne Inkremente stattfanden, ist unbekannt. Pulse extrapoliert nicht auf Zeitfenstergrenzen und verwendet keine PromQL-Schätzung. Perzentile (`p50` bis `p99`) beschreiben ausschließlich Gauge-Messwerte; Histogramm- und Summary-Quantile werden nicht unterstützt.

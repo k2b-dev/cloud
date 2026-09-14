@@ -110,13 +110,14 @@ export const initializeSchema = async (): Promise<void> => {
       endpoint_url TEXT,
       bearer_token_encrypted TEXT,
       scrape_interval_seconds INTEGER,
+      last_scrape_slot_at TIMESTAMPTZ,
       config JSONB NOT NULL DEFAULT '{}'::jsonb,
       last_seen_at TIMESTAMPTZ,
       last_error TEXT,
       last_error_at TIMESTAMPTZ,
       created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-      CONSTRAINT pulse_sources_scrape_interval_check CHECK (scrape_interval_seconds IS NULL OR scrape_interval_seconds >= 10)
+      CONSTRAINT pulse_sources_scrape_interval_check CHECK (scrape_interval_seconds IS NULL OR (scrape_interval_seconds >= 60 AND scrape_interval_seconds <= 86400 AND scrape_interval_seconds % 60 = 0))
     )
   `.simple();
 
@@ -158,7 +159,7 @@ export const initializeSchema = async (): Promise<void> => {
     await sql`CREATE INDEX idx_pulse_ingest_idempotency_expires ON pulse.ingest_idempotency(expires_at)`.simple();
 
     await sql`
-    CREATE TYPE pulse.metric_type AS ENUM ('gauge', 'counter', 'histogram', 'summary');
+    CREATE TYPE pulse.metric_type AS ENUM ('gauge', 'counter');
   `.simple();
 
     await sql`

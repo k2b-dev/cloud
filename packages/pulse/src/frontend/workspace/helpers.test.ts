@@ -97,7 +97,7 @@ describe("Pulse workspace dashboard snippets", () => {
       name: "API",
       endpointUrl: "https://api.example.test/metrics",
       bearerToken: "secret",
-      scrapeIntervalSeconds: 10,
+      scrapeIntervalSeconds: 60,
     });
     expect(
       sourceCreateRequest({
@@ -129,7 +129,6 @@ describe("Pulse workspace dashboard snippets", () => {
 
   test("builds query text helpers for explorer navigation", () => {
     expect(defaultMetricAggregation("counter")).toBe("rate");
-    expect(defaultMetricAggregation("histogram")).toBe("p95");
     expect(defaultMetricAggregation("gauge")).toBe("latest");
     expect(queryWithDimensionFilter("metric cpu latest since 1h", "host", "Mac Book")).toBe(
       'metric cpu latest since 1h where host="Mac Book"',

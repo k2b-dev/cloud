@@ -110,7 +110,7 @@ All three collections are optional, but the batch must contain at least one item
 | `name` | Yes | Non-empty metric name. |
 | `value` | Yes | Finite number. `NaN` and infinities are rejected. |
 | `ts` | No | ISO datetime. Server time is used when omitted. |
-| `type` | No | `gauge`, `counter`, `histogram`, or `summary`; defaults to `gauge`. |
+| `type` | No | `gauge` or `counter`; defaults to `gauge`. |
 | `unit` | No | Non-empty unit string or null. Common units are formatted automatically by dashboards. |
 | `resource` | No | Explicit `{type, id, label?}` for the observed object; omit or use null for no resource. |
 | `dimensions` | No | Exact-match labels distinguishing variants. |
@@ -364,3 +364,11 @@ cld pulse resources events "container:host-01/f06a6893f7bd" --json
 - Deleting a source makes its source-bound credentials unusable and removes source metadata, but retained historical telemetry loses its source association rather than being deleted.
 
 Return to the [Pulse CLI reference](pulse.md) for base discovery, queries, dashboards, access, and lifecycle operations.
+
+### Metric definitions and scrapes
+
+The first accepted sample fixes the metric type and unit within its base. Later samples must use the same type and unit, including an omitted unit. Conflicting batches are rejected atomically. Counters must be nonnegative.
+
+Scheduled metrics sources use whole-minute intervals from 60 through 86400 seconds. Scheduling is based on the scheduled slot, so completion time does not postpone the next minute. Only one scrape per source runs at a time. Fetching headers and the complete body share a 15-second timeout; the response limit is 10 MiB and the sample limit is 50000. All accepted samples in an attempt use the same collection time.
+
+The Prometheus adapter accepts explicitly declared gauge and counter families. It reports skipped histogram, summary, undeclared, malformed, and nonfinite samples in the source diagnostics and scrape history. It does not reinterpret histogram or summary suffixes as counters. The adapter uses `instance`, `host`, or `node` as target identity, falling back to the endpoint host and port. This inference belongs to the adapter; HTTP ingest requires an explicit resource.

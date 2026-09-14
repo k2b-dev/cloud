@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
+import { err } from "@k2b/cloud/server";
 import type { sql } from "bun";
 import type { PulseIngestBatch } from "../contracts";
 import { explicitPulseResource, type PulseResourceIdentity } from "../resource-model";
@@ -217,7 +218,7 @@ const json = (value: unknown): string => JSON.stringify(value);
 const writeMetrics = async (baseId: string, sourceId: string, rows: PreparedMetric[], db: PulseSqlClient) => {
   if (rows.length === 0) return;
   const input = json(rows);
-  await db`
+  const definitions = await db<{ name: string }[]>`
     WITH input AS (
       SELECT * FROM jsonb_to_recordset((${input}::jsonb #>> '{}')::jsonb) AS row(
         ordinal int, name text, unit text, "metricType" text
@@ -228,9 +229,14 @@ const writeMetrics = async (baseId: string, sourceId: string, rows: PreparedMetr
       ORDER BY name, ordinal
     )
     INSERT INTO pulse.metric_defs (base_id, name, unit, type)
-    SELECT ${baseId}::uuid, name, unit, "metricType"::pulse.metric_type FROM definitions
-    ON CONFLICT (base_id, name) DO UPDATE SET unit = COALESCE(EXCLUDED.unit, pulse.metric_defs.unit)
+    SELECT ${baseId}::uuid, name, unit, "metricType"::pulse.metric_type FROM definitions ORDER BY name
+    ON CONFLICT (base_id, name) DO UPDATE SET name = EXCLUDED.name
+    WHERE pulse.metric_defs.type = EXCLUDED.type AND pulse.metric_defs.unit IS NOT DISTINCT FROM EXCLUDED.unit
+    RETURNING name
   `;
+  if (definitions.length !== new Set(rows.map((row) => row.name)).size) {
+    throw err.badInput("Metric type and unit must match the existing definition");
+  }
   await enforceMetricSeriesBudget(
     baseId,
     rows.map((row) => ({ metric: row.name, seriesKey: row.seriesKey })),

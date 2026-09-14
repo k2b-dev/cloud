@@ -22,7 +22,7 @@ export const readActivityQueryState = (search: string): ActivityQueryState => {
   const type = params.get("type") ?? "";
   return {
     q: params.get("q")?.trim() ?? "",
-    type: type === "gauge" || type === "counter" || type === "histogram" || type === "summary" ? type : "",
+    type: type === "gauge" || type === "counter" ? type : "",
   };
 };
 

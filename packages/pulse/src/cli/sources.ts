@@ -34,7 +34,12 @@ export const sourceCommands = [
       kind: sourceKindFlag,
       endpointUrl: flag.string({ name: "endpoint-url", description: "Metrics endpoint URL" }),
       ...bearerTokenFlags,
-      scrapeIntervalSeconds: flag.int({ name: "scrape-interval-seconds", min: 10, max: 86400, description: "Scrape interval" }),
+      scrapeIntervalSeconds: flag.int({
+        name: "scrape-interval-seconds",
+        min: 60,
+        max: 86400,
+        description: "Scrape interval in seconds (multiples of 60)",
+      }),
     },
     args: { args: arg.rest({ valueLabel: "base" }) },
     async run({ ctx, args, flags }) {
@@ -66,7 +71,12 @@ export const sourceCommands = [
       endpointUrl: flag.string({ name: "endpoint-url", description: "Metrics endpoint URL" }),
       ...bearerTokenFlags,
       clearBearerToken: flag.boolean({ name: "clear-bearer-token", description: "Remove the configured metrics bearer token" }),
-      scrapeIntervalSeconds: flag.int({ name: "scrape-interval-seconds", min: 10, max: 86400, description: "Scrape interval" }),
+      scrapeIntervalSeconds: flag.int({
+        name: "scrape-interval-seconds",
+        min: 60,
+        max: 86400,
+        description: "Scrape interval in seconds (multiples of 60)",
+      }),
     },
     args: { args: arg.rest({ valueLabel: "base source", required: true }) },
     async run({ ctx, args, flags }) {

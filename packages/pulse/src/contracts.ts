@@ -1,7 +1,7 @@
 export const SOURCE_KINDS = ["metrics", "http_ingest"] as const;
 export type SourceKind = (typeof SOURCE_KINDS)[number];
 
-export const METRIC_TYPES = ["gauge", "counter", "histogram", "summary"] as const;
+export const METRIC_TYPES = ["gauge", "counter"] as const;
 export type MetricType = (typeof METRIC_TYPES)[number];
 
 export const AGGREGATIONS = ["avg", "sum", "min", "max", "count", "latest", "rate", "increase", "p50", "p90", "p95", "p99"] as const;

@@ -81,3 +81,11 @@ reuse that installation without changing its data. Existing Alpha schemas are
 rejected: there is no automatic upgrade or data repair. Before replacing a
 disposable Alpha installation, explicitly remove only its Pulse schema; the
 application never deletes it on startup.
+
+## Server collection before deployment
+
+Metrics support gauges and nonnegative counters. Type and unit are fixed per metric name within a base; conflicting input rejects the entire batch. Counter rates use observed consecutive samples and correct resets before combining series. Histogram and summary aggregation is not supported.
+
+Prometheus sources accept declared gauge/counter families and expose skipped samples in source diagnostics. Scrapes use whole-minute intervals (minimum 60 seconds), one collection timestamp, and a 15-second timeout covering both headers and body. Sources with no instance, host, or node label use the endpoint host and port as their target resource.
+
+The initial operator scenario is 20–50 servers, approximately ten websites, 60-second sampling and 30-day raw retention. Website backends send events using secret source tokens. This is a test scenario, not a measured production capacity guarantee.

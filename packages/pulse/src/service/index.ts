@@ -71,6 +71,7 @@ import {
 export const scrapeMetricsSource = async (params: {
   baseId: string;
   sourceId: string;
+  slotTs?: number;
 }): Promise<Result<{ metrics: number; events: number; states: number }>> => runMetricsSourceScrape(params, { ingestBatch });
 
 const scrapeSource = async (params: {

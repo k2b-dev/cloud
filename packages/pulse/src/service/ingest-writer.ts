@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import type { ServiceAccount } from "@k2b/cloud/contracts";
 import { err, fail, isServiceError, ok, type Result, type ServiceError } from "@k2b/cloud/server";
 import { logger } from "@k2b/cloud/services";
-import { sql } from "bun";
+import { sql, type TransactionSQL } from "bun";
 import type { PulseEvent, PulseIngestBatch, PulseMetric, PulseState } from "../contracts";
 import {
   PULSE_INGEST_IDEMPOTENCY_KEY_MAX_LENGTH,
@@ -50,6 +50,9 @@ const validateMetric = (metric: PulseMetric): Result<void> => {
   }
   if (!metric.name.trim()) return fail(err.badInput("Metric name is required"));
   if (!Number.isFinite(metric.value)) return fail(err.badInput("Metric value must be finite"));
+  if (metric.type && metric.type !== "gauge" && metric.type !== "counter")
+    return fail(err.badInput("Only gauge and counter metrics are supported"));
+  if (metric.type === "counter" && metric.value < 0) return fail(err.badInput("Counter values must be nonnegative"));
   const ts = parseTime(metric.ts);
   if (!ts.ok) return fail(ts.error);
   const dimensionsError = validateDimensions(metric.dimensions);
@@ -94,7 +97,13 @@ const validateState = (state: PulseState): Result<void> => {
 };
 
 const validateBatch = (batch: PulseIngestBatch): Result<void> => {
+  const definitions = new Map<string, string>();
   for (const metric of batch.metrics ?? []) {
+    const definition = JSON.stringify([metric.type ?? "gauge", metric.unit ?? null]);
+    if (definitions.has(metric.name) && definitions.get(metric.name) !== definition) {
+      return fail(err.badInput("Metric type and unit must agree within a batch"));
+    }
+    definitions.set(metric.name, definition);
     const result = validateMetric(metric);
     if (!result.ok) return result;
   }
@@ -144,6 +153,7 @@ export const ingestBatch = async (params: {
   baseId: string;
   sourceId: string;
   batch: PulseIngestBatch;
+  transaction?: TransactionSQL;
 }): Promise<Result<{ metrics: number; events: number; states: number }>> => {
   const requestedCount = countBatchItems(params.batch);
   if (requestedCount === 0) return fail(err.badInput("Ingest batch is empty"));
@@ -155,10 +165,11 @@ export const ingestBatch = async (params: {
 
   // Ingest batches are all-or-nothing: once preflight passes, every write participates in this transaction.
   try {
-    return await sql.begin(async (tx): Promise<Result<IngestCounts>> => {
+    const write = async (tx: SqlClient): Promise<Result<IngestCounts>> => {
       await lockIngestScope({ baseId: params.baseId, sourceId: params.sourceId, db: tx });
       return ok(await ingestBatchInClient({ baseId: params.baseId, sourceId: params.sourceId, batch: params.batch, db: tx }));
-    });
+    };
+    return await (params.transaction ? params.transaction.savepoint(write) : sql.begin(write));
   } catch (error) {
     if (error instanceof MetricSeriesLimitError) return fail(err.badInput(error.message));
     if (error instanceof IngestTransactionFailure) return fail(error.serviceError);

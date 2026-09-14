@@ -11,7 +11,6 @@ import { quoteQueryPart } from "./dashboard-query-text";
 
 export const defaultMetricAggregation = (type: MetricType): Aggregation => {
   if (type === "counter") return "rate";
-  if (type === "histogram" || type === "summary") return "p95";
   return "latest";
 };
 

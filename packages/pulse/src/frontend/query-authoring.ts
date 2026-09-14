@@ -273,7 +273,7 @@ export const buildPulseQuery = (params: {
 export const defaultPulseQuery = (metrics: PulseMetricSummary[]): string => {
   const metric = metrics[0];
   if (!metric) return "";
-  const aggregation = metric.type === "counter" ? "rate" : metric.type === "histogram" || metric.type === "summary" ? "p95" : "avg";
+  const aggregation = metric.type === "counter" ? "rate" : "avg";
   return buildPulseQuery({ metric: metric.name, aggregation, bucket: "5m", since: "24h" });
 };
 

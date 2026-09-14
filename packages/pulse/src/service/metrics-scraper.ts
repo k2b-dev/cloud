@@ -1,27 +1,37 @@
 import { err, fail, ok, type Result } from "@k2b/cloud/server";
 import { decryptSecret, logger } from "@k2b/cloud/services";
-import { sql } from "bun";
-import { METRIC_TYPES, type MetricType, type PulseIngestBatch, type PulseMetric } from "../contracts";
+import { sql, type TransactionSQL } from "bun";
+import type { MetricType, PulseIngestBatch, PulseMetric } from "../contracts";
+
+import { requireBaseActive } from "./access-control";
 
 const MAX_SCRAPE_RESPONSE_BYTES = 10 * 1024 * 1024;
 const MAX_SCRAPE_SAMPLES = 50_000;
 const PROMETHEUS_TYPE_LINE = /^# TYPE\s+(\S+)\s+(\S+)/;
 const PROMETHEUS_SAMPLE_LINE =
   /^([a-zA-Z_:][a-zA-Z0-9_:]*)(?:\{([^}]*)\})?\s+(-?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?|NaN|Inf|\+Inf|-Inf)(?:\s+\d+)?$/i;
-const PROMETHEUS_METRIC_TYPES = new Set<string>(METRIC_TYPES);
+type PrometheusType = MetricType | "histogram" | "summary" | "untyped";
+const PROMETHEUS_METRIC_TYPES = new Set<string>(["gauge", "counter", "histogram", "summary", "untyped"]);
+type ParsedMetrics = { metrics: PulseMetric[]; skippedSamples: number };
 const log = logger("pulse:metrics-scraper");
 
 type IngestCounts = { metrics: number; events: number; states: number };
 type MetricsScraperDeps = {
-  ingestBatch: (params: { baseId: string; sourceId: string; batch: PulseIngestBatch }) => Promise<Result<IngestCounts>>;
+  database?: typeof sql;
+  ingestBatch: (params: {
+    baseId: string;
+    sourceId: string;
+    batch: PulseIngestBatch;
+    transaction: TransactionSQL;
+  }) => Promise<Result<IngestCounts>>;
 };
 type MetricsSourceConfig = {
   endpointUrl: string;
   bearerTokenEncrypted: string | null;
 };
 
-const markSourceError = async (params: { sourceId: string; message: string | null }): Promise<void> => {
-  await sql`
+const markSourceError = async (params: { sourceId: string; message: string | null }, db: TransactionSQL): Promise<void> => {
+  await db`
     UPDATE pulse.sources
     SET last_error = ${params.message}, last_error_at = CASE WHEN ${params.message}::text IS NULL THEN NULL ELSE now() END, updated_at = now()
     WHERE id = ${params.sourceId}::uuid
@@ -42,55 +52,76 @@ const logSourceScrapeRecordFailure = (params: { baseId: string; sourceId: string
   });
 };
 
-const recordFailedSourceScrape = async (params: { baseId: string; sourceId: string; startedAt: Date; message: string }): Promise<void> => {
-  await recordSourceScrape({
-    baseId: params.baseId,
-    sourceId: params.sourceId,
-    startedAt: params.startedAt,
-    success: false,
-    errorMessage: params.message,
-  });
-  await markSourceError({ sourceId: params.sourceId, message: params.message });
-};
-
-const recordIngestResult = async (params: {
-  baseId: string;
-  sourceId: string;
-  startedAt: Date;
-  result: Result<IngestCounts>;
-}): Promise<void> => {
-  if (params.result.ok) {
-    await recordSourceScrape({
+const recordFailedSourceScrape = async (
+  params: { baseId: string; sourceId: string; startedAt: Date; message: string },
+  db: TransactionSQL,
+): Promise<void> => {
+  await recordSourceScrape(
+    {
       baseId: params.baseId,
       sourceId: params.sourceId,
       startedAt: params.startedAt,
-      success: true,
-      counts: params.result.data,
-    });
-    await markSourceError({ sourceId: params.sourceId, message: null });
-    return;
-  }
-  await recordFailedSourceScrape({
-    baseId: params.baseId,
-    sourceId: params.sourceId,
-    startedAt: params.startedAt,
-    message: params.result.error.message,
-  });
+      success: false,
+      errorMessage: params.message,
+    },
+    db,
+  );
+  await markSourceError({ sourceId: params.sourceId, message: params.message }, db);
 };
 
-const recordSourceScrape = async (params: {
-  baseId: string;
-  sourceId: string;
-  startedAt: Date;
-  success: boolean;
-  counts?: IngestCounts;
-  errorMessage?: string | null;
-}): Promise<void> => {
+const recordIngestResult = async (
+  params: {
+    baseId: string;
+    sourceId: string;
+    startedAt: Date;
+    result: Result<IngestCounts>;
+    warning?: string | null;
+  },
+  db: TransactionSQL,
+): Promise<void> => {
+  if (params.result.ok) {
+    await recordSourceScrape(
+      {
+        baseId: params.baseId,
+        sourceId: params.sourceId,
+        startedAt: params.startedAt,
+        success: true,
+        counts: params.result.data,
+        errorMessage: params.warning,
+      },
+      db,
+    );
+    await markSourceError({ sourceId: params.sourceId, message: params.warning ?? null }, db);
+    return;
+  }
+  await recordFailedSourceScrape(
+    {
+      baseId: params.baseId,
+      sourceId: params.sourceId,
+      startedAt: params.startedAt,
+      message: params.result.error.message,
+    },
+    db,
+  );
+};
+
+const recordSourceScrape = async (
+  params: {
+    baseId: string;
+    sourceId: string;
+    startedAt: Date;
+    success: boolean;
+    counts?: IngestCounts;
+    errorMessage?: string | null;
+  },
+  db: TransactionSQL,
+): Promise<void> => {
   const finishedAt = new Date();
   const durationMs = Math.max(0, finishedAt.getTime() - params.startedAt.getTime());
   const counts = scrapeCounts(params.counts);
   try {
-    await sql`
+    await db.savepoint(async (tx) => {
+      await tx`
       INSERT INTO pulse.source_scrapes (
         base_id,
         source_id,
@@ -116,6 +147,7 @@ const recordSourceScrape = async (params: {
         ${params.errorMessage ?? null}
       )
     `;
+    });
   } catch (error) {
     // Scrape history is diagnostic; never make the scrape itself fail because
     // the audit row could not be persisted.
@@ -201,18 +233,10 @@ const parsePrometheusLabels = (labelText: string): Record<string, string> => {
   return labels;
 };
 
-const inferPrometheusMetricType = (name: string, explicit?: MetricType): MetricType => {
-  if (explicit) return explicit;
-  if (name.endsWith("_bucket")) return "histogram";
-  if (name.endsWith("_sum") || name.endsWith("_count") || name.endsWith("_total")) return "counter";
-  return "gauge";
-};
-
-const isMetricType = (value: string | undefined): value is MetricType => Boolean(value && PROMETHEUS_METRIC_TYPES.has(value));
-
-const parsePrometheusTypeLine = (line: string): { name: string; type: MetricType } | null => {
+const isPrometheusType = (value: string | undefined): value is PrometheusType => Boolean(value && PROMETHEUS_METRIC_TYPES.has(value));
+const parsePrometheusTypeLine = (line: string): { name: string; type: PrometheusType } | null => {
   const [, name, type] = line.match(PROMETHEUS_TYPE_LINE) ?? [];
-  return name && isMetricType(type) ? { name, type } : null;
+  return name && isPrometheusType(type) ? { name, type } : null;
 };
 
 const parsePrometheusValue = (rawValue: string | undefined): number | null => {
@@ -235,32 +259,11 @@ const parsePrometheusSampleLine = (line: string): { name: string; value: number;
   };
 };
 
-const prometheusSampleToMetric = (
-  sample: { name: string; value: number; dimensions: Record<string, string> },
-  typeByName: Map<string, MetricType>,
-): PulseMetric => {
-  const resourceKey = resourceKeyFromDimensions(sample.dimensions);
-  return {
-    name: sample.name,
-    value: sample.value,
-    type: inferPrometheusMetricType(sample.name, typeByName.get(sample.name)),
-    resource: resourceKey ? { type: "target", id: resourceKey } : null,
-    dimensions: sample.dimensions,
-  };
-};
-
-const fetchWithTimeout = async (url: string, init: RequestInit, timeoutMs: number): Promise<Response> => {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    return await fetch(url, { ...init, signal: controller.signal });
-  } finally {
-    clearTimeout(timeout);
-  }
-};
-
-const loadMetricsSourceConfig = async (params: { baseId: string; sourceId: string }): Promise<MetricsSourceConfig | null> => {
-  const [source] = await sql<{ endpoint_url: string | null; bearer_token_encrypted: string | null }[]>`
+const loadMetricsSourceConfig = async (
+  params: { baseId: string; sourceId: string },
+  db: TransactionSQL,
+): Promise<MetricsSourceConfig | null> => {
+  const [source] = await db<{ endpoint_url: string | null; bearer_token_encrypted: string | null }[]>`
     SELECT s.endpoint_url, s.bearer_token_encrypted
     FROM pulse.sources s
     JOIN pulse.bases b ON b.id = s.base_id
@@ -286,20 +289,28 @@ const buildMetricsScrapeHeaders = async (bearerTokenEncrypted: string | null): P
   return headers;
 };
 
-const fetchPrometheusMetrics = async (source: MetricsSourceConfig): Promise<Result<PulseMetric[]>> => {
+export const fetchPrometheusMetrics = async (source: MetricsSourceConfig, timeoutMs = 15_000): Promise<Result<ParsedMetrics>> => {
   const headers = await buildMetricsScrapeHeaders(source.bearerTokenEncrypted);
-  const response = await fetchWithTimeout(source.endpointUrl, { headers }, 15_000);
-  if (!response.ok) return fail(err.internal(`Metrics endpoint returned HTTP ${response.status}`));
-
-  const textResult = await readScrapeResponseText(response);
-  if (!textResult.ok) return fail(textResult.error);
-
-  const metrics = parsePrometheusMetrics(textResult.data);
-  if (metrics.length === 0) return fail(err.badInput("Metrics endpoint returned no parseable samples"));
-  if (metrics.length > MAX_SCRAPE_SAMPLES) {
-    return fail(err.badInput(`Metrics endpoint returned ${metrics.length} samples, above the ${MAX_SCRAPE_SAMPLES} sample limit`));
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(source.endpointUrl, { headers, signal: controller.signal });
+    if (!response.ok) {
+      await response.body?.cancel();
+      return fail(err.internal(`Metrics endpoint returned HTTP ${response.status}`));
+    }
+    const textResult = await readScrapeResponseText(response);
+    if (!textResult.ok) return fail(textResult.error);
+    const parsed = parsePrometheusMetrics(textResult.data, new URL(source.endpointUrl).host);
+    if (parsed.metrics.length === 0)
+      return fail(err.badInput(`Metrics endpoint returned no supported samples (${parsed.skippedSamples} skipped)`));
+    if (parsed.metrics.length + parsed.skippedSamples > MAX_SCRAPE_SAMPLES) {
+      return fail(err.badInput(`Metrics endpoint exceeds the ${MAX_SCRAPE_SAMPLES} sample limit`));
+    }
+    return ok(parsed);
+  } finally {
+    clearTimeout(timeout);
   }
-  return ok(metrics);
 };
 
 const metricsScrapeErrorMessage = (scrapeError: unknown): string => {
@@ -308,57 +319,99 @@ const metricsScrapeErrorMessage = (scrapeError: unknown): string => {
   return "Metrics scrape failed";
 };
 
-export const parsePrometheusMetrics = (text: string): PulseMetric[] => {
+export const parsePrometheusMetrics = (text: string, defaultTarget?: string): ParsedMetrics => {
   const metrics: PulseMetric[] = [];
-  const typeByName = new Map<string, MetricType>();
-  for (const rawLine of text.split(/\r?\n/)) {
-    const line = rawLine.trim();
-    if (!line) continue;
-    if (line.startsWith("# TYPE ")) {
-      const typeLine = parsePrometheusTypeLine(line);
-      if (typeLine) typeByName.set(typeLine.name, typeLine.type);
+  const typeByName = new Map<string, PrometheusType>();
+  const lines = text.split(/\r?\n/).map((line) => line.trim());
+  let skippedSamples = 0;
+  for (const line of lines) {
+    const declaration = parsePrometheusTypeLine(line);
+    if (declaration) typeByName.set(declaration.name, declaration.type);
+  }
+  for (const line of lines) {
+    if (!line || line.startsWith("#")) continue;
+    const sample = parsePrometheusSampleLine(line);
+    if (!sample) {
+      skippedSamples += 1;
       continue;
     }
-    if (line.startsWith("#")) continue;
-    const sample = parsePrometheusSampleLine(line);
-    if (sample) metrics.push(prometheusSampleToMetric(sample, typeByName));
+    const family = sample.name.replace(/_(bucket|sum|count)$/, "");
+    const type = typeByName.get(sample.name) ?? typeByName.get(family);
+    if (type !== "gauge" && type !== "counter") {
+      skippedSamples += 1;
+      continue;
+    }
+    const target = resourceKeyFromDimensions(sample.dimensions) ?? defaultTarget;
+    metrics.push({ ...sample, type, resource: target ? { type: "target", id: target } : null });
   }
-  return metrics;
+  return { metrics, skippedSamples };
 };
 
-export const runMetricsSourceScrape = async (
+const scrapeSource = async (
   params: {
     baseId: string;
     sourceId: string;
+    slotTs?: number;
   },
   deps: MetricsScraperDeps,
+  db: TransactionSQL,
 ): Promise<Result<IngestCounts>> => {
   const startedAt = new Date();
-  const source = await loadMetricsSourceConfig(params);
+  const source = await loadMetricsSourceConfig(params, db);
   if (!source) {
     const message = "Metrics source is missing or disabled";
-    await recordFailedSourceScrape({ baseId: params.baseId, sourceId: params.sourceId, startedAt, message });
+    await recordFailedSourceScrape({ baseId: params.baseId, sourceId: params.sourceId, startedAt, message }, db);
     return fail(err.notFound("Metrics source"));
   }
 
+  const slot = new Date(params.slotTs ?? Math.floor(startedAt.getTime() / 60_000) * 60_000);
+  await db`UPDATE pulse.sources SET last_scrape_slot_at = GREATEST(last_scrape_slot_at, ${slot}) WHERE id = ${params.sourceId}::uuid`;
   // Endpoint-side failures (unreachable, timeout, HTTP status, unparseable
   // body) are scrape outcomes: recorded on the source and returned as `fail`.
-  let metricsResult: Result<PulseMetric[]>;
+  let metricsResult: Result<ParsedMetrics>;
   try {
     metricsResult = await fetchPrometheusMetrics(source);
   } catch (scrapeError) {
     metricsResult = fail(err.internal(metricsScrapeErrorMessage(scrapeError)));
   }
   if (!metricsResult.ok) {
-    await recordFailedSourceScrape({ baseId: params.baseId, sourceId: params.sourceId, startedAt, message: metricsResult.error.message });
+    await recordFailedSourceScrape(
+      { baseId: params.baseId, sourceId: params.sourceId, startedAt, message: metricsResult.error.message },
+      db,
+    );
     return fail(metricsResult.error);
   }
-  const metrics = metricsResult.data.map((metric) => ({ ...metric, sourceId: params.sourceId }));
-  const result = await deps.ingestBatch({ baseId: params.baseId, sourceId: params.sourceId, batch: { metrics } });
+  const metrics = metricsResult.data.metrics.map((metric) => ({ ...metric, ts: startedAt.toISOString() }));
+  const result = await deps.ingestBatch({ baseId: params.baseId, sourceId: params.sourceId, batch: { metrics }, transaction: db });
   // The ingest writer turns database failures into internal errors. Those are
   // infrastructure, not a property of the endpoint: throw so the job retries
   // instead of recording them as a scrape outcome.
   if (!result.ok && result.error.status >= 500) throw new Error(`Metrics ingest failed: ${result.error.message}`);
-  await recordIngestResult({ baseId: params.baseId, sourceId: params.sourceId, startedAt, result });
+  await recordIngestResult(
+    {
+      baseId: params.baseId,
+      sourceId: params.sourceId,
+      startedAt,
+      result,
+      warning: metricsResult.data.skippedSamples
+        ? `${metricsResult.data.skippedSamples} unsupported, invalid or nonfinite samples skipped; only declared gauge/counter families are supported`
+        : null,
+    },
+    db,
+  );
   return result;
 };
+
+export const runMetricsSourceScrape = async (
+  params: { baseId: string; sourceId: string; slotTs?: number },
+  deps: MetricsScraperDeps,
+): Promise<Result<IngestCounts>> =>
+  (deps.database ?? sql).begin(async (tx) => {
+    const [claim] = await tx<
+      { claimed: boolean }[]
+    >`SELECT pg_try_advisory_xact_lock(hashtextextended(${`pulse.scrape:${params.sourceId}`}, 0)) AS claimed`;
+    if (!claim?.claimed) return fail(err.conflict("A scrape for this source is already running"));
+    const active = await requireBaseActive(params.baseId, tx);
+    if (!active.ok) return active;
+    return scrapeSource(params, deps, tx);
+  });

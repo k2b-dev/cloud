@@ -51,6 +51,12 @@ describe("fresh Pulse installation", () => {
       expect(row?.name).toBe("Preserved");
       const [installation] = await sql`SELECT count(*)::int AS count FROM pulse.installation`;
       expect(installation?.count).toBe(1);
+      await expect(Promise.resolve(sql`SELECT 'histogram'::pulse.metric_type`)).rejects.toThrow();
+      await expect(
+        Promise.resolve(
+          sql`INSERT INTO pulse.sources(short_id,base_id,kind,name,scrape_interval_seconds) SELECT 'Test02',id,'metrics','Invalid interval',90 FROM pulse.bases WHERE short_id='Test01'`,
+        ),
+      ).rejects.toThrow();
       await expect(Promise.resolve(sql`INSERT INTO pulse.bases (short_id, name) VALUES ('bad', 'Invalid')`)).rejects.toThrow();
       await expect(
         Promise.resolve(sql`INSERT INTO pulse.bases (short_id, name, retention_days) VALUES ('Test02', 'Invalid', 0)`),

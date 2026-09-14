@@ -40,8 +40,6 @@ const dimensionSearchText = (dimensions: Record<string, string>): string =>
 const referenceMetricAggregations: Record<MetricType, Aggregation> = {
   gauge: "avg",
   counter: "rate",
-  histogram: "p95",
-  summary: "p95",
 };
 
 type ReferenceAggregateRow = { id: string; count: number; lastSeenAt: string; search: string };

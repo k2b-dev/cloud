@@ -1,8 +1,8 @@
-import { NoticeCard, Button, dialogCore, NumberInput, PanelDialog, panelDialogOptions, Select, TextInput } from "@k2b/ui";
-import { createSignal, Show, type Accessor } from "solid-js";
+import { Button, dialogCore, NoticeCard, NumberInput, PanelDialog, panelDialogOptions, Select, TextInput } from "@k2b/ui";
+import { type Accessor, createSignal, Show } from "solid-js";
+import { usePulseMessages } from "../use-messages";
 import { SOURCE_TYPE_OPTIONS } from "./helpers";
 import type { CreateSourceInput, SourceCreateKind } from "./types";
-import { usePulseMessages } from "../use-messages";
 
 type SourceCreateDialogOptions = {
   loading: Accessor<boolean>;
@@ -39,12 +39,7 @@ export const openSourceCreateDialog = (options: SourceCreateDialogOptions) =>
         }}
       >
         <PanelDialog>
-          <PanelDialog.Header
-            title={t().newSource}
-            subtitle={t().newSourceDescription}
-            icon="ti ti-plug-connected"
-            close={close}
-          />
+          <PanelDialog.Header title={t().newSource} subtitle={t().newSourceDescription} icon="ti ti-plug-connected" close={close} />
           <PanelDialog.Body>
             <TextInput
               label={t().name}
@@ -86,7 +81,8 @@ export const openSourceCreateDialog = (options: SourceCreateDialogOptions) =>
                     description={t().scrapeIntervalDescription}
                     icon="ti ti-refresh"
                     suffix={t().secondsShort}
-                    min={10}
+                    min={60}
+                    step={60}
                     max={86_400}
                     value={scrapeIntervalSeconds}
                     onValueChange={setScrapeIntervalSeconds}

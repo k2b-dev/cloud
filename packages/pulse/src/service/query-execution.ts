@@ -33,6 +33,7 @@ type MetricValueRow = {
 
 type MetricSeriesMatch = {
   id: string;
+  type: string;
   resource_key: string | null;
   resource_id: string | null;
   resource_type: string | null;
@@ -129,7 +130,7 @@ const resolveMetricSeries = async (query: MetricQuery): Promise<MetricSeriesMatc
     .slice(1)
     .reduce((condition, next) => sql`${condition} AND ${next}`, dimensionConditions[0] ?? sql`TRUE`);
   const rows = await sql<MetricSeriesMatch[]>`
-    SELECT ms.id, ms.resource_key, ms.resource_id, ms.resource_type, ms.resource_label, ms.dimensions
+    SELECT ms.id, md.type, ms.resource_key, ms.resource_id, ms.resource_type, ms.resource_label, ms.dimensions
     FROM pulse.metric_series ms
     JOIN pulse.metric_defs md ON md.id = ms.metric_id
     WHERE ms.base_id = ${query.baseId}::uuid
@@ -223,37 +224,33 @@ const queryLatestMetric = async (query: MetricQuery, window: MetricWindow, serie
 
 const queryCounterDeltaMetric = async (query: MetricQuery, window: MetricWindow, seriesIds: string[]): Promise<MetricValueRow[]> => {
   const valueSql =
-    query.aggregation === "rate"
-      ? sql`GREATEST(last_value - first_value, 0) / NULLIF(seconds, 0)`
-      : sql`GREATEST(last_value - first_value, 0)`;
-  const rows = await sql<MetricValueRow[]>`
-    WITH bucketed AS (
-      SELECT
-        date_bin(${window.bucketInterval}::interval, ts, '1970-01-01'::timestamptz) AS bucket,
-        series_id,
-        ts,
-        value
-      FROM pulse.metric_samples
-      WHERE base_id = ${query.baseId}::uuid
-        AND series_id = ANY(${toPgUuidArray(seriesIds)}::uuid[])
-        AND ts >= ${window.since}
-    ),
-    series_bucket AS (
-      SELECT
-        bucket,
-        series_id,
-        (array_agg(value ORDER BY ts ASC))[1] AS first_value,
-        (array_agg(value ORDER BY ts DESC))[1] AS last_value,
-        EXTRACT(epoch FROM MAX(ts) - MIN(ts))::double precision AS seconds
-      FROM bucketed
-      GROUP BY bucket, series_id
+    query.aggregation === "rate" ? sql`SUM(delta) / NULLIF(SUM(seconds) FILTER (WHERE delta IS NOT NULL), 0)` : sql`SUM(delta)`;
+  return await sql<MetricValueRow[]>`
+    WITH samples AS (
+      SELECT sample.series_id, sample.ts, sample.value
+      FROM unnest(${toPgUuidArray(seriesIds)}::uuid[]) AS selected(id)
+      CROSS JOIN LATERAL (
+        (SELECT series_id, ts, value FROM pulse.metric_samples
+         WHERE base_id = ${query.baseId}::uuid AND series_id = selected.id AND ts < ${window.since}
+         ORDER BY ts DESC LIMIT 1)
+        UNION ALL
+        (SELECT series_id, ts, value FROM pulse.metric_samples
+         WHERE base_id = ${query.baseId}::uuid AND series_id = selected.id AND ts >= ${window.since})
+      ) sample
+    ), pairs AS (
+      SELECT *, lag(value) OVER series AS previous_value, lag(ts) OVER series AS previous_ts
+      FROM samples WINDOW series AS (PARTITION BY series_id ORDER BY ts)
+    ), deltas AS (
+      SELECT series_id, date_bin(${window.bucketInterval}::interval, ts, '1970-01-01'::timestamptz) AS bucket,
+        CASE WHEN previous_ts < ts THEN
+          CASE WHEN value >= previous_value THEN value - previous_value ELSE value END
+        END AS delta,
+        EXTRACT(epoch FROM ts - previous_ts)::double precision AS seconds
+      FROM pairs WHERE ts >= ${window.since}
     )
-    SELECT series_id, bucket, ${valueSql} AS value
-    FROM series_bucket
-    ORDER BY bucket ASC, series_id ASC
-    LIMIT ${MAX_METRIC_POINTS}
+    SELECT series_id, bucket, ${valueSql} AS value FROM deltas
+    GROUP BY series_id, bucket ORDER BY bucket, series_id LIMIT ${MAX_METRIC_POINTS}
   `;
-  return rows;
 };
 
 const sampleAggregateSql = (aggregation: MetricQuery["aggregation"]) => {
@@ -317,6 +314,12 @@ export const queryMetricData = async (
   if (series.length === 0) return ok([]);
   if (series.length > MAX_MATCHED_SERIES) {
     return fail(err.badInput("This query matches too many series. Add a source or dimension filter."));
+  }
+  if ((query.aggregation === "rate" || query.aggregation === "increase") && series.some((item) => item.type !== "counter")) {
+    return fail(err.badInput("Rate and increase require a counter metric"));
+  }
+  if (["p50", "p90", "p95", "p99"].includes(query.aggregation) && series.some((item) => item.type !== "gauge")) {
+    return fail(err.badInput("Sample percentiles require a gauge metric"));
   }
   const groups = new Set(series.map((item) => metricGroup(item, query.groupBy).key));
   const maxOutputPoints = Math.min(MAX_METRIC_POINTS, Math.max(1, limits.maxOutputPoints ?? MAX_METRIC_POINTS));

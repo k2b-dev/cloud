@@ -181,6 +181,15 @@ export const createSource = async (params: {
   bearerToken?: string | null;
   scrapeIntervalSeconds?: number | null;
 }): Promise<Result<PulseSource>> => {
+  if (
+    params.scrapeIntervalSeconds != null &&
+    (!Number.isInteger(params.scrapeIntervalSeconds) ||
+      params.scrapeIntervalSeconds < 60 ||
+      params.scrapeIntervalSeconds % 60 !== 0 ||
+      params.scrapeIntervalSeconds > 86_400)
+  ) {
+    return fail(err.badInput("Scrape interval must be a multiple of 60 between 60 and 86400 seconds"));
+  }
   const access = await requireBaseAccess(params.baseId, params.user, "write");
   if (!access.ok) return fail(access.error);
   const active = await requireBaseActive(params.baseId);
@@ -269,6 +278,15 @@ const normalizeSourceUpdateValues = async (params: UpdateSourceParams, existing:
 };
 
 export const updateSource = async (params: UpdateSourceParams): Promise<Result<PulseSource>> => {
+  if (
+    params.scrapeIntervalSeconds != null &&
+    (!Number.isInteger(params.scrapeIntervalSeconds) ||
+      params.scrapeIntervalSeconds < 60 ||
+      params.scrapeIntervalSeconds % 60 !== 0 ||
+      params.scrapeIntervalSeconds > 86_400)
+  ) {
+    return fail(err.badInput("Scrape interval must be a multiple of 60 between 60 and 86400 seconds"));
+  }
   const access = await requireBaseAccess(params.baseId, params.user, "write");
   if (!access.ok) return fail(access.error);
   const active = await requireBaseActive(params.baseId);

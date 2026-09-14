@@ -1,68 +1,82 @@
 import { describe, expect, test } from "bun:test";
-import { parsePrometheusMetrics } from "./metrics-scraper";
+import { fetchPrometheusMetrics, parsePrometheusMetrics } from "./metrics-scraper";
 
 describe("Pulse Prometheus metrics scraper", () => {
-  test("parses Prometheus samples with labels, escaped values, and explicit types", () => {
-    const metrics = parsePrometheusMetrics(`# HELP http_requests_total Total requests.
-# TYPE http_requests_total counter
-http_requests_total{method="GET",route="/api",instance="api-1"} 42 1710000000000
+  test("keeps declared scalar families and explicit or endpoint target identity", () => {
+    const parsed = parsePrometheusMetrics(
+      `# TYPE http_requests_total counter
+http_requests_total{method="GET",instance="api-1"} 42
 # TYPE process_resident_memory_bytes gauge
-process_resident_memory_bytes{host="worker-1",note="line\\nquote\\"slash\\\\"} 123.5
-`);
-
-    expect(metrics).toEqual([
-      {
-        name: "http_requests_total",
-        value: 42,
-        type: "counter",
-        resource: { type: "target", id: "api-1" },
-        dimensions: { method: "GET", route: "/api", instance: "api-1" },
-      },
-      {
-        name: "process_resident_memory_bytes",
-        value: 123.5,
-        type: "gauge",
-        resource: { type: "target", id: "worker-1" },
-        dimensions: { host: "worker-1", note: 'line\nquote"slash\\' },
-      },
-    ]);
+process_resident_memory_bytes 123.5
+`,
+      "node:9100",
+    );
+    expect(parsed).toEqual({
+      skippedSamples: 0,
+      metrics: [
+        {
+          name: "http_requests_total",
+          value: 42,
+          type: "counter",
+          resource: { type: "target", id: "api-1" },
+          dimensions: { method: "GET", instance: "api-1" },
+        },
+        {
+          name: "process_resident_memory_bytes",
+          value: 123.5,
+          type: "gauge",
+          resource: { type: "target", id: "node:9100" },
+          dimensions: {},
+        },
+      ],
+    });
   });
-
-  test("infers histogram and counter samples when the base type line is absent", () => {
-    const metrics = parsePrometheusMetrics(`
-request_duration_seconds_bucket{le="0.5"} 10
-request_duration_seconds_sum 12.75
-request_duration_seconds_count 20
-jobs_processed_total 99
-temperature_celsius 23
+  test("does not reinterpret histogram or summary suffixes as scalar counters", () => {
+    const parsed = parsePrometheusMetrics(`# TYPE latency summary
+latency{quantile="0.5"} 2
+latency_sum -12
+latency_count 9
+# TYPE duration histogram
+duration_bucket{le="1"} 3
+duration_sum 2
+duration_count 3
+undeclared_total 4
+# TYPE active gauge
+active 0
 `);
-
-    expect(metrics.map((metric) => [metric.name, metric.type])).toEqual([
-      ["request_duration_seconds_bucket", "histogram"],
-      ["request_duration_seconds_sum", "counter"],
-      ["request_duration_seconds_count", "counter"],
-      ["jobs_processed_total", "counter"],
-      ["temperature_celsius", "gauge"],
-    ]);
+    expect(parsed.skippedSamples).toBe(7);
+    expect(parsed.metrics.map(({ name, type }) => [name, type])).toEqual([["active", "gauge"]]);
   });
-
-  test("ignores comments, malformed lines, and non-finite values", () => {
-    const metrics = parsePrometheusMetrics(`
-# HELP ignored Ignored.
+  test("reports malformed and nonfinite samples and preserves escaped labels", () => {
+    const parsed = parsePrometheusMetrics(`# TYPE value gauge
 broken
-nan_value NaN
-infinite_value +Inf
-valid_value -1.25e3
+value NaN
+value +Inf
+value{note="line\\nquote\\"slash\\\\"} -1.25e3
 `);
-
-    expect(metrics).toEqual([
-      {
-        name: "valid_value",
-        value: -1250,
-        type: "gauge",
-        resource: null,
-        dimensions: {},
-      },
-    ]);
+    expect(parsed.skippedSamples).toBe(3);
+    expect(parsed.metrics[0]).toMatchObject({ value: -1250, dimensions: { note: 'line\nquote"slash\\' } });
+  });
+  test("the timeout covers a body that stalls after its headers", async () => {
+    const endpoint = Bun.serve({
+      port: 0,
+      fetch: () =>
+        new Response(
+          new ReadableStream({
+            start(controller) {
+              controller.enqueue(new TextEncoder().encode("# TYPE value gauge\n"));
+            },
+          }),
+        ),
+    });
+    const start = Date.now();
+    try {
+      await expect(
+        fetchPrometheusMetrics({ endpointUrl: `http://127.0.0.1:${endpoint.port}/metrics`, bearerTokenEncrypted: null }, 100),
+      ).rejects.toThrow();
+      expect(Date.now() - start).toBeLessThan(2000);
+    } finally {
+      endpoint.stop(true);
+    }
   });
 });

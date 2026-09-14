@@ -118,9 +118,7 @@ describe("Pulse query authoring", () => {
     expect(defaultPulseQuery([{ name: "requests.total", type: "counter", unit: "count", seriesCount: 1, lastSeenAt: null }])).toContain(
       " rate ",
     );
-    expect(
-      defaultPulseQuery([{ name: "duration.bucket", type: "histogram", unit: "seconds", seriesCount: 1, lastSeenAt: null }]),
-    ).toContain(" p95 ");
+    expect(defaultPulseQuery([{ name: "duration", type: "gauge", unit: "seconds", seriesCount: 1, lastSeenAt: null }])).toContain(" avg ");
     expect(defaultPulseQuery([{ name: "memory.usage", type: "gauge", unit: "percent", seriesCount: 1, lastSeenAt: null }])).toContain(
       " avg ",
     );
