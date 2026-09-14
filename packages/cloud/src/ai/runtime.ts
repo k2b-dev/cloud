@@ -1,3 +1,4 @@
+import { coreSettings } from "../services/settings/api";
 import { startAiDictationRuntime } from "./dictation-runtime";
 import { isDeepStrictEqual } from "node:util";
 import type { InboundEvent, Input, Message } from "@k2b/nessi";
@@ -45,7 +46,7 @@ const AI_TURN_LEASE_MS = 45_000;
 const AI_TURN_HEARTBEAT_MS = 3_000;
 const AI_TURN_WORKER_CONCURRENCY = 8;
 const AI_TURN_MAX_ATTEMPTS = 5;
-const AI_TURN_RUN_BUDGET_MS = 10 * 60_000;
+
 const AI_SWEEP_INTERVAL_MS = 15_000;
 
 // ---------------------------------------------------------------------------
@@ -361,6 +362,8 @@ const runClaimedTurn = async (
   leaseOwner: string,
   onTurnFinalized?: (event: AiTurnFinalizedEvent) => Promise<void>,
 ): Promise<void> => {
+  const timeoutMinutes = await coreSettings.get<number>("ai.turn_timeout_minutes");
+  const runBudgetMs = Math.max(0, Number(timeoutMinutes ?? 30)) * 60_000;
   const claim =
     (await aiConversations.claimTurn({
       ...job,
@@ -368,7 +371,7 @@ const runClaimedTurn = async (
       leaseMs: AI_TURN_LEASE_MS,
       from: "queue",
       maxAttempts: AI_TURN_MAX_ATTEMPTS,
-      runBudgetMs: AI_TURN_RUN_BUDGET_MS,
+      runBudgetMs,
     })) ??
     (await aiConversations.claimTurn({
       ...job,
@@ -376,7 +379,7 @@ const runClaimedTurn = async (
       leaseMs: AI_TURN_LEASE_MS,
       from: "waiting",
       maxAttempts: AI_TURN_MAX_ATTEMPTS,
-      runBudgetMs: AI_TURN_RUN_BUDGET_MS,
+      runBudgetMs,
     }));
 
   if (!claim) return; // Already owned, done, cancelled, or attempt-capped.

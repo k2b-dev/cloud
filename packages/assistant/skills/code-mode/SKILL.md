@@ -11,6 +11,18 @@ Cloud feature when it already answers the question. For a quick look at an
 uploaded PDF or Office file, `read_file` can return converted Markdown without
 code. Use the original with code when exact cells, types, or PDF positions matter.
 
+## Keep a working plan
+
+For work with several real steps, use `todo_write` to keep a short chat plan.
+Replace the full `todos` list each time; give each item a stable `id`, actionable
+`content`, and `status` (`pending`, `in_progress`, `completed`, or `cancelled`).
+At most one step is active. Update as work changes, including user corrections;
+mark a step completed only after doing and checking it. Preserve exact commands
+when they matter. Skip this tool for a simple calculation or conversational reply.
+
+For an app, useful steps are inspect inputs, implement, and verify actual output
+and interactions. Saving or compiling code does not complete verification.
+
 ## Explore quickly, build from evidence
 
 For a clear small experiment, load `code_run` through `load_tools` and pass

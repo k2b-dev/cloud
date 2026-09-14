@@ -1,3 +1,4 @@
+import { AiRunTimeout } from "./run-timeout";
 import { createTurnTimingRecorder, withDurableTurnTiming } from "./turn-timing";
 import type { CompactEvent, NessiLoop, OutboundEvent, Provider, Tool, ToolResolver } from "@k2b/nessi";
 import { compact, nessi } from "@k2b/nessi";
@@ -970,10 +971,12 @@ export class AiTurnExecutor {
         })
       : prepared.tools;
 
+    const workingPlan = (await aiConversations.getConversation({ conversationId }))?.todoPlan;
     const systemPrompt = composeAiSystemPrompt({
       globalInstructions: settings.globalInstructions,
       turnInstructions: [
         material.systemPrompt,
+        workingPlan ? `Current working plan (new todo_write results supersede this):\n${JSON.stringify({ todos: workingPlan.todos })}` : undefined,
         ...(allowedTools === null
           ? []
           : [
@@ -1072,6 +1075,15 @@ export class AiTurnExecutor {
       return;
     }
 
+    // A provider/tool may notice the lost lease before the next heartbeat tick.
+    // Resolve the durable cause too, so deadline expiry never looks like a user stop.
+    const finalTurn = outcome.status !== "completed" ? await aiConversations.getTurn({ conversationId, turnId }) : null;
+    const timeout = abortController.signal.reason instanceof AiRunTimeout ? abortController.signal.reason
+      : finalTurn?.deadline && Date.parse(finalTurn.deadline) <= Date.now() && !finalTurn.cancelRequestedAt ? new AiRunTimeout(finalTurn.runBudgetMs ?? null) : null;
+    if (timeout) {
+      outcome.status = "failed";
+      outcome.error = timeout.messageFor(promptLocale);
+    }
     const finalized = await this.finalize(conversationId, turnId, pipeline, outcome.status, outcome.error, "chat");
     if (finalized === "pending_steering" && outcome.status === "completed" && !signal.aborted) {
       await this.runChat(conversationId, turnId, claim, config, pipeline, signal, true);
@@ -1337,7 +1349,11 @@ export class AiTurnExecutor {
         failures += 1;
         if (failures < 3) return;
       }
-      if (!ok && !stopped) abortController.abort();
+      if (!ok && !stopped) {
+        const turn = await aiConversations.getTurn({ conversationId, turnId }).catch(() => null);
+        const timedOut = turn?.deadline && Date.parse(turn.deadline) <= Date.now() && !turn.cancelRequestedAt;
+        abortController.abort(timedOut ? new AiRunTimeout(turn.runBudgetMs ?? null) : undefined);
+      }
     };
     const timer = setInterval(() => void tick(), this.config.heartbeatMs);
     if (typeof timer === "object" && "unref" in timer) timer.unref();
@@ -1434,6 +1450,10 @@ export class AiTurnExecutor {
       signal.removeEventListener("abort", onSignal);
     }
 
+    if (abortController.signal.reason instanceof AiRunTimeout) {
+      status = "failed";
+      error = abortController.signal.reason.messageFor();
+    }
     await this.finalize(conversationId, turnId, pipeline, status, error, "compact");
   }
 }

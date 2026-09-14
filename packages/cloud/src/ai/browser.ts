@@ -1,3 +1,4 @@
+export { parseAiTodoPlan, type AiTodoPlan } from "./todo-contracts";
 export { CodeResourceId, CODE_RUNTIME_TOOL_NAMES, CodeRuntimeInput, parseCodeToolInput } from "./browser-code-contracts";
 import { AI_TURN_ATTACHMENT_MAX_ITEMS } from "./limits";
 import type { AiConversation, AiDraftContentPart } from "./types";

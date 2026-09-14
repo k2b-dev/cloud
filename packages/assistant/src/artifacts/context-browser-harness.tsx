@@ -20,7 +20,7 @@ render(() => {
           <div class="assistant-chat-layout">
             <div class="assistant-chat-messages"><div class="k2b-chat-timeline__viewport">Messages</div></div>
             <div class="assistant-chat-composer"><input aria-label="Message" /></div>
-            <AssistantChatContextPanel chatId="chat-one" onOpenView={open} onOpenApp={(id,title) => controller.open(appTab(id,title))} />
+            <AssistantChatContextPanel chatId="chat-one" onOpenView={open} onOpenApp={(id,title,start) => controller.open(appTab(id,title,start))} />
           </div>
         </div>
       </AppWorkspace.MainPane>

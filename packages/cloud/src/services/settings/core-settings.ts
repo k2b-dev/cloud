@@ -288,6 +288,14 @@ export const CORE_SETTINGS = {
     description: "Optional organization guidance added to the fixed long-chat compaction task and completeness contract.",
     placeholder: "Preserve internal ticket ids and use the organization's canonical team names.",
   },
+  "ai.turn_timeout_minutes": {
+    kind: "number",
+    label: "Run time limit (minutes)",
+    integer: true,
+    default: 30,
+    min: 0,
+    description: "Maximum running time per AI turn. Zero or an empty field disables this limit. Existing turns keep their original budget; request and tool timeouts still apply.",
+  },
   "ai.max_tool_result_chars": {
     kind: "number",
     label: "Tool Result Ceiling",

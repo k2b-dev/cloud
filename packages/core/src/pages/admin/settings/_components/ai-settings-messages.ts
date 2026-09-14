@@ -62,6 +62,8 @@ export const aiSettingsMessages = i18n.define({
         "Used by view_image when the chat model needs help inspecting a stored image. Direct vision models still receive newly attached images.",
       disableVisionFallback: "Disable view_image fallback",
       filterVisionModels: "Filter vision models",
+      turnTimeout: "Run time limit (minutes)",
+      turnTimeoutDescription: "Default: 30 minutes. Zero or empty means unlimited. Applies to new runs; individual request and tool timeouts remain in effect.",
       toolResultCeiling: "Tool result ceiling",
       toolResultCeilingDescription:
         "Maximum characters in one tool result. The runtime automatically uses less for models with smaller context windows.",
@@ -261,6 +263,8 @@ export const aiSettingsMessages = i18n.define({
         "Wird von view_image verwendet, wenn das Chatmodell Hilfe bei einem gespeicherten Bild benötigt. Modelle mit direkter Bildverarbeitung erhalten neue Anhänge weiterhin selbst.",
       disableVisionFallback: "view_image-Fallback deaktivieren",
       filterVisionModels: "Bildmodelle filtern",
+      turnTimeout: "Laufzeitlimit (Minuten)",
+      turnTimeoutDescription: "Standard: 30 Minuten. Null oder leer bedeutet unbegrenzt. Gilt für neue Läufe; einzelne Request- und Tool-Timeouts bleiben bestehen.",
       toolResultCeiling: "Obergrenze für Werkzeugergebnisse",
       toolResultCeilingDescription:
         "Maximale Zeichenzahl eines Werkzeugergebnisses. Bei kleineren Kontextfenstern verwendet die Laufzeit automatisch weniger.",

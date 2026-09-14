@@ -198,6 +198,7 @@ const AI_SETTINGS_HANDLED_BY_PANEL = new Set<string>([
   AI_COMPACTION_INSTRUCTIONS_SETTING_KEY,
   AI_CHAT_ENRICHMENT_INSTRUCTIONS_SETTING_KEY,
   AI_MEMORY_LEARNING_INSTRUCTIONS_SETTING_KEY,
+  "ai.turn_timeout_minutes",
   AI_MAX_TOOL_RESULT_CHARS_SETTING_KEY,
   AI_FIRECRAWL_API_KEY_SETTING_KEY,
   AI_BACKGROUND_MODEL_SETTING_KEY,
@@ -1423,6 +1424,14 @@ function AiSettingsPanel(props: {
             ]}
             icon="ti ti-microphone"
             error={() => props.errorFor(AI_AUDIO_MODEL_SETTING_KEY)}
+          />
+          <NumberInput
+            label={t().turnTimeout}
+            description={t().turnTimeoutDescription}
+            value={() => Number(props.valueOf("ai.turn_timeout_minutes") ?? 30) || null}
+            onValueChange={(value) => props.onChange("ai.turn_timeout_minutes", value ?? 0)}
+            min={0} showSteppers={false}
+            error={() => props.errorFor("ai.turn_timeout_minutes")}
           />
           <NumberInput
             label={t().toolResultCeiling}

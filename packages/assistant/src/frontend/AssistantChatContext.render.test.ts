@@ -78,7 +78,7 @@ describe("Assistant chat context", () => {
         get children() {
           return createComponent(AssistantChatContextContent, {
             chatId: "cHt234",
-            initial: { chatId: "cHt234", sources: [reference], files: [], tasks: [], runs: [] },
+            initial: { chatId: "cHt234", sources: [reference], files: [], tasks: [], viewerUserId: "test", apps: [], runCount: 0, runs: [] },
           });
         },
       }),
@@ -132,7 +132,7 @@ describe("Assistant chat context", () => {
         }),
       );
 
-    const empty = { chatId: "cHt234", sources: [], files: [], tasks: [], runs: [] } satisfies AssistantChatContextSnapshot;
+    const empty = { chatId: "cHt234", sources: [], files: [], tasks: [], viewerUserId: "test", apps: [], runCount: 0, runs: [] } satisfies AssistantChatContextSnapshot;
     const populated = { ...empty, sources: [source("web", "docs")] } satisfies AssistantChatContextSnapshot;
 
     expect(assistantChatContextHasContent(empty)).toBeFalse();
@@ -169,7 +169,7 @@ describe("Assistant chat context", () => {
         get children() {
           return createComponent(AssistantChatContextContent, {
             chatId: "cHt234",
-            initial: { chatId: "cHt234", sources: [source("web", "Cloud docs")], files: [], tasks: [], runs: [] },
+            initial: { chatId: "cHt234", sources: [source("web", "Cloud docs")], files: [], tasks: [], viewerUserId: "test", apps: [], runCount: 0, runs: [] },
           });
         },
       }),
@@ -221,7 +221,7 @@ describe("Assistant chat context", () => {
                 file("file-three.txt", "text/plain"),
                 file("file-four.txt", "text/plain"),
               ],
-              tasks: [], runs: [],
+              tasks: [], viewerUserId: "test", apps: [], runCount: 0, runs: [],
             },
           });
         },
@@ -273,7 +273,7 @@ test("hides only the current chat and the task already shown in Scheduled", () =
   ];
   expect(visibleAssistantReferences(refs, "cHt234", "tSk234").map((item) => item.key)).toEqual(["other-chat", "other-task"]);
   expect(visibleAssistantReferences(refs, "cHt234").map((item) => item.key)).toEqual(["other-chat", "visible-task", "other-task"]);
-  expect(assistantChatContextHasContent({ chatId: "cHt234", sources: refs.slice(0, 1), files: [], tasks: [], runs: [] })).toBe(false);
+  expect(assistantChatContextHasContent({ chatId: "cHt234", sources: refs.slice(0, 1), files: [], tasks: [], viewerUserId: "test", apps: [], runCount: 0, runs: [] })).toBe(false);
   expect(refs).toHaveLength(4);
 });
 

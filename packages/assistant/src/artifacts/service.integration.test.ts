@@ -110,7 +110,9 @@ const isolated = /\/cloud_assistant_artifacts_test(?:\?|$)/.test(process.env.DAT
   });
 
   test("context titles expose only currently accessible apps", async () => {
-    expect(await artifacts.describe([id, "invalid"], owner.user.id)).toEqual([{ id, title: "Analysis", description: "", icon: "ti ti-app-window",kind:"app",revision:1,publishedVersion:null }]);
+    const described = await artifacts.describe([id, "invalid"], owner.user.id);
+    expect(described).toHaveLength(1);
+    expect(described[0]).toMatchObject({ id, title: "Analysis", description: "", icon: "ti ti-app-window",kind:"app",revision:1,publishedVersion:null,permission:"admin",publishedRevision:null });
     expect(await artifacts.describe([id], stranger.user.id)).toEqual([]);
   });
   test("descriptions round-trip without source writes erasing them", async () => {

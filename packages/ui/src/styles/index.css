@@ -7666,3 +7666,22 @@
   .k2b-ui .k2b-chat-activity[data-busy="true"] .k2b-chat-activity__leading,
   .k2b-ui .k2b-chat-activity[data-busy="true"] .k2b-chat-activity__copy strong { -webkit-text-fill-color: currentColor; }
 }
+
+.k2b-ui .k2b-chat-tasks { border: 1px solid var(--k2b-border); border-radius: 0.75rem; overflow: hidden; }
+.k2b-ui .k2b-chat-tasks__header { display: flex; align-items: center; gap: 0.5rem; width: 100%; padding: 0.6rem 0.75rem; font-size: 0.8125rem; text-align: start; cursor: pointer; }
+.k2b-ui .k2b-chat-tasks__header:focus-visible { outline: 2px solid var(--k2b-action); outline-offset: -2px; }
+.k2b-ui .k2b-chat-tasks__title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.k2b-ui .k2b-chat-tasks__count { white-space: nowrap; color: var(--k2b-text-secondary); font-size: 0.75rem; }
+.k2b-ui .k2b-chat-tasks__segments { display: flex; gap: 2px; width: clamp(2rem, 12vw, 6rem); flex-shrink: 0; }
+.k2b-ui .k2b-chat-tasks__segments > span { height: 4px; flex: 1; min-width: 0; border-radius: 2px; background: var(--k2b-border); }
+.k2b-ui .k2b-chat-tasks__segments > [data-status="completed"] { background: var(--k2b-success-text, #16845b); }
+.k2b-ui .k2b-chat-tasks__segments > [data-status="in_progress"] { background: var(--k2b-action); }
+.k2b-ui .k2b-chat-tasks__segments > [data-status="cancelled"] { background: repeating-linear-gradient(135deg, var(--k2b-border) 0 2px, transparent 2px 4px); }
+.k2b-ui .k2b-chat-tasks__list { max-height: 14rem; overflow-y: auto; margin: 0; padding: 0 0.75rem 0.5rem; list-style: none; }
+.k2b-ui .k2b-chat-tasks__list li { display: flex; gap: 0.5rem; align-items: baseline; padding: 0.3rem 0; font-size: 0.8125rem; }
+.k2b-ui .k2b-chat-tasks__content { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.k2b-ui .k2b-chat-tasks__status { font-size: 0.75rem; color: var(--k2b-text-secondary); }
+.k2b-ui .k2b-chat-tasks__list [data-status="completed"] { color: var(--k2b-text-secondary); }
+.k2b-ui .k2b-chat-tasks__list [data-status="completed"] > i { color: var(--k2b-success-text, #16845b); }
+.k2b-ui .k2b-chat-tasks__list [data-status="in_progress"] > i { color: var(--k2b-action); }
+.k2b-ui .k2b-chat-tasks__list [data-status="cancelled"] .k2b-chat-tasks__content { text-decoration: line-through; color: var(--k2b-text-secondary); }

@@ -1,3 +1,4 @@
+import { parseAiTodoPlan } from "@k2b/cloud/ai/browser";
 import { browserHttpHost, openSecretsDialog } from "../artifacts/SecretsDialog";
 import { createCodeApprovals } from "../artifacts/CapabilityApproval";
 import { useAssistantText } from "./ui-copy";
@@ -125,7 +126,7 @@ export default function AssistantWorkspace(props: Props) {
     const chatId = chat.activeConversationId();
     if (!chatId) return;
     const project = activeConversationProject();
-    openContextView({ context: { conversationId: chatId, category, project }, key: `${chatId}:${category}`, title, render: () => <AssistantChatContextContent chatId={chatId} project={project} category={category} onOpenView={openContextView} onOpenApp={(id, title) => artifactWorkspace.open(appTab(id, title))} /> });
+    openContextView({ context: { conversationId: chatId, category, project }, key: `${chatId}:${category}`, title, render: () => <AssistantChatContextContent chatId={chatId} project={project} category={category} onOpenView={openContextView} onOpenApp={(id, title, start) => artifactWorkspace.open(appTab(id, title, start))} /> });
   };
   const artifactCopy = () => artifactMessages.resolve([locale()]).t;
   const t = () => assistantMessages.resolve([locale()]).t;
@@ -710,6 +711,31 @@ export default function AssistantWorkspace(props: Props) {
 
   const activeConversation = () =>
     conversations().find((conversation) => conversation.id === chat.activeConversationId()) ?? chat.conversation();
+  const [todoOpen, setTodoOpen] = createSignal(false);
+  const todoItems = () => {
+    const checkpoint = chat.conversation()?.todoPlan;
+    let todos = checkpoint?.todos ?? [];
+    for (const stored of chat.messages()) {
+      if (stored.seq <= (checkpoint?.seq ?? -1)) continue;
+      const message = stored.message;
+      const plan = message.role === "tool_result" && message.name === "todo_write" && !message.isError
+        ? parseAiTodoPlan(message.result) : stored.meta?.todoPlan;
+      if (plan) todos = plan.todos;
+    }
+    for (const block of chat.activeTurn()?.blocks ?? []) {
+      if (block.kind === "tool" && block.name === "todo_write" && block.status === "completed" && !block.isError) {
+        const plan = parseAiTodoPlan(block.result);
+        if (plan) todos = plan.todos;
+      }
+    }
+    return todos;
+  };
+  const todoProgress = () => {
+    const todos = todoItems(), done = todos.filter(item => item.status === "completed").length;
+    const cancelled = todos.filter(item => item.status === "cancelled").length;
+    const de = locale().startsWith("de");
+    return `${done}/${todos.length - cancelled} ${de ? "erledigt" : "complete"}${cancelled ? ` · ${cancelled} ${de ? "verworfen" : "cancelled"}` : ""}`;
+  };
   const activeConversationProject = () => {
     const projectId = activeConversation()?.projectId;
     return projectId ? (projects().find((project) => project.id === projectId) ?? null) : null;
@@ -1038,6 +1064,13 @@ export default function AssistantWorkspace(props: Props) {
             </Show>
           </div>
         </Show>
+        <Show when={!projectComposer()}>
+          <Chat.Tasks items={todoItems()} open={todoOpen()} onOpenChange={setTodoOpen}
+            label={locale().startsWith("de") ? "Aufgaben" : "Tasks"} progressLabel={todoProgress()}
+            statusLabels={locale().startsWith("de")
+              ? { pending: "Offen", in_progress: chat.activeTurn()?.status === "running" ? "In Arbeit" : "Aktueller Schritt", completed: "Erledigt", cancelled: "Verworfen" }
+              : { pending: "Pending", in_progress: chat.activeTurn()?.status === "running" ? "In progress" : "Current step", completed: "Completed", cancelled: "Cancelled" }} />
+        </Show>
         <Chat.Composer
           submitTools={<dictation.Control />}
           footerContent={dictation.recording() ? <dictation.RecordingFooter /> : undefined}
@@ -1359,7 +1392,7 @@ export default function AssistantWorkspace(props: Props) {
                           <AssistantChatContextPanel
                             onOpenView={openContextView}
                             onSnapshotChange={setWorkspaceContext}
-                            onOpenApp={(id, title) => artifactWorkspace.open(appTab(id, title))}
+                            onOpenApp={(id, title, start) => artifactWorkspace.open(appTab(id, title, start))}
                             chatId={conversation().id}
                             project={activeConversationProject()}
                             initial={props.initialContext?.chatId === conversation().id ? props.initialContext : null}

@@ -35,6 +35,7 @@ export function groupToolBlocks(blocks: readonly AiTurnBlock[], hasUi: (tool: To
 export function summarizeToolGroup(tools: readonly Tool[], locale: string): string {
   const de = locale.startsWith("de");
   const categories = tools.map((tool) => {
+    if (tool.name === "todo_write") return de ? "Arbeitsplan aktualisiert" : "Updated working plan";
     if (tool.name.startsWith("code_")) return de ? "Mit Code gearbeitet" : "Worked with code";
     if (tool.presentation?.kind === "capability" || tool.name === "read_cloud_resource")
       return de ? "Cloud-Integration verwendet" : "Used Cloud integration";

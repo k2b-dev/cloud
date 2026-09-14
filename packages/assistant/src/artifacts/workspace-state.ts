@@ -5,7 +5,7 @@ export type WorkspaceTab =
   | { key: string; kind: "context"; conversationId: string; category: ContextCategory; title: string; project?: AiProject | null }
   | { key: string; kind: "view"; title: string; render: () => JSX.Element }
   | { key: string; kind: "file"; conversationId: string; path: string; title: string }
-  | { key: string; kind: "app"; artifactId: string; title: string }
+  | { key: string; kind: "app"; artifactId: string; title: string; autoStart?: boolean }
   | { key: string; kind: "source"; artifactId: string; path: string; title: string };
 
 export function contextTab(conversationId: string, category: ContextCategory, title: string, project?: AiProject | null): WorkspaceTab {
@@ -15,15 +15,15 @@ export type WorkspaceState = { tabs: WorkspaceTab[]; active: string | null };
 export function fileTab(conversationId: string, path: string): WorkspaceTab {
   return { key: JSON.stringify(["file",conversationId,path]),kind: "file",conversationId,path,title: path.split("/").pop() || path };
 }
-export function appTab(artifactId: string, title: string): WorkspaceTab {
-  return { key: JSON.stringify(["app",artifactId]),kind: "app",artifactId,title };
+export function appTab(artifactId: string, title: string, autoStart = false): WorkspaceTab {
+  return { key: JSON.stringify(["app",artifactId]),kind: "app",artifactId,title,autoStart };
 }
 export function sourceTab(artifactId: string, path: string): WorkspaceTab {
   return { key: JSON.stringify(["source",artifactId,path]),kind: "source",artifactId,path,title: path.split("/").pop() || path };
 }
 export function openWorkspaceTab(state: WorkspaceState, tab: WorkspaceTab): WorkspaceState {
   const exists = state.tabs.some((current) => current.key === tab.key);
-  return { tabs: exists ? state.tabs.map((current) => current.key === tab.key ? { ...current,title: tab.title } : current) : [...state.tabs,tab], active: tab.key };
+  return { tabs: exists ? state.tabs.map((current) => current.key === tab.key ? { ...current,title: tab.title, ...(current.kind === "app" && tab.kind === "app" && tab.autoStart ? { autoStart: true } : {}) } : current) : [...state.tabs,tab], active: tab.key };
 }
 export function closeWorkspaceTab(state: WorkspaceState, key: string): WorkspaceState {
   const index = state.tabs.findIndex((tab) => tab.key === key);

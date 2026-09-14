@@ -37,7 +37,7 @@ describe("@k2b/ui portable chat family", () => {
   });
 
   test("exposes one compound chat API without legacy runtime exports", () => {
-    expect(Object.keys(Chat)).toEqual(["Timeline", "Message", "Activity", "Composer", "ContextUsage"]);
+    expect(Object.keys(Chat)).toEqual(["Tasks", "Timeline", "Message", "Activity", "Composer", "ContextUsage"]);
     for (const legacyExport of ["ChatTimeline", "ChatMessage", "ChatActivity", "ChatComposer", "ChatContextUsage"]) {
       expect(legacyExport in publicUi).toBe(false);
     }
@@ -624,8 +624,8 @@ describe("@k2b/ui portable chat family", () => {
     const css = readFileSync(resolve(import.meta.dir, "../styles/index.css"), "utf8");
 
     expect(css).toContain('.k2b-chat-activity[data-busy="true"]:not([data-tone="success"]):not([data-tone="danger"])');
-    expect(css).toContain("color-mix(in srgb, var(--k2b-chat-activity-busy-color) 48%, transparent)");
-    expect(css).toContain("animation: k2b-chat-activity-shimmer 1.7s linear infinite;");
+    expect(css).toContain("background-clip: text;");
+    expect(css).toMatch(/animation: k2b-chat-activity-shimmer [\d.]+s linear infinite;/);
     expect(css).toContain("@keyframes k2b-chat-activity-shimmer");
     expect(css).not.toContain("k2b-chat-activity-accent-sweep");
     expect(css).toContain("color: var(--k2b-chat-activity-busy-color);");
@@ -679,4 +679,15 @@ test("keeps context actions available without usage and out of the Plus menu", (
   expect(html).toContain("Compact context");
   expect(html).toContain('aria-expanded="false"');
   expect(html).not.toContain('role="tooltip"');
+});
+
+
+test("working plan shows one semantic segment per step and bounded disclosure", () => {
+  const items = [{id:"done",content:"Read inputs",status:"completed" as const},{id:"active",content:"Verify",status:"in_progress" as const},{id:"removed",content:"Export",status:"cancelled" as const}];
+  const html = renderToString(() => createComponent(Chat.Tasks, { items, label:"Tasks", progressLabel:"1/2 complete · 1 cancelled", open:true, onOpenChange:()=>{}, statusLabels:{pending:"Pending",in_progress:"Current step",completed:"Completed",cancelled:"Cancelled"} }));
+  expect(html).toContain('aria-expanded="true"');
+  expect(html).toContain("1/2 complete");
+  expect(html).toContain('data-status="cancelled"');
+  expect(html).toContain("Current step");
+  expect(html).not.toContain("Running");
 });

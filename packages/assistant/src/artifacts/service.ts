@@ -124,7 +124,7 @@ export const artifacts = {
       return {deleted:true,databaseCleanupQueued:cleanup.length>0};
     });
   },
-  async describe(ids: string[], userId: string, conversationId?: string): Promise<Array<{ id: string; title: string; description: string; icon: string; kind: "app" | "script"; revision: number; publishedVersion: number | null }>> {
+  async describe(ids: string[], userId: string, conversationId?: string): Promise<Array<ArtifactSummary & { description: string; icon: string }>> {
     if (!ids.length) return [];
     const valid = ids.filter(id => CodeResourceId.safeParse(id).success);
     if (!valid.length) return [];
@@ -134,9 +134,12 @@ export const artifacts = {
     const match = buildAccessPrincipalCondition({ subject: { type: "user", userId }, columns: {
       userId: sql`a.user_id`, groupId: sql`a.group_id`, serviceAccountId: sql`a.service_account_id`, authenticatedOnly: sql`a.authenticated_only`,
     } });
-    return sql<{ id: string; title: string; description: string; icon: string; kind: "app" | "script"; revision: number; publishedVersion: number | null }[]>`SELECT artifact.short_id AS id, artifact.kind,
+    return sql<(ArtifactSummary & { description: string; icon: string })[]>`SELECT artifact.short_id AS id, artifact.kind,
       CASE WHEN bool_or(a.permission='admin') THEN artifact.revision ELSE artifact.published_revision END AS revision,
       artifact.published_version AS "publishedVersion",
+      artifact.published_revision AS "publishedRevision", artifact.updated_at::text AS "updatedAt",
+      NULL AS "forkedFromId", NULL AS "forkedFromRevision",
+      CASE WHEN bool_or(a.permission='admin') THEN 'admin' ELSE 'read' END AS permission,
       CASE WHEN bool_or(a.permission='admin') THEN artifact.icon ELSE artifact.published_icon END AS icon,
       CASE WHEN bool_or(a.permission='admin') THEN artifact.title ELSE artifact.published_title END AS title,
       CASE WHEN bool_or(a.permission='admin') THEN artifact.description ELSE artifact.published_description END AS description FROM assistant.artifacts artifact

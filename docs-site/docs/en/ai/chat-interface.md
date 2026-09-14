@@ -467,3 +467,30 @@ Managed execution reports starting, working, and approval phases in the active
 tool row. Startup is bounded to 45 seconds; the server also checks the browser
 event loop with a 10-second heartbeat deadline. A dead host is reported without
 replaying an uncertain operation.
+
+### Working plan and compact Studio context
+
+Assistant shows the current working plan above its composer. The collapsible
+list uses the portable, controlled `Chat.Tasks` component from `@k2b/ui`.
+Applications supply items, disclosure state, localized labels and progress text.
+One segment per task shows completed work in green, the current step in the
+accent color, pending work in gray, and cancelled work with a striped segment.
+Symbols and text provide the same information without color. Cancelled tasks
+are counted separately. The current step remains visible after stopping; it is
+only described as in progress while its turn is actually running.
+
+Compact context entries use one line and consistent icon alignment. One-off
+runs appear only in the Studio count, not as preview rows. The Studio tab reuses
+the gallery's application cards and permission-aware menus. Start opens the app
+in a workspace tab; the external-link action opens its standalone runner in a
+new browser tab. Opening a context preview still does not start an app. The
+Studio tab also shows the latest 20 one-off runs in a compact log table, with
+the full count stated separately. Exports do not overwrite a known run status.
+
+Secrets management uses a list with an empty-state action. Adding or replacing
+a secret opens a separate dialog. Validation errors appear at their fields;
+network errors and revision conflicts remain explicit. A Bearer preset supplies
+the exact `Bearer ` prefix. API-key and custom-header modes remain available.
+The target is an HTTPS origin: URL paths and query parameters do not narrow the
+secret's destination. Only metadata is returned when listing or replacing;
+existing secret values are never loaded into the browser.

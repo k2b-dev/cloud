@@ -10,6 +10,19 @@ a one-off analysis, an exported file, or a reusable Studio app accordingly.
 Load `assistant-code-mode` for execution and read its `references/analytics.md`
 for the built-in UI. Loading this skill does not install a library or grant access.
 
+## Keep a working plan
+
+For work with several real steps, use `todo_write` to keep a short chat plan.
+Replace the full `todos` list each time; give each item a stable `id`, actionable
+`content`, and `status` (`pending`, `in_progress`, `completed`, or `cancelled`).
+At most one step is active. Update as work changes, including user corrections;
+mark a step completed only after doing and checking it. Preserve exact commands
+when they matter. Skip this tool for a simple calculation or conversational reply.
+
+For analysis, useful steps are reconcile source data, build the analysis, and
+verify totals, filters and conclusions. A rendered dashboard alone is not proof
+that its numbers are correct. Keep blocked source work open and explain why.
+
 ## Establish the data
 
 Identify the actual source, unit of observation, time window, timezone, and

@@ -248,3 +248,16 @@ for expensive diagnostic details: it is mounted only while the activity is open.
 Use a bounded, keyboard-focusable scrolling region for long input/output payloads.
 Busy activity uses the same text shimmer as inline guidance, with reduced-motion
 and forced-colors support. Waiting for user input is a separate state.
+
+## Working plans
+
+Use `Chat.Tasks` above the composer for a compact working plan. Pass `items`
+with stable `id`, `content`, and `status` (`pending`, `in_progress`, `completed`,
+`cancelled`), controlled `open`/`onOpenChange`, a `label`, a `progressLabel`,
+and localized `statusLabels`. The component renders one colored segment per
+item and a bounded, scrollable disclosure. Status symbols and labels complement
+color; cancelled work has a striped segment and a struck-through description.
+
+The host decides when a plan exists, persists it, counts cancelled work
+separately, and translates execution state into labels. Do not label a paused
+current step as running. This component does not start tasks or infer progress.

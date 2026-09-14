@@ -1,3 +1,4 @@
+import { ContextStudio } from "../artifacts/ContextStudio";
 import { formatDictationTimestamp } from "./dictation-files";
 import { query } from "@k2b/stdlib/solid";
 import { useLocale, Button, Lightbox, Placeholder, prompts, StatusBadge, FileView, MarkdownView, TextInput } from "@k2b/ui";
@@ -146,7 +147,7 @@ const createAssistantChatContextState = (props: AssistantChatContextQueryProps) 
 
 type AssistantChatContextState = ReturnType<typeof createAssistantChatContextState>;
 
-function AssistantChatContextView(props: ContextNavigation & { state: AssistantChatContextState; onOpenApp?: (id: string, title: string) => void }) {
+function AssistantChatContextView(props: ContextNavigation & { state: AssistantChatContextState; onOpenApp?: (id: string, title: string, start?: boolean) => void }) {
   const locale = useLocale();
   const text = useAssistantText();
   const [search, setSearch] = createSignal("");
@@ -283,7 +284,7 @@ function AssistantChatContextView(props: ContextNavigation & { state: AssistantC
           }
         };
         return (
-          <div class="flex flex-col gap-5">
+          <div class={props.category ? "flex flex-col gap-4" : "flex flex-col gap-3"}>
             <Show when={props.category && props.category !== "tasks"}><TextInput value={search()} onValueChange={setSearch} aria-label={text("Search")} placeholder={text("Search")} /></Show>
             <Show when={props.category && !(props.category === "apps" ? apps().filter(app => includes(app.title)).length + value().chat.runs.length : props.category === "files" ? files().filter(file => includes(file.displayName ?? file.path)).length : props.category === "sources" ? references().filter(item => includes(item.title)).length + value().chat.sources.filter(item => includes(item.title)).length : props.category === "knowledge" ? (value().project ? 1 : 0) + (value().projectContext?.knowledge.length ?? 0) : value().chat.tasks.length)}><p role="status" class="text-sm text-secondary">{text(search() ? "No matching items." : "No items yet.")}</p></Show>
             <Show when={section("knowledge") && value().project}>
@@ -347,17 +348,18 @@ function AssistantChatContextView(props: ContextNavigation & { state: AssistantC
             </Show>
 
             <Show when={section("apps") && (apps().length > 0 || value().chat.runs.length > 0)}>
-              <AssistantContextSection title={"Studio"}>
-                <AssistantContextRows>
-                  <div class={props.category === "apps" ? "assistant-app-grid" : ""}><For each={apps().filter(app => includes(app.title)).slice(0, limit())}>{app => <AssistantContextRow icon={app.kind === "source" ? app.source.icon ?? "ti ti-app-window" : "ti ti-app-window"} title={app.title} description={app.kind === "source" ? app.source.preview ?? undefined : undefined}
-                    onClick={() => props.onOpenApp ? props.onOpenApp(refOf(app)!.id, app.title) : void openAssistantCloudReference(app.title, refOf(app)!)} />}</For></div>
-                  <Show when={value().chat.runs.length > 0}>
-                    <p class="px-2 pt-2 text-xs text-secondary">{text("Recent one-off runs")}</p>
-                    <For each={value().chat.runs.slice(0,limit())}>{run=><AssistantContextRow icon="ti ti-code" title={text(run.status==="ready"?"Run succeeded":run.status==="error"||run.status==="lost"?"Run failed":run.status==="stopped"?"Run stopped":run.status==="unknown"?"Run state unavailable":"Run in progress")}
-                      description={new Date(run.createdAt).toLocaleString(locale())} />}</For>
-                  </Show>
-                  <Show when={!props.category && (apps().length > CONTEXT_PREVIEW_LIMIT || value().chat.runs.length > CONTEXT_PREVIEW_LIMIT)}><AssistantContextViewAll count={apps().length + value().chat.runs.length} onClick={() => overview("apps", "Studio")} /></Show>
-                </AssistantContextRows>
+              <AssistantContextSection title={props.category === "apps" ? "" : "Studio"}>
+                <Show when={props.category === "apps"} fallback={
+                  <AssistantContextRows>
+                    <For each={apps().filter(app => includes(app.title)).slice(0, limit())}>{app => <AssistantContextRow
+                      icon={app.kind === "source" ? app.source.icon ?? "ti ti-app-window" : "ti ti-app-window"}
+                      title={app.title} description={app.kind === "source" ? app.source.preview ?? undefined : undefined}
+                      onClick={() => props.onOpenApp ? props.onOpenApp(refOf(app)!.id, app.title) : void openAssistantCloudReference(app.title, refOf(app)!)} />}</For>
+                    <Show when={!props.category}><AssistantContextViewAll count={apps().length + value().chat.runCount} onClick={() => overview("apps", "Studio")} /></Show>
+                  </AssistantContextRows>
+                }>
+                  <ContextStudio snapshot={value().chat} projects={value().project ? [value().project!] : []} search={search()} refresh={props.state.refresh} onStart={props.onOpenApp} />
+                </Show>
               </AssistantContextSection>
             </Show>
 
@@ -495,7 +497,7 @@ export function AssistantChatContextContent(props: ContextNavigation & {
   initial?: AssistantChatContextSnapshot | null;
   onPresenceChange?: (hasContent: boolean | null) => void;
   onSnapshotChange?: (snapshot: AssistantChatContextSnapshot | null) => void;
-  onOpenApp?: (id: string, title: string) => void;
+  onOpenApp?: (id: string, title: string, start?: boolean) => void;
 }) {
   const state = createAssistantChatContextState(props);
   createEffect(() => {
@@ -511,7 +513,7 @@ export function AssistantChatContextPanel(props: ContextNavigation & {
   initial?: AssistantChatContextSnapshot | null;
   onPresenceChange?: (hasContent: boolean | null) => void;
   onSnapshotChange?: (snapshot: AssistantChatContextSnapshot | null) => void;
-  onOpenApp?: (id: string, title: string) => void;
+  onOpenApp?: (id: string, title: string, start?: boolean) => void;
 }) {
   const state = createAssistantChatContextState(props);
   createEffect(() => {
@@ -527,11 +529,11 @@ export function AssistantChatContextPanel(props: ContextNavigation & {
   );
 }
 
-export const openAssistantChatContextDialog = (chatId: string, project: AiProject | null, live: AssistantLiveHub, onOpenApp?: (id: string, title: string) => void, onOpenView?: (view: ContextView) => void) =>
+export const openAssistantChatContextDialog = (chatId: string, project: AiProject | null, live: AssistantLiveHub, onOpenApp?: (id: string, title: string, start?: boolean) => void, onOpenView?: (view: ContextView) => void) =>
   prompts.dialog<void>(
     (close) => (
       <AssistantLiveProvider value={live}>
-        <AssistantChatContextContent chatId={chatId} project={project} onOpenApp={onOpenApp ? (id, title) => { onOpenApp(id, title); close(); } : undefined} onOpenView={onOpenView ? view => { onOpenView(view); close(); } : undefined} />
+        <AssistantChatContextContent chatId={chatId} project={project} onOpenApp={onOpenApp ? (id, title, start) => { onOpenApp(id, title, start); close(); } : undefined} onOpenView={onOpenView ? view => { onOpenView(view); close(); } : undefined} />
       </AssistantLiveProvider>
     ),
     { title: assistantBrowserText("Chat context"), icon: "ti ti-adjustments-horizontal", size: "medium" },

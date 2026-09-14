@@ -1,3 +1,4 @@
+import { createAiTodoTool } from "./todo-tool";
 import { runManagedCodeTool } from "./code-runtime-tools";
 import { CODE_SOURCE_TOOLS } from "./code-source-contracts";
 import { createCodeSourceTools } from "./code-source-tools";
@@ -103,7 +104,7 @@ export const createCloudAiCodeTools = () => [
   defineAiTool({ name: "code_export", description: "Copy a captured output file from a test run into the chat. Returns a path for normal file tools and presentation.", inputSchema: CodeExportInput, outputSchema: z.json(), approval: "never" }).server(runManagedCodeTool("code_export")),
 ];
 
-export const createDefaultCloudAiTools = () => [createCloudAiSurveyTool(), createCloudAiTextEditorTool()];
+export const createDefaultCloudAiTools = () => [createAiTodoTool(), createCloudAiSurveyTool(), createCloudAiTextEditorTool()];
 
 /** Built-ins advertised through discovery and loaded only when needed. */
 export const CLOUD_AI_DEFERRED_BUILTIN_TOOL_NAMES = new Set<string>([

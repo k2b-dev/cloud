@@ -1,170 +1,118 @@
-import { Button, TextInput, NoticeCard, Placeholder, prompts, useLocale } from "@k2b/ui";
+import { Button, TextInput, Select, Dropdown, NoticeCard, Placeholder, prompts, useLocale } from "@k2b/ui";
 import { createResource, createSignal, For, Show, onCleanup } from "solid-js";
 import { artifactClient } from "./client";
 import { HttpScope, SecretSave, type SecretMetadata } from "./http-contracts";
 import { artifactMessages } from "./messages";
+import { secretDialogMessages } from "./secret-dialog-messages";
 import type { HttpHost } from "./http-host";
 
-export function openSecretsDialog(
-  scope: HttpScope,
-  initial?: SecretMetadata,
-  signal?: AbortSignal,
-): Promise<{ configured: boolean; name: string }> {
-  let result = { configured: false, name: initial?.name ?? "" };
-  return prompts
-    .dialog<void>(
-      (close) => {
-        const abort = () => close();
-        signal?.addEventListener("abort", abort, { once: true });
-        onCleanup(() => signal?.removeEventListener("abort", abort));
-        if (signal?.aborted) close();
-        return (
-          <SecretsDialog
-            scope={scope}
-            initial={initial}
-            saved={(name) => {
-              result = { configured: true, name };
-              if (initial) close();
-            }}
-          />
-        );
-      },
-      { title: "Secrets", size: "medium" },
-    )
-    .then(() => result);
+type SecretEntry = Awaited<ReturnType<typeof artifactClient.secrets>>[number];
+const errorCode = (error: unknown) => error && typeof error === "object" && "code" in error ? error.code : undefined;
+function closeOnAbort(signal: AbortSignal | undefined, close: () => void) {
+  signal?.addEventListener("abort", close, { once: true });
+  onCleanup(() => signal?.removeEventListener("abort", close));
+  if (signal?.aborted) close();
 }
-function SecretsDialog(props: { scope: HttpScope; initial?: SecretMetadata; saved: (name: string) => void }) {
-  const locale = useLocale(),
-    t = () => artifactMessages.resolve([locale()]).t;
+export async function openSecretsDialog(scope: HttpScope, initial?: SecretMetadata, signal?: AbortSignal): Promise<{ configured: boolean; name: string }> {
+  if (initial) {
+    const name = await openSecretEditor(scope, initial, undefined, signal);
+    return { configured: !!name, name: name ?? initial.name };
+  }
+  let savedName = "";
+  await prompts.dialog<void>(close => {
+    closeOnAbort(signal, close);
+    return <SecretsDialog scope={scope} signal={signal} saved={name => { savedName = name; }} />;
+  }, { title: "Secrets", size: "medium" });
+  return { configured: !!savedName, name: savedName };
+}
+function SecretsDialog(props: { scope: HttpScope; signal?: AbortSignal; saved: (name: string) => void }) {
+  const locale = useLocale(), t = () => artifactMessages.resolve([locale()]).t, copy = () => secretDialogMessages.resolve([locale()]).t;
   const [entries, { refetch }] = createResource(() => artifactClient.secrets(props.scope));
-  const [name, setName] = createSignal(props.initial?.name ?? ""),
-    [origin, setOrigin] = createSignal(props.initial?.origin ?? "");
-  const [header, setHeader] = createSignal(props.initial?.header ?? "authorization"),
-    [prefix, setPrefix] = createSignal(props.initial?.prefix ?? "Bearer ");
-  const [value, setValue] = createSignal(""),
-    [busy, setBusy] = createSignal(false),
-    [error, setError] = createSignal("");
-  const [revision, setRevision] = createSignal<string | null>(null);
-  // Values never enter local storage, a chat draft, or a tool response.
+  const [busy, setBusy] = createSignal(false), [error, setError] = createSignal("");
+  async function edit(entry?: SecretEntry) {
+    const name = await openSecretEditor(props.scope, entry, entry?.revision, props.signal);
+    await refetch();
+    if (name) props.saved(name);
+  }
+  return <div class="flex flex-col gap-3">
+    <p class="text-sm text-secondary">{copy().help}</p>
+    <span class="text-xs text-secondary">{props.scope.resourceId ? copy().scopeApp : copy().scopeChat}</span>
+    <Show when={error()}><NoticeCard tone="danger" title={error()} /></Show>
+    <Show when={entries.loading}><Placeholder state="loading" /></Show>
+    <Show when={!entries.loading && entries.error}><Placeholder state="error" title={t().REQUEST_FAILED} action={<Button onClick={() => void refetch()}>{t().refresh}</Button>} /></Show>
+    <Show when={!entries.loading && !entries.error}>
+      <Show when={entries()?.length} fallback={<Placeholder title={t().noSecrets} icon="ti ti-key" action={<Button onClick={() => edit()}>{copy().add}</Button>} />}>
+        <div class="max-h-80 overflow-auto"><For each={entries()}>{entry =>
+          <div class="flex items-center gap-3 border-b border-[var(--ui-border)] py-3">
+            <i class="ti ti-key text-secondary" aria-hidden="true" />
+            <div class="min-w-0 flex-1"><strong class="block truncate">{entry.name}</strong>
+              <p class="truncate text-sm text-secondary" title={entry.origin}>{entry.origin}</p>
+              <p class="truncate text-xs text-secondary">{entry.header} · {entry.prefix === "Bearer " ? copy().bearer : entry.prefix ? `${copy().custom}: ${JSON.stringify(entry.prefix)}` : copy().apiKey}</p>
+            </div>
+            <Dropdown.Root items={[
+              { label: t().secretReplace, icon: "ti ti-refresh", action: () => edit(entry) },
+              { label: t().remove, icon: "ti ti-trash", action: async () => {
+                if (!(await prompts.confirm(t().secretDeleteConfirm, { title: t().remove, variant: "danger" }))) return;
+                setBusy(true); setError("");
+                try { await artifactClient.removeSecret(props.scope, entry.name, entry.revision); await refetch(); }
+                catch (error) { setError(errorCode(error) === "HTTP_CONFLICT" ? copy().conflict : copy().failed); }
+                finally { setBusy(false); }
+              } },
+            ]}><Dropdown.Trigger iconOnly variant="ghost" disabled={busy()} label={`${t().actions} · ${entry.name}`}><i class="ti ti-dots" /></Dropdown.Trigger></Dropdown.Root>
+          </div>
+        }</For></div>
+        <div class="flex justify-end"><Button onClick={() => edit()}>{copy().add}</Button></div>
+      </Show>
+    </Show>
+  </div>;
+}
+function openSecretEditor(scope: HttpScope, initial?: SecretMetadata, revision?: string, signal?: AbortSignal) {
+  return prompts.dialog<string>(close => {
+    closeOnAbort(signal, () => close());
+    return <SecretEditor scope={scope} initial={initial} revision={revision} close={close} />;
+  }, { title: initial?.name ? `Secret · ${initial.name}` : "Secret", size: "medium" });
+}
+function SecretEditor(props: { scope: HttpScope; initial?: SecretMetadata; revision?: string; close: (name?: string) => void }) {
+  const locale = useLocale(), t = () => artifactMessages.resolve([locale()]).t, copy = () => secretDialogMessages.resolve([locale()]).t;
+  const [name, setName] = createSignal(props.initial?.name ?? ""), [origin, setOrigin] = createSignal(props.initial?.origin ?? "");
+  const [header, setHeader] = createSignal(props.initial?.header ?? "authorization"), [prefix, setPrefix] = createSignal(props.initial?.prefix ?? "Bearer ");
+  const [value, setValue] = createSignal(""), [busy, setBusy] = createSignal(false), [error, setError] = createSignal("");
+  const [fields, setFields] = createSignal<Record<string, string>>({});
+  const [auth, setAuth] = createSignal(!props.initial || (props.initial.header === "authorization" && props.initial.prefix === "Bearer ") ? "bearer" : props.initial.prefix ? "custom" : "key");
+  let form: HTMLFormElement | undefined;
   onCleanup(() => setValue(""));
-  const edit = (entry: NonNullable<ReturnType<typeof entries>>[number]) => {
-    setName(entry.name);
-    setOrigin(entry.origin);
-    setHeader(entry.header);
-    setPrefix(entry.prefix);
-    setRevision(entry.revision);
-    setValue("");
-    setError("");
-  };
+  function fieldError(field: string) { return fields()[field]; }
   async function save() {
     if (busy()) return;
-    setBusy(true);
-    setError("");
-    try {
-      const input = SecretSave.parse({
-        name: name(),
-        origin: origin(),
-        header: header(),
-        prefix: prefix(),
-        value: value(),
-        expectedRevision: revision(),
-      });
-      const stored = await artifactClient.saveSecret(props.scope, input);
-      setValue("");
-      setRevision(stored.revision);
-      await refetch();
-      props.saved(stored.name);
-    } catch {
-      setError(t().secretSaveError);
-    } finally {
-      setBusy(false);
+    setError(""); setFields({});
+    const parsed = SecretSave.safeParse({ name: name(), origin: origin(), header: header(), prefix: prefix(), value: value(), expectedRevision: props.revision ?? null });
+    if (!parsed.success) {
+      const messages: Record<string,string> = { name: copy().name, origin: copy().origin, header: copy().header, prefix: copy().prefix, value: copy().value };
+      setFields(Object.fromEntries(parsed.error.issues.map(issue => [String(issue.path[0]), messages[String(issue.path[0])] ?? copy().failed])));
+      queueMicrotask(() => form?.querySelector<HTMLInputElement>('[aria-invalid="true"]')?.focus());
+      return;
     }
+    setBusy(true);
+    try {
+      await artifactClient.saveSecret(props.scope, parsed.data);
+      setValue(""); props.close(parsed.data.name);
+    } catch (error) {
+      if (errorCode(error) === "HTTP_CONFLICT" && !props.revision) setFields({ name: copy().duplicate });
+      else setError(errorCode(error) === "HTTP_CONFLICT" ? copy().conflict : copy().failed);
+    } finally { setBusy(false); }
   }
-  return (
-    <div class="flex flex-col gap-4">
-      <NoticeCard tone="info" title={t().personalSecrets} detail={t().secretHelp} />
-      <Show when={entries.error}>
-        <Placeholder state="error" title={t().REQUEST_FAILED} action={<Button onClick={() => void refetch()}>{t().refresh}</Button>} />
-      </Show>
-      <Show when={entries.loading}>
-        <Placeholder state="loading" />
-      </Show>
-      <For each={entries()}>
-        {(entry) => (
-          <div class="flex items-center gap-2">
-            <div class="flex-1 min-w-0">
-              <strong>{entry.name}</strong>
-              <p class="text-sm break-all">
-                {entry.origin} · {entry.header}
-              </p>
-            </div>
-            <Button variant="secondary" disabled={busy()} onClick={() => edit(entry)}>
-              {t().secretReplace}
-            </Button>
-            <Button
-              variant="secondary"
-              disabled={busy()}
-              onClick={async () => {
-                if (!(await prompts.confirm(t().secretDeleteConfirm, { title: t().remove, variant: "danger" }))) return;
-                setBusy(true);
-                setError("");
-                try {
-                  await artifactClient.removeSecret(props.scope, entry.name, entry.revision);
-                  if (name() === entry.name) setRevision(null);
-                  await refetch();
-                } catch {
-                  setError(t().secretSaveError);
-                } finally {
-                  setBusy(false);
-                }
-              }}
-            >
-              {t().remove}
-            </Button>
-          </div>
-        )}
-      </For>
-      <Show when={!entries.loading && !entries()?.length}>
-        <p>{t().noSecrets}</p>
-      </Show>
-      <Show when={error()}>
-        <NoticeCard tone="danger" title={error()} />
-      </Show>
-      <form
-        class="flex flex-col gap-3"
-        onSubmit={(event) => {
-          event.preventDefault();
-          void save();
-        }}
-      >
-        <TextInput
-          label={t().secretName}
-          value={name}
-          onValueChange={(v) => {
-            setName(v);
-            setRevision(null);
-          }}
-          disabled={busy()}
-          maxLength={80}
-        />
-        <TextInput
-          label={t().secretOrigin}
-          value={origin}
-          onValueChange={setOrigin}
-          disabled={busy()}
-          placeholder="https://api.example.com"
-        />
-        <TextInput label={t().secretHeader} value={header} onValueChange={setHeader} disabled={busy()} />
-        <TextInput label={t().secretPrefix} value={prefix} onValueChange={setPrefix} disabled={busy()} />
-        <TextInput label={t().secretValue} password value={value} onValueChange={setValue} disabled={busy()} autocomplete="new-password" />
-        <Button type="submit" disabled={busy() || !value() || entries.loading || !!entries.error}>
-          {t().save}
-        </Button>
-      </form>
-    </div>
-  );
+  return <form ref={form} noValidate class="flex flex-col gap-3" onSubmit={event => { event.preventDefault(); void save(); }}>
+    <Show when={error()}><NoticeCard tone="danger" title={error()} /></Show>
+    <TextInput label={t().secretName} value={name} onValueChange={setName} disabled={busy() || !!props.revision} error={() => fieldError("name")} maxLength={80} />
+    <TextInput label={t().secretOrigin} description={copy().target} value={origin} onValueChange={setOrigin} disabled={busy()} error={() => fieldError("origin")} placeholder="https://api.example.com" />
+    <Select label={copy().auth} value={auth} disabled={busy()} options={[{ id: "bearer", label: copy().bearer }, { id: "key", label: copy().apiKey }, { id: "custom", label: copy().custom }]}
+      onValueChange={mode => { setAuth(mode ?? "custom"); if (mode === "bearer") { setHeader("authorization"); setPrefix("Bearer "); } else if (mode === "key") { setHeader("x-api-key"); setPrefix(""); } }} />
+    <Show when={auth() !== "bearer"}><TextInput label={t().secretHeader} value={header} onValueChange={setHeader} disabled={busy()} error={() => fieldError("header")} /></Show>
+    <Show when={auth() === "custom"}><TextInput label={copy().customPrefix} value={prefix} onValueChange={setPrefix} disabled={busy()} error={() => fieldError("prefix")} /></Show>
+    <TextInput label={t().secretValue} password value={value} onValueChange={setValue} disabled={busy()} error={() => fieldError("value")} autocomplete="new-password" />
+    <div class="flex justify-end gap-2"><Button variant="secondary" onClick={() => props.close()}>{copy().cancel}</Button><Button type="submit" disabled={busy()}>{t().save}</Button></div>
+  </form>;
 }
-
 export const browserHttpHost: HttpHost = {
   secret: openSecretsDialog,
   approve: async (request, signal) => {

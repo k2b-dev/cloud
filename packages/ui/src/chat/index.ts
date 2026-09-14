@@ -1,3 +1,5 @@
+import { ChatTasks } from "./ChatTasks";
+export type { ChatTask, ChatTasksProps } from "./ChatTasks";
 import { ChatComposer } from "./ChatComposer";
 import { ChatActivity, ChatContextUsage, ChatMessage } from "./ChatPrimitives";
 import { ChatRoot } from "./ChatRoot";
@@ -27,6 +29,7 @@ export type {
  * authorization, rich message rendering, and domain actions.
  */
 export const Chat = Object.assign(ChatRoot, {
+  Tasks: ChatTasks,
   Timeline: ChatTimeline,
   Message: ChatMessage,
   Activity: ChatActivity,

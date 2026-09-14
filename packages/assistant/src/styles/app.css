@@ -238,3 +238,8 @@
 .artifact-analysis-context { font-size: .875rem; margin-block: .5rem; overflow-wrap: anywhere; }
 
 .artifact-analysis-context > strong { margin-inline-start: .5rem; }
+
+.k2b-ui [data-assistant-context="compact"] .k2b-button.assistant-context-action { padding: .3rem .5rem; min-height: 2rem; }
+.k2b-ui [data-assistant-context="compact"] .k2b-detail-panel__action-copy { display: flex; flex-direction: row; align-items: baseline; gap: .4rem; min-width: 0; overflow: hidden; }
+.k2b-ui [data-assistant-context="compact"] .k2b-detail-panel__action-title { flex-shrink: 0; max-width: 70%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .8125rem; }
+.k2b-ui [data-assistant-context="compact"] .k2b-detail-panel__action-description { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .6875rem; }

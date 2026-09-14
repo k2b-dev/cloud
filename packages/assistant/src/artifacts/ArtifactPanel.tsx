@@ -71,7 +71,8 @@ export function ArtifactPanel(props: { artifactId: string; refreshKey?: string; 
   const stop = async () => { generation++; setLoading(false); const previous=session; session = undefined; await previous?.stop(); };
   onCleanup(() => {void stop();});
   onMount(() => {onCleanup(registerLocalRun(props.userId,props.artifactId,stop));});
-  onMount(() => { if (props.autoStart) void start(); });
+  let autoStarted = false;
+  createEffect(() => { if (props.autoStart && !autoStarted) { autoStarted = true; void start(); } });
   async function start() {
     const stopping=stop();
     const token = generation;

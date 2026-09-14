@@ -324,3 +324,19 @@ Server tools may await `context.reportProgress?.(message)` to publish a short,
 localized status in the active tool row. Report phase changes rather than every
 poll. This status is presentation only: do not include payloads or secrets, and
 continue to return the authoritative result from the tool.
+
+## Maintain a chat working plan
+
+`todo_write` is an immediately available server tool for multi-step work. It
+replaces the complete plan with `{todos:[{id,content,status}]}` and returns that
+validated plan. IDs stay stable when tasks are renamed or reordered. Status is
+`pending`, `in_progress`, `completed`, or `cancelled`; at most one item may be
+active. An empty list clears the plan. Plans allow up to 50 short tasks, each
+with at most 500 characters, to keep the working context bounded.
+
+The runtime stores successful updates as normal tool results in the originating
+conversation. Failed calls do not replace the plan. Snapshot reads include the
+latest checkpoint independently of history pagination. Compaction preserves an
+exact plan checkpoint alongside its summary; fork and retry follow the selected
+history rather than importing a later plan. A plan records intended and completed
+work; it neither executes actions nor grants permission.

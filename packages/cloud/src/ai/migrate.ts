@@ -447,6 +447,7 @@ export const migrateCloudAi = async (): Promise<void> => {
   await sql`ALTER TABLE ai.turns ADD COLUMN IF NOT EXISTS lease_expires_at TIMESTAMPTZ`.simple();
   await sql`ALTER TABLE ai.turns ADD COLUMN IF NOT EXISTS heartbeat_at TIMESTAMPTZ`.simple();
   await sql`ALTER TABLE ai.turns ADD COLUMN IF NOT EXISTS run_config JSONB`.simple();
+  await sql`ALTER TABLE ai.turns ADD COLUMN IF NOT EXISTS run_budget_ms DOUBLE PRECISION`.simple();
   await sql`ALTER TABLE ai.turns ADD COLUMN IF NOT EXISTS attempt INTEGER NOT NULL DEFAULT 0`.simple();
   await sql`ALTER TABLE ai.turns ADD COLUMN IF NOT EXISTS live_blocks JSONB`.simple();
   await sql`ALTER TABLE ai.turns ADD COLUMN IF NOT EXISTS live_seq BIGINT NOT NULL DEFAULT 0`.simple();

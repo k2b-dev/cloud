@@ -133,6 +133,7 @@ export type AiConversationRunStatus = "idle" | "queued" | "running" | "needs_att
 export type AiConversationStatusFilter = Exclude<AiConversationRunStatus, "idle" | "queued" | "waiting_for_browser"> | "unread";
 
 export type AiConversation = {
+  todoPlan?: { seq: number; todos: import("./todo-contracts").AiTodoPlan["todos"] };
   id: string;
   shortId: string;
   title: string;
@@ -273,6 +274,7 @@ export type AiStoredMessage = {
     /** The atomically consumed composer revision, used to confirm a local send. */
     submittedDraftRevision?: number;
     compactedCount?: number;
+    todoPlan?: import("./todo-contracts").AiTodoPlan;
     steerId?: string;
     agentMessage?: {
       id: string;
@@ -338,6 +340,9 @@ export type AiTurnFinalizedEvent = {
 };
 
 export type AiTurn = {
+  deadline?: string | null;
+  runBudgetMs?: number | null;
+  cancelRequestedAt?: string | null;
   id: string;
   shortId: string;
   conversationId: string;

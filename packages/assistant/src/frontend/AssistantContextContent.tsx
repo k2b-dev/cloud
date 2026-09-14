@@ -41,7 +41,7 @@ export const assistantContextCountTitle = (count: number, singular: string, plur
 export function AssistantContextSection(props: { title: string; identity?: boolean; action?: JSX.Element; children: JSX.Element }) {
   return (
     <section class="flex flex-col gap-2">
-      <div class="flex min-h-7 items-center justify-between gap-2">
+      <Show when={props.title}><div class="flex min-h-7 items-center justify-between gap-2">
         <h2
           class={
             props.identity
@@ -52,7 +52,7 @@ export function AssistantContextSection(props: { title: string; identity?: boole
           {props.title}
         </h2>
         {props.action}
-      </div>
+      </div></Show>
       {props.children}
     </section>
   );

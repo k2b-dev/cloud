@@ -388,3 +388,17 @@ or incomplete trace has no aggregate timing or token-rate estimate; the chat can
 still display elapsed time from persisted messages. Live `message_saved` events
 carry usage after each model response, before its tools finish, without rendering
 a second copy of the active response.
+
+### Run time budget
+
+Administrators configure `ai.turn_timeout_minutes` in AI settings. The default
+is 30 minutes; zero or clearing the field disables this run time limit. Values
+must be nonnegative whole minutes. The worker snapshots the budget when it
+first claims a turn. Later setting changes do not alter a claimed turn, including
+lease recovery. Resuming after a human interaction uses that same configured
+budget for its new running phase. Individual provider and tool timeouts and
+worker leases remain independent, even with an unlimited turn budget.
+
+An expired execution deadline ends the turn as failed with a time-limit message
+and an instruction to continue with a new message. It is distinct from a user's
+Stop action. Continuing does not automatically replay uncertain external calls.

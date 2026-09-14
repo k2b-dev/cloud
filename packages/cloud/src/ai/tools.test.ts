@@ -167,8 +167,8 @@ describe("AI tools", () => {
   test("ships default interaction tools without offering Card to the Assistant", () => {
     const prepared = prepareAiTools({ tools: createDefaultCloudAiTools(), actor });
 
-    expect(prepared.tools.map((tool) => tool.def.name)).toEqual(["survey", "text_editor"]);
-    expect(prepared.tools.every((tool) => tool.kind === "client")).toBe(true);
+    expect(prepared.tools.map((tool) => tool.def.name)).toEqual(["todo_write", "survey", "text_editor"]);
+    expect(prepared.tools.map((tool) => tool.kind)).toEqual(["server", "client", "client"]);
     expect(prepared.frontendModes.get("survey")).toBe("client_interaction");
     expect(prepared.frontendModes.get("text_editor")).toBe("client_interaction");
     expect(prepared.approvalPolicies.get("survey")).toBe("never");
@@ -210,6 +210,7 @@ describe("AI tools", () => {
     expect(withWeb.filter(tool=>tool.def.name.startsWith("web_")).map(tool=>tool.def.name)).toEqual(["web_search","web_extract"]);
     expect(withWeb.filter(tool=>!tool.def.name.startsWith("web_")).map(tool=>tool.def.name)).toEqual(withoutWeb.map(tool=>tool.def.name));
     expect(aiToolPromptHints(withoutWeb).map((hint) => hint.name)).toEqual([
+      "todo_write",
       "survey",
       "text_editor",
       "list_files",

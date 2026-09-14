@@ -1,3 +1,4 @@
+import { parseAiTodoPlan } from "./todo-contracts";
 import type { DoneReason, InboundEvent, LoopAggregate, Message, SessionStore, StoreEntry } from "@k2b/nessi";
 import type { Usage } from "@k2b/nessi/ai";
 import { sql, type SQL } from "bun";
@@ -158,6 +159,9 @@ type MessageRow = {
 };
 
 type TurnRow = {
+  deadline?: Date | string | null;
+  run_budget_ms?: number | null;
+  cancel_requested_at?: Date | string | null;
   id: string;
   short_id: string;
   conversation_id: string;
@@ -494,6 +498,10 @@ const conversationRunStatus = (status: AiTurnStatus | null | undefined, browserP
   return "idle";
 };
 
+// Bun SQL may return historical JSON payloads as string-encoded JSON.
+const todoMessageJson = sql`(CASE WHEN jsonb_typeof(message) = 'string' THEN (message #>> '{}')::jsonb ELSE message END)`;
+const todoMetaJson = sql`(CASE WHEN jsonb_typeof(meta) = 'string' THEN (meta #>> '{}')::jsonb ELSE meta END)`;
+
 const rowToConversation = (row: ConversationRow): AiConversation => ({
   id: row.id,
   shortId: row.short_id,
@@ -582,6 +590,9 @@ const rowToMessage = (row: MessageRow): AiStoredMessage => {
 };
 
 const rowToTurn = (row: TurnRow): AiTurn => ({
+  deadline: row.deadline ? iso(row.deadline) : null,
+  runBudgetMs: row.run_budget_ms ?? null,
+  cancelRequestedAt: row.cancel_requested_at ? iso(row.cancel_requested_at) : null,
   id: row.id,
   shortId: row.short_id,
   conversationId: row.conversation_id,
@@ -683,7 +694,15 @@ const loadConversationSummary = async (input: {
       AND (${Boolean(input.archived)}::boolean = (conversation.archived_at IS NOT NULL))
     LIMIT 1
   `;
-  return rows[0] ? rowToConversation(rows[0]) : null;
+  if (!rows[0]) return null;
+  const plans = await sql<{ seq: number; plan: unknown }[]>`
+    SELECT seq, CASE WHEN role = 'tool_result' THEN ${todoMessageJson}->'result' ELSE ${todoMetaJson}->'todoPlan' END AS plan
+    FROM ai.messages WHERE conversation_id = ${rows[0].id}
+      AND ((role = 'tool_result' AND ${todoMessageJson}->>'name' = 'todo_write' AND COALESCE(${todoMessageJson}->>'isError','false') = 'false') OR ${todoMetaJson} ? 'todoPlan')
+    ORDER BY seq DESC, id DESC LIMIT 1
+  `;
+  const plan = parseAiTodoPlan(plans[0]?.plan);
+  return { ...rowToConversation(rows[0]), ...(plan ? { todoPlan: { seq: Number(plans[0]!.seq), todos: plan.todos } } : {}) };
 };
 
 const firstText = (message: Message): string => {
@@ -1000,11 +1019,12 @@ export const aiConversations: AiConversationService = {
       await tx`
         INSERT INTO ai.messages (
           short_id, conversation_id, seq, kind, role, message, search_text, loop_id,
-          model_profile_id, provider_model, usage, stop_reason, loop_aggregate, loop_done_reason
+          model_profile_id, provider_model, usage, stop_reason, loop_aggregate, loop_done_reason, meta
         )
         SELECT
           short_id, ${target.id}::uuid, seq, kind, role, message, search_text, loop_id,
-          model_profile_id, provider_model, usage, stop_reason, loop_aggregate, loop_done_reason
+          model_profile_id, provider_model, usage, stop_reason, loop_aggregate, loop_done_reason,
+          CASE WHEN ${todoMetaJson} ? 'todoPlan' THEN jsonb_build_object('todoPlan', ${todoMetaJson}->'todoPlan') ELSE NULL END
         FROM ai.messages
         WHERE conversation_id = ${input.sourceConversationId}::uuid
           AND compacted_at IS NULL
@@ -2161,7 +2181,8 @@ export const aiConversations: AiConversationService = {
           usage,
           stop_reason,
           loop_aggregate,
-          loop_done_reason
+          loop_done_reason,
+          meta
         )
         SELECT
           short_id,
@@ -2177,7 +2198,8 @@ export const aiConversations: AiConversationService = {
           usage,
           stop_reason,
           loop_aggregate,
-          loop_done_reason
+          loop_done_reason,
+          CASE WHEN ${todoMetaJson} ? 'todoPlan' THEN jsonb_build_object('todoPlan', ${todoMetaJson}->'todoPlan') ELSE NULL END
         FROM ai.messages
         WHERE conversation_id = ${input.sourceConversationId}
           AND compacted_at IS NULL
@@ -2239,6 +2261,13 @@ export const aiConversations: AiConversationService = {
       `;
       if ((rows[0]?.count ?? 0) === 0) return;
 
+      const plans = await tx<{ plan: unknown }[]>`
+        SELECT CASE WHEN role = 'tool_result' THEN ${todoMessageJson}->'result' ELSE ${todoMetaJson}->'todoPlan' END AS plan
+        FROM ai.messages WHERE conversation_id = ${input.conversationId} AND seq <= ${checkpointSeq}
+          AND ((role = 'tool_result' AND ${todoMessageJson}->>'name' = 'todo_write' AND COALESCE(${todoMessageJson}->>'isError','false') = 'false') OR ${todoMetaJson} ? 'todoPlan')
+        ORDER BY seq DESC, id DESC LIMIT 1
+      `;
+      const todoPlan = parseAiTodoPlan(plans[0]?.plan);
       const archived = await tx<{ count: number }[]>`
         WITH archived AS (
           UPDATE ai.messages
@@ -2254,12 +2283,12 @@ export const aiConversations: AiConversationService = {
       await insertMessageLocked(
         {
           conversationId: input.conversationId,
-          message: input.summary,
+          message: todoPlan && input.summary.role === "assistant" ? { ...input.summary, content: [...input.summary.content, { type: "text", text: `Working plan at this checkpoint:\n${JSON.stringify(todoPlan)}` }] } : input.summary,
           kind: "summary",
           seq: checkpointSeq,
           loopId: null,
           modelProfileId: input.modelProfileId ?? null,
-          meta: { compactedCount: archived[0]?.count ?? 0 },
+          meta: { compactedCount: archived[0]?.count ?? 0, ...(todoPlan ? { todoPlan } : {}) },
         },
         tx,
       );
@@ -2454,7 +2483,7 @@ export const aiConversations: AiConversationService = {
 
   claimTurn: async (input) => {
     const leaseMs = boundedMs(input.leaseMs, 60_000, 5_000, 5 * 60_000);
-    const runBudgetMs = boundedMs(input.runBudgetMs, 10 * 60_000, 10_000, 60 * 60_000);
+    const runBudgetMs = Number.isFinite(input.runBudgetMs) && input.runBudgetMs >= 0 ? input.runBudgetMs : 30 * 60_000;
     const maxAttempts = Math.max(1, Math.floor(input.maxAttempts));
     const rows = await sql<TurnRow[]>`
       UPDATE ai.turns
@@ -2463,9 +2492,11 @@ export const aiConversations: AiConversationService = {
           lease_owner = ${input.leaseOwner},
           lease_expires_at = now() + (${leaseMs} * interval '1 millisecond'),
           heartbeat_at = now(),
+          run_budget_ms = COALESCE(run_budget_ms, ${runBudgetMs}),
           deadline = CASE
-            WHEN ${input.from} = 'waiting' THEN now() + (${runBudgetMs} * interval '1 millisecond')
-            ELSE COALESCE(deadline, now() + (${runBudgetMs} * interval '1 millisecond'))
+            WHEN COALESCE(run_budget_ms, ${runBudgetMs}) = 0 THEN NULL
+            WHEN ${input.from} = 'waiting' OR deadline IS NULL THEN now() + (COALESCE(run_budget_ms, ${runBudgetMs}) * interval '1 millisecond')
+            ELSE deadline
           END
       WHERE id = ${input.turnId}
         AND conversation_id = ${input.conversationId}
@@ -2709,7 +2740,7 @@ export const aiConversations: AiConversationService = {
       UPDATE ai.turns
       SET status = 'failed',
           completed_at = now(),
-          error = 'AI turn exceeded its execution budget.',
+          error = 'Run time limit reached. You can continue the task in a new message.',
           lease_owner = NULL,
           lease_expires_at = NULL,
           live_blocks = NULL
