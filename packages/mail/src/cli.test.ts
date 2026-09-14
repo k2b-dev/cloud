@@ -1,5 +1,8 @@
-import { afterEach, expect, test } from "bun:test";
+import { afterEach, expect, setDefaultTimeout, test } from "bun:test";
 import { readFile, rm, writeFile } from "node:fs/promises";
+
+// Each scenario launches several cold CLI processes; bound the whole scenario, not just one launch.
+setDefaultTimeout(30_000);
 
 const servers: ReturnType<typeof Bun.serve>[] = [];
 const temporaryFiles: string[] = [];
@@ -150,7 +153,7 @@ test("focus lists a cross-mailbox queue without resolving one mailbox", async ()
 
   const result = await runCli(`http://127.0.0.1:${server.port}`, ["--json", "mail", "focus", "--view", "mine", "--limit", "25"]);
 
-  expect(result.exitCode).toBe(0);
+  expect(result.exitCode, result.stderr).toBe(0);
   expect(JSON.parse(result.stdout)).toEqual(page);
   expect(requests).toEqual(["GET /api/mail/overview/conversations?view=mine&limit=25"]);
 });
@@ -189,7 +192,7 @@ test("message report-phishing submits an explicit confirmed report", async () =>
     "--yes",
   ]);
 
-  expect(result.exitCode).toBe(0);
+  expect(result.exitCode, result.stderr).toBe(0);
   expect(JSON.parse(result.stdout)).toEqual(report);
   expect(received).toEqual([
     {
@@ -390,7 +393,7 @@ test("conversation drafts lists resumable work for one conversation", async () =
     "12",
   ]);
 
-  expect(result.exitCode).toBe(0);
+  expect(result.exitCode, result.stderr).toBe(0);
   expect(result.stderr).toBe("");
   expect(requestedPath).toBe(`/api/mail/mailboxes/${MAILBOX_ID}/conversations/${CONVERSATION_ID}/drafts?limit=12`);
   expect(JSON.parse(result.stdout)).toEqual(drafts);
@@ -417,7 +420,7 @@ test("mailbox configure maps automatic reply access to the mailbox policy", asyn
     "writers",
   ]);
 
-  expect(result.exitCode).toBe(0);
+  expect(result.exitCode, result.stderr).toBe(0);
   expect(result.stderr).toBe("");
   expect(requestBody).toEqual({ automaticReplyManagementPermission: "write" });
 });
@@ -586,7 +589,7 @@ test("search forwards nested expressions and cursors", async () => {
     }),
   );
 
-  expect(result.exitCode).toBe(0);
+  expect(result.exitCode, result.stderr).toBe(0);
   expect(result.stderr).toBe("");
   expect(requestBody).toEqual({
     expression: {
@@ -625,7 +628,7 @@ test("search preserves commas inside repeated free-text terms", async () => {
     "Invoice, July",
   ]);
 
-  expect(result.exitCode).toBe(0);
+  expect(result.exitCode, result.stderr).toBe(0);
   expect(requestBody).toMatchObject({
     expression: {
       type: "and",
@@ -656,7 +659,7 @@ test("mailbox short-id resolution uses the direct resource endpoint independentl
 
   const result = await runCli(`http://127.0.0.1:${server.port}`, ["--jsonl", "mail", "mailbox", "get", MAILBOX_ID]);
 
-  expect(result.exitCode).toBe(0);
+  expect(result.exitCode, result.stderr).toBe(0);
   expect(result.stderr).toBe("");
   expect(result.stdout.trim().split("\n")).toHaveLength(1);
   expect(JSON.parse(result.stdout)).toMatchObject({ id: MAILBOX_ID, permission: null });
@@ -726,7 +729,7 @@ test("mailbox name resolution uses an exact server-side lookup", async () => {
 
   const result = await runCli(`http://127.0.0.1:${server.port}`, ["--jsonl", "mail", "mailbox", "get", mailbox.name]);
 
-  expect(result.exitCode).toBe(0);
+  expect(result.exitCode, result.stderr).toBe(0);
   expect(result.stderr).toBe("");
   expect(requests[0]).toBe("/api/mail/mailboxes?limit=2&name=Support");
   expect(JSON.parse(result.stdout)).toMatchObject({ id: MAILBOX_ID, permission: "admin" });
@@ -754,7 +757,7 @@ test("six-character mailbox names remain exact selectors", async () => {
 
   const result = await runCli(`http://127.0.0.1:${server.port}`, ["--json", "mail", "mailbox", "get", "Shared"]);
 
-  expect(result.exitCode).toBe(0);
+  expect(result.exitCode, result.stderr).toBe(0);
   expect(JSON.parse(result.stdout)).toMatchObject({ id: MAILBOX_ID, name: "Shared", permission: "write" });
 });
 
@@ -1087,7 +1090,7 @@ test("conversation tag add exposes bounded additive bulk assignment", async () =
     TAG_ID,
   ]);
 
-  expect(result.exitCode).toBe(0);
+  expect(result.exitCode, result.stderr).toBe(0);
   expect(result.stderr).toBe("");
   expect(requestBody).toEqual({
     conversationIds: [CONVERSATION_ID, SOURCE_CONVERSATION_ID],
@@ -1136,7 +1139,7 @@ test("reference config set preserves unspecified settings", async () => {
     "--exclude-from-reply-subjects",
   ]);
 
-  expect(result.exitCode).toBe(0);
+  expect(result.exitCode, result.stderr).toBe(0);
   expect(result.stderr).toBe("");
   expect(requestBody).toEqual({
     expectedRevision: 3,
@@ -1179,7 +1182,7 @@ test("reference list and ensure expose the permanent value without a row id", as
     MAILBOX_ID,
   ]);
 
-  expect(listed.exitCode).toBe(0);
+  expect(listed.exitCode, listed.stderr).toBe(0);
   expect(listed.stdout).toContain("SUP-2026-42");
   expect(listed.stdout).not.toContain(USER_ID);
   expect(ensured.exitCode).toBe(0);
@@ -1206,7 +1209,7 @@ test("deleted mailbox CLI lists, reads, and restores retained mailboxes", async 
   const read = await runCli(`http://127.0.0.1:${server.port}`, ["--json", "mail", "mailbox", "deleted", "get", MAILBOX_ID]);
   const restored = await runCli(`http://127.0.0.1:${server.port}`, ["--json", "mail", "mailbox", "restore", MAILBOX_ID, "--yes"]);
 
-  expect(listed.exitCode).toBe(0);
+  expect(listed.exitCode, listed.stderr).toBe(0);
   expect(JSON.parse(listed.stdout)).toEqual({ items: [deleted], nextCursor: "next-page" });
   expect(read.exitCode).toBe(0);
   expect(JSON.parse(read.stdout)).toEqual(deleted);
@@ -1252,7 +1255,7 @@ test("conversation update sends one optimistic collaboration mutation", async ()
     "--reopen",
   ]);
 
-  expect(result.exitCode).toBe(0);
+  expect(result.exitCode, result.stderr).toBe(0);
   expect(requestBody).toEqual({
     expectedRevision: 4,
     assigneeUserId: USER_ID,
@@ -1346,7 +1349,7 @@ test("conversation split forwards the bounded selected message set", async () =>
     MESSAGE_ID,
     "--yes",
   ]);
-  expect(result.exitCode).toBe(0);
+  expect(result.exitCode, result.stderr).toBe(0);
   expect(requestBody).toEqual({ messageIds: [MESSAGE_ID], expectedRevision: 5, confirm: true });
   expect(JSON.parse(result.stdout)).toMatchObject({ movedMessageCount: 1 });
 });
@@ -1607,7 +1610,7 @@ test("saved view commands cover structured filters and revisioned lifecycle", as
   ]);
 
   expect(created.exitCode).toBe(0);
-  expect(listed.exitCode).toBe(0);
+  expect(listed.exitCode, listed.stderr).toBe(0);
   expect(loaded.exitCode).toBe(0);
   expect(updated.exitCode).toBe(0);
   expect(conversations.exitCode).toBe(0);
@@ -1677,7 +1680,7 @@ test("comment add forwards stdin and a message reference", async () => {
     "Internal note\n",
   );
 
-  expect(result.exitCode).toBe(0);
+  expect(result.exitCode, result.stderr).toBe(0);
   expect(requestBody).toEqual({
     body: "Internal note\n",
     referencedMessageId: MESSAGE_ID,
@@ -1722,7 +1725,7 @@ test("comment delete uses a revisioned tombstone request", async () => {
     "--yes",
   ]);
 
-  expect(result.exitCode).toBe(0);
+  expect(result.exitCode, result.stderr).toBe(0);
   expect(method).toBe("DELETE");
   expect(requestBody).toEqual({ expectedRevision: 2 });
   expect(JSON.parse(result.stdout)).toMatchObject({ body: null, revision: 3 });
@@ -1751,7 +1754,7 @@ test("conversation list forwards a built-in collaboration view", async () => {
     "mine",
   ]);
 
-  expect(result.exitCode).toBe(0);
+  expect(result.exitCode, result.stderr).toBe(0);
   expect(new URLSearchParams(query).get("view")).toBe("mine");
 });
 
@@ -1820,7 +1823,7 @@ test("conversation get includes shared context and the latest message window", a
     MAILBOX_ID,
   ]);
 
-  expect(result.exitCode).toBe(0);
+  expect(result.exitCode, result.stderr).toBe(0);
   expect(JSON.parse(result.stdout)).toEqual({
     conversationId: CONVERSATION_ID,
     summary: summary.summary,
@@ -1861,7 +1864,7 @@ test("command wait polls until a successful terminal state", async () => {
     "2",
   ]);
 
-  expect(result.exitCode).toBe(0);
+  expect(result.exitCode, result.stderr).toBe(0);
   expect(reads).toBe(2);
   expect(JSON.parse(result.stdout).state).toBe("confirmed");
 });
@@ -1888,7 +1891,7 @@ test("status reads the aggregate operational health endpoint", async () => {
 
   const result = await runCli(`http://127.0.0.1:${server.port}`, ["--json", "mail", "status", "--mailbox", MAILBOX_ID]);
 
-  expect(result.exitCode).toBe(0);
+  expect(result.exitCode, result.stderr).toBe(0);
   expect(JSON.parse(result.stdout)).toMatchObject({ mailboxId: MAILBOX_ID, bindings: { active: 1 }, discovery: { missingFolders: 1 } });
 });
 
@@ -1915,7 +1918,7 @@ test("operator run submits a durable typed action with the caller idempotency ke
     "operator-rebuild",
   ]);
 
-  expect(result.exitCode).toBe(0);
+  expect(result.exitCode, result.stderr).toBe(0);
   expect(body).toEqual({ kind: "rebuild_search", idempotencyKey: "operator-rebuild" });
   expect(JSON.parse(result.stdout)).toMatchObject({ kind: "rebuild_search", state: "queued" });
 });
@@ -1937,7 +1940,7 @@ test("admin operations reads the redacted platform operator endpoint", async () 
 
   const result = await runCli(`http://127.0.0.1:${server.port}`, ["--json", "mail", "admin", "operations"]);
 
-  expect(result.exitCode).toBe(0);
+  expect(result.exitCode, result.stderr).toBe(0);
   expect(JSON.parse(result.stdout)).toMatchObject({ mailboxes: [{ mailboxId: MAILBOX_ID, coverage: { search: { covered: 1 } } }] });
 });
 
@@ -1972,7 +1975,7 @@ test("admin mailbox list preserves server pagination and recovery counts", async
     "25",
   ]);
 
-  expect(result.exitCode).toBe(0);
+  expect(result.exitCode, result.stderr).toBe(0);
   expect(requested).toBe("/api/mail/admin/operations?limit=25&q=Support");
   expect(JSON.parse(result.stdout)).toMatchObject({
     mailboxCount: 3,
@@ -2105,7 +2108,7 @@ test("admin mailbox access can repair a service-account grant without mailbox me
     "admin",
   ]);
 
-  expect(result.exitCode).toBe(0);
+  expect(result.exitCode, result.stderr).toBe(0);
   expect(granted).toEqual({
     principal: { type: "service_account", serviceAccountId },
     permission: "admin",
@@ -2185,7 +2188,7 @@ test("rediscover submits a typed durable maintenance command and can wait", asyn
     "2",
   ]);
 
-  expect(result.exitCode).toBe(0);
+  expect(result.exitCode, result.stderr).toBe(0);
   expect(reads).toBe(1);
   expect(bodies).toEqual([
     {
@@ -2310,7 +2313,7 @@ test("message wait polls indexed search for the expected message", async () => {
     "2",
   ]);
 
-  expect(result.exitCode).toBe(0);
+  expect(result.exitCode, result.stderr).toBe(0);
   expect(searches).toBe(2);
   expect(JSON.parse(result.stdout).id).toBe(MESSAGE_ID);
 });
@@ -2384,7 +2387,7 @@ test("send carries reply context and can wait for delivery", async () => {
   );
 
   expect(result.stderr).toBe("");
-  expect(result.exitCode).toBe(0);
+  expect(result.exitCode, result.stderr).toBe(0);
   expect(bodies[0]).toMatchObject({ conversationId: CONVERSATION_ID, body: "Reply body" });
   expect(bodies[1]).toMatchObject({ kind: "send", expectedDraftRevision: 1, undoSeconds: 0 });
   expect(JSON.parse(result.stdout).command.state).toBe("confirmed");
@@ -2491,7 +2494,7 @@ test("message reuse commands create independent idempotent drafts", async () => 
   ];
   for (const args of commands) {
     const result = await runCli(origin, args);
-    expect(result.exitCode).toBe(0);
+    expect(result.exitCode, result.stderr).toBe(0);
   }
   expect(requests).toEqual([
     { kind: "edit_as_new", senderIdentityId: IDENTITY_ID, includeAttachments: true, idempotencyKey: "edit-1" },
@@ -2551,7 +2554,7 @@ test("draft create can include source attachments for a forward", async () => {
     "Forward body",
   );
 
-  expect(result.exitCode).toBe(0);
+  expect(result.exitCode, result.stderr).toBe(0);
   expect(result.stderr).toBe("");
   expect(requestBody).toMatchObject({
     conversationId: CONVERSATION_ID,
@@ -2603,7 +2606,7 @@ test("provider credentials are accepted from stdin and never printed", async () 
     "not-a-real-secret",
   );
 
-  expect(result.exitCode).toBe(0);
+  expect(result.exitCode, result.stderr).toBe(0);
   expect(requestBody).toMatchObject({ secret: { kind: "password", password: "not-a-real-secret" } });
   expect(requestBody).not.toHaveProperty("owner");
   expect(result.stdout).not.toContain("not-a-real-secret");
@@ -2730,7 +2733,7 @@ test("binding attach sends only the mailbox connection id", async () => {
     MAILBOX_ID,
   ]);
 
-  expect(result.exitCode).toBe(0);
+  expect(result.exitCode, result.stderr).toBe(0);
   expect(requestBody).toEqual({ connectionId: CONNECTION_ID });
   expect(JSON.parse(result.stdout)).toEqual(binding);
 });
@@ -2761,7 +2764,7 @@ test("attachment download writes the exact response bytes", async () => {
     output,
   ]);
 
-  expect(result.exitCode).toBe(0);
+  expect(result.exitCode, result.stderr).toBe(0);
   expect(new Uint8Array(await readFile(output))).toEqual(expected);
   expect(JSON.parse(result.stdout)).toMatchObject({ path: output, bytes: expected.byteLength, contentType: "text/plain" });
 });
@@ -2990,7 +2993,7 @@ test("attachment link list exposes pagination and revoke requires confirmation",
     "--yes",
   ]);
 
-  expect(listed.exitCode).toBe(0);
+  expect(listed.exitCode, listed.stderr).toBe(0);
   expect(JSON.parse(listed.stdout)).toEqual({ items: [link], nextCursor: "oldest-page" });
   expect(unconfirmed.exitCode).not.toBe(0);
   expect(unconfirmed.stderr).toContain("Pass --yes");
@@ -3080,7 +3083,7 @@ test("send cancellation uses the public command id", async () => {
     MAILBOX_ID,
   ]);
 
-  expect(result.exitCode).toBe(0);
+  expect(result.exitCode, result.stderr).toBe(0);
   expect(requestedPath).toBe(`/api/mail/mailboxes/${MAILBOX_ID}/commands/${COMMAND_ID}/cancel`);
   expect(JSON.parse(result.stdout)).toEqual({ cancelled: true, commandId: COMMAND_ID });
 });
@@ -3125,7 +3128,7 @@ test("scheduled sends expose list and explicit cancellation disposition", async 
   servers.push(server);
 
   const listed = await runCli(`http://127.0.0.1:${server.port}`, ["--json", "mail", "scheduled", "list", "--mailbox", MAILBOX_ID]);
-  expect(listed.exitCode).toBe(0);
+  expect(listed.exitCode, listed.stderr).toBe(0);
   expect(JSON.parse(listed.stdout)).toMatchObject({ total: 1, items: [{ id: SCHEDULED_SEND_ID }] });
 
   const cancelled = await runCli(`http://127.0.0.1:${server.port}`, [
@@ -3183,7 +3186,7 @@ test("folder create submits one durable provider command and waits for rediscove
     "2",
   ]);
 
-  expect(result.exitCode).toBe(0);
+  expect(result.exitCode, result.stderr).toBe(0);
   expect(body).toEqual({
     kind: "create_folder",
     parentFolderId: FOLDER_ID,
@@ -3209,7 +3212,7 @@ test("folder hide changes only Cloud Mail sidebar visibility", async () => {
 
   const result = await runCli(`http://127.0.0.1:${server.port}`, ["--json", "mail", "folder", "hide", FOLDER_ID, "--mailbox", MAILBOX_ID]);
 
-  expect(result.exitCode).toBe(0);
+  expect(result.exitCode, result.stderr).toBe(0);
   expect(body).toEqual({ showInSidebar: false });
   expect(JSON.parse(result.stdout)).toEqual({ folderId: FOLDER_ID, showInSidebar: false });
 });
@@ -3239,7 +3242,7 @@ test("message read uses an additive state command", async () => {
     "message-read-test",
   ]);
 
-  expect(result.exitCode).toBe(0);
+  expect(result.exitCode, result.stderr).toBe(0);
   expect(body).toEqual({
     kind: "change_message_state",
     messageId: MESSAGE_ID,
@@ -3361,7 +3364,7 @@ test("conversation message table does not expose provider placement ids", async 
     MAILBOX_ID,
   ]);
 
-  expect(result.exitCode).toBe(0);
+  expect(result.exitCode, result.stderr).toBe(0);
   expect(result.stdout).toContain(MESSAGE_ID);
   expect(result.stdout).not.toContain(placementId);
   expect(result.stdout).not.toContain("REMOTE REF");
@@ -3393,7 +3396,7 @@ test("conversation archive targets the configured semantic role", async () => {
     "conversation-archive-test",
   ]);
 
-  expect(result.exitCode).toBe(0);
+  expect(result.exitCode, result.stderr).toBe(0);
   expect(body).toEqual({
     kind: "move_to_role",
     sourceFolderId: FOLDER_ID,
@@ -3505,7 +3508,7 @@ test("conversation move targets an explicit provider folder", async () => {
     "conversation-move-test",
   ]);
 
-  expect(result.exitCode).toBe(0);
+  expect(result.exitCode, result.stderr).toBe(0);
   expect(body).toEqual({
     kind: "move_to_folder",
     sourceFolderId: FOLDER_ID,
@@ -3612,7 +3615,7 @@ test("draft attachment add resumes a chunked upload and finalizes at the expecte
     "text/plain",
   ]);
 
-  expect(result.exitCode).toBe(0);
+  expect(result.exitCode, result.stderr).toBe(0);
   expect(uploaded).toEqual(bytes);
   expect(createBody).toEqual({ filename: "upload.txt", contentType: "text/plain", byteLength: bytes.length });
   expect(String(offset)).toBe("0");
@@ -3730,7 +3733,7 @@ test("draft recovery restore owns and releases a lease around the mutation", asy
     "3",
   ]);
 
-  expect(result.exitCode).toBe(0);
+  expect(result.exitCode, result.stderr).toBe(0);
   expect(JSON.parse(result.stdout)).toMatchObject({ id: DRAFT_ID, revision: 4 });
   expect(requests).toEqual([
     {
@@ -3849,7 +3852,7 @@ test("default sender setup preserves an existing display name when no name is pa
     MAILBOX_ID,
   ]);
 
-  expect(result.exitCode).toBe(0);
+  expect(result.exitCode, result.stderr).toBe(0);
   expect(body).toEqual({ bindingId: CONNECTION_ID, savesSentAutomatically: false });
   expect(JSON.parse(result.stdout)).toMatchObject({ displayName: "Existing sender", status: "verified" });
 });
@@ -3985,7 +3988,7 @@ test("identity configuration sends identity-specific defaults without hidden leg
     COMPOSE_TEMPLATE_ID,
   ]);
 
-  expect(result.exitCode).toBe(0);
+  expect(result.exitCode, result.stderr).toBe(0);
   expect(body).toEqual({
     label: "University",
     displayName: "Student representation",
@@ -4074,7 +4077,7 @@ test("workflow validate accepts YAML and sends exact canonical source", async ()
     workflowSource,
   );
 
-  expect(result.exitCode).toBe(0);
+  expect(result.exitCode, result.stderr).toBe(0);
   expect(result.stderr).toBe("");
   expect(requestBody).toEqual({ source: workflowSource });
   expect(JSON.parse(result.stdout)).toMatchObject({ valid: true, sourceHash: "a".repeat(64) });
@@ -4122,7 +4125,7 @@ test("workflow create forwards explicit effect budgets", async () => {
     workflowSource,
   );
 
-  expect(result.exitCode).toBe(0);
+  expect(result.exitCode, result.stderr).toBe(0);
   expect(requestBody as Record<string, unknown> | null).toMatchObject({
     name: "Budgeted workflow",
     source: workflowSource,
@@ -4158,7 +4161,7 @@ test("workflow update reads optimistic state before patching metadata", async ()
     "25",
   ]);
 
-  expect(result.exitCode).toBe(0);
+  expect(result.exitCode, result.stderr).toBe(0);
   expect(result.stderr).toBe("");
   expect(requests).toEqual([
     {
@@ -4239,7 +4242,7 @@ test("workflow version restore forwards the expected current version", async () 
     WORKFLOW_VERSION_ID,
   ]);
 
-  expect(result.exitCode).toBe(0);
+  expect(result.exitCode, result.stderr).toBe(0);
   expect(result.stderr).toBe("");
   expect(body).toEqual({ expectedCurrentVersionId: WORKFLOW_VERSION_ID });
 });
@@ -4273,7 +4276,7 @@ test("provider discovery exposes mailbox-scoped autoconfiguration candidates", a
     MAILBOX_ID,
   ]);
 
-  expect(result.exitCode).toBe(0);
+  expect(result.exitCode, result.stderr).toBe(0);
   expect(requestedEmails).toEqual(["support@example.com"]);
   expect(JSON.parse(result.stdout)).toEqual([candidate]);
 });
@@ -4308,7 +4311,7 @@ test("provider list reports manual connection metadata without credentials", asy
 
   const result = await runCli(`http://127.0.0.1:${server.port}`, ["mail", "provider", "list", "--mailbox", MAILBOX_ID]);
 
-  expect(result.exitCode).toBe(0);
+  expect(result.exitCode, result.stderr).toBe(0);
   expect(result.stdout).toContain("Google Mail");
   expect(result.stdout).toContain("degraded");
   expect(result.stdout).not.toContain("password");
@@ -4358,7 +4361,7 @@ test("provider limit commands expose cached evidence and explicit refresh", asyn
     MAILBOX_ID,
   ]);
 
-  expect(listed.exitCode).toBe(0);
+  expect(listed.exitCode, listed.stderr).toBe(0);
   expect(JSON.parse(listed.stdout)).toEqual([connection]);
   expect(refreshed.exitCode).toBe(0);
   expect(JSON.parse(refreshed.stdout)).toEqual(connection);
