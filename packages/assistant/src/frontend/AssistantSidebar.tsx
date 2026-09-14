@@ -42,8 +42,6 @@ type AssistantSidebarProps = {
 };
 
 const PER_SPOTLIGHT_PAGE = 20;
-const SIDEBAR_CHAT_LIMIT = 15;
-const SIDEBAR_PINNED_LIMIT = 10;
 
 function AssistantSpotlightButton(props: {
   registerShortcut?: boolean;
@@ -114,7 +112,7 @@ function ConversationSidebarItem(props: {
     if (saving()) return;
     setSaving(true);
     try {
-      props.update(await assistantApi.setConversationDone(props.conversation.id, !props.conversation.doneAt));
+      props.update(await assistantApi.setConversationDone(props.conversation.id, !props.conversation.isDone));
     } catch {
       toast.error(text("Could not update chat. Stop the response first or try again."));
     } finally {
@@ -139,7 +137,7 @@ function ConversationSidebarItem(props: {
       onNavigate={props.open ? handleNavigate : undefined}
       active={props.active}
       description={
-        <Show when={!props.conversation.doneAt}>
+        <Show when={!props.conversation.isDone}>
           <Show
             when={props.conversation.runStatus !== "idle" || props.conversation.unreadCompletion || props.conversation.pinnedAt}
             fallback={<span>{text("Ready")}</span>}
@@ -163,15 +161,15 @@ function ConversationSidebarItem(props: {
     >
       <AppWorkspace.SidebarItemLabel>{props.conversation.title}</AppWorkspace.SidebarItemLabel>
       <AppWorkspace.SidebarItemAction
-        icon={props.conversation.doneAt ? "ti ti-arrow-back-up" : "ti ti-check"}
+        icon={props.conversation.isDone ? "ti ti-arrow-back-up" : "ti ti-check"}
         label={
-          props.conversation.doneAt
+          props.conversation.isDone
             ? text("Reopen chat")
             : busy()
               ? text("Stop the response before marking it done")
               : text("Mark chat done")
         }
-        disabled={saving() || (!props.conversation.doneAt && busy())}
+        disabled={saving() || (!props.conversation.isDone && busy())}
         visibility="hover"
         onSelect={() => void toggleDone()}
       />
@@ -183,19 +181,17 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
   const locale = useLocale();
   const t = () => assistantMessages.resolve([locale()]).t;
   const text = useAssistantText();
-  const activeConversations = () => props.conversations().filter((conversation) => !conversation.doneAt);
-  const doneConversations = () => props.conversations().filter((conversation) => conversation.doneAt);
+  const activeConversations = () => props.conversations().filter((conversation) => !conversation.isDone);
+  const doneConversations = () => props.conversations().filter((conversation) => conversation.isDone);
   const activeConversationId = () => props.activeConversationId?.() ?? null;
   const activeView = () => props.activeView ?? "chat";
   const creatingConversation = () => props.creatingConversation?.() ?? false;
   const pinnedConversations = () =>
     activeConversations()
       .filter((conversation) => conversation.pinnedAt)
-      .toSorted((left, right) => Date.parse(right.pinnedAt!) - Date.parse(left.pinnedAt!))
-      .slice(0, SIDEBAR_PINNED_LIMIT);
+      .toSorted((left, right) => Date.parse(right.pinnedAt!) - Date.parse(left.pinnedAt!));
   const unpinnedConversations = () => activeConversations().filter((conversation) => !conversation.pinnedAt);
   const generalConversations = () => unpinnedConversations().filter((conversation) => !conversation.projectId);
-  const visibleGeneralConversations = () => generalConversations().slice(0, SIDEBAR_CHAT_LIMIT);
   const [expandedProjects, setExpandedProjects] = createSignal<readonly string[]>(
     (props.projects ?? []).map((project) => `project:${project.id}`),
   );
@@ -209,8 +205,7 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
   const projectChats = (project: AiProject) =>
     unpinnedConversations()
       .filter((conversation) => conversation.projectId === project.id)
-      .toSorted((left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt))
-      .slice(0, 10);
+      .toSorted((left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt));
   const openProject = async (project: AiProject) => {
     if (props.activeProjectId === project.id) return;
     const href = assistantProjectHref("/app/assistant", project.id);
@@ -353,9 +348,7 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
       <Show when={!doneConversations().length}>
         <p class="px-2 py-1 text-xs text-dimmed">{text("No done chats.")}</p>
       </Show>
-      <Show when={(props.doneCount ?? doneConversations().length) > 0}>
-        <AppWorkspace.SidebarItem onClick={() => openAllChats(true)}>{t().seeAll}</AppWorkspace.SidebarItem>
-      </Show>
+      <AppWorkspace.SidebarItem onClick={() => openAllChats()}>{t().allChats}</AppWorkspace.SidebarItem>
     </AppWorkspace.SidebarSection>
   );
   const collapsedChatMenu = () => [
@@ -374,12 +367,10 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
       sectionLabel: t().chats,
       items: [
         ...generalConversations()
-          .slice(0, 6)
           .map((conversation) => ({
             label: conversation.title,
             action: () => openConversationFromCommand(conversation),
           })),
-        { icon: "ti ti-messages", label: t().allChats, action: () => openAllChats() },
       ],
     },
   ];
@@ -409,7 +400,7 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
           <ProjectsSection />
           <AppWorkspace.SidebarSection title={t().chats}>
             <Show when={generalConversations().length > 0} fallback={<p class="px-2 py-1 text-xs text-dimmed">{t().noChats}</p>}>
-              <For each={visibleGeneralConversations()}>
+              <For each={generalConversations()}>
                 {(conversation) => (
                   <ConversationSidebarItem
                     conversation={conversation}
@@ -422,9 +413,6 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
                 )}
               </For>
             </Show>
-            <AppWorkspace.SidebarItem onClick={() => openAllChats()} title={t().seeAllChats}>
-              {t().seeAll}
-            </AppWorkspace.SidebarItem>
           </AppWorkspace.SidebarSection>
           <DoneSection />
         </AppWorkspace.SidebarMobileBody>
@@ -474,7 +462,7 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
           <ProjectsSection />
           <AppWorkspace.SidebarSection title={t().chats}>
             <Show when={generalConversations().length > 0} fallback={<p class="px-2 py-1 text-xs text-dimmed">{t().noChats}</p>}>
-              <For each={visibleGeneralConversations()}>
+              <For each={generalConversations()}>
                 {(conversation) => (
                   <ConversationSidebarItem
                     conversation={conversation}
@@ -487,13 +475,10 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
                 )}
               </For>
             </Show>
-            <AppWorkspace.SidebarItem onClick={() => openAllChats()} title={t().seeAllChats}>
-              {t().seeAll}
-            </AppWorkspace.SidebarItem>
           </AppWorkspace.SidebarSection>
+          <DoneSection />
         </AppWorkspace.SidebarBody>
         <AppWorkspace.SidebarFooter sidebarMode="expanded">
-          <DoneSection />
           <AppWorkspace.SidebarItem
             sidebarMode="expanded"
             icon="ti ti-app-window"

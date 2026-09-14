@@ -439,7 +439,6 @@ export const aiProjects = {
       JOIN auth.access access ON access.id = project_access.access_id
       WHERE access.permission <> 'none' AND ${match}
       ORDER BY lower(project.name), project.id
-      LIMIT 200
     `;
     return (await Promise.all(rows.map((row) => toProject(row, subject)))).filter((project): project is AiProject => Boolean(project));
   },

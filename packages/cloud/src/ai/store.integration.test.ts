@@ -76,6 +76,43 @@ const assistantMessage = (text: string): Message => ({
 const runConfig = { kind: "chat" as const, input: "hi", toolSource: { kind: "none" as const } };
 
 suite("AI conversation store integration", () => {
+  test("automatic completion uses activity, respects overrides and pending work, and does not cap active chats", async () => {
+    const userId = await insertUser();
+    const conversationIds: string[] = [];
+    try {
+      const chat = await aiConversations.createConversation({ ownerUserId: userId, title: "Age fixture" });
+      conversationIds.push(chat.id);
+      const age = async () => { await sql`UPDATE ai.conversations SET last_used_at = now() - interval '8 days' WHERE id = ${chat.id}`; };
+      await age();
+      expect(await aiConversations.getConversation({ conversationId: chat.id })).toMatchObject({ done: null, isDone: true });
+      expect(await aiConversations.listConversationsPage({ ownerUserId: userId, done: true, search: "Age", page: 1, perPage: 10 })).toMatchObject({ total: 1 });
+      await aiConversations.updateConversationMetadata({ conversationId: chat.id, ownerUserId: userId, title: "New metadata" });
+      expect((await aiConversations.getConversation({ conversationId: chat.id }))?.isDone).toBe(true);
+      await aiConversations.setConversationDone({ conversationId: chat.id, ownerUserId: userId, done: false });
+      expect(await aiConversations.getConversation({ conversationId: chat.id })).toMatchObject({ done: false, isDone: false });
+      await age();
+      await aiConversations.setConversationDone({ conversationId: chat.id, ownerUserId: userId, done: null });
+      expect((await aiConversations.getConversation({ conversationId: chat.id }))?.isDone).toBe(true);
+      await aiConversations.markConversationViewed({ conversationId: chat.id, ownerUserId: userId });
+      expect((await aiConversations.getConversation({ conversationId: chat.id }))?.isDone).toBe(false);
+      const { turn } = await aiConversations.submitChatTurn({ conversationId: chat.id, modelProfileId: "test-model", runConfig, userMessage: userMessage("Working") });
+      await age();
+      for (const status of ["queued", "running", "waiting_for_action"]) {
+        await sql`UPDATE ai.turns SET status = ${status} WHERE id = ${turn.id}`;
+        expect((await aiConversations.getConversation({ conversationId: chat.id }))?.isDone).toBe(false);
+        expect(await aiConversations.listSidebarConversations({ ownerUserId: userId })).toHaveLength(1);
+      }
+      await sql`UPDATE ai.turns SET status = 'completed' WHERE id = ${turn.id}`;
+      expect((await aiConversations.getConversation({ conversationId: chat.id }))?.isDone).toBe(true);
+      await aiConversations.setConversationDone({ conversationId: chat.id, ownerUserId: userId, done: false });
+      const more = await Promise.all(Array.from({ length: 20 }, () => aiConversations.createConversation({ ownerUserId: userId })));
+      conversationIds.push(...more.map(item => item.id));
+      expect(await aiConversations.listSidebarConversations({ ownerUserId: userId })).toHaveLength(21);
+      await aiConversations.submitChatTurn({ conversationId: chat.id, modelProfileId: "test-model", runConfig, userMessage: userMessage("Keep active") });
+      expect((await aiConversations.getConversation({ conversationId: chat.id }))?.done).toBe(false);
+    } finally { await cleanupFixture({ userId, conversationIds }); }
+  });
+
   test("Done is owner-scoped, preserves resources and pins, and reopens on a new turn", async () => {
     const userId = await insertUser();
     const stranger = await insertUser();
@@ -87,17 +124,17 @@ suite("AI conversation store integration", () => {
       const file = await aiFileStore.createUserUpload({ conversationId: chat.id, path: "source.txt", bytes: new TextEncoder().encode("preserved"), mediaType: "text/plain" });
       expect(await aiConversations.setConversationDone({ conversationId: chat.id, ownerUserId: stranger, done: true })).toEqual({ ok: false, reason: "not_found" });
       const completed = await aiConversations.setConversationDone({ conversationId: chat.id, ownerUserId: userId, done: true });
-      expect(completed).toMatchObject({ ok: true, conversation: { doneAt: expect.any(String), archivedAt: null, pinnedAt: expect.any(String) } });
+      expect(completed).toMatchObject({ ok: true, conversation: { done: true, isDone: true, archivedAt: null, pinnedAt: expect.any(String) } });
       expect(await aiConversations.listSidebarConversations({ ownerUserId: userId })).toHaveLength(0);
       expect(await aiConversations.listConversations({ ownerUserId: userId, done: false })).toHaveLength(0);
       expect(await aiConversations.listConversations({ ownerUserId: userId, search: "Finished", done: true })).toHaveLength(1);
       expect(await aiConversations.listConversationsPage({ ownerUserId: userId, done: true, page: 1, perPage: 1 })).toMatchObject({ total: 1, hasNext: false });
       expect(await readAiConversationFile({ conversationId: chat.id, ownerUserId: userId, path: file.path, version: file.version })).not.toBeNull();
       expect(await readAiConversationFile({ conversationId: chat.id, ownerUserId: stranger, path: file.path, version: file.version })).toBeNull();
-      expect(await aiConversations.setConversationDone({ conversationId: chat.id, ownerUserId: userId, done: false })).toMatchObject({ ok: true, conversation: { doneAt: null } });
+      expect(await aiConversations.setConversationDone({ conversationId: chat.id, ownerUserId: userId, done: false })).toMatchObject({ ok: true, conversation: { done: false, isDone: false } });
       await aiConversations.setConversationDone({ conversationId: chat.id, ownerUserId: userId, done: true });
       const { turn } = await aiConversations.submitChatTurn({ conversationId: chat.id, modelProfileId: "test-model", runConfig, userMessage: userMessage("Continue") });
-      expect((await aiConversations.getConversation({ conversationId: chat.id }))?.doneAt).toBeNull();
+      expect((await aiConversations.getConversation({ conversationId: chat.id }))?.isDone).toBe(false);
       expect(await aiConversations.setConversationDone({ conversationId: chat.id, ownerUserId: userId, done: true })).toEqual({ ok: false, reason: "active_turn" });
       expect((await aiConversations.getLatestTurn({ conversationId: chat.id }))?.id).toBe(turn.id);
     } finally {
@@ -1321,7 +1358,7 @@ suite("AI conversation store integration", () => {
       expect(await aiConversations.restoreConversation({ conversationId: pinned.id, ownerUserId: userId })).toMatchObject({
         id: pinned.id,
         pinnedAt: null,
-        doneAt: null, archivedAt: null,
+        done: null, isDone: false, lastUsedAt: expect.any(String), archivedAt: null,
       });
       expect(await aiConversations.getConversation({ conversationId: normal.id })).toMatchObject({ runStatus: "idle" });
     } finally {

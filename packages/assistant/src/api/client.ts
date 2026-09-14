@@ -379,7 +379,7 @@ export const assistantApi = {
     return response.json();
   },
 
-  setConversationDone: async (conversationId: string, done: boolean): Promise<AiConversation> => {
+  setConversationDone: async (conversationId: string, done: boolean | null): Promise<AiConversation> => {
     const response = await client.conversations[":conversationId"].done.$put({ param: { conversationId }, json: { done } });
     if (!response.ok) throw new Error(await readError(response, "Failed to update chat completion"));
     return response.json();

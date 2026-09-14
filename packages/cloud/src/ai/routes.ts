@@ -695,7 +695,7 @@ export const aiRoutes = (() => {
         });
         return updated ? respond(c, ok(await publicConversationFor(updated, c.get("accessSubject")))) : notFound(c);
       })
-      .put("/conversations/:conversationId/done", v("json", z.object({ done: z.boolean() })), async (c) => {
+      .put("/conversations/:conversationId/done", v("json", z.object({ done: z.boolean().nullable() })), async (c) => {
         const ctx = await resolveContext(c);
         if (ctx instanceof Response) return ctx;
         const conversation = await loadConversation(c, ctx);

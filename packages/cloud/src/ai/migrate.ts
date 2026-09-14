@@ -141,11 +141,21 @@ export const migrateCloudAi = async (): Promise<void> => {
   await sql`ALTER TABLE ai.conversations ADD COLUMN IF NOT EXISTS enrich_failed_at TIMESTAMPTZ`.simple();
   await sql`ALTER TABLE ai.conversations ADD COLUMN IF NOT EXISTS enrich_fail_count INTEGER NOT NULL DEFAULT 0`.simple();
   await sql`ALTER TABLE ai.conversations ADD COLUMN IF NOT EXISTS pinned_at TIMESTAMPTZ`.simple();
-  await sql`ALTER TABLE ai.conversations ADD COLUMN IF NOT EXISTS done_at TIMESTAMPTZ`.simple();
+  await sql`ALTER TABLE ai.conversations ADD COLUMN IF NOT EXISTS done BOOLEAN`.simple();
+  await sql`ALTER TABLE ai.conversations ADD COLUMN IF NOT EXISTS last_used_at TIMESTAMPTZ`.simple();
+  await sql`DO $$ BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'ai' AND table_name = 'conversations' AND column_name = 'done_at') THEN
+      UPDATE ai.conversations SET done = TRUE WHERE done_at IS NOT NULL;
+      ALTER TABLE ai.conversations DROP COLUMN done_at;
+    END IF;
+  END $$`.simple();
   await sql`ALTER TABLE ai.conversations ADD COLUMN IF NOT EXISTS last_viewed_at TIMESTAMPTZ NOT NULL DEFAULT now()`.simple();
   await sql`ALTER TABLE ai.conversations ALTER COLUMN last_viewed_at SET DEFAULT now()`.simple();
   await sql`UPDATE ai.conversations SET last_viewed_at = now() WHERE last_viewed_at IS NULL`.simple();
   await sql`ALTER TABLE ai.conversations ALTER COLUMN last_viewed_at SET NOT NULL`.simple();
+  await sql`UPDATE ai.conversations SET last_used_at = GREATEST(created_at, updated_at, last_viewed_at) WHERE last_used_at IS NULL`.simple();
+  await sql`ALTER TABLE ai.conversations ALTER COLUMN last_used_at SET DEFAULT now()`.simple();
+  await sql`ALTER TABLE ai.conversations ALTER COLUMN last_used_at SET NOT NULL`.simple();
   await sql`ALTER TABLE ai.conversations ADD COLUMN IF NOT EXISTS search_text TEXT NOT NULL DEFAULT ''`.simple();
   await sql`ALTER TABLE ai.conversations ADD COLUMN IF NOT EXISTS search_document TSVECTOR NOT NULL DEFAULT ''::tsvector`.simple();
   await sql`

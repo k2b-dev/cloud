@@ -405,16 +405,23 @@ Stop action. Continuing does not automatically replay uncertain external calls.
 
 ### Conversation completion
 
-`AiConversation.doneAt` records an explicit user-marked completion, separately
-from `archivedAt` and run status. `PUT /api/ai/conversations/:id/done` takes
-`{ "done": true }` or `{ "done": false }`. The owner-only operation returns the
-updated conversation; an active queued, running or waiting turn yields 409.
-It preserves files, resource access, history and pinning. A new chat turn,
-compaction or delivered inter-chat message reopens the conversation atomically.
+`AiConversation.done` is a nullable override: `true` means finished, `false`
+keeps the chat active, and `null` uses automatic completion after seven days
+without use. `isDone` exposes the effective result; `lastUsedAt` tracks opening,
+reading, new turns, and delivered messages independently from metadata updates.
+Queued, running, and waiting turns prevent automatic completion.
 
-Conversation list and page endpoints accept optional `done=true|false`.
-Omitting it includes both states; sidebar active queries exclude done chats.
-`aiConversations.setConversationDone` serializes against turn submission and
-returns `not_found` or `active_turn` when completion cannot be applied.
+`PUT /api/ai/conversations/:id/done` accepts `{ "done": true }`,
+`{ "done": false }`, or `{ "done": null }`. Only the owner can change it;
+explicit completion while a turn is active returns 409. New turns clear an
+explicit finished choice to automatic, but preserve explicit active choices.
+Completion preserves history, files, access, and pinning; it is separate from
+archiving. The migration preserves previously finished chats as `true`.
+
+List and page filters `done=true|false` use the effective state. Omitting the
+filter includes both states. The sidebar returns all active chats without a
+per-project or pinned cap; finished chats remain paginated. Time-based state is
+recomputed on reads without a background job or destructive archival.
+
 `aiConversations.getLatestTurn` reads the newest turn for an already-authorized
 conversation, including its model profile; it does not authorize access itself.

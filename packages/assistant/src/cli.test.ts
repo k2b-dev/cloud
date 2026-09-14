@@ -267,7 +267,7 @@ describe("assistant CLI", () => {
         expect(String(path)).toBe("/api/ai/conversations/cWWCrY/done");
         expect(init?.method).toBe("PUT");
         expect(await new Response(init?.body).json()).toEqual({ done: action === "done" });
-        return json({ id: "cWWCrY", doneAt: action === "done" ? "2026-09-14" : null });
+        return json({ id: "cWWCrY", done: action === "done", isDone: action === "done" });
       });
       await assistantCli.run(ctx);
     }

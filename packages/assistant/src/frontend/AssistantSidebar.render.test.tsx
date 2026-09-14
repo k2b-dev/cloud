@@ -46,7 +46,7 @@ const conversation = (id: string, title: string, projectId: string | null): AiCo
   descriptionSource: "default",
   keywords: [],
   pinnedAt: null,
-  doneAt: null, archivedAt: null,
+  done: null, isDone: false, lastUsedAt: "2026-09-14T00:00:00.000Z", archivedAt: null,
   runStatus: "idle",
   runError: null,
   unreadCompletion: false,
@@ -58,7 +58,7 @@ const conversation = (id: string, title: string, projectId: string | null): AiCo
 });
 
 describe("Assistant sidebar", () => {
-  test("opens every Project and caps the icon-free Chats section with See all", () => {
+  test("opens every Project and shows all active chats before Done", () => {
     const [conversations] = createSignal([
       { ...conversation("chatpinned", "Pinned chat", null), pinnedAt: "2026-08-12T10:00:00.000Z" },
       { ...conversation("chatprojectpinned", "Pinned project chat", project.id), pinnedAt: "2026-08-12T09:00:00.000Z" },
@@ -78,9 +78,9 @@ describe("Assistant sidebar", () => {
     expect(html).toContain("Mark chat done");
     expect(html).toContain(">Chats</");
     expect(html).toContain("General chat 15");
-    expect(html).not.toContain("General chat 16");
-    expect(html.match(/>See all</g)?.length).toBe(2);
-    expect(html).not.toContain(">All Chats</");
+    expect(html).toContain("General chat 17");
+    expect(html).not.toContain(">See all<");
+    expect(html).toContain("All chats");
     expect(html).not.toContain("Today");
     expect(html).not.toContain("This Week");
     expect(html).not.toContain("This Month");
@@ -88,7 +88,7 @@ describe("Assistant sidebar", () => {
   });
 
   test("separates Done from pinned and Project chats and offers reopening", () => {
-    const done = { ...conversation("finished", "Completed work", project.id), doneAt: "2026-09-14T12:00:00.000Z", pinnedAt: "2026-09-14T11:00:00.000Z" };
+    const done = { ...conversation("finished", "Completed work", project.id), done: true, isDone: true, pinnedAt: "2026-09-14T11:00:00.000Z" };
     const html = renderToString(() => createComponent(AssistantSidebar, {
       conversations: () => [done, { ...conversation("running", "Active work", null), runStatus: "running" }],
       projects: [project], doneCount: 21, live,

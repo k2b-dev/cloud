@@ -89,7 +89,7 @@ export function ConversationSidebarPreview(props: { conversation: AiConversation
           </>
         )}
       </Show>
-      <Show when={props.conversation.doneAt}>
+      <Show when={props.conversation.isDone}>
         <StatusBadge tone="ok" label={text("Done")} />
       </Show>
       <Button size="sm" variant="secondary" class="self-start" onClick={props.edit}>

@@ -54,7 +54,7 @@ export default ssr<AuthContext>(async (c) => {
     : null;
   const projectContext = activeProject ? await loadAssistantProjectContextSnapshot(subject, activeProject.id) : null;
 
-  const selectedConversationId = activeProject ? null : (requestedConversationId ?? conversations.find(conversation => !conversation.doneAt)?.shortId ?? null);
+  const selectedConversationId = activeProject ? null : (requestedConversationId ?? conversations.find(conversation => !conversation.isDone)?.shortId ?? null);
   const resolvedActiveConversation = selectedConversationId
     ? await aiConversations.getConversationByShortId({ shortId: selectedConversationId, ownerUserId: user.id })
     : null;

@@ -89,7 +89,7 @@ export const assistantChatCommands = [
         chats.map((chat) => ({
           id: chat.id,
           title: chat.title,
-          status: chat.doneAt ? "done" : chat.runStatus,
+          status: chat.isDone ? "done" : chat.runStatus,
           unread: chat.unreadCompletion ? "yes" : "",
           pinned: chat.pinnedAt ? "yes" : "",
           updated: chat.updatedAt,

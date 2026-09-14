@@ -63,6 +63,8 @@ proposed actions before relying on them.
 
 ## Keep active chats in view
 
+Chats automatically move to **Done** after seven days without use. Opening or reading a chat counts as use; background metadata changes do not. Running chats and chats waiting for confirmation stay active. **Reopen chat** keeps a chat active until you mark it done again. All active chats appear in the sidebar, followed by **Done** and its **All chats** entry.
+
 Choose **Mark chat done** on a sidebar row when its work is finished. Stop a
 running response first. Done chats move into the collapsed **Done** section;
 their files, apps, history and pinning remain available. Choose **Reopen chat**
@@ -72,7 +74,7 @@ does not automatically mark the whole chat done.
 Hover over a chat for its description, Project, last model, apps, files and
 **Chat settings**. Touch devices provide an information button; keyboard users
 can reach the same preview with Tab. Resource details load when the preview
-opens. **See all** includes a searchable, paginated **Done** filter.
+opens. **All chats** inside **Done** includes a searchable, paginated **Done** filter.
 
 The CLI supports `cld assistant chats done CHAT`, `chats reopen CHAT`, and
 `chats list --lifecycle active|done|all`. Archiving remains a separate action.

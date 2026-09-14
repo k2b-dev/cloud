@@ -147,8 +147,10 @@ export type AiConversation = {
   keywords: string[];
   pinnedAt: string | null;
   archivedAt: string | null;
-  /** User-marked completion; keeps chat resources accessible. */
-  doneAt: string | null;
+  /** null: automatic after seven days without use; false: explicitly active; true: finished. */
+  done: boolean | null;
+  isDone: boolean;
+  lastUsedAt: string;
   runStatus: AiConversationRunStatus;
   /** Error from the latest turn when `runStatus` is `failed`. */
   runError: string | null;
@@ -630,7 +632,7 @@ export type AiConversationService = {
     unassigned?: boolean;
     limit?: number;
   }): Promise<AiConversation[]>;
-  listSidebarConversations(input: { ownerUserId: string; unassignedLimit?: number; perProjectLimit?: number }): Promise<AiConversation[]>;
+  listSidebarConversations(input: { ownerUserId: string }): Promise<AiConversation[]>;
   listConversationsPage(input: {
     ownerUserId: string;
     search?: string;
@@ -729,7 +731,7 @@ export type AiConversationService = {
   setConversationDone(input: {
     conversationId: string;
     ownerUserId: string;
-    done: boolean;
+    done: boolean | null;
   }): Promise<{ ok: true; conversation: AiConversation } | { ok: false; reason: "not_found" | "active_turn" }>;
   archiveConversation(input: { conversationId: string; ownerUserId?: string }): Promise<boolean>;
   restoreConversation(input: { conversationId: string; ownerUserId?: string }): Promise<AiConversation | null>;
