@@ -340,8 +340,7 @@ const boundedMetricPoints = (
 };
 
 export const queryMetricData = async (query: MetricQuery, limits: { maxOutputPoints?: number } = {}): Promise<Result<MetricQueryPoint[]>> =>
-  sql.begin(async (tx) => {
-    await tx`SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY`;
+  sql.begin("ISOLATION LEVEL REPEATABLE READ READ ONLY", async (tx) => {
     return queryMetricDataInSnapshot(query, limits, tx);
   });
 

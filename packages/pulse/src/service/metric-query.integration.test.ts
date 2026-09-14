@@ -79,6 +79,13 @@ describe("Pulse grouped metric query Postgres smoke", () => {
         { group: "Worker", value: 10 },
       ]);
 
+      // Exercise warmed connections while independent transactions compete for the pool.
+      const reads = await Promise.all(Array.from({ length: 20 }, async (_, index) => {
+        await sql.begin(async (tx) => { await tx`SELECT ${index}::int`; });
+        return queryMetricData({ ...baseQuery, aggregation: "latest", reduce: "sum" });
+      }));
+      expect(reads.every(result => result.ok && result.data[0]?.value === 35)).toBe(true);
+
       const totalLatest = await queryMetricData({ ...baseQuery, aggregation: "latest", reduce: "sum" });
       expect(totalLatest.ok).toBe(true);
       if (!totalLatest.ok) return;

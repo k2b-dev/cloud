@@ -8,8 +8,7 @@ export const withEventQuerySnapshot = <T>(
   query: EventQuery,
   read: (db: typeof sql, range: Window) => Promise<Result<T>>,
 ): Promise<Result<T>> =>
-  sql.begin(async (tx) => {
-    await tx`SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY`;
+  sql.begin("ISOLATION LEVEL REPEATABLE READ READ ONLY", async (tx) => {
     const [policy] = await tx<
       { now: Date; earliest: Date }[]
     >`SELECT now(),now()-retention_days*interval '1 day' AS earliest FROM pulse.bases WHERE id=${query.baseId}::uuid`;
