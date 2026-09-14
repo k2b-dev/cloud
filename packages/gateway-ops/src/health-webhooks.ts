@@ -137,8 +137,8 @@ export const createHealthWebhook = async (raw: HealthWebhookInput): Promise<Heal
     )
     VALUES (
       ${input.name}, ${input.url}, ${input.method}, ${input.enabled},
-      ${input.scopeKind}, ${JSON.stringify(input.scopeAppIds)}::jsonb,
-      ${JSON.stringify(input.sendOn)}::jsonb, ${input.minStatus},
+      ${input.scopeKind}, ${JSON.stringify(input.scopeAppIds)}::text::jsonb,
+      ${JSON.stringify(input.sendOn)}::text::jsonb, ${input.minStatus},
       ${input.repeatIntervalMs}, ${input.timeoutMs}
     )
     RETURNING *
@@ -157,8 +157,8 @@ export const updateHealthWebhook = async (id: string, raw: HealthWebhookInput): 
       method = ${input.method},
       enabled = ${input.enabled},
       scope_kind = ${input.scopeKind},
-      scope_app_ids = ${JSON.stringify(input.scopeAppIds)}::jsonb,
-      send_on = ${JSON.stringify(input.sendOn)}::jsonb,
+      scope_app_ids = ${JSON.stringify(input.scopeAppIds)}::text::jsonb,
+      send_on = ${JSON.stringify(input.sendOn)}::text::jsonb,
       min_status = ${input.minStatus},
       repeat_interval_ms = ${input.repeatIntervalMs},
       timeout_ms = ${input.timeoutMs},

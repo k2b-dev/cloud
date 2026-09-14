@@ -236,7 +236,7 @@ const record = async (params: AuditRecordParams, db: AuditDb = sql): Promise<voi
         ${asString(params.error?.code ?? null)},
         ${sanitizeAuditText(params.error?.message ?? null)},
         ${asString(params.requestId)},
-        ${JSON.stringify(metadata)}::jsonb
+        ${JSON.stringify(metadata)}::text::jsonb
       )
     `;
   } catch (error) {

@@ -704,7 +704,7 @@ const createSectionInTx = async (tx: SqlClient, venueId: string, input: PublicSe
     "section",
     (db, shortId) => db<DbPublicSection[]>`
     INSERT INTO venue.public_sections (short_id, venue_id, kind, title, content, enabled, position)
-    VALUES (${shortId}, ${venueId}::uuid, ${input.kind}, ${input.title.trim()}, ${JSON.stringify(input.content)}::jsonb, ${input.enabled}, ${input.position})
+    VALUES (${shortId}, ${venueId}::uuid, ${input.kind}, ${input.title.trim()}, ${JSON.stringify(input.content)}::text::jsonb, ${input.enabled}, ${input.position})
     RETURNING *
   `,
   );
@@ -1282,7 +1282,7 @@ const updateSection = async (venueId: string, id: string, input: PublicSectionIn
     UPDATE venue.public_sections
     SET kind = ${input.kind},
         title = ${input.title.trim()},
-        content = ${JSON.stringify(input.content)}::jsonb,
+        content = ${JSON.stringify(input.content)}::text::jsonb,
         enabled = ${input.enabled},
         position = ${input.position},
         updated_at = now()

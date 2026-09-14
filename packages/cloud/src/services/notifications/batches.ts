@@ -424,7 +424,7 @@ export const createDraft = async (params: {
   const bodyHtml = markdown.renderSync(bodyMarkdown);
   const rows = await sql<BatchRow[]>`
     INSERT INTO notifications.batches (subject, body_markdown, body_html, selection, selection_hash, created_by)
-    VALUES (${subject}, ${bodyMarkdown}, ${bodyHtml}, ${JSON.stringify(selection)}::jsonb, ${hash}, ${params.createdBy}::uuid)
+    VALUES (${subject}, ${bodyMarkdown}, ${bodyHtml}, ${JSON.stringify(selection)}::text::jsonb, ${hash}, ${params.createdBy}::uuid)
     RETURNING *
   `;
   return ok(mapBatch(rows[0]!));

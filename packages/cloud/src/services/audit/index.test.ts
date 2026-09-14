@@ -3,6 +3,28 @@ import { sql } from "bun";
 import { audit, sanitizeAuditMetadata, sanitizeAuditText } from "./index";
 
 describe("sanitizeAuditMetadata", () => {
+  (process.env.CLOUD_DATABASE_TEST === "1" ? test : test.skip)("stores searchable JSON objects rather than encoded strings", async () => {
+    const requestId = `audit-json-${crypto.randomUUID()}`;
+    try {
+      await audit.record({
+        action: "service_account_credential.create",
+        outcome: "allowed",
+        requestId,
+        metadata: { source: "json-regression", nested: { count: 2 }, tags: ["one", "two"] },
+      });
+      const [row] = await sql`
+        SELECT jsonb_typeof(metadata) AS kind,
+          metadata->>'source' AS source,
+          metadata->'nested'->>'count' AS count,
+          jsonb_array_length(metadata->'tags') AS tags
+        FROM audit.events WHERE request_id = ${requestId}
+      `;
+      expect(row).toEqual({ kind: "object", source: "json-regression", count: "2", tags: 2 });
+    } finally {
+      await sql`DELETE FROM audit.events WHERE request_id = ${requestId}`;
+    }
+  });
+
   test("redacts sensitive nested metadata keys", () => {
     expect(
       sanitizeAuditMetadata({

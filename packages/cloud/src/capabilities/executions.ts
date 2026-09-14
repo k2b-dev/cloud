@@ -111,8 +111,8 @@ export const recordCapabilityExecution = async (input: CapabilityExecutionInput)
       ${input.actorKind ?? null}, ${input.actorId ?? null}, ${input.userId ?? null},
       ${input.accessSubject?.type ?? null}, ${input.accessSubject?.id ?? null},
       ${input.status}, ${input.errorCode ?? null},
-      ${input.inputMeta ? JSON.stringify(input.inputMeta) : null}::jsonb,
-      ${input.outputMeta ? JSON.stringify(input.outputMeta) : null}::jsonb,
+      ${input.inputMeta ? JSON.stringify(input.inputMeta) : null}::text::jsonb,
+      ${input.outputMeta ? JSON.stringify(input.outputMeta) : null}::text::jsonb,
       ${input.idempotencyKey ?? null}, ${input.replayed ?? false}, ${input.startedAt}, ${input.completedAt}, ${durationMs}
     )
     RETURNING id::text AS id

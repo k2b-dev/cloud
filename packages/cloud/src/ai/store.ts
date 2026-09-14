@@ -801,14 +801,14 @@ const insertMessageLocked = async (
       ${seq},
       ${input.kind ?? "message"},
       ${input.message.role},
-      ${JSON.stringify(input.message)}::jsonb,
+      ${JSON.stringify(input.message)}::text::jsonb,
       ${messageSearchText(input.message)},
       ${input.loopId ?? null},
       ${input.modelProfileId ?? null},
       ${providerModel},
-      ${usage ? JSON.stringify(usage) : null}::jsonb,
+      ${usage ? JSON.stringify(usage) : null}::text::jsonb,
       ${stopReason},
-      ${input.meta ? JSON.stringify(input.meta) : null}::jsonb
+      ${input.meta ? JSON.stringify(input.meta) : null}::text::jsonb
     )
     RETURNING *
   `,
@@ -869,13 +869,13 @@ const appendTurnOwnedMessage = async (input: {
       END,
       ${input.kind ?? "message"},
       ${input.message.role},
-      ${JSON.stringify(input.message)}::jsonb,
+      ${JSON.stringify(input.message)}::text::jsonb,
       ${input.loopId},
       ${input.modelProfileId ?? null},
       ${providerModel},
-      ${usage ? JSON.stringify(usage) : null}::jsonb,
+      ${usage ? JSON.stringify(usage) : null}::text::jsonb,
       ${stopReason},
-      ${input.meta ? JSON.stringify(input.meta) : null}::jsonb
+      ${input.meta ? JSON.stringify(input.meta) : null}::text::jsonb
     WHERE EXISTS (
       SELECT 1
       FROM ai.turns
@@ -930,7 +930,7 @@ export const saveAiDraftInTransaction = async (
     return { ok: false as const, reason: "conflict" as const };
   }
   const [sameDraft] = await tx<{ same: boolean }[]>`
-        SELECT ${JSON.stringify(input.content)}::jsonb = ${JSON.stringify(parseJsonValue(conversation.draft_content))}::jsonb AS same
+        SELECT ${JSON.stringify(input.content)}::text::jsonb = ${JSON.stringify(parseJsonValue(conversation.draft_content))}::text::jsonb AS same
       `;
   if (sameDraft?.same) {
     return {
@@ -960,7 +960,7 @@ export const saveAiDraftInTransaction = async (
 
   const [saved] = await tx<{ draft_content: unknown; draft_revision: number | string; draft_updated_at: Date | string }[]>`
         UPDATE ai.conversations
-        SET draft_content = ${JSON.stringify(input.content)}::jsonb,
+        SET draft_content = ${JSON.stringify(input.content)}::text::jsonb,
             draft_revision = draft_revision + 1,
             draft_updated_at = now()
         WHERE id = ${input.conversationId}::uuid
@@ -999,7 +999,7 @@ export const aiConversations: AiConversationService = {
         ${input.title?.trim() || "New chat"},
         ${input.description?.trim() ?? ""},
         ${input.projectId ?? null}::uuid,
-        ${JSON.stringify(input.draft ?? [])}::jsonb,
+        ${JSON.stringify(input.draft ?? [])}::text::jsonb,
         ${input.draft?.length ? 1 : 0},
         ${toPgTextArray(input.preloadTools ?? [])}::text[],
         ${input.draft?.length ? new Date() : null},
@@ -2285,7 +2285,7 @@ export const aiConversations: AiConversationService = {
     const loopId = input.loopId ?? null;
     await sql`
       UPDATE ai.messages
-      SET loop_aggregate = ${JSON.stringify(input.aggregate)}::jsonb,
+      SET loop_aggregate = ${JSON.stringify(input.aggregate)}::text::jsonb,
           loop_done_reason = ${input.doneReason}
       WHERE id = (
         SELECT id
@@ -2978,14 +2978,14 @@ export const aiConversations: AiConversationService = {
         ${input.callId},
         ${input.kind},
         ${input.name},
-        ${JSON.stringify(input.args ?? null)}::jsonb,
+        ${JSON.stringify(input.args ?? null)}::text::jsonb,
         ${input.message ?? null},
-        ${input.review ? JSON.stringify(input.review) : null}::jsonb,
+        ${input.review ? JSON.stringify(input.review) : null}::text::jsonb,
         ${input.approvalScope},
         ${input.allowAlways},
         ${input.frontendMode ?? null},
         ${input.resolvedEvent ? "resolved" : "pending"},
-        ${input.resolvedEvent ? JSON.stringify(input.resolvedEvent) : null}::jsonb,
+        ${input.resolvedEvent ? JSON.stringify(input.resolvedEvent) : null}::text::jsonb,
         CASE WHEN ${Boolean(input.resolvedEvent)} THEN now() ELSE NULL END
       )
       ON CONFLICT (turn_id, call_id)
@@ -3053,7 +3053,7 @@ export const aiConversations: AiConversationService = {
     const rows = await sql<PendingActionRow[]>`
       UPDATE ai.pending_actions
       SET status = 'resolved',
-          resolved_event = ${JSON.stringify(input.event)}::jsonb,
+          resolved_event = ${JSON.stringify(input.event)}::text::jsonb,
           resolved_at = now()
       WHERE conversation_id = ${input.conversationId}
         AND turn_id = ${input.turnId}

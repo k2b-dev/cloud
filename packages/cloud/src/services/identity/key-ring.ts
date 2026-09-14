@@ -181,7 +181,7 @@ const insertKey = async (
       purpose, state, kid, alg, public_jwk, encrypted_private_jwk, encryption_key_id,
       created_at, activate_at, activated_at, sign_until, verify_until
     ) VALUES (
-      ${purpose}, ${state}, ${generated.kid}, ${CLOUD_IDENTITY_ALGORITHM}, ${JSON.stringify(generated.publicJwk)}::jsonb,
+      ${purpose}, ${state}, ${generated.kid}, ${CLOUD_IDENTITY_ALGORITHM}, ${JSON.stringify(generated.publicJwk)}::text::jsonb,
       ${generated.encryptedPrivateJwk}, ${generated.encryptionKeyId}, ${now}, ${activateAt},
       ${state === "active" ? now : null}, ${signUntil}, ${verifyUntil}
     )

@@ -408,7 +408,7 @@ export const webhookTesterService = {
         ${params.url},
         ${params.path},
         ${params.query},
-        ${JSON.stringify(params.headers)}::jsonb,
+        ${JSON.stringify(params.headers)}::text::jsonb,
         ${truncate(params.body)},
         ${params.contentType},
         200
@@ -470,11 +470,11 @@ export const webhookTesterService = {
         ${parsedUrl.toString()},
         ${parsedUrl.pathname},
         ${parsedUrl.search},
-        ${JSON.stringify(sanitizeHeaders(headers))}::jsonb,
+        ${JSON.stringify(sanitizeHeaders(headers))}::text::jsonb,
         ${input.method === "GET" ? null : truncate(input.body)},
         ${headers.get("content-type")},
         ${responseStatus},
-        ${responseHeaders ? JSON.stringify(responseHeaders) : null}::jsonb,
+        ${responseHeaders ? JSON.stringify(responseHeaders) : null}::text::jsonb,
         ${responseBody},
         ${Math.round(performance.now() - started)},
         ${error}

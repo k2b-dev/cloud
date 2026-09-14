@@ -35,7 +35,7 @@ export const writeDeletedAccountAudit = async (config: {
       ${config.previousProvider},
       ${config.previousProfile},
       ${config.reason},
-      ${JSON.stringify(config.meta ?? {})}::jsonb
+      ${JSON.stringify(config.meta ?? {})}::text::jsonb
     )
   `;
 };
