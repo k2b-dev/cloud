@@ -9,7 +9,7 @@ import {
   type PulseRecordedEvent,
 } from "../../contracts";
 import type { pulseMessages } from "../../messages";
-import { intervalToMs } from "../../query-dsl";
+import { intervalToMs } from "../../query-dsl/interval";
 import { usePulseMessages } from "../use-messages";
 import {
   compactDate,

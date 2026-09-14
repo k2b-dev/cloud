@@ -21,7 +21,7 @@ import type {
   PulseRecordedEvent,
   PulseSource,
 } from "../../contracts";
-import { intervalToMs } from "../../query-dsl";
+import { intervalToMs } from "../../query-dsl/interval";
 import { formatDashboardConditionText, matchDashboardCondition } from "../dashboard-conditions";
 import { usePulseMessages } from "../use-messages";
 import {
