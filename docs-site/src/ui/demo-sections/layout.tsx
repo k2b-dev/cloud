@@ -1,3 +1,4 @@
+import { LiveWorkspaceDemo } from "./workspace-live";
 import {
   AppOverview,
   AppWorkspace,
@@ -1402,6 +1403,7 @@ export const PaginationDemo = () => (
 const demos: DemoSection = {
   workspace: () => (
     <DemoGrid columns="one">
+      <LiveWorkspaceDemo />
       <WorkspaceDemo />
     </DemoGrid>
   ),

@@ -1,8 +1,10 @@
+import { SidebarItemPreview } from "./SidebarItemPreview";
 import { Link, type LinkNavigateEvent, type NavigationScrollMode } from "@k2b/ssr/nav";
 import {
   children,
   createContext,
   createMemo,
+  mergeProps,
   createSignal,
   createUniqueId,
   For,
@@ -236,12 +238,21 @@ export type AppWorkspaceSidebarBodyProps = {
 };
 export type AppWorkspaceSidebarSectionProps = AppWorkspaceSidebarBodyProps & {
   title?: string;
+  count?: number;
+  collapsible?: boolean;
+  open?: boolean;
+  defaultOpen?: boolean;
+  onOpenChange?: (open: boolean) => void;
   actions?: JSX.Element;
 };
 export type AppWorkspaceSidebarItemTone = "default" | "success" | "danger";
 export type AppWorkspaceSidebarIconActionTone = "default" | "success" | "danger";
 export type AppWorkspaceSidebarItemProps = {
   children: JSX.Element;
+  /** Passive second line; keep controls in actions or preview. */
+  description?: JSX.Element;
+  /** Interactive details, also reachable through a dedicated button. */
+  preview?: { label: string; content: JSX.Element };
   href?: string;
   /** Document navigation by default; opt into enhanced navigation only when the owning island applies the target state. */
   navigation?: "enhanced" | "document";
@@ -642,28 +653,35 @@ const AppWorkspaceSidebarFooter = (props: AppWorkspaceSidebarBodyProps) => (
     {props.children}
   </footer>
 );
-const AppWorkspaceSidebarSection = (props: AppWorkspaceSidebarSectionProps) => (
-  <section class={`k2b-app-workspace__sidebar-section ${props.class ?? ""}`} {...modeAttrs(props.sidebarMode)}>
+const AppWorkspaceSidebarSection = (props: AppWorkspaceSidebarSectionProps) => {
+  const [expanded, setExpanded] = createSignal(props.defaultOpen ?? true);
+  const open = () => !props.collapsible || (props.open ?? expanded());
+  const id = `sidebar-section-${createUniqueId()}`;
+  const title = () => <>{props.title}<Show when={props.count !== undefined}><span class="k2b-app-workspace__sidebar-section-count">{props.count}</span></Show></>;
+  return <section class={`k2b-app-workspace__sidebar-section ${props.class ?? ""}`} data-collapsible={props.collapsible ? "true" : undefined} {...modeAttrs(props.sidebarMode)}>
     <Show when={props.title || props.actions}>
       <header class="k2b-app-workspace__sidebar-section-header">
-        <Show when={props.title}>{(title) => <h2>{title()}</h2>}</Show>
-        <Show when={props.actions}>
-          <div class="k2b-app-workspace__sidebar-section-actions">{props.actions}</div>
+        <Show when={props.collapsible} fallback={<Show when={props.title}><h2>{title()}</h2></Show>}>
+          <button type="button" class="k2b-app-workspace__sidebar-section-toggle" aria-expanded={open()} aria-controls={id}
+            onClick={() => { const next = !open(); setExpanded(next); props.onOpenChange?.(next); }}>
+            {title()}<i class={open() ? "ti ti-chevron-down" : "ti ti-chevron-right"} aria-hidden="true" />
+          </button>
         </Show>
+        <Show when={props.actions}><div class="k2b-app-workspace__sidebar-section-actions">{props.actions}</div></Show>
       </header>
     </Show>
-    {props.children}
-  </section>
-);
+    <div id={id} hidden={!open()} class="k2b-app-workspace__sidebar-section-content">{props.children}</div>
+  </section>;
+};
 
 const AppWorkspaceSidebarItemIcon = (props: AppWorkspaceSidebarItemIconProps): JSX.Element =>
-  ({ kind: SIDEBAR_ITEM_ICON, ...props }) as unknown as JSX.Element;
+  mergeProps({ kind: SIDEBAR_ITEM_ICON }, props) as unknown as JSX.Element;
 const AppWorkspaceSidebarItemLabel = (props: AppWorkspaceSidebarItemLabelProps): JSX.Element =>
-  ({ kind: SIDEBAR_ITEM_LABEL, ...props }) as unknown as JSX.Element;
+  mergeProps({ kind: SIDEBAR_ITEM_LABEL }, props) as unknown as JSX.Element;
 const AppWorkspaceSidebarItemMeta = (props: AppWorkspaceSidebarItemMetaProps): JSX.Element =>
-  ({ kind: SIDEBAR_ITEM_META, ...props }) as unknown as JSX.Element;
+  mergeProps({ kind: SIDEBAR_ITEM_META }, props) as unknown as JSX.Element;
 const AppWorkspaceSidebarItemAction = (props: AppWorkspaceSidebarItemActionProps): JSX.Element =>
-  ({ kind: SIDEBAR_ITEM_ACTION, ...props }) as unknown as JSX.Element;
+  mergeProps({ kind: SIDEBAR_ITEM_ACTION }, props) as unknown as JSX.Element;
 const AppWorkspaceSidebarItemActions = (props: AppWorkspaceSidebarItemActionsProps): JSX.Element => (
   <div class="k2b-app-workspace__sidebar-item-actions" data-visibility={props.visibility === "hover" ? "hover" : undefined}>
     {props.children}
@@ -716,85 +734,30 @@ function AppWorkspaceSidebarRow(props: AppWorkspaceSidebarRowProps): JSX.Element
   });
   const current = () => (props.active ? ("page" as const) : undefined);
 
-  if (props.hasActions) {
-    if (!props.href || props.disabled) {
-      return (
-        <div {...common()} data-disabled={props.disabled ? "true" : undefined}>
-          <button
-            type="button"
-            class="k2b-app-workspace__sidebar-item-main"
-            tabIndex={props.tabIndex}
-            disabled={props.disabled}
-            onClick={props.onClick}
-          >
-            {props.children}
-          </button>
-          {props.actions}
-        </div>
-      );
-    }
-    if (props.navigation !== "enhanced" || !props.onNavigate) {
-      return (
-        <div {...common()}>
-          <a
-            href={props.href}
-            class="k2b-app-workspace__sidebar-item-main"
-            tabIndex={props.tabIndex}
-            aria-current={current()}
-            onClick={props.onClick}
-          >
-            {props.children}
-          </a>
-          {props.actions}
-        </div>
-      );
-    }
-    return (
-      <div {...common()}>
-        <Link
-          href={props.href}
-          class="k2b-app-workspace__sidebar-item-main"
-          tabIndex={props.tabIndex}
-          aria-current={current()}
-          replace={props.replace}
-          scroll={props.scroll}
-          onNavigate={props.onNavigate}
-          onClick={props.onClick}
-        >
-          {props.children}
-        </Link>
-        {props.actions}
-      </div>
-    );
-  }
-  if (!props.href || props.disabled) {
-    return (
-      <button type="button" {...common()} tabIndex={props.tabIndex} disabled={props.disabled} onClick={props.onClick}>
+  const Control = (control: { grouped: boolean }) => {
+    const attrs = () => control.grouped ? { class: "k2b-app-workspace__sidebar-item-main" } : common();
+    return <Show when={Boolean(props.href && !props.disabled)} fallback={
+      <button type="button" {...attrs()} tabIndex={props.tabIndex} disabled={props.disabled} onClick={props.onClick}>
         {props.children}
       </button>
-    );
-  }
-  if (props.navigation !== "enhanced" || !props.onNavigate) {
-    return (
-      <a href={props.href} {...common()} tabIndex={props.tabIndex} aria-current={current()} onClick={props.onClick}>
-        {props.children}
-      </a>
-    );
-  }
-  return (
-    <Link
-      href={props.href}
-      {...common()}
-      tabIndex={props.tabIndex}
-      aria-current={current()}
-      replace={props.replace}
-      scroll={props.scroll}
-      onNavigate={props.onNavigate}
-      onClick={props.onClick}
-    >
-      {props.children}
-    </Link>
-  );
+    }>
+      <Show when={props.navigation === "enhanced" && Boolean(props.onNavigate)} fallback={
+        <a href={props.href} {...attrs()} tabIndex={props.tabIndex} aria-current={current()} onClick={props.onClick}>
+          {props.children}
+        </a>
+      }>
+        <Link href={props.href!} {...attrs()} tabIndex={props.tabIndex} aria-current={current()}
+          replace={props.replace} scroll={props.scroll} onNavigate={props.onNavigate} onClick={props.onClick}>
+          {props.children}
+        </Link>
+      </Show>
+    </Show>;
+  };
+  return <Show when={props.hasActions} fallback={<Control grouped={false} />}>
+    <div {...common()} data-disabled={props.disabled ? "true" : undefined}>
+      <Control grouped />{props.actions}
+    </div>
+  </Show>;
 }
 
 function AppWorkspaceSidebarItem(props: AppWorkspaceSidebarItemProps): JSX.Element {
@@ -836,7 +799,7 @@ function AppWorkspaceSidebarItem(props: AppWorkspaceSidebarItemProps): JSX.Eleme
   const metaVisibility = () => metaSlot()?.visibility ?? props.metaVisibility;
   const customActions = () => resolvedActions();
   const hasCustomActions = () => Boolean(customActions());
-  const hasAction = () => Boolean(actionSlot() || props.actionIcon || hasCustomActions());
+  const hasAction = () => Boolean(actionSlot() || props.actionIcon || hasCustomActions() || props.preview);
   const mainContent = (
     <>
       <Show when={iconContent() || icon()}>
@@ -846,8 +809,11 @@ function AppWorkspaceSidebarItem(props: AppWorkspaceSidebarItemProps): JSX.Eleme
       </Show>
       {/* The inner text span is what the marquee translates; the controller
           measures its `scrollWidth` against the clipping outer span. */}
+      <span class="k2b-app-workspace__sidebar-item-copy">
       <span class="k2b-app-workspace__sidebar-item-label" data-marquee={labelSlot()?.marquee === false ? undefined : "true"}>
         <span class="k2b-app-workspace__sidebar-item-label-text">{label() as JSX.Element}</span>
+      </span>
+      <Show when={props.description}><span class="k2b-app-workspace__sidebar-item-description">{props.description}</span></Show>
       </span>
       <Show when={meta()}>
         {(value) => (
@@ -859,49 +825,31 @@ function AppWorkspaceSidebarItem(props: AppWorkspaceSidebarItemProps): JSX.Eleme
     </>
   );
   const singleAction = () => {
-    const slot = actionSlot();
-    if (!slot && !props.actionIcon) return null;
-    const content = slot?.children ?? <i class={iconClass(slot?.icon ?? props.actionIcon, "ti-dots")} />;
-    const label = slot?.label ?? props.actionLabel ?? messages().rowAction;
+    const label = () => actionSlot()?.label ?? props.actionLabel ?? messages().rowAction;
     const select = (event: MouseEvent) => {
-      event.preventDefault();
       event.stopPropagation();
-      slot?.onSelect?.(event);
+      if (!actionSlot()?.href) event.preventDefault();
+      actionSlot()?.onSelect?.(event);
       props.onActionClick?.(event);
     };
-    // A row action that is a link must still navigate — only the row's own
-    // click handling is suppressed.
-    const follow = (event: MouseEvent) => {
-      event.stopPropagation();
-      slot?.onSelect?.(event);
-      props.onActionClick?.(event);
-    };
-    return slot?.href ? (
-      <a
-        href={slot.href}
-        class="k2b-app-workspace__sidebar-item-action"
-        data-visibility={slot.visibility === "hover" ? "hover" : undefined}
-        aria-label={label}
-        onClick={follow}
-      >
-        {content}
-      </a>
-    ) : (
-      <button
-        type="button"
-        class="k2b-app-workspace__sidebar-item-action"
-        data-visibility={slot?.visibility === "hover" ? "hover" : undefined}
-        aria-label={label}
-        onClick={select}
-      >
-        {content}
-      </button>
-    );
+    const content = () => actionSlot()?.children ?? <i class={iconClass(actionSlot()?.icon ?? props.actionIcon, "ti-dots")} />;
+    return <Show when={Boolean(actionSlot() || props.actionIcon)}>
+      <Show when={actionSlot()?.href} fallback={
+        <button type="button" class="k2b-app-workspace__sidebar-item-action"
+          data-visibility={actionSlot()?.visibility === "hover" ? "hover" : undefined}
+          aria-label={label()} onClick={select}>{content()}</button>
+      }>
+        <a href={actionSlot()?.href} class="k2b-app-workspace__sidebar-item-action"
+          data-visibility={actionSlot()?.visibility === "hover" ? "hover" : undefined}
+          aria-label={label()} onClick={select}>{content()}</a>
+      </Show>
+    </Show>;
   };
   const actions = () => (
     <>
       {customActions()}
       {singleAction()}
+      <Show when={props.preview}>{(preview) => <SidebarItemPreview label={preview().label}>{preview().content}</SidebarItemPreview>}</Show>
     </>
   );
   return (

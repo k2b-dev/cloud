@@ -1,6 +1,6 @@
 import { describe, expect, spyOn, test } from "bun:test";
 import { createSignal } from "solid-js";
-import { isServer, render } from "solid-js/web";
+import { delegateEvents, isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "./dom";
 
 describe("@k2b/ui AppWorkspace behavior", () => {
@@ -81,6 +81,58 @@ describe("@k2b/ui AppWorkspace behavior", () => {
 
     dispose();
     dom.cleanup();
+  });
+
+  test("updates compound slots and preview content without replacing focused controls", async () => {
+    const dom = createDomTestHarness();
+    const { default: AppWorkspace } = await import("../src/layout/AppWorkspace");
+    const [title, setTitle] = createSignal("Import");
+    const [status, setStatus] = createSignal("Reading");
+    const [count, setCount] = createSignal(1);
+    const dispose = render(() => <AppWorkspace.SidebarItem description={status()}
+      preview={{ label: "Details", content: <input aria-label="Preview note" value={status()} /> }}>
+      <AppWorkspace.SidebarItemIcon icon={count() === 1 ? "ti ti-clock" : "ti ti-check"} />
+      <AppWorkspace.SidebarItemLabel>{title()}</AppWorkspace.SidebarItemLabel>
+      <AppWorkspace.SidebarItemMeta>{count()}</AppWorkspace.SidebarItemMeta>
+      <AppWorkspace.SidebarItemAction label={status()} icon="ti ti-check" onSelect={() => {}} />
+    </AppWorkspace.SidebarItem>, dom.root);
+    try {
+      const control = dom.root.querySelector<HTMLButtonElement>('[aria-label="Reading"]')!;
+      const note = dom.root.querySelector<HTMLInputElement>('[aria-label="Preview note"]')!;
+      control.focus();
+      setTitle("Stock import"); setStatus("Verified"); setCount(3);
+      expect(dom.root.textContent).toContain("Stock import");
+      expect(dom.root.querySelector(".k2b-app-workspace__sidebar-item-meta")?.textContent).toBe("3");
+      expect(dom.root.querySelector(".k2b-app-workspace__sidebar-item-icon i")?.className).toBe("ti ti-check");
+      expect(control.getAttribute("aria-label")).toBe("Verified");
+      expect(dom.document.activeElement).toBe(control);
+      expect(dom.root.querySelector('[aria-label="Preview note"]')).toBe(note);
+      expect(note.value).toBe("Verified");
+    } finally { dispose(); dom.cleanup(); }
+  });
+
+  test("collapsible sections keep content mounted and count reactive", async () => {
+    const dom = createDomTestHarness();
+    delegateEvents(["click"], dom.document);
+    const { default: AppWorkspace } = await import("../src/layout/AppWorkspace");
+    const [count, setCount] = createSignal(0);
+    const dispose = render(() => <AppWorkspace.SidebarSection title="Done" count={count()} collapsible defaultOpen={false}>
+      <input aria-label="Retained value" />
+    </AppWorkspace.SidebarSection>, dom.root);
+    try {
+      const toggle = dom.root.querySelector<HTMLButtonElement>("button")!;
+      const content = dom.root.querySelector<HTMLElement>(".k2b-app-workspace__sidebar-section-content")!;
+      const input = dom.root.querySelector<HTMLInputElement>("input")!;
+      input.value = "Keep";
+      expect(content.hidden).toBe(true);
+      setCount(2); toggle.click();
+      expect(toggle.textContent).toContain("2");
+      expect(toggle.getAttribute("aria-expanded")).toBe("true");
+      expect(content.hidden).toBe(false);
+      toggle.click();
+      expect(content.hidden).toBe(true);
+      expect(input.value).toBe("Keep");
+    } finally { dispose(); dom.cleanup(); }
   });
 
   test("renders grouped actions beside the row control", async () => {

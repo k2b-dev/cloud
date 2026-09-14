@@ -259,10 +259,12 @@ type AppWorkspaceSidebarBodyProps = {
 };
 
 type AppWorkspaceSidebarSectionProps = AppWorkspaceSidebarBodyProps & {
-  title?: string; actions?: JSX.Element;
+  title?: string; actions?: JSX.Element; count?: number; collapsible?: boolean;
+  open?: boolean; defaultOpen?: boolean; onOpenChange?: (open: boolean) => void;
 };
 
 type AppWorkspaceSidebarItemProps = {
+  description?: JSX.Element; preview?: { label: string; content: JSX.Element };
   children: JSX.Element; href?: string; navigation?: "enhanced" | "document"; replace?: boolean;
   scroll?: NavigationScrollMode; onNavigate?: (event: LinkNavigateEvent) => void | Promise<void>;
   onClick?: (event: MouseEvent) => void; active?: boolean; activeClass?: string; disabled?: boolean;
@@ -535,3 +537,42 @@ The package exports parse, normalize, serialize, and style helpers for layout st
 
 Main-pane borders separate adjacent desktop regions. The last visible pane has
 no outer border, and single-pane mobile layouts do not retain split borders.
+
+### Live rows and detail previews
+
+`SidebarItem.description` supplies an optional passive second line. Compose a
+`StatusBadge`, short status text or progress there; keep interactive controls in
+`actions` or the preview. Existing one-line rows keep their compact layout.
+Compound icon, label, metadata and action props remain reactive. Applications own
+the data source: no socket, task lifecycle or subscription belongs in the library.
+
+Use `preview={{ label: "Item details", content: <Details /> }}` for interactive
+secondary information. Fine-pointer hover and keyboard focus open it after a short
+delay. A dedicated details button also opens it on touch and moves focus into the
+non-modal dialog. Escape and outside clicks dismiss it. The preview stays mounted
+while closed; live content updates preserve its controls and focus. Do not start
+expensive subscriptions merely because a row exists. The preview can hold an
+explicit action that loads additional details.
+
+Use `SidebarSection` with `collapsible`, `count`, and `defaultOpen={false}` for
+completed items or other secondary groups. `open` and `onOpenChange` support
+controlled expansion. Counts remain application-owned; collapsing keeps child
+state mounted. Give every collapsible section a descriptive title. Place a
+persistent secondary group in `SidebarFooter`, with a bounded list if it can grow.
+
+```tsx
+<AppWorkspace.SidebarItem
+  description={<StatusBadge label={status()} tone="running" variant="dot" />}
+  preview={{ label: "Import details", content: <ImportDetails /> }}
+>
+  <AppWorkspace.SidebarItemIcon icon={icon()} />
+  <AppWorkspace.SidebarItemLabel>{title()}</AppWorkspace.SidebarItemLabel>
+</AppWorkspace.SidebarItem>
+<AppWorkspace.SidebarSection title="Done" count={done().length} collapsible defaultOpen={false}>
+  {/* The application chooses and renders completed items. */}
+</AppWorkspace.SidebarSection>
+```
+
+The live navigation showcase demonstrates generic jobs, documents and projects,
+manual or automatic status changes, an attention state, and moving items into and
+out of a completed section. Completion is a host action, separate from progress.
