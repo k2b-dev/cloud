@@ -63,7 +63,7 @@ proposed actions before relying on them.
 
 ## Keep active chats in view
 
-Chats automatically move to **Done** after seven days without use. Opening or reading a chat counts as use; background metadata changes do not. Running chats and chats waiting for confirmation stay active. **Reopen chat** keeps a chat active until you mark it done again. Projects, pinned chats, Chats and **Done** share one sidebar scroll area. Projects are navigation links; their active chats appear in the main chat list with the Project name on each card. **Done** includes the **All chats** entry.
+Chats automatically move to **Done** after seven days without use. Sending a message, starting a run, or explicitly reopening a chat counts as use. Opening or reading a chat only marks it as read; it does not reset the activity timestamp. Background metadata changes do not count as use. Running chats and chats waiting for confirmation stay active. **Reopen chat** keeps a chat active until you mark it done again. Projects, pinned chats, Chats and **Done** share one sidebar scroll area. Projects are navigation links; their active chats appear in the main chat list with the Project name on each card. **Done** includes the **All chats** entry.
 
 Choose **Mark chat done** on a sidebar row when its work is finished. Stop a
 running response first. Done chats move into the collapsed **Done** section;

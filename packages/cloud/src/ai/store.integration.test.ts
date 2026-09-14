@@ -93,9 +93,15 @@ suite("AI conversation store integration", () => {
       await age();
       await aiConversations.setConversationDone({ conversationId: chat.id, ownerUserId: userId, done: null });
       expect((await aiConversations.getConversation({ conversationId: chat.id }))?.isDone).toBe(true);
+      const beforeViewing = await aiConversations.getConversation({ conversationId: chat.id });
       await aiConversations.markConversationViewed({ conversationId: chat.id, ownerUserId: userId });
-      expect((await aiConversations.getConversation({ conversationId: chat.id }))?.isDone).toBe(false);
+      expect(await aiConversations.getConversation({ conversationId: chat.id })).toMatchObject({
+        isDone: true, lastUsedAt: beforeViewing!.lastUsedAt,
+      });
       const { turn } = await aiConversations.submitChatTurn({ conversationId: chat.id, modelProfileId: "test-model", runConfig, userMessage: userMessage("Working") });
+      const afterMessage = await aiConversations.getConversation({ conversationId: chat.id });
+      expect(afterMessage?.isDone).toBe(false);
+      expect(new Date(afterMessage!.lastUsedAt).getTime()).toBeGreaterThan(new Date(beforeViewing!.lastUsedAt).getTime());
       await age();
       for (const status of ["queued", "running", "waiting_for_action"]) {
         await sql`UPDATE ai.turns SET status = ${status} WHERE id = ${turn.id}`;

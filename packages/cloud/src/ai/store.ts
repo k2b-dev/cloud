@@ -1770,7 +1770,7 @@ export const aiConversations: AiConversationService = {
   markConversationViewed: async (input) => {
     const rows = await sql<{ id: string }[]>`
       UPDATE ai.conversations
-      SET last_viewed_at = now(), last_used_at = now()
+      SET last_viewed_at = now()
       WHERE id = ${input.conversationId}
         AND (${input.ownerUserId ?? null}::uuid IS NULL OR created_by_user_id = ${input.ownerUserId ?? null})
         AND archived_at IS NULL
