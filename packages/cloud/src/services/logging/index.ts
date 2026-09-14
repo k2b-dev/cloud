@@ -130,7 +130,7 @@ function write(params: WriteParams): void {
       ${params.level},
       ${params.source},
       ${params.message},
-      ${safeMetadata ? JSON.stringify(safeMetadata) : null}::jsonb
+      (${safeMetadata ? JSON.stringify(safeMetadata) : null}::text)::jsonb
     )
   `.catch((err: Error) => console.error("[logging] DB write failed:", err.message));
 }
@@ -195,7 +195,7 @@ const list = async (
       WHERE source = ${filterSource}
         AND (${filterLevel}::text IS NULL OR level = ${filterLevel})
         AND (${filterSinceHours}::int IS NULL OR created_at >= now() - (${filterSinceHours}::int * INTERVAL '1 hour'))
-        AND (${searchPattern}::text IS NULL OR message ILIKE ${searchPattern} ESCAPE '\' OR metadata::text ILIKE ${searchPattern} ESCAPE '\')
+        AND (${searchPattern}::text IS NULL OR message ILIKE ${searchPattern} ESCAPE '\\' OR metadata::text ILIKE ${searchPattern} ESCAPE '\\')
     `;
 
     dataRows = await sql`
@@ -204,7 +204,7 @@ const list = async (
       WHERE source = ${filterSource}
         AND (${filterLevel}::text IS NULL OR level = ${filterLevel})
         AND (${filterSinceHours}::int IS NULL OR created_at >= now() - (${filterSinceHours}::int * INTERVAL '1 hour'))
-        AND (${searchPattern}::text IS NULL OR message ILIKE ${searchPattern} ESCAPE '\' OR metadata::text ILIKE ${searchPattern} ESCAPE '\')
+        AND (${searchPattern}::text IS NULL OR message ILIKE ${searchPattern} ESCAPE '\\' OR metadata::text ILIKE ${searchPattern} ESCAPE '\\')
       ORDER BY created_at DESC
       LIMIT ${perPage} OFFSET ${offset}
     `;
@@ -215,7 +215,7 @@ const list = async (
       WHERE source = ANY(${filterSourcesLiteral}::text[])
         AND (${filterLevel}::text IS NULL OR level = ${filterLevel})
         AND (${filterSinceHours}::int IS NULL OR created_at >= now() - (${filterSinceHours}::int * INTERVAL '1 hour'))
-        AND (${searchPattern}::text IS NULL OR message ILIKE ${searchPattern} ESCAPE '\' OR metadata::text ILIKE ${searchPattern} ESCAPE '\')
+        AND (${searchPattern}::text IS NULL OR message ILIKE ${searchPattern} ESCAPE '\\' OR metadata::text ILIKE ${searchPattern} ESCAPE '\\')
     `;
 
     dataRows = await sql`
@@ -224,7 +224,7 @@ const list = async (
       WHERE source = ANY(${filterSourcesLiteral}::text[])
         AND (${filterLevel}::text IS NULL OR level = ${filterLevel})
         AND (${filterSinceHours}::int IS NULL OR created_at >= now() - (${filterSinceHours}::int * INTERVAL '1 hour'))
-        AND (${searchPattern}::text IS NULL OR message ILIKE ${searchPattern} ESCAPE '\' OR metadata::text ILIKE ${searchPattern} ESCAPE '\')
+        AND (${searchPattern}::text IS NULL OR message ILIKE ${searchPattern} ESCAPE '\\' OR metadata::text ILIKE ${searchPattern} ESCAPE '\\')
       ORDER BY created_at DESC
       LIMIT ${perPage} OFFSET ${offset}
     `;
@@ -234,7 +234,7 @@ const list = async (
       FROM logging.entries
       WHERE (${filterLevel}::text IS NULL OR level = ${filterLevel})
         AND (${filterSinceHours}::int IS NULL OR created_at >= now() - (${filterSinceHours}::int * INTERVAL '1 hour'))
-        AND (${searchPattern}::text IS NULL OR message ILIKE ${searchPattern} ESCAPE '\' OR metadata::text ILIKE ${searchPattern} ESCAPE '\')
+        AND (${searchPattern}::text IS NULL OR message ILIKE ${searchPattern} ESCAPE '\\' OR metadata::text ILIKE ${searchPattern} ESCAPE '\\')
     `;
 
     dataRows = await sql`
@@ -242,7 +242,7 @@ const list = async (
       FROM logging.entries
       WHERE (${filterLevel}::text IS NULL OR level = ${filterLevel})
         AND (${filterSinceHours}::int IS NULL OR created_at >= now() - (${filterSinceHours}::int * INTERVAL '1 hour'))
-        AND (${searchPattern}::text IS NULL OR message ILIKE ${searchPattern} ESCAPE '\' OR metadata::text ILIKE ${searchPattern} ESCAPE '\')
+        AND (${searchPattern}::text IS NULL OR message ILIKE ${searchPattern} ESCAPE '\\' OR metadata::text ILIKE ${searchPattern} ESCAPE '\\')
       ORDER BY created_at DESC
       LIMIT ${perPage} OFFSET ${offset}
     `;
@@ -322,8 +322,8 @@ const timeseries = async (
         AND (${level}::text IS NULL OR entries.level = ${level})
         AND (
           ${searchPattern}::text IS NULL
-          OR entries.message ILIKE ${searchPattern} ESCAPE '\'
-          OR entries.metadata::text ILIKE ${searchPattern} ESCAPE '\'
+          OR entries.message ILIKE ${searchPattern} ESCAPE '\\'
+          OR entries.metadata::text ILIKE ${searchPattern} ESCAPE '\\'
         )
       GROUP BY at, entries.level
     )
@@ -370,8 +370,8 @@ const statsBy = async (
         AND (${level}::text IS NULL OR level = ${level})
         AND (
           ${searchPattern}::text IS NULL
-          OR message ILIKE ${searchPattern} ESCAPE '\'
-          OR metadata::text ILIKE ${searchPattern} ESCAPE '\'
+          OR message ILIKE ${searchPattern} ESCAPE '\\'
+          OR metadata::text ILIKE ${searchPattern} ESCAPE '\\'
         )
       GROUP BY level
       ORDER BY count DESC, key ASC
@@ -388,8 +388,8 @@ const statsBy = async (
       AND (${level}::text IS NULL OR level = ${level})
       AND (
         ${searchPattern}::text IS NULL
-        OR message ILIKE ${searchPattern} ESCAPE '\'
-        OR metadata::text ILIKE ${searchPattern} ESCAPE '\'
+        OR message ILIKE ${searchPattern} ESCAPE '\\'
+        OR metadata::text ILIKE ${searchPattern} ESCAPE '\\'
       )
     GROUP BY source
     ORDER BY count DESC, key ASC
