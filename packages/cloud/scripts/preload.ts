@@ -43,7 +43,7 @@ if (!existsSync(appDir)) throw new Error(`Unknown app dir: ${appDir} (set APP_DI
 process.env.APP_DIR = appDir;
 
 const { app, plugin } = await import(resolve(appDir, "src/config"));
-Bun.plugin(plugin());
+Bun.plugin((app?.plugin ?? plugin)());
 
 // ── Build CSS ───────────────────────────────────────────────────────────────
 const publicDir = resolve(root, "public");
@@ -140,10 +140,12 @@ if (appId !== "core" && app) {
   });
 }
 
-await buildAppCss();
+if (existsSync(appCssPath)) {
+  await buildAppCss();
+  watchDevCss("app.css", [resolve(appCssPath, "..")], buildAppCss);
+}
 await buildBrowserPerformance(publicDir, appId);
 
-watchDevCss("app.css", [resolve(appCssPath, "..")], buildAppCss);
 if (appId === "core" && existsSync(globalCssEntry)) {
   watchDevCss("global.css", [globalCssEntry, resolve(frameworkDir, "src/styles")], buildGlobalCss);
 }

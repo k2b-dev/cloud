@@ -122,7 +122,7 @@ try {
       __CLOUD_RELEASE__: JSON.stringify(release),
       __CLOUD_SYNC_VERSION__: JSON.stringify(syncVersion),
     },
-    plugins: [plugin()],
+    plugins: [(app?.plugin ?? plugin)()],
   });
 } finally {
   await rm(serverEntry, { force: true });
