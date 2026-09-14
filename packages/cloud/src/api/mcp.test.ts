@@ -1,16 +1,48 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, mock, test } from "bun:test";
 import { ok } from "@k2b/stdlib";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
+import { sql } from "bun";
 import { Hono, type MiddlewareHandler } from "hono";
+import { decodeJwt, generateKeyPair } from "jose";
 import { z } from "zod";
 import { compileCapabilities } from "../_internal/capabilities";
 import { defineCapabilities } from "../contracts/capabilities";
 import type { AppRegistryEntry, CapabilityRegistryEntry, HelpRegistryEntry } from "../contracts/registry";
-import { type AuthContext, auth } from "../server";
+import { type AuthContext, auth, type RequestActor } from "../server";
+import type { withActiveIdentitySigner } from "../services/identity/key-ring";
 import { createCapabilityRoutes } from "./capabilities";
 import { cloudMcpResourceUri, createMcpProtectedResourceRoutes, createMcpRoutes as createMcpRoutesBase } from "./mcp";
+
+// The dispatcher records executions and idempotency claims through the store.
+// This suite is a unit test of the dispatch path: keep it away from any database.
+const executionStore = await import("../capabilities/executions");
+mock.module(new URL("../capabilities/executions.ts", import.meta.url).pathname, () => ({
+  ...executionStore,
+  recordCapabilityExecution: async () => crypto.randomUUID(),
+  claimCapabilityIdempotency: async () => ({ state: "claimed" as const }),
+  completeCapabilityClaim: async () => undefined,
+  releaseCapabilityClaim: async () => undefined,
+  markCapabilityClaimUncertain: async () => undefined,
+  resolveCapabilityClaim: async (resolve: Promise<void>) => {
+    await resolve;
+  },
+}));
+
+let signerKey: CryptoKey | undefined;
+const withActiveSigner: typeof withActiveIdentitySigner = async (_purpose, callback) => {
+  signerKey ??= (await generateKeyPair("RS256")).privateKey;
+  return callback(
+    {
+      kid: "33333333-3333-4333-8333-333333333333",
+      key: signerKey,
+      signUntil: new Date(Date.now() + 60_000),
+      issuer: "https://cloud.example.test",
+    },
+    sql,
+  );
+};
 
 const compiled = compileCapabilities(
   "demo",
@@ -142,6 +174,35 @@ const helpSummary = (): AppRegistryEntry => ({
 
 type McpTestDependencies = NonNullable<Parameters<typeof createMcpRoutesBase>[0]>;
 const passThrough: NonNullable<McpTestDependencies["limit"]> = async (_c, next) => next();
+const setTestAuthority = (c: Parameters<MiddlewareHandler<AuthContext>>[0]) => {
+  const user: Extract<RequestActor, { kind: "user" }>["user"] = {
+    id: "11111111-1111-4111-8111-111111111111",
+    uid: "mcp-user",
+    provider: "local" as const,
+    displayName: "MCP user",
+    givenname: "MCP",
+    sn: "user",
+    mail: null,
+    avatarHash: null,
+    accountExpires: null,
+    lastLoginLocal: null,
+    ipa: null,
+    profile: "user",
+    roles: ["user"],
+    manages: [],
+    managesGroupIds: [],
+    memberofGroup: [],
+    memberofGroupIds: [],
+  };
+  c.set("actor", { kind: "user", user });
+  c.set("accessSubject", { type: "user", userId: user.id });
+  c.set("credentialKind", "oauth");
+};
+const authenticated: MiddlewareHandler<AuthContext> = async (c, next) => {
+  setTestAuthority(c);
+  await next();
+};
+
 const workloadAuthentication =
   (scope: "identity:invoke" | "identity:oauth-issue"): MiddlewareHandler<AuthContext> =>
   async (c, next) => {
@@ -173,7 +234,8 @@ const createMcpRoutes = (dependencies: McpTestDependencies = {}) =>
     listApps: async () => [summary(app)],
     getOperatorLocale: async () => "en",
     getAppUrl: async () => "cloud.example",
-    authenticate: passThrough,
+    authenticate: authenticated,
+    withActiveSigner,
     limit: passThrough,
     ...dependencies,
   });
@@ -218,7 +280,7 @@ describe("capability MCP projection", () => {
       listApps: async () => [helpSummary()],
       listHelp: async () => [help],
       getCapability: async () => app,
-      authenticate: async (_c, next) => next(),
+      authenticate: authenticated,
     });
     const transport = new StreamableHTTPClientTransport(new URL("http://localhost/mcp/v1"), {
       requestInit: { headers: { authorization: "Bearer caller" } },
@@ -240,7 +302,7 @@ describe("capability MCP projection", () => {
   });
 
   test("initializes current and compatible clients with self-contained server guidance", async () => {
-    const routes = createMcpRoutes({ authenticate: async (_c, next) => next() });
+    const routes = createMcpRoutes({ authenticate: authenticated });
     for (const version of ["2025-11-25", "2025-06-18"]) {
       const response = await rpc(
         routes,
@@ -265,7 +327,7 @@ describe("capability MCP projection", () => {
   });
 
   test("rejects oversized JSON-RPC bodies before the MCP transport parses them", async () => {
-    const routes = createMcpRoutes({ authenticate: async (_c, next) => next() });
+    const routes = createMcpRoutes({ authenticate: authenticated });
     const response = await rpc(routes, {
       jsonrpc: "2.0",
       id: 99,
@@ -280,7 +342,7 @@ describe("capability MCP projection", () => {
     const routes = createMcpRoutes({
       listApps: async () => [summary(app)],
       getCapability: async () => app,
-      authenticate: async (_c, next) => next(),
+      authenticate: authenticated,
     });
     const response = await rpc(routes, {
       jsonrpc: "2.0",
@@ -344,6 +406,7 @@ describe("capability MCP projection", () => {
   test("enforces OAuth read and write scopes while leaving discovery truthful", async () => {
     const readOnly = createMcpRoutes({
       authenticate: async (c, next) => {
+        setTestAuthority(c);
         c.set("oauthScopes", ["read"]);
         return next();
       },
@@ -374,6 +437,7 @@ describe("capability MCP projection", () => {
 
     const noRead = createMcpRoutes({
       authenticate: async (c, next) => {
+        setTestAuthority(c);
         c.set("oauthScopes", ["write"]);
         return next();
       },
@@ -387,8 +451,13 @@ describe("capability MCP projection", () => {
     const routes = createMcpRoutes({
       authenticate: async (c, next) => {
         const token = auth.session.getToken(c);
-        if (token === "session-token") return next();
+        if (token === "session-token") {
+          setTestAuthority(c);
+          c.set("credentialKind", "session");
+          return next();
+        }
         if (token === "read-token") {
+          setTestAuthority(c);
           c.set("oauthScopes", ["read"]);
           return next();
         }
@@ -430,7 +499,7 @@ describe("capability MCP projection", () => {
       getCapability: async () => {
         throw new Error("registry offline");
       },
-      authenticate: async (_c, next) => next(),
+      authenticate: authenticated,
     });
     const listed = await rpc(routes, { jsonrpc: "2.0", id: 20, method: "tools/list", params: {} });
     expect(await listed.json()).toMatchObject({
@@ -466,7 +535,7 @@ describe("capability MCP projection", () => {
         lookups += 1;
         return byId.get(appId) ?? null;
       },
-      authenticate: async (_c, next) => next(),
+      authenticate: authenticated,
     });
     const firstResponse = await rpc(routes, {
       jsonrpc: "2.0",
@@ -575,7 +644,7 @@ describe("capability MCP projection", () => {
       listApps: async () => [helpSummary()],
       listHelp: async () => [help],
       getCapability: async () => app,
-      authenticate: async (_c, next) => next(),
+      authenticate: authenticated,
     });
     const listed = await rpc(routes, { jsonrpc: "2.0", id: 30, method: "resources/list", params: {} }, "2025-11-25");
     expect(await listed.json()).toMatchObject({
@@ -681,7 +750,7 @@ describe("capability MCP projection", () => {
   });
 
   test("rejects cross-origin browser requests and advertises protected-resource discovery", async () => {
-    const routes = createMcpRoutes({ authenticate: async (_c, next) => next(), getAppUrl: async () => "cloud.example" });
+    const routes = createMcpRoutes({ authenticate: authenticated, getAppUrl: async () => "cloud.example" });
     const rejected = await routes.request("http://cloud.example/mcp/v1", {
       method: "POST",
       headers: { origin: "https://evil.example", "content-type": "application/json" },
@@ -700,7 +769,7 @@ describe("capability MCP projection", () => {
     });
     expect(forged.status).toBe(403);
     const forwarded = await rpc(
-      createMcpRoutes({ listApps: async () => [], authenticate: async (_c, next) => next(), getAppUrl: async () => "cloud.example" }),
+      createMcpRoutes({ listApps: async () => [], authenticate: authenticated, getAppUrl: async () => "cloud.example" }),
       { jsonrpc: "2.0", id: 2, method: "tools/list", params: {} },
       "2025-11-25",
       { origin: "https://cloud.example", "x-forwarded-host": "cloud.example", "x-forwarded-proto": "https" },
@@ -803,11 +872,11 @@ describe("capability MCP projection", () => {
     expect(await search.json()).toEqual({ source: "search" });
   });
 
-  test("calls the shared dispatcher with caller credentials and structured results", async () => {
+  test("calls the shared dispatcher with a scoped invocation and structured results", async () => {
     let forwarded: Headers | undefined;
     const routes = createMcpRoutes({
       getCapability: async () => app,
-      authenticate: async (_c, next) => next(),
+      authenticate: authenticated,
       fetch: async (_input, init) => {
         forwarded = new Headers(init?.headers);
         return Response.json({
@@ -852,7 +921,15 @@ describe("capability MCP projection", () => {
         name: "Open item",
       }),
     );
-    expect(forwarded?.get("authorization")).toBe("Bearer caller");
+    const authorization = forwarded?.get("authorization");
+    expect(authorization).toStartWith("Bearer ");
+    expect(authorization).not.toBe("Bearer caller");
+    expect(decodeJwt(authorization!.slice(7))).toMatchObject({
+      aud: "app:demo",
+      op: "capability.action.run:create",
+      token_use: "invocation",
+      sub: "11111111-1111-4111-8111-111111111111",
+    });
     expect(forwarded?.get("idempotency-key")).toBe("create-1");
   });
 
@@ -861,7 +938,7 @@ describe("capability MCP projection", () => {
     let requestedBody: unknown;
     const routes = createMcpRoutes({
       getCapability: async () => app,
-      authenticate: async (_c, next) => next(),
+      authenticate: authenticated,
       fetch: async (input, init) => {
         requestedUrl = String(input);
         requestedBody = JSON.parse(String(init?.body));
@@ -881,7 +958,7 @@ describe("capability MCP projection", () => {
   });
 
   test("returns actionable resource-ref validation and reader errors", async () => {
-    const routes = createMcpRoutes({ getCapability: async () => app, authenticate: async (_c, next) => next() });
+    const routes = createMcpRoutes({ getCapability: async () => app, authenticate: authenticated });
     const invalid = await rpc(routes, {
       jsonrpc: "2.0",
       id: 71,
@@ -910,7 +987,7 @@ describe("capability MCP projection", () => {
     let forwarded: Headers | undefined;
     const routes = createMcpRoutes({
       getCapability: async () => app,
-      authenticate: async (_c, next) => next(),
+      authenticate: authenticated,
       fetch: async (_input, init) => {
         forwarded = new Headers(init?.headers);
         return Response.json({ data: { id: "one" } });
@@ -936,7 +1013,7 @@ describe("capability MCP projection", () => {
   test("returns an actionable protocol error when a live tool disappears", async () => {
     const routes = createMcpRoutes({
       getCapability: async () => null,
-      authenticate: async (_c, next) => next(),
+      authenticate: authenticated,
     });
     const response = await rpc(routes, {
       jsonrpc: "2.0",
@@ -956,7 +1033,7 @@ describe("capability MCP projection", () => {
   test("preserves app authorization failures as structured tool errors", async () => {
     const routes = createMcpRoutes({
       getCapability: async () => app,
-      authenticate: async (_c, next) => next(),
+      authenticate: authenticated,
       fetch: async () => Response.json({ code: "FORBIDDEN", message: "No access to this item" }, { status: 403 }),
     });
     const response = await rpc(routes, {
