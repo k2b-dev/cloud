@@ -1,3 +1,4 @@
+import { readWebVitals } from "./web-vitals";
 import { sql } from "bun";
 import type { PaginationParams } from "../../contracts/shared";
 import { escapeLikePattern, parsePgJsonRecord, toPgTextArray } from "../postgres";
@@ -466,6 +467,7 @@ const summary = async (): Promise<LogSummary> => {
 
 /** Admin service object for querying/managing logs. */
 export const logging = {
+  webVitals: readWebVitals,
   list,
   getById,
   getSources,

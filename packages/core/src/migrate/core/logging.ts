@@ -1,3 +1,4 @@
+import { migrateLogMetadataReader } from "./logging-metadata";
 import { sql } from "bun";
 
 export const migrate = async (): Promise<void> => {
@@ -15,6 +16,7 @@ export const migrate = async (): Promise<void> => {
     )
   `.simple();
   console.log("  ✓ logging.entries table");
+  await migrateLogMetadataReader();
 
   await sql`
     CREATE INDEX IF NOT EXISTS idx_logging_entries_source

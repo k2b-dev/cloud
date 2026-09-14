@@ -189,3 +189,5 @@ export { legalConsent } from "./legal-consent";
 
 /** Core-owned app bar administration; service methods enforce administrator access. */
 export { railShortcuts } from "./rail-shortcuts";
+
+export type { WebVitalsOverview, WebVitalsQuery, WebVitalMetric, WebVitalName } from "./logging/web-vitals";
