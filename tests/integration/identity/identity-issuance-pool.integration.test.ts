@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, mock, spyOn, test } from "bun:te
 import * as bun from "bun";
 import { createLocalJWKSet } from "jose";
 import { z } from "zod";
-import { bindProcessApplicationId, clearProcessApplicationId } from "../../cloud/src/_internal/process-identity";
+import { bindProcessApplicationId, clearProcessApplicationId } from "../../../packages/cloud/src/_internal/process-identity";
 
 // Run this file alone: replacing Bun's default SQL handle ensures preparation,
 // guarded transactions, mandates and audits all compete for the SAME real pool.
@@ -15,13 +15,13 @@ if (process.env.CLOUD_IDENTITY_POOL_INTEGRATION !== "1") {
   }
   const pool = new bun.SQL(databaseUrl, { max: 1, connectionTimeout: 5, idleTimeout: 0 });
   mock.module("bun", () => ({ ...bun, sql: pool }));
-  const identity = await import("@k2b/cloud/services/identity");
-  const runtimeConfig = await import("@k2b/cloud/services/identity/runtime-config");
-  const settings = await import("@k2b/cloud/services/settings");
-  const { withMandateIssueAuthority } = await import("@k2b/cloud/services/mandates");
-  const { dispatchCapability } = await import("@k2b/cloud/api");
-  const { compileCapabilityManifest } = await import("@k2b/cloud/capabilities/testing");
-  const { defineCapabilities } = await import("@k2b/cloud/contracts");
+  const identity = await import("../../../packages/cloud/src/services/identity");
+  const runtimeConfig = await import("../../../packages/cloud/src/services/identity/runtime-config");
+  const settings = await import("../../../packages/cloud/src/services/settings");
+  const { withMandateIssueAuthority } = await import("../../../packages/cloud/src/services/mandates");
+  const { dispatchCapability } = await import("../../../packages/cloud/src/api");
+  const { compileCapabilityManifest } = await import("../../../packages/cloud/src/capabilities/testing");
+  const { defineCapabilities } = await import("../../../packages/cloud/src/contracts");
   const { ok } = await import("@k2b/stdlib");
   const issuer = "https://pool.cloud.example";
   const previousEnvironment = {
@@ -91,10 +91,10 @@ if (process.env.CLOUD_IDENTITY_POOL_INTEGRATION !== "1") {
       process.env.CLOUD_IDENTITY_KEY_ENCRYPTION_KEY = "31".repeat(32);
       delete process.env.CLOUD_IDENTITY_PREVIOUS_KEY;
       delete process.env.CLOUD_IDENTITY_NEXT_KEY;
-      await (await import("./migrate/core/auth")).migrate();
-      await (await import("./migrate/core/audit")).migrate();
-      await (await import("./migrate/core/settings")).migrate();
-      await (await import("./migrate/core/logging")).migrate();
+      await (await import("../../../packages/core/src/migrate/core/auth")).migrate();
+      await (await import("../../../packages/core/src/migrate/core/audit")).migrate();
+      await (await import("../../../packages/core/src/migrate/core/settings")).migrate();
+      await (await import("../../../packages/core/src/migrate/core/logging")).migrate();
       await pool`INSERT INTO settings.entries (key, value) VALUES ('app.url', ${JSON.stringify(issuer)}), ('freeipa.groups.admin', '[]')`;
       const [user] = await pool<
         { id: string }[]

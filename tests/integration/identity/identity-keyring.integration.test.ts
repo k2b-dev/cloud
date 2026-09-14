@@ -1,5 +1,6 @@
-import { bindProcessApplicationId, clearProcessApplicationId } from "../../cloud/src/_internal/process-identity";
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { sql } from "bun";
+import { bindProcessApplicationId, clearProcessApplicationId } from "../../../packages/cloud/src/_internal/process-identity";
 import {
   clearIdentityKeyCachesForTest,
   getIdentitySigningKeyStatus,
@@ -9,10 +10,11 @@ import {
   revokeIdentitySigningKey,
   runIdentityKeyMaintenance,
   withActiveIdentitySigner,
-} from "@k2b/cloud/services/identity";
-import { readIdentityKeyEncryptionConfig } from "@k2b/cloud/services/identity/key-config";
-import { sql } from "bun";
-import { migrate } from "./migrate/core/auth";
+} from "../../../packages/cloud/src/services/identity";
+import { readIdentityKeyEncryptionConfig } from "../../../packages/cloud/src/services/identity/key-config";
+import { migrate } from "../../../packages/core/src/migrate/core/auth";
+import { migrate as migrateLogging } from "../../../packages/core/src/migrate/core/logging";
+import { migrate as migrateSettings } from "../../../packages/core/src/migrate/core/settings";
 
 const suite = process.env.CLOUD_IDENTITY_KEYRING_INTEGRATION === "1" ? describe : describe.skip;
 const keyA = "10".repeat(32);
@@ -26,11 +28,16 @@ suite("Core identity key ring", () => {
   };
 
   beforeAll(async () => {
+    if (!new URL(process.env.DATABASE_URL!).pathname.startsWith("/cloud_identity_keyring_")) {
+      throw new Error("Identity keyring integration requires a disposable cloud_identity_keyring_ database");
+    }
     bindProcessApplicationId("core");
     process.env.CLOUD_IDENTITY_KEY_ENCRYPTION_KEY = keyA;
     delete process.env.CLOUD_IDENTITY_PREVIOUS_KEY;
     delete process.env.CLOUD_IDENTITY_NEXT_KEY;
     await migrate();
+    await migrateSettings();
+    await migrateLogging();
   }, 30_000);
 
   afterAll(() => {
@@ -45,6 +52,17 @@ suite("Core identity key ring", () => {
     }
     clearIdentityKeyCachesForTest();
   });
+
+  test("emergency OAuth revoke eagerly prepares a usable replacement", async () => {
+    clearIdentityKeyCachesForTest();
+    const signer = await prepareIdentitySigner("oauth");
+    expect(await revokeIdentitySigningKey({ kid: signer.kid, reason: "OAuth review test" })).toBe(true);
+    const active = await sql<{ kid: string }[]>`
+      SELECT kid FROM auth.signing_keys WHERE purpose = 'oauth' AND state = 'active' AND sign_until > now()
+    `;
+    expect(active).toHaveLength(1);
+    expect(active[0]!.kid).not.toBe(signer.kid);
+  }, 30_000);
 
   test("keeps the mandate workload index stable across idempotent migrations", async () => {
     const readIndex = async () => {

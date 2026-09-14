@@ -1,10 +1,9 @@
-import { bindProcessApplicationId, clearProcessApplicationId, getProcessApplicationId } from "../../cloud/src/_internal/process-identity";
 import { beforeAll, describe, expect, test } from "bun:test";
-import { clearIdentityKeyCachesForTest, prepareIdentitySigner, revokeIdentitySigningKey } from "@k2b/cloud/services/identity";
 import { sql } from "bun";
 import { exportJWK, generateKeyPair, SignJWT } from "jose";
 import { createIdentityOAuthIssuanceRoutes } from "../../core/src/api/identity-oauth-issuance";
 import { migrate as migrateAuth } from "../../core/src/migrate/core/auth";
+import { migrate as migrateSettings } from "../../core/src/migrate/core/settings";
 import { migrate } from "./migrate";
 import * as clients from "./service/clients";
 import * as refreshTokens from "./service/refresh-tokens";
@@ -74,6 +73,7 @@ suite("OAuth external review regressions", () => {
       throw new Error("OAuth review integration requires an isolated oauth_review_fix_ database");
     }
     await migrateAuth();
+    await migrateSettings();
     await migrate();
   }, 60_000);
 
@@ -255,28 +255,4 @@ suite("OAuth external review regressions", () => {
       else process.env.CLOUD_OAUTH_JWKS_ORIGIN = originalOrigin;
     }
   });
-
-  test("emergency OAuth revoke eagerly prepares a usable replacement", async () => {
-    const originalApp = getProcessApplicationId();
-    const originalKey = process.env.CLOUD_IDENTITY_KEY_ENCRYPTION_KEY;
-    try {
-      clearProcessApplicationId();
-      bindProcessApplicationId("core");
-      process.env.CLOUD_IDENTITY_KEY_ENCRYPTION_KEY = "12".repeat(32);
-      clearIdentityKeyCachesForTest();
-      const signer = await prepareIdentitySigner("oauth");
-      expect(await revokeIdentitySigningKey({ kid: signer.kid, reason: "OAuth review test" })).toBe(true);
-      const active = await sql<
-        { kid: string }[]
-      >`SELECT kid FROM auth.signing_keys WHERE purpose = 'oauth' AND state = 'active' AND sign_until > now()`;
-      expect(active).toHaveLength(1);
-      expect(active[0]!.kid).not.toBe(signer.kid);
-    } finally {
-      clearProcessApplicationId();
-      if (originalApp) bindProcessApplicationId(originalApp);
-      if (originalKey === undefined) delete process.env.CLOUD_IDENTITY_KEY_ENCRYPTION_KEY;
-      else process.env.CLOUD_IDENTITY_KEY_ENCRYPTION_KEY = originalKey;
-      clearIdentityKeyCachesForTest();
-    }
-  }, 30_000);
 });
