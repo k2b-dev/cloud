@@ -597,3 +597,5 @@ or secondary value. Both accept reactive JSX. Keep commands in actions or the
 preview. Cards truncate titles with an ellipsis by default. Set
 `SidebarItemLabel marquee={false}` for the same truncation in ordinary rows.
 Completed work can retain `variant="row"` without context or description.
+
+Card context headers keep their width when trailing actions appear; only the title area yields space. Use `Format.RelativeTime` for relative timestamps. Desktop sidebar scroll tracks sit in balanced side gutters.

@@ -4,6 +4,7 @@ import { type LinkNavigateEvent, navigate, navigateTo } from "@k2b/ssr/nav";
 import {
   AppWorkspace,
   Dropdown,
+  Format,
   IconButton,
   isSpotlightShortcut,
   openSpotlightSearch,
@@ -137,7 +138,7 @@ function ConversationSidebarItem(props: {
       class="assistant-chat-sidebar-item"
       variant={props.conversation.isDone ? "row" : "card"}
       context={!props.conversation.isDone ? <span><i class={props.project?.icon || "ti ti-message"} aria-hidden="true" /> {props.project?.name ?? text("Chat")}</span> : undefined}
-      contextMeta={!props.conversation.isDone ? <span class="inline-flex items-center gap-1.5"><Show when={props.conversation.pinnedAt}><i class="ti ti-pin-filled" aria-label={text("Unpin chat")} /></Show><time dateTime={props.conversation.lastUsedAt}>{new Intl.DateTimeFormat(locale(), { month: "short", day: "numeric" }).format(new Date(props.conversation.lastUsedAt))}</time></span> : undefined}
+      contextMeta={!props.conversation.isDone ? <span class="inline-flex items-center gap-1.5"><Show when={props.conversation.pinnedAt}><i class="ti ti-pin-filled" aria-label={text("Unpin chat")} /></Show><Format.RelativeTime value={props.conversation.lastUsedAt} /></span> : undefined}
       navigation={props.open ? "enhanced" : "document"}
       scroll="manual"
       onNavigate={props.open ? handleNavigate : undefined}

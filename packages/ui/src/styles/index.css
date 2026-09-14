@@ -7811,9 +7811,10 @@
 
 /* Optional navigation cards keep contextual metadata separate from the title. */
 .k2b-ui .k2b-app-workspace__sidebar-item[data-variant="card"] {
-  margin-block: 0.375rem;
+  position: relative;
+  margin-block: 0.15625rem;
   border: 1px solid var(--k2b-border);
-  border-radius: var(--k2b-radius-surface);
+  border-radius: var(--k2b-radius-control);
   background: var(--k2b-surface);
 }
 .k2b-ui .k2b-app-workspace__sidebar-item[data-variant="card"]:hover {
@@ -7826,6 +7827,16 @@
 .k2b-ui .k2b-app-workspace__sidebar-item[data-variant="card"]:not(.has-action),
 .k2b-ui .k2b-app-workspace__sidebar-item[data-variant="card"] .k2b-app-workspace__sidebar-item-main {
   padding-block: 0.625rem;
+}
+.k2b-ui .k2b-app-workspace__sidebar-item[data-variant="card"]:has(.k2b-app-workspace__sidebar-item-context):not(.has-action),
+.k2b-ui .k2b-app-workspace__sidebar-item[data-variant="card"]:has(.k2b-app-workspace__sidebar-item-context) .k2b-app-workspace__sidebar-item-main {
+  padding-block-start: 2rem;
+}
+.k2b-ui .k2b-app-workspace__sidebar-item[data-variant="card"] .k2b-app-workspace__sidebar-item-context {
+  position: absolute;
+  inset-block-start: 0.625rem;
+  inset-inline: 0.625rem;
+  margin: 0;
 }
 .k2b-ui .k2b-app-workspace__sidebar-item[data-variant="card"] .k2b-app-workspace__sidebar-item-label-text {
   font-size: 0.8125rem;
@@ -7860,4 +7871,12 @@
   min-width: 0;
   transform: none;
   animation: none;
+}
+
+/* Put the scroll track in the sidebar inset and reserve the same space on both sides. */
+.k2b-ui .k2b-app-workspace__sidebar-desktop > .k2b-app-workspace__sidebar-body {
+  margin-inline: -0.5rem;
+  padding-inline: 0.25rem;
+  scrollbar-width: thin;
+  scrollbar-gutter: stable both-edges;
 }
