@@ -1,4 +1,4 @@
-import { DataTable, StatCell, StatGrid, ButtonLink } from "@k2b/ui";
+import { DataTable, StatCell, StatGrid, ButtonLink, NoticeCard } from "@k2b/ui";
 import { listAppsDetailed } from "@k2b/cloud";
 import { logging, coreSettings, type WebVitalsOverview, type WebVitalName } from "@k2b/cloud/services";
 import { getLocale } from "@k2b/cloud/server";
@@ -40,6 +40,20 @@ export async function browserTelemetryPage<E extends Env>(c: Context<E>) {
         </div>
         <ModeNav url={c.req.url} locale={locale} browser />
         <Controls filter={filter} apps={apps} enabled={enabled} />
+        <NoticeCard tone="info" title={t.metricsTitle}>
+          <dl class="grid grid-cols-1 xl:grid-cols-3 gap-3">
+            {names.map((name) => (
+              <div>
+                <dt class="font-semibold">{name}</dt>
+                <dd>{name === "LCP" ? t.lcpHelp : name === "INP" ? t.inpHelp : t.clsHelp}</dd>
+              </div>
+            ))}
+          </dl>
+          <p class="mt-2">{t.guidance}</p>
+          <a class="underline" href="https://web.dev/articles/vitals" target="_blank" rel="noreferrer">
+            {t.learnMore}
+          </a>
+        </NoticeCard>
         {data ? (
           <>
             <StatGrid columns={3}>

@@ -7,6 +7,13 @@ export const browserMessages = i18n.define({
       browser: "Browser",
       title: "Browser performance",
       description: "Client-reported LCP, INP and CLS from signed-in document visits.",
+      metricsTitle: "What do these values mean?",
+      lcpHelp: "Largest Contentful Paint: time until the largest visible image or text block appears. Good: up to 2,500 ms.",
+      inpHelp: "Interaction to Next Paint: how quickly the page visibly responds to clicks, taps and keyboard input. Good: up to 200 ms.",
+      clsHelp: "Cumulative Layout Shift: how much visible content unexpectedly shifts. A score without a unit; good: up to 0.1.",
+      guidance:
+        "Lower is better. These p75 targets are a guide; a few local measurements do not represent all users. Device load and network conditions also affect the results.",
+      learnMore: "Web Vitals definitions and targets",
       collect: "Collect Web Vitals",
       costs:
         "Global collection for signed-in users. Each metric creates a log entry. Enable temporarily; reload existing pages to begin collection.",
@@ -41,6 +48,14 @@ export const browserMessages = i18n.define({
       browser: "Browser",
       title: "Browser-Performance",
       description: "Gemeldete LCP-, INP- und CLS-Werte angemeldeter Seitenaufrufe.",
+      metricsTitle: "Was bedeuten diese Werte?",
+      lcpHelp: "Largest Contentful Paint: Zeit, bis das größte sichtbare Bild oder der größte Textblock erscheint. Gut: bis 2.500 ms.",
+      inpHelp:
+        "Interaction to Next Paint: Wie schnell die Seite auf Klicks, Tippen und Tastatureingaben sichtbar reagiert. Gut: bis 200 ms.",
+      clsHelp: "Cumulative Layout Shift: Wie stark sich sichtbare Inhalte unerwartet verschieben. Ein Wert ohne Einheit; gut: bis 0,1.",
+      guidance:
+        "Niedriger ist besser. Diese p75-Richtwerte dienen zur Orientierung; wenige lokale Messungen stehen nicht für alle Nutzer. Auch Geräteauslastung und Netzwerk beeinflussen die Ergebnisse.",
+      learnMore: "Definitionen und Richtwerte der Web Vitals",
       collect: "Web-Vitals erfassen",
       costs:
         "Globale Erfassung für angemeldete Nutzer. Jede Metrik erzeugt einen Log-Eintrag. Zeitweise aktivieren; bereits offene Seiten zum Start neu laden.",
