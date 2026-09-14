@@ -13,7 +13,7 @@ import {
   useLocale,
 } from "@k2b/ui";
 import type { AiConversation, AiProject } from "@k2b/cloud/ai";
-import { type Accessor, createEffect, createSignal, For, onCleanup, onMount, Show } from "solid-js";
+import { type Accessor, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { assistantApi } from "../api/client";
 import { openAssistantAllChatsDialog } from "./AssistantAllChatsDialog";
 import { openAssistantConversationEditor } from "./AssistantConversationEditor";
@@ -192,21 +192,7 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
       .filter((conversation) => conversation.pinnedAt)
       .toSorted((left, right) => Date.parse(right.pinnedAt!) - Date.parse(left.pinnedAt!));
   const unpinnedConversations = () => activeConversations().filter((conversation) => !conversation.pinnedAt);
-  const generalConversations = () => unpinnedConversations().filter((conversation) => !conversation.projectId);
-  const [expandedProjects, setExpandedProjects] = createSignal<readonly string[]>(
-    (props.projects ?? []).map((project) => `project:${project.id}`),
-  );
-  const knownProjects = new Set((props.projects ?? []).map((project) => project.id));
-  createEffect(() => {
-    const added = (props.projects ?? []).filter((project) => !knownProjects.has(project.id));
-    if (added.length === 0) return;
-    for (const project of added) knownProjects.add(project.id);
-    setExpandedProjects((current) => [...current, ...added.map((project) => `project:${project.id}`)]);
-  });
-  const projectChats = (project: AiProject) =>
-    unpinnedConversations()
-      .filter((conversation) => conversation.projectId === project.id)
-      .toSorted((left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt));
+  const generalConversations = unpinnedConversations;
   const openProject = async (project: AiProject) => {
     if (props.activeProjectId === project.id) return;
     const href = assistantProjectHref("/app/assistant", project.id);
@@ -221,40 +207,16 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
       navigateTo(href);
     }
   };
-  const ProjectsTree = () => (
+  const ProjectItems = () => (
     <For each={props.projects ?? []}>
       {(project) => (
-        <AppWorkspace.SidebarSection
-          title={project.name}
-          collapsible
-          open={expandedProjects().includes(`project:${project.id}`)}
-          onOpenChange={(open) =>
-            setExpandedProjects((current) =>
-              open ? [...current, `project:${project.id}`] : current.filter((id) => id !== `project:${project.id}`),
-            )
-          }
-          actions={
-            <IconButton size="xs" label={project.name} onClick={() => void openProject(project)}>
-              <i class={project.icon || "ti ti-folder"} aria-hidden="true" />
-            </IconButton>
-          }
+        <AppWorkspace.SidebarItem
+          icon={project.icon || "ti ti-folder"}
+          active={props.activeProjectId === project.id}
+          onClick={() => void openProject(project)}
         >
-          <For each={projectChats(project)}>
-            {(conversation) => (
-              <ConversationSidebarItem
-                conversation={conversation}
-                project={project}
-                active={conversation.id === activeConversationId()}
-                open={props.onOpenConversation ? (item) => props.onOpenConversation!(item.id) : undefined}
-                edit={(item) => void openEditor(item)}
-                update={(item) => props.onConversationUpdated?.(item)}
-              />
-            )}
-          </For>
-          <Show when={!projectChats(project).length}>
-            <p class="px-2 py-1 text-xs text-dimmed">{t().noRecentChats}</p>
-          </Show>
-        </AppWorkspace.SidebarSection>
+          <AppWorkspace.SidebarItemLabel marquee={false}>{project.name}</AppWorkspace.SidebarItemLabel>
+        </AppWorkspace.SidebarItem>
       )}
     </For>
   );
@@ -268,7 +230,7 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
       }
     >
       <Show when={(props.projects?.length ?? 0) > 0} fallback={<p class="px-2 py-1 text-xs text-dimmed">{t().noProjects}</p>}>
-        <ProjectsTree />
+        <ProjectItems />
       </Show>
     </AppWorkspace.SidebarSection>
   );
@@ -329,7 +291,6 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
     <AppWorkspace.SidebarSection
       title={text("Done")}
       icon="ti ti-check"
-      class="max-h-[40vh] overflow-y-auto"
       count={props.doneCount ?? doneConversations().length}
       collapsible
       defaultOpen={false}

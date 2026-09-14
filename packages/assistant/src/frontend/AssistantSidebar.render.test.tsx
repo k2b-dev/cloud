@@ -58,7 +58,7 @@ const conversation = (id: string, title: string, projectId: string | null): AiCo
 });
 
 describe("Assistant sidebar", () => {
-  test("opens every Project and shows all active chats before Done", () => {
+  test("lists projects as rows and includes their chats in the shared chat list", () => {
     const [conversations] = createSignal([
       { ...conversation("chatpinned", "Pinned chat", null), pinnedAt: "2026-08-12T10:00:00.000Z" },
       { ...conversation("chatprojectpinned", "Pinned project chat", project.id), pinnedAt: "2026-08-12T09:00:00.000Z" },
@@ -67,7 +67,7 @@ describe("Assistant sidebar", () => {
     ]);
     const html = renderToString(() => createComponent(AssistantSidebar, { conversations, projects: [project], live }));
 
-    expect(html).toContain('aria-expanded="true"');
+    expect(html).not.toContain('aria-expanded="true"');
     expect(html).toContain("Project chat");
     expect(html).toContain(">Pinned</");
     expect(html).toContain("Pinned chat");
@@ -99,7 +99,9 @@ describe("Assistant sidebar", () => {
     expect(html).toContain("21");
     expect(html).not.toContain(">Pinned</");
     expect(html).not.toContain('title="Completed work"');
-    expect(html).toContain("No recent chats");
+    expect(html).not.toContain("No recent chats");
+    expect(html).not.toContain("max-h-[40vh]");
+    expect(html).not.toContain("overflow-y-auto");
   });
 
   test("pinned cards expose unpin in the preview without a Done action or Ready filler", () => {
