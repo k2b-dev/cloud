@@ -9,7 +9,7 @@ export type DescriptionListItem = {
 export type DescriptionListProps = {
   items: readonly DescriptionListItem[];
   columns?: 1 | 2 | 3;
-  layout?: "grid" | "rows";
+  layout?: "grid" | "rows" | "compact";
   size?: "sm" | "md";
   actionVisibility?: "always" | "progressive";
   class?: string;

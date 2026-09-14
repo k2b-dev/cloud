@@ -576,3 +576,6 @@ persistent secondary group in `SidebarFooter`, with a bounded list if it can gro
 The live navigation showcase demonstrates generic jobs, documents and projects,
 manual or automatic status changes, an attention state, and moving items into and
 out of a completed section. Completion is a host action, separate from progress.
+
+Use `DescriptionList layout="compact"` inside previews for content-sized labels
+and a smaller column gap, keeping each label visually paired with its value.

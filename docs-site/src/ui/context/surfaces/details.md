@@ -24,6 +24,12 @@ item may provide one short action directly related to its value. Set
 fine pointers reveal them on row hover or focus, while touch layouts keep them
 visible.
 
+Use `layout="compact"` for read-mostly metadata in previews and small panels.
+Labels size to their content (up to 40% of the available width), with a smaller
+horizontal gap than the space between rows. Unlike inspector rows, compact rows
+do not reserve extra height for controls. Values can wrap without losing their
+association with the label.
+
 ## API reference
 
 ```ts
@@ -32,7 +38,7 @@ type DescriptionListItem = {
 };
 
 type DescriptionListProps = {
-  items: readonly DescriptionListItem[]; columns?: 1 | 2 | 3; layout?: "grid" | "rows"; size?: "sm" | "md";
+  items: readonly DescriptionListItem[]; columns?: 1 | 2 | 3; layout?: "grid" | "rows" | "compact"; size?: "sm" | "md";
   actionVisibility?: "always" | "progressive"; class?: string;
 };
 ```

@@ -120,6 +120,12 @@ describe("@k2b/ui Cloud-faithful surfaces", () => {
     expect(list).toContain('data-columns="2"');
     expect(list).toContain('data-layout="rows"');
     expect(list).toContain('data-action-visibility="progressive"');
+    const compact = renderToString(() => createComponent(DescriptionList, {
+      layout: "compact", size: "sm", items: [{ term: "Project", description: "Operations" }],
+    }));
+    expect(compact).toContain('data-layout="compact"');
+    expect(compact).toContain("<dt>Project</dt>");
+    expect(compact).toContain("<dd>Operations</dd>");
   });
 
   test("keeps Avatar portable while LinkCard exposes the Cloud color contract", () => {

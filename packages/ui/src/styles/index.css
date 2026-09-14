@@ -3148,6 +3148,7 @@
 }
 
 .k2b-ui .k2b-app-workspace__sidebar-item-action {
+  cursor: pointer;
   display: grid;
   width: 1.75rem;
   height: 1.75rem;
@@ -7452,7 +7453,7 @@
 .k2b-ui .k2b-description-list[data-columns="3"] {
   --k2b-description-columns: 3;
 }
-.k2b-ui .k2b-description-list[data-layout="rows"] {
+.k2b-ui .k2b-description-list:is([data-layout="rows"], [data-layout="compact"]) {
   display: grid;
   grid-template-columns: minmax(5.75rem, 7rem) minmax(0, 1fr) auto;
   gap: 0 0.75rem;
@@ -7497,7 +7498,7 @@
 .k2b-ui .k2b-description-list[data-size="sm"] .k2b-description-list__item dd {
   line-height: 1.25rem;
 }
-.k2b-ui .k2b-description-list[data-layout="rows"] .k2b-description-list__item {
+.k2b-ui .k2b-description-list:is([data-layout="rows"], [data-layout="compact"]) .k2b-description-list__item {
   min-height: 2.25rem;
   grid-column: 1 / -1;
   grid-template-areas: "term description action";
@@ -7508,17 +7509,17 @@
   column-gap: 0.75rem;
   padding: 0;
 }
-.k2b-ui .k2b-description-list[data-layout="rows"] .k2b-description-list__item dd {
+.k2b-ui .k2b-description-list:is([data-layout="rows"], [data-layout="compact"]) .k2b-description-list__item dd {
   align-self: center;
 }
-.k2b-ui .k2b-description-list[data-layout="rows"] .k2b-description-list__item dt,
-.k2b-ui .k2b-description-list[data-layout="rows"] .k2b-description-list__item dd {
+.k2b-ui .k2b-description-list:is([data-layout="rows"], [data-layout="compact"]) .k2b-description-list__item dt,
+.k2b-ui .k2b-description-list:is([data-layout="rows"], [data-layout="compact"]) .k2b-description-list__item dd {
   font-size: 0.75rem;
   font-weight: 400;
   line-height: 1.25rem;
   letter-spacing: 0;
 }
-.k2b-ui .k2b-description-list[data-layout="rows"] .k2b-select-chip {
+.k2b-ui .k2b-description-list:is([data-layout="rows"], [data-layout="compact"]) .k2b-select-chip {
   max-width: 100%;
 }
 
@@ -7778,4 +7779,14 @@
     opacity: 1;
     pointer-events: auto;
   }
+}
+
+.k2b-ui .k2b-description-list[data-layout="compact"] {
+  grid-template-columns: fit-content(40%) minmax(0, 1fr) auto;
+  gap: 0.75rem 0.5rem;
+}
+.k2b-ui .k2b-description-list[data-layout="compact"] .k2b-description-list__item {
+  min-height: 1.25rem;
+  grid-template-rows: minmax(1.25rem, auto);
+  column-gap: 0.5rem;
 }

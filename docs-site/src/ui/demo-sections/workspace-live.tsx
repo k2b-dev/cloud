@@ -24,13 +24,13 @@ export function LiveWorkspaceDemo() {
     description={<><StatusBadge variant="dot" tone={entry.id === "import" ? tone() : entry.id === "review" ? "warning" : "neutral"}
       label={entry.id === "import" ? label() : entry.id === "review" ? "Needs your input" : "Ready"} />
       <Show when={entry.id === "import"}><span>{step()}/3</span><ProgressBar class="w-10 shrink-0" label="Import progress" size="xs" tone={step() === 3 ? "success" : "info"} value={step() / 3 * 100} /></Show></>}
-    preview={{ label: `Details: ${entry.title}`, content: <div class="space-y-3">
-      <strong>{entry.title}</strong><p class="text-dimmed">{entry.detail}</p>
-      <DescriptionList layout="rows" size="sm" items={[
+    preview={{ label: `Details: ${entry.title}`, content: <div class="flex flex-col items-start gap-4">
+      <div class="flex flex-col gap-1"><strong>{entry.title}</strong><p class="text-dimmed">{entry.detail}</p></div>
+      <DescriptionList class="w-full" layout="compact" size="sm" items={[
         { term: <span class="inline-flex items-center gap-1.5"><i class="ti ti-folder" aria-hidden="true" />Project</span>, description: entry.project },
         { term: <span class="inline-flex items-center gap-1.5"><i class="ti ti-paperclip" aria-hidden="true" />Resources</span>, description: "2 documents · 1 app" },
       ]} />
-      <Show when={entry.id === "import"}><StatusBadge tone={tone()} label={label()} /><ProgressBar label="Import progress" size="sm" tone={step() === 3 ? "success" : "info"} value={step() / 3 * 100} /></Show>
+      <Show when={entry.id === "import"}><div class="flex w-full flex-col items-start gap-2"><StatusBadge tone={tone()} label={label()} /><ProgressBar class="w-full" label="Import progress" size="sm" tone={step() === 3 ? "success" : "info"} value={step() / 3 * 100} /></div></Show>
       <Button size="sm" variant="secondary" onClick={() => setSelected(entry.id)}>Open details</Button>
     </div> }}>
     <AppWorkspace.SidebarItemIcon icon={entry.icon} />
