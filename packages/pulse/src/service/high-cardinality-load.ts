@@ -8,9 +8,9 @@ import { queryEventAggregateData } from "./query-execution";
 import { runRetentionBatch } from "./runtime";
 import { PULSE_APP_ID, PULSE_INGEST_SCOPE, PULSE_SOURCE_RESOURCE_TYPE } from "./source-management";
 
-// Destructive production-scale gate. Point DATABASE_URL at a dedicated
-// `pulse_load_test` database, set REDIS_URL, then run `bun run test:load`.
-const REQUIRED_DATABASE = "pulse_load_test";
+// Destructive SQL-volume gate (not an HTTP ingest throughput benchmark). Point DATABASE_URL at a dedicated
+// `pulse_volume_test` database, set REDIS_URL, then run `bun run test:load`.
+const REQUIRED_DATABASE = "pulse_volume_test";
 const DEFAULT_EVENT_COUNT = 10_000_000;
 const INSERT_BATCH_SIZE = 100_000;
 const WRITER_EVENT_COUNT = 500;
@@ -33,8 +33,8 @@ const numeric = (value: number | string | null | undefined): number => Number(va
 
 const requiredEventCount = (): number => {
   const configured = Number(process.env.PULSE_LOAD_EVENT_COUNT ?? DEFAULT_EVENT_COUNT);
-  if (!Number.isInteger(configured) || configured < WRITER_EVENT_COUNT) {
-    throw new Error(`PULSE_LOAD_EVENT_COUNT must be an integer of at least ${WRITER_EVENT_COUNT}`);
+  if (!Number.isInteger(configured) || configured < WRITER_EVENT_COUNT * 2) {
+    throw new Error(`PULSE_LOAD_EVENT_COUNT must be an integer of at least ${WRITER_EVENT_COUNT * 2}`);
   }
   if (configured < DEFAULT_EVENT_COUNT && process.env.PULSE_LOAD_ALLOW_SMALL !== "1") {
     throw new Error(`Set PULSE_LOAD_ALLOW_SMALL=1 for a smoke run below ${DEFAULT_EVENT_COUNT} events`);
@@ -182,7 +182,7 @@ const insertScaleRows = async (baseId: string, sourceId: string, eventCount: num
         ${baseId}::uuid,
         ${sourceId}::uuid,
         ${sourceId}::uuid,
-        now() - make_interval(secs => (item % 2592000)::int),
+        now() - make_interval(secs => ((item * 7919) % 2592000)::int),
         kind,
         'actor-' || (item % 100000),
         'session-' || (item % 200000),
@@ -238,7 +238,7 @@ const main = async (): Promise<void> => {
   const sourceShortId = newShortId();
   await sql`
     INSERT INTO pulse.bases (id, short_id, name, retention_days, rollup_retention_days, sensitive_retention_hours)
-    VALUES (${baseId}::uuid, ${newShortId()}, 'High-cardinality load', 1, 365, 1)
+    VALUES (${baseId}::uuid, ${newShortId()}, 'High-cardinality load', 30, 365, 1)
   `;
   await sql`
     INSERT INTO pulse.sources (id, short_id, base_id, kind, name)
@@ -283,13 +283,14 @@ const main = async (): Promise<void> => {
     `;
 
     if (numeric(counts?.events) !== eventCount) throw new Error("Event row count does not match the requested load");
-    if (numeric(counts?.actors) < 100_000 || numeric(counts?.sessions) < 100_000) throw new Error("Identity cardinality is too low");
+    if (numeric(counts?.actors) < Math.min(eventCount, 100_000) || numeric(counts?.sessions) < Math.min(eventCount, 100_000)) throw new Error("Identity cardinality is too low");
     if (numeric(counts?.ip_hashes) < Math.min(eventCount, 1_000_000)) throw new Error("Attribute cardinality is too low");
     if (catalog?.fields !== 12 || catalog.resources !== 0 || catalog.series !== 0 || catalog.idempotency !== 1) {
       throw new Error("Bounded catalog, resource, series, or idempotency invariant failed");
     }
     if (grouped.p95Ms > 30_000 || uniqueActors.p95Ms > 30_000) throw new Error("Event aggregate query exceeded 30 seconds");
 
+    await sql`UPDATE pulse.bases SET retention_days=1 WHERE id=${baseId}::uuid`;
     const retention = await runRetention(baseId);
     if (retention.remaining <= 0 || retention.remaining >= eventCount) throw new Error("Retention did not preserve only the active window");
     if (retention.remainingSensitive <= 0 || retention.remainingSensitive >= retention.remaining) {
@@ -306,7 +307,7 @@ const main = async (): Promise<void> => {
           sessions: numeric(counts?.sessions),
           ipHashes: numeric(counts?.ip_hashes),
           insertDurationMs,
-          ingestEventsPerSecond: Math.round((eventCount / insertDurationMs) * 1_000),
+          sqlSeedRowsPerSecond: Math.round(((eventCount - WRITER_EVENT_COUNT) / insertDurationMs) * 1_000),
           tableBytes: numeric(size?.table_bytes),
           indexBytes: numeric(size?.index_bytes),
           totalBytes: numeric(size?.total_bytes),
