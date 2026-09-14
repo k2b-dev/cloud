@@ -51,8 +51,8 @@ describe("Pulse metric cardinality Postgres smoke", () => {
       `;
 
         const candidates: PulseMetric[] = [
-          { name: metricName, value: 1, resource: { type: "host", id: "candidate-a" }, dimensions: { shard: "a" } },
-          { name: metricName, value: 1, resource: { type: "host", id: "candidate-b" }, dimensions: { shard: "b" } },
+          { name: metricName, value: 1, unit: "count", resource: { type: "host", id: "candidate-a" }, dimensions: { shard: "a" } },
+          { name: metricName, value: 1, unit: "count", resource: { type: "host", id: "candidate-b" }, dimensions: { shard: "b" } },
         ];
         const results = await Promise.all(candidates.map((metric) => ingestBatch({ baseId, sourceId, batch: { metrics: [metric] } })));
 
@@ -73,7 +73,11 @@ describe("Pulse metric cardinality Postgres smoke", () => {
         const newSingle = await ingestBatch({
           baseId,
           sourceId,
-          batch: { metrics: [{ name: metricName, value: 1, resource: { type: "host", id: "candidate-c" }, dimensions: { shard: "c" } }] },
+          batch: {
+            metrics: [
+              { name: metricName, value: 1, unit: "count", resource: { type: "host", id: "candidate-c" }, dimensions: { shard: "c" } },
+            ],
+          },
         });
         expect(newSingle.ok).toBe(false);
         if (newSingle.ok) throw new Error("Expected a metric cardinality failure");
