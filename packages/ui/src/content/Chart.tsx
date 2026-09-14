@@ -1,3 +1,4 @@
+import { lineGapsSvg } from "./chart-line-gaps";
 import type { ChartCursor } from "./chart-cursor";
 import type { MapViewport } from "@k2b/stdlib";
 import { charts } from "@k2b/stdlib";
@@ -106,6 +107,7 @@ export type ChartProps = {
         zoomFocus?: Pick<MapViewport, "latitude" | "longitude">;
       }
     : {}) &
+    (K extends "line" ? { /** Largest connected X distance; positive, finite, without area/errorBand fills. */ maxGap?: number } : {}) &
     (K extends "stateTimeline" ? StateTimelineChartOptions : Omit<Parameters<(typeof charts)[K]>[0], "width" | "height" | "inspect">);
 }[ChartKind];
 
@@ -156,13 +158,17 @@ export const renderChartSvg = (
     );
   }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const svg = (charts[kind] as (o: unknown) => string)({
+  let svg = (charts[kind] as (o: unknown) => string)({
     ...(opts as any),
     ...(kind === "map" ? { viewport: DEFAULT_MAP_VIEWPORT } : {}),
     width,
     height,
-    inspect: props.interactive === true,
+    inspect: props.interactive === true || (props.kind === "line" && props.maxGap !== undefined),
   });
+  if (props.kind === "line" && props.maxGap !== undefined) {
+    if (props.area || props.errorBand) throw new Error("Chart maxGap does not support area or errorBand fills");
+    svg = lineGapsSvg(svg, props.maxGap, props);
+  }
   if (props.kind === "map") return responsiveMapSvg(svg, width, height, normalizeMapViewport(mapViewport ?? props.viewport));
   return preservesAspectRatio(kind) ? svg : responsiveChartSvg(svg);
 };
