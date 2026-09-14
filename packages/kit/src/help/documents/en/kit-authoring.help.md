@@ -28,7 +28,7 @@ errors and log messages with timestamps.
 while saving stay unsaved. On a revision conflict, download your draft, load the
 latest version and reconcile. Never overwrite someone else's changes blindly.
 
-## Markdown pages
+## Markdown pages {icon="markdown"}
 
 Choose **Add Markdown page** in the editor sidebar to create a `.md` file.
 Edit it with the standard Markdown toolbar; its preview updates as you type.
@@ -38,7 +38,7 @@ starting a script. Rename and delete use the file menu. Keep at least one
 tool or page. Pages share the app permissions and revision, and can also be
 read and changed through the CLI and Assistant source operations.
 
-## Shared data and imports
+## Shared data and imports {icon="database-import"}
 
 A Cloud administrator enables rsql globally; an app administrator then enables the app database in Settings. All users with Use access share the same rows. Schema changes require Admin. Disabling access keeps data; resetting deletes tables and records, and deleting the app also deletes its server database. Local files remain separate.
 
@@ -46,7 +46,7 @@ Read the `kit.db` SDK page before programming database operations. `importData` 
 
 Start simple for a one-person tool. Do not add locks, queues or conflict machinery unless multiple users actually need them. In shared workflows, prefer constraints and remember that read-then-write is not an atomic transaction. Reset invalidates running scripts; restart them to use the new database.
 
-## Update UI and ask for input
+## Update UI and ask for input {icon="forms"}
 
 Use `set(value)` on UI handles. Lists and tables also have `upsert(items)` and
 `remove(ids)`. Calling `remove()` with no argument clears the displayed items;

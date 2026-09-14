@@ -31,7 +31,7 @@ Während des Speicherns neu eingegebene Änderungen bleiben ungespeichert. Bei
 einem Revisionskonflikt lade deinen Entwurf herunter, lade den neuesten Stand
 und führe die Änderungen zusammen.
 
-## Markdown-Seiten
+## Markdown-Seiten {icon="markdown"}
 
 Wähle **Markdown-Seite hinzufügen** in der Editor-Seitenleiste für eine `.md`-Datei.
 Bearbeite sie mit der normalen Markdown-Werkzeugleiste; die Vorschau aktualisiert
@@ -42,7 +42,7 @@ Dateimenü. Mindestens ein Werkzeug oder eine Seite muss bleiben. Seiten nutzen
 die Freigaben und Revision der App. CLI und Assistant können sie über dieselben
 Dateioperationen lesen und ändern.
 
-## Gemeinsame Daten und Importe
+## Gemeinsame Daten und Importe {icon="database-import"}
 
 Ein Cloud-Administrator aktiviert rsql global; danach aktiviert ein App-Administrator die Datenbank in den App-Einstellungen. Alle Nutzer mit Use-Zugriff teilen dieselben Datensätze. Schemaänderungen benötigen Admin. Deaktivieren erhält Daten; Zurücksetzen löscht Tabellen und Datensätze. Beim Löschen der App wird auch ihre Server-Datenbank gelöscht. Lokale Dateien bleiben davon getrennt.
 
@@ -50,7 +50,7 @@ Lies vor der Programmierung die SDK-Hilfe zu `kit.db`. `importData` prüft Zeile
 
 Halte Ein-Personen-Werkzeuge einfach. Ergänze keine Locks, Queues oder Konfliktlogik ohne echten Bedarf. Bei gemeinsamer Bearbeitung helfen Constraints; Lesen und anschließendes Schreiben sind aber keine atomare Transaktion. Nach einem Reset müssen laufende Scripts neu gestartet werden.
 
-## UI aktualisieren und Eingaben abfragen
+## UI aktualisieren und Eingaben abfragen {icon="forms"}
 
 UI-Handles nutzen `set(value)`. Listen und Tabellen bieten zusätzlich
 `upsert(items)` und `remove(ids)`. `remove()` ohne Argument leert die Anzeige,

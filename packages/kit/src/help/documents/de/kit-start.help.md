@@ -6,6 +6,8 @@ description: Apps benutzen in Kit
 order: 100
 ---
 
+## Eine App starten {icon="player-play"}
+
 Öffne eine App und wähle links ein Werkzeug. Klicke auf **Starten**, um es
 auszuführen. Öffnen und Werkzeugwechsel starten keinen Code automatisch.
 **Stoppen** beendet den Worker; **Neu starten** beginnt einen frischen Durchlauf.

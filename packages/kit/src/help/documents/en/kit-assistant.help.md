@@ -6,6 +6,8 @@ description: Program with Assistant in Kit
 order: 102
 ---
 
+## Create and update apps {icon="apps"}
+
 Ask Assistant to create a new Kit app, or give it the exact URL or reference of an existing app.
 You need Admin permission to have Assistant change its code. Ask for the complete
 workflow, including inputs, results, file formats and error handling.

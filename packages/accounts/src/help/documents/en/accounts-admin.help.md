@@ -14,7 +14,7 @@ Optional action-dependent follow-up notices are configured under **Registration 
 They appear after successful user, group and membership changes; an empty template adds nothing.
 Notices are instructions for the person making the change, not messages sent to users.
 
-## Review duplicate email addresses
+## Review duplicate email addresses {icon="users"}
 
 Open **Administration → Duplicate email addresses** to compare accounts sharing an address.
 Matching ignores letter case and surrounding spaces. The last Cloud web login is

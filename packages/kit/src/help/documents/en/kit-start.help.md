@@ -6,6 +6,8 @@ description: Use apps in Kit
 order: 100
 ---
 
+## Start an app {icon="player-play"}
+
 Open an app and select a tool in its left navigation. Click **Start** to run it.
 Opening an app or switching tools never starts code automatically. **Stop** ends
 the worker; **Restart** starts a fresh run.

@@ -22,7 +22,7 @@ Die Accounts-CLI verwendet dieselben APIs wie die App. Agenten können Kontodate
 Nutze für Automatisierung die JSON-Ausgabe. Die Tabellenausgabe dient der schnellen Prüfung im Terminal.
 :::
 
-## Linux-Identitäten
+## Linux-Identitäten {icon="terminal"}
 
 Prüfe mit `cld accounts users linux get <user> --json` die Identität. Nach der
 globalen Einrichtung ergänzt `users linux prepare <user> --yes` fehlende Attribute

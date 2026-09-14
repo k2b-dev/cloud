@@ -14,7 +14,7 @@ Optionale Hinweise nach erfolgreichen Benutzer-, Gruppen- und Mitgliedschaftsän
 konfigurierst du unter **Registrierung & Anfragen**. Eine leere Vorlage zeigt nichts an.
 Die Hinweise richten sich an die ausführende Person; sie werden nicht an Nutzer versendet.
 
-## Doppelte E-Mail-Adressen bereinigen
+## Doppelte E-Mail-Adressen bereinigen {icon="users"}
 
 Öffne **Administration → Doppelte E-Mail-Adressen**, um Konten mit derselben Adresse zu
 vergleichen. Groß- und Kleinschreibung sowie Leerzeichen am Anfang und Ende werden

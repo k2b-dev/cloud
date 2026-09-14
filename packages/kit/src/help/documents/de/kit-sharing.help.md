@@ -30,7 +30,7 @@ in den Einstellungen keinen Schalter dafür. Das Löschen der Cloud-App entfernt
 Quelltext und Freigaben, nicht Browserspeicher auf anderen Geräten.
 
 
-## Gemeinsame Datenbank
+## Gemeinsame Datenbank {icon="database"}
 
 Wenn sie unter **Einstellungen → Gemeinsame Datenbank** aktiviert ist, kann die App Daten auf dem Server speichern. Alle Nutzer mit Use teilen diese Daten. Lokale Dateien und KV bleiben davon getrennt. App-Admins können den Zugriff ohne Datenverlust deaktivieren, einen Snapshot exportieren oder die Datenbank nach Bestätigung zurücksetzen. Beim Löschen der App wird auch die Server-Datenbank gelöscht; bei einem Ausfall wird die Bereinigung wiederholt. Cloud-Admins konfigurieren den optionalen Server unter `/admin/kit`.
 

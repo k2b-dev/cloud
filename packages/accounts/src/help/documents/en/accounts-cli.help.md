@@ -22,7 +22,7 @@ The Accounts CLI uses the same APIs as the app, so agents can list, inspect, and
 Use JSON output for automation. Table output is intended for quick terminal inspection.
 :::
 
-## Linux identities
+## Linux identities {icon="terminal"}
 
 Inspect with `cld accounts users linux get <user> --json`. After global setup,
 backfill missing attributes for an existing local full account with `users linux prepare <user> --yes`.

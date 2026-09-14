@@ -32,7 +32,7 @@ beweist noch nicht, dass die Verarbeitung funktioniert. Bei Konflikten neu lesen
 und zusammenführen; bei unklarem Speicherergebnis vor einem erneuten Versuch
 Revision und Dateien prüfen.
 
-## Apps anlegen und einstellen
+## Apps anlegen und einstellen {icon="apps"}
 
 `kit.app.create` erstellt eine App mit README-Seite und optionaler gemeinsamer
 Datenbank (`databaseEnabled`). `kit.app.update` ändert Name, Beschreibung oder

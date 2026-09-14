@@ -28,7 +28,7 @@ expose a toggle. Deleting the Cloud app removes source and grants, not browser
 storage on other devices.
 
 
-## Shared database
+## Shared database {icon="database"}
 
 If enabled in **Settings → Shared database**, the app can store data on the server. Every user with Use permission shares that data. This is separate from local files and KV. App Admin can disable access without deleting data, export a snapshot or reset the database after confirmation. Deleting the app also deletes its server database; pending deletion is retried if rsql is unavailable. Global administrators configure the optional server under `/admin/kit`.
 

@@ -17,6 +17,7 @@ const helpPackages = [
   "gateway-ops",
   "grids",
   "ipa-hosts",
+  "kit",
   "mail",
   "notebooks",
   "proxy-auth",
@@ -27,7 +28,7 @@ const helpPackages = [
   "weather",
 ] as const;
 
-const sourceGlob = new Bun.Glob("src/help/documents/*.help.md");
+const sourceGlob = new Bun.Glob("src/help/documents/**/*.help.md");
 const withoutFencedCode = (source: string) =>
   source
     .split("\n")
@@ -68,13 +69,10 @@ describe("Cloud guided Help corpus", () => {
     expect(uncovered).toEqual([...registeredHelpExemptions].sort());
   });
 
-  test("every app-owned article renders through the shared guided profile", async () => {
-    let articleCount = 0;
-
-    for (const packageName of helpPackages) {
+  for (const packageName of helpPackages) {
+    test(`${packageName} articles render through the shared guided profile`, async () => {
       const sources = await readPackageSources(packageName);
       expect(sources.length, `${packageName} should own Help Markdown`).toBeGreaterThan(0);
-      articleCount += sources.length;
 
       for (const { path, source } of sources) {
         const collection = defineHelp({ documents: [source] });
@@ -94,8 +92,11 @@ describe("Cloud guided Help corpus", () => {
         const ids = [...document!.html.matchAll(/<h2 id="([^"]+)"/g)].map((match) => match[1]);
         expect(new Set(ids).size, `${path} should not render duplicate H2 ids`).toBe(ids.length);
       }
-    }
+    });
+  }
 
-    expect(articleCount).toBeGreaterThan(70);
+  test("keeps the complete article corpus", async () => {
+    const sources = await Promise.all(helpPackages.map(readPackageSources));
+    expect(sources.flat().length).toBeGreaterThan(70);
   });
 });
