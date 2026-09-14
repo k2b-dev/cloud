@@ -19,14 +19,14 @@ import { createDomTestHarness } from "./dom";
     expect(dom.root.querySelector('[role="tablist"]')?.contains(trailing)).toBe(false);
     const tabs = () => Array.from(dom.root.querySelectorAll<HTMLButtonElement>('[role="tab"]'));
     tabs()[0]!.focus();
-    tabs()[0]!.dispatchEvent(new dom.window.KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }));
+    tabs()[0]!.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }));
     await Promise.resolve();
     expect(value()).toBe("two");
-    expect(dom.document.activeElement).toBe(tabs()[1]);
-    tabs()[1]!.dispatchEvent(new dom.window.KeyboardEvent("keydown", { key: "Delete", bubbles: true }));
+    expect(dom.document.activeElement).toBe(tabs()[1]!);
+    tabs()[1]!.dispatchEvent(new KeyboardEvent("keydown", { key: "Delete", bubbles: true }));
     await Promise.resolve();
     expect(ids()).toEqual(["one", "three"]);
-    expect(dom.document.activeElement).toBe(tabs()[0]);
+    expect(dom.document.activeElement).toBe(tabs()[0]!);
     expect(dom.root.querySelector('[role="tab"] button')).toBeNull();
   } finally { dispose(); dom.cleanup(); }
 });

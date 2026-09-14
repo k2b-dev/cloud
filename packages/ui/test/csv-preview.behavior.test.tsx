@@ -30,7 +30,7 @@ else
       expect(dom.root.textContent).toContain("Süd");
       const settings =
         dom.root.querySelector<HTMLButtonElement>('button[title="CSV display settings"]') ??
-        [...dom.root.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
+        Array.from(dom.root.querySelectorAll<HTMLButtonElement>("button")).find((button) =>
           button.innerHTML.includes("ti-adjustments-horizontal"),
         );
       expect(settings).toBeDefined();

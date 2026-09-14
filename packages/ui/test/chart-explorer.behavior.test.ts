@@ -75,8 +75,8 @@ describe("chart explorer presentation", () => {
       await tick();
       const svg = dom.root.querySelector(".k2b-chart__svg")?.innerHTML;
       cursor.move(source, 2);
-      expect(dom.root.querySelector('[role="tooltip"]')?.textContent).toContain("Time 2");
-      expect(dom.root.querySelector('[role="tooltip"]')?.textContent).toContain("20");
+      expect(dom.root.querySelector('.k2b-chart__tooltip[role="tooltip"]')?.textContent).toContain("Time 2");
+      expect(dom.root.querySelector('.k2b-chart__tooltip[role="tooltip"]')?.textContent).toContain("20");
       expect(dom.root.querySelector(".k2b-chart__svg")?.innerHTML).not.toBeUndefined();
       cursor.clear(source);
       expect(dom.root.querySelector(".k2b-chart__svg")?.innerHTML).toBe(svg);
@@ -93,7 +93,7 @@ describe("chart explorer presentation", () => {
       expect(dom.root.querySelector(".k2b-chart-explorer__details")?.textContent).toContain("Imports");
       dom.root.querySelector<HTMLButtonElement>('[aria-label="Chart view"]')!.click();
       await tick();
-      Array.from(dom.window.document.querySelectorAll<HTMLButtonElement>("button"))
+      Array.from(dom.document.querySelectorAll<HTMLButtonElement>("button"))
         .find((b) => b.textContent?.trim() === "Table")!
         .click();
       await tick();

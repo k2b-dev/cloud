@@ -126,7 +126,7 @@ describe("@k2b/ui AppWorkspace behavior", () => {
       expect(openings).toEqual([]);
       const panel = dom.root.querySelector<HTMLElement>(".k2b-app-workspace__sidebar-preview")!;
       for (const newState of ["open", "closed"]) {
-        const event = new dom.window.Event("toggle");
+        const event = new Event("toggle");
         Object.defineProperty(event, "newState", { value: newState });
         panel.dispatchEvent(event);
       }

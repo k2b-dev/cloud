@@ -38,6 +38,8 @@ export function ChartFilterControls(props: ChartFilterControlsProps) {
       <Show when={props.steps?.length}>
         <div
           class="k2b-chart-explorer__dimension"
+          role="group"
+          aria-label={props.dimensionLabel ?? messages().range}
           data-keyboard={keyboardSteps() ? "true" : undefined}
           onPointerDown={() => {
             pointerFocus = true;
