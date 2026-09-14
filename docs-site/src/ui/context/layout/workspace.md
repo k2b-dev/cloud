@@ -532,3 +532,6 @@ The package exports parse, normalize, serialize, and style helpers for layout st
   </AppWorkspace.BottomDrawer>
 </AppWorkspace>
 ```
+
+Main-pane borders separate adjacent desktop regions. The last visible pane has
+no outer border, and single-pane mobile layouts do not retain split borders.

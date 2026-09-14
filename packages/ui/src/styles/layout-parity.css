@@ -806,7 +806,6 @@
 }
 
 .k2b-ui .k2b-app-workspace__main-pane {
-  border-right: 1px solid var(--k2b-border);
   scrollbar-gutter: stable;
 }
 
@@ -1132,6 +1131,11 @@
   .k2b-ui .k2b-app-workspace__main-pane {
     width: var(--k2b-workspace-panel-size);
     flex: 0 0 var(--k2b-workspace-panel-size);
+  }
+
+  /* Separators belong between visible regions, never at the outer edge. */
+  .k2b-ui .k2b-app-workspace__main-pane:has(~ [data-workspace-main-region]) {
+    border-right: 1px solid var(--k2b-border);
   }
 
   .k2b-ui .k2b-app-workspace__main-pane.is-primary {
