@@ -277,3 +277,15 @@
 .k2b-ui .assistant-chat-sidebar-item .assistant-conversation-status i {
   order: 1;
 }
+
+/* Reserve the chat list's scroll track in the surrounding inset, so rows and
+   the non-scrolling search header share the same content edge. */
+.k2b-ui .assistant-project-chats-scroll {
+  margin-inline-end: -0.5rem;
+  scrollbar-width: auto;
+  scrollbar-color: auto;
+  scrollbar-gutter: stable;
+}
+.k2b-ui .assistant-project-chats-scroll::-webkit-scrollbar {
+  width: 0.5rem;
+}

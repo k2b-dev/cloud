@@ -413,7 +413,7 @@ export default function AssistantProjectView(props: Props) {
               </Show>
               <ScrollArea
                 ref={chatListViewport}
-                class="max-h-40"
+                class="assistant-project-chats-scroll max-h-40"
                 aria-busy={chats.loading() || chats.refreshing() || chats.loadingMore()}
                 scrollPreserveKey="assistant-project-chats"
               >
