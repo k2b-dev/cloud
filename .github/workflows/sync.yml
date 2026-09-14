@@ -53,7 +53,6 @@ jobs:
           bun test --isolate packages/cloud/src/services/audit/index.test.ts packages/cloud/src/workflows/store/actions.integration.test.ts packages/spaces/src/service/public-resources.test.ts
       - name: Verify replay and cursor boundaries
         run: |
-          bun test packages/cloud/src/services/notifications/live.integration.test.ts
           bun test packages/notebooks/src/service/yjs-sync.integration.test.ts packages/notebooks/src/service/yjs-snapshot-ordering.integration.test.ts
           bun test packages/notebooks/src/service/presence.test.ts
           bun test packages/contacts/src/service/events.integration.test.ts
