@@ -120,6 +120,10 @@ worker; use a production build to check installation and offline startup.
 
 ## Preview documentation links locally
 
+The documentation development server uses Bun hot reloading. After startup,
+transient source errors keep the last working HTTP handler available until a
+successful reload. The UI build marker still gates initial asset loading.
+
 Start or refresh the local Fibel server and point your development Cloud at it:
 
 ```bash

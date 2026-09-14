@@ -15,7 +15,7 @@
     "precheck:ui-catalog:http": "bun run build:ui",
     "check:ui-catalog:http": "bun ./scripts/check-ui-catalog.ts --require-http",
     "predev": "bun run build:ui",
-    "dev": "bun --watch --preload ./src/preload.ts ./src/dev.ts",
+    "dev": "bun --hot --preload ./src/preload.ts ./src/dev.ts",
     "pretypecheck": "bun run build:ui",
     "typecheck": "tsc -p ./tsconfig.json --noEmit --pretty false",
     "pretypecheck:examples": "bun run build:ui",
