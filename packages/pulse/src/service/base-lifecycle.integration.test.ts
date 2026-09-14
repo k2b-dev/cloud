@@ -300,6 +300,31 @@ beforeAll(async () => {
 });
 
 describe("Pulse lifecycle Postgres smoke", () => {
+  postgresTest("clear keeps other bases isolated across physical time chunks", async () => {
+    const { purgeBaseDataClearBatch } = await import("./base-lifecycle");
+    const own = await createBase("Clear target"),
+      foreign = await createBase("Keep other chunk");
+    try {
+      await insertTelemetryFixture(own, await createSource(own));
+      await insertTelemetryFixture(foreign, await createSource(foreign), "raw-expired");
+      const [timescale] = await sql`SELECT EXISTS(SELECT 1 FROM pg_extension WHERE extname='timescaledb') AS enabled`;
+      if (timescale.enabled) {
+        const [chunks] =
+          await sql`SELECT count(DISTINCT tableoid)::int AS count FROM pulse.events WHERE base_id IN (${own}::uuid,${foreign}::uuid)`;
+        expect(chunks.count).toBe(2);
+      }
+      await sql`INSERT INTO pulse.base_data_clears(base_id,status,phase) VALUES(${own}::uuid,'queued','queued')`;
+      await runUntilDone(() => purgeBaseDataClearBatch(own));
+      await expectBaseTelemetryCleared(own);
+      for (const table of ["pulse.metric_samples", "pulse.metric_rollups_hourly", "pulse.events"]) {
+        expect(await countRows(table, foreign)).toBe(1);
+      }
+    } finally {
+      await cleanupBase(own);
+      await cleanupBase(foreign);
+    }
+  });
+
   postgresTest("clears telemetry in batches while preserving base, sources, dashboards, and saved queries", async () => {
     const { purgeBaseDataClearBatch } = await import("./base-lifecycle");
     const baseId = await createBase("Lifecycle clear smoke");

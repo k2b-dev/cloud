@@ -1,6 +1,6 @@
-import type { JobContext, Worker } from "@k2b/sync";
 import { lazySync } from "@k2b/cloud";
 import { logger, trace } from "@k2b/cloud/services";
+import type { JobContext, Worker } from "@k2b/sync";
 import { sql } from "bun";
 
 const BASE_DELETE_BATCH_SIZE = 50_000;
@@ -57,14 +57,14 @@ const recordBaseDeletionProgress = async (params: {
 const deleteMetricSamplesChunk = async (baseId: string): Promise<number> => {
   const result = await sql`
     WITH victim AS (
-      SELECT ctid
+      SELECT series_id, ts
       FROM pulse.metric_samples
       WHERE base_id = ${baseId}::uuid
       LIMIT ${BASE_DELETE_BATCH_SIZE}
     )
     DELETE FROM pulse.metric_samples item
     USING victim
-    WHERE item.ctid = victim.ctid
+    WHERE item.base_id = ${baseId}::uuid AND item.series_id = victim.series_id AND item.ts = victim.ts
   `;
   return result.count ?? 0;
 };
@@ -72,14 +72,14 @@ const deleteMetricSamplesChunk = async (baseId: string): Promise<number> => {
 const deleteMetricRollupsChunk = async (baseId: string): Promise<number> => {
   const result = await sql`
     WITH victim AS (
-      SELECT ctid
+      SELECT series_id, bucket
       FROM pulse.metric_rollups_hourly
       WHERE base_id = ${baseId}::uuid
       LIMIT ${BASE_DELETE_BATCH_SIZE}
     )
     DELETE FROM pulse.metric_rollups_hourly item
     USING victim
-    WHERE item.ctid = victim.ctid
+    WHERE item.base_id = ${baseId}::uuid AND item.series_id = victim.series_id AND item.bucket = victim.bucket
   `;
   return result.count ?? 0;
 };
@@ -102,14 +102,14 @@ const deleteStateChangesChunk = async (baseId: string): Promise<number> => {
 const deleteEventsChunk = async (baseId: string): Promise<number> => {
   const result = await sql`
     WITH victim AS (
-      SELECT ctid
+      SELECT id, ts
       FROM pulse.events
       WHERE base_id = ${baseId}::uuid
       LIMIT ${BASE_DELETE_BATCH_SIZE}
     )
     DELETE FROM pulse.events item
     USING victim
-    WHERE item.ctid = victim.ctid
+    WHERE item.base_id = ${baseId}::uuid AND item.id = victim.id AND item.ts = victim.ts
   `;
   return result.count ?? 0;
 };
