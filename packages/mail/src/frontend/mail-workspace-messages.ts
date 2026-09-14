@@ -31,7 +31,7 @@ export const mailWorkspaceMessages = i18n.define({
       thisConversation: "this conversation",
       selectedConversation: "the selected conversation",
       mergeQuestion: ({ source, target }: { source: string; target: string }) =>
-        `Move every message, comment, draft, tag, and reference from “${source}” into “${target}”?`,
+        `Move every message, comment, draft, tag, and reference from “${source}” into “${target}”? The target keeps its assignee and work state. There is no automatic undo.`,
       mergeTitle: "Merge conversations?",
       merge: "Merge conversations",
       mergeFailed: "Could not merge conversations",
@@ -48,7 +48,8 @@ export const mailWorkspaceMessages = i18n.define({
       messageMoved: "Message moved to another conversation",
       messageMovedRefreshFailed: "Message moved, refresh failed",
       messageNotMoved: "Message was not moved",
-      splitQuestion: "Create a separate conversation from this message and its linked internal comments?",
+      splitQuestion:
+        "Create a separate conversation from this message and its linked internal comments? Drafts and assignment stay in the original conversation. The new conversation is unassigned. There is no automatic undo.",
       splitTitle: "Start a new conversation?",
       createConversation: "Create conversation",
       splitFailed: "Could not create a separate conversation",
@@ -112,7 +113,7 @@ export const mailWorkspaceMessages = i18n.define({
       thisConversation: "diese Unterhaltung",
       selectedConversation: "die ausgewählte Unterhaltung",
       mergeQuestion: ({ source, target }) =>
-        `Alle Nachrichten, Kommentare, Entwürfe, Tags und Verweise aus „${source}“ nach „${target}“ verschieben?`,
+        `Alle Nachrichten, Kommentare, Entwürfe, Tags und Verweise aus „${source}“ nach „${target}“ verschieben? Zuständigkeit und Bearbeitungsstand der Zielunterhaltung bleiben erhalten. Es gibt kein automatisches Rückgängigmachen.`,
       mergeTitle: "Unterhaltungen zusammenführen?",
       merge: "Unterhaltungen zusammenführen",
       mergeFailed: "Unterhaltungen konnten nicht zusammengeführt werden",
@@ -130,7 +131,8 @@ export const mailWorkspaceMessages = i18n.define({
       messageMoved: "Nachricht in eine andere Unterhaltung verschoben",
       messageMovedRefreshFailed: "Nachricht verschoben, Aktualisierung fehlgeschlagen",
       messageNotMoved: "Die Nachricht wurde nicht verschoben",
-      splitQuestion: "Aus dieser Nachricht und ihren verknüpften internen Kommentaren eine eigene Unterhaltung erstellen?",
+      splitQuestion:
+        "Aus dieser Nachricht und ihren verknüpften internen Kommentaren eine eigene Unterhaltung erstellen? Entwürfe und Zuständigkeit bleiben in der ursprünglichen Unterhaltung. Die neue Unterhaltung ist nicht zugewiesen. Es gibt kein automatisches Rückgängigmachen.",
       splitTitle: "Neue Unterhaltung erstellen?",
       createConversation: "Unterhaltung erstellen",
       splitFailed: "Es konnte keine eigene Unterhaltung erstellt werden",

@@ -165,3 +165,9 @@ Lokale Tags sind Postfachkennzeichnungen für Personen, Suche und Automatisierun
 ## Unterhaltungsgruppierung korrigieren {icon="arrows-split-2"}
 
 Verwende **Mit anderer Unterhaltung zusammenführen**, wenn zwei Cloud-Unterhaltungen zusammengehören. Wähle bei einer einzelnen Nachricht **Neue Unterhaltung mit dieser Nachricht beginnen**, wenn eine Antwort ein neues Thema einführt, oder **Nachricht in andere Unterhaltung verschieben**, wenn sie zu einem vorhandenen Verlauf gehört. Diese Aktionen erfordern Schreibzugriff und ändern die Unterhaltungsgruppierung in Cloud, nicht den Nachrichteninhalt.
+
+Suche die Zielunterhaltung im selben Postfach nach Absender oder Betreff. Prüfe vor dem Zusammenführen Quelle und Ziel in der Bestätigung. Zuständigkeit und Bearbeitungsstand der Zielunterhaltung bleiben erhalten. Nachrichten, Kommentare, Entwürfe, lokale Tags und Verweise der Quelle werden dorthin übernommen. Persönliche Erinnerungen ziehen ebenfalls um; hat eine Person in beiden Unterhaltungen eine Erinnerung, bleibt ihre Erinnerung am Ziel erhalten. Die Quellunterhaltung wird entfernt.
+
+Beim Aufteilen in der Weboberfläche wählst du eine einzelne Nachricht. Sie und ihre verknüpften Kommentare werden in eine neue, nicht zugewiesene Unterhaltung übernommen. Entwürfe, Tags, Verweise, Erinnerungen und andere Kommentare bleiben bei der Quelle. Zuständigkeit und Bearbeitungsstand der Quelle bleiben erhalten. Mindestens eine Nachricht muss dort verbleiben.
+
+Es gibt kein automatisches Rückgängigmachen. Du kannst die Gruppierung mit denselben Aktionen erneut korrigieren. Frühere Zuständigkeiten, Erinnerungen oder andere Zusammenarbeitsdaten werden dadurch jedoch nicht wiederhergestellt. Die Änderungen erscheinen im Aktivitätsverlauf der Unterhaltung. Ändert eine andere Person vor deiner Bestätigung eine der betroffenen Unterhaltungen, lehnt Mail die veraltete Änderung ab. Lade die Ansicht neu und prüfe sie erneut.

@@ -165,3 +165,9 @@ Local tags are mailbox labels used by people, search, and automations. Select a 
 ## Correct conversation grouping {icon="arrows-split-2"}
 
 Use **Merge with another conversation** when two Cloud conversations belong together. On an individual message, use **Start new conversation from this message** when a reply introduces a new topic, or **Move message to another conversation** when it belongs in an existing thread. These actions require write access and change Cloud's conversation grouping without changing the message content.
+
+Choose the destination from the same mailbox by sender or subject, then review the source and destination in the confirmation before merging. The target keeps its assignee and work state. Source messages, comments, drafts, local tags, and references move to it. Personal reminders also move; if someone has a reminder on both conversations, their target reminder is kept. The source conversation is removed.
+
+Splitting in the Web UI selects one message. That message and its linked comments move to a new, unassigned conversation; drafts, tags, references, reminders, and other comments stay with the source. The source keeps its assignee and work state. At least one message must remain there.
+
+There is no automatic undo. You can adjust the grouping again with the same actions, but this does not restore previous assignments, reminders, or other collaboration state. Changes are recorded in conversation activity. If another person changes either conversation before you confirm, Mail rejects the outdated change; reload and review it again.
