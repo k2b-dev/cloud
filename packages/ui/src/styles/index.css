@@ -3226,7 +3226,7 @@
   }
 
   .k2b-ui
-    .k2b-app-workspace__sidebar-item[data-action-visibility="hover"]:is(:hover, :focus-within)
+    .k2b-app-workspace__sidebar-item[data-action-visibility="hover"]:where(:hover, :focus-within)
     > .k2b-app-workspace__sidebar-item-action[data-visibility="hover"] {
     width: 1.75rem;
     opacity: 1;
@@ -7758,7 +7758,7 @@
   color: var(--k2b-text);
   box-shadow: 0 8px 28px rgb(0 0 0 / 0.16);
 }
-.k2b-ui .k2b-app-workspace__sidebar-item:is(:hover, :focus-within, :has(.k2b-app-workspace__sidebar-preview:popover-open)) > .k2b-app-workspace__sidebar-item-action[data-visibility="hover"] {
+.k2b-ui .k2b-app-workspace__sidebar-item:where(:hover, :focus-within, :has(.k2b-app-workspace__sidebar-preview:popover-open)) > .k2b-app-workspace__sidebar-item-action[data-visibility="hover"] {
   width: 1.75rem;
   opacity: 1;
   pointer-events: auto;
