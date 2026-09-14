@@ -27,8 +27,7 @@ export function safeQuery(sql: string, parameterCount?: number) {
     const quoted = token.startsWith('"') || token.startsWith("[");
     const word = (quoted ? token.slice(1, -1) : token).toLowerCase();
     if (quoted && !/^[a-z][a-z0-9_]*$/.test(word)) throw new Error("DB_SQL_UNSUPPORTED");
-    if (word.startsWith("_") || word.startsWith("sqlite") || word.startsWith("pragma") || forbidden.has(word))
-      throw new Error("DB_SQL_UNSUPPORTED");
+    if (word.startsWith("pragma") || forbidden.has(word)) throw new Error("DB_SQL_UNSUPPORTED");
     tokens.push({ word, quoted });
   }
   if (tokens[0]?.word !== "select" || tokens[0]?.quoted) throw new Error("DB_SQL_UNSUPPORTED");

@@ -34,7 +34,7 @@ const ArtifactMetadata = z
 const ArtifactCreate = ArtifactMetadata.required({ title: true }).extend({ kind: ArtifactKind.default("app") });
 const PublicationNote = z.string().trim().min(1).max(1000);
 const DatabaseSql = z.object({
-  sql: z.string().trim().min(1).max(16000).describe("Read-only SELECT; no writes, CTEs, comments or internal objects. Use LIMIT."),
+  sql: z.string().trim().min(1).max(16000).describe("Read-only SELECT; no writes, CTEs or comments. Use LIMIT."),
   params: z.array(z.json()).max(1000).default([]),
 });
 

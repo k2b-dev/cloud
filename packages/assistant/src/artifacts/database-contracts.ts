@@ -24,7 +24,7 @@ export const DbQuery = z
   .record(z.string().max(200), z.union([filterValue, z.array(filterValue).max(LIMITS.rows)]))
   .describe("rsql row filters, projection, order and pagination; limit at most 1000.");
 export const DatabaseSql = z.object({
-    sql: z.string().trim().min(1).max(LIMITS.text).describe("A bounded SELECT using supported functions; no writes, CTEs, comments or internal objects."),
+    sql: z.string().trim().min(1).max(LIMITS.text).describe("A bounded SELECT using supported functions; no writes, CTEs or comments."),
     params: z.array(z.json()).max(LIMITS.rows).default([]).describe("Values bound to SQL placeholders, in order."),
 }).strict();
 export const DatabaseRequest = z.discriminatedUnion("operation", [
