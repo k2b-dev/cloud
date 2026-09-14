@@ -265,6 +265,7 @@ export const initializeSchema = async (): Promise<void> => {
       resource_key TEXT,
       id UUID NOT NULL DEFAULT gen_random_uuid(),
       base_id UUID NOT NULL REFERENCES pulse.bases(id) ON DELETE CASCADE,
+      source_identity UUID NOT NULL,
       source_id UUID REFERENCES pulse.sources(id) ON DELETE SET NULL,
       ts TIMESTAMPTZ NOT NULL,
       kind TEXT NOT NULL,

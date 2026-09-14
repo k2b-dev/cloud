@@ -3,6 +3,7 @@ import { z } from "zod";
 import { AGGREGATIONS, EVENT_AGGREGATIONS, METRIC_TYPES, PANEL_VISUALS, SOURCE_KINDS } from "../contracts";
 import { PULSE_EXTERNAL_INGEST_BATCH_LIMIT, PULSE_EXTERNAL_INGEST_COLLECTION_LIMIT } from "../ingest-limits";
 import { MAX_QUERY_TEXT_LENGTH } from "../query-dsl";
+import { type QueryTimeRange, resolveQueryTimeRange, validateEventBucket } from "../query-dsl/time-window";
 import {
   jsonBytes,
   PULSE_EXTERNAL_INGEST_MAX_BYTES,
@@ -176,19 +177,38 @@ export const UpdateSourceSchema = z.strictObject({
   scrapeIntervalSeconds: z.number().int().min(60).max(86_400).multipleOf(60).nullable().optional(),
 });
 
-const DashboardEventQuerySchema = z.strictObject({
-  kind: z.literal("events"),
-  event: z.string().trim().min(1).max(240).nullable(),
-  since: DurationSchema,
-  sourceId: PulseShortIdSchema.nullable().optional(),
-  resourceKey: z.string().nullable().optional(),
-  resourceType: z.string().nullable().optional(),
-  dimensions: DimensionsSchema,
-  aggregation: z.enum(EVENT_AGGREGATIONS).optional(),
-  bucket: DurationSchema.nullable().optional(),
-  groupBy: z.array(z.string()).max(4).optional(),
-  limit: z.number().int().min(1).max(1_000),
-});
+const TimeRangeFields = {
+  since: DurationSchema.optional(),
+  from: z.iso.datetime({ offset: true }).optional(),
+  to: z.iso.datetime({ offset: true }).optional(),
+};
+const checkTimeRange = (value: QueryTimeRange, ctx: z.RefinementCtx) => {
+  const result = resolveQueryTimeRange(value);
+  if (!result.ok) ctx.addIssue({ code: "custom", message: result.error.message });
+};
+const EventBucketSchema = z.union([DurationSchema, z.enum(["day", "week", "month", "all"])]);
+const checkEventQuery = (value: QueryTimeRange & { bucket?: string | null; timeZone?: string }, ctx: z.RefinementCtx) => {
+  checkTimeRange(value, ctx);
+  const result = validateEventBucket(value.bucket, value.timeZone);
+  if (!result.ok) ctx.addIssue({ code: "custom", message: result.error.message });
+};
+
+const DashboardEventQuerySchema = z
+  .strictObject({
+    kind: z.literal("events"),
+    event: z.string().trim().min(1).max(240).nullable(),
+    ...TimeRangeFields,
+    sourceId: PulseShortIdSchema.nullable().optional(),
+    resourceKey: z.string().nullable().optional(),
+    resourceType: z.string().nullable().optional(),
+    dimensions: DimensionsSchema,
+    aggregation: z.enum(EVENT_AGGREGATIONS).optional(),
+    bucket: EventBucketSchema.nullable().optional(),
+    timeZone: z.string().min(1).max(100).optional(),
+    groupBy: z.array(z.string()).max(4).optional(),
+    limit: z.number().int().min(1).max(1_000),
+  })
+  .superRefine(checkEventQuery);
 
 const DashboardMetricWidgetSchema = z.object({
   id: z.string().trim().min(1).max(80),
@@ -202,7 +222,7 @@ const DashboardMetricWidgetSchema = z.object({
       metric: z.string().trim().min(1).max(240),
       aggregation: z.enum(AGGREGATIONS),
       bucket: DurationSchema,
-      since: DurationSchema,
+      ...TimeRangeFields,
       sourceId: PulseShortIdSchema.nullable().optional(),
       resourceKey: z.string().nullable().optional(),
       resourceType: z.string().nullable().optional(),
@@ -408,36 +428,41 @@ export const UpdateDashboardSchema = z.object({
   config: DashboardConfigInputSchema.optional(),
 });
 
-export const MetricQuerySchema = z.strictObject({
-  baseId: PulseShortIdSchema,
-  metric: z.string().trim().min(1),
-  aggregation: z.enum(AGGREGATIONS),
-  bucket: DurationSchema,
-  since: DurationSchema,
-  sourceId: PulseShortIdSchema.nullable().optional(),
-  resourceKey: z.string().nullable().optional(),
-  resourceType: z.string().nullable().optional(),
-  dimensions: DimensionsSchema,
-  reduce: z.enum(["sum", "avg", "min", "max"]).nullable().optional(),
-  groupBy: z.string().trim().min(1).max(80).nullable().optional(),
-});
+export const MetricQuerySchema = z
+  .strictObject({
+    baseId: PulseShortIdSchema,
+    metric: z.string().trim().min(1),
+    aggregation: z.enum(AGGREGATIONS),
+    bucket: DurationSchema,
+    ...TimeRangeFields,
+    sourceId: PulseShortIdSchema.nullable().optional(),
+    resourceKey: z.string().nullable().optional(),
+    resourceType: z.string().nullable().optional(),
+    dimensions: DimensionsSchema,
+    reduce: z.enum(["sum", "avg", "min", "max"]).nullable().optional(),
+    groupBy: z.string().trim().min(1).max(80).nullable().optional(),
+  })
+  .superRefine(checkTimeRange);
 
-const CompiledMetricQuerySchema = MetricQuerySchema.extend({ kind: z.literal("metric") });
+const CompiledMetricQuerySchema = MetricQuerySchema.safeExtend({ kind: z.literal("metric") });
 
-const EventQuerySchema = z.strictObject({
-  kind: z.literal("events"),
-  baseId: PulseShortIdSchema,
-  event: z.string().nullable(),
-  since: DurationSchema,
-  sourceId: PulseShortIdSchema.nullable().optional(),
-  resourceKey: z.string().nullable().optional(),
-  resourceType: z.string().nullable().optional(),
-  dimensions: DimensionsSchema,
-  aggregation: z.enum(EVENT_AGGREGATIONS).optional(),
-  bucket: DurationSchema.nullable().optional(),
-  groupBy: z.array(z.string().trim().min(1).max(80)).max(4).optional(),
-  limit: z.number().int().positive().max(1_000),
-});
+const EventQuerySchema = z
+  .strictObject({
+    kind: z.literal("events"),
+    baseId: PulseShortIdSchema,
+    event: z.string().nullable(),
+    ...TimeRangeFields,
+    sourceId: PulseShortIdSchema.nullable().optional(),
+    resourceKey: z.string().nullable().optional(),
+    resourceType: z.string().nullable().optional(),
+    dimensions: DimensionsSchema,
+    aggregation: z.enum(EVENT_AGGREGATIONS).optional(),
+    bucket: EventBucketSchema.nullable().optional(),
+    timeZone: z.string().min(1).max(100).optional(),
+    groupBy: z.array(z.string().trim().min(1).max(80)).max(4).optional(),
+    limit: z.number().int().positive().max(1_000),
+  })
+  .superRefine(checkEventQuery);
 
 const StateQuerySchema = z.strictObject({
   kind: z.literal("states"),

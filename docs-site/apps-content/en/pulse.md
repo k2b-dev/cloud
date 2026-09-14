@@ -116,3 +116,81 @@ or explicitly cleared, independently of history retention. A resource or field
 still needed by current state or retained observations remains in its catalog.
 Continuously creating new state identities therefore requires an explicit
 operator lifecycle; raw retention does not bound that inventory.
+
+## Website analytics from your backend
+
+Create one HTTP ingest source per website and keep its source token in the
+website backend's secret store. Send to `POST /api/pulse/ingest` with
+`Authorization: Bearer <source-token>`. Do not include this token in browser
+JavaScript. Token rotation keeps the same source and identity namespace.
+
+Use `page.viewed` for an observed pageview and `conversion.completed` for an
+explicit business outcome. For both, use one website resource, for example
+`{"type":"website","id":"example.com"}`. Do not create resources for individual
+requests or visitors.
+
+| Field | Website convention |
+| --- | --- |
+| `dimensions.route` | Route template such as `/articles/:slug`, not a unique URL |
+| `dimensions.campaign` | Optional controlled campaign name |
+| `attributes.referrerHost` | Optional hostname, with URL parameters removed |
+| `actorId` | Optional opaque visitor ID supplied by the backend |
+| `sessionId` | Optional opaque session ID supplied by the backend |
+| `sensitive` | Optional short-lived sensitive fields, under the base's separate policy |
+| `payload` | Additional event details that should not become dimensions |
+
+Pulse does not derive identities from IP addresses or user agents and does not
+create sessions. Unique counts exclude missing IDs and distinguish identical IDs
+from different sources, including after source deletion. A period-wide unique
+count is calculated over all events in that period, never by adding daily counts.
+
+A backend delivery can use this request. Persist the body and delivery ID before
+sending if delivery must survive a backend restart:
+
+```ts
+const body = JSON.stringify({
+  events: [{
+    kind: "page.viewed",
+    ts: new Date().toISOString(),
+    resource: { type: "website", id: "example.com" },
+    dimensions: { route: "/articles/:slug" },
+    actorId: visitorId,
+    sessionId,
+  }],
+});
+const response = await fetch(`${pulseUrl}/api/pulse/ingest`, {
+  method: "POST",
+  headers: {
+    authorization: `Bearer ${sourceToken}`,
+    "content-type": "application/json",
+    "idempotency-key": deliveryId,
+  },
+  body,
+  signal: AbortSignal.timeout(15_000),
+});
+if (!response.ok) throw new Error(`Pulse ingest failed: ${response.status}`);
+```
+
+On a timeout, connection failure, 429 or server error, retry the unchanged body
+with the same delivery ID within 24 hours, using bounded backoff in your backend
+queue. Other client errors require correcting the request. A correlation ID is
+not a deduplication key. Automatic indefinite retries and durable backend queues
+are not provided by this example.
+
+Use either a relative `since` range or an absolute `from`/`to` pair. Absolute
+values require UTC or an explicit offset. Both forms use a fixed, exclusive upper
+bound: `[from,to)`. Queries older than the base's retained history fail explicitly.
+Metric historical ranges use exact UTC hours after raw data expires.
+
+```text
+events page.viewed unique actor every all from 2026-09-01T00:00:00+02:00 to 2026-10-01T00:00:00+02:00
+events page.viewed count every day timezone Europe/Berlin since 7d group by route
+events conversion.completed count every month timezone Europe/Berlin since 90d
+metric system.cpu.usage avg every 1h from 2026-09-01T00:00:00Z to 2026-09-02T00:00:00Z
+```
+
+`day`, `week` and `month` use calendar boundaries in the required IANA time zone;
+weeks begin on Monday. Daylight saving transitions can produce 23- or 25-hour
+days. Duration buckets such as `1d` remain fixed 24-hour UTC intervals. `every all`
+returns one point per group for the whole selected window. An empty ungrouped
+window returns zero for counts and uniques, and null for sum.

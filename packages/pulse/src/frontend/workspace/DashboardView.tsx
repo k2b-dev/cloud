@@ -24,6 +24,8 @@ import type {
 import { intervalToMs } from "../../query-dsl/interval";
 import { formatDashboardConditionText, matchDashboardCondition } from "../dashboard-conditions";
 import { usePulseMessages } from "../use-messages";
+import { queryBucketMaxGap } from "./chart-data";
+import { formatQueryBucket } from "./date-format";
 import {
   compactDate,
   compactDateWithDelta,
@@ -85,6 +87,13 @@ const dashboardControlValue = (dashboard: PulseDashboard, control: PulseDashboar
 const MetricWidgetChart = (props: { widget: PulseDashboardMetricWidget; context: DashboardRenderContext }) => {
   const t = usePulseMessages();
   const data = () => props.context.metricWidgetPoints()[props.widget.id] ?? [];
+  const dateContext = () => ({
+    ...props.context.dateContext(),
+    timeZone:
+      props.widget.query.kind === "events"
+        ? (props.widget.query.timeZone ?? props.context.dateContext().timeZone)
+        : props.context.dateContext().timeZone,
+  });
   const last = () => data().at(-1)?.value ?? null;
   const summary = () => props.context.metricByName().get(props.widget.query.kind === "metric" ? props.widget.query.metric : "");
   const rawUnit = () => summary()?.unit ?? null;
@@ -137,7 +146,7 @@ const MetricWidgetChart = (props: { widget: PulseDashboardMetricWidget; context:
       <Chart
         kind="bar"
         class="h-48 text-dimmed"
-        data={pointsToBars(data(), props.context.dateContext())}
+        data={pointsToBars(data(), dateContext(), props.widget.query.bucket ?? "1h")}
         showValues={data().length <= 16}
       />
     );
@@ -150,7 +159,7 @@ const MetricWidgetChart = (props: { widget: PulseDashboardMetricWidget; context:
       <Chart
         kind="heatmap"
         class="h-48 text-dimmed"
-        data={pointsToHeatmap(data(), props.context.dateContext())}
+        data={pointsToHeatmap(data(), dateContext(), props.widget.query.bucket ?? "1h")}
         format={valueFormat}
         showValues={data().length <= 48}
       />
@@ -160,7 +169,7 @@ const MetricWidgetChart = (props: { widget: PulseDashboardMetricWidget; context:
     return (
       <DataTable
         rows={data()}
-        columns={queryPointColumns}
+        columns={queryPointColumns(dateContext(), props.widget.query.bucket ?? "1h")}
         getRowId={(point) => JSON.stringify([point.bucket, point.group])}
         density="compact"
         class="max-h-64 overflow-auto"
@@ -173,8 +182,8 @@ const MetricWidgetChart = (props: { widget: PulseDashboardMetricWidget; context:
       kind="line"
       class="h-48 text-dimmed"
       series={pointsToLineSeries(data(), props.widget.title)}
-      maxGap={intervalToMs(props.widget.query.bucket ?? "1h") ?? undefined}
-      xAxis={{ format: (value) => compactDate(new Date(value).toISOString(), props.context.dateContext()) }}
+      maxGap={queryBucketMaxGap(data(), props.widget.query.bucket ?? "1h", dateContext())}
+      xAxis={{ format: (value) => formatQueryBucket(new Date(value).toISOString(), props.widget.query.bucket ?? "1h", dateContext()) }}
       yAxis={{ format: valueFormat }}
       smooth
     />

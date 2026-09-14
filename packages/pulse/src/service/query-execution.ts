@@ -3,6 +3,8 @@ import { toPgUuidArray } from "@k2b/cloud/services";
 import { sql } from "bun";
 import type { EventQuery, MetricQuery, MetricQueryPoint, PulseCurrentState, PulseRecordedEvent, StateQuery } from "../contracts";
 import { durationToInterval, intervalToMs } from "../query-dsl";
+import { isCalendarBucket, resolveQueryTimeRange, validateEventBucket } from "../query-dsl/time-window";
+import { withEventQuerySnapshot } from "./event-query-window";
 import {
   type CurrentStateRow,
   iso,
@@ -22,6 +24,8 @@ type MetricWindow = {
   bucketInterval: string;
   bucketMs: number;
   since: Date;
+  until: Date;
+  rawFrom: Date;
   sinceMs: number;
 };
 
@@ -98,8 +102,10 @@ const metricRowsToPoints = (query: MetricQuery, rows: MetricValueRow[], series: 
 
 const resolveMetricWindow = (query: MetricQuery): Result<MetricWindow> => {
   const bucketInterval = durationToInterval(query.bucket);
-  const sinceMs = intervalToMs(query.since);
-  if (!bucketInterval || !sinceMs) return fail(err.badInput("Use compact durations like 5m, 1h, or 7d"));
+  const range = resolveQueryTimeRange(query);
+  if (!range.ok) return range;
+  const sinceMs = range.data.durationMs;
+  if (!bucketInterval) return fail(err.badInput("Use compact durations like 5m, 1h, or 7d"));
 
   const bucketMs = intervalToMs(query.bucket) ?? 0;
   if (!bucketMs || Math.ceil(sinceMs / bucketMs) > MAX_METRIC_BUCKETS) {
@@ -109,7 +115,9 @@ const resolveMetricWindow = (query: MetricQuery): Result<MetricWindow> => {
   return ok({
     bucketInterval,
     bucketMs,
-    since: new Date(Date.now() - sinceMs),
+    since: range.data.from,
+    until: range.data.to,
+    rawFrom: range.data.from,
     sinceMs,
   });
 };
@@ -183,7 +191,7 @@ const queryHourlyRollupRows = async (
     WITH complete AS MATERIALIZED (
       SELECT h.hour FROM pulse.metric_hours h JOIN pulse.bases b ON b.id=h.base_id
       WHERE h.base_id=${query.baseId}::uuid AND h.state IN ('clean','sealed')
-        AND h.hour>=${window.since} AND h.hour+interval '1 hour'<=now()
+        AND h.hour>=${window.since} AND h.hour+interval '1 hour'<=now() AND h.hour+interval '1 hour'<=${window.until}
         AND h.hour>=date_bin('1 hour',now()-b.rollup_retention_days*interval '1 day','1970-01-01'::timestamptz)
     ), retained AS MATERIALIZED (
       SELECT r.series_id,r.bucket,r.sample_count,r.value_sum,r.value_min,r.value_max,r.last_value,r.last_ts
@@ -196,7 +204,7 @@ const queryHourlyRollupRows = async (
         sum(s.value),min(s.value),max(s.value),(array_agg(s.value ORDER BY s.ts DESC))[1],max(s.ts)
       FROM pulse.metric_samples s
       WHERE s.base_id=${query.baseId}::uuid AND s.series_id=ANY(${toPgUuidArray(seriesIds)}::uuid[])
-        AND s.ts>=${window.since} AND s.ts<=now()
+        AND s.ts>=${window.since} AND s.ts<${window.until}
         AND NOT EXISTS(SELECT 1 FROM retained r WHERE r.series_id=s.series_id AND s.ts>=r.bucket AND s.ts<r.bucket+interval '1 hour')
       GROUP BY s.series_id,2
     )
@@ -222,7 +230,7 @@ const queryLatestMetric = async (
       FROM pulse.metric_samples
       WHERE base_id = ${query.baseId}::uuid
         AND series_id = ANY(${toPgUuidArray(seriesIds)}::uuid[])
-        AND ts >= ${window.since}
+        AND ts >= ${window.since} AND ts < ${window.until}
     ),
     latest_per_series AS (
       SELECT DISTINCT ON (series_id, bucket)
@@ -254,11 +262,11 @@ const queryCounterDeltaMetric = async (
       FROM unnest(${toPgUuidArray(seriesIds)}::uuid[]) AS selected(id)
       CROSS JOIN LATERAL (
         (SELECT series_id, ts, value FROM pulse.metric_samples
-         WHERE base_id = ${query.baseId}::uuid AND series_id = selected.id AND ts < ${window.since}
+         WHERE base_id = ${query.baseId}::uuid AND series_id = selected.id AND ts < ${window.since} AND ts >= ${window.rawFrom}
          ORDER BY ts DESC LIMIT 1)
         UNION ALL
         (SELECT series_id, ts, value FROM pulse.metric_samples
-         WHERE base_id = ${query.baseId}::uuid AND series_id = selected.id AND ts >= ${window.since})
+         WHERE base_id = ${query.baseId}::uuid AND series_id = selected.id AND ts >= ${window.since} AND ts < ${window.until})
       ) sample
     ), pairs AS (
       SELECT *, lag(value) OVER series AS previous_value, lag(ts) OVER series AS previous_ts
@@ -269,7 +277,7 @@ const queryCounterDeltaMetric = async (
           CASE WHEN value >= previous_value THEN value - previous_value ELSE value END
         END AS delta,
         EXTRACT(epoch FROM ts - previous_ts)::double precision AS seconds
-      FROM pairs WHERE ts >= ${window.since}
+      FROM pairs WHERE ts >= ${window.since} AND ts < ${window.until}
     )
     SELECT series_id, bucket, ${valueSql} AS value FROM deltas
     GROUP BY series_id, bucket ORDER BY bucket, series_id LIMIT ${MAX_METRIC_POINTS}
@@ -311,7 +319,7 @@ const querySampleAggregateMetric = async (
     FROM pulse.metric_samples
     WHERE base_id = ${query.baseId}::uuid
       AND series_id = ANY(${toPgUuidArray(seriesIds)}::uuid[])
-      AND ts >= ${window.since}
+      AND ts >= ${window.since} AND ts < ${window.until}
     GROUP BY series_id, bucket
     ORDER BY bucket ASC, series_id ASC
     LIMIT ${MAX_METRIC_POINTS}
@@ -350,11 +358,14 @@ const queryMetricDataInSnapshot = async (
       date_bin('1 hour',now()-rollup_retention_days*interval '1 day','1970-01-01'::timestamptz) AS rollup_from
     FROM pulse.bases WHERE id=${query.baseId}::uuid`;
   if (!policy) return fail(err.notFound("Pulse base"));
+  window.data.rawFrom = policy.raw_from;
   if (window.data.since.getTime() < policy.raw_from.getTime()) {
     if (!canUseHourlyRollup(query, window.data))
       return fail(err.badInput("This aggregation and bucket require a range within raw retention"));
     if (window.data.since.getTime() < policy.rollup_from.getTime())
       return fail(err.badInput("Query starts before retained metric history"));
+    if (window.data.until.getTime() < policy.raw_from.getTime() && window.data.until.getTime() % 3_600_000 !== 0)
+      return fail(err.badInput("Historical metric ranges must end on an exact UTC hour; partial hours require raw data"));
     if (window.data.since.getTime() % 3_600_000 !== 0)
       return fail(err.badInput("Historical metric ranges must start on an exact UTC hour; partial hours require raw data"));
   }
@@ -394,12 +405,11 @@ const queryMetricDataInSnapshot = async (
   return boundedMetricPoints(query, await querySampleAggregateMetric(query, window.data, seriesIds, db), series, maxOutputPoints);
 };
 
-export const queryEventsData = async (query: EventQuery): Promise<Result<PulseRecordedEvent[]>> => {
-  const sinceMs = intervalToMs(query.since);
-  if (!sinceMs) return fail(err.badInput("Use compact durations like 5m, 1h, or 7d"));
-  const since = new Date(Date.now() - sinceMs);
-  const dimensions = normalizeDimensions(query.dimensions);
-  const rows = await sql<RecordedEventRow[]>`
+export const queryEventsData = async (query: EventQuery): Promise<Result<PulseRecordedEvent[]>> =>
+  withEventQuerySnapshot(query, async (db, range) => {
+    const since = range.from;
+    const dimensions = normalizeDimensions(query.dimensions);
+    const rows = await db<RecordedEventRow[]>`
     SELECT id, kind, ts, value, source_id, resource_key, resource_type, dimensions, attributes, payload, recorded_at
     FROM pulse.events
     WHERE base_id = ${query.baseId}::uuid
@@ -408,12 +418,12 @@ export const queryEventsData = async (query: EventQuery): Promise<Result<PulseRe
       AND (${query.resourceKey ?? null}::text IS NULL OR resource_key = ${query.resourceKey ?? null})
       AND (${query.resourceType ?? null}::text IS NULL OR resource_type = ${query.resourceType ?? null})
       AND dimensions @> (${jsonbObject(dimensions)}::jsonb #>> '{}')::jsonb
-      AND ts >= ${since}
+      AND ts >= ${since} AND ts < ${range.to}
     ORDER BY ts DESC, recorded_at DESC
     LIMIT ${query.limit}
   `;
-  return ok(rows.map(mapRecordedEvent));
-};
+    return ok(rows.map(mapRecordedEvent));
+  });
 
 type EventAggregateRow = {
   bucket: Date | string;
@@ -428,9 +438,9 @@ const eventAggregateExpression = (aggregation: NonNullable<EventQuery["aggregati
     case "sum":
       return sql`SUM(value)::double precision`;
     case "unique_actor":
-      return sql`COUNT(DISTINCT actor_id)::double precision`;
+      return sql`COUNT(DISTINCT (source_identity,actor_id)) FILTER (WHERE actor_id IS NOT NULL)::double precision`;
     case "unique_session":
-      return sql`COUNT(DISTINCT session_id)::double precision`;
+      return sql`COUNT(DISTINCT (source_identity,session_id)) FILTER (WHERE session_id IS NOT NULL)::double precision`;
     default:
       throw new Error("Rows are not an event aggregation");
   }
@@ -468,23 +478,32 @@ const eventGroupExpression = (groupBy: string[]) => {
 export const queryEventAggregateData = async (
   query: EventQuery,
   limits: { maxOutputPoints?: number } = {},
-): Promise<Result<MetricQueryPoint[]>> => {
-  const aggregation = query.aggregation ?? "rows";
-  if (aggregation === "rows") return fail(err.badInput("Event aggregation is required"));
-  const sinceMs = intervalToMs(query.since);
-  const bucketInterval = query.bucket ? durationToInterval(query.bucket) : null;
-  if (!sinceMs || !bucketInterval) return fail(err.badInput("Use compact durations like 5m, 1h, or 7d"));
-  const groupBy = query.groupBy ?? [];
-  if (groupBy.length > 4) return fail(err.badInput("Group by cannot exceed 4 dimension keys"));
+): Promise<Result<MetricQueryPoint[]>> =>
+  withEventQuerySnapshot(query, async (db, range) => {
+    const aggregation = query.aggregation ?? "rows";
+    if (aggregation === "rows") return fail(err.badInput("Event aggregation is required"));
+    const bucketCheck = validateEventBucket(query.bucket, query.timeZone);
+    if (!bucketCheck.ok) return bucketCheck;
+    if (!query.bucket) return fail(err.badInput("An event aggregate bucket is required"));
+    const bucketInterval = durationToInterval(query.bucket);
+    const bucketSql =
+      query.bucket === "all"
+        ? sql`${range.from}::timestamptz`
+        : isCalendarBucket(query.bucket)
+          ? sql`date_trunc(${query.bucket}::text,event.ts AT TIME ZONE ${query.timeZone}::text) AT TIME ZONE ${query.timeZone}::text`
+          : sql`date_bin(${bucketInterval}::interval,event.ts,'1970-01-01'::timestamptz)`;
+    const groupBy = query.groupBy ?? [];
+    if (groupBy.length > 4) return fail(err.badInput("Group by cannot exceed 4 dimension keys"));
 
-  const dimensions = jsonbObject(normalizeDimensions(query.dimensions));
-  const since = new Date(Date.now() - sinceMs);
-  const maxOutputPoints = Math.min(1_000, Math.max(1, limits.maxOutputPoints ?? 1_000));
-  const rows = await sql<EventAggregateRow[]>`
+    const dimensions = jsonbObject(normalizeDimensions(query.dimensions));
+    const since = range.from;
+    const maxOutputPoints = Math.min(1_000, Math.max(1, limits.maxOutputPoints ?? 1_000));
+    const rows = await db<EventAggregateRow[]>`
     WITH scoped AS (
       SELECT
-        date_bin(${bucketInterval}::interval, event.ts, '1970-01-01'::timestamptz) AS bucket,
+        ${bucketSql} AS bucket,
         event.value,
+        event.source_identity,
         event.actor_id,
         event.session_id,
         ${eventGroupExpression(groupBy)} AS group_data
@@ -495,25 +514,27 @@ export const queryEventAggregateData = async (
         AND (${query.resourceKey ?? null}::text IS NULL OR event.resource_key = ${query.resourceKey ?? null})
         AND (${query.resourceType ?? null}::text IS NULL OR event.resource_type = ${query.resourceType ?? null})
         AND event.dimensions @> (${dimensions}::jsonb #>> '{}')::jsonb
-        AND event.ts >= ${since}
+        AND event.ts >= ${since} AND event.ts < ${range.to}
     )
-    SELECT bucket, ${eventAggregateExpression(aggregation)} AS value, group_data
+    SELECT ${query.bucket === "all" && groupBy.length === 0 ? sql`${range.from}::timestamptz AS bucket` : sql`bucket`},
+      ${eventAggregateExpression(aggregation)} AS value,
+      ${query.bucket === "all" && groupBy.length === 0 ? sql`'{}'::jsonb AS group_data` : sql`group_data`}
     FROM scoped
-    GROUP BY bucket, group_data
-    ORDER BY bucket ASC, group_data::text ASC
+    ${query.bucket === "all" && groupBy.length === 0 ? sql`` : sql`GROUP BY bucket, group_data`}
+    ${query.bucket === "all" && groupBy.length === 0 ? sql`ORDER BY bucket ASC` : sql`ORDER BY bucket ASC, group_data::text ASC`}
     LIMIT ${maxOutputPoints + 1}
   `;
-  if (rows.length > maxOutputPoints) {
-    return fail(err.badInput("This query creates too many aggregate points. Use a larger bucket, shorter range, or narrower filter."));
-  }
-  return ok(
-    rows.map((row) => ({
-      bucket: iso(row.bucket),
-      value: row.value === null ? null : Number(row.value),
-      group: normalizeDimensions(readJsonObject(row.group_data)),
-    })),
-  );
-};
+    if (rows.length > maxOutputPoints) {
+      return fail(err.badInput("This query creates too many aggregate points. Use a larger bucket, shorter range, or narrower filter."));
+    }
+    return ok(
+      rows.map((row) => ({
+        bucket: iso(row.bucket),
+        value: row.value === null ? null : Number(row.value),
+        group: normalizeDimensions(readJsonObject(row.group_data)),
+      })),
+    );
+  });
 
 export const queryStatesData = async (query: StateQuery): Promise<Result<PulseCurrentState[]>> => {
   const params = resolveStateQueryParams(query);

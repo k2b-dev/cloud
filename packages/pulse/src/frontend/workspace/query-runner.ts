@@ -18,7 +18,7 @@ export const runPulseTextQuery = async (baseId: string, query: string, signal?: 
   });
 
 export const metricControlsFromQuery = (compiled: PulseExplorerQuery): MetricQueryControls | null => {
-  if (compiled.kind !== "metric") return null;
+  if (compiled.kind !== "metric" || !compiled.since) return null;
   return {
     aggregation: compiled.aggregation,
     bucket: compiled.bucket,

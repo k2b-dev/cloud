@@ -52,6 +52,11 @@ dbTest(
       await sql`DELETE FROM pulse.metric_samples WHERE base_id=${baseId}::uuid AND ts<${new Date(+hour + 3600000)}`;
       result = await queryMetricData(query);
       expect(result.ok).toBe(false);
+      const historical = { ...query, since: undefined, from: hour.toISOString(), to: new Date(+hour + 3600000).toISOString() };
+      const exact = await queryMetricData(historical);
+      if (!exact.ok) throw Error(exact.error.message);
+      expect(exact.data.map((p) => p.value)).toEqual([40]);
+      expect((await queryMetricData({ ...historical, to: new Date(+hour + 1800000).toISOString() })).ok).toBe(false);
       expect((await queryMetricData({ ...query, aggregation: "p95" })).ok).toBe(false);
       const [rollup] = await sql`SELECT value_sum,sample_count,last_value FROM pulse.metric_rollups_hourly WHERE base_id=${baseId}::uuid`;
       expect(Number(rollup?.value_sum)).toBe(80);

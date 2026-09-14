@@ -124,6 +124,7 @@ const insertTelemetryFixture = async (baseId: string, sourceId: string, age: "ac
       id,
       base_id,
       source_id,
+      source_identity,
       ts,
       kind,
       value,
@@ -137,6 +138,7 @@ const insertTelemetryFixture = async (baseId: string, sourceId: string, age: "ac
     VALUES (
       ${eventId}::uuid,
       ${baseId}::uuid,
+      ${sourceId}::uuid,
       ${sourceId}::uuid,
       ${ts}::timestamptz,
       ${`lifecycle.event.${eventId}`},

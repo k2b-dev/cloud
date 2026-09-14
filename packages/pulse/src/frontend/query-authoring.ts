@@ -62,10 +62,11 @@ const aggregationSuggestions = (query: string): Suggestion[] =>
 const clauseSuggestions = (kind: "metric" | "events" | "states", query: string, text: string): Suggestion[] => {
   const clauses =
     kind === "metric"
-      ? ["every", "since", "source", "resource", "resource_type", ...(hasWhere(text) ? [] : ["where"])]
+      ? ["every", "since", "from", "to", "source", "resource", "resource_type", ...(hasWhere(text) ? [] : ["where"])]
       : [
           ...(kind === "events" && /\bevents\s+\S+\s+(?:count|sum|unique\s+(?:actor|session))\b/i.test(text) ? ["every", "group"] : []),
           "since",
+          ...(kind === "events" ? ["from", "to", "timezone"] : []),
           "source",
           "resource",
           "resource_type",
@@ -199,6 +200,9 @@ const shouldSuggestDimensions = (ctx: SuggestContext): boolean => {
 
 const suggestionsAfterPreviousToken = (params: PulseQueryAuthoringInventory, query: string, ctx: SuggestContext): Suggestion[] | null => {
   const prev = previousToken(ctx.fullText, ctx.tokenStart);
+  if (prev === "every" && /^\s*events\b/.test(ctx.fullText))
+    return literalSuggestions([...BUCKET_LITERALS, "day", "week", "month", "all"], query, "bucket");
+  if (prev === "timezone") return literalSuggestions(["UTC", "Europe/Berlin"], query, "IANA time zone");
   const factory = PREVIOUS_TOKEN_SUGGESTIONS[prev];
   if (factory) return factory(params, query);
   if (shouldSuggestDimensions(ctx)) return dimensionSuggestions(params, query);
@@ -416,7 +420,19 @@ const DASHBOARD_DSL_KEYWORDS = new Set([
   "sum",
 ]);
 
-const DASHBOARD_QUERY_KEYWORDS = new Set(["metric", "events", "states", "every", "since", "where", "limit", "resource_type"]);
+const DASHBOARD_QUERY_KEYWORDS = new Set([
+  "metric",
+  "events",
+  "states",
+  "every",
+  "since",
+  "from",
+  "to",
+  "timezone",
+  "where",
+  "limit",
+  "resource_type",
+]);
 
 const dashboardTokenHighlight = (token: string): string => {
   const lower = token.toLowerCase();

@@ -308,10 +308,10 @@ const writeEvents = async (baseId: string, sourceId: string, rows: PreparedEvent
       )
     )
     INSERT INTO pulse.events (
-      id, base_id, source_id, ts, kind, value, actor_id, session_id,
+      id, base_id, source_id, source_identity, ts, kind, value, actor_id, session_id,
       correlation_id, dimensions_hash, dimensions, attributes, sensitive, payload, resource_key, resource_id, resource_type, resource_label
     )
-    SELECT id, ${baseId}::uuid, ${sourceId}::uuid, ts, kind, value, "actorId",
+    SELECT id, ${baseId}::uuid, ${sourceId}::uuid, ${sourceId}::uuid, ts, kind, value, "actorId",
       "sessionId", "correlationId", "dimensionsHash", dimensions, attributes, sensitive, payload, "resourceKey", "resourceId", "resourceType", "resourceLabel"
     FROM input
   `;

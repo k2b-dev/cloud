@@ -237,7 +237,9 @@ export type PulseDashboardMetricQuery = {
   metric: string;
   aggregation: Aggregation;
   bucket: string;
-  since: string;
+  since?: string;
+  from?: string;
+  to?: string;
   sourceId?: string | null;
   resourceKey?: string | null;
   resourceType?: string | null;
@@ -249,13 +251,16 @@ export type PulseDashboardMetricQuery = {
 export type PulseDashboardEventQuery = {
   kind: "events";
   event: string | null;
-  since: string;
+  since?: string;
+  from?: string;
+  to?: string;
   sourceId?: string | null;
   resourceKey?: string | null;
   resourceType?: string | null;
   dimensions?: Record<string, string | number | boolean | null>;
   aggregation?: EventAggregation;
   bucket?: string | null;
+  timeZone?: string;
   groupBy?: string[];
   limit: number;
 };
@@ -415,7 +420,10 @@ export type PulsePublicDashboardMetricWidget = Omit<PulseDashboardMetricWidget, 
   metric: string;
   aggregation: Aggregation | EventAggregation;
   bucket: string;
-  since: string;
+  timeZone?: string;
+  since?: string;
+  from?: string;
+  to?: string;
   unit?: string | null;
 };
 
@@ -501,7 +509,9 @@ export type MetricQuery = {
   metric: string;
   aggregation: Aggregation;
   bucket: string;
-  since: string;
+  since?: string;
+  from?: string;
+  to?: string;
   sourceId?: string | null;
   resourceKey?: string | null;
   resourceType?: string | null;
@@ -516,13 +526,16 @@ export type EventQuery = {
   kind: "events";
   baseId: string;
   event: string | null;
-  since: string;
+  since?: string;
+  from?: string;
+  to?: string;
   sourceId?: string | null;
   resourceKey?: string | null;
   resourceType?: string | null;
   dimensions?: Record<string, string | number | boolean | null>;
   aggregation?: EventAggregation;
   bucket?: string | null;
+  timeZone?: string;
   groupBy?: string[];
   limit: number;
 };

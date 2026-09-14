@@ -26,9 +26,9 @@ describe("Pulse event aggregation Postgres smoke", () => {
       for (const event of events) {
         await sql`
           INSERT INTO pulse.events (
-            base_id, ts, kind, actor_id, session_id, dimensions_hash, dimensions, attributes, payload
+            source_identity, base_id, ts, kind, actor_id, session_id, dimensions_hash, dimensions, attributes, payload
           ) VALUES (
-            ${baseId}::uuid, now(), 'page.viewed', ${event.actor}, ${event.session}, ${crypto.randomUUID()},
+            ${baseId}::uuid, ${baseId}::uuid, now(), 'page.viewed', ${event.actor}, ${event.session}, ${crypto.randomUUID()},
             (${JSON.stringify({ campaign: event.campaign, country: event.country })}::jsonb #>> '{}')::jsonb,
             (${JSON.stringify({ url: `https://example.com/${event.campaign}` })}::jsonb #>> '{}')::jsonb,
             '{}'::jsonb

@@ -1,9 +1,10 @@
-import { intervalToMs } from "./interval";
 import { err, fail, ok, type Result } from "@k2b/cloud/server";
 import type { Aggregation, EventAggregation, EventQuery, MetricQuery, PulseExplorerQuery, StateQuery } from "../contracts";
 import { AGGREGATIONS } from "../contracts";
 import { SHORT_ID_REGEX } from "../lib/short-id";
 import { PULSE_DIMENSION_KEY_LIMIT } from "../telemetry-contract";
+import { intervalToMs } from "./interval";
+import { resolveQueryTimeRange, validateEventBucket } from "./time-window";
 
 export { intervalToMs } from "./interval";
 
@@ -95,7 +96,10 @@ const readQueryLimit = (value: string | undefined, fallback: number): Result<num
 };
 
 type SharedClauses = {
-  since: string;
+  since?: string;
+  from?: string;
+  to?: string;
+  timeZone?: string;
   sourceId: string | null;
   resourceKey: string | null;
   resourceType: string | null;
@@ -138,6 +142,10 @@ const parseSharedQueryClauses = (
     const clause = readSharedQueryClause(tokens, state);
     if (!clause.ok) return fail(clause.error);
   }
+  if (state.from !== undefined || state.to !== undefined) {
+    if (state.seen.has("since")) return fail(err.badInput("Use either since or from/to, never both"));
+    delete state.since;
+  }
   const { index: _index, seen: _seen, ...clauses } = state;
   return ok(clauses);
 };
@@ -152,6 +160,21 @@ const readSharedQueryClause = (tokens: string[], state: SharedClauseState): Resu
 };
 
 const SHARED_CLAUSE_READERS: Record<string, SharedClauseReader> = {
+  from: (tokens, state) => {
+    state.from = tokens[state.index + 1] ?? "";
+    state.index += 2;
+    return ok(undefined);
+  },
+  to: (tokens, state) => {
+    state.to = tokens[state.index + 1] ?? "";
+    state.index += 2;
+    return ok(undefined);
+  },
+  timezone: (tokens, state) => {
+    state.timeZone = tokens[state.index + 1] ?? "";
+    state.index += 2;
+    return ok(undefined);
+  },
   since: (tokens, state) => {
     const value = tokens[state.index + 1];
     if (!value) return fail(err.badInput("Since duration is missing"));
@@ -216,8 +239,10 @@ const compileMetricQueryTokens = (baseId: string, tokens: string[]): Result<Metr
   if (!parts.ok) return fail(parts.error);
   const shared = parseSharedQueryClauses(parts.data.sharedTokens, 0, { since: "24h", limit: 1_000 });
   if (!shared.ok) return fail(shared.error);
-  if (!intervalToMs(parts.data.bucket) || !intervalToMs(shared.data.since))
-    return fail(err.badInput("Use compact durations like 5m, 1h, or 7d"));
+  if (!intervalToMs(parts.data.bucket)) return fail(err.badInput("Use compact durations like 5m, 1h, or 7d"));
+  const range = resolveQueryTimeRange(shared.data);
+  if (!range.ok) return fail(range.error);
+  if (shared.data.timeZone !== undefined) return fail(err.badInput("Metric buckets use UTC duration boundaries"));
   return ok(metricQueryFromParts(baseId, parts.data, shared.data));
 };
 
@@ -299,7 +324,7 @@ const metricQueryFromParts = (baseId: string, parts: MetricTokenParts, shared: S
   metric: parts.metric,
   aggregation: parts.aggregation,
   bucket: parts.bucket,
-  since: shared.since,
+  ...(shared.from !== undefined ? { from: shared.from, to: shared.to } : { since: shared.since }),
   sourceId: shared.sourceId,
   resourceKey: shared.resourceKey,
   resourceType: shared.resourceType,
@@ -313,13 +338,16 @@ const compileEventQueryTokens = (baseId: string, tokens: string[]): Result<Event
   if (!options.ok) return fail(options.error);
   const shared = parseSharedQueryClauses(options.data.sharedTokens, 0, { since: "24h", limit: 500 });
   if (!shared.ok) return fail(shared.error);
-  if (!intervalToMs(shared.data.since)) return fail(err.badInput("Use compact durations like 5m, 1h, or 7d"));
-  if (options.data.bucket && !intervalToMs(options.data.bucket)) return fail(err.badInput("Use compact durations like 5m, 1h, or 7d"));
+  const range = resolveQueryTimeRange(shared.data);
+  if (!range.ok) return fail(range.error);
+  const bucket = validateEventBucket(options.data.bucket, shared.data.timeZone);
+  if (!bucket.ok) return fail(bucket.error);
   return ok({
     kind: "events",
     baseId,
     event: readQueryName(tokens[1]),
-    since: shared.data.since,
+    ...(shared.data.from !== undefined ? { from: shared.data.from, to: shared.data.to } : { since: shared.data.since }),
+    ...(shared.data.timeZone !== undefined ? { timeZone: shared.data.timeZone } : {}),
     sourceId: shared.data.sourceId,
     resourceKey: shared.data.resourceKey,
     resourceType: shared.data.resourceType,
@@ -402,6 +430,8 @@ const readEventOptions = (tokens: string[]): Result<EventOptions> => {
 const compileStateQueryTokens = (baseId: string, tokens: string[]): Result<StateQuery> => {
   const shared = parseSharedQueryClauses(tokens, 2, { since: "", limit: 500 });
   if (!shared.ok) return fail(shared.error);
+  if (shared.data.from !== undefined || shared.data.to !== undefined || shared.data.timeZone !== undefined)
+    return fail(err.badInput("Current state queries do not support from/to or time zones"));
   if (shared.data.since && !intervalToMs(shared.data.since)) return fail(err.badInput("Use compact durations like 5m, 1h, or 7d"));
   return ok({
     kind: "states",

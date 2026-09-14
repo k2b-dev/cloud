@@ -31,7 +31,7 @@ metric <metric> <aggregation>
   [every <duration>]
   [reduce <sum|avg|min|max>]
   [group by <resource|dimension>]
-  [since <duration>]
+  [since <duration> | from <ISO-timestamp> to <ISO-timestamp>]
   [source <source-id>]
   [resource <id>]
   [resource_type <type>]
@@ -43,9 +43,10 @@ metric <metric> <aggregation>
 ```text
 events [<kind>|*]
   [count|sum|unique actor|unique session]
-  [every <duration>]
+  [every <duration|day|week|month|all>]
+  [timezone <IANA-zone>]
   [group by <dimension>, ...]
-  [since <duration>]
+  [since <duration> | from <ISO-timestamp> to <ISO-timestamp>]
   [source <source-id>]
   [resource <id>]
   [resource_type <type>]
@@ -227,3 +228,26 @@ Abfragetext ist auf 2.000 Zeichen begrenzt. Metrikabfragen brechen ab, wenn mehr
 `rate` und `increase` benötigen einen nichtnegativen Counter. Pulse vergleicht aufeinanderfolgende Messwerte je Variante und lädt einen Vorgänger vor dem Abfragebeginn. Ein Rückgang gilt als Neustart bei null: `100 → 110 → 3 → 8` ergibt `10 + 3 + 5 = 18`. Das Delta gehört zum Zeitfenster des neueren Messwerts. `rate` teilt die Summe der Deltas durch die gesamte beobachtete Zeit zwischen den Messungen; unregelmäßige Abstände werden zeitlich gewichtet. Erst danach werden Varianten zusammengefasst.
 
 Ohne Vorgänger entsteht `null`; leere Zeitfenster bleiben leer. Nach einer längeren Lücke beschreibt das nächste Wertepaar den mittleren Anstieg über diese Lücke. Wann einzelne Inkremente stattfanden, ist unbekannt. Pulse extrapoliert nicht auf Zeitfenstergrenzen und verwendet keine PromQL-Schätzung. Perzentile (`p50` bis `p99`) beschreiben ausschließlich Gauge-Messwerte; Histogramm- und Summary-Quantile werden nicht unterstützt.
+
+## Exakte Zeiträume und Website-Identitäten
+
+`from` und `to` benötigen UTC-Zeitstempel oder einen expliziten Offset. Beide
+Grenzen gehören zusammen und dürfen nicht mit `since` kombiniert werden. Der
+Anfang zählt mit, das Ende nicht. Auch relative Abfragen haben eine feste obere
+Grenze und schließen zukünftige Ereignisse aus. Abfragen außerhalb der
+Aufbewahrung schlagen ausdrücklich fehl.
+
+```text
+events page.viewed unique actor every all from 2026-09-01T00:00:00+02:00 to 2026-10-01T00:00:00+02:00
+events page.viewed count every day timezone Europe/Berlin since 7d group by route
+```
+
+`every all` zählt direkt über den gesamten Zeitraum. Besucher- und Sitzungs-IDs
+sind je Source getrennt; fehlende IDs zählen nicht. Tageswerte für eindeutige
+Besucher ergeben addiert keinen korrekten Gesamtwert. `day`, `week` und `month`
+verwenden Kalendergrenzen in der angegebenen IANA-Zeitzone. Wochen beginnen
+montags; Zeitumstellungen ändern die Tageslänge. Feste Dauer-Buckets verwenden
+UTC. Historische Metrikabfragen benötigen nach Ablauf der Rohdaten volle
+UTC-Stundengrenzen und Stunden-Buckets. Perzentile und Counter-Differenzen
+benötigen Rohdaten. Aktuelle States behalten ihre `since`-Syntax und unterstützen
+keine absoluten historischen Zeiträume.

@@ -31,7 +31,7 @@ metric <metric> <aggregation>
   [every <duration>]
   [reduce <sum|avg|min|max>]
   [group by <resource|dimension>]
-  [since <duration>]
+  [since <duration> | from <ISO-timestamp> to <ISO-timestamp>]
   [source <source-id>]
   [resource <id>]
   [resource_type <type>]
@@ -43,9 +43,10 @@ metric <metric> <aggregation>
 ```text
 events [<kind>|*]
   [count|sum|unique actor|unique session]
-  [every <duration>]
+  [every <duration|day|week|month|all>]
+  [timezone <IANA-zone>]
   [group by <dimension>, ...]
-  [since <duration>]
+  [since <duration> | from <ISO-timestamp> to <ISO-timestamp>]
   [source <source-id>]
   [resource <id>]
   [resource_type <type>]
@@ -227,3 +228,23 @@ Query text is limited to 2,000 characters. Metric queries stop when more than 25
 `rate` and `increase` require a nonnegative counter. Pulse compares consecutive samples within each variant, including one predecessor before the query starts. A decrease is treated as a reset to zero: `100 → 110 → 3 → 8` contributes `10 + 3 + 5 = 18`. Each delta belongs to the bucket of its newer sample. `rate` divides the sum of these deltas by their total observed elapsed seconds; irregular intervals are weighted by time. Reduction across variants happens afterward.
 
 A sample without a predecessor produces `null`, and empty buckets remain missing. Across a longer gap, the next pair reports average growth across that gap; Pulse cannot infer when individual increments happened. Values are not extrapolated to bucket boundaries and are not PromQL estimates. Percentiles (`p50` through `p99`) describe gauge samples only; histogram and summary quantiles are unsupported.
+
+## Exact periods and website identities
+
+Use `from` and `to` together with UTC or offset timestamps. Do not combine them
+with `since`. The start is inclusive and the end exclusive. Relative queries also
+have a fixed upper bound and exclude future events. Ranges outside retention fail.
+
+```text
+events page.viewed unique actor every all from 2026-09-01T00:00:00+02:00 to 2026-10-01T00:00:00+02:00
+events page.viewed count every day timezone Europe/Berlin since 7d group by route
+```
+
+`every all` counts directly across the entire window. Unique actor/session IDs
+are source-local; missing IDs do not count. Do not add daily uniques to obtain a
+period total. Calendar `day`, `week` and `month` buckets require an IANA time zone;
+weeks start Monday and daylight saving transitions change the length of a day.
+Fixed durations use UTC. Historical metric queries require whole-hour bounds and
+whole-hour buckets after raw retention; percentiles and counter deltas need raw
+samples. Current-state queries keep their `since` syntax and do not accept
+absolute historical windows.

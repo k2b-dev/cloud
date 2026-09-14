@@ -677,3 +677,20 @@ principal selector = --user <ref> | --group <ref> | --authenticated
 - [Pulse Query DSL](pulse-query-dsl.md) is the complete query grammar and execution reference.
 - [Pulse Dashboard DSL](pulse-dashboard-dsl.md) is the complete dashboard authoring reference.
 - [Pulse ingest](pulse-ingest.md) is the complete collector and batch contract.
+
+### Absolute analytics periods
+
+Query text supports either `since` or `from <ISO timestamp> to <ISO timestamp>`.
+Absolute timestamps require UTC or an offset; the interval includes its start
+and excludes its end. Event aggregates accept `every all` for period totals, or
+`every day|week|month timezone <IANA zone>` for calendar boundaries. Unique actor
+and session IDs are source-local; missing identities do not count.
+
+```bash
+cld pulse query run --query 'events page.viewed unique actor every all from 2026-09-01T00:00:00+02:00 to 2026-10-01T00:00:00+02:00' --json
+cld pulse query run --query 'events page.viewed count every day timezone Europe/Berlin since 7d group by route' --json
+```
+
+Use one HTTP ingest source per website. Website backends send unchanged retry
+batches with the same idempotency key to `/api/pulse/ingest`; keys are retained
+for 24 hours. Keep source tokens out of browser code.

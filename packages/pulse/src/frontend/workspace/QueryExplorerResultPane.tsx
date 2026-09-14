@@ -11,6 +11,8 @@ import {
 import type { pulseMessages } from "../../messages";
 import { intervalToMs } from "../../query-dsl/interval";
 import { usePulseMessages } from "../use-messages";
+import { queryBucketMaxGap } from "./chart-data";
+import { formatQueryBucket } from "./date-format";
 import {
   compactDate,
   formatMetricValue,
@@ -113,7 +115,7 @@ function QueryExplorerChart(props: {
       <Chart
         kind="bar"
         class="h-full min-h-0 text-dimmed"
-        data={pointsToBars(data(), props.dateContext())}
+        data={pointsToBars(data(), props.dateContext(), props.bucket())}
         showValues={data().length <= 16}
       />
     );
@@ -128,7 +130,7 @@ function QueryExplorerChart(props: {
       <Chart
         kind="heatmap"
         class="h-full min-h-0 text-dimmed"
-        data={pointsToHeatmap(data(), props.dateContext())}
+        data={pointsToHeatmap(data(), props.dateContext(), props.bucket())}
         format={valueFormat}
         showValues={data().length <= 48}
       />
@@ -139,8 +141,8 @@ function QueryExplorerChart(props: {
       kind="line"
       class="h-full min-h-0 text-dimmed"
       series={props.series()}
-      maxGap={intervalToMs(props.bucket()) ?? undefined}
-      xAxis={{ format: (value) => compactDate(new Date(value).toISOString(), props.dateContext()) }}
+      maxGap={queryBucketMaxGap(data(), props.bucket(), props.dateContext())}
+      xAxis={{ format: (value) => formatQueryBucket(new Date(value).toISOString(), props.bucket(), props.dateContext()) }}
       yAxis={{ format: valueFormat }}
       smooth
     />
@@ -181,13 +183,23 @@ const renderStatesResult = (props: QueryExplorerResultPaneProps): JSX.Element =>
   );
 };
 
+const queryDateContext = (props: QueryExplorerResultPaneProps) => {
+  const query = props.compiled(),
+    context = props.dateContext();
+  return { ...context, timeZone: query?.kind === "events" ? (query.timeZone ?? context.timeZone) : context.timeZone };
+};
+const queryBucket = (props: QueryExplorerResultPaneProps) => {
+  const query = props.compiled();
+  return query && query.kind !== "states" ? (query.bucket ?? "1h") : "1h";
+};
+
 const renderMetricTableResult = (props: QueryExplorerResultPaneProps): JSX.Element => {
   const t = usePulseMessages();
   return (
     <DataTable
       rows={props.points()}
-      columns={queryPointColumns}
-      getRowId={(point) => point.bucket}
+      columns={queryPointColumns(queryDateContext(props), queryBucket(props))}
+      getRowId={(point) => JSON.stringify([point.bucket, point.group])}
       density="compact"
       class="h-full min-h-0 overflow-auto"
       empty={props.queryWasRun() ? noMetricPointsMessage(true, t()) : t().runMetricPoints}
@@ -197,16 +209,13 @@ const renderMetricTableResult = (props: QueryExplorerResultPaneProps): JSX.Eleme
 
 const renderMetricChartResult = (props: QueryExplorerResultPaneProps): JSX.Element => (
   <QueryExplorerChart
-    bucket={() => {
-      const query = props.compiled();
-      return query && query.kind !== "states" ? (query.bucket ?? "1h") : "1h";
-    }}
+    bucket={() => queryBucket(props)}
     visual={props.visual}
     points={props.points}
     title={props.previewTitle}
     unit={props.previewUnit}
     series={props.previewSeries}
-    dateContext={props.dateContext}
+    dateContext={() => queryDateContext(props)}
   />
 );
 

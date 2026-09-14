@@ -18,6 +18,8 @@ import { intervalToMs } from "../query-dsl/interval";
 import { formatDashboardConditionText, matchDashboardCondition } from "./dashboard-conditions";
 import { publicDashboardEventSubject, publicDashboardStateRowId, sanitizePublicDashboardMarkdown } from "./public-dashboard-runtime";
 import { usePulseMessages } from "./use-messages";
+import { queryBucketMaxGap } from "./workspace/chart-data";
+import { formatQueryBucket } from "./workspace/date-format";
 import {
   compactDate,
   compactDateWithDelta,
@@ -40,8 +42,13 @@ type Props = {
 
 type Messages = ReturnType<typeof pulseMessages.resolve>["t"];
 
-const queryPointColumns = (dateContext: DateContext, t: Messages): DataTableColumn<MetricQueryPoint>[] => [
-  { id: "bucket", header: t.bucket, value: (point) => compactDate(point.bucket, dateContext), cellClass: "w-32 whitespace-nowrap" },
+const queryPointColumns = (dateContext: DateContext, t: Messages, bucket: string): DataTableColumn<MetricQueryPoint>[] => [
+  {
+    id: "bucket",
+    header: t.bucket,
+    value: (point) => formatQueryBucket(point.bucket, bucket, dateContext),
+    cellClass: "w-32 whitespace-nowrap",
+  },
   { id: "group", header: t.group, value: (point) => metricPointGroupLabel(point) || "-" },
   { id: "value", header: t.value, value: (point) => formatValue(point.value), cellClass: "w-32 whitespace-nowrap" },
 ];
@@ -110,8 +117,14 @@ const renderLineMetricVisual = (widget: PulsePublicDashboardMetricWidget, data: 
     kind="line"
     class="h-56 text-dimmed"
     series={pointsToLineSeries(data, widget.title)}
-    maxGap={intervalToMs(widget.bucket) ?? undefined}
-    xAxis={{ format: (value) => compactDate(new Date(value).toISOString(), dateContext) }}
+    maxGap={queryBucketMaxGap(data, widget.bucket, { ...dateContext, timeZone: widget.timeZone ?? dateContext.timeZone })}
+    xAxis={{
+      format: (value) =>
+        formatQueryBucket(new Date(value).toISOString(), widget.bucket, {
+          ...dateContext,
+          timeZone: widget.timeZone ?? dateContext.timeZone,
+        }),
+    }}
     yAxis={{ format: metricWidgetValueFormat(widget) }}
     smooth
   />
@@ -132,7 +145,14 @@ const renderMetricVisual = (
     case "barGauge":
       return last === null ? <p class="text-dimmed">{t.noPoints}</p> : renderBarGaugeMetricVisual(widget, last);
     case "bar":
-      return <Chart kind="bar" class="h-56 text-dimmed" data={pointsToBars(data, dateContext)} showValues={data.length <= 16} />;
+      return (
+        <Chart
+          kind="bar"
+          class="h-56 text-dimmed"
+          data={pointsToBars(data, { ...dateContext, timeZone: widget.timeZone ?? dateContext.timeZone }, widget.bucket)}
+          showValues={data.length <= 16}
+        />
+      );
     case "histogram":
       return <Chart kind="histogram" class="h-56 text-dimmed" data={pointsToHistogram(data)} bins={12} yAxis={{ label: t.count }} />;
     case "heatmap":
@@ -140,7 +160,7 @@ const renderMetricVisual = (
         <Chart
           kind="heatmap"
           class="h-56 text-dimmed"
-          data={pointsToHeatmap(data, dateContext)}
+          data={pointsToHeatmap(data, { ...dateContext, timeZone: widget.timeZone ?? dateContext.timeZone }, widget.bucket)}
           format={metricWidgetValueFormat(widget)}
           showValues={data.length <= 48}
         />
@@ -149,7 +169,7 @@ const renderMetricVisual = (
       return (
         <DataTable
           rows={data}
-          columns={queryPointColumns(dateContext, t)}
+          columns={queryPointColumns({ ...dateContext, timeZone: widget.timeZone ?? dateContext.timeZone }, t, widget.bucket)}
           getRowId={(point) => JSON.stringify([point.bucket, point.group])}
           density="compact"
           class="max-h-72 overflow-auto"

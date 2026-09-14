@@ -1,7 +1,8 @@
 import type { PulseDashboardEventQuery, PulseDashboardMetricQuery, PulseDashboardStateQuery } from "../../contracts";
+import { queryTimeRangeText } from "../../query-dsl/time-window";
 
 export const quoteQueryPart = (value: string): string =>
-  /[\s,=]/.test(value) ? `"${value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"` : value;
+  /[\s,='"\\]/.test(value) ? `"${value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"` : value;
 
 const queryFiltersToText = (query: PulseDashboardMetricQuery | PulseDashboardEventQuery | PulseDashboardStateQuery): string => {
   const source = query.sourceId ? ` source ${query.sourceId}` : "";
@@ -16,7 +17,7 @@ const queryFiltersToText = (query: PulseDashboardMetricQuery | PulseDashboardEve
 export const dashboardMetricQueryText = (query: PulseDashboardMetricQuery): string =>
   `metric ${query.metric} ${query.aggregation} every ${query.bucket}${query.reduce ? ` reduce ${query.reduce}` : ""}${
     query.groupBy ? ` group by ${quoteQueryPart(query.groupBy)}` : ""
-  } since ${query.since}${queryFiltersToText(query)}`;
+  } ${queryTimeRangeText(query)}${queryFiltersToText(query)}`;
 
 export const dashboardEventQueryText = (query: PulseDashboardEventQuery): string =>
   `events ${query.event ?? "*"}${
@@ -25,7 +26,7 @@ export const dashboardEventQueryText = (query: PulseDashboardEventQuery): string
           query.groupBy?.length ? ` group by ${query.groupBy.map(quoteQueryPart).join(", ")}` : ""
         }`
       : ""
-  } since ${query.since}${queryFiltersToText(query)}`;
+  }${query.timeZone ? ` timezone ${query.timeZone}` : ""} ${queryTimeRangeText(query)}${queryFiltersToText(query)}`;
 
 export const dashboardStateQueryText = (query: PulseDashboardStateQuery): string =>
   `states ${query.state ?? "*"}${query.since ? ` since ${query.since}` : ""}${queryFiltersToText(query)}`;

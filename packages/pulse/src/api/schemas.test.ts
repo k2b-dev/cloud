@@ -178,3 +178,19 @@ test("rejects historical identity fields instead of silently dropping them", () 
   }
   expect(IngestBatchSchema.safeParse({ metrics: [{ name: "load", value: 1, resource: { type: "a:b", id: "c" } }] }).success).toBe(false);
 });
+
+test("metric API accepts exact periods and rejects partial or mixed windows", () => {
+  const query = {
+    baseId: "abc123",
+    metric: "load",
+    aggregation: "avg",
+    bucket: "1h",
+    dimensions: {},
+    from: "2026-09-01T00:00:00Z",
+    to: "2026-09-02T00:00:00Z",
+  };
+  expect(MetricQuerySchema.safeParse(query).success).toBe(true);
+  expect(MetricQuerySchema.safeParse({ ...query, since: "1d" }).success).toBe(false);
+  expect(MetricQuerySchema.safeParse({ ...query, to: undefined }).success).toBe(false);
+  expect(MetricQuerySchema.safeParse({ ...query, from: "2026-09-01" }).success).toBe(false);
+});

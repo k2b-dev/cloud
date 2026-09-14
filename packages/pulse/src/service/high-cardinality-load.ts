@@ -175,11 +175,12 @@ const insertScaleRows = async (baseId: string, sourceId: string, eventCount: num
         FROM generate_series(${first}::bigint, ${last}::bigint) AS item
       )
       INSERT INTO pulse.events (
-        base_id, source_id, ts, kind, actor_id, session_id, correlation_id,
+        base_id, source_id, source_identity, ts, kind, actor_id, session_id, correlation_id,
         dimensions_hash, dimensions, attributes, sensitive, payload
       )
       SELECT
         ${baseId}::uuid,
+        ${sourceId}::uuid,
         ${sourceId}::uuid,
         now() - make_interval(secs => (item % 2592000)::int),
         kind,

@@ -22,6 +22,7 @@ postgresTest(
       const dsl = `dashboard "Ops" {
     controls { range "Window" variable range default 1h options 1h, 6h }
     line "CPU" { query metric cpu avg since $range source ${sourceShortId} }
+    bar "Visits" { query events page.viewed count every day timezone Europe/Berlin from 2026-09-01T00:00:00+02:00 to 2026-09-02T00:00:00+02:00 source ${sourceShortId} }
   }`;
       const created = await createDashboard({ baseId, user: { id: user.id }, name: "Ops", config: { dsl, refreshIntervalSeconds: 5 } });
       expect(created.ok).toBe(true);
@@ -38,7 +39,14 @@ postgresTest(
           expect(query.since).toBe("1h");
           return ok([{ bucket: "2026-01-01T00:00:00.000Z", value: 0 }]);
         },
-        queryEventAggregateData: async () => ok([]),
+        queryEventAggregateData: async (query: import("../contracts").EventQuery) => {
+          expect(query.sourceId).toBe(sourceId);
+          expect(query.timeZone).toBe("Europe/Berlin");
+          expect(query.from).toBe("2026-09-01T00:00:00+02:00");
+          expect(query.to).toBe("2026-09-02T00:00:00+02:00");
+          expect(query.since).toBeUndefined();
+          return ok([{ bucket: "2026-08-31T22:00:00.000Z", value: 5 }]);
+        },
         queryEventsData: async () => ok([]),
         queryStatesData: async () => ok([]),
         queryEventMapData: async () => ok([]),

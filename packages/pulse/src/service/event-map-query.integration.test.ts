@@ -28,9 +28,9 @@ describe("Pulse event map Postgres smoke", () => {
       for (const event of events) {
         await sql`
           INSERT INTO pulse.events (
-            base_id, ts, kind, value, dimensions_hash, dimensions, attributes, sensitive, payload
+            source_identity, base_id, ts, kind, value, dimensions_hash, dimensions, attributes, sensitive, payload
           ) VALUES (
-            ${baseId}::uuid, now(), 'qr.opened', ${event.value}, ${crypto.randomUUID()},
+            ${baseId}::uuid, ${baseId}::uuid, now(), 'qr.opened', ${event.value}, ${crypto.randomUUID()},
             (${JSON.stringify({ campaign: event.campaign })}::jsonb #>> '{}')::jsonb,
             (${JSON.stringify({ geo: { city: event.city, latitude: event.latitude, longitude: event.longitude } })}::jsonb #>> '{}')::jsonb,
             '{"ip":"203.0.113.42"}'::jsonb,

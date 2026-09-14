@@ -2,7 +2,7 @@ import { err, fail, ok, type Result } from "@k2b/cloud/server";
 import { toPgTextArray } from "@k2b/cloud/services";
 import { sql } from "bun";
 import type { EventQuery, PulseMapFieldSelector, PulseMapSeries } from "../contracts";
-import { intervalToMs } from "../query-dsl";
+import { withEventQuerySnapshot } from "./event-query-window";
 import { jsonbObject, normalizeDimensions } from "./telemetry-values";
 
 const MAX_MAP_POINTS = 1_000;
@@ -51,22 +51,20 @@ const rowsToSeries = (rows: EventMapRow[]): PulseMapSeries[] => {
   return [...grouped.values()];
 };
 
-export const queryEventMapData = async (input: EventMapQuery): Promise<Result<PulseMapSeries[]>> => {
-  const { query } = input;
-  if ((query.aggregation ?? "rows") !== "rows") return fail(err.badInput("Map widgets require an event rows query"));
-  const sinceMs = intervalToMs(query.since);
-  if (!sinceMs) return fail(err.badInput("Use compact durations like 5m, 1h, or 7d"));
+export const queryEventMapData = async (input: EventMapQuery): Promise<Result<PulseMapSeries[]>> =>
+  withEventQuerySnapshot(input.query, async (db, range) => {
+    const { query } = input;
+    if ((query.aggregation ?? "rows") !== "rows") return fail(err.badInput("Map widgets require an event rows query"));
+    const since = range.from;
+    const dimensions = normalizeDimensions(query.dimensions);
+    const latitude = selectorSql(input.latitude);
+    const longitude = selectorSql(input.longitude);
+    const label = optionalSelectorSql(input.label);
+    const series = optionalSelectorSql(input.series);
+    const size = input.size === "sum" ? sql`GREATEST(SUM(COALESCE(value, 0)), 0)::double precision` : sql`COUNT(*)::double precision`;
+    const limit = Math.min(MAX_MAP_POINTS, Math.max(1, query.limit));
 
-  const since = new Date(Date.now() - sinceMs);
-  const dimensions = normalizeDimensions(query.dimensions);
-  const latitude = selectorSql(input.latitude);
-  const longitude = selectorSql(input.longitude);
-  const label = optionalSelectorSql(input.label);
-  const series = optionalSelectorSql(input.series);
-  const size = input.size === "sum" ? sql`GREATEST(SUM(COALESCE(value, 0)), 0)::double precision` : sql`COUNT(*)::double precision`;
-  const limit = Math.min(MAX_MAP_POINTS, Math.max(1, query.limit));
-
-  const rows = await sql<EventMapRow[]>`
+    const rows = await db<EventMapRow[]>`
     WITH extracted AS (
       SELECT
         ${latitude} AS latitude_text,
@@ -81,7 +79,7 @@ export const queryEventMapData = async (input: EventMapQuery): Promise<Result<Pu
         AND (${query.resourceKey ?? null}::text IS NULL OR event.resource_key = ${query.resourceKey ?? null})
         AND (${query.resourceType ?? null}::text IS NULL OR event.resource_type = ${query.resourceType ?? null})
         AND event.dimensions @> (${jsonbObject(dimensions)}::jsonb #>> '{}')::jsonb
-        AND event.ts >= ${since}
+        AND event.ts >= ${since} AND event.ts < ${range.to}
     ),
     located AS (
       SELECT
@@ -103,5 +101,5 @@ export const queryEventMapData = async (input: EventMapQuery): Promise<Result<Pu
     LIMIT ${limit}
   `;
 
-  return ok(rowsToSeries(rows));
-};
+    return ok(rowsToSeries(rows));
+  });

@@ -192,10 +192,10 @@ describe("Pulse capabilities", () => {
       `;
       await sql`
         INSERT INTO pulse.events (
-          id, base_id, source_id, ts, kind, resource_key, resource_type, dimensions_hash, dimensions, attributes, payload
+          id, base_id, source_id, source_identity, ts, kind, resource_key, resource_type, dimensions_hash, dimensions, attributes, payload
         )
         SELECT
-          gen_random_uuid(), ${baseId}::uuid, ${sourceId}::uuid, now() - make_interval(secs => item), 'agent.event',
+          gen_random_uuid(), ${baseId}::uuid, ${sourceId}::uuid, ${sourceId}::uuid, now() - make_interval(secs => item), 'agent.event',
           'agent-1', 'service', item::text, '{}'::jsonb, '{"internal":"hidden"}'::jsonb, '{"raw":"hidden"}'::jsonb
         FROM generate_series(1, 101) AS item
       `;
@@ -204,19 +204,19 @@ describe("Pulse capabilities", () => {
       );
       await sql`
         INSERT INTO pulse.events (
-          id, base_id, source_id, ts, kind, resource_key, resource_type, dimensions_hash, dimensions, attributes, payload
+          id, base_id, source_id, source_identity, ts, kind, resource_key, resource_type, dimensions_hash, dimensions, attributes, payload
         )
         SELECT
-          gen_random_uuid(), ${baseId}::uuid, ${sourceId}::uuid, now() - make_interval(secs => item), 'agent.large',
+          gen_random_uuid(), ${baseId}::uuid, ${sourceId}::uuid, ${sourceId}::uuid, now() - make_interval(secs => item), 'agent.large',
           'agent-1', 'service', ${suffix} || '-large-' || item::text,
           (${JSON.stringify(largeDimensions)}::jsonb #>> '{}')::jsonb, '{}'::jsonb, '{}'::jsonb
         FROM generate_series(1, 20) AS item
       `;
       await sql`
         INSERT INTO pulse.events (
-          id, base_id, source_id, ts, kind, resource_key, dimensions_hash, dimensions, attributes, payload, value
+          id, base_id, source_id, source_identity, ts, kind, resource_key, dimensions_hash, dimensions, attributes, payload, value
         ) VALUES (
-          gen_random_uuid(), ${baseId}::uuid, ${sourceId}::uuid, now(), 'agent.nonfinite', 'agent-1', ${suffix} || '-nonfinite',
+          gen_random_uuid(), ${baseId}::uuid, ${sourceId}::uuid, ${sourceId}::uuid, now(), 'agent.nonfinite', 'agent-1', ${suffix} || '-nonfinite',
           '{}'::jsonb, '{}'::jsonb, '{}'::jsonb, '+Infinity'::double precision
         )
       `;
