@@ -23,6 +23,15 @@ export const emptyProjection = (conversation: AiConversation | null = null): AiC
   activeTurn: null,
 });
 
+/** A local send is an overlay, never part of a replaceable server snapshot. */
+export const messagesWithPendingSend = (messages: AiStoredMessage[], pending?: AiStoredMessage): AiStoredMessage[] => {
+  if (!pending) return messages;
+  const revision = pending.meta?.submittedDraftRevision;
+  const confirmed = messages.some(message => message.id === pending.id ||
+    (revision !== undefined && message.message.role === "user" && message.meta?.submittedDraftRevision === revision));
+  return confirmed ? messages : [...messages, pending];
+};
+
 const mergeMessages = (existing: AiStoredMessage[], incoming: AiStoredMessage[]): AiStoredMessage[] => {
   if (incoming.length === 0) return existing;
   const byId = new Map(existing.map((message) => [message.id, message]));
@@ -158,6 +167,11 @@ export const reduceWireEvent = (state: AiChatProjection, event: AiWireEvent): Ai
   if (event.type === "turn_finished") {
     if (!active || active.turnId !== event.turnId) return state;
     return { ...state, messages: mergeMessages(state.messages, event.messages ?? []), activeTurn: null };
+  }
+
+  if (event.type === "message_saved") {
+    if (!active || active.turnId !== event.turnId || !isNewerWireEvent(event, active)) return state;
+    return { ...state, messages: mergeMessages(state.messages, [event.message]), activeTurn: { ...active, seq: event.seq, attempt: event.attempt } };
   }
 
   // block_set / block_delta

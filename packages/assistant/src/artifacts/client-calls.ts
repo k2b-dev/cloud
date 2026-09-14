@@ -1,5 +1,5 @@
 import { sql } from "bun";
-import { aiConversations, CodeRuntimeInput, CODE_RUNTIME_TOOL_NAMES, parseCodeToolInput } from "@k2b/cloud/ai";
+import { aiConversations, aiToolAudit, CodeRuntimeInput, CODE_RUNTIME_TOOL_NAMES, parseCodeToolInput } from "@k2b/cloud/ai";
 import { userFromActor } from "@k2b/cloud/server";
 import { z } from "zod";
 import { ArtifactError, type ArtifactIdentity } from "./service";
@@ -25,13 +25,13 @@ async function authorize(call: z.infer<typeof ClientCall>, identity: ArtifactIde
     throw new ArtifactError("CONFLICT");
   // Schema parsing gives canonical property order and strips no unknown fields.
   if (JSON.stringify(CodeRuntimeInput.parse(parseCodeToolInput(block.name, block.args))) !== JSON.stringify(call.input)) throw new ArtifactError("INVALID_INPUT");
-  return { user, turnId: active.turn.id };
+  return { user, turnId: active.turn.id, conversationId: conversation.id, toolName: block.name };
 }
 
 export const clientCalls = {
   async claim(input: unknown, identity: ArtifactIdentity) {
-    const call = ClientCall.parse(input), { user, turnId } = await authorize(call, identity);
-    return sql.begin(async (db) => {
+    const call = ClientCall.parse(input), { user, turnId, conversationId, toolName } = await authorize(call, identity);
+    const result = await sql.begin(async (db) => {
       // Closed turns cannot pass authorize again. Keep completed-call payloads short-lived.
       await db`DELETE FROM assistant.artifact_client_calls WHERE user_id=${user.id}::uuid AND created_at < now() - interval '1 day'`;
       const inserted = await db`INSERT INTO assistant.artifact_client_calls(user_id,turn_id,call_id,client_id,input)
@@ -49,6 +49,8 @@ export const clientCalls = {
       // Never replay an execution with an uncertain outcome, including after reload.
       return { status: row?.expired ? "interrupted" as const : "pending" as const };
     });
+    if (result.status === "execute") await aiToolAudit.noteToolStarted({conversationId,turnId,callId:call.callId,toolName});
+    return result;
   },
   async complete(input: unknown, identity: ArtifactIdentity) {
     const call = ClientCallResult.parse(input), { user, turnId } = await authorize(call, identity);

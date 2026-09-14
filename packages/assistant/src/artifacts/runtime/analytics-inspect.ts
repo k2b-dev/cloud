@@ -1,6 +1,20 @@
-import type { AnalyticsNode } from "./analytics-contracts";
+import type { AnalyticsEvent, AnalyticsNode } from "./analytics-contracts";
+function interactions(node: AnalyticsNode): Array<{ id: string; event?: AnalyticsEvent }> {
+  if (node.disabled) return [];
+  const action = (event: AnalyticsEvent) => ({ id: node.id, event });
+  switch (node.type) {
+    case "button": return [{ id: node.id }];
+    case "input": case "number": case "slider": case "dateRange": case "select": case "multiSelect":
+      return [action({ type: "change", value: node.value })];
+    case "explorer": return [action({ type: "view", value: node.view === "chart" ? "table" : "chart" }), action({ type: "select", key: null })];
+    case "table": case "chart": return [action({ type: "select", key: null })];
+    case "group": return [action({ type: "refresh" }), action({ type: "request", request: node.desired })];
+    default: return [];
+  }
+}
+
 export function inspectAnalytics(node: AnalyticsNode, offset: number, limit: number, detail: boolean) {
-  const base = { type: node.type, label: node.label, description: node.description, disabled: node.disabled, loading: node.loading };
+  const base = { type: node.type, label: node.label, description: node.description, disabled: node.disabled, loading: node.loading, interactions: interactions(node) };
   switch (node.type) {
     case "group":
       return {
@@ -22,8 +36,9 @@ export function inspectAnalytics(node: AnalyticsNode, offset: number, limit: num
         selectedKey: node.selectedKey,
         view: node.view,
         totalRows: node.data.rows.length,
-        rows: detail ? node.data.rows.slice(offset, offset + limit) : [],
+        ...(detail ? { rows: node.data.rows.slice(offset, offset + limit) } : {}),
         chartKind: "kind" in node.data.chart ? node.data.chart.kind : node.data.chart.options.kind,
+        ...("kind" in node.data.chart ? {mapping:node.data.chart} : {}),
       };
     case "table":
       return {
@@ -32,7 +47,7 @@ export function inspectAnalytics(node: AnalyticsNode, offset: number, limit: num
         columns: node.columns,
         selectedKey: node.selectedKey,
         totalRows: node.rows.length,
-        rows: detail ? node.rows.slice(offset, offset + limit) : [],
+        ...(detail ? { rows: node.rows.slice(offset, offset + limit) } : {}),
       };
     case "chart":
       return {
@@ -40,7 +55,7 @@ export function inspectAnalytics(node: AnalyticsNode, offset: number, limit: num
         kind: node.data.options.kind,
         selectedKey: node.selectedKey,
         totalMarks: node.data.marks?.length,
-        marks: detail ? node.data.marks?.slice(offset, offset + limit) : [],
+        ...(detail ? { marks: node.data.marks?.slice(offset, offset + limit) } : {}),
       };
     case "select":
     case "multiSelect":
@@ -48,7 +63,7 @@ export function inspectAnalytics(node: AnalyticsNode, offset: number, limit: num
         ...base,
         value: node.value,
         totalOptions: node.options.length,
-        options: detail ? node.options.slice(offset, offset + limit) : [],
+        options: node.options.slice(detail ? offset : 0, (detail ? offset : 0) + limit),
       };
     case "layout":
       return { ...base, layout: node.layout, children: node.children };
@@ -56,6 +71,8 @@ export function inspectAnalytics(node: AnalyticsNode, offset: number, limit: num
       return { ...base, names: node.names, multiple: node.multiple, accept: node.accept };
     case "button":
       return base;
+    case "stat":
+      return {...base,value:node.value,format:node.format,...(detail?{trend:node.trend}:{})};
     default:
       return { ...base, value: node.value };
   }

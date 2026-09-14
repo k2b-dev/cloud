@@ -12,7 +12,7 @@ small input schema; there is no app prefix or capability name to translate.
 | --- | --- | --- |
 | `code_create` | `title`, `kind: "app"` or `"script"`, optional `description`, `icon` | Create one private resource; returns `id`, `entry`, and files |
 | `code_read` | `id`, optional `path`, `offset`, `revision` | Current directory without path; file content with path |
-| `code_write` | `id`, `path`, `content` | Create or overwrite one complete file and save immediately |
+| `code_write` | `id`, `expectedRevision`, `files: [{path, content}]`, optional `entry` | Atomically save a batch and return the new revision plus diagnostics |
 | `code_remove` | `id`, `path` | Remove a source file, preserving history and the app |
 | `code_list` | optional `page`, `kind`, `q` | Find accessible apps or scripts; follow `hasNext` |
 | `code_history` | `id`, optional `page` | List old saved versions for recovery |
@@ -23,6 +23,9 @@ identifies a particular execution. The resource reader follows Cloud's standard
 `id` contract. Source file paths are relative, such as `main.ts` or `lib/math.ts`.
 
 Create returns a minimal `main.ts` entry. Replace it with the requested program.
+The entry default-exports a function, not its returned object. Local imports may
+omit `.ts` or `.js` when exactly one matching file exists; use the exact extension
+when both exist. Package imports and paths outside the resource are unavailable.
 Use the same ID for all related files, tests, and subsequent repairs. Creation
 does not start code or share the app.
 
@@ -107,3 +110,25 @@ and file selection. Publish creates a release from saved changes. Agent test
 runs still support isolated picker fixtures through `code_run.inputPaths`.
 If a person edits at the same time, read the latest source before your next
 write; do not overwrite changes you have not inspected.
+
+## Atomic edits and data imports
+
+Read the current revision, then save related modules together:
+
+```js
+code_write({ id, expectedRevision: 3, files: [
+  { path: "data.json", fromChatFile: { path: "/validated-data.json", version: 1 } },
+  { path: "main.ts", content: 'import rows from "./data.json"; export default () => ({rows: rows.length});' }
+] });
+```
+
+`fromChatFile` copies a specific current-chat file version on the server. Export
+validated data with `code_export`, use the resulting path/version, and avoid
+printing/retyping large datasets. A stale revision or file version fails without
+saving any files; re-read before reconciling. Source imports support `.json`
+objects and `.csv`, `.tsv`, `.txt` strings; pass CSV strings to `sheet.fromCsv`.
+Imported text must be UTF-8; decode older encodings in a script before exporting.
+Each source/data file is limited to 1 MiB and the bundle to 2 MiB. Use resource
+storage or its database for larger datasets. Keep full numeric precision in
+stored data and format only at display time. Always rerun the saved revision;
+a copied scratch script is not a test of the saved app.

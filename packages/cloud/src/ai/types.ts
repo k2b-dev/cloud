@@ -270,6 +270,8 @@ export type AiStoredMessage = {
   compactedAt: string | null;
   /** UI metadata (e.g. how many messages a compaction summary replaced). */
   meta: {
+    /** The atomically consumed composer revision, used to confirm a local send. */
+    submittedDraftRevision?: number;
     compactedCount?: number;
     steerId?: string;
     agentMessage?: {
@@ -889,6 +891,8 @@ export type AiConversationService = {
   /** Atomically make pending steers visible to the model and return them in order. */
   takePendingTurnSteers(input: { conversationId: string; turnId: string; leaseOwner: string }): Promise<AiTurnSteer[]>;
   createSessionStore(input: {
+    /** Called after a durable append, for incremental usage/history projection. */
+    onMessage?: (message: AiStoredMessage) => Promise<void>;
     conversationId: string;
     modelProfileId?: string | null;
     turnId?: string | null;
@@ -957,6 +961,8 @@ export type AiToolRuntime<TInput extends z.ZodType = z.ZodType, TOutput extends 
           selectedModel?: AiResolvedModel;
           locale?: string;
           timeZone?: string;
+          /** Localized short status; never include payloads or secrets. */
+          reportProgress?: (message: string) => Promise<void>;
         },
       ): Promise<z.infer<TOutput>>;
     }

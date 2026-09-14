@@ -92,7 +92,7 @@ export const httpService = {
       if (!current && count!.count >= LIMITS.files) throw new HttpError("HTTP_LIMIT");
       const revision = crypto.randomUUID();
       await db`INSERT INTO assistant.http_secrets(user_id,scope,name,resource_id,origin,header,prefix,encrypted,revision)
-        VALUES(${ctx.userId}::uuid,${ctx.key},${value.name},${ctx.resource?.id ?? null}::uuid,${value.origin},${value.header},${value.prefix},${encrypted},${revision}::uuid)
+        VALUES(${ctx.userId}::uuid,${ctx.key},${value.name},(SELECT id FROM assistant.artifacts WHERE short_id=${ctx.resource?.id ?? null}),${value.origin},${value.header},${value.prefix},${encrypted},${revision}::uuid)
         ON CONFLICT(user_id,scope,name) DO UPDATE SET origin=EXCLUDED.origin,header=EXCLUDED.header,prefix=EXCLUDED.prefix,encrypted=EXCLUDED.encrypted,revision=EXCLUDED.revision`;
       return SecretView.parse({ ...value, revision, configured: true });
     });

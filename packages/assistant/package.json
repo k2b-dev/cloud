@@ -29,7 +29,8 @@
   },
   "devDependencies": {
     "@types/bun": "catalog:",
-    "@types/papaparse": "5.5.2"
+    "@types/papaparse": "5.5.2",
+    "@k2b/nessi": "catalog:"
   },
   "license": "AGPL-3.0-or-later"
 }

@@ -58,6 +58,8 @@ export const defineAiTool = <TInput extends z.ZodType, TOutput extends z.ZodType
           selectedModel?: AiResolvedModel;
           locale?: string;
           timeZone?: string;
+          /** Localized short status; never include payloads or secrets. */
+          reportProgress?: (message: string) => Promise<void>;
         },
       ) => Promise<z.infer<TOutput>>,
     ): AiToolRuntime<TInput, TOutput> {
@@ -103,6 +105,7 @@ export type AiToolPreparationContext = {
   selectedModel?: AiResolvedModel;
   locale?: string;
   timeZone?: string;
+  reportToolProgress?: (callId: string, message: string) => Promise<void>;
 };
 
 export const prepareAiTools = (input: AiToolPreparationContext & { tools?: AiRuntimeTool[] }): PreparedAiTools => {
@@ -129,6 +132,8 @@ export const prepareAiTools = (input: AiToolPreparationContext & { tools?: AiRun
     if (tool.location === "server") {
       return nessiTool.server((toolInput, ctx) => {
         if (!input.actor) throw new Error(`AI server tool "${tool.def.name}" requires a request actor.`);
+        const report = input.reportToolProgress;
+        const callId = ctx.callId;
         return tool.run(toolInput, {
           ...ctx,
           actor: input.actor,
@@ -141,6 +146,7 @@ export const prepareAiTools = (input: AiToolPreparationContext & { tools?: AiRun
           selectedModel: input.selectedModel,
           locale: input.locale,
           timeZone: input.timeZone,
+          reportProgress: callId && report ? message => report(callId,message) : undefined,
         });
       });
     }

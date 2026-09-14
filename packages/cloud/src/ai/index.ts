@@ -1,5 +1,5 @@
 export { CODE_SOURCE_TOOLS, type CodeSourceToolName } from "./code-source-contracts";
-export { CODE_RUNTIME_TOOL_NAMES, CodeRuntimeInput, parseCodeToolInput } from "./browser-code-contracts";
+export { CodeResourceId, CODE_RUNTIME_TOOL_NAMES, CodeRuntimeInput, parseCodeToolInput } from "./browser-code-contracts";
 export { assistantAiSettingsState, listAssistantAiModels } from "./assistant-models";
 export { type AiApprovalPreferenceRoutes, type AiApprovalPreferenceView, createAiApprovalPreferenceRoutes } from "./approval-routes";
 export {
@@ -74,6 +74,8 @@ export {
   type AiFileStat,
   guessAiMediaType,
   listAiConversationFiles,
+  readAiConversationFile,
+  createAiConversationArtifact,
   normalizeAiFilePath,
 } from "./files-store";
 export {
@@ -216,7 +218,7 @@ export {
   selectAiModelProfile,
   toPublicAiSettingsState,
 } from "./settings";
-export { AI_SHORT_ID_PATTERN, createAiShortId } from "./short-id";
+export { AI_SHORT_ID_PATTERN, createAiShortId, withAiShortIdForDb } from "./short-id";
 export {
   AI_SKILL_DESCRIPTION_MAX_CHARS,
   AI_SKILL_EXTRA_FRONTMATTER_MAX_CHARS,

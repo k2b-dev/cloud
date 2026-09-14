@@ -1,4 +1,6 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import type { RequestAuthority } from "../server";
+import * as dispatcher from "../api/capabilities";
+import { afterEach, describe, expect, spyOn, test } from "bun:test";
 import { z } from "zod";
 import { invokeCapability, invokeCapabilityWithDataSchema, reviewCapabilityAction } from "./server";
 
@@ -12,6 +14,26 @@ afterEach(() => {
 });
 
 describe("server capability client", () => {
+  test("verified host authority uses the canonical dispatcher without exposing a credential to fetch", async () => {
+    process.env.CLOUD_CORE_INTERNAL_ORIGIN="http://core.internal";
+    const authority:RequestAuthority={actor:{kind:"service_account",serviceAccount:{id:crypto.randomUUID(),name:"Test caller",kind:"resource_bound",status:"active",delegatedUserId:null,appId:"test",resourceType:"test",resourceId:"test",createdBy:null,createdAt:new Date().toISOString()},delegatedUser:null,scopes:["read"],credentialId:crypto.randomUUID()},accessSubject:{type:"service_account",serviceAccountId:crypto.randomUUID()},credentialKind:"api_key",scopes:["read"]};
+    const dispatch=spyOn(dispatcher,"dispatchCapability").mockResolvedValue(Response.json({data:{value:42}}));
+    let fetched=false;
+    globalThis.fetch=Object.assign(async()=>{fetched=true;throw new Error("No HTTP credential bridge expected");},{preconnect:originalFetch.preconnect});
+    try {
+      expect(await invokeCapability({appId:"demo",capabilityId:"read",kind:"query",input:{}},{authority,origin:"assistant",requestId:"host-call"}))
+        .toMatchObject({ok:true,data:{data:{value:42}}});
+      expect(dispatch.mock.calls[0]?.[0]).toMatchObject({authority,origin:"assistant",kind:"queries"});
+      expect(dispatch.mock.calls[0]?.[0].request.headers.get("authorization")).toBeNull();
+      expect(fetched).toBe(false);
+      await invokeCapability({appId:"demo",capabilityId:"read",kind:"query",input:{}},{authority,cookie:"session=unexpected"});
+      expect(dispatch).toHaveBeenCalledTimes(1);
+      dispatch.mockResolvedValueOnce(Response.json({message:"Approve update"}));
+      expect(await reviewCapabilityAction({appId:"demo",capabilityId:"update",input:{}},{authority,origin:"assistant"})).toMatchObject({ok:true,data:{message:"Approve update"}});
+      expect(dispatch.mock.calls[1]?.[0]).toMatchObject({review:true,kind:"actions",authority});
+    } finally {dispatch.mockRestore();}
+  });
+
   test("does not send workload authority to a public-origin fallback", async () => {
     delete process.env.CLOUD_CORE_INTERNAL_ORIGIN;
     let fetched = false;

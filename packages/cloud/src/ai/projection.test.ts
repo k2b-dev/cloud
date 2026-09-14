@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { emptyProjection, reconcileActiveTurnActions, reduceProjection, visibleMessages } from "./client/projection";
+import { emptyProjection, messagesWithPendingSend, reconcileActiveTurnActions, reduceProjection, visibleMessages } from "./client/projection";
 import type { AiStreamSseEvent, AiTurnBlock } from "./protocol";
 import { buildBlocksFromMessages, messageBlockId, toolBlockId } from "./protocol";
 import type { AiConversation, AiStoredMessage } from "./types";
@@ -40,6 +40,24 @@ const storedMessage = (overrides: Partial<AiStoredMessage> & { id: string; seq: 
   meta: null,
   createdAt: "2026-07-07T00:00:00.000Z",
   ...overrides,
+});
+
+describe("pending send overlay", () => {
+  test("survives an empty reconnect snapshot and confirms by consumed draft revision", () => {
+    const pending = storedMessage({ id: "pending-1", seq: 1, meta: { submittedDraftRevision: 3 } });
+    const snapshot = reduceProjection(emptyProjection(conversation), { type: "state", conversation, messages: [], activeTurn: null });
+    expect(messagesWithPendingSend(snapshot.messages, pending)).toEqual([pending]);
+    const saved = storedMessage({ id: "saved-1", seq: 1, meta: { submittedDraftRevision: 3 } });
+    expect(messagesWithPendingSend([saved], pending)).toEqual([saved]);
+    expect(messagesWithPendingSend([], saved)).toEqual([saved]);
+  });
+
+  test("does not confuse another submitted draft or preserve deleted server history", () => {
+    const pending = storedMessage({ id: "pending-2", seq: 2, meta: { submittedDraftRevision: 5 } });
+    const older = storedMessage({ id: "saved-1", seq: 1, meta: { submittedDraftRevision: 3 } });
+    expect(messagesWithPendingSend([older], pending)).toEqual([older, pending]);
+    expect(messagesWithPendingSend([], undefined)).toEqual([]);
+  });
 });
 
 const wire = (partial: Record<string, unknown>): AiStreamSseEvent =>
@@ -546,4 +564,15 @@ describe("buildBlocksFromMessages via timeline shape", () => {
     };
     expect(block.id).toBe("tool-c1");
   });
+});
+
+test("a saved model round updates usage before loop completion without duplicating its visible blocks", () => {
+  const active = reduceProjection(emptyProjection(conversation), { v: 1, type: "turn_started", conversationId: conversation.id, turnId: "loop", attempt: 1, seq: 1, modelProfileId: "model", providerModel: "provider" });
+  const message = storedMessage({ id: "round", seq: 2, loopId: "loop", message: { role: "assistant", content: [{ type: "text", text: "Working" }] }, usage: { input: 100, output: 10, total: 110 } });
+  const event = { v: 1 as const, type: "message_saved" as const, conversationId: conversation.id, turnId: "loop", attempt: 1, seq: 2, message };
+  const next = reduceProjection(active, event);
+  expect(next.messages[0]?.usage?.total).toBe(110);
+  expect(next.activeTurn?.turnId).toBe("loop");
+  expect(visibleMessages(next)).toEqual([]);
+  expect(reduceProjection(next, event)).toBe(next);
 });

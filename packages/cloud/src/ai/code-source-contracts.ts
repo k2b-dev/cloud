@@ -1,7 +1,8 @@
 import { z } from "zod";
+import { CodeResourceId } from "./browser-code-contracts";
 
 // Flat Assistant tool inputs. The owning service also validates its domain contracts.
-const Id = z.object({ id: z.uuid().describe("Saved app or script ID returned by code_create or code_list.") }).strict();
+const Id = z.object({ id: CodeResourceId }).strict();
 const Page = z.number().int().min(1).max(100000).default(1);
 const ArtifactKind = z.enum(["app", "script"]);
 const ArtifactPath = z
@@ -106,13 +107,20 @@ export const CODE_SOURCE_TOOLS = {
   },
   code_create: {
     description:
-      "Create a private reusable resource with kind app for an interactive UI or script for reusable code. For one-off analysis, use code_run with code instead. Returns id and entry path; write source with code_write. Does not run or share anything.",
+      "Create a private reusable resource with kind app for an interactive UI or script for reusable code. For one-off analysis, use code_run with code instead. Returns id and entry path; write source with code_write. Optional icon uses the complete class, e.g. ti ti-chart-bar; omit it when unsure. Does not run or share anything.",
     input: ArtifactCreate.pick({ kind: true, title: true, description: true, icon: true }),
   },
   code_write: {
     description:
-      "Create or overwrite one complete file and save immediately. Other files stay unchanged. Saves incomplete code too and returns compiler diagnostics. No revision or separate save call needed; never auto-runs.",
-    input: Id.extend(ArtifactFile.shape),
+      "Atomically save a batch of source/data files against expectedRevision from code_read/create. Other files stay unchanged. Returns the new revision and compiler diagnostics; never runs. Use fromChatFile with exact path and version to copy data without putting its contents in the model response. Import .json as data or .csv/.txt as text.",
+    input: Id.extend({
+      expectedRevision: z.number().int().positive(),
+      entry: ArtifactPath.optional(),
+      files: z.array(z.union([ArtifactFile, z.object({
+        path: ArtifactPath,
+        fromChatFile: z.object({ path: z.string().startsWith("/"), version: z.number().int().positive() }).strict(),
+      }).strict()])).min(1).max(64),
+    }),
   },
   code_remove: {
     description:

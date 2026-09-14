@@ -242,3 +242,9 @@ in chronological order, and loading older messages preserves the reader's positi
 Feedback actions can set `pressedTone="success"` or `pressedTone="danger"` to
 mark their selected state with the semantic icon color and no persistent
 background. `pressed` continues to expose the toggle state to assistive technology.
+
+Activity rows keep their label and muted metadata on one line. Use `renderBody`
+for expensive diagnostic details: it is mounted only while the activity is open.
+Use a bounded, keyboard-focusable scrolling region for long input/output payloads.
+Busy activity uses the same text shimmer as inline guidance, with reduced-motion
+and forced-colors support. Waiting for user input is a separate state.

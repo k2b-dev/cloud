@@ -802,11 +802,11 @@ const appendTurnOwnedMessage = async (input: {
   loopId: string | null;
   modelProfileId?: string | null;
   meta?: AiStoredMessage["meta"];
-}): Promise<boolean> => {
+}): Promise<AiStoredMessage | null> => {
   const { usage, providerModel, stopReason } = messageColumns(input.message);
   const rows = await withAiShortId(
     "idx_ai_messages_conversation_short_id",
-    (shortId) => sql<{ id: string }[]>`
+    (shortId) => sql<MessageRow[]>`
     INSERT INTO ai.messages (
       short_id,
       conversation_id,
@@ -845,14 +845,14 @@ const appendTurnOwnedMessage = async (input: {
         AND status IN ('running', 'waiting_for_action')
         AND lease_owner = ${input.leaseOwner}
     )
-    RETURNING id
+    RETURNING *
   `,
   );
   if (rows[0]) {
     await sql`UPDATE ai.conversations SET updated_at = now() WHERE id = ${input.conversationId}`;
-    return true;
+    return rowToMessage(rows[0]);
   }
-  return false;
+  return null;
 };
 
 const toolMessageMeta = (
@@ -2364,6 +2364,7 @@ export const aiConversations: AiConversationService = {
           conversationId: input.conversationId,
           message: input.userMessage,
           loopId: turn.id,
+          meta: input.expectedDraftRevision === undefined ? undefined : { submittedDraftRevision: input.expectedDraftRevision },
         },
         tx,
       );
@@ -3112,6 +3113,7 @@ export const aiConversations: AiConversationService = {
         if (!appended) {
           throw new Error("AI turn lost its lease while writing a message.");
         }
+        await input.onMessage?.(appended);
         return;
       }
 

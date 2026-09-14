@@ -133,7 +133,7 @@ export type DelimitedTextPreview = {
 
 export const parseDelimitedText = (
   input: string,
-  delimiter: "," | "\t",
+  delimiter: string,
   limits: { rows?: number; columns?: number } = {},
 ): DelimitedTextPreview => {
   const maxRows = Math.max(1, limits.rows ?? 201);

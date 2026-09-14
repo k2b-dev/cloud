@@ -450,3 +450,22 @@ export const aiFileStore = {
 /** Authorized services may expose this read after resolving the conversation owner. */
 export const listAiConversationFiles = (conversationId: string, prefix?: string): Promise<AiFileStat[]> =>
   aiFileStore.list({ conversationId, prefix });
+
+/** Authorized byte-preserving read for app-owned artifact importers. */
+export async function readAiConversationFile(input: { conversationId: string; ownerUserId: string; path: string; version: number }): Promise<AiFileContent | null> {
+  const { aiConversations } = await import("./store");
+  const conversation = await aiConversations.getConversation({ conversationId: input.conversationId, ownerUserId: input.ownerUserId });
+  if (!conversation || conversation.archivedAt) return null;
+  const file = await aiFileStore.read(input);
+  return file?.version === input.version ? file : null;
+}
+
+/** Save one agent-produced file without overwriting an existing or user-edited file. */
+export async function createAiConversationArtifact(input: {
+  conversationId: string; ownerUserId: string; path: string; bytes: Uint8Array; mediaType: string; producerCallKey: string;
+}): Promise<AiFileStat> {
+  const { aiConversations } = await import("./store");
+  const conversation = await aiConversations.getConversation({conversationId:input.conversationId,ownerUserId:input.ownerUserId});
+  if (!conversation || conversation.archivedAt) throw new Error("Conversation access denied");
+  return aiFileStore.createToolArtifact(input);
+}

@@ -119,14 +119,11 @@ export const buildAiMessageTimeline = (messages: AiStoredMessage[]): AiMessageTi
       index += 1;
     }
 
-    // Preferred: nessi's measured timing — generation + tool execution, which
-    // deliberately excludes approval/client waits ("worked", not "waited").
-    // Fallback for legacy loops: user message submitted → last round persisted.
-    const timing = entries.findLast((candidate) => candidate.loopAggregate?.timing)?.loopAggregate?.timing;
+    // Durable timestamps span all executor resumes, including tool/client waits.
     const startedAt =
       loopId && lastUserEntry?.loopId === loopId ? timestampMs(lastUserEntry.createdAt) : timestampMs(entries[0]?.createdAt);
     const finishedAt = timestampMs(entries.at(-1)?.createdAt);
-    const workedMs = timing?.totalElapsedMs ?? (startedAt !== null && finishedAt !== null ? Math.max(0, finishedAt - startedAt) : 0);
+    const workedMs = startedAt !== null && finishedAt !== null ? Math.max(0, finishedAt - startedAt) : 0;
 
     const blocks = [
       ...steerBlocks,

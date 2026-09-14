@@ -8,9 +8,24 @@ export type AiToolDisclosureState = {
 
 export const createAiToolDisclosureState = (): AiToolDisclosureState => {
   const openByBlockId = new Map<string, boolean>();
+  const storageKey = (blockId: string) => `cloud.ai.tool-disclosure:${blockId}`;
   return {
-    get: (blockId) => openByBlockId.get(blockId),
-    set: (blockId, open) => openByBlockId.set(blockId, open),
+    get: (blockId) => {
+      if (!openByBlockId.has(blockId)) {
+        try {
+          const saved = window.sessionStorage.getItem(storageKey(blockId));
+          if (saved === "open") openByBlockId.set(blockId, true);
+        } catch { /* SSR and disabled storage keep the in-memory state. */ }
+      }
+      return openByBlockId.get(blockId);
+    },
+    set: (blockId, open) => {
+      openByBlockId.set(blockId, open);
+      try {
+        if (open) window.sessionStorage.setItem(storageKey(blockId), "open");
+        else window.sessionStorage.removeItem(storageKey(blockId));
+      } catch { /* Storage limits must not prevent expanding a tool. */ }
+    },
   };
 };
 

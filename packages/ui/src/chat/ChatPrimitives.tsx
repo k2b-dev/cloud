@@ -43,6 +43,8 @@ export type ChatActivityProps = {
   bodyInset?: boolean;
   anchorId?: string | number;
   children?: JSX.Element;
+  /** Mount expensive details only while expanded. */
+  renderBody?: () => JSX.Element;
   class?: string;
 };
 
@@ -307,11 +309,13 @@ const ActivityContent = (props: ChatActivityProps & { disclosure?: boolean }) =>
 );
 
 export function ChatActivity(props: ChatActivityProps): JSX.Element {
+  const [expanded, setExpanded] = createSignal(props.defaultOpen ?? false);
+  const open = () => props.open ?? expanded();
   const tone = () => props.tone ?? "neutral";
   const style = () => (props.accent ? { "--k2b-chat-activity-accent": props.accent } : undefined);
   return (
     <Show
-      when={props.children}
+      when={props.renderBody || props.children}
       fallback={
         <div
           class={`k2b-chat-activity ${props.class ?? ""}`}
@@ -336,14 +340,14 @@ export function ChatActivity(props: ChatActivityProps): JSX.Element {
         data-body-inset={props.bodyInset === false ? "false" : undefined}
         data-chat-anchor={props.anchorId !== undefined ? String(props.anchorId) : undefined}
         style={style()}
-        open={props.open ?? props.defaultOpen}
-        onToggle={(event) => props.onOpenChange?.(event.currentTarget.open)}
+        open={open()}
+        onToggle={(event) => { setExpanded(event.currentTarget.open); props.onOpenChange?.(event.currentTarget.open); }}
         aria-busy={props.busy ? "true" : undefined}
       >
         <summary class="k2b-chat-activity__row">
           <ActivityContent {...props} disclosure />
         </summary>
-        <div class="k2b-chat-activity__body">{props.children}</div>
+        <div class="k2b-chat-activity__body">{props.renderBody ? <Show when={open() ? props.renderBody : undefined}>{(render) => render()()}</Show> : props.children}</div>
       </details>
     </Show>
   );

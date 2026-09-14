@@ -20,9 +20,11 @@ test("bundled code mode skill matches its canonical Markdown files", async () =>
 test("code mode reference examples compile with the artifact runtime", async () => {
   const document = await Bun.file(new URL("../../skills/code-mode/references/examples.md", import.meta.url)).text();
   const examples = [...document.matchAll(/```js\n([\s\S]*?)\n```/g)].map((match) => match[1]!);
-  expect(examples).toHaveLength(3);
+  expect(examples).toHaveLength(4);
+  const csv = document.match(/```csv\n([\s\S]*?)\n```/)?.[1];
+  expect(csv).toBeDefined();
   for (const content of examples) {
-    const compiled = await compileArtifact({ entry: "main.js", files: [{ path: "main.js", content }] });
+    const compiled = await compileArtifact({ entry: "main.js", files: [{ path: "main.js", content },{path:"sales.csv",content:csv!}] });
     expect(compiled.code).toContain("__artifactStart");
   }
 });

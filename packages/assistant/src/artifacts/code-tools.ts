@@ -1,11 +1,11 @@
 import { artifactDatabase, DatabaseError } from "./database";
-import { CODE_SOURCE_TOOLS } from "@k2b/cloud/ai";
+import { CODE_SOURCE_TOOLS, readAiConversationFile } from "@k2b/cloud/ai";
 import { CAPABILITY_MAX_RESULT_BYTES } from "@k2b/cloud/contracts";
 import type { ArtifactIdentity } from "./service";
 import { fail, ok } from "@k2b/stdlib";
 import { z } from "zod";
 import { LIMITS } from "./contracts";
-import { artifacts, ArtifactError } from "./service";
+import { artifacts, ArtifactError, user } from "./service";
 import { artifactMessages } from "./messages";
 import { sourceDiagnostics, sourceManifest } from "./source";
 
@@ -128,10 +128,26 @@ export const artifactCodeHandlers = {
       );
       return { data: sourceManifest(created), ...links(created.id) };
     }),
-  code_write: ({ id, path, content }, context) =>
+  code_write: ({ id, files, expectedRevision, entry }, context) =>
     result(context, async () => {
-      const saved = await artifacts.writeFile(id, path, content, context);
-      return { data: { id, path, saved: true, diagnostics: await sourceDiagnostics(saved.source) } };
+      // Authorize the destination before loading any source data.
+      const current = await artifacts.get(id, context);
+      if (current.permission !== "admin") throw new ArtifactError("ACCESS_DENIED");
+      if (current.revision !== expectedRevision) throw new ArtifactError("CONFLICT");
+      const resolved = [];
+      for (const file of files) {
+        if ("content" in file) { resolved.push(file); continue; }
+        if (!context.conversationId) throw new ArtifactError("ACCESS_DENIED");
+        const data = await readAiConversationFile({ conversationId: context.conversationId, ownerUserId: user(context).id, ...file.fromChatFile });
+        if (!data) throw new ArtifactError("CONFLICT");
+        if (data.bytes.byteLength > LIMITS.fileBytes) throw new ArtifactError("INVALID_INPUT");
+        let content: string;
+        try { content = new TextDecoder("utf-8", { fatal: true }).decode(data.bytes); }
+        catch { throw new ArtifactError("INVALID_INPUT"); }
+        resolved.push({ path: file.path, content });
+      }
+      const saved = await artifacts.writeFiles(id, { files: resolved, expectedRevision, entry }, context);
+      return { data: { ...sourceManifest(saved), saved: true, imported: files.filter(file => "fromChatFile" in file), diagnostics: await sourceDiagnostics(saved.source) }, ...links(id) };
     }),
   code_remove: ({ id, path }, context) =>
     result(context, async () => {

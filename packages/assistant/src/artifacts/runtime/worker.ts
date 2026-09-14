@@ -12,6 +12,12 @@ import { ModalRequest } from "./modal-schema";
 
 type Definition = () => unknown;
 const send = globalThis.postMessage.bind(globalThis);
+function sendOutput(value: unknown) {
+  if (!z.json().safeParse(value).success) {
+    throw new Error("Output must be JSON data. Replace undefined values with null. Do not return UI handles, functions, or class instances. Inspect input columns before calculating derived fields.");
+  }
+  send({type:"output",value});
+}
 let nodes: UiNode[] = [];
 let requestId = 0, scheduled = false;
 const filePaths = new WeakMap<File, string>();
@@ -49,7 +55,7 @@ function flush() {
   scheduled = true;
   flushTimer = setTimeout(flushNow, 100);
 }
-const textError = (e: unknown) => (e instanceof Error ? (e.stack ?? e.message) : String(e));
+const textError = (e: unknown) => e instanceof z.ZodError ? z.prettifyError(e) : (e instanceof Error ? (e.stack ?? e.message) : String(e));
 let logWindow = Date.now(), logCount = 0, suppressedLogs = 0;
 for (const level of ["log", "info", "warn", "error"] as const) {
   console[level] = (...args: unknown[]) => {
@@ -150,7 +156,7 @@ const api = {
     path: (file: File) => filePaths.get(file) ?? file.name,
     save: (data: Blob | string, name: string) => rpc("file.save", [data, name]),
   },
-  work: createWork(state => send({type:"work",...state}), value => send({type:"output",value}), error => send({type:"error",text:textError(error).slice(0,LIMITS.text)})),
+  work: createWork(state => send({type:"work",...state}), sendOutput, error => send({type:"error",text:textError(error).slice(0,LIMITS.text)})),
   pdf,
   sheet: {
     openExcel: excel.open,
@@ -222,9 +228,10 @@ Object.defineProperty(globalThis, "__artifactStart", {
     if (started) return;
     started = true;
     try {
+      if (typeof definition !== "function") throw new Error("The entry module must default-export a function: export default () => { /* create UI or return data */ }. An exported object is not executable.");
       const result = await definition();
       if (result !== undefined) {
-        try { send({ type: "output", value: result }); }
+        try { sendOutput(result); }
         catch (error) {
           if (error instanceof Error && error.name === "DataCloneError") throw new Error("Entry output must be serializable data. Do not return UI handles or functions; create the UI without returning it.");
           throw error;

@@ -14,6 +14,15 @@ export function resolveSourceImport(importer: string, specifier: string): string
   return parts.join("/");
 }
 
+function resolveSourceFile(importer: string, specifier: string, files: ReadonlyMap<string, string>): string {
+  const path = resolveSourceImport(importer, specifier);
+  if (files.has(path)) return path;
+  const candidates = /\.[^/]+$/.test(path) ? [] : [path + ".ts", path + ".js"].filter(candidate => files.has(candidate));
+  if (candidates.length === 1) return candidates[0]!;
+  if (candidates.length > 1) throw new Error(`Ambiguous import ${JSON.stringify(specifier)} in ${importer}: use ${candidates.join(" or ")} explicitly.`);
+  throw new Error(`Missing source file for import ${JSON.stringify(specifier)} in ${importer}. Save the referenced module before running the app.`);
+}
+
 let runtime: Promise<string> | undefined;
 export function runtimeSource(): Promise<string> {
   if (process.env.NODE_ENV === "production")
@@ -41,7 +50,7 @@ export async function compileArtifact(input: unknown) {
       builder.onResolve({ filter: /.*/ }, (args) => ({
         path: args.path === "__artifact_entry__" ? args.path
           : args.importer === "__artifact_entry__" ? source.entry
-          : resolveSourceImport(args.importer, args.path),
+          : resolveSourceFile(args.importer, args.path, files),
         namespace: "artifact",
       }));
       builder.onLoad({ filter: /.*/, namespace: "artifact" }, (args) => {
@@ -49,12 +58,14 @@ export async function compileArtifact(input: unknown) {
           ? `import entry from ${JSON.stringify("./" + source.entry)}; globalThis.__artifactStart(entry);`
           : files.get(args.path);
         if (contents === undefined) throw new Error(`Missing source file: ${args.path}`);
+        if (args.path.endsWith(".json")) return { contents, loader: "json" };
+        if (/\.(?:csv|tsv|txt)$/.test(args.path)) return { contents, loader: "text" };
         if (args.path !== "__artifact_entry__" && !/\.(?:js|ts)$/.test(args.path))
-          throw new Error("Only JavaScript and TypeScript modules can be imported");
+          throw new Error("Import JavaScript, TypeScript, JSON, CSV, TSV or text files.");
         return { contents, loader: args.path.endsWith(".ts") ? "ts" : "js" };
       });
     } }],
-  });
+  }).catch(error => { throw new Error(compilationDiagnostic(error)); });
   if (!build.success) throw new Error(build.logs.join("\n"));
   return { code: await build.outputs[0]!.text(), runtime: runtimeCode };
 }

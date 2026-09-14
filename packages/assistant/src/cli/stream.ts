@@ -209,6 +209,10 @@ export const streamAssistantTurn = async (input: {
       return handleToolBlock(event.block, previous);
     }
 
+    if (event.type === "message_saved") {
+      emitJsonLine({type:"usage",messageId:event.message.id,usage:event.message.usage});
+      return null;
+    }
     const messages = event.messages ?? [];
     const result = {
       conversationId,

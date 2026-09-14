@@ -22,7 +22,7 @@ describe("AI short IDs", () => {
       "short_id_unique",
       async (_attempt, shortId) => {
         attempts.push(shortId);
-        if (shortId === "AAAAAA") throw { code: "23505", constraint: "short_id_unique" };
+        if (shortId === "AAAAAA") throw { code: "ERR_POSTGRES_SERVER_ERROR", errno: "23505", constraint: "short_id_unique" };
         return shortId;
       },
       () => ids.shift()!,

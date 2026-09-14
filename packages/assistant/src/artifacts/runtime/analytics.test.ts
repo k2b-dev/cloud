@@ -176,3 +176,17 @@ test("unchanged filters reuse the snapshot while explicit refresh loads again", 
   await group.refresh();
   expect(loads).toBe(1);
 });
+
+test("KPI handles retain raw numeric values, default to unavailable and reject invalid updates",()=>{
+  const runtime=createAnalyticsUi(()=>{});
+  const stat=runtime.ui.stat({id:"revenue",label:"Revenue",format:{type:"currency",currency:"EUR"}});
+  expect(runtime.snapshot()[0]).toMatchObject({type:"stat",value:null});
+  stat.setValue(123.4567);
+  expect(runtime.snapshot()[0]).toMatchObject({value:123.4567});
+  stat.setOptions({description:"Validated snapshot",trend:[1,2,3]});
+  stat.setLoading(true);
+  expect(runtime.snapshot()[0]).toMatchObject({loading:true,description:"Validated snapshot",trend:[1,2,3]});
+  expect(()=>stat.setValue(Number.NaN)).toThrow();
+  expect(runtime.snapshot()[0]).toMatchObject({value:123.4567});
+  expect(()=>runtime.ui.text({id:"revenue",value:"duplicate"})).toThrow('Duplicate UI id "revenue"');
+});

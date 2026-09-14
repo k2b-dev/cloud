@@ -1,3 +1,6 @@
+import { evaluateCodeMode } from "./code-mode.eval";
+import { loadAssistantChatContextSnapshot } from "../chat-context";
+import { agentHost } from "./agent-host";
 import { httpService } from "./http-service";
 import { secrets } from "@k2b/cloud/services";
 import { HttpPrepare } from "./http-contracts";
@@ -9,7 +12,7 @@ import { z } from "zod";
 import { ok } from "@k2b/stdlib";
 import { runtimeCapabilities } from "./capability-runtime";
 import { beforeAll, afterAll, describe, expect, test, spyOn } from "bun:test";
-import { aiConversations, aiProjects, aiToolAudit } from "@k2b/cloud/ai";
+import { aiConversations, aiProjects, aiToolAudit, aiChatTasks } from "@k2b/cloud/ai";
 import { sql } from "bun";
 import { migrateArtifacts } from "./migrate";
 import { artifacts } from "./service";
@@ -33,7 +36,10 @@ const isolated = /\/cloud_assistant_artifacts_test(?:\?|$)/.test(process.env.DAT
     await sql`CREATE SCHEMA ai`;
     await sql`CREATE TABLE ai.conversations(id uuid PRIMARY KEY,created_by_user_id uuid,archived_at timestamptz)`;
     await sql`CREATE TABLE ai.turns(id uuid PRIMARY KEY,status text)`;
-    await sql`CREATE TABLE ai.tool_calls(request_id text,conversation_id uuid,turn_id uuid,location text)`;
+    await sql`CREATE TABLE ai.files(conversation_id uuid,path text,bytes bytea,size bigint,media_type text,origin text,producer_call_key text,dictation_recorded_at timestamptz,updated_at timestamptz DEFAULT now(),version bigint DEFAULT 1,PRIMARY KEY(conversation_id,path))`;
+    await sql`CREATE TABLE ai.dictations(conversation_id uuid,source_bytes bytea)`;
+
+    await sql`CREATE TABLE ai.tool_calls(request_id text,conversation_id uuid,turn_id uuid,location text,call_id text,tool_name text,status text,started_at timestamptz,UNIQUE(turn_id,call_id))`;
     await sql`CREATE TABLE ai.tool_approval_preferences(id uuid DEFAULT gen_random_uuid(),actor_user_id uuid,tool_name text,approval_scope text,created_at timestamptz DEFAULT now(),last_used_at timestamptz,expires_at timestamptz)`;
     await sql`CREATE SCHEMA auth`;
     await sql`CREATE TYPE auth.permission_level AS ENUM ('none','read','write','admin')`;
@@ -49,7 +55,7 @@ const isolated = /\/cloud_assistant_artifacts_test(?:\?|$)/.test(process.env.DAT
     // Fixtures use the canonical access rows; grant mutation checks are tested below.
     for (const [who,permission] of [[reader,"read"],[editor,"write"]] as const) {
       const [grant] = await sql<{ id: string }[]>`INSERT INTO auth.access(user_id,permission) VALUES(${who.user!.id}::uuid,${permission}::auth.permission_level) RETURNING id`;
-      await sql`INSERT INTO assistant.artifact_access VALUES(${id}::uuid,${grant!.id}::uuid)`;
+      await sql`INSERT INTO assistant.artifact_access VALUES((SELECT id FROM assistant.artifacts WHERE short_id=${id}),${grant!.id}::uuid)`;
     }
   });
   afterAll(async () => { await sql.close(); });
@@ -104,7 +110,7 @@ const isolated = /\/cloud_assistant_artifacts_test(?:\?|$)/.test(process.env.DAT
   });
 
   test("context titles expose only currently accessible apps", async () => {
-    expect(await artifacts.describe([id, "invalid"], owner.user.id)).toEqual([{ id, title: "Analysis", description: "", icon: "ti ti-app-window" }]);
+    expect(await artifacts.describe([id, "invalid"], owner.user.id)).toEqual([{ id, title: "Analysis", description: "", icon: "ti ti-app-window",kind:"app",revision:1,publishedVersion:null }]);
     expect(await artifacts.describe([id], stranger.user.id)).toEqual([]);
   });
   test("descriptions round-trip without source writes erasing them", async () => {
@@ -162,7 +168,7 @@ const isolated = /\/cloud_assistant_artifacts_test(?:\?|$)/.test(process.env.DAT
     await sql`INSERT INTO auth.group_groups_v2 VALUES(${parent}::uuid,${child}::uuid)`;
     await sql`INSERT INTO auth.user_groups_v2 VALUES(${stranger.user.id}::uuid,${child}::uuid)`;
     const [grant] = await sql<{id: string}[]>`INSERT INTO auth.access(group_id,permission) VALUES(${parent}::uuid,'read') RETURNING id`;
-    await sql`INSERT INTO assistant.artifact_access VALUES(${id}::uuid,${grant!.id}::uuid)`;
+    await sql`INSERT INTO assistant.artifact_access VALUES((SELECT id FROM assistant.artifacts WHERE short_id=${id}),${grant!.id}::uuid)`;
     expect((await artifacts.get(id,stranger)).sourceRevision).toBe(1);
     expect((await artifacts.list(stranger)).items.map(a => a.id)).toContain(id);
     await artifacts.unpublish(id,owner);
@@ -182,7 +188,7 @@ const isolated = /\/cloud_assistant_artifacts_test(?:\?|$)/.test(process.env.DAT
 
   test("the final manager cannot be removed and foreign grants cannot be changed", async () => {
     const [grant] = await sql<{ access_id: string }[]>`SELECT link.access_id FROM assistant.artifact_access link
-      JOIN auth.access a ON a.id=link.access_id WHERE link.artifact_id=${id}::uuid AND a.permission='admin'`;
+      JOIN auth.access a ON a.id=link.access_id WHERE link.artifact_id=(SELECT id FROM assistant.artifacts WHERE short_id=${id}) AND a.permission='admin'`;
     await expect(artifacts.changeGrant(id,grant!.access_id,null,owner)).rejects.toMatchObject({ code: "LAST_MANAGER" });
     await expect(artifacts.changeGrant(id,crypto.randomUUID(),null,owner)).rejects.toMatchObject({ code: "NOT_FOUND" });
   });
@@ -203,7 +209,7 @@ const isolated = /\/cloud_assistant_artifacts_test(?:\?|$)/.test(process.env.DAT
     const created = await artifactCodeHandlers.code_create({ kind: "app", title: "Agent test" }, context);
     if (!created.ok) throw new Error(created.error.message);
     const id = created.data.data.id;
-    const write = (path: string, content: string) => artifactCodeHandlers.code_write({ id, path, content }, context);
+    const write = async (path: string, content: string) => artifactCodeHandlers.code_write({ id, expectedRevision: (await artifacts.get(id, owner)).revision, files: [{ path, content }] }, context);
     const intermediate = await write("main.ts", 'import {value} from "./helper.ts"; export default () => value;');
     expect(intermediate).toMatchObject({ ok: true, data: { data: { saved: true } } });
     if (!intermediate.ok) throw new Error("Write failed");
@@ -211,12 +217,16 @@ const isolated = /\/cloud_assistant_artifacts_test(?:\?|$)/.test(process.env.DAT
     expect(await write("helper.ts", "export const value = 42;"))
       .toMatchObject({ ok: true, data: { data: { saved: true, diagnostics: [] } } });
     expect((await artifacts.get(id, owner)).source.files).toHaveLength(2);
-    await Promise.all([write("a.ts", "export const a=1;"), write("b.ts", "export const b=2;")]);
+    const expectedRevision = (await artifacts.get(id, owner)).revision;
+    const batch = await artifactCodeHandlers.code_write({ id, expectedRevision, files: [{ path: "a.ts", content: "export const a=1;" }, { path: "b.ts", content: "export const b=2;" }] }, context);
+    expect(batch).toMatchObject({ ok: true });
+    expect((await artifacts.get(id, owner)).revision).toBe(expectedRevision + 1);
+    expect(await artifactCodeHandlers.code_write({ id, expectedRevision, files: [{ path: "a.ts", content: "stale" }] }, context)).toMatchObject({ ok: false, error: { code: "CONFLICT" } });
     expect((await artifacts.get(id, owner)).source.files).toHaveLength(4);
     await write("main.ts", "export default !!!");
     expect(await artifactCodeHandlers.code_read({ id, path: "main.ts", offset: 0 }, context))
       .toMatchObject({ ok: true, data: { data: { content: "export default !!!", complete: true } } });
-    expect(await artifactCodeHandlers.code_write({ id, path: "main.ts", content: "x" }, { ...context, ...stranger }))
+    expect(await artifactCodeHandlers.code_write({ id, expectedRevision: 1, files: [{ path: "main.ts", content: "x" }] }, { ...context, ...stranger }))
       .toMatchObject({ ok: false, error: { code: "ACCESS_DENIED" } });
     expect(await artifactCodeHandlers.code_remove({ id, path: "main.ts" }, context))
       .toMatchObject({ ok: true, data: { data: { removed: true } } });
@@ -251,7 +261,7 @@ const isolated = /\/cloud_assistant_artifacts_test(?:\?|$)/.test(process.env.DAT
       await clientCalls.complete({ ...winner, result: { opened: id } }, owner);
       expect(await clientCalls.claim(loser, owner)).toEqual({ status: "done", result: { opened: id } });
       await expect(clientCalls.claim(first, stranger)).rejects.toMatchObject({ code: "NOT_FOUND" });
-      await expect(clientCalls.claim({ ...first, input: { ...input, id: crypto.randomUUID() } }, owner)).rejects.toMatchObject({ code: "INVALID_INPUT" });
+      await expect(clientCalls.claim({ ...first, input: { ...input, id: "Xyz789" } }, owner)).rejects.toMatchObject({ code: "INVALID_INPUT" });
       await sql`UPDATE assistant.artifact_client_calls SET result=NULL, created_at=now()-interval '10 minutes' WHERE turn_id=${turnId}::uuid`;
       // Human approval can take longer than the old fixed execution timeout.
       expect(await clientCalls.claim(winner, owner)).toEqual({ status: "pending" });
@@ -270,10 +280,10 @@ const isolated = /\/cloud_assistant_artifacts_test(?:\?|$)/.test(process.env.DAT
     await artifacts.publish(app.id,1,owner,"Initial release");
     await artifacts.writeFile(app.id,"main.js","export default () => 2",owner);
     await artifacts.writeFile(app.id,"main.js","export default () => 3",owner);
-    await sql`UPDATE assistant.artifact_revisions SET source_bytes=262144000 WHERE artifact_id=${app.id}::uuid AND revision=2`;
+    await sql`UPDATE assistant.artifact_revisions SET source_bytes=262144000 WHERE artifact_id=(SELECT id FROM assistant.artifacts WHERE short_id=${app.id}) AND revision=2`;
     await artifacts.writeFile(app.id,"main.js","export default () => 4",owner);
     expect((await artifacts.history(app.id,owner)).items.map(item=>item.revision)).toEqual([4,3,1]);
-    await sql`UPDATE assistant.artifact_revisions SET source_bytes=262144000 WHERE artifact_id=${app.id}::uuid AND revision=1`;
+    await sql`UPDATE assistant.artifact_revisions SET source_bytes=262144000 WHERE artifact_id=(SELECT id FROM assistant.artifacts WHERE short_id=${app.id}) AND revision=1`;
     await expect(artifacts.writeFile(app.id,"main.js","export default () => 5",owner)).rejects.toMatchObject({code:"STORAGE_FULL"});
     expect((await artifacts.history(app.id,owner)).items.map(item=>item.revision)).toEqual([4,3,1]);
     expect((await artifacts.get(app.id,owner)).revision).toBe(4);
@@ -395,12 +405,12 @@ const isolated = /\/cloud_assistant_artifacts_test(?:\?|$)/.test(process.env.DAT
     await artifacts.publish(resource.id,1,owner,"Initial release");
     await artifacts.grant(resource.id,{type:"user",userId:reader.user.id},"read",owner);
     await artifacts.storage(resource.id,{area:"kv",operation:"write",key:"x",content:"1"},owner);
-    await sql`INSERT INTO assistant.artifact_databases VALUES(${resource.id}::uuid,'manager_cleanup_test',false)`;
+    await sql`INSERT INTO assistant.artifact_databases VALUES((SELECT id FROM assistant.artifacts WHERE short_id=${resource.id}),'manager_cleanup_test',false)`;
     await expect(artifacts.remove(resource.id,reader)).rejects.toMatchObject({code:"ACCESS_DENIED"});
     await expect(artifactAdmin.remove(resource.id,owner)).rejects.toMatchObject({code:"ACCESS_DENIED"});
     expect(await artifacts.remove(resource.id,owner)).toMatchObject({deleted:true,databaseCleanupQueued:true});
-    expect(await sql`SELECT 1 FROM assistant.artifact_storage WHERE artifact_id=${resource.id}::uuid`).toHaveLength(0);
-    expect(await sql`SELECT 1 FROM assistant.artifact_publications WHERE artifact_id=${resource.id}::uuid`).toHaveLength(0);
+    expect(await sql`SELECT 1 FROM assistant.artifact_storage WHERE artifact_id=(SELECT id FROM assistant.artifacts WHERE short_id=${resource.id})`).toHaveLength(0);
+    expect(await sql`SELECT 1 FROM assistant.artifact_publications WHERE artifact_id=(SELECT id FROM assistant.artifacts WHERE short_id=${resource.id})`).toHaveLength(0);
     expect(await sql`SELECT 1 FROM assistant.database_cleanup WHERE namespace='manager_cleanup_test'`).toHaveLength(1);
     await expect(artifacts.get(resource.id,owner)).rejects.toMatchObject({code:"NOT_FOUND"});
   });
@@ -415,10 +425,10 @@ const isolated = /\/cloud_assistant_artifacts_test(?:\?|$)/.test(process.env.DAT
       return Response.json({name:"test",data:[]});
     }});
     try {
-      expect(await sql`SELECT 1 FROM assistant.artifact_databases WHERE artifact_id=${applet.id}::uuid`).toHaveLength(0);
+      expect(await sql`SELECT 1 FROM assistant.artifact_databases WHERE artifact_id=(SELECT id FROM assistant.artifacts WHERE short_id=${applet.id})`).toHaveLength(0);
       await expect(artifactDatabase.connect(applet.id,owner)).rejects.toMatchObject({code:"DB_NOT_CONFIGURED"});
       expect(await artifactCodeHandlers.code_sql({id:applet.id,sql:"SELECT title FROM todos",params:[]},{...owner,locale:"en",signal:new AbortController().signal})).toMatchObject({ok:false,error:{code:"DB_NOT_CONFIGURED"}});
-      expect(await sql`SELECT 1 FROM assistant.artifact_databases WHERE artifact_id=${applet.id}::uuid`).toHaveLength(0);
+      expect(await sql`SELECT 1 FROM assistant.artifact_databases WHERE artifact_id=(SELECT id FROM assistant.artifacts WHERE short_id=${applet.id})`).toHaveLength(0);
       url=upstream.url.origin;token="test-token";
       await expect(artifactDatabase.connect(applet.id,stranger)).rejects.toMatchObject({code:"ACCESS_DENIED"});
       expect(await artifactDatabase.connect(applet.id,owner)).toEqual({connected:true});
@@ -432,7 +442,7 @@ const isolated = /\/cloud_assistant_artifacts_test(?:\?|$)/.test(process.env.DAT
       await expect(artifactDatabase.call(applet.id,{operation:"query",sql:"DELETE FROM todos",params:[]},owner)).rejects.toMatchObject({code:"DB_SQL_UNSUPPORTED"});
       await artifacts.publish(applet.id,1,owner,"Initial release");
       const fork=await artifacts.fork(applet.id,owner);
-      expect(await sql`SELECT 1 FROM assistant.artifact_databases WHERE artifact_id=${fork.id}::uuid`).toHaveLength(0);
+      expect(await sql`SELECT 1 FROM assistant.artifact_databases WHERE artifact_id=(SELECT id FROM assistant.artifacts WHERE short_id=${fork.id})`).toHaveLength(0);
     } finally { settings.mockRestore(); await upstream.stop(true); }
   });
 
@@ -467,7 +477,7 @@ const isolated = /\/cloud_assistant_artifacts_test(?:\?|$)/.test(process.env.DAT
     const resource=await artifacts.create({title:"Manage data",source},owner);
     await artifacts.publish(resource.id,1,owner,"Initial release");
     const [grant]=await sql<{id:string}[]>`INSERT INTO auth.access(user_id,permission) VALUES(${reader.user.id}::uuid,'read') RETURNING id`;
-    await sql`INSERT INTO assistant.artifact_access VALUES(${resource.id}::uuid,${grant!.id}::uuid)`;
+    await sql`INSERT INTO assistant.artifact_access VALUES((SELECT id FROM assistant.artifacts WHERE short_id=${resource.id}),${grant!.id}::uuid)`;
     await artifacts.storage(resource.id,{area:"kv",operation:"write",key:"counter",content:"2"},reader);
     await artifacts.storage(resource.id,{area:"files",operation:"write",key:"keep.txt",content:"YQ=="},owner);
     await expect(artifacts.clearStorage(resource.id,"all",reader)).rejects.toMatchObject({code:"ACCESS_DENIED"});
@@ -490,7 +500,7 @@ const isolated = /\/cloud_assistant_artifacts_test(?:\?|$)/.test(process.env.DAT
     const settings=spyOn(app.settings,"get").mockImplementation(async key=>key==="assistant.rsql_url"?process.env.RSQL_TEST_URL!:"artifact-test-only");
     try{
       expect(await artifactDatabase.status(resource.id,owner)).toMatchObject({configured:true,connected:false});
-      expect(await sql`SELECT 1 FROM assistant.artifact_databases WHERE artifact_id=${resource.id}::uuid`).toHaveLength(0);
+      expect(await sql`SELECT 1 FROM assistant.artifact_databases WHERE artifact_id=(SELECT id FROM assistant.artifacts WHERE short_id=${resource.id})`).toHaveLength(0);
       await artifactDatabase.connect(resource.id,owner,undefined,true);
       await artifactDatabase.call(resource.id,{operation:"tables.create",name:"ledger",columns:[{name:"amount",type:"integer"}]},owner);
       await artifactDatabase.call(resource.id,{operation:"rows.insert",table:"ledger",rows:[{amount:1200}]},owner,undefined,"maintenance");
@@ -498,13 +508,13 @@ const isolated = /\/cloud_assistant_artifacts_test(?:\?|$)/.test(process.env.DAT
       const bytes=new Uint8Array(await backup.arrayBuffer());
       expect(new TextDecoder().decode(bytes.slice(0,15))).toBe("SQLite format 3");
       expect(await artifactDatabase.status(resource.id,owner)).toMatchObject({connected:true});
-      const [old]=await sql<{namespace:string}[]>`SELECT namespace FROM assistant.artifact_databases WHERE artifact_id=${resource.id}::uuid`;
+      const [old]=await sql<{namespace:string}[]>`SELECT namespace FROM assistant.artifact_databases WHERE artifact_id=(SELECT id FROM assistant.artifacts WHERE short_id=${resource.id})`;
       const oldGeneration=(await artifactDatabase.status(resource.id,owner)).generation;
       await Promise.all([artifactDatabase.reset(resource.id,oldGeneration,owner),artifactDatabase.reset(resource.id,oldGeneration,owner)]);
       expect(await artifactDatabase.status(resource.id,owner)).toMatchObject({connected:false});
       expect(await sql`SELECT 1 FROM assistant.database_cleanup WHERE namespace=${old!.namespace}`).toHaveLength(1);
       await artifactDatabase.connect(resource.id,owner,undefined,true);
-      const [next]=await sql<{namespace:string}[]>`SELECT namespace FROM assistant.artifact_databases WHERE artifact_id=${resource.id}::uuid`;
+      const [next]=await sql<{namespace:string}[]>`SELECT namespace FROM assistant.artifact_databases WHERE artifact_id=(SELECT id FROM assistant.artifacts WHERE short_id=${resource.id})`;
       expect(next!.namespace).not.toBe(old!.namespace);
       await expect(artifactDatabase.reset(resource.id,oldGeneration,owner)).rejects.toMatchObject({code:"CONFLICT"});
       expect(await artifactDatabase.call(resource.id,{operation:"tables.list"},owner)).toEqual([]);
@@ -537,7 +547,7 @@ const isolated = /\/cloud_assistant_artifacts_test(?:\?|$)/.test(process.env.DAT
   test("platform administration is explicit and deletion queues database cleanup", async () => {
     const applet=await artifacts.create({title:"Admin cleanup",source},owner);
     await artifacts.storage(applet.id,{area:"kv",operation:"write",key:"x",content:"1"},owner);
-    await sql`INSERT INTO assistant.artifact_databases VALUES(${applet.id}::uuid,'assistant_cleanup_test',false)`;
+    await sql`INSERT INTO assistant.artifact_databases VALUES((SELECT id FROM assistant.artifacts WHERE short_id=${applet.id}),'assistant_cleanup_test',false)`;
     await expect(artifactAdmin.list(stranger)).rejects.toMatchObject({code:"ACCESS_DENIED"});
     await expect(artifacts.get(applet.id,{...stranger,administrative:true})).rejects.toMatchObject({code:"ACCESS_DENIED"});
     const administrator={...stranger,actor:{kind:"user" as const,user:{...stranger.user,roles:["admin" as const]}}};
@@ -546,8 +556,8 @@ const isolated = /\/cloud_assistant_artifacts_test(?:\?|$)/.test(process.env.DAT
     // Platform administration does not expose all private apps in Studio.
     expect((await artifacts.list(administrator)).items.map(item=>item.id)).not.toContain(applet.id);
     expect(await artifactAdmin.remove(applet.id,administrator)).toMatchObject({deleted:true,databaseCleanupQueued:true});
-    expect(await sql`SELECT 1 FROM assistant.artifact_storage WHERE artifact_id=${applet.id}::uuid`).toHaveLength(0);
-    expect(await sql`SELECT 1 FROM assistant.artifact_databases WHERE artifact_id=${applet.id}::uuid`).toHaveLength(0);
+    expect(await sql`SELECT 1 FROM assistant.artifact_storage WHERE artifact_id=(SELECT id FROM assistant.artifacts WHERE short_id=${applet.id})`).toHaveLength(0);
+    expect(await sql`SELECT 1 FROM assistant.artifact_databases WHERE artifact_id=(SELECT id FROM assistant.artifacts WHERE short_id=${applet.id})`).toHaveLength(0);
     expect(await sql`SELECT 1 FROM assistant.database_cleanup WHERE namespace='assistant_cleanup_test'`).toHaveLength(1);
   });
 
@@ -642,4 +652,117 @@ const isolated = /\/cloud_assistant_artifacts_test(?:\?|$)/.test(process.env.DAT
       expect(index.mock.calls[0]![0]).toMatchObject({ conversationId, resources: [{ ref: { type: "assistant.artifact", id } }] });
     } finally { create.mockRestore(); index.mockRestore(); }
   });
+  test.skipIf(!process.env.ASSISTANT_EVAL_URL)("real model builds and exercises the three-CSV dashboard", async () => {
+    const conversationId=crypto.randomUUID(),turnId=crypto.randomUUID();
+    await sql`INSERT INTO ai.conversations(id,created_by_user_id) VALUES(${conversationId}::uuid,${owner.user.id}::uuid)`;
+    await sql`INSERT INTO ai.turns(id,status) VALUES(${turnId}::uuid,'running')`;
+    const conversation=spyOn(aiConversations,"getConversation").mockImplementation(async request=>request.ownerUserId !== owner.user.id ? null : ({
+      id:conversationId,shortId:"abc234",title:"Host test",titleSource:"user",description:"",descriptionSource:"user",keywords:[],pinnedAt:null,archivedAt:null,
+      runStatus:"running",runError:null,unreadCompletion:false,projectId:null,draft:{content:[],revision:1,updatedAt:null},createdByUserId:owner.user.id,
+      createdAt:new Date().toISOString(),updatedAt:new Date().toISOString(),
+    }));
+    const turn=spyOn(aiConversations,"getActiveTurn").mockResolvedValue({turn:{id:turnId,shortId:"abc345",conversationId,status:"running",attempt:1,modelProfileId:null,
+      createdAt:new Date().toISOString(),completedAt:null,error:null},liveBlocks:[],liveSeq:1});
+    try {
+      const result=await evaluateCodeMode({...owner,conversationId,locale:"de",signal:AbortSignal.timeout(1_200_000)},turnId);
+      expect(result.apps).toHaveLength(1);
+      const app=result.apps[0]!;
+      const runs=result.history.filter(entry=>entry.message.role==="tool_result").map(entry=>entry.message.role==="tool_result"?entry.message.result:null);
+      expect(runs).toContainEqual(expect.objectContaining({id:app.id,revision:app.revision,status:"ready"}));
+      expect(result.history.filter(entry=>entry.message.role==="tool_result"&&entry.message.name==="code_interact").length).toBeGreaterThanOrEqual(3);
+    } finally {await agentHost.close();conversation.mockRestore();turn.mockRestore();}
+  },1_230_000);
+  test("server-owned code survives caller detachment, deduplicates calls and never replays a lost host", async () => {
+    const conversationId=crypto.randomUUID(),turnId=crypto.randomUUID();
+    await sql`INSERT INTO ai.conversations(id,created_by_user_id) VALUES(${conversationId}::uuid,${owner.user.id}::uuid)`;
+    await sql`INSERT INTO ai.turns(id,status) VALUES(${turnId}::uuid,'running')`;
+    const conversation=spyOn(aiConversations,"getConversation").mockImplementation(async request=>request.ownerUserId !== owner.user.id ? null : ({
+      id:conversationId,shortId:"abc234",title:"Host test",titleSource:"user",description:"",descriptionSource:"user",keywords:[],pinnedAt:null,archivedAt:null,
+      runStatus:"running",runError:null,unreadCompletion:false,projectId:null,draft:{content:[],revision:1,updatedAt:null},createdByUserId:owner.user.id,
+      createdAt:new Date().toISOString(),updatedAt:new Date().toISOString(),
+    }));
+    const turn=spyOn(aiConversations,"getActiveTurn").mockResolvedValue({turn:{id:turnId,shortId:"abc345",conversationId,status:"running",attempt:1,modelProfileId:null,
+      createdAt:new Date().toISOString(),completedAt:null,error:null},liveBlocks:[],liveSeq:1});
+    const abort=new AbortController();
+    const context={...owner,conversationId,locale:"en",signal:abort.signal};
+    const call={turnId,callId:"server-run",name:"code_run" as const,args:{code:"export default () => ({answer:42,serverProcess:typeof process})"}};
+    const wait=async(input:Parameters<typeof agentHost.call>[0])=>{
+      for(let i=0;i<200;i++) {const result=await agentHost.call(input,{...context,signal:new AbortController().signal});if(result.status!=="running"&&result.status!=="busy")return result;await Bun.sleep(25);}
+      throw new Error("Managed host test did not finish");
+    };
+    try {
+      const starts=await Promise.all([agentHost.call(call,context),agentHost.call(call,context)]);
+      expect(starts.every(result=>["running","busy"].includes(result.status))).toBe(true);
+      abort.abort(); // Detaching the HTTP caller must not terminate the owned execution.
+      const observers=await Promise.all(Array.from({length:8},()=>wait(call)));
+      expect(observers.every(result=>result.status==="done")).toBe(true);
+      const result=observers[0]!;
+      expect(result).toMatchObject({status:"done",result:{status:"ready",output:'{"answer":42,"serverProcess":"undefined"}'}});
+      expect(await wait(call)).toEqual(result);
+      const [count]=await sql<{count:number}[]>`SELECT count(*)::int AS count FROM assistant.artifact_agent_calls WHERE turn_id=${turnId}::uuid`;
+      expect(count!.count).toBe(1);
+      const syntax = await wait({...call,callId:"syntax-error",args:{code:"export default () => { const broken = ; }"}});
+      expect(syntax).toMatchObject({status:"done",result:{error:expect.stringContaining("Unexpected")}});
+      expect(JSON.stringify(syntax)).not.toContain("artifact request failed");
+      await expect(agentHost.call({...call,args:{code:"export default ()=>43"}},context)).rejects.toThrow("input changed");
+      await expect(agentHost.call(call,{...context,...stranger})).rejects.toThrow();
+      const inspect={...call,name:"code_inspect" as const,callId:"server-inspect",args:{runId:call.callId}};
+      expect(await wait(inspect)).toMatchObject({status:"done",result:{runId:call.callId,status:"ready"}});
+      const generated=Array.from({length:1000},(_,index)=>({index,amount:"123456789.123400",region:"Süd"}));
+      const produce={...call,callId:"produce-data",args:{code:`export default async()=>{await files.save(JSON.stringify(${JSON.stringify(generated)}),"data.json");return "saved";}`}};
+      expect(await wait(produce)).toMatchObject({status:"done",result:{status:"ready"}});
+      const exported=await wait({...call,name:"code_export",callId:"export-data",args:{runId:produce.callId,name:"data.json"}});
+      const file=z.object({path:z.string(),version:z.number()}).parse("result" in exported ? exported.result : null);
+      const resource=await artifacts.create({title:"Imported data",source},owner);
+      const written=await artifactCodeHandlers.code_write({id:resource.id,expectedRevision:1,entry:"main.ts",files:[
+        {path:"data.json",fromChatFile:file},{path:"main.ts",content:'import data from "./data.json"; export default()=>({rows:data.length,first:data[0],last:data.at(-1)});'},
+      ]},context);
+      expect(written.ok).toBe(true);
+      expect((await artifacts.get(resource.id,owner)).source.files.find(file=>file.path==="data.json")?.content).toBe(JSON.stringify(generated));
+      expect(await wait({...call,callId:"run-import",args:{id:resource.id}})).toMatchObject({status:"done",result:{status:"ready",id:resource.id,revision:2,output:JSON.stringify({rows:1000,first:generated[0],last:generated.at(-1)})}});
+      const stale=await artifactCodeHandlers.code_write({id:resource.id,expectedRevision:2,files:[{path:"data.json",fromChatFile:{...file,version:2}}]},context);
+      expect(stale.ok).toBe(false);
+      expect((await artifacts.get(resource.id,owner)).revision).toBe(2);
+      const lookup=spyOn(aiConversations,"getConversationByShortId").mockImplementation(async request=>aiConversations.getConversation({conversationId,ownerUserId:request.ownerUserId}));
+      const sources=spyOn(aiConversations,"listConversationSources").mockResolvedValue({sources:[{kind:"resource",key:resource.id,title:"Old title",preview:null,icon:"ti ti-code",href:null,path:null,mediaType:null,size:null,ref:{type:"assistant.artifact",id:resource.id},occurrences:1,firstSeenAt:new Date().toISOString(),lastSeenAt:new Date().toISOString(),sourceTurnId:turnId,sourceCallId:"run-import"}],nextCursor:undefined});
+      const tasks=spyOn(aiChatTasks,"list").mockResolvedValue([]);
+      try {
+        const snapshot=await loadAssistantChatContextSnapshot(owner.user.id,"abc234","de");
+        expect(snapshot?.sources[0]?.preview).toContain("R2 · Entwurf · Lauf erfolgreich");
+        expect(snapshot?.runs.some(run=>run.id===call.callId&&run.status==="ready")).toBe(true);
+        await artifacts.writeFile(resource.id,"main.ts","export default()=>43",owner);
+        expect((await loadAssistantChatContextSnapshot(owner.user.id,"abc234","de"))?.sources[0]?.preview).toContain("R3 · Entwurf · Revision noch nicht ausgeführt");
+        expect(await loadAssistantChatContextSnapshot(stranger.user.id,"abc234","de")).toBeNull();
+      } finally {lookup.mockRestore();sources.mockRestore();tasks.mockRestore();}
+      let sent=0;
+      const http=spyOn(httpService,"execute").mockImplementation(async(_id,approved)=>{expect(approved).toBe(true);sent++;return {status:200,headers:{"content-type":"application/json"},body:btoa('{"ok":true}')};});
+      try {
+        const network={...call,callId:"approved-http",args:{code:'export default async()=>await (await http.fetch("https://example.com/data")).json()'}};
+        let approval:{id:string}|undefined;
+        for(let i=0;i<200&&!approval;i++){const state=await agentHost.call(network,context);approval=state.approvals[0];if(!approval)await Bun.sleep(25);}
+        expect(approval).toBeDefined();expect(sent).toBe(0);
+        await agentHost.call({...network,decision:{id:approval!.id,approved:true}},context);
+        expect(await wait(network)).toMatchObject({status:"done",result:{output:'{"ok":true}'}});
+        expect(await wait(network)).toMatchObject({status:"done"});expect(sent).toBe(1);
+      } finally {http.mockRestore();}
+      await agentHost.sweep(); // Includes a browser event-loop heartbeat.
+      await agentHost.close();
+      await sql`UPDATE assistant.artifact_agent_calls SET status='running' WHERE turn_id=${turnId}::uuid AND call_id=${call.callId}`;
+      expect(await wait(call)).toMatchObject({status:"lost"});
+    } finally {await agentHost.close();conversation.mockRestore();turn.mockRestore();}
+  },30000);
+
+  test("resources expose only Cloud short IDs and migration preserves resource-scoped secrets", async () => {
+    const resource = await artifacts.create({kind:"app",title:"Short ID",source},owner);
+    expect(resource.id).toMatch(/^[23456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz]{6}$/);
+    const [internal] = await sql<{id:string}[]>`SELECT id FROM assistant.artifacts WHERE short_id=${resource.id}`;
+    await expect(artifacts.get(internal!.id, owner)).rejects.toThrow();
+    await httpService.save({resourceId:resource.id}, {name:"migrate",origin:"https://example.com",header:"Authorization",prefix:"Bearer ",value:"test-only",expectedRevision:null},owner);
+    await sql`UPDATE assistant.http_secrets SET scope=${"resource:"+internal!.id} WHERE resource_id=${internal!.id}::uuid`;
+    await migrateArtifacts();
+    expect(await httpService.list({resourceId:resource.id},owner)).toHaveLength(1);
+    expect((await artifacts.get(resource.id,owner)).id).toBe(resource.id);
+  });
+
+
 });

@@ -11,7 +11,7 @@ type Call = Parameters<AiFrontendToolHandler>[0];
 // Each host owns one Bun process and one browser. Bun's child_process pipe
 // finalizers must never outlive a browser and close a replacement's descriptors.
 // Credentials and approval decisions stay in this parent CLI process.
-export async function createCliCodeHost(ctx: Pick<CloudCliContext, "fetch">, approve?: (request: CodeApproval) => Promise<CapabilityDecision>) {
+export async function createCliCodeHost(ctx: Pick<CloudCliContext, "fetch">, approve?: (request: CodeApproval) => Promise<CapabilityDecision>, options?: {entry?:string}) {
   const lifetime = new AbortController();
   const ipc = hostIpc(message => child.send(message), async request => {
     if (request.operation === "approve") {
@@ -23,8 +23,8 @@ export async function createCliCodeHost(ctx: Pick<CloudCliContext, "fetch">, app
       ...(request.body ? { body: request.body } : {}), signal: lifetime.signal });
     return { status: response.status, headers: hostHeaders(response.headers), body: await response.arrayBuffer() };
   });
-  const entry = typeof __CLD_STANDALONE__ !== "undefined" && __CLD_STANDALONE__
-    ? "--internal-code-host" : fileURLToPath(new URL("./code-host-process.ts", import.meta.url));
+  const entry = options?.entry ?? (typeof __CLD_STANDALONE__ !== "undefined" && __CLD_STANDALONE__
+    ? "--internal-code-host" : fileURLToPath(new URL("./code-host-process.ts", import.meta.url)));
   const child = Bun.spawn([process.execPath, entry], {
     stdin: "ignore", stdout: "ignore", stderr: "inherit", serialization: "advanced",
     ipc: message => ipc.receive(message),
@@ -44,14 +44,31 @@ export async function createCliCodeHost(ctx: Pick<CloudCliContext, "fetch">, app
       await child.exited;
     } finally { clearTimeout(force); }
   })();
+  // Startup shares the runtime's 45-second operation budget. A stalled child
+  // must not keep a server tool waiting forever before runtime deadlines exist.
+  const startupDeadline = setTimeout(() => {
+    ipc.close(new Error("Code host startup exceeded 45 seconds; no operation was executed"));
+    child.kill();
+  }, 45_000);
   try {
     await ipc.request({ operation: "start" });
     return {
+      health: async () => {
+        // Match the host bridge's network deadline. Check the browser event
+        // loop as well as IPC so a frozen Chromium cannot look healthy.
+        const deadline = setTimeout(() => {
+          ipc.close(new Error("Code host heartbeat was lost; no operation was replayed"));
+          child.kill();
+        }, 10_000);
+        try { await ipc.request({operation:"health"}); }
+        finally { clearTimeout(deadline); }
+      },
       execute: (call: Call) => ipc.request({ operation: "execute", call }),
       call: (call: Call) => ipc.request({ operation: "call", call }),
       close,
     };
   } catch (error) { await close(); throw error; }
+  finally { clearTimeout(startupDeadline); }
 }
 
 const hosts = new WeakMap<CloudCliContext, ReturnType<typeof createCliCodeHost>>();

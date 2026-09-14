@@ -1,3 +1,5 @@
+import { agentHost, AgentHostRequest } from "./agent-host";
+import { ok } from "@k2b/stdlib";
 import { z } from "zod";
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
@@ -56,3 +58,7 @@ register("code_update", CODE_SOURCE_TOOLS.code_update.input, artifactCodeHandler
 register("code_create", CODE_SOURCE_TOOLS.code_create.input, artifactCodeHandlers.code_create);
 register("code_write", CODE_SOURCE_TOOLS.code_write.input, artifactCodeHandlers.code_write);
 register("code_remove", CODE_SOURCE_TOOLS.code_remove.input, artifactCodeHandlers.code_remove);
+
+for (const name of ["code_run","code_inspect","code_interact","code_stop","code_export"] as const) {
+  register(name,AgentHostRequest.refine(input=>input.name===name),async(input,context)=>ok(await agentHost.call(input,context)));
+}

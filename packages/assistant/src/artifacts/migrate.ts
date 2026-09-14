@@ -1,4 +1,5 @@
 import { sql } from "bun";
+import { withAiShortIdForDb } from "@k2b/cloud/ai";
 
 export async function migrateArtifacts() {
   await sql`CREATE SCHEMA IF NOT EXISTS assistant`.simple();
@@ -9,6 +10,12 @@ export async function migrateArtifacts() {
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
   )`.simple();
+  await sql`ALTER TABLE assistant.artifacts ADD COLUMN IF NOT EXISTS short_id TEXT`.simple();
+  await sql`CREATE UNIQUE INDEX IF NOT EXISTS assistant_artifacts_short_id_key ON assistant.artifacts(short_id)`.simple();
+  const missing = await sql<{ id: string }[]>`SELECT id FROM assistant.artifacts WHERE short_id IS NULL`;
+  for (const row of missing) await withAiShortIdForDb(sql, "assistant_artifacts_short_id_key", (db, shortId) =>
+    db`UPDATE assistant.artifacts SET short_id=${shortId} WHERE id=${row.id}::uuid AND short_id IS NULL`);
+  await sql`ALTER TABLE assistant.artifacts ALTER COLUMN short_id SET NOT NULL`.simple();
   await sql`ALTER TABLE assistant.artifacts ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL DEFAULT 'app' CHECK(kind IN ('app','script'))`.simple();
   await sql`ALTER TABLE assistant.artifacts ADD COLUMN IF NOT EXISTS description TEXT NOT NULL DEFAULT ''`.simple();
   await sql`ALTER TABLE assistant.artifacts
@@ -99,6 +106,29 @@ export async function migrateArtifacts() {
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(), PRIMARY KEY(user_id,id)
   )`.simple();
   await sql`CREATE INDEX IF NOT EXISTS assistant_http_calls_created ON assistant.http_calls(created_at)`.simple();
+  // Rewrite owned secret scopes once; keep the encrypted secret value unchanged.
+  await sql`UPDATE assistant.http_secrets s SET scope='resource:' || a.short_id
+    FROM assistant.artifacts a WHERE s.resource_id=a.id AND s.scope='resource:' || a.id::text`.simple();
+  // Existing chat resource links are indexed by public identity, never an alias.
+  const [refs] = await sql`SELECT to_regclass('ai.conversation_resource_refs') AS relation`;
+  if (refs?.relation) await sql`UPDATE ai.conversation_resource_refs r SET resource_id=a.short_id,
+    href=replace(r.href,a.id::text,a.short_id)
+    FROM assistant.artifacts a WHERE r.resource_type='assistant.artifact' AND r.resource_id=a.id::text`.simple();
   // Project membership is checked through the public AI project service.
   // No conversation foreign key owns an artifact. Chat references are ordinary URLs.
+  await sql`CREATE TABLE IF NOT EXISTS assistant.artifact_agent_calls (
+    turn_id UUID NOT NULL REFERENCES ai.turns(id) ON DELETE CASCADE, call_id TEXT NOT NULL, user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+    conversation_id UUID NOT NULL REFERENCES ai.conversations(id) ON DELETE CASCADE, host_id UUID NOT NULL, input JSONB NOT NULL,
+    status TEXT NOT NULL DEFAULT 'running', result JSONB,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(), updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY(turn_id,call_id)
+  )`;
+  await sql`CREATE INDEX IF NOT EXISTS artifact_agent_calls_conversation ON assistant.artifact_agent_calls(conversation_id,created_at DESC)`;
+  await sql`CREATE TABLE IF NOT EXISTS assistant.artifact_agent_approvals (
+    turn_id UUID NOT NULL, call_id TEXT NOT NULL, id UUID NOT NULL,
+    ordinal INTEGER GENERATED ALWAYS AS IDENTITY, message TEXT NOT NULL, decision BOOLEAN,
+    PRIMARY KEY(turn_id,call_id,id),
+    FOREIGN KEY(turn_id,call_id) REFERENCES assistant.artifact_agent_calls(turn_id,call_id) ON DELETE CASCADE
+  )`;
+
 }

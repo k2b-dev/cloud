@@ -230,7 +230,9 @@ to the task and all occurrences.
 
 ## Conversation files
 
-Conversation uploads under `/input` represent immutable user inputs. Files under `/files` are the editable agent workspace.
+Use the exact paths returned by the conversation file listing or attachment
+manifest, including the leading slash. Files are conversation-scoped and versioned;
+there is no reserved `/input` or `/files` prefix to add to an uploaded filename.
 
 ```bash
 cld assistant files list <chat-id>

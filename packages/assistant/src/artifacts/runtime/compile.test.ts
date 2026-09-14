@@ -43,3 +43,23 @@ test("rejects external imports, traversal and syntax errors", async () => {
   for (const content of ['import "bun"; export default () => 1;', 'export default () => {'])
     await expect(compileArtifact({ entry: "main.js", files: [{ path: "main.js", content }] })).rejects.toThrow();
 });
+
+test("resolves extensionless local modules and rejects ambiguous names", async () => {
+  const files = [
+    { path: "main.ts", content: 'import { answer } from "./data"; export default () => answer;' },
+    { path: "data.ts", content: "export const answer = 42;" },
+  ];
+  expect((await compileArtifact({ entry: "main.ts", files })).code).toContain("42");
+  await expect(compileArtifact({ entry: "main.ts", files: [...files, { path: "data.js", content: "export const answer = 7;" }] })).rejects.toThrow("Ambiguous import");
+  await expect(compileArtifact({ entry: "main.ts", files: files.slice(0, 1) })).rejects.toThrow('Missing source file for import');
+});
+
+test("imports saved JSON and CSV data without a model-output round trip", async () => {
+  const compiled = await compileArtifact({ entry: "main.ts", files: [
+    { path: "main.ts", content: 'import rows from "./data.json"; import csv from "./data.csv"; export default () => ({rows, csv});' },
+    { path: "data.json", content: '[{"amount":12.34567}]' },
+    { path: "data.csv", content: 'name;amount\nMüller;12.34567' },
+  ] });
+  expect(compiled.code).toContain("12.34567");
+  expect(compiled.code).toContain("Müller");
+});

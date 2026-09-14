@@ -110,6 +110,27 @@ export const ExplorerData = z
   })
   .strict()
   .superRefine((data, ctx) => {
+    const chart = data.chart;
+    if ("kind" in chart) {
+      const numericFields = "value" in chart ? [chart.value] : chart.kind === "scatter" ? [chart.x, chart.y] : [chart.y];
+      for (const field of numericFields) {
+        if (data.rows.some(row => typeof row[field] !== "number" || !Number.isFinite(row[field])))
+          ctx.addIssue({code:"custom",message:`Chart field ${field} requires finite numbers`});
+      }
+      if ("category" in chart && data.rows.some(row => row[chart.category] === null || row[chart.category] === undefined))
+        ctx.addIssue({code:"custom",message:`Missing chart field ${chart.category}`});
+      if (chart.kind === "pie" || chart.kind === "donut") {
+        if (data.rows.some(row => { const value = row[chart.value]; return typeof value === "number" && value <= 0; }))
+          ctx.addIssue({code:"custom",message:"Pie and donut values must be positive; filter explicitly before rendering"});
+      }
+      if (chart.kind === "line") {
+        const values = data.rows.map(row => row[chart.x]);
+        if (!values.every(value => typeof value === "string" && value.length > 0) && !values.every(value => typeof value === "number" && Number.isFinite(value)))
+          ctx.addIssue({code:"custom",message:`Line field ${chart.x} requires either finite numbers or nonempty category labels, without mixing types`});
+      }
+      if ("series" in chart && chart.series && data.rows.some(row => row[chart.series!] === null || row[chart.series!] === undefined))
+        ctx.addIssue({code:"custom",message:`Missing series field ${chart.series}`});
+    }
     const keys = data.rows.map((row) => row[data.rowKey]);
     if (keys.some((value) => typeof value !== "string" || !value) || new Set(keys).size !== keys.length)
       ctx.addIssue({ code: "custom", message: "Rows require unique nonempty string keys" });
@@ -148,6 +169,7 @@ export const DateRange = z
 export const AnalyticsNode = z
   .discriminatedUnion("type", [
     z.object({ ...common, type: z.literal("text"), value: text, markdown: z.boolean().default(false) }).strict(),
+    z.object({ ...common, type: z.literal("stat"), label: text.min(1), value: z.number().finite().nullable().default(null), format: Format.optional(), trend: z.array(z.number().finite()).max(1000).optional() }).strict(),
     z
       .object({
         ...common,

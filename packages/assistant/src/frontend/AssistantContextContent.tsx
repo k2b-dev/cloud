@@ -243,6 +243,7 @@ const virtualPath = (file: AssistantContextFile): string =>
   `/${assistantBrowserText(file.dictationRecordedAt ? "Voice inputs" : file.scope === "project" ? "Project" : "Chat")}/${file.path.replace(/^\/+/, "")}`;
 
 export const assistantContextFileSource = (files: readonly AssistantContextFile[]): FileSource => ({
+  previewPreferencesKey: "assistant.csv-preview",
   async list(): Promise<FileTreeEntry[]> {
     return files.map((file) => ({
       path: virtualPath(file),

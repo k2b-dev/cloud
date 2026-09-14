@@ -57,6 +57,24 @@ empty results, and recovery from a failed load. Reconcile displayed values with
 the reviewed totals and check that filters describe the data actually displayed.
 A successful schema validation does not establish analytical correctness.
 
+Validate the saved source revision, rather than pasting its formulas into a
+second test script. Keep an independent expectation from the input data: row
+counts, unmatched joins, totals and representative boundary cases. For targets,
+state their grain (for example month × region) and aggregate each target once;
+multiple selected regions must sum their distinct targets. Compare inspected raw
+KPI values and plotted series with independent expectations. A formatted value
+matching after rounding does not validate the raw ratio. Never round fractions
+before passing them to percent-formatted controls. Preserve precision
+until display formatting. Test reset, one/multiple/all selections, empty results,
+and complete versus partial periods. A newly generated timestamp is not source
+freshness: keep the real retrieval or file-snapshot timestamp stable.
+
+For a data snapshot, export the validated dataset with `files.save` and
+`code_export`, then copy its exact path/version into the resource with
+`code_write({id,expectedRevision,files:[{path:"data.json",fromChatFile:{path,version}}]})`.
+Import that file in the app. Never rebuild a truncated dataset by copying tool
+output. Keep transformations and source identity alongside the snapshot.
+
 Human approval and uncertain HTTP outcomes follow the Code Mode HTTP contract.
 Do not replay an external mutation to refresh a chart. Separate local filtering
 from external loading; an Apply button can avoid a request for every slider move.

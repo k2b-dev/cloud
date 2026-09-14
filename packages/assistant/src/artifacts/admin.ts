@@ -12,7 +12,7 @@ export const artifactAdmin = {
     adminIdentity(identity); z.number().int().min(1).max(100000).parse(page);
     z.string().max(120).parse(search);
     const rows=await sql<{id:string;title:string;kind:"app"|"script";files:number;kv:number;bytes:number;database:boolean;published:boolean;projects:string[]}[]>`
-      SELECT a.id,a.title,a.kind,a.published_revision IS NOT NULL AS published,
+      SELECT a.short_id AS id,a.title,a.kind,a.published_revision IS NOT NULL AS published,
         (SELECT count(*)::int FROM assistant.artifact_storage s WHERE s.artifact_id=a.id AND s.area='files') AS files,
         (SELECT count(*)::int FROM assistant.artifact_storage s WHERE s.artifact_id=a.id AND s.area='kv') AS kv,
         (SELECT coalesce(sum(bytes),0)::int FROM assistant.artifact_storage s WHERE s.artifact_id=a.id) AS bytes,

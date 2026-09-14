@@ -18,7 +18,8 @@ For a clear small experiment, load `code_run` through `load_tools` and pass
 No written plan, app creation, title, save step or GUI reference is required.
 Write a fresh short script for the next question when that is simpler. Variables
 are not shared between runs. Pass inputs again; preserve useful files with
-`code_export`. Its returned chat path can be the next run's `inputPaths` entry.
+`code_export`. Its returned path/version can be passed to `code_write` as
+`fromChatFile`, or its path can be the next run's `inputPaths` entry.
 
 Before substantial implementation, identify the desired result and consequential
 unknowns. Inspect existing files, source, contracts, or a small read-only sample.
@@ -41,6 +42,12 @@ export default async () => {
   return { rows: rows.length, columns: Object.keys(rows[0] ?? {}), sample: rows.slice(0, 3) };
 };
 ```
+
+`files.list()` entries use the full leading-slash path as `name`, for example
+`"/umsaetze.csv"`. Pass that exact name to `files.read`; do not compare it with
+a basename or invent a directory. Inspect the returned CSV column names before
+writing joins or calculations; month-level data may have `monat` instead of a
+day-level `datum`.
 
 `files.read` returns a `File`, not bytes. `sheet.fromCsv` returns **data rows**
 keyed by header names: `rows[0]` is the first record, not the header; do not
@@ -74,10 +81,11 @@ source validation, metric interpretation, and report/dashboard delivery.
 - **Cloud operations:** discover the actual capabilities and contracts, then
   use `capabilities.run` in code; [Capability calls](references/capabilities.md).
 - **Saved script or app:** [Source workflow](references/source-workflow.md).
-  Read existing source before editing; `code_write` saves immediately and
-  preserves sibling files. Keep full resource UUIDs. Use `code_list` with `q`
+  Read existing source before editing; `code_write` atomically saves a file batch against `expectedRevision` and
+  preserves sibling files. Use the returned six-character resource short ID. Use `code_list` with `q`
   and `code_read` to find/reuse existing work; fork only for an independent copy.
-- **Interactive app:** additionally read [UI and dialogs](references/ui.md).
+- **Interactive app:** before the first source write, read [Source workflow](references/source-workflow.md) and the closest [complete example](references/examples.md). Additionally read [UI and dialogs](references/ui.md).
+  Use `ui.stat` for numeric KPIs and `ui.chartExplorer` for inspectable charts.
   Test returned control IDs with `code_interact`, including file-picker fixtures.
 - **Optional APIs:** [Storage](references/storage.md), [Charts](references/charts.md),
   [Money](references/money.md), [DATEV and SEPA](references/finance.md), [Publishing and access](references/publishing.md).
@@ -107,9 +115,13 @@ For analysis, reconcile input/output row counts and exclusions before reporting 
 Open GUI apps with `code_open`; saved scripts
 are available in Studio. Old finished one-offs without files/UI are reclaimed
 when slots are needed. Stop unneeded runs holding UI, jobs or captured files.
+Test the saved revision, not a rewritten copy of its calculation: the returned
+`revision` must equal the revision you intend to deliver. Large validated data
+belongs in an exported file imported with `fromChatFile`, not copied from output.
 
-A connected browser or CLI host is required. Closing/reloading/suspending it
-can interrupt work. For `kind: "input"`, fix the tool arguments. For `kind: "host"`,
+Agent execution runs on the Assistant server in an isolated host; closing or
+suspending the user tab does not stop it. `code_open` and `code_secret` still use
+the user interface. A lost server host is never replayed automatically. For `kind: "input"`, fix the tool arguments. For `kind: "host"`,
 diagnose the host rather than rewriting app source. Never claim an unexecuted
 or incomplete result is verified. Keep user-facing progress, errors, and labels
 clear; do not introduce decorative UI or a saved resource just to explore.

@@ -89,6 +89,23 @@ const findLoopSplitIndex = (entries: StoreEntry[], keepLoops: number): number =>
   return -1;
 };
 
+/** Preserve recent complete rounds, retaining one when the first loop has only two. */
+const findRoundSplitIndex = (entries: StoreEntry[]): number => {
+  const rounds = entries.flatMap((entry, index) => entry.message.role === "assistant" && entry.kind === "message" ? [index] : []);
+  if (!rounds.length) return -1;
+  const candidate = rounds.length === 1 ? entries.length : rounds[rounds.length - (rounds.length > 2 ? 2 : 1)]!;
+  const pending = new Set<string>();
+  let safe = -1;
+  for (let index = 0; index < candidate; index++) {
+    const message = entries[index]!.message;
+    if (message.role === "assistant") {
+      for (const block of message.content) if (block.type === "tool_call") pending.add(block.id);
+    } else if (message.role === "tool_result") pending.delete(message.callId);
+    if (pending.size === 0) safe = index + 1;
+  }
+  return safe;
+};
+
 const buildCompactionPrompt = (additionalInstructions: string, source: string) => ({
   systemPrompt: buildAiTaskPrompt({
     baseInstructions: DEFAULT_COMPACTION_PROMPT,
@@ -113,13 +130,16 @@ export const createCloudCompactFn = (input: {
   keepRecentLoops?: number;
 }): CompactFn => {
   return (ctx) => {
-    if (!ctx.force && (typeof ctx.fillRatio !== "number" || ctx.fillRatio < COMPACTION_FILL_RATIO)) return null;
+    const window = ctx.provider.contextWindow;
+    const reserve = input.maxOutputTokens ?? 0;
+    const fillRatio = typeof ctx.fillRatio === "number" && window && window > reserve
+      ? ctx.fillRatio * window / (window - reserve) : ctx.fillRatio;
+    if (!ctx.force && (typeof fillRatio !== "number" || fillRatio < COMPACTION_FILL_RATIO)) return null;
 
     const totalLoops = countConversationLoops(ctx.entries);
-    const keepLoops = input.keepRecentLoops ?? keepLoopsForFillRatio(ctx.fillRatio, totalLoops);
-    if (totalLoops <= keepLoops) return null;
-
-    const splitIndex = findLoopSplitIndex(ctx.entries, keepLoops);
+    const keepLoops = input.keepRecentLoops ?? keepLoopsForFillRatio(fillRatio, totalLoops);
+    const loopSplit = totalLoops > keepLoops ? findLoopSplitIndex(ctx.entries, keepLoops) : -1;
+    const splitIndex = loopSplit > 0 ? loopSplit : findRoundSplitIndex(ctx.entries);
     if (splitIndex < 1) return null;
 
     const sourceEntries = ctx.entries.slice(0, splitIndex);
@@ -179,4 +199,4 @@ export const createCloudCompactFn = (input: {
   };
 };
 
-export const __compactionTest = { countConversationLoops, findLoopSplitIndex, keepLoopsForFillRatio };
+export const __compactionTest = { countConversationLoops, findLoopSplitIndex, findRoundSplitIndex, keepLoopsForFillRatio };

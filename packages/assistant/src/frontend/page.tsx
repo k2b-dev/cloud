@@ -81,7 +81,7 @@ export default ssr<AuthContext>(async (c) => {
     ? await Promise.all([
         loadAiStreamState(activeConversation),
         aiConversations.listConversationTimeline({ conversationId: activeConversation.id }),
-        loadAssistantChatContextSnapshot(user.id, activeConversation.shortId),
+        loadAssistantChatContextSnapshot(user.id, activeConversation.shortId, getLocale(c)),
       ])
     : [null, [], null];
 

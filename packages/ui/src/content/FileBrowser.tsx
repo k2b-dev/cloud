@@ -18,6 +18,7 @@ import FileTree, { type FileTreeEntry } from "./FileTree";
 import FileView, { type FileViewContent, type FileViewRenderer } from "./FileView";
 
 export type FileSource = {
+  previewPreferencesKey?: string;
   list(): Promise<FileTreeEntry[]>;
   read(path: string): Promise<FileViewContent>;
   write?(path: string, content: string, encoding?: "utf8" | "base64"): Promise<void>;
@@ -322,6 +323,7 @@ export function FileBrowserPanel(props: FileBrowserPanelProps) {
         <Match when={selectedEntry()}>
           {(entry) => (
             <FileView
+              previewPreferencesKey={props.source.previewPreferencesKey}
               file={{ path: entry().path, mediaType: entry().mediaType, size: entry().size }}
               load={() => props.source.read(entry().path)}
               revision={props.refreshKey}

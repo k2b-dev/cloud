@@ -39,7 +39,8 @@ export function createAnalyticsUi(
   }
   function create<T extends { id?: string }>(type: AnalyticsNode["type"], options: T, callback?: Callback) {
     const id = options.id ?? `node-${sequence++}`;
-    if (nodes.has(id) || nodes.size >= LIMITS.nodes) throw new Error("Duplicate UI id or node limit reached");
+    if (nodes.has(id)) throw new Error(`Duplicate UI id ${JSON.stringify(id)}. Give every control and chart its own id.`);
+    if (nodes.size >= LIMITS.nodes) throw new Error(`UI node limit reached (${LIMITS.nodes}). Aggregate data or simplify the layout.`);
     commit({ ...options, type, id });
     if (callback) callbacks.set(id, callback);
     flush();
@@ -285,6 +286,11 @@ export function createAnalyticsUi(
     text: (options: Options<"text">) => {
       const h = create("text", options);
       return { id: h.id, setValue: (value: string) => h.update({ value }) };
+    },
+    stat: (options: Options<"stat">) => {
+      const h = create("stat",options);
+      return {id:h.id,setValue:(value:number|null)=>h.update({value}),
+        setOptions:(options:Partial<Omit<Options<"stat">,"id">>)=>h.update(options),setLoading:h.setLoading};
     },
     chart: (input: Options<"chart"> & { onSelect?: (key: string | null) => unknown }) => {
       const { onSelect, ...options } = input;

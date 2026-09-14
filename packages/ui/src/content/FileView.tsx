@@ -19,10 +19,14 @@ import {
   type JSX,
   Match,
   onCleanup,
+  onMount,
   Show,
   Switch,
   untrack,
 } from "solid-js";
+import { prompts } from "../feedback/prompts";
+import { Select } from "../inputs/Select";
+import { decodeDelimitedContent, readDelimitedPreferences, type DelimitedPreferences } from "./delimited-preferences";
 import { toast } from "../feedback/toast";
 import { MarkdownEditor } from "../inputs/markdown/MarkdownEditor";
 import { useUiMessages } from "../intl/messages";
@@ -37,6 +41,8 @@ export { canPreviewFile, getFileViewPreviewKind } from "./file-view-preview";
 export type FileViewContent = { encoding: "utf8" | "base64"; content: string; mediaType: string };
 
 export type FileViewProps = {
+  /** Optional browser-local preference scope, owned by the host. */
+  previewPreferencesKey?: string;
   file: FileViewFile;
   load: () => Promise<FileViewContent>;
   /** Refetch the current path when this host-owned revision changes. */
@@ -56,6 +62,8 @@ export type FileViewProps = {
 };
 
 export type FileViewRendererProps = {
+  /** Optional browser-local preference scope, owned by the host. */
+  previewPreferencesKey?: string;
   file: FileViewFile;
   content: FileViewContent;
   previewHref: string | null;
@@ -306,14 +314,41 @@ function JsonRenderer(props: FileViewRendererProps) {
 
 function DelimitedTextRenderer(props: FileViewRendererProps) {
   const messages = useUiMessages();
-  const delimiter = () =>
-    fileViewExtension(props.file.path) === "tsv" || props.content.mediaType === "text/tab-separated-values" ? "\t" : ",";
-  const preview = createMemo(() => parseDelimitedText(props.content.content, delimiter()));
+  const [preferences, setPreferences] = createSignal<DelimitedPreferences>({ encoding: "utf-8", delimiter: "auto", view: "table" });
+  onMount(() => {
+    if (!props.previewPreferencesKey) return;
+    try { setPreferences(readDelimitedPreferences(localStorage.getItem(props.previewPreferencesKey))); } catch { /* Storage may be disabled. */ }
+  });
+  const update = (patch: Partial<DelimitedPreferences>) => {
+    const next = { ...preferences(), ...patch };
+    setPreferences(next);
+    if (props.previewPreferencesKey) {
+      try { localStorage.setItem(props.previewPreferencesKey, JSON.stringify(next)); } catch { /* Keep the local selection. */ }
+    }
+  };
+  const text = createMemo(() => decodeDelimitedContent(props.content, preferences().encoding));
+  const delimiter = () => preferences().delimiter === "auto"
+    ? (fileViewExtension(props.file.path) === "tsv" || props.content.mediaType === "text/tab-separated-values" ? "\t" : ",")
+    : preferences().delimiter;
+  const preview = createMemo(() => parseDelimitedText(text(), delimiter()));
+  const settings = () => prompts.dialog(() => <div class="k2b-content-file-view__settings">
+    <Select label={messages().csvEncoding} value={preferences().encoding} disabled={props.content.encoding !== "base64"}
+      options={["utf-8", "windows-1252", "utf-16le", "utf-16be"]} onValueChange={(value) => { if (value) update({ encoding: value }); }} />
+    <Select label={messages().csvSeparator} value={preferences().delimiter} options={[
+      { value: "auto", label: messages().csvDefaultSeparator }, { value: ",", label: messages().csvComma },
+      { value: ";", label: messages().csvSemicolon }, { value: "\t", label: messages().csvTab }, { value: "|", label: "|" },
+    ]} onValueChange={(value) => { if (value) update({ delimiter: value }); }} />
+    <Select label={messages().csvView} value={preferences().view} options={[
+      { value: "table", label: messages().dataTable }, { value: "raw", label: messages().csvRaw },
+    ]} onValueChange={(value) => { if (value === "table" || value === "raw") update({ view: value }); }} />
+    <Show when={props.previewPreferencesKey}><p>{messages().csvPreferencesSaved}</p></Show>
+  </div>, { title: messages().csvSettings });
   const headers = createMemo(() => preview().rows[0] ?? []);
   const rows = createMemo(() => preview().rows.slice(1));
 
   return (
-    <OverlayPanel actions={<DownloadAction {...props} />}>
+    <OverlayPanel actions={<><OverlayAction icon="ti-adjustments-horizontal" title={messages().csvSettings} onClick={() => void settings()} /><DownloadAction {...props} /></>}>
+      <Show when={preferences().view === "table"} fallback={<CodeDisplay code={text()} language="text" />}>
       <Show
         when={headers().length > 0}
         fallback={<Placeholder icon="ti ti-table" title={messages().emptyFile} description={messages().delimitedFileEmpty} />}
@@ -345,6 +380,7 @@ function DelimitedTextRenderer(props: FileViewRendererProps) {
             <p class="k2b-content-file-view__truncated">{messages().previewLimited}</p>
           </Show>
         </div>
+      </Show>
       </Show>
     </OverlayPanel>
   );
@@ -441,7 +477,6 @@ const BUILTIN_RENDERERS: FileViewRenderer[] = [
   {
     id: "delimited-text",
     match: (file, content) =>
-      content.encoding === "utf8" &&
       getFileViewPreviewKind({ ...file, mediaType: content.mediaType || file.mediaType }) === "delimited-text",
     component: DelimitedTextRenderer,
   },
@@ -568,6 +603,7 @@ export default function FileView(props: FileViewProps) {
             const Renderer = active().component;
             return (
               <Renderer
+                previewPreferencesKey={props.previewPreferencesKey}
                 file={props.file}
                 content={resolvedContent()!}
                 previewHref={nativePreviewHref()}

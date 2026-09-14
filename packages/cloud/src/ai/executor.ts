@@ -1,3 +1,4 @@
+import { createTurnTimingRecorder, withDurableTurnTiming } from "./turn-timing";
 import type { CompactEvent, NessiLoop, OutboundEvent, Provider, Tool, ToolResolver } from "@k2b/nessi";
 import { compact, nessi } from "@k2b/nessi";
 import { loadCurrentHelp } from "../_internal/help-catalog";
@@ -168,6 +169,12 @@ const indexConversationToolSource = async (input: {
 }): Promise<void> => {
   if (input.isError) return;
   try {
+    if (input.name.startsWith("code_")) {
+      const resources = collectConversationResourceObservations(input.result);
+      if (resources.length) await indexConversationResources({
+        conversationId: input.conversationId, turnId: input.turnId, callId: input.callId, resources,
+      });
+    }
     let source: Parameters<typeof aiConversations.indexConversationSource>[0]["source"] | null = null;
     if (input.name === "web_search") {
       const args = input.args;
@@ -784,6 +791,7 @@ export class AiTurnExecutor {
 
     const dynamicToolRuntimeContext = {
       turnId,
+      reportToolProgress: (callId: string, message: string) => pipeline.reportToolProgress(callId,message),
       attachedFilePaths: new Set(config.files?.attached.map((file) => file.path) ?? []),
       allowedDataBoundaries: material.modelPolicy?.allowedDataBoundaries,
       projectFiles,
@@ -832,6 +840,10 @@ export class AiTurnExecutor {
       return;
     }
     const store = aiConversations.createSessionStore({
+      onMessage: async (message) => {
+        if (message.message.role === "assistant") await pipeline.timing.finishGeneration();
+        await pipeline.emitMessage(message);
+      },
       conversationId,
       modelProfileId: resolved.profile.id,
       turnId,
@@ -1109,6 +1121,7 @@ export class AiTurnExecutor {
 
     try {
       for await (const event of loop) {
+        await pipeline.timing.event(event);
         if (event.type === "tool_action_request") {
           const suspended = await this.handleActionRequest({
             event,
@@ -1148,6 +1161,7 @@ export class AiTurnExecutor {
               location: prepared.frontendModes.get(event.name) ?? "server",
             })
             .catch(() => undefined);
+          if (!prepared.frontendModes.has(event.name)) await aiToolAudit.noteToolStarted({conversationId,turnId,callId:event.callId,toolName}).catch(() => undefined);
         } else if (event.type === "tool_execution_end") {
           await aiToolAudit.noteToolCompleted({ turnId, callId: event.callId, isError: event.isError }).catch(() => undefined);
           const toolBlock = pipeline.blocks.find((block) => block.kind === "tool" && block.callId === event.callId);
@@ -1166,7 +1180,7 @@ export class AiTurnExecutor {
           lastIssueMessage = event.issue.message;
           log.warn("AI turn issue", { conversationId, turnId, kind: event.issue.kind, message: event.issue.message });
         } else if (event.type === "loop_end") {
-          const aggregate = event.aggregate;
+          const aggregate = await withDurableTurnTiming(turnId, event.aggregate);
           if (aggregate.assistantMessageCount > 0) {
             await aiConversations
               .setLatestAssistantLoopAggregate({ conversationId, loopId: turnId, aggregate, doneReason: event.reason })
@@ -1440,6 +1454,7 @@ class StreamPipeline {
   private readonly leaseOwner: string;
   private readonly mapper: ReturnType<typeof createEventMapper>;
   private readonly allowRememberedApprovals: boolean;
+  readonly timing: ReturnType<typeof createTurnTimingRecorder>;
   private lastSnapshotAt = 0;
   private snapshotDirty = false;
   private chain: Promise<void> = Promise.resolve();
@@ -1453,6 +1468,7 @@ class StreamPipeline {
     seedBlocks: AiTurnBlock[];
     allowRememberedApprovals: boolean;
   }) {
+    this.timing = createTurnTimingRecorder(input.turnId);
     this.conversationId = input.conversationId;
     this.turnId = input.turnId;
     this.attempt = input.attempt;
@@ -1517,6 +1533,11 @@ class StreamPipeline {
     this.snapshotDirty = this.blocks.length > 0;
   }
 
+  async emitMessage(message: AiStoredMessage): Promise<void> {
+    const seq = this.nextSeq();
+    await this.publish(this.envelope({ type: "message_saved" as const, seq, message }));
+  }
+
   async emitTurnStarted(modelProfileId: string): Promise<void> {
     const seq = this.nextSeq();
     await this.publish(
@@ -1546,6 +1567,13 @@ class StreamPipeline {
       type: "block_set",
       block: { id: steerAppliedBlockId(steer.id), kind: "steer_applied", steerId: steer.id },
     });
+    await this.maybeSnapshot();
+  }
+
+  async reportToolProgress(callId: string, progress: string): Promise<void> {
+    const block = this.blocks.find(block => block.kind === "tool" && block.callId === callId);
+    if (!block || block.kind !== "tool" || block.progress === progress) return;
+    await this.emitOp({type:"block_set",block:{...block,progress}});
     await this.maybeSnapshot();
   }
 

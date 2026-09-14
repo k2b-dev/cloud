@@ -1,7 +1,7 @@
 import { hasRole } from "@k2b/cloud/contracts";
 import { sql, type SQL } from "bun";
 import { z } from "zod";
-import { AI_FILES_MAX_CONVERSATION_BYTES_DEFAULT, aiConversations, aiProjects } from "@k2b/cloud/ai";
+import { AI_FILES_MAX_CONVERSATION_BYTES_DEFAULT, withAiShortIdForDb, CodeResourceId, aiConversations, aiProjects } from "@k2b/cloud/ai";
 import {
   type AccessSubject, type AuthContext, type PermissionLevel, type Principal,
   buildAccessPrincipalCondition, createAccess, getAccess, deleteAccess, updateAccess,
@@ -17,15 +17,15 @@ export class ArtifactError extends Error {
     super(code);
   }
 }
-type ArtifactRow = { kind: ArtifactKind; icon: string; published_icon: string | null; published_version: number | null; id: string; title: string; description?: string; revision: number; updated_at: Date; published_revision: number | null; published_title: string | null; published_description: string | null; forked_from_id: string | null; forked_from_revision: number | null };
+type ArtifactRow = { short_id: string; forked_from_short_id?: string | null; kind: ArtifactKind; icon: string; published_icon: string | null; published_version: number | null; id: string; title: string; description?: string; revision: number; updated_at: Date; published_revision: number | null; published_title: string | null; published_description: string | null; forked_from_id: string | null; forked_from_revision: number | null };
 export type ArtifactSummary = { kind: ArtifactKind; icon?: string; publishedVersion?: number | null; id: string; title: string; description?: string; revision: number; permission: PermissionLevel; updatedAt: string; publishedRevision: number | null; forkedFromId: string | null; forkedFromRevision: number | null };
 export type ArtifactBundle = ArtifactSummary & { source: ArtifactSource; sourceRevision: number };
 const summarize = (row: ArtifactRow, permission: PermissionLevel): ArtifactSummary => ({
   kind: row.kind, icon: permission === "admin" ? row.icon : row.published_icon ?? row.icon, publishedVersion: row.published_version,
-  id: row.id, title: permission === "admin" ? row.title : row.published_title ?? row.title,
+  id: row.short_id, title: permission === "admin" ? row.title : row.published_title ?? row.title,
   description: (permission === "admin" ? row.description : row.published_description) ?? "",
   revision: permission === "admin" ? row.revision : row.published_revision!, permission, updatedAt: row.updated_at.toISOString(),
-  publishedRevision: row.published_revision, forkedFromId: row.forked_from_id, forkedFromRevision: row.forked_from_revision,
+  publishedRevision: row.published_revision, forkedFromId: row.forked_from_short_id ?? null, forkedFromRevision: row.forked_from_revision,
 });
 export function user(identity: ArtifactIdentity) {
   const actor = userFromActor(identity.actor);
@@ -52,11 +52,12 @@ async function projectContext(identity: ArtifactIdentity) {
 }
 
 export async function requireArtifact(db: SQL, id: string, identity: ArtifactIdentity, required: PermissionLevel) {
-  z.uuid().parse(id);
+  CodeResourceId.parse(id);
   const match = predicate(identity);
   // Serialize authorization with changes to grants, revisions and deletion.
-  const [row] = await db<ArtifactRow[]>`SELECT * FROM assistant.artifacts WHERE id=${id}::uuid FOR UPDATE`;
+  const [row] = await db<ArtifactRow[]>`SELECT * FROM assistant.artifacts WHERE short_id=${id} FOR UPDATE`;
   if (!row) throw new ArtifactError("NOT_FOUND");
+  id = row.id;
   const [grant] = await db<{ permission: PermissionLevel }[]>`SELECT a.permission
     FROM auth.access a JOIN assistant.artifact_access link ON link.access_id=a.id
     WHERE link.artifact_id=${id}::uuid AND ${match}
@@ -78,7 +79,8 @@ async function revision(db: SQL, row: ArtifactRow, permission: PermissionLevel, 
     WHERE artifact_id=${row.id}::uuid AND revision=${sourceRevision}`;
   if (!stored) throw new ArtifactError("NOT_FOUND");
   const source = typeof stored.source === "string" ? JSON.parse(stored.source) : stored.source;
-  return { ...summarize(row, permission), source: ArtifactSource.parse(source), sourceRevision };
+  const [origin] = row.forked_from_id ? await db<{short_id: string}[]>`SELECT short_id FROM assistant.artifacts WHERE id=${row.forked_from_id}::uuid` : [];
+  return { ...summarize(row, permission), forkedFromId: origin?.short_id ?? null, source: ArtifactSource.parse(source), sourceRevision };
 }
 async function writeRevision(db: SQL, id: string, number: number, source: ArtifactSource) {
   const encoded = JSON.stringify(source);
@@ -114,7 +116,7 @@ export const artifacts = {
     const { databaseConfigLock } = await import("./database");
     return sql.begin(async db => {
       await databaseConfigLock(db);
-      await requireArtifact(db,id,identity,"admin");
+      id = (await requireArtifact(db, id,identity,"admin")).row.id;
       const cleanup = await db`INSERT INTO assistant.database_cleanup(namespace)
         SELECT namespace FROM assistant.artifact_databases WHERE artifact_id=${id}::uuid ON CONFLICT DO NOTHING RETURNING namespace`;
       await db`DELETE FROM auth.access WHERE id IN (SELECT access_id FROM assistant.artifact_access WHERE artifact_id=${id}::uuid)`;
@@ -122,9 +124,9 @@ export const artifacts = {
       return {deleted:true,databaseCleanupQueued:cleanup.length>0};
     });
   },
-  async describe(ids: string[], userId: string, conversationId?: string): Promise<Array<{ id: string; title: string; description: string; icon: string }>> {
+  async describe(ids: string[], userId: string, conversationId?: string): Promise<Array<{ id: string; title: string; description: string; icon: string; kind: "app" | "script"; revision: number; publishedVersion: number | null }>> {
     if (!ids.length) return [];
-    const valid = ids.filter(id => z.uuid().safeParse(id).success);
+    const valid = ids.filter(id => CodeResourceId.safeParse(id).success);
     if (!valid.length) return [];
     const conversation = conversationId ? await aiConversations.getConversation({conversationId,ownerUserId:userId}) : null;
     const projectId = conversation && !conversation.archivedAt && conversation.projectId
@@ -132,13 +134,15 @@ export const artifacts = {
     const match = buildAccessPrincipalCondition({ subject: { type: "user", userId }, columns: {
       userId: sql`a.user_id`, groupId: sql`a.group_id`, serviceAccountId: sql`a.service_account_id`, authenticatedOnly: sql`a.authenticated_only`,
     } });
-    return sql<{ id: string; title: string; description: string; icon: string }[]>`SELECT artifact.id,
+    return sql<{ id: string; title: string; description: string; icon: string; kind: "app" | "script"; revision: number; publishedVersion: number | null }[]>`SELECT artifact.short_id AS id, artifact.kind,
+      CASE WHEN bool_or(a.permission='admin') THEN artifact.revision ELSE artifact.published_revision END AS revision,
+      artifact.published_version AS "publishedVersion",
       CASE WHEN bool_or(a.permission='admin') THEN artifact.icon ELSE artifact.published_icon END AS icon,
       CASE WHEN bool_or(a.permission='admin') THEN artifact.title ELSE artifact.published_title END AS title,
       CASE WHEN bool_or(a.permission='admin') THEN artifact.description ELSE artifact.published_description END AS description FROM assistant.artifacts artifact
       LEFT JOIN assistant.artifact_access link ON link.artifact_id=artifact.id
       LEFT JOIN auth.access a ON a.id=link.access_id AND ${match} AND a.permission IN ('read','write','admin')
-      WHERE artifact.id IN ${sql(valid)}
+      WHERE artifact.short_id IN ${sql(valid)}
       GROUP BY artifact.id HAVING bool_or(a.permission='admin') OR (artifact.published_revision IS NOT NULL AND
         (count(a.id)>0 OR (artifact.kind='script' AND EXISTS(SELECT 1 FROM assistant.artifact_projects project
           WHERE project.artifact_id=artifact.id AND project.project_id=${projectId ?? null}::uuid))))`;
@@ -148,7 +152,7 @@ export const artifacts = {
     z.string().max(120).parse(search);
     if (kind !== undefined) ArtifactKind.parse(kind);
     const match = predicate(identity), projectId = await projectContext(identity);
-    const rows = await sql<(ArtifactRow & { permission: PermissionLevel })[]>`SELECT p.*,
+    const rows = await sql<(ArtifactRow & { permission: PermissionLevel })[]>`SELECT p.*, (SELECT origin.short_id FROM assistant.artifacts origin WHERE origin.id=p.forked_from_id) AS forked_from_short_id,
       CASE max(CASE a.permission WHEN 'admin' THEN 3 WHEN 'write' THEN 2 ELSE 1 END)
       WHEN 3 THEN 'admin' WHEN 2 THEN 'write' ELSE 'read' END AS permission
       FROM assistant.artifacts p LEFT JOIN assistant.artifact_access link ON link.artifact_id=p.id
@@ -166,6 +170,7 @@ export const artifacts = {
     if (sourceRevision !== undefined) z.number().int().positive().parse(sourceRevision);
     return sql.begin(async (db) => {
       const { row, permission } = await requireArtifact(db,id,identity,"read");
+      id = row.id;
       if (version !== undefined) {
         z.number().int().positive().parse(version);
         if (permission !== "admin") throw new ArtifactError("ACCESS_DENIED");
@@ -183,7 +188,7 @@ export const artifacts = {
     const actor = user(identity);
     const parsed = ArtifactCreate.parse(input);
     return sql.begin(async (db) => {
-      const [row] = await db<ArtifactRow[]>`INSERT INTO assistant.artifacts(kind,title,description,icon) VALUES(${parsed.kind},${parsed.title},${parsed.description ?? ""},${parsed.icon ?? "ti ti-app-window"}) RETURNING *`;
+      const [row] = await withAiShortIdForDb(db, "assistant_artifacts_short_id_key", (tx, shortId) => tx<ArtifactRow[]>`INSERT INTO assistant.artifacts(short_id,kind,title,description,icon) VALUES(${shortId},${parsed.kind},${parsed.title},${parsed.description ?? ""},${parsed.icon ?? "ti ti-app-window"}) RETURNING *`);
       if (!row) throw new ArtifactError("NOT_FOUND");
       const access = await createAccess({ principal: { type: "user", userId: actor.id }, permission: "admin" },db);
       if (!access.ok) throw new ArtifactError("INVALID_INPUT");
@@ -196,6 +201,7 @@ export const artifacts = {
     const parsed = ArtifactUpdate.parse(input);
     return sql.begin(async (db) => {
       const { row, permission } = await requireArtifact(db,id,identity,"admin");
+      id = row.id;
       if (row.revision !== parsed.expectedRevision) throw new ArtifactError("CONFLICT");
       await writeRevision(db,id,row.revision + 1,parsed.source);
       const [updated] = await db<ArtifactRow[]>`UPDATE assistant.artifacts SET title=${parsed.title}, icon=${parsed.icon ?? row.icon}, description=${parsed.description ?? row.description ?? ""},
@@ -208,6 +214,7 @@ export const artifacts = {
     if (content !== null) ArtifactFile.parse({ path, content });
     return sql.begin(async (db) => {
       const { row, permission } = await requireArtifact(db, id, identity, "admin");
+      id = row.id;
       const current = await revision(db, row, permission);
       const files = new Map(current.source.files.map((file) => [file.path, file]));
       if (content === null) files.delete(path);
@@ -219,10 +226,27 @@ export const artifacts = {
       return revision(db, updated!, permission);
     });
   },
+  async writeFiles(id: string, input: { expectedRevision: number; entry?: string; files: { path: string; content: string }[] }, identity: ArtifactIdentity): Promise<ArtifactBundle> {
+    z.number().int().positive().parse(input.expectedRevision);
+    z.array(ArtifactFile).min(1).max(LIMITS.files).parse(input.files);
+    if (new Set(input.files.map(file => file.path)).size !== input.files.length) throw new ArtifactError("INVALID_INPUT");
+    return sql.begin(async db => {
+      const { row, permission } = await requireArtifact(db, id, identity, "admin");
+      id = row.id;
+      if (row.revision !== input.expectedRevision) throw new ArtifactError("CONFLICT");
+      const current = await revision(db, row, permission);
+      const files = new Map(current.source.files.map(file => [file.path, file]));
+      for (const file of input.files) files.set(file.path, file);
+      const source = ArtifactSource.parse({ entry: input.entry ?? current.source.entry, files: [...files.values()] });
+      await writeRevision(db, id, row.revision + 1, source);
+      const [updated] = await db<ArtifactRow[]>`UPDATE assistant.artifacts SET revision=revision+1,updated_at=now() WHERE id=${id}::uuid RETURNING *`;
+      return revision(db, updated!, permission);
+    });
+  },
   async history(id: string, identity: ArtifactIdentity, page = 1) {
     z.number().int().min(1).max(100000).parse(page);
     return sql.begin(async (db) => {
-      await requireArtifact(db,id,identity,"admin");
+      id = (await requireArtifact(db, id,identity,"admin")).row.id;
       const rows = await db<{ revision: number; created_at: Date }[]>`SELECT revision,created_at
         FROM assistant.artifact_revisions WHERE artifact_id=${id}::uuid ORDER BY revision DESC LIMIT 31 OFFSET ${(page - 1) * 30}`;
       return { items: rows.slice(0,30).map((row) => ({ revision: row.revision, createdAt: row.created_at.toISOString() })), hasNext: rows.length > 30, page };
@@ -230,7 +254,7 @@ export const artifacts = {
   },
   async access(id: string, identity: ArtifactIdentity) {
     return sql.begin(async (db) => {
-      await requireArtifact(db,id,identity,"admin");
+      id = (await requireArtifact(db, id,identity,"admin")).row.id;
       const links = await db<{ access_id: string }[]>`SELECT access_id FROM assistant.artifact_access WHERE artifact_id=${id}::uuid`;
       const grants = await Promise.all(links.map((link) => getAccess({ id: link.access_id },db)));
       return resolveDisplayNames(grants.filter((grant) => grant !== null));
@@ -240,7 +264,7 @@ export const artifacts = {
     z.enum(["read", "admin"]).parse(level);
     if (principal.type === "public" || principal.type === "service_account") throw new ArtifactError("INVALID_INPUT");
     return sql.begin(async (db) => {
-      await requireArtifact(db,id,identity,"admin");
+      id = (await requireArtifact(db, id,identity,"admin")).row.id;
       const access = await createAccess({ principal, permission: level },db);
       if (!access.ok) throw new ArtifactError("INVALID_INPUT");
       await db`INSERT INTO assistant.artifact_access VALUES(${id}::uuid,${access.data.id}::uuid)`;
@@ -251,7 +275,7 @@ export const artifacts = {
     z.enum(["read", "admin"]).nullable().parse(level);
     z.uuid().parse(accessId);
     return sql.begin(async (db) => {
-      await requireArtifact(db,id,identity,"admin");
+      id = (await requireArtifact(db, id,identity,"admin")).row.id;
       const [grant] = await db<{ permission: PermissionLevel }[]>`SELECT a.permission FROM auth.access a
         JOIN assistant.artifact_access link ON link.access_id=a.id WHERE link.artifact_id=${id}::uuid AND a.id=${accessId}::uuid`;
       if (!grant) throw new ArtifactError("NOT_FOUND");
@@ -272,6 +296,7 @@ export const artifacts = {
     await compileArtifact(draft.source);
     return sql.begin(async db => {
       const { row } = await requireArtifact(db, id, identity, "admin");
+      id = row.id;
       if (row.revision !== expectedRevision || draft.revision !== expectedRevision) throw new ArtifactError("CONFLICT");
       const [next] = await db<{ version: number }[]>`SELECT coalesce(max(version),0)+1 AS version FROM assistant.artifact_publications WHERE artifact_id=${id}::uuid`;
       const version = next!.version;
@@ -285,7 +310,7 @@ export const artifacts = {
   async clearStorage(id: string, area: "files" | "kv" | "all", identity: ArtifactIdentity) {
     z.enum(["files", "kv", "all"]).parse(area);
     return sql.begin(async db => {
-      await requireArtifact(db,id,identity,"admin");
+      id = (await requireArtifact(db, id,identity,"admin")).row.id;
       await db`DELETE FROM assistant.artifact_storage WHERE artifact_id=${id}::uuid AND (${area} = 'all' OR area=${area})`;
       return {cleared:true};
     });
@@ -308,7 +333,7 @@ export const artifacts = {
     return sql.begin(async db => {
       // App use includes its runtime data effects. Code administration remains
       // separate. Lock the resource so quota checks and writes serialize.
-      await requireArtifact(db,id,identity,management ? "admin" : "read");
+      id = (await requireArtifact(db, id,identity,management ? "admin" : "read")).row.id;
       if (request.operation === "list") {
         const items = await db<{key:string;bytes:number;mediaType:string}[]>`SELECT key,bytes,media_type AS "mediaType"
           FROM assistant.artifact_storage WHERE artifact_id=${id}::uuid AND area=${request.area} AND key > ${request.after} ORDER BY key LIMIT ${request.limit}`;
@@ -334,7 +359,7 @@ export const artifacts = {
   },
   async projects(id: string, identity: ArtifactIdentity) {
     return sql.begin(async db => {
-      await requireArtifact(db,id,identity,"admin");
+      id = (await requireArtifact(db, id,identity,"admin")).row.id;
       return db<{projectId:string}[]>`SELECT project_id AS "projectId" FROM assistant.artifact_projects WHERE artifact_id=${id}::uuid ORDER BY project_id`;
     });
   },
@@ -347,6 +372,7 @@ export const artifacts = {
     const projectId = project.id;
     return sql.begin(async db => {
       const {row} = await requireArtifact(db,id,identity,"admin");
+      id = row.id;
       if (row.kind !== "script") throw new ArtifactError("INVALID_INPUT");
       if (linked) await db`INSERT INTO assistant.artifact_projects(artifact_id,project_id) VALUES(${id}::uuid,${projectId}::uuid) ON CONFLICT DO NOTHING`;
       else await db`DELETE FROM assistant.artifact_projects WHERE artifact_id=${id}::uuid AND project_id=${projectId}::uuid`;
@@ -357,6 +383,7 @@ export const artifacts = {
     const patch = ArtifactMetadata.parse(input);
     return sql.begin(async db => {
       const { row, permission } = await requireArtifact(db,id,identity,"admin");
+      id = row.id;
       const current = await revision(db,row,permission);
       await writeRevision(db,id,row.revision+1,current.source);
       const [updated] = await db<ArtifactRow[]>`UPDATE assistant.artifacts SET title=${patch.title ?? row.title},
@@ -368,7 +395,7 @@ export const artifacts = {
   async versions(id: string, identity: ArtifactIdentity, page = 1) {
     z.number().int().min(1).max(100000).parse(page);
     return sql.begin(async db => {
-      await requireArtifact(db,id,identity,"admin");
+      id = (await requireArtifact(db, id,identity,"admin")).row.id;
       const rows = await db<{version: number; revision: number; note: string; authorId: string | null; createdAt: Date}[]>`
         SELECT version,revision,note,author_id AS "authorId",created_at AS "createdAt" FROM assistant.artifact_publications
         WHERE artifact_id=${id}::uuid ORDER BY version DESC LIMIT 31 OFFSET ${(page-1)*30}`;
@@ -379,6 +406,7 @@ export const artifacts = {
     z.number().int().positive().parse(version);
     return sql.begin(async db => {
       const {row,permission} = await requireArtifact(db,id,identity,"admin");
+      id = row.id;
       if (row.revision !== expectedRevision) throw new ArtifactError("CONFLICT");
       const [release] = await db`SELECT * FROM assistant.artifact_publications WHERE artifact_id=${id}::uuid AND version=${version}`;
       if (!release) throw new ArtifactError("NOT_FOUND");
@@ -408,7 +436,7 @@ export const artifacts = {
   },
   async unpublish(id: string, identity: ArtifactIdentity) {
     return sql.begin(async db => {
-      await requireArtifact(db, id, identity, "admin");
+      id = (await requireArtifact(db, id, identity, "admin")).row.id;
       await db`UPDATE assistant.artifacts SET published_revision=NULL,published_title=NULL,published_description=NULL,published_icon=NULL,published_version=NULL WHERE id=${id}::uuid`;
       return { unpublished: true };
     });
@@ -418,10 +446,11 @@ export const artifacts = {
     const actor = user(identity);
     return sql.begin(async db => {
       const { row, permission } = await requireArtifact(db, id, identity, "read");
+      id = row.id;
       if (row.published_revision === null) throw new ArtifactError("NOT_FOUND");
       const source = await revision(db, row, permission, row.published_revision);
-      const [copy] = await db<ArtifactRow[]>`INSERT INTO assistant.artifacts(kind,title,description,icon,forked_from_id,forked_from_revision)
-        VALUES(${row.kind},${row.published_title!},${row.published_description ?? ""},${row.published_icon ?? row.icon},${id}::uuid,${row.published_revision}) RETURNING *`;
+      const [copy] = await withAiShortIdForDb(db, "assistant_artifacts_short_id_key", (tx, shortId) => tx<ArtifactRow[]>`INSERT INTO assistant.artifacts(short_id,kind,title,description,icon,forked_from_id,forked_from_revision)
+        VALUES(${shortId},${row.kind},${row.published_title!},${row.published_description ?? ""},${row.published_icon ?? row.icon},${id}::uuid,${row.published_revision}) RETURNING *`);
       const access = await createAccess({ principal: { type: "user", userId: actor.id }, permission: "admin" }, db);
       if (!access.ok) throw new ArtifactError("INVALID_INPUT");
       await db`INSERT INTO assistant.artifact_access VALUES(${copy!.id}::uuid,${access.data.id}::uuid)`;

@@ -54,6 +54,7 @@ type ContextNavigation = {
 
 export const assistantChatContextHasContent = (snapshot: AssistantChatContextSnapshot): boolean =>
   visibleAssistantReferences(snapshot.sources, snapshot.chatId, snapshot.tasks.find((task) => task.state !== "completed")?.id).some((source) => source.kind !== "file") ||
+  snapshot.runs.length > 0 ||
   snapshot.files.length > 0 ||
   snapshot.tasks.some((task) => task.state !== "completed");
 
@@ -159,7 +160,7 @@ function AssistantChatContextView(props: ContextNavigation & { state: AssistantC
     if (!props.onOpenView) return openAssistantContextFiles(files, selected);
     if (!selected) return overview("files", text("Files"));
     const file = selected;
-    props.onOpenView({ file: file.scope === "chat" ? { conversationId: props.state.context()!.chat.chatId, path: file.path } : undefined, key: `${props.state.context()!.chat.chatId}:${file.id}`, title: file.displayName ?? file.path.split("/").pop()!, render: () => <FileView file={{ path: file.path }} load={() => file.source.read(file.path)} downloadHref={file.source.downloadHref?.(file.path)} /> });
+    props.onOpenView({ file: file.scope === "chat" ? { conversationId: props.state.context()!.chat.chatId, path: file.path } : undefined, key: `${props.state.context()!.chat.chatId}:${file.id}`, title: file.displayName ?? file.path.split("/").pop()!, render: () => <FileView previewPreferencesKey="assistant.csv-preview" file={{ path: file.path }} load={() => file.source.read(file.path)} downloadHref={file.source.downloadHref?.(file.path)} /> });
   };
   const overview = (category: ContextCategory, title: string) => {
     const context = props.state.context();
@@ -284,7 +285,7 @@ function AssistantChatContextView(props: ContextNavigation & { state: AssistantC
         return (
           <div class="flex flex-col gap-5">
             <Show when={props.category && props.category !== "tasks"}><TextInput value={search()} onValueChange={setSearch} aria-label={text("Search")} placeholder={text("Search")} /></Show>
-            <Show when={props.category && !(props.category === "apps" ? apps().filter(app => includes(app.title)).length : props.category === "files" ? files().filter(file => includes(file.displayName ?? file.path)).length : props.category === "sources" ? references().filter(item => includes(item.title)).length + value().chat.sources.filter(item => includes(item.title)).length : props.category === "knowledge" ? (value().project ? 1 : 0) + (value().projectContext?.knowledge.length ?? 0) : value().chat.tasks.length)}><p role="status" class="text-sm text-secondary">{text(search() ? "No matching items." : "No items yet.")}</p></Show>
+            <Show when={props.category && !(props.category === "apps" ? apps().filter(app => includes(app.title)).length + value().chat.runs.length : props.category === "files" ? files().filter(file => includes(file.displayName ?? file.path)).length : props.category === "sources" ? references().filter(item => includes(item.title)).length + value().chat.sources.filter(item => includes(item.title)).length : props.category === "knowledge" ? (value().project ? 1 : 0) + (value().projectContext?.knowledge.length ?? 0) : value().chat.tasks.length)}><p role="status" class="text-sm text-secondary">{text(search() ? "No matching items." : "No items yet.")}</p></Show>
             <Show when={section("knowledge") && value().project}>
               {(project) => (
                 <AssistantContextSection title={project().name} identity>
@@ -345,12 +346,17 @@ function AssistantChatContextView(props: ContextNavigation & { state: AssistantC
               </AssistantContextSection>
             </Show>
 
-            <Show when={section("apps") && apps().length > 0}>
+            <Show when={section("apps") && (apps().length > 0 || value().chat.runs.length > 0)}>
               <AssistantContextSection title={"Studio"}>
                 <AssistantContextRows>
                   <div class={props.category === "apps" ? "assistant-app-grid" : ""}><For each={apps().filter(app => includes(app.title)).slice(0, limit())}>{app => <AssistantContextRow icon={app.kind === "source" ? app.source.icon ?? "ti ti-app-window" : "ti ti-app-window"} title={app.title} description={app.kind === "source" ? app.source.preview ?? undefined : undefined}
                     onClick={() => props.onOpenApp ? props.onOpenApp(refOf(app)!.id, app.title) : void openAssistantCloudReference(app.title, refOf(app)!)} />}</For></div>
-                  <Show when={!props.category && apps().length > CONTEXT_PREVIEW_LIMIT}><AssistantContextViewAll count={apps().length} onClick={() => overview("apps", "Studio")} /></Show>
+                  <Show when={value().chat.runs.length > 0}>
+                    <p class="px-2 pt-2 text-xs text-secondary">{text("Recent one-off runs")}</p>
+                    <For each={value().chat.runs.slice(0,limit())}>{run=><AssistantContextRow icon="ti ti-code" title={text(run.status==="ready"?"Run succeeded":run.status==="error"||run.status==="lost"?"Run failed":run.status==="stopped"?"Run stopped":run.status==="unknown"?"Run state unavailable":"Run in progress")}
+                      description={new Date(run.createdAt).toLocaleString(locale())} />}</For>
+                  </Show>
+                  <Show when={!props.category && (apps().length > CONTEXT_PREVIEW_LIMIT || value().chat.runs.length > CONTEXT_PREVIEW_LIMIT)}><AssistantContextViewAll count={apps().length + value().chat.runs.length} onClick={() => overview("apps", "Studio")} /></Show>
                 </AssistantContextRows>
               </AssistantContextSection>
             </Show>

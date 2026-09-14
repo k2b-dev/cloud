@@ -41,6 +41,7 @@ export async function createBrowserCodeHost(ctx: Pick<CloudCliContext, "fetch">,
     await page.addScriptTag({ content: await response.text() });
     if (startupErrors.length) throw new Error(`Code host failed to initialize: ${startupErrors.join("; ")}`);
     return {
+      health: () => page.evaluate(() => undefined),
       execute: (call: Call) => page.evaluate(call => window.assistantCodeExecute(call), call),
       call: (call: Call) => page.evaluate(call => window.assistantCodeCall(call), call),
       close: () => {lifetime.abort();return browser.close();},

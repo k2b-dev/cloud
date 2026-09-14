@@ -1,7 +1,8 @@
 import { z } from "zod";
 
-const id = z.uuid().describe("App ID returned by code_create or code_list.");
-const runId = z.string().min(1).max(180).describe("Run ID returned by code_run in this browser.");
+export const CodeResourceId = z.string().regex(/^[23456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz]{6}$/).describe("Public resource short ID returned by code_create or code_list.");
+const id = CodeResourceId;
+const runId = z.string().min(1).max(180).describe("Run ID returned by code_run in this conversation execution host.");
 export const CODE_RUNTIME_TOOL_NAMES = ["code_run", "code_inspect", "code_interact", "code_stop", "code_open", "code_export", "code_secret"] as const;
 export const CodeRunInput = z.object({
   id: id.optional(),
@@ -11,10 +12,24 @@ export const CodeRunInput = z.object({
   inputPaths: z.array(z.string().min(1).max(500)).max(64).default([]).describe("Explicit current-chat input files. Scripts can read them; app test runs expose them only through the simulated picker. User apps never receive chat files."),
 }).strict().refine(input => Number(input.id !== undefined) + Number(input.code !== undefined) === 1, "Provide exactly one of id or code").refine(input => input.version === undefined || input.id !== undefined,"A published version requires a saved resource id").refine(input => input.resourceId === undefined || input.code !== undefined, "resourceId requires one-off code");
 export const CodeInspectInput = z.object({ runId, waitMs: z.number().int().min(0).max(30000).default(0).describe("Wait up to this duration for background work to finish before returning its real state; never restarts work."), nodeId: z.string().min(1).max(80).optional(), offset: z.number().int().min(0).default(0), limit: z.number().int().min(1).max(100).default(20) }).strict();
-export const CodeInteractInput = z.object({ runId,
+const CodeInteraction = z.object({
   id: z.string().min(1).max(80).describe("Control ID or pending modal ID returned by the snapshot."),
-  value: z.json().optional().describe("Structured UI event or modal answer. Omit for button activation; use {type:change,value:...} for controls, {type:select,key:...} for selection. Use null to cancel a modal."),
+  event: z.discriminatedUnion("type", [
+    z.object({ type: z.literal("change"), value: z.union([z.string(), z.number().finite(), z.boolean(), z.null(), z.array(z.string()), z.object({ start: z.iso.date().nullable(), end: z.iso.date().nullable() }).strict()]) }).strict(),
+    z.object({ type: z.literal("select"), key: z.string().nullable() }).strict(),
+    z.object({ type: z.literal("view"), value: z.enum(["chart", "table"]) }).strict(),
+    z.object({ type: z.literal("refresh") }).strict(),
+    z.object({ type: z.literal("request"), request: z.record(z.string(), z.json()) }).strict(),
+  ]).optional().describe("An event object, never a JSON-encoded string. Omit to activate a button. Example: {type:'change',value:['Sued']} or {type:'view',value:'table'}."),
+  answer: z.json().optional().describe("Only for the pending modal ID: the modal answer, or null to cancel. Do not use for controls."),
 }).strict();
+const validInteraction = (input: z.infer<typeof CodeInteraction>) => input.event === undefined || input.answer === undefined;
+export const CodeInteractInput = CodeInteraction.partial({id:true}).extend({
+  runId,
+  // Three normal 15-second callback budgets share the existing 45-second call budget.
+  steps:z.array(CodeInteraction.refine(validInteraction,"Supply event OR answer")).min(1).max(3).optional()
+    .describe("Up to three sequential interactions in one call. Use steps OR the top-level id/event/answer. Stops on an error, pending modal or background work; returns completedSteps and nextStep."),
+}).strict().refine(input=>input.steps ? input.id===undefined && input.event===undefined && input.answer===undefined : input.id!==undefined && (input.event===undefined || input.answer===undefined),"Supply steps OR one id with event/answer.");
 export const CodeStopInput = z.object({ runId }).strict();
 export const CodeOpenInput = z.object({ id }).strict();
 export const CodeExportInput = z.object({ runId, name: z.string().min(1).max(180).describe("Captured output filename returned by the snapshot.") }).strict();
@@ -31,7 +46,7 @@ export const CodeSecretInput = z.object({
 export const CodeRuntimeInput = z.discriminatedUnion("operation", [
   CodeRunInput.safeExtend({ operation: z.literal("run") }),
   CodeInspectInput.extend({ operation: z.literal("inspect") }),
-  CodeInteractInput.extend({ operation: z.literal("interact") }),
+  CodeInteractInput.safeExtend({ operation: z.literal("interact") }),
   CodeStopInput.extend({ operation: z.literal("stop") }),
   CodeOpenInput.extend({ operation: z.literal("open") }),
   CodeSecretInput.extend({ operation: z.literal("secret") }),

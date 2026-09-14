@@ -20,6 +20,11 @@ export function startCliCodeHostProcess() {
       return null;
     }
     if (request.operation === "close") { await host?.close(); return null; }
+    if (request.operation === "health") {
+      if (!host) throw new Error("Code host is not ready");
+      await host.health();
+      return null;
+    }
     if (request.operation === "call" || request.operation === "execute") {
       if (!host) throw new Error("CLI browser host not started");
       return host[request.operation](request.call);

@@ -176,7 +176,7 @@ describe("AI tools", () => {
     expect(CLOUD_AI_DEFERRED_BUILTIN_TOOL_NAMES.has("card")).toBe(false);
   });
 
-  test("browser execution is an explicitly advertised client tool, not a default", () => {
+  test("managed execution is deferred and only user-facing code tools need a browser", () => {
     const defaults = prepareAiTools({ tools: createDefaultCloudAiTools(), actor });
     const browser = prepareAiTools({ tools: createCloudAiCodeTools(), actor });
     for (const tool of browser.tools) {
@@ -186,7 +186,9 @@ describe("AI tools", () => {
     expect(browser.tools).toHaveLength(7);
     expect(browser.frontendModes.get("code_secret")).toBe("client");
     expect(browser.approvalPolicies.get("code_secret")).toBe("never");
-    expect(browser.frontendModes.get("code_run")).toBe("client");
+    expect(browser.frontendModes.get("code_run")).toBeUndefined();
+    expect(browser.tools.find(tool=>tool.def.name==="code_run")?.kind).toBe("server");
+    expect(browser.frontendModes.get("code_open")).toBe("client");
     expect(browser.approvalPolicies.get("code_run")).toBe("never");
   });
 
@@ -204,34 +206,9 @@ describe("AI tools", () => {
     const withoutWeb = await createConfiguredDefaultCloudAiTools({ firecrawlApiKey: "" });
     const withWeb = await createConfiguredDefaultCloudAiTools({ firecrawlApiKey: "fc-secret" });
 
-    expect(withoutWeb.map((tool) => tool.def.name)).toEqual([
-      "survey",
-      "text_editor",
-      "list_files",
-      "read_file",
-      "fetch_file",
-      "write_file",
-      "markdown_to_pdf",
-      "present",
-      "calculate",
-      "view_image",
-      "transcribe_audio",
-    ]);
-    expect(withWeb.map((tool) => tool.def.name)).toEqual([
-      "survey",
-      "text_editor",
-      "list_files",
-      "read_file",
-      "fetch_file",
-      "write_file",
-      "markdown_to_pdf",
-      "present",
-      "calculate",
-      "view_image",
-      "transcribe_audio",
-      "web_search",
-      "web_extract",
-    ]);
+    expect(withoutWeb.some(tool=>tool.def.name.startsWith("web_"))).toBe(false);
+    expect(withWeb.filter(tool=>tool.def.name.startsWith("web_")).map(tool=>tool.def.name)).toEqual(["web_search","web_extract"]);
+    expect(withWeb.filter(tool=>!tool.def.name.startsWith("web_")).map(tool=>tool.def.name)).toEqual(withoutWeb.map(tool=>tool.def.name));
     expect(aiToolPromptHints(withoutWeb).map((hint) => hint.name)).toEqual([
       "survey",
       "text_editor",

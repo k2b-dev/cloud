@@ -17,6 +17,7 @@ test("opaque worker drives ChartExplorer, controls, tables and responsive layout
         content: `
 
     export default () => {
+      const stat = ui.stat({id:"stat",label:"Revenue KPI",value:123.456,format:{type:"currency",currency:"EUR",maximumFractionDigits:2}});
       const result = ui.text({ id: "result", value: "No selection" });
       const view = ui.chartExplorer({id:"revenue", label:"Revenue", columns:[{key:"name",label:"Region"},{key:"value",label:"Revenue",format:{type:"currency",currency:"EUR"},sortable:true}],
         data:{rowKey:"id",rows:[{id:"a",name:"North",value:12},{id:"b",name:"South",value:8}],chart:{kind:"bar",category:"name",value:"value"},context:{mode:"snapshot",asOf:"2026-09-13T12:00:00Z",sources:[{label:"Fixture"}],status:"fixture",note:"Demonstration only"}},
@@ -27,7 +28,7 @@ test("opaque worker drives ChartExplorer, controls, tables and responsive layout
       const data = value => ({rowKey:"id",rows:[{id:"a",name:"A",value}],chart:{kind:"bar",category:"name",value:"value"}});
       const group = ui.explorer({id:"group",label:"Linked charts",snapshot:{request:{step:"first"},charts:{one:data(1),two:data(2)}},steps:[{key:"first",label:"First"},{key:"second",label:"Second"}],async load(request){return {request,charts:{one:data(3),two:data(6)}};}});
       const one = group.chart("one",{label:"First chart",columns}); const two = group.chart("two",{label:"Second chart",columns});
-      ui.column({children:[result,scale,choice,group,ui.grid({children:[view,one,two]})]});
+      ui.column({children:[stat,result,scale,choice,group,ui.grid({children:[view,one,two]})]});
     }
   `,
       },
@@ -57,6 +58,7 @@ test("opaque worker drives ChartExplorer, controls, tables and responsive layout
     await page.goto(server.url.href);
     await page.waitForFunction(() => document.querySelector("#state")?.textContent === "ready");
     expect(await page.locator(".k2b-chart-explorer").count()).toBe(3);
+    expect(await page.locator(".k2b-stat-cell").textContent()).toContain("€123.46");
     expect(
       await page.evaluate(() =>
         Array.from(document.styleSheets).some((sheet) => sheet.href?.endsWith("/ui.css") && sheet.cssRules.length > 0),

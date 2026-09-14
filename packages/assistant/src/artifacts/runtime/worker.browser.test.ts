@@ -16,6 +16,8 @@ test("real opaque worker returns data, reuses table selection callbacks and rema
   const compile = (content: string) => compileArtifact({ entry: "main.js", files: [{ path: "main.js",content }] });
   const invalidLayoutSource = await compile('export default () => { const text=ui.text({value:"Input"}); ui.column({children:[text,text]}); };');
   const invalidOutputSource = await compile('export default () => ui.text({value:"Output"});');
+  const invalidEntrySource = await compile('export default { answer: 42 };');
+  const undefinedOutputSource = await compile('export default () => ({missingColumn:undefined});');
   const headlessSource = await compile("export default () => ({ answer: 42 });");
   const csvSource = await compile(`export default async () => {
     for(let i=0;i<250;i++) console.info("row",i);
@@ -160,6 +162,10 @@ test("real opaque worker returns data, reuses table selection callbacks and rema
     expect(invalidLayout.errors.join(" ")).toContain("exactly one layout");
     const invalidOutput = await page.evaluate(source => runArtifactScenario({ source }), invalidOutputSource);
     expect(invalidOutput.errors.join(" ")).toContain("Do not return UI handles");
+    const invalidEntry = await page.evaluate(source => runArtifactScenario({ source }), invalidEntrySource);
+    expect(invalidEntry.errors.join(" ")).toContain("must default-export a function");
+    const undefinedOutput = await page.evaluate(source => runArtifactScenario({source}),undefinedOutputSource);
+    expect(undefinedOutput.errors.join(" ")).toContain("Replace undefined values with null");
     const recovery = await page.evaluate((source) => runArtifactRecoveryScenario(source), recoverySource);
     expect(recovery.failed.status).toBe("error");
     expect(recovery.recovered.status).toBe("ready");

@@ -157,6 +157,12 @@ language-dependent automatic retries.
 The router also supports message retry, forks, compaction, pending tool
 actions, conversation enrichment, and paged history.
 
+Automatic compaction accounts for the configured output-token reserve. When a
+single user request grows too large, it can summarize completed model rounds
+inside that first loop. The newest two model rounds stay intact, and a tool call
+is never archived separately from its pending result. Archived messages remain
+available in the conversation history.
+
 For a compact diagnostic of one owned chat, including its ordered tool calls,
 arguments, results, model profiles, errors, usage, and timing without the
 duplicated loop transcript, run:
@@ -344,8 +350,11 @@ and retry decision. Dictations are not workflow runs.
 The Assistant live connection uses `activity: "always"`. Hiding the browser tab
 does not unsubscribe the active conversation or close its WebSocket. This does
 not override browser suspension, operating-system sleep, reload, or closing the
-tab. Worker sessions remain browser-owned; changing the selected conversation
-can leave another conversation waiting for its browser handler.
+tab. Agent Code Mode execution uses an Assistant-owned isolated Chromium host,
+so changing or closing the user tab does not pause code or simulated UI actions.
+The interactive Studio preview remains browser-owned. Opening an app, selecting
+local files, entering secrets and answering approval prompts still need a user
+client.
 
 Code Mode source and runtime tools do not require confirmation. Source Actions
 retain permission checks and idempotency. Browser execution claims resolve a
@@ -353,6 +362,12 @@ public short turn ID to the authorized active turn's UUID before persistence.
 A duplicate claim cannot repeat an interaction. Host failures return
 `kind: "host"` with `retryable: false`; agents should report them rather than
 rewriting otherwise valid application source or retrying unchanged calls.
+
+The execution host belongs to one Assistant process. Run this alpha with one
+Assistant replica: temporary JavaScript state is not transferred between replicas
+or recovered after a process restart. Durable call records prevent an uncertain
+operation from being replayed. A new run is required after host loss. Startup and
+health checks are bounded independently of the user's browser timers.
 
 Complete active-turn snapshots replace the observed block baseline when their
 attempt and sequence are current. Older snapshots cannot restore obsolete
@@ -364,3 +379,12 @@ Conversation multipart uploads accept an optional `directory` form field
 (default `/`). The normal path validation and reserved Project namespace apply.
 Collisions receive a suffix; use the returned `file.path` rather than deriving
 a path from the original filename.
+
+Chat timing uses the durable user turn's wall-clock interval. Each model request
+records its generation interval before tool execution; these measurements survive
+client actions and executor resumption. Tool execution and approval/browser waits
+use their durable audit timestamps. Overlapping phases are counted once. An older
+or incomplete trace has no aggregate timing or token-rate estimate; the chat can
+still display elapsed time from persisted messages. Live `message_saved` events
+carry usage after each model response, before its tools finish, without rendering
+a second copy of the active response.

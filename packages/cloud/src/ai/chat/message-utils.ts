@@ -231,14 +231,20 @@ export type AiLatestUsageSnapshot = {
 export const latestUsageSnapshot = (messages: AiStoredMessage[]): AiLatestUsageSnapshot | null => {
   for (let i = messages.length - 1; i >= 0; i--) {
     const entry = messages[i];
+    if (entry?.message.role !== "assistant") continue;
     const request = entry?.loopAggregate?.turns.findLast((turn) => Boolean(turn.usage))?.usage ?? entry?.usage;
     if (request) {
       return {
         request,
-        loop: entry?.loopAggregate?.usage ?? entry?.usage ?? request,
+        loop: entry?.loopAggregate?.usage ?? (entry?.loopId ? messages.filter(message => message.loopId === entry.loopId && message.message.role === "assistant").reduce<Usage>((sum, message) => ({
+          input: sum.input + (message.usage?.input ?? 0), output: sum.output + (message.usage?.output ?? 0), total: sum.total + (message.usage?.total ?? 0),
+          ...((sum.cacheRead !== undefined || message.usage?.cacheRead !== undefined) ? { cacheRead: (sum.cacheRead ?? 0) + (message.usage?.cacheRead ?? 0) } : {}),
+        }), { input: 0, output: 0, total: 0 }) : request),
         modelProfileId: entry?.modelProfileId ?? null,
       };
     }
+    // A provider without usage must not inherit a previous request's numbers.
+    return null;
   }
   return null;
 };

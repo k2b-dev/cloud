@@ -76,7 +76,9 @@ RUN bun run packages/cloud/scripts/build.ts
 # ──────────────────────────────────────────────────────────────────────
 FROM oven/bun:1.3.14-alpine@sha256:5acc90a93e91ff07bf72aa90a7c9f0fa189765aec90b47bdbf2152d2196383c0 AS runtime
 WORKDIR /app
-ENV NODE_ENV=production
+ARG APP_ID
+RUN if [ "$APP_ID" = "assistant" ]; then apk add --no-cache chromium; fi
+ENV NODE_ENV=production CLOUD_CLI_CHROMIUM=/usr/bin/chromium
 COPY --from=build /app/dist ./
 
 EXPOSE 3000

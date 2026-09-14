@@ -19,6 +19,7 @@ import {
   activeTurnFromSnapshot,
   emptyProjection,
   mergeActiveTurn,
+  messagesWithPendingSend,
   reconcileActiveTurnActions,
   reduceProjection,
   visibleMessages,
@@ -148,6 +149,13 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
   const [streamStatus, setStreamStatus] = createSignal<AiStreamStatus>("idle");
   const initialProjection = options.initialDetail ? detailToProjection(options.initialDetail) : emptyProjection();
   const [state, setState] = createStore<AiChatProjection>(initialProjection);
+  const completedDuringSend = new Map<string, string>();
+  const [pendingSends, setPendingSends] = createSignal<Record<string, AiStoredMessage | undefined>>({});
+  const clearPendingSend = (conversationId: string) => setPendingSends(current => {
+    const next = { ...current };
+    delete next[conversationId];
+    return next;
+  });
 
   // Cache of projections for conversations opened this session (fast switching).
   const cache = new Map<string, AiChatProjection>();
@@ -214,7 +222,7 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
   const error = () => globalError() ?? runError();
 
   const activeTurn = () => state.activeTurn;
-  const messages = createMemo(() => visibleMessages(state));
+  const messages = createMemo(() => messagesWithPendingSend(visibleMessages(state), pendingSends()[activeConversationId() ?? ""]));
   const runStatus = (): AiChatRunStatus => {
     const override = runStatusRaw();
     if (override) return override;
@@ -233,6 +241,7 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
     const next = reduceProjection({ conversation: state.conversation, messages: state.messages, activeTurn: state.activeTurn }, event);
     setState(reconcile(next, { key: "id", merge: true }));
     cache.set(conversationId, next);
+    if (event.type === "turn_finished" && pendingSends()[conversationId]?.loopId === event.turnId) clearPendingSend(conversationId);
   };
 
   /**
@@ -248,6 +257,7 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
       setProjection(detailToProjection(detail), session.conversationId);
       setHasMore(session.conversationId, detail.hasMoreMessages ?? false);
       if (detail.timeline) setTimeline(session.conversationId, detail.timeline);
+      if (event.type === "turn_finished" && pendingSends()[session.conversationId]?.loopId === event.turnId) clearPendingSend(session.conversationId);
     } else reduceEvent(session.conversationId, event);
     setRunStatusRaw(null);
     void markConversationViewed(session.conversationId);
@@ -256,6 +266,9 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
   const applyEvent = (session: AiStreamSession, event: AiStreamEvent) => {
     if (!isCurrentStreamSession(streamSession, session)) return;
     const conversationId = session.conversationId;
+    if (event.type === "turn_finished" && pendingSends()[conversationId]) {
+      completedDuringSend.set(conversationId, event.turnId);
+    }
 
     if (event.type === "state") setHasMore(conversationId, event.hasMoreMessages ?? false);
     const nextRunError = runErrorFromEvent(event, state.activeTurn?.turnId);
@@ -716,28 +729,18 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
     if (!isComposerDraftSendable(input)) return Promise.resolve(false);
     const targetConversation = input.conversationId ? Promise.resolve(input.conversationId) : ensureConversation();
     return queueDraftOperation(async () => {
-      const savedDraft = await persistComposerDraft(input, await targetConversation);
-      if (!savedDraft) return false;
-      const conversationId = savedDraft.conversationId;
-      if (isActiveConversation(conversationId) && running()) return false;
-
+      const conversationId = await targetConversation;
+      if (!conversationId || (isActiveConversation(conversationId) && running())) return false;
       if (isActiveConversation(conversationId)) clearErrors();
       const baseProjection = isActiveConversation(conversationId)
         ? { conversation: state.conversation, messages: [...state.messages], activeTurn: state.activeTurn }
         : (cache.get(conversationId) ?? emptyProjection());
-
-      // Optimistic view renders attachments through the same marker format the server persists.
       const optimisticContent: AiUserContentPart[] = [
-        ...savedDraft.content.flatMap((part) => {
-          if (part.type === "text") return [{ type: "text" as const, text: part.text }];
-          if (part.type === "file") return [{ type: "text" as const, text: aiAttachmentMarker(part) }];
-          return [
-            {
-              type: "text" as const,
-              text: aiResourceMarker({ ref: part.ref, title: part.title, icon: part.icon, href: part.href }),
-            },
-          ];
-        }),
+        ...(input.content ?? []),
+        ...(!input.content?.length && input.message ? [{ type: "text" as const, text: input.message }] : []),
+        ...(input.resources ?? []).map(ref => ({ type: "text" as const, text: aiResourceMarker(ref) })),
+        ...(input.storedFiles ?? []).map(file => ({ type: "text" as const, text: aiAttachmentMarker(file) })),
+        ...(input.files ?? []).map(file => ({ type: "text" as const, text: aiAttachmentMarker({ path: `/${file.name}`, mediaType: file.type, size: file.size }) })),
       ];
 
       // Optimistic: show the user message immediately.
@@ -759,14 +762,25 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
         meta: null,
         createdAt: new Date().toISOString(),
       };
-      const optimisticProjection = { ...baseProjection, messages: [...baseProjection.messages, optimistic] };
-      cache.set(conversationId, optimisticProjection);
+      setPendingSends(current => ({ ...current, [conversationId]: optimistic }));
       if (isActiveConversation(conversationId)) {
-        setState("messages", (prev) => [...prev, optimistic]);
         setRunStatusRaw("streaming");
       }
 
       try {
+        const savedDraft = await persistComposerDraft(input, conversationId);
+        if (!savedDraft) {
+          clearPendingSend(conversationId);
+          if (isActiveConversation(conversationId)) setRunStatusRaw("failed");
+          return false;
+        }
+        setPendingSends(current => ({ ...current, [conversationId]: {
+          ...optimistic,
+          meta: { submittedDraftRevision: savedDraft.revision },
+          message: { role: "user", content: savedDraft.content.map(part => ({
+            type: "text", text: part.type === "text" ? part.text : part.type === "file" ? aiAttachmentMarker(part) : aiResourceMarker({ ref: part.ref, title: part.title, icon: part.icon, href: part.href }),
+          })) },
+        } }));
         const result = await request<SubmitTurnResult>(
           `/conversations/${conversationId}/turns`,
           {
@@ -779,20 +793,24 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
           },
           "AI request failed",
         );
+        const alreadyFinished = completedDuringSend.get(conversationId) === result.turn.id;
+        completedDuringSend.delete(conversationId);
+        if (alreadyFinished) clearPendingSend(conversationId);
+        else setPendingSends(current => ({ ...current, [conversationId]: result.message }));
         if (invalidateInactiveCache(conversationId)) return true;
         // Replace the optimistic message with the persisted one.
-        setState("messages", (prev) => prev.map((message) => (message.id === optimistic.id ? result.message : message)));
+        setState("messages", (prev) => [...prev.filter(message => message.id !== result.message.id), result.message]);
         setState(
           "activeTurn",
           (current) =>
-            current ?? {
+            current ?? (alreadyFinished ? null : {
               turnId: result.turn.id,
               attempt: 0,
               seq: 0,
               status: "running",
               blocks: [],
               modelProfileId: result.turn.modelProfileId,
-            },
+            }),
         );
         if (state.conversation) {
           setState("conversation", "draft", {
@@ -809,6 +827,8 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
         }
         return true;
       } catch (sendError) {
+        completedDuringSend.delete(conversationId);
+        clearPendingSend(conversationId);
         if (invalidateInactiveCache(conversationId)) return false;
         setState("messages", (prev) => prev.filter((message) => message.id !== optimistic.id));
         cache.set(conversationId, { conversation: state.conversation, messages: state.messages, activeTurn: state.activeTurn });
@@ -1179,6 +1199,8 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
     conversation: () => state.conversation,
     setActiveConversationId,
     messages,
+    /** Includes persisted model rounds still represented by live blocks in the timeline. */
+    usageMessages: () => state.messages,
     activeTurn,
     hasMoreHistory,
     loadingOlder: () => isActiveConversationLoading(activeConversationId(), loadingOlderConversationId()),

@@ -17,10 +17,10 @@ test("CLI runs one-off code in the existing isolated worker without a GUI chat",
     if (path.includes("/files") && init?.method==="POST"){
       const form=await new Response(init.body,{headers:{"content-type":new Headers(init.headers).get("content-type")!}}).formData();
       expect(form.get("directory")).toBe("/files");
-      return Response.json({file:{path:"/files/answer-2.txt"}});
+      return Response.json({file:{path:"/files/answer-2.txt",version:1}});
     }
     if (path.includes("/files")) return Response.json({files:[]});
-    if (path.includes("/artifacts/")) return Response.json({id:"00000000-0000-4000-8000-000000000001",kind:"app",revision:1});
+    if (path.includes("/artifacts/")) return Response.json({id:"aBc234",kind:"app",revision:1});
     throw new Error(`Unexpected host request ${path}`);
   }});
   const ids = {conversationId:"00000000-0000-4000-8000-000000000001",turnId:"00000000-0000-4000-8000-000000000001"};
@@ -36,7 +36,7 @@ test("CLI runs one-off code in the existing isolated worker without a GUI chat",
     expect(inspected).toMatchObject({runId:"standalone",status:"ready"});
     const exported = await host.execute({...ids,name:"code_export",callId:"export",args:{runId:"standalone",name:"answer.txt"}});
     expect(exported).toMatchObject({path:"/files/answer-2.txt",size:2});
-    const rejected = await host.call({...ids,name:"code_run",callId:"app-files",args:{id:ids.conversationId,inputPaths:["private.csv"]}});
+    const rejected = await host.call({...ids,name:"code_run",callId:"app-files",args:{id:"aBc234",inputPaths:["private.csv"]}});
     expect(rejected).toMatchObject({error:"Input not found: private.csv"});
   } finally { await host.close(); }
 }, 60000);
@@ -117,14 +117,14 @@ test("chat inputs load on demand and app fixtures are visible only to the picker
     if(path.includes("/files/content?")){reads++;return new Response("hello",{headers:{"content-type":"text/plain"}});}
     if(path.endsWith("/files"))return Response.json({files:[{path:"/folder/report.csv",size:5,mediaType:"text/plain"}]});
     if(path.includes("/compiled"))return Response.json({...appSource,revision:1});
-    if(path.includes("/artifacts/"))return Response.json({id:"00000000-0000-4000-8000-000000000001",kind:"app",revision:1,sourceRevision:1});
+    if(path.includes("/artifacts/"))return Response.json({id:"aBc234",kind:"app",revision:1,sourceRevision:1});
     throw new Error(`Unexpected request ${path}`);
   }});
   const ids={conversationId:"00000000-0000-4000-8000-000000000001",turnId:"00000000-0000-4000-8000-000000000001"};
   try {
     const listed=await host.execute({...ids,name:"code_run",callId:"list-only",args:{code:"export default async()=>({count:(await files.list()).length})",inputPaths:["/folder/report.csv"]}});
     expect(listed).toMatchObject({output:'{"count":1}'});expect(reads).toBe(0);
-    const picked=await host.execute({...ids,name:"code_run",callId:"picker",args:{id:ids.conversationId,inputPaths:["/folder/report.csv"]}});
+    const picked=await host.execute({...ids,name:"code_run",callId:"picker",args:{id:"aBc234",inputPaths:["/folder/report.csv"]}});
     expect(picked).toMatchObject({output:JSON.stringify({hidden:0,path:"/folder/report.csv",text:"hello"})});expect(reads).toBe(1);
     const denied=await host.execute({...ids,name:"code_run",callId:"unselected",args:{code:'export default async()=>await files.read("/not-selected.csv")',inputPaths:["/folder/report.csv"]}});
     expect(denied).toMatchObject({status:"error"});expect(reads).toBe(1);
@@ -132,7 +132,7 @@ test("chat inputs load on demand and app fixtures are visible only to the picker
 },30000);
 
 test("database error codes survive HTTP and the worker bridge",async()=>{
-  const id="00000000-0000-4000-8000-000000000001";
+  const id="aBc234";
   const code='export default async()=>{try{await database.connect();return "unexpected success";}catch(error){return {code:error.code,message:error.message};}}';
   const source=await compileArtifact({entry:"main.ts",files:[{path:"main.ts",content:code}]});
   const bundle=await cliHostBundle();
@@ -195,7 +195,7 @@ test("scratchpad pressure preserves exports and interactive runs while reclaimin
 },60000);
 
 test("slow database and shared storage calls do not consume the short callback deadline",async()=>{
-  const id="00000000-0000-4000-8000-000000000001";
+  const id="aBc234";
   const code='export default()=>{ui.button({label:"Import",onClick:async()=>{await database.connect();await kv.shared.set("done",true);ui.text({value:"Finished"});},id:"import"});}';
   const compiled=await compileArtifact({entry:"main.ts",files:[{path:"main.ts",content:code}]});
   const bundle=await cliHostBundle();
@@ -239,7 +239,7 @@ test("replacing CLI hosts survives garbage collection without losing the new bro
 }, 30000);
 
 test("finance exports and resource-scoped one-offs use the existing worker and management routes", async () => {
-  const id = "00000000-0000-4000-8000-000000000001";
+  const id = "aBc234";
   const bundle = await cliHostBundle();
   const document = await Bun.file(new URL("../../skills/code-mode/references/finance.md", import.meta.url)).text();
   const example = document.match(/```js\n([\s\S]*?)```/)![1]!;
@@ -322,7 +322,43 @@ test("CLI uses UI typed controls and bounded explorer inspection", async () => {
   const ids={conversationId:"00000000-0000-4000-8000-000000000001",turnId:"00000000-0000-4000-8000-000000000001"};
   try{
     expect(await host.execute({...ids,name:"code_run",callId:"analytics",args:{code}})).toMatchObject({status:"ready"});
-    expect(await host.execute({...ids,name:"code_interact",callId:"change",args:{runId:"analytics",id:"count",value:{type:"change",value:7}}})).toMatchObject({status:"ready",nodes:expect.arrayContaining([expect.objectContaining({id:"output",value:"Count: 7"})])});
+    expect(await host.execute({...ids,name:"code_interact",callId:"change",args:{runId:"analytics",id:"count",event:{type:"change",value:7}}})).toMatchObject({status:"ready",nodes:expect.arrayContaining([expect.objectContaining({id:"output",value:"Count: 7"})])});
     expect(await host.execute({...ids,name:"code_inspect",callId:"inspect",args:{runId:"analytics",nodeId:"chart",limit:1}})).toMatchObject({nodes:[expect.objectContaining({rows:[{id:"a",value:4}],totalRows:1})]});
+    expect(await host.execute({...ids,name:"code_interact",callId:"batch",args:{runId:"analytics",steps:[
+      {id:"count",event:{type:"change",value:8}},{id:"chart",event:{type:"view",value:"table"}},{id:"count",event:{type:"change",value:9}},
+    ]}})).toMatchObject({completedSteps:3,nextStep:null,nodes:expect.arrayContaining([expect.objectContaining({id:"output",value:"Count: 9"})])});
+    const failed=await host.execute({...ids,name:"code_interact",callId:"batch-failure",args:{runId:"analytics",steps:[
+      {id:"count",event:{type:"change",value:10}},{id:"missing"},{id:"count",event:{type:"change",value:11}},
+    ]}});
+    expect(failed).toHaveProperty("error");
+    expect(await host.execute({...ids,name:"code_inspect",callId:"after-failure",args:{runId:"analytics"}}))
+      .toMatchObject({nodes:expect.arrayContaining([expect.objectContaining({id:"output",value:"Count: 10"})])});
+
   }finally{await host.close();}
+},60000);
+
+test("documented CSV dashboard uses numeric KPIs and survives real filter/reset interactions",async()=>{
+  const reference=await Bun.file(new URL("../../skills/code-mode/references/examples.md",import.meta.url)).text();
+  const section=reference.split("## CSV dashboard with a KPI")[1]!;
+  const code=section.match(/```js\n([\s\S]*?)```/)?.[1];
+  const csv=section.match(/```csv\n([\s\S]*?)```/)?.[1];
+  if(!code||!csv)throw new Error("Missing runnable dashboard example");
+  const compiled=await compileArtifact({entry:"main.ts",files:[{path:"main.ts",content:code},{path:"sales.csv",content:csv}]});
+  const bundle=await cliHostBundle();
+  const host=await createCliCodeHost({fetch:async input=>{
+    const path=String(input);
+    if(path.endsWith("host.js"))return new Response(bundle);
+    if(path.includes("/compiled"))return Response.json({...compiled,revision:7});
+    if(path.includes("/files"))return Response.json({files:[]});
+    if(path.includes("/artifacts/"))return Response.json({id:"aBc234",kind:"app",revision:7,sourceRevision:7});
+    throw new Error(`Unexpected request: ${path}`);
+  }});
+  const identity={conversationId:crypto.randomUUID(),turnId:crypto.randomUUID()};
+  const run=async(name:string,callId:string,args:unknown)=>host.execute({...identity,name,callId,args});
+  try {
+    expect(await run("code_run","demo",{id:"aBc234"})).toMatchObject({status:"ready",revision:7,nodes:expect.arrayContaining([expect.objectContaining({id:"revenue",type:"stat",value:600})])});
+    expect(await run("code_interact","filter",{runId:"demo",steps:[{id:"regions",event:{type:"change",value:["North"]}},{id:"dates",event:{type:"change",value:{start:"2026-02-01",end:"2026-02-28"}}}]})).toMatchObject({status:"ready",completedSteps:2,nodes:expect.arrayContaining([expect.objectContaining({id:"revenue",value:300})])});
+    expect(await run("code_interact","reset",{runId:"demo",steps:[{id:"reset"},{id:"monthly",event:{type:"view",value:"table"}}]})).toMatchObject({status:"ready",completedSteps:2,nodes:expect.arrayContaining([expect.objectContaining({id:"revenue",value:600}),expect.objectContaining({id:"monthly",view:"table",totalRows:2})])});
+    await host.health();
+  } finally {await host.close();}
 },60000);

@@ -593,6 +593,14 @@ export const migrateCloudAi = async (): Promise<void> => {
     )
   `.simple();
 
+  await sql`CREATE TABLE IF NOT EXISTS ai.turn_generation_timings (
+    turn_id UUID NOT NULL REFERENCES ai.turns(id) ON DELETE CASCADE,
+    request_id TEXT NOT NULL,
+    started_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    ended_at TIMESTAMPTZ,
+    PRIMARY KEY (turn_id, request_id)
+  )`.simple();
+
   await sql`ALTER TABLE ai.pending_actions ADD COLUMN IF NOT EXISTS review JSONB`.simple();
 
   await sql`

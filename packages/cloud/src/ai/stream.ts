@@ -207,6 +207,11 @@ export async function* streamAiConversationEvents(input: {
       continue;
     }
 
+    if (event.type === "message_saved") {
+      const [message] = projectPublicAiStoredMessages([event.message], input.conversation.shortId, new Map([[event.turnId, publicTurnId]]));
+      if (message) yield { ...event, conversationId: input.conversation.shortId, turnId: publicTurnId, message };
+      continue;
+    }
     yield { ...event, conversationId: input.conversation.shortId, turnId: publicTurnId };
   }
 }

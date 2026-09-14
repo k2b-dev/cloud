@@ -29,17 +29,6 @@ test("uses the full message width for every tool, including persisted messages",
   expect(cloudStyles).toMatch(/\.k2b-button\.ai-chat-result-link\[data-size="xs"\]\s*\{[^}]*padding-block:\s*0;/);
 });
 
-test("collapses completed work while keeping the final text and rich results visible", () => {
-  const presentationSource = readFileSync(resolve(import.meta.dir, "presentation.tsx"), "utf8");
-
-  expect(presentationSource).toContain("partitionCompletedAssistantBlocks");
-  expect(presentationSource).toContain('isCardToolName(block.name) || block.name === "present"');
-  expect(presentationSource).toContain("index !== finalTextIndex && !isDirectCompletedResult(block)");
-  expect(presentationSource).toContain("index === finalTextIndex || isDirectCompletedResult(block)");
-  expect(presentationSource).toContain("Worked for ${formatWorkedDuration(props.item.workedMs)}");
-  expect(presentationSource).toContain("defaultOpen={workedFailed()}");
-});
-
 test("renders attributable inter-chat input as a system message", () => {
   const presentationSource = readFileSync(resolve(import.meta.dir, "presentation.tsx"), "utf8");
 

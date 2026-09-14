@@ -116,8 +116,12 @@ services:
 
   app-assistant:
     <<: *app
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+      args: { INSTALL_CHROMIUM: "true" }
     container_name: app-assistant
-    environment: { <<: *env, APP_ID: assistant }
+    environment: { <<: *env, APP_ID: assistant, CLOUD_CLI_CHROMIUM: /usr/bin/chromium }
     volumes:
       - ./packages/cloud/src:/app/packages/cloud/src
       - ./packages/cloud/scripts:/app/packages/cloud/scripts

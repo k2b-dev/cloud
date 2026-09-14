@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { createRoot } from "solid-js";
+import { isServer } from "solid-js/web";
 import type { AiStreamSseEvent, AiTurnBlock } from "../protocol";
 import type { AiConversation } from "../types";
 import { __aiControllerTest, createAiChatController } from "./controller";
@@ -158,6 +159,49 @@ describe("AI controller draft submission", () => {
     expect(await sending).toBe(true);
     await emptyAutosave;
     expect(requests).toEqual(["PUT:Sent", "POST", "PUT:empty"]);
+    dispose();
+  });
+
+  for (const finishBeforeAck of [false, true]) test.skipIf(isServer)(`keeps a first send visible through upload and confirmation (early finish: ${finishBeforeAck})`, async () => {
+    const current = conversation("new-chat");
+    let emit!: Parameters<AiConversationStreamTransport["subscribe"]>[0]["onEvent"];
+    let finishUpload!: (response: Response) => void;
+    let finishTurn!: (response: Response) => void;
+    const upload = new Promise<Response>(resolve => { finishUpload = resolve; });
+    const turn = new Promise<Response>(resolve => { finishTurn = resolve; });
+    globalThis.fetch = Object.assign(async (request: RequestInfo | URL, init?: RequestInit) => {
+      const path = String(request);
+      if (path.endsWith("/files") && init?.method === "POST") return upload;
+      if (path.endsWith("/draft") && init?.method === "PUT") return Response.json({ content: [], revision: 1, updatedAt: null });
+      if (path.endsWith("/turns") && init?.method === "POST") return turn;
+      if (path.endsWith("/timeline")) return Response.json([]);
+      return Response.json({});
+    }, { preconnect: originalFetch.preconnect });
+    let dispose!: () => void;
+    const controller = createRoot(cleanup => {
+      dispose = cleanup;
+      return createAiChatController({ baseUrl: "/api/ai", initialConversationId: current.id,
+        initialDetail: { conversation: current, messages: [], activeTurn: null },
+        streamTransport: { subscribe: input => { emit = input.onEvent; return { close() {} }; } },
+      });
+    });
+    const sending = controller.send({ message: "Analyze", files: [new File(["a,b"], "demo.csv", { type: "text/csv" })] });
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(controller.messages()).toHaveLength(1);
+    emit({ type: "state", conversation: current, messages: [], activeTurn: null });
+    expect(controller.messages()).toHaveLength(1);
+    finishUpload(Response.json({ file: { path: "/demo.csv", size: 3, mediaType: "text/csv", version: 1 } }));
+    await new Promise(resolve => setTimeout(resolve, 0));
+    const pending = controller.messages()[0]!;
+    const saved = { ...pending, id: "saved", shortId: "saved", loopId: "turn-1", meta: { submittedDraftRevision: 1 } };
+    emit({ type: "state", conversation: current, messages: [saved], activeTurn: null });
+    expect(controller.messages()).toHaveLength(1);
+    if (finishBeforeAck) emit({v:1,type:"turn_finished",conversationId:current.id,turnId:"turn-1",attempt:1,seq:1,status:"completed",error:null});
+    finishTurn(Response.json({ message: saved, turn: { id: "turn-1", modelProfileId: null } }));
+    expect(await sending).toBe(true);
+    expect(controller.activeTurn()?.status ?? null).toBe(finishBeforeAck ? null : "running");
+    emit({ type: "state", conversation: current, messages: finishBeforeAck ? [saved] : [], activeTurn: null });
+    expect(controller.messages().map(message => message.id)).toEqual(["saved"]);
     dispose();
   });
 

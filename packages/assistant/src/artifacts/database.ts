@@ -70,7 +70,7 @@ export const artifactDatabase = {
   async status(id: string, identity: ArtifactIdentity, signal?: AbortSignal) {
     return sql.begin(async db => {
       await databaseConfigLock(db);
-      await requireArtifact(db, id, identity, "admin");
+      id = (await requireArtifact(db, id, identity, "admin")).row.id;
       const c = await config();
       const [mapping] = await db<{namespace:string;connected:boolean}[]>`SELECT namespace,connected FROM assistant.artifact_databases WHERE artifact_id=${id}::uuid`;
       const configured = Boolean(c.url && c.token);
@@ -85,7 +85,7 @@ export const artifactDatabase = {
   async reset(id: string, expectedGeneration: string | null, identity: ArtifactIdentity) {
     return sql.begin(async db => {
       await databaseConfigLock(db);
-      await requireArtifact(db, id, identity, "admin");
+      id = (await requireArtifact(db, id, identity, "admin")).row.id;
       const [mapping]=await db<{namespace:string}[]>`SELECT namespace FROM assistant.artifact_databases WHERE artifact_id=${id}::uuid`;
       if(mapping&&generation(mapping.namespace)!==expectedGeneration)throw new DatabaseError("CONFLICT",409);
       await db`INSERT INTO assistant.database_cleanup(namespace)
@@ -97,7 +97,7 @@ export const artifactDatabase = {
   async export(id: string, identity: ArtifactIdentity, signal?: AbortSignal) {
     return sql.begin(async db => {
       await databaseConfigLock(db);
-      await requireArtifact(db, id, identity, "admin");
+      id = (await requireArtifact(db, id, identity, "admin")).row.id;
       const [mapping] = await db<{namespace:string;connected:boolean}[]>`SELECT namespace,connected FROM assistant.artifact_databases WHERE artifact_id=${id}::uuid`;
       if (!mapping?.connected) throw new DatabaseError("DB_NOT_CONNECTED",409);
       // Keep the response streaming; a database backup is not a bounded JSON RPC.
@@ -124,18 +124,19 @@ export const artifactDatabase = {
     });
   },
   async connect(id: string, identity: ArtifactIdentity, signal?: AbortSignal, requireManage = false) {
+    const publicId = id;
     // Persist the intended namespace before any remote effect. A failed call
     // can be retried, and deletion can always find a partially created DB.
     await sql.begin(async db => {
       await databaseConfigLock(db);
-      await requireArtifact(db,id,identity,requireManage ? "admin" : "read");
+      id = (await requireArtifact(db, publicId,identity,requireManage ? "admin" : "read")).row.id;
       connection(await config(),signal);
       await db`INSERT INTO assistant.artifact_databases(artifact_id,namespace)
         VALUES(${id}::uuid,${"assistant_"+crypto.randomUUID().replaceAll("-","")}) ON CONFLICT DO NOTHING`;
     });
     return sql.begin(async db => {
       await databaseConfigLock(db);
-      await requireArtifact(db,id,identity,requireManage ? "admin" : "read");
+      id = (await requireArtifact(db, publicId,identity,requireManage ? "admin" : "read")).row.id;
       const [mapping]=await db<{namespace:string;connected:boolean}[]>`SELECT * FROM assistant.artifact_databases WHERE artifact_id=${id}::uuid`;
       if (!mapping) throw new DatabaseError("DB_NOT_CONNECTED",409);
       if (!mapping.connected) {
@@ -153,7 +154,7 @@ export const artifactDatabase = {
     if(mode === "inspect" && !["tables.list","schema.get","rows.list","query"].includes(req.operation)) throw new DatabaseError("DB_SQL_UNSUPPORTED");
     return sql.begin(async db => {
       await databaseConfigLock(db);
-      await requireArtifact(db,id,identity,mode !== "runtime" || (req.operation.startsWith("tables.") && req.operation !== "tables.list") ? "admin" : "read");
+      id = (await requireArtifact(db, id,identity,mode !== "runtime" || (req.operation.startsWith("tables.") && req.operation !== "tables.list") ? "admin" : "read")).row.id;
       const c=await config(); connection(c,signal);
       const [mapping]=await db<{namespace:string;connected:boolean}[]>`SELECT * FROM assistant.artifact_databases WHERE artifact_id=${id}::uuid`;
       if (!mapping?.connected) throw new DatabaseError("DB_NOT_CONNECTED",409);

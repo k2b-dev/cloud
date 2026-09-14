@@ -49,6 +49,7 @@ export const conversationFileSource = (baseUrl: string, conversationId: string):
     (await request<{ files: AiFileStat[] }>(filesUrl(), { method: "GET" }, "Failed to load files")).files;
 
   return {
+    previewPreferencesKey: "assistant.csv-preview",
     listFiles,
     async list(): Promise<FileTreeEntry[]> {
       return (await listFiles()).map((file) => ({
@@ -65,7 +66,8 @@ export const conversationFileSource = (baseUrl: string, conversationId: string):
       if (!response.ok) throw new Error(await readError(response, "Failed to load file"));
       const mediaType = response.headers.get("Content-Type")?.split(";")[0]?.trim() || "application/octet-stream";
       const bytes = new Uint8Array(await response.arrayBuffer());
-      return isTextMediaType(mediaType)
+      const delimited = /\.(csv|tsv)$/i.test(path) || mediaType === "text/csv" || mediaType === "text/tab-separated-values";
+      return isTextMediaType(mediaType) && !delimited
         ? { encoding: "utf8", content: new TextDecoder().decode(bytes), mediaType }
         : { encoding: "base64", content: bytesToBase64(bytes), mediaType };
     },

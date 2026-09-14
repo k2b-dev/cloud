@@ -17,7 +17,7 @@ process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 
 const { AiTurnBlockList, AiTurnBlockView } = await import("./blocks");
 const { AiChatActionsProvider } = await import("./message-actions");
-const { AiAssistantContent, createAiChatTimeline, partitionCompletedAssistantBlocks } = await import("./presentation");
+const { AiAssistantContent, createAiChatTimeline } = await import("./presentation");
 const { createAiToolDisclosureState } = await import("./tool-disclosure");
 const { CloudSurveyBlock, CloudTextEditorBlock } = await import("./visual-tools");
 
@@ -529,10 +529,6 @@ describe("capability tool presentation", () => {
       actionEntry: null,
       workedMs: 1_000,
     };
-    const partitioned = partitionCompletedAssistantBlocks(blocks);
-    expect(partitioned.worked.map((candidate) => candidate.id)).toEqual(["text-before", "tool-middle"]);
-    expect(partitioned.visible.map((candidate) => candidate.id)).toEqual(["card-middle", "present-middle", "text-after"]);
-
     const storedHtml = renderToString(() => createComponent(AiAssistantContent, { item }));
     const liveHtml = renderToString(() => createComponent(AiTurnBlockList, { blocks, turnId: "turn-1" }));
 
@@ -558,7 +554,7 @@ describe("capability tool presentation", () => {
     expect(html).not.toContain("flex flex-col");
   });
 
-  test("opens failed completed work immediately and preserves an explicit Worked disclosure choice", () => {
+  test("keeps failed tool details collapsed and preserves an explicit tool disclosure choice", () => {
     const item: AiAssistantTimelineItem = {
       type: "assistant",
       id: "stored-failure",
@@ -581,14 +577,15 @@ describe("capability tool presentation", () => {
     };
 
     const failedHtml = renderToString(() => createComponent(AiAssistantContent, { item }));
-    expect(hasOpenDetailsContaining(failedHtml, "Worked for 2s")).toBe(true);
+    expect(hasOpenDetailsContaining(failedHtml, "Unknown tool")).toBe(false);
     expect(failedHtml).toContain('data-tone="danger"');
-    expect(failedHtml).toContain("Mailbox is required");
+    expect(failedHtml).not.toContain("Mailbox is required");
 
     const disclosureState = createAiToolDisclosureState();
-    disclosureState.set("worked:turn-failure", false);
+    disclosureState.set("group:failed-tool", true);
     const collapsedHtml = renderToString(() => createComponent(AiAssistantContent, { item: { ...item }, disclosureState }));
-    expect(hasOpenDetailsContaining(collapsedHtml, "Worked for 2s")).toBe(false);
+    expect(hasOpenDetailsContaining(collapsedHtml, "Unknown tool")).toBe(true);
+    expect(collapsedHtml).toContain("Mailbox is required");
   });
 
   test("shows categorized fetch_file failures as a clear danger activity", () => {
@@ -765,7 +762,7 @@ describe("live tool disclosure stability", () => {
     );
     expect(hasOpenDetails(initialHtml)).toBe(false);
 
-    disclosureState.set(completed.id, true);
+    disclosureState.set(`group:${completed.id}`, true);
     const nextHtml = renderToString(() =>
       createComponent(AiTurnBlockList, {
         blocks: [{ ...completed, result: { step: 2 } }],

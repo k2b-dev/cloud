@@ -27,7 +27,7 @@ function inspect(runId: string, entry: Entry, options: { nodeId?: string; offset
   const selected = nodeId ? state.nodes.filter((node) => node.id === nodeId) : state.nodes.slice(offset, offset + limit);
   if (nodeId && !selected.length) throw new Error("UI node not found");
   return {
-    runId, id: entry.artifactId, resourceId: entry.resourceId, status: state.status, busy: state.busy, work: state.work,
+    runId, id: entry.artifactId, revision: entry.artifactId ? entry.revision : undefined, resourceId: entry.resourceId, status: state.status, busy: state.busy, work: state.work,
     error: state.error ? text(state.error, 6000) : null, modal: state.modal ? { ...state.modal, id: state.modalId } : null,
     totalNodes: state.nodes.length, nextNodeOffset: !nodeId && offset + limit < state.nodes.length ? offset + limit : null,
     nodes: selected.map(node => ({ id: node.id, ...inspectAnalytics(node, offset, limit, Boolean(nodeId)) })),
@@ -151,7 +151,7 @@ export function createArtifactAgentRuntime(open: ((tab: WorkspaceTab) => void) |
       return inspect(runId, entry);
     }
     const entry = runs.get(input.runId);
-    if (!entry || entry.conversationId !== conversationId) throw new Error("Test run is no longer available in this chat/browser. Start a new run.");
+    if (!entry || entry.conversationId !== conversationId) throw new Error("Test run is no longer available in this conversation host. Inspect saved effects before starting a new run.");
     // Re-check current permissions even when the test run was started earlier.
     if (entry.resourceId && input.operation !== "stop") await artifactClient.access(entry.resourceId);
     if (entry.artifactId) await artifactClient.get(entry.artifactId, false, undefined, conversationId);
@@ -169,30 +169,41 @@ export function createArtifactAgentRuntime(open: ((tab: WorkspaceTab) => void) |
       return { runId: input.runId, stopped: true };
     }
     if (input.operation === "interact") {
+      const steps = input.steps ?? [{id:input.id,event:input.event,answer:input.answer}];
+      let completedSteps=0;
+      for (const step of steps) {
+      if (!step.id) throw new Error("Interaction requires a control or modal ID");
       const state = entry.session.snapshot();
-      if (state.modal && input.id === state.modalId) {
-        entry.session.respond(input.value);
+      if (state.modal && step.id === state.modalId) {
+        if (step.event !== undefined || step.answer === undefined) throw new Error("This is a modal. Supply answer with the requested value, or null to cancel.");
+        entry.session.respond(step.answer);
         await waitFor(entry, () => {
           const current = entry.session.snapshot();
           return (current.status === "waiting" && current.modalId !== state.modalId)
             || (!["starting", "waiting"].includes(current.status) && !current.busy);
         });
       } else {
-        const event = AnalyticsEvent.parse(input.value ?? { type: "change", value: null });
+        if (step.answer !== undefined) throw new Error("This is a control. Supply event as an object, or omit it to activate a button.");
+        const event = AnalyticsEvent.parse(step.event ?? { type: "change", value: null });
         let settled = false, failure: unknown;
-        void entry.session.event({ id: input.id, event })
+        void entry.session.event({ id: step.id, event })
           .then(() => { settled = true; }, (error) => { failure = error; settled = true; });
         await waitFor(entry, () => settled || entry.session.snapshot().status === "waiting" || entry.session.snapshot().work?.status === "running");
         if (failure) throw failure;
       }
+      completedSteps++;
+      const current=entry.session.snapshot();
+      if (current.error || current.modal || current.work?.status === "running") break;
+      }
+      return {...inspect(input.runId,entry),completedSteps,nextStep:completedSteps<steps.length?completedSteps:null};
     } else if (input.operation === "export") {
       const file = entry.session.files().find((file) => file.name === input.name);
       if (!file) throw new Error("Captured output not found");
       const form=new FormData();form.append("file",file);form.append("directory","/files");
       const response=await fetch(`/api/ai/conversations/${encodeURIComponent(conversationId)}/files`,{method:"POST",body:form,signal});
       if(!response.ok)throw new Error(`Could not export ${file.name}: HTTP ${response.status}`);
-      const stored=z.object({file:z.object({path:z.string()})}).parse(await response.json());
-      const result={path:stored.file.path,size:file.size,mediaType:file.type};
+      const stored=z.object({file:z.object({path:z.string(),version:z.number().int().positive()})}).parse(await response.json());
+      const result={path:stored.file.path,version:stored.file.version,size:file.size,mediaType:file.type};
       return result;
     }
     return inspect(input.runId, entry, input.operation === "inspect" ? input : undefined);

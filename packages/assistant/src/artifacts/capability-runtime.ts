@@ -1,3 +1,4 @@
+import { CodeResourceId } from "@k2b/cloud/ai/browser";
 import { sql } from "bun";
 import { z } from "zod";
 import { getCapabilityCatalogApp, invokeCapability, reviewCapabilityAction, type CapabilityCaller } from "@k2b/cloud/capabilities/server";
@@ -8,12 +9,12 @@ import { LIMITS } from "./contracts";
 
 export const RuntimeCapabilityRequest=z.object({
   id:z.uuid(),name:z.string().regex(/^[a-z0-9-]+\.[a-zA-Z0-9_.-]+$/).max(240),input:z.json(),
-  artifactId:z.uuid().optional(),conversationId:z.string().min(1).max(80).optional(),
+  artifactId:CodeResourceId.optional(),conversationId:z.string().min(1).max(80).optional(),
 }).strict().refine(value=>value.artifactId||value.conversationId,"A resource or current conversation is required");
 const Prepared=z.object({
   appId:z.string(),localId:z.string(),kind:z.enum(["query","action"]),schemaHash:z.string(),
   approval:z.enum(["none","rememberable"]).nullable(),
-  resource:z.object({id:z.uuid(),title:z.string()}).optional(),
+  resource:z.object({id:CodeResourceId,title:z.string()}).optional(),
   title:z.string(),review:CapabilityActionReviewSchema.nullable(),allowAlways:z.boolean(),scope:z.string().nullable(),
 });
 type Request=z.infer<typeof RuntimeCapabilityRequest>;
@@ -69,7 +70,7 @@ export const runtimeCapabilities={
       const [pending]=await db<{count:number}[]>`SELECT count(*)::int AS count FROM assistant.capability_calls WHERE user_id=${actor.id}::uuid AND status IN ('pending','running')`;
       if(pending!.count>=LIMITS.pendingRequests)throw new ArtifactError("TOO_MANY_REQUESTS");
       await db`INSERT INTO assistant.capability_calls(id,user_id,artifact_id,conversation_id,request,prepared)
-        VALUES(${request.id}::uuid,${actor.id}::uuid,${request.artifactId??null}::uuid,${request.conversationId??null},${JSON.stringify(request)}::jsonb,${JSON.stringify(prepared)}::jsonb)`;
+        VALUES(${request.id}::uuid,${actor.id}::uuid,(SELECT id FROM assistant.artifacts WHERE short_id=${request.artifactId??null}),${request.conversationId??null},${JSON.stringify(request)}::jsonb,${JSON.stringify(prepared)}::jsonb)`;
       // Only recent completed transport results are needed; canonical execution
       // history remains in the platform's capabilities.executions table.
       await db`DELETE FROM assistant.capability_calls WHERE id IN (SELECT id FROM assistant.capability_calls

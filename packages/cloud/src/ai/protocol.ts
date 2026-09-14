@@ -33,6 +33,8 @@ export type AiTurnBlock =
       name: string;
       args?: unknown;
       status: AiToolBlockStatus;
+      /** Localized transient host status, without tool payload data. */
+      progress?: string;
       result?: unknown;
       isError?: boolean;
       /** Present while status is awaiting_approval. */
@@ -62,6 +64,7 @@ export type AiWireEvent =
       /** Authoritative ordered baseline for this attempt. Optional for older senders. */
       blocks?: AiTurnBlock[];
     })
+  | (AiWireEventBase & { type: "message_saved"; message: AiStoredMessage })
   | (AiWireEventBase & { type: "block_set"; block: AiTurnBlock })
   | (AiWireEventBase & { type: "block_delta"; blockId: string; blockKind: "text" | "thinking"; delta: string })
   | (AiWireEventBase & {

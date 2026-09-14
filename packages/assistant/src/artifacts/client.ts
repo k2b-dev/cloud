@@ -63,7 +63,8 @@ export const artifactClient = {
   },
   compile: async (source: ArtifactSource) => {
     const response = await client.runtime.compile.$post({ json: source });
-    await checked(response); return response.json();
+    await checked(response);
+    return z.object({runtime:z.string(),code:z.string()}).parse(await response.json());
   },
   list: async (page = 1, kind?: ArtifactKind) => {
     const response = await client.$get({ query: { page: String(page), kind } });

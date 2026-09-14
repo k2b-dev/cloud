@@ -14,11 +14,11 @@ export const withAiShortId = async <T>(
     try {
       return await insert(allocate());
     } catch (error) {
+      const uniqueViolation = typeof error === "object" && error !== null && (("code" in error && error.code === "23505") || ("errno" in error && error.errno === "23505"));
       const collision =
         typeof error === "object" &&
         error !== null &&
-        "code" in error &&
-        error.code === "23505" &&
+        uniqueViolation &&
         "constraint" in error &&
         error.constraint === constraint;
       if (!collision) throw error;

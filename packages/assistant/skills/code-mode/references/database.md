@@ -25,7 +25,7 @@ its effects before retrying; a timeout does not prove that nothing changed.
 
 The database belongs to the resource across edits, publications, and restores.
 A fork starts without one. A one-off can use an existing resource database with
-`code_run({ code, resourceId: "RESOURCE_UUID" })`; this requires Manage. Without
+`code_run({ code, resourceId: "RESOURCE_SHORT_ID" })`; this requires Manage. Without
 a resourceId, save the script only if it needs its own durable database. Database calls always use the current user's permissions.
 
 ## Inspect data without a script

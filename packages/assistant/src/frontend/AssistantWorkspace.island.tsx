@@ -291,7 +291,7 @@ export default function AssistantWorkspace(props: Props) {
 
 
   const canUseComposer = createMemo(() => props.status.ok && props.status.enabled && props.models.length > 0);
-  const usageSnapshot = createMemo(() => aiLatestUsageSnapshot(chat.messages()));
+  const usageSnapshot = createMemo(() => aiLatestUsageSnapshot(chat.usageMessages()));
   const usageModel = createMemo(() => {
     const snapshot = usageSnapshot();
     const modelId = snapshot ? snapshot.modelProfileId : selectedModelId();

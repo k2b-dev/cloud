@@ -1,3 +1,4 @@
+import { CodeResourceId } from "@k2b/cloud/ai/browser";
 import { parseCodeToolInput } from "@k2b/cloud/ai/browser";
 import { createCliCodeHost } from "./code-host";
 import { resolveConversation } from "./turn";
@@ -9,7 +10,7 @@ import { ArtifactKind } from "../artifacts/contracts";
 import type { ArtifactBundle } from "../artifacts/service";
 
 const resource=arg.required({valueLabel:"resource-id"});
-const path=(id:string,suffix="")=>`/artifacts/${encodeURIComponent(z.uuid().parse(id))}${suffix}`;
+const path=(id:string,suffix="")=>`/artifacts/${encodeURIComponent(CodeResourceId.parse(id))}${suffix}`;
 const jsonInput=async(input:Parameters<typeof readCliInput>[0])=>parseJson(await readCliInput(input,{label:"JSON input",required:true})??"","input");
 const inputFlag=()=>flag.input({description:"JSON input; use --input-file or stdin, especially for secrets"});
 

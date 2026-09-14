@@ -28,6 +28,11 @@ import { Chat } from "@k2b/ui";
 
 The application still owns the current controller and mutation callbacks. Cloud persistence, streaming, tools, approvals, and files remain outside `@k2b/ui`.
 
+The controller keeps a submitted message visible while attachments upload and
+the server accepts the draft. This local send is separate from server snapshots:
+a reconnect cannot remove it, and the consumed draft revision identifies its
+confirmation without rendering a duplicate message.
+
 ## Accessibility
 
 `Chat` owns common keyboard, focus, status, and accessible-name behavior. Cloud renderers preserve visible status and accessible names for domain-specific tool blocks.

@@ -1,13 +1,14 @@
 import { dates } from "@k2b/stdlib";
 import { mutation } from "@k2b/stdlib/solid";
 import { Button, ButtonLink, Chat, isStructuredDataValue, SplitButton, StructuredDataPreview, useLocale } from "@k2b/ui";
-import { createSignal, For, type JSX, Match, Show, Switch } from "solid-js";
+import { createMemo, createSignal, For, type JSX, Match, Show, Switch } from "solid-js";
 import type { CapabilityActionReview } from "../../contracts/capabilities";
 import { markdown } from "../../shared";
+import { groupToolBlocks, isFailedTool, summarizeToolGroup } from "./tool-groups";
 import type { AiTurnBlock } from "../protocol";
 import { isRenderableTurnBlock } from "../protocol";
 import { hasSpecializedBuiltinToolView, SpecializedBuiltinToolBlock } from "./builtin-tools";
-import { CapabilityTablePreview } from "./capability-table";
+import { capabilityTable, CapabilityTablePreview } from "./capability-table";
 import { PresentToolBlock } from "./file-tools";
 import { useAiChatActions } from "./message-actions";
 import {
@@ -699,6 +700,46 @@ export function AiTurnBlockView(props: { block: AiTurnBlock; turnId: string; str
   }
 }
 
+function CompactToolRow(props: { block: ToolBlock; busy?: boolean }) {
+  const locale = useLocale();
+  const de = () => locale().startsWith("de");
+  const args = () => isRecord(props.block.args) ? props.block.args : {};
+  const detail = () => [args().path, args().name, args().query].find((value) => typeof value === "string");
+  const waiting = () => props.block.status === "awaiting_client";
+  return <AiToolActivity blockId={props.block.id} label={props.block.presentation?.title ?? displayToolName(props.block.name)}
+    description={[props.block.status === "running" ? props.block.progress ?? "" : "", typeof detail() === "string" ? String(detail()) : "", waiting() ? (de() ? "Wartet" : "Waiting") : isFailedTool(props.block) ? (de() ? "Fehlgeschlagen" : "Failed") : ""].filter(Boolean).join(" · ")}
+    icon={waiting() ? "ti ti-clock" : aiToolIcon(props.block.name, props.block.presentation?.appIcon)}
+    tone={isFailedTool(props.block) ? "danger" : "neutral"} busy={props.busy && !waiting()} bodyInset={false} renderBody={() =>
+    <div class="max-h-72 overflow-auto overscroll-contain rounded-md bg-zinc-100 p-3 dark:bg-zinc-950" tabIndex={0} role="region" aria-label={de() ? "Werkzeug-Eingabe und Ausgabe" : "Tool input and output"}>
+      <ToolDetail title={de() ? "Eingabe" : "Input"} toolName={props.block.name} value={props.block.args} />
+      <ToolDetail title={de() ? "Ausgabe" : "Output"} toolName={props.block.name} value={props.block.result} />
+    </div>}
+  />;
+}
+
+function ToolGroupView(props: { blocks: ToolBlock[]; active: boolean }) {
+  const locale = useLocale();
+  const last = () => props.blocks.at(-1)!;
+  const waiting = () => last().status === "awaiting_client";
+  const multiple = () => props.blocks.length > 1;
+  const detail = () => {
+    const args = last().args;
+    return isRecord(args) ? [args.path,args.name,args.query].find(value=>typeof value==="string") : undefined;
+  };
+  return <AiToolActivity blockId={`group:${props.blocks[0]!.id}`} bodyInset={false}
+    label={props.active || !multiple() ? (last().presentation?.title ?? displayToolName(last().name)) : summarizeToolGroup(props.blocks, locale())}
+    description={waiting() ? (locale().startsWith("de") ? "Wartet" : "Waiting") : last().status === "running" ? last().progress : !multiple() && typeof detail()==="string" ? String(detail()) : undefined}
+    icon={props.active || !multiple() ? (waiting() ? "ti ti-clock" : aiToolIcon(last().name)) : "ti ti-stack"}
+    tone={!multiple() && isFailedTool(last()) ? "danger" : "neutral"}
+    busy={props.active && !waiting()} renderBody={() => <Show when={multiple()} fallback={
+      <div class="max-h-72 overflow-auto overscroll-contain rounded-md bg-zinc-100 p-3 dark:bg-zinc-950" tabIndex={0} role="region" aria-label={locale().startsWith("de") ? "Werkzeug-Eingabe und Ausgabe" : "Tool input and output"}>
+        <ToolDetail title={locale().startsWith("de") ? "Eingabe" : "Input"} toolName={last().name} value={last().args} />
+        <ToolDetail title={locale().startsWith("de") ? "Ausgabe" : "Output"} toolName={last().name} value={last().result} />
+      </div>
+    }><For each={props.blocks}>{(block) => <CompactToolRow block={block} />}</For></Show>}
+    />;
+}
+
 export function AiTurnBlockList(props: {
   blocks: AiTurnBlock[];
   turnId: string;
@@ -707,24 +748,25 @@ export function AiTurnBlockList(props: {
   active?: boolean;
   disclosureState?: AiToolDisclosureState;
 }) {
-  const visible = () => props.blocks.filter(isRenderableTurnBlock);
+  const groups = createMemo(() => groupToolBlocks(props.blocks.filter(isRenderableTurnBlock), (block) => Boolean(capabilityTable(block.result))));
+  const keyedGroups = createMemo(() => new Map(groups().map(group => [group.kind === "tools" ? `tools:${group.blocks[0]!.id}` : `block:${group.block.id}`, group])));
+  const keys = createMemo(() => [...keyedGroups().keys()]);
   const disclosureState = props.disclosureState ?? createAiToolDisclosureState();
   return (
-    <Show when={visible().length > 0}>
-      <AiToolDisclosureProvider state={disclosureState}>
-        <div class={`flex flex-col ${props.compact ? "gap-1" : "gap-2"}`}>
-          <For each={visible()}>
-            {(block, index) => (
-              <AiTurnBlockView
-                block={block}
-                turnId={props.turnId}
-                streaming={props.streaming && index() === visible().length - 1}
-                active={props.active}
-              />
-            )}
-          </For>
-        </div>
-      </AiToolDisclosureProvider>
-    </Show>
+    <Show when={groups().length > 0}><AiToolDisclosureProvider state={disclosureState}>
+      <div class={`flex flex-col ${props.compact ? "gap-1" : "gap-2"}`}>
+        <For each={keys()}>{(key, index) => {
+          const group = () => keyedGroups().get(key)!;
+          return <Switch>
+            <Match when={(() => { const value = group(); return value.kind === "tools" ? value : undefined; })()}>
+              {(tools) => <ToolGroupView blocks={tools().blocks} active={Boolean(props.active && index() === keys().length - 1)} />}
+            </Match>
+            <Match when={(() => { const value = group(); return value.kind === "block" ? value : undefined; })()}>
+              {(item) => <AiTurnBlockView block={item().block} turnId={props.turnId} streaming={props.streaming && index() === keys().length - 1} active={props.active} />}
+            </Match>
+          </Switch>;
+        }}</For>
+      </div>
+    </AiToolDisclosureProvider></Show>
   );
 }

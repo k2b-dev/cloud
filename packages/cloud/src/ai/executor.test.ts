@@ -555,3 +555,21 @@ test("web search sources retain the query above the activity description", async
     index.mockRestore();
   }
 });
+
+test("direct code tools index returned Studio references without a capability wrapper", async () => {
+  const index = spyOn(aiConversations, "indexConversationResources").mockResolvedValue(undefined);
+  const call = {
+    conversationId: "conversation", turnId: "turn", callId: "create", name: "code_create",
+    args: {}, result: { refs: [{ type: "assistant.artifact", id: "app-id", title: "Dashboard" }] }, isError: false,
+  };
+  try {
+    await __aiExecutorTest.indexConversationToolSource(call);
+    expect(index).toHaveBeenCalledWith({
+      conversationId: "conversation", turnId: "turn", callId: "create",
+      resources: [{ ref: { type: "assistant.artifact", id: "app-id" }, title: "Dashboard" }],
+    });
+    index.mockClear();
+    await __aiExecutorTest.indexConversationToolSource({ ...call, isError: true });
+    expect(index).not.toHaveBeenCalled();
+  } finally { index.mockRestore(); }
+});

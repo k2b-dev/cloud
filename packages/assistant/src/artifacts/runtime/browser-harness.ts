@@ -42,7 +42,7 @@ globalThis.runArtifactRecoveryScenario = async (source) => {
 globalThis.runArtifactAgentScenario = async (source) => {
   const originalFetch = window.fetch;
   const results = new Map<string, unknown>();
-  const id = "00000000-0000-4000-8000-000000000001";
+  const id = "aBc234";
   window.fetch = Object.assign(async (url: RequestInfo | URL, init?: RequestInit) => {
     const path = String(url);
     if (path.includes("/runtime/claim")) {
@@ -64,9 +64,9 @@ globalThis.runArtifactAgentScenario = async (source) => {
   try {
     const start = await call("code_run", "start", { id });
     const pending = await call("code_interact", "click", { runId: "start", id: "add" });
-    const answer = await call("code_interact", "answer", { runId: "start", id: "@modal:1", value: "Example" });
-    const duplicate = await call("code_interact", "answer", { runId: "start", id: "@modal:1", value: "Example" });
-    const secondAnswer = await call("code_interact", "second-answer", { runId: "start", id: "@modal:2", value: true });
+    const answer = await call("code_interact", "answer", { runId: "start", id: "@modal:1", answer: "Example" });
+    const duplicate = await call("code_interact", "answer", { runId: "start", id: "@modal:1", answer: "Example" });
+    const secondAnswer = await call("code_interact", "second-answer", { runId: "start", id: "@modal:2", answer: true });
     const current = await call("code_inspect", "inspect", { runId: "start", nodeId: "tasks" });
     const stop = await call("code_stop", "stop", { runId: "start" });
     await call("code_open", "open", { id });

@@ -180,39 +180,24 @@ Keep the Stop action available until the server accepts the abort.
 
 Render tool input and output as data. Do not inject model text as HTML.
 
-Compact capability rows use the saved capability title, app icon, and optional
-accent while running and on failure. A successful provider-authored `summary`
-replaces the title as one escaped plain-text result row without a disclosure or
-duplicate raw data. Semantic links remain direct row actions; raw resource refs
-remain structured result data rather than user-facing labels. Results without
-a summary expose their input and response details.
-Expanded generic disclosures show
-JSON-like payloads as structured data previews with at most eight visible rows
-and an optional raw view. Expanded data surfaces span the available message
-column. Built-in discovery, Skill, Help, Project, file, calculation, image, web,
-memory, and interaction tools use Cloud-owned readable renderers and omit raw
-input or output that adds no user value. Imported web files show the source's
-first-party favicon, filename, domain, size, media type, final source URL, and
-conversation path; the web-download icon is the favicon fallback. Capability
-failures show their canonical bounded error directly in one danger row without
-repeating large inputs or responses. Unknown tool failures retain the generic
-technical disclosure and open it immediately.
-Rejected approvals collapse to one readable result row without input or
-response details; they are user decisions rather than tool failures.
-Approval prompts additionally show the owning application's saved name. The
-saved snapshot keeps history readable when an app is
-temporarily unavailable or later changes its registry metadata; ordinary Nessi
-tools keep the generic tool presentation.
+Ordinary tools render as single-line activities with compact gray metadata.
+Consecutive calls form one group until Markdown, a visible result, or an
+interactive decision creates a boundary. During execution the group shows its
+latest tool; afterward it summarizes the kinds of work performed, including a
+failure count. Expanding the group reveals its individual tools. Expanding a
+tool reveals input and output inside a bounded, scrollable region; payloads are
+rendered lazily. No tool group hides intervening Markdown or user controls.
 
-Discovery result disclosures use flat, single-line rows with a readable title,
-truncated description, and app label instead of enclosing the list in another
-surface. Loaded tools use their catalog titles.
-While a loop is active, Assistant renders its blocks in their saved order. Once
-the loop completes, it moves tool calls, reasoning, compaction, and every text
-block except the final response into one collapsed **Worked for ...**
-disclosure. Presented files remain directly visible as standalone results. Failed work opens the
-disclosure immediately with danger treatment, and an explicit user disclosure
-choice remains stable across live timeline updates.
+Capability titles and application icons come from the saved presentation.
+Approval prompts retain their application identity and explicit decision
+controls. Surveys, cards, presented files, editors, and capability tables remain
+visible results. The saved presentation remains readable when an application
+is temporarily unavailable. Ordinary Nessi tools use generic tool labels.
+
+Completed turns preserve the same ordered timeline and show their elapsed
+wall-clock duration. They do not move earlier Markdown into a second outer
+work disclosure. Explicit disclosure choices survive streaming updates and a
+reload in the same browser tab when session storage is available.
 
 Generic tool rows and disclosures use `Chat.Activity` from `@k2b/ui`. Cloud
 only supplies protocol-derived labels and specialized bodies such as web search
@@ -315,7 +300,13 @@ from `@k2b/cloud/ai/browser` and `@k2b/cloud/ai` for host integrations.
 `code_run` accepts the app `id` and optional chat `inputPaths`, takes a fixed
 snapshot of current source, and returns a run ID and compact state. There is no
 required source revision. `code_interact` accepts a control ID or the pending
-modal ID, including structured answers. `code_open` never starts the visible
+modal ID. Controls receive an `event` object; modal responses use `answer`.
+For example, use `event: {type: "view", value: "table"}` for an Explorer and
+`answer: null` to cancel a modal. Inspection includes ready-to-use interaction
+examples. A `steps` array runs up to three sequential interactions and returns
+one snapshot with `completedSteps` and `nextStep`; errors, modals, and background
+work stop the sequence. Do not combine `steps` with a top-level interaction.
+Inspection also reports the tested source revision. `code_open` never starts the visible
 app. `code_export` copies a captured file into the originating chat.
 
 Assistant exposes direct server tools: `code_create`, `code_read`, `code_write`,
@@ -328,18 +319,26 @@ The server derives the chat context and checks current user, conversation,
 Project and resource permissions. GUI and CLI use the same resource services.
 Writes reuse the platform replay guard; uncertain calls are not repeated.
 `capabilities.run` remains available for other applications, not these tools.
-Writes immediately persist one
-file, preserve other files, and report compilation diagnostics without rejecting
-incomplete source. Execution still requires compilable source. History remains
-available internally; file writes need no revision argument. Concurrent writes
-to the same path use the last saved content.
+`code_write` saves one atomic batch against `expectedRevision`, preserves sibling
+files and reports compilation diagnostics without rejecting incomplete source.
+Conflicting revisions and duplicate paths reject the whole batch. A file can
+use `{path,content}` or `{path,fromChatFile:{path,version}}`; the latter copies
+validated data bytes on the server without printing/retyping them through the
+model. `code_export` returns the required chat path and version. Relative JSON
+imports expose data; CSV/TSV/TXT imports expose text. Execution requires a
+compilable entry exporting one function.
 
 The host owns isolation, artifact permissions, input file authorization,
-cancellation, and execution deduplication. The controller's in-memory call
-tracking does not provide an exactly-once guarantee across tabs or reloads.
-Assistant uses a server-side claim and never replays an uncertain execution.
-Its test runs are separate from visible apps and persistent user data. A missing
-browser cannot perform execution; do not report an unexecuted test as successful.
+cancellation, and execution deduplication. Assistant persists call ownership
+and results; an uncertain execution is never automatically replayed.
+Its test runs are separate from visible apps and persistent user data. Assistant
+owns an isolated Chromium host for model-driven run/inspect/interact/stop/export
+operations. Closing or freezing the user's tab does not suspend these operations.
+Calls, results and ordered approvals are persisted; a lost host is not replayed.
+Only `code_open` and `code_secret` require the user interface. The host pool admits
+eight conversations and retains idle runs for two minutes after a chat finishes.
+The Assistant image includes Chromium; other application images do not need it.
+The direct CLI code command retains its own isolated local execution host.
 
 ### Assistant apps and browser work
 
@@ -439,3 +438,32 @@ status and put their action menu at the top right.
 Visible running sessions check for updates every 30 seconds and on window focus,
 with at most one background check in flight. Updates offer a restart instead of
 discarding current inputs. Historical selections stay on their selected version.
+
+Code source edits use `code_write({id, expectedRevision, files, entry?})` to
+commit related files in one revision. Each file supplies `content` or
+`fromChatFile: {path, version}`; the latter copies authorized UTF-8 chat data
+without a model-output round trip. JSON and CSV/TSV/text imports are supported.
+Stale destination revisions or source versions fail before saving any files.
+CSV previews expose encoding, delimiter and raw-text choices; Assistant remembers
+those choices in browser-local preferences, without modifying uploaded files.
+
+Studio resource URLs, tool inputs and references use six-character Cloud short
+IDs. UUIDs remain internal database keys and are rejected as public resource IDs.
+Existing resources receive short IDs during migration; no UUID URL alias exists.
+
+
+The chat's Studio section uses the canonical conversation resource index. Direct
+code tools index their returned refs immediately. Rows show current authorized
+metadata, source revision, publication state and the last matching run result.
+A newer source revision is explicitly untested; a successful run is not a claim
+of business correctness. Recent one-off runs are a separate compact list (latest
+20), and exported files remain in Files. Forbidden resources are filtered again
+when the context snapshot is loaded.
+
+Code Mode `ui.stat({label,value,format?,trend?})` uses the shared `StatCell`
+component. Values remain numeric or null for inspection; formatting occurs in
+the host locale. Its handle supports `setValue`, `setOptions`, and `setLoading`.
+Managed execution reports starting, working, and approval phases in the active
+tool row. Startup is bounded to 45 seconds; the server also checks the browser
+event loop with a 10-second heartbeat deadline. A dead host is reported without
+replaying an uncertain operation.

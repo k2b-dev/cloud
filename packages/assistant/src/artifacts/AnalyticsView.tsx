@@ -12,6 +12,7 @@ import {
   NumberInput,
   Select,
   Slider,
+  StatCell,
   TextInput,
   useLocale,
   type ChartCursor,
@@ -32,6 +33,7 @@ export function AnalyticsView(props: {
   const t = () => artifactMessages.resolve([locale()]).t;
   const disabled = () => props.busy || props.node.disabled || (props.node.loading && props.node.type !== "group");
   const text = () => (props.node.type === "text" ? props.node : undefined);
+  const stat = () => (props.node.type === "stat" ? props.node : undefined);
   const filePicker = () => (props.node.type === "filePicker" ? props.node : undefined);
   const button = () => (props.node.type === "button" ? props.node : undefined);
   const input = () => (props.node.type === "input" ? props.node : undefined);
@@ -174,6 +176,9 @@ export function AnalyticsView(props: {
   }
   return (
     <>
+      <Show when={stat()}>{node=><div aria-busy={node().loading}><StatCell label={node().label}
+        value={node().loading ? "…" : formatValue(node().value,node().format,locale())}
+        sub={node().description} trend={node().trend} /></div>}</Show>
       <Show when={text()}>
         {(n) => (
           <Show when={n().markdown} fallback={<p class="whitespace-pre-wrap">{n().value}</p>}>

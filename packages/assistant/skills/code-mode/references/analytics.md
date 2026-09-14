@@ -33,6 +33,7 @@ The UI uses one options object per control. Common options: `id`, `label`,
 
 | Constructor | Required options / callbacks | Handle updates |
 | --- | --- | --- |
+| `ui.stat` | `label`; optional numeric/null `value` (default null), `format`, `trend: number[]` | `setValue`, `setOptions`, `setLoading` |
 | `ui.text` | `value`; optional `markdown: true` | `setValue(text)` |
 | `ui.button` | `label`, `onClick`; optional `variant` | `setOptions`, `setLoading`, `setDisabled` |
 | `ui.filePicker` | `label`, `onChange(files)`; optional `accept`, `multiple` | `setLoading`, `setDisabled` |
@@ -74,6 +75,12 @@ values deliberately. Null displays as an unavailable value rather than zero.
 Explorer chart mappings support `bar`, `pie`, `donut` with `category`/`value`,
 and `line`, `scatter` with `x`/`y` and optional `series` fields. Each row maps to
 one mark. Pie and donut values must be positive. There is no implicit aggregation.
+Line X values may be finite numbers or nonempty category labels such as months;
+labels keep their first-occurrence order across series. Do not mix these types.
+Scatter X and all Y/value fields must be finite numbers. The worker validates
+these mappings before returning a ready state, including after filter updates.
+Mapped charts reserve axis space for formatted numbers. Long bar labels are
+shortened on the axis; keep the full label column in tooltips and tables.
 
 For all 14 kinds use `{options, marks, formats?}`. `options` uses the strict
 [Charts](charts.md) schema. Each mark is:
@@ -123,19 +130,34 @@ substitute for an explicit Apply button when each change has an external effect.
 
 ## Inspection, budgets, and delivery
 
-`code_interact` uses `value` for a typed UI event:
+`code_interact` uses `event` for a typed UI event:
 `{type:"change",value:...}`, `{type:"select",key:"row-id"}`, or
 `{type:"view",value:"table"}`. Group events are
 `{type:"request",request:{step:"month"}}` and `{type:"refresh"}`.
 Use `code_inspect({runId,nodeId,offset,limit})` for bounded rows and controls.
 
+For a short known sequence, use
+`code_interact({runId,steps:[{id:"region",event:{type:"change",value:"north"}},{id:"apply"}]})`.
+A batch accepts up to three sequential steps and returns one final snapshot.
+It stops at an error, modal, or unfinished background work; check `completedSteps`
+and `nextStep` before continuing. Do not mix `steps` with top-level `id`, `event`,
+or `answer`. Use separate calls when the next action depends on inspecting data.
+
 Existing budgets still apply: 300 UI nodes, 1,000 rows/data entries per chart,
 and the 16 MiB bridge budget. Group data and multiple views also count toward
 transport bytes. Aggregate before rendering; the host does not fetch hidden rows.
 
+Use `ui.stat` for KPIs so raw numbers remain inspectable and formatting follows
+the host locale. Use null for unavailable ratios. Pass the full raw value to
+`setValue`: for a margin, `profit / revenue`, never `Math.round(ratio * 100) / 100`.
+A fraction such as 0.449550499 must remain that fraction; its percent format
+controls visible digits. Validate the raw `value` from inspection against an
+independent calculation, not only a rounded screenshot or formatted string.
+
 Source context contains `mode:"snapshot"|"live"`, ISO `asOf`, `sources` with a
-label and optional HTTPS link/description, and optional `status`/`note`. Partial
-or fixture status requires a note. Never put keys or credential-bearing URLs in
+label and optional HTTPS link/description, and optional `status`/`note`. `status` is exactly `complete`, `partial`, or `fixture`; it does not accept
+`validated`. Partial or fixture status requires a note. Use a full ISO timestamp
+for `asOf` (including time and Z), captured once during data preparation. Never put keys or credential-bearing URLs in
 provenance. This context records claims; it does not validate the underlying data.
 Read the `assistant-data-analysis` skill for analytical validation and delivery.
 

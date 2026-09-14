@@ -1,19 +1,18 @@
 # Run and debug
 
-Load the required `code_*` tools with `load_tools`. They are available only when
-a connected Assistant browser or CLI execution host advertises them. For example:
-`load_tools({"names":["code_run","code_interact","code_open"]})`.
-Use these exact names without `assistant.`; they are browser tools, not app
-capabilities. If absent, do not claim to have
-executed the code. There is no browser setup or technical switch for the user.
+Load the required `code_*` tools with `load_tools`. Run, inspect, interact, stop,
+and export execute on the Assistant server, independently of the user's tab.
+`code_open` and `code_secret` use the user interface. Use the exact tool names
+without `assistant.`; they are direct tools, not app capabilities. If execution
+is unavailable, report that state rather than claiming the code ran.
 
 | Tool | Input | Result |
 | --- | --- | --- |
 | `code_run` | `id` or `code`, optional `inputPaths`, `version` | Starts saved source or a one-off entry; returns `runId` and snapshot |
 | `code_inspect` | `runId`, optional `nodeId`, `offset`, `limit`, `waitMs` | UI, logs, errors, modal, output, and files |
-| `code_interact` | `runId`, `id`, optional `value` | Performs an interaction and returns the resulting state |
+| `code_interact` | `runId`, `id`, optional `event` or modal `answer` | Performs an interaction and returns the resulting state |
 | `code_stop` | `runId` | Stops and releases a test run |
-| `code_export` | `runId`, `name` | Copies a captured output file into the chat; returns its path |
+| `code_export` | `runId`, `name` | Copies a captured output file into the chat; returns its path and version |
 | `code_open` | `id` | Opens the user's app tab without starting code |
 
 ## Test the result
@@ -24,12 +23,14 @@ For interactive apps, exercise the main action and invalid input. Fix source
 and start another run when needed. No revision argument is required.
 
 Use IDs returned in the snapshot. A button needs only its control `id`; an input
-or select uses `value: {type:"change", value:...}`. Table/chart selection uses
-`value: {type:"select", key:...}`. See [Analytics UI](analytics.md) for all events.
+or select uses `event: {type:"change", value:...}`. Table/chart selection uses
+`event: {type:"select", key:...}`. See [Analytics UI](analytics.md) for all events.
+Each inspected control includes `interactions` examples. Add the current `runId`
+and adjust the event value; send the object directly, not JSON encoded as text.
 Do not guess IDs from visible labels.
 
 A pending modal has its own `id` and schema. Answer it through `code_interact`
-with that ID and a `value`: boolean for confirm, scalar for text/number, a field
+with that ID and an `answer`: boolean for confirm, scalar for text/number, a field
 object for a form, or null to cancel. Invalid answers leave the dialog open for
 correction. Do not reuse an ID from an earlier modal.
 
@@ -48,10 +49,15 @@ receive selected chat files through `inputPaths`; app tests use those paths
 only as isolated picker fixtures. Shared storage, database writes, and capabilities affect real resources,
 even in agent runs. Read the corresponding reference before using them.
 
-The execution host must stay connected. Each tool call has a server execution claim:
-a second tab can reuse its completed result, but cannot execute the same call.
-An interrupted or uncertain call is not replayed. After reload, an old run may
-be gone; inspect external effects before deliberately starting another run. The deadlines protect different boundaries:
+The server owns one isolated host per active conversation. Calls and ordered
+approval decisions are durable: reconnecting continues the same call without
+repeating effects. A lost host produces an explicit failure, never an automatic
+rerun. Inspect saved data before deliberately starting a replacement run.
+The host retains temporary runs while the conversation is active and for two
+idle minutes after it finishes. Saved source and exported files remain durable.
+The server admits eight hosts; a full host pool returns an availability error.
+
+The deadlines protect different boundaries:
 
 - Startup and short callbacks: 15 seconds of readiness/execution time. Pending
   input reads pause startup; file reads/pickers and database/shared-storage

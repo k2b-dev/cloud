@@ -1,3 +1,5 @@
+import type { CapabilityCaller } from "@k2b/cloud/capabilities/server";
+import { CodeResourceId } from "@k2b/cloud/ai/browser";
 import { httpService, HttpError } from "./http-service";
 import { HttpScope, SecretSave, HttpPrepare } from "./http-contracts";
 import { runtimeCapabilities, RuntimeCapabilityRequest } from "./capability-runtime";
@@ -20,7 +22,7 @@ import { ClientCall, ClientCallResult, clientCalls } from "./client-calls";
 
 const capabilityCaller=(c:Context<AuthContext>)=>({authorization:c.req.header("authorization"),cookie:c.req.header("cookie"),locale:getLocale(c),signal:c.req.raw.signal});
 const identity = (c: Context<AuthContext>) => ({ actor: c.get("actor"), accessSubject: c.get("accessSubject"), conversationId: c.req.query("conversationId") });
-const id = (c: Context<AuthContext>) => z.uuid().parse(c.req.param("id"));
+const id = (c: Context<AuthContext>) => CodeResourceId.parse(c.req.param("id"));
 const page = (c: Context<AuthContext>) => z.coerce.number().int().min(1).max(100000).parse(c.req.query("page") ?? 1);
 const revision = (c: Context<AuthContext>) => c.req.query("revision") === undefined ? undefined
   : z.coerce.number().int().positive().parse(c.req.query("revision"));
@@ -36,9 +38,7 @@ const Grant = z.object({
   permission: Level,
 }).strict();
 
-export const artifactApi = new Hono<AuthContext>()
-  .use("*", auth.requireRole("authenticated"))
-  .use("*", auth.requireUser())
+export const createArtifactServiceRoutes = (caller: (context: Context<AuthContext>) => CapabilityCaller = capabilityCaller) => new Hono<AuthContext>()
   .use("*", (c,next) => bodyLimit({ maxSize: c.req.path.endsWith("/storage") ? STORAGE_TRANSPORT_BYTES : LIMITS.rpcBytes })(c,next))
   .use("*", async (c,next) => { c.header("Cache-Control","private, no-store"); await next(); })
   .onError((error,c) => {
@@ -82,13 +82,16 @@ export const artifactApi = new Hono<AuthContext>()
   })
   .post("/:id/database",v("json",DatabaseRequest),async c => respond(c,ok(await artifactDatabase.call(id(c),c.req.valid("json"),identity(c),c.req.raw.signal))))
   .post("/:id/database/inspect",v("json",DatabaseRequest),async c => respond(c,ok(await artifactDatabase.call(id(c),c.req.valid("json"),identity(c),c.req.raw.signal,"inspect"))))
-  .post("/runtime/capabilities",v("json",RuntimeCapabilityRequest),async c=>respond(c,ok(await runtimeCapabilities.prepare(c.req.valid("json"),identity(c),capabilityCaller(c)))))
-  .post("/runtime/capabilities/:callId/resolve",v("json",z.object({approved:z.boolean(),remember:z.literal("always").optional()}).strict()),async c=>respond(c,ok(await runtimeCapabilities.resolve(z.uuid().parse(c.req.param("callId")),c.req.valid("json"),identity(c),capabilityCaller(c)))))
+  .post("/runtime/capabilities",v("json",RuntimeCapabilityRequest),async c=>respond(c,ok(await runtimeCapabilities.prepare(c.req.valid("json"),identity(c),caller(c)))))
+  .post("/runtime/capabilities/:callId/resolve",v("json",z.object({approved:z.boolean(),remember:z.literal("always").optional()}).strict()),async c=>respond(c,ok(await runtimeCapabilities.resolve(z.uuid().parse(c.req.param("callId")),c.req.valid("json"),identity(c),caller(c)))))
   .get("/runtime/host.js", async c => c.body(await cliHostBundle(), 200, { "Content-Type": "application/javascript; charset=utf-8" }))
   .post("/runtime/claim", v("json", ClientCall), async (c) => respond(c, ok(await clientCalls.claim(c.req.valid("json"), identity(c)))))
   .post("/runtime/complete", v("json", ClientCallResult), async (c) => respond(c, ok(await clientCalls.complete(c.req.valid("json"), identity(c)))))
   .post("/", v("json",ArtifactCreate), async (c) => respond(c,ok(await artifacts.create(c.req.valid("json"),identity(c))),201))
-  .post("/runtime/compile", v("json", ArtifactSource), async c => respond(c,ok(await compileArtifact(c.req.valid("json")))))
+  .post("/runtime/compile", v("json", ArtifactSource), async c => {
+    try { return respond(c,ok(await compileArtifact(c.req.valid("json")))); }
+    catch (error) { return respond(c,{ ok: false, status: 400, code: "COMPILE_FAILED", error: compilationDiagnostic(error) }); }
+  })
   .post("/runtime/rename",v("json",z.object({source:ArtifactSource,from:z.string().max(180),to:z.string().max(180)}).strict()),async c=>{
     const input=c.req.valid("json");
     try{return respond(c,ok(renameSource(input.source,input.from,input.to)));}
@@ -128,3 +131,8 @@ export const artifactApi = new Hono<AuthContext>()
   })
   .put("/:id/access/:accessId", v("json",z.object({ permission: Level.nullable() }).strict()), async (c) =>
     respond(c,ok(await artifacts.changeGrant(id(c),z.uuid().parse(c.req.param("accessId")),c.req.valid("json").permission,identity(c)))));
+
+export const artifactApi = new Hono<AuthContext>()
+  .use("*",auth.requireRole("authenticated"))
+  .use("*",auth.requireUser())
+  .route("/",createArtifactServiceRoutes());

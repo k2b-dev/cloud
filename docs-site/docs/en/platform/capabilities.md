@@ -1067,6 +1067,14 @@ const result = await invokeCapabilityWithDataSchema(
 if (!result.ok) throw new Error(result.error.message);
 ```
 
+A server-owned execution host may instead pass `authority` resolved by Cloud's
+verified request middleware, plus its `origin`. This uses the same permission,
+review, idempotency, invocation-signing and audit dispatcher in process. Never
+construct authority from JSON, tool arguments, worker messages or browser state.
+Do not mix it with credentials or a mandate. It is appropriate for an active
+request-owned execution; durable background jobs still require a revocable
+mandate. User code runs in a sandbox and receives neither authority nor credentials.
+
 Server-side app code uses the Core-backed adapter. Pass only credentials and
 trace data from the current request. The adapter sends them to Core's private
 origin, where Core resolves the authority and dispatches a target-bound
