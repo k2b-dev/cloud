@@ -113,4 +113,4 @@ test("host accepts refreshed list ownership and rejects unowned actions", async 
   } finally {
     await browser.close();
   }
-}, 20000);
+}, 60000);

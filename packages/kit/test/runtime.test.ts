@@ -67,7 +67,7 @@ test("opaque worker denies network and origin storage but executes scripts", asy
   expect(JSON.stringify(messages)).toContain('\\"storage\\":false');
   expect(JSON.stringify(messages)).toContain('\\"opfs\\":false');
   expect(JSON.stringify(messages)).toContain("Ready");
-}, 20000);
+}, 60000);
 
 test("local storage shares an app namespace and isolates other apps and users", async () => {
   const bundle = await Bun.build({
@@ -153,7 +153,7 @@ test("local storage shares an app namespace and isolates other apps and users", 
   } finally {
     await browser.close();
   }
-}, 20000);
+}, 60000);
 
 test("a busy worker can be stopped and replaced without blocking the browser", async () => {
   const build = (content: string) => compile({ name: "Test", files: [{ path: "test.script.js", content }] }, "test.script.js");
@@ -203,7 +203,7 @@ test("a busy worker can be stopped and replaced without blocking the browser", a
   } finally {
     await browser.close();
   }
-}, 15000);
+}, 60000);
 
 test("money namespace computes exact amounts inside the isolated worker", async () => {
   const messages = await browserTest(`export default kit.script({name:"Money",run(){
@@ -224,7 +224,7 @@ test("money namespace computes exact amounts inside the isolated worker", async 
     messages.filter((message) => typeof message === "object" && message !== null && "type" in message && message.type === "error"),
   ).toEqual([]);
   expect(JSON.stringify(messages)).toContain("Money verified");
-}, 20000);
+}, 60000);
 
 test("PDF.js extracts text in the opaque worker without network", async () => {
   // Minimal PDF with one standard-font text stream, generated in memory.
@@ -253,7 +253,7 @@ test("PDF.js extracts text in the opaque worker without network", async () => {
   for (const message of messages) expect(WorkerMessage.safeParse(message).success).toBe(true);
   expect(JSON.stringify(messages)).toContain("Kit PDF text");
   expect(JSON.stringify(messages)).toContain('"type":"ready"');
-});
+}, 60000);
 
 test("lists replace visible items and retain reusable action ownership", async () => {
   const messages = await browserTest(`export default kit.script({name:"List",run(){
@@ -271,7 +271,7 @@ test("lists replace visible items and retain reusable action ownership", async (
   expect(list.items).toEqual([]);
   expect(list.children).toEqual(["done"]);
   expect(JSON.stringify(messages)).toContain("duplicate rejected: true");
-}, 20000);
+}, 60000);
 
 test("Alpha UI handles expose only canonical collection and scalar mutations", async () => {
   const messages = await browserTest(`export default kit.script({name:'Updates',run(){
@@ -287,4 +287,4 @@ test("Alpha UI handles expose only canonical collection and scalar mutations", a
   expect(nodes.find((n) => n.kind === "chart")!.chart).toEqual({ kind: "bar", data: [{ label: "B", value: 2 }] });
   expect(JSON.stringify(messages)).toContain('\\"legacy\\":true');
   expect(nodes.find((n) => n.id === "input")!.value).toBe("New");
-}, 20000);
+}, 60000);

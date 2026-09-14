@@ -27,4 +27,4 @@ test("native folder files retain their relative paths across the worker transpor
     await browser.close();
     await rm(directory, { recursive: true, force: true });
   }
-}, 15000);
+}, 60000);

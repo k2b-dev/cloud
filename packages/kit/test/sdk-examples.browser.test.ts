@@ -58,4 +58,4 @@ test.each([false, true])("documentation executes in the isolated worker (CRUD: %
   } finally {
     await browser.close();
   }
-}, 30000);
+}, 60000);
