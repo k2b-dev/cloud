@@ -1,3 +1,4 @@
+import { aiQuotas } from "./quotas";
 import { drainQueuedMessages } from "./message-queue";
 import { coreSettings } from "../services/settings/api";
 import { startAiDictationRuntime } from "./dictation-runtime";
@@ -138,6 +139,8 @@ export const prepareAiChatTurn = async (input: SubmitAiChatTurnInput) => {
     modelPolicy: input.modelPolicy,
     requestedModelId,
   });
+  const quotaSubject = aiChatAccessSubject(input.actor);
+  if (input.assistantChat && quotaSubject) await aiQuotas.assertAllowed(quotaSubject, resolved.profile.id);
   const runConfig: AiChatTurnRunConfig = {
     kind: "chat",
     ...(input.assistantChat ? { assistantChat: true } : {}),

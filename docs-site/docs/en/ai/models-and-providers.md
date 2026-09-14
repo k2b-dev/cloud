@@ -157,3 +157,12 @@ For example, [Scaleway's audio API](https://www.scaleway.com/en/developers/api/g
 lists WAV, MP3/MPGA, FLAC, and OGG/OGA. Its documented list does not include
 M4A/MP4 or WebM. Check the chosen endpoint before promising support for phone
 memos or browser recordings.
+
+## Direct-chat allowances
+
+Optional [Assistant limits](/en/docs/ai/usage-and-feedback#assistant-limits)
+are configured separately from model access, and are disabled by default.
+A quota never grants access to a model. All-model **Unlimited** overrides
+model-specific quotas, while finite all-model and model-specific allowances
+both apply. Only direct interactive chat calls count; helper inference such
+as image inspection, transcription and compaction remains outside the quota.

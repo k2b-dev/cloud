@@ -1,5 +1,6 @@
+import PrincipalPicker from "./PrincipalPicker";
 import { mutation } from "@k2b/stdlib/solid";
-import { Button, Combobox, type ComboboxOption, IconButton, Placeholder, prompts, SelectChip, Tooltip, useLocale } from "@k2b/ui";
+import { Button, IconButton, Placeholder, prompts, SelectChip, Tooltip, useLocale } from "@k2b/ui";
 import { createSignal, For, Show } from "solid-js";
 import { CloudAvatar } from "../account/Avatar";
 import type { AccessEntry, PermissionLevel, Principal } from "../contracts/shared";
@@ -135,22 +136,6 @@ const getPrincipalIcon = (principal: Principal): string => {
   }
 };
 
-// Backend `/api/accounts/entities` shape (the subset we consume).
-type ApiEntity =
-  | { kind: "user"; user: { id: string; uid: string; displayName: string; mail: string | null } }
-  | { kind: "group"; group: { id: string; name: string; description: string | null } }
-  | {
-      kind: "service_account";
-      serviceAccount: {
-        id: string;
-        name: string;
-        kind: "user_delegated" | "resource_bound";
-        appId: string | null;
-        resourceType: string | null;
-        resourceId: string | null;
-      };
-    };
-
 // ─────────────────────────────────────────────────────────────────────────
 // PermissionEditor
 // ─────────────────────────────────────────────────────────────────────────
@@ -174,21 +159,6 @@ export default function PermissionEditor(props: PermissionEditorProps) {
       );
     }
   }
-
-  const existingUserIds = () =>
-    entries()
-      .filter((e) => e.principal.type === "user")
-      .map((e) => (e.principal as { type: "user"; userId: string }).userId);
-  const existingGroupIds = () =>
-    entries()
-      .filter((e) => e.principal.type === "group")
-      .map((e) => (e.principal as { type: "group"; groupId: string }).groupId);
-  const existingServiceAccountIds = () =>
-    entries()
-      .filter((e) => e.principal.type === "service_account")
-      .map((e) => (e.principal as { type: "service_account"; serviceAccountId: string }).serviceAccountId);
-  const hasAuthenticatedEntry = () => entries().some((entry) => entry.principal.type === "authenticated");
-  const hasPublicEntry = () => entries().some((entry) => entry.principal.type === "public");
 
   const grantMut = mutation.create({
     mutation: async (data: { principal: Principal; permission: GrantableLevel; display: { displayName: string } }) =>
@@ -230,106 +200,6 @@ export default function PermissionEditor(props: PermissionEditorProps) {
   });
   const busy = () => grantMut.loading() || updateMut.loading() || revokeMut.loading();
 
-  // ── Combobox add-flow ─────────────────────────────────────────────────
-  // The Combobox is a fire-and-forget input: type → pick → granted at the
-  // lowest allowed level. The `principalsByOptId` map carries the original
-  // discriminated principal across the ComboboxOption boundary so onSelect
-  // can route it to grantAccess without re-parsing prefixed ids.
-  let principalsByOptId = new Map<string, Principal>();
-
-  const fetchPrincipals = async (q: string, signal: AbortSignal): Promise<ComboboxOption[]> => {
-    const map = new Map<string, Principal>();
-    const opts: ComboboxOption[] = [];
-
-    // Synthetic principals — only when allowed AND not already granted.
-    // Placed first so they're visible immediately on focus, before any
-    // typing kicks off a backend request.
-    if (allowAuthenticated() && !hasAuthenticatedEntry()) {
-      map.set("auth", { type: "authenticated" });
-      opts.push({
-        id: "auth",
-        label: t().allUsers,
-        description: t().signedInDescription,
-        icon: "ti-lock-open-2",
-      });
-    }
-    if (allowPublic() && !hasPublicEntry()) {
-      map.set("public", { type: "public" });
-      opts.push({
-        id: "public",
-        label: t().public,
-        description: t().publicDescription,
-        icon: "ti-world",
-      });
-    }
-
-    // Real entities require a query — avoid a wide listing on every focus.
-    if (q.length >= 2) {
-      const url = new URL("/api/accounts/entities", window.location.origin);
-      url.searchParams.set("search", q);
-      url.searchParams.set("kinds", props.allowServiceAccounts ? "user,group,service_account" : "user,group");
-      url.searchParams.set("per_page", "10");
-      const userIds = existingUserIds();
-      if (userIds.length) url.searchParams.set("exclude_user_ids", userIds.join(","));
-      const groupIds = existingGroupIds();
-      if (groupIds.length) url.searchParams.set("exclude_group_ids", groupIds.join(","));
-      const serviceAccountIds = existingServiceAccountIds();
-      if (serviceAccountIds.length) url.searchParams.set("exclude_service_account_ids", serviceAccountIds.join(","));
-
-      const res = await fetch(url.toString(), { credentials: "same-origin", signal });
-      if (res.ok) {
-        const data = (await res.json()) as { items?: ApiEntity[] };
-        for (const item of data.items ?? []) {
-          if (item.kind === "user") {
-            const id = `u:${item.user.id}`;
-            map.set(id, { type: "user", userId: item.user.id });
-            opts.push({
-              id,
-              label: item.user.displayName,
-              description: item.user.mail ?? item.user.uid,
-              icon: "ti ti-user",
-            });
-          } else if (item.kind === "group") {
-            const id = `g:${item.group.id}`;
-            map.set(id, { type: "group", groupId: item.group.id });
-            opts.push({
-              id,
-              label: item.group.name,
-              description: item.group.description ?? undefined,
-              icon: "ti ti-users-group",
-            });
-          } else if (item.kind === "service_account") {
-            const id = `sa:${item.serviceAccount.id}`;
-            map.set(id, { type: "service_account", serviceAccountId: item.serviceAccount.id });
-            opts.push({
-              id,
-              label: item.serviceAccount.name,
-              description:
-                item.serviceAccount.kind === "user_delegated"
-                  ? t().userBoundServiceAccount
-                  : [item.serviceAccount.appId, item.serviceAccount.resourceType, item.serviceAccount.resourceId]
-                      .filter(Boolean)
-                      .join(" · "),
-              icon: "ti ti-key",
-            });
-          }
-        }
-      }
-    }
-
-    principalsByOptId = map;
-    return opts;
-  };
-
-  const handleSelect = (option: ComboboxOption) => {
-    if (busy()) return;
-    const principal = principalsByOptId.get(option.id);
-    if (!principal) return;
-    const firstLevel = allowed()[0]?.level;
-    if (!firstLevel) return; // dev-warned above; bail silently
-    grantMut.mutate({ principal, permission: firstLevel, display: { displayName: option.label } });
-  };
-
   return (
     <div class="flex flex-col gap-3">
       {/* Existing entries */}
@@ -360,20 +230,12 @@ export default function PermissionEditor(props: PermissionEditorProps) {
           level on pick. The user upgrades via the row pill if they want
           a higher level. KISS: one decision per step. */}
       <Show when={canEdit()}>
-        <Combobox
-          placeholder={
-            props.allowServiceAccounts
-              ? allowAuthenticated()
-                ? t().addAll
-                : t().addService
-              : allowAuthenticated()
-                ? t().addAudience
-                : t().addBasic
-          }
-          fetchData={fetchPrincipals}
-          onSelect={handleSelect}
-          disabled={busy()}
-        />
+        <PrincipalPicker existing={entries().map(e=>e.principal)} allowPublic={allowPublic()} allowAuthenticated={allowAuthenticated()} allowServiceAccounts={props.allowServiceAccounts}
+          disabled={busy()} onSelect={(principal,display)=>{
+            const permission=allowed()[0]?.level;
+            if(permission&&!busy())grantMut.mutate({principal,permission,display});
+          }}/>
+
       </Show>
     </div>
   );

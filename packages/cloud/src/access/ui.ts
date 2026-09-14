@@ -14,3 +14,5 @@ export type {
   ResourceApiKeysProps,
 } from "./ResourceApiKeys";
 export { default as ResourceApiKeys } from "./ResourceApiKeys";
+
+export { default as PrincipalPicker, principalKey } from "./PrincipalPicker";

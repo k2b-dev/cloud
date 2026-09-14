@@ -1,3 +1,4 @@
+export { aiQuotas, AiQuotaError } from "./quotas";
 /** Server-only AI administration and usage accounting. */
 
 export { type AiModelAccessDraft, type AiModelAccessMap, type AiModelAccessState, aiModelAccess } from "./model-access";

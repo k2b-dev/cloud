@@ -369,3 +369,13 @@ permission, and a limit from `1` to `500`. It does not expand `public` or
 
 Keep grant editing and credential creation separate. The permission editor
 must not display raw keys or own secret lifecycle.
+
+
+For assignment forms that need identity selection without permission levels,
+use `PrincipalPicker` from `@k2b/cloud/access/ui`. Its `onSelect` callback returns
+a `Principal` and display name; the consumer owns persistence and authorization.
+Pass `existing` to exclude already selected principals. Users and groups are
+searched through Accounts after two characters. All signed-in users are
+available by default; `allowAuthenticated={false}` removes that option.
+Public and service-account selection require `allowPublic` and
+`allowServiceAccounts` respectively. This picker grants no access itself.

@@ -1,3 +1,4 @@
+import { AiQuotaError } from "./quotas";
 import { CODE_RUNTIME_TOOL_NAMES } from "./browser-code-contracts";
 import type { Input, Message } from "@k2b/nessi";
 import type { Context } from "hono";
@@ -247,6 +248,7 @@ const aiSettingsServiceError = (error: AiSettingsError) => {
 };
 
 export const toAiErrorResponse = (c: Context<AuthContext>, error: unknown) => {
+  if (error instanceof AiQuotaError) return c.json({ok:false,error:error.message,message:error.message,code:error.code},429);
   if (isAiSettingsError(error)) {
     return respond(c, fail(aiSettingsServiceError(error.aiError)));
   }

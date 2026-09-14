@@ -1,3 +1,7 @@
+import AiQuotaAdmin from "./_components/AiQuotaAdmin.island";
+import { quotaMessages } from "./_components/ai-quota-messages";
+import { aiQuotas } from "@k2b/cloud/ai/admin";
+import { listAiModels } from "@k2b/cloud/ai";
 import { SettingsPage } from "@k2b/ui";
 import {
   type AiEnrichmentOverview,
@@ -36,7 +40,7 @@ import LinuxIdentityPanel from "./_components/LinuxIdentityPanel.island";
 
 // Flat tab list. Each tab maps either to a core-settings group (`group` prop)
 // or a dedicated immediate-action view such as Projects or Legal.
-const tabs = (t: ReturnType<typeof adminMessages.resolve>["t"]) =>
+const tabs = (t: ReturnType<typeof adminMessages.resolve>["t"], locale: string) =>
   [
     {
       id: "general",
@@ -81,6 +85,13 @@ const tabs = (t: ReturnType<typeof adminMessages.resolve>["t"]) =>
       description: t.aiProvidersDescription,
       icon: "ti ti-sparkles",
       group: "ai" as const,
+    },
+    {
+      id: "ai-quotas",
+      title: quotaMessages.resolve([locale]).t.title,
+      description: quotaMessages.resolve([locale]).t.description,
+      icon: "ti ti-gauge",
+      group: null,
     },
     {
       id: "ai-usage",
@@ -196,7 +207,7 @@ const buildLegalInitial = (entries: SettingFieldDef[]): LegalInitial => {
 export default ssr<AuthContext>(async (c) => {
   const locale = getLocale(c);
   const t = adminMessages.resolve([locale]).t;
-  const availableTabs = tabs(t);
+  const availableTabs = tabs(t, locale);
   const rawTab = c.req.query("tab");
   // "ai" predates the split into the AI sidebar group — keep old links working.
   const legacyTab = rawTab === "ai" ? "ai-general" : rawTab;
@@ -233,6 +244,10 @@ export default ssr<AuthContext>(async (c) => {
   let aiSkillTotal = 0;
   let aiSkillPage = 1;
   let aiSkillPerPage = 100;
+  const quotaData =
+    tab.id === "ai-quotas"
+      ? { config: await aiQuotas.config(), models: (await listAiModels()).map((m) => ({ id: m.id, label: m.label })) }
+      : null;
   let aiUsageReport: AiUsageReport | null = null;
   const search = (c.req.query("search") ?? "").trim();
   const requestedPage = Number.parseInt(c.req.query("page") ?? "1", 10);
@@ -275,9 +290,9 @@ export default ssr<AuthContext>(async (c) => {
   }
 
   return () => (
-    <AdminLayout c={c} title={tab.title} scroll={tab.id === "ai-usage"}>
+    <AdminLayout c={c} title={tab.title} scroll={tab.id === "ai-usage" || tab.id === "ai-quotas"}>
       <div
-        class={tab.id === "ai-usage" ? "flex min-w-0 flex-none flex-col" : "flex min-h-0 flex-1 flex-col"}
+        class={tab.id === "ai-usage" || tab.id === "ai-quotas" ? "flex min-w-0 flex-none flex-col" : "flex min-h-0 flex-1 flex-col"}
         style="view-transition-name: admin-settings-content"
       >
         {linuxOverview ? (
@@ -348,6 +363,7 @@ export default ssr<AuthContext>(async (c) => {
           />
         ) : null}
 
+        {quotaData ? <AiQuotaAdmin {...quotaData} /> : null}
         {tab.id === "ai-usage" && aiUsageReport ? <AiUsageAdminPanel report={aiUsageReport} /> : null}
       </div>
     </AdminLayout>

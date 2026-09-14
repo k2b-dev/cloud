@@ -1,3 +1,4 @@
+import adminAiQuotaRoutes from "./admin-ai-quotas";
 /**
  * Core platform API surface — owned by cloud-lib, mounted by the core-app.
  *
@@ -67,6 +68,7 @@ const buildCoreApi = (options: CoreApiOptions) => {
     .route("/apps", appDiscoveryRoutes)
     .route("/announcements", announcementRoutes)
     .route("/admin/core/ai-usage", adminAiUsageRoutes)
+    .route("/admin/core/ai-quotas", adminAiQuotaRoutes)
     .route("/admin/core/ai-projects", adminAiProjectsRoutes)
     .route("/admin/core/ai-skills", adminAiSkillsRoutes)
     .route("/admin/core/announcements", adminAnnouncementRoutes)

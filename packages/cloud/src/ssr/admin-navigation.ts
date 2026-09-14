@@ -23,6 +23,7 @@ export const buildAdminGroups = (apps: readonly RuntimeContext["apps"][number][]
   const aiLinks: AdminLink[] = [
     { href: "/admin/settings?tab=ai-general", icon: "ti-adjustments", label: t.general },
     { href: "/admin/settings?tab=ai-providers", icon: "ti-sparkles", label: t.providers },
+    { href: "/admin/settings?tab=ai-quotas", icon: "ti-gauge", label: t.aiQuotas },
     { href: "/admin/settings?tab=ai-usage", icon: "ti-chart-histogram", label: t.aiUsage },
     { href: "/admin/settings?tab=ai-skills", icon: "ti-wand", label: t.skills },
     { href: "/admin/settings?tab=ai-projects", icon: "ti-folders", label: t.projects },

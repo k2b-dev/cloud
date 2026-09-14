@@ -489,3 +489,16 @@ recomputed on reads without a background job or destructive archival.
 conversation, including its model profile; it does not authorize access itself.
 
 Pinned chats always remain active, overriding explicit or automatic completion. Unpinning reveals the underlying completion choice again. The sidebar hides the Done action for pinned chats; pinning and unpinning are available directly in the chat preview.
+
+## Optional Assistant quotas
+
+Direct interactive Assistant submissions check optional token allowances before
+consuming the draft or promoting a queued message. Each subsequent direct model
+round checks again. API rejection uses HTTP 429 with `quota_exhausted` or
+`quota_usage_unknown`; model access is still checked independently. A blocked
+queue head retains its content and attachments for later dispatch. Already
+running provider calls may finish and exceed the allowance.
+
+The feature is disabled by default and does not limit generic application AI,
+workflow or background inference. See [Assistant limits](/en/docs/ai/usage-and-feedback#assistant-limits)
+for accounting, wildcard precedence and reset behavior.

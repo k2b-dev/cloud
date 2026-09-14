@@ -1,3 +1,5 @@
+import { aiQuotas, AiQuotaError } from "./quotas";
+import { aiChatAccessSubject, isAssistantChatTurn } from "./assistant-models";
 import { aiInputToUserMessage, aiTurnInputToContent } from "./http";
 import { canonicalizeAiConversationAttachments } from "./file-context";
 import { aiResourceMarker } from "./resource-markers";
@@ -20,6 +22,7 @@ export const migrateAiMessageQueue = async () => {
     status text NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','failed','submitted','cancelled')),
     error text, created_at timestamptz NOT NULL DEFAULT now()
   )`.simple();
+  await sql`ALTER TABLE ai.queued_messages ADD COLUMN IF NOT EXISTS quota_checked_at TIMESTAMPTZ`.simple();
   await sql`CREATE INDEX IF NOT EXISTS ai_queued_messages_pending ON ai.queued_messages(conversation_id, position) WHERE status IN ('pending','failed')`.simple();
   await sql`CREATE TABLE IF NOT EXISTS ai.queued_message_files (
     message_id uuid NOT NULL REFERENCES ai.queued_messages(id) ON DELETE CASCADE,
@@ -28,8 +31,12 @@ export const migrateAiMessageQueue = async () => {
     PRIMARY KEY(message_id, path)
   )`.simple();
   await sql`DROP TRIGGER IF EXISTS ai_live_queued_messages_changed ON ai.queued_messages`.simple();
-  await sql`CREATE TRIGGER ai_live_queued_messages_changed AFTER INSERT OR UPDATE OR DELETE ON ai.queued_messages
+  await sql`CREATE TRIGGER ai_live_queued_messages_changed AFTER INSERT OR DELETE ON ai.queued_messages
     FOR EACH ROW EXECUTE FUNCTION ai.live_conversation_child_changed('conversation-detail,conversation-list')`.simple();
+  await sql`DROP TRIGGER IF EXISTS ai_live_queued_messages_updated ON ai.queued_messages`.simple();
+  await sql`CREATE TRIGGER ai_live_queued_messages_updated AFTER UPDATE ON ai.queued_messages
+    FOR EACH ROW WHEN (OLD.status IS DISTINCT FROM NEW.status OR OLD.error IS DISTINCT FROM NEW.error OR OLD.content IS DISTINCT FROM NEW.content)
+    EXECUTE FUNCTION ai.live_conversation_child_changed('conversation-detail,conversation-list')`.simple();
 };
 
 export const listQueuedMessages = async (conversationId: string) => {
@@ -125,16 +132,24 @@ export const drainQueuedMessages = async (
   const rows = await sql<{ id: string; conversation_id: string; submission: Submission }[]>`
     SELECT q.id, q.conversation_id, q.submission FROM ai.queued_messages q
     JOIN ai.conversations c ON c.id = q.conversation_id
-    WHERE q.status = 'pending' AND c.archived_at IS NULL AND c.created_by_user_id IS NOT NULL
+    WHERE (q.status = 'pending' OR (q.status = 'failed' AND q.error IN ('quota_exhausted','quota_usage_unknown'))) AND c.archived_at IS NULL AND c.created_by_user_id IS NOT NULL
       AND (${conversationId ?? null}::uuid IS NULL OR q.conversation_id = ${conversationId ?? null}::uuid)
       AND NOT EXISTS (SELECT 1 FROM ai.queued_messages earlier WHERE earlier.conversation_id = q.conversation_id AND earlier.position < q.position AND earlier.status IN ('pending','failed'))
       AND NOT EXISTS (SELECT 1 FROM ai.turns t WHERE t.conversation_id = q.conversation_id AND t.status IN ('queued','running','waiting_for_action'))
-    ORDER BY q.position LIMIT ${AI_MESSAGE_QUEUE_LIMIT}`;
+    ORDER BY q.quota_checked_at NULLS FIRST, q.position LIMIT ${AI_MESSAGE_QUEUE_LIMIT}`;
   for (const row of rows) {
     try {
+      const quotaSubject = aiChatAccessSubject(row.submission.runConfig.actor);
+      if (isAssistantChatTurn(row.submission.runConfig) && quotaSubject)
+        await aiQuotas.assertAllowed(quotaSubject, row.submission.modelProfileId);
+      await sql`UPDATE ai.queued_messages SET status='pending', error=NULL WHERE id=${row.id}::uuid AND status='failed' AND error IN ('quota_exhausted','quota_usage_unknown')`;
       const result = await aiConversations.submitChatTurn({ ...row.submission, queuedMessageId: row.id });
       await enqueue({ conversationId: row.conversation_id, turnId: result.turn.id });
     } catch (error) {
+      if (error instanceof AiQuotaError) {
+        await sql`UPDATE ai.queued_messages SET status='failed', error=${error.code}, quota_checked_at=clock_timestamp() WHERE id=${row.id}::uuid AND status IN ('pending','failed')`;
+        continue;
+      }
       // Another dispatcher may have consumed it or a new foreground turn may have won.
       const reason = error instanceof Error ? error.message : String(error);
       if (reason === "Queued message is no longer ready." || reason.includes("idx_ai_turns_one_active_per_conversation")) continue;

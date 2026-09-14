@@ -141,3 +141,57 @@ collections are paginated `{ items, page, perPage, total }` objects; aggregate
 rows share measurement coverage and feedback counts. The browser-safe
 `@k2b/cloud/shared` export provides `AiUsageQuerySchema`,
 `aiUsageSearchParams`, and `aiUsageHref` for the same URL contract.
+
+## Assistant limits
+
+Open **Admin → AI → Assistant limits** (`/admin/settings?tab=ai-quotas`).
+Enforcement is **off by default**. Existing installations continue without a
+quota. Direct chat usage is recorded even while enforcement is off; enabling
+limits uses the recorded usage in the current window.
+
+Each rule selects a chat model profile or **All chat models**, a reset interval
+in hours (1–8,760), and assignments to users, groups, service accounts, or all
+signed-in users. Each group member receives a personal allowance. The highest
+matching allowance applies; assignments are never added together. No matching
+assignment means zero allowance for that rule. An absent rule adds no limit.
+
+**Unlimited on All chat models overrides every model-specific quota.**
+Otherwise, both the all-model allowance and any specific model allowance apply.
+Unlimited on one model does not remove a finite all-model allowance. Model
+permissions remain a separate requirement, including for administrators.
+
+All-model usage combines direct chat calls across model profiles, so changing
+models does not refill that allowance. Input and output tokens count once;
+cache and reasoning subtotals are not added again. The feature limits usage,
+not money. Calls already in progress can exceed an allowance before their
+usage is reported.
+
+Only direct interactive Assistant model calls count, including API and CLI
+submissions, retries and queued messages. Separate image, audio, transcription,
+compaction, enrichment, scheduled and workflow calls do not count. A direct
+chat call to a model with image capabilities still counts its reported input
+and output tokens.
+
+The **Users** view includes existing direct-chat users and recorded service
+accounts. Search can also find accounts without usage. Select an account to
+inspect recorded input/output and its current allowances, including the
+assignments that determine them. Detailed accounting begins with this feature;
+older chat history is not backfilled into quota consumption. Deleting a chat
+neither removes these measurements nor restores allowance.
+
+**Reset allowance** restores one account's allowance for one scope until its
+regular reset. Other scopes and historical usage are unchanged. The reset is
+recorded with its administrator and timestamp. Calls started before the reset
+remain in the old allowance even if their usage arrives afterward. Changing a
+rule's interval starts a new period after confirmation; changing assignments
+or token amounts does not reset consumption.
+
+Usage that cannot be measured is shown separately. It blocks subsequent calls
+under finite limits until a reset or the next window; it never becomes a free
+zero-token call. Disabled or unlimited quotas do not block chats for a usage
+booking failure. A known context-size rejection before generation counts zero
+so the normal compaction/retry path can continue.
+
+Quotas preserve blocked queued messages. The existing queue recovery checks
+again after a reset or window change; it does not change models automatically.
+The Assistant's own allowance display is being designed separately.

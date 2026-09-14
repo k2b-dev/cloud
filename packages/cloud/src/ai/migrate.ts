@@ -1,3 +1,4 @@
+import { migrateAiQuotas } from "./quotas-migrate";
 import { migrateAiMessageQueue } from "./message-queue";
 import { sql } from "bun";
 import { migrateAiModelAccess } from "./model-access-migrate";
@@ -2187,6 +2188,7 @@ export const migrateCloudAi = async (): Promise<void> => {
 
   await migrateAiTurnUsage();
   await migrateAiModelAccess();
+  await migrateAiQuotas();
 
   await sql`CREATE OR REPLACE FUNCTION ai.sidebar_tool_label(blocks jsonb) RETURNS jsonb AS $$
     SELECT jsonb_build_object('label', left(COALESCE(block->'presentation'->>'title', block->>'name'),200), 'status', block->>'status')
