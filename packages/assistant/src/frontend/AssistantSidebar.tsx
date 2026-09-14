@@ -132,18 +132,14 @@ function ConversationSidebarItem(props: {
   return (
     <AppWorkspace.SidebarItem
       href={href()}
+      class="assistant-chat-sidebar-item"
       navigation={props.open ? "enhanced" : "document"}
       scroll="manual"
       onNavigate={props.open ? handleNavigate : undefined}
       active={props.active}
       description={
         <Show when={!props.conversation.isDone}>
-          <Show
-            when={props.conversation.runStatus !== "idle" || props.conversation.unreadCompletion || props.conversation.pinnedAt}
-            fallback={<span>{text("Ready")}</span>}
-          >
-            <ConversationStatusMeta conversation={props.conversation} active={props.active} labels />
-          </Show>
+          <ConversationStatusMeta conversation={props.conversation} active={props.active} labels fallbackLabel={text("Ready")} />
         </Show>
       }
       preview={{

@@ -266,3 +266,21 @@
 .assistant-sidebar-preview-resource {
   color: var(--k2b-text);
 }
+
+/* Keep chat titles primary and every secondary status aligned. */
+.k2b-ui .assistant-chat-sidebar-item .k2b-app-workspace__sidebar-item-label-text {
+  font-size: 0.8125rem;
+  font-weight: 500;
+}
+.k2b-ui .assistant-chat-sidebar-item .assistant-conversation-status {
+  font-size: 0.6875rem;
+  line-height: 1rem;
+  font-weight: 400;
+  color: var(--k2b-text-muted);
+}
+.k2b-ui .assistant-chat-sidebar-item .assistant-conversation-status-label {
+  color: var(--k2b-text-muted);
+}
+.k2b-ui .assistant-chat-sidebar-item .assistant-conversation-status i {
+  order: 1;
+}

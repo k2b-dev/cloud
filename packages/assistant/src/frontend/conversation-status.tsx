@@ -4,12 +4,12 @@ import { Show } from "solid-js";
 import { conversationStatusPresentation } from "./conversation-view";
 import { assistantMessages } from "./messages";
 
-export function ConversationStatusMeta(props: { conversation: AiConversation; active?: boolean; labels?: boolean; hideStatus?: boolean }) {
+export function ConversationStatusMeta(props: { conversation: AiConversation; active?: boolean; labels?: boolean; hideStatus?: boolean; fallbackLabel?: string }) {
   const locale = useLocale();
   const t = () => assistantMessages.resolve([locale()]).t;
   const status = () => (props.hideStatus ? null : conversationStatusPresentation(props.conversation, locale(), props.active));
   return (
-    <span class="inline-flex shrink-0 items-center gap-1.5 text-[11px] text-dimmed">
+    <span class="assistant-conversation-status inline-flex shrink-0 items-center gap-1.5 text-[11px] text-dimmed">
       <Show when={props.conversation.pinnedAt}>
         <span class="inline-flex items-center gap-1" title={t().pinnedLabel}>
           <i class="ti ti-pin-filled text-xs" aria-hidden="true" />
@@ -19,11 +19,11 @@ export function ConversationStatusMeta(props: { conversation: AiConversation; ac
           </Show>
         </span>
       </Show>
-      <Show when={status()}>
+      <Show when={status()} fallback={props.labels ? props.fallbackLabel : undefined}>
         {(item) => (
           <span class={`inline-flex items-center gap-1 ${item().class}`} title={item().label}>
             <i class={`${item().icon} text-xs`} aria-hidden="true" />
-            <Show when={props.labels}>{item().label}</Show>
+            <Show when={props.labels}><span class="assistant-conversation-status-label">{item().label}</span></Show>
             <Show when={!props.labels}>
               <span class="sr-only">{item().label}</span>
             </Show>
