@@ -14,7 +14,7 @@ export const incomingAutomationMandatePolicy = (steps: MailAutomationStep[]): Ma
   const operations = new Set<string>();
   visitSteps(steps, (step) => {
     if (step.kind === "link_space_item") operations.add("capability.action.run:item.reference.add");
-    if (step.kind === "create_space_event") operations.add("capability.action.run:event.create-once");
+    if (step.kind === "create_space_event") operations.add("capability.action.run:event.create");
   });
   if (operations.size === 0) return null;
   return {

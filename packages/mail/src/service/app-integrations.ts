@@ -43,7 +43,6 @@ const REQUIRED_SPACES_CONTEXT_ACTIONS = [
   "item.reference.remove",
   "task.create",
   "event.create",
-  "event.create-once",
 ] as const;
 
 export type AppIntegrationRequest = {
@@ -126,7 +125,7 @@ export const createSpaceEventOnce = (input: Record<string, unknown>, idempotency
   fetchAppCapability({
     appId: "spaces",
     kind: "action",
-    capabilityId: "event.create-once",
+    capabilityId: "event.create",
     request,
     dataSchema: spacesItemMutationDataSchema,
     input,
@@ -151,6 +150,7 @@ export const createSpaceItemForResource = (kind: "task" | "event", input: Record
     request,
     dataSchema: spacesItemMutationDataSchema,
     input,
+    idempotencyKey: request.requestId || crypto.randomUUID(),
   }).then((result) => (result.ok ? { ok: true as const, data: result.data.data } : result));
 
 export const projectAppCapabilityError = (error: CapabilityFailure): AppIntegrationFailure => {
@@ -295,6 +295,7 @@ export const createCalendarEvent = (
     request,
     dataSchema: calendarEventSchema,
     input,
+    idempotencyKey: request.requestId || crypto.randomUUID(),
   }).then((result) => (result.ok ? { ok: true as const, data: result.data.data } : result));
 
 export const prepareEventInvitation = (

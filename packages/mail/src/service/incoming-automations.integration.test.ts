@@ -394,7 +394,7 @@ suite("incoming automations", () => {
       policy: {
         version: 1,
         apps: ["spaces"],
-        operations: ["capability.action.run:event.create-once", "capability.action.run:item.reference.add"],
+        operations: ["capability.action.run:event.create", "capability.action.run:item.reference.add"],
         actions: "preapproved",
       },
     });
