@@ -1,13 +1,14 @@
-import { DataTable, type DataTableColumn, Pagination, StatCell, StatGrid } from "@k2b/ui";
 import { listApps } from "@k2b/cloud";
 import { createPagination, hasRole, type NotificationDeliveryStatus } from "@k2b/cloud/contracts";
 import { type AuthContext, expectUserBackedActor, getDateConfig, getLocale } from "@k2b/cloud/server";
 import { formatDateTime, formatNumber } from "@k2b/cloud/shared";
 import { AdminLayout } from "@k2b/cloud/ssr";
+import { DataTable, type DataTableColumn, Pagination, StatCell, StatGrid } from "@k2b/ui";
 import type { JSX } from "solid-js";
 import { ssr } from "../../config";
 import OperationalCharts from "../../frontend/OperationalCharts.island";
 import { prepareOperationalCharts } from "../../frontend/operational-charts";
+import { type GatewayOpsMessages, gatewayOpsMessages } from "../../messages";
 import DeliveryFilterBar from "./_components/DeliveryFilterBar.island";
 import {
   buildDeliveryNotificationsUrl,
@@ -27,7 +28,6 @@ import NotificationFilterBar from "./_components/NotificationFilterBar.island";
 import NotificationViewSwitch from "./_components/NotificationViewSwitch.island";
 import RegistryFilterBar from "./_components/RegistryFilterBar.island";
 import { notificationsService } from "./service";
-import { gatewayOpsMessages, type GatewayOpsMessages } from "../../messages";
 
 type DeliveryItem = Awaited<ReturnType<typeof notificationsService.delivery.list>>["items"][number];
 type RegistryItem = Awaited<ReturnType<typeof notificationsService.registry.list>>["items"][number];
@@ -111,7 +111,7 @@ export default ssr<AuthContext>(async (c) => {
   const perPage = 100;
   const search = (c.req.query("search") ?? "").trim();
 
-  const renderPage = (description: string, content: JSX.Element) => () => (
+  const renderPage = (description: string, content: () => JSX.Element) => () => (
     <AdminLayout c={c} title={t.notifications}>
       <div class="app-rows">
         <div class="min-w-0" style="view-transition-name: admin-notifications-title">
@@ -121,7 +121,7 @@ export default ssr<AuthContext>(async (c) => {
         <div class="self-start">
           <NotificationViewSwitch view={view} />
         </div>
-        {content}
+        {content()}
       </div>
     </AdminLayout>
   );
@@ -178,8 +178,7 @@ export default ssr<AuthContext>(async (c) => {
       { id: "created", header: t.created, value: (item) => item.createdAt, cellClass: "whitespace-nowrap" },
     ];
 
-    return renderPage(
-      t.deliveryDescriptionPage,
+    return renderPage(t.deliveryDescriptionPage, () => (
       <>
         <StatGrid columns={4}>
           <StatCell
@@ -298,8 +297,8 @@ export default ssr<AuthContext>(async (c) => {
           />
         </section>
         <Pagination currentPage={pagination.page} totalPages={pagination.total_pages} baseUrl={baseUrl} />
-      </>,
-    );
+      </>
+    ));
   }
 
   if (view === "registry") {
@@ -331,8 +330,7 @@ export default ssr<AuthContext>(async (c) => {
       { id: "state", header: t.state, value: (item) => item.active },
     ];
 
-    return renderPage(
-      t.registryDescription,
+    return renderPage(t.registryDescription, () => (
       <>
         <StatGrid columns={4}>
           <StatCell label={t.definitions} value={formatNumber(summary.total, { locale })} sub={t.durableCatalog} />
@@ -432,8 +430,8 @@ export default ssr<AuthContext>(async (c) => {
           />
         </section>
         <Pagination currentPage={pagination.page} totalPages={pagination.total_pages} baseUrl={baseUrl} />
-      </>,
-    );
+      </>
+    ));
   }
 
   const status = parseLegacyStatus(c.req.query("status") ?? undefined);
@@ -461,8 +459,7 @@ export default ssr<AuthContext>(async (c) => {
     },
   ];
 
-  return renderPage(
-    t.legacyNotificationsDescription,
+  return renderPage(t.legacyNotificationsDescription, () => (
     <>
       <StatGrid columns={3}>
         <StatCell
@@ -545,6 +542,6 @@ export default ssr<AuthContext>(async (c) => {
         />
       </section>
       <Pagination currentPage={pagination.page} totalPages={pagination.total_pages} baseUrl={baseUrl} />
-    </>,
-  );
+    </>
+  ));
 });
