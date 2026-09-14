@@ -5,7 +5,7 @@ import { app } from "../config";
 import { LIMITS } from "../contracts";
 import { DatabaseRequest, DatabaseSettings } from "../database-contracts";
 import { safeQuery } from "../database-sql";
-import { requireProject, user, type Identity } from "./index";
+import { requireProject, user, type Identity } from "./access";
 
 export class DatabaseError extends Error {
   constructor(
