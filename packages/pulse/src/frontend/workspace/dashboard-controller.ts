@@ -4,6 +4,7 @@ import { prompts, toast } from "@k2b/ui";
 import { type Accessor, createSignal, onCleanup, type Setter } from "solid-js";
 import type { PulseDashboard, PulseDashboardConfig, PulseDashboardControl, PulseDashboardDslCompileResult } from "../../contracts";
 import { jsonFetch } from "../http";
+import { usePulseMessages } from "../use-messages";
 import {
   compileDashboardDslText,
   createPublicDashboardToken,
@@ -26,7 +27,6 @@ import {
 } from "./public-display-dialog";
 import type { RefreshIntervalOption, WorkspaceView } from "./types";
 import { refreshIntervalFromOption } from "./workspace-options";
-import { usePulseMessages } from "../use-messages";
 
 type DashboardControllerDeps = {
   selectedBaseId: Accessor<string>;
@@ -91,7 +91,7 @@ export const createDashboardController = (deps: DashboardControllerDeps) => {
     mutation: ({ dashboardId, name, config }, { abortSignal }) =>
       jsonFetch<PulseDashboard>(`/api/pulse/dashboards/${dashboardId}`, {
         method: "PATCH",
-        body: JSON.stringify({ name, config }),
+        body: JSON.stringify({ name, config: { dsl: config.dsl, refreshIntervalSeconds: config.refreshIntervalSeconds } }),
         signal: abortSignal,
       }),
   });
@@ -146,8 +146,7 @@ export const createDashboardController = (deps: DashboardControllerDeps) => {
       if (disposed) return null;
       if (createMutation.error()) throw createMutation.error();
       const dashboard = createMutation.data()!;
-      if (!(await reconcile([deps.refreshBaseData], t().dashboardCreatedRefreshFailed)))
-        return null;
+      if (!(await reconcile([deps.refreshBaseData], t().dashboardCreatedRefreshFailed))) return null;
       const dashboardDsl = dashboardToDsl(dashboard);
       deps.setDashboardDslText(dashboardDsl);
       deps.setDashboardPreviewConfig(dashboard.config);
@@ -226,8 +225,7 @@ export const createDashboardController = (deps: DashboardControllerDeps) => {
       const updated = saveMutation.data()!;
       if (!(await reconcile([deps.refreshBaseData], t().dashboardSavedListRefreshFailed))) return;
       deps.setDashboardDslSeededFor("");
-      if (!(await reconcile([() => deps.refreshDashboard(updated)], t().dashboardSavedDataRefreshFailed)))
-        return;
+      if (!(await reconcile([() => deps.refreshDashboard(updated)], t().dashboardSavedDataRefreshFailed))) return;
       deps.navigate({ view: "dashboard", dashboardId: updated.id });
       toast.success(t().dashboardSaved);
     } catch (error) {
@@ -285,8 +283,7 @@ export const createDashboardController = (deps: DashboardControllerDeps) => {
       await disablePublicLinkMutation.mutate({ dashboardId: dashboard.id });
       if (disposed) return;
       if (disablePublicLinkMutation.error()) throw disablePublicLinkMutation.error();
-      if (!(await reconcile([deps.refreshBaseData], t().publicLinkDisabledRefreshFailed)))
-        return;
+      if (!(await reconcile([deps.refreshBaseData], t().publicLinkDisabledRefreshFailed))) return;
       toast.success(t().publicDashboardLinkDisabled);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : t().publicLinkDisableFailed);
@@ -317,8 +314,7 @@ export const createDashboardController = (deps: DashboardControllerDeps) => {
       await settingsMutation.mutate({ dashboardId: dashboard.id, name, config });
       if (disposed) return "failed";
       if (settingsMutation.error()) throw settingsMutation.error();
-      if (!(await reconcile([deps.refreshBaseData], t().dashboardUpdatedRefreshFailed)))
-        return "persisted";
+      if (!(await reconcile([deps.refreshBaseData], t().dashboardUpdatedRefreshFailed))) return "persisted";
       toast.success(t().dashboardUpdated);
       return "reconciled";
     } catch (error) {
@@ -331,7 +327,10 @@ export const createDashboardController = (deps: DashboardControllerDeps) => {
 
   const deleteDashboard = async (dashboard: PulseDashboard): Promise<DashboardWriteResult> => {
     if (!requireWritable()) return "failed";
-    const confirmed = await prompts.confirm(t().deleteDashboardConfirm({ name: dashboard.name }), { title: t().deleteDashboard, variant: "danger" });
+    const confirmed = await prompts.confirm(t().deleteDashboardConfirm({ name: dashboard.name }), {
+      title: t().deleteDashboard,
+      variant: "danger",
+    });
     if (disposed || !confirmed || !requireWritable()) return "failed";
     deps.setLoading(true);
     try {

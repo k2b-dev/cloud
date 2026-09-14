@@ -1,5 +1,5 @@
-import type { DataTableColumn } from "@k2b/ui";
 import type { DateContext } from "@k2b/stdlib";
+import type { DataTableColumn } from "@k2b/ui";
 import type { MetricQueryPoint } from "../../contracts";
 import { compactDate, compactDateWithDelta, compactDay } from "./date-format";
 import { formatValue } from "./metric-format";
@@ -17,27 +17,36 @@ export const pointsToLineSeries = (points: MetricQueryPoint[], fallbackLabel: st
   }
   return [...grouped.entries()].map(([label, data]) => ({
     label,
-    data: data.map((point) => ({ x: Date.parse(point.bucket), y: point.value ?? 0 })),
+    data: data.flatMap((point) => (point.value === null ? [] : [{ x: Date.parse(point.bucket), y: point.value }])),
   }));
 };
 
 export const pointsToBars = (points: MetricQueryPoint[], context?: DateContext) =>
-  points.slice(-48).map((point) => ({
-    label: compactDate(point.bucket, context),
-    value: point.value ?? 0,
-  }));
+  points.flatMap((point) =>
+    point.value === null
+      ? []
+      : [
+          {
+            label: compactDate(point.bucket, context),
+            value: point.value,
+          },
+        ],
+  );
 
 export const pointsToHistogram = (points: MetricQueryPoint[]) =>
   points.map((point) => point.value).filter((value): value is number => typeof value === "number" && Number.isFinite(value));
 
 export const pointsToHeatmap = (points: MetricQueryPoint[], context?: DateContext) =>
-  points.slice(-240).map((point) => {
+  points.flatMap((point) => {
+    if (point.value === null) return [];
     const date = new Date(point.bucket);
-    return {
-      x: compactDate(date.toISOString(), context).slice(0, 2),
-      y: compactDay(point.bucket, context),
-      value: point.value ?? 0,
-    };
+    return [
+      {
+        x: compactDate(date.toISOString(), context).slice(0, 2),
+        y: compactDay(point.bucket, context),
+        value: point.value,
+      },
+    ];
   });
 
 export const queryPointColumns: DataTableColumn<MetricQueryPoint>[] = [

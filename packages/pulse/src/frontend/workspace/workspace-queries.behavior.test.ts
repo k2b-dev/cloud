@@ -306,7 +306,7 @@ describe("Pulse workspace queries", () => {
     }
   });
 
-  test("keeps a failed dashboard widget local while healthy widgets refresh", async () => {
+  test("marks a failed dashboard refresh stale and preserves the last complete snapshot", async () => {
     const dom = createDomTestHarness();
     const originalFetch = globalThis.fetch;
     globalThis.fetch = (async (_input: string | URL | Request, init?: RequestInit) => {
@@ -317,11 +317,9 @@ describe("Pulse workspace queries", () => {
       id,
       kind: "metric" as const,
       title: id,
-      metric,
       visual: "line" as const,
-      aggregation: "avg" as const,
-      bucket: "5m",
-      since: "24h",
+      queryText: `metric ${metric} avg every 5m since 24h`,
+      query: { kind: "metric" as const, metric, aggregation: "avg" as const, bucket: "5m", since: "24h" },
     });
     const dashboard: PulseDashboard = {
       id: "dashboard-1",
@@ -369,9 +367,9 @@ describe("Pulse workspace queries", () => {
       await flush();
       expect(controls.metricWidgetPoints().broken).toEqual([{ bucket: "old", value: 1 }]);
       await controls.queries.dashboard.refresh();
-      expect(controls.queries.dashboard.error()).toBeNull();
+      expect(controls.queries.dashboard.error()).toBeTruthy();
       expect(controls.metricWidgetPoints().broken).toEqual([{ bucket: "old", value: 1 }]);
-      expect(controls.metricWidgetPoints().healthy).toEqual([{ bucket: "new", value: 2 }]);
+      expect(controls.metricWidgetPoints().healthy).toEqual([{ bucket: "old", value: 1 }]);
     } finally {
       dispose();
       dom.cleanup();
@@ -413,11 +411,9 @@ describe("Pulse workspace queries", () => {
                       id: "metric-1",
                       kind: "metric",
                       title: "Requests",
-                      metric: "requests",
                       visual: "line",
-                      aggregation: "avg",
-                      bucket: "5m",
-                      since: "24h",
+                      queryText: "metric requests avg every 5m since $range",
+                      query: { kind: "metric", metric: "requests", aggregation: "avg", bucket: "5m", since: "24h" },
                     },
                   ],
                 },

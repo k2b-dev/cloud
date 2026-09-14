@@ -1,8 +1,7 @@
-import { err, fail, ok, type Result } from "@k2b/cloud/server";
+import { err, fail, isServiceError, ok, type Result } from "@k2b/cloud/server";
 import { toPgTextArray } from "@k2b/cloud/services";
 import { sql } from "bun";
 import type {
-  Aggregation,
   DashboardRefreshInterval,
   EventQuery,
   MetricQuery,
@@ -39,24 +38,22 @@ import {
   dashboardEventsWidgets,
   dashboardMapWidgets,
   dashboardMetricWidgets,
-  dashboardRenderConfig,
   dashboardStatesWidgets,
-  normalizeDashboardConfig,
+  readDashboardConfig,
 } from "./dashboard-config";
 import type { EventMapQuery } from "./event-map-query";
 import { publicDashboardTokenHash } from "./public-dashboard-tokens";
 import { resolveExistingBasePublicIds } from "./public-resources";
 import { iso } from "./telemetry-values";
 
-const MAX_PUBLIC_EXECUTED_WIDGETS = 36;
-const MISSING_SOURCE_ID = "00000000-0000-4000-8000-000000000000";
-
 export const internalDashboardSourceId = (
   sources: ReadonlyMap<string, string>,
   sourceId: string | null | undefined,
 ): string | null | undefined => {
   if (!sourceId) return sourceId;
-  return sources.get(sourceId) ?? MISSING_SOURCE_ID;
+  const id = sources.get(sourceId);
+  if (!id) throw err.badInput("Dashboard references an unavailable source");
+  return id;
 };
 
 type DashboardRow = {
@@ -89,7 +86,7 @@ const mapDashboard = (row: DashboardRow): PulseDashboard => ({
   id: row.id,
   baseId: row.base_id,
   name: row.name,
-  config: normalizeDashboardConfig(row.config),
+  config: readDashboardConfig(row.base_id, row.config),
   publicEnabled: row.public_enabled,
   createdAt: iso(row.created_at),
   updatedAt: iso(row.updated_at),
@@ -128,12 +125,12 @@ const publicMetricWidget = (
   id: widget.id,
   kind: "metric",
   title: widget.title,
-  metric: widget.metric,
-  unit: metricUnitByName.get(widget.query?.kind === "metric" ? widget.query.metric : widget.metric) ?? null,
+  metric: widget.query.kind === "metric" ? widget.query.metric : (widget.query.event ?? "events"),
+  unit: metricUnitByName.get(widget.query.kind === "metric" ? widget.query.metric : "") ?? null,
   visual: widget.visual,
-  aggregation: widget.aggregation as Aggregation,
-  bucket: widget.bucket,
-  since: widget.since,
+  aggregation: widget.query.aggregation ?? "count",
+  bucket: widget.query.bucket ?? "1h",
+  since: widget.query.since,
   description: widget.description,
   conditions: widget.conditions,
   span: widget.span,
@@ -216,13 +213,7 @@ const publicDashboardLayout = (
     : null;
 
 const publicDashboardMetricUnits = async (baseId: string, widgets: PulseDashboardMetricWidget[]): Promise<Map<string, string | null>> => {
-  const names = [
-    ...new Set(
-      widgets
-        .filter((widget) => widget.query?.kind !== "events")
-        .map((widget) => (widget.query?.kind === "metric" ? widget.query.metric : widget.metric)),
-    ),
-  ];
+  const names = [...new Set(widgets.flatMap((widget) => (widget.query.kind === "metric" ? [widget.query.metric] : [])))];
   if (!names.length) return new Map();
   const rows = await sql<{ name: string; unit: string | null }[]>`
     SELECT name, unit
@@ -254,37 +245,7 @@ const publicCurrentState = (state: PulseCurrentState): PulsePublicCurrentState =
 const publicRefreshInterval = (value: DashboardRefreshInterval | null | undefined): DashboardRefreshInterval | null | undefined =>
   value === 1 ? 5 : value;
 
-const nullable = <T>(value: T | null | undefined): T | null => value ?? null;
-
-const fallbackMetricWidgetQuery = (baseId: string, widget: PulseDashboardMetricWidget): MetricQuery => ({
-  kind: "metric",
-  baseId,
-  metric: widget.metric,
-  aggregation: widget.aggregation as Aggregation,
-  bucket: widget.bucket,
-  since: widget.since,
-  sourceId: nullable(widget.sourceId),
-  resourceKey: nullable(widget.resourceKey),
-  resourceType: nullable(widget.resourceType),
-  dimensions: widget.dimensions,
-  reduce: widget.reduce,
-  groupBy: widget.groupBy,
-});
-
-const metricWidgetQuery = (baseId: string, widget: PulseDashboardMetricWidget): MetricQuery | EventQuery => {
-  if (widget.query?.kind === "events") return { ...widget.query, baseId };
-  return {
-    ...fallbackMetricWidgetQuery(baseId, widget),
-    ...(widget.query ?? {}),
-    baseId,
-    kind: "metric",
-  };
-};
-
-const takePublicWidgets = <T>(widgets: T[], remaining: number): { widgets: T[]; remaining: number } => {
-  const allowed = Math.max(0, remaining);
-  return { widgets: widgets.slice(0, allowed), remaining: Math.max(0, allowed - widgets.length) };
-};
+const metricWidgetQuery = (baseId: string, widget: PulseDashboardMetricWidget): MetricQuery | EventQuery => ({ ...widget.query, baseId });
 
 const runPublicMetricWidgets = async (
   baseId: string,
@@ -295,7 +256,8 @@ const runPublicMetricWidgets = async (
   for (const widget of widgets) {
     const query = metricWidgetQuery(baseId, widget);
     const result = query.kind === "events" ? await deps.queryEventAggregateData(query) : await deps.queryMetricData(query);
-    points[widget.id] = result.ok ? result.data : [];
+    if (!result.ok) throw result.error;
+    points[widget.id] = result.data;
   }
   return points;
 };
@@ -308,7 +270,8 @@ const runPublicEventsWidgets = async (
   const events: Record<string, PulsePublicRecordedEvent[]> = {};
   for (const widget of widgets) {
     const result = await deps.queryEventsData({ baseId, ...widget.query });
-    events[widget.id] = result.ok ? result.data.map(publicRecordedEvent) : [];
+    if (!result.ok) throw result.error;
+    events[widget.id] = result.data.map(publicRecordedEvent);
   }
   return events;
 };
@@ -321,7 +284,8 @@ const runPublicStatesWidgets = async (
   const states: Record<string, PulsePublicCurrentState[]> = {};
   for (const widget of widgets) {
     const result = await deps.queryStatesData({ baseId, ...widget.query });
-    states[widget.id] = result.ok ? result.data.map(publicCurrentState) : [];
+    if (!result.ok) throw result.error;
+    states[widget.id] = result.data.map(publicCurrentState);
   }
   return states;
 };
@@ -341,40 +305,40 @@ const runPublicMapWidgets = async (
       series: widget.series,
       size: widget.size,
     });
-    maps[widget.id] = result.ok ? result.data : [];
+    if (!result.ok) throw result.error;
+    maps[widget.id] = result.data;
   }
   return maps;
 };
 
 const collectPublicWidgetResults = async (dashboard: PulseDashboard, deps: PublicDashboardSnapshotDeps): Promise<PublicWidgetResults> => {
-  const config = dashboardRenderConfig(dashboard);
+  const config = dashboard.config;
   const metricWidgets = dashboardMetricWidgets(config);
   const metricUnitByName = await publicDashboardMetricUnits(dashboard.baseId, metricWidgets);
-  const metrics = takePublicWidgets(metricWidgets, MAX_PUBLIC_EXECUTED_WIDGETS);
-  const eventWidgets = takePublicWidgets(dashboardEventsWidgets(config), metrics.remaining);
-  const stateWidgets = takePublicWidgets(dashboardStatesWidgets(config), eventWidgets.remaining);
-  const mapWidgets = takePublicWidgets(dashboardMapWidgets(config), stateWidgets.remaining);
+  const metrics = metricWidgets;
+  const eventWidgets = dashboardEventsWidgets(config);
+  const stateWidgets = dashboardStatesWidgets(config);
+  const mapWidgets = dashboardMapWidgets(config);
   const sourceSelectors = [
-    ...metrics.widgets.map((widget) => metricWidgetQuery(dashboard.baseId, widget).sourceId),
-    ...eventWidgets.widgets.map((widget) => widget.query.sourceId),
-    ...stateWidgets.widgets.map((widget) => widget.query.sourceId),
-    ...mapWidgets.widgets.map((widget) => widget.query.sourceId),
+    ...metrics.map((widget) => metricWidgetQuery(dashboard.baseId, widget).sourceId),
+    ...eventWidgets.map((widget) => widget.query.sourceId),
+    ...stateWidgets.map((widget) => widget.query.sourceId),
+    ...mapWidgets.map((widget) => widget.query.sourceId),
   ].filter((value): value is string => Boolean(value));
   const sources = await resolveExistingBasePublicIds("sources", dashboard.baseId, sourceSelectors);
-  const internalMetrics = metrics.widgets.map((widget) => ({
-    ...widget,
-    sourceId: internalDashboardSourceId(sources, widget.sourceId),
-    query: widget.query ? { ...widget.query, sourceId: internalDashboardSourceId(sources, widget.query.sourceId) } : widget.query,
-  }));
-  const internalEvents = eventWidgets.widgets.map((widget) => ({
+  const internalMetrics = metrics.map((widget) => ({
     ...widget,
     query: { ...widget.query, sourceId: internalDashboardSourceId(sources, widget.query.sourceId) },
   }));
-  const internalStates = stateWidgets.widgets.map((widget) => ({
+  const internalEvents = eventWidgets.map((widget) => ({
     ...widget,
     query: { ...widget.query, sourceId: internalDashboardSourceId(sources, widget.query.sourceId) },
   }));
-  const internalMaps = mapWidgets.widgets.map((widget) => ({
+  const internalStates = stateWidgets.map((widget) => ({
+    ...widget,
+    query: { ...widget.query, sourceId: internalDashboardSourceId(sources, widget.query.sourceId) },
+  }));
+  const internalMaps = mapWidgets.map((widget) => ({
     ...widget,
     query: { ...widget.query, sourceId: internalDashboardSourceId(sources, widget.query.sourceId) },
   }));
@@ -389,7 +353,7 @@ const collectPublicWidgetResults = async (dashboard: PulseDashboard, deps: Publi
 };
 
 const publicDashboardFromConfig = (dashboard: PulseDashboard, metricUnitByName: Map<string, string | null>): PulsePublicDashboard => {
-  const config = dashboardRenderConfig(dashboard);
+  const config = dashboard.config;
   return {
     id: dashboard.id,
     name: dashboard.name,
@@ -404,13 +368,17 @@ export const getPublicDashboardSnapshot = async (
   token: string,
   deps: PublicDashboardSnapshotDeps,
 ): Promise<Result<PulseDashboardSnapshot>> => {
-  const dashboardResult = await getPublicDashboardByToken(token);
-  if (!dashboardResult.ok) return fail(dashboardResult.error);
-  const dashboard = dashboardResult.data;
-  const { points, events, states, maps, metricUnitByName } = await collectPublicWidgetResults(dashboard, deps);
-  const publicDashboard = publicDashboardFromConfig(dashboard, metricUnitByName);
+  try {
+    const dashboardResult = await getPublicDashboardByToken(token);
+    if (!dashboardResult.ok) return fail(dashboardResult.error);
+    const dashboard = dashboardResult.data;
+    const { points, events, states, maps, metricUnitByName } = await collectPublicWidgetResults(dashboard, deps);
+    const publicDashboard = publicDashboardFromConfig(dashboard, metricUnitByName);
 
-  return ok({ dashboard: publicDashboard, points, events, states, maps });
+    return ok({ dashboard: publicDashboard, points, events, states, maps });
+  } catch (error) {
+    return fail(isServiceError(error) ? error : err.internal("Dashboard refresh failed"));
+  }
 };
 
 export const getDashboardSnapshot = async (
@@ -418,15 +386,19 @@ export const getDashboardSnapshot = async (
   user: AccessScope,
   deps: PublicDashboardSnapshotDeps,
 ): Promise<Result<PulseDashboardSnapshot>> => {
-  const dashboardResult = await getDashboardById(dashboardId, user);
-  if (!dashboardResult.ok) return fail(dashboardResult.error);
-  const dashboard = dashboardResult.data;
-  const { points, events, states, maps, metricUnitByName } = await collectPublicWidgetResults(dashboard, deps);
-  return ok({
-    dashboard: publicDashboardFromConfig(dashboard, metricUnitByName),
-    points,
-    events,
-    states,
-    maps,
-  });
+  try {
+    const dashboardResult = await getDashboardById(dashboardId, user);
+    if (!dashboardResult.ok) return fail(dashboardResult.error);
+    const dashboard = dashboardResult.data;
+    const { points, events, states, maps, metricUnitByName } = await collectPublicWidgetResults(dashboard, deps);
+    return ok({
+      dashboard: publicDashboardFromConfig(dashboard, metricUnitByName),
+      points,
+      events,
+      states,
+      maps,
+    });
+  } catch (error) {
+    return fail(isServiceError(error) ? error : err.internal("Dashboard refresh failed"));
+  }
 };

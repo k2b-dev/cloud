@@ -138,7 +138,7 @@ export const createWorkspaceDerivedModel = (props: PulseWorkspaceProps, state: W
     }
     return [...grouped.entries()].map(([label, seriesPoints]) => ({
       label,
-      data: seriesPoints.map((point) => ({ x: Date.parse(point.bucket), y: point.value ?? 0 })),
+      data: seriesPoints.flatMap((point) => (point.value === null ? [] : [{ x: Date.parse(point.bucket), y: point.value }])),
     }));
   });
   const queryCompletions = createMemo(() =>

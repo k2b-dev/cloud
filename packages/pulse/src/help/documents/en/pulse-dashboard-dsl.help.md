@@ -218,3 +218,13 @@ Use `warn when value > 80` or `critical when value = false` to mark metric widge
 - A section supports up to 24 rows and 12 nested sections. Nested sections stop after three child levels.
 - A row supports up to 12 cells. `span` must be an integer from 1 to 12.
 - One widget supports up to eight visual conditions.
+
+## Validation and unavailable data
+
+Pulse stores the DSL source and refresh setting. It compiles one render model from that source; old layouts, string-encoded configuration, invalid values, and oversized documents are rejected rather than repaired. The same controls resolve in previews, server rendering, and browser refreshes.
+
+A dashboard supports at most 36 data widgets, 24 controls, 24 rows per container and 12 widgets per row. These limits apply before saving, including public dashboards. Excess widgets are never silently omitted.
+
+A failed query or a deleted source makes the refresh fail visibly. The private dashboard keeps its previous complete snapshot and marks the refresh as failed; it does not combine old and newly fetched widget data. Public snapshots also return an error instead of empty success data.
+
+Missing metric values remain missing: charts do not turn them into zero, lines break across missing buckets, and gauges show no data when the latest value is unavailable. A measured zero remains a valid observation.

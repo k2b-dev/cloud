@@ -2,6 +2,7 @@ import { PermissionLevelSchema, PrincipalSchema, ServiceAccountCredentialSchema 
 import { z } from "zod";
 import { AGGREGATIONS, EVENT_AGGREGATIONS, METRIC_TYPES, PANEL_VISUALS, SOURCE_KINDS } from "../contracts";
 import { PULSE_EXTERNAL_INGEST_BATCH_LIMIT, PULSE_EXTERNAL_INGEST_COLLECTION_LIMIT } from "../ingest-limits";
+import { MAX_QUERY_TEXT_LENGTH } from "../query-dsl";
 import {
   jsonBytes,
   PULSE_EXTERNAL_INGEST_MAX_BYTES,
@@ -175,22 +176,28 @@ export const UpdateSourceSchema = z.strictObject({
   scrapeIntervalSeconds: z.number().int().min(60).max(86_400).multipleOf(60).nullable().optional(),
 });
 
-const DashboardMetricWidgetSchema = z.object({
-  id: z.string().trim().min(1).max(80),
-  kind: z.literal("metric"),
-  title: z.string().trim().min(1).max(160),
-  metric: z.string().trim().min(1).max(240),
-  visual: z.enum(PANEL_VISUALS),
-  aggregation: z.enum(AGGREGATIONS),
-  bucket: DurationSchema,
+const DashboardEventQuerySchema = z.strictObject({
+  kind: z.literal("events"),
+  event: z.string().trim().min(1).max(240).nullable(),
   since: DurationSchema,
   sourceId: PulseShortIdSchema.nullable().optional(),
   resourceKey: z.string().nullable().optional(),
   resourceType: z.string().nullable().optional(),
   dimensions: DimensionsSchema,
-  queryText: z.string().trim().max(8_000).optional(),
-  query: z
-    .object({
+  aggregation: z.enum(EVENT_AGGREGATIONS).optional(),
+  bucket: DurationSchema.nullable().optional(),
+  groupBy: z.array(z.string()).max(4).optional(),
+  limit: z.number().int().min(1).max(1_000),
+});
+
+const DashboardMetricWidgetSchema = z.object({
+  id: z.string().trim().min(1).max(80),
+  kind: z.literal("metric"),
+  title: z.string().trim().min(1).max(160),
+  visual: z.enum(PANEL_VISUALS),
+  queryText: z.string().trim().min(1).max(MAX_QUERY_TEXT_LENGTH),
+  query: z.union([
+    z.strictObject({
       kind: z.literal("metric"),
       metric: z.string().trim().min(1).max(240),
       aggregation: z.enum(AGGREGATIONS),
@@ -200,8 +207,11 @@ const DashboardMetricWidgetSchema = z.object({
       resourceKey: z.string().nullable().optional(),
       resourceType: z.string().nullable().optional(),
       dimensions: DimensionsSchema,
-    })
-    .optional(),
+      reduce: z.enum(["sum", "avg", "min", "max"]).nullable().optional(),
+      groupBy: z.string().nullable().optional(),
+    }),
+    DashboardEventQuerySchema,
+  ]),
   description: z.string().trim().max(500).nullable().optional(),
   conditions: z
     .array(
@@ -215,17 +225,6 @@ const DashboardMetricWidgetSchema = z.object({
     .max(8)
     .optional(),
   span: z.number().int().min(1).max(12).optional(),
-});
-
-const DashboardEventQuerySchema = z.strictObject({
-  kind: z.literal("events"),
-  event: z.string().trim().min(1).max(240).nullable(),
-  since: DurationSchema,
-  sourceId: PulseShortIdSchema.nullable().optional(),
-  resourceKey: z.string().nullable().optional(),
-  resourceType: z.string().nullable().optional(),
-  dimensions: DimensionsSchema,
-  limit: z.number().int().min(1).max(1_000),
 });
 
 const DashboardStateQuerySchema = z.strictObject({
@@ -244,7 +243,7 @@ const DashboardEventsWidgetSchema = z.object({
   kind: z.literal("events"),
   title: z.string().trim().min(1).max(160),
   visual: z.literal("table"),
-  queryText: z.string().trim().max(8_000),
+  queryText: z.string().trim().max(MAX_QUERY_TEXT_LENGTH),
   query: DashboardEventQuerySchema,
   description: z.string().trim().max(500).nullable().optional(),
   conditions: DashboardMetricWidgetSchema.shape.conditions,
@@ -256,7 +255,7 @@ const DashboardStatesWidgetSchema = z.object({
   kind: z.literal("states"),
   title: z.string().trim().min(1).max(160),
   visual: z.enum(["table", "stat"]),
-  queryText: z.string().trim().max(8_000),
+  queryText: z.string().trim().max(MAX_QUERY_TEXT_LENGTH),
   query: DashboardStateQuerySchema,
   description: z.string().trim().max(500).nullable().optional(),
   conditions: DashboardMetricWidgetSchema.shape.conditions,
@@ -277,7 +276,7 @@ const DashboardMapWidgetSchema = z.object({
   id: z.string().trim().min(1).max(80),
   kind: z.literal("map"),
   title: z.string().trim().min(1).max(160),
-  queryText: z.string().trim().max(8_000),
+  queryText: z.string().trim().max(MAX_QUERY_TEXT_LENGTH),
   query: DashboardEventQuerySchema,
   latitude: MapFieldSelectorSchema,
   longitude: MapFieldSelectorSchema,
@@ -375,8 +374,8 @@ const DashboardLayoutSchema = z.object({
         kind: z.enum(["range", "source", "resource", "resource_type", "label", "text"]),
         variable: z.string().trim().min(1).max(80),
         label: z.string().trim().min(1).max(160),
-        defaultValue: z.string().trim().max(240),
-        options: z.array(z.string().trim().min(1).max(240)).max(100).optional(),
+        defaultValue: z.string().trim().max(505),
+        options: z.array(z.string().trim().min(1).max(505)).max(100).optional(),
         resourceType: z.string().trim().min(1).max(80).nullable().optional(),
       }),
     )
@@ -456,7 +455,7 @@ const ExplorerQuerySchema = z.discriminatedUnion("kind", [CompiledMetricQuerySch
 
 export const QueryTextSchema = z.object({
   baseId: PulseShortIdSchema,
-  query: z.string().trim().min(1).max(2_000),
+  query: z.string().trim().min(1).max(MAX_QUERY_TEXT_LENGTH),
 });
 
 export const EventMapQueryTextSchema = QueryTextSchema.extend({
@@ -477,7 +476,7 @@ export const DashboardDslCompileSchema = z.object({
 export const CreateSavedQuerySchema = z.object({
   name: z.string().trim().min(1).max(120),
   description: z.string().trim().max(1_000).nullable().optional(),
-  query: z.string().trim().min(1).max(2_000),
+  query: z.string().trim().min(1).max(MAX_QUERY_TEXT_LENGTH),
 });
 
 export const MetricSeriesQuerySchema = z.strictObject({

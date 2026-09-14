@@ -218,3 +218,13 @@ Nutze `warn when value > 80` oder `critical when value = false`, um Metrik-Widge
 - Ein Abschnitt unterstützt bis zu 24 Zeilen und 12 verschachtelte Abschnitte. Verschachtelte Abschnitte enden nach drei untergeordneten Ebenen.
 - Eine Zeile unterstützt bis zu 12 Zellen. `span` muss eine ganze Zahl von 1 bis 12 sein.
 - Ein Widget unterstützt bis zu acht visuelle Bedingungen.
+
+## Validierung und fehlende Daten
+
+Pulse speichert den DSL-Quelltext und das Aktualisierungsintervall und kompiliert daraus ein Darstellungsmodell. Alte Layouts, als String gespeicherte Konfigurationen, ungültige Werte und zu große Dokumente werden abgelehnt. Vorschau, Server-Rendering und Browser-Aktualisierung lösen Controls identisch auf.
+
+Ein Dashboard unterstützt höchstens 36 Daten-Widgets, 24 Controls, 24 Zeilen je Container und zwölf Widgets je Zeile. Diese Grenzen gelten vor dem Speichern, auch für öffentliche Dashboards. Überzählige Widgets werden nicht still ausgelassen.
+
+Eine fehlgeschlagene Abfrage oder gelöschte Source führt zu einem sichtbaren Aktualisierungsfehler. Das private Dashboard behält den vorherigen vollständigen Datenstand und zeigt den Fehler an; alte und neu geladene Widget-Daten werden nicht vermischt. Öffentliche Snapshots melden ebenfalls einen Fehler statt eines leeren Erfolgs.
+
+Fehlende Messwerte bleiben fehlend: Charts ersetzen sie nicht durch null als Zahl, Linien werden an fehlenden Zeitfenstern unterbrochen und Gauges zeigen ohne letzten Messwert keine Daten. Eine gemessene Null bleibt ein gültiger Wert.

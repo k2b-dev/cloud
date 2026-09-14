@@ -21,7 +21,7 @@ export const savePulseDashboardConfig = (
 ): Promise<PulseDashboard> =>
   jsonFetch<PulseDashboard>(`/api/pulse/dashboards/${dashboard.id}`, {
     method: "PATCH",
-    body: JSON.stringify({ name: dashboard.name, config }),
+    body: JSON.stringify({ name: dashboard.name, config: { dsl: config.dsl, refreshIntervalSeconds: config.refreshIntervalSeconds } }),
     signal,
   });
 

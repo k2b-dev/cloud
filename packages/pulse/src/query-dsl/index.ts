@@ -4,6 +4,8 @@ import { AGGREGATIONS } from "../contracts";
 import { SHORT_ID_REGEX } from "../lib/short-id";
 import { PULSE_DIMENSION_KEY_LIMIT } from "../telemetry-contract";
 
+export const MAX_QUERY_TEXT_LENGTH = 2_000;
+
 const MAX_DURATION_MS = 90 * 24 * 60 * 60_000;
 
 type QueryTokenQuote = '"' | "'";
@@ -424,6 +426,8 @@ const compileStateQueryTokens = (baseId: string, tokens: string[]): Result<State
 };
 
 export const compilePulseQueryText = (baseId: string, text: string): Result<PulseExplorerQuery> => {
+  if (text.trim().length > MAX_QUERY_TEXT_LENGTH)
+    return fail(err.badInput(`Query text supports at most ${MAX_QUERY_TEXT_LENGTH} characters`));
   const trimmed = text.trim();
   if (!trimmed) return fail(err.badInput("Query is empty"));
   const tokens = tokenizeQueryText(trimmed);

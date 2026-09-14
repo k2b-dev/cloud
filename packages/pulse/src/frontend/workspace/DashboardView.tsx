@@ -21,6 +21,7 @@ import type {
   PulseRecordedEvent,
   PulseSource,
 } from "../../contracts";
+import { intervalToMs } from "../../query-dsl";
 import { formatDashboardConditionText, matchDashboardCondition } from "../dashboard-conditions";
 import { usePulseMessages } from "../use-messages";
 import {
@@ -85,7 +86,7 @@ const MetricWidgetChart = (props: { widget: PulseDashboardMetricWidget; context:
   const t = usePulseMessages();
   const data = () => props.context.metricWidgetPoints()[props.widget.id] ?? [];
   const last = () => data().at(-1)?.value ?? null;
-  const summary = () => props.context.metricByName().get(props.widget.metric);
+  const summary = () => props.context.metricByName().get(props.widget.query.kind === "metric" ? props.widget.query.metric : "");
   const rawUnit = () => summary()?.unit ?? null;
   const valueFormat = (value: number) => formatMetricValue(value, rawUnit());
 
@@ -96,35 +97,39 @@ const MetricWidgetChart = (props: { widget: PulseDashboardMetricWidget; context:
         class="h-36 text-primary"
         label={props.widget.title}
         value={formatMetricValue(last(), rawUnit())}
-        sparkline={data().map((point) => point.value ?? 0)}
+        sparkline={data().some((point) => point.value === null) ? undefined : pointsToHistogram(data())}
       />
     );
   }
   if (props.widget.visual === "gauge") {
     const value = () => last() ?? 0;
     return (
-      <Chart
-        kind="gauge"
-        class="h-44 text-primary"
-        value={value()}
-        min={0}
-        max={gaugeMax(rawUnit(), value())}
-        label={props.widget.title}
-        format={valueFormat}
-      />
+      <Show when={last() !== null} fallback={<p class="text-dimmed">{t().noPoints}</p>}>
+        <Chart
+          kind="gauge"
+          class="h-44 text-primary"
+          value={value()}
+          min={0}
+          max={gaugeMax(rawUnit(), value())}
+          label={props.widget.title}
+          format={valueFormat}
+        />
+      </Show>
     );
   }
   if (props.widget.visual === "barGauge") {
     const value = () => last() ?? 0;
     return (
-      <Chart
-        kind="barGauge"
-        class="h-36 text-primary"
-        data={[{ label: props.widget.title, value: value(), min: 0, max: gaugeMax(rawUnit(), value()) }]}
-        min={0}
-        max={gaugeMax(rawUnit(), value())}
-        format={valueFormat}
-      />
+      <Show when={last() !== null} fallback={<p class="text-dimmed">{t().noPoints}</p>}>
+        <Chart
+          kind="barGauge"
+          class="h-36 text-primary"
+          data={[{ label: props.widget.title, value: value(), min: 0, max: gaugeMax(rawUnit(), value()) }]}
+          min={0}
+          max={gaugeMax(rawUnit(), value())}
+          format={valueFormat}
+        />
+      </Show>
     );
   }
   if (props.widget.visual === "bar") {
@@ -156,7 +161,7 @@ const MetricWidgetChart = (props: { widget: PulseDashboardMetricWidget; context:
       <DataTable
         rows={data()}
         columns={queryPointColumns}
-        getRowId={(point) => point.bucket}
+        getRowId={(point) => JSON.stringify([point.bucket, point.group])}
         density="compact"
         class="max-h-64 overflow-auto"
         empty={t().noPoints}
@@ -168,10 +173,10 @@ const MetricWidgetChart = (props: { widget: PulseDashboardMetricWidget; context:
       kind="line"
       class="h-48 text-dimmed"
       series={pointsToLineSeries(data(), props.widget.title)}
+      maxGap={intervalToMs(props.widget.query.bucket ?? "1h") ?? undefined}
       xAxis={{ format: (value) => compactDate(new Date(value).toISOString(), props.context.dateContext()) }}
       yAxis={{ format: valueFormat }}
       smooth
-      area
     />
   );
 };
@@ -192,8 +197,9 @@ const MetricWidgetCard = (props: { widget: PulseDashboardMetricWidget; context: 
         <div class="min-w-0">
           <p class="truncate text-sm font-semibold text-primary">{props.widget.title}</p>
           <p class="mt-1 truncate text-xs text-dimmed">
-            {props.widget.metric} · {props.widget.aggregation} / {props.widget.bucket}
-            {props.widget.sourceId ? ` · ${props.context.sourceNameById().get(props.widget.sourceId) ?? "source"}` : ""}
+            {props.widget.query.kind === "metric" ? props.widget.query.metric : (props.widget.query.event ?? "events")} ·{" "}
+            {props.widget.query.aggregation} / {props.widget.query.bucket}
+            {props.widget.query.sourceId ? ` · ${props.context.sourceNameById().get(props.widget.query.sourceId) ?? "source"}` : ""}
           </p>
           <Show when={condition()}>
             {(matched) => (

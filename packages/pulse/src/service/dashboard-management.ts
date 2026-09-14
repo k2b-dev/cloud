@@ -3,7 +3,7 @@ import { sql } from "bun";
 import type { PulseDashboard } from "../contracts";
 import { withShortId } from "../lib/short-id";
 import { type AccessScope, requireBaseAccess, requireBaseActive, userIdForScope } from "./access-control";
-import { compileDashboardConfigForSave, normalizeDashboardConfig, validateDashboardSources } from "./dashboard-config";
+import { compileDashboardConfigForSave, dashboardSource, readDashboardConfig, validateDashboardSources } from "./dashboard-config";
 import { resolvePublicDashboardToken } from "./public-dashboard-tokens";
 import { iso } from "./telemetry-values";
 
@@ -23,7 +23,7 @@ const mapDashboard = (row: DashboardRow): PulseDashboard => ({
   id: row.id,
   baseId: row.base_id,
   name: row.name,
-  config: normalizeDashboardConfig(row.config),
+  config: readDashboardConfig(row.base_id, row.config),
   publicEnabled: row.public_enabled,
   createdAt: iso(row.created_at),
   updatedAt: iso(row.updated_at),
@@ -61,7 +61,7 @@ export const createDashboard = async (params: {
   const row = await withShortId("dashboard", async (shortId) => {
     const [created] = await sql<DashboardRow[]>`
       INSERT INTO pulse.dashboards (short_id, base_id, name, config, created_by)
-      VALUES (${shortId}, ${params.baseId}::uuid, ${name}, ${JSON.stringify(config)}::jsonb, ${userIdForScope(params.user)}::uuid)
+      VALUES (${shortId}, ${params.baseId}::uuid, ${name}, (${JSON.stringify(dashboardSource(config))}::jsonb #>> '{}')::jsonb, ${userIdForScope(params.user)}::uuid)
       RETURNING *
     `;
     return created;
@@ -94,7 +94,7 @@ export const updateDashboard = async (params: {
   const config = validated.data;
   const [row] = await sql<DashboardRow[]>`
     UPDATE pulse.dashboards
-    SET name = ${name}, config = ${JSON.stringify(config)}::jsonb, updated_at = now()
+    SET name = ${name}, config = (${JSON.stringify(dashboardSource(config))}::jsonb #>> '{}')::jsonb, updated_at = now()
     WHERE id = ${params.dashboardId}::uuid
     RETURNING *
   `;

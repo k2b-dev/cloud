@@ -1,5 +1,5 @@
-import { query } from "@k2b/stdlib/solid";
 import type { ResourceApiKey } from "@k2b/cloud/access/ui";
+import { query } from "@k2b/stdlib/solid";
 import { type Accessor, createMemo } from "solid-js";
 import type {
   MetricQueryPoint,
@@ -301,8 +301,7 @@ export const createPulseWorkspaceQueries = (props: PulseWorkspaceProps, deps: Wo
       initialDashboard ? dashboardRuntimeValues(initialDashboard.config, props.initialDashboardControlValues) : undefined,
     ]),
   };
-  let lastDashboardSource = initialDashboardSource.fingerprint;
-  let lastDashboardData: DashboardData = {
+  const lastDashboardData: DashboardData = {
     points: props.initialMetricWidgetPoints ?? {},
     events: props.initialDashboardEvents ?? {},
     states: props.initialDashboardStates ?? {},
@@ -316,70 +315,49 @@ export const createPulseWorkspaceQueries = (props: PulseWorkspaceProps, deps: Wo
     enabled: () => ["dashboard", "dashboard-edit"].includes(deps.activeView()) && Boolean(dashboardSource().dashboard),
     isSameSource: (left, right) => left.fingerprint === right.fingerprint,
     load: async (source, { abortSignal }) => {
-      const { baseId, dashboard, config, controlValues, fingerprint } = source;
+      const { baseId, dashboard, config, controlValues } = source;
       if (!dashboard || !config) return { source, data: { points: {}, events: {}, states: {}, maps: {} } };
-      const previous = lastDashboardSource === fingerprint ? lastDashboardData : { points: {}, events: {}, states: {}, maps: {} };
       const points = Object.fromEntries(
         await Promise.all(
           dashboardMetricWidgets(config).map(async (widget) => {
-            try {
-              return [
-                widget.id,
-                await fetchDashboardMetricWidgetPoints({ baseId, config, controlValues, dashboard, signal: abortSignal, widget }),
-              ] as const;
-            } catch {
-              return [widget.id, previous.points[widget.id] ?? []] as const;
-            }
+            return [
+              widget.id,
+              await fetchDashboardMetricWidgetPoints({ baseId, config, controlValues, dashboard, signal: abortSignal, widget }),
+            ] as const;
           }),
         ),
       );
       const events = Object.fromEntries(
         await Promise.all(
           dashboardEventsWidgets(config).map(async (widget) => {
-            try {
-              return [
-                widget.id,
-                await fetchDashboardEventsWidgetRows({ baseId, config, controlValues, dashboard, signal: abortSignal, widget }),
-              ] as const;
-            } catch {
-              return [widget.id, previous.events[widget.id] ?? []] as const;
-            }
+            return [
+              widget.id,
+              await fetchDashboardEventsWidgetRows({ baseId, config, controlValues, dashboard, signal: abortSignal, widget }),
+            ] as const;
           }),
         ),
       );
       const states = Object.fromEntries(
         await Promise.all(
           dashboardStatesWidgets(config).map(async (widget) => {
-            try {
-              return [
-                widget.id,
-                await fetchDashboardStatesWidgetRows({ baseId, config, controlValues, dashboard, signal: abortSignal, widget }),
-              ] as const;
-            } catch {
-              return [widget.id, previous.states[widget.id] ?? []] as const;
-            }
+            return [
+              widget.id,
+              await fetchDashboardStatesWidgetRows({ baseId, config, controlValues, dashboard, signal: abortSignal, widget }),
+            ] as const;
           }),
         ),
       );
       const maps = Object.fromEntries(
         await Promise.all(
           dashboardMapWidgets(config).map(async (widget) => {
-            try {
-              return [
-                widget.id,
-                await fetchDashboardMapWidgetSeries({ baseId, config, controlValues, dashboard, signal: abortSignal, widget }),
-              ] as const;
-            } catch {
-              return [widget.id, previous.maps[widget.id] ?? []] as const;
-            }
+            return [
+              widget.id,
+              await fetchDashboardMapWidgetSeries({ baseId, config, controlValues, dashboard, signal: abortSignal, widget }),
+            ] as const;
           }),
         ),
       );
       const next = { points, events, states, maps };
-      if (!abortSignal.aborted) {
-        lastDashboardSource = fingerprint;
-        lastDashboardData = next;
-      }
       return { source, data: next };
     },
   });

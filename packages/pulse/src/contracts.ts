@@ -307,19 +307,9 @@ export type PulseDashboardMetricWidget = {
   id: string;
   kind: "metric";
   title: string;
-  metric: string;
   visual: PanelVisual;
-  aggregation: Aggregation | Exclude<EventAggregation, "rows">;
-  bucket: string;
-  since: string;
-  sourceId?: string | null;
-  resourceKey?: string | null;
-  resourceType?: string | null;
-  dimensions?: Record<string, string | number | boolean | null>;
-  reduce?: MetricReducer | null;
-  groupBy?: string | null;
-  queryText?: string;
-  query?: PulseDashboardMetricQuery | PulseDashboardEventQuery;
+  queryText: string;
+  query: PulseDashboardMetricQuery | PulseDashboardEventQuery;
   description?: string | null;
   conditions?: PulseDashboardCondition[];
   span?: number;
@@ -421,10 +411,11 @@ export type PulsePublicCurrentState = Pick<
   "variantKey" | "key" | "value" | "resourceKey" | "resourceType" | "updatedAt"
 >;
 
-export type PulsePublicDashboardMetricWidget = Omit<
-  PulseDashboardMetricWidget,
-  "query" | "queryText" | "sourceId" | "resourceKey" | "resourceType" | "dimensions"
-> & {
+export type PulsePublicDashboardMetricWidget = Omit<PulseDashboardMetricWidget, "query" | "queryText"> & {
+  metric: string;
+  aggregation: Aggregation | EventAggregation;
+  bucket: string;
+  since: string;
   unit?: string | null;
 };
 

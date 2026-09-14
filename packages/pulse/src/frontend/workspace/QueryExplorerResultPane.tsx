@@ -1,5 +1,5 @@
-import { Button, Chart, DataTable, Select, StructuredDataPreview, type DataTableColumn } from "@k2b/ui";
-import { Show, type Accessor, type JSX, type Setter } from "solid-js";
+import { Button, Chart, DataTable, type DataTableColumn, Select, StructuredDataPreview } from "@k2b/ui";
+import { type Accessor, type JSX, type Setter, Show } from "solid-js";
 import {
   isEventAggregateQuery,
   type MetricQueryPoint,
@@ -8,22 +8,23 @@ import {
   type PulseExplorerQuery,
   type PulseRecordedEvent,
 } from "../../contracts";
-import type { ExplorerResultView } from "./types";
+import type { pulseMessages } from "../../messages";
+import { intervalToMs } from "../../query-dsl";
+import { usePulseMessages } from "../use-messages";
 import {
   compactDate,
   formatMetricValue,
   gaugeMax,
+  type PulseDateContext,
   pointsToBars,
   pointsToHeatmap,
   pointsToHistogram,
   queryPointColumns,
   RESULT_VIEW_OPTIONS,
   stateRowId,
-  type PulseDateContext,
   VISUAL_OPTIONS,
 } from "./helpers";
-import type { pulseMessages } from "../../messages";
-import { usePulseMessages } from "../use-messages";
+import type { ExplorerResultView } from "./types";
 
 type Messages = ReturnType<typeof pulseMessages.resolve>["t"];
 
@@ -52,6 +53,7 @@ type QueryExplorerResultPaneProps = {
 };
 
 function QueryExplorerChart(props: {
+  bucket: Accessor<string>;
   visual: Accessor<PanelVisual>;
   points: Accessor<MetricQueryPoint[]>;
   title: Accessor<string>;
@@ -71,35 +73,39 @@ function QueryExplorerChart(props: {
         class="h-full min-h-0 text-primary"
         label={props.title()}
         value={formatMetricValue(last(), props.unit())}
-        sparkline={data().map((point) => point.value ?? 0)}
+        sparkline={data().some((point) => point.value === null) ? undefined : pointsToHistogram(data())}
       />
     );
   }
   if (props.visual() === "gauge") {
     const value = last() ?? 0;
     return (
-      <Chart
-        kind="gauge"
-        class="h-full min-h-0 text-primary"
-        value={value}
-        min={0}
-        max={gaugeMax(props.unit(), value)}
-        label={props.title()}
-        format={valueFormat}
-      />
+      <Show when={last() !== null} fallback={<p class="text-dimmed">{t().noPoints}</p>}>
+        <Chart
+          kind="gauge"
+          class="h-full min-h-0 text-primary"
+          value={value}
+          min={0}
+          max={gaugeMax(props.unit(), value)}
+          label={props.title()}
+          format={valueFormat}
+        />
+      </Show>
     );
   }
   if (props.visual() === "barGauge") {
     const value = last() ?? 0;
     return (
-      <Chart
-        kind="barGauge"
-        class="h-full min-h-0 text-primary"
-        data={[{ label: props.title(), value, min: 0, max: gaugeMax(props.unit(), value) }]}
-        min={0}
-        max={gaugeMax(props.unit(), value)}
-        format={valueFormat}
-      />
+      <Show when={last() !== null} fallback={<p class="text-dimmed">{t().noPoints}</p>}>
+        <Chart
+          kind="barGauge"
+          class="h-full min-h-0 text-primary"
+          data={[{ label: props.title(), value, min: 0, max: gaugeMax(props.unit(), value) }]}
+          min={0}
+          max={gaugeMax(props.unit(), value)}
+          format={valueFormat}
+        />
+      </Show>
     );
   }
   if (props.visual() === "bar") {
@@ -133,10 +139,10 @@ function QueryExplorerChart(props: {
       kind="line"
       class="h-full min-h-0 text-dimmed"
       series={props.series()}
+      maxGap={intervalToMs(props.bucket()) ?? undefined}
       xAxis={{ format: (value) => compactDate(new Date(value).toISOString(), props.dateContext()) }}
       yAxis={{ format: valueFormat }}
       smooth
-      area
     />
   );
 }
@@ -146,51 +152,55 @@ const noMetricPointsMessage = (queryWasRun: boolean, t: Messages): string => (qu
 const renderEventsResult = (props: QueryExplorerResultPaneProps): JSX.Element => {
   const t = usePulseMessages();
   return (
-  <DataTable
-    rows={props.events()}
-    columns={props.eventColumns}
-    getRowId={(event) => event.id}
-    selectedRowId={null}
-    density="compact"
-    class="h-full min-h-0 overflow-auto"
-    empty={t().runEventsQuery}
-    renderCell={({ row: event, col, render }) => props.renderEventCell(event, col, render)}
-  />
+    <DataTable
+      rows={props.events()}
+      columns={props.eventColumns}
+      getRowId={(event) => event.id}
+      selectedRowId={null}
+      density="compact"
+      class="h-full min-h-0 overflow-auto"
+      empty={t().runEventsQuery}
+      renderCell={({ row: event, col, render }) => props.renderEventCell(event, col, render)}
+    />
   );
 };
 
 const renderStatesResult = (props: QueryExplorerResultPaneProps): JSX.Element => {
   const t = usePulseMessages();
   return (
-  <DataTable
-    rows={props.states()}
-    columns={props.stateColumns}
-    getRowId={stateRowId}
-    selectedRowId={null}
-    density="compact"
-    class="h-full min-h-0 overflow-auto"
-    empty={t().runStatesQuery}
-    renderCell={({ row: state, col, render }) => props.renderStateCell(state, col, render)}
-  />
+    <DataTable
+      rows={props.states()}
+      columns={props.stateColumns}
+      getRowId={stateRowId}
+      selectedRowId={null}
+      density="compact"
+      class="h-full min-h-0 overflow-auto"
+      empty={t().runStatesQuery}
+      renderCell={({ row: state, col, render }) => props.renderStateCell(state, col, render)}
+    />
   );
 };
 
 const renderMetricTableResult = (props: QueryExplorerResultPaneProps): JSX.Element => {
   const t = usePulseMessages();
   return (
-  <DataTable
-    rows={props.points()}
-    columns={queryPointColumns}
-    getRowId={(point) => point.bucket}
-    density="compact"
-    class="h-full min-h-0 overflow-auto"
-    empty={props.queryWasRun() ? noMetricPointsMessage(true, t()) : t().runMetricPoints}
-  />
+    <DataTable
+      rows={props.points()}
+      columns={queryPointColumns}
+      getRowId={(point) => point.bucket}
+      density="compact"
+      class="h-full min-h-0 overflow-auto"
+      empty={props.queryWasRun() ? noMetricPointsMessage(true, t()) : t().runMetricPoints}
+    />
   );
 };
 
 const renderMetricChartResult = (props: QueryExplorerResultPaneProps): JSX.Element => (
   <QueryExplorerChart
+    bucket={() => {
+      const query = props.compiled();
+      return query && query.kind !== "states" ? (query.bucket ?? "1h") : "1h";
+    }}
     visual={props.visual}
     points={props.points}
     title={props.previewTitle}
@@ -203,9 +213,9 @@ const renderMetricChartResult = (props: QueryExplorerResultPaneProps): JSX.Eleme
 const renderEmptyMetricResult = (queryWasRun: boolean): JSX.Element => {
   const t = usePulseMessages();
   return (
-  <div class="flex h-full min-h-0 items-center justify-center px-6 text-center text-sm text-dimmed">
-    {noMetricPointsMessage(queryWasRun, t())}
-  </div>
+    <div class="flex h-full min-h-0 items-center justify-center px-6 text-center text-sm text-dimmed">
+      {noMetricPointsMessage(queryWasRun, t())}
+    </div>
   );
 };
 
@@ -231,8 +241,7 @@ const renderDataResult = (props: QueryExplorerResultPaneProps, compiled: PulseEx
 const renderQueryExplorerResult = (props: QueryExplorerResultPaneProps): JSX.Element => {
   const t = usePulseMessages();
   const compiled = props.compiled();
-  if (props.resultView() === "compiled")
-    return <StructuredDataPreview data={compiled ?? {}} empty={t().runCompiledShape} />;
+  if (props.resultView() === "compiled") return <StructuredDataPreview data={compiled ?? {}} empty={t().runCompiledShape} />;
   return renderDataResult(props, compiled);
 };
 

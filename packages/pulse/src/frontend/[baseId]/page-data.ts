@@ -1,7 +1,7 @@
 import type { ResourceApiKey } from "@k2b/cloud/access/ui";
-import type { ServiceError } from "@k2b/stdlib";
 import { type AuthContext, expectUserBackedActor, getDateConfig } from "@k2b/cloud/server";
 import { get as getSetting } from "@k2b/cloud/services";
+import type { ServiceError } from "@k2b/stdlib";
 import type { Context } from "hono";
 import type {
   MetricQueryPoint,
@@ -9,7 +9,6 @@ import type {
   PulseCurrentState,
   PulseDashboard,
   PulseDashboardConfig,
-  PulseDashboardControl,
   PulseDashboardEventsWidget,
   PulseDashboardMapWidget,
   PulseDashboardStatesWidget,
@@ -22,6 +21,7 @@ import type {
   PulseSource,
   PulseSourceScrape,
 } from "../../contracts";
+import { resolveDashboardControls } from "../../dashboard-controls";
 import { SHORT_ID_REGEX } from "../../lib/short-id";
 import { pulseService } from "../../service";
 import type { UserScope } from "../../service/access-control";
@@ -35,14 +35,12 @@ import {
   resolvePublicId,
 } from "../../service/public-resources";
 import type { DashboardTextQuery } from "../../service/query-management";
-import { metricWidgetQueryText } from "../workspace/dashboard-runtime";
 import {
   dashboardEventsWidgets,
   dashboardMapWidgets,
   dashboardMetricWidgets,
   dashboardStatesWidgets,
   FOCUSED_PAGE_SIZE,
-  quoteQueryPart,
 } from "../workspace/helpers";
 import { DASHBOARD_EDITOR_PANES_KEY, QUERY_EXPLORER_PANES_KEY, readPulsePanesLayoutCookie } from "../workspace/panes-state";
 import {
@@ -98,20 +96,8 @@ type ResourceInitialData = {
   resourceSignalsCovered: boolean;
 };
 
-const dashboardControlValues = (config: PulseDashboardConfig, values: DashboardControlValues): DashboardControlValues =>
-  Object.fromEntries(
-    (config.layout?.controls ?? []).map((control: PulseDashboardControl) => [
-      control.variable,
-      values[control.variable] ?? control.defaultValue,
-    ]),
-  );
-
-const resolveDashboardQueryText = (text: string, config: PulseDashboardConfig, values: DashboardControlValues): string => {
-  const controls = dashboardControlValues(config, values);
-  return text.replace(/\$([A-Za-z_][A-Za-z0-9_]*)/g, (match, variable: string) =>
-    typeof controls[variable] === "string" ? quoteQueryPart(controls[variable]) : match,
-  );
-};
+const resolveDashboardQueryText = (text: string, config: PulseDashboardConfig, values: DashboardControlValues): string =>
+  resolveDashboardControls(text, config.layout?.controls ?? [], values);
 
 const widgetQueryText = (
   widget: PulseDashboardEventsWidget | PulseDashboardStatesWidget,
@@ -272,7 +258,7 @@ const loadDashboardWidgetData = async (
   const requests: DashboardTextQuery[] = [
     ...metricWidgets.map((widget) => ({
       kind: "query" as const,
-      query: resolveDashboardQueryText(metricWidgetQueryText(widget), selectedDashboard.config, controlValues),
+      query: resolveDashboardQueryText(widget.queryText, selectedDashboard.config, controlValues),
     })),
     ...eventWidgets.map((widget) => ({ kind: "query" as const, query: widgetQueryText(widget, selectedDashboard, controlValues) })),
     ...stateWidgets.map((widget) => ({ kind: "query" as const, query: widgetQueryText(widget, selectedDashboard, controlValues) })),

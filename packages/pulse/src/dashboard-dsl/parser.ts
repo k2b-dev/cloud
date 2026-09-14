@@ -31,6 +31,7 @@ const variableFromLabel = (label: string): string =>
     .slice(0, 40) || "value";
 
 class Parser {
+  private depth = 0;
   private diagnostics: Result<never>["diagnostics"] = [];
   private position: Position = { index: 0, line: 1, column: 1 };
 
@@ -61,13 +62,23 @@ class Parser {
   }
 
   private readContainerBody(allowed: Iterable<string>): DashboardContainerBody {
-    const allowedSet = new Set(allowed);
     const body: DashboardContainerBody = { description: null, controls: [], blocks: [] };
-    while (!this.isEnd()) {
-      if (this.readContainerStatement(allowedSet, body) === "closed") return body;
+    if (this.depth >= 8) {
+      this.error(this.position, "Dashboard nesting is too deep");
+      while (!this.isEnd()) this.advance();
+      return body;
     }
-    this.error(this.position, 'Missing closing "}"');
-    return body;
+    this.depth++;
+    try {
+      const allowedSet = new Set(allowed);
+      while (!this.isEnd()) {
+        if (this.readContainerStatement(allowedSet, body) === "closed") return body;
+      }
+      this.error(this.position, 'Missing closing "}"');
+      return body;
+    } finally {
+      this.depth--;
+    }
   }
 
   private readContainerStatement(allowedSet: Set<string>, body: DashboardContainerBody): "continue" | "closed" {

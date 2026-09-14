@@ -74,9 +74,9 @@ describe("Pulse dashboard DSL", () => {
     const gauge = card.rows[0]?.cells[0];
     expect(gauge?.kind).toBe("metric");
     if (gauge?.kind !== "metric") return;
-    expect(gauge.metric).toBe("solar.battery.charge_percent");
+    expect(gauge.query.kind === "metric" ? gauge.query.metric : null).toBe("solar.battery.charge_percent");
     expect(gauge.visual).toBe("gauge");
-    expect(gauge.since).toBe("10m");
+    expect(gauge.query.since).toBe("10m");
     const markdown = section?.rows[0]?.cells[1];
     expect(markdown?.kind).toBe("markdown");
   });
@@ -111,7 +111,7 @@ describe("Pulse dashboard DSL", () => {
     const widget = result.data.layout?.sections[0]?.rows[0]?.cells[0];
     expect(widget?.kind).toBe("metric");
     if (widget?.kind !== "metric") return;
-    expect(widget.since).toBe("1h");
+    expect(widget.query.since).toBe("1h");
     expect(widget.conditions?.[0]).toMatchObject({ level: "warn", operator: ">", value: 100 });
   });
 
@@ -144,7 +144,7 @@ describe("Pulse dashboard DSL", () => {
     const widget = row?.cells[0];
     expect(widget?.kind).toBe("metric");
     if (widget?.kind !== "metric") return;
-    expect(widget.dimensions).toEqual({ region: "eu", term: "checkout" });
+    expect(widget.query.dimensions).toEqual({ region: "eu", term: "checkout" });
   });
 
   test("does not replace partial dashboard control variable names", () => {
@@ -244,15 +244,11 @@ describe("Pulse dashboard DSL", () => {
     const [metricWidget, eventWidget] = result.data.layout?.sections[0]?.rows[0]?.cells ?? [];
     expect(metricWidget).toMatchObject({
       kind: "metric",
-      reduce: "sum",
-      groupBy: "resource",
       query: { kind: "metric", reduce: "sum", groupBy: "resource" },
     });
     expect(eventWidget).toMatchObject({
       kind: "metric",
-      metric: "proxmox.task.failed",
-      aggregation: "count",
-      query: { kind: "events", aggregation: "count", bucket: "1h" },
+      query: { kind: "events", event: "proxmox.task.failed", aggregation: "count", bucket: "1h" },
     });
   });
 

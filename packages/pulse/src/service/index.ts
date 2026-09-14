@@ -16,7 +16,7 @@ import {
   updateBase,
   updateBaseAccess,
 } from "./base-management";
-import { normalizeDashboardConfig, validateDashboardSources } from "./dashboard-config";
+import { validateDashboardSources } from "./dashboard-config";
 import {
   createDashboard,
   deleteDashboard,
@@ -98,7 +98,7 @@ const compileDashboardDslText = async (params: {
   if (!compiled.ok) {
     return ok({ ok: false, diagnostics: compiled.diagnostics, config: null });
   }
-  const config = normalizeDashboardConfig(compiled.data);
+  const config = compiled.data;
   const validated = await validateDashboardSources(params.baseId, config);
   if (!validated.ok)
     return ok({ ok: false, diagnostics: [{ severity: "error", message: validated.error.message, line: 1, column: 1 }], config: null });

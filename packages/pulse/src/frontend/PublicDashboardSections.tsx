@@ -14,6 +14,7 @@ import type {
   PulsePublicDashboardWidget,
 } from "../contracts";
 import type { pulseMessages } from "../messages";
+import { intervalToMs } from "../query-dsl";
 import { formatDashboardConditionText, matchDashboardCondition } from "./dashboard-conditions";
 import { publicDashboardEventSubject, publicDashboardStateRowId, sanitizePublicDashboardMarkdown } from "./public-dashboard-runtime";
 import { usePulseMessages } from "./use-messages";
@@ -70,7 +71,7 @@ const renderStatMetricVisual = (widget: PulsePublicDashboardMetricWidget, data: 
     class="h-40 text-primary"
     label={widget.title}
     value={formatMetricValue(last, widget.unit)}
-    sparkline={data.map((point) => point.value ?? 0)}
+    sparkline={data.some((point) => point.value === null) ? undefined : pointsToHistogram(data)}
   />
 );
 
@@ -109,10 +110,10 @@ const renderLineMetricVisual = (widget: PulsePublicDashboardMetricWidget, data: 
     kind="line"
     class="h-56 text-dimmed"
     series={pointsToLineSeries(data, widget.title)}
+    maxGap={intervalToMs(widget.bucket) ?? undefined}
     xAxis={{ format: (value) => compactDate(new Date(value).toISOString(), dateContext) }}
     yAxis={{ format: metricWidgetValueFormat(widget) }}
     smooth
-    area
   />
 );
 
@@ -127,9 +128,9 @@ const renderMetricVisual = (
     case "stat":
       return renderStatMetricVisual(widget, data, last);
     case "gauge":
-      return renderGaugeMetricVisual(widget, last);
+      return last === null ? <p class="text-dimmed">{t.noPoints}</p> : renderGaugeMetricVisual(widget, last);
     case "barGauge":
-      return renderBarGaugeMetricVisual(widget, last);
+      return last === null ? <p class="text-dimmed">{t.noPoints}</p> : renderBarGaugeMetricVisual(widget, last);
     case "bar":
       return <Chart kind="bar" class="h-56 text-dimmed" data={pointsToBars(data, dateContext)} showValues={data.length <= 16} />;
     case "histogram":
@@ -149,7 +150,7 @@ const renderMetricVisual = (
         <DataTable
           rows={data}
           columns={queryPointColumns(dateContext, t)}
-          getRowId={(point) => point.bucket}
+          getRowId={(point) => JSON.stringify([point.bucket, point.group])}
           density="compact"
           class="max-h-72 overflow-auto"
           empty={t.noPoints}

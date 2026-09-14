@@ -136,7 +136,7 @@ line "Memory" {
 }
 ```
 
-Values containing spaces, commas, or equals signs are quoted when control defaults are compiled into Query DSL. An undeclared `$variable` is a compile error.
+Values containing spaces, commas, equals signs, quotes, or backslashes are quoted when control defaults are compiled into Query DSL. An undeclared `$variable` is a compile error.
 
 Public displays use control defaults and do not expose interactive dashboard controls. Choose deterministic defaults that produce a useful view without user input.
 
@@ -469,3 +469,9 @@ dashboard "Solar overview" {
 ```
 
 Return to the [Pulse CLI reference](pulse.md) for discovery, source management, access, and lifecycle operations.
+
+## Configuration and failure contract
+
+Only `{dsl, refreshIntervalSeconds}` is persisted. The returned `layout` is compiled from that source and must not be sent back as authoring input. Invalid or historical shapes are rejected; Pulse does not repair or truncate stored dashboards.
+
+Compilation enforces a shared maximum of 36 data widgets, 24 controls, 24 rows per container, and 12 cells per row. Public rendering executes all accepted data widgets. Missing sources and query failures fail the snapshot explicitly. Private refreshes keep the previous complete snapshot with a visible refresh error; they do not mix fresh and old widget results. Missing numeric values remain absent, including gauge and line rendering.

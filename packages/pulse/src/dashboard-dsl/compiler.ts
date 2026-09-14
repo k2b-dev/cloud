@@ -19,6 +19,8 @@ import type {
   PulseMapFieldSelector,
   StateQuery,
 } from "../contracts";
+import { resolveDashboardControls } from "../dashboard-controls";
+import { MAX_QUERY_TEXT_LENGTH } from "../query-dsl";
 import type {
   CompileQuery,
   DashboardCompilerContext,
@@ -33,6 +35,7 @@ import type {
   UniqueDashboardId,
 } from "./ast";
 import { STATE_WIDGET_VISUALS } from "./constants";
+import { dashboardLayoutError } from "./limits";
 import { parseDashboardDsl } from "./parser";
 
 const titleId = (prefix: string, title: string): string =>
@@ -43,14 +46,6 @@ const titleId = (prefix: string, title: string): string =>
       .replace(/^-|-$/g, "")
       .slice(0, 48) || "item"
   }`;
-
-const queryWithDefaultControls = (query: string, controls: DashboardDslDocument["controls"]): string => {
-  const defaults = new Map(controls.map((control) => [control.variable, quoteQueryValue(control.defaultValue)]));
-  return query.replace(/\$([A-Za-z_][A-Za-z0-9_]*)/g, (match, variable: string) => defaults.get(variable) ?? match);
-};
-
-const quoteQueryValue = (value: string): string =>
-  /[\s,=]/.test(value) ? `"${value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"` : value;
 
 const stripBaseId = (
   query: MetricQuery | EventQuery | StateQuery,
@@ -68,6 +63,11 @@ const stripBaseId = (
 };
 
 export const compileDashboardDsl = (input: string, compileQuery: CompileQuery): Result<PulseDashboardConfig> => {
+  if (input.length > 40000)
+    return {
+      ok: false,
+      diagnostics: [{ severity: "error", message: "Dashboard DSL supports at most 40000 characters", line: 1, column: 1 }],
+    };
   const parsed = parseDashboardDsl(input);
   if (!parsed.ok) return parsed;
   const context: DashboardCompilerContext = {
@@ -79,6 +79,8 @@ export const compileDashboardDsl = (input: string, compileQuery: CompileQuery): 
   const controls = compileDashboardControls(context.document, context.uniqueId);
   const layout = compileDashboardLayout(context, controls);
 
+  const layoutError = dashboardLayoutError(layout);
+  if (layoutError) context.diagnostics.push({ severity: "error", message: layoutError, line: 1, column: 1 });
   if (context.diagnostics.length) return { ok: false, diagnostics: context.diagnostics };
   return { ok: true, data: { layout, dsl: input.trim() }, diagnostics: [] };
 };
@@ -175,7 +177,16 @@ const compileMapWidget = (block: DashboardDslMap, context: DashboardCompilerCont
     );
     return null;
   }
-  const resolvedQueryText = queryWithDefaultControls(block.query, context.document.controls);
+  if (block.query.length > MAX_QUERY_TEXT_LENGTH) {
+    context.diagnostics.push({
+      severity: "error",
+      message: `Query text supports at most ${MAX_QUERY_TEXT_LENGTH} characters`,
+      line: 1,
+      column: 1,
+    });
+    return null;
+  }
+  const resolvedQueryText = resolveDashboardControls(block.query, context.document.controls);
   const unresolvedVariable = resolvedQueryText.match(/\$[A-Za-z_][A-Za-z0-9_]*/)?.[0];
   if (unresolvedVariable) {
     pushMapDiagnostic(context, block, `Unknown dashboard variable "${unresolvedVariable}"`);
@@ -239,7 +250,16 @@ const compileCardWidget = (block: DashboardDslCard, context: DashboardCompilerCo
 
 const compileVisualWidget = (block: DashboardDslVisual, context: DashboardCompilerContext): PulseDashboardWidget | null => {
   if (!block.query) return null;
-  const resolvedQueryText = queryWithDefaultControls(block.query, context.document.controls);
+  if (block.query.length > MAX_QUERY_TEXT_LENGTH) {
+    context.diagnostics.push({
+      severity: "error",
+      message: `Query text supports at most ${MAX_QUERY_TEXT_LENGTH} characters`,
+      line: 1,
+      column: 1,
+    });
+    return null;
+  }
+  const resolvedQueryText = resolveDashboardControls(block.query, context.document.controls);
   const unresolvedVariable = resolvedQueryText.match(/\$[A-Za-z_][A-Za-z0-9_]*/)?.[0];
   if (unresolvedVariable) {
     pushWidgetDiagnostic(context, block, `Unknown dashboard variable "${unresolvedVariable}"`);
@@ -265,17 +285,7 @@ const compileMetricWidget = (block: DashboardDslVisual, query: MetricQuery, uniq
   kind: "metric",
   title: block.title,
   description: block.description,
-  metric: query.metric,
   visual: normalizeMetricVisual(block.visual),
-  aggregation: query.aggregation,
-  bucket: query.bucket,
-  since: query.since,
-  sourceId: query.sourceId,
-  resourceKey: query.resourceKey,
-  resourceType: query.resourceType,
-  dimensions: query.dimensions,
-  reduce: query.reduce,
-  groupBy: query.groupBy,
   queryText: widgetQueryText(block),
   query: stripBaseId(query) as PulseDashboardMetricQuery,
   conditions: widgetConditions(block),
@@ -308,14 +318,6 @@ const compileEventsWidget = (
       kind: "metric",
       title: block.title,
       visual: normalizeMetricVisual(block.visual),
-      metric: query.event ?? "events",
-      aggregation: query.aggregation as Exclude<NonNullable<EventQuery["aggregation"]>, "rows">,
-      bucket: query.bucket ?? "1h",
-      since: query.since,
-      sourceId: query.sourceId,
-      resourceKey: query.resourceKey,
-      resourceType: query.resourceType,
-      dimensions: query.dimensions,
       queryText: widgetQueryText(block),
       query: stripBaseId(query) as PulseDashboardEventQuery,
       conditions: widgetConditions(block),
@@ -364,7 +366,10 @@ const compileStatesWidget = (
 const isStateWidgetVisual = (visual: DashboardDslVisual["visual"]): visual is PulseDashboardStatesWidget["visual"] =>
   STATE_WIDGET_VISUALS.has(visual);
 
-const widgetQueryText = (block: DashboardDslVisual): string | undefined => block.query ?? undefined;
+const widgetQueryText = (block: DashboardDslVisual): string => {
+  if (!block.query) throw new Error("Compiled visual must have a query");
+  return block.query;
+};
 
 const widgetConditions = (block: DashboardDslVisual): PulseDashboardCondition[] | undefined =>
   block.conditions.length ? block.conditions : undefined;
