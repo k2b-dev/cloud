@@ -5,7 +5,7 @@ section: Operations
 order: 1160
 description: Use logs, traces, metrics, and health data to operate Cloud applications.
 tags: [observability, health, logs]
-updated: 2026-09-08
+updated: 2026-09-14
 ---
 
 # Observability
@@ -82,8 +82,38 @@ the setting suppresses the script on subsequent pages and discards reports
 from already-open pages after the normal shared settings cache invalidation.
 Server-Timing remains available independently of browser collection.
 
-Find these client-reported
-diagnostics in the existing logs with source **web-vitals**. Reports contain
+Open **Observability → Telemetry → Browser**
+(`/admin/observability/telemetry?view=browser`) to view these measurements and
+switch collection on or off. The switch changes the same global Core setting;
+both reading and changing it require an administrator. Existing pages need a
+reload to start collection. Turning collection off leaves retained history
+visible. The Server view continues to show gateway telemetry separately.
+
+The Browser view offers app, exact route-template, and time-window filters
+(1 hour to 30 days). It shows p75 and sample counts for each metric, time
+buckets in ChartExplorer, and a paginated route table. ChartExplorer supports
+point selection and a table view of the same aggregate data. LCP and INP use
+milliseconds; CLS has no unit. Missing metrics display a dash, and gaps are
+not interpolated. A loading failure is reported separately from an empty
+selection. Counts describe metric measurements, not unique users or visits.
+
+Aggregation keeps the last valid report per app, route, metric name, and
+metric ID **within the selected window**. Buckets use the last report's
+receipt time in UTC, not navigation start. Overall p75 is calculated from
+those reports, not from bucket percentiles. Standard log retention can remove
+older measurements before a query runs; a 30-day selection does not guarantee
+30 days of retained history. These self-reported, signed-in samples are
+operational diagnostics, not a representative public-user benchmark.
+
+The view reads existing logs without another data store or rollup job. Core's
+normal logging migration installs the metadata decoder used by aggregation;
+run the updated Core migration before serving the updated Browser view. This
+supports both object metadata and the JSON-string metadata written by the
+existing logger. Query cost grows with retained reports in the selected window,
+so prefer a short window when investigating a high-volume installation.
+
+Find the underlying client-reported diagnostics in logs with source
+**web-vitals**. Reports contain
 the application ID, route template, metric ID, value, navigation type, and
 server timings. They contain no concrete URL, query string, DOM attribution,
 page text, or user ID. The endpoint shares the authenticated self-service

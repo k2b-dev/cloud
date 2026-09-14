@@ -23,7 +23,7 @@ export type TelemetryRange = keyof typeof TELEMETRY_RANGES;
 export const DEFAULT_TELEMETRY_RANGE: TelemetryRange = "24h";
 
 export const isTelemetryRange = (value: string | null | undefined): value is TelemetryRange =>
-  value !== null && value !== undefined && value in TELEMETRY_RANGES;
+  value !== null && value !== undefined && Object.hasOwn(TELEMETRY_RANGES, value);
 
 /**
  * `errorRate` finds routes that are broken; `errors` finds where the most

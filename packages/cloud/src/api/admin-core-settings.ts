@@ -191,6 +191,9 @@ const invalidateCommittedSettings = async (keys: readonly string[]): Promise<voi
 const liveSettingKeys = async () => (await listApps()).flatMap((app) => [...(app.settingKeys ?? [])]);
 
 const app = new Hono<AuthContext>()
+  .get("/web-vitals", auth.requireRole("admin"), async (c) =>
+    c.json({ enabled: (await settings.get("observability.web_vitals.enabled")) === true }),
+  )
   .delete(
     "/cache",
     auth.requireRole("admin"),

@@ -1,3 +1,5 @@
+import { browserTelemetryPage } from "./browser/page";
+import ModeNav from "./browser/ModeNav";
 import { DataTable, type DataTableColumn, StatCell, StatGrid } from "@k2b/ui";
 import { listAppsDetailed } from "@k2b/cloud";
 import { type AuthContext, getLocale } from "@k2b/cloud/server";
@@ -68,6 +70,7 @@ const SortableHeader = (props: { filter: TelemetryFilter; sort: TelemetryRouteSo
 };
 
 export default ssr<AuthContext>(async (c) => {
+  if (new URL(c.req.url).searchParams.get("view") === "browser") return browserTelemetryPage(c);
   const locale = getLocale(c);
   const { t } = gatewayOpsMessages.resolve([locale]);
   const filter = parseTelemetryFilterFromUrl(new URL(c.req.url));
@@ -114,6 +117,7 @@ export default ssr<AuthContext>(async (c) => {
           <p class="mt-1 text-xs text-dimmed">{t.telemetryDescription}</p>
         </div>
 
+        <ModeNav url={c.req.url} locale={locale} />
         <TelemetryFilterBar filter={filter} apps={appOptions} />
 
         <StatGrid columns={5}>
