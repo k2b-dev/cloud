@@ -13,7 +13,8 @@ const formatSeconds = (seconds: number | null): string => {
   return `${Math.round(seconds / 3600)}h`;
 };
 
-import ObservabilityChart from "../../frontend/ObservabilityChart.island";
+import OperationalCharts from "../../frontend/OperationalCharts.island";
+import { prepareOperationalCharts } from "../../frontend/operational-charts";
 import {
   getPostgresDiagnostics,
   listPostgresIndexes,
@@ -228,7 +229,11 @@ export default ssr<AuthContext>(async (c) => {
           <StatCell
             label={t.lockWaits}
             value={formatNumber(diagnostics.runtime.waitingLocks, { locale })}
-            sub={diagnostics.runtime.waitingLocks ? t.oldestQuerySeconds({ seconds: Math.round(diagnostics.runtime.oldestWaitingQuerySeconds) }) : t.none}
+            sub={
+              diagnostics.runtime.waitingLocks
+                ? t.oldestQuerySeconds({ seconds: Math.round(diagnostics.runtime.oldestWaitingQuerySeconds) })
+                : t.none
+            }
             accent={diagnostics.runtime.waitingLocks ? { tone: "amber", icon: "ti ti-lock" } : undefined}
           />
           <StatCell
@@ -282,23 +287,26 @@ export default ssr<AuthContext>(async (c) => {
 
         <section class="paper p-3">
           <h2 class="text-xs font-semibold text-primary">{t.storageView}</h2>
-          <p class="text-[10px] text-dimmed">{t.storageViewDescription({ count: formatNumber(filteredTables.length, { locale }), total: formatNumber(diagnostics.tableRows.length, { locale }) })}</p>
+          <p class="text-[10px] text-dimmed">
+            {t.storageViewDescription({
+              count: formatNumber(filteredTables.length, { locale }),
+              total: formatNumber(diagnostics.tableRows.length, { locale }),
+            })}
+          </p>
           <div class="mt-2 flex flex-col gap-2">
-            <SearchBar
-              action={searchAction}
-              value={search}
-              placeholder={t.searchPostgresTables}
-              ariaLabel={t.searchPostgresTablesLabel}
-            />
+            <SearchBar action={searchAction} value={search} placeholder={t.searchPostgresTables} ariaLabel={t.searchPostgresTablesLabel} />
             <PostgresDataFilters search={search} schema={selectedSchema} sort={selectedSort} schemas={schemas} />
           </div>
         </section>
 
         <section class="grid gap-2 xl:grid-cols-3">
-          <article class="paper p-3">
-            <h2 class="text-xs font-semibold text-primary">{t.sizeBySchema}</h2>
-            <p class="text-[10px] text-dimmed">{t.topSchemasDescription}</p>
-            <ObservabilityChart kind="bar" class="mt-2 h-56 text-dimmed" data={schemaChartData} yFormat="bytes" />
+          <article class="min-w-0">
+            <OperationalCharts
+              charts={prepareOperationalCharts(
+                [{ kind: "bar", title: t.sizeBySchema, description: t.topSchemasDescription, data: schemaChartData, unit: "bytes" }],
+                locale,
+              )}
+            />
             <nav class="mt-2 flex flex-wrap gap-1" aria-label={t.filterTablesBySchema}>
               {schemaChartData.slice(0, 5).map((schema) => (
                 <ButtonLink
@@ -312,10 +320,13 @@ export default ssr<AuthContext>(async (c) => {
               ))}
             </nav>
           </article>
-          <article class="paper p-3">
-            <h2 class="text-xs font-semibold text-primary">{t.largestTables}</h2>
-            <p class="text-[10px] text-dimmed">{t.topTenDescription}</p>
-            <ObservabilityChart kind="donut" class="mt-2 h-64 text-dimmed" data={tableChartData} legend />
+          <article class="min-w-0">
+            <OperationalCharts
+              charts={prepareOperationalCharts(
+                [{ kind: "bar", title: t.largestTables, description: t.topTenDescription, data: tableChartData, unit: "bytes" }],
+                locale,
+              )}
+            />
             <nav class="mt-2 flex flex-wrap gap-1" aria-label={t.inspectLargeTable}>
               {tableChartData.slice(0, 5).map((table) => (
                 <ButtonLink
@@ -330,10 +341,13 @@ export default ssr<AuthContext>(async (c) => {
               ))}
             </nav>
           </article>
-          <article class="paper p-3">
-            <h2 class="text-xs font-semibold text-primary">{t.rowsBySchema}</h2>
-            <p class="text-[10px] text-dimmed">{t.plannerRowsDescription}</p>
-            <ObservabilityChart kind="bar" class="mt-2 h-56 text-dimmed" data={schemaRowsChartData} yFormat="number" />
+          <article class="min-w-0">
+            <OperationalCharts
+              charts={prepareOperationalCharts(
+                [{ kind: "bar", title: t.rowsBySchema, description: t.plannerRowsDescription, data: schemaRowsChartData, unit: "number" }],
+                locale,
+              )}
+            />
           </article>
         </section>
 
@@ -394,7 +408,11 @@ export default ssr<AuthContext>(async (c) => {
 
         <DataPanel
           title={t.indexes}
-          subtitle={indexesResult.status === "fulfilled" ? t.indexesSummary({ count: indexes.length, size: formatBytes(unusedIndexBytes, { locale }) }) : undefined}
+          subtitle={
+            indexesResult.status === "fulfilled"
+              ? t.indexesSummary({ count: indexes.length, size: formatBytes(unusedIndexBytes, { locale }) })
+              : undefined
+          }
           error={indexesResult.status === "rejected" ? t.postgresIndexesUnavailable : null}
           isEmpty={indexes.length === 0}
           empty={t.noUserIndexes}
@@ -415,7 +433,8 @@ export default ssr<AuthContext>(async (c) => {
                     </span>
                   </div>
                 );
-              if (col.id === "size") return <span class="text-[10px] tabular-nums text-dimmed">{formatBytes(row.sizeBytes, { locale })}</span>;
+              if (col.id === "size")
+                return <span class="text-[10px] tabular-nums text-dimmed">{formatBytes(row.sizeBytes, { locale })}</span>;
               if (col.id === "scans")
                 return (
                   <span
@@ -425,7 +444,9 @@ export default ssr<AuthContext>(async (c) => {
                   </span>
                 );
               if (col.id === "kind")
-                return <span class="text-[10px] text-dimmed">{row.isPrimary ? t.primary : row.isUnique ? t.unique : t.index.toLowerCase()}</span>;
+                return (
+                  <span class="text-[10px] text-dimmed">{row.isPrimary ? t.primary : row.isUnique ? t.unique : t.index.toLowerCase()}</span>
+                );
               return render(value);
             }}
           />
@@ -455,7 +476,8 @@ export default ssr<AuthContext>(async (c) => {
                   </span>
                 );
               }
-              if (col.id === "rows" || col.id === "dead") return <span class="tabular-nums">{formatNumber(Number(value ?? 0), { locale })}</span>;
+              if (col.id === "rows" || col.id === "dead")
+                return <span class="tabular-nums">{formatNumber(Number(value ?? 0), { locale })}</span>;
               if (col.id === "total" || col.id === "tableBytes" || col.id === "indexBytes")
                 return <span class="tabular-nums">{formatBytes(Number(value ?? 0), { locale })}</span>;
               if (col.id === "analyze") return <span class="text-dimmed">{formatDate(value as string | null, dateConfig)}</span>;
@@ -478,7 +500,12 @@ export default ssr<AuthContext>(async (c) => {
         <section class="paper overflow-hidden">
           <div class="px-3 py-2">
             <h2 class="text-xs font-semibold text-primary">{t.extensions}</h2>
-            <p class="text-[10px] text-dimmed">{t.extensionSummary({ installed: formatNumber(diagnostics.installedExtensions, { locale }), available: formatNumber(diagnostics.availableExtensions, { locale }) })}</p>
+            <p class="text-[10px] text-dimmed">
+              {t.extensionSummary({
+                installed: formatNumber(diagnostics.installedExtensions, { locale }),
+                available: formatNumber(diagnostics.availableExtensions, { locale }),
+              })}
+            </p>
           </div>
           <DataTable
             rows={filteredExtensions}

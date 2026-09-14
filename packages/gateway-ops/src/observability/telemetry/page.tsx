@@ -1,3 +1,4 @@
+import { TELEMETRY_RANGES } from "./contracts";
 import { browserTelemetryPage } from "./browser/page";
 import ModeNav from "./browser/ModeNav";
 import { DataTable, type DataTableColumn, StatCell, StatGrid } from "@k2b/ui";
@@ -6,7 +7,8 @@ import { type AuthContext, getLocale } from "@k2b/cloud/server";
 import { formatNumber as fmtCount, formatDurationMs as fmtMs, formatPercent as fmtRatio } from "@k2b/cloud/shared";
 import { AdminLayout } from "@k2b/cloud/ssr";
 import { ssr } from "../../config";
-import ObservabilityChart from "../../frontend/ObservabilityChart.island";
+import OperationalCharts from "../../frontend/OperationalCharts.island";
+import { prepareOperationalCharts } from "../../frontend/operational-charts";
 import { listAppSloWindows } from "../../grids-operational-health";
 import RouteDetailPanel from "./_components/RouteDetailPanel";
 import TelemetryFilterBar, { type TelemetryAppFilterOption } from "./_components/TelemetryFilterBar.island";
@@ -74,7 +76,16 @@ export default ssr<AuthContext>(async (c) => {
   const locale = getLocale(c);
   const { t } = gatewayOpsMessages.resolve([locale]);
   const filter = parseTelemetryFilterFromUrl(new URL(c.req.url));
-  const sortLabel = filter.sort === "errorRate" ? t.errorRate : filter.sort === "errors" ? t.errors : filter.sort === "requests" ? t.requests : filter.sort === "slow" ? t.slow : t.duration;
+  const sortLabel =
+    filter.sort === "errorRate"
+      ? t.errorRate
+      : filter.sort === "errors"
+        ? t.errors
+        : filter.sort === "requests"
+          ? t.requests
+          : filter.sort === "slow"
+            ? t.slow
+            : t.duration;
   const query = { range: filter.range, appId: filter.appId || undefined, route: filter.route || undefined };
 
   const [overview, timeseries, routes, telemetryApps, registryApps, events, sloWindows] = await Promise.all([
@@ -98,7 +109,6 @@ export default ssr<AuthContext>(async (c) => {
   }));
 
   const requestSeries = timeseries.map((point) => ({ x: new Date(point.at).getTime(), y: point.requests }));
-  const errorSeries = timeseries.map((point) => ({ x: new Date(point.at).getTime(), y: point.errors }));
 
   const routeColumns: DataTableColumn<TelemetryRouteRow>[] = [
     { id: "route", header: t.route },
@@ -144,22 +154,57 @@ export default ssr<AuthContext>(async (c) => {
           />
         </StatGrid>
 
-        <section class="paper p-3">
-          <h2 class="text-xs font-semibold text-primary">{t.traffic}</h2>
-          <p class="text-[10px] text-dimmed">{t.trafficDescription}</p>
-          <ObservabilityChart
-            kind="line"
-            class="mt-2 h-72 w-full text-dimmed"
-            series={[
-              { label: t.requests, data: requestSeries },
-              { label: t.errors, data: errorSeries },
-            ]}
-            xFormat="datetime"
-            legend
-            area
-            interactive
-          />
-        </section>
+        <OperationalCharts
+          columns={3}
+          charts={prepareOperationalCharts(
+            [
+              {
+                kind: "line",
+                title: t.requests,
+                description: t.trafficDescription,
+                maxGap: TELEMETRY_RANGES[filter.range].bucketSeconds * 1000,
+                series: [{ label: t.requests, data: requestSeries }],
+              },
+              {
+                kind: "line",
+                title: t.errorRate,
+                description: t.chartRateHelp,
+                unit: "percent",
+                maxGap: TELEMETRY_RANGES[filter.range].bucketSeconds * 1000,
+                series: [
+                  {
+                    label: t.errorRate,
+                    data: timeseries
+                      .filter((p) => p.requests > 0)
+                      .map((p) => ({ x: new Date(p.at).getTime(), y: (p.errors / p.requests) * 100 })),
+                  },
+                ],
+              },
+              {
+                kind: "line",
+                title: t.latency,
+                description: t.chartLatencyHelp,
+                unit: "ms",
+                maxGap: TELEMETRY_RANGES[filter.range].bucketSeconds * 1000,
+                series: [
+                  {
+                    label: t.chartAverage,
+                    data: timeseries.flatMap((p) =>
+                      p.avgDurationMs === null ? [] : [{ x: new Date(p.at).getTime(), y: p.avgDurationMs }],
+                    ),
+                  },
+                  {
+                    label: t.chartMaximum,
+                    data: timeseries.flatMap((p) =>
+                      p.maxDurationMs === null ? [] : [{ x: new Date(p.at).getTime(), y: p.maxDurationMs }],
+                    ),
+                  },
+                ],
+              },
+            ],
+            locale,
+          )}
+        />
 
         {sloWindows.length > 0 ? (
           <section class="paper p-3" aria-labelledby="request-slo-title">
@@ -214,7 +259,8 @@ export default ssr<AuthContext>(async (c) => {
                       <span class="text-[9px] text-dimmed">{row.appId}</span>
                     </a>
                   );
-                if (col.id === "requests") return <span class="text-[10px] tabular-nums text-dimmed">{fmtCount(row.requests, { locale })}</span>;
+                if (col.id === "requests")
+                  return <span class="text-[10px] tabular-nums text-dimmed">{fmtCount(row.requests, { locale })}</span>;
                 if (col.id === "errors")
                   return (
                     <span
@@ -225,7 +271,9 @@ export default ssr<AuthContext>(async (c) => {
                     </span>
                   );
                 if (col.id === "errorCount")
-                  return <span class="text-[10px] tabular-nums text-dimmed">{row.errors === 0 ? "—" : fmtCount(row.errors, { locale })}</span>;
+                  return (
+                    <span class="text-[10px] tabular-nums text-dimmed">{row.errors === 0 ? "—" : fmtCount(row.errors, { locale })}</span>
+                  );
                 if (col.id === "slow")
                   return (
                     <span class={`text-[10px] tabular-nums ${row.slowRequests > 0 ? "text-amber-600 dark:text-amber-400" : "text-dimmed"}`}>

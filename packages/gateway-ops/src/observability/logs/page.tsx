@@ -3,7 +3,8 @@ import { type AuthContext, getLocale } from "@k2b/cloud/server";
 import { get } from "@k2b/cloud/services";
 import { AdminLayout } from "@k2b/cloud/ssr";
 import { ssr } from "../../config";
-import ObservabilityChart from "../../frontend/ObservabilityChart.island";
+import OperationalCharts from "../../frontend/OperationalCharts.island";
+import { prepareOperationalCharts } from "../../frontend/operational-charts";
 import LogTable from "./_components/LogTable.island";
 import { buildLogFilterUrl, LOG_WINDOWS } from "./_components/types";
 
@@ -94,13 +95,7 @@ export default ssr<AuthContext>(async (c) => {
         </div>
 
         {loadError ? (
-          <Placeholder
-            state="error"
-            surface="paper"
-            icon="ti ti-database-off"
-            title={t.logStoreUnavailable}
-            description={loadError}
-          />
+          <Placeholder state="error" surface="paper" icon="ti ti-database-off" title={t.logStoreUnavailable} description={loadError} />
         ) : null}
 
         <nav class="flex flex-wrap items-center gap-1" aria-label={t.logWindow}>
@@ -147,23 +142,37 @@ export default ssr<AuthContext>(async (c) => {
             href={topSource ? buildLogFilterUrl(LOGS_PAGE_PATH, { sources: [topSource.key], page: 1 }, filter) : undefined}
             accent={{ tone: "blue", icon: "ti ti-stack-3" }}
           />
-          <StatCell label={t.retained} value={summary ? summary.total.toLocaleString(locale) : "—"} sub={t.autoPruneDays({ days: retentionDays })} />
+          <StatCell
+            label={t.retained}
+            value={summary ? summary.total.toLocaleString(locale) : "—"}
+            sub={t.autoPruneDays({ days: retentionDays })}
+          />
         </StatGrid>
 
-        <section class="paper p-3">
-          <h2 class="text-xs font-semibold text-primary">{t.volumeOverTime}</h2>
-          <p class="text-[10px] text-dimmed">{t.volumeOverTimeDescription}</p>
+        <section>
           {timeseriesResult.error ? (
             <Placeholder state="error" variant="compact" description={timeseriesResult.error} />
           ) : (
-            <ObservabilityChart
-              kind="line"
-              class="mt-2 h-64 w-full text-dimmed"
-              series={levelSeries}
-              xFormat="timeline"
-              yFormat="number"
-              legend
-              interactive
+            <OperationalCharts
+              columns={2}
+              charts={prepareOperationalCharts(
+                [
+                  {
+                    kind: "line",
+                    title: t.volumeOverTime,
+                    description: t.volumeOverTimeDescription,
+                    series: levelSeries,
+                    maxGap: timeseries.length > 1 ? timeseries[1]!.at.getTime() - timeseries[0]!.at.getTime() : undefined,
+                  },
+                  {
+                    kind: "line",
+                    title: `${t.warn} / ${t.error}`,
+                    series: levelSeries.filter((series) => series.label === t.warn || series.label === t.error),
+                    maxGap: timeseries.length > 1 ? timeseries[1]!.at.getTime() - timeseries[0]!.at.getTime() : undefined,
+                  },
+                ],
+                locale,
+              )}
             />
           )}
         </section>

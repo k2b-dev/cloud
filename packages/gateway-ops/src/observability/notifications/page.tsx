@@ -6,7 +6,8 @@ import { formatDateTime, formatNumber } from "@k2b/cloud/shared";
 import { AdminLayout } from "@k2b/cloud/ssr";
 import type { JSX } from "solid-js";
 import { ssr } from "../../config";
-import ObservabilityChart from "../../frontend/ObservabilityChart.island";
+import OperationalCharts from "../../frontend/OperationalCharts.island";
+import { prepareOperationalCharts } from "../../frontend/operational-charts";
 import DeliveryFilterBar from "./_components/DeliveryFilterBar.island";
 import {
   buildDeliveryNotificationsUrl,
@@ -204,19 +205,27 @@ export default ssr<AuthContext>(async (c) => {
           <StatCell label={t.suppressed7d} value={formatNumber(summary.suppressed, { locale })} sub={t.policyOrFallback} />
         </StatGrid>
 
-        <section class="paper p-3">
-          <h2 class="text-xs font-semibold text-primary">{t.deliveryOutcomes}</h2>
-          <p class="text-[10px] text-dimmed">{t.deliveryOutcomesDescription}</p>
-          <ObservabilityChart
-            kind="line"
-            class="mt-2 h-64 w-full text-dimmed"
-            series={deliverySeries}
-            xFormat="timeline"
-            yFormat="number"
-            legend
-            interactive
-          />
-        </section>
+        <OperationalCharts
+          columns={2}
+          charts={prepareOperationalCharts(
+            [
+              {
+                kind: "line",
+                title: t.deliveryOutcomes,
+                description: t.deliveryOutcomesDescription,
+                series: deliverySeries,
+                maxGap: timeseries.length > 1 ? timeseries[1]!.at.getTime() - timeseries[0]!.at.getTime() : undefined,
+              },
+              {
+                kind: "line",
+                title: `${t.failed} / ${t.suppressed}`,
+                series: deliverySeries.filter((series) => series.label === t.failed || series.label === t.suppressed),
+                maxGap: timeseries.length > 1 ? timeseries[1]!.at.getTime() - timeseries[0]!.at.getTime() : undefined,
+              },
+            ],
+            locale,
+          )}
+        />
 
         <section class="paper overflow-hidden" style="view-transition-name: admin-notification-deliveries-table">
           <div class="flex flex-col gap-2 px-3 py-2">
@@ -470,7 +479,12 @@ export default ssr<AuthContext>(async (c) => {
           valueClass={summary.pending > 0 ? "text-amber-600 dark:text-amber-400" : "text-primary"}
           accent={summary.pending > 0 ? { tone: "amber", icon: "ti ti-clock" } : undefined}
         />
-        <StatCell label={t.sent7d} value={formatNumber(summary.sent, { locale })} sub={t.last7Days} accent={{ tone: "emerald", icon: "ti ti-check" }} />
+        <StatCell
+          label={t.sent7d}
+          value={formatNumber(summary.sent, { locale })}
+          sub={t.last7Days}
+          accent={{ tone: "emerald", icon: "ti ti-check" }}
+        />
       </StatGrid>
 
       <section class="paper overflow-hidden" style="view-transition-name: admin-notification-legacy-table">

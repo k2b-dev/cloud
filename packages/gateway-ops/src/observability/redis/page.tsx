@@ -4,7 +4,8 @@ import { formatBytes, formatNumber, formatPercent } from "@k2b/cloud/shared";
 import { AdminLayout } from "@k2b/cloud/ssr";
 import { SearchBar } from "@k2b/cloud/ssr/islands";
 import { ssr } from "../../config";
-import ObservabilityChart from "../../frontend/ObservabilityChart.island";
+import OperationalCharts from "../../frontend/OperationalCharts.island";
+import { prepareOperationalCharts } from "../../frontend/operational-charts";
 import { getRedisDiagnostics, type RedisPrefixDiagnostic } from "../data/service";
 import RedisDataFilters from "./_components/RedisDataFilters.island";
 import { gatewayOpsMessages } from "../../messages";
@@ -86,7 +87,11 @@ export default ssr<AuthContext>(async (c) => {
         </div>
 
         <StatGrid columns={5}>
-          <StatCell label={t.keys} value={formatNumber(diagnostics.dbSize, { locale })} sub={t.expiringKeys({ count: formatNumber(expiringKeys, { locale }) })} />
+          <StatCell
+            label={t.keys}
+            value={formatNumber(diagnostics.dbSize, { locale })}
+            sub={t.expiringKeys({ count: formatNumber(expiringKeys, { locale }) })}
+          />
           <StatCell
             label={t.memory}
             value={runtime.usedMemoryBytes === null ? "—" : formatBytes(runtime.usedMemoryBytes, { locale })}
@@ -104,7 +109,11 @@ export default ssr<AuthContext>(async (c) => {
           <StatCell
             label={t.hitRate}
             value={runtime.hitRate === null ? "—" : formatPercent(runtime.hitRate, { locale })}
-            sub={runtime.connectedClients === null ? t.clientsUnknown : t.clientCount({ count: formatNumber(runtime.connectedClients, { locale }) })}
+            sub={
+              runtime.connectedClients === null
+                ? t.clientsUnknown
+                : t.clientCount({ count: formatNumber(runtime.connectedClients, { locale }) })
+            }
             valueClass={runtime.hitRate !== null && runtime.hitRate < 0.8 ? "text-amber-600 dark:text-amber-400" : "text-primary"}
           />
           <StatCell
@@ -132,14 +141,25 @@ export default ssr<AuthContext>(async (c) => {
           </section>
         ) : null}
 
-        <section class="paper p-3">
-          <h2 class="text-xs font-semibold text-primary">{t.prefixDistribution}</h2>
-          <p class="text-[10px] text-dimmed">
-            {diagnostics.scanComplete
-              ? t.keysScanned({ count: formatNumber(diagnostics.sampledKeys, { locale }) })
-              : t.keysSampled({ count: formatNumber(diagnostics.sampledKeys, { locale }), total: formatNumber(diagnostics.dbSize, { locale }) })}
-          </p>
-          <ObservabilityChart kind="donut" class="mt-2 h-72 text-dimmed" data={prefixChartData} legend />
+        <section>
+          <OperationalCharts
+            charts={prepareOperationalCharts(
+              [
+                {
+                  kind: "bar",
+                  title: t.prefixDistribution,
+                  description: diagnostics.scanComplete
+                    ? t.keysScanned({ count: formatNumber(diagnostics.sampledKeys, { locale }) })
+                    : t.keysSampled({
+                        count: formatNumber(diagnostics.sampledKeys, { locale }),
+                        total: formatNumber(diagnostics.dbSize, { locale }),
+                      }),
+                  data: prefixChartData,
+                },
+              ],
+              locale,
+            )}
+          />
           <nav class="mt-2 flex flex-wrap gap-1" aria-label={t.filterSampledKeys}>
             {prefixChartData.slice(0, 6).map((prefix) => (
               <ButtonLink
@@ -159,7 +179,9 @@ export default ssr<AuthContext>(async (c) => {
           <div class="flex flex-col gap-2 px-3 py-2">
             <div>
               <h2 class="text-xs font-semibold text-primary">{t.prefixes}</h2>
-              <p class="text-[10px] text-dimmed">{t.prefixesAtDepth({ count: formatNumber(filteredPrefixes.length, { locale }), depth: selectedDepth })}</p>
+              <p class="text-[10px] text-dimmed">
+                {t.prefixesAtDepth({ count: formatNumber(filteredPrefixes.length, { locale }), depth: selectedDepth })}
+              </p>
             </div>
             <SearchBar action={searchAction} value={search} placeholder={t.searchRedisPrefixes} ariaLabel={t.searchRedisPrefixesLabel} />
             <RedisDataFilters search={search} depth={selectedDepth} />

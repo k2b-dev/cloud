@@ -99,6 +99,20 @@ milliseconds; CLS has no unit. Missing metrics display a dash, and gaps are
 not interpolated. A loading failure is reported separately from an empty
 selection. Counts describe metric measurements, not unique users or visits.
 
+Server telemetry also offers synchronized charts for request counts, HTTP error
+percentage (status 400 or higher), and response duration. Duration shows the
+request-weighted mean and maximum from existing minute rollups, not a percentile.
+The overview aligns server-error counts to the log chart's coarser intervals
+before synchronizing inspection. Missing telemetry buckets remain gaps.
+
+Logs and notification delivery views include a separate chart for uncommon
+warning or failure outcomes alongside their volume chart. Existing filters apply
+to both charts. ChartExplorer provides exact counts, formatted units, local table
+sorting, and copying without loading more data. Postgres and Redis rankings use
+horizontal bars with a shared scale within each chart; full names remain in
+inspection and the table view. Redis sampling and Postgres row-estimate notices
+still apply to these charts.
+
 Aggregation keeps the last valid report per app, route, metric name, and
 metric ID **within the selected window**. Buckets use the last report's
 receipt time in UTC, not navigation start. Overall p75 is calculated from

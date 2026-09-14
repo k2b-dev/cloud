@@ -16,7 +16,8 @@ import { type AuthContext, getLocale } from "@k2b/cloud/server";
 import { logging, type TraceWindow, trace } from "@k2b/cloud/services";
 import { AdminLayout } from "@k2b/cloud/ssr";
 import { ssr } from "../config";
-import ObservabilityChart from "../frontend/ObservabilityChart.island";
+import OperationalCharts from "../frontend/OperationalCharts.island";
+import { prepareOperationalCharts, alignCountSeries } from "../frontend/operational-charts";
 import { buildGatewayHealth } from "../health";
 import { gatewayOpsMessages } from "../messages";
 import { buildOverviewSignals, type OverviewSignalSeverity, overviewVerdict } from "./overview";
@@ -81,10 +82,17 @@ export default ssr<AuthContext>(async (c) => {
     locale,
   );
   const verdict = overviewVerdict(signals, locale);
+  const comparisonInterval =
+    logTimeseries.value.length > 1
+      ? logTimeseries.value[1]!.at.getTime() - logTimeseries.value[0]!.at.getTime()
+      : TELEMETRY_RANGES[range].bucketSeconds * 1000;
   const serverErrorSeries = [
     {
       label: t.errors,
-      data: telemetryTimeseries.value.map((point) => ({ x: new Date(point.at).getTime(), y: point.serverErrors })),
+      data: alignCountSeries(
+        telemetryTimeseries.value.map((point) => ({ x: new Date(point.at).getTime(), y: point.serverErrors })),
+        comparisonInterval,
+      ),
     },
   ];
   const logSeveritySeries = [
@@ -202,60 +210,34 @@ export default ssr<AuthContext>(async (c) => {
           />
         </StatGrid>
 
-        <section class="grid gap-2 xl:grid-cols-2">
-          <article class="paper p-3">
-            <div class="flex flex-wrap items-start justify-between gap-2">
-              <div class="min-w-0">
-                <h2 class="text-xs font-semibold text-primary">{t.serverErrorsOverTime}</h2>
-                <p class="text-[10px] text-dimmed">{t.serverErrorsDescription}</p>
-              </div>
-              <ButtonLink href={`/admin/observability/telemetry?range=${range}`} variant="secondary" size="sm">
-                {t.openTraffic}
-                <i class="ti ti-arrow-up-right" aria-hidden="true" />
-              </ButtonLink>
-            </div>
-            {telemetryTimeseries.error ? (
-              <Placeholder state="error" variant="compact" description={telemetryTimeseries.error} />
-            ) : telemetryTimeseries.value.length === 0 ? (
-              <Placeholder variant="compact" description={t.noTrafficRecorded} />
-            ) : (
-              <ObservabilityChart
-                kind="line"
-                class="mt-2 h-56 w-full text-dimmed"
-                series={serverErrorSeries}
-                xFormat="timeline"
-                yFormat="number"
-                interactive
-              />
-            )}
-          </article>
-
-          <article class="paper p-3">
-            <div class="flex flex-wrap items-start justify-between gap-2">
-              <div class="min-w-0">
-                <h2 class="text-xs font-semibold text-primary">{t.logSeverityOverTime}</h2>
-                <p class="text-[10px] text-dimmed">{t.logSeverityDescription}</p>
-              </div>
-              <ButtonLink href={`/admin/observability/logs?window=${range}`} variant="secondary" size="sm">
-                {t.openLogs}
-                <i class="ti ti-arrow-up-right" aria-hidden="true" />
-              </ButtonLink>
-            </div>
-            {logTimeseries.error ? (
-              <Placeholder state="error" variant="compact" description={logTimeseries.error} />
-            ) : (
-              <ObservabilityChart
-                kind="line"
-                class="mt-2 h-56 w-full text-dimmed"
-                series={logSeveritySeries}
-                xFormat="timeline"
-                yFormat="number"
-                legend
-                interactive
-              />
-            )}
-          </article>
-        </section>
+        <OperationalCharts
+          columns={2}
+          charts={prepareOperationalCharts(
+            [
+              {
+                kind: "line",
+                title: t.serverErrors,
+                description: t.serverErrorsDescription,
+                series: serverErrorSeries,
+                maxGap: comparisonInterval,
+                error: telemetryTimeseries.error,
+                href: `/admin/observability/telemetry?range=${range}`,
+                linkLabel: t.openTraffic,
+              },
+              {
+                kind: "line",
+                title: t.logSeverityOverTime,
+                description: t.logSeverityDescription,
+                series: logSeveritySeries,
+                maxGap: comparisonInterval,
+                error: logTimeseries.error,
+                href: `/admin/observability/logs?window=${range}`,
+                linkLabel: t.openLogs,
+              },
+            ],
+            locale,
+          )}
+        />
 
         <section class="paper p-3">
           <h2 class="text-xs font-semibold text-primary">{t.failingRoutes}</h2>
