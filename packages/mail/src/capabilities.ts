@@ -3103,8 +3103,8 @@ const actionDefinitions = {
     },
   },
   "conversation.snooze": {
-    title: "Snooze conversation",
-    description: "Set or clear the snooze deadline of one conversation.",
+    title: "Show conversation later",
+    description: "Choose when a conversation reappears, or show it again now.",
     input: c.ConversationSnoozeInputSchema,
     data: c.CollaborationDataSchema,
     destructive: false,

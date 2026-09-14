@@ -13,7 +13,7 @@ Der E-Mail-Anbieter bleibt die maßgebliche Quelle für übertragbare E-Mail-Zus
 ## Den passenden Einstieg wählen {icon="square-plus"}
 
 - Wenn du Mail über die App-Navigation öffnest, erscheint **Fokus**: eine gemeinsame Arbeitsliste für alle Postfächer, die du lesen darfst.
-- Unter **Für mich** findest du dir zugewiesene Unterhaltungen mit Handlungsbedarf. **Nicht zugewiesen** zeigt Vorgänge ohne zuständige Person, **Wartend** deine zugewiesenen Unterhaltungen, die auf eine Antwort warten, und **Alle aktiven** alle nicht abgeschlossenen und nicht zurückgestellten Unterhaltungen, die du lesen darfst.
+- Unter **Für mich** findest du dir zugewiesene Unterhaltungen mit Handlungsbedarf. **Nicht zugewiesen** zeigt Vorgänge ohne zuständige Person, **Wartend** deine zugewiesenen Unterhaltungen, die auf eine Antwort warten, und **Alle aktiven** alle nicht abgeschlossenen Unterhaltungen, die du lesen darfst und die nicht unter **Später** liegen.
 - Jede Postfachschaltfläche zeigt die Anzahl ungelesener Unterhaltungen und der Unterhaltungen mit Handlungsbedarf. Öffne ein Postfach, wenn du Ordner, die postfachweite Suche oder Einstellungen benötigst.
 - Auf einem großen Bildschirm kannst du eine Zeile in Fokus auswählen und daneben Kontext, Zusammenfassung, Workflow-Felder und Teamnotizen prüfen. Auf einem kleineren Bildschirm öffnet die Auswahl die Unterhaltung in ihrem Postfach.
 - Wähle **Neues Postfach**, um ein weiteres E-Mail-Konto zu verbinden.
@@ -51,7 +51,7 @@ Nach der Einrichtung erkennt Mail die Ordner des Anbieters und beginnt mit der S
 
 Die linke Navigation enthält:
 
-- **Nachverfolgung** mit Handlungsbedarf, Wartet auf Antwort, Zurückgestellt und Erledigt.
+- **Nachverfolgung** mit Handlungsbedarf, Wartet auf Antwort, Später und Erledigt.
 - **Zuordnung** mit Mir zugewiesen und Nicht zugewiesen.
 - **Mail** mit Posteingang, Entwürfe, Geplant, Gesendet und einer ausklappbaren Mehr-Gruppe.
 - **Ordner** mit eigenen Anbieterordnern und deren verschachtelter Hierarchie. Personen mit Postfach-Adminrechten können Ordner hier ausblenden, ohne sie zu löschen oder abzubestellen.

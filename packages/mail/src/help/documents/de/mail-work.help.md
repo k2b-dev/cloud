@@ -44,7 +44,7 @@ Die integrierten Ansichten unter **Nachverfolgung** zeigen, was als Nächstes ge
 | --- | --- | --- |
 | Nachverfolgung | Handlungsbedarf | Unterhaltungen, die das Team prüfen oder bearbeiten muss |
 | Nachverfolgung | Wartet auf Antwort | Unterhaltungen, bei denen eine bestätigte Antwort des Teams auf eine Reaktion einer anderen Person wartet. Neue eingehende E-Mails verschieben sie zu Handlungsbedarf. |
-| Nachverfolgung | Zurückgestellt | Unterhaltungen, die bis zu ihrem Wiedervorlagezeitpunkt ausgeblendet sind. Der Zeitpunkt blendet sie wieder ein, ohne ihren nächsten Schritt zu ändern. Neue eingehende E-Mails blenden sie sofort wieder ein. |
+| Nachverfolgung | Später | Unterhaltungen, die bis zum gewählten Zeitpunkt ausgeblendet sind. Der Zeitpunkt blendet sie wieder ein, ohne ihren nächsten Schritt zu ändern. Neue eingehende E-Mails blenden sie sofort wieder ein. |
 | Nachverfolgung | Erledigt | Als erledigt markierte Unterhaltungen |
 | Zuordnung | Mir zugewiesen | Dir zugewiesene Unterhaltungen |
 | Zuordnung | Nicht zugewiesen | Unterhaltungen ohne zuständige Person |
@@ -54,9 +54,9 @@ Die integrierten Ansichten unter **Nachverfolgung** zeigen, was als Nächstes ge
 
 Anbieterordner bilden eine andere Ebene. Wenn du eine Unterhaltung in Archiv, Papierkorb, Junk oder einen anderen Anbieterordner verschiebst, ändert sich die entfernte Ablage. Die Änderung kann in anderen E-Mail-Programmen sichtbar sein. Wenn du eine Unterhaltung als **Erledigt** markierst, ändert sich nur der Cloud-Nachverfolgungsstatus. Die E-Mail wird weder archiviert noch verschoben.
 
-Verwende **Wartet auf Antwort**, wenn der nächste Schritt deines Teams von einer anderen Person abhängt. Mail setzt diesen Status, nachdem der Versand einer menschlichen Antwort oder Antwort an alle bestätigt wurde. Das gilt auch für Antworten, die aus einem anderen E-Mail-Programm synchronisiert werden. Verwende **Zurückstellen bis**, wenn die nächste Prüfung von einem Datum oder einer Uhrzeit abhängt. Zurückgestellte Unterhaltungen bleiben bis zum gewählten Zeitpunkt aus aktiven Ansichten ausgeblendet, sofern nicht vorher eine neue E-Mail eingeht.
+Verwende **Wartet auf Antwort**, wenn der nächste Schritt deines Teams von einer anderen Person abhängt. Mail setzt diesen Status, nachdem der Versand einer menschlichen Antwort oder Antwort an alle bestätigt wurde. Das gilt auch für Antworten, die aus einem anderen E-Mail-Programm synchronisiert werden. Verwende **Später anzeigen**, wenn die nächste Prüfung von einem Datum oder einer Uhrzeit abhängt. Bei **Wann soll die Unterhaltung wieder erscheinen?** wählst du den Zeitpunkt. Bis dahin liegt sie unter **Später** und bleibt aus aktiven Ansichten ausgeblendet, sofern nicht vorher eine neue E-Mail eingeht.
 
-Neue eingehende E-Mails setzen eine Unterhaltung immer auf **Handlungsbedarf** und beenden ihre Zurückstellung. Eine menschliche Antwort oder Antwort an alle setzt sie erst auf **Wartet auf Antwort**, wenn die Zustellung bestätigt wurde. Neue Nachrichten, Weiterleitungen, automatische Antworten, Wiederholungen und unklare Zustellungsergebnisse leiten keinen neuen nächsten Schritt ab. Unter **Unterhaltungsdetails** entscheidest du nur, ob die Unterhaltung **Erledigt** ist. Wenn du Erledigt entfernst, öffnet Mail sie wieder und leitet den nächsten Schritt aus der letzten bestätigten Nachricht ab.
+Neue eingehende E-Mails setzen eine Unterhaltung immer auf **Handlungsbedarf** und entfernen sie aus **Später**. Eine menschliche Antwort oder Antwort an alle setzt sie erst auf **Wartet auf Antwort**, wenn die Zustellung bestätigt wurde. Neue Nachrichten, Weiterleitungen, automatische Antworten, Wiederholungen und unklare Zustellungsergebnisse leiten keinen neuen nächsten Schritt ab. Unter **Unterhaltungsdetails** entscheidest du nur, ob die Unterhaltung **Erledigt** ist. Wenn du Erledigt entfernst, öffnet Mail sie wieder und leitet den nächsten Schritt aus der letzten bestätigten Nachricht ab.
 
 Mit **In Ordner verschieben** in den Unterhaltungsaktionen oder Mail-Befehlen wählst du das Ziel per Tastatur, Zeigegerät oder Berührung. Auf dem Desktop kannst du eine Unterhaltungszeile außerdem auf einen auswählbaren Ordner in der linken Navigation ziehen. Mail merkt die Verschiebung vor; die Synchronisierung bestätigt das Ergebnis beim Anbieter.
 
@@ -154,7 +154,7 @@ Informationen zu Verfassen, Entwürfen, Anhängen, Signaturen und Zustellungsopt
 
 ## Wiederverwendbare Ansichten und lokale Tags erstellen {icon="layout-list"}
 
-Öffne **Einstellungen > Organisation**, um aus Ordner- und Zusammenarbeitsfiltern eine gespeicherte Ansicht zu erstellen. Eine Ansicht kann nach Ordner, zuständiger Person, nächstem Schritt, lokalem Tag und Zurückstellungsstatus filtern.
+Öffne **Einstellungen > Organisation**, um aus Ordner- und Zusammenarbeitsfiltern eine gespeicherte Ansicht zu erstellen. Eine Ansicht kann nach Ordner, zuständiger Person, nächstem Schritt, lokalem Tag und danach filtern, ob die Unterhaltung unter **Später** liegt.
 
 - **Nur für mich** erstellt eine private Ansicht.
 - **Alle mit Postfachzugriff** erstellt eine Postfachansicht und erfordert Schreibzugriff.

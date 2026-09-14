@@ -15,9 +15,9 @@ The conversation reader places meaningful collaboration and workflow changes qui
 - **Assignee** names the person currently responsible for the conversation.
 - **Next step** is derived by Mail. **Needs action** means the team must review or act. **Waiting for reply** means a confirmed human reply was sent and the next step belongs to someone else.
 - **Mark as done** is the only manual follow-up state. Select it when no current action remains; clear it to reopen the conversation. Mail then derives the next step from the latest verified message.
-- **Snooze until** temporarily removes the conversation from active work without changing its next step. Use it when the next review depends on time rather than another person. Its due time reveals the conversation again; new incoming mail ends the snooze immediately.
+- **Show later** temporarily removes the conversation from active work without changing its next step. Use it when the next review depends on time rather than another person. The conversation stays under **Later** until the selected time; new incoming mail makes it appear immediately.
 
-New incoming mail changes any conversation to **Needs action**. A confirmed human reply or reply-all changes it to **Waiting for reply**. Automatic replies, forwards, new messages, retries, failed sends, and ambiguous delivery outcomes do not invent a new next step. Treat **Done** as a team state, not as an email archive action. Done and reopening also end an active snooze.
+New incoming mail changes any conversation to **Needs action**. A confirmed human reply or reply-all changes it to **Waiting for reply**. Automatic replies, forwards, new messages, retries, failed sends, and ambiguous delivery outcomes do not invent a new next step. Treat **Done** as a team state, not as an email archive action. Marking a conversation done or reopening it also removes it from **Later**.
 
 ## Add internal comments {icon="point"}
 
@@ -38,7 +38,7 @@ Mailbox access is granted in **Settings > Access**.
 | Permission | What it allows |
 | --- | --- |
 | Read | Read and search mail, download attachments, view collaboration context, write internal comments, and use personal reminders |
-| Write | All Read actions plus compose and send, change provider mail state, assign work, mark conversations done or reopen them, snooze, and manage conversation tags |
+| Write | All Read actions plus compose and send, change provider mail state, assign work, mark conversations done or reopen them, choose when a conversation appears again, and manage conversation tags |
 | Admin | All Write actions plus connections, identities, folder mappings, shared settings, access, response policy, workflows, and mailbox deletion |
 
 Access can be granted through the standard Cloud permission editor to the supported people, groups, or service accounts. Removing access takes effect for the mailbox, including open live views and future agent or service-account actions.
@@ -67,7 +67,7 @@ Shared across the mailbox:
 - mailbox templates and mailbox default signatures,
 - mailbox saved views,
 - local tags,
-- conversation assignment, status, snooze state, comments, references, activity, and shared drafts.
+- conversation assignment, status, the time chosen with **Show later**, comments, references, activity, and shared drafts.
 
 Private to one user:
 

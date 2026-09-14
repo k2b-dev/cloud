@@ -15,9 +15,9 @@ Die Unterhaltungsansicht zeigt wichtige Änderungen durch Zusammenarbeit und Wor
 - **Zuständig** nennt die Person, die aktuell für die Unterhaltung verantwortlich ist.
 - **Nächster Schritt** wird von Mail abgeleitet. **Aktion erforderlich** bedeutet, dass das Team die Unterhaltung prüfen oder bearbeiten muss. **Wartet auf Antwort** bedeutet, dass eine bestätigte menschliche Antwort gesendet wurde und der nächste Schritt bei einer anderen Person liegt.
 - **Als erledigt markieren** ist der einzige manuelle Bearbeitungsstatus. Wähle ihn, wenn aktuell nichts mehr zu tun ist, und entferne ihn, um die Unterhaltung wieder zu öffnen. Mail leitet den nächsten Schritt dann aus der neuesten verifizierten Nachricht ab.
-- **Zurückstellen bis** entfernt die Unterhaltung vorübergehend aus der aktiven Arbeit, ohne ihren nächsten Schritt zu ändern. Verwende diese Funktion, wenn die nächste Prüfung von einem Zeitpunkt und nicht von einer anderen Person abhängt. Zum Fälligkeitszeitpunkt wird die Unterhaltung wieder angezeigt; eine neue eingehende E-Mail beendet die Zurückstellung sofort.
+- **Später anzeigen** entfernt die Unterhaltung vorübergehend aus der aktiven Arbeit, ohne ihren nächsten Schritt zu ändern. Verwende diese Funktion, wenn die nächste Prüfung von einem Zeitpunkt und nicht von einer anderen Person abhängt. Bis zum gewählten Zeitpunkt liegt die Unterhaltung unter **Später**; eine neue eingehende E-Mail blendet sie sofort wieder ein.
 
-Eine neue eingehende E-Mail setzt jede Unterhaltung auf **Aktion erforderlich**. Eine bestätigte menschliche Antwort oder Antwort an alle setzt sie auf **Wartet auf Antwort**. Automatische Antworten, Weiterleitungen, neue Nachrichten, Wiederholungsversuche, fehlgeschlagene Sendevorgänge und unklare Zustellergebnisse erzeugen keinen neuen nächsten Schritt. **Erledigt** ist ein Teamstatus und keine Archivierungsaktion für E-Mails. Das Erledigen und erneute Öffnen beenden außerdem eine aktive Zurückstellung.
+Eine neue eingehende E-Mail setzt jede Unterhaltung auf **Aktion erforderlich**. Eine bestätigte menschliche Antwort oder Antwort an alle setzt sie auf **Wartet auf Antwort**. Automatische Antworten, Weiterleitungen, neue Nachrichten, Wiederholungsversuche, fehlgeschlagene Sendevorgänge und unklare Zustellergebnisse erzeugen keinen neuen nächsten Schritt. **Erledigt** ist ein Teamstatus und keine Archivierungsaktion für E-Mails. Das Erledigen und erneute Öffnen entfernen die Unterhaltung außerdem aus **Später**.
 
 ## Interne Kommentare hinzufügen {icon="point"}
 
@@ -38,7 +38,7 @@ Der Postfachzugriff wird unter **Einstellungen > Zugriff** vergeben.
 | Berechtigung | Erlaubte Aktionen |
 | --- | --- |
 | Lesen | E-Mails lesen und durchsuchen, Anhänge herunterladen, Informationen zur Zusammenarbeit sehen, interne Kommentare schreiben und persönliche Erinnerungen verwenden |
-| Schreiben | Alle Aktionen von Lesen sowie E-Mails verfassen und senden, den E-Mail-Status beim Anbieter ändern, Aufgaben zuweisen, Unterhaltungen erledigen oder wieder öffnen, Unterhaltungen zurückstellen und Schlagwörter verwalten |
+| Schreiben | Alle Aktionen von Lesen sowie E-Mails verfassen und senden, den E-Mail-Status beim Anbieter ändern, Aufgaben zuweisen, Unterhaltungen erledigen oder wieder öffnen, den Zeitpunkt für das erneute Anzeigen wählen und Schlagwörter verwalten |
 | Admin | Alle Aktionen von Schreiben sowie Verbindungen, Identitäten, Ordnerzuordnungen, gemeinsame Einstellungen, Zugriffe, Antwortregeln, Workflows und das Löschen des Postfachs verwalten |
 
 Über den üblichen Cloud-Berechtigungseditor kann unterstützten Personen, Gruppen oder Dienstkonten Zugriff gewährt werden. Wird der Zugriff entfernt, gilt dies für das gesamte Postfach, einschließlich bereits geöffneter Live-Ansichten und künftiger Aktionen durch Agents oder Dienstkonten.
@@ -67,7 +67,7 @@ Im Postfach gemeinsam genutzt werden:
 - Postfachvorlagen und Standardsignaturen des Postfachs,
 - gespeicherte Ansichten des Postfachs,
 - lokale Schlagwörter sowie
-- Zuweisung, Status, Zurückstellung, Kommentare, Referenzen, Aktivitäten und gemeinsame Entwürfe einer Unterhaltung.
+- Zuweisung, Status, der unter **Später anzeigen** gewählte Zeitpunkt, Kommentare, Referenzen, Aktivitäten und gemeinsame Entwürfe einer Unterhaltung.
 
 Privat für eine Person bleiben:
 

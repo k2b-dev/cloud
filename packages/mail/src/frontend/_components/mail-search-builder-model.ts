@@ -50,7 +50,7 @@ export const MAIL_SEARCH_FIELD_OPTIONS: MailSearchFieldOption[] = [
   { id: "size:attachment", label: "Attachment size", icon: "ti ti-file-download", groups: ["date-size"] },
   { id: "work_status", label: "Work status", icon: "ti ti-progress-check", groups: ["recommended", "mailbox"] },
   { id: "assignee", label: "Assignee", icon: "ti ti-user-check", groups: ["recommended", "people", "mailbox"] },
-  { id: "snoozed", label: "Snoozed", icon: "ti ti-alarm-snooze", groups: ["mailbox"] },
+  { id: "snoozed", label: "Later", icon: "ti ti-alarm-snooze", groups: ["mailbox"] },
   { id: "folder_id", label: "Specific folder", icon: "ti ti-folder-check", groups: ["recommended", "mailbox"] },
   { id: "local_tag_id", label: "Specific tag", icon: "ti ti-tag", groups: ["recommended", "mailbox"] },
   { id: "assigned_to_me", label: "Assigned to me", icon: "ti ti-user-pin", groups: ["people", "mailbox"] },

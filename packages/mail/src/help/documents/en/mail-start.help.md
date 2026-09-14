@@ -13,7 +13,7 @@ The email provider remains the source for portable mail state. Moving a message,
 ## Choose the right starting point {icon="square-plus"}
 
 - Opening Mail from the app navigation shows **Focus**, a combined work queue across every mailbox you may read.
-- Use **For me** for assigned conversations that need action, **Unassigned** for unowned work, **Waiting** for your assigned conversations waiting on a reply, or **All active** for every unfinished, unsnoozed conversation you may read.
+- Use **For me** for assigned conversations that need action, **Unassigned** for unowned work, **Waiting** for your assigned conversations waiting on a reply, or **All active** for every unfinished conversation you may read that is not in **Later**.
 - Each mailbox button shows its unread and needs-action conversation counts. Open a mailbox when you need folders, mailbox-wide search, or settings.
 - On a large screen, select a Focus row to review its context, summary, workflow fields, and team notes beside the queue. On a smaller screen, selecting the row opens the conversation in its mailbox.
 - Select **New mailbox** when you need to connect another email account.
@@ -51,7 +51,7 @@ Open **Settings > Accounts & identities > Sending identities**. An identity grou
 
 The left navigation contains:
 
-- **Follow-up** for Needs action, Waiting for reply, Snoozed, and Done.
+- **Follow-up** for Needs action, Waiting for reply, Later, and Done.
 - **Assignment** for Assigned to me and Unassigned.
 - **Mail** for Inbox, Drafts, Scheduled, Sent, and an expandable More group.
 - **Folders** for custom provider folders and their nested hierarchy. Mailbox administrators can hide folders here without deleting or unsubscribing them.

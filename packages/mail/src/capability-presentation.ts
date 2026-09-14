@@ -482,14 +482,14 @@ export const mailCapabilityPresentation: CapabilityPresentationCatalog = {
           },
         },
         "conversation.snooze": {
-          title: "Gespräch einschlafen",
-          description: "Legen Sie die Schlummerfrist für ein Gespräch fest oder löschen Sie sie.",
+          title: "Unterhaltung später anzeigen",
+          description: "Wähle, wann die Unterhaltung wieder erscheint, oder zeige sie jetzt wieder an.",
           input: {
             mailboxId: "Exaktes mail.mailbox ID, das von Listenpostfächern oder einem eingegebenen Postfach ref zurückgegeben wird.",
             conversationId:
               "Exaktes mail.conversation ID, das von einer Konversationsliste, einer Suche, einem Fokusergebnis oder einer eingegebenen Konversation ref zurückgegeben wird.",
             expectedRevision: "Aktuelle Ressourcenrevision, die für optimistische Parallelität verwendet wird.",
-            snoozedUntil: "Frist verschieben oder null, um sie zu löschen.",
+            snoozedUntil: "Zeitpunkt für die erneute Anzeige oder null, um die Unterhaltung jetzt wieder anzuzeigen.",
           },
         },
         "conversation.status.update": {

@@ -78,7 +78,7 @@ const VIEW_LABELS: Record<ConversationView, string> = {
   unassigned: "Unassigned",
   waiting: "Waiting for reply",
   done: "Done",
-  snoozed: "Snoozed",
+  snoozed: "Later",
   send_problems: "Send problems",
   recently_active: "Recent activity",
 };

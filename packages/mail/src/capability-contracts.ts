@@ -958,7 +958,7 @@ export const ConversationStatusUpdateInputSchema = z
 export const ConversationSnoozeInputSchema = z
   .object({
     ...CollaborationMutationBaseShape,
-    snoozedUntil: NullableTimestampSchema.describe("Snooze deadline, or null to clear it."),
+    snoozedUntil: NullableTimestampSchema.describe("Time to show the conversation again, or null to show it now."),
   })
   .strict();
 

@@ -950,7 +950,7 @@ const printCollaboration = (ctx: CloudCliContext, value: ConversationCollaborati
   ctx.print(`Revision: ${value.revision}`);
   ctx.print(`Status: ${value.workStatus}`);
   ctx.print(`Assignee: ${value.assignee ? `${value.assignee.displayName} (${value.assignee.id})` : "unassigned"}`);
-  ctx.print(`Snoozed until: ${value.snoozedUntil ?? "not snoozed"}`);
+  ctx.print(`Show again at: ${value.snoozedUntil ?? "not in Later"}`);
 };
 
 const collaborationPath = (mailboxId: string, conversationId: string): string =>
@@ -3891,7 +3891,7 @@ export default defineCliCommands({
       },
     }),
     command("conversation collaboration", {
-      summary: "Show assignment, queue state, and snooze",
+      summary: "Show assignment, queue state, and when the conversation reappears",
       args: {
         conversationId: arg.required({ description: "Conversation id" }),
       },
@@ -4081,7 +4081,7 @@ export default defineCliCommands({
       },
     }),
     command("conversation update", {
-      summary: "Update assignment, completion, or snooze",
+      summary: "Update assignment, completion, or when the conversation reappears",
       args: {
         conversationId: arg.required({ description: "Conversation id" }),
       },
@@ -4102,7 +4102,7 @@ export default defineCliCommands({
           name: "snooze-until",
           description: "Future ISO date-time",
         }),
-        unsnooze: flag.boolean({ description: "Clear the snooze time" }),
+        unsnooze: flag.boolean({ description: "Show the conversation again now" }),
       },
       run: async ({ ctx, args, flags }) => {
         if (!flags.revision) throw new Error("Missing expected conversation revision.");
@@ -4110,7 +4110,7 @@ export default defineCliCommands({
         if (flags.done && flags.reopen) throw new Error("Use either --done or --reopen.");
         if (flags.snoozeUntil && flags.unsnooze) throw new Error("Use either --snooze-until or --unsnooze.");
         if ((flags.done || flags.reopen) && (flags.snoozeUntil || flags.unsnooze)) {
-          throw new Error("Change completion and snooze in separate commands.");
+          throw new Error("Change completion and the time to show the conversation again in separate commands.");
         }
         let snoozedUntil: string | null | undefined;
         if (flags.snoozeUntil) {

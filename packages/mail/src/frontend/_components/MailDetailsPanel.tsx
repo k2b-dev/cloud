@@ -201,6 +201,11 @@ export default function MailDetailsPanel(props: {
     },
   });
 
+  const snoozeDescription = () => {
+    const until = state().snoozedUntil;
+    return until ? t().snoozeScheduled({ date: dates.formatDateTime(until, props.dateConfig) }) : t().snoozeQuestion;
+  };
+
   const updateCollaboration = (patch: MailCollaborationPatch) => {
     setState((current) => applyCollaborationPatch(current, patch));
     detailUpdates.enqueue({ kind: "collaboration", patch });
@@ -628,6 +633,7 @@ export default function MailDetailsPanel(props: {
                 />
                 <DateTimePicker
                   label={t().snoozeUntil}
+                  description={snoozeDescription()}
                   value={() => state().snoozedUntil}
                   onValueChange={(value) => updateCollaboration({ snoozedUntil: value || null })}
                   dateConfig={props.dateConfig}
