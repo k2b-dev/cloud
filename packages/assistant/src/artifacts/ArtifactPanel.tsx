@@ -2,7 +2,7 @@ import { browserHttpHost } from "./SecretsDialog";
 import { runHttp } from "./http-host";
 import { approveInModal } from "./CapabilityApproval";
 import { runCapability } from "./runtime/capabilities";
-import { Button, Paper, Tag, useLocale } from "@k2b/ui";
+import { Button, Paper, StatusBadge, useLocale } from "@k2b/ui";
 import { files } from "@k2b/stdlib/browser";
 import { createEffect, createMemo, createResource, createSignal, createUniqueId, For, on, onCleanup, onMount, Show } from "solid-js";
 import { artifactClient } from "./client";
@@ -143,7 +143,7 @@ export function ArtifactPanel(props: { artifactId: string; refreshKey?: string; 
         <Show when={state()?.logs.length} fallback={<p class="text-muted">{t().noLogs}</p>}>
           <For each={state()?.logs}>{(log) => <div class="artifact-console__line" data-level={log.level}>
             <time dateTime={log.time}>{new Date(log.time).toLocaleTimeString(locale(), { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</time>
-            <Tag class="artifact-console__level">{{ error: t().logError, warn: t().logWarning, info: t().logInfo, debug: "Debug" }[log.level] ?? "Log"}</Tag>
+            <StatusBadge class="artifact-console__level" icon={null} tone={log.level === "error" ? "error" : log.level === "warn" ? "warning" : log.level === "info" ? "info" : "neutral"} label={{ error: t().logError, warn: t().logWarning, info: t().logInfo, debug: "Debug" }[log.level] ?? "Log"} />
             <span class="artifact-console__message">{log.text === "Started" ? t().started : log.text}</span>
           </div>}</For>
         </Show>

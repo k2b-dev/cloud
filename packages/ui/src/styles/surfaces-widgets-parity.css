@@ -307,6 +307,7 @@
 .k2b-ui .k2b-status-badge[data-tone="warning"],
 .k2b-ui .k2b-status-badge[data-tone="degraded"] { color: #92400e; }
 .k2b-ui .k2b-status-badge[data-tone="error"] { color: var(--k2b-danger-text); }
+.k2b-ui .k2b-status-badge[data-tone="info"],
 .k2b-ui .k2b-status-badge[data-tone="running"] { color: var(--k2b-info-text); }
 .k2b-ui .k2b-status-badge[data-tone="neutral"] { color: var(--k2b-text-secondary); }
 .k2b-ui .k2b-status-badge[data-variant="text"][data-tone="neutral"] { color: var(--k2b-text-muted); }
@@ -331,6 +332,7 @@
 .k2b-ui .k2b-status-badge[data-tone="warning"] .k2b-status-badge__dot { background: var(--k2b-warning-500); }
 .k2b-ui .k2b-status-badge[data-tone="degraded"] .k2b-status-badge__dot { background: var(--k2b-warning-500); }
 .k2b-ui .k2b-status-badge[data-tone="error"] .k2b-status-badge__dot { background: var(--k2b-danger-500); }
+.k2b-ui .k2b-status-badge[data-tone="info"] .k2b-status-badge__dot,
 .k2b-ui .k2b-status-badge[data-tone="running"] .k2b-status-badge__dot { background: var(--k2b-accent-500); }
 .k2b-ui .k2b-status-badge[data-tone="running"] i { display: inline-block; animation: k2b-parity-spin 800ms linear infinite; }
 .k2b-ui .k2b-status-badge[data-tone="running"] .k2b-status-badge__dot { animation: k2b-parity-pulse 1.5s ease-in-out infinite; }

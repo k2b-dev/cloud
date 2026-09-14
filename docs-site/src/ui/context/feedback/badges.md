@@ -6,7 +6,7 @@
 
 Use a chip in cards and normal tables. Use `variant="dot"` in dense rows. Use `variant="text"` when the surrounding surface already provides enough structure.
 
-Choose the tone by meaning: `ok`, `warning`, `error`, `degraded`, `running`, or `neutral`.
+Choose the tone by meaning: `info`, `ok`, `warning`, `error`, `degraded`, `running`, or `neutral`.
 
 ## Import
 
@@ -20,7 +20,7 @@ Pass `label` as visible status text. Default icons follow the tone and can be re
 
 `title` adds supporting detail without replacing the visible label.
 
-Required props are `label: JSX.Element` and `tone: "ok" | "warning" | "error" | "degraded" | "running" | "neutral"`.
+Required props are `label: JSX.Element` and `tone: "info" | "ok" | "warning" | "error" | "degraded" | "running" | "neutral"`.
 `variant?: "chip" | "dot" | "text"` defaults to chip. `icon?: string | null`
 overrides the default icon; `null` removes it. `title?: string` and `class?: string`
 add supporting text and layout classes.
@@ -42,3 +42,6 @@ Status badges render complete server HTML and need no hydration.
 <StatusBadge label="Running" tone="running" variant="dot" />
 <StatusBadge label="Offline" tone="error" variant="text" />
 ```
+
+Use `tone="info"` for informational messages. It uses the blue information
+palette without the animation of the running state.

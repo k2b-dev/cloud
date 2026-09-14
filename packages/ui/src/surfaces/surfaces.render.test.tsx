@@ -260,6 +260,9 @@ describe("@k2b/ui Cloud-faithful surfaces", () => {
     );
     const text = renderToString(() => createComponent(StatusBadge, { label: "Offline", tone: "error", variant: "text", icon: null }));
 
+    const info = renderToString(() => createComponent(StatusBadge, { label: "Info", tone: "info" }));
+    expect(info).toContain('data-tone="info"');
+    expect(info).toContain("ti ti-info-circle");
     expect(chip).toContain("ti ti-check");
     expect(chip).toContain('data-variant="chip"');
     expect(dot).toContain("k2b-status-badge__dot");

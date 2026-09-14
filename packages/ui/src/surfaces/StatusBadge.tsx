@@ -1,6 +1,6 @@
 import { type JSX, Show } from "solid-js";
 
-export type StatusTone = "ok" | "warning" | "error" | "degraded" | "running" | "neutral";
+export type StatusTone = "info" | "ok" | "warning" | "error" | "degraded" | "running" | "neutral";
 
 export type StatusBadgeProps = {
   tone: StatusTone;
@@ -12,6 +12,7 @@ export type StatusBadgeProps = {
 };
 
 const DEFAULT_ICONS: Record<StatusTone, string> = {
+  info: "ti ti-info-circle",
   ok: "ti ti-check",
   warning: "ti ti-alert-triangle",
   error: "ti ti-alert-circle",
