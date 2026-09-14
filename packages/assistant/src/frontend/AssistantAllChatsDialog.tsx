@@ -14,12 +14,13 @@ import {
 import type { ConversationOpenResult } from "./assistant-navigation";
 import { useAssistantCopy, useAssistantText } from "./ui-copy";
 
-type ChatView = "all" | "running" | "needs_attention" | "failed" | "unread" | "archived";
+type ChatView = "done" | "all" | "running" | "needs_attention" | "failed" | "unread" | "archived";
 
 const PER_PAGE = 20;
 
 const emptyViewText = (view: ChatView, search: string, text: (value: string) => string): string => {
   if (search) return text("No chats match your search.");
+  if (view === "done") return text("No done chats.");
   if (view === "archived") return text("No archived chats.");
   if (view === "running") return text("No chats are running.");
   if (view === "needs_attention") return text("No chats need attention.");
@@ -30,12 +31,14 @@ const emptyViewText = (view: ChatView, search: string, text: (value: string) => 
 
 function AssistantAllChatsDialog(props: {
   close: () => void;
+  initialView?: ChatView;
   openConversation: (conversation: AiConversation) => Promise<ConversationOpenResult>;
   projects: () => readonly AiProject[];
 }) {
   const text = useAssistantText();
   const copy = useAssistantCopy();
   const chatViews: ReadonlyArray<{ value: ChatView; label: string }> = [
+    { value: "done", label: text("Done") },
     { value: "all", label: text("All") },
     { value: "running", label: text("Running") },
     { value: "needs_attention", label: text("Needs attention") },
@@ -44,7 +47,7 @@ function AssistantAllChatsDialog(props: {
     { value: "archived", label: text("Archived") },
   ];
   const [query, setQuery] = createSignal("");
-  const [view, setView] = createSignal<ChatView>("all");
+  const [view, setView] = createSignal<ChatView>(props.initialView ?? "all");
   const [page, setPage] = createSignal(1);
   const [requestQuery, setRequestQuery] = createSignal("");
   let latestOpenRequestId = 0;
@@ -53,12 +56,13 @@ function AssistantAllChatsDialog(props: {
     source,
     load: async (serialized, { abortSignal }) => {
       const input = JSON.parse(serialized) as { query: string; view: ChatView; page: number };
-      const status = input.view !== "all" && input.view !== "archived" ? (input.view as AiConversationStatusFilter) : undefined;
+      const status = input.view !== "all" && input.view !== "archived" && input.view !== "done" ? (input.view as AiConversationStatusFilter) : undefined;
       return assistantApi.listConversationsPage({
         q: input.query || undefined,
         page: input.page,
         perPage: PER_PAGE,
         archived: input.view === "archived",
+        done: input.view === "done" ? true : undefined,
         status,
         signal: abortSignal,
       });
@@ -218,11 +222,12 @@ export const openAssistantAllChatsDialog = (
   openConversation: (conversation: AiConversation) => Promise<ConversationOpenResult>,
   live: AssistantLiveHub,
   projects: () => readonly AiProject[] = () => [],
+  initialView?: ChatView,
 ): Promise<void | undefined> =>
   dialogCore.open<void>(
     (close) => (
       <AssistantLiveProvider value={live}>
-        <AssistantAllChatsDialog close={() => close()} openConversation={openConversation} projects={projects} />
+        <AssistantAllChatsDialog close={() => close()} openConversation={openConversation} projects={projects} initialView={initialView} />
       </AssistantLiveProvider>
     ),
     panelDialogFixedOptions,

@@ -12,7 +12,7 @@ import {
   revokeAiToolApprovalPreference,
 } from "./approvals";
 import { aiCapabilityToolName } from "./capabilities";
-import { aiFileStore } from "./files-store";
+import { readAiConversationFile, aiFileStore } from "./files-store";
 import { migrateCloudAi } from "./migrate";
 import { aiProjects } from "./projects";
 import { AI_SHORT_ID_PATTERN, createAiShortId } from "./short-id";
@@ -76,6 +76,36 @@ const assistantMessage = (text: string): Message => ({
 const runConfig = { kind: "chat" as const, input: "hi", toolSource: { kind: "none" as const } };
 
 suite("AI conversation store integration", () => {
+  test("Done is owner-scoped, preserves resources and pins, and reopens on a new turn", async () => {
+    const userId = await insertUser();
+    const stranger = await insertUser();
+    const conversationIds: string[] = [];
+    try {
+      const chat = await aiConversations.createConversation({ ownerUserId: userId, title: "Finished fixture" });
+      conversationIds.push(chat.id);
+      await aiConversations.setConversationPinned({ conversationId: chat.id, ownerUserId: userId, pinned: true });
+      const file = await aiFileStore.createUserUpload({ conversationId: chat.id, path: "source.txt", bytes: new TextEncoder().encode("preserved"), mediaType: "text/plain" });
+      expect(await aiConversations.setConversationDone({ conversationId: chat.id, ownerUserId: stranger, done: true })).toEqual({ ok: false, reason: "not_found" });
+      const completed = await aiConversations.setConversationDone({ conversationId: chat.id, ownerUserId: userId, done: true });
+      expect(completed).toMatchObject({ ok: true, conversation: { doneAt: expect.any(String), archivedAt: null, pinnedAt: expect.any(String) } });
+      expect(await aiConversations.listSidebarConversations({ ownerUserId: userId })).toHaveLength(0);
+      expect(await aiConversations.listConversations({ ownerUserId: userId, done: false })).toHaveLength(0);
+      expect(await aiConversations.listConversations({ ownerUserId: userId, search: "Finished", done: true })).toHaveLength(1);
+      expect(await aiConversations.listConversationsPage({ ownerUserId: userId, done: true, page: 1, perPage: 1 })).toMatchObject({ total: 1, hasNext: false });
+      expect(await readAiConversationFile({ conversationId: chat.id, ownerUserId: userId, path: file.path, version: file.version })).not.toBeNull();
+      expect(await readAiConversationFile({ conversationId: chat.id, ownerUserId: stranger, path: file.path, version: file.version })).toBeNull();
+      expect(await aiConversations.setConversationDone({ conversationId: chat.id, ownerUserId: userId, done: false })).toMatchObject({ ok: true, conversation: { doneAt: null } });
+      await aiConversations.setConversationDone({ conversationId: chat.id, ownerUserId: userId, done: true });
+      const { turn } = await aiConversations.submitChatTurn({ conversationId: chat.id, modelProfileId: "test-model", runConfig, userMessage: userMessage("Continue") });
+      expect((await aiConversations.getConversation({ conversationId: chat.id }))?.doneAt).toBeNull();
+      expect(await aiConversations.setConversationDone({ conversationId: chat.id, ownerUserId: userId, done: true })).toEqual({ ok: false, reason: "active_turn" });
+      expect((await aiConversations.getLatestTurn({ conversationId: chat.id }))?.id).toBe(turn.id);
+    } finally {
+      await cleanupFixture({ userId, conversationIds });
+      await cleanupFixture({ userId: stranger, conversationIds: [] });
+    }
+  });
+
   test("persists immutable tool scope and preserves it in forks", async () => {
     const userId = await insertUser();
     const conversationIds: string[] = [];
@@ -1291,7 +1321,7 @@ suite("AI conversation store integration", () => {
       expect(await aiConversations.restoreConversation({ conversationId: pinned.id, ownerUserId: userId })).toMatchObject({
         id: pinned.id,
         pinnedAt: null,
-        archivedAt: null,
+        doneAt: null, archivedAt: null,
       });
       expect(await aiConversations.getConversation({ conversationId: normal.id })).toMatchObject({ runStatus: "idle" });
     } finally {

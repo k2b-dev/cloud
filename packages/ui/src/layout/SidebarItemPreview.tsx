@@ -2,7 +2,7 @@ import { createSignal, createUniqueId, type JSX, onCleanup, onMount } from "soli
 import { positionTooltipSurface } from "../feedback/tooltip-position";
 
 /** A non-modal, interactive row preview. Native popover owns light dismissal. */
-export function SidebarItemPreview(props: { label: string; children: JSX.Element }) {
+export function SidebarItemPreview(props: { label: string; children: JSX.Element; onOpenChange?: (open: boolean) => void }) {
   const id = `sidebar-preview-${createUniqueId()}`;
   const [open, setOpen] = createSignal(false);
   let button!: HTMLButtonElement;
@@ -76,7 +76,7 @@ export function SidebarItemPreview(props: { label: string; children: JSX.Element
       }}><i class="ti ti-info-circle" aria-hidden="true" /></button>
     <div ref={panel} id={id} popover="auto" role="dialog" aria-label={props.label} tabIndex={-1}
       class="k2b-app-workspace__sidebar-preview" onPointerEnter={clear} onPointerLeave={leave}
-      onToggle={(event) => { const visible = event.newState === "open"; setOpen(visible); if (!visible) pinned = false; }}>
+      onToggle={(event) => { const visible = event.newState === "open"; setOpen(visible); props.onOpenChange?.(visible); if (!visible) pinned = false; }}>
       {props.children}
     </div>
   </>;

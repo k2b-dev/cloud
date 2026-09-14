@@ -264,7 +264,7 @@ type AppWorkspaceSidebarSectionProps = AppWorkspaceSidebarBodyProps & {
 };
 
 type AppWorkspaceSidebarItemProps = {
-  description?: JSX.Element; preview?: { label: string; content: JSX.Element };
+  description?: JSX.Element; preview?: { label: string; content: JSX.Element; onOpenChange?: (open: boolean) => void };
   children: JSX.Element; href?: string; navigation?: "enhanced" | "document"; replace?: boolean;
   scroll?: NavigationScrollMode; onNavigate?: (event: LinkNavigateEvent) => void | Promise<void>;
   onClick?: (event: MouseEvent) => void; active?: boolean; activeClass?: string; disabled?: boolean;
@@ -295,7 +295,7 @@ type AppWorkspaceSidebarItemMetaProps = {
 };
 
 type AppWorkspaceSidebarItemActionProps = {
-  icon?: string; label: string; visibility?: AppWorkspaceSidebarAccessoryVisibility; href?: string;
+  icon?: string; label: string; disabled?: boolean; visibility?: AppWorkspaceSidebarAccessoryVisibility; href?: string;
   navigation?: "enhanced" | "document"; onSelect?: (event: MouseEvent) => void; children?: JSX.Element;
 };
 
@@ -581,3 +581,7 @@ out of a completed section. Completion is a host action, separate from progress.
 
 Use `DescriptionList layout="compact"` inside previews for content-sized labels
 and a smaller column gap, keeping each label visually paired with its value.
+
+Use `preview.onOpenChange` to load authorized detail data only while the preview
+is open. Cancel an outstanding request when it closes; the preview content
+remains mounted so local input state is preserved.

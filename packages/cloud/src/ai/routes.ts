@@ -108,6 +108,10 @@ const ConversationListQuerySchema = z
       .enum(["true", "false"])
       .transform((value) => value === "true")
       .optional(),
+    done: z
+      .enum(["true", "false"])
+      .transform((value) => value === "true")
+      .optional(),
     status: z.enum(["running", "needs_attention", "failed", "unread"]).optional(),
     projectId: z.string().regex(AI_SHORT_ID_PATTERN).optional(),
     unassigned: z
@@ -434,6 +438,7 @@ export const aiRoutes = (() => {
                 ownerUserId: ctx.ownerUserId,
                 search: query.q,
                 archived: query.archived,
+                done: query.done,
                 status: query.status,
                 projectId: project?.id,
                 unassigned: query.unassigned,
@@ -454,6 +459,7 @@ export const aiRoutes = (() => {
           ownerUserId: ctx.ownerUserId,
           search: query.q,
           archived: query.archived,
+          done: query.done,
           status: query.status,
           projectId: project?.id,
           unassigned: query.unassigned,
@@ -688,6 +694,22 @@ export const aiRoutes = (() => {
           pinned: false,
         });
         return updated ? respond(c, ok(await publicConversationFor(updated, c.get("accessSubject")))) : notFound(c);
+      })
+      .put("/conversations/:conversationId/done", v("json", z.object({ done: z.boolean() })), async (c) => {
+        const ctx = await resolveContext(c);
+        if (ctx instanceof Response) return ctx;
+        const conversation = await loadConversation(c, ctx);
+        if (!conversation) return notFound(c);
+        const result = await aiConversations.setConversationDone({
+          conversationId: conversation.id,
+          ownerUserId: ctx.ownerUserId,
+          done: c.req.valid("json").done,
+        });
+        if (!result.ok)
+          return result.reason === "active_turn"
+            ? respond(c, fail(err.conflict("Stop the current response before marking this chat done.")))
+            : notFound(c);
+        return respond(c, ok(await publicConversationFor(result.conversation, c.get("accessSubject"))));
       })
       .post("/conversations/:conversationId/archive", async (c) => {
         const ctx = await resolveContext(c);

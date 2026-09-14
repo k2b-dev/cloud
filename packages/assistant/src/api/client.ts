@@ -1,3 +1,4 @@
+import type { AssistantSidebarPreview } from "../sidebar-preview";
 import type {
   AiConversation,
   AiConversationPage,
@@ -124,6 +125,12 @@ export const assistantApi = {
     return (await response.json()) as AssistantSidebarSnapshot;
   },
 
+  loadSidebarPreview: async (conversationId: string, signal?: AbortSignal): Promise<AssistantSidebarPreview> => {
+    const response = await assistantClient.workspace.conversations[":conversationId"].preview.$get({ param: { conversationId } }, { init: { signal } });
+    if (!response.ok) throw new Error(await readError(response, "Failed to load chat details"));
+    return response.json();
+  },
+
   loadChatContext: async (conversationId: string, signal?: AbortSignal): Promise<AssistantChatContextSnapshot> => {
     const response = await assistantClient.workspace.conversations[":conversationId"].context.$get(
       { param: { conversationId } },
@@ -143,6 +150,7 @@ export const assistantApi = {
     q?: string;
     limit?: number;
     archived?: boolean;
+    done?: boolean;
     status?: AiConversationStatusFilter;
     projectId?: string;
     unassigned?: boolean;
@@ -154,6 +162,7 @@ export const assistantApi = {
           q: input.q,
           limit: input.limit ? String(input.limit) : undefined,
           archived: input.archived ? "true" : undefined,
+          done: input.done === undefined ? undefined : input.done ? "true" : "false",
           status: input.status,
           projectId: input.projectId,
           unassigned: input.unassigned ? "true" : undefined,
@@ -170,6 +179,7 @@ export const assistantApi = {
     page: number;
     perPage?: number;
     archived?: boolean;
+    done?: boolean;
     status?: AiConversationStatusFilter;
     projectId?: string;
     unassigned?: boolean;
@@ -182,6 +192,7 @@ export const assistantApi = {
           page: String(input.page),
           perPage: String(input.perPage ?? 20),
           archived: input.archived ? "true" : undefined,
+          done: input.done === undefined ? undefined : input.done ? "true" : "false",
           status: input.status,
           projectId: input.projectId,
           unassigned: input.unassigned ? "true" : undefined,
@@ -365,6 +376,12 @@ export const assistantApi = {
     const endpoint = client.conversations[":conversationId"].pin;
     const response = pinned ? await endpoint.$post({ param: { conversationId } }) : await endpoint.$delete({ param: { conversationId } });
     if (!response.ok) throw new Error(await readError(response, pinned ? "Failed to pin chat" : "Failed to unpin chat"));
+    return response.json();
+  },
+
+  setConversationDone: async (conversationId: string, done: boolean): Promise<AiConversation> => {
+    const response = await client.conversations[":conversationId"].done.$put({ param: { conversationId }, json: { done } });
+    if (!response.ok) throw new Error(await readError(response, "Failed to update chat completion"));
     return response.json();
   },
 

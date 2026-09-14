@@ -3,6 +3,7 @@ import type { Context } from "hono";
 import { Hono } from "hono";
 import { loadAssistantChatContextSnapshot } from "../chat-context";
 import { loadAssistantProjectContextSnapshot } from "../project-context";
+import { loadAssistantSidebarPreview } from "../sidebar-preview";
 import { loadAssistantSidebarSnapshot } from "../sidebar";
 import { artifactApi } from "../artifacts/api";
 
@@ -20,6 +21,12 @@ const app = new Hono<AuthContext>()
     const user = actorUser(c);
     if (!user) return respond(c, fail(err.forbidden("Assistant requires a user-backed actor")));
     return respond(c, ok(await loadAssistantSidebarSnapshot(user.id)));
+  })
+  .get("/workspace/conversations/:conversationId/preview", async (c) => {
+    const user = actorUser(c);
+    if (!user) return respond(c, fail(err.forbidden("Assistant requires a user-backed actor")));
+    const preview = await loadAssistantSidebarPreview(user.id, c.req.param("conversationId"));
+    return preview ? respond(c, ok(preview)) : respond(c, fail(err.notFound("Conversation")));
   })
   .get("/workspace/conversations/:conversationId/context", async (c) => {
     const user = actorUser(c);

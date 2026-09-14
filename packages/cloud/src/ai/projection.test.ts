@@ -13,7 +13,7 @@ const conversation: AiConversation = {
   descriptionSource: "default",
   keywords: [],
   pinnedAt: null,
-  archivedAt: null,
+  doneAt: null, archivedAt: null,
   runStatus: "idle",
   runError: null,
   unreadCompletion: false,

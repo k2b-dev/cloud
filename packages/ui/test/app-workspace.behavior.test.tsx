@@ -85,16 +85,20 @@ describe("@k2b/ui AppWorkspace behavior", () => {
 
   test("updates compound slots and preview content without replacing focused controls", async () => {
     const dom = createDomTestHarness();
+    delegateEvents(["click"], dom.document);
     const { default: AppWorkspace } = await import("../src/layout/AppWorkspace");
     const [title, setTitle] = createSignal("Import");
     const [status, setStatus] = createSignal("Reading");
     const [count, setCount] = createSignal(1);
+    const [disabled, setDisabled] = createSignal(false);
+    let selections = 0;
+    const openings: boolean[] = [];
     const dispose = render(() => <AppWorkspace.SidebarItem description={status()}
-      preview={{ label: "Details", content: <input aria-label="Preview note" value={status()} /> }}>
+      preview={{ label: "Details", onOpenChange: open => openings.push(open), content: <input aria-label="Preview note" value={status()} /> }}>
       <AppWorkspace.SidebarItemIcon icon={count() === 1 ? "ti ti-clock" : "ti ti-check"} />
       <AppWorkspace.SidebarItemLabel>{title()}</AppWorkspace.SidebarItemLabel>
       <AppWorkspace.SidebarItemMeta>{count()}</AppWorkspace.SidebarItemMeta>
-      <AppWorkspace.SidebarItemAction label={status()} icon="ti ti-check" onSelect={() => {}} />
+      <AppWorkspace.SidebarItemAction label={status()} icon="ti ti-check" disabled={disabled()} onSelect={() => { selections++; }} />
     </AppWorkspace.SidebarItem>, dom.root);
     try {
       const control = dom.root.querySelector<HTMLButtonElement>('[aria-label="Reading"]')!;
@@ -108,6 +112,21 @@ describe("@k2b/ui AppWorkspace behavior", () => {
       expect(dom.document.activeElement).toBe(control);
       expect(dom.root.querySelector('[aria-label="Preview note"]')).toBe(note);
       expect(note.value).toBe("Verified");
+      setDisabled(true);
+      expect(control.disabled).toBe(true);
+      control.click();
+      expect(selections).toBe(0);
+      setDisabled(false);
+      control.click();
+      expect(selections).toBe(1);
+      expect(openings).toEqual([]);
+      const panel = dom.root.querySelector<HTMLElement>(".k2b-app-workspace__sidebar-preview")!;
+      for (const newState of ["open", "closed"]) {
+        const event = new dom.window.Event("toggle");
+        Object.defineProperty(event, "newState", { value: newState });
+        panel.dispatchEvent(event);
+      }
+      expect(openings).toEqual([true, false]);
     } finally { dispose(); dom.cleanup(); }
   });
 

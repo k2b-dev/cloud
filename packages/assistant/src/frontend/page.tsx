@@ -54,7 +54,7 @@ export default ssr<AuthContext>(async (c) => {
     : null;
   const projectContext = activeProject ? await loadAssistantProjectContextSnapshot(subject, activeProject.id) : null;
 
-  const selectedConversationId = activeProject ? null : (requestedConversationId ?? conversations[0]?.shortId ?? null);
+  const selectedConversationId = activeProject ? null : (requestedConversationId ?? conversations.find(conversation => !conversation.doneAt)?.shortId ?? null);
   const resolvedActiveConversation = selectedConversationId
     ? await aiConversations.getConversationByShortId({ shortId: selectedConversationId, ownerUserId: user.id })
     : null;
@@ -95,6 +95,7 @@ export default ssr<AuthContext>(async (c) => {
         lastModelId={prefs.lastModelId}
         initialLiveCursor={initialLiveCursor}
         initialConversations={initialConversations}
+        initialDoneCount={sidebar.doneCount}
         initialConversationId={activeConversation?.shortId ?? null}
         initialArtifactPath={initialArtifactPath}
         initialDetail={

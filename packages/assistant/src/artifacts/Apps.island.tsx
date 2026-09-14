@@ -15,7 +15,7 @@ import { openAssistantCreateProjectDialog } from "../frontend/AssistantProjectsD
 import { ManualEditor } from "./ManualEditor";
 import { SqlConsole } from "./SqlConsole";
 
-type Props = { kind?: "app" | "script"; userId: string; conversations: AiConversation[]; projects: AiProject[];
+type Props = { kind?: "app" | "script"; userId: string; doneCount: number; conversations: AiConversation[]; projects: AiProject[];
   initialList: Awaited<ReturnType<typeof artifacts.list>>; initialApp?: ArtifactBundle;
   view?:"app"|"edit"|"database"; selectedFile?:string;
   databaseStatus?:Awaited<ReturnType<typeof artifactClient.databaseStatus>> };
@@ -23,6 +23,8 @@ type Props = { kind?: "app" | "script"; userId: string; conversations: AiConvers
 export default function Apps(props: Props) {
   const locale = useLocale(), t = () => artifactMessages.resolve([locale()]).t;
   const live = createAssistantLiveInvalidationHub({ onApplied: () => {} });
+  const [sidebar, setSidebar] = createSignal({ conversations: props.conversations, projects: props.projects, doneCount: props.doneCount });
+  const reloadSidebar = async () => setSidebar(await assistantApi.loadSidebar());
   const [selectedVersion, setSelectedVersion] = createSignal<number>();
   const page = () => props.initialList.page;
   const [list, setList] = createSignal(props.initialList);
@@ -35,7 +37,7 @@ export default function Apps(props: Props) {
   });
   const open = (id: string) => navigateTo(`/app/assistant/apps/${id}`);
   return <AssistantLiveProvider value={live}><AppWorkspace class="flex-1 min-h-0">
-    <AssistantSidebar conversations={() => props.conversations} projects={props.projects} activeView="apps" live={live}
+    <AssistantSidebar conversations={() => sidebar().conversations} doneCount={sidebar().doneCount} projects={sidebar().projects} onConversationUpdated={() => void reloadSidebar()} onConversationArchived={() => void reloadSidebar()} activeView="apps" live={live}
       creatingConversation={busy}
       onNewConversation={() => action(async () => navigateTo(`/app/assistant?conversation=${(await assistantApi.createConversation()).shortId}`))}
       onCreateProject={async () => { const project = await openAssistantCreateProjectDialog(); if (project) navigateTo(`/app/assistant?project=${project.id}`); }} />

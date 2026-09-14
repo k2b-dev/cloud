@@ -23,7 +23,8 @@ Assistant separates Project chats from general chats in the sidebar. Create a Pr
 - **Cloud resources:** Use the composer plus menu to attach a supported Cloud resource without copying its contents into the chat. A chat opened from Mail or another app can begin with one or more resources already attached. Resource links open their owning app in a new tab; every read and Action still checks your current permission there.
 - **Sources and references:** A reference shows its current resource title with the resource type underneath when the owning app supplied both. Select a source or reference to review its destination before opening it in a new tab.
 - **View all:** The compact summary shows up to three entries per section. Use View all to search complete knowledge, source, and reference lists; browse all files; open all images in the image viewer; or manage the chat's scheduled tasks.
-- **Edit or archive:** Use the settings action on a chat to change its name, description, pinning, or archive it.
+- **Finish or continue:** Mark a chat done to move it into **Done**. Stop a running response first. Reopen it or send a new message to continue; files, apps, and pinning remain available.
+- **Edit or archive:** Open the chat preview and choose **Chat settings** to change its name, description, pinning, or archive it. Hover over the row, use the information button on touch devices, or reach the preview with Tab.
 :::
 
 ## Message actions {icon="point"}

@@ -252,7 +252,7 @@ export type AppWorkspaceSidebarItemProps = {
   /** Passive second line; keep controls in actions or preview. */
   description?: JSX.Element;
   /** Interactive details, also reachable through a dedicated button. */
-  preview?: { label: string; content: JSX.Element };
+  preview?: { label: string; content: JSX.Element; onOpenChange?: (open: boolean) => void };
   href?: string;
   /** Document navigation by default; opt into enhanced navigation only when the owning island applies the target state. */
   navigation?: "enhanced" | "document";
@@ -304,6 +304,7 @@ export type AppWorkspaceSidebarItemMetaProps = {
 export type AppWorkspaceSidebarItemActionProps = {
   icon?: string;
   label: string;
+  disabled?: boolean;
   /** Hide the action on fine pointers until the row is hovered or keyboard-focused. */
   visibility?: AppWorkspaceSidebarAccessoryVisibility;
   href?: string;
@@ -828,14 +829,16 @@ function AppWorkspaceSidebarItem(props: AppWorkspaceSidebarItemProps): JSX.Eleme
     const label = () => actionSlot()?.label ?? props.actionLabel ?? messages().rowAction;
     const select = (event: MouseEvent) => {
       event.stopPropagation();
+      if (actionSlot()?.disabled) { event.preventDefault(); return; }
       if (!actionSlot()?.href) event.preventDefault();
       actionSlot()?.onSelect?.(event);
       props.onActionClick?.(event);
     };
     const content = () => actionSlot()?.children ?? <i class={iconClass(actionSlot()?.icon ?? props.actionIcon, "ti-dots")} />;
     return <Show when={Boolean(actionSlot() || props.actionIcon)}>
-      <Show when={actionSlot()?.href} fallback={
+      <Show when={actionSlot()?.href && !actionSlot()?.disabled} fallback={
         <button type="button" class="k2b-app-workspace__sidebar-item-action"
+          disabled={actionSlot()?.disabled}
           data-visibility={actionSlot()?.visibility === "hover" ? "hover" : undefined}
           aria-label={label()} onClick={select}>{content()}</button>
       }>
@@ -849,7 +852,7 @@ function AppWorkspaceSidebarItem(props: AppWorkspaceSidebarItemProps): JSX.Eleme
     <>
       {customActions()}
       {singleAction()}
-      <Show when={props.preview}>{(preview) => <SidebarItemPreview label={preview().label}>{preview().content}</SidebarItemPreview>}</Show>
+      <Show when={props.preview}>{(preview) => <SidebarItemPreview label={preview().label} onOpenChange={preview().onOpenChange}>{preview().content}</SidebarItemPreview>}</Show>
     </>
   );
   return (

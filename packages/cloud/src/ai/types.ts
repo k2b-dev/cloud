@@ -147,6 +147,8 @@ export type AiConversation = {
   keywords: string[];
   pinnedAt: string | null;
   archivedAt: string | null;
+  /** User-marked completion; keeps chat resources accessible. */
+  doneAt: string | null;
   runStatus: AiConversationRunStatus;
   /** Error from the latest turn when `runStatus` is `failed`. */
   runError: string | null;
@@ -622,6 +624,7 @@ export type AiConversationService = {
     search?: string;
     refs?: CloudResourceRef[];
     archived?: boolean;
+    done?: boolean;
     status?: AiConversationStatusFilter;
     projectId?: string;
     unassigned?: boolean;
@@ -632,6 +635,7 @@ export type AiConversationService = {
     ownerUserId: string;
     search?: string;
     archived?: boolean;
+    done?: boolean;
     status?: AiConversationStatusFilter;
     projectId?: string;
     unassigned?: boolean;
@@ -722,6 +726,11 @@ export type AiConversationService = {
     projectId: string | null;
   }): Promise<AiConversationProjectUpdateResult>;
   setConversationPinned(input: { conversationId: string; ownerUserId?: string; pinned: boolean }): Promise<AiConversation | null>;
+  setConversationDone(input: {
+    conversationId: string;
+    ownerUserId: string;
+    done: boolean;
+  }): Promise<{ ok: true; conversation: AiConversation } | { ok: false; reason: "not_found" | "active_turn" }>;
   archiveConversation(input: { conversationId: string; ownerUserId?: string }): Promise<boolean>;
   restoreConversation(input: { conversationId: string; ownerUserId?: string }): Promise<AiConversation | null>;
   markConversationViewed(input: { conversationId: string; ownerUserId?: string }): Promise<boolean>;
@@ -827,6 +836,7 @@ export type AiConversationService = {
     retrySourceTurnId?: string;
   }): Promise<{ turn: AiTurn; message: AiStoredMessage }>;
   getTurnRunConfig(input: { conversationId: string; turnId: string }): Promise<AiTurnRunConfig | null>;
+  getLatestTurn(input: { conversationId: string }): Promise<AiTurn | null>;
   getTurn(input: { conversationId: string; turnId: string }): Promise<AiTurn | null>;
   getTurnByShortId(input: { conversationId: string; shortId: string }): Promise<AiTurn | null>;
   getActiveTurn(input: { conversationId: string }): Promise<{ turn: AiTurn; liveBlocks: AiTurnBlock[]; liveSeq: number } | null>;

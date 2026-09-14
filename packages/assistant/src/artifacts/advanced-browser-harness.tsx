@@ -27,7 +27,7 @@ render(
   () => location.pathname === "/starters" ? <AssistantEmptyChat composer={<div>Ask the Assistant</div>} projects={[]} selectedProjectId={null} onChooseProject={()=>{}} onStarter={()=>{}} /> : (
     <Apps
       userId="test"
-      conversations={[]}
+      conversations={[]} doneCount={0}
       projects={[]}
       initialList={{ items: [item], page: 1, hasNext: false }}
       initialApp={location.pathname === "/gallery" ? undefined : { ...item, source, sourceRevision: 1 }}

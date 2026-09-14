@@ -26,7 +26,7 @@ export default ssr<AuthContext>(async c => {
     const databaseStatus=view==="database"&&app?await artifactDatabase.status(app.id,identity,c.req.raw.signal):undefined;
     const selectedFile=ArtifactPath.safeParse(c.req.query("file"));
     return () => <Layout c={c} fullPage title={[{ title: t.apps, href: "/app/assistant/apps" }, ...(app ? [{ title: app.title }] : [])]}>
-      <Apps kind={kind} userId={user.id} conversations={sidebar.conversations} projects={sidebar.projects} initialList={list} initialApp={app}
+      <Apps kind={kind} userId={user.id} conversations={sidebar.conversations} doneCount={sidebar.doneCount} projects={sidebar.projects} initialList={list} initialApp={app}
         view={view} databaseStatus={databaseStatus} selectedFile={selectedFile.success?selectedFile.data:undefined}/>
     </Layout>;
   } catch (e) {

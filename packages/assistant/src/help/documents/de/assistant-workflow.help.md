@@ -23,7 +23,8 @@ Der Assistent trennt Projekt-Chats und allgemeine Chats in der Seitenleiste. Ers
 - **Cloud-Ressourcen:** Hänge über das Plus-Menü eine unterstützte Cloud-Ressource an, ohne ihren Inhalt in den Chat zu kopieren. Ein Chat, der aus Mail oder einer anderen Anwendung geöffnet wurde, kann bereits eine oder mehrere Ressourcen enthalten. Ressourcenlinks öffnen die zuständige Anwendung in einem neuen Tab. Jeder Lesezugriff und jede Aktion prüft weiterhin deine aktuelle Berechtigung in dieser Anwendung.
 - **Quellen und Referenzen:** Eine Referenz zeigt den aktuellen Ressourcentitel und darunter den Ressourcentyp, wenn die zuständige Anwendung beides bereitstellt. Wähle eine Quelle oder Referenz aus, um ihr Ziel zu prüfen, bevor du es in einem neuen Tab öffnest.
 - **Alle anzeigen:** Die kompakte Zusammenfassung zeigt pro Bereich bis zu drei Einträge. Über **Alle anzeigen** kannst du vollständige Wissens-, Quellen- und Referenzlisten durchsuchen, alle Dateien anzeigen, alle Bilder in der Bildansicht öffnen oder die geplanten Aufgaben des Chats verwalten.
-- **Bearbeiten oder archivieren:** Über die Einstellungen eines Chats kannst du seinen Namen, seine Beschreibung, die Anheftung oder den Archivstatus ändern.
+- **Abschließen oder fortsetzen:** Markiere einen Chat als fertig, um ihn unter **Fertig** abzulegen. Stoppe vorher eine laufende Antwort. Öffne ihn wieder oder sende eine neue Nachricht; Dateien, Apps und Anheftung bleiben erhalten.
+- **Bearbeiten oder archivieren:** Öffne die Chatvorschau und wähle **Chat-Einstellungen**, um Namen, Beschreibung, Anheftung oder Archivstatus zu ändern. Die Vorschau öffnet sich beim Darüberfahren, über das Info-Symbol auf Touch-Geräten oder per Tab-Taste.
 :::
 
 ## Nachrichtenaktionen {icon="point"}

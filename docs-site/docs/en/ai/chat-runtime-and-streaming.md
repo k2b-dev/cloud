@@ -402,3 +402,19 @@ worker leases remain independent, even with an unlimited turn budget.
 An expired execution deadline ends the turn as failed with a time-limit message
 and an instruction to continue with a new message. It is distinct from a user's
 Stop action. Continuing does not automatically replay uncertain external calls.
+
+### Conversation completion
+
+`AiConversation.doneAt` records an explicit user-marked completion, separately
+from `archivedAt` and run status. `PUT /api/ai/conversations/:id/done` takes
+`{ "done": true }` or `{ "done": false }`. The owner-only operation returns the
+updated conversation; an active queued, running or waiting turn yields 409.
+It preserves files, resource access, history and pinning. A new chat turn,
+compaction or delivered inter-chat message reopens the conversation atomically.
+
+Conversation list and page endpoints accept optional `done=true|false`.
+Omitting it includes both states; sidebar active queries exclude done chats.
+`aiConversations.setConversationDone` serializes against turn submission and
+returns `not_found` or `active_turn` when completion cannot be applied.
+`aiConversations.getLatestTurn` reads the newest turn for an already-authorized
+conversation, including its model profile; it does not authorize access itself.

@@ -2,6 +2,21 @@ import { i18n } from "@k2b/stdlib";
 import { useLocale } from "@k2b/ui";
 
 const germanText: Record<string, string> = {
+  "No Project": "Kein Projekt",
+  "Apps": "Apps",
+  "Mark chat done": "Chat als fertig markieren",
+  "Reopen chat": "Chat wieder öffnen",
+  "No done chats.": "Noch keine fertigen Chats.",
+  "Chat details": "Chatdetails",
+  "Chat settings": "Chat-Einstellungen",
+  "Stop the response before marking it done": "Vor dem Abschließen die Antwort stoppen",
+  "Could not update chat. Stop the response first or try again.": "Chat konnte nicht aktualisiert werden. Stoppe die Antwort oder versuche es erneut.",
+  "Could not load chat details.": "Chatdetails konnten nicht geladen werden.",
+  "Loading details…": "Details werden geladen…",
+  "Not used yet": "Noch nicht verwendet",
+  "More resources in the chat.": "Weitere Ressourcen findest du im Chat.",
+  "No apps or files yet.": "Noch keine Apps oder Dateien.",
+  "Ready": "Bereit",
   "Voice inputs": "Spracheingaben",
   "Scheduled AI task": "Geplante KI-Aufgabe",
   "AI conversation": "KI-Chat",

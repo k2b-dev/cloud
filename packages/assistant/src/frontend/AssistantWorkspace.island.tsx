@@ -100,6 +100,7 @@ type Props = {
   lastModelId: string;
   initialLiveCursor: string;
   initialConversations: AiConversation[];
+  initialDoneCount: number;
   initialConversationId: string | null;
   initialArtifactPath: string | null;
   initialDetail: InitialDetail | null;
@@ -180,7 +181,7 @@ export default function AssistantWorkspace(props: Props) {
     source: () => "/api/assistant/workspace/sidebar",
     initial: {
       source: "/api/assistant/workspace/sidebar",
-      data: { conversations: props.initialConversations, projects: props.projects },
+      data: { conversations: props.initialConversations, projects: props.projects, doneCount: props.initialDoneCount },
     },
     load: (_source, { abortSignal }) => assistantApi.loadSidebar(abortSignal),
   });
@@ -1307,6 +1308,7 @@ export default function AssistantWorkspace(props: Props) {
       <AppWorkspace class="flex-1 min-h-0">
         <AssistantSidebar
           conversations={conversations}
+          doneCount={sidebar.data()?.doneCount ?? props.initialDoneCount}
           activeConversationId={chat.activeConversationId}
           activeView="chat"
           projects={projects()}

@@ -130,6 +130,7 @@ const AiConversationSchema = z
     keywords: z.array(z.string()),
     pinnedAt: z.string().nullable(),
     archivedAt: z.string().nullable(),
+    doneAt: z.string().nullable(),
     runStatus: z.enum(["idle", "queued", "running", "needs_attention", "waiting_for_browser", "failed"]),
     runError: z.string().nullable(),
     unreadCompletion: z.boolean(),

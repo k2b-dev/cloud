@@ -261,8 +261,20 @@ describe("assistant CLI", () => {
     expect(help).not.toMatch(/^\s+\w+\s+Commands$/m);
   });
 
+  test("marks chats done and reopens them through the same lifecycle endpoint", async () => {
+    for (const action of ["done", "reopen"]) {
+      const { ctx } = createContext(["chats", action, "cWWCrY"], async (path, init) => {
+        expect(String(path)).toBe("/api/ai/conversations/cWWCrY/done");
+        expect(init?.method).toBe("PUT");
+        expect(await new Response(init?.body).json()).toEqual({ done: action === "done" });
+        return json({ id: "cWWCrY", doneAt: action === "done" ? "2026-09-14" : null });
+      });
+      await assistantCli.run(ctx);
+    }
+  });
+
   test("Studio reset requires confirmation and sends the inspected connection generation",async()=>{
-    const id="00000000-0000-4000-8000-000000000001",generation="a".repeat(64),requests:string[]=[];
+    const id="aBc234",generation="a".repeat(64),requests:string[]=[];
     const fetcher:CloudCliContext["fetch"]=async(path,init)=>{
       requests.push(String(path));
       if(String(path).endsWith("/status"))return json({generation,connected:true});

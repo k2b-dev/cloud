@@ -46,7 +46,7 @@ const conversation = (id: string, title: string, projectId: string | null): AiCo
   descriptionSource: "default",
   keywords: [],
   pinnedAt: null,
-  archivedAt: null,
+  doneAt: null, archivedAt: null,
   runStatus: "idle",
   runError: null,
   unreadCompletion: false,
@@ -73,8 +73,9 @@ describe("Assistant sidebar", () => {
     expect(html).toContain("Pinned chat");
     expect(html.match(/title="Pinned chat"/g)).toHaveLength(2);
     expect(html.match(/title="Pinned project chat"/g)).toHaveLength(2);
-    expect(html.indexOf(">Pinned</")).toBeLessThan(html.indexOf(">Projects</"));
-    expect(html).toContain('aria-label="Edit Project chat"');
+    expect(html.indexOf(">Pinned</")).toBeLessThan(html.indexOf("Projects"));
+    expect(html).toContain("Chat settings");
+    expect(html).toContain("Mark chat done");
     expect(html).toContain(">Chats</");
     expect(html).toContain("General chat 15");
     expect(html).not.toContain("General chat 16");
@@ -84,6 +85,21 @@ describe("Assistant sidebar", () => {
     expect(html).not.toContain("This Week");
     expect(html).not.toContain("This Month");
     expect(html).not.toContain('class="ti ti-message"');
+  });
+
+  test("separates Done from pinned and Project chats and offers reopening", () => {
+    const done = { ...conversation("finished", "Completed work", project.id), doneAt: "2026-09-14T12:00:00.000Z", pinnedAt: "2026-09-14T11:00:00.000Z" };
+    const html = renderToString(() => createComponent(AssistantSidebar, {
+      conversations: () => [done, { ...conversation("running", "Active work", null), runStatus: "running" }],
+      projects: [project], doneCount: 21, live,
+    }));
+    expect(html).toContain("Reopen chat");
+    expect(html).toContain("Stop the response before marking it done");
+    expect(html).toContain('aria-expanded="false"');
+    expect(html).toContain("21");
+    expect(html).not.toContain(">Pinned</");
+    expect(html.match(/title="Completed work"/g)).toHaveLength(2);
+    expect(html).toContain("No recent chats");
   });
 
   test("keeps New Chat text and icon stable while creation is pending", () => {

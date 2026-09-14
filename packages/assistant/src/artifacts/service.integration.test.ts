@@ -242,7 +242,7 @@ const isolated = /\/cloud_assistant_artifacts_test(?:\?|$)/.test(process.env.DAT
     const input = { operation: "open" as const, id };
     const conversation = spyOn(aiConversations, "getConversation").mockImplementation(async (request) => request.ownerUserId !== owner.user.id ? null : ({
       id: conversationId, shortId: "abcdef", title: "Test", titleSource: "user", description: "", descriptionSource: "user",
-      keywords: [], pinnedAt: null, archivedAt: null, runStatus: "needs_attention", runError: null, unreadCompletion: false,
+      keywords: [], pinnedAt: null, doneAt: null, archivedAt: null, runStatus: "needs_attention", runError: null, unreadCompletion: false,
       projectId: null, draft: { content: [], revision: 1, updatedAt: null }, createdByUserId: owner.user.id,
       createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
     }));
@@ -589,7 +589,7 @@ const isolated = /\/cloud_assistant_artifacts_test(?:\?|$)/.test(process.env.DAT
     let member = true, currentProject: string | null = projectId;
     const conversation = spyOn(aiConversations,"getConversation").mockImplementation(async input => ({
       id: conversationId, shortId: "project1", title: "Project", titleSource: "user", description: "", descriptionSource: "user",
-      keywords: [], pinnedAt: null, archivedAt: null, runStatus: "idle", runError: null, unreadCompletion: false,
+      keywords: [], pinnedAt: null, doneAt: null, archivedAt: null, runStatus: "idle", runError: null, unreadCompletion: false,
       projectId: currentProject, draft: {content:[],revision:1,updatedAt:null}, createdByUserId: input.ownerUserId ?? null,
       createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
     }));
@@ -640,7 +640,7 @@ const isolated = /\/cloud_assistant_artifacts_test(?:\?|$)/.test(process.env.DAT
     const conversationId = crypto.randomUUID();
     const create = spyOn(aiConversations, "createConversation").mockImplementation(async input => ({
       id: conversationId, shortId: "edit01", title: input.title!, titleSource: "user", description: "", descriptionSource: "user",
-      keywords: [], pinnedAt: null, archivedAt: null, runStatus: "idle", runError: null, unreadCompletion: false,
+      keywords: [], pinnedAt: null, doneAt: null, archivedAt: null, runStatus: "idle", runError: null, unreadCompletion: false,
       projectId: null, draft: { content: input.draft ?? [], revision: 1, updatedAt: null }, createdByUserId: input.ownerUserId ?? null,
       createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
     }));
@@ -659,7 +659,7 @@ const isolated = /\/cloud_assistant_artifacts_test(?:\?|$)/.test(process.env.DAT
     await sql`INSERT INTO ai.conversations(id,created_by_user_id) VALUES(${conversationId}::uuid,${owner.user.id}::uuid)`;
     await sql`INSERT INTO ai.turns(id,status) VALUES(${turnId}::uuid,'running')`;
     const conversation=spyOn(aiConversations,"getConversation").mockImplementation(async request=>request.ownerUserId !== owner.user.id ? null : ({
-      id:conversationId,shortId:"abc234",title:"Host test",titleSource:"user",description:"",descriptionSource:"user",keywords:[],pinnedAt:null,archivedAt:null,
+      id:conversationId,shortId:"abc234",title:"Host test",titleSource:"user",description:"",descriptionSource:"user",keywords:[],pinnedAt:null,doneAt:null,archivedAt:null,
       runStatus:"running",runError:null,unreadCompletion:false,projectId:null,draft:{content:[],revision:1,updatedAt:null},createdByUserId:owner.user.id,
       createdAt:new Date().toISOString(),updatedAt:new Date().toISOString(),
     }));
@@ -679,7 +679,7 @@ const isolated = /\/cloud_assistant_artifacts_test(?:\?|$)/.test(process.env.DAT
     await sql`INSERT INTO ai.conversations(id,created_by_user_id) VALUES(${conversationId}::uuid,${owner.user.id}::uuid)`;
     await sql`INSERT INTO ai.turns(id,status) VALUES(${turnId}::uuid,'running')`;
     const conversation=spyOn(aiConversations,"getConversation").mockImplementation(async request=>request.ownerUserId !== owner.user.id ? null : ({
-      id:conversationId,shortId:"abc234",title:"Host test",titleSource:"user",description:"",descriptionSource:"user",keywords:[],pinnedAt:null,archivedAt:null,
+      id:conversationId,shortId:"abc234",title:"Host test",titleSource:"user",description:"",descriptionSource:"user",keywords:[],pinnedAt:null,doneAt:null,archivedAt:null,
       runStatus:"running",runError:null,unreadCompletion:false,projectId:null,draft:{content:[],revision:1,updatedAt:null},createdByUserId:owner.user.id,
       createdAt:new Date().toISOString(),updatedAt:new Date().toISOString(),
     }));

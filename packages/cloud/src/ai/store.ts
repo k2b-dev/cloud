@@ -99,6 +99,7 @@ type ConversationRow = {
   keywords: string[] | null;
   pinned_at: Date | string | null;
   archived_at: Date | string | null;
+  done_at: Date | string | null;
   last_viewed_at: Date | string | null;
   latest_turn_status?: AiTurnStatus | null;
   latest_browser_pending?: boolean;
@@ -512,6 +513,7 @@ const rowToConversation = (row: ConversationRow): AiConversation => ({
   keywords: row.keywords ?? [],
   pinnedAt: row.pinned_at ? iso(row.pinned_at) : null,
   archivedAt: row.archived_at ? iso(row.archived_at) : null,
+  doneAt: row.done_at ? iso(row.done_at) : null,
   runStatus: conversationRunStatus(row.latest_turn_status, row.latest_browser_pending),
   runError: row.latest_turn_status === "failed" ? row.latest_turn_error?.trim() || "Assistant response failed." : null,
   unreadCompletion:
@@ -1050,7 +1052,9 @@ export const aiConversations: AiConversationService = {
     const rows = await withConversationSearchBackend(query, async (backend) => {
       const order = query
         ? sql`${conversationSearchRank(backend, query)} DESC, conversation.pinned_at DESC NULLS LAST, conversation.updated_at DESC, conversation.created_at DESC`
-        : sql`conversation.pinned_at DESC NULLS LAST, conversation.updated_at DESC, conversation.created_at DESC`;
+        : input.done === true
+          ? sql`conversation.done_at DESC, conversation.id DESC`
+          : sql`conversation.pinned_at DESC NULLS LAST, conversation.updated_at DESC, conversation.created_at DESC`;
       return sql<ConversationRow[]>`
       SELECT
         conversation.*,
@@ -1068,6 +1072,7 @@ export const aiConversations: AiConversationService = {
       ) latest ON TRUE
       WHERE conversation.created_by_user_id = ${input.ownerUserId}
         AND (${archived}::boolean = (conversation.archived_at IS NOT NULL))
+        AND (${input.done ?? null}::boolean IS NULL OR ${input.done ?? null}::boolean = (conversation.done_at IS NOT NULL))
         AND (${input.projectId ?? null}::uuid IS NULL OR conversation.project_id = ${input.projectId ?? null}::uuid)
         AND (NOT ${Boolean(input.unassigned)}::boolean OR conversation.project_id IS NULL)
         AND (${refs.length === 0}::boolean OR NOT EXISTS (
@@ -1130,6 +1135,7 @@ export const aiConversations: AiConversationService = {
         ) latest ON TRUE
         WHERE conversation.created_by_user_id = ${input.ownerUserId}::uuid
           AND conversation.archived_at IS NULL
+          AND conversation.done_at IS NULL
       )
       SELECT *
       FROM ranked
@@ -1149,7 +1155,9 @@ export const aiConversations: AiConversationService = {
     const rows = await withConversationSearchBackend(query, async (backend) => {
       const order = query
         ? sql`${conversationSearchRank(backend, query)} DESC, conversation.pinned_at DESC NULLS LAST, conversation.updated_at DESC, conversation.created_at DESC`
-        : sql`conversation.pinned_at DESC NULLS LAST, conversation.updated_at DESC, conversation.created_at DESC`;
+        : input.done === true
+          ? sql`conversation.done_at DESC, conversation.id DESC`
+          : sql`conversation.pinned_at DESC NULLS LAST, conversation.updated_at DESC, conversation.created_at DESC`;
       return sql<ConversationRow[]>`
       SELECT
         conversation.*,
@@ -1167,6 +1175,7 @@ export const aiConversations: AiConversationService = {
       ) latest ON TRUE
       WHERE conversation.created_by_user_id = ${input.ownerUserId}
         AND (${archived}::boolean = (conversation.archived_at IS NOT NULL))
+        AND (${input.done ?? null}::boolean IS NULL OR ${input.done ?? null}::boolean = (conversation.done_at IS NOT NULL))
         AND (${input.projectId ?? null}::uuid IS NULL OR conversation.project_id = ${input.projectId ?? null}::uuid)
         AND (NOT ${Boolean(input.unassigned)}::boolean OR conversation.project_id IS NULL)
         AND (${pattern}::text IS NULL
@@ -1203,6 +1212,7 @@ export const aiConversations: AiConversationService = {
       ) latest ON TRUE
       WHERE conversation.created_by_user_id = ${input.ownerUserId}
         AND (${archived}::boolean = (conversation.archived_at IS NOT NULL))
+        AND (${input.done ?? null}::boolean IS NULL OR ${input.done ?? null}::boolean = (conversation.done_at IS NOT NULL))
         AND (${input.projectId ?? null}::uuid IS NULL OR conversation.project_id = ${input.projectId ?? null}::uuid)
         AND (NOT ${Boolean(input.unassigned)}::boolean OR conversation.project_id IS NULL)
         AND (${pattern}::text IS NULL
@@ -1590,6 +1600,7 @@ export const aiConversations: AiConversationService = {
           RETURNING *
         `,
       );
+      await tx`UPDATE ai.conversations SET done_at = NULL WHERE id = ${message.target_conversation_id}::uuid AND done_at IS NOT NULL`;
       const turn = rowToTurn(turnRows[0]!);
       const targetMeta: NonNullable<AiStoredMessage["meta"]> = {
         agentMessage: {
@@ -1699,6 +1710,32 @@ export const aiConversations: AiConversationService = {
       RETURNING id
     `;
     return rows[0] ? loadConversationSummary(input) : null;
+  },
+
+  setConversationDone: async (input) => {
+    const result = await sql.begin(async (tx) => {
+      // Same lock as turn submission: completion cannot race a new message.
+      const [conversation] = await tx<{ id: string }[]>`
+        SELECT id FROM ai.conversations
+        WHERE id = ${input.conversationId}::uuid AND created_by_user_id = ${input.ownerUserId}::uuid
+          AND archived_at IS NULL FOR UPDATE
+      `;
+      if (!conversation) return { ok: false as const, reason: "not_found" as const };
+      if (input.done) {
+        const [active] = await tx<{ id: string }[]>`
+          SELECT id FROM ai.turns WHERE conversation_id = ${input.conversationId}::uuid
+            AND status IN ('queued', 'running', 'waiting_for_action') LIMIT 1
+        `;
+        if (active) return { ok: false as const, reason: "active_turn" as const };
+      }
+      await tx`UPDATE ai.conversations
+        SET done_at = CASE WHEN ${input.done} THEN COALESCE(done_at, now()) ELSE NULL END
+        WHERE id = ${input.conversationId}::uuid`;
+      return { ok: true as const };
+    });
+    if (!result.ok) return result;
+    const conversation = await loadConversationSummary(input);
+    return conversation ? { ok: true as const, conversation } : { ok: false as const, reason: "not_found" as const };
   },
 
   archiveConversation: async (input) => {
@@ -2295,29 +2332,20 @@ export const aiConversations: AiConversationService = {
     });
   },
 
-  createCompactionTurn: async (input) => {
-    const rows = await withAiShortId(
-      "idx_ai_turns_conversation_short_id",
-      (shortId) => sql<TurnRow[]>`
-      INSERT INTO ai.turns (
-        short_id,
-        conversation_id,
-        model_profile_id,
-        status,
-        run_config
-      )
-      VALUES (
-        ${shortId},
-        ${input.conversationId},
-        ${input.modelProfileId},
-        'queued',
-        (${input.runConfig ? JSON.stringify(input.runConfig) : null}::text)::jsonb
-      )
+  createCompactionTurn: async (input) => sql.begin(async (tx) => {
+    const [conversation] = await tx<{ id: string }[]>`
+      SELECT id FROM ai.conversations WHERE id = ${input.conversationId}::uuid AND archived_at IS NULL FOR UPDATE
+    `;
+    if (!conversation) throw new Error("Conversation not found.");
+    const rows = await withAiShortIdForDb(tx, "idx_ai_turns_conversation_short_id", (attempt, shortId) => attempt<TurnRow[]>`
+      INSERT INTO ai.turns (short_id, conversation_id, model_profile_id, status, run_config)
+      VALUES (${shortId}, ${input.conversationId}, ${input.modelProfileId}, 'queued',
+        (${input.runConfig ? JSON.stringify(input.runConfig) : null}::text)::jsonb)
       RETURNING *
-    `,
-    );
+    `);
+    await tx`UPDATE ai.conversations SET done_at = NULL WHERE id = ${input.conversationId}::uuid AND done_at IS NOT NULL`;
     return rowToTurn(rows[0]!);
-  },
+  }),
 
   submitChatTurn: async (input) => {
     return await sql.begin(async (tx) => {
@@ -2360,6 +2388,7 @@ export const aiConversations: AiConversationService = {
         RETURNING *
       `,
       );
+      await tx`UPDATE ai.conversations SET done_at = NULL WHERE id = ${input.conversationId}::uuid AND done_at IS NOT NULL`;
       const turn = rowToTurn(turnRows[0]!);
       const attachedFiles = input.runConfig.files?.attached ?? [];
       for (const file of attachedFiles) {
@@ -2440,6 +2469,12 @@ export const aiConversations: AiConversationService = {
       LIMIT 1
     `;
     return rows[0]?.run_config ? parseJsonValue<AiTurnRunConfig>(rows[0].run_config) : null;
+  },
+
+  getLatestTurn: async (input) => {
+    const [row] = await sql<TurnRow[]>`SELECT * FROM ai.turns WHERE conversation_id = ${input.conversationId}::uuid
+      ORDER BY created_at DESC, id DESC LIMIT 1`;
+    return row ? rowToTurn(row) : null;
   },
 
   getTurn: async (input) => {

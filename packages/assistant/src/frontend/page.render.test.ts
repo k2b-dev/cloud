@@ -98,7 +98,7 @@ test("missing or revoked selected project returns opaque HTML404 despite a stale
   spies.push(
     spyOn(sidebar, "loadAssistantSidebarSnapshot").mockResolvedValue({
       projects: [{ ...project, id: project.shortId }],
-      conversations: [],
+      doneCount: 0, conversations: [],
     }),
   );
   spies.push(spyOn(ai.aiProjects, "getByShortId").mockResolvedValue(null));
@@ -114,7 +114,7 @@ test("missing or revoked selected project returns opaque HTML404 despite a stale
 });
 
 test("authorized project omitted by sidebar cap remains in the rendered workspace with public IDs", async () => {
-  spies.push(spyOn(sidebar, "loadAssistantSidebarSnapshot").mockResolvedValue({ projects: [], conversations: [] }));
+  spies.push(spyOn(sidebar, "loadAssistantSidebarSnapshot").mockResolvedValue({ projects: [], doneCount: 0, conversations: [] }));
   const lookup = spyOn(ai.aiProjects, "getByShortId").mockResolvedValue(project);
   const chats = spyOn(ai.aiConversations, "listConversationsPage").mockResolvedValue({
     items: [],

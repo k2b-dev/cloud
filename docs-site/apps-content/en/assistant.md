@@ -61,6 +61,22 @@ Extracted pages show their title and description.
 Assistant can make mistakes. Check consequential facts, calculations, and
 proposed actions before relying on them.
 
+## Keep active chats in view
+
+Choose **Mark chat done** on a sidebar row when its work is finished. Stop a
+running response first. Done chats move into the collapsed **Done** section;
+their files, apps, history and pinning remain available. Choose **Reopen chat**
+to bring one back, or send a new message to continue it. A finished response
+does not automatically mark the whole chat done.
+
+Hover over a chat for its description, Project, last model, apps, files and
+**Chat settings**. Touch devices provide an information button; keyboard users
+can reach the same preview with Tab. Resource details load when the preview
+opens. **See all** includes a searchable, paginated **Done** filter.
+
+The CLI supports `cld assistant chats done CHAT`, `chats reopen CHAT`, and
+`chats list --lifecycle active|done|all`. Archiving remains a separate action.
+
 ## Understand the Assistant model
 
 | Resource or surface | Responsibility |

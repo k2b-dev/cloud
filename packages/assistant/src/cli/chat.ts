@@ -75,12 +75,13 @@ export const assistantChatCommands = [
       search: flag.string({ aliases: ["q"], description: "Search title, description, and keywords" }),
       limit: flag.int({ default: 50, min: 1, max: 50 }),
       archived: flag.boolean(),
+      lifecycle: flag.enum(["active", "done", "all"] as const, { default: "all" }),
       status: flag.enum(["running", "needs_attention", "failed", "unread"] as const),
     },
     async run({ ctx, flags }) {
       const chats = await readApi<AiConversation[]>(
         ctx,
-        `/conversations${queryString({ q: flags.search, limit: flags.limit, archived: flags.archived || undefined, status: flags.status })}`,
+        `/conversations${queryString({ q: flags.search, limit: flags.limit, archived: flags.archived || undefined, done: flags.lifecycle === "all" ? undefined : flags.lifecycle === "done", status: flags.status })}`,
       );
       printRows(
         ctx,
@@ -88,7 +89,7 @@ export const assistantChatCommands = [
         chats.map((chat) => ({
           id: chat.id,
           title: chat.title,
-          status: chat.runStatus,
+          status: chat.doneAt ? "done" : chat.runStatus,
           unread: chat.unreadCompletion ? "yes" : "",
           pinned: chat.pinnedAt ? "yes" : "",
           updated: chat.updatedAt,
@@ -166,6 +167,14 @@ export const assistantChatCommands = [
       },
     }),
   ),
+  ...(["done", "reopen"] as const).map(action => command(`chats ${action}`, {
+    summary: action === "done" ? "Mark a chat done without archiving its resources" : "Reopen a done chat",
+    args: { chat: arg.required({ valueLabel: "chat-id" }) },
+    async run({ ctx, args }) {
+      const result = await readApi<AiConversation>(ctx, conversationPath(args.chat, "/done"), jsonRequest("PUT", { done: action === "done" }));
+      printValue(ctx, result);
+    },
+  })),
   command("chats timeline", {
     summary: "List user-message navigation points in a chat",
     args: { chat: arg.required({ valueLabel: "chat-id" }) },
