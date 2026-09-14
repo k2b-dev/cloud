@@ -2,7 +2,7 @@ import { browserHttpHost } from "./SecretsDialog";
 import { runHttp } from "./http-host";
 import { approveInModal } from "./CapabilityApproval";
 import { runCapability } from "./runtime/capabilities";
-import { Button, Paper, StatusBadge, useLocale } from "@k2b/ui";
+import { Button, InlineGuidance, Paper, StatusBadge, useLocale } from "@k2b/ui";
 import { files } from "@k2b/stdlib/browser";
 import { createEffect, createMemo, createResource, createSignal, createUniqueId, For, on, onCleanup, onMount, Show } from "solid-js";
 import { artifactClient } from "./client";
@@ -118,10 +118,10 @@ export function ArtifactPanel(props: { artifactId: string; refreshKey?: string; 
         }} />
       </Show>
     </div>
-    <Show when={revision() !== undefined && (metadata()?.sourceRevision ?? 0) > revision()!}>
-      <div role="status" class="flex items-center gap-2">
-        <span class="text-sm text-muted">{t().staleSource}</span>
-      </div>
+    <Show when={loading() || (revision() !== undefined && (metadata()?.sourceRevision ?? 0) > revision()!)}>
+      <InlineGuidance role="status" loading={loading()} icon={loading() ? undefined : "ti ti-info-circle"} class="px-2 py-1">
+        {loading() ? t().loading : t().staleSource}
+      </InlineGuidance>
     </Show>
     <div class="artifact-console__header">
         <Button size="sm" variant="ghost" aria-expanded={consoleOpen()} aria-controls={consoleId} onClick={() => setConsoleOpen(value => !value)}>
