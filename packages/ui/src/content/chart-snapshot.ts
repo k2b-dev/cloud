@@ -1,7 +1,6 @@
 import { escapeXml, type ChartDatum } from "@k2b/stdlib";
-import { renderChartSvg, type ChartKind, type ChartRenderOptions } from "./Chart";
+import { chartRenderHeight, renderChartSvg, type ChartKind, type ChartRenderOptions } from "./Chart";
 import { isChartDatum, type ChartSelection, type ChartTooltip, type ChartTooltipFormatter } from "./chart-inspection";
-import { stateTimelineHeight } from "./chart-state-timeline";
 
 /** Trusted output of prepareChartSnapshot; never accept arbitrary user SVG. */
 export type ChartSnapshot = {
@@ -34,7 +33,7 @@ export function prepareChartSnapshot(
   },
 ): ChartSnapshot {
   const width = 480;
-  const height = options.kind === "stateTimeline" ? stateTimelineHeight(options.rows.length, options.legend !== false) : 280;
+  const height = chartRenderHeight(options);
   const svg = renderChartSvg({ ...options, interactive: true }, width, height);
   const marks: ChartSnapshot["marks"][number][] = [];
   const keys = new Set<string>();

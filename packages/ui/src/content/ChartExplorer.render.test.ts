@@ -84,3 +84,17 @@ test("reference glyphs and linked controls are present in the server output", as
   expect(html).toContain("Current");
   expect(html).toContain('aria-valuetext="17:00"');
 });
+
+test("bar gauge snapshots include every row beyond the default chart height", () => {
+  const data = Array.from({ length: 12 }, (_, index) => ({ label: `Row ${index}`, value: index }));
+  const snapshot = prepareChartSnapshot(
+    { kind: "barGauge", data, min: 0, max: 12 },
+    {
+      key: ({ datum }) => String(datum.index),
+      tooltip: ({ datum }) => ({ rows: [{ label: "Value", value: String(datum.index) }] }),
+    },
+  );
+  expect(snapshot.height).toBe(366);
+  expect(snapshot.marks).toHaveLength(12);
+  expect(snapshot.marks.every((mark) => mark.datum.anchor[1] < snapshot.height)).toBe(true);
+});

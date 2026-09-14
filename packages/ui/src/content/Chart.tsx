@@ -119,6 +119,13 @@ export type ChartRenderOptions = {
   >;
 }[ChartKind];
 
+/** Keep the fixed 28-unit bar-gauge rows inside the shared SSR/browser coordinate space. */
+export const chartRenderHeight = (props: ChartRenderOptions): number => {
+  if (props.kind === "stateTimeline") return stateTimelineHeight(props.rows.length, props.legend !== false);
+  if (props.kind === "barGauge") return Math.max(280, (props.title || props.subtitle ? 42 : 16) + props.data.length * 28 + 14);
+  return 280;
+};
+
 /**
  * Internal — strips wrapper-only keys from props and forwards the
  * rest (plus logical size) to `charts[kind]`. The `any` is the
@@ -209,7 +216,7 @@ const Chart = (props: ChartProps): JSX.Element => {
   // SVG to its box; hydration must never replace it with measured geometry.
   const size = () => ({
     width: 480,
-    height: props.kind === "stateTimeline" ? stateTimelineHeight(props.rows.length, props.legend !== false) : 280,
+    height: chartRenderHeight(props),
   });
   const dimensions = () => containerRef?.getBoundingClientRect() ?? size();
   const initialMapViewport = props.kind === "map" ? normalizeMapViewport(props.viewport) : DEFAULT_MAP_VIEWPORT;

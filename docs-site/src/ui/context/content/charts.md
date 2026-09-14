@@ -157,6 +157,9 @@ Row links navigate from the row label; interval links navigate from the region.
 
 Set the chart height explicitly with `style={{ height: "14rem" }}` or an application class. The exception is `stateTimeline`, which derives its height from the row count. Axes inherit `currentColor`; series use the shared chart color variables.
 
+Bar-gauge geometry grows to fit all rows in both direct charts and prepared
+snapshots. Choose a matching CSS height when showing larger rankings.
+
 Empty series render a visible **No data** state. Keep loading and query errors outside the component so they are not confused with an empty result.
 
 `labels` localizes package-owned text such as the empty state, series fallback,
