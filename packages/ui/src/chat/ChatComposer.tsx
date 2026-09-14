@@ -514,6 +514,7 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
                       class="k2b-chat-composer__icon-action"
                       data-tone={action.variant === "danger" ? "danger" : undefined}
                       disabled={action.disabled}
+                      aria-pressed={action.pressed}
                       aria-label={action.label}
                       title={action.label}
                       onClick={() => reportChatFailure(() => executeChatAction(action), props.onError)}

@@ -730,6 +730,14 @@ export default function AssistantWorkspace(props: Props) {
     }
     return todos;
   };
+  const hasOpenTodos = createMemo(() => todoItems().some(item => item.status === "pending" || item.status === "in_progress"));
+  const [showCompletedTodos, setShowCompletedTodos] = createSignal(false);
+  createEffect(() => {
+    chat.activeConversationId();
+    hasOpenTodos();
+    setShowCompletedTodos(false);
+    setTodoOpen(false);
+  });
   const todoProgress = () => {
     const todos = todoItems(), done = todos.filter(item => item.status === "completed").length;
     const cancelled = todos.filter(item => item.status === "cancelled").length;
@@ -1064,7 +1072,7 @@ export default function AssistantWorkspace(props: Props) {
             </Show>
           </div>
         </Show>
-        <Show when={!projectComposer()}>
+        <Show when={!projectComposer() && (hasOpenTodos() || showCompletedTodos())}>
           <Chat.Tasks items={todoItems()} open={todoOpen()} onOpenChange={setTodoOpen}
             label={locale().startsWith("de") ? "Aufgaben" : "Tasks"} progressLabel={todoProgress()}
             statusLabels={locale().startsWith("de")
@@ -1159,6 +1167,19 @@ export default function AssistantWorkspace(props: Props) {
                 ]
               : []),
           ]}
+          contextActions={!projectComposer() && todoItems().length > 0 && !hasOpenTodos() ? [{
+            id: "toggle-completed-tasks",
+            icon: "ti ti-list-check",
+            label: locale().startsWith("de")
+              ? showCompletedTodos() ? "Aufgaben ausblenden" : "Aufgaben anzeigen"
+              : showCompletedTodos() ? "Hide tasks" : "Show tasks",
+            pressed: showCompletedTodos(),
+            onSelect: () => {
+              const visible = !showCompletedTodos();
+              setShowCompletedTodos(visible);
+              setTodoOpen(visible);
+            },
+          }] : []}
           contextPopupAction={
             !projectComposer() && activeConversation()
               ? {

@@ -502,3 +502,7 @@ messages wrap within their column. The header identifies the executed revision.
 The Studio app preview scrolls independently of its bottom console controls.
 Expanded console output scrolls within its own bounded area, keeping controls
 visible while browsing a long app.
+
+Completed working plans hide automatically once every task is completed or cancelled.
+A checklist action beside context usage reopens or hides the saved plan. New open
+tasks restore the plan automatically; switching chats resets the disclosure.

@@ -691,3 +691,13 @@ test("working plan shows one semantic segment per step and bounded disclosure", 
   expect(html).toContain("Current step");
   expect(html).not.toContain("Running");
 });
+
+test("composer context actions expose their toggle state", () => {
+  const html = renderToString(() => createComponent(Chat.Composer, {
+    value: "", onValueChange: () => {}, onSubmit: () => {},
+    contextActions: [{ id: "tasks", label: "Hide tasks", icon: "ti ti-list-check", pressed: true, onSelect: () => {} }],
+  }));
+  expect(html).toContain('aria-label="Hide tasks"');
+  expect(html).toContain('title="Hide tasks"');
+  expect(html).toContain('aria-pressed="true"');
+});
