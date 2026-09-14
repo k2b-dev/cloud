@@ -89,7 +89,7 @@ export default function Controls(props: { filter: BrowserFilter; apps: { id: str
           }}
         >
           <TextInput aria-label={t.route} placeholder={t.route} value={route()} onValueChange={setRoute} maxLength={200} />
-          <Button type="submit" size="sm" variant="secondary">
+          <Button type="submit" variant="input">
             {t.apply}
           </Button>
         </form>

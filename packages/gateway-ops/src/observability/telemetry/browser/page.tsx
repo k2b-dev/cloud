@@ -15,15 +15,16 @@ export async function browserTelemetryPage<E extends Env>(c: Context<E>) {
   const locale = getLocale(c);
   const { t } = browserMessages.resolve([locale]);
   const filter = parseBrowserFilter(new URL(c.req.url));
+  const until = new Date();
   const [dataResult, enabledResult, appsResult] = await Promise.allSettled([
-    logging.webVitals(filter),
+    logging.webVitals(filter, until),
     coreSettings.get<boolean>("observability.web_vitals.enabled"),
     listAppsDetailed(),
   ]);
   const data: WebVitalsOverview | null = dataResult.status === "fulfilled" ? dataResult.value : null;
   const enabled = enabledResult.status === "fulfilled" ? enabledResult.value : null;
   const apps = appsResult.status === "fulfilled" ? appsResult.value.map((app) => ({ id: app.id, name: app.name })) : [];
-  const charts = data ? buildVitalCharts(data, locale) : [];
+  const charts = data ? buildVitalCharts(data, locale, filter.range, until.getTime()) : [];
   const names: WebVitalName[] = ["LCP", "INP", "CLS"];
   const routes = data
     ? [...new Map(data.routes.map((row) => [`${row.appId}\0${row.route}`, { appId: row.appId, route: row.route }])).values()]
@@ -55,10 +56,10 @@ export async function browserTelemetryPage<E extends Env>(c: Context<E>) {
             </StatGrid>
             <p class="text-xs text-dimmed">{t.note}</p>
             {data.summary.length === 0 ? <p class="paper p-3 text-xs text-dimmed">{t.empty}</p> : <VitalCharts charts={charts} />}
-            <section class="paper p-3 space-y-3">
-              <h2 class="text-xs font-semibold text-primary">{t.routes}</h2>
+            <DataTable.Panel>
+              <DataTable.Header title={t.routes} subtitle={`${data.totalRoutes.toLocaleString(locale)} ${t.count}`} size="sm" />
               <DataTable
-                surface="plain"
+                surface="paper"
                 rows={routes}
                 renderCell={({ row, col, value }) =>
                   col.id === "route" ? (
@@ -82,24 +83,23 @@ export async function browserTelemetryPage<E extends Env>(c: Context<E>) {
                   })),
                 ]}
               />
-              <div class="flex items-center justify-between gap-2 text-xs text-dimmed">
-                <span>
-                  {data.totalRoutes.toLocaleString(locale)} {t.count}
-                </span>
-                <div class="flex gap-2">
-                  {filter.page > 1 && (
-                    <ButtonLink size="sm" variant="secondary" href={browserUrl(filter, { page: filter.page - 1 })}>
-                      {t.previous}
-                    </ButtonLink>
-                  )}
-                  {filter.page * data.perPage < data.totalRoutes && (
-                    <ButtonLink size="sm" variant="secondary" href={browserUrl(filter, { page: filter.page + 1 })}>
-                      {t.next}
-                    </ButtonLink>
-                  )}
-                </div>
-              </div>
-            </section>
+              {(filter.page > 1 || filter.page * data.perPage < data.totalRoutes) && (
+                <DataTable.Footer>
+                  <div class="flex gap-2">
+                    {filter.page > 1 && (
+                      <ButtonLink size="sm" variant="secondary" href={browserUrl(filter, { page: filter.page - 1 })}>
+                        {t.previous}
+                      </ButtonLink>
+                    )}
+                    {filter.page * data.perPage < data.totalRoutes && (
+                      <ButtonLink size="sm" variant="secondary" href={browserUrl(filter, { page: filter.page + 1 })}>
+                        {t.next}
+                      </ButtonLink>
+                    )}
+                  </div>
+                </DataTable.Footer>
+              )}
+            </DataTable.Panel>
           </>
         ) : (
           <section class="paper p-3">

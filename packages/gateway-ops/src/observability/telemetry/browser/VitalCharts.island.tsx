@@ -1,4 +1,4 @@
-import { ChartExplorer, useLocale } from "@k2b/ui";
+import { ChartExplorer, createChartCursor, useLocale } from "@k2b/ui";
 import type { VitalChart, VitalRow } from "./charts";
 import { vitalValue } from "./charts";
 import { browserMessages } from "./messages";
@@ -6,15 +6,17 @@ export default function VitalCharts(props: { charts: VitalChart[] }) {
   const locale = useLocale();
   const { t } = browserMessages.resolve([locale()]);
   const date = (value: number) => `${new Date(value).toLocaleString(locale(), { timeZone: "UTC" })} UTC`;
+  const cursor = createChartCursor({ formatX: date });
   return (
-    <div class="space-y-3">
+    <div class="grid grid-cols-1 xl:grid-cols-3 gap-3 items-start">
       {props.charts.map((item) => (
         <ChartExplorer<VitalRow>
-          class="paper p-3"
+          class="paper p-3 min-w-0"
+          cursor={cursor}
           title={`${item.name} · p75`}
           description={<span class="text-[10px] text-dimmed">{t.details} · UTC</span>}
           data={item.data}
-          height="18rem"
+          height="15rem"
           columns={[
             { id: "time", label: t.interval, value: (row) => date(row.bucket), sortValue: (row) => row.bucket },
             {

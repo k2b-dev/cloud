@@ -91,7 +91,9 @@ visible. The Server view continues to show gateway telemetry separately.
 
 The Browser view offers app, exact route-template, and time-window filters
 (1 hour to 30 days). It shows p75 and sample counts for each metric, time
-buckets in ChartExplorer, and a paginated route table. ChartExplorer supports
+buckets in side-by-side ChartExplorers, and an integrated paginated route table.
+The charts share a time axis and inspection cursor for comparison. Lines connect
+only adjacent buckets; isolated measurements remain visible. ChartExplorer supports
 point selection and a table view of the same aggregate data. LCP and INP use
 milliseconds; CLS has no unit. Missing metrics display a dash, and gaps are
 not interpolated. A loading failure is reported separately from an empty
