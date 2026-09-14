@@ -605,6 +605,7 @@ describe("CustomAppBuilder", () => {
     );
 
     expect(html).toContain("This draft cannot be opened");
+    expect(html).toContain("Stored draft uses unsupported App schemaVersion 1.");
     expect(html).not.toContain("Download stored JSON");
     expect(html).not.toContain("Replace with blank");
     expect(html).not.toContain("App canvas");

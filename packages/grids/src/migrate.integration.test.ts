@@ -191,6 +191,21 @@ describe("grids schema migration", () => {
   );
 
   postgresTest(
+    "rejects an incomplete kernel before creating Grids objects",
+    async () => {
+      await withIsolatedDatabase(async (database) => {
+        await database`CREATE SCHEMA workflows`.simple();
+        await database`CREATE TABLE workflows.run (id UUID PRIMARY KEY)`.simple();
+        await database`CREATE TABLE workflows.version (id UUID PRIMARY KEY)`.simple();
+        await expect(migrate(database)).rejects.toThrow("Start Core before Grids");
+        const [row] = await database`SELECT to_regnamespace('grids') AS schema`;
+        expect(row.schema).toBeNull();
+      });
+    },
+    30_000,
+  );
+
+  postgresTest(
     "serializes concurrent setup and remains idempotent",
     async () => {
       await withIsolatedDatabase(async (database) => {

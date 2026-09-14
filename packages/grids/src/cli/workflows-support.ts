@@ -173,14 +173,14 @@ export const WORKFLOW_REFERENCE = {
   launchers: {
     scanner: {
       name: "Scan item",
-      config: { kind: "scanner", inputSources: { ["item"]: { kind: "scan", value: "record", resolve: { by: "scanCode" } } } },
+      config: { kind: "scanner", inputSources: { item: { kind: "scan", value: "record", resolve: { by: "scanCode" } } } },
       enabled: true,
     },
     scannerByField: {
       name: "Scan asset tag",
       config: {
         kind: "scanner",
-        inputSources: { ["item"]: { kind: "scan", value: "record", resolve: { by: "field", field: "Asset tag" } } },
+        inputSources: { item: { kind: "scan", value: "record", resolve: { by: "field", field: "Asset tag" } } },
       },
       enabled: true,
     },

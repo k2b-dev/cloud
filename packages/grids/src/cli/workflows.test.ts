@@ -4,6 +4,7 @@ import { compileWorkflow } from "@k2b/cloud/workflows/language";
 import { BulkLauncherRequestSchema } from "../api/workflow-public-contracts";
 import { buildWorkflowCatalog } from "../service/workflow-catalog";
 import { bindGridsWorkflow } from "../workflows/binder";
+import { type GridsWorkflowLauncherConfig, GridsWorkflowLauncherConfigSchema } from "../workflows/contracts";
 import { gridsWorkflows } from "../workflows/module";
 import { workflowCommands, workflowRunCommands } from "./workflows";
 import { WORKFLOW_REFERENCE, workflowRunRows, workflowStepRows } from "./workflows-support";
@@ -33,20 +34,25 @@ const launcher = (kind: "scanner" | "bulk" | "record" | "customApp") => ({
   baseId,
   workflowId,
   name: `${kind} launcher`,
-  config:
-    kind === "scanner"
-      ? { kind, input: "item", resolve: { by: "scanCode" } }
-      : kind === "bulk"
-        ? { kind, input: "items" }
-        : kind === "record"
-          ? { kind, input: "original", profile: "correctionDraft" }
-          : { kind, label: "Run" },
+  config: (kind === "scanner"
+    ? { kind, inputSources: { item: { kind: "scan", value: "record", resolve: { by: "scanCode" } } } }
+    : kind === "bulk"
+      ? { kind, input: "items" }
+      : kind === "record"
+        ? { kind, input: "original", profile: "correctionDraft" }
+        : { kind, label: "Run", inputMode: "fixed" }) satisfies GridsWorkflowLauncherConfig,
   enabled: true,
   validatedRevision: 3,
   diagnostics: [],
   deletedAt: null,
   createdAt: "2026-07-15T00:00:00.000Z",
   updatedAt: "2026-07-15T00:00:00.000Z",
+});
+
+test("launcher fixtures satisfy the current runtime contract", () => {
+  for (const kind of ["scanner", "bulk", "record", "customApp"] as const) {
+    expect(GridsWorkflowLauncherConfigSchema.safeParse(launcher(kind).config).success).toBe(true);
+  }
 });
 
 const receipt = {

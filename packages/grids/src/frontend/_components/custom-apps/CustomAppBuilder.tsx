@@ -388,7 +388,9 @@ export default function CustomAppBuilder(props: CustomAppBuilderProps) {
   if (!props.app.draftDefinition) {
     return (
       <AppWorkspace.Main class="p-4">
-        <NoticeCard tone="danger" title={messages().text({ value: "This draft cannot be opened" })} />
+        <NoticeCard tone="danger" title={messages().text({ value: "This draft cannot be opened" })}>
+          <For each={props.app.draftDiagnostics}>{(diagnostic) => <p>{diagnostic.message}</p>}</For>
+        </NoticeCard>
       </AppWorkspace.Main>
     );
   }

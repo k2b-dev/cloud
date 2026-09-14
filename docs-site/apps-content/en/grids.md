@@ -347,10 +347,10 @@ Document automation is available through `documents renderers|list|list-by-templ
 
 ## Deployment requirements
 
-The historical alpha workflow reset refuses to run when retained documents
-reference runs or stored workflow profiles exist. Do not remove the migration
-ledger to force a reset: such a schema change needs an explicit preserving
-migration. Normal restarts retain the applied workflow schema version.
+Grids creates its current schema at startup and preserves data on subsequent
+starts. Older Grids schemas require an explicit destructive reset, including
+Grids-owned shared data. Follow the [operator reset procedure](/en/docs/reference/deprecations-and-migrations#grids-starts-with-a-fresh-schema)
+before switching an existing installation. Start Core before Grids.
 
 Record events are committed in PostgreSQL before background publication.
 Workflow dispatch failures retry up to 20 times and remain in PostgreSQL for

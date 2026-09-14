@@ -2,6 +2,8 @@ import { sql as defaultSql, type SQL } from "bun";
 
 // Current Grids schema only. Existing installations must be reset before adopting
 // this definition; startup never converts data or repairs historical schemas.
+// IF NOT EXISTS does not reconcile existing columns or constraints. Future
+// schema changes need explicit, idempotent steps here, not just edited CREATEs.
 const defineSchema = async (sql: SQL): Promise<void> => {
   await sql`
     CREATE SCHEMA IF NOT EXISTS grids
@@ -1994,7 +1996,8 @@ const defineSchema = async (sql: SQL): Promise<void> => {
 const assertWorkflowKernelReady = async (sql: SQL): Promise<void> => {
   const [kernel] = await sql<Array<{ ready: boolean }>>`
     SELECT to_regclass('workflows.run') IS NOT NULL
-      AND to_regclass('workflows.version') IS NOT NULL AS ready
+      AND to_regclass('workflows.version') IS NOT NULL
+      AND to_regclass('workflows.step_outcome') IS NOT NULL AS ready
   `;
   if (!kernel?.ready) {
     throw new Error("Grids requires the workflow kernel schema. Start Core before Grids.");

@@ -49,8 +49,67 @@ Grids creates its current schema at startup. There is no in-place migration
 from older Grids schemas. Before switching an existing installation, the
 operator must stop Grids and explicitly reset its schema and Grids-owned
 shared workflow and access data. This discards the existing Grids content;
-keep any required backups or exports separately. Never reset other applications.
+keep any required backups or exports separately. Delete only Grids-owned rows
+in shared Core tables, never the shared schemas or another application's data.
 Start Core before Grids. Subsequent Grids starts preserve the current data.
+
+### Reset an existing Grids installation
+
+This procedure permanently discards Grids content, workflow runs, generated
+documents, and resource-bound credentials. It is not an upgrade that preserves
+data. Confirm the target database and NATS namespace, obtain approval for this
+scope, and keep a restorable backup before starting. A schema-only reset is
+incomplete: old kernel runs would still appear in Grids health reports.
+
+Stop every Grids replica and worker, and prevent new Grids invocations during
+the maintenance window. Inventory foreign keys and cross-application references
+before deleting anything. If another application references a Grids resource or
+service account, stop and resolve that dependency; do not let `CASCADE` remove it.
+
+Perform the database cleanup in one transaction, in this order:
+
+1. Capture access IDs from `grids.base_access` and `grids.custom_app_access`,
+   Grids resource-bound service accounts and their grants, and kernel workflow
+   and event IDs where `app_id = 'grids'`. Retain this inventory until verified.
+2. Check that captured grants and service accounts are not used by another
+   application. Preserve shared grants and ordinary user accounts.
+3. Delete `workflows.event_delivery` rows referencing the captured workflow
+   **or** event IDs. Delete rows from `workflows.workflow`, `workflows.event`,
+   and `workflows.dependency_signal` only where `app_id = 'grids'`. Their
+   kernel child rows are removed through foreign keys.
+4. Delete `capabilities.idempotency_claims` and `capabilities.executions` only
+   where `app_id = 'grids'`, so old results cannot be replayed.
+5. Run `DROP SCHEMA grids CASCADE` only after the dependency checks above.
+6. Delete captured, exclusively Grids-owned `auth.access` rows. Remove mandates
+   only where `owner_app_id = 'grids'`, then the captured resource-bound service
+   accounts and their credentials. Do not delete delegated user accounts.
+7. Commit. On an unexpected dependency or error, roll back and investigate.
+
+PostgreSQL and NATS cleanup are separate operations. Keep Grids stopped until
+both finish. Inventory streams by their Sync metadata, not a guessed name
+prefix. Delete only streams with the verified `sync.namespace`,
+`sync.owner=grids`, and these resource IDs, including their associated
+key-value and dead-letter streams:
+
+- `grids:workflow-record-events`
+- `grids:evidence-export`
+- `grids:controlled-destruction`
+- `grids:workflows`
+- `grids:external-record-operation-retention`
+- `grids:records`
+- `grids:metadata`
+- `grids:workflow-runtime`
+- `grids:workflow-runs`
+
+Do not delete shared volumes, other namespaces, or other applications' streams.
+If transport cleanup fails, leave Grids stopped and resume from the inventory;
+do not start new workers against old queued work.
+
+Start the updated Core before the updated Grids. Check gateway registration,
+an authenticated Grids page, empty Base/Record/Document lists, and the health
+view for leftover Grids runs. Confirm a second Grids start preserves the schema
+and any newly created data. Old Grids links in other applications remain but
+point to removed resources; do not delete their chats or audit history.
 
 ## Mail automation authority is mandate-only
 
