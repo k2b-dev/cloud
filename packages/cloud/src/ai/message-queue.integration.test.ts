@@ -91,6 +91,7 @@ integration("durable queue is FIFO, idempotent and isolated from a newer compose
     };
     await Promise.all([drainQueuedMessages(push, chat.id), drainQueuedMessages(push, chat.id)]);
     expect(jobs).toHaveLength(1);
+    expect((await aiConversations.getConversation({conversationId:chat.id}))?.lastUsedAt).toBe(before!.lastUsedAt);
     const [snapshot] = await sql<
       { bytes: Uint8Array }[]
     >`SELECT bytes FROM ai.turn_files WHERE turn_id=${jobs[0]!.turnId}::uuid AND path=${file.path}`;

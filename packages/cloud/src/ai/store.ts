@@ -2415,7 +2415,8 @@ export const aiConversations: AiConversationService = {
         RETURNING *
       `,
       );
-      await tx`UPDATE ai.conversations SET done = CASE WHEN done IS TRUE THEN NULL ELSE done END, last_used_at = now() WHERE id = ${input.conversationId}::uuid`;
+      // Queue acceptance already recorded the user's interaction time.
+      if (!input.queuedMessageId) await tx`UPDATE ai.conversations SET done = CASE WHEN done IS TRUE THEN NULL ELSE done END, last_used_at = now() WHERE id = ${input.conversationId}::uuid`;
       const turn = rowToTurn(turnRows[0]!);
       const attachedFiles = input.runConfig.files?.attached ?? [];
       for (const file of attachedFiles) {
