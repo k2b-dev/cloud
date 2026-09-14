@@ -15,14 +15,14 @@ import { SQL } from "bun";
     url.pathname = "/postgres";
     const admin = new SQL(url);
     const database = new SQL(target);
-    const connection = await connect({ servers: "nats://127.0.0.1:4222" });
+    const connection = await connect({ servers: (process.env.SYNC_TEST_SERVERS ?? "nats://127.0.0.1:4222").split(",") });
     const namespace = `snapshot-cutover-${crypto.randomUUID()}`;
     const sync = createSync({ connection, namespace, application: "notebooks" });
     const manager = await jetstreamManager(connection);
     let created = false;
     const run = async () => {
       const child = Bun.spawn([process.execPath, new URL("./snapshot-cutover-preflight.ts", import.meta.url).pathname], {
-        env: { ...process.env, DATABASE_URL: target.toString(), NATS_SERVERS: "nats://127.0.0.1:4222", SYNC_NAMESPACE: namespace },
+        env: { ...process.env, DATABASE_URL: target.toString(), NATS_SERVERS: process.env.SYNC_TEST_SERVERS ?? "nats://127.0.0.1:4222", SYNC_NAMESPACE: namespace },
         stdout: "pipe",
         stderr: "pipe",
       });

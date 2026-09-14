@@ -9,7 +9,7 @@ import { createYjsTopic } from "./yjs-sync";
 (process.env.NOTEBOOKS_NATS_TEST === "1" ? test : test.skip)(
   "snapshot ordering serializes the same note across competing workers while other notes proceed",
   async () => {
-    const connection = await connect({ servers: "nats://127.0.0.1:4222" });
+    const connection = await connect({ servers: (process.env.SYNC_TEST_SERVERS ?? "nats://127.0.0.1:4222").split(",") });
     const namespace = `snapshot-ordering-${crypto.randomUUID()}`;
     const sync = createSync({ connection, namespace, application: "notebooks" });
     bindProcessSync(sync);

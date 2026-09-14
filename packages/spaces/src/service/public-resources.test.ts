@@ -17,7 +17,7 @@ describe("Spaces public resource boundary", () => {
     expect(await resolvePublicIds("items", ["AbC123", "legacy1"])).toBeNull();
   });
 
-  test("preserves duplicate selectors and their input order", async () => {
+  (process.env.CLOUD_DATABASE_TEST === "1" ? test : test.skip)("preserves duplicate selectors and their input order", async () => {
     const first = { id: crypto.randomUUID(), shortId: newShortId() };
     const second = { id: crypto.randomUUID(), shortId: newShortId() };
     try {

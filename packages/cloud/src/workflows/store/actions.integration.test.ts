@@ -31,13 +31,9 @@ import { runOneWorkflow as runWorker } from "./worker";
 let readiness: Promise<boolean> | null = null;
 const ready = (): Promise<boolean> => {
   readiness ??= (async () => {
-    try {
-      await migrate();
-      const [row] = await sql<{ run: string | null }[]>`SELECT to_regclass('workflows.run')::text AS run`;
-      return Boolean(row?.run);
-    } catch {
-      return false;
-    }
+    await migrate();
+    const [row] = await sql<{ run: string | null }[]>`SELECT to_regclass('workflows.run')::text AS run`;
+    return Boolean(row?.run);
   })();
   return readiness;
 };
@@ -113,7 +109,7 @@ const effectRow = async (runId: string) => {
   return row;
 };
 
-describe("declared actions", () => {
+(process.env.CLOUD_DATABASE_TEST === "1" ? describe : describe.skip)("declared actions", () => {
   test("transactional heartbeat rejects cancellation before application writes", async () => {
     expect(await ready()).toBe(true);
     const { runId } = await queued("probe.cancelFence");
@@ -178,7 +174,7 @@ describe("declared actions", () => {
   });
 
   test("a pure action runs with its config resolved and no effect recorded", async () => {
-    if (!(await ready())) return;
+    expect(await ready()).toBe(true);
     const { runId } = await queued("probe.format");
 
     const seen: string[] = [];
@@ -204,7 +200,7 @@ describe("declared actions", () => {
   });
 
   test("applies app-owned authorization before a shared action runs", async () => {
-    if (!(await ready())) return;
+    expect(await ready()).toBe(true);
     const { runId } = await queued("probe.shared");
     let calls = 0;
     const actions = {
@@ -228,7 +224,7 @@ describe("declared actions", () => {
   });
 
   test("a declared action can park, wake, and resume without losing the signal", async () => {
-    if (!(await ready())) return;
+    expect(await ready()).toBe(true);
     const { runId, appId } = await queued("probe.await");
     let calls = 0;
     const dependency = { kind: "probe.reply", key: crypto.randomUUID() };
@@ -256,7 +252,7 @@ describe("declared actions", () => {
   });
 
   test("an ambiguous action is marked before it acts and settled after", async () => {
-    if (!(await ready())) return;
+    expect(await ready()).toBe(true);
     const { runId } = await queued("probe.send");
 
     const observed: { effectState?: string | null } = {};
@@ -283,7 +279,7 @@ describe("declared actions", () => {
   });
 
   test("an ambiguous result needs a human and stays unsettled", async () => {
-    if (!(await ready())) return;
+    expect(await ready()).toBe(true);
     const { runId } = await queued("probe.maybe");
 
     const actions = {
@@ -315,7 +311,7 @@ describe("declared actions", () => {
   });
 
   test("an operator can confirm an ambiguous effect and resume without repeating it", async () => {
-    if (!(await ready())) return;
+    expect(await ready()).toBe(true);
     const { runId } = await queued("probe.resolve");
     let calls = 0;
     const actions = {
@@ -347,7 +343,7 @@ describe("declared actions", () => {
   });
 
   test("a thrown ambiguous action becomes attention, never an ordinary retry", async () => {
-    if (!(await ready())) return;
+    expect(await ready()).toBe(true);
     const { runId } = await queued("probe.throw-after-begin");
     const actions = {
       "probe.throw-after-begin": workflowAction.ambiguous({
@@ -370,7 +366,7 @@ describe("declared actions", () => {
   });
 
   test("an effect that escaped is reconciled, never repeated", async () => {
-    if (!(await ready())) return;
+    expect(await ready()).toBe(true);
     const { runId } = await queued("probe.escaped");
 
     // A previous attempt marked the effect and died before settling it — the
@@ -426,7 +422,7 @@ describe("declared actions", () => {
   });
 
   test("an escaped effect nobody can resolve waits for a human", async () => {
-    if (!(await ready())) return;
+    expect(await ready()).toBe(true);
     const { runId } = await queued("probe.unknowable");
 
     const claim = await claimWorkflowRun({ worker: "w0", runId });
@@ -474,7 +470,7 @@ describe("declared actions", () => {
   });
 
   test("the budget is charged from the same hook a dry run reads", async () => {
-    if (!(await ready())) return;
+    expect(await ready()).toBe(true);
     const { runId } = await queued("probe.blocked", { emails: 0 });
 
     let ran = false;
@@ -504,7 +500,7 @@ describe("declared actions", () => {
   });
 
   test("a step that parks and resumes is charged once, not once per attempt", async () => {
-    if (!(await ready())) return;
+    expect(await ready()).toBe(true);
     // One move allowed, which is how an incoming automation is sized: the
     // effect happens on the first attempt and the resume only observes it.
     const { runId, appId } = await queued("probe.move", { maxMoves: 1 });
@@ -537,7 +533,7 @@ describe("declared actions", () => {
   });
 
   test("a transactional action commits its work and its evidence together", async () => {
-    if (!(await ready())) return;
+    expect(await ready()).toBe(true);
     const { runId } = await queued("probe.tx");
 
     const actions = {
@@ -560,7 +556,7 @@ describe("declared actions", () => {
   });
 
   test("a transactional replay returns the recorded output instead of working twice", async () => {
-    if (!(await ready())) return;
+    expect(await ready()).toBe(true);
     const { runId } = await queued("probe.tx-replay");
 
     let runs = 0;
@@ -592,7 +588,7 @@ describe("declared actions", () => {
   });
 
   test("a refused authorize fails the step without performing the work", async () => {
-    if (!(await ready())) return;
+    expect(await ready()).toBe(true);
     const { runId } = await queued("probe.denied", { writes: 10 });
 
     let ran = false;
@@ -619,7 +615,7 @@ describe("declared actions", () => {
   });
 
   test("an action sees who it acts as and what its app attached", async () => {
-    if (!(await ready())) return;
+    expect(await ready()).toBe(true);
     const { runId } = await queued("probe.context");
 
     const seen: { actor?: unknown; context?: unknown } = {};
@@ -645,7 +641,7 @@ describe("declared actions", () => {
   });
 
   test("a step's output lands under the name its config gives", async () => {
-    if (!(await ready())) return;
+    expect(await ready()).toBe(true);
     const { runId, workflowId } = await queued("probe.saved", {}, { saveAs: "created" });
 
     const actions = {
@@ -668,7 +664,7 @@ describe("declared actions", () => {
   });
 
   test("an action reads the identity the compiler pinned, not the name a person typed", async () => {
-    if (!(await ready())) return;
+    expect(await ready()).toBe(true);
     const { runId } = await queued(
       "probe.bound",
       {},
@@ -702,7 +698,7 @@ describe("declared actions", () => {
   });
 
   test("a failed action keeps its own code, so the run says which failure it was", async () => {
-    if (!(await ready())) return;
+    expect(await ready()).toBe(true);
     const { runId } = await queued("probe.gone");
 
     const actions = {
@@ -722,7 +718,7 @@ describe("declared actions", () => {
   });
 
   test("an action that says the attempt failed, not the work, is retried", async () => {
-    if (!(await ready())) return;
+    expect(await ready()).toBe(true);
     const { runId } = await queued("probe.flaky");
 
     const actions = {
@@ -744,7 +740,7 @@ describe("declared actions", () => {
   });
 
   test("automatic retries stop after a bounded number of consecutive failures", async () => {
-    if (!(await ready())) return;
+    expect(await ready()).toBe(true);
     const { runId } = await queued("probe.always-down");
     let calls = 0;
     const actions = createWorkflowActionPort(
@@ -775,7 +771,7 @@ describe("declared actions", () => {
   });
 
   test("an action the app never declared is a missing handler, not a crash", async () => {
-    if (!(await ready())) return;
+    expect(await ready()).toBe(true);
     const { runId } = await queued("probe.unknown");
     const outcome = await runOneWorkflow({ worker: "w1", runId, actions: createWorkflowActionPort(workflowModule({})) });
     expect(outcome.state).toBe("finished");
@@ -783,7 +779,7 @@ describe("declared actions", () => {
   });
 
   test("a dry run reports impure steps and really runs pure ones", async () => {
-    if (!(await ready())) return;
+    expect(await ready()).toBe(true);
 
     const actions = {
       "probe.format": workflowAction.pure({

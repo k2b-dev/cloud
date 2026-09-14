@@ -1,0 +1,78 @@
+# Disposable integration infrastructure, independent of the development stack.
+name: cloud-sync-test
+
+x-nats: &nats
+  image: nats:2.14.3-alpine
+  configs:
+    - source: nats_config
+      target: /etc/nats/nats.conf
+    - source: nats_system_config
+      target: /etc/nats/system.conf
+  healthcheck:
+    test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:8222/healthz?js-enabled-only=true"]
+    interval: 2s
+    timeout: 2s
+    retries: 30
+
+services:
+  nats-1:
+    <<: *nats
+    command: --config /etc/nats/nats.conf --name sync-test-1
+    ports:
+      - "127.0.0.1:${SYNC_TEST_NATS_PORT:-4222}:4222"
+    volumes:
+      - nats_1:/data
+  nats-2:
+    <<: *nats
+    command: --config /etc/nats/nats.conf --name sync-test-2
+    volumes:
+      - nats_2:/data
+  nats-3:
+    <<: *nats
+    command: --config /etc/nats/nats.conf --name sync-test-3
+    volumes:
+      - nats_3:/data
+  postgres:
+    image: postgres:15-alpine
+    command: postgres -c max_connections=300
+    environment:
+      POSTGRES_DB: ipa
+      POSTGRES_USER: ipa
+      POSTGRES_PASSWORD: ipa
+    ports:
+      - "127.0.0.1:${SYNC_TEST_POSTGRES_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ipa -d ipa"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+  valkey:
+    image: docker.io/valkey/valkey:8-alpine
+    ports:
+      - "127.0.0.1:${SYNC_TEST_VALKEY_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+
+configs:
+  nats_system_config:
+    file: ./.local/nats-sync-test/system.conf
+  nats_config:
+    content: |
+      include system.conf
+      max_payload: 16MB
+      http: 0.0.0.0:8222
+      jetstream {
+        store_dir: /data
+      }
+      cluster {
+        name: cloud-sync-test
+        listen: 0.0.0.0:6222
+        routes: [nats://nats-1:6222, nats://nats-2:6222, nats://nats-3:6222]
+      }
+volumes:
+  nats_1:
+  nats_2:
+  nats_3:

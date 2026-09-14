@@ -2,10 +2,10 @@ name: Sync runtime integration
 
 on:
   pull_request:
-    paths: ["packages/**", "scripts/**", "patches/**", "package.json", "compose.yml", "bun.lock", ".github/workflows/sync.yml"]
+    paths: ["packages/**", "scripts/**", "patches/**", "package.json", "compose.sync-test.yml", "bun.lock", ".github/workflows/sync.yml"]
   push:
     branches: [main]
-    paths: ["packages/**", "scripts/**", "patches/**", "package.json", "compose.yml", "bun.lock", ".github/workflows/sync.yml"]
+    paths: ["packages/**", "scripts/**", "patches/**", "package.json", "compose.sync-test.yml", "bun.lock", ".github/workflows/sync.yml"]
   workflow_dispatch:
 
 permissions:
@@ -36,15 +36,21 @@ jobs:
       - name: Build shared UI package
         run: bun run --cwd packages/ui build
       - name: Prepare local NATS system account
-        run: bun packages/gateway-ops/scripts/dev-nats.ts
+        run: bun -e 'import { prepareDevNats } from "./packages/gateway-ops/scripts/dev-nats"; await prepareDevNats(".local/nats-sync-test")'
       - name: Validate generated NATS configuration and include paths
-        run: docker compose -f compose.yml run --rm --no-deps nats-1 --config /etc/nats/nats.conf -t
+        run: docker compose -f compose.sync-test.yml run --rm --no-deps nats-1 --config /etc/nats/nats.conf -t
       - name: Start three-node JetStream cluster and isolated test database server
-        run: docker compose -f compose.yml up -d --wait nats-1 nats-2 nats-3 postgres valkey
+        run: docker compose -f compose.sync-test.yml up -d --wait nats-1 nats-2 nats-3 postgres valkey
       - name: Create core and gateway database schemas
         run: |
           bun -e 'import { runCoreSetup } from "./packages/core/src/runtime-helpers"; await runCoreSetup()'
           bun -e 'import { migrate } from "./packages/gateway-ops/src/migrate"; await migrate()'
+      - name: Verify database-backed test contracts
+        env:
+          CLOUD_DATABASE_TEST: "1"
+        run: |
+          bun -e 'import { migrate } from "./packages/spaces/src/migrate"; await migrate()'
+          bun test --isolate packages/cloud/src/services/audit/index.test.ts packages/cloud/src/workflows/store/actions.integration.test.ts packages/spaces/src/service/public-resources.test.ts
       - name: Verify replay and cursor boundaries
         run: |
           bun test packages/cloud/src/services/notifications/live.integration.test.ts
@@ -87,11 +93,11 @@ jobs:
           NATS_DIAGNOSTICS_TEST: "1"
           NATS_SERVERS: ${{ env.SYNC_TEST_SERVERS }}
           NATS_ADMIN_SERVERS: ${{ env.SYNC_TEST_SERVERS }}
-          NATS_ADMIN_NKEY_SEED_FILE: .local/nats/admin.seed
+          NATS_ADMIN_NKEY_SEED_FILE: .local/nats-sync-test/admin.seed
         run: bun test packages/gateway-ops/src/observability/nats/service.integration.test.ts
       - name: Cluster diagnostics
         if: failure()
-        run: docker compose -f compose.yml logs --tail 100 nats-1 nats-2 nats-3
+        run: docker compose -f compose.sync-test.yml logs --tail 100 nats-1 nats-2 nats-3
       - name: Stop isolated CI cluster
         if: always()
-        run: docker compose -f compose.yml down --volumes
+        run: docker compose -f compose.sync-test.yml down --volumes

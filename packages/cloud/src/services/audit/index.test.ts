@@ -41,7 +41,7 @@ describe("sanitizeAuditMetadata", () => {
     expect(sanitizeAuditText("Access denied")).toBe("Access denied");
   });
 
-  test("lists only safe actor-owned self-service activity", async () => {
+  (process.env.CLOUD_DATABASE_TEST === "1" ? test : test.skip)("lists only safe actor-owned self-service activity", async () => {
     const userId = crypto.randomUUID();
     const otherUserId = crypto.randomUUID();
     const requestId = `self-service-activity-${crypto.randomUUID()}`;

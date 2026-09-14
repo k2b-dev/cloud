@@ -45,7 +45,7 @@ if (!databaseName) {
     const { createSync } = await import("@k2b/sync");
     const { connect } = await import("@nats-io/transport-node");
     const { bindProcessSync, unbindProcessSync } = await import("@k2b/cloud");
-    const connection = await connect({ servers: "nats://127.0.0.1:4222" });
+    const connection = await connect({ servers: (process.env.SYNC_TEST_SERVERS ?? "nats://127.0.0.1:4222").split(",") });
     const namespace = `snapshot-${crypto.randomUUID()}`;
     const sync = createSync({ connection, namespace, application: "notebooks" });
     bindProcessSync(sync);
