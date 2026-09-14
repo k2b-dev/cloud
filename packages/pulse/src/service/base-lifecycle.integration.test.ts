@@ -8,9 +8,9 @@ const postgresTest = runDbSmoke ? test : test.skip;
 const uuid = () => crypto.randomUUID();
 const jsonb = (value: unknown) => JSON.stringify(value);
 
-const migratePulse = async () => {
-  const { migrate } = await import("../migrate");
-  await migrate();
+const initializePulseSchema = async () => {
+  const { initializeSchema } = await import("../schema");
+  await initializeSchema();
 };
 
 type RetentionPolicy = {
@@ -292,7 +292,7 @@ const expectBaseTelemetryCleared = async (baseId: string) => {
 };
 
 beforeAll(async () => {
-  if (runDbSmoke) await migratePulse();
+  if (runDbSmoke) await initializePulseSchema();
 });
 
 describe("Pulse lifecycle Postgres smoke", () => {

@@ -2,7 +2,7 @@ import type { ServiceAccount } from "@k2b/cloud/contracts";
 import { sql } from "bun";
 import type { EventQuery, PulseEvent } from "../contracts";
 import { newShortId } from "../lib/short-id";
-import { migrate } from "../migrate";
+import { initializeSchema } from "../schema";
 import { ingestByApiKey } from "./ingest-writer";
 import { queryEventAggregateData } from "./query-execution";
 import { runRetentionBatch } from "./runtime";
@@ -117,7 +117,7 @@ const prepareSchema = async (): Promise<void> => {
   await sql`CREATE SCHEMA IF NOT EXISTS auth`.simple();
   await sql`CREATE TABLE IF NOT EXISTS auth.users (id uuid PRIMARY KEY)`.simple();
   await sql`CREATE TABLE IF NOT EXISTS auth.access (id uuid PRIMARY KEY)`.simple();
-  await migrate();
+  await initializeSchema();
   const [timescale] = await sql<{ enabled: boolean }[]>`
     SELECT EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'timescaledb') AS enabled
   `;

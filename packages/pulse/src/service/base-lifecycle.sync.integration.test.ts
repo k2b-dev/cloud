@@ -14,8 +14,8 @@ syncTest(
       "./base-lifecycle"
     );
     const { newShortId } = await import("../lib/short-id");
-    const { migrate } = await import("../migrate");
-    await migrate();
+    const { initializeSchema } = await import("../schema");
+    await initializeSchema();
     const connection = await connect({
       servers: process.env.NATS_SERVERS ?? "nats://localhost:4222",
       ignoreClusterUpdates: true,

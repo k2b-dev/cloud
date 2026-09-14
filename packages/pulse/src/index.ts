@@ -5,7 +5,7 @@ import { pulseCapabilities } from "./capabilities";
 import { app, ssr } from "./config";
 import pageRoutes from "./frontend";
 import { pulseHelp } from "./help";
-import { migrate } from "./migrate";
+import { initializeSchema } from "./schema";
 import { pulseService } from "./service";
 import { pulseRuntime } from "./service/runtime";
 
@@ -24,7 +24,7 @@ export default await app.start({
   openapi: apiRoutes,
   lifecycle: {
     setup: async () => {
-      await migrate();
+      await initializeSchema();
     },
     start: async () => {
       await pulseRuntime.start();

@@ -5,7 +5,7 @@ section: Operations
 order: 420
 description: Explore metrics, events, states, resources, queries, and dashboards in one telemetry workspace.
 tags: [pulse, telemetry, metrics, dashboards]
-updated: 2026-09-07
+updated: 2026-09-14
 ---
 
 # Pulse
@@ -75,3 +75,9 @@ base.
 See [Deployment requirements](/en/docs/operations/deployment-requirements) for
 this app’s startup prerequisites, optional integrations, configuration and
 functional checks.
+
+Pulse initializes its tables atomically in a fresh `pulse` schema. Later starts
+reuse that installation without changing its data. Existing Alpha schemas are
+rejected: there is no automatic upgrade or data repair. Before replacing a
+disposable Alpha installation, explicitly remove only its Pulse schema; the
+application never deletes it on startup.
