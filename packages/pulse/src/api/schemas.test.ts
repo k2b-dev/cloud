@@ -169,3 +169,12 @@ describe("Pulse public resource IDs", () => {
     ).toBe(false);
   });
 });
+
+test("rejects historical identity fields instead of silently dropping them", () => {
+  for (const field of ["entityId", "entityType", "resourceKey", "resourceType"]) {
+    expect(IngestBatchSchema.safeParse({ metrics: [{ name: "load", value: 1, [field]: "old" }] }).success).toBe(false);
+    expect(IngestBatchSchema.safeParse({ events: [{ kind: "view", [field]: "old" }] }).success).toBe(false);
+    expect(IngestBatchSchema.safeParse({ states: [{ key: "online", value: true, [field]: "old" }] }).success).toBe(false);
+  }
+  expect(IngestBatchSchema.safeParse({ metrics: [{ name: "load", value: 1, resource: { type: "a:b", id: "c" } }] }).success).toBe(false);
+});

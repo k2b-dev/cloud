@@ -19,7 +19,7 @@ Pulse accepts metrics, events, and current states in one JSON batch. Signed-in a
 
 | Path | Use it for | Source association | Retry idempotency |
 | --- | --- | --- | --- |
-| `cld pulse ingest` | A signed-in agent importing or testing a batch | None | No idempotency-key option |
+| `cld pulse ingest` | A signed-in agent importing or testing a batch | Required `--source` | No idempotency-key option |
 | `POST /api/pulse/ingest` | Servers, jobs, importers, and collectors | Source bound to the token | Optional `Idempotency-Key` header |
 | `metrics` source | Pulling a Prometheus-compatible `/metrics` endpoint | Configured metrics source | Scrape lifecycle handles collection |
 
@@ -71,11 +71,11 @@ The token determines the base and source. Omit `sourceId` from every signal; Pul
 For a one-off signed-in import:
 
 ```bash
-cld pulse ingest --file batch.json --json
-cat batch.json | cld pulse ingest --stdin --json
+cld pulse ingest --source "Warehouse importer" --file batch.json --json
+cat batch.json | cld pulse ingest --source "Warehouse importer" --stdin --json
 ```
 
-`cld pulse ingest` requires write access to the selected base. It uses the authenticated internal endpoint and records signals without an associated source. Prefer source-token ingest when source attribution matters.
+`cld pulse ingest` requires write access to the selected base. Pass `--source` to select an enabled source in that base. The endpoint is `/api/pulse/bases/:baseId/sources/:sourceId/ingest`. Long-running collectors use a source token.
 
 ## Batch schema
 
@@ -98,8 +98,7 @@ All three collections are optional, but the batch must contain at least one item
   "ts": "2026-07-12T12:00:00.000Z",
   "type": "counter",
   "unit": "count",
-  "entityId": "store:berlin",
-  "entityType": "store",
+  "resource": { "type": "store", "id": "berlin" },
   "dimensions": {
     "channel": "web"
   }
@@ -113,8 +112,7 @@ All three collections are optional, but the batch must contain at least one item
 | `ts` | No | ISO datetime. Server time is used when omitted. |
 | `type` | No | `gauge`, `counter`, `histogram`, or `summary`; defaults to `gauge`. |
 | `unit` | No | Non-empty unit string or null. Common units are formatted automatically by dashboards. |
-| `entityId` | No | Stable observed-object identifier. |
-| `entityType` | No | Resource class such as `host`, `container`, `store`, or `customer`. |
+| `resource` | No | Explicit `{type, id, label?}` for the observed object; omit or use null for no resource. |
 | `dimensions` | No | Exact-match labels distinguishing variants. |
 
 A metric variant is identified by metric name, authenticated source, resource identity, and normalized dimensions. Sending the same variant and timestamp again updates that sample rather than creating a second sample. Keep type and unit stable for one metric name: the first observed type remains the metric definition, while a later non-null unit can update its unit.
@@ -128,8 +126,7 @@ One metric may have at most 10,000 variants in one base. Values such as visitor 
   "kind": "order.created",
   "ts": "2026-07-12T12:00:00.000Z",
   "value": 149.9,
-  "entityId": "order:1234",
-  "entityType": "order",
+  "resource": { "type": "order", "id": "1234" },
   "actorId": "customer:42",
   "sessionId": "checkout-session-8",
   "correlationId": "checkout-1234",
@@ -161,7 +158,7 @@ One metric may have at most 10,000 variants in one base. Values such as visitor 
 | `kind` | Yes | Non-empty event kind. |
 | `ts` | No | Event ISO datetime; server time is used when omitted. |
 | `value` | No | Optional finite numeric value or null. |
-| `entityId`, `entityType` | No | Resource the event concerns. |
+| `resource` | No | Explicit `{type, id, label?}` for the observed object. |
 | `actorId` | No | Actor responsible for the event. |
 | `sessionId` | No | Session grouping related events. |
 | `correlationId` | No | Identifier joining one process across events. |
@@ -224,8 +221,7 @@ Pulse lists observed event field names, roles, value types, and counts. It does 
   "key": "store.online",
   "value": true,
   "ts": "2026-07-12T12:00:00.000Z",
-  "entityId": "store:berlin",
-  "entityType": "store",
+  "resource": { "type": "store", "id": "berlin" },
   "dimensions": {
     "region": "eu-central"
   }
@@ -237,10 +233,10 @@ Pulse lists observed event field names, roles, value types, and counts. It does 
 | `key` | Yes | Non-empty state key. |
 | `value` | Yes | String, number, boolean, or null. |
 | `ts` | No | State-change ISO datetime; server time is used when omitted. |
-| `entityId`, `entityType` | No | Resource whose current state is being set. |
+| `resource` | No | Explicit `{type, id, label?}` whose state is being set. |
 | `dimensions` | No | Labels distinguishing independently current state variants. |
 
-States represent current truth. Sending the same key, resource identity, and dimensions replaces the current value. Pulse records state history only for the initial value and real value changes; repeated equal snapshots update the current row without adding another transition. Source is not part of current-state identity, so a matching update from another source also becomes the current value. Query DSL `states` returns current rows, not the state-change history.
+States represent current truth. Sending the same source, key, resource identity, and dimensions replaces the current value. Pulse records state history only for the initial value and real value changes; repeated equal snapshots update the current row without adding another transition. Source is part of current-state identity: different sources never overwrite each other. Late snapshots do not rewind the current value. Batch transitions are processed in timestamp order, with input order breaking ties; stored history preserves that order. Query DSL `states` returns current rows, not the state-change history.
 
 ### Dimension values
 
@@ -254,8 +250,9 @@ Resource modeling determines whether the Pulse UI remains understandable.
 
 Use this split:
 
-- `entityId`: stable identity of the observed object.
-- `entityType`: reusable class of that object.
+- `resource.id`: stable identity of the observed object.
+- `resource.type`: a lowercase slug such as `host`, `container`, or `service`.
+- `resource.label`: optional presentation; changing it does not create a variant.
 - `dimensions`: labels that distinguish or filter variants without replacing identity.
 - metric/event/state name: the fact being observed, not the object name.
 
@@ -267,8 +264,7 @@ Good container example:
   "value": 12.4,
   "unit": "percent",
   "type": "gauge",
-  "entityId": "host-01/f06a6893f7bd",
-  "entityType": "container",
+  "resource": { "type": "container", "id": "host-01/f06a6893f7bd" },
   "dimensions": {
     "host": "host-01",
     "container": "app-core",
@@ -281,9 +277,11 @@ Good container example:
 
 Do not put the container name into the metric name. One stable metric name with one resource per container lets users browse a host, open a container, and see all its signals.
 
-Pulse first derives known resource shapes from signal prefixes and dimensions. For Docker container signals, `host` plus `container_id` is the stable identity and `container` is the display label. It also recognizes Compose service/project, filesystem, network, host (`host`, `instance`, or `node`), and service shapes. When no known shape matches, Pulse uses explicit `entityId` and `entityType`, then falls back to a host, service, or source resource.
-
-This inference is a compatibility aid, not a substitute for deliberate modeling. New collectors should send stable entity fields and the expected identity dimensions consistently. For recognized Docker signals, ensure those dimensions describe the same object as the entity fields.
+Pulse uses only explicit resources. It does not infer Docker, host, or service
+objects from generic ingest dimensions. The Prometheus adapter can identify a
+`target` resource from its `instance`, `host`, or `node` label. Resource types
+must match `[a-z][a-z0-9._-]*`; their full `type:id` key has at most 505
+characters. The type distinguishes equal IDs belonging to different classes.
 
 Keep identity consistent across metrics, events, and states so Pulse groups all signals under the same resource.
 

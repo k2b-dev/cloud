@@ -53,8 +53,8 @@ const series = (overrides: Partial<PulseMetricSeries>): PulseMetricSeries => ({
   id: "series-a",
   metric: "system.cpu.usage",
   sourceId: "source-a",
-  entityId: "host:alpha",
-  entityType: "host",
+  resourceKey: "host:alpha",
+  resourceType: "host",
   dimensions: { host: "alpha", service: "api" },
   lastSeenAt: "2026-07-10T10:00:00.000Z",
   latestValue: 42,
@@ -68,8 +68,8 @@ const event = (overrides: Partial<PulseRecordedEvent>): PulseRecordedEvent => ({
   ts: "2026-07-10T10:00:00.000Z",
   value: null,
   sourceId: "source-a",
-  entityId: "host:alpha",
-  entityType: "host",
+  resourceKey: "host:alpha",
+  resourceType: "host",
   dimensions: { host: "alpha", service: "api" },
   attributes: {},
   payload: {},
@@ -78,11 +78,12 @@ const event = (overrides: Partial<PulseRecordedEvent>): PulseRecordedEvent => ({
 });
 
 const state = (overrides: Partial<PulseCurrentState>): PulseCurrentState => ({
+  variantKey: "fixture-0",
   key: "service.online",
   value: true,
   sourceId: "source-a",
-  entityId: "host:alpha",
-  entityType: "host",
+  resourceKey: "host:alpha",
+  resourceType: "host",
   dimensions: { host: "alpha", service: "api" },
   updatedAt: "2026-07-10T10:00:00.000Z",
   ...overrides,
@@ -91,8 +92,8 @@ const state = (overrides: Partial<PulseCurrentState>): PulseCurrentState => ({
 const inventory = (overrides: Partial<PulseInventory> = {}): PulseInventory => ({
   resources: [
     {
-      key: "host/alpha",
-      id: "host:alpha",
+      key: "host:alpha",
+      id: "alpha",
       label: "alpha",
       type: "host",
       sourceIds: ["source-a"],
@@ -115,35 +116,35 @@ describe("Pulse query browser model", () => {
   test("builds browse entities from resources and unlisted signal entities", () => {
     const entities = buildBrowseEntities({
       inventory: inventory(),
-      series: [series({ entityId: "host:beta", dimensions: { host: "beta" } })],
-      events: [event({ entityId: "host:beta", dimensions: { host: "beta", service: "worker" } })],
-      states: [state({ entityId: "host:gamma", dimensions: { host: "gamma" } })],
+      series: [series({ resourceKey: "host:beta", dimensions: { host: "beta" } })],
+      events: [event({ resourceKey: "host:beta", dimensions: { host: "beta", service: "worker" } })],
+      states: [state({ resourceKey: "host:gamma", dimensions: { host: "gamma" } })],
     });
 
-    expect(entities.map((entity) => [entity.id, entity.metricCount, entity.eventCount, entity.stateCount])).toEqual([
+    expect(entities.map((resource) => [resource.id, resource.metricCount, resource.eventCount, resource.stateCount])).toEqual([
       ["host:beta", 1, 1, 0],
       ["host:alpha", 1, 0, 0],
       ["host:gamma", 0, 0, 1],
     ]);
-    expect(entities.find((entity) => entity.id === "host:beta")?.sourceIds).toEqual(["source-a"]);
-    expect(entities.find((entity) => entity.id === "host:beta")?.dimensions).toEqual({ host: "beta", service: "worker" });
+    expect(entities.find((resource) => resource.id === "host:beta")?.sourceIds).toEqual(["source-a"]);
+    expect(entities.find((resource) => resource.id === "host:beta")?.dimensions).toEqual({ host: "beta", service: "worker" });
   });
 
-  test("scopes metric rows to selected source and entity", () => {
+  test("scopes metric rows to selected source and resource", () => {
     const scoped = filterBrowseSeries(
       [
-        series({ id: "cpu-alpha", entityId: "host:alpha", sourceId: "source-a" }),
-        series({ id: "cpu-beta", entityId: "host:beta", sourceId: "source-a" }),
-        series({ id: "cpu-other-source", entityId: "host:alpha", sourceId: "source-b" }),
+        series({ id: "cpu-alpha", resourceKey: "host:alpha", sourceId: "source-a" }),
+        series({ id: "cpu-beta", resourceKey: "host:beta", sourceId: "source-a" }),
+        series({ id: "cpu-other-source", resourceKey: "host:alpha", sourceId: "source-b" }),
       ],
-      { sourceId: "source-a", entityId: "host:alpha" },
+      { sourceId: "source-a", resourceKey: "host:alpha" },
     );
     const rows = buildBrowseMetrics({
       metrics: [metric({ name: "system.cpu.usage" }), metric({ name: "system.memory.usage" })],
       scopedSeries: scoped,
       allSeries: scoped,
       selectedEntityDimensions: { host: "alpha" },
-      entityId: "host:alpha",
+      resourceKey: "host:alpha",
       matches: matchesAll,
     });
 
@@ -161,21 +162,21 @@ describe("Pulse query browser model", () => {
         event({ id: "alert-1", kind: "alert.opened", dimensions: { host: "alpha", severity: "critical" } }),
         event({ id: "other-source", sourceId: "source-b" }),
       ],
-      { sourceId: "source-a", entityId: "host:alpha" },
+      { sourceId: "source-a", resourceKey: "host:alpha" },
       matchesTerm("deploy"),
     );
     const states = buildBrowseStates(
       [
         state({ key: "service.online" }),
-        state({ key: "service.online", entityId: "host:beta" }),
+        state({ key: "service.online", resourceKey: "host:beta" }),
         state({ key: "service.version", dimensions: { host: "alpha", version: "1.2.3" } }),
       ],
-      { sourceId: "source-a", entityId: "host:alpha" },
+      { sourceId: "source-a", resourceKey: "host:alpha" },
       matchesTerm("service"),
     );
 
     expect(events.map((row) => [row.kind, row.count, row.sample.id])).toEqual([["deploy.finished", 2, "deploy-1"]]);
-    expect(states.map((row) => [row.key, row.count, row.sample.entityId])).toEqual([
+    expect(states.map((row) => [row.key, row.count, row.sample.resourceKey])).toEqual([
       ["service.online", 1, "host:alpha"],
       ["service.version", 1, "host:alpha"],
     ]);
@@ -196,7 +197,7 @@ describe("Pulse query browser model", () => {
       ],
       events: [event({ dimensions: { host: "alpha", severity: "critical" } })],
       states: [state({ dimensions: { host: "beta", service: "api" } })],
-      scope: { sourceId: "source-a", entityId: "" },
+      scope: { sourceId: "source-a", resourceKey: "" },
       matches: matchesAll,
     });
 
@@ -207,4 +208,31 @@ describe("Pulse query browser model", () => {
     ]);
     expect(labels.find((group) => group.key === "host")?.count).toBe(4);
   });
+});
+
+test("merges inventory and signal rows by the full resource key", () => {
+  const inventory: PulseInventory = {
+    resources: [
+      {
+        key: "host:alpha",
+        id: "alpha",
+        label: "Alpha",
+        type: "host",
+        sourceIds: ["source-a"],
+        metricCount: 1,
+        metricSeriesCount: 1,
+        eventCount: 0,
+        stateCount: 0,
+        lastSeenAt: null,
+        dimensions: {},
+      },
+    ],
+    metrics: [],
+    events: [],
+    states: [],
+    fields: [],
+  };
+  const rows = buildBrowseEntities({ inventory, series: [series({})], events: [], states: [] });
+  expect(rows).toHaveLength(1);
+  expect(rows[0]?.id).toBe("host:alpha");
 });

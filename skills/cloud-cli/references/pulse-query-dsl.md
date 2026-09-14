@@ -31,8 +31,8 @@ metric <metric> <aggregation>
   [every <duration>]
   [since <duration>]
   [source <source-id>]
-  [entity <id>]
-  [entity_type <type>]
+  [resource <id>]
+  [resource_type <type>]
   [where <key>=<value>, ...]
 ```
 
@@ -78,8 +78,8 @@ events [<kind>|*]
   [group by <dimension>, ...]
   [since <duration>]
   [source <source-id>]
-  [entity <id>]
-  [entity_type <type>]
+  [resource <id>]
+  [resource_type <type>]
   [where <key>=<value>, ...]
   [limit <rows>]
 ```
@@ -94,7 +94,7 @@ Defaults are:
 
 ```text
 events deploy.finished since 7d where env=prod limit 100
-events * since 1h entity_type service limit 200
+events * since 1h resource_type service limit 200
 events page.viewed count every 1h since 7d where channel=qr group by campaign, country
 events page.viewed unique actor every 1d since 30d
 ```
@@ -112,7 +112,7 @@ Without an aggregation, event rows include the event kind and timestamp, optiona
 
 Summarized events return points over time instead of individual event rows. `every` defaults to `1h`. `group by` accepts one to four dimension keys and groups missing values as a separate empty group. Grouping applies only to `dimensions`, not `attributes`, `sensitive`, or `payload`.
 
-The event aggregation must follow the event kind directly. `every` and `group by` require an aggregation. Shared clauses such as `since`, `source`, `entity`, `entity_type`, `where`, and `limit` may follow in any order.
+The event aggregation must follow the event kind directly. `every` and `group by` require an aggregation. Shared clauses such as `since`, `source`, `resource`, `resource_type`, `where`, and `limit` may follow in any order.
 
 ```text
 events qr.opened count every 1h since 7d group by campaign, country
@@ -128,8 +128,8 @@ Use `actorId` and `sessionId` for unique counts. Do not duplicate unique identit
 states [<key>|*]
   [since <duration>]
   [source <source-id>]
-  [entity <id>]
-  [entity_type <type>]
+  [resource <id>]
+  [resource_type <type>]
   [where <key>=<value>, ...]
   [limit <rows>]
 ```
@@ -143,8 +143,8 @@ Defaults are:
 States are current values, not a state-change history. Add `since` only when stale current values should disappear.
 
 ```text
-states integration.online entity service:webshop
-states * since 10m entity_type device limit 200
+states integration.online resource service:webshop
+states * since 10m resource_type device limit 200
 ```
 
 State rows include the key, current value, source and resource identifiers, dimensions, and last update time.
@@ -167,24 +167,24 @@ Resolve the ID first:
 cld pulse sources list --json
 ```
 
-### `entity <id>`
+### `resource <id>`
 
-Restricts the query to one resource identifier. The UI and CLI inventory call the object a resource; Query DSL calls its ID an entity.
+Restricts the query to one complete `type:id` resource key. Use the key shown by the resource inventory.
 
 ```text
-entity container:app-core
+resource container:app-core
 ```
 
-### `entity_type <type>`
+### `resource_type <type>`
 
 Restricts the query to one resource class. Types come from observed data and are not a fixed server-only enum.
 
 ```text
-entity_type container
-entity_type customer
+resource_type container
+resource_type customer
 ```
 
-Use the exact spelling `entity_type`. Pre-V1 aliases such as `entity-type` and `entitytype` are rejected.
+Use the exact spelling `resource_type`. Historical entity clauses and alternate spellings are rejected.
 
 ### `where <key>=<value>, ...`
 
@@ -213,11 +213,11 @@ Applies to events and states. It must be a positive integer no larger than 1,000
 
 ## Quoting and exact names
 
-Single and double quotes are supported. Quote metric names, event kinds, state keys, entity IDs, types, dimension keys, or values when they contain spaces, commas, or equals signs.
+Single and double quotes are supported. Quote metric names, event kinds, state keys, resource IDs, types, dimension keys, or values when they contain spaces, commas, or equals signs.
 
 ```text
 events "checkout error" where message="payment, provider=offline" limit 50
-states "integration label" entity "service:web shop"
+states "integration label" resource "service:web shop"
 ```
 
 Inside a quoted token, backslash escapes the next character:
@@ -249,8 +249,8 @@ Compile output:
     "event": "deploy.finished",
     "since": "24h",
     "sourceId": null,
-    "entityId": null,
-    "entityType": null,
+    "resourceKey": null,
+    "resourceType": null,
     "dimensions": { "env": "prod" },
     "limit": 100
   }
@@ -270,8 +270,8 @@ Run output always contains `compiled`, `points`, `events`, and `states`. Exactly
       "ts": "2026-07-12T12:00:00.000Z",
       "value": null,
       "sourceId": "Src001",
-      "entityId": "service:checkout",
-      "entityType": "service",
+      "resourceKey": "service:checkout",
+      "resourceType": "service",
       "dimensions": { "env": "prod" },
       "attributes": { "releaseId": "release-123" },
       "payload": { "version": "1.2.3" },
@@ -293,14 +293,14 @@ Run output always contains `compiled`, `points`, `events`, and `states`. Exactly
 - A `where` clause accepts at most 32 distinct dimension filters.
 - A clause may appear only once.
 
-When a metric matches too many variants, inspect them with `cld pulse series <metric> --json`, then add `source`, `entity`, `entity_type`, or `where` filters. Do not silently choose an arbitrary variant.
+When a metric matches too many variants, inspect them with `cld pulse series <metric> --json`, then add `source`, `resource`, `resource_type`, or `where` filters. Do not silently choose an arbitrary variant.
 
 ## Examples
 
 ### Current gauge value
 
 ```text
-metric battery.charge_percent latest every 5m since 24h entity battery:garage
+metric battery.charge_percent latest every 5m since 24h resource battery:garage
 ```
 
 ### Counter throughput

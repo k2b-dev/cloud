@@ -22,7 +22,7 @@ export type ReferenceScopeChip = { id: string; label: string; hint: string; coun
 
 type ScopeFilters = {
   sourceId: string;
-  entityId: string;
+  resourceKey: string;
 };
 
 export const quotePulseQueryValue = (value: string): string =>
@@ -31,8 +31,8 @@ export const quotePulseQueryValue = (value: string): string =>
 const referenceSourceName = (sources: Map<string, PulseSource>, sourceId: string | null): string =>
   sourceId ? (sources.get(sourceId)?.name ?? sourceId.slice(0, 8)) : "No source";
 
-const matchesScope = (value: { sourceId: string | null; entityId: string | null }, filters: ScopeFilters): boolean =>
-  (!filters.sourceId || value.sourceId === filters.sourceId) && (!filters.entityId || value.entityId === filters.entityId);
+const matchesScope = (value: { sourceId: string | null; resourceKey: string | null }, filters: ScopeFilters): boolean =>
+  (!filters.sourceId || value.sourceId === filters.sourceId) && (!filters.resourceKey || value.resourceKey === filters.resourceKey);
 
 const dimensionSearchText = (dimensions: Record<string, string>): string =>
   `${Object.keys(dimensions).join(" ")} ${Object.values(dimensions).join(" ")}`;
@@ -98,21 +98,21 @@ export const buildReferenceEntityChips = (params: {
   states: PulseCurrentState[];
 }): ReferenceScopeChip[] => {
   const entities = new Map<string, { type: string | null; count: number }>();
-  const add = (entityId: string | null, entityType: string | null) => {
-    if (!entityId) return;
-    const current = entities.get(entityId);
-    entities.set(entityId, { type: current?.type ?? entityType, count: (current?.count ?? 0) + 1 });
+  const add = (resourceKey: string | null, resourceType: string | null) => {
+    if (!resourceKey) return;
+    const current = entities.get(resourceKey);
+    entities.set(resourceKey, { type: current?.type ?? resourceType, count: (current?.count ?? 0) + 1 });
   };
 
-  for (const item of params.series) add(item.entityId, item.entityType);
-  for (const item of params.events) add(item.entityId, item.entityType);
-  for (const item of params.states) add(item.entityId, item.entityType);
+  for (const item of params.series) add(item.resourceKey, item.resourceType);
+  for (const item of params.events) add(item.resourceKey, item.resourceType);
+  for (const item of params.states) add(item.resourceKey, item.resourceType);
 
   return [...entities.entries()]
     .map(([id, value]) => ({
       id,
       label: id,
-      hint: value.type ?? "entity",
+      hint: value.type ?? "resource",
       count: value.count,
       icon: "ti ti-cube",
     }))
@@ -133,14 +133,14 @@ export const buildReferenceMetricRows = (params: {
     seriesByMetric.get(item.metric)!.push(item);
   }
 
-  const scoped = params.filters.sourceId || params.filters.entityId;
+  const scoped = params.filters.sourceId || params.filters.resourceKey;
   const rows = params.metrics
     .map((metric) => {
       const matchingSeries = seriesByMetric.get(metric.name) ?? [];
       const seriesText = matchingSeries.flatMap((item) => [
         referenceSourceName(params.sourcesById, item.sourceId),
-        item.entityId ?? "",
-        item.entityType ?? "",
+        item.resourceKey ?? "",
+        item.resourceType ?? "",
         ...Object.keys(item.dimensions),
         ...Object.values(item.dimensions),
       ]);
@@ -166,8 +166,8 @@ export const buildReferenceEventRows = (params: {
 }): ReferenceEventRow[] => {
   const byKind = new Map<string, ReferenceAggregateRow>();
   for (const event of params.events.filter((item) => matchesScope(item, params.filters))) {
-    const search = `${event.kind} ${referenceSourceName(params.sourcesById, event.sourceId)} ${event.entityId ?? ""} ${
-      event.entityType ?? ""
+    const search = `${event.kind} ${referenceSourceName(params.sourcesById, event.sourceId)} ${event.resourceKey ?? ""} ${
+      event.resourceType ?? ""
     } ${dimensionSearchText(event.dimensions)}`;
     addAggregateRow(byKind, event.kind, event.ts, search);
   }
@@ -189,8 +189,8 @@ export const buildReferenceStateRows = (params: {
 }): ReferenceStateRow[] => {
   const byKey = new Map<string, ReferenceAggregateRow>();
   for (const state of params.states.filter((item) => matchesScope(item, params.filters))) {
-    const search = `${state.key} ${referenceSourceName(params.sourcesById, state.sourceId)} ${state.entityId ?? ""} ${
-      state.entityType ?? ""
+    const search = `${state.key} ${referenceSourceName(params.sourcesById, state.sourceId)} ${state.resourceKey ?? ""} ${
+      state.resourceType ?? ""
     } ${dimensionSearchText(state.dimensions)}`;
     addAggregateRow(byKey, state.key, state.updatedAt, search);
   }
@@ -206,23 +206,24 @@ export const buildReferenceStateRows = (params: {
 
 export const buildReferenceMetricQuery = (row: ReferenceMetricRow, filters: ScopeFilters): string => {
   const aggregation = referenceMetricAggregations[row.type];
-  const dimensions = filters.entityId && row.sampleSeries ? row.sampleSeries.dimensions : {};
+  const dimensions = filters.resourceKey && row.sampleSeries ? row.sampleSeries.dimensions : {};
   return buildPulseQuery({
     metric: row.name,
     aggregation,
     bucket: "5m",
     since: "24h",
     sourceId: filters.sourceId || null,
+    resourceKey: filters.resourceKey || null,
     dimensions,
   });
 };
 
-export const buildReferenceEventQuery = (row: ReferenceEventRow, filters: ScopeFilters, entityType: string | null): string =>
+export const buildReferenceEventQuery = (row: ReferenceEventRow, filters: ScopeFilters, resourceType: string | null): string =>
   `events ${quotePulseQueryValue(row.kind)} since 7d${filters.sourceId ? ` source ${filters.sourceId}` : ""}${
-    filters.entityId ? ` entity ${quotePulseQueryValue(filters.entityId)}` : ""
-  }${entityType ? ` entity_type ${quotePulseQueryValue(entityType)}` : ""} limit 100`;
+    filters.resourceKey ? ` resource ${quotePulseQueryValue(filters.resourceKey)}` : ""
+  }${resourceType ? ` resource_type ${quotePulseQueryValue(resourceType)}` : ""} limit 100`;
 
-export const buildReferenceStateQuery = (row: ReferenceStateRow, filters: ScopeFilters, entityType: string | null): string =>
+export const buildReferenceStateQuery = (row: ReferenceStateRow, filters: ScopeFilters, resourceType: string | null): string =>
   `states ${quotePulseQueryValue(row.key)}${filters.sourceId ? ` source ${filters.sourceId}` : ""}${
-    filters.entityId ? ` entity ${quotePulseQueryValue(filters.entityId)}` : ""
-  }${entityType ? ` entity_type ${quotePulseQueryValue(entityType)}` : ""} limit 100`;
+    filters.resourceKey ? ` resource ${quotePulseQueryValue(filters.resourceKey)}` : ""
+  }${resourceType ? ` resource_type ${quotePulseQueryValue(resourceType)}` : ""} limit 100`;

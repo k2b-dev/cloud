@@ -75,18 +75,18 @@ const ResourceSourceAction = (props: {
 }) => {
   const t = usePulseMessages();
   return (
-  <Show when={props.sourceId} fallback={<p class="text-xs text-dimmed">-</p>}>
-    {(sourceId) => (
-      <DetailPanel.Action
-        type="button"
-        title={props.sourceNameById().get(sourceId()) ?? t().unknownSource}
-        description={t().openSource}
-        leading={<i class="ti ti-database-share" aria-hidden="true" />}
-        trailing={<i class="ti ti-chevron-right" aria-hidden="true" />}
-        onClick={() => props.openSource(sourceId())}
-      />
-    )}
-  </Show>
+    <Show when={props.sourceId} fallback={<p class="text-xs text-dimmed">-</p>}>
+      {(sourceId) => (
+        <DetailPanel.Action
+          type="button"
+          title={props.sourceNameById().get(sourceId()) ?? t().unknownSource}
+          description={t().openSource}
+          leading={<i class="ti ti-database-share" aria-hidden="true" />}
+          trailing={<i class="ti ti-chevron-right" aria-hidden="true" />}
+          onClick={() => props.openSource(sourceId())}
+        />
+      )}
+    </Show>
   );
 };
 
@@ -119,7 +119,7 @@ const eventColumns = (t: Messages): DataTableColumn<PulseRecordedEvent>[] => [
 ];
 
 const resourceStateId = (state: PulseCurrentState) =>
-  `${state.key}:${state.sourceId ?? ""}:${state.entityId}:${JSON.stringify(state.dimensions)}`;
+  `${state.key}:${state.sourceId ?? ""}:${state.resourceKey}:${JSON.stringify(state.dimensions)}`;
 
 const metricValue = (metric: PulseResourceMetric) =>
   metric.latestValue === null ? "-" : formatMetricValue(metric.latestValue, metric.unit);
@@ -193,28 +193,28 @@ const renderEventCell = (
 const ResourceHeader = (props: Pick<ResourceDetailProps, "resource" | "dateContext">) => {
   const t = usePulseMessages();
   return (
-  <header class="flex shrink-0 items-center gap-3">
-    <span class="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-zinc-100 app-accent-text dark:bg-zinc-900">
-      <i class="ti ti-cube text-base" />
-    </span>
-    <div class="min-w-0">
-      <p class="text-label text-[11px]">{props.resource.type ?? t().resource}</p>
-      <h1 class="mt-0.5 truncate text-lg font-semibold leading-6 text-primary">{props.resource.label || props.resource.id}</h1>
-      <p class="mt-0.5 truncate text-xs text-dimmed">
-        {props.resource.id}
-        {props.resource.lastSeenAt ? ` · ${compactDateWithDelta(props.resource.lastSeenAt, props.dateContext)}` : ""}
-      </p>
-    </div>
-  </header>
+    <header class="flex shrink-0 items-center gap-3">
+      <span class="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-zinc-100 app-accent-text dark:bg-zinc-900">
+        <i class="ti ti-cube text-base" />
+      </span>
+      <div class="min-w-0">
+        <p class="text-label text-[11px]">{props.resource.type ?? t().resource}</p>
+        <h1 class="mt-0.5 truncate text-lg font-semibold leading-6 text-primary">{props.resource.label || props.resource.id}</h1>
+        <p class="mt-0.5 truncate text-xs text-dimmed">
+          {props.resource.id}
+          {props.resource.lastSeenAt ? ` · ${compactDateWithDelta(props.resource.lastSeenAt, props.dateContext)}` : ""}
+        </p>
+      </div>
+    </header>
   );
 };
 
 const ResourceDimensions = (props: Pick<ResourceDetailProps, "resource">) => {
   const t = usePulseMessages();
   return (
-  <DetailPanel.Section title={t().dimensions} class="shrink-0">
-    <StructuredDataPreview data={props.resource.dimensions} empty={t().noDimensions} />
-  </DetailPanel.Section>
+    <DetailPanel.Section title={t().dimensions} class="shrink-0">
+      <StructuredDataPreview data={props.resource.dimensions} empty={t().noDimensions} />
+    </DetailPanel.Section>
   );
 };
 
@@ -291,215 +291,219 @@ type ResourceSignalPanesProps = ResourceDetailProps & {
 const ResourceSignalTabs = (props: ResourceSignalPanesProps) => {
   const t = usePulseMessages();
   return (
-  <section class="h-[min(68vh,54rem)] min-h-[32rem] shrink-0 overflow-hidden">
-    <Tabs
-      value={props.selection.activeTab}
-      onValueChange={props.selection.setActiveTab}
-      ariaLabel={t().resourceSignals}
-      class="h-full min-h-0 gap-0 [&_.k2b-tabs__list]:shrink-0 [&_.k2b-tabs__panel]:min-h-0 [&_.k2b-tabs__panel]:flex-1 [&_.k2b-tabs__panel]:overflow-hidden"
-    >
-      <Tabs.Item value="metrics" label={`${t().metrics} ${props.metrics.length}`} icon="ti ti-chart-dots">
-        <div class="flex h-full min-h-0 flex-col overflow-hidden">
-          <DataTable
-            rows={props.metrics}
-            columns={metricColumns(t())}
-            getRowId={(metric) => metric.seriesId}
-            selectedRowId={props.selection.selectedMetric()?.seriesId ?? null}
-            density="compact"
-            fillHeight
-            class="min-h-0 flex-1 overflow-auto"
-            empty={t().noMetricsForResource}
-            scrollPreserveKey={`pulse-resource-${props.resource.key}-metrics`}
-            onRowClick={props.selection.selectMetric}
-            renderCell={({ row, col, render }) => renderMetricCell(row, col, render, props)}
-          />
-        </div>
-      </Tabs.Item>
+    <section class="h-[min(68vh,54rem)] min-h-[32rem] shrink-0 overflow-hidden">
+      <Tabs
+        value={props.selection.activeTab}
+        onValueChange={props.selection.setActiveTab}
+        ariaLabel={t().resourceSignals}
+        class="h-full min-h-0 gap-0 [&_.k2b-tabs__list]:shrink-0 [&_.k2b-tabs__panel]:min-h-0 [&_.k2b-tabs__panel]:flex-1 [&_.k2b-tabs__panel]:overflow-hidden"
+      >
+        <Tabs.Item value="metrics" label={`${t().metrics} ${props.metrics.length}`} icon="ti ti-chart-dots">
+          <div class="flex h-full min-h-0 flex-col overflow-hidden">
+            <DataTable
+              rows={props.metrics}
+              columns={metricColumns(t())}
+              getRowId={(metric) => metric.seriesId}
+              selectedRowId={props.selection.selectedMetric()?.seriesId ?? null}
+              density="compact"
+              fillHeight
+              class="min-h-0 flex-1 overflow-auto"
+              empty={t().noMetricsForResource}
+              scrollPreserveKey={`pulse-resource-${props.resource.key}-metrics`}
+              onRowClick={props.selection.selectMetric}
+              renderCell={({ row, col, render }) => renderMetricCell(row, col, render, props)}
+            />
+          </div>
+        </Tabs.Item>
 
-      <Tabs.Item value="states" label={`${t().states} ${props.states.length}`} icon="ti ti-toggle-right">
-        <div class="flex h-full min-h-0 flex-col overflow-hidden">
-          <DataTable
-            rows={props.states}
-            columns={stateColumns(t())}
-            getRowId={resourceStateId}
-            selectedRowId={props.selection.selectedState() ? resourceStateId(props.selection.selectedState()!) : null}
-            density="compact"
-            fillHeight
-            class="min-h-0 flex-1 overflow-auto"
-            empty={t().noStatesForResource}
-            scrollPreserveKey={`pulse-resource-${props.resource.key}-states`}
-            onRowClick={props.selection.selectState}
-            renderCell={({ row, col, render }) => renderStateCell(row, col, render, props)}
-          />
-        </div>
-      </Tabs.Item>
+        <Tabs.Item value="states" label={`${t().states} ${props.states.length}`} icon="ti ti-toggle-right">
+          <div class="flex h-full min-h-0 flex-col overflow-hidden">
+            <DataTable
+              rows={props.states}
+              columns={stateColumns(t())}
+              getRowId={resourceStateId}
+              selectedRowId={props.selection.selectedState() ? resourceStateId(props.selection.selectedState()!) : null}
+              density="compact"
+              fillHeight
+              class="min-h-0 flex-1 overflow-auto"
+              empty={t().noStatesForResource}
+              scrollPreserveKey={`pulse-resource-${props.resource.key}-states`}
+              onRowClick={props.selection.selectState}
+              renderCell={({ row, col, render }) => renderStateCell(row, col, render, props)}
+            />
+          </div>
+        </Tabs.Item>
 
-      <Tabs.Item value="events" label={`${t().events} ${props.events.length}`} icon="ti ti-bolt">
-        <div class="flex h-full min-h-0 flex-col overflow-hidden">
-          <DataTable
-            rows={props.events}
-            columns={eventColumns(t())}
-            getRowId={(event) => event.id}
-            selectedRowId={props.selection.selectedEvent()?.id ?? null}
-            density="compact"
-            fillHeight
-            class="min-h-0 flex-1 overflow-auto"
-            empty={t().noEventsForResource}
-            scrollPreserveKey={`pulse-resource-${props.resource.key}-events`}
-            onRowClick={props.selection.selectEvent}
-            renderCell={({ row, col, render }) => renderEventCell(row, col, render, props)}
-          />
-        </div>
-      </Tabs.Item>
-    </Tabs>
-  </section>
+        <Tabs.Item value="events" label={`${t().events} ${props.events.length}`} icon="ti ti-bolt">
+          <div class="flex h-full min-h-0 flex-col overflow-hidden">
+            <DataTable
+              rows={props.events}
+              columns={eventColumns(t())}
+              getRowId={(event) => event.id}
+              selectedRowId={props.selection.selectedEvent()?.id ?? null}
+              density="compact"
+              fillHeight
+              class="min-h-0 flex-1 overflow-auto"
+              empty={t().noEventsForResource}
+              scrollPreserveKey={`pulse-resource-${props.resource.key}-events`}
+              onRowClick={props.selection.selectEvent}
+              renderCell={({ row, col, render }) => renderEventCell(row, col, render, props)}
+            />
+          </div>
+        </Tabs.Item>
+      </Tabs>
+    </section>
   );
 };
 
 export const ResourceSignalDetail = (props: ResourceSignalPanesProps) => {
   const t = usePulseMessages();
   return (
-  <div class="flex h-full min-h-0 flex-col overflow-hidden">
-    <Show when={props.selection.selectedMetric()}>
-      {(metric) => (
-        <div class={props.selection.activeTab() === "metrics" ? "flex h-full min-h-0 flex-col overflow-hidden" : "hidden"}>
-          <DetailPanel>
-            <DetailPanel.Header
-              title={metric().metric}
-              icon="ti ti-chart-dots"
-              meta={t().metricValue}
-              subtitle={`${metric().type}${metric().unit ? ` · ${metric().unit}` : ""}${
-                metric().latestSampleAt ? ` · ${compactDateWithDelta(metric().latestSampleAt!, props.dateContext)}` : ""
-              }`}
-              actions={
-                <Tooltip.Anchor content={t().closeDetails}>
-                  <IconButton label={t().closeMetricDetails} variant="ghost" size="sm" onClick={props.selection.close}>
-                    <i class="ti ti-x" />
-                  </IconButton>
-                </Tooltip.Anchor>
-              }
-              primaryActions={
-                <div class="flex flex-wrap items-center gap-2" role="group" aria-label={t().actionsFor({ name: metric().metric })}>
-                  <Button type="button" variant="secondary" size="sm" onClick={() => props.openMetricQuery(metric())}>
-                    <i class="ti ti-code" /> {t().openQuery}
-                  </Button>
-                  <Button type="button" variant="secondary" size="sm" onClick={() => props.openMetricVariants(metric().metric)}>
-                    <i class="ti ti-stack-2" /> {t().allVariants}
-                  </Button>
-                </div>
-              }
-            />
-            <DetailPanel.Body>
-              <DetailPanel.Summary title={t().value}>
-                <p class="text-3xl font-semibold text-primary">{metricValue(metric())}</p>
-              </DetailPanel.Summary>
-              <DetailPanel.Group label={t().signalContext}>
-                <DetailPanel.Section title={t().source} icon="ti ti-database-share" tone="accent">
-                  <ResourceSourceAction sourceId={metric().sourceId} sourceNameById={props.sourceNameById} openSource={props.openSource} />
-                </DetailPanel.Section>
-                <DetailPanel.Section title={t().metricDimensions} icon="ti ti-tags" tone="neutral">
-                  <StructuredDataPreview data={metric().dimensions} empty={t().noDimensions} />
-                </DetailPanel.Section>
-              </DetailPanel.Group>
-            </DetailPanel.Body>
-          </DetailPanel>
-        </div>
-      )}
-    </Show>
+    <div class="flex h-full min-h-0 flex-col overflow-hidden">
+      <Show when={props.selection.selectedMetric()}>
+        {(metric) => (
+          <div class={props.selection.activeTab() === "metrics" ? "flex h-full min-h-0 flex-col overflow-hidden" : "hidden"}>
+            <DetailPanel>
+              <DetailPanel.Header
+                title={metric().metric}
+                icon="ti ti-chart-dots"
+                meta={t().metricValue}
+                subtitle={`${metric().type}${metric().unit ? ` · ${metric().unit}` : ""}${
+                  metric().latestSampleAt ? ` · ${compactDateWithDelta(metric().latestSampleAt!, props.dateContext)}` : ""
+                }`}
+                actions={
+                  <Tooltip.Anchor content={t().closeDetails}>
+                    <IconButton label={t().closeMetricDetails} variant="ghost" size="sm" onClick={props.selection.close}>
+                      <i class="ti ti-x" />
+                    </IconButton>
+                  </Tooltip.Anchor>
+                }
+                primaryActions={
+                  <div class="flex flex-wrap items-center gap-2" role="group" aria-label={t().actionsFor({ name: metric().metric })}>
+                    <Button type="button" variant="secondary" size="sm" onClick={() => props.openMetricQuery(metric())}>
+                      <i class="ti ti-code" /> {t().openQuery}
+                    </Button>
+                    <Button type="button" variant="secondary" size="sm" onClick={() => props.openMetricVariants(metric().metric)}>
+                      <i class="ti ti-stack-2" /> {t().allVariants}
+                    </Button>
+                  </div>
+                }
+              />
+              <DetailPanel.Body>
+                <DetailPanel.Summary title={t().value}>
+                  <p class="text-3xl font-semibold text-primary">{metricValue(metric())}</p>
+                </DetailPanel.Summary>
+                <DetailPanel.Group label={t().signalContext}>
+                  <DetailPanel.Section title={t().source} icon="ti ti-database-share" tone="accent">
+                    <ResourceSourceAction
+                      sourceId={metric().sourceId}
+                      sourceNameById={props.sourceNameById}
+                      openSource={props.openSource}
+                    />
+                  </DetailPanel.Section>
+                  <DetailPanel.Section title={t().metricDimensions} icon="ti ti-tags" tone="neutral">
+                    <StructuredDataPreview data={metric().dimensions} empty={t().noDimensions} />
+                  </DetailPanel.Section>
+                </DetailPanel.Group>
+              </DetailPanel.Body>
+            </DetailPanel>
+          </div>
+        )}
+      </Show>
 
-    <Show when={props.selection.selectedState()}>
-      {(state) => (
-        <div class={props.selection.activeTab() === "states" ? "flex h-full min-h-0 flex-col overflow-hidden" : "hidden"}>
-          <DetailPanel>
-            <DetailPanel.Header
-              title={state().key}
-              icon="ti ti-toggle-right"
-              meta={t().stateValue}
-              subtitle={compactDateWithDelta(state().updatedAt, props.dateContext)}
-              actions={
-                <Tooltip.Anchor content={t().closeDetails}>
-                  <IconButton label={t().closeStateDetails} variant="ghost" size="sm" onClick={props.selection.close}>
-                    <i class="ti ti-x" />
-                  </IconButton>
-                </Tooltip.Anchor>
-              }
-              primaryActions={
-                <div class="flex flex-wrap items-center gap-2" role="group" aria-label={t().actionsFor({ name: state().key })}>
-                  <Button type="button" variant="secondary" size="sm" onClick={() => props.openStateQuery(state())}>
-                    <i class="ti ti-code" /> {t().openQuery}
-                  </Button>
-                  <Button type="button" variant="secondary" size="sm" onClick={() => props.openStateVariants(state().key)}>
-                    <i class="ti ti-stack-2" /> {t().allVariants}
-                  </Button>
-                </div>
-              }
-            />
-            <DetailPanel.Body>
-              <DetailPanel.Summary title={t().value}>
-                <p class="break-words text-2xl font-semibold text-primary">{formatSignalValue(state().value)}</p>
-              </DetailPanel.Summary>
-              <DetailPanel.Group label={t().signalContext}>
-                <DetailPanel.Section title={t().source} icon="ti ti-database-share" tone="accent">
-                  <ResourceSourceAction sourceId={state().sourceId} sourceNameById={props.sourceNameById} openSource={props.openSource} />
-                </DetailPanel.Section>
-                <DetailPanel.Section title={t().stateDimensions} icon="ti ti-tags" tone="neutral">
-                  <StructuredDataPreview data={state().dimensions} empty={t().noDimensions} />
-                </DetailPanel.Section>
-              </DetailPanel.Group>
-            </DetailPanel.Body>
-          </DetailPanel>
-        </div>
-      )}
-    </Show>
+      <Show when={props.selection.selectedState()}>
+        {(state) => (
+          <div class={props.selection.activeTab() === "states" ? "flex h-full min-h-0 flex-col overflow-hidden" : "hidden"}>
+            <DetailPanel>
+              <DetailPanel.Header
+                title={state().key}
+                icon="ti ti-toggle-right"
+                meta={t().stateValue}
+                subtitle={compactDateWithDelta(state().updatedAt, props.dateContext)}
+                actions={
+                  <Tooltip.Anchor content={t().closeDetails}>
+                    <IconButton label={t().closeStateDetails} variant="ghost" size="sm" onClick={props.selection.close}>
+                      <i class="ti ti-x" />
+                    </IconButton>
+                  </Tooltip.Anchor>
+                }
+                primaryActions={
+                  <div class="flex flex-wrap items-center gap-2" role="group" aria-label={t().actionsFor({ name: state().key })}>
+                    <Button type="button" variant="secondary" size="sm" onClick={() => props.openStateQuery(state())}>
+                      <i class="ti ti-code" /> {t().openQuery}
+                    </Button>
+                    <Button type="button" variant="secondary" size="sm" onClick={() => props.openStateVariants(state().key)}>
+                      <i class="ti ti-stack-2" /> {t().allVariants}
+                    </Button>
+                  </div>
+                }
+              />
+              <DetailPanel.Body>
+                <DetailPanel.Summary title={t().value}>
+                  <p class="break-words text-2xl font-semibold text-primary">{formatSignalValue(state().value)}</p>
+                </DetailPanel.Summary>
+                <DetailPanel.Group label={t().signalContext}>
+                  <DetailPanel.Section title={t().source} icon="ti ti-database-share" tone="accent">
+                    <ResourceSourceAction sourceId={state().sourceId} sourceNameById={props.sourceNameById} openSource={props.openSource} />
+                  </DetailPanel.Section>
+                  <DetailPanel.Section title={t().stateDimensions} icon="ti ti-tags" tone="neutral">
+                    <StructuredDataPreview data={state().dimensions} empty={t().noDimensions} />
+                  </DetailPanel.Section>
+                </DetailPanel.Group>
+              </DetailPanel.Body>
+            </DetailPanel>
+          </div>
+        )}
+      </Show>
 
-    <Show when={props.selection.selectedEvent()}>
-      {(event) => (
-        <div class={props.selection.activeTab() === "events" ? "flex h-full min-h-0 flex-col overflow-hidden" : "hidden"}>
-          <DetailPanel>
-            <DetailPanel.Header
-              title={event().kind}
-              icon="ti ti-bolt"
-              meta={t().eventRow}
-              subtitle={`${signalSubject(event())} · ${compactDateWithDelta(event().ts, props.dateContext)}`}
-              actions={
-                <Tooltip.Anchor content={t().closeDetails}>
-                  <IconButton label={t().closeEventDetails} variant="ghost" size="sm" onClick={props.selection.close}>
-                    <i class="ti ti-x" />
-                  </IconButton>
-                </Tooltip.Anchor>
-              }
-              primaryActions={
-                <div class="flex flex-wrap items-center gap-2" role="group" aria-label={t().actionsFor({ name: event().kind })}>
-                  <Button type="button" variant="secondary" size="sm" onClick={() => props.openEventQuery(event())}>
-                    <i class="ti ti-code" /> {t().openQuery}
-                  </Button>
-                  <Button type="button" variant="secondary" size="sm" onClick={() => props.openEventVariants(event().kind)}>
-                    <i class="ti ti-stack-2" /> {t().allVariants}
-                  </Button>
-                </div>
-              }
-            />
-            <DetailPanel.Body>
-              <DetailPanel.Summary title={t().value}>
-                <p class="text-2xl font-semibold text-primary">{event().value === null ? "-" : formatValue(event().value)}</p>
-              </DetailPanel.Summary>
-              <DetailPanel.Group label={t().signalContext}>
-                <DetailPanel.Section title={t().source} icon="ti ti-database-share" tone="accent">
-                  <ResourceSourceAction sourceId={event().sourceId} sourceNameById={props.sourceNameById} openSource={props.openSource} />
-                </DetailPanel.Section>
-                <DetailPanel.Section title={t().eventDimensions} icon="ti ti-tags" tone="neutral">
-                  <StructuredDataPreview data={event().dimensions} empty={t().noDimensions} />
-                </DetailPanel.Section>
-                <DetailPanel.Section title={t().eventPayload} icon="ti ti-braces" tone="neutral">
-                  <StructuredDataPreview data={structuredData(event().payload, t().eventPayload)} empty={t().noPayload} />
-                </DetailPanel.Section>
-              </DetailPanel.Group>
-            </DetailPanel.Body>
-          </DetailPanel>
-        </div>
-      )}
-    </Show>
-  </div>
+      <Show when={props.selection.selectedEvent()}>
+        {(event) => (
+          <div class={props.selection.activeTab() === "events" ? "flex h-full min-h-0 flex-col overflow-hidden" : "hidden"}>
+            <DetailPanel>
+              <DetailPanel.Header
+                title={event().kind}
+                icon="ti ti-bolt"
+                meta={t().eventRow}
+                subtitle={`${signalSubject(event())} · ${compactDateWithDelta(event().ts, props.dateContext)}`}
+                actions={
+                  <Tooltip.Anchor content={t().closeDetails}>
+                    <IconButton label={t().closeEventDetails} variant="ghost" size="sm" onClick={props.selection.close}>
+                      <i class="ti ti-x" />
+                    </IconButton>
+                  </Tooltip.Anchor>
+                }
+                primaryActions={
+                  <div class="flex flex-wrap items-center gap-2" role="group" aria-label={t().actionsFor({ name: event().kind })}>
+                    <Button type="button" variant="secondary" size="sm" onClick={() => props.openEventQuery(event())}>
+                      <i class="ti ti-code" /> {t().openQuery}
+                    </Button>
+                    <Button type="button" variant="secondary" size="sm" onClick={() => props.openEventVariants(event().kind)}>
+                      <i class="ti ti-stack-2" /> {t().allVariants}
+                    </Button>
+                  </div>
+                }
+              />
+              <DetailPanel.Body>
+                <DetailPanel.Summary title={t().value}>
+                  <p class="text-2xl font-semibold text-primary">{event().value === null ? "-" : formatValue(event().value)}</p>
+                </DetailPanel.Summary>
+                <DetailPanel.Group label={t().signalContext}>
+                  <DetailPanel.Section title={t().source} icon="ti ti-database-share" tone="accent">
+                    <ResourceSourceAction sourceId={event().sourceId} sourceNameById={props.sourceNameById} openSource={props.openSource} />
+                  </DetailPanel.Section>
+                  <DetailPanel.Section title={t().eventDimensions} icon="ti ti-tags" tone="neutral">
+                    <StructuredDataPreview data={event().dimensions} empty={t().noDimensions} />
+                  </DetailPanel.Section>
+                  <DetailPanel.Section title={t().eventPayload} icon="ti ti-braces" tone="neutral">
+                    <StructuredDataPreview data={structuredData(event().payload, t().eventPayload)} empty={t().noPayload} />
+                  </DetailPanel.Section>
+                </DetailPanel.Group>
+              </DetailPanel.Body>
+            </DetailPanel>
+          </div>
+        )}
+      </Show>
+    </div>
   );
 };
 

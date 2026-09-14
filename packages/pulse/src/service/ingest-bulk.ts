@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import type { sql } from "bun";
 import type { PulseIngestBatch } from "../contracts";
-import { derivePulseResource, explicitPulseResource, type PulseResourceIdentity } from "../resource-model";
+import { explicitPulseResource, type PulseResourceIdentity } from "../resource-model";
 import { type PulseTelemetryValueKind, telemetryValueKind } from "../telemetry-contract";
 import { enforceMetricSeriesBudget } from "./metric-cardinality";
 import { lockStateIdentities } from "./state-transitions";
@@ -25,8 +25,6 @@ type PreparedMetric = PreparedResourceFields & {
   ts: string;
   unit: string | null;
   metricType: string;
-  entityId: string | null;
-  entityType: string | null;
   seriesKey: string;
   dimensionsHash: string;
   dimensions: Record<string, string>;
@@ -37,8 +35,6 @@ type PreparedEvent = PreparedResourceFields & {
   kind: string;
   ts: string;
   value: number | null;
-  entityId: string | null;
-  entityType: string | null;
   actorId: string | null;
   sessionId: string | null;
   correlationId: string | null;
@@ -50,12 +46,11 @@ type PreparedEvent = PreparedResourceFields & {
 };
 
 type PreparedState = PreparedResourceFields & {
+  variantKey: string;
   ordinal: number;
   key: string;
   value: string | number | boolean | null;
   ts: string;
-  entityId: string;
-  entityType: string | null;
   dimensionsHash: string;
   dimensions: Record<string, string>;
 };
@@ -86,10 +81,15 @@ type PreparedField = {
   lastSeenAt: string;
 };
 
+const variantKey = (sourceId: string, resourceKey: string | null, dimensionsHash: string): string =>
+  createHash("sha256")
+    .update(JSON.stringify([sourceId, resourceKey, dimensionsHash]))
+    .digest("hex");
+
 const dimensionsHash = (dimensions: Record<string, string>): string =>
   createHash("sha256").update(JSON.stringify(dimensions)).digest("hex");
 
-const resourceFields = (resource: ReturnType<typeof derivePulseResource>): PreparedResourceFields => ({
+const resourceFields = (resource: PulseResourceIdentity | null): PreparedResourceFields => ({
   resourceKey: resource?.key ?? null,
   resourceId: resource?.id ?? null,
   resourceType: resource?.type ?? null,
@@ -98,7 +98,7 @@ const resourceFields = (resource: ReturnType<typeof derivePulseResource>): Prepa
 
 const isoTime = (value?: string): string => (value ? new Date(value) : new Date()).toISOString();
 
-export const prepareIngestBatch = (batch: PulseIngestBatch, sourceId?: string | null): PreparedIngestBatch => {
+export const prepareIngestBatch = (batch: PulseIngestBatch, sourceId: string): PreparedIngestBatch => {
   const resources = new Map<string, PreparedResource>();
   const fields = new Map<string, PreparedField>();
 
@@ -129,15 +129,11 @@ export const prepareIngestBatch = (batch: PulseIngestBatch, sourceId?: string | 
   const observe = (
     scope: "metric" | "event" | "state",
     signalName: string,
-    entityId: string | null | undefined,
-    entityType: string | null | undefined,
     dimensions: Record<string, string>,
     seenAt: string,
-    explicitResource?: PulseResourceIdentity | null,
+    resource: PulseResourceIdentity | null,
   ) => {
     observeFields(scope, signalName, "dimension", dimensions, seenAt);
-    const resource =
-      explicitResource === undefined ? derivePulseResource({ signalName, sourceId, entityId, entityType, dimensions }) : explicitResource;
     if (!resource) return null;
     const current = resources.get(resource.key);
     resources.set(resource.key, {
@@ -155,8 +151,8 @@ export const prepareIngestBatch = (batch: PulseIngestBatch, sourceId?: string | 
     const dimensions = normalizeDimensions(metric.dimensions);
     const hash = dimensionsHash(dimensions);
     const ts = isoTime(metric.ts);
-    const explicitResource = metric.resource === undefined ? undefined : explicitPulseResource(metric.resource);
-    const resource = observe("metric", metric.name, metric.entityId, metric.entityType, dimensions, ts, explicitResource);
+    const explicitResource = explicitPulseResource(metric.resource);
+    const resource = observe("metric", metric.name, dimensions, ts, explicitResource);
     return {
       ordinal,
       name: metric.name,
@@ -164,9 +160,7 @@ export const prepareIngestBatch = (batch: PulseIngestBatch, sourceId?: string | 
       ts,
       unit: metric.unit ?? null,
       metricType: metric.type ?? "gauge",
-      entityId: metric.entityId ?? null,
-      entityType: metric.entityType ?? null,
-      seriesKey: [sourceId ?? "", metric.entityId ?? "", hash].join("\u001f"),
+      seriesKey: variantKey(sourceId, resource?.key ?? null, hash),
       dimensionsHash: hash,
       dimensions,
       ...resourceFields(resource),
@@ -177,7 +171,7 @@ export const prepareIngestBatch = (batch: PulseIngestBatch, sourceId?: string | 
     const dimensions = normalizeDimensions(event.dimensions);
     const hash = dimensionsHash(dimensions);
     const ts = isoTime(event.ts);
-    const resource = observe("event", event.kind, event.entityId, event.entityType, dimensions, ts, explicitPulseResource(event.resource));
+    const resource = observe("event", event.kind, dimensions, ts, explicitPulseResource(event.resource));
     observeFields("event", event.kind, "attribute", event.attributes ?? {}, ts);
     observeFields("event", event.kind, "sensitive", event.sensitive ?? {}, ts);
     return {
@@ -185,8 +179,6 @@ export const prepareIngestBatch = (batch: PulseIngestBatch, sourceId?: string | 
       kind: event.kind,
       ts,
       value: event.value ?? null,
-      entityId: event.entityId ?? null,
-      entityType: event.entityType ?? null,
       actorId: event.actorId ?? null,
       sessionId: event.sessionId ?? null,
       correlationId: event.correlationId ?? null,
@@ -203,15 +195,14 @@ export const prepareIngestBatch = (batch: PulseIngestBatch, sourceId?: string | 
     const dimensions = normalizeDimensions(state.dimensions);
     const hash = dimensionsHash(dimensions);
     const ts = isoTime(state.ts);
-    const explicitResource = state.resource === undefined ? undefined : explicitPulseResource(state.resource);
-    const resource = observe("state", state.key, state.entityId, state.entityType, dimensions, ts, explicitResource);
+    const explicitResource = explicitPulseResource(state.resource);
+    const resource = observe("state", state.key, dimensions, ts, explicitResource);
     return {
       ordinal,
       key: state.key,
+      variantKey: variantKey(sourceId, resource?.key ?? null, hash),
       value: state.value,
       ts,
-      entityId: state.entityId ?? "",
-      entityType: state.entityType ?? null,
       dimensionsHash: hash,
       dimensions,
       ...resourceFields(resource),
@@ -223,7 +214,7 @@ export const prepareIngestBatch = (batch: PulseIngestBatch, sourceId?: string | 
 
 const json = (value: unknown): string => JSON.stringify(value);
 
-const writeMetrics = async (baseId: string, sourceId: string | null | undefined, rows: PreparedMetric[], db: PulseSqlClient) => {
+const writeMetrics = async (baseId: string, sourceId: string, rows: PreparedMetric[], db: PulseSqlClient) => {
   if (rows.length === 0) return;
   const input = json(rows);
   await db`
@@ -248,7 +239,7 @@ const writeMetrics = async (baseId: string, sourceId: string | null | undefined,
   await db`
     WITH input AS (
       SELECT * FROM jsonb_to_recordset((${input}::jsonb #>> '{}')::jsonb) AS row(
-        ordinal int, name text, "entityId" text, "entityType" text, "seriesKey" text,
+        ordinal int, name text, "seriesKey" text,
         "dimensionsHash" text, dimensions jsonb, "resourceKey" text, "resourceId" text,
         "resourceType" text, "resourceLabel" text, ts timestamptz
       )
@@ -256,15 +247,15 @@ const writeMetrics = async (baseId: string, sourceId: string | null | undefined,
       SELECT DISTINCT ON (name, "seriesKey") * FROM input ORDER BY name, "seriesKey", ordinal DESC
     )
     INSERT INTO pulse.metric_series (
-      base_id, metric_id, source_id, entity_id, entity_type, series_key, dimensions_hash,
+      base_id, metric_id, source_id, series_key, dimensions_hash,
       dimensions, resource_key, resource_id, resource_type, resource_label, last_seen_at
     )
-    SELECT ${baseId}::uuid, md.id, ${sourceId ?? null}::uuid, i."entityId", i."entityType", i."seriesKey",
+    SELECT ${baseId}::uuid, md.id, ${sourceId}::uuid, i."seriesKey",
       i."dimensionsHash", i.dimensions, i."resourceKey", i."resourceId", i."resourceType", i."resourceLabel", i.ts
     FROM series i
     JOIN pulse.metric_defs md ON md.base_id = ${baseId}::uuid AND md.name = i.name
     ON CONFLICT (base_id, metric_id, series_key) DO UPDATE SET
-      source_id = EXCLUDED.source_id, entity_id = EXCLUDED.entity_id, entity_type = EXCLUDED.entity_type,
+      source_id = EXCLUDED.source_id,
       dimensions = EXCLUDED.dimensions, resource_key = EXCLUDED.resource_key, resource_id = EXCLUDED.resource_id,
       resource_type = EXCLUDED.resource_type, resource_label = EXCLUDED.resource_label,
       last_seen_at = GREATEST(pulse.metric_series.last_seen_at, EXCLUDED.last_seen_at)
@@ -298,88 +289,88 @@ const writeMetrics = async (baseId: string, sourceId: string | null | undefined,
   `;
 };
 
-const writeEvents = async (baseId: string, sourceId: string | null | undefined, rows: PreparedEvent[], db: PulseSqlClient) => {
+const writeEvents = async (baseId: string, sourceId: string, rows: PreparedEvent[], db: PulseSqlClient) => {
   if (rows.length === 0) return;
   const input = json(rows);
   await db`
     WITH input AS (
       SELECT * FROM jsonb_to_recordset((${input}::jsonb #>> '{}')::jsonb) AS row(
-        id uuid, kind text, ts timestamptz, value double precision, "entityId" text, "entityType" text,
+        id uuid, kind text, ts timestamptz, value double precision,
         "actorId" text, "sessionId" text, "correlationId" text, "dimensionsHash" text, dimensions jsonb,
         attributes jsonb, sensitive jsonb, payload jsonb, "resourceKey" text, "resourceId" text, "resourceType" text, "resourceLabel" text
       )
     )
     INSERT INTO pulse.events (
-      id, base_id, source_id, ts, kind, value, entity_id, entity_type, actor_id, session_id,
+      id, base_id, source_id, ts, kind, value, actor_id, session_id,
       correlation_id, dimensions_hash, dimensions, attributes, sensitive, payload, resource_key, resource_id, resource_type, resource_label
     )
-    SELECT id, ${baseId}::uuid, ${sourceId ?? null}::uuid, ts, kind, value, "entityId", "entityType", "actorId",
+    SELECT id, ${baseId}::uuid, ${sourceId}::uuid, ts, kind, value, "actorId",
       "sessionId", "correlationId", "dimensionsHash", dimensions, attributes, sensitive, payload, "resourceKey", "resourceId", "resourceType", "resourceLabel"
     FROM input
   `;
 };
 
-const writeStates = async (baseId: string, sourceId: string | null | undefined, rows: PreparedState[], db: PulseSqlClient) => {
+const writeStates = async (baseId: string, sourceId: string, rows: PreparedState[], db: PulseSqlClient) => {
   if (rows.length === 0) return;
   const input = json(rows);
-  const columns = `ordinal int, key text, value jsonb, ts timestamptz, \"entityId\" text, \"entityType\" text, \"dimensionsHash\" text, dimensions jsonb, \"resourceKey\" text, \"resourceId\" text, \"resourceType\" text, \"resourceLabel\" text`;
+  const columns = `ordinal int, key text, value jsonb, ts timestamptz, "variantKey" text, "dimensionsHash" text, dimensions jsonb, "resourceKey" text, "resourceId" text, "resourceType" text, "resourceLabel" text`;
   await lockStateIdentities(
     baseId,
-    rows.map((row) => ({ key: row.key, entityId: row.entityId, dimensionsHash: row.dimensionsHash })),
+    rows.map((row) => ({ key: row.key, variantKey: row.variantKey })),
     db,
   );
   await db.unsafe(
     `
     WITH input AS (
-      SELECT * FROM jsonb_to_recordset(($1::jsonb #>> '{}')::jsonb) AS row(${columns})
-    ), current_rows AS (
-      SELECT DISTINCT ON (key, "entityId", "dimensionsHash") *
-      FROM input ORDER BY key, "entityId", "dimensionsHash", ts DESC, ordinal DESC
+      SELECT ordinal, key, COALESCE(value, 'null'::jsonb) AS value, ts, "variantKey", "dimensionsHash", dimensions, "resourceKey", "resourceId", "resourceType", "resourceLabel" FROM jsonb_to_recordset(($1::jsonb #>> '{}')::jsonb) AS row(${columns})
+    ), transitions AS (
+      SELECT incoming.*,
+        lag(incoming.value, 1, current.value) OVER (
+          PARTITION BY incoming.key, incoming."variantKey" ORDER BY incoming.ts, incoming.ordinal
+        ) AS previous_value
+      FROM input incoming
+      LEFT JOIN pulse.states_current current
+        ON current.base_id = $2::uuid AND current.state_key = incoming.key
+        AND current.variant_key = incoming."variantKey"
+      WHERE current.base_id IS NULL OR incoming.ts >= current.updated_at
     )
     INSERT INTO pulse.state_changes (
-      base_id, state_key, source_id, entity_id, entity_type, value, dimensions_hash, dimensions,
+      base_id, state_key, source_id, variant_key, value, dimensions_hash, dimensions,
       resource_key, resource_id, resource_type, resource_label, changed_at
     )
-    SELECT $2::uuid, incoming.key, $3::uuid, NULLIF(incoming."entityId", ''), incoming."entityType", incoming.value,
-      incoming."dimensionsHash", incoming.dimensions, incoming."resourceKey", incoming."resourceId", incoming."resourceType",
-      incoming."resourceLabel", incoming.ts
-    FROM current_rows incoming
-    LEFT JOIN pulse.states_current current
-      ON current.base_id = $2::uuid
-      AND current.state_key = incoming.key
-      AND current.entity_id = incoming."entityId"
-      AND current.dimensions_hash = incoming."dimensionsHash"
-    WHERE current.base_id IS NULL
-      OR (current.updated_at <= incoming.ts AND current.value IS DISTINCT FROM incoming.value)
+    SELECT $2::uuid, key, $3::uuid, "variantKey", value, "dimensionsHash", dimensions,
+      "resourceKey", "resourceId", "resourceType", "resourceLabel", ts
+    FROM transitions WHERE previous_value IS DISTINCT FROM value
+    ORDER BY key, "variantKey", ts, ordinal
   `,
-    [input, baseId, sourceId ?? null],
+    [input, baseId, sourceId],
   );
   await db.unsafe(
     `
     WITH input AS (
-      SELECT * FROM jsonb_to_recordset(($1::jsonb #>> '{}')::jsonb) AS row(${columns})
+      SELECT ordinal, key, COALESCE(value, 'null'::jsonb) AS value, ts, "variantKey", "dimensionsHash", dimensions, "resourceKey", "resourceId", "resourceType", "resourceLabel" FROM jsonb_to_recordset(($1::jsonb #>> '{}')::jsonb) AS row(${columns})
     ), current_rows AS (
-      SELECT DISTINCT ON (key, "entityId", "dimensionsHash") *
-      FROM input ORDER BY key, "entityId", "dimensionsHash", ts DESC, ordinal DESC
+      SELECT DISTINCT ON (key, "variantKey") *
+      FROM input ORDER BY key, "variantKey", ts DESC, ordinal DESC
     )
     INSERT INTO pulse.states_current (
-      base_id, state_key, source_id, entity_id, entity_type, value, dimensions_hash, dimensions,
+      base_id, state_key, source_id, variant_key, value, dimensions_hash, dimensions,
       resource_key, resource_id, resource_type, resource_label, updated_at
     )
-    SELECT $2::uuid, key, $3::uuid, "entityId", "entityType", value, "dimensionsHash", dimensions,
+    SELECT $2::uuid, key, $3::uuid, "variantKey", value, "dimensionsHash", dimensions,
       "resourceKey", "resourceId", "resourceType", "resourceLabel", ts
     FROM current_rows
-    ON CONFLICT (base_id, state_key, entity_id, dimensions_hash) DO UPDATE SET
-      value = EXCLUDED.value, source_id = EXCLUDED.source_id, entity_type = EXCLUDED.entity_type,
+    ON CONFLICT (base_id, state_key, variant_key) DO UPDATE SET
+      value = EXCLUDED.value, source_id = EXCLUDED.source_id,
       dimensions = EXCLUDED.dimensions, resource_key = EXCLUDED.resource_key, resource_id = EXCLUDED.resource_id,
       resource_type = EXCLUDED.resource_type, resource_label = EXCLUDED.resource_label, updated_at = EXCLUDED.updated_at
     WHERE pulse.states_current.updated_at <= EXCLUDED.updated_at
   `,
-    [input, baseId, sourceId ?? null],
+    [input, baseId, sourceId],
   );
 };
 
-const writeResources = async (baseId: string, sourceId: string | null | undefined, resources: PreparedResource[], db: PulseSqlClient) => {
+const writeResources = async (baseId: string, sourceId: string, resources: PreparedResource[], db: PulseSqlClient) => {
   if (resources.length === 0) return;
   await db`
     WITH input AS (
@@ -391,7 +382,7 @@ const writeResources = async (baseId: string, sourceId: string | null | undefine
       base_id, resource_key, resource_id, resource_type, label, source_ids, dimensions, last_seen_at, updated_at
     )
     SELECT ${baseId}::uuid, key, id, type, label,
-      CASE WHEN ${sourceId ?? null}::uuid IS NULL THEN ARRAY[]::uuid[] ELSE ARRAY[${sourceId ?? null}::uuid] END,
+      ARRAY[${sourceId}::uuid],
       dimensions, "seenAt", now()
     FROM input
     ON CONFLICT (base_id, resource_key) DO UPDATE SET
@@ -405,13 +396,8 @@ const writeResources = async (baseId: string, sourceId: string | null | undefine
   `;
 };
 
-const writeFieldMetadata = async (
-  baseId: string,
-  sourceId: string | null | undefined,
-  fields: PreparedIngestBatch["fields"],
-  db: PulseSqlClient,
-) => {
-  if (!sourceId || fields.length === 0) return;
+const writeFieldMetadata = async (baseId: string, sourceId: string, fields: PreparedIngestBatch["fields"], db: PulseSqlClient) => {
+  if (fields.length === 0) return;
   await db`
     WITH input AS (
       SELECT * FROM jsonb_to_recordset((${json(fields)}::jsonb #>> '{}')::jsonb) AS row(
@@ -434,7 +420,7 @@ const writeFieldMetadata = async (
 
 export const writePreparedIngestBatchInTransaction = async (params: {
   baseId: string;
-  sourceId?: string | null;
+  sourceId: string;
   batch: PreparedIngestBatch;
   db: PulseSqlClient;
 }): Promise<void> => {

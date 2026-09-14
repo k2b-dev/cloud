@@ -13,8 +13,10 @@ import type {
   PulsePublicDashboardStatesWidget,
   PulsePublicDashboardWidget,
 } from "../contracts";
+import type { pulseMessages } from "../messages";
 import { formatDashboardConditionText, matchDashboardCondition } from "./dashboard-conditions";
 import { publicDashboardEventSubject, publicDashboardStateRowId, sanitizePublicDashboardMarkdown } from "./public-dashboard-runtime";
+import { usePulseMessages } from "./use-messages";
 import {
   compactDate,
   compactDateWithDelta,
@@ -29,8 +31,6 @@ import {
   pointsToHistogram,
   pointsToLineSeries,
 } from "./workspace/helpers";
-import type { pulseMessages } from "../messages";
-import { usePulseMessages } from "./use-messages";
 
 type Props = {
   snapshot: PulseDashboardSnapshot;
@@ -116,7 +116,12 @@ const renderLineMetricVisual = (widget: PulsePublicDashboardMetricWidget, data: 
   />
 );
 
-const renderMetricVisual = (widget: PulsePublicDashboardMetricWidget, data: MetricQueryPoint[], dateContext: DateContext, t: Messages): JSX.Element => {
+const renderMetricVisual = (
+  widget: PulsePublicDashboardMetricWidget,
+  data: MetricQueryPoint[],
+  dateContext: DateContext,
+  t: Messages,
+): JSX.Element => {
   const last = metricWidgetLastValue(data);
   switch (widget.visual) {
     case "stat":
@@ -254,7 +259,7 @@ export function PublicDashboardSections(props: Props) {
         columns={[
           { id: "state", header: t().state, value: (state) => state.key },
           { id: "value", header: t().value, value: (state) => formatSignalValue(state.value) },
-          { id: "entity", header: t().entity, value: (state) => state.entityId },
+          { id: "resource", header: t().resource, value: (state) => state.resourceKey },
           { id: "updated", header: t().updated, value: (state) => compactDateWithDelta(state.updatedAt, props.dateContext) },
         ]}
         getRowId={(state) => publicDashboardStateRowId(state)}

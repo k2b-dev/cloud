@@ -13,7 +13,7 @@ const log = logger("pulse:metrics-scraper");
 
 type IngestCounts = { metrics: number; events: number; states: number };
 type MetricsScraperDeps = {
-  ingestBatch: (params: { baseId: string; sourceId?: string | null; batch: PulseIngestBatch }) => Promise<Result<IngestCounts>>;
+  ingestBatch: (params: { baseId: string; sourceId: string; batch: PulseIngestBatch }) => Promise<Result<IngestCounts>>;
 };
 type MetricsSourceConfig = {
   endpointUrl: string;
@@ -221,7 +221,7 @@ const parsePrometheusValue = (rawValue: string | undefined): number | null => {
   return Number.isFinite(value) ? value : null;
 };
 
-const entityIdFromDimensions = (dimensions: Record<string, string>): string | null =>
+const resourceKeyFromDimensions = (dimensions: Record<string, string>): string | null =>
   dimensions.instance ?? dimensions.host ?? dimensions.node ?? null;
 
 const parsePrometheusSampleLine = (line: string): { name: string; value: number; dimensions: Record<string, string> } | null => {
@@ -239,13 +239,12 @@ const prometheusSampleToMetric = (
   sample: { name: string; value: number; dimensions: Record<string, string> },
   typeByName: Map<string, MetricType>,
 ): PulseMetric => {
-  const entityId = entityIdFromDimensions(sample.dimensions);
+  const resourceKey = resourceKeyFromDimensions(sample.dimensions);
   return {
     name: sample.name,
     value: sample.value,
     type: inferPrometheusMetricType(sample.name, typeByName.get(sample.name)),
-    entityId,
-    entityType: entityId ? "target" : null,
+    resource: resourceKey ? { type: "target", id: resourceKey } : null,
     dimensions: sample.dimensions,
   };
 };
@@ -273,7 +272,6 @@ const loadMetricsSourceConfig = async (params: { baseId: string; sourceId: strin
       AND (
         b.data_clear_started_at IS NULL
         OR b.data_clear_completed_at IS NOT NULL
-        OR b.data_clear_failed_at IS NOT NULL
       )
   `;
   return source?.endpoint_url ? { endpointUrl: source.endpoint_url, bearerTokenEncrypted: source.bearer_token_encrypted } : null;

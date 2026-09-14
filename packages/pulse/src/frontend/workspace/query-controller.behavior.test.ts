@@ -69,7 +69,7 @@ describe("Pulse query controller", () => {
         writeBlocked: () => false,
         selectedVisual: () => "line",
         browseSourceId: () => "",
-        browseEntityId: () => "",
+        browseResourceKey: () => "",
         openExplorer: () => undefined,
       });
       return dom.document.createTextNode("");
@@ -148,7 +148,7 @@ describe("Pulse query controller", () => {
         writeBlocked: () => false,
         selectedVisual: () => "line",
         browseSourceId: () => "",
-        browseEntityId: () => "",
+        browseResourceKey: () => "",
         openExplorer: () => undefined,
       });
       return dom.document.createTextNode("");

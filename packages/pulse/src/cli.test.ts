@@ -146,11 +146,12 @@ const inventory = {
   ],
   states: [
     {
+      variantKey: "fixture-0",
       key: "system.host.online",
       value: true,
       sourceId,
-      entityId: "host:macbook",
-      entityType: "host",
+      resourceKey: "host:macbook",
+      resourceType: "host",
       dimensions: { host: "macbook" },
       updatedAt: "2026-07-07T12:00:00.000Z",
     },
@@ -495,8 +496,8 @@ describe("pulse CLI", () => {
         key: "system.host.online",
         value: "true",
         source: "Src001",
-        entity: "host:macbook",
-        entityType: "host",
+        resource: "host:macbook",
+        resourceType: "host",
         updatedAt: "2026-07-07T12:00:00.000Z",
       },
     ]);
@@ -599,8 +600,8 @@ describe("pulse CLI", () => {
         key: "system.host.online",
         value: "true",
         source: "Src001",
-        entity: "host:macbook",
-        entityType: "host",
+        resource: "host:macbook",
+        resourceType: "host",
         updatedAt: "2026-07-07T12:00:00.000Z",
       },
     ]);
@@ -705,7 +706,16 @@ describe("pulse CLI", () => {
       dashboard: { id: dashboardId, name: "Ops", config: { layout: null, refreshIntervalSeconds: 5 } },
       points: { cpu: [{ ts: "2026-07-07T12:00:00.000Z", value: 42 }] },
       events: { deploys: [{ id: "event", kind: "deploy", ts: "2026-07-07T12:00:00.000Z", value: {} }] },
-      states: { health: [{ key: "service.online", value: true, updatedAt: "2026-07-07T12:00:00.000Z" }] },
+      states: {
+        health: [
+          {
+            variantKey: "fixture-3",
+            key: "service.online",
+            value: true,
+            updatedAt: "2026-07-07T12:00:00.000Z",
+          },
+        ],
+      },
     };
     const { ctx, calls, lines } = createContext(["dashboards", "snapshot", baseId, "Ops"], {}, [
       jsonResponse(base),
@@ -856,4 +866,16 @@ describe("pulse CLI", () => {
     });
     expect(payload.topResources).toHaveLength(1);
   });
+});
+
+test("ingests into an explicit source through the authenticated source endpoint", async () => {
+  const batch = { events: [{ kind: "page.viewed" }] };
+  const { ctx, calls } = createContext(["ingest", baseId], { source: sourceId, batch: JSON.stringify(batch) }, [
+    jsonResponse(base),
+    jsonResponse([source]),
+    jsonResponse({ metrics: 0, events: 1, states: 0 }),
+  ]);
+  await pulseCli.run(ctx);
+  expect(calls.at(-1)?.path).toBe(`/api/pulse/bases/${baseId}/sources/${sourceId}/ingest`);
+  expect(JSON.parse(String(calls.at(-1)?.init?.body))).toEqual(batch);
 });

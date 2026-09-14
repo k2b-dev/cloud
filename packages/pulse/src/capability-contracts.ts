@@ -13,8 +13,7 @@ const ResourceRefIdSchema = z
   .string()
   .regex(/^[0-9A-Za-z]{6}\/[\s\S]+$/)
   .max(512);
-const resourceRef = <Type extends string>(type: Type, id: z.ZodType = ShortIdSchema) =>
-  z.object({ type: z.literal(type), id }).strict();
+const resourceRef = <Type extends string>(type: Type, id: z.ZodType = ShortIdSchema) => z.object({ type: z.literal(type), id }).strict();
 
 export const BaseDataSchema = z
   .object({
@@ -153,8 +152,8 @@ const EventDataSchema = z
     ts: TimestampSchema,
     value: z.number().finite().nullable(),
     sourceId: ShortIdSchema.nullable(),
-    entityId: z.string().max(500).nullable(),
-    entityType: z.string().max(120).nullable(),
+    resourceKey: z.string().max(505).nullable(),
+    resourceType: z.string().max(120).nullable(),
     dimensions: DimensionsDataSchema,
   })
   .strict();
@@ -164,8 +163,8 @@ const StateDataSchema = z
     key: z.string().min(1).max(240),
     value: StateValueSchema,
     sourceId: ShortIdSchema.nullable(),
-    entityId: z.string().max(500),
-    entityType: z.string().max(120).nullable(),
+    resourceKey: z.string().max(505).nullable(),
+    resourceType: z.string().max(120).nullable(),
     dimensions: DimensionsDataSchema,
     updatedAt: TimestampSchema,
   })

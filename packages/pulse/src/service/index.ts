@@ -1,14 +1,6 @@
 import { fail, ok, type Result } from "@k2b/cloud/server";
 import { sql } from "bun";
-import type {
-  PulseCapabilitySnapshot,
-  PulseDashboardDslCompileResult,
-  PulseDashboardSnapshot,
-  PulseEvent,
-  PulseIngestBatch,
-  PulseMetric,
-  PulseState,
-} from "../contracts";
+import type { PulseCapabilitySnapshot, PulseDashboardDslCompileResult, PulseDashboardSnapshot } from "../contracts";
 import { compileDashboardDsl } from "../dashboard-dsl";
 import { compilePulseQueryText } from "../query-dsl";
 import { type AccessScope, requireBaseAccess } from "./access-control";
@@ -34,7 +26,7 @@ import {
   updateDashboard,
 } from "./dashboard-management";
 import { queryEventMapData } from "./event-map-query";
-import { ingestBatch, ingestByApiKey, recordEvent, recordMetric, setState } from "./ingest-writer";
+import { ingestBatch, ingestByApiKey } from "./ingest-writer";
 import { runMetricsSourceScrape } from "./metrics-scraper";
 import {
   getDashboardSnapshot as getDashboardSnapshotWithDeps,
@@ -75,13 +67,6 @@ import {
   removeSourceApiKey,
   updateSource,
 } from "./source-management";
-
-const programmaticPulse = {
-  recordMetric: (params: { baseId: string; sourceId?: string | null; metric: PulseMetric }) => recordMetric(params),
-  emitEvent: (params: { baseId: string; sourceId?: string | null; event: PulseEvent }) => recordEvent(params),
-  setState: (params: { baseId: string; sourceId?: string | null; state: PulseState }) => setState(params),
-  batch: (params: { baseId: string; sourceId?: string | null; batch: PulseIngestBatch }) => ingestBatch(params),
-};
 
 export const scrapeMetricsSource = async (params: {
   baseId: string;
@@ -203,11 +188,7 @@ export const pulseService = {
   ingest: {
     batch: ingestBatch,
     byApiKey: ingestByApiKey,
-    metric: recordMetric,
-    event: recordEvent,
-    state: setState,
   },
-  programmatic: programmaticPulse,
   query: {
     metric: queryMetric,
     metricText: queryMetricText,

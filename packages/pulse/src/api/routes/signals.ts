@@ -225,10 +225,10 @@ const routes = new Hono<AuthContext>()
     },
   )
   .post(
-    "/bases/:baseId/ingest",
+    "/bases/:baseId/sources/:sourceId/ingest",
     describeRoute({
       tags: ["Pulse"],
-      summary: "Ingest Pulse data through authenticated internal API",
+      summary: "Ingest Pulse data into an enabled source",
       responses: { 200: jsonResponse(z.object({ metrics: z.number(), events: z.number(), states: z.number() }), "Ingest counts") },
     }),
     v("json", IngestBatchSchema),
@@ -237,7 +237,9 @@ const routes = new Hono<AuthContext>()
       if (!baseId.ok) return respond(c, baseId.result);
       const gate = await pulseService.base.access.require(baseId.value, requestAccessScope(c), "write");
       if (!gate.ok) return respond(c, gate);
-      return respond(c, pulseService.ingest.batch({ baseId: baseId.value, batch: c.req.valid("json") }));
+      const sourceId = await requirePublicIdParam(c.req.param("sourceId"), "source ID", "sources");
+      if (!sourceId.ok) return respond(c, sourceId.result);
+      return respond(c, pulseService.ingest.batch({ baseId: baseId.value, sourceId: sourceId.value, batch: c.req.valid("json") }));
     },
   );
 

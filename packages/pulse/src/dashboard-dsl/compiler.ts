@@ -101,7 +101,7 @@ const compileDashboardControls = (document: DashboardDslDocument, uniqueId: Uniq
     label: control.label,
     defaultValue: control.defaultValue,
     options: control.options.length ? control.options : undefined,
-    entityType: control.entityType,
+    resourceType: control.resourceType,
   }));
 
 const compileDashboardLayout = (context: DashboardCompilerContext, controls: PulseDashboardControl[]): PulseDashboardLayout => {
@@ -271,8 +271,8 @@ const compileMetricWidget = (block: DashboardDslVisual, query: MetricQuery, uniq
   bucket: query.bucket,
   since: query.since,
   sourceId: query.sourceId,
-  entityId: query.entityId,
-  entityType: query.entityType,
+  resourceKey: query.resourceKey,
+  resourceType: query.resourceType,
   dimensions: query.dimensions,
   reduce: query.reduce,
   groupBy: query.groupBy,
@@ -313,8 +313,8 @@ const compileEventsWidget = (
       bucket: query.bucket ?? "1h",
       since: query.since,
       sourceId: query.sourceId,
-      entityId: query.entityId,
-      entityType: query.entityType,
+      resourceKey: query.resourceKey,
+      resourceType: query.resourceType,
       dimensions: query.dimensions,
       queryText: widgetQueryText(block),
       query: stripBaseId(query) as PulseDashboardEventQuery,

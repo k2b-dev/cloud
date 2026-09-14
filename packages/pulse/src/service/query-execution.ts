@@ -10,8 +10,8 @@ import {
   mapCurrentState,
   mapRecordedEvent,
   normalizeDimensions,
-  parseJsonObject,
   type RecordedEventRow,
+  readJsonObject,
 } from "./telemetry-values";
 
 const MAX_METRIC_BUCKETS = 2_000;
@@ -43,8 +43,8 @@ type MetricSeriesMatch = {
 type StateQueryParams = {
   state: string | null;
   sourceId: string | null;
-  entityId: string | null;
-  entityType: string | null;
+  resourceKey: string | null;
+  resourceType: string | null;
   dimensionsJson: string;
   since: Date | null;
   limit: number;
@@ -53,7 +53,7 @@ type StateQueryParams = {
 const metricGroup = (series: MetricSeriesMatch, groupBy: string | null | undefined): { key: string; group?: Record<string, string> } => {
   if (!groupBy) return { key: "" };
   if (groupBy === "resource") {
-    const key = series.resource_key ?? `${series.resource_type ?? ""}:${series.resource_id ?? ""}`;
+    const key = series.resource_key ?? "(none)";
     return {
       key,
       group: {
@@ -62,7 +62,7 @@ const metricGroup = (series: MetricSeriesMatch, groupBy: string | null | undefin
       },
     };
   }
-  const value = normalizeDimensions(parseJsonObject(series.dimensions))[groupBy] ?? "(none)";
+  const value = normalizeDimensions(readJsonObject(series.dimensions))[groupBy] ?? "(none)";
   return { key: value, group: { [groupBy]: value } };
 };
 
@@ -135,8 +135,8 @@ const resolveMetricSeries = async (query: MetricQuery): Promise<MetricSeriesMatc
     WHERE ms.base_id = ${query.baseId}::uuid
       AND md.name = ${query.metric}
       AND ms.source_id IS NOT DISTINCT FROM COALESCE(${query.sourceId ?? null}::uuid, ms.source_id)
-      AND (${query.entityId ?? null}::text IS NULL OR ms.entity_id = ${query.entityId ?? null})
-      AND (${query.entityType ?? null}::text IS NULL OR ms.entity_type = ${query.entityType ?? null})
+      AND (${query.resourceKey ?? null}::text IS NULL OR ms.resource_key = ${query.resourceKey ?? null})
+      AND (${query.resourceType ?? null}::text IS NULL OR ms.resource_type = ${query.resourceType ?? null})
       AND ${dimensionsMatch}
     LIMIT ${MAX_MATCHED_SERIES + 1}
   `;
@@ -348,13 +348,13 @@ export const queryEventsData = async (query: EventQuery): Promise<Result<PulseRe
   const since = new Date(Date.now() - sinceMs);
   const dimensions = normalizeDimensions(query.dimensions);
   const rows = await sql<RecordedEventRow[]>`
-    SELECT id, kind, ts, value, source_id, entity_id, entity_type, dimensions, attributes, payload, recorded_at
+    SELECT id, kind, ts, value, source_id, resource_key, resource_type, dimensions, attributes, payload, recorded_at
     FROM pulse.events
     WHERE base_id = ${query.baseId}::uuid
       AND (${query.event ?? null}::text IS NULL OR kind = ${query.event ?? null})
       AND (${query.sourceId ?? null}::uuid IS NULL OR source_id = ${query.sourceId ?? null}::uuid)
-      AND (${query.entityId ?? null}::text IS NULL OR entity_id = ${query.entityId ?? null})
-      AND (${query.entityType ?? null}::text IS NULL OR entity_type = ${query.entityType ?? null})
+      AND (${query.resourceKey ?? null}::text IS NULL OR resource_key = ${query.resourceKey ?? null})
+      AND (${query.resourceType ?? null}::text IS NULL OR resource_type = ${query.resourceType ?? null})
       AND dimensions @> (${jsonbObject(dimensions)}::jsonb #>> '{}')::jsonb
       AND ts >= ${since}
     ORDER BY ts DESC, recorded_at DESC
@@ -440,8 +440,8 @@ export const queryEventAggregateData = async (
       WHERE event.base_id = ${query.baseId}::uuid
         AND (${query.event ?? null}::text IS NULL OR event.kind = ${query.event ?? null})
         AND (${query.sourceId ?? null}::uuid IS NULL OR event.source_id = ${query.sourceId ?? null}::uuid)
-        AND (${query.entityId ?? null}::text IS NULL OR event.entity_id = ${query.entityId ?? null})
-        AND (${query.entityType ?? null}::text IS NULL OR event.entity_type = ${query.entityType ?? null})
+        AND (${query.resourceKey ?? null}::text IS NULL OR event.resource_key = ${query.resourceKey ?? null})
+        AND (${query.resourceType ?? null}::text IS NULL OR event.resource_type = ${query.resourceType ?? null})
         AND event.dimensions @> (${dimensions}::jsonb #>> '{}')::jsonb
         AND event.ts >= ${since}
     )
@@ -458,7 +458,7 @@ export const queryEventAggregateData = async (
     rows.map((row) => ({
       bucket: iso(row.bucket),
       value: row.value === null ? null : Number(row.value),
-      group: normalizeDimensions(parseJsonObject(row.group_data)),
+      group: normalizeDimensions(readJsonObject(row.group_data)),
     })),
   );
 };
@@ -477,8 +477,8 @@ const resolveStateQueryParams = (query: StateQuery): Result<StateQueryParams> =>
   return ok({
     state: query.state ?? null,
     sourceId: query.sourceId ?? null,
-    entityId: query.entityId ?? null,
-    entityType: query.entityType ?? null,
+    resourceKey: query.resourceKey ?? null,
+    resourceType: query.resourceType ?? null,
     dimensionsJson: jsonbObject(dimensions),
     since: sinceMs ? new Date(Date.now() - sinceMs) : null,
     limit: query.limit,
@@ -487,13 +487,13 @@ const resolveStateQueryParams = (query: StateQuery): Result<StateQueryParams> =>
 
 const queryCurrentStateRows = async (baseId: string, params: StateQueryParams): Promise<CurrentStateRow[]> =>
   sql<CurrentStateRow[]>`
-    SELECT state_key, value, source_id, entity_id, entity_type, dimensions, updated_at
+    SELECT state_key, variant_key, value, source_id, resource_key, resource_type, dimensions, updated_at
     FROM pulse.states_current
     WHERE base_id = ${baseId}::uuid
       AND (${params.state}::text IS NULL OR state_key = ${params.state})
       AND (${params.sourceId}::uuid IS NULL OR source_id = ${params.sourceId}::uuid)
-      AND (${params.entityId}::text IS NULL OR entity_id = ${params.entityId})
-      AND (${params.entityType}::text IS NULL OR entity_type = ${params.entityType})
+      AND (${params.resourceKey}::text IS NULL OR resource_key = ${params.resourceKey})
+      AND (${params.resourceType}::text IS NULL OR resource_type = ${params.resourceType})
       AND dimensions @> (${params.dimensionsJson}::jsonb #>> '{}')::jsonb
       AND (${params.since}::timestamptz IS NULL OR updated_at >= ${params.since}::timestamptz)
     ORDER BY updated_at DESC, state_key ASC

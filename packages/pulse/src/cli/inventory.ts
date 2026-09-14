@@ -17,8 +17,7 @@ type ResourceSignalFilters = {
   q?: string;
   sourceId?: string;
   resource?: InventoryResource;
-  entity?: string;
-  entityType?: string;
+  resourceType?: string;
 };
 type MetricFilters = ResourceSignalFilters & { type?: MetricType };
 type StateFilters = ResourceSignalFilters & { key?: string };
@@ -42,25 +41,10 @@ const includesSearch = (q: string | undefined, values: SearchValue[]): boolean =
   );
 };
 
-const resourceEntityRefs = (resource: InventoryResource): string[] => {
-  const refs = [resource.key, resource.id];
-  if (resource.type) refs.push(`${resource.type}:${resource.id}`);
-  return refs.filter(Boolean);
-};
-
-const matchesResourceEntity = (resource: InventoryResource, entityId: string | null | undefined, entityType?: string | null): boolean => {
-  if (resource.type && entityType && resource.type !== entityType) return false;
-  const refs = new Set(resourceEntityRefs(resource));
-  return Boolean(entityId && refs.has(entityId));
-};
-
 const optionalEquals = (filter: string | undefined, value: string | null | undefined): boolean => filter === undefined || value === filter;
 
-const optionalResourceEntity = (
-  resource: InventoryResource | undefined,
-  entityId: string | null | undefined,
-  entityType?: string | null,
-): boolean => !resource || matchesResourceEntity(resource, entityId, entityType);
+const optionalResource = (resource: InventoryResource | undefined, resourceKey: string | null | undefined): boolean =>
+  !resource || resource.key === resourceKey;
 
 export const sliceRows = <T>(items: T[], limit?: number, offset?: number): T[] => {
   const start = Math.max(0, offset ?? 0);
@@ -74,12 +58,9 @@ const metricMatchesScope = (metric: InventoryMetric, filters: MetricFilters): bo
     optionalEquals(filters.type, metric.type) &&
     optionalEquals(filters.sourceId, metric.sourceId) &&
     optionalEquals(resourceKey, metric.resourceKey) &&
-    optionalEquals(filters.entityType, metric.resourceType)
+    optionalEquals(filters.resourceType, metric.resourceType)
   );
 };
-
-const metricMatchesEntity = (metric: InventoryMetric, entity: string | undefined): boolean =>
-  !entity || metric.resourceId === entity || metric.resourceKey === entity;
 
 const metricSearchValues = (metric: InventoryMetric): SearchValue[] => [
   metric.metric,
@@ -92,9 +73,7 @@ const metricSearchValues = (metric: InventoryMetric): SearchValue[] => [
 ];
 
 const metricMatchesFilters = (metric: InventoryMetric, filters: MetricFilters): boolean =>
-  metricMatchesScope(metric, filters) &&
-  metricMatchesEntity(metric, filters.entity) &&
-  includesSearch(filters.q, metricSearchValues(metric));
+  metricMatchesScope(metric, filters) && includesSearch(filters.q, metricSearchValues(metric));
 
 export const filterInventoryMetrics = (inventory: PulseInventory, filters: MetricFilters): InventoryMetric[] =>
   inventory.metrics.filter((metric) => metricMatchesFilters(metric, filters));
@@ -124,17 +103,16 @@ const stateMatchesScope = (state: PulseCurrentState, filters: StateFilters): boo
   return (
     optionalEquals(filters.key, state.key) &&
     optionalEquals(filters.sourceId, state.sourceId) &&
-    optionalResourceEntity(filters.resource, state.entityId, state.entityType) &&
-    optionalEquals(filters.entity, state.entityId) &&
-    optionalEquals(filters.entityType, state.entityType)
+    optionalResource(filters.resource, state.resourceKey) &&
+    optionalEquals(filters.resourceType, state.resourceType)
   );
 };
 
 const stateSearchValues = (state: PulseCurrentState): SearchValue[] => [
   state.key,
   formatValue(state.value),
-  state.entityId,
-  state.entityType,
+  state.resourceKey,
+  state.resourceType,
   state.sourceId,
   ...Object.keys(state.dimensions),
   ...Object.values(state.dimensions),
@@ -150,17 +128,16 @@ const eventMatchesScope = (event: PulseRecordedEvent, filters: EventFilters): bo
   return (
     optionalEquals(filters.kind, event.kind) &&
     optionalEquals(filters.sourceId, event.sourceId) &&
-    optionalResourceEntity(filters.resource, event.entityId, event.entityType) &&
-    optionalEquals(filters.entity, event.entityId) &&
-    optionalEquals(filters.entityType, event.entityType)
+    optionalResource(filters.resource, event.resourceKey) &&
+    optionalEquals(filters.resourceType, event.resourceType)
   );
 };
 
 const eventSearchValues = (event: PulseRecordedEvent): SearchValue[] => [
   event.kind,
   event.value,
-  event.entityId,
-  event.entityType,
+  event.resourceKey,
+  event.resourceType,
   event.sourceId,
   ...Object.keys(event.dimensions),
   ...Object.values(event.dimensions),
@@ -187,8 +164,8 @@ export const seriesRows = (series: PulseMetricSeries[]) =>
     id: compactId(item.id),
     metric: item.metric,
     source: compactId(item.sourceId),
-    entity: item.entityId ?? "",
-    entityType: item.entityType ?? "",
+    resource: item.resourceKey ?? "",
+    resourceType: item.resourceType ?? "",
     value: item.latestValue ?? "",
     lastSeenAt: formatDate(item.lastSeenAt),
   }));
@@ -210,8 +187,8 @@ export const stateRows = (states: PulseCurrentState[]) =>
     key: state.key,
     value: formatValue(state.value),
     source: compactId(state.sourceId),
-    entity: state.entityId,
-    entityType: state.entityType ?? "",
+    resource: state.resourceKey,
+    resourceType: state.resourceType ?? "",
     updatedAt: state.updatedAt,
   }));
 
@@ -221,8 +198,8 @@ export const eventRows = (events: PulseRecordedEvent[]) =>
     kind: event.kind,
     value: event.value ?? "",
     source: compactId(event.sourceId),
-    entity: event.entityId ?? "",
-    entityType: event.entityType ?? "",
+    resource: event.resourceKey ?? "",
+    resourceType: event.resourceType ?? "",
     ts: event.ts,
   }));
 

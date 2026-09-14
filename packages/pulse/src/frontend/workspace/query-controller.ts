@@ -15,6 +15,7 @@ import type {
   PulseSavedQuery,
 } from "../../contracts";
 import { defaultPulseQuery } from "../query-authoring";
+import { usePulseMessages } from "../use-messages";
 import {
   currentStateQueryText,
   dashboardWidgetSnippetFromQuery,
@@ -37,7 +38,6 @@ import {
 import { createPulseSavedQuery, deletePulseSavedQuery } from "./saved-query-actions";
 import { openSaveQueryDialog } from "./saved-query-dialog";
 import type { ExplorerResultView, QueryHistoryEntry } from "./types";
-import { usePulseMessages } from "../use-messages";
 
 type QueryControllerDeps = {
   selectedBaseId: Accessor<string>;
@@ -67,7 +67,7 @@ type QueryControllerDeps = {
   writeBlocked: Accessor<boolean>;
   selectedVisual: Accessor<PanelVisual>;
   browseSourceId: Accessor<string>;
-  browseEntityId: Accessor<string>;
+  browseResourceKey: Accessor<string>;
   openExplorer: () => void;
 };
 
@@ -123,19 +123,28 @@ export const createQueryController = (deps: QueryControllerDeps) => {
   };
 
   const setMetricBrowseQuery = (metric: PulseMetricSummary, dimensions: Record<string, string> = {}) =>
-    deps.setQueryText(metricSummaryQueryText(metric, { sourceId: deps.browseSourceId() || null, dimensions }));
+    deps.setQueryText(
+      metricSummaryQueryText(metric, {
+        sourceId: deps.browseSourceId() || null,
+        resourceKey: deps.browseResourceKey() || null,
+        dimensions,
+      }),
+    );
 
   const setEventBrowseQuery = (kind: string, sample?: PulseRecordedEvent) =>
     deps.setQueryText(
       eventKindQueryText(kind, {
         sourceId: deps.browseSourceId() || sample?.sourceId,
-        entityId: deps.browseEntityId() || sample?.entityId,
+        resourceKey: deps.browseResourceKey() || sample?.resourceKey,
       }),
     );
 
   const setStateBrowseQuery = (key: string, sample?: PulseCurrentState) =>
     deps.setQueryText(
-      stateKeyQueryText(key, { sourceId: deps.browseSourceId() || sample?.sourceId, entityId: deps.browseEntityId() || sample?.entityId }),
+      stateKeyQueryText(key, {
+        sourceId: deps.browseSourceId() || sample?.sourceId,
+        resourceKey: deps.browseResourceKey() || sample?.resourceKey,
+      }),
     );
 
   const openMetricQuery = (metric: PulseResourceMetric) => {

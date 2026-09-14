@@ -6,8 +6,8 @@ export type RecordedEventRow = {
   ts: Date | string;
   value: number | null;
   source_id: string | null;
-  entity_id: string | null;
-  entity_type: string | null;
+  resource_key: string | null;
+  resource_type: string | null;
   dimensions: unknown;
   attributes: unknown;
   payload: unknown;
@@ -15,11 +15,12 @@ export type RecordedEventRow = {
 };
 
 export type CurrentStateRow = {
+  variant_key: string;
   state_key: string;
   value: unknown;
   source_id: string | null;
-  entity_id: string;
-  entity_type: string | null;
+  resource_key: string | null;
+  resource_type: string | null;
   dimensions: unknown;
   updated_at: Date | string;
 };
@@ -28,18 +29,11 @@ export const iso = (value: Date | string): string => (value instanceof Date ? va
 
 export const isoNullable = (value: Date | string | null): string | null => (value ? iso(value) : null);
 
-const parseJson = (value: unknown): unknown => {
-  if (typeof value !== "string") return value;
-  try {
-    return JSON.parse(value);
-  } catch {
-    return value;
+export const readJsonObject = (value: unknown): Record<string, unknown> => {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new TypeError("Expected a JSON object from Pulse storage");
   }
-};
-
-export const parseJsonObject = (value: unknown): Record<string, unknown> => {
-  const parsed = parseJson(value);
-  return typeof parsed === "object" && parsed !== null && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : {};
+  return Object.fromEntries(Object.entries(value));
 };
 
 export const normalizeDimensions = (dimensions: Record<string, unknown> | undefined): Record<string, string> => {
@@ -59,20 +53,21 @@ export const mapRecordedEvent = (row: RecordedEventRow): PulseRecordedEvent => (
   ts: iso(row.ts),
   value: row.value,
   sourceId: row.source_id,
-  entityId: row.entity_id,
-  entityType: row.entity_type,
-  dimensions: normalizeDimensions(parseJsonObject(row.dimensions)),
-  attributes: parseJsonObject(row.attributes),
-  payload: parseJsonObject(row.payload),
+  resourceKey: row.resource_key,
+  resourceType: row.resource_type,
+  dimensions: normalizeDimensions(readJsonObject(row.dimensions)),
+  attributes: readJsonObject(row.attributes),
+  payload: readJsonObject(row.payload),
   recordedAt: iso(row.recorded_at),
 });
 
 export const mapCurrentState = (row: CurrentStateRow): PulseCurrentState => ({
+  variantKey: row.variant_key,
   key: row.state_key,
-  value: parseJson(row.value),
+  value: row.value,
   sourceId: row.source_id,
-  entityId: row.entity_id,
-  entityType: row.entity_type,
-  dimensions: normalizeDimensions(parseJsonObject(row.dimensions)),
+  resourceKey: row.resource_key,
+  resourceType: row.resource_type,
+  dimensions: normalizeDimensions(readJsonObject(row.dimensions)),
   updatedAt: iso(row.updated_at),
 });

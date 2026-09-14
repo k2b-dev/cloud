@@ -146,10 +146,7 @@ export default function DashboardEditorView(props: DashboardEditorViewProps) {
       const metric = props.inventory().metrics.find((item) => item.resourceKey === resource.key);
       const sourceId = metric?.sourceId ?? resource.sourceIds[0] ?? null;
       const source = sourceId ? ` source ${sourceId}` : "";
-      const dimensions = Object.entries(resource.dimensions ?? {});
-      const scope = dimensions.length
-        ? ` where ${dimensions.map(([key, value]) => `${key}=${quoteQueryPart(String(value))}`).join(", ")}`
-        : ` entity ${quoteQueryPart(resource.id)}${resource.type ? ` entity_type ${quoteQueryPart(resource.type)}` : ""}`;
+      const scope = ` resource ${quoteQueryPart(resource.key)}`;
       return {
         label: resource.label,
         meta: `${resource.type ?? t().resource} · ${t().metricCount({ count: resource.metricCount })}`,
@@ -204,14 +201,14 @@ export default function DashboardEditorView(props: DashboardEditorViewProps) {
 
   const dashboardReferenceEntities = createMemo(() => {
     const entities = new Map<string, { type: string | null; count: number }>();
-    const addEntity = (entityId: string | null, entityType: string | null) => {
-      if (!entityId) return;
-      const current = entities.get(entityId);
-      entities.set(entityId, { type: current?.type ?? entityType, count: (current?.count ?? 0) + 1 });
+    const addEntity = (resourceKey: string | null, resourceType: string | null) => {
+      if (!resourceKey) return;
+      const current = entities.get(resourceKey);
+      entities.set(resourceKey, { type: current?.type ?? resourceType, count: (current?.count ?? 0) + 1 });
     };
-    for (const item of props.inventory().metrics) addEntity(item.resourceId, item.resourceType);
-    for (const item of props.inventory().events) addEntity(item.entityId, item.entityType);
-    for (const item of props.inventory().states) addEntity(item.entityId, item.entityType);
+    for (const item of props.inventory().metrics) addEntity(item.resourceKey, item.resourceType);
+    for (const item of props.inventory().events) addEntity(item.resourceKey, item.resourceType);
+    for (const item of props.inventory().states) addEntity(item.resourceKey, item.resourceType);
     return [...entities.entries()]
       .map(([label, value]) => ({ label, meta: value.type ? `${value.type} · ${value.count}` : `${value.count}` }))
       .sort((left, right) => left.label.localeCompare(right.label));
@@ -268,14 +265,24 @@ export default function DashboardEditorView(props: DashboardEditorViewProps) {
         items: dashboardReferenceMetrics(),
         empty: t().noItemsYet({ items: t().metrics.toLowerCase() }),
       })}
-      {renderReferenceList({ title: t().events, icon: "ti ti-bolt", items: dashboardReferenceEvents(), empty: t().noItemsYet({ items: t().events.toLowerCase() }) })}
+      {renderReferenceList({
+        title: t().events,
+        icon: "ti ti-bolt",
+        items: dashboardReferenceEvents(),
+        empty: t().noItemsYet({ items: t().events.toLowerCase() }),
+      })}
       {renderReferenceList({
         title: t().states,
         icon: "ti ti-toggle-right",
         items: dashboardReferenceStates(),
         empty: t().noItemsYet({ items: t().states.toLowerCase() }),
       })}
-      {renderReferenceList({ title: t().labels, icon: "ti ti-tags", items: dashboardReferenceLabels(), empty: t().noItemsYet({ items: t().labels.toLowerCase() }) })}
+      {renderReferenceList({
+        title: t().labels,
+        icon: "ti ti-tags",
+        items: dashboardReferenceLabels(),
+        empty: t().noItemsYet({ items: t().labels.toLowerCase() }),
+      })}
       {renderReferenceList({
         title: t().entities,
         icon: "ti ti-cube",

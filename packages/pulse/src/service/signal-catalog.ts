@@ -19,8 +19,8 @@ import {
   mapCurrentState,
   mapRecordedEvent,
   normalizeDimensions,
-  parseJsonObject,
   type RecordedEventRow,
+  readJsonObject,
 } from "./telemetry-values";
 
 type InventoryMetricRow = {
@@ -29,8 +29,8 @@ type InventoryMetricRow = {
   type: MetricType;
   unit: string | null;
   source_id: string | null;
-  entity_id: string | null;
-  entity_type: string | null;
+  resource_key: string | null;
+  resource_type: string | null;
   dimensions: unknown;
   last_seen_at: Date | string | null;
   latest_value: number | null;
@@ -128,7 +128,7 @@ const mapObservedResource = (
     eventCount: counts.events.get(row.resource_key) ?? 0,
     stateCount: counts.states.get(row.resource_key) ?? 0,
     lastSeenAt: isoNullable(row.last_seen_at),
-    dimensions: normalizeDimensions(parseJsonObject(row.dimensions)),
+    dimensions: normalizeDimensions(readJsonObject(row.dimensions)),
   };
 };
 
@@ -141,7 +141,7 @@ const mapResourceMetric = (row: ResourceMetricRow): PulseResourceMetric => ({
   type: row.type,
   unit: row.unit,
   sourceId: row.source_id,
-  dimensions: normalizeDimensions(parseJsonObject(row.dimensions)),
+  dimensions: normalizeDimensions(readJsonObject(row.dimensions)),
   lastSeenAt: isoNullable(row.last_seen_at),
   latestValue: row.latest_value,
   latestSampleAt: isoNullable(row.latest_sample_at),
@@ -193,8 +193,8 @@ export const listMetrics = async (
     q?: string | null;
     sourceId?: string | null;
     type?: MetricType | null;
-    entityId?: string | null;
-    entityType?: string | null;
+    resourceKey?: string | null;
+    resourceType?: string | null;
     limit?: number;
     offset?: number;
   } = {},
@@ -218,8 +218,8 @@ export const listMetrics = async (
     LEFT JOIN pulse.metric_series ms
       ON ms.metric_id = md.id
       AND (${sourceId}::uuid IS NULL OR ms.source_id = ${sourceId}::uuid)
-      AND (${params.entityId ?? null}::text IS NULL OR ms.entity_id = ${params.entityId ?? null})
-      AND (${params.entityType ?? null}::text IS NULL OR ms.entity_type = ${params.entityType ?? null})
+      AND (${params.resourceKey ?? null}::text IS NULL OR ms.resource_key = ${params.resourceKey ?? null})
+      AND (${params.resourceType ?? null}::text IS NULL OR ms.resource_type = ${params.resourceType ?? null})
     WHERE md.base_id = ${baseId}::uuid
       AND (${pattern}::text IS NULL OR md.name ILIKE ${pattern} ESCAPE '\\')
       AND (${params.type ?? null}::pulse.metric_type IS NULL OR md.type = ${params.type ?? null}::pulse.metric_type)
@@ -326,8 +326,8 @@ export const listMetricSeries = async (
   params: {
     metric: string;
     sourceId?: string | null;
-    entityId?: string | null;
-    entityType?: string | null;
+    resourceKey?: string | null;
+    resourceType?: string | null;
     q?: string | null;
     limit?: number;
     offset?: number;
@@ -345,8 +345,8 @@ export const listMetricSeries = async (
       id: string;
       metric: string;
       source_id: string | null;
-      entity_id: string | null;
-      entity_type: string | null;
+      resource_key: string | null;
+      resource_type: string | null;
       dimensions: unknown;
       last_seen_at: Date | string | null;
       latest_value: number | null;
@@ -357,8 +357,8 @@ export const listMetricSeries = async (
       ms.id,
       md.name AS metric,
       ms.source_id,
-      ms.entity_id,
-      ms.entity_type,
+      ms.resource_key,
+      ms.resource_type,
       ms.dimensions,
       ms.last_seen_at,
       latest.value AS latest_value,
@@ -375,19 +375,19 @@ export const listMetricSeries = async (
     WHERE ms.base_id = ${baseId}::uuid
       AND md.name = ${metric}
       AND ms.source_id IS NOT DISTINCT FROM COALESCE(${params.sourceId ?? null}::uuid, ms.source_id)
-      AND (${params.entityId ?? null}::text IS NULL OR ms.entity_id = ${params.entityId ?? null})
-      AND (${params.entityType ?? null}::text IS NULL OR ms.entity_type = ${params.entityType ?? null})
+      AND (${params.resourceKey ?? null}::text IS NULL OR ms.resource_key = ${params.resourceKey ?? null})
+      AND (${params.resourceType ?? null}::text IS NULL OR ms.resource_type = ${params.resourceType ?? null})
       AND (
         ${pattern}::text IS NULL
-        OR ms.entity_id ILIKE ${pattern} ESCAPE '\\'
-        OR ms.entity_type ILIKE ${pattern} ESCAPE '\\'
+        OR ms.resource_key ILIKE ${pattern} ESCAPE '\\'
+        OR ms.resource_type ILIKE ${pattern} ESCAPE '\\'
         OR EXISTS (
           SELECT 1 FROM pulse.metric_series_dimensions dimension
           WHERE dimension.series_id = ms.id
             AND (dimension.key ILIKE ${pattern} ESCAPE '\\' OR dimension.value ILIKE ${pattern} ESCAPE '\\')
         )
       )
-    ORDER BY ms.last_seen_at DESC NULLS LAST, ms.entity_id ASC NULLS LAST
+    ORDER BY ms.last_seen_at DESC NULLS LAST, ms.resource_key ASC NULLS LAST
     LIMIT ${limit}
     OFFSET ${offset}
   `;
@@ -396,9 +396,9 @@ export const listMetricSeries = async (
       id: row.id,
       metric: row.metric,
       sourceId: row.source_id,
-      entityId: row.entity_id,
-      entityType: row.entity_type,
-      dimensions: normalizeDimensions(parseJsonObject(row.dimensions)),
+      resourceKey: row.resource_key,
+      resourceType: row.resource_type,
+      dimensions: normalizeDimensions(readJsonObject(row.dimensions)),
       lastSeenAt: isoNullable(row.last_seen_at),
       latestValue: row.latest_value,
       latestSampleAt: isoNullable(row.latest_sample_at),
@@ -413,8 +413,8 @@ export const listRecentEvents = async (
     q?: string | null;
     kind?: string | null;
     sourceId?: string | null;
-    entityId?: string | null;
-    entityType?: string | null;
+    resourceKey?: string | null;
+    resourceType?: string | null;
     limit?: number;
     offset?: number;
   } = {},
@@ -425,18 +425,18 @@ export const listRecentEvents = async (
   const limit = Math.min(500, Math.max(1, params.limit ?? 500));
   const offset = Math.max(0, params.offset ?? 0);
   const rows = await sql<RecordedEventRow[]>`
-    SELECT id, kind, ts, value, source_id, entity_id, entity_type, dimensions, attributes, payload, recorded_at
+    SELECT id, kind, ts, value, source_id, resource_key, resource_type, dimensions, attributes, payload, recorded_at
     FROM pulse.events
     WHERE base_id = ${baseId}::uuid
       AND (${params.kind ?? null}::text IS NULL OR kind = ${params.kind ?? null})
       AND (${params.sourceId ?? null}::uuid IS NULL OR source_id = ${params.sourceId ?? null}::uuid)
-      AND (${params.entityId ?? null}::text IS NULL OR entity_id = ${params.entityId ?? null})
-      AND (${params.entityType ?? null}::text IS NULL OR entity_type = ${params.entityType ?? null})
+      AND (${params.resourceKey ?? null}::text IS NULL OR resource_key = ${params.resourceKey ?? null})
+      AND (${params.resourceType ?? null}::text IS NULL OR resource_type = ${params.resourceType ?? null})
       AND (
         ${pattern}::text IS NULL
         OR kind ILIKE ${pattern} ESCAPE '\\'
-        OR entity_id ILIKE ${pattern} ESCAPE '\\'
-        OR entity_type ILIKE ${pattern} ESCAPE '\\'
+        OR resource_key ILIKE ${pattern} ESCAPE '\\'
+        OR resource_type ILIKE ${pattern} ESCAPE '\\'
         OR dimensions::text ILIKE ${pattern} ESCAPE '\\'
         OR payload::text ILIKE ${pattern} ESCAPE '\\'
       )
@@ -454,8 +454,8 @@ export const listCurrentStates = async (
     q?: string | null;
     key?: string | null;
     sourceId?: string | null;
-    entityId?: string | null;
-    entityType?: string | null;
+    resourceKey?: string | null;
+    resourceType?: string | null;
     limit?: number;
     offset?: number;
   } = {},
@@ -466,18 +466,18 @@ export const listCurrentStates = async (
   const limit = Math.min(500, Math.max(1, params.limit ?? 500));
   const offset = Math.max(0, params.offset ?? 0);
   const rows = await sql<CurrentStateRow[]>`
-    SELECT state_key, value, source_id, entity_id, entity_type, dimensions, updated_at
+    SELECT state_key, variant_key, value, source_id, resource_key, resource_type, dimensions, updated_at
     FROM pulse.states_current
     WHERE base_id = ${baseId}::uuid
       AND (${params.key ?? null}::text IS NULL OR state_key = ${params.key ?? null})
       AND (${params.sourceId ?? null}::uuid IS NULL OR source_id = ${params.sourceId ?? null}::uuid)
-      AND (${params.entityId ?? null}::text IS NULL OR entity_id = ${params.entityId ?? null})
-      AND (${params.entityType ?? null}::text IS NULL OR entity_type = ${params.entityType ?? null})
+      AND (${params.resourceKey ?? null}::text IS NULL OR resource_key = ${params.resourceKey ?? null})
+      AND (${params.resourceType ?? null}::text IS NULL OR resource_type = ${params.resourceType ?? null})
       AND (
         ${pattern}::text IS NULL
         OR state_key ILIKE ${pattern} ESCAPE '\\'
-        OR entity_id ILIKE ${pattern} ESCAPE '\\'
-        OR entity_type ILIKE ${pattern} ESCAPE '\\'
+        OR resource_key ILIKE ${pattern} ESCAPE '\\'
+        OR resource_type ILIKE ${pattern} ESCAPE '\\'
         OR dimensions::text ILIKE ${pattern} ESCAPE '\\'
         OR value::text ILIKE ${pattern} ESCAPE '\\'
       )
@@ -577,8 +577,8 @@ export const listResourceMetrics = async (
       md.type,
       md.unit,
       ms.source_id,
-      ms.entity_id,
-      ms.entity_type,
+      ms.resource_key,
+      ms.resource_type,
       ms.dimensions,
       ms.last_seen_at,
       latest.value AS latest_value,
@@ -623,7 +623,7 @@ export const listResourceEvents = async (
   const limit = Math.min(500, Math.max(1, params.limit ?? 100));
   const offset = Math.max(0, params.offset ?? 0);
   const rows = await sql<RecordedEventRow[]>`
-    SELECT id, kind, ts, value, source_id, entity_id, entity_type, dimensions, attributes, payload, recorded_at
+    SELECT id, kind, ts, value, source_id, resource_key, resource_type, dimensions, attributes, payload, recorded_at
     FROM pulse.events
     WHERE base_id = ${baseId}::uuid
       AND resource_key = ${resourceKey}
@@ -632,8 +632,8 @@ export const listResourceEvents = async (
       AND (
         ${pattern}::text IS NULL
         OR kind ILIKE ${pattern} ESCAPE '\\'
-        OR entity_id ILIKE ${pattern} ESCAPE '\\'
-        OR entity_type ILIKE ${pattern} ESCAPE '\\'
+        OR resource_key ILIKE ${pattern} ESCAPE '\\'
+        OR resource_type ILIKE ${pattern} ESCAPE '\\'
         OR dimensions::text ILIKE ${pattern} ESCAPE '\\'
         OR payload::text ILIKE ${pattern} ESCAPE '\\'
       )
@@ -657,7 +657,7 @@ export const listResourceStates = async (
   const limit = Math.min(500, Math.max(1, params.limit ?? 100));
   const offset = Math.max(0, params.offset ?? 0);
   const rows = await sql<CurrentStateRow[]>`
-    SELECT state_key, value, source_id, entity_id, entity_type, dimensions, updated_at
+    SELECT state_key, variant_key, value, source_id, resource_key, resource_type, dimensions, updated_at
     FROM pulse.states_current
     WHERE base_id = ${baseId}::uuid
       AND resource_key = ${resourceKey}
@@ -666,8 +666,8 @@ export const listResourceStates = async (
       AND (
         ${pattern}::text IS NULL
         OR state_key ILIKE ${pattern} ESCAPE '\\'
-        OR entity_id ILIKE ${pattern} ESCAPE '\\'
-        OR entity_type ILIKE ${pattern} ESCAPE '\\'
+        OR resource_key ILIKE ${pattern} ESCAPE '\\'
+        OR resource_type ILIKE ${pattern} ESCAPE '\\'
         OR dimensions::text ILIKE ${pattern} ESCAPE '\\'
         OR value::text ILIKE ${pattern} ESCAPE '\\'
       )
@@ -697,8 +697,8 @@ export const listInventory = async (baseId: string, user: AccessScope): Promise<
         md.type,
         md.unit,
         ms.source_id,
-        ms.entity_id,
-        ms.entity_type,
+        ms.resource_key,
+        ms.resource_type,
         ms.dimensions,
         ms.last_seen_at,
         latest.value AS latest_value,
@@ -718,7 +718,7 @@ export const listInventory = async (baseId: string, user: AccessScope): Promise<
       LIMIT 5000
     `,
     sql<RecordedEventRow[]>`
-      SELECT id, kind, ts, value, source_id, entity_id, entity_type, dimensions, attributes, payload, recorded_at
+      SELECT id, kind, ts, value, source_id, resource_key, resource_type, dimensions, attributes, payload, recorded_at
       FROM pulse.events
       WHERE base_id = ${baseId}::uuid
         AND resource_key = ANY(${sql.array(resourceKeys, "TEXT")})
@@ -726,7 +726,7 @@ export const listInventory = async (baseId: string, user: AccessScope): Promise<
       LIMIT 1000
     `,
     sql<CurrentStateRow[]>`
-      SELECT state_key, value, source_id, entity_id, entity_type, dimensions, updated_at
+      SELECT state_key, variant_key, value, source_id, resource_key, resource_type, dimensions, updated_at
       FROM pulse.states_current
       WHERE base_id = ${baseId}::uuid
         AND resource_key = ANY(${sql.array(resourceKeys, "TEXT")})

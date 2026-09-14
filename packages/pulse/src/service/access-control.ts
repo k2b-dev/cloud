@@ -1,13 +1,5 @@
 import type { RequestActor, ServiceAccount } from "@k2b/cloud/contracts";
-import {
-  type AccessSubject,
-  buildAccessPrincipalCondition,
-  err,
-  fail,
-  ok,
-  type PermissionLevel,
-  type Result,
-} from "@k2b/cloud/server";
+import { type AccessSubject, buildAccessPrincipalCondition, err, fail, ok, type PermissionLevel, type Result } from "@k2b/cloud/server";
 import { sql } from "bun";
 
 export type UserScope = {
@@ -133,8 +125,8 @@ export const listBaseIdsVisibleTo = async (
   return rows.map((row) => row.id);
 };
 
-export const requireBaseActive = async (baseId: string): Promise<Result<void>> => {
-  const [row] = await sql<
+export const requireBaseActive = async (baseId: string, db: typeof sql = sql): Promise<Result<void>> => {
+  const [row] = await db<
     {
       deletion_started_at: Date | string | null;
       data_clear_started_at: Date | string | null;
@@ -145,10 +137,11 @@ export const requireBaseActive = async (baseId: string): Promise<Result<void>> =
     SELECT deletion_started_at, data_clear_started_at, data_clear_completed_at, data_clear_failed_at
     FROM pulse.bases
     WHERE id = ${baseId}::uuid
+    FOR SHARE
   `;
   if (!row) return fail(err.notFound("Pulse base"));
   if (row.deletion_started_at) return fail(err.conflict("Pulse base is being deleted"));
-  if (row.data_clear_started_at && !row.data_clear_completed_at && !row.data_clear_failed_at) {
+  if (row.data_clear_started_at && !row.data_clear_completed_at) {
     return fail(err.conflict("Pulse base data is being cleared"));
   }
   return ok();

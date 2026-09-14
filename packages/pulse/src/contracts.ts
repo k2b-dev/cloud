@@ -1,4 +1,4 @@
-export const SOURCE_KINDS = ["metrics", "http_ingest", "internal"] as const;
+export const SOURCE_KINDS = ["metrics", "http_ingest"] as const;
 export type SourceKind = (typeof SOURCE_KINDS)[number];
 
 export const METRIC_TYPES = ["gauge", "counter", "histogram", "summary"] as const;
@@ -69,9 +69,6 @@ export type PulseMetric = {
   ts?: string;
   unit?: string | null;
   type?: MetricType;
-  sourceId?: string | null;
-  entityId?: string | null;
-  entityType?: string | null;
   resource?: PulseResourceRef | null;
   dimensions?: Record<string, string | number | boolean | null>;
 };
@@ -86,9 +83,6 @@ export type PulseEvent = {
   kind: string;
   ts?: string;
   value?: number | null;
-  sourceId?: string | null;
-  entityId?: string | null;
-  entityType?: string | null;
   actorId?: string | null;
   sessionId?: string | null;
   correlationId?: string | null;
@@ -103,9 +97,6 @@ export type PulseState = {
   key: string;
   value: string | number | boolean | null;
   ts?: string;
-  sourceId?: string | null;
-  entityId?: string | null;
-  entityType?: string | null;
   resource?: PulseResourceRef | null;
   dimensions?: Record<string, string | number | boolean | null>;
 };
@@ -122,8 +113,8 @@ export type PulseRecordedEvent = {
   ts: string;
   value: number | null;
   sourceId: string | null;
-  entityId: string | null;
-  entityType: string | null;
+  resourceKey: string | null;
+  resourceType: string | null;
   dimensions: Record<string, string>;
   attributes: Record<string, unknown>;
   payload: Record<string, unknown>;
@@ -131,11 +122,12 @@ export type PulseRecordedEvent = {
 };
 
 export type PulseCurrentState = {
+  variantKey: string;
   key: string;
   value: unknown;
   sourceId: string | null;
-  entityId: string;
-  entityType: string | null;
+  resourceKey: string | null;
+  resourceType: string | null;
   dimensions: Record<string, string>;
   updatedAt: string;
 };
@@ -152,8 +144,8 @@ export type PulseMetricSeries = {
   id: string;
   metric: string;
   sourceId: string | null;
-  entityId: string | null;
-  entityType: string | null;
+  resourceKey: string | null;
+  resourceType: string | null;
   dimensions: Record<string, string>;
   lastSeenAt: string | null;
   latestValue: number | null;
@@ -232,12 +224,12 @@ export type PulseDashboardCondition = {
 
 export type PulseDashboardControl = {
   id: string;
-  kind: "range" | "source" | "entity" | "entity_type" | "label" | "text";
+  kind: "range" | "source" | "resource" | "resource_type" | "label" | "text";
   variable: string;
   label: string;
   defaultValue: string;
   options?: string[];
-  entityType?: string | null;
+  resourceType?: string | null;
 };
 
 export type PulseDashboardMetricQuery = {
@@ -247,8 +239,8 @@ export type PulseDashboardMetricQuery = {
   bucket: string;
   since: string;
   sourceId?: string | null;
-  entityId?: string | null;
-  entityType?: string | null;
+  resourceKey?: string | null;
+  resourceType?: string | null;
   dimensions?: Record<string, string | number | boolean | null>;
   reduce?: MetricReducer | null;
   groupBy?: string | null;
@@ -259,8 +251,8 @@ export type PulseDashboardEventQuery = {
   event: string | null;
   since: string;
   sourceId?: string | null;
-  entityId?: string | null;
-  entityType?: string | null;
+  resourceKey?: string | null;
+  resourceType?: string | null;
   dimensions?: Record<string, string | number | boolean | null>;
   aggregation?: EventAggregation;
   bucket?: string | null;
@@ -273,8 +265,8 @@ export type PulseDashboardStateQuery = {
   state: string | null;
   since?: string | null;
   sourceId?: string | null;
-  entityId?: string | null;
-  entityType?: string | null;
+  resourceKey?: string | null;
+  resourceType?: string | null;
   dimensions?: Record<string, string | number | boolean | null>;
   limit: number;
 };
@@ -321,8 +313,8 @@ export type PulseDashboardMetricWidget = {
   bucket: string;
   since: string;
   sourceId?: string | null;
-  entityId?: string | null;
-  entityType?: string | null;
+  resourceKey?: string | null;
+  resourceType?: string | null;
   dimensions?: Record<string, string | number | boolean | null>;
   reduce?: MetricReducer | null;
   groupBy?: string | null;
@@ -422,13 +414,16 @@ export type PulseDashboard = {
   updatedAt: string;
 };
 
-export type PulsePublicRecordedEvent = Pick<PulseRecordedEvent, "id" | "kind" | "ts" | "value" | "entityId" | "entityType">;
+export type PulsePublicRecordedEvent = Pick<PulseRecordedEvent, "id" | "kind" | "ts" | "value" | "resourceKey" | "resourceType">;
 
-export type PulsePublicCurrentState = Pick<PulseCurrentState, "key" | "value" | "entityId" | "entityType" | "updatedAt">;
+export type PulsePublicCurrentState = Pick<
+  PulseCurrentState,
+  "variantKey" | "key" | "value" | "resourceKey" | "resourceType" | "updatedAt"
+>;
 
 export type PulsePublicDashboardMetricWidget = Omit<
   PulseDashboardMetricWidget,
-  "query" | "queryText" | "sourceId" | "entityId" | "entityType" | "dimensions"
+  "query" | "queryText" | "sourceId" | "resourceKey" | "resourceType" | "dimensions"
 > & {
   unit?: string | null;
 };
@@ -517,8 +512,8 @@ export type MetricQuery = {
   bucket: string;
   since: string;
   sourceId?: string | null;
-  entityId?: string | null;
-  entityType?: string | null;
+  resourceKey?: string | null;
+  resourceType?: string | null;
   dimensions?: Record<string, string | number | boolean | null>;
   reduce?: MetricReducer | null;
   groupBy?: string | null;
@@ -532,8 +527,8 @@ export type EventQuery = {
   event: string | null;
   since: string;
   sourceId?: string | null;
-  entityId?: string | null;
-  entityType?: string | null;
+  resourceKey?: string | null;
+  resourceType?: string | null;
   dimensions?: Record<string, string | number | boolean | null>;
   aggregation?: EventAggregation;
   bucket?: string | null;
@@ -549,8 +544,8 @@ export type StateQuery = {
   state: string | null;
   since?: string | null;
   sourceId?: string | null;
-  entityId?: string | null;
-  entityType?: string | null;
+  resourceKey?: string | null;
+  resourceType?: string | null;
   dimensions?: Record<string, string | number | boolean | null>;
   limit: number;
 };

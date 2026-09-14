@@ -44,8 +44,8 @@ const series: PulseMetricSeries[] = [
     id: "series-1",
     metric: "docker.container.cpu.usage",
     sourceId: "source-a",
-    entityId: "container:api",
-    entityType: "container",
+    resourceKey: "container:api",
+    resourceType: "container",
     dimensions: { container: "api", compose_project: "cloud" },
     lastSeenAt: "2026-01-01T00:02:00.000Z",
     latestValue: 42,
@@ -55,8 +55,8 @@ const series: PulseMetricSeries[] = [
     id: "series-2",
     metric: "docker.container.cpu.usage",
     sourceId: "source-a",
-    entityId: "container:worker",
-    entityType: "container",
+    resourceKey: "container:worker",
+    resourceType: "container",
     dimensions: { container: "worker", compose_project: "cloud" },
     lastSeenAt: "2026-01-01T00:01:00.000Z",
     latestValue: 12,
@@ -66,8 +66,8 @@ const series: PulseMetricSeries[] = [
     id: "series-3",
     metric: "system.memory.usage",
     sourceId: "source-b",
-    entityId: "host:macbook",
-    entityType: "host",
+    resourceKey: "host:macbook",
+    resourceType: "host",
     dimensions: { host: "Valentins Laptop" },
     lastSeenAt: "2026-01-01T00:03:00.000Z",
     latestValue: 68,
@@ -82,8 +82,8 @@ const events: PulseRecordedEvent[] = [
     ts: "2026-01-01T00:01:00.000Z",
     value: null,
     sourceId: "source-a",
-    entityId: "container:api",
-    entityType: "container",
+    resourceKey: "container:api",
+    resourceType: "container",
     dimensions: { container: "api" },
     attributes: {},
     payload: {},
@@ -95,8 +95,8 @@ const events: PulseRecordedEvent[] = [
     ts: "2026-01-01T00:04:00.000Z",
     value: null,
     sourceId: "source-a",
-    entityId: "container:worker",
-    entityType: "container",
+    resourceKey: "container:worker",
+    resourceType: "container",
     dimensions: { container: "worker" },
     attributes: {},
     payload: {},
@@ -106,20 +106,22 @@ const events: PulseRecordedEvent[] = [
 
 const states: PulseCurrentState[] = [
   {
+    variantKey: "fixture-0",
     key: "docker.container.running",
     value: true,
     sourceId: "source-a",
-    entityId: "container:api",
-    entityType: "container",
+    resourceKey: "container:api",
+    resourceType: "container",
     dimensions: { container: "api" },
     updatedAt: "2026-01-01T00:02:00.000Z",
   },
   {
+    variantKey: "fixture-1",
     key: "docker.container.running",
     value: false,
     sourceId: "source-a",
-    entityId: "container:worker",
-    entityType: "container",
+    resourceKey: "container:worker",
+    resourceType: "container",
     dimensions: { container: "worker" },
     updatedAt: "2026-01-01T00:05:00.000Z",
   },
@@ -132,7 +134,7 @@ describe("Pulse query reference inventory", () => {
     expect(quotePulseQueryValue('host "quoted"')).toBe('"host \\"quoted\\""');
   });
 
-  test("builds source and entity chips from all inventory kinds", () => {
+  test("builds source and resource chips from all inventory kinds", () => {
     expect(buildReferenceSourceChips({ sources: [sourceA, sourceB], series, events, states })).toMatchObject([
       { id: "source-a", label: "Docker", count: 6 },
       { id: "source-b", label: "MacBook", count: 1 },
@@ -149,32 +151,32 @@ describe("Pulse query reference inventory", () => {
       metrics,
       series,
       sourcesById: new Map([sourceA, sourceB].map((source) => [source.id, source])),
-      filters: { sourceId: "source-a", entityId: "container:api" },
+      filters: { sourceId: "source-a", resourceKey: "container:api" },
       query: "cpu",
     });
 
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({ name: "docker.container.cpu.usage", visibleSeriesCount: 1 });
-    expect(buildReferenceMetricQuery(rows[0]!, { sourceId: "source-a", entityId: "container:api" })).toBe(
-      "metric docker.container.cpu.usage avg every 5m since 24h source source-a where container=api, compose_project=cloud",
+    expect(buildReferenceMetricQuery(rows[0]!, { sourceId: "source-a", resourceKey: "container:api" })).toBe(
+      "metric docker.container.cpu.usage avg every 5m since 24h source source-a resource container:api where container=api, compose_project=cloud",
     );
   });
 
   test("groups event and state rows and generates scoped copy queries", () => {
     const sourcesById = new Map([sourceA].map((source) => [source.id, source]));
-    const filters = { sourceId: "source-a", entityId: "container:api" };
-    const entityType = "container";
+    const filters = { sourceId: "source-a", resourceKey: "container:api" };
+    const resourceType = "container";
 
     const eventRows = buildReferenceEventRows({ events, sourcesById, filters, query: "" });
     const stateRows = buildReferenceStateRows({ states, sourcesById, filters, query: "" });
 
     expect(eventRows).toMatchObject([{ kind: "docker.container.error", count: 1, lastSeenAt: "2026-01-01T00:01:00.000Z" }]);
     expect(stateRows).toMatchObject([{ key: "docker.container.running", count: 1, lastSeenAt: "2026-01-01T00:02:00.000Z" }]);
-    expect(buildReferenceEventQuery(eventRows[0]!, filters, entityType)).toBe(
-      "events docker.container.error since 7d source source-a entity container:api entity_type container limit 100",
+    expect(buildReferenceEventQuery(eventRows[0]!, filters, resourceType)).toBe(
+      "events docker.container.error since 7d source source-a resource container:api resource_type container limit 100",
     );
-    expect(buildReferenceStateQuery(stateRows[0]!, filters, entityType)).toBe(
-      "states docker.container.running source source-a entity container:api entity_type container limit 100",
+    expect(buildReferenceStateQuery(stateRows[0]!, filters, resourceType)).toBe(
+      "states docker.container.running source source-a resource container:api resource_type container limit 100",
     );
   });
 });

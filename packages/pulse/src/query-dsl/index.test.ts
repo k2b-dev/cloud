@@ -16,10 +16,10 @@ describe("Pulse query DSL", () => {
     ]);
   });
 
-  test("compiles metric queries with source, entity, and dimensions", () => {
+  test("compiles metric queries with source, resource, and dimensions", () => {
     const result = compilePulseQueryText(
       baseId,
-      `metric docker.container.cpu.usage avg every 1m since 6h source ${sourceId} entity container:app-core entity_type container where env=prod`,
+      `metric docker.container.cpu.usage avg every 1m since 6h source ${sourceId} resource container:app-core resource_type container where env=prod`,
     );
     expect(result.ok).toBe(true);
     if (!result.ok) return;
@@ -31,8 +31,8 @@ describe("Pulse query DSL", () => {
       bucket: "1m",
       since: "6h",
       sourceId,
-      entityId: "container:app-core",
-      entityType: "container",
+      resourceKey: "container:app-core",
+      resourceType: "container",
       dimensions: { env: "prod" },
     });
   });
@@ -55,17 +55,17 @@ describe("Pulse query DSL", () => {
   });
 
   test("compiles events and states queries", () => {
-    const events = compilePulseQueryText(baseId, "events deploy.finished since 24h entity app-core limit 50");
-    const states = compilePulseQueryText(baseId, "states service.online entity app-core entity_type service limit 10");
+    const events = compilePulseQueryText(baseId, "events deploy.finished since 24h resource app-core limit 50");
+    const states = compilePulseQueryText(baseId, "states service.online resource app-core resource_type service limit 10");
     expect(events.ok).toBe(true);
     expect(states.ok).toBe(true);
-    if (events.ok) expect(events.data).toMatchObject({ kind: "events", event: "deploy.finished", entityId: "app-core", limit: 50 });
+    if (events.ok) expect(events.data).toMatchObject({ kind: "events", event: "deploy.finished", resourceKey: "app-core", limit: 50 });
     if (states.ok)
       expect(states.data).toMatchObject({
         kind: "states",
         state: "service.online",
-        entityId: "app-core",
-        entityType: "service",
+        resourceKey: "app-core",
+        resourceType: "service",
         limit: 10,
       });
   });
@@ -80,8 +80,8 @@ describe("Pulse query DSL", () => {
           event: "page.viewed",
           since: "7d",
           sourceId: null,
-          entityId: null,
-          entityType: null,
+          resourceKey: null,
+          resourceType: null,
           dimensions: { channel: "qr" },
           aggregation: "count",
           bucket: "1h",
@@ -118,10 +118,10 @@ describe("Pulse query DSL", () => {
     if (!unterminated.ok) expect(unterminated.error.message).toBe("Query has an unterminated quote");
   });
 
-  test("rejects pre-V1 entity type aliases", () => {
+  test("rejects pre-V1 resource type aliases", () => {
     for (const query of [
-      "states service.online entity app-core entity-type service limit 10",
-      "states service.online entity app-core entitytype service limit 10",
+      "states service.online resource app-core resource-type service limit 10",
+      "states service.online resource app-core entitytype service limit 10",
     ]) {
       const result = compilePulseQueryText(baseId, query);
       expect(result.ok).toBe(false);
@@ -160,4 +160,10 @@ describe("Pulse query DSL", () => {
       error: { message: "Group by cannot exceed 4 dimension keys" },
     });
   });
+});
+
+test("rejects removed entity clauses", () => {
+  for (const clause of ["entity host:alpha", "entity_type host"]) {
+    expect(compilePulseQueryText(baseId, `metric load avg every 5m since 1h ${clause}`).ok).toBe(false);
+  }
 });

@@ -104,8 +104,8 @@ const readQueryLimit = (value: string | undefined, fallback: number): Result<num
 type SharedClauses = {
   since: string;
   sourceId: string | null;
-  entityId: string | null;
-  entityType: string | null;
+  resourceKey: string | null;
+  resourceType: string | null;
   dimensions: Record<string, string>;
   limit: number;
 };
@@ -134,8 +134,8 @@ const parseSharedQueryClauses = (
   const state: SharedClauseState = {
     since: defaults.since ?? "",
     sourceId: null,
-    entityId: null,
-    entityType: null,
+    resourceKey: null,
+    resourceType: null,
     dimensions: {},
     limit: defaults.limit ?? 500,
     index: startIndex,
@@ -172,15 +172,15 @@ const SHARED_CLAUSE_READERS: Record<string, SharedClauseReader> = {
     state.index += 2;
     return ok(undefined);
   },
-  entity: (tokens, state) => {
-    state.entityId = tokens[state.index + 1] ?? null;
-    if (!state.entityId) return fail(err.badInput("Entity is missing"));
+  resource: (tokens, state) => {
+    state.resourceKey = tokens[state.index + 1] ?? null;
+    if (!state.resourceKey) return fail(err.badInput("Resource is missing"));
     state.index += 2;
     return ok(undefined);
   },
-  entity_type: (tokens, state) => {
-    state.entityType = tokens[state.index + 1] ?? null;
-    if (!state.entityType) return fail(err.badInput("Entity type is missing"));
+  resource_type: (tokens, state) => {
+    state.resourceType = tokens[state.index + 1] ?? null;
+    if (!state.resourceType) return fail(err.badInput("Resource type is missing"));
     state.index += 2;
     return ok(undefined);
   },
@@ -308,8 +308,8 @@ const metricQueryFromParts = (baseId: string, parts: MetricTokenParts, shared: S
   bucket: parts.bucket,
   since: shared.since,
   sourceId: shared.sourceId,
-  entityId: shared.entityId,
-  entityType: shared.entityType,
+  resourceKey: shared.resourceKey,
+  resourceType: shared.resourceType,
   dimensions: shared.dimensions,
   reduce: parts.reduce,
   groupBy: parts.groupBy,
@@ -328,8 +328,8 @@ const compileEventQueryTokens = (baseId: string, tokens: string[]): Result<Event
     event: readQueryName(tokens[1]),
     since: shared.data.since,
     sourceId: shared.data.sourceId,
-    entityId: shared.data.entityId,
-    entityType: shared.data.entityType,
+    resourceKey: shared.data.resourceKey,
+    resourceType: shared.data.resourceType,
     dimensions: shared.data.dimensions,
     aggregation: options.data.aggregation,
     bucket: options.data.bucket,
@@ -416,8 +416,8 @@ const compileStateQueryTokens = (baseId: string, tokens: string[]): Result<State
     state: readQueryName(tokens[1]),
     since: shared.data.since || null,
     sourceId: shared.data.sourceId,
-    entityId: shared.data.entityId,
-    entityType: shared.data.entityType,
+    resourceKey: shared.data.resourceKey,
+    resourceType: shared.data.resourceType,
     dimensions: shared.data.dimensions,
     limit: shared.data.limit,
   });

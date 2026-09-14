@@ -2,10 +2,10 @@ import { describe, expect, test } from "bun:test";
 import {
   parsePublicDashboardDisplayHeight,
   parsePublicDashboardTheme,
+  publicDashboardEventSubject,
   publicDashboardRefreshBackoffMs,
   publicDashboardRefreshDelayMs,
   publicDashboardRefreshJitterMs,
-  publicDashboardEventSubject,
   publicDashboardStateRowId,
   resolvePublicDashboardRefreshSeconds,
   sanitizePublicDashboardMarkdown,
@@ -49,8 +49,8 @@ describe("Pulse public dashboard runtime helpers", () => {
         kind: "deploy",
         ts: "2026-01-01T00:00:00.000Z",
         value: null,
-        entityId: "service:api",
-        entityType: null,
+        resourceKey: "service:api",
+        resourceType: null,
       }),
     ).toBe("service:api");
     expect(
@@ -59,8 +59,8 @@ describe("Pulse public dashboard runtime helpers", () => {
         kind: "deploy",
         ts: "2026-01-01T00:00:00.000Z",
         value: null,
-        entityId: null,
-        entityType: "service",
+        resourceKey: null,
+        resourceType: "service",
       }),
     ).toBe("service");
     expect(
@@ -69,20 +69,21 @@ describe("Pulse public dashboard runtime helpers", () => {
         kind: "deploy",
         ts: "2026-01-01T00:00:00.000Z",
         value: null,
-        entityId: null,
-        entityType: null,
+        resourceKey: null,
+        resourceType: null,
       }),
     ).toBe("-");
 
     expect(
       publicDashboardStateRowId({
+        variantKey: "opaque-variant",
         key: "service.online",
         value: true,
-        entityId: "service:api",
-        entityType: "service",
+        resourceKey: "service:api",
+        resourceType: "service",
         updatedAt: "2026-01-01T00:00:00.000Z",
       }),
-    ).toBe("service.online:service:api:service");
+    ).toBe(JSON.stringify(["service.online", "opaque-variant"]));
   });
 
   test("strips remote images from public markdown", () => {

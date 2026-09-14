@@ -1,6 +1,6 @@
-import type { Worker } from "@k2b/sync";
 import { lazySync } from "@k2b/cloud";
 import { trace } from "@k2b/cloud/services";
+import type { Worker } from "@k2b/sync";
 import { sql } from "bun";
 import {
   resumePulseBaseDataClearJobs,
@@ -291,7 +291,6 @@ const submitDueScrapes = async (slotTs: number): Promise<{ submitted: number }> 
       AND (
         b.data_clear_started_at IS NULL
         OR b.data_clear_completed_at IS NOT NULL
-        OR b.data_clear_failed_at IS NOT NULL
       )
       AND (
         GREATEST(

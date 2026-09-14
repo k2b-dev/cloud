@@ -32,7 +32,7 @@ Pulse must be deployed and available to your account.
 | Resource | Responsibility |
 | --- | --- |
 | Base | Access, retention, sources, queries, and dashboards for one telemetry context |
-| Source | Metrics endpoint, HTTP ingest connection, or internal producer |
+| Source | Metrics endpoint or HTTP ingest connection |
 | Resource | Stable observed object that groups its metrics, events, and states |
 | Signal | Named metric, event, or state published by one or more sources |
 | Query and dashboard | Reusable analysis and its operator-facing presentation |

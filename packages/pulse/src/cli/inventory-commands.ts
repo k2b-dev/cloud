@@ -220,7 +220,7 @@ export const inventoryCommands = [
         { key: "key" },
         { key: "value" },
         { key: "source" },
-        { key: "entity" },
+        { key: "resource" },
         { key: "updatedAt" },
       ]);
     },
@@ -255,7 +255,7 @@ export const inventoryCommands = [
         { key: "kind" },
         { key: "value" },
         { key: "source" },
-        { key: "entity" },
+        { key: "resource" },
         { key: "ts" },
       ]);
     },

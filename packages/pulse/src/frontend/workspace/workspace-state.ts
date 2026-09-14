@@ -63,7 +63,7 @@ export const createPulseWorkspaceState = (props: PulseWorkspaceProps) => {
   const [querySuggestionSearch, setQuerySuggestionSearch] = createSignal("");
   const [browseSearch, setBrowseSearch] = createSignal("");
   const [browseSourceId, setBrowseSourceId] = createSignal("");
-  const [browseEntityId, setBrowseEntityId] = createSignal("");
+  const [browseResourceKey, setBrowseResourceKey] = createSignal("");
   const [explorerResultView, setExplorerResultView] = createSignal<ExplorerResultView>("chart");
   const [points, setPoints] = createSignal<MetricQueryPoint[]>([]);
   const [explorerEvents, setExplorerEvents] = createSignal<PulseRecordedEvent[]>([]);
@@ -87,7 +87,7 @@ export const createPulseWorkspaceState = (props: PulseWorkspaceProps) => {
   return {
     activeView,
     activitySearch,
-    browseEntityId,
+    browseResourceKey,
     browseSearch,
     browseSourceId,
     dashboardControlValues,
@@ -132,7 +132,7 @@ export const createPulseWorkspaceState = (props: PulseWorkspaceProps) => {
     selectedSourceId,
     selectedVisual,
     setActivitySearch,
-    setBrowseEntityId,
+    setBrowseResourceKey,
     setBrowseSearch,
     setBrowseSourceId,
     setDashboardControlValues,

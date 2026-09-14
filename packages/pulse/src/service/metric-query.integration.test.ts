@@ -37,11 +37,10 @@ describe("Pulse grouped metric query Postgres smoke", () => {
       ] as const) {
         const [row] = await sql<{ id: string }[]>`
           INSERT INTO pulse.metric_series (
-            base_id, metric_id, source_id, entity_id, entity_type, series_key, dimensions_hash, dimensions,
+            base_id, metric_id, source_id, series_key, dimensions_hash, dimensions,
             resource_key, resource_id, resource_type, resource_label, last_seen_at
           ) VALUES (
-            ${baseId}::uuid, ${definition.id}::uuid, ${sourceId}::uuid, ${`docker-compose-service:test:${service}`},
-            'docker-compose-service', ${service}, ${service},
+            ${baseId}::uuid, ${definition.id}::uuid, ${sourceId}::uuid, ${service}, ${service},
             (${JSON.stringify({ compose_service: service })}::jsonb #>> '{}')::jsonb,
             ${`docker-compose-service:test:${service}`}, ${`test:${service}`}, 'docker-compose-service', ${label}, now()
           )

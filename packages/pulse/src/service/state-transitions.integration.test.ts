@@ -2,7 +2,7 @@ import { beforeAll, describe, expect, test } from "bun:test";
 import { sql } from "bun";
 import type { PulseState } from "../contracts";
 import { newShortId } from "../lib/short-id";
-import { ingestBatch, setState } from "./ingest-writer";
+import { ingestBatch } from "./ingest-writer";
 
 const runDbSmoke = process.env.PULSE_STATE_TRANSITIONS_DB_TEST === "1";
 const postgresTest = runDbSmoke ? test : test.skip;
@@ -30,8 +30,7 @@ describe("Pulse state transition Postgres smoke", () => {
         key: "service.online",
         value,
         ts: at(seconds),
-        entityId: "service:api",
-        entityType: "service",
+        resource: { type: "service", id: "service:api" },
         dimensions: { region: "eu" },
       });
       const writeBatch = (value: boolean, seconds: number) => ingestBatch({ baseId, sourceId, batch: { states: [state(value, seconds)] } });
@@ -43,8 +42,8 @@ describe("Pulse state transition Postgres smoke", () => {
         expect((await writeBatch(false, 30)).ok).toBe(true);
 
         const concurrent = await Promise.all([
-          setState({ baseId, sourceId, state: state(true, 40) }),
-          setState({ baseId, sourceId, state: state(true, 40) }),
+          ingestBatch({ baseId, sourceId, batch: { states: [state(true, 40)] } }),
+          ingestBatch({ baseId, sourceId, batch: { states: [state(true, 40)] } }),
         ]);
         expect(concurrent.every((result) => result.ok)).toBe(true);
 

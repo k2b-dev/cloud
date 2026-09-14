@@ -1,16 +1,16 @@
-import { arg, command, defineCliCommands } from "@k2b/cloud/cli";
-import { type PulseCapabilitySnapshot, type PulseIngestBatch } from "./contracts";
+import { arg, command, defineCliCommands, flag } from "@k2b/cloud/cli";
 import { pulseAccessCommands } from "./cli/access";
 import { baseCommands } from "./cli/bases";
+import { resolveBaseFromCommand, resolveSource } from "./cli/context";
 import { dashboardCommands } from "./cli/dashboards";
+import { baseFlag, JSON_INPUT } from "./cli/flags";
 import { inventoryCommands } from "./cli/inventory-commands";
 import { queryCommands } from "./cli/queries";
-import { signalCommands } from "./cli/signals";
-import { sourceCommands } from "./cli/sources";
-import { sourceTokenCommands } from "./cli/source-tokens";
-import { resolveBaseFromCommand } from "./cli/context";
-import { baseFlag, JSON_INPUT } from "./cli/flags";
 import { jsonRequest, printJsonOrTable, readApi, readJsonInput, yesNo } from "./cli/shared";
+import { signalCommands } from "./cli/signals";
+import { sourceTokenCommands } from "./cli/source-tokens";
+import { sourceCommands } from "./cli/sources";
+import type { PulseCapabilitySnapshot, PulseIngestBatch } from "./contracts";
 
 type IngestResult = { metrics: number; events: number; states: number };
 
@@ -59,12 +59,18 @@ const module = defineCliCommands({
     ...dashboardCommands,
     command("ingest", {
       summary: "Ingest a Pulse JSON batch through the authenticated API",
-      flags: { ...baseFlag, batch: JSON_INPUT },
+      flags: { ...baseFlag, source: flag.string({ required: true, description: "Ingest source ID or exact name" }), batch: JSON_INPUT },
       args: { args: arg.rest({ valueLabel: "base" }) },
       async run({ ctx, args, flags }) {
         const { base } = await resolveBaseFromCommand(ctx, args.args, 0);
+        if (!flags.source) throw new Error("--source is required");
+        const source = await resolveSource(ctx, base.id, flags.source);
         const batch = await readJsonInput<PulseIngestBatch>(flags.batch, "ingest JSON");
-        const result = await readApi<IngestResult>(ctx, `/bases/${encodeURIComponent(base.id)}/ingest`, jsonRequest("POST", batch));
+        const result = await readApi<IngestResult>(
+          ctx,
+          `/bases/${encodeURIComponent(base.id)}/sources/${encodeURIComponent(source.id)}/ingest`,
+          jsonRequest("POST", batch),
+        );
         printJsonOrTable(ctx, result, [result], [{ key: "metrics" }, { key: "events" }, { key: "states" }]);
       },
     }),

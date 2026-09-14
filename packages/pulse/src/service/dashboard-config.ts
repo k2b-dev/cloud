@@ -63,10 +63,10 @@ const normalizeMetricWidgetBase = (value: Record<string, unknown>) => {
   const bucket = normalizeDurationToken(value.bucket, "5m");
   const since = normalizeDurationToken(value.since, "24h");
   const sourceId = normalizeTrimmedString(value.sourceId, 80);
-  const entityId = normalizeTrimmedString(value.entityId, 240);
-  const entityType = normalizeTrimmedString(value.entityType, 80);
+  const resourceKey = normalizeTrimmedString(value.resourceKey, 240);
+  const resourceType = normalizeTrimmedString(value.resourceType, 80);
   const dimensions = normalizeQueryDimensions(value.dimensions);
-  return { id, title, metric, visual, aggregation, bucket, since, sourceId, entityId, entityType, dimensions };
+  return { id, title, metric, visual, aggregation, bucket, since, sourceId, resourceKey, resourceType, dimensions };
 };
 
 const normalizeId = (value: unknown): string => (typeof value === "string" && value.trim() ? value.trim().slice(0, 80) : randomUUID());
@@ -78,7 +78,7 @@ const normalizeQueryDimensions = (value: unknown): Record<string, string> | unde
   isRecord(value) ? normalizeDashboardDimensions(value as Record<string, string | number | boolean | null>) : undefined;
 
 const normalizeControlKind = (value: unknown): PulseDashboardControl["kind"] | null =>
-  value === "range" || value === "source" || value === "entity" || value === "entity_type" || value === "label" || value === "text"
+  value === "range" || value === "source" || value === "resource" || value === "resource_type" || value === "label" || value === "text"
     ? value
     : null;
 
@@ -106,7 +106,7 @@ const normalizeControl = (control: unknown): PulseDashboardControl | null => {
     label,
     defaultValue: typeof value.defaultValue === "string" ? value.defaultValue.trim().slice(0, 240) : "",
     options,
-    entityType: normalizeTrimmedString(value.entityType, 80),
+    resourceType: normalizeTrimmedString(value.resourceType, 80),
   };
 };
 
@@ -147,8 +147,8 @@ const normalizeMetricQuery = (
       event: normalizeTableQueryName(query.event),
       since: normalizeDurationToken(query.since, base.since),
       sourceId: normalizeQueryStringOrNull(query.sourceId, 80),
-      entityId: normalizeQueryStringOrNull(query.entityId, 240),
-      entityType: normalizeQueryStringOrNull(query.entityType, 80),
+      resourceKey: normalizeQueryStringOrNull(query.resourceKey, 240),
+      resourceType: normalizeQueryStringOrNull(query.resourceType, 80),
       dimensions: normalizeQueryDimensions(query.dimensions),
       aggregation,
       bucket: normalizeDurationToken(query.bucket, base.bucket),
@@ -166,8 +166,8 @@ const normalizeMetricQuery = (
     bucket: normalizeDurationToken(query.bucket, base.bucket),
     since: normalizeDurationToken(query.since, base.since),
     sourceId: normalizeQueryStringOrNull(query.sourceId, 80),
-    entityId: normalizeQueryStringOrNull(query.entityId, 240),
-    entityType: normalizeQueryStringOrNull(query.entityType, 80),
+    resourceKey: normalizeQueryStringOrNull(query.resourceKey, 240),
+    resourceType: normalizeQueryStringOrNull(query.resourceType, 80),
     dimensions: normalizeQueryDimensions(query.dimensions),
     reduce: query.reduce === "sum" || query.reduce === "avg" || query.reduce === "min" || query.reduce === "max" ? query.reduce : null,
     groupBy: normalizeQueryStringOrNull(query.groupBy, 80),
@@ -201,8 +201,8 @@ const applyDescription = <T extends { description?: string | null }>(result: T, 
 
 const normalizeTableQueryBase = (rawQuery: Record<string, unknown>) => ({
   sourceId: typeof rawQuery.sourceId === "string" && rawQuery.sourceId.trim() ? rawQuery.sourceId : null,
-  entityId: typeof rawQuery.entityId === "string" && rawQuery.entityId.trim() ? rawQuery.entityId : null,
-  entityType: typeof rawQuery.entityType === "string" && rawQuery.entityType.trim() ? rawQuery.entityType : null,
+  resourceKey: typeof rawQuery.resourceKey === "string" && rawQuery.resourceKey.trim() ? rawQuery.resourceKey : null,
+  resourceType: typeof rawQuery.resourceType === "string" && rawQuery.resourceType.trim() ? rawQuery.resourceType : null,
   dimensions: normalizeQueryDimensions(rawQuery.dimensions),
   limit: typeof rawQuery.limit === "number" && Number.isInteger(rawQuery.limit) ? Math.min(1_000, Math.max(1, rawQuery.limit)) : 500,
 });

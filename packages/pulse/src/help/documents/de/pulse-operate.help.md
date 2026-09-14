@@ -30,7 +30,7 @@ Nutze diese Seite, wenn Daten fehlen, Zugriffsrechte geändert werden müssen od
 
 :::reference
 - **Es erscheinen keine Daten:** Prüfe zuerst die Quelle. Sie muss eine erfolgreiche Aktualisierung melden, bevor Ressourcen, Signale oder Dashboards Daten anzeigen können.
-- **Eine Abfrage liefert zu viele Treffer:** Öffne das Inventar oder die Signalseite und ergänze dann Filter für `source`, `entity`, `entity_type` oder `where`.
+- **Eine Abfrage liefert zu viele Treffer:** Öffne das Inventar oder die Signalseite und ergänze dann Filter für `source`, `resource`, `resource_type` oder `where`.
 - **Ein Diagramm ist leer:** Prüfe Zeitraum und Aggregation. Zähler benötigen meist `rate` oder `increase`, Messwerte meist `avg` oder `latest`.
 - **Zeilen wirken dupliziert:** Öffne die Ressourcen- oder Signalseite. Wiederholte Zeilen sind meist Varianten mit unterschiedlichen Ressourcen oder Dimensionen.
 - **Eine Metrik hat zu viele Varianten:** Prüfe ihre Dimensionen. Behalte stabile Gruppierungsmerkmale und verschiebe eindeutige Identitäten oder Ereignisdetails in Identitätsfelder, Attribute, vertrauliche Felder oder die Payload eines Ereignisses.

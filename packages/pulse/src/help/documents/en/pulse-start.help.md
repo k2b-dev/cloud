@@ -23,7 +23,7 @@ Pulse turns incoming data into browsable facts, query results, and dashboards. T
 1. **Create a base:** Use one base for one product, environment, business area, or reporting context.
 2. **Connect a source:** Add a metrics endpoint or HTTP ingest source and wait until Pulse reports received data.
 3. **Browse what exists:** Use Resources when you know the object; use Metrics, Events, or States when you know the signal name.
-4. **Open a query:** Start with a copied query snippet, then narrow it with source, entity, entity_type, or where filters. Save stable queries you expect to reuse.
+4. **Open a query:** Start with a copied query snippet, then narrow it with source, resource, resource_type, or where filters. Save stable queries you expect to reuse.
 5. **Write the dashboard:** Move useful, stable queries into Dashboard DSL. Add descriptions when the chart needs interpretation.
 :::
 

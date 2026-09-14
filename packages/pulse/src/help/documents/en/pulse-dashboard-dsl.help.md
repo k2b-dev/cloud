@@ -12,7 +12,7 @@ Dashboard DSL describes the whole dashboard. Write and preview it as text so lay
 :::steps
 1. **Start with one section:** Give the dashboard a name and add the smallest section that answers one real question.
 2. **Add one widget:** Use stat, gauge, line, bar, histogram, heatmap, map, or table depending on the query output.
-3. **Add controls when repetition appears:** Use controls for range, source, entity, entity_type, label, or text values that multiple widgets share.
+3. **Add controls when repetition appears:** Use controls for range, source, resource, resource_type, label, or text values that multiple widgets share.
 4. **Group related widgets:** Use rows for side-by-side charts, cards for a related cluster, and sections for larger topics.
 5. **Explain decisions in place:** Use descriptions and markdown for operating notes, assumptions, and links.
 :::
@@ -61,18 +61,18 @@ Use `#` or `//` for line comments wherever whitespace is allowed.
 dashboard "Ops" {
   controls {
     range "Range" variable range default 24h options 1h, 6h, 24h, 7d
-    entity "Container" variable entity_id type container default container:app-core
+    resource "Container" variable resource_key type container default container:app-core
   }
 
   section "Container" {
     line "Memory" {
-      query metric docker.container.memory.usage avg every 5m since $range entity $entity_id
+      query metric docker.container.memory.usage avg every 5m since $range resource $resource_key
     }
   }
 }
 ```
 
-Controls create variables such as `$range` or `$entity_id`. If `variable` is omitted, Pulse derives it from the label, for example `Resource type` becomes `$resource_type`. If `default` is omitted, Pulse uses the first option. A range with neither a default nor options uses `24h`; other controls use an empty value.
+Controls create variables such as `$range` or `$resource_key`. If `variable` is omitted, Pulse derives it from the label, for example `Resource type` becomes `$resource_type`. If `default` is omitted, Pulse uses the first option. A range with neither a default nor options uses `24h`; other controls use an empty value.
 
 Public displays use control defaults and do not show interactive controls, so choose defaults that make sense without interaction.
 
@@ -87,7 +87,7 @@ dashboard "Name" {
   controls {
     range "Range" variable range default 24h options 1h, 6h, 24h, 7d
     source "Source" variable source_id default Src001
-    entity "Entity" variable entity_id type container default container:app-core
+    resource "Resource" variable resource_key type container default container:app-core
     label "Region" variable region default eu options eu, us
     text "Search" variable search default ""
   }
@@ -101,11 +101,11 @@ dashboard "Name" {
     }
 
     table "Recent events" {
-      query events deploy.finished since $range entity $entity_id limit 50
+      query events deploy.finished since $range resource $resource_key limit 50
     }
 
     table "Current states" {
-      query states service.online entity $entity_id limit 50
+      query states service.online resource $resource_key limit 50
     }
 
     map "Recent engagement" {
@@ -168,7 +168,7 @@ dashboard "Solar overview" {
 | `dashboard "Name" { ... }` | root | Defines one dashboard. Edit this document to change its content and layout. | `dashboard "Ops" { stat "Status" { query metric service.online latest since 10m } }` |
 | `description "Text"` | dashboard, section, card, widget, markdown | Adds reader-facing context without changing data queries. | `description "Live operational view."` |
 | `controls { ... }` | dashboard | Declares reusable variables rendered above the dashboard. | `controls { range "Range" variable range default 24h options 1h, 24h }` |
-| `range/source/entity/entity_type/label/text "Label"` | controls | Creates a control. Use variable, default, options, and type where useful. If default is omitted, the first option is used. | `entity "Container" variable entity_id type container default container:app-core` |
+| `range/source/resource/resource_type/label/text "Label"` | controls | Creates a control. Use variable, default, options, and type where useful. If default is omitted, the first option is used. | `resource "Container" variable resource_key type container default container:app-core` |
 | `section "Name" { ... }` | dashboard, section | Groups related rows and nested sections. | `section "Today" { line "Orders" { query metric orders.created increase since 24h } }` |
 | `row height sm\|md\|lg { ... }` | dashboard, section, card | Places multiple widgets in one row. If height is omitted, md is used. | `row height lg { line "CPU" { query metric system.cpu.usage avg since 6h } }` |
 | `card "Name" [span n] { ... }` | dashboard, section, row | Frames related child widgets and optional markdown. Cards cannot contain nested cards or sections. Span is an optional integer from 1 to 12. | `card "Battery" span 6 { gauge "Charge" { query metric battery.charge latest since 10m } }` |
@@ -190,7 +190,7 @@ Widget `query` lines use the same Query DSL. Metrics and summarized events show 
 :::
 
 :::info Maps summarize event locations
-Use a map for events that contain decimal latitude and longitude fields. Pulse groups matching events by location, optional label, and optional series across the selected range. Invalid or out-of-range coordinates are ignored. A map shows at most 1,000 aggregated points, so use source, entity, and dimension filters when a broad query would hide useful detail. On a public dashboard, the aggregated coordinates, labels, and series shown by the map are public too.
+Use a map for events that contain decimal latitude and longitude fields. Pulse groups matching events by location, optional label, and optional series across the selected range. Invalid or out-of-range coordinates are ignored. A map shows at most 1,000 aggregated points, so use source, resource, and dimension filters when a broad query would hide useful detail. On a public dashboard, the aggregated coordinates, labels, and series shown by the map are public too.
 :::
 
 :::info Controls define variables

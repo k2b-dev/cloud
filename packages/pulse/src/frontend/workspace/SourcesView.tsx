@@ -1,11 +1,11 @@
 import type { ResourceApiKey, ResourceApiKeysProps } from "@k2b/cloud/access/ui";
-import { Button, DataTable, TextInput, type DataTableColumn, useLocale } from "@k2b/ui";
-import { Show, type Accessor, type JSX } from "solid-js";
+import { Button, DataTable, type DataTableColumn, TextInput, useLocale } from "@k2b/ui";
+import { type Accessor, type JSX, Show } from "solid-js";
 import type { PulseSource, PulseSourceScrape } from "../../contracts";
-import { compactDateWithDelta, sourceKindIcon, sourceStatus, type PulseDateContext } from "./helpers";
-import SourceDetailView from "./SourceDetailView";
 import type { pulseMessages } from "../../messages";
 import { usePulseMessages } from "../use-messages";
+import { compactDateWithDelta, type PulseDateContext, sourceKindIcon, sourceStatus } from "./helpers";
+import SourceDetailView from "./SourceDetailView";
 
 type PublishedCounts = {
   resources: number;
@@ -80,8 +80,7 @@ const renderSourceTargetCell = (source: PulseSource, t: Messages): JSX.Element =
       </div>
     );
   }
-  if (source.kind === "http_ingest") return <span class="text-xs text-secondary">{t.tokenIngestEndpoint}</span>;
-  return <span class="text-xs text-secondary">{t.internalAppTelemetry}</span>;
+  return <span class="text-xs text-secondary">{t.tokenIngestEndpoint}</span>;
 };
 
 export type SourcesViewProps = {

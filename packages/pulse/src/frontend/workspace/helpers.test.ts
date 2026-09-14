@@ -21,13 +21,13 @@ import {
   queryWithSourceFilter,
   recordedEventQueryText,
   resourceMetricQueryText,
-  stateKeyQueryText,
+  shouldSkipDashboardDslPreview,
   sourceCreatedMessage,
   sourceCreateRequest,
   sourceCreateValidationError,
   sourceInitialScrapeFailureMessage,
   sourceInitialScrapeSuccessMessage,
-  shouldSkipDashboardDslPreview,
+  stateKeyQueryText,
 } from "./helpers";
 
 const compileSnippet = (snippet: string) =>
@@ -141,11 +141,11 @@ describe("Pulse workspace dashboard snippets", () => {
     expect(queryWithSourceFilter("metric cpu latest since 1h source source-a", "source-b")).toBe(
       "metric cpu latest since 1h source source-a",
     );
-    expect(eventKindQueryText("deploy finished", { sourceId: "source-a", entityId: "service:api" })).toBe(
-      'events "deploy finished" since 24h source source-a entity service:api limit 100',
+    expect(eventKindQueryText("deploy finished", { sourceId: "source-a", resourceKey: "service:api" })).toBe(
+      'events "deploy finished" since 24h source source-a resource service:api limit 100',
     );
-    expect(stateKeyQueryText("service.online", { sourceId: "source-a", entityId: "service:api" })).toBe(
-      "states service.online since 10m source source-a entity service:api limit 100",
+    expect(stateKeyQueryText("service.online", { sourceId: "source-a", resourceKey: "service:api" })).toBe(
+      "states service.online since 10m source source-a resource service:api limit 100",
     );
   });
 
@@ -165,7 +165,9 @@ describe("Pulse workspace dashboard snippets", () => {
         latestValue: 12,
         latestSampleAt: null,
       }),
-    ).toBe('metric docker.container.cpu.usage latest every 1m since 24h source source-a where container=api, compose_service="api web"');
+    ).toBe(
+      'metric docker.container.cpu.usage latest every 1m since 24h source source-a resource container:api where container=api, compose_service="api web"',
+    );
 
     expect(
       recordedEventQueryText({
@@ -174,28 +176,29 @@ describe("Pulse workspace dashboard snippets", () => {
         ts: "2026-01-01T00:00:00.000Z",
         value: null,
         sourceId: "source-a",
-        entityId: "container:api",
-        entityType: "container",
+        resourceKey: "container:api",
+        resourceType: "container",
         dimensions: { collector: "docker", message: "context deadline exceeded", ignored: "still included" },
         attributes: {},
         payload: {},
         recordedAt: "2026-01-01T00:00:00.000Z",
       }),
     ).toBe(
-      'events docker.error since 24h source source-a entity container:api where collector=docker, message="context deadline exceeded", ignored="still included" limit 100',
+      'events docker.error since 24h source source-a resource container:api where collector=docker, message="context deadline exceeded", ignored="still included" limit 100',
     );
 
     expect(
       currentStateQueryText({
+        variantKey: "fixture-0",
         key: "docker.container.running",
         value: true,
         sourceId: "source-a",
-        entityId: "container:api",
-        entityType: "container",
+        resourceKey: "container:api",
+        resourceType: "container",
         dimensions: { container: "api" },
         updatedAt: "2026-01-01T00:00:00.000Z",
       }),
-    ).toBe("states docker.container.running since 10m source source-a entity container:api where container=api limit 100");
+    ).toBe("states docker.container.running since 10m source source-a resource container:api where container=api limit 100");
   });
 
   test("creates empty dashboard DSL without starter widgets", () => {
@@ -270,7 +273,7 @@ describe("Pulse workspace dashboard snippets", () => {
   });
 
   test("copies state queries as table widgets", () => {
-    const query = "states service.online since 10m entity_type service limit 50";
+    const query = "states service.online since 10m resource_type service limit 50";
     const compiled = compilePulseQueryText("base", query);
     expect(compiled.ok).toBe(true);
     if (!compiled.ok) return;

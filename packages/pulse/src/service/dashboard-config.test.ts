@@ -30,7 +30,7 @@ const dashboardDsl = `dashboard "Ops" {
   section "Nested" {
     section "Inner" {
       table "States" {
-        query states service.online entity_type service limit 50
+        query states service.online resource_type service limit 50
       }
     }
   }

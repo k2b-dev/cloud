@@ -43,11 +43,11 @@ type BrowseLabelGroup = {
 
 type BrowseScope = {
   sourceId: string;
-  entityId: string;
+  resourceKey: string;
 };
 
 const resourceEntity = (resource: PulseInventory["resources"][number]): BrowseEntity => ({
-  id: resource.id,
+  id: resource.key,
   type: resource.type,
   sourceIds: resource.sourceIds,
   metricCount: resource.metricCount,
@@ -68,29 +68,29 @@ const emptyEntity = (id: string, type: string | null): BrowseEntity => ({
 
 const ensureEntity = (
   entities: Map<string, BrowseEntity>,
-  entityId: string | null,
-  entityType: string | null,
+  resourceKey: string | null,
+  resourceType: string | null,
   sourceId: string | null,
   dimensions: Record<string, string>,
 ): BrowseEntity | null => {
-  if (!entityId) return null;
-  const current = entities.get(entityId) ?? emptyEntity(entityId, entityType);
-  if (!current.type && entityType) current.type = entityType;
+  if (!resourceKey) return null;
+  const current = entities.get(resourceKey) ?? emptyEntity(resourceKey, resourceType);
+  if (!current.type && resourceType) current.type = resourceType;
   if (sourceId && !current.sourceIds.includes(sourceId)) current.sourceIds.push(sourceId);
   current.dimensions = { ...dimensions, ...current.dimensions };
-  entities.set(entityId, current);
+  entities.set(resourceKey, current);
   return current;
 };
 
 const incrementUnlistedEntity = (
-  entity: BrowseEntity | null,
+  resource: BrowseEntity | null,
   resourceIds: Set<string>,
   key: "metricCount" | "eventCount" | "stateCount",
 ) => {
-  if (entity && !resourceIds.has(entity.id)) entity[key] += 1;
+  if (resource && !resourceIds.has(resource.id)) resource[key] += 1;
 };
 
-const entityTotal = (entity: BrowseEntity): number => entity.metricCount + entity.eventCount + entity.stateCount;
+const entityTotal = (resource: BrowseEntity): number => resource.metricCount + resource.eventCount + resource.stateCount;
 
 const compareEntities = (left: BrowseEntity, right: BrowseEntity): number =>
   entityTotal(right) - entityTotal(left) || left.id.localeCompare(right.id);
@@ -101,26 +101,26 @@ export const buildBrowseEntities = (params: {
   events: PulseRecordedEvent[];
   states: PulseCurrentState[];
 }): BrowseEntity[] => {
-  const entities = new Map(params.inventory.resources.map((resource) => [resource.id, resourceEntity(resource)]));
-  const resourceIds = new Set(params.inventory.resources.map((resource) => resource.id));
+  const entities = new Map(params.inventory.resources.map((resource) => [resource.key, resourceEntity(resource)]));
+  const resourceIds = new Set(params.inventory.resources.map((resource) => resource.key));
 
   for (const item of params.series) {
     incrementUnlistedEntity(
-      ensureEntity(entities, item.entityId, item.entityType, item.sourceId, item.dimensions),
+      ensureEntity(entities, item.resourceKey, item.resourceType, item.sourceId, item.dimensions),
       resourceIds,
       "metricCount",
     );
   }
   for (const item of params.events) {
     incrementUnlistedEntity(
-      ensureEntity(entities, item.entityId, item.entityType, item.sourceId, item.dimensions),
+      ensureEntity(entities, item.resourceKey, item.resourceType, item.sourceId, item.dimensions),
       resourceIds,
       "eventCount",
     );
   }
   for (const item of params.states) {
     incrementUnlistedEntity(
-      ensureEntity(entities, item.entityId, item.entityType, item.sourceId, item.dimensions),
+      ensureEntity(entities, item.resourceKey, item.resourceType, item.sourceId, item.dimensions),
       resourceIds,
       "stateCount",
     );
@@ -129,9 +129,9 @@ export const buildBrowseEntities = (params: {
   return [...entities.values()].sort(compareEntities);
 };
 
-const itemInScope = (item: { sourceId: string | null; entityId: string | null }, scope: BrowseScope): boolean => {
+const itemInScope = (item: { sourceId: string | null; resourceKey: string | null }, scope: BrowseScope): boolean => {
   if (scope.sourceId && item.sourceId !== scope.sourceId) return false;
-  return !(scope.entityId && item.entityId !== scope.entityId);
+  return !(scope.resourceKey && item.resourceKey !== scope.resourceKey);
 };
 
 const dimensionSearchValues = (dimensions: Record<string, string>): string[] => [...Object.keys(dimensions), ...Object.values(dimensions)];
@@ -176,15 +176,15 @@ const metricSearchValues = (item: BrowseMetricRow): string[] => [
   ...dimensionSearchValues(item.sampleDimensions),
 ];
 
-const metricMatchesScope = (metric: PulseMetricSummary, scopedSeries: PulseMetricSeries[], entityId: string): boolean =>
-  !entityId || scopedSeries.length === 0 || scopedSeries.some((series) => series.metric === metric.name);
+const metricMatchesScope = (metric: PulseMetricSummary, scopedSeries: PulseMetricSeries[], resourceKey: string): boolean =>
+  !resourceKey || scopedSeries.length === 0 || scopedSeries.some((series) => series.metric === metric.name);
 
 export const buildBrowseMetrics = (params: {
   metrics: PulseMetricSummary[];
   scopedSeries: PulseMetricSeries[];
   allSeries: PulseMetricSeries[];
   selectedEntityDimensions: Record<string, string>;
-  entityId: string;
+  resourceKey: string;
   matches: BrowseMatcher;
 }): BrowseMetricRow[] =>
   params.metrics
@@ -194,14 +194,14 @@ export const buildBrowseMetrics = (params: {
       return {
         metric,
         seriesCount: metricScopedSeries.length > 0 ? metricScopedSeries.length : metric.seriesCount,
-        sampleDimensions: params.entityId ? (sampleSeries?.dimensions ?? params.selectedEntityDimensions) : {},
+        sampleDimensions: params.resourceKey ? (sampleSeries?.dimensions ?? params.selectedEntityDimensions) : {},
       };
     })
-    .filter((item) => metricMatchesScope(item.metric, params.scopedSeries, params.entityId) && params.matches(metricSearchValues(item)))
+    .filter((item) => metricMatchesScope(item.metric, params.scopedSeries, params.resourceKey) && params.matches(metricSearchValues(item)))
     .slice(0, 60);
 
 const eventMatches = (event: PulseRecordedEvent, scope: BrowseScope, matches: BrowseMatcher): boolean =>
-  itemInScope(event, scope) && matches([event.kind, event.entityId, event.entityType, ...dimensionSearchValues(event.dimensions)]);
+  itemInScope(event, scope) && matches([event.kind, event.resourceKey, event.resourceType, ...dimensionSearchValues(event.dimensions)]);
 
 export const buildBrowseEvents = (events: PulseRecordedEvent[], scope: BrowseScope, matches: BrowseMatcher): BrowseEventRow[] => {
   const groups = new Map<string, BrowseEventRow>();
@@ -214,7 +214,7 @@ export const buildBrowseEvents = (events: PulseRecordedEvent[], scope: BrowseSco
 };
 
 const stateMatches = (state: PulseCurrentState, scope: BrowseScope, matches: BrowseMatcher): boolean =>
-  itemInScope(state, scope) && matches([state.key, state.entityId, state.entityType, ...dimensionSearchValues(state.dimensions)]);
+  itemInScope(state, scope) && matches([state.key, state.resourceKey, state.resourceType, ...dimensionSearchValues(state.dimensions)]);
 
 export const buildBrowseStates = (states: PulseCurrentState[], scope: BrowseScope, matches: BrowseMatcher): BrowseStateRow[] => {
   const groups = new Map<string, BrowseStateRow>();

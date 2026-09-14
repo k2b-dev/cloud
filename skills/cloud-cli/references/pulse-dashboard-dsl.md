@@ -108,14 +108,14 @@ Controls appear only at the dashboard root:
 controls {
   range "Range" variable range default 24h options 1h, 6h, 24h, 7d
   source "Source" variable source_id default Src001
-  entity "Container" variable entity_id type container default container:app-core
-  entity_type "Resource type" variable entity_type default container
+  resource "Container" variable entity_id type container default container:app-core
+  resource_type "Resource type" variable resource_type default container
   label "Region" variable region default eu options eu, us
   text "Search" variable search default ""
 }
 ```
 
-Supported control kinds are `range`, `source`, `entity`, `entity_type`, `label`, and `text`.
+Supported control kinds are `range`, `source`, `resource`, `resource_type`, `label`, and `text`.
 
 Each control accepts inline options:
 
@@ -124,7 +124,7 @@ Each control accepts inline options:
 | `variable <name>` | Variable used as `$name` in widget queries. Defaults to a normalized form of the label. |
 | `default <value>` | Value used before interaction and on public displays. |
 | `options <value>, ...` | Selectable values. Commas are optional. |
-| `type <resource-type>` | Resource type associated with an entity control. |
+| `type <resource-type>` | Resource type associated with a resource control. |
 
 If `default` is omitted, Pulse uses the first option. A range control with neither a default nor options uses `24h`; other controls use an empty string.
 
@@ -132,7 +132,7 @@ Use variables inside query lines:
 
 ```text
 line "Memory" {
-  query metric docker.container.memory.usage avg every 5m since $range entity $entity_id
+  query metric docker.container.memory.usage avg every 5m since $range resource $entity_id
 }
 ```
 
@@ -256,7 +256,7 @@ table "Recent deploys" {
 }
 
 stat "Checkout enabled" {
-  query states checkout.enabled entity service:checkout limit 1
+  query states checkout.enabled resource service:checkout limit 1
 }
 ```
 
@@ -289,7 +289,7 @@ Sensitive fields cannot be selected. Keep precise location or identity data in p
 
 `size count` sizes a point by matching event count and is the default. `size sum` uses the non-negative sum of numeric event values; a negative total is treated as zero. Pulse groups across the complete query range by coordinate, optional label, and optional series. Coordinates outside latitude -90 to 90 or longitude -180 to 180 are ignored.
 
-One map returns at most 1,000 aggregated points. Use `source`, `entity`, `entity_type`, or `where` filters to keep broad, high-cardinality event sets readable. Maps are static point maps; they do not provide interactive zoom, clustering, regions, or choropleths.
+One map returns at most 1,000 aggregated points. Use `source`, `resource`, `resource_type`, or `where` filters to keep broad, high-cardinality event sets readable. Maps are static point maps; they do not provide interactive zoom, clustering, regions, or choropleths.
 
 On a public dashboard, the aggregated coordinates, labels, and series rendered by the map are public. Use coarse coordinates and non-identifying labels for public displays.
 
@@ -414,7 +414,7 @@ dashboard "Solar overview" {
 
   controls {
     range "Range" variable range default 24h options 1h, 6h, 24h, 7d
-    entity "Site" variable site type site default site:warehouse
+    resource "Site" variable site type site default site:warehouse
   }
 
   section "Today" {
@@ -423,25 +423,25 @@ dashboard "Solar overview" {
     row height md {
       gauge "Battery charge" span 4 {
         description "Latest state of charge reported by the inverter."
-        query metric solar.battery.charge_percent latest since 10m entity $site
+        query metric solar.battery.charge_percent latest since 10m resource $site
         warn when value < 20 message "Battery is low"
         critical when value < 10 message "Battery is critical"
       }
 
       line "Solar output" span 8 {
         description "Average generated power over the selected range."
-        query metric solar.output_watts avg every 5m since $range entity $site
+        query metric solar.output_watts avg every 5m since $range resource $site
       }
     }
 
     section "Grid" {
       row height md {
         line "Import" span 6 {
-          query metric grid.import_watts avg every 5m since $range entity $site
+          query metric grid.import_watts avg every 5m since $range resource $site
         }
 
         line "Export" span 6 {
-          query metric grid.export_watts avg every 5m since $range entity $site
+          query metric grid.export_watts avg every 5m since $range resource $site
         }
       }
     }

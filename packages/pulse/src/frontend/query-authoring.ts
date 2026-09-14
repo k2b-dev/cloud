@@ -62,13 +62,13 @@ const aggregationSuggestions = (query: string): Suggestion[] =>
 const clauseSuggestions = (kind: "metric" | "events" | "states", query: string, text: string): Suggestion[] => {
   const clauses =
     kind === "metric"
-      ? ["every", "since", "source", ...(hasWhere(text) ? [] : ["where"])]
+      ? ["every", "since", "source", "resource", "resource_type", ...(hasWhere(text) ? [] : ["where"])]
       : [
           ...(kind === "events" && /\bevents\s+\S+\s+(?:count|sum|unique\s+(?:actor|session))\b/i.test(text) ? ["every", "group"] : []),
           "since",
           "source",
-          "entity",
-          "entity_type",
+          "resource",
+          "resource_type",
           "limit",
           ...(hasWhere(text) ? [] : ["where"]),
         ];
@@ -122,13 +122,13 @@ const sourceSuggestions = (sources: PulseSource[], query: string): Suggestion[] 
 
 const entitySuggestions = (params: PulseQueryAuthoringInventory, query: string): Suggestion[] =>
   uniqueValues([
-    ...params.series.map((item) => item.entityId),
-    ...(params.events ?? []).map((item) => item.entityId),
-    ...(params.states ?? []).map((item) => item.entityId),
+    ...params.series.map((item) => item.resourceKey),
+    ...(params.events ?? []).map((item) => item.resourceKey),
+    ...(params.states ?? []).map((item) => item.resourceKey),
   ])
     .filter((value) => matches(value, query))
     .slice(0, 40)
-    .map((value) => suggestion(value, "entity", quoteQueryValue(value)));
+    .map((value) => suggestion(value, "resource", quoteQueryValue(value)));
 
 const dimensionSuggestions = (params: PulseQueryAuthoringInventory, query: string): Suggestion[] => {
   const dimensions = new Map<string, Set<string>>();
@@ -186,7 +186,7 @@ const PREVIOUS_TOKEN_SUGGESTIONS: Record<string, PreviousTokenSuggestionFactory>
   every: literalSuggestionFactory(BUCKET_LITERALS, "bucket"),
   since: literalSuggestionFactory(RANGE_LITERALS, "range"),
   limit: literalSuggestionFactory(LIMIT_LITERALS, "rows"),
-  entity: (params, query) => entitySuggestions(params, query),
+  resource: (params, query) => entitySuggestions(params, query),
   unique: (_params, query) => literalSuggestions(["actor", "session"], query, "identity"),
   group: (_params, query) => literalSuggestions(["by"], query, "clause"),
   by: (params, query) => dimensionKeySuggestions(params, query),
@@ -250,6 +250,7 @@ export const buildPulseQuery = (params: {
   bucket?: string;
   since?: string;
   sourceId?: string | null;
+  resourceKey?: string | null;
   dimensions?: Record<string, string | number | boolean | null>;
 }): string => {
   const filters = Object.entries(params.dimensions ?? {}).map(([key, value]) => `${key}=${quoteQueryValue(String(value))}`);
@@ -262,6 +263,7 @@ export const buildPulseQuery = (params: {
     "since",
     params.since ?? "24h",
     params.sourceId ? `source ${params.sourceId}` : "",
+    params.resourceKey ? `resource ${quoteQueryValue(params.resourceKey)}` : "",
     filters.length > 0 ? `where ${filters.join(", ")}` : "",
   ]
     .filter(Boolean)
@@ -356,8 +358,8 @@ const QUERY_KEYWORDS = new Set([
   "every",
   "since",
   "source",
-  "entity",
-  "entity_type",
+  "resource",
+  "resource_type",
   "limit",
   "where",
   "group",
@@ -386,7 +388,7 @@ const DASHBOARD_DSL_KEYWORDS = new Set([
   "range",
   "text",
   "source",
-  "entity",
+  "resource",
   "section",
   "row",
   "card",
@@ -414,7 +416,7 @@ const DASHBOARD_DSL_KEYWORDS = new Set([
   "sum",
 ]);
 
-const DASHBOARD_QUERY_KEYWORDS = new Set(["metric", "events", "states", "every", "since", "where", "limit", "entity_type"]);
+const DASHBOARD_QUERY_KEYWORDS = new Set(["metric", "events", "states", "every", "since", "where", "limit", "resource_type"]);
 
 const dashboardTokenHighlight = (token: string): string => {
   const lower = token.toLowerCase();

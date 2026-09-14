@@ -1,4 +1,3 @@
-import { err, fail, ok } from "@k2b/stdlib";
 import {
   CAPABILITY_MAX_RESULT_BYTES,
   type CapabilityExecutionContext,
@@ -10,6 +9,7 @@ import {
   type UniversalSearchInput,
   UniversalSearchInputSchema,
 } from "@k2b/cloud/contracts";
+import { err, fail, ok } from "@k2b/stdlib";
 import type { z } from "zod";
 import {
   BaseDataSchema,
@@ -37,8 +37,8 @@ import {
 } from "./capability-contracts";
 import { pulseCapabilityPresentation } from "./capability-presentation";
 import type { PulseBase, PulseCurrentState, PulseRecordedEvent, PulseSavedQuery, PulseSource } from "./contracts";
-import { pulseBaseHref, pulseExplorerHref, pulseResourceHref, pulseSignalHref, pulseSourceHref } from "./resource-hrefs";
 import { resolvePulseMessages } from "./messages";
+import { pulseBaseHref, pulseExplorerHref, pulseResourceHref, pulseSignalHref, pulseSourceHref } from "./resource-hrefs";
 import { pulseService } from "./service";
 import { accessScopeFor } from "./service/access-control";
 import {
@@ -387,8 +387,8 @@ const compactEvent = (event: PulseRecordedEvent) => ({
   ts: event.ts,
   value: event.value === null || Number.isFinite(event.value) ? event.value : null,
   sourceId: event.sourceId,
-  entityId: event.entityId?.slice(0, 500) ?? null,
-  entityType: event.entityType?.slice(0, 120) ?? null,
+  resourceKey: event.resourceKey?.slice(0, 505) ?? null,
+  resourceType: event.resourceType?.slice(0, 120) ?? null,
   dimensions: event.dimensions,
 });
 
@@ -396,8 +396,8 @@ const compactState = (state: PulseCurrentState) => ({
   key: state.key.slice(0, 240),
   value: compactStateValue(state.value),
   sourceId: state.sourceId,
-  entityId: state.entityId.slice(0, 500),
-  entityType: state.entityType?.slice(0, 120) ?? null,
+  resourceKey: state.resourceKey?.slice(0, 505) ?? null,
+  resourceType: state.resourceType?.slice(0, 120) ?? null,
   dimensions: state.dimensions,
   updatedAt: state.updatedAt,
 });

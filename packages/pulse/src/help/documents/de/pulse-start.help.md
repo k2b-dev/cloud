@@ -23,7 +23,7 @@ Pulse verwandelt eingehende Daten in durchsuchbare Fakten, Abfrageergebnisse und
 1. **Eine Basis erstellen:** Nutze jeweils eine Basis für ein Produkt, eine Umgebung, einen Geschäftsbereich oder einen Berichtskontext.
 2. **Eine Quelle verbinden:** Füge einen Metrik-Endpunkt oder eine HTTP-Ingest-Quelle hinzu und warte, bis Pulse empfangene Daten meldet.
 3. **Vorhandene Daten durchsuchen:** Nutze Ressourcen, wenn du das Objekt kennst. Nutze Metriken, Ereignisse oder Zustände, wenn du den Signalnamen kennst.
-4. **Eine Abfrage öffnen:** Beginne mit einem kopierten Abfrageausschnitt und grenze ihn dann mit `source`, `entity`, `entity_type` oder `where` ein. Speichere stabile Abfragen, die du wiederverwenden möchtest.
+4. **Eine Abfrage öffnen:** Beginne mit einem kopierten Abfrageausschnitt und grenze ihn dann mit `source`, `resource`, `resource_type` oder `where` ein. Speichere stabile Abfragen, die du wiederverwenden möchtest.
 5. **Das Dashboard schreiben:** Übernimm nützliche, stabile Abfragen in Dashboard DSL. Ergänze Beschreibungen, wenn ein Diagramm erklärt werden muss.
 :::
 

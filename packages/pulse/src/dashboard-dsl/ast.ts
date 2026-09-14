@@ -39,14 +39,14 @@ export type DashboardDslControl = {
   variable: string;
   defaultValue: string;
   options: string[];
-  entityType: string | null;
+  resourceType: string | null;
 };
 
 export type ControlOptionState = {
   variable: string;
   defaultValue: string;
   options: string[];
-  entityType: string | null;
+  resourceType: string | null;
 };
 
 export type DashboardContainerBody = {

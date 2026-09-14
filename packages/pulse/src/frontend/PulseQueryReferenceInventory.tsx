@@ -1,4 +1,4 @@
-import { Button, CopyButton, DataTable, TextInput, type DataTableColumn } from "@k2b/ui";
+import { Button, CopyButton, DataTable, type DataTableColumn, TextInput } from "@k2b/ui";
 import { createMemo, createSignal, For } from "solid-js";
 import type {
   PulseCurrentState,
@@ -76,15 +76,15 @@ export function PulseQueryReferenceInventory(props: Props) {
   const [stateQuery, setStateQuery] = createSignal("");
   const [fieldQuery, setFieldQuery] = createSignal("");
   const [selectedSourceId, setSelectedSourceId] = createSignal("");
-  const [selectedEntityId, setSelectedEntityId] = createSignal("");
+  const [selectedResourceKey, setSelectedResourceKey] = createSignal("");
 
   const sourcesById = createMemo(() => new Map(props.sources.map((source) => [source.id, source])));
-  const filters = createMemo(() => ({ sourceId: selectedSourceId(), entityId: selectedEntityId() }));
+  const filters = createMemo(() => ({ sourceId: selectedSourceId(), resourceKey: selectedResourceKey() }));
   const sourceChips = createMemo(() => buildReferenceSourceChips(props));
   const entityChips = createMemo(() => buildReferenceEntityChips(props));
-  const selectedEntityType = createMemo(() => {
-    const entity = entityChips().find((item) => item.id === selectedEntityId());
-    return entity?.hint && entity.hint !== "entity" ? entity.hint : null;
+  const selectedResourceType = createMemo(() => {
+    const resource = entityChips().find((item) => item.id === selectedResourceKey());
+    return resource?.hint && resource.hint !== "resource" ? resource.hint : null;
   });
 
   const metricRows = createMemo(() =>
@@ -119,7 +119,7 @@ export function PulseQueryReferenceInventory(props: Props) {
     {
       id: "series",
       header: t().series,
-      value: (row) => (selectedSourceId() || selectedEntityId() ? row.visibleSeriesCount : row.seriesCount),
+      value: (row) => (selectedSourceId() || selectedResourceKey() ? row.visibleSeriesCount : row.seriesCount),
       headerClass: "w-24",
       cellClass: "w-24 whitespace-nowrap",
     },
@@ -132,7 +132,7 @@ export function PulseQueryReferenceInventory(props: Props) {
     {
       id: "copy",
       header: "",
-      value: (row) => buildReferenceEventQuery(row, filters(), selectedEntityType()),
+      value: (row) => buildReferenceEventQuery(row, filters(), selectedResourceType()),
       headerClass: "w-12",
       cellClass: "w-12",
     },
@@ -144,7 +144,7 @@ export function PulseQueryReferenceInventory(props: Props) {
     {
       id: "copy",
       header: "",
-      value: (row) => buildReferenceStateQuery(row, filters(), selectedEntityType()),
+      value: (row) => buildReferenceStateQuery(row, filters(), selectedResourceType()),
       headerClass: "w-12",
       cellClass: "w-12",
     },
@@ -191,9 +191,9 @@ export function PulseQueryReferenceInventory(props: Props) {
         <ScopeChipRow
           label={t().entities}
           allLabel={t().allEntities}
-          selected={selectedEntityId()}
+          selected={selectedResourceKey()}
           items={entityChips()}
-          onSelect={setSelectedEntityId}
+          onSelect={setSelectedResourceKey}
         />
       </section>
 
@@ -204,7 +204,13 @@ export function PulseQueryReferenceInventory(props: Props) {
               <i class="ti ti-chart-dots" /> {t().metrics} <span class="text-dimmed">{metricRows().length}</span>
             </h2>
             <div class="w-full sm:w-64">
-              <TextInput value={metricQuery} onValueChange={setMetricQuery} icon="ti ti-search" placeholder={t().searchMetricsPlaceholder} clearable />
+              <TextInput
+                value={metricQuery}
+                onValueChange={setMetricQuery}
+                icon="ti ti-search"
+                placeholder={t().searchMetricsPlaceholder}
+                clearable
+              />
             </div>
           </div>
           <DataTable
@@ -227,7 +233,13 @@ export function PulseQueryReferenceInventory(props: Props) {
               <i class="ti ti-bolt" /> {t().events} <span class="text-dimmed">{eventRows().length}</span>
             </h2>
             <div class="w-full sm:w-64">
-              <TextInput value={eventQuery} onValueChange={setEventQuery} icon="ti ti-search" placeholder={t().searchEventsPlaceholder} clearable />
+              <TextInput
+                value={eventQuery}
+                onValueChange={setEventQuery}
+                icon="ti ti-search"
+                placeholder={t().searchEventsPlaceholder}
+                clearable
+              />
             </div>
           </div>
           <DataTable
@@ -250,7 +262,13 @@ export function PulseQueryReferenceInventory(props: Props) {
               <i class="ti ti-toggle-right" /> {t().states} <span class="text-dimmed">{stateRows().length}</span>
             </h2>
             <div class="w-full sm:w-64">
-              <TextInput value={stateQuery} onValueChange={setStateQuery} icon="ti ti-search" placeholder={t().searchStatesPlaceholder} clearable />
+              <TextInput
+                value={stateQuery}
+                onValueChange={setStateQuery}
+                icon="ti ti-search"
+                placeholder={t().searchStatesPlaceholder}
+                clearable
+              />
             </div>
           </div>
           <DataTable
@@ -274,12 +292,16 @@ export function PulseQueryReferenceInventory(props: Props) {
             <h2 class="flex items-center gap-2 text-sm font-semibold text-secondary">
               <i class="ti ti-list-details" /> {t().fields} <span class="text-dimmed">{fieldRows().length}</span>
             </h2>
-            <p class="mt-1 text-xs text-dimmed">
-              {t().fieldsDescription}
-            </p>
+            <p class="mt-1 text-xs text-dimmed">{t().fieldsDescription}</p>
           </div>
           <div class="w-full sm:w-72">
-            <TextInput value={fieldQuery} onValueChange={setFieldQuery} icon="ti ti-search" placeholder={t().searchFieldsPlaceholder} clearable />
+            <TextInput
+              value={fieldQuery}
+              onValueChange={setFieldQuery}
+              icon="ti ti-search"
+              placeholder={t().searchFieldsPlaceholder}
+              clearable
+            />
           </div>
         </div>
         <DataTable

@@ -1,4 +1,5 @@
 import { describe, expect, setDefaultTimeout, test } from "bun:test";
+import { compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 import {
   CAPABILITY_MAX_RESULT_BYTES,
   type CapabilityExecutionContext,
@@ -8,7 +9,6 @@ import {
   UniversalSearchInputSchema,
   type User,
 } from "@k2b/cloud/contracts";
-import { compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 import { sql } from "bun";
 import { pulseCapabilities } from "./capabilities";
 import {
@@ -178,10 +178,10 @@ describe("Pulse capabilities", () => {
       `;
       await sql`
         INSERT INTO pulse.metric_series (
-          id, base_id, metric_id, source_id, entity_id, entity_type, series_key, dimensions_hash, dimensions,
+          id, base_id, metric_id, source_id, series_key, dimensions_hash, dimensions,
           resource_key, resource_id, resource_type, resource_label, last_seen_at
         ) VALUES (
-          ${seriesId}::uuid, ${baseId}::uuid, ${metricId}::uuid, ${sourceId}::uuid, 'agent-1', 'service', ${suffix}, ${suffix},
+          ${seriesId}::uuid, ${baseId}::uuid, ${metricId}::uuid, ${sourceId}::uuid, ${suffix}, ${suffix},
           (${JSON.stringify({ env: "test" })}::jsonb #>> '{}')::jsonb,
           ${resourceKey}, 'agent-1', 'service', 'Agent service', now()
         )
@@ -192,7 +192,7 @@ describe("Pulse capabilities", () => {
       `;
       await sql`
         INSERT INTO pulse.events (
-          id, base_id, source_id, ts, kind, entity_id, entity_type, dimensions_hash, dimensions, attributes, payload
+          id, base_id, source_id, ts, kind, resource_key, resource_type, dimensions_hash, dimensions, attributes, payload
         )
         SELECT
           gen_random_uuid(), ${baseId}::uuid, ${sourceId}::uuid, now() - make_interval(secs => item), 'agent.event',
@@ -204,7 +204,7 @@ describe("Pulse capabilities", () => {
       );
       await sql`
         INSERT INTO pulse.events (
-          id, base_id, source_id, ts, kind, entity_id, entity_type, dimensions_hash, dimensions, attributes, payload
+          id, base_id, source_id, ts, kind, resource_key, resource_type, dimensions_hash, dimensions, attributes, payload
         )
         SELECT
           gen_random_uuid(), ${baseId}::uuid, ${sourceId}::uuid, now() - make_interval(secs => item), 'agent.large',
@@ -214,7 +214,7 @@ describe("Pulse capabilities", () => {
       `;
       await sql`
         INSERT INTO pulse.events (
-          id, base_id, source_id, ts, kind, entity_id, dimensions_hash, dimensions, attributes, payload, value
+          id, base_id, source_id, ts, kind, resource_key, dimensions_hash, dimensions, attributes, payload, value
         ) VALUES (
           gen_random_uuid(), ${baseId}::uuid, ${sourceId}::uuid, now(), 'agent.nonfinite', 'agent-1', ${suffix} || '-nonfinite',
           '{}'::jsonb, '{}'::jsonb, '{}'::jsonb, '+Infinity'::double precision

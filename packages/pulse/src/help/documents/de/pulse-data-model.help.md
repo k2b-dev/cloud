@@ -46,6 +46,11 @@ Pulse verwendet ein kompaktes Datenmodell, damit unterschiedliche Fachbereiche d
 - **Ressourcen bleiben stabil:** Lege Ressourcen für durchsuchbare Objekte wie eine Kampagne, einen QR-Code, Host oder Dienst an. Ein Besuch, eine Sitzung, Anfrage, ein Zeitstempel oder eine IP-Adresse ist keine Ressource.
 :::
 
-:::note Ressource in der Oberfläche, Entity in der DSL
-Die Oberfläche verwendet Ressource, weil der Begriff leichter verständlich ist. Query DSL verwendet `entity` für dieselbe Kennung und `entity_type` für die Ressourcenklasse. `entity container:app-core` bezeichnet zum Beispiel eine Ressource; `entity_type container` bezeichnet alle Container-Ressourcen.
+:::note Explizite Ressourcen
+Sende `resource: {type, id, label?}`, um ein Signal einem Objekt zuzuordnen.
+Ohne diese Angabe bleibt das Signal ressourcenlos. Pulse leitet keine Objekte
+aus allgemeinen Ingest-Dimensionen ab. Ressourcentypen sind Slugs in
+Kleinbuchstaben. Abfragen wählen mit `resource` den vollständigen Schlüssel
+`type:id` oder mit `resource_type` eine Klasse. Metriken und Zustände aus
+unterschiedlichen Quellen bleiben getrennte Varianten.
 :::

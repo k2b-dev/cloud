@@ -20,7 +20,7 @@ Beschreibe Dashboard-Steuerelemente, Abschnitte, Karten, Markdown-Notizen und vi
 :::
 
 :::info Inventar
-Durchsuche die aktuelle Basis. Filtere nach Quelle oder Entity und kopiere eingegrenzte Ausschnitte, statt Namen auswendig zu lernen.
+Durchsuche die aktuelle Basis. Filtere nach Quelle oder Resource und kopiere eingegrenzte Ausschnitte, statt Namen auswendig zu lernen.
 :::
 
 ## Mit bekannten Daten arbeiten {icon="shield-lock"}
@@ -28,7 +28,7 @@ Durchsuche die aktuelle Basis. Filtere nach Quelle oder Entity und kopiere einge
 :::reference
 - **Von der Aufgabe ausgehen:** Entscheide vor der Syntaxwahl, ob die Frage einen Metrikverlauf, Ereigniszeilen, aktuelle Zustände oder eine Dashboard-Ansicht erfordert.
 - **Namen aus dem Inventar kopieren:** Metriken, Ereignisse, Zustände, Quellen, Ressourcen und Dimensionen sind beobachtete Daten. Leite sie nicht aus Beispielen ab.
-- **Ressource und Entity gleich behandeln:** Die Oberfläche verwendet Ressource, Query DSL verwendet Entity. Beide bezeichnen dieselbe Kennung, zum Beispiel `container:app-core` oder `customer:acme`.
+- **Ressource und Resource gleich behandeln:** Die Oberfläche verwendet Ressource, Query DSL verwendet Resource. Beide bezeichnen dieselbe Kennung, zum Beispiel `container:app-core` oder `customer:acme`.
 - **Den Text lesbar halten:** Nutze eindeutige Namen, enge Bereiche und Beschreibungen in der Nähe der erklärten Diagramme.
 :::
 

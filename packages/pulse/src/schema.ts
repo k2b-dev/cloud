@@ -96,7 +96,7 @@ export const initializeSchema = async (): Promise<void> => {
     await sql`CREATE INDEX idx_pulse_base_access_access ON pulse.base_access(access_id)`.simple();
 
     await sql`
-    CREATE TYPE pulse.source_kind AS ENUM ('metrics', 'http_ingest', 'internal');
+    CREATE TYPE pulse.source_kind AS ENUM ('metrics', 'http_ingest');
   `.simple();
 
     await sql`
@@ -184,8 +184,6 @@ export const initializeSchema = async (): Promise<void> => {
       base_id UUID NOT NULL REFERENCES pulse.bases(id) ON DELETE CASCADE,
       metric_id UUID NOT NULL REFERENCES pulse.metric_defs(id) ON DELETE CASCADE,
       source_id UUID REFERENCES pulse.sources(id) ON DELETE SET NULL,
-      entity_id TEXT,
-      entity_type TEXT,
       series_key TEXT NOT NULL,
       dimensions_hash TEXT NOT NULL,
       dimensions JSONB NOT NULL DEFAULT '{}'::jsonb,
@@ -259,8 +257,6 @@ export const initializeSchema = async (): Promise<void> => {
       ts TIMESTAMPTZ NOT NULL,
       kind TEXT NOT NULL,
       value DOUBLE PRECISION,
-      entity_id TEXT,
-      entity_type TEXT,
       actor_id TEXT,
       session_id TEXT,
       correlation_id TEXT,
@@ -292,14 +288,13 @@ export const initializeSchema = async (): Promise<void> => {
       resource_key TEXT,
       base_id UUID NOT NULL REFERENCES pulse.bases(id) ON DELETE CASCADE,
       state_key TEXT NOT NULL,
+      variant_key TEXT NOT NULL,
       source_id UUID REFERENCES pulse.sources(id) ON DELETE SET NULL,
-      entity_id TEXT NOT NULL DEFAULT '',
-      entity_type TEXT,
       value JSONB NOT NULL,
       dimensions_hash TEXT NOT NULL,
       dimensions JSONB NOT NULL DEFAULT '{}'::jsonb,
       updated_at TIMESTAMPTZ NOT NULL,
-      PRIMARY KEY (base_id, state_key, entity_id, dimensions_hash)
+      PRIMARY KEY (base_id, state_key, variant_key)
     )
   `.simple();
 
@@ -307,6 +302,7 @@ export const initializeSchema = async (): Promise<void> => {
 
     await sql`
     CREATE TABLE pulse.state_changes (
+      sequence BIGINT GENERATED ALWAYS AS IDENTITY,
       resource_label TEXT,
       resource_type TEXT,
       resource_id TEXT,
@@ -314,9 +310,8 @@ export const initializeSchema = async (): Promise<void> => {
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       base_id UUID NOT NULL REFERENCES pulse.bases(id) ON DELETE CASCADE,
       state_key TEXT NOT NULL,
+      variant_key TEXT NOT NULL,
       source_id UUID REFERENCES pulse.sources(id) ON DELETE SET NULL,
-      entity_id TEXT,
-      entity_type TEXT,
       value JSONB NOT NULL,
       dimensions_hash TEXT NOT NULL,
       dimensions JSONB NOT NULL DEFAULT '{}'::jsonb,
@@ -325,7 +320,7 @@ export const initializeSchema = async (): Promise<void> => {
     )
   `.simple();
 
-    await sql`CREATE INDEX idx_pulse_state_changes_key_ts ON pulse.state_changes(base_id, state_key, changed_at DESC)`.simple();
+    await sql`CREATE INDEX idx_pulse_state_changes_key_ts ON pulse.state_changes(base_id, state_key, changed_at DESC, sequence DESC)`.simple();
 
     await sql`CREATE INDEX idx_pulse_state_changes_resource_ts ON pulse.state_changes(base_id, resource_key, changed_at DESC) WHERE resource_key IS NOT NULL`.simple();
 

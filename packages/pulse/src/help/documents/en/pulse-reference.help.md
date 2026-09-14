@@ -20,7 +20,7 @@ Describe dashboard controls, sections, cards, markdown notes, and visual widgets
 :::
 
 :::info Inventory
-Browse the current base. Filter by source or entity, then copy scoped snippets instead of memorizing names.
+Browse the current base. Filter by source or resource, then copy scoped snippets instead of memorizing names.
 :::
 
 ## Work from known data {icon="shield-lock"}
@@ -28,7 +28,7 @@ Browse the current base. Filter by source or entity, then copy scoped snippets i
 :::reference
 - **Start from the task:** Decide whether the question needs a metric trend, event rows, current states, or a dashboard view before choosing syntax.
 - **Copy names from Inventory:** Metrics, events, states, sources, resources, and dimensions are observed data. Do not guess them from examples.
-- **Keep resource and entity aligned:** The UI says resource. Query DSL says entity. They refer to the same identifier, such as container:app-core or customer:acme.
+- **Keep resource and resource aligned:** The UI says resource. Query DSL says resource. They refer to the same identifier, such as container:app-core or customer:acme.
 - **Keep the text readable:** Use explicit names, narrow scopes, and descriptions close to the charts they explain.
 :::
 

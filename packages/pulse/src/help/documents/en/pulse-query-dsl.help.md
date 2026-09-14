@@ -19,7 +19,7 @@ Query DSL answers one data question at a time. Pick whether you need a metric tr
 1. **Name the signal:** Choose the metric, event kind, or state key from the UI or Inventory.
 2. **Choose the shape:** Metrics need an aggregation. Events can return rows or use count, sum, or unique aggregation.
 3. **Set the time range:** Use since for the range, and every for metric or summarized-event time windows.
-4. **Narrow the scope:** Add source, entity, entity_type, or where filters when the result includes too many variants or rows.
+4. **Narrow the scope:** Add source, resource, resource_type, or where filters when the result includes too many variants or rows.
 :::
 
 ## Statement types {icon="book-2"}
@@ -33,8 +33,8 @@ metric <metric> <aggregation>
   [group by <resource|dimension>]
   [since <duration>]
   [source <source-id>]
-  [entity <id>]
-  [entity_type <type>]
+  [resource <id>]
+  [resource_type <type>]
   [where <key>=<value>, ...]
 ```
 
@@ -47,8 +47,8 @@ events [<kind>|*]
   [group by <dimension>, ...]
   [since <duration>]
   [source <source-id>]
-  [entity <id>]
-  [entity_type <type>]
+  [resource <id>]
+  [resource_type <type>]
   [where <key>=<value>, ...]
   [limit <rows>]
 ```
@@ -59,8 +59,8 @@ events [<kind>|*]
 states [<key>|*]
   [since <duration>]
   [source <source-id>]
-  [entity <id>]
-  [entity_type <type>]
+  [resource <id>]
+  [resource_type <type>]
   [where <key>=<value>, ...]
   [limit <rows>]
 ```
@@ -140,7 +140,7 @@ Use `actorId` for unique visitor counts instead of creating one dimension value 
 **Current states**
 
 ```text
-states integration.enabled entity "webshop" limit 50
+states integration.enabled resource "webshop" limit 50
 ```
 
 Use states for current truth. Add since only when stale values should disappear.
@@ -159,8 +159,8 @@ Use states for current truth. Add since only when stale values should disappear.
 | `every <duration>` | metric, summarized events | Group metric values or summarized events into fixed time windows. Use compact durations such as 5m, 1h, or 7d. | `every 15m` |
 | `since <duration>` | metric, events, states | Limit by time. Durations use m, h, or d and may not exceed 90 days. For states, since hides stale current values. | `since 7d` |
 | `source <source-id>` | all | Restrict results to one source. The value must be a valid source ID copied from Pulse. | `source Src001` |
-| `entity <id>` | all | Restrict results to one resource identifier. The UI calls this a resource; Query DSL calls it an entity. | `entity container:app-core` |
-| `entity_type <type>` | all | Restrict results to one resource class such as host, container, service, device, order, or customer. | `entity_type container` |
+| `resource <id>` | all | Restrict results to one complete `type:id` resource key. | `resource container:app-core` |
+| `resource_type <type>` | all | Restrict results to one resource class such as host, container, service, device, order, or customer. | `resource_type container` |
 | `where <key>=<value>` | all | Filter dimensions by exact equality. Separate multiple filters with commas; one query accepts up to 32 filters. | `where env=prod, region=eu` |
 | `limit <rows>` | events, states | Limit returned rows. Use a positive integer no larger than 1000. | `limit 100` |
 
@@ -172,7 +172,7 @@ Use single or double quotes around names and values containing spaces, commas, o
 
 ```text
 events "checkout error" where message="payment, provider=offline" limit 50
-states "integration label" entity 'service:web shop'
+states "integration label" resource 'service:web shop'
 ```
 
 Inside a quoted value, backslash escapes the next character:
@@ -211,13 +211,13 @@ Pulse first applies the metric aggregation independently to every matched varian
 :::
 
 :::success Events return rows or points
-`events` starts as table output. Add `count`, `sum`, `unique actor`, or `unique session` to show a trend over time. `states` returns current rows. Use `source`, `entity`, `entity_type`, `where`, and `limit` to narrow them.
+`events` starts as table output. Add `count`, `sum`, `unique actor`, or `unique session` to show a trend over time. `states` returns current rows. Use `source`, `resource`, `resource_type`, `where`, and `limit` to narrow them.
 :::
 
 :::info Names and values
-Use `*` or omit the name for all events or all states. `source` accepts a six-character Source ID, while `entity` accepts the exact resource identifier shown by Pulse.
+Use `*` or omit the name for all events or all states. `source` accepts a six-character Source ID, while `resource` accepts the exact resource identifier shown by Pulse.
 :::
 
 :::warning Performance limits
-Query text is limited to 2,000 characters. Metric queries stop when more than 250 variants match, when the requested range creates more than 2,000 time windows, or when grouped output would exceed 100,000 points. Add `source`, `entity`, or `where` filters, shorten `since`, or increase `every`. Event and state results are capped at 1,000 rows; event summaries accept at most four group keys and return at most 1,000 points.
+Query text is limited to 2,000 characters. Metric queries stop when more than 250 variants match, when the requested range creates more than 2,000 time windows, or when grouped output would exceed 100,000 points. Add `source`, `resource`, or `where` filters, shorten `since`, or increase `every`. Event and state results are capped at 1,000 rows; event summaries accept at most four group keys and return at most 1,000 points.
 :::

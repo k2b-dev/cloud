@@ -1,104 +1,30 @@
 import { describe, expect, test } from "bun:test";
-import { derivePulseResource, explicitPulseResource, pulseSignalSubject } from "./resource-model";
+import { explicitPulseResource } from "./resource-model";
 import { PULSE_RESOURCE_KEY_MAX_LENGTH } from "./telemetry-contract";
 
-describe("Pulse resource model", () => {
-  test("derives Docker container resources from host and container dimensions", () => {
-    const resource = derivePulseResource({
-      signalName: "docker.container.cpu.usage",
-      dimensions: {
-        host: "host-a",
-        container: "app-core",
-        container_id: "abc123",
-      },
-    });
-
-    expect(resource).toEqual({
-      key: "container:host-a/abc123",
-      id: "host-a/abc123",
-      label: "app-core",
-      type: "container",
-    });
-  });
-
-  test("derives host resources from generic system data without Docker-specific counters", () => {
-    const resource = derivePulseResource({
-      signalName: "system.memory.usage",
-      dimensions: {
-        host: "MacBookPro",
-      },
-    });
-
-    expect(resource).toEqual({
-      key: "host:MacBookPro",
-      id: "MacBookPro",
-      label: "MacBookPro",
+describe("Pulse resource identity", () => {
+  test("uses explicit type and id while keeping labels out of identity", () => {
+    expect(explicitPulseResource({ type: "host", id: "alpha", label: "Alpha" })).toEqual({
+      key: "host:alpha",
       type: "host",
+      id: "alpha",
+      label: "Alpha",
     });
+    expect(explicitPulseResource({ type: "host", id: "alpha", label: "Renamed" })?.key).toBe("host:alpha");
+    expect(explicitPulseResource(undefined)).toBeNull();
+    expect(explicitPulseResource(null)).toBeNull();
   });
-
-  test("uses explicit business entities when present", () => {
-    const resource = derivePulseResource({
-      signalName: "sales.orders.created",
-      entityId: "shop:kolb-antik",
-      entityType: "shop",
-      sourceId: "source-a",
-      dimensions: {
-        channel: "webshop",
-      },
-    });
-
-    expect(resource).toEqual({
-      key: "shop:shop:kolb-antik",
-      id: "shop:kolb-antik",
-      label: "shop:kolb-antik",
-      type: "shop",
-    });
+  test("rejects ambiguous types and distinguishes equal ids of different types", () => {
+    expect(explicitPulseResource({ type: "a:b", id: "c" })).toBeNull();
+    expect(explicitPulseResource({ type: "a", id: "b:c" })?.key).toBe("a:b:c");
+    expect(explicitPulseResource({ type: "host", id: "alpha" })?.key).not.toBe(
+      explicitPulseResource({ type: "service", id: "alpha" })?.key,
+    );
   });
-
-  test("does not expose an internal Source ID as a resource identity", () => {
-    const resource = derivePulseResource({
-      signalName: "custom.metric",
-      sourceId: "11111111-1111-4111-8111-111111111111",
-      dimensions: {},
-    });
-
-    expect(resource).toBeNull();
-  });
-
-  test("keeps observed resource keys within the CloudResourceRef budget", () => {
+  test("keeps resource keys within the Cloud reference budget", () => {
     const type = "service";
-    const allowedId = "a".repeat(PULSE_RESOURCE_KEY_MAX_LENGTH - type.length - 1);
-
-    expect(explicitPulseResource({ type, id: allowedId })?.key).toHaveLength(PULSE_RESOURCE_KEY_MAX_LENGTH);
-    expect(explicitPulseResource({ type, id: `${allowedId}a` })).toBeNull();
-    expect(
-      derivePulseResource({
-        signalName: "custom.metric",
-        entityType: type,
-        entityId: `${allowedId}a`,
-        dimensions: {},
-      }),
-    ).toBeNull();
-    expect(
-      derivePulseResource({
-        signalName: "custom.metric",
-        entityType: type,
-        entityId: ` ${allowedId}`,
-        dimensions: {},
-      }),
-    ).toBeNull();
-  });
-
-  test("formats signal subjects from the derived resource", () => {
-    expect(
-      pulseSignalSubject({
-        signalName: "system.net.rx",
-        dimensions: {
-          host: "host-a",
-          interface: "en0",
-        },
-      }),
-    ).toBe("network:en0");
+    const id = "a".repeat(PULSE_RESOURCE_KEY_MAX_LENGTH - type.length - 1);
+    expect(explicitPulseResource({ type, id })?.key).toHaveLength(PULSE_RESOURCE_KEY_MAX_LENGTH);
+    expect(explicitPulseResource({ type, id: `${id}a` })).toBeNull();
   });
 });

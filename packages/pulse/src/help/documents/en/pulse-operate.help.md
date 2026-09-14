@@ -30,7 +30,7 @@ Use this page when data is missing, access needs to change, or a public display 
 
 :::reference
 - **No data appears:** Check the source first. It must report a successful update before resources, signals, or dashboards can show data.
-- **A query matches too much:** Open Inventory or the signal page, then add source, entity, entity_type, or where filters.
+- **A query matches too much:** Open Inventory or the signal page, then add source, resource, resource_type, or where filters.
 - **A chart is empty:** Check the time range and aggregation. Counters usually need rate or increase; gauges usually need avg or latest.
 - **Rows look duplicated:** Open the resource or signal page. Repeated rows are usually variants with different resources or dimensions.
 - **A metric has too many variants:** Inspect its dimensions. Keep stable grouping labels, then move unique identities or event detail into an event's identity fields, attributes, sensitive fields, or payload.

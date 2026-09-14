@@ -15,16 +15,14 @@ process_resident_memory_bytes{host="worker-1",note="line\\nquote\\"slash\\\\"} 1
         name: "http_requests_total",
         value: 42,
         type: "counter",
-        entityId: "api-1",
-        entityType: "target",
+        resource: { type: "target", id: "api-1" },
         dimensions: { method: "GET", route: "/api", instance: "api-1" },
       },
       {
         name: "process_resident_memory_bytes",
         value: 123.5,
         type: "gauge",
-        entityId: "worker-1",
-        entityType: "target",
+        resource: { type: "target", id: "worker-1" },
         dimensions: { host: "worker-1", note: 'line\nquote"slash\\' },
       },
     ]);
@@ -62,8 +60,7 @@ valid_value -1.25e3
         name: "valid_value",
         value: -1250,
         type: "gauge",
-        entityId: null,
-        entityType: null,
+        resource: null,
         dimensions: {},
       },
     ]);

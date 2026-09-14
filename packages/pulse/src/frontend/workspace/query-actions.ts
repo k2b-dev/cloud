@@ -26,10 +26,10 @@ export const queryWithSourceFilter = (query: string, sourceId: string): string =
 };
 
 const sourceClause = (sourceId: string | null | undefined) => (sourceId ? ` source ${sourceId}` : "");
-const entityClause = (entityId: string | null | undefined) => (entityId ? ` entity ${quoteQueryPart(entityId)}` : "");
+const resourceClause = (resourceKey: string | null | undefined) => (resourceKey ? ` resource ${quoteQueryPart(resourceKey)}` : "");
 
 const whereClause = (dimensions: Record<string, string>) => {
-  const entries = Object.entries(dimensions).slice(0, 8);
+  const entries = Object.entries(dimensions);
   return entries.length ? ` where ${entries.map(([key, value]) => `${key}=${quoteQueryPart(value)}`).join(", ")}` : "";
 };
 
@@ -38,6 +38,7 @@ export const metricSummaryQueryText = (
   options: {
     dimensions?: Record<string, string>;
     sourceId?: string | null;
+    resourceKey?: string | null;
   } = {},
 ): string =>
   buildPulseQuery({
@@ -46,6 +47,7 @@ export const metricSummaryQueryText = (
     bucket: metric.type === "gauge" ? "1m" : "5m",
     since: "24h",
     sourceId: options.sourceId,
+    resourceKey: options.resourceKey,
     dimensions: options.dimensions,
   });
 
@@ -56,31 +58,32 @@ export const resourceMetricQueryText = (metric: PulseResourceMetric): string =>
     bucket: metric.type === "gauge" ? "1m" : "5m",
     since: "24h",
     sourceId: metric.sourceId,
+    resourceKey: metric.resourceKey,
     dimensions: metric.dimensions,
   });
 
 export const eventKindQueryText = (
   kind: string,
   options: {
-    entityId?: string | null;
+    resourceKey?: string | null;
     sourceId?: string | null;
   } = {},
-): string => `events ${quoteQueryPart(kind)} since 24h${sourceClause(options.sourceId)}${entityClause(options.entityId)} limit 100`;
+): string => `events ${quoteQueryPart(kind)} since 24h${sourceClause(options.sourceId)}${resourceClause(options.resourceKey)} limit 100`;
 
 export const stateKeyQueryText = (
   key: string,
   options: {
-    entityId?: string | null;
+    resourceKey?: string | null;
     sourceId?: string | null;
   } = {},
-): string => `states ${quoteQueryPart(key)} since 10m${sourceClause(options.sourceId)}${entityClause(options.entityId)} limit 100`;
+): string => `states ${quoteQueryPart(key)} since 10m${sourceClause(options.sourceId)}${resourceClause(options.resourceKey)} limit 100`;
 
 export const recordedEventQueryText = (event: PulseRecordedEvent): string =>
-  `events ${quoteQueryPart(event.kind)} since 24h${sourceClause(event.sourceId)}${entityClause(event.entityId)}${whereClause(
+  `events ${quoteQueryPart(event.kind)} since 24h${sourceClause(event.sourceId)}${resourceClause(event.resourceKey)}${whereClause(
     event.dimensions,
   )} limit 100`;
 
 export const currentStateQueryText = (state: PulseCurrentState): string =>
-  `states ${quoteQueryPart(state.key)} since 10m${sourceClause(state.sourceId)}${entityClause(state.entityId)}${whereClause(
+  `states ${quoteQueryPart(state.key)} since 10m${sourceClause(state.sourceId)}${resourceClause(state.resourceKey)}${whereClause(
     state.dimensions,
   )} limit 100`;

@@ -2,6 +2,7 @@ import { clipboard } from "@k2b/stdlib/browser";
 import { AppWorkspace, Button, NoticeCard, Panes, type PanesLayout, toast } from "@k2b/ui";
 import { createEffect, createSignal, on, Show, untrack } from "solid-js";
 import type { MetricType, PulseDashboard, PulseDashboardConfig, PulseResourceSummary, PulseSource } from "../contracts";
+import { usePulseMessages } from "./use-messages";
 import { createBaseController } from "./workspace/base-controller";
 import DashboardEditorView from "./workspace/DashboardEditorView";
 import DashboardView, { type DashboardRenderContext } from "./workspace/DashboardView";
@@ -43,7 +44,6 @@ import { createWorkspaceDerivedModel } from "./workspace/workspace-derived-model
 import { installWorkspaceEffects } from "./workspace/workspace-effects";
 import { createPulseWorkspaceQueries } from "./workspace/workspace-queries";
 import { createPulseWorkspaceState } from "./workspace/workspace-state";
-import { usePulseMessages } from "./use-messages";
 
 export default function PulseWorkspace(props: PulseWorkspaceProps) {
   const t = usePulseMessages();
@@ -118,7 +118,7 @@ export default function PulseWorkspace(props: PulseWorkspaceProps) {
     activityMetrics,
     activitySearch,
     bases,
-    browseEntityId,
+    browseResourceKey,
     browseSearch,
     browseSourceId,
     dashboardControlValues,
@@ -168,7 +168,7 @@ export default function PulseWorkspace(props: PulseWorkspaceProps) {
     selectedSourceId,
     selectedVisual,
     setActivitySearch,
-    setBrowseEntityId,
+    setBrowseResourceKey,
     setBrowseSearch,
     setBrowseSourceId,
     setDashboardControlValues,
@@ -388,7 +388,7 @@ export default function PulseWorkspace(props: PulseWorkspaceProps) {
     writeBlocked: canonicalWriteBlocked,
     selectedVisual,
     browseSourceId,
-    browseEntityId,
+    browseResourceKey,
     openExplorer: () => openQueryExplorer(),
   });
   const {
@@ -952,9 +952,9 @@ export default function PulseWorkspace(props: PulseWorkspaceProps) {
       states={browseStates}
       labels={browseLabels}
       onClearSourceScope={() => setBrowseSourceId("")}
-      onClearEntityScope={() => setBrowseEntityId("")}
+      onClearEntityScope={() => setBrowseResourceKey("")}
       onSelectSource={setBrowseSourceId}
-      onSelectEntity={setBrowseEntityId}
+      onSelectEntity={setBrowseResourceKey}
       onMetricQuery={setMetricBrowseQuery}
       onEventQuery={setEventBrowseQuery}
       onStateQuery={setStateBrowseQuery}

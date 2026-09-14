@@ -2,7 +2,7 @@ import { beforeAll, describe, expect, test } from "bun:test";
 import { sql } from "bun";
 import { newShortId } from "../lib/short-id";
 import { prepareIngestBatch, writePreparedIngestBatchInTransaction } from "./ingest-bulk";
-import { recordEvent } from "./ingest-writer";
+import { ingestBatch } from "./ingest-writer";
 import { queryEventsData } from "./query-execution";
 
 const runDbSmoke = process.env.PULSE_FIELD_CATALOG_DB_TEST === "1";
@@ -47,14 +47,18 @@ describe("Pulse field catalog Postgres smoke", () => {
           sourceId,
         );
         await sql.begin((tx) => writePreparedIngestBatchInTransaction({ baseId, sourceId, batch, db: tx }));
-        const single = await recordEvent({
+        const single = await ingestBatch({
           baseId,
           sourceId,
-          event: {
-            kind: "page.viewed",
-            dimensions: { campaign: "spring" },
-            attributes: { request_id: "request-secret-3", result: 201 },
-            sensitive: { ip: "192.0.2.15" },
+          batch: {
+            events: [
+              {
+                kind: "page.viewed",
+                dimensions: { campaign: "spring" },
+                attributes: { request_id: "request-secret-3", result: 201 },
+                sensitive: { ip: "192.0.2.15" },
+              },
+            ],
           },
         });
         expect(single.ok).toBe(true);

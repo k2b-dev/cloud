@@ -51,7 +51,7 @@ export default function QueryExplorerBrowsePane(props: {
   onClearSourceScope: () => void;
   onClearEntityScope: () => void;
   onSelectSource: (sourceId: string) => void;
-  onSelectEntity: (entityId: string) => void;
+  onSelectEntity: (resourceKey: string) => void;
   onMetricQuery: (metric: PulseMetricSummary, sampleDimensions: Record<string, string>) => void;
   onEventQuery: (kind: string, sample: PulseRecordedEvent) => void;
   onStateQuery: (key: string, sample: PulseCurrentState) => void;
@@ -89,10 +89,10 @@ export default function QueryExplorerBrowsePane(props: {
             )}
           </Show>
           <Show when={props.selectedEntity()}>
-            {(entity) => (
+            {(resource) => (
               <span class={scopeTagClass}>
                 <i class="ti ti-cube" />
-                <span class="truncate">{t().resourceScope({ id: entity().id })}</span>
+                <span class="truncate">{t().resourceScope({ id: resource().id })}</span>
                 <button type="button" class={clearScopeButtonClass} onClick={props.onClearEntityScope} aria-label={t().clearResourceScope}>
                   <i class="ti ti-x" />
                 </button>
@@ -120,7 +120,11 @@ export default function QueryExplorerBrowsePane(props: {
                       <span class="flex items-center gap-2">
                         <i class={`${sourceKindIcon(source.kind)} text-dimmed`} />
                         <span class="min-w-0 flex-1 truncate text-sm font-medium text-secondary">{source.name}</span>
-                        <span class={sourceStatus(source, { paused: t().paused, error: t().error, healthy: t().healthy, waiting: t().waiting }).text}>
+                        <span
+                          class={
+                            sourceStatus(source, { paused: t().paused, error: t().error, healthy: t().healthy, waiting: t().waiting }).text
+                          }
+                        >
                           {sourceStatus(source, { paused: t().paused, error: t().error, healthy: t().healthy, waiting: t().waiting }).label}
                         </span>
                       </span>
@@ -141,15 +145,15 @@ export default function QueryExplorerBrowsePane(props: {
             </div>
             <Show when={props.entities().length > 0} fallback={<p class="px-1 py-2 text-xs text-dimmed">{t().noMatchingResources}</p>}>
               <For each={props.entities()}>
-                {(entity) => (
-                  <button type="button" class={rowClass} onClick={() => props.onSelectEntity(entity.id)}>
+                {(resource) => (
+                  <button type="button" class={rowClass} onClick={() => props.onSelectEntity(resource.id)}>
                     <span class="flex items-center gap-2">
                       <i class="ti ti-cube text-dimmed" />
-                      <span class="min-w-0 flex-1 truncate text-sm font-medium text-secondary">{entity.id}</span>
-                      <span class="text-[11px] text-dimmed">{entity.type ?? "entity"}</span>
+                      <span class="min-w-0 flex-1 truncate text-sm font-medium text-secondary">{resource.id}</span>
+                      <span class="text-[11px] text-dimmed">{resource.type ?? "resource"}</span>
                     </span>
                     <span class="mt-1 block truncate text-[11px] text-dimmed">
-                      {t().ingestCounts({ metrics: entity.metricCount, events: entity.eventCount, states: entity.stateCount })}
+                      {t().ingestCounts({ metrics: resource.metricCount, events: resource.eventCount, states: resource.stateCount })}
                     </span>
                   </button>
                 )}
@@ -220,7 +224,8 @@ export default function QueryExplorerBrowsePane(props: {
                       <button type="button" class="block w-full text-left" onClick={() => props.onStateQuery(state.key, state.sample)}>
                         <span class="block truncate text-sm font-medium text-secondary">{state.key}</span>
                         <span class="block truncate text-[11px] text-dimmed">
-                          {t().currentRowCount({ count: state.count })} · {t().latestSignalValue({ value: formatSignalValue(state.sample.value) })}
+                          {t().currentRowCount({ count: state.count })} ·{" "}
+                          {t().latestSignalValue({ value: formatSignalValue(state.sample.value) })}
                         </span>
                       </button>
                     </div>

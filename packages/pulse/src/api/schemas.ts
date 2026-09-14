@@ -64,7 +64,7 @@ const EventSensitiveSchema = z
   .optional();
 
 const ResourceSchema = z
-  .object({
+  .strictObject({
     type: z.string().trim().min(1).max(80),
     id: z.string().trim().min(1).max(500),
     label: z.string().trim().min(1).max(240).nullable().optional(),
@@ -76,26 +76,22 @@ const ResourceSchema = z
   .nullable()
   .optional();
 
-const MetricSchema = z.object({
+const MetricSchema = z.strictObject({
   name: z.string().trim().min(1),
   value: z.number().finite(),
   ts: z.string().datetime().optional(),
   unit: z.string().trim().min(1).nullable().optional(),
   type: z.enum(METRIC_TYPES).optional(),
   sourceId: z.never().optional(),
-  entityId: z.string().trim().min(1).nullable().optional(),
-  entityType: z.string().trim().min(1).nullable().optional(),
   resource: ResourceSchema,
   dimensions: DimensionsSchema,
 });
 
-const EventSchema = z.object({
+const EventSchema = z.strictObject({
   kind: z.string().trim().min(1),
   ts: z.string().datetime().optional(),
   value: z.number().finite().nullable().optional(),
   sourceId: z.never().optional(),
-  entityId: z.string().trim().min(1).nullable().optional(),
-  entityType: z.string().trim().min(1).nullable().optional(),
   actorId: z.string().trim().min(1).nullable().optional(),
   sessionId: z.string().trim().min(1).nullable().optional(),
   correlationId: z.string().trim().min(1).nullable().optional(),
@@ -106,19 +102,17 @@ const EventSchema = z.object({
   payload: EventPayloadSchema,
 });
 
-const StateSchema = z.object({
+const StateSchema = z.strictObject({
   key: z.string().trim().min(1),
   value: z.union([z.string(), z.number(), z.boolean(), z.null()]),
   ts: z.string().datetime().optional(),
   sourceId: z.never().optional(),
-  entityId: z.string().trim().min(1).nullable().optional(),
-  entityType: z.string().trim().min(1).nullable().optional(),
   resource: ResourceSchema,
   dimensions: DimensionsSchema,
 });
 
 export const IngestBatchSchema = z
-  .object({
+  .strictObject({
     metrics: z.array(MetricSchema).max(PULSE_EXTERNAL_INGEST_COLLECTION_LIMIT).optional(),
     events: z.array(EventSchema).max(PULSE_EXTERNAL_INGEST_COLLECTION_LIMIT).optional(),
     states: z.array(StateSchema).max(PULSE_EXTERNAL_INGEST_COLLECTION_LIMIT).optional(),
@@ -159,7 +153,7 @@ export const UpdateBaseAccessSchema = z.object({
   permission: PermissionLevelSchema.exclude(["none"]),
 });
 
-export const CreateSourceSchema = z.object({
+export const CreateSourceSchema = z.strictObject({
   kind: z.enum(SOURCE_KINDS),
   name: z.string().trim().min(1).max(120),
   endpointUrl: z.string().trim().min(1).max(2_000).nullable().optional(),
@@ -173,7 +167,7 @@ export const CreateSourceApiKeySchema = z.object({
   permission: z.literal("write").default("write"),
 });
 
-export const UpdateSourceSchema = z.object({
+export const UpdateSourceSchema = z.strictObject({
   name: z.string().trim().min(1).max(120).optional(),
   enabled: z.boolean().optional(),
   endpointUrl: z.string().trim().min(1).max(2_000).nullable().optional(),
@@ -191,8 +185,8 @@ const DashboardMetricWidgetSchema = z.object({
   bucket: DurationSchema,
   since: DurationSchema,
   sourceId: PulseShortIdSchema.nullable().optional(),
-  entityId: z.string().nullable().optional(),
-  entityType: z.string().nullable().optional(),
+  resourceKey: z.string().nullable().optional(),
+  resourceType: z.string().nullable().optional(),
   dimensions: DimensionsSchema,
   queryText: z.string().trim().max(8_000).optional(),
   query: z
@@ -203,8 +197,8 @@ const DashboardMetricWidgetSchema = z.object({
       bucket: DurationSchema,
       since: DurationSchema,
       sourceId: PulseShortIdSchema.nullable().optional(),
-      entityId: z.string().nullable().optional(),
-      entityType: z.string().nullable().optional(),
+      resourceKey: z.string().nullable().optional(),
+      resourceType: z.string().nullable().optional(),
       dimensions: DimensionsSchema,
     })
     .optional(),
@@ -223,24 +217,24 @@ const DashboardMetricWidgetSchema = z.object({
   span: z.number().int().min(1).max(12).optional(),
 });
 
-const DashboardEventQuerySchema = z.object({
+const DashboardEventQuerySchema = z.strictObject({
   kind: z.literal("events"),
   event: z.string().trim().min(1).max(240).nullable(),
   since: DurationSchema,
   sourceId: PulseShortIdSchema.nullable().optional(),
-  entityId: z.string().nullable().optional(),
-  entityType: z.string().nullable().optional(),
+  resourceKey: z.string().nullable().optional(),
+  resourceType: z.string().nullable().optional(),
   dimensions: DimensionsSchema,
   limit: z.number().int().min(1).max(1_000),
 });
 
-const DashboardStateQuerySchema = z.object({
+const DashboardStateQuerySchema = z.strictObject({
   kind: z.literal("states"),
   state: z.string().trim().min(1).max(240).nullable(),
   since: DurationSchema.nullable().optional(),
   sourceId: PulseShortIdSchema.nullable().optional(),
-  entityId: z.string().nullable().optional(),
-  entityType: z.string().nullable().optional(),
+  resourceKey: z.string().nullable().optional(),
+  resourceType: z.string().nullable().optional(),
   dimensions: DimensionsSchema,
   limit: z.number().int().min(1).max(1_000),
 });
@@ -378,12 +372,12 @@ const DashboardLayoutSchema = z.object({
     .array(
       z.object({
         id: z.string().trim().min(1).max(80),
-        kind: z.enum(["range", "source", "entity", "entity_type", "label", "text"]),
+        kind: z.enum(["range", "source", "resource", "resource_type", "label", "text"]),
         variable: z.string().trim().min(1).max(80),
         label: z.string().trim().min(1).max(160),
         defaultValue: z.string().trim().max(240),
         options: z.array(z.string().trim().min(1).max(240)).max(100).optional(),
-        entityType: z.string().trim().min(1).max(80).nullable().optional(),
+        resourceType: z.string().trim().min(1).max(80).nullable().optional(),
       }),
     )
     .max(24)
@@ -415,15 +409,15 @@ export const UpdateDashboardSchema = z.object({
   config: DashboardConfigInputSchema.optional(),
 });
 
-export const MetricQuerySchema = z.object({
+export const MetricQuerySchema = z.strictObject({
   baseId: PulseShortIdSchema,
   metric: z.string().trim().min(1),
   aggregation: z.enum(AGGREGATIONS),
   bucket: DurationSchema,
   since: DurationSchema,
   sourceId: PulseShortIdSchema.nullable().optional(),
-  entityId: z.string().nullable().optional(),
-  entityType: z.string().nullable().optional(),
+  resourceKey: z.string().nullable().optional(),
+  resourceType: z.string().nullable().optional(),
   dimensions: DimensionsSchema,
   reduce: z.enum(["sum", "avg", "min", "max"]).nullable().optional(),
   groupBy: z.string().trim().min(1).max(80).nullable().optional(),
@@ -431,14 +425,14 @@ export const MetricQuerySchema = z.object({
 
 const CompiledMetricQuerySchema = MetricQuerySchema.extend({ kind: z.literal("metric") });
 
-const EventQuerySchema = z.object({
+const EventQuerySchema = z.strictObject({
   kind: z.literal("events"),
   baseId: PulseShortIdSchema,
   event: z.string().nullable(),
   since: DurationSchema,
   sourceId: PulseShortIdSchema.nullable().optional(),
-  entityId: z.string().nullable().optional(),
-  entityType: z.string().nullable().optional(),
+  resourceKey: z.string().nullable().optional(),
+  resourceType: z.string().nullable().optional(),
   dimensions: DimensionsSchema,
   aggregation: z.enum(EVENT_AGGREGATIONS).optional(),
   bucket: DurationSchema.nullable().optional(),
@@ -446,14 +440,14 @@ const EventQuerySchema = z.object({
   limit: z.number().int().positive().max(1_000),
 });
 
-const StateQuerySchema = z.object({
+const StateQuerySchema = z.strictObject({
   kind: z.literal("states"),
   baseId: PulseShortIdSchema,
   state: z.string().nullable(),
   since: DurationSchema.nullable().optional(),
   sourceId: PulseShortIdSchema.nullable().optional(),
-  entityId: z.string().nullable().optional(),
-  entityType: z.string().nullable().optional(),
+  resourceKey: z.string().nullable().optional(),
+  resourceType: z.string().nullable().optional(),
   dimensions: DimensionsSchema,
   limit: z.number().int().positive().max(1_000),
 });
@@ -486,23 +480,23 @@ export const CreateSavedQuerySchema = z.object({
   query: z.string().trim().min(1).max(2_000),
 });
 
-export const MetricSeriesQuerySchema = z.object({
+export const MetricSeriesQuerySchema = z.strictObject({
   metric: z.string().trim().min(1).max(240),
   sourceId: PulseShortIdSchema.optional(),
-  entityId: z.string().trim().min(1).max(500).optional(),
-  entityType: z.string().trim().min(1).max(120).optional(),
+  resourceKey: z.string().trim().min(1).max(PULSE_RESOURCE_KEY_MAX_LENGTH).optional(),
+  resourceType: z.string().trim().min(1).max(120).optional(),
   q: z.string().trim().max(200).optional(),
   limit: z.coerce.number().int().min(1).max(500).optional(),
   offset: z.coerce.number().int().min(0).max(1_000_000).optional(),
 });
 
-export const ActivitySearchQuerySchema = z.object({
+export const ActivitySearchQuerySchema = z.strictObject({
   q: z.string().trim().max(200).optional(),
   limit: z.coerce.number().int().min(1).max(500).optional(),
   offset: z.coerce.number().int().min(0).max(1_000_000).optional(),
   sourceId: PulseShortIdSchema.optional(),
-  entityId: z.string().trim().min(1).max(500).optional(),
-  entityType: z.string().trim().min(1).max(120).optional(),
+  resourceKey: z.string().trim().min(1).max(PULSE_RESOURCE_KEY_MAX_LENGTH).optional(),
+  resourceType: z.string().trim().min(1).max(120).optional(),
   kind: z.string().trim().min(1).max(240).optional(),
   key: z.string().trim().min(1).max(240).optional(),
 });
@@ -511,7 +505,7 @@ export const MetricsQuerySchema = ActivitySearchQuerySchema.extend({
   type: z.enum(METRIC_TYPES).optional(),
 });
 
-export const ResourceListQuerySchema = z.object({
+export const ResourceListQuerySchema = z.strictObject({
   q: z.string().trim().max(200).optional(),
   ref: z.string().trim().min(1).max(PULSE_RESOURCE_KEY_MAX_LENGTH).optional(),
   type: z.string().trim().min(1).max(120).optional(),
@@ -520,7 +514,7 @@ export const ResourceListQuerySchema = z.object({
   offset: z.coerce.number().int().min(0).max(1_000_000).optional(),
 });
 
-export const SignalFieldQuerySchema = z.object({
+export const SignalFieldQuerySchema = z.strictObject({
   q: z.string().trim().max(200).optional(),
   sourceId: PulseShortIdSchema.optional(),
   scope: z.enum(["metric", "event", "state"]).optional(),
@@ -529,7 +523,7 @@ export const SignalFieldQuerySchema = z.object({
   offset: z.coerce.number().int().min(0).max(1_000_000).optional(),
 });
 
-export const ResourceMetricQuerySchema = z.object({
+export const ResourceMetricQuerySchema = z.strictObject({
   resourceKey: z.string().trim().min(1).max(PULSE_RESOURCE_KEY_MAX_LENGTH),
   q: z.string().trim().max(200).optional(),
   sourceId: PulseShortIdSchema.optional(),
@@ -538,7 +532,7 @@ export const ResourceMetricQuerySchema = z.object({
   offset: z.coerce.number().int().min(0).max(1_000_000).optional(),
 });
 
-export const ResourceEventQuerySchema = z.object({
+export const ResourceEventQuerySchema = z.strictObject({
   resourceKey: z.string().trim().min(1).max(PULSE_RESOURCE_KEY_MAX_LENGTH),
   q: z.string().trim().max(200).optional(),
   sourceId: PulseShortIdSchema.optional(),
@@ -547,7 +541,7 @@ export const ResourceEventQuerySchema = z.object({
   offset: z.coerce.number().int().min(0).max(1_000_000).optional(),
 });
 
-export const ResourceStateQuerySchema = z.object({
+export const ResourceStateQuerySchema = z.strictObject({
   resourceKey: z.string().trim().min(1).max(PULSE_RESOURCE_KEY_MAX_LENGTH),
   q: z.string().trim().max(200).optional(),
   sourceId: PulseShortIdSchema.optional(),
@@ -652,15 +646,16 @@ const PublicRecordedEventSchema = z.object({
   kind: z.string(),
   ts: z.string(),
   value: z.number().nullable(),
-  entityId: z.string().nullable(),
-  entityType: z.string().nullable(),
+  resourceKey: z.string().nullable(),
+  resourceType: z.string().nullable(),
 });
 
 const PublicCurrentStateSchema = z.object({
+  variantKey: z.string(),
   key: z.string(),
   value: z.unknown(),
-  entityId: z.string(),
-  entityType: z.string().nullable(),
+  resourceKey: z.string().nullable(),
+  resourceType: z.string().nullable(),
   updatedAt: z.string(),
 });
 
@@ -701,8 +696,8 @@ export const MetricSeriesSchema = z.object({
   id: z.string(),
   metric: z.string(),
   sourceId: PulseShortIdSchema.nullable(),
-  entityId: z.string().nullable(),
-  entityType: z.string().nullable(),
+  resourceKey: z.string().nullable(),
+  resourceType: z.string().nullable(),
   dimensions: z.record(z.string(), z.string()),
   lastSeenAt: z.string().nullable(),
   latestValue: z.number().nullable(),
@@ -744,8 +739,8 @@ export const RecordedEventSchema = z.object({
   ts: z.string(),
   value: z.number().nullable(),
   sourceId: PulseShortIdSchema.nullable(),
-  entityId: z.string().nullable(),
-  entityType: z.string().nullable(),
+  resourceKey: z.string().nullable(),
+  resourceType: z.string().nullable(),
   dimensions: z.record(z.string(), z.string()),
   attributes: z.record(z.string(), z.unknown()),
   payload: z.record(z.string(), z.unknown()),
@@ -753,11 +748,12 @@ export const RecordedEventSchema = z.object({
 });
 
 export const CurrentStateSchema = z.object({
+  variantKey: z.string(),
   key: z.string(),
   value: z.unknown(),
   sourceId: PulseShortIdSchema.nullable(),
-  entityId: z.string(),
-  entityType: z.string().nullable(),
+  resourceKey: z.string().nullable(),
+  resourceType: z.string().nullable(),
   dimensions: z.record(z.string(), z.string()),
   updatedAt: z.string(),
 });

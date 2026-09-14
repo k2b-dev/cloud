@@ -155,7 +155,7 @@ class Parser {
   }
 
   private readControlOptionState(variable: string): ControlOptionState {
-    const state: ControlOptionState = { variable, defaultValue: "", options: [], entityType: null };
+    const state: ControlOptionState = { variable, defaultValue: "", options: [], resourceType: null };
     while (this.hasInlineStatementContent()) {
       const optionStart = this.position;
       const keyword = this.readIdentifier();
@@ -177,7 +177,7 @@ class Parser {
       return true;
     }
     if (keyword === "type") {
-      state.entityType = this.readBareOrString() ?? state.entityType;
+      state.resourceType = this.readBareOrString() ?? state.resourceType;
       return true;
     }
     if (keyword === "options") {

@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { prepareIngestBatch } from "./ingest-bulk";
 
 describe("Pulse bulk ingest preparation", () => {
-  test("binds every signal to the authenticated source instead of payload source ids", () => {
+  test("binds signal variants to the authenticated source", () => {
     const sourceId = "11111111-1111-4111-8111-111111111111";
     const prepared = prepareIngestBatch(
       {
@@ -10,9 +10,6 @@ describe("Pulse bulk ingest preparation", () => {
           {
             name: "system.cpu.usage",
             value: 42,
-            sourceId: "22222222-2222-4222-8222-222222222222",
-            entityId: "host:alpha",
-            entityType: "host",
             resource: { type: "host", id: "alpha", label: "Alpha" },
             dimensions: { host: "alpha" },
           },
@@ -20,9 +17,6 @@ describe("Pulse bulk ingest preparation", () => {
         events: [
           {
             kind: "deploy.finished",
-            sourceId: null,
-            entityId: "host:alpha",
-            entityType: "host",
             resource: { type: "host", id: "alpha", label: "Alpha" },
             attributes: { request_id: "request-1", location: { city: "Berlin" } },
             sensitive: { ip: "203.0.113.42" },
@@ -32,9 +26,6 @@ describe("Pulse bulk ingest preparation", () => {
           {
             key: "system.online",
             value: true,
-            sourceId: "33333333-3333-4333-8333-333333333333",
-            entityId: "host:alpha",
-            entityType: "host",
             resource: { type: "host", id: "alpha", label: "Alpha" },
           },
         ],
@@ -42,7 +33,7 @@ describe("Pulse bulk ingest preparation", () => {
       sourceId,
     );
 
-    expect(prepared.metrics[0]?.seriesKey.startsWith(`${sourceId}\u001f`)).toBe(true);
+    expect(prepared.metrics[0]?.seriesKey).toMatch(/^[a-f0-9]{64}$/);
     expect(prepared.resources).toHaveLength(1);
     expect(prepared.resources[0]).toEqual(
       expect.objectContaining({
@@ -64,8 +55,6 @@ describe("Pulse bulk ingest preparation", () => {
             kind: "page.viewed",
             actorId: "visitor:high-cardinality",
             sessionId: "session:high-cardinality",
-            entityId: "page:/pricing",
-            entityType: "page",
             attributes: { url: "https://example.com/pricing?request=unique" },
           },
         ],
@@ -84,8 +73,6 @@ describe("Pulse bulk ingest preparation", () => {
           {
             name: "docker.container.cpu.usage",
             value: 12,
-            entityId: "container:host-a:app",
-            entityType: "docker-container",
             resource: { type: "docker-container", id: "host-a:app", label: "app" },
             dimensions: { host: "host-a", container: "app", container_id: "volatile-id" },
           },
@@ -94,8 +81,6 @@ describe("Pulse bulk ingest preparation", () => {
           {
             key: "docker.container.running",
             value: true,
-            entityId: "container:host-a:app",
-            entityType: "docker-container",
             resource: { type: "docker-container", id: "host-a:app", label: "app" },
             dimensions: { host: "host-a", container: "app", container_id: "volatile-id" },
           },
@@ -150,8 +135,7 @@ describe("Pulse bulk ingest preparation", () => {
         metrics: Array.from({ length: 1_000 }, (_, index) => ({
           name: `system.metric.${index % 10}`,
           value: index,
-          entityId: "host:alpha",
-          entityType: "host",
+          resource: { type: "host", id: "alpha" },
           dimensions: { host: "alpha", region: "eu" },
         })),
       },
@@ -171,4 +155,23 @@ describe("Pulse bulk ingest preparation", () => {
       }),
     );
   });
+});
+
+test("uses one collision-safe variant identity and never infers generic resources", () => {
+  const resources = [{ type: "host", id: "same" }, { type: "service", id: "same" }, { type: "host", id: "other" }, null];
+  const batch = {
+    metrics: resources.map((resource) => ({ name: "load", value: 1, resource, dimensions: { host: "inference-must-not-happen" } })),
+    states: resources.map((resource) => ({ key: "online", value: true, resource, dimensions: { host: "inference-must-not-happen" } })),
+  };
+  const first = prepareIngestBatch(batch, "source-a");
+  const second = prepareIngestBatch(batch, "source-b");
+  expect(new Set([...first.metrics, ...second.metrics].map((row) => row.seriesKey)).size).toBe(8);
+  expect(first.metrics.map((row) => row.seriesKey)).toEqual(first.states.map((row) => row.variantKey));
+  expect(first.metrics[3]?.resourceKey).toBeNull();
+  expect(first.resources).toHaveLength(3);
+  const renamed = prepareIngestBatch(
+    { metrics: [{ ...batch.metrics[0]!, resource: { type: "host", id: "same", label: "Renamed" } }] },
+    "source-a",
+  );
+  expect(renamed.metrics[0]?.seriesKey).toBe(first.metrics[0]?.seriesKey);
 });

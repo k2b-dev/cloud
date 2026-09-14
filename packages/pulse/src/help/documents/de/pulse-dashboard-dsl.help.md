@@ -12,7 +12,7 @@ Dashboard DSL beschreibt das gesamte Dashboard. Schreibe den Inhalt als Text und
 :::steps
 1. **Mit einem Abschnitt beginnen:** Gib dem Dashboard einen Namen und füge den kleinsten Abschnitt hinzu, der eine konkrete Frage beantwortet.
 2. **Ein Widget hinzufügen:** Nutze je nach Abfrageausgabe `stat`, `gauge`, `line`, `bar`, `histogram`, `heatmap`, `map` oder `table`.
-3. **Steuerelemente bei Wiederholungen ergänzen:** Nutze gemeinsame Steuerelemente für Werte wie `range`, `source`, `entity`, `entity_type`, `label` oder `text`, die mehrere Widgets verwenden.
+3. **Steuerelemente bei Wiederholungen ergänzen:** Nutze gemeinsame Steuerelemente für Werte wie `range`, `source`, `resource`, `resource_type`, `label` oder `text`, die mehrere Widgets verwenden.
 4. **Zusammengehörige Widgets gruppieren:** Nutze Zeilen für nebeneinanderliegende Diagramme, Karten für zusammengehörige Gruppen und Abschnitte für größere Themen.
 5. **Entscheidungen an Ort und Stelle erklären:** Nutze Beschreibungen und Markdown für Betriebshinweise, Annahmen und Links.
 :::
@@ -61,18 +61,18 @@ Nutze `#` oder `//` für Zeilenkommentare an Stellen, an denen Leerraum erlaubt 
 dashboard "Ops" {
   controls {
     range "Range" variable range default 24h options 1h, 6h, 24h, 7d
-    entity "Container" variable entity_id type container default container:app-core
+    resource "Container" variable resource_key type container default container:app-core
   }
 
   section "Container" {
     line "Memory" {
-      query metric docker.container.memory.usage avg every 5m since $range entity $entity_id
+      query metric docker.container.memory.usage avg every 5m since $range resource $resource_key
     }
   }
 }
 ```
 
-Steuerelemente erzeugen Variablen wie `$range` oder `$entity_id`. Fehlt `variable`, leitet Pulse die Variable aus der Bezeichnung ab. Aus `Resource type` wird zum Beispiel `$resource_type`. Fehlt `default`, verwendet Pulse die erste Option. Ein Zeitraum ohne Standardwert und Optionen verwendet `24h`; andere Steuerelemente verwenden einen leeren Wert.
+Steuerelemente erzeugen Variablen wie `$range` oder `$resource_key`. Fehlt `variable`, leitet Pulse die Variable aus der Bezeichnung ab. Aus `Resource type` wird zum Beispiel `$resource_type`. Fehlt `default`, verwendet Pulse die erste Option. Ein Zeitraum ohne Standardwert und Optionen verwendet `24h`; andere Steuerelemente verwenden einen leeren Wert.
 
 Öffentliche Anzeigen verwenden die Standardwerte der Steuerelemente und zeigen keine interaktiven Steuerelemente. Wähle deshalb Standardwerte, die ohne Interaktion sinnvoll sind.
 
@@ -87,7 +87,7 @@ dashboard "Name" {
   controls {
     range "Range" variable range default 24h options 1h, 6h, 24h, 7d
     source "Source" variable source_id default Src001
-    entity "Entity" variable entity_id type container default container:app-core
+    resource "Resource" variable resource_key type container default container:app-core
     label "Region" variable region default eu options eu, us
     text "Search" variable search default ""
   }
@@ -101,11 +101,11 @@ dashboard "Name" {
     }
 
     table "Recent events" {
-      query events deploy.finished since $range entity $entity_id limit 50
+      query events deploy.finished since $range resource $resource_key limit 50
     }
 
     table "Current states" {
-      query states service.online entity $entity_id limit 50
+      query states service.online resource $resource_key limit 50
     }
 
     map "Recent engagement" {
@@ -168,7 +168,7 @@ dashboard "Solar overview" {
 | `dashboard "Name" { ... }` | root | Definiert ein Dashboard. Bearbeite dieses Dokument, um Inhalt und Layout zu ändern. | `dashboard "Ops" { stat "Status" { query metric service.online latest since 10m } }` |
 | `description "Text"` | dashboard, section, card, widget, markdown | Ergänzt Kontext für die lesende Person, ohne Datenabfragen zu ändern. | `description "Live operational view."` |
 | `controls { ... }` | dashboard | Deklariert wiederverwendbare Variablen, die über dem Dashboard angezeigt werden. | `controls { range "Range" variable range default 24h options 1h, 24h }` |
-| `range/source/entity/entity_type/label/text "Label"` | controls | Erstellt ein Steuerelement. Nutze `variable`, `default`, `options` und `type`, wenn sie benötigt werden. Fehlt `default`, wird die erste Option verwendet. | `entity "Container" variable entity_id type container default container:app-core` |
+| `range/source/resource/resource_type/label/text "Label"` | controls | Erstellt ein Steuerelement. Nutze `variable`, `default`, `options` und `type`, wenn sie benötigt werden. Fehlt `default`, wird die erste Option verwendet. | `resource "Container" variable resource_key type container default container:app-core` |
 | `section "Name" { ... }` | dashboard, section | Gruppiert zusammengehörige Zeilen und verschachtelte Abschnitte. | `section "Today" { line "Orders" { query metric orders.created increase since 24h } }` |
 | `row height sm\|md\|lg { ... }` | dashboard, section, card | Ordnet mehrere Widgets in einer Zeile an. Fehlt `height`, wird `md` verwendet. | `row height lg { line "CPU" { query metric system.cpu.usage avg since 6h } }` |
 | `card "Name" [span n] { ... }` | dashboard, section, row | Umrahmt zusammengehörige untergeordnete Widgets und optionales Markdown. Karten dürfen keine verschachtelten Karten oder Abschnitte enthalten. `span` ist eine optionale ganze Zahl von 1 bis 12. | `card "Battery" span 6 { gauge "Charge" { query metric battery.charge latest since 10m } }` |
@@ -190,7 +190,7 @@ dashboard "Solar overview" {
 :::
 
 :::info Karten fassen Ereignisorte zusammen
-Nutze eine Karte für Ereignisse mit Feldern für Breiten- und Längengrad in Dezimalgrad. Pulse gruppiert passende Ereignisse im ausgewählten Zeitraum nach Ort, optionaler Beschriftung und optionaler Reihe. Ungültige Koordinaten und Koordinaten außerhalb des gültigen Bereichs werden ignoriert. Eine Karte zeigt höchstens 1.000 zusammengefasste Punkte. Nutze Filter für Quelle, Entity und Dimensionen, wenn eine breite Abfrage nützliche Details verdecken würde. Auf einem öffentlichen Dashboard sind auch die von der Karte gezeigten zusammengefassten Koordinaten, Beschriftungen und Reihen öffentlich.
+Nutze eine Karte für Ereignisse mit Feldern für Breiten- und Längengrad in Dezimalgrad. Pulse gruppiert passende Ereignisse im ausgewählten Zeitraum nach Ort, optionaler Beschriftung und optionaler Reihe. Ungültige Koordinaten und Koordinaten außerhalb des gültigen Bereichs werden ignoriert. Eine Karte zeigt höchstens 1.000 zusammengefasste Punkte. Nutze Filter für Quelle, Resource und Dimensionen, wenn eine breite Abfrage nützliche Details verdecken würde. Auf einem öffentlichen Dashboard sind auch die von der Karte gezeigten zusammengefassten Koordinaten, Beschriftungen und Reihen öffentlich.
 :::
 
 :::info Steuerelemente definieren Variablen

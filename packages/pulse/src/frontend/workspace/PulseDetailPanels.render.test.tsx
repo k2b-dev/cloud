@@ -48,8 +48,8 @@ const metricSeries: PulseMetricSeries = {
   id: "series-1",
   metric: "system.cpu.usage",
   sourceId: source.id,
-  entityId: "node-1",
-  entityType: "host",
+  resourceKey: "node-1",
+  resourceType: "host",
   dimensions: { cpu: "0" },
   lastSeenAt: now,
   latestValue: 42,
@@ -57,11 +57,12 @@ const metricSeries: PulseMetricSeries = {
 };
 
 const state: PulseCurrentState = {
+  variantKey: "fixture-0",
   key: "system.online",
   value: true,
   sourceId: source.id,
-  entityId: "node-1",
-  entityType: "host",
+  resourceKey: "node-1",
+  resourceType: "host",
   dimensions: { region: "eu" },
   updatedAt: now,
 };
@@ -72,8 +73,8 @@ const event: PulseRecordedEvent = {
   ts: now,
   value: 1,
   sourceId: source.id,
-  entityId: "node-1",
-  entityType: "host",
+  resourceKey: "node-1",
+  resourceType: "host",
   dimensions: { region: "eu" },
   attributes: {},
   payload: { reason: "upgrade" },

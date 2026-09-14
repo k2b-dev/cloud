@@ -413,7 +413,6 @@ export const resolveIngestSourceForServiceAccount = async (
       AND (
         b.data_clear_started_at IS NULL
         OR b.data_clear_completed_at IS NOT NULL
-        OR b.data_clear_failed_at IS NOT NULL
       )
   `;
   return source ? ok({ id: source.id, baseId: source.base_id }) : fail(err.notFound("Ingest source"));

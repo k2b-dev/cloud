@@ -24,10 +24,9 @@ export const publicDashboardRefreshJitterMs = (randomValue: number): number =>
 export const publicDashboardRefreshDelayMs = (intervalSeconds: number, failures: number, randomValue: number): number =>
   publicDashboardRefreshBackoffMs(intervalSeconds, failures) + publicDashboardRefreshJitterMs(randomValue);
 
-export const publicDashboardEventSubject = (event: PulsePublicRecordedEvent): string => event.entityId || event.entityType || "-";
+export const publicDashboardEventSubject = (event: PulsePublicRecordedEvent): string => event.resourceKey || event.resourceType || "-";
 
-export const publicDashboardStateRowId = (state: PulsePublicCurrentState): string =>
-  [state.key, state.entityId, state.entityType ?? ""].join(":");
+export const publicDashboardStateRowId = (state: PulsePublicCurrentState): string => JSON.stringify([state.key, state.variantKey]);
 
 export const sanitizePublicDashboardMarkdown = (input: string): string =>
   input.replace(/!\[[^\]]*]\(\s*https?:\/\/[^)]+\)/gi, "").replace(/<img\b[^>]*>/gi, "");

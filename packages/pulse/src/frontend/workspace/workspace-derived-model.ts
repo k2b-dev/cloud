@@ -21,7 +21,7 @@ type WorkspaceState = ReturnType<typeof createPulseWorkspaceState> & ReturnType<
 export const createWorkspaceDerivedModel = (props: PulseWorkspaceProps, state: WorkspaceState) => {
   const {
     bases,
-    browseEntityId,
+    browseResourceKey,
     browseSearch,
     browseSourceId,
     currentStates,
@@ -161,11 +161,11 @@ export const createWorkspaceDerivedModel = (props: PulseWorkspaceProps, state: W
     }
     return scopes;
   });
-  const browseScope = createMemo(() => ({ sourceId: browseSourceId(), entityId: browseEntityId() }));
+  const browseScope = createMemo(() => ({ sourceId: browseSourceId(), resourceKey: browseResourceKey() }));
   const browseEntities = createMemo(() =>
     buildBrowseEntities({ inventory: inventory(), series: series(), events: recentEvents(), states: currentStates() }),
   );
-  const selectedBrowseEntity = createMemo(() => browseEntities().find((entity) => entity.id === browseEntityId()) ?? null);
+  const selectedBrowseEntity = createMemo(() => browseEntities().find((resource) => resource.id === browseResourceKey()) ?? null);
   const browseMatches = (values: Array<string | null | undefined>) => {
     const needle = browseSearchNeedle();
     return !needle || values.some((value) => value?.toLowerCase().includes(needle));
@@ -176,9 +176,9 @@ export const createWorkspaceDerivedModel = (props: PulseWorkspaceProps, state: W
   );
   const browseVisibleEntities = createMemo(() =>
     browseEntities()
-      .filter((entity) => {
-        if (browseSourceId() && !entity.sourceIds.includes(browseSourceId())) return false;
-        return browseMatches([entity.id, entity.type, ...Object.keys(entity.dimensions), ...Object.values(entity.dimensions)]);
+      .filter((resource) => {
+        if (browseSourceId() && !resource.sourceIds.includes(browseSourceId())) return false;
+        return browseMatches([resource.id, resource.type, ...Object.keys(resource.dimensions), ...Object.values(resource.dimensions)]);
       })
       .slice(0, 24),
   );
@@ -188,7 +188,7 @@ export const createWorkspaceDerivedModel = (props: PulseWorkspaceProps, state: W
       scopedSeries: browseScopedSeries(),
       allSeries: series(),
       selectedEntityDimensions: selectedBrowseEntity()?.dimensions ?? {},
-      entityId: browseEntityId(),
+      resourceKey: browseResourceKey(),
       matches: browseMatches,
     }),
   );

@@ -32,7 +32,7 @@ Read Pulse data from broad context to specific values:
 5. A **variant** is one signal for one source, resource, and dimension set.
 6. A **dimension** is an exact-match label such as `region`, `route`, `channel`, `mount`, or `compose_service`.
 
-The UI calls an observed object a resource. Query DSL calls its identifier `entity` and its class `entity_type`.
+The UI and query DSL use the same resource model. The `resource` clause selects a complete `type:id` key; `resource_type` selects a class.
 
 Pulse bases, sources, dashboards, and saved queries use immutable six-character IDs in CLI output, APIs, URLs, and Capability refs. Internal database UUIDs are not accepted as public selectors. Observed resources keep their domain `resource_key`; a cross-base resource ref combines the Base ID and resource key as `<base-id>/<resource-key>`. High-volume events, samples, series, state history, scrape runs, and credentials keep technical identities and are not promoted to short-ID resources. See [Public resource identifiers](/en/docs/data/public-resource-identifiers).
 
@@ -109,15 +109,15 @@ Do not infer warning thresholds from metric names alone.
 
 ```bash
 cld pulse query compile \
-  --query 'metric system.memory.usage avg every 5m since 24h entity host:macbook' \
+  --query 'metric system.memory.usage avg every 5m since 24h resource host:macbook' \
   --json
 
 cld pulse query run \
-  --query 'metric system.memory.usage avg every 5m since 24h entity host:macbook' \
+  --query 'metric system.memory.usage avg every 5m since 24h resource host:macbook' \
   --json
 ```
 
-Run every query planned for a widget. If a metric matches too many variants, add `source`, `entity`, `entity_type`, or `where` filters.
+Run every query planned for a widget. If a metric matches too many variants, add `source`, `resource`, `resource_type`, or `where` filters.
 
 ### 6. Build and verify the dashboard
 
@@ -182,22 +182,22 @@ Resource commands resolve an exact resource key, ID, or label. Filters include:
 ### Signals and variants
 
 ```bash
-cld pulse metrics --q memory --type gauge --entity-type host --json
-cld pulse series system.memory.usage --entity host:macbook --json
-cld pulse events --kind deploy.finished --entity-type service --limit 100 --json
-cld pulse states --key service.online --entity service:checkout --json
+cld pulse metrics --q memory --type gauge --resource-type host --json
+cld pulse series system.memory.usage --resource host:macbook --json
+cld pulse events --kind deploy.finished --resource-type service --limit 100 --json
+cld pulse states --key service.online --resource service:checkout --json
 ```
 
 The signal commands support source and resource scoping:
 
-- `metrics`: `--q`, `--type`, `--resource`, `--entity`, `--entity-type`, source filters, and pagination.
-- `series <metric>`: `--q`, `--resource`, `--entity`, `--entity-type`, source filters, and pagination.
-- `events`: `--q`, `--kind`, `--resource`, `--entity`, `--entity-type`, source filters, and pagination.
-- `states`: `--q`, `--key`, `--resource`, `--entity`, `--entity-type`, source filters, and pagination.
+- `metrics`: `--q`, `--type`, `--resource`, `--resource-type`, source filters, and pagination.
+- `series <metric>`: `--q`, `--resource`, `--resource-type`, source filters, and pagination.
+- `events`: `--q`, `--kind`, `--resource`, `--resource-type`, source filters, and pagination.
+- `states`: `--q`, `--key`, `--resource`, `--resource-type`, source filters, and pagination.
 
 Use `series` to inspect a metric's variants when it has several resources or dimension sets. Use a resource command when the question starts from an observed object.
 
-Do not combine `--resource` with `--entity` or `--entity-type`: resource mode resolves one resource first, while entity filters scope the base-wide signal endpoint.
+The `--resource` flag resolves an observed resource before reading its signals. `--resource-type` filters the base-wide signal endpoint.
 
 ### Observed fields
 
@@ -287,7 +287,6 @@ Pulse has three source kinds:
 
 - `metrics`: Pulse scrapes a Prometheus-compatible endpoint. `--endpoint-url` is required; bearer auth and scrape interval are optional.
 - `http_ingest`: external collectors push metrics, events, and states with labeled source tokens.
-- `internal`: metadata for Cloud-internal integrations. External collectors should normally use `http_ingest`.
 
 ```bash
 cld pulse sources create --name "API metrics" --kind metrics \
@@ -320,7 +319,7 @@ cld pulse source-tokens revoke "Warehouse importer" production-job --yes
 
 `--expires-at` accepts an ISO datetime. Store the returned token in the collector's secret store; do not place it in dashboard DSL, saved queries, shell history, or documentation.
 
-`cld pulse ingest` sends a batch through the signed-in user's authenticated API access and does not associate it with an HTTP ingest source. External collectors use `/api/pulse/ingest` with a source token instead.
+`cld pulse ingest --source <source>` sends a batch through the signed-in user's authenticated API access into that enabled source. External collectors use `/api/pulse/ingest` with a source token instead.
 
 Read [Pulse ingest](pulse-ingest.md) for the complete batch schema, collector request, source-token behavior, limits, transaction semantics, and idempotent retries.
 
@@ -426,8 +425,8 @@ With `--include-inventory`, the same object additionally contains `inventory` an
   "id": "series-uuid",
   "metric": "docker.container.cpu.usage",
   "sourceId": "Src001",
-  "entityId": "container:app-core",
-  "entityType": "container",
+  "resourceKey": "container:app-core",
+  "resourceType": "container",
   "dimensions": { "compose_service": "app-core" },
   "latestValue": 12.4,
   "latestSampleAt": "2026-07-12T12:00:00.000Z"
@@ -475,7 +474,7 @@ With `--include-inventory`, the same object additionally contains `inventory` an
 }
 ```
 
-Individual event rows include `id`, `kind`, `ts`, `value`, `sourceId`, `entityId`, `entityType`, `dimensions`, `attributes`, `payload`, and `recordedAt`. They intentionally omit `sensitive`, `actorId`, `sessionId`, and `correlationId`; summarized queries can still count unique actors and sessions. State rows include `key`, `value`, `sourceId`, `entityId`, `entityType`, `dimensions`, and `updatedAt`.
+Individual event rows include `id`, `kind`, `ts`, `value`, `sourceId`, `resourceKey`, `resourceType`, `dimensions`, `attributes`, `payload`, and `recordedAt`. They intentionally omit `sensitive`, `actorId`, `sessionId`, and `correlationId`; summarized queries can still count unique actors and sessions. State rows include a stable `variantKey`, `key`, `value`, `sourceId`, `resourceKey`, `resourceType`, `dimensions`, and `updatedAt`.
 
 ### Dashboard snapshot
 
@@ -604,7 +603,7 @@ Reusable filter groups:
 
 ```text
 source filter   = [--source <name-or-id> | --source-id <source-id>]
-resource filter = [--resource <key-or-id-or-label>] [--entity <id>] [--entity-type <type>]
+resource filter = [--resource <key-or-id-or-label>] [--resource-type <type>]
 page            = [--limit <1-500>] [--offset <non-negative>]
 ```
 
@@ -612,7 +611,7 @@ Sources and ingest:
 
 ```text
 cld pulse sources list [base]
-cld pulse sources create [base] --name <name> --kind <metrics|http_ingest|internal>
+cld pulse sources create [base] --name <name> --kind <metrics|http_ingest>
   [--endpoint-url <url>] [--bearer-token-file <path> | --bearer-token-stdin]
   [--scrape-interval-seconds <seconds>]
 cld pulse sources update [base] <source>
@@ -626,7 +625,7 @@ cld pulse sources scrapes [base] <source>
 cld pulse source-tokens list [base] <source>
 cld pulse source-tokens create [base] <source> --name <label> [--expires-at <ISO-datetime>]
 cld pulse source-tokens revoke [base] <source> <token-id-or-name-or-prefix> --yes
-cld pulse ingest [base] (--batch <json> | --file <path> | --stdin)
+cld pulse ingest [base] --source <source> (--batch <json> | --file <path> | --stdin)
 ```
 
 `metrics` sources require `--endpoint-url`. Scraping and scrape history apply only to metrics sources. Token commands apply only to HTTP ingest sources.

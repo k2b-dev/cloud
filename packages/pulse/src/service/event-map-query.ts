@@ -78,8 +78,8 @@ export const queryEventMapData = async (input: EventMapQuery): Promise<Result<Pu
       WHERE event.base_id = ${query.baseId}::uuid
         AND (${query.event ?? null}::text IS NULL OR event.kind = ${query.event ?? null})
         AND (${query.sourceId ?? null}::uuid IS NULL OR event.source_id = ${query.sourceId ?? null}::uuid)
-        AND (${query.entityId ?? null}::text IS NULL OR event.entity_id = ${query.entityId ?? null})
-        AND (${query.entityType ?? null}::text IS NULL OR event.entity_type = ${query.entityType ?? null})
+        AND (${query.resourceKey ?? null}::text IS NULL OR event.resource_key = ${query.resourceKey ?? null})
+        AND (${query.resourceType ?? null}::text IS NULL OR event.resource_type = ${query.resourceType ?? null})
         AND event.dimensions @> (${jsonbObject(dimensions)}::jsonb #>> '{}')::jsonb
         AND event.ts >= ${since}
     ),

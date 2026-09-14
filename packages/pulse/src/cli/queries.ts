@@ -53,12 +53,12 @@ export const queryCommands = [
           [{ key: "bucket" }, { key: "value" }],
         );
       } else if (result.events.length) {
-        printJsonOrTable(ctx, result, eventRows(result.events), [{ key: "kind" }, { key: "value" }, { key: "entity" }, { key: "ts" }]);
+        printJsonOrTable(ctx, result, eventRows(result.events), [{ key: "kind" }, { key: "value" }, { key: "resource" }, { key: "ts" }]);
       } else if (result.states.length) {
         printJsonOrTable(ctx, result, stateRows(result.states), [
           { key: "key" },
           { key: "value" },
-          { key: "entity" },
+          { key: "resource" },
           { key: "updatedAt" },
         ]);
       } else {

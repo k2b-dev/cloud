@@ -192,11 +192,11 @@ describe("Pulse dashboard DSL", () => {
       `dashboard "Ops" {
         section "Activity" {
           table "Deploys" {
-            query events deploy.finished since 24h entity service:api limit 25
+            query events deploy.finished since 24h resource service:api limit 25
           }
 
           table "Current states" {
-            query states service.online entity_type service limit 50
+            query states service.online resource_type service limit 50
           }
         }
       }`,
@@ -212,13 +212,13 @@ describe("Pulse dashboard DSL", () => {
     if (eventsWidget?.kind !== "events") return;
     expect(eventsWidget.query.kind).toBe("events");
     expect(eventsWidget.query.event).toBe("deploy.finished");
-    expect(eventsWidget.query.entityId).toBe("service:api");
+    expect(eventsWidget.query.resourceKey).toBe("service:api");
     expect(eventsWidget.query.limit).toBe(25);
     expect(statesWidget?.kind).toBe("states");
     if (statesWidget?.kind !== "states") return;
     expect(statesWidget.query.kind).toBe("states");
     expect(statesWidget.query.state).toBe("service.online");
-    expect(statesWidget.query.entityType).toBe("service");
+    expect(statesWidget.query.resourceType).toBe("service");
     expect(statesWidget.query.limit).toBe(50);
   });
 

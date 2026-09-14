@@ -19,7 +19,7 @@ Query DSL beantwortet jeweils eine Datenfrage. Entscheide, ob du einen Metrikver
 1. **Das Signal benennen:** Wähle die Metrik, Ereignisart oder den Zustandsschlüssel in der Oberfläche oder im Inventar aus.
 2. **Die Form wählen:** Metriken benötigen eine Aggregation. Ereignisse können Zeilen zurückgeben oder mit `count`, `sum` oder `unique` aggregiert werden.
 3. **Den Zeitraum festlegen:** Nutze `since` für den Zeitraum und `every` für Zeitfenster von Metriken oder zusammengefassten Ereignissen.
-4. **Den Bereich eingrenzen:** Ergänze Filter für `source`, `entity`, `entity_type` oder `where`, wenn das Ergebnis zu viele Varianten oder Zeilen enthält.
+4. **Den Bereich eingrenzen:** Ergänze Filter für `source`, `resource`, `resource_type` oder `where`, wenn das Ergebnis zu viele Varianten oder Zeilen enthält.
 :::
 
 ## Anweisungstypen {icon="book-2"}
@@ -33,8 +33,8 @@ metric <metric> <aggregation>
   [group by <resource|dimension>]
   [since <duration>]
   [source <source-id>]
-  [entity <id>]
-  [entity_type <type>]
+  [resource <id>]
+  [resource_type <type>]
   [where <key>=<value>, ...]
 ```
 
@@ -47,8 +47,8 @@ events [<kind>|*]
   [group by <dimension>, ...]
   [since <duration>]
   [source <source-id>]
-  [entity <id>]
-  [entity_type <type>]
+  [resource <id>]
+  [resource_type <type>]
   [where <key>=<value>, ...]
   [limit <rows>]
 ```
@@ -59,8 +59,8 @@ events [<kind>|*]
 states [<key>|*]
   [since <duration>]
   [source <source-id>]
-  [entity <id>]
-  [entity_type <type>]
+  [resource <id>]
+  [resource_type <type>]
   [where <key>=<value>, ...]
   [limit <rows>]
 ```
@@ -140,7 +140,7 @@ Nutze `actorId` für die Anzahl eindeutiger Besucher, statt für jede Person ein
 **Aktuelle Zustände**
 
 ```text
-states integration.enabled entity "webshop" limit 50
+states integration.enabled resource "webshop" limit 50
 ```
 
 Nutze Zustände für den aktuell gültigen Wert. Ergänze `since` nur, wenn veraltete Werte nicht erscheinen sollen.
@@ -159,8 +159,8 @@ Nutze Zustände für den aktuell gültigen Wert. Ergänze `since` nur, wenn vera
 | `every <duration>` | Metrik, zusammengefasste Ereignisse | Gruppiert Metrikwerte oder zusammengefasste Ereignisse in feste Zeitfenster. Nutze kompakte Zeitangaben wie `5m`, `1h` oder `7d`. | `every 15m` |
 | `since <duration>` | Metrik, Ereignisse, Zustände | Begrenzt den Zeitraum. Zeitangaben verwenden `m`, `h` oder `d` und dürfen 90 Tage nicht überschreiten. Bei Zuständen blendet `since` veraltete aktuelle Werte aus. | `since 7d` |
 | `source <source-id>` | alle | Beschränkt die Ergebnisse auf eine Quelle. Der Wert muss eine gültige, aus Pulse kopierte Quellen-ID sein. | `source Src001` |
-| `entity <id>` | alle | Beschränkt die Ergebnisse auf eine Ressourcenkennung. Die Oberfläche nennt sie Ressource, Query DSL nennt sie Entity. | `entity container:app-core` |
-| `entity_type <type>` | alle | Beschränkt die Ergebnisse auf eine Ressourcenklasse wie Host, Container, Dienst, Gerät, Bestellung oder Kundenobjekt. | `entity_type container` |
+| `resource <id>` | alle | Beschränkt die Ergebnisse auf eine Ressourcenkennung. Die Oberfläche nennt sie Ressource, Query DSL nennt sie Resource. | `resource container:app-core` |
+| `resource_type <type>` | alle | Beschränkt die Ergebnisse auf eine Ressourcenklasse wie Host, Container, Dienst, Gerät, Bestellung oder Kundenobjekt. | `resource_type container` |
 | `where <key>=<value>` | alle | Filtert Dimensionen nach exakter Gleichheit. Trenne mehrere Filter mit Kommas. Eine Abfrage akzeptiert bis zu 32 Filter. | `where env=prod, region=eu` |
 | `limit <rows>` | Ereignisse, Zustände | Begrenzt die Anzahl zurückgegebener Zeilen. Nutze eine positive ganze Zahl bis höchstens 1000. | `limit 100` |
 
@@ -172,7 +172,7 @@ Setze Namen und Werte mit Leerzeichen, Kommas oder Gleichheitszeichen in einfach
 
 ```text
 events "checkout error" where message="payment, provider=offline" limit 50
-states "integration label" entity 'service:web shop'
+states "integration label" resource 'service:web shop'
 ```
 
 Innerhalb eines Werts in Anführungszeichen maskiert ein umgekehrter Schrägstrich das nächste Zeichen:
@@ -211,13 +211,13 @@ Pulse wendet die Metrikaggregation zuerst unabhängig auf jede passende Variante
 :::
 
 :::success Ereignisse geben Zeilen oder Punkte zurück
-`events` beginnt mit einer Tabellenausgabe. Ergänze `count`, `sum`, `unique actor` oder `unique session`, um einen zeitlichen Verlauf anzuzeigen. `states` gibt aktuelle Zeilen zurück. Grenze sie mit `source`, `entity`, `entity_type`, `where` und `limit` ein.
+`events` beginnt mit einer Tabellenausgabe. Ergänze `count`, `sum`, `unique actor` oder `unique session`, um einen zeitlichen Verlauf anzuzeigen. `states` gibt aktuelle Zeilen zurück. Grenze sie mit `source`, `resource`, `resource_type`, `where` und `limit` ein.
 :::
 
 :::info Namen und Werte
-Nutze `*` oder lasse den Namen weg, um alle Ereignisse oder Zustände auszuwählen. `source` akzeptiert eine Quellen-ID aus sechs Zeichen, `entity` die exakte Ressourcenkennung aus Pulse.
+Nutze `*` oder lasse den Namen weg, um alle Ereignisse oder Zustände auszuwählen. `source` akzeptiert eine Quellen-ID aus sechs Zeichen, `resource` die exakte Ressourcenkennung aus Pulse.
 :::
 
 :::warning Leistungsgrenzen
-Abfragetext ist auf 2.000 Zeichen begrenzt. Metrikabfragen brechen ab, wenn mehr als 250 Varianten übereinstimmen, der angeforderte Zeitraum mehr als 2.000 Zeitfenster erzeugt oder die gruppierte Ausgabe 100.000 Punkte überschreiten würde. Ergänze Filter für `source`, `entity` oder `where`, verkürze `since` oder vergrößere `every`. Ereignis- und Zustandsergebnisse sind auf 1.000 Zeilen begrenzt. Ereigniszusammenfassungen akzeptieren höchstens vier Gruppierungsschlüssel und geben höchstens 1.000 Punkte zurück.
+Abfragetext ist auf 2.000 Zeichen begrenzt. Metrikabfragen brechen ab, wenn mehr als 250 Varianten übereinstimmen, der angeforderte Zeitraum mehr als 2.000 Zeitfenster erzeugt oder die gruppierte Ausgabe 100.000 Punkte überschreiten würde. Ergänze Filter für `source`, `resource` oder `where`, verkürze `since` oder vergrößere `every`. Ereignis- und Zustandsergebnisse sind auf 1.000 Zeilen begrenzt. Ereigniszusammenfassungen akzeptieren höchstens vier Gruppierungsschlüssel und geben höchstens 1.000 Punkte zurück.
 :::

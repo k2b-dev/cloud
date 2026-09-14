@@ -42,8 +42,7 @@ export const sourceFilterFlags = {
 export const resourceFilterFlags = {
   ...sourceFilterFlags,
   resource: flag.string({ description: "Resource key, ID, or label" }),
-  entity: flag.string({ description: "Entity/resource ID" }),
-  entityType: flag.string({ name: "entity-type", description: "Entity/resource type" }),
+  resourceType: flag.string({ name: "resource-type", description: "Resource type" }),
 };
 
 export const publicDisplayFlags = {

@@ -46,6 +46,10 @@ Pulse uses a small data model so different domains can share one query and dashb
 - **Resources stay stable:** Create resources for browsable objects such as a campaign, QR code, host, or service. A visit, session, request, timestamp, or IP address is not a resource.
 :::
 
-:::note Resource in the UI, entity in the DSL
-The UI says resource because it is easier to read. Query DSL uses `entity` for the same identifier and `entity_type` for the resource class. For example, `entity container:app-core` means one resource; `entity_type container` means all container resources.
+:::note Explicit resources
+Send `resource: {type, id, label?}` to associate a signal with an object. Omit it
+for a signal without a resource. Pulse does not infer objects from generic
+ingest dimensions. Resource types are lowercase slugs; queries select the
+complete `type:id` key with `resource` or a class with `resource_type`.
+Metrics and states from different sources remain separate variants.
 :::

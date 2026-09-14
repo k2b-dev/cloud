@@ -5,12 +5,12 @@ export const quoteQueryPart = (value: string): string =>
 
 const queryFiltersToText = (query: PulseDashboardMetricQuery | PulseDashboardEventQuery | PulseDashboardStateQuery): string => {
   const source = query.sourceId ? ` source ${query.sourceId}` : "";
-  const entity = query.entityId ? ` entity ${quoteQueryPart(query.entityId)}` : "";
-  const entityType = query.entityType ? ` entity_type ${quoteQueryPart(query.entityType)}` : "";
+  const resource = query.resourceKey ? ` resource ${quoteQueryPart(query.resourceKey)}` : "";
+  const resourceType = query.resourceType ? ` resource_type ${quoteQueryPart(query.resourceType)}` : "";
   const dimensions = Object.entries(query.dimensions ?? {});
   const where = dimensions.length ? ` where ${dimensions.map(([key, value]) => `${key}=${quoteQueryPart(String(value))}`).join(", ")}` : "";
   const limit = query.kind === "events" || query.kind === "states" ? ` limit ${query.limit}` : "";
-  return `${source}${entity}${entityType}${where}${limit}`;
+  return `${source}${resource}${resourceType}${where}${limit}`;
 };
 
 export const dashboardMetricQueryText = (query: PulseDashboardMetricQuery): string =>

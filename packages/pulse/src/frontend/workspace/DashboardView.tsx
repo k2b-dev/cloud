@@ -1,7 +1,6 @@
 import type { DateContext } from "@k2b/stdlib";
 import { Button, Chart, DataTable, MarkdownView, Placeholder, Select, TextInput } from "@k2b/ui";
 import { type Accessor, createMemo, For, Show } from "solid-js";
-import { usePulseMessages } from "../use-messages";
 import type {
   MetricQueryPoint,
   PulseCurrentState,
@@ -23,6 +22,7 @@ import type {
   PulseSource,
 } from "../../contracts";
 import { formatDashboardConditionText, matchDashboardCondition } from "../dashboard-conditions";
+import { usePulseMessages } from "../use-messages";
 import {
   compactDate,
   compactDateWithDelta,
@@ -277,27 +277,27 @@ const CardWidget = (props: { widget: PulseDashboardCardWidget; context: Dashboar
 const EventsWidget = (props: { widget: PulseDashboardEventsWidget; context: DashboardRenderContext }) => {
   const t = usePulseMessages();
   return (
-  <article class="paper h-full p-4">
-    <div class="mb-3">
-      <p class="text-sm font-semibold text-primary">{props.widget.title}</p>
-      <Show when={props.widget.description}>
-        {(description) => <p class="mt-1 text-xs leading-relaxed text-dimmed">{description()}</p>}
-      </Show>
-    </div>
-    <DataTable
-      rows={props.context.dashboardEvents()[props.widget.id] ?? []}
-      columns={[
-        { id: "time", header: "Time", value: (event) => compactDateWithDelta(event.ts, props.context.dateContext()) },
-        { id: "event", header: "Event", value: (event) => event.kind },
-        { id: "subject", header: "Subject", value: (event) => signalSubject(event) },
-        { id: "value", header: "Value", value: (event) => formatSignalValue(event.value) },
-      ]}
-      getRowId={(event) => event.id}
-      density="compact"
-      class="max-h-80 overflow-auto"
-      empty={t().noEventsMatched}
-    />
-  </article>
+    <article class="paper h-full p-4">
+      <div class="mb-3">
+        <p class="text-sm font-semibold text-primary">{props.widget.title}</p>
+        <Show when={props.widget.description}>
+          {(description) => <p class="mt-1 text-xs leading-relaxed text-dimmed">{description()}</p>}
+        </Show>
+      </div>
+      <DataTable
+        rows={props.context.dashboardEvents()[props.widget.id] ?? []}
+        columns={[
+          { id: "time", header: "Time", value: (event) => compactDateWithDelta(event.ts, props.context.dateContext()) },
+          { id: "event", header: "Event", value: (event) => event.kind },
+          { id: "subject", header: "Subject", value: (event) => signalSubject(event) },
+          { id: "value", header: "Value", value: (event) => formatSignalValue(event.value) },
+        ]}
+        getRowId={(event) => event.id}
+        density="compact"
+        class="max-h-80 overflow-auto"
+        empty={t().noEventsMatched}
+      />
+    </article>
   );
 };
 
@@ -321,7 +321,7 @@ const StatesWidget = (props: { widget: PulseDashboardStatesWidget; context: Dash
             columns={[
               { id: "state", header: "State", value: (state) => state.key },
               { id: "value", header: "Value", value: (state) => formatSignalValue(state.value) },
-              { id: "entity", header: "Entity", value: (state) => state.entityId },
+              { id: "resource", header: "Resource", value: (state) => state.resourceKey },
               { id: "updated", header: "Updated", value: (state) => compactDateWithDelta(state.updatedAt, props.context.dateContext()) },
             ]}
             getRowId={(state) => stateRowId(state)}
@@ -397,7 +397,7 @@ const DashboardControls = (props: { dashboard: PulseDashboard; config: PulseDash
                   fallback={
                     <TextInput
                       label={control.label}
-                      icon={control.kind === "entity" ? "ti ti-cube" : control.kind === "text" ? "ti ti-search" : "ti ti-filter"}
+                      icon={control.kind === "resource" ? "ti ti-cube" : control.kind === "text" ? "ti ti-search" : "ti ti-filter"}
                       value={() => dashboardControlValue(props.dashboard, control, props.context)}
                       onValueChange={(value) => props.context.onControlChange(props.dashboard, control, value, props.config)}
                       placeholder={control.variable}
@@ -411,7 +411,7 @@ const DashboardControls = (props: { dashboard: PulseDashboard; config: PulseDash
                         ? "ti ti-clock"
                         : control.kind === "source"
                           ? "ti ti-database-share"
-                          : control.kind === "entity"
+                          : control.kind === "resource"
                             ? "ti ti-cube"
                             : "ti ti-filter"
                     }

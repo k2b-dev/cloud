@@ -86,8 +86,8 @@ export const signalCommands = [
         `/bases/${encodeURIComponent(base.id)}/metrics${queryString({
           q: flags.q,
           sourceId,
-          entityId: flags.entity,
-          entityType: flags.entityType,
+          resourceKey: flags.resource,
+          resourceType: flags.resourceType,
           type: flags.type as MetricType | undefined,
           limit: flags.limit,
           offset: flags.offset,
@@ -130,7 +130,7 @@ export const signalCommands = [
           { key: "key" },
           { key: "value" },
           { key: "source" },
-          { key: "entity" },
+          { key: "resource" },
           { key: "updatedAt" },
         ]);
         return;
@@ -141,8 +141,8 @@ export const signalCommands = [
           q: flags.q,
           key: flags.key,
           sourceId,
-          entityId: flags.entity,
-          entityType: flags.entityType,
+          resourceKey: flags.resource,
+          resourceType: flags.resourceType,
           limit: flags.limit,
           offset: flags.offset,
         })}`,
@@ -151,7 +151,7 @@ export const signalCommands = [
         { key: "key" },
         { key: "value" },
         { key: "source" },
-        { key: "entity" },
+        { key: "resource" },
         { key: "updatedAt" },
       ]);
     },
@@ -184,7 +184,7 @@ export const signalCommands = [
           { key: "kind" },
           { key: "value" },
           { key: "source" },
-          { key: "entity" },
+          { key: "resource" },
           { key: "ts" },
         ]);
         return;
@@ -195,8 +195,8 @@ export const signalCommands = [
           q: flags.q,
           kind: flags.kind,
           sourceId,
-          entityId: flags.entity,
-          entityType: flags.entityType,
+          resourceKey: flags.resource,
+          resourceType: flags.resourceType,
           limit: flags.limit,
           offset: flags.offset,
         })}`,
@@ -205,7 +205,7 @@ export const signalCommands = [
         { key: "kind" },
         { key: "value" },
         { key: "source" },
-        { key: "entity" },
+        { key: "resource" },
         { key: "ts" },
       ]);
     },
@@ -256,8 +256,8 @@ export const signalCommands = [
           metric,
           q: flags.q,
           sourceId,
-          entityId: flags.entity,
-          entityType: flags.entityType,
+          resourceKey: flags.resource,
+          resourceType: flags.resourceType,
           limit: flags.limit,
           offset: flags.offset,
         })}`,
@@ -265,7 +265,7 @@ export const signalCommands = [
       printJsonOrTable(ctx, series, seriesRows(series), [
         { key: "metric" },
         { key: "source" },
-        { key: "entity" },
+        { key: "resource" },
         { key: "value" },
         { key: "lastSeenAt" },
       ]);

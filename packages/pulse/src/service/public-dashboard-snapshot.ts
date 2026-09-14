@@ -238,15 +238,16 @@ const publicRecordedEvent = (event: PulseRecordedEvent): PulsePublicRecordedEven
   kind: event.kind,
   ts: event.ts,
   value: event.value,
-  entityId: event.entityId,
-  entityType: event.entityType,
+  resourceKey: event.resourceKey,
+  resourceType: event.resourceType,
 });
 
 const publicCurrentState = (state: PulseCurrentState): PulsePublicCurrentState => ({
+  variantKey: state.variantKey,
   key: state.key,
   value: state.value,
-  entityId: state.entityId,
-  entityType: state.entityType,
+  resourceKey: state.resourceKey,
+  resourceType: state.resourceType,
   updatedAt: state.updatedAt,
 });
 
@@ -263,8 +264,8 @@ const fallbackMetricWidgetQuery = (baseId: string, widget: PulseDashboardMetricW
   bucket: widget.bucket,
   since: widget.since,
   sourceId: nullable(widget.sourceId),
-  entityId: nullable(widget.entityId),
-  entityType: nullable(widget.entityType),
+  resourceKey: nullable(widget.resourceKey),
+  resourceType: nullable(widget.resourceType),
   dimensions: widget.dimensions,
   reduce: widget.reduce,
   groupBy: widget.groupBy,
