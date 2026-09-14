@@ -24,6 +24,7 @@ import {
   v,
 } from "../server";
 import { coreSettings } from "../services/settings/api";
+import { logger } from "../services/logging";
 import type { AiToolApprovalContext } from "./approvals";
 import { assistantAiSettingsState, listAssistantAiModels, selectAssistantAiModelId } from "./assistant-models";
 import { buildAiCapabilityCatalog } from "./capabilities";
@@ -1245,6 +1246,10 @@ export const aiRoutes = (() => {
           });
           return respond(c, ok({ file: stat }));
         } catch (error) {
+          logger("ai:files").warn("Conversation upload failed", {
+            code: "file_upload_failed", conversationId: conversation.id,
+            errorType: error instanceof Error ? error.name : "unknown",
+          });
           return respond(c, fail(err.badInput(error instanceof Error ? error.message : "Upload failed")));
         }
       })

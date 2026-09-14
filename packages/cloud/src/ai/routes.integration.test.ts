@@ -1,5 +1,7 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
 import { sql } from "bun";
+import { createTestSession } from "../services/session/test-fixture";
+import { aiFileStore } from "./files-store";
 import { migrateCloudAi } from "./migrate";
 import { aiProjects } from "./projects";
 import { __aiRoutesTest, aiRoutes } from "./routes";
@@ -38,6 +40,26 @@ describe("global AI route registration", () => {
 });
 
 suite("global AI conversation boundaries", () => {
+  test("an upload storage failure produces a safe correlated diagnostic", async () => {
+    const userId = await insertUser();
+    const chat = await aiConversations.createConversation({ownerUserId:userId});
+    const warning = spyOn(console,"warn").mockImplementation(()=>{});
+    const upload = spyOn(aiFileStore,"createUserUpload").mockRejectedValue(new Error("storage unavailable"));
+    try {
+      const token = await createTestSession(userId);
+      const body = new FormData(); body.append("file",new File(["private file content"],"fixture.txt"));
+      const response = await aiRoutes.request(`/conversations/${chat.shortId}/files`,{method:"POST",body,headers:{Authorization:`Bearer ${token}`}});
+      expect(response.status).toBe(400);
+      const diagnostic = warning.mock.calls.find(call=>call[1] === "Conversation upload failed");
+      expect(diagnostic?.[2]).toMatchObject({code:"file_upload_failed",conversationId:chat.id});
+      expect(JSON.stringify(diagnostic)).not.toContain("private file content");
+    } finally {
+      upload.mockRestore(); warning.mockRestore();
+      await sql`DELETE FROM ai.conversations WHERE id=${chat.id}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id=${userId}::uuid`;
+    }
+  });
+
   test("replaces a turn waiting for action when its user message is retried", async () => {
     const userId = await insertUser();
     const chat = await aiConversations.createConversation({ ownerUserId: userId });

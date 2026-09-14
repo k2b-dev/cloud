@@ -405,7 +405,7 @@ const runClaimedTurn = async (
 };
 
 const processMessage = async (
-  message: QueueMessage<AiTurnJob>,
+  message: Pick<QueueMessage<AiTurnJob>, "messageId" | "data" | "heartbeat">,
   signal: AbortSignal,
   onTurnFinalized?: (event: AiTurnFinalizedEvent) => Promise<void>,
 ): Promise<void> => {
@@ -568,4 +568,4 @@ const releaseAiRuntime = (listener: ((event: AiTurnFinalizedEvent) => Promise<vo
   };
 };
 
-export const __aiRuntimeTest = { actionMatchesResolvedEvent };
+export const __aiRuntimeTest = { actionMatchesResolvedEvent, processMessage, publishSweepFinished };

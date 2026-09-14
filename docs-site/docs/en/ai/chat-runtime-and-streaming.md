@@ -64,13 +64,15 @@ state before acknowledging its cursor; no per-conversation socket is required.
 ## Diagnose runtime failures
 
 Use the existing Core log and trace views. Filter logs by `ai:runtime`,
-`ai:message-queue`, `ai:executor`, `ai:transcription`, or `ai:live-routes`.
+`ai:message-queue`, `ai:executor`, `ai:files`, `ai:transcription`, or
+`ai:live-routes`.
 Queue dispatch errors carry `conversationId`, `messageId` and
 `queue_dispatch_failed`. Heartbeat, recovery and completion-publication warnings
 carry conversation and turn IDs. A heartbeat warning is emitted once per failure
 streak; recovery uses the existing durable turn state.
 
-Tool-audit write failures are warnings with turn and call IDs. Expected audio
+Upload storage failures emit `file_upload_failed` with the conversation ID and
+error type. Tool-audit write failures are warnings with turn and call IDs. Expected audio
 cancellation is informational; retryable dictation failures are warnings and
 terminal failures are errors. Provider/transcription traces retain their existing
 status, duration and accounting. Diagnostic metadata does not add prompt,
