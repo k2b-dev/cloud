@@ -1,8 +1,15 @@
 {
   "protocolVersion": 1,
   "appId": "notebooks",
-  "manifestHash": "84c4a58be793541b8e956d7dc2ae09d89a4f3a8ba02f71dd101b642896a151c1",
+  "manifestHash": "e55fe30da5ef4e0ff4b5fd3ad5bddc653dc2b06250a7ebacf1652385ba5cf5b5",
   "types": [
+    {
+      "localId": "comment",
+      "title": "Note comment",
+      "description": "Durable discussion context attached to one accessible note.",
+      "icon": "ti ti-message",
+      "reader": "comment.read"
+    },
     {
       "localId": "note",
       "title": "Note",
@@ -19,6 +26,463 @@
     }
   ],
   "queries": [
+    {
+      "localId": "comment.browse",
+      "title": "Browse comment previews",
+      "description": "Select discussion context using short previews, newest first. Follow page.nextCursor; read the full text of any previewTruncated item with comment.read using ref.id.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "noteId": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9]{6}$",
+            "description": "Note ID returned by note search/tree/read or a notebooks.note ref."
+          },
+          "cursor": {
+            "description": "Opaque cursor returned by the previous page.",
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "limit": {
+            "default": 25,
+            "description": "Maximum number of results to return.",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          }
+        },
+        "required": [
+          "noteId"
+        ],
+        "additionalProperties": false
+      },
+      "dataSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "maxItems": 100,
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "ref": {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "const": "notebooks.comment"
+                },
+                "id": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9]{6}$",
+                  "description": "Stable 6-character resource ID."
+                }
+              },
+              "required": [
+                "type",
+                "id"
+              ],
+              "additionalProperties": false
+            },
+            "authorDisplayName": {
+              "type": "string"
+            },
+            "createdAt": {
+              "type": "string",
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+            },
+            "preview": {
+              "type": "string",
+              "maxLength": 300
+            },
+            "previewTruncated": {
+              "type": "boolean"
+            },
+            "canEdit": {
+              "type": "boolean"
+            },
+            "canDelete": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "ref",
+            "authorDisplayName",
+            "createdAt",
+            "preview",
+            "previewTruncated",
+            "canEdit",
+            "canDelete"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "schemaHash": "3da2d7e84bf29dc17ef5a369ff2381d696eab8c8078704c79f4dea7e11478920",
+      "openWorld": false
+    },
+    {
+      "localId": "comment.list",
+      "title": "List note comments",
+      "description": "List complete Markdown comments for one known note, newest first. A response may contain fewer than limit to fit the transport budget; always follow page.nextCursor. Prefer comment.browse to select comments before reading full bodies.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "noteId": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9]{6}$",
+            "description": "Note ID returned by note search/tree/read or a notebooks.note ref."
+          },
+          "cursor": {
+            "description": "Opaque cursor returned by the previous page.",
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "limit": {
+            "default": 25,
+            "description": "Maximum number of results to return.",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          }
+        },
+        "required": [
+          "noteId"
+        ],
+        "additionalProperties": false
+      },
+      "dataSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "maxItems": 100,
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9]{6}$",
+              "description": "Stable 6-character resource ID."
+            },
+            "notebookId": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9]{6}$",
+              "description": "Stable 6-character resource ID."
+            },
+            "noteId": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9]{6}$",
+              "description": "Stable 6-character resource ID."
+            },
+            "authorUserId": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "authorDisplayName": {
+              "type": "string",
+              "minLength": 1
+            },
+            "canEdit": {
+              "type": "boolean"
+            },
+            "canDelete": {
+              "type": "boolean"
+            },
+            "content": {
+              "type": "string",
+              "maxLength": 5000
+            },
+            "createdAt": {
+              "type": "string",
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+            },
+            "updatedAt": {
+              "type": "string",
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+            },
+            "ref": {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "const": "notebooks.comment"
+                },
+                "id": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9]{6}$",
+                  "description": "Stable 6-character resource ID."
+                }
+              },
+              "required": [
+                "type",
+                "id"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "id",
+            "notebookId",
+            "noteId",
+            "authorUserId",
+            "authorDisplayName",
+            "content",
+            "createdAt",
+            "updatedAt",
+            "ref"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "schemaHash": "9a2f5f04e78c68021c00b37dab1eb3862793a673d527659dd753f64e66485f20",
+      "openWorld": false
+    },
+    {
+      "localId": "comment.read",
+      "title": "Read note comment",
+      "description": "Read one notebooks.comment ref returned by comment.list after checking access to its parent note.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9]{6}$",
+            "description": "Comment ID returned by comment.list or a notebooks.comment ref."
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      },
+      "dataSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9]{6}$",
+            "description": "Stable 6-character resource ID."
+          },
+          "notebookId": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9]{6}$",
+            "description": "Stable 6-character resource ID."
+          },
+          "noteId": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9]{6}$",
+            "description": "Stable 6-character resource ID."
+          },
+          "authorUserId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "authorDisplayName": {
+            "type": "string",
+            "minLength": 1
+          },
+          "canEdit": {
+            "type": "boolean"
+          },
+          "canDelete": {
+            "type": "boolean"
+          },
+          "content": {
+            "type": "string",
+            "maxLength": 5000
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+          }
+        },
+        "required": [
+          "id",
+          "notebookId",
+          "noteId",
+          "authorUserId",
+          "authorDisplayName",
+          "content",
+          "createdAt",
+          "updatedAt"
+        ],
+        "additionalProperties": false
+      },
+      "schemaHash": "095bf48bcc21e56103cbfcb5b49b0c7b904717e8277acd337e420067e4b7a0b4",
+      "openWorld": false
+    },
+    {
+      "localId": "note.children",
+      "title": "Browse child notes",
+      "description": "Browse immediate children without loading the whole tree. Omit parentId for roots; otherwise use a note from the same notebook. Follow page.nextCursor, open a child with note.read, or use its ID as note.create parentId.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "notebookId": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9]{6}$",
+            "description": "Notebook ID returned by notebook search/list/read or a notebooks.notebook ref."
+          },
+          "cursor": {
+            "description": "Opaque cursor returned by the previous page.",
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "limit": {
+            "default": 25,
+            "description": "Maximum number of results to return.",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "parentId": {
+            "description": "Parent note in this notebook; omit for root notes.",
+            "type": "string",
+            "pattern": "^[A-Za-z0-9]{6}$"
+          }
+        },
+        "required": [
+          "notebookId"
+        ],
+        "additionalProperties": false
+      },
+      "dataSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "maxItems": 2000,
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9]{6}$",
+              "description": "Stable 6-character resource ID."
+            },
+            "ref": {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "const": "notebooks.note"
+                },
+                "id": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9]{6}$",
+                  "description": "Stable 6-character resource ID."
+                }
+              },
+              "required": [
+                "type",
+                "id"
+              ],
+              "additionalProperties": false
+            },
+            "parentId": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9]{6}$",
+                  "description": "Stable 6-character resource ID."
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "title": {
+              "type": "string"
+            },
+            "position": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "hasChildren": {
+              "type": "boolean"
+            },
+            "links": {
+              "minItems": 1,
+              "maxItems": 10,
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "rel": {
+                    "type": "string",
+                    "enum": [
+                      "open",
+                      "edit",
+                      "status",
+                      "preview",
+                      "download"
+                    ],
+                    "description": "Semantic relationship; clients decide how to present it."
+                  },
+                  "href": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 2048,
+                    "pattern": "^\\/(?![\\\\/])[^\\\\\\u0000-\\u001f\\u007f]*$",
+                    "description": "Root-relative Cloud URL."
+                  },
+                  "title": {
+                    "description": "Optional human-readable link label.",
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 120
+                  }
+                },
+                "required": [
+                  "rel",
+                  "href"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          "required": [
+            "id",
+            "ref",
+            "parentId",
+            "title",
+            "position",
+            "hasChildren"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "schemaHash": "45656f0444796b4f75d541155a6c73f6295434028768970dbaef1e1031b788c2",
+      "openWorld": false
+    },
     {
       "localId": "note.links",
       "title": "List note links and backlinks",
@@ -171,9 +635,94 @@
       "openWorld": false
     },
     {
+      "localId": "note.preview",
+      "title": "Check note blocks",
+      "description": "Validate query and TOC blocks using the same server preview as the editor. Returns compact diagnostics, not HTML or query rows. Requires a user-backed actor; saved content needs read access, drafts need write access. Does not save or validate all Markdown/table formulas.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "noteId": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9]{6}$",
+            "description": "Existing note ID returned by note.read, search or tree."
+          },
+          "markdown": {
+            "description": "Complete draft Markdown, at most 200,000 characters. Omit for saved content. Drafts require write access and an unlocked note; nothing is saved.",
+            "type": "string",
+            "maxLength": 200000
+          }
+        },
+        "required": [
+          "noteId"
+        ],
+        "additionalProperties": false
+      },
+      "dataSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "valid": {
+            "type": "boolean"
+          },
+          "contentHash": {
+            "type": "string",
+            "pattern": "^sha256:[a-f0-9]{64}$"
+          },
+          "blockCount": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "headingCount": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "diagnostics": {
+            "maxItems": 50,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "line": {
+                  "type": "integer",
+                  "exclusiveMinimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "message": {
+                  "type": "string",
+                  "maxLength": 500
+                }
+              },
+              "required": [
+                "line",
+                "message"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "diagnosticsTruncated": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "valid",
+          "contentHash",
+          "blockCount",
+          "headingCount",
+          "diagnostics",
+          "diagnosticsTruncated"
+        ],
+        "additionalProperties": false
+      },
+      "schemaHash": "6765dc53abbf5ed732f7f9ed2d4ba0ecc0d4437da05fb530bfb0e3cda6b461d2",
+      "openWorld": false
+    },
+    {
       "localId": "note.read",
       "title": "Read note",
-      "description": "Read one notebooks.note ref returned by note.search, note.tree, note.links, or tag.notes as a bounded Markdown window with hashes, tags, and named-block summaries.",
+      "description": "Read one notebooks.note ref returned by note.search, note.tree, note.links, or tag.notes as a bounded Markdown window with hashes, tags, and named-block summaries. contentComplete means the entire source is present. Follow nextContentOffset while verifying contentHash is unchanged. Never replace a whole note with a partial window; prefer structural edits with ifContentHash.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -243,6 +792,10 @@
           "locked": {
             "type": "boolean"
           },
+          "historyIncomplete": {
+            "type": "boolean",
+            "description": "Some document history was unavailable during recovery; the content may be incomplete."
+          },
           "createdAt": {
             "type": "string",
             "format": "date-time",
@@ -272,7 +825,8 @@
             "pattern": "^sha256:[a-f0-9]{64}$"
           },
           "contentComplete": {
-            "type": "boolean"
+            "type": "boolean",
+            "description": "True only when this response contains the entire source, starting at offset zero. Never use a partial window as set-content."
           },
           "nextContentOffset": {
             "anyOf": [
@@ -318,7 +872,6 @@
                     "list",
                     "data",
                     "section",
-                    "script",
                     "unknown"
                   ]
                 },
@@ -365,6 +918,7 @@
           "position",
           "hasChildren",
           "locked",
+          "historyIncomplete",
           "createdAt",
           "updatedAt",
           "content",
@@ -381,7 +935,7 @@
         ],
         "additionalProperties": false
       },
-      "schemaHash": "ff13841688ec6bba284a8269cfeadf193b301b3e48d0ae15397be0b589ff59ad",
+      "schemaHash": "23b56412f548ffe21ecb0a8ec33cac20c866f519666c6656b86926f5b1c0bad5",
       "openWorld": false
     },
     {
@@ -567,7 +1121,7 @@
     {
       "localId": "note.tree",
       "title": "List note tree",
-      "description": "Browse the hierarchy of one known notebook without loading Markdown. Get notebookId from notebook.list or notebook.search; use returned notebooks.note refs with note.read.",
+      "description": "Browse the hierarchy of one known notebook without loading Markdown. Get notebookId from notebook.list or notebook.search; use returned notebooks.note refs with note.read. Each response returns at most 100 entries even for a larger requested limit; follow page.nextCursor for the rest. Prefer note.children to choose a local parent.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -702,6 +1256,157 @@
         }
       },
       "schemaHash": "41fbb4d478df4abfbe4fe6e62c80c53806cff4d082fa9f92fd4049ed4e19930c",
+      "openWorld": false
+    },
+    {
+      "localId": "notebook.browse",
+      "title": "Choose a notebook",
+      "description": "Compact notebook selection with effective permission and homepage. Use minimumPermission write before creating notes. Use returned ref.id with note.children or note.create; notebook.read is only needed for administrative details.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "query": {
+            "description": "Optional text search.",
+            "type": "string",
+            "maxLength": 500
+          },
+          "minimumPermission": {
+            "default": "read",
+            "description": "Minimum effective permission required for returned notebooks.",
+            "type": "string",
+            "enum": [
+              "read",
+              "write",
+              "admin"
+            ]
+          },
+          "cursor": {
+            "description": "Opaque cursor returned by the previous page.",
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "limit": {
+            "default": 25,
+            "description": "Maximum number of results to return.",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          }
+        },
+        "additionalProperties": false
+      },
+      "dataSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "maxItems": 100,
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "ref": {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "const": "notebooks.notebook"
+                },
+                "id": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9]{6}$",
+                  "description": "Stable 6-character resource ID."
+                }
+              },
+              "required": [
+                "type",
+                "id"
+              ],
+              "additionalProperties": false
+            },
+            "title": {
+              "type": "string"
+            },
+            "preview": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "permission": {
+              "type": "string",
+              "enum": [
+                "read",
+                "write",
+                "admin"
+              ]
+            },
+            "homepageNoteId": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9]{6}$",
+                  "description": "Stable 6-character resource ID."
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "links": {
+              "minItems": 1,
+              "maxItems": 10,
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "rel": {
+                    "type": "string",
+                    "enum": [
+                      "open",
+                      "edit",
+                      "status",
+                      "preview",
+                      "download"
+                    ],
+                    "description": "Semantic relationship; clients decide how to present it."
+                  },
+                  "href": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 2048,
+                    "pattern": "^\\/(?![\\\\/])[^\\\\\\u0000-\\u001f\\u007f]*$",
+                    "description": "Root-relative Cloud URL."
+                  },
+                  "title": {
+                    "description": "Optional human-readable link label.",
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 120
+                  }
+                },
+                "required": [
+                  "rel",
+                  "href"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          "required": [
+            "ref",
+            "title",
+            "preview",
+            "permission",
+            "homepageNoteId"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "schemaHash": "3b690450e0420ffce0eafa5627848553375ef29a61b2d9c176fe5f52fa2c78e8",
       "openWorld": false
     },
     {
@@ -1449,6 +2154,252 @@
   ],
   "actions": [
     {
+      "localId": "comment.create",
+      "title": "Add note comment",
+      "description": "Add Markdown discussion context to one writable note as the current user.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "noteId": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9]{6}$",
+            "description": "Writable note ID returned by note search/tree/read or a notebooks.note ref."
+          },
+          "content": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 5000,
+            "description": "Markdown comment, limited to 5,000 characters."
+          }
+        },
+        "required": [
+          "noteId",
+          "content"
+        ],
+        "additionalProperties": false
+      },
+      "dataSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9]{6}$",
+            "description": "Stable 6-character resource ID."
+          },
+          "notebookId": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9]{6}$",
+            "description": "Stable 6-character resource ID."
+          },
+          "noteId": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9]{6}$",
+            "description": "Stable 6-character resource ID."
+          },
+          "authorUserId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "authorDisplayName": {
+            "type": "string",
+            "minLength": 1
+          },
+          "canEdit": {
+            "type": "boolean"
+          },
+          "canDelete": {
+            "type": "boolean"
+          },
+          "content": {
+            "type": "string",
+            "maxLength": 5000
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+          }
+        },
+        "required": [
+          "id",
+          "notebookId",
+          "noteId",
+          "authorUserId",
+          "authorDisplayName",
+          "content",
+          "createdAt",
+          "updatedAt"
+        ],
+        "additionalProperties": false
+      },
+      "schemaHash": "ab8dd4d7d313c699b10886d1851063cdaacf2dc8548728853f0a7a5a922ad517",
+      "destructive": false,
+      "openWorld": false,
+      "idempotency": "required",
+      "approval": "rememberable",
+      "review": true
+    },
+    {
+      "localId": "comment.delete",
+      "title": "Delete note comment",
+      "description": "Delete the current user's own comment within ten minutes of creation. Requires write access to the notebook.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "commentId": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9]{6}$",
+            "description": "Own comment ID returned by comment.list or comment.read; deletable for ten minutes after creation."
+          }
+        },
+        "required": [
+          "commentId"
+        ],
+        "additionalProperties": false
+      },
+      "dataSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9]{6}$",
+            "description": "Stable 6-character resource ID."
+          },
+          "deleted": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "id",
+          "deleted"
+        ],
+        "additionalProperties": false
+      },
+      "schemaHash": "2d45ac01e61be19cb444cd0520ff7074251070d6ef963bcac598d8bb54ad33e3",
+      "destructive": true,
+      "openWorld": false,
+      "idempotency": "required",
+      "review": true
+    },
+    {
+      "localId": "comment.update",
+      "title": "Edit note comment",
+      "description": "Replace the current user's own comment within ten minutes of creation. Requires write access to the notebook.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "commentId": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9]{6}$",
+            "description": "Own comment ID returned by comment.list or comment.read; editable for ten minutes after creation."
+          },
+          "content": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 5000,
+            "description": "Replacement Markdown comment, limited to 5,000 characters."
+          }
+        },
+        "required": [
+          "commentId",
+          "content"
+        ],
+        "additionalProperties": false
+      },
+      "dataSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9]{6}$",
+            "description": "Stable 6-character resource ID."
+          },
+          "notebookId": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9]{6}$",
+            "description": "Stable 6-character resource ID."
+          },
+          "noteId": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9]{6}$",
+            "description": "Stable 6-character resource ID."
+          },
+          "authorUserId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "authorDisplayName": {
+            "type": "string",
+            "minLength": 1
+          },
+          "canEdit": {
+            "type": "boolean"
+          },
+          "canDelete": {
+            "type": "boolean"
+          },
+          "content": {
+            "type": "string",
+            "maxLength": 5000
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+          }
+        },
+        "required": [
+          "id",
+          "notebookId",
+          "noteId",
+          "authorUserId",
+          "authorDisplayName",
+          "content",
+          "createdAt",
+          "updatedAt"
+        ],
+        "additionalProperties": false
+      },
+      "schemaHash": "dea239bb57534b247ee34f3c69449eb46d3d3e3eaef821336501637b89fd758a",
+      "destructive": false,
+      "openWorld": false,
+      "idempotency": "none",
+      "review": true
+    },
+    {
       "localId": "note.create",
       "title": "Create note",
       "description": "Create one Markdown note in an explicitly selected writable notebook.",
@@ -1523,6 +2474,10 @@
           "locked": {
             "type": "boolean"
           },
+          "historyIncomplete": {
+            "type": "boolean",
+            "description": "Some document history was unavailable during recovery; the content may be incomplete."
+          },
           "createdAt": {
             "type": "string",
             "format": "date-time",
@@ -1542,15 +2497,16 @@
           "position",
           "hasChildren",
           "locked",
+          "historyIncomplete",
           "createdAt",
           "updatedAt"
         ],
         "additionalProperties": false
       },
-      "schemaHash": "d870e5efe2a02b742bc585965decbc8aff3e86682eeaf4f1e84fb3f7d3f0fc2a",
+      "schemaHash": "ccd70c656b0737aecfccdaa2050573e38503f5f41ac93992ee3f5c9778ee5f65",
       "destructive": false,
       "openWorld": false,
-      "idempotency": "none",
+      "idempotency": "required",
       "approval": "rememberable",
       "review": true
     },
@@ -1778,7 +2734,6 @@
                             "list",
                             "data",
                             "section",
-                            "script",
                             "unknown"
                           ]
                         },
@@ -1827,7 +2782,6 @@
                             "list",
                             "data",
                             "section",
-                            "script",
                             "unknown"
                           ]
                         },
@@ -1872,7 +2826,6 @@
                             "list",
                             "data",
                             "section",
-                            "script",
                             "unknown"
                           ]
                         },
@@ -1916,6 +2869,12 @@
             "description": "Reject when the selected named block changed.",
             "type": "string",
             "pattern": "^sha256:[a-f0-9]{64}$"
+          },
+          "blockLimit": {
+            "description": "Maximum returned block summaries (default 500). Use zero for a compact mutation receipt; hashes are always returned.",
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 500
           }
         },
         "required": [
@@ -1967,6 +2926,10 @@
               "locked": {
                 "type": "boolean"
               },
+              "historyIncomplete": {
+                "type": "boolean",
+                "description": "Some document history was unavailable during recovery; the content may be incomplete."
+              },
               "createdAt": {
                 "type": "string",
                 "format": "date-time",
@@ -1986,6 +2949,7 @@
               "position",
               "hasChildren",
               "locked",
+              "historyIncomplete",
               "createdAt",
               "updatedAt"
             ],
@@ -2018,7 +2982,6 @@
                     "list",
                     "data",
                     "section",
-                    "script",
                     "unknown"
                   ]
                 },
@@ -2067,8 +3030,8 @@
         ],
         "additionalProperties": false
       },
-      "schemaHash": "487fe04c4417efa575a5cef230ed825ebfebeadb4a23a62ea986bdaa0c1e483c",
-      "destructive": true,
+      "schemaHash": "9da978483b9044fce4e507a83491ae3e093438d20bac20293acbccc5f54eddf6",
+      "destructive": false,
       "openWorld": false,
       "idempotency": "none",
       "approval": "rememberable",
@@ -2154,6 +3117,10 @@
           "locked": {
             "type": "boolean"
           },
+          "historyIncomplete": {
+            "type": "boolean",
+            "description": "Some document history was unavailable during recovery; the content may be incomplete."
+          },
           "createdAt": {
             "type": "string",
             "format": "date-time",
@@ -2173,13 +3140,14 @@
           "position",
           "hasChildren",
           "locked",
+          "historyIncomplete",
           "createdAt",
           "updatedAt"
         ],
         "additionalProperties": false
       },
-      "schemaHash": "764b95195677f304219096d9e3b0bb948ecac961ff5e6dc7bbcaed870f3fc68c",
-      "destructive": true,
+      "schemaHash": "eead9c14e9b2e0e90ac0cfff7c2cd4c0a4ee06b5df94c337b01f6509516c86a7",
+      "destructive": false,
       "openWorld": false,
       "idempotency": "none",
       "approval": "rememberable",

@@ -1,7 +1,7 @@
 {
   "protocolVersion": 1,
   "appId": "contacts",
-  "manifestHash": "b36cc8f17392ce1e1fc620de67bb7da4be462551931deefe9c07f9e85fcb48bb",
+  "manifestHash": "d4c0e044e121949206da7b295a5485ff92903b83defec332d8226fcd14409cf1",
   "types": [
     {
       "localId": "book",
@@ -3248,7 +3248,7 @@
       "schemaHash": "94b37bba4040d50f4a18c39148c41347361be13d163e8310cf0a53b985167035",
       "destructive": true,
       "openWorld": false,
-      "idempotency": "none",
+      "idempotency": "required",
       "review": true
     },
     {
@@ -3830,7 +3830,7 @@
       "schemaHash": "a416fc610954919bec1dceda1c56a3669f25406d6e998c63d0c728e423004057",
       "destructive": true,
       "openWorld": false,
-      "idempotency": "none",
+      "idempotency": "required",
       "review": true
     },
     {
@@ -4829,7 +4829,7 @@
         "additionalProperties": false
       },
       "schemaHash": "0677885cd775d312a5fba22fe6431e7f8021dbb07e3588011fcfc1c3e532d56d",
-      "destructive": true,
+      "destructive": false,
       "openWorld": false,
       "idempotency": "none",
       "approval": "rememberable",
@@ -4878,7 +4878,7 @@
         "additionalProperties": false
       },
       "schemaHash": "83ee1f90fc8a99f132cdbc30accb439034d793af0010866b12d7aed22a413525",
-      "destructive": true,
+      "destructive": false,
       "openWorld": false,
       "idempotency": "none",
       "approval": "rememberable",
@@ -5122,7 +5122,7 @@
         "additionalProperties": false
       },
       "schemaHash": "2ae2908db80f6562154faa5f67690a0d3732c9a87610e184cd52e0ddbcb2ee24",
-      "destructive": true,
+      "destructive": false,
       "openWorld": false,
       "idempotency": "none",
       "approval": "rememberable",

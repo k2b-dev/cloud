@@ -1,7 +1,7 @@
 {
   "protocolVersion": 1,
   "appId": "spaces",
-  "manifestHash": "591f564fec4cedd32c61291e41fda4ff987d5b908fcf5755375b5658a13b1fb0",
+  "manifestHash": "590e1b18ccbf6118fec903230211e1d4531c7989c7736fdc7ae42d29ae735666",
   "types": [
     {
       "localId": "comment",
@@ -33,7 +33,21 @@
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
-        "properties": {},
+        "properties": {
+          "cursor": {
+            "description": "Opaque cursor returned by the previous page.",
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "limit": {
+            "default": 100,
+            "description": "Maximum number of results to return.",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          }
+        },
         "additionalProperties": false
       },
       "dataSchema": {
@@ -123,7 +137,7 @@
           "additionalProperties": false
         }
       },
-      "schemaHash": "270ac26787275e69149c2b149b8ffa684d508723dc379f4961368089f1e81039",
+      "schemaHash": "78412daa42623934ffbc9e71239955120c7ba2a0879637116df72892bc09b353",
       "openWorld": false
     },
     {
@@ -860,6 +874,163 @@
       "openWorld": false
     },
     {
+      "localId": "event.agenda",
+      "title": "Read calendar occurrences",
+      "description": "Read open event occurrences in an inclusive-from, exclusive-to interval of at most 31 days, expanded server-side in the application timezone. Follow page.nextCursor even on empty pages. Each page is chronological; collect all pages and sort startsAt for a complete agenda. Cursors require unchanged interval, Space and assignment filters. Task deadlines are not included.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "cursor": {
+            "description": "Opaque continuation cursor; keep all filters unchanged.",
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "limit": {
+            "default": 25,
+            "description": "Maximum result entries per page.",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "spaceId": {
+            "description": "Omit to search all accessible Spaces.",
+            "type": "string",
+            "pattern": "^[0-9A-Za-z]{6}$"
+          },
+          "assignedTo": {
+            "default": "all",
+            "description": "Assignment filter; me requires a user-backed actor.",
+            "type": "string",
+            "enum": [
+              "all",
+              "assigned",
+              "me",
+              "unassigned"
+            ]
+          },
+          "from": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+            "description": "Inclusive start instant."
+          },
+          "to": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+            "description": "Exclusive end instant; at most 31 days after from. Split longer requests into monthly windows."
+          }
+        },
+        "required": [
+          "from",
+          "to"
+        ],
+        "additionalProperties": false
+      },
+      "dataSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "maxItems": 100,
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "ref": {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "const": "spaces.item"
+                },
+                "id": {
+                  "type": "string",
+                  "pattern": "^[0-9A-Za-z]{6}$"
+                }
+              },
+              "required": [
+                "type",
+                "id"
+              ],
+              "additionalProperties": false
+            },
+            "title": {
+              "type": "string",
+              "maxLength": 500
+            },
+            "spaceId": {
+              "type": "string",
+              "pattern": "^[0-9A-Za-z]{6}$"
+            },
+            "spaceName": {
+              "type": "string",
+              "maxLength": 200
+            },
+            "startsAt": {
+              "type": "string"
+            },
+            "endsAt": {
+              "type": "string"
+            },
+            "allDay": {
+              "type": "boolean"
+            },
+            "location": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 500
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "recurrenceId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "seriesId": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^[0-9A-Za-z]{6}$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "href": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "ref",
+            "title",
+            "spaceId",
+            "spaceName",
+            "startsAt",
+            "endsAt",
+            "allDay",
+            "location",
+            "recurrenceId",
+            "seriesId",
+            "href"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "schemaHash": "f25402a5ecf8c8ced05923bcbf9c62f1965e7257b204e8b5cf371b648e59abf6",
+      "openWorld": false
+    },
+    {
       "localId": "event.list",
       "title": "List events",
       "description": "Browse calendar events in one known Space. Get spaceId, columnIds, and tagIds from space.read; use returned spaces.item refs with item.read, comments, or event Actions.",
@@ -876,6 +1047,27 @@
             "description": "Optional text search.",
             "type": "string",
             "maxLength": 500
+          },
+          "activity": {
+            "default": "all",
+            "description": "Inactive means open tasks without activity for 30 days.",
+            "type": "string",
+            "enum": [
+              "all",
+              "inactive"
+            ]
+          },
+          "deadlineFilter": {
+            "default": "all",
+            "description": "Deadline window in the configured application timezone.",
+            "type": "string",
+            "enum": [
+              "all",
+              "overdue",
+              "today",
+              "week",
+              "none"
+            ]
           },
           "status": {
             "default": "active",
@@ -1009,6 +1201,18 @@
                 "id"
               ],
               "additionalProperties": false
+            },
+            "columnName": {
+              "description": "Human-readable workflow column; columnId remains the stable action target.",
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 50
+                },
+                {
+                  "type": "null"
+                }
+              ]
             },
             "spaceId": {
               "type": "string",
@@ -1226,7 +1430,7 @@
           "additionalProperties": false
         }
       },
-      "schemaHash": "fa1aa77923f2bc4827487d887716f6c072ad2f805e45bfd1251a8d6680fc4e5a",
+      "schemaHash": "07a336cf6f24c73d2fc18e4ab7df886dc87cc02cd326d2a4bca3f1b96553baf0",
       "openWorld": false
     },
     {
@@ -2461,6 +2665,155 @@
       "openWorld": false
     },
     {
+      "localId": "space.browse",
+      "title": "Browse Spaces",
+      "description": "Compact paginated Space selection with effective permissions. Use minimumPermission write before creating items; read a Space only when column or tag IDs are needed.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "query": {
+            "description": "Optional text search.",
+            "type": "string",
+            "maxLength": 500
+          },
+          "minimumPermission": {
+            "default": "read",
+            "description": "Minimum effective permission required for every returned Space.",
+            "type": "string",
+            "enum": [
+              "read",
+              "write",
+              "admin"
+            ]
+          },
+          "cursor": {
+            "description": "Opaque cursor returned by the previous page.",
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "limit": {
+            "default": 25,
+            "description": "Maximum number of results to return.",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          }
+        },
+        "additionalProperties": false
+      },
+      "dataSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "maxItems": 100,
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "pattern": "^[0-9A-Za-z]{6}$"
+            },
+            "ref": {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "const": "spaces.space"
+                },
+                "id": {
+                  "type": "string",
+                  "pattern": "^[0-9A-Za-z]{6}$"
+                }
+              },
+              "required": [
+                "type",
+                "id"
+              ],
+              "additionalProperties": false
+            },
+            "name": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+            },
+            "description": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 500
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "descriptionTruncated": {
+              "description": "True when the list description was shortened to fit the response budget; space.read returns the full description.",
+              "type": "boolean"
+            },
+            "permission": {
+              "type": "string",
+              "enum": [
+                "read",
+                "write",
+                "admin"
+              ]
+            },
+            "links": {
+              "minItems": 1,
+              "maxItems": 10,
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "rel": {
+                    "type": "string",
+                    "enum": [
+                      "open",
+                      "edit",
+                      "status",
+                      "preview",
+                      "download"
+                    ],
+                    "description": "Semantic relationship; clients decide how to present it."
+                  },
+                  "href": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 2048,
+                    "pattern": "^\\/(?![\\\\/])[^\\\\\\u0000-\\u001f\\u007f]*$",
+                    "description": "Root-relative Cloud URL."
+                  },
+                  "title": {
+                    "description": "Optional human-readable link label.",
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 120
+                  }
+                },
+                "required": [
+                  "rel",
+                  "href"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          "required": [
+            "id",
+            "ref",
+            "name",
+            "description",
+            "permission"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "schemaHash": "e49ebd24877593589d2a7e884efa487cf41cfc4c6d8e62f9ffa9dc7fde06ce60",
+      "openWorld": false
+    },
+    {
       "localId": "space.list",
       "title": "List spaces",
       "description": "Normal entry for Space-scoped work. List accessible Spaces with effective permission; use returned spaces.space refs or IDs with space.read, task.list, event.list, and item creation Actions.",
@@ -2525,6 +2878,10 @@
                   "type": "null"
                 }
               ]
+            },
+            "descriptionTruncated": {
+              "description": "True when the list description was shortened to fit the response budget; space.read returns the full description.",
+              "type": "boolean"
             },
             "color": {
               "type": "string",
@@ -2620,7 +2977,7 @@
           "additionalProperties": false
         }
       },
-      "schemaHash": "217ac2b6a1bccb4dc539903aafcc12be27b1ed1fabe0a616eeb70ca70cbceb24",
+      "schemaHash": "53fb7961abf14a8469e8acd2debd50672466e0914542b26c8559dad5e22df07e",
       "openWorld": false
     },
     {
@@ -2665,6 +3022,10 @@
                 "type": "null"
               }
             ]
+          },
+          "descriptionTruncated": {
+            "description": "True when the list description was shortened to fit the response budget; space.read returns the full description.",
+            "type": "boolean"
           },
           "color": {
             "type": "string",
@@ -2818,7 +3179,7 @@
         ],
         "additionalProperties": false
       },
-      "schemaHash": "fc9f31797a902eee40b94b1b5367434944a3d5df687260c795c69cab88447ac1",
+      "schemaHash": "c0ee1f2f2f11ba78316ce3cb8fde4deef18a0fda6b641cd79fb14aed46bf887e",
       "openWorld": false
     },
     {
@@ -3195,6 +3556,262 @@
       "openWorld": false
     },
     {
+      "localId": "task.checklist.list",
+      "title": "List task checklist",
+      "description": "Read paginated checklist entries of one task: entry ID, label, and completed state. Follow page.nextCursor until complete. Entries are simple checkmarks, not independent tasks.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "itemId": {
+            "type": "string",
+            "pattern": "^[0-9A-Za-z]{6}$",
+            "description": "Task or event ID returned by item search/list/read or a spaces.item ref."
+          },
+          "cursor": {
+            "description": "Opaque cursor returned by the previous page.",
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "limit": {
+            "default": 25,
+            "description": "Maximum number of results to return.",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          }
+        },
+        "required": [
+          "itemId"
+        ],
+        "additionalProperties": false
+      },
+      "dataSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "maxItems": 100,
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "pattern": "^[0-9A-Za-z]{6}$",
+              "description": "Checklist entry ID"
+            },
+            "label": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500,
+              "description": "Checklist entry label"
+            },
+            "completed": {
+              "type": "boolean",
+              "description": "Whether the checklist entry is complete"
+            }
+          },
+          "required": [
+            "id",
+            "label",
+            "completed"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "schemaHash": "5b5f59da718136005b1add6289947da5bedc55eedb3415723d56408256271c47",
+      "openWorld": false
+    },
+    {
+      "localId": "task.focus",
+      "title": "Find actionable tasks",
+      "description": "Compact paginated open-task work queue across readable Spaces. Filter assignment, deadline, priority, blockers or 30-day inactivity. Use item.read only for full content and task.checklist.list for checklist entries.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "cursor": {
+            "description": "Opaque continuation cursor; keep all filters unchanged.",
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "limit": {
+            "default": 25,
+            "description": "Maximum result entries per page.",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "spaceId": {
+            "description": "Omit to search all accessible Spaces.",
+            "type": "string",
+            "pattern": "^[0-9A-Za-z]{6}$"
+          },
+          "assignedTo": {
+            "default": "all",
+            "description": "Assignment filter; me requires a user-backed actor.",
+            "type": "string",
+            "enum": [
+              "all",
+              "assigned",
+              "me",
+              "unassigned"
+            ]
+          },
+          "query": {
+            "default": "",
+            "description": "Optional task text search.",
+            "type": "string",
+            "maxLength": 500
+          },
+          "deadlineFilter": {
+            "default": "all",
+            "description": "Deadline window in the inherited user timezone.",
+            "type": "string",
+            "enum": [
+              "all",
+              "overdue",
+              "today",
+              "week",
+              "none"
+            ]
+          },
+          "activity": {
+            "default": "all",
+            "description": "Include all open tasks or only inactive tasks.",
+            "type": "string",
+            "enum": [
+              "all",
+              "inactive"
+            ]
+          },
+          "priority": {
+            "description": "Match any selected priority.",
+            "maxItems": 4,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "low",
+                "medium",
+                "high",
+                "urgent"
+              ]
+            }
+          },
+          "blocked": {
+            "description": "Filter by whether unfinished blocker tasks exist.",
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "dataSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "maxItems": 100,
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "ref": {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "const": "spaces.item"
+                },
+                "id": {
+                  "type": "string",
+                  "pattern": "^[0-9A-Za-z]{6}$"
+                }
+              },
+              "required": [
+                "type",
+                "id"
+              ],
+              "additionalProperties": false
+            },
+            "title": {
+              "type": "string",
+              "maxLength": 500
+            },
+            "spaceId": {
+              "type": "string",
+              "pattern": "^[0-9A-Za-z]{6}$"
+            },
+            "spaceName": {
+              "type": "string",
+              "maxLength": 200
+            },
+            "columnId": {
+              "type": "string",
+              "pattern": "^[0-9A-Za-z]{6}$"
+            },
+            "columnName": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 200
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "deadline": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "priority": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "enum": [
+                    "low",
+                    "medium",
+                    "high",
+                    "urgent"
+                  ]
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "activeBlockerCount": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "href": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "ref",
+            "title",
+            "spaceId",
+            "spaceName",
+            "columnId",
+            "columnName",
+            "deadline",
+            "priority",
+            "activeBlockerCount",
+            "href"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "schemaHash": "dc6f2bceb1fbf5f7f02b9a990aa24037754be82d630ae9946627fc71d95ff2d7",
+      "openWorld": false
+    },
+    {
       "localId": "task.list",
       "title": "List tasks",
       "description": "Browse tasks in one known Space. Get spaceId, columnIds, and tagIds from space.read; use returned spaces.item refs with item.read, dependency queries, comments, or task Actions.",
@@ -3211,6 +3828,27 @@
             "description": "Optional text search.",
             "type": "string",
             "maxLength": 500
+          },
+          "activity": {
+            "default": "all",
+            "description": "Inactive means open tasks without activity for 30 days.",
+            "type": "string",
+            "enum": [
+              "all",
+              "inactive"
+            ]
+          },
+          "deadlineFilter": {
+            "default": "all",
+            "description": "Deadline window in the configured application timezone.",
+            "type": "string",
+            "enum": [
+              "all",
+              "overdue",
+              "today",
+              "week",
+              "none"
+            ]
           },
           "status": {
             "default": "active",
@@ -3344,6 +3982,18 @@
                 "id"
               ],
               "additionalProperties": false
+            },
+            "columnName": {
+              "description": "Human-readable workflow column; columnId remains the stable action target.",
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 50
+                },
+                {
+                  "type": "null"
+                }
+              ]
             },
             "spaceId": {
               "type": "string",
@@ -3558,7 +4208,205 @@
           "additionalProperties": false
         }
       },
-      "schemaHash": "62ea8f704b1e9ebb8ca6b5272e00c8e41c7f95fcdab8a091b8718f03546f2c19",
+      "schemaHash": "040980a1e5760e79a896139d3159a5d3efdca851956255a2c2f1ce131ae25157",
+      "openWorld": false
+    },
+    {
+      "localId": "task.work.read",
+      "title": "Read task work state",
+      "description": "Read the current claim, full progress note and last completion result, including verification and commit. Reopening preserves the result. Use item.read and the existing checklist, comment and dependency queries for other context.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[0-9A-Za-z]{6}$",
+            "description": "Task or event ID returned by item search/list/read or a spaces.item ref."
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      },
+      "dataSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "claim": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                  },
+                  "actor": {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "enum": [
+                          "user",
+                          "service_account"
+                        ]
+                      },
+                      "id": {
+                        "type": "string",
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "id"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "claimedAt": {
+                    "type": "string",
+                    "format": "date-time",
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+                  }
+                },
+                "required": [
+                  "id",
+                  "actor",
+                  "claimedAt"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "progress": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "content": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 5000,
+                    "description": "Full Markdown work note, including decisions, next steps or verification evidence."
+                  },
+                  "actor": {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "enum": [
+                          "user",
+                          "service_account"
+                        ]
+                      },
+                      "id": {
+                        "type": "string",
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "id"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "at": {
+                    "type": "string",
+                    "format": "date-time",
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+                  }
+                },
+                "required": [
+                  "content",
+                  "actor",
+                  "at"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "result": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "content": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 5000,
+                    "description": "Full Markdown work note, including decisions, next steps or verification evidence."
+                  },
+                  "actor": {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "enum": [
+                          "user",
+                          "service_account"
+                        ]
+                      },
+                      "id": {
+                        "type": "string",
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "id"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "at": {
+                    "type": "string",
+                    "format": "date-time",
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+                  },
+                  "commit": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "pattern": "^[a-fA-F0-9]{7,64}$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "content",
+                  "actor",
+                  "at",
+                  "commit"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "claim",
+          "progress",
+          "result"
+        ],
+        "additionalProperties": false
+      },
+      "schemaHash": "c0110ae2577582b39df3725db96aaa43b77c8aa3200d963a33ebfb5bbe068485",
       "openWorld": false
     }
   ],
@@ -3677,7 +4525,7 @@
         "additionalProperties": false
       },
       "schemaHash": "8565564ac4ff5d2af3db1bd46bd6725efad1edb63c2a752e996bcb1a5d1c01c9",
-      "destructive": true,
+      "destructive": false,
       "openWorld": false,
       "idempotency": "none",
       "review": true
@@ -3758,7 +4606,7 @@
         "additionalProperties": false
       },
       "schemaHash": "f0b98c34f73353be07795546b8f1c8721f6ad143daa5c8f8b16f3a233f78394e",
-      "destructive": true,
+      "destructive": false,
       "openWorld": false,
       "idempotency": "none",
       "approval": "rememberable",
@@ -3881,7 +4729,7 @@
       "schemaHash": "486c66debf53f5271ed2fa008add7324eedb2d088c7af2088e6cfd18de409cc2",
       "destructive": false,
       "openWorld": false,
-      "idempotency": "none",
+      "idempotency": "required",
       "approval": "rememberable",
       "review": true
     },
@@ -3926,7 +4774,7 @@
       "schemaHash": "d01fb3d0841a823723592d4cbab0dc701ffa3304ef3aec8764d843108ba742ac",
       "destructive": true,
       "openWorld": false,
-      "idempotency": "none",
+      "idempotency": "required",
       "review": true
     },
     {
@@ -4040,432 +4888,13 @@
       "schemaHash": "cb1d7a0f1018389568a969f4dd7151033411fe2a86d8588f701e852729eeb200",
       "destructive": true,
       "openWorld": false,
-      "idempotency": "none",
-      "approval": "rememberable",
+      "idempotency": "required",
       "review": true
     },
     {
       "localId": "event.create",
       "title": "Create calendar event",
       "description": "Create one calendar event with an explicit valid time range in a writable Space.",
-      "inputSchema": {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "type": "object",
-        "properties": {
-          "spaceId": {
-            "type": "string",
-            "pattern": "^[0-9A-Za-z]{6}$",
-            "description": "Space ID returned by Space search/list/read or a spaces.space ref."
-          },
-          "columnId": {
-            "type": "string",
-            "pattern": "^[0-9A-Za-z]{6}$",
-            "description": "Target column ID returned by Read space for the selected Space."
-          },
-          "title": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 200,
-            "description": "Event title."
-          },
-          "description": {
-            "description": "Optional event description.",
-            "type": "string",
-            "maxLength": 5000
-          },
-          "location": {
-            "description": "Optional event location.",
-            "type": "string",
-            "maxLength": 500
-          },
-          "url": {
-            "description": "Optional event URL.",
-            "type": "string",
-            "maxLength": 2000,
-            "format": "uri"
-          },
-          "startsAt": {
-            "type": "string",
-            "format": "date-time",
-            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
-            "description": "Event start timestamp."
-          },
-          "endsAt": {
-            "type": "string",
-            "format": "date-time",
-            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
-            "description": "Event end timestamp after startsAt."
-          },
-          "allDay": {
-            "description": "Whether the event uses all-day presentation.",
-            "type": "boolean"
-          },
-          "recurrence": {
-            "description": "Optional recurrence series.",
-            "type": "object",
-            "properties": {
-              "rrule": {
-                "type": "string",
-                "minLength": 1,
-                "maxLength": 2000,
-                "description": "RFC 5545 recurrence rule without the RRULE prefix."
-              },
-              "dtstart": {
-                "description": "Optional recurrence anchor timestamp.",
-                "anyOf": [
-                  {
-                    "type": "string",
-                    "format": "date-time",
-                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ]
-              },
-              "exdate": {
-                "default": [],
-                "description": "Excluded recurrence timestamps.",
-                "maxItems": 1000,
-                "type": "array",
-                "items": {
-                  "type": "string",
-                  "format": "date-time",
-                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
-                }
-              }
-            },
-            "required": [
-              "rrule"
-            ],
-            "additionalProperties": false
-          },
-          "assigneeIds": {
-            "description": "Optional assignee user UUIDs from this Space.",
-            "maxItems": 100,
-            "type": "array",
-            "items": {
-              "type": "string",
-              "format": "uuid",
-              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
-            }
-          },
-          "tagIds": {
-            "description": "Optional tag IDs from this Space.",
-            "maxItems": 100,
-            "type": "array",
-            "items": {
-              "type": "string",
-              "pattern": "^[0-9A-Za-z]{6}$"
-            }
-          },
-          "references": {
-            "description": "Cloud resources linked to the new event.",
-            "maxItems": 10,
-            "type": "array",
-            "items": {
-              "type": "object",
-              "properties": {
-                "ref": {
-                  "type": "object",
-                  "properties": {
-                    "type": {
-                      "type": "string",
-                      "minLength": 3,
-                      "maxLength": 180,
-                      "pattern": "^[a-z][a-z0-9-]*\\.[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$",
-                      "description": "Namespaced resource type declared by the owning app."
-                    },
-                    "id": {
-                      "type": "string",
-                      "minLength": 1,
-                      "maxLength": 512,
-                      "description": "Stable app-owned resource identifier."
-                    }
-                  },
-                  "required": [
-                    "type",
-                    "id"
-                  ],
-                  "additionalProperties": false,
-                  "description": "Stable Cloud resource reference"
-                },
-                "label": {
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 500,
-                  "description": "Space-owned display label snapshot"
-                }
-              },
-              "required": [
-                "ref",
-                "label"
-              ],
-              "additionalProperties": false
-            }
-          }
-        },
-        "required": [
-          "spaceId",
-          "columnId",
-          "title",
-          "startsAt",
-          "endsAt"
-        ],
-        "additionalProperties": false
-      },
-      "dataSchema": {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "type": "object",
-        "properties": {
-          "kind": {
-            "type": "string",
-            "const": "event"
-          },
-          "id": {
-            "type": "string",
-            "pattern": "^[0-9A-Za-z]{6}$"
-          },
-          "spaceId": {
-            "type": "string",
-            "pattern": "^[0-9A-Za-z]{6}$"
-          },
-          "columnId": {
-            "type": "string",
-            "pattern": "^[0-9A-Za-z]{6}$"
-          },
-          "title": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 200
-          },
-          "titleTruncated": {
-            "type": "boolean"
-          },
-          "description": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 5000
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "descriptionTruncated": {
-            "type": "boolean"
-          },
-          "completedAt": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "date-time",
-                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "assignees": {
-            "maxItems": 100,
-            "type": "array",
-            "items": {
-              "type": "object",
-              "properties": {
-                "id": {
-                  "type": "string",
-                  "format": "uuid",
-                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
-                },
-                "displayName": {
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 200
-                }
-              },
-              "required": [
-                "id",
-                "displayName"
-              ],
-              "additionalProperties": false
-            }
-          },
-          "tags": {
-            "maxItems": 100,
-            "type": "array",
-            "items": {
-              "type": "object",
-              "properties": {
-                "id": {
-                  "type": "string",
-                  "pattern": "^[0-9A-Za-z]{6}$"
-                },
-                "name": {
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 100
-                },
-                "color": {
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 100
-                }
-              },
-              "required": [
-                "id",
-                "name",
-                "color"
-              ],
-              "additionalProperties": false
-            }
-          },
-          "relationsTruncated": {
-            "type": "boolean"
-          },
-          "createdAt": {
-            "type": "string",
-            "format": "date-time",
-            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
-          },
-          "updatedAt": {
-            "type": "string",
-            "format": "date-time",
-            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
-          },
-          "location": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 500
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "locationTruncated": {
-            "type": "boolean"
-          },
-          "url": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 2000
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "urlTruncated": {
-            "type": "boolean"
-          },
-          "startsAt": {
-            "type": "string",
-            "format": "date-time",
-            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
-          },
-          "endsAt": {
-            "type": "string",
-            "format": "date-time",
-            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
-          },
-          "allDay": {
-            "type": "boolean"
-          },
-          "recurrence": {
-            "anyOf": [
-              {
-                "type": "object",
-                "properties": {
-                  "rrule": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 2000,
-                    "description": "RFC 5545 recurrence rule without the RRULE prefix."
-                  },
-                  "dtstart": {
-                    "description": "Optional recurrence anchor timestamp.",
-                    "anyOf": [
-                      {
-                        "type": "string",
-                        "format": "date-time",
-                        "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
-                      },
-                      {
-                        "type": "null"
-                      }
-                    ]
-                  },
-                  "exdate": {
-                    "default": [],
-                    "description": "Excluded recurrence timestamps.",
-                    "maxItems": 1000,
-                    "type": "array",
-                    "items": {
-                      "type": "string",
-                      "format": "date-time",
-                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
-                    }
-                  }
-                },
-                "required": [
-                  "rrule",
-                  "exdate"
-                ],
-                "additionalProperties": false
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "recurrenceTruncated": {
-            "type": "boolean"
-          },
-          "recurrenceExceptionsTruncated": {
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "kind",
-          "id",
-          "spaceId",
-          "columnId",
-          "title",
-          "titleTruncated",
-          "description",
-          "descriptionTruncated",
-          "completedAt",
-          "assignees",
-          "tags",
-          "relationsTruncated",
-          "createdAt",
-          "updatedAt",
-          "location",
-          "locationTruncated",
-          "url",
-          "urlTruncated",
-          "startsAt",
-          "endsAt",
-          "allDay",
-          "recurrence",
-          "recurrenceTruncated",
-          "recurrenceExceptionsTruncated"
-        ],
-        "additionalProperties": false
-      },
-      "schemaHash": "2eff2173996d3b2cb055c29627e04882449795927692cb6b2148b017e8eaa6de",
-      "destructive": false,
-      "openWorld": false,
-      "idempotency": "none"
-    },
-    {
-      "localId": "event.create-once",
-      "title": "Create calendar event once",
-      "description": "Create one calendar event with retry-safe idempotency for durable workflows.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -4931,7 +5360,7 @@
         "additionalProperties": false
       },
       "schemaHash": "f944f09f90494fe06ac7290ccdf6afdcad0abd41be8b6d1e1e0ce1c49dd6b929",
-      "destructive": true,
+      "destructive": false,
       "openWorld": false,
       "idempotency": "none",
       "approval": "rememberable",
@@ -5488,7 +5917,7 @@
         "additionalProperties": false
       },
       "schemaHash": "891916a3c35f210dc6be2af0b1d81c52f479662a6f5a92bd4081c883cd7d2104",
-      "destructive": true,
+      "destructive": false,
       "openWorld": false,
       "idempotency": "none",
       "approval": "rememberable",
@@ -5535,7 +5964,7 @@
       "schemaHash": "c3269b8859a22b5429b630120d2bc16e2684379bbe0ec10ef7cada2ba95a0865",
       "destructive": true,
       "openWorld": false,
-      "idempotency": "none",
+      "idempotency": "required",
       "review": true
     },
     {
@@ -5741,7 +6170,7 @@
         "additionalProperties": false
       },
       "schemaHash": "4ead936932c726735141e7640d6ccc43a228de87008857a39578ffae88f4b9d0",
-      "destructive": true,
+      "destructive": false,
       "openWorld": false,
       "idempotency": "none",
       "approval": "rememberable",
@@ -6307,7 +6736,7 @@
         ]
       },
       "schemaHash": "aee28dfb1fc054d430e72cae8965aa07fb532a5bc8032be0e96056079bcfe58b",
-      "destructive": true,
+      "destructive": false,
       "openWorld": false,
       "idempotency": "none",
       "approval": "rememberable",
@@ -6466,11 +6895,397 @@
         "additionalProperties": false
       },
       "schemaHash": "e3a03f4a278aac97fe788e5c3f3847c8ff7dcd07943fe6d1c921e90bf921299d",
-      "destructive": true,
+      "destructive": false,
       "openWorld": false,
       "idempotency": "none",
       "approval": "rememberable",
       "review": true
+    },
+    {
+      "localId": "task.checklist.create",
+      "title": "Add task checklist entry",
+      "description": "Append one simple checklist label to a writable task.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "label": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500,
+            "description": "Text of the new checkmark entry."
+          },
+          "itemId": {
+            "type": "string",
+            "pattern": "^[0-9A-Za-z]{6}$",
+            "description": "Task or event ID returned by item search/list/read or a spaces.item ref."
+          }
+        },
+        "required": [
+          "label",
+          "itemId"
+        ],
+        "additionalProperties": false
+      },
+      "dataSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[0-9A-Za-z]{6}$",
+            "description": "Checklist entry ID"
+          },
+          "label": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500,
+            "description": "Checklist entry label"
+          },
+          "completed": {
+            "type": "boolean",
+            "description": "Whether the checklist entry is complete"
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "completed"
+        ],
+        "additionalProperties": false
+      },
+      "schemaHash": "0a3355af384f2304d04467ff3fc50f3f9013a21f467d7c4516461bf3be40de91",
+      "destructive": false,
+      "openWorld": false,
+      "idempotency": "none",
+      "approval": "rememberable",
+      "review": true
+    },
+    {
+      "localId": "task.checklist.delete",
+      "title": "Delete task checklist entry",
+      "description": "Remove one checklist entry from a writable task; the task itself is preserved.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "itemId": {
+            "type": "string",
+            "pattern": "^[0-9A-Za-z]{6}$",
+            "description": "Task or event ID returned by item search/list/read or a spaces.item ref."
+          },
+          "entryId": {
+            "type": "string",
+            "pattern": "^[0-9A-Za-z]{6}$",
+            "description": "Entry ID returned by task.checklist.list."
+          }
+        },
+        "required": [
+          "itemId",
+          "entryId"
+        ],
+        "additionalProperties": false
+      },
+      "dataSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[0-9A-Za-z]{6}$"
+          },
+          "deleted": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "id",
+          "deleted"
+        ],
+        "additionalProperties": false
+      },
+      "schemaHash": "9b970979ae97e096da11544cd8044ba572ab6fdb24b999bf7a96a248772a5b75",
+      "destructive": true,
+      "openWorld": false,
+      "idempotency": "required",
+      "review": true
+    },
+    {
+      "localId": "task.checklist.update",
+      "title": "Update task checklist entry",
+      "description": "Change only the supplied label or completed state of an entry returned by task.checklist.list.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "label": {
+            "description": "Replacement label; omitted preserves the existing text.",
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500
+          },
+          "completed": {
+            "description": "Whether the checkmark is complete; omitted preserves the current state.",
+            "type": "boolean"
+          },
+          "itemId": {
+            "type": "string",
+            "pattern": "^[0-9A-Za-z]{6}$",
+            "description": "Task or event ID returned by item search/list/read or a spaces.item ref."
+          },
+          "entryId": {
+            "type": "string",
+            "pattern": "^[0-9A-Za-z]{6}$",
+            "description": "Entry ID returned by task.checklist.list."
+          }
+        },
+        "required": [
+          "itemId",
+          "entryId"
+        ],
+        "additionalProperties": false
+      },
+      "dataSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[0-9A-Za-z]{6}$",
+            "description": "Checklist entry ID"
+          },
+          "label": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500,
+            "description": "Checklist entry label"
+          },
+          "completed": {
+            "type": "boolean",
+            "description": "Whether the checklist entry is complete"
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "completed"
+        ],
+        "additionalProperties": false
+      },
+      "schemaHash": "85cb2174134ec30a79e8a1f45c132f8da885cd3561685e1012c57497b6bae226",
+      "destructive": false,
+      "openWorld": false,
+      "idempotency": "none",
+      "approval": "rememberable",
+      "review": true
+    },
+    {
+      "localId": "task.claim",
+      "title": "Claim task work",
+      "description": "Claim an open unblocked task for one worker. Generate a UUID claimId and reuse it only for retries; competing claims return a conflict.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "claimId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "description": "Caller-generated ID; reuse only when retrying this claim."
+          },
+          "itemId": {
+            "type": "string",
+            "pattern": "^[0-9A-Za-z]{6}$",
+            "description": "Task or event ID returned by item search/list/read or a spaces.item ref."
+          }
+        },
+        "required": [
+          "claimId",
+          "itemId"
+        ],
+        "additionalProperties": false
+      },
+      "dataSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "claim": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                  },
+                  "actor": {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "enum": [
+                          "user",
+                          "service_account"
+                        ]
+                      },
+                      "id": {
+                        "type": "string",
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "id"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "claimedAt": {
+                    "type": "string",
+                    "format": "date-time",
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+                  }
+                },
+                "required": [
+                  "id",
+                  "actor",
+                  "claimedAt"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "progress": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "content": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 5000,
+                    "description": "Full Markdown work note, including decisions, next steps or verification evidence."
+                  },
+                  "actor": {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "enum": [
+                          "user",
+                          "service_account"
+                        ]
+                      },
+                      "id": {
+                        "type": "string",
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "id"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "at": {
+                    "type": "string",
+                    "format": "date-time",
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+                  }
+                },
+                "required": [
+                  "content",
+                  "actor",
+                  "at"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "result": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "content": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 5000,
+                    "description": "Full Markdown work note, including decisions, next steps or verification evidence."
+                  },
+                  "actor": {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "enum": [
+                          "user",
+                          "service_account"
+                        ]
+                      },
+                      "id": {
+                        "type": "string",
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "id"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "at": {
+                    "type": "string",
+                    "format": "date-time",
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+                  },
+                  "commit": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "pattern": "^[a-fA-F0-9]{7,64}$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "content",
+                  "actor",
+                  "at",
+                  "commit"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "claim",
+          "progress",
+          "result"
+        ],
+        "additionalProperties": false
+      },
+      "schemaHash": "5cd1a2085d1b718cf45d9d64b4a01f0093a315d99921a442cc8e7699c6495b0a",
+      "destructive": false,
+      "openWorld": false,
+      "idempotency": "none"
     },
     {
       "localId": "task.create",
@@ -6882,6 +7697,430 @@
       "schemaHash": "563a396f76cb7483683a0ff0382da9d592ea7c5902fb9e5ac33e996605dbb89a",
       "destructive": false,
       "openWorld": false,
+      "idempotency": "required"
+    },
+    {
+      "localId": "task.progress",
+      "title": "Progress task work",
+      "description": "Save a full progress and handoff note under the actual user or service account identity. Supply the current claimId when claimed; the previous note remains in task activity.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "content": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 5000,
+            "description": "Full Markdown work note, including decisions, next steps or verification evidence."
+          },
+          "claimId": {
+            "description": "Current worker claim ID; required when the task is claimed.",
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "itemId": {
+            "type": "string",
+            "pattern": "^[0-9A-Za-z]{6}$",
+            "description": "Task or event ID returned by item search/list/read or a spaces.item ref."
+          }
+        },
+        "required": [
+          "content",
+          "itemId"
+        ],
+        "additionalProperties": false
+      },
+      "dataSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "claim": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                  },
+                  "actor": {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "enum": [
+                          "user",
+                          "service_account"
+                        ]
+                      },
+                      "id": {
+                        "type": "string",
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "id"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "claimedAt": {
+                    "type": "string",
+                    "format": "date-time",
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+                  }
+                },
+                "required": [
+                  "id",
+                  "actor",
+                  "claimedAt"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "progress": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "content": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 5000,
+                    "description": "Full Markdown work note, including decisions, next steps or verification evidence."
+                  },
+                  "actor": {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "enum": [
+                          "user",
+                          "service_account"
+                        ]
+                      },
+                      "id": {
+                        "type": "string",
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "id"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "at": {
+                    "type": "string",
+                    "format": "date-time",
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+                  }
+                },
+                "required": [
+                  "content",
+                  "actor",
+                  "at"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "result": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "content": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 5000,
+                    "description": "Full Markdown work note, including decisions, next steps or verification evidence."
+                  },
+                  "actor": {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "enum": [
+                          "user",
+                          "service_account"
+                        ]
+                      },
+                      "id": {
+                        "type": "string",
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "id"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "at": {
+                    "type": "string",
+                    "format": "date-time",
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+                  },
+                  "commit": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "pattern": "^[a-fA-F0-9]{7,64}$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "content",
+                  "actor",
+                  "at",
+                  "commit"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "claim",
+          "progress",
+          "result"
+        ],
+        "additionalProperties": false
+      },
+      "schemaHash": "57fcbb01055c95c4e90846fe2c8253825103b0021f7cb53ea17f30747a3793e1",
+      "destructive": false,
+      "openWorld": false,
+      "idempotency": "none"
+    },
+    {
+      "localId": "task.release",
+      "title": "Release task work",
+      "description": "Release your current claim using its exact claimId. Progress and completion results remain available.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "claimId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "description": "Caller-generated ID; reuse only when retrying this claim."
+          },
+          "force": {
+            "description": "Admin recovery: release the exact observed claim, including another actor's claim.",
+            "type": "boolean"
+          },
+          "itemId": {
+            "type": "string",
+            "pattern": "^[0-9A-Za-z]{6}$",
+            "description": "Task or event ID returned by item search/list/read or a spaces.item ref."
+          }
+        },
+        "required": [
+          "claimId",
+          "itemId"
+        ],
+        "additionalProperties": false
+      },
+      "dataSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "claim": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                  },
+                  "actor": {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "enum": [
+                          "user",
+                          "service_account"
+                        ]
+                      },
+                      "id": {
+                        "type": "string",
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "id"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "claimedAt": {
+                    "type": "string",
+                    "format": "date-time",
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+                  }
+                },
+                "required": [
+                  "id",
+                  "actor",
+                  "claimedAt"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "progress": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "content": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 5000,
+                    "description": "Full Markdown work note, including decisions, next steps or verification evidence."
+                  },
+                  "actor": {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "enum": [
+                          "user",
+                          "service_account"
+                        ]
+                      },
+                      "id": {
+                        "type": "string",
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "id"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "at": {
+                    "type": "string",
+                    "format": "date-time",
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+                  }
+                },
+                "required": [
+                  "content",
+                  "actor",
+                  "at"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "result": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "content": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 5000,
+                    "description": "Full Markdown work note, including decisions, next steps or verification evidence."
+                  },
+                  "actor": {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "enum": [
+                          "user",
+                          "service_account"
+                        ]
+                      },
+                      "id": {
+                        "type": "string",
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "id"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "at": {
+                    "type": "string",
+                    "format": "date-time",
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+                  },
+                  "commit": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "pattern": "^[a-fA-F0-9]{7,64}$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "content",
+                  "actor",
+                  "at",
+                  "commit"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "claim",
+          "progress",
+          "result"
+        ],
+        "additionalProperties": false
+      },
+      "schemaHash": "346f4994c00607426f5bce130d312fde04b67a91133f88e9c1b6fcb919fe1cd5",
+      "destructive": false,
+      "openWorld": false,
       "idempotency": "none"
     },
     {
@@ -6892,19 +8131,36 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
         "properties": {
+          "completed": {
+            "type": "boolean",
+            "description": "True completes an unblocked task; false reopens it without erasing its result."
+          },
+          "result": {
+            "description": "Full completion result including verification; saved atomically with completion.",
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 5000
+          },
+          "commit": {
+            "description": "Commit SHA implementing this result; requires result.",
+            "type": "string",
+            "pattern": "^[a-fA-F0-9]{7,64}$"
+          },
+          "claimId": {
+            "description": "Current worker claim ID; required when the task is claimed.",
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
           "itemId": {
             "type": "string",
             "pattern": "^[0-9A-Za-z]{6}$",
             "description": "Task or event ID returned by item search/list/read or a spaces.item ref."
-          },
-          "completed": {
-            "type": "boolean",
-            "description": "True completes the task; false reopens it."
           }
         },
         "required": [
-          "itemId",
-          "completed"
+          "completed",
+          "itemId"
         ],
         "additionalProperties": false
       },
@@ -7192,8 +8448,8 @@
         ],
         "additionalProperties": false
       },
-      "schemaHash": "66011ffc43b192b7bdc8a906a0c4f288ee18fed3c712769614b08005d396a4f2",
-      "destructive": true,
+      "schemaHash": "27f85d455813546c888410f33d3c5452dc973929dc080f0325f44fca530d9bd2",
+      "destructive": false,
       "openWorld": false,
       "idempotency": "none",
       "approval": "rememberable",
@@ -7583,7 +8839,7 @@
         "additionalProperties": false
       },
       "schemaHash": "43ad2d6535548a2129494f93c057cd376ba64ed1ece481079b56f17e40e0b18e",
-      "destructive": true,
+      "destructive": false,
       "openWorld": false,
       "idempotency": "none",
       "approval": "rememberable",

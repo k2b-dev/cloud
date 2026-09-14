@@ -23,26 +23,59 @@ export const spacesCapabilityPresentation: CapabilityPresentationCatalog = {
           title: "Arbeitsstand lesen",
           description:
             "Aktuelle Übernahme, vollständigen Fortschritt und letztes Abschlussergebnis lesen. Das Ergebnis bleibt beim Wiederöffnen erhalten.",
+          input: {
+            "id": "Öffentliche Ressourcen-ID.",
+          },
         },
         "task.focus": {
           title: "Offene Aufgaben finden",
           description:
             "Kompakte, seitenweise Aufgabenübersicht über zugängliche Spaces. Nach Zuständigkeit, Frist, Priorität, Blockern oder 30 Tagen Inaktivität filtern.",
+          input: {
+            "cursor": "Cursor aus page.nextCursor bei unveränderten Filtern; für die erste Seite weglassen.",
+            "limit": "Maximale Anzahl von Ergebnissen pro Seite.",
+            "spaceId": "Öffentliche ID des ausgewählten Space.",
+            "assignedTo": "Nach Zuständigkeit filtern.",
+            "query": "Optionaler Suchtext.",
+            "deadlineFilter": "Nach Fälligkeit filtern.",
+            "activity": "Nach Aktivität filtern; stale bedeutet mindestens 30 Tage ohne Aktivität.",
+            "priority": "Nach Aufgabenpriorität filtern.",
+            "blocked": "Nach offenen Blockern filtern.",
+          },
         },
         "event.agenda": {
           title: "Kalendervorkommen lesen",
           description:
             "Offene Termine in höchstens 31 Tagen lesen; Wiederholungen werden serverseitig aufgelöst. Auch nach leeren Seiten weiterblättern. Für eine vollständige chronologische Agenda alle Seiten sammeln und nach startsAt sortieren. Cursor nur mit unveränderten Filtern verwenden.",
+          input: {
+            "cursor": "Cursor aus page.nextCursor bei unveränderten Filtern; für die erste Seite weglassen.",
+            "limit": "Maximale Anzahl von Ergebnissen pro Seite.",
+            "spaceId": "Öffentliche ID des ausgewählten Space.",
+            "assignedTo": "Nach Zuständigkeit filtern.",
+            "from": "Beginn des Zeitraums einschließlich, als ISO-Zeitstempel.",
+            "to": "Ende des Zeitraums ausschließlich, als ISO-Zeitstempel; höchstens 31 Tage nach from.",
+          },
         },
         "space.browse": {
           title: "Spaces auswählen",
           description:
             "Kompakte, seitenweise Auswahl zugänglicher Spaces mit Berechtigung. Für neue Inhalte minimumPermission write verwenden; space.read nur für Spalten- oder Tag-IDs aufrufen.",
+          input: {
+            "query": "Optionaler Suchtext.",
+            "minimumPermission": "Mindestens benötigte Berechtigung; write für neue Inhalte.",
+            "cursor": "Cursor aus page.nextCursor bei unveränderten Filtern; für die erste Seite weglassen.",
+            "limit": "Maximale Anzahl von Ergebnissen pro Seite.",
+          },
         },
         "task.checklist.list": {
           title: "Aufgabencheckliste lesen",
           description:
             "Checklistenpunkte einer Aufgabe seitenweise mit ID, Text und Erledigt-Status lesen. Weitere Seiten über page.nextCursor abrufen.",
+          input: {
+            "itemId": "Öffentliche ID der Aufgabe.",
+            "cursor": "Cursor aus page.nextCursor bei unveränderten Filtern; für die erste Seite weglassen.",
+            "limit": "Maximale Anzahl von Ergebnissen pro Seite.",
+          },
         },
         "calendar-destination.list": {
           title: "Kalenderziele auflisten",
@@ -99,6 +132,8 @@ export const spacesCapabilityPresentation: CapabilityPresentationCatalog = {
           description:
             "Durchsuchen Sie Kalenderereignisse in einem bekannten Space. SpaceId, ColumnIds und TagIds von space.read abrufen; Verwenden Sie das zurückgegebene spaces.item refs mit item.read, Kommentaren oder dem Ereignis Actions.",
           input: {
+            "activity": "Nach Aktivität filtern; stale bedeutet mindestens 30 Tage ohne Aktivität.",
+            "deadlineFilter": "Nach Fälligkeit filtern.",
             spaceId: "Space ID zurückgegeben von Space Suche/Liste/Lesen oder einem spaces.space ref.",
             query: "Optionale Textsuche.",
             status: "Abschlussstatusfilter.",
@@ -243,6 +278,8 @@ export const spacesCapabilityPresentation: CapabilityPresentationCatalog = {
           description:
             "Durchsuchen Sie Aufgaben in einem bekannten Space. SpaceId, ColumnIds und TagIds von space.read abrufen; Verwenden Sie das zurückgegebene spaces.item refs mit item.read, Abhängigkeitsabfragen, Kommentaren oder der Aufgabe Actions.",
           input: {
+            "activity": "Nach Aktivität filtern; stale bedeutet mindestens 30 Tage ohne Aktivität.",
+            "deadlineFilter": "Nach Fälligkeit filtern.",
             spaceId: "Space ID zurückgegeben von Space Suche/Liste/Lesen oder einem spaces.space ref.",
             query: "Optionale Textsuche.",
             status: "Abschlussstatusfilter.",
@@ -263,28 +300,56 @@ export const spacesCapabilityPresentation: CapabilityPresentationCatalog = {
           title: "Aufgabe übernehmen",
           description:
             "Offene, unblockierte Aufgabe mit einer selbst erzeugten UUID für eine Sitzung übernehmen. Konkurrierende Übernahmen werden abgewiesen.",
+          input: {
+            "claimId": "ID der aktuellen Aufgabenübernahme.",
+            "itemId": "Öffentliche ID der Aufgabe.",
+          },
         },
         "task.release": {
           title: "Aufgabe freigeben",
           description:
             "Aktuelle Übernahme anhand ihrer genauen Kennung freigeben. Mit Adminrechten kann eine verwaiste Übernahme ausdrücklich freigegeben werden.",
+          input: {
+            "claimId": "ID der aktuellen Aufgabenübernahme.",
+            "force": "Eine fremde Übernahme mit entsprechender Berechtigung freigeben.",
+            "itemId": "Öffentliche ID der Aufgabe.",
+          },
         },
         "task.progress": {
           title: "Fortschritt festhalten",
           description:
             "Vollständige Fortschritts- und Übergabenotiz unter der tatsächlichen Benutzer- oder Service-Account-Identität speichern. Bei einer Übernahme deren Kennung angeben.",
+          input: {
+            "content": "Vollständiger Fortschritts- und Übergabetext.",
+            "claimId": "ID der aktuellen Aufgabenübernahme.",
+            "itemId": "Öffentliche ID der Aufgabe.",
+          },
         },
         "task.checklist.create": {
           title: "Checklistenpunkt hinzufügen",
           description: "Einen einfachen Checklistenpunkt an eine beschreibbare Aufgabe anhängen.",
+          input: {
+            "label": "Text des Checklistenpunkts.",
+            "itemId": "Öffentliche ID der Aufgabe.",
+          },
         },
         "task.checklist.update": {
           title: "Checklistenpunkt ändern",
           description: "Nur den übergebenen Text oder Erledigt-Status eines Checklistenpunkts ändern.",
+          input: {
+            "label": "Text des Checklistenpunkts.",
+            "completed": "Ob der Checklistenpunkt erledigt ist.",
+            "itemId": "Öffentliche ID der Aufgabe.",
+            "entryId": "ID des Checklistenpunkts.",
+          },
         },
         "task.checklist.delete": {
           title: "Checklistenpunkt löschen",
           description: "Einen einzelnen Checklistenpunkt entfernen; die Aufgabe bleibt erhalten.",
+          input: {
+            "itemId": "Öffentliche ID der Aufgabe.",
+            "entryId": "ID des Checklistenpunkts.",
+          },
         },
         "calendar-invitation.import": {
           title: "Kalendereinladung importieren",
@@ -487,6 +552,9 @@ export const spacesCapabilityPresentation: CapabilityPresentationCatalog = {
           description:
             "Schließen Sie eine entsperrte Aufgabe ab oder öffnen Sie eine Aufgabe erneut, indem Sie die Workflow-Spalten Space verwenden.",
           input: {
+            "result": "Abschlussergebnis der Aufgabe.",
+            "commit": "Optionale Commit-Referenz zum Abschlussergebnis.",
+            "claimId": "ID der aktuellen Aufgabenübernahme.",
             itemId: "Aufgabe oder Ereignis ID, zurückgegeben durch Elementsuche/Liste/Lesen oder ein spaces.item ref.",
             completed: "True schließt die Aufgabe ab; false öffnet es erneut.",
           },

@@ -1,7 +1,7 @@
 {
   "protocolVersion": 1,
   "appId": "weather",
-  "manifestHash": "1c206b45523d1446f15328310da92a2679915bd883e578dc774c5e8e94df92f3",
+  "manifestHash": "f3ad1f0d3847640f0ba6285327f0cfb1792cfb20765658e7f835e185a4a912ba",
   "types": [
     {
       "localId": "location",
@@ -1260,7 +1260,7 @@
       "schemaHash": "d69b72b97af65cfdf243d35447ab79165c4732cf0c75f21eaf561c64a96c0bc9",
       "destructive": false,
       "openWorld": false,
-      "idempotency": "none",
+      "idempotency": "required",
       "approval": "rememberable",
       "review": true
     },
@@ -1305,7 +1305,7 @@
       "schemaHash": "9bdc3b312c1b0ec001b4360509a08c5194ec7f790a97f30b4c764cbebdfae361",
       "destructive": true,
       "openWorld": false,
-      "idempotency": "none",
+      "idempotency": "required",
       "review": true
     }
   ]

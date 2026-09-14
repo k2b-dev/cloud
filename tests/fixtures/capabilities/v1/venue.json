@@ -1,7 +1,7 @@
 {
   "protocolVersion": 1,
   "appId": "venue",
-  "manifestHash": "09ad41a33298e66df4f4f62868172fa9957b40f6db6aea2a39ffb1c3ad18ace8",
+  "manifestHash": "59c2f38b03b59684c23213f1cff29c3b5265007e9fd7b3ec85dc9b878f557b39",
   "types": [
     {
       "localId": "assignment",
@@ -1280,7 +1280,7 @@
     {
       "localId": "assignment.cancel",
       "title": "Cancel my shift assignment",
-      "description": "Delete only the current user-backed actor's own assignment. This action is not idempotent.",
+      "description": "Delete only the current user-backed actor's own assignment. Supply an idempotency key so an uncertain attempt can be repeated safely.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -1325,7 +1325,7 @@
       "schemaHash": "c59dafb852b195e7b7c4806e7c277a5bb4daa9c1690000b7718851e3b2843224",
       "destructive": true,
       "openWorld": false,
-      "idempotency": "none",
+      "idempotency": "required",
       "review": true
     },
     {
@@ -1445,7 +1445,7 @@
       "schemaHash": "f12ed478f8a8cfcc2f45e3fb4560a059da35f9a5ad4ef1c96469d8d0da6c853e",
       "destructive": false,
       "openWorld": false,
-      "idempotency": "none",
+      "idempotency": "required",
       "review": true
     },
     {
@@ -1578,7 +1578,7 @@
       "schemaHash": "9ad10ba29e701536a4e92639594f6b5eab8585ea7325e6ac37b604a8a4b5016b",
       "destructive": false,
       "openWorld": false,
-      "idempotency": "none",
+      "idempotency": "required",
       "review": true
     }
   ]
