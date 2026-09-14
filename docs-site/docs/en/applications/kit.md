@@ -537,7 +537,7 @@ settings to the exact app. Source replacement and database mutations retain
 per-call review; their current contracts include irreversible effects.
 No app deletion, database reset, permissions or automatic launch are exposed.
 Custom table columns must omit the rsql-managed `id`, `created_at`, `updated_at`.
-SQL binds exactly one parameter for each unquoted `?` placeholder.
+SQL binds exactly one parameter for each unquoted `?` parameter marker.
 
 The in-app `kit-crud-example` is a complete shared-database starter with dialogs,
 filtering and pagination. `rows.list` always returns an array in `data`, including
