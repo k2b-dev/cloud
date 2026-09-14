@@ -34,7 +34,7 @@ export function ConversationSidebarPreview(props: { conversation: AiConversation
       <div class="flex flex-col gap-1">
         <strong>{props.conversation.title}</strong>
         <Show when={props.conversation.description}>
-          <p class="text-dimmed">{props.conversation.description}</p>
+          <p class="assistant-sidebar-preview-description">{props.conversation.description}</p>
         </Show>
       </div>
       <DescriptionList
@@ -59,7 +59,7 @@ export function ConversationSidebarPreview(props: { conversation: AiConversation
                 <span class="text-xs text-dimmed">{text("Apps")}</span>
                 <For each={value().apps}>
                   {(app) => (
-                    <a class="inline-flex items-center gap-2 text-sm" href={`/app/assistant/apps/${encodeURIComponent(app.id)}`}>
+                    <a class="assistant-sidebar-preview-resource inline-flex items-center gap-2" href={`/app/assistant/apps/${encodeURIComponent(app.id)}`}>
                       <i class={app.icon || "ti ti-app-window"} aria-hidden="true" />
                       {app.title}
                     </a>
@@ -72,7 +72,7 @@ export function ConversationSidebarPreview(props: { conversation: AiConversation
                 <span class="text-xs text-dimmed">{text("Files")}</span>
                 <For each={value().files.slice(0, 5)}>
                   {(file) => (
-                    <span class="inline-flex items-center gap-2 text-sm" title={file.path}>
+                    <span class="assistant-sidebar-preview-resource inline-flex items-center gap-2" title={file.path}>
                       <i class="ti ti-file" aria-hidden="true" />
                       <span class="truncate">{file.path.split("/").pop()}</span>
                     </span>
@@ -85,9 +85,6 @@ export function ConversationSidebarPreview(props: { conversation: AiConversation
             </Show>
             <Show when={value().hasMoreSources}>
               <span class="text-xs text-dimmed">{text("More resources in the chat.")}</span>
-            </Show>
-            <Show when={!value().apps.length && !value().files.length}>
-              <span class="text-sm text-dimmed">{text("No apps or files yet.")}</span>
             </Show>
           </>
         )}

@@ -138,7 +138,6 @@ function ConversationSidebarItem(props: {
       scroll="manual"
       onNavigate={props.open ? handleNavigate : undefined}
       active={props.active}
-      title={props.conversation.title}
       description={
         <Show
           when={props.conversation.doneAt}

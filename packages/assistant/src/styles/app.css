@@ -246,3 +246,23 @@
 .k2b-ui [data-assistant-context="compact"] .k2b-detail-panel__action-copy { display: flex; flex-direction: row; align-items: baseline; gap: .4rem; min-width: 0; overflow: hidden; }
 .k2b-ui [data-assistant-context="compact"] .k2b-detail-panel__action-title { flex-shrink: 0; max-width: 70%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .8125rem; }
 .k2b-ui [data-assistant-context="compact"] .k2b-detail-panel__action-description { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .6875rem; }
+
+/* Match compact DescriptionList labels and values inside chat previews. */
+.assistant-sidebar-preview-description,
+.assistant-sidebar-preview-resource {
+  font-size: 0.75rem;
+  font-weight: 400;
+  line-height: 1.25rem;
+  letter-spacing: 0;
+}
+.assistant-sidebar-preview-description {
+  color: var(--k2b-text-muted);
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+.assistant-sidebar-preview-resource {
+  color: var(--k2b-text);
+}

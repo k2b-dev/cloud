@@ -71,8 +71,8 @@ describe("Assistant sidebar", () => {
     expect(html).toContain("Project chat");
     expect(html).toContain(">Pinned</");
     expect(html).toContain("Pinned chat");
-    expect(html.match(/title="Pinned chat"/g)).toHaveLength(2);
-    expect(html.match(/title="Pinned project chat"/g)).toHaveLength(2);
+    expect(html).not.toContain('title="Pinned chat"');
+    expect(html).not.toContain('title="Pinned project chat"');
     expect(html.indexOf(">Pinned</")).toBeLessThan(html.indexOf("Projects"));
     expect(html).toContain("Chat settings");
     expect(html).toContain("Mark chat done");
@@ -98,7 +98,7 @@ describe("Assistant sidebar", () => {
     expect(html).toContain('aria-expanded="false"');
     expect(html).toContain("21");
     expect(html).not.toContain(">Pinned</");
-    expect(html.match(/title="Completed work"/g)).toHaveLength(2);
+    expect(html).not.toContain('title="Completed work"');
     expect(html).toContain("No recent chats");
   });
 
