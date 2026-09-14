@@ -97,6 +97,57 @@ describe("runtime lifecycle", () => {
     expect(failures).toBe(0);
   });
 
+  test("continues recovering when error reporting itself throws", async () => {
+    const controller = new AbortController();
+    let attempts = 0;
+    const failures: number[] = [];
+
+    await superviseRuntimeTask({
+      signal: controller.signal,
+      minRetryMs: 1,
+      maxRetryMs: 2,
+      jitter: 0,
+      run: async () => {
+        attempts += 1;
+        if (attempts === 3) controller.abort();
+        else throw new Error("reader failed");
+      },
+      onError: ({ failureCount }) => {
+        failures.push(failureCount);
+        throw new Error("reporter failed");
+      },
+    });
+
+    expect(attempts).toBe(3);
+    expect(failures).toEqual([1, 2]);
+  });
+
+  test("does not report or restart a task that rejects during shutdown", async () => {
+    const controller = new AbortController();
+    const started = Promise.withResolvers<void>();
+    let attempts = 0;
+    let failures = 0;
+    const supervised = superviseRuntimeTask({
+      signal: controller.signal,
+      run: (signal) => {
+        attempts += 1;
+        return new Promise<void>((_resolve, reject) => {
+          signal.addEventListener("abort", () => reject(new Error("reader closed")), { once: true });
+          started.resolve();
+        });
+      },
+      onError: () => {
+        failures += 1;
+      },
+    });
+
+    await started.promise;
+    controller.abort();
+    await supervised;
+    expect(attempts).toBe(1);
+    expect(failures).toBe(0);
+  });
+
   test("drains every in-flight task", async () => {
     const tracker = createRuntimeTaskTracker();
     const completed: string[] = [];
@@ -283,6 +334,41 @@ describe("runtime lifecycle", () => {
     await Promise.all([runtime.stop(), runtime.stop()]);
 
     expect({ starts, stops }).toEqual({ starts: 1, stops: 1 });
+  });
+
+  test("serializes stop and restart behind an in-flight start", async () => {
+    const firstStart = Promise.withResolvers<void>();
+    const started = Promise.withResolvers<void>();
+    const events: string[] = [];
+    let starts = 0;
+    const runtime = createRuntimeLifecycle({
+      start: async () => {
+        const attempt = ++starts;
+        events.push(`start:${attempt}`);
+        if (attempt === 1) {
+          started.resolve();
+          await firstStart.promise;
+        }
+        events.push(`ready:${attempt}`);
+      },
+      stop: async () => {
+        events.push("stop");
+      },
+    });
+
+    const initial = runtime.start();
+    await started.promise;
+    const stopping = runtime.stop();
+    const restarting = runtime.start();
+    try {
+      await Promise.resolve();
+      expect(events).toEqual(["start:1"]);
+    } finally {
+      firstStart.resolve();
+      await Promise.all([initial, stopping, restarting]);
+      await runtime.stop();
+    }
+    expect(events).toEqual(["start:1", "ready:1", "stop", "start:2", "ready:2", "stop"]);
   });
 
   test("cleans up a partial start before allowing a retry", async () => {

@@ -220,6 +220,49 @@ describe("createHeartbeat", () => {
     expect(stale).toHaveLength(1);
   });
 
+  test("recovers despite throwing callbacks and reports a later lease failure again", async () => {
+    let unavailable = true;
+    let successfulTouches = 0;
+    let staleReports = 0;
+    let errorReports = 0;
+    const heartbeat = createHeartbeat("test", entry, {
+      intervalMs: 2,
+      retryMs: 2,
+      staleAfterMs: 1,
+      registry: {
+        upsert: async () => upsertResult(),
+        touch: async () => {
+          if (unavailable) throw new Error("registry unavailable");
+          successfulTouches += 1;
+          return true;
+        },
+        delete: async () => true,
+      },
+      onError: () => {
+        errorReports += 1;
+        throw new Error("error reporter failed");
+      },
+      onStale: () => {
+        staleReports += 1;
+        throw new Error("stale reporter failed");
+      },
+    });
+
+    try {
+      await heartbeat.start();
+      await waitUntil(() => staleReports === 1);
+      unavailable = false;
+      await waitUntil(() => successfulTouches > 0);
+      unavailable = true;
+      await waitUntil(() => staleReports === 2);
+    } finally {
+      await heartbeat.stop();
+    }
+    expect(staleReports).toBe(2);
+    expect(errorReports).toBeGreaterThanOrEqual(2);
+    expect(successfulTouches).toBeGreaterThan(0);
+  });
+
   test("does not report stale when writes recover before the deadline", async () => {
     let attempts = 0;
     const stale: unknown[] = [];
@@ -246,7 +289,11 @@ describe("createHeartbeat", () => {
       await heartbeat.start();
       await waitUntil(() => attempts >= 4);
     } finally {
-      try { await heartbeat.stop(); } finally { setSystemTime(); }
+      try {
+        await heartbeat.stop();
+      } finally {
+        setSystemTime();
+      }
     }
 
     expect(stale).toHaveLength(0);
