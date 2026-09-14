@@ -130,6 +130,7 @@ const ChatDemo = () => {
           ]}
           selectedModelId={model()}
           onModelChange={setModel}
+          modelDetails={<Chat.ContextPopup aria-label="Model details" class="text-xs text-muted" content={<div style="width:16rem"><strong>Model details</strong><p>The host can explain availability or allowance here.</p></div>}>Details</Chat.ContextPopup>}
           fileSelection={{ onSelect: () => undefined }}
           menuActions={[
             {

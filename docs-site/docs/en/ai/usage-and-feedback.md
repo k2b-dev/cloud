@@ -194,4 +194,18 @@ so the normal compaction/retry path can continue.
 
 Quotas preserve blocked queued messages. The existing queue recovery checks
 again after a reset or window change; it does not change models automatically.
-The Assistant's own allowance display is being designed separately.
+The Assistant shows the remaining allowance beside its model selector. Open
+the indicator for all-model and selected-model balances, reset times, and
+unlimited access. The tighter effective allowance determines the indicator;
+unmeasured usage is shown separately. Disabled limits remain invisible.
+
+The page seeds this view on the server and refreshes it after chat activity,
+on focus, and every 30 seconds while visible. The popup also has a refresh
+action. Loading errors hide cached percentages and do not disable sending;
+the server remains authoritative and a rejected submission preserves the draft.
+
+`getAiChatQuotas(accessSubject)` from `@k2b/cloud/ai` and authenticated
+`GET /api/ai/quotas` return the caller's allowances. The browser-safe
+`AiChatQuotaSnapshot` type is exported from `@k2b/cloud/shared`. The view omits
+grant identities, historical usage, and specific model profiles the caller
+cannot use. The endpoint takes no target-user parameter and uses `no-store`.

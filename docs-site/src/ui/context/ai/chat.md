@@ -30,7 +30,7 @@ import { Chat, type ChatTimelineItem } from "@k2b/ui";
 
 `Chat.Composer` calls `onSubmit` with an `intent`, trimmed text, and generic attachments. The intent is `send` while idle and `steer` while a response is running. Return `false` or throw to restore the consumed draft and attachments; failures are passed to `onError`.
 
-Use `state="running"` to show Stop when the draft is empty. Once the user types, Send replaces Stop and submits a steer. `menuActions` populate the Plus menu; `contextActions` sit beside context usage. `contextPopupAction` places one small action inside the context details popup and keeps it available before token usage is reported. Model options can provide an icon or provider image. Use `submitTools` for compact application controls immediately before Send or Stop; `footerTools` remains beside the add/model controls. The application owns these controls and their state. `footerContent` replaces the footer during an application-owned interaction, such as audio recording, while preserving the editor. Pass `undefined` to restore the standard controls.
+Use `state="running"` to show Stop when the draft is empty. Once the user types, Send replaces Stop and submits a steer. `menuActions` populate the Plus menu; `contextActions` sit beside context usage. `contextPopupAction` places one small action inside the context details popup and keeps it available before token usage is reported. Model options can provide an icon or provider image. Use `submitTools` for compact application controls immediately before Send or Stop; `footerTools` remains beside the add/model controls. `modelDetails` places compact application-owned details immediately after the model selector. The application owns these controls and their state. `footerContent` replaces the footer during an application-owned interaction, such as audio recording, while preserving the editor. Pass `undefined` to restore the standard controls.
 
 Every structured chat action declares exactly one behavior: `onSelect` for an
 application callback or `copyText` for clipboard content. The same contract is
@@ -160,7 +160,7 @@ type ChatComposerProps = {
   onPaste?: ChatPasteHandler; menuActions?: readonly ChatAction[]; models?: readonly ChatModelOption[];
   selectedModelId?: string | null; onModelChange?: (modelId: string) => void;
   commands?: readonly ChatCommand[]; contextUsage?: ChatContextUsageData;
-  contextActions?: readonly ChatAction[]; contextPopupAction?: ChatAction; footerTools?: JSX.Element;
+  contextActions?: readonly ChatAction[]; contextPopupAction?: ChatAction; footerTools?: JSX.Element; modelDetails?: JSX.Element;
   submitTools?: JSX.Element; footerContent?: JSX.Element; placeholder?: string; label?: string;
   inputLabel?: string; disabled?: boolean; error?: string; focusToken?: unknown; class?: string;
 };
@@ -265,3 +265,14 @@ current step as running. This component does not start tasks or infer progress.
 Message file attachments use compact horizontal chips with an icon and a single
 filename line. Long filenames truncate; the attachment row wraps when needed.
 Image attachments retain their thumbnail presentation.
+
+
+## Application-owned model details
+
+Use `Chat.ContextPopup` in `modelDetails` for a compact button with custom
+details, such as an application allowance. Pass the trigger text as children,
+`content` for the panel, and a complete `aria-label`. The button defaults to
+`type="button"`. Hover previews the panel; click or keyboard activation pins
+it open. Escape and outside click close it. Interactive panel content is
+reachable with Tab. Popup-owned click, pointer-enter/leave and ref props are
+not part of its public props. Applications own data loading and authorization.

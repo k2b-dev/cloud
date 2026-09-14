@@ -55,3 +55,5 @@ export const AiQuotaUsersQuerySchema = z
     page: z.coerce.number().int().positive().default(1),
   })
   .strict();
+
+export type AiChatQuotaSnapshot = { enabled: boolean; balances: Omit<AiQuotaBalance, "sources">[] };

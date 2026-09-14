@@ -1,0 +1,41 @@
+import { i18n } from "@k2b/stdlib";
+export const quotaText = i18n.define({
+  baseLocale: "en",
+  messages: {
+    en: {
+      title: "Chat allowances",
+      all: "All chat models",
+      unlimited: "Unlimited",
+      remaining: ({ percent }: { percent: string }) => `${percent} left`,
+      used: "Used",
+      tokens: "tokens",
+      reset: "Resets",
+      refresh: "Refresh",
+      refreshing: "Refreshing…",
+      unavailable: "Unavailable",
+      loadFailed: "Allowances could not be loaded. You can still send; the server checks your current allowance.",
+      unknownShort: "Check usage",
+      unknown: "Some calls could not be measured. Contact an administrator or wait for the reset.",
+      exhausted: "This allowance is exhausted. Your draft stays here. Wait for the reset or select a model with available allowance.",
+      scope: "Input and output of direct chat calls. Separate image and audio functions are excluded.",
+    },
+    de: {
+      title: "Chat-Kontingente",
+      all: "Alle Chatmodelle",
+      unlimited: "Unbegrenzt",
+      remaining: ({ percent }) => `${percent} frei`,
+      used: "Verbraucht",
+      tokens: "Tokens",
+      reset: "Reset",
+      refresh: "Aktualisieren",
+      refreshing: "Wird aktualisiert…",
+      unavailable: "Nicht verfügbar",
+      loadFailed: "Die Kontingente konnten nicht geladen werden. Senden bleibt möglich; der Server prüft dein aktuelles Kontingent.",
+      unknownShort: "Nutzung prüfen",
+      unknown: "Einige Aufrufe konnten nicht gemessen werden. Wende dich an einen Administrator oder warte auf den Reset.",
+      exhausted:
+        "Dieses Kontingent ist aufgebraucht. Dein Entwurf bleibt erhalten. Warte auf den Reset oder wähle ein Modell mit verfügbarem Kontingent.",
+      scope: "Input und Output direkter Chat-Aufrufe. Separate Bild- und Audiofunktionen sind ausgenommen.",
+    },
+  },
+});

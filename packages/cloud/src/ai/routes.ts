@@ -1,3 +1,4 @@
+import { getAiChatQuotas } from "./chat-quotas";
 import { enqueueChatMessage, listQueuedMessages, updateQueuedMessage, editQueuedMessage, queuedMessageAccepted, AiMessageQueueConflict } from "./message-queue";
 import { prepareAiChatTurn, wakeAiMessageQueue } from "./runtime";
 import { bodyLimit } from "hono/body-limit";
@@ -297,6 +298,10 @@ export const aiRoutes = (() => {
       .use("*", auth.requireRole("authenticated"))
       .get("/status", async (c) => {
         return respond(c, ok(await assistantAiSettingsState(c.get("accessSubject"))));
+      })
+      .get("/quotas", async (c) => {
+        c.header("Cache-Control", "no-store");
+        return c.json(await getAiChatQuotas(c.get("accessSubject")));
       })
       .get("/models", async (c) => {
         return respond(c, ok(await listAssistantAiModels(c.get("accessSubject"))));

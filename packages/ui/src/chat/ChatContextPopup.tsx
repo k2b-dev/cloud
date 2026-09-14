@@ -1,10 +1,10 @@
 import { createSignal, createUniqueId, type JSX, onCleanup, onMount, splitProps } from "solid-js";
 import { positionTooltipSurface } from "../feedback/tooltip-position";
 
-type Props = Omit<JSX.ButtonHTMLAttributes<HTMLButtonElement>, "content"> & { content: JSX.Element };
+export type ChatContextPopupProps = Omit<JSX.ButtonHTMLAttributes<HTMLButtonElement>, "content" | "ref" | "onClick" | "onPointerEnter" | "onPointerLeave"> & { content: JSX.Element };
 
 /** Context details support hover preview and deliberate click-to-pin without changing tooltip behavior. */
-export function ChatContextPopup(props: Props): JSX.Element {
+export function ChatContextPopup(props: ChatContextPopupProps): JSX.Element {
   const [local, rest] = splitProps(props, ["content", "children"]);
   const id = `chat-context-${createUniqueId()}`;
   const [open, setOpen] = createSignal(false);
@@ -44,6 +44,8 @@ export function ChatContextPopup(props: Props): JSX.Element {
     }, 180);
   };
   onMount(() => {
+    const resize = new ResizeObserver(position);
+    if (surface) resize.observe(surface);
     const outside = (event: PointerEvent) => {
       const path = event.composedPath();
       if (!path.includes(trigger!) && !path.includes(surface!)) close();
@@ -60,6 +62,7 @@ export function ChatContextPopup(props: Props): JSX.Element {
     window.addEventListener("resize", position);
     window.addEventListener("scroll", position, true);
     onCleanup(() => {
+      resize.disconnect();
       clear();
       document.removeEventListener("pointerdown", outside);
       document.removeEventListener("keydown", escape);
@@ -70,6 +73,7 @@ export function ChatContextPopup(props: Props): JSX.Element {
   return (
     <>
       <button
+        type="button"
         {...rest}
         ref={trigger}
         aria-expanded={open()}

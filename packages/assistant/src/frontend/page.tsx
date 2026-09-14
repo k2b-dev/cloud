@@ -1,4 +1,5 @@
 import {
+  getAiChatQuotas,
   aiConversations,
   aiProjects,
   aiUserPrefs,
@@ -28,12 +29,13 @@ export default ssr<AuthContext>(async (c) => {
   const initialArtifactPath = url.searchParams.get("artifact");
   const subject = { type: "user" as const, userId: user.id };
   const initialLiveCursor = await latestAiInvalidationCursor(user.id);
-  const [status, models, prefs, sidebar, appUrl] = await Promise.all([
+  const [status, models, prefs, sidebar, appUrl, initialQuotas] = await Promise.all([
     assistantAiSettingsState(subject),
     listAssistantAiModels(subject),
     aiUserPrefs.get(user.id),
     loadAssistantSidebarSnapshot(user.id),
     coreSettings.get<string>("app.url"),
+    getAiChatQuotas(subject).catch(() => null),
   ]);
   const { conversations } = sidebar;
   const activeProjectRecord = requestedProjectId ? await aiProjects.getByShortId(requestedProjectId, subject) : null;
@@ -88,6 +90,7 @@ export default ssr<AuthContext>(async (c) => {
   return () => (
     <Layout c={c} fullPage title={[{ title: t.start, href: "/" }, { title: t.assistant }]}>
       <AssistantWorkspace
+        initialQuotas={initialQuotas}
         userId={user.id}
         cloudUrl={publicCloudOrigin(appUrl)}
         status={status}

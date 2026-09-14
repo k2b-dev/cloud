@@ -1,3 +1,5 @@
+export type { ChatContextPopupProps } from "./ChatContextPopup";
+import { ChatContextPopup } from "./ChatContextPopup";
 import { ChatTasks } from "./ChatTasks";
 export type { ChatTask, ChatTasksProps } from "./ChatTasks";
 import { ChatComposer } from "./ChatComposer";
@@ -35,4 +37,5 @@ export const Chat = Object.assign(ChatRoot, {
   Activity: ChatActivity,
   Composer: ChatComposer,
   ContextUsage: ChatContextUsage,
+  ContextPopup: ChatContextPopup,
 });

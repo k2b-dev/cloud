@@ -51,6 +51,11 @@ const readError = async (response: Response, fallback: string): Promise<string> 
 
 /** Typed conversation-management facade used by the Assistant UI. */
 export const assistantApi = {
+  quotas: async (signal?: AbortSignal): Promise<import("@k2b/cloud/shared").AiChatQuotaSnapshot> => {
+    const response = await client.quotas.$get({}, { init: { signal } });
+    if (!response.ok) throw new Error(await readError(response, "Failed to load allowances"));
+    return response.json();
+  },
   listSkills: async (): Promise<AiSkillSummary[]> => {
     const response = await skillsClient.index.$get();
     if (!response.ok) throw new Error(await readError(response, "Failed to load skills"));

@@ -1,3 +1,4 @@
+import AssistantQuota, { createAssistantQuota } from "./AssistantQuota";
 import { parseAiTodoPlan } from "@k2b/cloud/ai/browser";
 import { browserHttpHost, openSecretsDialog } from "../artifacts/SecretsDialog";
 import { createCodeApprovals } from "../artifacts/CapabilityApproval";
@@ -39,7 +40,7 @@ import {
 } from "@k2b/cloud/ai/ui";
 import { cloudResourceClipboard } from "@k2b/cloud/browser/resource-clipboard";
 import { openCloudResourcePicker } from "@k2b/cloud/browser/resource-picker";
-import { createEffect, createMemo, createSignal, onCleanup, onMount, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, onCleanup, onMount, on, Show } from "solid-js";
 import { assistantApi } from "../api/client";
 import type { AssistantChatContextSnapshot } from "../chat-context";
 import type { AssistantProjectContextSnapshot } from "../project-context";
@@ -92,6 +93,7 @@ type InitialDetail = {
 };
 
 type Props = {
+  initialQuotas?: import("@k2b/cloud/shared").AiChatQuotaSnapshot | null;
   userId: string;
   cloudUrl: string;
   status: Status;
@@ -179,6 +181,9 @@ export default function AssistantWorkspace(props: Props) {
     clientToolIds: [...CODE_RUNTIME_TOOL_NAMES],
     frontendTools: createArtifactAgentRuntime(artifactWorkspace.open,codeApprovals.ask,"chat-tool",browserHttpHost),
   });
+
+  const quotas = createAssistantQuota(props.initialQuotas);
+  createEffect(on(() => chat.running(), () => quotas.refresh(), { defer: true }));
 
   const sidebar = query.create<string, AssistantSidebarSnapshot, AssistantLiveInvalidation>({
     source: () => "/api/assistant/workspace/sidebar",
@@ -1081,6 +1086,16 @@ export default function AssistantWorkspace(props: Props) {
           models={aiChatModelOptions(props.models)}
           selectedModelId={selectedModelId()}
           onModelChange={setSelectedModelId}
+          modelDetails={
+            <AssistantQuota
+              snapshot={quotas.data()}
+              model={selectedModelId()}
+              modelLabel={props.models.find((m) => m.id === selectedModelId())?.label ?? selectedModelId()}
+              error={quotas.error()}
+              loading={quotas.loading() || quotas.refreshing()}
+              onRefresh={quotas.refresh}
+            />
+          }
           disabled={!canUseComposer() || newConversation.loading() || chat.loadingConversation()}
           state={
             projectComposer()

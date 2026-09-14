@@ -54,3 +54,5 @@ export * from "./theme";
 export * from "./time";
 
 export * from "./ai-quotas";
+
+export type { AiChatQuotaSnapshot } from "./ai-quotas";

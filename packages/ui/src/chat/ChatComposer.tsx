@@ -50,6 +50,8 @@ export type ChatComposerProps = {
   models?: readonly ChatModelOption[];
   selectedModelId?: string | null;
   onModelChange?: (modelId: string) => void;
+  /** Compact application-owned details immediately after the model selector. */
+  modelDetails?: JSX.Element;
   commands?: readonly ChatCommand[];
   contextUsage?: ChatContextUsageData;
   contextActions?: readonly ChatAction[];
@@ -504,6 +506,7 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
                     }}
                   />
                 </Show>
+                {props.modelDetails}
               </div>
 
               <div class="k2b-chat-composer__submit">
