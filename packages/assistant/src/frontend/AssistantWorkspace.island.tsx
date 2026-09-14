@@ -549,10 +549,10 @@ export default function AssistantWorkspace(props: Props) {
         navigateTo(`${window.location.pathname}${window.location.search}${window.location.hash}`);
         return;
       }
-      if (conversationId !== chat.activeConversationId()) {
-        void chat.openConversation(conversationId).then(() => {
-          if (artifactPath && chat.activeConversationId() === conversationId) void openFiles(artifactPath);
-        });
+      if (projectView() || conversationId !== chat.activeConversationId()) {
+        void openAndFocusConversation(conversationId).then((opened) => {
+          if (opened && artifactPath) void openFiles(artifactPath);
+        }).catch(() => navigateTo(window.location.href));
         return;
       }
       if (artifactPath) void openFiles(artifactPath);

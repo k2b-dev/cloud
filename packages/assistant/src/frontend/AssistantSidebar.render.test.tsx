@@ -58,6 +58,19 @@ const conversation = (id: string, title: string, projectId: string | null): AiCo
 });
 
 describe("Assistant sidebar", () => {
+  test("selects only the visible project or Studio despite a retained chat", () => {
+    for (const activeView of ["chat", "apps"] as const) {
+      const html = renderToString(() => createComponent(AssistantSidebar, {
+        conversations: () => [conversation("retained", "Retained chat", null)],
+        projects: [project], activeConversationId: () => "retained",
+        activeProjectId: project.id, activeView, live,
+      }));
+      const selectedLinks = html.match(/<(?:a|button)\b[^>]*class="[^"]*\bis-active\b[^"]*"[^>]*>[\s\S]*?<\/(?:a|button)>/g) ?? [];
+      expect(selectedLinks.length).toBeGreaterThan(0);
+      for (const selected of selectedLinks) expect(selected).toContain(activeView === "apps" ? '/app/assistant/apps' : project.name);
+    }
+  });
+
   test("lists projects as rows and includes their chats in the shared chat list", () => {
     const [conversations] = createSignal([
       { ...conversation("chatpinned", "Pinned chat", null), pinnedAt: "2026-08-12T10:00:00.000Z" },

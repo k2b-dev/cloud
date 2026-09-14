@@ -32,12 +32,16 @@ test("chat clicks select immediately while loading, preserve native modifiers an
   const [selected, setSelected] = createSignal("first");
   let finish: (opened: boolean) => void = () => {};
   const pending = new Promise<boolean>(resolve => { finish = resolve; });
+  const [project, setProject] = createSignal<string | null>(null);
+  const [view, setView] = createSignal<"chat" | "apps" | "all">("chat");
   let opens = 0;
   let transitions = 0;
   Object.defineProperty(dom.document, "startViewTransition", { configurable: true, value: () => { transitions++; } });
   const dispose = render(() => <AssistantSidebar
     conversations={() => [conversation("first", "First", null), conversation("second", "Second", null)]}
     activeConversationId={selected}
+    activeProjectId={project()}
+    activeView={view()}
     onOpenConversation={id => { opens++; setSelected(id); return pending; }}
     live={live}
   />, dom.root);
@@ -62,6 +66,18 @@ test("chat clicks select immediately while loading, preserve native modifiers an
     await pending;
     await Promise.resolve();
     expect(dom.window.location.href).toBe(href);
+    setProject("project123");
+    expect(link.getAttribute("aria-current")).not.toBe("page");
+    setProject(null);
+    expect(link.getAttribute("aria-current")).toBe("page");
+    for (const destination of ["apps", "all"] as const) {
+      setView(destination);
+      expect(link.getAttribute("aria-current")).not.toBe("page");
+    }
+    setView("chat");
+    setProject("project123");
+    link.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    expect(opens).toBe(2);
   } finally {
     dispose();
     dom.cleanup();

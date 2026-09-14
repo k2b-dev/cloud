@@ -185,8 +185,9 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
   const text = useAssistantText();
   const activeConversations = () => props.conversations().filter((conversation) => !conversation.isDone);
   const doneConversations = () => props.conversations().filter((conversation) => conversation.isDone);
-  const activeConversationId = () => props.activeConversationId?.() ?? null;
   const activeView = () => props.activeView ?? "chat";
+  const activeProjectId = () => activeView() === "chat" ? props.activeProjectId ?? null : null;
+  const activeConversationId = () => activeView() === "chat" && !activeProjectId() ? props.activeConversationId?.() ?? null : null;
   const creatingConversation = () => props.creatingConversation?.() ?? false;
   const pinnedConversations = () =>
     activeConversations()
@@ -195,7 +196,7 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
   const unpinnedConversations = () => activeConversations().filter((conversation) => !conversation.pinnedAt);
   const generalConversations = unpinnedConversations;
   const openProject = async (project: AiProject) => {
-    if (props.activeProjectId === project.id) return;
+    if (activeProjectId() === project.id) return;
     const href = assistantProjectHref("/app/assistant", project.id);
     if (!props.onOpenProject) {
       navigateTo(href);
@@ -213,7 +214,7 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
       {(project) => (
         <AppWorkspace.SidebarItem
           icon={project.icon || "ti ti-folder"}
-          active={props.activeProjectId === project.id}
+          active={activeProjectId() === project.id}
           onClick={() => void openProject(project)}
         >
           <AppWorkspace.SidebarItemLabel marquee={false}>{project.name}</AppWorkspace.SidebarItemLabel>
