@@ -217,8 +217,7 @@ export const accountMessages = i18n.define({
       enabled: "Enabled",
       off: "Off",
       browserNotifications: "Browser notifications",
-      browserNotificationsDescription:
-        "Receive operating-system notifications from this browser when Cloud is in the background or closed.",
+      browserNotificationsDescription: "Receive operating-system notifications from this browser, including while Cloud is open.",
       disabling: "Disabling",
       enabling: "Enabling",
       working: "Working...",
@@ -566,8 +565,7 @@ export const accountMessages = i18n.define({
       enabled: "Aktiviert",
       off: "Aus",
       browserNotifications: "Browser-Benachrichtigungen",
-      browserNotificationsDescription:
-        "Erhalte Systembenachrichtigungen von diesem Browser, wenn Cloud im Hintergrund läuft oder geschlossen ist.",
+      browserNotificationsDescription: "Erhalte Systembenachrichtigungen von diesem Browser, auch während Cloud geöffnet ist.",
       disabling: "Wird deaktiviert",
       enabling: "Wird aktiviert",
       working: "Wird verarbeitet...",

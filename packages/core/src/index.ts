@@ -20,7 +20,6 @@ import { aiCapabilities } from "./capabilities";
 import { app } from "./config";
 import { coreHelp } from "./help";
 import { createCoreNotificationSender } from "./notifications";
-import notificationWebSocketRoutes from "./notifications-ws";
 import { createPagesRouter } from "./pages/create";
 import { runCoreSetup, startCoreServices, stopCoreServices } from "./runtime-helpers";
 
@@ -41,7 +40,6 @@ const router = new Hono<AuthContext>()
   .use("*", middleware.settings())
   .route("/", identityPublicRoutes)
   .route("/", mcpProtectedResource)
-  .route("/api/me/notifications/ws", notificationWebSocketRoutes)
   .route("/api/ai/live", aiLiveRoutes)
   .route("/api/_internal/identity/v1", identityInvocationRoutes)
   .route("/api/_internal/identity/v1", identityMandateRoutes)

@@ -5,6 +5,7 @@ import { defineApp, notification } from "../..";
 import { notifications } from ".";
 import { registerNotificationDefinitions } from "./catalog";
 import { registerNotificationChannel } from "./channels";
+import { processNotificationDelivery } from "./dispatcher";
 import { userNotifications } from "./user";
 
 declare module "../../contracts/notification-types" {
@@ -115,13 +116,29 @@ suite("typed notification delivery integration", () => {
             throw new Error("Email renderer must stay lazy");
           },
         }),
-        foreground: notification({
+        browserOnly: notification({
           recipient: "user",
-          label: "Foreground",
-          description: "Visible pages receive this without a Push endpoint.",
+          label: "Browser only",
+          description: "Browser delivery requires an active Push endpoint.",
           delivery: { recommended: ["browser"] },
           data: z.object({ resourceId: z.string() }),
-          render: ({ resourceId }) => ({ title: "Foreground ready", targetHref: `/resources/${resourceId}` }),
+          render: ({ resourceId }) => ({ title: "Browser ready", targetHref: `/resources/${resourceId}` }),
+        }),
+        requiredBrowser: notification({
+          recipient: "user",
+          label: "Required browser",
+          description: "A required browser channel needs an endpoint.",
+          delivery: { required: ["browser"] },
+          data: z.object({}),
+          render: () => ({ title: "Required browser" }),
+        }),
+        browserFallback: notification({
+          recipient: "user",
+          label: "Browser fallback",
+          description: "An unavailable browser endpoint allows the next configured channel.",
+          delivery: { recommended: ["browser", "test"] },
+          data: z.object({}),
+          render: () => ({ title: "Browser fallback" }),
         }),
         brokenEmail: notification({
           recipient: "user",
@@ -181,29 +198,39 @@ suite("typed notification delivery integration", () => {
       });
       expect(lazyEmail.status).toBe("delivered");
 
-      const liveAbort = new AbortController();
-      const cursor = (await notifications.live.latestCursor(userId)) ?? notifications.live.emptyCursor();
-      const liveIterator = notifications.live.events({ userId, after: cursor, signal: liveAbort.signal })[Symbol.asyncIterator]();
-      const nextLive = liveIterator.next();
-      const foreground = await notifications.send(app.notifications.foreground, {
+      const browserOnly = await notifications.send(app.notifications.browserOnly, {
         recipient: { userId },
-        data: { resourceId: "resource-live" },
-        idempotencyKey: `foreground:${suffix}`,
+        data: { resourceId: "resource-browser" },
+        idempotencyKey: `browser-only:${suffix}`,
       });
-      const live = await Promise.race([
-        nextLive,
-        Bun.sleep(2_000).then(() => {
-          throw new Error("Timed out waiting for foreground notification");
-        }),
+      expect(browserOnly.status).toBe("suppressed");
+      expect(browserOnly.deliveries).toEqual([
+        expect.objectContaining({ channel: "browser", status: "suppressed", errorCode: "no_endpoint" }),
       ]);
-      liveAbort.abort();
-      expect(foreground.status).toBe("suppressed");
-      expect(live.value?.data).toEqual({
-        type: "cloud-notification",
-        eventId: foreground.id,
-        title: "Foreground ready",
-        targetHref: "/resources/resource-live",
+
+      const requiredBrowser = await notifications.send(app.notifications.requiredBrowser, {
+        recipient: { userId },
+        data: {},
+        idempotencyKey: `required-browser:${suffix}`,
       });
+      expect(requiredBrowser.status).toBe("error");
+      expect(requiredBrowser.deliveries).toEqual([
+        expect.objectContaining({ channel: "browser", required: true, status: "suppressed", errorCode: "no_endpoint" }),
+      ]);
+      const fallback = await notifications.send(app.notifications.browserFallback, {
+        recipient: { userId },
+        data: {},
+        idempotencyKey: `browser-fallback:${suffix}`,
+      });
+      expect(fallback.status).toBe("queued");
+      expect(fallback.deliveries).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ channel: "browser", status: "suppressed", errorCode: "no_endpoint" }),
+          expect.objectContaining({ channel: "test", status: "pending", errorCode: null }),
+        ]),
+      );
+      const fallbackDelivery = fallback.deliveries.find((delivery) => delivery.channel === "test")!;
+      expect((await processNotificationDelivery(fallbackDelivery.id)).status).toBe("delivered");
 
       const brokenEmail = await notifications.send(app.notifications.brokenEmail, {
         recipient: { userId },
@@ -249,6 +276,20 @@ suite("typed notification delivery integration", () => {
       });
       expect(muted.status).toBe("suppressed");
       expect(muted.deliveries).toEqual([expect.objectContaining({ channel: "none", status: "suppressed", errorCode: "disabled_by_user" })]);
+
+      await sql`
+        INSERT INTO notifications.preferences (user_id, definition_id, channels)
+        VALUES (${userId}::uuid, ${app.notifications.browserOnly.id}, '{}'::text[])
+      `;
+      const browserMuted = await notifications.send(app.notifications.browserOnly, {
+        recipient: { userId },
+        data: { resourceId: "muted-browser" },
+        idempotencyKey: `browser-muted:${suffix}`,
+      });
+      expect(browserMuted.status).toBe("suppressed");
+      expect(browserMuted.deliveries).toEqual([
+        expect.objectContaining({ channel: "none", status: "suppressed", errorCode: "disabled_by_user" }),
+      ]);
 
       const preferences = await userNotifications.preferences.list(userId, "de-CH");
       expect(preferences.availableChannels).toContain("test");

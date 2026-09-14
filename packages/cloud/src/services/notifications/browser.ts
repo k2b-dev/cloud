@@ -152,6 +152,18 @@ const browserDriver = {
   },
   deliver: async (value: unknown) => {
     const payload: BrowserDeliveryPayload = BrowserDeliveryPayloadSchema.parse(value);
+    // A queued payload can outlive logout, disable, or rebinding this browser to another user.
+    const [endpoint] = await sql<{ id: string }[]>`
+      SELECT id FROM notifications.endpoints
+      WHERE id = ${payload.endpointId}::uuid AND channel = 'browser'
+        AND verified_at IS NOT NULL AND disabled_at IS NULL
+    `;
+    if (!endpoint) {
+      throw Object.assign(new Error("Browser notification endpoint is no longer registered"), {
+        code: "endpoint_gone",
+        retryable: false,
+      });
+    }
     await ensureWebPushConfigured();
     try {
       await sendPinnedWebPush(

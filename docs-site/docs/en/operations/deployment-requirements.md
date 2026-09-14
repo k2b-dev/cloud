@@ -144,7 +144,7 @@ egress is needed from Core, while Mail needs access to its mailbox providers.
 | AI | `ai.enabled`, `ai.model_profiles_json`, selected model IDs, profile credentials/endpoint and applicable model access grants | Follow [Models and providers](/en/docs/ai/models-and-providers). An installed Assistant is not an enabled or authorized model. Private models need reachable inference endpoints; hosted models need provider credentials. |
 | AI web tools | `ai.firecrawl_api_key` and provider egress | Test the selected web tool; this is not required for basic chat. |
 | HTML/Markdown PDF | `gotenberg.url`, optional `gotenberg.username` / `gotenberg.password`, and configured limits/timeouts | Follow [PDF and templates](/en/docs/platform/pdf-and-templates). In Dev the service origin is `http://gotenberg:3000`; starting its container does not populate the Cloud setting. |
-| Browser push | `notifications.web_push_public_key`, `notifications.web_push_private_key`, browser subscription/permission and outbound push-service access | Test delivery to an opted-in browser. In-app notification storage does not depend on browser push. |
+| Browser push | `notifications.web_push_public_key`, `notifications.web_push_private_key`, browser subscription/permission and outbound push-service access | Test native notification delivery to an opted-in browser with Cloud visible and with no open Cloud tab. Notification history does not depend on browser push. |
 | City search | `weather.geo_url` pointing to the supported Geo API | Dev supplies a Geo container (`http://geo:4000` internally), but the setting must still be configured. Forecast access is a separate dependency. |
 
 For S3 snapshots, enter credentials in the individual notebook's snapshot

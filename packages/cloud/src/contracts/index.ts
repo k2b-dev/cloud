@@ -2,7 +2,6 @@ export * from "./account-categories";
 export * from "./announcements";
 export * from "./app";
 export * from "./capabilities";
-export * from "./notification-live";
 export * from "./notification-types";
 export * from "./posix";
 export * from "./profile";

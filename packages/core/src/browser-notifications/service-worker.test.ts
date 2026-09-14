@@ -3,11 +3,6 @@ import serviceWorkerSource from "./service-worker.js" with { type: "text" };
 
 type Listener = (event: Record<string, unknown>) => void;
 
-class TestMessageChannel {
-  port1: { onmessage: (() => void) | null; close: () => void } = { onmessage: null, close: () => undefined };
-  port2 = { postMessage: () => this.port1.onmessage?.() };
-}
-
 const loadWorker = (windows: Array<Record<string, unknown>>) => {
   const listeners = new Map<string, Listener>();
   const shown: Array<{ title: string; options: Record<string, unknown> }> = [];
@@ -30,7 +25,7 @@ const loadWorker = (windows: Array<Record<string, unknown>>) => {
       },
     },
   };
-  new Function("self", "MessageChannel", serviceWorkerSource)(worker, TestMessageChannel);
+  new Function("self", serviceWorkerSource)(worker);
   return { listeners, opened, shown };
 };
 
@@ -68,78 +63,47 @@ const notificationClickEvent = (targetHref: string) => {
 };
 
 describe("browser notification service worker", () => {
-  test("uses one visible Cloud client instead of showing a duplicate OS notification", async () => {
+  test.each([
+    { name: "a focused target tab", tabs: [{ focused: true, visibilityState: "visible" }] },
+    { name: "a visible unfocused tab", tabs: [{ focused: false, visibilityState: "visible" }] },
+    { name: "a hidden tab", tabs: [{ focused: false, visibilityState: "hidden" }] },
+    { name: "no tabs", tabs: [] },
+    {
+      name: "multiple tabs",
+      tabs: [{ focused: true, visibilityState: "visible" }, { visibilityState: "visible" }, { visibilityState: "hidden" }],
+    },
+  ])("shows one native notification with $name without forwarding to tabs", async ({ tabs }) => {
     const messages: unknown[] = [];
-    const visibleClient = {
-      focused: true,
-      visibilityState: "visible",
-      postMessage: (value: unknown, ports: Array<{ postMessage: (value: unknown) => void }>) => {
-        messages.push(value);
-        ports[0]?.postMessage({ received: true });
-      },
-    };
-    const { listeners, shown } = loadWorker([visibleClient]);
-    const payload = { type: "cloud-notification", eventId: crypto.randomUUID(), title: "Ready", targetHref: "/app/assistant" };
-    const push = pushEvent(payload);
-
-    listeners.get("push")!(push.event);
-    await push.completion();
-
-    expect(messages).toEqual([payload]);
-    expect(shown).toEqual([]);
-  });
-
-  test("shows a minimal deep-linked OS notification without a visible client", async () => {
-    const { listeners, shown } = loadWorker([]);
+    const targetHref = "/app/assistant?conversation=one";
+    const { listeners, shown } = loadWorker(
+      tabs.map((tab) => ({
+        ...tab,
+        url: `https://cloud.example${targetHref}`,
+        postMessage: (value: unknown) => messages.push(value),
+      })),
+    );
     const eventId = crypto.randomUUID();
-    const push = pushEvent({ type: "cloud-notification", eventId, title: "Ready", targetHref: "/app/assistant/chats/1" });
+    const push = pushEvent({ type: "cloud-notification", eventId, title: "Ready", targetHref });
 
     listeners.get("push")!(push.event);
+    expect(push.completion()).not.toBeNull();
     await push.completion();
 
+    expect(messages).toEqual([]);
     expect(shown).toEqual([
       {
         title: "Ready",
-        options: {
-          body: "Open Cloud to view.",
-          icon: "/branding/logo",
-          tag: eventId,
-          data: { targetHref: "/app/assistant/chats/1" },
-        },
+        options: { icon: "/branding/logo", tag: eventId, data: { targetHref } },
       },
     ]);
   });
 
-  test("shows the OS notification instead of messaging a hidden Cloud client", async () => {
-    const messages: unknown[] = [];
-    const hiddenClient = {
-      focused: false,
-      visibilityState: "hidden",
-      postMessage: (value: unknown) => messages.push(value),
-    };
-    const { listeners, shown } = loadWorker([hiddenClient]);
-    const push = pushEvent({ type: "cloud-notification", eventId: "hidden-event", title: "Ready", targetHref: "/app/assistant" });
-
+  test("uses the Cloud root when a notification has no target", async () => {
+    const { listeners, shown } = loadWorker([]);
+    const push = pushEvent({ type: "cloud-notification", eventId: crypto.randomUUID(), title: "Ready" });
     listeners.get("push")!(push.event);
     await push.completion();
-
-    expect(messages).toEqual([]);
-    expect(shown).toHaveLength(1);
-  });
-
-  test("falls back to the OS notification when a visible client does not acknowledge the message", async () => {
-    const visibleClient = {
-      focused: true,
-      visibilityState: "visible",
-      postMessage: () => undefined,
-    };
-    const { listeners, shown } = loadWorker([visibleClient]);
-    const push = pushEvent({ type: "cloud-notification", eventId: "unready-event", title: "Ready", targetHref: "/app/assistant" });
-
-    listeners.get("push")!(push.event);
-    await push.completion();
-
-    expect(shown).toHaveLength(1);
+    expect(shown[0]?.options.data).toEqual({ targetHref: "/" });
   });
 
   test("focuses an already open exact target when its notification is clicked", async () => {
@@ -173,10 +137,45 @@ describe("browser notification service worker", () => {
     expect(opened).toEqual(["/app/assistant?conversation=two"]);
   });
 
-  test("ignores malformed or cross-origin targets", () => {
+  test("navigates and focuses an existing window when its target differs", async () => {
+    const actions: string[] = [];
+    const client = {
+      url: "https://cloud.example/other",
+      navigate: async (href: string) => {
+        actions.push(`navigate:${href}`);
+      },
+      focus: async () => {
+        actions.push("focus");
+      },
+    };
+    const { listeners, opened } = loadWorker([client]);
+    const click = notificationClickEvent("/app/assistant?conversation=two");
+    listeners.get("notificationclick")!(click.event);
+    await click.completion();
+    expect(actions).toEqual(["navigate:/app/assistant?conversation=two", "focus"]);
+    expect(opened).toEqual([]);
+  });
+
+  test("opens the safe root for malformed stored click targets", async () => {
+    const { listeners, opened } = loadWorker([]);
+    const click = notificationClickEvent("https://other.example/private");
+    listeners.get("notificationclick")!(click.event);
+    await click.completion();
+    expect(opened).toEqual(["/"]);
+  });
+
+  test("ignores malformed payloads and unsafe targets", () => {
     const { listeners, shown } = loadWorker([]);
-    for (const targetHref of ["//example.test", "/\\evil.example"]) {
-      const push = pushEvent({ type: "cloud-notification", eventId: crypto.randomUUID(), title: "Unsafe", targetHref });
+    const payload = { type: "cloud-notification", eventId: crypto.randomUUID(), title: "Unsafe" };
+    for (const value of [
+      null,
+      {},
+      { ...payload, type: "other" },
+      { ...payload, title: null },
+      { ...payload, eventId: null },
+      ...["//example.test", "/\\evil.example", "https://example.test", "/path\n"].map((targetHref) => ({ ...payload, targetHref })),
+    ]) {
+      const push = pushEvent(value);
       listeners.get("push")!(push.event);
       expect(push.completion()).toBeNull();
     }

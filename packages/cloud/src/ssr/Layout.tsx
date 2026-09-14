@@ -13,7 +13,7 @@ import type { AppLaunchpadApp } from "./AppLaunchpad.island";
 import AppWorkspaceController from "./AppWorkspaceController.island";
 import { appAppearanceStyle, resolveCurrentApp } from "./app-appearance";
 import { visibleNavigationApps } from "./app-navigation";
-import BrowserNotifications from "./BrowserNotifications.island";
+import BrowserPushRegistration from "./BrowserPushRegistration.island";
 import GlobalAnnouncements from "./GlobalAnnouncements.island";
 import type { GlobalSearchHelpApp } from "./GlobalSearchHelpDialog";
 import LayoutFooter from "./LayoutFooter";
@@ -238,7 +238,7 @@ export default function Layout(props: LayoutProps) {
         <TimezoneCookie />
         {registeredHelp && <RegisteredHelpDocuments documents={registeredHelp.documents} pageBase={registeredHelp.pageBase} />}
         <AppWorkspaceController appId={currentApp?.id} />
-        {user && <BrowserNotifications userId={user.id} />}
+        {user && <BrowserPushRegistration />}
         {showRail && (
           <LayoutRail
             accent={currentApp?.appearance?.accent}

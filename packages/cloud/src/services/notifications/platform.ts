@@ -15,7 +15,6 @@ import { encryptSecret } from "../secrets";
 import { ensureNotificationDefinition } from "./catalog";
 import { getNotificationChannel, type NotificationDestination, type ResolvedNotificationRecipient } from "./channels";
 import { processNotificationDelivery } from "./dispatcher";
-import { notificationLive } from "./live";
 import { enqueueNotificationDeliveries, enqueueNotificationDelivery } from "./runtime";
 
 export type TypedNotificationDeliveryStatus = "deferred" | "pending" | "sending" | "delivered" | "suppressed" | "failed";
@@ -406,9 +405,6 @@ export const sendTypedNotification = async <
   });
 
   if (persisted.prepared) {
-    if (resolved.recipient.userId && (requiredChannelSet.has("browser") || preferred.includes("browser"))) {
-      await notificationLive.publish({ userId: resolved.recipient.userId, eventId: identity.id, presentation });
-    }
     for (const deliveryId of persisted.requiredIds) {
       const result = await processNotificationDelivery(deliveryId);
       if (result.status === "retry") await enqueueNotificationDelivery(deliveryId, result.retryAfterMs);

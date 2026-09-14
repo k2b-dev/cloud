@@ -17,6 +17,8 @@ Im Benachrichtigungsbereich kannst du Zustellversuche aus Cloud und den verfügb
 
 ## Browser-Benachrichtigungen aktivieren {icon="bell"}
 
+Browser-Benachrichtigungen erscheinen als Systembenachrichtigungen, auch während Cloud geöffnet ist oder du den verknüpften Inhalt bereits ansiehst. Ein Klick öffnet den zugehörigen Inhalt. Cloud zeigt dafür keine zusätzliche Meldung innerhalb der App. Ohne aktivierte Browser-Zustellung und Browserberechtigung erhältst du auf diesem Gerät keine solchen Benachrichtigungen.
+
 :::steps
 1. Aktiviere die Browser-Zustellung im Kontobereich, wenn sie verfügbar ist.
 2. Erlaube Benachrichtigungen in der Abfrage des Browsers.

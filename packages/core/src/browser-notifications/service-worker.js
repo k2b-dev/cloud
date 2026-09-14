@@ -31,26 +31,6 @@ const parsePayload = (event) => {
 
 const targetHref = (value) => safeTargetHref(value) ?? "/";
 
-const postToVisibleClient = (client, payload) =>
-  new Promise((resolve) => {
-    const channel = new MessageChannel();
-    let settled = false;
-    const finish = (received) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timeout);
-      channel.port1.close();
-      resolve(received);
-    };
-    const timeout = setTimeout(() => finish(false), 500);
-    channel.port1.onmessage = () => finish(true);
-    try {
-      client.postMessage(payload, [channel.port2]);
-    } catch {
-      finish(false);
-    }
-  });
-
 self.addEventListener("install", () => self.skipWaiting());
 self.addEventListener("activate", (event) => event.waitUntil(self.clients.claim()));
 
@@ -59,21 +39,11 @@ self.addEventListener("push", (event) => {
   if (!payload) return;
 
   event.waitUntil(
-    (async () => {
-      const windows = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
-      const visible = windows
-        .filter((client) => client.visibilityState === "visible")
-        .sort((left, right) => Number(Boolean(right.focused)) - Number(Boolean(left.focused)));
-      for (const client of visible) {
-        if (await postToVisibleClient(client, payload)) return;
-      }
-      await self.registration.showNotification(payload.title, {
-        body: "Open Cloud to view.",
-        icon: "/branding/logo",
-        tag: payload.eventId,
-        data: { targetHref: targetHref(payload.targetHref) },
-      });
-    })(),
+    self.registration.showNotification(payload.title, {
+      icon: "/branding/logo",
+      tag: payload.eventId,
+      data: { targetHref: targetHref(payload.targetHref) },
+    }),
   );
 });
 

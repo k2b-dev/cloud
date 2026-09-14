@@ -17,6 +17,8 @@ Notifications keep account and app events in one history. Delivery channels and 
 
 ## Browser notifications {icon="bell"}
 
+Browser notifications appear as operating-system notifications, including while Cloud is open or you are already viewing the linked item. Click a notification to open its item. Cloud does not show an additional in-app notification. This device needs browser delivery enabled and notification permission to receive these notifications.
+
 :::steps
 1. Enable browser delivery from your profile when the option is available.
 2. Allow notifications in the browser permission prompt.

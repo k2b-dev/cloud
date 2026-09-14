@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { sql } from "bun";
 import { browserNotifications } from "./browser";
+import { getNotificationChannel } from "./channels";
 
 const canUseNotificationDatabase = async (): Promise<boolean> => {
   if (!process.env.APP_SECRET) return false;
@@ -70,6 +71,15 @@ suite("browser notification endpoints", () => {
       expect(stored[0]?.secret_encrypted).not.toContain(subscription.endpoint);
       expect(stored[0]?.secret_encrypted).not.toContain(subscription.keys.auth);
 
+      const driver = getNotificationChannel("browser")!;
+      const [destination] = await driver.resolveDestinations({ userId: firstUserId, email: null });
+      expect(destination).toBeDefined();
+      const queuedPayload = driver.createPayload({
+        presentation: { title: "Private update" },
+        destination: destination!,
+        event: { id: crypto.randomUUID(), definitionId: "test.privateUpdate" },
+      });
+
       const second = await browserNotifications.registerEndpoint({
         userId: secondUserId,
         subscription,
@@ -82,8 +92,17 @@ suite("browser notification endpoints", () => {
           AND endpoint_hash = (SELECT endpoint_hash FROM notifications.endpoints WHERE id = ${second.id}::uuid)
       `;
       expect(active).toEqual([{ id: second.id, user_id: secondUserId, label: "Second device" }]);
+      await expect(driver.deliver(queuedPayload)).rejects.toMatchObject({ code: "endpoint_gone", retryable: false });
+      expect(await driver.resolveDestinations({ userId: firstUserId, email: null })).toEqual([]);
       expect(await browserNotifications.disableEndpoint({ userId: firstUserId, subscription })).toBe(false);
+      const [currentDestination] = await driver.resolveDestinations({ userId: secondUserId, email: null });
+      const currentPayload = driver.createPayload({
+        presentation: { title: "Current update" },
+        destination: currentDestination!,
+        event: { id: crypto.randomUUID(), definitionId: "test.currentUpdate" },
+      });
       expect(await browserNotifications.disableEndpoint({ userId: secondUserId, subscription })).toBe(true);
+      await expect(driver.deliver(currentPayload)).rejects.toMatchObject({ code: "endpoint_gone", retryable: false });
     } finally {
       await sql`DELETE FROM auth.users WHERE id IN (${firstUserId}::uuid, ${secondUserId}::uuid)`;
     }

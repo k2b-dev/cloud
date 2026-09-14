@@ -5,7 +5,7 @@ section: Platform services
 order: 530
 description: Define, send, and inspect typed notifications.
 tags: [notifications, email, browser]
-updated: 2026-08-29
+updated: 2026-09-14
 ---
 
 # Notifications
@@ -220,14 +220,24 @@ when it has no driver or destination.
 
 ### Browser delivery
 
-The browser channel needs a user with an active browser endpoint. Each endpoint
-gets its own Web Push delivery.
+The browser channel uses Web Push exclusively. It needs a user with an active
+browser endpoint and notification permission. Each registered endpoint gets
+its own delivery.
 
-Cloud also sends a live event to active sessions. This is separate from Web
-Push.
+The service worker shows an operating-system notification whether Cloud is
+visible, in the background, or has no open tab. An already-open destination
+does not suppress the notification. Multiple tabs in the same browser profile
+do not create extra deliveries. Browser and operating-system settings control
+when and how notifications appear.
 
-A Web Push delivery can be `suppressed` while an active session still receives
-the live event.
+Notifications show the rendered title and Cloud icon. The presentation body
+stays out of the push payload. Clicking a notification opens or focuses its
+Cloud destination, where normal authentication and authorization apply.
+
+Without an active endpoint, Cloud records `no_endpoint` for that browser
+delivery. A later configured recommended channel can still receive the event.
+There is no in-app notification card or separate notification WebSocket.
+Ordinary interface feedback, such as a saved confirmation, is unaffected.
 
 Use the browser client to read and change the current browser's registration:
 
@@ -247,7 +257,9 @@ existing subscription. It never asks for permission. Call `enable()` only from
 an explicit user action because it may open the browser permission prompt.
 
 Use `state()` to inspect support, permission, and subscription state. Use
-`disable()` to remove the endpoint and unsubscribe this browser.
+`disable()` to disable the endpoint and unsubscribe this browser. Before sending
+a queued browser delivery, Cloud checks that its endpoint is still active.
+Disabling or rebinding that endpoint prevents later attempts from sending to it.
 
 Browser delivery requires a secure context, service-worker and Push API support.
 On iPhone and iPad, Cloud must run as an installed Home Screen application.
@@ -452,9 +464,9 @@ type TypedNotificationSendResult = {
 | `suppressed` | No persisted delivery is pending, sending, or delivered |
 | `error` | A required delivery was suppressed, failed, or has an error code |
 
-`suppressed` describes persisted channel delivery. It does not prove that the
-recipient saw nothing. An active application session may receive a live browser
-event even when no registered Web Push endpoint exists.
+Delivery status describes provider processing. `delivered` confirms provider
+acceptance, not that the operating system displayed a notification or that the
+recipient read it.
 
 ### Read each delivery
 
