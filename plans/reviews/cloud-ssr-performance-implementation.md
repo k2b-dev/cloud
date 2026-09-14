@@ -95,3 +95,29 @@ four production builds and the isolated browser fixture do not quantify Cloud
 LCP improvement or separate laptop load from server latency. That measurement
 requires an appropriate running build and comparable client conditions; it
 does not authorize releasing or deploying anything as part of this epic.
+
+## Peer-review follow-up
+
+The accepted corrections make browser metrics an explicit operator choice.
+`observability.web_vitals.enabled` defaults to false. SSR uses its existing
+settings snapshot to decide whether to emit the collector; the endpoint also
+checks the setting and discards reports while disabled, including reports from
+already-open pages. Server-Timing stays available without browser collection.
+
+Core now builds one shared collector. Its asset name derives from the collector
+source and the exact web-vitals dependency version, so applications with the
+same collector share a cache key without stale immutable URLs. The server
+bundle embeds both version inputs and needs no source files at runtime.
+
+The other review suggestions were not applied: a font preload remains subject
+to measured cold-visit CLS and font usage rather than adding speculative asset
+metadata; the SSR adapter retains 406 when the client excludes every available
+representation; Mail retains the disclosure needed for on-demand deleted
+mailbox loading. No release, dependency publication, or deployment is included.
+
+Verification of the follow-up: 11 focused tests passed (50 assertions), covering
+collection disable/re-enable, payload/auth boundaries, the Core-only asset,
+compiled asset URL parity, SSR status handling, and request locale isolation.
+The direct Cloud TypeScript check passed. A production Contacts build passed;
+the shared Core collector build was verified independently. No live application
+restart or release was performed.

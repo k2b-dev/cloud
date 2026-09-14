@@ -3,10 +3,19 @@ import { createSSRHandler } from "@k2b/ssr/hono";
 import type { Context, Env, MiddlewareHandler, TypedResponse } from "hono";
 import type { StatusCode } from "hono/utils/http-status";
 import type { RailSnapshot } from "../contracts/rail-preferences";
+import type { SettingsFlat, Unflatten } from "../contracts/settings-types";
 import type { User } from "../contracts/shared";
+import type { CORE_SETTINGS } from "../services/settings/core-settings";
 import { measureServerPhase } from "./server-timing";
 
-type PageEnv<T extends object> = { Variables: { page: Partial<T>; user?: User; railPreferences?: RailSnapshot } };
+type PageEnv<T extends object> = {
+  Variables: {
+    page: Partial<T>;
+    user?: User;
+    railPreferences?: RailSnapshot;
+    settings?: Unflatten<SettingsFlat<typeof CORE_SETTINGS>>;
+  };
+};
 type SsrHandlerResult = RenderFn | Response | TypedResponse;
 type SsrHandler<E extends Env, T extends object> = (context: Context<E & PageEnv<T>>) => SsrHandlerResult | Promise<SsrHandlerResult>;
 

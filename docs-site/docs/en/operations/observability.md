@@ -69,8 +69,20 @@ measures its own work; `ssr_render` includes HTML serialization and the
 template. Phases absent from a request remain absent. These timings exclude
 network transfer and browser work.
 
-Authenticated SSR pages also report LCP, INP, and CLS through the locally
-bundled `web-vitals` library to `/api/me/web-vitals`. Find these client-reported
+Browser collection is **off by default**. Enable the Core setting
+`observability.web_vitals.enabled` temporarily to diagnose page performance.
+Authenticated SSR pages then report LCP, INP, and CLS to `/api/me/web-vitals`.
+Core builds and serves one shared, versioned `web-vitals` bundle. Applications
+use the same asset URL and browser cache entry. SSR reads the existing request
+settings snapshot; it adds no settings lookup for this decision.
+
+Each report creates an entry in the existing logs; collection is intended for
+controlled measurement windows, not permanent full-traffic analytics. Disabling
+the setting suppresses the script on subsequent pages and discards reports
+from already-open pages after the normal shared settings cache invalidation.
+Server-Timing remains available independently of browser collection.
+
+Find these client-reported
 diagnostics in the existing logs with source **web-vitals**. Reports contain
 the application ID, route template, metric ID, value, navigation type, and
 server timings. They contain no concrete URL, query string, DOM attribution,

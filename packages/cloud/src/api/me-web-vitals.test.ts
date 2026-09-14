@@ -15,7 +15,11 @@ const report: WebVitalsReport = {
 
 test("performance reports require a user and accept only bounded diagnostic fields", async () => {
   const recorded: WebVitalsReport[] = [];
-  const routes = createMeWebVitalsRoutes((value) => recorded.push(value));
+  let enabled = true;
+  const routes = createMeWebVitalsRoutes(
+    (value) => recorded.push(value),
+    async () => enabled,
+  );
   const app = new Hono<{ Variables: { user: { id: string } } }>()
     .use("*", async (c, next) => {
       c.set("user", { id: "authenticated-fixture" });
@@ -30,6 +34,9 @@ test("performance reports require a user and accept only bounded diagnostic fiel
     });
   expect((await post(report)).status).toBe(204);
   expect(recorded).toEqual([report]);
+  enabled = false;
+  expect((await post(report)).status).toBe(204);
+  expect(recorded).toHaveLength(1);
   const anonymous = await routes.request("/web-vitals", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -47,4 +54,7 @@ test("performance reports require a user and accept only bounded diagnostic fiel
     expect((await post(invalid)).status).toBe(400);
   expect((await post({ ...report, padding: "x".repeat(4096) })).status).toBe(413);
   expect(recorded).toHaveLength(1);
+  enabled = true;
+  expect((await post(report)).status).toBe(204);
+  expect(recorded).toHaveLength(2);
 });

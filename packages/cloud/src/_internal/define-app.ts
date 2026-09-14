@@ -74,6 +74,7 @@ import { appRegistry, type CapabilityRegistryRecord, capabilityRegistry, helpReg
 import { ensureRuntimeWatcher, getCurrentRuntime, stopRuntimeWatcher } from "./runtime-watcher";
 import { servePublicAsset } from "./static-assets";
 import { createStatusPreservingSsrHandler } from "./status-preserving-ssr";
+import { WEB_VITALS_ASSET_HREF } from "./web-vitals-asset";
 
 /** Cache-busting version stamp — changes on every server start / rebuild. */
 const v = Date.now();
@@ -337,7 +338,7 @@ export const defineApp = <
     ${body}
   </body>
   ${scripts}
-  ${performanceRoute ? `<script type="module" src="/public/${opts.id}/web-vitals.js?v=${v}" data-cloud-web-vitals data-app-id="${escapeHtml(opts.id)}" data-route-template="${escapeHtml(performanceRoute)}"></script>` : ""}
+  ${performanceRoute ? `<script type="module" src="${WEB_VITALS_ASSET_HREF}" data-cloud-web-vitals data-app-id="${escapeHtml(opts.id)}" data-route-template="${escapeHtml(performanceRoute)}"></script>` : ""}
 </html>`;
     },
   });
@@ -356,7 +357,8 @@ export const defineApp = <
     createStatusPreservingSsrHandler<ResolvedPageOptions>(html, async (c) => {
       c.get("page").lang = getLocale(c);
       const user = c.get("user");
-      c.get("page").performanceRoute = user ? (matchedRouteTemplate(c) ?? undefined) : undefined;
+      c.get("page").performanceRoute =
+        user && c.get("settings")?.observability?.web_vitals?.enabled === true ? (matchedRouteTemplate(c) ?? undefined) : undefined;
       await Promise.all([
         preloadLayoutAnnouncements(c),
         user ? readRailSnapshot(user).then((snapshot) => c.set("railPreferences", snapshot)) : undefined,

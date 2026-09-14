@@ -32,6 +32,13 @@ const IPA_ACCOUNT_TRANSITION_OPTIONS = [
 ] as const;
 
 export const CORE_SETTINGS = {
+  "observability.web_vitals.enabled": {
+    kind: "boolean",
+    label: "Record browser page performance",
+    description:
+      "Collect LCP, INP and CLS from authenticated pages in the existing logs. Enable temporarily for performance diagnosis; each metric adds a log entry.",
+    default: false,
+  },
   "user.app_approval.enabled": {
     kind: "boolean",
     label: "Enable app sign-in",
