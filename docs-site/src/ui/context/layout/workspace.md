@@ -598,4 +598,4 @@ preview. Cards truncate titles with an ellipsis by default. Set
 `SidebarItemLabel marquee={false}` for the same truncation in ordinary rows.
 Completed work can retain `variant="row"` without context or description.
 
-Card context headers keep their width when trailing actions appear; only the title area yields space. Use `Format.RelativeTime` for relative timestamps. Desktop sidebar scroll tracks sit in balanced side gutters.
+Card context headers keep their width when trailing actions appear; only the title area yields space. Use `Format.RelativeTime` for relative timestamps. The desktop scroll track occupies the existing right inset and keeps its gutter when content fits, without adding space on the left. Keyboard focus on the main card action outlines the complete card.

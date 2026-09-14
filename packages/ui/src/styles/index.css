@@ -7873,10 +7873,21 @@
   animation: none;
 }
 
-/* Put the scroll track in the sidebar inset and reserve the same space on both sides. */
+/* The fixed-width scroll track occupies the existing right inset, even without overflow. */
 .k2b-ui .k2b-app-workspace__sidebar-desktop > .k2b-app-workspace__sidebar-body {
-  margin-inline: -0.5rem;
-  padding-inline: 0.25rem;
-  scrollbar-width: thin;
-  scrollbar-gutter: stable both-edges;
+  margin-inline-end: -0.5rem;
+  padding: 0;
+  scrollbar-width: auto;
+  scrollbar-gutter: stable;
+}
+.k2b-ui .k2b-app-workspace__sidebar-desktop > .k2b-app-workspace__sidebar-body::-webkit-scrollbar {
+  width: 0.5rem;
+}
+.k2b-ui .k2b-app-workspace__sidebar-item[data-variant="card"]:has(> .k2b-app-workspace__sidebar-item-main:focus-visible) {
+  outline: 2px solid var(--k2b-focus-ring);
+  outline-offset: -2px;
+}
+.k2b-ui .k2b-app-workspace__sidebar-item[data-variant="card"] > .k2b-app-workspace__sidebar-item-main:focus-visible {
+  outline: none;
+  box-shadow: none;
 }
