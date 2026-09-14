@@ -67,7 +67,7 @@ export function SidebarItemPreview(props: { label: string; children: JSX.Element
     });
   });
   return <>
-    <button ref={button} type="button" class="k2b-app-workspace__sidebar-item-action"
+    <button ref={button} type="button" class="k2b-app-workspace__sidebar-item-action k2b-app-workspace__sidebar-preview-trigger"
       data-visibility="hover" aria-label={props.label} aria-haspopup="dialog" aria-expanded={open()} aria-controls={id}
       onClick={() => {
         clear();

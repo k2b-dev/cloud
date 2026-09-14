@@ -548,8 +548,10 @@ the data source: no socket, task lifecycle or subscription belongs in the librar
 
 Use `preview={{ label: "Item details", content: <Details /> }}` for interactive
 secondary information. Fine-pointer hover and keyboard focus open it after a short
-delay. A dedicated details button also opens it on touch and moves focus into the
-non-modal dialog. Escape and outside clicks dismiss it. The preview stays mounted
+delay. A dedicated details button opens it on touch-capable devices and moves focus
+into the non-modal dialog. With hover and a fine pointer, this button is hidden
+visually until keyboard focus reaches it. A coarse pointer on hybrid devices
+keeps it visible too. This behavior depends on input capabilities, not screen width. Escape and outside clicks dismiss it. The preview stays mounted
 while closed; live content updates preserve its controls and focus. Do not start
 expensive subscriptions merely because a row exists. The preview can hold an
 explicit action that loads additional details.

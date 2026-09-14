@@ -7790,3 +7790,21 @@
   grid-template-rows: minmax(1.25rem, auto);
   column-gap: 0.5rem;
 }
+
+@media (hover: hover) and (pointer: fine) {
+  .k2b-ui .k2b-app-workspace__sidebar-item > .k2b-app-workspace__sidebar-item-action.k2b-app-workspace__sidebar-preview-trigger:not(:focus-visible) {
+    width: 0;
+    overflow: hidden;
+    opacity: 0;
+    pointer-events: none;
+  }
+}
+
+@media (any-pointer: coarse) {
+  .k2b-ui .k2b-app-workspace__sidebar-item > .k2b-app-workspace__sidebar-item-action.k2b-app-workspace__sidebar-preview-trigger:not(:focus-visible) {
+    width: 1.75rem;
+    overflow: visible;
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
