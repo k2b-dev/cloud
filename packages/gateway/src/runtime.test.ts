@@ -16,6 +16,8 @@ if (process.env.GATEWAY_RUNTIME_TEST_CHILD !== "1") {
     let now = 0;
     let snapshot: { updatedAt: number; stats: { totalRequests: number } } | null = null;
     let listCalls = 0;
+    let registryVersion = 0;
+    let builtVersion = -1;
     let hold: Promise<void> | undefined;
     const writes: string[] = [];
     const callbacks: Array<{ run: () => void; interval: number; timer: ReturnType<typeof setInterval> }> = [];
@@ -31,7 +33,7 @@ if (process.env.GATEWAY_RUNTIME_TEST_CHILD !== "1") {
     const stats = { totalRequests: 0 };
     mock.module("./stats", () => ({ stats, getRouteTable: () => ({ routeCount: 0 }), setRouteTable: () => {} }));
     mock.module("@k2b/cloud", () => ({
-      buildRuntimeFromRegistry: () => ({}),
+      buildRuntimeFromRegistry: () => { builtVersion = registryVersion; return {}; },
       listApps: async () => {
         listCalls++;
         return [];
@@ -66,6 +68,8 @@ if (process.env.GATEWAY_RUNTIME_TEST_CHILD !== "1") {
       const renewal = callbacks[0]!;
       expect(renewal.interval).toBeLessThan(30_000);
       stats.totalRequests = 42;
+      // No watch notification: periodic reconciliation must still read the new registry.
+      registryVersion = 1;
       for (now = renewal.interval; now <= 35_000; now += renewal.interval) {
         renewal.run();
         await Bun.sleep(0);
@@ -73,7 +77,8 @@ if (process.env.GATEWAY_RUNTIME_TEST_CHILD !== "1") {
         expect(now - snapshot!.updatedAt).toBeLessThan(30_000);
       }
       expect(snapshot!.stats.totalRequests).toBe(42);
-      expect(listCalls).toBe(1);
+      expect(listCalls).toBeGreaterThan(1);
+      expect(builtVersion).toBe(1);
 
       const pending = Promise.withResolvers<void>();
       hold = pending.promise;

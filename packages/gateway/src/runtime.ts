@@ -15,13 +15,15 @@ const log = logger("gateway");
 
 let currentRuntime = buildRuntimeFromRegistry([]);
 let lastRouteHash = "";
+let refreshGeneration = 0;
 let lastWarningsHash = "";
 let lastRouteWarnings: AppRouteWarning[] = [];
 let watcherAbort: AbortController | null = null;
 let watcherTask: Promise<void> | null = null;
 let processSync: ProcessSync | null = null;
 // Keep the 30-second presence lease and request counters fresh even when no
-// application registry entries change. This restores the previous 5s cadence.
+// application registry entries change. Also reconcile routing if a registry
+// watcher misses a restart notification.
 const SNAPSHOT_INTERVAL_MS = 5_000;
 let snapshotTimer: ReturnType<typeof setInterval> | null = null;
 let snapshotTask: Promise<void> | null = null;
@@ -44,8 +46,10 @@ const publishSnapshot = async (routeHash: string, routeWarnings: AppRouteWarning
 };
 
 export const refreshRoutes = async (): Promise<void> => {
+  const generation = ++refreshGeneration;
   try {
     const apps = await listApps();
+    if (generation !== refreshGeneration) return;
     const { routes: appRoutes, warnings } = buildAppRoutesDetailed(apps);
     const routeHash = JSON.stringify(appRoutes.map((r) => `${r.prefix}:${r.baseUrl}`).sort());
     const warningsHash = JSON.stringify(warnings);
@@ -65,8 +69,8 @@ export const refreshRoutes = async (): Promise<void> => {
       }
     }
 
-    await publishSnapshot(routeHash, lastRouteWarnings);
     currentRuntime = buildRuntimeFromRegistry(apps);
+    await publishSnapshot(routeHash, lastRouteWarnings);
   } catch (error) {
     log.error("Route refresh failed", {
       error: error instanceof Error ? error.message : String(error),
@@ -102,7 +106,7 @@ export const gatewayRuntime = {
     startRegistryWatcher();
     snapshotTimer ??= setInterval(() => {
       if (snapshotTask) return;
-      snapshotTask = publishSnapshot(lastRouteHash, lastRouteWarnings)
+      snapshotTask = refreshRoutes()
         .catch((error) => log.error("Route snapshot renewal failed", { error: error instanceof Error ? error.message : String(error) }))
         .finally(() => {
           snapshotTask = null;
