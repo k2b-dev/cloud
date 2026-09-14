@@ -358,8 +358,8 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
           </AppWorkspace.SidebarItem>
         </AppWorkspace.SidebarMobileItems>
         <AppWorkspace.SidebarMobileBody scrollPreserveKey="assistant-sidebar-mobile">
-          <PinnedSection />
           <ProjectsSection />
+          <PinnedSection />
           <AppWorkspace.SidebarSection title={t().chats}>
             <Show when={generalConversations().length > 0} fallback={<p class="px-2 py-1 text-xs text-dimmed">{t().noChats}</p>}>
               <For each={generalConversations()}>
@@ -420,8 +420,8 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
         </AppWorkspace.SidebarIconGrid>
 
         <AppWorkspace.SidebarBody scrollPreserveKey="assistant-sidebar" sidebarMode="expanded">
-          <PinnedSection />
           <ProjectsSection />
+          <PinnedSection />
           <AppWorkspace.SidebarSection title={t().chats}>
             <Show when={generalConversations().length > 0} fallback={<p class="px-2 py-1 text-xs text-dimmed">{t().noChats}</p>}>
               <For each={generalConversations()}>
