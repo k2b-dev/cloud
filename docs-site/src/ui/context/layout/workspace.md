@@ -264,6 +264,7 @@ type AppWorkspaceSidebarSectionProps = AppWorkspaceSidebarBodyProps & {
 };
 
 type AppWorkspaceSidebarItemProps = {
+  variant?: "row" | "card"; context?: JSX.Element; contextMeta?: JSX.Element;
   description?: JSX.Element; preview?: { label: string; content: JSX.Element; onOpenChange?: (open: boolean) => void };
   children: JSX.Element; href?: string; navigation?: "enhanced" | "document"; replace?: boolean;
   scroll?: NavigationScrollMode; onNavigate?: (event: LinkNavigateEvent) => void | Promise<void>;
@@ -587,3 +588,12 @@ is open. Cancel an outstanding request when it closes; the preview content
 remains mounted so local input state is preserved.
 
 `SidebarSection.icon` optionally adds a leading decorative icon beside the section title.
+
+### Context cards
+
+Use `SidebarItem variant="card"` for work that benefits from context above its
+title. `context` holds a project or category; `contextMeta` holds a short time
+or secondary value. Both accept reactive JSX. Keep commands in actions or the
+preview. Cards truncate titles with an ellipsis by default. Set
+`SidebarItemLabel marquee={false}` for the same truncation in ordinary rows.
+Completed work can retain `variant="row"` without context or description.

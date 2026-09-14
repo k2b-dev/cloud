@@ -1,14 +1,22 @@
-import { Button, DescriptionList, InlineGuidance, StatusBadge } from "@k2b/ui";
+import { Button, DescriptionList, InlineGuidance, StatusBadge, toast } from "@k2b/ui";
 import type { AiConversation, AiProject } from "@k2b/cloud/ai";
 import { createEffect, createSignal, For, onCleanup, Show } from "solid-js";
 import { assistantApi } from "../api/client";
 import type { AssistantSidebarPreview } from "../sidebar-preview";
 import { useAssistantText } from "./ui-copy";
 
-export function ConversationSidebarPreview(props: { conversation: AiConversation; project?: AiProject; open: boolean; edit: () => void }) {
+export function ConversationSidebarPreview(props: { conversation: AiConversation; project?: AiProject; open: boolean; edit: () => void; update: (conversation: AiConversation) => void }) {
   const text = useAssistantText();
   const [details, setDetails] = createSignal<AssistantSidebarPreview>();
   const [error, setError] = createSignal(false);
+  const [pinning, setPinning] = createSignal(false);
+  const togglePin = async () => {
+    if (pinning()) return;
+    setPinning(true);
+    try { props.update(await assistantApi.setConversationPinned(props.conversation.id, !props.conversation.pinnedAt)); }
+    catch { toast.error(text("Could not update pin.")); }
+    finally { setPinning(false); }
+  };
   createEffect(() => {
     if (!props.open) return;
     const controller = new AbortController();
@@ -92,10 +100,16 @@ export function ConversationSidebarPreview(props: { conversation: AiConversation
       <Show when={props.conversation.isDone}>
         <StatusBadge tone="ok" label={text("Done")} />
       </Show>
+      <div class="flex flex-wrap gap-2">
+      <Button size="sm" variant="secondary" disabled={pinning()} onClick={() => void togglePin()}>
+        <i class={props.conversation.pinnedAt ? "ti ti-pinned-off" : "ti ti-pin"} aria-hidden="true" />
+        {text(props.conversation.pinnedAt ? "Unpin chat" : "Pin chat")}
+      </Button>
       <Button size="sm" variant="secondary" class="self-start" onClick={props.edit}>
         <i class="ti ti-settings" aria-hidden="true" />
         {text("Chat settings")}
       </Button>
+      </div>
     </div>
   );
 }

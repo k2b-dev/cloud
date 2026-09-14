@@ -79,6 +79,10 @@ opens. **All chats** inside **Done** includes a searchable, paginated **Done** f
 The CLI supports `cld assistant chats done CHAT`, `chats reopen CHAT`, and
 `chats list --lifecycle active|done|all`. Archiving remains a separate action.
 
+Pinned chats always remain active, overriding explicit or automatic completion. Unpinning reveals the underlying completion choice again. The sidebar hides the Done action for pinned chats; pinning and unpinning are available directly in the chat preview.
+
+Active chats use context cards with an ellipsized title. Completed chats remain simple rows. New responses and requests for input use accent colors.
+
 ## Understand the Assistant model
 
 | Resource or surface | Responsibility |

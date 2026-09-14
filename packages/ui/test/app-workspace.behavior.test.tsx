@@ -93,7 +93,7 @@ describe("@k2b/ui AppWorkspace behavior", () => {
     const [disabled, setDisabled] = createSignal(false);
     let selections = 0;
     const openings: boolean[] = [];
-    const dispose = render(() => <AppWorkspace.SidebarItem description={status()}
+    const dispose = render(() => <AppWorkspace.SidebarItem variant="card" context={status()} contextMeta={count()} description={status()}
       preview={{ label: "Details", onOpenChange: open => openings.push(open), content: <input aria-label="Preview note" value={status()} /> }}>
       <AppWorkspace.SidebarItemIcon icon={count() === 1 ? "ti ti-clock" : "ti ti-check"} />
       <AppWorkspace.SidebarItemLabel>{title()}</AppWorkspace.SidebarItemLabel>
@@ -112,6 +112,10 @@ describe("@k2b/ui AppWorkspace behavior", () => {
       expect(dom.document.activeElement).toBe(control);
       expect(dom.root.querySelector('[aria-label="Preview note"]')).toBe(note);
       expect(note.value).toBe("Verified");
+      expect(dom.root.querySelector('[data-variant="card"]')).not.toBeNull();
+      expect(dom.root.querySelector('.k2b-app-workspace__sidebar-item-context-label')?.textContent).toBe("Verified");
+      expect(dom.root.querySelector('.k2b-app-workspace__sidebar-item-context-meta')?.textContent).toBe("3");
+      expect(dom.root.querySelector('.k2b-app-workspace__sidebar-item-label')?.getAttribute("data-marquee")).toBe("false");
       setDisabled(true);
       expect(control.disabled).toBe(true);
       control.click();

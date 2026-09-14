@@ -73,7 +73,6 @@ describe("Assistant sidebar", () => {
     expect(html).toContain("Pinned chat");
     expect(html).not.toContain('title="Pinned chat"');
     expect(html).not.toContain('title="Pinned project chat"');
-    expect(html.indexOf(">Pinned</")).toBeLessThan(html.indexOf("Projects"));
     expect(html).toContain("Chat settings");
     expect(html).toContain("Mark chat done");
     expect(html).toContain(">Chats</");
@@ -84,11 +83,12 @@ describe("Assistant sidebar", () => {
     expect(html).not.toContain("Today");
     expect(html).not.toContain("This Week");
     expect(html).not.toContain("This Month");
-    expect(html).not.toContain('class="ti ti-message"');
+    expect(html).toContain('data-variant="card"');
+    expect(html).toContain('data-marquee="false"');
   });
 
   test("separates Done from pinned and Project chats and offers reopening", () => {
-    const done = { ...conversation("finished", "Completed work", project.id), done: true, isDone: true, pinnedAt: "2026-09-14T11:00:00.000Z" };
+    const done = { ...conversation("finished", "Completed work", project.id), done: true, isDone: true, pinnedAt: null };
     const html = renderToString(() => createComponent(AssistantSidebar, {
       conversations: () => [done, { ...conversation("running", "Active work", null), runStatus: "running" }],
       projects: [project], doneCount: 21, live,
@@ -100,6 +100,16 @@ describe("Assistant sidebar", () => {
     expect(html).not.toContain(">Pinned</");
     expect(html).not.toContain('title="Completed work"');
     expect(html).toContain("No recent chats");
+  });
+
+  test("pinned cards expose unpin in the preview without a Done action or Ready filler", () => {
+    const html = renderToString(() => createComponent(AssistantSidebar, {
+      conversations: () => [{ ...conversation("pinned", "Pinned work", null), pinnedAt: "2026-09-14T11:00:00.000Z" }], live,
+    }));
+    expect(html).toContain("Unpin chat");
+    expect(html).not.toContain("Mark chat done");
+    expect(html).not.toContain(">Ready<");
+    expect(html).not.toContain('class="k2b-app-workspace__sidebar-item-description"');
   });
 
   test("keeps New Chat text and icon stable while creation is pending", () => {

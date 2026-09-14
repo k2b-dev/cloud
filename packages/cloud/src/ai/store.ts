@@ -478,12 +478,12 @@ const parseCapabilityActionReview = (value: unknown): CapabilityActionReview | u
 
 const fieldSource = (value: string | null): AiConversation["titleSource"] => (value === "auto" || value === "user" ? value : "default");
 
-// Explicit choices win; automatic completion never hides pending work.
-const effectiveDone = sql`COALESCE(conversation.done,
+// Pins stay active; otherwise explicit choices win and automatic completion never hides pending work.
+const effectiveDone = sql`(conversation.pinned_at IS NULL AND COALESCE(conversation.done,
   conversation.last_used_at <= now() - interval '7 days'
   AND NOT EXISTS (SELECT 1 FROM ai.turns active_turn
     WHERE active_turn.conversation_id = conversation.id
-      AND active_turn.status IN ('queued', 'running', 'waiting_for_action')))`;
+      AND active_turn.status IN ('queued', 'running', 'waiting_for_action'))))`;
 
 const browserWorkPending = sql`(
   latest.status = 'waiting_for_action'
@@ -523,7 +523,7 @@ const rowToConversation = (row: ConversationRow): AiConversation => ({
   pinnedAt: row.pinned_at ? iso(row.pinned_at) : null,
   archivedAt: row.archived_at ? iso(row.archived_at) : null,
   done: row.done,
-  isDone: row.is_done ?? row.done ?? (
+  isDone: row.pinned_at ? false : row.is_done ?? row.done ?? (
     new Date(row.last_used_at).getTime() <= Date.now() - 7 * 86400000
     && !["queued", "running", "waiting_for_action"].includes(row.latest_turn_status ?? "")
   ),

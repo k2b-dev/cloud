@@ -124,7 +124,10 @@ suite("AI conversation store integration", () => {
       const file = await aiFileStore.createUserUpload({ conversationId: chat.id, path: "source.txt", bytes: new TextEncoder().encode("preserved"), mediaType: "text/plain" });
       expect(await aiConversations.setConversationDone({ conversationId: chat.id, ownerUserId: stranger, done: true })).toEqual({ ok: false, reason: "not_found" });
       const completed = await aiConversations.setConversationDone({ conversationId: chat.id, ownerUserId: userId, done: true });
-      expect(completed).toMatchObject({ ok: true, conversation: { done: true, isDone: true, archivedAt: null, pinnedAt: expect.any(String) } });
+      expect(completed).toMatchObject({ ok: true, conversation: { done: true, isDone: false, archivedAt: null, pinnedAt: expect.any(String) } });
+      expect(await aiConversations.listSidebarConversations({ ownerUserId: userId })).toHaveLength(1);
+      expect(await aiConversations.listConversationsPage({ ownerUserId: userId, done: true, page: 1, perPage: 10 })).toMatchObject({ total: 0 });
+      await aiConversations.setConversationPinned({ conversationId: chat.id, ownerUserId: userId, pinned: false });
       expect(await aiConversations.listSidebarConversations({ ownerUserId: userId })).toHaveLength(0);
       expect(await aiConversations.listConversations({ ownerUserId: userId, done: false })).toHaveLength(0);
       expect(await aiConversations.listConversations({ ownerUserId: userId, search: "Finished", done: true })).toHaveLength(1);

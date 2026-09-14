@@ -4,13 +4,13 @@ import { Show } from "solid-js";
 import { conversationStatusPresentation } from "./conversation-view";
 import { assistantMessages } from "./messages";
 
-export function ConversationStatusMeta(props: { conversation: AiConversation; active?: boolean; labels?: boolean; hideStatus?: boolean; fallbackLabel?: string }) {
+export function ConversationStatusMeta(props: { conversation: AiConversation; active?: boolean; labels?: boolean; hideStatus?: boolean; hidePin?: boolean; fallbackLabel?: string }) {
   const locale = useLocale();
   const t = () => assistantMessages.resolve([locale()]).t;
   const status = () => (props.hideStatus ? null : conversationStatusPresentation(props.conversation, locale(), props.active));
   return (
     <span class="assistant-conversation-status inline-flex shrink-0 items-center gap-1.5 text-[11px] text-dimmed">
-      <Show when={props.conversation.pinnedAt}>
+      <Show when={props.conversation.pinnedAt && !props.hidePin}>
         <span class="inline-flex items-center gap-1" title={t().pinnedLabel}>
           <i class="ti ti-pin-filled text-xs" aria-hidden="true" />
           <Show when={props.labels}>{t().pinnedLabel}</Show>

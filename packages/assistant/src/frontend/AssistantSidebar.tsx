@@ -20,6 +20,7 @@ import { openAssistantPrefsModal } from "./AssistantPrefsModals";
 import type { AssistantLiveHub } from "./assistant-live";
 import { assistantConversationHref, assistantProjectHref } from "./assistant-navigation";
 import { ConversationStatusMeta } from "./conversation-status";
+import { conversationStatusPresentation } from "./conversation-view";
 import { assistantMessages } from "./messages";
 import { artifactMessages } from "../artifacts/messages";
 
@@ -105,6 +106,7 @@ function ConversationSidebarItem(props: {
   update: (conversation: AiConversation) => void;
 }) {
   const text = useAssistantText();
+  const locale = useLocale();
   const [previewOpen, setPreviewOpen] = createSignal(false);
   const [saving, setSaving] = createSignal(false);
   const busy = () => ["queued", "running", "needs_attention", "waiting_for_browser"].includes(props.conversation.runStatus);
@@ -133,15 +135,16 @@ function ConversationSidebarItem(props: {
     <AppWorkspace.SidebarItem
       href={href()}
       class="assistant-chat-sidebar-item"
+      variant={props.conversation.isDone ? "row" : "card"}
+      context={!props.conversation.isDone ? <span><i class={props.project?.icon || "ti ti-message"} aria-hidden="true" /> {props.project?.name ?? text("Chat")}</span> : undefined}
+      contextMeta={!props.conversation.isDone ? <span class="inline-flex items-center gap-1.5"><Show when={props.conversation.pinnedAt}><i class="ti ti-pin-filled" aria-label={text("Unpin chat")} /></Show><time dateTime={props.conversation.lastUsedAt}>{new Intl.DateTimeFormat(locale(), { month: "short", day: "numeric" }).format(new Date(props.conversation.lastUsedAt))}</time></span> : undefined}
       navigation={props.open ? "enhanced" : "document"}
       scroll="manual"
       onNavigate={props.open ? handleNavigate : undefined}
       active={props.active}
-      description={
-        <Show when={!props.conversation.isDone}>
-          <ConversationStatusMeta conversation={props.conversation} active={props.active} labels fallbackLabel={text("Ready")} />
-        </Show>
-      }
+      description={!props.conversation.isDone && conversationStatusPresentation(props.conversation, locale(), props.active)
+        ? <ConversationStatusMeta conversation={props.conversation} active={props.active} labels hidePin />
+        : undefined}
       preview={{
         label: text("Chat details"),
         onOpenChange: setPreviewOpen,
@@ -151,12 +154,13 @@ function ConversationSidebarItem(props: {
             project={props.project}
             open={previewOpen()}
             edit={() => props.edit(props.conversation)}
+            update={props.update}
           />
         ),
       }}
     >
-      <AppWorkspace.SidebarItemLabel>{props.conversation.title}</AppWorkspace.SidebarItemLabel>
-      <AppWorkspace.SidebarItemAction
+      <AppWorkspace.SidebarItemLabel marquee={false}>{props.conversation.title}</AppWorkspace.SidebarItemLabel>
+      <Show when={!props.conversation.pinnedAt}><AppWorkspace.SidebarItemAction
         icon={props.conversation.isDone ? "ti ti-arrow-back-up" : "ti ti-check"}
         label={
           props.conversation.isDone
@@ -168,7 +172,7 @@ function ConversationSidebarItem(props: {
         disabled={saving() || (!props.conversation.isDone && busy())}
         visibility="hover"
         onSelect={() => void toggleDone()}
-      />
+      /></Show>
     </AppWorkspace.SidebarItem>
   );
 }

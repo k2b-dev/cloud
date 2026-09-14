@@ -2,6 +2,9 @@ import { i18n } from "@k2b/stdlib";
 import { useLocale } from "@k2b/ui";
 
 const germanText: Record<string, string> = {
+  "Pin chat": "Anheften",
+  "Unpin chat": "Anheftung lösen",
+  "Could not update pin.": "Anheftung konnte nicht geändert werden.",
   "No Project": "Kein Projekt",
   "Apps": "Apps",
   "Mark chat done": "Chat als fertig markieren",

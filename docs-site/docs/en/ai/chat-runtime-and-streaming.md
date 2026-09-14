@@ -425,3 +425,5 @@ recomputed on reads without a background job or destructive archival.
 
 `aiConversations.getLatestTurn` reads the newest turn for an already-authorized
 conversation, including its model profile; it does not authorize access itself.
+
+Pinned chats always remain active, overriding explicit or automatic completion. Unpinning reveals the underlying completion choice again. The sidebar hides the Done action for pinned chats; pinning and unpinning are available directly in the chat preview.

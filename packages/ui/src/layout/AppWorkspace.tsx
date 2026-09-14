@@ -250,6 +250,10 @@ export type AppWorkspaceSidebarItemTone = "default" | "success" | "danger";
 export type AppWorkspaceSidebarIconActionTone = "default" | "success" | "danger";
 export type AppWorkspaceSidebarItemProps = {
   children: JSX.Element;
+  /** Card rows add a quiet context header above the main label. */
+  variant?: "row" | "card";
+  context?: JSX.Element;
+  contextMeta?: JSX.Element;
   /** Passive second line; keep controls in actions or preview. */
   description?: JSX.Element;
   /** Interactive details, also reachable through a dedicated button. */
@@ -812,7 +816,13 @@ function AppWorkspaceSidebarItem(props: AppWorkspaceSidebarItemProps): JSX.Eleme
       {/* The inner text span is what the marquee translates; the controller
           measures its `scrollWidth` against the clipping outer span. */}
       <span class="k2b-app-workspace__sidebar-item-copy">
-      <span class="k2b-app-workspace__sidebar-item-label" data-marquee={labelSlot()?.marquee === false ? undefined : "true"}>
+      <Show when={props.context || props.contextMeta}>
+        <span class="k2b-app-workspace__sidebar-item-context">
+          <span class="k2b-app-workspace__sidebar-item-context-label">{props.context}</span>
+          <Show when={props.contextMeta}><span class="k2b-app-workspace__sidebar-item-context-meta">{props.contextMeta}</span></Show>
+        </span>
+      </Show>
+      <span class="k2b-app-workspace__sidebar-item-label" data-marquee={(labelSlot()?.marquee ?? props.variant !== "card") ? "true" : "false"}>
         <span class="k2b-app-workspace__sidebar-item-label-text">{label() as JSX.Element}</span>
       </span>
       <Show when={props.description}><span class="k2b-app-workspace__sidebar-item-description">{props.description}</span></Show>
@@ -878,6 +888,7 @@ function AppWorkspaceSidebarItem(props: AppWorkspaceSidebarItemProps): JSX.Eleme
       data={{
         ...props.data,
         ...modeData(props.sidebarMode),
+        variant: props.variant ?? "row",
         "has-actions": hasCustomActions() ? "true" : undefined,
         "action-visibility": actionSlot()?.visibility === "hover" ? "hover" : undefined,
       }}
