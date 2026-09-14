@@ -1,4 +1,0 @@
-from table {csW4Zu} as claim
-join table {AuCwGm} as cost on {L2x8Za} = cost.id
-where record.id = 'n4DQk3' and ((oneof({QFMSK7}, 'ffdb5e51-cb4a-4059-9307-781cfdf771f3') or oneof(cost.{2fV7jQ}, 'ffdb5e51-cb4a-4059-9307-781cfdf771f3') or oneof(cost.{ZyETdJ}, 'ffdb5e51-cb4a-4059-9307-781cfdf771f3')))
-limit 1

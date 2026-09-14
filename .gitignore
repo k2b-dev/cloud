@@ -13,6 +13,7 @@ _old/
 /skills-lock.json
 
 # Local scratch notes (todos, draft reviews)
+/plans/
 todo/
 /tmp/
 /docs/
