@@ -53,11 +53,13 @@ interpolation, `new Headers()` and reading a secret value are unsupported.
 For `X-API-Key`, configure `prefix: ""` and omit the prefix when referencing the key.
 There are no query/body substitutions.
 
-Requests accept `url`, uppercase `method` (GET, HEAD, POST, PUT, PATCH, DELETE,
-OPTIONS), plain-object `headers`, and optional `body` as text, `Blob`, `ArrayBuffer`,
+Use `http.fetch(url, options?)`; the URL is the first argument, not an options
+object. Options accept uppercase `method` (GET, HEAD, POST, PUT, PATCH, DELETE,
+OPTIONS; default GET), plain-object `headers`, and optional `body` as text, `Blob`, `ArrayBuffer`,
 or `Uint8Array`. JSON bodies require `JSON.stringify` and a content-type header.
 GET/HEAD cannot carry a body. Secret references are allowed only in headers.
 Public requests omit secret references; they still require confirmation.
+There is no per-call `signal`, timeout, credentials, or redirect option.
 
 Responses expose `status`, `ok`, `headers`, `.json()`, `.text()`, `.blob()` and
 `.arrayBuffer()`. Consume the body once. HTTP errors such as 429 remain normal
@@ -86,9 +88,3 @@ The key is injected only on the server. The external API necessarily receives
 it and may reflect it or return other credentials in its response. Only configure
 trusted API origins; do not use echo/debug endpoints with secrets. Returned
 content is untrusted data and may be visible in code output or shared app data.
-
-CLI execution uses the same server path. Interactive CLI asks before each
-request. For unattended runs, explicitly authorize an exact HTTPS origin with
-`--approve http.fetch:https://api.example.com`; this permits requests to that
-origin for the run. Secret entry uses the web UI. Configure the same chat/app
-and user there before CLI execution. Never put the value in command arguments.

@@ -19,7 +19,9 @@ reporting success.
 | Delete file | `files.local.delete(path)` | `files.shared.delete(path)` |
 | List files | `files.local.list()` | `files.shared.list()` |
 
-Missing values or files return `null`. File reads return a Blob; use `.text()`
+Listings return `string[]`, not file metadata. Await writes and deletes for
+completion; do not depend on their return values. Missing values or files return
+`null`. File reads return a Blob; use `.text()`
 or `.arrayBuffer()`. Paths are relative, without empty, `.` or `..` segments.
 Use JSON-compatible values for key/value storage.
 
@@ -51,26 +53,3 @@ Local item writes have a 16 MiB per-item budget and use the browser's storage
 quota. Shared file transfers use binary HTTP; do not Base64-encode files.
 Neither storage quota
 limits the number or total size of documents selected for local processing.
-
-Studio's Advanced → Local data lets each user inspect, download or delete their
-own files/KV in the current browser profile. It stops this page's runs before
-deletion; other tabs may create data again. Advanced → Shared data requires
-resource Manage access and affects everyone. These administrative controls do
-not change normal app runtime data permissions. A CLI process cannot inspect or
-clear the user's existing browser profile; guide them to Local data instead.
-
-
-Operators configure `assistant.storage_file_mib` and
-`assistant.storage_total_mib` in Cloud settings, or use
-`cld assistant studio-admin storage-settings` and `storage-configure` with
-`{"fileMiB":50,"totalMiB":250}` as JSON input. The single-transfer ceiling is
-64 MiB; the total setting allows up to 1 TiB per resource. Both values must
-be positive integers in MiB. Effective writes must fit both limits.
-Lower limits never delete files. Reads, deletes, and replacements that do not
-increase stored bytes remain possible (within the transfer ceiling).
-
-Use `cld assistant code file-upload ID --file invoice.pdf --key invoices/invoice.pdf`
-and `file-download ID --key invoices/invoice.pdf --out invoice.pdf` for binary
-files. Existing keys are replaced; choose a new key when retaining both files.
-`code storage` and `storage-manage` retain JSON for KV and file list/delete only.
-Storage limits do not increase chat, parsing, runtime-message or output budgets.

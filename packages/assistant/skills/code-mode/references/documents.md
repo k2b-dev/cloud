@@ -17,6 +17,13 @@ Follow [Investigation patterns](investigation.md) for the general workflow.
 
 ## PDF
 
+`await pdf.open(file: Blob)` returns `{pageCount: number, readPage, close}`.
+`await readPage(number)` returns `{page: number, width: number, height: number,
+text: string, items: {text: string, transform: number[], width: number,
+height: number, direction: string, endOfLine: boolean}[]}`.
+`await close()` releases the document and returns nothing.
+
+
 ```js
 const document = await pdf.open(file);
 try {
@@ -30,7 +37,7 @@ try {
 }
 ```
 
-PDF.js is bundled; never import a package or fetch a CDN. Pages start at 1.
+The PDF reader is built in; no package import or CDN is needed. Pages start at 1.
 `transform` contains the six PDF text transformation values; retain original
 items when layout matters. `text` is a convenient concatenation, not a table
 parser. Keep `files.path(file)`, page number, and matching evidence alongside
@@ -39,12 +46,19 @@ Encrypted, unsupported, and corrupt files can throw. External font/CMap assets
 are not fetched; verify extraction for documents requiring unusual fonts. Report the filename and
 error, continue with other files, and never silently classify failures as empty.
 
-Use the bundled `einvoice` and `camt` APIs for their supported XML formats; see
-[Finance](finance.md). Other format-specific mappings belong in app source modules. Verify
+Use [Electronic invoices](einvoice.md) and [CAMT](camt.md) for their supported
+XML formats. Other format-specific mappings belong in app source modules. Verify
 against representative documents before claiming Sparkasse, DHL, or FedEx
 support. Similar-looking PDFs can encode very different text layouts.
 
 ## Excel (XLSX only, reading only)
+
+`await sheet.openExcel(file: Blob, {numbers?: "number" | "string"}?)` returns
+`{sheetNames: string[], readSheet(name), close()}`. `readSheet` is synchronous
+and returns cell arrays: `(string | number | boolean | Date | null)[][]`.
+`close()` is synchronous and returns nothing. A missing sheet or read after
+close throws. No sheet index, range or write options are supported.
+
 
 ```js
 const workbook = await sheet.openExcel(file, { numbers: "string" });

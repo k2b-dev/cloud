@@ -44,8 +44,23 @@ The UI uses one options object per control. Common options: `id`, `label`,
 | `ui.slider` | `value`, `min`, `max`; optional `step`, `onChange(number)` | same |
 | `ui.dateRange` | `value: {start,end}`; each ISO date or null; optional `onChange` | same |
 | `ui.table` | `rows`, `rowKey`, `columns`; optional `onSelect(row or null)` | `setData`, `setColumns`, `select(key or null)` |
-| `ui.chart` | `data: {options, marks?, formats?}`; optional `onSelect(key)` | `setData`, `select`, `setLoading` |
-| `ui.chartExplorer` | `data`, `columns`; optional `onSelect(row or null)`, `onViewChange` | `setData`, `setOptions`, `select`, `setLoading` |
+| `ui.chart` | `data: {options, marks?, formats?}`; optional `onSelect(key)` | `setData`, `setOptions`, `select`, `setLoading` |
+| `ui.chartExplorer` | `data`, `columns`; optional `onSelect(row or null)`, `onViewChange("chart" or "table")` | `setData`, `setOptions`, `select`, `setLoading` |
+
+Button variants are `primary`, `secondary` (default), `ghost`, `text`, and
+`danger`. `number.onChange` receives `number | null`; `dateRange.onChange`
+receives `{start: string | null, end: string | null}`. `filePicker.onChange`
+always receives `File[]`, even with `multiple: false`; cancelling does not call
+it. All handles have an `id`; layout handles expose only that ID.
+
+`setOptions(patch)` updates constructor properties without replacing callbacks
+or IDs. For `chartExplorer`, the allowed keys are only `label`, `description`,
+`columns`, and `view`; for `chart`, use common options, `selectedKey`, and `cursor?: string`, with
+`setData` for chart data. Control/stat/button patches use their respective
+constructor properties. `chartExplorer` accepts initial `view: "chart" | "table"`
+(default `"chart"`). Tables, charts and Explorers accept `selectedKey: string | null`
+(default null); their `select(keyOrNull)` sets or clears selection. A standalone
+chart's `setData` clears selection; table/Explorer updates retain valid keys.
 
 Setters never invoke user callbacks. Handles do not have generic
 `set`, `upsert`, or `remove`. Replace reviewed row arrays with `setData`.
@@ -85,7 +100,9 @@ shortened on the axis; keep the full label column in tooltips and tables.
 For all 14 kinds use `{options, marks, formats?}`. `options` uses the strict
 [Charts](charts.md) schema. Each mark is:
 `{role,index,seriesIndex?,key,rowKey,reference?,tooltip?:{title?,rows:[{label,value}]}}`.
-The role/index identifies the renderer datum in the current chart input. Every
+`role` is `point`, `item`, `bin`, `box`, `outlier`, `value`, `cell`, or
+`interval`; indices are zero-based. The role/index identifies the renderer datum
+in the current chart input (see the role table in [Charts](charts.md)). Every
 rendered mark needs one mapping; every `rowKey` must exist in the Explorer rows.
 Histogram bin indices identify computed bins; boxplot boxes identify groups and
 outliers identify observations. Prepare summary rows for these derived entities.
@@ -123,8 +140,21 @@ while a pending server call retains its normal consent and deadline.
 Repeated `setRequest` calls with the same filters do not reload existing data.
 `refresh` and `retry` explicitly request a fresh load.
 
-Methods: `setRequest`, `refresh`, `retry`, `pinReference`, `clearReference`,
-`select`, `setData(snapshot)`, `cancel`. Local filtering requires no network call.
+Group handle methods:
+
+- `chart(name, {columns, label?, description?, view?, ...})` mounts a named chart
+  once; its handle has only `id`, `select(keyOrNull)`, and `setOptions(patch)`.
+  Update its data through the group snapshot.
+- `await setRequest(request)` replaces filters, rather than merging them.
+- `await refresh()` or `await retry()` reloads the current desired filters.
+- `await pinReference()` pins the currently displayed step; it takes no argument.
+  `await clearReference()` removes it. Both may call the loader.
+- `select(keyOrNull)` sets shared selection; `setData(snapshot)` synchronously
+  replaces all chart data and filters, cancelling obsolete loading.
+- `cancel()` cancels loading and keeps the displayed snapshot.
+
+Load failures are retained as group error state, rather than thrown from
+`setRequest`/`refresh`; inspect the resulting state. Local filtering requires no network call.
 An external HTTP load still needs approval. A slider over data steps is not a
 substitute for an explicit Apply button when each change has an external effect.
 
@@ -154,8 +184,7 @@ A fraction such as 0.449550499 must remain that fraction; its percent format
 controls visible digits. Validate the raw `value` from inspection against an
 independent calculation, not only a rounded screenshot or formatted string.
 
-Source context contains `mode:"snapshot"|"live"`, ISO `asOf`, `sources` with a
-label and optional HTTPS link/description, and optional `status`/`note`. `status` is exactly `complete`, `partial`, or `fixture`; it does not accept
+Source context contains `mode:"snapshot"|"live"`, ISO `asOf`, `sources: [{label, href?, description?}]` with optional HTTPS links, and optional `status`/`note`. `status` is exactly `complete`, `partial`, or `fixture`; it does not accept
 `validated`. Partial or fixture status requires a note. Use a full ISO timestamp
 for `asOf` (including time and Z), captured once during data preparation. Never put keys or credential-bearing URLs in
 provenance. This context records claims; it does not validate the underlying data.

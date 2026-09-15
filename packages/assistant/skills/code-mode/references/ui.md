@@ -47,7 +47,28 @@ if (values === null) return;
   number or `null`.
 - `ui.modal.dialog({ title, fields })` returns a plain object or `null`.
 
-Schema fields support `text`, `number`, `boolean`, and `select`. Select options
-use `{ value, label }`. Custom JavaScript validators are not transported to the
-host. Use the supported schema constraints and validate domain rules after the
-result returns. Test runs expose pending dialogs so an agent can answer them.
+All modal methods additionally accept `confirmText?`, `cancelText?`, and
+`variant?: "primary" | "success" | "danger"`. Text modals also accept
+`multiline?: boolean`. Titles, labels and button captions must be nonempty.
+
+Dialog `fields` is an object keyed by identifiers matching
+`[a-zA-Z][a-zA-Z0-9_]*` (1–64 fields). Every field requires `type` and `label`;
+common optional fields are `description`, `placeholder`, and `required`.
+
+| Field type | Additional optional fields |
+| --- | --- |
+| `text` | `default: string`, `multiline: boolean`, `minLength`, `maxLength` |
+| `number` | `default: number`, `min`, `max`, `step` (positive) |
+| `boolean` | `default: boolean` |
+| `select` | Required `options: [{value,label,icon?,description?}]`; optional `default: string` |
+
+Select option values are unique, nonempty strings; a default must match one.
+Dialog results contain every field key: text is a string, number a number,
+boolean a boolean, and select the option's string value. Empty optional text
+returns `""`; other empty optional fields return `null`. Cancelling the dialog
+returns `null`. `default` initializes a field; it is not a replacement for an
+omitted answer in an agent interaction.
+
+Custom JavaScript validators are not transported to the host. Validate domain
+rules after the result returns. Test runs expose pending dialogs so an agent
+can answer them.

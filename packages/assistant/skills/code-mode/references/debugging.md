@@ -8,7 +8,7 @@ is unavailable, report that state rather than claiming the code ran.
 
 | Tool | Input | Result |
 | --- | --- | --- |
-| `code_run` | `id` or `code`, optional `inputPaths`, `version` | Starts saved source or a one-off entry; returns `runId` and snapshot |
+| `code_run` | `id` or `code`, optional `inputPaths`, `version`; one-off `code` may bind `resourceId` | Starts saved source or a one-off entry; returns `runId` and snapshot |
 | `code_inspect` | `runId`, optional `nodeId`, `offset`, `limit`, `waitMs` | UI, logs, errors, modal, output, and files |
 | `code_interact` | `runId`, `id`, optional `event` or modal `answer` | Performs an interaction and returns the resulting state |
 | `code_stop` | `runId` | Stops and releases a test run |
@@ -20,7 +20,8 @@ is unavailable, report that state rather than claiming the code ran.
 Write source, run it, and inspect the returned snapshot. For calculations,
 verify the returned values with representative inputs and inspect output files.
 For interactive apps, exercise the main action and invalid input. Fix source
-and start another run when needed. No revision argument is required.
+and start another run when needed. Check the returned `revision` against the
+saved revision you intend to deliver; runs have no revision input argument.
 
 Use IDs returned in the snapshot. A button needs only its control `id`; an input
 or select uses `event: {type:"change", value:...}`. Table/chart selection uses
@@ -84,30 +85,3 @@ unexecuted or incomplete test as successful.
 A test run is separate from the user’s open app. Saving or running code does
 not replace that app’s running version. Users can restart after the new-version
 notice appears; never claim their open app has updated solely because a test passed.
-
-
-## Direct Cloud CLI execution
-
-`assistant code run --chat CHAT --input-file run.json` executes without a model
-turn or an open browser tab. The CLI starts the same isolated worker in headless
-Chromium. Supply a JSON `code_run` input, such as `{"code":"export default () => 42"}`
-or `{"id":"RESOURCE_ID","version":2}`. Historical versions require Manage.
-
-Optional `--steps-file steps.json` supplies an array of `{name,args}` steps using
-`code_interact`, `code_inspect`, or `code_export`. The command supplies the current
-`runId` automatically. It returns each snapshot and closes the worker afterward.
-Upload inputs with the normal chat file commands, then select them in
-`inputPaths`. Use `code_export` steps to retain outputs in the chat.
-
-Actions requiring approval need an explicitly authorized `--approve` capability
-name or an interactive Assistant chat. Source code cannot grant approval.
-
-The CLI keeps its host alive until a background job finishes; `--steps-file` can
-inspect or interact before that final wait. A pending unanswered dialog needs an
-explicit interaction step. Ctrl+C closes the host. The final result must show
-completion before an export or a success claim.
-
-`code_update` changes metadata only. The existing CLI command `assistant code
-update` instead replaces a complete source bundle and metadata with a revision
-check. Prefer `assistant code write` for ordinary file edits; do not confuse
-that CLI command with the agent's metadata tool.

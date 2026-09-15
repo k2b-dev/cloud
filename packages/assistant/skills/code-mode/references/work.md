@@ -28,7 +28,10 @@ export default () => {
 
 Do not await `job.done` in a GUI button: its callback would remain pending for the entire job. For a headless script, use
 `const job = work.run(async context => { /* ... */ }); return await job.done;`.
-A job's returned value becomes the run output. Do not return the job handle.
+`work.run(callback)` returns `{done: Promise<result>, cancel(): void}`;
+`work.cancel()` cancels the active job. Both cancel methods return immediately;
+`done` rejects on failure or cancellation. A job's returned value becomes the
+run output. Do not return the job handle.
 
 `context.signal` is aborted by cancellation. `await context.checkpoint()` yields
 the worker event loop and throws if cancelled. Call it between files/batches
@@ -46,7 +49,7 @@ responding for 15 seconds is terminated. This watchdog is not a total job limit.
 The user's Stop action and `code_stop` can also terminate a stuck worker.
 
 `code_run` and `code_interact` may return while background work is running.
-Check `work.status`: `running`, `completed`, `cancelled`, or `error`. Use
+Check the inspection result’s `work.status` (not a worker-global property): `running`, `completed`, `cancelled`, or `error`. Use
 `code_inspect({runId, waitMs: 30000})` to wait for completion and obtain current
 progress, output, and errors. It returns after at most 30 seconds; a remaining
 `running` status is not success. Modal/approval waits return promptly. Do not

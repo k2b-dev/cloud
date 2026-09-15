@@ -46,7 +46,7 @@ from the current authorized Project chat. The CLI equivalent is
 ## Read and write records
 
 ```ts
-const rows = await db.query("SELECT title FROM todos WHERE done = ?", [false]);
+const { data: rows } = await db.query("SELECT title FROM todos WHERE done = ?", [false]);
 const tables = await db.tables();
 const todos = db.table("todos");
 await todos.insert({ title: "Check totals", done: false });
@@ -58,17 +58,58 @@ It rejects SQL writes, CTEs, comments, and internal database objects. Use
 structured methods for mutations. Query results are bounded to 1,000 rows;
 read the returned result shape and paginate structured row lists when needed.
 
-| Call | Purpose |
+| Call | Result |
 | --- | --- |
-| `db.tables()` | List tables |
-| `db.createTable(name, columns)` | Create schema; requires Manage |
-| `db.table(name).schema()` | Read column definitions |
-| `db.table(name).alter(changes)` | Explicit schema changes; requires Manage |
-| `db.table(name).list(query)` | Filter and paginate records |
-| `db.table(name).get(id)` | Read one record |
-| `db.table(name).insert(rowOrRows)` | Insert one row or batch |
-| `db.table(name).update(id, values)` | Update supplied fields |
-| `db.table(name).delete(id)` | Delete one record |
+| `db.tables()` | Array of table objects with `name` and `type` |
+| `db.createTable(name, columns)` | `{created: name, type: "table"}`; requires Manage |
+| `db.table(name).schema()` | Schema object with `name`, `type`, `columns` |
+| `db.table(name).alter(changes)` | `{updated: true}`; requires Manage |
+| `db.table(name).list(query?)` | `{data: Row[], meta?}`; see pagination below |
+| `db.table(name).get(id)` | One row object; missing ID throws |
+| `db.table(name).insert(rowOrRows)` | `{inserted: number}`; not the inserted row/ID |
+| `db.table(name).update(id, values)` | `{updated: number}` |
+| `db.table(name).delete(id)` | `null` on success |
+
+All methods above return promises; `db.table(name)` itself returns a synchronous
+handle. Errors throw with `error.code`; there is no `{ok,data}` envelope.
+Row IDs are positive integers. Insert accepts a single plain row or an array of
+1–1,000 rows; do not add a `{rows: ...}` wrapper or pass transport options.
+Read back by a unique business key when the inserted ID is needed.
+
+`alter(changes)` accepts only `{rename?, add_columns?, drop_columns?,
+rename_columns?}`. `add_columns` uses the same column objects as `createTable`;
+`drop_columns` is a string array; `rename_columns` maps old names to new names.
+Do not invent methods such as `upsert`, `transaction`, `execute` or table deletion.
+
+### Filter and paginate
+
+`list` takes a plain object. Studio defaults to 50 rows and accepts `limit` 1–1,000;
+`offset` defaults to 0. `order` is comma-separated `column.asc`/`column.desc`
+(default `id.asc`); `select` is comma-separated column names (default all).
+`count:"exact"` requests counts. Ordinary results include
+`meta:{limit,offset,total_count?,filter_count?}`; aggregate results may omit it.
+
+```js
+const page = await db.table("todos").list({
+  done: "eq.false", select: "id,title", order: "id.asc", limit: 100, offset: 0,
+});
+const rows = page.data;
+```
+
+Filters use column keys with `"operator.value"` strings: `eq`, `neq`, `gt`, `gte`,
+`lt`, `lte`; `like`/`ilike` with `*` wildcards; `in.(a,b)`; `is.null`; or a
+`not.` prefix. Use `and:"(score.gte.50,score.lte.95)"` for two filters on one
+column and `or:"(status.eq.active,priority.gte.3)"` for alternatives. `search`
+is a text query. Bind arbitrary user text through `db.query` parameters instead
+of manually building filter expressions with reserved punctuation.
+
+Advance `offset` by the returned row count until `data.length < limit`. Use a
+stable order with a unique tie-breaker; concurrent changes can shift offset
+pages. Counts are optional, so do not require them to finish pagination.
+For large changing sets use `id:"gt.LAST_ID"`, `order:"id.asc"` and no offset.
+Select supports `count()` and `column.sum()/avg()/min()/max()/count()`; regular
+selected columns group the aggregates. Prefer named SQL aliases with `db.query`
+when consuming calculated fields so their keys are explicit.
 
 Create schema while building the app as an admin, before publishing. Do not make
 normal Use-level users run schema mutations on startup. Check existing tables

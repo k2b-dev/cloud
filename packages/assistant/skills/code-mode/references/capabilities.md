@@ -33,10 +33,9 @@ mechanism. Declined calls throw. Respect the decision and do not retry through
 another route. A chat's allowed-tools restriction also applies to calls from
 its scripts.
 
-The interactive CLI prompts for confirmation. Unattended CLI execution needs
-explicit authorization for the capability through its approval options; code
-itself never supplies an approval flag. No session cookie or API token belongs
-in app source.
+Failures reject the promise; the runtime removes the transport `{ok, data}`
+wrapper. The returned object is the capability's own envelope (`data`, `refs`,
+files when supplied), not a second transport wrapper.
 
 Use the user's current request to decide which effects are appropriate. The
 availability of a tool is not a reason to invoke unrelated actions.

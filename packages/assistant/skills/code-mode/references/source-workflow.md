@@ -5,6 +5,38 @@ pass code directly to `code_run`; no create/write sequence is needed. Before
 building an app around unfamiliar data, test its processing core with a small
 one-off and representative inputs. Then use the learned structure here.
 
+## Agent-only scripts and display-only dashboards
+
+A saved resource does not require an interactive UI. Choose `kind:"script"`
+for a reusable procedure the agent calls with `code_run({id, inputPaths?})`.
+Persistence is optional: a reusable converter, validator or calculation can
+operate entirely on each run's inputs without a database or stored data.
+Return a small JSON result and optional output files; do not create buttons,
+modals or a dashboard merely to make it reusable. Its database and shared files/KV
+belong to that resource and survive runs and chats. Find it again with
+`code_list` and reuse its ID rather than creating a copy for each session.
+Variables and agent local storage do not survive as durable shared state.
+
+For example, a saved importer can read explicitly supplied chat files, validate
+rows, store them through `database.connect()` and return inserted/rejected
+counts. Subsequent authorized chats can run the same resource. Initialize schema
+with Manage access before publishing, then normal Use-level runs can work with
+existing rows. See [Database](database.md) and [Storage](storage.md).
+
+For a user who only wants to see results, keep an app's UI to a dashboard over
+its resource data. The agent can inspect it with `code_sql` and, with Manage,
+maintain that same app's data through `code_run({code,resourceId})`, without adding
+maintenance controls or rewriting its dashboard source. Display-only UI is a
+presentation choice, not an additional database permission boundary. Separate
+saved resources have separate databases; they do not share data automatically.
+
+The current API runs the saved default entry, or a one-off maintenance entry.
+It has no named exported app-action invocation and no arbitrary argument object
+for saved runs. Use documented `inputPaths` for file inputs. Do not invent
+`actions.run`, `code_action`, cross-resource database handles or hidden UI
+controls as a substitute. Configurable exported app actions would be a separate
+runtime feature, not something a skill can enable.
+
 Use `load_tools` with these exact Assistant tool names. Each tool has one
 small input schema; there is no app prefix or capability name to translate.
 
@@ -32,22 +64,23 @@ does not start code or share the app.
 ```json
 {
   "id": "ID returned by code_create",
-  "path": "main.ts",
-  "content": "export default () => ({ answer: 42 });"
+  "expectedRevision": 1,
+  "files": [{ "path": "main.ts", "content": "export default () => ({ answer: 42 });" }]
 }
 ```
 
-Every successful write returns `saved: true`. Diagnostics describe compilation
-problems in the saved source; they do not mean the file was rejected. For example,
-write an entry that imports a helper, write the helper, then run. Missing imports
+Source tools return `{ok:true,data,...}` or `{ok:false,error}`. Read IDs,
+`revision`, file windows and diagnostics from `data`. A successful write returns
+`data.saved: true`. Diagnostics describe compilation
+problems in the saved source; they do not mean the file was rejected. Save related files in one batch. Missing imports
 or syntax errors prevent execution, not intermediate saves. Invalid paths,
 permissions, or storage limits still reject the write.
 
-Other files stay unchanged. Each file mutation uses the current stored bundle,
-so parallel writes to different files preserve each other. The last write to the
-same file wins. Do not coordinate your normal work with revision numbers.
-Each test run internally keeps a fixed source snapshot; start another run to
-execute edits. Removing an absent path is harmless. Removing the entry requires
+Other files stay unchanged. Read the current `revision` before writing and pass
+it as `expectedRevision`; use the returned revision for the next edit. A stale
+revision returns `CONFLICT` without saving anything. Re-read and reconcile rather
+than blindly retrying. Each run keeps a fixed source snapshot; start another run
+to execute edits. Removing an absent path is harmless. Removing the entry requires
 recreating it before execution.
 
 Read long files through `nextOffset` until `complete` is true. Offsets count
@@ -66,20 +99,6 @@ state after an uncertain result before deciding to retry.
 
 Give an app a concise title and an optional one- or two-sentence description of
 its purpose. Users see these in the chat context and app overview cards.
-
-## Work through the Cloud CLI
-
-Use `assistant code create TITLE --kind app|script` for a saved resource.
-`assistant code write ID main.ts --content-file ./main.ts` writes one complete
-file and preserves its siblings. `assistant code get ID` reads source and
-metadata. Source text may also come from stdin using the CLI input flags.
-Use `assistant code update` only when intentionally replacing a complete source
-bundle with its current revision check.
-
-Use `assistant code run` for execution, `code sql` for a direct SELECT, and the
-publication, access, and Project commands for their corresponding operations.
-`code_open` in a headless CLI host returns the app URL; it does not claim to open
-a user-visible tab.
 
 ## Source history storage
 

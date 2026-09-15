@@ -27,7 +27,7 @@ export default () => {
 | `money.format(value, { locale })` | Format a localized amount with currency |
 | `money.currencyDigits(currency)` | Read the currency's number of fraction digits |
 | `money.add(a, b)`, `money.subtract(a, b)` | Combine same-currency amounts |
-| `money.sum(values, { currency })` | Sum amounts; explicit currency also supports an empty list |
+| `money.sum(values, { currency }?)` | Sum amounts; explicit currency also supports an empty list |
 | `money.compare(a, b)` | Return -1, 0, or 1 for same-currency amounts |
 | `money.multiply(value, factorText, { rounding })` | Multiply by an exact decimal factor |
 | `money.divide(value, divisorText, { rounding })` | Divide and round to minor units |
@@ -60,3 +60,10 @@ const { tax: tip, gross: total } = money.taxFromNet(bill, {
 ```
 
 Use canonical decimal strings for API percentages (for example `"7.5"`).
+
+`allocate` takes a nonempty array of nonnegative weights with a positive sum.
+Number weights must be safe integers; fractional weights use decimal strings,
+for example `["0.25", "0.75"]`. It returns `Money[]` in input order, distributes
+remaining minor units by largest remainder (ties use input order), and supports
+negative totals. Arithmetic methods return `Money`; parsing returns `Money`,
+formatting returns strings, and `currencyDigits` returns a number.

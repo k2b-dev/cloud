@@ -1,8 +1,8 @@
 # Generate PDFs
 
 `pdf.render`, `pdf.attach` and `pdf.facturX` are asynchronous and return a PDF
-`Blob`. They use the instance's configured Gotenberg service. `pdf.open` remains
-the local PDF.js text reader described in [Documents](documents.md).
+`Blob`. They use the instance's configured PDF service. `pdf.open` is
+the local text reader described in [Documents](documents.md).
 
 ## HTML and CSS
 
@@ -25,7 +25,7 @@ values for local images, fonts and CSS. Use plain filenames, no directories;
 reference the exact filename from HTML or CSS. Duplicate names and the reserved
 names `index.html`, `header.html`, `footer.html`, `factur-x.xml` fail.
 `headerHtml` and `footerHtml` are optional independent HTML strings with their own
-CSS. Gotenberg page markers such as `<span class="pageNumber"></span>` work in
+CSS. Page markers such as `<span class="pageNumber"></span>` work in
 those templates. Background colors are printed.
 
 `page.format` defaults to `A4`; alternatives are `A3`, `A5`, `Letter`, and `Legal`.
@@ -36,8 +36,7 @@ not certify accessibility.
 
 Studio styles are not inherited. Scripts, redirects, frames and outbound
 resources are blocked. Supply local assets or data URLs; this is not a URL-to-PDF
-browser or a JavaScript rendering environment. Gotenberg must provide isolated
-request directories (the development stack uses 8.36.0).
+browser or a JavaScript rendering environment.
 
 ## Attach files
 
@@ -57,8 +56,9 @@ The source PDF and attachments are ordinary `Blob`s. Their origin does not
 matter: explicit picker selections, authorized chat inputs, or app storage use
 the same API. `relationship` defaults to `Unspecified`; alternatives are
 `Source`, `Data`, `Alternative`, and `Supplement`. MIME type comes from the Blob
-and defaults to `application/octet-stream` if empty. Names within the request
-must be unique. Embedding an XML file alone does not create a compliant invoice.
+and defaults to `application/octet-stream` if empty. Provide at least one attachment. Names within the request
+must be unique. All asset/attachment names are 1–180 characters, with no slash,
+backslash or control characters, and cannot be `.` or `..`. Embedding an XML file alone does not create a compliant invoice.
 
 ## Factur-X / ZUGFeRD
 
@@ -78,7 +78,7 @@ await files.save(document, "invoice.pdf");
 `facturX` accepts the same render options plus required `xml` and `profile`.
 Profiles: `MINIMUM`, `BASIC WL`, `BASIC`, `EN 16931`, `EXTENDED`. Use `EN 16931`
 with the bundled `einvoice.serialize` output; that serializer does not support
-the other profiles. Gotenberg embeds `factur-x.xml`, sets Factur-X 1.0 invoice
+the other profiles. The service embeds `factur-x.xml`, sets Factur-X 1.0 invoice
 metadata and requests PDF/A-3b. The app must supply matching HTML and XML.
 Neither rendering nor parsing certifies XSD, Schematron, tax or invoice validity.
 
@@ -91,11 +91,11 @@ code explicitly saves it; do not automatically retry failed calls.
 
 Saved resources need Use access, not Manage. One-off scripts need an accessible,
 unrestricted current chat. The server checks access before reading the body.
-No Gotenberg URL, credentials, shell flags or arbitrary conversion route are
+No service URL, credentials, shell flags or arbitrary conversion route are
 exposed to app code. This is an internal conversion, not `http.fetch`; there is
 no external API approval prompt.
 
-Configured Gotenberg input, output and timeout limits apply. HTML, its headers,
+Configured service input, output and timeout limits apply. HTML, its headers,
 footers, assets and invoice XML share the HTML input budget. PDF attachments
 and the source PDF share the PDF input budget. All transfers also have a 64 MiB
 ceiling; multipart framing has a separate bounded overhead. Shared storage and

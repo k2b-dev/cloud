@@ -1,6 +1,5 @@
 # Charts
 
-Pass these options as `ui.chart({data:{options}})`.
 See [Analytics UI](analytics.md) for formats, selection, and Chart Explorer.
 
 Use `ui.chart({data:{options}})` for charts rendered by the host. Values must be finite
@@ -35,7 +34,7 @@ instead of creating a chart on every refresh. Charts do not use `upsert` or
 
 All listed charts except sparkline accept `title` and `subtitle`. Line charts
 accept `smooth`, `area`, `legend`, and `interactive` booleans. Bar charts accept
-`showValues` and `colorByBar`. Pie and donut charts accept `showLabels` and
+`legend`, `showValues` and `colorByBar`. Pie and donut charts accept `showLabels` and
 `innerRadius` from 0 to 0.95. Stat `trend` is `up`, `down`, or `neutral`.
 
 Use at most 1,000 values per array. Aggregate large datasets before rendering.
@@ -79,3 +78,27 @@ format or selection behavior. Omit properties that are not listed for the kind.
 The UI uses `data.formats` instead of transporting formatting functions.
 Use explicit mark tooltips for domain labels or derived values. An Explorer
 with field mappings derives tooltip labels and formats from its columns.
+
+
+## Mark identifiers for selection
+
+Use these identities in `data.marks`; `index` and `seriesIndex` are zero-based
+indices in the original input, not screen positions or sorted order. Omit
+`seriesIndex` where the table says none.
+
+| Chart | `role` | `index` / `seriesIndex` |
+| --- | --- | --- |
+| bar, pie, donut, barGauge | `item` | data item / none |
+| line, scatter, map | `point` | point within series / series |
+| sparkline | `point` | data point / none |
+| histogram | `bin` | computed bin / none |
+| boxplot | `box` | group / none |
+| boxplot outlier | `outlier` | value within original group / group |
+| gauge, stat summary | `value` | 0 / none |
+| stat sparkline | `point` | sparkline point / none |
+| heatmap | `cell` | data item / none |
+| stateTimeline | `interval` | interval within row / row |
+
+For histogram mappings, provide explicit increasing bin boundaries so the bin
+indices and corresponding summary rows are known. Use field-mapped Explorers
+for ordinary bar/pie/donut/line/scatter views to avoid manual mark construction.

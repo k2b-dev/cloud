@@ -2,49 +2,38 @@
 name: assistant-code-mode
 description: Inspect and transform unfamiliar data, analyze files, compare results across Cloud apps, or build and improve interactive apps and reusable scripts in Assistant Studio. Use for quick code experiments, data analysis, file generation, resource SQL queries and combining discovered Cloud capabilities. For plain arithmetic or date offsets, answer directly or use calculate. Work on existing Kit resources belongs to cloud-kit.
 ---
-
 # Assistant code mode
 
-Choose the smallest useful result: direct answer, one-off script, exported file,
-saved script for reuse/sharing, or app for interactive controls. Use an existing
-Cloud feature when it already answers the question. For a quick look at an
-uploaded PDF or Office file, `read_file` can return converted Markdown without
-code. Use the original with code when exact cells, types, or PDF positions matter.
+Choose the smallest useful result: one-off answer, exported file, reusable script,
+or interactive Studio app. A saved script may be agent-only with no GUI; an app
+may be a display-only dashboard. Neither needs artificial controls. Reuse an
+existing Cloud feature when it fits. For a
+quick reading of an uploaded PDF or Office document, `read_file` can return
+Markdown; use code for exact cells, calculations, original PDF text or positions.
 
-## Keep a working plan
+## Start from the contract
 
-For work with several real steps, use `todo_write` to keep a short chat plan.
-Replace the full `todos` list each time; give each item a stable `id`, actionable
-`content`, and `status` (`pending`, `in_progress`, `completed`, or `cancelled`).
-At most one step is active. Update as work changes, including user corrections;
-mark a step completed only after doing and checking it. Preserve exact commands
-when they matter. Skip this tool for a simple calculation or conversational reply.
+Load the needed `code_*` tools individually through `load_tools` and read their
+input schemas. They are Assistant tools, not capabilities or functions inside
+code. Discover other Cloud operations before using `capabilities.run`.
 
-For an app, useful steps are inspect inputs, implement, and verify actual output
-and interactions. Saving or compiling code does not complete verification.
+Runtime namespaces are globals: no imports or package installation are needed.
+Only relative imports of the resource's own source files are supported. There is
+no DOM or native network access. Before using a namespace, read its reference
+below for signatures, options and return values. Do not invent methods or infer
+an API from a familiar library. For discovered Cloud capabilities and external
+APIs, obtain their actual contracts separately.
 
-## Explore quickly, build from evidence
-
-For a clear small experiment, load `code_run` through `load_tools` and pass
-`{"code":"export default () => ({ unique: [...new Set([3, 8, 8, 12])] })"}`.
-No written plan, app creation, title, save step or GUI reference is required.
-Write a fresh short script for the next question when that is simpler. Variables
-are not shared between runs. Pass inputs again; preserve useful files with
-`code_export`. Its returned path/version can be passed to `code_write` as
-`fromChatFile`, or its path can be the next run's `inputPaths` entry.
-
-Before substantial implementation, identify the desired result and consequential
-unknowns. Inspect existing files, source, contracts, or a small read-only sample.
-Ask only for missing examples or decisions you cannot resolve yourself. Choose
-reasonable reversible defaults for minor details; do not wait for every possible
-question to disappear. Use failed experiments to change the hypothesis, not to
-repeat the same call. Read [Investigation](references/investigation.md) only when
-unfamiliar data or a cross-app workflow needs more guidance.
+Inspect supplied data before joining, filtering or calculating: column names,
+types, units, date ranges and missing values. Ask only for decisions or inputs
+that cannot be established from available evidence. For several real steps,
+keep a short `todo_write` plan and update it as work changes; skip ceremony for a
+small experiment. A failed experiment should change the next hypothesis.
 
 ## First file script
 
-Use exact current-chat paths from the supplied file manifest as `inputPaths`.
-For a small CSV, pass this entry as `code`:
+Pass exact current-chat manifest paths as `code_run.inputPaths`, and this entry
+as `code_run.code` for a small CSV:
 
 ```js
 export default async () => {
@@ -55,85 +44,66 @@ export default async () => {
 };
 ```
 
-`files.list()` entries use the full leading-slash path as `name`, for example
-`"/umsaetze.csv"`. Pass that exact name to `files.read`; do not compare it with
-a basename or invent a directory. Inspect the returned CSV column names before
-writing joins or calculations; month-level data may have `monat` instead of a
-day-level `datum`.
+`input.name` is the full path, such as `/sales.csv`; pass it unchanged to
+`files.read`, which returns a `File`. CSV rows are objects keyed by headers:
+`rows[0]` is already data. Do not drop it. For older Excel CSVs, use
+`sheet.fromCsv(file, {encoding:"windows-1252"})`. Inspect actual headings first.
+For a tiny experiment without files, `export default () => ({answer:42})` suffices.
+Each run has fresh variables. No saved resource or UI is required.
 
-`files.read` returns a `File`, not bytes. `sheet.fromCsv` returns **data rows**
-keyed by header names: `rows[0]` is the first record, not the header; do not
-remove it with `slice(1)`. For older Excel CSVs use
-`await sheet.fromCsv(file, { encoding: "windows-1252" })`.
-[Runtime and files](references/runtime.md) covers other decoding options.
-For XLSX use `sheet.openExcel(file)`; for PDF use `pdf.open(file)`. Read
-[Documents](references/documents.md) for their small handle APIs and close them
-in `finally`. [Runtime and files](references/runtime.md) covers limits/exports.
-Chat attachments are already uploaded. Local originals stay local through the
-user's picker; never require upload when it contradicts the request.
-In app tests, explicit `inputPaths` supply picker fixtures; app `files.list/read`
-still cannot access chat files.
+## Reference routing
 
-Short entries have a 15-second readiness watchdog, excluding pending input
-reads. For long processing, use `const job = work.run(async context => { /* ... */ });
-return await job.done;` in a script; read [Background work](references/work.md).
-GUI callbacks launch the job without awaiting `done`. The tool-call budget is
-separate; [Debugging](references/debugging.md) explains deadlines and I/O waits.
+Read only the rows relevant to the task. Each link describes its own complete
+supported surface; links within references add related workflows when needed.
 
-## Load only what the task needs
+| Task / API | Read |
+| --- | --- |
+| Source entry, input/output files, pickers, CSV, IDs | [Runtime and files](references/runtime.md) |
+| Read original PDF text/positions or XLSX cells, write XLSX | [Documents](references/documents.md) |
+| Generate a PDF, embed attachments, combine invoice HTML and XML | [PDF generation](references/pdf.md) |
+| Exact amounts, taxes, allocation, localized money | [Money](references/money.md) |
+| Export DATEV bookings or SEPA transfers | [DATEV and SEPA](references/finance.md) |
+| Parse a CAMT bank report | [Bank reports](references/camt.md) |
+| Calculate, create or read electronic invoices/XML/PDF attachments | [Electronic invoices](references/einvoice.md) |
+| Controls, layouts and dialogs | [UI and dialogs](references/ui.md), [Analytics UI](references/analytics.md) |
+| Chart types, series and axes | [Charts](references/charts.md) |
+| Long processing, progress, cancellation | [Background work](references/work.md) |
+| Persist JSON or files locally/shared | [Storage](references/storage.md) |
+| Resource SQL, schema, row CRUD, imports | [Database](references/database.md) |
+| Discovered Cloud queries/actions | [Capability calls](references/capabilities.md) |
+| External HTTPS and personal secrets | [HTTP and secrets](references/http.md) |
+| Reuse work across chats, create or edit an app/script, agent-only scripts | [Source workflow](references/source-workflow.md) |
+| Publish, restore, copy, grant access | [Publishing and access](references/publishing.md) |
+| Execute, inspect, interact, export, stop, diagnose errors | [Run and debug](references/debugging.md) |
+| Unfamiliar inputs or cross-app investigation | [Investigation](references/investigation.md) |
+| Complete app starters | [Examples](references/examples.md) |
 
-For new interactive analysis views, use the built-in UI from
-[Analytics UI](references/analytics.md). Load `assistant-data-analysis` for
-source validation, metric interpretation, and report/dashboard delivery.
-
-- **Resource data:** `code_sql` runs SELECT directly. For an app-specific experiment,
-  import, migration or export, use `code_run({ code, resourceId })` with Manage access;
-  [Database](references/database.md). Combine scripts and apps without saving helper scripts.
-- **External HTTPS APIs and secrets:** [HTTP and personal secrets](/skills/assistant-code-mode/references/http.md). Use `http.fetch` and `secret()` references; collect keys only with the trusted `code_secret` tool.
-- **Cloud operations:** discover the actual capabilities and contracts, then
-  use `capabilities.run` in code; [Capability calls](references/capabilities.md).
-- **Saved script or app:** [Source workflow](references/source-workflow.md).
-  Read existing source before editing; `code_write` atomically saves a file batch against `expectedRevision` and
-  preserves sibling files. Use the returned six-character resource short ID. Use `code_list` with `q`
-  and `code_read` to find/reuse existing work; fork only for an independent copy.
-- **Interactive app:** before the first source write, read [Source workflow](references/source-workflow.md) and the closest [complete example](references/examples.md). Additionally read [UI and dialogs](references/ui.md).
-  Use `ui.stat` for numeric KPIs and `ui.chartExplorer` for inspectable charts.
-  Test returned control IDs with `code_interact`, including file-picker fixtures.
-- **Optional APIs:** [Storage](references/storage.md), [Charts](references/charts.md),
-  [Money](references/money.md), [Finance formats](references/finance.md), [PDF generation](references/pdf.md), [Publishing and access](references/publishing.md).
-  [Examples](references/examples.md) provides complete starters when needed.
-
-Runtime namespaces are globals; only relative imports of your own source files
-are supported. No package installation. All `code_*` tools are direct Assistant
-tools, not capabilities; load them individually. Use `capabilities.run` for
-other Cloud apps. Shared writes and capability actions are real even in tests,
-with normal permissions and approvals. Temporary local storage does not undo them.
+For a new app, read Source workflow and the closest complete example before
+writing source, plus only the API references it uses. For analytical reports or
+dashboards, also load `assistant-data-analysis` for metrics and source validation.
 
 ## Verify and deliver
 
-Run/interact return errors, logs, UI state, output and captured files. When
-`work.status` is `running`, use `code_inspect` with `waitMs` until completion;
-do not inspect merely to repeat a finished snapshot. Correct failures and check
-that the result actually answers the user's question, with relevant sources,
-units, and limitations. A sample does not prove full coverage. `outputTruncated`
-means the displayed output is incomplete; return a summary or export a file.
+Run the actual saved revision and test relevant controls with IDs returned by
+`code_run`/`code_interact`, including invalid inputs and picker fixtures. Creating,
+compiling or saving source does not verify behavior. If `work.status` is
+`running`, wait with `code_inspect({runId,waitMs:30000})`; do not restart the job.
+Inspect only when the returned snapshot needs more detail. Errors and
+`outputTruncated` are not successful complete results.
 
-To deliver a CSV, call `await files.save(sheet.toCsv(rows), "result.csv")`
-**inside** the script. Then load and call the **tool** `code_export` with the
-returned `runId` and file name; finally `present` its returned chat path.
-`files.save` returns no path; `code_export` is not a function inside scripts.
-CSV export defaults to semicolon, UTF-8 BOM and safe spreadsheet cells.
-For analysis, reconcile input/output row counts and exclusions before reporting totals.
-Open GUI apps with `code_open`; saved scripts
-are available in Studio. Old finished one-offs without files/UI are reclaimed
-when slots are needed. Stop unneeded runs holding UI, jobs or captured files.
-Test the saved revision, not a rewritten copy of its calculation: the returned
-`revision` must equal the revision you intend to deliver. Large validated data
-belongs in an exported file imported with `fromChatFile`, not copied from output.
+For a CSV, call `await files.save(sheet.toCsv(rows), "result.csv")` inside code.
+Then call the **tool** `code_export` with the returned `runId` and captured file
+name, and `present` its returned chat path. `files.save` returns no path.
+Reuse exported data via its path/version rather than retyping truncated output.
+Reconcile row counts, exclusions and totals before reporting findings.
 
-Agent execution runs on the Assistant server in an isolated host; closing or
-suspending the user tab does not stop it. `code_open` and `code_secret` still use
-the user interface. A lost server host is never replayed automatically. For `kind: "input"`, fix the tool arguments. For `kind: "host"`,
-diagnose the host rather than rewriting app source. Never claim an unexecuted
-or incomplete result is verified. Keep user-facing progress, errors, and labels
-clear; do not introduce decorative UI or a saved resource just to explore.
+Open apps with `code_open`; saved scripts remain in Studio. Saving or testing does
+not replace a user's already-running app. Stop runs no longer needed that retain
+UI, jobs or output files. Never claim an unexecuted result is verified.
+
+Agent execution runs independently of the user's tab. Agent local storage is
+temporary; shared storage, database writes and external actions are real, even
+in tests. Cancellation and source restore do not undo them. Apps select local
+files explicitly; they never gain implicit access to chat attachments. Use
+`code_secret` for credentials, never chat or app controls. Honor normal access
+and approval decisions; availability is not authorization for unrelated actions.
