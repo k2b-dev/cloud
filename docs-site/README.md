@@ -53,6 +53,11 @@ docker run --rm \
 
 ## Release
 
+SSR assets use a build-specific URL prefix. After deploying a new build, reload
+already-open tabs if an island or lazy-loaded module fails to load. The server
+only serves the current build; copying old assets into `dist` does not preserve
+their previous URLs.
+
 Run `bun run verify:docs` from this directory before releasing. This checks
 the documentation, API reference, compiled examples, UI catalog, and website
 build. Example sources live in `examples/cloud-docs` and use this package's

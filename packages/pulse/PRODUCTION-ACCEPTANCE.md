@@ -6,7 +6,7 @@ The existing development installation was not reset.
 
 ## Deployment decision
 
-**Do not deploy with the repository's current Bun 1.3.14 runtime.** The real HTTP
+**Do not deploy Pulse with Bun 1.3.14.** The real HTTP
 probe reproduced PostgreSQL decoder failures, wrongly shaped query results, and
 stalled requests under concurrent reads and writes. These match the upstream
 [Bun SQL pipelining defect](https://github.com/oven-sh/bun/issues/33665).
@@ -14,8 +14,8 @@ The [upstream fix](https://github.com/oven-sh/bun/pull/33627) is included in Bun
 1.4.2. An isolated Bun 1.4.2 run passed the same HTTP workload. No JSON parser
 fallback was added to hide incorrectly decoded results.
 
-Changing Cloud's shared Docker, CI, and package-manager pins is a separate
-repository-wide runtime change. At this checkpoint those pins remain 1.3.14.
+Cloud's shared Docker, CI, and package-manager pins have since been updated
+to Bun 1.4.2. The Bun 1.3.14 results below remain historical comparison evidence.
 The Pulse query readers also establish repeatable-read, read-only isolation
 in `BEGIN`, rather than issuing a separately prepared `SET TRANSACTION`.
 

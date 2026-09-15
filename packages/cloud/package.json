@@ -18,7 +18,8 @@
     "!src/**/*.test.ts",
     "!src/**/*.test.tsx",
     "!src/**/*.integration.test.ts",
-    "!scripts/**/*.test.ts"
+    "!scripts/**/*.test.ts",
+    "!scripts/runtime-recovery-*.ts"
   ],
   "exports": {
     ".": "./src/index.ts",

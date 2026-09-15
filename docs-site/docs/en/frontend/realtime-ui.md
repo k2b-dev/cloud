@@ -5,7 +5,7 @@ section: Frontend
 order: 870
 description: Update an open page from application events while preserving reload and recovery behavior.
 tags: [realtime, websocket, cursors]
-updated: 2026-08-22
+updated: 2026-09-15
 ---
 
 # Realtime UI
@@ -86,6 +86,10 @@ a custom `classifyClose` handler only when the application can safely
 reconnect.
 
 ## Preserve reload behavior
+
+The gateway reports abnormal upstream disconnects and failed upstream connection
+attempts as `1012`, so the live client retries during an application restart.
+Explicit application close codes, including terminal `1011`, are preserved.
 
 The URL must still identify the visible resource and view. A reload asks the
 server for a fresh authorized result.

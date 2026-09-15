@@ -56,7 +56,9 @@ const closeProxy = (state: ProxyState, code: number, reason: string) => {
   if (state.closed) return;
   state.closed = true;
   clearPending(state);
-  // Reserved receive-only codes (notably 1006) cannot be sent in a close frame.
+  // Receive-only codes cannot be sent. Keep transport loss reconnectable.
+  if (code === 1005) code = 1000;
+  else if (code === 1006 || code === 1015) code = 1012;
   const closeCode =
     Number.isInteger(code) && ((code >= 1000 && code <= 1003) || (code >= 1007 && code <= 1014) || (code >= 3000 && code <= 4999))
       ? code
@@ -65,7 +67,11 @@ const closeProxy = (state: ProxyState, code: number, reason: string) => {
     state.upstream.close(closeCode, reason);
   } catch {
     // Parameterless close also cancels a connection still being established.
-    state.upstream.close();
+    try {
+      state.upstream.close();
+    } catch {
+      // Still close the client if the upstream can no longer be closed.
+    }
   }
   try {
     state.client?.close(closeCode, reason);
@@ -189,7 +195,8 @@ export const tryUpgradeWebSocket = (
 
   upstreamSocket.addEventListener("error", () => {
     logFn("WebSocket upstream error", { appId: match.appId });
-    closeProxy(state, 1011, "upstream error");
+    // A failed connection attempt during an app restart must remain retryable.
+    closeProxy(state, 1012, "upstream unavailable");
   });
 
   const upgraded = server.upgrade(req, { data: { state } });

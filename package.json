@@ -121,7 +121,8 @@
     "check:localization": "bun run scripts/check-localization.ts",
     "check:css": "bun run scripts/check-css-architecture.ts",
     "test": "bun run scripts/run-tests.ts",
-    "test:request-cache": "bun run scripts/test-request-cache.ts"
+    "test:request-cache": "bun run scripts/test-request-cache.ts",
+    "test:runtime-recovery": "bun run packages/cloud/scripts/runtime-recovery-acceptance.ts"
   },
   "devDependencies": {
     "@k2b/stdlib": "0.23.0",

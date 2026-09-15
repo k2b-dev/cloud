@@ -1,7 +1,6 @@
 import { cp, mkdir, mkdtemp, rename, rm, stat } from "fs/promises";
 import { join, resolve } from "path";
 import { buildAssets } from "./build-assets";
-import { carryForwardSsrAssets } from "./build-output";
 import { plugin } from "./ssr";
 
 const root = resolve(import.meta.dir, "..");
@@ -27,7 +26,6 @@ try {
   await cp(join(root, "agent-skills"), join(staging, "agent-skills"), { recursive: true, force: true });
   await cp(join(root, ".fibel"), join(staging, ".fibel"), { recursive: true, force: true });
   await cp(join(root, "assets"), join(staging, "assets"), { recursive: true, force: true });
-  await carryForwardSsrAssets(dist, staging);
 
   const hadPreviousBuild = await stat(dist).then(
     () => true,

@@ -110,6 +110,13 @@ Dev admin login: open `/auth/login?method=admin` and paste `dev-admin` into the 
 
 ## Agent-assisted development
 
+For shared runtime recovery changes, run `bun run test:runtime-recovery` from
+the repository root with Docker available. This manual acceptance creates
+disposable Bun and NATS containers and checks heartbeat continuity, recovery,
+one supervised restart, and graceful shutdown over three registry TTLs
+(about ten minutes). It removes its test containers and network afterward.
+The acceptance scripts are excluded from the published `@k2b/cloud` package.
+
 After a fresh clone, install the workspace, start the containerized
 documentation, and install its current developer skill. Docker with Compose v2
 is required on macOS and Linux.
