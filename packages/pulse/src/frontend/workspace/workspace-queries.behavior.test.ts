@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { createSignal } from "solid-js";
 import { isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../../../ui/test/dom";
-import type { PulseDashboard, PulseMetricSeries } from "../../contracts";
+import type { PulseDashboard, PulseMetricSeries, PulseSource } from "../../contracts";
 import type { PulseWorkspaceProps, PulseWorkspaceQueryCoverage, WorkspaceView } from "./types";
 import { createPulseWorkspaceQueries } from "./workspace-queries";
 
@@ -81,6 +81,49 @@ describe("Pulse workspace queries", () => {
     test.skip("runs with browser export conditions", () => {});
     return;
   }
+
+  test("preserves SSR source names while the uncovered inventory loads without leaking them to another base", async () => {
+    const dom = createDomTestHarness();
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = pendingFetch();
+    const source: PulseSource = {
+      id: "Src001",
+      baseId: "base-1",
+      name: "Server 1",
+      kind: "http_ingest",
+      enabled: true,
+      endpointUrl: null,
+      bearerTokenConfigured: false,
+      scrapeIntervalSeconds: 60,
+      lastSeenAt: null,
+      lastError: null,
+      lastErrorAt: null,
+      createdAt: "2026-09-15T00:00:00.000Z",
+      updatedAt: "2026-09-15T00:00:00.000Z",
+    };
+    let controls!: ReturnType<typeof createPulseWorkspaceQueries>;
+    let selectBase!: (id: string) => void;
+    const dispose = render(() => {
+      const [selectedBaseId, setSelectedBaseId] = createSignal("base-1");
+      selectBase = setSelectedBaseId;
+      controls = createPulseWorkspaceQueries(
+        queryProps({ initialSources: [source], initialQueryCoverage: { ...fullCoverage, baseData: false } }),
+        queryDeps("resources", { selectedBaseId }),
+      );
+      return dom.document.createTextNode("");
+    }, dom.root);
+    try {
+      expect(controls.sources()).toEqual([source]);
+      await flush();
+      expect(controls.sources()).toEqual([source]);
+      selectBase("base-2");
+      expect(controls.sources()).toEqual([]);
+    } finally {
+      dispose();
+      dom.cleanup();
+      globalThis.fetch = originalFetch;
+    }
+  });
 
   test("shares load-more, aborts it for invalidation, and atomically commits the rebuilt focused chain", async () => {
     const dom = createDomTestHarness();

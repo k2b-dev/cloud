@@ -493,7 +493,7 @@ export const createPulseWorkspaceQueries = (props: PulseWorkspaceProps, deps: Wo
       const detail = sourceDetailQuery.data();
       return detail ? { [detail.sourceId]: detail.scrapes } : {};
     },
-    sources: () => currentBaseData()?.sources ?? [],
+    sources: () => currentBaseData()?.sources ?? (deps.selectedBaseId() === initialBaseId ? (props.initialSources ?? []) : []),
     queries: {
       activity: { ...activityQuery, data: currentActivity },
       baseData: { ...baseDataQuery, data: currentBaseData },
