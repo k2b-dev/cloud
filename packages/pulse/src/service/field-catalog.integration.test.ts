@@ -27,17 +27,23 @@ describe("Pulse field catalog Postgres smoke", () => {
     `;
 
       try {
+        // Catalog assertions must not race the query's exclusive upper time boundary.
+        const [clock] = await sql<{ ts: Date }[]>`SELECT now()-interval '1 minute' AS ts`;
+        if (!clock) throw Error("Missing database clock");
+        const ts = clock.ts.toISOString();
         const batch = prepareIngestBatch(
           {
             events: [
               {
                 kind: "page.viewed",
+                ts,
                 dimensions: { campaign: "summer" },
                 attributes: { request_id: "request-secret-1", result: 200 },
                 sensitive: { ip: "203.0.113.42" },
               },
               {
                 kind: "page.viewed",
+                ts,
                 dimensions: { campaign: "winter" },
                 attributes: { request_id: "request-secret-2", result: "cached" },
                 sensitive: { ip: "198.51.100.9" },
@@ -54,6 +60,7 @@ describe("Pulse field catalog Postgres smoke", () => {
             events: [
               {
                 kind: "page.viewed",
+                ts,
                 dimensions: { campaign: "spring" },
                 attributes: { request_id: "request-secret-3", result: 201 },
                 sensitive: { ip: "192.0.2.15" },
