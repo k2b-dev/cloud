@@ -32,7 +32,7 @@ render(
       initialList={{ items: [item], page: 1, hasNext: false }}
       initialApp={location.pathname === "/gallery" ? undefined : { ...item, source, sourceRevision: 1 }}
       view={view}
-      databaseStatus={{ configured: true, connected: true, overview: null, unavailable: null, generation: null }}
+      databaseStatus={{ configured: true, connected: true, overview: null, unavailable: null, generation: null, dataRevision: null }}
     />
   ),
   document.getElementById("root")!,

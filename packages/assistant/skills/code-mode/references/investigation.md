@@ -1,7 +1,7 @@
 # Investigate with disposable code
 
 Code Mode is also a scratchpad for learning about data and testing an idea.
-A useful investigation may end with an answer, not an app or saved script.
+A useful investigation may end with an answer, not an App.
 Load only the tools and API references needed for the current question.
 
 ## Choose the next small experiment

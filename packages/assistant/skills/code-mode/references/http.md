@@ -20,7 +20,7 @@ chat, `survey`, `ui.modal`, app controls, source, or `code_interact`.
 The user can change the proposed metadata. Use the returned name, and handle
 cancellation without asking for the value another way.
 
-Omit `resourceId` for a chat-scoped secret. Set it for an app or saved script.
+Omit `resourceId` for a chat-scoped secret. Set it for an App.
 A one-off run with `resourceId` uses that resource's personal secrets; a saved
 run uses its resource's secrets. There is no fallback to other chats or apps.
 Every user supplies their own secrets, even in shared apps. Publishing does not

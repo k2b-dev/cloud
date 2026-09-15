@@ -603,3 +603,91 @@ matches for review, and save a report with its XML data attached. A separate
 invoice app can calculate totals, generate XML, render matching HTML and offer
 the resulting PDF for download. Neither flow submits payments automatically.
 The Code Mode skill contains complete PDF options and Finance API references.
+
+### Agent data administration
+
+Assistant loads management tools only for a requested maintenance task. Manage
+access is required; ordinary published App actions continue to work with Use.
+The documented Studio API is the complete agent contract, independent of the
+software implementing its database service.
+
+- `code_storage_list` reads paginated shared file/JSON-key metadata and the
+  current storage revision. `code_storage_delete` deletes an exact key or clears
+  files, JSON storage, or both after fresh review. Concurrent writes invalidate
+  the review. Source and database are preserved.
+- `code_database_read` reads connection state and opaque database revisions.
+  `code_database_export` writes a bounded backup to a new current-chat path;
+  existing files are never overwritten.
+- `code_database_clear` clears rows while retaining tables and schema. It reports
+  completed tables and any partial failure explicitly. The CLI equivalent is
+  `assistant code database-clear ID --yes`.
+- `code_database_reset` discards schema and data after fresh review. Source,
+  publications, and shared files/JSON keys stay intact. Physical cleanup is
+  queued; the next connection starts with an empty database.
+- `code_manage_read` obtains the snapshot required by `code_delete`. Deletion
+  removes the entire App and its server data after fresh review. Source,
+  publication, storage, permission, or database changes invalidate that snapshot.
+
+Database write attempts invalidate earlier reviews even after an uncertain
+upstream outcome. Neither cancellation nor restoring source undoes data writes.
+The agent must inspect partial or unknown outcomes before requesting a retry.
+
+### Transfer files between stores
+
+`code_files` lists files in one authorized chat, Project, or App. Its entries
+contain explicit `{scope,id,path}` locations. `code_file_stat` adds an opaque
+string version to form a reference. `code_file_copy` copies that exact source
+reference to a destination location; `expectedVersion:null` requires a new
+path, while an existing destination requires its reviewed version.
+
+The agent shows source, destination, and overwrite scope for fresh confirmation.
+App and Project destinations can disclose a private attachment to other
+recipients, so no whole-chat mount or implicit attachment transfer is involved.
+App files require Use, Project writes require Write, and chat files require
+ownership. The receiving store enforces its ordinary byte budgets. Bytes never
+pass through a model response. Concurrent changes reject the copy rather than
+overwrite newer data.
+
+Use `assistant code files`, `assistant code file-stat`, and
+`assistant code file-copy --yes` with JSON input files for the same CLI flow.
+`code_write` also accepts `{path,fromFile:reference}` for reviewed UTF-8 source
+imports. This replaces the former chat-only `fromChatFile` input. Imported data
+becomes source and can be published; ordinary runtime data belongs in shared
+files or the database instead.
+
+### Reusable action examples
+
+The repository includes four complete source bundles in
+[`packages/assistant/examples/studio-actions`](https://github.com/k2b-dev/cloud/tree/main/packages/assistant/examples/studio-actions):
+a stateless CSV converter, an agent-only shared-record importer, a display-only
+dashboard with a separate maintenance action, and an invoice-linking App. Their
+README covers setup, publication, file transfer, repeated use, conflict handling,
+and a linked Skill with independently managed permissions. The integration
+suite runs their published handlers in the isolated Studio runtime.
+
+### Agent management coverage
+
+| Existing Studio operation | Agent path |
+| --- | --- |
+| Find Apps, inspect source and revisions | `code_list`, `code_read`, `code_history` |
+| Change working title, description or icon; make a private copy | `code_update`, `code_fork` |
+| Create, edit or remove source files | `code_create`, `code_write`, `code_remove` |
+| Test, inspect, interact, export results or stop | `code_run`, `code_action`, `code_inspect`, `code_interact`, `code_export`, `code_stop` |
+| Open GUI, publish, withdraw or restore a publication | Existing `code_open`, `code_publish`, `code_unpublish`, `code_restore` |
+| Read and change grants | `code_access_read`, reviewed `code_access_change` |
+| Inspect/copy chat, Project or App files | `code_files`, `code_file_stat`, reviewed `code_file_copy` |
+| Read/write shared JSON or files | Documented runtime storage APIs in a Manage-authorized maintenance run |
+| Delete entries or clear shared file/JSON storage | Reviewed `code_storage_delete` |
+| Inspect database/schema, read or mutate structured records | `code_database_read`, `code_sql`, documented runtime database APIs |
+| Export database, clear rows, discard schema and data | `code_database_export`, reviewed `code_database_clear` and `code_database_reset` |
+| Delete App and queue external database cleanup | Reviewed `code_delete` |
+
+Browser-local storage belongs to that browser and cannot be erased by a server
+agent. Personal secret values stay in the trusted `code_secret` dialog; listing
+or deleting another person's credentials is not an App management operation.
+Project associations retain their existing Studio/CLI administration path
+(`assistant code projects` and `assistant code project-link`); they are not
+exposed as an implicit grant or a general vendor API. Operator connection settings and secrets remain installation
+administration; normal App workflows do not load or expose them. There is no
+arbitrary vendor-admin SQL interface. Every path retains the owning service's
+current authorization and version checks.

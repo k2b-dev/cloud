@@ -71,12 +71,29 @@ export const assistantCodeCommands=[
     const status=await readAssistantApi<{generation:string|null}>(ctx,path(args.id,"/database/status"));
     printValue(ctx,await readAssistantApi(ctx,path(args.id,"/database/reset"),jsonRequest("POST",{confirmed:true,expectedGeneration:status.generation})));
   }}),
+  command("code database-clear",{summary:"Permanently clear all rows while preserving tables and schema (Manage access)",args:{id:resource},flags:{yes:flag.boolean()},async run({ctx,args,flags}){
+    requireConfirmation(flags.yes,"Clearing all database rows while preserving schema");
+    const status=await readAssistantApi<{generation:string|null;dataRevision:string|null}>(ctx,path(args.id,"/database/status"));
+    if (!status.generation || !status.dataRevision) throw new Error("The App database is not connected.");
+    printValue(ctx,await readAssistantApi(ctx,path(args.id,"/database/clear"),jsonRequest("POST",{confirmed:true,expectedGeneration:status.generation,expectedDataRevision:status.dataRevision})));
+  }}),
   command("code database-export",{summary:"Download a SQLite backup (Manage access)",args:{id:resource},flags:{out:flag.string({required:true})},async run({ctx,args,flags}){
     const response=await ctx.fetch("/api/assistant"+path(args.id,"/database/export"));
     if(!response.ok)await ctx.readJson(response);
     if(!flags.out)throw new Error("Provide --out for the SQLite backup.");
     await Bun.write(flags.out,response);
     printValue(ctx,{out:flags.out});
+  }}),
+  command("code files",{summary:"List files in a chat, Project or App: {scope,id,after?,limit?}",flags:{input:inputFlag(),conversation:flag.string()},async run({ctx,flags}){
+    printValue(ctx,await readAssistantApi(ctx,"/artifacts/files/list"+queryString({conversationId:flags.conversation}),jsonRequest("POST",await jsonInput(flags.input))));
+  }}),
+  command("code file-stat",{summary:"Read an exact file reference and version: {file:{scope,id,path}}",flags:{input:inputFlag(),conversation:flag.string()},async run({ctx,flags}){
+    printValue(ctx,await readAssistantApi(ctx,"/artifacts/files/stat"+queryString({conversationId:flags.conversation}),jsonRequest("POST",await jsonInput(flags.input))));
+  }}),
+  command("code file-copy",{summary:"Copy {source,destination,expectedVersion} between authorized stores without exposing bytes",flags:{input:inputFlag(),yes:flag.boolean(),conversation:flag.string()},async run({ctx,flags}){
+    requireConfirmation(flags.yes,"Copying the explicit source file to the destination, including any specified overwrite");
+    const input=z.object({source:z.unknown(),destination:z.unknown(),expectedVersion:z.string().nullable()}).strict().parse(await jsonInput(flags.input));
+    printValue(ctx,await readAssistantApi(ctx,"/artifacts/files/copy"+queryString({conversationId:flags.conversation}),jsonRequest("POST",{...input,confirmed:true})));
   }}),
   command("code file-upload",{summary:"Upload a binary shared file (Use access; --manage for explicit management)",args:{id:resource},flags:{file:flag.string({required:true}),key:flag.string({required:true}),manage:flag.boolean(),conversation:flag.string()},async run({ctx,args,flags}){
     if (!flags.file || !flags.key) throw new Error("Provide --file and --key.");
@@ -149,10 +166,10 @@ export const assistantCodeCommands=[
     const current=await readAssistantApi<ArtifactBundle>(ctx,path(args.id));
     printValue(ctx,await readAssistantApi(ctx,path(args.id,"/restore"),jsonRequest("POST",{version:Number(args.version),expectedRevision:current.revision})));
   }}),
-  command("code projects",{summary:"List Project associations for a script",args:{id:resource},async run({ctx,args}){
+  command("code projects",{summary:"List Project associations for an App",args:{id:resource},async run({ctx,args}){
     printValue(ctx,await readAssistantApi(ctx,path(args.id,"/projects")));
   }}),
-  command("code project-link",{summary:"Link or unlink a script; requires script and Project administration",args:{id:resource,project:arg.required()},flags:{remove:flag.boolean()},async run({ctx,args,flags}){
+  command("code project-link",{summary:"Link or unlink an App; requires App and Project administration",args:{id:resource,project:arg.required()},flags:{remove:flag.boolean()},async run({ctx,args,flags}){
     printValue(ctx,await readAssistantApi(ctx,path(args.id,"/projects/"+encodeURIComponent(args.project)),jsonRequest("PUT",{linked:!flags.remove})));
   }}),
   command("code access",{summary:"Read resource grants",args:{id:resource},async run({ctx,args}){printValue(ctx,await readAssistantApi(ctx,path(args.id,"/access")));}}),
@@ -175,7 +192,7 @@ export const assistantCodeCommands=[
   command("code database",{summary:"Run SELECT or a structured schema/row operation on the connected database",args:{id:resource},flags:{input:inputFlag(),conversation:flag.string()},async run({ctx,args,flags}){
     printValue(ctx,await readAssistantApi(ctx,path(args.id,"/database")+queryString({conversationId:flags.conversation}),jsonRequest("POST",await jsonInput(flags.input))));
   }}),
-  command("studio-admin list",{summary:"List all apps/scripts and shared storage counts as an administrator",flags:{page:flag.string(),search:flag.string()},async run({ctx,flags}){
+  command("studio-admin list",{summary:"List all Apps and shared storage counts as an administrator",flags:{page:flag.string(),search:flag.string()},async run({ctx,flags}){
     printValue(ctx,await readAssistantApi(ctx,"/artifacts/admin/resources"+queryString({page:flags.page,search:flags.search})));
   }}),
   command("studio-admin delete",{summary:"Delete a resource, its publications and shared data",args:{id:resource},flags:{yes:flag.boolean()},async run({ctx,args,flags}){

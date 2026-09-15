@@ -14,7 +14,7 @@ const user: User = {
 };
 afterEach(() => mock.restore());
 
-for (const approved of [false, true]) test(`App access ${approved ? "approval" : "denial"} gates the actual write`, async () => {
+for (const name of ["code_access_change", "code_write"] as const) for (const approved of [false, true]) test(`${name} ${approved ? "approval" : "denial"} gates the actual write`, async () => {
   const actor = { kind: "user" as const, user };
   spyOn(execution, "resolveAiCapabilityActor").mockResolvedValue({ actor, accessSubject: { type: "user", userId: user.id } });
   spyOn(registry, "getApp").mockResolvedValue({ id: "assistant", name: "Assistant", icon: "", description: "", baseUrl: "http://assistant.test", routes: [] });
@@ -26,15 +26,15 @@ for (const approved of [false, true]) test(`App access ${approved ? "approval" :
   const complete = spyOn(claims, "completeCapabilityClaim").mockResolvedValue();
   const requests: unknown[] = [];
   const events: string[] = [];
-  spyOn(globalThis, "fetch").mockImplementation(async (_url, init) => {
+  spyOn(globalThis, "fetch").mockImplementation(Object.assign(async (_url: RequestInfo | URL, init?: RequestInit) => {
     const body = JSON.parse(String(init?.body));
     requests.push(body);
     events.push(body.review ? "preview" : "write");
     return Response.json({ ok: true, data: { data: body.review ? { message: "Share App AbC234 with Test User: none → read" } : { changed: true } } });
-  });
-  const tool = createCodeSourceTool("code_access_change");
+  }, { preconnect: fetch.preconnect }));
+  const tool = createCodeSourceTool(name);
   if (tool.location !== "server") throw new Error("Expected server tool");
-  const input = { id: "AbC234", expectedAccessRevision: "a".repeat(64), principal: { type: "user" as const, userId: user.id }, permission: "read" as const };
+  const input = name === "code_write" ? { id: "AbC234", expectedRevision: 1, files: [{ path: "data.json", fromFile: { scope: "app" as const, id: "AbC345", path: "data.json", version: "1" } }] } : { id: "AbC234", expectedAccessRevision: "a".repeat(64), principal: { type: "user" as const, userId: user.id }, permission: "read" as const };
   const operation = tool.run(input, {
     actor, conversationId: "chat-test", callId: "change-1", signal: new AbortController().signal,
     requestClientTool: async () => { throw new Error("Unexpected client tool"); },

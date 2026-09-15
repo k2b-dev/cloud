@@ -1,3 +1,5 @@
+import { studioFiles } from "./file-transfer";
+import { CODE_SOURCE_TOOLS } from "@k2b/cloud/ai";
 import { GotenbergRenderError } from "@k2b/cloud/services";
 import { studioPdf } from "./pdf-service";
 import { decodePdfRequest } from "./pdf-contracts";
@@ -97,7 +99,23 @@ export const createArtifactServiceRoutes = (caller: (context: Context<AuthContex
   .post("/:id/database/maintenance/connect",async c => respond(c,ok(await artifactDatabase.connect(id(c),identity(c),c.req.raw.signal,true))))
   .post("/:id/database/maintenance",v("json",DatabaseRequest),async c => respond(c,ok(await artifactDatabase.call(id(c),c.req.valid("json"),identity(c),c.req.raw.signal,"maintenance"))))
   .post("/:id/database/connect",async c => respond(c,ok(await artifactDatabase.connect(id(c),identity(c),c.req.raw.signal))))
+  .post("/files/list",v("json",CODE_SOURCE_TOOLS.code_files.input),async c => {
+    const input=c.req.valid("json");
+    return respond(c,ok(await studioFiles.list(input,identity(c),input.after,input.limit)));
+  })
+  .post("/files/stat",v("json",CODE_SOURCE_TOOLS.code_file_stat.input),async c => {
+    const file=await studioFiles.read(c.req.valid("json").file,identity(c));
+    return respond(c,ok(file ? {exists:true,reference:file.reference,size:file.bytes.byteLength,mediaType:file.mediaType} : {exists:false}));
+  })
+  .post("/files/copy",v("json",CODE_SOURCE_TOOLS.code_file_copy.input.extend({confirmed:z.literal(true)})),async c => {
+    const input=c.req.valid("json");
+    return respond(c,ok(await studioFiles.copy(input.source,input.destination,input.expectedVersion,identity(c),c.req.raw.signal)));
+  })
   .get("/:id/database/status",async c => respond(c,ok(await artifactDatabase.status(id(c),identity(c),c.req.raw.signal))))
+  .post("/:id/database/clear",v("json",z.object({confirmed:z.literal(true),expectedGeneration:z.string().regex(/^[a-f0-9]{64}$/),expectedDataRevision:z.uuid()}).strict()),async c => {
+    const input=c.req.valid("json");
+    return respond(c,ok(await artifactDatabase.clear(id(c),input.expectedGeneration,input.expectedDataRevision,identity(c),c.req.raw.signal)));
+  })
   .post("/:id/database/reset",v("json",z.object({confirmed:z.literal(true),expectedGeneration:z.string().length(64).nullable()}).strict()),async c => respond(c,ok(await artifactDatabase.reset(id(c),c.req.valid("json").expectedGeneration,identity(c)))))
   .get("/:id/database/export",async c => {
     const response = await artifactDatabase.export(id(c),identity(c),c.req.raw.signal);

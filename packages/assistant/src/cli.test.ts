@@ -229,17 +229,15 @@ describe("assistant CLI", () => {
     const fetcher:CloudCliContext["fetch"]=async(input,init)=>{
       requests.push({path:String(input),method:init?.method??"GET"});
       if(String(input).split("?")[0]!=="/api/assistant/artifacts")return json({message:"Not found"},404);
-      if(init?.method==="POST")expect(await new Response(init.body).json()).toMatchObject({kind:"script",source:{entry:"main.ts",files:[{path:"main.ts",content:"export default () => {};\n"}]}});
-      return json(init?.method==="POST" ? {id:"created",kind:"script"} : {items:[],page:1,hasNext:false});
+      if(init?.method==="POST")expect(await new Response(init.body).json()).toMatchObject({source:{entry:"main.ts",files:[{path:"main.ts",content:"export default () => {};\n"}]}});
+      return json(init?.method==="POST" ? {id:"created",kind:"app"} : {items:[],page:1,hasNext:false});
     };
     const list=createContext(["code","list"],fetcher,"json");
-    list.ctx.flags={kind:"script"};
     await assistantCli.run(list.ctx);
     const create=createContext(["code","create","Reusable calculation"],fetcher,"json");
-    create.ctx.flags={kind:"script"};
     await assistantCli.run(create.ctx);
-    expect(requests).toEqual([{path:"/api/assistant/artifacts?kind=script",method:"GET"},{path:"/api/assistant/artifacts",method:"POST"}]);
-    expect(JSON.parse(create.stdout.join(""))).toMatchObject({kind:"script"});
+    expect(requests).toEqual([{path:"/api/assistant/artifacts",method:"GET"},{path:"/api/assistant/artifacts",method:"POST"}]);
+    expect(JSON.parse(create.stdout.join(""))).toMatchObject({kind:"app"});
   });
 
   test("documents the one-shot and management surface", () => {

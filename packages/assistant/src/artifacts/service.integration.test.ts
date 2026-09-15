@@ -1,3 +1,5 @@
+import { readdir } from "node:fs/promises";
+import { studioFiles } from "./file-transfer";
 import { Hono } from "hono";
 import { accessRevision, type AuthContext } from "@k2b/cloud/server";
 import { createArtifactServiceRoutes } from "./api";
@@ -346,6 +348,56 @@ const isolated = /\/cloud_assistant_artifacts_test(?:\?|$)/.test(process.env.DAT
       .toMatchObject({ ok: false, error: { code: "ACCESS_DENIED" } });
   });
 
+  test("generic App file copies preserve binary bytes with Use and reject stale overwrite or denial", async () => {
+    const from = await artifacts.create({ title: "Source files", source }, owner);
+    const to = await artifacts.create({ title: "Target files", source }, owner);
+    for (const resource of [from, to]) {
+      await artifacts.publish(resource.id, 1, owner, "Ready");
+      await artifacts.grant(resource.id, { type: "user", userId: reader.user.id }, "read", owner);
+    }
+    const bytes = new Uint8Array([0, 128, 255, 10]);
+    await artifacts.storage(from.id, { area: "files", operation: "write", key: "invoice.pdf", mediaType: "application/pdf" }, owner, false, bytes);
+    const file = await studioFiles.read({ scope: "app", id: from.id, path: "invoice.pdf" }, reader);
+    const destination = { scope: "app" as const, id: to.id, path: "invoice.pdf" };
+    const context = { ...reader, locale: "en", signal: new AbortController().signal };
+    const input = { source: file!.reference, destination, expectedVersion: null };
+    expect(await artifactCodeHandlers.code_file_copy(input, { ...context, review: true })).toMatchObject({ ok: true, data: { data: { message: expect.stringContaining("other authorized users") } } });
+    expect(await studioFiles.read(destination, reader)).toBeNull();
+    expect(await artifactCodeHandlers.code_file_copy(input, context)).toMatchObject({ ok: true });
+    expect((await studioFiles.read(destination, reader))?.bytes).toEqual(bytes);
+    expect(await artifactCodeHandlers.code_file_copy(input, context)).toMatchObject({ ok: false, error: { code: "CONFLICT" } });
+    await expect(studioFiles.copy(file!.reference, destination, null, stranger, context.signal)).rejects.toMatchObject({ code: "ACCESS_DENIED" });
+    await artifacts.storage(from.id, { area: "files", operation: "write", key: "invoice.pdf" }, owner, false, new Uint8Array([1]));
+    await expect(studioFiles.readReference(file!.reference, reader)).rejects.toMatchObject({ code: "CONFLICT" });
+    const abort = AbortSignal.abort();
+    const current = await studioFiles.read({ scope: "app", id: from.id, path: "invoice.pdf" }, reader);
+    await expect(studioFiles.copy(current!.reference, { ...destination, path: "cancelled.pdf" }, null, reader, abort)).rejects.toBeInstanceOf(Error);
+    expect(await studioFiles.read({ ...destination, path: "cancelled.pdf" }, reader)).toBeNull();
+  });
+
+  test("storage reviews reject intervening writes and file versions survive delete/recreate", async () => {
+    const resource = await artifacts.create({ title: "Storage review", source }, owner);
+    const context = { ...owner, locale: "en", signal: new AbortController().signal };
+    const write = () => artifacts.storage(resource.id, { area: "kv", operation: "write", key: "state", content: "{}" }, owner);
+    await write();
+    const state = await artifacts.storageState(resource.id, owner);
+    const input = { id: resource.id, area: "kv" as const, expectedStorageRevision: state.storageRevision };
+    expect(await artifactCodeHandlers.code_storage_delete(input, { ...context, review: true }))
+      .toMatchObject({ ok: true, data: { data: { message: expect.stringContaining("Storage review") } } });
+    await write();
+    expect(await artifactCodeHandlers.code_storage_delete(input, context)).toMatchObject({ ok: false, error: { code: "CONFLICT" } });
+    const before = await artifacts.storage(resource.id, { area: "kv", operation: "read", key: "state" }, owner);
+    const current = await artifacts.storageState(resource.id, owner);
+    expect(await artifactCodeHandlers.code_storage_delete({ ...input, expectedStorageRevision: current.storageRevision }, context))
+      .toMatchObject({ ok: true, data: { data: { cleared: true } } });
+    await write();
+    const after = await artifacts.storage(resource.id, { area: "kv", operation: "read", key: "state" }, owner);
+    expect(after.item?.version).toBeGreaterThan(before.item!.version);
+    await expect(artifacts.storage(resource.id, { area: "kv", operation: "delete", key: "state" }, owner, true, undefined, { version: before.item!.version }))
+      .rejects.toMatchObject({ code: "CONFLICT" });
+    expect((await artifacts.get(resource.id, owner)).source).toEqual(source);
+  });
+
   test("the permission editor uses canonical grants and resolved names", async () => {
     const app = await artifacts.create({ title: "Sharing", source }, owner);
     const grant = await artifacts.grant(app.id, { type: "user", userId: reader.user.id }, "read", owner);
@@ -366,7 +418,7 @@ const isolated = /\/cloud_assistant_artifacts_test(?:\?|$)/.test(process.env.DAT
     const intermediate = await write("main.ts", 'import {value} from "./helper.ts"; export default () => value;');
     expect(intermediate).toMatchObject({ ok: true, data: { data: { saved: true } } });
     if (!intermediate.ok) throw new Error("Write failed");
-    expect(intermediate.data.data.diagnostics.length).toBeGreaterThan(0);
+    expect(z.object({ diagnostics: z.array(z.unknown()) }).parse(intermediate.data.data).diagnostics.length).toBeGreaterThan(0);
     expect(await write("helper.ts", "export const value = 42;"))
       .toMatchObject({ ok: true, data: { data: { saved: true, diagnostics: [] } } });
     expect((await artifacts.get(id, owner)).source.files).toHaveLength(2);
@@ -565,6 +617,22 @@ const isolated = /\/cloud_assistant_artifacts_test(?:\?|$)/.test(process.env.DAT
     }finally{catalog.mockRestore();review.mockRestore();execute.mockRestore();}
   });
 
+  test("reviewed App deletion rejects storage changes and removes only the reviewed resource", async () => {
+    const resource = await artifacts.create({ title: "Delete review", source }, owner);
+    const context = { ...owner, locale: "en", signal: new AbortController().signal };
+    const before = await artifacts.managementState(resource.id, owner);
+    const input = { id: resource.id, expectedManagementRevision: before.managementRevision };
+    expect(await artifactCodeHandlers.code_delete(input, { ...context, review: true }))
+      .toMatchObject({ ok: true, data: { data: { message: expect.stringContaining("Delete review") } } });
+    await artifacts.storage(resource.id, { area: "kv", operation: "write", key: "new", content: "1" }, owner);
+    expect(await artifactCodeHandlers.code_delete(input, context)).toMatchObject({ ok: false, error: { code: "CONFLICT" } });
+    const latest = await artifacts.managementState(resource.id, owner);
+    expect(await artifactCodeHandlers.code_delete({ ...input, expectedManagementRevision: latest.managementRevision }, context))
+      .toMatchObject({ ok: true, data: { data: { deleted: true, databaseCleanupQueued: false } } });
+    await expect(artifacts.get(resource.id, owner)).rejects.toMatchObject({ code: "NOT_FOUND" });
+    expect((await artifacts.get(id, owner)).id).toBe(id);
+  });
+
   test("resource managers can delete shared data and queue database cleanup; use access cannot",async()=>{
     const resource=await artifacts.create({title:"Disposable",source},owner);
     await artifacts.publish(resource.id,1,owner,"Initial release");
@@ -625,6 +693,35 @@ const isolated = /\/cloud_assistant_artifacts_test(?:\?|$)/.test(process.env.DAT
       expect(await call({operation:"query",sql:"SELECT count(*) AS total FROM ledger_rows",params:[]})).toMatchObject({data:[{total:2500}]});
       expect(await artifactCodeHandlers.code_sql({id:resource.id,sql:"SELECT count(*) AS total FROM ledger_rows a JOIN ledger_rows b ON a.import_key = b.import_key",params:[]},{...owner,locale:"en",signal:new AbortController().signal})).toMatchObject({ok:true,data:{data:{data:[{total:2500}]}}});
     } finally {settings.mockRestore();}
+  });
+
+  (process.env.RSQL_TEST_URL ? test : test.skip)("database clear preserves schema and every attempted write invalidates reviewed state", async () => {
+    const settings = spyOn(app.settings, "get").mockImplementation(async key => ({ "assistant.storage_total_mib": 250, "assistant.storage_file_mib": 50, "assistant.rsql_url": process.env.RSQL_TEST_URL!, "assistant.rsql_api_token": "artifact-test-only" }[key]));
+    const resource = await artifacts.create({ title: "Clear rows", source }, owner);
+    try {
+      await artifactDatabase.connect(resource.id, owner);
+      await artifactDatabase.call(resource.id, { operation: "tables.create", name: "records", columns: [{ name: "key", type: "text", unique: true }] }, owner);
+      await artifactDatabase.call(resource.id, { operation: "rows.insert", table: "records", rows: { key: "first" } }, owner);
+      // Leave exactly one ordinary pool connection for the mutation transaction.
+      // Its durable intent must not wait for a second connection from that pool.
+      const reserved = await Promise.all(Array.from({ length: (sql.options.max ?? 10) - 1 }, () => sql.reserve()));
+      let timeout: ReturnType<typeof setTimeout> | undefined;
+      try {
+        await Promise.race([
+          artifactDatabase.call(resource.id, { operation: "rows.insert", table: "records", rows: { key: "pool-check" } }, owner),
+          new Promise((_, reject) => { timeout = setTimeout(() => reject(new Error("Mutation exhausted the ordinary SQL pool")), 2000); }),
+        ]);
+      } finally { clearTimeout(timeout); for (const connection of reserved) connection.release(); }
+      const before = await artifactDatabase.status(resource.id, owner);
+      await expect(artifactDatabase.call(resource.id, { operation: "rows.insert", table: "records", rows: { key: "first" } }, owner)).rejects.toBeInstanceOf(Error);
+      const afterFailure = await artifactDatabase.status(resource.id, owner);
+      expect(afterFailure.dataRevision).not.toBe(before.dataRevision);
+      await expect(artifactDatabase.clear(resource.id, before.generation!, before.dataRevision!, owner)).rejects.toMatchObject({ code: "CONFLICT" });
+      expect(await artifactDatabase.clear(resource.id, afterFailure.generation!, afterFailure.dataRevision!, owner)).toEqual({ completed: true, clearedTables: ["records"] });
+      expect(await artifactDatabase.call(resource.id, { operation: "rows.list", table: "records" }, owner)).toMatchObject({ data: [] });
+      expect(await artifactDatabase.call(resource.id, { operation: "schema.get", table: "records" }, owner)).toMatchObject({ name: "records" });
+      expect((await artifacts.get(resource.id, owner)).source).toEqual(source);
+    } finally { await artifacts.remove(resource.id, owner); settings.mockRestore(); }
   });
 
   test("database connection errors distinguish invalid credentials from an unavailable server", async () => {
@@ -872,19 +969,44 @@ const isolated = /\/cloud_assistant_artifacts_test(?:\?|$)/.test(process.env.DAT
       await expect(agentHost.call(call,{...context,...stranger})).rejects.toThrow();
       const inspect={...call,name:"code_inspect" as const,callId:"server-inspect",args:{runId:call.callId}};
       expect(await wait(inspect)).toMatchObject({status:"done",result:{runId:call.callId,status:"ready"}});
+      const exampleSettings = spyOn(app.settings, "get").mockImplementation(async key => ({ "assistant.storage_total_mib": 250, "assistant.storage_file_mib": 50, "assistant.rsql_url": process.env.RSQL_TEST_URL!, "assistant.rsql_api_token": "artifact-test-only" }[key]));
+      try {
+        for (const [folder, action, input, expected] of [
+          ["converter", "convert", { csv: "name,amount\nTea,4\nCoffee,5" }, { rows: 2 }],
+          ["importer", "importItems", { items: [{ key: "record-1", value: "shared value" }] }, { inserted: 1, skipped: 0 }],
+          ["dashboard", "setStatus", { message: "All checks passed" }, { saved: true }],
+          ["invoice-matcher", "linkTransaction", { transactionKey: "bank-42", invoicePath: "invoices/INV-7.pdf" }, { linked: true, unchanged: false }],
+        ] as const) {
+          const directory = new URL(`../../examples/studio-actions/${folder}/`, import.meta.url);
+          const files = await Promise.all((await readdir(directory)).filter(path => path.endsWith(".js") || path === "app.actions.json").map(async path => ({ path, content: await Bun.file(new URL(path, directory)).text() })));
+          const example = await artifacts.create({ title: folder, source: { entry: "main.js", files } }, owner);
+          try {
+            const setup = files.find(file => file.path === "setup.js");
+            if (setup) expect(await wait({ ...call, callId: `${folder}-setup`, args: { code: setup.content, resourceId: example.id } })).toMatchObject({ status: "done", result: { status: "ready" } });
+            if (folder === "invoice-matcher") await artifacts.storage(example.id, { area: "files", operation: "write", key: "invoices/INV-7.pdf", mediaType: "application/pdf" }, owner, false, new TextEncoder().encode("Fixture invoice"));
+            await artifacts.publish(example.id, 1, owner, "Example release");
+            const invoke = { ...call, name: "code_action" as const, callId: `${folder}-action`, args: { id: example.id, action, publishedVersion: 1, input } };
+            expect(await wait(invoke)).toMatchObject({ status: "done", result: { status: "ready", output: JSON.stringify(expected) } });
+            if (folder === "importer") expect(await wait({ ...invoke, callId: "importer-second-session" })).toMatchObject({ status: "done", result: { output: '{"inserted":0,"skipped":1}' } });
+            if (folder === "invoice-matcher") expect(await wait({ ...invoke, callId: "invoice-link-repeat" })).toMatchObject({ status: "done", result: { output: '{"linked":true,"unchanged":true}' } });
+            if (folder === "dashboard") expect(await wait({ ...call, callId: "dashboard-view", args: { id: example.id } })).toMatchObject({ status: "done", result: { status: "ready" } });
+          } finally { await artifacts.remove(example.id, owner); }
+        }
+      } finally { exampleSettings.mockRestore(); }
       const generated=Array.from({length:1000},(_,index)=>({index,amount:"123456789.123400",region:"Süd"}));
       const produce={...call,callId:"produce-data",args:{code:`export default async()=>{await files.save(JSON.stringify(${JSON.stringify(generated)}),"data.json");return "saved";}`}};
       expect(await wait(produce)).toMatchObject({status:"done",result:{status:"ready"}});
       const exported=await wait({...call,name:"code_export",callId:"export-data",args:{runId:produce.callId,name:"data.json"}});
       const file=z.object({path:z.string(),version:z.number()}).parse("result" in exported ? exported.result : null);
       const resource=await artifacts.create({title:"Imported data",source},owner);
+      const fileReference=(await studioFiles.read({scope:"chat",id:context.conversationId,path:file.path},context))!.reference;
       const written=await artifactCodeHandlers.code_write({id:resource.id,expectedRevision:1,entry:"main.ts",files:[
-        {path:"data.json",fromChatFile:file},{path:"main.ts",content:'import data from "./data.json"; export default()=>({rows:data.length,first:data[0],last:data.at(-1)});'},
+        {path:"data.json",fromFile:fileReference},{path:"main.ts",content:'import data from "./data.json"; export default()=>({rows:data.length,first:data[0],last:data.at(-1)});'},
       ]},context);
       expect(written.ok).toBe(true);
       expect((await artifacts.get(resource.id,owner)).source.files.find(file=>file.path==="data.json")?.content).toBe(JSON.stringify(generated));
       expect(await wait({...call,callId:"run-import",args:{id:resource.id}})).toMatchObject({status:"done",result:{status:"ready",id:resource.id,revision:2,output:JSON.stringify({rows:1000,first:generated[0],last:generated.at(-1)})}});
-      const stale=await artifactCodeHandlers.code_write({id:resource.id,expectedRevision:2,files:[{path:"data.json",fromChatFile:{...file,version:2}}]},context);
+      const stale=await artifactCodeHandlers.code_write({id:resource.id,expectedRevision:2,files:[{path:"data.json",fromFile:{scope:"chat",id:context.conversationId,path:file.path,version:"2"}}]},context);
       expect(stale.ok).toBe(false);
       expect((await artifacts.get(resource.id,owner)).revision).toBe(2);
       const lookup=spyOn(aiConversations,"getConversationByShortId").mockImplementation(async request=>aiConversations.getConversation({conversationId,ownerUserId:request.ownerUserId}));

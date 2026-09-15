@@ -374,3 +374,28 @@ For Skills, discover `core.ai.skill.access.read` and
 normal capability review/execute flow. Read grants first and forward the exact
 `accessRevision` as `expectedAccessRevision`. Resolve recipients through
 `core.entities.search`. Skill and App grants remain independent.
+
+`assistant code database-clear ID --yes` removes rows while retaining tables
+and schema. It reads the current database generation and data revision before
+execution. Inspect `completed` and `clearedTables`; a partial failure reports
+`failedTable` and requires inspection before retrying. This differs from
+`database-reset`, which discards schema too. Both preserve source and files/KV.
+
+### Copy files between chats, Projects, and Apps
+
+Use JSON files or stdin, preserving exact returned IDs and paths:
+
+1. `assistant code files --input-file list.json`, with
+   `{scope:"chat"|"project"|"app",id,after?,limit?}`. Follow `nextAfter`.
+2. `assistant code file-stat --input-file stat.json`, with
+   `{file:{scope,id,path}}`. Save the returned versioned `reference`.
+3. `assistant code file-copy --input-file copy.json --yes`, with
+   `{source:reference,destination:{scope,id,path},expectedVersion:null}` for a
+   new path, or the current destination's opaque version for replacement.
+
+Copies preserve binary bytes and apply both stores' permissions and destination
+limits. App files require Use; Project destinations require Write; chats require
+ownership. `--conversation` supplies authorized Project-chat context when needed.
+Show the exact destination and overwrite before confirming; shared destinations
+may disclose private chat files. Inspect conflicts or uncertain outcomes before
+retrying. No vendor database API or filesystem access is implied by these tools.

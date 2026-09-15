@@ -359,3 +359,52 @@ since creation. Artifact collisions fail explicitly.
 See [Models and providers](/en/docs/ai/models-and-providers#configure-audio-transcription)
 for container and provider limits. Normal file storage limits do not imply
 that an audio endpoint accepts the same input size.
+
+## Explicit file transfers
+
+Assistant file references use the public `AiFileLocation` and `AiFileReference`
+schemas from `@k2b/cloud/ai`: `{scope:"chat"|"project"|"app",id,path}` plus an
+opaque string `version`. A reference names one snapshot; it grants no access.
+Each owning service authorizes reads and writes, and the destination enforces
+its normal byte budgets and an explicit expected version (null means absent).
+
+Platform-owned conversation adapters are `readAiConversationFile` and
+`writeAiConversationFile`. Reads require the current owner and reject archived
+chats; an optional numeric file version constrains an existing manifest read.
+Writes require an opaque transfer version and verify the owner and expected
+content under the conversation lock before replacing a file. The returned
+metadata is captured in that transaction. Project writes accept an optional
+`expectedVersion` and serialize permission and version checks with other Project
+file mutations. Existing UI callers retain their existing write behavior.
+
+Studio owns App file storage and its transfer adapter. File imports into App
+source use `fromFile` with the same reference schema and require fresh review,
+since imported private bytes may become shared or published source. Keep binary
+bytes out of tool responses and never treat access to one chat as permission to
+mount all of its files into an App.
+
+### Visual inspection of PDF pages
+
+`view_image` accepts stored images and PDFs through the same authorized chat or
+Project file adapter. PDF `pages` are one-based and distinct, default `[1]`,
+with at most three pages per call. Image calls reject `pages` and retain their
+existing result. PDF results add `sourceVersion` (a hash of inspected bytes),
+`totalPages` and `pages: [{page, description}]`; descriptions cover selected
+pages only. Attached chat files use the immutable turn snapshot.
+
+PDF page inspection requires the Linux Cloud runtime; other hosts reject PDF
+rendering rather than run it without the memory boundary. Image inspection is
+unchanged. Rendering runs in an isolated, credential-free subprocess, terminated on
+cancellation or a 30-second deadline. On Linux, a 512 MiB kernel data-memory limit also bounds the decoder's heap and
+native writable allocations. Each service permits two concurrent
+decoders and rejects overload without queuing. Input and aggregate PNG output
+are each limited to 10 MiB; page canvases have a 2,000-pixel longest edge and
+maximum 2× scale, while embedded images are limited to 16 megapixels. Damaged,
+password-protected or oversized content fails explicitly rather than silently
+omitting it. The normal Vision model, fallback data boundaries and usage
+attribution apply. No persistent image copies are created. For normal PDF text
+extraction, `read_file` remains the simpler path.
+
+The standard Cloud build packages the PDF decoder, native canvas binary and
+font/CMap/WASM assets when the server imports this tool. Build on the target
+platform; no document-rendering service or browser installation is required.

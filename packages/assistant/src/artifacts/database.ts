@@ -1,4 +1,5 @@
-import { sql } from "bun";
+import { sql, SQL } from "bun";
+import { z } from "zod";
 import { hasRole } from "@k2b/cloud/contracts";
 import { createRsqlClient, type RsqlResult } from "@k2b/rsql";
 import { app } from "../config";
@@ -66,32 +67,63 @@ function result<T>(r: RsqlResult<T>): T {
   return r.data;
 }
 const generation=(namespace:string)=>new Bun.CryptoHasher("sha256").update(namespace).digest("hex");
+// A separate, single-connection pool cannot queue behind callers holding App
+// locks in the ordinary pool. This query never takes an App/config lock.
+const mutationIntents = new SQL({ max: 1, connectionTimeout: 15 });
+// Called while the owning App row is locked. Commit the intent separately so
+// a timeout, upstream failure or process crash still invalidates earlier reviews.
+// No mapping row is locked/updated by the surrounding transaction on this path.
+async function markDataMutation(id: string) {
+  await mutationIntents`UPDATE assistant.artifact_databases SET data_revision=gen_random_uuid() WHERE artifact_id=${id}::uuid`;
+}
 export const artifactDatabase = {
   async status(id: string, identity: ArtifactIdentity, signal?: AbortSignal) {
     return sql.begin(async db => {
       await databaseConfigLock(db);
       id = (await requireArtifact(db, id, identity, "admin")).row.id;
       const c = await config();
-      const [mapping] = await db<{namespace:string;connected:boolean}[]>`SELECT namespace,connected FROM assistant.artifact_databases WHERE artifact_id=${id}::uuid`;
+      const [mapping] = await db<{namespace:string;connected:boolean;data_revision:string}[]>`SELECT namespace,connected,data_revision FROM assistant.artifact_databases WHERE artifact_id=${id}::uuid`;
       const configured = Boolean(c.url && c.token);
       let overview=null, unavailable:string|null=null;
       if(configured&&mapping?.connected){
         try{overview=result(await connection(c,signal).ns(mapping.namespace).overview.get());}
         catch(error){if(signal?.aborted)throw error;unavailable=error instanceof DatabaseError?error.code:"DB_UNREACHABLE";}
       }
-      return {configured, connected: mapping?.connected ?? false, generation:mapping?generation(mapping.namespace):null, overview, unavailable};
+      return {configured, connected: mapping?.connected ?? false, generation:mapping?generation(mapping.namespace):null, dataRevision:mapping?.data_revision ?? null, overview, unavailable};
     });
   },
-  async reset(id: string, expectedGeneration: string | null, identity: ArtifactIdentity) {
+  async reset(id: string, expectedGeneration: string | null, identity: ArtifactIdentity, expectedDataRevision?: string | null) {
     return sql.begin(async db => {
       await databaseConfigLock(db);
       id = (await requireArtifact(db, id, identity, "admin")).row.id;
-      const [mapping]=await db<{namespace:string}[]>`SELECT namespace FROM assistant.artifact_databases WHERE artifact_id=${id}::uuid`;
-      if(mapping&&generation(mapping.namespace)!==expectedGeneration)throw new DatabaseError("CONFLICT",409);
+      const [mapping]=await db<{namespace:string;data_revision:string}[]>`SELECT namespace,data_revision FROM assistant.artifact_databases WHERE artifact_id=${id}::uuid`;
+      if ((mapping && generation(mapping.namespace) !== expectedGeneration) || (expectedDataRevision !== undefined && (mapping?.data_revision ?? null) !== expectedDataRevision))throw new DatabaseError("CONFLICT",409);
       await db`INSERT INTO assistant.database_cleanup(namespace)
         SELECT namespace FROM assistant.artifact_databases WHERE artifact_id=${id}::uuid ON CONFLICT DO NOTHING`;
       await db`DELETE FROM assistant.artifact_databases WHERE artifact_id=${id}::uuid`;
       return {connected:false};
+    });
+  },
+  async clear(id: string, expectedGeneration: string, expectedDataRevision: string, identity: ArtifactIdentity, signal?: AbortSignal) {
+    return sql.begin(async db => {
+      await databaseConfigLock(db);
+      id = (await requireArtifact(db, id, identity, "admin")).row.id;
+      const [mapping] = await db<{ namespace: string; connected: boolean; data_revision: string }[]>`SELECT namespace,connected,data_revision FROM assistant.artifact_databases WHERE artifact_id=${id}::uuid`;
+      if (!mapping?.connected) throw new DatabaseError("DB_NOT_CONNECTED", 409);
+      if (generation(mapping.namespace) !== expectedGeneration || mapping.data_revision !== expectedDataRevision) throw new DatabaseError("CONFLICT", 409);
+      const client = connection(await config(), signal).ns(mapping.namespace);
+      const tables = z.array(z.object({ name: z.string(), type: z.string() })).parse(result(await client.tables.list())).filter(table => table.type === "table");
+      await markDataMutation(id);
+      const clearedTables: string[] = [];
+      for (const table of tables) {
+        try {
+          result(await client.table(table.name).rows.bulkDelete({}));
+          clearedTables.push(table.name);
+        } catch (error) {
+          return { completed: false, clearedTables, failedTable: table.name, error: error instanceof DatabaseError ? error.code : "DB_UNREACHABLE", outcome: "The failed table may have changed; inspect before retrying." };
+        }
+      }
+      return { completed: true, clearedTables };
     });
   },
   async export(id: string, identity: ArtifactIdentity, signal?: AbortSignal) {
@@ -159,6 +191,7 @@ export const artifactDatabase = {
       const [mapping]=await db<{namespace:string;connected:boolean}[]>`SELECT * FROM assistant.artifact_databases WHERE artifact_id=${id}::uuid`;
       if (!mapping?.connected) throw new DatabaseError("DB_NOT_CONNECTED",409);
       const client=connection(c,signal).ns(mapping.namespace);
+      if (["tables.create", "tables.update", "tables.delete", "rows.insert", "rows.update", "rows.delete"].includes(req.operation)) await markDataMutation(id);
       let data: unknown;
       switch (req.operation) {
         case "tables.list":

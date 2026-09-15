@@ -31,6 +31,7 @@ import { Glob } from "bun";
 import tailwind from "bun-plugin-tailwind";
 import { writeAppFavicon } from "./app-favicon";
 import { buildBrowserPerformance } from "./browser-performance";
+import { buildPdfRenderer } from "./build-pdf-renderer";
 
 const appId = process.env.APP_ID;
 if (!appId) throw new Error("APP_ID env var required");
@@ -118,9 +119,11 @@ try {
     naming: "server.js",
     target: "bun",
     minify: true,
+    metafile: true,
     define: {
       __CLOUD_RELEASE__: JSON.stringify(release),
       __CLOUD_SYNC_VERSION__: JSON.stringify(syncVersion),
+      __CLOUD_PDF_RENDER_WORKER__: JSON.stringify("./pdf-render/worker.js"),
     },
     plugins: [(app?.plugin ?? plugin)()],
   });
@@ -130,6 +133,9 @@ try {
 if (!server.success) {
   for (const m of server.logs) console.error(m);
   throw new Error("Server bundle failed");
+}
+if (Object.keys(server.metafile?.inputs ?? {}).some(path => path.endsWith("/ai/pdf-render.ts"))) {
+  await buildPdfRenderer(dist);
 }
 
 // 2. Per-app Tailwind stylesheet.

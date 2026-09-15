@@ -23,7 +23,7 @@ data concise; write larger deliverables as files. `console.log`, `console.info`,
 
 ## Files
 
-All file operations except `files.path` return promises. For one-off and saved scripts, pass the
+All file operations except `files.path` return promises. For one-off scripts and App test runs, pass the
 selected current chat paths to `code_run` as `inputPaths`. For app test runs,
 these are explicit picker fixtures only; `files.list/read` cannot see them.
 User apps use their own picker and never receive chat inputs.

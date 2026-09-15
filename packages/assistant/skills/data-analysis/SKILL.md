@@ -84,7 +84,9 @@ freshness: keep the real retrieval or file-snapshot timestamp stable.
 
 For a data snapshot, export the validated dataset with `files.save` and
 `code_export`, then copy its exact path/version into the resource with
-`code_write({id,expectedRevision,files:[{path:"data.json",fromChatFile:{path,version}}]})`.
+`code_write({id,expectedRevision,files:[{path:"data.json",fromFile:reference}]})`.
+Obtain the exact reference with `code_file_stat`; importing private files into
+App source receives fresh review.
 Import that file in the app. Never rebuild a truncated dataset by copying tool
 output. Keep transformations and source identity alongside the snapshot.
 

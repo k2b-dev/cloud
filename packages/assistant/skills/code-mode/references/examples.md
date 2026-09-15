@@ -47,7 +47,7 @@ export default () => {
 
 Save `sales.csv` and `main.ts` in one `code_write` batch. These three rows are
 **fixture data**, not a business result. For real data, copy the validated chat
-file with `fromChatFile`, inspect its schema, and record the actual snapshot time.
+file with `fromFile`, inspect its schema, and record the actual snapshot time.
 The date range below includes months by their first day, inclusively.
 
 `sales.csv`:
@@ -104,3 +104,22 @@ Run the saved resource. Initial revenue is 600. Test
 revenue must be 300. Then `{runId,id:"reset"}` restores 600. Finally switch
 `{runId,id:"monthly",event:{type:"view",value:"table"}}` and inspect both months.
 The `runId` always identifies the saved revision being tested.
+
+## Reusable procedures beyond a GUI
+
+- **Stateless converter:** publish a `convert` action taking explicit CSV text,
+  save a JSON output with `files.save`, then let the agent export it. No database
+  is needed. A one-time conversion remains a chat-scoped script.
+- **Agent-only importer:** publish an `importItems` action with stable business
+  keys. Initialize schema with Manage before sharing; Use-level callers reuse
+  the same App data across chats. Unique keys prevent silent duplicate records.
+- **Display-only dashboard:** the GUI reads results; separate published actions
+  maintain them. Do not add configuration controls just to let the agent work.
+- **Invoice matcher:** inspect a spreadsheet and selected invoice pages, ask for
+  ambiguous matches, copy exactly the chosen file through [File transfers](files.md),
+  then call a published linking action. A linked Skill can describe this workflow;
+  its access remains separate from the App's.
+
+Read [App actions](app-actions.md) for the complete publication/call contract.
+The canonical Assistant documentation links runnable source bundles for these
+four flows. Do not infer additional database methods from these use cases.

@@ -16,7 +16,7 @@ export async function importRows(db:ImportDatabase,rows:ImportRow[],checkpoint:(
     for(const row of batch)if(existing.has(row.import_key)&&existing.get(row.import_key)!==row.payload)
       throw new Error(`Previously imported row changed: ${row.import_key}. Resolve the change explicitly.`);
     const fresh=batch.filter(row=>!existing.has(row.import_key));
-    // rsql inserts this batch atomically. A unique key protects concurrent
+    // Studio inserts this batch atomically. A unique key protects concurrent
     // imports; a conflict fails the batch. Inspect, then deliberately retry.
     if(fresh.length)await db.table("ledger_rows").insert(fresh);
     inserted+=fresh.length;skipped+=batch.length-fresh.length;

@@ -59,7 +59,7 @@ supported surface; links within references add related workflows when needed.
 | Task / API | Read |
 | --- | --- |
 | Source entry, input/output files, pickers, CSV, IDs | [Runtime and files](references/runtime.md) |
-| Read original PDF text/positions or XLSX cells, write XLSX | [Documents](references/documents.md) |
+| Inspect PDF pages, read PDF text/positions or XLSX cells, write XLSX | [Documents](references/documents.md) |
 | Generate a PDF, embed attachments, combine invoice HTML and XML | [PDF generation](references/pdf.md) |
 | Exact amounts, taxes, allocation, localized money | [Money](references/money.md) |
 | Export DATEV bookings or SEPA transfers | [DATEV and SEPA](references/finance.md) |
@@ -69,6 +69,7 @@ supported surface; links within references add related workflows when needed.
 | Chart types, series and axes | [Charts](references/charts.md) |
 | Long processing, progress, cancellation | [Background work](references/work.md) |
 | Persist JSON or files locally/shared | [Storage](references/storage.md) |
+| Copy files between chats, Projects and Apps | [File transfers](references/files.md) |
 | Resource SQL, schema, row CRUD, imports | [Database](references/database.md) |
 | Discovered Cloud queries/actions | [Capability calls](references/capabilities.md) |
 | External HTTPS and personal secrets | [HTTP and secrets](references/http.md) |
@@ -76,6 +77,7 @@ supported surface; links within references add related workflows when needed.
 | Reuse work across chats, create or edit an App | [Source workflow](references/source-workflow.md) |
 | Publish, restore, copy | [Publishing](references/publishing.md) |
 | Find recipients or change App/Skill sharing | [Access](references/access.md) |
+| Inspect, export, clear server data, or delete an App | [Management](references/management.md) |
 | Execute, inspect, interact, export, stop, diagnose errors | [Run and debug](references/debugging.md) |
 | Unfamiliar inputs or cross-app investigation | [Investigation](references/investigation.md) |
 | Complete app starters | [Examples](references/examples.md) |

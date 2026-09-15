@@ -1,9 +1,9 @@
 # Store resource data
 
 Choose local storage for data belonging to this user and browser. Choose shared
-storage for data that users of the saved app or script need together. One-off
+storage for data that users of the App need together. One-off
 scripts can explicitly use an existing resource with `code_run({code, resourceId})`
-and Manage access. Save a script only when it needs its own durable shared data.
+and Manage access. Create an App for a reusable program, with or without persistence.
 
 All operations are asynchronous. Await writes before reading their result or
 reporting success.

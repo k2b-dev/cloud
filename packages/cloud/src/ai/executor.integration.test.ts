@@ -1,3 +1,4 @@
+import { visionPdfFixture } from "./pdf-render.fixture";
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import type { InboundEvent, Message, OutboundEvent } from "@k2b/nessi";
 import { sql } from "bun";
@@ -660,6 +661,7 @@ suite("AI executor integration", () => {
       expect(result).toEqual({ path: "/label.png", mediaType: "image/png", description: "The label reads Cloud." });
       expect(JSON.stringify(requestBody)).toContain("Read only the label.");
       expect(JSON.stringify(requestBody)).toContain("data:image/png;base64,AQID");
+      await expect(tool.run({ path: "/label.png", pages: [1] }, { actor: { kind: "user", user: actorUser(userId) }, conversationId: conversation.id, signal: new AbortController().signal } as never)).rejects.toThrow("pages can only be used with a PDF");
     } finally {
       onCompletionRequest = null;
       nextJsonCompletion = null;
@@ -706,6 +708,35 @@ suite("AI executor integration", () => {
     } finally {
       onCompletionRequest = null;
       nextJsonCompletion = null;
+      await sql`DELETE FROM ai.conversations WHERE id = ${conversation.id}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
+    }
+  });
+
+  test.skipIf(process.platform !== "linux")("view_image renders only selected PDF pages before calling the authorized vision model", async () => {
+    const userId = await insertUser();
+    const conversation = await aiConversations.createConversation({ ownerUserId: userId });
+    const profile: AiModelProfile = { ...mockProfile(), capabilities: ["vision"] };
+    const bytes = visionPdfFixture();
+    try {
+      await aiFileStore.write({ conversationId: conversation.id, path: "/invoice.pdf", bytes, mediaType: "application/pdf", origin: "user" });
+      let requestBody: unknown;
+      onCompletionRequest = body => { requestBody = body; };
+      nextJsonCompletion = '{"pages":[{"page":2,"description":"Total 42.00 EUR"}]}';
+      const tool = createCloudAiViewImageTool({ resolveModel: async () => ({ profile, provider: createAiProvider(profile, "test") }) });
+      if (tool.location !== "server") throw new Error("Expected server tool");
+      const context = { actor: { kind: "user", user: actorUser(userId) }, conversationId: conversation.id, signal: new AbortController().signal } as never;
+      const result = await tool.run({ path: "/invoice.pdf", pages: [2], prompt: "Read the total." }, context);
+      expect(result).toMatchObject({ totalPages: 2, pages: [{ page: 2, description: "Total 42.00 EUR" }] });
+      expect(result.sourceVersion).toHaveLength(64);
+      expect(JSON.stringify(requestBody)).toContain("PDF page 2 of 2.");
+      expect(JSON.stringify(requestBody)).toContain("data:image/png;base64,");
+      expect(JSON.stringify(requestBody)).not.toContain("data:application/pdf");
+      requestBody = undefined;
+      await expect(tool.run({ path: "/invoice.pdf", pages: [3] }, context)).rejects.toThrow("PDF has 2 pages");
+      expect(requestBody).toBeUndefined();
+    } finally {
+      onCompletionRequest = null; nextJsonCompletion = null;
       await sql`DELETE FROM ai.conversations WHERE id = ${conversation.id}::uuid`;
       await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
     }

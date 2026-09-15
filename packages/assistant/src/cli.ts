@@ -10,7 +10,7 @@ const module = defineCliCommands({
   name: "assistant",
   summary: "Chat with the Cloud Assistant and manage chats, scheduled tasks, files, personalization, and Projects.",
   groupSummaries: {
-    code: "Build and manage apps and saved scripts",
+    code: "Build and manage Studio Apps and actions",
     "studio-admin": "Administer Studio resources, data and database settings",
     actions: "Review and resolve pending turn actions",
     chats: "Create, inspect, and manage Assistant chats",

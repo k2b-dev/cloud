@@ -19,7 +19,7 @@ export class ArtifactError extends Error {
     super(code);
   }
 }
-type ArtifactRow = { short_id: string; forked_from_short_id?: string | null; kind: ArtifactKind; icon: string; published_icon: string | null; published_version: number | null; id: string; title: string; description?: string; revision: number; updated_at: Date; published_revision: number | null; published_title: string | null; published_description: string | null; forked_from_id: string | null; forked_from_revision: number | null };
+type ArtifactRow = { storage_revision: number; short_id: string; forked_from_short_id?: string | null; kind: ArtifactKind; icon: string; published_icon: string | null; published_version: number | null; id: string; title: string; description?: string; revision: number; updated_at: Date; published_revision: number | null; published_title: string | null; published_description: string | null; forked_from_id: string | null; forked_from_revision: number | null };
 export type ArtifactSummary = { kind: ArtifactKind; icon?: string; publishedVersion?: number | null; id: string; title: string; description?: string; revision: number; permission: PermissionLevel; updatedAt: string; publishedRevision: number | null; forkedFromId: string | null; forkedFromRevision: number | null };
 export type ArtifactBundle = ArtifactSummary & { source: ArtifactSource; sourceRevision: number };
 const summarize = (row: ArtifactRow, permission: PermissionLevel): ArtifactSummary => ({
@@ -120,12 +120,30 @@ async function checkAccessRevision(db: SQL, id: string, expected: string | undef
   if (accessRevision(entries.filter(entry => entry !== null)) !== expected) throw new ArtifactError("CONFLICT");
 }
 
+async function managementState(db: SQL, row: ArtifactRow) {
+  const [storage] = await db<{ files: number; kv: number }[]>`SELECT count(*) FILTER (WHERE area='files')::int AS files,count(*) FILTER (WHERE area='kv')::int AS kv FROM assistant.artifact_storage WHERE artifact_id=${row.id}::uuid`;
+  const [database] = await db<{ namespace: string; data_revision: string; connected: boolean }[]>`SELECT namespace,data_revision,connected FROM assistant.artifact_databases WHERE artifact_id=${row.id}::uuid`;
+  const grants = await db<{ access_id: string }[]>`SELECT access_id FROM assistant.artifact_access WHERE artifact_id=${row.id}::uuid ORDER BY access_id`;
+  const entries = await Promise.all(grants.map(grant => getAccess({ id: grant.access_id }, db)));
+  const projects = await db<{ project_id: string }[]>`SELECT project_id FROM assistant.artifact_projects WHERE artifact_id=${row.id}::uuid ORDER BY project_id`;
+  const state = { id: row.short_id, title: row.title, revision: row.revision, publishedVersion: row.published_version,
+    storageRevision: Number(row.storage_revision), files: storage!.files, kv: storage!.kv, databaseConnected: database?.connected ?? false };
+  const managementRevision = new Bun.CryptoHasher("sha256").update(JSON.stringify({ state, description: row.description, icon: row.icon,
+    database, projects, access: accessRevision(entries.filter(entry => entry !== null)) })).digest("hex");
+  return { ...state, managementRevision };
+}
+
 export const artifacts = {
-  async remove(id: string, identity: ArtifactIdentity) {
+  async managementState(id: string, identity: ArtifactIdentity) {
+    return sql.begin(async db => managementState(db, (await requireArtifact(db, id, identity, "admin")).row));
+  },
+  async remove(id: string, identity: ArtifactIdentity, expectedManagementRevision?: string) {
     const { databaseConfigLock } = await import("./database");
     return sql.begin(async db => {
       await databaseConfigLock(db);
-      id = (await requireArtifact(db, id,identity,"admin")).row.id;
+      const { row } = await requireArtifact(db, id,identity,"admin");
+      id = row.id;
+      if (expectedManagementRevision !== undefined && (await managementState(db, row)).managementRevision !== expectedManagementRevision) throw new ArtifactError("CONFLICT");
       const cleanup = await db`INSERT INTO assistant.database_cleanup(namespace)
         SELECT namespace FROM assistant.artifact_databases WHERE artifact_id=${id}::uuid ON CONFLICT DO NOTHING RETURNING namespace`;
       await db`DELETE FROM auth.access WHERE id IN (SELECT access_id FROM assistant.artifact_access WHERE artifact_id=${id}::uuid)`;
@@ -319,10 +337,21 @@ export const artifacts = {
       return { publishedRevision: row.revision, publishedVersion: version };
     });
   },
-  async clearStorage(id: string, area: "files" | "kv" | "all", identity: ArtifactIdentity) {
+  async storageState(id: string, identity: ArtifactIdentity) {
+    return sql.begin(async db => {
+      const { row } = await requireArtifact(db, id, identity, "admin");
+      const areas = await db<{ area: "files" | "kv"; items: number; bytes: number }[]>`SELECT area,count(*)::int AS items,coalesce(sum(bytes),0)::bigint AS bytes
+        FROM assistant.artifact_storage WHERE artifact_id=${row.id}::uuid GROUP BY area ORDER BY area`;
+      return { id: row.short_id, title: row.title, storageRevision: Number(row.storage_revision), areas: areas.map(area => ({ ...area, bytes: Number(area.bytes) })) };
+    });
+  },
+  async clearStorage(id: string, area: "files" | "kv" | "all", identity: ArtifactIdentity, expectedStorageRevision?: number) {
     z.enum(["files", "kv", "all"]).parse(area);
     return sql.begin(async db => {
-      id = (await requireArtifact(db, id,identity,"admin")).row.id;
+      const { row } = await requireArtifact(db, id,identity,"admin");
+      id = row.id;
+      if (expectedStorageRevision !== undefined && Number(row.storage_revision) !== expectedStorageRevision) throw new ArtifactError("CONFLICT");
+      await db`UPDATE assistant.artifacts SET storage_revision=storage_revision+1 WHERE id=${id}::uuid`;
       await db`DELETE FROM assistant.artifact_storage WHERE artifact_id=${id}::uuid AND (${area} = 'all' OR area=${area})`;
       return {cleared:true};
     });
@@ -338,7 +367,7 @@ export const artifacts = {
     if (!Number.isSafeInteger(maximum) || maximum < 1) throw new ArtifactError("INVALID_INPUT");
     return maximum;
   },
-  async storage(id: string, input: unknown, identity: ArtifactIdentity, management = false, fileData?: Uint8Array) {
+  async storage(id: string, input: unknown, identity: ArtifactIdentity, management = false, fileData?: Uint8Array, expected?: { storageRevision?: number; version?: number | null }) {
     const request = StorageRequest.parse(input);
     if (request.operation !== "list" && !request.key) throw new ArtifactError("INVALID_INPUT");
     let bytes = 0;
@@ -359,13 +388,20 @@ export const artifacts = {
     return sql.begin(async db => {
       // App use includes its runtime data effects. Code administration remains
       // separate. Lock the resource so quota checks and writes serialize.
-      id = (await requireArtifact(db, id,identity,management ? "admin" : "read")).row.id;
+      const { row } = await requireArtifact(db, id,identity,management ? "admin" : "read");
+      id = row.id;
+      if (expected?.storageRevision !== undefined && Number(row.storage_revision) !== expected.storageRevision) throw new ArtifactError("CONFLICT");
+      if (expected?.version !== undefined) {
+        const [current] = await db<{ version: number }[]>`SELECT version FROM assistant.artifact_storage WHERE artifact_id=${id}::uuid AND area=${request.area} AND key=${request.key!}`;
+        if ((current ? Number(current.version) : null) !== expected.version) throw new ArtifactError("CONFLICT");
+      }
       if (request.operation === "list") {
-        const items = await db<{key:string;bytes:number;mediaType:string}[]>`SELECT key,bytes,media_type AS "mediaType"
+        const items = await db<{key:string;bytes:number;mediaType:string;version:number}[]>`SELECT key,bytes,version,media_type AS "mediaType"
           FROM assistant.artifact_storage WHERE artifact_id=${id}::uuid AND area=${request.area} AND key > ${request.after} ORDER BY key LIMIT ${request.limit}`;
-        return {items};
+        return {items: items.map(item => ({ ...item, bytes: Number(item.bytes), version: Number(item.version) }))};
       }
       if (request.operation === "delete") {
+        await db`UPDATE assistant.artifacts SET storage_revision=storage_revision+1 WHERE id=${id}::uuid`;
         await db`DELETE FROM assistant.artifact_storage WHERE artifact_id=${id}::uuid AND area=${request.area} AND key=${request.key!}`;
         return {deleted:true};
       }
@@ -378,14 +414,16 @@ export const artifacts = {
           WHERE artifact_id=${id}::uuid AND area=${request.area} AND key=${request.key!}`;
         if (!checkStorageBudget({ area: request.area, bytes, total: Number(usage!.bytes), previous: Number(usage!.previous),
           items: Number(usage!.items), exists: Boolean(existing), limits })) throw new ArtifactError("STORAGE_FULL");
-        await db`INSERT INTO assistant.artifact_storage(artifact_id,area,key,content,data,media_type,bytes)
-          VALUES(${id}::uuid,${request.area},${request.key!},${request.content ?? ""},${fileData ?? null},${request.mediaType},${bytes})
-          ON CONFLICT(artifact_id,area,key) DO UPDATE SET content=excluded.content,data=excluded.data,media_type=excluded.media_type,bytes=excluded.bytes,updated_at=now()`;
-        return {written:true};
+        const version = Number(row.storage_revision) + 1;
+        await db`UPDATE assistant.artifacts SET storage_revision=${version} WHERE id=${id}::uuid`;
+        await db`INSERT INTO assistant.artifact_storage(artifact_id,area,key,content,data,media_type,bytes,version)
+          VALUES(${id}::uuid,${request.area},${request.key!},${request.content ?? ""},${fileData ?? null},${request.mediaType},${bytes},${version})
+          ON CONFLICT(artifact_id,area,key) DO UPDATE SET content=excluded.content,data=excluded.data,media_type=excluded.media_type,bytes=excluded.bytes,version=excluded.version,updated_at=now()`;
+        return {written:true, version};
       }
-      const [item] = await db<{content:string;mediaType:string;data:Uint8Array|null}[]>`SELECT content,data,media_type AS "mediaType"
+      const [item] = await db<{content:string;mediaType:string;data:Uint8Array|null;version:number}[]>`SELECT content,data,version,media_type AS "mediaType"
         FROM assistant.artifact_storage WHERE artifact_id=${id}::uuid AND area=${request.area} AND key=${request.key!}`;
-      return {item:item ?? null};
+      return {item:item ? {...item, version: Number(item.version)} : null};
     });
   },
   async projects(id: string, identity: ArtifactIdentity) {
@@ -464,9 +502,11 @@ export const artifacts = {
       resources: [{ ref, title: bundle.title, icon: "ti ti-app-window", href }] });
     return { href: `/app/assistant?conversation=${conversation.shortId}&workspace=${encodeURIComponent(JSON.stringify(["app", id]))}` };
   },
-  async unpublish(id: string, identity: ArtifactIdentity) {
+  async unpublish(id: string, identity: ArtifactIdentity, expectedPublishedVersion?: number) {
     return sql.begin(async db => {
-      id = (await requireArtifact(db, id, identity, "admin")).row.id;
+      const { row } = await requireArtifact(db, id, identity, "admin");
+      if (expectedPublishedVersion !== undefined && row.published_version !== expectedPublishedVersion) throw new ArtifactError("CONFLICT");
+      id = row.id;
       await db`UPDATE assistant.artifacts SET published_revision=NULL,published_title=NULL,published_description=NULL,published_icon=NULL,published_version=NULL WHERE id=${id}::uuid`;
       return { unpublished: true };
     });

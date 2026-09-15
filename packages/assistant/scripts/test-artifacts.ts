@@ -24,7 +24,7 @@ try {
     try {const response=await fetch(rsqlUrl+"/healthz");if(!response.ok)throw new Error("rsql unhealthy");break;}
     catch(error){if(attempt>=60)throw error;await Bun.sleep(250);}
   }
-  const child=Bun.spawn([process.execPath,"--no-env-file","test",new URL("../src/artifacts/service.integration.test.ts",import.meta.url).pathname],{
+  const child=Bun.spawn([process.execPath,"--no-env-file","test","--timeout","20000",new URL("../src/artifacts/service.integration.test.ts",import.meta.url).pathname],{
     env:{PATH:process.env.PATH,ASSISTANT_EVAL_FILES:process.env.ASSISTANT_EVAL_FILES,ASSISTANT_EVAL_URL:process.env.ASSISTANT_EVAL_URL,ASSISTANT_EVAL_TOKEN:process.env.ASSISTANT_EVAL_TOKEN,ASSISTANT_EVAL_MODEL:process.env.ASSISTANT_EVAL_MODEL,NODE_ENV:"test",DATABASE_URL:`postgres://postgres@127.0.0.1:${port}/cloud_assistant_artifacts_test`,APP_SECRET:"51".repeat(32),RSQL_TEST_URL:rsqlUrl},stdout:"inherit",stderr:"inherit",
   });
   process.exitCode=await child.exited;

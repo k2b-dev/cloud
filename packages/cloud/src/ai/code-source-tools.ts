@@ -16,7 +16,7 @@ import { resolveAiCapabilityActor } from "./capability-execution";
 import { aiConversations } from "./store";
 import { defineAiTool } from "./tools";
 
-const WRITE_TOOLS = new Set(["code_create", "code_write", "code_remove", "code_update", "code_fork", "code_publish", "code_restore", ...Object.entries(CODE_SOURCE_TOOLS).filter(([, definition]) => "review" in definition && definition.review).map(([name]) => name)]);
+const WRITE_TOOLS = new Set(["code_create", "code_write", "code_remove", "code_update", "code_fork", "code_publish", "code_restore", "code_database_export", ...Object.entries(CODE_SOURCE_TOOLS).filter(([, definition]) => "review" in definition && definition.review).map(([name]) => name)]);
 
 const Reply = z.discriminatedUnion("ok", [
   z.object({ ok: z.literal(true), data: z.unknown() }),
@@ -83,7 +83,7 @@ export function createCodeSourceTool(name: CodeSourceToolName) {
       if (!response.ok) throw new Error("Assistant tool request failed.");
       return { data: reply.data.data, status: response.status };
     };
-    if ("review" in definition && definition.review) {
+    if ("review" in definition && (typeof definition.review === "function" ? definition.review(input) : definition.review)) {
       const preview = z.object({ data: z.object({ message: z.string().min(1) }) }).parse((await send(true)).data).data;
       if (!await context.requestApproval(preview.message)) throw new Error("The user declined this change. No mutation was sent.");
     }
@@ -116,6 +116,17 @@ export function createCodeSourceTool(name: CodeSourceToolName) {
 }
 
 export const createCodeSourceTools = () => [
+  createCodeSourceTool("code_files"),
+  createCodeSourceTool("code_file_stat"),
+  createCodeSourceTool("code_file_copy"),
+  createCodeSourceTool("code_database_export"),
+  createCodeSourceTool("code_manage_read"),
+  createCodeSourceTool("code_delete"),
+  createCodeSourceTool("code_database_read"),
+  createCodeSourceTool("code_database_clear"),
+  createCodeSourceTool("code_database_reset"),
+  createCodeSourceTool("code_storage_list"),
+  createCodeSourceTool("code_storage_delete"),
   createCodeSourceTool("code_access_read"),
   createCodeSourceTool("code_access_change"),
   createCodeSourceTool("code_actions"),

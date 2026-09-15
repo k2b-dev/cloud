@@ -1,6 +1,8 @@
+import { studioFiles } from "./file-transfer";
+import { readBinaryResponse } from "./binary";
 import { sourceActions } from "./actions";
 import { artifactDatabase, DatabaseError } from "./database";
-import { CODE_SOURCE_TOOLS, readAiConversationFile } from "@k2b/cloud/ai";
+import { CODE_SOURCE_TOOLS, createAiConversationArtifact, AI_FILES_MAX_FILE_BYTES_DEFAULT } from "@k2b/cloud/ai";
 import { CAPABILITY_MAX_RESULT_BYTES } from "@k2b/cloud/contracts";
 import type { ArtifactIdentity } from "./service";
 import { fail, ok } from "@k2b/stdlib";
@@ -61,12 +63,80 @@ async function result<T>(
 }
 
 export const artifactCodeHandlers = {
+  code_files: (input, context) => result(context, async () => ({ data: await studioFiles.list(input, context, input.after, input.limit) })),
+  code_file_stat: ({ file }, context) => result(context, async () => {
+    const found = await studioFiles.read(file, context);
+    return { data: found ? { exists: true, reference: found.reference, size: found.bytes.byteLength, mediaType: found.mediaType } : { exists: false } };
+  }),
+  code_file_copy: (input, context) => result<unknown>(context, async () => {
+    if (context.review) {
+      const target = await studioFiles.destination(input.destination, input.expectedVersion, context);
+      const source = await studioFiles.readReference(input.source, context);
+      return { data: { message: `Copy ${input.source.path} (${source.bytes.byteLength} bytes) from ${input.source.scope} “${source.title}” (${source.reference.id}) to ${target.scope} “${target.title}” (${target.id}) at ${input.destination.path}. ${input.expectedVersion === null ? "Create a new file." : "Replace the reviewed destination file."} Files in Apps and Projects can be read by other authorized users. No other files are transferred.` } };
+    }
+    return { data: await studioFiles.copy(input.source, input.destination, input.expectedVersion, context, context.signal) };
+  }),
+  code_database_export: ({ id, path }, context) => result(context, async () => {
+    if (!context.conversationId) throw new ArtifactError("ACCESS_DENIED");
+    const signal = AbortSignal.any([context.signal, AbortSignal.timeout(30000)]);
+    const response = await artifactDatabase.export(id, context, signal);
+    const bytes = await readBinaryResponse(response, AI_FILES_MAX_FILE_BYTES_DEFAULT);
+    signal.throwIfAborted();
+    const resource = await artifacts.get(id, context);
+    if (resource.permission !== "admin") throw new ArtifactError("ACCESS_DENIED");
+    return { data: await createAiConversationArtifact({ conversationId: context.conversationId, ownerUserId: user(context).id,
+      path, bytes, mediaType: "application/vnd.sqlite3", producerCallKey: `database-export:${crypto.randomUUID()}` }) };
+  }),
+  code_manage_read: ({ id }, context) => result(context, async () => ({ data: await artifacts.managementState(id, context) })),
+  code_delete: (input, context) => result<unknown>(context, async () => {
+    const state = await artifacts.managementState(input.id, context);
+    if (state.managementRevision !== input.expectedManagementRevision) throw new ArtifactError("CONFLICT");
+    if (context.review) return { data: { message: `Permanently delete App “${state.title}” (${input.id}), all source history, publications, grants, ${state.files} shared files, ${state.kv} JSON keys and its database (connected: ${state.databaseConnected}). Database physical deletion is queued. This cannot be undone.` } };
+    return { data: await artifacts.remove(input.id, context, input.expectedManagementRevision) };
+  }),
+  code_database_read: ({ id }, context) => result(context, async () => {
+    const state = await artifactDatabase.status(id, context, context.signal);
+    return { data: { configured: state.configured, connected: state.connected, generation: state.generation, dataRevision: state.dataRevision, tables: state.overview?.schema.tables ?? null, unavailable: state.unavailable } };
+  }),
+  code_database_clear: (input, context) => result<unknown>(context, async () => {
+    const state = await artifactDatabase.status(input.id, context, context.signal);
+    if (state.generation !== input.expectedGeneration || state.dataRevision !== input.expectedDataRevision) throw new ArtifactError("CONFLICT");
+    if (context.review) {
+      const resource = await artifacts.get(input.id, context);
+      return { data: { message: `Permanently clear all rows in App “${resource.title}” (${input.id}). Tables and schema stay intact. Source, publications, files and JSON storage are preserved. A failure may leave some tables cleared.` } };
+    }
+    return { data: await artifactDatabase.clear(input.id, input.expectedGeneration, input.expectedDataRevision, context, context.signal) };
+  }),
+  code_database_reset: (input, context) => result<unknown>(context, async () => {
+    const state = await artifactDatabase.status(input.id, context, context.signal);
+    if (state.generation !== input.expectedGeneration || state.dataRevision !== input.expectedDataRevision) throw new ArtifactError("CONFLICT");
+    if (context.review) {
+      const resource = await artifacts.get(input.id, context);
+      return { data: { message: `Permanently discard the entire database of App “${resource.title}” (${input.id}), including all tables and data. Source, publications, files and JSON storage are preserved. Physical deletion is queued; the next connection starts empty.` } };
+    }
+    const data = await artifactDatabase.reset(input.id, input.expectedGeneration, context, input.expectedDataRevision);
+    return { data: { ...data, databaseCleanupQueued: input.expectedGeneration !== null } };
+  }),
+  code_storage_list: (input, context) => result(context, async () => {
+    const state = await artifacts.storageState(input.id, context);
+    const page = await artifacts.storage(input.id, { operation: "list", area: input.area, after: input.after, limit: input.limit }, context, true, undefined, { storageRevision: state.storageRevision });
+    if (!page.items) throw new ArtifactError("INVALID_INPUT");
+    return { data: { ...state, items: page.items, nextAfter: page.items.length === input.limit ? page.items.at(-1)!.key : null } };
+  }),
+  code_storage_delete: (input, context) => result<unknown>(context, async () => {
+    const state = await artifacts.storageState(input.id, context);
+    if (state.storageRevision !== input.expectedStorageRevision) throw new ArtifactError("CONFLICT");
+    if (context.review) return { data: { message: `Permanently delete ${input.key ? JSON.stringify(input.key) : "all entries"} from ${input.area} storage of App “${state.title}” (${input.id}).\nCurrent storage: ${JSON.stringify(state.areas)}\nSource, publications and database are preserved.` } };
+    const data = input.key && input.area !== "all"
+      ? await artifacts.storage(input.id, { operation: "delete", area: input.area, key: input.key }, context, true, undefined, { storageRevision: input.expectedStorageRevision })
+      : await artifacts.clearStorage(input.id, input.area, context, input.expectedStorageRevision);
+    return { data };
+  }),
   code_access_read: ({ id }, context) => result(context, async () => {
     const grants = await artifacts.access(id, context);
     return { data: { id, accessRevision: accessRevision(grants), levels: ["read", "admin"], principalTypes: ["user", "group", "authenticated"], grants } };
   }),
   code_access_change: (input, context) => result<unknown>(context, async () => {
-    if (input.principal?.type === "public" || input.principal?.type === "service_account") throw new ArtifactError("INVALID_INPUT");
     const grants = await artifacts.access(input.id, context);
     if (accessRevision(grants) !== input.expectedAccessRevision) throw new ArtifactError("CONFLICT");
     const previous = input.accessId ? grants.find(grant => grant.id === input.accessId) : undefined;
@@ -79,6 +149,12 @@ export const artifactCodeHandlers = {
     else if (input.accessId) await artifacts.changeGrant(input.id, input.accessId, input.permission, context, input.expectedAccessRevision);
     else throw new ArtifactError("INVALID_INPUT");
     return { data: { changed: true } };
+  }),
+  code_unpublish: ({ id, expectedPublishedVersion }, context) => result<unknown>(context, async () => {
+    const state = await artifacts.managementState(id, context);
+    if (state.publishedVersion !== expectedPublishedVersion) throw new ArtifactError("CONFLICT");
+    if (context.review) return { data: { message: `Withdraw App “${state.title}” (${id}), publication ${expectedPublishedVersion}. Users with Use access can no longer start its GUI or actions. Source, history and data remain.` } };
+    return { data: await artifacts.unpublish(id, context, expectedPublishedVersion) };
   }),
   code_actions: ({ id, draft }, context) => result(context, async () => {
     const bundle = await artifacts.get(id, context, undefined, !draft);
@@ -153,7 +229,7 @@ export const artifactCodeHandlers = {
       return { data: sourceManifest(created), ...links(created.id) };
     }),
   code_write: ({ id, files, expectedRevision, entry }, context) =>
-    result(context, async () => {
+    result<unknown>(context, async () => {
       // Authorize the destination before loading any source data.
       const current = await artifacts.get(id, context);
       if (current.permission !== "admin") throw new ArtifactError("ACCESS_DENIED");
@@ -161,17 +237,16 @@ export const artifactCodeHandlers = {
       const resolved = [];
       for (const file of files) {
         if ("content" in file) { resolved.push(file); continue; }
-        if (!context.conversationId) throw new ArtifactError("ACCESS_DENIED");
-        const data = await readAiConversationFile({ conversationId: context.conversationId, ownerUserId: user(context).id, ...file.fromChatFile });
-        if (!data) throw new ArtifactError("CONFLICT");
+        const data = await studioFiles.readReference(file.fromFile, context);
         if (data.bytes.byteLength > LIMITS.fileBytes) throw new ArtifactError("INVALID_INPUT");
         let content: string;
         try { content = new TextDecoder("utf-8", { fatal: true }).decode(data.bytes); }
         catch { throw new ArtifactError("INVALID_INPUT"); }
         resolved.push({ path: file.path, content });
       }
+      if (context.review) return { data: { message: `Import the reviewed files into source of App “${current.title}” (${id}): ${files.filter(file => "fromFile" in file).map(file => JSON.stringify(file)).join(", ")}. Existing source paths in this batch are replaced. Imported data becomes App source and may be shared or published with it.` } };
       const saved = await artifacts.writeFiles(id, { files: resolved, expectedRevision, entry }, context);
-      return { data: { ...sourceManifest(saved), saved: true, imported: files.filter(file => "fromChatFile" in file), diagnostics: await sourceDiagnostics(saved.source) }, ...links(id) };
+      return { data: { ...sourceManifest(saved), saved: true, imported: files.filter(file => "fromFile" in file), diagnostics: await sourceDiagnostics(saved.source) }, ...links(id) };
     }),
   code_remove: ({ id, path }, context) =>
     result(context, async () => {

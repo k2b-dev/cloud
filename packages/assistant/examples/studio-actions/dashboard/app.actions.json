@@ -1,0 +1,36 @@
+{
+  "actions": [
+    {
+      "name": "setStatus",
+      "title": "Replace the dashboard status message",
+      "description": "Replace the dashboard status message",
+      "entry": "update.js",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "message": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500
+          }
+        },
+        "required": [
+          "message"
+        ],
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "saved": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "saved"
+        ],
+        "additionalProperties": false
+      }
+    }
+  ]
+}

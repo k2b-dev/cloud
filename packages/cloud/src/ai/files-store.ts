@@ -1,3 +1,4 @@
+import { aiFileContentVersion, AiFileVersionConflict } from "./file-content-version";
 import { sql, type SQL } from "bun";
 
 export { guessAiMediaType } from "./file-media-type";
@@ -196,15 +197,16 @@ export const aiFileStore = {
     return createUniqueAiFile({ ...input, origin: "assistant" });
   },
 
-  async list(input: { conversationId: string; prefix?: string }): Promise<AiFileStat[]> {
+  async list(input: { conversationId: string; prefix?: string; after?: string; limit?: number }): Promise<AiFileStat[]> {
+    if (input.limit !== undefined && (!Number.isInteger(input.limit) || input.limit < 1 || input.limit > 1000)) throw new Error("Invalid file page limit");
     const prefix = input.prefix ?? "/";
     const pattern = `${prefix.endsWith("/") ? prefix : `${prefix}/`}%`;
     const rows = await sql<FileRow[]>`
       SELECT path, size, media_type, origin, dictation_recorded_at, updated_at, version
       FROM ai.files
       WHERE conversation_id = ${input.conversationId}
-        AND (path LIKE ${pattern} OR path = ${prefix})
-      ORDER BY updated_at DESC, path ASC
+        AND (path LIKE ${pattern} OR path = ${prefix}) AND path > ${input.after ?? ""}
+      ORDER BY CASE WHEN ${input.limit === undefined} THEN updated_at END DESC, path ASC LIMIT ${input.limit ?? null}
     `;
     return rows.map(toStat);
   },
@@ -291,17 +293,25 @@ export const aiFileStore = {
     mediaType?: string;
     origin?: "user" | "assistant";
     allowUserOverwrite?: boolean;
+    expectedVersion?: string | null;
+    ownerUserId?: string;
     maxFileBytes?: number;
     maxConversationBytes?: number;
-  }): Promise<void> {
+  }): Promise<AiFileStat> {
     const maxFile = input.maxFileBytes ?? AI_FILES_MAX_FILE_BYTES_DEFAULT;
     const maxConversation = input.maxConversationBytes ?? AI_FILES_MAX_CONVERSATION_BYTES_DEFAULT;
     if (input.bytes.byteLength > maxFile) {
       throw new Error(`File exceeds the per-file limit of ${Math.floor(maxFile / (1024 * 1024))} MB.`);
     }
 
-    await sql.begin(async (tx) => {
-      await tx`SELECT id FROM ai.conversations WHERE id = ${input.conversationId} FOR UPDATE`;
+    return sql.begin(async (tx) => {
+      const [conversation] = await tx<{ id: string; created_by_user_id: string; archived_at: Date | null }[]>`SELECT id,created_by_user_id,archived_at FROM ai.conversations WHERE id = ${input.conversationId} FOR UPDATE`;
+      if (input.ownerUserId !== undefined && (!conversation || conversation.created_by_user_id !== input.ownerUserId || conversation.archived_at)) throw new Error("Conversation access denied");
+      if (input.expectedVersion !== undefined) {
+        const [existing] = await tx<FileContentRow[]>`SELECT path,size,media_type,origin,updated_at,version,bytes FROM ai.files WHERE conversation_id=${input.conversationId} AND path=${input.path}`;
+        const version = existing ? aiFileContentVersion({ ...toContent(existing), id: `${input.conversationId}:${input.path}:${existing.version}` }) : null;
+        if (version !== input.expectedVersion) throw new AiFileVersionConflict();
+      }
       const otherBytes = await aiConversationStoredBytes(tx, input.conversationId, input.path);
       if (otherBytes + input.bytes.byteLength > maxConversation) {
         throw new Error(`Conversation storage limit of ${Math.floor(maxConversation / (1024 * 1024))} MB exceeded.`);
@@ -336,6 +346,8 @@ export const aiFileStore = {
         `;
         if (!written[0]) throw new Error(`Cannot overwrite user-uploaded file ${input.path}.`);
       }
+      const [written] = await tx<FileRow[]>`SELECT path,size,media_type,origin,dictation_recorded_at,updated_at,version FROM ai.files WHERE conversation_id=${input.conversationId} AND path=${input.path}`;
+      return toStat(written!);
     });
   },
 
@@ -448,16 +460,16 @@ export const aiFileStore = {
 };
 
 /** Authorized services may expose this read after resolving the conversation owner. */
-export const listAiConversationFiles = (conversationId: string, prefix?: string): Promise<AiFileStat[]> =>
-  aiFileStore.list({ conversationId, prefix });
+export const listAiConversationFiles = (conversationId: string, prefix?: string, page?: { after?: string; limit: number }): Promise<AiFileStat[]> =>
+  aiFileStore.list({ conversationId, prefix, ...page });
 
 /** Authorized byte-preserving read for app-owned artifact importers. */
-export async function readAiConversationFile(input: { conversationId: string; ownerUserId: string; path: string; version: number }): Promise<AiFileContent | null> {
+export async function readAiConversationFile(input: { conversationId: string; ownerUserId: string; path: string; version?: number }): Promise<AiFileContent | null> {
   const { aiConversations } = await import("./store");
   const conversation = await aiConversations.getConversation({ conversationId: input.conversationId, ownerUserId: input.ownerUserId });
   if (!conversation || conversation.archivedAt) return null;
   const file = await aiFileStore.read(input);
-  return file?.version === input.version ? file : null;
+  return input.version === undefined || file?.version === input.version ? file : null;
 }
 
 /** Save one agent-produced file without overwriting an existing or user-edited file. */
@@ -468,4 +480,13 @@ export async function createAiConversationArtifact(input: {
   const conversation = await aiConversations.getConversation({conversationId:input.conversationId,ownerUserId:input.ownerUserId});
   if (!conversation || conversation.archivedAt) throw new Error("Conversation access denied");
   return aiFileStore.createToolArtifact(input);
+}
+
+/** Explicit, revision-checked file replacement for authorized transfer services. */
+export async function writeAiConversationFile(input: {
+  conversationId: string; ownerUserId: string; path: string; bytes: Uint8Array; mediaType: string; expectedVersion: string | null;
+}): Promise<AiFileStat> {
+  if (normalizeAiFilePath(input.path) !== input.path) throw new Error("Invalid file path");
+  const current = await aiFileStore.stat(input);
+  return aiFileStore.write({ ...input, origin: current?.origin ?? "assistant", allowUserOverwrite: current?.origin === "user" });
 }

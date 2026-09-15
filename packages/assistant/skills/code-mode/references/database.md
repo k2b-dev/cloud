@@ -1,5 +1,11 @@
 # Resource database
 
+Use only the Studio methods and query grammar documented here. The backing
+database service is an implementation detail, not an additional API. Do not
+import its client, look up vendor methods, or infer support from a SQL engine.
+If an operation is absent here, inspect the relevant Studio management tool
+contract rather than calling the underlying service directly.
+
 Resource managers can inspect tables and run SELECT in Studio's Advanced → SQL
 console. Opening it never creates a database. Advanced → Manage database offers
 a streamed SQLite backup and an explicit reset. A reset removes schema/data,
@@ -7,7 +13,7 @@ preserving source, publications and files/KV; the next connect creates an empty
 database. All code versions use the same current database. Restoring source does
 not restore data. Never propose a reset as a routine fix for a query error.
 
-Use a database when the saved app or script needs structured records and SQL
+Use a database when the App needs structured records and SQL
 analysis. A resource does not get a database automatically. Connect explicitly:
 
 ```ts
@@ -17,7 +23,7 @@ const db = await database.connect();
 Connecting is idempotent and lazily creates this resource's database. The host
 logs a successful connection. An unconfigured Cloud instance throws an error with
 `error.code === "DB_NOT_CONFIGURED"`; explain that an administrator must
-configure the Assistant rsql connection. Do not invent credentials or fall back to Kit settings.
+configure the Assistant database connection. Do not invent credentials or fall back to Kit settings.
 `DB_AUTH_FAILED` means the stored server token was rejected; `DB_UNREACHABLE`
 means the server could not be reached. Ask an administrator to check the
 connection. For `DB_TIMEOUT`, a read can be retried once. For a write, inspect
@@ -26,7 +32,7 @@ its effects before retrying; a timeout does not prove that nothing changed.
 The database belongs to the resource across edits, publications, and restores.
 A fork starts without one. A one-off can use an existing resource database with
 `code_run({ code, resourceId: "RESOURCE_SHORT_ID" })`; this requires Manage. Without
-a resourceId, save the script only if it needs its own durable database. Database calls always use the current user's permissions.
+a resourceId, create an App only if the work needs its own durable database. Database calls always use the current user's permissions.
 
 ## Inspect data without a script
 
@@ -113,7 +119,7 @@ when consuming calculated fields so their keys are explicit.
 
 Create schema while building the app as an admin, before publishing. Do not make
 normal Use-level users run schema mutations on startup. Check existing tables
-before creating one. rsql manages `id`, `created_at`, and `updated_at`; omit these
+before creating one. Studio manages `id`, `created_at`, and `updated_at`; omit these
 from custom columns and inserted values. Column definitions use `name`, `type`,
 and optional `not_null`, `unique`, or `index`. Types are `text`, `integer`,
 `real`, `boolean`, `json`, `date`, and `datetime`.

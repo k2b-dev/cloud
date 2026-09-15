@@ -76,6 +76,7 @@ export {
   listAiConversationFiles,
   readAiConversationFile,
   createAiConversationArtifact,
+  writeAiConversationFile,
   normalizeAiFilePath,
 } from "./files-store";
 export {
@@ -351,3 +352,6 @@ export {
 export { createCloudAiTranscribeAudioTool, CloudAiTranscribeAudioInputSchema, CloudAiTranscribeAudioOutputSchema } from "./audio-tool";
 
 export { getAiChatQuotas } from "./chat-quotas";
+
+export { AiFileLocation, AiFileReference } from "./file-reference-contracts";
+export { aiFileContentVersion, AiFileVersionConflict } from "./file-content-version";

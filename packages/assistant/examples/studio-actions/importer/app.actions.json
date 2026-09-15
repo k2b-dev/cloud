@@ -1,0 +1,60 @@
+{
+  "actions": [
+    {
+      "name": "importItems",
+      "title": "Import stable keys into shared records",
+      "description": "Import stable keys into shared records",
+      "entry": "import.js",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 100,
+            "items": {
+              "type": "object",
+              "properties": {
+                "key": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 500
+                },
+                "value": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 500
+                }
+              },
+              "required": [
+                "key",
+                "value"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "inserted": {
+            "type": "integer"
+          },
+          "skipped": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "inserted",
+          "skipped"
+        ],
+        "additionalProperties": false
+      }
+    }
+  ]
+}

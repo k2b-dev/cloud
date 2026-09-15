@@ -145,7 +145,7 @@ export async function evaluateCodeMode(context: CodeToolContext, turnId: string)
     }).server((args, ctx) => runtime("code_interact", args, ctx.callId)),
     defineTool({
       name: "code_export",
-      description: "Export a captured file to the chat; returns path and version for code_write fromChatFile",
+      description: "Export a captured file to the chat; returns path and version; use code_file_stat for an explicit code_write fromFile reference",
       inputSchema: getCodeToolInputSchema("code_export"),
     }).server((args, ctx) => runtime("code_export", args, ctx.callId)),
   ];

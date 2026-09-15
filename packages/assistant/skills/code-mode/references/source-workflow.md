@@ -75,7 +75,7 @@ recovered content with `code_write`.
 Keep source files focused; each file is limited to 1 MiB of UTF-8 content.
 Tool results are bounded to 256 KiB. Write large analysis results as output files.
 
-Creation and file mutations run without approval prompts, within the user's
+Creation and ordinary source edits run without approval prompts, within the user's
 existing permissions. Replay protection is handled internally; do not supply
 idempotency keys. This does not grant sharing or app deletion. Inspect current
 state after an uncertain result before deciding to retry.
@@ -102,7 +102,7 @@ Before editing source while the user is also using the editor, announce the
 change. Saves reject stale revisions rather than overwriting either draft. The
 user can download their current editor draft and explicitly load the latest
 source before reconciling changes. Resource managers can delete Apps in
-Studio or with `assistant code delete ID --yes`; no agent deletion tool exists.
+Studio or through the reviewed tools in [Management](management.md).
 
 Studio's Advanced menu offers a manual multi-file editor for resource managers.
 It is optional: continue doing normal work with `code_read` and `code_write`.
@@ -119,13 +119,15 @@ Read the current revision, then save related modules together:
 
 ```js
 code_write({ id, expectedRevision: 3, files: [
-  { path: "data.json", fromChatFile: { path: "/validated-data.json", version: 1 } },
+  { path: "data.json", fromFile: reference }, // exact reference returned by code_file_stat
   { path: "main.ts", content: 'import rows from "./data.json"; export default () => ({rows: rows.length});' }
 ] });
 ```
 
-`fromChatFile` copies a specific current-chat file version on the server. Export
-validated data with `code_export`, use the resulting path/version, and avoid
+`fromFile` copies one explicit chat, Project, or App file reference as UTF-8 source.
+Read [File transfers](files.md) to obtain the exact reference with `code_file_stat`.
+Imports receive fresh review because the bytes become source that can be shared
+or published. Export validated data with `code_export`, then inspect it, and avoid
 printing/retyping large datasets. A stale revision or file version fails without
 saving any files; re-read before reconciling. Source imports support `.json`
 objects and `.csv`, `.tsv`, `.txt` strings; pass CSV strings to `sheet.fromCsv`.

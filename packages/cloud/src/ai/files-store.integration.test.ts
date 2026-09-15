@@ -1,6 +1,7 @@
+import { aiFileContentVersion } from "./file-content-version";
 import { describe, expect, test } from "bun:test";
 import { sql } from "bun";
-import { aiFileStore, normalizeAiFilePath } from "./files-store";
+import { aiFileStore, normalizeAiFilePath, writeAiConversationFile } from "./files-store";
 import { migrateCloudAi } from "./migrate";
 import { aiConversations } from "./store";
 
@@ -43,6 +44,28 @@ suite("normalizeAiFilePath", () => {
 });
 
 suite("aiFileStore integration", () => {
+  test("versioned chat file transfers protect user uploads and resolve concurrent writes", async () => {
+    const userId = await insertUser();
+    const conversation = await aiConversations.createConversation({ ownerUserId: userId });
+    const input = { conversationId: conversation.id, ownerUserId: userId, path: "/invoice.pdf", bytes: new Uint8Array([0, 255]), mediaType: "application/pdf" };
+    try {
+      await aiFileStore.write({ ...input, origin: "user" });
+      const file = (await aiFileStore.read(input))!;
+      const version = aiFileContentVersion({ ...file, id: `${conversation.id}:${input.path}:${file.version}` });
+      await expect(writeAiConversationFile({ ...input, expectedVersion: null })).rejects.toThrow("version conflict");
+      const results = await Promise.allSettled([
+        writeAiConversationFile({ ...input, expectedVersion: version, bytes: bytes("first") }),
+        writeAiConversationFile({ ...input, expectedVersion: version, bytes: bytes("second") }),
+      ]);
+      expect(results.filter(result => result.status === "fulfilled")).toHaveLength(1);
+      expect(results.filter(result => result.status === "rejected")).toHaveLength(1);
+      expect((await aiFileStore.read(input))!.origin).toBe("user");
+      await expect(writeAiConversationFile({ ...input, ownerUserId: crypto.randomUUID(), expectedVersion: version })).rejects.toThrow("access denied");
+      const page = await aiFileStore.list({ conversationId: conversation.id, limit: 1 });
+      expect(page.map(file => file.path)).toEqual([input.path]);
+    } finally { await sql`DELETE FROM ai.conversations WHERE id=${conversation.id}::uuid`; await sql`DELETE FROM auth.users WHERE id=${userId}::uuid`; }
+  });
+
   test("tool artifacts reuse an identical unedited call output and reject foreign or edited files", async () => {
     const userId = await insertUser();
     const conversation = await aiConversations.createConversation({ ownerUserId: userId });

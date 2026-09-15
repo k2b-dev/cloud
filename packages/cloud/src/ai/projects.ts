@@ -1,3 +1,4 @@
+import { aiFileContentVersion, AiFileVersionConflict } from "./file-content-version";
 import { type SQL, type SQLQuery, sql } from "bun";
 import type { CloudResourceRef } from "../contracts/capabilities";
 import type { AccessSubject } from "../server";
@@ -786,24 +787,33 @@ export const aiProjects = {
     });
   },
 
-  async listFiles(projectId: string, subject: AccessSubject | null): Promise<AiProjectFile[]> {
+  async listFiles(projectId: string, subject: AccessSubject | null, page?: { after?: string; limit: number }): Promise<AiProjectFile[]> {
     if (!(await requireProject(projectId, subject, "read"))) return [];
+    if (page && (!Number.isInteger(page.limit) || page.limit < 1 || page.limit > 1000)) throw new Error("Invalid file page limit");
     return (
       await sql<
         FileRow[]
-      >`SELECT id, short_id, project_id, path, media_type, size, updated_at FROM ai.project_files WHERE project_id = ${projectId}::uuid ORDER BY path LIMIT 500`
+      >`SELECT id, short_id, project_id, path, media_type, size, updated_at FROM ai.project_files WHERE project_id = ${projectId}::uuid AND path > ${page?.after ?? ""} ORDER BY path LIMIT ${page?.limit ?? 500}`
     ).map(toFile);
   },
 
   async writeFile(
     projectId: string,
     subject: AccessSubject | null,
-    input: { path: string; mediaType: string; bytes: Uint8Array },
+    input: { path: string; mediaType: string; bytes: Uint8Array; expectedVersion?: string | null },
   ): Promise<AiProjectFile | null> {
     if (!(await requireProject(projectId, subject, "write"))) return null;
     if (input.bytes.byteLength > AI_PROJECT_FILE_MAX_BYTES) throw new Error("Project file exceeds the size limit.");
     const path = normalizeProjectPath(input.path);
     return sql.begin(async (tx) => {
+      const [row] = await tx<ProjectRow[]>`SELECT * FROM ai.projects WHERE id=${projectId}::uuid FOR UPDATE`;
+      const project = row ? await toProject(row, subject, tx) : null;
+      if (!project || !hasPermission(project.permission, "write")) return null;
+      if (input.expectedVersion !== undefined) {
+        const [existing] = await tx<(FileRow & { bytes: Uint8Array })[]>`SELECT id,short_id,project_id,path,media_type,size,updated_at,bytes FROM ai.project_files WHERE project_id=${projectId}::uuid AND path=${path}`;
+        const version = existing ? aiFileContentVersion({ ...toFile(existing), bytes: existing.bytes }) : null;
+        if (version !== input.expectedVersion) throw new AiFileVersionConflict();
+      }
       const rows = await withAiShortIdForDb(
         tx,
         "idx_ai_project_files_short_id",
@@ -850,6 +860,9 @@ export const aiProjects = {
   async deleteFile(projectId: string, fileId: string, subject: AccessSubject | null): Promise<boolean> {
     if (!(await requireProject(projectId, subject, "write"))) return false;
     return sql.begin(async (tx) => {
+      const [row] = await tx<ProjectRow[]>`SELECT * FROM ai.projects WHERE id=${projectId}::uuid FOR UPDATE`;
+      const project = row ? await toProject(row, subject, tx) : null;
+      if (!project || !hasPermission(project.permission, "write")) return false;
       const rows = await tx<{ id: string }[]>`
         DELETE FROM ai.project_files WHERE short_id = ${fileId} AND project_id = ${projectId}::uuid RETURNING id
       `;

@@ -1,3 +1,4 @@
+import { aiFileContentVersion } from "./file-content-version";
 import { describe, expect, test } from "bun:test";
 import { sql } from "bun";
 import { migrateCloudAi } from "./migrate";
@@ -39,6 +40,31 @@ const insertServiceAccount = async (label: string) => {
 };
 
 describe.skipIf(!(await canUseAiDatabase()))("aiProjects (integration)", () => {
+  test("versioned Project file transfers serialize replacements and reject stale content", async () => {
+    const userId = await insertUser("file-transfer");
+    const subject = { type: "user" as const, userId };
+    const project = await aiProjects.create({ subject, name: "Transfer" });
+    try {
+      const input = { path: "invoice.pdf", mediaType: "application/pdf", bytes: new Uint8Array([0, 128, 255]), expectedVersion: null };
+      await aiProjects.writeFile(project.id, subject, input);
+      const current = (await aiProjects.readFileByPath(project.id, input.path, subject))!;
+      const version = aiFileContentVersion(current);
+      const writes = await Promise.allSettled([
+        aiProjects.writeFile(project.id, subject, { ...input, expectedVersion: version, bytes: new Uint8Array([1]) }),
+        aiProjects.writeFile(project.id, subject, { ...input, expectedVersion: version, bytes: new Uint8Array([2]) }),
+      ]);
+      expect(writes.filter(write => write.status === "fulfilled")).toHaveLength(1);
+      expect(writes.filter(write => write.status === "rejected")).toHaveLength(1);
+      await expect(aiProjects.writeFile(project.id, subject, input)).rejects.toThrow("version conflict");
+      const page = await aiProjects.listFiles(project.id, subject, { limit: 1 });
+      expect(page.map(file => file.path)).toEqual([input.path]);
+      expect(await aiProjects.listFiles(project.id, subject, { after: input.path, limit: 1 })).toEqual([]);
+    } finally {
+      await aiProjects.delete(project.id, subject);
+      await sql`DELETE FROM auth.users WHERE id=${userId}::uuid`;
+    }
+  });
+
   test("uses the access-owned Project schema", async () => {
     const columns = await sql<{ table_name: string; column_name: string }[]>`
       SELECT table_name, column_name

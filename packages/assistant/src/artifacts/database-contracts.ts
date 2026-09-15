@@ -7,7 +7,7 @@ export const DbName = z
   .describe("Table or column identifier; letters, digits and underscores, starting with a letter.");
 export const DbColumn = z
   .object({
-    name: DbName.refine(name => !["id", "created_at", "updated_at"].includes(name.toLowerCase()), { message: "id, created_at and updated_at are managed by rsql; omit them." }).describe("Custom column name; id, created_at and updated_at are automatic and must be omitted."),
+    name: DbName.refine(name => !["id", "created_at", "updated_at"].includes(name.toLowerCase()), { message: "id, created_at and updated_at are managed by Studio; omit them." }).describe("Custom column name; id, created_at and updated_at are automatic and must be omitted."),
     type: z
       .enum(["text", "integer", "real", "boolean", "json", "date", "datetime"])
       .describe("Column value type; integer for exact minor currency units."),
@@ -22,7 +22,7 @@ export const DbRow = z
 const filterValue = z.union([z.string(), z.number().finite(), z.boolean(), z.null()]);
 export const DbQuery = z
   .record(z.string().max(200), z.union([filterValue, z.array(filterValue).max(LIMITS.rows)]))
-  .describe("rsql row filters, projection, order and pagination; limit at most 1000.");
+  .describe("Studio row filters, projection, order and pagination; limit at most 1000.");
 export const DatabaseSql = z.object({
     sql: z.string().trim().min(1).max(LIMITS.text).describe("A bounded SELECT using supported functions; no writes, CTEs or comments."),
     params: z.array(z.json()).max(LIMITS.rows).default([]).describe("Values bound to SQL placeholders, in order."),
@@ -32,7 +32,7 @@ export const DatabaseRequest = z.discriminatedUnion("operation", [
   z.object({
     operation: z.literal("tables.create").describe("Database operation: tables.create."),
     name: DbName,
-    columns: z.array(DbColumn).min(1).max(LIMITS.rows).describe("Custom columns only. rsql automatically adds id, created_at and updated_at; never declare them."),
+    columns: z.array(DbColumn).min(1).max(LIMITS.rows).describe("Custom columns only. Studio automatically adds id, created_at and updated_at; never declare them."),
   }),
   z.object({
     operation: z.literal("tables.update").describe("Database operation: tables.update."),
@@ -53,7 +53,7 @@ export const DatabaseRequest = z.discriminatedUnion("operation", [
   z.object({
     operation: z.literal("rows.get").describe("Database operation: rows.get."),
     table: DbName,
-    id: z.number().int().positive().describe("Positive record id returned by rsql."),
+    id: z.number().int().positive().describe("Positive record id returned by Studio."),
   }),
   z.object({
     operation: z.literal("rows.insert").describe("Database operation: rows.insert."),
@@ -63,13 +63,13 @@ export const DatabaseRequest = z.discriminatedUnion("operation", [
   z.object({
     operation: z.literal("rows.update").describe("Database operation: rows.update."),
     table: DbName,
-    id: z.number().int().positive().describe("Positive record id returned by rsql."),
+    id: z.number().int().positive().describe("Positive record id returned by Studio."),
     row: DbRow,
   }),
   z.object({
     operation: z.literal("rows.delete").describe("Database operation: rows.delete."),
     table: DbName,
-    id: z.number().int().positive().describe("Positive record id returned by rsql."),
+    id: z.number().int().positive().describe("Positive record id returned by Studio."),
   }),
   DatabaseSql.extend({ operation: z.literal("query").describe("Database operation: query.") }),
 ]);
