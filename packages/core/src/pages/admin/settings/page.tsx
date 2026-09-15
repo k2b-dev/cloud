@@ -363,7 +363,7 @@ export default ssr<AuthContext>(async (c) => {
           />
         ) : null}
 
-        {quotaData ? <AiQuotaAdmin {...quotaData} /> : null}
+        {quotaData ? <AiQuotaAdmin config={quotaData.config} models={quotaData.models} /> : null}
         {tab.id === "ai-usage" && aiUsageReport ? <AiUsageAdminPanel report={aiUsageReport} /> : null}
       </div>
     </AdminLayout>
