@@ -187,6 +187,7 @@ const queryHourlyRollupRows = async (
   if (!canUseHourlyRollup(query, window)) return null;
 
   // Both paths share a statement snapshot. Only complete hours replace their raw samples.
+  // Compute gaps per series first so covered hours never scan raw samples, including when other series lack a rollup.
   return await db<MetricValueRow[]>`
     WITH complete AS MATERIALIZED (
       SELECT h.hour FROM pulse.metric_hours h JOIN pulse.bases b ON b.id=h.base_id
@@ -197,16 +198,26 @@ const queryHourlyRollupRows = async (
       SELECT r.series_id,r.bucket,r.sample_count,r.value_sum,r.value_min,r.value_max,r.last_value,r.last_ts
       FROM pulse.metric_rollups_hourly r JOIN complete c ON c.hour=r.bucket
       WHERE r.base_id=${query.baseId}::uuid AND r.series_id=ANY(${toPgUuidArray(seriesIds)}::uuid[])
+    ), covered AS (
+      SELECT series_id,range_agg(tstzrange(bucket,bucket+interval '1 hour','[)')) AS ranges
+      FROM retained GROUP BY series_id
+    ), gaps AS MATERIALIZED (
+      SELECT selected.series_id,unnest(
+        tstzmultirange(tstzrange(${window.since},${window.until},'[)')) - COALESCE(covered.ranges,'{}'::tstzmultirange)
+      ) AS range
+      FROM unnest(${toPgUuidArray(seriesIds)}::uuid[]) AS selected(series_id)
+      LEFT JOIN covered ON covered.series_id=selected.series_id
     ), parts AS (
       SELECT * FROM retained
       UNION ALL
-      SELECT s.series_id,date_bin('1 hour',s.ts,'1970-01-01'::timestamptz),count(*)::bigint,
-        sum(s.value),min(s.value),max(s.value),(array_agg(s.value ORDER BY s.ts DESC))[1],max(s.ts)
-      FROM pulse.metric_samples s
-      WHERE s.base_id=${query.baseId}::uuid AND s.series_id=ANY(${toPgUuidArray(seriesIds)}::uuid[])
-        AND s.ts>=${window.since} AND s.ts<${window.until}
-        AND NOT EXISTS(SELECT 1 FROM retained r WHERE r.series_id=s.series_id AND s.ts>=r.bucket AND s.ts<r.bucket+interval '1 hour')
-      GROUP BY s.series_id,2
+      SELECT raw.* FROM gaps CROSS JOIN LATERAL (
+        SELECT s.series_id,date_bin('1 hour',s.ts,'1970-01-01'::timestamptz),count(*)::bigint,
+          sum(s.value),min(s.value),max(s.value),(array_agg(s.value ORDER BY s.ts DESC))[1],max(s.ts)
+        FROM pulse.metric_samples s
+        WHERE s.base_id=${query.baseId}::uuid AND s.series_id=gaps.series_id
+          AND s.ts>=lower(gaps.range) AND s.ts<upper(gaps.range)
+        GROUP BY s.series_id,2
+      ) raw
     )
     SELECT series_id,date_bin(${window.bucketInterval}::interval,bucket,'1970-01-01'::timestamptz) AS bucket,
       ${hourlyRollupAggregateSql(query.aggregation)} AS value
