@@ -115,7 +115,7 @@ All three collections are optional, but the batch must contain at least one item
 | `resource` | No | Explicit `{type, id, label?}` for the observed object; omit or use null for no resource. |
 | `dimensions` | No | Exact-match labels distinguishing variants. |
 
-A metric variant is identified by metric name, authenticated source, resource identity, and normalized dimensions. Sending the same variant and timestamp again updates that sample rather than creating a second sample. Keep type and unit stable for one metric name: the first observed type remains the metric definition, while a later non-null unit can update its unit.
+A metric variant is identified by metric name, authenticated source, resource identity, and normalized dimensions. Sending the same variant and timestamp again updates that sample rather than creating a second sample. The first accepted sample fixes the type and unit for that metric name within its base. Later samples must match both, including a null or omitted unit; a conflict rejects the entire batch.
 
 One metric may have at most 10,000 variants in one base. Values such as visitor IDs, request IDs, session IDs, full URLs, timestamps, or IP addresses create too many variants and belong in events instead. Pulse rejects a batch that would exceed the metric's variant limit.
 
@@ -126,7 +126,6 @@ One metric may have at most 10,000 variants in one base. Values such as visitor 
   "kind": "order.created",
   "ts": "2026-07-12T12:00:00.000Z",
   "value": 149.9,
-  "resource": { "type": "order", "id": "1234" },
   "actorId": "customer:42",
   "sessionId": "checkout-session-8",
   "correlationId": "checkout-1234",
@@ -158,7 +157,6 @@ One metric may have at most 10,000 variants in one base. Values such as visitor 
 | `kind` | Yes | Non-empty event kind. |
 | `ts` | No | Event ISO datetime; server time is used when omitted. |
 | `value` | No | Optional finite numeric value or null. |
-| `resource` | No | Explicit `{type, id, label?}` for the observed object. |
 | `actorId` | No | Actor responsible for the event. |
 | `sessionId` | No | Session grouping related events. |
 | `correlationId` | No | Identifier joining one process across events. |
@@ -371,4 +369,4 @@ The first accepted sample fixes the metric type and unit within its base. Later 
 
 Scheduled metrics sources use whole-minute intervals from 60 through 86400 seconds. Scheduling is based on the scheduled slot, so completion time does not postpone the next minute. Only one scrape per source runs at a time. Fetching headers and the complete body share a 15-second timeout; the response limit is 10 MiB and the sample limit is 50000. All accepted samples in an attempt use the same collection time.
 
-The Prometheus adapter accepts explicitly declared gauge and counter families. It reports skipped histogram, summary, undeclared, malformed, and nonfinite samples in the source diagnostics and scrape history. It does not reinterpret histogram or summary suffixes as counters. The adapter uses `instance`, `host`, or `node` as target identity, falling back to the endpoint host and port. This inference belongs to the adapter; HTTP ingest requires an explicit resource.
+The Prometheus adapter accepts explicitly declared gauge and counter families. It reports skipped histogram, summary, undeclared, malformed, and nonfinite samples in the source diagnostics and scrape history. It does not reinterpret histogram or summary suffixes as counters. The adapter uses `instance`, `host`, or `node` as target identity, falling back to the endpoint host and port. This inference belongs to the adapter. HTTP ingest creates a resource association only when you supply `resource`; omitting it or sending null records the signal without a resource.
