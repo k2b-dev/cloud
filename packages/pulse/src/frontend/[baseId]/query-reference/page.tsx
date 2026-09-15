@@ -1,6 +1,6 @@
 import type { AuthContext } from "@k2b/cloud/server";
 import { expectUserBackedActor, getLocale } from "@k2b/cloud/server";
-import { getRuntimeContext } from "@k2b/cloud/ssr";
+import { preloadLayoutHelp } from "@k2b/cloud/ssr/help";
 import { ssr } from "../../../config";
 import { pulseService } from "../../../service";
 import { projectPublicRelations, projectSources, resolvePublicId } from "../../../service/public-resources";
@@ -39,7 +39,7 @@ export default ssr<AuthContext>(async (c) => {
     projectPublicRelations(series),
     projectPublicRelations(fieldsResult.ok ? fieldsResult.data : []),
   ]);
-  const helpDocuments = getRuntimeContext(c).apps.find((registeredApp) => registeredApp.id === "pulse")?.help?.documents ?? [];
+  const helpDocuments = (await preloadLayoutHelp(c, "pulse"))?.documents ?? [];
 
   return () => (
     <PulseQueryReferenceWindow
