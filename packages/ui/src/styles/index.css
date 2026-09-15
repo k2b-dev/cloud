@@ -2226,7 +2226,7 @@
 
 .k2b-ui .k2b-discussion__status button:hover,
 .k2b-ui .k2b-discussion__load-more:hover {
-  background: var(--k2b-surface-subtle);
+  background: var(--k2b-surface-muted);
 }
 
 .k2b-ui .k2b-discussion__load-more:disabled {

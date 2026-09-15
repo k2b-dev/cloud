@@ -113,7 +113,7 @@
 .artifact-workspace__tab { display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: auto; padding: .5rem; }
 .artifact-workspace__tab[hidden] { display: none; }
 .artifact-panel { display: flex; flex: 1; flex-direction: column; gap: .5rem; min-height: 0; min-width: 0; overflow: hidden; }
-.artifact-panel__preview { flex: 1; min-height: 0; overflow: auto; padding: .5rem; border-radius: var(--ui-radius-frame); background: var(--k2b-surface-subtle, var(--k2b-surface)); }
+.artifact-panel__preview { flex: 1; min-height: 0; overflow: auto; padding: .5rem; border-radius: var(--ui-radius-frame); background: var(--k2b-surface); }
 .artifact-panel__launch { display: grid; place-content: center; justify-items: center; gap: 1rem; min-height: 12rem; }
 .artifact-panel__console { display: flex; flex-direction: column; gap: .5rem; flex: 0 1 auto; min-height: 0; max-height: 60%; }
 .artifact-panel__console > .k2b-inline-guidance, .artifact-console__header, .artifact-console__caption { flex-shrink: 0; }
@@ -132,7 +132,7 @@
 
 /* Recording replaces footer controls with explicit cancel and finish actions. */
 .k2b-ui .assistant-recording-footer { display: flex; align-items: center; gap: .75rem; width: 100%; min-width: 0; }
-.k2b-ui .assistant-recording-action { flex: 0 0 auto; width: 1.875rem; height: 1.875rem; padding: 0; border-radius: 50%; background: var(--k2b-surface-subtle); color: var(--k2b-text); }
+.k2b-ui .assistant-recording-action { flex: 0 0 auto; width: 1.875rem; height: 1.875rem; padding: 0; border-radius: 50%; background: var(--k2b-surface-muted); color: var(--k2b-text); }
 .k2b-ui .assistant-recording-action i { font-size: .875rem; }
 .k2b-ui .assistant-recording-stop { display: block; width: .5625rem; height: .5625rem; border-radius: 2px; background: currentColor; }
 .k2b-ui .assistant-recording-wave { display: flex; flex: 1; min-width: 0; align-items: center; justify-content: space-between; gap: 2px; height: 28px; overflow: hidden; color: var(--k2b-text-muted); }

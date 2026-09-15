@@ -194,7 +194,15 @@ for (const [property, owners] of customPropertyOwners) {
 }
 
 const runtimePropertyPrefixes = ["--app-", "--color-", "--sidebar-", "--tw-", "--workspace-"];
-const componentRuntimeProperties = new Set(["--ac-h", "--md-h"]);
+const componentRuntimeProperties = new Set([
+  "--ac-h",
+  "--md-h",
+  "--audio-scale", // assistant-dictation.tsx: live waveform level per bar
+  "--studio-accent-light", // StudioCard.tsx: palette selected by app id
+  "--studio-secondary", // StudioCard.tsx
+  "--studio-accent-dark", // StudioCard.tsx
+  "--analysis-min-width", // AnalyticsView.tsx: validated layout width
+]);
 // Cloud imports the UI package stylesheet. Its defaults are valid owners,
 // while Cloud and application styles may override those theme tokens.
 const uiCustomProperties = new Set(
