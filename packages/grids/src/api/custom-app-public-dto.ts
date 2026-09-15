@@ -4,7 +4,7 @@ import { type PublicResourceType, projectPublicIds } from "../service/public-res
 
 export const requiredProjected = (ids: ReadonlyMap<string, string>, internalId: string, type: PublicResourceType): string => {
   const publicId = ids.get(internalId);
-  if (!publicId) throw new Error(`Missing public id for Grids ${type} ${internalId}`);
+  if (!publicId) throw new Error(`Missing public id for Grids ${type}`);
   return publicId;
 };
 
@@ -16,26 +16,38 @@ const collectUuidValues = (value: unknown, output: Set<string>): void => {
   if (Array.isArray(value)) for (const item of value) collectUuidValues(item, output);
 };
 
+const projectRelationValue = (value: unknown, recordIds: ReadonlyMap<string, string>): unknown => {
+  if (typeof value === "string") return requiredProjected(recordIds, value, "record");
+  if (Array.isArray(value)) return value.map((item) => projectRelationValue(item, recordIds));
+  return value;
+};
+
 const projectRecordValues = (
   values: Readonly<Record<string, unknown>>,
   fieldIds: ReadonlyMap<string, string>,
   recordIds: ReadonlyMap<string, string>,
   relationFieldIds: ReadonlySet<string>,
 ): Record<string, unknown> => {
-  const projectValue = (value: unknown): unknown => {
-    if (typeof value === "string") return recordIds.get(value) ?? value;
-    if (Array.isArray(value)) return value.map(projectValue);
-    return value;
-  };
   return Object.fromEntries(
     Object.entries(values).map(([fieldId, value]) => [
-      fieldIds.get(fieldId) ?? fieldId,
-      relationFieldIds.has(fieldId) ? projectValue(value) : value,
+      projectFieldKey(fieldId, fieldIds),
+      relationFieldIds.has(fieldId) ? projectRelationValue(value, recordIds) : value,
     ]),
   );
 };
 
-const projectField = (field: Field, tableIds: ReadonlyMap<string, string>, fieldIds: ReadonlyMap<string, string>) => {
+const projectFieldKey = (key: string, fieldIds: ReadonlyMap<string, string>): string => {
+  const [id] = key.split("__");
+  if (!id || !/^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(id)) return key;
+  return `${requiredProjected(fieldIds, id, "field")}${key.slice(id.length)}`;
+};
+
+const projectField = (
+  field: Field,
+  tableIds: ReadonlyMap<string, string>,
+  fieldIds: ReadonlyMap<string, string>,
+  recordIds: ReadonlyMap<string, string>,
+) => {
   const config = { ...field.config };
   if (typeof config.targetTableId === "string") config.targetTableId = requiredProjected(tableIds, config.targetTableId, "table");
   if (typeof config.displayFieldId === "string") config.displayFieldId = requiredProjected(fieldIds, config.displayFieldId, "field");
@@ -55,7 +67,7 @@ const projectField = (field: Field, tableIds: ReadonlyMap<string, string>, field
     required: field.required,
     presentable: field.presentable,
     hideInTable: field.hideInTable,
-    defaultValue: field.defaultValue,
+    defaultValue: field.type === "relation" ? projectRelationValue(field.defaultValue, recordIds) : field.defaultValue,
     indexed: field.indexed,
     uniqueConstraint: field.uniqueConstraint,
     deletedAt: field.deletedAt,
@@ -64,14 +76,14 @@ const projectField = (field: Field, tableIds: ReadonlyMap<string, string>, field
   };
 };
 
-export const projectGridRecord = async (record: GridRecord, fields: readonly Field[]) => {
+export const projectGridRecord = async (record: GridRecord, fields: readonly Field[], projectIds = projectPublicIds) => {
   const relationFieldIds = new Set(fields.filter((field) => field.type === "relation").map((field) => field.id));
   const recordValueIds = new Set<string>();
   for (const [fieldId, value] of Object.entries(record.data)) if (relationFieldIds.has(fieldId)) collectUuidValues(value, recordValueIds);
   const [recordIds, tableIds, fieldIds] = await Promise.all([
-    projectPublicIds("record", [record.id, ...recordValueIds]),
-    projectPublicIds("table", [record.tableId]),
-    projectPublicIds("field", Object.keys(record.data)),
+    projectIds("record", [record.id, ...recordValueIds]),
+    projectIds("table", [record.tableId]),
+    projectIds("field", Object.keys(record.data)),
   ]);
   return {
     id: requiredProjected(recordIds, record.id, "record"),
@@ -87,12 +99,16 @@ export const projectGridRecord = async (record: GridRecord, fields: readonly Fie
   };
 };
 
-export const projectPublishedRecords = async (published: NonNullable<Awaited<ReturnType<typeof executePublishedCustomAppRecords>>>) => {
+export const projectPublishedRecords = async (
+  published: NonNullable<Awaited<ReturnType<typeof executePublishedCustomAppRecords>>>,
+  projectIds = projectPublicIds,
+) => {
   const tableInternalIds = new Set([published.primaryTableId]);
   const fieldInternalIds = new Set<string>();
   const recordInternalIds = new Set<string>();
   const fileInternalIds = new Set<string>();
   const addField = (field: Field) => {
+    if (field.type === "relation") collectUuidValues(field.defaultValue, recordInternalIds);
     fieldInternalIds.add(field.id);
     tableInternalIds.add(field.tableId);
     const targetTableId = field.config.targetTableId;
@@ -126,7 +142,7 @@ export const projectPublishedRecords = async (published: NonNullable<Awaited<Ret
   const relationValueKeys = new Set(relationFieldIds);
   if (published.response.ok)
     for (const column of published.response.columns)
-      if (column.fieldId && relationFieldIds.has(column.fieldId)) relationValueKeys.add(column.key);
+      if (column.type === "relation" && (column.sqlType === "uuid" || column.sqlType === "uuid[]")) relationValueKeys.add(column.key);
   if (published.response.ok)
     for (const row of published.response.rows)
       for (const [fieldId, value] of Object.entries(row.values))
@@ -158,10 +174,10 @@ export const projectPublishedRecords = async (published: NonNullable<Awaited<Ret
   const calendarConfig = published.cards?.displayConfig.calendar;
   if (calendarConfig?.dateFieldId) fieldInternalIds.add(calendarConfig.dateFieldId);
   const [tableIds, fieldIds, recordIds, fileIds] = await Promise.all([
-    projectPublicIds("table", [...tableInternalIds]),
-    projectPublicIds("field", [...fieldInternalIds]),
-    projectPublicIds("record", [...recordInternalIds]),
-    projectPublicIds("file", [...fileInternalIds]),
+    projectIds("table", [...tableInternalIds]),
+    projectIds("field", [...fieldInternalIds]),
+    projectIds("record", [...recordInternalIds]),
+    projectIds("file", [...fileInternalIds]),
   ]);
   const response = published.response.ok
     ? {
@@ -170,7 +186,7 @@ export const projectPublishedRecords = async (published: NonNullable<Awaited<Ret
           ...column,
           ...(column.tableId ? { tableId: requiredProjected(tableIds, column.tableId, "table") } : {}),
           ...(column.fieldId ? { fieldId: requiredProjected(fieldIds, column.fieldId, "field") } : {}),
-          key: column.fieldId && column.key === column.fieldId ? requiredProjected(fieldIds, column.fieldId, "field") : column.key,
+          key: projectFieldKey(column.key, fieldIds),
         })),
         rows: published.response.rows.map((row) => ({
           ...row,
@@ -178,15 +194,15 @@ export const projectPublishedRecords = async (published: NonNullable<Awaited<Ret
           ...(row.tableId ? { tableId: requiredProjected(tableIds, row.tableId, "table") } : {}),
           values: Object.fromEntries(
             Object.entries(row.values).map(([key, value]) => [
-              fieldIds.get(key) ?? key,
-              projectRecordValues({ [key]: value }, new Map(), recordIds, relationValueKeys)[key],
+              projectFieldKey(key, fieldIds),
+              relationValueKeys.has(key) ? projectRelationValue(value, recordIds) : value,
             ]),
           ),
         })),
       }
     : published.response;
   const presentation = published.presentation
-    ? { fields: published.presentation.fields.map((field) => projectField(field, tableIds, fieldIds)) }
+    ? { fields: published.presentation.fields.map((field) => projectField(field, tableIds, fieldIds, recordIds)) }
     : undefined;
   const rowNavigationParams = published.rowNavigationParams
     ? Object.fromEntries(
@@ -221,7 +237,7 @@ export const projectPublishedRecords = async (published: NonNullable<Awaited<Ret
               }
             : {}),
         },
-        fields: published.cards.fields.map((field) => projectField(field, tableIds, fieldIds)),
+        fields: published.cards.fields.map((field) => projectField(field, tableIds, fieldIds, recordIds)),
         records: published.cards.records.map((record) => ({
           id: requiredProjected(recordIds, record.id, "record"),
           tableId: requiredProjected(tableIds, record.tableId, "table"),

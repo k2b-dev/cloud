@@ -571,6 +571,80 @@ describe("workflow kernel Record launchers", () => {
 });
 
 describe("workflow kernel Grids App launchers", () => {
+  const authorization = {
+    kind: "custom-app-action" as const,
+    customAppId: "90000000-0000-4000-8000-000000000009",
+    publishedAt: "2026-08-13T12:00:00.000Z",
+    pageId: "request",
+    pageParams: {},
+    timeZone: "Europe/Berlin",
+    blockId: "actions",
+    actionId: "approve",
+    revision: 3,
+  };
+
+  test("a public App launcher never promotes supplied UUIDs into trusted bindings", async () => {
+    const item = setup(launcher({ kind: "customApp", inputMode: "prompt" }), workflow());
+    const result = await invokeCustomAppLauncher(customAppInput({ inputs: { record: recordId } }), item.deps);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.code).toBe("BAD_INPUT");
+      expect(result.error.message).not.toContain(recordId);
+    }
+    expect(item.resolveExplicitRecordIds).not.toHaveBeenCalled();
+    expect(item.invokeWorkflow).not.toHaveBeenCalled();
+  });
+
+  test("validates internal record and record-list bindings once per declared table", async () => {
+    const configuredWorkflow = workflow();
+    configuredWorkflow.plan.inputs.push({ name: "records", type: "recordList", config: { required: true } });
+    configuredWorkflow.plan.bindings["inputs.records.table"] = tableId;
+    const item = setup(launcher({ kind: "customApp", inputMode: "prompt" }), configuredWorkflow);
+    const inputs = { record: recordId, records: [recordId, secondRecordId] };
+
+    const result = await invokeCustomAppLauncher(customAppInput({ inputs, authorization }), item.deps);
+
+    expect(result.ok).toBe(true);
+    expect(item.resolveExplicitRecordIds).toHaveBeenCalledTimes(1);
+    expect(item.resolveExplicitRecordIds).toHaveBeenCalledWith(baseId, tableId, [recordId, secondRecordId], undefined);
+    expect(item.invokeWorkflow).toHaveBeenCalledWith(
+      expect.objectContaining({
+        inputs,
+        trustedRecordIds: new Map([[tableId, new Set([recordId, secondRecordId])]]),
+      }),
+    );
+  });
+
+  test("does not trust public IDs or UUID-shaped text inputs", async () => {
+    const configuredWorkflow = workflow();
+    configuredWorkflow.plan.inputs.push({ name: "note", type: "text", config: {} });
+    const item = setup(launcher({ kind: "customApp", inputMode: "prompt" }), configuredWorkflow);
+    const inputs = { record: "ABC123", note: secondRecordId };
+    const result = await invokeCustomAppLauncher(customAppInput({ inputs }), item.deps);
+    expect(result.ok).toBe(true);
+    expect(item.resolveExplicitRecordIds).not.toHaveBeenCalled();
+    expect(item.invokeWorkflow).toHaveBeenCalledWith(expect.objectContaining({ inputs, trustedRecordIds: new Map() }));
+  });
+
+  test("rejects unavailable internal records before starting the workflow", async () => {
+    const item = setup(launcher({ kind: "customApp", inputMode: "prompt" }), workflow(), {
+      resolveExplicitRecordIds: mock(async () => fail(err.notFound("Record"))),
+    });
+    const result = await invokeCustomAppLauncher(customAppInput({ inputs: { record: recordId }, authorization }), item.deps);
+    expect(result.ok).toBe(false);
+    expect(item.invokeWorkflow).not.toHaveBeenCalled();
+  });
+
+  test("does not resolve internal records before launcher authorization", async () => {
+    const item = setup(launcher({ kind: "customApp", inputMode: "prompt" }), workflow(), {
+      authorize: mock(async () => fail(err.forbidden())),
+    });
+    const result = await invokeCustomAppLauncher(customAppInput({ inputs: { record: recordId } }), item.deps);
+    expect(result.ok).toBe(false);
+    expect(item.resolveExplicitRecordIds).not.toHaveBeenCalled();
+    expect(item.invokeWorkflow).not.toHaveBeenCalled();
+  });
+
   test("uses only stored bindings for fixed launchers", async () => {
     const configuredWorkflow = workflow("message", "text");
     configuredWorkflow.plan.inputs.push({ name: "count", type: "number", config: {} });

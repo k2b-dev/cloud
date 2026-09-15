@@ -2,7 +2,7 @@
 id: grids-documents-pdfs
 title: Documents & PDFs
 icon: ti ti-file-type-pdf
-description: Create, generate, organize, and share PDFs from saved records.
+description: Create templates, generate PDF and data files, and inspect or share immutable documents.
 order: 135
 ---
 Document templates create PDFs from table records, for example invoices, contracts and labels.
@@ -10,6 +10,10 @@ Document templates create PDFs from table records, for example invoices, contrac
 Each template belongs to one table and defines one document family. A generated document belongs to one selected record, receives a stable number and filename, and keeps the exact source snapshot after the live records change. It appears in the record's Documents section, its template workspace, and the Base-wide **All documents** catalog.
 
 Use templates for formatted, shareable output; CSV/JSON exports for data exchange.
+
+Workflows can also create one PDF from several Records, free CSV/JSON/XML, DATEV booking batches, and SEPA transfer files. All are Documents, not just PDFs. See [workflow outputs](/app/grids/help/grids-workflows) for header/mapping configuration and [CAMT](/app/grids/help/grids-camt) for reading bank input.
+
+The financial serializers use stdlib 0.25.0. Grids owns permissions, captured inputs, IDs, duplicate-export claims and confirmation; stdlib owns format calculation and serialization. E-Invoice XML and SEPA XML also receive the format's pinned XSD validation at runtime. The generated PDF's actual embedded XML is read and compared with the structured artifact; a successful serializer alone does not prove the PDF contains it. This does not certify the whole business process.
 
 ## One immutable Document model {icon="shield-check"}
 

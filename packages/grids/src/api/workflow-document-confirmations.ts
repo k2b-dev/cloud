@@ -27,14 +27,14 @@ const preview = z
     number: z.string(),
     filename: z.string().nullable(),
     timeZone: z.string().optional(),
-    warnings: z.array(z.object({ code: z.enum(["extendedCharacters", "pastExecutionDate"]), message: z.string() }).strict()).optional(),
+    warnings: z.array(z.object({ code: z.literal("pastExecutionDate"), message: z.string() }).strict()).optional(),
     version: z.literal(1),
     source: z
       .object({
         capturedAt: z.iso.datetime(),
         rowCount: z.number().int().nonnegative(),
         selectionLimit: z.number().int().positive().nullable(),
-        kind: z.enum(["query", "values", "documents", "recordSnapshots"]),
+        kind: z.enum(["query", "values", "documents", "recordSnapshots", "file"]),
         query: z.string().nullable(),
       })
       .strict(),
@@ -110,7 +110,7 @@ export const createWorkflowDocumentConfirmationRoutes = () =>
             result.data.kind === "sepa-xml"
               ? sepaPreviewWarnings(result.data.input, dates.formatDateKey(new Date(), dateConfig)).map((code) => ({
                   code,
-                  message: code === "extendedCharacters" ? t.sepaExtendedCharacters : t.sepaPastExecutionDate,
+                  message: t.sepaPastExecutionDate,
                 }))
               : [];
           return ok({ ...result.data, timeZone: dateConfig.timeZone, warnings });

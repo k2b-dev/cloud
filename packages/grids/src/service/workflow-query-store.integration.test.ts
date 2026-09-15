@@ -1,12 +1,13 @@
 import { beforeAll, expect } from "bun:test";
 import { sql } from "bun";
 import { migrate as migrateCoreWorkflows } from "../../../core/src/migrate/core/workflows";
+import { toPublicWorkflowPayloads } from "../api/workflow-api-shared";
 import { migrate } from "../migrate";
 import { cleanupFixture, ctx, insertDslDbFixture, postgresTest } from "../query-dsl/sql-compiler.integration-fixtures";
 import { canonicalDocumentJson } from "./document-json";
 import { newShortId } from "./short-id";
 import { bindWorkflowQueryData, captureWorkflowQueryData } from "./workflow-query-data";
-import { loadWorkflowQueryData, persistWorkflowQueryDataInTransaction } from "./workflow-query-store";
+import { findWorkflowDocumentDataForStep, loadWorkflowQueryData, persistWorkflowQueryDataInTransaction } from "./workflow-query-store";
 import { deleteTestWorkflowScope, insertTestWorkflow, insertTestWorkflowRun } from "./workflow-test-fixture";
 
 beforeAll(async () => {
@@ -49,6 +50,15 @@ postgresTest("query payload is immutable, scoped, deduplicated and rolls back wi
     const loaded = await loadWorkflowQueryData({ baseId: fixture.baseId, runId, id: stored.data.id, sha256: stored.data.sha256 }, sql);
     if (!loaded.ok) throw new Error(loaded.error.message);
     expect(loaded.data.payload).toEqual(captured.data.payload);
+    const [publicReference] = await toPublicWorkflowPayloads([stored.data]);
+    expect(publicReference).toEqual({
+      kind: stored.data.kind,
+      stepKey: "steps.0",
+      sha256: stored.data.sha256,
+      rowCount: stored.data.rowCount,
+      capturedAt: stored.data.capturedAt,
+    });
+    expect(await findWorkflowDocumentDataForStep({ baseId: fixture.baseId, runId, stepKey: "steps.0" }, sql)).toEqual(loaded);
     await expect(
       Promise.resolve(sql`UPDATE grids.workflow_run_profile SET captured_bytes = NULL WHERE run_id = ${runId}::uuid`),
     ).rejects.toMatchObject({ errno: "23502" });
@@ -65,6 +75,7 @@ postgresTest("query payload is immutable, scoped, deduplicated and rolls back wi
       const denied = await loadWorkflowQueryData({ ...scope, id: stored.data.id, sha256: stored.data.sha256 }, sql);
       expect(denied.ok).toBe(false);
       if (!denied.ok) expect(denied.error.code).toBe("NOT_FOUND");
+      expect(await findWorkflowDocumentDataForStep({ ...scope, stepKey: "steps.0" }, sql)).toEqual({ ok: true, data: null });
     }
     const changedHash = await loadWorkflowQueryData({ baseId: fixture.baseId, runId, id: stored.data.id, sha256: "0".repeat(64) }, sql);
     expect(changedHash.ok).toBe(false);

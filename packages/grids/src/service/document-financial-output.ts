@@ -1,8 +1,9 @@
 import { err, fail, ok, type Result } from "@k2b/stdlib";
+import { datev, sepa } from "@k2b/stdlib/finance";
 import Decimal from "decimal.js";
 import { z } from "zod";
-import { DatevBatchSchema, DatevHeaderSchema } from "../document-profiles/datev-csv-contracts";
-import { SepaBatchSchema, SepaHeaderSchema } from "../document-profiles/sepa-xml-contracts";
+import { DatevBatchSchema, DatevHeaderSchema, datevFormatInput } from "../document-profiles/datev-csv-contracts";
+import { SepaBatchSchema, SepaHeaderSchema, sepaFormatInput } from "../document-profiles/sepa-xml-contracts";
 import type { WorkflowDocumentDataCapture } from "../workflows/query-contracts";
 import { canonicalDocumentJson } from "./document-json";
 import { documentServiceText } from "./document-messages";
@@ -120,7 +121,33 @@ export const normalizeFinancialDocumentOutput = (
   // Keep the discriminant correlated with its parsed input rather than casting
   // one financial schema into the other.
   if (config.kind === "datev-csv") {
-    return ok({ kind: config.kind, purpose: "accounting", input: DatevBatchSchema.parse(candidate.data), sha256 });
+    const input = DatevBatchSchema.parse(candidate.data);
+    const checked = datev.validate(datevFormatInput(input, data.capturedAt));
+    if (!checked.ok)
+      return fail(
+        err.badInput(
+          t.financialValuesInvalid({
+            fields: (checked.error.issues ?? [])
+              .slice(0, 8)
+              .map((issue) => issue.path.join("."))
+              .join(", "),
+          }),
+        ),
+      );
+    return ok({ kind: config.kind, purpose: "accounting", input, sha256 });
   }
-  return ok({ kind: config.kind, purpose: "payment", input: SepaBatchSchema.parse(candidate.data), sha256 });
+  const input = SepaBatchSchema.parse(candidate.data);
+  const checked = sepa.validate(sepaFormatInput(input, data.capturedAt));
+  if (!checked.ok)
+    return fail(
+      err.badInput(
+        t.financialValuesInvalid({
+          fields: (checked.error.issues ?? [])
+            .slice(0, 8)
+            .map((issue) => issue.path.join("."))
+            .join(", "),
+        }),
+      ),
+    );
+  return ok({ kind: config.kind, purpose: "payment", input, sha256 });
 };

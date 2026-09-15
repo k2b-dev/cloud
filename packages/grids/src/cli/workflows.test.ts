@@ -5,6 +5,7 @@ import { BulkLauncherRequestSchema } from "../api/workflow-public-contracts";
 import { buildWorkflowCatalog } from "../service/workflow-catalog";
 import { bindGridsWorkflow } from "../workflows/binder";
 import { type GridsWorkflowLauncherConfig, GridsWorkflowLauncherConfigSchema } from "../workflows/contracts";
+import type { WorkflowFilePreview } from "../workflows/file-preview-contracts";
 import { gridsWorkflows } from "../workflows/module";
 import { workflowCommands, workflowRunCommands } from "./workflows";
 import { WORKFLOW_REFERENCE, workflowRunRows, workflowStepRows } from "./workflows-support";
@@ -123,6 +124,45 @@ const basePage = { items: [{ id: baseId, name: "Bookshop" }], total: 1, limit: 5
 const resolutionResponses = () => [jsonResponse(basePage), jsonResponse([workflow])];
 
 describe("Grids workflow CLI", () => {
+  test("CAMT inspection stays read-only and JSON retains account report details", async () => {
+    const captureId = "steps.0";
+    const hash = "a".repeat(64);
+    const preview = {
+      filename: "bank.xml",
+      format: "camt.052.001.08",
+      messageId: "bank-report-1",
+      createdAt: "2026-09-15T12:00:00.000Z",
+      capturedAt: "2026-09-15T12:00:00.000Z",
+      pagination: { pageNumber: "1", lastPage: false },
+      reports: [
+        {
+          id: "report-1",
+          account: "account-1",
+          currency: "EUR",
+          period: null,
+          entryCount: 1,
+          statuses: { BOOK: 1 },
+          pagination: null,
+          details: { entries: [{ amount: { amount: "125.50", currency: "EUR" }, direction: "DBIT", reversal: true }] },
+        },
+      ],
+    } satisfies WorkflowFilePreview;
+    const result = createContext(["workflow-runs", "file", runId, captureId], { sha256: hash }, [jsonResponse(preview)]);
+    await cli.run(result.ctx);
+    expect(result.calls).toEqual([{ path: `/api/grids/workflows/runs/${runId}/files/${captureId}?sha256=${hash}`, init: undefined }]);
+    expect(result.tables[0]).toEqual([
+      expect.objectContaining({ account: "account-1", entries: 1, statuses: "BOOK: 1", lastPage: "unknown" }),
+    ]);
+    expect(result.lines.join("\n")).toContain("last page: false");
+    const jsonResult = createContext(["workflow-runs", "file", runId, captureId], { sha256: hash, json: true }, [jsonResponse(preview)]);
+    jsonResult.ctx.options.output = "json";
+    await cli.run(jsonResult.ctx);
+    expect(JSON.parse(jsonResult.lines.join("\n"))).toEqual(preview);
+    expect(jsonResult.tables).toHaveLength(0);
+    const invalid = createContext(["workflow-runs", "file", runId, "11111111-1111-4111-8111-111111111111"], { sha256: hash });
+    await expect(cli.run(invalid.ctx)).rejects.toThrow("capture UUID");
+    expect(invalid.calls).toHaveLength(0);
+  });
   test("financial confirmation needs an explicitly reviewed hash and never refreshes it implicitly", async () => {
     const hash = "a".repeat(64);
     const missingApproval = createContext(["workflow-runs", "confirm-export", runId, "Doc001"], { sha256: hash });
@@ -194,7 +234,9 @@ describe("Grids workflow CLI", () => {
     expect(WORKFLOW_REFERENCE.language.atomicPredicates).toContain("record-list references");
     expect(WORKFLOW_REFERENCE.language.atomicPredicates).not.toContain("Formula fields and aggregate arithmetic are not supported");
     expect(WORKFLOW_REFERENCE.language.recordLifecycle).toContain("deleteRecord moves one non-finalized Record to trash");
-    expect(WORKFLOW_REFERENCE.language.recordLifecycle).toContain("finalizeRecord.record accepts one Record reference, never a list or tree");
+    expect(WORKFLOW_REFERENCE.language.recordLifecycle).toContain(
+      "finalizeRecord.record accepts one Record reference, never a list or tree",
+    );
     expect(WORKFLOW_REFERENCE.invocation.direct.inputs).toEqual({ item: "Rec001" });
     expect(WORKFLOW_REFERENCE.launchers.correctionDraft.config.intent).toBe("correction");
     expect(WORKFLOW_REFERENCE.launchers.cancellationDraft.config.intent).toBe("cancellation");

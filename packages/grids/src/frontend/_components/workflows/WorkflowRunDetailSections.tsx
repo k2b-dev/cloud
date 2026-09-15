@@ -1,7 +1,9 @@
 import { Button, DetailPanel, IconButton, NoticeCard, Placeholder, StatusBadge, Tooltip, useLocale } from "@k2b/ui";
 import { For, Show } from "solid-js";
+import { workflowFileReferenceFromOutcome } from "../../../workflows/file-preview-contracts";
 import type { PublicDocument } from "../documents/public-document-types";
 import type { PublicWorkflowRun, PublicWorkflowStepRun, PublicWorkspaceWorkflowRunDetail } from "../workspace/workspace-public-state-model";
+import { camtReportMessages, openCamtReportDialog } from "./CamtReportDialog";
 import { financialExportMessages } from "./financial-export-messages";
 import { workflowMessages } from "./messages";
 import {
@@ -113,6 +115,7 @@ export function WorkflowRunInputsSection(props: { inputs: WorkflowRunInputRow[] 
 }
 
 export function WorkflowRunStepsSection(props: {
+  runId: string;
   steps: PublicWorkflowStepRun[];
   truncated: boolean;
   loading: boolean;
@@ -160,6 +163,15 @@ export function WorkflowRunStepsSection(props: {
                       <i class="ti ti-file-check" aria-hidden="true" /> {financialExportMessages.resolve([locale()]).t.title}
                     </Button>
                   </div>
+                </Show>
+                <Show when={workflowFileReferenceFromOutcome(step.outcome)}>
+                  {(reference) => (
+                    <div class="col-span-3">
+                      <Button variant="secondary" size="sm" onClick={() => void openCamtReportDialog(props.runId, reference())}>
+                        <i class="ti ti-building-bank" aria-hidden="true" /> {camtReportMessages.resolve([locale()]).t.open}
+                      </Button>
+                    </div>
+                  )}
                 </Show>
                 <For each={step.action ? workflowStepPlannedEffects(step.outcome, locale()) : []}>
                   {(effect) => (

@@ -17,9 +17,8 @@ Sobald die Datensätze nützlich sind, können dieselben gespeicherten Daten ver
 
 - **Ansichten** zeigen die Datensätze, die Personen für eine Aufgabe benötigen, etwa verfügbare Gegenstände oder überfällige Ausleihen.
 - **Formulare** bieten eine gezielte Möglichkeit, Datensätze anzulegen, ohne die vollständige Tabelle zu öffnen.
-- **Grids Apps** verbinden Kennzahlen, Diagramme, Datensatzlisten, Formulare, Anleitungen, Links und Workflow-Aktionen.
-- **Grids Apps** veröffentlichen gezielte, serverseitig abgesicherte Seiten für angemeldete oder öffentliche Zielgruppen, ohne den vollständigen Basisarbeitsbereich zu öffnen.
-- **Dokumente** erzeugen aus Datensätzen PDF-Dateien wie Rechnungen, Etiketten, Vereinbarungen und Berichte.
+- **Grids Apps** verbinden Kennzahlen, Diagramme, Datensatzlisten, Formulare, Anleitungen, Links und Workflow-Aktionen in serverseitig abgesicherten Seiten für angemeldete oder öffentliche Zielgruppen, ohne den vollständigen Base-Arbeitsbereich zu öffnen.
+- **Dokumente** bewahren erzeugte PDF-, CSV-, JSON-, XML-, SEPA- und DATEV-Dateien mit ihren erfassten Quelldaten auf.
 - **Workflows** führen wiederholbare Schritte manuell, nach einem Scan oder einer Auswahl, nach Zeitplan oder nach einer Änderung an einem Datensatz aus.
 - **Kombinierte Tabellen** veröffentlichen aus Tabellen mehrerer Basen einen zentral geregelten, schreibgeschützten Datenbestand.
 
@@ -36,6 +35,34 @@ Wähle einen kleinen Prozess mit bereits klar definierten Einträgen, etwa Gerä
 4. Erstelle eine Ansicht für eine wiederkehrende Aufgabe.
 5. Füge ein Formular, eine Grids App, ein Dokument oder einen Workflow erst hinzu, wenn dadurch ein konkreter manueller Schritt entfällt.
 :::
+
+## Alle Themen
+
+- [Bases, Tabellen, Datensätze und Relationen](/app/grids/help/grids-core-model)
+- [Base aufbauen und Einstellungen wählen](/app/grids/help/grids-build-base)
+- [Vorlagen und Abläufe: Abrechnung, Auslagen, Inventar](/app/grids/help/grids-build-business-app)
+- [Tabellenoptionen, Indizes, Historie, Finalisierung und Vier Augen](/app/grids/help/grids-tables-fields)
+- [Alle Feldtypen, ID-Strategien, Optionen und Standardwerte](/app/grids/help/grids-field-configuration)
+- [Importe, externe Identitäten und CSV-/JSON-Exporte](/app/grids/help/grids-data-exchange)
+- [Ansichten, Diagramme, Karten, Kalender und Berichte](/app/grids/help/grids-views-reports)
+- [Lesende Datenbestände aus mehreren Bases](/app/grids/help/grids-combined-tables)
+- [GQL-Syntax, Joins, unabhängige Summen und Dokumentmetadaten](/app/grids/help/grids-gql)
+- [Formelfunktionen, Typen, exakte Dezimalwerte und Diagnosen](/app/grids/help/grids-formulas)
+- [Formulare, kompaktes Layout, Standards, Inline-Erstellung und Zusammenfassungen](/app/grids/help/grids-forms)
+- [Was eine Grids App ist](/app/grids/help/grids-custom-apps)
+- [Eine fokussierte Anwendung aufbauen](/app/grids/help/grids-build-custom-app)
+- [Seiten, Parameter, Blöcke, Abfragen und Navigation](/app/grids/help/grids-custom-app-pages-blocks)
+- [Vollständiger App-API- und Konfigurationsvertrag](/app/grids/help/grids-custom-app-api)
+- [YAML prüfen, planen, anwenden und wiederherstellen](/app/grids/help/grids-custom-app-yaml-cli)
+- [Sicher veröffentlichen und jede Zielgruppe prüfen](/app/grids/help/grids-publish-custom-app)
+- [Vorlagen, PDF/E-Rechnungen, erzeugte Dateien und Quelldatensätze](/app/grids/help/grids-documents-pdfs)
+- [Aktionen, Trigger, Starter, Dateiausgaben, Bestätigungen und Wiederholung](/app/grids/help/grids-workflows)
+- [CAMT-Bankberichte lesen, ohne Zahlungen anzulegen](/app/grids/help/grids-camt)
+- [Eingaben, Grenzen und Prüfung der Finanzformate](/app/grids/help/grids-financial-formats)
+- [Base-Rechte, App-Zielgruppen und anonyme Formulare](/app/grids/help/grids-permissions)
+- [Aufbewahrung, Sperren, Papierkorb und Vernichtung](/app/grids/help/grids-retention-preservation)
+- [Evidence-Exporte und Integritätsprüfung](/app/grids/help/grids-evidence-exports)
+- [Fehler, Konflikte und unterbrochene Läufe beheben](/app/grids/help/grids-operations-troubleshooting)
 
 In dieser Reihenfolge bleiben Fehler kostengünstig. Eine klare Tabelle und einige repräsentative Datensätze erleichtern alle späteren Entscheidungen.
 

@@ -6,6 +6,7 @@ import {
   isWorkspaceAccessRefreshCurrent,
   resolveWorkspaceEventCursor,
   sendWorkspaceMessage,
+  toPublicWorkflowRunEvent,
   workspaceCloseCodeForError,
 } from "./ws";
 
@@ -17,6 +18,80 @@ const publicBaseId = "BASE01";
 const publicWorkflowId = "WORK01";
 const publicTableId = "TABL01";
 const publicRecordId = "RECD01";
+
+test("workflow live events project nested results through the same boundary as REST", async () => {
+  const runId = "55555555-5555-4555-8555-555555555555";
+  const captureId = "66666666-6666-4666-8666-666666666666";
+  const at = "2026-09-15T12:00:00.000Z";
+  const capture = { kind: "fileSnapshot", id: captureId, sha256: "a".repeat(64), rowCount: 1, capturedAt: at };
+  const projected = await toPublicWorkflowRunEvent(
+    {
+      v: 1,
+      baseId,
+      workflowId,
+      scope: { kind: "workflow" },
+      run: {
+        id: runId,
+        baseId,
+        workflowId,
+        launcherId: null,
+        workflowRevision: 1,
+        mode: "execute",
+        channel: "api",
+        status: "failed",
+        error: { code: "BAD_INPUT", message: `Missing ${recordId}`, retryable: false },
+        resultMessage: null,
+        createdAt: at,
+        startedAt: at,
+        finishedAt: at,
+      },
+      steps: [
+        {
+          runId,
+          key: "steps.0",
+          sourcePath: ["steps", 0],
+          iterationPath: [],
+          kind: "action",
+          action: "parseDocument",
+          status: "completed",
+          outcome: { state: "succeeded", output: capture },
+          executionGeneration: 0,
+          startedAt: at,
+          finishedAt: at,
+        },
+        {
+          runId,
+          key: "steps.1",
+          sourcePath: ["steps", 1],
+          iterationPath: [],
+          kind: "action",
+          action: "getRecord",
+          status: "completed",
+          outcome: { state: "succeeded", output: { kind: "record", recordId, tableId } },
+          executionGeneration: 0,
+          startedAt: at,
+          finishedAt: at,
+        },
+      ],
+    },
+    async (_type, ids) => {
+      const map = new Map([
+        [baseId, publicBaseId],
+        [workflowId, publicWorkflowId],
+        [runId, "RUN001"],
+        [recordId, publicRecordId],
+        [tableId, publicTableId],
+      ]);
+      return new Map(ids.flatMap((id) => (map.has(id) ? [[id, map.get(id)!]] : [])));
+    },
+    async () => new Map([[captureId, "steps.0"]]),
+  );
+  expect(projected.run.id).toBe("RUN001");
+  expect(projected.run.error?.message).toBe("Missing …");
+  expect(projected.steps[0]?.outcome).toMatchObject({ output: { stepKey: "steps.0" } });
+  expect(projected.steps[1]?.outcome).toMatchObject({ output: { recordId: publicRecordId, tableId: publicTableId } });
+  for (const id of [runId, captureId, recordId, tableId, baseId, workflowId]) expect(JSON.stringify(projected)).not.toContain(id);
+});
 
 const testSocket = (sendStatus = 1) => {
   const messages: Array<{ type: string; payload?: Record<string, unknown> }> = [];

@@ -104,11 +104,45 @@ export const WorkflowRecordSnapshotPayloadSchema = z
     "Inconsistent row count",
   );
 
+export const WorkflowFilePayloadSchema = z
+  .object({
+    ...WorkflowValuesPayloadSchema.shape,
+    version: z.literal(5),
+    source: z
+      .object({
+        kind: z.literal("file"),
+        format: z.literal("camt.052.001.08"),
+        fileId: z.uuid(),
+        tableId: z.uuid(),
+        recordId: z.uuid(),
+        fieldId: z.uuid(),
+        filename: z.string().min(1).max(255),
+        sha256: z.string().regex(/^[a-f0-9]{64}$/),
+        messageId: z.string(),
+        createdAt: z.string(),
+        pagination: z
+          .object({ pageNumber: z.string().regex(/^\d+$/), lastPage: z.boolean() })
+          .strict()
+          .optional(),
+        // Preserve exact original bytes, including BOM, without retaining a live attachment.
+        bytesBase64: z.string().regex(/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/),
+      })
+      .strict(),
+    tableIds: z.array(z.uuid()).length(1),
+  })
+  .strict()
+  .refine(
+    (value) =>
+      value.rows.length === value.rowCount && value.rowOrigins.length === value.rowCount && value.tableIds[0] === value.source.tableId,
+    "Inconsistent file capture",
+  );
+
 export const WorkflowDocumentDataPayloadSchema = z.union([
   WorkflowQueryPayloadSchema,
   WorkflowValuesPayloadSchema,
   WorkflowDocumentSnapshotPayloadSchema,
   WorkflowRecordSnapshotPayloadSchema,
+  WorkflowFilePayloadSchema,
 ]);
 export type WorkflowDocumentDataCapture = Omit<WorkflowQueryCapture, "payload"> & {
   payload: z.infer<typeof WorkflowDocumentDataPayloadSchema>;

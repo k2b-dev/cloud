@@ -2,14 +2,18 @@ import { defineHelp } from "@k2b/cloud/server";
 import buildBaseDe from "./documents/de/grids-build-base.help.md" with { type: "text" };
 import buildBusinessAppDe from "./documents/de/grids-build-business-app.help.md" with { type: "text" };
 import buildCustomAppDe from "./documents/de/grids-build-custom-app.help.md" with { type: "text" };
+import camtDe from "./documents/de/grids-camt.help.md" with { type: "text" };
 import combinedTablesDe from "./documents/de/grids-combined-tables.help.md" with { type: "text" };
 import coreModelDe from "./documents/de/grids-core-model.help.md" with { type: "text" };
 import customAppApiDe from "./documents/de/grids-custom-app-api.help.md" with { type: "text" };
 import customAppPagesBlocksDe from "./documents/de/grids-custom-app-pages-blocks.help.md" with { type: "text" };
 import customAppYamlCliDe from "./documents/de/grids-custom-app-yaml-cli.help.md" with { type: "text" };
 import customAppsDe from "./documents/de/grids-custom-apps.help.md" with { type: "text" };
+import dataExchangeDe from "./documents/de/grids-data-exchange.help.md" with { type: "text" };
 import documentsDe from "./documents/de/grids-documents-pdfs.help.md" with { type: "text" };
 import evidenceExportsDe from "./documents/de/grids-evidence-exports.help.md" with { type: "text" };
+import fieldConfigurationDe from "./documents/de/grids-field-configuration.help.md" with { type: "text" };
+import financialFormatsDe from "./documents/de/grids-financial-formats.help.md" with { type: "text" };
 import formsDe from "./documents/de/grids-forms.help.md" with { type: "text" };
 import formulasDe from "./documents/de/grids-formulas.help.md" with { type: "text" };
 import gqlDe from "./documents/de/grids-gql.help.md" with { type: "text" };
@@ -24,14 +28,18 @@ import workflowsDe from "./documents/de/grids-workflows.help.md" with { type: "t
 import buildBase from "./documents/en/grids-build-base.help.md" with { type: "text" };
 import buildBusinessApp from "./documents/en/grids-build-business-app.help.md" with { type: "text" };
 import buildCustomApp from "./documents/en/grids-build-custom-app.help.md" with { type: "text" };
+import camt from "./documents/en/grids-camt.help.md" with { type: "text" };
 import combinedTables from "./documents/en/grids-combined-tables.help.md" with { type: "text" };
 import coreModel from "./documents/en/grids-core-model.help.md" with { type: "text" };
 import customAppApi from "./documents/en/grids-custom-app-api.help.md" with { type: "text" };
 import customAppPagesBlocks from "./documents/en/grids-custom-app-pages-blocks.help.md" with { type: "text" };
 import customAppYamlCli from "./documents/en/grids-custom-app-yaml-cli.help.md" with { type: "text" };
 import customApps from "./documents/en/grids-custom-apps.help.md" with { type: "text" };
+import dataExchange from "./documents/en/grids-data-exchange.help.md" with { type: "text" };
 import documents from "./documents/en/grids-documents-pdfs.help.md" with { type: "text" };
 import evidenceExports from "./documents/en/grids-evidence-exports.help.md" with { type: "text" };
+import fieldConfiguration from "./documents/en/grids-field-configuration.help.md" with { type: "text" };
+import financialFormats from "./documents/en/grids-financial-formats.help.md" with { type: "text" };
 import forms from "./documents/en/grids-forms.help.md" with { type: "text" };
 import formulas from "./documents/en/grids-formulas.help.md" with { type: "text" };
 import gql from "./documents/en/grids-gql.help.md" with { type: "text" };
@@ -53,6 +61,8 @@ export const gridsHelp = defineHelp({
       buildBase,
       buildBusinessApp,
       tablesFields,
+      fieldConfiguration,
+      dataExchange,
       viewsReports,
       combinedTables,
       gql,
@@ -65,7 +75,9 @@ export const gridsHelp = defineHelp({
       customAppApi,
       customApps,
       documents,
+      financialFormats,
       workflows,
+      camt,
       permissions,
       evidenceExports,
       retentionPreservation,
@@ -77,6 +89,8 @@ export const gridsHelp = defineHelp({
       buildBaseDe,
       buildBusinessAppDe,
       tablesFieldsDe,
+      fieldConfigurationDe,
+      dataExchangeDe,
       viewsReportsDe,
       combinedTablesDe,
       gqlDe,
@@ -89,7 +103,9 @@ export const gridsHelp = defineHelp({
       customAppApiDe,
       customAppsDe,
       documentsDe,
+      financialFormatsDe,
       workflowsDe,
+      camtDe,
       permissionsDe,
       evidenceExportsDe,
       retentionPreservationDe,

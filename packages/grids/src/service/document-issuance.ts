@@ -16,7 +16,7 @@ import { persistIssuedDocument } from "./document-issuance-storage";
 import { canonicalDocumentJson, canonicalJson } from "./document-json";
 import { documentNumberFor } from "./document-liquid";
 import { type DocumentDbRow, hydrateDocuments } from "./document-mappers";
-import { documentServiceText, isGermanDocumentLocale } from "./document-messages";
+import { documentServiceText } from "./document-messages";
 import { validateDocumentProfileInput } from "./document-profile-validation";
 import { DocumentQueryOutputSchema, validateDocumentQueryOutput } from "./document-query-output";
 import { capturedDocumentRecords, resolveCapturedDocumentRecords } from "./document-record-sources";
@@ -1258,7 +1258,9 @@ export const createDocumentIssuanceService = (options: { profiles?: readonly Doc
                     ? ("values" as const)
                     : capture.payload.version === 3
                       ? ("documents" as const)
-                      : ("recordSnapshots" as const),
+                      : capture.payload.version === 4
+                        ? ("recordSnapshots" as const)
+                        : ("file" as const),
               query: capture.payload.version === 1 ? capture.payload.source : null,
             },
           };

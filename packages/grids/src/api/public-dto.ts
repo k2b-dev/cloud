@@ -40,6 +40,7 @@ import { groupedColumnFieldId, rewriteGroupedColumnKeys } from "../presentation-
 import { listByTable } from "../service/field-read";
 import type { Form } from "../service/forms";
 import { isSequentialNumberSeriesConfig, loadFieldNumberSeries } from "../service/number-series";
+import { publicDiagnosticMessage } from "../service/public-diagnostics";
 import { projectPublicIds, resolvePublicIds } from "../service/public-resources";
 import type { RecordComment } from "../service/record-comments";
 import type { GridFile } from "../service/types";
@@ -760,6 +761,7 @@ export const toPublicFederatedDiagnostics = async (
   return visible.map((diagnostic) =>
     PublicFederatedDiagnosticSchema.parse({
       ...diagnostic,
+      message: publicDiagnosticMessage(diagnostic.message),
       ...(diagnostic.sourceTableId ? { sourceTableId: publicId(tableIds, diagnostic.sourceTableId, "federation source table") } : {}),
       ...(diagnostic.targetFieldId ? { targetFieldId: publicId(fieldIds, diagnostic.targetFieldId, "federation target field") } : {}),
       ...(diagnostic.sourceFieldId ? { sourceFieldId: publicId(fieldIds, diagnostic.sourceFieldId, "federation source field") } : {}),

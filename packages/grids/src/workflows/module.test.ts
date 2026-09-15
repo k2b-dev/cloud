@@ -18,12 +18,13 @@ describe("Grids workflow manifest", () => {
   });
 
   test("pins the query-enabled manifest hash; older plans require republication", async () => {
-    expect(await hashWorkflowJson(gridsWorkflowManifest)).toBe("f3877098be1c6bd7c36bed665e74cbd04e9674f075c09cd21adcf1bd93c5780e");
+    expect(await hashWorkflowJson(gridsWorkflowManifest)).toBe("5ffd400ad14d78c197c1b0e7c7efcd1086b8534c9c82e790626ce2cba7014048");
   });
 
   test("classifies every effectful action explicitly", () => {
     expect(Object.fromEntries(gridsWorkflowManifest.actions.map((action) => [action.kind, action.effect]))).toMatchObject({
       query: "transactional",
+      parseDocument: "transactional",
       finalizeRecord: "transactional",
       deleteRecord: "transactional",
       closeRecord: "transactional",

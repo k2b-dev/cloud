@@ -1,8 +1,9 @@
+import { sepaSchemaSha256 } from "@k2b/stdlib/finance/validate";
 import { z } from "zod";
 import type { DocumentProfile } from "../document-profiles";
 import { renderDatevBatch } from "./datev-csv";
 import { DatevBatchSchema } from "./datev-csv-contracts";
-import { renderSepaBatch, SEPA_SCHEMA_SHA256 } from "./sepa-xml";
+import { renderSepaBatch } from "./sepa-xml";
 import { SepaBatchSchema } from "./sepa-xml-contracts";
 
 const datevInput = DatevBatchSchema.safeExtend({
@@ -28,8 +29,8 @@ export const financialQueryProfiles: readonly DocumentProfile[] = [
     version: 1,
     title: "DATEV booking batch",
     description: "DATEV 700/13 booking batch in EUR, UTF-8 with BOM.",
-    rendererVersion: "grids-datev-700-13-v1",
-    validatorVersion: "grids-datev-700-13-v1",
+    rendererVersion: "stdlib-0.25.0-datev-700-13",
+    validatorVersion: "stdlib-0.25.0-datev-700-13",
     primaryArtifact: { key: "csv", mediaType: "text/csv" },
     input: datevInput,
     formatNumber: ({ value }) => `DATEV-${value}`,
@@ -55,8 +56,8 @@ export const financialQueryProfiles: readonly DocumentProfile[] = [
     version: 1,
     title: "SEPA credit transfers",
     description: "SEPA SCT pain.001.001.09 using the pinned DK GBIC 5 schema.",
-    rendererVersion: "grids-sepa-pain-001-001-09-v1",
-    validatorVersion: `dk-gbic-5:${SEPA_SCHEMA_SHA256}`,
+    rendererVersion: "stdlib-0.25.0-sepa-pain-001-001-09",
+    validatorVersion: `stdlib-0.25.0-dk-gbic-5:${sepaSchemaSha256}`,
     primaryArtifact: { key: "xml", mediaType: "application/xml" },
     input: sepaInput,
     formatNumber: ({ value }) => `SEPA-${value}`,

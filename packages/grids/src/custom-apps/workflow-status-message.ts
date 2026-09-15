@@ -1,4 +1,5 @@
 import type { GridsApiMessages } from "../api/messages";
+import { publicDiagnosticMessage } from "../service/public-diagnostics";
 import type { GridsWorkflowRun } from "../workflows/contracts";
 
 type StatusMessages = Pick<
@@ -27,7 +28,7 @@ export const customAppWorkflowStatusMessage = (
     case "WORKFLOW_FAILED":
     case "ATOMIC_CHECK_FAILED":
     case "DOCUMENT_INPUT_INVALID":
-      return run.error.message;
+      return publicDiagnosticMessage(run.error.message);
     // Finalization readiness and profile input validation use ServiceError codes.
     case "BAD_INPUT":
       return messages.workflowStatusValidationFailed;

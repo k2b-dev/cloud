@@ -17,9 +17,8 @@ Once the records are useful, the same saved data can support different jobs:
 
 - **Views** show the records people need for a task, such as available items or overdue loans.
 - **Forms** give people a focused way to add records without opening the full table.
-- **Grids Apps** combine numbers, charts, record lists, forms, instructions, links, and workflow actions.
-- **Grids Apps** publish focused, server-enforced pages for authenticated or public audiences without opening the raw Base workspace.
-- **Documents** turn records into PDFs such as invoices, labels, agreements, and reports.
+- **Grids Apps** combine numbers, charts, record lists, forms, instructions, links, and workflow actions in server-enforced pages for authenticated or public audiences, without opening the raw Base workspace.
+- **Documents** keep generated PDF, CSV, JSON, XML, SEPA and DATEV files with their captured source data.
 - **Workflows** carry out repeatable steps manually, from a scanner or selection, on a schedule, or after a record changes.
 - **Combined tables** publish one governed, read-only dataset from tables in several bases.
 
@@ -36,6 +35,34 @@ Choose a small process that already has clear items, such as equipment loans or 
 4. Create a view for one repeated task.
 5. Add a form, Grids App, document, or workflow only when it removes a real manual step.
 :::
+
+## All topics
+
+- [Bases, tables, Records and relations](/app/grids/help/grids-core-model)
+- [Build a Base and configure settings](/app/grids/help/grids-build-base)
+- [Templates and real workflows: Billing, expenses, inventory](/app/grids/help/grids-build-business-app)
+- [Table options, indexing, history, finalization and Four-eyes](/app/grids/help/grids-tables-fields)
+- [Every field type, ID strategy, option and default](/app/grids/help/grids-field-configuration)
+- [Imports, external identities and CSV/JSON exports](/app/grids/help/grids-data-exchange)
+- [Views, charts, cards, calendars and reports](/app/grids/help/grids-views-reports)
+- [Read-only datasets shared across Bases](/app/grids/help/grids-combined-tables)
+- [GQL syntax, joins, summary joins and document metadata](/app/grids/help/grids-gql)
+- [Formula functions, types, exact decimals and diagnostics](/app/grids/help/grids-formulas)
+- [Forms, compact layout, defaults, inline creation and summaries](/app/grids/help/grids-forms)
+- [What a Grids App is](/app/grids/help/grids-custom-apps)
+- [Build a focused application](/app/grids/help/grids-build-custom-app)
+- [Pages, parameters, blocks, queries and navigation](/app/grids/help/grids-custom-app-pages-blocks)
+- [Complete app API and configuration contract](/app/grids/help/grids-custom-app-api)
+- [YAML validation, planning, apply and restore](/app/grids/help/grids-custom-app-yaml-cli)
+- [Publish safely and test each audience](/app/grids/help/grids-publish-custom-app)
+- [Templates, PDF/E-Invoices, generated files and source records](/app/grids/help/grids-documents-pdfs)
+- [Actions, triggers, launchers, file outputs, approvals and retries](/app/grids/help/grids-workflows)
+- [Read CAMT bank reports without recording payments](/app/grids/help/grids-camt)
+- [Financial format inputs, limits and validation](/app/grids/help/grids-financial-formats)
+- [Base access, app audiences and anonymous forms](/app/grids/help/grids-permissions)
+- [Retention, holds, trash and destruction](/app/grids/help/grids-retention-preservation)
+- [Evidence exports and integrity verification](/app/grids/help/grids-evidence-exports)
+- [Recover from errors, conflicts and interrupted runs](/app/grids/help/grids-operations-troubleshooting)
 
 This order keeps mistakes inexpensive. A clear table and a few representative records make every later choice easier.
 

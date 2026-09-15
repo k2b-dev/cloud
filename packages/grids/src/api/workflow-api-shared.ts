@@ -13,11 +13,13 @@ import { get as getBase } from "../service/bases";
 import { listTemplatesForTable } from "../service/document-templates";
 import { listForBase as listEmailTemplatesForBase } from "../service/email-templates";
 import { listByTable as listFieldsByTable } from "../service/field-read";
+import { publicDiagnosticMessage, publicDiagnosticValue } from "../service/public-diagnostics";
 import { type PublicResourceType, projectPublicIds, resolvePublicId, resolvePublicIds } from "../service/public-resources";
 import { listByBase as listTablesByBase } from "../service/tables";
 import { buildWorkflowCatalog, type WorkflowCatalog, type WorkflowCatalogEntry } from "../service/workflow-catalog";
 import { listWorkflowScopes, listWorkflows } from "../service/workflow-definitions";
 import { workflowQueryBinder } from "../service/workflow-query-binding";
+import { projectWorkflowCaptureSteps, WorkflowDocumentDataReferenceSchema } from "../service/workflow-query-store";
 import { bindGridsWorkflow } from "../workflows/binder";
 import { presentWorkflowCompletions } from "../workflows/completion-presentation";
 import type {
@@ -57,7 +59,7 @@ type PublicIdMaps = Partial<Record<PublicResourceType, Map<string, string>>>;
 
 const requiredPublicId = (maps: PublicIdMaps, type: PublicResourceType, internalId: string): string => {
   const publicId = maps[type]?.get(internalId);
-  if (!publicId) throw new Error(`Missing public id for ${type} ${internalId}`);
+  if (!publicId) throw new Error(`Missing public id for ${type}`);
   return publicId;
 };
 
@@ -98,7 +100,10 @@ const collectUuidStrings = (value: unknown, into = new Set<string>()): Set<strin
   } else if (Array.isArray(value)) {
     for (const item of value) collectUuidStrings(item, into);
   } else if (value && typeof value === "object") {
-    for (const item of Object.values(value)) collectUuidStrings(item, into);
+    for (const [key, item] of Object.entries(value)) {
+      collectUuidStrings(key, into);
+      collectUuidStrings(item, into);
+    }
   }
   return into;
 };
@@ -107,7 +112,7 @@ const projectJsonIds = (value: unknown, ids: ReadonlyMap<string, string>): unkno
   if (typeof value === "string") return ids.get(value) ?? value;
   if (Array.isArray(value)) return value.map((item) => projectJsonIds(item, ids));
   if (!value || typeof value !== "object") return value;
-  return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, projectJsonIds(item, ids)]));
+  return Object.fromEntries(Object.entries(value).map(([key, item]) => [ids.get(key) ?? key, projectJsonIds(item, ids)]));
 };
 
 const publicPlans = async (plans: readonly unknown[], load: PublicIdLoader): Promise<unknown[]> => {
@@ -118,6 +123,71 @@ const publicPlans = async (plans: readonly unknown[], load: PublicIdLoader): Pro
   const maps = await Promise.all(gridsPlanResourceTypes.map((type) => load(type, internalIds)));
   const ids = new Map(maps.flatMap((map) => [...map]));
   return plans.map((plan) => projectJsonIds(plan, ids));
+};
+
+export const toPublicWorkflowPayloads = async (
+  payloads: readonly unknown[],
+  load: PublicIdLoader = projectPublicIds,
+  loadCaptureSteps: typeof projectWorkflowCaptureSteps = projectWorkflowCaptureSteps,
+): Promise<unknown[]> => {
+  const captureIds = new Set<string>();
+  const references: Partial<Record<PublicResourceType, string[]>> = {};
+  // Project typed Grids references, never arbitrary strings returned by HTTP or
+  // entered as text inputs. One lookup per referenced resource type, not per row.
+  const identityFields = (value: Record<string, unknown>): Record<string, PublicResourceType> => {
+    if (value.kind === "record") return { tableId: "table", recordId: "record" };
+    if (value.kind === "documentLink") return { id: "documentLink", documentId: "document" };
+    if (value.kind === "document" || (typeof value.shortId === "string" && "primaryArtifactKey" in value))
+      return { id: "document", baseId: "base", tableId: "table", recordId: "record", templateId: "documentTemplate" };
+    if (typeof value.templateId === "string" && typeof value.subject === "string" && Array.isArray(value.recipients))
+      return { templateId: "emailTemplate" };
+    return {};
+  };
+  const collect = (value: unknown): void => {
+    const reference = WorkflowDocumentDataReferenceSchema.safeParse(value);
+    if (reference.success) {
+      captureIds.add(reference.data.id);
+    } else if (Array.isArray(value)) value.forEach(collect);
+    else if (value && typeof value === "object") {
+      const object = z.record(z.string(), z.unknown()).parse(value);
+      for (const [key, type] of Object.entries(identityFields(object))) {
+        const id = object[key];
+        if (typeof id === "string" && z.uuid().safeParse(id).success) {
+          references[type] ??= [];
+          references[type].push(id);
+        }
+      }
+      Object.values(object).forEach(collect);
+    }
+  };
+  payloads.forEach(collect);
+  const [steps, maps] = await Promise.all([
+    captureIds.size ? loadCaptureSteps([...captureIds]) : new Map<string, string>(),
+    loadPublicIdMaps(Object.fromEntries(Object.entries(references).map(([type, ids]) => [type, [...new Set(ids)]])), load),
+  ]);
+  const project = (value: unknown): unknown => {
+    const reference = WorkflowDocumentDataReferenceSchema.safeParse(value);
+    if (reference.success) {
+      const { id, ...rest } = reference.data;
+      const stepKey = steps.get(id);
+      if (!stepKey) throw new Error("Missing workflow capture step");
+      return { ...rest, stepKey };
+    }
+    if (Array.isArray(value)) return value.map(project);
+    if (!value || typeof value !== "object") return value;
+    const object = z.record(z.string(), z.unknown()).parse(value);
+    const identities = identityFields(object);
+    return Object.fromEntries(
+      Object.entries(object).map(([key, item]) => {
+        const type = identities[key];
+        return [
+          key,
+          type && typeof item === "string" && z.uuid().safeParse(item).success ? requiredPublicId(maps, type, item) : project(item),
+        ];
+      }),
+    );
+  };
+  return payloads.map(project);
 };
 
 export const toPublicWorkflowPlan = async (plan: unknown, load: PublicIdLoader = projectPublicIds) => (await publicPlans([plan], load))[0];
@@ -138,7 +208,7 @@ export const toPublicWorkflows = async (workflows: readonly GridsWorkflow[], loa
       description: workflow.description,
       source: workflow.source,
       plan: plans[index],
-      diagnostics: workflow.diagnostics,
+      diagnostics: workflow.diagnostics.map((diagnostic) => ({ ...diagnostic, message: publicDiagnosticMessage(diagnostic.message) })),
       enabled: workflow.enabled,
       position: workflow.position,
       revision: workflow.revision,
@@ -165,7 +235,7 @@ export const toPublicWorkflowRevision = async (
     description: revision.description,
     source: revision.source,
     plan: (await publicPlans([revision.plan], load))[0],
-    diagnostics: revision.diagnostics,
+    diagnostics: revision.diagnostics.map((diagnostic) => ({ ...diagnostic, message: publicDiagnosticMessage(diagnostic.message) })),
     position: revision.position,
     actorUserId: revision.actorUserId,
     createdAt: revision.createdAt,
@@ -198,7 +268,7 @@ export const toPublicWorkflowTriggerState = async (state: WorkflowTriggerRuntime
           timezone: state.schedule.timezone,
           state: state.schedule.state,
           nextRunAt: state.schedule.nextRunAt,
-          problem: state.schedule.problem,
+          problem: state.schedule.problem ? publicDiagnosticMessage(state.schedule.problem) : null,
         }
       : null,
     recordEvents: state.recordEvents.map((event) => ({
@@ -227,7 +297,7 @@ export const toPublicWorkflowLaunchers = async (launchers: readonly GridsWorkflo
       config: launcher.config,
       enabled: launcher.enabled,
       validatedRevision: launcher.validatedRevision,
-      diagnostics: launcher.diagnostics,
+      diagnostics: launcher.diagnostics.map((diagnostic) => ({ ...diagnostic, message: publicDiagnosticMessage(diagnostic.message) })),
       deletedAt: launcher.deletedAt,
       createdAt: launcher.createdAt,
       updatedAt: launcher.updatedAt,
@@ -237,6 +307,9 @@ export const toPublicWorkflowLaunchers = async (launchers: readonly GridsWorkflo
 
 export const toPublicWorkflowLauncher = async (launcher: GridsWorkflowLauncher, load: PublicIdLoader = projectPublicIds) =>
   (await toPublicWorkflowLaunchers([launcher], load))[0]!;
+
+export const toPublicWorkflowError = (error: GridsWorkflowRun["error"]) =>
+  PublicGridsWorkflowRunSchema.shape.error.parse(publicDiagnosticValue(error));
 
 export const toPublicWorkflowRuns = async (runs: readonly GridsWorkflowRun[], load: PublicIdLoader = projectPublicIds) => {
   const [maps, payloads] = await Promise.all([
@@ -249,7 +322,7 @@ export const toPublicWorkflowRuns = async (runs: readonly GridsWorkflowRun[], lo
       },
       load,
     ),
-    publicPlans(
+    toPublicWorkflowPayloads(
       runs.map((run) => ({ inputs: run.inputs, result: run.result, errorDetails: run.error?.details ?? null })),
       load,
     ),
@@ -278,9 +351,9 @@ export const toPublicWorkflowRuns = async (runs: readonly GridsWorkflowRun[], lo
       error: run.error
         ? {
             code: run.error.code,
-            message: run.error.message,
+            message: publicDiagnosticMessage(run.error.message),
             retryable: run.error.retryable,
-            ...(payload.errorDetails ? { details: payload.errorDetails } : { details: undefined }),
+            ...(payload.errorDetails ? { details: publicDiagnosticValue(payload.errorDetails) } : { details: undefined }),
           }
         : null,
       resultMessage: run.resultMessage,
@@ -309,10 +382,12 @@ export const toPublicWorkflowSteps = async (
   page: { items: GridsWorkflowStepRun[]; truncated: boolean },
   runPublicId: string,
   load: PublicIdLoader = projectPublicIds,
+  loadCaptureSteps: typeof projectWorkflowCaptureSteps = projectWorkflowCaptureSteps,
 ) => {
-  const outcomes = await publicPlans(
+  const outcomes = await toPublicWorkflowPayloads(
     page.items.map((step) => step.outcome),
     load,
+    loadCaptureSteps,
   );
   return PublicGridsWorkflowStepRunListSchema.parse({
     items: page.items.map((step, index) => ({
@@ -323,7 +398,10 @@ export const toPublicWorkflowSteps = async (
       kind: step.kind,
       action: step.action,
       status: step.status,
-      outcome: z.json().nullable().parse(outcomes[index]),
+      outcome: z
+        .json()
+        .nullable()
+        .parse(step.status === "failed" ? publicDiagnosticValue(outcomes[index]) : outcomes[index]),
       ...(step.documentConfirmation ? { documentConfirmation: step.documentConfirmation } : {}),
       executionGeneration: step.executionGeneration,
       startedAt: step.startedAt,
@@ -396,7 +474,7 @@ export const toPublicWorkflowDeliveries = async (
         ...(recipient.status ? { status: recipient.status } : {}),
       })),
       status: item.status,
-      error: item.error,
+      error: item.error ? publicDiagnosticMessage(item.error) : null,
       createdAt: item.createdAt,
     })),
     nextCursor: publicCursor(page.nextCursor),

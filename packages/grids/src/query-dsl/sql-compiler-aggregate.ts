@@ -63,7 +63,7 @@ export const compileDslAggregateQueryPlanToSql = (
   const columns: DslSqlAggregateOutputColumn[] = aggregations.map(
     (aggregation): DslSqlAggregateOutputColumn => ({
       key: aggregateOutputKey(aggregation.fieldId, aggregation.agg),
-      label: aggregation.label ?? `${aggregation.agg} ${aggregation.fieldId}`,
+      label: aggregation.label ?? `${aggregation.agg} ${fieldsById.get(aggregation.fieldId)?.name ?? "*"}`,
       fieldId: aggregation.fieldId,
       agg: aggregation.agg,
       sqlType: viewAggregateSqlType(aggregation, fieldsById),

@@ -169,14 +169,15 @@ export const createDocumentRenderRoutes = () =>
         if (!rendered.ok) return errorResponse(c, rendered.message, rendered.status);
         const data = await addDraftDocumentMetadata(c, { template: loaded.template, data: rendered.data, createdAt, dateConfig });
         if (!data.ok) return data.response;
+        const publicData = await projectDocumentPreviewData(data.data, { tableId: loaded.table.id, recordId });
         if (loaded.template.renderer.kind === "profile") {
-          const input = await gridsService.document.renderProfileInput(loaded.template, data.data, getLocale(c));
+          const input = await gridsService.document.renderProfileInput(loaded.template, publicData, getLocale(c));
           if (!input.ok) return c.json({ message: input.error.message, phase: "profile" }, input.error.status);
-          return c.json({ html: "", source: rendered.source, data: await projectDocumentPreviewData(data.data) });
+          return c.json({ html: "", source: rendered.source, data: publicData });
         }
-        const html = await gridsService.document.renderHtml(loaded.template, data.data, getLocale(c));
+        const html = await gridsService.document.renderHtml(loaded.template, publicData, getLocale(c));
         if (!html.ok) return c.json({ message: html.error.message }, html.error.status);
-        return c.json({ html: html.data, source: rendered.source, data: await projectDocumentPreviewData(data.data) });
+        return c.json({ html: html.data, source: rendered.source, data: publicData });
       },
     )
 

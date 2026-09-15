@@ -57,7 +57,7 @@ import {
 import { runWithQueryAdmission } from "./query-admission";
 import { internalIdParam, requirePublicIdParam } from "./route-params";
 import { v } from "./validator";
-import { ScannerLauncherRequestSchema } from "./workflow-api-shared";
+import { ScannerLauncherRequestSchema, toPublicWorkflowError } from "./workflow-api-shared";
 
 const DefinitionBaseSchema = z.object({ baseId: ShortIdSchema });
 const CustomAppCreateSchema = z.object({ name: z.string().trim().min(1).max(200) }).strict();
@@ -296,7 +296,7 @@ const projectWorkflowRunSummary = async (run: Parameters<typeof toWorkflowRunEve
     mode: summary.mode,
     channel: summary.channel,
     status: summary.status,
-    error: summary.error,
+    error: toPublicWorkflowError(summary.error),
     resultMessage: summary.resultMessage,
     createdAt: summary.createdAt,
     startedAt: summary.startedAt,

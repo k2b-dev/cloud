@@ -27,6 +27,7 @@ import { gridsService } from "../service";
 import { authoringText, isGermanAuthoringLocale } from "../service/authoring-messages";
 import type { FederatedRevisionScope } from "../service/federated-tables";
 import { buildTrustedGqlResolverContext, hydrateDslViewQueries } from "../service/gql-resolver-context";
+import { publicDiagnosticMessage } from "../service/public-diagnostics";
 import { validateRecordQueryForFields } from "../service/query-validation";
 import type { Field, Table } from "../service/types";
 import { type GqlRuntimeOperation, type GqlRuntimeTracer, traceGqlRuntime } from "./gql-observability";
@@ -68,7 +69,9 @@ export const gqlDiagnosticsForLocale = (
     code,
     // Keep the parser/resolver detail: replacing it with a translated stage
     // label prevents both people and machine clients from repairing the query.
-    message: (isGermanAuthoringLocale(locale) ? `${localizedMessage} ${diagnostic.message}` : diagnostic.message).slice(0, 2_000),
+    message: publicDiagnosticMessage(
+      isGermanAuthoringLocale(locale) ? `${localizedMessage} ${diagnostic.message}` : diagnostic.message,
+    ).slice(0, 2_000),
   }));
 };
 

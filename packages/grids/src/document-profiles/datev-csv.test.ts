@@ -93,7 +93,7 @@ describe("DATEV 700/13 EUR batch", () => {
       { businessId: " " },
       { entryId: "x " },
     ])
-      expect(DatevBatchSchema.safeParse({ ...batch, rows: [{ ...row, ...patch }] }).success).toBe(false);
+      expect(() => renderDatevBatch(DatevBatchSchema.parse({ ...batch, rows: [{ ...row, ...patch }] }), issuedAt)).toThrow();
     expect(DatevBatchSchema.safeParse({ ...batch, periodEnd: "2027-01-01" }).success).toBe(false);
     expect(DatevBatchSchema.safeParse({ ...batch, consultantNumber: "1000" }).success).toBe(false);
     expect(DatevBatchSchema.safeParse({ ...batch, fiscalYearStart: "garbage" }).success).toBe(false);

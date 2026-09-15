@@ -13,6 +13,10 @@ Nutze Vorlagen für formatierte, teilbare Ausgaben; CSV-/JSON-Exporte für den D
 
 ## Ein unveränderliches Dokumentmodell {icon="shield-check"}
 
+Workflows erzeugen auch ein PDF aus mehreren Datensätzen, freie CSV-/JSON-/XML-Dateien, DATEV-Buchungsstapel und SEPA-Überweisungsdateien. Alles sind Dokumente, nicht nur PDFs. Kopf- und Spaltenzuordnung stehen unter [Workflows](/app/grids/help/grids-workflows), Bankdateien als Eingang unter [CAMT](/app/grids/help/grids-camt).
+
+Die Finanz-Serialisierer verwenden stdlib 0.25.0. Grids verwaltet Rechte, erfasste Daten, IDs, Schutz vor Doppelexporten und Bestätigung. stdlib übernimmt Formatberechnung und Serialisierung. E-Rechnungs- und SEPA-XML werden zusätzlich zur Laufzeit gegen das festgelegte XSD geprüft. Beim erzeugten PDF wird die tatsächlich eingebettete XML gelesen und mit dem strukturierten Artefakt verglichen. Ein erfolgreicher Serialisierer allein belegt die Einbettung nicht. Der gesamte Geschäftsprozess wird damit nicht zertifiziert.
+
 Agents finden mit `document.templates` Vorlagen, lesen mit `document.list` und `document.read` gespeicherte Dokumente und stellen mit `document.create` ein Dokument für einen ausgewählten Record aus. Dafür sind Schreibzugriff, ein Idempotenzschlüssel und eine einzelne ausdrückliche Bestätigung nötig. Die Ausstellung ist nicht rückgängig zu machen und erlaubt keine dauerhafte Pauschalfreigabe. Der Download-Link benötigt weiterhin deine Berechtigungen; er erstellt keinen öffentlichen Freigabelink und versendet das Dokument nicht.
 
 Eine wiederholte Generierung mit demselben Idempotenzschlüssel gibt dasselbe unveränderliche Dokument zurück; die Wiederverwendung mit anderer Eingabe scheitert.

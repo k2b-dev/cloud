@@ -6,6 +6,7 @@ import { sql } from "bun";
 import { z } from "zod";
 import type { GridRecord } from "../contracts";
 import type { GridsWorkflowPrincipal } from "../workflows/contracts";
+import { type PublicResourceType, projectPublicId } from "./public-resources";
 import { createReader } from "./record-read";
 import { SHORT_ID_REGEX } from "./short-id";
 import { canAccessWorkflowBaseTable } from "./workflow-authorization";
@@ -32,6 +33,7 @@ type WorkflowValueResolverDeps = {
   canReadTable: (tableId: string) => Promise<boolean>;
   readRecord: (tableId: string, recordId: string) => Promise<GridRecord | null>;
   recordShortId: (tableId: string, recordId: string) => Promise<string | null>;
+  publicResourceId?: (type: PublicResourceType, id: string) => Promise<string | null>;
 };
 
 export class WorkflowInputPreparationError extends Error {
@@ -109,7 +111,11 @@ const prepareRecordIds = async (
   const uniqueIds = [...new Set(recordIds)];
   const resolvedIds = await deps.resolveRecordIds(tableId, uniqueIds);
   const missing = uniqueIds.find((recordId) => !resolvedIds.has(recordId));
-  if (missing) throw new WorkflowInputPreparationError(`references missing record "${missing}"`);
+  if (missing) {
+    throw new WorkflowInputPreparationError(
+      SHORT_ID_REGEX.test(missing) ? `references missing record "${missing}"` : "references a missing record",
+    );
+  }
   return recordIds.map((recordId) => recordReference(tableId, resolvedIds.get(recordId)!));
 };
 
@@ -187,6 +193,7 @@ export class GridsWorkflowValueResolver implements WorkflowValueResolverPort {
   private readonly readableTables = new Map<string, Promise<boolean>>();
   private readonly records = new Map<string, Promise<GridRecord | null>>();
   private readonly recordShortIds = new Map<string, Promise<string | null>>();
+  private readonly resourceShortIds = new Map<string, Promise<string | null>>();
 
   constructor(private readonly deps: WorkflowValueResolverDeps) {}
 
@@ -228,6 +235,29 @@ export class GridsWorkflowValueResolver implements WorkflowValueResolverPort {
     fallback: () => WorkflowJsonValue | undefined;
   }): Promise<WorkflowValueResolution> {
     const { value, remaining } = rootValue(input.invocation, input.variables, input.reference);
+    if (value && typeof value === "object" && !Array.isArray(value) && remaining.length === 1) {
+      const property = remaining[0]!;
+      const document = value.kind === "document" || (typeof value.shortId === "string" && "primaryArtifactKey" in value);
+      const link = value.kind === "documentLink";
+      const fields: Record<string, PublicResourceType> = document
+        ? { id: "document", baseId: "base", tableId: "table", recordId: "record", templateId: "documentTemplate" }
+        : link
+          ? { id: "documentLink", documentId: "document" }
+          : {};
+      const type = fields[property];
+      const id = value[property];
+      if (type && typeof id === "string" && uuid.safeParse(id).success) {
+        const key = `${type}:${id}`;
+        let resolved = this.resourceShortIds.get(key);
+        if (!resolved) {
+          resolved = (this.deps.publicResourceId ?? projectPublicId)(type, id);
+          this.resourceShortIds.set(key, resolved);
+        }
+        const publicId = await resolved;
+        if (!publicId) throw new Error("referenced workflow resource no longer exists");
+        return { state: "resolved", value: publicId };
+      }
+    }
     if (isRecordReference(value) && remaining.length === 1 && remaining[0] === "recordId") {
       if (!(await this.canReadTable(value.tableId))) throw new Error("workflow actor cannot read the referenced table");
       const shortId = await this.recordShortId(value.tableId, value.recordId);

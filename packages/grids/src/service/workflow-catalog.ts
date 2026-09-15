@@ -7,6 +7,7 @@ export type WorkflowCatalogEntry = { id: string; name: string; shortId: string }
 /** Record events exist for stored tables only; Combined tables are derived and never emit them. */
 type WorkflowTableCatalogEntry = WorkflowCatalogEntry & { kind: "stored" | "federated" };
 export type WorkflowFieldCatalogEntry = WorkflowCatalogEntry & {
+  file?: true;
   relation?: { targetTableId: string; cardinality: "single" | "multiple" };
 };
 
@@ -25,6 +26,7 @@ export type WorkflowCatalog = {
 const WorkflowCatalogEntrySchema = z.object({ id: z.string().uuid(), name: z.string(), shortId: z.string().regex(SHORT_ID_REGEX) });
 const WorkflowTableCatalogEntrySchema = WorkflowCatalogEntrySchema.extend({ kind: z.enum(["stored", "federated"]) });
 const WorkflowFieldCatalogEntrySchema = WorkflowCatalogEntrySchema.extend({
+  file: z.literal(true).optional(),
   relation: z.object({ targetTableId: z.string().uuid(), cardinality: z.enum(["single", "multiple"]) }).optional(),
 });
 const WorkflowTemplateCatalogEntrySchema = WorkflowCatalogEntrySchema.extend({ tableId: z.string().uuid() });
@@ -140,6 +142,7 @@ export const loadWorkflowCatalog = async (baseId: string, db: SQL = sql): Promis
       id: row.id,
       shortId: row.short_id,
       name: row.name,
+      ...(row.type === "file" ? { file: true as const } : {}),
       ...(targetTableId ? { relation: { targetTableId, cardinality } } : {}),
     });
   }

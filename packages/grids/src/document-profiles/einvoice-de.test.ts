@@ -1,4 +1,6 @@
 import { describe, expect, test } from "bun:test";
+import { renderFacturXHtmlToPdfWithConfig } from "@k2b/cloud/services/pdf";
+import { PDFDocument } from "pdf-lib";
 import {
   buildGermanEInvoiceXml,
   createGermanBillingProfile,
@@ -30,6 +32,47 @@ const snapshot = {
 };
 
 const context = { number: "RE-2026-000001", issuedAt: new Date("2026-08-22T10:00:00Z") };
+
+// Explicit opt-in: exercises the external renderer, not a successful mock.
+// No DB writes, no bank calls, no production URL inferred from settings.
+const livePdfTest = process.env.GRIDS_GOTENBERG_TEST_URL ? test : test.skip;
+livePdfTest(
+  "real Gotenberg produces readable PDF/XML for invoices, corrections and self-billing",
+  async () => {
+    const url = new URL(process.env.GRIDS_GOTENBERG_TEST_URL!);
+    if (!["localhost", "127.0.0.1"].includes(url.hostname)) throw new Error("Local renderer test only");
+    const config = { url: url.toString(), timeoutMs: 30_000, maxHtmlBytes: 5 * 1024 * 1024, maxPdfBytes: 20 * 1024 * 1024 };
+    for (const billing of [
+      { kind: "invoice" },
+      { kind: "creditNote", original: { number: "RE-ORIGINAL", invoiceDate: "2026-08-01" }, reason: "Partial correction" },
+      { kind: "selfBilling", agreementReference: "AGREEMENT-42" },
+    ] as const) {
+      const input = germanBillingSnapshotSchema.parse({ ...snapshot, billing, serviceDate: snapshot.invoiceDate });
+      let renderMs = 0;
+      const profile = createGermanBillingProfile({
+        render: async (value) => {
+          const start = performance.now();
+          const result = await renderFacturXHtmlToPdfWithConfig(value, config);
+          renderMs = performance.now() - start;
+          return result;
+        },
+      });
+      const start = performance.now();
+      const issued = await profile.issue(input, context);
+      const totalMs = performance.now() - start;
+      expect(issued.validationStatus).toBe("valid");
+      expect(issued.validationReport).toMatchObject({ xsd: "valid", embeddedXml: "verified" });
+      expect(issued.output).toMatchObject({ netAmount: "120.00", grossAmount: "140.40" });
+      const pdf = issued.artifacts.find((artifact) => artifact.key === "pdf")!;
+      expect(new TextDecoder().decode(pdf.bytes.subarray(0, 5))).toBe("%PDF-");
+      expect((await PDFDocument.load(pdf.bytes)).getPageCount()).toBeGreaterThan(0);
+      console.log(
+        `E-Invoice ${billing.kind}: total ${totalMs.toFixed(0)} ms; Gotenberg ${renderMs.toFixed(0)} ms; serializer/XSD/attachment check ${(totalMs - renderMs).toFixed(0)} ms`,
+      );
+    }
+  },
+  90_000,
+);
 
 describe("German E-Invoice profile", () => {
   for (const [billing, code, title] of [
@@ -73,7 +116,7 @@ describe("German E-Invoice profile", () => {
       expect(html).toContain(`<h1>${title} ${context.number}</h1>`);
       expect(html).toContain("140.40 EUR");
       // Keep totals and payment details together when the positions span pages.
-      expect(html).toContain('.settlement{break-inside:avoid}');
+      expect(html).toContain(".settlement{break-inside:avoid}");
       const settlement = html.match(/<tbody class="settlement">([\s\S]*?)<\/tbody>/)?.[1];
       expect(settlement).toContain("Gesamt");
       expect(settlement).toContain(`IBAN: ${input.payment.iban}`);
@@ -165,6 +208,7 @@ describe("German E-Invoice profile", () => {
     expect(xml.match(/<ram:LineTotalAmount>1.01<\/ram:LineTotalAmount>/g)).toHaveLength(3);
     expect(xml).toContain("<ram:LineTotalAmount>3.03</ram:LineTotalAmount>");
     expect(xml).toContain("<ram:GrandTotalAmount>3.61</ram:GrandTotalAmount>");
+    expect(xml).toContain("<ram:ChargeAmount>1.0050</ram:ChargeAmount>");
     expect(html.match(/<td>1.01 EUR<\/td>/g)).toHaveLength(3);
     expect(html).toContain("3.61 EUR");
   });
@@ -189,4 +233,19 @@ describe("German E-Invoice profile", () => {
     });
     await expect(profile.issue(snapshot, context)).rejects.toThrow("does not contain the generated Factur-X XML");
   });
+});
+
+test("issuance verifies a real PDF attachment through the stdlib reader", async () => {
+  const profile = createGermanEInvoiceProfile({
+    render: async ({ xml }) => {
+      const pdf = await PDFDocument.create();
+      pdf.addPage();
+      await pdf.attach(new TextEncoder().encode(xml), "factur-x.xml", { mimeType: "application/xml" });
+      return { pdf: await pdf.save() };
+    },
+  });
+  const result = await profile.issue(snapshot, context);
+  expect(result.validationStatus).toBe("valid");
+  expect(result.output?.grossAmount).toBe("140.40");
+  expect(result.validationReport).toMatchObject({ xsd: "valid", embeddedXml: "verified" });
 });

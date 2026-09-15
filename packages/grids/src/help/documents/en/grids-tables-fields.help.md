@@ -7,6 +7,8 @@ order: 110
 ---
 A table stores one kind of record. Choose field types for their meaning, not just their appearance.
 
+For all configuration keys, defaults, ID strategies, and object-list columns, use the [field configuration reference](/app/grids/help/grids-field-configuration).
+
 **Base settings → Tables** lets admins search by name or public ID and compare field/index/unique counts, history, finalization, and write paths. Open a table for its records and settings; this overview does not count records.
 
 ## Fields for entered values {icon="table"}
@@ -37,7 +39,7 @@ Date-time display, date-based filters, formulas, exports, and document folders u
 - **Rollup** summarizes values reached through a relation.
 - **Formula** calculates from the current Draft's fields. Finalization freezes the result.
 - **HTML template** renders Liquid and optional CSS into one HTML string per record. It can use ordinary fields plus lookup, rollup, and formula results. Values are escaped by default; preview the result before using `raw`.
-- **ID** creates a stable generated identifier. Sequence and date-sequence IDs use a durable number series that Grids assigns when the record is created. Values increase atomically and are never reused; rollbacks and technical failures can leave gaps. Changing the prefix or format affects only future records.
+- **ID** creates a stable generated identifier. Sequence and date-sequence IDs use a durable number series, assigned on creation by default or on finalization when configured. Values increase atomically and are never reused; rollbacks and technical failures can leave gaps. Changing the prefix or format affects only future records.
 - **Created at, Created by, Updated at, and Updated by** are system-managed fields. They describe record activity and cannot be entered as ordinary business values.
 
 Choose a relation when the target has its own details or lifecycle. A customer name typed into every invoice is only text; a Customer relation keeps the invoice connected when the customer's details change.
@@ -101,7 +103,7 @@ Each request has a short public ID. CLI approval and rejection require that exac
 
 Finalization checks required fields, assigns **On finalization** IDs, freezes typed formula, lookup, rollup and list results, then locks the Record atomically. Exact decimals remain usable for arithmetic. Fields, Relations, Files, trash state and final numbers cannot change. Retries return the same Record without allocating another number.
 
-Only captured calculations are historical values. Fields added later, and older finalizations without captures, have no saved result. Grids does not reconstruct them using current formulas. Do not interpret missing results as zero or use incomplete totals for financial exports.
+Only captured calculations are historical values. Fields added after finalization have no saved result. Grids does not reconstruct them using current formulas. Do not interpret missing results as zero or use incomplete totals for financial exports.
 
 Before the first record is finalized, an admin can disable the feature after changing all finalization-assigned ID fields back to **On record creation**. After the first final record, the table setting is permanent. Grids does not add invoice, cancellation, correction, or compliance semantics; model those with ordinary fields, Relations, and Workflows.
 

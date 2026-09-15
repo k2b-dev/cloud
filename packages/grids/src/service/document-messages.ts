@@ -4,6 +4,12 @@ export const documentServiceMessages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
+      camtInvalid:
+        "Cannot read this bank report. Use a standalone camt.052.001.08 XML file. Check its version and XML structure; no payments were recorded.",
+      camtUtf8Required: "Use a UTF-8 XML bank report, not a PDF, ZIP or another encoding.",
+      camtSingleFile: "Select a File field containing exactly one bank report.",
+      camtPlanned: "Read one bank report without recording payments.",
+      camtUnsupported: "Unsupported bank-report format. This action reads only camt.052.001.08, not camt.053 or camt.054.",
       templateDisabled: "Document template is disabled.",
       issuanceRequiresFinalization: "Finalize this record before issuing its document.",
       templateWrongTable: "Document template does not belong to the table.",
@@ -25,7 +31,8 @@ export const documentServiceMessages = i18n.define({
       sourceTooLarge: "GQL source is too large.",
       sourceInvalid: "The GQL source is invalid.",
       sourceExecutionFailed: "The GQL source could not be executed.",
-      workflowQueryInlineRequired: "Use an inline GQL query with an explicit table source. Only grouped summary Views may be joined; their definitions are pinned when publishing.",
+      workflowQueryInlineRequired:
+        "Use an inline GQL query with an explicit table source. Only grouped summary Views may be joined; their definitions are pinned when publishing.",
       workflowQuerySchemaChanged: "The query schema changed. Review and save the workflow again before generating documents.",
       workflowQueryAccessDenied: "You no longer have access to all tables used by this query.",
       workflowQueryIntegrityFailed: "Stored workflow query data failed its integrity check. No document was generated.",
@@ -67,8 +74,6 @@ export const documentServiceMessages = i18n.define({
       sourceVersionsEmpty: "No records were found for this export. Check the selection and query filters before starting a new export.",
       sourceVersionChanged: "A source record changed or is no longer available. Start a new export and review its current data.",
       financialAccessDenied: "You no longer have permission to confirm this export. Check your workflow and source access.",
-      sepaExtendedCharacters:
-        "Names or payment references contain characters outside the SEPA basic character set. Check whether your bank accepts them. Grids preserves these characters.",
       sepaPastExecutionDate:
         "The execution date is in the past and will not be changed automatically. To use another date, cancel this run and start a new export with the correct date.",
       financialAlreadyReserved:
@@ -165,6 +170,13 @@ export const documentServiceMessages = i18n.define({
       createdDocumentReadFailed: "The created document could not be read.",
     },
     de: {
+      camtInvalid:
+        "Dieser Bankbericht kann nicht gelesen werden. Verwende eine eigenständige camt.052.001.08-XML-Datei. Prüfe Version und XML-Struktur; es wurden keine Zahlungen erfasst.",
+      camtUtf8Required: "Verwende einen XML-Bankbericht in UTF-8, keine PDF-, ZIP-Datei oder andere Zeichenkodierung.",
+      camtSingleFile: "Wähle ein Datei-Feld mit genau einem Bankbericht.",
+      camtPlanned: "Einen Bankbericht lesen, ohne Zahlungen zu erfassen.",
+      camtUnsupported:
+        "Nicht unterstütztes Bankbericht-Format. Diese Aktion liest ausschließlich camt.052.001.08, nicht camt.053 oder camt.054.",
       associatedDataInvalid: "associatedData muss auf das gespeicherte Ergebnis eines vorherigen Abfrageschritts verweisen.",
       associatedDataNotRowQuery:
         "associatedData benötigt eine Zeilenabfrage aus einer Tabelle ohne Joins, Gruppierung oder Aggregate. Erfasse die Quelldatensätze in einem eigenen Abfrageschritt.",
@@ -183,8 +195,6 @@ export const documentServiceMessages = i18n.define({
       sourceVersionChanged:
         "Ein Quelldatensatz wurde geändert oder ist nicht mehr verfügbar. Starte einen neuen Export und prüfe die aktuellen Daten.",
       financialAccessDenied: "Du darfst diesen Export nicht mehr bestätigen. Prüfe deinen Zugriff auf den Workflow und seine Quellen.",
-      sepaExtendedCharacters:
-        "Namen oder Verwendungszwecke enthalten Zeichen außerhalb des SEPA-Basiszeichensatzes. Prüfe, ob deine Bank diese akzeptiert. Grids behält die Zeichen bei.",
       sepaPastExecutionDate:
         "Das Ausführungsdatum liegt in der Vergangenheit und wird nicht automatisch geändert. Für ein anderes Datum brich diesen Lauf ab und starte einen neuen Export mit dem richtigen Datum.",
       financialAlreadyReserved:

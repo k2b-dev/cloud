@@ -1,11 +1,12 @@
-import { CursorMismatchError, RetentionGapError } from "@k2b/sync";
 import type { User } from "@k2b/cloud/contracts";
 import { auth, getLocale } from "@k2b/cloud/server";
 import { logger } from "@k2b/cloud/services";
+import { CursorMismatchError, RetentionGapError } from "@k2b/sync";
 import type { ServerWebSocket } from "bun";
 import { Hono } from "hono";
 import { upgradeWebSocket } from "hono/bun";
 import { z } from "zod";
+import { toPublicWorkflowError, toPublicWorkflowSteps } from "./api/workflow-api-shared";
 import { ShortIdSchema } from "./contracts";
 import type { GridsWorkflowRunEvent } from "./lib/workflow-run-events";
 import { gridsWorkspace } from "./lib/workspace-events";
@@ -13,6 +14,7 @@ import { gridsService } from "./service";
 import { latestMetadataEventCursor, liveMetadataEvents, toPublicMetadataEvent } from "./service/metadata-events";
 import { projectPublicId, projectPublicIds, resolvePublicId } from "./service/public-resources";
 import { latestRecordEventCursor, liveRecordEvents, toPublicRecordEvent } from "./service/record-events";
+import { projectWorkflowCaptureSteps } from "./service/workflow-query-store";
 import { latestWorkflowRunEventCursor, liveWorkflowRunEvents } from "./service/workflow-run-events";
 import { gridsWebSocketMessages } from "./ws-messages";
 
@@ -119,14 +121,18 @@ export const sendWorkspaceMessage = (socket: ServerWebSocket<unknown>, type: str
 
 const send = sendWorkspaceMessage;
 
-const toPublicWorkflowRunEvent = async (event: GridsWorkflowRunEvent) => {
+export const toPublicWorkflowRunEvent = async (
+  event: GridsWorkflowRunEvent,
+  projectIds = projectPublicIds,
+  loadCaptureSteps = projectWorkflowCaptureSteps,
+) => {
   const workflowInternalIds = [event.workflowId, event.run.workflowId].filter((id): id is string => Boolean(id));
   const launcherInternalIds = event.run.launcherId ? [event.run.launcherId] : [];
   const [bases, workflows, runs, launchers] = await Promise.all([
-    projectPublicIds("base", [event.baseId, event.run.baseId]),
-    projectPublicIds("workflow", workflowInternalIds),
-    projectPublicIds("workflowRun", [event.run.id]),
-    projectPublicIds("workflowLauncher", launcherInternalIds),
+    projectIds("base", [event.baseId, event.run.baseId]),
+    projectIds("workflow", workflowInternalIds),
+    projectIds("workflowRun", [event.run.id]),
+    projectIds("workflowLauncher", launcherInternalIds),
   ]);
   const required = (ids: ReadonlyMap<string, string>, id: string, resource: string) => {
     const publicId = ids.get(id);
@@ -140,12 +146,13 @@ const toPublicWorkflowRunEvent = async (event: GridsWorkflowRunEvent) => {
     workflowId: event.workflowId ? required(workflows, event.workflowId, "workflow") : null,
     run: {
       ...event.run,
+      error: toPublicWorkflowError(event.run.error),
       id: runId,
       baseId: required(bases, event.run.baseId, "base"),
       workflowId: event.run.workflowId ? required(workflows, event.run.workflowId, "workflow") : null,
       launcherId: event.run.launcherId ? required(launchers, event.run.launcherId, "workflow launcher") : null,
     },
-    steps: event.steps.map((step) => ({ ...step, runId })),
+    steps: (await toPublicWorkflowSteps({ items: event.steps, truncated: false }, runId, projectIds, loadCaptureSteps)).items,
   };
 };
 

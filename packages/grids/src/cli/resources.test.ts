@@ -17,6 +17,7 @@ describe("Grids CLI public IDs", () => {
 
   test("rejects private UUIDs and validates direct public-id arguments", () => {
     expect(() => resolveNamedResource([resource], uuid, "table")).toThrow("do not accept UUIDs");
+    expect(() => resolveNamedResource([resource], "019f0000-0000-7000-8000-000000000001", "table")).toThrow("do not accept UUIDs");
     expect(requirePublicId("Ab12C3", "Table id")).toBe("Ab12C3");
     expect(() => requirePublicId("Ab12C", "Table id")).toThrow("must be a 6-character public id");
     expect(() => requirePublicId(uuid, "Table id")).toThrow("must be a 6-character public id");

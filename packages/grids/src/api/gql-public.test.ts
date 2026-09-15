@@ -7,6 +7,7 @@ import {
   PublicDslQueryPreviewBodySchema,
   publicGqlParameterContext,
 } from "./gql-public";
+import { gqlDiagnosticsForLocale } from "./gql-runtime";
 
 const baseId = "11111111-1111-4111-8111-111111111111";
 const tableId = "22222222-2222-4222-8222-222222222222";
@@ -15,6 +16,14 @@ const recordId = "44444444-4444-4444-8444-444444444444";
 const relatedRecordId = "55555555-5555-4555-8555-555555555555";
 
 describe("GQL public ID boundary", () => {
+  test("keeps actionable diagnostics without exposing private IDs in either locale", () => {
+    for (const locale of ["en", "de", "fr"]) {
+      const [diagnostic] = gqlDiagnosticsForLocale([{ message: `Unknown field ${fieldId}; use FILD01 instead` }], locale, "gql.resolution");
+      expect(diagnostic?.message).not.toContain(fieldId);
+      expect(diagnostic?.message).toContain("use FILD01 instead");
+      expect(diagnostic?.code).toBe("gql.resolution");
+    }
+  });
   test("binds public parameters only in the params namespace and preserves exact decimals", () => {
     const input = PublicDslQueryExecuteBodySchema.parse({
       query: "from table Items",

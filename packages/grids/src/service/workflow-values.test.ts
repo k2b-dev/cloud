@@ -74,7 +74,7 @@ describe("workflow kernel inputs", () => {
     await expect(prepareWorkflowInputs(plan, { note: "ready" }, deps)).rejects.toThrow('workflow input "item" is required');
     await expect(prepareWorkflowInputs(plan, { item: recordShortId, extra: true }, deps)).rejects.toThrow('unknown workflow input "extra"');
     await expect(prepareWorkflowInputs(plan, { item: recordShortId }, deps)).rejects.toThrow("references missing record");
-    await expect(prepareWorkflowInputs(plan, { item: recordId }, deps)).rejects.toThrow("references missing record");
+    await expect(prepareWorkflowInputs(plan, { item: recordId }, deps)).rejects.toThrow(/^references a missing record$/);
     await expect(prepareWorkflowInputs(plan, { item: recordShortId }, { ...deps, canReadTable: async () => false })).rejects.toThrow(
       "cannot read the input table",
     );
@@ -117,6 +117,47 @@ describe("workflow kernel inputs", () => {
 });
 
 describe("workflow kernel value resolver", () => {
+  test("document and link scalar IDs are public before interpolation into messages or HTTP", async () => {
+    const reads: string[] = [];
+    const resolver = new GridsWorkflowValueResolver({
+      canReadTable: async () => true,
+      readRecord: async () => null,
+      recordShortId: async () => null,
+      publicResourceId: async (type, id) => {
+        reads.push(`${type}:${id}`);
+        return type === "document" ? "DOC001" : "LINK01";
+      },
+    });
+    const documents: Record<string, WorkflowJsonValue> = {
+      document: { id: recordId, shortId: "DOC001", primaryArtifactKey: "primary", createdBy: otherRecordId },
+      link: { kind: "documentLink", id: otherRecordId, documentId: recordId },
+      text: { id: recordId },
+    };
+    const invocation: WorkflowInvocation = {
+      workflowId: recordId,
+      mode: "execute",
+      channel: "api",
+      actor: {},
+      inputs: {},
+      idempotencyKey: "public-ids",
+      occurredAt: new Date(0).toISOString(),
+    };
+    const resolve = (reference: string) =>
+      resolver.resolve({
+        reference,
+        path: [],
+        plan,
+        invocation,
+        variables: { get: (name) => documents[name], has: (name) => name in documents, set: () => undefined },
+        fallback: () => recordId,
+      });
+    expect(await resolve("document.id")).toEqual({ state: "resolved", value: "DOC001" });
+    expect(await resolve("document.id")).toEqual({ state: "resolved", value: "DOC001" });
+    expect(await resolve("link.documentId")).toEqual({ state: "resolved", value: "DOC001" });
+    expect(await resolve("link.id")).toEqual({ state: "resolved", value: "LINK01" });
+    expect(await resolve("text.id")).toEqual({ state: "resolved", value: recordId });
+    expect(reads).toEqual([`document:${recordId}`, `documentLink:${otherRecordId}`]);
+  });
   test("rejects direct record IDs from an inaccessible table before reading any record data", async () => {
     let shortIdReads = 0;
     let recordReads = 0;

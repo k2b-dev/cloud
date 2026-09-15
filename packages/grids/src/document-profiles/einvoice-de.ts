@@ -1,17 +1,9 @@
 import { type RenderFacturXHtmlToPdfInput, renderFacturXHtmlToPdf } from "@k2b/cloud/services/pdf";
-import {
-  buildXml,
-  DocumentTypeCode,
-  extractXml,
-  type FacturXInvoiceInput,
-  Flavor,
-  Profile,
-  UnitCode,
-  VatCategoryCode,
-  validateInput,
-  validateXsd,
-} from "@stackforge-eu/factur-x";
+import { unwrap } from "@k2b/stdlib";
+import { einvoice, type Invoice } from "@k2b/stdlib/finance";
+import { validateInvoiceXml } from "@k2b/stdlib/finance/validate";
 import Decimal from "decimal.js";
+import { isValidIBAN } from "ibantools";
 import { z } from "zod";
 import type { DocumentProfile } from "../document-profiles";
 
@@ -34,15 +26,6 @@ const date = z
     const parsed = new Date(`${value}T00:00:00Z`);
     return Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
   }, "invalid date");
-const validIban = (value: string) => {
-  const rearranged = `${value.slice(4)}${value.slice(0, 4)}`;
-  let remainder = 0;
-  for (const character of rearranged) {
-    const digits = /\d/.test(character) ? character : String(character.charCodeAt(0) - 55);
-    for (const digit of digits) remainder = (remainder * 10 + Number(digit)) % 97;
-  }
-  return remainder === 1;
-};
 const party = z
   .object({
     name: text(200),
@@ -54,6 +37,9 @@ const party = z
   })
   .strict();
 
+// This is the deliberately narrower Grids input profile, also used before a
+// document number exists. stdlib owns invoice calculation, serialization and
+// final format validation; do not duplicate those rules here.
 export const germanEInvoiceSnapshotSchema = z
   .object({
     invoiceDate: date,
@@ -67,7 +53,7 @@ export const germanEInvoiceSnapshotSchema = z
         iban: z
           .string()
           .regex(/^[A-Z]{2}\d{2}[A-Z0-9]{11,30}$/)
-          .refine(validIban, "invalid IBAN checksum"),
+          .refine(isValidIBAN, "invalid IBAN"),
         accountName: text(200),
       })
       .strict(),
@@ -109,10 +95,15 @@ export const germanBillingSnapshotSchema = germanEInvoiceSnapshotSchema
   .safeExtend({
     billing: billingKindSchema,
     serviceDate: date,
-    lines: germanEInvoiceSnapshotSchema.shape.lines.element.extend({
-      description: text(4_000).optional(),
-      unitCode: z.enum([UnitCode.UNIT, UnitCode.HOUR, UnitCode.DAY, UnitCode.KILOGRAM]).optional(),
-    }).strict().array().min(1).max(1_000),
+    lines: germanEInvoiceSnapshotSchema.shape.lines.element
+      .extend({
+        description: text(4_000).optional(),
+        unitCode: z.enum(["C62", "HUR", "DAY", "KGM"]).optional(),
+      })
+      .strict()
+      .array()
+      .min(1)
+      .max(1_000),
   })
   .superRefine((value, ctx) => {
     if (value.billing.kind === "creditNote" && value.billing.original.invoiceDate > value.invoiceDate) {
@@ -132,114 +123,54 @@ const escapeXml = (value: string) =>
   value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&apos;");
 const escapeHtml = escapeXml;
 const normalizedXml = (value: string) => value.trim().replace(/encoding="utf-8"/i, 'encoding="UTF-8"');
-const money = (value: Decimal) => value.toDecimalPlaces(2, Decimal.ROUND_HALF_UP).toFixed(2);
+const invoiceLines = (snapshot: GermanEInvoiceSnapshot): Invoice["lines"] =>
+  snapshot.lines.map((line, index) => ({
+    id: String(index + 1),
+    name: line.name,
+    quantity: line.quantity,
+    unitPrice: line.unitPrice,
+    taxRate: line.taxRate,
+    unitCode: "unitCode" in line ? (line.unitCode ?? "C62") : "C62",
+    ...("description" in line && line.description ? { description: line.description } : {}),
+  }));
 
 const calculate = (snapshot: GermanEInvoiceSnapshot) => {
-  const lines = snapshot.lines.map((line, index) => {
-    const net = new Decimal(line.quantity).mul(line.unitPrice).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
-    return { ...line, id: String(index + 1), net };
-  });
-  const groups = new Map<string, { basis: Decimal; tax: Decimal }>();
-  for (const line of lines) {
-    const group = groups.get(line.taxRate) ?? { basis: new Decimal(0), tax: new Decimal(0) };
-    group.basis = group.basis.plus(line.net);
-    groups.set(line.taxRate, group);
-  }
-  for (const [rate, group] of groups) group.tax = group.basis.mul(rate).div(100).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
-  const net = lines.reduce((sum, line) => sum.plus(line.net), new Decimal(0));
-  const tax = [...groups.values()].reduce((sum, group) => sum.plus(group.tax), new Decimal(0));
-  return { lines, groups, net, tax, total: net.plus(tax) };
+  const totals = unwrap(einvoice.calculate(invoiceLines(snapshot)));
+  return {
+    lines: totals.lines.map((line) => ({ ...line, net: line.netAmount })),
+    groups: new Map(totals.taxGroups.map((group) => [group.taxRate, { basis: group.netAmount, tax: group.taxAmount }])),
+    net: totals.netAmount,
+    tax: totals.taxAmount,
+    total: totals.grossAmount,
+  };
 };
 
-const facturXInput = (
-  snapshot: GermanEInvoiceSnapshot,
-  context: Parameters<DocumentProfile<GermanEInvoiceSnapshot>["issue"]>[1],
-): FacturXInvoiceInput => {
-  const totals = calculate(snapshot);
+const invoiceInput = (snapshot: GermanEInvoiceSnapshot, number: string): Invoice => {
   const billing = "billing" in snapshot ? snapshot.billing : undefined;
-  const party = (value: GermanEInvoiceSnapshot["seller"]) => ({
-    name: value.name,
-    address: {
-      line1: value.address.line1,
-      city: value.address.city,
-      postalCode: value.address.postalCode,
-      country: value.address.countryCode,
-    },
-    taxRegistrations: [{ id: value.vatId, schemeId: "VA" as const }],
-  });
   return {
-    document: {
-      id: context.number,
-      issueDate: snapshot.invoiceDate,
-      typeCode:
-        billing?.kind === "creditNote"
-          ? DocumentTypeCode.CREDIT_NOTE
-          : billing?.kind === "selfBilling"
-            ? DocumentTypeCode.SELF_BILLED_INVOICE
-            : DocumentTypeCode.COMMERCIAL_INVOICE,
-      buyerReference: snapshot.buyerReference,
-      ...(billing?.kind === "creditNote"
-        ? { notes: [{ content: billing.reason }] }
-        : billing?.kind === "selfBilling"
-          ? { notes: [{ content: `Gutschrift (Selbstabrechnung). Vereinbarung: ${billing.agreementReference}` }] }
-          : {}),
-    },
+    kind: billing?.kind ?? "invoice",
+    number,
+    invoiceDate: snapshot.invoiceDate,
+    serviceDate: "serviceDate" in snapshot ? snapshot.serviceDate : snapshot.invoiceDate,
+    dueDate: snapshot.dueDate,
+    currency: snapshot.currency,
+    buyerReference: snapshot.buyerReference,
+    seller: snapshot.seller,
+    buyer: snapshot.buyer,
+    payment: snapshot.payment,
+    lines: invoiceLines(snapshot),
     ...(billing?.kind === "creditNote"
-      ? {
-          references: [{ type: "preceding" as const, id: billing.original.number, issueDate: billing.original.invoiceDate }],
-        }
-      : {}),
-    seller: party(snapshot.seller),
-    buyer: party(snapshot.buyer),
-    lines: totals.lines.map((line) => ({
-      id: line.id,
-      name: line.name,
-      ...("description" in line && line.description ? { description: line.description } : {}),
-      quantity: Number(line.quantity),
-      unitCode: "unitCode" in line ? (line.unitCode ?? UnitCode.UNIT) : UnitCode.UNIT,
-      unitPrice: Number(line.unitPrice),
-      // The library otherwise recalculates using binary floating point and
-      // validates the header against unrounded products, unlike the PDF.
-      lineTotal: Number(money(line.net)),
-      vatCategoryCode: VatCategoryCode.STANDARD_RATE,
-      vatRatePercent: Number(line.taxRate),
-    })),
-    totals: {
-      lineTotal: Number(money(totals.net)),
-      allowanceTotal: 0,
-      chargeTotal: 0,
-      taxBasisTotal: Number(money(totals.net)),
-      taxTotal: Number(money(totals.tax)),
-      grandTotal: Number(money(totals.total)),
-      duePayableAmount: Number(money(totals.total)),
-      currency: snapshot.currency,
-    },
-    vatBreakdown: [...totals.groups.entries()].map(([rate, group]) => ({
-      categoryCode: VatCategoryCode.STANDARD_RATE,
-      ratePercent: Number(rate),
-      taxableAmount: Number(money(group.basis)),
-      taxAmount: Number(money(group.tax)),
-    })),
-    payment: {
-      meansCode: "58",
-      iban: snapshot.payment.iban,
-      accountName: snapshot.payment.accountName,
-      dueDate: snapshot.dueDate,
-    },
-    delivery: { date: "serviceDate" in snapshot ? snapshot.serviceDate : snapshot.invoiceDate },
+      ? { precedingInvoice: billing.original, notes: [billing.reason] }
+      : billing?.kind === "selfBilling"
+        ? { notes: [`Gutschrift (Selbstabrechnung). Vereinbarung: ${billing.agreementReference}`] }
+        : {}),
   };
 };
 
 export const buildGermanEInvoiceXml = (
   snapshot: GermanEInvoiceSnapshot,
   context: Parameters<DocumentProfile<GermanEInvoiceSnapshot>["issue"]>[1],
-): string => {
-  const input = facturXInput(snapshot, context);
-  const validation = validateInput(input, Profile.EN16931);
-  if (!validation.valid)
-    throw new Error(`E-Invoice input failed EN 16931 validation: ${JSON.stringify(validation.errors).slice(0, 2_000)}`);
-  return buildXml(input, Profile.EN16931, Flavor.ZUGFERD);
-};
+): string => unwrap(einvoice.serialize(invoiceInput(snapshot, context.number), { format: "zugferd-2.5-en16931" })).xml;
 
 const buildHtml = (snapshot: GermanEInvoiceSnapshot, number: string) => {
   const totals = calculate(snapshot);
@@ -254,11 +185,16 @@ const buildHtml = (snapshot: GermanEInvoiceSnapshot, number: string) => {
         : "";
   const service = "serviceDate" in snapshot ? `<p>Leistungsdatum: ${snapshot.serviceDate}</p>` : "";
   const unitLabel = (line: (typeof totals.lines)[number]) => {
-    const unit = "unitCode" in line ? line.unitCode : UnitCode.UNIT;
-    return unit === UnitCode.HOUR ? "Std." : unit === UnitCode.DAY ? "Tage" : unit === UnitCode.KILOGRAM ? "kg" : "Stk.";
+    const unit = "unitCode" in line ? line.unitCode : "C62";
+    return unit === "HUR" ? "Std." : unit === "DAY" ? "Tage" : unit === "KGM" ? "kg" : "Stk.";
   };
-  const rows = totals.lines.map((line) => `<tr><td>${escapeHtml(line.name)}${"description" in line && line.description ? `<div class="description">${escapeHtml(line.description)}</div>` : ""}</td><td>${line.quantity} ${unitLabel(line)}</td><td>${line.unitPrice} EUR</td><td>${line.taxRate} %</td><td>${money(line.net)} EUR</td></tr>`).join("");
-  return `<!doctype html><html lang="de"><head><meta charset="utf-8"><style>@page{size:A4;margin:18mm}body{font:12px system-ui;color:#17202a}h1{font-size:24px}table{width:100%;border-collapse:collapse;margin-top:24px}thead{display:table-header-group}tr{break-inside:avoid}th,td{padding:8px;border-bottom:1px solid #ccd1d1;text-align:right;vertical-align:top}th:first-child,td:first-child{text-align:left;overflow-wrap:anywhere}.description{white-space:pre-wrap;margin-top:4px}.total{font-weight:700}.settlement{break-inside:avoid}.settlement td{white-space:nowrap}.settlement .payment{text-align:left;white-space:normal;overflow-wrap:anywhere}</style></head><body><h1>${title} ${escapeHtml(number)}</h1>${detail}${service}<p>${escapeHtml(snapshot.seller.name)} · ${escapeHtml(snapshot.seller.address.line1)} · ${escapeHtml(snapshot.seller.address.postalCode)} ${escapeHtml(snapshot.seller.address.city)}</p><p>An: ${escapeHtml(snapshot.buyer.name)}<br>${escapeHtml(snapshot.buyer.address.line1)}<br>${escapeHtml(snapshot.buyer.address.postalCode)} ${escapeHtml(snapshot.buyer.address.city)}</p><p>Rechnungsdatum: ${snapshot.invoiceDate} · Fällig: ${snapshot.dueDate}</p><table><thead><tr><th>Leistung</th><th>Menge</th><th>Einzelpreis</th><th>USt.</th><th>Netto</th></tr></thead><tbody>${rows}</tbody><tbody class="settlement"><tr><td colspan="4">Netto</td><td>${money(totals.net)} EUR</td></tr><tr><td colspan="4">Umsatzsteuer</td><td>${money(totals.tax)} EUR</td></tr><tr class="total"><td colspan="4">Gesamt</td><td>${money(totals.total)} EUR</td></tr><tr><td class="payment" colspan="5">IBAN: ${snapshot.payment.iban}</td></tr></tbody></table></body></html>`;
+  const rows = totals.lines
+    .map(
+      (line) =>
+        `<tr><td>${escapeHtml(line.name)}${"description" in line && line.description ? `<div class="description">${escapeHtml(line.description)}</div>` : ""}</td><td>${line.quantity} ${unitLabel(line)}</td><td>${line.unitPrice} EUR</td><td>${line.taxRate} %</td><td>${line.net} EUR</td></tr>`,
+    )
+    .join("");
+  return `<!doctype html><html lang="de"><head><meta charset="utf-8"><style>@page{size:A4;margin:18mm}body{font:12px system-ui;color:#17202a}h1{font-size:24px}table{width:100%;border-collapse:collapse;margin-top:24px}thead{display:table-header-group}tr{break-inside:avoid}th,td{padding:8px;border-bottom:1px solid #ccd1d1;text-align:right;vertical-align:top}th:first-child,td:first-child{text-align:left;overflow-wrap:anywhere}.description{white-space:pre-wrap;margin-top:4px}.total{font-weight:700}.settlement{break-inside:avoid}.settlement td{white-space:nowrap}.settlement .payment{text-align:left;white-space:normal;overflow-wrap:anywhere}</style></head><body><h1>${title} ${escapeHtml(number)}</h1>${detail}${service}<p>${escapeHtml(snapshot.seller.name)} · ${escapeHtml(snapshot.seller.address.line1)} · ${escapeHtml(snapshot.seller.address.postalCode)} ${escapeHtml(snapshot.seller.address.city)}</p><p>An: ${escapeHtml(snapshot.buyer.name)}<br>${escapeHtml(snapshot.buyer.address.line1)}<br>${escapeHtml(snapshot.buyer.address.postalCode)} ${escapeHtml(snapshot.buyer.address.city)}</p><p>Rechnungsdatum: ${snapshot.invoiceDate} · Fällig: ${snapshot.dueDate}</p><table><thead><tr><th>Leistung</th><th>Menge</th><th>Einzelpreis</th><th>USt.</th><th>Netto</th></tr></thead><tbody>${rows}</tbody><tbody class="settlement"><tr><td colspan="4">Netto</td><td>${totals.net} EUR</td></tr><tr><td colspan="4">Umsatzsteuer</td><td>${totals.tax} EUR</td></tr><tr class="total"><td colspan="4">Gesamt</td><td>${totals.total} EUR</td></tr><tr><td class="payment" colspan="5">IBAN: ${snapshot.payment.iban}</td></tr></tbody></table></body></html>`;
 };
 
 export const createGermanEInvoiceProfile = (
@@ -269,19 +205,31 @@ export const createGermanEInvoiceProfile = (
   title: "German E-Invoice (ZUGFeRD EN 16931)",
   description:
     "Outgoing EUR invoices using ZUGFeRD 2.5 / Factur-X 1.09 EN 16931. Technical validation is not tax or legal approval. The issuer is responsible for invoice content and suitability for the intended use.",
-  rendererVersion: "gotenberg-8.36.0-factur-x",
-  validatorVersion: "stackforge-factur-x-1.2.0-xsd-en16931",
+  rendererVersion: "stdlib-0.25.0-gotenberg-8.36.0-factur-x",
+  validatorVersion: "stdlib-0.25.0-zugferd-2.5-en16931-xsd",
   primaryArtifact: { key: "pdf", mediaType: "application/pdf" },
   input: germanEInvoiceSnapshotSchema,
   formatNumber: ({ value, issuedAt }) => `RE-${issuedAt.getUTCFullYear()}-${String(value).padStart(6, "0")}`,
   issue: async (snapshot, context) => {
     const xml = buildGermanEInvoiceXml(snapshot, context);
-    const validation = await (dependencies.validate ?? (async ({ xml: value }) => validateXsd(value, Profile.EN16931)))({ xml });
+    const validation = await (
+      dependencies.validate ??
+      (async ({ xml: value }) => {
+        const result = await validateInvoiceXml(value, { format: "zugferd-2.5-en16931" });
+        return result.ok ? { valid: true, errors: [] } : { valid: false, errors: result.error.issues };
+      })
+    )({ xml });
     if (!validation.valid) {
       throw new Error(`Generated E-Invoice failed XSD validation: ${JSON.stringify(validation.errors).slice(0, 2_000)}`);
     }
     const rendered = await (dependencies.render ?? renderFacturXHtmlToPdf)({ html: buildHtml(snapshot, context.number), xml });
-    const embedded = await (dependencies.extractEmbedded ?? (async (pdf) => extractXml(pdf)))(rendered.pdf);
+    const embedded = await (
+      dependencies.extractEmbedded ??
+      (async (pdf) => {
+        const parsed = unwrap(await einvoice.parsePdf(pdf));
+        return { filename: parsed.filename, xml: parsed.xml };
+      })
+    )(rendered.pdf);
     if (embedded.filename.toLowerCase() !== "factur-x.xml" || normalizedXml(embedded.xml) !== normalizedXml(xml)) {
       throw new Error("Rendered E-Invoice does not contain the generated Factur-X XML.");
     }
@@ -290,13 +238,13 @@ export const createGermanEInvoiceProfile = (
     return {
       output: {
         currency: snapshot.currency,
-        netAmount: money(totals.net),
-        taxAmount: money(totals.tax),
-        grossAmount: money(totals.total),
+        netAmount: totals.net,
+        taxAmount: totals.tax,
+        grossAmount: totals.total,
         taxGroups: [...totals.groups].map(([taxRate, group]) => ({
           taxRate,
-          netAmount: money(group.basis),
-          taxAmount: money(group.tax),
+          netAmount: group.basis,
+          taxAmount: group.tax,
         })),
       },
       artifacts: [

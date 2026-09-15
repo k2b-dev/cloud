@@ -47,3 +47,27 @@ Darstellung und Absenden prüfen die veröffentlichte Capability und `availableW
 Wähle **Datensatz dieser Seite bearbeiten** für ein Formular auf einer passenden Datensatzseite, um einen bestehenden Entwurf mit seinen konfigurierten verknüpften Eingaben gemeinsam zu ändern. Anlegen bleibt der Standard; öffentliche Links und globale Seitenleistenformulare legen immer neue Datensätze an. Bestehende verknüpfte Änderungen benötigen exklusive Verbindungen zu diesem Eltern-Datensatz innerhalb derselben Base. Das Entfernen einer Zeile löst die Verknüpfung, löscht aber keinen Kinddatensatz. Finalisierte Datensätze bleiben schreibgeschützt.
 
 Speichern prüft Versionen und übernimmt verknüpfte Änderungen gemeinsam. Verbindungsfehler im offenen Dialog erneut versuchen; bei Versionskonflikten neu laden und vor dem Speichern prüfen. CLI/API-Versionen, Idempotenzschlüssel, Payloads und Grenzen stehen in der [API-Referenz](/app/grids/help/grids-custom-app-api).
+
+## Konfiguration für CLI- und API-Autoren
+
+Formular-`config` verwendet folgende Schlüssel. Öffentliche APIs nehmen öffentliche Feld-IDs an, keine internen UUIDs.
+
+| Schlüssel | Bedeutung |
+| --- | --- |
+| `title`, `description` | Optionaler Text über den Eingaben |
+| `fields` | Geordnete Eingaben und feste Werte; jedes Feld nur einmal |
+| `computedFields` | Bis 20 nur lesende Zusammenfassungen: `{fieldId, label?, helpText?, width?}`; Label bis 200, Hinweis bis 2.000 Zeichen |
+| `validations` | Bis 20 feldübergreifende Regeln, siehe unten |
+| `submitLabel`, `successMessage` | Optionaler Aktions- und Erfolgstext |
+| `redirectUrl` | Optionales Ziel nach erfolgreicher Übermittlung; null bedeutet keine Weiterleitung |
+| `titleImage` | Optionale Bild-Data-URL, bis 1.000.000 Zeichen |
+
+Eine sichtbare Eingabe lautet `{kind:"user_input", fieldId, label?, helpText?, required?, defaultValue?, width?, inlineCreate?}`. Ein verborgenes Feld lautet `{kind:"form_value", fieldId, value}`: Der Server setzt den festen Wert, statt einen mitgesendeten Wert zu übernehmen.
+
+Eine Regel lautet `{leftFieldId, operator, rightFieldId, message, errorFieldId?}`. Operatoren: `eq`, `neq`, `lt`, `lte`, `gt`, `gte`. Die Meldung hat 1–240 Zeichen. Vergleiche kompatible Zahlen-, Dauer- oder Datumseingaben. `errorFieldId` bestimmt das Feld für die Fehlermeldung.
+
+Bei geeigneten Relationsfeldern wählt `inlineCreate: {enabled:true, fields:[...]}` die Zieleingaben. Jede hat `fieldId` und optional `label`, `helpText`, `width`, `required`, `defaultValue`. Inline-Erstellung ist eine Ebene tief: keine weiteren verschachtelten Relationen, Datei-Uploads, Systemwerte oder berechneten Eingaben.
+
+Formularstandards schlagen Anfangsantworten vor. Objektlistenstandards schlagen Werte neu hinzugefügter Zellen vor. Beides ist keine Berechtigungsregel und ersetzt keine festen Werte. Nutze sichere Erleichterungen wie Menge 1; erfinde keine Preise, Bankkonten, Zahlungsbestätigungen oder Freigaben.
+
+Gespeicherte Feldstandards und skalare Optionen stehen unter [Feldkonfiguration](/app/grids/help/grids-field-configuration). Übermittlungsdaten veröffentlichter Apps, Versionsprüfungen und Zuweisung des aktuellen Nutzers stehen in der [Grids-App-API](/app/grids/help/grids-custom-app-api).

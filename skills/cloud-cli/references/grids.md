@@ -2,6 +2,13 @@
 
 Grids stores structured operational data in bases made of tables, fields, records, views, forms, Grids Apps, documents, and workflows. Use `cld grids` to inspect and change the Grids resources available to the signed-in user through the same permission-checked HTTP API used by the app.
 
+Grids resource IDs are six-character public IDs across API responses, CLI JSON,
+URLs, relations, workflow results, and live events. Internal database UUIDs are
+not accepted as resource arguments. Cloud account/group IDs, audit and delivery
+IDs, opaque cursors, and ordinary user data follow their own contracts; they are
+not Grids resource IDs. Captured workflow data is addressed by the run's public
+ID and its `stepKey`, not by a capture UUID.
+
 ## Contents
 
 - [Exact options and specialized references](#exact-options-and-specialized-references)
@@ -1275,7 +1282,7 @@ Paths neither expand arrays nor query live Records. Missing Documents, paths or 
 All selected render/profile snapshots together must fit 5 MiB before loading; the projected capture has the same limit.
 Use exact issued IDs for invoice exports; a later live invoice query is not equivalent to the issued snapshot.
 After `generateDocument` with `saveAs: issued`, use `documents: ["${{ issued.shortId }}"]` to consume it in a later step.
-Its result exposes `id` (internal identity), `shortId` (public identity), `number`, `filename` and `primaryArtifactKey`;
+Its result exposes `id` and `shortId` (the same public identity), `number`, `filename` and `primaryArtifactKey`;
 do not use `documentNumber`, `snapshotId` or `workflowRunId` as expression fields.
 A dry-run accepts earlier planned Documents without looking up placeholder IDs. Their saved values can only be checked
 during execution; the dry-run summary states this limitation. Existing source Documents are still checked.
@@ -1363,7 +1370,7 @@ DATEV consultant/client numbers and account numbers are digit **strings**; `acco
 DATEV dates must fall in 2000–2099 and within the configured fiscal period. SEPA IBANs must be valid uppercase electronic values
 without spaces; QR-IBANs are rejected. Amounts must be positive exact decimal values with at most two effective decimal places.
 Grids does not round fractional cents. DATEV represents the direction separately as `S` or `H`.
-SEPA preview `warnings` flag extended characters requiring bank support and a past execution date in the request timezone.
+SEPA preview `warnings` flag a past execution date in the request timezone. Unsupported characters fail validation before issuance; Grids does not transliterate values or offer a legacy charset fallback.
 Warnings are advisory metadata, not part of the confirmation hash. Names and dates remain unchanged; cancel and restart with
 corrected inputs to change them. Local XML validation does not guarantee bank acceptance.
 
@@ -1521,6 +1528,12 @@ Saved document outputs expose `id`, `shortId`, `templateId`, `baseId`, `tableId`
 `documentId`. Email outputs expose `subject`, `templateId`, and `recipients`, whose entries include `id`, `deliveryId`, `kind`, `recipient`,
 and `status`. HTTP outputs expose `status`, `ok`, and `body`.
 
+Document and link resource IDs also resolve to public IDs when interpolated in
+messages or HTTP parameters. Pass the whole result reference to actions that
+expect a Document. Query/file captures are opaque: pass the whole `saveAs`
+reference to `generateDocument.data`; their private `.id` is not an expression
+field. Use `rowCount`, `sha256`, or `capturedAt` for capture metadata.
+
 Limits are 100 inputs, 1,000 total steps, nesting depth 20, 1,000 conditions, condition depth 20, 10,000 loop or record-list items, and
 200,000 YAML characters. Run modes are `execute` and `dryRun`. Invocation channels are `api`, `customApp`, `scanner`, `bulk`, `record`,
 `schedule`, and `recordEvent`.
@@ -1570,6 +1583,52 @@ cld grids workflows restore "Check in" --revision 2 --yes --json
 ```
 
 Restore copies the selected definition into a new current revision. It uses the current revision as an optimistic concurrency guard and fails if somebody saves the workflow first.
+
+### Read a CAMT bank report
+
+The read-only `parseDocument` action supports exactly `camt.052.001.08` UTF-8 XML.
+Use `record: inputs.<record>`, a bound File `field`, `format`, and optional `saveAs`.
+That field must contain exactly one attachment. A dry run checks the Record but
+does not parse/capture the file. Example:
+
+```yaml
+inputs:
+  selected: { type: record, table: BankImports, required: true }
+steps:
+  - parseDocument:
+      record: inputs.selected
+      field: BankFile
+      format: camt.052.001.08
+      saveAs: bank
+  - generateDocument:
+      data: bank
+      output: { kind: json }
+```
+
+The public step result is `{kind:"fileSnapshot",stepKey,sha256,rowCount,capturedAt}`.
+Use the run's Short ID with `stepKey`; capture UUIDs stay internal. `rowCount` counts account reports.
+Full rows are `{report:<typed CAMT report>}`; balances, entries and transaction
+details remain nested. Original bytes are retained alongside parsed data under
+the cumulative 5 MiB capture budget. No silent truncation or fallback parser.
+DTD, malformed XML, non-UTF-8 and other CAMT versions are rejected.
+
+Amounts remain decimal strings with currency and separate CRDT/DBIT direction.
+Missing detail amounts stay absent; never add both an entry and its transaction
+details. Preserve bank status, reversals and message/report pagination. A captured
+file is not proof of complete pages or a settled payment. No payment creation,
+matching or invoice status update happens automatically.
+
+```bash
+cld grids workflow-runs steps <run>
+cld grids workflow-runs file <run> <step-key> --sha256 <capture-hash> --json
+cld grids workflow-runs download-file <run> <step-key> --sha256 <capture-hash> --out bank.xml
+```
+
+Text output shows an account-report table; JSON exposes the hierarchy. Both CLI
+and GUI use the authorized run/capture/hash API; the original download remains
+available if the attachment was detached. Read Help `grids-camt` for the full
+contract. Capturing bank XML does not infer Document membership from IDs inside
+the XML.
 
 ### Invoke and inspect runs
 

@@ -228,6 +228,8 @@ Ausführungsoptionen werden getrennt von der Workflow-Quelle konfiguriert. Ein W
 
 ## Schrittreferenz {icon="book-2"}
 
+Bankdateien liest `parseDocument` mit `record`, Datei-`field`, `format: camt.052.001.08` und optional `saveAs`. Die Aktion speichert Original und typisierte Kontoberichte zusammen. Ein Probelauf prüft die Datensatzreferenz, nicht die Datei. Die kleine `fileSnapshot`-Referenz lässt sich als `generateDocument.data` verwenden. Es werden keine Zahlungen gebucht. Vollständiges Beispiel, Grenzen und CLI: [Bankberichte lesen (CAMT)](/app/grids/help/grids-camt).
+
 | Schritt | Erforderliche Felder | Optionale Felder und Standardwerte | Testlauf |
 | --- | --- | --- | --- |
 | `query` | GQL unter `source` | Typisierte `parameters`, `saveAs` | Prüft Schema und Zugriff, erfasst keine Zeilen |
@@ -247,6 +249,13 @@ Ausführungsoptionen werden getrennt von der Workflow-Quelle konfiguriert. Ein W
 | `fail` | `message` | Keine | Beendet die Planung mit dem Fehler, den die Ausführung erzeugen würde |
 
 `query` erfasst höchstens 10.000 Zeilen/5 MiB oder scheitert ohne Teilergebnis; GQL-`limit` wählt eine Teilmenge. Parameter: `{type, value}` über `@params.name`; Typen: text, number, decimal (exakte Zeichenkette), boolean, date, dateTime, record, recordList. Datensätze nutzen Workflow-Referenzen. Leeres `oneof(record.id, @params.selected)` ergibt keine Treffer. Testläufe akzeptieren geplante Datensätze, erfassen aber nichts. `saveAs` liefert Metadaten für `generateDocument.data`, keine Zeilen.
+
+Grids-Ressourcen verwenden in Laufergebnissen und Live-Updates öffentliche IDs.
+Dokument- und Link-IDs liefern auch in Ausdrücken öffentliche IDs. Erfasste Daten
+sind eine undurchsichtige Referenz: Übergib die gesamte gespeicherte Referenz an
+spätere Aktionen; `.id` ist kein Ausdrucksfeld. Zum Öffnen dienen die öffentliche
+Lauf-ID und der Schrittschlüssel. Cloud-Konto-IDs sowie technische Audit- und
+Zustellungs-IDs behalten ihr eigenes Format.
 
 Alle Quellerfassungen teilen sich 5 MiB pro Lauf, auch in Schleifen. Wiederverwendung zählt nicht doppelt. Reduziere Zeilen/Felder oder verteile größere Exporte auf mehrere Läufe.
 
@@ -301,7 +310,7 @@ IBANs sind maskiert; **Bankdaten anzeigen** blendet sie zur Prüfung ein.
 `generateDocument` akzeptiert auch `output: { kind: datev-csv, version: 1, header: ..., mapping: ... }`
 oder `kind: sepa-xml`. Diese erzeugen EUR-Buchungs- oder Zahlungsdateien, keine importierten Buchungen oder ausgeführten Zahlungen.
 Das DATEV-Profil verwendet 700/13, SEPA SCT pain.001.001.09 (DK GBIC 5). Die Annahme durch das Zielsystem wird nicht garantiert.
-Die SEPA-Vorschau warnt vor vergangenen Daten und erweiterten Zeichen. Werte bleiben unverändert; zum Korrigieren abbrechen und neu starten.
+Die SEPA-Vorschau warnt vor vergangenen Ausführungsdaten. Nicht unterstützte Zeichen werden vor der Ausstellung abgelehnt; Grids ersetzt weder Namen noch andere Werte stillschweigend. Zum Korrigieren abbrechen und neu starten.
 
 Starte manuell; automatische Trigger dürfen keine Finanzexporte erstellen. Wähle **Export prüfen** im Lauf, der Custom-App-Aktion oder
 Scanner-Protokollzeile. Prüfe Ziel, Datum, Zeilen, Summen und Abfragelimit. Bestätigungen verfallen nicht automatisch; brich unerwünschte Läufe ab.

@@ -20,6 +20,7 @@ import {
 } from "@k2b/cloud/workflows/language";
 import { normalizeWorkflowSchedule } from "@k2b/cloud/workflows/runtime";
 import type { Result } from "@k2b/stdlib";
+import { datev, sepa } from "@k2b/stdlib/finance";
 import type { DslQueryContextInput } from "../query-dsl/parameters";
 import { parseGridsQueryDsl } from "../query-dsl/parser";
 import { FinancialDocumentOutputSchema } from "../service/document-financial-output";
@@ -64,7 +65,6 @@ const gridsValueDescriptors: Record<string, WorkflowValuePathDescriptor> = {
     type: "grids.queryResult",
     properties: {
       kind: textValue,
-      id: textValue,
       sha256: textValue,
       rowCount: { kind: "scalar", type: "core.number" },
       capturedAt: dateTimeValue,
@@ -367,6 +367,24 @@ const bindFinancialOutput = (
   if (!Object.values(header).some((value) => typeof value === "string" && parseWorkflowValueString(value).kind !== "literal")) {
     const checked = validateDocumentQueryOutput(output);
     if (!checked.ok) addDiagnostic(context, "binding.output", checked.error.message, path);
+  } else {
+    // Missing dynamic values are not samples. Report only issues belonging to
+    // supplied literals; complete cross-field validation runs after evaluation.
+    const literals = Object.fromEntries(
+      Object.entries(header).filter(
+        ([key, value]) => key !== "destinationKey" && !(typeof value === "string" && parseWorkflowValueString(value).kind !== "literal"),
+      ),
+    );
+    const checked =
+      output.kind === "datev-csv"
+        ? datev.validateHeader({ ...literals, format: "datev-700-13", currency: "EUR" })
+        : sepa.validateHeader({ ...literals, format: "sepa-sct-pain.001.001.09-gbic-5", currency: "EUR" });
+    if (!checked.ok)
+      for (const issue of checked.error.issues) {
+        const key = issue.path[0];
+        if (typeof key === "string" && Object.hasOwn(literals, key))
+          addDiagnostic(context, "binding.output", issue.message, [...path, "header", ...issue.path]);
+      }
   }
   if (context.ir.triggers.some((trigger) => trigger.kind === "schedule" || trigger.kind === "recordEvent"))
     addDiagnostic(
@@ -538,7 +556,15 @@ const bindAction = (step: Extract<WorkflowIrStep, { kind: "action" }>, scope: Ma
   const outputType = gridsWorkflows.manifest.actions.find((action) => action.kind === step.action)?.outputType;
   let output: ValueInfo | undefined = outputType ? valueDescriptor(outputType) : undefined;
 
-  if (step.action === "query") {
+  if (step.action === "parseDocument") {
+    const record = expectReference(config.record, "grids.record", "record", [...path, "record"], scope, context);
+    if (record && !record.tableId)
+      addDiagnostic(context, "binding.type", "parseDocument requires a record input with a declared table", [...path, "record"]);
+    if (record?.tableId && typeof config.field === "string") {
+      const field = bindField(context, record.tableId, config.field, [...path, "field"]);
+      if (field && !field.file) addDiagnostic(context, "binding.type", "parseDocument requires a File field", [...path, "field"]);
+    }
+  } else if (step.action === "query") {
     bindQueryConfig(config, path, scope, context);
     const parsed = typeof config.source === "string" ? parseGridsQueryDsl(config.source) : null;
     if (output && parsed?.ok)

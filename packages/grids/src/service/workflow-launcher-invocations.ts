@@ -708,5 +708,32 @@ export const invokeCustomAppLauncher = async (
     return fail(err.badInput(t.fixedInputs));
   }
   const inputs = ctx.config.inputMode === "fixed" ? (ctx.config.inputBindings ?? {}) : suppliedInputs;
-  return invoke(ctx, { ...input.data, inputs }, deps);
+  // Published App bindings carry internal IDs. Trust them only after checking
+  // their declared Table and Base, just like record and bulk launchers do.
+  // Public IDs and malformed inputs still go through the normal input parser.
+  const trustedRecordIds = new Map<string, Set<string>>();
+  for (const declared of ctx.workflow.plan.inputs) {
+    const value = inputs[declared.name];
+    const values = declared.type === "record" ? [value] : declared.type === "recordList" && Array.isArray(value) ? value : [];
+    if (values.length > MAX_BULK_LAUNCHER_RECORDS) continue;
+    const tableId = ctx.workflow.plan.bindings[`inputs.${declared.name}.table`];
+    if (typeof tableId !== "string") continue;
+    for (const id of values) {
+      if (typeof id !== "string" || !z.uuid().safeParse(id).success) continue;
+      if (input.data.authorization?.kind !== "custom-app-action") {
+        return fail(err.badInput(t.invalidLauncherInvocation({ kind: "Grids App", detail: "Record inputs require public IDs." })));
+      }
+      let ids = trustedRecordIds.get(tableId);
+      if (!ids) {
+        ids = new Set();
+        trustedRecordIds.set(tableId, ids);
+      }
+      ids.add(id);
+    }
+  }
+  for (const [tableId, ids] of trustedRecordIds) {
+    const resolved = await deps.resolveExplicitRecordIds(ctx.workflow.baseId, tableId, [...ids], input.data.locale);
+    if (!resolved.ok) return resolved;
+  }
+  return invoke(ctx, { ...input.data, inputs, trustedRecordIds }, deps);
 };

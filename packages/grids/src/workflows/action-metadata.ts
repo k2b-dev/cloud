@@ -41,7 +41,8 @@ const querySource = {
   kind: "string",
   minLength: 1,
   maxLength: 20_000,
-  description: "Inline GQL with an explicit table source and optional @params.name values. Grouped summary View joins pin their definitions at publication.",
+  description:
+    "Inline GQL with an explicit table source and optional @params.name values. Grouped summary View joins pin their definitions at publication.",
 } as const;
 const queryParameters = {
   kind: "record",
@@ -65,6 +66,21 @@ const atomicAssertion = {
 } satisfies Record<string, WorkflowFieldSchema>;
 
 export const GRIDS_WORKFLOW_ACTION_METADATA = {
+  parseDocument: {
+    effect: "transactional",
+    label: "Read bank report",
+    description: "Captures one CAMT file and its reports once. Does not match invoices or confirm payments.",
+    outputType: "grids.queryResult",
+    config: {
+      kind: "object",
+      properties: {
+        record: { kind: "string", minLength: 1, maxLength: 500, description: "Record reference containing the uploaded file." },
+        field: { kind: "string", minLength: 1, description: "File field name or ID. Must contain exactly one file." },
+        format: { kind: "string", enum: ["camt.052.001.08"], description: "Exact supported bank report format; UTF-8 XML only." },
+        saveAs,
+      },
+    },
+  },
   query: {
     effect: "transactional",
     label: "Capture query data",
@@ -148,7 +164,8 @@ export const GRIDS_WORKFLOW_ACTION_METADATA = {
   deleteRecord: {
     effect: "transactional",
     label: "Move record to trash",
-    description: "Moves one non-finalized record to trash after current permission, mutation-policy, and audit checks. Does not destroy its data.",
+    description:
+      "Moves one non-finalized record to trash after current permission, mutation-policy, and audit checks. Does not destroy its data.",
     outputType: "grids.record",
     config: {
       kind: "object",
@@ -220,8 +237,14 @@ export const GRIDS_WORKFLOW_ACTION_METADATA = {
           kind: "array",
           minItems: 1,
           maxItems: MAX_ATOMIC_LOCK_RECORDS,
-          items: { kind: "string", minLength: 1, maxLength: 500, description: "Record or record-list reference used to coordinate concurrent runs." },
-          description: "At most 100 distinct records across explicit locks, change targets and validateDocuments targets together, locked in stable order before checks run.",
+          items: {
+            kind: "string",
+            minLength: 1,
+            maxLength: 500,
+            description: "Record or record-list reference used to coordinate concurrent runs.",
+          },
+          description:
+            "At most 100 distinct records across explicit locks, change targets and validateDocuments targets together, locked in stable order before checks run.",
         },
         checks: {
           kind: "array",

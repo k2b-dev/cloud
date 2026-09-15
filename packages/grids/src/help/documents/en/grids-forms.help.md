@@ -47,3 +47,27 @@ Rendering and submission check the published capability and `availableWhen`. Ina
 Choose **Edit this page's record** for a Form on a matching Record page when users should revise an existing draft and its configured related inputs together. Creation remains the default; public links and global sidebar Forms always create. Existing related edits require exclusive links to that parent within the same Base. Removing a related row detaches it, not deletes it. Finalized records remain read-only.
 
 Saving checks versions and commits related edits together. Retry connection failures in the open dialog; after version conflicts, reload and review before saving. For CLI/API versions, idempotency keys, payloads and limits, see the [API reference](/app/grids/help/grids-custom-app-api).
+
+## Configuration for CLI and API authors
+
+Form `config` uses the following keys. Public APIs accept public field IDs, not internal UUIDs.
+
+| Key | Meaning |
+| --- | --- |
+| `title`, `description` | Optional text above the inputs |
+| `fields` | Ordered input/hidden-value entries; do not repeat a field |
+| `computedFields` | At most 20 read-only summaries: `{fieldId, label?, helpText?, width?}`; label up to 200 characters, hint up to 2,000 |
+| `validations` | At most 20 cross-field rules, described below |
+| `submitLabel`, `successMessage` | Optional action and success text |
+| `redirectUrl` | Optional destination after successful submission; null means no redirect |
+| `titleImage` | Optional image data URL, at most 1,000,000 characters |
+
+A visible entry is `{kind:"user_input", fieldId, label?, helpText?, required?, defaultValue?, width?, inlineCreate?}`. A hidden entry is `{kind:"form_value", fieldId, value}`: the server applies that fixed value instead of trusting submitted data.
+
+A rule is `{leftFieldId, operator, rightFieldId, message, errorFieldId?}`. Operators: `eq`, `neq`, `lt`, `lte`, `gt`, `gte`. The message is 1–240 characters. Compare compatible number/duration/date inputs; `errorFieldId` chooses the input showing the error.
+
+For an eligible Relation input, `inlineCreate: {enabled:true, fields:[...]}` selects the target inputs. Each entry has `fieldId` and optional `label`, `helpText`, `width`, `required`, `defaultValue`. Inline creation is one level deep; it cannot nest further relations, upload file fields, or accept system/calculated values.
+
+Form defaults suggest initial answers. Object-list column defaults suggest newly added cells. Neither is an authorization rule or a substitute for hidden values. Set safe conveniences such as quantity 1; do not invent a price, bank account, payment confirmation or approval.
+
+For stored field defaults and all scalar configuration options, read [Field configuration](/app/grids/help/grids-field-configuration). For published app payloads, optimistic versions and current-user assignments, read [Grids App API](/app/grids/help/grids-custom-app-api).

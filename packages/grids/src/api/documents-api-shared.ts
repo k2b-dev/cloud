@@ -367,14 +367,14 @@ const objectValue = (value: unknown): Record<string, unknown> | null =>
 
 export { projectRecordSnapshot } from "../service/document-snapshot-projection";
 
-export const projectDocumentPreviewData = async (data: Record<string, unknown>) => {
+export const projectDocumentPreviewData = async (data: Record<string, unknown>, identity: { tableId: string; recordId: string }) => {
   const record = objectValue(data.record) ?? {};
   const table = objectValue(data.table) ?? {};
   const columns = (Array.isArray(data.columns) ? data.columns : []).map(objectValue).filter((column) => column !== null);
   const rows = (Array.isArray(data.rows) ? data.rows : []).map(objectValue).filter((row) => row !== null);
-  const internalTableId = typeof table.id === "string" ? table.id : typeof record.tableId === "string" ? record.tableId : null;
-  const internalRecordId = typeof record.id === "string" ? record.id : null;
-  if (!internalTableId || !internalRecordId) throw new Error("Document preview data is missing its record identity.");
+  // Render data already exposes the record's public ID to Liquid. The trusted
+  // internal identity comes from the caller, never from that presentation data.
+  const { tableId: internalTableId, recordId: internalRecordId } = identity;
   const fields = await gridsService.field.listByTable(internalTableId);
   const fieldsByTemplateKey = new Map(fields.flatMap((field) => [[field.id, field] as const, [field.shortId, field] as const]));
   const columnFieldIds = columns.flatMap((column) => (typeof column.fieldId === "string" ? [column.fieldId] : []));
@@ -424,24 +424,24 @@ export const projectDocumentPreviewData = async (data: Record<string, unknown>) 
           ? requiredPublicId(records, value, "record")
           : value
         : value;
-  const projectRowRelationValue = (value: unknown): unknown =>
-    Array.isArray(value)
-      ? value.map((id) => (typeof id === "string" ? (records.get(id) ?? id) : id))
-      : typeof value === "string"
-        ? (records.get(value) ?? value)
-        : value;
+  const projectColumnKey = (key: string): string => {
+    const [fieldId] = key.split("__");
+    return fieldId && z.uuid().safeParse(fieldId).success
+      ? `${requiredPublicId(publicFields, fieldId, "field")}${key.slice(fieldId.length)}`
+      : key;
+  };
   const projectRow = (row: Record<string, unknown>) =>
     Object.fromEntries(
       Object.entries(row).map(([key, value]) => {
         if (key === "recordId" && typeof value === "string") return [key, requiredPublicId(records, value, "record")];
         if (key === "tableId" && typeof value === "string") return [key, requiredPublicId(tables, value, "table")];
         const column = columns.find((candidate) => candidate.key === key || candidate.label === key);
-        const publicKey = publicFields.get(key) ?? key;
-        return [publicKey, column?.type === "relation" ? projectRowRelationValue(value) : value];
+        const publicKey = projectColumnKey(key);
+        return [publicKey, column?.type === "relation" ? projectRelationValue(value) : value];
       }),
     );
   const projectedColumns = columns.map((column) => ({
-    key: typeof column.key === "string" ? (publicFields.get(column.key) ?? column.key) : "",
+    key: typeof column.key === "string" ? projectColumnKey(column.key) : "",
     label: typeof column.label === "string" ? column.label : "",
     ...(typeof column.tableId === "string" ? { tableId: requiredPublicId(tables, column.tableId, "table") } : {}),
     ...(typeof column.fieldId === "string" ? { fieldId: requiredPublicId(publicFields, column.fieldId, "field") } : {}),
@@ -470,7 +470,7 @@ export const projectDocumentPreviewData = async (data: Record<string, unknown>) 
       data: Object.fromEntries(
         Object.entries(recordData).map(([fieldId, value]) => {
           const field = fieldsByTemplateKey.get(fieldId);
-          if (!field) throw new Error(`Document preview data contains unknown field ${fieldId}.`);
+          if (!field) throw new Error("Document preview data contains an unknown field.");
           return [field.shortId, field.type === "relation" ? projectRelationValue(value) : value];
         }),
       ),
@@ -704,14 +704,15 @@ export const renderDraftDataResponse = async (
   if (!rendered.ok) return c.json({ message: rendered.message, phase: rendered.phase }, rendered.status === 400 ? 400 : 404);
   const data = await addDraftDocumentMetadata(c, { template: params.template, data: rendered.data, createdAt, dateConfig });
   if (!data.ok) return data.response;
+  const publicData = await projectDocumentPreviewData(data.data, params);
   if (params.template.renderer.kind === "profile") {
-    const input = await gridsService.document.renderProfileInput(params.template, data.data, getLocale(c));
+    const input = await gridsService.document.renderProfileInput(params.template, publicData, getLocale(c));
     if (!input.ok) return c.json({ message: input.error.message, phase: "profile" }, input.error.status);
-    return c.json({ html: "", source: rendered.source, data: await projectDocumentPreviewData(data.data) });
+    return c.json({ html: "", source: rendered.source, data: publicData });
   }
-  const html = await gridsService.document.renderHtml(params.template, data.data, getLocale(c));
+  const html = await gridsService.document.renderHtml(params.template, publicData, getLocale(c));
   if (!html.ok) return c.json({ message: html.error.message, phase: "html" }, html.error.status);
-  return c.json({ html: html.data, source: rendered.source, data: await projectDocumentPreviewData(data.data) });
+  return c.json({ html: html.data, source: rendered.source, data: publicData });
 };
 
 export const renderDraftPdfResponse = async (
@@ -726,7 +727,8 @@ export const renderDraftPdfResponse = async (
   const dateConfig = await getDateConfig(c);
   const rendered = await liveRenderData(c, { ...params, createdAt, dateConfig });
   if (!rendered.ok) return c.json({ message: rendered.message, phase: rendered.phase }, rendered.status === 400 ? 400 : 404);
-  return renderPreparedDraftPdfResponse(c, { template: params.template, data: rendered.data, createdAt, dateConfig });
+  const data = await projectDocumentPreviewData(rendered.data, params);
+  return renderPreparedDraftPdfResponse(c, { template: params.template, data, createdAt, dateConfig });
 };
 
 /** Render only after the caller has authorized and prepared the complete data. */

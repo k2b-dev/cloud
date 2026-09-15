@@ -1,9 +1,10 @@
-import { ok } from "@k2b/stdlib";
 import { ErrorResponseSchema } from "@k2b/cloud/contracts";
 import { type AuthContext, getLocale, jsonResponse, respond } from "@k2b/cloud/server";
+import { ok } from "@k2b/stdlib";
 import { Hono } from "hono";
 import { describeRoute } from "hono-openapi";
 import { z } from "zod";
+import { publicDiagnosticMessage } from "../service/public-diagnostics";
 import {
   createWorkflow,
   getWorkflow,
@@ -103,7 +104,17 @@ export const createWorkflowCatalogRoutes = (overrides: Partial<WorkflowCatalogRo
         const gate = await gateAt(c, { baseId }, "read");
         if (!gate.ok) return respond(c, () => Promise.resolve(gate));
         const result = await validatePermissionedWorkflowSource(c, baseId, c.req.valid("json").source);
-        return c.json(result.ok ? { ok: true as const, plan: await toPublicWorkflowPlan(result.plan) } : result);
+        return c.json(
+          result.ok
+            ? { ok: true as const, plan: await toPublicWorkflowPlan(result.plan) }
+            : {
+                ...result,
+                diagnostics: result.diagnostics.map((diagnostic) => ({
+                  ...diagnostic,
+                  message: publicDiagnosticMessage(diagnostic.message),
+                })),
+              },
+        );
       },
     )
     .post(

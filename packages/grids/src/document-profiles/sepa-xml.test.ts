@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { renderSepaBatch, validateSepaXml } from "./sepa-xml";
+import { validateSepaXml } from "@k2b/stdlib/finance/validate";
+import { renderSepaBatch } from "./sepa-xml";
 import { SepaBatchSchema, sepaPreviewWarnings } from "./sepa-xml-contracts";
 
 const input = () => ({
@@ -14,21 +15,21 @@ const input = () => ({
       businessId: "expense-1",
       endToEndId: "expense-1-payment",
       amount: "12.30",
-      creditorName: "Valentin <Example>",
+      creditorName: "Valentin Müller",
       creditorIban: "NL91ABNA0417164300",
-      remittance: 'Expense "train" & meal',
+      remittance: "Expense 'train' & meal",
     },
   ],
 });
 const issuedAt = new Date("2026-09-11T12:34:56Z");
 
 describe("SEPA pain.001.001.09 DK GBIC 5", () => {
-  test("warns without mutating captured dates or extended characters", () => {
+  test("warns about past dates without mutating captured input", () => {
     const batch = SepaBatchSchema.parse(input());
     const before = structuredClone(batch);
-    expect(sepaPreviewWarnings(batch, "2026-09-15")).toEqual(["extendedCharacters", "pastExecutionDate"]);
-    expect(sepaPreviewWarnings(batch, "2026-09-14")).toEqual(["extendedCharacters"]);
-    expect(sepaPreviewWarnings(batch, "2026-09-13")).toEqual(["extendedCharacters"]);
+    expect(sepaPreviewWarnings(batch, "2026-09-15")).toEqual(["pastExecutionDate"]);
+    expect(sepaPreviewWarnings(batch, "2026-09-14")).toEqual([]);
+    expect(sepaPreviewWarnings(batch, "2026-09-13")).toEqual([]);
     expect(batch).toEqual(before);
     const basic = {
       ...batch,
@@ -36,10 +37,7 @@ describe("SEPA pain.001.001.09 DK GBIC 5", () => {
       rows: batch.rows.map((row) => ({ ...row, creditorName: "Payee", remittance: "Train - 2026/09" })),
     };
     expect(sepaPreviewWarnings(basic, "2026-09-14")).toEqual([]);
-    expect(sepaPreviewWarnings({ ...basic, debtorName: "Müller" }, "2026-09-14")).toEqual(["extendedCharacters"]);
-    expect(sepaPreviewWarnings({ ...basic, rows: basic.rows.map((row) => ({ ...row, remittance: "Fahrt €" })) }, "2026-09-14")).toEqual([
-      "extendedCharacters",
-    ]);
+    expect(sepaPreviewWarnings({ ...basic, debtorName: "Müller" }, "2026-09-14")).toEqual([]);
   });
 
   test("rejects an empty payment batch before rendering", async () => {
@@ -73,15 +71,15 @@ describe("SEPA pain.001.001.09 DK GBIC 5", () => {
     expect(xml).toContain("<CtrlSum>12.31</CtrlSum>");
     expect(xml.match(/<NbOfTxs>2<\/NbOfTxs>/g)).toHaveLength(2);
     expect(xml).toContain("Company &amp; Partners");
-    expect(xml).toContain("Valentin &lt;Example&gt;");
+    expect(xml).toContain("Valentin Müller");
     expect(xml).toContain('<InstdAmt Ccy="EUR">0.01</InstdAmt>');
     expect(xml).toContain("<Othr><Id>NOTPROVIDED</Id></Othr>");
     expect(xml).not.toContain("INST");
-    await expect(validateSepaXml(xml)).resolves.toBeUndefined();
+    expect((await validateSepaXml(xml)).ok).toBe(true);
     expect((await renderSepaBatch(batch, issuedAt)).bytes).toEqual((await renderSepaBatch(batch, issuedAt)).bytes);
   });
 
-  test("rejects invalid IBAN structure/checksum, unsupported currency and imprecise values", () => {
+  test("rejects invalid IBAN structure/checksum, unsupported currency and imprecise values", async () => {
     const batch = input();
     for (const patch of [
       { creditorIban: "DE89370400440532013001" },
@@ -96,17 +94,24 @@ describe("SEPA pain.001.001.09 DK GBIC 5", () => {
       { amount: "NaN" },
       { creditorName: "a".repeat(71) },
       { creditorName: "line\nbreak" },
+      { creditorName: "Valentin <Example>" },
+      { creditorName: "René" },
+      { remittance: 'Expense "train"' },
+      { remittance: "Fahrt €" },
+      { remittance: "   " },
       { currency: "USD" },
       { endToEndId: "x//y" },
       { endToEndId: "/x" },
       { remittance: "a".repeat(141) },
     ])
-      expect(SepaBatchSchema.safeParse({ ...batch, rows: [{ ...batch.rows[0]!, ...patch }] }).success).toBe(false);
+      await expect(
+        (async () => renderSepaBatch(SepaBatchSchema.parse({ ...batch, rows: [{ ...batch.rows[0]!, ...patch }] }), issuedAt))(),
+      ).rejects.toThrow();
     expect(SepaBatchSchema.safeParse({ ...batch, executionDate: "2026-02-30" }).success).toBe(false);
     expect(SepaBatchSchema.safeParse({ ...batch, rows: [...batch.rows, ...batch.rows] }).success).toBe(false);
-    expect(SepaBatchSchema.safeParse({ ...batch, rows: [batch.rows[0]!, { ...batch.rows[0]!, businessId: "another" }] }).success).toBe(
-      false,
-    );
+    await expect(
+      renderSepaBatch({ ...batch, rows: [batch.rows[0]!, { ...batch.rows[0]!, businessId: "another" }] }, issuedAt),
+    ).rejects.toThrow();
   });
 
   test("schema verification rejects wrong namespaces, malformed XML, unsafe entities and non-EUR amounts", async () => {
@@ -118,6 +123,6 @@ describe("SEPA pain.001.001.09 DK GBIC 5", () => {
       xml.slice(0, -3),
       '<!DOCTYPE Document SYSTEM "file:///etc/passwd"><Document/>',
     ])
-      await expect(validateSepaXml(invalid)).rejects.toThrow();
+      expect((await validateSepaXml(invalid)).ok).toBe(false);
   });
 });

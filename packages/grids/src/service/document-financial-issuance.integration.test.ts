@@ -52,18 +52,37 @@ const output: FinancialDocumentOutput = {
   },
 };
 
+const sepaOutput: FinancialDocumentOutput = {
+  kind: "sepa-xml",
+  version: 1,
+  header: { destinationKey: "main-bank", debtorName: "Example", debtorIban: "DE89370400440532013000", executionDate: "2026-09-14" },
+  mapping: {
+    businessId: "business",
+    amount: "amount",
+    endToEndId: "payment",
+    creditorName: "payee",
+    creditorIban: "iban",
+    remittance: "purpose",
+  },
+};
+
 const fixture = async () => {
   const baseId = testUuid();
   await sql`INSERT INTO grids.bases (id, short_id, name) VALUES (${baseId}::uuid, ${testShortId("B")}, 'Financial issuance test')`;
   const workflowId = await insertTestWorkflow({ baseId, shortId: testShortId("W") });
   const actor = { kind: "service_account" as const, serviceAccountId: testUuid(), delegatedUserId: null, credentialId: null };
-  const capture = async (channel: "api" | "schedule" = "api", format: FinancialDocumentOutput = output, businessId = "invoice-1") => {
+  const capture = async (
+    channel: "api" | "schedule" = "api",
+    format: FinancialDocumentOutput = output,
+    businessId = "invoice-1",
+    amount = "12.3000",
+  ) => {
     const runId = await insertTestWorkflowRun({ baseId, workflowId, shortId: testShortId("R"), state: "waiting", channel });
     const capturedAt = new Date().toISOString();
     const sourceRow: Record<string, string> = {
       business: businessId,
       entry: "main",
-      amount: "12.3000",
+      amount,
       side: "S",
       account: "00440",
       other: "70000",
@@ -224,35 +243,66 @@ describe("financial query Document issuance", () => {
     ).rejects.toMatchObject({ errno: "23503" });
   });
 
-  postgresTest("a render failure retains no claims and retries the same confirmed receipt", async () => {
-    const scope = await fixture();
-    const profile = financialQueryProfiles.find((item) => item.id === "grids.datev-csv")!;
-    const render = spyOn(profile, "issue").mockImplementationOnce(() => {
-      throw new Error("Renderer temporarily unavailable");
+  for (const format of [output, sepaOutput]) {
+    postgresTest(`${format.kind}: invalid mapped amounts fail before rendering or reserving claims`, async () => {
+      const scope = await fixture();
+      const profile = financialQueryProfiles.find((item) => item.id === `grids.${format.kind}`)!;
+      const render = spyOn(profile, "issue");
+      try {
+        const request = await scope.capture("api", format, "invoice-1", "sensitive invalid amount");
+        const result = await service.issueQueryDocument({ ...request, locale: "de" });
+        expect(result).toMatchObject({ ok: false, error: { code: "BAD_INPUT", status: 400 } });
+        if (result.ok) throw new Error("Expected invalid amount");
+        expect(result.error.message).toContain("Zeile 1");
+        expect(result.error.message).not.toContain("sensitive");
+        expect(render).not.toHaveBeenCalled();
+        expect(await sql`SELECT id FROM grids.documents WHERE base_id = ${scope.baseId}::uuid`).toHaveLength(0);
+        expect(await sql`SELECT business_id FROM grids.document_export_claims WHERE base_id = ${scope.baseId}::uuid`).toHaveLength(0);
+        expect(
+          await sql`SELECT confirmed_at FROM grids.document_issuances WHERE base_id = ${scope.baseId}::uuid AND confirmed_at IS NOT NULL`,
+        ).toHaveLength(0);
+      } finally {
+        render.mockRestore();
+        await scope.cleanup();
+      }
     });
-    try {
-      const request = await scope.capture();
-      const pending = await service.issueQueryDocument(request);
-      if (!pending.ok) throw pending.error;
-      if (!("kind" in pending.data)) throw new Error("Expected confirmation");
-      const confirmed = await service.confirmQueryDocument({ ...request, receiptId: pending.data.receiptId, sha256: pending.data.sha256 });
-      if (!confirmed.ok) throw confirmed.error;
-      await expect(service.issueQueryDocument(request)).rejects.toThrow("Renderer temporarily unavailable");
-      expect(await sql`SELECT business_id FROM grids.document_export_claims WHERE base_id = ${scope.baseId}::uuid`).toHaveLength(0);
-      render.mockRestore();
-      const retry = await service.issueQueryDocument(request);
-      if (!retry.ok) throw retry.error;
-      expect(retry.data).toHaveProperty("shortId", pending.data.receiptId);
-      const [document] = await sql`SELECT template_snapshot, template_revision, profile_snapshot, snapshot_sha256
+
+    postgresTest(`${format.kind}: a render failure retains no claims and retries the same confirmed receipt`, async () => {
+      const scope = await fixture();
+      const profile = financialQueryProfiles.find((item) => item.id === `grids.${format.kind}`)!;
+      const render = spyOn(profile, "issue").mockImplementationOnce(() => {
+        throw new Error("Renderer temporarily unavailable");
+      });
+      try {
+        const request = await scope.capture("api", format);
+        const pending = await service.issueQueryDocument(request);
+        if (!pending.ok) throw pending.error;
+        if (!("kind" in pending.data)) throw new Error("Expected confirmation");
+        const confirmed = await service.confirmQueryDocument({
+          ...request,
+          receiptId: pending.data.receiptId,
+          sha256: pending.data.sha256,
+        });
+        if (!confirmed.ok) throw confirmed.error;
+        await expect(service.issueQueryDocument(request)).rejects.toThrow("Renderer temporarily unavailable");
+        expect(await sql`SELECT id FROM grids.documents WHERE base_id = ${scope.baseId}::uuid`).toHaveLength(0);
+        expect(await sql`SELECT business_id FROM grids.document_export_claims WHERE base_id = ${scope.baseId}::uuid`).toHaveLength(0);
+        render.mockRestore();
+        const retry = await service.issueQueryDocument(request);
+        if (!retry.ok) throw retry.error;
+        expect(retry.data).toHaveProperty("shortId", pending.data.receiptId);
+        const [document] = await sql`SELECT template_snapshot, template_revision, profile_snapshot, snapshot_sha256
         FROM grids.documents WHERE base_id = ${scope.baseId}::uuid`;
-      expect(document.template_revision).toBe(canonicalJson(document.template_snapshot).sha256);
-      expect(document.snapshot_sha256).toBe(canonicalJson(document.profile_snapshot).sha256);
-      expect(await sql`SELECT business_id FROM grids.document_export_claims WHERE base_id = ${scope.baseId}::uuid`).toHaveLength(1);
-    } finally {
-      render.mockRestore();
-      await scope.cleanup();
-    }
-  });
+        expect(document.template_revision).toBe(canonicalJson(document.template_snapshot).sha256);
+        expect(document.snapshot_sha256).toBe(canonicalJson(document.profile_snapshot).sha256);
+        expect(await sql`SELECT business_id FROM grids.document_export_claims WHERE base_id = ${scope.baseId}::uuid`).toHaveLength(1);
+        expect(await service.issueQueryDocument(request)).toEqual(retry);
+      } finally {
+        render.mockRestore();
+        await scope.cleanup();
+      }
+    });
+  }
 
   postgresTest("failure after document insertion rolls back bytes, claims and completion before retry", async () => {
     const scope = await fixture();
@@ -489,19 +539,7 @@ describe("financial query Document issuance", () => {
   postgresTest("creates a schema-validated SEPA document from the exact preview and retains payment identifiers on replay", async () => {
     const scope = await fixture();
     try {
-      const request = await scope.capture("api", {
-        kind: "sepa-xml",
-        version: 1,
-        header: { destinationKey: "main-bank", debtorName: "Example", debtorIban: "DE89370400440532013000", executionDate: "2026-09-14" },
-        mapping: {
-          businessId: "business",
-          amount: "amount",
-          endToEndId: "payment",
-          creditorName: "payee",
-          creditorIban: "iban",
-          remittance: "purpose",
-        },
-      });
+      const request = await scope.capture("api", sepaOutput);
       const pending = await service.issueQueryDocument(request);
       if (!pending.ok) throw pending.error;
       if (!("kind" in pending.data)) throw new Error("Expected SEPA confirmation");

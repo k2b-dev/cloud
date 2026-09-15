@@ -37,7 +37,7 @@ Die Darstellung von Werten vom Typ Datum und Uhrzeit, datumsbezogene Filter, For
 - **Rollup** fasst Werte zusammen, die über eine Relation erreichbar sind.
 - **Formel** berechnet aus den Feldern des aktuellen Entwurfs einen Wert. Die Finalisierung schreibt ihn fest.
 - **HTML-Vorlage** rendert Liquid und optionales CSS zu einem HTML-String je Datensatz. Sie kann normale Felder sowie Ergebnisse aus Lookup, Rollup und Formel verwenden. Werte werden standardmäßig maskiert. Prüfe die Vorschau, bevor du `raw` verwendest.
-- **ID** erstellt eine stabile, generierte Kennung. Sequence- und Date-sequence-IDs verwenden eine dauerhafte Zahlenreihe, die Grids beim Erstellen eines Datensatzes zuweist. Die Werte steigen atomar und werden nie wiederverwendet; Rollbacks und technische Fehler können Lücken hinterlassen. Änderungen an Präfix oder Format betreffen nur zukünftige Datensätze.
+- **ID** erstellt eine stabile, generierte Kennung. Sequence- und Date-sequence-IDs verwenden eine dauerhafte Zahlenreihe, standardmäßig beim Erstellen oder auf Wunsch erst beim Finalisieren. Die Werte steigen atomar und werden nie wiederverwendet; Rollbacks und technische Fehler können Lücken hinterlassen. Änderungen an Präfix oder Format betreffen nur zukünftige Datensätze. Alle Optionen stehen in der [Feldkonfiguration](/app/grids/help/grids-field-configuration).
 - **Erstellt am, Erstellt von, Geändert am und Geändert von** sind systemverwaltete Felder. Sie beschreiben die Aktivität eines Datensatzes und können nicht wie gewöhnliche Geschäftswerte eingegeben werden.
 
 Wähle eine Relation, wenn das Ziel eigene Details oder einen eigenen Lebenszyklus hat. Ein Kundenname, der in jede Rechnung eingetragen wird, ist nur Text. Eine Relation zum Kunden hält die Rechnung verbunden, wenn sich die Kundendaten ändern.
@@ -101,7 +101,7 @@ Jede Anfrage hat eine kurze öffentliche ID. Genehmigung und Ablehnung über die
 
 Die Finalisierung prüft Pflichtfelder, vergibt IDs für **Bei Finalisierung**, schreibt typisierte Formel-, Lookup-, Rollup- und Listenwerte fest und sperrt den Datensatz atomar. Exakte Dezimalwerte bleiben berechenbar. Felder, Relationen, Dateien, Papierkorbstatus und endgültige Nummer sind unveränderlich. Wiederholungen geben denselben Datensatz zurück, ohne eine weitere Nummer zu vergeben.
 
-Nur gespeicherte Berechnungen sind historische Werte. Später hinzugefügte Felder und ältere Finalisierungen ohne Berechnungsstand haben kein gespeichertes Ergebnis. Grids rekonstruiert es nicht mit heutigen Formeln. Fehlende Ergebnisse sind keine Nullbeträge; verwende unvollständige Summen nicht für Finanzexporte.
+Nur gespeicherte Berechnungen sind historische Werte. Nach der Finalisierung hinzugefügte Felder haben kein gespeichertes Ergebnis. Grids rekonstruiert es nicht mit heutigen Formeln. Fehlende Ergebnisse sind keine Nullbeträge; verwende unvollständige Summen nicht für Finanzexporte.
 
 Bevor der erste Datensatz finalisiert wurde, kann eine Person mit Administratorrechten die Funktion deaktivieren, nachdem alle bei der Finalisierung zugewiesenen ID-Felder wieder auf **Bei Erstellung des Datensatzes** umgestellt wurden. Nach dem ersten finalisierten Datensatz ist die Tabelleneinstellung dauerhaft. Grids ergänzt keine fachliche Bedeutung für Rechnungen, Stornierungen, Korrekturen oder Compliance. Bilde diese mit gewöhnlichen Feldern, Relationen und Workflows ab.
 

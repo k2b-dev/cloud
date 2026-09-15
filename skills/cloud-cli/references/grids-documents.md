@@ -30,7 +30,31 @@ Task map:
 - [Batch PDFs and free CSV/JSON/XML](#batch-pdfs-and-free-csvjsonxml)
 - [SEPA transfers and DATEV bookings](#sepa-transfers-and-datev-bookings)
 - [E-invoices, corrections, and self-billing](#e-invoices-corrections-and-self-billing)
+- [Read bank reports](#read-bank-reports)
 - [Limits and recovery](#limits-and-recovery)
+
+## Read bank reports
+
+`parseDocument` reads an existing Record attachment as `camt.052.001.08`.
+It produces a `fileSnapshot`, not a new Document or payment. Each captured
+row contains one typed `report`; entries and transaction details stay nested.
+Statuses, credit/debit direction, reversals, missing values, currencies, and
+bank pagination must be interpreted explicitly by the workflow author.
+
+Use the [CAMT workflow reference](grids.md#read-a-camt-bank-report) and the
+in-app `grids-camt` Help page for the full action contract. Inspect a capture
+with `cld grids workflow-runs file <run-id> <capture-id> --sha256 <hash> --json`;
+download its original with `workflow-runs download-file` and `--out bank.xml`.
+The immutable reference comes from the run's step result. It is scoped to the
+Base and run, and remains available if the original attachment is detached.
+No automatic invoice matching or payment creation takes place.
+
+Financial serializers use the public stdlib implementation; Grids retains
+authorization, frozen inputs, numbering, approval, and export claims. XSD
+validation and checking the XML actually embedded in the rendered PDF remain
+enabled. These checks are not accounting certification or proof that a bank
+or accounting installation will accept the file. Use `grids-financial-formats`
+Help for the supported inputs and format limits.
 
 ## Create or edit templates
 
@@ -405,8 +429,12 @@ Transfer constraints: unique `businessId` and unique `endToEndId` per batch;
 `endToEndId` up to 35 SEPA basic characters, no leading/trailing `/` or `//`;
 creditor name up to 70, remittance up to 140; valid SEPA IBAN without spaces,
 no QR-IBAN. Amount is positive exact money, at most 999,999,999.99, no fractional
-cents. Grids generates message/payment-information IDs. Extended characters and
-past execution dates produce preview warnings, not automatic rewriting.
+cents. Grids generates message/payment-information IDs. Past execution dates
+produce preview warnings, not automatic rewriting. Unsupported characters are
+rejected. Names/remittance permit letters A–Z/a–z, digits, spaces, basic
+`+ ? / : ( ) . , ' -` and the DK extensions `& * $ % Ä Ö Ü ä ö ü ß`.
+Other characters, such as `é` or `€`, fail validation; Grids never transliterates
+them. Payment IDs remain restricted to the basic character set.
 
 ### DATEV version 1
 

@@ -72,6 +72,35 @@ const compile = async (source: string) => {
 };
 
 describe("Grids workflow binder", () => {
+  test("publishes the bilingual CAMT help examples without inventing input contracts", async () => {
+    for (const locale of ["en", "de"]) {
+      const markdown = await Bun.file(new URL(`../help/documents/${locale}/grids-camt.help.md`, import.meta.url)).text();
+      const source = markdown.match(/```yaml\n([\s\S]*?)```/)?.[1];
+      expect(source).toBeDefined();
+      const bankCatalog = buildWorkflowCatalog({
+        tables: [{ id: ids.items, shortId: "TBL001", name: locale === "en" ? "Bank imports" : "Bankimporte", kind: "stored" }],
+        fieldsByTable: new Map([
+          [ids.items, [{ id: ids.document, shortId: "FIL001", name: locale === "en" ? "Bank file" : "Bankdatei", file: true }]],
+        ]),
+        templates: [],
+        emailTemplates: [],
+      });
+      const bound = await compileAndBindGridsWorkflowSource(source!, bankCatalog);
+      expect(bound.ok ? [] : bound.diagnostics).toEqual([]);
+    }
+  });
+  test("binds CAMT file fields at publication and rejects ordinary or unknown fields", async () => {
+    const source = (field: string) =>
+      `inputs:\n  selected:\n    type: record\n    table: Items\nsteps:\n  - parseDocument:\n      record: inputs.selected\n      field: ${field}\n      format: camt.052.001.08\n      saveAs: bank\n  - generateDocument:\n      data: bank\n      output: { kind: json }\n`;
+    const fields = catalog();
+    const file = { id: ids.document, shortId: "FIL001", name: "Statement", file: true as const };
+    fields.fieldsByTable.get(ids.items)!.refs.set("Statement", file);
+    fields.fieldsByTable.get(ids.items)!.refs.set("FIL001", file);
+    expect((await compileAndBindGridsWorkflowSource(source("Statement"), fields)).ok).toBe(true);
+    for (const field of ["Name", "Missing"]) expect((await compileAndBindGridsWorkflowSource(source(field), fields)).ok).toBe(false);
+    const restored = restoreWorkflowCatalog(WorkflowCatalogSnapshotSchema.parse(snapshotWorkflowCatalog(fields)));
+    expect(restored.fieldsByTable.get(ids.items)?.refs.get("FIL001")?.file).toBe(true);
+  });
   test("rejects non-row associatedData at publication", async () => {
     for (const source of ["from table Items\nselect Name", "from table Items\naggregate count(*) as total"]) {
       const result = await compileAndBindGridsWorkflowSource(
@@ -268,6 +297,10 @@ steps:
       ok({ source: "unused", schemaHash: "a".repeat(64) }),
     );
     expect(rows.ok).toBe(false);
+    const privateId = await compileAndBindGridsWorkflowSource(source.replace("report.rowCount", "report.id"), catalog(), async () =>
+      ok({ source: "unused", schemaHash: "a".repeat(64) }),
+    );
+    expect(privateId.ok).toBe(false);
   });
 
   test("document generation consumes typed query references and rejects mixed source modes", async () => {

@@ -231,6 +231,7 @@ Run options are configured separately from the workflow source. One workflow can
 | Step | Required fields | Optional fields and defaults | Dry run |
 | --- | --- | --- | --- |
 | `query` | GQL `source` | Typed `parameters`, `saveAs` | Checks schema and access without capturing rows |
+| `parseDocument` | `record`, File `field`, `format: camt.052.001.08` | `saveAs` | Checks the Record reference; does not read or validate the file |
 | `closeRecord` | `record` | `expectedMode`, `expectedPolicyRevision` | Predicts Direct Finalization or a Four-eyes request from the Table's current policy |
 | `createCorrectionDraft` | `original`, `typeField`, `typeValue`, `originalField` | `intent` (`correction` default), `copyFields`, `values`, `saveAs` | Validates the finalized original and predicts one linked Draft |
 | `finalizeRecord` | `record` | None | Validates Write access and predicts one permanent finalization |
@@ -248,7 +249,15 @@ Run options are configured separately from the workflow source. One workflow can
 
 `query` captures at most 10,000 rows/5 MiB or fails atomically; GQL `limit` selects a subset. Parameters: `{type, value}` via `@params.name`; types: text, number, decimal (exact string), boolean, date, dateTime, record, recordList. Records use workflow references. Empty `oneof(record.id, @params.selected)` matches nothing. Dry-runs accept planned records but capture nothing. Pass `saveAs` metadata, not rows, to `generateDocument.data`.
 
+Grids resource IDs in run results and live updates are public IDs. Document and
+link IDs also resolve to public IDs in expressions. Captures are opaque: pass
+the whole saved reference to a later action; `.id` is not an expression field.
+Inspect captures using the run's public ID and step key. Cloud account and
+operational audit/delivery IDs retain their own identity format.
+
 ### Create files from a query
+
+For bank-provided input, see [Read bank reports (CAMT)](/app/grids/help/grids-camt): `parseDocument` captures the exact original plus typed account reports and returns a small `fileSnapshot` reference usable as `generateDocument.data`. It does not post payments or flatten bank transactions.
 
 For a joined or grouped file, `associatedData: selection` names an earlier
 single-table row query saved as `selection`. Those frozen record identities
@@ -301,7 +310,7 @@ IBANs are masked; choose **Show bank details** to inspect them.
 `generateDocument` also accepts `output: { kind: datev-csv, version: 1, header: ..., mapping: ... }`
 or `kind: sepa-xml`. These create EUR booking or payment files, not imported bookings or executed payments.
 The DATEV profile targets 700/13; SEPA targets SCT pain.001.001.09 (DK GBIC 5). Acceptance by the receiving system is not guaranteed.
-SEPA previews warn about past dates and extended characters. Values stay unchanged; cancel and restart to correct them.
+SEPA previews warn about past execution dates. Unsupported characters are rejected before issuance; Grids does not transliterate names or silently rewrite values. Cancel and restart to correct inputs.
 
 Start manually; automatic triggers cannot create financial exports. Choose **Review export** in the run, Custom App action or scanner log.
 Check destination, date, rows, totals and query limit. Confirmation has no automatic expiry; cancel unwanted runs explicitly.

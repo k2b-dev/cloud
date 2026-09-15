@@ -8,6 +8,7 @@ import {
   PublicGridsWorkflowRunSchema,
   PublicWorkflowInvocationReceiptSchema,
   RecordLauncherRequestSchema,
+  toPublicWorkflowPayloads,
   toPublicWorkflowRuns,
   WorkflowRunsQuerySchema,
 } from "./workflow-api-shared";
@@ -23,8 +24,71 @@ const directInvocation = {
 const app = () => new Hono<AuthContext>().route("/workflows", createWorkflowRunRoutes()).route("/workflows", createWorkflowTriggerRoutes());
 
 describe("workflow route contracts", () => {
+  test("capture references expose run-relative step keys, not UUIDs, including nested outputs", async () => {
+    const id = "11111111-1111-4111-8111-111111111111";
+    const fieldId = "22222222-2222-4222-8222-222222222222";
+    const capture = { kind: "fileSnapshot", id, sha256: "a".repeat(64), rowCount: 1, capturedAt: "2026-09-15T12:00:00.000Z" };
+    let reads = 0;
+    const result = await toPublicWorkflowPayloads(
+      [
+        { state: "succeeded", output: capture },
+        { nested: [capture], values: { [fieldId]: "unchanged" } },
+      ],
+      async (type) => new Map(type === "field" ? [[fieldId, "FILD01"]] : []),
+      async (ids) => {
+        reads++;
+        expect(ids).toEqual([id]);
+        return new Map([[id, "steps.0"]]);
+      },
+    );
+    expect(reads).toBe(1);
+    expect(result).toEqual([
+      {
+        state: "succeeded",
+        output: { kind: "fileSnapshot", stepKey: "steps.0", sha256: capture.sha256, rowCount: 1, capturedAt: capture.capturedAt },
+      },
+      {
+        nested: [{ kind: "fileSnapshot", stepKey: "steps.0", sha256: capture.sha256, rowCount: 1, capturedAt: capture.capturedAt }],
+        values: { [fieldId]: "unchanged" },
+      },
+    ]);
+    await expect(
+      toPublicWorkflowPayloads(
+        [capture],
+        async () => new Map(),
+        async () => new Map(),
+      ),
+    ).rejects.toThrow("Missing workflow capture step");
+  });
+
   test("uses one canonical channel for every direct external invocation route", () => {
     expect(DIRECT_WORKFLOW_CHANNEL).toBe("api");
+  });
+
+  test("file preview URLs reject capture UUIDs before loading a run", async () => {
+    const response = await app().request("/workflows/runs/RUN001/files/11111111-1111-4111-8111-111111111111?sha256=" + "a".repeat(64));
+    expect(response.status).toBe(400);
+  });
+
+  test("workflow payload projection batches only typed resource references and preserves text", async () => {
+    const record = "11111111-1111-4111-8111-111111111111";
+    const table = "22222222-2222-4222-8222-222222222222";
+    const reads: string[] = [];
+    const reference = { kind: "record", recordId: record, tableId: table };
+    const projected = await toPublicWorkflowPayloads([{ records: Array(100).fill(reference), note: record }], async (type, ids) => {
+      reads.push(type);
+      expect(ids).toHaveLength(1);
+      return new Map([[type === "record" ? record : table, type === "record" ? "REC001" : "TAB001"]]);
+    });
+    expect(reads.sort()).toEqual(["record", "table"]);
+    expect(projected[0]).toMatchObject({
+      note: record,
+      records: [
+        expect.objectContaining({ recordId: "REC001", tableId: "TAB001" }),
+        ...Array(99).fill({ kind: "record", recordId: "REC001", tableId: "TAB001" }),
+      ],
+    });
+    await expect(toPublicWorkflowPayloads([reference], async () => new Map())).rejects.toThrow("Missing public id for record");
   });
 
   test("rejects malformed public base, workflow, launcher, and run ids before service calls", async () => {
@@ -90,10 +154,15 @@ describe("workflow route contracts", () => {
       channel: "api",
       actorUserId: internalUserId,
       serviceAccountId: null,
-      inputs: { recordId: internalRecordId },
+      inputs: { record: { kind: "record", tableId: internalTableId, recordId: internalRecordId }, note: internalRecordId },
       status: "queued",
       result: { kind: "record", tableId: internalTableId, recordId: internalRecordId },
-      error: null,
+      error: {
+        code: "BAD_INPUT",
+        message: `Cannot read ${internalRecordId}`,
+        retryable: false,
+        details: { reason: `Record ${internalRecordId}` },
+      },
       resultMessage: null,
       createdAt: "2026-08-15T12:00:00.000Z",
       startedAt: null,
@@ -116,8 +185,9 @@ describe("workflow route contracts", () => {
       workflowId: "work01",
       baseId: "base01",
       actorUserId: internalUserId,
-      inputs: { recordId: "rec001" },
+      inputs: { record: { kind: "record", tableId: "tabl01", recordId: "rec001" }, note: internalRecordId },
       result: { kind: "record", tableId: "tabl01", recordId: "rec001" },
+      error: { message: "Cannot read …", details: { reason: "Record …" } },
     });
     expect(PublicGridsWorkflowRunSchema.safeParse(projected[0]).success).toBe(true);
     expect(PublicGridsWorkflowRunSchema.safeParse({ ...projected[0], id: internalRunId }).success).toBe(false);

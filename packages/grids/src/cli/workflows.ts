@@ -1,6 +1,6 @@
 import { arg, command, confirmFlag, flag } from "@k2b/cloud/cli";
 import type { WorkflowInvocationReceipt } from "@k2b/cloud/workflows";
-import type { z } from "zod";
+import { z } from "zod";
 import { PUBLIC_DOCUMENT_PAGE_LIMIT } from "../api/document-public-contracts";
 import type { FinancialExportPreview } from "../api/workflow-document-confirmations";
 import type { PublicWorkflowDocumentListSchema } from "../api/workflow-public-contracts";
@@ -13,6 +13,7 @@ import {
   type WorkflowAutocompleteResponse,
   type GridsWorkflowRun as WorkflowRun,
 } from "../workflows/contracts";
+import { type WorkflowFilePreview, workflowFileReferenceFromOutcome } from "../workflows/file-preview-contracts";
 import { documentRows } from "./documents-support";
 import { baseArgs, baseFlag, requirePublicId, resolveBaseFromCommand } from "./resources";
 import {
@@ -62,6 +63,13 @@ import {
 } from "./workflows-support";
 
 const prettyJson = (value: unknown): string => JSON.stringify(value, null, 2);
+
+const capturedFilePath = (run: string, stepKey: string, sha256: unknown) => {
+  if (!stepKey || z.uuid().safeParse(stepKey).success)
+    throw new Error("Pass the stepKey returned by workflow-runs steps, not a capture UUID.");
+  if (typeof sha256 !== "string" || !/^[a-f0-9]{64}$/.test(sha256)) throw new Error("Pass the SHA-256 returned by parseDocument.");
+  return `/workflows/runs/${requirePublicId(run, "Workflow run id")}/files/${encodeURIComponent(stepKey)}?sha256=${sha256}`;
+};
 
 export const emailTemplateCommands = [
   command("email-templates reference", {
@@ -814,6 +822,61 @@ export const workflowRunCommands = [
         for (const step of payload.items)
           if (step.documentConfirmation)
             ctx.print(`Review export: cld grids workflow-runs preview-export ${args.run} ${step.documentConfirmation.receiptId}`);
+      if (ctx.options.output === "text")
+        for (const step of payload.items) {
+          const file = workflowFileReferenceFromOutcome(step.outcome);
+          if (file) ctx.print(`Bank report: cld grids workflow-runs file ${args.run} ${file.stepKey} --sha256 ${file.sha256}`);
+        }
+    },
+  }),
+  command("workflow-runs file", {
+    summary: "Inspect a captured CAMT bank report without modifying records",
+    description:
+      "Use stepKey and SHA-256 from workflow-runs steps. JSON preserves the report hierarchy, missing values, and decimal strings. Text shows one account report per row; no automatic payment matching.",
+    args: { run: arg.required(), step: arg.required() },
+    flags: { sha256: flag.string({ required: true, description: "Capture SHA-256 from parseDocument" }) },
+    async run({ ctx, args, flags }) {
+      const preview = await readApi<WorkflowFilePreview>(ctx, capturedFilePath(args.run, args.step, flags.sha256));
+      printJsonOrTable(
+        ctx,
+        preview,
+        preview.reports.map((report) => ({
+          id: report.id,
+          account: report.account,
+          currency: report.currency ?? "—",
+          entries: report.entryCount,
+          page: report.pagination?.pageNumber ?? "—",
+          lastPage: report.pagination?.lastPage ?? "unknown",
+          statuses: Object.entries(report.statuses)
+            .map(([status, count]) => `${status}: ${count}`)
+            .join(", "),
+        })),
+        [
+          { key: "id", label: "REPORT" },
+          { key: "account", label: "ACCOUNT" },
+          { key: "currency", label: "CURRENCY" },
+          { key: "entries", label: "ENTRIES" },
+          { key: "page", label: "PAGE" },
+          { key: "lastPage", label: "LAST PAGE" },
+          { key: "statuses", label: "STATUSES" },
+        ],
+      );
+      if (ctx.options.output === "text") {
+        ctx.print(`${preview.filename} · ${preview.format} · captured ${preview.capturedAt}`);
+        ctx.print(
+          preview.pagination
+            ? `Message page ${preview.pagination.pageNumber}; last page: ${preview.pagination.lastPage}`
+            : "Message pagination not provided; completeness cannot be inferred.",
+        );
+      }
+    },
+  }),
+  command("workflow-runs download-file", {
+    summary: "Download the exact original XML bytes of a captured CAMT file",
+    args: { run: arg.required(), step: arg.required() },
+    flags: { sha256: flag.string({ required: true }), out: flag.string({ description: "Output XML path" }) },
+    async run({ ctx, args, flags }) {
+      await writeApiFile(ctx, `${capturedFilePath(args.run, args.step, flags.sha256)}&download=original`, undefined, flags.out);
     },
   }),
   command("workflow-runs documents", {

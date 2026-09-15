@@ -1,6 +1,8 @@
+import { createHash } from "node:crypto";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
-import type { SQL } from "bun";
+import { type SQL, sql } from "bun";
 import { z } from "zod";
+import { WorkflowFileReferenceSchema } from "../workflows/file-preview-contracts";
 import { type WorkflowDocumentDataCapture, WorkflowDocumentDataPayloadSchema } from "../workflows/query-contracts";
 import { canonicalDocumentJson, MAX_DOCUMENT_PROFILE_INPUT_BYTES } from "./document-json";
 import { documentServiceText } from "./document-messages";
@@ -18,9 +20,19 @@ export const WorkflowDocumentDataReferenceSchema = z.union([
   WorkflowQueryReferenceSchema.extend({ kind: z.literal("workflowValues") }),
   WorkflowQueryReferenceSchema.extend({ kind: z.literal("documentSnapshots") }),
   WorkflowQueryReferenceSchema.extend({ kind: z.literal("recordSnapshots") }),
+  WorkflowFileReferenceSchema,
 ]);
 type WorkflowDocumentDataReference = z.infer<typeof WorkflowDocumentDataReferenceSchema>;
 type QueryRow = { id: string; payload: Record<string, unknown>; sha256: string; row_count: number; captured_at: Date };
+
+/** Public capture handles are scoped to their run and use the authored step key. */
+export const projectWorkflowCaptureSteps = async (ids: readonly string[], db: SQL = sql): Promise<Map<string, string>> => {
+  if (ids.length === 0) return new Map();
+  const rows = await db<Array<{ id: string; step_key: string }>>`
+    SELECT id::text, step_key FROM grids.workflow_query_data WHERE id = ANY(${db.array([...new Set(ids)], "UUID")})
+  `;
+  return new Map(rows.map((row) => [row.id, row.step_key]));
+};
 
 const validateCapture = (
   input: { payload: Record<string, unknown>; sha256: string; rowCount: number; capturedAt: string },
@@ -43,6 +55,14 @@ const validateCapture = (
       new Date(input.capturedAt).toISOString() !== input.capturedAt
     )
       return fail(err.internal(t.workflowQueryIntegrityFailed));
+    if (parsed.data.version === 5) {
+      const bytes = Buffer.from(parsed.data.source.bytesBase64, "base64");
+      if (
+        bytes.toString("base64") !== parsed.data.source.bytesBase64 ||
+        createHash("sha256").update(bytes).digest("hex") !== parsed.data.source.sha256
+      )
+        return fail(err.internal(t.workflowQueryIntegrityFailed));
+    }
     return ok({ ...input, payload: parsed.data });
   } catch {
     return fail(err.internal(t.workflowQueryIntegrityFailed));
@@ -68,7 +88,9 @@ const decode = (row: QueryRow, locale?: string) => {
           ? "workflowValues"
           : capture.data.payload.version === 3
             ? "documentSnapshots"
-            : "recordSnapshots",
+            : capture.data.payload.version === 4
+              ? "recordSnapshots"
+              : "fileSnapshot",
     id: row.id,
     sha256: row.sha256,
     rowCount: row.row_count,
