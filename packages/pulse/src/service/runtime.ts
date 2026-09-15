@@ -12,6 +12,7 @@ import {
 import { pruneCatalogBatch } from "./catalog-retention";
 import { scrapeMetricsSource } from "./index";
 import { runHourlyRollup, sealExpiredMetricHour } from "./metric-rollups";
+import { pruneEmptyTimescaleChunk } from "./timescale-chunk-retention";
 
 type ScrapeInput = {
   baseId: string;
@@ -32,6 +33,8 @@ type RetentionResult = {
   stateChanges: number;
   idempotencyRecords: number;
   catalogRecords: number;
+  emptyChunks: number;
+  chunkCleanupDeferred: boolean;
   done: boolean;
 };
 
@@ -200,6 +203,7 @@ export const runRetentionBatch = async (baseId?: string): Promise<RetentionResul
   const stateChanges = await deleteExpiredStateChangesChunk(baseId);
   const idempotencyRecords = await deleteExpiredIdempotencyChunk(baseId);
   const catalogRecords = await pruneCatalogBatch(baseId, RETENTION_DELETE_BATCH_SIZE);
+  const { dropped: emptyChunks, deferred: chunkCleanupDeferred } = await pruneEmptyTimescaleChunk();
   const phases = [
     ["event_sensitive", sensitiveEvents],
     ["metric_samples", metricSamples],
@@ -208,11 +212,13 @@ export const runRetentionBatch = async (baseId?: string): Promise<RetentionResul
     ["state_changes", stateChanges],
     ["ingest_idempotency", idempotencyRecords],
     ["catalog", catalogRecords],
+    ["empty_chunks", emptyChunks],
+    ["sealed_metric_hours", sealedHours],
   ] as const;
   const backlog = phases.find(([, count]) => count >= RETENTION_DELETE_BATCH_SIZE);
   const work = phases.find(([, count]) => count > 0);
   return {
-    phase: backlog?.[0] ?? work?.[0] ?? "done",
+    phase: backlog?.[0] ?? work?.[0] ?? (chunkCleanupDeferred ? "chunk_cleanup_deferred" : "done"),
     sensitiveEvents,
     metricSamples,
     metricRollups,
@@ -220,7 +226,9 @@ export const runRetentionBatch = async (baseId?: string): Promise<RetentionResul
     stateChanges,
     idempotencyRecords,
     catalogRecords,
-    done: !backlog && sealedHours === 0 && catalogRecords === 0,
+    emptyChunks,
+    chunkCleanupDeferred,
+    done: !backlog && sealedHours === 0 && catalogRecords === 0 && emptyChunks === 0 && !chunkCleanupDeferred,
   };
 };
 
@@ -322,7 +330,13 @@ export const pulseRuntime = {
             appId: "pulse",
             category: "job",
           },
-          () => runRetentionBatch(),
+          async () => {
+            const result = await runRetentionBatch();
+            if (result.phase === "chunk_cleanup_deferred") {
+              throw new Error("Pulse empty-chunk maintenance deferred by a database lock or timeout; retry with backoff");
+            }
+            return result;
+          },
           { summarize: (result) => result },
         );
         if (!result.done) context.resubmit();

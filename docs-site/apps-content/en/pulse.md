@@ -117,6 +117,14 @@ still needed by current state or retained observations remains in its catalog.
 Continuously creating new state identities therefore requires an explicit
 operator lifecycle; raw retention does not bound that inventory.
 
+On default Timescale installations, retention also releases closed empty chunks
+once ordinary vacuum has emptied their heap. Each candidate is checked again
+under lock; chunks containing another base's data or raw samples awaiting
+aggregation remain intact. Maintenance yields to concurrent readers and writers
+and uses bounded retries. Keep autovacuum enabled; physical space reclamation is
+asynchronous. This cleanup covers uncompressed partitions with a single time
+dimension.
+
 ## Website analytics from your backend
 
 Create one HTTP ingest source per website and keep its source token in the
