@@ -41,7 +41,7 @@ test("removed model scope stays visible and editable", () => {
   expect(html).toContain("removed-profile");
 });
 test("principal picker placeholder follows both audience and service-account flags", async () => {
-  const { default: Picker } = await import("../../../../../../cloud/src/access/PrincipalPicker");
+  const { PrincipalPicker: Picker } = await import("@k2b/cloud/access/ui");
   for (const [audience, service, expected] of [[false, false, "Add user or group"], [false, true, "Add user, group, or service account"], [true, false, "Add user, group, or audience"], [true, true, "Add user, group, service account, or audience"]] as const) {
     const html = renderToString(() => createComponent(Picker, { allowAuthenticated: audience, allowServiceAccounts: service, onSelect: () => {} }));
     expect(html).toContain(expected);

@@ -82,7 +82,7 @@ test("every code-mode reference is directly routed and local links resolve", asy
 });
 
 test("source workflow example uses the current atomic write contract", async () => {
-  const { CODE_SOURCE_TOOLS } = await import("../../../cloud/src/ai/code-source-contracts");
+  const { CODE_SOURCE_TOOLS } = await import("@k2b/cloud/ai");
   const document = await Bun.file(new URL("../../skills/code-mode/references/source-workflow.md", import.meta.url)).text();
   const source = document.match(/```json\n([\s\S]*?)\n```/)?.[1];
   expect(source).toBeDefined();
