@@ -24,6 +24,10 @@ const fixtureSchema = z.object({
 const path = process.env.PULSE_LOAD_FIXTURE;
 if (!path) throw Error("PULSE_LOAD_FIXTURE is required");
 const fixture = fixtureSchema.parse(await Bun.file(path).json());
+const databaseTarget = new URL(process.env.DATABASE_URL ?? "");
+if (!["localhost", "127.0.0.1", "[::1]"].includes(databaseTarget.hostname) || databaseTarget.pathname !== "/pulse_load_test") {
+  throw Error("Acceptance probes require loopback pulse_load_test");
+}
 const [database] = await sql`SELECT current_database() AS name`;
 if (database?.name !== "pulse_load_test") throw Error("HTTP load proof requires pulse_load_test");
 if (
@@ -38,6 +42,12 @@ const acceptanceFrom = new Date().toISOString();
 const origin = new URL(fixture.url);
 if (!["127.0.0.1", "localhost", "[::1]"].includes(origin.hostname)) throw Error("HTTP load proof requires a loopback test instance");
 const runId = crypto.randomUUID();
+const rounds = z.coerce
+  .number()
+  .int()
+  .min(3)
+  .max(60)
+  .parse(process.env.PULSE_LOAD_ROUNDS ?? 3);
 const samplesPerServer = 20;
 const eventsPerWebsite = 10;
 const timings: Record<string, number[]> = {};
@@ -61,10 +71,15 @@ const request = async (phase: string, path: string, init: RequestInit) => {
       body = JSON.parse(text);
     } catch {
       throw Error(
-        `Non-JSON ${phase} response: status=${response.status}, type=${response.headers.get("content-type")}, preview=${text.slice(0, 120)}`,
+        `Non-JSON ${phase} response: status=${response.status}, type=${response.headers.get("content-type")}, bytes=${text.length}`,
       );
     }
-    (timings[phase] ??= []).push(performance.now() - start);
+    const durationMs = performance.now() - start;
+    (timings[phase] ??= []).push(durationMs);
+    if (durationMs >= 5000)
+      console.info(
+        JSON.stringify({ phase: "slow-request", requestPhase: phase, status: response.status, durationMs, at: new Date().toISOString() }),
+      );
     const phaseStatuses = (statuses[phase] ??= {});
     phaseStatuses[response.status] = (phaseStatuses[response.status] ?? 0) + 1;
     return { status: response.status, body };
@@ -74,8 +89,8 @@ const request = async (phase: string, path: string, init: RequestInit) => {
 };
 const counts = async () => {
   const [row] = await sql`SELECT
-    (SELECT count(*)::int FROM pulse.metric_samples WHERE base_id=${fixture.base.id}::uuid) AS metrics,
-    (SELECT count(*)::int FROM pulse.events WHERE base_id=${fixture.base.id}::uuid AND kind='page.viewed') AS events`;
+    (SELECT count(*)::int FROM pulse.metric_samples WHERE base_id=${fixture.base.id}::uuid AND ts>=${acceptanceFrom}::timestamptz) AS metrics,
+    (SELECT count(*)::int FROM pulse.events WHERE base_id=${fixture.base.id}::uuid AND ts>=${acceptanceFrom}::timestamptz) AS events`;
   return { metrics: Number(row?.metrics), events: Number(row?.events) };
 };
 const baseline = await counts();
@@ -138,29 +153,31 @@ if (
     .status !== 400
 )
   throw Error("Source injection was not rejected");
+const querySuccessCounts: Record<string, number> = {};
 const readQuery = async (phase: string, query: string) => {
   const result = await request(phase, "/api/pulse/query/metric-text", {
     method: "POST",
     headers: { "content-type": "application/json", cookie: fixture.cookie },
     body: JSON.stringify({ baseId: fixture.base.short_id, query }),
   });
-  if (result.status === 429 && phase === "query") return null;
+  if (result.status === 429 && phase === "burst-query") return null;
   if (result.status !== 200) throw Error(`Query failed: ${result.status}`);
   const parsed = MetricQueryResultSchema.parse(result.body);
   if (parsed.compiled.baseId !== fixture.base.short_id) throw Error("Query returned another base");
+  if (phase === "baseline-query") querySuccessCounts[query] = (querySuccessCounts[query] ?? 0) + 1;
   return parsed;
 };
+let queryPhase = "baseline-query";
 let querying = true;
 let queryError: unknown;
+const dashboardQueries = [
+  "metric cpu avg every 1m since 1h",
+  "events page.viewed count every day timezone Europe/Berlin since 1h",
+  "events page.viewed unique actor every all since 1h",
+];
 const queryLoop = (async () => {
   while (querying) {
-    await Promise.all(
-      [
-        "metric cpu avg every 1m since 1h",
-        "events page.viewed count every day timezone Europe/Berlin since 1h",
-        "events page.viewed unique actor every all since 1h",
-      ].map((query) => readQuery("query", query)),
-    );
+    await Promise.all(dashboardQueries.map((query) => readQuery(queryPhase, query)));
     await Bun.sleep(1000);
   }
 })().catch((error) => {
@@ -170,7 +187,7 @@ const queryLoop = (async () => {
 const roundDurations: number[] = [];
 const started = performance.now();
 try {
-  for (let round = 0; round < 3; round++) {
+  for (let round = 0; round < rounds; round++) {
     if (queryError) throw queryError;
     const target = started + round * 60_000;
     while (performance.now() < target) await Bun.sleep(Math.min(1000, target - performance.now()));
@@ -188,15 +205,23 @@ try {
         }
       }),
     );
-    roundDurations.push(performance.now() - start);
+    const completed = performance.now();
+    roundDurations.push(completed - start);
     console.info(
       JSON.stringify({
         phase: "round",
+        at: new Date().toISOString(),
         round,
         durationMs: roundDurations.at(-1),
+        scheduledLagMs: start - target,
+        deadlineMet: completed <= target + 60_000,
       }),
     );
+    if (completed > target + 60_000) throw Error(`Fleet cycle ${round} missed its 60-second deadline`);
   }
+  if (dashboardQueries.some((query) => !querySuccessCounts[query]))
+    throw Error("Baseline did not execute every dashboard query successfully");
+  queryPhase = "burst-query";
   // Bounded burst; accepted/rejected requests are counted, then a normal write must recover.
   await Promise.all(
     Array.from({ length: 120 }, async (_, index) => {
@@ -270,6 +295,7 @@ console.info(
         samplesPerServer,
         eventsPerWebsite,
         intervalSeconds: 60,
+        rounds,
         rawRetentionDays: 30,
       },
       expectedMetrics,
@@ -278,6 +304,7 @@ console.info(
       committedEvents: stored.events - baseline.events,
       peakActive,
       roundDurations,
+      querySuccessCounts,
       catalog,
       statuses,
       stats,
