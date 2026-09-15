@@ -41,7 +41,7 @@ export type WebhookQuerySource = {
   requestId: null;
 };
 
-export const assertOk = async (response: Response): Promise<void> => {
+export const assertOk = async (response: Pick<Response, "json" | "ok" | "status">): Promise<void> => {
   if (!response.ok) {
     const body = await response.json().catch(() => null);
     const message =

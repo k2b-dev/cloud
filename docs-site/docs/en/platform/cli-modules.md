@@ -289,6 +289,9 @@ cld inventory items list --jsonl
 | `table()` | Text table |
 | `getDefault()` / `setDefault()` | Profile-scoped application defaults |
 
+`readJson()` accepts native fetch responses and typed Hono client responses.
+It requires `json()`, `text()`, `ok`, `status`, and `statusText`.
+
 Use this context. Do not read CLI token or profile files from an application
 module.
 

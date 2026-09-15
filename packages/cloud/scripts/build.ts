@@ -4,11 +4,11 @@
  * Two consumer shapes:
  *
  *   Monorepo (this repo):
- *     APP_ID=<id> bun run packages/cloud/scripts/build.ts
+ *     NODE_ENV=production APP_ID=<id> bun run packages/cloud/scripts/build.ts
  *     # appDir defaults to packages/<APP_ID>, run from workspace root.
  *
  *   Standalone (npm consumer, see cloud-template):
- *     APP_ID=<id> APP_DIR=. bun run node_modules/@k2b/cloud/scripts/build.ts
+ *     NODE_ENV=production APP_ID=<id> APP_DIR=. bun run node_modules/@k2b/cloud/scripts/build.ts
  *     # appDir = APP_DIR (resolved against cwd) and must be the directory
  *     # that CONTAINS src/, since entrypoints resolve to <appDir>/src/*.
  *

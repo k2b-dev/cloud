@@ -13,7 +13,7 @@ export const flattenNoteOptions = (nodes: NoteTreeNode[], untitled = "Untitled",
     ...flattenNoteOptions(note.children, untitled, depth + 1),
   ]);
 
-export const readErrorMessage = async (response: Response, fallback: string): Promise<string> => {
+export const readErrorMessage = async (response: Pick<Response, "json">, fallback: string): Promise<string> => {
   try {
     const data = (await response.json()) as { message?: string };
     if (typeof data?.message === "string" && data.message.length > 0) return data.message;

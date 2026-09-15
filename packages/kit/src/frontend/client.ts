@@ -10,7 +10,7 @@ export function displayError(error: unknown, locale: string): string {
   if (error instanceof KitRequestError) return error.message;
   return apiErrorMessage("REQUEST_FAILED", locale);
 }
-export async function checked<T>(response: Response & { json: () => Promise<T> }): Promise<T> {
+export async function checked<T>(response: Pick<Response, "ok" | "status"> & { json: () => Promise<T> }): Promise<T> {
   if (!response.ok) {
     const error: unknown = await response.json().catch(() => null);
     const code = error && typeof error === "object" && "code" in error ? String(error.code) : "REQUEST_FAILED";

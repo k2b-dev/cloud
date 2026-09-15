@@ -32,7 +32,7 @@ export type CloudCliContext = {
   setDefault: (key: string, value: string | undefined) => Promise<void>;
   createApiClient: <TApi extends Hono<any, any, any>>(basePath: string) => CloudApiClient<TApi>;
   fetch: (path: string, init?: RequestInit) => Promise<Response>;
-  readJson: <T>(response: Response) => Promise<T>;
+  readJson: <T>(response: Pick<Response, "json" | "text" | "ok" | "status" | "statusText">) => Promise<T>;
   print: (value?: string) => void;
   /** Write a stdout chunk without adding a newline. */
   /** Resolves once the value is flushed; await it when writing large output. */

@@ -5,7 +5,7 @@ section: Operations
 order: 1130
 description: Build a standalone application image and connect it to a Cloud deployment.
 tags: [build, docker, deployment]
-updated: 2026-09-10
+updated: 2026-09-15
 ---
 
 # Build and deploy
@@ -18,7 +18,7 @@ optional application-specific build output.
 ## Build a standalone application
 
 ```bash
-APP_ID=inventory \
+NODE_ENV=production APP_ID=inventory \
 APP_DIR=. \
 bun run node_modules/@k2b/cloud/scripts/build.ts
 ```
@@ -47,7 +47,7 @@ Cloud maintainers building an application from the monorepo use the same build
 contract through the checked-out script:
 
 ```bash
-APP_ID=inventory bun run packages/cloud/scripts/build.ts
+NODE_ENV=production APP_ID=inventory bun run packages/cloud/scripts/build.ts
 ```
 
 That repository path is not an application API. Standalone builds always use
@@ -62,6 +62,12 @@ Add `scripts/build-extras.ts` only when the application must generate another
 artifact. The build sets `WORKSPACE_ROOT` and `DIST_DIR` before importing it.
 
 The build precompresses supported static files with Brotli and gzip.
+
+SSR 0.14 serves island modules under an application-scoped version directory,
+such as `/inventory/_ssr/<version>/<island>.js`. The files remain flat in
+`dist/_ssr/`; the SSR adapter resolves the URL and serves compressed siblings.
+Rebuild affected application images when updating SSR so entry modules and lazy
+chunks come from the same build.
 
 ## Build a standalone image
 

@@ -4,7 +4,7 @@ import { createSignal, For, Show } from "solid-js";
 import { apiClient } from "../../api/client";
 import { venueMessages } from "../../messages";
 
-const readError = async (res: Response, fallback: string): Promise<string> => {
+const readError = async (res: Pick<Response, "json">, fallback: string): Promise<string> => {
   const body = (await res.json().catch(() => null)) as { message?: string } | null;
   return body?.message ?? fallback;
 };

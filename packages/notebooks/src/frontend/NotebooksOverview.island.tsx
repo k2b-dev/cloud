@@ -75,7 +75,7 @@ type SearchResponse = {
 const cleanSnippet = (snippet: string | null): string | undefined =>
   snippet?.replaceAll("\uE000", "").replaceAll("\uE001", "").replace(/\s+/g, " ").trim() || undefined;
 
-const errorMessage = async (response: Response, fallback: string) => {
+const errorMessage = async (response: Pick<Response, "json">, fallback: string) => {
   try {
     const body = await response.json();
     if (body && typeof body === "object" && "message" in body && typeof body.message === "string") return body.message;

@@ -23,14 +23,14 @@ type LauncherRequestInput = {
 };
 
 export type WorkflowScannerTransport = {
-  invokeLauncher: (input: LauncherRequestInput) => Promise<Response>;
+  invokeLauncher: (input: LauncherRequestInput) => Promise<Pick<Response, "json" | "ok" | "status">>;
 };
 
 export const invokeWorkflowScannerRequest = (
   transport: WorkflowScannerTransport,
   target: WorkflowScannerRequestTarget,
   request: WorkflowScannerRequest,
-): Promise<Response> => {
+): Promise<Pick<Response, "json" | "ok" | "status">> => {
   return transport.invokeLauncher({
     param: { launcherId: target.launcherId },
     json: {

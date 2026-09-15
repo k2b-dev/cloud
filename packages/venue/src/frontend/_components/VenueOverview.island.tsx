@@ -12,7 +12,7 @@ type Props = {
   initialQuery: string;
 };
 
-const readError = async (res: Response, fallback: string): Promise<string> => {
+const readError = async (res: Pick<Response, "json">, fallback: string): Promise<string> => {
   const body = (await res.json().catch(() => null)) as { message?: string } | null;
   return body?.message ?? fallback;
 };

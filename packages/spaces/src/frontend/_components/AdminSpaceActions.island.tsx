@@ -12,7 +12,7 @@ type AdminSpaceActionsProps = {
   spaceName: string;
 };
 
-const readErrorMessage = async (response: Response, fallback: string): Promise<string> => {
+const readErrorMessage = async (response: Pick<Response, "json">, fallback: string): Promise<string> => {
   try {
     const data = (await response.json()) as { message?: string };
     if (typeof data?.message === "string" && data.message.length > 0) {

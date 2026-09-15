@@ -31,7 +31,7 @@ export type HealthWebhook = {
 
 export type HealthWebhookInput = Omit<HealthWebhook, "id" | "lastStatus" | "lastSentAt" | "lastError">;
 
-export const responseErrorMessage = async (response: Response, fallback: string): Promise<string> => {
+export const responseErrorMessage = async (response: Pick<Response, "json">, fallback: string): Promise<string> => {
   const data = (await response.json().catch(() => null)) as { message?: string } | null;
   return data?.message ?? fallback;
 };
@@ -39,7 +39,10 @@ export const responseErrorMessage = async (response: Response, fallback: string)
 const isHealthWebhook = (value: unknown): value is HealthWebhook =>
   Boolean(value && typeof value === "object" && "id" in value && typeof value.id === "string");
 
-export const readHealthWebhookResponse = async (response: Response, fallback = "Unexpected webhook response."): Promise<HealthWebhook> => {
+export const readHealthWebhookResponse = async (
+  response: Pick<Response, "json">,
+  fallback = "Unexpected webhook response.",
+): Promise<HealthWebhook> => {
   const body = await response.json();
   if (isHealthWebhook(body)) return body;
   throw new Error(fallback);

@@ -8,7 +8,7 @@
 # ──────────────────────────────────────────────────────────────────────
 # Stage 1: deps — install workspace dependencies (cache-shared).
 # ──────────────────────────────────────────────────────────────────────
-FROM oven/bun:1.3.14-alpine@sha256:5acc90a93e91ff07bf72aa90a7c9f0fa189765aec90b47bdbf2152d2196383c0 AS deps
+FROM oven/bun:1.4.2-alpine@sha256:d888c0ae6c86d7866ff10c5aafdd9077b36aee6455b33dd270fb93c0dd5cef6f AS deps
 WORKDIR /app
 
 COPY package.json bun.lock bunfig.toml ./
@@ -74,7 +74,7 @@ RUN bun run packages/cloud/scripts/build.ts
 # ──────────────────────────────────────────────────────────────────────
 # Stage 3: runtime — only the bundled output + bun runtime.
 # ──────────────────────────────────────────────────────────────────────
-FROM oven/bun:1.3.14-alpine@sha256:5acc90a93e91ff07bf72aa90a7c9f0fa189765aec90b47bdbf2152d2196383c0 AS runtime
+FROM oven/bun:1.4.2-alpine@sha256:d888c0ae6c86d7866ff10c5aafdd9077b36aee6455b33dd270fb93c0dd5cef6f AS runtime
 WORKDIR /app
 ARG APP_ID
 RUN if [ "$APP_ID" = "assistant" ]; then apk add --no-cache chromium; fi

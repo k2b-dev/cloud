@@ -13,7 +13,7 @@ export const defaultShiftRange = (): DateRangeValue => ({
 });
 export const todayDateKey = (): string => new Date().toISOString().slice(0, 10);
 
-export const readError = async (res: Response, fallback: string): Promise<string> => {
+export const readError = async (res: Pick<Response, "json">, fallback: string): Promise<string> => {
   const body = (await res.json().catch(() => null)) as { message?: string } | null;
   return body?.message ?? fallback;
 };

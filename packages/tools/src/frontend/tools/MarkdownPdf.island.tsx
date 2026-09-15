@@ -56,7 +56,7 @@ export const validateMarkdownPdfInput = (
   return null;
 };
 
-const responseError = async (response: Response, t: MarkdownPdfMessages): Promise<string> => {
+const responseError = async (response: Pick<Response, "json" | "status">, t: MarkdownPdfMessages): Promise<string> => {
   if (response.status === 401) return t.signInToGenerate;
   if (response.status === 429) return t.tooManyRenders;
   const data: unknown = await response.json().catch(() => null);

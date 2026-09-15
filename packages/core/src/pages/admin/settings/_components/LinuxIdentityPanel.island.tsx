@@ -30,7 +30,7 @@ type Overview = Awaited<ReturnType<typeof linuxIdentities.overview>>;
 import DocumentationLink from "./DocumentationLink";
 
 const api = coreClient.admin.core["linux-identities"];
-const responseError = async (response: Response): Promise<Error> => {
+const responseError = async (response: Pick<Response, "json">): Promise<Error> => {
   const body: unknown = await response.json().catch(() => null);
   return new Error(body && typeof body === "object" && "code" in body && typeof body.code === "string" ? body.code : "error");
 };

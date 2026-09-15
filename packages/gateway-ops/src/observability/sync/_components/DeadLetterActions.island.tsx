@@ -14,7 +14,7 @@ type Props = {
   replayAvailable?: boolean;
 };
 
-const readErrorMessage = async (response: Response, fallback: string): Promise<string> => {
+const readErrorMessage = async (response: Pick<Response, "json">, fallback: string): Promise<string> => {
   const body = (await response.json().catch(() => null)) as { message?: string } | null;
   return body?.message ?? fallback;
 };
@@ -39,7 +39,7 @@ export default function DeadLetterActions(props: Props) {
         },
       );
       if (!confirmed) return false;
-      let response: Response;
+      let response: Pick<Response, "json" | "ok">;
       if (props.kind === "topic") {
         const consumer = props.consumer;
         if (!props.replayAvailable || !consumer) throw new Error(t.syncReplayUnavailable);

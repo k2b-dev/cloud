@@ -16,7 +16,7 @@ type Props = {
   attentionStep?: AttentionStep;
 };
 
-const responseError = async (response: Response, fallback: string): Promise<Error> => {
+const responseError = async (response: Pick<Response, "json">, fallback: string): Promise<Error> => {
   const data = (await response.json().catch(() => null)) as { message?: unknown } | null;
   return new Error(typeof data?.message === "string" ? data.message : fallback);
 };

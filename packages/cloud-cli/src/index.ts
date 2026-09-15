@@ -707,7 +707,7 @@ const resolveOfflineOptions = async (global: GlobalArgs): Promise<ResolvedCliOpt
   };
 };
 
-const readJson = async <T>(response: Response): Promise<T> => {
+const readJson = async <T>(response: Pick<Response, "json" | "text" | "ok" | "status" | "statusText">): Promise<T> => {
   const text = await response.text().catch(() => "");
   const payload = text.length > 0 ? tryParseJson(text) : null;
   if (!response.ok) {

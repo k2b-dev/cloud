@@ -11,7 +11,7 @@ type Props = {
   error: string | null;
 };
 
-const readError = async (res: Response, fallback: string) => {
+const readError = async (res: Pick<Response, "json">, fallback: string) => {
   try {
     const data = await res.json();
     return data.message ?? data.error?.message ?? fallback;

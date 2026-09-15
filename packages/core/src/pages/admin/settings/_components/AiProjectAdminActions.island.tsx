@@ -12,7 +12,7 @@ type Props = {
   projectName: string;
 };
 
-const readError = async (response: Response, fallback: string): Promise<string> => {
+const readError = async (response: Pick<Response, "json">, fallback: string): Promise<string> => {
   const body = (await response.json().catch(() => null)) as { message?: string } | null;
   return body?.message || fallback;
 };

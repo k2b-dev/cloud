@@ -71,7 +71,10 @@ const DEFAULT_PROFILE_INPUT = `{
   }]
 }`;
 
-const readDocumentPreviewError = async (response: Response, fallback: string): Promise<{ message: string; phase: string | null }> => {
+const readDocumentPreviewError = async (
+  response: Pick<Response, "json">,
+  fallback: string,
+): Promise<{ message: string; phase: string | null }> => {
   try {
     const data = (await response.json()) as unknown;
     if (data && typeof data === "object") {

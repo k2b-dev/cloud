@@ -42,7 +42,7 @@ const pdfFilename = (title: string): string => {
   return `${clean.slice(0, 251)}.pdf`;
 };
 
-const responseError = async (response: Response, rateLimited: string, fallback: string): Promise<string> => {
+const responseError = async (response: Pick<Response, "json" | "status">, rateLimited: string, fallback: string): Promise<string> => {
   if (response.status === 429) return rateLimited;
   const data: unknown = await response.json().catch(() => null);
   if (data && typeof data === "object" && "message" in data && typeof data.message === "string") return data.message;

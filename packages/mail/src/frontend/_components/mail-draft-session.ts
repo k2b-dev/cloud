@@ -33,7 +33,7 @@ export const createSerializedDraftMutationQueue = () => {
 const journalKey = (mailboxId: string, draftId: string): string => `cloud:mail:draft:${mailboxId}:${draftId}`;
 
 /** Reports the exclusive-lease rejection the API raises when another session owns the draft. */
-export const isDraftLeaseHeldResponse = async (response: Response): Promise<boolean> => {
+export const isDraftLeaseHeldResponse = async (response: { status: number; clone(): Pick<Response, "json"> }): Promise<boolean> => {
   if (response.status !== 409) return false;
   try {
     const body: unknown = await response.clone().json();

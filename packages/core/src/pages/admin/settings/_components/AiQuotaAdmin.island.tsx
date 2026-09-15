@@ -6,7 +6,7 @@ import type { AiQuotaConfig, AiQuotaIdentity, AiQuotaSnapshot } from "@k2b/cloud
 import { createSignal, For, Index, Show } from "solid-js";
 import { quotaMessages } from "./ai-quota-messages";
 const api = coreClient.admin.core["ai-quotas"];
-async function checked<T>(response: Response): Promise<T> {
+async function checked<T>(response: Pick<Response, "json" | "ok" | "statusText">): Promise<T> {
   const body = await response.json();
   if (!response.ok) throw new Error(body.message || response.statusText);
   return body;

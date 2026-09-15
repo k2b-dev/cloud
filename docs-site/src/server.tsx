@@ -1,6 +1,7 @@
 import { createFibelApp } from "@k2b/fibel";
 import { Hono } from "hono";
-import { dirname, extname, join, normalize, resolve } from "path";
+import { routes as ssrRoutes } from "@k2b/ssr/hono";
+import { extname, join, normalize, resolve } from "path";
 import fibelConfig from "../fibel.config";
 import { linkedChartSnapshot, parseGroupRequest } from "./ui/chart-group-data";
 import HomePage from "./home/HomePage";
@@ -10,7 +11,6 @@ import { siteTheme } from "./site-config";
 const fibelApp = await createFibelApp(fibelConfig);
 const app = new Hono();
 const assetsRoot = process.env.NODE_ENV === "production" ? join(import.meta.dir, "assets") : resolve(import.meta.dir, "..", "assets");
-const ssrRoot = ssrConfig.dev ? (ssrConfig.rootDir ?? process.cwd()) : dirname(Bun.main);
 
 const themeFromRequest = (request: Request) => {
   const theme = request.headers.get("Cookie")?.match(new RegExp(`(?:^|;\\s*)${siteTheme.cookieName}=(dark|light)(?:;|$)`))?.[1];
@@ -62,39 +62,7 @@ app.use("*", async (c, next) => {
   }
 });
 
-if (ssrConfig.dev) {
-  app.get("/_ssr/_ping", (c) => c.text("ok"));
-  app.get(
-    "/_ssr/_reload",
-    () =>
-      new Response(
-        new ReadableStream({
-          start(controller) {
-            controller.enqueue(new TextEncoder().encode(": connected\n\n"));
-            const interval = setInterval(() => {
-              try {
-                controller.enqueue(new TextEncoder().encode(": ping\n\n"));
-              } catch {
-                clearInterval(interval);
-              }
-            }, 5000);
-          },
-        }),
-        { headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache" } },
-      ),
-  );
-}
-app.get("/_ssr/:filename{[a-zA-Z0-9._-]+\\.js(?:\\.map)?}", async (c) => {
-  const filename = c.req.param("filename");
-  const file = Bun.file(join(ssrRoot, "_ssr", filename));
-  if (!(await file.exists())) return c.notFound();
-  return new Response(file, {
-    headers: {
-      "Content-Type": filename.endsWith(".map") ? "application/json; charset=utf-8" : "application/javascript; charset=utf-8",
-      "Cache-Control": ssrConfig.dev ? "no-cache" : "public, max-age=31536000, immutable",
-    },
-  });
-});
+app.route("/_ssr", ssrRoutes(ssrConfig));
 app.get("/", (c) => c.redirect("/en", 302));
 app.get("/en", (c) =>
   html(() => <HomePage theme={themeFromRequest(c.req.raw)} themeCookieName={siteTheme.cookieName} />, {

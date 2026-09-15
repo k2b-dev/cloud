@@ -20,7 +20,7 @@ type ScopedAccessEntry = AccessEntry & {
   tableName: string | null;
 };
 
-const readErrorMessage = (_response: Response, fallback: string): Promise<string> => Promise.resolve(fallback);
+const readErrorMessage = (_response: unknown, fallback: string): Promise<string> => Promise.resolve(fallback);
 
 const listBaseAccess = async (baseId: string, fallback: string): Promise<ScopedAccessEntry[]> => {
   const response = await apiClient.admin.bases[":baseId"].access.$get({

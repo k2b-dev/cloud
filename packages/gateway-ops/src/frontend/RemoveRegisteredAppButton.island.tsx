@@ -4,7 +4,7 @@ import { Button, prompts, Tooltip, toast, useLocale } from "@k2b/ui";
 import { apiClient } from "@/api/client";
 import { gatewayOpsMessages } from "../messages";
 
-const readErrorMessage = async (response: Response, fallback: string): Promise<string> => {
+const readErrorMessage = async (response: Pick<Response, "json">, fallback: string): Promise<string> => {
   const body = (await response.json().catch(() => null)) as { message?: string } | null;
   return body?.message ?? fallback;
 };

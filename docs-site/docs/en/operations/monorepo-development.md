@@ -326,7 +326,7 @@ Use a separate three-node cluster for replication and failover tests.
 
 ## Application-scoped SSR builds
 
-Development and production use SSR 0.13.1 component roots: the selected app's
+Development and production use SSR 0.14.0 component roots: the selected app's
 `src/` and Cloud's framework `src/`. The build scripts resolve `APP_DIR` before
 loading the app configuration. The workspace root stays the base for island IDs
 and development assets. Other apps and UI test fixtures are not scanned.

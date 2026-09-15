@@ -21,7 +21,7 @@ describe("@k2b/ui standalone SSR fixture", () => {
     expect(html).toContain("Composition");
     expect(html).toContain("Platform health");
     expect(html).toContain("All checks passed");
-    expect(html).toContain('const p="/_ssr"');
+    expect(html).toMatch(/const p="\/_ssr\/\d+"/);
     expect(html).toContain("<solid-island");
 
     const styles = await app.request("/styles.css");

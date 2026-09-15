@@ -40,7 +40,7 @@ const mockContext = (options: { args?: string[]; flags?: CloudCliContext["flags"
     fetch:
       options.fetch ??
       (async (path) => (String(path) === "/api/api-docs/sources" ? Response.json({ items: [source] }) : Response.json(spec))),
-    readJson: async <T>(response: Response) => (await response.json()) as T,
+    readJson: async <T>(response: Parameters<CloudCliContext["readJson"]>[0]) => (await response.json()) as T,
     print: (value = "") => output.push(value),
     write: (value: string) => output.push(value),
     error: (value: string) => output.push(value),

@@ -44,7 +44,7 @@ export type AssistantSkillFields = {
   references?: AiSkillReferenceInput[];
 };
 
-const readError = async (response: Response, fallback: string): Promise<string> => {
+const readError = async (response: Pick<Response, "json">, fallback: string): Promise<string> => {
   const body = await response.json().catch(() => null);
   return body && typeof body === "object" && "message" in body && typeof body.message === "string" ? body.message : fallback;
 };

@@ -56,15 +56,21 @@ const closeProxy = (state: ProxyState, code: number, reason: string) => {
   if (state.closed) return;
   state.closed = true;
   clearPending(state);
+  // Reserved receive-only codes (notably 1006) cannot be sent in a close frame.
+  const closeCode =
+    Number.isInteger(code) && ((code >= 1000 && code <= 1003) || (code >= 1007 && code <= 1014) || (code >= 3000 && code <= 4999))
+      ? code
+      : 1011;
   try {
-    state.upstream.close(code, reason);
+    state.upstream.close(closeCode, reason);
   } catch {
-    // The upstream connection may never have opened.
+    // Parameterless close also cancels a connection still being established.
+    state.upstream.close();
   }
   try {
-    state.client?.close(code, reason);
+    state.client?.close(closeCode, reason);
   } catch {
-    // The browser connection may already be closing.
+    state.client?.terminate();
   }
 };
 
@@ -88,7 +94,7 @@ const sendUpstream = (state: ProxyState, frame: string | ArrayBufferLike | Array
  */
 export const tryUpgradeWebSocket = (
   req: Request,
-  server: { upgrade: (req: Request, options?: { data?: ProxyData; headers?: Record<string, string> }) => boolean },
+  server: { upgrade: (req: Request, options: { data: ProxyData; headers?: Record<string, string> }) => boolean },
   table: RouteTable,
   logFn: (msg: string, meta?: Record<string, unknown>) => void,
 ): Response | undefined => {

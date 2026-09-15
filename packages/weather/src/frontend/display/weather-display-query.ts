@@ -5,7 +5,7 @@ import { weatherMessages } from "../../messages";
 
 const DISPLAY_REQUEST_TIMEOUT_MS = 10_000;
 
-const readResponseError = async (response: Response, fallback: string): Promise<string> => {
+const readResponseError = async (response: Pick<Response, "json">, fallback: string): Promise<string> => {
   const body: unknown = await response.json().catch(() => null);
   return body && typeof body === "object" && "message" in body && typeof body.message === "string" ? body.message : fallback;
 };

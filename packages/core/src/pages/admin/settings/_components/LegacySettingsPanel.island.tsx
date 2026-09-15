@@ -11,7 +11,7 @@ type LegacySetting = {
   decryptable: boolean;
 };
 
-const errorMessage = async (response: Response, fallback: string): Promise<string> => {
+const errorMessage = async (response: Pick<Response, "json">, fallback: string): Promise<string> => {
   const data = (await response.json().catch(() => null)) as { message?: string } | null;
   return data?.message ?? fallback;
 };

@@ -100,7 +100,7 @@ await writeFile(resolve(dist, "global.css"), '@import "./styles.css";\n@import "
 const tablerPath = resolve(dist, "tabler.css");
 const tablerCss = await readFile(tablerPath, "utf8");
 const optimizedTablerCss = tablerCss.replace(
-  /src:url\(([^)]+\.woff2)\)\s*format\("?woff2"?\),url\([^)]+\)\s*format\("?woff"?\),url\([^)]+\)\s*format\("?truetype"?\)/,
+  /src:url\(([^)]+\.woff2(?:[?#][^)]*)?)\)\s*format\("?woff2"?\),url\([^)]+\)\s*format\("?woff"?\),url\([^)]+\)\s*format\("?truetype"?\)/,
   "src:url($1)format(woff2)",
 );
 if (optimizedTablerCss === tablerCss) {

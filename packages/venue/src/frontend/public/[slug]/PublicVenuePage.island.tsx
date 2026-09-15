@@ -344,7 +344,7 @@ function UnavailablePage(props: RefreshDiagnostics) {
   );
 }
 
-const readResponseError = async (response: Response, fallback: string): Promise<string> => {
+const readResponseError = async (response: Pick<Response, "json">, fallback: string): Promise<string> => {
   const body: unknown = await response.json().catch(() => null);
   return body && typeof body === "object" && "message" in body && typeof body.message === "string" ? body.message : fallback;
 };

@@ -121,12 +121,12 @@ export default function AssistantProjectView(props: Props) {
     }
   };
 
-  const readError = async (response: Response, fallback: string) => {
+  const readError = async (response: Pick<Response, "json">, fallback: string) => {
     const payload = (await response.json().catch(() => null)) as { message?: unknown } | null;
     return typeof payload?.message === "string" && payload.message.trim() ? payload.message : fallback;
   };
 
-  const runContextAction = async (key: string, success: string, action: () => Promise<Response>) => {
+  const runContextAction = async (key: string, success: string, action: () => Promise<Pick<Response, "json" | "ok">>) => {
     if (contextAction()) return;
     setContextAction(key);
     try {

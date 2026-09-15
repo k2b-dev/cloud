@@ -15,7 +15,9 @@ export class ApprovalError extends Error {
     super(code);
   }
 }
-export async function checked(response: Response): Promise<Response> {
+type ApprovalResponse = Pick<Response, "json" | "ok" | "status" | "headers">;
+
+export async function checked<T extends ApprovalResponse>(response: T): Promise<T> {
   if (!response.ok) {
     const body: unknown = await response.json().catch(() => null);
     const code = body && typeof body === "object" && "code" in body && typeof body.code === "string" ? body.code : "UNAVAILABLE";
@@ -24,7 +26,7 @@ export async function checked(response: Response): Promise<Response> {
   }
   return response;
 }
-export async function parsed<T>(response: Response, schema: z.ZodType<T>): Promise<T> {
+export async function parsed<T>(response: ApprovalResponse, schema: z.ZodType<T>): Promise<T> {
   return schema.parse(await (await checked(response)).json());
 }
 

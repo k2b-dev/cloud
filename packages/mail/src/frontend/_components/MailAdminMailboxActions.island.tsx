@@ -12,7 +12,7 @@ type MailAdminMailboxActionsProps = {
   mailboxName: string;
 };
 
-const readErrorMessage = async (response: Response, fallback: string): Promise<string> => {
+const readErrorMessage = async (response: Pick<Response, "json">, fallback: string): Promise<string> => {
   try {
     const body = (await response.json()) as { message?: string };
     return body.message?.trim() || fallback;

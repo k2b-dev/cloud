@@ -53,7 +53,7 @@ type ResolvedShortcut = {
   href: string;
 };
 
-const errorMessage = async (response: Response, fallback: string): Promise<string> => {
+const errorMessage = async (response: Pick<Response, "json">, fallback: string): Promise<string> => {
   const body = await response.json().catch(() => null);
   if (body && typeof body === "object" && "message" in body && typeof body.message === "string") return body.message;
   return fallback;

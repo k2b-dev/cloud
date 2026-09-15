@@ -30,7 +30,7 @@ const MEMORY_MAX_CHARS = 500;
 
 type AssistantPrefsTab = "personalization" | "skills" | "system-prompt" | "approvals";
 
-const readApiError = async (response: Response, fallback: string): Promise<string> => {
+const readApiError = async (response: Pick<Response, "json">, fallback: string): Promise<string> => {
   const body = (await response.json().catch(() => null)) as { message?: unknown } | null;
   return typeof body?.message === "string" ? body.message : fallback;
 };

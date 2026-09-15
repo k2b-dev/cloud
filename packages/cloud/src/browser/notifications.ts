@@ -56,7 +56,7 @@ const subscriptionPayload = (subscription: PushSubscription): BrowserPushSubscri
   };
 };
 
-const responseError = async (response: Response, fallback: string): Promise<Error> => {
+const responseError = async (response: Pick<Response, "json">, fallback: string): Promise<Error> => {
   try {
     const payload = (await response.json()) as { message?: unknown };
     if (typeof payload.message === "string" && payload.message.trim()) return new Error(payload.message);

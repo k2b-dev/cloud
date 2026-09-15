@@ -3,7 +3,7 @@ import type { AiProject } from "@k2b/cloud/ai";
 import { coreClient } from "@k2b/cloud/clients/core";
 import { assistantBrowserText } from "./ui-copy";
 
-const readError = async (response: Response, fallback: string): Promise<string> => {
+const readError = async (response: Pick<Response, "json">, fallback: string): Promise<string> => {
   const body = (await response.json().catch(() => null)) as { message?: unknown } | null;
   return typeof body?.message === "string" ? body.message : fallback;
 };

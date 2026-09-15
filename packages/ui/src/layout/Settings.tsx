@@ -139,7 +139,7 @@ SettingsGroup.Action = SettingsGroupAction;
 export const sameSettingValue = (left: unknown, right: unknown): boolean => JSON.stringify(left) === JSON.stringify(right);
 
 export const readSettingsError = async (
-  response: Response,
+  response: Pick<Response, "json">,
   fallback: string,
 ): Promise<{ message: string; fields: Record<string, string> }> => {
   const data = (await response.json().catch(() => null)) as {

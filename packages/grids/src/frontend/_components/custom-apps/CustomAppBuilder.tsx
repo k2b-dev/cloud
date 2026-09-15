@@ -1316,7 +1316,10 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
       setSaveState("saving");
       setSaveError(null);
       try {
-        const response: Response = await apiClient.apps[":appId"].draft.$put({ param: { appId: app().id }, json: { definition } });
+        const response: Pick<Response, "json" | "ok" | "headers"> = await apiClient.apps[":appId"].draft.$put({
+          param: { appId: app().id },
+          json: { definition },
+        });
         if (!response.ok) throw new Error(await errorMessage(response, text("Could not save the App draft.")));
         const saved: PublicCustomAppDraftSave = await response.json();
         if (!saved.app.draftDefinition) {

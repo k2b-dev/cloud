@@ -97,7 +97,7 @@ const createContext = (
       throw new Error("unused");
     },
     fetch: fetchWithDraftFallback,
-    readJson: async <T>(response: Response) => {
+    readJson: async <T>(response: Parameters<CloudCliContext["readJson"]>[0]) => {
       if (!response.ok)
         throw new Error(`${response.status} ${((await response.json()) as { message?: string }).message ?? response.statusText}`);
       return (await response.json()) as T;

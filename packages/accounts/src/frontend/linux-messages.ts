@@ -93,7 +93,10 @@ export const linuxAccountMessages = i18n.define({
   },
 });
 
-export const accountLinuxError = async (response: Response, t: ReturnType<typeof linuxAccountMessages.resolve>["t"]): Promise<Error> => {
+export const accountLinuxError = async (
+  response: Pick<Response, "json">,
+  t: ReturnType<typeof linuxAccountMessages.resolve>["t"],
+): Promise<Error> => {
   const body: unknown = await response.json().catch(() => null);
   const code = body && typeof body === "object" && "code" in body ? body.code : null;
   const message = Object.entries(t).find(([key]) => key === code)?.[1];

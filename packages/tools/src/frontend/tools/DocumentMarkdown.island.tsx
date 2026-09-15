@@ -35,7 +35,7 @@ export const markdownDownloadName = (filename: string): string => {
   return `${stem}.md`;
 };
 
-const errorMessage = async (response: Response, t: DocumentMarkdownMessages): Promise<string> => {
+const errorMessage = async (response: Pick<Response, "json" | "status">, t: DocumentMarkdownMessages): Promise<string> => {
   if (response.status === 401) return t.signInToConvert;
   if (response.status === 429) return t.tooManyConversions;
   const body: unknown = await response.json().catch(() => null);

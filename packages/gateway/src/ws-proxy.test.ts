@@ -8,6 +8,7 @@ class FakeUpstream extends EventTarget {
   readonly sent: unknown[] = [];
   readonly closes: Array<{ code: number; reason: string }> = [];
   bufferedAmount = 0;
+  rejectCloseArguments = false;
 
   constructor(
     readonly url: string,
@@ -22,6 +23,7 @@ class FakeUpstream extends EventTarget {
   }
 
   close(code = 1000, reason = "") {
+    if (this.rejectCloseArguments && arguments.length) throw new Error("close arguments rejected");
     this.closes.push({ code, reason });
   }
 
@@ -74,6 +76,31 @@ afterEach(() => {
 });
 
 describe("gateway WebSocket proxy", () => {
+  test.each([1005, 1006, 1015])("maps reserved close code %s and ignores repeated callbacks", (code) => {
+    const connection = setup();
+    const data = connection.data();
+    if (!data) throw new Error("Gateway upgrade data missing");
+    const { client, closes } = clientFor(data);
+    websocketHandlers.message(client, "queued");
+    websocketHandlers.close(client, code, "disconnected");
+    websocketHandlers.close(client, code, "duplicate");
+    expect(data.state.pending).toEqual([]);
+    expect(data.state.pendingBytes).toBe(0);
+    expect(FakeUpstream.instances[0]!.closes).toEqual([{ code: 1011, reason: "disconnected" }]);
+    expect(closes).toEqual([{ code: 1011, reason: "disconnected" }]);
+  });
+
+  test("still closes both sides if upstream close arguments are rejected", () => {
+    const connection = setup();
+    const data = connection.data();
+    if (!data) throw new Error("Gateway upgrade data missing");
+    const { client, closes } = clientFor(data);
+    FakeUpstream.instances[0]!.rejectCloseArguments = true;
+    websocketHandlers.close(client, 1006, "disconnected");
+    expect(FakeUpstream.instances[0]!.closes).toEqual([{ code: 1000, reason: "" }]);
+    expect(closes).toEqual([{ code: 1011, reason: "disconnected" }]);
+  });
+
   test("bounds frames queued before the upstream opens", () => {
     const connection = setup();
     expect(connection.response).toBeUndefined();

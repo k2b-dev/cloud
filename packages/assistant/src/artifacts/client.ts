@@ -6,7 +6,7 @@ import type { ApiType } from "../api";
 import type { StorageRequest } from "./storage-contracts";
 import { ArtifactUpdate, ArtifactSource, type ArtifactKind } from "./contracts";
 const client = api.create<ApiType>({ baseUrl: "/api/assistant" }).artifacts;
-async function checked(response: Response): Promise<void> {
+async function checked(response: Pick<Response, "json" | "ok" | "status">): Promise<void> {
   if (!response.ok) {
     const error: unknown = await response.json().catch(() => null);
     const message = error && typeof error === "object" && "message" in error && typeof error.message === "string" ? error.message : `HTTP ${response.status}`;

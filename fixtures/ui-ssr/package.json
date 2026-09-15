@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "bun run --cwd ../../packages/ui build && bun run scripts/build.ts",
+    "build": "bun run --cwd ../../packages/ui build && NODE_ENV=production bun run scripts/build.ts",
     "dev": "NODE_ENV=development bun --preload ./src/preload.ts ./src/server.ts",
     "test": "bun run --cwd ../../packages/ui build && bun test",
     "typecheck": "tsc -p tsconfig.json --noEmit --pretty false"
