@@ -482,6 +482,9 @@ async function loadPulseWorkspaceInitialData(params: {
   searchParams: URLSearchParams;
 }): Promise<Partial<PulseWorkspaceProps> & Pick<PulseWorkspaceProps, "initialQueryCoverage">> {
   const activityQuery = activityQueryInput(params.activityQuery);
+  const metricsPromise = pulseService.query.metrics(params.baseId, params.user, {});
+  const activityMetricsPromise =
+    activityQuery.q || activityQuery.type ? pulseService.query.metrics(params.baseId, params.user, activityQuery) : metricsPromise;
   const [
     sourcesResult,
     metricsResult,
@@ -493,9 +496,9 @@ async function loadPulseWorkspaceInitialData(params: {
     statesResult,
   ] = await Promise.all([
     pulseService.source.list(params.baseId, params.user),
-    pulseService.query.metrics(params.baseId, params.user, {}),
+    metricsPromise,
     loadResourceInitialData(params.baseId, params.user, params.routeState, params.searchParams),
-    pulseService.query.metrics(params.baseId, params.user, activityQuery),
+    activityMetricsPromise,
     pulseService.dashboard.list(params.baseId, params.user),
     pulseService.savedQuery.list(params.baseId, params.user),
     pulseService.query.recentEvents(params.baseId, params.user, { q: activityQuery.q }),
