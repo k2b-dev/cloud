@@ -14,16 +14,19 @@ export const markMetricHoursDirty = async (baseId: string, timestamps: readonly 
   if (!policy) throw err.notFound("Pulse base");
   if (hours.some((hour) => Date.parse(hour) < policy.earliest.getTime()))
     throw err.badInput("Metric timestamps must be within the raw retention window");
-  const marked = await db<{ hour: Date }[]>`
-   INSERT INTO pulse.metric_hours(base_id,hour,state)
-   SELECT ${baseId}::uuid,hour::timestamptz,'dirty'
-   FROM jsonb_array_elements_text((${JSON.stringify(hours)}::jsonb #>> '{}')::jsonb) AS input(hour)
-   ORDER BY hour
-   ON CONFLICT(base_id,hour) DO UPDATE SET state='dirty',updated_at=now()
-   WHERE pulse.metric_hours.state<>'sealed'
-   RETURNING hour
- `;
-  if (marked.length !== hours.length) throw err.badInput("Metric hour is sealed after raw retention");
+  // Acquire each hour in the same order for both the shared and transition paths.
+  // Dirty hours need exclusion against rollup/sealing, not against other writers.
+  for (const hour of hours) {
+    const [dirty] = await db`SELECT hour FROM pulse.metric_hours
+      WHERE base_id=${baseId}::uuid AND hour=${hour}::timestamptz AND state='dirty' FOR SHARE`;
+    if (dirty) continue;
+    // Do not share-lock clean rows: upgrading two concurrent readers would deadlock.
+    const marked = await db`INSERT INTO pulse.metric_hours(base_id,hour,state)
+      VALUES (${baseId}::uuid,${hour}::timestamptz,'dirty')
+      ON CONFLICT(base_id,hour) DO UPDATE SET state='dirty',updated_at=now()
+      WHERE pulse.metric_hours.state<>'sealed' RETURNING hour`;
+    if (marked.length !== 1) throw err.badInput("Metric hour is sealed after raw retention");
+  }
 };
 
 export const runHourlyRollup = async (baseId?: string): Promise<{ buckets: number; done: boolean }> =>
