@@ -1389,7 +1389,7 @@ export default function MailWorkspace(props: {
   };
 
   return (
-    <AppWorkspace>
+    <AppWorkspace mobileSurface="flush">
       <MailSidebar
         mailboxId={data.mailbox.id}
         mailboxName={data.mailbox.name}

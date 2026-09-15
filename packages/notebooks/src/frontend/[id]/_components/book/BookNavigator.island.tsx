@@ -1,4 +1,5 @@
-import { AppWorkspace, Placeholder, useLocale } from "@k2b/ui";
+import { WorkspaceNavigationProvider } from "@k2b/cloud/ssr/islands";
+import { createNavigation, type NavigationItem, AppWorkspace, Placeholder, useLocale } from "@k2b/ui";
 import { createSignal, For, onCleanup, onMount } from "solid-js";
 import { withPresentationMode } from "../../../../lib/presentation-url";
 import { buildNoteUrl, buildTagPageUrl } from "../../../params";
@@ -97,15 +98,57 @@ export default function BookNavigator(props: BookNavigatorProps) {
       )}
     </>
   );
+  const noteEntry = (node: BookTreeNode): NavigationItem => ({
+    id: `note:${node.id}`,
+    label: node.title,
+    icon: "ti ti-file-text",
+    href: withPresentationMode(buildNoteUrl(props.notebookId, node.id), "book"),
+    active: state().selectedNoteId === node.id,
+    children: node.children.map(noteEntry),
+  });
+  const mobileNavigation = createNavigation({
+    items: () => [
+      { id: "all", label: t().allNotebooks, href: "/app/notebooks", icon: "ti ti-library" },
+      ...(state().canWrite && (!state().selectedNoteId || state().locked)
+        ? [
+            {
+              id: "workspace",
+              label: t().openWorkspace,
+              icon: "ti ti-layout-sidebar",
+              href: withPresentationMode(
+                state().selectedNoteId ? buildNoteUrl(props.notebookId, state().selectedNoteId!) : `/app/notebooks/${props.notebookId}`,
+                "readonly",
+              ),
+            },
+          ]
+        : []),
+      { id: "notes", label: t().notes, children: state().tree.map(noteEntry) },
+      ...(state().tags.length
+        ? [
+            {
+              id: "tags",
+              label: t().tags,
+              children: state().tags.map((item) => ({
+                id: `tag:${item.tag}`,
+                label: item.tag,
+                icon: "ti ti-hash",
+                badge: item.count,
+                active: state().activeTag === item.tag,
+                href: withPresentationMode(buildTagPageUrl(props.notebookId, item.tag), "book"),
+              })),
+            },
+          ]
+        : []),
+    ],
+  });
   return (
-    <AppWorkspace.Sidebar resizable>
-      <AppWorkspace.SidebarMobileTrigger label={state().notebookName} />
-      <AppWorkspace.SidebarMobile>
-        <AppWorkspace.SidebarMobileBody>{navigation()}</AppWorkspace.SidebarMobileBody>
-      </AppWorkspace.SidebarMobile>
-      <AppWorkspace.SidebarDesktop>
-        <AppWorkspace.SidebarBody>{navigation()}</AppWorkspace.SidebarBody>
-      </AppWorkspace.SidebarDesktop>
-    </AppWorkspace.Sidebar>
+    <>
+      <WorkspaceNavigationProvider navigation={mobileNavigation} label={state().notebookName} />
+      <AppWorkspace.Sidebar resizable>
+        <AppWorkspace.SidebarDesktop>
+          <AppWorkspace.SidebarBody>{navigation()}</AppWorkspace.SidebarBody>
+        </AppWorkspace.SidebarDesktop>
+      </AppWorkspace.Sidebar>
+    </>
   );
 }

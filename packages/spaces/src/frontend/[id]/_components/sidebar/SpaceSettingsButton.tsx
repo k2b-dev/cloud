@@ -11,7 +11,7 @@ type Props = {
   viewTransitionName?: string;
 };
 
-export default function SpaceSettingsButton(props: Props) {
+export function createSpaceSettings(props: Pick<Props, "spaceId" | "baseUrl">) {
   const t = useSpaceMessages();
   const [open, setOpen] = createSignal(false);
 
@@ -39,6 +39,12 @@ export default function SpaceSettingsButton(props: Props) {
     }
   };
 
+  return { openDialog, open };
+}
+
+export default function SpaceSettingsButton(props: Props) {
+  const t = useSpaceMessages();
+  const { openDialog, open } = createSpaceSettings(props);
   if (props.variant === "icon") {
     return (
       <AppWorkspace.SidebarIconAction

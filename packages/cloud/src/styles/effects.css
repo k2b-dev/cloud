@@ -794,7 +794,7 @@ dialog:has(.launchpad-panel)::backdrop {
 
 /* Dashboard launchpad app icon. One app colour drives the glyph and graded rim;
    the face stays clean so the tile feels crisp instead of plastic. */
-.launchpad-panel .app-icon {
+:is(.launchpad-panel, .cloud-mobile-apps) .app-icon {
   --icon-face: #ffffff;
   --rim-top: color-mix(in oklab, var(--app-icon-color), white 34%);
   --rim-bottom: color-mix(in oklab, var(--app-icon-color), black 12%);
@@ -817,13 +817,13 @@ dialog:has(.launchpad-panel)::backdrop {
 }
 
 @supports (color: oklch(from red l c h)) {
-  .launchpad-panel .app-icon {
+  :is(.launchpad-panel, .cloud-mobile-apps) .app-icon {
     --glyph: oklch(from var(--app-icon-color) min(l, 0.5) c h);
     --glyph-hover: oklch(from var(--app-icon-color) min(l, 0.4) c h);
   }
 }
 
-.dark .launchpad-panel .app-icon {
+.dark :is(.launchpad-panel, .cloud-mobile-apps) .app-icon {
   --icon-face: #202026;
   --rim-top: color-mix(in oklab, var(--app-icon-color), white 30%);
   --rim-bottom: color-mix(in oklab, var(--app-icon-color), black 24%);
@@ -835,15 +835,15 @@ dialog:has(.launchpad-panel)::backdrop {
 }
 
 @supports (color: oklch(from red l c h)) {
-  .dark .launchpad-panel .app-icon {
+  .dark :is(.launchpad-panel, .cloud-mobile-apps) .app-icon {
     --glyph: oklch(from var(--app-icon-color) max(l, 0.82) c h);
     --glyph-hover: oklch(from var(--app-icon-color) max(l, 0.96) c h);
   }
 }
 
 /* Hover changes only the icon tile, never the whole icon+label item. */
-.launchpad-panel .group:hover > .app-icon,
-.launchpad-panel .app-icon:hover {
+:is(.launchpad-panel, .cloud-mobile-apps) .group:hover > .app-icon,
+:is(.launchpad-panel, .cloud-mobile-apps) .app-icon:hover {
   background:
     linear-gradient(var(--icon-face), var(--icon-face)) padding-box,
     linear-gradient(180deg, var(--rim-top-hover), var(--rim-bottom-hover)) border-box;

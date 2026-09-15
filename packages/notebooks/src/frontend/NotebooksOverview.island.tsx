@@ -402,7 +402,7 @@ export default function NotebooksOverview(props: Props) {
   });
 
   return (
-    <AppWorkspace class="notebooks-overview-workspace" resizable={false}>
+    <AppWorkspace mobileSurface="flush" class="notebooks-overview-workspace" resizable={false}>
       <h1 class="sr-only">{t().notebooks}</h1>
       <AppWorkspace.Content>
         <AppWorkspace.Main class="notebooks-overview-main">

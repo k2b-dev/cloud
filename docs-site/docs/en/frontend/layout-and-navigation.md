@@ -263,3 +263,12 @@ hydration and support open-in-new-tab.
 
 Use enhanced navigation only inside an island that also updates its own state.
 See [URL state and navigation](/en/docs/frontend/url-state-and-navigation).
+
+## Mobile workspace menu
+
+Below 1024 px, the header launcher hosts the current application's navigation
+and an **All apps** switch. Desktop navigation starts at 1024 px. The mobile
+workspace uses the full canvas without a second application title or exterior
+frame. See [Application shells](/en/docs/frontend/application-shells#supply-mobile-navigation)
+for the SSR snapshot and island-owned action APIs. `@k2b/ui` remains independent
+of Cloud; Cloud owns registration, the launcher, and menu history.

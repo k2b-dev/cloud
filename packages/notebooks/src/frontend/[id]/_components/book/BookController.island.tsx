@@ -88,10 +88,6 @@ export default function BookController(props: Props) {
     window.dispatchEvent(new CustomEvent(BOOK_CONTENT_EVENT));
     if (!navigating) scrollContainer?.scrollTo(scrollLeft, scrollTop);
     if (navigating) {
-      const drawer = article
-        .closest(".notebook-book-shell")
-        ?.querySelector<HTMLDetailsElement>(".k2b-app-workspace__sidebar-mobile details");
-      if (drawer) drawer.open = false;
       article.focus({ preventScroll: true });
       if (navigating.kind === "pop" && navigating.scroll) {
         scrollContainer?.scrollTo(navigating.scroll.left, navigating.scroll.top);

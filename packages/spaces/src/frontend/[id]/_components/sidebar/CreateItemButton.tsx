@@ -22,7 +22,7 @@ type Props = {
   registerShortcut?: boolean;
 };
 
-export default function CreateItemButton(props: Props) {
+export function createItemController(props: Props) {
   const t = useSpaceMessages();
   const defaultType = () => props.defaultType ?? "task";
   const label = () => (defaultType() === "event" ? t.newEvent : t.newTask);
@@ -75,6 +75,12 @@ export default function CreateItemButton(props: Props) {
   };
   const pending = () => dialogPending() || mutation.loading();
 
+  return { createItem, pending, label, defaultType };
+}
+
+export default function CreateItemButton(props: Props) {
+  const t = useSpaceMessages();
+  const { createItem, pending, label, defaultType } = createItemController(props);
   hotkeys.create(
     (): HotkeyMap =>
       props.registerShortcut

@@ -1,21 +1,6 @@
-import {
-  createMemo,
-  createSignal,
-  For,
-  Show,
-  onCleanup,
-  onMount,
-} from "solid-js";
-import {
-  AppWorkspace,
-  Button,
-  DataTable,
-  Dropdown,
-  StatusBadge,
-  SegmentedControl,
-  prompts,
-  useLocale,
-} from "@k2b/ui";
+import { WorkspaceNavigationProvider } from "@k2b/cloud/ssr/islands";
+import { createMemo, createSignal, For, Show, onCleanup, onMount } from "solid-js";
+import { createNavigation, AppWorkspace, Button, DataTable, Dropdown, StatusBadge, SegmentedControl, prompts, useLocale } from "@k2b/ui";
 import { files } from "@k2b/stdlib/browser";
 import Papa from "papaparse";
 import type { Bundle } from "../contracts";
@@ -61,9 +46,7 @@ export default function QueryConsole(props: {
     [tableResult, setTableResult] = createSignal<Result>(),
     [schema, setSchema] = createSignal<Record<string, unknown>[]>([]);
   const [panel, setPanel] = createSignal<"results" | "tables">("results");
-  const [catalog, setCatalog] = createSignal<
-    { name: string; rows?: number; columns: { name: string; type: string }[] }[]
-  >([]);
+  const [catalog, setCatalog] = createSignal<{ name: string; rows?: number; columns: { name: string; type: string }[] }[]>([]);
   const [loadingCatalog, setLoadingCatalog] = createSignal(false);
   let catalogAbort: AbortController | undefined;
   const [error, setError] = createSignal(""),
@@ -73,11 +56,9 @@ export default function QueryConsole(props: {
     [loadingTable, setLoadingTable] = createSignal(false);
   const dirty = createMemo(() => text() !== (base()?.sql ?? ""));
   const tables = () => state().tables?.filter((row) => row.type === "table");
-  const ready = () =>
-    state().status === "ready" && state().enabled && state().globallyEnabled;
+  const ready = () => state().status === "ready" && state().enabled && state().globallyEnabled;
   const abort = new AbortController();
-  let execution: AbortController | undefined,
-    tableAbort: AbortController | undefined;
+  let execution: AbortController | undefined, tableAbort: AbortController | undefined;
   let selection = 0,
     listRequest = 0;
   function stop() {
@@ -87,10 +68,7 @@ export default function QueryConsole(props: {
   }
   function report(e: unknown) {
     if (abort.signal.aborted) return;
-    if (
-      e instanceof KitRequestError &&
-      e.message === databaseMessages.resolve([locale()]).t.request
-    ) {
+    if (e instanceof KitRequestError && e.message === databaseMessages.resolve([locale()]).t.request) {
       setError(t().failed);
       return;
     }
@@ -105,12 +83,7 @@ export default function QueryConsole(props: {
       setSchema([]);
       setState((s) => ({ ...s, status: "provisioning" }));
       setError(t().stale);
-    } else
-      setError(
-        e instanceof KitRequestError && e.code === "REVISION_CONFLICT"
-          ? t().conflict
-          : displayError(e, locale()),
-      );
+    } else setError(e instanceof KitRequestError && e.code === "REVISION_CONFLICT" ? t().conflict : displayError(e, locale()));
   }
   const leave = (e: BeforeUnloadEvent) => {
     if (dirty() || saving()) {
@@ -140,11 +113,7 @@ export default function QueryConsole(props: {
     );
   }
   function url(query?: string) {
-    history.replaceState(
-      null,
-      "",
-      `/app/kit/${id}/database${query ? `?query=${encodeURIComponent(query)}` : ""}`,
-    );
+    history.replaceState(null, "", `/app/kit/${id}/database${query ? `?query=${encodeURIComponent(query)}` : ""}`);
   }
   async function openQuery(query?: QuerySummary, sql = "") {
     if (saving() || !(await discard())) return;
@@ -152,15 +121,9 @@ export default function QueryConsole(props: {
       draft = text();
     try {
       const next = query
-        ? await checked(
-            await queryApi[":queryId"].$get(
-              { param: { id, queryId: query.id } },
-              { init: { signal: abort.signal } },
-            ),
-          )
+        ? await checked(await queryApi[":queryId"].$get({ param: { id, queryId: query.id } }, { init: { signal: abort.signal } }))
         : null;
-      if (token !== selection || abort.signal.aborted || text() !== draft)
-        return;
+      if (token !== selection || abort.signal.aborted || text() !== draft) return;
       stop();
       setBase(next);
       setText(next?.sql ?? sql);
@@ -175,10 +138,7 @@ export default function QueryConsole(props: {
   async function list(page = queryPage()) {
     const token = ++listRequest;
     const response = await checked(
-      await queryApi.$get(
-        { param: { id }, query: { page: String(page) } },
-        { init: { signal: abort.signal } },
-      ),
+      await queryApi.$get({ param: { id }, query: { page: String(page) } }, { init: { signal: abort.signal } }),
     );
     if (abort.signal.aborted || token !== listRequest) return;
     setQueries(response.items);
@@ -216,12 +176,7 @@ export default function QueryConsole(props: {
     if (refreshing()) return;
     setRefreshing(true);
     try {
-      const next = await checked(
-        await api.$get(
-          { param: { id }, query: { diagnostics: "true" } },
-          { init: { signal: abort.signal } },
-        ),
-      );
+      const next = await checked(await api.$get({ param: { id }, query: { diagnostics: "true" } }, { init: { signal: abort.signal } }));
       if (abort.signal.aborted) return;
       if (next.generation !== state().generation || next.status !== "ready") {
         stop();
@@ -245,12 +200,7 @@ export default function QueryConsole(props: {
   }
   onMount(() => void refresh());
   async function call(request: DatabaseRequest, signal: AbortSignal) {
-    return checked(
-      await api.call.$post(
-        { param: { id }, json: { generation: state().generation, request } },
-        { init: { signal } },
-      ),
-    );
+    return checked(await api.call.$post({ param: { id }, json: { generation: state().generation, request } }, { init: { signal } }));
   }
   async function run() {
     if (!ready() || running()) return;
@@ -270,10 +220,7 @@ export default function QueryConsole(props: {
     const sql = text(),
       started = performance.now();
     try {
-      const raw = await call(
-        { operation: "query", sql, params: [] },
-        AbortSignal.any([abort.signal, controller.signal]),
-      );
+      const raw = await call({ operation: "query", sql, params: [] }, AbortSignal.any([abort.signal, controller.signal]));
       const parsed = queryResult.parse(raw);
       if (controller.signal.aborted || execution !== controller) return;
       setResult({
@@ -291,11 +238,7 @@ export default function QueryConsole(props: {
       }
     }
   }
-  async function browse(
-    name: string,
-    page = 0,
-    tab: "data" | "schema" = "data",
-  ) {
+  async function browse(name: string, page = 0, tab: "data" | "schema" = "data") {
     tableAbort?.abort();
     const controller = new AbortController();
     tableAbort = controller;
@@ -345,23 +288,22 @@ export default function QueryConsole(props: {
     setSaving(true);
     try {
       const current = base();
-      const name =
-        !current
-          ? (
-              await prompts.form({
-                title: t().save,
-                fields: {
-                  name: {
-                    type: "text",
-                    label: t().name,
-                    default: "",
-                    required: true,
-                    maxLength: 120,
-                  },
+      const name = !current
+        ? (
+            await prompts.form({
+              title: t().save,
+              fields: {
+                name: {
+                  type: "text",
+                  label: t().name,
+                  default: "",
+                  required: true,
+                  maxLength: 120,
                 },
-              })
-            )?.name
-          : current.name;
+              },
+            })
+          )?.name
+        : current.name;
       if (name === null || name === undefined) return;
       const input = { name: name.trim(), sql: text() };
       let target = current;
@@ -369,7 +311,8 @@ export default function QueryConsole(props: {
         const matches = await checked(await queryApi.$get({ param: { id }, query: { page: "1", name: input.name } }));
         const existing = matches.items[0];
         if (existing) {
-          if (!(await prompts.confirm(t().overwriteBody, { title: `${t().overwrite}: ${existing.name}`, confirmText: t().overwrite }))) return;
+          if (!(await prompts.confirm(t().overwriteBody, { title: `${t().overwrite}: ${existing.name}`, confirmText: t().overwrite })))
+            return;
           target = { ...existing, sql: "" };
         }
       }
@@ -396,15 +339,29 @@ export default function QueryConsole(props: {
     if (!admin || saving()) return;
     setSaving(true);
     try {
-      const fields = await prompts.form({ title: t().rename, fields: { name: { type: "text", label: t().name, default: query.name, required: true, maxLength: 120 } } });
+      const fields = await prompts.form({
+        title: t().rename,
+        fields: { name: { type: "text", label: t().name, default: query.name, required: true, maxLength: 120 } },
+      });
       if (!fields || fields.name.trim() === query.name) return;
       const current = await checked(await queryApi[":queryId"].$get({ param: { id, queryId: query.id } }));
-      if (current.revision !== query.revision) { setError(t().conflict); return; }
-      const renamed = await checked(await queryApi[":queryId"].$put({ param: { id, queryId: query.id }, json: { name: fields.name, sql: current.sql, revision: query.revision } }));
+      if (current.revision !== query.revision) {
+        setError(t().conflict);
+        return;
+      }
+      const renamed = await checked(
+        await queryApi[":queryId"].$put({
+          param: { id, queryId: query.id },
+          json: { name: fields.name, sql: current.sql, revision: query.revision },
+        }),
+      );
       if (base()?.id === query.id) setBase(renamed);
       await list();
-    } catch (e) { report(e); }
-    finally { setSaving(false); }
+    } catch (e) {
+      report(e);
+    } finally {
+      setSaving(false);
+    }
   }
   async function remove(query: QuerySummary) {
     if (saving() || !admin) return;
@@ -447,11 +404,7 @@ export default function QueryConsole(props: {
         Papa.unparse(
           {
             fields: value.columns,
-            data: value.data.map((row) =>
-              value.columns.map((key) =>
-                row[key] === null ? "" : cellText(row[key]),
-              ),
-            ),
+            data: value.data.map((row) => value.columns.map((key) => (row[key] === null ? "" : cellText(row[key])))),
           },
           { delimiter: ";" },
         ),
@@ -460,37 +413,44 @@ export default function QueryConsole(props: {
     );
   }
   const metrics = () => (
-          <Show when={shown()}>
-            {(value) => (
-              <>
-                <StatusBadge tone="neutral" icon="ti ti-table" label={`${value().data.length} ${t().rows}`} />
-                <StatusBadge tone="neutral" icon="ti ti-clock" title={t().duration} label={`${Math.round(value().duration)} ms`} />
-              </>
-            )}
-          </Show>
+    <Show when={shown()}>
+      {(value) => (
+        <>
+          <StatusBadge tone="neutral" icon="ti ti-table" label={`${value().data.length} ${t().rows}`} />
+          <StatusBadge tone="neutral" icon="ti ti-clock" title={t().duration} label={`${Math.round(value().duration)} ms`} />
+        </>
+      )}
+    </Show>
   );
   const resultPanel = () => (
     <section class="kit-sql-results" aria-label={t().result}>
-        <Show when={view() === "sql" || tablePage() > 0 || tableResult()?.data.length === 50}>
+      <Show when={view() === "sql" || tablePage() > 0 || tableResult()?.data.length === 50}>
         <div class="kit-sql-toolbar kit-sql-result-toolbar">
           <Show when={view() === "sql"}>
-            <SegmentedControl size="sm" ariaLabel={t().result} value={panel} onValueChange={(value) => value === "tables" ? void showCatalog() : setPanel("results")} options={[
-              { value: "results", label: t().result, icon: "ti ti-terminal" },
-              { value: "tables", label: t().catalog, icon: "ti ti-schema", disabled: !ready() },
-            ]} />
+            <SegmentedControl
+              size="sm"
+              ariaLabel={t().result}
+              value={panel}
+              onValueChange={(value) => (value === "tables" ? void showCatalog() : setPanel("results"))}
+              options={[
+                { value: "results", label: t().result, icon: "ti ti-terminal" },
+                { value: "tables", label: t().catalog, icon: "ti ti-schema", disabled: !ready() },
+              ]}
+            />
           </Show>
           <Show when={view() === "sql" && panel() === "results"}>{metrics()}</Show>
           <Show when={view() === "sql" && panel() === "results"}>
             <Dropdown.Root items={[{ label: t().export, icon: "ti ti-download", disabled: !shown()?.data.length, action: exportCsv }]}>
-              <Dropdown.Trigger iconOnly label={t().resultActions}><i class="ti ti-dots" aria-hidden="true" /></Dropdown.Trigger>
+              <Dropdown.Trigger iconOnly label={t().resultActions}>
+                <i class="ti ti-dots" aria-hidden="true" />
+              </Dropdown.Trigger>
             </Dropdown.Root>
           </Show>
-          <Show when={view() === "data" && (tablePage() > 0 || tableResult()?.data.length === 50)}><span class="kit-sql-hint">{t().page} {tablePage() + 1}</span>
-            <Button
-              variant="ghost"
-              disabled={tablePage() === 0 || loadingTable()}
-              onClick={() => void browse(table(), tablePage() - 1)}
-            >
+          <Show when={view() === "data" && (tablePage() > 0 || tableResult()?.data.length === 50)}>
+            <span class="kit-sql-hint">
+              {t().page} {tablePage() + 1}
+            </span>
+            <Button variant="ghost" disabled={tablePage() === 0 || loadingTable()} onClick={() => void browse(table(), tablePage() - 1)}>
               {t().previous}
             </Button>
             <Button
@@ -502,7 +462,7 @@ export default function QueryConsole(props: {
             </Button>
           </Show>
         </div>
-        </Show>
+      </Show>
 
       <Show when={error()}>
         <p role="alert" class="kit-sql-error">
@@ -511,19 +471,39 @@ export default function QueryConsole(props: {
       </Show>
       <Show when={panel() === "tables"}>
         <div class="kit-sql-catalog">
-          <For each={catalog()}>{(item) => (
-            <section class="kit-sql-schema">
-              <header class="kit-sql-schema-header">
-                <h2><i class="ti ti-table" aria-hidden="true" /> {item.name}</h2>
-                <Show when={item.rows !== undefined}><StatusBadge tone="neutral" icon={null} label={`${item.rows} ${t().rows}`} /></Show>
-                <Button variant="ghost" onClick={() => void openQuery(undefined, `SELECT * FROM "${item.name.replaceAll('"', '""')}" LIMIT 100;`)}>{t().open}</Button>
-              </header>
-              <dl class="kit-sql-columns">
-                <For each={item.columns}>{(column) => <div><dt>{column.name}</dt><dd>{column.type}</dd></div>}</For>
-              </dl>
-            </section>
-          )}</For>
-          <Show when={!loadingCatalog() && !catalog().length && !error()}><p class="kit-sql-hint">{t().noTables}</p></Show>
+          <For each={catalog()}>
+            {(item) => (
+              <section class="kit-sql-schema">
+                <header class="kit-sql-schema-header">
+                  <h2>
+                    <i class="ti ti-table" aria-hidden="true" /> {item.name}
+                  </h2>
+                  <Show when={item.rows !== undefined}>
+                    <StatusBadge tone="neutral" icon={null} label={`${item.rows} ${t().rows}`} />
+                  </Show>
+                  <Button
+                    variant="ghost"
+                    onClick={() => void openQuery(undefined, `SELECT * FROM "${item.name.replaceAll('"', '""')}" LIMIT 100;`)}
+                  >
+                    {t().open}
+                  </Button>
+                </header>
+                <dl class="kit-sql-columns">
+                  <For each={item.columns}>
+                    {(column) => (
+                      <div>
+                        <dt>{column.name}</dt>
+                        <dd>{column.type}</dd>
+                      </div>
+                    )}
+                  </For>
+                </dl>
+              </section>
+            )}
+          </For>
+          <Show when={!loadingCatalog() && !catalog().length && !error()}>
+            <p class="kit-sql-hint">{t().noTables}</p>
+          </Show>
         </div>
         <Show when={loadingCatalog()}>
           <p role="status" class="kit-sql-hint">
@@ -544,16 +524,15 @@ export default function QueryConsole(props: {
               </p>
             }
           >
-            <DataTable surface="paper"
+            <DataTable
+              surface="paper"
               rows={shown()?.data ?? []}
               columns={(shown()?.columns ?? []).map((key) => ({
                 id: key,
                 header: key,
                 value: (row: Record<string, unknown>) => cellText(row[key]),
               }))}
-              empty={
-                loadingTable() ? t().working : shown() ? t().empty : t().idle
-              }
+              empty={loadingTable() ? t().working : shown() ? t().empty : t().idle}
             />
           </Show>
         </Show>
@@ -562,17 +541,11 @@ export default function QueryConsole(props: {
   );
   const footer = () => (
     <>
-      <AppWorkspace.SidebarItem
-        href={`/app/kit/${id}`}
-        icon="ti ti-player-play"
-      >
+      <AppWorkspace.SidebarItem href={`/app/kit/${id}`} icon="ti ti-player-play">
         {t().app}
       </AppWorkspace.SidebarItem>
       <Show when={admin}>
-        <AppWorkspace.SidebarItem
-          href={`/app/kit/${id}/edit`}
-          icon="ti ti-code"
-        >
+        <AppWorkspace.SidebarItem href={`/app/kit/${id}/edit`} icon="ti ti-code">
           {t().edit}
         </AppWorkspace.SidebarItem>
       </Show>
@@ -583,19 +556,10 @@ export default function QueryConsole(props: {
       <AppWorkspace.SidebarItem href={`/app/kit/${id}`} icon="ti ti-arrow-left">
         {props.project.name}
       </AppWorkspace.SidebarItem>
-      <AppWorkspace.SidebarItem
-        active={view() === "sql"}
-        icon="ti ti-terminal"
-        onClick={() => setView("sql")}
-      >
+      <AppWorkspace.SidebarItem active={view() === "sql"} icon="ti ti-terminal" onClick={() => setView("sql")}>
         {t().title}
       </AppWorkspace.SidebarItem>
-      <AppWorkspace.SidebarItem
-        icon="ti ti-plus"
-        tone="success"
-        disabled={saving()}
-        onClick={() => void openQuery()}
-      >
+      <AppWorkspace.SidebarItem icon="ti ti-plus" tone="success" disabled={saving()} onClick={() => void openQuery()}>
         {t().newQuery}
       </AppWorkspace.SidebarItem>
       <AppWorkspace.SidebarSection title={t().tables}>
@@ -617,70 +581,116 @@ export default function QueryConsole(props: {
         </Show>
       </AppWorkspace.SidebarSection>
       <Show when={queries().length > 0 || queryPage() > 1}>
-      <AppWorkspace.SidebarSection title={t().queries}>
-        <For each={queries()}>
-          {(q) => (
-            <AppWorkspace.SidebarItem
-              active={base()?.id === q.id && view() === "sql"}
-              icon="ti ti-file-code"
-              disabled={saving()}
-              onClick={() => void openQuery(q)}
-              actions={
-                admin ? (
-                  <AppWorkspace.SidebarItemActions visibility="hover">
-                  <Dropdown.Root
-                    items={[
-                      { label: t().rename, icon: "ti ti-pencil", action: () => void renameQuery(q) },
-                      {
-                        label: t().remove,
-                        icon: "ti ti-trash",
-                        variant: "danger",
-                        action: () => void remove(q),
-                      },
-                    ]}
-                  >
-                    <Dropdown.Trigger iconOnly label={t().actions}>
-                      <i class="ti ti-dots" aria-hidden="true" />
-                    </Dropdown.Trigger>
-                  </Dropdown.Root>
-                  </AppWorkspace.SidebarItemActions>
-                ) : undefined
-              }
-            >
-              {q.name}
-            </AppWorkspace.SidebarItem>
-          )}
-        </For>
-        <Show when={queryPage() > 1}>
-          <Button
-            variant="ghost"
-            onClick={() => void list(queryPage() - 1).catch(report)}
-          >
-            {t().back}
-          </Button>
-        </Show>
-        <Show when={hasNext()}>
-          <Button
-            variant="ghost"
-            onClick={() => void list(queryPage() + 1).catch(report)}
-          >
-            {t().more}
-          </Button>
-        </Show>
-      </AppWorkspace.SidebarSection>
+        <AppWorkspace.SidebarSection title={t().queries}>
+          <For each={queries()}>
+            {(q) => (
+              <AppWorkspace.SidebarItem
+                active={base()?.id === q.id && view() === "sql"}
+                icon="ti ti-file-code"
+                disabled={saving()}
+                onClick={() => void openQuery(q)}
+                actions={
+                  admin ? (
+                    <AppWorkspace.SidebarItemActions visibility="hover">
+                      <Dropdown.Root
+                        items={[
+                          { label: t().rename, icon: "ti ti-pencil", action: () => void renameQuery(q) },
+                          {
+                            label: t().remove,
+                            icon: "ti ti-trash",
+                            variant: "danger",
+                            action: () => void remove(q),
+                          },
+                        ]}
+                      >
+                        <Dropdown.Trigger iconOnly label={t().actions}>
+                          <i class="ti ti-dots" aria-hidden="true" />
+                        </Dropdown.Trigger>
+                      </Dropdown.Root>
+                    </AppWorkspace.SidebarItemActions>
+                  ) : undefined
+                }
+              >
+                {q.name}
+              </AppWorkspace.SidebarItem>
+            )}
+          </For>
+          <Show when={queryPage() > 1}>
+            <Button variant="ghost" onClick={() => void list(queryPage() - 1).catch(report)}>
+              {t().back}
+            </Button>
+          </Show>
+          <Show when={hasNext()}>
+            <Button variant="ghost" onClick={() => void list(queryPage() + 1).catch(report)}>
+              {t().more}
+            </Button>
+          </Show>
+        </AppWorkspace.SidebarSection>
       </Show>
     </>
   );
+  const mobileNavigation = createNavigation({
+    items: () => [
+      { id: "app", label: props.project.name, icon: "ti ti-arrow-left", href: `/app/kit/${id}` },
+      { id: "sql", label: t().title, icon: "ti ti-terminal", action: "sql", active: view() === "sql" },
+      { id: "new", label: t().newQuery, icon: "ti ti-plus", action: "new", disabled: saving() },
+      {
+        id: "tables",
+        label: t().tables,
+        children: (tables() ?? []).map((row) => ({
+          id: `table:${row.name}`,
+          label: String(row.name),
+          icon: "ti ti-table",
+          action: `table:${row.name}`,
+          badge: typeof row.row_count === "number" ? row.row_count : undefined,
+          active: table() === row.name && view() !== "sql",
+          disabled: !ready(),
+        })),
+      },
+      {
+        id: "queries",
+        label: t().queries,
+        children: [
+          ...queries().map((q) => ({
+            id: `query:${q.id}`,
+            label: q.name,
+            icon: "ti ti-file-code",
+            action: `query:${q.id}`,
+            active: base()?.id === q.id && view() === "sql",
+            disabled: saving(),
+            actions: admin
+              ? [
+                  { id: `rename:${q.id}`, action: `rename:${q.id}`, label: t().rename, icon: "ti ti-pencil" },
+                  { id: `remove:${q.id}`, action: `remove:${q.id}`, label: t().remove, icon: "ti ti-trash" },
+                ]
+              : [],
+          })),
+          ...(queryPage() > 1 ? [{ id: "back", label: t().back, action: "back", icon: "ti ti-arrow-left" }] : []),
+          ...(hasNext() ? [{ id: "more", label: t().more, action: "more", icon: "ti ti-arrow-right" }] : []),
+        ],
+      },
+      ...(admin ? [{ id: "edit", label: t().edit, icon: "ti ti-code", href: `/app/kit/${id}/edit` }] : []),
+    ],
+    onAction: async (action) => {
+      if (action === "sql") setView("sql");
+      else if (action === "new") await openQuery();
+      else if (action === "back") await list(queryPage() - 1).catch(report);
+      else if (action === "more") await list(queryPage() + 1).catch(report);
+      else if (action.startsWith("table:")) await browse(action.slice(6));
+      else {
+        const [kind, queryId] = action.split(":");
+        const q = queries().find((q) => q.id === queryId);
+        if (!q) return;
+        if (kind === "query") await openQuery(q);
+        else if (kind === "rename") await renameQuery(q);
+        else if (kind === "remove") await remove(q);
+      }
+    },
+  });
   return (
-    <AppWorkspace class="kit-sql-workspace">
+    <AppWorkspace mobileSurface="flush" class="kit-sql-workspace">
+      <WorkspaceNavigationProvider navigation={mobileNavigation} label={t().title} />
       <AppWorkspace.Sidebar>
-        <AppWorkspace.SidebarMobileTrigger label={t().title} />
-        <AppWorkspace.SidebarMobile>
-          <AppWorkspace.SidebarMobileItems>
-            {navigation()}
-            {footer()}
-          </AppWorkspace.SidebarMobileItems>
-        </AppWorkspace.SidebarMobile>
         <AppWorkspace.SidebarDesktop>
           <AppWorkspace.SidebarBody>{navigation()}</AppWorkspace.SidebarBody>
           <AppWorkspace.SidebarFooter>{footer()}</AppWorkspace.SidebarFooter>
@@ -692,7 +702,8 @@ export default function QueryConsole(props: {
             <div>
               <h1>{view() === "sql" ? t().title : table()}</h1>
               <p>
-                {props.project.name}{view() === "sql" ? ` · ${base()?.name ?? t().draft}` : ""}
+                {props.project.name}
+                {view() === "sql" ? ` · ${base()?.name ?? t().draft}` : ""}
                 {view() === "sql" && dirty() ? ` · ${t().dirty}` : ""}
               </p>
             </div>
@@ -702,9 +713,9 @@ export default function QueryConsole(props: {
                   <i class="ti ti-device-floppy" aria-hidden="true" /> {t().save}
                 </Button>
               </Show>
-            <Button variant="ghost" onClick={refresh} loading={refreshing()}>
-              <i class="ti ti-refresh" aria-hidden="true" /> {t().refresh}
-            </Button>
+              <Button variant="ghost" onClick={refresh} loading={refreshing()}>
+                <i class="ti ti-refresh" aria-hidden="true" /> {t().refresh}
+              </Button>
             </div>
           </header>
           <Show when={!ready()}>
@@ -716,29 +727,44 @@ export default function QueryConsole(props: {
             when={view() === "sql"}
             fallback={
               <div class="kit-sql-toolbar">
-                <SegmentedControl size="sm" ariaLabel={t().tableView} value={() => view() === "schema" ? "schema" : "data"} onValueChange={(value) => void browse(table(), 0, value)} options={[
-                  { value: "data", label: t().data },
-                  { value: "schema", label: t().schema },
-                ]} />
+                <SegmentedControl
+                  size="sm"
+                  ariaLabel={t().tableView}
+                  value={() => (view() === "schema" ? "schema" : "data")}
+                  onValueChange={(value) => void browse(table(), 0, value)}
+                  options={[
+                    { value: "data", label: t().data },
+                    { value: "schema", label: t().schema },
+                  ]}
+                />
                 <Show when={view() === "data"}>{metrics()}</Show>
                 <div class="kit-sql-toolbar-end">
-                <Dropdown.Root items={[
-                  { label: t().open, icon: "ti ti-code", action: () => void openQuery(undefined, `SELECT * FROM "${table().replaceAll('"', '""')}" LIMIT 100;`) },
-                  { label: t().export, icon: "ti ti-download", disabled: view() !== "data" || !tableResult()?.data.length, action: exportCsv },
-                ]}>
-                  <Dropdown.Trigger iconOnly label={t().tableActions}><i class="ti ti-dots" aria-hidden="true" /></Dropdown.Trigger>
-                </Dropdown.Root>
+                  <Dropdown.Root
+                    items={[
+                      {
+                        label: t().open,
+                        icon: "ti ti-code",
+                        action: () => void openQuery(undefined, `SELECT * FROM "${table().replaceAll('"', '""')}" LIMIT 100;`),
+                      },
+                      {
+                        label: t().export,
+                        icon: "ti ti-download",
+                        disabled: view() !== "data" || !tableResult()?.data.length,
+                        action: exportCsv,
+                      },
+                    ]}
+                  >
+                    <Dropdown.Trigger iconOnly label={t().tableActions}>
+                      <i class="ti ti-dots" aria-hidden="true" />
+                    </Dropdown.Trigger>
+                  </Dropdown.Root>
                 </div>
               </div>
             }
           >
             <div class="kit-sql-toolbar">
-              <Button
-                onClick={run}
-                disabled={!ready() || running() || !text().trim()}
-              >
-                <i class="ti ti-player-play" aria-hidden="true" />{" "}
-                {running() ? t().working : t().run}
+              <Button onClick={run} disabled={!ready() || running() || !text().trim()}>
+                <i class="ti ti-player-play" aria-hidden="true" /> {running() ? t().working : t().run}
               </Button>
               <Show when={running()}>
                 <Button
@@ -754,18 +780,16 @@ export default function QueryConsole(props: {
             </div>
           </Show>
           <div class="kit-sql-editor" hidden={view() !== "sql"}>
-            <Editor
-              path={t().sql}
-              language="sql"
-              content={text()}
-              onChange={setText}
-              onSave={() => void save()}
-              onRun={() => void run()}
-            />
+            <Editor path={t().sql} language="sql" content={text()} onChange={setText} onSave={() => void save()} onRun={() => void run()} />
           </div>
           <Show when={view() === "schema"}>
-            <Show when={error()}><p role="alert" class="kit-sql-error">{error()}</p></Show>
-            <DataTable surface="paper"
+            <Show when={error()}>
+              <p role="alert" class="kit-sql-error">
+                {error()}
+              </p>
+            </Show>
+            <DataTable
+              surface="paper"
               rows={schema()}
               getRowId={(r) => String(r.name)}
               columns={[
@@ -792,18 +816,10 @@ export default function QueryConsole(props: {
               empty={loadingTable() ? t().working : t().empty}
             />
           </Show>
-          <Show when={view() === "data"}>
-            {resultPanel()}
-          </Show>
+          <Show when={view() === "data"}>{resultPanel()}</Show>
         </AppWorkspace.Main>
       </AppWorkspace.Content>
-      <AppWorkspace.BottomDrawer
-        id="query-results"
-        class="kit-sql-drawer"
-        open={view() === "sql"}
-        height="lg"
-        minHeight={160}
-      >
+      <AppWorkspace.BottomDrawer id="query-results" class="kit-sql-drawer" open={view() === "sql"} height="lg" minHeight={160}>
         <Show when={view() === "sql"}>{resultPanel()}</Show>
       </AppWorkspace.BottomDrawer>
     </AppWorkspace>

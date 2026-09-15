@@ -8,7 +8,7 @@ type Props = {
   variant?: "sidebar" | "chip" | "icon";
 };
 
-export default function CopyICalButton(props: Props) {
+export function createIcalCopy(props: Pick<Props, "icalToken">) {
   const t = useSpaceMessages();
   const [copied, setCopied] = createSignal(false);
 
@@ -26,6 +26,12 @@ export default function CopyICalButton(props: Props) {
     }
   };
 
+  return { copied, icalUrl, handleCopy };
+}
+
+export default function CopyICalButton(props: Props) {
+  const t = useSpaceMessages();
+  const { copied, icalUrl, handleCopy } = createIcalCopy(props);
   if (!icalUrl()) return null;
 
   if (props.variant === "chip") {

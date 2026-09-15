@@ -144,6 +144,8 @@ const portableSections = [
       page("panes", "Panes", "ti ti-columns", "Controlled serializable tabs and nested split layouts."),
       page("overview", "AppOverview", "ti ti-home", "Application landing page with primary and supporting panels."),
       page("settings-modal", "Settings", "ti ti-settings", "Accessible settings tabs, fields, and save state."),
+      page("navigation", "Navigation", "ti ti-list", "Serializable navigation with native links and owner-local actions."),
+      page("bottom-sheet", "BottomSheet", "ti ti-layout-bottombar", "Bottom-edge dialogs using the shared modal lifecycle."),
       page("panel-dialog", "PanelDialog", "ti ti-app-window", "Contained or floating composition for complex editors."),
       page("floating-window", "FloatingWindow", "ti ti-window", "Movable and resizable utility content with mobile fallback."),
     ],
@@ -280,7 +282,7 @@ const cloudEntries = cloudPages.map((page, pageIndex) => entry("cloud", "Cloud c
 export const uiCatalogEntries: UiCatalogEntry[] = [...portableEntries, ...cloudEntries];
 
 /** Runtime component exports from @k2b/ui. Kept honest by check-ui-catalog.ts. */
-export const portableUiComponentCount = 111;
+export const portableUiComponentCount = 113;
 
 export const uiCatalogSections: UiCatalogSection[] = [
   ...portableSections.map((section) => ({
@@ -320,6 +322,7 @@ export const hiddenUiCatalogExports = {
  * inferred from arbitrary prose mentions.
  */
 export const documentedOnlyUiCatalogExports = {
+  findNavigationItem: "Documented lookup for the latest enabled Navigation item.",
   ChartSnapshotView: "Documented prepared-chart surface composed by ChartExplorer.",
   ChartFilterControls: "Documented filter surface composed by ChartExplorerControls.",
   APP_WORKSPACE_DETAIL_DEFAULT: "Documented AppWorkspace detail sizing constant.",
@@ -358,12 +361,10 @@ export const documentedOnlyUiCatalogExports = {
   appWorkspacePanelVariable: "Documented AppWorkspace panel-variable helper.",
   appWorkspaceResizeLimits: "Documented AppWorkspace resize helper.",
   canPreviewFile: "Documented FileView capability helper.",
-  confirmDiscardIfDirty: "Documented TemplateEditor dirty-state helper.",
   createCroppedImageCanvas: "Documented ImageCropper export helper.",
   createCroppedImageDataUrl: "Documented ImageCropper export helper.",
   createPanesLayout: "Documented Panes initial-layout helper.",
   createTemplateEditorPanesLayout: "Documented TemplateEditor layout helper.",
-  dialogCore: "Documented shared dialog manager used by prompt APIs.",
   fitFloatingWindowRect: "Documented FloatingWindow geometry helper.",
   formatFileViewSize: "Documented FileView metadata formatter.",
   getFileViewPreviewKind: "Documented FileView preview classifier.",

@@ -61,7 +61,7 @@ const searchRequest = (query: string): ItemFilter => ({
   pageSize: PAGE_SIZE,
 });
 
-export default function SearchButton(props: Props) {
+export function createSpaceSearch(props: Props) {
   const t = useSpaceMessages();
   const itemDescription = (item: SpaceItem, query: string): string | undefined => {
     const column = props.columns.find((entry) => entry.id === item.columnId);
@@ -112,6 +112,12 @@ export default function SearchButton(props: Props) {
     }
   };
 
+  return openSearch;
+}
+
+export default function SearchButton(props: Props) {
+  const t = useSpaceMessages();
+  const openSearch = createSpaceSearch(props);
   const runSearch = () => {
     if (!document.querySelector("dialog[open]")) void openSearch();
   };

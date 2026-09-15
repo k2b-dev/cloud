@@ -176,7 +176,7 @@ export default ssr<AuthContext>(async (c) => {
 
   return () => (
     <Layout c={c} title={[{ title: t.start, href: "/" }, { title: t.files, href: "/app/files" }, { title: t.search }]} fullWidth>
-      <AppWorkspace>
+      <AppWorkspace mobileSurface="flush">
         <BaseSidebar bases={basesInfo} currentBaseType="search" currentBaseId="" />
 
         <AppWorkspace.Content>

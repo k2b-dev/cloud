@@ -59,7 +59,8 @@ describe("Book surface", () => {
     expect(html).toContain("/app/notebooks/book01/notes/note02?mode=book");
     expect(html).toContain("/app/notebooks/book01/tags/handbook?mode=book");
     expect(html).not.toMatch(/CodeMirror|NoteEditor|NotebookDetailPanel|EditorToolbar|mode=write|mode=readonly/);
-    expect(html).toContain("sidebar-mobile");
+    expect(html).not.toContain("sidebar-mobile");
+    expect(html).toContain("data-cloud-workspace-navigation");
     expect(html).toContain("sidebar-desktop");
   });
   test("authors get a floating edit action only on unlocked notes", () => {

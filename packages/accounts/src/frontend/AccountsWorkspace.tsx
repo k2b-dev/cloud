@@ -12,7 +12,7 @@ type Props = {
 
 export default function AccountsWorkspace(props: Props) {
   return (
-    <AppWorkspace class="h-full">
+    <AppWorkspace mobileSurface="flush" class="h-full">
       <AccountsNavSidebar active={props.active} isAdmin={props.isAdmin} pendingRequests={props.pendingRequests} />
       <AppWorkspace.Content>
         <AppWorkspace.Main class="p-[var(--ui-space-shell)]" scrollPreserveKey={props.scrollPreserveKey}>

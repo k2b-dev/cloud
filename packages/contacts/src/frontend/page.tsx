@@ -107,7 +107,7 @@ export default ssr<AuthContext>(async (c) => {
     <Layout c={c} fullWidth title={[{ title: t.breadcrumbStart, href: "/" }, { title: t.breadcrumbContacts }]}>
       <ContactsLiveEvents scope={{ kind: "all" }} initialCursor={initialLiveCursor} />
       <ContactCreateLauncher writableBooks={writableBooks} />
-      <AppWorkspace>
+      <AppWorkspace mobileSurface="flush">
         <ContactsSidebar books={books} active={queryOptions.favorites ? "favorites" : "all"} adminBookIds={adminBookIds} />
 
         <AppWorkspace.Content>

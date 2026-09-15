@@ -1,3 +1,4 @@
+import WorkspaceNavigation from "@k2b/cloud/ssr/WorkspaceNavigation.island";
 import { AppWorkspace, useLocale } from "@k2b/ui";
 import type { JSX } from "solid-js";
 import type { FileBaseInfo } from "@/contracts";
@@ -44,56 +45,50 @@ export default function BaseSidebar(props: BaseSidebarProps) {
   );
 
   return (
-    <AppWorkspace.Sidebar>
-      <AppWorkspace.SidebarMobileTrigger label={sidebarTitle} />
+    <>
+      <WorkspaceNavigation
+        label={sidebarTitle}
+        items={[
+          { id: "search", label: t().search, icon: "ti ti-search", href: "/app/files/search", active: isSearch },
+          ...props.bases.map((base) => ({
+            id: `${base.type}:${base.id}`,
+            label: base.type === "home" ? getHomeLabel(base.name) : base.name,
+            href: getHref(base),
+            icon: base.type === "home" ? "ti ti-home" : "ti ti-users-group",
+            active: isActive(base, props.currentBaseType, props.currentBaseId),
+          })),
+        ]}
+      />
+      <AppWorkspace.Sidebar>
+        <AppWorkspace.SidebarDesktop>
+          <div class="flex flex-col gap-3">
+            <AppWorkspace.SidebarSection>
+              <AppWorkspace.SidebarItem href="/app/files/search" navigation="document" icon="ti ti-search" active={isSearch}>
+                {t().search}
+              </AppWorkspace.SidebarItem>
+            </AppWorkspace.SidebarSection>
+          </div>
 
-      <AppWorkspace.SidebarMobile>
-        <AppWorkspace.SidebarMobileItems>
-          <AppWorkspace.SidebarItem href="/app/files/search" navigation="document" icon="ti ti-search" active={isSearch}>
-            {t().search}
-          </AppWorkspace.SidebarItem>
-        </AppWorkspace.SidebarMobileItems>
-        <AppWorkspace.SidebarMobileBody scrollPreserveKey="files-sidebar-mobile">
-          <AppWorkspace.SidebarSection>
-            {props.bases.map(renderBaseItem)}
+          <AppWorkspace.SidebarBody scrollPreserveKey="files-sidebar">
+            {homeBases.length > 0 && (
+              <AppWorkspace.SidebarSection title={t().home}>{homeBases.map(renderBaseItem)}</AppWorkspace.SidebarSection>
+            )}
+
+            {groupBases.length > 0 && (
+              <AppWorkspace.SidebarSection title={t().groups}>{groupBases.map(renderBaseItem)}</AppWorkspace.SidebarSection>
+            )}
+
             {props.bases.length === 0 && (
               <p class="px-2 py-1 text-xs text-dimmed">
                 <i class="ti ti-folder-off mr-1" />
                 {t().noAccessibleBases}
               </p>
             )}
-          </AppWorkspace.SidebarSection>
-        </AppWorkspace.SidebarMobileBody>
-      </AppWorkspace.SidebarMobile>
 
-      <AppWorkspace.SidebarDesktop>
-        <div class="flex flex-col gap-3">
-          <AppWorkspace.SidebarSection>
-            <AppWorkspace.SidebarItem href="/app/files/search" navigation="document" icon="ti ti-search" active={isSearch}>
-              {t().search}
-            </AppWorkspace.SidebarItem>
-          </AppWorkspace.SidebarSection>
-        </div>
-
-        <AppWorkspace.SidebarBody scrollPreserveKey="files-sidebar">
-          {homeBases.length > 0 && (
-            <AppWorkspace.SidebarSection title={t().home}>{homeBases.map(renderBaseItem)}</AppWorkspace.SidebarSection>
-          )}
-
-          {groupBases.length > 0 && (
-            <AppWorkspace.SidebarSection title={t().groups}>{groupBases.map(renderBaseItem)}</AppWorkspace.SidebarSection>
-          )}
-
-          {props.bases.length === 0 && (
-            <p class="px-2 py-1 text-xs text-dimmed">
-              <i class="ti ti-folder-off mr-1" />
-              {t().noAccessibleBases}
-            </p>
-          )}
-
-          {props.settingsPanel ? <AppWorkspace.SidebarSection>{props.settingsPanel()}</AppWorkspace.SidebarSection> : null}
-        </AppWorkspace.SidebarBody>
-      </AppWorkspace.SidebarDesktop>
-    </AppWorkspace.Sidebar>
+            {props.settingsPanel ? <AppWorkspace.SidebarSection>{props.settingsPanel()}</AppWorkspace.SidebarSection> : null}
+          </AppWorkspace.SidebarBody>
+        </AppWorkspace.SidebarDesktop>
+      </AppWorkspace.Sidebar>
+    </>
   );
 }

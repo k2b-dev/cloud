@@ -42,7 +42,7 @@ export default function AdminLayout(props: Props) {
   }
   return (
     <Layout c={c} fullWidth fullPage title={breadcrumbs}>
-      <AppWorkspace class="min-h-0 flex-1" resizable={false}>
+      <AppWorkspace mobileSurface="flush" class="min-h-0 flex-1" resizable={false}>
         <AdminSidebar currentPath={currentPath} apps={runtime.apps} />
         <AppWorkspace.Content>
           <AppWorkspace.Main scroll={scroll} class={scroll ? "p-[var(--ui-space-shell)]" : undefined}>

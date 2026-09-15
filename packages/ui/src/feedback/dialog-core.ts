@@ -21,6 +21,8 @@ export type DialogRender<T> = (
     dialog: HTMLDialogElement;
     /** Route Escape/backdrop through the same guarded handler as Cancel and X. */
     setDismissHandler: (handler: () => void | Promise<void>) => void;
+    /** Request dismissal through this entry's cancellation policy and guard. */
+    requestDismiss: () => Promise<void>;
   },
 ) => JSX.Element;
 
@@ -165,7 +167,7 @@ export const createDialogCore = (): DialogCore => {
   };
 
   const requestDismiss = async (entry: DialogStackEntry) => {
-    if (state.stack[state.stack.length - 1] !== entry || entry.dismissPending) return;
+    if (state.stack[state.stack.length - 1] !== entry || entry.dismissPending || entry.cancelBehavior === "ignore") return;
     if (!entry.dismissHandler) {
       popTop(undefined);
       return;
@@ -291,6 +293,7 @@ export const createDialogCore = (): DialogCore => {
           () =>
             view(closeTyped, {
               dialog,
+              requestDismiss: () => requestDismiss(entry),
               setDismissHandler: (handler) => {
                 entry.dismissHandler = handler;
               },

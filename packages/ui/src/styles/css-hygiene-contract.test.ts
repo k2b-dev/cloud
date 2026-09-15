@@ -128,7 +128,7 @@ describe("@k2b/ui stylesheet hygiene", () => {
 
     expect(index).toMatch(/\.k2b-ui \.k2b-ui-portal\s*\{\s*display:\s*contents;\s*\}/);
     expect(index).toMatch(
-      /@media \(prefers-reduced-motion: reduce\)[\s\S]*?\.k2b-ui \.k2b-switch__thumb,[\s\S]*?sidebar-mobile details > summary > i[\s\S]*?transition:\s*none;/,
+      /@media \(prefers-reduced-motion: reduce\)[\s\S]*?\.k2b-ui \.k2b-chat-activity__chevron,[\s\S]*?\.k2b-ui \.k2b-chat-composer,[\s\S]*?\.k2b-ui \.k2b-switch__thumb\s*\{\s*transition:\s*none;/,
     );
     expect(surfaces).toMatch(
       /\.k2b-status-badge\[data-tone="degraded"\] \.k2b-status-badge__dot\s*\{\s*background:\s*var\(--k2b-warning-500\);/,

@@ -1,3 +1,4 @@
+import CapabilitiesNavigation from "./CapabilitiesNavigation.island";
 import { AppWorkspace, DataTable, type DataTableColumn, IconButtonLink, Pagination, Placeholder, StatusBadge } from "@k2b/ui";
 import { type AuthContext, getLocale } from "@k2b/cloud/server";
 import { Layout } from "@k2b/cloud/ssr";
@@ -83,27 +84,30 @@ function CapabilitiesSidebar(props: {
   );
 
   return (
-    <AppWorkspace.Sidebar>
-      <AppWorkspace.SidebarMobileTrigger label={props.labels.capabilities} />
-
-      <AppWorkspace.SidebarMobile>
-        <AppWorkspace.SidebarMobileItems scrollPreserveKey="capabilities-apps-mobile">
-          <CapabilitySearchButton entries={props.searchEntries} variant="sidebar-mobile" />
-          <For each={props.apps}>{renderApp}</For>
-        </AppWorkspace.SidebarMobileItems>
-      </AppWorkspace.SidebarMobile>
-
-      <AppWorkspace.SidebarDesktop>
-        <AppWorkspace.SidebarBody scrollPreserveKey="capabilities-apps-sidebar">
-          <AppWorkspace.SidebarSection>
-            <CapabilitySearchButton entries={props.searchEntries} variant="sidebar" registerShortcut />
-          </AppWorkspace.SidebarSection>
-          <AppWorkspace.SidebarSection title={props.labels.apps}>
-            <For each={props.apps}>{renderApp}</For>
-          </AppWorkspace.SidebarSection>
-        </AppWorkspace.SidebarBody>
-      </AppWorkspace.SidebarDesktop>
-    </AppWorkspace.Sidebar>
+    <>
+      <CapabilitiesNavigation
+        entries={props.searchEntries}
+        items={props.apps.map((app) => ({
+          id: app.id,
+          label: app.name,
+          icon: app.icon || "ti ti-apps",
+          href: capabilityHref({ appId: app.id }),
+          active: app.id === props.selectedAppId,
+        }))}
+      />
+      <AppWorkspace.Sidebar>
+        <AppWorkspace.SidebarDesktop>
+          <AppWorkspace.SidebarBody scrollPreserveKey="capabilities-apps-sidebar">
+            <AppWorkspace.SidebarSection>
+              <CapabilitySearchButton entries={props.searchEntries} variant="sidebar" registerShortcut />
+            </AppWorkspace.SidebarSection>
+            <AppWorkspace.SidebarSection title={props.labels.apps}>
+              <For each={props.apps}>{renderApp}</For>
+            </AppWorkspace.SidebarSection>
+          </AppWorkspace.SidebarBody>
+        </AppWorkspace.SidebarDesktop>
+      </AppWorkspace.Sidebar>
+    </>
   );
 }
 
@@ -258,7 +262,7 @@ export default ssr<AuthContext>(async (c) => {
       ]}
     >
       <div class="k2b-ui min-h-0 min-w-0 flex-1 overflow-hidden" style={{ background: "transparent" }}>
-        <AppWorkspace>
+        <AppWorkspace mobileSurface="flush">
           <CapabilitiesSidebar apps={workspace.apps} selectedAppId={loaded.app.id} searchEntries={searchEntries} labels={t} />
 
           <AppWorkspace.Content>

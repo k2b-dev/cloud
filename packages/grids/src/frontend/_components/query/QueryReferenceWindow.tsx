@@ -1,5 +1,6 @@
 import {
   AppWorkspace,
+  Select,
   ButtonLink,
   CopyButton,
   DataTable,
@@ -316,15 +317,14 @@ function ReferenceSidebar(props: { activeTab: GqlReferenceTab; baseId: string; b
   );
 
   return (
+    <>
+    <div class="p-3 lg:hidden"><Select label={t.gridsReference} options={referenceTabs(t).map(tab => ({ id: tab.value, label: tab.label }))} value={() => props.activeTab} onValueChange={value => { const tab = referenceTabs(t).find(tab => tab.value === value); if (tab) window.location.assign(referenceTabHref(props.baseId, tab.value)); }} /></div>
     <AppWorkspace.Sidebar>
-      <AppWorkspace.SidebarMobileTrigger label={t.gridsReference} />
-      <AppWorkspace.SidebarMobile>
-        <AppWorkspace.SidebarMobileBody scrollPreserveKey="grids-query-reference-mobile">{items}</AppWorkspace.SidebarMobileBody>
-      </AppWorkspace.SidebarMobile>
       <AppWorkspace.SidebarDesktop>
         <AppWorkspace.SidebarBody scrollPreserveKey="grids-query-reference-sidebar">{items}</AppWorkspace.SidebarBody>
       </AppWorkspace.SidebarDesktop>
     </AppWorkspace.Sidebar>
+    </>
   );
 }
 

@@ -779,11 +779,6 @@
   display: none;
 }
 
-.k2b-ui .k2b-app-workspace__sidebar-mobile {
-  display: block;
-  grid-area: mobile;
-}
-
 /* A row with a trailing action renders as a wrapper element, so `:disabled`
    cannot reach it — Cloud disables the whole row, action included. */
 .k2b-ui .k2b-app-workspace__sidebar-item[data-disabled="true"] {
@@ -1106,10 +1101,6 @@
     flex-direction: column;
     gap: 0.5rem;
     padding: 0.5rem;
-  }
-
-  .k2b-ui .k2b-app-workspace__sidebar-mobile {
-    display: none;
   }
 
   .k2b-ui .k2b-app-workspace__resize {

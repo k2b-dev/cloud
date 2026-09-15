@@ -70,7 +70,7 @@ export default function SpacesWorkspace(props: { state: OkWorkspaceState; dateCo
     <>
       <RememberSpace spaceId={state.space.id} />
       <SpaceLiveEvents spaceId={state.space.id} initialCursor={state.eventCursor} />
-      <AppWorkspace class="flex-1 min-h-0">
+      <AppWorkspace mobileSurface="flush" class="flex-1 min-h-0">
         <SpaceSidebar ctx={sidebarContext} baseUrl={state.icalBaseUrl} dateConfig={props.dateConfig} />
 
         <AppWorkspace.Content>

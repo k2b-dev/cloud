@@ -1,3 +1,4 @@
+import WeatherNavigation from "../WeatherNavigation.island";
 import { AppWorkspace, useLocale } from "@k2b/ui";
 import { type WeatherData, weatherService } from "@k2b/cloud/services";
 import { weatherMessages } from "../../messages";
@@ -51,28 +52,33 @@ export default function LocationSidebar(props: Props) {
   };
 
   return (
-    <AppWorkspace.Sidebar>
-      <AppWorkspace.SidebarMobileTrigger label={activeLocation?.name ?? t().appName} />
-
-      <AppWorkspace.SidebarMobile>
-        <AppWorkspace.SidebarMobileItems>
-          <AddLocationButton variant="sidebar" />
-        </AppWorkspace.SidebarMobileItems>
-        <AppWorkspace.SidebarMobileBody scrollPreserveKey="weather-locations-mobile">
-          <AppWorkspace.SidebarSection>{props.locations.map((loc) => renderLocation(loc, "mobile"))}</AppWorkspace.SidebarSection>
-        </AppWorkspace.SidebarMobileBody>
-      </AppWorkspace.SidebarMobile>
-
-      <AppWorkspace.SidebarDesktop>
-        <div class="flex min-h-0 flex-1 flex-col gap-3">
-          <AddLocationButton />
-          <AppWorkspace.SidebarBody scrollPreserveKey="weather-locations">
-            <AppWorkspace.SidebarSection title={t().locations}>
-              {props.locations.map((loc) => renderLocation(loc, "desktop"))}
-            </AppWorkspace.SidebarSection>
-          </AppWorkspace.SidebarBody>
-        </div>
-      </AppWorkspace.SidebarDesktop>
-    </AppWorkspace.Sidebar>
+    <>
+      <WeatherNavigation
+        label={activeLocation?.name ?? t().appName}
+        items={props.locations.map((loc) => {
+          const data = props.weatherMap.get(loc.id);
+          return {
+            id: loc.id,
+            label: loc.name,
+            href: `/app/weather/${loc.id}`,
+            active: loc.id === props.activeId,
+            icon: `ti ti-${data?.current ? weatherService.ui.getTablerIcon(data.current.icon) : "map-pin"}`,
+            description: data?.current ? temperature(data.current.temperature) : t().noForecast,
+          };
+        })}
+      />
+      <AppWorkspace.Sidebar>
+        <AppWorkspace.SidebarDesktop>
+          <div class="flex min-h-0 flex-1 flex-col gap-3">
+            <AddLocationButton />
+            <AppWorkspace.SidebarBody scrollPreserveKey="weather-locations">
+              <AppWorkspace.SidebarSection title={t().locations}>
+                {props.locations.map((loc) => renderLocation(loc, "desktop"))}
+              </AppWorkspace.SidebarSection>
+            </AppWorkspace.SidebarBody>
+          </div>
+        </AppWorkspace.SidebarDesktop>
+      </AppWorkspace.Sidebar>
+    </>
   );
 }

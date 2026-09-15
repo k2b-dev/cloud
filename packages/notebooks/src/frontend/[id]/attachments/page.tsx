@@ -116,7 +116,7 @@ export default ssr<AuthContext>(async (c) => {
         { title: t.attachments },
       ]}
     >
-      <AppWorkspace class="flex-1 min-h-0">
+      <AppWorkspace mobileSurface="flush" class="flex-1 min-h-0">
         <WorkspaceEventBridge notebookId={notebook.shortId} appUrl={appUrl} initialCursor={workspaceCursor} />
         <NotebookSidebar ctx={ctx} />
         <AppWorkspace.Content>

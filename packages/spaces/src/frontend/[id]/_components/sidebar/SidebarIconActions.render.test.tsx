@@ -17,12 +17,11 @@ const { default: SearchButton } = await import("../search/SearchButton");
 const { default: ViewLinks } = await import("./ViewLinks");
 
 describe("Spaces sidebar icon actions", () => {
-  test.each(["mobile", "desktop", "collapsed"] as const)("renders %s view links with SSR search state", (variant) => {
+  test.each(["desktop", "collapsed"] as const)("renders %s view links with SSR search state", (variant) => {
     const html = renderToString(() =>
       createComponent(ViewLinks, { spaceId: "Space1", query: "view=list&q=initial&status=all", currentView: "list", variant }),
     );
     expect(html.match(/href=/g)).toHaveLength(4);
-    if (variant !== "collapsed") expect(html.match(new RegExp(`data-mode="${variant}"`, "g"))).toHaveLength(4);
     expect(html).toContain("view=table&amp;q=initial&amp;status=all");
   });
 

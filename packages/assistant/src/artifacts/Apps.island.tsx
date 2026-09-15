@@ -36,7 +36,7 @@ export default function Apps(props: Props) {
     userId: props.userId, projects: props.projects, refresh: reloadList, app, setApp, editorDirty, setSelectedVersion, view: props.view,
   });
   const open = (id: string) => navigateTo(`/app/assistant/apps/${id}`);
-  return <AssistantLiveProvider value={live}><AppWorkspace class="flex-1 min-h-0">
+  return <AssistantLiveProvider value={live}><AppWorkspace mobileSurface="flush" class="flex-1 min-h-0">
     <AssistantSidebar conversations={() => sidebar().conversations} doneCount={sidebar().doneCount} projects={sidebar().projects} onConversationUpdated={() => void reloadSidebar()} onConversationArchived={() => void reloadSidebar()} activeView="apps" live={live}
       creatingConversation={busy}
       onNewConversation={() => action(async () => navigateTo(`/app/assistant?conversation=${(await assistantApi.createConversation()).shortId}`))}

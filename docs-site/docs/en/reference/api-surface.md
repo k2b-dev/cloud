@@ -199,6 +199,7 @@ documents all process variables; that larger list is not the shape of `env`.
 | `@k2b/cloud/workflows/testing` | Supported, tests | Workflow process fixtures | [Test workflows](/en/docs/automation/workflow-observability-and-testing) |
 | `@k2b/cloud/services/document-extraction` | Supported, server-only | Convert authorized document bytes to bounded untrusted Markdown | [Document extraction](/en/docs/platform/document-extraction) |
 | `@k2b/cloud/ssr/islands` | Supported, server-only | Shared SSR island helpers | [In-product help](/en/docs/platform/help) |
+| `@k2b/cloud/ssr/WorkspaceNavigation.island` | Supported | SSR-first workspace links for the Cloud mobile menu | [Application shells](/en/docs/frontend/application-shells) |
 | `@k2b/cloud/ssr/*` | Advanced | Named SSR modules; prefer the barrel | — |
 | `@k2b/cloud/workflows/editor` | Supported, SolidJS | Workflow authoring controls | [Shared components](/en/docs/frontend#choose-shared-components) |
 | `@k2b/cloud/styles/global.css` | Supported asset | Alias for the global stylesheet | [Styling](/en/docs/frontend/styling-and-accessibility) |
@@ -271,3 +272,14 @@ PDF applications use `renderHtmlToPdf`, `renderFacturXHtmlToPdf` and
 `attachPdfFiles` from `@k2b/cloud/services` for HTML conversion, invoice XML
 embedding and ordinary file attachments. See [PDF and templates](/en/docs/platform/pdf-and-templates)
 for their input, access, cancellation and deployment responsibilities.
+
+### Workspace navigation
+
+`@k2b/cloud/ssr/WorkspaceNavigation.island` supplies SSR-first workspace links.
+`@k2b/cloud/ssr/islands` exports `WorkspaceNavigationProvider` and
+`provideWorkspaceNavigation` for reactive navigation owned by an application
+island. See [Application shells](/en/docs/frontend/application-shells#supply-mobile-navigation).
+
+The standalone UI exports `createNavigation`, `Navigation`, `NavigationItem`,
+`NavigationController`, `NavigationOptions`, `NavigationProps`,
+`findNavigationItem`, `BottomSheet`, `BottomSheetProps`, and `bottomSheetOptions`.

@@ -26,7 +26,7 @@ export default function BookSurface(props: BookSurfaceProps) {
   return (
     <div class="notebook-book-shell">
       <link rel="stylesheet" href={katexStylesHref} />
-      <AppWorkspace class="notebook-book-workspace">
+      <AppWorkspace mobileSurface="flush" class="notebook-book-workspace">
         <BookNavigator
           notebookId={props.notebookId}
           notebookName={props.notebookName}

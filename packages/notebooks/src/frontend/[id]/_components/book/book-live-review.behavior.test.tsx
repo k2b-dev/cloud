@@ -135,7 +135,7 @@ describe("independent Book live metadata regression", () => {
         createComponent(TagsButton, {
           notebookId: "book01",
           tags: [{ tag: "team/news", count: 2 }],
-          variant: "sidebar-mobile",
+          variant: "icon",
           presentationMode,
         }),
       dom.root,

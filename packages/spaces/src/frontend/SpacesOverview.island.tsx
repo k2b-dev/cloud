@@ -712,7 +712,7 @@ export default function SpacesOverview(props: Props) {
 
   onCleanup(() => createSpaceMutation.abort());
   return (
-    <AppWorkspace class="spaces-overview-workspace" resizable={false}>
+    <AppWorkspace mobileSurface="flush" class="spaces-overview-workspace" resizable={false}>
       <h1 class="sr-only">Spaces</h1>
       <AppWorkspace.Content>
         <AppWorkspace.Main class="spaces-overview-main">

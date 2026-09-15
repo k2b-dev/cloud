@@ -1,4 +1,15 @@
-import { Button, Checkbox, IconButton, LocaleProvider, PanelDialog, Paper, TextInput, useLocale } from "@k2b/ui";
+import {
+  BottomSheet,
+  bottomSheetOptions,
+  Button,
+  Checkbox,
+  IconButton,
+  LocaleProvider,
+  PanelDialog,
+  Paper,
+  TextInput,
+  useLocale,
+} from "@k2b/ui";
 import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import type { Authenticator, Login } from "./authenticator";
 import { openDialog } from "./dialog";
@@ -6,7 +17,15 @@ import { authMessages } from "./i18n";
 import type { Preferences } from "./preferences";
 import type { Binding } from "./storage";
 
-function Decision(props: { auth: Authenticator; binding: Binding; request: Login; position: number; total: number; close: () => void }) {
+function Decision(props: {
+  auth: Authenticator;
+  binding: Binding;
+  request: Login;
+  position: number;
+  total: number;
+  dismiss: () => void | Promise<void>;
+  close: () => void;
+}) {
   const locale = useLocale();
   const t = createMemo(() => authMessages.resolve([locale()]).t);
   const [busy, setBusy] = createSignal(false);
@@ -28,27 +47,8 @@ function Decision(props: { auth: Authenticator; binding: Binding; request: Login
     const pending = props.auth.states()[props.binding.id]?.requests.some((r) => r.requestId === props.request.requestId);
     if (!busy() && !error() && (!pending || expired())) props.close();
   });
-  let dragStart: number | undefined;
   return (
-    <PanelDialog>
-      <button
-        class="auth-sheet-handle"
-        aria-label={t().close}
-        onClick={props.close}
-        onPointerDown={(event) => {
-          dragStart = event.clientY;
-          event.currentTarget.setPointerCapture(event.pointerId);
-        }}
-        onPointerUp={(event) => {
-          if (dragStart !== undefined && event.clientY - dragStart > 60) props.close();
-          dragStart = undefined;
-        }}
-        onPointerCancel={() => {
-          dragStart = undefined;
-        }}
-      >
-        <span />
-      </button>
+    <BottomSheet onDismiss={props.dismiss}>
       <PanelDialog.Header title={props.binding.label} subtitle={props.total > 1 ? `${props.position} / ${props.total}` : undefined} />
       <PanelDialog.Body>
         <div class="auth-flow">
@@ -72,7 +72,7 @@ function Decision(props: { auth: Authenticator; binding: Binding; request: Login
           </Button>
         </div>
       </PanelDialog.Footer>
-    </PanelDialog>
+    </BottomSheet>
   );
 }
 function Disconnect(props: { auth: Authenticator; binding: Binding; close: () => void }) {
@@ -149,27 +149,25 @@ export function Clouds(props: { auth: Authenticator; preferences: Preferences })
     seen.add(key);
     setSheetOpen(true);
     try {
-      await openDialog(
-        (close) => {
-          if (disposed || document.visibilityState !== "visible") {
-            queueMicrotask(() => close());
-            return null;
-          }
-          return (
-            <LocaleProvider locale={props.preferences.locale()}>
-              <Decision
-                auth={props.auth}
-                binding={binding}
-                request={request}
-                position={queue.findIndex((item) => item.key === key) + 1}
-                total={queue.length}
-                close={() => close()}
-              />
-            </LocaleProvider>
-          );
-        },
-        { panelClassName: "k2b-dialog auth-request-sheet", contentClassName: "k2b-dialog__viewport" },
-      );
+      await openDialog((close, context) => {
+        if (disposed || document.visibilityState !== "visible") {
+          queueMicrotask(() => close());
+          return null;
+        }
+        return (
+          <LocaleProvider locale={props.preferences.locale()}>
+            <Decision
+              auth={props.auth}
+              binding={binding}
+              request={request}
+              position={queue.findIndex((item) => item.key === key) + 1}
+              total={queue.length}
+              dismiss={context.requestDismiss}
+              close={() => close()}
+            />
+          </LocaleProvider>
+        );
+      }, bottomSheetOptions);
     } finally {
       if (!disposed) setSheetOpen(false);
     }

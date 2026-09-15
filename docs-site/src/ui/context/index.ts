@@ -1,3 +1,5 @@
+import layoutNavigation from "./layout/navigation.md" with { type: "text" };
+import layoutBottomSheet from "./layout/bottom-sheet.md" with { type: "text" };
 import actionButtons from "./actions/buttons.md" with { type: "text" };
 import actionCopyRemove from "./actions/copy-remove.md" with { type: "text" };
 import actionDisclosure from "./actions/disclosure.md" with { type: "text" };
@@ -98,6 +100,8 @@ const catalogContextSources = {
   "actions/disclosure": { file: "actions/disclosure.md", content: actionDisclosure },
   "actions/toolbar": { file: "actions/toolbar.md", content: actionToolbar },
   "actions/spotlight": { file: "actions/spotlight.md", content: actionSpotlight },
+  "layout/navigation": { file: "layout/navigation.md", content: layoutNavigation },
+  "layout/bottom-sheet": { file: "layout/bottom-sheet.md", content: layoutBottomSheet },
   "layout/workspace": { file: "layout/workspace.md", content: layoutWorkspace },
   "layout/detail-panel": { file: "layout/detail-panel.md", content: layoutDetailPanel },
   "layout/discussion": { file: "layout/discussion.md", content: layoutDiscussion },

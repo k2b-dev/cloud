@@ -45,12 +45,9 @@ every application capability.
 
 ```tsx
 <Layout c={c} title="Inventory" fullWidth fullPage>
-  <AppWorkspace>
+  <AppWorkspace mobileSurface="flush">
+    <InventoryWorkspaceNavigation />
     <AppWorkspace.Sidebar collapsible>
-      <AppWorkspace.SidebarMobileTrigger label="Inventory" />
-      <AppWorkspace.SidebarMobile>
-        <InventoryMobileNavigation />
-      </AppWorkspace.SidebarMobile>
       <AppWorkspace.SidebarDesktop>
         <AppWorkspace.SidebarBody>
           <InventoryNavigation />
@@ -104,3 +101,59 @@ Do not restyle a shared shell locally. Improve the primitive when the design
 system cannot express a recurring requirement.
 
 Inspect current examples in the [UI catalog](/ui).
+
+## Supply mobile navigation
+
+Cloud owns one mobile menu below 1024 px. The header launcher opens the current
+workspace menu by default; **All apps** switches to the application grid.
+The sheet header combines the workspace name and **All apps** in one segmented
+control. All apps uses a three-column grid and a local search over app names and
+descriptions. Signed-in users also find their profile, theme, language, and
+sign-out actions there; the mobile header has no separate profile menu.
+At 1024 px and above, the existing desktop rail and workspace sidebar apply.
+There is no intermediate tablet menu.
+
+For SSR link navigation, render the public island once alongside the outer
+sidebar:
+
+```tsx
+import WorkspaceNavigation from "@k2b/cloud/ssr/WorkspaceNavigation.island";
+
+<WorkspaceNavigation label="Inventory" items={[
+  { id: "items", label: "Items", href: "/app/inventory/items", active: true },
+]} />
+```
+
+For reactive state or local actions, use `WorkspaceNavigationProvider` inside
+the owning application island:
+
+```tsx
+import { createNavigation } from "@k2b/ui";
+import { WorkspaceNavigationProvider } from "@k2b/cloud/ssr/islands";
+
+const navigation = createNavigation({
+  items: () => [
+    { id: "items", label: "Items", href: "/app/inventory/items", badge: count() },
+    { id: "new", label: "New item", action: "new", disabled: saving() },
+  ],
+  onAction: action => { if (action === "new") openEditor(); },
+});
+<WorkspaceNavigationProvider label="Inventory" navigation={navigation} />
+```
+
+Keep permission filtering, labels, counts, URLs, and actions application-owned.
+The provider emits an SSR snapshot, binds handlers on mount, and unregisters on
+cleanup. Links remain usable before the application island loads; action-only
+entries remain disabled until their owner is ready. Do not register embedded
+inspectors, reference windows, or builder previews as the Cloud workspace.
+They keep local content controls.
+
+Cloud closes its menu and removes its temporary history entry before running a
+selection. Back, Escape, backdrop, the close button, and a handle drag dismiss
+the menu. Changing to desktop also closes it. App-to-app navigation replaces
+the registered owner; an old island cannot unregister the new owner's menu.
+
+`provideWorkspaceNavigation(navigation, { label, owner })` is the lower-level
+binding for hosts that already own a stable element. Both options are accessors;
+`owner` must return the mounted outer navigation marker. Prefer the component
+unless that explicit DOM ownership is needed.

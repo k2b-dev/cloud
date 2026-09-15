@@ -1,42 +1,9 @@
-import { dialogCore, IconButton, ScrollArea, Tooltip, useLocale } from "@k2b/ui";
-import { createEffect, For, Show } from "solid-js";
+import { AppLaunchpadPanel, type AppLaunchpadApp, type AppLaunchpadLegalLink, type AppLaunchpadContext } from "./AppLaunchpadPanel";
+import { openCloudMobileMenu } from "./MobileNavigation";
+export type { AppLaunchpadApp, AppLaunchpadLegalLink } from "./AppLaunchpadPanel";
+import { dialogCore, IconButton, Tooltip, useLocale } from "@k2b/ui";
+import { createEffect } from "solid-js";
 import { platformMessages } from "./platform-messages";
-import { openRailEditor } from "./RailEditor";
-import { readRailContext } from "./rail-context";
-import { railMessages } from "./rail-messages";
-import { projectRailNavigation } from "./rail-navigation";
-
-export type AppLaunchpadApp = {
-  id: string;
-  iconClass: string;
-  label: string;
-  href: string;
-  description?: string;
-  accent?: string;
-};
-
-export type AppLaunchpadLegalLink = {
-  label: string;
-  href: string;
-  icon?: string;
-};
-
-type AppLaunchpadContext = {
-  apps: AppLaunchpadApp[];
-  legalLinks: AppLaunchpadLegalLink[];
-};
-
-type AppIconPaletteEntry = { from: string };
-
-const appIconPalette: readonly [AppIconPaletteEntry, ...AppIconPaletteEntry[]] = [
-  { from: "#2563eb" },
-  { from: "#059669" },
-  { from: "#7c3aed" },
-  { from: "#d97706" },
-  { from: "#e11d48" },
-  { from: "#0891b2" },
-  { from: "#52525b" },
-];
 
 declare global {
   interface Window {
@@ -46,17 +13,6 @@ declare global {
     };
   }
 }
-
-const paletteForId = (id: string) => {
-  let hash = 0;
-  for (let i = 0; i < id.length; i++) hash = (hash + id.charCodeAt(i)) % appIconPalette.length;
-  return appIconPalette[hash] ?? appIconPalette[0];
-};
-
-const appIconStyle = (app: AppLaunchpadApp) => {
-  const tone = /^#[0-9a-f]{6}$/i.test(app.accent ?? "") ? app.accent! : paletteForId(app.id).from;
-  return `--app-icon-color:${tone}`;
-};
 
 const readEmbeddedContext = (): AppLaunchpadContext | undefined => {
   if (typeof document === "undefined") return undefined;
@@ -69,6 +25,7 @@ const readEmbeddedContext = (): AppLaunchpadContext | undefined => {
     if (!Array.isArray(parsed.apps)) return undefined;
     return {
       apps: parsed.apps,
+      profile: parsed.profile?.name && (parsed.profile.theme === "dark" || parsed.profile.theme === "light") ? parsed.profile : undefined,
       legalLinks: Array.isArray(parsed.legalLinks) ? parsed.legalLinks : [],
     };
   } catch {
@@ -76,100 +33,28 @@ const readEmbeddedContext = (): AppLaunchpadContext | undefined => {
   }
 };
 
-const AppLaunchpadPanel = (props: AppLaunchpadContext & { close: () => void }) => {
-  const locale = useLocale();
-  const t = () => railMessages.resolve([locale()]).t;
-  const rail = readRailContext();
-  const shortcuts = () => (rail ? projectRailNavigation(rail.apps, rail.settings, locale()).shortcuts : []);
-  return (
-    <ScrollArea class="launchpad-panel mx-auto max-h-[min(86vh,var(--ui-dialog-available-height))] w-[var(--ui-dialog-available-width)] max-w-[var(--ui-dialog-available-width)] overscroll-contain p-4 text-primary sm:w-fit sm:p-6 md:p-7 dark:text-white">
-      <Show when={rail}>
-        <div class="mb-2 flex justify-end">
-          <IconButton
-            variant="ghost"
-            size="sm"
-            label={t().customize}
-            tooltip={t().customize}
-            tooltipDelay={0}
-            onClick={() => {
-              props.close();
-              openRailEditor(locale());
-            }}
-          >
-            <i class="ti ti-adjustments-horizontal" aria-hidden="true" />
-          </IconButton>
-        </div>
-      </Show>
-      <Show when={shortcuts().length > 0}>
-        <section class="mb-5" aria-label={t().shortcuts}>
-          <div class="flex flex-wrap justify-center gap-3">
-            <For each={shortcuts()}>
-              {(shortcut) => (
-                <a
-                  href={shortcut.href}
-                  class="group flex w-16 min-w-0 flex-col items-center gap-1 rounded-lg p-1 text-center focus-ui"
-                >
-                  <span class="grid h-9 w-9 place-items-center rounded-xl bg-[var(--ui-hover)] text-lg transition-colors group-hover:bg-[var(--ui-active)]">
-                    <i class={shortcut.iconClass} aria-hidden="true" />
-                  </span>
-                  <span class="max-w-full truncate text-[11px] font-medium text-primary dark:text-white">{shortcut.label}</span>
-                </a>
-              )}
-            </For>
-          </div>
-        </section>
-      </Show>
-      <div class="flex flex-wrap justify-center gap-x-4 gap-y-4 sm:gap-x-7 sm:gap-y-6">
-        <For each={props.apps}>
-          {(app) => (
-            <a
-              href={app.href}
-              class="group flex w-[4.75rem] min-w-0 flex-col items-center gap-1.5 rounded-2xl p-1 text-center focus-ui sm:w-[6.25rem] sm:gap-2 sm:p-2"
-            >
-              <span
-                class="app-icon grid h-12 w-12 place-items-center rounded-[0.95rem] text-[1.25rem] sm:h-16 sm:w-16 sm:rounded-[1.25rem] sm:text-[1.7rem]"
-                style={appIconStyle(app)}
-              >
-                <i class={app.iconClass} />
-              </span>
-              <span class="max-w-full truncate text-[11px] font-medium text-primary sm:text-xs dark:text-white">{app.label}</span>
-            </a>
-          )}
-        </For>
-      </div>
-      <Show when={props.legalLinks.length > 0}>
-        <div class="mt-7 flex flex-wrap justify-center text-[11px] text-dimmed dark:text-white/56">
-          <For each={props.legalLinks}>
-            {(link) => (
-              <a
-                href={link.href}
-                class="inline-flex items-center gap-1.5 rounded-md px-2 py-1 transition-colors hover:text-primary dark:hover:text-white"
-              >
-                <i class={link.icon ?? "ti ti-file-text"} />
-                {link.label}
-              </a>
-            )}
-          </For>
-        </div>
-      </Show>
-    </ScrollArea>
-  );
-};
-
-export function setAppLaunchpadContext(apps: AppLaunchpadApp[], legalLinks: AppLaunchpadLegalLink[] = []) {
+export function setAppLaunchpadContext(
+  apps: AppLaunchpadApp[],
+  legalLinks: AppLaunchpadLegalLink[] = [],
+  profile?: AppLaunchpadContext["profile"],
+) {
   if (typeof window === "undefined") return;
-  window.__cloudAppLaunchpad = { apps, legalLinks };
+  window.__cloudAppLaunchpad = { apps, legalLinks, profile };
   window.cloud ??= {};
   window.cloud.openAppLaunchpad = () => {
     openAppLaunchpad();
   };
 }
 
-export function openAppLaunchpad(apps?: AppLaunchpadApp[], legalLinks?: AppLaunchpadLegalLink[]) {
+export function openAppLaunchpad(apps?: AppLaunchpadApp[], legalLinks?: AppLaunchpadLegalLink[], profile?: AppLaunchpadContext["profile"]) {
   if (typeof window === "undefined") return;
-  const context = apps ? { apps, legalLinks: legalLinks ?? [] } : (window.__cloudAppLaunchpad ?? readEmbeddedContext());
-  if (!context || context.apps.length === 0) return;
+  const context = apps ? { apps, legalLinks: legalLinks ?? [], profile } : (window.__cloudAppLaunchpad ?? readEmbeddedContext());
+  if (!context) return;
   window.__cloudAppLaunchpad = context;
+  if (window.matchMedia("(max-width: 1023px)").matches) {
+    void openCloudMobileMenu(context);
+    return;
+  }
   void dialogCore.open<void>((close) => <AppLaunchpadPanel apps={context.apps} legalLinks={context.legalLinks} close={close} />, {
     panelClassName: "k2b-dialog k2b-dialog--large is-bare",
     contentClassName: "k2b-dialog__viewport is-bare",
@@ -179,7 +64,7 @@ export function openAppLaunchpad(apps?: AppLaunchpadApp[], legalLinks?: AppLaunc
 
 export function AppLaunchpadProvider(props: AppLaunchpadContext) {
   createEffect(() => {
-    setAppLaunchpadContext(props.apps, props.legalLinks);
+    setAppLaunchpadContext(props.apps, props.legalLinks, props.profile);
   });
 
   return <span class="hidden" data-cloud-app-launchpad-provider />;
@@ -188,13 +73,14 @@ export function AppLaunchpadProvider(props: AppLaunchpadContext) {
 export function AppLaunchpadButton(props: AppLaunchpadContext & { variant: "rail" | "header" | "menu"; label?: string }) {
   const locale = useLocale();
   const t = () => platformMessages.resolve([locale()]).t;
-  const open = () => openAppLaunchpad(props.apps, props.legalLinks);
+  const open = () => openAppLaunchpad(props.apps, props.legalLinks, props.profile);
 
   if (props.variant === "rail") {
     return (
       <Tooltip.Trigger
         type="button"
         class="rail-item shrink-0"
+        data-cloud-launchpad
         content={props.label ?? t().apps}
         placement="right"
         delay={0}
@@ -228,10 +114,10 @@ export function AppLaunchpadButton(props: AppLaunchpadContext & { variant: "rail
 
 export function AppLaunchpad(props: AppLaunchpadContext & { variant?: "provider" | "rail" | "header" | "menu"; label?: string }) {
   if (!props.variant || props.variant === "provider") {
-    return <AppLaunchpadProvider apps={props.apps} legalLinks={props.legalLinks} />;
+    return <AppLaunchpadProvider apps={props.apps} legalLinks={props.legalLinks} profile={props.profile} />;
   }
 
-  return <AppLaunchpadButton apps={props.apps} legalLinks={props.legalLinks} variant={props.variant} label={props.label} />;
+  return <AppLaunchpadButton apps={props.apps} legalLinks={props.legalLinks} profile={props.profile} variant={props.variant} label={props.label} />;
 }
 
 export default AppLaunchpad;

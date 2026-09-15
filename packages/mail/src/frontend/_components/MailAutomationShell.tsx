@@ -1,4 +1,5 @@
-import { AppWorkspace, useLocale } from "@k2b/ui";
+import { WorkspaceNavigationProvider } from "@k2b/cloud/ssr/islands";
+import { createNavigation, type NavigationItem, AppWorkspace, useLocale } from "@k2b/ui";
 import { createMemo, createSignal, type JSX, Show } from "solid-js";
 import type { Mailbox } from "../../contracts";
 import { openMailboxSettingsDialog } from "./MailboxSettingsDialog";
@@ -65,32 +66,35 @@ export default function MailAutomationShell(props: {
     }
   };
 
+  const link = (page: MailAutomationPageId, label: string, icon: string): NavigationItem => ({
+    id: page,
+    label,
+    icon,
+    href: pageHref(props.mailbox.id, page),
+    active: props.activePage === page,
+  });
+  const navigation = createNavigation({
+    items: () => [
+      { id: "mailbox", label: messages().backToMailbox, icon: "ti ti-inbox", href: mailboxHref },
+      link("overview", messages().overview, "ti ti-layout-dashboard"),
+      link("replies", messages().automaticReplies, "ti ti-message-cog"),
+      ...(props.permission === "admin"
+        ? [
+            link("incoming", messages().incomingMail, "ti ti-mailbox"),
+            link("activity", messages().activity, "ti ti-activity"),
+            link("workflows", messages().workflows, "ti ti-route"),
+          ]
+        : []),
+      { id: "settings", label: messages().mailboxSettings, icon: "ti ti-settings", action: "settings", disabled: settingsOpening() },
+    ],
+    onAction: (action) => {
+      if (action === "settings") return openSettings();
+    },
+  });
   return (
-    <AppWorkspace>
+    <AppWorkspace mobileSurface="flush">
+      <WorkspaceNavigationProvider navigation={navigation} label={messages().automations} />
       <AppWorkspace.Sidebar>
-        <AppWorkspace.SidebarMobileTrigger label={messages().automations} />
-        <AppWorkspace.SidebarMobile>
-          <AppWorkspace.SidebarMobileItems>
-            <AppWorkspace.SidebarItem href={mailboxHref} icon="ti ti-inbox" navigation="document">
-              {messages().backToMailbox}
-            </AppWorkspace.SidebarItem>
-            <AppWorkspace.SidebarItem
-              icon={settingsOpening() ? "ti ti-loader-2 animate-spin" : "ti ti-settings"}
-              disabled={settingsOpening()}
-              onClick={() => void openSettings()}
-            >
-              {messages().mailboxSettings}
-            </AppWorkspace.SidebarItem>
-          </AppWorkspace.SidebarMobileItems>
-          <AppWorkspace.SidebarMobileBody>
-            <NavigationItems
-              mailboxId={props.mailbox.id}
-              activePage={props.activePage}
-              admin={props.permission === "admin"}
-              suffix="mobile"
-            />
-          </AppWorkspace.SidebarMobileBody>
-        </AppWorkspace.SidebarMobile>
         <AppWorkspace.SidebarDesktop>
           <AppWorkspace.SidebarBody scrollPreserveKey={`mail-automations-sidebar-${props.mailbox.id}`}>
             <NavigationItems

@@ -1,8 +1,14 @@
+import { WorkspaceNavigationProvider } from "@k2b/cloud/ssr/islands";
 import { ConversationSidebarPreview } from "./ConversationSidebarPreview";
 import { useAssistantText } from "./ui-copy";
 import { navigate, navigateTo } from "@k2b/ssr/nav";
 import {
   AppWorkspace,
+  createNavigation,
+  type NavigationItem,
+  dialogCore,
+  PanelDialog,
+  panelDialogOptions,
   Dropdown,
   Format,
   IconButton,
@@ -45,7 +51,7 @@ type AssistantSidebarProps = {
 
 const PER_SPOTLIGHT_PAGE = 20;
 
-function AssistantSpotlightButton(props: {
+function createAssistantSearch(props: {
   registerShortcut?: boolean;
   openConversation?: (conversation: AiConversation) => void | Promise<void>;
   variant?: "item" | "icon";
@@ -76,6 +82,14 @@ function AssistantSpotlightButton(props: {
     if (props.openConversation) await props.openConversation(selected.value);
     else navigateTo(assistantConversationHref("/app/assistant", selected.value.id));
   };
+
+  return openSearch;
+}
+
+function AssistantSpotlightButton(props: Parameters<typeof createAssistantSearch>[0]) {
+  const locale = useLocale();
+  const t = () => assistantMessages.resolve([locale()]).t;
+  const openSearch = createAssistantSearch(props);
 
   onMount(() => {
     if (!props.registerShortcut) return;
@@ -126,13 +140,17 @@ function ConversationSidebarItem(props: {
   const handleClick = (event: MouseEvent) => {
     // Keep modified clicks native. Plain clicks must not put the network request
     // inside Link's view transition, which freezes rendering until it resolves.
-    if (!props.open || event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    if (!props.open || event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey)
+      return;
     event.preventDefault();
     if (props.active) return;
     const target = href();
-    void props.open(props.conversation).then((opened) => {
-      if (opened) navigate(target, { scroll: "manual", viewTransition: false });
-    }).catch(() => navigateTo(target));
+    void props
+      .open(props.conversation)
+      .then((opened) => {
+        if (opened) navigate(target, { scroll: "manual", viewTransition: false });
+      })
+      .catch(() => navigateTo(target));
   };
 
   return (
@@ -140,13 +158,30 @@ function ConversationSidebarItem(props: {
       href={href()}
       class="assistant-chat-sidebar-item"
       variant={props.conversation.isDone ? "row" : "card"}
-      context={!props.conversation.isDone ? <span><i class={props.project?.icon || "ti ti-message"} aria-hidden="true" /> {props.project?.name ?? text("Chat")}</span> : undefined}
-      contextMeta={!props.conversation.isDone ? <span class="inline-flex items-center gap-1.5"><Show when={props.conversation.pinnedAt}><i class="ti ti-pin-filled" aria-label={text("Unpin chat")} /></Show><Format.RelativeTime value={props.conversation.lastUsedAt} /></span> : undefined}
+      context={
+        !props.conversation.isDone ? (
+          <span>
+            <i class={props.project?.icon || "ti ti-message"} aria-hidden="true" /> {props.project?.name ?? text("Chat")}
+          </span>
+        ) : undefined
+      }
+      contextMeta={
+        !props.conversation.isDone ? (
+          <span class="inline-flex items-center gap-1.5">
+            <Show when={props.conversation.pinnedAt}>
+              <i class="ti ti-pin-filled" aria-label={text("Unpin chat")} />
+            </Show>
+            <Format.RelativeTime value={props.conversation.lastUsedAt} />
+          </span>
+        ) : undefined
+      }
       onClick={handleClick}
       active={props.active}
-      description={!props.conversation.isDone && conversationStatusPresentation(props.conversation, locale(), props.active)
-        ? <ConversationStatusMeta conversation={props.conversation} active={props.active} labels hidePin />
-        : undefined}
+      description={
+        !props.conversation.isDone && conversationStatusPresentation(props.conversation, locale(), props.active) ? (
+          <ConversationStatusMeta conversation={props.conversation} active={props.active} labels hidePin />
+        ) : undefined
+      }
       preview={{
         label: text("Chat details"),
         onOpenChange: setPreviewOpen,
@@ -162,19 +197,21 @@ function ConversationSidebarItem(props: {
       }}
     >
       <AppWorkspace.SidebarItemLabel marquee={false}>{props.conversation.title}</AppWorkspace.SidebarItemLabel>
-      <Show when={!props.conversation.pinnedAt}><AppWorkspace.SidebarItemAction
-        icon={props.conversation.isDone ? "ti ti-arrow-back-up" : "ti ti-check"}
-        label={
-          props.conversation.isDone
-            ? text("Reopen chat")
-            : busy()
-              ? text("Stop the response before marking it done")
-              : text("Mark chat done")
-        }
-        disabled={saving() || (!props.conversation.isDone && busy())}
-        visibility="hover"
-        onSelect={() => void toggleDone()}
-      /></Show>
+      <Show when={!props.conversation.pinnedAt}>
+        <AppWorkspace.SidebarItemAction
+          icon={props.conversation.isDone ? "ti ti-arrow-back-up" : "ti ti-check"}
+          label={
+            props.conversation.isDone
+              ? text("Reopen chat")
+              : busy()
+                ? text("Stop the response before marking it done")
+                : text("Mark chat done")
+          }
+          disabled={saving() || (!props.conversation.isDone && busy())}
+          visibility="hover"
+          onSelect={() => void toggleDone()}
+        />
+      </Show>
     </AppWorkspace.SidebarItem>
   );
 }
@@ -186,8 +223,8 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
   const activeConversations = () => props.conversations().filter((conversation) => !conversation.isDone);
   const doneConversations = () => props.conversations().filter((conversation) => conversation.isDone);
   const activeView = () => props.activeView ?? "chat";
-  const activeProjectId = () => activeView() === "chat" ? props.activeProjectId ?? null : null;
-  const activeConversationId = () => activeView() === "chat" && !activeProjectId() ? props.activeConversationId?.() ?? null : null;
+  const activeProjectId = () => (activeView() === "chat" ? (props.activeProjectId ?? null) : null);
+  const activeConversationId = () => (activeView() === "chat" && !activeProjectId() ? (props.activeConversationId?.() ?? null) : null);
   const creatingConversation = () => props.creatingConversation?.() ?? false;
   const pinnedConversations = () =>
     activeConversations()
@@ -330,143 +367,244 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
     {
       sectionLabel: t().chats,
       items: [
-        ...generalConversations()
-          .map((conversation) => ({
-            label: conversation.title,
-            action: () => openConversationFromCommand(conversation),
-          })),
+        ...generalConversations().map((conversation) => ({
+          label: conversation.title,
+          action: () => openConversationFromCommand(conversation),
+        })),
       ],
     },
   ];
 
+  const openSearch = createAssistantSearch({ openConversation: openConversationFromCommand });
+  const [savingIds, setSavingIds] = createSignal<ReadonlySet<string>>(new Set());
+  const chatItem = (conversation: AiConversation): NavigationItem => {
+    const busy = ["queued", "running", "needs_attention", "waiting_for_browser"].includes(conversation.runStatus);
+    return {
+      id: `chat:${conversation.id}`,
+      label: conversation.title,
+      icon: conversation.pinnedAt ? "ti ti-pin" : "ti ti-message",
+      href: assistantConversationHref("/app/assistant", conversation.id),
+      action: `chat:${conversation.id}`,
+      active: activeConversationId() === conversation.id,
+      description: conversationStatusPresentation(conversation, locale(), activeConversationId() === conversation.id)?.label,
+      actions: [
+        { id: `details:${conversation.id}`, action: `details:${conversation.id}`, label: text("Chat details"), icon: "ti ti-info-circle" },
+        ...(!conversation.pinnedAt
+          ? [
+              {
+                id: `done:${conversation.id}`,
+                action: `done:${conversation.id}`,
+                label: conversation.isDone
+                  ? text("Reopen chat")
+                  : busy
+                    ? text("Stop the response before marking it done")
+                    : text("Mark chat done"),
+                icon: conversation.isDone ? "ti ti-arrow-back-up" : "ti ti-check",
+                disabled: savingIds().has(conversation.id) || (!conversation.isDone && busy),
+              },
+            ]
+          : []),
+      ],
+    };
+  };
+  const mobileNavigation = createNavigation({
+    items: () => [
+      { id: "new", action: "new", label: t().newChat, icon: "ti ti-plus", disabled: creatingConversation() },
+      { id: "search", action: "search", label: t().searchChats, icon: "ti ti-search" },
+      { id: "new-project", action: "new-project", label: t().newProject, icon: "ti ti-folder-plus" },
+      {
+        id: "apps",
+        href: "/app/assistant/apps",
+        label: artifactMessages.resolve([locale()]).t.apps,
+        icon: "ti ti-app-window",
+        active: activeView() === "apps",
+      },
+      {
+        id: "projects",
+        label: t().projects,
+        children: (props.projects ?? []).map((project) => ({
+          id: `project:${project.id}`,
+          action: `project:${project.id}`,
+          href: assistantProjectHref("/app/assistant", project.id),
+          label: project.name,
+          icon: project.icon || "ti ti-folder",
+          active: activeProjectId() === project.id,
+        })),
+      },
+      ...(pinnedConversations().length ? [{ id: "pinned", label: t().pinned, children: pinnedConversations().map(chatItem) }] : []),
+      { id: "chats", label: t().chats, children: generalConversations().map(chatItem) },
+      {
+        id: "done-chats",
+        label: text("Done"),
+        badge: props.doneCount ?? doneConversations().length,
+        children: [...doneConversations().map(chatItem), { id: "all", action: "all", label: t().allChats }],
+      },
+      { id: "preferences", action: "preferences", label: t().personalize, icon: "ti ti-user-cog" },
+    ],
+    onAction: async (action) => {
+      if (action === "new") {
+        await props.onNewConversation?.();
+        return;
+      }
+      if (action === "new-project") {
+        await props.onCreateProject?.();
+        return;
+      }
+      if (action === "search") {
+        await openSearch();
+        return;
+      }
+      if (action === "preferences") {
+        await openAssistantPrefsModal();
+        return;
+      }
+      if (action === "all") {
+        openAllChats();
+        return;
+      }
+      const [kind, id] = action.split(":");
+      if (kind === "project") {
+        const project = props.projects?.find((item) => item.id === id);
+        if (project) await openProject(project);
+        return;
+      }
+      const conversation = props.conversations().find((item) => item.id === id);
+      if (!conversation) return;
+      if (kind === "chat") {
+        try {
+          await openConversationFromCommand(conversation);
+        } catch {
+          navigateTo(assistantConversationHref("/app/assistant", conversation.id));
+        }
+      } else if (kind === "details") {
+        await dialogCore.open<void>(
+          (close) => (
+            <PanelDialog>
+              <PanelDialog.Header title={text("Chat details")} close={() => close()} />
+              <PanelDialog.Body>
+                <ConversationSidebarPreview
+                  conversation={props.conversations().find((item) => item.id === id) ?? conversation}
+                  project={props.projects?.find((item) => item.id === conversation.projectId)}
+                  open
+                  edit={() => {
+                    const latest = props.conversations().find((item) => item.id === id);
+                    close();
+                    if (latest) void openEditor(latest);
+                  }}
+                  update={(item) => props.onConversationUpdated?.(item)}
+                />
+              </PanelDialog.Body>
+            </PanelDialog>
+          ),
+          panelDialogOptions,
+        );
+      } else if (kind === "done" && !savingIds().has(conversation.id)) {
+        setSavingIds((ids) => new Set([...ids, conversation.id]));
+        try {
+          props.onConversationUpdated?.(await assistantApi.setConversationDone(conversation.id, !conversation.isDone));
+        } catch {
+          toast.error(text("Could not update chat. Stop the response first or try again."));
+        } finally {
+          setSavingIds((ids) => new Set([...ids].filter((id) => id !== conversation.id)));
+        }
+      }
+    },
+  });
+
   return (
-    <AppWorkspace.Sidebar collapsible>
-      <AppWorkspace.SidebarMobileTrigger label={t().assistant} />
-
-      <AppWorkspace.SidebarMobile>
-        <AppWorkspace.SidebarMobileItems>
-          <AppWorkspace.SidebarItem icon="ti ti-plus" disabled={creatingConversation()} onClick={() => void props.onNewConversation?.()}>
-            {t().newChat}
-          </AppWorkspace.SidebarItem>
-          <AssistantSpotlightButton openConversation={openConversationFromCommand} />
-          <AppWorkspace.SidebarItem icon="ti ti-folder-plus" onClick={() => void props.onCreateProject?.()}>
-            {t().newProject}
-          </AppWorkspace.SidebarItem>
-          <AppWorkspace.SidebarItem icon="ti ti-app-window" href="/app/assistant/apps">
-            {artifactMessages.resolve([locale()]).t.apps}
-          </AppWorkspace.SidebarItem>
-          <AppWorkspace.SidebarItem icon="ti ti-user-cog" onClick={() => void openAssistantPrefsModal()}>
-            {t().personalize}
-          </AppWorkspace.SidebarItem>
-        </AppWorkspace.SidebarMobileItems>
-        <AppWorkspace.SidebarMobileBody scrollPreserveKey="assistant-sidebar-mobile">
-          <ProjectsSection />
-          <PinnedSection />
-          <AppWorkspace.SidebarSection title={t().chats}>
-            <Show when={generalConversations().length > 0} fallback={<p class="px-2 py-1 text-xs text-dimmed">{t().noChats}</p>}>
-              <For each={generalConversations()}>
-                {(conversation) => (
-                  <ConversationSidebarItem
-                    conversation={conversation}
-                    active={conversation.id === activeConversationId()}
-                    open={props.onOpenConversation ? (item) => props.onOpenConversation!(item.id) : undefined}
-                    edit={(item) => void openEditor(item)}
-                    project={props.projects?.find((project) => project.id === conversation.projectId)}
-                    update={(item) => props.onConversationUpdated?.(item)}
-                  />
-                )}
-              </For>
-            </Show>
-          </AppWorkspace.SidebarSection>
-          <DoneSection />
-        </AppWorkspace.SidebarMobileBody>
-      </AppWorkspace.SidebarMobile>
-
-      <AppWorkspace.SidebarDesktop>
-        <AppWorkspace.SidebarIconGrid columns={2} sidebarMode="expanded">
-          <AppWorkspace.SidebarIconAction
-            icon="ti ti-plus"
-            label={t().newChat}
-            disabled={creatingConversation()}
-            onClick={() => void props.onNewConversation?.()}
-          />
-          <AssistantSpotlightButton variant="icon" registerShortcut openConversation={openConversationFromCommand} />
-        </AppWorkspace.SidebarIconGrid>
-
-        <AppWorkspace.SidebarIconGrid columns={3} sidebarMode="collapsed">
-          <AppWorkspace.SidebarIconAction
-            icon="ti ti-plus"
-            label={t().newChat}
-            disabled={creatingConversation()}
-            onClick={() => void props.onNewConversation?.()}
-          />
-          <AssistantSpotlightButton variant="icon" openConversation={openConversationFromCommand} />
-          <AppWorkspace.SidebarIconAction
-            icon="ti ti-folder-plus"
-            label={t().createProject}
-            onClick={() => void props.onCreateProject?.()}
-          />
-        </AppWorkspace.SidebarIconGrid>
-
-        <AppWorkspace.SidebarIconGrid sidebarMode="collapsed">
-          <Dropdown.Root items={collapsedChatMenu()} position="right-start" width="16rem">
-            <Dropdown.Trigger
-              appearance="plain"
-              iconOnly
-              label={t().recentAllChats}
-              class={`k2b-app-workspace__sidebar-icon-action ${activeView() === "all" ? "is-active" : ""}`}
-            >
-              <i class="ti ti-messages" aria-hidden="true" />
-            </Dropdown.Trigger>
-          </Dropdown.Root>
-        </AppWorkspace.SidebarIconGrid>
-
-        <AppWorkspace.SidebarBody scrollPreserveKey="assistant-sidebar" sidebarMode="expanded">
-          <ProjectsSection />
-          <PinnedSection />
-          <AppWorkspace.SidebarSection title={t().chats}>
-            <Show when={generalConversations().length > 0} fallback={<p class="px-2 py-1 text-xs text-dimmed">{t().noChats}</p>}>
-              <For each={generalConversations()}>
-                {(conversation) => (
-                  <ConversationSidebarItem
-                    conversation={conversation}
-                    active={conversation.id === activeConversationId()}
-                    open={props.onOpenConversation ? (item) => props.onOpenConversation!(item.id) : undefined}
-                    edit={(item) => void openEditor(item)}
-                    project={props.projects?.find((project) => project.id === conversation.projectId)}
-                    update={(item) => props.onConversationUpdated?.(item)}
-                  />
-                )}
-              </For>
-            </Show>
-          </AppWorkspace.SidebarSection>
-          <DoneSection />
-        </AppWorkspace.SidebarBody>
-        <AppWorkspace.SidebarFooter sidebarMode="expanded">
-          <AppWorkspace.SidebarItem
-            sidebarMode="expanded"
-            icon="ti ti-app-window"
-            href="/app/assistant/apps"
-            active={activeView() === "apps"}
-          >
-            {artifactMessages.resolve([locale()]).t.apps}
-          </AppWorkspace.SidebarItem>
-          <AppWorkspace.SidebarItem icon="ti ti-user-cog" onClick={() => void openAssistantPrefsModal()}>
-            {t().personalize}
-          </AppWorkspace.SidebarItem>
-        </AppWorkspace.SidebarFooter>
-        <AppWorkspace.SidebarFooter sidebarMode="collapsed">
-          <AppWorkspace.SidebarIconGrid>
-            <AppWorkspace.SidebarIconAction icon="ti ti-check" label={text("Done")} onClick={() => openAllChats(true)} />
+    <>
+      <WorkspaceNavigationProvider navigation={mobileNavigation} label={t().assistant} />
+      <AppWorkspace.Sidebar collapsible>
+        <AppWorkspace.SidebarDesktop>
+          <AppWorkspace.SidebarIconGrid columns={2} sidebarMode="expanded">
             <AppWorkspace.SidebarIconAction
-              icon="ti ti-app-window"
-              label={artifactMessages.resolve([locale()]).t.apps}
-              onClick={() => navigateTo("/app/assistant/apps")}
+              icon="ti ti-plus"
+              label={t().newChat}
+              disabled={creatingConversation()}
+              onClick={() => void props.onNewConversation?.()}
             />
-            <AppWorkspace.SidebarIconAction icon="ti ti-user-cog" label={t().personalize} onClick={() => void openAssistantPrefsModal()} />
+            <AssistantSpotlightButton variant="icon" registerShortcut openConversation={openConversationFromCommand} />
           </AppWorkspace.SidebarIconGrid>
-        </AppWorkspace.SidebarFooter>
-      </AppWorkspace.SidebarDesktop>
-    </AppWorkspace.Sidebar>
+
+          <AppWorkspace.SidebarIconGrid columns={3} sidebarMode="collapsed">
+            <AppWorkspace.SidebarIconAction
+              icon="ti ti-plus"
+              label={t().newChat}
+              disabled={creatingConversation()}
+              onClick={() => void props.onNewConversation?.()}
+            />
+            <AssistantSpotlightButton variant="icon" openConversation={openConversationFromCommand} />
+            <AppWorkspace.SidebarIconAction
+              icon="ti ti-folder-plus"
+              label={t().createProject}
+              onClick={() => void props.onCreateProject?.()}
+            />
+          </AppWorkspace.SidebarIconGrid>
+
+          <AppWorkspace.SidebarIconGrid sidebarMode="collapsed">
+            <Dropdown.Root items={collapsedChatMenu()} position="right-start" width="16rem">
+              <Dropdown.Trigger
+                appearance="plain"
+                iconOnly
+                label={t().recentAllChats}
+                class={`k2b-app-workspace__sidebar-icon-action ${activeView() === "all" ? "is-active" : ""}`}
+              >
+                <i class="ti ti-messages" aria-hidden="true" />
+              </Dropdown.Trigger>
+            </Dropdown.Root>
+          </AppWorkspace.SidebarIconGrid>
+
+          <AppWorkspace.SidebarBody scrollPreserveKey="assistant-sidebar" sidebarMode="expanded">
+            <ProjectsSection />
+            <PinnedSection />
+            <AppWorkspace.SidebarSection title={t().chats}>
+              <Show when={generalConversations().length > 0} fallback={<p class="px-2 py-1 text-xs text-dimmed">{t().noChats}</p>}>
+                <For each={generalConversations()}>
+                  {(conversation) => (
+                    <ConversationSidebarItem
+                      conversation={conversation}
+                      active={conversation.id === activeConversationId()}
+                      open={props.onOpenConversation ? (item) => props.onOpenConversation!(item.id) : undefined}
+                      edit={(item) => void openEditor(item)}
+                      project={props.projects?.find((project) => project.id === conversation.projectId)}
+                      update={(item) => props.onConversationUpdated?.(item)}
+                    />
+                  )}
+                </For>
+              </Show>
+            </AppWorkspace.SidebarSection>
+            <DoneSection />
+          </AppWorkspace.SidebarBody>
+          <AppWorkspace.SidebarFooter sidebarMode="expanded">
+            <AppWorkspace.SidebarItem
+              sidebarMode="expanded"
+              icon="ti ti-app-window"
+              href="/app/assistant/apps"
+              active={activeView() === "apps"}
+            >
+              {artifactMessages.resolve([locale()]).t.apps}
+            </AppWorkspace.SidebarItem>
+            <AppWorkspace.SidebarItem icon="ti ti-user-cog" onClick={() => void openAssistantPrefsModal()}>
+              {t().personalize}
+            </AppWorkspace.SidebarItem>
+          </AppWorkspace.SidebarFooter>
+          <AppWorkspace.SidebarFooter sidebarMode="collapsed">
+            <AppWorkspace.SidebarIconGrid>
+              <AppWorkspace.SidebarIconAction icon="ti ti-check" label={text("Done")} onClick={() => openAllChats(true)} />
+              <AppWorkspace.SidebarIconAction
+                icon="ti ti-app-window"
+                label={artifactMessages.resolve([locale()]).t.apps}
+                onClick={() => navigateTo("/app/assistant/apps")}
+              />
+              <AppWorkspace.SidebarIconAction
+                icon="ti ti-user-cog"
+                label={t().personalize}
+                onClick={() => void openAssistantPrefsModal()}
+              />
+            </AppWorkspace.SidebarIconGrid>
+          </AppWorkspace.SidebarFooter>
+        </AppWorkspace.SidebarDesktop>
+      </AppWorkspace.Sidebar>
+    </>
   );
 }

@@ -30,14 +30,14 @@ const jsonScript = (value: unknown): string => JSON.stringify(value).replace(/</
 export default function LayoutRail(props: LayoutRailProps) {
   return (
     <>
-      <AppLaunchpad apps={props.launchpadApps} legalLinks={props.legalLinks} />
+      <AppLaunchpad profile={{ name: props.profileName, theme: props.theme }} apps={props.launchpadApps} legalLinks={props.legalLinks} />
       <script id="cloud-app-launchpad-data" type="application/json">
-        {jsonScript({ apps: props.launchpadApps, legalLinks: props.legalLinks })}
+        {jsonScript({ apps: props.launchpadApps, legalLinks: props.legalLinks, profile: { name: props.profileName, theme: props.theme } })}
       </script>
       <script id="cloud-rail-data" type="application/json">
         {jsonScript({ apps: props.apps, settings: props.railSettings })}
       </script>
-      <aside class="layout-rail hidden w-10 shrink-0 flex-col md:flex">
+      <aside class="layout-rail hidden w-10 shrink-0 flex-col lg:flex">
         <div class="layout-rail-logo flex h-[2.875rem] shrink-0 items-center justify-center">
           <a href="/" aria-label={props.homeLabel}>
             <img src="/branding/logo" alt="Logo" class="h-5 w-5" />
@@ -45,7 +45,13 @@ export default function LayoutRail(props: LayoutRailProps) {
         </div>
         <nav class="layout-rail-navigation flex min-h-0 flex-1 flex-col items-center gap-1" aria-label={props.appsLabel}>
           <RailApps apps={props.apps} settings={props.railSettings} currentUrl={props.currentUrl} />
-          <AppLaunchpad apps={props.launchpadApps} legalLinks={props.legalLinks} variant="rail" label={props.openAppsLabel} />
+          <AppLaunchpad
+            profile={{ name: props.profileName, theme: props.theme }}
+            apps={props.launchpadApps}
+            legalLinks={props.legalLinks}
+            variant="rail"
+            label={props.openAppsLabel}
+          />
           <div class="mt-auto shrink-0 flex flex-col items-center gap-1">
             <GlobalSearchTrigger variant="rail" searchHelpApps={props.searchHelpApps} />
             <HotkeysHelpRail variant="rail" registerHotkey searchHelpApps={props.searchHelpApps} accent={props.accent} />

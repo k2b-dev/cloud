@@ -13,7 +13,8 @@ import {
   type FilterChipSection,
   IconButton,
   NoticeCard,
-  prompts,ScrollArea,
+  prompts,
+  ScrollArea,
   Select,
   TextInput,
   toast,
@@ -489,35 +490,34 @@ export default function WebhookTester(props: { initialState?: WebhookTesterIniti
   return (
     <div class="flex min-h-0 min-w-0 flex-1">
       <AppWorkspace class="min-h-0 flex-1">
+        <div class="flex flex-col gap-2 p-3 lg:hidden">
+          <Select
+            label={t().sidebarRequests}
+            options={[
+              { id: "receive", label: t().modeReceive },
+              { id: "send", label: t().modeSend },
+            ]}
+            value={() => routeState().mode}
+            onValueChange={(mode) => {
+              if (mode === "receive" || mode === "send")
+                commitRoute({ mode, endpointId: mode === "send" ? null : routeState().endpointId, requestId: null });
+            }}
+          />
+          <Show when={routeState().mode === "receive"}>
+            <Select
+              label={t().sidebarWebhooks}
+              options={[
+                { id: "all", label: t().allEndpoints },
+                ...(endpointsQuery.data() ?? []).map((endpoint) => ({ id: endpoint.id, label: endpoint.name })),
+              ]}
+              value={() => routeState().endpointId ?? "all"}
+              onValueChange={(id) => {
+                if (id) commitRoute({ mode: "receive", endpointId: id === "all" ? null : id, requestId: null });
+              }}
+            />
+          </Show>
+        </div>
         <AppWorkspace.Sidebar>
-          <AppWorkspace.SidebarMobileTrigger label={t().workspaceTitle} />
-          <AppWorkspace.SidebarMobile>
-            <AppWorkspace.SidebarMobileItems scrollPreserveKey="webhook-tester-mobile-modes">
-              <AppWorkspace.SidebarItem
-                active={routeState().mode === "receive"}
-                icon="ti ti-inbox"
-                onClick={() => commitRoute({ mode: "receive", requestId: null }, { replace: false })}
-              >
-                {t().modeReceive}
-              </AppWorkspace.SidebarItem>
-              <AppWorkspace.SidebarItem
-                active={routeState().mode === "send"}
-                icon="ti ti-send"
-                onClick={() => commitRoute({ mode: "send", endpointId: null, requestId: null }, { replace: false })}
-              >
-                {t().modeSend}
-              </AppWorkspace.SidebarItem>
-            </AppWorkspace.SidebarMobileItems>
-            <AppWorkspace.SidebarMobileBody scrollPreserveKey="webhook-tester-mobile-sidebar">
-              <WebhookSidebarBody
-                mode={routeState().mode}
-                endpoints={endpointsQuery.data() ?? []}
-                activeEndpointId={routeState().endpointId}
-                onMode={(mode) => commitRoute({ mode, endpointId: mode === "send" ? null : routeState().endpointId, requestId: null })}
-                onEndpoint={(endpointId) => commitRoute({ mode: "receive", endpointId, requestId: null })}
-              />
-            </AppWorkspace.SidebarMobileBody>
-          </AppWorkspace.SidebarMobile>
           <AppWorkspace.SidebarDesktop>
             <AppWorkspace.SidebarBody scrollPreserveKey="webhook-tester-sidebar">
               <WebhookSidebarBody
@@ -767,7 +767,12 @@ function SendPanel(props: {
       </div>
 
       <div class="grid grid-cols-1 gap-2 lg:grid-cols-[10rem_1fr]">
-        <Select label={t().methodLabel} value={props.method} onValueChange={(value) => props.setMethod(value as Method)} options={METHODS} />
+        <Select
+          label={t().methodLabel}
+          value={props.method}
+          onValueChange={(value) => props.setMethod(value as Method)}
+          options={METHODS}
+        />
         <TextInput
           label={t().targetUrlLabel}
           type="url"
@@ -834,7 +839,11 @@ export function RequestDetail(props: { log: WebhookLog; endpoint: Endpoint | nul
             items={[
               {
                 term: t().colStatus,
-                description: props.log.error ? t().statusError : props.log.responseStatus ? String(props.log.responseStatus) : t().statusLogged,
+                description: props.log.error
+                  ? t().statusError
+                  : props.log.responseStatus
+                    ? String(props.log.responseStatus)
+                    : t().statusLogged,
               },
               { term: t().duration, description: props.log.durationMs === null ? "-" : `${props.log.durationMs} ms` },
               { term: t().contentType, description: props.log.requestContentType ?? "-" },

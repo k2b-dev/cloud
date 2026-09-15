@@ -2,6 +2,7 @@ import { navigateTo } from "@k2b/ssr/nav";
 import { cookies } from "@k2b/stdlib/browser";
 import { mutation, query } from "@k2b/stdlib/solid";
 import {
+  createNavigation,
   AppWorkspace,
   Button,
   ButtonLink,
@@ -23,7 +24,7 @@ import {
   toast,
   useLocale,
 } from "@k2b/ui";
-import { SearchBar } from "@k2b/cloud/ssr/islands";
+import { SearchBar, WorkspaceNavigationProvider } from "@k2b/cloud/ssr/islands";
 import { createMemo, createSignal, For, type JSX, onCleanup, Show } from "solid-js";
 import { apiClient } from "../../api/client";
 import type { FeedbackEntry, PublicSection, PublicSectionInput, ShiftAssignment, UpcomingSlot } from "../../contracts";
@@ -472,64 +473,51 @@ export default function VenueWorkspace(props: VenueWorkspaceProps) {
     cancelAssignment.abort();
   });
 
+  const navigation = createNavigation({
+    items: () => [
+      ...(canWrite(venue())
+        ? [{ id: "signup", label: t().signUp, icon: "ti ti-user-plus", action: "signup", disabled: workspaceActionBlocked() }]
+        : []),
+      { id: "all", label: t().allVenues, icon: "ti ti-layout-grid", href: "/app/venue" },
+      { id: "public", label: t().publicPage, icon: "ti ti-device-tv", action: "public" },
+      ...views().map((item) => ({
+        id: item.id,
+        label: item.label,
+        icon: item.icon,
+        href: viewHref(item.id),
+        active: !selectedSectionId() && view() === item.id,
+      })),
+      ...(canAdmin(venue())
+        ? [
+            {
+              id: "add-section",
+              label: t().addPublicSection,
+              icon: "ti ti-plus",
+              action: "add-section",
+              disabled: workspaceActionBlocked(),
+            },
+          ]
+        : []),
+      ...dashboard().sections.map((section) => ({
+        id: `section:${section.id}`,
+        label: section.title,
+        icon: sectionKindIcon(section.kind),
+        href: sectionHref(section),
+        active: selectedSectionId() === section.id,
+      })),
+      { id: "settings", label: t().venueSettings, icon: "ti ti-settings", action: "settings" },
+    ],
+    onAction: async (action) => {
+      if (action === "signup") await openSignup();
+      if (action === "public") await openPublicPage();
+      if (action === "add-section") await openAddSection();
+      if (action === "settings") await openSettings();
+    },
+  });
   return (
-    <AppWorkspace>
+    <AppWorkspace mobileSurface="flush">
+      <WorkspaceNavigationProvider navigation={navigation} label={venue().name} />
       <AppWorkspace.Sidebar collapsible>
-        <AppWorkspace.SidebarMobileTrigger label={venue().name} />
-
-        <AppWorkspace.SidebarMobile>
-          <AppWorkspace.SidebarMobileItems scrollPreserveKey={`venue-sidebar-mobile-${venue().id}`}>
-            <Show when={canWrite(venue())}>
-              <AppWorkspace.SidebarItem icon="ti ti-user-plus" tone="success" disabled={workspaceActionBlocked()} onClick={openSignup}>
-                Sign up
-              </AppWorkspace.SidebarItem>
-            </Show>
-            <AppWorkspace.SidebarItem href="/app/venue" navigation="document" icon="ti ti-layout-grid">
-              All venues
-            </AppWorkspace.SidebarItem>
-            <AppWorkspace.SidebarItem icon="ti ti-device-tv" onClick={openPublicPage}>
-              Public page
-            </AppWorkspace.SidebarItem>
-            <For each={views()}>
-              {(item) => (
-                <AppWorkspace.SidebarItem
-                  href={viewHref(item.id)}
-                  navigation="document"
-                  icon={item.icon}
-                  active={!selectedSectionId() && view() === item.id}
-                >
-                  {item.label}
-                </AppWorkspace.SidebarItem>
-              )}
-            </For>
-            <Show when={canAdmin(venue())}>
-              <AppWorkspace.SidebarItem
-                icon="ti ti-plus"
-                tone="success"
-                disabled={workspaceActionBlocked()}
-                onClick={() => void openAddSection()}
-              >
-                Add public section
-              </AppWorkspace.SidebarItem>
-            </Show>
-            <For each={dashboard().sections}>
-              {(section) => (
-                <AppWorkspace.SidebarItem
-                  href={sectionHref(section)}
-                  navigation="document"
-                  icon={sectionKindIcon(section.kind)}
-                  active={selectedSectionId() === section.id}
-                >
-                  {section.title}
-                </AppWorkspace.SidebarItem>
-              )}
-            </For>
-            <AppWorkspace.SidebarItem icon="ti ti-settings" onClick={openSettings}>
-              Venue settings
-            </AppWorkspace.SidebarItem>
-          </AppWorkspace.SidebarMobileItems>
-        </AppWorkspace.SidebarMobile>
-
         <AppWorkspace.SidebarDesktop>
           <div class="flex flex-col gap-3">
             <AppWorkspace.SidebarIconGrid columns={canWrite(venue()) ? 3 : 2} sidebarMode="expanded">

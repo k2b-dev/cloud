@@ -1,3 +1,4 @@
+import GridsNavigation from "./GridsNavigation.island";
 import { AppWorkspace, useLocale } from "@k2b/ui";
 import { navigationMessages } from "../../../navigation-messages";
 import BaseSettingsButton from "../sidebar/BaseSettingsButton.island";
@@ -217,67 +218,39 @@ export default function GridsSidebar(props: { state: PublicOkWorkspaceState }) {
   );
 
   return (
-    <AppWorkspace.Sidebar>
-      <AppWorkspace.SidebarMobileTrigger label={state.base.name} />
-      <AppWorkspace.SidebarMobile>
-        <AppWorkspace.SidebarMobileItems scrollPreserveKey={`grids-sidebar-mobile-${state.base.id}`}>
-          {state.canUseEditMode && (
-            <SidebarLink
-              href={state.editModeToggleHref}
-              tone={state.adminModeRequested ? "success" : undefined}
-              class={state.adminModeRequested ? "font-medium" : undefined}
-            >
-              <AppWorkspace.SidebarItemIcon icon={state.adminModeRequested ? "ti ti-check" : "ti ti-tool"} />
-              <AppWorkspace.SidebarItemLabel>{state.adminModeRequested ? t.doneEditing : t.editMode}</AppWorkspace.SidebarItemLabel>
+    <>
+      <GridsNavigation state={state} />
+      <AppWorkspace.Sidebar>
+        <AppWorkspace.SidebarDesktop>
+          <AppWorkspace.SidebarSection>
+            <SidebarLink href="/app/grids">
+              <AppWorkspace.SidebarItemIcon icon="ti ti-layout-grid" />
+              <AppWorkspace.SidebarItemLabel>{t.allGrids}</AppWorkspace.SidebarItemLabel>
             </SidebarLink>
+            {renderQueryItem()}
+            {overviewLink()}
+            {createButton()}
+          </AppWorkspace.SidebarSection>
+          <AppWorkspace.SidebarBody scrollPreserveKey="grids-sidebar">{navigation()}</AppWorkspace.SidebarBody>
+          {(state.canUseEditMode || state.canManageBase) && (
+            <AppWorkspace.SidebarFooter>
+              {state.canUseEditMode && (
+                <SidebarLink
+                  href={state.editModeToggleHref}
+                  tone={state.adminModeRequested ? "success" : undefined}
+                  class={state.adminModeRequested ? "font-medium" : undefined}
+                >
+                  <AppWorkspace.SidebarItemIcon icon={state.adminModeRequested ? "ti ti-check" : "ti ti-tool"} />
+                  <AppWorkspace.SidebarItemLabel>{state.adminModeRequested ? t.doneEditing : t.editMode}</AppWorkspace.SidebarItemLabel>
+                </SidebarLink>
+              )}
+              {state.canManageBase && (
+                <BaseSettingsButton base={state.base} navigationResources={navigationResources(state.base.id, state.catalog)} />
+              )}
+            </AppWorkspace.SidebarFooter>
           )}
-          <SidebarLink href="/app/grids">
-            <AppWorkspace.SidebarItemIcon icon="ti ti-layout-grid" />
-            <AppWorkspace.SidebarItemLabel>{t.allGrids}</AppWorkspace.SidebarItemLabel>
-          </SidebarLink>
-          {renderQueryItem()}
-          {overviewLink()}
-          {createButton()}
-          {state.canManageBase && (
-            <BaseSettingsButton base={state.base} navigationResources={navigationResources(state.base.id, state.catalog)} />
-          )}
-        </AppWorkspace.SidebarMobileItems>
-        <AppWorkspace.SidebarMobileBody
-          class="!max-h-[min(40rem,calc(100dvh-14rem))]"
-          scrollPreserveKey={`grids-sidebar-mobile-body-${state.base.id}`}
-        >
-          {navigation()}
-        </AppWorkspace.SidebarMobileBody>
-      </AppWorkspace.SidebarMobile>
-      <AppWorkspace.SidebarDesktop>
-        <AppWorkspace.SidebarSection>
-          <SidebarLink href="/app/grids">
-            <AppWorkspace.SidebarItemIcon icon="ti ti-layout-grid" />
-            <AppWorkspace.SidebarItemLabel>{t.allGrids}</AppWorkspace.SidebarItemLabel>
-          </SidebarLink>
-          {renderQueryItem()}
-          {overviewLink()}
-          {createButton()}
-        </AppWorkspace.SidebarSection>
-        <AppWorkspace.SidebarBody scrollPreserveKey="grids-sidebar">{navigation()}</AppWorkspace.SidebarBody>
-        {(state.canUseEditMode || state.canManageBase) && (
-          <AppWorkspace.SidebarFooter>
-            {state.canUseEditMode && (
-              <SidebarLink
-                href={state.editModeToggleHref}
-                tone={state.adminModeRequested ? "success" : undefined}
-                class={state.adminModeRequested ? "font-medium" : undefined}
-              >
-                <AppWorkspace.SidebarItemIcon icon={state.adminModeRequested ? "ti ti-check" : "ti ti-tool"} />
-                <AppWorkspace.SidebarItemLabel>{state.adminModeRequested ? t.doneEditing : t.editMode}</AppWorkspace.SidebarItemLabel>
-              </SidebarLink>
-            )}
-            {state.canManageBase && (
-              <BaseSettingsButton base={state.base} navigationResources={navigationResources(state.base.id, state.catalog)} />
-            )}
-          </AppWorkspace.SidebarFooter>
-        )}
-      </AppWorkspace.SidebarDesktop>
-    </AppWorkspace.Sidebar>
+        </AppWorkspace.SidebarDesktop>
+      </AppWorkspace.Sidebar>
+    </>
   );
 }

@@ -10,14 +10,14 @@
  */
 
 import { timed } from "@k2b/stdlib/solid";
-import { AppWorkspace, Button, Placeholder, prompts, TextInput, Tooltip, useLocale } from "@k2b/ui";
+import { AppWorkspace, Placeholder, prompts, TextInput, Tooltip, useLocale } from "@k2b/ui";
 import { createMemo, createSignal, For, Show } from "solid-js";
 import type { PresentationMode } from "../../../../lib/presentation-mode";
 import { buildTagPageUrl } from "../../../params";
 import { notebookWorkspaceMessages } from "../../messages";
 import type { TagSummary } from "./types";
 
-type Variant = "sidebar" | "sidebar-mobile" | "icon";
+type Variant = "sidebar" | "icon";
 
 type Props = {
   notebookId: string;
@@ -95,7 +95,7 @@ const TagsModal = (props: { notebookId: string; tags: TagSummary[]; presentation
   );
 };
 
-const openTagsModal = (notebookId: string, tags: TagSummary[], locale: string, presentationMode?: PresentationMode) => {
+export const openTagsModal = (notebookId: string, tags: TagSummary[], locale: string, presentationMode?: PresentationMode) => {
   const { t } = notebookWorkspaceMessages.resolve([locale]);
   return prompts.dialog<void>(() => <TagsModal notebookId={notebookId} tags={tags} presentationMode={presentationMode} />, {
     title: t.tags,
@@ -120,19 +120,6 @@ export default function TagsButton(props: Props) {
     );
   }
 
-  if (props.variant === "sidebar-mobile") {
-    return (
-      <Button
-        variant="ghost"
-        size="sm"
-        class="w-full justify-start"
-        onClick={() => void openTagsModal(props.notebookId, props.tags, locale(), props.presentationMode)}
-      >
-        <i class="ti ti-hash" />
-        {t().tags} ({tagCount()})
-      </Button>
-    );
-  }
   return (
     <AppWorkspace.SidebarItem
       icon="ti ti-hash"

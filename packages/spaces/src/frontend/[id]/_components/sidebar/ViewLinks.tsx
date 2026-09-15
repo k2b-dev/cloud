@@ -8,10 +8,10 @@ type Props = {
   spaceId: string;
   query: string;
   currentView: ViewType;
-  variant: "mobile" | "desktop" | "collapsed";
+  variant: "desktop" | "collapsed";
 };
 
-export default function ViewLinks(props: Props) {
+export function createSpaceViews(props: Omit<Props, "variant">) {
   const t = useSpaceMessages();
   const [query, setQuery] = createSignal(props.query);
   const path = `/app/spaces/${props.spaceId}`;
@@ -38,6 +38,11 @@ export default function ViewLinks(props: Props) {
     return `${path}?${params}`;
   };
 
+  return { views, href };
+}
+
+export default function ViewLinks(props: Props) {
+  const { views, href } = createSpaceViews(props);
   return views.map((view) =>
     props.variant === "collapsed" ? (
       <AppWorkspace.SidebarIconAction

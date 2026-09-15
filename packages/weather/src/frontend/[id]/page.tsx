@@ -168,7 +168,7 @@ export default ssr<AuthContext>(async (c) => {
         title={[{ title: t.start, href: "/" }, { title: t.appName, href: "/app/weather" }, { title: t.notFound }]}
       >
         <div class="min-h-0 min-w-0 flex-1 overflow-hidden">
-          <AppWorkspace>
+          <AppWorkspace mobileSurface="flush">
             <LocationSidebar locations={locations} activeId={id} weatherMap={new Map()} />
             <AppWorkspace.Content>
               <AppWorkspace.Main>
@@ -213,7 +213,7 @@ export default ssr<AuthContext>(async (c) => {
       title={[{ title: t.start, href: "/" }, { title: t.appName, href: "/app/weather" }, { title: activeLocation.name }]}
     >
       <div class="min-h-0 min-w-0 flex-1 overflow-hidden">
-        <AppWorkspace>
+        <AppWorkspace mobileSurface="flush">
           <LocationSidebar locations={locations} activeId={id} weatherMap={weatherMap} />
 
           <AppWorkspace.Content>

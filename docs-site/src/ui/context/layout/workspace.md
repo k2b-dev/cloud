@@ -47,7 +47,15 @@ controls visibility, so local state and SSR DOM identity remain stable.
 
 ## Navigation
 
-Provide both `SidebarMobile` and `SidebarDesktop` when the workspace has navigation. Sidebar items with an `href` remain real links.
+`Sidebar` with `SidebarDesktop` supplies the persistent desktop navigation at
+1024 px and above. Below 1024 px, the host renders its mobile navigation using
+[createNavigation and Navigation](/en/ui/layout/navigation), usually inside a
+[BottomSheet](/en/ui/layout/bottom-sheet). AppWorkspace adds no mobile launcher,
+second application title, or tablet menu. Sidebar items with an `href` remain real links.
+
+Set `mobileSurface="flush"` on an outer workspace when the host supplies the
+mobile chrome. This removes its exterior border, radius, shadow, and background
+on mobile. Embedded workspaces keep the default contained surface.
 
 Sidebar links use document navigation by default. Set `navigation="enhanced"`
 only inside an island that loads and applies the target state before committing
@@ -68,9 +76,6 @@ their normal visible scrollbar treatment.
 
 The sidebar compound members cover these jobs:
 
-- `SidebarMobileTrigger` supplies the compact menu label and standard menu icon;
-- `SidebarMobile`, `SidebarMobileItems`, and `SidebarMobileBody` compose the
-  compact navigation;
 - `SidebarDesktop`, `SidebarBody`, `SidebarSection`, and `SidebarFooter`
   compose the persistent navigation;
 - `SidebarItem`, `SidebarItemIcon`, `SidebarItemLabel`, `SidebarItemMeta`,
@@ -81,9 +86,7 @@ The sidebar compound members cover these jobs:
 
 Desktop sidebars are action-first: begin with primary actions or navigation,
 not a repeated application title. Put persistent secondary navigation in
-`SidebarFooter`; when Settings exists, it is the final footer item. The compact
-trigger is mobile-only and deliberately owns no application-specific icon or
-accent tile.
+`SidebarFooter`; when Settings exists, it is the final footer item. The host owns the mobile trigger and application identity.
 
 Pass labelled shared controls through `SidebarSection.actions` when a section
 needs a compact header action such as creating a resource. The section owns
@@ -202,6 +205,7 @@ const [expanded, setExpanded] = createSignal<readonly string[]>(["mail"]);
 
 ```ts
 type AppWorkspaceProps = {
+  mobileSurface?: "contained" | "flush";
   children: JSX.Element; class?: string; resizable?: boolean;
   layoutState?: () => AppWorkspaceLayoutState | null | undefined;
   onLayoutChange?: (state: AppWorkspaceLayoutState) => void; controller?: false;
@@ -241,16 +245,9 @@ type AppWorkspaceBottomDrawerProps = {
 
 ```ts
 type AppWorkspaceSidebarProps = {
+  label?: string;
   children: JSX.Element; class?: string; resizable?: boolean; resizeShadow?: boolean; collapsible?: boolean;
   defaultSize?: number; minSize?: number; maxSize?: number;
-};
-
-type AppWorkspaceSidebarMobileTriggerProps = { label: string };
-
-type AppWorkspaceSidebarMobileProps = { children: JSX.Element };
-
-type AppWorkspaceSidebarMobileItemsProps = {
-  children: JSX.Element; scrollPreserveKey?: string | false;
 };
 
 type AppWorkspaceSidebarBodyProps = {
@@ -477,18 +474,6 @@ The package exports parse, normalize, serialize, and style helpers for layout st
 ```tsx
 <AppWorkspace class="app-shell-frame">
   <AppWorkspace.Sidebar collapsible>
-    <AppWorkspace.SidebarMobileTrigger label="Inventory" />
-    <AppWorkspace.SidebarMobile>
-      <AppWorkspace.SidebarMobileItems>
-        <AppWorkspace.SidebarItem
-          href="/app/inventory"
-          icon="ti ti-list"
-          active
-        >
-          All items
-        </AppWorkspace.SidebarItem>
-      </AppWorkspace.SidebarMobileItems>
-    </AppWorkspace.SidebarMobile>
     <AppWorkspace.SidebarDesktop>
       <AppWorkspace.SidebarBody scrollPreserveKey="inventory-sidebar">
         <AppWorkspace.SidebarSection title="Views">

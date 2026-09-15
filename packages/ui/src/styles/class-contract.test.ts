@@ -48,8 +48,8 @@ const sources = walk(resolve(packageRoot, "src"));
 const isForeignContract = (token: string) =>
   token === "ti" || token.startsWith("ti-") || token.startsWith("cd-") || token.startsWith("md-") || token.startsWith("stdlib-");
 
-/** Deliberate marker classes composed onto an already-styled base. */
-const HOOK_CLASSES = new Set(["k2b-copy-button"]);
+/** Marker classes: CopyButton uses its base styles; Navigation styles its lists and rows. */
+const HOOK_CLASSES = new Set(["k2b-copy-button", "k2b-navigation"]);
 
 /**
  * `is-*` / `has-*` state modifiers are the package's own convention and are

@@ -1095,7 +1095,7 @@ export default function PulseWorkspace(props: PulseWorkspaceProps) {
   };
 
   return (
-    <AppWorkspace class={`${activeView() === "explorer" ? "min-h-0" : "min-h-[760px]"}`}>
+    <AppWorkspace mobileSurface="flush" class={`${activeView() === "explorer" ? "min-h-0" : "min-h-[760px]"}`}>
       <PulseSidebar
         title={selectedBase()?.name ?? t().appName}
         activeView={activeView()}
@@ -1110,6 +1110,8 @@ export default function PulseWorkspace(props: PulseWorkspaceProps) {
         createDashboard={createDashboard}
         openDashboard={openDashboard}
         renderDashboardItem={renderDashboardSidebarItem}
+        selectedDashboardId={selectedDashboardId()}
+        openDashboardEditor={openDashboardEditor}
         openResources={openResources}
         openSources={openSources}
         openQueryExplorer={openQueryExplorer}

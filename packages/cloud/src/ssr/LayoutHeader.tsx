@@ -11,6 +11,7 @@ import ProfilePreferences from "./ProfilePreferences.island";
 
 type LayoutHeaderProps = {
   accent?: string;
+  appLabel?: string;
   authenticated: boolean;
   breadcrumbs: LayoutBreadcrumb[];
   homeLabel: string;
@@ -27,7 +28,7 @@ type LayoutHeaderProps = {
 export default function LayoutHeader(props: LayoutHeaderProps) {
   return (
     <header
-      class="layout-header paper flex min-h-[2.875rem] shrink-0 items-center justify-between px-2 py-1.5 md:px-3 md:py-2"
+      class="layout-header paper flex min-h-[2.875rem] shrink-0 items-center justify-between px-2 py-1.5 lg:px-3 lg:py-2"
       style="box-shadow: var(--ui-shadow-surface)"
     >
       <div class="flex min-w-0 items-center gap-2">
@@ -35,22 +36,22 @@ export default function LayoutHeader(props: LayoutHeaderProps) {
           href="/"
           class={
             props.authenticated
-              ? "inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-dimmed transition-colors hover:bg-zinc-100 hover:text-secondary md:hidden dark:hover:bg-zinc-800"
+              ? "inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-dimmed transition-colors hover:bg-zinc-100 hover:text-secondary lg:hidden dark:hover:bg-zinc-800"
               : "flex shrink-0 items-center"
           }
           aria-label={props.homeLabel}
         >
           <img src="/branding/logo" alt="" class={props.authenticated ? "h-4 w-4" : "h-6 w-6"} />
         </a>
-        <div class="hidden min-w-0 items-center md:flex">
+        <div class="hidden min-w-0 items-center lg:flex">
           <LayoutBreadcrumbs breadcrumbs={props.breadcrumbs} />
         </div>
-        <div class="flex min-w-0 items-center md:hidden">
-          <LayoutBreadcrumbs breadcrumbs={props.breadcrumbs} mobile />
+        <div class="flex min-w-0 items-center lg:hidden">
+          <span class="truncate font-semibold">{props.appLabel ?? props.breadcrumbs.at(-1)?.title}</span>
         </div>
       </div>
       <div class="flex shrink-0 items-center gap-1">
-        <div class="flex items-center gap-1 md:hidden">
+        <div class="flex items-center gap-1 lg:hidden">
           <HotkeysHelpRail
             variant="header"
             registerHotkey={!props.authenticated}
@@ -61,13 +62,37 @@ export default function LayoutHeader(props: LayoutHeaderProps) {
         </div>
         {props.authenticated ? (
           <>
-            <div class="md:hidden">
-              <AppLaunchpad apps={props.launchpadApps} legalLinks={props.legalLinks} variant="header" label={props.openAppsLabel} />
+            <div class="lg:hidden">
+              <AppLaunchpad
+                profile={props.authenticated ? { name: props.profileName, theme: props.theme } : undefined}
+                apps={props.launchpadApps}
+                legalLinks={props.legalLinks}
+                variant="header"
+                label={props.openAppsLabel}
+              />
             </div>
-            <ProfilePreferences avatarSrc={props.profileAvatarSrc} initialTheme={props.theme} name={props.profileName} placement="header" />
+            <div class="hidden lg:block">
+              <ProfilePreferences
+                avatarSrc={props.profileAvatarSrc}
+                initialTheme={props.theme}
+                name={props.profileName}
+                placement="header"
+              />
+            </div>
           </>
         ) : (
           <>
+            {props.appLabel && (
+              <div class="lg:hidden">
+                <AppLaunchpad
+                  profile={props.authenticated ? { name: props.profileName, theme: props.theme } : undefined}
+                  apps={props.launchpadApps}
+                  legalLinks={props.legalLinks}
+                  variant="header"
+                  label={props.openAppsLabel}
+                />
+              </div>
+            )}
             <LayoutPreferences initialTheme={props.theme} position="bottom-left" />
             <ButtonLink href="/auth/login" size="sm" variant="primary">
               <i class="ti ti-login" aria-hidden="true" />

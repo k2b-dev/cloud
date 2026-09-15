@@ -1,7 +1,8 @@
+import { WorkspaceNavigationProvider } from "@k2b/cloud/ssr/islands";
 import { queryMessages } from "./query-messages";
 import { createDatabaseHost } from "./database-host";
 import { batch, createMemo, createSignal, For, Show, onCleanup, onMount } from "solid-js";
-import { AppWorkspace, Button, Dropdown, MarkdownView, Paper, prompts, useLocale } from "@k2b/ui";
+import { createNavigation, AppWorkspace, Button, Dropdown, MarkdownView, Paper, prompts, useLocale } from "@k2b/ui";
 import { openKitModal } from "./modal-host";
 import { LocalFiles } from "./LocalFiles";
 import { KitSettings } from "./KitSettings";
@@ -560,16 +561,70 @@ export default function Workbench(props: {
       </section>
     </Show>
   );
+  const mobileNavigation = createNavigation({
+    items: () => [
+      { id: "all", label: t().all, href: "/app/kit", icon: "ti ti-arrow-left" },
+      ...(props.edit
+        ? source().map((file) => ({ path: file.path, name: file.path, icon: isPage(file.path) ? "ti ti-file-text" : "ti ti-file-code" }))
+        : entries()
+      ).map((entry) => ({
+        id: `file:${entry.path}`,
+        label: entry.name,
+        icon: entry.icon,
+        action: `file:${entry.path}`,
+        active: (props.edit ? selectedFile() : selectedEntry()) === entry.path,
+        actions: props.edit
+          ? [
+              { id: `rename:${entry.path}`, label: t().renameFile, icon: "ti ti-pencil", action: `rename:${entry.path}` },
+              { id: `remove:${entry.path}`, label: t().deleteFile, icon: "ti ti-trash", action: `remove:${entry.path}` },
+            ]
+          : [],
+      })),
+      ...(props.edit
+        ? [
+            { id: "add", label: t().addFile, icon: "ti ti-plus", action: "add" },
+            { id: "add-page", label: t().addPage, icon: "ti ti-file-plus", action: "add-page" },
+          ]
+        : []),
+      ...(saved().permission === "admin"
+        ? [
+            {
+              id: "mode",
+              label: props.edit ? t().use : t().edit,
+              icon: props.edit ? "ti ti-player-play" : "ti ti-code",
+              href: `/app/kit/${saved().id}${props.edit ? "" : "/edit"}`,
+            },
+          ]
+        : []),
+      ...(databaseEnabled()
+        ? [
+            {
+              id: "database",
+              label: queryMessages.resolve([locale()]).t.title,
+              icon: "ti ti-terminal",
+              href: `/app/kit/${saved().id}/database`,
+            },
+          ]
+        : []),
+      { id: "local-data", label: t().localData, icon: "ti ti-folder", action: "local-data", disabled: clearing() || settingsOpen() },
+      { id: "settings", label: t().settings, icon: "ti ti-settings", action: "settings", disabled: clearing() || settingsOpen() },
+    ],
+    onAction: async (action) => {
+      if (action.startsWith("file:")) {
+        if (props.edit) setSelectedFile(action.slice(5));
+        else await switchEntry(action.slice(5));
+      } else if (action.startsWith("rename:")) await renameFile(action.slice(7));
+      else if (action.startsWith("remove:")) await removeFile(action.slice(7));
+      else if (action === "add") await addFile();
+      else if (action === "add-page") await addFile(false, true);
+      else if (action === "local-data") await localData();
+      else if (action === "settings") await settings();
+    },
+  });
   return (
-    <AppWorkspace class={`kit-workspace ${props.edit ? "kit-edit" : "kit-use"}`}>
+    <AppWorkspace mobileSurface="flush" class={`kit-workspace ${props.edit ? "kit-edit" : "kit-use"}`}>
+      <WorkspaceNavigationProvider navigation={mobileNavigation} label={props.edit ? t().files : t().pages} />
       <AppWorkspace.Sidebar>
-        <AppWorkspace.SidebarMobileTrigger label={props.edit ? t().files : t().pages} />
-        <AppWorkspace.SidebarMobile>
-          <AppWorkspace.SidebarMobileItems>
-            {navigation()}
-            {footer()}
-          </AppWorkspace.SidebarMobileItems>
-        </AppWorkspace.SidebarMobile>
         <AppWorkspace.SidebarDesktop>
           <AppWorkspace.SidebarBody>
             <AppWorkspace.SidebarSection title={props.edit ? t().files : t().pages}>{navigation()}</AppWorkspace.SidebarSection>

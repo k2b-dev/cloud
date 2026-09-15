@@ -408,3 +408,12 @@ works without that extension. Rolling back requires a consistent old image set
 and application restarts to repopulate its NATS registry; retained SQL rows do
 not make old readers compatible. Retired NATS resource removal is a separate
 operator action after verifying the cutover.
+
+## Workspace mobile navigation
+
+The `AppWorkspace.SidebarMobileTrigger`, `SidebarMobile`, `SidebarMobileItems`,
+and `SidebarMobileBody` slots and their prop types have been removed. There is
+no compatibility renderer. Use `createNavigation` and let the host render
+`Navigation`; Cloud applications bind it through `WorkspaceNavigationProvider`
+or the SSR `WorkspaceNavigation` island. Keep `SidebarDesktop` for desktop.
+See [Application shells](/en/docs/frontend/application-shells#supply-mobile-navigation).

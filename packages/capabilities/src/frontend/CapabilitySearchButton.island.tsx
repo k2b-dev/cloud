@@ -1,5 +1,5 @@
-import { navigateTo } from "@k2b/ssr/nav";
-import { isSpotlightShortcut, openSpotlightSearch, SPOTLIGHT_SHORTCUT_TITLE, SpotlightButton, type SpotlightButtonVariant, useLocale } from "@k2b/ui";
+import { createCapabilitySearch } from "./capability-search";
+import { isSpotlightShortcut, SPOTLIGHT_SHORTCUT_TITLE, SpotlightButton, type SpotlightButtonVariant, useLocale } from "@k2b/ui";
 import { onCleanup, onMount } from "solid-js";
 import { capabilityUiMessages } from "./messages";
 
@@ -19,28 +19,7 @@ type Props = {
 export default function CapabilitySearchButton(props: Props) {
   const locale = useLocale();
   const t = () => capabilityUiMessages.resolve([locale()]).t;
-  const openSearch = async () => {
-    const selected = await openSpotlightSearch<CapabilitySearchEntry>({
-      title: t().search,
-      icon: "ti ti-api-app",
-      placeholder: t().searchPlaceholder,
-      noResultsText: t().noSearchResults,
-      resolve: ({ query }) => {
-        const needle = query.trim().toLocaleLowerCase();
-        return props.entries
-          .filter((entry) => !needle || `${entry.label} ${entry.description}`.toLocaleLowerCase().includes(needle))
-          .map((entry) => ({
-            value: entry,
-            label: entry.label,
-            desc: entry.description,
-            icon: entry.icon,
-          }));
-      },
-    });
-
-    if (selected?.value) navigateTo(selected.value.href);
-  };
-
+  const openSearch = createCapabilitySearch(props);
   onMount(() => {
     if (!props.registerShortcut) return;
     const onKeyDown = (event: KeyboardEvent) => {

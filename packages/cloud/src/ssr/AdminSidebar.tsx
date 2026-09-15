@@ -1,3 +1,4 @@
+import WorkspaceNavigation from "./WorkspaceNavigation.island";
 import { AppWorkspace, useLocale } from "@k2b/ui";
 import { activeAdminHref } from "./admin-active-link";
 import { type AdminLink, buildAdminGroups } from "./admin-navigation";
@@ -31,20 +32,33 @@ export default function AdminSidebar({ currentPath, apps }: { currentPath: strin
   const groups = () => buildAdminGroups(apps, locale());
 
   return (
-    <AppWorkspace.Sidebar resizable={false}>
-      <AppWorkspace.SidebarMobileTrigger label={t().admin} />
-
-      <AppWorkspace.SidebarMobile>
-        <AppWorkspace.SidebarMobileBody scrollPreserveKey="admin-sidebar-mobile">
-          <AdminNavigation currentPath={currentPath} groups={groups()} />
-        </AppWorkspace.SidebarMobileBody>
-      </AppWorkspace.SidebarMobile>
-
-      <AppWorkspace.SidebarDesktop>
-        <AppWorkspace.SidebarBody scrollPreserveKey="admin-sidebar">
-          <AdminNavigation currentPath={currentPath} groups={groups()} />
-        </AppWorkspace.SidebarBody>
-      </AppWorkspace.SidebarDesktop>
-    </AppWorkspace.Sidebar>
+    <>
+      <WorkspaceNavigation
+        label={t().admin}
+        items={groups().map((group) => ({
+          id: group.label,
+          label: group.label,
+          children: group.links.map((link) => ({
+            id: link.href,
+            label: link.label,
+            href: link.href,
+            icon: `ti ${link.icon}`,
+            active:
+              link.href ===
+              activeAdminHref(
+                currentPath,
+                groups().flatMap((entry) => entry.links.map((entry) => entry.href)),
+              ),
+          })),
+        }))}
+      />
+      <AppWorkspace.Sidebar resizable={false}>
+        <AppWorkspace.SidebarDesktop>
+          <AppWorkspace.SidebarBody scrollPreserveKey="admin-sidebar">
+            <AdminNavigation currentPath={currentPath} groups={groups()} />
+          </AppWorkspace.SidebarBody>
+        </AppWorkspace.SidebarDesktop>
+      </AppWorkspace.Sidebar>
+    </>
   );
 }

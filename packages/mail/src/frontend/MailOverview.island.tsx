@@ -398,7 +398,7 @@ export default function MailOverview(props: {
   );
 
   return (
-    <AppWorkspace class="mail-focus-workspace" resizable={false}>
+    <AppWorkspace mobileSurface="flush" class="mail-focus-workspace" resizable={false}>
       <h1 class="sr-only">Mail</h1>
       <AppWorkspace.Content>
         <AppWorkspace.Main class="mail-focus-main" aria-busy={focusResults.loading() || focusResults.refreshing()}>

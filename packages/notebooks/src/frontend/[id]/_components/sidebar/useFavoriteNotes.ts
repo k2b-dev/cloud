@@ -12,9 +12,9 @@ export function useFavoriteNotes(params: { notebookId: string; initialFavoriteNo
 
   createEffect(() => setFavoriteNoteIds(new Set(params.initialFavoriteNoteIds())));
 
-  const toggleFavorite = async (note: NoteTreeNode, event: MouseEvent) => {
-    event.preventDefault();
-    event.stopPropagation();
+  const toggleFavorite = async (note: NoteTreeNode, event?: MouseEvent) => {
+    event?.preventDefault();
+    event?.stopPropagation();
     if (pendingNoteIds.has(note.id)) return;
     pendingNoteIds.add(note.id);
     const next = !favoriteNoteIds().has(note.id);

@@ -1297,7 +1297,7 @@ export default function AssistantWorkspace(props: Props) {
 
   return (
     <AssistantLiveProvider value={liveHub}>
-      <AppWorkspace class="flex-1 min-h-0">
+      <AppWorkspace mobileSurface="flush" class="flex-1 min-h-0">
         <AssistantSidebar
           conversations={conversations}
           doneCount={sidebar.data()?.doneCount ?? props.initialDoneCount}

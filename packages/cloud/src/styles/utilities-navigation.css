@@ -135,13 +135,9 @@
   @apply lg:hidden flex flex-col gap-3;
 }
 
-@utility sidebar-mobile-toggle {
-  @apply sidebar-header cursor-pointer select-none list-none;
-}
 
-@utility sidebar-mobile-actions {
-  @apply flex flex-wrap gap-2;
-}
+
+
 
 @utility sidebar-item-mobile {
   @apply btn-input btn-input-sm;
@@ -888,7 +884,7 @@
   }
 }
 
-@media (min-width: 768px) and (hover: hover) and (pointer: fine) {
+@media (min-width: 1024px) and (hover: hover) and (pointer: fine) {
   .layout-profile-preferences__link,
   .layout-profile-preferences__panel {
     display: flex;
@@ -896,20 +892,6 @@
 
   .layout-profile-preferences > .layout-profile-preferences__dropdown {
     display: none;
-  }
-}
-
-/* Keep the 46px header for wider desktop viewports. Compact and 14-inch
-   laptop widths stay rail-only, while viewports wider than 1536px retain the
-   header. Because it becomes display:none, the shell flex gap adds no empty
-   top row or double spacing. */
-@media (min-width: 768px) and (max-width: 96rem) {
-  .cloud-app-canvas[data-layout-authenticated="true"] .layout-header {
-    display: none;
-  }
-
-  .cloud-app-canvas[data-layout-authenticated="true"] .layout-profile-preferences[data-placement="rail"] {
-    display: inline-flex;
   }
 }
 
@@ -958,24 +940,6 @@
   min-height: var(--ui-control-md);
   gap: 0.625rem;
   padding: 0 0.25rem;
-}
-
-.workspace-sidebar-mobile > details {
-  overflow: hidden;
-  border: 0;
-  border-radius: 0;
-  background: var(--ui-surface-subtle);
-  box-shadow: none;
-}
-
-.workspace-sidebar-mobile .sidebar-mobile-toggle {
-  min-height: 2.75rem;
-  padding: 0.375rem 0.625rem;
-}
-
-.workspace-sidebar-mobile .sidebar-mobile-actions {
-  gap: var(--ui-space-control);
-  padding: 0 0.625rem 0.625rem;
 }
 
 .sidebar-header-icon {

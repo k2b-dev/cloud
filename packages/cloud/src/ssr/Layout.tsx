@@ -204,7 +204,7 @@ export default function Layout(props: LayoutProps) {
     user?.avatarHash && user.id
       ? `/api/accounts/users/${encodeURIComponent(user.id)}/avatar?rev=${encodeURIComponent(user.avatarHash)}`
       : undefined;
-  const mainLayoutClass = fullPage || fullWidth ? "flex flex-col" : "md:overflow-auto";
+  const mainLayoutClass = fullPage || fullWidth ? "flex flex-col" : "lg:overflow-auto";
   const canvasStyle =
     [appAppearanceStyle(currentApp?.appearance), appWorkspaceLayoutStyle(workspaceLayout), focusMode && flushCanvas ? "padding:0" : ""]
       .filter(Boolean)
@@ -230,7 +230,7 @@ export default function Layout(props: LayoutProps) {
   return (
     <LocaleProvider locale={lang}>
       <div
-        class={`cloud-app-canvas relative flex w-full ${fullPage ? "h-dvh overflow-hidden" : "min-h-screen md:h-screen md:overflow-hidden"}`}
+        class={`cloud-app-canvas relative flex w-full ${fullPage ? "h-dvh overflow-hidden" : "min-h-screen lg:h-screen lg:overflow-hidden"}`}
         style={canvasStyle}
         data-app-id={currentApp?.id}
         data-layout-authenticated={showRail ? "true" : undefined}
@@ -259,6 +259,7 @@ export default function Layout(props: LayoutProps) {
         )}
         <div class="layout-shell-content flex min-h-0 min-w-0 flex-1 flex-col">
           <LayoutHeader
+            appLabel={currentApp?.name ?? (pathname.startsWith("/admin") ? t.admin : undefined)}
             accent={currentApp?.appearance?.accent}
             authenticated={showRail}
             breadcrumbs={breadcrumbs}

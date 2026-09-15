@@ -27,9 +27,6 @@ export type {
   AppWorkspaceSidebarItemMetaProps,
   AppWorkspaceSidebarItemProps,
   AppWorkspaceSidebarItemTone,
-  AppWorkspaceSidebarMobileItemsProps,
-  AppWorkspaceSidebarMobileProps,
-  AppWorkspaceSidebarMobileTriggerProps,
   AppWorkspaceSidebarProps,
   AppWorkspaceSidebarSectionProps,
   AppWorkspaceSidebarVisibility,
@@ -185,3 +182,6 @@ export type {
   SettingsModalTabTone,
 } from "./SettingsModal";
 export { default as SettingsModal } from "./SettingsModal";
+export { default as BottomSheet, bottomSheetOptions, type BottomSheetProps } from "./BottomSheet";
+export { default as Navigation, type NavigationProps } from "./Navigation";
+export { createNavigation, findNavigationItem, type NavigationController, type NavigationItem, type NavigationOptions } from "./navigation-model";

@@ -103,7 +103,7 @@ export default function GridsWorkspace(props: { state: PublicOkWorkspaceState; c
         canAdmin={props.state.canManageBase}
       />
       <div id={`grids-workspace-${props.state.base.id}`} class="contents">
-        <AppWorkspace class={workspaceRootClass(props.state.adminModeRequested)}>
+        <AppWorkspace mobileSurface="flush" class={workspaceRootClass(props.state.adminModeRequested)}>
           <GridsSidebar state={props.state} />
           <AppWorkspace.Content>
             <GridsRoute state={routeClientState(props.state)} cloudUrl={props.cloudUrl} />

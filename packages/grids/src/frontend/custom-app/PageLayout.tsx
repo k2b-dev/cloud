@@ -185,15 +185,9 @@ export function CustomAppPageLayout(props: {
   );
 
   return (
-    <AppWorkspace class="min-h-0 flex-1">
+    <AppWorkspace mobileSurface={props.editor ? "contained" : "flush"} class="min-h-0 flex-1">
       <Show when={hasSidebar()}>
         <AppWorkspace.Sidebar>
-          <AppWorkspace.SidebarMobileTrigger label={props.definition.name} />
-          <AppWorkspace.SidebarMobile>
-            <AppWorkspace.SidebarMobileBody scrollPreserveKey={`grids-app-${props.definition.id}-mobile`}>
-              <SidebarContent />
-            </AppWorkspace.SidebarMobileBody>
-          </AppWorkspace.SidebarMobile>
           <AppWorkspace.SidebarDesktop>
             <AppWorkspace.SidebarBody scrollPreserveKey={`grids-app-${props.definition.id}`}>
               <SidebarContent />

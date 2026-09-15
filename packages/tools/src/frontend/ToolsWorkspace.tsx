@@ -1,3 +1,4 @@
+import ToolsNavigation from "./ToolsNavigation.island";
 import { i18n } from "@k2b/stdlib";
 import { AppWorkspace, useLocale } from "@k2b/ui";
 import { createMemo, type JSX } from "solid-js";
@@ -52,23 +53,9 @@ export const ToolsWorkspace = (props: ToolsWorkspaceProps) => {
 
   return (
     <div class="flex min-h-0 min-w-0 flex-1">
-      <AppWorkspace class="min-h-0 flex-1">
+      <AppWorkspace mobileSurface="flush" class="min-h-0 flex-1">
+        <ToolsNavigation overviewLabel={t().overview} activeToolId={props.activeToolId} />
         <AppWorkspace.Sidebar collapsible>
-          <AppWorkspace.SidebarMobileTrigger label="Tools" />
-          <AppWorkspace.SidebarMobile>
-            <AppWorkspace.SidebarMobileItems scrollPreserveKey="tools-sidebar-mobile">
-              <AppWorkspace.SidebarItem href="/tools" navigation="document" icon="ti ti-layout-grid" active={!props.activeToolId}>
-                {t().overview}
-              </AppWorkspace.SidebarItem>
-              <ToolSearchButton variant="sidebar-mobile" />
-              {registry()
-                .tools.filter((tool) => tool.featured)
-                .map(renderItem)}
-            </AppWorkspace.SidebarMobileItems>
-            <AppWorkspace.SidebarMobileBody scrollPreserveKey="tools-sidebar-mobile-body">
-              {categoryNavigation()}
-            </AppWorkspace.SidebarMobileBody>
-          </AppWorkspace.SidebarMobile>
           <AppWorkspace.SidebarDesktop>
             <AppWorkspace.SidebarBody scrollPreserveKey="tools-sidebar">
               <AppWorkspace.SidebarIconGrid columns={2}>

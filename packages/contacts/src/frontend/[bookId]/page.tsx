@@ -131,7 +131,7 @@ export default ssr<AuthContext>(async (c) => {
       title={[{ title: t.breadcrumbStart, href: "/" }, { title: t.breadcrumbContacts, href: "/app/contacts" }, { title: currentBook.name }]}
     >
       <ContactsLiveEvents scope={{ kind: "book", bookId: publicBookId }} initialCursor={initialLiveCursor} />
-      <AppWorkspace>
+      <AppWorkspace mobileSurface="flush">
         <ContactsSidebar books={books} active={currentBook.id} adminBookIds={adminBookIds} />
 
         <AppWorkspace.Content>

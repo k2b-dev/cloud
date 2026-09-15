@@ -35,7 +35,6 @@ describe("@k2b/ui complete advanced layout migrations", () => {
               collapsible: true,
               get children() {
                 return [
-                  createComponent(AppWorkspace.SidebarMobileTrigger, { label: "Inventory" }),
                   createComponent(AppWorkspace.SidebarDesktop, {
                     get children() {
                       return createComponent(AppWorkspace.SidebarBody, {
@@ -97,7 +96,6 @@ describe("@k2b/ui complete advanced layout migrations", () => {
                       });
                     },
                   }),
-                  createComponent(AppWorkspace.SidebarMobile, { children: "Mobile navigation" }),
                 ];
               },
             }),
@@ -129,9 +127,7 @@ describe("@k2b/ui complete advanced layout migrations", () => {
     );
 
     expect(html).toContain("data-k2b-app-workspace");
-    expect(html).toContain("k2b-app-workspace__sidebar-mobile");
-    expect(html).toContain("k2b-app-workspace__sidebar-mobile-trigger");
-    expect(html).toContain("ti ti-menu-2");
+    expect(html).not.toContain("k2b-app-workspace__sidebar-mobile");
     expect(html).toContain("Inventory");
     expect(html).toContain("k2b-app-workspace__sidebar-desktop");
     expect(html).toContain('role="separator"');
@@ -557,7 +553,7 @@ describe("@k2b/ui complete advanced layout migrations", () => {
     // The controller measures this inner span against its clipping parent.
     expect(item()).toContain('class="k2b-app-workspace__sidebar-item-label-text"');
     expect(item()).toContain('data-marquee="true"');
-    expect(item(false)).not.toContain("data-marquee");
+    expect(item(false)).toContain('data-marquee="false"');
     expect(item(false)).toContain('class="k2b-app-workspace__sidebar-item-label-text"');
   });
 
@@ -684,7 +680,6 @@ describe("@k2b/ui complete advanced layout migrations", () => {
       expect(rule(".k2b-app-workspace__main-pane")).not.toContain("border-right");
       expect(css).toMatch(/\.k2b-app-workspace__main-pane:has\(~\s*\[data-workspace-main-region\]\)[^{]*\{border-right:1px solid var\(--k2b-border\)/);
       expect(rule(".k2b-app-workspace__sidebar-item")).toContain("--k2b-sidebar-item-depth");
-      expect(rule(".k2b-app-workspace__sidebar-mobile-trigger")).toContain("font-size:.875rem");
       expect(rule(".k2b-app-workspace__sidebar-icon-action")).toContain("width:100%");
       expect(rule(".k2b-app-workspace__main-pane[data-surface=navigation]")).toContain("background:var(--k2b-surface-muted)");
       expect(rule(".k2b-app-workspace__main-pane[data-surface=navigation]")).toContain("padding:.5rem");

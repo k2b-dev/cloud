@@ -1,6 +1,17 @@
+import { WorkspaceNavigationProvider } from "@k2b/cloud/ssr/islands";
 import { documentNavigate, type LinkNavigateEvent, refreshCurrentPath } from "@k2b/ssr/nav";
 import { mutation as mutations } from "@k2b/stdlib/solid";
-import { AppWorkspace, ButtonLink, Dropdown, prompts, toast, useLocale } from "@k2b/ui";
+import {
+  createNavigation,
+  type NavigationItem,
+  type DropdownSection,
+  AppWorkspace,
+  ButtonLink,
+  Dropdown,
+  prompts,
+  toast,
+  useLocale,
+} from "@k2b/ui";
 import { createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import { apiClient } from "../../api/client";
 import type { ConversationView } from "../../contracts";
@@ -195,44 +206,49 @@ export default function MailSidebar(props: {
     </AppWorkspace.SidebarItem>
   );
 
+  const mailboxToolSections = (): Array<
+    Omit<DropdownSection, "items"> & { items: Array<DropdownSection["items"][number] & { id: string }> }
+  > => [
+    {
+      sectionLabel: messages().mailbox,
+      items: [
+        ...(props.canAdmin
+          ? [
+              {
+                id: "sync",
+                label: props.syncEnabled ? messages().syncMailbox : messages().mailboxPaused,
+                icon: props.syncEnabled ? "ti ti-refresh" : "ti ti-player-play",
+                action: props.syncEnabled ? () => sync.mutate() : props.onOpenHealth,
+              },
+              { id: "health", label: messages().mailboxHealth, icon: "ti ti-heartbeat", action: props.onOpenHealth },
+            ]
+          : []),
+        {
+          id: "automations",
+          label: messages().automations,
+          icon: "ti ti-route",
+          action: () => documentNavigate(`/app/mail/${props.mailboxId}/automations`),
+        },
+      ],
+    },
+    {
+      sectionLabel: messages().manage,
+      items: [
+        { id: "mailing-lists", label: messages().mailingLists, icon: "ti ti-news", action: props.onOpenSubscriptions },
+        { id: "remote-images", label: messages().remoteImages, icon: "ti ti-photo-shield", action: props.onOpenRemoteContent },
+        ...(props.canAdmin
+          ? [{ id: "shared-links", label: messages().sharedLinks, icon: "ti ti-link", action: props.onOpenSharedLinks }]
+          : []),
+      ],
+    },
+    {
+      sectionLabel: messages().thisBrowser,
+      items: [{ id: "email-links", label: messages().emailLinkSetup, icon: "ti ti-link", action: () => void registerEmailLinks() }],
+    },
+  ];
+
   const mailboxTools = () => (
-    <Dropdown.Root
-      items={[
-        {
-          sectionLabel: messages().mailbox,
-          items: [
-            ...(props.canAdmin
-              ? [
-                  {
-                    label: props.syncEnabled ? messages().syncMailbox : messages().mailboxPaused,
-                    icon: props.syncEnabled ? "ti ti-refresh" : "ti ti-player-play",
-                    action: props.syncEnabled ? () => sync.mutate() : props.onOpenHealth,
-                  },
-                  { label: messages().mailboxHealth, icon: "ti ti-heartbeat", action: props.onOpenHealth },
-                ]
-              : []),
-            {
-              label: messages().automations,
-              icon: "ti ti-route",
-              action: () => documentNavigate(`/app/mail/${props.mailboxId}/automations`),
-            },
-          ],
-        },
-        {
-          sectionLabel: messages().manage,
-          items: [
-            { label: messages().mailingLists, icon: "ti ti-news", action: props.onOpenSubscriptions },
-            { label: messages().remoteImages, icon: "ti ti-photo-shield", action: props.onOpenRemoteContent },
-            ...(props.canAdmin ? [{ label: messages().sharedLinks, icon: "ti ti-link", action: props.onOpenSharedLinks }] : []),
-          ],
-        },
-        {
-          sectionLabel: messages().thisBrowser,
-          items: [{ label: messages().emailLinkSetup, icon: "ti ti-link", action: () => void registerEmailLinks() }],
-        },
-      ]}
-      position="top-right"
-    >
+    <Dropdown.Root items={mailboxToolSections()} position="top-right">
       <Dropdown.Trigger
         appearance="plain"
         class="k2b-app-workspace__sidebar-item"
@@ -409,88 +425,201 @@ export default function MailSidebar(props: {
     </For>
   );
 
+  const link = (id: string, label: string, href: string, icon: string, active = false, badge?: number): NavigationItem => ({
+    id,
+    label,
+    href,
+    icon,
+    active,
+    badge,
+    navigation: "enhanced",
+    scroll: "preserve",
+  });
+  const views = (items: MailViewItem[]) =>
+    items.map((view) =>
+      link(
+        `view:${view.id}`,
+        view.label,
+        `/app/mail/${props.mailboxId}?view=${view.id}`,
+        view.icon,
+        !props.scheduledMode && props.activeView === view.id,
+        props.viewCounts[view.id],
+      ),
+    );
+  const folderEntry = (node: MailFolderTreeNode): NavigationItem => {
+    const folder = node.folder;
+    const common = {
+      id: `folder:${folder.id}`,
+      label: folder.name,
+      icon: folderIcon(folder.role),
+      active: props.activeFolderId === folder.id,
+      badge: folder.role === "sent" ? undefined : (folder.role === "drafts" ? folder.total : folder.unread) || undefined,
+      children: node.children.map(folderEntry),
+    };
+    return folder.selectable
+      ? { ...common, href: `/app/mail/${props.mailboxId}?folder=${folder.id}`, navigation: "enhanced", scroll: "preserve" }
+      : common;
+  };
+  const navigation = createNavigation({
+    items: () => [
+      ...(props.canWrite
+        ? [
+            {
+              id: "compose",
+              label: messages().compose,
+              icon: "ti ti-pencil",
+              href: `/app/mail/compose?mailbox=${props.mailboxId}&autostart=1`,
+            },
+          ]
+        : []),
+      { id: "mailboxes", label: messages().allMailboxes, icon: "ti ti-switch-horizontal", href: "/app/mail" },
+      { id: "follow-up", label: messages().followUp, children: views(followUpViewItems()) },
+      { id: "assignment", label: messages().assignment, children: views(assignmentViewItems()) },
+      {
+        id: "mail",
+        label: messages().mail,
+        children: [
+          ...primaryFolders()
+            .filter((folder) => folder.role === "inbox" || folder.role === "drafts")
+            .map((folder) => folderEntry({ folder, children: [] })),
+          link(
+            "scheduled",
+            messages().scheduled,
+            `/app/mail/${props.mailboxId}?scheduled=1`,
+            "ti ti-calendar-time",
+            props.scheduledMode,
+            props.scheduledCount,
+          ),
+          ...views([sendProblemView()]),
+          ...primaryFolders()
+            .filter((folder) => folder.role === "sent")
+            .map((folder) => folderEntry({ folder, children: [] })),
+          {
+            id: "more",
+            label: messages().more,
+            children: [
+              link("all", messages().allMail, `/app/mail/${props.mailboxId}`, "ti ti-mail", allMailActive()),
+              ...views(secondaryViewItems()),
+              ...secondaryFolders().map((folder) => folderEntry({ folder, children: [] })),
+            ],
+          },
+        ],
+      },
+      ...(customFolderTree().length ? [{ id: "folders", label: messages().folders, children: customFolderTree().map(folderEntry) }] : []),
+      ...(props.localTags.length
+        ? [
+            {
+              id: "tags",
+              label: messages().tags,
+              children: props.localTags.map((tag) => {
+                const search = serializeMailSearchState({ expression: { type: "local_tag_id", tagId: tag.id }, sort: "newest" });
+                return {
+                  ...link(
+                    `tag:${tag.id}`,
+                    tag.name,
+                    `/app/mail/${props.mailboxId}?search=${encodeURIComponent(search.ok ? search.value : "")}`,
+                    "ti ti-tag",
+                    props.activeTagId === tag.id,
+                  ),
+                  color: tag.color,
+                };
+              }),
+            },
+          ]
+        : []),
+      ...(props.savedViews.length
+        ? [
+            {
+              id: "saved",
+              label: messages().savedViews,
+              children: props.savedViews.map((view) =>
+                link(
+                  `saved:${view.id}`,
+                  view.name,
+                  `/app/mail/${props.mailboxId}?savedView=${view.id}`,
+                  view.scope === "private" ? "ti ti-user" : "ti ti-users",
+                  props.activeSavedViewId === view.id,
+                ),
+              ),
+            },
+          ]
+        : []),
+      {
+        id: "tools",
+        label: messages().mailboxTools,
+        icon: "ti ti-tool",
+        disabled: props.managementOpening !== null || sync.loading(),
+        children: mailboxToolSections().map((group, index) => ({
+          id: `tools:${index}`,
+          label: group.sectionLabel ?? messages().mailboxTools,
+          children: group.items.map((item) => ({
+            id: `tool:${item.id}`,
+            action: `tool:${item.id}`,
+            label: item.label,
+            icon: item.icon,
+            disabled: item.disabled,
+          })),
+        })),
+      },
+      { id: "settings", label: messages().settings, icon: "ti ti-settings", action: "settings", disabled: props.settingsOpening },
+    ],
+    onNavigate: props.onNavigate,
+    onAction: (action) => {
+      if (action === "settings") return props.onOpenSettings();
+      const item = mailboxToolSections()
+        .flatMap((group) => group.items)
+        .find((item) => `tool:${item.id}` === action);
+      if (item && !item.disabled) item.action?.();
+    },
+  });
+
   return (
-    <AppWorkspace.Sidebar class="mail-workspace-navigation">
-      <AppWorkspace.SidebarMobileTrigger label={props.mailboxName} />
-      <AppWorkspace.SidebarMobile>
-        <AppWorkspace.SidebarMobileItems>
+    <>
+      <WorkspaceNavigationProvider navigation={navigation} label={props.mailboxName} />
+      <AppWorkspace.Sidebar class="mail-workspace-navigation">
+        <AppWorkspace.SidebarDesktop>
           {props.canWrite && (
-            <AppWorkspace.SidebarItem
-              href={`/app/mail/compose?mailbox=${props.mailboxId}&autostart=1`}
-              icon="ti ti-pencil"
-              navigation="document"
-            >
-              {messages().compose}
+            <ButtonLink size="sm" href={`/app/mail/compose?mailbox=${props.mailboxId}&autostart=1`} class="mail-compose-action mx-2 mt-2">
+              <i class="ti ti-pencil" aria-hidden="true" />
+              <span>{messages().compose}</span>
+            </ButtonLink>
+          )}
+          <AppWorkspace.SidebarBody scrollPreserveKey={`mail-sidebar-${props.mailboxId}`}>
+            <AppWorkspace.SidebarSection title={messages().followUp}>
+              {viewItems(followUpViewItems(), "desktop")}
+            </AppWorkspace.SidebarSection>
+            <AppWorkspace.SidebarSection title={messages().assignment}>
+              {viewItems(assignmentViewItems(), "desktop")}
+            </AppWorkspace.SidebarSection>
+            <AppWorkspace.SidebarSection title={messages().mail}>
+              {mailItems("desktop")}
+              {moreItems("desktop")}
+            </AppWorkspace.SidebarSection>
+            <Show when={flattenMailFolderTree(customFolderTree()).length > 0}>
+              <AppWorkspace.SidebarSection title={messages().folders}>{customFolderItems("desktop")}</AppWorkspace.SidebarSection>
+            </Show>
+            {props.localTags.length > 0 && (
+              <AppWorkspace.SidebarSection title={messages().tags}>{tagItems("desktop")}</AppWorkspace.SidebarSection>
+            )}
+            {props.savedViews.length > 0 && (
+              <AppWorkspace.SidebarSection title={messages().savedViews}>{savedViewItems("desktop")}</AppWorkspace.SidebarSection>
+            )}
+          </AppWorkspace.SidebarBody>
+          <AppWorkspace.SidebarFooter class="flex flex-col gap-1">
+            <AppWorkspace.SidebarItem href="/app/mail" icon="ti ti-switch-horizontal" navigation="document">
+              {messages().allMailboxes}
             </AppWorkspace.SidebarItem>
-          )}
-          <AppWorkspace.SidebarItem href="/app/mail" icon="ti ti-switch-horizontal" navigation="document">
-            {messages().allMailboxes}
-          </AppWorkspace.SidebarItem>
-          {mailboxTools()}
-          <AppWorkspace.SidebarItem icon="ti ti-settings" disabled={props.settingsOpening} onClick={props.onOpenSettings}>
-            {messages().settings}
-          </AppWorkspace.SidebarItem>
-        </AppWorkspace.SidebarMobileItems>
-        <AppWorkspace.SidebarMobileBody scrollPreserveKey={`mail-sidebar-mobile-${props.mailboxId}`}>
-          <AppWorkspace.SidebarSection title={messages().followUp}>{viewItems(followUpViewItems(), "mobile")}</AppWorkspace.SidebarSection>
-          <AppWorkspace.SidebarSection title={messages().assignment}>
-            {viewItems(assignmentViewItems(), "mobile")}
-          </AppWorkspace.SidebarSection>
-          <AppWorkspace.SidebarSection title={messages().mail}>
-            {mailItems("mobile")}
-            {moreItems("mobile")}
-          </AppWorkspace.SidebarSection>
-          <Show when={flattenMailFolderTree(customFolderTree()).length > 0}>
-            <AppWorkspace.SidebarSection title={messages().folders}>{customFolderItems("mobile")}</AppWorkspace.SidebarSection>
-          </Show>
-          {props.localTags.length > 0 && (
-            <AppWorkspace.SidebarSection title={messages().tags}>{tagItems("mobile")}</AppWorkspace.SidebarSection>
-          )}
-          {props.savedViews.length > 0 && (
-            <AppWorkspace.SidebarSection title={messages().savedViews}>{savedViewItems("mobile")}</AppWorkspace.SidebarSection>
-          )}
-        </AppWorkspace.SidebarMobileBody>
-      </AppWorkspace.SidebarMobile>
-      <AppWorkspace.SidebarDesktop>
-        {props.canWrite && (
-          <ButtonLink size="sm" href={`/app/mail/compose?mailbox=${props.mailboxId}&autostart=1`} class="mail-compose-action mx-2 mt-2">
-            <i class="ti ti-pencil" aria-hidden="true" />
-            <span>{messages().compose}</span>
-          </ButtonLink>
-        )}
-        <AppWorkspace.SidebarBody scrollPreserveKey={`mail-sidebar-${props.mailboxId}`}>
-          <AppWorkspace.SidebarSection title={messages().followUp}>{viewItems(followUpViewItems(), "desktop")}</AppWorkspace.SidebarSection>
-          <AppWorkspace.SidebarSection title={messages().assignment}>
-            {viewItems(assignmentViewItems(), "desktop")}
-          </AppWorkspace.SidebarSection>
-          <AppWorkspace.SidebarSection title={messages().mail}>
-            {mailItems("desktop")}
-            {moreItems("desktop")}
-          </AppWorkspace.SidebarSection>
-          <Show when={flattenMailFolderTree(customFolderTree()).length > 0}>
-            <AppWorkspace.SidebarSection title={messages().folders}>{customFolderItems("desktop")}</AppWorkspace.SidebarSection>
-          </Show>
-          {props.localTags.length > 0 && (
-            <AppWorkspace.SidebarSection title={messages().tags}>{tagItems("desktop")}</AppWorkspace.SidebarSection>
-          )}
-          {props.savedViews.length > 0 && (
-            <AppWorkspace.SidebarSection title={messages().savedViews}>{savedViewItems("desktop")}</AppWorkspace.SidebarSection>
-          )}
-        </AppWorkspace.SidebarBody>
-        <AppWorkspace.SidebarFooter class="flex flex-col gap-1">
-          <AppWorkspace.SidebarItem href="/app/mail" icon="ti ti-switch-horizontal" navigation="document">
-            {messages().allMailboxes}
-          </AppWorkspace.SidebarItem>
-          {mailboxTools()}
-          <AppWorkspace.SidebarItem
-            icon={props.settingsOpening ? "ti ti-loader-2 animate-spin" : "ti ti-settings"}
-            disabled={props.settingsOpening}
-            onClick={props.onOpenSettings}
-          >
-            {messages().settings}
-          </AppWorkspace.SidebarItem>
-        </AppWorkspace.SidebarFooter>
-      </AppWorkspace.SidebarDesktop>
-    </AppWorkspace.Sidebar>
+            {mailboxTools()}
+            <AppWorkspace.SidebarItem
+              icon={props.settingsOpening ? "ti ti-loader-2 animate-spin" : "ti ti-settings"}
+              disabled={props.settingsOpening}
+              onClick={props.onOpenSettings}
+            >
+              {messages().settings}
+            </AppWorkspace.SidebarItem>
+          </AppWorkspace.SidebarFooter>
+        </AppWorkspace.SidebarDesktop>
+      </AppWorkspace.Sidebar>
+    </>
   );
 }

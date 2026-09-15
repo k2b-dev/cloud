@@ -1,3 +1,4 @@
+import { BottomSheetDemo, NavigationDemo } from "./mobile-navigation";
 import { LiveWorkspaceDemo } from "./workspace-live";
 import {
   AppOverview,
@@ -55,7 +56,6 @@ const WorkspaceDemo = () => {
       onLayoutChange={(state) => setSidebarCollapsed(Boolean(state.sidebarCollapsed))}
     >
       <AppWorkspace.Sidebar collapsible>
-        <AppWorkspace.SidebarMobileTrigger label="Inventory" />
         <AppWorkspace.SidebarDesktop>
           <AppWorkspace.SidebarBody>
             <AppWorkspace.SidebarSection title="Status">
@@ -117,17 +117,6 @@ const WorkspaceDemo = () => {
             <AppWorkspace.SidebarItem icon="ti ti-settings">Settings</AppWorkspace.SidebarItem>
           </AppWorkspace.SidebarFooter>
         </AppWorkspace.SidebarDesktop>
-        <AppWorkspace.SidebarMobile>
-          <AppWorkspace.SidebarMobileItems>
-            <AppWorkspace.SidebarItem active={activeView() === "available"} icon="ti ti-list" onClick={() => setActiveView("available")}>
-              Items
-            </AppWorkspace.SidebarItem>
-            <AppWorkspace.SidebarItem active={activeView() === "activity"} icon="ti ti-history" onClick={() => setActiveView("activity")}>
-              Activity
-            </AppWorkspace.SidebarItem>
-            <AppWorkspace.SidebarItem icon="ti ti-settings">Settings</AppWorkspace.SidebarItem>
-          </AppWorkspace.SidebarMobileItems>
-        </AppWorkspace.SidebarMobile>
       </AppWorkspace.Sidebar>
       <AppWorkspace.Content>
         <AppWorkspace.Main mobilePane="main">
@@ -1401,8 +1390,11 @@ export const PaginationDemo = () => (
 );
 
 const demos: DemoSection = {
+  "bottom-sheet": () => <BottomSheetDemo />,
+  navigation: () => <NavigationDemo />,
   workspace: () => (
     <DemoGrid columns="one">
+      <NavigationDemo />
       <LiveWorkspaceDemo />
       <WorkspaceDemo />
     </DemoGrid>

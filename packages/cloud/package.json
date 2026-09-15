@@ -61,6 +61,7 @@
     "./access/ui": "./src/access/ui.ts",
     "./ssr": "./src/ssr/index.ts",
     "./ssr/islands": "./src/ssr/islands/index.ts",
+    "./ssr/WorkspaceNavigation.island": "./src/ssr/WorkspaceNavigation.island.tsx",
     "./ssr/*": "./src/ssr/*",
     "./config": "./src/config/index.ts",
     "./config/*": "./src/config/*",

@@ -5,7 +5,7 @@ type LayoutFooterProps = {
 
 export default function LayoutFooter(props: LayoutFooterProps) {
   return (
-    <footer class="hidden shrink-0 flex-wrap items-center justify-center gap-x-4 gap-y-1 px-3 py-2 text-xs text-dimmed md:flex">
+    <footer class="hidden shrink-0 flex-wrap items-center justify-center gap-x-4 gap-y-1 px-3 py-2 text-xs text-dimmed lg:flex">
       {props.legalLinks.map((link) => (
         <a href={link.href} class="flex items-center gap-1 transition-colors hover:text-primary">
           {link.icon && <i class={`${link.icon} text-xs`} />}

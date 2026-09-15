@@ -1,3 +1,4 @@
+import CustomAppNavigation from "./CustomAppNavigation.island";
 import type { AuthContext, getDateConfig } from "@k2b/cloud/server";
 import { Layout } from "@k2b/cloud/ssr";
 import { MarkdownView, Placeholder, StatCell, StatGrid } from "@k2b/ui";
@@ -196,6 +197,8 @@ const CustomAppPage = (props: {
 }) => {
   const messages = useCustomAppRuntimeMessages();
   return (
+    <>
+    <CustomAppNavigation definition={props.definition} pageId={props.page.id} appId={props.shortId} actions={props.sidebarActions} />
     <CustomAppPageLayout
       definition={props.definition}
       page={props.page}
@@ -269,6 +272,7 @@ const CustomAppPage = (props: {
         )
       }
     />
+    </>
   );
 };
 

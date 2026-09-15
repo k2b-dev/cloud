@@ -157,7 +157,7 @@ export const renderFilesBasePage = async <E extends AuthContext>(
     c.header("Cache-Control", "private, no-store");
     return () => (
       <Layout c={c} title={buildBreadcrumbs(baseType, baseId, currentBaseInfo.name, path, t.start, t.files)} fullWidth>
-        <AppWorkspace>
+        <AppWorkspace mobileSurface="flush">
           <BaseSidebar
             bases={basesInfo}
             currentBaseType={baseType}
@@ -236,7 +236,7 @@ export const renderFilesBasePage = async <E extends AuthContext>(
 
   return () => (
     <Layout c={c} title={breadcrumbs} fullWidth>
-      <AppWorkspace>
+      <AppWorkspace mobileSurface="flush">
         <BaseSidebar
           bases={basesInfo}
           currentBaseType={baseType}

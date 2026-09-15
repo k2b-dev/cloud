@@ -385,36 +385,6 @@ body.k2b-ui textarea {
   font-size: 0.875rem;
 }
 
-.k2b-ui .k2b-dialog.auth-request-sheet {
-  top: auto;
-  bottom: 0;
-  left: 50%;
-  transform: translateX(-50%);
-  width: min(100%, 33rem);
-  max-height: 90dvh;
-  border-bottom: 0;
-  border-radius: var(--k2b-radius-dialog) var(--k2b-radius-dialog) 0 0;
-}
-.auth-request-sheet .k2b-panel-dialog__footer {
-  padding-bottom: max(1rem, env(safe-area-inset-bottom));
-}
-.auth-sheet-handle {
-  display: grid;
-  place-items: center;
-  width: 100%;
-  min-height: 44px;
-  border: 0;
-  background: var(--k2b-surface-elevated);
-  cursor: grab;
-  touch-action: none;
-}
-.auth-sheet-handle span {
-  width: 2.5rem;
-  height: 4px;
-  border-radius: 2px;
-  background: var(--k2b-border-strong);
-}
-
 .auth-dialog-actions--end {
   justify-content: flex-end;
 }

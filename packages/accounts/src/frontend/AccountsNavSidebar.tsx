@@ -1,3 +1,4 @@
+import AccountsNavigation from "./AccountsNavigation.island";
 import { AppWorkspace } from "@k2b/ui";
 import AccountsSearchButton from "./AccountsSearchButton.island";
 import { useAccountsMessages } from "./messages";
@@ -91,26 +92,29 @@ export default function AccountsNavSidebar(props: Props) {
   ];
 
   return (
-    <AppWorkspace.Sidebar>
-      <AppWorkspace.SidebarMobileTrigger label={messages().accounts} />
-      <AppWorkspace.SidebarMobile>
-        <AppWorkspace.SidebarMobileItems scrollPreserveKey="accounts-sidebar-mobile">
-          <AccountsSearchButton isAdmin={props.isAdmin} variant="sidebar-mobile" />
-          {generalItems().map(renderItem)}
-          {props.isAdmin ? adminItems().map(renderItem) : null}
-        </AppWorkspace.SidebarMobileItems>
-      </AppWorkspace.SidebarMobile>
-      <AppWorkspace.SidebarDesktop>
-        <AppWorkspace.SidebarBody scrollPreserveKey="accounts-sidebar">
-          <AppWorkspace.SidebarSection>
-            <AccountsSearchButton isAdmin={props.isAdmin} variant="sidebar" registerShortcut />
-            {generalItems().map(renderItem)}
-          </AppWorkspace.SidebarSection>
-          {props.isAdmin ? (
-            <AppWorkspace.SidebarSection title={messages().admin}>{adminItems().map(renderItem)}</AppWorkspace.SidebarSection>
-          ) : null}
-        </AppWorkspace.SidebarBody>
-      </AppWorkspace.SidebarDesktop>
-    </AppWorkspace.Sidebar>
+    <>
+      <AccountsNavigation
+        isAdmin={props.isAdmin}
+        items={[
+          ...generalItems().map((item) => ({ ...item, id: item.href })),
+          ...(props.isAdmin
+            ? [{ id: "admin", label: messages().admin, children: adminItems().map((item) => ({ ...item, id: item.href })) }]
+            : []),
+        ]}
+      />
+      <AppWorkspace.Sidebar>
+        <AppWorkspace.SidebarDesktop>
+          <AppWorkspace.SidebarBody scrollPreserveKey="accounts-sidebar">
+            <AppWorkspace.SidebarSection>
+              <AccountsSearchButton isAdmin={props.isAdmin} variant="sidebar" registerShortcut />
+              {generalItems().map(renderItem)}
+            </AppWorkspace.SidebarSection>
+            {props.isAdmin ? (
+              <AppWorkspace.SidebarSection title={messages().admin}>{adminItems().map(renderItem)}</AppWorkspace.SidebarSection>
+            ) : null}
+          </AppWorkspace.SidebarBody>
+        </AppWorkspace.SidebarDesktop>
+      </AppWorkspace.Sidebar>
+    </>
   );
 }
