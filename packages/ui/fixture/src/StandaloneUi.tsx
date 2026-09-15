@@ -11,6 +11,7 @@ import {
   MarkdownView,
   NoticeCard,
   Pagination,
+  PanelDialog,
   Placeholder,
   ProgressBar,
   SegmentedControl,
@@ -85,6 +86,27 @@ export default function StandaloneUi() {
             <div style={{ flex: "1 1 240px" }}>
               <ProgressBar label="Certification" value={100} showValue />
             </div>
+          </section>
+
+          <section aria-label="Responsive actions" style={{ display: "grid", gap: "16px", "max-width": "420px", width: "100%" }}>
+            <div style={{ display: "flex", gap: "12px" }}>
+              <div style={{ flex: "1", "min-width": "0" }}>
+                <TextInput label="Find clients" placeholder="Search" value="" readOnly />
+              </div>
+              <Button data-testid="single-line-action">New client</Button>
+            </div>
+            <Button wrap data-testid="wrapping-action">
+              Create a new monitoring space with a description that deliberately wraps on small screens
+            </Button>
+            <PanelDialog>
+              <PanelDialog.Footer>
+                <span>Review the client settings before creating a new client.</span>
+                <div style={{ display: "flex", gap: "8px", "margin-left": "auto" }}>
+                  <Button variant="secondary">Cancel</Button>
+                  <Button disabled>Create client</Button>
+                </div>
+              </PanelDialog.Footer>
+            </PanelDialog>
           </section>
 
           <Calendar

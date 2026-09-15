@@ -46,6 +46,12 @@ separately.
 
 Use `PanelDialog.Section` for meaningful field groups. Keep the primary save action in `PanelDialog.Footer`.
 
+Footer children can move onto separate rows when space is limited. Put a hint
+first and the action group last: the group keeps its width and moves below the
+hint before its buttons are squeezed. A trailing flex group containing direct
+buttons can also wrap whole buttons when they cannot fit across the footer on
+their own.
+
 Use `PanelDialog.Tabs` only for local views within the editor. Its `value` may
 be direct or an accessor; the application updates it through `onValueChange`.
 

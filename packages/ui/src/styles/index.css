@@ -1125,6 +1125,7 @@
 
 .k2b-ui .k2b-button {
   @apply inline-flex items-center justify-center;
+  white-space: nowrap;
   gap: 0.375rem;
   min-height: 2rem;
   padding: 0.375rem 0.75rem;
@@ -1291,6 +1292,16 @@
 .k2b-ui .k2b-button__label {
   @apply inline-flex items-center justify-center;
   gap: 0.375rem;
+}
+
+.k2b-ui .k2b-button[data-wrap="true"] {
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.k2b-ui .k2b-button[data-wrap="true"] > .k2b-button__label {
+  min-width: 0;
 }
 
 .k2b-ui .k2b-icon-button {
@@ -2631,8 +2642,20 @@
 /* Cloud's footer separates a leading hint from the trailing action group. */
 .k2b-ui .k2b-panel-dialog__footer {
   @apply justify-between;
+  flex-wrap: wrap;
   gap: 0.5rem;
   padding: 1rem 1.5rem;
+}
+
+.k2b-ui .k2b-panel-dialog__footer > * {
+  min-width: 0;
+  max-width: 100%;
+}
+
+/* Move the trailing action group below the hint before squeezing its buttons. */
+.k2b-ui .k2b-panel-dialog__footer > :last-child:has(> .k2b-button) {
+  flex-shrink: 0;
+  flex-wrap: wrap;
 }
 
 .k2b-ui .k2b-panel-dialog__body {

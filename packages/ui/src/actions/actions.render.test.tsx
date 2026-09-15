@@ -187,6 +187,36 @@ describe("@k2b/ui complete action migrations", () => {
     expect(rule('.k2b-ui .k2b-icon-button[data-variant="input"]')).toContain("width: 2.25rem");
   });
 
+  test("supports explicit wrapping across buttons, links, and split button modes", () => {
+    const normal = renderToString(() => createComponent(Button, { children: "New client" }));
+    expect(normal).not.toContain("data-wrap");
+    const wrapped = [
+      renderToString(() =>
+        createComponent(Button, { wrap: true, loading: true, loadingLabel: "Creating a new client", children: "New client" }),
+      ),
+      renderToString(() => createComponent(ButtonLink, { wrap: true, href: "/clients", children: "Open all clients" })),
+      renderToString(() =>
+        createComponent(ButtonLink, {
+          wrap: true,
+          href: "/clients",
+          navigation: "enhanced",
+          onNavigate: () => {},
+          children: "Open all clients",
+        }),
+      ),
+      ...[undefined, [{ label: "Create client", action: () => {} }]].map((primaryItems) =>
+        renderToString(() =>
+          createComponent(SplitButton, { wrap: true, children: "Create a new client", menuLabel: "More actions", items: [], primaryItems }),
+        ),
+      ),
+    ];
+    for (const html of wrapped) {
+      expect(html).toContain('data-wrap="true"');
+      expect(html).not.toMatch(/\s+wrap=/);
+    }
+    expect(wrapped[0]).toContain("Creating a new client");
+  });
+
   test("renders surface-free text actions through the shared button contract", () => {
     const button = renderToString(() => createComponent(Button, { size: "xs", variant: "text", children: "More" }));
     const link = renderToString(() => createComponent(ButtonLink, { href: "/more", size: "sm", variant: "text", children: "More" }));

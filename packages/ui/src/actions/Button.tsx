@@ -6,6 +6,8 @@ export type ButtonVariant = "primary" | "secondary" | "ghost" | "text" | "subtle
 export type ButtonSize = "xs" | "sm" | "md" | "lg";
 
 export type ButtonProps = JSX.ButtonHTMLAttributes<HTMLButtonElement> & {
+  /** Allow a deliberately long or rich label to wrap. Defaults to false. */
+  wrap?: boolean;
   loading?: boolean;
   loadingLabel?: string;
   size?: ButtonSize;
@@ -16,6 +18,8 @@ export type ButtonProps = JSX.ButtonHTMLAttributes<HTMLButtonElement> & {
 };
 
 export type ButtonLinkProps = Omit<JSX.AnchorHTMLAttributes<HTMLAnchorElement>, "onClick"> & {
+  /** Allow a deliberately long or rich label to wrap. Defaults to false. */
+  wrap?: boolean;
   navigation?: "document" | "enhanced";
   onClick?: JSX.EventHandlerUnion<HTMLAnchorElement, MouseEvent>;
   onNavigate?: (event: LinkNavigateEvent) => void | Promise<void>;
@@ -44,6 +48,7 @@ export function Button(props: ButtonProps): JSX.Element {
     "tooltipPlacement",
     "type",
     "variant",
+    "wrap",
   ]);
   let target: HTMLButtonElement | undefined;
   const setRef = (element: HTMLButtonElement) => {
@@ -59,6 +64,7 @@ export function Button(props: ButtonProps): JSX.Element {
       class={buttonClass(local.class)}
       data-size={local.size ?? "md"}
       data-variant={local.variant ?? "primary"}
+      data-wrap={local.wrap || undefined}
       disabled={local.disabled || local.loading}
       aria-busy={local.loading ? "true" : undefined}
     >
@@ -105,6 +111,7 @@ export function ButtonLink(props: ButtonLinkProps): JSX.Element {
     "tooltipDelay",
     "tooltipPlacement",
     "variant",
+    "wrap",
   ]);
   let target: HTMLAnchorElement | undefined;
   const setRef = (element: HTMLAnchorElement) => {
@@ -130,6 +137,7 @@ export function ButtonLink(props: ButtonLinkProps): JSX.Element {
           class={className}
           data-size={local.size ?? "md"}
           data-variant={local.variant ?? "primary"}
+          data-wrap={local.wrap || undefined}
           onClick={local.onClick}
           onNavigate={local.onNavigate}
           replace={local.replace}
@@ -151,6 +159,7 @@ export function ButtonLink(props: ButtonLinkProps): JSX.Element {
         class={className}
         data-size={local.size ?? "md"}
         data-variant={local.variant ?? "primary"}
+        data-wrap={local.wrap || undefined}
         onClick={local.onClick}
       >
         {content}

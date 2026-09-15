@@ -142,6 +142,7 @@ export default function PulseOverview(props: Props) {
           <Button
             type="button"
             variant="ghost"
+            wrap
             class="group h-auto w-full items-start justify-start gap-3 rounded-xl border border-[var(--ui-border)] p-4 text-left hover:bg-[var(--ui-surface-subtle)]"
             disabled={createMutation.loading()}
             onClick={() => void createBase()}

@@ -69,6 +69,7 @@ export function SplitButton(props: SplitButtonProps): JSX.Element {
             width={local.menuWidth}
           >
             <Dropdown.Trigger
+              wrap={buttonProps.wrap}
               disabled={disabled()}
               size={local.size}
               variant={local.variant ?? "primary"}

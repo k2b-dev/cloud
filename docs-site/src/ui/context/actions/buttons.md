@@ -57,6 +57,11 @@ import { Button, ButtonLink, IconButton, IconButtonLink, SplitButton } from "@k2
 
 The `input` variant uses the same height, radius, muted surface, hover border, and inset focus treatment as form fields. Use it for a separate action immediately beside an input, not for actions embedded inside the field shell.
 
+Button labels stay on one line by default, including loading labels. Let the surrounding toolbar wrap whole
+actions when space is limited. Set `wrap` on `Button` or `ButtonLink` for
+deliberately long or rich content that should wrap within the available width.
+This also applies to buttons composed through `SplitButton`.
+
 Hover preserves each variant's color hierarchy. Pressing an immediate action adds a subtle inward scale without adding shadow depth or changing layout; a split button's main action moves the compound control, while its menu trigger opens without scaling. Reduced-motion preferences keep the color feedback without the scale.
 
 Use `SplitButton` when one immediate action has closely related alternatives. The main segment remains a native button; the icon-only segment opens the existing `DropdownItem` menu contract. `variant`, `size`, `disabled`, and `loading` apply to both segments. `menuLabel` is required as the secondary trigger's accessible name.
