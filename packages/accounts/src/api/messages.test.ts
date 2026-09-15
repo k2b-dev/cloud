@@ -16,3 +16,10 @@ describe("Accounts API messages", () => {
     expect(german).toBe("Die angeforderte Accounts-Ressource wurde nicht gefunden");
   });
 });
+
+test("explains email conflicts without changing unrelated conflict messages", () => {
+  expect(accountsApiErrorMessage(409, "de", "An account with this email already exists.")).toBe(
+    "Diese E-Mail-Adresse wird bereits von einem Konto verwendet.",
+  );
+  expect(accountsApiErrorMessage(409, "de", "Unrelated conflict")).toBe("Die Accounts-Änderung steht im Konflikt mit dem aktuellen Stand");
+});

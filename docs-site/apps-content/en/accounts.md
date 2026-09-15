@@ -67,6 +67,24 @@ Direct membership is stored on one relationship. Effective access can also
 come through nested groups. Removing one direct membership therefore does not
 prove that access is gone.
 
+## Email addresses and existing duplicates
+
+Creating an account or changing its email checks the address across local and
+FreeIPA accounts, ignoring case and surrounding whitespace. A conflict returns
+HTTP 409. New addresses are stored in lowercase without surrounding whitespace.
+
+Existing duplicate addresses remain attached to their account IDs. Updating
+other profile fields, or submitting the same normalized address, keeps the
+stored email spelling. Cloud does not merge accounts or add a new database
+uniqueness constraint. Existing login and directory synchronization behavior
+is unchanged; operators can resolve old duplicates separately.
+
+A FreeIPA account creation can still promote an existing local account. An
+exact stored email match takes precedence; otherwise there must be exactly one
+matching local account. Promotion preserves its ID and stored email spelling.
+Directory synchronization remains authoritative and can mirror duplicates
+created outside Cloud; this check applies to Cloud's account mutations.
+
 ## Create users and groups
 
 Choose **New user** or **New group** and complete one form. When FreeIPA is

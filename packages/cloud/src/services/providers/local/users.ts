@@ -2,6 +2,7 @@ import { sql } from "bun";
 import type { MutationResult, UserProfile } from "../../../contracts/shared";
 import { isAccountCategoryAllowed } from "../../account-category-policy";
 import { writeDeletedAccountAudit } from "../../account-lifecycle/audit";
+import { emailAlreadyUsed, findAccountsByEmail, lockAccountEmail, normalizeAccountEmail } from "../../accounts/email-write";
 import { resolveStoredAdminState } from "../../accounts/model";
 import { writeLocalAccount } from "../../accounts/posix";
 import type { AuditActor } from "../../audit";
@@ -31,6 +32,7 @@ export const create = async (params: {
   admin?: boolean;
   actor?: AuditActor;
 }): Promise<MutationResult<{ id: string }>> => {
+  const email = normalizeAccountEmail(params.data.email);
   const uid = await createLocalUid();
   const admin = resolveStoredAdminState({
     provider: "local",
@@ -42,6 +44,8 @@ export const create = async (params: {
     return await writeLocalAccount(async (tx) => {
       if (!(await isAccountCategoryAllowed({ provider: "local", profile: params.profile }, tx)))
         return { ok: false, error: "This account category is disabled. Contact an administrator.", status: 403 };
+      await lockAccountEmail(tx, email);
+      if ((await findAccountsByEmail(tx, email)).length > 0) return emailAlreadyUsed();
       const rows = await tx<{ id: string }[]>`
       INSERT INTO auth.users (
         uid,
@@ -58,7 +62,7 @@ export const create = async (params: {
         ${uid},
         'local',
         ${params.profile},
-        ${params.data.email},
+        ${email},
         ${params.data.givenname ?? ""},
         ${params.data.sn ?? ""},
         ${params.data.displayName ?? ""},
@@ -118,21 +122,26 @@ export const update = async (params: {
     mail?: string;
   };
 }): Promise<MutationResult<void>> => {
-  const existingRows = await sql<DbRow[]>`SELECT id FROM auth.users WHERE id = ${params.id}::uuid AND provider = 'local'`;
-  if (existingRows.length === 0) {
-    return { ok: false, error: "Local user not found", status: 404 };
-  }
-
-  await sql`
-    UPDATE auth.users
-    SET given_name = CASE WHEN ${params.data.givenname !== undefined} THEN ${params.data.givenname ?? ""} ELSE given_name END,
-        sn = CASE WHEN ${params.data.sn !== undefined} THEN ${params.data.sn ?? ""} ELSE sn END,
-        display_name = CASE WHEN ${params.data.displayName !== undefined} THEN ${params.data.displayName ?? ""} ELSE display_name END,
-        mail = CASE WHEN ${params.data.mail !== undefined} THEN ${params.data.mail ?? null} ELSE mail END
-    WHERE id = ${params.id}::uuid
-  `;
-
-  return { ok: true, data: undefined };
+  return sql.begin(async (tx) => {
+    if (params.data.mail !== undefined) await lockAccountEmail(tx, params.data.mail);
+    else await tx`LOCK TABLE auth.users IN ROW EXCLUSIVE MODE`;
+    const [existing] = await tx<{ mail: string | null }[]>`
+      SELECT mail FROM auth.users WHERE id = ${params.id}::uuid AND provider = 'local' FOR UPDATE
+    `;
+    if (!existing) return { ok: false, error: "Local user not found", status: 404 };
+    const email = params.data.mail === undefined ? undefined : normalizeAccountEmail(params.data.mail);
+    const changed = email !== undefined && email !== normalizeAccountEmail(existing.mail ?? "");
+    if (changed && email && (await findAccountsByEmail(tx, email)).some((row) => row.id !== params.id)) return emailAlreadyUsed();
+    await tx`
+      UPDATE auth.users
+      SET given_name = CASE WHEN ${params.data.givenname !== undefined} THEN ${params.data.givenname ?? ""} ELSE given_name END,
+          sn = CASE WHEN ${params.data.sn !== undefined} THEN ${params.data.sn ?? ""} ELSE sn END,
+          display_name = CASE WHEN ${params.data.displayName !== undefined} THEN ${params.data.displayName ?? ""} ELSE display_name END,
+          mail = CASE WHEN ${changed} THEN ${email || null} ELSE mail END
+      WHERE id = ${params.id}::uuid
+    `;
+    return { ok: true, data: undefined };
+  });
 };
 
 export const setProfile = async (params: {

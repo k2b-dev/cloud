@@ -94,6 +94,19 @@ the service account does not give them administrative access.
 Excluded groups remain available while Cloud evaluates sync scope. Cloud does
 not mirror those groups or their membership and hierarchy edges.
 
+## Email changes through Cloud
+
+Cloud rejects a new account email or an actual email change if another account
+already uses the normalized address, including local accounts. Case and
+surrounding whitespace are ignored. The check stays in application write paths;
+no new unique database constraint or startup cleanup is installed.
+
+Existing duplicates remain valid stored identities. Saving their unchanged
+address preserves its spelling, and editing other profile fields remains
+possible. Explicit local-account promotion keeps its Cloud ID. Synchronization
+continues to mirror directory data under the existing matching policy below;
+it does not apply the new-address rejection to the directory inventory.
+
 ## Account matching and transitions
 
 **User Match Mode** (`freeipa.user_match_mode`) defaults to **Ignore local match**.

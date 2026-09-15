@@ -4,6 +4,7 @@ import type { MutationResult, UserProfile } from "../../contracts/shared";
 import { freeipa } from "../../server/services";
 import { writeDeletedAccountAudit } from "../account-lifecycle/audit";
 import { resolveProviderProfile } from "../accounts/base-user";
+import { emailAlreadyUsed, findAccountsByEmail, lockAccountEmail, normalizeAccountEmail } from "../accounts/email-write";
 import { logger } from "../logging";
 import { session } from "../session";
 import * as settings from "../settings";
@@ -47,34 +48,36 @@ const log = logger("auth:ipa");
  * profile patches call `patchUserIpaData` — otherwise SSH keys, uid_number,
  * password expiry, etc. get wiped.
  */
-const upsertUserIpaData = async (params: {
-  userId: string;
-  uidNumber?: number | null;
-  primaryGidNumber?: number | null;
-  homeDirectory?: string | null;
-  loginShell?: string | null;
-  phone?: string | null;
-  employeeType?: string | null;
-  mobile?: string | null;
-  street?: string | null;
-  postalCode?: string | null;
-  city?: string | null;
-  state?: string | null;
-  passwordExpires?: Date | null;
-  lastLoginIpa?: Date | null;
-  syncedAt?: Date | null;
-  sshPublicKeys?: string[];
-  sshFingerprints?: string[];
-}) => {
-  await sql.begin(async (tx) => {
-    await mirrorIpaPosix(tx, {
-      userId: params.userId,
-      uidNumber: params.uidNumber ?? null,
-      primaryGidNumber: params.primaryGidNumber ?? null,
-      homeDirectory: params.homeDirectory ?? null,
-      loginShell: params.loginShell ?? null,
-    });
-    await tx`
+const upsertUserIpaData = async (
+  params: {
+    userId: string;
+    uidNumber?: number | null;
+    primaryGidNumber?: number | null;
+    homeDirectory?: string | null;
+    loginShell?: string | null;
+    phone?: string | null;
+    employeeType?: string | null;
+    mobile?: string | null;
+    street?: string | null;
+    postalCode?: string | null;
+    city?: string | null;
+    state?: string | null;
+    passwordExpires?: Date | null;
+    lastLoginIpa?: Date | null;
+    syncedAt?: Date | null;
+    sshPublicKeys?: string[];
+    sshFingerprints?: string[];
+  },
+  tx: typeof sql,
+) => {
+  await mirrorIpaPosix(tx, {
+    userId: params.userId,
+    uidNumber: params.uidNumber ?? null,
+    primaryGidNumber: params.primaryGidNumber ?? null,
+    homeDirectory: params.homeDirectory ?? null,
+    loginShell: params.loginShell ?? null,
+  });
+  await tx`
     INSERT INTO auth.user_ipa_data (
       user_id, uid_number, phone, employee_type, mobile, addr_street, addr_postal_code,
       addr_city, addr_state, ipa_password_expires, last_login_ipa, synced_at, ssh_public_keys, ssh_fingerprints
@@ -110,7 +113,6 @@ const upsertUserIpaData = async (params: {
       ssh_public_keys = EXCLUDED.ssh_public_keys,
       ssh_fingerprints = EXCLUDED.ssh_fingerprints
   `;
-  });
 };
 
 /**
@@ -119,19 +121,22 @@ const upsertUserIpaData = async (params: {
  * If no row exists yet the UPDATE is a no-op; callers that need to guarantee a
  * row must use `upsertUserIpaData` first.
  */
-const patchUserIpaData = async (params: {
-  userId: string;
-  phone?: string | null;
-  street?: string | null;
-  postalCode?: string | null;
-  city?: string | null;
-  state?: string | null;
-  sshPublicKeys?: string[];
-  sshFingerprints?: string[];
-  syncedAt?: Date | null;
-}) => {
+const patchUserIpaData = async (
+  params: {
+    userId: string;
+    phone?: string | null;
+    street?: string | null;
+    postalCode?: string | null;
+    city?: string | null;
+    state?: string | null;
+    sshPublicKeys?: string[];
+    sshFingerprints?: string[];
+    syncedAt?: Date | null;
+  },
+  tx: typeof sql,
+) => {
   const has = (v: unknown) => v !== undefined;
-  await sql`
+  await tx`
     UPDATE auth.user_ipa_data SET
       phone = CASE WHEN ${has(params.phone)} THEN ${params.phone ?? null} ELSE phone END,
       addr_street = CASE WHEN ${has(params.street)} THEN ${params.street ?? null} ELSE addr_street END,
@@ -236,85 +241,91 @@ export const addIpa = async (params: {
   const unavailable = await ensureFreeIpaMutationAvailable();
   if (unavailable) return unavailable;
   const { ipaSession, data } = params;
-  const { email, givenname, sn } = data;
-  const targetProfile = params.profile ?? "user";
+  const { givenname, sn } = data;
+  let promotedUserId: string | undefined;
+  const result = await sql.begin(async (tx): Promise<MutationResult<AddIpaResult>> => {
+    await lockAccountEmail(tx, data.email);
+    const targetProfile = params.profile ?? "user";
 
-  const displayName = data.displayName || `${givenname} ${sn}`;
+    const displayName = data.displayName || `${givenname} ${sn}`;
 
-  // Check if a local account with this email already exists (provider switch case)
-  const existingLocalRows: DbRow[] = await sql`
-    SELECT id, uid FROM auth.users WHERE mail = ${email} AND provider = 'local'
-  `;
+    const matches = await findAccountsByEmail(tx, data.email);
+    const locals = matches.filter((row) => row.provider === "local");
+    // Preserve an exact legacy match; otherwise promotion must identify one account.
+    const local = locals.find((row) => row.mail === data.email) ?? (locals.length === 1 ? locals[0] : undefined);
+    if (!local && matches.length > 0) return emailAlreadyUsed();
+    const existingLocalRows = local ? [local] : [];
+    const email = local?.mail ?? normalizeAccountEmail(data.email);
 
-  // Use existing guest UID or generate a new one
-  let uid: string;
-  if (existingLocalRows.length > 0) {
-    uid = existingLocalRows[0]!.uid as string;
-  } else {
-    try {
-      const abbrLen = await settings.get<number>("user.abbr_length");
-      uid = await generateUniqueAbbreviation(abbrLen);
-    } catch (e) {
+    // Use existing guest UID or generate a new one
+    let uid: string;
+    if (existingLocalRows.length > 0) {
+      uid = existingLocalRows[0]!.uid as string;
+    } else {
+      try {
+        const abbrLen = await settings.get<number>("user.abbr_length");
+        uid = await generateUniqueAbbreviation(abbrLen);
+      } catch (e) {
+        return {
+          ok: false,
+          error: e instanceof Error ? e.message : "Failed to generate UID",
+          status: 500,
+        };
+      }
+    }
+
+    if ((await uidExists(uid)) && existingLocalRows.length === 0) {
+      return { ok: false, error: `UID '${uid}' already exists`, status: 400 };
+    }
+
+    const temporaryPassword = generateFreeIpaPassword();
+    const accountExpiry = params.accountExpires === undefined ? await calculateAccountExpiration() : params.accountExpires;
+    const now = new Date();
+
+    const ipaOpts: Record<string, unknown> = {
+      givenname,
+      sn,
+      cn: displayName,
+      displayname: displayName,
+      mail: email,
+      userpassword: temporaryPassword,
+    };
+    if (accountExpiry) {
+      ipaOpts.krbprincipalexpiration = freeipa.util.toGeneralizedTime(accountExpiry);
+    }
+
+    const response = await freeipa.client.call({ url: await getIpaUrl(), ipaSession, method: "user_add", args: [uid], options: ipaOpts });
+    if (response.error) {
+      const code = response.error.code;
+      if (code === 4001)
+        return {
+          ok: false,
+          error: "IPA session expired. Please log in again.",
+          status: 401,
+        };
+      if (code === 4301)
+        return {
+          ok: false,
+          error: "You don't have permission to create users.",
+          status: 403,
+        };
       return {
         ok: false,
-        error: e instanceof Error ? e.message : "Failed to generate UID",
-        status: 500,
+        error: response.error.message || "Failed to create user.",
+        status: 400,
       };
     }
-  }
 
-  if ((await uidExists(uid)) && existingLocalRows.length === 0) {
-    return { ok: false, error: `UID '${uid}' already exists`, status: 400 };
-  }
+    // Extract uidNumber from IPA response
+    const ipaResult = response.result?.result as Record<string, unknown> | undefined;
+    const uidNumber = ipaResult ? freeipa.util.num(ipaResult.uidnumber) : null;
 
-  const temporaryPassword = generateFreeIpaPassword();
-  const accountExpiry = params.accountExpires === undefined ? await calculateAccountExpiration() : params.accountExpires;
-  const now = new Date();
-
-  const ipaOpts: Record<string, unknown> = {
-    givenname,
-    sn,
-    cn: displayName,
-    displayname: displayName,
-    mail: email,
-    userpassword: temporaryPassword,
-  };
-  if (accountExpiry) {
-    ipaOpts.krbprincipalexpiration = freeipa.util.toGeneralizedTime(accountExpiry);
-  }
-
-  const response = await freeipa.client.call({ url: await getIpaUrl(), ipaSession, method: "user_add", args: [uid], options: ipaOpts });
-  if (response.error) {
-    const code = response.error.code;
-    if (code === 4001)
-      return {
-        ok: false,
-        error: "IPA session expired. Please log in again.",
-        status: 401,
-      };
-    if (code === 4301)
-      return {
-        ok: false,
-        error: "You don't have permission to create users.",
-        status: 403,
-      };
-    return {
-      ok: false,
-      error: response.error.message || "Failed to create user.",
-      status: 400,
-    };
-  }
-
-  // Extract uidNumber from IPA response
-  const ipaResult = response.result?.result as Record<string, unknown> | undefined;
-  const uidNumber = ipaResult ? freeipa.util.num(ipaResult.uidnumber) : null;
-
-  let id: string;
-  try {
-    if (existingLocalRows.length > 0) {
-      // Provider switch: update existing local account to IPA user
-      const guestId = existingLocalRows[0]!.id as string;
-      const updateRows: DbRow[] = await sql`
+    let id: string;
+    try {
+      if (existingLocalRows.length > 0) {
+        // Provider switch: update existing local account to IPA user
+        const guestId = existingLocalRows[0]!.id as string;
+        const updateRows: DbRow[] = await tx`
         UPDATE auth.users SET
           provider = 'ipa',
           profile = ${targetProfile},
@@ -327,20 +338,23 @@ export const addIpa = async (params: {
         WHERE id = ${guestId}
         RETURNING id
       `;
-      id = updateRows[0]!.id as string;
-      await upsertUserIpaData({
-        userId: id,
-        uidNumber,
-        primaryGidNumber: ipaResult ? freeipa.util.num(ipaResult.gidnumber) : null,
-        homeDirectory: ipaResult ? freeipa.util.str(ipaResult.homedirectory) || null : null,
-        loginShell: ipaResult ? freeipa.util.str(ipaResult.loginshell) || null : null,
-        passwordExpires: now,
-        syncedAt: now,
-      });
-      await session.revokeAllForUser(guestId);
-    } else {
-      // New user: insert
-      const insertRows: DbRow[] = await sql`
+        id = updateRows[0]!.id as string;
+        await upsertUserIpaData(
+          {
+            userId: id,
+            uidNumber,
+            primaryGidNumber: ipaResult ? freeipa.util.num(ipaResult.gidnumber) : null,
+            homeDirectory: ipaResult ? freeipa.util.str(ipaResult.homedirectory) || null : null,
+            loginShell: ipaResult ? freeipa.util.str(ipaResult.loginshell) || null : null,
+            passwordExpires: now,
+            syncedAt: now,
+          },
+          tx,
+        );
+        promotedUserId = guestId;
+      } else {
+        // New user: insert
+        const insertRows: DbRow[] = await tx`
         INSERT INTO auth.users (uid, provider, profile, admin, given_name, sn, display_name, mail, account_expires)
         VALUES (${uid}, 'ipa', ${targetProfile}, false, ${givenname}, ${sn}, ${displayName}, ${email}, ${accountExpiry})
         ON CONFLICT (uid) DO UPDATE SET
@@ -354,38 +368,44 @@ export const addIpa = async (params: {
           account_expires = EXCLUDED.account_expires
         RETURNING id
       `;
-      id = insertRows[0]!.id as string;
-      await upsertUserIpaData({
-        userId: id,
+        id = insertRows[0]!.id as string;
+        await upsertUserIpaData(
+          {
+            userId: id,
+            uidNumber,
+            primaryGidNumber: ipaResult ? freeipa.util.num(ipaResult.gidnumber) : null,
+            homeDirectory: ipaResult ? freeipa.util.str(ipaResult.homedirectory) || null : null,
+            loginShell: ipaResult ? freeipa.util.str(ipaResult.loginshell) || null : null,
+            passwordExpires: now,
+            syncedAt: now,
+          },
+          tx,
+        );
+      }
+    } catch (dbError) {
+      log.error("CRITICAL: FreeIPA user created but local DB update failed. Manual reconciliation needed.", {
+        uid,
+        email,
+        userId: existingLocalRows.length > 0 ? (existingLocalRows[0]!.id as string) : null,
         uidNumber,
-        primaryGidNumber: ipaResult ? freeipa.util.num(ipaResult.gidnumber) : null,
-        homeDirectory: ipaResult ? freeipa.util.str(ipaResult.homedirectory) || null : null,
-        loginShell: ipaResult ? freeipa.util.str(ipaResult.loginshell) || null : null,
-        passwordExpires: now,
-        syncedAt: now,
+        targetProfile,
+        error: dbError instanceof Error ? dbError.message : String(dbError),
       });
+      throw dbError;
     }
-  } catch (dbError) {
-    log.error("CRITICAL: FreeIPA user created but local DB update failed. Manual reconciliation needed.", {
-      uid,
-      email,
-      userId: existingLocalRows.length > 0 ? (existingLocalRows[0]!.id as string) : null,
-      uidNumber,
-      targetProfile,
-      error: dbError instanceof Error ? dbError.message : String(dbError),
-    });
-    throw dbError;
-  }
 
-  return {
-    ok: true,
-    data: {
-      id,
-      uid,
-      accountExpires: accountExpiry ? accountExpiry.toISOString() : null,
-      _temporaryPassword: temporaryPassword,
-    },
-  };
+    return {
+      ok: true,
+      data: {
+        id,
+        uid,
+        accountExpires: accountExpiry ? accountExpiry.toISOString() : null,
+        _temporaryPassword: temporaryPassword,
+      },
+    };
+  });
+  if (result.ok && promotedUserId) await session.revokeAllForUser(promotedUserId);
+  return result;
 };
 
 // ==========================
@@ -400,74 +420,100 @@ export const updateProfile = async (params: {
   id: string;
   data: IpaPatchData;
 }): Promise<MutationResult<void>> => {
-  const { ipaSession, id, data } = params;
+  const { ipaSession, id } = params;
+  const data = { ...params.data };
+  return sql.begin(async (tx): Promise<MutationResult<void>> => {
+    if (data.mail !== undefined) await lockAccountEmail(tx, data.mail);
+    else await tx`LOCK TABLE auth.users IN ROW EXCLUSIVE MODE`;
 
-  const userRows: DbRow[] = await sql`SELECT uid, provider, profile FROM auth.users WHERE id = ${id}`;
-  if (userRows.length === 0) {
-    return { ok: false, error: "User not found", status: 404 };
-  }
-  const uid = userRows[0]!.uid as string;
-  const { provider } = resolveProviderProfile(userRows[0]!);
+    const userRows: DbRow[] = await tx`SELECT uid, provider, profile, mail FROM auth.users WHERE id = ${id} FOR UPDATE`;
+    if (userRows.length === 0) {
+      return { ok: false, error: "User not found", status: 404 };
+    }
+    if (data.mail !== undefined) {
+      const email = normalizeAccountEmail(data.mail);
+      const existingEmail = (userRows[0]!.mail as string | null) ?? "";
+      if (email === normalizeAccountEmail(existingEmail)) {
+        // Keep the stored spelling: legacy provider/mail uniqueness is case-sensitive.
+        delete data.mail;
+      } else {
+        if (email && (await findAccountsByEmail(tx, email)).some((row) => row.id !== id)) return emailAlreadyUsed();
+        data.mail = email;
+      }
+    }
+    const uid = userRows[0]!.uid as string;
+    const { provider } = resolveProviderProfile(userRows[0]!);
 
-  if (provider === "ipa") {
-    const unavailable = await ensureFreeIpaMutationAvailable();
-    if (unavailable) return unavailable;
-    if (!ipaSession) {
-      return {
-        ok: false,
-        error: "IPA session required to update IPA user",
-        status: 400,
-      };
+    if (provider === "ipa") {
+      const unavailable = await ensureFreeIpaMutationAvailable();
+      if (unavailable) return unavailable;
+      if (!ipaSession) {
+        return {
+          ok: false,
+          error: "IPA session required to update IPA user",
+          status: 400,
+        };
+      }
+
+      const ipaOptions: Record<string, unknown> = {};
+      if (data.givenname !== undefined) ipaOptions.givenname = data.givenname;
+      if (data.sn !== undefined) ipaOptions.sn = data.sn;
+      if (data.displayName !== undefined) ipaOptions.displayname = data.displayName;
+      if (data.mail !== undefined) ipaOptions.mail = data.mail || "";
+      if (data.ipa?.phone !== undefined) ipaOptions.telephonenumber = data.ipa.phone || "";
+      if (data.ipa?.address?.street !== undefined) ipaOptions.street = data.ipa.address.street || "";
+      if (data.ipa?.address?.postalCode !== undefined) ipaOptions.postalcode = data.ipa.address.postalCode || "";
+      if (data.ipa?.address?.city !== undefined) ipaOptions.l = data.ipa.address.city || "";
+      if (data.ipa?.address?.state !== undefined) ipaOptions.st = data.ipa.address.state || "";
+      if (data.ipa?.sshPublicKeys !== undefined) {
+        ipaOptions.ipasshpubkey = data.ipa.sshPublicKeys.length > 0 ? data.ipa.sshPublicKeys : "";
+      }
+
+      const response = await freeipa.client.call({
+        url: await getIpaUrl(),
+        ipaSession,
+        method: "user_mod",
+        args: [uid],
+        options: ipaOptions,
+      });
+      if (response.error) {
+        return {
+          ok: false,
+          error: response.error.message ?? "Failed to update user in FreeIPA",
+          status: freeipa.util.mapIpaErrorCode(response.error.code),
+        };
+      }
+
+      const result = response.result?.result as Record<string, unknown> | undefined;
+      // Partial patch: never touch uid_number, password expiry, last-login, or
+      // other full-sync fields when the user is only editing profile attributes.
+      await patchUserIpaData(
+        {
+          userId: id,
+          phone: data.ipa?.phone,
+          street: data.ipa?.address?.street,
+          postalCode: data.ipa?.address?.postalCode,
+          city: data.ipa?.address?.city,
+          state: data.ipa?.address?.state,
+          sshPublicKeys:
+            data.ipa?.sshPublicKeys !== undefined
+              ? Array.isArray(result?.ipasshpubkey)
+                ? (result?.ipasshpubkey as string[])
+                : []
+              : undefined,
+          sshFingerprints:
+            data.ipa?.sshPublicKeys !== undefined
+              ? Array.isArray(result?.sshpubkeyfp)
+                ? (result?.sshpubkeyfp as string[])
+                : []
+              : undefined,
+          syncedAt: new Date(),
+        },
+        tx,
+      );
     }
 
-    const ipaOptions: Record<string, unknown> = {};
-    if (data.givenname !== undefined) ipaOptions.givenname = data.givenname;
-    if (data.sn !== undefined) ipaOptions.sn = data.sn;
-    if (data.displayName !== undefined) ipaOptions.displayname = data.displayName;
-    if (data.mail !== undefined) ipaOptions.mail = data.mail || "";
-    if (data.ipa?.phone !== undefined) ipaOptions.telephonenumber = data.ipa.phone || "";
-    if (data.ipa?.address?.street !== undefined) ipaOptions.street = data.ipa.address.street || "";
-    if (data.ipa?.address?.postalCode !== undefined) ipaOptions.postalcode = data.ipa.address.postalCode || "";
-    if (data.ipa?.address?.city !== undefined) ipaOptions.l = data.ipa.address.city || "";
-    if (data.ipa?.address?.state !== undefined) ipaOptions.st = data.ipa.address.state || "";
-    if (data.ipa?.sshPublicKeys !== undefined) {
-      ipaOptions.ipasshpubkey = data.ipa.sshPublicKeys.length > 0 ? data.ipa.sshPublicKeys : "";
-    }
-
-    const response = await freeipa.client.call({
-      url: await getIpaUrl(),
-      ipaSession,
-      method: "user_mod",
-      args: [uid],
-      options: ipaOptions,
-    });
-    if (response.error) {
-      return {
-        ok: false,
-        error: response.error.message ?? "Failed to update user in FreeIPA",
-        status: freeipa.util.mapIpaErrorCode(response.error.code),
-      };
-    }
-
-    const result = response.result?.result as Record<string, unknown> | undefined;
-    // Partial patch: never touch uid_number, password expiry, last-login, or
-    // other full-sync fields when the user is only editing profile attributes.
-    await patchUserIpaData({
-      userId: id,
-      phone: data.ipa?.phone,
-      street: data.ipa?.address?.street,
-      postalCode: data.ipa?.address?.postalCode,
-      city: data.ipa?.address?.city,
-      state: data.ipa?.address?.state,
-      sshPublicKeys:
-        data.ipa?.sshPublicKeys !== undefined ? (Array.isArray(result?.ipasshpubkey) ? (result?.ipasshpubkey as string[]) : []) : undefined,
-      sshFingerprints:
-        data.ipa?.sshPublicKeys !== undefined ? (Array.isArray(result?.sshpubkeyfp) ? (result?.sshpubkeyfp as string[]) : []) : undefined,
-      syncedAt: new Date(),
-    });
-  }
-
-  await sql`
+    await tx`
     UPDATE auth.users
     SET given_name = CASE WHEN ${data.givenname !== undefined} THEN ${data.givenname ?? ""} ELSE given_name END,
         sn = CASE WHEN ${data.sn !== undefined} THEN ${data.sn ?? ""} ELSE sn END,
@@ -475,11 +521,12 @@ export const updateProfile = async (params: {
     WHERE id = ${id}
   `;
 
-  if (data.mail !== undefined) {
-    await sql`UPDATE auth.users SET mail = ${data.mail || null} WHERE id = ${id}`;
-  }
+    if (data.mail !== undefined) {
+      await tx`UPDATE auth.users SET mail = ${data.mail || null} WHERE id = ${id}`;
+    }
 
-  return { ok: true, data: undefined };
+    return { ok: true, data: undefined };
+  });
 };
 
 // ==========================

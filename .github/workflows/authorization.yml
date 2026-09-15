@@ -64,6 +64,7 @@ jobs:
         run: |
           bun test --isolate --timeout 15000 --preload ./scripts/fixtures/authorization-preload.ts \
             packages/cloud/src/server/services/access.test.ts \
+            packages/cloud/src/services/accounts/email-write.integration.test.ts \
             packages/cloud/src/services/service-account-credentials.test.ts \
             packages/cloud/src/services/notifications/batches.test.ts \
             packages/oauth/src/service/tokens.test.ts \

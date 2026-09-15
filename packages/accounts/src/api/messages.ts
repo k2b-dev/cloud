@@ -8,6 +8,7 @@ const catalog = i18n.define({
       accessDenied: "You do not have permission to perform this Accounts operation",
       resourceNotFound: "The requested Accounts resource was not found",
       conflictingChange: "The Accounts change conflicts with the current state",
+      emailAlreadyUsed: "An account with this email already exists.",
       operationFailed: "The Accounts operation failed",
       userUpdated: "User updated.",
       avatarUpdated: "Avatar updated.",
@@ -28,6 +29,7 @@ const catalog = i18n.define({
       accessDenied: "Du hast keine Berechtigung für diesen Accounts-Vorgang",
       resourceNotFound: "Die angeforderte Accounts-Ressource wurde nicht gefunden",
       conflictingChange: "Die Accounts-Änderung steht im Konflikt mit dem aktuellen Stand",
+      emailAlreadyUsed: "Diese E-Mail-Adresse wird bereits von einem Konto verwendet.",
       operationFailed: "Der Accounts-Vorgang ist fehlgeschlagen",
       userUpdated: "Benutzer aktualisiert.",
       avatarUpdated: "Profilbild aktualisiert.",
@@ -55,6 +57,7 @@ export const accountsApiErrorMessage = (status: number, locale?: string | null, 
   const { t } = resolved;
   if (status === 401 || status === 403) return t.accessDenied;
   if (status === 404) return t.resourceNotFound;
+  if (status === 409 && baseMessage === "An account with this email already exists.") return t.emailAlreadyUsed;
   if (status === 409) return t.conflictingChange;
   if (status >= 500) return t.operationFailed;
   return t.invalidRequest;
