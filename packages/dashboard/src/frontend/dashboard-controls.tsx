@@ -1,3 +1,5 @@
+import type { DashboardWidgetSpan, DashboardWidgetZone } from "@k2b/cloud/contracts";
+import { openAppLaunchpad } from "@k2b/cloud/ssr/islands";
 import { gradients } from "@k2b/stdlib";
 import { mutation as mutations } from "@k2b/stdlib/solid";
 import {
@@ -19,8 +21,6 @@ import {
   toast,
   useLocale,
 } from "@k2b/ui";
-import type { DashboardWidgetSpan, DashboardWidgetZone } from "@k2b/cloud/contracts";
-import { openAppLaunchpad } from "@k2b/cloud/ssr/islands";
 import { createMemo, createSignal, For, Show } from "solid-js";
 import { apiClient } from "../api/client";
 import {
@@ -375,6 +375,11 @@ const EditForm = (params: {
     if (save.loading()) return;
     if (await confirmDiscardIfDirty(dirty)) close();
   };
+  const requestAddShortcut = async () => {
+    if (save.loading() || !(await confirmDiscardIfDirty(dirty))) return;
+    close();
+    onAddShortcut();
+  };
   params.setDismissHandler(requestClose);
   const appById = createMemo(() => new Map(props.apps.map((app) => [app.id, app])));
 
@@ -409,7 +414,7 @@ const EditForm = (params: {
           title={t().shortcuts}
           icon="ti ti-link"
           actions={
-            <Button variant="secondary" size="sm" onClick={onAddShortcut}>
+            <Button variant="secondary" size="sm" onClick={requestAddShortcut} disabled={save.loading()}>
               <i class="ti ti-plus" />
               {t().add}
             </Button>

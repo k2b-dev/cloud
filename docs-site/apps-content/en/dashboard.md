@@ -39,6 +39,9 @@ temporarily unable to load from its owning application.
 Dashboard settings belong to a user-backed session. They are stored per user
 and reused after login on another device.
 
+Adding a shortcut from the layout editor opens a separate dialog. If the
+layout has unsaved changes, Dashboard asks before discarding them.
+
 ## How Dashboard fits Cloud
 
 Dashboard owns the start-page layout, shortcuts, and personal presentation
