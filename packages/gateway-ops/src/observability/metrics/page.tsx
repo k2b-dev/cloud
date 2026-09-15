@@ -1,6 +1,6 @@
 import { StatCell, StatGrid } from "@k2b/ui";
 import { type AuthContext, getDateConfig, getLocale } from "@k2b/cloud/server";
-import { formatDate, formatNumber } from "@k2b/cloud/shared";
+import { formatDateTime, formatNumber } from "@k2b/cloud/shared";
 import { AdminLayout } from "@k2b/cloud/ssr";
 import { ssr } from "../../config";
 import { gatewayOpsMessages } from "../../messages";
@@ -86,7 +86,7 @@ export default ssr<AuthContext>(async (c) => {
           />
           <StatCell
             label={t.collectors}
-            value={`${okCollectors}/${snapshot.collectors.length}`}
+            value={`${formatNumber(okCollectors, { locale })}/${formatNumber(snapshot.collectors.length, { locale })}`}
             sub={unhealthyCollectors.length > 0 ? unhealthyCollectors.map((collector) => collector.name).join(", ") : t.healthy}
             valueClass={unhealthyCollectors.length > 0 ? "text-amber-600 dark:text-amber-400" : "text-primary"}
             title={
@@ -97,12 +97,17 @@ export default ssr<AuthContext>(async (c) => {
             }
           />
           <StatCell label={t.series} value={formatNumber(snapshot.series, { locale })} sub={t.lastPayload} />
-          <StatCell label={t.tokens} value={formatNumber(tokens.length, { locale })} sub={t.active} accent={{ tone: "zinc", icon: "ti ti-key" }} />
+          <StatCell
+            label={t.tokens}
+            value={formatNumber(tokens.length, { locale })}
+            sub={t.active}
+            accent={{ tone: "zinc", icon: "ti ti-key" }}
+          />
         </StatGrid>
 
-        <p class="text-[10px] text-dimmed">{t.metricsGenerated({ date: formatDate(snapshot.generatedAt, dateConfig) })}</p>
+        <p class="text-[10px] text-dimmed">{t.metricsGenerated({ date: formatDateTime(snapshot.generatedAt, dateConfig) })}</p>
 
-        <MetricsTokens tokens={tokens} />
+        <MetricsTokens tokens={tokens} timeZone={dateConfig.timeZone ?? "UTC"} />
 
         <MetricsCatalogue rows={metrics} sources={sources} />
       </div>

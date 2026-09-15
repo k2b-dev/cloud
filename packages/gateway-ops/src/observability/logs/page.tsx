@@ -1,5 +1,6 @@
-import { ButtonLink, Pagination, Placeholder, StatCell, StatGrid } from "@k2b/ui";
-import { type AuthContext, getLocale } from "@k2b/cloud/server";
+import { formatNumber } from "@k2b/cloud/shared";
+import { ButtonLink, Placeholder, StatCell, StatGrid } from "@k2b/ui";
+import { type AuthContext, getLocale, getTimeZone } from "@k2b/cloud/server";
 import { get } from "@k2b/cloud/services";
 import { AdminLayout } from "@k2b/cloud/ssr";
 import { ssr } from "../../config";
@@ -94,10 +95,6 @@ export default ssr<AuthContext>(async (c) => {
           <p class="mt-1 text-xs text-dimmed">{t.logsDescription}</p>
         </div>
 
-        {loadError ? (
-          <Placeholder state="error" surface="paper" icon="ti ti-database-off" title={t.logStoreUnavailable} description={loadError} />
-        ) : null}
-
         <nav class="flex flex-wrap items-center gap-1" aria-label={t.logWindow}>
           <span class="mr-1 text-[10px] text-dimmed">{t.window}</span>
           {LOG_WINDOW_KEYS.map((option) => (
@@ -138,7 +135,11 @@ export default ssr<AuthContext>(async (c) => {
           <StatCell
             label={t.noisiestSource}
             value={topSource ? topSource.key : "—"}
-            sub={topSource ? t.logEntriesCount({ count: topSource.count }) : t.noEntriesInWindow}
+            sub={
+              topSource
+                ? t.logEntriesCount({ count: topSource.count, formattedCount: formatNumber(topSource.count, { locale }) })
+                : t.noEntriesInWindow
+            }
             href={topSource ? buildLogFilterUrl(LOGS_PAGE_PATH, { sources: [topSource.key], page: 1 }, filter) : undefined}
             accent={{ tone: "blue", icon: "ti ti-stack-3" }}
           />
@@ -177,8 +178,17 @@ export default ssr<AuthContext>(async (c) => {
           )}
         </section>
 
-        <LogTable entries={entries} total={total} filter={filter} sources={sources} retentionDays={retentionDays} />
-        <Pagination currentPage={paginationResult.page} totalPages={paginationResult.total_pages} baseUrl={baseUrl} />
+        <LogTable
+          entries={entries}
+          total={total}
+          filter={filter}
+          sources={sources}
+          retentionDays={retentionDays}
+          timeZone={getTimeZone(c)}
+          totalPages={paginationResult.total_pages}
+          baseUrl={baseUrl}
+          loadError={loadError}
+        />
       </div>
     </AdminLayout>
   );

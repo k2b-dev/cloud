@@ -30,8 +30,17 @@ delivery.
 Gateway Ops requires administrator access. Removing an offline registration
 cleans the gateway registry; it does not restart or repair the application.
 
-In Logs, Jobs, and Notifications, **Clear** resets active filters on desktop
-and mobile. Notification filters reset within the currently selected view.
+In Logs, Jobs, Notifications, Postgres, and Redis, **Clear** resets active
+filters on desktop and mobile. Notification filters reset within the currently
+selected view; Jobs keeps the selected source. Telemetry clears its filters
+while keeping the time range. Search and filter links preserve the other
+selections and reset pagination when the result set changes.
+
+Tables use consistent headings, controls, pagination, and labeled status badges.
+A failed log query shows an error rather than an empty result. Job runs and
+events include their time of day. Logs, job details and timelines, request
+details, and gateway timestamps use your configured time zone; charts explicitly
+labeled UTC retain UTC.
 
 Gateway traffic counts and server telemetry percentages follow your language's
 number formatting. Gateway error percentages use whole numbers; telemetry

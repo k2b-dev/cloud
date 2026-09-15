@@ -1,12 +1,13 @@
 import { refreshCurrentPath } from "@k2b/ssr/nav";
 import { mutation as mutations } from "@k2b/stdlib/solid";
-import { Button, CopyButton, IconButton, Placeholder, prompts, Tooltip, toast, useLocale } from "@k2b/ui";
+import { Button, CopyButton, IconButton, DataTable, type DataTableColumn, Placeholder, prompts, Tooltip, toast, useLocale } from "@k2b/ui";
 import { formatDateTime as formatDate } from "@k2b/cloud/shared";
 import type { MetricsToken } from "../service";
 import { gatewayOpsMessages } from "../../../messages";
 
 type Props = {
   tokens: MetricsToken[];
+  timeZone: string;
 };
 
 type CreateResponse =
@@ -114,65 +115,58 @@ export default function MetricsTokens(props: Props) {
     await revokeMutation.mutate(token);
   };
 
+  const columns: DataTableColumn<MetricsToken>[] = [
+    { id: "name", header: t.name, value: "name", cellClass: "font-medium text-primary" },
+    { id: "prefix", header: t.prefix, value: "tokenPrefix", cellClass: "font-mono text-[11px] text-secondary" },
+    { id: "scope", header: t.scopeLabel },
+    { id: "expires", header: t.expires, cellClass: "whitespace-nowrap text-dimmed" },
+    { id: "lastUsed", header: t.lastUsed, cellClass: "whitespace-nowrap text-dimmed" },
+    { id: "action", header: t.action, align: "right" },
+  ];
+
   return (
-    <section class="overflow-hidden rounded-[var(--ui-radius-surface)] bg-[var(--ui-surface-subtle)]">
-      <div class="flex items-center gap-2 px-3 py-2">
-        <div class="min-w-0">
-          <h2 class="text-xs font-semibold text-primary">{t.bearerTokens}</h2>
-          <p class="text-[10px] text-dimmed">{t.bearerTokensDescription}</p>
-        </div>
-        <Button type="button" size="sm" class="ml-auto" onClick={createToken} disabled={createMutation.loading()}>
-          <i class={createMutation.loading() ? "ti ti-loader-2 animate-spin" : "ti ti-plus"} />
+    <DataTable.Panel>
+      <DataTable.Header title={t.bearerTokens} subtitle={t.bearerTokensDescription} size="sm">
+        <Button type="button" size="sm" onClick={createToken} disabled={createMutation.loading()}>
+          <i class={createMutation.loading() ? "ti ti-loader-2 animate-spin" : "ti ti-plus"} aria-hidden="true" />
           {t.newToken}
         </Button>
-      </div>
+      </DataTable.Header>
       {props.tokens.length > 0 ? (
-        <div class="overflow-x-auto">
-          <table class="w-full text-left text-xs">
-            <thead class="border-b border-zinc-100 text-[10px] uppercase tracking-wide text-dimmed">
-              <tr>
-                <th class="px-3 py-2 font-medium">{t.name}</th>
-                <th class="px-3 py-2 font-medium">{t.prefix}</th>
-                <th class="px-3 py-2 font-medium">{t.scopeLabel}</th>
-                <th class="px-3 py-2 font-medium">{t.expires}</th>
-                <th class="px-3 py-2 font-medium">{t.lastUsed}</th>
-                <th class="px-3 py-2 text-right font-medium">{t.action}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {props.tokens.map((token) => (
-                <tr class="border-b border-zinc-100 last:border-b-0">
-                  <td class="px-3 py-2 font-medium text-primary">{token.name}</td>
-                  <td class="px-3 py-2 font-mono text-[11px] text-secondary">{token.tokenPrefix}</td>
-                  <td class="px-3 py-2">
-                    <span class="tag bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300">
-                      {token.scopes.join(", ") || "-"}
-                    </span>
-                  </td>
-                  <td class="px-3 py-2 text-dimmed">{formatDate(token.expiresAt, { locale: locale() })}</td>
-                  <td class="px-3 py-2 text-dimmed">{formatDate(token.lastUsedAt, { locale: locale() })}</td>
-                  <td class="px-3 py-2 text-right">
-                    <Tooltip.Anchor content={t.revokeMetricsToken}>
-                      <IconButton
-                        type="button"
-                        variant="danger"
-                        size="sm"
-                        label={t.revokeNamedToken({ name: token.name })}
-                        onClick={() => revokeToken(token)}
-                        disabled={revokeMutation.loading()}
-                      >
-                        <i class={revokeMutation.loading() ? "ti ti-loader-2 animate-spin" : "ti ti-key-off"} />
-                      </IconButton>
-                    </Tooltip.Anchor>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <DataTable
+          rows={props.tokens}
+          columns={columns}
+          getRowId={(token) => token.id}
+          density="compact"
+          surface="plain"
+          renderCell={({ row: token, col, value, render }) => {
+            if (col.id === "scope")
+              return (
+                <span class="tag bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300">{token.scopes.join(", ") || "-"}</span>
+              );
+            if (col.id === "expires") return formatDate(token.expiresAt, { locale: locale(), timeZone: props.timeZone });
+            if (col.id === "lastUsed") return formatDate(token.lastUsedAt, { locale: locale(), timeZone: props.timeZone });
+            if (col.id === "action")
+              return (
+                <Tooltip.Anchor content={t.revokeMetricsToken}>
+                  <IconButton
+                    type="button"
+                    variant="danger"
+                    size="sm"
+                    label={t.revokeNamedToken({ name: token.name })}
+                    onClick={() => revokeToken(token)}
+                    disabled={revokeMutation.loading()}
+                  >
+                    <i class={revokeMutation.loading() ? "ti ti-loader-2 animate-spin" : "ti ti-key-off"} aria-hidden="true" />
+                  </IconButton>
+                </Tooltip.Anchor>
+              );
+            return render(value);
+          }}
+        />
       ) : (
         <Placeholder icon="ti ti-key" description={<>{t.noMetricsTokens}</>} />
       )}
-    </section>
+    </DataTable.Panel>
   );
 }

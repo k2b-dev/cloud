@@ -61,6 +61,7 @@ export default function ManagersTab(props: ManagersTabProps) {
   return (
     <div class="flex flex-col gap-2" style="view-transition-name: accounts-group-managers">
       <TabToolbar
+        searchAction={props.pageBaseUrl}
         serviceAccountsToggleUrl={props.serviceAccountsToggleUrl}
         showServiceAccounts={props.showServiceAccounts}
         actions={

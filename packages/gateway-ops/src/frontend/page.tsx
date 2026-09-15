@@ -1,5 +1,5 @@
 import { readAppRegistrySnapshot } from "@k2b/cloud";
-import { type AuthContext, getLocale } from "@k2b/cloud/server";
+import { type AuthContext, getLocale, getDateConfig } from "@k2b/cloud/server";
 import { latestGatewayRouteSnapshot } from "@k2b/cloud/services";
 import { AdminLayout } from "@k2b/cloud/ssr";
 import { DEFAULT_TELEMETRY_RANGE, isTelemetryRange, TELEMETRY_RANGES, type TelemetryRange } from "../observability/telemetry/contracts";
@@ -16,7 +16,7 @@ const rangeUrl = (url: URL, range: TelemetryRange): string => {
 };
 
 import { ButtonLink, DataTable, type DataTableColumn, NoticeCard, StatCell, StatGrid, StatusBadge } from "@k2b/ui";
-import { formatNumber as fmtCount, formatDurationMs as fmtMs, formatRatio as fmtRatio } from "@k2b/cloud/shared";
+import { formatNumber as fmtCount, formatDurationMs as fmtMs, formatRatio as fmtRatio, formatDateTime } from "@k2b/cloud/shared";
 import { SearchBar } from "@k2b/cloud/ssr/islands";
 import { type AppRuntimeStatus, buildAppRuntimeStatuses } from "../app-runtime-status";
 import { ssr } from "../config";
@@ -64,6 +64,7 @@ type GatewayRouteRow = {
 
 export default ssr<AuthContext>(async (c) => {
   const locale = getLocale(c);
+  const dateConfig = getDateConfig(c);
   const { t } = gatewayOpsMessages.resolve([locale]);
   const url = new URL(c.req.url);
   const isRoutesPage = url.pathname.endsWith("/routes");
@@ -211,9 +212,7 @@ export default ssr<AuthContext>(async (c) => {
       <div class="app-rows">
         <div class="min-w-0" style="view-transition-name: admin-gateway-title">
           <h1 class="text-base font-semibold text-primary">{title}</h1>
-          <p class="mt-1 text-xs text-dimmed">
-            {isRoutesPage ? t.gatewayRoutesDescription : t.gatewayAppsDescription}
-          </p>
+          <p class="mt-1 text-xs text-dimmed">{isRoutesPage ? t.gatewayRoutesDescription : t.gatewayAppsDescription}</p>
         </div>
 
         <nav class="flex flex-wrap items-center gap-1" aria-label={t.trafficWindow}>
@@ -251,7 +250,13 @@ export default ssr<AuthContext>(async (c) => {
             label={t.uptime}
             sub={
               routerSnapshot
-                ? t.sinceTime({ time: new Date(routerSnapshot.startedAt).toLocaleTimeString(locale, { hour: "2-digit", minute: "2-digit" }) })
+                ? t.sinceTime({
+                    time: new Date(routerSnapshot.startedAt).toLocaleTimeString(locale, {
+                      hour: "2-digit",
+                      minute: "2-digit",
+                      timeZone: dateConfig.timeZone,
+                    }),
+                  })
                 : t.noRouterSnapshot
             }
           />
@@ -259,7 +264,9 @@ export default ssr<AuthContext>(async (c) => {
             value={`${healthy.length}/${appCount}`}
             label={t.healthy}
             sub={
-              healthy.length === appCount ? t.allSystems : t.healthSummary({ offline: offlineCount, degraded: appCount - healthy.length - offlineCount })
+              healthy.length === appCount
+                ? t.allSystems
+                : t.healthSummary({ offline: offlineCount, degraded: appCount - healthy.length - offlineCount })
             }
             accent={healthy.length === appCount ? { tone: "emerald", icon: "ti ti-check" } : { tone: "red", icon: "ti ti-alert-circle" }}
           />
@@ -267,7 +274,7 @@ export default ssr<AuthContext>(async (c) => {
 
         {/* ── Apps Table ── */}
         {!isRoutesPage ? (
-          <section class="paper overflow-hidden">
+          <DataTable.Panel>
             {registry.issues.length > 0 ? (
               <NoticeCard
                 tone="danger"
@@ -276,12 +283,7 @@ export default ssr<AuthContext>(async (c) => {
                 class="m-3"
               />
             ) : null}
-            <div class="flex flex-col gap-2 px-3 py-3">
-              <div>
-                <h2 class="text-xs font-semibold text-primary">{t.apps}</h2>
-                <p class="text-[10px] text-dimmed">{t.registeredApps({ count: appRows.length })}</p>
-              </div>
-            </div>
+            <DataTable.Header title={t.apps} subtitle={t.registeredApps({ count: appRows.length })} />
             <DataTable
               rows={appRows}
               columns={appColumns}
@@ -295,7 +297,7 @@ export default ssr<AuthContext>(async (c) => {
                     ? "bg-amber-50/50 dark:bg-amber-950/20"
                     : ""
               }
-              class="overflow-x-auto"
+              surface="plain"
               tableClass="w-full text-sm"
               renderCell={({ row: app, col }) => {
                 if (col.id === "app") {
@@ -364,7 +366,7 @@ export default ssr<AuthContext>(async (c) => {
                   return (
                     <span
                       class={`text-[10px] tabular-nums ${app.isHealthy ? "text-dimmed" : "text-red-500"}`}
-                      title={new Date(app.live?.createdAt ?? app.lastSeenAt).toLocaleString(locale)}
+                      title={formatDateTime(new Date(app.live?.createdAt ?? app.lastSeenAt), dateConfig)}
                     >
                       {fmtUptime(app.upSince, locale)}
                     </span>
@@ -395,26 +397,31 @@ export default ssr<AuthContext>(async (c) => {
                 return "";
               }}
             />
-          </section>
+          </DataTable.Panel>
         ) : null}
 
         {/* ── Routes: title + search + table (same pattern as logs) ── */}
         {isRoutesPage ? (
-          <section class="paper overflow-hidden">
-            <div class="flex flex-col gap-2 px-3 py-3">
-              <div>
-                <h2 class="text-xs font-semibold text-primary">{t.gatewayRoutesTitle}</h2>
-                <p class="text-[10px] text-dimmed">
-                  {searchQuery ? t.filteredRoutesCount({ count: filteredRoutes.length, total: allRoutes.length }) : t.routesCount({ count: allRoutes.length })}
-                </p>
-              </div>
+          <DataTable.Panel>
+            <DataTable.Header
+              title={t.gatewayRoutesTitle}
+              subtitle={
+                searchQuery
+                  ? t.filteredRoutesCount({
+                      count: fmtCount(filteredRoutes.length, { locale }),
+                      total: fmtCount(allRoutes.length, { locale }),
+                    })
+                  : t.routesCount({ count: allRoutes.length })
+              }
+            />
+            <DataTable.Controls>
               <SearchBar
-                action="/admin/gateway/routes"
-                value={searchQuery}
                 placeholder={t.filterRoutes}
                 ariaLabel={t.filterRoutesLabel}
+                action={rangeUrl(new URL("/admin/gateway/routes", url), range)}
+                value={searchQuery}
               />
-            </div>
+            </DataTable.Controls>
             <DataTable
               rows={filteredRoutes}
               columns={routeColumns}
@@ -422,7 +429,7 @@ export default ssr<AuthContext>(async (c) => {
               hoverRows
               highlightColumns={false}
               density="compact"
-              class="overflow-x-auto"
+              surface="plain"
               empty={t.noMatchingRoutes({ query: searchQuery })}
               renderCell={({ row: route, col }) => {
                 if (col.id === "prefix") return <code class="text-[10px] text-primary">{route.prefix}</code>;
@@ -439,7 +446,7 @@ export default ssr<AuthContext>(async (c) => {
                 return "";
               }}
             />
-          </section>
+          </DataTable.Panel>
         ) : null}
       </div>
     </AdminLayout>

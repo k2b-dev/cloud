@@ -1,3 +1,4 @@
+import type { DateContext } from "@k2b/stdlib";
 import { DataTable, type DataTableColumn, DetailPanel, IconButtonLink, Placeholder, useLocale } from "@k2b/ui";
 import { formatDateTime, formatDurationMs } from "@k2b/cloud/shared";
 import type { TelemetryEventRow } from "../service";
@@ -16,6 +17,7 @@ export type RouteDetailPanelProps = {
   eventLimit: number;
   slowRequestMs: number;
   closeHref: string;
+  dateConfig: DateContext;
 };
 
 export default function RouteDetailPanel(props: RouteDetailPanelProps) {
@@ -47,13 +49,15 @@ export default function RouteDetailPanel(props: RouteDetailPanelProps) {
               <Placeholder variant="compact" description={t.noRetainedRequests} />
             ) : (
               <DataTable
+                ariaLabel={t.requests}
                 rows={props.events}
                 columns={eventColumns}
                 getRowId={(row) => String(row.id)}
                 highlightColumns={false}
                 density="compact"
                 renderCell={({ row, col }) => {
-                  if (col.id === "time") return <span class="text-[10px] text-dimmed">{formatDateTime(row.occurredAt, { locale: locale() })}</span>;
+                  if (col.id === "time")
+                    return <span class="text-[10px] text-dimmed">{formatDateTime(row.occurredAt, props.dateConfig)}</span>;
                   if (col.id === "method") return <span class="text-[10px] font-medium text-dimmed">{row.method}</span>;
                   if (col.id === "status")
                     return (

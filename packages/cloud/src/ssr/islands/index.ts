@@ -1,4 +1,4 @@
-export { default as SearchBar } from "./SearchBar.island";
+export { default as SearchBar } from "./SearchBar";
 
 import { AppLaunchpadButton, AppLaunchpadProvider } from "../AppLaunchpad.island";
 import { LayoutHelpDocuments, LayoutHelpPage } from "../LayoutHelp";

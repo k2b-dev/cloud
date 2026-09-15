@@ -4,6 +4,10 @@ import { buildJobsFilterUrl, defaultJobsFilter, parseJobsFilterFromUrl } from ".
 const baseUrl = "/admin/observability/jobs";
 
 describe("job run navigation", () => {
+  test.each(["0.5", "1.5", "0", "-2", "Infinity", "NaN", "9007199254740992"])("rejects invalid page %s", (page) => {
+    expect(parseJobsFilterFromUrl(new URL(`http://cloud${baseUrl}?page=${page}`)).page).toBe(1);
+  });
+
   test("opening a run preserves the current source, filters, and page", () => {
     const current = {
       ...defaultJobsFilter,

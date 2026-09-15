@@ -4,6 +4,7 @@ import type { JSX } from "solid-js/jsx-runtime";
 import { useAccountsMessages } from "../../messages";
 
 type Props = {
+  searchAction: string;
   /** URL to toggle indirect/recursive mode (omit to hide the button) */
   indirectToggleUrl?: string;
   /** Whether indirect mode is currently active */
@@ -25,7 +26,7 @@ export default function TabToolbar(props: Props) {
   return (
     <div class="flex flex-wrap gap-2 items-stretch">
       <div class="flex-1">
-        <SearchBar />
+        <SearchBar action={props.searchAction} />
       </div>
       {props.indirectToggleUrl && (
         <ButtonLink

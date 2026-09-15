@@ -53,19 +53,25 @@ const translatedSortLabel = (sort: TelemetryRouteSort, t: GatewayOpsMessages): s
 export default function TelemetryFilterBar(props: Props) {
   const { t } = gatewayOpsMessages.resolve([useLocale()()]);
   const labels = rangeLabels(t);
-  const rangeOptions: FilterChipSection[] = [{
-    options: (Object.keys(TELEMETRY_RANGES) as TelemetryRange[]).map((value) => ({ value, label: labels[value], icon: "ti ti-clock" })),
-  }];
-  const sortOptions: FilterChipSection[] = [{
-    options: TELEMETRY_ROUTE_SORTS.map((value) => ({ value, label: translatedSortLabel(value, t), icon: SORT_ICONS[value] })),
-  }];
-  const scopeOptions: FilterChipSection[] = [{
-    options: [
-      { value: "errors", label: t.withErrors, icon: "ti ti-alert-circle" },
-      { value: "slow", label: t.withSlowRequests, icon: "ti ti-clock-exclamation" },
-    ],
-    multiple: true,
-  }];
+  const rangeOptions: FilterChipSection[] = [
+    {
+      options: (Object.keys(TELEMETRY_RANGES) as TelemetryRange[]).map((value) => ({ value, label: labels[value], icon: "ti ti-clock" })),
+    },
+  ];
+  const sortOptions: FilterChipSection[] = [
+    {
+      options: TELEMETRY_ROUTE_SORTS.map((value) => ({ value, label: translatedSortLabel(value, t), icon: SORT_ICONS[value] })),
+    },
+  ];
+  const scopeOptions: FilterChipSection[] = [
+    {
+      options: [
+        { value: "errors", label: t.withErrors, icon: "ti ti-alert-circle" },
+        { value: "slow", label: t.withSlowRequests, icon: "ti ti-clock-exclamation" },
+      ],
+      multiple: true,
+    },
+  ];
   const appOptions = (): FilterChipSection[] => [
     {
       options: [
@@ -129,7 +135,7 @@ export default function TelemetryFilterBar(props: Props) {
         defaultValue={[]}
       />
       {hasActiveTelemetryFilters(props.filter) ? (
-        <ButtonLink href={clearTelemetryFiltersUrl(props.filter)} variant="secondary" size="sm">
+        <ButtonLink href={clearTelemetryFiltersUrl(props.filter)} variant="ghost" size="sm" aria-label={t.clearAllFilters}>
           <i class="ti ti-x" aria-hidden="true" /> {t.clear}
         </ButtonLink>
       ) : null}

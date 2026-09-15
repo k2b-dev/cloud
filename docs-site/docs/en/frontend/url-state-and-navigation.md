@@ -5,7 +5,7 @@ section: Frontend
 order: 860
 description: Keep durable view state in the URL and navigate without losing server authority.
 tags: [url, navigation, filters]
-updated: 2026-08-10
+updated: 2026-09-15
 ---
 
 # URL state and navigation
@@ -45,6 +45,38 @@ Query state still needs service validation before it reaches SQL.
 
 See [Pagination and filtering](/en/docs/server/pagination-and-filtering) for
 the server-side query.
+
+## Search server-rendered lists
+
+Use the shared `SearchBar` for a list whose results come from its page loader:
+
+```tsx
+import { SearchBar } from "@k2b/cloud/ssr/islands";
+
+<SearchBar
+  action={inventoryFilter.build(state)}
+  value={state.search}
+  placeholder="Search inventory…"
+  ariaLabel="Search inventory"
+/>;
+```
+
+`action` is required. Include every query parameter the search should retain.
+The component submits a native GET form and clears through a normal link, so
+both actions work directly in server HTML and inside an existing island.
+It needs no separate island wrapper. Submission navigates to a fresh server
+result; it does not issue a request on every keystroke.
+
+By default, the input replaces `search` and resets `page`. Use `param` and
+`pageParam` for other names, including cursor pagination. Other parameters,
+including repeated values and other searches on the page, become hidden form
+fields. Clearing removes only this search and its pagination parameter.
+
+`value` defaults to the search in `action`. Parse and trim submitted text on
+the server, for example with `text()` above; an empty GET input is sent as an
+empty string. Labels inherit the UI locale unless explicitly supplied.
+Pass `disabled` when surrounding work must block both searching and clearing;
+this also applies when placing the component inside a disabled `<fieldset>`.
 
 ## Use links first
 

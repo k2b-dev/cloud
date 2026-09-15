@@ -277,6 +277,7 @@ export default function LinuxIdentityPanel(props: {
           <div class="flex flex-col gap-2 px-3 pb-3">
             <fieldset class="m-0 min-w-0 border-0 p-0" disabled={busy() || dirty()} onInput={() => setSelected([])}>
               <SearchBar
+                disabled={busy() || dirty()}
                 action={pageHref()}
                 value={props.search ?? ""}
                 pageParam="after"

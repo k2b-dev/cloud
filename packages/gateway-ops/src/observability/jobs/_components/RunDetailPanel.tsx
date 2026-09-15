@@ -1,3 +1,4 @@
+import type { DateContext } from "@k2b/stdlib";
 import {
   DescriptionList,
   DetailPanel,
@@ -9,7 +10,7 @@ import {
   useLocale,
 } from "@k2b/ui";
 import type { TraceEvent, TraceSpan } from "@k2b/cloud/services";
-import { formatDate, formatDurationMs, formatNumber } from "@k2b/cloud/shared";
+import { formatDateTime, formatDurationMs, formatNumber } from "@k2b/cloud/shared";
 import type { JSX } from "solid-js";
 import { gatewayOpsMessages } from "../../../messages";
 
@@ -21,6 +22,7 @@ export type RunDetailPanelProps = {
   events: TraceEvent[];
   status: JSX.Element;
   closeHref: string;
+  dateConfig: DateContext;
 };
 
 export default function RunDetailPanel(props: RunDetailPanelProps) {
@@ -52,8 +54,8 @@ export default function RunDetailPanel(props: RunDetailPanelProps) {
                 },
                 { term: t.type, description: props.span.category },
                 { term: t.status, description: props.status },
-                { term: t.started, description: formatDate(props.span.startedAt, { locale: locale() }) },
-                { term: t.ended, description: formatDate(props.span.endedAt, { locale: locale() }) },
+                { term: t.started, description: formatDateTime(props.span.startedAt, props.dateConfig) },
+                { term: t.ended, description: formatDateTime(props.span.endedAt, props.dateConfig) },
                 { term: t.duration, description: formatDurationMs(props.span.durationMs, { locale: locale() }) },
                 { term: t.events, description: formatNumber(props.span.eventCount, { locale: locale() }) },
                 ...(props.span.statusMessage
@@ -93,11 +95,13 @@ export default function RunDetailPanel(props: RunDetailPanelProps) {
                     <article class="min-w-0">
                       <div class="flex items-center justify-between gap-2">
                         <span class="truncate text-[11px] font-medium text-primary">{event.name}</span>
-                        <span class="shrink-0 text-[10px] text-dimmed">{formatDate(event.occurredAt, { locale: locale() })}</span>
+                        <span class="shrink-0 text-[10px] text-dimmed">{formatDateTime(event.occurredAt, props.dateConfig)}</span>
                       </div>
                       <p class="mt-1 text-[10px] text-dimmed">{event.severity}</p>
                       {event.body ? <p class="mt-1 break-words text-[10px] text-primary">{event.body}</p> : null}
-                      {event.attributes ? <StructuredDataPreview class="mt-1" data={traceData(event.attributes, t.invalidTraceData)} maxRows={6} /> : null}
+                      {event.attributes ? (
+                        <StructuredDataPreview class="mt-1" data={traceData(event.attributes, t.invalidTraceData)} maxRows={6} />
+                      ) : null}
                     </article>
                   </li>
                 ))}

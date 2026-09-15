@@ -152,6 +152,8 @@ export default ssr<AuthContext>(async (c) => {
                     </p>
                   </div>
                   <SearchBar
+                    param="q"
+                    pageParam="cursor"
                     action="/admin/mail"
                     value={query}
                     placeholder={t.searchMailboxesPlaceholder}

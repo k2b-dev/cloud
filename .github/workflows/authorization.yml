@@ -55,6 +55,8 @@ jobs:
         run: bun test packages/cloud/src/_internal/postgres-application-name.test.ts packages/cloud/src/_internal/postgres-application-name.integration.test.ts packages/cloud/src/cli/admin.test.ts
       - name: Verify search result validation and provider isolation
         run: bun test packages/cloud/src/api/search.test.ts packages/cloud/src/api/search/schemas.test.ts packages/cloud/src/_internal/bounded-json.test.ts
+      - name: Verify native list search and URL state
+        run: bun test --isolate packages/cloud/src/ssr/islands/SearchBar.render.test.tsx packages/cloud/src/ssr/url-filter.test.ts packages/accounts/src/frontend/groups/detail/group-detail-url.test.ts packages/gateway-ops/src/observability/logs/_components/types.test.ts
       - name: Verify Dashboard and OAuth editor behavior
         run: |
           bun test packages/dashboard/src/shared.test.ts packages/dashboard/src/frontend/messages.test.ts packages/dashboard/src/frontend/widget-request.test.ts packages/oauth/src/contracts.test.ts packages/oauth/src/frontend/messages.test.ts packages/oauth/src/frontend/_components/client-editor.test.ts

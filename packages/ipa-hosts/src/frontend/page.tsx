@@ -19,7 +19,7 @@ export default ssr<AuthContext>(async (c) => {
   const rawUngroupedPage = Number(c.req.query("ungrouped_page") ?? "1");
   const ungroupedPage = Number.isInteger(rawUngroupedPage) && rawUngroupedPage > 0 ? rawUngroupedPage : 1;
   const perPage = 100;
-  const search = c.req.query("search") ?? "";
+  const search = c.req.query("search")?.trim() ?? "";
 
   const [hostgroupsPage, ungroupedHostsPage, hostStats] = await Promise.all([
     ipaHostsService.hostgroup.listWithHosts({

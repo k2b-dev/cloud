@@ -3,7 +3,7 @@ import { createPagination, hasRole, type NotificationDeliveryStatus } from "@k2b
 import { type AuthContext, expectUserBackedActor, getDateConfig, getLocale } from "@k2b/cloud/server";
 import { formatDateTime, formatNumber } from "@k2b/cloud/shared";
 import { AdminLayout } from "@k2b/cloud/ssr";
-import { DataTable, type DataTableColumn, Pagination, StatCell, StatGrid } from "@k2b/ui";
+import { DataTable, type DataTableColumn, Pagination, StatCell, StatGrid, StatusBadge, type StatusTone } from "@k2b/ui";
 import type { JSX } from "solid-js";
 import { ssr } from "../../config";
 import OperationalCharts from "../../frontend/OperationalCharts.island";
@@ -57,23 +57,14 @@ const channelChip = (channel: string, t: GatewayOpsMessages): JSX.Element => {
 
 const deliveryStatusBadge = (status: NotificationDeliveryStatus, t: GatewayOpsMessages): JSX.Element => {
   const config = {
-    deferred: { label: t.deferred, icon: "ti ti-player-pause", tone: "bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-200" },
-    pending: { label: t.pending, icon: "ti ti-clock", tone: "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-200" },
-    sending: { label: t.sending, icon: "ti ti-send", tone: "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-200" },
-    delivered: {
-      label: t.delivered,
-      icon: "ti ti-check",
-      tone: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-200",
-    },
-    suppressed: { label: t.suppressed, icon: "ti ti-bell-off", tone: "bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-200" },
-    failed: { label: t.failed, icon: "ti ti-alert-circle", tone: "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-200" },
-  }[status];
-  return (
-    <span class={`inline-flex h-6 items-center gap-1 rounded-full px-2 text-[10px] font-medium ${config.tone}`}>
-      <i class={`${config.icon} text-xs`} />
-      {config.label}
-    </span>
-  );
+    deferred: { label: t.deferred, icon: "ti ti-player-pause", tone: "neutral" },
+    pending: { label: t.pending, icon: "ti ti-clock", tone: "warning" },
+    sending: { label: t.sending, icon: "ti ti-send", tone: "running" },
+    delivered: { label: t.delivered, icon: "ti ti-check", tone: "ok" },
+    suppressed: { label: t.suppressed, icon: "ti ti-bell-off", tone: "neutral" },
+    failed: { label: t.failed, icon: "ti ti-alert-circle", tone: "error" },
+  } satisfies Record<NotificationDeliveryStatus, { label: string; icon: string; tone: StatusTone }>;
+  return <StatusBadge {...config[status]} />;
 };
 
 const legacyStatusBadge = (status: LegacyItem["status"], t: GatewayOpsMessages): JSX.Element => {
@@ -226,77 +217,84 @@ export default ssr<AuthContext>(async (c) => {
           )}
         />
 
-        <section class="paper overflow-hidden" style="view-transition-name: admin-notification-deliveries-table">
-          <div class="flex flex-col gap-2 px-3 py-2">
-            <div>
-              <h2 class="text-xs font-semibold text-primary">{t.deliveryAttempts}</h2>
-              <p class="text-[10px] text-dimmed">{t.attemptsCount({ count: result.items.length, total: result.total })}</p>
-            </div>
-            <DeliveryFilterBar
-              search={search}
-              status={status}
-              channels={channels}
-              appIds={appIds}
-              channelOptions={facets.channels}
-              appOptions={appOptions}
+        <div class="min-w-0" style="view-transition-name: admin-notification-deliveries-table">
+          <DataTable.Panel>
+            <DataTable.Header
+              title={t.deliveryAttempts}
+              subtitle={t.attemptsCount({
+                count: formatNumber(result.items.length, { locale }),
+                total: formatNumber(result.total, { locale }),
+              })}
             />
-          </div>
-          <DataTable
-            rows={result.items}
-            columns={columns}
-            getRowId={(item) => item.id}
-            hoverRows
-            class="overflow-x-auto"
-            empty={search ? t.noMatchingDeliveryAttempts : t.noDeliveryAttempts}
-            renderCell={({ row: item, col }) => {
-              if (col.id === "status") return deliveryStatusBadge(item.status, t);
-              if (col.id === "notification") {
-                return (
-                  <div class="min-w-0">
-                    <p class="truncate font-medium text-primary" title={item.title}>
-                      {item.title}
-                    </p>
-                    <p class="truncate text-[10px] text-dimmed" title={item.definitionId}>
-                      {item.label}
-                    </p>
-                    {item.errorCode && (
-                      <p class="truncate text-[10px] text-red-500" title={item.errorMessage ?? item.errorCode}>
-                        {item.errorCode}
+            <DataTable.Controls>
+              <DeliveryFilterBar
+                search={search}
+                status={status}
+                channels={channels}
+                appIds={appIds}
+                channelOptions={facets.channels}
+                appOptions={appOptions}
+              />
+            </DataTable.Controls>
+            <DataTable
+              rows={result.items}
+              columns={columns}
+              getRowId={(item) => item.id}
+              hoverRows
+              surface="plain"
+              empty={search ? t.noMatchingDeliveryAttempts : t.noDeliveryAttempts}
+              renderCell={({ row: item, col }) => {
+                if (col.id === "status") return deliveryStatusBadge(item.status, t);
+                if (col.id === "notification") {
+                  return (
+                    <div class="min-w-0">
+                      <p class="truncate font-medium text-primary" title={item.title}>
+                        {item.title}
                       </p>
-                    )}
-                  </div>
-                );
-              }
-              if (col.id === "app") return appCell(item.appId, appById);
-              if (col.id === "recipient") {
-                return (
-                  <div class="min-w-0">
-                    <p class="truncate text-primary" title={item.recipientLabel}>
-                      {item.recipientLabel}
-                    </p>
-                    {item.recipientReference !== item.recipientLabel && (
-                      <p class="truncate font-mono text-[10px] text-dimmed" title={item.recipientReference}>
-                        {item.recipientReference}
+                      <p class="truncate text-[10px] text-dimmed" title={item.definitionId}>
+                        {item.label}
                       </p>
-                    )}
-                  </div>
-                );
-              }
-              if (col.id === "channel") {
-                return (
-                  <div class="flex flex-wrap items-center gap-1">
-                    {channelChip(item.channel, t)}
-                    {item.required && <span class="text-[9px] font-medium uppercase text-dimmed">{t.required}</span>}
-                  </div>
-                );
-              }
-              if (col.id === "attempts") return formatNumber(item.attemptCount, { locale });
-              if (col.id === "created") return <span class="text-dimmed">{formatDateTime(item.createdAt, dateConfig)}</span>;
-              return "";
-            }}
-          />
-        </section>
-        <Pagination currentPage={pagination.page} totalPages={pagination.total_pages} baseUrl={baseUrl} />
+                      {item.errorCode && (
+                        <p class="truncate text-[10px] text-red-500" title={item.errorMessage ?? item.errorCode}>
+                          {item.errorCode}
+                        </p>
+                      )}
+                    </div>
+                  );
+                }
+                if (col.id === "app") return appCell(item.appId, appById);
+                if (col.id === "recipient") {
+                  return (
+                    <div class="min-w-0">
+                      <p class="truncate text-primary" title={item.recipientLabel}>
+                        {item.recipientLabel}
+                      </p>
+                      {item.recipientReference !== item.recipientLabel && (
+                        <p class="truncate font-mono text-[10px] text-dimmed" title={item.recipientReference}>
+                          {item.recipientReference}
+                        </p>
+                      )}
+                    </div>
+                  );
+                }
+                if (col.id === "channel") {
+                  return (
+                    <div class="flex flex-wrap items-center gap-1">
+                      {channelChip(item.channel, t)}
+                      {item.required && <span class="text-[9px] font-medium uppercase text-dimmed">{t.required}</span>}
+                    </div>
+                  );
+                }
+                if (col.id === "attempts") return formatNumber(item.attemptCount, { locale });
+                if (col.id === "created") return <span class="text-dimmed">{formatDateTime(item.createdAt, dateConfig)}</span>;
+                return "";
+              }}
+            />
+            <DataTable.Footer>
+              <Pagination currentPage={pagination.page} totalPages={pagination.total_pages} baseUrl={baseUrl} />
+            </DataTable.Footer>
+          </DataTable.Panel>
+        </div>
       </>
     ));
   }
@@ -349,87 +347,90 @@ export default ssr<AuthContext>(async (c) => {
           />
         </StatGrid>
 
-        <section class="paper overflow-hidden" style="view-transition-name: admin-notification-registry-table">
-          <div class="flex flex-col gap-2 px-3 py-2">
-            <div>
-              <h2 class="text-xs font-semibold text-primary">{t.registeredNotificationKinds}</h2>
-              <p class="text-[10px] text-dimmed">{t.definitionsCount({ count: result.items.length, total: result.total })}</p>
-            </div>
-            <RegistryFilterBar search={search} status={status} appIds={appIds} appOptions={appOptions} />
-          </div>
-          <DataTable
-            rows={result.items}
-            columns={columns}
-            getRowId={(item) => item.id}
-            hoverRows
-            class="overflow-x-auto"
-            empty={search ? t.noMatchingRegisteredNotifications : t.noRegisteredDefinitions}
-            renderCell={({ row: item, col }) => {
-              if (col.id === "app") return appCell(item.appId, appById);
-              if (col.id === "notification") {
-                return (
-                  <div class="min-w-0">
-                    <p class="truncate font-medium text-primary" title={item.label}>
-                      {item.label}
-                    </p>
-                    <p class="truncate text-[10px] text-dimmed" title={item.description}>
-                      {item.description}
-                    </p>
-                    <p class="truncate font-mono text-[9px] text-dimmed" title={item.id}>
-                      {item.kind}
-                    </p>
-                  </div>
-                );
-              }
-              if (col.id === "recipient") {
-                return (
-                  <span class="inline-flex items-center gap-1 text-xs capitalize text-secondary">
-                    <i class={item.recipientKind === "email" ? "ti ti-mail" : "ti ti-user"} />
-                    {item.recipientKind}
-                  </span>
-                );
-              }
-              if (col.id === "recommended") {
-                return item.recommendedChannels.length > 0 ? (
-                  <div class="flex flex-wrap gap-1">{item.recommendedChannels.map((channel) => channelChip(channel, t))}</div>
-                ) : (
-                  <span class="text-dimmed">-</span>
-                );
-              }
-              if (col.id === "required") {
-                return item.requiredChannels.length > 0 ? (
-                  <div class="flex flex-wrap gap-1">{item.requiredChannels.map((channel) => channelChip(channel, t))}</div>
-                ) : (
-                  <span class="text-dimmed">-</span>
-                );
-              }
-              if (col.id === "events") return formatNumber(item.eventCount7d, { locale });
-              if (col.id === "failures") {
-                return (
-                  <span class={item.failedDeliveryCount7d > 0 ? "text-red-500" : "text-dimmed"}>
-                    {formatNumber(item.failedDeliveryCount7d, { locale })}
-                  </span>
-                );
-              }
-              if (col.id === "seen") return <span class="text-dimmed">{formatDateTime(item.lastSeenAt, dateConfig)}</span>;
-              if (col.id === "state") {
-                return item.active ? (
-                  <span class="inline-flex h-6 items-center gap-1 rounded-full bg-emerald-100 px-2 text-[10px] font-medium text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-200">
-                    <i class="ti ti-check" />
-                    {t.active}
-                  </span>
-                ) : (
-                  <span class="inline-flex h-6 items-center gap-1 rounded-full bg-zinc-100 px-2 text-[10px] font-medium text-zinc-700 dark:bg-zinc-800 dark:text-zinc-200">
-                    <i class="ti ti-archive" />
-                    {t.inactive}
-                  </span>
-                );
-              }
-              return "";
-            }}
-          />
-        </section>
-        <Pagination currentPage={pagination.page} totalPages={pagination.total_pages} baseUrl={baseUrl} />
+        <div class="min-w-0" style="view-transition-name: admin-notification-registry-table">
+          <DataTable.Panel>
+            <DataTable.Header
+              title={t.registeredNotificationKinds}
+              subtitle={t.definitionsCount({
+                count: formatNumber(result.items.length, { locale }),
+                total: formatNumber(result.total, { locale }),
+              })}
+            />
+            <DataTable.Controls>
+              <RegistryFilterBar search={search} status={status} appIds={appIds} appOptions={appOptions} />
+            </DataTable.Controls>
+            <DataTable
+              rows={result.items}
+              columns={columns}
+              getRowId={(item) => item.id}
+              hoverRows
+              surface="plain"
+              empty={search ? t.noMatchingRegisteredNotifications : t.noRegisteredDefinitions}
+              renderCell={({ row: item, col }) => {
+                if (col.id === "app") return appCell(item.appId, appById);
+                if (col.id === "notification") {
+                  return (
+                    <div class="min-w-0">
+                      <p class="truncate font-medium text-primary" title={item.label}>
+                        {item.label}
+                      </p>
+                      <p class="truncate text-[10px] text-dimmed" title={item.description}>
+                        {item.description}
+                      </p>
+                      <p class="truncate font-mono text-[9px] text-dimmed" title={item.id}>
+                        {item.kind}
+                      </p>
+                    </div>
+                  );
+                }
+                if (col.id === "recipient") {
+                  return (
+                    <span class="inline-flex items-center gap-1 text-xs capitalize text-secondary">
+                      <i class={item.recipientKind === "email" ? "ti ti-mail" : "ti ti-user"} />
+                      {item.recipientKind}
+                    </span>
+                  );
+                }
+                if (col.id === "recommended") {
+                  return item.recommendedChannels.length > 0 ? (
+                    <div class="flex flex-wrap gap-1">{item.recommendedChannels.map((channel) => channelChip(channel, t))}</div>
+                  ) : (
+                    <span class="text-dimmed">-</span>
+                  );
+                }
+                if (col.id === "required") {
+                  return item.requiredChannels.length > 0 ? (
+                    <div class="flex flex-wrap gap-1">{item.requiredChannels.map((channel) => channelChip(channel, t))}</div>
+                  ) : (
+                    <span class="text-dimmed">-</span>
+                  );
+                }
+                if (col.id === "events") return formatNumber(item.eventCount7d, { locale });
+                if (col.id === "failures") {
+                  return (
+                    <span class={item.failedDeliveryCount7d > 0 ? "text-red-500" : "text-dimmed"}>
+                      {formatNumber(item.failedDeliveryCount7d, { locale })}
+                    </span>
+                  );
+                }
+                if (col.id === "seen") return <span class="text-dimmed">{formatDateTime(item.lastSeenAt, dateConfig)}</span>;
+                if (col.id === "state") {
+                  return (
+                    <StatusBadge
+                      tone={item.active ? "ok" : "neutral"}
+                      label={item.active ? t.active : t.inactive}
+                      icon={item.active ? "ti ti-check" : "ti ti-archive"}
+                    />
+                  );
+                }
+                return "";
+              }}
+            />
+            <DataTable.Footer>
+              <Pagination currentPage={pagination.page} totalPages={pagination.total_pages} baseUrl={baseUrl} />
+            </DataTable.Footer>
+          </DataTable.Panel>
+        </div>
       </>
     ));
   }
@@ -484,64 +485,68 @@ export default ssr<AuthContext>(async (c) => {
         />
       </StatGrid>
 
-      <section class="paper overflow-hidden" style="view-transition-name: admin-notification-legacy-table">
-        <div class="flex flex-col gap-2 px-3 py-2">
-          <div>
-            <h2 class="text-xs font-semibold text-primary">{t.legacyEmailEntries}</h2>
-            <p class="text-[10px] text-dimmed">{t.entriesCount({ count: items.length, total })}</p>
-          </div>
-          <NotificationFilterBar search={search} status={status} />
-          {searchSummary && (
-            <div class="flex flex-wrap items-center gap-1.5">
-              <span class="inline-flex h-7 items-center gap-1.5 rounded-full bg-zinc-100 px-2.5 text-xs font-medium text-zinc-700 dark:bg-zinc-800 dark:text-zinc-200">
-                <i class="ti ti-search text-sm" />
-                {t.matches({ count: formatNumber(searchSummary.total, { locale }) })}
-              </span>
-              <span
-                class={`inline-flex h-7 items-center gap-1.5 rounded-full px-2.5 text-xs font-medium ${searchSummary.error > 0 ? "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-200" : "bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300"}`}
-              >
-                <i class="ti ti-alert-circle text-sm" />
-                {t.errorCountLabel({ count: formatNumber(searchSummary.error, { locale }) })}
-              </span>
-              <span class="inline-flex h-7 items-center gap-1.5 rounded-full bg-amber-100 px-2.5 text-xs font-medium text-amber-700 dark:bg-amber-900/40 dark:text-amber-200">
-                <i class="ti ti-clock text-sm" />
-                {t.pendingCountLabel({ count: formatNumber(searchSummary.pending, { locale }) })}
-              </span>
-            </div>
-          )}
-        </div>
-        <DataTable
-          rows={items}
-          columns={columns}
-          getRowId={(item) => item.id}
-          hoverRows
-          class="overflow-x-auto"
-          empty={search ? t.noMatchingLegacyNotifications : t.noLegacyNotifications}
-          renderCell={({ row: item, col }) => {
-            if (col.id === "status") return legacyStatusBadge(item.status, t);
-            if (col.id === "recipient") return item.recipient;
-            if (col.id === "subject")
-              return <span title={item.error ? `${item.subject} · ${item.error}` : item.subject}>{item.subject}</span>;
-            if (col.id === "sentBy") return <span class="text-dimmed">{item.sentByName ?? <span class="italic">{t.system}</span>}</span>;
-            if (col.id === "created") return <span class="text-dimmed">{formatDateTime(item.createdAt, dateConfig)}</span>;
-            if (col.id === "actions") {
-              return (
-                <NotificationActions
-                  id={item.id}
-                  status={item.status}
-                  subject={item.subject}
-                  content={item.content}
-                  recipient={item.recipient}
-                  error={item.error}
-                  isAdmin={isAdmin}
-                />
-              );
-            }
-            return "";
-          }}
-        />
-      </section>
-      <Pagination currentPage={pagination.page} totalPages={pagination.total_pages} baseUrl={baseUrl} />
+      <div class="min-w-0" style="view-transition-name: admin-notification-legacy-table">
+        <DataTable.Panel>
+          <DataTable.Header
+            title={t.legacyEmailEntries}
+            subtitle={t.entriesCount({ count: formatNumber(items.length, { locale }), total: formatNumber(total, { locale }) })}
+          />
+          <DataTable.Controls>
+            <NotificationFilterBar search={search} status={status} />
+            {searchSummary && (
+              <div class="flex flex-wrap items-center gap-1.5">
+                <span class="inline-flex h-7 items-center gap-1.5 rounded-full bg-zinc-100 px-2.5 text-xs font-medium text-zinc-700 dark:bg-zinc-800 dark:text-zinc-200">
+                  <i class="ti ti-search text-sm" />
+                  {t.matches({ count: formatNumber(searchSummary.total, { locale }) })}
+                </span>
+                <span
+                  class={`inline-flex h-7 items-center gap-1.5 rounded-full px-2.5 text-xs font-medium ${searchSummary.error > 0 ? "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-200" : "bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300"}`}
+                >
+                  <i class="ti ti-alert-circle text-sm" />
+                  {t.errorCountLabel({ count: formatNumber(searchSummary.error, { locale }) })}
+                </span>
+                <span class="inline-flex h-7 items-center gap-1.5 rounded-full bg-amber-100 px-2.5 text-xs font-medium text-amber-700 dark:bg-amber-900/40 dark:text-amber-200">
+                  <i class="ti ti-clock text-sm" />
+                  {t.pendingCountLabel({ count: formatNumber(searchSummary.pending, { locale }) })}
+                </span>
+              </div>
+            )}
+          </DataTable.Controls>
+          <DataTable
+            rows={items}
+            columns={columns}
+            getRowId={(item) => item.id}
+            hoverRows
+            surface="plain"
+            empty={search ? t.noMatchingLegacyNotifications : t.noLegacyNotifications}
+            renderCell={({ row: item, col }) => {
+              if (col.id === "status") return legacyStatusBadge(item.status, t);
+              if (col.id === "recipient") return item.recipient;
+              if (col.id === "subject")
+                return <span title={item.error ? `${item.subject} · ${item.error}` : item.subject}>{item.subject}</span>;
+              if (col.id === "sentBy") return <span class="text-dimmed">{item.sentByName ?? <span class="italic">{t.system}</span>}</span>;
+              if (col.id === "created") return <span class="text-dimmed">{formatDateTime(item.createdAt, dateConfig)}</span>;
+              if (col.id === "actions") {
+                return (
+                  <NotificationActions
+                    id={item.id}
+                    status={item.status}
+                    subject={item.subject}
+                    content={item.content}
+                    recipient={item.recipient}
+                    error={item.error}
+                    isAdmin={isAdmin}
+                  />
+                );
+              }
+              return "";
+            }}
+          />
+          <DataTable.Footer>
+            <Pagination currentPage={pagination.page} totalPages={pagination.total_pages} baseUrl={baseUrl} />
+          </DataTable.Footer>
+        </DataTable.Panel>
+      </div>
     </>
   ));
 });

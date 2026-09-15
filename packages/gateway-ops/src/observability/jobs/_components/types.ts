@@ -50,7 +50,7 @@ const durationFilters = new Set(jobsDurationOptions.map((option) => option.value
 
 const parsePage = (value: string | null): number => {
   const page = Number(value ?? "1");
-  return Number.isFinite(page) && page > 0 ? Math.trunc(page) : 1;
+  return Number.isSafeInteger(page) && page > 0 ? page : 1;
 };
 
 export const parseJobsFilterFromUrl = (url: URL): JobsFilterState => {

@@ -46,6 +46,7 @@ const renderPanel = (rows: TelemetryEventRow[] = events) =>
       events: rows,
       eventLimit: 100,
       slowRequestMs: 500,
+      dateConfig: { locale: "en-GB", timeZone: "Europe/Berlin" },
       closeHref: "/admin/observability/telemetry?range=7d&app=mail&sort=requests",
     }),
   );
@@ -53,6 +54,8 @@ const renderPanel = (rows: TelemetryEventRow[] = events) =>
 describe("RouteDetailPanel", () => {
   test("renders retained requests through one shared detail panel body", () => {
     const html = renderPanel();
+    expect(html).toContain("10:00");
+    expect(html).not.toContain("08:00");
 
     expect(html).toContain('aria-label="Route detail"');
     expect(html).toContain('class="k2b-detail-panel"');

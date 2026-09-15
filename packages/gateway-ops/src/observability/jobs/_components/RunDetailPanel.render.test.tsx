@@ -65,6 +65,7 @@ const renderPanel = (input: { span?: TraceSpan; events?: TraceEvent[] } = {}) =>
       span: input.span ?? span,
       events: input.events ?? events,
       status: "Healthy",
+      dateConfig: { locale: "en-GB", timeZone: "Europe/Berlin" },
       closeHref: "/admin/observability/jobs?source=mail.cleanup",
     }),
   );
@@ -72,6 +73,8 @@ const renderPanel = (input: { span?: TraceSpan; events?: TraceEvent[] } = {}) =>
 describe("RunDetailPanel", () => {
   test("renders the complete run context through one shared detail panel body", () => {
     const html = renderPanel();
+    expect(html).toContain("10:00");
+    expect(html).not.toContain("08:00");
 
     expect(html).toContain('<aside class="paper min-h-0 p-3" aria-label="Run detail">');
     expect(html).toContain('class="k2b-detail-panel"');

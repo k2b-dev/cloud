@@ -38,16 +38,23 @@ export type ObservabilityChartProps = {
   xFormat?: ObservabilityChartFormat;
   yFormat?: ObservabilityChartFormat;
   legend?: boolean;
+  timeZone?: string;
   area?: boolean;
 };
 
 /** Chart axes hand over a raw number, so each shared helper is adapted to that. */
-const formatterFor = (format: ObservabilityChartFormat | undefined, locale: string, domain?: readonly [number, number]): ((value: number) => string) => {
+const formatterFor = (
+  format: ObservabilityChartFormat | undefined,
+  locale: string,
+  domain?: readonly [number, number],
+  timeZone?: string,
+): ((value: number) => string) => {
   if (format === "bytes") return (value) => formatBytes(value, { locale });
-  if (format === "datetime") return (value) => formatDateTime(new Date(value), { locale });
+  if (format === "datetime") return (value) => formatDateTime(new Date(value), { locale, timeZone });
   if (format === "timeline") {
     const span = domain ? Math.abs(domain[1] - domain[0]) : 0;
     const formatter = new Intl.DateTimeFormat(locale, {
+      timeZone,
       ...(span > 24 * 60 * 60 * 1000 ? { day: "2-digit", month: "short" } : {}),
       hour: "2-digit",
       minute: "2-digit",
@@ -76,8 +83,8 @@ export default function ObservabilityChart(props: ObservabilityChartProps) {
         kind="line"
         class={cls()}
         series={props.series ?? []}
-        xAxis={{ format: formatterFor(props.xFormat, locale(), lineDomain()) }}
-        yAxis={{ format: formatterFor(props.yFormat, locale()) }}
+        xAxis={{ format: formatterFor(props.xFormat, locale(), lineDomain(), props.timeZone) }}
+        yAxis={{ format: formatterFor(props.yFormat, locale(), undefined, props.timeZone) }}
         legend={props.legend}
         area={props.area}
         interactive={props.interactive}
@@ -94,7 +101,7 @@ export default function ObservabilityChart(props: ObservabilityChartProps) {
         rows={props.rows ?? []}
         states={props.states}
         domain={props.domain}
-        xAxis={{ format: formatterFor(props.xFormat, locale(), props.domain) }}
+        xAxis={{ format: formatterFor(props.xFormat, locale(), props.domain, props.timeZone) }}
         legend={props.legend}
         interactive={props.interactive}
       />
@@ -102,7 +109,14 @@ export default function ObservabilityChart(props: ObservabilityChartProps) {
   }
 
   if (props.kind === "bar") {
-    return <Chart kind="bar" class={cls()} data={props.data ?? []} yAxis={{ format: formatterFor(props.yFormat, locale()) }} />;
+    return (
+      <Chart
+        kind="bar"
+        class={cls()}
+        data={props.data ?? []}
+        yAxis={{ format: formatterFor(props.yFormat, locale(), undefined, props.timeZone) }}
+      />
+    );
   }
 
   return <Chart kind="donut" class={cls()} data={props.data ?? []} legend={props.legend} />;

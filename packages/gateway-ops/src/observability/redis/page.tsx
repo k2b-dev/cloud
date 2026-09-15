@@ -2,11 +2,11 @@ import { ButtonLink, DataTable, type DataTableColumn, NoticeCard, StatCell, Stat
 import { type AuthContext, getLocale } from "@k2b/cloud/server";
 import { formatBytes, formatNumber, formatPercent } from "@k2b/cloud/shared";
 import { AdminLayout } from "@k2b/cloud/ssr";
-import { SearchBar } from "@k2b/cloud/ssr/islands";
 import { ssr } from "../../config";
 import OperationalCharts from "../../frontend/OperationalCharts.island";
 import { prepareOperationalCharts } from "../../frontend/operational-charts";
 import { getRedisDiagnostics, type RedisPrefixDiagnostic } from "../data/service";
+import { buildRedisFilterUrl, parseRedisFilterFromUrl } from "./_components/filter-state";
 import RedisDataFilters from "./_components/RedisDataFilters.island";
 import { gatewayOpsMessages } from "../../messages";
 
@@ -16,16 +16,10 @@ export default ssr<AuthContext>(async (c) => {
   const locale = getLocale(c);
   const { t } = gatewayOpsMessages.resolve([locale]);
   const url = new URL(c.req.url);
-  const search = url.searchParams.get("search")?.trim() ?? "";
-  const selectedDepth = Math.min(3, Math.max(1, Number(url.searchParams.get("depth") ?? "3")));
+  const filter = parseRedisFilterFromUrl(url);
+  const { search, depth: selectedDepth } = filter;
   const diagnostics = await getRedisDiagnostics(locale);
   const searchNeedle = normalize(search);
-
-  const searchActionParams = new URLSearchParams(url.searchParams);
-  searchActionParams.delete("search");
-  const searchAction = searchActionParams.toString()
-    ? `/admin/observability/redis?${searchActionParams.toString()}`
-    : "/admin/observability/redis";
 
   const filteredPrefixes = diagnostics.prefixes.filter((prefix) => {
     if (prefix.depth !== selectedDepth) return false;
@@ -38,11 +32,7 @@ export default ssr<AuthContext>(async (c) => {
     .sort((left, right) => right.count - left.count || left.prefix.localeCompare(right.prefix))
     .slice(0, 10)
     .map((prefix) => ({ label: prefix.prefix, value: prefix.count }));
-  const redisPrefixHref = (prefix: string): string => {
-    const params = new URLSearchParams(url.searchParams);
-    params.set("search", prefix);
-    return `/admin/observability/redis?${params.toString()}`;
-  };
+  const redisPrefixHref = (prefix: string): string => buildRedisFilterUrl(filter, { search: prefix });
 
   const expiringKeys = diagnostics.keyspace.reduce((sum, row) => sum + row.expires, 0);
   const runtime = diagnostics.runtime;
@@ -111,13 +101,7 @@ export default ssr<AuthContext>(async (c) => {
         </StatGrid>
 
         <NoticeCard.Grid items={diagnostics.warnings}>
-          {(warning) => (
-            <NoticeCard
-              tone={warning.tone === "red" ? "danger" : "warning"}
-              title={warning.title}
-              detail={warning.detail}
-            />
-          )}
+          {(warning) => <NoticeCard tone={warning.tone === "red" ? "danger" : "warning"} title={warning.title} detail={warning.detail} />}
         </NoticeCard.Grid>
 
         <section>
@@ -154,24 +138,22 @@ export default ssr<AuthContext>(async (c) => {
           </nav>
         </section>
 
-        <section class="paper overflow-hidden">
-          <div class="flex flex-col gap-2 px-3 py-2">
-            <div>
-              <h2 class="text-xs font-semibold text-primary">{t.prefixes}</h2>
-              <p class="text-[10px] text-dimmed">
-                {t.prefixesAtDepth({ count: formatNumber(filteredPrefixes.length, { locale }), depth: selectedDepth })}
-              </p>
-            </div>
-            <SearchBar action={searchAction} value={search} placeholder={t.searchRedisPrefixes} ariaLabel={t.searchRedisPrefixesLabel} />
+        <DataTable.Panel>
+          <DataTable.Header
+            title={t.prefixes}
+            subtitle={t.prefixesAtDepth({ count: formatNumber(filteredPrefixes.length, { locale }), depth: selectedDepth })}
+          />
+          <DataTable.Controls>
             <RedisDataFilters search={search} depth={selectedDepth} />
-          </div>
+          </DataTable.Controls>
           <DataTable
             rows={filteredPrefixes}
             columns={prefixColumns}
             getRowId={(prefix) => `${prefix.depth}:${prefix.prefix}`}
             density="compact"
             hoverRows
-            class="max-h-[34rem] overflow-auto"
+            surface="plain"
+            class="max-h-[34rem]"
             empty={t.noMatchingRedisPrefixes}
             renderCell={({ col, value, render }) => {
               if (col.id === "count") return <span class="tabular-nums">{formatNumber(Number(value ?? 0), { locale })}</span>;
@@ -179,7 +161,7 @@ export default ssr<AuthContext>(async (c) => {
               return render(value);
             }}
           />
-        </section>
+        </DataTable.Panel>
       </div>
     </AdminLayout>
   );

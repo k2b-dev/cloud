@@ -1,3 +1,4 @@
+import type { DateContext } from "@k2b/stdlib";
 import {
   Button,
   ButtonLink,
@@ -8,18 +9,13 @@ import {
   Placeholder,
   StatCell,
   StatGrid,
+  StatusBadge,
   useLocale,
 } from "@k2b/ui";
 import { createPagination } from "@k2b/cloud/contracts";
 import { type AuthContext, getDateConfig, getLocale } from "@k2b/cloud/server";
 import { type TraceListFilter, type TraceRunStats, type TraceSourceGroup, type TraceSpan, trace } from "@k2b/cloud/services";
-import {
-  formatDate,
-  formatDurationMs as formatMs,
-  formatNumber,
-  formatPercent,
-  formatDateTime as formatTimestamp,
-} from "@k2b/cloud/shared";
+import { formatDurationMs as formatMs, formatNumber, formatPercent, formatDateTime as formatTimestamp } from "@k2b/cloud/shared";
 import { AdminLayout } from "@k2b/cloud/ssr";
 import { ssr } from "../../config";
 import ObservabilityChart from "../../frontend/ObservabilityChart.island";
@@ -52,15 +48,16 @@ const baseUrl = "/admin/observability/jobs";
  */
 const OVERDUE_GRACE_MS = 2 * 60 * 1000;
 
-const formatDuration = (ms: number): string => {
+const formatDuration = (ms: number, locale: string): string => {
   const minutes = Math.floor(ms / 60_000);
-  if (minutes < 60) return `${minutes}m`;
+  if (minutes < 60) return `${formatNumber(minutes, { locale })}m`;
   const hours = Math.floor(minutes / 60);
-  return hours < 48 ? `${hours}h` : `${Math.floor(hours / 24)}d`;
+  return hours < 48 ? `${formatNumber(hours, { locale })}h` : `${formatNumber(Math.floor(hours / 24), { locale })}d`;
 };
 
 const windowLabel = (filter: JobsFilterState, t: GatewayOpsMessages): string => {
   if (filter.window === "10m") return t.lastMinutes({ count: 10 }).toLowerCase();
+  if (filter.window === "1h") return t.lastHours({ count: 1 }).toLowerCase();
   if (filter.window === "12h") return t.lastHours({ count: 12 }).toLowerCase();
   if (filter.window === "24h") return t.lastHours({ count: 24 }).toLowerCase();
   return t.lastDays({ count: filter.window === "30d" ? 30 : 7 }).toLowerCase();
@@ -99,28 +96,10 @@ const traceFilterFromJobs = (filter: JobsFilterState): TraceListFilter => {
 
 const statusBadge = (input: { status: string | null; running?: boolean }) => {
   const { t } = gatewayOpsMessages.resolve([useLocale()()]);
-  if (input.running) {
-    return (
-      <span class="rounded bg-blue-50 px-1.5 py-0.5 text-[10px] font-medium text-blue-700 dark:bg-blue-950/40 dark:text-blue-200">
-        {t.running}
-      </span>
-    );
-  }
-  if (input.status === "error") {
-    return (
-      <span class="rounded bg-red-50 px-1.5 py-0.5 text-[10px] font-medium text-red-700 dark:bg-red-950/40 dark:text-red-200">
-        {t.failed}
-      </span>
-    );
-  }
-  if (input.status === "ok") {
-    return (
-      <span class="rounded bg-emerald-50 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-200">
-        {t.healthy}
-      </span>
-    );
-  }
-  return <span class="rounded bg-zinc-100 px-1.5 py-0.5 text-[10px] font-medium text-dimmed dark:bg-zinc-900">{t.unset}</span>;
+  if (input.running) return <StatusBadge tone="running" label={t.running} />;
+  if (input.status === "error") return <StatusBadge tone="error" label={t.failed} />;
+  if (input.status === "ok") return <StatusBadge tone="ok" label={t.healthy} />;
+  return <StatusBadge tone="neutral" label={t.unset} />;
 };
 
 const groupHealth = (group: TraceSourceGroup) => {
@@ -133,27 +112,14 @@ const rowHealth = (row: BackgroundJobOverviewRow) => (row.trace ? groupHealth(ro
 const stateBadge = (row: BackgroundJobOverviewRow) => {
   const { t } = gatewayOpsMessages.resolve([useLocale()()]);
   if (row.kind === "trace") {
-    if (row.trace.categories.includes("backfill")) {
-      return (
-        <span class="inline-flex items-center gap-1 rounded bg-blue-50 px-1.5 py-0.5 text-[10px] font-medium text-blue-700 dark:bg-blue-950/40 dark:text-blue-200">
-          <i class="ti ti-database-import" aria-hidden="true" />
-          {t.backfill}
-        </span>
-      );
-    }
-    return <span class="rounded bg-zinc-100 px-1.5 py-0.5 text-[10px] font-medium text-dimmed dark:bg-zinc-900">{t.traceOnly}</span>;
-  }
-  if (row.state === "available") {
-    return (
-      <span class="rounded bg-emerald-50 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-200">
-        {t.available}
-      </span>
+    return row.trace.categories.includes("backfill") ? (
+      <StatusBadge tone="info" label={t.backfill} icon="ti ti-database-import" />
+    ) : (
+      <StatusBadge tone="neutral" label={t.traceOnly} />
     );
   }
   return (
-    <span class="rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:bg-amber-950/40 dark:text-amber-200">
-      {t.unavailable}
-    </span>
+    <StatusBadge tone={row.state === "available" ? "ok" : "warning"} label={row.state === "available" ? t.available : t.unavailable} />
   );
 };
 
@@ -208,7 +174,7 @@ const statsGrid = (stats: TraceRunStats, filter: JobsFilterState) => {
         sub={t.openAbandoned}
         valueClass={stats.stuck > 0 ? "text-red-500" : "text-primary"}
         accent={stats.stuck > 0 ? { tone: "red", icon: "ti ti-plug-connected-x" } : undefined}
-        href={stats.stuck > 0 ? buildJobsFilterUrl(baseUrl, { health: "stuck" }, filter) : undefined}
+        href={stats.stuck > 0 ? buildJobsFilterUrl(baseUrl, { health: "stuck", page: 1, run: null }, filter) : undefined}
       />
       <StatCell
         label="P99"
@@ -300,7 +266,7 @@ const ActionCell = (props: { row: BackgroundJobOverviewRow; filter: JobsFilterSt
   );
 };
 
-const OverviewTable = (props: { rows: BackgroundJobOverviewRow[]; filter: JobsFilterState }) => {
+const OverviewTable = (props: { rows: BackgroundJobOverviewRow[]; filter: JobsFilterState; dateConfig: DateContext }) => {
   const locale = useLocale();
   const { t } = gatewayOpsMessages.resolve([locale()]);
   const columns: DataTableColumn<BackgroundJobOverviewRow>[] = [
@@ -325,14 +291,20 @@ const OverviewTable = (props: { rows: BackgroundJobOverviewRow[]; filter: JobsFi
       cellClass: "text-right",
     },
     { id: "next", header: t.next, subtitle: t.scheduled, value: (row) => row.nextRunAt ?? 0, cellClass: "whitespace-nowrap" },
-    { id: "action", header: "", value: (row) => row.scheduleId ?? row.source, headerClass: "text-right", cellClass: "text-right" },
+    {
+      id: "action",
+      header: <span class="sr-only">{t.actions}</span>,
+      value: (row) => row.scheduleId ?? row.source,
+      headerClass: "text-right",
+      cellClass: "text-right",
+    },
   ];
   return (
-    <section class="paper overflow-hidden">
-      <div class="px-3 py-2">
-        <h2 class="text-xs font-semibold text-primary">{t.schedulesAndFamilies}</h2>
-        <p class="text-[10px] text-dimmed">{t.schedulesAndFamiliesDescription}</p>
-      </div>
+    <DataTable.Panel>
+      <DataTable.Header title={t.schedulesAndFamilies} subtitle={t.schedulesAndFamiliesDescription} />
+      <DataTable.Controls>
+        <JobsFilterBar filter={props.filter} />
+      </DataTable.Controls>
       <DataTable
         rows={props.rows}
         columns={columns}
@@ -340,7 +312,7 @@ const OverviewTable = (props: { rows: BackgroundJobOverviewRow[]; filter: JobsFi
         hoverRows
         highlightColumns={false}
         density="compact"
-        class="overflow-x-auto"
+        surface="plain"
         empty={t.noJobSources}
         renderCell={({ row, col }) => {
           if (col.id === "source")
@@ -376,14 +348,14 @@ const OverviewTable = (props: { rows: BackgroundJobOverviewRow[]; filter: JobsFi
               <span
                 class="text-[10px] text-red-500"
                 title={t.expectedAt({
-                  time: formatTimestamp(row.nextRunAt === null ? null : new Date(row.nextRunAt), { locale: locale() }),
+                  time: formatTimestamp(row.nextRunAt === null ? null : new Date(row.nextRunAt), props.dateConfig),
                 })}
               >
-                {t.overdue({ duration: formatDuration(overdueMs) })}
+                {t.overdue({ duration: formatDuration(overdueMs, locale()) })}
               </span>
             ) : (
               <span class="text-[10px] text-dimmed">
-                {formatTimestamp(row.nextRunAt === null ? null : new Date(row.nextRunAt), { locale: locale() })}
+                {formatTimestamp(row.nextRunAt === null ? null : new Date(row.nextRunAt), props.dateConfig)}
               </span>
             );
           }
@@ -391,7 +363,7 @@ const OverviewTable = (props: { rows: BackgroundJobOverviewRow[]; filter: JobsFi
           return "";
         }}
       />
-    </section>
+    </DataTable.Panel>
   );
 };
 
@@ -401,6 +373,7 @@ const SourceRunsTable = (props: {
   pagination: ReturnType<typeof createPagination>;
   filter: JobsFilterState;
   selectedRunKey: string | null;
+  dateConfig: DateContext;
 }) => {
   const locale = useLocale();
   const { t } = gatewayOpsMessages.resolve([locale()]);
@@ -414,17 +387,18 @@ const SourceRunsTable = (props: {
     { id: "summary", header: t.summary, value: (row) => summarize(row.summary) },
   ];
   return (
-    <section class="paper overflow-hidden">
-      <div class="px-3 py-2">
-        <h2 class="text-xs font-semibold text-primary">{t.runs}</h2>
-        <p class="text-[10px] text-dimmed">
-          {t.runsCountAndDuration({
-            count: formatNumber(props.spans.length, { locale: locale() }),
-            total: formatNumber(props.total, { locale: locale() }),
-            duration: durationLabel(props.filter, t),
-          })}
-        </p>
-      </div>
+    <DataTable.Panel>
+      <DataTable.Header
+        title={t.runs}
+        subtitle={t.runsCountAndDuration({
+          count: formatNumber(props.spans.length, { locale: locale() }),
+          total: formatNumber(props.total, { locale: locale() }),
+          duration: durationLabel(props.filter, t),
+        })}
+      />
+      <DataTable.Controls>
+        <JobsFilterBar filter={props.filter} />
+      </DataTable.Controls>
       <DataTable
         rows={props.spans}
         columns={columns}
@@ -433,10 +407,10 @@ const SourceRunsTable = (props: {
         hoverRows
         highlightColumns={false}
         density="compact"
-        class="overflow-x-auto"
+        surface="plain"
         empty={t.noMatchingRuns}
         renderCell={({ row, col }) => {
-          if (col.id === "started") return <span class="text-[10px] text-dimmed">{formatDate(row.startedAt, { locale: locale() })}</span>;
+          if (col.id === "started") return <span class="text-[10px] text-dimmed">{formatTimestamp(row.startedAt, props.dateConfig)}</span>;
           if (col.id === "name")
             return (
               <a href={runUrl(props.filter, row)} class="block min-w-0 hover:text-blue-600 dark:hover:text-blue-300">
@@ -455,14 +429,14 @@ const SourceRunsTable = (props: {
           return "";
         }}
       />
-      <div class="px-3 py-2">
+      <DataTable.Footer>
         <Pagination
           currentPage={props.pagination.page}
           totalPages={props.pagination.total_pages}
           baseUrl={paginationBaseUrl(props.filter)}
         />
-      </div>
-    </section>
+      </DataTable.Footer>
+    </DataTable.Panel>
   );
 };
 
@@ -617,6 +591,7 @@ export default ssr<AuthContext>(async (c) => {
                 { state: "stuck", label: t.neverFinished, color: "#f59e0b" },
               ]}
               xFormat="timeline"
+              timeZone={dateConfig.timeZone}
               legend
               interactive
             />
@@ -624,10 +599,6 @@ export default ssr<AuthContext>(async (c) => {
         </section>
         <FeedbackBanner feedback={actionFeedback} />
         <ControlWarning error={scheduleResult.error} />
-
-        <section class="paper p-3">
-          <JobsFilterBar filter={filter} />
-        </section>
 
         {filter.source ? (
           <div class={selectedSpan ? "grid min-h-0 gap-2 xl:grid-cols-[minmax(0,1fr)_26rem]" : "min-h-0"}>
@@ -637,10 +608,12 @@ export default ssr<AuthContext>(async (c) => {
               pagination={pagination}
               filter={filter}
               selectedRunKey={selectedRunKey}
+              dateConfig={dateConfig}
             />
             {selectedSpan ? (
               <RunDetailPanel
                 span={selectedSpan}
+                dateConfig={dateConfig}
                 events={selectedEvents}
                 status={statusBadge({ status: selectedSpan.status, running: !selectedSpan.endedAt })}
                 closeHref={closeRunUrl(filter)}
@@ -648,7 +621,7 @@ export default ssr<AuthContext>(async (c) => {
             ) : null}
           </div>
         ) : (
-          <OverviewTable rows={overviewRows} filter={filter} />
+          <OverviewTable rows={overviewRows} filter={filter} dateConfig={dateConfig} />
         )}
       </div>
     </AdminLayout>

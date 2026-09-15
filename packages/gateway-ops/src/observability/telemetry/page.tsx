@@ -3,7 +3,7 @@ import { browserTelemetryPage } from "./browser/page";
 import ModeNav from "./browser/ModeNav";
 import { DataTable, type DataTableColumn, StatCell, StatGrid } from "@k2b/ui";
 import { listAppsDetailed } from "@k2b/cloud";
-import { type AuthContext, getLocale } from "@k2b/cloud/server";
+import { type AuthContext, getLocale, getDateConfig } from "@k2b/cloud/server";
 import {
   formatNumber as fmtCount,
   formatDurationMs as fmtMs,
@@ -239,11 +239,11 @@ export default ssr<AuthContext>(async (c) => {
         ) : null}
 
         <div class={filter.route ? "grid min-h-0 gap-2 xl:grid-cols-[minmax(0,1fr)_24rem]" : "min-h-0"}>
-          <section class="paper overflow-hidden">
-            <div class="px-3 py-2">
-              <h2 class="text-xs font-semibold text-primary">{t.gatewayRoutesTitle}</h2>
-              <p class="text-[10px] text-dimmed">{t.sortedRoutesDescription({ sort: sortLabel.toLocaleLowerCase(locale) })}</p>
-            </div>
+          <DataTable.Panel>
+            <DataTable.Header
+              title={t.gatewayRoutesTitle}
+              subtitle={t.sortedRoutesDescription({ sort: sortLabel.toLocaleLowerCase(locale) })}
+            />
             <DataTable
               rows={routes}
               columns={routeColumns}
@@ -252,7 +252,7 @@ export default ssr<AuthContext>(async (c) => {
               hoverRows
               highlightColumns={false}
               density="compact"
-              class="overflow-x-auto"
+              surface="plain"
               empty={t.noTrafficRange}
               renderCell={({ row, col }) => {
                 if (col.id === "route")
@@ -299,11 +299,12 @@ export default ssr<AuthContext>(async (c) => {
                 return "";
               }}
             />
-          </section>
+          </DataTable.Panel>
 
           {filter.route ? (
             <RouteDetailPanel
               route={filter.route}
+              dateConfig={getDateConfig(c)}
               events={events}
               eventLimit={DRILLDOWN_EVENT_LIMIT}
               slowRequestMs={SLOW_REQUEST_MS}

@@ -65,6 +65,7 @@ export default function MembersTab(props: MembersTabProps) {
   return (
     <div class="flex flex-col gap-2" style="view-transition-name: accounts-group-members">
       <TabToolbar
+        searchAction={props.pageBaseUrl}
         indirectToggleUrl={props.toggleIndirectUrl}
         indirect={props.indirect}
         serviceAccountsToggleUrl={props.serviceAccountsToggleUrl}

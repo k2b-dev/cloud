@@ -19,37 +19,54 @@ const baseUrl = "/admin/observability/jobs";
 
 export default function JobsFilterBar(props: Props) {
   const { t } = gatewayOpsMessages.resolve([useLocale()()]);
-  const windowOptions: FilterChipSection[] = [{
-    options: jobsWindowOptions.map((option) => ({
-      value: option.value,
-      label: option.value.endsWith("m")
-        ? t.lastMinutes({ count: Number(option.value.slice(0, -1)) })
-        : option.value.endsWith("d")
-          ? t.lastDays({ count: Number(option.value.slice(0, -1)) })
-          : t.lastHours({ count: Number(option.value.slice(0, -1)) }),
-      icon: "ti ti-clock",
-    })),
-  }];
-  const healthOptions: FilterChipSection[] = [{ options: [
-    { value: "all", label: t.allStates, icon: "ti ti-list" },
-    { value: "failed", label: t.failed, icon: "ti ti-alert-circle" },
-    { value: "running", label: t.running, icon: "ti ti-loader" },
-    { value: "healthy", label: t.healthy, icon: "ti ti-check" },
-  ] }];
-  const typeOptions: FilterChipSection[] = [{ options: [
-    { value: "all", label: t.allTypes, icon: "ti ti-stack-2" },
-    { value: "job", label: t.backgroundJobs, icon: "ti ti-briefcase" },
-    { value: "schedule", label: t.schedules, icon: "ti ti-calendar-time" },
-    { value: "backfill", label: t.backfills, icon: "ti ti-database-import" },
-    { value: "ai", label: "AI", icon: "ti ti-sparkles" },
-    { value: "sync", label: "Sync", icon: "ti ti-refresh" },
-    { value: "notification", label: t.notifications, icon: "ti ti-bell" },
-    { value: "http", label: "HTTP", icon: "ti ti-world" },
-    { value: "custom", label: t.custom, icon: "ti ti-settings" },
-  ] }];
-  const durationOptions: FilterChipSection[] = [{
-    options: jobsDurationOptions.map((option) => ({ value: option.value, label: option.value === "all" ? t.allDurations : option.label, icon: "ti ti-hourglass" })),
-  }];
+  const windowOptions: FilterChipSection[] = [
+    {
+      options: jobsWindowOptions.map((option) => ({
+        value: option.value,
+        label: option.value.endsWith("m")
+          ? t.lastMinutes({ count: Number(option.value.slice(0, -1)) })
+          : option.value.endsWith("d")
+            ? t.lastDays({ count: Number(option.value.slice(0, -1)) })
+            : t.lastHours({ count: Number(option.value.slice(0, -1)) }),
+        icon: "ti ti-clock",
+      })),
+    },
+  ];
+  const healthOptions: FilterChipSection[] = [
+    {
+      options: [
+        { value: "all", label: t.allStates, icon: "ti ti-list" },
+        { value: "failed", label: t.failed, icon: "ti ti-alert-circle" },
+        { value: "stuck", label: t.stuck, icon: "ti ti-plug-connected-x" },
+        { value: "running", label: t.running, icon: "ti ti-loader" },
+        { value: "healthy", label: t.healthy, icon: "ti ti-check" },
+      ],
+    },
+  ];
+  const typeOptions: FilterChipSection[] = [
+    {
+      options: [
+        { value: "all", label: t.allTypes, icon: "ti ti-stack-2" },
+        { value: "job", label: t.backgroundJobs, icon: "ti ti-briefcase" },
+        { value: "schedule", label: t.schedules, icon: "ti ti-calendar-time" },
+        { value: "backfill", label: t.backfills, icon: "ti ti-database-import" },
+        { value: "ai", label: "AI", icon: "ti ti-sparkles" },
+        { value: "sync", label: "Sync", icon: "ti ti-refresh" },
+        { value: "notification", label: t.notifications, icon: "ti ti-bell" },
+        { value: "http", label: "HTTP", icon: "ti ti-world" },
+        { value: "custom", label: t.custom, icon: "ti ti-settings" },
+      ],
+    },
+  ];
+  const durationOptions: FilterChipSection[] = [
+    {
+      options: jobsDurationOptions.map((option) => ({
+        value: option.value,
+        label: option.value === "all" ? t.allDurations : option.label,
+        icon: "ti ti-hourglass",
+      })),
+    },
+  ];
   const navigate = (updates: Partial<JobsFilterState>) => {
     navigateTo(buildJobsFilterUrl(baseUrl, { ...updates, page: 1, run: null }, props.filter));
   };

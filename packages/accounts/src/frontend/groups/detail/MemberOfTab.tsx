@@ -40,6 +40,7 @@ export default function MemberOfTab(props: MemberOfTabProps) {
   return (
     <div class="flex flex-col gap-2" style="view-transition-name: accounts-group-member-of">
       <TabToolbar
+        searchAction={props.pageBaseUrl}
         actions={
           props.isAdmin ? (
             <AddGroupToGroup groupId={props.groupId} groupProvider={props.groupProvider} excludeGroups={props.allParentGroupIds} />

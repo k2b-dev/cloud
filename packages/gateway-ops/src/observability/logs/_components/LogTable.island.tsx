@@ -1,5 +1,18 @@
-import { dates } from "@k2b/stdlib";
-import { Button, CopyButton, DataTable, type DataTableColumn, type LogTableEntry, Placeholder, prompts, useLocale } from "@k2b/ui";
+import { type DateContext } from "@k2b/stdlib";
+import { formatDateTime, formatNumber } from "@k2b/cloud/shared";
+import {
+  Button,
+  CopyButton,
+  DataTable,
+  type DataTableColumn,
+  type LogTableEntry,
+  Pagination,
+  Placeholder,
+  prompts,
+  StatusBadge,
+  type StatusTone,
+  useLocale,
+} from "@k2b/ui";
 import { createSignal, Show } from "solid-js";
 import LogFilterBar from "./LogFilterBar";
 import type { LogFilterState } from "./types";
@@ -11,13 +24,17 @@ type Props = {
   filter: LogFilterState;
   sources: string[];
   retentionDays: number;
+  timeZone: string;
+  totalPages: number;
+  baseUrl: string;
+  loadError: string | null;
 };
 
-const LEVEL: Record<string, { icon: string; color: string; label: string }> = {
-  debug: { icon: "ti ti-bug", color: "text-zinc-400 dark:text-zinc-500", label: "debug" },
-  info: { icon: "ti ti-info-circle", color: "text-blue-500 dark:text-blue-400", label: "info" },
-  warn: { icon: "ti ti-alert-triangle", color: "text-amber-500 dark:text-amber-400", label: "warn" },
-  error: { icon: "ti ti-alert-circle", color: "text-red-500 dark:text-red-400", label: "error" },
+const LEVEL: Record<string, { icon: string; tone: StatusTone; label: string }> = {
+  debug: { icon: "ti ti-bug", tone: "neutral", label: "debug" },
+  info: { icon: "ti ti-info-circle", tone: "info", label: "info" },
+  warn: { icon: "ti ti-alert-triangle", tone: "warning", label: "warn" },
+  error: { icon: "ti ti-alert-circle", tone: "error", label: "error" },
 };
 
 /** key=value, key2=value2 for the inline detail column */
@@ -76,20 +93,20 @@ function MetadataDetail(props: { metadata: Record<string, unknown> | null }) {
   );
 }
 
-function showDetail(entry: LogTableEntry) {
-  const locale = document.documentElement.lang;
-  const { t } = gatewayOpsMessages.resolve([locale]);
+function showDetail(entry: LogTableEntry, dateConfig: DateContext) {
+  const locale = dateConfig.locale;
+  const { t } = gatewayOpsMessages.resolve([locale ?? "en"]);
   const level = LEVEL[entry.level];
   void prompts.dialog(
     (close) => (
       <div class="flex flex-col gap-4">
         <div class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-xs">
           <span class="text-dimmed">{t.level}</span>
-          <span class={`font-medium ${level?.color ?? "text-primary"}`}>{level?.label ?? entry.level}</span>
+          <StatusBadge tone={level?.tone ?? "neutral"} label={level?.label ?? entry.level} icon={level?.icon} />
           <span class="text-dimmed">{t.source}</span>
           <span class="text-primary">{entry.source}</span>
           <span class="text-dimmed">{t.time}</span>
-          <span class="text-primary">{dates.formatDateTime(entry.createdAt, { locale })}</span>
+          <span class="text-primary">{formatDateTime(entry.createdAt, dateConfig)}</span>
         </div>
         <div class="flex flex-col gap-1">
           <span class="text-[10px] uppercase tracking-wider text-dimmed">{t.message}</span>
@@ -130,39 +147,49 @@ export default function LogTable(props: Props) {
   ];
 
   return (
-    <section class="overflow-hidden rounded-[var(--ui-radius-surface)] bg-[var(--ui-surface-subtle)]">
-      <div class="flex flex-col gap-2 px-3 py-2">
-        <div>
-          <h2 class="text-xs font-semibold text-primary">{t.entries}</h2>
-          <p class="text-[10px] text-dimmed">{t.visibleLogEntries({ count: props.entries.length, total: props.total })}</p>
-        </div>
+    <DataTable.Panel>
+      <DataTable.Header
+        title={t.entries}
+        subtitle={
+          props.loadError
+            ? t.unavailable
+            : t.visibleLogEntries({
+                count: formatNumber(props.entries.length, { locale: locale() }),
+                total: formatNumber(props.total, { locale: locale() }),
+              })
+        }
+      />
+      <DataTable.Controls>
         <LogFilterBar filter={props.filter} sources={props.sources} retentionDays={props.retentionDays} />
-      </div>
-      <Show when={props.entries.length > 0} fallback={<Placeholder description={<>{t.noLogEntries}</>} />}>
+      </DataTable.Controls>
+      <Show
+        when={!props.loadError}
+        fallback={<Placeholder state="error" variant="compact" title={t.logStoreUnavailable} description={props.loadError ?? undefined} />}
+      >
         <DataTable
           rows={props.entries}
           columns={columns}
           getRowId={(entry) => String(entry.id)}
-          onRowClick={showDetail}
-          class="overflow-x-auto"
+          onRowClick={(entry) => showDetail(entry, { locale: locale(), timeZone: props.timeZone })}
+          surface="plain"
+          empty={t.noLogEntries}
           renderCell={({ row, col }) => {
             const level = LEVEL[row.level] ?? LEVEL.debug!;
             if (col.id === "level") {
-              return (
-                <span class={`inline-flex items-center gap-1.5 whitespace-nowrap ${level.color}`}>
-                  <i class={`${level.icon} text-sm`} />
-                  <span>{level.label}</span>
-                </span>
-              );
+              return <StatusBadge tone={level.tone} icon={level.icon} label={level.label} />;
             }
             if (col.id === "source") return <span class="text-secondary">{row.source}</span>;
             if (col.id === "message") return <span title={row.message}>{row.message}</span>;
             if (col.id === "detail") return <span class="text-dimmed">{formatMetaInline(row.metadata) || "—"}</span>;
-            if (col.id === "time") return <span class="text-dimmed">{dates.formatDateTime(row.createdAt, { locale: locale() })}</span>;
+            if (col.id === "time")
+              return <span class="text-dimmed">{formatDateTime(row.createdAt, { locale: locale(), timeZone: props.timeZone })}</span>;
             return "";
           }}
         />
       </Show>
-    </section>
+      <DataTable.Footer>
+        <Pagination currentPage={props.filter.page} totalPages={props.totalPages} baseUrl={props.baseUrl} />
+      </DataTable.Footer>
+    </DataTable.Panel>
   );
 }

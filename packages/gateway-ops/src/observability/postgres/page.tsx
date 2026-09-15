@@ -1,16 +1,15 @@
 import { type AuthContext, getDateConfig, getLocale } from "@k2b/cloud/server";
 import { formatBytes, formatDateTime as formatDate, formatNumber } from "@k2b/cloud/shared";
 import { AdminLayout } from "@k2b/cloud/ssr";
-import { SearchBar } from "@k2b/cloud/ssr/islands";
-import { ButtonLink, DataPanel, DataTable, type DataTableColumn, NoticeCard, StatCell, StatGrid, StatusBadge } from "@k2b/ui";
+import { ButtonLink, DataPanel, DataTable, type DataTableColumn, NoticeCard, PanelHeader, StatCell, StatGrid, StatusBadge } from "@k2b/ui";
 import { ssr } from "../../config";
 
 /** Seconds to a compact age; sessions report ages, not durations. */
-const formatSeconds = (seconds: number | null): string => {
+const formatSeconds = (seconds: number | null, locale: string): string => {
   if (seconds === null || !Number.isFinite(seconds)) return "—";
-  if (seconds < 60) return `${Math.round(seconds)}s`;
-  if (seconds < 3600) return `${Math.round(seconds / 60)}m`;
-  return `${Math.round(seconds / 3600)}h`;
+  if (seconds < 60) return `${formatNumber(Math.round(seconds), { locale })}s`;
+  if (seconds < 3600) return `${formatNumber(Math.round(seconds / 60), { locale })}m`;
+  return `${formatNumber(Math.round(seconds / 3600), { locale })}h`;
 };
 
 import OperationalCharts from "../../frontend/OperationalCharts.island";
@@ -25,6 +24,7 @@ import {
   type PostgresSession,
   type PostgresTableDiagnostic,
 } from "../data/service";
+import { buildPostgresFilterUrl, parsePostgresFilterFromUrl } from "./_components/filter-state";
 import PostgresDataFilters from "./_components/PostgresDataFilters.island";
 
 const normalize = (value: string): string => value.toLowerCase();
@@ -51,9 +51,8 @@ export default ssr<AuthContext>(async (c) => {
   const dateConfig = getDateConfig(c);
   const { t } = gatewayOpsMessages.resolve([locale]);
   const url = new URL(c.req.url);
-  const search = url.searchParams.get("search")?.trim() ?? "";
-  const selectedSchema = url.searchParams.get("schema")?.trim() || "all";
-  const selectedSort = url.searchParams.get("sort")?.trim() || "size-desc";
+  const filter = parsePostgresFilterFromUrl(url);
+  const { search, schema: selectedSchema, sort: selectedSort } = filter;
   const [diagnostics, [sessionsResult, indexesResult]] = await Promise.all([
     getPostgresDiagnostics(locale),
     Promise.allSettled([listPostgresSessions(), listPostgresIndexes()]),
@@ -87,12 +86,6 @@ export default ssr<AuthContext>(async (c) => {
   const hasCriticalWarning = diagnostics.warnings.some((warning) => warning.tone === "red");
   const searchNeedle = normalize(search);
   const schemas = diagnostics.schemaRows.map((row) => row.schema).sort((a, b) => a.localeCompare(b));
-
-  const searchActionParams = new URLSearchParams(url.searchParams);
-  searchActionParams.delete("search");
-  const searchAction = searchActionParams.toString()
-    ? `/admin/observability/postgres?${searchActionParams.toString()}`
-    : "/admin/observability/postgres";
 
   const filteredTables = sortTables(
     diagnostics.tableRows.filter((table) => {
@@ -135,19 +128,7 @@ export default ssr<AuthContext>(async (c) => {
     .sort((left, right) => right.totalBytes - left.totalBytes)
     .slice(0, 10)
     .map((table) => ({ label: `${table.schema}.${table.name}`, value: table.totalBytes }));
-  const postgresFilterHref = (updates: { schema?: string; search?: string }): string => {
-    const params = new URLSearchParams(url.searchParams);
-    if (updates.schema !== undefined) {
-      if (updates.schema === "all") params.delete("schema");
-      else params.set("schema", updates.schema);
-    }
-    if (updates.search !== undefined) {
-      if (updates.search) params.set("search", updates.search);
-      else params.delete("search");
-    }
-    const query = params.toString();
-    return query ? `/admin/observability/postgres?${query}` : "/admin/observability/postgres";
-  };
+  const postgresFilterHref = (updates: { schema?: string; search?: string }): string => buildPostgresFilterUrl(filter, updates);
 
   const tableColumns: DataTableColumn<PostgresTableDiagnostic>[] = [
     { id: "table", header: t.table, value: (table) => `${table.schema}.${table.name}`, cellClass: "min-w-[220px]" },
@@ -263,34 +244,27 @@ export default ssr<AuthContext>(async (c) => {
           />
           <StatCell
             label={t.oldestTransaction}
-            value={diagnostics.available ? formatSeconds(diagnostics.runtime.oldestTransactionSeconds) : "—"}
+            value={diagnostics.available ? formatSeconds(diagnostics.runtime.oldestTransactionSeconds, locale) : "—"}
           />
           <StatCell
             label={t.oldestActiveQuery}
-            value={diagnostics.available ? formatSeconds(diagnostics.runtime.oldestQuerySeconds) : "—"}
+            value={diagnostics.available ? formatSeconds(diagnostics.runtime.oldestQuerySeconds, locale) : "—"}
           />
         </StatGrid>
 
         <NoticeCard.Grid items={diagnostics.warnings}>
-          {(warning) => (
-            <NoticeCard
-              tone={warning.tone === "red" ? "danger" : "warning"}
-              title={warning.title}
-              detail={warning.detail}
-            />
-          )}
+          {(warning) => <NoticeCard tone={warning.tone === "red" ? "danger" : "warning"} title={warning.title} detail={warning.detail} />}
         </NoticeCard.Grid>
 
         <section class="paper p-3">
-          <h2 class="text-xs font-semibold text-primary">{t.storageView}</h2>
-          <p class="text-[10px] text-dimmed">
-            {t.storageViewDescription({
+          <PanelHeader
+            title={t.storageView}
+            subtitle={t.storageViewDescription({
               count: formatNumber(filteredTables.length, { locale }),
               total: formatNumber(diagnostics.tableRows.length, { locale }),
             })}
-          </p>
+          />
           <div class="mt-2 flex flex-col gap-2">
-            <SearchBar action={searchAction} value={search} placeholder={t.searchPostgresTables} ariaLabel={t.searchPostgresTablesLabel} />
             <PostgresDataFilters search={search} schema={selectedSchema} sort={selectedSort} schemas={schemas} />
           </div>
         </section>
@@ -302,18 +276,24 @@ export default ssr<AuthContext>(async (c) => {
               ? undefined
               : sessions.length === 0
                 ? t.noClientBackendsReported
-                : t.sessionSummary({ total: sessions.length, blocked: blockedSessions.length, unnamed: unnamedSessions })
+                : t.sessionSummary({
+                    total: formatNumber(sessions.length, { locale }),
+                    blocked: formatNumber(blockedSessions.length, { locale }),
+                    unnamed: formatNumber(unnamedSessions, { locale }),
+                  })
           }
           error={sessionsResult.status === "rejected" ? t.postgresSessionsUnavailable : null}
           isEmpty={sessions.length === 0}
           empty={t.noClientBackends}
         >
           <DataTable
+            ariaLabel={t.sessions}
             rows={sessions}
             columns={sessionColumns}
             getRowId={(session) => String(session.pid)}
             density="compact"
-            class="max-h-[26rem] overflow-auto"
+            surface="plain"
+            class="max-h-[26rem]"
             renderCell={({ row, col, value, render }) => {
               if (col.id === "state")
                 return (
@@ -332,9 +312,9 @@ export default ssr<AuthContext>(async (c) => {
                   </span>
                 );
               if (col.id === "txAge")
-                return <span class="text-[10px] tabular-nums text-dimmed">{formatSeconds(row.transactionAgeSeconds)}</span>;
+                return <span class="text-[10px] tabular-nums text-dimmed">{formatSeconds(row.transactionAgeSeconds, locale)}</span>;
               if (col.id === "queryAge")
-                return <span class="text-[10px] tabular-nums text-dimmed">{formatSeconds(row.queryAgeSeconds)}</span>;
+                return <span class="text-[10px] tabular-nums text-dimmed">{formatSeconds(row.queryAgeSeconds, locale)}</span>;
               if (col.id === "wait")
                 return <span class="text-[10px] text-dimmed">{row.waitEvent ? `${row.waitEventType}: ${row.waitEvent}` : "—"}</span>;
               if (col.id === "query")
@@ -352,7 +332,7 @@ export default ssr<AuthContext>(async (c) => {
           title={t.indexes}
           subtitle={
             indexesResult.status === "fulfilled"
-              ? t.indexesSummary({ count: indexes.length, size: formatBytes(unusedIndexBytes, { locale }) })
+              ? t.indexesSummary({ count: formatNumber(indexes.length, { locale }), size: formatBytes(unusedIndexBytes, { locale }) })
               : undefined
           }
           error={indexesResult.status === "rejected" ? t.postgresIndexesUnavailable : null}
@@ -360,11 +340,13 @@ export default ssr<AuthContext>(async (c) => {
           empty={t.noUserIndexes}
         >
           <DataTable
+            ariaLabel={t.indexes}
             rows={indexes}
             columns={indexColumns}
             getRowId={(index) => `${index.schema}.${index.name}`}
             density="compact"
-            class="max-h-[26rem] overflow-auto"
+            surface="plain"
+            class="max-h-[26rem]"
             renderCell={({ row, col, value, render }) => {
               if (col.id === "index")
                 return (
@@ -394,18 +376,16 @@ export default ssr<AuthContext>(async (c) => {
           />
         </DataPanel>
 
-        <section class="paper overflow-hidden">
-          <div class="px-3 py-2">
-            <h2 class="text-xs font-semibold text-primary">{t.tables}</h2>
-            <p class="text-[10px] text-dimmed">{t.matchingTables({ count: formatNumber(filteredTables.length, { locale }) })}</p>
-          </div>
+        <DataTable.Panel>
+          <DataTable.Header title={t.tables} subtitle={t.matchingTables({ count: formatNumber(filteredTables.length, { locale }) })} />
           <DataTable
             rows={filteredTables}
             columns={tableColumns}
             getRowId={(table) => `${table.schema}.${table.name}`}
             density="compact"
             hoverRows
-            class="max-h-[34rem] overflow-auto"
+            surface="plain"
+            class="max-h-[34rem]"
             rowClass={(table) => (table.warnings.length > 0 ? "bg-amber-500/[0.04]" : "")}
             empty={t.noMatchingTables}
             renderCell={({ row: table, col, value, render }) => {
@@ -427,7 +407,7 @@ export default ssr<AuthContext>(async (c) => {
                 return table.warnings.length ? (
                   <div class="flex flex-wrap gap-1">
                     {table.warnings.map((warning) => (
-                      <span class="tag bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">{warning}</span>
+                      <StatusBadge tone="warning" label={warning} />
                     ))}
                   </div>
                 ) : (
@@ -437,7 +417,7 @@ export default ssr<AuthContext>(async (c) => {
               return render(value);
             }}
           />
-        </section>
+        </DataTable.Panel>
 
         <section class="grid gap-2 xl:grid-cols-3">
           <article class="min-w-0">
@@ -491,40 +471,37 @@ export default ssr<AuthContext>(async (c) => {
           </article>
         </section>
 
-        <section class="paper overflow-hidden">
-          <div class="px-3 py-2">
-            <h2 class="text-xs font-semibold text-primary">{t.extensions}</h2>
-            <p class="text-[10px] text-dimmed">
-              {t.extensionSummary({
-                installed: formatNumber(diagnostics.installedExtensions, { locale }),
-                available: formatNumber(diagnostics.availableExtensions, { locale }),
-              })}
-            </p>
-          </div>
+        <DataTable.Panel>
+          <DataTable.Header
+            title={t.extensions}
+            subtitle={t.extensionSummary({
+              installed: formatNumber(diagnostics.installedExtensions, { locale }),
+              available: formatNumber(diagnostics.availableExtensions, { locale }),
+            })}
+          />
           <DataTable
             rows={filteredExtensions}
             columns={extensionColumns}
             getRowId={(extension) => extension.name}
             density="compact"
             hoverRows
-            class="max-h-80 overflow-auto"
+            surface="plain"
+            class="max-h-80"
             empty={t.noMatchingExtensions}
             renderCell={({ row: extension, col, value, render }) => {
               if (col.id === "status") {
-                return extension.installed ? (
-                  <span class="tag bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">
-                    <i class="ti ti-check text-[9px]" />
-                    {t.installed.toLowerCase()}
-                  </span>
-                ) : (
-                  <span class="tag bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400">{t.available}</span>
+                return (
+                  <StatusBadge
+                    tone={extension.installed ? "ok" : "neutral"}
+                    label={extension.installed ? t.installed.toLowerCase() : t.available}
+                  />
                 );
               }
               if (col.id === "comment") return <span title={extension.comment ?? undefined}>{extension.comment ?? "-"}</span>;
               return render(value);
             }}
           />
-        </section>
+        </DataTable.Panel>
       </div>
     </AdminLayout>
   );

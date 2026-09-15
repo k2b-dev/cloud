@@ -8,7 +8,7 @@ export const LOG_WINDOWS = { "1h": 1, "6h": 6, "24h": 24, "7d": 168, "30d": 720 
 export type LogWindow = keyof typeof LOG_WINDOWS;
 
 export const isLogWindow = (value: string | null | undefined): value is LogWindow =>
-  value !== null && value !== undefined && value in LOG_WINDOWS;
+  value !== null && value !== undefined && Object.hasOwn(LOG_WINDOWS, value);
 
 export type LogFilterState = {
   level: string;
@@ -35,12 +35,14 @@ export const defaultLogFilter: LogFilterState = {
 export function parseLogFilterFromUrl(url: URL): LogFilterState {
   const params = url.searchParams;
   const rawSources = params.getAll("source");
+  const window = params.get("window");
+  const page = Number(params.get("page") ?? "1");
   return {
     level: params.get("level") || defaultLogFilter.level,
     sources: rawSources.length > 0 ? [...new Set(rawSources.map((value) => value.trim()).filter(Boolean))] : defaultLogFilter.sources,
-    search: params.get("search") || defaultLogFilter.search,
-    window: isLogWindow(params.get("window")) ? (params.get("window") as LogWindow) : defaultLogFilter.window,
-    page: parseInt(params.get("page") || "1", 10) || 1,
+    search: params.get("search")?.trim() || defaultLogFilter.search,
+    window: isLogWindow(window) ? window : defaultLogFilter.window,
+    page: Number.isSafeInteger(page) && page > 0 ? page : defaultLogFilter.page,
   };
 }
 
