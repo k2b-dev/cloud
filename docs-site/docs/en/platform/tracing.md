@@ -5,7 +5,7 @@ section: Platform services
 order: 540
 description: Follow one request across application and platform boundaries.
 tags: [tracing, observability, operations]
-updated: 2026-07-27
+updated: 2026-09-15
 ---
 
 # Tracing
@@ -61,13 +61,39 @@ when it belongs to the same operation.
 | `spanKey` | No | Stable key used to resume or update a known span |
 | `parent` | No | Parent trace context |
 | `appId` | No | Owning application |
-| `category` | No | `job`, `schedule`, `ai`, `http`, `notification`, `sync`, or `custom` |
+| `category` | No | `job`, `schedule`, `backfill`, `ai`, `http`, `notification`, `sync`, or `custom` |
 | `kind` | No | `internal`, `server`, `client`, `producer`, or `consumer` |
 | `attributes` | No | Structured, sanitized values |
 | `startedAt` | No | Explicit start time |
 
 Attributes may contain strings, numbers, booleans, null, and undefined. Keep
 names stable and values bounded. Do not attach request bodies or secrets.
+
+## Trace backfills
+
+Use `backfill` for a bounded run that processes existing records, such as
+reindexing historical data or applying a rule retroactively. Use `job` for an
+individual background operation and `sync` for synchronization activity.
+The category labels the trace; it does not schedule work or make it durable.
+
+Cloud automatically records Sync pump runs as `backfill` spans. Their `name`
+and `source` are the pump ID, and `appId` identifies the hosting application.
+No application-level observer or additional wrapper span is needed. To attach
+events to that run, use `trace.syncSpanKey("pump", pumpId, runKey)` with the
+exact key passed to the pump. For a manually traced backfill outside a pump,
+set `category: "backfill"` on the normal span API.
+
+Keep metadata limited to safe identifiers and counts. Do not attach scanned
+records, account details, tokens, or message contents. Pump completion records
+the status, dispatched count, and failure count; a failed pump ends with trace
+status `error`. Completion of a producer does not prove that all dispatched
+jobs succeeded: inspect their own runs as well.
+
+For example, Core's FreeIPA expiry backfill uses pump source
+`auth:ipa:backfill`; its per-account jobs use `auth:ipa:backfill:account`.
+See [Observability](/en/docs/operations/observability#inspect-backfills) for
+the UI and CLI filters and [FreeIPA recovery](/en/docs/reference/freeipa-recovery)
+for that operation's recovery rules.
 
 ## Record events
 

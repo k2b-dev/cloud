@@ -57,6 +57,7 @@ The older `telemetry summary`, `telemetry events`, and `telemetry apps` remain f
 cld admin jobs list --json
 cld admin jobs list --health stuck --json
 cld admin jobs list --health failed --window 7d --json
+cld admin jobs list --type backfill --window 7d --json
 cld admin jobs runs --source gateway:telemetry:cleanup --json
 cld admin jobs show <traceId>:<spanId> --json
 ```
@@ -70,6 +71,11 @@ Three states are deliberately distinct:
 - **anomalous** — finished, but took longer than that threshold. These come from sweeps closing orphaned spans long after the fact and are excluded from the duration percentiles so those describe real runs.
 
 `--health failed` means the most recent run of a source failed, i.e. it is unhealthy right now — it does not list every source that has ever failed. `--health stuck` lists sources with abandoned spans. Use `jobs runs --source <id>` for run history and `jobs show` for a single run with its recorded events, which is the closest thing a background job has to a log. These commands are read-only; trigger a schedule from the admin UI.
+
+Backfills process existing records. Sync pump runs appear under `--type backfill`;
+their source is the pump ID. Inspect the returned source with `jobs runs` and
+the returned run ID with `jobs show`. A completed pump does not prove that all
+dispatched jobs succeeded; inspect those job sources separately.
 
 ## Workflows
 

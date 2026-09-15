@@ -5,7 +5,7 @@ section: Operations
 order: 1160
 description: Use logs, traces, metrics, and health data to operate Cloud applications.
 tags: [observability, health, logs]
-updated: 2026-09-14
+updated: 2026-09-15
 ---
 
 # Observability
@@ -167,6 +167,29 @@ Use the dedicated pages for:
 - [jobs and queues](/en/docs/automation/jobs-and-queues);
 - [workflow observability](/en/docs/automation/workflow-observability-and-testing);
 - [notifications](/en/docs/platform/notifications).
+
+## Inspect backfills
+
+Open **Admin > Observability > Jobs** and select the **Backfills** type to find
+recorded runs over existing data. Narrow by source, inspect the latest outcome,
+then open its run history. The same read-only checks are available in the CLI:
+
+```bash
+cld admin jobs list --type backfill --window 7d --json
+cld admin jobs runs --source auth:ipa:backfill --window 7d --json
+cld admin jobs show <traceId>:<spanId> --json
+```
+
+The source example is Core's FreeIPA expiry backfill. Use the source returned
+by `jobs list` for another operation and the run ID returned by `jobs runs`
+for `jobs show`. An empty list can mean no run exists in the selected window.
+
+Pump summaries include dispatched and failed counts. A completed producer can
+still have unfinished or failed downstream jobs; for FreeIPA, also inspect
+source `auth:ipa:backfill:account` and its dead letters. Use the owning app's
+recovery controls rather than treating a trace as a resumable work item.
+See [Tracing](/en/docs/platform/tracing#trace-backfills) for category selection
+and automatic pump tracing.
 
 ## Read capability calls
 
