@@ -51,6 +51,10 @@ export const artifactMessages = i18n.define({ baseLocale: "en", messages: {
     STORAGE_FULL: "This artifact has reached its storage limit.",
     INVALID_INPUT: "Check the file paths and source settings.",
     LAST_MANAGER: "Keep at least one person with permission to manage this artifact.",
+    PDF_NOT_CONFIGURED: "PDF generation is not configured. Ask an administrator to configure Gotenberg.",
+    PDF_TIMEOUT: "PDF processing timed out.",
+    PDF_LIMIT: "The document exceeds the configured PDF size limit.",
+    PDF_FAILED: "PDF processing failed. Check the document and the PDF service.",
     REQUEST_FAILED: "The artifact request failed. Please try again.",
   },
   de: {
@@ -104,6 +108,10 @@ export const artifactMessages = i18n.define({ baseLocale: "en", messages: {
     STORAGE_FULL: "Das Speicherlimit dieser Ressource ist erreicht.",
     INVALID_INPUT: "Prüfe die Dateipfade und die Quelltexteinstellungen.",
     LAST_MANAGER: "Mindestens eine Person muss dieses Artefakt verwalten dürfen.",
+    PDF_NOT_CONFIGURED: "Die PDF-Erzeugung ist nicht eingerichtet. Bitte einen Administrator, Gotenberg einzurichten.",
+    PDF_TIMEOUT: "Die PDF-Verarbeitung hat zu lange gedauert.",
+    PDF_LIMIT: "Das Dokument überschreitet die konfigurierte PDF-Größenbegrenzung.",
+    PDF_FAILED: "Die PDF-Verarbeitung ist fehlgeschlagen. Prüfe das Dokument und den PDF-Dienst.",
     REQUEST_FAILED: "Die Anfrage ist fehlgeschlagen. Versuche es erneut.",
   },
 } });

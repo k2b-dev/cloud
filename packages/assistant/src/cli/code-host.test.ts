@@ -184,7 +184,7 @@ test("scratchpad pressure preserves exports and interactive runs while reclaimin
   try{
     await run("retained",'export default async()=>{await files.save("important","result.csv");return 1;}');
     await run("interactive",'export default()=>{ui.button({label:"Keep",onClick:()=>{},id:"keep"});}');
-    await run("retained-work",'export default()=>{work.run(async job=>{await new Promise(r=>setTimeout(r,30000));await job.checkpoint();});}');
+    await run("retained-work",'export default()=>{work.run(async job=>{for(;;){await new Promise(r=>setTimeout(r,1000));await job.checkpoint();}});}');
     for(let i=0;i<32;i++)expect(await run(`probe-${i}`,`export default()=>${i}`)).toMatchObject({status:"ready"});
     expect(await host.execute({...ids,name:"code_inspect",callId:"files",args:{runId:"retained"}})).toMatchObject({files:[{name:"result.csv"}]});
     expect(await host.execute({...ids,name:"code_inspect",callId:"ui",args:{runId:"interactive"}})).toMatchObject({nodes:[{id:"keep"}]});

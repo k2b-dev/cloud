@@ -328,3 +328,21 @@ An upload replaces the named key; use another key to keep both originals.
 Lowering budgets preserves files and permits reads/deletes or non-growing
 replacements. Storage settings do not raise chat or processing limits.
 Direct JSON file read/write is no longer accepted; use the binary commands.
+
+
+### PDF generation and Finance in Code Mode
+
+Code run through the CLI uses the same Studio APIs: `pdf.render`, `pdf.attach`
+and `pdf.facturX` return Blobs through the configured Gotenberg service.
+`files.save` captures the result for an explicit export step. PDF calls use
+binary multipart, preserve cancellation across the browser subprocess, and do
+not need `--approve` for the internal conversion. App Use access or an accessible
+unrestricted chat is required; source editing and resource maintenance retain
+their existing Manage requirement.
+
+`camt.parse` and `einvoice.validate/calculate/serialize/parseXml/parsePdf` are
+available alongside `money`, `datev`, and `sepa`. No WASM/XSD checker is included.
+CAMT supports camt.052.001.08; invoice generation supports EUR ZUGFeRD CII EN16931.
+PDF invoice reading extracts embedded XML, not OCR. See the Code Mode Finance
+and PDF references for full options and examples. Generating SEPA or invoice
+files does not submit a payment or certify accounting compliance.

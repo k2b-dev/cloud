@@ -100,7 +100,7 @@ source validation, metric interpretation, and report/dashboard delivery.
   Use `ui.stat` for numeric KPIs and `ui.chartExplorer` for inspectable charts.
   Test returned control IDs with `code_interact`, including file-picker fixtures.
 - **Optional APIs:** [Storage](references/storage.md), [Charts](references/charts.md),
-  [Money](references/money.md), [DATEV and SEPA](references/finance.md), [Publishing and access](references/publishing.md).
+  [Money](references/money.md), [Finance formats](references/finance.md), [PDF generation](references/pdf.md), [Publishing and access](references/publishing.md).
   [Examples](references/examples.md) provides complete starters when needed.
 
 Runtime namespaces are globals; only relative imports of your own source files

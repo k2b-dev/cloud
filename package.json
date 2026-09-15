@@ -40,7 +40,7 @@
     "catalog": {
       "@firecrawl/anydoc": "0.1.9",
       "@k2b/ssr": "0.14.0",
-      "@k2b/stdlib": "0.23.0",
+      "@k2b/stdlib": "0.24.0",
       "@k2b/sync": "6.4.0",
       "@nats-io/jetstream": "3.4.0",
       "@nats-io/transport-node": "3.4.0",
@@ -125,7 +125,7 @@
     "test:runtime-recovery": "bun run packages/cloud/scripts/runtime-recovery-acceptance.ts"
   },
   "devDependencies": {
-    "@k2b/stdlib": "0.23.0",
+    "@k2b/stdlib": "0.24.0",
     "jose": "6.2.5",
     "zod": "4.4.3",
     "@biomejs/biome": "2.5.6",

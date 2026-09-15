@@ -1,5 +1,6 @@
 export type {
   GotenbergConfig,
+  AttachPdfFilesInput,
   GotenbergRenderErrorCode,
   MergePdfsInput,
   RenderFacturXHtmlToPdfInput,
@@ -10,6 +11,8 @@ export type {
 export {
   GotenbergRenderError,
   getGotenbergConfig,
+  attachPdfFiles,
+  attachPdfFilesWithConfig,
   mergePdfs,
   mergePdfsWithConfig,
   renderFacturXHtmlToPdf,

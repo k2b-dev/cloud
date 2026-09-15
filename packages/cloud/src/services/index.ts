@@ -145,6 +145,10 @@ export {
   MarkdownPdfError,
   buildMarkdownPdfHtml,
   getGotenbergConfig,
+  attachPdfFiles,
+  attachPdfFilesWithConfig,
+  renderFacturXHtmlToPdf,
+  renderFacturXHtmlToPdfWithConfig,
   mergePdfs,
   mergePdfsWithConfig,
   renderMarkdownToPdf,
@@ -156,6 +160,8 @@ export {
 } from "./pdf";
 export type {
   GotenbergConfig,
+  AttachPdfFilesInput,
+  RenderFacturXHtmlToPdfInput,
   GotenbergRenderErrorCode,
   MarkdownPdfErrorCode,
   MarkdownPdfTemplateId,

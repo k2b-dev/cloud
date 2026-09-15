@@ -1,3 +1,6 @@
+import { GotenbergRenderError } from "@k2b/cloud/services";
+import { studioPdf } from "./pdf-service";
+import { decodePdfRequest } from "./pdf-contracts";
 import type { CapabilityCaller } from "@k2b/cloud/capabilities/server";
 import { CodeResourceId } from "@k2b/cloud/ai/browser";
 import { httpService, HttpError } from "./http-service";
@@ -40,9 +43,14 @@ const Grant = z.object({
 }).strict();
 
 export const createArtifactServiceRoutes = (caller: (context: Context<AuthContext>) => CapabilityCaller = capabilityCaller) => new Hono<AuthContext>()
-  .use("*", (c,next) => c.req.path.endsWith("/storage/file") ? next() : bodyLimit({ maxSize: c.req.path.includes("/storage") ? STORAGE_TRANSPORT_BYTES : LIMITS.rpcBytes })(c,next))
+  .use("*", (c,next) => (c.req.path.endsWith("/storage/file") || c.req.path.endsWith("/runtime/pdf")) ? next() : bodyLimit({ maxSize: c.req.path.includes("/storage") ? STORAGE_TRANSPORT_BYTES : LIMITS.rpcBytes })(c,next))
   .use("*", async (c,next) => { c.header("Cache-Control","private, no-store"); await next(); })
   .onError((error,c) => {
+    if (error instanceof GotenbergRenderError) {
+      const code = error.code === "not_configured" ? "PDF_NOT_CONFIGURED" : error.code === "timeout" ? "PDF_TIMEOUT"
+        : error.code === "html_too_large" || error.code === "pdf_too_large" ? "PDF_LIMIT" : error.code === "bad_input" ? "INVALID_INPUT" : "PDF_FAILED";
+      return respond(c, { ok: false, code, status: code === "PDF_LIMIT" ? 413 : code === "INVALID_INPUT" ? 400 : 503, error: artifactMessages.resolve([getLocale(c)]).t[code] });
+    }
     if (error instanceof HttpError) {
       const t = artifactMessages.resolve([getLocale(c)]).t;
       return respond(c, { ok: false, code: error.code, status: error.code === "HTTP_DENIED" ? 403 : 409, error: t[error.code] });
@@ -57,6 +65,16 @@ export const createArtifactServiceRoutes = (caller: (context: Context<AuthContex
       : code === "CONFLICT" || code === "LAST_MANAGER" ? 409 : code === "REQUEST_FAILED" ? 500 : 400;
     if (code === "REQUEST_FAILED") console.error("Assistant artifact request failed", error);
     return respond(c,{ ok: false, code, status, error: artifactMessages.resolve([getLocale(c)]).t[code] });
+  })
+  .post("/runtime/pdf", async (c,next) => {
+    await studioPdf.authorize({ resourceId: c.req.query("resourceId"), conversationId: c.req.query("conversationId") }, identity(c));
+    await next();
+  }, bodyLimit({ maxSize: STORAGE_TRANSPORT_BYTES }), async c => {
+    let input;
+    try { input = decodePdfRequest(await c.req.raw.formData()); }
+    catch { throw new ArtifactError("INVALID_INPUT"); }
+    const result = await studioPdf.execute(input, c.req.raw.signal);
+    return new Response(new Uint8Array(result.pdf), { headers: { "Content-Type": "application/pdf", "Content-Disposition": 'attachment; filename="document.pdf"', "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff" } });
   })
   .post("/runtime/secrets/list",v("json",HttpScope),async c=>respond(c,ok(await httpService.list(c.req.valid("json"),identity(c)))))
   .put("/runtime/secrets",v("json",z.object({scope:HttpScope,secret:SecretSave}).strict()),async c=>{const input=c.req.valid("json");return respond(c,ok(await httpService.save(input.scope,input.secret,identity(c))));})

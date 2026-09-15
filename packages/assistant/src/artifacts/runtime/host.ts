@@ -45,6 +45,7 @@ export function startArtifactRun(container: HTMLElement, source: { runtime: stri
   frame.title = "Isolated artifact runtime";
   frame.srcdoc = sandboxDocument();
   const abort = new AbortController();
+  const requests = new Map<number, AbortController>();
   let stopped = false, windowStart = Date.now(), messages = 0, queued = 0, eventId = 0;
   let chain = Promise.resolve();
   let waitingForModal = false;
@@ -74,7 +75,8 @@ export function startArtifactRun(container: HTMLElement, source: { runtime: stri
       const encoded = JSON.stringify(event.data);
       if (!encoded || new TextEncoder().encode(encoded).byteLength > LIMITS.rpcBytes) throw new Error("Runtime message exceeds byte budget");
       const m = WorkerMessage.parse(event.data);
-      if (m.type === "ui") { validateTree(m.nodes); hooks.ui(m.nodes); }
+      if (m.type === "cancel") { requests.get(m.id)?.abort(); }
+      else if (m.type === "ui") { validateTree(m.nodes); hooks.ui(m.nodes); }
       else if (m.type === "log") hooks.log(m.level,m.text);
       else if (m.type === "error") hooks.error(m.text);
       else if (m.type === "output") hooks.output(m.value);
@@ -91,28 +93,31 @@ export function startArtifactRun(container: HTMLElement, source: { runtime: stri
       }
       else if (m.type === "settled") {
         const pending = events.get(m.id);
-        if (pending) { clearTimeout(pending.timer); events.delete(m.id); m.error ? pending.reject(new Error(m.error)) : pending.resolve(); }
+        if (pending) { clearTimeout(pending.timer); events.delete(m.id); hooks.busy(events.size > 0); m.error ? pending.reject(new Error(m.error)) : pending.resolve(); }
       } else if (m.type === "rpc") {
         if (queued >= LIMITS.pendingRequests) throw new Error("Too many pending host requests");
+        const requestAbort = new AbortController();
+        requests.set(m.id, requestAbort);
         queued++;
         hooks.pending?.(queued);
         chain = chain.then(async () => {
           try {
-            if (stopped) return;
-            if (["http.fetch","database","storage","ui.modal","file.read","file.open","file.openMultiple","file.openFolder","capabilities.run"].includes(m.method)) {
+            if (stopped || requestAbort.signal.aborted) return;
+            if (["pdf","http.fetch","database","storage","ui.modal","file.read","file.open","file.openMultiple","file.openFolder","capabilities.run"].includes(m.method)) {
               waitingForModal = true;
               for (const event of events.values()) clearTimeout(event.timer);
             }
-            const value = await hooks.request(m.method,m.args,abort.signal);
+            const value = await hooks.request(m.method,m.args,AbortSignal.any([abort.signal, requestAbort.signal]));
             post({ type: "result",id: m.id,value });
           } catch (error) {
             const code = error && typeof error === "object" && "code" in error && typeof error.code === "string" ? error.code.slice(0,128) : undefined;
             post({ type: "result",id: m.id,error: String(error instanceof Error ? error.message : error).slice(0,LIMITS.text),code });
           } finally {
-            if (["http.fetch","database","storage","ui.modal","file.read","file.open","file.openMultiple","file.openFolder","capabilities.run"].includes(m.method)) {
+            if (["pdf","http.fetch","database","storage","ui.modal","file.read","file.open","file.openMultiple","file.openFolder","capabilities.run"].includes(m.method)) {
               waitingForModal = false;
               if (!stopped) for (const event of events.values()) event.timer = setTimeout(event.expire, event.timeoutMs);
             }
+            requests.delete(m.id);
             queued--;
             hooks.pending?.(queued);
           }
@@ -140,6 +145,7 @@ export function startArtifactRun(container: HTMLElement, source: { runtime: stri
         };
         const timer = waitingForModal ? undefined : setTimeout(expire, timeoutMs);
         events.set(id,{ resolve,reject,timer,expire,timeoutMs });
+        hooks.busy(true);
         post({ type: "event",...parsed,requestId: id });
       });
     },

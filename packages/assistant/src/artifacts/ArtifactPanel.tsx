@@ -93,6 +93,7 @@ export function ArtifactPanel(props: { artifactId: string; refreshKey?: string; 
         mode: props.test ? "test" : "user", changed: setState, pickerInputs:props.pickerInputs,
         modal: (request, signal) => openArtifactModal(request, signal, locale()),
         capability:(name,input,signal)=>runCapability(name,input,{artifactId:props.artifactId},approveInModal,signal),
+        pdf: (request,signal) => artifactClient.pdf(request,{resourceId:props.artifactId},signal),
         database: (request,signal) => artifactClient.database(props.artifactId,request,undefined,signal),
         storage: (method, args) => {
           if (method !== "storage") return storage.call(method,args);

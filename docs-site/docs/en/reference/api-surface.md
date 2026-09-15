@@ -265,3 +265,9 @@ do not protect a route. Use `auth` middleware.
 The `@k2b/cloud/ai` export `CODE_SOURCE_TOOLS` and its `CodeSourceToolName` type
 define the flat inputs for direct Assistant server tools. See
 [Assistant code tools](/en/docs/ai/chat-interface) for loading and execution.
+
+
+PDF applications use `renderHtmlToPdf`, `renderFacturXHtmlToPdf` and
+`attachPdfFiles` from `@k2b/cloud/services` for HTML conversion, invoice XML
+embedding and ordinary file attachments. See [PDF and templates](/en/docs/platform/pdf-and-templates)
+for their input, access, cancellation and deployment responsibilities.

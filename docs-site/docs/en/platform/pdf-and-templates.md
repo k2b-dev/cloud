@@ -125,3 +125,53 @@ Treat configuration and availability failures as operational errors. See
 
 Authorize access to the document data before rendering. Avoid remote assets
 whose availability or credentials are outside the document request.
+
+
+## Assets, paper options and file attachments
+
+`renderHtmlToPdf` also accepts `assets: Array<{ name, data: Blob }>`, `tagged`,
+and `page: { format, landscape, margin: { top, right, bottom, left } }`.
+Supported formats are A4, A3, A5, Letter and Legal. When `page` is supplied,
+omitted values use A4 portrait and 15 mm margins; dimensions are sent explicitly
+instead of preferring CSS page size. Existing callers without `page` retain CSS
+page sizing. Avoid conflicting `@page` rules. Asset names are plain filenames,
+unique without case distinctions, and cannot replace the reserved HTML or
+`factur-x.xml` files. HTML, headers, footers and assets share `maxHtmlBytes`.
+
+```ts
+import { attachPdfFiles } from "@k2b/cloud/services";
+
+const result = await attachPdfFiles({
+  document: existingPdfBlob,
+  attachments: [{
+    name: "details.xml",
+    data: new Blob([xml], { type: "application/xml" }),
+    relationship: "Data",
+  }],
+}, { signal: request.signal });
+```
+
+`relationship` defaults to `Unspecified`; other values are `Source`, `Data`,
+`Alternative`, and `Supplement`. MIME type comes from the Blob, falling back to
+`application/octet-stream`. The source PDF and attachment bytes together must
+fit `maxPdfBytes`. Attachment names in one request must be unique.
+
+`renderFacturXHtmlToPdf({ html, xml, conformanceLevel, ... })` uses the same HTML
+options, embeds `factur-x.xml`, requests PDF/A-3b and supplies Factur-X metadata.
+The default conformance level is EN 16931. XML shares the HTML input budget.
+The caller owns XML generation and validation; embedding alone is not invoice
+certification. These features require a Gotenberg version supporting the
+corresponding embedding/Factur-X fields; the local stack uses 8.36.0.
+
+HTML, Factur-X and attachment operations accept `{ signal }` as their second
+argument and combine it with the configured timeout. Output is bounded while
+reading the response. `...WithConfig` variants accept an explicit Gotenberg
+configuration and optional test transport. They never choose an app's storage
+location or grant access to a source file.
+
+The server helpers accept application-owned HTML. Applications exposing them to
+untrusted code must enforce authentication, input budgets and an offline content
+policy before calling them. Assistant Studio removes active document elements
+and applies CSP to restrict resources to local files/data. Its worker API does
+not expose arbitrary Gotenberg endpoints or connection settings. Operators must
+retain Gotenberg's request-directory file isolation.

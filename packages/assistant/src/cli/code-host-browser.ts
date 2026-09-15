@@ -3,6 +3,7 @@ import type { CloudCliContext } from "@k2b/cloud/cli";
 import type { AiFrontendToolHandler } from "@k2b/cloud/ai/solid";
 import { chromium, type Browser } from "playwright";
 import type {} from "../artifacts/runtime/cli-host";
+declare global { interface Window { assistantFetchLifecycle: (id: string, action: "start" | "cancel" | "finish") => Promise<void>; } }
 
 type Call = Parameters<AiFrontendToolHandler>[0];
 export async function createBrowserCodeHost(ctx: Pick<CloudCliContext, "fetch">,approve?:(request:CodeApproval)=>Promise<CapabilityDecision>) {
@@ -14,6 +15,37 @@ export async function createBrowserCodeHost(ctx: Pick<CloudCliContext, "fetch">,
   browser.on("disconnected", () => lifetime.abort());
   try {
     const page = await browser.newPage();
+    const requests = new Map<string, AbortController>();
+    // Playwright does not report a routed fetch abort until route fulfillment.
+    // Bridge only cancellation IDs; request/response bytes stay on the binary route.
+    await page.exposeFunction("assistantFetchLifecycle", (id: string, action: "start" | "cancel" | "finish") => {
+      if (action === "start") requests.set(id, new AbortController());
+      else {
+        requests.get(id)?.abort();
+        if (action === "finish") requests.delete(id);
+      }
+    });
+    await page.addInitScript(() => {
+      const originalFetch = window.fetch;
+      const original = originalFetch.bind(window);
+      const lifecycle = (id: string, action: "start" | "cancel" | "finish") =>
+        window.assistantFetchLifecycle(id, action);
+      window.fetch = Object.assign(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const request = new Request(input, init), id = crypto.randomUUID();
+        const headers = new Headers(request.headers);
+        headers.set("X-Cloud-CLI-Request", id);
+        await lifecycle(id, "start");
+        const cancel = () => { void lifecycle(id, "cancel").catch(() => {}); };
+        request.signal.addEventListener("abort", cancel, { once: true });
+        try {
+          request.signal.throwIfAborted();
+          return await original(new Request(request, { headers }));
+        } finally {
+          request.signal.removeEventListener("abort", cancel);
+          await lifecycle(id, "finish");
+        }
+      }, { preconnect: originalFetch.preconnect });
+    });
     const startupErrors: string[] = [];
     page.on("pageerror", error => startupErrors.push(error.message));
     await page.route("**/*", async route => {
@@ -21,15 +53,17 @@ export async function createBrowserCodeHost(ctx: Pick<CloudCliContext, "fetch">,
       if (request.frame() !== page.mainFrame() || url.origin !== "http://localhost") return route.abort();
       if (url.pathname === "/") return route.fulfill({ contentType: "text/html", body: "<!doctype html><body></body>" });
       if (!url.pathname.startsWith("/api/assistant/artifacts/") && !url.pathname.startsWith("/api/ai/conversations/")) return route.abort();
+      const requestAbort = requests.get(request.headers()["x-cloud-cli-request"] ?? "") ?? new AbortController();
       try {
         const response = await ctx.fetch(url.pathname + url.search, {
           method: request.method(),
-          signal: lifetime.signal,
+          signal: AbortSignal.any([lifetime.signal, requestAbort.signal]),
           headers: { "Content-Type": request.headers()["content-type"] ?? "application/json" },
           ...(request.postDataBuffer() ? { body: new Uint8Array(request.postDataBuffer()!).buffer } : {}),
         });
         await route.fulfill({ status: response.status, contentType: response.headers.get("content-type") ?? "application/json", body: Buffer.from(await response.arrayBuffer()) });
-      } catch { await route.abort(); }
+      } catch { await route.abort().catch(() => {}); }
+
     });
     await page.exposeFunction("assistantCodeApprove",(request:CodeApproval)=>{
       if(!approve)throw new Error("Capability requires approval. Use an interactive Assistant CLI chat or explicitly allow this capability with --approve.");

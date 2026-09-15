@@ -1,10 +1,11 @@
+import { createPdf } from "./pdf";
 import { createAnalyticsUi } from "./analytics-ui";
 import { createHttp, secret } from "./http";
 import { createWork } from "./work";
-import { pdf, excel } from "./documents";
+import { excel } from "./documents";
 import { z } from "zod";
 import Papa from "papaparse";
-import { datev, sepa } from "@k2b/stdlib/finance";
+import { datev, sepa, camt, einvoice } from "@k2b/stdlib/finance";
 import { common, money } from "@k2b/stdlib";
 import { LIMITS } from "../contracts";
 import { UiNode } from "./protocol";
@@ -34,13 +35,21 @@ async function pickMany(method: string, options?: unknown) {
   return value.map(item => picked(item)).filter((file): file is File => file !== null);
 }
 const pending = new Map<number, { resolve: (v: unknown) => void; reject: (e: Error) => void }>();
-function rpc(method: string, args: unknown[] = []) {
+function rpc(method: string, args: unknown[] = [], signal?: AbortSignal) {
+  signal?.throwIfAborted();
   if (pending.size >= LIMITS.pendingRequests) return Promise.reject(new Error("Too many pending host requests"));
   return new Promise<unknown>((resolve, reject) => {
     const id = requestId++;
-    pending.set(id, { resolve, reject });
+    const cancel = () => {
+      pending.delete(id);
+      send({ type: "cancel", id });
+      reject(new DOMException("PDF request cancelled", "AbortError"));
+    };
+    const clean = () => signal?.removeEventListener("abort", cancel);
+    pending.set(id, { resolve: value => { clean(); resolve(value); }, reject: error => { clean(); reject(error); } });
+    signal?.addEventListener("abort", cancel, { once: true });
     try { send({ type: "rpc", id, method, args }); }
-    catch (error) { pending.delete(id); reject(error); }
+    catch (error) { const entry = pending.get(id); pending.delete(id); entry?.reject(error instanceof Error ? error : new Error(String(error))); }
   });
 }
 let flushTimer: ReturnType<typeof setTimeout> | undefined;
@@ -110,6 +119,8 @@ const api = {
   money,
   datev,
   sepa,
+  camt,
+  einvoice,
   ids: { ulid: common.ulid },
   ui: {
     modal: {
@@ -157,7 +168,7 @@ const api = {
     save: (data: Blob | string, name: string) => rpc("file.save", [data, name]),
   },
   work: createWork(state => send({type:"work",...state}), sendOutput, error => send({type:"error",text:textError(error).slice(0,LIMITS.text)})),
-  pdf,
+  pdf: createPdf(rpc),
   sheet: {
     openExcel: excel.open,
     fromCsv: async (file: File | string, options: { delimiter?: string; encoding?: string } = {}) => {

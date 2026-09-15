@@ -545,3 +545,33 @@ Shared access and published source versions use the normal Studio lifecycle.
 Personal secrets remain personal. External loads still follow HTTP approval and
 uncertain-outcome rules. The canonical Code Mode analytics reference contains
 executable examples, formatting rules, limits, and structured interaction events.
+
+
+### Generate PDFs and read financial formats
+
+Studio apps and scripts can generate PDFs with `pdf.render({ html, ... })`,
+embed files with `pdf.attach({ document, attachments })`, and combine invoice
+HTML and XML with `pdf.facturX({ html, xml, profile, ... })`. Each returns a Blob
+for download or explicit storage. HTML contains its own CSS; local images,
+fonts and stylesheets can be passed as named assets. External resources and
+scripts are blocked. Paper format, orientation, millimeter margins, optional
+headers/footers and PDF tagging are configurable. These methods need Gotenberg;
+local PDF text extraction continues to work without it.
+
+Use access suffices for published apps. Gotenberg credentials remain on the
+server. Requests can be cancelled, are bounded by configured Gotenberg limits
+and a 64 MiB transfer ceiling, and store no result automatically. A PDF/A-3b
+with XML and Factur-X metadata is not a certificate of invoice validity.
+
+Studio also includes stdlib 0.24 `camt` and `einvoice` alongside `money`, `datev`
+and `sepa`. Read camt.052.001.08 reports, calculate exact invoice totals,
+generate supported ZUGFeRD CII EN16931 XML, or read invoice XML directly or from
+PDF attachments. PDF invoice reading extracts embedded XML; it is not OCR.
+No WASM/XSD checker is included. Parsers preserve declared incoming values;
+the app still owns reconciliation, numbering and manual decisions.
+
+For example, an app can read a bank report and invoice attachments, suggest
+matches for review, and save a report with its XML data attached. A separate
+invoice app can calculate totals, generate XML, render matching HTML and offer
+the resulting PDF for download. Neither flow submits payments automatically.
+The Code Mode skill contains complete PDF options and Finance API references.

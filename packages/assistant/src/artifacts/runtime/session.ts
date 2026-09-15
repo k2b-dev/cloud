@@ -31,6 +31,7 @@ export type SessionOptions = {
   readInput?: (name:string,signal:AbortSignal)=>Promise<File>;
   pickerInputs?: File[] | ((signal:AbortSignal)=>Promise<File[]>);
   capability?: (name:string,input:unknown,signal:AbortSignal) => Promise<unknown>;
+  pdf?: (request: unknown, signal: AbortSignal) => Promise<Blob>;
   http?: (request: unknown, signal: AbortSignal) => Promise<unknown>;
   database?: (request: unknown, signal: AbortSignal) => Promise<unknown>;
   storage?: (method: string, args: unknown[]) => Promise<unknown>;
@@ -171,6 +172,12 @@ export function createArtifactSession(container: HTMLElement, source: { runtime:
         clearTimeout(watchdog); capabilityRequests++; emit({approvalPending:true});
         try { return await options.http(args[0],signal); }
         finally { capabilityRequests--; emit({approvalPending:capabilityRequests>0}); if (!capabilityRequests && state.status === "starting" && !signal.aborted) arm(); }
+      }
+      if (method === "pdf") {
+        if (!options.pdf) throw new Error("PDF service unavailable");
+        clearTimeout(watchdog); emit({inputPending:true});
+        try { return await options.pdf(args[0],signal); }
+        finally { emit({inputPending:false}); if (state.status === "starting" && !signal.aborted) arm(); }
       }
       if (method === "database") {
         if (!options.database) throw new Error("Database access requires a saved app or script");

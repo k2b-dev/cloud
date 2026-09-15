@@ -5,6 +5,7 @@ export const FileOpenOptions = z.object({ accept: z.string().max(LIMITS.text).op
 export const UiNode = AnalyticsNode;
 export type UiNode = z.infer<typeof UiNode>;
 export const WorkerMessage = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("cancel"), id: z.number().int().nonnegative() }),
   z.object({type:z.literal("work"),status:z.enum(["running","completed","cancelled","error"]),completed:z.number().nonnegative(),total:z.number().nonnegative().optional(),label:z.string().max(1000).optional()}),
   z.object({ type: z.literal("ui"), nodes: z.array(UiNode).max(LIMITS.nodes) }),
   z.object({
@@ -30,6 +31,7 @@ export const WorkerMessage = z.discriminatedUnion("type", [
       "file.save",
       "capabilities.run",
       "http.fetch",
+      "pdf",
       "database",
       "storage",
       "store.get",

@@ -13,14 +13,14 @@ type Call = Parameters<AiFrontendToolHandler>[0];
 // Credentials and approval decisions stay in this parent CLI process.
 export async function createCliCodeHost(ctx: Pick<CloudCliContext, "fetch">, approve?: (request: CodeApproval) => Promise<CapabilityDecision>, options?: {entry?:string}) {
   const lifetime = new AbortController();
-  const ipc = hostIpc(message => child.send(message), async request => {
+  const ipc = hostIpc(message => child.send(message), async (request, signal) => {
     if (request.operation === "approve") {
       if (!approve) throw new Error("Capability requires approval. Use an interactive Assistant CLI chat or explicitly allow this capability with --approve.");
       return approve(request.approval);
     }
     if (request.operation !== "fetch") throw new Error("Unsupported CLI browser request");
     const response = await ctx.fetch(request.path, { method: request.method, headers: request.headers,
-      ...(request.body ? { body: request.body } : {}), signal: lifetime.signal });
+      ...(request.body ? { body: request.body } : {}), signal: AbortSignal.any([lifetime.signal, signal]) });
     return { status: response.status, headers: hostHeaders(response.headers), body: await response.arrayBuffer() };
   });
   const entry = options?.entry ?? (typeof __CLD_STANDALONE__ !== "undefined" && __CLD_STANDALONE__

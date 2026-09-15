@@ -39,7 +39,8 @@ Encrypted, unsupported, and corrupt files can throw. External font/CMap assets
 are not fetched; verify extraction for documents requiring unusual fonts. Report the filename and
 error, continue with other files, and never silently classify failures as empty.
 
-Format-specific invoice/bank parsers belong in separate source modules. Verify
+Use the bundled `einvoice` and `camt` APIs for their supported XML formats; see
+[Finance](finance.md). Other format-specific mappings belong in app source modules. Verify
 against representative documents before claiming Sparkasse, DHL, or FedEx
 support. Similar-looking PDFs can encode very different text layouts.
 

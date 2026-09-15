@@ -1,3 +1,4 @@
+import { encodePdfRequest } from "./pdf-contracts";
 import { HttpScope, SecretSave, HttpPrepare, HttpReview, HttpResult, SecretView } from "./http-contracts";
 import { DatabaseRequest } from "./database-contracts";
 import { api } from "@k2b/cloud/browser";
@@ -15,6 +16,14 @@ async function checked(response: Pick<Response, "json" | "ok" | "status">): Prom
   }
 }
 export const artifactClient = {
+  pdf: async (input: unknown, scope: HttpScope, signal?: AbortSignal): Promise<Blob> => {
+    const query = new URLSearchParams();
+    if (scope.resourceId) query.set("resourceId", scope.resourceId);
+    if (scope.conversationId) query.set("conversationId", scope.conversationId);
+    const response = await fetch(`/api/assistant/artifacts/runtime/pdf?${query}`, { method: "POST", body: encodePdfRequest(input), signal });
+    await checked(response);
+    return response.blob();
+  },
   secrets: async(scope:HttpScope) => {const response=await client.runtime.secrets.list.$post({json:scope});await checked(response);return z.array(SecretView).parse(await response.json());},
   saveSecret: async(scope:HttpScope,secret:z.infer<typeof SecretSave>) => {const response=await client.runtime.secrets.$put({json:{scope,secret}});await checked(response);return SecretView.parse(await response.json());},
   removeSecret: async(scope:HttpScope,name:string,revision:string) => {const response=await client.runtime.secrets.remove.$post({json:{scope,name,revision}});await checked(response);},

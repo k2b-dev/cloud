@@ -127,7 +127,7 @@ export function createArtifactAgentRuntime(open: ((tab: WorkspaceTab) => void) |
       const container = document.createElement("div"); container.hidden = true; document.body.append(container);
       let session: ArtifactSession;
       try {
-        session = createArtifactSession(container, compiled, { mode: "test", http: (request,signal) => {
+        session = createArtifactSession(container, compiled, { mode: "test", pdf: (request,signal) => artifactClient.pdf(request,{resourceId:dataId,conversationId},signal), http: (request,signal) => {
           if (!httpHost) throw new Error("Server HTTP unavailable");
           return runHttp(request,{resourceId:dataId,conversationId},httpHost,signal);
         }, inputFiles: current?.kind === "app" ? [] : inputFiles, readInput, pickerInputs, changed: () => {}, capability: (name,input,signal) => {

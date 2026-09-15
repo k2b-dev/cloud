@@ -13,7 +13,7 @@ export function startCliCodeHostProcess() {
       starting = createBrowserCodeHost({ fetch: async (path, init) => {
         const body = init?.body ? await new Response(init.body).arrayBuffer() : null;
         const response = ResponseData.parse(await ipc.request({ operation: "fetch", path: String(path),
-          method: init?.method ?? "GET", headers: hostHeaders(init?.headers), body }));
+          method: init?.method ?? "GET", headers: hostHeaders(init?.headers), body }, init?.signal ?? undefined));
         return new Response(response.body.byteLength ? response.body : null, { status: response.status, headers: response.headers });
       } }, async approval => Decision.parse(await ipc.request({ operation: "approve", approval })));
       host = await starting;
