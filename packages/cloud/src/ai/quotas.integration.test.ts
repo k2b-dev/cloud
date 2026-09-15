@@ -178,4 +178,35 @@ suite("Assistant quota PostgreSQL boundaries", () => {
     expect((await aiQuotas.users("", 1)).items.some((u) => u.id === other)).toBe(true);
     expect((await aiQuotas.snapshot({ type: "user", userId: other })).usage).toEqual([]);
   });
+
+  test("estimated interrupted usage counts but does not lock a finite quota", async () => {
+    await save([rule("*", 1000)]);
+    const id = await aiQuotas.begin(subject, "a", turn);
+    await aiQuotas.finish(id, { input: 10, output: 5, estimated: true });
+    await aiQuotas.finish(id, undefined);
+    expect((await aiQuotas.snapshot(subject)).balances[0]).toMatchObject({ used: 15, unknown: 0, estimated: 1 });
+    expect(await aiQuotas.assertAllowed(subject, "a")).toBe(true);
+    const users = await aiQuotas.users("One", 1);
+    expect(users.items[0]?.lastUsed).toMatch(/T.*Z$/);
+  });
+  test("retention preserves maximum windows, resets and active calls", async () => {
+    const recent = await charge("a"), old = await charge("a"), active = await charge("a");
+    await sql`UPDATE ai.quota_calls SET started_at=now()-interval '8761 hours',turn_id=NULL WHERE id=${old}::uuid`;
+    await sql`UPDATE ai.quota_calls SET started_at=now()-interval '8761 hours',finished_at=NULL WHERE id=${active}::uuid`;
+    await aiQuotas.prune();
+    const remaining = (await sql<{id:string}[]>`SELECT id FROM ai.quota_calls`).map(r=>r.id);
+    expect(remaining).toContain(recent);
+    expect(remaining).toContain(active);
+    expect(remaining).not.toContain(old);
+    await sql`UPDATE ai.turns SET status='aborted' WHERE id=${turn}::uuid`;
+    await aiQuotas.prune();
+    expect((await sql`SELECT 1 FROM ai.quota_calls WHERE id=${active}::uuid`).length).toBe(0);
+  });
+
+  test("retention deletes at most one bounded batch", async () => {
+    await sql`INSERT INTO ai.quota_calls(id,user_id,model_profile_id,started_at,finished_at,input,output)
+      SELECT gen_random_uuid(),${user}::uuid,'a',now()-interval '8761 hours',now(),1,1 FROM generate_series(1,1001)`;
+    await aiQuotas.prune();
+    expect(Number((await sql`SELECT count(*) AS n FROM ai.quota_calls`)[0]!.n)).toBe(1);
+  });
 });

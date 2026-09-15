@@ -117,7 +117,8 @@ export default function AiQuotaAdmin(props: { config: AiQuotaConfig; models: { i
                     label={t().scope}
                     value={rule().scope}
                     disabled={busy()}
-                    options={[{ value: "*", label: t().all }, ...props.models.map((m) => ({ value: m.id, label: m.label }))].filter(
+                    options={[{ value: "*", label: t().all }, ...props.models.map((m) => ({ value: m.id, label: m.label })),
+                      ...(rule().scope !== "*" && !props.models.some((m) => m.id === rule().scope) ? [{ value: rule().scope, label: rule().scope }] : [])].filter(
                       (o) => o.value === rule().scope || !draft().rules.some((r) => r.scope === o.value),
                     )}
                     onValueChange={(v) =>
@@ -216,7 +217,7 @@ export default function AiQuotaAdmin(props: { config: AiQuotaConfig; models: { i
         <div class="flex gap-2">
           <Button
             variant="secondary"
-            disabled={busy() || draft().rules.length >= props.models.length + 1}
+            disabled={busy() || !["*", ...props.models.map(m => m.id)].some(scope => !draft().rules.some(rule => rule.scope === scope))}
             onClick={() =>
               update((d) => {
                 const scope = ["*", ...props.models.map((m) => m.id)].find((s) => !d.rules.some((r) => r.scope === s));
@@ -272,11 +273,11 @@ export default function AiQuotaAdmin(props: { config: AiQuotaConfig; models: { i
               <p>{t().none}</p>
             </Show>
             <div class="flex gap-2">
-              <Button disabled={page() <= 1} onClick={() => setPage((p) => p - 1)}>
+              <Button disabled={users.loading() || users.refreshing() || (users.data()?.page ?? 1) <= 1} onClick={() => setPage((users.data()?.page ?? 1) - 1)}>
                 {t().previous}
               </Button>
               <span>{users.data()?.page || 1}</span>
-              <Button disabled={page() * 25 >= (users.data()?.total || 0)} onClick={() => setPage((p) => p + 1)}>
+              <Button disabled={users.loading() || users.refreshing() || (users.data()?.page ?? 1) * (users.data()?.perPage ?? 0) >= (users.data()?.total ?? 0)} onClick={() => setPage((users.data()?.page ?? 1) + 1)}>
                 {t().next}
               </Button>
             </div>
@@ -316,6 +317,7 @@ export default function AiQuotaAdmin(props: { config: AiQuotaConfig; models: { i
                     <Show when={b.bypassed}>
                       <p>{t().bypassed}</p>
                     </Show>
+                    <Show when={b.estimated}><p class="text-xs text-muted">{t().estimated}: {b.estimated}</p></Show>
                     <Show when={b.unknown}>
                       <p>
                         {t().unknown}: {b.unknown}

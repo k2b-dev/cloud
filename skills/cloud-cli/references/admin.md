@@ -395,3 +395,9 @@ reset needs a new UUID. Quote `*` to prevent shell expansion. Resetting one scop
 does not reset the other scopes or delete usage history. The response contains
 the updated balance. Reads and writes also support `--jsonl`; list responses
 retain their response envelope and pagination fields.
+
+Interrupted-call token amounts can be estimates; balances expose the number of
+`estimated` calls separately from `unknown`. Estimates count toward limits.
+The `authenticated` principal also matches service accounts. Raw call history
+is retained for 8,760 hours (the maximum quota window), with bounded cleanup;
+usage history in balances is not a lifetime total. Reset IDs remain durable.

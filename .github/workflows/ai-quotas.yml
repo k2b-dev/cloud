@@ -1,0 +1,41 @@
+name: Assistant quotas
+on:
+  pull_request:
+    paths: ["packages/cloud/**", "packages/core/**", "packages/assistant/**", "packages/ui/**", "bun.lock", ".github/workflows/ai-quotas.yml"]
+  push:
+    branches: [main]
+    paths: ["packages/cloud/**", "packages/core/**", "packages/assistant/**", "packages/ui/**", "bun.lock", ".github/workflows/ai-quotas.yml"]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  quotas:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_HOST_AUTH_METHOD: trust
+          POSTGRES_DB: cloud_ai_quota_verify_ci
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres -d cloud_ai_quota_verify_ci"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+        with:
+          bun-version: 1.4.2
+      - run: bun ci
+      - run: bun run --cwd packages/ui build
+      - name: Quota provider and API tests
+        run: bun test --isolate packages/cloud/src/ai/quota-provider.test.ts packages/cloud/src/api/admin-ai-quotas.test.ts packages/cloud/src/ai/chat-quotas.test.ts packages/cloud/src/cli/admin.test.ts
+      - name: PostgreSQL quota integration tests (disposable database)
+        env:
+          DATABASE_URL: postgres://postgres@127.0.0.1:5432/cloud_ai_quota_verify_ci
+        run: bun test packages/cloud/src/ai/quotas.integration.test.ts
+      - name: Quota UI regression tests
+        run: |
+          bun test --isolate packages/assistant/src/frontend/AssistantQuota.render.test.tsx packages/core/src/pages/admin/settings/_components/AiQuotaAdmin.render.test.tsx
+          bun test --isolate --conditions=browser --preload ./packages/ui/test/solid-dom-preload.ts packages/core/src/pages/admin/settings/_components/AiQuotaAdmin.behavior.test.tsx

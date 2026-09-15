@@ -1,4 +1,4 @@
-import { quotaProvider } from "./quota-provider";
+import { assistantQuotaProvider } from "./quota-provider";
 import { AiRunTimeout } from "./run-timeout";
 import { createTurnTimingRecorder, withDurableTurnTiming } from "./turn-timing";
 import type { CompactEvent, NessiLoop, OutboundEvent, Provider, Tool, ToolResolver } from "@k2b/nessi";
@@ -1007,9 +1007,7 @@ export class AiTurnExecutor {
     const quotaSubject = accessSubjectForActor(material.actor);
     const toolRoundPolicy = applyToolRoundPolicy({
       provider:
-        isAssistantChatTurn(config) && quotaSubject
-          ? quotaProvider(resolved.provider, quotaSubject, resolved.profile.id, turnId)
-          : resolved.provider,
+        assistantQuotaProvider(resolved.provider, config, quotaSubject, resolved.profile.id, turnId),
       tools,
       maxToolRounds: resolved.profile.maxToolRounds,
       issuedToolRounds: priorToolRounds.issued,

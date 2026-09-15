@@ -34,3 +34,16 @@ for (const locale of ["en", "de"])
     expect(enabled).toContain(locale === "de" ? "Unbegrenzt" : "Unlimited");
     expect(enabled).toContain(locale === "de" ? "Alle Chatmodelle" : "All chat models");
   });
+test("removed model scope stays visible and editable", () => {
+  const html = renderToString(() => createComponent(Panel, { models: [], config: {
+    enabled: true, revision: 1, rules: [{ scope: "removed-profile", hours: 24, anchor: "2026-01-01T00:00:00Z", grants: [] }],
+  } }));
+  expect(html).toContain("removed-profile");
+});
+test("principal picker placeholder follows both audience and service-account flags", async () => {
+  const { default: Picker } = await import("../../../../../../cloud/src/access/PrincipalPicker");
+  for (const [audience, service, expected] of [[false, false, "Add user or group"], [false, true, "Add user, group, or service account"], [true, false, "Add user, group, or audience"], [true, true, "Add user, group, service account, or audience"]] as const) {
+    const html = renderToString(() => createComponent(Picker, { allowAuthenticated: audience, allowServiceAccounts: service, onSelect: () => {} }));
+    expect(html).toContain(expected);
+  }
+});

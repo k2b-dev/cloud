@@ -37,6 +37,7 @@ export type AiQuotaBalance = {
   output: number;
   used: number;
   unknown: number;
+  estimated?: number;
   resetsAt: string;
   sources: string[];
   bypassed: boolean;

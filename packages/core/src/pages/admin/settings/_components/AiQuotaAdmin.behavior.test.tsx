@@ -77,3 +77,24 @@ else
       dom.cleanup();
     }
   });
+if (!isServer) test("pagination uses the returned page and page size after server clamp", async () => {
+  const dom = createDomTestHarness();
+  const { default: Panel } = await import("./AiQuotaAdmin.island.tsx");
+  const calls: string[] = [];
+  const fetch = spyOn(globalThis, "fetch").mockImplementation(Object.assign(async (input: RequestInfo | URL) => {
+    const url = String(input instanceof Request ? input.url : input);
+    calls.push(url);
+    return Response.json({ items: [], total: calls.length === 1 ? 20 : 5, page: 1, perPage: 10 });
+  }, { preconnect: globalThis.fetch.preconnect }));
+  const dispose = render(() => createComponent(Panel, { config: { enabled: false, revision: 0, rules: [] }, models: [] }), dom.root);
+  const button = (label: string) => Array.from(dom.root.querySelectorAll("button")).find(b => b.textContent === label)!;
+  try {
+    await tick(); button("Users").click(); await tick();
+    expect(button("Next").disabled).toBe(false);
+    button("Next").click();
+    await tick(); await tick();
+    expect(calls.at(-1)).toContain("page=2");
+    expect(button("Previous").disabled).toBe(true);
+    expect(button("Next").disabled).toBe(true);
+  } finally { dispose(); fetch.mockRestore(); dom.cleanup(); }
+});

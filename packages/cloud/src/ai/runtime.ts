@@ -453,6 +453,7 @@ const publishSweepFinished = async (turn: AiTurnFinalizedAction & { error?: stri
 };
 
 export const sweepAiRuntime = async (onTurnFinalized?: (event: AiTurnFinalizedEvent) => Promise<void>): Promise<void> => {
+  await aiQuotas.prune().catch(() => log.warn("Quota retention failed", { code: "quota_retention_failed" }));
   await drainQueuedMessages(enqueueAiTurn);
   const sweep = await aiConversations.sweepTurns({ maxAttempts: AI_TURN_MAX_ATTEMPTS });
   await Promise.all([

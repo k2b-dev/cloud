@@ -14,6 +14,8 @@ export async function migrateAiQuotas() {
       CHECK(num_nonnulls(user_id,service_account_id)=1),
       CHECK(input IS NULL OR input>=0), CHECK(output IS NULL OR output>=0)
     )`;
+    await db`ALTER TABLE ai.quota_calls ADD COLUMN IF NOT EXISTS estimated BOOLEAN NOT NULL DEFAULT false`;
+    await db`CREATE INDEX IF NOT EXISTS quota_calls_started ON ai.quota_calls(started_at)`;
     await db`CREATE INDEX IF NOT EXISTS quota_calls_user ON ai.quota_calls(user_id,started_at)`;
     await db`CREATE INDEX IF NOT EXISTS quota_calls_service ON ai.quota_calls(service_account_id,started_at)`;
     await db`CREATE TABLE IF NOT EXISTS ai.quota_resets (

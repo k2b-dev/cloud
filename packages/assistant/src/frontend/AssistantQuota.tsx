@@ -61,7 +61,7 @@ export default function AssistantQuota(props: {
           : t().remaining({ percent: percent(state().remaining!) });
   const number = (value: number) => value.toLocaleString(locale());
   return (
-    <Show when={props.model && (state().balances.length || (failed() && props.snapshot?.enabled !== false))}>
+    <Show when={props.model && state().balances.length}>
       <Chat.ContextPopup
         type="button"
         class="inline-flex cursor-pointer items-center gap-1 rounded px-1 py-1 text-xs text-muted hover:text-default focus-visible:outline focus-visible:outline-2"
@@ -109,6 +109,7 @@ export default function AssistantQuota(props: {
                           </span>
                         </Show>
                       </div>
+                      <Show when={balance.estimated}><p class="text-xs text-muted">{t().estimated}</p></Show>
                       <Show when={!unlimited() && balance.unknown}>
                         <p class="text-xs text-muted">{t().unknown}</p>
                       </Show>

@@ -20,7 +20,7 @@ const balance = (scope: string, limit: number | null, used = 20, bypassed = fals
   resetsAt: "2026-10-01T00:00:00Z",
   bypassed,
 });
-const render = (snapshot: AiChatQuotaSnapshot, error?: Error) =>
+const render = (snapshot: AiChatQuotaSnapshot | undefined, error?: Error) =>
   renderToString(() =>
     createComponent(LocaleProvider, {
       locale: "de",
@@ -58,4 +58,9 @@ test("errors never present cached allowance as fresh", () => {
 test("missing usage differs from exhausted quota", () => {
   expect(render({ enabled: true, balances: [{ ...balance("*", 100), unknown: 1 }] })).toContain("Nutzung prüfen");
   expect(render({ enabled: true, balances: [balance("*", 0)] })).toContain("Dein Entwurf bleibt erhalten");
+});
+
+test("failed discovery never invents an enabled quota UI", () => {
+  expect(render(undefined, new Error("offline"))).not.toContain("Nicht verfügbar");
+  expect(render({ enabled: false, balances: [] }, new Error("offline"))).not.toContain("Nicht verfügbar");
 });

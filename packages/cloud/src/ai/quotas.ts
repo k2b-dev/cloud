@@ -63,8 +63,8 @@ export const aiQuotas = {
         WHERE ${matches}`;
       const limit = grants.some((g) => g.limit === null) ? null : Math.max(0, ...grants.map((g) => g.limit ?? 0));
       const window = quotaWindow(rule.anchor, rule.hours, now);
-      const [counts] = await sql<{ input: number; output: number; unknown: number }[]>`
-        SELECT COALESCE(sum(c.input),0)::float8 AS input, COALESCE(sum(c.output),0)::float8 AS output,
+      const [counts] = await sql<{ input: number; output: number; unknown: number; estimated: number }[]>`
+        SELECT COALESCE(sum(c.input),0)::float8 AS input, COALESCE(sum(c.output),0)::float8 AS output, count(*) FILTER(WHERE c.estimated)::int AS estimated,
           count(*) FILTER(WHERE (c.input IS NULL OR c.output IS NULL) AND
             (c.finished_at IS NOT NULL OR NOT EXISTS(SELECT 1 FROM ai.turns t WHERE t.id=c.turn_id AND t.attempt=c.turn_attempt AND t.status='running' AND t.lease_expires_at > now())))::int AS unknown
         FROM ai.quota_calls c
@@ -80,6 +80,7 @@ export const aiQuotas = {
         output: counts?.output ?? 0,
         used: (counts?.input ?? 0) + (counts?.output ?? 0),
         unknown: counts?.unknown ?? 0,
+        estimated: counts?.estimated ?? 0,
         resetsAt: window.until.toISOString(),
         sources: grants.filter((g) => g.limit === limit).map((g) => g.label),
         bypassed: false,
@@ -117,10 +118,19 @@ export const aiQuotas = {
       VALUES(${id}::uuid,${identity.user}::uuid,${identity.service}::uuid,${model},${turnId}::uuid,(SELECT attempt FROM ai.turns WHERE id=${turnId}::uuid))`;
     return id;
   },
-  async finish(id: string, usage?: { input: number; output: number }) {
+  async finish(id: string, usage?: { input: number; output: number; estimated?: boolean }) {
     // Provider events are snapshots. Finalizing twice must not double charge or erase usage.
-    await sql`UPDATE ai.quota_calls SET input=${usage?.input ?? null},output=${usage?.output ?? null},finished_at=clock_timestamp()
+    await sql`UPDATE ai.quota_calls SET input=${usage?.input ?? null},output=${usage?.output ?? null},estimated=${usage?.estimated ?? false},finished_at=clock_timestamp()
       WHERE id=${id}::uuid AND finished_at IS NULL`;
+  },
+  async prune() {
+    // Preserve every supported quota window, including rules added while limits were off.
+    // One bounded batch per runtime sweep avoids long deletes on busy installations.
+    await sql`DELETE FROM ai.quota_calls WHERE id IN (
+      SELECT c.id FROM ai.quota_calls c WHERE c.started_at < now() - interval '8760 hours'
+      AND NOT EXISTS(SELECT 1 FROM ai.turns t WHERE t.id=c.turn_id AND t.attempt=c.turn_attempt
+        AND t.status='running' AND t.lease_expires_at>now())
+      ORDER BY c.started_at LIMIT 1000 FOR UPDATE SKIP LOCKED)`;
   },
   async reset(subject: AccessSubject, scope: string, requestId: string, actorId: string) {
     const identity = ids(subject);
@@ -146,7 +156,7 @@ export const aiQuotas = {
       current = Math.min(page, Math.max(1, Math.ceil(total / perPage)));
     const items = await sql<
       AiQuotaIdentity[]
-    >`SELECT type,id,label,last_used::text AS "lastUsed" FROM (${filtered}) q ORDER BY last_used DESC NULLS LAST,label,id LIMIT ${perPage} OFFSET ${(current - 1) * perPage}`;
+    >`SELECT type,id,label,to_char(last_used AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS "lastUsed" FROM (${filtered}) q ORDER BY last_used DESC NULLS LAST,label,id LIMIT ${perPage} OFFSET ${(current - 1) * perPage}`;
     return { items, total, page: current, perPage };
   },
 };

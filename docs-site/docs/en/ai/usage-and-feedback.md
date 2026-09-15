@@ -147,7 +147,11 @@ rows share measurement coverage and feedback counts. The browser-safe
 Open **Admin → AI → Assistant limits** (`/admin/settings?tab=ai-quotas`).
 Enforcement is **off by default**. Existing installations continue without a
 quota. Direct chat usage is recorded even while enforcement is off; enabling
-limits uses the recorded usage in the current window.
+limits uses the recorded usage in the current window. The runtime sweep removes
+at most 1,000 inactive raw calls per pass after 8,760 hours, the maximum supported
+quota window. Per-user history covers the retained ledger, not lifetime totals.
+Active leased calls are preserved. Reset request IDs remain durable so an old
+retry cannot apply a second reset.
 
 Each rule selects a chat model profile or **All chat models**, a reset interval
 in hours (1–8,760), and assignments to users, groups, service accounts, or all
@@ -186,9 +190,17 @@ remain in the old allowance even if their usage arrives afterward. Changing a
 rule's interval starts a new period after confirmation; changing assignments
 or token amounts does not reset consumption.
 
-Usage that cannot be measured is shown separately. It blocks subsequent calls
-under finite limits until a reset or the next window; it never becomes a free
-zero-token call. Disabled or unlimited quotas do not block chats for a usage
+Interrupted streams (Stop, timeout, shutdown, or provider errors) often omit
+final provider usage. When that happens, quota accounting records an explicitly
+labelled estimate from the request text, system prompt, tool schemas, and streamed
+text/thinking/tool arguments (roughly four characters per token). Binary file
+data is excluded; hidden reasoning and provider-specific image costs cannot be
+reconstructed. Estimates are approximate, not provider billing measurements,
+and count against the allowance without an unknown-usage lockout. Reported
+usage always takes precedence. A normal completed stream without valid usage,
+or an orphaned call after a process crash, remains unknown and blocks finite
+limits until reset or the next window. Existing unknown historical rows cannot
+be reconstructed and may still require an administrator reset. Disabled or unlimited quotas do not block chats for a usage
 booking failure. A known context-size rejection before generation counts zero
 so the normal compaction/retry path can continue.
 
@@ -240,3 +252,8 @@ Use `--type service_account` for a service account. Retain the reset operation's
 UUID and reuse it when retrying an uncertain response. A new reset requires a
 new UUID. Reset applies only to the selected identity and scope; historical
 usage remains available. All commands support JSON and JSONL output.
+
+The `authenticated` quota principal includes signed-in users and service accounts,
+consistent with Cloud access rules. Their usage is still accounted separately.
+The quota PostgreSQL regression suite runs in the dedicated **Assistant quotas**
+CI workflow against a disposable `cloud_ai_quota_verify_ci` database.
