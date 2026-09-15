@@ -1,79 +1,84 @@
 import { query } from "@k2b/stdlib/solid";
-import { Button, NumberInput, Select, Switch, TextInput, Placeholder, prompts, useLocale } from "@k2b/ui";
-import { PrincipalPicker, principalKey } from "@k2b/cloud/access/ui";
+import { navigateTo } from "@k2b/ssr/nav";
+import {
+  Button,
+  ButtonLink,
+  DataTable,
+  DetailPanel,
+  FilterChip,
+  Pagination,
+  Placeholder,
+  ProgressBar,
+  Select,
+  StatCell,
+  StatGrid,
+  TextInput,
+  Tabs,
+  prompts,
+  useLocale,
+} from "@k2b/ui";
 import { coreClient } from "@k2b/cloud/clients/core";
-import type { AiQuotaConfig, AiQuotaIdentity, AiQuotaSnapshot } from "@k2b/cloud/shared";
-import { createSignal, For, Index, Show } from "solid-js";
+import {
+  aiQuotaHref,
+  AiQuotaReportQuerySchema,
+  type AiQuotaConfig,
+  type AiQuotaReport,
+  type AiQuotaReportQuery,
+  type AiQuotaSnapshot,
+  type AiQuotaStatus,
+} from "@k2b/cloud/shared";
+import { createSignal, For, Show } from "solid-js";
 import { quotaMessages } from "./ai-quota-messages";
+import AiQuotaRules from "./AiQuotaRules";
+import AiQuotaCharts from "./AiQuotaCharts";
 const api = coreClient.admin.core["ai-quotas"];
-async function checked<T>(response: Pick<Response, "json" | "ok" | "statusText">): Promise<T> {
-  const body = await response.json();
-  if (!response.ok) throw new Error(body.message || response.statusText);
-  return body;
-}
-export default function AiQuotaAdmin(props: { config: AiQuotaConfig; models: { id: string; label: string }[] }) {
+export default function AiQuotaAdmin(props: {
+  config: AiQuotaConfig;
+  models: { id: string; label: string }[];
+  report: AiQuotaReport;
+  balance: AiQuotaSnapshot | null;
+}) {
   const locale = useLocale(),
     t = () => quotaMessages.resolve([locale()]).t;
-  const [draft, setDraft] = createSignal(structuredClone(props.config));
-  const [saved, setSaved] = createSignal(props.config),
-    [busy, setBusy] = createSignal(false),
+  const q = () => props.report.query;
+  const [search, setSearch] = createSignal(q().search);
+  const [busy, setBusy] = createSignal(false),
     [error, setError] = createSignal("");
-  const [tab, setTab] = createSignal("rules"),
-    [search, setSearch] = createSignal(""),
-    [page, setPage] = createSignal(1);
-  const [selected, setSelected] = createSignal<AiQuotaIdentity | null>(null);
-  const users = query.create({
-    source: () => ({ search: search(), page: page() }),
-    load: async (q, { abortSignal }) =>
-      checked<{ items: AiQuotaIdentity[]; total: number; page: number; perPage: number }>(
-        await api.users.$get({ query: { search: q.search, page: String(q.page) } }, { init: { signal: abortSignal } }),
-      ),
-  });
+  const n = (v: number) => v.toLocaleString(locale());
+  const name = (id: string) => (id === "*" ? t().all : (props.models.find((m) => m.id === id)?.label ?? id));
+  const status = (s: AiQuotaStatus) =>
+    ({ disabled: t().disabled, available: t().available, unlimited: t().unlimited, exhausted: t().exhausted, unknown: t().unknownStatus })[
+      s
+    ];
+  const statusClass = (s: AiQuotaStatus) => (s === "unknown" || s === "exhausted" ? "text-amber-600 dark:text-amber-400" : "text-dimmed");
+  const href = (patch: Partial<AiQuotaReportQuery>) => aiQuotaHref({ ...q(), ...patch });
+  const change = (patch: Partial<AiQuotaReportQuery>) => navigateTo(href({ ...patch, page: 1, identity: undefined }));
+  const selected = () => props.report.selected;
+  const identityKey = () => (q().identity ? `${q().identityType}:${q().identity}` : "");
   const balance = query.create({
-    source: () => selected(),
-    load: async (who, { abortSignal }) => {
-      if (!who) return null;
-      const snapshot = await checked<AiQuotaSnapshot>(
-        await api.balance.$get({ query: { type: who.type, id: who.id } }, { init: { signal: abortSignal } }),
-      );
-      return { ...snapshot, identityKey: `${who.type}:${who.id}` };
+    source: identityKey,
+    initial: { source: identityKey(), data: { key: identityKey(), snapshot: props.balance } },
+    load: async (key, { abortSignal }) => {
+      if (!q().identity) return { key, snapshot: null };
+      const response = await api.balance.$get({ query: { type: q().identityType, id: q().identity! } }, { init: { signal: abortSignal } });
+      if (!response.ok) throw new Error(t().error);
+      return { key, snapshot: await response.json() };
     },
   });
-  const shownBalance = () => (balance.data()?.identityKey === `${selected()?.type}:${selected()?.id}` ? balance.data() : null);
-  const update = (fn: (next: AiQuotaConfig) => void) =>
-    setDraft((previous) => {
-      const next = structuredClone(previous);
-      fn(next);
-      return next;
-    });
-  const name = (scope: string) => (scope === "*" ? t().all : props.models.find((m) => m.id === scope)?.label || scope);
-  async function save() {
-    setBusy(true);
-    setError("");
-    try {
-      const changed = draft().rules.some((r) => saved().rules.some((old) => old.scope === r.scope && old.hours !== r.hours));
-      if (changed && !(await prompts.confirm(t().newPeriod))) return;
-      const config = structuredClone(draft());
-      for (const r of config.rules)
-        if (saved().rules.some((old) => old.scope === r.scope && old.hours !== r.hours)) r.anchor = new Date().toISOString();
-      const result = await checked<AiQuotaConfig>(await api.$put({ json: config }));
-      setDraft(result);
-      setSaved(result);
-      await balance.refresh();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setBusy(false);
-    }
-  }
+  const shownBalance = () => (balance.data()?.key === identityKey() ? balance.data()?.snapshot : null);
   async function reset(scope: string) {
-    const who = selected();
-    if (!who || !shownBalance() || !(await prompts.confirm(`${who.label} · ${name(scope)}\n\n${t().resetConfirm}`))) return;
+    if (busy() || !selected() || !shownBalance()) return;
+    const who = selected()!;
+    if (!(await prompts.confirm(`${who.label} · ${name(scope)}\n\n${t().resetConfirm}`))) return;
     setBusy(true);
     setError("");
     try {
-      await checked(await api.reset.$post({ json: { type: who.type, id: who.id, scope, requestId: crypto.randomUUID() } }));
-      await balance.refresh();
+      const response = await api.reset.$post({ json: { type: who.type, id: who.id, scope, requestId: crypto.randomUUID() } });
+      if (!response.ok) {
+        const body = await response.json();
+        throw new Error("message" in body ? body.message : t().error);
+      }
+      await navigateTo(href({ until: undefined }));
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -81,263 +86,263 @@ export default function AiQuotaAdmin(props: { config: AiQuotaConfig; models: { i
     }
   }
   return (
-    <div class="flex min-w-0 flex-col gap-4 p-4">
-      <h2 class="text-xl font-semibold">{t().title}</h2>
-      <p class="text-sm text-muted">{t().description}</p>
-      <div class="flex gap-2">
-        <Button variant={tab() === "rules" ? "primary" : "secondary"} onClick={() => setTab("rules")}>
-          {t().rules}
-        </Button>
-        <Button variant={tab() === "users" ? "primary" : "secondary"} onClick={() => setTab("users")}>
-          {t().users}
-        </Button>
+    <div class="app-rows min-w-0 p-3">
+      <div class="flex flex-wrap items-start justify-between gap-2">
+        <div>
+          <h1 class="text-base font-semibold text-primary">{t().title}</h1>
+          <p class="mt-1 text-xs text-dimmed">{t().description}</p>
+        </div>
+        <Show when={q().view === "users"}>
+          <span class="text-xs text-dimmed">{props.config.enabled ? t().enabled : t().disabled}</span>
+        </Show>
       </div>
-      <Show when={error()}>
-        <Placeholder state="error" title={error()} />
-      </Show>
-      <Show when={tab() === "rules"}>
-        <Switch
-          label={t().enabled}
-          description={t().disabledHint}
-          value={draft().enabled}
-          disabled={busy()}
-          onValueChange={(v) =>
-            update((d) => {
-              d.enabled = v;
-            })
-          }
-        />
-        <p class="text-sm text-muted">{t().hint}</p>
-        <Index each={draft().rules}>
-          {(rule, i) => (
-            <section class="flex flex-col gap-3 rounded-lg border border-border p-4">
-              <div class="flex flex-wrap items-end gap-3">
-                <div class="min-w-48 flex-1">
-                  <Select
-                    label={t().scope}
-                    value={rule().scope}
-                    disabled={busy()}
-                    options={[{ value: "*", label: t().all }, ...props.models.map((m) => ({ value: m.id, label: m.label })),
-                      ...(rule().scope !== "*" && !props.models.some((m) => m.id === rule().scope) ? [{ value: rule().scope, label: rule().scope }] : [])].filter(
-                      (o) => o.value === rule().scope || !draft().rules.some((r) => r.scope === o.value),
-                    )}
-                    onValueChange={(v) =>
-                      v &&
-                      update((d) => {
-                        d.rules[i]!.scope = v;
-                      })
-                    }
-                  />
-                </div>
-                <NumberInput
-                  label={t().hours}
-                  value={rule().hours}
-                  min={1}
-                  max={8760}
-                  disabled={busy()}
-                  onValueChange={(v) =>
-                    update((d) => {
-                      d.rules[i]!.hours = v ?? 1;
-                    })
-                  }
+      <Tabs
+        ariaLabel={t().title}
+        value={q().view}
+        onValueChange={(view) => void navigateTo(href({ view, identity: undefined }))}
+        options={(["users", "rules"] as const).map((value) => ({ value, label: t()[value] }))}
+      />
+      <Show
+        when={q().view === "rules"}
+        fallback={
+          <>
+            <Show when={!props.config.enabled}>
+              <p class="text-xs text-dimmed">{t().disabledHint}</p>
+            </Show>
+            <div class="flex flex-wrap items-center gap-2">
+              <form
+                role="search"
+                class="w-full sm:w-64"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  void change({ search: search() });
+                }}
+              >
+                <TextInput
+                  type="search"
+                  icon="ti ti-search"
+                  aria-label={t().search}
+                  placeholder={t().search}
+                  value={search()}
+                  onValueChange={setSearch}
                 />
-                <Button
-                  variant="secondary"
-                  disabled={busy()}
-                  onClick={() =>
-                    update((d) => {
-                      d.rules.splice(i, 1);
-                    })
+              </form>
+              <FilterChip
+                label={`${t().period}: ${q().range}`}
+                icon="ti ti-clock"
+                value={[q().range]}
+                options={[{ options: ["24h", "7d", "30d", "90d"].map((value) => ({ value, label: value })) }]}
+                onValueChange={(values) => void change({ range: AiQuotaReportQuerySchema.shape.range.parse(values[0]) })}
+              />
+              <Select
+                aria-label={t().scope}
+                placeholder={t().all}
+                class="w-48"
+                value={q().model || null}
+                clearable
+                searchable
+                options={props.models.map((m) => ({ value: m.id, label: m.label }))}
+                onValueChange={(model) => void change({ model: model ?? "" })}
+              />
+              <FilterChip
+                label={t().status}
+                icon="ti ti-adjustments"
+                value={[q().status]}
+                isActive={q().status !== "all"}
+                options={[
+                  {
+                    options: [
+                      { value: "all", label: t().allStatuses },
+                      ...(["disabled", "available", "unlimited", "exhausted", "unknown"] as const).map((value) => ({
+                        value,
+                        label: status(value),
+                      })),
+                    ],
+                  },
+                ]}
+                onValueChange={(values) => void change({ status: AiQuotaReportQuerySchema.shape.status.parse(values[0]) })}
+              />
+              <ButtonLink size="sm" variant="ghost" href={aiQuotaHref({})}>
+                {t().resetFilters}
+              </ButtonLink>
+              <ButtonLink size="sm" variant="secondary" href={href({ until: undefined })}>
+                {t().refresh}
+              </ButtonLink>
+            </div>
+            <p class="text-xs text-dimmed">{t().periodHint}</p>
+            <StatGrid columns={4}>
+              <StatCell label={t().active} value={n(props.report.overview.accounts)} sub={q().range} />
+              <StatCell
+                label={t().input}
+                value={props.report.overview.calls && !props.report.overview.measured ? "—" : n(props.report.overview.input)}
+                sub={t().tokens}
+              />
+              <StatCell
+                label={t().output}
+                value={props.report.overview.calls && !props.report.overview.measured ? "—" : n(props.report.overview.output)}
+                sub={t().tokens}
+              />
+              <StatCell
+                label={t().recordedCalls}
+                value={`${n(props.report.overview.measured)} / ${n(props.report.overview.calls)}`}
+                sub={`${n(props.report.overview.unknown)} ${t().unknown} · ${n(props.report.overview.estimated)} ${t().estimates}`}
+              />
+            </StatGrid>
+            <Show when={props.report.overview.calls > 0}>
+              <AiQuotaCharts report={props.report} modelName={name} />
+            </Show>
+            <div class={`grid min-w-0 gap-3 ${selected() ? "xl:grid-cols-[minmax(0,3fr)_minmax(20rem,2fr)]" : ""}`}>
+              <DataTable.Panel class="self-start">
+                <DataTable.Header title={t().users} subtitle={`${props.report.total} · ${t().current}`} />
+                <DataTable
+                  rows={props.report.items}
+                  getRowId={(r) => `${r.type}:${r.id}`}
+                  selectedRowId={identityKey()}
+                  density="compact"
+                  surface="plain"
+                  sort={{ key: q().sort, direction: q().direction }}
+                  sortHref={(sort) =>
+                    href({ sort: AiQuotaReportQuerySchema.shape.sort.parse(sort.key), direction: sort.direction, page: 1 })
                   }
-                >
-                  {t().remove}
-                </Button>
-              </div>
-              <p class="text-xs text-muted">{t().grantHint}</p>
-              <Index each={rule().grants}>
-                {(grant, j) => (
-                  <div class="flex flex-wrap items-center gap-3">
-                    <span class="min-w-32 flex-1 text-sm">
-                      {grant().displayName || (grant().principal.type === "authenticated" ? t().allUsers : principalKey(grant().principal))}
-                    </span>
-                    <Switch
-                      label={t().unlimited}
-                      value={grant().limit === null}
-                      disabled={busy()}
-                      onValueChange={(v) =>
-                        update((d) => {
-                          d.rules[i]!.grants[j]!.limit = v ? null : 100000;
-                        })
-                      }
-                    />
-                    <Show when={grant().limit !== null}>
-                      <NumberInput
-                        label={t().tokens}
-                        value={grant().limit}
-                        min={0}
-                        disabled={busy()}
-                        onValueChange={(v) =>
-                          update((d) => {
-                            d.rules[i]!.grants[j]!.limit = v ?? 0;
-                          })
+                  columns={[
+                    { id: "label", header: t().account, sortable: true },
+                    { id: "tokens", header: t().tokens, align: "right", sortable: true },
+                    { id: "status", header: t().status },
+                    { id: "lastUsed", header: t().lastUsed, sortable: true },
+                  ]}
+                  empty={<Placeholder variant="compact" title={t().noResults} description={t().noResultsHint} />}
+                  renderCell={({ row, col }) => {
+                    if (col.id === "label")
+                      return (
+                        <a class="font-medium text-primary" href={href({ identity: row.id, identityType: row.type })}>
+                          {row.label}
+                          <Show when={row.type === "service_account"}>
+                            <span class="block text-xs text-dimmed">Service account</span>
+                          </Show>
+                        </a>
+                      );
+                    if (col.id === "tokens" && row.calls && !row.measured) return "—";
+                    if (col.id === "tokens")
+                      return (
+                        <span class="tabular-nums">
+                          {n(row.input + row.output)}
+                          <span class="block text-xs text-dimmed">
+                            {n(row.input)} / {n(row.output)}
+                          </span>
+                        </span>
+                      );
+                    if (col.id === "status")
+                      return (
+                        <span class={statusClass(row.status)}>
+                          {status(row.status)}
+                          <Show when={row.scopes > 1}>
+                            <span class="block text-xs">
+                              {row.scopes} {t().limitedScopes} · {row.exhausted} {t().blockedScopes}
+                            </span>
+                          </Show>
+                        </span>
+                      );
+                    return <span class="text-xs text-dimmed">{row.lastUsed ? new Date(row.lastUsed).toLocaleString(locale()) : "—"}</span>;
+                  }}
+                />
+                <DataTable.Footer>
+                  <Pagination
+                    currentPage={props.report.page}
+                    totalPages={Math.ceil(props.report.total / props.report.perPage)}
+                    baseUrl={`${href({ page: undefined })}&page=`}
+                  />
+                </DataTable.Footer>
+              </DataTable.Panel>
+              <Show when={selected()}>
+                {(who) => (
+                  <aside class="paper min-w-0 p-3" aria-label={who().label}>
+                    <DetailPanel>
+                      <DetailPanel.Header
+                        title={who().label}
+                        subtitle={t().current}
+                        actions={
+                          <ButtonLink size="sm" variant="ghost" href={href({ identity: undefined })}>
+                            {t().close}
+                          </ButtonLink>
                         }
                       />
-                    </Show>
-                    <Button
-                      variant="ghost"
-                      disabled={busy()}
-                      onClick={() =>
-                        update((d) => {
-                          d.rules[i]!.grants.splice(j, 1);
-                        })
-                      }
-                    >
-                      {t().remove}
-                    </Button>
-                  </div>
+                      <DetailPanel.Body>
+                        <Show when={error()}>
+                          <Placeholder state="error" description={error()} />
+                        </Show>
+                        <Show when={balance.loading()}>
+                          <Placeholder state="loading" />
+                        </Show>
+                        <Show when={balance.error()}>
+                          <Placeholder
+                            state="error"
+                            description={t().error}
+                            action={<Button onClick={() => balance.refresh()}>{t().refresh}</Button>}
+                          />
+                        </Show>
+                        <Show when={shownBalance() && !shownBalance()!.balances.length}>
+                          <p class="text-sm text-dimmed">{t().noRules}</p>
+                        </Show>
+                        <For each={shownBalance()?.balances}>
+                          {(b) => (
+                            <DetailPanel.Section title={name(b.scope)}>
+                              <p class="text-sm tabular-nums">
+                                {n(b.used)} / {b.limit === null ? t().unlimited : n(b.limit)} {t().tokens}
+                              </p>
+                              <Show when={b.limit !== null && !b.bypassed}>
+                                <ProgressBar
+                                  size="xs"
+                                  label={`${name(b.scope)} ${t().used}`}
+                                  value={b.limit === 0 ? 100 : (b.used / (b.limit ?? 1)) * 100}
+                                />
+                              </Show>
+                              <p class="text-xs text-dimmed">
+                                {t().input}: {n(b.input)} · {t().output}: {n(b.output)}
+                              </p>
+                              <p class="text-xs text-dimmed">
+                                {t().source}: {b.sources.join(", ") || t().missing}
+                              </p>
+                              <Show when={b.bypassed}>
+                                <p class="text-xs text-dimmed">{t().bypassed}</p>
+                              </Show>
+                              <Show when={b.estimated}>
+                                <p class="text-xs text-dimmed">
+                                  {t().estimated}: {n(b.estimated ?? 0)}
+                                </p>
+                              </Show>
+                              <Show when={b.unknown}>
+                                <p class="text-xs text-amber-600">
+                                  {t().unknown}: {n(b.unknown)}. {t().unknownHint}
+                                </p>
+                              </Show>
+                              <p class="text-xs text-dimmed">
+                                {t().until}: {new Date(b.resetsAt).toLocaleString(locale())}
+                              </p>
+                              <Button variant="secondary" size="sm" disabled={busy()} onClick={() => void reset(b.scope)}>
+                                {t().reset}
+                              </Button>
+                            </DetailPanel.Section>
+                          )}
+                        </For>
+                        <Show when={who().type === "user"}>
+                          <ButtonLink
+                            variant="ghost"
+                            size="sm"
+                            href={`/admin/settings?tab=ai-usage&view=comparisons&userId=${who().id}&range=${q().range}`}
+                          >
+                            {t().historyLink}
+                          </ButtonLink>
+                        </Show>
+                      </DetailPanel.Body>
+                    </DetailPanel>
+                  </aside>
                 )}
-              </Index>
-              <PrincipalPicker
-                allowServiceAccounts
-                disabled={busy()}
-                existing={rule().grants.map((g) => g.principal)}
-                onSelect={(principal, display) =>
-                  principal.type !== "public" &&
-                  update((d) => {
-                    d.rules[i]!.grants.push({ principal, displayName: display.displayName, limit: 100000 });
-                  })
-                }
-              />
-            </section>
-          )}
-        </Index>
-        <Show when={!draft().rules.length}>
-          <p class="text-sm text-muted">{t().noRules}</p>
-        </Show>
-        <div class="flex gap-2">
-          <Button
-            variant="secondary"
-            disabled={busy() || !["*", ...props.models.map(m => m.id)].some(scope => !draft().rules.some(rule => rule.scope === scope))}
-            onClick={() =>
-              update((d) => {
-                const scope = ["*", ...props.models.map((m) => m.id)].find((s) => !d.rules.some((r) => r.scope === s));
-                if (scope) d.rules.push({ scope, hours: 168, anchor: "1970-01-01T00:00:00.000Z", grants: [] });
-              })
-            }
-          >
-            {t().add}
-          </Button>
-          <Button disabled={busy()} onClick={() => void save()}>
-            {t().save}
-          </Button>
-          <Button
-            variant="ghost"
-            disabled={busy()}
-            onClick={async () => {
-              try {
-                const c = await checked<AiQuotaConfig>(await api.$get());
-                setDraft(c);
-                setSaved(c);
-              } catch (e) {
-                setError(String(e));
-              }
-            }}
-          >
-            {t().reload}
-          </Button>
-        </div>
-      </Show>
-      <Show when={tab() === "users"}>
-        <TextInput
-          label={t().search}
-          value={search()}
-          onValueChange={(v) => {
-            setSearch(v);
-            setPage(1);
-          }}
-        />
-        <Show when={users.error()}>
-          <Placeholder state="error" title={t().error} action={<Button onClick={() => users.refresh()}>{t().refresh}</Button>} />
-        </Show>
-        <div class="grid gap-4 lg:grid-cols-2">
-          <div class="flex flex-col gap-2">
-            <For each={users.data()?.items}>
-              {(user) => (
-                <Button variant={selected()?.id === user.id ? "secondary" : "ghost"} onClick={() => setSelected(user)}>
-                  {user.label}
-                  {user.type === "service_account" ? " · Service Account" : ""}
-                </Button>
-              )}
-            </For>
-            <Show when={!users.loading() && !users.data()?.items.length}>
-              <p>{t().none}</p>
-            </Show>
-            <div class="flex gap-2">
-              <Button disabled={users.loading() || users.refreshing() || (users.data()?.page ?? 1) <= 1} onClick={() => setPage((users.data()?.page ?? 1) - 1)}>
-                {t().previous}
-              </Button>
-              <span>{users.data()?.page || 1}</span>
-              <Button disabled={users.loading() || users.refreshing() || (users.data()?.page ?? 1) * (users.data()?.perPage ?? 0) >= (users.data()?.total ?? 0)} onClick={() => setPage((users.data()?.page ?? 1) + 1)}>
-                {t().next}
-              </Button>
+              </Show>
             </div>
-          </div>
-          <div class="flex flex-col gap-3">
-            <Show when={selected()} fallback={<p>{t().select}</p>}>
-              <h3 class="font-semibold">{selected()?.label}</h3>
-              <Show when={shownBalance()?.usage.length}>
-                <p class="text-sm text-muted">{t().recorded}</p>
-              </Show>
-              <For each={shownBalance()?.usage}>
-                {(u) => (
-                  <p class="text-sm text-muted">
-                    {name(u.model)} · {t().input}: {u.input.toLocaleString(locale())} · {t().output}: {u.output.toLocaleString(locale())}
-                  </p>
-                )}
-              </For>
-              <Show when={balance.loading()}>
-                <Placeholder state="loading" title={t().details} />
-              </Show>
-              <Show when={balance.error()}>
-                <Placeholder state="error" title={t().error} action={<Button onClick={() => balance.refresh()}>{t().refresh}</Button>} />
-              </Show>
-              <For each={shownBalance()?.balances}>
-                {(b) => (
-                  <section class="flex flex-col gap-2 rounded-lg border border-border p-3">
-                    <h4 class="font-semibold">{name(b.scope)}</h4>
-                    <p>
-                      {t().used}: {b.used.toLocaleString(locale())} / {b.limit === null ? t().unlimited : b.limit.toLocaleString(locale())}
-                    </p>
-                    <p class="text-xs text-muted">
-                      {t().input}: {b.input} · {t().output}: {b.output}
-                    </p>
-                    <p class="text-xs text-muted">
-                      {t().source}: {b.sources.join(", ") || t().missing}
-                    </p>
-                    <Show when={b.bypassed}>
-                      <p>{t().bypassed}</p>
-                    </Show>
-                    <Show when={b.estimated}><p class="text-xs text-muted">{t().estimated}: {b.estimated}</p></Show>
-                    <Show when={b.unknown}>
-                      <p>
-                        {t().unknown}: {b.unknown}
-                      </p>
-                    </Show>
-                    <p class="text-xs">
-                      {t().until}: {new Date(b.resetsAt).toLocaleString(locale())}
-                    </p>
-                    <Button variant="secondary" disabled={busy()} onClick={() => void reset(b.scope)}>
-                      {t().reset}
-                    </Button>
-                  </section>
-                )}
-              </For>
-              <Show when={shownBalance() && !shownBalance()?.balances.length}>
-                <p>{t().noRules}</p>
-              </Show>
-            </Show>
-          </div>
-        </div>
+          </>
+        }
+      >
+        <AiQuotaRules config={props.config} models={props.models} />
       </Show>
     </div>
   );

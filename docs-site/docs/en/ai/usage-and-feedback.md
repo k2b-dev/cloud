@@ -17,7 +17,8 @@ errors, without granting access to another user's private chat content.
 ## Filter and investigate
 
 The shared filters are period, user, model profile, actual provider model, and
-application. Compact filter chips apply selections immediately. Search user and
+application. Compact filter chips apply selections immediately. Provider-model and application
+filters are under **More filters**, which stays open when either is active. Search user and
 model selectors by name or identifier. The runs view has a search row; submit
 text searches with Enter. **About these data** explains measurement and attribution
 limits. Filters, view, sorting,
@@ -25,14 +26,16 @@ and pagination are stored in the URL. **Refresh** advances the period end;
 pagination retains the end time so new runs do not shift existing pages.
 
 - **Overview** shows inference totals, coverage, timelines, application usage,
-  and chat launches. Chat and background inference count once. Capability calls
+  and chat launches. The two compact charts support an exact-value table and
+  copying data, with a shared UTC inspection cursor. Chat and background inference count once. Capability calls
   are not inference and are not counted here; the platform records every
   capability execution, from the assistant and from every other surface, at
   [Observability](/en/docs/operations/observability).
 - **Users & models** displays one comparison table at a time. Switch between
   users and models to compare volume, costs, failures, latency, throughput,
   switches away, and feedback. Sort by volume, tokens, credits, failures,
-  negative count, or negative share. Models are grouped by both profile and
+  negative count, or negative share. Table headers also select ascending or
+  descending ordering. Models are grouped by both profile and
   actual provider model, so editing a profile does not merge different models.
 - **Feedback** filters current ratings by positive/negative and reason. The
   totals retain the whole selected user/model cohort, so filtering to negative
@@ -93,7 +96,8 @@ excludes these records. Stored background errors are limited to 2,000 characters
 
 ## Use the CLI
 
-The same service backs `cld admin ai usage`. JSON includes the server-resolved
+The same service backs `cld admin ai usage`. Comparison commands also accept
+`--direction asc|desc` (descending by default). JSON includes the server-resolved
 query, period, total count, page, and page size. List commands also accept
 `--jsonl` to emit one complete row per line from the requested page.
 
@@ -176,10 +180,31 @@ compaction, enrichment, scheduled and workflow calls do not count. A direct
 chat call to a model with image capabilities still counts its reported input
 and output tokens.
 
-The **Users** view includes existing direct-chat users and recorded service
-accounts. Search can also find accounts without usage. Select an account to
-inspect recorded input/output and its current allowances, including the
-assignments that determine them. Detailed accounting begins with this feature;
+The default **Users** view is a searchable, sortable account table. It includes
+existing direct-chat users and recorded service accounts; search can also find
+accounts without usage. Choose a consumption period (24 hours, 7, 30, or 90 days),
+model and current allowance status. Counts and charts use the whole filtered
+cohort, not just the current page of 25 accounts. The model chart shows the top
+20 models by recorded consumption. Switch either chart to its exact-value table
+or copy the values. Missing measurements are not zero consumption; estimates
+and unmeasured calls are shown separately.
+
+Consumption follows the selected historical period. **Current allowances** use
+each rule's own current reset window, even when a past consumption period is
+selected. The status reflects disabled enforcement, unlimited access, available
+or exhausted allowances, and unknown usage that blocks a finite allowance.
+Multiple model rules are summarized separately, never added into a single
+percentage. Selecting an account opens its current per-scope balances, grant
+sources and reset actions. Closing details preserves filters and pagination.
+The link to broader **Usage** includes background inference and can have different
+retention and measurement coverage; its totals are not quota balances.
+
+**Rules** shows one compact row per model scope. Use **Add rule** or **Edit rule**
+to choose a model, interval, and assignments in a dialog. **Apply to draft** changes
+only the local draft; **Save changes** persists the full configuration. Cancelling
+a dialog does not save, and leaving with pending changes asks before discarding
+them. A conflicting administrator edit requires reloading before saving.
+Detailed accounting begins with this feature;
 older chat history is not backfilled into quota consumption. Deleting a chat
 neither removes these measurements nor restores allowance.
 
@@ -257,3 +282,20 @@ The `authenticated` quota principal includes signed-in users and service account
 consistent with Cloud access rules. Their usage is still accounted separately.
 The quota PostgreSQL regression suite runs in the dedicated **Assistant quotas**
 CI workflow against a disposable `cloud_ai_quota_verify_ci` database.
+
+
+### Admin quota reporting
+
+`GET /api/admin/core/ai-quotas/report` uses the same administrator authorization as
+quota configuration. Its query accepts `range`, `until`, `search`, `model`,
+`status`, `sort` (`label`, `tokens`, `lastUsed`), `direction` (`asc`, `desc`) and
+`page`. `view` is `users` by default or `rules`; the rules view needs no consumption
+report. `identity` and `identityType` select an optional account for the UI.
+The report returns period aggregates, a UTC timeline, up to 20 model groups,
+a paginated account table and current allowance summaries. It does not expose
+private chat content. `until` fixes the historical period end; `asOf` identifies
+when current allowances were evaluated. Refresh advances the period end.
+
+Filters, sorting, pagination, and account selection are stored in the Admin URL.
+Consumption remains visible when enforcement is disabled. Existing configuration,
+balance, and reset CLI commands continue to use the same quota policy and APIs.

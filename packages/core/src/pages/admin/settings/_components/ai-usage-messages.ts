@@ -4,6 +4,7 @@ export const aiUsageMessages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
+      allowances: "Inspect Assistant allowances",
       moreFilters: "More filters",
       dataNotes: "About these data",
       additionalStatistics: "Applications & tools",
@@ -141,6 +142,7 @@ export const aiUsageMessages = i18n.define({
       other: "Other",
     },
     de: {
+      allowances: "Assistant-Kontingente ansehen",
       moreFilters: "Weitere Filter",
       dataNotes: "Hinweise zu den Daten",
       additionalStatistics: "Anwendungen & Werkzeuge",

@@ -14,6 +14,7 @@ import {
 } from "@k2b/cloud/shared";
 import { navigateTo } from "@k2b/ssr/nav";
 import {
+  Tabs,
   Button,
   ButtonLink,
   CopyButton,
@@ -27,7 +28,6 @@ import {
   PanelDialog,
   panelDialogWideOptions,
   Select,
-  SettingsPage,
   StatCell,
   StatGrid,
   TextInput,
@@ -219,11 +219,11 @@ export default function AiUsageExplorer(props: { report: AiUsageReport }) {
   const groupTable = (dimension: "users" | "models" | "tasks" | "apps", title: string) => {
     const columns: DataTableColumn<AiUsageGroup>[] = [
       { id: "name", header: title, value: (row) => row.label ?? row.id ?? t().unassigned },
-      { id: "runs", header: t().runs, value: (row) => row.runs, align: "right" },
-      { id: "tokens", header: t().tokens, value: (row) => row.tokens, align: "right" },
-      { id: "credits", header: t().credits, value: (row) => row.credits, align: "right" },
-      { id: "failed", header: t().errors, value: (row) => row.failed, align: "right" },
-      { id: "feedback", header: t().feedback, value: (row) => row.negative, align: "right" },
+      { id: "runs", header: t().runs, sortable: true, value: (row) => row.runs, align: "right" },
+      { id: "tokens", header: t().tokens, sortable: true, value: (row) => row.tokens, align: "right" },
+      { id: "credits", header: t().credits, sortable: true, value: (row) => row.credits, align: "right" },
+      { id: "failed", header: t().errors, sortable: "errors", value: (row) => row.failed, align: "right" },
+      { id: "feedback", header: t().feedback, sortable: "negative", value: (row) => row.negative, align: "right" },
     ];
     const patch = (row: AiUsageGroup): Partial<AiUsageQuery> =>
       dimension === "users"
@@ -236,8 +236,12 @@ export default function AiUsageExplorer(props: { report: AiUsageReport }) {
     const linkable = (row: AiUsageGroup) =>
       dimension === "users" || (row.id !== null && (dimension !== "models" || row.providerModel !== null));
     return (
-      <DataPanel title={title} footer={footer(report()[dimension])} class="min-w-0">
+      <DataTable.Panel>
+        <DataTable.Header title={title} />
         <DataTable
+          surface="plain"
+          sort={{ key: q().sort, direction: q().direction }}
+          sortHref={(next) => href({ sort: AiUsageQuerySchema.shape.sort.parse(next.key), direction: next.direction })}
           rows={report()[dimension].items}
           columns={columns}
           getRowId={(row) => `${row.id}:${row.providerModel ?? ""}`}
@@ -295,7 +299,8 @@ export default function AiUsageExplorer(props: { report: AiUsageReport }) {
             return render(value);
           }}
         />
-      </DataPanel>
+        <DataTable.Footer>{footer(report()[dimension])}</DataTable.Footer>
+      </DataTable.Panel>
     );
   };
   const runColumns: DataTableColumn<AiUsageRun>[] = [
@@ -315,27 +320,17 @@ export default function AiUsageExplorer(props: { report: AiUsageReport }) {
     { id: "details", header: t().details, value: (row) => row.id },
   ];
   return (
-    <SettingsPage
-      class="ai-usage-page"
-      title={t().title}
-      subtitle={t().description}
-      icon="ti ti-chart-histogram"
-      scrollPreserveKey="admin-ai-usage"
-    >
-      <nav class="flex flex-wrap gap-2" aria-label={t().views}>
-        <For each={AI_USAGE_VIEWS}>
-          {(view) => (
-            <ButtonLink
-              size="sm"
-              variant={q().view === view ? "primary" : "secondary"}
-              aria-current={q().view === view ? "page" : undefined}
-              href={href({ view })}
-            >
-              {views()[view]}
-            </ButtonLink>
-          )}
-        </For>
-      </nav>
+    <div class="app-rows ai-usage-page min-w-0 p-3">
+      <div>
+        <h1 class="text-base font-semibold text-primary">{t().title}</h1>
+        <p class="mt-1 text-xs text-dimmed">{t().description}</p>
+      </div>
+      <Tabs
+        ariaLabel={t().views}
+        value={q().view}
+        onValueChange={(view) => void navigateTo(href({ view }))}
+        options={AI_USAGE_VIEWS.map((value) => ({ value, label: views()[value] }))}
+      />
       <div class="flex flex-col gap-2">
         <Show when={q().view === "runs"}>
           <form
@@ -384,8 +379,12 @@ export default function AiUsageExplorer(props: { report: AiUsageReport }) {
           )}
           {facets("userId", t().user)}
           {facets("modelProfileId", t().model)}
-          {facets("providerModel", t().providerModel)}
-          {facets("appId", t().application)}
+          <Disclosure summary={t().moreFilters} defaultValue={!!(q().providerModel || q().appId)}>
+            <div class="flex flex-wrap gap-2 py-2">
+              {facets("providerModel", t().providerModel)}
+              {facets("appId", t().application)}
+            </div>
+          </Disclosure>
           <Show when={q().view === "comparisons"}>
             {chip(
               "sort",
@@ -450,6 +449,15 @@ export default function AiUsageExplorer(props: { report: AiUsageReport }) {
           </Show>
         </div>
       </Disclosure>
+      <Show when={q().userId && q().userId !== "unassigned"}>
+        <ButtonLink
+          size="sm"
+          variant="ghost"
+          href={`/admin/settings?tab=ai-quotas&search=${q().userId}&identity=${q().userId}&identityType=user&range=${q().range}`}
+        >
+          {t().allowances}
+        </ButtonLink>
+      </Show>
       <Show when={q().view === "overview"}>
         <p class="text-xs text-dimmed">{t().totalsHelp}</p>
         {stats(report().overview)}
@@ -472,8 +480,10 @@ export default function AiUsageExplorer(props: { report: AiUsageReport }) {
         <AiUsageCharts timeline={report().timeline} range={q().range} />
         <Disclosure summary={t().additionalStatistics}>
           {groupTable("apps", t().application)}
-          <DataPanel title={t().launchedByApps} footer={footer(report().launches)}>
+          <DataTable.Panel>
+            <DataTable.Header title={t().launchedByApps} />
             <DataTable
+              surface="plain"
               rows={report().launches.items}
               columns={[
                 { id: "app", header: t().application, value: (row) => row.appId },
@@ -483,7 +493,8 @@ export default function AiUsageExplorer(props: { report: AiUsageReport }) {
               getRowId={(row) => row.appId}
               empty={t().noResults}
             />
-          </DataPanel>
+            <DataTable.Footer>{footer(report().launches)}</DataTable.Footer>
+          </DataTable.Panel>
           <p class="text-xs text-dimmed">
             {t().capabilitiesMoved}{" "}
             <ButtonLink variant="text" size="sm" href="/admin/observability/capabilities">
@@ -517,8 +528,10 @@ export default function AiUsageExplorer(props: { report: AiUsageReport }) {
       <Show when={q().view === "feedback"}>
         {stats(report().chat)}
         <p class="text-xs text-dimmed">{t().feedbackHelp}</p>
-        <DataPanel title={t().feedback} footer={footer(report().feedback)}>
+        <DataTable.Panel>
+          <DataTable.Header title={t().feedback} />
           <DataTable
+            surface="plain"
             rows={report().feedback.items}
             columns={feedbackColumns}
             getRowId={(row) => row.id}
@@ -554,12 +567,15 @@ export default function AiUsageExplorer(props: { report: AiUsageReport }) {
               return render(value);
             }}
           />
-        </DataPanel>
+          <DataTable.Footer>{footer(report().feedback)}</DataTable.Footer>
+        </DataTable.Panel>
       </Show>
       <Show when={q().view === "runs"}>
         <p class="text-xs text-dimmed">{t().runsHelp}</p>
-        <DataPanel title={t().runsTab} footer={footer(report().runs)}>
+        <DataTable.Panel>
+          <DataTable.Header title={t().runsTab} />
           <DataTable
+            surface="plain"
             rows={report().runs.items}
             columns={runColumns}
             getRowId={(row) => `${row.kind}:${row.id}`}
@@ -600,8 +616,9 @@ export default function AiUsageExplorer(props: { report: AiUsageReport }) {
               return render(value);
             }}
           />
-        </DataPanel>
+          <DataTable.Footer>{footer(report().runs)}</DataTable.Footer>
+        </DataTable.Panel>
       </Show>
-    </SettingsPage>
+    </div>
   );
 }

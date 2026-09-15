@@ -58,3 +58,49 @@ export const AiQuotaUsersQuerySchema = z
   .strict();
 
 export type AiChatQuotaSnapshot = { enabled: boolean; balances: Omit<AiQuotaBalance, "sources">[] };
+
+export const AiQuotaReportQuerySchema = z.object({
+  view: z.enum(["users", "rules"]).default("users"),
+  range: z.enum(["24h", "7d", "30d", "90d"]).default("30d"),
+  until: z.iso.datetime({ offset: true }).optional(),
+  search: z.string().trim().max(200).default(""),
+  model: z.string().max(128).default(""),
+  status: z.enum(["all", "available", "exhausted", "unknown", "unlimited", "disabled"]).default("all"),
+  sort: z.enum(["label", "tokens", "lastUsed"]).default("lastUsed"),
+  direction: z.enum(["asc", "desc"]).default("desc"),
+  page: z.coerce.number().int().min(1).max(1000000).default(1),
+  identity: z.uuid().optional(),
+  identityType: z.enum(["user", "service_account"]).default("user"),
+});
+export type AiQuotaReportQuery = z.infer<typeof AiQuotaReportQuerySchema>;
+export type AiQuotaStatus = Exclude<AiQuotaReportQuery["status"], "all">;
+export type AiQuotaReportRow = AiQuotaIdentity & {
+  input: number;
+  output: number;
+  calls: number;
+  measured: number;
+  estimated: number;
+  unknown: number;
+  status: AiQuotaStatus;
+  scopes: number;
+  exhausted: number;
+};
+export type AiQuotaReport = {
+  query: AiQuotaReportQuery;
+  since: string;
+  until: string;
+  asOf: string;
+  overview: { accounts: number; input: number; output: number; calls: number; measured: number; estimated: number; unknown: number };
+  timeline: { at: string; input: number; output: number; calls: number; measured: number; unknown: number }[];
+  models: { model: string; input: number; output: number; calls: number; measured: number; unknown: number }[];
+  selected: AiQuotaIdentity | null;
+  items: AiQuotaReportRow[];
+  total: number;
+  page: number;
+  perPage: number;
+};
+export const aiQuotaHref = (query: Partial<AiQuotaReportQuery>) => {
+  const params = new URLSearchParams({ tab: "ai-quotas" });
+  for (const [key, value] of Object.entries(query)) if (value !== undefined && value !== "") params.set(key, String(value));
+  return `/admin/settings?${params}`;
+};

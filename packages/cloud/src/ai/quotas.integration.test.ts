@@ -2,6 +2,7 @@ import { drainQueuedMessages } from "./message-queue";
 import { aiConversations } from "./store";
 import { beforeAll, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { sql } from "bun";
+import { quotaReport } from "./quota-report";
 import { aiQuotas, quotaWindow } from "./quotas";
 import { migrateAiQuotas } from "./quotas-migrate";
 import type { AiQuotaRule } from "../shared/ai-quotas";
@@ -51,6 +52,80 @@ suite("Assistant quota PostgreSQL boundaries", () => {
     await sql`TRUNCATE ai.quota_calls,ai.quota_resets,ai.quota_changes`;
     await sql`UPDATE ai.quota_config SET enabled=false,revision=0,rules='[]'`;
     await sql`UPDATE ai.turns SET attempt=1,status='running',lease_expires_at=now()+interval '1 hour'`;
+  });
+  test("report matches canonical nested grants, model constraints and wildcard bypass", async () => {
+    const all = rule("*", 50);
+    all.grants.push({ principal: { type: "group", groupId: group }, limit: 200 });
+    await save([all, rule("a", 50)]);
+    await charge("a");
+    const r = await quotaReport({ search: user, model: "a" });
+    const snapshot = await aiQuotas.snapshot(subject, "a");
+    expect(snapshot.balances.map((b) => b.limit)).toEqual([200, 50]);
+    expect(r.items[0]?.status).toBe("exhausted");
+    expect(r.items[0]?.exhausted).toBe(1);
+    expect(r.items[0]?.scopes).toBe(2);
+    expect(r.overview.input).toBe(60);
+    expect(r.overview.output).toBe(40);
+    expect(r.timeline[0]?.calls).toBe(1);
+    await save([rule("*", null), rule("a", 0)]);
+    const bypass = await quotaReport({ search: user, model: "a" });
+    expect(bypass.items[0]?.status).toBe("unlimited");
+    expect(bypass.items[0]?.exhausted).toBe(0);
+  });
+  test("report separates reset balances, historical period and unknown accounting", async () => {
+    await save([rule("a", 100)]);
+    await charge("a");
+    await aiQuotas.reset(subject, "a", crypto.randomUUID(), user);
+    let r = await quotaReport({ search: user });
+    expect(r.items[0]?.status).toBe("available");
+    expect(r.overview.input + r.overview.output).toBe(100);
+    await aiQuotas.finish(await aiQuotas.begin(subject, "a", turn));
+    r = await quotaReport({ search: user });
+    expect(r.items[0]?.status).toBe("unknown");
+    expect(r.overview.unknown).toBe(1);
+    expect(r.overview.measured).toBe(1);
+    const historical = await quotaReport({ search: user, until: new Date(Date.now() - 86400000).toISOString() });
+    expect(historical.overview.calls).toBe(0);
+    expect(historical.items[0]?.status).toBe("unknown");
+    await save([rule("a", 100)], false);
+    expect((await quotaReport({ search: user })).items[0]?.status).toBe("disabled");
+  });
+  test("report filters globally, clamps pages and includes unused searched identities", async () => {
+    await save([{ ...rule("a", 100), grants: [{ principal: { type: "user", userId: user }, limit: 100 }] }]);
+    await charge("a", 10, 20);
+    const limited = await quotaReport({ search: "o", model: "a", status: "exhausted", page: 999 });
+    expect(limited.items.map((r) => r.id)).toEqual([other]);
+    expect(limited.page).toBe(1);
+    expect(limited.total).toBe(1);
+    expect(limited.overview.calls).toBe(0);
+    const svc = { type: "service_account" as const, serviceAccountId: service };
+    await aiQuotas.finish(await aiQuotas.begin(svc, "a", turn), { input: 5, output: 2, estimated: true });
+    const serviceReport = await quotaReport({ search: service, identity: service, identityType: "service_account" });
+    expect(serviceReport.selected?.label).toBe("Service");
+    expect(serviceReport.overview.estimated).toBe(1);
+    expect(serviceReport.items[0]?.status).toBe("exhausted");
+  });
+  test("report sorts and filters a multi-page cohort before pagination", async () => {
+    const users = Array.from({ length: 30 }, (_, i) => ({ id: crypto.randomUUID(), uid: `report-${i}`, display_name: `Report ${i}` }));
+    await sql`INSERT INTO auth.users ${sql(users, "id", "uid", "display_name")}`;
+    try {
+      await save([rule("a", 15)]);
+      await sql`INSERT INTO ai.quota_calls ${sql(users.map((u, i) => ({ id: crypto.randomUUID(), user_id: u.id, model_profile_id: "a", input: i, output: 0 })))}`;
+      const first = await quotaReport({ search: "Report", sort: "tokens", direction: "desc" });
+      const second = await quotaReport({ ...first.query, page: 2 });
+      expect(first.total).toBe(30);
+      expect(first.items).toHaveLength(25);
+      expect(second.items).toHaveLength(5);
+      expect(first.items[0]?.input).toBe(29);
+      expect(second.items[0]?.input).toBe(4);
+      expect(new Set([...first.items, ...second.items].map((r) => r.id)).size).toBe(30);
+      const blocked = await quotaReport({ search: "Report", status: "exhausted", page: 2 });
+      expect(blocked.total).toBe(15);
+      expect(blocked.page).toBe(1);
+      expect(blocked.items.every((r) => r.input >= 15)).toBe(true);
+    } finally {
+      await sql`DELETE FROM auth.users WHERE id IN ${sql(users.map((u) => u.id))}`;
+    }
   });
   test("default disabled and repeat migration keep ordinary chats unlimited", async () => {
     await migrateAiQuotas();
@@ -190,11 +265,13 @@ suite("Assistant quota PostgreSQL boundaries", () => {
     expect(users.items[0]?.lastUsed).toMatch(/T.*Z$/);
   });
   test("retention preserves maximum windows, resets and active calls", async () => {
-    const recent = await charge("a"), old = await charge("a"), active = await charge("a");
+    const recent = await charge("a"),
+      old = await charge("a"),
+      active = await charge("a");
     await sql`UPDATE ai.quota_calls SET started_at=now()-interval '8761 hours',turn_id=NULL WHERE id=${old}::uuid`;
     await sql`UPDATE ai.quota_calls SET started_at=now()-interval '8761 hours',finished_at=NULL WHERE id=${active}::uuid`;
     await aiQuotas.prune();
-    const remaining = (await sql<{id:string}[]>`SELECT id FROM ai.quota_calls`).map(r=>r.id);
+    const remaining = (await sql<{ id: string }[]>`SELECT id FROM ai.quota_calls`).map((r) => r.id);
     expect(remaining).toContain(recent);
     expect(remaining).toContain(active);
     expect(remaining).not.toContain(old);

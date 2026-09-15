@@ -28,7 +28,7 @@ describe("AI usage explorer rendering", () => {
       expect(html).toContain("k2b-filter-chip");
       expect(html).toContain("Ada");
       expect(html).not.toContain("provider/model-a");
-      expect(html).not.toContain(locale === "de" ? "Weitere Filter" : "More filters");
+      expect(html).toContain(locale === "de" ? "Weitere Filter" : "More filters");
       expect(html).toContain("userId=11111111-1111-4111-8111-111111111111");
       expect(html).toContain("rating=down");
       expect(html).toContain("status=failed");

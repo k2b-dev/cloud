@@ -32,6 +32,7 @@ export const AiUsageQuerySchema = z.object({
   search: z.string().trim().max(200).optional(),
   rating: z.enum(["up", "down"]).optional(),
   reason: z.enum(AI_USAGE_REASONS).optional(),
+  direction: z.enum(["asc", "desc"]).default("desc"),
   sort: z.enum(["newest", "runs", "tokens", "credits", "errors", "negative", "negativeRate"]).default("runs"),
   page: z.coerce.number().int().min(1).max(1000000).default(1),
   perPage: z.coerce.number().int().min(1).max(100).default(50),

@@ -1,65 +1,86 @@
-import { Chart, DataPanel, useLocale } from "@k2b/ui";
+import { ChartExplorer, createChartCursor, prepareChartSnapshot, useLocale } from "@k2b/ui";
 import type { AiUsageReport } from "@k2b/cloud/ai/admin";
 import { formatNumber } from "@k2b/cloud/shared";
+import { createMemo } from "solid-js";
 import { aiUsageMessages } from "./ai-usage-messages";
 
 export default function AiUsageCharts(props: { timeline: AiUsageReport["timeline"]; range: AiUsageReport["query"]["range"] }) {
-  const locale = useLocale();
-  const t = () => aiUsageMessages.resolve([locale()]).t;
-  const xAxis = {
-    ticks: 3,
-    format: (value: number) =>
-      new Intl.DateTimeFormat(
-        locale(),
-        props.range === "24h" ? { hour: "2-digit", minute: "2-digit" } : { month: "short", day: "numeric" },
-      ).format(new Date(value)),
+  const locale = useLocale(),
+    t = () => aiUsageMessages.resolve([locale()]).t;
+  const date = (at: number) => `${new Date(at).toLocaleString(locale(), { timeZone: "UTC" })} UTC`;
+  const n = (v: number) => formatNumber(v, { locale: locale(), decimals: 0 });
+  const cursor = createChartCursor({ formatX: date });
+  const build = (metrics: { label: string; value: (p: AiUsageReport["timeline"][number]) => number | null }[]) => {
+    const series = metrics.map((m) => ({
+      label: m.label,
+      data: props.timeline.flatMap((p) => (m.value(p) === null ? [] : [{ x: Date.parse(p.bucket), y: m.value(p)! }])),
+    }));
+    const rows = series.flatMap((s, seriesIndex) =>
+      s.data.map((p, index) => ({ key: `${seriesIndex}:${index}`, at: p.x, label: s.label, value: p.y })),
+    );
+    const byKey = new Map(rows.map((row) => [row.key, row]));
+    return {
+      rows,
+      chart: prepareChartSnapshot(
+        {
+          kind: "line",
+          series,
+          smooth: false,
+          legend: metrics.length > 1,
+          maxGap: (props.range === "24h" ? 3600000 : 86400000) * 1.5,
+          xAxis: {
+            ticks: 3,
+            format: (value) =>
+              new Date(value).toLocaleString(locale(), {
+                timeZone: "UTC",
+                ...(props.range === "24h" ? { hour: "2-digit", minute: "2-digit" } : { month: "short", day: "numeric" }),
+              }),
+          },
+          yAxis: { format: (value) => formatNumber(value, { locale: locale(), compact: true }) },
+        },
+        {
+          key: ({ datum }) => `${datum.seriesIndex ?? 0}:${datum.index}`,
+          tooltip: ({ datum }) => {
+            const r = byKey.get(`${datum.seriesIndex ?? 0}:${datum.index}`)!;
+            return { title: date(r.at), rows: [{ label: r.label, value: n(r.value) }] };
+          },
+        },
+      ),
+    };
   };
+  const usage = createMemo(() =>
+    build([
+      { label: t().turns, value: (p) => p.turns },
+      { label: t().errors, value: (p) => p.failed },
+    ]),
+  );
+  const tokens = createMemo(() => build([{ label: t().tokens, value: (p) => p.tokens }]));
+  type Row = ReturnType<typeof build>["rows"][number];
+  const columns = [
+    { id: "at", label: "UTC", value: (r: Row) => date(r.at), sortValue: (r: Row) => r.at },
+    { id: "label", label: t().runKind, value: (r: Row) => r.label },
+    { id: "value", label: t().tokens, value: (r: Row) => n(r.value), sortValue: (r: Row) => r.value },
+  ];
   return (
-    <div class="grid min-w-0 gap-2">
-      <DataPanel
+    <div class="grid min-w-0 gap-3 xl:grid-cols-2">
+      <ChartExplorer
+        class="paper p-3"
+        height="14rem"
         title={t().usageOverTime}
-        subtitle={t().usageOverTimeDescription}
-        isEmpty={!props.timeline.some((point) => point.turns > 0)}
-        empty={t().noTurns}
-      >
-        <Chart
-          kind="line"
-          smooth={false}
-          class="h-72 w-full text-dimmed"
-          series={[
-            { label: t().turns, data: props.timeline.map((point) => ({ x: new Date(point.bucket).getTime(), y: point.turns })) },
-            { label: t().errors, data: props.timeline.map((point) => ({ x: new Date(point.bucket).getTime(), y: point.failed })) },
-          ]}
-          xAxis={xAxis}
-          legend
-          area
-          interactive
-        />
-      </DataPanel>
-      <DataPanel
+        description={<span class="text-xs text-dimmed">{t().usageOverTimeDescription}</span>}
+        data={usage()}
+        cursor={cursor}
+        columns={columns.map((c) => (c.id === "value" ? { ...c, label: t().runs } : c))}
+      />
+      <ChartExplorer
+        class="paper p-3"
+        height="14rem"
         title={t().tokenVolume}
-        subtitle={t().tokenVolumeDescription}
-        isEmpty={!props.timeline.some((point) => (point.tokens ?? 0) > 0)}
-        empty={t().noTokens}
-      >
-        <Chart
-          kind="line"
-          smooth={false}
-          class="h-56 w-full text-dimmed"
-          series={[
-            {
-              label: t().tokens,
-              data: props.timeline
-                .filter((point) => point.tokens !== null)
-                .map((point) => ({ x: new Date(point.bucket).getTime(), y: point.tokens! })),
-            },
-          ]}
-          xAxis={xAxis}
-          yAxis={{ format: (value) => formatNumber(value, { locale: locale(), compact: true }) }}
-          area
-          interactive
-        />
-      </DataPanel>
+        description={<span class="text-xs text-dimmed">{t().tokenVolumeDescription}</span>}
+        data={tokens()}
+        cursor={cursor}
+        columns={columns}
+      />
     </div>
   );
 }

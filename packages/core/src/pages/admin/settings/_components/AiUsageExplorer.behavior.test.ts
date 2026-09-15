@@ -20,10 +20,9 @@ describe("AI usage drill-down", () => {
       report.runs.items[0]!.error = "Full error " + "long detail ".repeat(150);
       const dispose = render(() => createComponent(Explorer, { report }), dom.root);
       try {
-        const links = Array.from(dom.root.querySelectorAll("a"));
-        const next = links.find((link) => link.textContent === "Users & models")!;
-        expect(next.href).toContain(`userId=${report.query.userId}`);
-        expect(next.href).toContain("until=");
+        const tabs = Array.from(dom.root.querySelectorAll('[role="tab"]'));
+        expect(tabs.find((tab) => tab.textContent === "Users & models")).toBeDefined();
+        expect(tabs.find((tab) => tab.getAttribute("aria-selected") === "true")?.textContent).toBe(view === "runs" ? "Errors & runs" : "Feedback");
         const button = Array.from(dom.root.querySelectorAll("button")).find(
           (button) => button.textContent === (view === "runs" ? "Show error" : "Details"),
         );

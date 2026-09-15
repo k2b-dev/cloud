@@ -25,7 +25,6 @@
 
 /* AdminLayout owns scrolling; this report grows with its tables. */
 .k2b-ui .ai-usage-page { height: auto; flex: none; overflow: visible; }
-.k2b-ui .ai-usage-page > .k2b-settings-page__body { flex: none; overflow: visible; }
 
 /* Data links inherit typography from their surrounding data or note. */
 .k2b-ui .ai-usage-page .k2b-data-table .k2b-button[data-variant="text"],

@@ -8,6 +8,7 @@ test("all quota reads and mutations require administrator authentication", async
     ["/", "PUT"],
     ["/models", "GET"],
     ["/users", "GET"],
+    ["/report", "GET"],
     ["/balance", "GET"],
     ["/reset", "POST"],
   ] as const)

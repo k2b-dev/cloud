@@ -1,6 +1,6 @@
 import AiQuotaAdmin from "./_components/AiQuotaAdmin.island";
 import { quotaMessages } from "./_components/ai-quota-messages";
-import { aiQuotas } from "@k2b/cloud/ai/admin";
+import { aiQuotas, quotaReport, quotaAdminConfig } from "@k2b/cloud/ai/admin";
 import { listAiModels } from "@k2b/cloud/ai";
 import { SettingsPage } from "@k2b/ui";
 import {
@@ -14,13 +14,7 @@ import {
   aiSkills,
   listAiCredentialProfileIds,
 } from "@k2b/cloud/ai";
-import {
-  AI_BACKGROUND_TASK_PROMPTS,
-  type AiModelAccessMap,
-  type AiUsageReport,
-  aiModelAccess,
-  aiUsage,
-} from "@k2b/cloud/ai/admin";
+import { AI_BACKGROUND_TASK_PROMPTS, type AiModelAccessMap, type AiUsageReport, aiModelAccess, aiUsage } from "@k2b/cloud/ai/admin";
 import { type AuthContext, getLocale } from "@k2b/cloud/server";
 import { appApproval, coreSettings, linuxIdentities, settingsService } from "@k2b/cloud/services";
 import { approvalAvailability } from "../../app-approval/availability";
@@ -244,10 +238,21 @@ export default ssr<AuthContext>(async (c) => {
   let aiSkillTotal = 0;
   let aiSkillPage = 1;
   let aiSkillPerPage = 100;
-  const quotaData =
-    tab.id === "ai-quotas"
-      ? { config: await aiQuotas.config(), models: (await listAiModels()).map((m) => ({ id: m.id, label: m.label })) }
-      : null;
+  const quotaReportData = tab.id === "ai-quotas" ? await quotaReport(c.req.query()) : null;
+  const quotaData = quotaReportData
+    ? {
+        config: await quotaAdminConfig(),
+        models: (await listAiModels()).map((m) => ({ id: m.id, label: m.label })),
+        report: quotaReportData,
+        balance: quotaReportData.selected
+          ? await aiQuotas.snapshot(
+              quotaReportData.selected.type === "user"
+                ? { type: "user", userId: quotaReportData.selected.id }
+                : { type: "service_account", serviceAccountId: quotaReportData.selected.id },
+            )
+          : null,
+      }
+    : null;
   let aiUsageReport: AiUsageReport | null = null;
   const search = (c.req.query("search") ?? "").trim();
   const requestedPage = Number.parseInt(c.req.query("page") ?? "1", 10);
@@ -363,7 +368,9 @@ export default ssr<AuthContext>(async (c) => {
           />
         ) : null}
 
-        {quotaData ? <AiQuotaAdmin config={quotaData.config} models={quotaData.models} /> : null}
+        {quotaData ? (
+          <AiQuotaAdmin config={quotaData.config} models={quotaData.models} report={quotaData.report} balance={quotaData.balance} />
+        ) : null}
         {tab.id === "ai-usage" && aiUsageReport ? <AiUsageAdminPanel report={aiUsageReport} /> : null}
       </div>
     </AdminLayout>

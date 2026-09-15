@@ -1,5 +1,7 @@
 import { Hono, type MiddlewareHandler } from "hono";
 import { aiQuotas, AiQuotaError } from "../ai/quotas";
+import { quotaReport, quotaAdminConfig } from "../ai/quota-report";
+import { AiQuotaReportQuerySchema } from "../shared/ai-quotas";
 import { AiQuotaConfigSchema, AiQuotaIdentitySchema, AiQuotaResetSchema, AiQuotaUsersQuerySchema } from "../shared/ai-quotas";
 import { type AuthContext, auth, v } from "../server";
 import { listAiModels } from "../ai/settings";
@@ -12,8 +14,9 @@ export const createAdminAiQuotaRoutes = (authenticate: MiddlewareHandler<AuthCon
       if (error instanceof AiQuotaError) return c.json({ error: error.code, message: error.message }, 409);
       throw error;
     })
-    .get("/", async (c) => c.json(await aiQuotas.config()))
+    .get("/", async (c) => c.json(await quotaAdminConfig()))
     .get("/models", async (c) => c.json({ models: (await listAiModels()).map((m) => ({ id: m.id, label: m.label })) }))
+    .get("/report", v("query", AiQuotaReportQuerySchema), async (c) => c.json(await quotaReport(c.req.valid("query"))))
     .put("/", v("json", AiQuotaConfigSchema), async (c) => {
       const config = c.req.valid("json"),
         models = await listAiModels(),

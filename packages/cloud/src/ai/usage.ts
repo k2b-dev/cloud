@@ -154,19 +154,20 @@ const stats = () => sql`
   COALESCE(sum(positive+negative),0)::int AS rated
 `;
 const comparisonOrder = (q: AiUsageQuery) => {
+  const direction = q.direction === "asc" ? sql`ASC` : sql`DESC`;
   switch (q.sort) {
     case "tokens":
-      return sql`tokens DESC NULLS LAST`;
+      return sql`tokens ${direction} NULLS LAST`;
     case "credits":
-      return sql`credits DESC NULLS LAST`;
+      return sql`credits ${direction} NULLS LAST`;
     case "errors":
-      return sql`failed DESC`;
+      return sql`failed ${direction}`;
     case "negative":
-      return sql`negative DESC`;
+      return sql`negative ${direction}`;
     case "negativeRate":
-      return sql`negative::double precision/NULLIF(rated,0) DESC NULLS LAST, rated DESC`;
+      return sql`negative::double precision/NULLIF(rated,0) ${direction} NULLS LAST, rated ${direction}`;
     default:
-      return sql`runs DESC`;
+      return sql`runs ${direction}`;
   }
 };
 const pageOf = async <T>(projection: ReturnType<typeof events>, q: AiUsageQuery): Promise<AiUsagePage<T>> => {

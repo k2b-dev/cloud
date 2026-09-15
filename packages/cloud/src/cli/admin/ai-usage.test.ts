@@ -51,6 +51,7 @@ describe("AI usage CLI", () => {
         model: "fast",
         "provider-model": "provider/fast",
         sort: "negativeRate",
+        direction: "asc",
         page: "2",
         "per-page": "1",
       },
@@ -62,6 +63,7 @@ describe("AI usage CLI", () => {
     expect(q.get("providerModel")).toBe("provider/fast");
     expect(q.get("page")).toBe("2");
     expect(q.get("sort")).toBe("negativeRate");
+    expect(q.get("direction")).toBe("asc");
     expect(JSON.parse(lines[0]!)).toEqual({ ...page, query: report.query, since: "start", until: "end" });
   });
   test("streams each full error row in JSONL and reads a single record", async () => {

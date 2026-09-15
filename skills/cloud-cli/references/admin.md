@@ -237,6 +237,7 @@ List commands are `users`, `models`, `tasks`, `apps`, `launches`, `capabilities`
 Shared filters: `--range 24h|7d|30d|90d`, `--user <uuid|unassigned>`,
 `--model <profile-id>`, `--provider-model <model>`, and `--app <app-id>`.
 Use `--sort negativeRate` or `--sort negative` for user/model comparisons.
+Use `--direction asc|desc` to choose the comparison sort direction (default: `desc`).
 Feedback accepts `--rating up|down` and `--reason`; runs accept
 `--kind chat|background|tool`, `--status`, `--task`, `--error-code`, and `--search`.
 These local filters affect only their list, preserving report denominators.

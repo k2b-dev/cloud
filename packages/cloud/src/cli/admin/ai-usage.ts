@@ -21,6 +21,7 @@ const filters = {
     default: "runs",
     description: "Comparison sort order",
   }),
+  direction: flag.enum(["asc", "desc"] as const, { default: "desc", description: "Comparison sort direction" }),
   page: flag.int({ default: 1, min: 1 }),
   perPage: flag.int({ name: "per-page", default: 50, min: 1, max: 100 }),
 };
