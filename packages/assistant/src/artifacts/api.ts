@@ -12,7 +12,8 @@ import { z } from "zod";
 import { ArtifactKind, ArtifactMetadata, PublicationNote, ArtifactCreate, ArtifactFile, ArtifactSource, ArtifactUpdate, LIMITS } from "./contracts";
 import { artifactDatabase, DatabaseError } from "./database";
 import { DatabaseRequest, DatabaseSettings } from "./database-contracts";
-import { StorageRequest, STORAGE_TRANSPORT_BYTES } from "./storage-contracts";
+import { StorageJsonRequest, StorageFileQuery, STORAGE_TRANSPORT_BYTES } from "./storage-contracts";
+import { storageSettings, StorageSettings } from "./storage-settings";
 import { artifacts, ArtifactError } from "./service";
 import { artifactMessages } from "./messages";
 import { compilationDiagnostic, compileArtifact } from "./runtime/compile";
@@ -39,7 +40,7 @@ const Grant = z.object({
 }).strict();
 
 export const createArtifactServiceRoutes = (caller: (context: Context<AuthContext>) => CapabilityCaller = capabilityCaller) => new Hono<AuthContext>()
-  .use("*", (c,next) => bodyLimit({ maxSize: c.req.path.endsWith("/storage") ? STORAGE_TRANSPORT_BYTES : LIMITS.rpcBytes })(c,next))
+  .use("*", (c,next) => c.req.path.endsWith("/storage/file") ? next() : bodyLimit({ maxSize: c.req.path.includes("/storage") ? STORAGE_TRANSPORT_BYTES : LIMITS.rpcBytes })(c,next))
   .use("*", async (c,next) => { c.header("Cache-Control","private, no-store"); await next(); })
   .onError((error,c) => {
     if (error instanceof HttpError) {
@@ -68,6 +69,8 @@ export const createArtifactServiceRoutes = (caller: (context: Context<AuthContex
   .get("/admin/resources/:id/access",async c => respond(c,ok(await artifacts.access(id(c),adminIdentity(identity(c))))))
   .post("/admin/resources/:id/access",v("json",Grant),async c => respond(c,ok(await artifacts.grant(id(c),c.req.valid("json").principal,c.req.valid("json").permission,adminIdentity(identity(c))))))
   .put("/admin/resources/:id/access/:accessId",v("json",z.object({permission:Level.nullable()}).strict()),async c => respond(c,ok(await artifacts.changeGrant(id(c),z.uuid().parse(c.req.param("accessId")),c.req.valid("json").permission,adminIdentity(identity(c))))))
+  .get("/admin/storage/settings",async c=>respond(c,ok(await storageSettings.read(identity(c)))))
+  .put("/admin/storage/settings",v("json",StorageSettings),async c=>respond(c,ok(await storageSettings.write(c.req.valid("json"),identity(c)))))
   .get("/admin/database/settings", async c => respond(c,ok(await artifactDatabase.settings(identity(c)))))
   .put("/admin/database/settings",v("json",DatabaseSettings),async c => respond(c,ok(await artifactDatabase.configure(c.req.valid("json"),identity(c)))))
   .post("/admin/database/test",v("json",DatabaseSettings),async c => respond(c,ok(await artifactDatabase.configure(c.req.valid("json"),identity(c),true))))
@@ -119,8 +122,27 @@ export const createArtifactServiceRoutes = (caller: (context: Context<AuthContex
     try { return respond(c,ok({ ...await compileArtifact(bundle.source), revision: bundle.sourceRevision })); }
     catch (error) { return respond(c,{ ok: false, status: 400, code: "COMPILE_FAILED", error: compilationDiagnostic(error) }); }
   })
-  .post("/:id/storage", v("query",z.object({conversationId:z.string().max(80).optional()})), v("json",StorageRequest), async c => respond(c,ok(await artifacts.storage(id(c),c.req.valid("json"),identity(c)))))
-  .post("/:id/storage/manage",v("json",StorageRequest),async c => respond(c,ok(await artifacts.storage(id(c),c.req.valid("json"),identity(c),true))))
+  .get("/:id/storage/file", v("query",StorageFileQuery), async c => {
+    const input=c.req.valid("query");
+    const result=await artifacts.storage(id(c), {area:"files",operation:"read",key:input.key}, identity(c), input.management === "true");
+    if (!("item" in result) || !result.item?.data) throw new ArtifactError("NOT_FOUND");
+    return new Response(new Uint8Array(result.item.data), {headers:{
+      "Content-Type":result.item.mediaType || "application/octet-stream",
+      "Content-Disposition":"attachment", "X-Content-Type-Options":"nosniff", "Cache-Control":"private, no-store",
+    }});
+  })
+  .put("/:id/storage/file", v("query",StorageFileQuery), async c => {
+    const input=c.req.valid("query");
+    // Authorize before accepting the body, then recheck under the write lock.
+    const maximum=await artifacts.storageFileLimit(id(c),input.key,identity(c),input.management === "true");
+    return bodyLimit({maxSize:maximum,onError:c=>c.json({code:"STORAGE_FULL",message:artifactMessages.resolve([getLocale(c)]).t.STORAGE_FULL},413)})(c,async()=>{
+      const data=new Uint8Array(await c.req.arrayBuffer());
+      const result=await artifacts.storage(id(c), {area:"files",operation:"write",key:input.key,mediaType:c.req.header("content-type") ?? "application/octet-stream"}, identity(c),input.management === "true",data);
+      c.res=await respond(c,ok(result));
+    });
+  })
+  .post("/:id/storage", v("query",z.object({conversationId:z.string().max(80).optional()})), v("json",StorageJsonRequest), async c => respond(c,ok(await artifacts.storage(id(c),c.req.valid("json"),identity(c)))))
+  .post("/:id/storage/manage",v("json",StorageJsonRequest),async c => respond(c,ok(await artifacts.storage(id(c),c.req.valid("json"),identity(c),true))))
   .post("/:id/storage/clear",v("json",z.object({area:z.enum(["files","kv","all"]),confirmed:z.literal(true)}).strict()),async c => respond(c,ok(await artifacts.clearStorage(id(c),c.req.valid("json").area,identity(c)))))
   .get("/:id/projects", async c => respond(c,ok(await artifacts.projects(id(c),identity(c)))))
   .put("/:id/projects/:projectId", v("json",z.object({linked:z.boolean()}).strict()), async c => respond(c,ok(await artifacts.linkProject(id(c),z.string().min(1).max(80).parse(c.req.param("projectId")),c.req.valid("json").linked,identity(c)))))

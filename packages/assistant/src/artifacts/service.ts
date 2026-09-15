@@ -7,7 +7,9 @@ import {
   buildAccessPrincipalCondition, createAccess, getAccess, deleteAccess, updateAccess,
   hasPermission, resolveDisplayNames, userFromActor,
 } from "@k2b/cloud/server";
-import { StorageRequest } from "./storage-contracts";
+import { app } from "../config";
+import { checkStorageBudget } from "./storage-budget";
+import { StorageRequest, STORAGE_FILE_MAX_BYTES } from "./storage-contracts";
 import { LIMITS, ArtifactKind, ArtifactMetadata, PublicationNote, ArtifactCreate, ArtifactFile, ArtifactPath, ArtifactSource, ArtifactUpdate } from "./contracts";
 import { compileArtifact } from "./runtime/compile";
 
@@ -318,21 +320,35 @@ export const artifacts = {
       return {cleared:true};
     });
   },
-  async storage(id: string, input: unknown, identity: ArtifactIdentity, management = false) {
+  async storageFileLimit(id: string, key: string, identity: ArtifactIdentity, management = false) {
+    const previous=await sql.begin(async db=>{
+      const resource=await requireArtifact(db,id,identity,management ? "admin" : "read");
+      const [file]=await db<{bytes:number}[]>`SELECT bytes FROM assistant.artifact_storage
+        WHERE artifact_id=${resource.row.id}::uuid AND area='files' AND key=${key}`;
+      return Number(file?.bytes ?? 0);
+    });
+    const maximum=Math.min(STORAGE_FILE_MAX_BYTES,Math.max(previous,Number(await app.settings.get("assistant.storage_file_mib"))*1024*1024));
+    if (!Number.isSafeInteger(maximum) || maximum < 1) throw new ArtifactError("INVALID_INPUT");
+    return maximum;
+  },
+  async storage(id: string, input: unknown, identity: ArtifactIdentity, management = false, fileData?: Uint8Array) {
     const request = StorageRequest.parse(input);
     if (request.operation !== "list" && !request.key) throw new ArtifactError("INVALID_INPUT");
     let bytes = 0;
     if (request.operation === "write") {
-      if (request.content === undefined) throw new ArtifactError("INVALID_INPUT");
+      if (request.content === undefined && fileData === undefined) throw new ArtifactError("INVALID_INPUT");
       if (request.area === "kv") {
-        try { JSON.parse(request.content); } catch { throw new ArtifactError("INVALID_INPUT"); }
+        try { JSON.parse(request.content!); } catch { throw new ArtifactError("INVALID_INPUT"); }
         bytes = new TextEncoder().encode(request.content).byteLength;
       } else {
-        if (!/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(request.content))
-          throw new ArtifactError("INVALID_INPUT");
-        bytes = Buffer.from(request.content,"base64").length;
+        if (!fileData || fileData.byteLength > STORAGE_FILE_MAX_BYTES) throw new ArtifactError("INVALID_INPUT");
+        bytes = fileData.byteLength;
       }
     }
+    const limits = request.operation === "write" && request.area === "files"
+      ? { total: Number(await app.settings.get("assistant.storage_total_mib")) * 1024 * 1024,
+          file: Number(await app.settings.get("assistant.storage_file_mib")) * 1024 * 1024 }
+      : { total: LIMITS.rpcBytes, file: LIMITS.rpcBytes };
     return sql.begin(async db => {
       // App use includes its runtime data effects. Code administration remains
       // separate. Lock the resource so quota checks and writes serialize.
@@ -347,15 +363,20 @@ export const artifacts = {
         return {deleted:true};
       }
       if (request.operation === "write") {
-        const [usage] = await db<{bytes:number;items:number}[]>`SELECT coalesce(sum(bytes),0)::bigint AS bytes,count(*)::int AS items
-          FROM assistant.artifact_storage WHERE artifact_id=${id}::uuid AND NOT(area=${request.area} AND key=${request.key!})`;
-        if (Number(usage!.bytes)+bytes > LIMITS.rpcBytes || usage!.items >= 1000) throw new ArtifactError("STORAGE_FULL");
-        await db`INSERT INTO assistant.artifact_storage(artifact_id,area,key,content,media_type,bytes)
-          VALUES(${id}::uuid,${request.area},${request.key!},${request.content!},${request.mediaType},${bytes})
-          ON CONFLICT(artifact_id,area,key) DO UPDATE SET content=excluded.content,media_type=excluded.media_type,bytes=excluded.bytes,updated_at=now()`;
+        const [usage] = await db<{bytes:number;items:number;previous:number}[]>`SELECT
+          coalesce(sum(bytes),0)::bigint AS bytes,count(*)::int AS items,
+          coalesce(max(bytes) FILTER (WHERE key=${request.key!}),0)::bigint AS previous
+          FROM assistant.artifact_storage WHERE artifact_id=${id}::uuid AND area=${request.area}`;
+        const [existing] = await db`SELECT 1 FROM assistant.artifact_storage
+          WHERE artifact_id=${id}::uuid AND area=${request.area} AND key=${request.key!}`;
+        if (!checkStorageBudget({ area: request.area, bytes, total: Number(usage!.bytes), previous: Number(usage!.previous),
+          items: Number(usage!.items), exists: Boolean(existing), limits })) throw new ArtifactError("STORAGE_FULL");
+        await db`INSERT INTO assistant.artifact_storage(artifact_id,area,key,content,data,media_type,bytes)
+          VALUES(${id}::uuid,${request.area},${request.key!},${request.content ?? ""},${fileData ?? null},${request.mediaType},${bytes})
+          ON CONFLICT(artifact_id,area,key) DO UPDATE SET content=excluded.content,data=excluded.data,media_type=excluded.media_type,bytes=excluded.bytes,updated_at=now()`;
         return {written:true};
       }
-      const [item] = await db<{content:string;mediaType:string}[]>`SELECT content,media_type AS "mediaType"
+      const [item] = await db<{content:string;mediaType:string;data:Uint8Array|null}[]>`SELECT content,data,media_type AS "mediaType"
         FROM assistant.artifact_storage WHERE artifact_id=${id}::uuid AND area=${request.area} AND key=${request.key!}`;
       return {item:item ?? null};
     });

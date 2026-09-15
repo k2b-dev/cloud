@@ -16,25 +16,19 @@ export function localStorageCall(request: z.infer<typeof RuntimeStorage>) {
 }
 
 export async function sharedStorage(id: string, request: z.infer<typeof RuntimeStorage>, conversationId?: string, management = false) {
-  let content: string | undefined, mediaType = "";
-  if (request.operation === "write") {
-    if (request.area === "kv") content = JSON.stringify(request.value);
-    else {
+  if (request.area === "files" && (request.operation === "read" || request.operation === "write")) {
+    if (!request.key) throw new Error("File key required");
+    let data: Blob | undefined;
+    if (request.operation === "write") {
       if (typeof request.value !== "string" && !(request.value instanceof Blob)) throw new Error("Expected text or Blob");
-      const blob = request.value instanceof Blob ? request.value : new Blob([request.value],{type:"text/plain"});
-      mediaType = blob.type;
-      const bytes = new Uint8Array(await blob.arrayBuffer());
-      let binary = "";
-      for (let i=0;i<bytes.length;i+=8192) binary += String.fromCharCode(...bytes.subarray(i,i+8192));
-      content = btoa(binary);
+      data=request.value instanceof Blob ? request.value : new Blob([request.value],{type:"text/plain"});
     }
+    return artifactClient.storageFile(id,request.key,{data,conversationId,management});
   }
-  const input = {area:request.area,operation:request.operation,key:request.key,after:request.after,limit:request.limit,content,mediaType};
+  const input = {area:request.area,operation:request.operation,key:request.key,after:request.after,limit:request.limit,
+    content:request.operation === "write" ? JSON.stringify(request.value) : undefined,mediaType:""};
   const result = await (management ? artifactClient.storageManage(id,input) : artifactClient.storage(id,input,conversationId));
   if ("items" in result) return result.items?.map(item=>item.key) ?? [];
-  if ("item" in result && result.item) {
-    if (request.area === "kv") return JSON.parse(result.item.content);
-    return new Blob([Uint8Array.from(atob(result.item.content),char=>char.charCodeAt(0))],{type:result.item.mediaType});
-  }
+  if ("item" in result && result.item) return JSON.parse(result.item.content);
   return null;
 }

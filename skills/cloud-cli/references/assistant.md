@@ -146,7 +146,7 @@ Those are separate from persistent shared storage quotas.
 
 Agent/CLI runs use isolated local test storage. Shared storage changes are real
 and persist across runs and publications. Forks start with empty data. Use
-`code storage` with JSON input for direct shared file/KV operations. Use
+`code storage` with JSON input for file list/delete and KV operations. Use
 `code sql` with `{"sql":"SELECT title FROM todos LIMIT 20","params":[]}` for
 a direct read-only query. It never creates a database. `code database-connect`
 explicitly provisions one when the instance has rsql configured;
@@ -306,3 +306,25 @@ Resource deletion requires Manage access and removes publications, grants and
 shared data; remote database cleanup is queued. It does not erase browser-local
 data. Running resources without Manage access requires per-call capability
 consent, including reads; personal remembered approvals do not apply.
+
+
+### Shared Studio files and limits
+
+Use binary commands for file contents (Use access; `--manage` explicitly requires
+Manage). `--conversation CHAT` supplies an authorized Project-chat context:
+
+```bash
+cld assistant code file-upload APP --file invoice.pdf --key invoices/invoice.pdf
+cld assistant code file-download APP --key invoices/invoice.pdf --out invoice.pdf
+cld assistant studio-admin storage-settings --json
+cld assistant studio-admin storage-configure --input-file limits.json
+```
+
+The administrator input is `{"fileMiB":50,"totalMiB":250}`. Those are also the
+default byte budgets in MiB. There is no shared file count limit. File size can
+be configured up to 64 MiB, total storage up to 1 TiB per resource. Shared KV
+retains its separate 16 MiB/1,000-entry budget. Lists use `after`/`limit` pages.
+An upload replaces the named key; use another key to keep both originals.
+Lowering budgets preserves files and permits reads/deletes or non-growing
+replacements. Storage settings do not raise chat or processing limits.
+Direct JSON file read/write is no longer accepted; use the binary commands.

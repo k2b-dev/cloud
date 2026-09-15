@@ -101,7 +101,7 @@ export const artifactMessages = i18n.define({ baseLocale: "en", messages: {
     ACCESS_DENIED: "Du hast keinen Zugriff auf dieses Artefakt.",
     CONFLICT: "Das Artefakt wurde geändert. Lade vor dem Speichern die aktuelle Version.",
     TOO_MANY_REQUESTS: "Zu viele offene Vorgänge. Schließe eine ausstehende Freigabe ab oder brich sie ab.",
-    STORAGE_FULL: "Der Versionsverlauf dieses Artefakts hat sein Speicherlimit erreicht.",
+    STORAGE_FULL: "Das Speicherlimit dieser Ressource ist erreicht.",
     INVALID_INPUT: "Prüfe die Dateipfade und die Quelltexteinstellungen.",
     LAST_MANAGER: "Mindestens eine Person muss dieses Artefakt verwalten dürfen.",
     REQUEST_FAILED: "Die Anfrage ist fehlgeschlagen. Versuche es erneut.",

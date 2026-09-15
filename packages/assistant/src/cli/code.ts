@@ -30,6 +30,26 @@ export const assistantCodeCommands=[
     await Bun.write(flags.out,response);
     printValue(ctx,{out:flags.out});
   }}),
+  command("code file-upload",{summary:"Upload a binary shared file (Use access; --manage for explicit management)",args:{id:resource},flags:{file:flag.string({required:true}),key:flag.string({required:true}),manage:flag.boolean(),conversation:flag.string()},async run({ctx,args,flags}){
+    if (!flags.file || !flags.key) throw new Error("Provide --file and --key.");
+    const file=Bun.file(flags.file);
+    if (!await file.exists()) throw new Error("Input file does not exist");
+    const response=await ctx.fetch("/api/assistant"+path(args.id,"/storage/file")+queryString({key:flags.key,management:flags.manage?"true":undefined,conversationId:flags.conversation}),{method:"PUT",headers:{"Content-Type":file.type || "application/octet-stream"},body:file});
+    printValue(ctx,await ctx.readJson(response));
+  }}),
+  command("code file-download",{summary:"Download a binary shared file",args:{id:resource},flags:{key:flag.string({required:true}),out:flag.string({required:true}),manage:flag.boolean(),conversation:flag.string()},async run({ctx,args,flags}){
+    if (!flags.out || !flags.key) throw new Error("Provide --out and --key.");
+    const response=await ctx.fetch("/api/assistant"+path(args.id,"/storage/file")+queryString({key:flags.key,management:flags.manage?"true":undefined,conversationId:flags.conversation}));
+    if (!response.ok) await ctx.readJson(response);
+    await Bun.write(flags.out,response);
+    printValue(ctx,{out:flags.out});
+  }}),
+  command("studio-admin storage-settings",{summary:"Read shared file limits (MiB); KV is separate",async run({ctx}){
+    printValue(ctx,await readAssistantApi(ctx,"/artifacts/admin/storage/settings"));
+  }}),
+  command("studio-admin storage-configure",{summary:"Set instance-wide {fileMiB,totalMiB} shared file limits",flags:{input:inputFlag()},async run({ctx,flags}){
+    printValue(ctx,await readAssistantApi(ctx,"/artifacts/admin/storage/settings",jsonRequest("PUT",await jsonInput(flags.input))));
+  }}),
   command("code storage-manage",{summary:"Inspect or delete shared files/KV as a resource manager",args:{id:resource},flags:{input:inputFlag()},async run({ctx,args,flags}){
     printValue(ctx,await readAssistantApi(ctx,path(args.id,"/storage/manage"),jsonRequest("POST",await jsonInput(flags.input))));
   }}),
@@ -137,7 +157,7 @@ export const assistantCodeCommands=[
   command("code change-grant",{summary:"Change or remove a grant: {permission:read|admin|null}",args:{id:resource,access:arg.required()},flags:{input:inputFlag()},async run({ctx,args,flags}){
     printValue(ctx,await readAssistantApi(ctx,path(args.id,"/access/"+encodeURIComponent(args.access)),jsonRequest("PUT",await jsonInput(flags.input))));
   }}),
-  command("code storage",{summary:"Read/write/list/delete shared files or KV using {area,operation,key,content}",args:{id:resource},flags:{input:inputFlag(),conversation:flag.string()},async run({ctx,args,flags}){
+  command("code storage",{summary:"List/delete shared files or read/write/list/delete KV; use file-upload/file-download for binary files",args:{id:resource},flags:{input:inputFlag(),conversation:flag.string()},async run({ctx,args,flags}){
     printValue(ctx,await readAssistantApi(ctx,path(args.id,"/storage")+queryString({conversationId:flags.conversation}),jsonRequest("POST",await jsonInput(flags.input))));
   }}),
   command("code sql",{summary:"Run a read-only SELECT against an existing resource database; never creates one",args:{id:resource},flags:{input:inputFlag(),conversation:flag.string()},async run({ctx,args,flags}){

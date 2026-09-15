@@ -325,6 +325,27 @@ or share them through server storage. Data belongs to the resource across
 publications. A copy starts empty. Agent test runs use temporary local storage,
 but shared writes and Cloud actions affect real resources.
 
+Shared files default to **250 MiB per resource** and **50 MiB per file**, with
+no file count limit. Shared KV is separate: **16 MiB and 1,000 entries**.
+Administrators can change `assistant.storage_file_mib` and
+`assistant.storage_total_mib` through Cloud settings. CLI equivalents are
+`cld assistant studio-admin storage-settings` and
+`cld assistant studio-admin storage-configure --input-file limits.json`, where
+`limits.json` contains `{"fileMiB":50,"totalMiB":250}`. Values are positive
+integers; file transfers support up to 64 MiB and total storage up to 1 TiB
+per resource. Changes apply to subsequent writes. Lowering a limit preserves
+existing data and allows reading, deleting, or replacing it without increasing
+its size. These settings do not change chat or document-processing limits.
+
+For example, an app can retain invoice PDFs while keeping import status in KV.
+File listings remain paginated regardless of how many documents are stored.
+Use `cld assistant code file-upload ID --file invoice.pdf --key invoices/invoice.pdf`
+to store the original and `file-download ID --key invoices/invoice.pdf --out invoice.pdf`
+to retrieve it. Uploading an existing key replaces that file; it does not create
+a version. The JSON `code storage` interface lists/deletes files and manages KV;
+file contents now use binary upload/download rather than Base64 JSON.
+
+
 A resource can explicitly connect a database when it needs structured records.
 Creating an app does not create a database. Database support requires an
 administrator-configured rsql server and secret API token. Without it, connecting

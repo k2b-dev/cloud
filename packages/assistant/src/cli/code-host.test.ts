@@ -362,3 +362,35 @@ test("documented CSV dashboard uses numeric KPIs and survives real filter/reset 
     await host.health();
   } finally {await host.close();}
 },60000);
+
+test("shared files cross the CLI/browser host as binary above the JSON budget",async()=>{
+  const bundle=await cliHostBundle();
+  let stored=new Uint8Array();
+  const host=await createCliCodeHost({fetch:async(input,init)=>{
+    const url=new URL(String(input),"http://localhost");
+    if(url.pathname.endsWith("host.js"))return new Response(bundle);
+    if(url.pathname.endsWith("/access"))return Response.json([]);
+    if(url.pathname.endsWith("/compile"))return Response.json(await compileArtifact(await new Response(init?.body).json()));
+    if(url.pathname.endsWith("/storage/file")){
+      expect(url.searchParams.get("management")).toBe("true");
+      if(init?.method==="PUT"){
+        stored=new Uint8Array(await new Response(init.body).arrayBuffer());
+        return Response.json({written:true});
+      }
+      return new Response(stored,{headers:{"content-type":"application/octet-stream"}});
+    }
+    throw new Error(`Unexpected request ${url}`);
+  }});
+  try{
+    const result=await host.execute({name:"code_run",callId:"binary",conversationId:"aBc234",turnId:"aBc234",args:{resourceId:"aBc234",code:`export default async()=>{
+      const bytes=new Uint8Array(17*1024*1024);bytes[0]=255;
+      await files.shared.write("binary",new Blob([bytes]));
+      const file=await files.shared.read("binary");
+      return {size:file.size,first:new Uint8Array(await file.arrayBuffer())[0]};
+    }`}});
+    expect(result).toMatchObject({status:"ready"});
+    expect(stored.length).toBe(17*1024*1024);
+    expect(JSON.stringify(result)).toContain('17825792');
+    expect(JSON.stringify(result)).toContain('255');
+  }finally{await host.close();}
+},30000);

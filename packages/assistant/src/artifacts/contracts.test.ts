@@ -31,13 +31,13 @@ describe("Assistant artifact boundaries", () => {
   });
 });
 
-test("storage transport accommodates a full decoded file without increasing its storage quota", async () => {
+test("KV transport accommodates escaped JSON at its byte budget", async () => {
   const {StorageRequest,STORAGE_TRANSPORT_BYTES}=await import("./storage-contracts");
-  const content=Buffer.alloc(LIMITS.rpcBytes,120).toString("base64");
-  const input={area:"files",operation:"write",key:"full.bin",content};
+  const content=JSON.stringify("x".repeat(LIMITS.rpcBytes-2));
+  const input={area:"kv",operation:"write",key:"full",content};
   expect(StorageRequest.safeParse(input).success).toBe(true);
   expect(Buffer.byteLength(JSON.stringify(input))).toBeLessThan(STORAGE_TRANSPORT_BYTES);
-  expect(Buffer.from(content,"base64").length).toBe(LIMITS.rpcBytes);
+  expect(Buffer.byteLength(content)).toBe(LIMITS.rpcBytes);
 });
 
 test("selected-input and captured-output budgets agree with chat storage",async()=>{

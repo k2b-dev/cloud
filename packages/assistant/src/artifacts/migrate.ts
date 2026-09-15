@@ -79,6 +79,10 @@ export async function migrateArtifacts() {
     bytes BIGINT NOT NULL CHECK(bytes >= 0), updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     PRIMARY KEY(artifact_id,area,key)
   )`.simple();
+  await sql`ALTER TABLE assistant.artifact_storage ADD COLUMN IF NOT EXISTS data BYTEA`.simple();
+  // One-way migration: file bytes no longer live in Base64 text.
+  await sql`UPDATE assistant.artifact_storage SET data=decode(content,'base64'),content=''
+    WHERE area='files' AND data IS NULL`.simple();
   await sql`CREATE TABLE IF NOT EXISTS assistant.artifact_databases (
     artifact_id UUID PRIMARY KEY REFERENCES assistant.artifacts(id) ON DELETE CASCADE,
     namespace TEXT NOT NULL UNIQUE, connected BOOLEAN NOT NULL DEFAULT false

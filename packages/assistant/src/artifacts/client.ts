@@ -25,6 +25,18 @@ export const artifactClient = {
   databaseStatus: async (id:string) => {const response=await client[":id"].database.status.$get({param:{id}});await checked(response);return response.json();},
   databaseReset: async (id:string,expectedGeneration:string|null) => {const response=await client[":id"].database.reset.$post({param:{id},json:{confirmed:true,expectedGeneration}});await checked(response);return response.json();},
   storageManage: async (id:string,input:StorageRequest) => {const response=await client[":id"].storage.manage.$post({param:{id},json:input});await checked(response);return response.json();},
+  storageFile: async (id:string,key:string,options:{data?:Blob;conversationId?:string;management?:boolean} = {}) => {
+    const query=new URLSearchParams({key});
+    if (options.conversationId) query.set("conversationId",options.conversationId);
+    if (options.management) query.set("management","true");
+    const response=await fetch(`/api/assistant/artifacts/${encodeURIComponent(id)}/storage/file?${query}`,{
+      method:options.data === undefined ? "GET" : "PUT",body:options.data,
+      ...(options.data ? {headers:{"Content-Type":options.data.type || "application/octet-stream"}} : {}),
+    });
+    if (response.status === 404 && options.data === undefined) return null;
+    await checked(response);
+    return options.data === undefined ? response.blob() : null;
+  },
   storageClear: async (id:string,area:"files"|"kv"|"all") => {const response=await client[":id"].storage.clear.$post({param:{id},json:{area,confirmed:true}});await checked(response);return response.json();},
   remove: async (id:string) => {const response=await client[":id"].$delete({param:{id}});await checked(response);return response.json();},
   capabilityPrepare:async(input:{id:string;name:string;input:unknown;artifactId?:string;conversationId?:string},signal?:AbortSignal)=>{

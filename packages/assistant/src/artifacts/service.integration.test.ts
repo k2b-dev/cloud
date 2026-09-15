@@ -1,3 +1,6 @@
+import { Hono } from "hono";
+import type { AuthContext } from "@k2b/cloud/server";
+import { createArtifactServiceRoutes } from "./api";
 import { evaluateCodeMode } from "./code-mode.eval";
 import { loadAssistantChatContextSnapshot } from "../chat-context";
 import { agentHost } from "./agent-host";
@@ -33,6 +36,8 @@ const isolated = /\/cloud_assistant_artifacts_test(?:\?|$)/.test(process.env.DAT
   const source = { entry: "main.js", files: [{ path: "main.js", content: "export default () => 1" }] };
   let id = "";
   beforeAll(async () => {
+    await sql`CREATE SCHEMA settings`;
+    await sql`CREATE TABLE settings.entries(key text PRIMARY KEY,value text,updated_at timestamptz DEFAULT now())`;
     await sql`CREATE SCHEMA ai`;
     await sql`CREATE TABLE ai.conversations(id uuid PRIMARY KEY,created_by_user_id uuid,archived_at timestamptz)`;
     await sql`CREATE TABLE ai.turns(id uuid PRIMARY KEY,status text)`;
@@ -59,6 +64,65 @@ const isolated = /\/cloud_assistant_artifacts_test(?:\?|$)/.test(process.env.DAT
     }
   });
   afterAll(async () => { await sql.close(); });
+
+  test("shared binary files have independent atomic byte budgets, pagination and no count ceiling",async()=>{
+    let total=1, single=1;
+    let cleanup="";
+    const settings=spyOn(app.settings,"get").mockImplementation(async key=>({"assistant.storage_total_mib":total,"assistant.storage_file_mib":single,"assistant.rsql_url":"","assistant.rsql_api_token":""}[key]));
+    try {
+      const resource=await artifacts.create({title:"Binary storage",source},owner);
+      cleanup=resource.id;
+      await artifacts.publish(resource.id,1,owner,"Storage fixture");
+      await artifacts.grant(resource.id,{type:"user",userId:reader.user.id},"read",owner);
+      const write=(key:string,data:Uint8Array)=>artifacts.storage(resource.id,{area:"files",operation:"write",key},reader,false,data);
+      await sql`INSERT INTO assistant.artifact_storage(artifact_id,area,key,content,data,bytes)
+        SELECT (SELECT id FROM assistant.artifacts WHERE short_id=${resource.id}),'files',lpad(n::text,5,'0'),'',''::bytea,0 FROM generate_series(1,1001) AS n`;
+      await write("binary",new Uint8Array([0,128,255]));
+      const read=await artifacts.storage(resource.id,{area:"files",operation:"read",key:"binary"},reader);
+      expect("item" in read && [...read.item!.data!]).toEqual([0,128,255]);
+      const first=await artifacts.storage(resource.id,{area:"files",operation:"list",limit:1000},reader);
+      expect("items" in first && first.items?.length).toBe(1000);
+      const rest=await artifacts.storage(resource.id,{area:"files",operation:"list",after:"01000"},reader);
+      expect("items" in rest && rest.items?.length).toBe(2);
+      await expect(artifacts.storage(resource.id,{area:"files",operation:"read",key:"binary"},stranger)).rejects.toMatchObject({code:"ACCESS_DENIED"});
+      await expect(artifacts.storage(resource.id,{area:"files",operation:"read",key:"binary"},reader,true)).rejects.toMatchObject({code:"ACCESS_DENIED"});
+      const results=await Promise.allSettled([write("large-a",new Uint8Array(600000)),write("large-b",new Uint8Array(600000))]);
+      expect(results.filter(r=>r.status==="fulfilled")).toHaveLength(1);
+      expect(results.filter(r=>r.status==="rejected")).toHaveLength(1);
+      const api=new Hono<AuthContext>().use("*",async(c,next)=>{
+        c.set("actor",reader.actor);c.set("accessSubject",reader.accessSubject);await next();
+      }).route("/",createArtifactServiceRoutes());
+      const endpoint=`/${resource.id}/storage/file?key=http-file`;
+      total=20;single=20;
+      const payload=new Uint8Array(17*1024*1024);payload[0]=128;payload[payload.length-1]=255;
+      expect((await api.request(endpoint,{method:"PUT",headers:{"content-type":"application/pdf"},body:payload})).status).toBe(200);
+      const downloaded=await api.request(endpoint);
+      expect(downloaded.headers.get("content-type")).toBe("application/pdf");
+      expect(Bun.hash(await downloaded.arrayBuffer())).toBe(Bun.hash(payload));
+      expect((await api.request(endpoint+"&management=true",{method:"PUT",body:"denied"})).status).toBe(403);
+      expect((await api.request(`/${resource.id}/storage`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({area:"files",operation:"read",key:"http-file"})})).status).toBe(400);
+      await artifacts.storage(resource.id,{area:"files",operation:"delete",key:"http-file"},reader);
+      total=1;single=1;
+      // KV is independent even with >1,000 files and an almost full file budget.
+      await artifacts.storage(resource.id,{area:"kv",operation:"write",key:"state",content:JSON.stringify("x".repeat(600000))},reader);
+      total=2;single=2;
+      await write("oversized-after-lowering",new Uint8Array(1200000));
+      total=1;single=1;
+      await write("oversized-after-lowering",new Uint8Array(1100000));
+      await expect(write("new",new Uint8Array(1))).rejects.toMatchObject({code:"STORAGE_FULL"});
+      await artifacts.storage(resource.id,{area:"files",operation:"delete",key:"oversized-after-lowering"},reader);
+      // Migration preserves old binary content and is repeatable.
+      await sql`INSERT INTO assistant.artifact_storage(artifact_id,area,key,content,bytes)
+        VALUES((SELECT id FROM assistant.artifacts WHERE short_id=${resource.id}),'files','legacy','AID/',3)`;
+      await migrateArtifacts();
+      // This old fixture intentionally exercises a legacy write grant. The
+      // migration upgrades it; restore the fixture for subsequent tests.
+      await sql`UPDATE auth.access SET permission='write' WHERE user_id=${editor.user.id}::uuid
+        AND id IN (SELECT access_id FROM assistant.artifact_access WHERE artifact_id=(SELECT id FROM assistant.artifacts WHERE short_id=${id}))`;
+      const legacy=await artifacts.storage(resource.id,{area:"files",operation:"read",key:"legacy"},reader);
+      expect("item" in legacy && [...legacy.item!.data!]).toEqual([0,128,255]);
+    } finally { if(cleanup) await artifacts.remove(cleanup,owner); settings.mockRestore(); }
+  },30000);
 
   test("artifact revisions store JSON objects and retain immutable source", async () => {
     const created = await artifacts.create({ title: "JSON source", source }, owner);
@@ -443,7 +507,7 @@ const isolated = /\/cloud_assistant_artifacts_test(?:\?|$)/.test(process.env.DAT
   test("databases are lazy, reconnect idempotently and reject writes through SQL", async () => {
     const applet=await artifacts.create({title:"Lazy DB",source},owner);
     let url="", token="", creates=0;
-    const settings=spyOn(app.settings,"get").mockImplementation(async key => key === "assistant.rsql_url" ? url : token);
+    const settings=spyOn(app.settings,"get").mockImplementation(async key => ({"assistant.storage_total_mib":250,"assistant.storage_file_mib":50,"assistant.rsql_url":url,"assistant.rsql_api_token":token}[key]));
     const upstream=Bun.serve({hostname:"127.0.0.1",port:0,fetch:async request => {
       expect(request.headers.get("authorization")).toBe("Bearer test-token");
       if (new URL(request.url).pathname === "/v1/namespaces" && request.method === "POST") creates++;
@@ -473,7 +537,7 @@ const isolated = /\/cloud_assistant_artifacts_test(?:\?|$)/.test(process.env.DAT
 
   (process.env.RSQL_TEST_URL ? test : test.skip)("real rsql imports and rejoins 2500 rows without duplicating retries", async () => {
     const resource=await artifacts.create({title:"Excel import",kind:"script",source},owner);
-    const settings=spyOn(app.settings,"get").mockImplementation(async key=>key==="assistant.rsql_url" ? process.env.RSQL_TEST_URL! : "artifact-test-only");
+    const settings=spyOn(app.settings,"get").mockImplementation(async key=>({"assistant.storage_total_mib":250,"assistant.storage_file_mib":50,"assistant.rsql_url":process.env.RSQL_TEST_URL!,"assistant.rsql_api_token":"artifact-test-only"}[key]));
     try {
       await artifactDatabase.connect(resource.id,owner);
       const call=(input:unknown)=>artifactDatabase.call(resource.id,input,owner);
@@ -490,7 +554,7 @@ const isolated = /\/cloud_assistant_artifacts_test(?:\?|$)/.test(process.env.DAT
   test("database connection errors distinguish invalid credentials from an unavailable server", async () => {
     const applet = await artifacts.create({title:"Database errors",source},owner);
     const upstream = Bun.serve({hostname:"127.0.0.1",port:0,fetch:()=>Response.json({error:"unauthorized"},{status:401})});
-    const settings = spyOn(app.settings,"get").mockImplementation(async key => key === "assistant.rsql_url" ? upstream.url.origin : "private-fixture-token");
+    const settings = spyOn(app.settings,"get").mockImplementation(async key => ({"assistant.storage_total_mib":250,"assistant.storage_file_mib":50,"assistant.rsql_url":upstream.url.origin,"assistant.rsql_api_token":"private-fixture-token"}[key]));
     try {
       await expect(artifactDatabase.connect(applet.id,owner)).rejects.toMatchObject({code:"DB_AUTH_FAILED",status:502});
       await upstream.stop(true);
@@ -504,7 +568,7 @@ const isolated = /\/cloud_assistant_artifacts_test(?:\?|$)/.test(process.env.DAT
     const [grant]=await sql<{id:string}[]>`INSERT INTO auth.access(user_id,permission) VALUES(${reader.user.id}::uuid,'read') RETURNING id`;
     await sql`INSERT INTO assistant.artifact_access VALUES((SELECT id FROM assistant.artifacts WHERE short_id=${resource.id}),${grant!.id}::uuid)`;
     await artifacts.storage(resource.id,{area:"kv",operation:"write",key:"counter",content:"2"},reader);
-    await artifacts.storage(resource.id,{area:"files",operation:"write",key:"keep.txt",content:"YQ=="},owner);
+    await artifacts.storage(resource.id,{area:"files",operation:"write",key:"keep.txt"},owner,false,new Uint8Array([97]));
     await expect(artifacts.clearStorage(resource.id,"all",reader)).rejects.toMatchObject({code:"ACCESS_DENIED"});
     await expect(artifacts.storage(resource.id,{area:"kv",operation:"list"},reader,true)).rejects.toMatchObject({code:"ACCESS_DENIED"});
     await expect(artifactDatabase.connect(resource.id,reader,undefined,true)).rejects.toMatchObject({code:"ACCESS_DENIED"});
@@ -516,13 +580,13 @@ const isolated = /\/cloud_assistant_artifacts_test(?:\?|$)/.test(process.env.DAT
     await expect(artifactDatabase.call(resource.id,{operation:"tables.list"},reader,undefined,"inspect")).rejects.toMatchObject({code:"ACCESS_DENIED"});
     await artifacts.clearStorage(resource.id,"kv",owner);
     expect(await artifacts.storage(resource.id,{area:"kv",operation:"list"},reader)).toEqual({items:[]});
-    expect(await artifacts.storage(resource.id,{area:"files",operation:"read",key:"keep.txt"},reader)).toMatchObject({item:{content:"YQ=="}});
+    expect(await artifacts.storage(resource.id,{area:"files",operation:"read",key:"keep.txt"},reader)).toMatchObject({item:{data:new Uint8Array([97])}});
     expect((await artifacts.get(resource.id,owner)).publishedRevision).toBe(1);
   });
 
   (process.env.RSQL_TEST_URL ? test : test.skip)("Studio database backup and reset preserve source and rotate namespace generations",async()=>{
     const resource=await artifacts.create({title:"Reset lifecycle",source},owner);
-    const settings=spyOn(app.settings,"get").mockImplementation(async key=>key==="assistant.rsql_url"?process.env.RSQL_TEST_URL!:"artifact-test-only");
+    const settings=spyOn(app.settings,"get").mockImplementation(async key=>({"assistant.storage_total_mib":250,"assistant.storage_file_mib":50,"assistant.rsql_url":process.env.RSQL_TEST_URL!,"assistant.rsql_api_token":"artifact-test-only"}[key]));
     try{
       expect(await artifactDatabase.status(resource.id,owner)).toMatchObject({configured:true,connected:false});
       expect(await sql`SELECT 1 FROM assistant.artifact_databases WHERE artifact_id=(SELECT id FROM assistant.artifacts WHERE short_id=${resource.id})`).toHaveLength(0);
@@ -556,7 +620,7 @@ const isolated = /\/cloud_assistant_artifacts_test(?:\?|$)/.test(process.env.DAT
       expect(request.headers.get("authorization")).toBe("Bearer secret-fixture");
       return Response.json({data:[]});
     }});
-    const settings=spyOn(app.settings,"get").mockImplementation(async key=>key==="assistant.rsql_url" ? upstream.url.origin : "secret-fixture");
+    const settings=spyOn(app.settings,"get").mockImplementation(async key=>({"assistant.storage_total_mib":250,"assistant.storage_file_mib":50,"assistant.rsql_url":upstream.url.origin,"assistant.rsql_api_token":"secret-fixture"}[key]));
     const writes=spyOn(app.settings,"set").mockResolvedValue();
     try {
       await expect(artifactDatabase.settings(owner)).rejects.toMatchObject({code:"ACCESS_DENIED"});
@@ -595,7 +659,7 @@ const isolated = /\/cloud_assistant_artifacts_test(?:\?|$)/.test(process.env.DAT
     await artifacts.grant(app.id,{type:"user",userId:reader.user.id},"read",owner);
     expect(await artifacts.storage(app.id,{area:"kv",operation:"read",key:"counter"},reader)).toMatchObject({item:{content:"42"}});
     await artifacts.storage(app.id,{...write,content:"43"},reader);
-    await artifacts.storage(app.id,{area:"files",operation:"write",key:"input.csv",content:btoa("a,b\n1,2"),mediaType:"text/csv"},reader);
+    await artifacts.storage(app.id,{area:"files",operation:"write",key:"input.csv",mediaType:"text/csv"},reader,false,new TextEncoder().encode("a,b\n1,2"));
     const edit=await artifacts.writeFile(app.id,"main.js","export default () => 2",owner);
     await artifacts.publish(app.id,edit.revision,owner,"Changed UI");
     expect(await artifacts.storage(app.id,{area:"kv",operation:"read",key:"counter"},reader)).toMatchObject({item:{content:"43"}});

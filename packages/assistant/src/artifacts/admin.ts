@@ -15,7 +15,7 @@ export const artifactAdmin = {
       SELECT a.short_id AS id,a.title,a.kind,a.published_revision IS NOT NULL AS published,
         (SELECT count(*)::int FROM assistant.artifact_storage s WHERE s.artifact_id=a.id AND s.area='files') AS files,
         (SELECT count(*)::int FROM assistant.artifact_storage s WHERE s.artifact_id=a.id AND s.area='kv') AS kv,
-        (SELECT coalesce(sum(bytes),0)::int FROM assistant.artifact_storage s WHERE s.artifact_id=a.id) AS bytes,
+        (SELECT coalesce(sum(bytes),0)::double precision FROM assistant.artifact_storage s WHERE s.artifact_id=a.id) AS bytes,
         EXISTS(SELECT 1 FROM assistant.artifact_databases d WHERE d.artifact_id=a.id) AS database,
         ARRAY(SELECT project_id::text FROM assistant.artifact_projects p WHERE p.artifact_id=a.id ORDER BY project_id) AS projects
       FROM assistant.artifacts a WHERE a.title ILIKE ${"%"+search+"%"}

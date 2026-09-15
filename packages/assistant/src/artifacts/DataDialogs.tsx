@@ -51,6 +51,11 @@ function DataDialog(props: { id: string; userId: string; scope: "local" | "share
       if (value === null) throw new Error(t().NOT_FOUND);
       return value instanceof Blob ? value : new Blob([JSON.stringify(value, null, 2)], { type: "application/json" });
     }
+    if (area() === "files") {
+      const file=await artifactClient.storageFile(props.id,key,{management:true});
+      if (!file) throw new Error(t().NOT_FOUND);
+      return file;
+    }
     const result = await artifactClient.storageManage(props.id, {
       area: area(),
       operation: "read",
@@ -60,9 +65,7 @@ function DataDialog(props: { id: string; userId: string; scope: "local" | "share
       limit: 50,
     });
     if (!("item" in result) || !result.item) throw new Error(t().NOT_FOUND);
-    return area() === "kv"
-      ? new Blob([result.item.content], { type: "application/json" })
-      : new Blob([Uint8Array.from(atob(result.item.content), (c) => c.charCodeAt(0))], { type: result.item.mediaType });
+    return new Blob([result.item.content], { type: "application/json" });
   }
   async function remove(key?: string) {
     if (
