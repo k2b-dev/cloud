@@ -16,7 +16,7 @@
   "dependencies": {
     "@k2b/cloud": "workspace:*",
     "@k2b/ui": "workspace:*",
-    "@k2b/stdlib": "0.24.0",
+    "@k2b/stdlib": "0.25.0",
     "solid-js": "^1.9.10"
   },
   "devDependencies": {

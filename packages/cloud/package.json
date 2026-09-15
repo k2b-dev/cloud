@@ -95,7 +95,7 @@
     "@k2b/nessi": "0.12.0",
     "@k2b/ssr": "0.14.0",
     "@k2b/ui": "0.2.0",
-    "@k2b/stdlib": "0.24.0",
+    "@k2b/stdlib": "0.25.0",
     "@k2b/sync": "6.4.0",
     "@nats-io/transport-node": "3.4.0",
     "@modelcontextprotocol/sdk": "1.30.0",
@@ -128,7 +128,7 @@
     "hono": "4.12.32",
     "solid-js": "1.9.14",
     "typescript": "5.9.3",
-    "zod": "4.4.3"
+    "zod": "4.6.2"
   },
   "peerDependencies": {
     "hono": "^4.12.25",

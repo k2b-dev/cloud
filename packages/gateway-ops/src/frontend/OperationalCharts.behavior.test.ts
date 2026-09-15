@@ -26,14 +26,14 @@ import { createDomTestHarness } from "../../../ui/test/dom";
   try {
     await Promise.resolve();
     const targets = dom.root.querySelectorAll('.k2b-chart[tabindex="0"]');
-    targets[0]!.dispatchEvent(new dom.window.FocusEvent("focusin", { bubbles: true }));
+    targets[0]!.dispatchEvent(new FocusEvent("focusin", { bubbles: true }));
     await Promise.resolve();
     const tips = dom.root.querySelectorAll('.k2b-chart__tooltip[role="tooltip"]');
     expect(tips[0]!.textContent).toContain("12,345");
     expect(tips[1]!.textContent).toContain("125 ms");
     expect(tips[2]!.textContent).not.toContain("7");
     expect(dom.root.querySelector("a")!.getAttribute("href")).toBe("/admin/observability/logs?window=1h");
-    targets[0]!.dispatchEvent(new dom.window.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    targets[0]!.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
     expect(targets[1]!.hasAttribute("aria-describedby")).toBe(false);
     expect(dom.root.querySelectorAll('button[aria-label="Chart view"]')).toHaveLength(3);
   } finally {
