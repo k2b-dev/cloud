@@ -23,7 +23,7 @@ export async function evaluateCodeMode(context: CodeToolContext, turnId: string)
       producerCallKey: `eval:${name}`,
     });
   }
-  const originalIds = new Set((await artifacts.list(context, 1, "app")).items.map((item) => item.id));
+  const originalIds = new Set((await artifacts.list(context, 1)).items.map((item) => item.id));
   let apps: Awaited<ReturnType<typeof artifacts.get>>[] = [];
   const history: StoreEntry[] = [];
   const events: unknown[] = [];
@@ -180,7 +180,7 @@ export async function evaluateCodeMode(context: CodeToolContext, turnId: string)
       }
     }
   } finally {
-    const listed = await artifacts.list(context, 1, "app");
+    const listed = await artifacts.list(context, 1);
     apps = await Promise.all(listed.items.filter((item) => !originalIds.has(item.id)).map((item) => artifacts.get(item.id, context)));
     await Bun.write(
       "/tmp/assistant-code-mode-eval.json",

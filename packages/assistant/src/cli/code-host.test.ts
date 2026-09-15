@@ -3,6 +3,31 @@ import { createCliCodeHost } from "./code-host";
 import { cliHostBundle } from "../artifacts/runtime/cli-bundle";
 import { compileArtifact } from "../artifacts/runtime/compile";
 
+test("published actions execute in the isolated host and validate their returned value", async () => {
+  const source = { entry: "main.ts", files: [
+    { path: "app.actions.json", content: JSON.stringify({ actions: [{ name: "double", title: "Double", description: "Double a number", entry: "double.ts", inputSchema: { type: "number" }, outputSchema: { type: "number" } }] }) },
+    { path: "double.ts", content: "export default (value: number) => value * 2;" },
+  ] };
+  const compiled = await compileArtifact(source, { action: "double", input: 3 });
+  const bundle = await cliHostBundle();
+  let outputSchema = { type: "number" };
+  const host = await createCliCodeHost({ fetch: async (input, init) => {
+    const path = String(input);
+    if (path.endsWith("host.js")) return new Response(bundle);
+    if (path.includes("runtime/action")) {
+      expect(JSON.parse(await new Response(init?.body).text())).toEqual({ id: "aBc234", action: "double", publishedVersion: 1, input: 3 });
+      return Response.json({ compiled, outputSchema, resource: { id: "aBc234", kind: "app", sourceRevision: 1 } });
+    }
+    throw new Error(`Unexpected action host request: ${path}`);
+  } });
+  const call = { name: "code_action", conversationId: crypto.randomUUID(), turnId: crypto.randomUUID(), args: { id: "aBc234", action: "double", publishedVersion: 1, input: 3 } };
+  try {
+    expect(await host.execute({ ...call, callId: "action" })).toMatchObject({ status: "ready", output: "6", nodes: [] });
+    outputSchema = { type: "string" };
+    expect(await host.execute({ ...call, callId: "invalid-output" })).toMatchObject({ runId: "invalid-output", status: "error", error: expect.stringContaining("schema") });
+  } finally { await host.close(); }
+}, 60000);
+
 test("CLI runs one-off code in the existing isolated worker without a GUI chat", async () => {
   const code = 'export default async () => { await files.save("42", "answer.txt"); return { answer: 42, serverProcess: typeof process, networkBlocked: await fetch("https://example.invalid/").then(() => false, () => true) }; }';
   const bundle = await cliHostBundle();

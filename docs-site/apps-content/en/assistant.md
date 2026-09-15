@@ -297,26 +297,39 @@ database-status`, `database-export ID --out backup.sqlite`, `database-reset ID
 grant as the UI. CLI processes cannot purge another browser profile's local
 storage. Global rsql credentials remain restricted to AI administration.
 
-### Analyze once or save a script
+### Analyze once or reuse an App
 
 Code Mode uses direct Assistant tools named `code_*`, loaded individually when
 needed. They are not Cloud capabilities and cannot be called through
 `capabilities.run`. Source operations and SQL execute on the server; code runs
-and UI interaction use the connected browser or CLI host. The GUI, tools, and
+and UI interaction use the isolated server or CLI host. The GUI, tools, and
 CLI use the same permission-aware resource services.
 
 Ask for an analysis, calculation, or file conversion directly in the chat. Code
 mode can run a one-off script and return findings or output files without
-creating an app. Reusable scripts can instead be saved, published, shared, and
-copied. Studio separates **Apps** and **Scripts**; one-off runs do not appear in
-its galleries.
+creating an App. All reusable programs are Apps: GUI, agent actions, or both,
+with optional persistence. One-off scripts stay scoped to their chat and cannot
+be published or shared. Existing saved scripts are migrated to Apps without
+changing their IDs, source, publications, grants, Project links or shared data.
 
-Scripts can receive selected attachments from their current chat. Apps request
-files through their own upload controls and never gain implicit access to chat
-attachments. A Project administrator can associate a published script with a
-Project when they also manage the script. Current members can then use it in
-that Project's chats. This does not grant editing, copying, or global Studio
-visibility; those require separate resource access.
+One-off scripts can receive selected attachments from their current chat. Apps
+never gain implicit access to chat attachments. A Project administrator who also
+manages an App can associate it with the Project. Current members can use its
+publication in that Project's chats; this does not grant editing, copying or
+global Studio visibility.
+
+Apps declare optional actions in `app.actions.json`, saved and published with
+source. Each action has a unique `name`, `title`, `description`, relative handler
+`entry`, `inputSchema` and `outputSchema`. The handler default-exports a function
+accepting the action input. An action-only App needs no GUI entry. Publication
+compiles every handler without executing source. Discovery uses static metadata.
+
+`code_actions({id})` returns the current publication and action schemas;
+`code_action({id,action,publishedVersion,input})` runs that exact publication with
+Use access. Changed publications require fresh discovery. Draft and management
+rights remain separate. Runtime approvals still apply; a failed output check or
+timeout does not undo effects. The CLI equivalents are `assistant code actions`
+and `assistant code action --chat CHAT --input-file call.json`.
 
 ### Store data and combine Cloud actions
 
@@ -378,7 +391,7 @@ Playwright, or `CLOUD_CLI_CHROMIUM` pointing to an installed Chromium executable
 
 ### Administer Studio
 
-The Assistant administration page lists all saved apps and scripts, their shared
+The Assistant administration page lists all saved Apps, their shared
 file and key/value counts, and whether they have a database. Administrators can
 manage access, delete resources, and configure or test the rsql connection.
 The stored API token is never returned. Removing or changing the server is
@@ -443,13 +456,13 @@ results. Invalid tool arguments return `kind: "input"` before source execution.
 
 ### Consent and resource cleanup
 
-When you run an app or script you do not manage, every Cloud capability call
+When you run an App you do not manage, every Cloud capability call
 asks for consent, including reads. The dialog identifies the resource and warns
 that returned data can be stored in shared files or its database. Personal
 remembered approvals are not reused or created for these calls. Denial prevents
 execution; existing access and action-review checks still apply.
 
-Resource managers can permanently delete an app or script from its Studio menu
+Resource managers can permanently delete an App from its Studio menu
 or with `cld assistant code delete ID --yes`. Publications, grants and shared
 storage are removed; database cleanup is queued and retried. Browser-local data
 cannot be erased remotely. Platform administrators retain the administration
@@ -549,7 +562,7 @@ executable examples, formatting rules, limits, and structured interaction events
 
 ### Generate PDFs and read financial formats
 
-Studio apps and scripts can generate PDFs with `pdf.render({ html, ... })`,
+Studio Apps and one-off scripts can generate PDFs with `pdf.render({ html, ... })`,
 embed files with `pdf.attach({ document, attachments })`, and combine invoice
 HTML and XML with `pdf.facturX({ html, xml, profile, ... })`. Each returns a Blob
 for download or explicit storage. HTML contains its own CSS; local images,

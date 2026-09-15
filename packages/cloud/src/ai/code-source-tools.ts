@@ -108,6 +108,7 @@ export function createCodeSourceTool(name: CodeSourceToolName) {
 }
 
 export const createCodeSourceTools = () => [
+  createCodeSourceTool("code_actions"),
   createCodeSourceTool("code_sql"),
   createCodeSourceTool("code_versions"),
   createCodeSourceTool("code_list"),

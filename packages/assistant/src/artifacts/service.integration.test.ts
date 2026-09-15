@@ -65,6 +65,56 @@ const isolated = /\/cloud_assistant_artifacts_test(?:\?|$)/.test(process.env.DAT
   });
   afterAll(async () => { await sql.close(); });
 
+  test("published actions are discoverable with Use, validate inputs and reject stale releases", async () => {
+    const action = { name: "double", title: "Double", description: "Double a number", entry: "double.ts",
+      inputSchema: { type: "number" }, outputSchema: { type: "number" } };
+    const resource = await artifacts.create({ title: "Headless", source: { entry: "main.ts", files: [
+      { path: "app.actions.json", content: JSON.stringify({ actions: [action] }) },
+      { path: "double.ts", content: "export default (value: number) => value * 2;" },
+    ] } }, owner);
+    await artifacts.grant(resource.id, { type: "user", userId: reader.user.id }, "read", owner);
+    const api = new Hono<AuthContext>().use("*", async (c, next) => {
+      c.set("actor", reader.actor); c.set("accessSubject", reader.accessSubject); await next();
+    }).route("/", createArtifactServiceRoutes());
+    const call = (input: unknown, publishedVersion = 1) => api.request("/runtime/action", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ id: resource.id, action: "double", publishedVersion, input }),
+    });
+    try {
+      expect((await api.request(`/${resource.id}/actions`)).status).toBe(404);
+      await artifacts.publish(resource.id, 1, owner, "Initial actions");
+      expect(await (await api.request(`/${resource.id}/actions`)).json()).toMatchObject({ publishedVersion: 1, actions: [action] });
+      expect((await api.request(`/${resource.id}/actions?draft=true`)).status).toBe(403);
+      expect((await api.request("/runtime/action", { method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ id: resource.id, action: "double", revision: 1, input: 3 }) })).status).toBe(403);
+      expect((await call("wrong type")).status).toBe(400);
+      expect((await call(3)).status).toBe(200);
+      await artifacts.writeFile(resource.id, "double.ts", "export default (value: number) => value * 3;", owner);
+      // A draft update does not change the published action.
+      expect((await call(3)).status).toBe(200);
+      await artifacts.publish(resource.id, 2, owner, "Triple now");
+      expect((await call(3)).status).toBe(409);
+      expect((await call(3, 2)).status).toBe(200);
+      await artifacts.unpublish(resource.id, owner);
+      expect((await call(3, 2)).status).toBe(404);
+    } finally { await artifacts.remove(resource.id, owner); }
+  });
+
+  test("saved script migration preserves revisions, grants and project associations", async () => {
+    const resource = await artifacts.create({ title: "Legacy reusable code", source }, owner);
+    await artifacts.publish(resource.id, 1, owner, "Legacy publication");
+    await artifacts.grant(resource.id, { type: "user", userId: reader.user.id }, "read", owner);
+    const projectId = crypto.randomUUID();
+    await sql`ALTER TABLE assistant.artifacts DROP CONSTRAINT artifacts_kind_check`.simple();
+    await sql`UPDATE assistant.artifacts SET kind='script' WHERE short_id=${resource.id}`;
+    await sql`INSERT INTO assistant.artifact_projects SELECT id,${projectId}::uuid FROM assistant.artifacts WHERE short_id=${resource.id}`;
+    await migrateArtifacts();
+    expect(await artifacts.get(resource.id, reader)).toMatchObject({ kind: "app", source, publishedVersion: 1 });
+    expect(await artifacts.projects(resource.id, owner)).toEqual([{ projectId }]);
+    await expect(artifacts.create({ kind: "script", title: "Rejected legacy kind", source }, owner)).rejects.toThrow();
+    await artifacts.remove(resource.id, owner);
+  });
+
   test("shared binary files have independent atomic byte budgets, pagination and no count ceiling",async()=>{
     let total=1, single=1;
     let cleanup="";
@@ -283,7 +333,7 @@ const isolated = /\/cloud_assistant_artifacts_test(?:\?|$)/.test(process.env.DAT
 
   test("agent file writes persist incomplete code, preserve helpers and enforce permissions", async () => {
     const context = { ...owner, locale: "en", requestId: crypto.randomUUID(), origin: "assistant" as const, signal: new AbortController().signal };
-    const created = await artifactCodeHandlers.code_create({ kind: "app", title: "Agent test" }, context);
+    const created = await artifactCodeHandlers.code_create({ title: "Agent test" }, context);
     if (!created.ok) throw new Error(created.error.message);
     const id = created.data.data.id;
     const write = async (path: string, content: string) => artifactCodeHandlers.code_write({ id, expectedRevision: (await artifacts.get(id, owner)).revision, files: [{ path, content }] }, context);
@@ -382,9 +432,9 @@ const isolated = /\/cloud_assistant_artifacts_test(?:\?|$)/.test(process.env.DAT
     expect((await artifacts.list(reader)).items.some(item=>item.id===app.id)).toBe(false);
     await artifacts.grant(app.id,{type:"user",userId:reader.user.id},"read",owner);
     const changed=await artifacts.metadata(app.id,{title:"Charts",description:"Chart totals",icon:"ti ti-chart-bar"},owner);
-    expect((await artifacts.list(owner,1,undefined,"Chart totals")).items.map(item=>item.id)).toContain(app.id);
-    expect((await artifacts.list(reader,1,undefined,"Chart totals")).items.map(item=>item.id)).not.toContain(app.id);
-    expect((await artifacts.list(reader,1,undefined,"Budget")).items.map(item=>item.id)).toContain(app.id);
+    expect((await artifacts.list(owner,1,"Chart totals")).items.map(item=>item.id)).toContain(app.id);
+    expect((await artifacts.list(reader,1,"Chart totals")).items.map(item=>item.id)).not.toContain(app.id);
+    expect((await artifacts.list(reader,1,"Budget")).items.map(item=>item.id)).toContain(app.id);
     expect((await artifacts.get(app.id,reader)).icon).toBe("ti ti-wallet");
     const edited=await artifacts.writeFile(app.id,"main.js","export default () => 2",owner);
     await artifacts.publish(app.id,edited.revision,owner,"Add charts");
@@ -536,7 +586,7 @@ const isolated = /\/cloud_assistant_artifacts_test(?:\?|$)/.test(process.env.DAT
   });
 
   (process.env.RSQL_TEST_URL ? test : test.skip)("real rsql imports and rejoins 2500 rows without duplicating retries", async () => {
-    const resource=await artifacts.create({title:"Excel import",kind:"script",source},owner);
+    const resource=await artifacts.create({title:"Excel import",kind:"app",source},owner);
     const settings=spyOn(app.settings,"get").mockImplementation(async key=>({"assistant.storage_total_mib":250,"assistant.storage_file_mib":50,"assistant.rsql_url":process.env.RSQL_TEST_URL!,"assistant.rsql_api_token":"artifact-test-only"}[key]));
     try {
       await artifactDatabase.connect(resource.id,owner);
@@ -688,8 +738,8 @@ const isolated = /\/cloud_assistant_artifacts_test(?:\?|$)/.test(process.env.DAT
       shortId === "project1" ? aiProjects.get(projectId,subject,permission) : null);
     const contextual = {...stranger,conversationId};
     try {
-      const script = await artifacts.create({kind:"script",title:"Shared calculation",source},owner);
-      expect(script.kind).toBe("script");
+      const script = await artifacts.create({kind:"app",title:"Shared calculation",source},owner);
+      expect(script.kind).toBe("app");
       await artifacts.linkProject(script.id,"project1",true,owner);
       expect(await artifacts.projects(script.id,owner)).toEqual([{projectId}]);
       const administrator={...owner,actor:{kind:"user" as const,user:{...owner.user,roles:["admin" as const]}}};
@@ -699,9 +749,8 @@ const isolated = /\/cloud_assistant_artifacts_test(?:\?|$)/.test(process.env.DAT
       expect((await artifacts.get(script.id,contextual)).permission).toBe("read");
       expect(await artifacts.describe([script.id],stranger.user.id,conversationId)).toHaveLength(1);
       expect(await artifacts.describe([script.id],stranger.user.id)).toEqual([]);
-      expect((await artifacts.list(contextual,1,"script")).items.map(item=>item.id)).toContain(script.id);
-      expect((await artifacts.list(stranger,1,"script")).items.map(item=>item.id)).not.toContain(script.id);
-      expect((await artifacts.list(contextual,1,"app")).items.map(item=>item.id)).not.toContain(script.id);
+      expect((await artifacts.list(contextual,1)).items.map(item=>item.id)).toContain(script.id);
+      expect((await artifacts.list(stranger,1)).items.map(item=>item.id)).not.toContain(script.id);
       const toolContext = {...contextual, locale: "en", signal: new AbortController().signal};
       expect(await artifactCodeHandlers.code_read({id:script.id,path:"main.js",offset:0},toolContext))
         .toMatchObject({ok:true,data:{data:{content:source.files[0]!.content}}});
@@ -718,8 +767,8 @@ const isolated = /\/cloud_assistant_artifacts_test(?:\?|$)/.test(process.env.DAT
       await artifacts.linkProject(script.id,projectId,false,owner);
       await expect(artifacts.get(script.id,contextual)).rejects.toMatchObject({code:"ACCESS_DENIED"});
       await artifacts.grant(script.id,{type:"user",userId:stranger.user.id},"read",owner);
-      expect((await artifacts.get(script.id,stranger)).kind).toBe("script");
-      expect((await artifacts.fork(script.id,stranger)).kind).toBe("script");
+      expect((await artifacts.get(script.id,stranger)).kind).toBe("app");
+      expect((await artifacts.fork(script.id,stranger)).kind).toBe("app");
     } finally { conversation.mockRestore(); project.mockRestore(); shortProject.mockRestore(); }
   });
 

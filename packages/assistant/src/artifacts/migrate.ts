@@ -17,6 +17,11 @@ export async function migrateArtifacts() {
     db`UPDATE assistant.artifacts SET short_id=${shortId} WHERE id=${row.id}::uuid AND short_id IS NULL`);
   await sql`ALTER TABLE assistant.artifacts ALTER COLUMN short_id SET NOT NULL`.simple();
   await sql`ALTER TABLE assistant.artifacts ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL DEFAULT 'app' CHECK(kind IN ('app','script'))`.simple();
+  // Preserve IDs, revisions, grants, project links and shared data. Saved
+  // scripts become ordinary reusable Apps; one-off code has no row here.
+  await sql`UPDATE assistant.artifacts SET kind='app' WHERE kind='script'`.simple();
+  await sql`ALTER TABLE assistant.artifacts DROP CONSTRAINT IF EXISTS artifacts_kind_check`.simple();
+  await sql`ALTER TABLE assistant.artifacts ADD CONSTRAINT artifacts_kind_check CHECK(kind='app')`.simple();
   await sql`ALTER TABLE assistant.artifacts ADD COLUMN IF NOT EXISTS description TEXT NOT NULL DEFAULT ''`.simple();
   await sql`ALTER TABLE assistant.artifacts
     ADD COLUMN IF NOT EXISTS published_revision INTEGER,

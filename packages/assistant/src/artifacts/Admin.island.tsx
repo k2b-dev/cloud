@@ -62,7 +62,7 @@ export default function Admin(props:{initial:Awaited<ReturnType<typeof artifactA
     <form onSubmit={event=>{event.preventDefault();page(1);}} class="flex gap-2"><TextInput aria-label={t().search} placeholder={t().search} value={search()} onValueChange={setSearch} /><Button type="submit">{t().search}</Button></form>
     <Show when={error()}><Placeholder state="error" title={t().REQUEST_FAILED} description={error()} /></Show>
     <DataTable rows={props.initial.items} getRowId={row=>row.id} empty={t().noAccessibleApps}
-      columns={[{id:"title",header:t().apps,value:row=>row.title},{id:"kind",header:t().kind,value:row=>row.kind==="app" ? t().guiApps : t().scripts},{id:"published",header:t().published,value:row=>row.published ? t().published : t().unpublished},{id:"files",header:t().files,value:row=>row.files},{id:"kv",header:"KV",value:row=>row.kv},{id:"bytes",header:"Bytes",value:row=>row.bytes},{id:"database",header:t().database},{id:"projects",header:t().projects},{id:"actions",header:t().actions}]}
+      columns={[{id:"title",header:t().apps,value:row=>row.title},{id:"published",header:t().published,value:row=>row.published ? t().published : t().unpublished},{id:"files",header:t().files,value:row=>row.files},{id:"kv",header:"KV",value:row=>row.kv},{id:"bytes",header:"Bytes",value:row=>row.bytes},{id:"database",header:t().database},{id:"projects",header:t().projects},{id:"actions",header:t().actions}]}
       renderCell={({row,col,value,render})=>{
         if(col.id==="database")return row.database ? t().present : t().absent;
         if(col.id==="projects")return row.projects.length ? <Button size="sm" variant="text" onClick={()=>prompts.dialog<void>(()=><div class="flex flex-col gap-3">

@@ -53,7 +53,6 @@ export function ArtifactPanel(props: { artifactId: string; refreshKey?: string; 
   const [loading, setLoading] = createSignal(false);
   const [error, setError] = createSignal("");
   const [consoleOpen, setConsoleOpen] = createSignal(false);
-  createEffect(() => { if (metadata()?.kind === "script") setConsoleOpen(true); });
   const consoleId = `artifact-console-${createUniqueId()}`;
   createEffect(on(() => error() || state()?.error, (failure) => { if (failure) setConsoleOpen(true); }));
   const [revision, setRevision] = createSignal<number>();

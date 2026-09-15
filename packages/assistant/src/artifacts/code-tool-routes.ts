@@ -46,6 +46,7 @@ function register<S extends z.ZodType>(name: string, schema: S, run: (input: z.o
   );
 }
 
+register("code_actions", CODE_SOURCE_TOOLS.code_actions.input, artifactCodeHandlers.code_actions);
 register("code_sql", CODE_SOURCE_TOOLS.code_sql.input, artifactCodeHandlers.code_sql);
 register("code_versions", CODE_SOURCE_TOOLS.code_versions.input, artifactCodeHandlers.code_versions);
 register("code_list", CODE_SOURCE_TOOLS.code_list.input, artifactCodeHandlers.code_list);
@@ -59,6 +60,6 @@ register("code_create", CODE_SOURCE_TOOLS.code_create.input, artifactCodeHandler
 register("code_write", CODE_SOURCE_TOOLS.code_write.input, artifactCodeHandlers.code_write);
 register("code_remove", CODE_SOURCE_TOOLS.code_remove.input, artifactCodeHandlers.code_remove);
 
-for (const name of ["code_run","code_inspect","code_interact","code_stop","code_export"] as const) {
+for (const name of ["code_run","code_action","code_inspect","code_interact","code_stop","code_export"] as const) {
   register(name,AgentHostRequest.refine(input=>input.name===name),async(input,context)=>ok(await agentHost.call(input,context)));
 }

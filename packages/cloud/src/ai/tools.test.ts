@@ -183,11 +183,12 @@ describe("AI tools", () => {
       expect(defaults.tools.some((entry) => entry.def.name === tool.def.name)).toBe(false);
       expect(CLOUD_AI_DEFERRED_BUILTIN_TOOL_NAMES.has(tool.def.name)).toBe(true);
     }
-    expect(browser.tools).toHaveLength(7);
+    expect(browser.tools).toHaveLength(8);
     expect(browser.frontendModes.get("code_secret")).toBe("client");
     expect(browser.approvalPolicies.get("code_secret")).toBe("never");
     expect(browser.frontendModes.get("code_run")).toBeUndefined();
     expect(browser.tools.find(tool=>tool.def.name==="code_run")?.kind).toBe("server");
+    expect(browser.tools.find(tool=>tool.def.name==="code_action")?.kind).toBe("server");
     expect(browser.frontendModes.get("code_open")).toBe("client");
     expect(browser.approvalPolicies.get("code_run")).toBe("never");
   });

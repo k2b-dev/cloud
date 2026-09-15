@@ -16,19 +16,21 @@ const Claim = z.discriminatedUnion("status", [
   z.object({ status: z.literal("execute") }), z.object({ status: z.literal("pending") }),
   z.object({ status: z.literal("interrupted") }), z.object({ status: z.literal("done"), result: z.json() }),
 ]);
-type Entry = { session: ArtifactSession; container: HTMLElement; artifactId?: string; revision: number; conversationId: string; resourceId?: string };
+type Entry = { session: ArtifactSession; container: HTMLElement; artifactId?: string; revision: number; conversationId: string; resourceId?: string; outputSchema?: z.ZodType };
 const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 const text = (value: string, max = 1000) => value.length > max ? `${value.slice(0, max)}…` : value;
 
 function inspect(runId: string, entry: Entry, options: { nodeId?: string; offset: number; limit: number } = { offset: 0, limit: 20 }) {
   const state = entry.session.snapshot();
+  const invalidOutput = entry.outputSchema && state.status === "ready" && !state.busy && state.work?.status !== "running"
+    && !entry.outputSchema.safeParse(state.output).success;
   const output = state.output === undefined ? null : JSON.stringify(state.output);
   const { offset, limit, nodeId } = options;
   const selected = nodeId ? state.nodes.filter((node) => node.id === nodeId) : state.nodes.slice(offset, offset + limit);
   if (nodeId && !selected.length) throw new Error("UI node not found");
   return {
-    runId, id: entry.artifactId, revision: entry.artifactId ? entry.revision : undefined, resourceId: entry.resourceId, status: state.status, busy: state.busy, work: state.work,
-    error: state.error ? text(state.error, 6000) : null, modal: state.modal ? { ...state.modal, id: state.modalId } : null,
+    runId, id: entry.artifactId, revision: entry.artifactId ? entry.revision : undefined, resourceId: entry.resourceId, status: invalidOutput ? "error" : state.status, busy: state.busy, work: state.work,
+    error: invalidOutput ? "Action output does not match its schema. Effects may have completed; inspect state before retrying." : state.error ? text(state.error, 6000) : null, modal: state.modal ? { ...state.modal, id: state.modalId } : null,
     totalNodes: state.nodes.length, nextNodeOffset: !nodeId && offset + limit < state.nodes.length ? offset + limit : null,
     nodes: selected.map(node => ({ id: node.id, ...inspectAnalytics(node, offset, limit, Boolean(nodeId)) })),
     logs: state.logs.slice(-20).map((log) => ({ ...log, text: text(log.text, 2000) })),
@@ -62,7 +64,13 @@ export function createArtifactAgentRuntime(open: ((tab: WorkspaceTab) => void) |
       await pause(20);
     }
   }
-  async function execute(input: CodeRuntimeInput, conversationId: string, callId: string, signal: AbortSignal) {
+  async function execute(input: CodeRuntimeInput, conversationId: string, callId: string, signal: AbortSignal,
+    invocation?: Awaited<ReturnType<typeof artifactClient.action>>): Promise<unknown> {
+    if (input.operation === "action") {
+      const { operation, ...request } = input;
+      const prepared = await artifactClient.action(request, conversationId, signal);
+      return execute({ operation: "run", id: input.id, inputPaths: [] }, conversationId, callId, signal, prepared);
+    }
     if (input.operation === "secret") {
       if (!httpHost?.secret) throw new Error("Secret input requires the Assistant web UI. Configure personal secrets there before running CLI code.");
       return httpHost.secret({resourceId:input.resourceId,conversationId},{name:input.name,origin:input.origin,header:input.header,prefix:input.prefix},signal);
@@ -71,7 +79,6 @@ export function createArtifactAgentRuntime(open: ((tab: WorkspaceTab) => void) |
       const app = await artifactClient.get(input.id);
       signal.throwIfAborted();
       if (abort.signal.aborted) throw new Error("Browser workspace disconnected");
-      if (app.kind !== "app") throw new Error("Scripts run with code_run; only GUI apps open in the app panel.");
       if (!open) return { href: `/app/assistant/apps/${app.id}`, started: false };
       open(appTab(app.id, app.title));
       return { opened: app.id, started: false };
@@ -92,7 +99,7 @@ export function createArtifactAgentRuntime(open: ((tab: WorkspaceTab) => void) |
       }
       if (input.resourceId) await artifactClient.access(input.resourceId);
       const dataId = input.resourceId ?? input.id;
-      const current = input.id ? await artifactClient.get(input.id, false, input.version, conversationId) : undefined;
+      const current = invocation?.resource ?? (input.id ? await artifactClient.get(input.id, false, input.version, conversationId) : undefined);
       const source = conversationFileSource("/api/ai", conversationId);
       const listed = input.inputPaths.length ? await source.list() : [];
       const selected = input.inputPaths.map((path) => {
@@ -119,9 +126,9 @@ export function createArtifactAgentRuntime(open: ((tab: WorkspaceTab) => void) |
         for(const file of selected)files.push(await readInput(file.path,readSignal));
         return files;
       };
-      const compiled = current
+      const compiled = invocation?.compiled ?? (current
         ? await artifactClient.compiled(current.id, current.sourceRevision, conversationId)
-        : await artifactClient.compile({entry:"main.ts",files:[{path:"main.ts",content:input.code!}]});
+        : await artifactClient.compile({entry:"main.ts",files:[{path:"main.ts",content:input.code!}]}));
       signal.throwIfAborted();
       if (abort.signal.aborted) throw new Error("Browser workspace disconnected");
       const container = document.createElement("div"); container.hidden = true; document.body.append(container);
@@ -145,7 +152,8 @@ export function createArtifactAgentRuntime(open: ((tab: WorkspaceTab) => void) |
         throw error;
       }
       const runId = callId;
-      const entry = { session, container, artifactId: input.id, resourceId: input.resourceId, revision: current?.sourceRevision ?? 0, conversationId };
+      const entry = { session, container, artifactId: input.id, resourceId: input.resourceId, revision: current?.sourceRevision ?? 0, conversationId,
+        outputSchema: invocation ? z.fromJSONSchema(invocation.outputSchema) : undefined };
       runs.set(runId, entry);
       await waitFor(entry, () => session.snapshot().status !== "starting" || session.snapshot().work?.status === "running");
       return inspect(runId, entry);
@@ -243,7 +251,7 @@ export function createArtifactAgentRuntime(open: ((tab: WorkspaceTab) => void) |
         renewing = false;
         if (Date.now() >= leaseUntil) {
           callAbort.abort(new Error("Execution ownership expired; inspect effects before retrying"));
-          const entry = runs.get(input.operation === "run" ? callId : "runId" in input ? input.runId : "");
+          const entry = runs.get(["run", "action"].includes(input.operation) ? callId : "runId" in input ? input.runId : "");
           if (entry) void entry.session.stop();
         }
       }
@@ -254,7 +262,7 @@ export function createArtifactAgentRuntime(open: ((tab: WorkspaceTab) => void) |
       result = await Promise.race([
         execute(input, conversationId, callId, signal),
         new Promise((_, reject) => { timer = setInterval(() => {
-          const entry = runs.get(input.operation === "run" ? callId : "runId" in input ? input.runId : "");
+          const entry = runs.get(["run", "action"].includes(input.operation) ? callId : "runId" in input ? input.runId : "");
           // Waiting for a human is not execution time. Keep the watchdog for
           // stalled work, but allow the user to consider an approval.
           if (entry?.session.snapshot().approvalPending) operationDeadline = Date.now() + 45000;
@@ -270,7 +278,7 @@ export function createArtifactAgentRuntime(open: ((tab: WorkspaceTab) => void) |
     // The model receives only bounded JSON, never Blob or Solid proxy objects.
     const encoded = JSON.stringify(result);
     const bounded: unknown = new TextEncoder().encode(encoded).byteLength <= 256 * 1024
-      ? JSON.parse(encoded) : { runId: input.operation === "run" ? callId : "runId" in input ? input.runId : null, error: "Inspection exceeds 256 KiB. Use inspect with a nodeId and smaller limit." };
+      ? JSON.parse(encoded) : { runId: ["run", "action"].includes(input.operation) ? callId : "runId" in input ? input.runId : null, error: "Inspection exceeds 256 KiB. Use inspect with a nodeId and smaller limit." };
     if (execution === "chat-tool") await request("complete", { ...call, result: bounded });
     return bounded;
   };

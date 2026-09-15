@@ -1,3 +1,4 @@
+import { sourceActions } from "./actions";
 import { artifactDatabase, DatabaseError } from "./database";
 import { CODE_SOURCE_TOOLS, readAiConversationFile } from "@k2b/cloud/ai";
 import { CAPABILITY_MAX_RESULT_BYTES } from "@k2b/cloud/contracts";
@@ -59,6 +60,11 @@ async function result<T>(
 }
 
 export const artifactCodeHandlers = {
+  code_actions: ({ id, draft }, context) => result(context, async () => {
+    const bundle = await artifacts.get(id, context, undefined, !draft);
+    if (draft && bundle.permission !== "admin") throw new ArtifactError("ACCESS_DENIED");
+    return { data: { id, publishedVersion: bundle.publishedVersion, revision: bundle.sourceRevision, actions: sourceActions(bundle.source) }, ...links(id) };
+  }),
   code_sql: ({ id, sql, params }, context) =>
     result(context, async () => {
       const data = await artifactDatabase.call(id, { operation: "query", sql, params }, context, context.signal);
@@ -67,16 +73,15 @@ export const artifactCodeHandlers = {
       return { data };
     }),
   code_versions: ({ id, page }, context) => result(context, async () => ({ data: await artifacts.versions(id, context, page) })),
-  code_list: ({ page, kind, q }, context) =>
+  code_list: ({ page, q }, context) =>
     result(context, async () => {
-      const result = await artifacts.list(context, page, kind, q);
+      const result = await artifacts.list(context, page, q);
       return {
         data: {
           ...result,
           items: result.items.map(({ id, kind, title, description, permission, publishedRevision }) => ({
             id,
-            kind,
-            title,
+              title,
             description,
             permission,
             publishedRevision,
@@ -114,11 +119,10 @@ export const artifactCodeHandlers = {
     result(context, async () => ({ data: sourceManifest(await artifacts.restore(id, version, expectedRevision, context)), ...links(id) })),
   code_update: ({ id, ...patch }, context) =>
     result(context, async () => ({ data: sourceManifest(await artifacts.metadata(id, patch, context)), ...links(id) })),
-  code_create: ({ kind, title, description, icon }, context) =>
+  code_create: ({ title, description, icon }, context) =>
     result(context, async () => {
       const created = await artifacts.create(
         {
-          kind,
           title,
           description,
           icon,

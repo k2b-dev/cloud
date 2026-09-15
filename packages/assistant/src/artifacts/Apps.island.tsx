@@ -1,6 +1,6 @@
 import { createArtifactActions } from "./artifact-actions";
 import { StudioCard } from "./StudioCard";
-import { AppWorkspace, Button, Dropdown, Placeholder, Tabs, useLocale } from "@k2b/ui";
+import { AppWorkspace, Button, Dropdown, Placeholder, useLocale } from "@k2b/ui";
 import { navigateTo } from "@k2b/ssr/nav";
 import { createSignal, For, Show } from "solid-js";
 import type { AiConversation, AiProject } from "@k2b/cloud/ai";
@@ -15,7 +15,7 @@ import { openAssistantCreateProjectDialog } from "../frontend/AssistantProjectsD
 import { ManualEditor } from "./ManualEditor";
 import { SqlConsole } from "./SqlConsole";
 
-type Props = { kind?: "app" | "script"; userId: string; doneCount: number; conversations: AiConversation[]; projects: AiProject[];
+type Props = { userId: string; doneCount: number; conversations: AiConversation[]; projects: AiProject[];
   initialList: Awaited<ReturnType<typeof artifacts.list>>; initialApp?: ArtifactBundle;
   view?:"app"|"edit"|"database"; selectedFile?:string;
   databaseStatus?:Awaited<ReturnType<typeof artifactClient.databaseStatus>> };
@@ -28,8 +28,8 @@ export default function Apps(props: Props) {
   const [selectedVersion, setSelectedVersion] = createSignal<number>();
   const page = () => props.initialList.page;
   const [list, setList] = createSignal(props.initialList);
-  const reloadList = async () => setList(await artifactClient.list(page(), props.kind ?? "app"));
-  const setPage = (next: (page: number) => number) => navigateTo(`/app/assistant/apps?kind=${props.kind ?? "app"}&page=${next(page())}`);
+  const reloadList = async () => setList(await artifactClient.list(page()));
+  const setPage = (next: (page: number) => number) => navigateTo(`/app/assistant/apps?page=${next(page())}`);
   const [app, setApp] = createSignal(props.initialApp);
   const [editorDirty,setEditorDirty]=createSignal(false);
   const { menu, action, busy, error, publish, versions } = createArtifactActions({
@@ -45,8 +45,6 @@ export default function Apps(props: Props) {
       <div class="assistant-apps-page" classList={{ "assistant-apps-page--runner": !!app() }}>
         <Show when={app()} fallback={<>
           <h1 class="text-xl font-semibold">{t().apps}</h1>
-          <Tabs value={() => props.kind ?? "app"} onValueChange={kind => navigateTo(`/app/assistant/apps?kind=${kind}`)} ariaLabel={t().apps}
-            options={[{value:"app",label:t().guiApps},{value:"script",label:t().scripts}]} />
           <Show when={error()}><Placeholder state="error" title={t().REQUEST_FAILED} description={error()} /></Show>
               <Show when={list()?.items.length} fallback={<Placeholder title={t().noAccessibleApps} />}>
                 <div class="assistant-apps-grid"><For each={list()?.items}>{item =>

@@ -6,7 +6,6 @@ import { arg, command, flag, readCliInput } from "@k2b/cloud/cli";
 import { z } from "zod";
 import { jsonRequest, parseJson, printValue, queryString, readAssistantApi, requireConfirmation } from "./shared";
 import { DatabaseSql } from "../artifacts/database-contracts";
-import { ArtifactKind } from "../artifacts/contracts";
 import type { ArtifactBundle } from "../artifacts/service";
 
 const resource=arg.required({valueLabel:"resource-id"});
@@ -14,7 +13,56 @@ const path=(id:string,suffix="")=>`/artifacts/${encodeURIComponent(CodeResourceI
 const jsonInput=async(input:Parameters<typeof readCliInput>[0])=>parseJson(await readCliInput(input,{label:"JSON input",required:true})??"","input");
 const inputFlag=()=>flag.input({description:"JSON input; use --input-file or stdin, especially for secrets"});
 
+const runtimeCommand = (name: "run" | "action") => command(`code ${name}`,{summary:"Execute code in an isolated CLI worker, optionally with UI interactions and output exports",flags:{
+    chat:flag.string({description:"Existing chat ID for authorized inputs, outputs and Project context"}),
+    input:inputFlag(),steps:flag.input({description:"Optional JSON array of {name,args} steps: code_interact, code_inspect, code_export"}),
+    approve:flag.stringList({description:"Approve an exact capability name or http.fetch:https://origin for this run"}),
+  },async run({ctx,flags}){
+    if(!flags.chat)throw new Error("Provide --chat with an existing chat ID for the run context.");
+    const input=await jsonInput(flags.input);
+    parseCodeToolInput(name === "action" ? "code_action" : "code_run",input);
+    const stepsText=await readCliInput(flags.steps,{label:"Run steps"});
+    const steps=z.array(z.object({name:z.enum(["code_interact","code_inspect","code_export"]),args:z.record(z.string(),z.json())}).strict())
+      .parse(stepsText ? parseJson(stepsText,"run steps") : []);
+    const conversation=await resolveConversation(ctx,{conversationId:flags.chat});
+    const host=await createCliCodeHost(ctx,async request=>{
+      if(flags.approve?.includes(request.name))return {approved:true};
+      throw new Error(`Capability ${request.name} needs approval. Use an interactive Assistant chat or explicitly authorize it with --approve.`);
+    });
+    const runId=crypto.randomUUID(),base={conversationId:conversation.id,turnId:crypto.randomUUID()};
+    try {
+      const results:unknown[]=[];
+      const first=await host.execute({...base,callId:runId,name:name === "action" ? "code_action" : "code_run",args:input});
+      results.push(first);
+      if(first && typeof first==="object" && "error" in first && first.error)throw new Error(JSON.stringify(first));
+      for(const step of steps){
+        const args={...step.args,runId};
+        parseCodeToolInput(step.name,args);
+        const result=await host.execute({...base,callId:crypto.randomUUID(),name:step.name,args});
+        results.push(result);
+        if(result && typeof result==="object" && "error" in result && result.error)throw new Error(JSON.stringify(result));
+      }
+      // Keep the CLI host alive for a background job, including jobs started by
+      // the last interaction. Intermediate snapshots are not completed results.
+      const running = (value: unknown) => value && typeof value === "object" && "work" in value
+        && value.work && typeof value.work === "object" && "status" in value.work && value.work.status === "running";
+      let latest = results.at(-1);
+      if (running(latest)) {
+        do {
+          latest = await host.execute({...base,callId:crypto.randomUUID(),name:"code_inspect",args:{runId,waitMs:30000}});
+          if(latest && typeof latest==="object" && "error" in latest && latest.error)throw new Error(JSON.stringify(latest));
+          if(latest && typeof latest==="object" && "modal" in latest && latest.modal)throw new Error("Background job is waiting for a dialog. Supply a code_interact step to answer it.");
+        } while (running(latest));
+        results.push(latest);
+      }
+      printValue(ctx,results.length===1 ? first : results);
+    } finally {await host.close();}
+  }});
+
 export const assistantCodeCommands=[
+  command("code actions", {summary:"Discover published App actions and input/output schemas",args:{id:resource},flags:{conversation:flag.string(),draft:flag.boolean()},async run({ctx,args,flags}) {
+    printValue(ctx,await readAssistantApi(ctx,path(args.id,"/actions")+queryString({conversationId:flags.conversation,draft:flags.draft ? "true" : undefined})));
+  }}),
   command("code database-status",{summary:"Read resource database status without creating it (Manage access)",args:{id:resource},async run({ctx,args}){
     printValue(ctx,await readAssistantApi(ctx,path(args.id,"/database/status")));
   }}),
@@ -57,56 +105,13 @@ export const assistantCodeCommands=[
     requireConfirmation(flags.yes,"Clearing shared storage");
     printValue(ctx,await readAssistantApi(ctx,path(args.id,"/storage/clear"),jsonRequest("POST",{area:z.enum(["files","kv","all"]).parse(flags.area),confirmed:true})));
   }}),
-  command("code run",{summary:"Execute code in an isolated CLI worker, optionally with UI interactions and output exports",flags:{
-    chat:flag.string({description:"Existing chat ID for authorized inputs, outputs and Project context"}),
-    input:inputFlag(),steps:flag.input({description:"Optional JSON array of {name,args} steps: code_interact, code_inspect, code_export"}),
-    approve:flag.stringList({description:"Approve an exact capability name or http.fetch:https://origin for this run"}),
-  },async run({ctx,flags}){
-    if(!flags.chat)throw new Error("Provide --chat with an existing chat ID for the run context.");
-    const input=await jsonInput(flags.input);
-    parseCodeToolInput("code_run",input);
-    const stepsText=await readCliInput(flags.steps,{label:"Run steps"});
-    const steps=z.array(z.object({name:z.enum(["code_interact","code_inspect","code_export"]),args:z.record(z.string(),z.json())}).strict())
-      .parse(stepsText ? parseJson(stepsText,"run steps") : []);
-    const conversation=await resolveConversation(ctx,{conversationId:flags.chat});
-    const host=await createCliCodeHost(ctx,async request=>{
-      if(flags.approve?.includes(request.name))return {approved:true};
-      throw new Error(`Capability ${request.name} needs approval. Use an interactive Assistant chat or explicitly authorize it with --approve.`);
-    });
-    const runId=crypto.randomUUID(),base={conversationId:conversation.id,turnId:crypto.randomUUID()};
-    try {
-      const results:unknown[]=[];
-      const first=await host.execute({...base,callId:runId,name:"code_run",args:input});
-      results.push(first);
-      if(first && typeof first==="object" && "error" in first && first.error)throw new Error(JSON.stringify(first));
-      for(const step of steps){
-        const args={...step.args,runId};
-        parseCodeToolInput(step.name,args);
-        const result=await host.execute({...base,callId:crypto.randomUUID(),name:step.name,args});
-        results.push(result);
-        if(result && typeof result==="object" && "error" in result && result.error)throw new Error(JSON.stringify(result));
-      }
-      // Keep the CLI host alive for a background job, including jobs started by
-      // the last interaction. Intermediate snapshots are not completed results.
-      const running = (value: unknown) => value && typeof value === "object" && "work" in value
-        && value.work && typeof value.work === "object" && "status" in value.work && value.work.status === "running";
-      let latest = results.at(-1);
-      if (running(latest)) {
-        do {
-          latest = await host.execute({...base,callId:crypto.randomUUID(),name:"code_inspect",args:{runId,waitMs:30000}});
-          if(latest && typeof latest==="object" && "error" in latest && latest.error)throw new Error(JSON.stringify(latest));
-          if(latest && typeof latest==="object" && "modal" in latest && latest.modal)throw new Error("Background job is waiting for a dialog. Supply a code_interact step to answer it.");
-        } while (running(latest));
-        results.push(latest);
-      }
-      printValue(ctx,results.length===1 ? first : results);
-    } finally {await host.close();}
+  runtimeCommand("run"),
+  runtimeCommand("action"),
+  command("code list",{summary:"List accessible Apps; optionally in a Project chat context",flags:{search:flag.string(),page:flag.string(),conversation:flag.string()},async run({ctx,flags}){
+    printValue(ctx,await readAssistantApi(ctx,"/artifacts"+queryString({q:flags.search,page:flags.page,conversationId:flags.conversation})));
   }}),
-  command("code list",{summary:"List accessible apps and saved scripts; optionally in a Project chat context",flags:{kind:flag.string(),search:flag.string(),page:flag.string(),conversation:flag.string()},async run({ctx,flags}){
-    printValue(ctx,await readAssistantApi(ctx,"/artifacts"+queryString({kind:flags.kind,q:flags.search,page:flags.page,conversationId:flags.conversation})));
-  }}),
-  command("code create",{summary:"Create a private app or saved script",args:{title:arg.required()},flags:{kind:flag.string(),description:flag.string(),icon:flag.string()},async run({ctx,args,flags}){
-    printValue(ctx,await readAssistantApi(ctx,"/artifacts",jsonRequest("POST",{title:args.title,kind:ArtifactKind.parse(flags.kind??"app"),description:flags.description,icon:flags.icon,source:{entry:"main.ts",files:[{path:"main.ts",content:"export default () => {};\n"}]}})));
+  command("code create",{summary:"Create a private reusable App",args:{title:arg.required()},flags:{description:flag.string(),icon:flag.string()},async run({ctx,args,flags}){
+    printValue(ctx,await readAssistantApi(ctx,"/artifacts",jsonRequest("POST",{title:args.title,description:flags.description,icon:flags.icon,source:{entry:"main.ts",files:[{path:"main.ts",content:"export default () => {};\n"}]}})));
   }}),
   command("code get",{summary:"Read source and metadata; Project context grants read/run only",args:{id:resource},flags:{conversation:flag.string(),version:flag.string()},async run({ctx,args,flags}){
     printValue(ctx,await readAssistantApi(ctx,path(args.id)+queryString({conversationId:flags.conversation,version:flags.version})));

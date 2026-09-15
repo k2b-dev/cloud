@@ -3,7 +3,7 @@ import { z } from "zod";
 export const CodeResourceId = z.string().regex(/^[23456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz]{6}$/).describe("Public resource short ID returned by code_create or code_list.");
 const id = CodeResourceId;
 const runId = z.string().min(1).max(180).describe("Run ID returned by code_run in this conversation execution host.");
-export const CODE_RUNTIME_TOOL_NAMES = ["code_run", "code_inspect", "code_interact", "code_stop", "code_open", "code_export", "code_secret"] as const;
+export const CODE_RUNTIME_TOOL_NAMES = ["code_run", "code_action", "code_inspect", "code_interact", "code_stop", "code_open", "code_export", "code_secret"] as const;
 export const CodeRunInput = z.object({
   id: id.optional(),
   resourceId: id.optional().describe("Optional data context for one-off code. Requires Manage; uses this resource database and shared files/KV without changing its source. Local storage stays temporary."),
@@ -11,6 +11,13 @@ export const CodeRunInput = z.object({
   code: z.string().min(1).max(1024 * 1024).optional().describe("One-off JavaScript/TypeScript entry exporting one function. Use code OR a saved resource id; no title or icon needed."),
   inputPaths: z.array(z.string().min(1).max(500)).max(64).default([]).describe("Explicit current-chat input files. Scripts can read them; app test runs expose them only through the simulated picker. User apps never receive chat files."),
 }).strict().refine(input => Number(input.id !== undefined) + Number(input.code !== undefined) === 1, "Provide exactly one of id or code").refine(input => input.version === undefined || input.id !== undefined,"A published version requires a saved resource id").refine(input => input.resourceId === undefined || input.code !== undefined, "resourceId requires one-off code");
+export const CodeActionInput = z.object({
+  id,
+  action: z.string().regex(/^[a-z][a-zA-Z0-9_]*$/).max(80).describe("Exact name returned by code_actions."),
+  publishedVersion: z.number().int().positive().optional().describe("Exact publication returned by code_actions; a changed publication requires fresh discovery. Supply this OR draft revision."),
+  revision: z.number().int().positive().optional().describe("Exact draft revision returned by code_actions({draft:true}); Manage required. Supply this OR publishedVersion."),
+  input: z.json().describe("Action input matching the discovered inputSchema."),
+}).strict().refine(input => Number(input.publishedVersion !== undefined) + Number(input.revision !== undefined) === 1, "Supply publishedVersion OR draft revision");
 export const CodeInspectInput = z.object({ runId, waitMs: z.number().int().min(0).max(30000).default(0).describe("Wait up to this duration for background work to finish before returning its real state; never restarts work."), nodeId: z.string().min(1).max(80).optional(), offset: z.number().int().min(0).default(0), limit: z.number().int().min(1).max(100).default(20) }).strict();
 const CodeInteraction = z.object({
   id: z.string().min(1).max(80).describe("Control ID or pending modal ID returned by the snapshot."),
@@ -45,6 +52,7 @@ export const CodeSecretInput = z.object({
 // Internal bridge envelope. Each model-facing tool receives only its own flat schema.
 export const CodeRuntimeInput = z.discriminatedUnion("operation", [
   CodeRunInput.safeExtend({ operation: z.literal("run") }),
+  CodeActionInput.safeExtend({ operation: z.literal("action") }),
   CodeInspectInput.extend({ operation: z.literal("inspect") }),
   CodeInteractInput.safeExtend({ operation: z.literal("interact") }),
   CodeStopInput.extend({ operation: z.literal("stop") }),
@@ -56,6 +64,7 @@ export type CodeRuntimeInput = z.infer<typeof CodeRuntimeInput>;
 export function parseCodeToolInput(name: string, args: unknown): CodeRuntimeInput {
   switch (name) {
     case "code_secret": return { operation: "secret", ...CodeSecretInput.parse(args) };
+    case "code_action": return { operation: "action", ...CodeActionInput.parse(args) };
     case "code_run": return { operation: "run", ...CodeRunInput.parse(args) };
     case "code_inspect": return { operation: "inspect", ...CodeInspectInput.parse(args) };
     case "code_interact": return { operation: "interact", ...CodeInteractInput.parse(args) };

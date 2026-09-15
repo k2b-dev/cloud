@@ -1,12 +1,12 @@
 ---
 name: assistant-code-mode
-description: Inspect and transform unfamiliar data, analyze files, compare results across Cloud apps, or build and improve interactive apps and reusable scripts in Assistant Studio. Use for quick code experiments, data analysis, file generation, resource SQL queries and combining discovered Cloud capabilities. For plain arithmetic or date offsets, answer directly or use calculate. Work on existing Kit resources belongs to cloud-kit.
+description: Inspect and transform unfamiliar data, analyze files, compare results across Cloud apps, or build and improve interactive and agent-only Apps in Assistant Studio. Use for quick code experiments, data analysis, file generation, resource SQL queries and combining discovered Cloud capabilities. For plain arithmetic or date offsets, answer directly or use calculate. Work on existing Kit resources belongs to cloud-kit.
 ---
 # Assistant code mode
 
-Choose the smallest useful result: one-off answer, exported file, reusable script,
-or interactive Studio app. A saved script may be agent-only with no GUI; an app
-may be a display-only dashboard. Neither needs artificial controls. Reuse an
+Choose the smallest useful result: one-off answer, exported file, or reusable
+Studio App. Apps may expose agent actions, a display-only dashboard, or both.
+Persistence is optional. One-off scripts stay in their chat and cannot be shared. Reuse an
 existing Cloud feature when it fits. For a
 quick reading of an uploaded PDF or Office document, `read_file` can return
 Markdown; use code for exact cells, calculations, original PDF text or positions.
@@ -72,7 +72,8 @@ supported surface; links within references add related workflows when needed.
 | Resource SQL, schema, row CRUD, imports | [Database](references/database.md) |
 | Discovered Cloud queries/actions | [Capability calls](references/capabilities.md) |
 | External HTTPS and personal secrets | [HTTP and secrets](references/http.md) |
-| Reuse work across chats, create or edit an app/script, agent-only scripts | [Source workflow](references/source-workflow.md) |
+| Call a published App action; declare handlers | [App actions](references/app-actions.md) |
+| Reuse work across chats, create or edit an App | [Source workflow](references/source-workflow.md) |
 | Publish, restore, copy, grant access | [Publishing and access](references/publishing.md) |
 | Execute, inspect, interact, export, stop, diagnose errors | [Run and debug](references/debugging.md) |
 | Unfamiliar inputs or cross-app investigation | [Investigation](references/investigation.md) |
@@ -97,7 +98,7 @@ name, and `present` its returned chat path. `files.save` returns no path.
 Reuse exported data via its path/version rather than retyping truncated output.
 Reconcile row counts, exclusions and totals before reporting findings.
 
-Open apps with `code_open`; saved scripts remain in Studio. Saving or testing does
+Open GUI apps with `code_open`. Saving or testing does
 not replace a user's already-running app. Stop runs no longer needed that retain
 UI, jobs or output files. Never claim an unexecuted result is verified.
 

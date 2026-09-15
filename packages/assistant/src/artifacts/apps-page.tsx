@@ -6,19 +6,17 @@ import { ssr } from "../config";
 import { loadAssistantSidebarSnapshot } from "../sidebar";
 import { artifacts, ArtifactError } from "./service";
 import { artifactMessages } from "./messages";
-import { ArtifactKind } from "./contracts";
 import Apps from "./Apps.island";
 import { artifactDatabase } from "./database";
 import { ArtifactPath } from "./contracts";
 
 export default ssr<AuthContext>(async c => {
   const user = expectUserBackedActor(c), identity = { actor: c.get("actor"), accessSubject: c.get("accessSubject") };
-  const kind = ArtifactKind.catch("app").parse(c.req.query("kind") ?? "app");
   const t = artifactMessages.resolve([getLocale(c)]).t;
   if (c.req.param("id") && !CodeResourceId.safeParse(c.req.param("id")).success) return ssr.error(c, 404);
   try {
     const [sidebar, list, app] = await Promise.all([
-      loadAssistantSidebarSnapshot(user.id), artifacts.list(identity, z.coerce.number().int().min(1).max(100000).catch(1).parse(c.req.query("page") ?? 1), kind),
+      loadAssistantSidebarSnapshot(user.id), artifacts.list(identity, z.coerce.number().int().min(1).max(100000).catch(1).parse(c.req.query("page") ?? 1)),
       c.req.param("id") ? artifacts.get(c.req.param("id")!, identity) : undefined,
     ]);
     const view=c.req.path.endsWith("/edit")?"edit":c.req.path.endsWith("/database")?"database":"app";
@@ -26,7 +24,7 @@ export default ssr<AuthContext>(async c => {
     const databaseStatus=view==="database"&&app?await artifactDatabase.status(app.id,identity,c.req.raw.signal):undefined;
     const selectedFile=ArtifactPath.safeParse(c.req.query("file"));
     return () => <Layout c={c} fullPage title={[{ title: t.apps, href: "/app/assistant/apps" }, ...(app ? [{ title: app.title }] : [])]}>
-      <Apps kind={kind} userId={user.id} conversations={sidebar.conversations} doneCount={sidebar.doneCount} projects={sidebar.projects} initialList={list} initialApp={app}
+      <Apps userId={user.id} conversations={sidebar.conversations} doneCount={sidebar.doneCount} projects={sidebar.projects} initialList={list} initialApp={app}
         view={view} databaseStatus={databaseStatus} selectedFile={selectedFile.success?selectedFile.data:undefined}/>
     </Layout>;
   } catch (e) {

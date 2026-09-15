@@ -11,7 +11,7 @@ import { app } from "../config";
 import { checkStorageBudget } from "./storage-budget";
 import { StorageRequest, STORAGE_FILE_MAX_BYTES } from "./storage-contracts";
 import { LIMITS, ArtifactKind, ArtifactMetadata, PublicationNote, ArtifactCreate, ArtifactFile, ArtifactPath, ArtifactSource, ArtifactUpdate } from "./contracts";
-import { compileArtifact } from "./runtime/compile";
+import { validateArtifact } from "./runtime/compile";
 
 export type ArtifactIdentity = { actor: AuthContext["Variables"]["actor"]; accessSubject: AccessSubject; conversationId?: string; administrative?: boolean };
 export class ArtifactError extends Error {
@@ -65,7 +65,7 @@ export async function requireArtifact(db: SQL, id: string, identity: ArtifactIde
     WHERE link.artifact_id=${id}::uuid AND ${match}
     ORDER BY CASE a.permission WHEN 'admin' THEN 3 WHEN 'write' THEN 2 WHEN 'read' THEN 1 ELSE 0 END DESC LIMIT 1`;
   let permission = identity.administrative && hasRole(user(identity),"admin") ? "admin" as const : grant?.permission ?? "none";
-  if (!hasPermission(permission, required) && required === "read" && row.kind === "script" && row.published_revision !== null) {
+  if (!hasPermission(permission, required) && required === "read" && row.published_revision !== null) {
     const projectId = await projectContext(identity);
     if (projectId) {
       const [link] = await db`SELECT 1 FROM assistant.artifact_projects WHERE artifact_id=${id}::uuid AND project_id=${projectId}::uuid`;
@@ -149,22 +149,20 @@ export const artifacts = {
       LEFT JOIN auth.access a ON a.id=link.access_id AND ${match} AND a.permission IN ('read','write','admin')
       WHERE artifact.short_id IN ${sql(valid)}
       GROUP BY artifact.id HAVING bool_or(a.permission='admin') OR (artifact.published_revision IS NOT NULL AND
-        (count(a.id)>0 OR (artifact.kind='script' AND EXISTS(SELECT 1 FROM assistant.artifact_projects project
+        (count(a.id)>0 OR (EXISTS(SELECT 1 FROM assistant.artifact_projects project
           WHERE project.artifact_id=artifact.id AND project.project_id=${projectId ?? null}::uuid))))`;
   },
-  async list(identity: ArtifactIdentity, page = 1, kind?: ArtifactKind, search = "") {
+  async list(identity: ArtifactIdentity, page = 1, search = "") {
     z.number().int().min(1).max(100000).parse(page);
     z.string().max(120).parse(search);
-    if (kind !== undefined) ArtifactKind.parse(kind);
     const match = predicate(identity), projectId = await projectContext(identity);
     const rows = await sql<(ArtifactRow & { permission: PermissionLevel })[]>`SELECT p.*, (SELECT origin.short_id FROM assistant.artifacts origin WHERE origin.id=p.forked_from_id) AS forked_from_short_id,
       CASE max(CASE a.permission WHEN 'admin' THEN 3 WHEN 'write' THEN 2 ELSE 1 END)
       WHEN 3 THEN 'admin' WHEN 2 THEN 'write' ELSE 'read' END AS permission
       FROM assistant.artifacts p LEFT JOIN assistant.artifact_access link ON link.artifact_id=p.id
       LEFT JOIN auth.access a ON a.id=link.access_id AND ${match} AND a.permission IN ('read','write','admin')
-      WHERE (${kind ?? null}::text IS NULL OR p.kind=${kind ?? null})
       GROUP BY p.id HAVING (bool_or(a.permission='admin') OR (p.published_revision IS NOT NULL AND
-        (count(a.id)>0 OR (p.kind='script' AND EXISTS(SELECT 1 FROM assistant.artifact_projects project
+        (count(a.id)>0 OR (EXISTS(SELECT 1 FROM assistant.artifact_projects project
           WHERE project.artifact_id=p.id AND project.project_id=${projectId ?? null}::uuid)))))
       AND strpos(lower(CASE WHEN bool_or(a.permission='admin') THEN p.title || ' ' || p.description
         ELSE coalesce(p.published_title,'') || ' ' || coalesce(p.published_description,'') END),lower(${search}))>0
@@ -298,7 +296,7 @@ export const artifacts = {
     PublicationNote.parse(note);
     const draft = await artifacts.get(id, identity);
     if (draft.permission !== "admin") throw new ArtifactError("ACCESS_DENIED");
-    await compileArtifact(draft.source);
+    await validateArtifact(draft.source);
     return sql.begin(async db => {
       const { row } = await requireArtifact(db, id, identity, "admin");
       id = row.id;
@@ -397,7 +395,6 @@ export const artifacts = {
     return sql.begin(async db => {
       const {row} = await requireArtifact(db,id,identity,"admin");
       id = row.id;
-      if (row.kind !== "script") throw new ArtifactError("INVALID_INPUT");
       if (linked) await db`INSERT INTO assistant.artifact_projects(artifact_id,project_id) VALUES(${id}::uuid,${projectId}::uuid) ON CONFLICT DO NOTHING`;
       else await db`DELETE FROM assistant.artifact_projects WHERE artifact_id=${id}::uuid AND project_id=${projectId}::uuid`;
       return {linked};

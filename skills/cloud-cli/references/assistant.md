@@ -98,12 +98,15 @@ Code has no Node/Bun environment, shell access, credentials, or unrestricted
 network access. This is separate from `--allow-bash`.
 
 ```bash
-cld assistant code list --kind script --json
+cld assistant code list --json
 cld assistant code list --search "sales totals" --json
-cld assistant code create "CSV totals" --kind script --description "Sum uploaded sales rows"
+cld assistant code create "CSV totals" --description "Sum uploaded sales rows"
 cld assistant code write <resource-id> main.ts --content-file main.ts
 cld assistant code get <resource-id> --json
 cld assistant code run --chat <chat-id> --input-file run.json --json
+cld assistant code actions <resource-id> --json
+cld assistant code actions <resource-id> --draft --json
+cld assistant code action --chat <chat-id> --input-file action.json --json
 cld assistant code publish <resource-id>
 cld assistant code versions <resource-id>
 cld assistant code restore <resource-id> 1
@@ -113,6 +116,17 @@ cld assistant code project-link <resource-id> <project-id>
 cld assistant code access <resource-id>
 cld assistant studio-admin list --json
 ```
+
+All reusable programs are Apps (GUI, agent actions, or both), with optional
+persistent data. One-off code belongs to its chat and cannot be shared.
+`code actions` reads the published `app.actions.json` contract without running
+code. `action.json` contains `{id,action,publishedVersion,input}`; copy the exact
+name and version from discovery and follow its JSON input schema. Use access
+suffices for published handlers. `--draft` discovery and `{id,action,revision,input}`
+require Manage and test the exact current draft. Supply one version selector.
+A changed version rejects execution; rediscover before retrying. Action errors,
+including invalid output, do not undo effects. The `code action` command uses
+the same isolated host, approval flags, and optional steps as `code run`.
 
 `run.json` contains either `{"code":"export default () => 42"}` for a one-off,
 or `{"id":"<resource-id>"}` for saved code. Add `inputPaths` for explicitly

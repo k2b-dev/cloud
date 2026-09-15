@@ -1,4 +1,5 @@
 import { ArtifactSource } from "../contracts";
+import { sourceActions } from "../actions";
 
 export function resolveSourceImport(importer: string, specifier: string): string {
   if (!specifier.startsWith("./") && !specifier.startsWith("../"))
@@ -40,22 +41,30 @@ export function runtimeSource(): Promise<string> {
   return runtime;
 }
 
-export async function compileArtifact(input: unknown) {
+export async function compileArtifact(input: unknown, invocation?: { action: string; input?: unknown }) {
   const source = ArtifactSource.parse(input);
+  const actions = sourceActions(source);
+  const action = invocation ? actions.find(action => action.name === invocation.action) : undefined;
+  if (invocation && !action) throw new Error(`Unknown app action: ${invocation.action}`);
+  const entry = action?.entry ?? source.entry;
   const runtimeCode = await runtimeSource();
   const files = new Map(source.files.map((file) => [file.path, file.content]));
+  // An action-only app needs no placeholder UI module. Its manifest and action
+  // modules remain the same immutable source bundle as an ordinary GUI app.
+  const headless = !invocation && actions.length > 0 && !files.has(entry);
   const build = await Bun.build({
     entrypoints: ["__artifact_entry__"], target: "browser", format: "iife",
     plugins: [{ name: "artifact-source", setup(builder) {
       builder.onResolve({ filter: /.*/ }, (args) => ({
         path: args.path === "__artifact_entry__" ? args.path
-          : args.importer === "__artifact_entry__" ? source.entry
+          : args.importer === "__artifact_entry__" ? entry
           : resolveSourceFile(args.importer, args.path, files),
         namespace: "artifact",
       }));
       builder.onLoad({ filter: /.*/, namespace: "artifact" }, (args) => {
         const contents = args.path === "__artifact_entry__"
-          ? `import entry from ${JSON.stringify("./" + source.entry)}; globalThis.__artifactStart(entry);`
+          ? headless ? "globalThis.__artifactStart(() => null);"
+            : `import entry from ${JSON.stringify("./" + entry)}; globalThis.__artifactStart(${invocation ? `() => entry(${JSON.stringify(invocation.input ?? null)})` : "entry"});`
           : files.get(args.path);
         if (contents === undefined) throw new Error(`Missing source file: ${args.path}`);
         if (args.path.endsWith(".json")) return { contents, loader: "json" };
@@ -68,6 +77,12 @@ export async function compileArtifact(input: unknown) {
   }).catch(error => { throw new Error(compilationDiagnostic(error)); });
   if (!build.success) throw new Error(build.logs.join("\n"));
   return { code: await build.outputs[0]!.text(), runtime: runtimeCode };
+}
+
+/** Compile every published handler without running any application code. */
+export async function validateArtifact(source: ArtifactSource) {
+  await compileArtifact(source);
+  for (const action of sourceActions(source)) await compileArtifact(source, { action: action.name });
 }
 
 /** Keep compiler messages useful to the author instead of dropping AggregateError details. */

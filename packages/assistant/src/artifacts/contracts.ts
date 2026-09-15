@@ -44,7 +44,7 @@ export const ArtifactSource = z.object({
 });
 export type ArtifactSource = z.infer<typeof ArtifactSource>;
 
-export const ArtifactKind = z.enum(["app", "script"]);
+export const ArtifactKind = z.literal("app");
 export type ArtifactKind = z.infer<typeof ArtifactKind>;
 
 export const ArtifactIcon = z.string().regex(/^ti ti-[a-z0-9-]+$/).max(80);
@@ -56,7 +56,7 @@ export const ArtifactMetadata = z.object({
 }).strict();
 
 export const ArtifactCreate = z.object({
-  kind: ArtifactKind.default("app").describe("app for a GUI, script for a saved reusable script. One-off code_run needs no resource."),
+  kind: ArtifactKind.default("app").describe("Reusable App with optional GUI, actions and persistence. One-off code_run needs no resource."),
   title: z.string().trim().min(1).max(120).describe("Short user-facing app title."),
   description: z.string().trim().max(500).optional().describe("One or two sentences explaining what this app does."),
   icon: ArtifactIcon.optional().describe("Tabler icon class, for example ti ti-calculator."),

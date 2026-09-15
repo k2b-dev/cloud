@@ -112,12 +112,12 @@ export function createArtifactActions(props: { userId: string; projects: AiProje
       {label:t().remove,icon:"ti ti-trash",action:async()=>{
         if(await prompts.confirm(t().removeConfirm,{title:t().remove,variant:"danger"})) await action(async()=>{
           await artifactClient.remove(item.id);
-          if(props.app?.()?.id===item.id)navigateTo(`/app/assistant/apps?kind=${item.kind}`);
+          if(props.app?.()?.id===item.id)navigateTo("/app/assistant/apps");
         });
       }},
       { label: a().assistantEdit, icon: "ti ti-edit", action: () => edit(item.id) },
       { label: t().share, icon: "ti ti-users", action: () => share(item) },
-      ...(item.kind === "script" ? [{label:t().projects,icon:"ti ti-folders",action:()=>projectLinks(item)}] : []),
+      {label:t().projects,icon:"ti ti-folders",action:()=>projectLinks(item)},
       { label: item.publishedRevision ? t().publishUpdate : t().publish, icon: "ti ti-upload",
         disabled: item.publishedRevision === item.revision,
         action: () => publish(item) },

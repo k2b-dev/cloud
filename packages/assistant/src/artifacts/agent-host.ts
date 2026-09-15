@@ -19,7 +19,7 @@ export const AgentHostRequest = z
   .object({
     turnId: z.uuid(),
     callId: z.string().min(1).max(180),
-    name: z.enum(["code_run", "code_inspect", "code_interact", "code_stop", "code_export"]),
+    name: z.enum(["code_run", "code_action", "code_inspect", "code_interact", "code_stop", "code_export"]),
     args: z.unknown(),
     decision: z.object({ id: z.uuid(), approved: z.boolean() }).optional(),
   })

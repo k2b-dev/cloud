@@ -5,48 +5,31 @@ pass code directly to `code_run`; no create/write sequence is needed. Before
 building an app around unfamiliar data, test its processing core with a small
 one-off and representative inputs. Then use the learned structure here.
 
-## Agent-only scripts and display-only dashboards
+## Agent-only Apps and display-only dashboards
 
-A saved resource does not require an interactive UI. Choose `kind:"script"`
-for a reusable procedure the agent calls with `code_run({id, inputPaths?})`.
-Persistence is optional: a reusable converter, validator or calculation can
-operate entirely on each run's inputs without a database or stored data.
-Return a small JSON result and optional output files; do not create buttons,
-modals or a dashboard merely to make it reusable. Its database and shared files/KV
-belong to that resource and survive runs and chats. Find it again with
-`code_list` and reuse its ID rather than creating a copy for each session.
-Variables and agent local storage do not survive as durable shared state.
+All reusable programs are Apps. Publish explicit [App actions](app-actions.md)
+for a procedure the agent can call without Manage access or artificial buttons.
+Persistence is optional: a reusable converter needs no database. A saved importer
+can use the same App's database and files across authorized chats. Initialize its
+schema with Manage before publishing; normal Use-level runs work with existing
+rows. Separate Apps have separate data. One-off scripts stay scoped to the chat;
+`code_run({code,resourceId})` explicitly requires Manage for App maintenance.
 
-For example, a saved importer can read explicitly supplied chat files, validate
-rows, store them through `database.connect()` and return inserted/rejected
-counts. Subsequent authorized chats can run the same resource. Initialize schema
-with Manage access before publishing, then normal Use-level runs can work with
-existing rows. See [Database](database.md) and [Storage](storage.md).
-
-For a user who only wants to see results, keep an app's UI to a dashboard over
-its resource data. The agent can inspect it with `code_sql` and, with Manage,
-maintain that same app's data through `code_run({code,resourceId})`, without adding
-maintenance controls or rewriting its dashboard source. Display-only UI is a
-presentation choice, not an additional database permission boundary. Separate
-saved resources have separate databases; they do not share data automatically.
-
-The current API runs the saved default entry, or a one-off maintenance entry.
-It has no named exported app-action invocation and no arbitrary argument object
-for saved runs. Use documented `inputPaths` for file inputs. Do not invent
-`actions.run`, `code_action`, cross-resource database handles or hidden UI
-controls as a substitute. Configurable exported app actions would be a separate
-runtime feature, not something a skill can enable.
+For a display-only dashboard, expose maintenance actions separately from its GUI.
+The user sees results while the agent operates the published handlers. A Skill can
+explain when to use those handlers without duplicating their code. Skill and App
+access remain separate; never assume sharing one also shares the other.
 
 Use `load_tools` with these exact Assistant tool names. Each tool has one
 small input schema; there is no app prefix or capability name to translate.
 
 | Tool | Input | Purpose |
 | --- | --- | --- |
-| `code_create` | `title`, `kind: "app"` or `"script"`, optional `description`, `icon` | Create one private resource; returns `id`, `entry`, and files |
+| `code_create` | `title`, optional `description`, `icon` | Create one private resource; returns `id`, `entry`, and files |
 | `code_read` | `id`, optional `path`, `offset`, `revision` | Current directory without path; file content with path |
 | `code_write` | `id`, `expectedRevision`, `files: [{path, content}]`, optional `entry` | Atomically save a batch and return the new revision plus diagnostics |
 | `code_remove` | `id`, `path` | Remove a source file, preserving history and the app |
-| `code_list` | optional `page`, `kind`, `q` | Find accessible apps or scripts; follow `hasNext` |
+| `code_list` | optional `page`, `q` | Find accessible Apps; follow `hasNext` |
 | `code_history` | `id`, optional `page` | List old saved versions for recovery |
 
 `id` means the saved resource ID. A one-off `code_run` supplies `code` instead
@@ -110,7 +93,7 @@ the save fails atomically with STORAGE_FULL. An independent copy starts with
 fresh source history, but also without the original's data or access grants;
 explain that tradeoff before proposing it as recovery.
 
-For saved scripts intended to be started by a person, show a short readable
+For Apps intended to be started by a person, show a short readable
 summary with `ui.text({value, markdown:true})` or a compact `ui.table` and offer detailed results
 with `files.save`. Keep structured return values for agent inspection. Read the
 UI reference only for the presentation controls you need; a full app is optional.
@@ -118,7 +101,7 @@ UI reference only for the presentation controls you need; a full app is optional
 Before editing source while the user is also using the editor, announce the
 change. Saves reject stale revisions rather than overwriting either draft. The
 user can download their current editor draft and explicitly load the latest
-source before reconciling changes. Resource managers can delete apps/scripts in
+source before reconciling changes. Resource managers can delete Apps in
 Studio or with `assistant code delete ID --yes`; no agent deletion tool exists.
 
 Studio's Advanced menu offers a manual multi-file editor for resource managers.

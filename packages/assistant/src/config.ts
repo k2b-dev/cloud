@@ -10,7 +10,7 @@ export const app = defineApp({
     translations: {
       de: {
         name: "Assistent",
-        adminLinks: {"/admin/assistant":"Apps und Skripte"},
+        adminLinks: {"/admin/assistant":"Apps"},
         description: "KI-Assistent zum Schreiben, Überarbeiten, Zusammenfassen und Beantworten von Fragen.",
       },
     },
@@ -24,7 +24,7 @@ export const app = defineApp({
     },
   },
   adminHref: "/admin/assistant",
-  adminNav: [{id:"studio",section:"ai",label:"Studio",links:[{label:"Apps and scripts",href:"/admin/assistant",icon:"ti ti-app-window"}]}],
+  adminNav: [{id:"studio",section:"ai",label:"Studio",links:[{label:"Apps",href:"/admin/assistant",icon:"ti ti-app-window"}]}],
   settings: {
     "assistant.storage_file_mib": { kind: "number", default: 50, min: 1, max: 64, integer: true,
       label: "Maximum shared file size (MiB)", description: "Per Studio file. Changes apply to new writes; existing files remain readable. Maximum 64 MiB per bounded transfer.",

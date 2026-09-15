@@ -4,7 +4,6 @@ import { CodeResourceId } from "./browser-code-contracts";
 // Flat Assistant tool inputs. The owning service also validates its domain contracts.
 const Id = z.object({ id: CodeResourceId }).strict();
 const Page = z.number().int().min(1).max(100000).default(1);
-const ArtifactKind = z.enum(["app", "script"]);
 const ArtifactPath = z
   .string()
   .min(1)
@@ -31,7 +30,7 @@ const ArtifactMetadata = z
     icon: Icon.optional(),
   })
   .strict();
-const ArtifactCreate = ArtifactMetadata.required({ title: true }).extend({ kind: ArtifactKind.default("app") });
+const ArtifactCreate = ArtifactMetadata.required({ title: true });
 const PublicationNote = z.string().trim().min(1).max(1000);
 const DatabaseSql = z.object({
   sql: z.string().trim().min(1).max(16000).describe("Read-only SELECT; no writes, CTEs or comments. Use LIMIT."),
@@ -39,6 +38,10 @@ const DatabaseSql = z.object({
 });
 
 export const CODE_SOURCE_TOOLS = {
+  code_actions: {
+    description: "Discover a visible App's currently published actions and their complete input/output JSON Schemas without running code. Returns publishedVersion for code_action. Requires Use; no draft source or management tools are loaded.",
+    input: Id.extend({ draft: z.boolean().default(false).describe("Inspect current draft actions instead of the publication; Manage required.") }),
+  },
   code_sql: {
     description:
       "Run a read-only SELECT directly against an app or saved script database without writing code. Supply its id and parameterized SQL. Does not create or connect a database. Requires current resource access; Project-only script access applies only in that Project chat. Narrow columns and add LIMIT for large results.",
@@ -54,7 +57,6 @@ export const CODE_SOURCE_TOOLS = {
     input: z
       .object({
         page: Page,
-        kind: ArtifactKind.optional().describe("Filter GUI apps or saved scripts; omit for both."),
         q: z.string().max(120).optional().describe("Find by title or description; matches only metadata you may access."),
       })
       .strict(),
@@ -107,8 +109,8 @@ export const CODE_SOURCE_TOOLS = {
   },
   code_create: {
     description:
-      "Create a private reusable resource with kind app for an interactive UI or script for reusable code. For one-off analysis, use code_run with code instead. Returns id and entry path; write source with code_write. Optional icon uses the complete class, e.g. ti ti-chart-bar; omit it when unsure. Does not run or share anything.",
-    input: ArtifactCreate.pick({ kind: true, title: true, description: true, icon: true }),
+      "Create a private reusable App with an optional UI, published actions and optional persistence. For one-off analysis, use code_run with code instead. Returns id and entry path; write source with code_write. Optional icon uses the complete class, e.g. ti ti-chart-bar; omit it when unsure. Does not run or share anything.",
+    input: ArtifactCreate.pick({ title: true, description: true, icon: true }),
   },
   code_write: {
     description:

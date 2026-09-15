@@ -5,7 +5,8 @@ import { api } from "@k2b/cloud/browser";
 import { z } from "zod";
 import type { ApiType } from "../api";
 import type { StorageRequest } from "./storage-contracts";
-import { ArtifactUpdate, ArtifactSource, type ArtifactKind } from "./contracts";
+import { ArtifactUpdate, ArtifactSource } from "./contracts";
+import { CodeActionInput } from "@k2b/cloud/ai/browser";
 const client = api.create<ApiType>({ baseUrl: "/api/assistant" }).artifacts;
 async function checked(response: Pick<Response, "json" | "ok" | "status">): Promise<void> {
   if (!response.ok) {
@@ -16,6 +17,15 @@ async function checked(response: Pick<Response, "json" | "ok" | "status">): Prom
   }
 }
 export const artifactClient = {
+  action: async (input: z.infer<typeof CodeActionInput>, conversationId: string, signal: AbortSignal) => {
+    const response = await client.runtime.action.$post({ json: input, query: { conversationId } }, { init: { signal } });
+    await checked(response);
+    return z.object({
+      compiled: z.object({ code: z.string(), runtime: z.string() }),
+      outputSchema: z.record(z.string(), z.json()),
+      resource: z.object({ id: z.string(), kind: z.literal("app"), sourceRevision: z.number() }),
+    }).parse(await response.json());
+  },
   pdf: async (input: unknown, scope: HttpScope, signal?: AbortSignal): Promise<Blob> => {
     const query = new URLSearchParams();
     if (scope.resourceId) query.set("resourceId", scope.resourceId);
@@ -87,8 +97,8 @@ export const artifactClient = {
     await checked(response);
     return z.object({runtime:z.string(),code:z.string()}).parse(await response.json());
   },
-  list: async (page = 1, kind?: ArtifactKind) => {
-    const response = await client.$get({ query: { page: String(page), kind } });
+  list: async (page = 1) => {
+    const response = await client.$get({ query: { page: String(page) } });
     await checked(response); return response.json();
   },
   get: async (id: string, published = false, version?: number, conversationId?: string) => {

@@ -12,7 +12,7 @@ import { ok } from "@k2b/stdlib";
 import { Hono, type Context } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { z } from "zod";
-import { ArtifactKind, ArtifactMetadata, PublicationNote, ArtifactCreate, ArtifactFile, ArtifactSource, ArtifactUpdate, LIMITS } from "./contracts";
+import { ArtifactMetadata, PublicationNote, ArtifactCreate, ArtifactFile, ArtifactSource, ArtifactUpdate, LIMITS } from "./contracts";
 import { artifactDatabase, DatabaseError } from "./database";
 import { DatabaseRequest, DatabaseSettings } from "./database-contracts";
 import { StorageJsonRequest, StorageFileQuery, STORAGE_TRANSPORT_BYTES } from "./storage-contracts";
@@ -20,6 +20,8 @@ import { storageSettings, StorageSettings } from "./storage-settings";
 import { artifacts, ArtifactError } from "./service";
 import { artifactMessages } from "./messages";
 import { compilationDiagnostic, compileArtifact } from "./runtime/compile";
+import { sourceActions, actionValidator } from "./actions";
+import { CodeActionInput } from "@k2b/cloud/ai/browser";
 import { cliHostBundle } from "./runtime/cli-bundle";
 import { renameSource } from "./rename-source";
 import { ClientCall, ClientCallResult, clientCalls } from "./client-calls";
@@ -31,7 +33,7 @@ const page = (c: Context<AuthContext>) => z.coerce.number().int().min(1).max(100
 const revision = (c: Context<AuthContext>) => c.req.query("revision") === undefined ? undefined
   : z.coerce.number().int().positive().parse(c.req.query("revision"));
 const Level = z.enum(["read", "admin"]);
-const PageQuery = z.object({ page: z.string().optional(), kind: ArtifactKind.optional(), q:z.string().max(120).optional(), conversationId: z.string().max(80).optional() });
+const PageQuery = z.object({ page: z.string().optional(), q:z.string().max(120).optional(), conversationId: z.string().max(80).optional() });
 const RevisionQuery = z.object({ conversationId: z.string().max(80).optional(), version: z.string().optional(), revision: z.string().optional(), published: z.enum(["true"]).optional() });
 const Grant = z.object({
   principal: z.discriminatedUnion("type", [
@@ -81,7 +83,7 @@ export const createArtifactServiceRoutes = (caller: (context: Context<AuthContex
   .post("/runtime/secrets/remove",v("json",z.object({scope:HttpScope,name:z.string(),revision:z.uuid()}).strict()),async c=>{const input=c.req.valid("json");return respond(c,ok(await httpService.remove(input.scope,input.name,input.revision,identity(c))));})
   .post("/runtime/http",v("json",HttpPrepare),async c=>respond(c,ok(await httpService.prepare(c.req.valid("json"),identity(c)))))
   .post("/runtime/http/:callId",v("json",z.object({approved:z.boolean()}).strict()),async c=>respond(c,ok(await httpService.execute(z.uuid().parse(c.req.param("callId")),c.req.valid("json").approved,identity(c),c.req.raw.signal))))
-  .get("/", v("query", PageQuery), async (c) => respond(c,ok(await artifacts.list(identity(c),page(c),c.req.valid("query").kind,c.req.valid("query").q))))
+  .get("/", v("query", PageQuery), async (c) => respond(c,ok(await artifacts.list(identity(c),page(c),c.req.valid("query").q))))
   .get("/admin/resources",v("query",PageQuery.extend({search:z.string().max(120).optional()})),async c => respond(c,ok(await artifactAdmin.list(identity(c),page(c),c.req.valid("query").search))))
   .delete("/admin/resources/:id",async c => respond(c,ok(await artifactAdmin.remove(id(c),identity(c)))))
   .get("/admin/resources/:id/access",async c => respond(c,ok(await artifacts.access(id(c),adminIdentity(identity(c))))))
@@ -113,6 +115,22 @@ export const createArtifactServiceRoutes = (caller: (context: Context<AuthContex
     try { return respond(c,ok(await compileArtifact(c.req.valid("json")))); }
     catch (error) { return respond(c,{ ok: false, status: 400, code: "COMPILE_FAILED", error: compilationDiagnostic(error) }); }
   })
+  .post("/runtime/action", v("query", z.object({ conversationId: z.string().max(80).optional() })), v("json", CodeActionInput), async c => {
+    const input = c.req.valid("json");
+    const draft = input.revision !== undefined;
+    const bundle = await artifacts.get(input.id, identity(c), undefined, !draft);
+    if (draft && bundle.permission !== "admin") throw new ArtifactError("ACCESS_DENIED");
+    if (draft ? bundle.sourceRevision !== input.revision : bundle.publishedVersion !== input.publishedVersion) throw new ArtifactError("CONFLICT");
+    const action = sourceActions(bundle.source).find(action => action.name === input.action);
+    if (!action) throw new ArtifactError("NOT_FOUND");
+    actionValidator(action.inputSchema).parse(input.input);
+    const compiled = await compileArtifact(bundle.source, { action: input.action, input: input.input });
+    const current = await artifacts.get(input.id, identity(c), undefined, !draft);
+    if (draft && current.permission !== "admin") throw new ArtifactError("ACCESS_DENIED");
+    if (draft ? current.sourceRevision !== input.revision : current.publishedVersion !== input.publishedVersion) throw new ArtifactError("CONFLICT");
+    return respond(c, ok({ compiled, outputSchema: action.outputSchema,
+      resource: { id: bundle.id, kind: bundle.kind, sourceRevision: bundle.sourceRevision } }));
+  })
   .post("/runtime/rename",v("json",z.object({source:ArtifactSource,from:z.string().max(180),to:z.string().max(180)}).strict()),async c=>{
     const input=c.req.valid("json");
     try{return respond(c,ok(renameSource(input.source,input.from,input.to)));}
@@ -123,6 +141,12 @@ export const createArtifactServiceRoutes = (caller: (context: Context<AuthContex
     catch (error) { return respond(c,ok({ valid: false, diagnostics: [compilationDiagnostic(error)] })); }
   })
   .delete("/:id",async c => respond(c,ok(await artifacts.remove(id(c),identity(c)))))
+  .get("/:id/actions", v("query", RevisionQuery.extend({ draft: z.enum(["true"]).optional() })), async c => {
+    const draft = c.req.valid("query").draft === "true";
+    const bundle = await artifacts.get(id(c), identity(c), undefined, !draft);
+    if (draft && bundle.permission !== "admin") throw new ArtifactError("ACCESS_DENIED");
+    return respond(c, ok({ id: bundle.id, publishedVersion: bundle.publishedVersion, revision: bundle.sourceRevision, actions: sourceActions(bundle.source) }));
+  })
   .get("/:id", v("query", RevisionQuery), async (c) => respond(c,ok(await artifacts.get(id(c),identity(c),revision(c),c.req.query("published") === "true", c.req.query("version") === undefined ? undefined : z.coerce.number().int().positive().parse(c.req.query("version"))))))
   .post("/:id/publish", v("json", z.object({ expectedRevision: z.number().int().positive(), note: PublicationNote }).strict()), async c =>
     respond(c, ok(await artifacts.publish(id(c), c.req.valid("json").expectedRevision, identity(c), c.req.valid("json").note))))
