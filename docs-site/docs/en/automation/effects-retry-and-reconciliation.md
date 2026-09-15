@@ -81,6 +81,7 @@ for the resolution API.
 | --- | --- |
 | Action returns a non-retryable failure | Ends the run as failed |
 | Action returns a retryable failure | Releases the run, waits with backoff, and resumes from the journal |
+| PostgreSQL rolls back a transactional action with `40001` or `40P01` | Retries the step with bounded backoff as `WORKFLOW_TRANSACTION_CONFLICT` |
 | Worker crashes or loses its lease | Another worker reclaims the run after lease expiry and resumes from the journal |
 | Action returns `waiting` | Parks the run until its dependency or deadline wakes it |
 | Ambiguous effect cannot be reconciled | Ends the run as `needs_attention` without repeating the effect |
@@ -89,6 +90,10 @@ for the resolution API.
 Shared workflow AI tasks also observe the parent run's cancellation. Queued
 tasks become canceled, running provider calls receive an abort signal, and a
 late provider result is discarded instead of waking the run with stale output.
+
+Connection failures and unknown database errors are not automatically classified
+as transaction conflicts: their commit outcome may be unknown. Deliberate
+application failures retain the action's own retry policy.
 
 Repeated crashes and retryable failures are bounded. After the exported
 `WORKFLOW_RUN_MAX_CONSECUTIVE_FAILURES` limit, the worker records

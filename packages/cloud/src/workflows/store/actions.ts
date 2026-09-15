@@ -13,7 +13,7 @@
  * defect was exactly that divergence, and here it is not a bug to fix but a
  * shape that cannot occur.
  */
-import type { SQL } from "bun";
+import { SQL } from "bun";
 import { type WorkflowDependency, type WorkflowJsonValue, type WorkflowStepOutcome, workflowPathKey } from "../contracts";
 import type { ErasedWorkflowAction, WorkflowActionContext } from "../definition";
 import type { DefinedWorkflowModule } from "../module";
@@ -306,6 +306,14 @@ const runDeclaredAction = async (
         return { state: "waiting", dependency: error.dependency } satisfies WorkflowStepOutcome;
       if (error instanceof WorkflowTransactionalFailure)
         return { state: "failed", error: reportedError(error.failure) } satisfies WorkflowStepOutcome;
+      // These PostgreSQL errors guarantee that this transaction did not commit.
+      // Classify only after rollback; connection failures have an ambiguous
+      // commit outcome and must not enter this retry path.
+      if (error instanceof SQL.PostgresError && (error.errno === "40001" || error.errno === "40P01"))
+        return {
+          state: "failed",
+          error: asError("Transaction conflicted; retrying the step.", true, "WORKFLOW_TRANSACTION_CONFLICT"),
+        } satisfies WorkflowStepOutcome;
       throw error;
     });
   }

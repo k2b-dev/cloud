@@ -555,6 +555,48 @@ const effectRow = async (runId: string) => {
     expect(await effectRow(runId)).toMatchObject({ effect_state: "succeeded" });
   });
 
+  for (const sqlState of ["40001", "40P01", "23514"])
+    test(`transactional SQLSTATE ${sqlState} rolls back before retry classification`, async () => {
+      expect(await ready()).toBe(true);
+      const action = `probe.sql-${sqlState}`;
+      const { runId } = await queued(action);
+      const original = (await sql<{ context: unknown }[]>`SELECT context FROM workflows.run WHERE id = ${runId}::uuid`)[0]!;
+      let attempts = 0;
+      const actions = {
+        [action]: workflowAction.transactional({
+          label: "Transactional failure",
+          description: "Tests rollback and retry classification.",
+          config: CONFIG,
+          run: async (ctx) => {
+            if (!ctx.tx) throw new Error("Missing transaction");
+            attempts++;
+            if (attempts === 1) {
+              await ctx.tx`UPDATE workflows.run SET context = '{"probe":"must-roll-back"}'::jsonb WHERE id = ${runId}::uuid`;
+              // Constants from this test only: a real PostgreSQL error, not a mocked driver object.
+              await ctx.tx.unsafe(`DO $$ BEGIN RAISE EXCEPTION 'private database details' USING ERRCODE = '${sqlState}'; END $$`);
+            }
+            return { state: "succeeded", output: null };
+          },
+          plan: async () => ({ summary: "transaction" }),
+        }),
+      };
+      const port = createWorkflowActionPort(workflowModule(actions));
+      await runOneWorkflow({ worker: "sql-error-test", runId, actions: port });
+      expect((await sql<{ context: unknown }[]>`SELECT context FROM workflows.run WHERE id = ${runId}::uuid`)[0]!.context).toEqual(
+        original.context,
+      );
+      expect((await effectRow(runId))?.effect_state ?? null).toBeNull();
+      if (sqlState === "23514") {
+        expect((await getWorkflowRun(runId))?.state).toBe("failed");
+      } else {
+        expect((await getWorkflowRun(runId))?.state).toBe("queued");
+        await sql`UPDATE workflows.run SET retry_after = now() WHERE id = ${runId}::uuid`;
+        await runOneWorkflow({ worker: "sql-retry-test", runId, actions: port });
+        expect((await getWorkflowRun(runId))?.state).toBe("succeeded");
+        expect(attempts).toBe(2);
+      }
+    });
+
   test("a transactional replay returns the recorded output instead of working twice", async () => {
     expect(await ready()).toBe(true);
     const { runId } = await queued("probe.tx-replay");
