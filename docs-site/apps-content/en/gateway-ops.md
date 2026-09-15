@@ -33,6 +33,10 @@ cleans the gateway registry; it does not restart or repair the application.
 In Logs, Jobs, and Notifications, **Clear** resets active filters on desktop
 and mobile. Notification filters reset within the currently selected view.
 
+Gateway traffic counts and server telemetry percentages follow your language's
+number formatting. Gateway error percentages use whole numbers; telemetry
+error percentages retain one decimal place.
+
 ## Understand the Gateway Ops model
 
 | Resource or signal | Responsibility |

@@ -16,7 +16,7 @@ const rangeUrl = (url: URL, range: TelemetryRange): string => {
 };
 
 import { ButtonLink, DataTable, type DataTableColumn, NoticeCard, StatCell, StatGrid, StatusBadge } from "@k2b/ui";
-import { formatNumber as fmtCount, formatDurationMs as fmtMs } from "@k2b/cloud/shared";
+import { formatNumber as fmtCount, formatDurationMs as fmtMs, formatRatio as fmtRatio } from "@k2b/cloud/shared";
 import { SearchBar } from "@k2b/cloud/ssr/islands";
 import { type AppRuntimeStatus, buildAppRuntimeStatuses } from "../app-runtime-status";
 import { ssr } from "../config";
@@ -37,10 +37,10 @@ const timeAgo = (ts: number, t: GatewayOpsMessages) => {
   return t.hoursAgo({ count: Math.floor(s / 3600) });
 };
 
-const fmtUptime = (ms: number) => {
+const fmtUptime = (ms: number, locale: string) => {
   if (ms < 60_000) return `${Math.round(ms / 1000)}s`;
   if (ms < 3_600_000) return `${Math.round(ms / 60_000)}m`;
-  return `${(ms / 3_600_000).toFixed(1)}h`;
+  return `${fmtCount(ms / 3_600_000, { locale, decimals: 1 })}h`;
 };
 
 const Check = () => <i class="ti ti-check text-emerald-500 text-xs" />;
@@ -239,15 +239,15 @@ export default ssr<AuthContext>(async (c) => {
             sub={routerSnapshot ? `v${routerSnapshot.tableVersion}` : t.noRouter}
           />
           <StatCell
-            value={fmtCount(windowRequests)}
+            value={fmtCount(windowRequests, { locale })}
             label={t.requests}
-            sub={unmatchedRequests > 0 ? t.unmatchedRequests({ count: fmtCount(unmatchedRequests), range }) : range}
+            sub={unmatchedRequests > 0 ? t.unmatchedRequests({ count: fmtCount(unmatchedRequests, { locale }), range }) : range}
             href={`/admin/observability/telemetry?range=${range}`}
             accent={unmatchedRequests > 0 ? { tone: "amber", icon: "ti ti-alert-triangle" } : undefined}
           />
           <StatCell value={withCapabilities.length} label={t.capabilities} sub={t.providers} />
           <StatCell
-            value={routerSnapshot ? fmtUptime(Date.now() - routerSnapshot.startedAt) : "—"}
+            value={routerSnapshot ? fmtUptime(Date.now() - routerSnapshot.startedAt, locale) : "—"}
             label={t.uptime}
             sub={
               routerSnapshot
@@ -366,23 +366,24 @@ export default ssr<AuthContext>(async (c) => {
                       class={`text-[10px] tabular-nums ${app.isHealthy ? "text-dimmed" : "text-red-500"}`}
                       title={new Date(app.live?.createdAt ?? app.lastSeenAt).toLocaleString(locale)}
                     >
-                      {fmtUptime(app.upSince)}
+                      {fmtUptime(app.upSince, locale)}
                     </span>
                   );
                 }
                 if (col.id === "requests")
-                  return <span class="text-xs text-dimmed">{app.traffic ? fmtCount(app.traffic.count) : "—"}</span>;
+                  return <span class="text-xs text-dimmed">{app.traffic ? fmtCount(app.traffic.count, { locale }) : "—"}</span>;
                 if (col.id === "latency") {
                   return (
                     <span class="text-xs tabular-nums text-dimmed">
-                      {app.traffic && app.traffic.count > 0 ? fmtMs(app.traffic.totalMs / app.traffic.count) : "—"}
+                      {app.traffic && app.traffic.count > 0 ? fmtMs(app.traffic.totalMs / app.traffic.count, { locale }) : "—"}
                     </span>
                   );
                 }
                 if (col.id === "errors") {
                   return app.traffic && app.traffic.errors > 0 ? (
                     <span class="text-xs tabular-nums text-red-500">
-                      {app.traffic.errors} <span class="text-[9px]">({((app.traffic.errors / app.traffic.count) * 100).toFixed(0)}%)</span>
+                      {fmtCount(app.traffic.errors, { locale })}{" "}
+                      <span class="text-[9px]">({fmtRatio(app.traffic.errors, app.traffic.count, { locale, decimals: 0 })})</span>
                     </span>
                   ) : (
                     <span class="text-xs text-dimmed">—</span>
@@ -427,10 +428,10 @@ export default ssr<AuthContext>(async (c) => {
                 if (col.id === "prefix") return <code class="text-[10px] text-primary">{route.prefix}</code>;
                 if (col.id === "app") return <span class="text-[10px] text-dimmed">{route.appId}</span>;
                 if (col.id === "hits")
-                  return <span class="text-[10px] text-dimmed">{route.count > 0 ? route.count.toLocaleString(locale) : "—"}</span>;
+                  return <span class="text-[10px] text-dimmed">{route.count > 0 ? fmtCount(route.count, { locale }) : "—"}</span>;
                 if (col.id === "errors") {
                   return route.errors > 0 ? (
-                    <span class="text-[10px] tabular-nums text-red-500">{route.errors}</span>
+                    <span class="text-[10px] tabular-nums text-red-500">{fmtCount(route.errors, { locale })}</span>
                   ) : (
                     <span class="text-[10px] text-dimmed">—</span>
                   );

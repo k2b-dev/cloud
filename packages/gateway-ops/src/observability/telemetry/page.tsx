@@ -4,7 +4,12 @@ import ModeNav from "./browser/ModeNav";
 import { DataTable, type DataTableColumn, StatCell, StatGrid } from "@k2b/ui";
 import { listAppsDetailed } from "@k2b/cloud";
 import { type AuthContext, getLocale } from "@k2b/cloud/server";
-import { formatNumber as fmtCount, formatDurationMs as fmtMs, formatPercent as fmtRatio } from "@k2b/cloud/shared";
+import {
+  formatNumber as fmtCount,
+  formatDurationMs as fmtMs,
+  formatPercent as fmtPercent,
+  formatRatio as fmtRatio,
+} from "@k2b/cloud/shared";
 import { AdminLayout } from "@k2b/cloud/ssr";
 import { ssr } from "../../config";
 import OperationalCharts from "../../frontend/OperationalCharts.island";
@@ -33,8 +38,6 @@ import { gatewayOpsMessages, type GatewayOpsMessages } from "../../messages";
 
 /** Individual requests shown once a route is selected. */
 const DRILLDOWN_EVENT_LIMIT = 100;
-
-const fmtPercent = (part: number, total: number) => (total === 0 ? "—" : `${((part / total) * 100).toFixed(1)}%`);
 
 const legacyTelemetryAppIcons: Record<string, string> = {
   gateway: "ti ti-route-scan",
@@ -220,7 +223,7 @@ export default ssr<AuthContext>(async (c) => {
                 return (
                   <StatCell
                     label={window.window}
-                    value={window.requestCount === 0 ? t.noTraffic : fmtRatio(window.availabilityRatio, { locale })}
+                    value={window.requestCount === 0 ? t.noTraffic : fmtPercent(window.availabilityRatio, { locale })}
                     sub={
                       collecting
                         ? t.requestsCollecting({ count: fmtCount(window.requestCount, { locale }) })
@@ -267,7 +270,7 @@ export default ssr<AuthContext>(async (c) => {
                       class={`text-[10px] tabular-nums ${isProblemRate(row.errors, row.requests) ? "text-red-500" : "text-dimmed"}`}
                       title={t.errorsOfRequests({ errors: fmtCount(row.errors, { locale }), requests: fmtCount(row.requests, { locale }) })}
                     >
-                      {row.errors === 0 ? "—" : fmtPercent(row.errors, row.requests)}
+                      {row.errors === 0 ? "—" : fmtRatio(row.errors, row.requests, { locale, decimals: 1 })}
                     </span>
                   );
                 if (col.id === "errorCount")
