@@ -198,6 +198,7 @@ const queryHourlyRollupRows = async (
       SELECT r.series_id,r.bucket,r.sample_count,r.value_sum,r.value_min,r.value_max,r.last_value,r.last_ts
       FROM pulse.metric_rollups_hourly r JOIN complete c ON c.hour=r.bucket
       WHERE r.base_id=${query.baseId}::uuid AND r.series_id=ANY(${toPgUuidArray(seriesIds)}::uuid[])
+        AND r.bucket>=${window.since} AND r.bucket<${window.until}
     ), covered AS (
       SELECT series_id,range_agg(tstzrange(bucket,bucket+interval '1 hour','[)')) AS ranges
       FROM retained GROUP BY series_id
