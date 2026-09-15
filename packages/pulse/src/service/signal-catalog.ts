@@ -518,6 +518,26 @@ export const listResources = async (
   if (rows.length === 0) return ok([]);
 
   const resourceKeys = rows.map((row) => row.resource_key);
+  const completeResourceList = !pattern && !ref && !type && params.sourceId == null && offset === 0 && rows.length < limit;
+  // For a complete list, aggregate once before filtering; avoid probing the same
+  // event index for every resource. Keep selective and paginated reads selective.
+  const eventCounts = completeResourceList
+    ? sql<ResourceCountRow[]>`
+        WITH counts AS MATERIALIZED (
+          SELECT resource_key, COUNT(*) AS count
+          FROM pulse.events WHERE base_id = ${baseId}::uuid
+          GROUP BY resource_key
+        )
+        SELECT resource_key, count::int AS count FROM counts
+        WHERE resource_key = ANY(${sql.array(resourceKeys, "TEXT")})
+      `
+    : sql<ResourceCountRow[]>`
+        SELECT resource_key, COUNT(*)::int AS count
+        FROM pulse.events
+        WHERE base_id = ${baseId}::uuid
+          AND resource_key = ANY(${sql.array(resourceKeys, "TEXT")})
+        GROUP BY resource_key
+      `;
   const [metricRows, eventRows, stateRows] = await Promise.all([
     sql<ResourceMetricCountRow[]>`
       SELECT
@@ -530,13 +550,7 @@ export const listResources = async (
         AND ms.resource_key = ANY(${sql.array(resourceKeys, "TEXT")})
       GROUP BY ms.resource_key
     `,
-    sql<ResourceCountRow[]>`
-      SELECT resource_key, COUNT(*)::int AS count
-      FROM pulse.events
-      WHERE base_id = ${baseId}::uuid
-        AND resource_key = ANY(${sql.array(resourceKeys, "TEXT")})
-      GROUP BY resource_key
-    `,
+    eventCounts,
     sql<ResourceCountRow[]>`
       SELECT resource_key, COUNT(*)::int AS count
       FROM pulse.states_current
