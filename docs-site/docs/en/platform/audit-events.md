@@ -116,3 +116,17 @@ security operation.
 
 Use [logging](/en/docs/platform/logging) for diagnosis and
 [tracing](/en/docs/platform/tracing) for timing and execution flow.
+
+## Accounts notification batches
+
+The batch mutation methods on `notificationBatches` require an `actor` with
+`userId` and optional audit identity fields (`uid`, `provider`, and `roles`).
+`createDraft` and `finalize` derive their stored creator or approver from this
+actor. The Accounts API supplies the authenticated administrator.
+
+Successful mutations write `accounts.notification_batch.create`, `.delete`,
+`.finalize`, `.retry_failed`, or `.retry_recipient` in the same transaction as
+the batch change. An audit failure rolls back that change. Delivery jobs are
+submitted after commit. These events describe the administrative action, not
+mail delivery success. They contain batch IDs, counts, or a retried user ID;
+message content and recipient email addresses are omitted.

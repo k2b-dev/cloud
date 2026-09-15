@@ -4,6 +4,7 @@ import type { Worker } from "@k2b/sync";
 import { sql } from "bun";
 import { lazySync } from "../../_internal/process-sync";
 import { markdown } from "../../shared/markdown";
+import { type AuditActor, audit } from "../audit";
 import { logger, trace } from "../logging";
 import { parsePgJsonValue, toPgTextArray, toPgUuidArray } from "../postgres";
 
@@ -406,7 +407,7 @@ export const createDraft = async (params: {
   subject: string;
   bodyMarkdown: string;
   selection: NotificationBatchSelection;
-  createdBy: string;
+  actor: AuditActor & { userId: string };
 }): Promise<Result<NotificationBatch>> => {
   const subject = params.subject.trim();
   const bodyMarkdown = params.bodyMarkdown.trim();
@@ -422,12 +423,24 @@ export const createDraft = async (params: {
   }
   const hash = selectionHash(selection);
   const bodyHtml = markdown.renderSync(bodyMarkdown);
-  const rows = await sql<BatchRow[]>`
-    INSERT INTO notifications.batches (subject, body_markdown, body_html, selection, selection_hash, created_by)
-    VALUES (${subject}, ${bodyMarkdown}, ${bodyHtml}, ${JSON.stringify(selection)}::text::jsonb, ${hash}, ${params.createdBy}::uuid)
-    RETURNING *
-  `;
-  return ok(mapBatch(rows[0]!));
+  return sql.begin(async (tx) => {
+    const rows = await tx<BatchRow[]>`
+      INSERT INTO notifications.batches (subject, body_markdown, body_html, selection, selection_hash, created_by)
+      VALUES (${subject}, ${bodyMarkdown}, ${bodyHtml}, ${JSON.stringify(selection)}::text::jsonb, ${hash}, ${params.actor.userId}::uuid)
+      RETURNING *
+    `;
+    const batch = mapBatch(rows[0]!);
+    await audit.record(
+      {
+        action: "accounts.notification_batch.create",
+        outcome: "allowed",
+        actor: params.actor,
+        target: { type: "notification_batch", id: batch.id },
+      },
+      tx,
+    );
+    return ok(batch);
+  });
 };
 
 export const get = async (id: string): Promise<NotificationBatch | null> => {
@@ -504,7 +517,7 @@ export const listRecipients = async (params: {
 
 export const finalize = async (params: {
   id: string;
-  actorUserId: string;
+  actor: AuditActor & { userId: string };
   expectedSelectionHash: string;
   expectedDeliverableCount: number;
   expectedRecipientHash: string;
@@ -568,7 +581,7 @@ export const finalize = async (params: {
       UPDATE notifications.batches
       SET
         status = 'ready',
-        finalized_by = ${params.actorUserId}::uuid,
+        finalized_by = ${params.actor.userId}::uuid,
         finalized_at = now(),
         target_count = ${candidates.length},
         deliverable_count = ${deliverableCount},
@@ -576,6 +589,16 @@ export const finalize = async (params: {
       WHERE id = ${params.id}::uuid
       RETURNING *
     `;
+    await audit.record(
+      {
+        action: "accounts.notification_batch.finalize",
+        outcome: "allowed",
+        actor: params.actor,
+        target: { type: "notification_batch", id: params.id },
+        metadata: { targetCount: candidates.length, deliverableCount },
+      },
+      tx,
+    );
     return ok(mapBatch(updated[0]!));
   });
 
@@ -584,28 +607,45 @@ export const finalize = async (params: {
   return ok({ batch: result.data, jobId });
 };
 
-export const retryFailed = async (params: { id: string }): Promise<Result<{ batch: NotificationBatch; jobId: string }>> => {
+export const retryFailed = async (params: {
+  id: string;
+  actor: AuditActor & { userId: string };
+}): Promise<Result<{ batch: NotificationBatch; jobId: string }>> => {
   const batch = await get(params.id);
   if (!batch) return fail(err.notFound("Notification batch not found"));
   if (batch.status === "draft" || batch.status === "cancelled") {
     return fail(err.conflict("Only finalized notification batches can retry recipients"));
   }
 
-  const updated = await sql<BatchRow[]>`
-    UPDATE notifications.batch_recipients
-    SET status = 'pending', error = NULL, notification_id = NULL, sent_at = NULL, updated_at = now()
-    WHERE batch_id = ${params.id}::uuid AND status = 'error' AND recipient IS NOT NULL
-    RETURNING user_id
-  `;
-  if (updated.length === 0) {
-    return fail(err.conflict("No failed deliverable recipients can be retried"));
-  }
+  const result = await sql.begin(async (tx) => {
+    const updated = await tx<BatchRow[]>`
+      UPDATE notifications.batch_recipients
+      SET status = 'pending', error = NULL, notification_id = NULL, sent_at = NULL, updated_at = now()
+      WHERE batch_id = ${params.id}::uuid AND status = 'error' AND recipient IS NOT NULL
+      RETURNING user_id
+    `;
+    if (updated.length === 0) {
+      return fail(err.conflict("No failed deliverable recipients can be retried"));
+    }
 
-  await sql`
-    UPDATE notifications.batches
-    SET status = 'ready', completed_at = NULL, last_error = NULL
-    WHERE id = ${params.id}::uuid AND status IN ('completed_with_errors', 'failed', 'running', 'ready', 'completed')
-  `;
+    await tx`
+      UPDATE notifications.batches
+      SET status = 'ready', completed_at = NULL, last_error = NULL
+      WHERE id = ${params.id}::uuid AND status IN ('completed_with_errors', 'failed', 'running', 'ready', 'completed')
+    `;
+    await audit.record(
+      {
+        action: "accounts.notification_batch.retry_failed",
+        outcome: "allowed",
+        actor: params.actor,
+        target: { type: "notification_batch", id: params.id },
+        metadata: { recipientCount: updated.length },
+      },
+      tx,
+    );
+    return ok(null);
+  });
+  if (!result.ok) return result;
   const refreshed = await refreshBatchCounters(params.id);
   // A completing worker may already have sampled zero remaining recipients.
   // Explicit retries need their own wakeup even while that worker holds its key.
@@ -615,6 +655,7 @@ export const retryFailed = async (params: { id: string }): Promise<Result<{ batc
 
 export const retryRecipient = async (params: {
   id: string;
+  actor: AuditActor & { userId: string };
   userId: string;
 }): Promise<Result<{ batch: NotificationBatch; jobId: string }>> => {
   const batch = await get(params.id);
@@ -623,30 +664,44 @@ export const retryRecipient = async (params: {
     return fail(err.conflict("Only finalized notification batches can retry recipients"));
   }
 
-  const updated = await sql<BatchRow[]>`
-    UPDATE notifications.batch_recipients
-    SET status = 'pending', error = NULL, notification_id = NULL, sent_at = NULL, updated_at = now()
-    WHERE batch_id = ${params.id}::uuid
-      AND user_id = ${params.userId}::uuid
-      AND status = 'error'
-      AND recipient IS NOT NULL
-    RETURNING *
-  `;
-  if (!updated[0]) {
-    const existing = await sql<BatchRow[]>`
-      SELECT status, recipient
-      FROM notifications.batch_recipients
-      WHERE batch_id = ${params.id}::uuid AND user_id = ${params.userId}::uuid
+  const result = await sql.begin(async (tx) => {
+    const updated = await tx<BatchRow[]>`
+      UPDATE notifications.batch_recipients
+      SET status = 'pending', error = NULL, notification_id = NULL, sent_at = NULL, updated_at = now()
+      WHERE batch_id = ${params.id}::uuid
+        AND user_id = ${params.userId}::uuid
+        AND status = 'error'
+        AND recipient IS NOT NULL
+      RETURNING *
     `;
-    if (!existing[0]) return fail(err.notFound("Notification recipient not found"));
-    return fail(err.conflict("Only failed deliverable recipients can be retried"));
-  }
+    if (!updated[0]) {
+      const existing = await tx<BatchRow[]>`
+        SELECT status, recipient
+        FROM notifications.batch_recipients
+        WHERE batch_id = ${params.id}::uuid AND user_id = ${params.userId}::uuid
+      `;
+      if (!existing[0]) return fail(err.notFound("Notification recipient not found"));
+      return fail(err.conflict("Only failed deliverable recipients can be retried"));
+    }
 
-  await sql`
-    UPDATE notifications.batches
-    SET status = 'ready', completed_at = NULL, last_error = NULL
-    WHERE id = ${params.id}::uuid AND status IN ('completed_with_errors', 'failed', 'running', 'ready', 'completed')
-  `;
+    await tx`
+      UPDATE notifications.batches
+      SET status = 'ready', completed_at = NULL, last_error = NULL
+      WHERE id = ${params.id}::uuid AND status IN ('completed_with_errors', 'failed', 'running', 'ready', 'completed')
+    `;
+    await audit.record(
+      {
+        action: "accounts.notification_batch.retry_recipient",
+        outcome: "allowed",
+        actor: params.actor,
+        target: { type: "notification_batch", id: params.id },
+        metadata: { recipientUserId: params.userId },
+      },
+      tx,
+    );
+    return ok(null);
+  });
+  if (!result.ok) return result;
   const refreshed = await refreshBatchCounters(params.id);
   const { jobId } = await batchJob().submit({
     key: `${params.id}:retry:${crypto.randomUUID()}`,
@@ -655,17 +710,29 @@ export const retryRecipient = async (params: {
   return ok({ batch: refreshed ?? batch, jobId });
 };
 
-export const removeDraft = async (params: { id: string }): Promise<Result<{ id: string }>> => {
-  const rows = await sql<BatchRow[]>`
-    DELETE FROM notifications.batches
-    WHERE id = ${params.id}::uuid AND status = 'draft'
-    RETURNING id
-  `;
-  if (rows[0]) return ok({ id: rows[0].id as string });
-
-  const batch = await get(params.id);
-  if (!batch) return fail(err.notFound("Notification batch not found"));
-  return fail(err.conflict("Only draft notification batches can be deleted"));
+export const removeDraft = async (params: { id: string; actor: AuditActor & { userId: string } }): Promise<Result<{ id: string }>> => {
+  return sql.begin(async (tx) => {
+    const rows = await tx<BatchRow[]>`
+      DELETE FROM notifications.batches
+      WHERE id = ${params.id}::uuid AND status = 'draft'
+      RETURNING id
+    `;
+    if (rows[0]) {
+      await audit.record(
+        {
+          action: "accounts.notification_batch.delete",
+          outcome: "allowed",
+          actor: params.actor,
+          target: { type: "notification_batch", id: params.id },
+        },
+        tx,
+      );
+      return ok({ id: params.id });
+    }
+    const existing = await tx`SELECT id FROM notifications.batches WHERE id = ${params.id}::uuid`;
+    if (!existing[0]) return fail(err.notFound("Notification batch not found"));
+    return fail(err.conflict("Only draft notification batches can be deleted"));
+  });
 };
 
 export const start = async (): Promise<void> => {

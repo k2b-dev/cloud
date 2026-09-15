@@ -28,6 +28,7 @@ test("explicit batch retries retain a wakeup while the previous worker is comple
       if (query.includes("UPDATE notifications.batches")) return [row];
       throw new Error("Unexpected SQL: " + query);
     };
+    sql.begin = async fn => fn(sql);
     // Bun's native sql export cannot be replaced with mock.module("bun").
     // Redirect only this module's SQL import to the in-memory fixture.
     globalThis.batchRetrySql = sql;
@@ -58,8 +59,9 @@ test("explicit batch retries retain a wakeup while the previous worker is comple
     mock.module(${JSON.stringify(new URL("./email.ts", import.meta.url).pathname)}, () => ({
       sendEmail: () => { throw new Error("Provider must not be called"); },
     }));
+    mock.module(${JSON.stringify(new URL("../audit/index.ts", import.meta.url).pathname)}, () => ({ audit: { record: async () => {} } }));
     const { retryFailed, retryRecipient } = await import(${JSON.stringify(new URL("./batches.ts", import.meta.url).pathname)});
-    for (const retry of [() => retryFailed({ id: batchId }), () => retryRecipient({ id: batchId, userId })]) {
+    for (const retry of [() => retryFailed({ id: batchId, actor: { userId } }), () => retryRecipient({ id: batchId, userId, actor: { userId } })]) {
       recipientStatus = "error";
       claims.add(batchId);
       queued.length = 0;

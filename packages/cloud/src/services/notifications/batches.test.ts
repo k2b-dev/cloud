@@ -1,5 +1,6 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
 import { sql } from "bun";
+import { audit } from "../audit";
 import { __notificationBatchTest, notificationBatches } from "./batches";
 
 const canUseAuthDatabase = async () => {
@@ -225,7 +226,7 @@ suite("notification batch selections", () => {
     try {
       const result = await notificationBatches.finalize({
         id: batch!.id,
-        actorUserId: actorId,
+        actor: { userId: actorId },
         expectedSelectionHash: selectionHash,
         expectedDeliverableCount: 0,
         expectedRecipientHash: "unused",
@@ -251,6 +252,128 @@ suite("notification batch selections", () => {
     } finally {
       await sql`DELETE FROM notifications.batches WHERE id = ${batch!.id}::uuid`;
       await cleanupAuthFixture([actorId], []);
+    }
+  });
+});
+
+suite("notification batch audit", () => {
+  test("records each committed administration action without copying message content", async () => {
+    const userId = await insertUser(crypto.randomUUID(), "audit");
+    const actor = { userId, uid: "batch-administrator", provider: "local", roles: ["admin"] };
+    const selection = { userIds: [userId] };
+    const create = async () => {
+      const result = await notificationBatches.createDraft({
+        actor,
+        selection,
+        subject: "Private subject",
+        bodyMarkdown: "Private message",
+      });
+      if (!result.ok) throw new Error(result.error.message);
+      return result.data;
+    };
+    try {
+      const deleted = await create();
+      expect((await notificationBatches.removeDraft({ id: deleted.id, actor })).ok).toBe(true);
+      const batch = await create();
+      const preview = await notificationBatches.preview(selection);
+      expect(
+        (
+          await notificationBatches.finalize({
+            id: batch.id,
+            actor,
+            expectedSelectionHash: batch.selectionHash,
+            expectedDeliverableCount: preview.deliverableCount,
+            expectedRecipientHash: preview.recipientHash,
+          })
+        ).ok,
+      ).toBe(true);
+      const markFailed = () => sql`UPDATE notifications.batch_recipients SET status = 'error' WHERE batch_id = ${batch.id}::uuid`;
+      await markFailed();
+      expect((await notificationBatches.retryFailed({ id: batch.id, actor })).ok).toBe(true);
+      await markFailed();
+      expect((await notificationBatches.retryRecipient({ id: batch.id, userId, actor })).ok).toBe(true);
+      expect((await notificationBatches.retryRecipient({ id: batch.id, userId, actor })).ok).toBe(false);
+      expect((await notificationBatches.removeDraft({ id: batch.id, actor })).ok).toBe(false);
+      const events = await sql<
+        {
+          action: string;
+          outcome: string;
+          actor_user_id: string;
+          actor_uid: string;
+          target_type: string;
+          target_id: string;
+          metadata: Record<string, unknown>;
+        }[]
+      >`SELECT action, outcome, actor_user_id, actor_uid, target_type, target_id, metadata
+        FROM audit.events WHERE actor_user_id = ${userId}::uuid ORDER BY id`;
+      expect(events.map((e) => e.action)).toEqual([
+        "accounts.notification_batch.create",
+        "accounts.notification_batch.delete",
+        "accounts.notification_batch.create",
+        "accounts.notification_batch.finalize",
+        "accounts.notification_batch.retry_failed",
+        "accounts.notification_batch.retry_recipient",
+      ]);
+      for (const event of events) {
+        expect(event).toMatchObject({ outcome: "allowed", actor_user_id: userId, actor_uid: actor.uid, target_type: "notification_batch" });
+        expect([deleted.id, batch.id]).toContain(event.target_id);
+      }
+      expect(events[3]?.metadata).toEqual({ targetCount: 1, deliverableCount: 1 });
+      expect(events[4]?.metadata).toEqual({ recipientCount: 1 });
+      expect(events[5]?.metadata).toEqual({ recipientUserId: userId });
+      expect(JSON.stringify(events)).not.toContain("Private");
+      expect(JSON.stringify(events)).not.toContain("@example.test");
+    } finally {
+      await sql`DELETE FROM notifications.batches WHERE created_by = ${userId}::uuid`;
+      await sql`DELETE FROM audit.events WHERE actor_user_id = ${userId}::uuid`;
+      await cleanupAuthFixture([userId], []);
+    }
+  });
+
+  test("rolls back all five mutations when the audit write fails", async () => {
+    const userId = await insertUser(crypto.randomUUID(), "audit-rollback");
+    const actor = { userId };
+    const selection = { userIds: [userId] };
+    const input = { actor, selection, subject: "Rollback", bodyMarkdown: "Rollback" };
+    const draft = await notificationBatches.createDraft(input);
+    const sent = await notificationBatches.createDraft(input);
+    if (!draft.ok || !sent.ok) throw new Error("Missing batch fixtures");
+    const preview = await notificationBatches.preview(selection);
+    const finalization = {
+      actor,
+      expectedSelectionHash: draft.data.selectionHash,
+      expectedDeliverableCount: preview.deliverableCount,
+      expectedRecipientHash: preview.recipientHash,
+    };
+    expect((await notificationBatches.finalize({ id: sent.data.id, ...finalization })).ok).toBe(true);
+    await sql`UPDATE notifications.batches SET status='failed' WHERE id=${sent.data.id}::uuid`;
+    await sql`UPDATE notifications.batch_recipients SET status='error' WHERE batch_id=${sent.data.id}::uuid`;
+    const recorder = spyOn(audit, "record").mockRejectedValue(new Error("Audit storage unavailable"));
+    try {
+      await expect(notificationBatches.createDraft(input)).rejects.toThrow("Audit storage unavailable");
+      const [count] = await sql`SELECT count(*)::int AS n FROM notifications.batches WHERE created_by=${userId}::uuid`;
+      expect(count?.n).toBe(2);
+      await expect(notificationBatches.removeDraft({ id: draft.data.id, actor })).rejects.toThrow("Audit storage unavailable");
+      expect((await notificationBatches.get(draft.data.id))?.status).toBe("draft");
+      await expect(notificationBatches.finalize({ id: draft.data.id, ...finalization })).rejects.toThrow("Audit storage unavailable");
+      expect((await notificationBatches.get(draft.data.id))?.status).toBe("draft");
+      const [recipients] = await sql`SELECT count(*)::int AS n FROM notifications.batch_recipients WHERE batch_id=${draft.data.id}::uuid`;
+      expect(recipients?.n).toBe(0);
+      for (const retry of [
+        () => notificationBatches.retryFailed({ id: sent.data.id, actor }),
+        () => notificationBatches.retryRecipient({ id: sent.data.id, userId, actor }),
+      ]) {
+        await expect(retry()).rejects.toThrow("Audit storage unavailable");
+        expect((await notificationBatches.get(sent.data.id))?.status).toBe("failed");
+        const [recipient] = await sql`SELECT status FROM notifications.batch_recipients WHERE batch_id=${sent.data.id}::uuid`;
+        expect(recipient?.status).toBe("error");
+      }
+      expect(recorder).toHaveBeenCalledTimes(5);
+    } finally {
+      recorder.mockRestore();
+      await sql`DELETE FROM notifications.batches WHERE created_by=${userId}::uuid`;
+      await sql`DELETE FROM audit.events WHERE actor_user_id=${userId}::uuid`;
+      await cleanupAuthFixture([userId], []);
     }
   });
 });

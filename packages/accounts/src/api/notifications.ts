@@ -1,10 +1,11 @@
-import { err, fail, ok } from "@k2b/stdlib";
 import { type AuthContext, auth, expectUserBackedActor, jsonResponse, requiresAdmin, respond, v } from "@k2b/cloud/server";
 import { notificationBatches } from "@k2b/cloud/services";
+import { err, fail, ok } from "@k2b/stdlib";
 import { Hono } from "hono";
 import { describeRoute } from "hono-openapi";
 import { z } from "zod";
 import { createPagination, ErrorResponseSchema, PaginationQuerySchema, PaginationResponseSchema, parsePagination } from "@/contracts";
+import { toAccountsActor } from "../shared/actor";
 
 const BatchStatusSchema = z.enum(["draft", "ready", "running", "completed", "completed_with_errors", "failed", "cancelled"]);
 const RecipientStatusSchema = z.enum(["pending", "sending", "sent", "skipped", "error"]);
@@ -200,7 +201,7 @@ const app = new Hono<AuthContext>()
           subject: body.subject,
           bodyMarkdown: body.bodyMarkdown,
           selection: body.selection,
-          createdBy: actor.id,
+          actor: toAccountsActor(actor),
         }),
       );
     },
@@ -241,7 +242,8 @@ const app = new Hono<AuthContext>()
       },
     }),
     v("param", BatchIdParamSchema),
-    async (c) => respond(c, notificationBatches.removeDraft({ id: c.req.valid("param").id })),
+    async (c) =>
+      respond(c, notificationBatches.removeDraft({ id: c.req.valid("param").id, actor: toAccountsActor(expectUserBackedActor(c)) })),
   )
   .get(
     "/batches/:id/recipients",
@@ -298,7 +300,7 @@ const app = new Hono<AuthContext>()
         c,
         notificationBatches.finalize({
           id: params.id,
-          actorUserId: actor.id,
+          actor: toAccountsActor(actor),
           expectedSelectionHash: body.expectedSelectionHash,
           expectedDeliverableCount: body.expectedDeliverableCount,
           expectedRecipientHash: body.expectedRecipientHash,
@@ -322,7 +324,8 @@ const app = new Hono<AuthContext>()
       },
     }),
     v("param", BatchIdParamSchema),
-    async (c) => respond(c, notificationBatches.retryFailed({ id: c.req.valid("param").id })),
+    async (c) =>
+      respond(c, notificationBatches.retryFailed({ id: c.req.valid("param").id, actor: toAccountsActor(expectUserBackedActor(c)) })),
   )
   .post(
     "/batches/:id/recipients/:userId/retry",
@@ -342,7 +345,10 @@ const app = new Hono<AuthContext>()
     v("param", BatchRecipientParamSchema),
     async (c) => {
       const params = c.req.valid("param");
-      return respond(c, notificationBatches.retryRecipient({ id: params.id, userId: params.userId }));
+      return respond(
+        c,
+        notificationBatches.retryRecipient({ id: params.id, userId: params.userId, actor: toAccountsActor(expectUserBackedActor(c)) }),
+      );
     },
   );
 

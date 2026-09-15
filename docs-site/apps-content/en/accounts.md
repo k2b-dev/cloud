@@ -43,7 +43,10 @@ settings, not in Accounts. See [Account types](/en/docs/operations/account-categ
 - Review user-bound and resource-bound service credentials, then revoke an
   active key when its access should end.
 - Trace account and access changes through the audit log, reminder history,
-  and notification batches.
+  and notification batches. Creating or deleting a batch draft, finalizing a
+  batch, and retrying failed recipients record the acting administrator and
+  batch ID. Message content and recipient email addresses are not copied into
+  these audit entries.
 - Inspect and maintain Linux identity attributes. Configure defaults and
   backfill existing accounts in Administration. FreeIPA manages its own values.
   See [Linux identities](/en/docs/operations/linux-identities).
