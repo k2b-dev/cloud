@@ -64,6 +64,9 @@ export const createWorkspaceDerivedModel = (props: PulseWorkspaceProps, state: W
   const selectedBase = createMemo(() => bases().find((base) => base.id === selectedBaseId()) ?? null);
   const selectedDashboard = createMemo(
     () => dashboards().find((dashboard) => dashboard.id === selectedDashboardId()) ?? dashboards()[0] ?? null,
+    undefined,
+    // Polling returns fresh objects; preserve control instances until dashboard content changes.
+    { equals: (left, right) => JSON.stringify(left) === JSON.stringify(right) },
   );
   const dashboardEditPreviewConfig = createMemo(() => dashboardPreviewConfig() ?? selectedDashboard()?.config ?? null);
   const selectedSource = createMemo(() => sources().find((source) => source.id === selectedSourceId()) ?? null);

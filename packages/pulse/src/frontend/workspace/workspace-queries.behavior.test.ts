@@ -5,6 +5,8 @@ import { createDomTestHarness } from "../../../../ui/test/dom";
 import type { PulseDashboard, PulseMetricSeries, PulseSource } from "../../contracts";
 import type { PulseWorkspaceProps, PulseWorkspaceQueryCoverage, WorkspaceView } from "./types";
 import { createPulseWorkspaceQueries } from "./workspace-queries";
+import { createWorkspaceDerivedModel } from "./workspace-derived-model";
+import { createPulseWorkspaceState } from "./workspace-state";
 
 const deferred = <T>() => {
   let resolve!: (value: T) => void;
@@ -512,4 +514,59 @@ describe("Pulse workspace queries", () => {
       globalThis.fetch = originalFetch;
     }
   });
+});
+
+(isServer ? test.skip : test)("unchanged base refresh preserves selected dashboard controls while real edits propagate", async () => {
+  const dom = createDomTestHarness();
+  const originalFetch = globalThis.fetch;
+  const dashboard: PulseDashboard = {
+    id: "dashboard-1",
+    baseId: "base-1",
+    name: "Ops",
+    config: {
+      dsl: "",
+      layout: { version: 1, sections: [], controls: [{ id: "range", kind: "range", variable: "period", label: "Range", defaultValue: "1h" }] },
+    },
+    publicEnabled: false,
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+  };
+  let responseDashboard = dashboard;
+  globalThis.fetch = Object.assign(
+    async (input: RequestInfo | URL) => {
+      const path = String(input);
+      return Response.json(
+        path.endsWith("/dashboards")
+          ? [responseDashboard]
+          : path.endsWith("/inventory")
+            ? { resources: [], metrics: [], events: [], states: [], fields: [] }
+            : [],
+      );
+    },
+    { preconnect: originalFetch.preconnect },
+  );
+  let queries!: ReturnType<typeof createPulseWorkspaceQueries>;
+  let model!: ReturnType<typeof createWorkspaceDerivedModel>;
+  const props = queryProps({ initialDashboards: [dashboard] });
+  const dispose = render(() => {
+    const local = createPulseWorkspaceState(props);
+    queries = createPulseWorkspaceQueries(props, queryDeps("resources"));
+    model = createWorkspaceDerivedModel(props, { ...local, ...queries });
+    return dom.document.createTextNode("");
+  }, dom.root);
+  try {
+    const original = model.selectedDashboard();
+    expect(original).toBe(dashboard);
+    await queries.queries.baseData.refresh();
+    expect(model.selectedDashboard()).toBe(original);
+    expect(model.selectedDashboard()?.config.layout?.controls?.[0]).toBe(original?.config.layout?.controls?.[0]);
+    responseDashboard = { ...dashboard, name: "Changed" };
+    await queries.queries.baseData.refresh();
+    expect(model.selectedDashboard()?.name).toBe("Changed");
+    expect(model.selectedDashboard()).not.toBe(original);
+  } finally {
+    dispose();
+    globalThis.fetch = originalFetch;
+    dom.cleanup();
+  }
 });

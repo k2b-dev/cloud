@@ -1,4 +1,4 @@
-import { type Accessor, createEffect, onCleanup } from "solid-js";
+import { type Accessor, createEffect, createMemo, onCleanup } from "solid-js";
 import type { PulseDashboard } from "../../contracts";
 import type { WorkspaceView } from "./types";
 
@@ -28,12 +28,25 @@ const refreshInterval = (view: WorkspaceView, dashboard: PulseDashboard | null):
 };
 
 export const installNearRealtimeController = (deps: NearRealtimeControllerDeps): void => {
+  const scheduleKey = createMemo(
+    () => ({
+      baseId: deps.selectedBaseId(),
+      view: deps.activeView(),
+      dashboardId: deps.selectedDashboard()?.id,
+      intervalSeconds: refreshInterval(deps.activeView(), deps.selectedDashboard()),
+    }),
+    undefined,
+    {
+      equals: (left, right) =>
+        left.baseId === right.baseId &&
+        left.view === right.view &&
+        left.dashboardId === right.dashboardId &&
+        left.intervalSeconds === right.intervalSeconds,
+    },
+  );
   createEffect(() => {
-    const baseId = deps.selectedBaseId();
-    const view = deps.activeView();
-    const dashboard = deps.selectedDashboard();
+    const { baseId, view, intervalSeconds } = scheduleKey();
     if (!baseId) return;
-    const intervalSeconds = refreshInterval(view, dashboard);
     if (intervalSeconds === null) return;
 
     let disposed = false;
