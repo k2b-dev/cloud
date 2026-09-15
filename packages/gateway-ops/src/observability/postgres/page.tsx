@@ -2,7 +2,7 @@ import { type AuthContext, getDateConfig, getLocale } from "@k2b/cloud/server";
 import { formatBytes, formatDateTime as formatDate, formatNumber } from "@k2b/cloud/shared";
 import { AdminLayout } from "@k2b/cloud/ssr";
 import { SearchBar } from "@k2b/cloud/ssr/islands";
-import { ButtonLink, DataPanel, DataTable, type DataTableColumn, StatCell, StatGrid, StatusBadge } from "@k2b/ui";
+import { ButtonLink, DataPanel, DataTable, type DataTableColumn, NoticeCard, StatCell, StatGrid, StatusBadge } from "@k2b/ui";
 import { ssr } from "../../config";
 
 /** Seconds to a compact age; sessions report ages, not durations. */
@@ -44,16 +44,6 @@ const sortTables = (rows: PostgresTableDiagnostic[], sort: string): PostgresTabl
     default:
       return sorted.sort((a, b) => b.totalBytes - a.totalBytes || a.schema.localeCompare(b.schema) || a.name.localeCompare(b.name));
   }
-};
-
-const warningClasses = (tone: "amber" | "red"): string =>
-  tone === "red"
-    ? "rounded-lg border border-red-200 bg-red-50 p-3 text-red-900 dark:border-red-500/30 dark:bg-red-950/25 dark:text-red-100"
-    : "rounded-lg border border-amber-200 bg-amber-50 p-3 text-amber-900 dark:border-amber-500/30 dark:bg-amber-950/25 dark:text-amber-100";
-const warningGridClass = (count: number): string => {
-  if (count <= 1) return "grid gap-2";
-  if (count === 2) return "grid gap-2 md:grid-cols-2";
-  return "grid gap-2 md:grid-cols-2 xl:grid-cols-3";
 };
 
 export default ssr<AuthContext>(async (c) => {
@@ -281,27 +271,15 @@ export default ssr<AuthContext>(async (c) => {
           />
         </StatGrid>
 
-        {diagnostics.warnings.length ? (
-          <section class={warningGridClass(diagnostics.warnings.length)}>
-            {diagnostics.warnings.map((warning) => (
-              <article class={warningClasses(warning.tone)}>
-                <div class="flex items-start gap-2">
-                  <i
-                    class={`ti mt-0.5 shrink-0 ${
-                      warning.tone === "red"
-                        ? "ti-alert-circle text-red-600 dark:text-red-300"
-                        : "ti-alert-triangle text-amber-600 dark:text-amber-300"
-                    }`}
-                  />
-                  <div class="min-w-0">
-                    <h2 class="text-xs font-semibold">{warning.title}</h2>
-                    <p class="mt-1 text-[11px] opacity-80">{warning.detail}</p>
-                  </div>
-                </div>
-              </article>
-            ))}
-          </section>
-        ) : null}
+        <NoticeCard.Grid items={diagnostics.warnings}>
+          {(warning) => (
+            <NoticeCard
+              tone={warning.tone === "red" ? "danger" : "warning"}
+              title={warning.title}
+              detail={warning.detail}
+            />
+          )}
+        </NoticeCard.Grid>
 
         <section class="paper p-3">
           <h2 class="text-xs font-semibold text-primary">{t.storageView}</h2>

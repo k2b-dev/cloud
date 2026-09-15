@@ -49,6 +49,10 @@ accumulate since the corresponding statistics were reset; a sequential scan
 alone does not imply a missing index. Sessions, indexes, and tables appear
 before storage charts.
 
+Postgres and Valkey use consistent diagnostic notices: amber for warnings and
+red with an error icon for critical findings. Each notice names the problem
+in text as well.
+
 Postgres row counts are planner estimates. Valkey prefixes come from a bounded
 sample rather than a raw key browser. Use these views to direct an
 investigation, not as exact replacements for database administration tools.
