@@ -360,3 +360,17 @@ CAMT supports camt.052.001.08; invoice generation supports EUR ZUGFeRD CII EN169
 PDF invoice reading extracts embedded XML, not OCR. See the Code Mode Finance
 and PDF references for full options and examples. Generating SEPA or invoice
 files does not submit a payment or certify accounting compliance.
+
+### Agent sharing and CLI parity
+
+Assistant's `code_access_read` and `code_access_change` tools use the same App
+permission service as Studio and the existing code-access CLI commands. Agent
+changes require a freshly reviewed `accessRevision`; they cannot be pre-approved
+with a model-supplied flag. App Use is `read`, Manage is `admin`. App recipients
+are users, groups, or authenticated users, not public or service accounts.
+
+For Skills, discover `core.ai.skill.access.read` and
+`core.ai.skill.access.change` through the CLI capability catalog and use the
+normal capability review/execute flow. Read grants first and forward the exact
+`accessRevision` as `expectedAccessRevision`. Resolve recipients through
+`core.entities.search`. Skill and App grants remain independent.

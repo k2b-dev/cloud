@@ -9,8 +9,9 @@ import { LIMITS } from "./contracts";
 import { artifacts, ArtifactError, user } from "./service";
 import { artifactMessages } from "./messages";
 import { sourceDiagnostics, sourceManifest } from "./source";
+import { accessRevision } from "@k2b/cloud/server";
 
-export type CodeToolContext = ArtifactIdentity & { locale: string; signal: AbortSignal };
+export type CodeToolContext = ArtifactIdentity & { locale: string; signal: AbortSignal; review?: boolean };
 const links = (id: string) => ({
   refs: [{ type: "assistant.artifact", id }],
   links: [{ rel: "open" as const, href: `/app/assistant?workspace=${encodeURIComponent(JSON.stringify(["app", id]))}` }],
@@ -60,6 +61,25 @@ async function result<T>(
 }
 
 export const artifactCodeHandlers = {
+  code_access_read: ({ id }, context) => result(context, async () => {
+    const grants = await artifacts.access(id, context);
+    return { data: { id, accessRevision: accessRevision(grants), levels: ["read", "admin"], principalTypes: ["user", "group", "authenticated"], grants } };
+  }),
+  code_access_change: (input, context) => result<unknown>(context, async () => {
+    if (input.principal?.type === "public" || input.principal?.type === "service_account") throw new ArtifactError("INVALID_INPUT");
+    const grants = await artifacts.access(input.id, context);
+    if (accessRevision(grants) !== input.expectedAccessRevision) throw new ArtifactError("CONFLICT");
+    const previous = input.accessId ? grants.find(grant => grant.id === input.accessId) : undefined;
+    if (input.accessId && !previous) throw new ArtifactError("NOT_FOUND");
+    if (context.review) {
+      const resource = await artifacts.get(input.id, context);
+      return { data: { message: `Change access to App “${resource.title}” (${input.id}).\nRecipient: ${JSON.stringify(previous?.principal ?? input.principal)}\nBefore: ${previous?.permission ?? "No grant"}\nAfter: ${input.permission ?? "Remove grant"}\nThis does not change access to any Skill.` } };
+    }
+    if (input.principal && input.permission) await artifacts.grant(input.id, input.principal, input.permission, context, input.expectedAccessRevision);
+    else if (input.accessId) await artifacts.changeGrant(input.id, input.accessId, input.permission, context, input.expectedAccessRevision);
+    else throw new ArtifactError("INVALID_INPUT");
+    return { data: { changed: true } };
+  }),
   code_actions: ({ id, draft }, context) => result(context, async () => {
     const bundle = await artifacts.get(id, context, undefined, !draft);
     if (draft && bundle.permission !== "admin") throw new ArtifactError("ACCESS_DENIED");

@@ -34,6 +34,9 @@ it never deletes history or restores user data. A concurrent write produces a
 conflict: read the new state and reconcile instead of blindly retrying. Coordinate
 overlapping edits; do not build branching machinery for ordinary single-user apps.
 
-Sharing and publishing are independent. Project-linked scripts are available only
+Sharing and publishing are independent. Project-linked Apps are available only
 in that project’s chats to its current members. That context does not grant
 editing, forking, or visibility in the global Studio list.
+
+For requested permission changes, read [Access](access.md). Publishing never
+grants access automatically.

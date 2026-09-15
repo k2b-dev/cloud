@@ -12,7 +12,7 @@ const references = await Promise.all(names.map(async (name) => ({
 // the existing virtual skill filesystem exposed to Assistant.
 const instructions = document.instructions.replace(/\]\(references\/([^\s)]+)\)/g,
   `](/skills/${document.name}/references/$1)`);
-const template = { key: "assistant:code-mode", version: 33, ...document, instructions, references };
+const template = { key: "assistant:code-mode", version: 34, ...document, instructions, references };
 const output = `// Generated from packages/assistant/skills/code-mode. Do not edit here.\n// Regenerate: bun packages/assistant/scripts/generate-code-mode-skill.ts\nimport type { AiSkillTemplate } from "./skills";\n\nexport const ASSISTANT_CODE_MODE_SKILL = ${JSON.stringify(template, null, 2)} satisfies AiSkillTemplate;\n`;
 const destination = new URL("../../cloud/src/ai/code-mode-skill.ts", import.meta.url);
 if (process.argv.includes("--check")) {

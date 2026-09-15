@@ -23,7 +23,7 @@ function register<S extends z.ZodType>(name: string, schema: S, run: (input: z.o
     requireInvocation(() => ({ targetAppId: "assistant", operation: `tool:${name}`, schemaHash: null })),
     async (c) => {
       const envelope = z
-        .object({ input: z.unknown(), conversationId: z.uuid() })
+        .object({ input: z.unknown(), conversationId: z.uuid(), review: z.boolean().optional() })
         .strict()
         .parse(await c.req.json());
       const input = schema.parse(envelope.input);
@@ -39,6 +39,7 @@ function register<S extends z.ZodType>(name: string, schema: S, run: (input: z.o
           accessSubject: c.get("accessSubject"),
           conversationId: conversation.id,
           locale: getLocale(c),
+          review: envelope.review,
           signal: c.req.raw.signal,
         }),
       );
@@ -46,6 +47,8 @@ function register<S extends z.ZodType>(name: string, schema: S, run: (input: z.o
   );
 }
 
+register("code_access_read", CODE_SOURCE_TOOLS.code_access_read.input, artifactCodeHandlers.code_access_read);
+register("code_access_change", CODE_SOURCE_TOOLS.code_access_change.input, artifactCodeHandlers.code_access_change);
 register("code_actions", CODE_SOURCE_TOOLS.code_actions.input, artifactCodeHandlers.code_actions);
 register("code_sql", CODE_SOURCE_TOOLS.code_sql.input, artifactCodeHandlers.code_sql);
 register("code_versions", CODE_SOURCE_TOOLS.code_versions.input, artifactCodeHandlers.code_versions);

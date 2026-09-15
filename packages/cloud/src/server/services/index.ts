@@ -46,3 +46,4 @@ export { crypto, err, fail, isServiceError, ok, okMany, paginate, password, svg,
 // Compat aliases for old API names
 export const images = { generateFallback: _svg.generateAvatar, parseWebpDataUrl: _svg.parseWebpDataUrl };
 export const generatePassword = _password.random;
+export { accessRevision } from "./access-revision";

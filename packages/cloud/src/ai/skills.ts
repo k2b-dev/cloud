@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { accessRevision } from "../server/services/access-revision";
 import { type SQL, type SQLQuery, sql } from "bun";
 import type { AccessSubject } from "../server";
 import {
@@ -319,6 +320,11 @@ const createSkillAccess = async (
   const entry = (await listSkillAccess(skillId, db)).find((item) => item.shortId === shortId);
   if (!entry) throw new Error("Failed to read the created skill access entry.");
   return entry;
+};
+
+const checkAccessRevision = async (skillId: string, expected: string | undefined, db: SQL) => {
+  if (expected !== undefined && accessRevision(await listSkillAccess(skillId, db)) !== expected)
+    throw new AiSkillRevisionConflictError();
 };
 
 const updateSkillAccess = async (skillId: string, accessId: string, permission: AiSkillPermission, db: SQL): Promise<boolean> => {
@@ -656,35 +662,42 @@ export const aiSkills = {
   },
 
   async listAccess(skillId: string, subject: AccessSubject | null): Promise<AiSkillAccess[] | null> {
-    if (!(await requireSkill(await getRow(skillId), subject, "admin"))) return null;
-    return listSkillAccess(skillId);
+    return sql.begin(async tx => {
+      const [row] = await tx<SkillRow[]>`SELECT * FROM ai.skills WHERE id=${skillId}::uuid FOR UPDATE`;
+      if (!row || !hasPermission(await permissionFor(row.id, subject, tx), "admin")) return null;
+      return listSkillAccess(skillId, tx);
+    });
   },
 
   async grantAccess(
     skillId: string,
     subject: AccessSubject | null,
     input: { principal: Principal; permission: AiSkillPermission },
+    expectedAccessRevision?: string,
   ): Promise<AiSkillAccess | null> {
     return sql.begin(async (tx) => {
       const [row] = await tx<SkillRow[]>`SELECT * FROM ai.skills WHERE id = ${skillId}::uuid FOR UPDATE`;
       if (!row || !hasPermission(await permissionFor(row.id, subject, tx), "admin")) return null;
+      await checkAccessRevision(skillId, expectedAccessRevision, tx);
       return createSkillAccess(skillId, input, tx);
     });
   },
 
-  async updateAccess(skillId: string, accessId: string, subject: AccessSubject | null, permission: AiSkillPermission): Promise<boolean> {
+  async updateAccess(skillId: string, accessId: string, subject: AccessSubject | null, permission: AiSkillPermission, expectedAccessRevision?: string): Promise<boolean> {
     return sql.begin(async (tx) => {
       const [row] = await tx<SkillRow[]>`SELECT * FROM ai.skills WHERE id = ${skillId}::uuid FOR UPDATE`;
-      return row && hasPermission(await permissionFor(row.id, subject, tx), "admin")
-        ? updateSkillAccess(skillId, accessId, permission, tx)
-        : false;
+      if (!row || !hasPermission(await permissionFor(row.id, subject, tx), "admin")) return false;
+      await checkAccessRevision(skillId, expectedAccessRevision, tx);
+      return updateSkillAccess(skillId, accessId, permission, tx);
     });
   },
 
-  async revokeAccess(skillId: string, accessId: string, subject: AccessSubject | null): Promise<boolean> {
+  async revokeAccess(skillId: string, accessId: string, subject: AccessSubject | null, expectedAccessRevision?: string): Promise<boolean> {
     return sql.begin(async (tx) => {
       const [row] = await tx<SkillRow[]>`SELECT * FROM ai.skills WHERE id = ${skillId}::uuid FOR UPDATE`;
-      return row && hasPermission(await permissionFor(row.id, subject, tx), "admin") ? revokeSkillAccess(skillId, accessId, tx) : false;
+      if (!row || !hasPermission(await permissionFor(row.id, subject, tx), "admin")) return false;
+      await checkAccessRevision(skillId, expectedAccessRevision, tx);
+      return revokeSkillAccess(skillId, accessId, tx);
     });
   },
 

@@ -5,7 +5,7 @@ import { AI_FILES_MAX_CONVERSATION_BYTES_DEFAULT, withAiShortIdForDb, CodeResour
 import {
   type AccessSubject, type AuthContext, type PermissionLevel, type Principal,
   buildAccessPrincipalCondition, createAccess, getAccess, deleteAccess, updateAccess,
-  hasPermission, resolveDisplayNames, userFromActor,
+  hasPermission, resolveDisplayNames, userFromActor, accessRevision,
 } from "@k2b/cloud/server";
 import { app } from "../config";
 import { checkStorageBudget } from "./storage-budget";
@@ -111,6 +111,13 @@ async function writeRevision(db: SQL, id: string, number: number, source: Artifa
   }
   await db`INSERT INTO assistant.artifact_revisions(artifact_id,revision,source,source_bytes)
     VALUES(${id}::uuid,${number},(${encoded}::text)::jsonb,${size})`;
+}
+
+async function checkAccessRevision(db: SQL, id: string, expected: string | undefined) {
+  if (expected === undefined) return;
+  const links = await db<{ access_id: string }[]>`SELECT access_id FROM assistant.artifact_access WHERE artifact_id=${id}::uuid`;
+  const entries = await Promise.all(links.map(link => getAccess({ id: link.access_id }, db)));
+  if (accessRevision(entries.filter(entry => entry !== null)) !== expected) throw new ArtifactError("CONFLICT");
 }
 
 export const artifacts = {
@@ -263,22 +270,24 @@ export const artifacts = {
       return resolveDisplayNames(grants.filter((grant) => grant !== null));
     });
   },
-  async grant(id: string, principal: Principal, level: "read" | "admin", identity: ArtifactIdentity) {
+  async grant(id: string, principal: Principal, level: "read" | "admin", identity: ArtifactIdentity, expectedAccessRevision?: string) {
     z.enum(["read", "admin"]).parse(level);
     if (principal.type === "public" || principal.type === "service_account") throw new ArtifactError("INVALID_INPUT");
     return sql.begin(async (db) => {
       id = (await requireArtifact(db, id,identity,"admin")).row.id;
+      await checkAccessRevision(db, id, expectedAccessRevision);
       const access = await createAccess({ principal, permission: level },db);
       if (!access.ok) throw new ArtifactError("INVALID_INPUT");
       await db`INSERT INTO assistant.artifact_access VALUES(${id}::uuid,${access.data.id}::uuid)`;
       return getAccess({ id: access.data.id },db);
     });
   },
-  async changeGrant(id: string, accessId: string, level: "read" | "admin" | null, identity: ArtifactIdentity) {
+  async changeGrant(id: string, accessId: string, level: "read" | "admin" | null, identity: ArtifactIdentity, expectedAccessRevision?: string) {
     z.enum(["read", "admin"]).nullable().parse(level);
     z.uuid().parse(accessId);
     return sql.begin(async (db) => {
       id = (await requireArtifact(db, id,identity,"admin")).row.id;
+      await checkAccessRevision(db, id, expectedAccessRevision);
       const [grant] = await db<{ permission: PermissionLevel }[]>`SELECT a.permission FROM auth.access a
         JOIN assistant.artifact_access link ON link.access_id=a.id WHERE link.artifact_id=${id}::uuid AND a.id=${accessId}::uuid`;
       if (!grant) throw new ArtifactError("NOT_FOUND");

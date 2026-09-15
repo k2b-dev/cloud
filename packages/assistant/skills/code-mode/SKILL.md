@@ -74,7 +74,8 @@ supported surface; links within references add related workflows when needed.
 | External HTTPS and personal secrets | [HTTP and secrets](references/http.md) |
 | Call a published App action; declare handlers | [App actions](references/app-actions.md) |
 | Reuse work across chats, create or edit an App | [Source workflow](references/source-workflow.md) |
-| Publish, restore, copy, grant access | [Publishing and access](references/publishing.md) |
+| Publish, restore, copy | [Publishing](references/publishing.md) |
+| Find recipients or change App/Skill sharing | [Access](references/access.md) |
 | Execute, inspect, interact, export, stop, diagnose errors | [Run and debug](references/debugging.md) |
 | Unfamiliar inputs or cross-app investigation | [Investigation](references/investigation.md) |
 | Complete app starters | [Examples](references/examples.md) |

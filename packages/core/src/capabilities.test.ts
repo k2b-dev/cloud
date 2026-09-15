@@ -19,7 +19,8 @@ import {
   capabilityResultSchema,
   type User,
 } from "@k2b/cloud/contracts";
-import { audit } from "@k2b/cloud/services";
+import { audit, accountsAppService } from "@k2b/cloud/services";
+import { accessRevision } from "@k2b/cloud/server";
 import * as taskRuntime from "./ai-chat-tasks-runtime";
 import { aiCapabilities } from "./capabilities";
 
@@ -150,6 +151,31 @@ const storedMessage = (seq: number, message: AiStoredMessage["message"], overrid
 afterEach(() => mock.restore());
 
 describe("Core AI capabilities", () => {
+  test("recipient discovery preserves actor visibility and returns directly usable principals", async () => {
+    const list = spyOn(accountsAppService.entity, "list").mockResolvedValue({
+      items: [{ kind: "user", user }], page: 2, perPage: 1, hasNext: true, total: 3,
+    });
+    const result = await aiCapabilities.queries["entities.search"].run({ query: "Assistant", types: ["user"], cursor: "2", limit: 1 }, context);
+    expect(list).toHaveBeenCalledWith(expect.objectContaining({ actor: { userId: user.id, uid: user.uid, roles: user.roles, provider: user.provider }, pagination: { page: 2, perPage: 1 } }));
+    expect(result).toMatchObject({ ok: true, data: { data: [{ principal: { type: "user", userId: user.id }, label: user.displayName }], page: { nextCursor: "3" } } });
+  });
+
+  test("Skill access changes require a fresh review and pass the exact grant revision to the owning service", async () => {
+    spyOn(aiSkills, "getByShortId").mockResolvedValue(skill);
+    const grants = [{ id: "AbC234", shortId: "AbC234", principal: { type: "user" as const, userId: user.id }, permission: "admin" as const, createdAt: "" }];
+    spyOn(aiSkills, "listAccess").mockResolvedValue(grants);
+    const update = spyOn(aiSkills, "updateAccess").mockResolvedValue(true);
+    const operation = aiCapabilities.actions["ai.skill.access.change"];
+    const input = { skillId: skill.shortId, accessId: "AbC234", permission: "read" as const, expectedAccessRevision: accessRevision(grants) };
+    const manifest = compileCapabilityManifest("core", aiCapabilities);
+    expect(manifest.actions.find(action => action.localId === "ai.skill.access.change")?.approval).toBeUndefined();
+    expect(await operation.review(input, context)).toMatchObject({ ok: true, data: { details: expect.arrayContaining([{ label: "Before", value: "admin" }, { label: "After", value: "read" }]) } });
+    expect(await operation.review({ ...input, expectedAccessRevision: "0".repeat(64) }, context)).toMatchObject({ ok: false });
+    expect(update).not.toHaveBeenCalled();
+    expect(await operation.run(input, context)).toMatchObject({ ok: true, data: { data: { changed: true } } });
+    expect(update).toHaveBeenCalledWith(skill.id, "AbC234", context.accessSubject, "read", input.expectedAccessRevision);
+    expect(operation.input.safeParse({ ...input, confirmed: true }).success).toBe(false);
+  });
   test("publishes closed-world AI capabilities under the core.ai namespace", () => {
     const manifest = compileCapabilityManifest("core", aiCapabilities);
     const queries = [
@@ -158,14 +184,17 @@ describe("Core AI capabilities", () => {
       "ai.chat.search",
       "ai.chats.resources",
       "ai.chats.search",
+      "ai.skill.access.read",
       "ai.skill.read",
       "ai.skill.reference.read",
       "ai.skills.list",
       "ai.task.read",
       "ai.tasks.list",
+      "entities.search",
     ];
     const actions = [
       "ai.chat.message",
+      "ai.skill.access.change",
       "ai.skill.create",
       "ai.skill.delete",
       "ai.skill.enabled.set",
@@ -197,6 +226,7 @@ describe("Core AI capabilities", () => {
       ),
     ).toEqual({
       "ai.chat.message": { destructive: false, idempotency: "required" },
+      "ai.skill.access.change": { destructive: true, idempotency: "required" },
       "ai.skill.create": { destructive: false, idempotency: "required" },
       "ai.skill.delete": { destructive: true, idempotency: "required" },
       "ai.skill.enabled.set": { destructive: false, idempotency: "none" },

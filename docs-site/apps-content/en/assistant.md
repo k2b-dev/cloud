@@ -162,7 +162,7 @@ Open **Assistant settings → Approvals** to review Actions previously accepted 
 matching call. Sending email, deleting data, open-world effects, and other
 Actions with the default approval policy continue to require confirmation every
 time. Code Mode source and execution tools run without confirmation within the
-user's existing permissions; they do not grant sharing or app deletion.
+user's existing permissions; they do not implicitly grant sharing or app deletion.
 
 ## Use Assistant from the terminal
 
@@ -221,6 +221,21 @@ stored conversation files that Assistant can read or transcribe again. Audio
 files you attach yourself remain in the regular chat files.
 
 ### Studio publication versions
+
+Assistant can manage requested sharing without opening Studio. It resolves recipients
+through the permission-aware `core.entities.search` capability and reads current
+App grants with `code_access_read`. `code_access_change` presents the exact
+recipient and before/after permission for fresh confirmation. App levels are
+Use (`read`) and Manage (`admin`); supported recipients are users, groups, and
+all authenticated users. Public and service-account App grants are unsupported.
+Concurrent changes invalidate the reviewed grant revision; the last manager
+cannot be removed.
+
+Skill sharing uses `core.ai.skill.access.read` and
+`core.ai.skill.access.change`, with Read/Edit/Manage (`read`/`write`/`admin`).
+A Skill and an App referenced by that Skill have independent grants. Sharing
+one never shares the other. The agent explains missing access and prepares each
+requested change separately. Access tools load only for sharing tasks.
 
 Sharing and publication are independent. Publishing a personal application never
 adds access grants. **Start** runs the current publication; before the first

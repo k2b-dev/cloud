@@ -58,6 +58,7 @@ export type {
   ServiceErrorCode,
 } from "./services";
 export {
+  accessRevision,
   buildAccessPrincipalCondition,
   buildAccessPrincipalTierConditions,
   createAccess,

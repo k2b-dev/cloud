@@ -83,7 +83,15 @@ Pass the exact current revision to mutations and read again after a revision con
 
 Creating, changing, and deleting Skills are reviewed mutations. Prepare the concrete content the user requested, then use the Capability review instead of asking for an extra confirmation that duplicates it.
 
-Sharing, access changes, imports, and exports are not available through these capabilities. Say so plainly rather than inventing a tool or bypassing Cloud permissions.`;
+## Optional App-backed workflows
+
+A Skill can reference a reusable Studio App and its published actions instead of duplicating code. Load \`assistant-code-mode\` only when building, changing, or discovering such an App is useful. Apps may be stateless scripts, agent-only services with shared data, dashboards, or a combination. Many Skills need no code and many Apps need no Skill.
+
+When referring to an App, include its exact ID, action names, input/output meaning, and a concrete workflow example. Read the action schemas instead of guessing APIs. Skill access and App access are independent: warn when intended recipients can use only one; never grant access implicitly.
+
+For requested sharing, discover \`core.entities.search\` to resolve a recipient, then \`core.ai.skill.access.read\` and \`core.ai.skill.access.change\`. Read current grants and pass their exact accessRevision as expectedAccessRevision. Supply either a returned principal and permission (read/write/admin), or an existing accessId and permission (null revokes). Every mutation receives fresh review and preserves the last administrator. After a conflict, re-read and prepare a new review. For App permissions, read the Code Mode access reference; App Use/Manage is separate from Skill Read/Edit/Manage.
+
+Imports and exports are not available through these capabilities. Do not invent a tool or bypass Cloud permissions.`;
 
 const CLOUD_MAIL_INSTRUCTIONS = `# Work with Cloud Mail
 
@@ -382,7 +390,7 @@ const BUILTIN_CLOUD_AI_SKILLS: AiSkillTemplate[] = [
     instructions: CLOUD_ASSISTANT_INSTRUCTIONS,
   },
   {
-    version: 1,
+    version: 2,
     key: "core:skill-creator",
     name: "skill-creator",
     description:

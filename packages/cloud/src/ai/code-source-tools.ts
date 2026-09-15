@@ -16,7 +16,7 @@ import { resolveAiCapabilityActor } from "./capability-execution";
 import { aiConversations } from "./store";
 import { defineAiTool } from "./tools";
 
-const WRITE_TOOLS = new Set(["code_create", "code_write", "code_remove", "code_update", "code_fork", "code_publish", "code_restore"]);
+const WRITE_TOOLS = new Set(["code_create", "code_write", "code_remove", "code_update", "code_fork", "code_publish", "code_restore", ...Object.entries(CODE_SOURCE_TOOLS).filter(([, definition]) => "review" in definition && definition.review).map(([name]) => name)]);
 
 const Reply = z.discriminatedUnion("ok", [
   z.object({ ok: z.literal(true), data: z.unknown() }),
@@ -44,29 +44,49 @@ export function createCodeSourceTool(name: CodeSourceToolName) {
     const app = await getApp("assistant");
     if (!app) throw new Error("Assistant is unavailable.");
     const signal = context.signal;
-    const signed = await withActiveIdentitySigner(
-      "invocation",
-      (signer) =>
-        signInvocationToken({
-          targetAppId: "assistant",
-          callingAppId: "core",
-          operation: `tool:${name}`,
-          schemaHash: null,
-          authority: {
-            sub: actor.user.id,
-            principal_type: "user",
-            access_subject_type: "user",
-            access_subject_id: actor.user.id,
-            credential_kind: "session",
-            scopes: [],
-          },
-          signer,
-          issuer: signer.issuer,
-        }),
-      { signal, timeoutMs: 5000 },
-    );
-    const headers = new Headers({ authorization: `Bearer ${signed.token}`, "content-type": "application/json" });
-    if (context.locale) headers.set(LOCALE_HEADER, context.locale);
+    const send = async (review = false) => {
+      const signed = await withActiveIdentitySigner(
+        "invocation",
+        (signer) =>
+          signInvocationToken({
+            targetAppId: "assistant",
+            callingAppId: "core",
+            operation: `tool:${name}`,
+            schemaHash: null,
+            authority: {
+              sub: actor.user.id,
+              principal_type: "user",
+              access_subject_type: "user",
+              access_subject_id: actor.user.id,
+              credential_kind: "session",
+              scopes: [],
+            },
+            signer,
+            issuer: signer.issuer,
+          }),
+        { signal, timeoutMs: 5000 },
+      );
+      const headers = new Headers({ authorization: `Bearer ${signed.token}`, "content-type": "application/json" });
+      if (context.locale) headers.set(LOCALE_HEADER, context.locale);
+      const response = await fetch(new URL(`/_internal/assistant/tools/${name}`, app.baseUrl), {
+        method: "POST",
+        headers,
+        redirect: "manual",
+        signal,
+        body: JSON.stringify({ input, conversationId: context.conversationId, ...(review ? { review: true } : {}) }),
+      });
+      const parsed = await readBoundedJson(response, 256 * 1024);
+      if (!parsed.ok) throw new Error("Invalid Assistant tool response. A write may have completed; inspect its state before retrying.");
+      const reply = Reply.safeParse(parsed.data);
+      if (!reply.success) throw new Error("Assistant tool request failed. Inspect resource state before retrying a write.");
+      if (!reply.data.ok) throw new Error(`${reply.data.error.code}: ${reply.data.error.message}`);
+      if (!response.ok) throw new Error("Assistant tool request failed.");
+      return { data: reply.data.data, status: response.status };
+    };
+    if ("review" in definition && definition.review) {
+      const preview = z.object({ data: z.object({ message: z.string().min(1) }) }).parse((await send(true)).data).data;
+      if (!await context.requestApproval(preview.message)) throw new Error("The user declined this change. No mutation was sent.");
+    }
     // Reuse the platform replay guard; these tools are not registered capabilities.
     const claim = WRITE_TOOLS.has(name)
       ? {
@@ -85,21 +105,9 @@ export function createCodeSourceTool(name: CodeSourceToolName) {
         throw new Error(`Write outcome ${state.state}; inspect current state before attempting another write.`);
     }
     try {
-      const response = await fetch(new URL(`/_internal/assistant/tools/${name}`, app.baseUrl), {
-        method: "POST",
-        headers,
-        redirect: "manual",
-        signal,
-        body: JSON.stringify({ input, conversationId: context.conversationId }),
-      });
-      const parsed = await readBoundedJson(response, 256 * 1024);
-      if (!parsed.ok) throw new Error("Invalid Assistant tool response. A write may have completed; inspect its state before retrying.");
-      const reply = Reply.safeParse(parsed.data);
-      if (!reply.success) throw new Error("Assistant tool request failed. Inspect resource state before retrying a write.");
-      if (!reply.data.ok) throw new Error(`${reply.data.error.code}: ${reply.data.error.message}`);
-      if (!response.ok) throw new Error("Assistant tool request failed.");
-      if (claim) await completeCapabilityClaim(claim, response.status, reply.data.data);
-      return reply.data.data;
+      const response = await send();
+      if (claim) await completeCapabilityClaim(claim, response.status, response.data);
+      return response.data;
     } catch (error) {
       if (claim) await markCapabilityClaimUncertain(claim);
       throw error;
@@ -108,6 +116,8 @@ export function createCodeSourceTool(name: CodeSourceToolName) {
 }
 
 export const createCodeSourceTools = () => [
+  createCodeSourceTool("code_access_read"),
+  createCodeSourceTool("code_access_change"),
   createCodeSourceTool("code_actions"),
   createCodeSourceTool("code_sql"),
   createCodeSourceTool("code_versions"),

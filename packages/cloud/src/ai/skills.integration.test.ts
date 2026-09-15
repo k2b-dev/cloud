@@ -3,6 +3,7 @@ import { sql } from "bun";
 import { migrateCloudAi } from "./migrate";
 import * as skillTemplates from "./skill-seeds";
 import { AiSkillRevisionConflictError, aiSkills } from "./skills";
+import { accessRevision } from "../server/services/access-revision";
 import { aiConversations } from "./store";
 
 const canUseAiDatabase = async (): Promise<boolean> => {
@@ -31,6 +32,28 @@ const insertUser = async (label: string): Promise<string> => {
 };
 
 describe.skipIf(!databaseReady)("aiSkills (integration)", () => {
+  test("grant revisions serialize reviewed changes and keep the last administrator", async () => {
+    const ownerId = await insertUser("access-owner"), otherId = await insertUser("access-reader");
+    const owner = { type: "user" as const, userId: ownerId };
+    const skill = await aiSkills.create({ subject: owner, name: `access-${crypto.randomUUID()}`, description: "Reviewed access fixture", instructions: "Summarize the supplied text." });
+    try {
+      const initial = (await aiSkills.listAccess(skill.id, owner))!;
+      const expected = accessRevision(initial);
+      const changes = await Promise.allSettled([
+        aiSkills.grantAccess(skill.id, owner, { principal: { type: "user", userId: otherId }, permission: "read" }, expected),
+        aiSkills.grantAccess(skill.id, owner, { principal: { type: "authenticated" }, permission: "read" }, expected),
+      ]);
+      expect(changes.filter(change => change.status === "fulfilled")).toHaveLength(1);
+      expect(changes.filter(change => change.status === "rejected")).toHaveLength(1);
+      const current = (await aiSkills.listAccess(skill.id, owner))!;
+      await expect(aiSkills.revokeAccess(skill.id, initial[0]!.id, owner, accessRevision(current))).rejects.toThrow("at least one admin");
+      await expect(aiSkills.updateAccess(skill.id, initial[0]!.id, owner, "read", expected)).rejects.toBeInstanceOf(AiSkillRevisionConflictError);
+      expect(await aiSkills.listAccess(skill.id, { type: "user", userId: otherId })).toBeNull();
+    } finally {
+      await aiSkills.admin.delete(skill.id);
+      await sql`DELETE FROM auth.users WHERE id IN (${ownerId}::uuid,${otherId}::uuid)`;
+    }
+  });
   test("seeds one ordinary Skill once, then leaves permissions, edits, and deletion to admins", async () => {
     const userId = await insertUser("seeded");
     const subject = { type: "user" as const, userId };

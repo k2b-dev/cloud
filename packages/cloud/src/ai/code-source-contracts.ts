@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { CodeResourceId } from "./browser-code-contracts";
+import { PrincipalSchema } from "../contracts/shared";
 
 // Flat Assistant tool inputs. The owning service also validates its domain contracts.
 const Id = z.object({ id: CodeResourceId }).strict();
@@ -38,13 +39,28 @@ const DatabaseSql = z.object({
 });
 
 export const CODE_SOURCE_TOOLS = {
+  code_access_read: {
+    description: "Read an App's current grants and accessRevision before changing access. Manage required. App Use is read; Manage is admin. Skill access is separate.",
+    input: Id,
+  },
+  code_access_change: {
+    description: "Grant, change or revoke one App permission with fresh user review. Read code_access_read first. Sharing a referenced Skill is a separate operation.",
+    review: true,
+    input: Id.extend({
+      expectedAccessRevision: z.string().regex(/^[a-f0-9]{64}$/).describe("Exact accessRevision returned by code_access_read."),
+      principal: PrincipalSchema.refine(principal => principal.type !== "public" && principal.type !== "service_account", "Studio Apps support user, group or authenticated grants.").optional().describe("New user or group from core.entities.search, or authenticated. Studio does not support public or service_account grants. Supply principal OR accessId."),
+      accessId: z.uuid().optional().describe("Existing grant ID from code_access_read; supply accessId OR principal."),
+      permission: z.enum(["read", "admin"]).nullable().describe("read means Use, admin means Manage; null removes an existing accessId."),
+    }).refine(input => Number(input.principal !== undefined) + Number(input.accessId !== undefined) === 1
+      && (input.principal === undefined || input.permission !== null), "Supply principal with permission OR accessId with permission (null removes)"),
+  },
   code_actions: {
     description: "Discover a visible App's currently published actions and their complete input/output JSON Schemas without running code. Returns publishedVersion for code_action. Requires Use; no draft source or management tools are loaded.",
     input: Id.extend({ draft: z.boolean().default(false).describe("Inspect current draft actions instead of the publication; Manage required.") }),
   },
   code_sql: {
     description:
-      "Run a read-only SELECT directly against an app or saved script database without writing code. Supply its id and parameterized SQL. Does not create or connect a database. Requires current resource access; Project-only script access applies only in that Project chat. Narrow columns and add LIMIT for large results.",
+      "Run a read-only SELECT directly against an App database without writing code. Supply its id and parameterized SQL. Does not create or connect a database. Requires current resource access; Project access applies only in that Project chat. Narrow columns and add LIMIT for large results.",
     input: Id.extend(DatabaseSql.shape),
   },
   code_versions: {
@@ -53,7 +69,7 @@ export const CODE_SOURCE_TOOLS = {
   },
   code_list: {
     description:
-      "Find accessible apps and saved scripts, including published Project scripts in the current authorized Project chat. Reuse the intended resource instead of creating duplicates.",
+      "Find accessible Apps, including published Project Apps in the current authorized Project chat. Reuse the intended resource instead of creating duplicates.",
     input: z
       .object({
         page: Page,
@@ -76,7 +92,7 @@ export const CODE_SOURCE_TOOLS = {
   },
   code_fork: {
     description:
-      "Create a private editable copy of an accessible publication. Source is copied; shared data, database and Project associations are not. Project-only script access does not permit forks.",
+      "Create a private editable copy of an accessible publication. Source is copied; shared data, database and Project associations are not. Project-only access does not permit forks.",
     input: Id,
   },
   code_publish: {

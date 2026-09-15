@@ -11,7 +11,7 @@ try {
   await docker("run","--detach","--name",name,"--env","POSTGRES_HOST_AUTH_METHOD=trust","--env","POSTGRES_DB=cloud_assistant_artifacts_test","--publish","127.0.0.1::5432","--tmpfs","/var/lib/postgresql/data","postgres:17-alpine");
   created=true;
   for(let attempt=0;;attempt++) {
-    try {await docker("exec",name,"pg_isready","-U","postgres");break;}
+    try {await docker("exec",name,"pg_isready","-h","127.0.0.1","-U","postgres");break;}
     catch(error){if(attempt>=60)throw error;await Bun.sleep(250);}
   }
   const port=(await docker("port",name,"5432/tcp")).split(":").at(-1);

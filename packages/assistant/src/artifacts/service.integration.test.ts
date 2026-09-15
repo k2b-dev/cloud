@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import type { AuthContext } from "@k2b/cloud/server";
+import { accessRevision, type AuthContext } from "@k2b/cloud/server";
 import { createArtifactServiceRoutes } from "./api";
 import { evaluateCodeMode } from "./code-mode.eval";
 import { loadAssistantChatContextSnapshot } from "../chat-context";
@@ -318,6 +318,32 @@ const isolated = /\/cloud_assistant_artifacts_test(?:\?|$)/.test(process.env.DAT
       JOIN auth.access a ON a.id=link.access_id WHERE link.artifact_id=(SELECT id FROM assistant.artifacts WHERE short_id=${id}) AND a.permission='admin'`;
     await expect(artifacts.changeGrant(id,grant!.access_id,null,owner)).rejects.toMatchObject({ code: "LAST_MANAGER" });
     await expect(artifacts.changeGrant(id,crypto.randomUUID(),null,owner)).rejects.toMatchObject({ code: "NOT_FOUND" });
+  });
+
+  test("reviewed app grants reject stale approval and serialize concurrent changes", async () => {
+    const resource = await artifacts.create({ title: "Reviewed sharing", source }, owner);
+    const context = { ...owner, locale: "en", signal: new AbortController().signal };
+    const grants = await artifacts.access(resource.id, owner);
+    const input = { id: resource.id, expectedAccessRevision: accessRevision(grants),
+      principal: { type: "user" as const, userId: reader.user.id }, permission: "read" as const };
+    const preview = await artifactCodeHandlers.code_access_change(input, { ...context, review: true });
+    expect(preview).toMatchObject({ ok: true, data: { data: { message: expect.stringContaining("Reviewed sharing") } } });
+    expect(await artifacts.access(resource.id, owner)).toEqual(grants);
+    const results = await Promise.all([
+      artifactCodeHandlers.code_access_change(input, context),
+      artifactCodeHandlers.code_access_change({ ...input, principal: { type: "user", userId: editor.user.id } }, context),
+    ]);
+    expect(results.filter(result => result.ok)).toHaveLength(1);
+    expect(results.find(result => !result.ok)).toMatchObject({ ok: false, error: { code: "CONFLICT" } });
+    expect(await artifactCodeHandlers.code_access_change(input, { ...context, review: true }))
+      .toMatchObject({ ok: false, error: { code: "CONFLICT" } });
+    const latest = await artifacts.access(resource.id, owner);
+    const manager = latest.find(grant => grant.permission === "admin")!;
+    expect(await artifactCodeHandlers.code_access_change({ id: resource.id, accessId: manager.id,
+      expectedAccessRevision: accessRevision(latest), permission: null }, context))
+      .toMatchObject({ ok: false, error: { code: "LAST_MANAGER" } });
+    expect(await artifactCodeHandlers.code_access_read({ id: resource.id }, { ...stranger, locale: "en", signal: context.signal }))
+      .toMatchObject({ ok: false, error: { code: "ACCESS_DENIED" } });
   });
 
   test("the permission editor uses canonical grants and resolved names", async () => {
