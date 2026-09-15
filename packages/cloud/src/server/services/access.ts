@@ -568,7 +568,7 @@ export const listUsersWithAccess = async (params: {
  * Resolve display names for access entries.
  * Populates the displayName field based on principal type.
  */
-export const resolveDisplayNames = async (entries: AccessEntry[]): Promise<AccessEntry[]> => {
+export const resolveDisplayNames = async <T extends { principal: Principal }>(entries: T[]): Promise<(T & { displayName: string; avatarHash?: string | null })[]> => {
   const userIds = entries.filter((e) => e.principal.type === "user").map((e) => (e.principal as { type: "user"; userId: string }).userId);
 
   const groupIds = entries

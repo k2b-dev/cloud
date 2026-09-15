@@ -2,7 +2,8 @@
 
 Files belong to a chat, Project, or App shared store. A location is
 `{scope:"chat"|"project"|"app",id,path}`. A reference adds an opaque string
-`version`. Reuse returned locations and references exactly; access to a location
+`version`. The current chat ID is supplied as `Chat:` in the platform context;
+use it for `scope:"chat"` rather than guessing an ID. Reuse returned locations and references exactly; access to a location
 never grants access to its whole store or to another resource.
 
 Load only `code_files`, `code_file_stat`, and `code_file_copy` as needed.
@@ -39,3 +40,7 @@ For small UTF-8 files that should become App source, use
 This is a reviewed import with the same source references, not a chat-only
 special case. Source file/bundle limits still apply; keep larger or private
 runtime data in shared files or the database instead of embedding it in source.
+
+Known rejections return `CONFLICT` for an occupied or changed destination and
+`STORAGE_FULL` for a destination byte limit. No destination bytes were written.
+Choose another path or reduce the file size, then prepare a new review.

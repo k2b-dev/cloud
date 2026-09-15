@@ -92,6 +92,10 @@ const isolated = /\/cloud_assistant_artifacts_test(?:\?|$)/.test(process.env.DAT
       expect((await call("wrong type")).status).toBe(400);
       expect((await call(3)).status).toBe(200);
       await artifacts.writeFile(resource.id, "double.ts", "export default (value: number) => value * 3;", owner);
+      const context = { ...owner, locale:"en", signal:new AbortController().signal };
+      expect(await artifactCodeHandlers.code_actions({id:resource.id,draft:false},context)).toMatchObject({ok:true,data:{data:{publishedVersion:1}}});
+      expect(JSON.stringify(await artifactCodeHandlers.code_actions({id:resource.id,draft:false},context))).not.toContain('"revision"');
+      expect(await artifactCodeHandlers.code_actions({id:resource.id,draft:true},context)).toMatchObject({ok:true,data:{data:{revision:2}}});
       // A draft update does not change the published action.
       expect((await call(3)).status).toBe(200);
       await artifacts.publish(resource.id, 2, owner, "Triple now");
@@ -100,6 +104,18 @@ const isolated = /\/cloud_assistant_artifacts_test(?:\?|$)/.test(process.env.DAT
       await artifacts.unpublish(resource.id, owner);
       expect((await call(3, 2)).status).toBe(404);
     } finally { await artifacts.remove(resource.id, owner); }
+  });
+
+  test("agent publication and draft discovery report invalid source without changing publication", async () => {
+    const context = { ...owner, locale: "en", signal: new AbortController().signal };
+    for (const content of ["{", JSON.stringify({actions:[{name:"Convert"}]}), JSON.stringify({actions:[{name:"convert",title:"Convert",description:"Convert",entry:"missing.ts",inputSchema:{},outputSchema:{}}]})]) {
+      const resource = await artifacts.create({ title: "Invalid manifest", source: { entry:"main.ts", files:[...source.files,{path:"app.actions.json",content}] } }, owner);
+      try {
+        expect(await artifactCodeHandlers.code_actions({id:resource.id,draft:true},context)).toMatchObject({ok:false,error:{code:"COMPILE_FAILED",status:400,message:expect.stringContaining("app.actions.json")}});
+        expect(await artifactCodeHandlers.code_publish({id:resource.id,expectedRevision:1,note:"Test"},context)).toMatchObject({ok:false,error:{code:"COMPILE_FAILED",status:400}});
+        expect((await artifacts.get(resource.id,owner)).publishedVersion).toBeNull();
+      } finally { await artifacts.remove(resource.id,owner); }
+    }
   });
 
   test("saved script migration preserves revisions, grants and project associations", async () => {
@@ -328,7 +344,12 @@ const isolated = /\/cloud_assistant_artifacts_test(?:\?|$)/.test(process.env.DAT
     const grants = await artifacts.access(resource.id, owner);
     const input = { id: resource.id, expectedAccessRevision: accessRevision(grants),
       principal: { type: "user" as const, userId: reader.user.id }, permission: "read" as const };
+    await sql`UPDATE auth.users SET display_name='Review recipient' WHERE id=${reader.user.id}::uuid`;
     const preview = await artifactCodeHandlers.code_access_change(input, { ...context, review: true });
+    await sql`UPDATE auth.users SET display_name='Test' WHERE id=${reader.user.id}::uuid`;
+    const previewText = JSON.stringify(preview);
+    expect(previewText).toContain("Review recipient");
+    expect(previewText).toContain(reader.user.id);
     expect(preview).toMatchObject({ ok: true, data: { data: { message: expect.stringContaining("Reviewed sharing") } } });
     expect(await artifacts.access(resource.id, owner)).toEqual(grants);
     const results = await Promise.all([
@@ -724,6 +745,39 @@ const isolated = /\/cloud_assistant_artifacts_test(?:\?|$)/.test(process.env.DAT
     } finally { await artifacts.remove(resource.id, owner); settings.mockRestore(); }
   });
 
+  (process.env.RSQL_TEST_URL ? test : test.skip)("partial clear reports progress and releases serialization after cancellation", async () => {
+    const controller = new AbortController();
+    let deletes = 0;
+    const proxy = Bun.serve({ port:0, async fetch(request) {
+      if (request.method === "DELETE" && ++deletes === 2) {
+        controller.abort();
+        return new Response("cancelled",{status:503});
+      }
+      const target = new URL(request.url); const base = new URL(process.env.RSQL_TEST_URL!);
+      target.host = base.host;
+      return fetch(new Request(target,request));
+    }});
+    const settings = spyOn(app.settings,"get").mockImplementation(async key=>({"assistant.storage_total_mib":250,"assistant.storage_file_mib":50,"assistant.rsql_url":proxy.url.toString(),"assistant.rsql_api_token":"artifact-test-only"}[key]));
+    const resource = await artifacts.create({title:"Partial clear",source},owner);
+    try {
+      await artifactDatabase.connect(resource.id,owner);
+      for (const table of ["first","second"]) {
+        await artifactDatabase.call(resource.id,{operation:"tables.create",name:table,columns:[{name:"value",type:"text"}]},owner);
+        await artifactDatabase.call(resource.id,{operation:"rows.insert",table,rows:{value:"keep"}},owner);
+      }
+      const before=await artifactDatabase.status(resource.id,owner);
+      const cleared=await artifactDatabase.clear(resource.id,before.generation!,before.dataRevision!,owner,controller.signal);
+      expect(cleared).toMatchObject({completed:false,clearedTables:["first"],failedTable:"second",error:"DB_CANCELLED"});
+      const after=await artifactDatabase.status(resource.id,owner);
+      expect(after.dataRevision).not.toBe(before.dataRevision);
+      expect(await artifactDatabase.call(resource.id,{operation:"rows.list",table:"first"},owner)).toMatchObject({data:[]});
+      expect(await artifactDatabase.call(resource.id,{operation:"rows.list",table:"second"},owner)).toMatchObject({data:[{value:"keep"}]});
+      await expect(artifactDatabase.clear(resource.id,before.generation!,before.dataRevision!,owner)).rejects.toMatchObject({code:"CONFLICT"});
+      const context={...owner,locale:"en",signal:new AbortController().signal};
+      expect(await artifactCodeHandlers.code_database_reset({id:resource.id,expectedGeneration:before.generation!,expectedDataRevision:before.dataRevision!},context)).toMatchObject({ok:false,error:{code:"CONFLICT"}});
+    } finally { await artifacts.remove(resource.id,owner); settings.mockRestore(); proxy.stop(true); }
+  });
+
   test("database connection errors distinguish invalid credentials from an unavailable server", async () => {
     const applet = await artifacts.create({title:"Database errors",source},owner);
     const upstream = Bun.serve({hostname:"127.0.0.1",port:0,fetch:()=>Response.json({error:"unauthorized"},{status:401})});
@@ -766,6 +820,20 @@ const isolated = /\/cloud_assistant_artifacts_test(?:\?|$)/.test(process.env.DAT
       await artifactDatabase.connect(resource.id,owner,undefined,true);
       await artifactDatabase.call(resource.id,{operation:"tables.create",name:"ledger",columns:[{name:"amount",type:"integer"}]},owner);
       await artifactDatabase.call(resource.id,{operation:"rows.insert",table:"ledger",rows:[{amount:1200}]},owner,undefined,"maintenance");
+      const conversation = { id:crypto.randomUUID() };
+      await sql`INSERT INTO ai.conversations VALUES(${conversation.id}::uuid,${owner.user.id}::uuid,NULL)`;
+      const conversationRead = spyOn(aiConversations,"getConversation").mockResolvedValue({
+        id:conversation.id,shortId:"abc234",title:"Export test",titleSource:"user",description:"",descriptionSource:"user",keywords:[],pinnedAt:null,done:null,isDone:false,lastUsedAt:new Date().toISOString(),archivedAt:null,
+        runStatus:"idle",runError:null,unreadCompletion:false,projectId:null,draft:{content:[],revision:1,updatedAt:null},createdByUserId:owner.user.id,
+        createdAt:new Date().toISOString(),updatedAt:new Date().toISOString(),
+      });
+      try {
+        const context={...owner,conversationId:conversation.id,locale:"en",signal:new AbortController().signal};
+        expect(await artifactCodeHandlers.code_database_export({id:resource.id,path:"/database.sqlite"},context)).toMatchObject({ok:true});
+        const before=await sql`SELECT bytes,version FROM ai.files WHERE conversation_id=${conversation.id}::uuid AND path='/database.sqlite'`;
+        expect(await artifactCodeHandlers.code_database_export({id:resource.id,path:"/database.sqlite"},context)).toMatchObject({ok:false,error:{code:"CONFLICT",status:409,message:expect.stringContaining("nothing was written")}});
+        expect(await sql`SELECT bytes,version FROM ai.files WHERE conversation_id=${conversation.id}::uuid AND path='/database.sqlite'`).toEqual(before);
+      } finally { conversationRead.mockRestore(); await sql`DELETE FROM ai.files WHERE conversation_id=${conversation.id}::uuid`; await sql`DELETE FROM ai.conversations WHERE id=${conversation.id}::uuid`; }
       const backup=await artifactDatabase.export(resource.id,owner);
       const bytes=new Uint8Array(await backup.arrayBuffer());
       expect(new TextDecoder().decode(bytes.slice(0,15))).toBe("SQLite format 3");

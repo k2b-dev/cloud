@@ -691,3 +691,15 @@ exposed as an implicit grant or a general vendor API. Operator connection settin
 administration; normal App workflows do not load or expose them. There is no
 arbitrary vendor-admin SQL interface. Every path retains the owning service's
 current authorization and version checks.
+
+### Agent error recovery
+
+Invalid App manifests or handler code return `COMPILE_FAILED` with source
+diagnostics. File collisions return `CONFLICT`; file/storage byte limits return
+`STORAGE_FULL`. These known rejections do not imply an uncertain write. Access
+reviews show the recipient name, principal type and identifier. Published Action
+discovery returns `publishedVersion`; only draft discovery returns a working
+`revision`. Database clear keeps concurrent writes/resets excluded and shares a
+15-second database budget across all tables; inspect partial results before retrying.
+Single-table deletion is supported by the Manage-only structured CLI operation
+`tables.delete`, not by the runtime JavaScript database handle or an agent tool.

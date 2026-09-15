@@ -75,3 +75,10 @@ CLI: `assistant code actions ID` discovers the same metadata. Run
 `assistant code action --chat CHAT --input-file call.json`, where `call.json`
 contains `{id,action,publishedVersion,input}`. Normal explicit capability approval
 flags and follow-up inspection/export steps work as for `assistant code run`.
+
+`code_list` exposes `publishedVersion` for identifying a release. Published
+`code_actions` returns `publishedVersion` and no working `revision`; draft
+discovery returns `revision` for the draft call. Never use `publishedRevision`
+(the source revision included in a release) as the working revision.
+Invalid manifests and handler compilation return `COMPILE_FAILED` with a source
+diagnostic. Fix App source; do not change otherwise valid tool arguments.

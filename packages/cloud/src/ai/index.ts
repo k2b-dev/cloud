@@ -354,4 +354,4 @@ export { createCloudAiTranscribeAudioTool, CloudAiTranscribeAudioInputSchema, Cl
 export { getAiChatQuotas } from "./chat-quotas";
 
 export { AiFileLocation, AiFileReference } from "./file-reference-contracts";
-export { aiFileContentVersion, AiFileVersionConflict } from "./file-content-version";
+export { aiFileContentVersion, AiFileWriteError, AiFileVersionConflict } from "./file-content-version";

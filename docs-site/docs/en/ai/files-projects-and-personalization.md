@@ -408,3 +408,9 @@ extraction, `read_file` remains the simpler path.
 The standard Cloud build packages the PDF decoder, native canvas binary and
 font/CMap/WASM assets when the server imports this tool. Build on the target
 platform; no document-rendering service or browser installation is required.
+
+Versioned file writes and generated-file exports distinguish known rejections
+with `AiFileWriteError`: `CONFLICT` for an occupied export destination and
+`STORAGE_FULL` for byte budgets. These errors retain a human-readable message and
+reject the destination write. `AiFileVersionConflict` still identifies a stale
+expected file version.

@@ -1,4 +1,4 @@
-import { aiFileContentVersion, AiFileVersionConflict } from "./file-content-version";
+import { aiFileContentVersion, AiFileWriteError, AiFileVersionConflict } from "./file-content-version";
 import { sql, type SQL } from "bun";
 
 export { guessAiMediaType } from "./file-media-type";
@@ -69,13 +69,13 @@ export const createUniqueAiFileInTransaction = async (
   const maxFile = input.maxFileBytes ?? AI_FILES_MAX_FILE_BYTES_DEFAULT;
   const maxConversation = input.maxConversationBytes ?? AI_FILES_MAX_CONVERSATION_BYTES_DEFAULT;
   if (input.bytes.byteLength > maxFile) {
-    throw new Error(`File exceeds the per-file limit of ${Math.floor(maxFile / (1024 * 1024))} MB.`);
+    throw new AiFileWriteError("STORAGE_FULL", `File exceeds the per-file limit of ${Math.floor(maxFile / (1024 * 1024))} MB.`);
   }
 
   await tx`SELECT id FROM ai.conversations WHERE id = ${input.conversationId} FOR UPDATE`;
   const total = await aiConversationStoredBytes(tx, input.conversationId);
   if (total + input.bytes.byteLength > maxConversation) {
-    throw new Error(`Conversation storage limit of ${Math.floor(maxConversation / (1024 * 1024))} MB exceeded.`);
+    throw new AiFileWriteError("STORAGE_FULL", `Conversation storage limit of ${Math.floor(maxConversation / (1024 * 1024))} MB exceeded.`);
   }
 
   for (let number = 1; number <= 100; number++) {
@@ -142,7 +142,8 @@ export const aiFileStore = {
     producerCallKey: string;
     mediaType: string;
   }): Promise<AiFileStat> {
-    if (!normalizeAiFilePath(input.path) || input.bytes.byteLength > AI_FILES_MAX_FILE_BYTES_DEFAULT) {
+    if (input.bytes.byteLength > AI_FILES_MAX_FILE_BYTES_DEFAULT) throw new AiFileWriteError("STORAGE_FULL", "File exceeds the destination file limit; nothing was written.");
+    if (!normalizeAiFilePath(input.path)) {
       throw new Error("Invalid tool artifact path or file size.");
     }
     return sql.begin(async (tx) => {
@@ -161,11 +162,11 @@ export const aiFileStore = {
           Buffer.from(row.bytes).equals(Buffer.from(input.bytes))
         )
           return toStat(row);
-        throw new Error("Transcript artifact already exists with different or edited content.");
+        throw new AiFileWriteError("CONFLICT", "Destination file already exists. Choose another path; nothing was written.");
       }
       const total = await aiConversationStoredBytes(tx, input.conversationId);
       if (total + input.bytes.byteLength > AI_FILES_MAX_CONVERSATION_BYTES_DEFAULT) {
-        throw new Error("Conversation storage limit exceeded.");
+        throw new AiFileWriteError("STORAGE_FULL", "Conversation storage limit exceeded.");
       }
       const rows = await tx<FileRow[]>`
         INSERT INTO ai.files (conversation_id, path, bytes, media_type, size, origin, producer_call_key)
@@ -301,7 +302,7 @@ export const aiFileStore = {
     const maxFile = input.maxFileBytes ?? AI_FILES_MAX_FILE_BYTES_DEFAULT;
     const maxConversation = input.maxConversationBytes ?? AI_FILES_MAX_CONVERSATION_BYTES_DEFAULT;
     if (input.bytes.byteLength > maxFile) {
-      throw new Error(`File exceeds the per-file limit of ${Math.floor(maxFile / (1024 * 1024))} MB.`);
+      throw new AiFileWriteError("STORAGE_FULL", `File exceeds the per-file limit of ${Math.floor(maxFile / (1024 * 1024))} MB.`);
     }
 
     return sql.begin(async (tx) => {
@@ -314,7 +315,7 @@ export const aiFileStore = {
       }
       const otherBytes = await aiConversationStoredBytes(tx, input.conversationId, input.path);
       if (otherBytes + input.bytes.byteLength > maxConversation) {
-        throw new Error(`Conversation storage limit of ${Math.floor(maxConversation / (1024 * 1024))} MB exceeded.`);
+        throw new AiFileWriteError("STORAGE_FULL", `Conversation storage limit of ${Math.floor(maxConversation / (1024 * 1024))} MB exceeded.`);
       }
       if (input.origin === "user") {
         if (input.allowUserOverwrite) {
@@ -369,11 +370,11 @@ export const aiFileStore = {
       `;
       const nextSize = Number(current[0]?.size ?? 0) + input.bytes.byteLength;
       if (nextSize > maxFile) {
-        throw new Error(`File exceeds the per-file limit of ${Math.floor(maxFile / (1024 * 1024))} MB.`);
+        throw new AiFileWriteError("STORAGE_FULL", `File exceeds the per-file limit of ${Math.floor(maxFile / (1024 * 1024))} MB.`);
       }
       const total = await aiConversationStoredBytes(tx, input.conversationId);
       if (total + input.bytes.byteLength > maxConversation) {
-        throw new Error(`Conversation storage limit of ${Math.floor(maxConversation / (1024 * 1024))} MB exceeded.`);
+        throw new AiFileWriteError("STORAGE_FULL", `Conversation storage limit of ${Math.floor(maxConversation / (1024 * 1024))} MB exceeded.`);
       }
       const appended = await tx<{ id: string }[]>`
         INSERT INTO ai.files (conversation_id, path, bytes, media_type, size, origin, updated_at)
@@ -442,7 +443,7 @@ export const aiFileStore = {
         (await aiConversationStoredBytes(tx, input.targetConversationId)) + Number(incoming?.total ?? 0) >
         AI_FILES_MAX_CONVERSATION_BYTES_DEFAULT
       ) {
-        throw new Error("Conversation storage limit exceeded.");
+        throw new AiFileWriteError("STORAGE_FULL", "Conversation storage limit exceeded.");
       }
       const rows = await tx<{ id: string }[]>`
         INSERT INTO ai.files (conversation_id, path, bytes, media_type, size, origin, dictation_recorded_at)

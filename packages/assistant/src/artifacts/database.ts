@@ -105,6 +105,7 @@ export const artifactDatabase = {
     });
   },
   async clear(id: string, expectedGeneration: string, expectedDataRevision: string, identity: ArtifactIdentity, signal?: AbortSignal) {
+    signal = AbortSignal.any([...(signal ? [signal] : []), AbortSignal.timeout(15000)]);
     return sql.begin(async db => {
       await databaseConfigLock(db);
       id = (await requireArtifact(db, id, identity, "admin")).row.id;
@@ -113,14 +114,16 @@ export const artifactDatabase = {
       if (generation(mapping.namespace) !== expectedGeneration || mapping.data_revision !== expectedDataRevision) throw new DatabaseError("CONFLICT", 409);
       const client = connection(await config(), signal).ns(mapping.namespace);
       const tables = z.array(z.object({ name: z.string(), type: z.string() })).parse(result(await client.tables.list())).filter(table => table.type === "table");
+      signal.throwIfAborted();
       await markDataMutation(id);
       const clearedTables: string[] = [];
       for (const table of tables) {
         try {
+          signal.throwIfAborted();
           result(await client.table(table.name).rows.bulkDelete({}));
           clearedTables.push(table.name);
         } catch (error) {
-          return { completed: false, clearedTables, failedTable: table.name, error: error instanceof DatabaseError ? error.code : "DB_UNREACHABLE", outcome: "The failed table may have changed; inspect before retrying." };
+          return { completed: false, clearedTables, failedTable: table.name, error: signal.aborted ? (signal.reason?.name === "TimeoutError" ? "DB_TIMEOUT" : "DB_CANCELLED") : error instanceof DatabaseError ? error.code : "DB_UNREACHABLE", outcome: "The failed table may have changed; inspect before retrying." };
         }
       }
       return { completed: true, clearedTables };

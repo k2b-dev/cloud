@@ -1,4 +1,4 @@
-import { aiFileContentVersion, AiFileVersionConflict } from "./file-content-version";
+import { aiFileContentVersion, AiFileWriteError, AiFileVersionConflict } from "./file-content-version";
 import { type SQL, type SQLQuery, sql } from "bun";
 import type { CloudResourceRef } from "../contracts/capabilities";
 import type { AccessSubject } from "../server";
@@ -803,7 +803,7 @@ export const aiProjects = {
     input: { path: string; mediaType: string; bytes: Uint8Array; expectedVersion?: string | null },
   ): Promise<AiProjectFile | null> {
     if (!(await requireProject(projectId, subject, "write"))) return null;
-    if (input.bytes.byteLength > AI_PROJECT_FILE_MAX_BYTES) throw new Error("Project file exceeds the size limit.");
+    if (input.bytes.byteLength > AI_PROJECT_FILE_MAX_BYTES) throw new AiFileWriteError("STORAGE_FULL", "Project file exceeds the size limit; nothing was written.");
     const path = normalizeProjectPath(input.path);
     return sql.begin(async (tx) => {
       const [row] = await tx<ProjectRow[]>`SELECT * FROM ai.projects WHERE id=${projectId}::uuid FOR UPDATE`;

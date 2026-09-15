@@ -1,8 +1,8 @@
 import { studioFiles } from "./file-transfer";
 import { readBinaryResponse } from "./binary";
-import { sourceActions } from "./actions";
+import { ArtifactCompileError, sourceActions } from "./actions";
 import { artifactDatabase, DatabaseError } from "./database";
-import { CODE_SOURCE_TOOLS, createAiConversationArtifact, AI_FILES_MAX_FILE_BYTES_DEFAULT } from "@k2b/cloud/ai";
+import { AiFileWriteError, CODE_SOURCE_TOOLS, createAiConversationArtifact, AI_FILES_MAX_FILE_BYTES_DEFAULT } from "@k2b/cloud/ai";
 import { CAPABILITY_MAX_RESULT_BYTES } from "@k2b/cloud/contracts";
 import type { ArtifactIdentity } from "./service";
 import { fail, ok } from "@k2b/stdlib";
@@ -11,7 +11,7 @@ import { LIMITS } from "./contracts";
 import { artifacts, ArtifactError, user } from "./service";
 import { artifactMessages } from "./messages";
 import { sourceDiagnostics, sourceManifest } from "./source";
-import { accessRevision } from "@k2b/cloud/server";
+import { accessRevision, resolveDisplayNames } from "@k2b/cloud/server";
 
 export type CodeToolContext = ArtifactIdentity & { locale: string; signal: AbortSignal; review?: boolean };
 const links = (id: string) => ({
@@ -25,6 +25,8 @@ async function result<T>(
   try {
     return ok(await operation());
   } catch (error) {
+    if (error instanceof ArtifactCompileError || error instanceof AiFileWriteError)
+      return fail({ code: error.code, status: error.code === "CONFLICT" ? 409 as const : 400 as const, message: error.message });
     if (error instanceof DatabaseError) {
       const t = artifactMessages.resolve([context.locale]).t;
       const message =
@@ -143,7 +145,10 @@ export const artifactCodeHandlers = {
     if (input.accessId && !previous) throw new ArtifactError("NOT_FOUND");
     if (context.review) {
       const resource = await artifacts.get(input.id, context);
-      return { data: { message: `Change access to App “${resource.title}” (${input.id}).\nRecipient: ${JSON.stringify(previous?.principal ?? input.principal)}\nBefore: ${previous?.permission ?? "No grant"}\nAfter: ${input.permission ?? "Remove grant"}\nThis does not change access to any Skill.` } };
+      const principal = previous?.principal ?? input.principal;
+      if (!principal) throw new ArtifactError("INVALID_INPUT");
+      const [recipient] = await resolveDisplayNames([{ principal }]);
+      return { data: { message: `Change access to App “${resource.title}” (${input.id}).\nRecipient: ${recipient!.displayName} — ${JSON.stringify(principal)}\nBefore: ${previous?.permission ?? "No grant"}\nAfter: ${input.permission ?? "Remove grant"}\nThis does not change access to any Skill.` } };
     }
     if (input.principal && input.permission) await artifacts.grant(input.id, input.principal, input.permission, context, input.expectedAccessRevision);
     else if (input.accessId) await artifacts.changeGrant(input.id, input.accessId, input.permission, context, input.expectedAccessRevision);
@@ -159,7 +164,7 @@ export const artifactCodeHandlers = {
   code_actions: ({ id, draft }, context) => result(context, async () => {
     const bundle = await artifacts.get(id, context, undefined, !draft);
     if (draft && bundle.permission !== "admin") throw new ArtifactError("ACCESS_DENIED");
-    return { data: { id, publishedVersion: bundle.publishedVersion, revision: bundle.sourceRevision, actions: sourceActions(bundle.source) }, ...links(id) };
+    return { data: { id, publishedVersion: bundle.publishedVersion, ...(draft ? { revision: bundle.sourceRevision } : {}), actions: sourceActions(bundle.source) }, ...links(id) };
   }),
   code_sql: ({ id, sql, params }, context) =>
     result(context, async () => {
@@ -175,12 +180,13 @@ export const artifactCodeHandlers = {
       return {
         data: {
           ...result,
-          items: result.items.map(({ id, kind, title, description, permission, publishedRevision }) => ({
+          items: result.items.map(({ id, kind, title, description, permission, publishedVersion, publishedRevision }) => ({
             id,
               title,
             description,
             permission,
             publishedRevision,
+            publishedVersion,
           })),
         },
       };

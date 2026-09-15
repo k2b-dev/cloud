@@ -85,7 +85,8 @@ Read back by a unique business key when the inserted ID is needed.
 `alter(changes)` accepts only `{rename?, add_columns?, drop_columns?,
 rename_columns?}`. `add_columns` uses the same column objects as `createTable`;
 `drop_columns` is a string array; `rename_columns` maps old names to new names.
-Do not invent methods such as `upsert`, `transaction`, `execute` or table deletion.
+Do not invent methods such as `upsert`, `transaction`, `execute` or table deletion. Single-table deletion is a separate Manage-only CLI operation
+described in [Management](management.md), not a method on this handle.
 
 ### Filter and paginate
 

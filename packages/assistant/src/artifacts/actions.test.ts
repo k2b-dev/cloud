@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { actionValidator, sourceActions } from "./actions";
+import { ArtifactCompileError, actionValidator, sourceActions } from "./actions";
 import { compileArtifact, validateArtifact } from "./runtime/compile";
 import type { ArtifactSource } from "./contracts";
 
@@ -43,4 +43,17 @@ test("publication validates every handler, including code unused by the GUI", as
   input.files.push({ path: "main.ts", content: "export default () => 42;" });
   input.files[1]!.content = 'import secret from "bun"; export default () => secret;';
   await expect(validateArtifact(input)).rejects.toThrow("Only relative source imports");
+});
+
+test("invalid manifest failures identify App source rather than tool input", () => {
+  for (const content of ["{", JSON.stringify({actions:[{...action,name:"Convert"}]}), JSON.stringify({actions:[{...action,entry:"missing.ts"}]})]) {
+    const input = source(); input.files[0]!.content = content;
+    expect(() => sourceActions(input)).toThrow(ArtifactCompileError);
+    expect(() => sourceActions(input)).toThrow("app.actions.json");
+  }
+});
+
+test("handler syntax failures retain a typed compiler diagnostic", async () => {
+  const input = source(); input.files[1]!.content = "export default ( =>";
+  await expect(validateArtifact(input)).rejects.toMatchObject({code:"COMPILE_FAILED"});
 });

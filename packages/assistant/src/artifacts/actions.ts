@@ -21,7 +21,16 @@ export function actionValidator(schema: AppAction["inputSchema"]) {
   return z.fromJSONSchema(structuredClone(schema));
 }
 
+export class ArtifactCompileError extends Error {
+  readonly code = "COMPILE_FAILED";
+}
+
 export function sourceActions(source: ArtifactSource): AppAction[] {
+  try { return parseSourceActions(source); }
+  catch (error) { throw new ArtifactCompileError(`app.actions.json: ${error instanceof Error ? error.message : String(error)}`.slice(0, 16000)); }
+}
+
+function parseSourceActions(source: ArtifactSource): AppAction[] {
   const file = source.files.find(file => file.path === ACTION_MANIFEST_PATH);
   if (!file) return [];
   const { actions } = Manifest.parse(JSON.parse(file.content));

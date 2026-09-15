@@ -37,7 +37,7 @@ import {
   PrincipalSchema,
 } from "@k2b/cloud/contracts";
 import { type AuditActor, audit, accountsAppService } from "@k2b/cloud/services";
-import { accessRevision } from "@k2b/cloud/server";
+import { accessRevision, resolveDisplayNames } from "@k2b/cloud/server";
 import { z } from "zod";
 import { aiChatTaskRuntime, reconcileAiChatTasks } from "./ai-chat-tasks-runtime";
 import { deliverPendingAiMessages } from "./ai-inter-chat-messages";
@@ -857,8 +857,11 @@ export const aiCapabilities = defineCapabilities({
         if (accessRevision(grants) !== input.expectedAccessRevision) return fail(err.conflict("Skill grants changed; read and review them again."));
         const previous = input.accessId ? grants.find(grant => grant.id === input.accessId) : undefined;
         if (input.accessId && !previous) return fail(err.notFound("Skill grant not found."));
+        const principal = previous?.principal ?? input.principal;
+        if (!principal) return fail(err.badInput("Recipient is required."));
+        const [recipient] = await resolveDisplayNames([{ principal }]);
         return ok({ message: `Change access to Skill “${skill.name}” (${input.skillId}).`, details: [
-          { label: "Recipient", value: JSON.stringify(previous?.principal ?? input.principal) },
+          { label: "Recipient", value: `${recipient!.displayName} — ${JSON.stringify(principal)}` },
           { label: "Before", value: previous?.permission ?? "No grant" },
           { label: "After", value: input.permission ?? "Remove grant" },
           { label: "Separate App access", value: "This changes only the Skill's access." },

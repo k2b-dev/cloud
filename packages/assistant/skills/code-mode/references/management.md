@@ -34,3 +34,16 @@ For JSON reads/writes or structured record/schema edits, use the existing
 unchanged. Do not add maintenance controls to the user's dashboard just to
 perform an agent task. Database state belongs to the App across sessions;
 source restore never rolls back its data.
+
+A clear operation shares one 15-second database budget across all tables and
+keeps the App locked against writes and resets until it ends. On partial failure,
+inspect `clearedTables` and the failed table before requesting fresh review.
+`DB_TIMEOUT` means the budget expired; `DB_CANCELLED` means the caller cancelled.
+Export collisions return `CONFLICT`; destination byte limits return `STORAGE_FULL`.
+Both reject the export without writing a chat file.
+
+Single-table deletion is currently a Manage-only CLI operation, not a JavaScript
+database method or an agent management tool. The structured request is
+`{"operation":"tables.delete","table":"obsolete"}` through `code database`.
+It deletes that table and its rows irreversibly. Do not substitute a whole-database
+reset when asked to remove one table; explain this interface limit.

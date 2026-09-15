@@ -21,6 +21,7 @@ import {
 } from "@k2b/cloud/contracts";
 import { audit, accountsAppService } from "@k2b/cloud/services";
 import { accessRevision } from "@k2b/cloud/server";
+import * as accessService from "@k2b/cloud/server";
 import * as taskRuntime from "./ai-chat-tasks-runtime";
 import { aiCapabilities } from "./capabilities";
 
@@ -165,11 +166,14 @@ describe("Core AI capabilities", () => {
     const grants = [{ id: "AbC234", shortId: "AbC234", principal: { type: "user" as const, userId: user.id }, permission: "admin" as const, createdAt: "" }];
     spyOn(aiSkills, "listAccess").mockResolvedValue(grants);
     const update = spyOn(aiSkills, "updateAccess").mockResolvedValue(true);
+    spyOn(accessService, "resolveDisplayNames").mockImplementation(async entries => entries.map(entry => ({...entry,displayName:"Alice Example"})));
     const operation = aiCapabilities.actions["ai.skill.access.change"];
     const input = { skillId: skill.shortId, accessId: "AbC234", permission: "read" as const, expectedAccessRevision: accessRevision(grants) };
     const manifest = compileCapabilityManifest("core", aiCapabilities);
     expect(manifest.actions.find(action => action.localId === "ai.skill.access.change")?.approval).toBeUndefined();
     expect(await operation.review(input, context)).toMatchObject({ ok: true, data: { details: expect.arrayContaining([{ label: "Before", value: "admin" }, { label: "After", value: "read" }]) } });
+    expect(JSON.stringify(await operation.review(input, context))).toContain("Alice Example");
+    expect(JSON.stringify(await operation.review(input, context))).toContain(user.id);
     expect(await operation.review({ ...input, expectedAccessRevision: "0".repeat(64) }, context)).toMatchObject({ ok: false });
     expect(update).not.toHaveBeenCalled();
     expect(await operation.run(input, context)).toMatchObject({ ok: true, data: { data: { changed: true } } });

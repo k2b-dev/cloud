@@ -1,5 +1,5 @@
 import { studioFiles } from "./file-transfer";
-import { CODE_SOURCE_TOOLS } from "@k2b/cloud/ai";
+import { AiFileWriteError, CODE_SOURCE_TOOLS } from "@k2b/cloud/ai";
 import { GotenbergRenderError } from "@k2b/cloud/services";
 import { studioPdf } from "./pdf-service";
 import { decodePdfRequest } from "./pdf-contracts";
@@ -22,7 +22,7 @@ import { storageSettings, StorageSettings } from "./storage-settings";
 import { artifacts, ArtifactError } from "./service";
 import { artifactMessages } from "./messages";
 import { compilationDiagnostic, compileArtifact } from "./runtime/compile";
-import { sourceActions, actionValidator } from "./actions";
+import { ArtifactCompileError, sourceActions, actionValidator } from "./actions";
 import { CodeActionInput } from "@k2b/cloud/ai/browser";
 import { cliHostBundle } from "./runtime/cli-bundle";
 import { renameSource } from "./rename-source";
@@ -50,6 +50,8 @@ export const createArtifactServiceRoutes = (caller: (context: Context<AuthContex
   .use("*", (c,next) => (c.req.path.endsWith("/storage/file") || c.req.path.endsWith("/runtime/pdf")) ? next() : bodyLimit({ maxSize: c.req.path.includes("/storage") ? STORAGE_TRANSPORT_BYTES : LIMITS.rpcBytes })(c,next))
   .use("*", async (c,next) => { c.header("Cache-Control","private, no-store"); await next(); })
   .onError((error,c) => {
+    if (error instanceof ArtifactCompileError || error instanceof AiFileWriteError)
+      return respond(c, { ok: false, code: error.code, status: error.code === "CONFLICT" ? 409 : 400, error: error.message });
     if (error instanceof GotenbergRenderError) {
       const code = error.code === "not_configured" ? "PDF_NOT_CONFIGURED" : error.code === "timeout" ? "PDF_TIMEOUT"
         : error.code === "html_too_large" || error.code === "pdf_too_large" ? "PDF_LIMIT" : error.code === "bad_input" ? "INVALID_INPUT" : "PDF_FAILED";

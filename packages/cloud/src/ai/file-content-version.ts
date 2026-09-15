@@ -15,3 +15,8 @@ export class AiFileVersionConflict extends Error {
     this.name = "AiFileVersionConflict";
   }
 }
+
+/** A known file write rejection; no destination bytes were written. */
+export class AiFileWriteError extends Error {
+  constructor(readonly code: "CONFLICT" | "STORAGE_FULL", message: string) { super(message); }
+}

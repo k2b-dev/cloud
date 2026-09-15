@@ -399,3 +399,10 @@ ownership. `--conversation` supplies authorized Project-chat context when needed
 Show the exact destination and overwrite before confirming; shared destinations
 may disclose private chat files. Inspect conflicts or uncertain outcomes before
 retrying. No vendor database API or filesystem access is implied by these tools.
+
+Manage-only single-table deletion uses `code database <app-id> --input
+'{"operation":"tables.delete","table":"obsolete"}'`. It removes the table
+and its rows irreversibly; it is not available as a JavaScript database method.
+Use an explicit user instruction for the named table. A full database reset is
+not a substitute. Known file collisions return `CONFLICT`, byte rejections
+`STORAGE_FULL`, and source validation failures `COMPILE_FAILED` with diagnostics.

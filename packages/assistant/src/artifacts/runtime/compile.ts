@@ -1,5 +1,5 @@
 import { ArtifactSource } from "../contracts";
-import { sourceActions } from "../actions";
+import { ArtifactCompileError, sourceActions } from "../actions";
 
 export function resolveSourceImport(importer: string, specifier: string): string {
   if (!specifier.startsWith("./") && !specifier.startsWith("../"))
@@ -45,7 +45,7 @@ export async function compileArtifact(input: unknown, invocation?: { action: str
   const source = ArtifactSource.parse(input);
   const actions = sourceActions(source);
   const action = invocation ? actions.find(action => action.name === invocation.action) : undefined;
-  if (invocation && !action) throw new Error(`Unknown app action: ${invocation.action}`);
+  if (invocation && !action) throw new ArtifactCompileError(`Unknown app action: ${invocation.action}`);
   const entry = action?.entry ?? source.entry;
   const runtimeCode = await runtimeSource();
   const files = new Map(source.files.map((file) => [file.path, file.content]));
@@ -74,8 +74,8 @@ export async function compileArtifact(input: unknown, invocation?: { action: str
         return { contents, loader: args.path.endsWith(".ts") ? "ts" : "js" };
       });
     } }],
-  }).catch(error => { throw new Error(compilationDiagnostic(error)); });
-  if (!build.success) throw new Error(build.logs.join("\n"));
+  }).catch(error => { throw new ArtifactCompileError(compilationDiagnostic(error)); });
+  if (!build.success) throw new ArtifactCompileError(build.logs.join("\n").slice(0, 16000));
   return { code: await build.outputs[0]!.text(), runtime: runtimeCode };
 }
 
