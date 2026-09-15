@@ -223,9 +223,12 @@ On desktop screens at least 64rem wide with a mouse and no touch input,
 drag the outer edge of Spotlight to place it beside the page. Detached search
 allows background interaction without blur. Its position is stored locally in
 this browser and kept within the viewport when resized or reopened. Drag near
-the original centered position to snap back and restore the modal backdrop;
-double-click an edge to reset directly. A subtle dashed outline marks the home
-position while dragging. You can place the compact search near the bottom;
+the original centered position and release to snap back and restore the modal
+backdrop; double-click an edge to reset directly. A translucent, softly blurred
+preview with a search icon marks the home position while dragging. It matches
+the current search size. In the snap area it turns blue and shows a checkmark
+with **Release to center**. The window only snaps when released.
+You can place the compact search near the bottom;
 results grow upward when there is no room below, then return to the preferred
 position when the search shrinks. Escape during a drag cancels that drag.
 On smaller or touch screens the search stays modal. Resource pickers always

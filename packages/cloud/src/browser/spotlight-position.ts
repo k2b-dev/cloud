@@ -18,7 +18,11 @@ export const readSpotlightPosition = (value: string | null): SpotlightPosition |
 };
 
 /** Cloud owns the desktop policy and persistence; the UI host owns modality and focus. */
-export const attachSpotlightPosition = (host: HTMLElement, context: Parameters<DialogRender<void>>[1]) => {
+export const attachSpotlightPosition = (
+  host: HTMLElement,
+  context: Parameters<DialogRender<void>>[1],
+  messages: () => { homeHint: string; releaseHint: string },
+) => {
   const { dialog } = context;
   const desktop = window.matchMedia("(min-width: 64rem) and (hover: hover) and (pointer: fine)");
   const enabled = () => desktop.matches && navigator.maxTouchPoints === 0;
@@ -43,6 +47,12 @@ export const attachSpotlightPosition = (host: HTMLElement, context: Parameters<D
   const home = document.createElement("div");
   home.className = "cloud-global-search__home";
   home.setAttribute("aria-hidden", "true");
+  const icon = document.createElement("i");
+  icon.className = "ti ti-search";
+  const hint = document.createElement("span");
+  const content = document.createElement("div");
+  content.append(icon, hint);
+  home.append(content);
   host.append(home);
   const clamp = (point: SpotlightPosition) => {
     const rect = dialog.getBoundingClientRect();
@@ -59,7 +69,11 @@ export const attachSpotlightPosition = (host: HTMLElement, context: Parameters<D
     home.style.left = `${anchor.x - rect.x - dialog.clientLeft}px`;
     home.style.top = `${anchor.y - rect.y - dialog.clientTop}px`;
     home.style.width = `${rect.width}px`;
-    home.style.height = `${Math.min(rect.height, window.innerHeight - 2 * anchor.y)}px`;
+    home.style.height = `${rect.height}px`;
+    const ready = Math.hypot(rect.x - anchor.x, rect.y - anchor.y) <= SNAP_DISTANCE;
+    home.dataset.ready = String(ready);
+    icon.className = ready ? "ti ti-check" : "ti ti-search";
+    hint.textContent = ready ? messages().releaseHint : messages().homeHint;
   };
   const apply = (next: SpotlightPosition | null) => {
     position = next;
@@ -128,12 +142,14 @@ export const attachSpotlightPosition = (host: HTMLElement, context: Parameters<D
     if (!host.dataset.dragging && Math.hypot(dx, dy) < 3) return;
     host.dataset.dragging = "true";
     const next = clamp({ x: drag.origin.x + dx, y: drag.origin.y + dy });
-    apply(Math.hypot(next.x - anchor.x, next.y - anchor.y) <= SNAP_DISTANCE ? null : next);
+    apply(next);
     // Switching native modality releases capture. Retain the same drag across that switch.
     if (!drag.handle.hasPointerCapture(event.pointerId)) drag.handle.setPointerCapture(event.pointerId);
   };
   const up = (event: PointerEvent) => {
-    if (event.pointerId === drag?.id) finish();
+    if (event.pointerId !== drag?.id) return;
+    if (host.dataset.dragging && home.dataset.ready === "true") apply(null);
+    finish();
   };
   const cancel = () => {
     if (!drag) return;

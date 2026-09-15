@@ -412,6 +412,8 @@
   border-radius: inherit;
 }
 .cloud-global-search > .cloud-resource-search {
+  z-index: 1;
+  background: var(--ui-dialog-surface);
   border-radius: var(--ui-radius-frame);
   overflow: hidden;
 }
@@ -461,10 +463,38 @@
   display: none;
   position: absolute;
   pointer-events: none;
-  border: 1px dashed var(--k2b-focus-ring);
+  z-index: 0;
+  place-items: center;
+  background: color-mix(in srgb, var(--ui-dialog-surface) 82%, transparent);
+  backdrop-filter: blur(8px);
   border-radius: var(--ui-radius-frame);
-  opacity: 0.6;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ui-border) 35%, transparent);
+  color: var(--k2b-text-muted);
+  transition:
+    background-color 120ms ease,
+    color 120ms ease;
+}
+.cloud-global-search__home > div {
+  display: grid;
+  justify-items: center;
+  gap: 0.5rem;
+  font-size: 0.8125rem;
+}
+.cloud-global-search__home i {
+  font-size: 1.75rem;
+}
+.cloud-global-search__home[data-ready="true"] {
+  /* Keep the release cue visible when the dragged search overlaps its target. */
+  z-index: 3;
+  background: color-mix(in srgb, var(--k2b-focus-ring) 12%, var(--ui-dialog-surface) 88%);
+  color: var(--k2b-focus-ring);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--k2b-focus-ring) 45%, transparent);
 }
 .cloud-global-search[data-dragging="true"] .cloud-global-search__home {
-  display: block;
+  display: grid;
+}
+@media (prefers-reduced-motion: reduce) {
+  .cloud-global-search__home {
+    transition: none;
+  }
 }

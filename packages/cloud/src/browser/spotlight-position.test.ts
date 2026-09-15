@@ -1,7 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import { createDomTestHarness } from "../../../ui/test/dom";
+import { resourceSearchMessages } from "./resource-search-messages";
 import { attachSpotlightPosition, readSpotlightPosition } from "./spotlight-position";
 
+const messages = () => resourceSearchMessages.resolve(["en"]).t;
 const settle = () => Bun.sleep(20);
 
 describe("desktop Spotlight placement", () => {
@@ -73,7 +75,7 @@ describe("desktop Spotlight placement", () => {
       });
       (type === "pointerdown" ? grip : window).dispatchEvent(event);
     };
-    let cleanup = attachSpotlightPosition(host, context);
+    let cleanup = attachSpotlightPosition(host, context, messages);
     try {
       await settle();
       expect(state.modal).toBe(true);
@@ -90,7 +92,7 @@ describe("desktop Spotlight placement", () => {
       expect(state.modal).toBe(false);
       expect(state.position).toEqual({ x: 502, y: 278 });
       cleanup();
-      cleanup = attachSpotlightPosition(host, context);
+      cleanup = attachSpotlightPosition(host, context, messages);
       await settle();
       expect(state.position).toEqual({ x: 502, y: 278 });
       dom.window.innerWidth = 1200;
@@ -102,11 +104,28 @@ describe("desktop Spotlight placement", () => {
       const anchor = { x: (dom.window.innerWidth - 896) / 2, y: (dom.window.innerHeight - 544) / 2 };
       pointer("pointerdown", before.x, before.y);
       pointer("pointermove", anchor.x + 5, anchor.y + 5);
+      expect(state.modal).toBe(false);
+      expect(state.position).toEqual({ x: anchor.x + 5, y: anchor.y + 5 });
+      const target = host.querySelector<HTMLElement>(".cloud-global-search__home")!;
+      expect(target.dataset.ready).toBe("true");
+      expect(target.textContent).toBe("Release to center");
+      // Crossing the target does not snap; leaving it before release keeps the new point.
+      pointer("pointermove", anchor.x + 100, anchor.y + 100);
+      expect(target.dataset.ready).toBe("false");
+      expect(target.textContent).toBe("Back to center");
+      pointer("pointerup", anchor.x + 100, anchor.y + 100);
+      expect(state.modal).toBe(false);
+      pointer("pointerdown", anchor.x + 100, anchor.y + 100);
+      pointer("pointermove", anchor.x + 5, anchor.y + 5);
+      pointer("pointercancel", anchor.x + 5, anchor.y + 5);
+      expect(state.position).toEqual({ x: anchor.x + 100, y: anchor.y + 100 });
+      pointer("pointerdown", anchor.x + 100, anchor.y + 100);
+      pointer("pointermove", anchor.x + 5, anchor.y + 5);
       pointer("pointerup", anchor.x + 5, anchor.y + 5);
       expect(state.modal).toBe(true);
       expect(state.position).toBeNull();
       cleanup();
-      cleanup = attachSpotlightPosition(host, context);
+      cleanup = attachSpotlightPosition(host, context, messages);
       await settle();
       expect(state.modal).toBe(true);
       // Compact panels can reach the bottom. Growth moves up without losing that preference.
@@ -123,7 +142,7 @@ describe("desktop Spotlight placement", () => {
       notifySize();
       expect(state.position).toEqual({ x: anchor.x, y: 244 });
       cleanup();
-      cleanup = attachSpotlightPosition(host, context);
+      cleanup = attachSpotlightPosition(host, context, messages);
       await settle();
       expect(state.position).toEqual({ x: anchor.x, y: 244 });
       height = 170;

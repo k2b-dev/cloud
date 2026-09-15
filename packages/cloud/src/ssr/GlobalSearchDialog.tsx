@@ -1,4 +1,4 @@
-import { type DialogRender, dialogCore } from "@k2b/ui";
+import { type DialogRender, dialogCore, useLocale } from "@k2b/ui";
 import { For, onCleanup, onMount } from "solid-js";
 import type { SearchItem } from "../api/search/schemas";
 import CloudResourceSearch from "../browser/CloudResourceSearch";
@@ -14,9 +14,11 @@ type GlobalSearchDialogProps = {
 };
 
 export default function GlobalSearchDialog(props: GlobalSearchDialogProps) {
+  const locale = useLocale();
+  const messages = () => resourceSearchMessages.resolve([locale()]).t;
   let host!: HTMLDivElement;
   onMount(() => {
-    if (props.context) onCleanup(attachSpotlightPosition(host, props.context));
+    if (props.context) onCleanup(attachSpotlightPosition(host, props.context, messages));
   });
   const openInNewTab = (item: SearchItem) => {
     window.open(item.href, "_blank", "noopener,noreferrer");
