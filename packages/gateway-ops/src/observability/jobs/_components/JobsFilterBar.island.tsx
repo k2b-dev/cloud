@@ -1,5 +1,5 @@
 import { navigateTo } from "@k2b/ssr/nav";
-import { FilterChip, type FilterChipSection, useLocale } from "@k2b/ui";
+import { ButtonLink, FilterChip, type FilterChipSection, useLocale } from "@k2b/ui";
 import { SearchBar } from "@k2b/cloud/ssr/islands";
 import {
   buildJobsFilterUrl,
@@ -118,9 +118,9 @@ export default function JobsFilterBar(props: Props) {
           defaultValue={[defaultJobsFilter.duration]}
         />
         {hasActiveJobsFilters(props.filter) && (
-          <a href={clearUrl} class="text-[10px] text-red-500 tabular-nums hidden sm:inline" aria-label={t.clearAllFilters}>
-            <i class="ti ti-x" /> {t.clear}
-          </a>
+          <ButtonLink href={clearUrl} variant="ghost" size="sm" aria-label={t.clearAllFilters}>
+            <i class="ti ti-x" aria-hidden="true" /> {t.clear}
+          </ButtonLink>
         )}
       </div>
     </div>

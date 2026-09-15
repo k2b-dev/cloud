@@ -1,5 +1,5 @@
 import { navigateTo } from "@k2b/ssr/nav";
-import { FilterChip, type FilterChipSection, useLocale } from "@k2b/ui";
+import { ButtonLink, FilterChip, type FilterChipSection, useLocale } from "@k2b/ui";
 import { SearchBar } from "@k2b/cloud/ssr/islands";
 import { buildLegacyNotificationsUrl, type LegacyNotificationStatusFilter, NOTIFICATION_ADMIN_BASE_URL } from "./filter-state";
 import SendAllPending from "./SendAllPending";
@@ -47,13 +47,9 @@ export default function NotificationFilterBar(props: Props) {
           defaultValue={["all"]}
         />
         {hasFilters && (
-          <a
-            href={`${NOTIFICATION_ADMIN_BASE_URL}?view=legacy`}
-            class="hidden text-[10px] tabular-nums text-red-500 sm:inline"
-            aria-label={t.clearAllFilters}
-          >
-            <i class="ti ti-x" /> {t.clear}
-          </a>
+          <ButtonLink href={`${NOTIFICATION_ADMIN_BASE_URL}?view=legacy`} variant="ghost" size="sm" aria-label={t.clearAllFilters}>
+            <i class="ti ti-x" aria-hidden="true" /> {t.clear}
+          </ButtonLink>
         )}
         <div class="ml-auto">
           <SendAllPending />

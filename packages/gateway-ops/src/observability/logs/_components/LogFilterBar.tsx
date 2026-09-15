@@ -1,6 +1,6 @@
 import { navigateTo, refreshCurrentPath } from "@k2b/ssr/nav";
 import { mutation as mutations } from "@k2b/stdlib/solid";
-import { Button, FilterChip, type FilterChipSection, prompts, Tooltip, toast, useLocale } from "@k2b/ui";
+import { Button, ButtonLink, FilterChip, type FilterChipSection, prompts, Tooltip, toast, useLocale } from "@k2b/ui";
 import { SearchBar } from "@k2b/cloud/ssr/islands";
 import { apiClient as loggingClient } from "../api-client";
 import { buildLogFilterUrl, defaultLogFilter, hasActiveLogFilters, type LogFilterState } from "./types";
@@ -114,9 +114,9 @@ export default function LogFilterBar(props: Props) {
           />
         )}
         {hasFilters && (
-          <a href={baseUrl} class="text-[10px] text-red-500 tabular-nums hidden sm:inline" aria-label={t.clearAllFilters}>
-            <i class="ti ti-x" /> {t.clear}
-          </a>
+          <ButtonLink href={baseUrl} variant="ghost" size="sm" aria-label={t.clearAllFilters}>
+            <i class="ti ti-x" aria-hidden="true" /> {t.clear}
+          </ButtonLink>
         )}
         <div class="ml-auto flex items-center gap-2 shrink-0">
           <Tooltip.Anchor content={t.configureLogRetention}>
