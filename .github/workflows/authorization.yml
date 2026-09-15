@@ -53,6 +53,8 @@ jobs:
       - run: bun run --cwd packages/ui build
       - name: Verify Postgres connection attribution and diagnostics
         run: bun test packages/cloud/src/_internal/postgres-application-name.test.ts packages/cloud/src/_internal/postgres-application-name.integration.test.ts packages/cloud/src/cli/admin.test.ts
+      - name: Verify search result validation and provider isolation
+        run: bun test packages/cloud/src/api/search.test.ts packages/cloud/src/api/search/schemas.test.ts packages/cloud/src/_internal/bounded-json.test.ts
       - name: Verify Dashboard and OAuth editor behavior
         run: |
           bun test packages/dashboard/src/shared.test.ts packages/dashboard/src/frontend/messages.test.ts packages/dashboard/src/frontend/widget-request.test.ts packages/oauth/src/contracts.test.ts packages/oauth/src/frontend/messages.test.ts packages/oauth/src/frontend/_components/client-editor.test.ts

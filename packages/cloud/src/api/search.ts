@@ -20,6 +20,7 @@ import { LOCALE_HEADER } from "../shared/locale";
 import { type SearchItem, SearchItemSchema, SearchQuerySchema, SearchResponseSchema } from "./search/schemas";
 
 const log = logger("search");
+const SearchProviderResultSchema = capabilityResultSchema(UniversalSearchDataSchema);
 
 /**
  * Maximum items returned to the client after merging across providers.
@@ -317,7 +318,7 @@ export const createSearchRoutes = (dependencies: SearchRouteDependencies = {}) =
 
         const parsedBody = await readBoundedJson(res, CAPABILITY_MAX_RESULT_BYTES);
         if (!parsedBody.ok) throw new Error(`Search provider ${provider.appId} returned invalid or oversized JSON`);
-        const envelope = capabilityResultSchema(UniversalSearchDataSchema).safeParse(parsedBody.data);
+        const envelope = SearchProviderResultSchema.safeParse(parsedBody.data);
         if (!envelope.success) throw new Error(`Search provider ${provider.appId} returned an invalid capability result`);
         const results = envelope.data.data;
         const validItems: SearchItem[] = [];

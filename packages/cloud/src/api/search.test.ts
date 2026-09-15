@@ -108,6 +108,59 @@ const createSearchRoutes = (dependencies: Parameters<typeof buildSearchRoutes>[0
   buildSearchRoutes({ withActiveSigner, signInvocation: async (params) => fakeInvocation(params), ...dependencies });
 
 describe("global capability search", () => {
+  test.each(["invalid data", "unknown field", "invalid reference", "too many items", "invalid presentation"])(
+    "isolates %s across providers and concurrent or repeated requests",
+    async (invalidCase) => {
+      const providers = [provider(1), provider(2)];
+      const routes = createSearchRoutes({
+        authenticate,
+        listCapabilities: async () => providers,
+        fetch: async (url, init) => {
+          const appId = new URL(String(url)).hostname;
+          const body: { input: { query: string } } = JSON.parse(String(init?.body));
+          const query = body.input.query;
+          const item = {
+            ref: { type: `${appId}.item`, id: query },
+            title: query,
+            links: [{ rel: "open", href: `/app/${appId}/${query}` }],
+          };
+          if (appId === "search-02" && query !== "recovered") {
+            switch (invalidCase) {
+              case "invalid data":
+                return Response.json({ data: {} });
+              case "unknown field":
+                return Response.json({ data: [item], unexpected: true });
+              case "invalid reference":
+                return Response.json({ data: [{ ...item, ref: { ...item.ref, id: null } }] });
+              case "too many items":
+                return Response.json({ data: Array.from({ length: 101 }, () => item) });
+              case "invalid presentation":
+                return Response.json({
+                  data: [item],
+                  presentation: { kind: "table", rowsPath: ["missing"], columns: [{ path: ["title"], label: "Title" }] },
+                });
+            }
+          }
+          return Response.json({ data: [item] });
+        },
+      });
+
+      const check = async (query: string, appIds: string[]) => {
+        const response = await routes.request(`/search?q=${query}`);
+        expect(response.status).toBe(200);
+        expect(await response.json()).toMatchObject({
+          query,
+          count: appIds.length,
+          items: appIds.map((appId) => ({ appId, ref: { type: `${appId}.item`, id: query }, title: query })),
+        });
+      };
+
+      await Promise.all([check("first", ["search-01"]), check("recovered", ["search-01", "search-02"])]);
+      await check("first", ["search-01"]);
+      await check("recovered", ["search-01", "search-02"]);
+    },
+  );
+
   test("drops invalid optional request ids without suppressing provider results", async () => {
     {
       for (const requestId of ["two words", "ümlaut", "x".repeat(201)]) {
