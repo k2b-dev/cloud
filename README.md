@@ -110,6 +110,13 @@ Dev admin login: open `/auth/login?method=admin` and paste `dev-admin` into the 
 
 ## Agent-assisted development
 
+The `Authorization integration` workflow runs the existing permission suites
+against fresh PostgreSQL, Valkey, and NATS services after the real Core and app
+migrations. It sets `CLOUD_DATABASE_TEST=1` and `NOTEBOOKS_DB_TEST=1`; missing
+database prerequisites fail the job. Without these flags, local runs can skip
+database tests. See `.github/workflows/authorization.yml` for the exact setup
+and test list.
+
 For shared runtime recovery changes, run `bun run test:runtime-recovery` from
 the repository root with Docker available. This manual acceptance creates
 disposable Bun and NATS containers and checks heartbeat continuity, recovery,

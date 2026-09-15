@@ -5,6 +5,8 @@ import { grantSpaceAccess, resolveSpaceApiKeyPermission, revokeSpaceAccess, upda
 import { checkOverlap, listCalendar, searchAcross } from "./items";
 import { list as listSpaces, listPage as listSpacesPage } from "./spaces";
 
+const databaseTest = process.env.CLOUD_DATABASE_TEST === "1" ? test : test.skip;
+
 const resourceSubject = {
   type: "service_account" as const,
   serviceAccountId: "11111111-1111-4111-8111-111111111111",
@@ -32,12 +34,7 @@ test("resource service-account collections fail closed without a valid space bin
   expect(await checkOverlap({ subject: resourceSubject, from: "2026-01-01T00:00:00Z", to: "2026-01-02T00:00:00Z" })).toEqual([]);
 });
 
-test("Space pages filter and paginate in SQL while enforcing resource bindings", async () => {
-  const [tables] = await sql<{ spaces: string | null; users: string | null }[]>`
-    SELECT to_regclass('spaces.spaces')::text AS spaces, to_regclass('auth.users')::text AS users
-  `.catch(() => [{ spaces: null, users: null }]);
-  if (!tables?.spaces || !tables.users) return;
-
+databaseTest("Space pages filter and paginate in SQL while enforcing resource bindings", async () => {
   const suffix = crypto.randomUUID();
   const [user] = await sql<{ id: string }[]>`
     INSERT INTO auth.users (uid, provider, profile, display_name, mail)
@@ -109,12 +106,7 @@ test("Space pages filter and paginate in SQL while enforcing resource bindings",
   }
 });
 
-test("Space access mutations preserve an administrator and can recover an orphaned Space", async () => {
-  const [tables] = await sql<{ spaces: string | null; users: string | null }[]>`
-    SELECT to_regclass('spaces.spaces')::text AS spaces, to_regclass('auth.users')::text AS users
-  `.catch(() => [{ spaces: null, users: null }]);
-  if (!tables?.spaces || !tables.users) return;
-
+databaseTest("Space access mutations preserve an administrator and can recover an orphaned Space", async () => {
   const suffix = crypto.randomUUID();
   const users = await sql<{ id: string }[]>`
     INSERT INTO auth.users (uid, provider, profile, display_name, mail)

@@ -44,7 +44,11 @@ const canUseNotificationBatchDatabase = async () => {
 };
 
 /** Reported as skipped rather than silently passing when the backing service is absent. */
-const suite = (await canUseAuthDatabase()) && (await canUseNotificationBatchDatabase()) ? describe : describe.skip;
+const databaseAvailable = (await canUseAuthDatabase()) && (await canUseNotificationBatchDatabase());
+if (process.env.CLOUD_DATABASE_TEST === "1" && !databaseAvailable) {
+  throw new Error("Required authorization test database is unavailable or not migrated");
+}
+const suite = databaseAvailable ? describe : describe.skip;
 
 const insertUser = async (suffix: string, label: string) => {
   const [row] = await sql<{ id: string }[]>`
