@@ -32,6 +32,8 @@ cld admin redis summary --json
 
 Use `cld admin logs show <id> --json` for the full details of a selected log entry, and `cld admin logs explain <id> --json` to get that entry together with nearby context. The `postgres` and `redis` command groups also provide tables, schemas, extensions, and sampled prefix views; read their command help before narrowing a diagnostic.
 
+`postgres summary` includes deadlocks since statistics reset and the ages of the oldest transaction and active query. `postgres tables` includes sequential and index scan counts since reset. These counters describe activity; a sequential scan alone does not prove that an index is missing.
+
 ## Request telemetry
 
 Start with `telemetry routes`, not with individual events. Routes are real route templates such as `/api/mail/mailboxes/:id`, so a failing endpoint is identifiable; an aggregate request count is usually dominated by one busy route and says very little.

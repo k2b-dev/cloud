@@ -40,6 +40,12 @@ cleans the gateway registry; it does not restart or repair the application.
 | Job or workflow run | State and history of background execution |
 | Health webhook | Scoped delivery of gateway health changes to an HTTP endpoint |
 
+Postgres shows sequential and index scan counts for each table, deadlocks, and
+the age of the oldest transaction and active query. Scan and deadlock counts
+accumulate since the corresponding statistics were reset; a sequential scan
+alone does not imply a missing index. Sessions, indexes, and tables appear
+before storage charts.
+
 Postgres row counts are planner estimates. Valkey prefixes come from a bounded
 sample rather than a raw key browser. Use these views to direct an
 investigation, not as exact replacements for database administration tools.

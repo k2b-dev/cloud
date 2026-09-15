@@ -54,6 +54,47 @@ const createContext = (args: string[], flags: CloudCliFlags = {}, responses: Res
 };
 
 describe("admin CLI", () => {
+  test("Postgres output exposes scan counters and transaction ages without treating unavailable data as zero", async () => {
+    const diagnostics = {
+      available: true,
+      schemas: 1,
+      tables: 1,
+      totalBytes: 1024,
+      installedExtensions: 1,
+      availableExtensions: 2,
+      warnings: [],
+      error: null,
+      runtime: { deadlocks: 3, oldestTransactionSeconds: 120, oldestQuerySeconds: 5 },
+      tableRows: [
+        {
+          schema: "app",
+          name: "records",
+          estimatedRows: 42,
+          deadRows: 0,
+          seqScans: 11,
+          indexScans: 0,
+          totalBytes: 1024,
+          tableBytes: 512,
+          indexBytes: 512,
+          warnings: [],
+        },
+      ],
+    };
+    const summary = createContext(["postgres", "summary"], {}, [jsonResponse(diagnostics)]);
+    await adminCli.run(summary.ctx);
+    expect(summary.tables[0]?.[0]).toMatchObject({ deadlocks: 3, oldestTransaction: "2m", oldestQuery: "5s" });
+    expect(summary.tableColumns[0]?.map((column) => column.key)).toEqual(
+      expect.arrayContaining(["deadlocks", "oldestTransaction", "oldestQuery"]),
+    );
+    const tables = createContext(["postgres", "tables"], {}, [jsonResponse(diagnostics)]);
+    await adminCli.run(tables.ctx);
+    expect(tables.tables[0]?.[0]).toMatchObject({ table: "app.records", seqScans: 11, indexScans: 0 });
+    expect(tables.tableColumns[0]?.map((column) => column.key)).toEqual(expect.arrayContaining(["seqScans", "indexScans"]));
+    const unavailable = createContext(["postgres", "summary"], {}, [jsonResponse({ ...diagnostics, available: false })]);
+    await adminCli.run(unavailable.ctx);
+    expect(unavailable.tables[0]?.[0]).toMatchObject({ deadlocks: "-", oldestTransaction: "-", oldestQuery: "-" });
+  });
+
   test("documentation configuration reads only its URL and writes only that setting", async () => {
     const read = createContext(["documentation", "get"], { json: true }, [jsonResponse({ url: "http://localhost:4187" })]);
     read.ctx.options.output = "json";

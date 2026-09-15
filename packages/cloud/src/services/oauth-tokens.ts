@@ -116,7 +116,7 @@ export const resolveOAuthTokenActor = async (
       FROM oauth.clients c
       JOIN auth.service_accounts sa ON sa.id = ${serviceAccountId}::uuid AND sa.status = 'active'
       LEFT JOIN auth.users u ON u.id = sa.delegated_user_id
-      ${userProjectionJoin}
+      ${userProjectionJoin()}
       WHERE c.client_id = ${clientId}
     `;
     const row = rows[0];
@@ -139,7 +139,7 @@ export const resolveOAuthTokenActor = async (
     SELECT ${userProjectionSql(groupsAdmin)}
     FROM oauth.clients c
     JOIN auth.users u ON ${predicate}
-    ${userProjectionJoin}
+    ${userProjectionJoin()}
     WHERE c.client_id = ${clientId}
   `;
   const user = rows[0] ? buildProjectedUser(rows[0]) : null;

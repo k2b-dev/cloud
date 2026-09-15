@@ -71,6 +71,7 @@ import { createHeartbeat } from "./heartbeat";
 import { compileHelp } from "./help";
 import { createPageResponses } from "./page-responses";
 import { getProcessSync, startProcessSync } from "./process-sync";
+import { configurePostgresApplicationName } from "./postgres-application-name";
 import { APP_READINESS_PATH, appReadinessResponse } from "./readiness";
 import { appRegistry, type CapabilityRegistryRecord, capabilityRegistry } from "./registry";
 import { ensureRuntimeWatcher, getCurrentRuntime, stopRuntimeWatcher } from "./runtime-watcher";
@@ -297,6 +298,7 @@ export const defineApp = <
 >(
   opts: AppOptions<S, N, AppId>,
 ): AppDefinition<S, N, AppId> => {
+  configurePostgresApplicationName(opts.id);
   const isDevelopment = process.env.NODE_ENV === "development";
   const notifications = bindNotificationDefinitions(opts.id, opts.notifications);
 

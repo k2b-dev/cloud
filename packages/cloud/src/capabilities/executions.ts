@@ -147,7 +147,7 @@ const filterSql = (filter: CapabilityExecutionFilter) => sql`
   AND (${filter.until ?? null}::timestamptz IS NULL OR execution.started_at <= ${filter.until ?? null})
 `;
 
-const columns = sql`
+const columns = () => sql`
   execution.id::text AS id, execution.request_id AS "requestId", execution.origin, execution.app_id AS "appId",
   execution.capability, execution.kind, execution.destructive,
   execution.actor_kind AS "actorKind", execution.actor_id::text AS "actorId", execution.user_id::text AS "userId",
@@ -182,7 +182,7 @@ export const listCapabilityExecutions = async (
   const limit = Math.min(MAX_PAGE_SIZE, Math.max(1, Math.trunc(input.limit ?? DEFAULT_PAGE_SIZE)));
   const cursor = input.cursor ? decodeCursor(input.cursor) : null;
   const rows = await sql<CapabilityExecution[]>`
-    SELECT ${columns}
+    SELECT ${columns()}
     FROM capabilities.executions execution
     WHERE ${filterSql(input)}
       AND (${cursor?.startedAt ?? null}::timestamptz IS NULL
@@ -209,7 +209,7 @@ export type CapabilityExecutionSummary = {
 
 const MAX_SUMMARY_GROUPS = 50;
 
-const groupCounts = sql`
+const groupCounts = () => sql`
   count(*)::int AS executions,
   count(*) FILTER (WHERE execution.status IN ('failed', 'timed_out', 'invalid_input'))::int AS failed,
   count(*) FILTER (WHERE execution.status IN ('denied', 'rejected'))::int AS denied,
@@ -221,18 +221,18 @@ export const summarizeCapabilityExecutions = async (filter: CapabilityExecutionF
   const scope = filterSql(filter);
   const [totals, apps, capabilities] = await Promise.all([
     sql<Omit<CapabilityExecutionSummary, "apps" | "capabilities">[]>`
-      SELECT ${groupCounts},
+      SELECT ${groupCounts()},
         avg(execution.duration_ms)::double precision AS "avgDurationMs",
         percentile_cont(0.95) WITHIN GROUP (ORDER BY execution.duration_ms)::double precision AS "p95DurationMs"
       FROM capabilities.executions execution WHERE ${scope}
     `,
     sql<CapabilityExecutionGroup[]>`
-      SELECT execution.app_id AS id, ${groupCounts}
+      SELECT execution.app_id AS id, ${groupCounts()}
       FROM capabilities.executions execution WHERE ${scope}
       GROUP BY execution.app_id ORDER BY executions DESC, id LIMIT ${MAX_SUMMARY_GROUPS}
     `,
     sql<CapabilityExecutionGroup[]>`
-      SELECT execution.capability AS id, ${groupCounts}
+      SELECT execution.capability AS id, ${groupCounts()}
       FROM capabilities.executions execution WHERE ${scope}
       GROUP BY execution.capability ORDER BY executions DESC, id LIMIT ${MAX_SUMMARY_GROUPS}
     `,

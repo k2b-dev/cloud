@@ -92,7 +92,7 @@ export const resolveInvocationAuthority = async (
       ${userProjectionSql(groupsAdmin)}
     FROM auth.service_accounts sa
     LEFT JOIN auth.users u ON u.id = sa.delegated_user_id
-    ${userProjectionJoin}
+    ${userProjectionJoin()}
     WHERE sa.id = ${claims.sub}::uuid
       AND sa.status = 'active'
   `;

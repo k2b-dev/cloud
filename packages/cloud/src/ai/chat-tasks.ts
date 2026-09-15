@@ -235,7 +235,7 @@ const pauseTerminalTaskMandate = async (task: TaskRow, db: SQL): Promise<number 
 };
 const taskFingerprint = (input: { chatId: string; prompt: string; schedule: AiChatTaskSchedule; timezone: string }): string =>
   new Bun.CryptoHasher("sha256").update(JSON.stringify([input.chatId, input.prompt.trim(), input.schedule, input.timezone])).digest("hex");
-const taskSelect = sql`
+const taskSelect = () => sql`
   SELECT task.*, conversation.short_id AS conversation_short_id, conversation.title AS conversation_title
   FROM ai.chat_tasks task
   JOIN ai.conversations conversation ON conversation.id = task.conversation_id
@@ -277,7 +277,7 @@ const toOccurrence = (row: OccurrenceRow): AiChatTaskOccurrence => ({
 const prepareTaskById = (taskId: string): Promise<AiChatTask | null> =>
   sql.begin(async (tx) => {
     const [task] = await tx<TaskRow[]>`
-      ${taskSelect}
+      ${taskSelect()}
       WHERE task.id = ${taskId}::uuid
       FOR UPDATE OF task
     `;
@@ -286,7 +286,7 @@ const prepareTaskById = (taskId: string): Promise<AiChatTask | null> =>
   });
 const loadOccurrenceTask = async (occurrenceId: string, db: SQL): Promise<TaskRow | null> => {
   const [task] = await db<TaskRow[]>`
-    ${taskSelect}
+    ${taskSelect()}
     WHERE EXISTS (
       SELECT 1 FROM ai.chat_task_occurrences occurrence
       WHERE occurrence.id = ${occurrenceId}::uuid AND occurrence.task_id = task.id
@@ -297,7 +297,7 @@ const loadOccurrenceTask = async (occurrenceId: string, db: SQL): Promise<TaskRo
 };
 const loadTurnTask = async (turnId: string, db: SQL): Promise<TaskRow | null> => {
   const [task] = await db<TaskRow[]>`
-    ${taskSelect}
+    ${taskSelect()}
     WHERE EXISTS (
       SELECT 1 FROM ai.chat_task_occurrences occurrence
       WHERE occurrence.turn_id = ${turnId}::uuid AND occurrence.task_id = task.id
@@ -316,7 +316,7 @@ export const aiChatTasks = {
     offset?: number;
   }): Promise<AiChatTask[]> => {
     const rows = await sql<TaskRow[]>`
-      ${taskSelect}
+      ${taskSelect()}
       WHERE task.sponsor_user_id = ${input.userId}::uuid
         AND (${input.chatId ?? null}::text IS NULL OR conversation.short_id = ${input.chatId ?? null})
         AND (${input.state ?? null}::text IS NULL OR task.state = ${input.state ?? null})
@@ -329,7 +329,7 @@ export const aiChatTasks = {
 
   get: async (input: { userId: string; taskId: string }): Promise<AiChatTask | null> => {
     const rows = await sql<TaskRow[]>`
-      ${taskSelect}
+      ${taskSelect()}
       WHERE task.sponsor_user_id = ${input.userId}::uuid
         AND task.short_id = ${input.taskId}
       LIMIT 1
@@ -350,7 +350,7 @@ export const aiChatTasks = {
     const fingerprint = scopedKey ? (input.idempotencyFingerprint ?? taskFingerprint(input)) : null;
     if (input.idempotencyKey) {
       const existing = await sql<(TaskRow & { idempotency_fingerprint: string | null })[]>`
-        ${taskSelect}
+        ${taskSelect()}
         WHERE task.idempotency_key = ${scopedKey}
           AND task.sponsor_user_id = ${input.userId}::uuid
         LIMIT 1
@@ -414,7 +414,7 @@ export const aiChatTasks = {
     if (rows[0]) return toTask(rows[0]);
     if (!input.idempotencyKey) return null;
     const existing = await sql<(TaskRow & { idempotency_fingerprint: string | null })[]>`
-      ${taskSelect}
+      ${taskSelect()}
       WHERE task.idempotency_key = ${scopedKey}
         AND task.sponsor_user_id = ${input.userId}::uuid
       LIMIT 1
@@ -430,7 +430,7 @@ export const aiChatTasks = {
     idempotencyFingerprint: string;
   }): Promise<AiChatTask | null> => {
     const rows = await sql<(TaskRow & { idempotency_fingerprint: string | null })[]>`
-      ${taskSelect}
+      ${taskSelect()}
       WHERE task.idempotency_key = ${taskIdempotencyKey(input.idempotencyKey)}
         AND task.sponsor_user_id = ${input.userId}::uuid
       LIMIT 1
@@ -449,7 +449,7 @@ export const aiChatTasks = {
   }): Promise<AiChatTask | null> =>
     sql.begin(async (tx) => {
       const rows = await tx<TaskRow[]>`
-        ${taskSelect}
+        ${taskSelect()}
         WHERE task.sponsor_user_id = ${input.userId}::uuid
           AND task.short_id = ${input.taskId}
         FOR UPDATE OF task
@@ -460,7 +460,7 @@ export const aiChatTasks = {
       const wasActive = current.state === "active";
       const authorityStopped = wasActive && !(await prepareTaskForExecution(current, tx));
       if (authorityStopped) {
-        [current] = await tx<TaskRow[]>`${taskSelect} WHERE task.id = ${current.id}::uuid`;
+        [current] = await tx<TaskRow[]>`${taskSelect()} WHERE task.id = ${current.id}::uuid`;
         if (!current) return null;
       }
       const nextTimezone = input.timezone ?? current.timezone;
@@ -499,7 +499,7 @@ export const aiChatTasks = {
           WHERE task_id = ${current.id}::uuid AND state = 'queued'
         `;
       }
-      const updated = await tx<TaskRow[]>`${taskSelect} WHERE task.id = ${current.id}::uuid`;
+      const updated = await tx<TaskRow[]>`${taskSelect()} WHERE task.id = ${current.id}::uuid`;
       const next = updated[0]!;
       if (next.state === "active" && !wasActive) {
         const revision = await mandateRevision(requireTaskMandate(next), "active", input.userId, tx);
@@ -514,7 +514,7 @@ export const aiChatTasks = {
   setState: async (input: { userId: string; taskId: string; state: "active" | "paused" }): Promise<AiChatTask | null> => {
     return sql.begin(async (tx) => {
       const rows = await tx<TaskRow[]>`
-        ${taskSelect}
+        ${taskSelect()}
         WHERE task.sponsor_user_id = ${input.userId}::uuid AND task.short_id = ${input.taskId}
         FOR UPDATE OF task
       `;
@@ -555,7 +555,7 @@ export const aiChatTasks = {
   delete: async (input: { userId: string; taskId: string }): Promise<boolean> => {
     return sql.begin(async (tx) => {
       const rows = await tx<TaskRow[]>`
-        ${taskSelect}
+        ${taskSelect()}
         WHERE task.sponsor_user_id = ${input.userId}::uuid AND task.short_id = ${input.taskId}
         FOR UPDATE OF task
       `;
@@ -599,7 +599,7 @@ export const aiChatTasks = {
 
   listActiveCron: async (): Promise<AiChatTask[]> => {
     const rows = await sql<TaskRow[]>`
-      ${taskSelect}
+      ${taskSelect()}
       WHERE task.state = 'active' AND task.schedule_kind = 'cron'
     `;
     const tasks: AiChatTask[] = [];
@@ -624,7 +624,7 @@ export const aiChatTasks = {
     expectedRevision?: number;
   }): Promise<AiChatTaskOccurrence | null> => {
     return sql.begin(async (tx) => {
-      const [current] = await tx<TaskRow[]>`${taskSelect} WHERE task.id = ${input.taskId}::uuid FOR UPDATE OF task`;
+      const [current] = await tx<TaskRow[]>`${taskSelect()} WHERE task.id = ${input.taskId}::uuid FOR UPDATE OF task`;
       if (!current || !(await prepareTaskForExecution(current, tx))) return null;
       const rows = await withAiShortIdForDb(
         tx,
@@ -728,7 +728,7 @@ export const aiChatTasks = {
       const occurrence = occurrences[0];
       if (!occurrence) return null;
       const tasks = await tx<TaskRow[]>`
-        ${taskSelect}
+        ${taskSelect()}
         WHERE task.id = ${occurrence.task_id}::uuid AND task.state = 'active'
         LIMIT 1
         FOR UPDATE OF task

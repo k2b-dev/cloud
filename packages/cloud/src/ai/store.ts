@@ -369,7 +369,7 @@ const rowToInterChatMessage = (row: InterChatMessageRow): AiInterChatMessage => 
   deliveredAt: row.delivered_at ? iso(row.delivered_at) : null,
 });
 
-const interChatMessageSelect = sql`
+const interChatMessageSelect = () => sql`
   SELECT message.id, message.short_id, message.source_conversation_id,
          source.short_id AS source_chat_id, source.title AS source_title,
          message.source_turn_id, source_turn.short_id AS source_turn_short_id, message.source_call_id,
@@ -480,14 +480,14 @@ const parseCapabilityActionReview = (value: unknown): CapabilityActionReview | u
 const fieldSource = (value: string | null): AiConversation["titleSource"] => (value === "auto" || value === "user" ? value : "default");
 
 // Pins stay active; otherwise explicit choices win and automatic completion never hides pending work.
-const effectiveDone = sql`(conversation.pinned_at IS NULL AND COALESCE(conversation.done,
+const effectiveDone = () => sql`(conversation.pinned_at IS NULL AND COALESCE(conversation.done,
   conversation.last_used_at <= now() - interval '7 days'
   AND NOT EXISTS (SELECT 1 FROM ai.turns active_turn
     WHERE active_turn.conversation_id = conversation.id
       AND active_turn.status IN ('queued', 'running', 'waiting_for_action'))
   AND NOT EXISTS (SELECT 1 FROM ai.queued_messages pending WHERE pending.conversation_id = conversation.id AND pending.status IN ('pending','failed'))))`;
 
-const browserWorkPending = sql`(
+const browserWorkPending = () => sql`(
   latest.status = 'waiting_for_action'
   AND EXISTS (
     SELECT 1 FROM jsonb_array_elements(CASE WHEN jsonb_typeof(latest.live_blocks) = 'array' THEN latest.live_blocks ELSE '[]'::jsonb END) block
@@ -511,8 +511,8 @@ const conversationRunStatus = (status: AiTurnStatus | null | undefined, browserP
 };
 
 // Bun SQL may return historical JSON payloads as string-encoded JSON.
-const todoMessageJson = sql`(CASE WHEN jsonb_typeof(message) = 'string' THEN (message #>> '{}')::jsonb ELSE message END)`;
-const todoMetaJson = sql`(CASE WHEN jsonb_typeof(meta) = 'string' THEN (meta #>> '{}')::jsonb ELSE meta END)`;
+const todoMessageJson = () => sql`(CASE WHEN jsonb_typeof(message) = 'string' THEN (message #>> '{}')::jsonb ELSE message END)`;
+const todoMetaJson = () => sql`(CASE WHEN jsonb_typeof(meta) = 'string' THEN (meta #>> '{}')::jsonb ELSE meta END)`;
 
 const rowToConversation = (row: ConversationRow): AiConversation => ({
   ...(row.activity ? {activity:row.activity} : {}),
@@ -695,9 +695,9 @@ const loadConversationSummary = async (input: {
   const rows = await sql<ConversationRow[]>`
     SELECT
       conversation.*,
-      ${effectiveDone} AS is_done,
+      ${effectiveDone()} AS is_done,
       latest.status AS latest_turn_status,
-      ${browserWorkPending} AS latest_browser_pending,
+      ${browserWorkPending()} AS latest_browser_pending,
       latest.error AS latest_turn_error,
       latest.completed_at AS latest_turn_completed_at
     FROM ai.conversations conversation
@@ -716,9 +716,9 @@ const loadConversationSummary = async (input: {
   `;
   if (!rows[0]) return null;
   const plans = await sql<{ seq: number; plan: unknown }[]>`
-    SELECT seq, CASE WHEN role = 'tool_result' THEN ${todoMessageJson}->'result' ELSE ${todoMetaJson}->'todoPlan' END AS plan
+    SELECT seq, CASE WHEN role = 'tool_result' THEN ${todoMessageJson()}->'result' ELSE ${todoMetaJson()}->'todoPlan' END AS plan
     FROM ai.messages WHERE conversation_id = ${rows[0].id}
-      AND ((role = 'tool_result' AND ${todoMessageJson}->>'name' = 'todo_write' AND COALESCE(${todoMessageJson}->>'isError','false') = 'false') OR ${todoMetaJson} ? 'todoPlan')
+      AND ((role = 'tool_result' AND ${todoMessageJson()}->>'name' = 'todo_write' AND COALESCE(${todoMessageJson()}->>'isError','false') = 'false') OR ${todoMetaJson()} ? 'todoPlan')
     ORDER BY seq DESC, id DESC LIMIT 1
   `;
   const plan = parseAiTodoPlan(plans[0]?.plan);
@@ -1044,7 +1044,7 @@ export const aiConversations: AiConversationService = {
         SELECT
           short_id, ${target.id}::uuid, seq, kind, role, message, search_text, loop_id,
           model_profile_id, provider_model, usage, stop_reason, loop_aggregate, loop_done_reason,
-          CASE WHEN ${todoMetaJson} ? 'todoPlan' THEN jsonb_build_object('todoPlan', ${todoMetaJson}->'todoPlan') ELSE NULL END
+          CASE WHEN ${todoMetaJson()} ? 'todoPlan' THEN jsonb_build_object('todoPlan', ${todoMetaJson()}->'todoPlan') ELSE NULL END
         FROM ai.messages
         WHERE conversation_id = ${input.sourceConversationId}::uuid
           AND compacted_at IS NULL
@@ -1076,9 +1076,9 @@ export const aiConversations: AiConversationService = {
       return sql<ConversationRow[]>`
       SELECT
         conversation.*,
-        ${effectiveDone} AS is_done,
+        ${effectiveDone()} AS is_done,
         latest.status AS latest_turn_status,
-        ${browserWorkPending} AS latest_browser_pending,
+        ${browserWorkPending()} AS latest_browser_pending,
         latest.error AS latest_turn_error,
         latest.completed_at AS latest_turn_completed_at
       FROM ai.conversations conversation
@@ -1091,7 +1091,7 @@ export const aiConversations: AiConversationService = {
       ) latest ON TRUE
       WHERE conversation.created_by_user_id = ${input.ownerUserId}
         AND (${archived}::boolean = (conversation.archived_at IS NOT NULL))
-        AND (${input.done ?? null}::boolean IS NULL OR ${input.done ?? null}::boolean = ${effectiveDone})
+        AND (${input.done ?? null}::boolean IS NULL OR ${input.done ?? null}::boolean = ${effectiveDone()})
         AND (${input.projectId ?? null}::uuid IS NULL OR conversation.project_id = ${input.projectId ?? null}::uuid)
         AND (NOT ${Boolean(input.unassigned)}::boolean OR conversation.project_id IS NULL)
         AND (${refs.length === 0}::boolean OR NOT EXISTS (
@@ -1118,8 +1118,8 @@ export const aiConversations: AiConversationService = {
                 OR message.search_document @@ websearch_to_tsquery('simple', ${query ?? ""}))
           ))
         AND (${status}::text IS NULL
-          OR (${status} = 'running' AND (latest.status IN ('queued', 'running') OR ${browserWorkPending}))
-          OR (${status} = 'needs_attention' AND latest.status = 'waiting_for_action' AND NOT ${browserWorkPending})
+          OR (${status} = 'running' AND (latest.status IN ('queued', 'running') OR ${browserWorkPending()}))
+          OR (${status} = 'needs_attention' AND latest.status = 'waiting_for_action' AND NOT ${browserWorkPending()})
           OR (${status} = 'failed' AND latest.status = 'failed')
           OR (${status} = 'unread' AND latest.status = 'completed' AND latest.completed_at > COALESCE(conversation.last_viewed_at, '-infinity')))
       ORDER BY ${order}
@@ -1131,8 +1131,8 @@ export const aiConversations: AiConversationService = {
 
   listSidebarConversations: async (input) => {
     const rows = await sql<ConversationRow[]>`
-      SELECT conversation.*, ${effectiveDone} AS is_done,
-        latest.status AS latest_turn_status, ${browserWorkPending} AS latest_browser_pending,
+      SELECT conversation.*, ${effectiveDone()} AS is_done,
+        latest.status AS latest_turn_status, ${browserWorkPending()} AS latest_browser_pending,
         latest.error AS latest_turn_error, latest.completed_at AS latest_turn_completed_at,
         jsonb_build_object('completed', COALESCE(progress.completed,0), 'total', COALESCE(progress.total,0),
           'step', progress.step, 'tool', ai.sidebar_tool_label(latest.live_blocks)->>'label') AS activity
@@ -1142,9 +1142,9 @@ export const aiConversations: AiConversationService = {
         WHERE conversation_id = conversation.id ORDER BY created_at DESC, id DESC LIMIT 1
       ) latest ON TRUE
       LEFT JOIN LATERAL (
-        SELECT CASE WHEN role = 'tool_result' THEN ${todoMessageJson}->'result' ELSE ${todoMetaJson}->'todoPlan' END AS plan
+        SELECT CASE WHEN role = 'tool_result' THEN ${todoMessageJson()}->'result' ELSE ${todoMetaJson()}->'todoPlan' END AS plan
         FROM ai.messages WHERE conversation_id = conversation.id
-          AND ((role = 'tool_result' AND ${todoMessageJson}->>'name' = 'todo_write' AND COALESCE(${todoMessageJson}->>'isError','false') = 'false') OR ${todoMetaJson} ? 'todoPlan')
+          AND ((role = 'tool_result' AND ${todoMessageJson()}->>'name' = 'todo_write' AND COALESCE(${todoMessageJson()}->>'isError','false') = 'false') OR ${todoMetaJson()} ? 'todoPlan')
         ORDER BY seq DESC, id DESC LIMIT 1
       ) working ON TRUE
       LEFT JOIN LATERAL (
@@ -1154,7 +1154,7 @@ export const aiConversations: AiConversationService = {
         FROM jsonb_array_elements(CASE WHEN jsonb_typeof(working.plan->'todos') = 'array' THEN working.plan->'todos' ELSE '[]'::jsonb END) task
       ) progress ON TRUE
       WHERE conversation.created_by_user_id = ${input.ownerUserId}::uuid
-        AND conversation.archived_at IS NULL AND NOT ${effectiveDone}
+        AND conversation.archived_at IS NULL AND NOT ${effectiveDone()}
       ORDER BY conversation.pinned_at DESC NULLS LAST, conversation.last_used_at DESC, conversation.id
     `;
     return rows.map(rowToConversation);
@@ -1175,9 +1175,9 @@ export const aiConversations: AiConversationService = {
       return sql<ConversationRow[]>`
       SELECT
         conversation.*,
-        ${effectiveDone} AS is_done,
+        ${effectiveDone()} AS is_done,
         latest.status AS latest_turn_status,
-        ${browserWorkPending} AS latest_browser_pending,
+        ${browserWorkPending()} AS latest_browser_pending,
         latest.error AS latest_turn_error,
         latest.completed_at AS latest_turn_completed_at
       FROM ai.conversations conversation
@@ -1190,7 +1190,7 @@ export const aiConversations: AiConversationService = {
       ) latest ON TRUE
       WHERE conversation.created_by_user_id = ${input.ownerUserId}
         AND (${archived}::boolean = (conversation.archived_at IS NOT NULL))
-        AND (${input.done ?? null}::boolean IS NULL OR ${input.done ?? null}::boolean = ${effectiveDone})
+        AND (${input.done ?? null}::boolean IS NULL OR ${input.done ?? null}::boolean = ${effectiveDone()})
         AND (${input.projectId ?? null}::uuid IS NULL OR conversation.project_id = ${input.projectId ?? null}::uuid)
         AND (NOT ${Boolean(input.unassigned)}::boolean OR conversation.project_id IS NULL)
         AND (${pattern}::text IS NULL
@@ -1206,8 +1206,8 @@ export const aiConversations: AiConversationService = {
                 OR message.search_document @@ websearch_to_tsquery('simple', ${query ?? ""}))
           ))
         AND (${status}::text IS NULL
-          OR (${status} = 'running' AND (latest.status IN ('queued', 'running') OR ${browserWorkPending}))
-          OR (${status} = 'needs_attention' AND latest.status = 'waiting_for_action' AND NOT ${browserWorkPending})
+          OR (${status} = 'running' AND (latest.status IN ('queued', 'running') OR ${browserWorkPending()}))
+          OR (${status} = 'needs_attention' AND latest.status = 'waiting_for_action' AND NOT ${browserWorkPending()})
           OR (${status} = 'failed' AND latest.status = 'failed')
           OR (${status} = 'unread' AND latest.status = 'completed' AND latest.completed_at > COALESCE(conversation.last_viewed_at, '-infinity')))
       ORDER BY ${order}
@@ -1227,7 +1227,7 @@ export const aiConversations: AiConversationService = {
       ) latest ON TRUE
       WHERE conversation.created_by_user_id = ${input.ownerUserId}
         AND (${archived}::boolean = (conversation.archived_at IS NOT NULL))
-        AND (${input.done ?? null}::boolean IS NULL OR ${input.done ?? null}::boolean = ${effectiveDone})
+        AND (${input.done ?? null}::boolean IS NULL OR ${input.done ?? null}::boolean = ${effectiveDone()})
         AND (${input.projectId ?? null}::uuid IS NULL OR conversation.project_id = ${input.projectId ?? null}::uuid)
         AND (NOT ${Boolean(input.unassigned)}::boolean OR conversation.project_id IS NULL)
         AND (${pattern}::text IS NULL
@@ -1243,8 +1243,8 @@ export const aiConversations: AiConversationService = {
                 OR message.search_document @@ websearch_to_tsquery('simple', ${query ?? ""}))
           ))
         AND (${status}::text IS NULL
-          OR (${status} = 'running' AND (latest.status IN ('queued', 'running') OR ${browserWorkPending}))
-          OR (${status} = 'needs_attention' AND latest.status = 'waiting_for_action' AND NOT ${browserWorkPending})
+          OR (${status} = 'running' AND (latest.status IN ('queued', 'running') OR ${browserWorkPending()}))
+          OR (${status} = 'needs_attention' AND latest.status = 'waiting_for_action' AND NOT ${browserWorkPending()})
           OR (${status} = 'failed' AND latest.status = 'failed')
           OR (${status} = 'unread' AND latest.status = 'completed' AND latest.completed_at > COALESCE(conversation.last_viewed_at, '-infinity')))
     `;
@@ -1487,7 +1487,7 @@ export const aiConversations: AiConversationService = {
   },
 
   createInterChatMessage: async (input) => {
-    const existing = await sql<InterChatMessageRow[]>`${interChatMessageSelect}
+    const existing = await sql<InterChatMessageRow[]>`${interChatMessageSelect()}
       WHERE message.idempotency_key = ${input.idempotencyKey}
         AND message.source_conversation_id = ${input.sourceConversationId}::uuid
         AND message.actor_user_id = ${input.actorUserId}::uuid
@@ -1532,14 +1532,14 @@ export const aiConversations: AiConversationService = {
         RETURNING id
       `,
     );
-    const rows = await sql<InterChatMessageRow[]>`${interChatMessageSelect} WHERE message.id = ${inserted[0]!.id}::uuid LIMIT 1`;
+    const rows = await sql<InterChatMessageRow[]>`${interChatMessageSelect()} WHERE message.id = ${inserted[0]!.id}::uuid LIMIT 1`;
     return { ok: true, message: rowToInterChatMessage(rows[0]!) };
   },
 
   listPendingInterChatMessages: async (input = {}) => {
     const limit = Math.min(Math.max(Math.floor(input.limit ?? 50), 1), 100);
     const rows = await sql<InterChatMessageRow[]>`
-      ${interChatMessageSelect}
+      ${interChatMessageSelect()}
       WHERE message.status = 'pending'
         AND (${input.targetConversationId ?? null}::uuid IS NULL OR message.target_conversation_id = ${input.targetConversationId ?? null}::uuid)
         AND (${input.targetConversationId ?? null}::uuid IS NOT NULL OR NOT EXISTS (
@@ -1575,7 +1575,7 @@ export const aiConversations: AiConversationService = {
   deliverInterChatMessage: async (input) => {
     const delivered = await sql.begin(async (tx) => {
       const rows = await tx<InterChatMessageRow[]>`
-        ${interChatMessageSelect}
+        ${interChatMessageSelect()}
         WHERE message.id = ${input.messageId}::uuid
         FOR UPDATE OF message
       `;
@@ -1647,7 +1647,7 @@ export const aiConversations: AiConversationService = {
         SET status = 'delivered', target_turn_id = ${turn.id}, target_message_id = ${messageRow.id}, delivered_at = now()
         WHERE id = ${message.id}::uuid
       `;
-      const updated = await tx<InterChatMessageRow[]>`${interChatMessageSelect} WHERE message.id = ${message.id}::uuid LIMIT 1`;
+      const updated = await tx<InterChatMessageRow[]>`${interChatMessageSelect()} WHERE message.id = ${message.id}::uuid LIMIT 1`;
       return { delivered: true as const, message: rowToInterChatMessage(updated[0]!), turn };
     });
     return delivered;
@@ -2254,7 +2254,7 @@ export const aiConversations: AiConversationService = {
           stop_reason,
           loop_aggregate,
           loop_done_reason,
-          CASE WHEN ${todoMetaJson} ? 'todoPlan' THEN jsonb_build_object('todoPlan', ${todoMetaJson}->'todoPlan') ELSE NULL END
+          CASE WHEN ${todoMetaJson()} ? 'todoPlan' THEN jsonb_build_object('todoPlan', ${todoMetaJson()}->'todoPlan') ELSE NULL END
         FROM ai.messages
         WHERE conversation_id = ${input.sourceConversationId}
           AND compacted_at IS NULL
@@ -2317,9 +2317,9 @@ export const aiConversations: AiConversationService = {
       if ((rows[0]?.count ?? 0) === 0) return;
 
       const plans = await tx<{ plan: unknown }[]>`
-        SELECT CASE WHEN role = 'tool_result' THEN ${todoMessageJson}->'result' ELSE ${todoMetaJson}->'todoPlan' END AS plan
+        SELECT CASE WHEN role = 'tool_result' THEN ${todoMessageJson()}->'result' ELSE ${todoMetaJson()}->'todoPlan' END AS plan
         FROM ai.messages WHERE conversation_id = ${input.conversationId} AND seq <= ${checkpointSeq}
-          AND ((role = 'tool_result' AND ${todoMessageJson}->>'name' = 'todo_write' AND COALESCE(${todoMessageJson}->>'isError','false') = 'false') OR ${todoMetaJson} ? 'todoPlan')
+          AND ((role = 'tool_result' AND ${todoMessageJson()}->>'name' = 'todo_write' AND COALESCE(${todoMessageJson()}->>'isError','false') = 'false') OR ${todoMetaJson()} ? 'todoPlan')
         ORDER BY seq DESC, id DESC LIMIT 1
       `;
       const todoPlan = parseAiTodoPlan(plans[0]?.plan);

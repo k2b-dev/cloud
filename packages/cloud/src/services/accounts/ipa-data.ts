@@ -3,9 +3,9 @@ import type { IpaUserData } from "../../contracts/shared";
 
 type DbRow = Record<string, unknown>;
 
-export const userIpaDataJoin = sql`LEFT JOIN auth.user_ipa_data ui ON ui.user_id = u.id`;
+export const userIpaDataJoin = () => sql`LEFT JOIN auth.user_ipa_data ui ON ui.user_id = u.id`;
 
-export const userIpaDataColumns = sql`
+export const userIpaDataColumns = () => sql`
   CASE WHEN EXISTS(SELECT 1 FROM auth.user_posix p WHERE p.user_id = u.id AND p.managed_by = 'ipa')
     THEN (SELECT p.uid_number FROM auth.user_posix p WHERE p.user_id = u.id AND p.managed_by = 'ipa')
     ELSE ui.uid_number END AS ipa_uid_number,

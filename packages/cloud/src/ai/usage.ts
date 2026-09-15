@@ -141,7 +141,7 @@ const runFilter = (q: AiUsageQuery) => sql`
   AND (${q.errorCode ?? null}::text IS NULL OR e.error_code=${q.errorCode ?? null})
   AND (${q.search ?? ""}='' OR position(lower(${q.search ?? ""}) in lower(concat_ws(' ',e.task,e.error_code,e.error)))>0)
 `;
-const stats = sql`
+const stats = () => sql`
   count(*)::int AS runs, count(*) FILTER (WHERE status='failed')::int AS failed,
   sum(tokens)::double precision AS tokens, sum(credits)::double precision AS credits,
   COALESCE(count(tokens)::double precision/NULLIF(count(*),0),0) AS "tokenCoverage",
@@ -176,7 +176,7 @@ const pageOf = async <T>(projection: ReturnType<typeof events>, q: AiUsageQuery)
   const items = await sql<T[]>`${projection} LIMIT ${q.perPage} OFFSET ${(page - 1) * q.perPage}`;
   return { items, total, page, perPage: q.perPage };
 };
-const runColumns = sql`e.id, e.kind, e.task, e.status, e.created_at::text AS "createdAt", e.user_id::text AS "userId",
+const runColumns = () => sql`e.id, e.kind, e.task, e.status, e.created_at::text AS "createdAt", e.user_id::text AS "userId",
   COALESCE(NULLIF(u.display_name,''),u.uid) AS "userLabel",e.model_profile_id AS "modelProfileId",e.provider_model AS "providerModel",
   e.app_id AS "appId",e.conversation_id::text AS "conversationId",e.turn_id::text AS "turnId",e.workflow_run_id::text AS "workflowRunId",
   e.trace_id AS "traceId",e.tokens,e.credits,e.duration_ms AS "durationMs",e.error_code AS "errorCode",e.error,e.attempts`;
@@ -188,7 +188,7 @@ export const aiUsage = {
     const filtered = sql`SELECT e.* FROM (${source}) e WHERE ${globalFilter(q)}`;
     const inference = filtered;
     const summary = async (kind?: string) => {
-      const [row] = await sql<AiUsageStats[]>`SELECT ${stats} FROM (${filtered}) e WHERE ${kind ? sql`kind=${kind}` : sql`TRUE`}`;
+      const [row] = await sql<AiUsageStats[]>`SELECT ${stats()} FROM (${filtered}) e WHERE ${kind ? sql`kind=${kind}` : sql`TRUE`}`;
       return row!;
     };
     const groups = (dimension: "users" | "models" | "tasks" | "apps") => {
@@ -203,14 +203,14 @@ export const aiUsage = {
       const label = dimension === "users" ? sql`COALESCE(NULLIF(u.display_name,''),u.uid)` : key;
       const provider = dimension === "models" ? sql`e.provider_model` : sql`NULL::text`;
       return pageOf<AiUsageGroup>(
-        sql`SELECT ${key} AS id,${label} AS label,${provider} AS "providerModel",${stats}
+        sql`SELECT ${key} AS id,${label} AS label,${provider} AS "providerModel",${stats()}
         FROM (${inference}) e LEFT JOIN auth.users u ON u.id=e.user_id
         GROUP BY ${key},${label},${provider}
         ORDER BY ${comparisonOrder(q)},id NULLS LAST,"providerModel" NULLS LAST`,
         q,
       );
     };
-    const runRows = sql`SELECT ${runColumns} FROM (${filtered}) e LEFT JOIN auth.users u ON u.id=e.user_id
+    const runRows = sql`SELECT ${runColumns()} FROM (${filtered}) e LEFT JOIN auth.users u ON u.id=e.user_id
       WHERE ${runFilter(q)} ORDER BY e.created_at DESC,e.kind,e.id`;
     // The response period is authoritative for both summary and feedback. Editing a rating never moves its response into a different period.
     const feedbackRows = sql`SELECT m.id::text AS id,c.id::text AS "conversationId",c.title AS "conversationTitle",
@@ -279,7 +279,7 @@ export const aiUsage = {
   },
   /** Resolve one metadata record only; this never opens another user's chat content. */
   detail: async (kind: AiUsageRun["kind"], id: string): Promise<AiUsageRun | null> => {
-    const [row] = await sql<AiUsageRun[]>`SELECT ${runColumns} FROM (${events(new Date(0), new Date())}) e
+    const [row] = await sql<AiUsageRun[]>`SELECT ${runColumns()} FROM (${events(new Date(0), new Date())}) e
       LEFT JOIN auth.users u ON u.id=e.user_id WHERE e.kind=${kind} AND e.id=${id}`;
     return row ?? null;
   },

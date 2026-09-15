@@ -176,7 +176,7 @@ const mapMandate = (row: MandateRow): Mandate => ({
   revokeReason: row.revoke_reason,
 });
 
-const selectMandate = sql`
+const selectMandate = () => sql`
   SELECT id, subject_kind, subject_user_id, subject_service_account_id,
     owner_app_id, workload_type, workload_id, policy, state, revision, expires_at,
     confirmed_at, confirmation_deadline,
@@ -224,7 +224,7 @@ const parsePolicyForWorkload = (
 
 const load = async (mandateId: string, db: SQL): Promise<Mandate | null> => {
   if (!UUID.safeParse(mandateId).success) return null;
-  const [row] = await db<MandateRow[]>`${selectMandate} WHERE id = ${mandateId}::uuid`;
+  const [row] = await db<MandateRow[]>`${selectMandate()} WHERE id = ${mandateId}::uuid`;
   return row ? mapMandate(row) : null;
 };
 
@@ -437,7 +437,7 @@ export const listMandates = async (config: {
   const where = conditions.slice(1).reduce((combined, condition) => sql`${combined} AND ${condition}`, conditions[0]!);
   const [countRows, rows] = await Promise.all([
     db<{ count: number }[]>`SELECT COUNT(*)::int AS count FROM auth.mandates WHERE ${where}`,
-    db<MandateRow[]>`${selectMandate} WHERE ${where} ORDER BY created_at DESC, id DESC LIMIT ${perPage} OFFSET ${offset}`,
+    db<MandateRow[]>`${selectMandate()} WHERE ${where} ORDER BY created_at DESC, id DESC LIMIT ${perPage} OFFSET ${offset}`,
   ]);
   const total = countRows[0]?.count ?? 0;
   return { items: rows.map(mapMandate), page, perPage, total, hasNext: page * perPage < total };

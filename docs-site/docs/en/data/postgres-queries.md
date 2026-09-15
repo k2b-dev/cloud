@@ -5,7 +5,7 @@ section: Data
 order: 410
 description: Query application-owned Postgres data with the shared database connection.
 tags: [data, postgres, sql, queries]
-updated: 2026-07-27
+updated: 2026-09-15
 ---
 
 # Postgres queries
@@ -18,6 +18,23 @@ import { sql } from "bun";
 
 Cloud does not add an ORM. Keep SQL in the service that owns the domain
 operation.
+
+## Identify application connections
+
+`defineApp()` adds `application_name=cloud:<app-id>` to the configured Postgres
+connection URL when no application name is supplied. This identifies the app
+in Postgres connection diagnostics. An existing `application_name` or `options`
+URL parameter remains operator-owned, and TLS connection settings are preserved.
+
+Call `defineApp()` before using Bun's default SQL pool, including reading
+`sql.options`. Perform startup queries in the application's lifecycle hooks.
+Bun initializes the pool configuration on first use, so a pool initialized
+before `defineApp()` keeps its existing name. Cloud does not replace the pool
+or rename an individual active connection. Separately constructed `new SQL()`
+clients with explicit URLs or options retain their own configuration.
+
+The standalone Gateway router does not use `defineApp()`, so its connection
+name must be supplied in its Postgres URL if attribution is needed.
 
 ## Map database rows
 

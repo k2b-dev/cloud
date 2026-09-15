@@ -172,7 +172,7 @@ export const get = async (params: { id: string } | { uid: string }): Promise<Use
   const { groupsAdmin } = await getFreeIpaConfig();
   const rows = await sql<DbRow[]>`
     SELECT u.*,
-      ${userIpaDataColumns},
+      ${userIpaDataColumns()},
       CASE
         WHEN u.provider = 'local' THEN u.admin
         ELSE EXISTS(
@@ -203,7 +203,7 @@ export const get = async (params: { id: string } | { uid: string }): Promise<Use
         ${managedGroupIdsSubquery(userIdExpr)}
       ), '{}') AS manages_group_ids
     FROM auth.users u
-    ${userIpaDataJoin}
+    ${userIpaDataJoin()}
     WHERE ${whereClause}
   `;
   if (rows.length === 0) return null;

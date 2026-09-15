@@ -611,9 +611,8 @@ const SESSION_LIMIT = 50;
  * waiting on a lock is the one an operator needs, and a long-open transaction
  * is what stops vacuum from reclaiming anything.
  *
- * `application_name` is included even though Cloud does not set it yet — an
- * unnamed connection is itself the finding, and the column is what makes that
- * visible rather than merely true.
+ * Include `application_name` so operators can attribute Cloud sessions and
+ * identify clients that do not report a name.
  */
 export const listPostgresSessions = async (): Promise<PostgresSession[]> => {
   const rows = await sql<

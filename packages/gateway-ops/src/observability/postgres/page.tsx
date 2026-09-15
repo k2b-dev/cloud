@@ -1,8 +1,8 @@
-import { ButtonLink, DataPanel, DataTable, type DataTableColumn, StatCell, StatGrid, StatusBadge } from "@k2b/ui";
 import { type AuthContext, getDateConfig, getLocale } from "@k2b/cloud/server";
 import { formatBytes, formatDateTime as formatDate, formatNumber } from "@k2b/cloud/shared";
 import { AdminLayout } from "@k2b/cloud/ssr";
 import { SearchBar } from "@k2b/cloud/ssr/islands";
+import { ButtonLink, DataPanel, DataTable, type DataTableColumn, StatCell, StatGrid, StatusBadge } from "@k2b/ui";
 import { ssr } from "../../config";
 
 /** Seconds to a compact age; sessions report ages, not durations. */
@@ -15,6 +15,7 @@ const formatSeconds = (seconds: number | null): string => {
 
 import OperationalCharts from "../../frontend/OperationalCharts.island";
 import { prepareOperationalCharts } from "../../frontend/operational-charts";
+import { gatewayOpsMessages } from "../../messages";
 import {
   getPostgresDiagnostics,
   listPostgresIndexes,
@@ -25,7 +26,6 @@ import {
   type PostgresTableDiagnostic,
 } from "../data/service";
 import PostgresDataFilters from "./_components/PostgresDataFilters.island";
-import { gatewayOpsMessages } from "../../messages";
 
 const normalize = (value: string): string => value.toLowerCase();
 
@@ -79,7 +79,7 @@ export default ssr<AuthContext>(async (c) => {
     .reduce((sum, index) => sum + index.sizeBytes, 0);
 
   const sessionColumns: DataTableColumn<PostgresSession>[] = [
-    { id: "pid", header: "PID", cellClass: "tabular-nums" },
+    { id: "pid", header: "PID", value: (session) => session.pid, cellClass: "tabular-nums" },
     { id: "state", header: t.state },
     { id: "application", header: t.application },
     { id: "wait", header: t.waitingOn },
@@ -186,6 +186,8 @@ export default ssr<AuthContext>(async (c) => {
       cellClass: "text-right",
     },
     { id: "indexBytes", header: t.indexes, value: (table) => table.indexBytes, headerClass: "text-right", cellClass: "text-right" },
+    { id: "seqScans", header: t.sequentialScans, subtitle: t.sinceReset, value: (table) => table.seqScans, align: "right" },
+    { id: "indexScans", header: t.indexScans, subtitle: t.sinceReset, value: (table) => table.indexScans, align: "right" },
     { id: "dead", header: t.deadRows, value: (table) => table.deadRows, headerClass: "text-right", cellClass: "text-right" },
     { id: "analyze", header: t.analyze, value: (table) => table.lastAutoanalyze ?? table.lastAnalyze, cellClass: "whitespace-nowrap" },
     { id: "warnings", header: t.signals, value: (table) => table.warnings.join(", ") },
@@ -263,6 +265,22 @@ export default ssr<AuthContext>(async (c) => {
           />
         </StatGrid>
 
+        <StatGrid columns={3}>
+          <StatCell
+            label={t.deadlocks}
+            value={diagnostics.available ? formatNumber(diagnostics.runtime.deadlocks, { locale }) : "—"}
+            sub={t.sinceReset}
+          />
+          <StatCell
+            label={t.oldestTransaction}
+            value={diagnostics.available ? formatSeconds(diagnostics.runtime.oldestTransactionSeconds) : "—"}
+          />
+          <StatCell
+            label={t.oldestActiveQuery}
+            value={diagnostics.available ? formatSeconds(diagnostics.runtime.oldestQuerySeconds) : "—"}
+          />
+        </StatGrid>
+
         {diagnostics.warnings.length ? (
           <section class={warningGridClass(diagnostics.warnings.length)}>
             {diagnostics.warnings.map((warning) => (
@@ -299,58 +317,6 @@ export default ssr<AuthContext>(async (c) => {
           </div>
         </section>
 
-        <section class="grid gap-2 xl:grid-cols-3">
-          <article class="min-w-0">
-            <OperationalCharts
-              charts={prepareOperationalCharts(
-                [{ kind: "bar", title: t.sizeBySchema, description: t.topSchemasDescription, data: schemaChartData, unit: "bytes" }],
-                locale,
-              )}
-            />
-            <nav class="mt-2 flex flex-wrap gap-1" aria-label={t.filterTablesBySchema}>
-              {schemaChartData.slice(0, 5).map((schema) => (
-                <ButtonLink
-                  href={postgresFilterHref({ schema: schema.label })}
-                  variant={selectedSchema === schema.label ? "primary" : "secondary"}
-                  size="sm"
-                  aria-current={selectedSchema === schema.label ? "true" : undefined}
-                >
-                  {schema.label}
-                </ButtonLink>
-              ))}
-            </nav>
-          </article>
-          <article class="min-w-0">
-            <OperationalCharts
-              charts={prepareOperationalCharts(
-                [{ kind: "bar", title: t.largestTables, description: t.topTenDescription, data: tableChartData, unit: "bytes" }],
-                locale,
-              )}
-            />
-            <nav class="mt-2 flex flex-wrap gap-1" aria-label={t.inspectLargeTable}>
-              {tableChartData.slice(0, 5).map((table) => (
-                <ButtonLink
-                  href={postgresFilterHref({ search: table.label })}
-                  variant="secondary"
-                  size="sm"
-                  class="max-w-full truncate"
-                  title={table.label}
-                >
-                  {table.label}
-                </ButtonLink>
-              ))}
-            </nav>
-          </article>
-          <article class="min-w-0">
-            <OperationalCharts
-              charts={prepareOperationalCharts(
-                [{ kind: "bar", title: t.rowsBySchema, description: t.plannerRowsDescription, data: schemaRowsChartData, unit: "number" }],
-                locale,
-              )}
-            />
-          </article>
-        </section>
-
         <DataPanel
           title={t.sessions}
           subtitle={
@@ -383,8 +349,6 @@ export default ssr<AuthContext>(async (c) => {
                 return row.application ? (
                   <span class="text-[10px] text-dimmed">{row.application}</span>
                 ) : (
-                  // Cloud does not set application_name yet, so an unattributable
-                  // connection is the finding rather than a rendering gap.
                   <span class="text-[10px] text-amber-600 dark:text-amber-400" title={t.unnamedConnection}>
                     {t.unnamed}
                   </span>
@@ -476,7 +440,7 @@ export default ssr<AuthContext>(async (c) => {
                   </span>
                 );
               }
-              if (col.id === "rows" || col.id === "dead")
+              if (col.id === "rows" || col.id === "dead" || col.id === "seqScans" || col.id === "indexScans")
                 return <span class="tabular-nums">{formatNumber(Number(value ?? 0), { locale })}</span>;
               if (col.id === "total" || col.id === "tableBytes" || col.id === "indexBytes")
                 return <span class="tabular-nums">{formatBytes(Number(value ?? 0), { locale })}</span>;
@@ -495,6 +459,58 @@ export default ssr<AuthContext>(async (c) => {
               return render(value);
             }}
           />
+        </section>
+
+        <section class="grid gap-2 xl:grid-cols-3">
+          <article class="min-w-0">
+            <OperationalCharts
+              charts={prepareOperationalCharts(
+                [{ kind: "bar", title: t.sizeBySchema, description: t.topSchemasDescription, data: schemaChartData, unit: "bytes" }],
+                locale,
+              )}
+            />
+            <nav class="mt-2 flex flex-wrap gap-1" aria-label={t.filterTablesBySchema}>
+              {schemaChartData.slice(0, 5).map((schema) => (
+                <ButtonLink
+                  href={postgresFilterHref({ schema: schema.label })}
+                  variant={selectedSchema === schema.label ? "primary" : "secondary"}
+                  size="sm"
+                  aria-current={selectedSchema === schema.label ? "true" : undefined}
+                >
+                  {schema.label}
+                </ButtonLink>
+              ))}
+            </nav>
+          </article>
+          <article class="min-w-0">
+            <OperationalCharts
+              charts={prepareOperationalCharts(
+                [{ kind: "bar", title: t.largestTables, description: t.topTenDescription, data: tableChartData, unit: "bytes" }],
+                locale,
+              )}
+            />
+            <nav class="mt-2 flex flex-wrap gap-1" aria-label={t.inspectLargeTable}>
+              {tableChartData.slice(0, 5).map((table) => (
+                <ButtonLink
+                  href={postgresFilterHref({ search: table.label })}
+                  variant="secondary"
+                  size="sm"
+                  class="max-w-full truncate"
+                  title={table.label}
+                >
+                  {table.label}
+                </ButtonLink>
+              ))}
+            </nav>
+          </article>
+          <article class="min-w-0">
+            <OperationalCharts
+              charts={prepareOperationalCharts(
+                [{ kind: "bar", title: t.rowsBySchema, description: t.plannerRowsDescription, data: schemaRowsChartData, unit: "number" }],
+                locale,
+              )}
+            />
+          </article>
         </section>
 
         <section class="paper overflow-hidden">

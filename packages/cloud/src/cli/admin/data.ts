@@ -18,11 +18,18 @@ export type PostgresDiagnostics = {
   totalBytes: number;
   installedExtensions: number;
   availableExtensions: number;
+  runtime: {
+    deadlocks: number;
+    oldestTransactionSeconds: number;
+    oldestQuerySeconds: number;
+  };
   tableRows: {
     schema: string;
     name: string;
     estimatedRows: number;
     deadRows: number;
+    seqScans: number;
+    indexScans: number;
     totalBytes: number;
     tableBytes: number;
     indexBytes: number;
@@ -117,6 +124,9 @@ export const dataCommands = [
           tables: data.tables,
           storage: formatBytes(data.totalBytes),
           extensions: `${data.installedExtensions}/${data.availableExtensions}`,
+          deadlocks: data.available ? data.runtime.deadlocks : "-",
+          oldestTransaction: data.available ? formatSeconds(data.runtime.oldestTransactionSeconds) : "-",
+          oldestQuery: data.available ? formatSeconds(data.runtime.oldestQuerySeconds) : "-",
           warnings: data.warnings.length,
           error: data.error ?? "",
         },
@@ -127,6 +137,9 @@ export const dataCommands = [
         { key: "tables" },
         { key: "storage" },
         { key: "extensions" },
+        { key: "deadlocks", label: "Deadlocks since reset" },
+        { key: "oldestTransaction", label: "Oldest transaction" },
+        { key: "oldestQuery", label: "Oldest active query" },
         { key: "warnings" },
         { key: "error" },
       ]);
@@ -161,6 +174,8 @@ export const dataCommands = [
         heap: formatBytes(table.tableBytes),
         indexes: formatBytes(table.indexBytes),
         deadRows: table.deadRows,
+        seqScans: table.seqScans,
+        indexScans: table.indexScans,
         warnings: table.warnings.join(", "),
       }));
       printJsonOrTable(ctx, { ...data, tableRows: tables }, rows, [
@@ -170,6 +185,8 @@ export const dataCommands = [
         { key: "heap" },
         { key: "indexes" },
         { key: "deadRows" },
+        { key: "seqScans", label: "Seq scans since reset" },
+        { key: "indexScans", label: "Index scans since reset" },
         { key: "warnings" },
       ]);
     },

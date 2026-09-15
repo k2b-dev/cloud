@@ -83,7 +83,7 @@ export const userProjectionSql = (groupsAdmin: string[]) => sql`
   u.*,
   (SELECT cache_version::text FROM auth.rail_state WHERE singleton) || ':' ||
     COALESCE((SELECT cache_version::text FROM auth.rail_preferences WHERE user_id = u.id), 'default') AS rail_cache_version,
-  ${userIpaDataColumns},
+  ${userIpaDataColumns()},
   CASE
     WHEN u.provider = 'local' THEN u.admin
     ELSE EXISTS(
@@ -97,8 +97,8 @@ export const userProjectionSql = (groupsAdmin: string[]) => sql`
 `;
 
 /** One scan for membership names/IDs and one recursive traversal for management. */
-export const userProjectionJoin = sql`
-  ${userIpaDataJoin}
+export const userProjectionJoin = () => sql`
+  ${userIpaDataJoin()}
   LEFT JOIN LATERAL (
     SELECT COALESCE(array_agg(g.name ORDER BY g.name), '{}') AS member_groups,
       COALESCE(array_agg(g.id ORDER BY g.name), '{}') AS member_group_ids
@@ -148,7 +148,7 @@ export const loadJwtSessionUser = async (
   params: SessionUserParams & { groupsAdmin: string[] },
   query: typeof sql = sql,
 ): Promise<User | null> => {
-  const row = await loadSessionRow(params, userProjectionSql(params.groupsAdmin), userProjectionJoin, query);
+  const row = await loadSessionRow(params, userProjectionSql(params.groupsAdmin), userProjectionJoin(), query);
   return row ? buildProjectedUser(row) : null;
 };
 
@@ -162,7 +162,7 @@ export const loadCurrentUser = async (params: { userId: string; groupsAdmin: str
   const rows = await query<DbRow[]>`
     SELECT ${userProjectionSql(params.groupsAdmin)}
     FROM auth.users u
-    ${userProjectionJoin}
+    ${userProjectionJoin()}
     WHERE u.id = ${params.userId}::uuid
   `;
   return rows[0] ? buildProjectedUser(rows[0]) : null;
