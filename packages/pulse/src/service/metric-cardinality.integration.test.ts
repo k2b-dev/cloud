@@ -20,12 +20,15 @@ describe("Pulse metric cardinality Postgres smoke", () => {
     async () => {
       const baseId = crypto.randomUUID();
       const sourceId = crypto.randomUUID();
+      const otherSourceId = crypto.randomUUID();
       const metricName = "cardinality.concurrent";
       await sql`INSERT INTO pulse.bases (id, short_id, name) VALUES (${baseId}::uuid, ${newShortId()}, 'Metric cardinality smoke')`;
       await sql`
       INSERT INTO pulse.sources (id, short_id, base_id, kind, name)
       VALUES (${sourceId}::uuid, ${newShortId()}, ${baseId}::uuid, 'http_ingest'::pulse.source_kind, 'Metric cardinality source')
     `;
+      await sql`INSERT INTO pulse.sources(id,short_id,base_id,kind,name)
+        VALUES(${otherSourceId}::uuid,${newShortId()},${baseId}::uuid,'http_ingest','Other source')`;
 
       try {
         const [definition] = await sql<{ id: string }[]>`
@@ -54,7 +57,12 @@ describe("Pulse metric cardinality Postgres smoke", () => {
           { name: metricName, value: 1, unit: "count", resource: { type: "host", id: "candidate-a" }, dimensions: { shard: "a" } },
           { name: metricName, value: 1, unit: "count", resource: { type: "host", id: "candidate-b" }, dimensions: { shard: "b" } },
         ];
-        const results = await Promise.all(candidates.map((metric) => ingestBatch({ baseId, sourceId, batch: { metrics: [metric] } })));
+        await sql`INSERT INTO pulse.metric_hours(base_id,hour,state)
+          VALUES(${baseId}::uuid,date_bin('1 hour',now(),'1970-01-01'::timestamptz),'dirty')`;
+        const candidateSources = [sourceId, otherSourceId];
+        const results = await Promise.all(
+          candidates.map((metric, index) => ingestBatch({ baseId, sourceId: candidateSources[index]!, batch: { metrics: [metric] } })),
+        );
 
         expect(results.filter((result) => result.ok)).toHaveLength(1);
         const rejected = results.find((result) => !result.ok);
@@ -68,7 +76,11 @@ describe("Pulse metric cardinality Postgres smoke", () => {
         expect(seriesCount?.count).toBe(PULSE_METRIC_SERIES_LIMIT);
 
         const acceptedIndex = results.findIndex((result) => result.ok);
-        const repeated = await ingestBatch({ baseId, sourceId, batch: { metrics: [candidates[acceptedIndex]!] } });
+        const repeated = await ingestBatch({
+          baseId,
+          sourceId: candidateSources[acceptedIndex]!,
+          batch: { metrics: [candidates[acceptedIndex]!] },
+        });
         expect(repeated.ok).toBe(true);
         const newSingle = await ingestBatch({
           baseId,

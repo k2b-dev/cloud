@@ -23,7 +23,18 @@ export const enforceMetricSeriesBudget = async (baseId: string, candidates: Seri
   const uniqueCandidates = [
     ...new Map(candidates.map((candidate) => [`${candidate.metric}\u001f${candidate.seriesKey}`, candidate])).values(),
   ];
-  const metricNames = [...new Set(uniqueCandidates.map((candidate) => candidate.metric))].sort();
+  // The caller holds the base lifecycle lock, so retained series cannot disappear
+  // through catalog cleanup while this transaction updates existing observations.
+  const missing = await db<{ metric: string }[]>`
+    SELECT DISTINCT input.metric
+    FROM jsonb_to_recordset((${JSON.stringify(uniqueCandidates)}::jsonb #>> '{}')::jsonb)
+      AS input(metric text,"seriesKey" text)
+    JOIN pulse.metric_defs definition ON definition.base_id=${baseId}::uuid AND definition.name=input.metric
+    LEFT JOIN pulse.metric_series series ON series.metric_id=definition.id AND series.series_key=input."seriesKey"
+    WHERE series.id IS NULL
+  `;
+  if (missing.length === 0) return;
+  const metricNames = missing.map(({ metric }) => metric).sort();
 
   await db`
     SELECT pg_advisory_xact_lock(hashtextextended(id::text, 0))

@@ -219,7 +219,7 @@ const json = (value: unknown): string => JSON.stringify(value);
 const writeMetrics = async (baseId: string, sourceId: string, rows: PreparedMetric[], db: PulseSqlClient) => {
   if (rows.length === 0) return;
   const input = json(rows);
-  const definitions = await db<{ name: string }[]>`
+  await db`
     WITH input AS (
       SELECT * FROM jsonb_to_recordset((${input}::jsonb #>> '{}')::jsonb) AS row(
         ordinal int, name text, unit text, "metricType" text
@@ -231,11 +231,19 @@ const writeMetrics = async (baseId: string, sourceId: string, rows: PreparedMetr
     )
     INSERT INTO pulse.metric_defs (base_id, name, unit, type)
     SELECT ${baseId}::uuid, name, unit, "metricType"::pulse.metric_type FROM definitions ORDER BY name
-    ON CONFLICT (base_id, name) DO UPDATE SET name = EXCLUDED.name
-    WHERE pulse.metric_defs.type = EXCLUDED.type AND pulse.metric_defs.unit IS NOT DISTINCT FROM EXCLUDED.unit
-    RETURNING name
+    ON CONFLICT (base_id, name) DO NOTHING
   `;
-  if (definitions.length !== new Set(rows.map((row) => row.name)).size) {
+  // Use a fresh statement snapshot after any concurrent definition insert commits.
+  // Definitions are immutable; validating them must not lock every writer of the same metric.
+  const [mismatch] = await db`
+    SELECT input.name FROM jsonb_to_recordset((${input}::jsonb #>> '{}')::jsonb)
+      AS input(name text,unit text,"metricType" text)
+    LEFT JOIN pulse.metric_defs definition ON definition.base_id=${baseId}::uuid AND definition.name=input.name
+    WHERE definition.id IS NULL OR definition.type::text<>input."metricType"
+      OR definition.unit IS DISTINCT FROM input.unit
+    LIMIT 1
+  `;
+  if (mismatch) {
     throw err.badInput("Metric type and unit must match the existing definition");
   }
   await enforceMetricSeriesBudget(
