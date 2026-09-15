@@ -293,6 +293,17 @@ authoritative platform tables.
 
 See [Authorization](/en/docs/identity/authorization).
 
+## Encoded JSON metadata upgrade
+
+For upgrades from the June 23, 2026 production baseline, the startup migrations
+automatically repair encoded deleted-account, audit, and Venue objects. They discard
+malformed Tools logs and Gateway registry snapshots, and cancel notification batches with
+invalid selection containers. Valid data survives repeated startup. Stop old
+writers before starting updated services; no manual repair command is required.
+See [JSON metadata upgrade](/en/docs/operations/repair-jsonb-containers) for the
+preservation rules and optional diagnosis. The NATS, identity, and OAuth release
+prerequisites still apply independently.
+
 ## Notification delivery upgrade
 
 When replacing the queue-based notification runtime, stop old application

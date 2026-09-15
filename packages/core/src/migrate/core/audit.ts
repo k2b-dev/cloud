@@ -1,4 +1,5 @@
 import { sql } from "bun";
+import { repairEncodedMetadata } from "./jsonb-metadata";
 
 export const migrate = async (): Promise<void> => {
   await sql`CREATE SCHEMA IF NOT EXISTS audit`.simple();
@@ -34,6 +35,7 @@ export const migrate = async (): Promise<void> => {
   await sql`CREATE INDEX IF NOT EXISTS idx_audit_events_action ON audit.events(action, created_at DESC)`.simple();
   await sql`CREATE INDEX IF NOT EXISTS idx_audit_events_outcome ON audit.events(outcome, created_at DESC)`.simple();
   console.log("  ✓ audit.events table");
+  await repairEncodedMetadata("audit.events");
 
   // Optional production enhancement. Local dev does not ship TimescaleDB, and
   // audit correctness must never depend on this extension being installed.

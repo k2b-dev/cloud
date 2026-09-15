@@ -9,7 +9,13 @@ import { defineCapabilities } from "../contracts/capabilities";
 import type { CapabilityRegistryEntry } from "../contracts/registry";
 import type { RequestAuthority } from "../server";
 import type { withActiveIdentitySigner } from "../services/identity/key-ring";
-import { CAPABILITY_CLAIM_RETENTION_HOURS, capabilityRequestHash, pruneCapabilityIdempotencyClaims } from "./claims";
+import {
+  CAPABILITY_CLAIM_RETENTION_HOURS,
+  capabilityRequestHash,
+  claimCapabilityIdempotency,
+  completeCapabilityClaim,
+  pruneCapabilityIdempotencyClaims,
+} from "./claims";
 import { listCapabilityExecutions, migrateCloudCapabilities } from "./executions";
 
 // This suite migrates and writes data. It must never use a shared developer database.
@@ -138,6 +144,34 @@ const claimState = async (keyHash?: string) =>
   `;
 
 suite("platform capability idempotency claims", () => {
+  test.each([
+    { body: { data: { id: "item-1" } }, jsonType: "object" },
+    { body: [1, "two", null], jsonType: "array" },
+    { body: "plain text", jsonType: "string" },
+    { body: '{"data":1}', jsonType: "string" },
+    { body: "42", jsonType: "string" },
+    { body: "null", jsonType: "string" },
+    { body: "", jsonType: "string" },
+    { body: " ", jsonType: "string" },
+    { body: 42, jsonType: "number" },
+    { body: false, jsonType: "boolean" },
+    { body: null, jsonType: "null" },
+  ])("stores and replays the original JSON value ($jsonType)", async ({ body, jsonType }) => {
+    const scope = { appId: "demo", capability: "demo.add", principal: "anonymous", keyHash: crypto.randomUUID() };
+    const hash = capabilityRequestHash({ input: "unchanged" });
+    expect(await claimCapabilityIdempotency(scope, hash)).toEqual({ state: "claimed" });
+    await completeCapabilityClaim(scope, 200, body);
+    const [stored] = await sql<{ json_type: string; response_body: unknown }[]>`
+      SELECT jsonb_typeof(response_body) AS json_type, response_body
+      FROM capabilities.idempotency_claims
+      WHERE app_id = ${scope.appId} AND capability = ${scope.capability}
+        AND principal = ${scope.principal} AND key_hash = ${scope.keyHash}
+    `;
+    expect(stored?.json_type).toBe(jsonType);
+    expect(stored?.response_body).toEqual(body);
+    expect(await claimCapabilityIdempotency(scope, hash)).toEqual({ state: "replay", status: 200, body });
+  });
+
   test("replays a stored success without forwarding again", async () => {
     const key = `replay-${crypto.randomUUID()}`;
     let forwarded = 0;

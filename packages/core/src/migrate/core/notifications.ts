@@ -317,4 +317,12 @@ export const migrate = async (): Promise<void> => {
     ON notifications.batch_recipients(batch_id, status)
   `.simple();
   console.log("  ✓ notifications batch tables");
+  // Legacy selections are intentionally discarded before the sender starts.
+  // Keep sent history, but never resume a batch whose audience is no longer valid.
+  await sql`
+    UPDATE notifications.batches
+    SET selection = '{}'::jsonb,
+        status = CASE WHEN status IN ('draft', 'ready', 'running') THEN 'cancelled' ELSE status END
+    WHERE jsonb_typeof(selection) IS DISTINCT FROM 'object'
+  `.simple();
 };

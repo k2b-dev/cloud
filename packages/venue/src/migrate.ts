@@ -167,6 +167,28 @@ export const migrate = async (): Promise<void> => {
   await sql`ALTER TABLE venue.public_sections ADD COLUMN IF NOT EXISTS short_id TEXT`.simple();
   await sql`CREATE UNIQUE INDEX IF NOT EXISTS idx_venue_public_sections_short_id ON venue.public_sections(short_id)`.simple();
   await sql`CREATE INDEX IF NOT EXISTS idx_venue_public_sections_venue_position ON venue.public_sections(venue_id, position, created_at)`.simple();
+  // Decode historical object strings inside Postgres to retain numeric precision.
+  await sql`
+    DO $$
+    DECLARE
+      section RECORD;
+      decoded JSONB;
+    BEGIN
+      FOR section IN
+        SELECT id, content FROM venue.public_sections WHERE jsonb_typeof(content) = 'string'
+      LOOP
+        BEGIN
+          decoded := (section.content #>> '{}')::jsonb;
+        EXCEPTION WHEN data_exception THEN
+          CONTINUE;
+        END;
+        IF jsonb_typeof(decoded) = 'object' THEN
+          UPDATE venue.public_sections SET content = decoded
+          WHERE id = section.id AND content = section.content;
+        END IF;
+      END LOOP;
+    END $$;
+  `.simple();
   console.log("  ✓ venue.public_sections table");
 
   await sql`

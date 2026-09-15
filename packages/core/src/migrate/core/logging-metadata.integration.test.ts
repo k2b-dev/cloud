@@ -1,11 +1,24 @@
 import { expect, test } from "bun:test";
-import { sql } from "bun";
 import { logging } from "@k2b/cloud/services";
+import { sql } from "bun";
 import { migrateLogMetadataReader } from "./logging-metadata";
+
 const readWebVitals = logging.webVitals;
 
 // Run against a development database with CLOUD_ADMIN_SLICE_TEST=1.
 const databaseTest = process.env.CLOUD_ADMIN_SLICE_TEST === "1" ? test : test.skip;
+databaseTest("legacy metadata with unsupported Unicode stays readable without changing the original", async () => {
+  await migrateLogMetadataReader();
+  for (const encoded of ['{"value":"\\u0000"}', '{"value":"\\ud800"}', '{"value":"\\udc00"}']) {
+    const [row] = await sql<{ metadata: unknown; original: string }[]>`
+      SELECT logging.object_metadata(to_jsonb(${encoded}::text)) AS metadata,
+        to_jsonb(${encoded}::text) #>> '{}' AS original
+    `;
+    expect(row?.metadata).toBeNull();
+    expect(row?.original).toBe(encoded);
+  }
+});
+
 databaseTest("Web Vitals aggregate valid final reports with consistent windows, filters and percentiles", async () => {
   await migrateLogMetadataReader();
   const app = `vitals-${crypto.randomUUID()}`;
@@ -30,6 +43,10 @@ databaseTest("Web Vitals aggregate valid final reports with consistent windows, 
     await insert(report("a", "LCP", "invalid"), "2026-09-14T11:31:00Z");
     await insert("not JSON");
     await insert('{"value":1e10000000}');
+    for (const encoded of ['{"value":"\\u0000"}', '{"value":"\\ud800"}', '{"value":"\\udc00"}']) {
+      await sql`INSERT INTO logging.entries(level,source,message,metadata,created_at)
+        VALUES ('info','web-vitals',${app},to_jsonb(${encoded}::text),'2026-09-14T11:30:00Z'::timestamptz)`;
+    }
     await sql`UPDATE logging.entries SET metadata = (metadata #>> '{}')::jsonb WHERE source='web-vitals' AND message=${app} AND metadata #>> '{}' LIKE '%"zero"%'`;
     const result = await readWebVitals({ range: "1h", appId: app, route: "/test/:id" }, until);
     expect(result.summary.find((row) => row.name === "LCP")).toEqual({ name: "LCP", count: 4, p75: 325 });

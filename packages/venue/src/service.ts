@@ -1,4 +1,3 @@
-import { dates } from "@k2b/stdlib";
 import {
   type AccessEntry,
   buildAccessPrincipalCondition,
@@ -16,6 +15,8 @@ import {
   updateAccess,
 } from "@k2b/cloud/server";
 import { logger, serviceAccounts } from "@k2b/cloud/services";
+import { parsePgJsonRecord } from "@k2b/cloud/services/postgres";
+import { dates } from "@k2b/stdlib";
 import { sql } from "bun";
 import type { z } from "zod";
 import { permissionFromVenueScopes, type VenueAccessScope } from "./access-control";
@@ -297,7 +298,7 @@ const mapSection = (row: DbPublicSection): PublicSection => ({
   venueId: row.venue_id,
   kind: row.kind,
   title: row.title,
-  content: typeof row.content === "string" ? (JSON.parse(row.content) as Record<string, unknown>) : (row.content ?? {}),
+  content: parsePgJsonRecord(row.content) ?? {},
   enabled: row.enabled,
   position: row.position,
   createdAt: row.created_at.toISOString(),

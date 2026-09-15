@@ -60,6 +60,17 @@ const isolated = /\/cloud_assistant_artifacts_test(?:\?|$)/.test(process.env.DAT
   });
   afterAll(async () => { await sql.close(); });
 
+  test("artifact revisions store JSON objects and retain immutable source", async () => {
+    const created = await artifacts.create({ title: "JSON source", source }, owner);
+    const changed = { ...source, files: [{ path: "main.js", content: 'export default () => "null"' }] };
+    await artifacts.update(created.id, { title: "JSON source", expectedRevision: 1, source: changed }, owner);
+    const rows = await sql<{ revision: number; kind: string; source: string }[]>`SELECT revision,jsonb_typeof(source) AS kind,source::text AS source
+      FROM assistant.artifact_revisions WHERE artifact_id=(SELECT id FROM assistant.artifacts WHERE short_id=${created.id}) ORDER BY revision`;
+    expect(rows.map(row => row.kind)).toEqual(["object", "object"]);
+    expect(rows.map(row => JSON.parse(row.source))).toEqual([source, changed]);
+    expect((await artifacts.get(created.id, owner)).source).toEqual(changed);
+  });
+
   test("personal HTTP secrets stay encrypted, scoped and bound; requests execute only once", async () => {
     const resource=await artifacts.create({title:"HTTP test",source},owner);
     const scope={resourceId:resource.id};
@@ -264,6 +275,15 @@ const isolated = /\/cloud_assistant_artifacts_test(?:\?|$)/.test(process.env.DAT
       expect(await clientCalls.claim(loser, owner)).toEqual({ status: "done", result: { opened: id } });
       await expect(clientCalls.claim(first, stranger)).rejects.toMatchObject({ code: "NOT_FOUND" });
       await expect(clientCalls.claim({ ...first, input: { ...input, id: "Xyz789" } }, owner)).rejects.toMatchObject({ code: "INVALID_INPUT" });
+      for (const result of ["null", "42", '{"x":1}', "hello", null, { x: 1 }, ["null", 42], 42, true]) {
+        await sql`UPDATE assistant.artifact_client_calls SET result=NULL WHERE turn_id=${turnId}::uuid`;
+        await clientCalls.complete({ ...winner, result }, owner);
+        expect(await clientCalls.claim(loser, owner)).toEqual({ status: "done", result });
+        const [stored] = await sql<{ input_kind: string; result: string }[]>`SELECT jsonb_typeof(input) AS input_kind,result::text AS result
+          FROM assistant.artifact_client_calls WHERE turn_id=${turnId}::uuid`;
+        expect(stored?.input_kind).toBe("object");
+        expect(JSON.parse(stored!.result)).toEqual(result);
+      }
       await sql`UPDATE assistant.artifact_client_calls SET result=NULL, created_at=now()-interval '10 minutes' WHERE turn_id=${turnId}::uuid`;
       // Human approval can take longer than the old fixed execution timeout.
       expect(await clientCalls.claim(winner, owner)).toEqual({ status: "pending" });
@@ -362,7 +382,10 @@ const isolated = /\/cloud_assistant_artifacts_test(?:\?|$)/.test(process.env.DAT
       await runtimeCapabilities.resolve(approved.id,{approved:true,remember:"always"},owner,caller);
       expect(execute).toHaveBeenCalledTimes(1);
       expect(execute.mock.calls[0]![0]).toMatchObject({idempotencyKey:`code-${approved.id}`,input:{value:"one"}});
-      await runtimeCapabilities.resolve(approved.id,{approved:true},owner,caller);
+      expect(await runtimeCapabilities.resolve(approved.id,{approved:true},owner,caller)).toEqual({status:"completed",result:{ok:true,data:{data:{written:true}}}});
+      const [stored] = await sql<{ request: string; prepared: string; result: string }[]>`SELECT jsonb_typeof(request) AS request,jsonb_typeof(prepared) AS prepared,jsonb_typeof(result) AS result
+        FROM assistant.capability_calls WHERE id=${approved.id}::uuid`;
+      expect(stored).toEqual({request:"object",prepared:"object",result:"object"});
       expect(execute).toHaveBeenCalledTimes(1);
       expect(await runtimeCapabilities.prepare(request(),owner,caller)).toMatchObject({status:"completed"});
       expect(execute).toHaveBeenCalledTimes(2);

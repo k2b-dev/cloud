@@ -71,8 +71,6 @@ export const capabilityIdempotencyKeyHash = (key: string): string => sha256(key)
 
 type ClaimRow = { state: CapabilityClaimState; request_hash: string; response_status: number | null; response_body: unknown };
 
-const parseBody = (value: unknown): unknown => (typeof value === "string" ? JSON.parse(value) : value);
-
 /**
  * Claim the scope before forwarding. Inserts `in_flight`; on conflict it reads
  * the existing row and never re-forwards a call whose outcome is already known
@@ -108,7 +106,7 @@ export const claimCapabilityIdempotency = async (scope: CapabilityClaimScope, re
   if (existing.state === "in_flight") return { state: "in_flight" };
   if (existing.state === "uncertain") return { state: "uncertain" };
   if (existing.response_status === null) return { state: "not_retained" };
-  return { state: "replay", status: existing.response_status, body: parseBody(existing.response_body) };
+  return { state: "replay", status: existing.response_status, body: existing.response_body };
 };
 
 /** Records a definitive success so a later retry replays it instead of acting twice. */
@@ -124,7 +122,7 @@ export const completeCapabilityClaim = async (scope: CapabilityClaimScope, statu
     UPDATE capabilities.idempotency_claims
     SET state = 'succeeded',
         response_status = ${serialized === null ? null : status},
-        response_body = ${serialized}::jsonb,
+        response_body = ${serialized}::text::jsonb,
         updated_at = now()
     WHERE app_id = ${scope.appId} AND capability = ${scope.capability}
       AND principal = ${scope.principal} AND key_hash = ${scope.keyHash}

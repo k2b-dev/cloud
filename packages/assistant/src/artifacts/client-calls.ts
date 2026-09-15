@@ -10,7 +10,6 @@ export const ClientCall = z.object({
 }).strict();
 const Output = z.json().refine((value) => new TextEncoder().encode(JSON.stringify(value)).byteLength <= 256 * 1024, "Tool result exceeds 256 KiB");
 export const ClientCallResult = ClientCall.extend({ result: Output });
-const decoded = (value: unknown) => typeof value === "string" ? JSON.parse(value) : value;
 
 async function authorize(call: z.infer<typeof ClientCall>, identity: ArtifactIdentity) {
   const user = userFromActor(identity.actor);
@@ -35,7 +34,7 @@ export const clientCalls = {
       // Closed turns cannot pass authorize again. Keep completed-call payloads short-lived.
       await db`DELETE FROM assistant.artifact_client_calls WHERE user_id=${user.id}::uuid AND created_at < now() - interval '1 day'`;
       const inserted = await db`INSERT INTO assistant.artifact_client_calls(user_id,turn_id,call_id,client_id,input)
-        VALUES(${user.id}::uuid,${turnId}::uuid,${call.callId},${call.clientId}::uuid,${JSON.stringify(call.input)}::jsonb)
+        VALUES(${user.id}::uuid,${turnId}::uuid,${call.callId},${call.clientId}::uuid,(${JSON.stringify(call.input)}::text)::jsonb)
         ON CONFLICT DO NOTHING RETURNING call_id`;
       if (inserted.length) return { status: "execute" as const };
       // Only the original host can renew ownership. A waiting tab never extends it.
@@ -45,7 +44,7 @@ export const clientCalls = {
         AND heartbeat_at >= now() - interval '2 minutes'`;
       const [row] = await db<{ result: unknown; completed: boolean; expired: boolean }[]>`SELECT result, result IS NOT NULL AS completed, heartbeat_at < now() - interval '2 minutes' AS expired
         FROM assistant.artifact_client_calls WHERE user_id=${user.id}::uuid AND turn_id=${turnId}::uuid AND call_id=${call.callId}`;
-      if (row?.completed) return { status: "done" as const, result: Output.parse(decoded(row.result)) };
+      if (row?.completed) return { status: "done" as const, result: Output.parse(row.result) };
       // Never replay an execution with an uncertain outcome, including after reload.
       return { status: row?.expired ? "interrupted" as const : "pending" as const };
     });
@@ -54,9 +53,9 @@ export const clientCalls = {
   },
   async complete(input: unknown, identity: ArtifactIdentity) {
     const call = ClientCallResult.parse(input), { user, turnId } = await authorize(call, identity);
-    const rows = await sql`UPDATE assistant.artifact_client_calls SET result=${JSON.stringify(call.result)}::jsonb
+    const rows = await sql`UPDATE assistant.artifact_client_calls SET result=(${JSON.stringify(call.result)}::text)::jsonb
       WHERE user_id=${user.id}::uuid AND turn_id=${turnId}::uuid AND call_id=${call.callId}
-      AND client_id=${call.clientId}::uuid AND input=${JSON.stringify(call.input)}::jsonb AND result IS NULL
+      AND client_id=${call.clientId}::uuid AND input=(${JSON.stringify(call.input)}::text)::jsonb AND result IS NULL
       AND heartbeat_at >= now() - interval '2 minutes' RETURNING call_id`;
     if (!rows.length) throw new ArtifactError("CONFLICT");
     return { saved: true };

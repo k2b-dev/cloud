@@ -30,6 +30,17 @@ export const migrate = async (): Promise<void> => {
   await sql`ALTER TABLE gateway.registered_apps ADD COLUMN IF NOT EXISTS appearance JSONB`.simple();
   await sql`ALTER TABLE gateway.registered_apps ADD COLUMN IF NOT EXISTS runtime JSONB`.simple();
   await sql`ALTER TABLE gateway.registered_apps ADD COLUMN IF NOT EXISTS capabilities JSONB`.simple();
+  // Registry snapshots are rebuilt from live discovery during setup.
+  await sql`
+    DELETE FROM gateway.registered_apps
+    WHERE jsonb_typeof(routes) <> 'array'
+       OR (appearance IS NOT NULL AND jsonb_typeof(appearance) <> 'object')
+       OR (runtime IS NOT NULL AND jsonb_typeof(runtime) <> 'object')
+       OR (nav IS NOT NULL AND jsonb_typeof(nav) <> 'object')
+       OR (capabilities IS NOT NULL AND jsonb_typeof(capabilities) <> 'object')
+       OR (legal_links IS NOT NULL AND jsonb_typeof(legal_links) <> 'array')
+       OR (widgets IS NOT NULL AND jsonb_typeof(widgets) <> 'array')
+  `.simple();
   console.log("  ✓ gateway.registered_apps table");
 
   await sql`

@@ -37,6 +37,13 @@ export const migrate = async () => {
     )
   `.simple();
 
+  // Historical header strings are disposable logs; endpoint configuration is retained.
+  await sql`
+    DELETE FROM tools.webhook_logs
+    WHERE jsonb_typeof(request_headers) <> 'object'
+       OR (response_headers IS NOT NULL AND jsonb_typeof(response_headers) <> 'object')
+  `.simple();
+
   await sql`
     CREATE INDEX IF NOT EXISTS idx_tools_webhook_endpoints_owner
       ON tools.webhook_endpoints(owner_user_id, deleted_at, created_at DESC)

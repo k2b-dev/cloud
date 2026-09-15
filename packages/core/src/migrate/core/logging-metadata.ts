@@ -11,7 +11,7 @@ export async function migrateLogMetadataReader(): Promise<void> {
       IF jsonb_typeof(payload) = 'string' THEN payload := (payload #>> '{}')::jsonb; END IF;
       IF jsonb_typeof(payload) = 'object' THEN RETURN payload; END IF;
       RETURN NULL;
-    EXCEPTION WHEN invalid_text_representation OR numeric_value_out_of_range THEN RETURN NULL;
+    EXCEPTION WHEN invalid_text_representation OR untranslatable_character OR numeric_value_out_of_range THEN RETURN NULL;
     END;
     $$
   `.simple();

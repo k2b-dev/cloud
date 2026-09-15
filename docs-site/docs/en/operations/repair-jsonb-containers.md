@@ -1,61 +1,69 @@
 ---
-title: Repair encoded JSON metadata
-navTitle: Repair JSON metadata
+title: Upgrade encoded JSON metadata
+navTitle: JSON metadata upgrade
 section: Operations
 order: 1115
 tags: [database, maintenance, json]
 updated: 2026-09-15
-description: Inspect and repair JSON objects and arrays stored as JSON strings.
+description: Understand automatic JSON metadata repairs and discarded legacy records during upgrade.
 ---
 
-# Repair encoded JSON metadata
+# Upgrade encoded JSON metadata
 
-Older writers could store an object or array as a JSON string inside a JSONB
-column. JSON filters then failed to find its fields. Updated writers pass JSON
-text through an explicit SQL text cast before converting it to JSONB.
+Older writers could store objects or arrays as JSON strings inside JSONB columns.
+The corrected writers and application startup migrations handle the production
+upgrade from revision `9ab9ec45c614` (June 23, 2026). A separate repair command is
+not required for this upgrade.
 
-Use the checkout's maintenance script to inspect one supported table:
+Before starting updated services, back up PostgreSQL and stop the old Core,
+application replicas, and background workers together. Start updated Core first,
+then the updated applications. Keep old writers stopped: they can recreate the
+incorrect values. Repeated startup preserves repaired records and valid new data.
+
+This JSON metadata change does not complete the rest of the release upgrade.
+Prepare NATS JetStream, Core's identity-key encryption key, and the Core/OAuth
+broker secret when running OAuth. Follow [Deployment requirements](/en/docs/operations/deployment-requirements),
+[Runtime configuration](/en/docs/operations/runtime-configuration), and the
+[coordinated identity and OAuth migration](/en/docs/reference/deprecations-and-migrations#jwt-only-sessions-and-internal-invocations)
+before restoring traffic.
+
+## What startup changes
+
+| Data | Upgrade behavior |
+| --- | --- |
+| Deleted-account metadata and audit metadata | Decode valid encoded objects in PostgreSQL, preserving numeric precision and original timestamps. |
+| Venue public-section content | Decode valid encoded objects without changing section identity, content precision, or timestamps. |
+| Tools webhook logs | Delete logs with invalid header container types. Keep endpoint configuration and valid logs. |
+| Gateway registry snapshots | Delete snapshots with invalid metadata container types. Live discovery rebuilds them during startup. Keep valid snapshots and health-webhook configuration. |
+| Notification batch selections | Clear invalid selections and cancel affected draft, ready, or running batches before delivery starts. Preserve completed delivery history and valid batches. |
+
+For the lossless repairs, malformed JSON, unsupported Unicode, numeric overflow,
+and unexpected value types remain unchanged without aborting startup. Preserved
+values may still need individual review before their contents can be used. Venue
+shows malformed JSON or non-object section content as empty content instead of
+failing the page request; the stored original remains available for review.
+
+Existing log records remain in place and are read through the compatibility
+reader. This metadata repair neither resets nor migrates identity keys. AI, Assistant, and Capabilities repairs
+belong to the separate local development scope; they are not required for the
+production baseline above.
+
+## Optional diagnosis
+
+The checkout's maintenance script can inspect an explicitly supported table:
 
 ```sh
 bun --no-env-file scripts/repair-jsonb-containers.ts --table audit.events
 ```
 
-Supply `DATABASE_URL` through your normal secret environment for the intended
-database. The command prints counts, never metadata contents or credentials.
-It does not write unless you add `--apply`.
+Supply `DATABASE_URL` through the intended database's secret environment. The
+command prints counts without metadata or credentials and writes nothing unless
+`--apply` is supplied. Its target list is broader than the automatic production
+upgrade; inclusion is not an instruction to repair every listed table.
 
-Before applying a repair, confirm the target database and its backup and recovery
-procedure, and deploy the corrected writers. Then run the same command with
-`--apply`. Work is committed in batches of at most 500 rows. A failed run can be
-repeated; already corrected rows are skipped. Rows changed concurrently are not
-overwritten.
-
-Only columns explicitly listed in the script are eligible. The repair decodes
-one layer when it contains the column's expected object or array. Malformed
-values, scalar values, unexpected container types, and strings containing NUL
-characters or unpaired Unicode surrogates remain unchanged and are
-counted as preserved. Decoding takes place in PostgreSQL so large JSON numbers
-retain their precision. PostgreSQL validation errors stop the current batch;
-earlier batches remain committed. The CLI reports a generic error with a nonzero
-exit status and suppresses database error details that could contain metadata.
-
-This is not a database-wide JSON conversion. Workflow results and other fields
-that permit scalar JSON are excluded. AI message `loop_aggregate` is also
-excluded: updating it invokes accounting triggers and needs a separate repair
-that respects the latest aggregate. Pending AI action arguments and outcomes
-likewise need their own type-aware review. The tool does not cover Grids or
-perform repairs automatically during application startup.
-
-## Verify the repair tool
-
-The database integration test is manual and is not part of CI. Use a disposable,
-freshly migrated fixture database with an empty `audit.events` table; the test
-inserts explicit fixture IDs and must not run against an existing installation.
-With that fixture's connection supplied through `DATABASE_URL`, run:
-
-```sh
-CLOUD_JSONB_REPAIR_TEST=1 bun --no-env-file test --timeout 20000 scripts/repair-jsonb-containers.integration.test.ts
-```
-
-The test checks numeric cursor ordering, exact JSON number preservation,
-repeatability, unsupported Unicode preservation, and the CLI dry-run behavior.
+For a separately approved repair, confirm the table, backup, and recovery path
+before adding `--apply`. The tool commits batches of at most 500 rows, skips
+already corrected values, and avoids overwriting concurrent changes. Validation
+errors stop the current batch; earlier batches remain committed. Scalar-valued
+workflow results, AI accounting aggregates, and other fields outside its explicit
+target list need their own review.

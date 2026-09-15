@@ -1,4 +1,5 @@
 import { sql } from "bun";
+import { repairEncodedMetadata } from "./jsonb-metadata";
 import { migratePosix } from "./posix";
 
 export const migrate = async (): Promise<void> => {
@@ -798,6 +799,7 @@ export const migrate = async (): Promise<void> => {
     CREATE INDEX IF NOT EXISTS idx_deleted_accounts_deleted_user_id
     ON auth.deleted_accounts(deleted_user_id)
   `.simple();
+  await repairEncodedMetadata("auth.deleted_accounts");
 
   await sql`
     CREATE TABLE IF NOT EXISTS auth.account_lifecycle_reminders (

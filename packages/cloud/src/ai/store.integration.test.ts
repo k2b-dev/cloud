@@ -629,6 +629,26 @@ suite("AI conversation store integration", () => {
     }
   });
 
+  test("pending action arguments preserve JSON scalars through every read path", async () => {
+    const userId = await insertUser();
+    const conversation = await aiConversations.createConversation({ ownerUserId: userId });
+    try {
+      const { turn } = await aiConversations.submitChatTurn({ conversationId: conversation.id, modelProfileId: "test-model", runConfig, userMessage: userMessage("JSON arguments") });
+      const scope = { conversationId: conversation.id, turnId: turn.id };
+      for (const [index, args] of ["null", "42", '{"x":1}', "hello", null, { x: 1 }, ["null", 42], 42, true].entries()) {
+        const callId = `scalar-${index}`;
+        await aiConversations.savePendingTurnAction({ ...scope, callId, kind: index % 2 ? "approval" : "client_tool", status: "pending", name: "test", args, approvalScope: "test", allowAlways: false, resolvedEvent: null });
+        expect((await aiConversations.listPendingTurnActions(scope)).find(row => row.callId === callId)?.args).toEqual(args);
+        expect((await aiConversations.getPendingTurnAction({ ...scope, callId }))?.args).toEqual(args);
+        expect((await aiConversations.listPendingActionRecords(scope)).find(row => row.callId === callId)?.args).toEqual(args);
+        expect((await aiConversations.resolvePendingTurnAction({ ...scope, callId, event: { type: "approval_response", callId, approved: true } }))?.args).toEqual(args);
+        expect((await aiConversations.listResolvedPendingActions(scope)).find(row => row.callId === callId)?.args).toEqual(args);
+      }
+    } finally {
+      await cleanupFixture({ userId, conversationIds: [conversation.id] });
+    }
+  });
+
   test("suspend, resolve, and continuation claim flow", async () => {
     const userId = await insertUser();
     const conversationIds: string[] = [];

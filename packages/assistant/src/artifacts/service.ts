@@ -108,7 +108,7 @@ async function writeRevision(db: SQL, id: string, number: number, source: Artifa
     await db`DELETE FROM assistant.artifact_revisions WHERE artifact_id=${id}::uuid AND revision IN ${db(remove)}`;
   }
   await db`INSERT INTO assistant.artifact_revisions(artifact_id,revision,source,source_bytes)
-    VALUES(${id}::uuid,${number},${encoded}::jsonb,${size})`;
+    VALUES(${id}::uuid,${number},(${encoded}::text)::jsonb,${size})`;
 }
 
 export const artifacts = {

@@ -70,7 +70,7 @@ export const runtimeCapabilities={
       const [pending]=await db<{count:number}[]>`SELECT count(*)::int AS count FROM assistant.capability_calls WHERE user_id=${actor.id}::uuid AND status IN ('pending','running')`;
       if(pending!.count>=LIMITS.pendingRequests)throw new ArtifactError("TOO_MANY_REQUESTS");
       await db`INSERT INTO assistant.capability_calls(id,user_id,artifact_id,conversation_id,request,prepared)
-        VALUES(${request.id}::uuid,${actor.id}::uuid,(SELECT id FROM assistant.artifacts WHERE short_id=${request.artifactId??null}),${request.conversationId??null},${JSON.stringify(request)}::jsonb,${JSON.stringify(prepared)}::jsonb)`;
+        VALUES(${request.id}::uuid,${actor.id}::uuid,(SELECT id FROM assistant.artifacts WHERE short_id=${request.artifactId??null}),${request.conversationId??null},(${JSON.stringify(request)}::text)::jsonb,(${JSON.stringify(prepared)}::text)::jsonb)`;
       // Only recent completed transport results are needed; canonical execution
       // history remains in the platform's capabilities.executions table.
       await db`DELETE FROM assistant.capability_calls WHERE id IN (SELECT id FROM assistant.capability_calls
@@ -120,7 +120,7 @@ export const runtimeCapabilities={
       await rememberAiToolApproval({actorUserId:actor.id},{toolName:request.name,approvalScope:prepared.scope});
     const result=await invokeCapability({appId:prepared.appId,capabilityId:prepared.localId,kind:prepared.kind,input:request.input,
       ...(target.action?.idempotency==="required"?{idempotencyKey:`code-${id}`} : {}),signal:caller.signal},{...caller,requestId:id});
-    await sql`UPDATE assistant.capability_calls SET status='completed',result=${JSON.stringify(result)}::jsonb WHERE id=${id}::uuid`;
+    await sql`UPDATE assistant.capability_calls SET status='completed',result=(${JSON.stringify(result)}::text)::jsonb WHERE id=${id}::uuid`;
     return {status:"completed" as const,result};
   },
 };
