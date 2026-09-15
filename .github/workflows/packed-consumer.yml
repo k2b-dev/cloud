@@ -2,10 +2,10 @@ name: Packed Cloud consumer
 
 on:
   pull_request:
-    paths: ["packages/cloud/**", "packages/gateway/src/config.ts", "packages/ui/**", "package.json", "bun.lock", "scripts/check-cloud-packed-consumer.ts", ".github/workflows/packed-consumer.yml"]
+    paths: ["packages/cloud/**", "packages/gateway/src/config.ts", "packages/ui/**", "package.json", "bun.lock", "scripts/check-cloud-packed-consumer.ts", "scripts/fixtures/packed-consumer-*.ts", "packages/core/src/**", ".github/workflows/packed-consumer.yml"]
   push:
     branches: [main]
-    paths: ["packages/cloud/**", "packages/gateway/src/config.ts", "packages/ui/**", "package.json", "bun.lock", "scripts/check-cloud-packed-consumer.ts", ".github/workflows/packed-consumer.yml"]
+    paths: ["packages/cloud/**", "packages/gateway/src/config.ts", "packages/ui/**", "package.json", "bun.lock", "scripts/check-cloud-packed-consumer.ts", "scripts/fixtures/packed-consumer-*.ts", "packages/core/src/**", ".github/workflows/packed-consumer.yml"]
   workflow_dispatch:
 
 permissions:

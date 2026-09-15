@@ -1,9 +1,10 @@
 import { mkdir, mkdtemp, realpath, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve, sep } from "node:path";
+import { checkPackedRuntime } from "./fixtures/packed-consumer-infrastructure";
 
-// No service credentials or repository aliases: this checks packaging, public
-// types and the real production build, not runtime registration or deployment.
+// No inherited service credentials or repository aliases. Runtime acceptance uses
+// fresh disposable infrastructure and the exact locally packed artifacts.
 const root = resolve(import.meta.dir, "..");
 const temporaryRoot = await mkdtemp(join(tmpdir(), "cloud-packed-consumer-"));
 const consumer = join(temporaryRoot, "consumer");
@@ -100,7 +101,7 @@ try {
     `import { defineApp } from "@k2b/cloud";
 export const app = defineApp({
   id: "inventory", name: "Inventory", icon: "ti ti-packages",
-  description: "Packed consumer smoke", baseUrl: "http://inventory:3000", routes: ["/api/inventory"],
+  description: "Packed consumer smoke", baseUrl: process.env.CONSUMER_BASE_URL ?? "http://inventory:3000", routes: ["/api/inventory"],
 });
 `,
   );
@@ -109,7 +110,7 @@ export const app = defineApp({
     `import { Hono } from "hono";
 import { app } from "./config";
 const router = new Hono().get("/api/inventory/health", c => c.json({ app: app.meta.id, status: "ok" }));
-export default await app.start({ fetch: router.fetch });
+export default await app.start({ fetch: router.fetch, port: Number(process.env.PORT ?? 3000) });
 `,
   );
   await run(
@@ -126,6 +127,7 @@ export default await app.start({ fetch: router.fetch });
   if (!(await Bun.file(join(consumer, "node_modules/@k2b/ui/dist/types/index.d.ts")).exists())) {
     throw new Error("Packed UI is missing its public type entry; rebuild UI and rerun");
   }
+  await Bun.write(join(consumer, "src/runtime-check.ts"), Bun.file(join(root, "scripts/fixtures/packed-consumer-runtime.ts")));
   await run(
     "Strict public-source typecheck",
     [process.execPath, "node_modules/typescript/bin/tsc", "--project", "tsconfig.json"],
@@ -138,6 +140,7 @@ export default await app.start({ fetch: router.fetch });
   );
   await run("Build with the installed Cloud production script", [process.execPath, "node_modules/@k2b/cloud/scripts/build.ts"], consumer);
   if ((await Bun.file(join(consumer, "dist/server.js")).size) === 0) throw new Error("Production server bundle is empty");
+  await checkPackedRuntime(root, consumer, cleanEnv);
   // Gateway shares these scripts but provides its plugin without defineApp().
   await Bun.write(join(consumer, "src/config.ts"), await Bun.file(join(root, "packages/gateway/src/config.ts")).text());
   await Bun.write(join(consumer, "src/index.ts"), `export default { fetch: () => new Response("ok") };\n`);
@@ -149,7 +152,7 @@ export default await app.start({ fetch: router.fetch });
   await run("Build plugin-only config", [process.execPath, "node_modules/@k2b/cloud/scripts/build.ts"], consumer);
   if ((await Bun.file(join(consumer, "dist/server.js")).size) === 0) throw new Error("Plugin-only server bundle is empty");
   console.log(
-    "Packed checkout installs, typechecks and builds without workspace aliases or extra transitive dependencies. Runtime startup is not exercised.",
+    "Packed checkout installs, typechecks and builds without workspace aliases or extra transitive dependencies. Production runtime registration, HTTP and graceful shutdown pass against disposable services.",
   );
 } finally {
   await rm(temporaryRoot, { recursive: true, force: true });
