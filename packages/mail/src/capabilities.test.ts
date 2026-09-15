@@ -1495,6 +1495,7 @@ describe("mail capabilities", () => {
 
     if (!result.ok) throw new Error("Expected conversation search success");
     expect(ConversationSearchDataSchema.safeParse(result.data.data).success).toBeTrue();
+    expect(result.data.data[0]?.title).toBe("Release update");
     expect(result.data.data[0]?.attachmentMatch).toEqual({
       ref: { type: "mail.attachment", id: attachmentId },
       messageRef: { type: "mail.message", id: messageId },

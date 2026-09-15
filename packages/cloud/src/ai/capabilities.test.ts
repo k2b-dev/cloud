@@ -487,9 +487,11 @@ describe("AI capability catalog", () => {
       "search_tools",
       "load_tools",
       "list_apps",
+      "todo_write",
       "read_file",
       "fetch_file",
       "view_image",
+      "transcribe_audio",
       "search_help",
       "read_help",
     ]);

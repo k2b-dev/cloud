@@ -107,7 +107,18 @@ describe("Assistant Project view", () => {
           return createComponent(AssistantProjectView, {
             project,
             initialPage: page,
-            initialContext: { projectId: project.id, knowledge: [], files: [], references: [] },
+            initialContext: {
+              projectId: project.id,
+              knowledge: [],
+              files: [],
+              references: [{
+                id: "mail-ref",
+                projectId: project.id,
+                ref: { type: "mail.conversation", id: "MaL123" },
+                label: "Supplier invoice September",
+                createdAt: "2026-09-15T10:00:00.000Z",
+              }],
+            },
             onOpenConversation: async () => true,
             get composer() {
               return "Standard composer";
@@ -136,7 +147,9 @@ describe("Assistant Project view", () => {
     expect(html).toContain("k2b-detail-panel__action");
     expect(html).toContain("Project knowledge");
     expect(html).toContain("Images");
-    expect(html).toContain("References");
+    expect(html).toContain("Reference");
+    expect(html).toContain("Supplier invoice September");
+    expect(html).not.toContain(">Mail conversation<");
     expect(html).not.toContain('aria-expanded="true"');
     expect(html.match(/aria-label="Project settings"/g)).toHaveLength(1);
     expect(html).toContain('aria-label="Add Project knowledge"');

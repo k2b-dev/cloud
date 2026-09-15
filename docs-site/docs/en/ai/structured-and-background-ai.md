@@ -204,6 +204,14 @@ may repeat that call. The stored task still exposes only one terminal output to
 later workflow steps. Missing models and invalid structured output fail the
 task instead of being retried indefinitely.
 
+An enabled chat model is not a guarantee of valid structured workflow output.
+Before publishing, test the selected profile with representative inputs and the
+workflow's actual output schema. A successful smoke test proves that request,
+not every future response. If a run reports `WORKFLOW_AI_INVALID_OUTPUT`,
+inspect the failed step and its selected model in the run details, check the
+output constraints, and test a corrected configuration before rerunning.
+Cloud keeps the selected model pinned; it does not silently switch providers.
+
 A dry run reports that AI output is unavailable instead of inventing a value.
 It charges one `maxAiCalls` unit only when that effect does not already have a
 durable task.
