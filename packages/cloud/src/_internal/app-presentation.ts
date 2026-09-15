@@ -11,12 +11,12 @@ const text = (value: string, label: string, max = MAX_SHORT_TEXT): string => {
   return normalized;
 };
 
-const labels = (values: Readonly<Record<string, string>> | undefined, allowed: Set<string>, label: string) => {
+const labels = (values: Readonly<Record<string, string>> | undefined, allowed: Set<string>, label: string, max = MAX_SHORT_TEXT) => {
   if (!values) return undefined;
   const normalized: Record<string, string> = {};
   for (const [key, value] of Object.entries(values)) {
     if (!allowed.has(key)) throw new Error(`${label} contains unknown key ${JSON.stringify(key)}`);
-    normalized[key] = text(value, `${label}.${key}`);
+    normalized[key] = text(value, `${label}.${key}`, max);
   }
   return normalized;
 };
@@ -51,6 +51,16 @@ export const compileAppPresentation = (app: AppMeta, catalog: AppPresentationCat
       ...(translation.adminGroups ? { adminGroups: labels(translation.adminGroups, groupIds, `${canonical}.adminGroups`) } : {}),
       ...(translation.adminLinks ? { adminLinks: labels(translation.adminLinks, adminHrefs, `${canonical}.adminLinks`) } : {}),
       ...(translation.searchLinks ? { searchLinks: labels(translation.searchLinks, searchHrefs, `${canonical}.searchLinks`) } : {}),
+      ...(translation.searchLinkDescriptions
+        ? {
+            searchLinkDescriptions: labels(
+              translation.searchLinkDescriptions,
+              searchHrefs,
+              `${canonical}.searchLinkDescriptions`,
+              MAX_DESCRIPTION,
+            ),
+          }
+        : {}),
       ...(translation.legalLinks ? { legalLinks: labels(translation.legalLinks, legalHrefs, `${canonical}.legalLinks`) } : {}),
     };
   }

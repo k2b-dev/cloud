@@ -9,22 +9,22 @@ const mergedTranslation = (catalog: AppPresentationCatalog, requestedLocale: str
       return canonical ? [[canonical, translation] as const] : [];
     }),
   );
-  const overlays = localeFallbackChain(requestedLocale, baseLocale).filter((locale) => locale !== baseLocale).reverse();
-  return overlays.reduce<AppPresentationTranslation>(
-    (current, locale) => {
-      const next = byLocale.get(locale);
-      if (!next) return current;
-      return {
-        ...current,
-        ...next,
-        adminGroups: { ...current.adminGroups, ...next.adminGroups },
-        adminLinks: { ...current.adminLinks, ...next.adminLinks },
-        legalLinks: { ...current.legalLinks, ...next.legalLinks },
-        searchLinks: { ...current.searchLinks, ...next.searchLinks },
-      };
-    },
-    {},
-  );
+  const overlays = localeFallbackChain(requestedLocale, baseLocale)
+    .filter((locale) => locale !== baseLocale)
+    .reverse();
+  return overlays.reduce<AppPresentationTranslation>((current, locale) => {
+    const next = byLocale.get(locale);
+    if (!next) return current;
+    return {
+      ...current,
+      ...next,
+      adminGroups: { ...current.adminGroups, ...next.adminGroups },
+      adminLinks: { ...current.adminLinks, ...next.adminLinks },
+      legalLinks: { ...current.legalLinks, ...next.legalLinks },
+      searchLinks: { ...current.searchLinks, ...next.searchLinks },
+      searchLinkDescriptions: { ...current.searchLinkDescriptions, ...next.searchLinkDescriptions },
+    };
+  }, {});
 };
 
 /** Resolve only human presentation; stable app identity, routes, icons, and authorization stay untouched. */
@@ -41,7 +41,11 @@ export const resolveAppPresentation = <T extends AppMeta>(app: T, requestedLocal
       label: (group.id && translation.adminGroups?.[group.id]) || group.label,
       links: group.links.map((link) => ({ ...link, label: translation.adminLinks?.[link.href] ?? link.label })),
     })),
-    searchLinks: app.searchLinks?.map((link) => ({ ...link, label: translation.searchLinks?.[link.href] ?? link.label })),
+    searchLinks: app.searchLinks?.map((link) => ({
+      ...link,
+      label: translation.searchLinks?.[link.href] ?? link.label,
+      description: translation.searchLinkDescriptions?.[link.href] ?? link.description,
+    })),
     legalLinks: app.legalLinks?.map((link) => ({ ...link, label: translation.legalLinks?.[link.href] ?? link.label })),
   };
 };

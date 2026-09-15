@@ -30,6 +30,7 @@ export const buildRuntimeFromRegistry = (entries: AppRegistryEntry[], capabiliti
                   adminLinks: translation.adminLinks ? { ...translation.adminLinks } : undefined,
                   legalLinks: translation.legalLinks ? { ...translation.legalLinks } : undefined,
                   searchLinks: translation.searchLinks ? { ...translation.searchLinks } : undefined,
+                  searchLinkDescriptions: translation.searchLinkDescriptions ? { ...translation.searchLinkDescriptions } : undefined,
                 },
               ]),
             ),

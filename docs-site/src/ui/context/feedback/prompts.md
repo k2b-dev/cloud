@@ -309,7 +309,7 @@ type PromptFormOptions<T extends Record<string, FieldSchema>> = {
 
 ## Dialog host
 
-Use `dialogCore` only for custom modal composition; ordinary confirmation,
+Use `dialogCore` for custom dialog composition; ordinary confirmation,
 forms, and search should use `prompts`.
 
 ```ts
@@ -325,6 +325,9 @@ type DialogRender<T> = (
   close: DialogClose<T>,
   context: {
     dialog: HTMLDialogElement;
+    setModal: (modal: boolean) => void;
+    setPosition: (position: { x: number; y: number } | null) => void;
+    requestDismiss: () => Promise<void>;
     setDismissHandler: (handler: () => void | Promise<void>) => void;
   },
 ) => JSX.Element;
@@ -341,6 +344,19 @@ type DialogCore = {
 and backdrop through the application's async guard; that handler must call
 `close()` to complete dismissal. `dialogCore.close` addresses the top dialog.
 Opening requires a browser and throws without `document`.
+
+Custom windows can call `setModal(false)` to allow interaction with the page,
+then `setModal(true)` to restore modality. This retains mounted content and
+focus inside the window; the host updates page scroll locking and Escape
+handling. A modeless window has no native backdrop. Escape respects handled
+keyboard events and the same dismissal guard. Nested dialogs start modal and
+restore the parent's mode when closed.
+
+`setPosition({ x, y })` uses viewport coordinates and fixed positioning;
+`setPosition(null)` restores the panel stylesheet's positioning. Mode and
+position belong to each stack entry. The caller owns dragging, responsive
+limits, persistence, and modeless stacking styles. Do not call the native
+`show()`, `showModal()`, or `close()` methods to switch modes.
 
 ## Accessibility
 

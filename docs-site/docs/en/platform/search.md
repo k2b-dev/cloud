@@ -26,6 +26,7 @@ For utility pages such as a QR generator, add `searchLinks` to `defineApp()`:
 searchLinks: [
   {
     label: "QR code generator",
+    description: "Turn links and text into QR codes.",
     href: "/tools/qr",
     icon: "ti ti-qrcode",
     keywords: ["qr", "barcode", "scan"],
@@ -35,14 +36,19 @@ searchLinks: [
 
 These links appear only in the global search dialog, below all resource
 results. Cloud includes them when the app is visible in the user's navigation
-catalog. The browser matches every search word against the label and keywords,
-ignoring case, after at least two characters. The app filter applies; tag
-searches omit static links.
+catalog. The browser matches every search word against the label, description, and keywords,
+ignoring case, after at least two characters. An initial application scope applies; tag searches omit static links.
 
 Use same-origin paths and public page labels. Destination routes still enforce
 their own authorization. Localize labels with
 `presentation.translations.<locale>.searchLinks`, keyed by `href`, and include
 alternate search terms in `keywords`.
+
+An optional plain-text `description` appears below the result title and in its
+preview. Localize it with
+`presentation.translations.<locale>.searchLinkDescriptions`, also keyed by `href`.
+Both labels and descriptions fall back through the requested locale to the base
+declaration. Links without descriptions continue to work.
 
 Static links create no agent capabilities or resource readers and do not appear
 in `/api/search` or resource pickers. Use a search Query for dynamic application
@@ -192,13 +198,52 @@ signer failure returns HTTP 503, not a successful empty result. Log provider fai
 with [structured logging](/en/docs/platform/logging); the application's domain
 database remains the source of truth.
 
+## Search in the browser
+
+Global search and the resource picker share one search interface. Start typing
+or choose **All filters** to discover tags. Typing `#` shows matching filters
+inside the result area. Suggestions list each canonical tag once and match
+its aliases. Enter or a click applies a filter; Tab keeps normal focus navigation.
+A typed tag is committed with whitespace. An unfinished tag does not trigger an
+unsupported-filter warning.
+
+Results are grouped by application. Desktop search shows a preview beside the
+input and result list. The centered dialog keeps its width and top position across search
+states, growing downward until its content needs to scroll.
+On small screens, **Details** opens the preview and
+**Back to results** returns to the list. Escape first leaves filter discovery
+or mobile details, then closes the dialog. Scroll fades indicate more content.
+
+In global search, Cmd+Enter (macOS) or Ctrl+Enter opens the active result in a
+new tab while preserving the query, filters, and selection. Modified clicks
+have the same effect. Ordinary Enter and clicks navigate in the current tab.
+The browser decides whether to focus the new tab.
+
+On desktop screens at least 64rem wide with a mouse and no touch input,
+drag the outer edge of Spotlight to place it beside the page. Detached search
+allows background interaction without blur. Its position is stored locally in
+this browser and kept within the viewport when resized or reopened. Drag near
+the original centered position to snap back and restore the modal backdrop;
+double-click an edge to reset directly. A subtle dashed outline marks the home
+position while dragging. You can place the compact search near the bottom;
+results grow upward when there is no room below, then return to the preferred
+position when the search shrinks. Escape during a drag cancels that drag.
+On smaller or touch screens the search stays modal. Resource pickers always
+retain their modal selection behavior.
+
+
+Global search opens a result on click or Enter. The picker selects it first;
+**Add** confirms the choice. While a new resource search loads, earlier results
+remain visible but cannot be selected for the new query.
+
 ## Let a user choose a Cloud resource
 
 Use `openCloudResourcePicker` from
 `@k2b/cloud/browser/resource-picker` when an application needs a
 stable `CloudResourceRef` selected from any searchable Cloud application. The
 picker groups the existing Universal Search results by their owning app,
-supports an app filter, and returns the selected resource view. Store the
+supports tag filters, and returns the resource view after the user selects
+a result and confirms with **Add**. Store the
 structured `ref`; treat its title, preview, and links as presentation data.
 Set `requireReader` when the consumer must resolve the selected resource later,
 as AI Project references do.
@@ -217,7 +262,11 @@ if (selected) await saveReference(selected.ref, selected.title);
 
 The shared `/api/search` route accepts one optional `app` query parameter to
 limit provider fan-out and returns the searchable app catalog with each
-response. `require_reader=true` removes navigation-only resources before
+response, including canonical tag names, titles, descriptions, and aliases.
+Tag presentation follows the request locale. The browser uses this catalog for
+both search dialogs; there is no application dropdown. `initialAppId` still
+starts a picker within one application, shown as a removable scope chip.
+`require_reader=true` removes navigation-only resources before
 result limits are applied. An empty unscoped request returns only the app
 catalog without calling providers. The picker owns this platform-specific
 discovery UI; `@k2b/ui` remains independent of Cloud applications and resource

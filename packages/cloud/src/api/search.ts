@@ -1,6 +1,7 @@
 import { Hono, type MiddlewareHandler } from "hono";
 import { describeRoute } from "hono-openapi";
 import { readBoundedJson } from "../_internal/bounded-json";
+import { resolveCapabilityManifestPresentation } from "../_internal/capabilities";
 import { listCapabilities } from "../_internal/registry";
 import type { CapabilityRegistryEntry } from "../contracts";
 import {
@@ -184,11 +185,26 @@ export const createSearchRoutes = (dependencies: SearchRouteDependencies = {}) =
         );
       }
       const providers = getSearchProviders(entries);
-      const apps = [
-        ...new Map(
-          providers.map((provider) => [provider.appId, { id: provider.appId, name: provider.appName, icon: provider.appIcon }]),
-        ).values(),
-      ].sort((a, b) => a.name.localeCompare(b.name));
+      const requestLocale = preferredLocale(c.req.raw.headers) ?? "en";
+      const apps = entries
+        .flatMap((entry) => {
+          const manifest = resolveCapabilityManifestPresentation(entry.manifest, entry.presentation, requestLocale);
+          const queries = manifest.queries.filter((operation) => operation.universalSearch);
+          if (!queries.length) return [];
+          return [
+            {
+              id: entry.appId,
+              name: entry.appName,
+              icon: entry.appIcon,
+              tags: [
+                ...new Map(
+                  queries.flatMap((operation) => (operation.universalSearch?.tags ?? []).map((tag) => [tag.tag, tag] as const)),
+                ).values(),
+              ],
+            },
+          ];
+        })
+        .sort((a, b) => a.name.localeCompare(b.name));
       const readableTypes = new Set(
         entries.flatMap((entry) => entry.manifest.types.filter((type) => type.reader).map((type) => `${entry.appId}.${type.localId}`)),
       );

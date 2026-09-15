@@ -9,11 +9,11 @@ describe("resourceSearchMessages", () => {
   test("uses German for regional German locales", () => {
     const { t } = resourceSearchMessages.resolve(["de-CH"]);
 
-    expect(t.searchPlaceholder).toBe("Apps durchsuchen…");
+    expect(t.searchPlaceholder).toBe("Cloud durchsuchen…");
     expect(t.resultCount({ count: 2 })).toBe("2 Ergebnisse");
   });
 
   test("falls back to English for unsupported locales", () => {
-    expect(resourceSearchMessages.resolve(["fr-FR"]).t.allApps).toBe("All apps");
+    expect(resourceSearchMessages.resolve(["fr-FR"]).t.allTags).toBe("All filters");
   });
 });

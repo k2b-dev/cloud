@@ -55,7 +55,7 @@ export default function LayoutRail(props: LayoutRailProps) {
             label={props.openAppsLabel}
           />
           <div class="mt-auto shrink-0 flex flex-col items-center gap-1">
-            <GlobalSearchTrigger variant="rail" searchLinks={props.searchLinks} searchHelpApps={props.searchHelpApps} />
+            <GlobalSearchTrigger variant="rail" searchLinks={props.searchLinks} />
             <HotkeysHelpRail variant="rail" registerHotkey searchHelpApps={props.searchHelpApps} accent={props.accent} />
             <ProfilePreferences avatarSrc={props.profileAvatarSrc} initialTheme={props.theme} name={props.profileName} placement="rail" />
           </div>

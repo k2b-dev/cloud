@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { resolveRegistry } from "./frontend/tools/registry";
-import { germanToolSearchLabels, toolSearchLinks } from "./search-links";
+import { germanToolSearchDescriptions, germanToolSearchLabels, toolSearchLinks } from "./search-links";
 
 test("every registered tool contributes its existing route, labels and bilingual search text", () => {
   const english = resolveRegistry("en");
@@ -10,8 +10,10 @@ test("every registered tool contributes its existing route, labels and bilingual
   for (const tool of english.tools) {
     const link = toolSearchLinks.find((link) => link.href === `/tools/${tool.id}`)!;
     expect(link.label).toBe(tool.name);
+    expect(link.description).toBe(tool.description);
     expect(link.keywords.join(" ")).toContain(tool.description.toLowerCase());
     expect(germanToolSearchLabels[link.href]).toBe(german.toolById(tool.id)?.name);
+    expect(germanToolSearchDescriptions[link.href]).toBe(german.toolById(tool.id)?.description);
   }
   const qr = toolSearchLinks.find((link) => link.href === "/tools/qr")!;
   expect(qr.keywords.join(" ")).toContain("qr");

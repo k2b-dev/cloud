@@ -29,6 +29,7 @@
 @import "./base-popover.css";
 @import "./effects.css";
 @import "./input.css";
+@import "./resource-search.css";
 
 @theme {
   --color-dark: rgb(9 9 11);

@@ -48,6 +48,10 @@
   transform: translate(-50%, -50%);
 }
 
+.k2b-ui .k2b-dialog[data-modeless="true"] {
+  z-index: 100;
+}
+
 /* Only the body scrolls. `hidden` still lets focus/scroll anchoring scroll the
  * native dialog when fields disappear, pushing its header out of the frame.
  * `clip` prevents the outer frame from becoming a scroll container at all. */

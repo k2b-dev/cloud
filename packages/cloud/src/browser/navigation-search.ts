@@ -16,6 +16,7 @@ export const navigationSearchItems = (apps: readonly AppMeta[], visibleAppIds: r
         ref: { type: "cloud.navigation", id: `${app.id}:${link.href}` },
         readable: false,
         title: link.label,
+        preview: link.description,
         href: link.href,
         icon: link.icon ?? app.icon,
         priority: 0,
@@ -33,7 +34,7 @@ export const matchNavigationSearchItems = (
   const words = query.split(/\s+/);
   return items.filter((item) => {
     if (input.appId && item.appId !== input.appId) return false;
-    const text = [item.title, ...(item.keywords ?? [])].join(" ").toLowerCase();
+    const text = [item.title, item.preview ?? "", ...(item.keywords ?? [])].join(" ").toLowerCase();
     return words.every((word) => text.includes(word));
   });
 };

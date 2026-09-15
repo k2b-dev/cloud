@@ -21,6 +21,7 @@ const canonicalSharedStylesheetImports: readonly string[] = [
   "base-popover.css",
   "effects.css",
   "input.css",
+  "resource-search.css",
 ];
 
 const violations: string[] = [];

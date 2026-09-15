@@ -149,7 +149,9 @@ test("forced native close preserves guards, focus, scroll and reopening", async 
   opener.focus();
   let allowed = false;
   const result = core.open((close, context) => {
-    context.setDismissHandler(() => { if (allowed) close(); });
+    context.setDismissHandler(() => {
+      if (allowed) close();
+    });
     const input = document.createElement("input");
     input.value = "unsaved value";
     return input;
@@ -215,6 +217,62 @@ test("default dialog focus prefers an input over the preceding close button", as
   const result = core.open(() => content);
   await Bun.sleep(30);
   expect(dom.document.activeElement).toBe(input);
-  core.close(); await result;
+  core.close();
+  await result;
   dom.cleanup();
+});
+
+test("modeless transitions preserve content, focus, stacking, position and Escape", async () => {
+  const dom = createDomTestHarness();
+  const core = createDialogCore();
+  let context!: Parameters<import("../src/feedback/dialog-core").DialogRender<void>>[1];
+  const parent = core.open<void>((_close, next) => {
+    context = next;
+    return document.createElement("input");
+  });
+  try {
+    await settle();
+    const dialog = document.querySelector("dialog")!;
+    const input = dialog.querySelector("input")!;
+    input.value = "retained query";
+    input.focus();
+    context.setPosition({ x: 90, y: 120 });
+    context.setModal(false);
+    expect(dialog.getAttribute("aria-modal")).toBe("false");
+    expect(document.body.style.overflow).toBe("");
+    expect(document.activeElement).toBe(input);
+    expect(dialog.style.inset).toBe("120px auto auto 90px");
+    let closeChild!: () => void;
+    const child = core.open<void>((close) => {
+      closeChild = close;
+      return document.createElement("button");
+    });
+    expect(dialog.getAttribute("aria-modal")).toBe("true");
+    expect(document.body.style.overflow).toBe("hidden");
+    expect(dialog.style.inset).toBe("");
+    closeChild();
+    await child;
+    await settle();
+    expect(dialog.getAttribute("aria-modal")).toBe("false");
+    expect(dialog.style.inset).toBe("120px auto auto 90px");
+    expect(dialog.querySelector("input")).toBe(input);
+    expect(input.value).toBe("retained query");
+    expect(document.activeElement).toBe(input);
+    context.setPosition(null);
+    context.setModal(true);
+    expect(dialog.style.inset).toBe("");
+    expect(document.body.style.overflow).toBe("hidden");
+    context.setModal(false);
+    const handled = new KeyboardEvent("keydown", { key: "Escape", cancelable: true, bubbles: true });
+    handled.preventDefault();
+    input.dispatchEvent(handled);
+    expect(core.isOpen()).toBe(true);
+    input.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", cancelable: true, bubbles: true }));
+    expect(await parent).toBeUndefined();
+    expect(core.isOpen()).toBe(false);
+    expect(document.body.style.overflow).toBe("");
+  } finally {
+    core.close();
+    dom.cleanup();
+  }
 });

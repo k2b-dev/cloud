@@ -19,6 +19,10 @@ export type DialogRender<T> = (
   close: DialogClose<T>,
   context: {
     dialog: HTMLDialogElement;
+    /** Switch this entry between a modal and a modeless window without remounting. */
+    setModal: (modal: boolean) => void;
+    /** Set viewport coordinates, or restore the panel stylesheet position with null. */
+    setPosition: (position: { x: number; y: number } | null) => void;
     /** Route Escape/backdrop through the same guarded handler as Cancel and X. */
     setDismissHandler: (handler: () => void | Promise<void>) => void;
     /** Request dismissal through this entry's cancellation policy and guard. */
@@ -43,10 +47,13 @@ type DialogStackEntry = {
   ariaLabel?: string;
   dismissHandler?: () => void | Promise<void>;
   dismissPending?: boolean;
+  modal: boolean;
+  position?: { x: number; y: number } | null;
 };
 
 type DialogState = {
   element?: HTMLDialogElement;
+  modal?: boolean;
   stack: DialogStackEntry[];
   scrollLocked?: boolean;
   previousBodyOverflow?: string;
@@ -66,8 +73,11 @@ const resolveInitialFocusTarget = (entry: DialogStackEntry, dialog: HTMLDialogEl
   const input = entry.container.querySelector<HTMLElement>(
     "input:not([type='hidden']):not([disabled]), textarea:not([disabled]), select:not([disabled]), [role='combobox']:not([disabled]):not([aria-disabled='true'])",
   );
-  return input ?? entry.container.querySelector<HTMLElement>(
-    "input:not([type='hidden']):not([disabled]), textarea:not([disabled]), select:not([disabled]), button:not([disabled]), a[href], [tabindex]:not([tabindex='-1'])",
+  return (
+    input ??
+    entry.container.querySelector<HTMLElement>(
+      "input:not([type='hidden']):not([disabled]), textarea:not([disabled]), select:not([disabled]), button:not([disabled]), a[href], [tabindex]:not([tabindex='-1'])",
+    )
   );
 };
 
@@ -108,7 +118,8 @@ export const createDialogCore = (): DialogCore => {
       // entry (ignore, an async guard, or a parent) still owns the modal.
       const top = state.stack[state.stack.length - 1];
       if (state.element !== element || element.open || !top) return;
-      element.showModal();
+      if (top.modal) element.showModal();
+      else element.show();
       resolveInitialFocusTarget(top, element)?.focus();
     };
     getK2bPortalRoot().appendChild(element);
@@ -134,7 +145,39 @@ export const createDialogCore = (): DialogCore => {
     state.previousHtmlOverflow = undefined;
   };
 
+  const applyPresentation = (entry: DialogStackEntry) => {
+    const dialog = state.element;
+    if (!dialog || state.stack[state.stack.length - 1] !== entry) return;
+    const position = entry.position;
+    dialog.style.position = position ? "fixed" : "";
+    dialog.style.inset = position ? `${position.y}px auto auto ${position.x}px` : "";
+    dialog.style.margin = position ? "0" : "";
+    dialog.style.transform = position ? "none" : "";
+    dialog.dataset.modeless = String(!entry.modal);
+    dialog.setAttribute("aria-modal", String(entry.modal));
+    if (dialog.open && state.modal !== entry.modal) {
+      const active = document.activeElement;
+      dialog.close();
+      if (entry.modal) dialog.showModal();
+      else dialog.show();
+      if (active instanceof HTMLElement && active.isConnected && (!entry.modal || dialog.contains(active))) {
+        active.focus({ preventScroll: true });
+      } else resolveInitialFocusTarget(entry, dialog)?.focus({ preventScroll: true });
+    }
+    state.modal = entry.modal;
+    if (entry.modal) lockPageScroll();
+    else unlockPageScroll();
+  };
+
+  const modelessEscape = (event: KeyboardEvent) => {
+    const top = state.stack[state.stack.length - 1];
+    if (!top || top.modal || event.key !== "Escape" || event.defaultPrevented || event.isComposing) return;
+    event.preventDefault();
+    void requestDismiss(top);
+  };
+
   const stopConnectionObserver = () => {
+    document.removeEventListener("keydown", modelessEscape);
     state.connectionObserver?.disconnect();
     state.connectionObserver = undefined;
   };
@@ -158,7 +201,7 @@ export const createDialogCore = (): DialogCore => {
     dialog.onclick = (event) => {
       const realBackdropClick = state.mouseDownOnDialog === true;
       state.mouseDownOnDialog = false;
-      if (event.target !== dialog) return;
+      if (event.target !== dialog || !state.modal) return;
       if (!realBackdropClick) return;
       if (behavior === "ignore") return;
       if (isPointInsideToast(event.clientX, event.clientY)) return;
@@ -194,6 +237,7 @@ export const createDialogCore = (): DialogCore => {
     if (previous && dialog) {
       previous.container.style.display = "";
       dialog.className = previous.panelClassName;
+      applyPresentation(previous);
       applyAccessibleName(dialog, previous);
       applyCancelBehavior(dialog, () => void requestDismiss(previous), previous.cancelBehavior);
       schedule(() => {
@@ -237,6 +281,7 @@ export const createDialogCore = (): DialogCore => {
 
   const observeConnection = () => {
     if (state.connectionObserver || typeof MutationObserver === "undefined") return;
+    document.addEventListener("keydown", modelessEscape);
     state.connectionObserver = new MutationObserver(resetDisconnectedDialog);
     state.connectionObserver.observe(document.documentElement, { childList: true, subtree: true });
   };
@@ -264,6 +309,7 @@ export const createDialogCore = (): DialogCore => {
       initialFocus,
       opener: activeElement instanceof HTMLElement ? activeElement : undefined,
       ariaLabel: options.ariaLabel,
+      modal: true,
     };
 
     return new Promise((resolve, reject) => {
@@ -293,6 +339,15 @@ export const createDialogCore = (): DialogCore => {
           () =>
             view(closeTyped, {
               dialog,
+              setModal: (modal) => {
+                entry.modal = modal;
+                applyPresentation(entry);
+              },
+              setPosition: (position) => {
+                if (position && (!Number.isFinite(position.x) || !Number.isFinite(position.y))) return;
+                entry.position = position;
+                applyPresentation(entry);
+              },
               requestDismiss: () => requestDismiss(entry),
               setDismissHandler: (handler) => {
                 entry.dismissHandler = handler;
@@ -300,13 +355,15 @@ export const createDialogCore = (): DialogCore => {
             }),
           container,
         );
+        applyPresentation(entry);
         applyAccessibleName(dialog, entry);
         applyCancelBehavior(dialog, () => void requestDismiss(entry), cancelBehavior);
 
         if (state.stack.length === 1) {
-          if (typeof dialog.showModal === "function") dialog.showModal();
-          else dialog.setAttribute("open", "");
-          lockPageScroll();
+          if (typeof dialog.showModal === "function") {
+            if (entry.modal) dialog.showModal();
+            else dialog.show();
+          } else dialog.setAttribute("open", "");
           observeConnection();
         }
         options.signal?.addEventListener("abort", abort, { once: true });

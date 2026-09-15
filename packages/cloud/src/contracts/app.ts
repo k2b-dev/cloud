@@ -19,6 +19,8 @@ export type LegalLink = {
  */
 export type AppSearchLink = {
   label: string;
+  /** Optional plain-text context shown with the result and its preview. */
+  description?: string;
   href: string;
   icon?: string;
   keywords?: readonly string[];
@@ -64,6 +66,8 @@ export type AppPresentationTranslation = {
   legalLinks?: Readonly<Record<string, string>>;
   /** Search-link labels keyed by their stable same-origin href. */
   searchLinks?: Readonly<Record<string, string>>;
+  /** Search-link descriptions keyed by their stable same-origin href. */
+  searchLinkDescriptions?: Readonly<Record<string, string>>;
 };
 
 export type AppPresentationCatalog = {

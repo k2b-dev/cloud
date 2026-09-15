@@ -57,8 +57,8 @@ jobs:
         run: bun test packages/cloud/src/api/search.test.ts packages/cloud/src/api/search/schemas.test.ts packages/cloud/src/_internal/bounded-json.test.ts
       - name: Verify global navigation search
         run: |
-          bun test packages/cloud/src/browser/navigation-search.test.ts packages/tools/src/search-links.test.ts
-          bun test --isolate --conditions=browser --preload ./packages/ui/test/solid-dom-preload.ts packages/cloud/src/browser/CloudResourceSearch.behavior.test.tsx
+          bun test packages/cloud/src/browser/navigation-search.test.ts packages/cloud/src/browser/resource-picker.test.ts packages/cloud/src/browser/resource-search-input.test.ts packages/cloud/src/browser/resource-search-messages.test.ts packages/tools/src/search-links.test.ts
+          bun test --isolate --conditions=browser --preload ./packages/ui/test/solid-dom-preload.ts packages/cloud/src/browser/CloudResourceSearch.behavior.test.tsx packages/cloud/src/ssr/GlobalSearchDialog.behavior.test.tsx packages/cloud/src/browser/spotlight-position.test.ts
       - name: Verify native list search and URL state
         run: bun test --isolate packages/cloud/src/ssr/islands/SearchBar.render.test.tsx packages/cloud/src/ssr/url-filter.test.ts packages/accounts/src/frontend/groups/detail/group-detail-url.test.ts packages/gateway-ops/src/observability/logs/_components/types.test.ts
       - name: Verify Dashboard and OAuth editor behavior

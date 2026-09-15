@@ -1,4 +1,5 @@
-import { Button, ButtonLink, InlineGuidance, NoticeCard, prompts, StatusBadge, Tooltip, toast } from "@k2b/ui";
+import { Button, ButtonLink, dialogCore, InlineGuidance, NoticeCard, prompts, StatusBadge, TextInput, Tooltip, toast } from "@k2b/ui";
+import { createSignal } from "solid-js";
 import { DemoCard } from "../DemoCard";
 import { DemoGrid, type DemoSection } from "./types";
 
@@ -335,6 +336,47 @@ await prompts.dialog((close) => <MySurface close={close} />, {
           }
         >
           Custom
+        </Button>
+        <Button
+          variant="secondary"
+          onClick={() =>
+            void dialogCore.open<void>(
+              (close, context) => {
+                const [floating, setFloating] = createSignal(false);
+                const [text, setText] = createSignal("");
+                return (
+                  <section class="ui-dialog-demo-body">
+                    <h2>Modal and floating window</h2>
+                    <p>Switch modes without losing this input or closing the window.</p>
+                    <TextInput aria-label="Retained text" placeholder="Type something…" value={text} onValueChange={setText} />
+                    <div class="ui-dialog-demo-actions">
+                      <Button
+                        variant="secondary"
+                        onClick={() => {
+                          const next = !floating();
+                          setFloating(next);
+                          context.setPosition(next ? { x: 24, y: 100 } : null);
+                          context.setModal(!next);
+                        }}
+                      >
+                        {floating() ? "Center as modal" : "Float beside page"}
+                      </Button>
+                      <Button
+                        variant="secondary"
+                        onClick={() => void prompts.confirm("The floating parent will be restored.", { title: "Nested dialog" })}
+                      >
+                        Nested dialog
+                      </Button>
+                      <Button onClick={() => close()}>Close</Button>
+                    </div>
+                  </section>
+                );
+              },
+              { ariaLabel: "Modal and floating window" },
+            )
+          }
+        >
+          Modal / floating
         </Button>
         <Button variant="secondary" onClick={() => void openBareNestedDialog()}>
           Bare + nested

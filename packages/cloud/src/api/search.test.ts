@@ -326,7 +326,7 @@ describe("global capability search", () => {
           preview: "A result",
         },
       ],
-      apps: [{ id: "demo", name: "Demo", icon: "ti ti-box" }],
+      apps: [{ id: "demo", name: "Demo", icon: "ti ti-box", tags: manifest.queries[0]!.universalSearch!.tags }],
     });
   });
 
@@ -348,7 +348,7 @@ describe("global capability search", () => {
       query: "",
       count: 0,
       items: [],
-      apps: [{ id: "demo", name: "Demo", icon: "ti ti-box" }],
+      apps: [{ id: "demo", name: "Demo", icon: "ti ti-box", tags: manifest.queries[0]!.universalSearch!.tags }],
       unsupportedTags: ["missing"],
     });
   });
@@ -372,9 +372,44 @@ describe("global capability search", () => {
     expect(response.status).toBe(200);
     expect(calls).toEqual(["http://other:3000/api/_internal/capabilities/v1/queries/search"]);
     expect((await response.json()).apps).toEqual([
-      { id: "demo", name: "Demo", icon: "ti ti-box" },
-      { id: "other", name: "Other", icon: "ti ti-box" },
+      { id: "demo", name: "Demo", icon: "ti ti-box", tags: manifest.queries[0]!.universalSearch!.tags },
+      { id: "other", name: "Other", icon: "ti ti-box", tags: manifest.queries[0]!.universalSearch!.tags },
     ]);
+  });
+
+  test("publishes canonical localized filters and aliases without provider calls", async () => {
+    const compiled = compileCapabilities(
+      "demo",
+      defineCapabilities({
+        ...capabilities,
+        presentation: {
+          baseLocale: "en",
+          translations: {
+            de: {
+              queries: {
+                search: {
+                  searchTags: { item: { title: "Elemente", description: "Testelemente suchen." } },
+                },
+              },
+            },
+          },
+        },
+      }),
+    );
+    let calls = 0;
+    const routes = createSearchRoutes({
+      authenticate,
+      listCapabilities: async () => [{ ...app, manifest: compiled.manifest, presentation: compiled.presentation }],
+      fetch: async () => {
+        calls++;
+        return Response.json({ data: [] });
+      },
+    });
+    const response = await routes.request("/search?require_reader=true", { headers: { "Accept-Language": "de-CH" } });
+    expect((await response.json()).apps[0].tags).toEqual([
+      { tag: "item", title: "Elemente", description: "Testelemente suchen.", aliases: ["thing"] },
+    ]);
+    expect(calls).toBe(0);
   });
 
   test("returns the app catalog without provider fan-out for an unscoped empty request", async () => {
@@ -395,7 +430,7 @@ describe("global capability search", () => {
       query: "",
       count: 0,
       items: [],
-      apps: [{ id: "demo", name: "Demo", icon: "ti ti-box" }],
+      apps: [{ id: "demo", name: "Demo", icon: "ti ti-box", tags: manifest.queries[0]!.universalSearch!.tags }],
     });
   });
 

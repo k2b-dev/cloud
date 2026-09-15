@@ -16,20 +16,38 @@ import { openCloudResourcePicker } from "@k2b/cloud/browser/resource-picker";
 
 ## Selection ownership
 
-The picker owns its dialog, search input, app filter, tags, loading and error states, and result selection. It returns the selected search item or `undefined` when the dialog closes without a selection.
+The picker owns its dialog, search input, tag filters, loading, error states, and result selection. A click or Enter selects a result; **Add** confirms it. It returns the selected search item or `undefined` when the dialog closes without a selection.
 
 Store `selected.ref` as the durable identity. Treat the returned title, preview, metadata, and links as presentation data that may change.
 
 Available options are:
 
 - `title` and `placeholder` for task-specific copy;
-- `initialAppId` to preselect one searchable application;
+- `initialAppId` to start within one searchable application, shown as a removable scope chip;
 - `excludeRefs` to hide resources already selected;
 - `requireReader` to show only Types with a canonical reader.
 
+## Presentation
+
+The picker starts with a search field and a few tag suggestions. **All filters**
+or typing `#` opens the full filter list in the result area. Aliases remain
+searchable without appearing as duplicate filters. No application dropdown or
+nested autocomplete menu is shown.
+
+While loading, the spinner replaces the search icon. Quiet tag placeholders
+reserve the suggestion row so opening the dialog does not shift its layout.
+
+Desktop results share the dialog with a preview that starts at its top edge.
+The dialog keeps a constant width and top position as results arrive; it grows
+downward and scrolls within the available viewport height.
+Small screens show one column with an optional **Details** view. The result list
+uses `ScrollArea` fades, and empty results use a short inline message. Previous
+results remain visible during a new request, but cannot be added until the
+current request completes.
+
 ## Accessibility
 
-The dialog provides its title as its accessible name, moves focus into the search interaction, and supports closing with Escape. Search results and app filtering are keyboard operable. Use a task-specific `title` when the surrounding workflow needs more context than “Choose Cloud resource.”
+The dialog provides its title as its accessible name, moves focus into the search interaction, and supports closing with Escape. Arrow keys navigate results or tag suggestions. Enter selects, Tab moves focus normally, and **Add** confirms the resource. Escape first leaves tag discovery or mobile details, then closes the dialog. Use a task-specific `title` when the surrounding workflow needs more context than “Choose Cloud resource.”
 
 ## Runtime
 

@@ -2,14 +2,12 @@ import { hotkeys } from "@k2b/stdlib/solid";
 import { IconButton, Tooltip, useLocale } from "@k2b/ui";
 import type { NavigationSearchItem } from "../browser/navigation-search";
 import { openGlobalSearchDialog } from "./GlobalSearchDialog";
-import type { GlobalSearchHelpApp } from "./GlobalSearchHelpDialog";
 import { platformMessages } from "./platform-messages";
 
 type GlobalSearchTriggerProps = {
   variant: "header" | "rail";
   class?: string;
   registerHotkey?: boolean;
-  searchHelpApps?: GlobalSearchHelpApp[];
   searchLinks?: NavigationSearchItem[];
 };
 
@@ -17,14 +15,13 @@ type GlobalSearchTriggerProps = {
 export default function GlobalSearchTrigger(props: GlobalSearchTriggerProps) {
   const locale = useLocale();
   const t = () => platformMessages.resolve([locale()]).t;
-  const searchHelpApps = props.searchHelpApps ?? [];
 
   if (props.registerHotkey) {
     hotkeys.create(() => ({
       "mod+k": {
         label: t().openGlobalSearch,
         desc: t().globalSearchDescription,
-        run: () => openGlobalSearchDialog(searchHelpApps, props.searchLinks),
+        run: () => openGlobalSearchDialog(props.searchLinks),
       },
     }));
   }
@@ -34,7 +31,7 @@ export default function GlobalSearchTrigger(props: GlobalSearchTriggerProps) {
       <Tooltip.Trigger
         type="button"
         class={`rail-item text-blue-500 hover:bg-blue-500/10 hover:text-blue-600 dark:text-blue-400 dark:hover:bg-blue-500/15 dark:hover:text-blue-300 ${props.class ?? ""}`}
-        onClick={() => openGlobalSearchDialog(searchHelpApps, props.searchLinks)}
+        onClick={() => openGlobalSearchDialog(props.searchLinks)}
         aria-label={t().openGlobalSearch}
         placement="right"
         delay={0}
@@ -47,7 +44,7 @@ export default function GlobalSearchTrigger(props: GlobalSearchTriggerProps) {
   return (
     <IconButton
       class={props.class}
-      onClick={() => openGlobalSearchDialog(searchHelpApps, props.searchLinks)}
+      onClick={() => openGlobalSearchDialog(props.searchLinks)}
       label={t().openGlobalSearch}
       title={t().searchShortcut}
     >

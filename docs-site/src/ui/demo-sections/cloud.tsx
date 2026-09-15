@@ -174,8 +174,8 @@ if (selected) {
 }`}
   >
     <BackendRequiredNote title="Real search providers and permissions required">
-      The picker discovers live applications through the authenticated Universal Search route. The catalog shows its public contract without
-      inventing resources or implying that a selection is authorized without the owning provider.
+      The picker discovers live resources and tag filters through authenticated Universal Search. Choose a result, inspect its preview, then
+      confirm with Add. On small screens, Details opens the preview. The catalog shows this contract without inventing authorized resources.
     </BackendRequiredNote>
   </DemoCard>
 );

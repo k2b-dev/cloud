@@ -1,0 +1,470 @@
+/* Cloud-owned search composition; controls and scroll fades come from @k2b/ui. */
+.cloud-search-dialog {
+  /* Anchor to the expanded footprint, not the changing content height. */
+  --search-expanded-height: 34rem;
+  --search-top: max(0.75rem, env(safe-area-inset-top, 0px), calc((100dvh - var(--search-expanded-height)) / 2));
+  --search-max-height: calc(var(--ui-dialog-available-height) - var(--search-top));
+  position: fixed;
+  inset: var(--search-top) auto auto 50%;
+  transform: translateX(-50%);
+  margin: 0;
+  padding: 0;
+  width: min(56rem, var(--ui-dialog-available-width));
+  max-width: none;
+  max-height: var(--search-max-height);
+  overflow: hidden;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius-frame);
+  background: var(--ui-dialog-surface);
+  color: var(--k2b-text);
+  box-shadow: var(--ui-shadow-float);
+}
+.cloud-search-dialog::backdrop {
+  background: rgb(0 0 0 / 0.35);
+  backdrop-filter: blur(5px);
+}
+.cloud-search-dialog__content {
+  min-height: 0;
+  max-height: inherit;
+}
+.cloud-resource-search {
+  --search-body-height: max(0px, min(26rem, calc(var(--search-max-height) - 12rem)));
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  padding: 0.5rem;
+  min-height: 0;
+  max-height: var(--search-max-height);
+}
+.cloud-resource-search__title {
+  grid-area: 1 / 1;
+  padding: 0.875rem 1.125rem 0;
+  color: var(--k2b-text-muted);
+  font-size: 0.75rem;
+}
+.cloud-resource-search .cloud-resource-search__close {
+  position: absolute;
+  right: 0.875rem;
+  top: 1.125rem;
+  z-index: 1;
+}
+.cloud-resource-search__input {
+  grid-area: 2 / 1;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-width: 0;
+  padding: 1rem 3rem 1rem 1.125rem;
+}
+.cloud-resource-search__input > i {
+  flex: none;
+  width: 1.25rem;
+  font-size: 1.25rem;
+  color: var(--k2b-text-muted);
+}
+.cloud-resource-search__field {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.375rem;
+}
+.cloud-resource-search__field input {
+  flex: 1;
+  min-width: 5rem;
+  width: 100%;
+  height: 2rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  box-shadow: none;
+  outline: none;
+  font-size: 1.25rem;
+  font-weight: 400;
+  letter-spacing: -0.025em;
+}
+.cloud-resource-search__field input::placeholder {
+  color: var(--k2b-text-muted);
+  opacity: 1;
+}
+.cloud-resource-search__tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  border-radius: 0.375rem;
+  padding: 0.25rem 0.375rem;
+  background: var(--k2b-selected);
+  color: var(--color-blue-600);
+  font-size: 0.75rem;
+}
+.dark .cloud-resource-search__tag {
+  color: var(--color-blue-300);
+}
+.cloud-resource-search__tag.is-unknown {
+  color: var(--color-amber-600);
+}
+.cloud-resource-search__body {
+  grid-area: 3 / 1;
+  max-height: var(--search-body-height);
+  overscroll-behavior: contain;
+}
+.cloud-resource-search.has-results .cloud-resource-search__body {
+  height: var(--search-body-height);
+}
+.cloud-resource-search__idle {
+  padding: 0.375rem 1.125rem 1.5rem;
+  color: var(--k2b-text-muted);
+  font-size: 0.8125rem;
+}
+.cloud-resource-search__quick {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  margin-top: 1rem;
+  min-height: 1.5rem;
+}
+.cloud-resource-search__quick > button {
+  min-width: 0;
+}
+.cloud-resource-search__quick > button:last-child {
+  flex-shrink: 0;
+}
+.cloud-resource-search__quick .k2b-button__label {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cloud-resource-search__tag-skeleton {
+  flex: 0 1 3.5rem;
+  height: 1.5rem;
+  border-radius: var(--k2b-radius-control);
+  background: var(--k2b-surface-muted);
+}
+.cloud-resource-search__count {
+  padding: 0 1.125rem 0.5rem;
+  color: var(--k2b-text-muted);
+  font-size: 0.6875rem;
+}
+.cloud-resource-search__results {
+  padding: 0 0.375rem 1rem;
+}
+.cloud-resource-search__group {
+  padding: 0.875rem 0.75rem 0.375rem;
+  color: var(--k2b-text-muted);
+  font-size: 0.6875rem;
+  font-weight: 500;
+}
+.cloud-resource-search__group:first-child {
+  padding-top: 0.25rem;
+}
+.cloud-resource-search__result {
+  display: flex;
+  align-items: center;
+  gap: 0.6875rem;
+  width: 100%;
+  min-height: 3.5rem;
+  margin-bottom: 0.125rem;
+  padding: 0.625rem 0.75rem;
+  border-radius: 0.5rem;
+  text-align: left;
+}
+.cloud-resource-search__result > i {
+  flex: none;
+  width: 1.25rem;
+  color: var(--k2b-text-muted);
+  font-size: 1rem;
+}
+.cloud-resource-search__result:hover {
+  background: var(--k2b-hover);
+}
+.cloud-resource-search__result.is-active,
+.cloud-resource-search__result.is-selected {
+  background: var(--k2b-selected);
+}
+.cloud-resource-search__result-copy {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  gap: 0.1875rem;
+}
+.cloud-resource-search__result-copy > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.875rem;
+  font-weight: 400;
+}
+.cloud-resource-search__result-copy small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--k2b-text-muted);
+  font-size: 0.6875rem;
+}
+.cloud-resource-search__hint {
+  padding: 0.5rem 1.125rem 1.5rem;
+  color: var(--k2b-text-muted);
+  font-size: 0.8125rem;
+}
+.cloud-resource-search__tag-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0 1.125rem 0.5rem;
+  color: var(--k2b-text-muted);
+  font-size: 0.6875rem;
+}
+.cloud-resource-search__tags {
+  padding: 0 0.375rem 1rem;
+}
+.cloud-resource-search__tag-option {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+  padding: 0.6875rem 0.75rem;
+  border-radius: 0.5rem;
+  text-align: left;
+}
+.cloud-resource-search__tag-option:hover,
+.cloud-resource-search__tag-option.is-active {
+  background: var(--k2b-selected);
+}
+.cloud-resource-search__tag-option > i {
+  flex: none;
+  color: var(--k2b-text-muted);
+}
+.cloud-resource-search__tag-option > span {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  gap: 0.125rem;
+}
+.cloud-resource-search__tag-option strong {
+  font-size: 0.8125rem;
+  font-weight: 500;
+}
+.cloud-resource-search__tag-option small {
+  color: var(--k2b-text-muted);
+  font-size: 0.6875rem;
+}
+.cloud-resource-search__tag-option code {
+  max-width: 35%;
+  overflow-wrap: anywhere;
+  color: var(--k2b-text-muted);
+  font-size: 0.6875rem;
+}
+.cloud-resource-search__footer {
+  grid-area: 4 / 1;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.625rem 1.125rem 0.5rem;
+}
+.cloud-resource-search__keys {
+  display: flex;
+  flex: 1;
+  gap: 0.875rem;
+  color: var(--k2b-text-muted);
+  font-size: 0.625rem;
+}
+.cloud-resource-search__selection {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--k2b-text-muted);
+  font-size: 0.6875rem;
+}
+.cloud-resource-search__preview {
+  display: none;
+  min-width: 0;
+  padding: 1.25rem;
+  border-radius: 0.6875rem;
+  background: var(--ui-surface-muted);
+}
+.cloud-resource-search__preview-app {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 1.75rem;
+  padding-right: 2rem;
+  color: var(--k2b-text-muted);
+  font-size: 0.75rem;
+}
+.cloud-resource-search__preview h2 {
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-size: 1.1875rem;
+  font-weight: 500;
+  letter-spacing: -0.025em;
+  line-height: 1.45;
+}
+.cloud-resource-search__preview dl {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.7fr);
+  gap: 0.75rem 0.5rem;
+  margin: 1.75rem 0 0;
+  font-size: 0.75rem;
+}
+.cloud-resource-search__preview dt {
+  color: var(--k2b-text-muted);
+  overflow-wrap: anywhere;
+}
+.cloud-resource-search__preview dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.cloud-resource-search__preview p {
+  margin-top: 1.75rem;
+  color: var(--k2b-text-muted);
+  font-size: 0.8125rem;
+  line-height: 1.85;
+  overflow-wrap: anywhere;
+}
+.cloud-resource-search__image {
+  width: 100%;
+  max-height: 12rem;
+  object-fit: contain;
+  margin-top: 1.25rem;
+  border-radius: 0.5rem;
+}
+.cloud-resource-search .cloud-resource-search__back {
+  display: none;
+}
+.cloud-resource-search :is(.cloud-resource-search__result, .cloud-resource-search__tag-option, .cloud-resource-search__tag):focus-visible {
+  outline: 2px solid var(--color-blue-500);
+  outline-offset: -2px;
+}
+@media (min-width: 48rem) {
+  .cloud-resource-search {
+    grid-template-columns: minmax(0, 1fr) 19rem;
+    gap: 0 0.625rem;
+  }
+  .cloud-resource-search__input {
+    padding-right: 1rem;
+  }
+  .cloud-resource-search__preview {
+    display: block;
+    grid-column: 2;
+    grid-row: 1 / 5;
+  }
+  .cloud-resource-search .cloud-resource-search__details {
+    display: none;
+  }
+}
+@media (max-width: 47.999rem) {
+  .cloud-search-dialog {
+    --search-expanded-height: 36rem;
+  }
+  .cloud-resource-search {
+    --search-body-height: max(0px, min(28rem, calc(var(--search-max-height) - 12rem)));
+  }
+  .cloud-resource-search__input {
+    padding-left: 0.625rem;
+    gap: 0.5625rem;
+  }
+  .cloud-resource-search__field input {
+    font-size: 1.125rem;
+  }
+  .cloud-resource-search__result {
+    padding-inline: 0.625rem;
+  }
+  .cloud-resource-search__results {
+    padding-inline: 0;
+  }
+  .cloud-resource-search__hint,
+  .cloud-resource-search__idle,
+  .cloud-resource-search__footer,
+  .cloud-resource-search__count,
+  .cloud-resource-search__tag-heading {
+    padding-inline: 0.625rem;
+  }
+  .cloud-resource-search.shows-details .cloud-resource-search__body {
+    display: none;
+  }
+  .cloud-resource-search.shows-details .cloud-resource-search__preview {
+    display: block;
+    grid-area: 3 / 1;
+    max-height: var(--search-body-height);
+  }
+  .cloud-resource-search.shows-details .cloud-resource-search__back {
+    display: inline-flex;
+    margin-bottom: 1rem;
+  }
+  .cloud-resource-search.shows-details .cloud-resource-search__details {
+    display: none;
+  }
+}
+
+/* Border grips belong only to desktop Spotlight, never the resource picker. */
+.cloud-search-dialog:has(.cloud-global-search) {
+  overflow: visible;
+}
+.cloud-global-search {
+  border-radius: inherit;
+}
+.cloud-global-search > .cloud-resource-search {
+  border-radius: var(--ui-radius-frame);
+  overflow: hidden;
+}
+.cloud-search-dialog[data-modeless="true"] {
+  --search-max-height: calc(100dvh - 1.5rem);
+  z-index: 100;
+}
+.cloud-global-search [data-search-grip] {
+  display: none;
+}
+.cloud-global-search[data-movable="true"] [data-search-grip] {
+  display: block;
+  position: absolute;
+  z-index: 2;
+  cursor: grab;
+  touch-action: none;
+}
+.cloud-global-search[data-dragging="true"] [data-search-grip] {
+  cursor: grabbing;
+}
+.cloud-global-search [data-search-grip="top"] {
+  top: -8px;
+  left: -8px;
+  right: -8px;
+  height: 16px;
+}
+.cloud-global-search [data-search-grip="bottom"] {
+  bottom: -8px;
+  left: -8px;
+  right: -8px;
+  height: 16px;
+}
+.cloud-global-search [data-search-grip="left"] {
+  left: -8px;
+  top: 8px;
+  bottom: 8px;
+  width: 16px;
+}
+.cloud-global-search [data-search-grip="right"] {
+  right: -8px;
+  top: 8px;
+  bottom: 8px;
+  width: 16px;
+}
+
+.cloud-global-search__home {
+  display: none;
+  position: absolute;
+  pointer-events: none;
+  border: 1px dashed var(--k2b-focus-ring);
+  border-radius: var(--ui-radius-frame);
+  opacity: 0.6;
+}
+.cloud-global-search[data-dragging="true"] .cloud-global-search__home {
+  display: block;
+}

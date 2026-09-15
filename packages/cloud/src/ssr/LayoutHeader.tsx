@@ -6,8 +6,8 @@ import type { GlobalSearchHelpApp } from "./GlobalSearchHelpDialog";
 import GlobalSearchTrigger from "./GlobalSearchTrigger.island";
 import HotkeysHelpRail from "./HotkeysHelpRail.island";
 import LayoutBreadcrumbs from "./LayoutBreadcrumbs.island";
-import type { LayoutBreadcrumb } from "./layout-runtime";
 import LayoutPreferences from "./LayoutPreferences.island";
+import type { LayoutBreadcrumb } from "./layout-runtime";
 import ProfilePreferences from "./ProfilePreferences.island";
 
 type LayoutHeaderProps = {
@@ -60,7 +60,7 @@ export default function LayoutHeader(props: LayoutHeaderProps) {
             searchHelpApps={props.searchHelpApps}
             accent={props.accent}
           />
-          {props.authenticated && <GlobalSearchTrigger variant="header" registerHotkey searchLinks={props.searchLinks} searchHelpApps={props.searchHelpApps} />}
+          {props.authenticated && <GlobalSearchTrigger variant="header" registerHotkey searchLinks={props.searchLinks} />}
         </div>
         {props.authenticated ? (
           <>

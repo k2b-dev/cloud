@@ -39,11 +39,12 @@ export const validateAppRegistryEntry = (value: unknown): string | null => {
     }
     for (const [locale, translation] of Object.entries(value.presentation.translations)) {
       if (!isRecord(translation)) return invalid(`presentation.translations.${locale}`, "an object");
-      if (translation.name !== undefined && !isString(translation.name)) return invalid(`presentation.translations.${locale}.name`, "a string");
+      if (translation.name !== undefined && !isString(translation.name))
+        return invalid(`presentation.translations.${locale}.name`, "a string");
       if (translation.description !== undefined && !isString(translation.description)) {
         return invalid(`presentation.translations.${locale}.description`, "a string");
       }
-      for (const field of ["adminGroups", "adminLinks", "legalLinks", "searchLinks"] as const) {
+      for (const field of ["adminGroups", "adminLinks", "legalLinks", "searchLinks", "searchLinkDescriptions"] as const) {
         if (translation[field] !== undefined && !isStringRecord(translation[field])) {
           return invalid(`presentation.translations.${locale}.${field}`, "a string map");
         }
@@ -93,6 +94,7 @@ export const validateAppRegistryEntry = (value: unknown): string | null => {
           !isRecord(link) ||
           !isString(link.label) ||
           !link.label.trim() ||
+          (link.description !== undefined && !isString(link.description)) ||
           !isString(link.href) ||
           !/^\/(?![\/\\])[^\\\s]*$/.test(link.href) ||
           (link.icon !== undefined && !isString(link.icon)) ||
@@ -119,8 +121,14 @@ export const validateAppRegistryEntry = (value: unknown): string | null => {
       return invalid("capabilities", "a valid capability summary");
     }
   }
-  if (value.help !== undefined && (!isRecord(value.help) || !isString(value.help.manifestHash) ||
-    !isString(value.help.baseLocale) || !isString(value.help.pageBase) || !value.help.pageBase.startsWith("/"))) {
+  if (
+    value.help !== undefined &&
+    (!isRecord(value.help) ||
+      !isString(value.help.manifestHash) ||
+      !isString(value.help.baseLocale) ||
+      !isString(value.help.pageBase) ||
+      !value.help.pageBase.startsWith("/"))
+  ) {
     return invalid("help", "a valid Help reference");
   }
 
