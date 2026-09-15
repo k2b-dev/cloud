@@ -5,7 +5,7 @@ section: Platform
 order: 320
 description: OAuth 2.0 and OpenID Connect clients, callbacks, scopes, access rules, and secrets.
 tags: [oauth, oidc, identity]
-updated: 2026-09-07
+updated: 2026-09-15
 ---
 
 # OAuth
@@ -24,6 +24,12 @@ callbacks, scopes, access rules, and secret lifecycle separate.
   client.
 - Rotate a confidential-client secret when it is exposed, and delete clients
   that should no longer start authorization flows.
+
+The client editor accepts one redirect URI per line and preserves all existing
+callbacks. Clients that do not use browser sign-in can leave this field empty.
+Profile access and specific user or group restrictions are separate: a selected
+account must also match an allowed profile. Guest-only access and disabling user
+sign-in are supported. Editing other fields preserves these restrictions.
 
 ## Understand the OAuth model
 

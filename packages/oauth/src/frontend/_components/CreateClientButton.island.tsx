@@ -3,8 +3,8 @@ import { mutation as mutations } from "@k2b/stdlib/solid";
 import { Button, CopyButton, dialogCore, panelDialogWideOptions, prompts, useLocale } from "@k2b/ui";
 import { apiClient } from "@/api/client";
 import type { CreateOAuthClient, OAuthClientWithSecret } from "@/contracts";
-import OAuthClientDialog from "./OAuthClientDialog";
 import { oauthMessages } from "../messages";
+import OAuthClientDialog from "./OAuthClientDialog";
 
 const CreateClientButton = () => {
   const locale = useLocale();
@@ -51,20 +51,23 @@ const CreateClientButton = () => {
   });
 
   const handleCreate = async () => {
-    void dialogCore.open<void>(
-      (close) => (
+    void dialogCore.open<void>((close, context) => {
+      const requestClose = () => {
+        if (!mutation.loading()) close();
+      };
+      context.setDismissHandler(requestClose);
+      return (
         <OAuthClientDialog
           mode="create"
-          close={close}
+          close={requestClose}
           loading={mutation.loading}
           onSubmit={async (data) => {
             await mutation.mutate(data);
             if (!mutation.error()) close();
           }}
         />
-      ),
-      panelDialogWideOptions,
-    );
+      );
+    }, panelDialogWideOptions);
   };
 
   return (

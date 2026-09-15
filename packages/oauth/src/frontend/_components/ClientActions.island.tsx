@@ -4,8 +4,8 @@ import { mutation as mutations } from "@k2b/stdlib/solid";
 import { CopyButton, Dropdown, dialogCore, panelDialogWideOptions, prompts, toast, useLocale } from "@k2b/ui";
 import { apiClient } from "@/api/client";
 import type { OAuthClient, UpdateOAuthClient } from "@/contracts";
-import OAuthClientDialog from "./OAuthClientDialog";
 import { oauthMessages } from "../messages";
+import OAuthClientDialog from "./OAuthClientDialog";
 
 type ClientActionsProps = {
   client: OAuthClient;
@@ -89,21 +89,24 @@ const ClientActions = (props: ClientActionsProps) => {
   });
 
   const handleEdit = async () => {
-    void dialogCore.open<void>(
-      (close) => (
+    void dialogCore.open<void>((close, context) => {
+      const requestClose = () => {
+        if (!updateMutation.loading()) close();
+      };
+      context.setDismissHandler(requestClose);
+      return (
         <OAuthClientDialog
           mode="edit"
           client={client}
-          close={close}
+          close={requestClose}
           loading={updateMutation.loading}
           onSubmit={async (data) => {
             await updateMutation.mutate(data);
             if (!updateMutation.error()) close();
           }}
         />
-      ),
-      panelDialogWideOptions,
-    );
+      );
+    }, panelDialogWideOptions);
   };
 
   const handleDelete = async () => {

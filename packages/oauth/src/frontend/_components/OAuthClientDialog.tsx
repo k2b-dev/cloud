@@ -1,10 +1,10 @@
-import { NoticeCard, Button, CheckboxCard, PanelDialog, Select, TextInput, useLocale } from "@k2b/ui";
 import { EntitySearch, type EntitySearchPrincipal } from "@k2b/cloud/account/ui";
+import { Button, CheckboxCard, NoticeCard, PanelDialog, Select, TextInput, useLocale } from "@k2b/ui";
 import { createSignal, For, Show } from "solid-js";
 import type { CreateOAuthClient, OAuthClient, OAuthScope, UpdateOAuthClient } from "@/contracts";
 import { oauthMessages } from "../messages";
 
-type AccessChoice = "user" | "everybody" | "specific";
+import { clientEditorUpdate, clientEditorValues, type ProfileChoice, profileChoice, profilesForChoice } from "./client-editor";
 
 type SelectedUser = {
   id: string;
@@ -35,11 +35,6 @@ type OAuthClientDialogProps =
       onSubmit: (data: UpdateOAuthClient) => Promise<void>;
     };
 
-const accessChoiceFromClient = (client?: OAuthClient): AccessChoice => {
-  if (client?.accessMode === "specific") return "specific";
-  return client?.allowedProfiles.includes("guest") ? "everybody" : "user";
-};
-
 const selectedUsersFromClient = (client?: OAuthClient): SelectedUser[] =>
   client?.accessUsers.map((user) => ({
     id: user.id,
@@ -61,10 +56,11 @@ const removeById = <T extends { id: string }>(id: string, values: T[]) => values
 export default function OAuthClientDialog(props: OAuthClientDialogProps) {
   const locale = useLocale();
   const t = () => oauthMessages.resolve([locale()]).t;
-  const accessChoiceOptions = (): { id: AccessChoice; label: string; description: string; icon: string }[] => [
+  const profileOptions = (): { id: ProfileChoice; label: string; description: string; icon: string }[] => [
     { id: "user", label: t().fullUsersOnly, description: t().fullUsersOnlyDescription, icon: "ti ti-user" },
     { id: "everybody", label: t().everybody, description: t().everybodyDescription, icon: "ti ti-users" },
-    { id: "specific", label: t().specific, description: t().specificDescription, icon: "ti ti-user-check" },
+    { id: "guest", label: t().guestsOnly, description: t().guestsOnlyDescription, icon: "ti ti-user" },
+    { id: "none", label: t().noUserProfiles, description: t().noUserProfilesDescription, icon: "ti ti-user-off" },
   ];
   const scopeOptions = () =>
     [
@@ -78,22 +74,21 @@ export default function OAuthClientDialog(props: OAuthClientDialogProps) {
       { id: "admin", label: t().admin, description: t().scopeAdmin, icon: "ti ti-shield-lock" },
     ] as const satisfies readonly { id: OAuthScope; label: string; description: string; icon: string }[];
   const client = () => (props.mode === "edit" ? props.client : undefined);
+  const initial = clientEditorValues(client());
   const [name, setName] = createSignal(client()?.name ?? "");
-  const [description, setDescription] = createSignal(client()?.description ?? "");
-  const [redirectUri, setRedirectUri] = createSignal(client()?.redirectUris[0] ?? "");
-  const [logoutUri, setLogoutUri] = createSignal(client()?.logoutUri ?? "");
-  const [accessChoice, setAccessChoice] = createSignal<AccessChoice>(accessChoiceFromClient(client()));
-  const [scopes, setScopes] = createSignal<OAuthScope[]>(client()?.scopes ?? ["openid", "profile", "email"]);
+  const [description, setDescription] = createSignal(initial.description);
+  const [redirectUris, setRedirectUris] = createSignal(initial.redirectUris);
+  const [logoutUri, setLogoutUri] = createSignal(initial.logoutUri);
+  const [allowedProfiles, setAllowedProfiles] = createSignal(initial.allowedProfiles);
+  const [specific, setSpecific] = createSignal(initial.specific);
+  const [scopes, setScopes] = createSignal<OAuthScope[]>(initial.scopes);
   const [isPublic, setIsPublic] = createSignal(client()?.isPublic ?? false);
   const [users, setUsers] = createSignal<SelectedUser[]>(selectedUsersFromClient(client()));
   const [groups, setGroups] = createSignal<SelectedGroup[]>(selectedGroupsFromClient(client()));
 
-  const selectedLabel = () => accessChoiceOptions().find((option) => option.id === accessChoice())?.label;
+  const selectedLabel = () => profileOptions().find((option) => option.id === profileChoice(allowedProfiles()))?.label;
   const hasSpecificSelection = () => users().length > 0 || groups().length > 0;
-  const canSubmit = () =>
-    (props.mode === "edit" || name().trim().length > 0) &&
-    redirectUri().trim().length > 0 &&
-    (accessChoice() !== "specific" || hasSpecificSelection());
+  const canSubmit = () => (props.mode === "edit" || name().trim().length > 0) && (!specific() || hasSpecificSelection());
 
   const addEntity = (principal: EntitySearchPrincipal) => {
     if (principal.type === "user") {
@@ -135,33 +130,24 @@ export default function OAuthClientDialog(props: OAuthClientDialogProps) {
       enabled ? (current.includes(scope) ? current : [...current, scope]) : current.filter((item) => item !== scope),
     );
 
-  const buildAccessPayload = () => {
-    const specific = accessChoice() === "specific";
-    return {
-      allowedProfiles: accessChoice() === "user" ? (["user"] as ("user" | "guest")[]) : (["user", "guest"] as ("user" | "guest")[]),
-      accessMode: specific ? ("specific" as const) : ("profiles" as const),
-      allowedUserIds: specific ? users().map((user) => user.id) : [],
-      allowedGroupIds: specific ? groups().map((group) => group.id) : [],
-    };
-  };
-
   const submit = async () => {
-    if (!canSubmit()) return;
-    const cleanRedirectUri = redirectUri()
-      .trim()
-      .replace(/^["']|["']$/g, "");
-    const cleanLogoutUri = logoutUri().trim();
-    const common = {
-      description: description().trim() || undefined,
-      redirectUris: [cleanRedirectUri],
-      logoutUri: cleanLogoutUri || undefined,
+    if (!canSubmit() || props.loading()) return;
+    const common = clientEditorUpdate({
+      description: description(),
+      redirectUris: redirectUris(),
+      logoutUri: logoutUri(),
       scopes: scopes(),
-      ...buildAccessPayload(),
-    };
+      allowedProfiles: allowedProfiles(),
+      specific: specific(),
+      allowedUserIds: users().map((user) => user.id),
+      allowedGroupIds: groups().map((group) => group.id),
+    });
 
     if (props.mode === "create") {
       await props.onSubmit({
         ...common,
+        description: common.description ?? undefined,
+        logoutUri: common.logoutUri ?? undefined,
         name: name().trim(),
         audiences: ["cloud"],
         isPublic: isPublic(),
@@ -169,11 +155,7 @@ export default function OAuthClientDialog(props: OAuthClientDialogProps) {
       return;
     }
 
-    await props.onSubmit({
-      ...common,
-      description: common.description ?? null,
-      logoutUri: cleanLogoutUri || null,
-    });
+    await props.onSubmit(common);
   };
 
   return (
@@ -183,6 +165,7 @@ export default function OAuthClientDialog(props: OAuthClientDialogProps) {
         subtitle={t().dialogSubtitle}
         icon={props.mode === "create" ? "ti ti-plus" : "ti ti-pencil"}
         close={props.close}
+        closeDisabled={props.loading()}
       />
 
       <PanelDialog.Body>
@@ -192,7 +175,7 @@ export default function OAuthClientDialog(props: OAuthClientDialogProps) {
               when={props.mode === "create"}
               fallback={
                 <NoticeCard tone="info" icon={false}>
-                  Client ID: <code>{props.mode === "edit" ? props.client.clientId : ""}</code>
+                  {t().clientId}: <code>{props.mode === "edit" ? props.client.clientId : ""}</code>
                 </NoticeCard>
               }
             >
@@ -217,9 +200,10 @@ export default function OAuthClientDialog(props: OAuthClientDialogProps) {
               description={t().redirectUriDescription}
               placeholder="https://myapp.example.com/callback"
               icon="ti ti-link"
-              value={redirectUri}
-              onValueChange={setRedirectUri}
-              required
+              value={redirectUris}
+              onValueChange={setRedirectUris}
+              multiline
+              lines={3}
             />
             <TextInput
               label={t().logoutUri}
@@ -245,16 +229,25 @@ export default function OAuthClientDialog(props: OAuthClientDialogProps) {
             <PanelDialog.Section title={t().access} subtitle={t().chooseAccess} icon="ti ti-user-check">
               <Select
                 label={t().whoCanUse}
-                value={accessChoice}
+                value={() => profileChoice(allowedProfiles())}
                 onValueChange={(value) => {
-                  if (value === "user" || value === "everybody" || value === "specific") setAccessChoice(value);
+                  if (value === "user" || value === "everybody" || value === "guest" || value === "none")
+                    setAllowedProfiles(profilesForChoice(value));
                 }}
                 selectedLabel={selectedLabel}
-                options={accessChoiceOptions()}
+                options={profileOptions()}
                 required
               />
 
-              <Show when={accessChoice() === "specific"}>
+              <CheckboxCard
+                label={t().specific}
+                description={t().specificDescription}
+                icon="ti ti-user-check"
+                variant="input"
+                value={specific}
+                onValueChange={setSpecific}
+              />
+              <Show when={specific()}>
                 <NoticeCard tone="info" icon={false} bodyClass="flex items-start gap-2">
                   <i class="ti ti-info-circle mt-0.5 shrink-0" />
                   <span>{t().nestedGroups}</span>
@@ -291,10 +284,8 @@ export default function OAuthClientDialog(props: OAuthClientDialogProps) {
 
       <PanelDialog.Footer>
         <div class="min-w-0 text-xs text-dimmed">
-          <Show when={accessChoice() !== "specific" || hasSpecificSelection()} fallback={t().selectPrincipal}>
-            {accessChoice() === "specific"
-              ? t().selectionCount({ users: users().length, groups: groups().length })
-              : t().profileAccessActive}
+          <Show when={!specific() || hasSpecificSelection()} fallback={t().selectPrincipal}>
+            {specific() ? t().selectionCount({ users: users().length, groups: groups().length }) : t().profileAccessActive}
           </Show>
         </div>
         <div class="ml-auto flex flex-wrap justify-end gap-2">
