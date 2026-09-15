@@ -12,10 +12,10 @@ describe("Help excerpts", () => {
 
 test("exact headings select complete sections in short and long articles", () => {
   for (const filler of ["Short intro.", "Background. ".repeat(800)]) {
-    const markdown = `${filler}\n\n## kit.ui.select {icon="code"}\nSignature\n\n### Example\nExample code\n\n## kit.ui.table {icon="table"}\nOther method`;
-    const selected = selectHelpMarkdown(markdown, "kit.ui.select");
+    const markdown = `${filler}\n\n## example.ui.select {icon="code"}\nSignature\n\n### Example\nExample code\n\n## example.ui.table {icon="table"}\nOther method`;
+    const selected = selectHelpMarkdown(markdown, "example.ui.select");
     expect(selected?.markdown).toContain("### Example\nExample code");
-    expect(selected?.markdown).not.toContain("kit.ui.table");
+    expect(selected?.markdown).not.toContain("example.ui.table");
     expect(selected?.markdown.length).toBeLessThan(7000);
   }
 });

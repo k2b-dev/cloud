@@ -28,8 +28,8 @@ describe("production Compose release set", () => {
       .split(/\r?\n/)
       .map((line) => line.trim())
       .filter((line) => line.startsWith("image: ghcr.io/k2b-dev/cloud-"));
-    expect(images).toHaveLength(24);
-    expect(images.some((line) => line.includes("/cloud-app-kit:"))).toBeTrue();
+    expect(images).toHaveLength(23);
+    expect(images.some((line) => line.includes("/cloud-app-kit:"))).toBeFalse();
     expect(images.some((line) => line.includes("/cloud-app-pulse:"))).toBeTrue();
     expect(images.every((line) => line.endsWith(":${CLOUD_IMAGE_TAG:?CLOUD_IMAGE_TAG is required}"))).toBeTrue();
     expect(images.some((line) => /:(?:latest|main)$/.test(line))).toBeFalse();

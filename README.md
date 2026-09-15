@@ -185,6 +185,9 @@ same license.
 Separate commercial licenses for proprietary, reseller, managed-service,
 white-label, or embedded product use are available by contacting the maintainer.
 
-### Kit shared databases in development
+### Assistant databases in development
 
-The local infrastructure includes an optional rsql container for [Kit](packages/kit/README.md). Database access stays disabled until configured under `/admin/kit`. The Kit README explains persistence, import limits and proportionate concurrency for small custom apps.
+The local infrastructure includes rsql for Assistant Studio databases. Configure
+`assistant.rsql_url` (`http://rsql:8080`) and `assistant.rsql_api_token` in Studio
+administration. The local server token is stored in `.local/rsql/credentials.env`.
+Keep that file private. Studio apps without a database do not require rsql.

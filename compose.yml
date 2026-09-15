@@ -22,6 +22,7 @@ services:
     restart: unless-stopped
     env_file: ./.local/rsql/credentials.env
     volumes:
+      # Retain the existing volume name: Assistant databases also live here.
       - kit_rsql_data:/data
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:8080/healthz"]

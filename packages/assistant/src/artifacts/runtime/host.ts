@@ -69,7 +69,7 @@ export function startArtifactRun(container: HTMLElement, source: { runtime: stri
     if (stopped || event.source !== frame.contentWindow) return;
     if (Date.now() - windowStart >= 1000) { windowStart = Date.now(); messages = 0; }
     try {
-      // Same per-second transport budget as Kit, independently enforced here.
+      // Enforce the per-second transport budget at the host boundary.
       if (++messages > 600) throw new Error("Run exceeded message budget");
       if (event.data?.type === "bridge-ready") { post({ type: "boot",...source }); return; }
       const encoded = JSON.stringify(event.data);

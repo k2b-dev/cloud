@@ -1,6 +1,6 @@
 ---
 name: cloud-cli
-description: Use the Cloud CLI (`cld`) to work with a user's Cloud content from a terminal. Use this skill whenever an agent needs to use installed Cloud app commands, sign in or select a Cloud profile, choose safe CLI input/output, inspect Cloud API documentation, or complete Assistant, Contacts, FAQ, Grids, Kit, Mail, Notebooks, Pulse, Spaces, or Tools workflows for the user.
+description: Use the Cloud CLI (`cld`) to work with a user's Cloud content from a terminal. Use this skill whenever an agent needs to use installed Cloud app commands, sign in or select a Cloud profile, choose safe CLI input/output, inspect Cloud API documentation, or complete Assistant, Contacts, FAQ, Grids, Mail, Notebooks, Pulse, Spaces, or Tools workflows for the user.
 ---
 
 # Cloud CLI
@@ -37,7 +37,6 @@ Read the app reference for the current task. Follow specialized links inside it 
 - Read [Grids](references/grids.md) to create bases from templates and manage schema, records, GQL, views, forms, Custom Apps, documents, access, and workflows.
 - For a complete Grids business application, also read [Build a business application](references/grids-build-apps.md): inventory, CRM, invoicing, expense reimbursement, and merchandise-management model choices and verification.
 - For Grids configuration, read [Schema and records](references/grids-schema.md): table options, every field type, ID assignment, formats, Views, Forms and finalization. For files and financial exports, read [Documents and exports](references/grids-documents.md): templates, Liquid, profiles, SEPA, DATEV, membership and download links. The main Grids reference routes Custom App and Workflow configuration to their complete machine-readable schemas.
-- Read [Kit](references/kit.md) to create, validate, edit and share local browser tools.
 - Read [Mail](references/mail.md) to configure and share mailboxes, search and collaborate on conversations, then follow its compose, automation, and operations references for the complete Mail CLI.
 - Read [Notebooks](references/notebooks.md) for collaborative notes, knowledge search, safe Markdown editing, query and TOC preview validation, comments, notebook views, attachments, formulas, exports, and access.
 - Read [Pulse](references/pulse.md) to explore telemetry and observed fields, ingest structured events, run queries, create DSL dashboards, manage sources, and share public displays.

@@ -129,10 +129,6 @@ services:
     <<: *app-defaults
     image: ghcr.io/k2b-dev/cloud-app-ipa-hosts:${CLOUD_IMAGE_TAG:?CLOUD_IMAGE_TAG is required}
 
-  app-kit:
-    <<: *app-defaults
-    image: ghcr.io/k2b-dev/cloud-app-kit:${CLOUD_IMAGE_TAG:?CLOUD_IMAGE_TAG is required}
-
   app-mail:
     <<: *app-defaults
     image: ghcr.io/k2b-dev/cloud-app-mail:${CLOUD_IMAGE_TAG:?CLOUD_IMAGE_TAG is required}

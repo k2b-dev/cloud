@@ -11,20 +11,16 @@ describe("Cloud AI Skill seeds", () => {
 
     await seedCloudAiSkills();
 
-    expect(seedOnce).toHaveBeenCalledTimes(11);
+    expect(seedOnce).toHaveBeenCalledTimes(10);
     const inputs = seedOnce.mock.calls.map(([input]) => input);
     const codeMode = inputs.find((candidate) => candidate.name === "assistant-code-mode");
-    expect(codeMode).toMatchObject({ key: "assistant:code-mode", version: 38 });
+    expect(codeMode).toMatchObject({ key: "assistant:code-mode", version: 39 });
     expect(codeMode?.references?.map((reference) => reference.path)).toContain("references/debugging.md");
     expect(inputs.find(candidate => candidate.name === "assistant-data-analysis")).toMatchObject({ key: "assistant:data-analysis", version: 5 });
     expect(codeMode?.instructions).toContain("todo_write");
     expect(inputs.find(candidate => candidate.name === "assistant-data-analysis")?.instructions).toContain("todo_write");
     expect(codeMode?.references?.map(reference => reference.path)).toContain("references/analytics.md");
-    const kit = inputs.find((candidate) => candidate.name === "cloud-kit");
-    expect(kit?.instructions).toContain("search_help");
-    expect(kit?.instructions).toContain("read_help");
-    expect(kit?.instructions).toContain("kit.source.apply");
-    expect(kit?.instructions).not.toContain("kit.sdk.read");
+    expect(inputs.some((candidate) => candidate.name === "cloud-kit")).toBeFalse();
     const input = inputs.find((candidate) => candidate.name === "skill-creator");
     expect(input).toMatchObject({ key: "core:skill-creator", name: "skill-creator" });
     expect(input?.description).toContain("Use this whenever");

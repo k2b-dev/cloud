@@ -49,7 +49,7 @@ const corpus = (body = "Editors can update inventory records.") =>
         en: [
           source("permissions", "Permissions", body),
           source("fallback", "English fallback", "A rare untranslated narwhal."),
-          source("technical", "kit.ui.modal.dialog", "Open a dialog."),
+          source("technical", "example.ui.modal.dialog", "Open a dialog."),
           source("long", "Background", "Background context. ".repeat(5500)),
         ],
         de: [source("permissions", "Berechtigungen", "Benutzer dürfen Datensätze ändern. Formulare erstellen und bearbeiten.")],
@@ -103,7 +103,7 @@ suite("Postgres Help publication and retrieval", () => {
     expect((await reader("de-CH").manifest("help-integration"))?.documents.find((d) => d.id === "fallback")?.locale).toBe("en");
   });
   test("ranks exact technical identifiers and handles stemming, punctuation, and limits", async () => {
-    expect((await reader().search({ query: "kit.ui.modal.dialog" }))[0]?.documentId).toBe("technical");
+    expect((await reader().search({ query: "example.ui.modal.dialog" }))[0]?.documentId).toBe("technical");
     expect((await reader().search({ query: "editor updates inventory" }))[0]?.documentId).toBe("permissions");
     expect(await reader().search({ query: "doesnotexist" })).toEqual([]);
     expect(await reader().search({ query: "" })).toEqual([]);

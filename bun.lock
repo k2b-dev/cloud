@@ -200,7 +200,6 @@
         "@k2b/cloud-app-faq": "workspace:*",
         "@k2b/cloud-app-grids": "workspace:*",
         "@k2b/cloud-app-ipa-hosts": "workspace:*",
-        "@k2b/cloud-app-kit": "workspace:*",
         "@k2b/cloud-app-mail": "workspace:*",
         "@k2b/cloud-app-notebooks": "workspace:*",
         "@k2b/cloud-app-oauth": "workspace:*",
@@ -394,30 +393,6 @@
       },
       "devDependencies": {
         "@types/bun": "catalog:",
-        "typescript": "catalog:",
-      },
-    },
-    "packages/kit": {
-      "name": "@k2b/cloud-app-kit",
-      "version": "0.0.0",
-      "dependencies": {
-        "@k2b/cloud": "workspace:*",
-        "@k2b/rsql": "1.0.0",
-        "@k2b/ssr": "catalog:",
-        "@k2b/stdlib": "catalog:",
-        "@k2b/ui": "workspace:*",
-        "acorn": "8.18.0",
-        "hono": "catalog:",
-        "hono-openapi": "catalog:",
-        "papaparse": "5.7.0",
-        "pdfjs-dist": "6.3.289",
-        "solid-js": "catalog:",
-        "zod": "catalog:",
-      },
-      "devDependencies": {
-        "@types/bun": "catalog:",
-        "@types/papaparse": "5.5.2",
-        "playwright": "catalog:",
         "typescript": "catalog:",
       },
     },
@@ -1042,8 +1017,6 @@
     "@k2b/cloud-app-grids": ["@k2b/cloud-app-grids@workspace:packages/grids"],
 
     "@k2b/cloud-app-ipa-hosts": ["@k2b/cloud-app-ipa-hosts@workspace:packages/ipa-hosts"],
-
-    "@k2b/cloud-app-kit": ["@k2b/cloud-app-kit@workspace:packages/kit"],
 
     "@k2b/cloud-app-mail": ["@k2b/cloud-app-mail@workspace:packages/mail"],
 

@@ -1,5 +1,4 @@
 import { ASSISTANT_DATA_ANALYSIS_SKILL } from "./data-analysis-skill";
-import { CLOUD_KIT_INSTRUCTIONS } from "./kit-skill";
 import { ASSISTANT_CODE_MODE_SKILL } from "./code-mode-skill";
 import { CLOUD_GRIDS_INSTRUCTIONS, CLOUD_GRIDS_QUERY_REFERENCE } from "./grids-skill";
 import type { AiSkillTemplate } from "./skills";
@@ -364,14 +363,6 @@ Do not fabricate organizer/attendee addresses, regenerate the returned calendar 
 const BUILTIN_CLOUD_AI_SKILLS: AiSkillTemplate[] = [
   ASSISTANT_CODE_MODE_SKILL,
   ASSISTANT_DATA_ANALYSIS_SKILL,
-  {
-    version: 3,
-    key: "kit:cloud-kit",
-    name: "cloud-kit",
-    description:
-      "Use when working in an existing Cloud Kit app: improve its browser UI, file conversion, JavaScript, CSV processing, exact money calculations or database workflow. General analysis and new Assistant apps belong to assistant-code-mode. Read current Kit Help before choosing SDK methods.",
-    instructions: CLOUD_KIT_INSTRUCTIONS,
-  },
   {
     version: 1,
     key: "grids:cloud-grids",

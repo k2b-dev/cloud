@@ -23,7 +23,7 @@ const db = await database.connect();
 Connecting is idempotent and lazily creates this resource's database. The host
 logs a successful connection. An unconfigured Cloud instance throws an error with
 `error.code === "DB_NOT_CONFIGURED"`; explain that an administrator must
-configure the Assistant database connection. Do not invent credentials or fall back to Kit settings.
+configure the Assistant database connection. Do not invent credentials.
 `DB_AUTH_FAILED` means the stored server token was rejected; `DB_UNREACHABLE`
 means the server could not be reached. Ask an administrator to check the
 connection. For `DB_TIMEOUT`, a read can be retried once. For a write, inspect

@@ -28,8 +28,7 @@
     "@k2b/cloud-app-spaces": "workspace:*",
     "@k2b/cloud-app-tools": "workspace:*",
     "@k2b/cloud-app-venue": "workspace:*",
-    "hono": "catalog:",
-    "@k2b/cloud-app-kit": "workspace:*"
+    "hono": "catalog:"
   },
   "devDependencies": {
     "@types/bun": "catalog:",

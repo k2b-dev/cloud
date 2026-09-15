@@ -12,7 +12,7 @@ describe("root test orchestration", () => {
     expect(byName.get("@k2b/ui")?.command).toEqual(["bun", "run", "test"]);
     expect(byName.get("@k2b/cloud-app-pulse")?.command).toEqual(["bun", "run", "test"]);
     expect(byName.get("@k2b/cloud-app-accounts")?.command).toEqual(["bun", "run", "test"]);
-    expect(byName.get("@k2b/cloud-app-kit")?.command).toEqual(["bun", "run", "test"]);
+    expect(byName.has("@k2b/cloud-app-kit")).toBeFalse();
     expect(byName.get("@k2b/cloud-app-tools")?.command).toEqual(["bun", "test"]);
     expect(byName.get("workspace root tests")?.command).toEqual(["bun", "test"]);
     expect(byName.get("workspace root scripts")?.command).toEqual(["bun", "test"]);

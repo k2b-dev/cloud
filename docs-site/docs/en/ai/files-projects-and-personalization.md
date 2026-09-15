@@ -169,7 +169,6 @@ new revision. Reading a mounted file still checks current Cloud access; revoked
 access takes effect immediately.
 
 Cloud installs built-in Skills with `read` access for every authenticated user.
-`cloud-kit` covers Kit mini apps and their SDK.
 `cloud-grids` includes a compact GQL syntax guide with lookup, join, and
 aggregation examples. It guides queries and daily work and routes product and
 administration questions to canonical Grids Help. Skill reference files are

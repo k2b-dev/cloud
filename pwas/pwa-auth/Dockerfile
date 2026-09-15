@@ -20,7 +20,6 @@ COPY packages/gateway/package.json packages/gateway/
 COPY packages/gateway-ops/package.json packages/gateway-ops/
 COPY packages/grids/package.json packages/grids/
 COPY packages/ipa-hosts/package.json packages/ipa-hosts/
-COPY packages/kit/package.json packages/kit/
 COPY packages/mail/package.json packages/mail/
 COPY packages/notebooks/package.json packages/notebooks/
 COPY packages/oauth/package.json packages/oauth/
@@ -40,12 +39,14 @@ COPY packages/cloud/tsconfig.json packages/cloud/
 COPY packages/cloud/src packages/cloud/src
 COPY packages/ui/src packages/ui/src
 COPY packages/ui/scripts packages/ui/scripts
+COPY packages/ui/test packages/ui/test
 COPY pwas/pwa-auth pwas/pwa-auth
 ARG PWA_VERSION=unreleased
 ARG PWA_REVISION
 RUN bun packages/ui/scripts/build.ts \
   && bun run --cwd pwas/pwa-auth typecheck \
-  && bun test pwas/pwa-auth/src packages/cloud/src/browser/app-approval-vault.test.ts \
+  && bun run --cwd pwas/pwa-auth test \
+  && bun test packages/cloud/src/browser/app-approval-vault.test.ts \
   && bun run --cwd pwas/pwa-auth build
 
 FROM oven/bun:1.4.2-slim@sha256:cb3bbbb08e13a4a2ff400f24c7a2a1d5efa83f6ef8544d52d95a519631e2fc61

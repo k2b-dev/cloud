@@ -25,7 +25,7 @@ describe("Assistant artifact boundaries", () => {
     ] }).success).toBe(false);
   });
 
-  test("does not expose the copied Kit database RPCs", () => {
+  test("does not expose unsupported database RPCs", () => {
     expect(WorkerMessage.safeParse({ type: "rpc", id: 0, method: "db.call", args: [] }).success).toBe(false);
     expect(WorkerMessage.safeParse({ type: "rpc", id: 0, method: "db.import", args: [] }).success).toBe(false);
   });

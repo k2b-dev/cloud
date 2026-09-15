@@ -17,7 +17,6 @@ const helpPackages = [
   "gateway-ops",
   "grids",
   "ipa-hosts",
-  "kit",
   "mail",
   "notebooks",
   "proxy-auth",
