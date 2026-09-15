@@ -1,7 +1,7 @@
 import type { EphemeralConfig } from "@k2b/sync";
 import type { AppAppearanceColor } from "../contracts/app";
 import type { CapabilityManifest, CapabilityPresentationCatalog } from "../contracts/capabilities";
-import type { AppRegistryEntry, CapabilityRegistryEntry, HelpRegistryEntry } from "../contracts/registry";
+import type { AppRegistryEntry, CapabilityRegistryEntry } from "../contracts/registry";
 import type { DashboardWidgetPresentation } from "../contracts/widgets";
 import { resolveAppPresentations } from "../shared/app-presentation";
 import { compileCapabilityPresentation, parseCapabilityManifest } from "./capabilities";
@@ -10,7 +10,7 @@ import { validateAppRegistryEntry } from "./registry-validation";
 import { watchRegistryChanges } from "./registry-watch";
 
 /**
- * Shared app registry: three @k2b/sync ephemerals on the process Sync
+ * Shared app registry: two @k2b/sync ephemerals on the process Sync
  * instance. Apps, the gateway, and gateway-ops all declare them through the
  * functions below, so id, owner, TTL, and value bound stay identical across
  * the fleet (a differing declaration fails with ResourceDriftError).
@@ -34,20 +34,12 @@ export const CAPABILITY_REGISTRY_CONFIG = {
   maxValueBytes: 512 * 1024,
 } as const satisfies EphemeralConfig;
 
-export const HELP_REGISTRY_CONFIG = {
-  id: "cloud-help",
-  owner: REGISTRY_OWNER,
-  ttlMs: APP_REGISTRY_TTL_MS,
-  maxValueBytes: 512 * 1024,
-} as const satisfies EphemeralConfig;
-
 export const APP_REGISTRY_PREFIX = "apps/";
 
 export type CapabilityRegistryRecord = { appId: string; manifest: CapabilityManifest; presentation?: CapabilityPresentationCatalog };
 
 export const appRegistry = lazySync((sync) => sync.ephemeral<AppRegistryEntry>(APP_REGISTRY_CONFIG));
 export const capabilityRegistry = lazySync((sync) => sync.ephemeral<CapabilityRegistryRecord>(CAPABILITY_REGISTRY_CONFIG));
-export const helpRegistry = lazySync((sync) => sync.ephemeral<HelpRegistryEntry>(HELP_REGISTRY_CONFIG));
 
 /**
  * Follow the app registry until `signal` aborts. The watch first replays the
@@ -230,49 +222,6 @@ export const getCapability = async (appId: string): Promise<CapabilityRegistryEn
   const [snap, app] = await Promise.all([capabilityRegistry().snapshot({ prefix: key }), getApp(appId)]);
   const entry = snap.entries.find((candidate) => candidate.key === key);
   return entry ? resolveLiveCapabilityRegistryEntry(entry.key, entry.value, app ?? undefined) : null;
-};
-
-const isHelpRegistryEntry = (value: unknown): value is HelpRegistryEntry => {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
-  const entry = value as Partial<HelpRegistryEntry>;
-  const validDocument = (document: unknown) =>
-    !!document &&
-    typeof document === "object" &&
-    typeof (document as { id?: unknown }).id === "string" &&
-    typeof (document as { title?: unknown }).title === "string" &&
-    typeof (document as { order?: unknown }).order === "number" &&
-    typeof (document as { markdown?: unknown }).markdown === "string" &&
-    ((document as { searchText?: unknown }).searchText === undefined ||
-      typeof (document as { searchText?: unknown }).searchText === "string") &&
-    ((document as { icon?: unknown }).icon === undefined || typeof (document as { icon?: unknown }).icon === "string") &&
-    ((document as { description?: unknown }).description === undefined ||
-      typeof (document as { description?: unknown }).description === "string");
-  return (
-    typeof entry.appId === "string" &&
-    typeof entry.appName === "string" &&
-    typeof entry.appIcon === "string" &&
-    typeof entry.manifestHash === "string" &&
-    (entry.baseLocale === undefined || typeof entry.baseLocale === "string") &&
-    Array.isArray(entry.documents) &&
-    entry.documents.every(validDocument) &&
-    (entry.documentsByLocale === undefined ||
-      (!!entry.documentsByLocale &&
-        typeof entry.documentsByLocale === "object" &&
-        !Array.isArray(entry.documentsByLocale) &&
-        Object.values(entry.documentsByLocale).every((documents) => Array.isArray(documents) && documents.every(validDocument))))
-  );
-};
-
-export const listHelp = async (): Promise<HelpRegistryEntry[]> => {
-  const snap = await helpRegistry().snapshot({ prefix: "help/" });
-  return snap.entries.map((entry) => entry.value).filter(isHelpRegistryEntry);
-};
-
-export const getHelp = async (appId: string): Promise<HelpRegistryEntry | null> => {
-  const key = `help/${appId}`;
-  const snap = await helpRegistry().snapshot({ prefix: key });
-  const value = snap.entries.find((entry) => entry.key === key)?.value;
-  return isHelpRegistryEntry(value) ? value : null;
 };
 
 /**

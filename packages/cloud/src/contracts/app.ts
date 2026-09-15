@@ -1,5 +1,5 @@
 import type { Sync } from "@k2b/sync";
-import type { HelpManifest } from "../shared/help";
+import type { AppRegistryHelpSummary } from "./registry";
 import type { Role } from "./shared";
 import type { DashboardWidgetPresentation } from "./widgets";
 
@@ -113,7 +113,7 @@ export type WidgetEndpoint = {
 };
 
 export type RuntimeAppMeta = AppMeta & {
-  help?: HelpManifest;
+  help?: AppRegistryHelpSummary;
   searchTags?: string[];
   searchHelp?: string;
   searchTagHelp?: AppSearchTagHelpEntry[];

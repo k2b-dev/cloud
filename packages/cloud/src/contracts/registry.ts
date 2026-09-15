@@ -1,4 +1,3 @@
-import type { HelpManifest } from "../shared/help";
 import type { AppAdminNavigationGroup, AppAppearance, AppAppearanceColor, AppPresentationCatalog } from "./app";
 import type { CapabilityManifest, CapabilityPresentationCatalog } from "./capabilities";
 import type { Role } from "./shared";
@@ -36,31 +35,7 @@ export type CapabilityRegistryEntry = {
   presentation?: CapabilityPresentationCatalog;
 };
 
-export type AppRegistryHelpSummary = HelpManifest;
-
-export type HelpRegistryDocument = {
-  id: string;
-  title: string;
-  icon?: string;
-  description?: string;
-  order: number;
-  markdown: string;
-  /** Precomputed by the app. Older registry entries may omit it during rolling upgrades. */
-  searchText?: string;
-};
-
-/** Full Markdown lives separately so normal app discovery stays small. */
-export type HelpRegistryEntry = {
-  appId: string;
-  appName: string;
-  appIcon: string;
-  manifestHash: string;
-  /** Base language that owns the complete logical article set. Absent on legacy registrations. */
-  baseLocale?: string;
-  /** Partial localized article variants stored in the same bounded logical registration. */
-  documentsByLocale?: Readonly<Record<string, readonly HelpRegistryDocument[]>>;
-  documents: readonly HelpRegistryDocument[];
-};
+export type AppRegistryHelpSummary = { manifestHash: string; pageBase: string; baseLocale: string };
 
 export type AppRegistryLegalLink = {
   label: string;

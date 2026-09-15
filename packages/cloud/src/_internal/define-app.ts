@@ -1,3 +1,5 @@
+import { registerHelp } from "../services/help";
+import { preloadLayoutHelp } from "../ssr/help";
 import { bindProcessApplicationId, clearProcessApplicationId } from "./process-identity";
 /**
  * defineApp() — The single entry point for every cloud app.
@@ -70,7 +72,7 @@ import { compileHelp } from "./help";
 import { createPageResponses } from "./page-responses";
 import { getProcessSync, startProcessSync } from "./process-sync";
 import { APP_READINESS_PATH, appReadinessResponse } from "./readiness";
-import { appRegistry, type CapabilityRegistryRecord, capabilityRegistry, helpRegistry } from "./registry";
+import { appRegistry, type CapabilityRegistryRecord, capabilityRegistry } from "./registry";
 import { ensureRuntimeWatcher, getCurrentRuntime, stopRuntimeWatcher } from "./runtime-watcher";
 import { servePublicAsset } from "./static-assets";
 import { createStatusPreservingSsrHandler } from "./status-preserving-ssr";
@@ -361,6 +363,7 @@ export const defineApp = <
         user && c.get("settings")?.observability?.web_vitals?.enabled === true ? (matchedRouteTemplate(c) ?? undefined) : undefined;
       await Promise.all([
         preloadLayoutAnnouncements(c),
+        preloadLayoutHelp(c),
         user ? readRailSnapshot(user).then((snapshot) => c.set("railPreferences", snapshot)) : undefined,
       ]);
     }),
@@ -436,8 +439,6 @@ export const defineApp = <
       const compiledHelp = startOpts.help
         ? compileHelp({
             appId: meta.id,
-            appName: meta.name,
-            appIcon: meta.icon,
             basePath: opts.basePath,
             definition: startOpts.help,
           })
@@ -488,6 +489,7 @@ export const defineApp = <
       // Heartbeat
       const heartbeat = createHeartbeat(meta.id, entry, {
         registry: appRegistry(),
+        beforeWrite: compiledHelp ? () => registerHelp(compiledHelp.corpus) : undefined,
         onError: (error) =>
           log.error("Registry heartbeat failed", {
             appId: meta.id,
@@ -526,27 +528,6 @@ export const defineApp = <
             },
           })
         : undefined;
-      const helpHeartbeat = compiledHelp
-        ? createHeartbeat(meta.id, compiledHelp.registryEntry, {
-            key: `help/${meta.id}`,
-            registry: helpRegistry(),
-            onError: (error) =>
-              log.error("Help registry heartbeat failed", {
-                appId: meta.id,
-                error: error instanceof Error ? error.message : String(error),
-              }),
-            onStale: (error) => {
-              log.error("Help registry lease expired; restarting", {
-                appId: meta.id,
-                error: error instanceof Error ? error.message : String(error),
-              });
-              process.exit(1);
-            },
-          })
-        : undefined;
-      cleanup.push(async () => {
-        await helpHeartbeat?.stop();
-      });
       cleanup.push(async () => {
         await capabilityHeartbeat?.stop();
       });
@@ -788,7 +769,6 @@ export const defineApp = <
 
       // Only advertise after setup, workers, and their declared resources are ready.
       // Publish supporting entries first; the app entry makes them discoverable.
-      await helpHeartbeat?.start();
       await capabilityHeartbeat?.start();
       await heartbeat.start();
       log.info(`Registered "${meta.id}"`, { baseUrl });

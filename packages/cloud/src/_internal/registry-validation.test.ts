@@ -36,15 +36,7 @@ describe("validateAppRegistryEntry", () => {
         help: {
           manifestHash: "sha256",
           pageBase: "/app/core/help",
-          documents: [
-            {
-              id: "getting-started",
-              title: "Getting started",
-              order: 10,
-              searchUrl: "/api/help/v1/core/search",
-              url: "/api/help/v1/core/documents/getting-started",
-            },
-          ],
+          baseLocale: "en",
         },
       }),
     ).toBeNull());

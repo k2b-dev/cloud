@@ -169,8 +169,9 @@ response for diagnosis.
 A user-backed personal chat on a tool-capable model resolves `search_help` and
 `read_help` dynamically from app-owned Help registration. They do not require
 Capability discovery because static product guidance is separate from
-executable operations. A registry failure stays local to Help and may be tried
-again on a later model turn. See
+executable operations. The tools query the shared PostgreSQL Help service when called. A Help failure
+stays local to that call and may be retried. Use concise search terms in the
+request language; optional BM25 improves ranking without adding tools. See
 [In-product Help](/en/docs/platform/help) for the owning declaration and
 exposure rules.
 

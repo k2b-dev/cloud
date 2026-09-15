@@ -409,3 +409,25 @@ describe("createHeartbeat", () => {
     expect(() => createHeartbeat("test", entry, { registry, writeTimeoutMs: 0 })).toThrow(RangeError);
   });
 });
+
+test("dependent publication precedes every app lease and failure prevents advertisement", async () => {
+  const events: string[] = [];
+  let fail = true;
+  const heartbeat = createHeartbeat("test", entry, {
+    intervalMs: 2,
+    beforeWrite: async () => { if (fail) throw new Error("publication unavailable"); events.push("publish"); },
+    registry: {
+      upsert: async () => { events.push("advertise"); },
+      touch: async () => { events.push("touch"); return true; },
+      delete: async () => {},
+    },
+  });
+  await expect(heartbeat.start()).rejects.toThrow("publication unavailable");
+  expect(events).toEqual([]);
+  fail = false;
+  try {
+    await heartbeat.start();
+    await waitUntil(() => events.includes("touch"));
+    expect(events.slice(0,4)).toEqual(["publish","advertise","publish","touch"]);
+  } finally { await heartbeat.stop(); }
+});

@@ -1,42 +1,15 @@
 import { createHash } from "node:crypto";
-import type { AppRegistryHelpSummary, HelpRegistryEntry } from "../contracts/registry";
+import type { AppRegistryHelpSummary } from "../contracts/registry";
 import type { HelpDefinition } from "../server/help";
-import type { HelpDocumentManifest } from "../shared/help";
+import type { HelpCorpus, HelpDocument } from "../services/help/types";
 
-export const HELP_REGISTRY_MAX_BYTES = 512 * 1024;
 export const HELP_DOCUMENT_MAX_BYTES = 128 * 1024;
+export type CompiledHelp = { summary: AppRegistryHelpSummary; corpus: HelpCorpus };
 
-export type CompiledHelp = {
-  summary: AppRegistryHelpSummary;
-  registryEntry: HelpRegistryEntry;
-};
-
-const serializedBytes = (value: unknown): number => new TextEncoder().encode(JSON.stringify(value)).byteLength;
-
-const helpHash = (value: unknown): string => createHash("sha256").update(JSON.stringify(value)).digest("hex");
-
-const omitSearchText = (documents: readonly HelpRegistryEntry["documents"][number][]) =>
-  documents.map(({ searchText: _searchText, ...document }) => document);
-
-const normalizedBasePath = (basePath: string | undefined): string => {
-  const value = basePath?.replace(/\/$/, "") ?? "";
-  return value || "";
-};
-
-export const compileHelp = (input: {
-  appId: string;
-  appName: string;
-  appIcon: string;
-  basePath?: string;
-  definition: HelpDefinition;
-}): CompiledHelp => {
-  const appId = encodeURIComponent(input.appId);
-  const pageBase = `${normalizedBasePath(input.basePath)}/help`;
-  const searchUrl = `/api/help/v1/${appId}/search`;
-  const compileDocuments = (source: readonly (typeof input.definition.documents)[number][]) =>
+export const compileHelp = (input: { appId: string; basePath?: string; definition: HelpDefinition }): CompiledHelp => {
+  const compileDocuments = (source: HelpDefinition["documents"]): HelpDocument[] =>
     source.map(({ id, title, icon, description, order, markdown, searchText }) => {
-      const markdownBytes = new TextEncoder().encode(markdown).byteLength;
-      if (markdownBytes > HELP_DOCUMENT_MAX_BYTES) {
+      if (Buffer.byteLength(markdown) > HELP_DOCUMENT_MAX_BYTES) {
         throw new Error(`Help document "${id}" exceeds the ${HELP_DOCUMENT_MAX_BYTES}-byte limit`);
       }
       return { id, title, icon, description, order, markdown, searchText };
@@ -46,50 +19,14 @@ export const compileHelp = (input: {
   const documentsByLocale = Object.fromEntries(
     Object.entries(input.definition.documentsByLocale ?? {})
       .filter(([locale]) => locale !== baseLocale)
-      .map(([locale, localized]) => [locale, compileDocuments(localized)]),
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([locale, docs]) => [locale, compileDocuments(docs)]),
   );
-  const manifestHash = helpHash({ appId: input.appId, baseLocale, documents, documentsByLocale });
-  const toManifest = (source: readonly (typeof documents)[number][]) =>
-    source.map<HelpDocumentManifest>(({ id, title, icon, description, order }) => ({
-      id,
-      title,
-      icon,
-      description,
-      order,
-      searchUrl,
-      url: `/api/help/v1/${appId}/documents/${encodeURIComponent(id)}`,
-    }));
-  const manifest = toManifest(documents);
-  const manifestByLocale = Object.fromEntries(
-    Object.entries(documentsByLocale).map(([locale, localized]) => [locale, toManifest(localized)]),
-  );
-  let registryEntry: HelpRegistryEntry = {
-    appId: input.appId,
-    appName: input.appName,
-    appIcon: input.appIcon,
-    manifestHash,
-    baseLocale,
-    documentsByLocale,
-    documents,
-  };
-  let bytes = serializedBytes(registryEntry);
-  if (bytes > HELP_REGISTRY_MAX_BYTES) {
-    registryEntry = {
-      ...registryEntry,
-      documents: omitSearchText(registryEntry.documents),
-      documentsByLocale: registryEntry.documentsByLocale
-        ? Object.fromEntries(
-            Object.entries(registryEntry.documentsByLocale).map(([locale, localized]) => [locale, omitSearchText(localized)]),
-          )
-        : undefined,
-    };
-    bytes = serializedBytes(registryEntry);
-  }
-  if (bytes > HELP_REGISTRY_MAX_BYTES) {
-    throw new Error(`Help corpus exceeds the ${HELP_REGISTRY_MAX_BYTES}-byte registry limit`);
-  }
+  const manifestHash = createHash("sha256")
+    .update(JSON.stringify({ revision: 1, appId: input.appId, baseLocale, documents, documentsByLocale }))
+    .digest("hex");
   return {
-    summary: { manifestHash, pageBase, baseLocale, documentsByLocale: manifestByLocale, documents: manifest },
-    registryEntry,
+    summary: { manifestHash, pageBase: `${input.basePath?.replace(/\/$/, "") ?? ""}/help`, baseLocale },
+    corpus: { appId: input.appId, manifestHash, baseLocale, documents, documentsByLocale },
   };
 };

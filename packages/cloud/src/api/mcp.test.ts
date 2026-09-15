@@ -1,3 +1,4 @@
+import { fixtureHelpReader, type FixtureCorpus } from "../../test/help-reader";
 import { describe, expect, mock, test } from "bun:test";
 import { ok } from "@k2b/stdlib";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -9,7 +10,7 @@ import { decodeJwt, generateKeyPair } from "jose";
 import { z } from "zod";
 import { compileCapabilities } from "../_internal/capabilities";
 import { defineCapabilities } from "../contracts/capabilities";
-import type { AppRegistryEntry, CapabilityRegistryEntry, HelpRegistryEntry } from "../contracts/registry";
+import type { AppRegistryEntry, CapabilityRegistryEntry } from "../contracts/registry";
 import { type AuthContext, auth, type RequestActor } from "../server";
 import type { withActiveIdentitySigner } from "../services/identity/key-ring";
 import { createCapabilityRoutes } from "./capabilities";
@@ -111,7 +112,7 @@ const app: CapabilityRegistryEntry = {
   manifest: compiled.manifest,
 };
 
-const help: HelpRegistryEntry = {
+const help: FixtureCorpus = {
   appId: "demo",
   appName: "Demo",
   appIcon: "ti ti-box",
@@ -159,16 +160,7 @@ const helpSummary = (): AppRegistryEntry => ({
   help: {
     manifestHash: help.manifestHash,
     pageBase: "/app/demo/help",
-    documents: [
-      {
-        id: "getting-started",
-        title: "Getting started",
-        description: "Create and inspect demo items.",
-        order: 10,
-        searchUrl: "/api/help/v1/demo/search",
-        url: "/api/help/v1/demo/documents/getting-started",
-      },
-    ],
+    baseLocale: "en",
   },
 });
 
@@ -278,7 +270,7 @@ describe("capability MCP projection", () => {
   test("works through the official Streamable HTTP client", async () => {
     const routes = createMcpRoutes({
       listApps: async () => [helpSummary()],
-      listHelp: async () => [help],
+      help: fixtureHelpReader(async () => [help]),
       getCapability: async () => app,
       authenticate: authenticated,
     });
@@ -642,7 +634,7 @@ describe("capability MCP projection", () => {
   test("lists, reads, and searches the same live Help resource without duplicating its markdown", async () => {
     const routes = createMcpRoutes({
       listApps: async () => [helpSummary()],
-      listHelp: async () => [help],
+      help: fixtureHelpReader(async () => [help]),
       getCapability: async () => app,
       authenticate: authenticated,
     });
@@ -711,7 +703,7 @@ describe("capability MCP projection", () => {
   });
 
   test("paginates large Help catalogs and excludes stale corpora at the route boundary", async () => {
-    const manyHelp: HelpRegistryEntry = {
+    const manyHelp: FixtureCorpus = {
       ...help,
       manifestHash: "many-help",
       documents: Array.from({ length: 101 }, (_, index) => ({
@@ -724,9 +716,9 @@ describe("capability MCP projection", () => {
     };
     const currentSummary: AppRegistryEntry = {
       ...helpSummary(),
-      help: { ...helpSummary().help!, manifestHash: manyHelp.manifestHash, documents: [] },
+      help: { ...helpSummary().help!, manifestHash: manyHelp.manifestHash, baseLocale: "en" },
     };
-    const routes = createMcpRoutes({ listApps: async () => [currentSummary], listHelp: async () => [manyHelp] });
+    const routes = createMcpRoutes({ listApps: async () => [currentSummary], help: fixtureHelpReader(async () => [manyHelp]) });
     const first = await rpc(routes, { jsonrpc: "2.0", id: 34, method: "resources/list", params: {} });
     const firstPage = (await first.json()) as { result: { resources: Array<{ uri: string }>; nextCursor?: string } };
     expect(firstPage.result.resources).toHaveLength(100);
@@ -743,7 +735,7 @@ describe("capability MCP projection", () => {
 
     const staleRoutes = createMcpRoutes({
       listApps: async () => [{ ...currentSummary, help: { ...currentSummary.help!, manifestHash: "stale" } }],
-      listHelp: async () => [manyHelp],
+      help: fixtureHelpReader(async () => []),
     });
     const stale = await rpc(staleRoutes, { jsonrpc: "2.0", id: 36, method: "resources/list", params: {} });
     expect(await stale.json()).toMatchObject({ result: { resources: [] } });

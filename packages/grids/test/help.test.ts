@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { compileHelp, HELP_REGISTRY_MAX_BYTES } from "../../cloud/src/_internal/help";
+import { compileHelp } from "../../cloud/src/_internal/help";
 import { AGGREGATE_KINDS } from "../src/aggregate-catalog";
 import { DOCUMENT_TEMPLATE_STARTERS } from "../src/document-template-starters";
 import { GRID_FORMULA_FUNCTIONS } from "../src/formula/function-catalog";
@@ -13,11 +13,12 @@ import {
 } from "../src/query-dsl/intelligence-grammar";
 import { parseGridsQueryDsl } from "../src/query-dsl/parser";
 
-test("registers the complete bilingual Help corpus within the platform budget", () => {
-  const compiled = compileHelp({ appId: "grids", appName: "Grids", appIcon: "ti ti-table", basePath: "/app/grids", definition: gridsHelp });
-  expect(Buffer.byteLength(JSON.stringify(compiled.registryEntry))).toBeLessThanOrEqual(HELP_REGISTRY_MAX_BYTES);
-  expect(compiled.registryEntry.documents).toHaveLength(gridsHelp.documents.length);
-  expect(compiled.registryEntry.documentsByLocale?.de).toHaveLength(gridsHelp.documentsByLocale?.de?.length ?? 0);
+test("registers complete bilingual Help with a small discovery reference", () => {
+  const compiled = compileHelp({ appId: "grids", basePath: "/app/grids", definition: gridsHelp });
+  expect(Object.keys(compiled.summary).sort()).toEqual(["baseLocale", "manifestHash", "pageBase"]);
+  expect(compiled.corpus.documents.every(doc => doc.searchText.length > 0)).toBe(true);
+  expect(compiled.corpus.documents).toHaveLength(gridsHelp.documents.length);
+  expect(compiled.corpus.documentsByLocale?.de).toHaveLength(gridsHelp.documentsByLocale?.de?.length ?? 0);
 });
 
 const cliSkillReference = await Bun.file(new URL("../../../skills/cloud-cli/references/grids.md", import.meta.url)).text();

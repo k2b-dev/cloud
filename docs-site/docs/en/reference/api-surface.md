@@ -224,6 +224,8 @@ their presence is not an application support promise.
 | Entry point | Status | Meaning |
 | --- | --- | --- |
 | `@k2b/cloud/api` | Platform-owned | Builds the Core platform router |
+| `@k2b/cloud/services/help` | Platform-owned | Core Help migration and shared publication/read service |
+| `@k2b/cloud/ssr/help` | Supported, server-only | Request-scoped Help metadata for specialized embedded readers |
 | Registry, heartbeat, and runtime helpers from `@k2b/cloud` | Platform-owned | Gateway, Core, and platform composition |
 | `@k2b/cloud/services/*` | Advanced | Deep service exports; prefer the barrel |
 | `@k2b/cloud/server/*` | Advanced | Deep server exports; prefer the barrel |

@@ -82,11 +82,11 @@ test("all chart variants have valid examples and documentation follows schemas",
   }
 });
 
-test("localized corpus stays bounded and internal article references resolve", () => {
+test("localized corpus compiles and internal article references resolve", () => {
   const locales = kitHelp.documentsByLocale!;
   expect(locales.en!.map((d) => d.id).sort()).toEqual(locales.de!.map((d) => d.id).sort());
-  const compiled = compileHelp({ appId: "kit", appName: "Kit", appIcon: "ti ti-code", basePath: "/app/kit", definition: kitHelp });
-  expect(new TextEncoder().encode(JSON.stringify(compiled.registryEntry)).length).toBeLessThan(512 * 1024);
+  const compiled = compileHelp({ appId: "kit", basePath: "/app/kit", definition: kitHelp });
+  expect(compiled.corpus.documents).toHaveLength(kitHelp.documents.length);
   for (const [locale, docs] of Object.entries(locales))
     for (const doc of docs) {
       for (const [, id, fragment] of doc.markdown.matchAll(/\/app\/kit\/help\/([a-z0-9-]+)(?:#([a-z0-9-]+))?/g)) {

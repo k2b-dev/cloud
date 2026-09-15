@@ -1,3 +1,4 @@
+import { migrateHelp, startHelpMaintenance } from "@k2b/cloud/services/help";
 /**
  * Core-specific lifecycle helpers.
  * Migrations, background jobs — nothing generic here.
@@ -32,6 +33,8 @@ import { migrate as migrateWorkflows } from "./migrate/core/workflows";
 import type { CoreNotificationSender } from "./notifications";
 
 let stopCloudAiRuntime: (() => void) | null = null;
+let stopHelpMaintenance: (() => Promise<void>) | undefined;
+
 let stopIdentityMaintenance: (() => void) | null = null;
 let stopMandateMaintenance: (() => void) | null = null;
 let stopCapabilityExecutionMaintenance: (() => void) | null = null;
@@ -40,6 +43,7 @@ let stopCapabilityExecutionMaintenance: (() => void) | null = null;
 export const runCoreSetup = async (): Promise<void> => {
   const steps = [
     { name: "auth", run: migrateAuth },
+    { name: "help", run: migrateHelp },
     { name: "rail-preferences", run: migrateRailPreferences },
     { name: "rail-shortcuts", run: migrateRailShortcuts },
     { name: "app-approval", run: migrateAppApproval },
@@ -67,6 +71,7 @@ export const startCoreServices = async (
 ): Promise<void> => {
   try {
     await initializeIdentityAuthority();
+    stopHelpMaintenance = startHelpMaintenance();
     stopIdentityMaintenance = startIdentityKeyMaintenance();
     stopMandateMaintenance = startMandateMaintenance();
     stopCapabilityExecutionMaintenance = startCapabilityExecutionMaintenance();
@@ -89,6 +94,8 @@ export const startCoreServices = async (
     await appApprovalRuntime.start(notificationSender);
     await lifecycleJobs.start({ notificationSender });
   } catch (error) {
+    await stopHelpMaintenance?.();
+    stopHelpMaintenance = undefined;
     stopIdentityMaintenance?.();
     stopIdentityMaintenance = null;
     stopMandateMaintenance?.();
@@ -113,6 +120,8 @@ export const startCoreServices = async (
 /** Stop core background services. */
 export const stopCoreServices = async (aiNotifications?: ReturnType<typeof createAiNotificationService>): Promise<void> => {
   try {
+    await stopHelpMaintenance?.();
+    stopHelpMaintenance = undefined;
     stopIdentityMaintenance?.();
     stopIdentityMaintenance = null;
     stopMandateMaintenance?.();

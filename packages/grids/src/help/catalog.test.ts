@@ -1,17 +1,15 @@
 import { expect, test } from "bun:test";
-import { compileHelp, HELP_REGISTRY_MAX_BYTES } from "../../../cloud/src/_internal/help";
+import { compileHelp } from "../../../cloud/src/_internal/help";
 import { gridsHelp } from ".";
 
 test("the full bilingual Grids help fits the startup registry contract", () => {
   const compiled = compileHelp({
     appId: "grids",
-    appName: "Grids",
-    appIcon: "ti ti-table",
     basePath: "/app/grids",
     definition: gridsHelp,
   });
-  expect(new TextEncoder().encode(JSON.stringify(compiled.registryEntry)).byteLength).toBeLessThanOrEqual(HELP_REGISTRY_MAX_BYTES);
-  expect([...new Set([compiled.registryEntry.baseLocale, ...Object.keys(compiled.registryEntry.documentsByLocale ?? {})])].sort()).toEqual([
+  expect(Object.keys(compiled.summary).sort()).toEqual(["baseLocale", "manifestHash", "pageBase"]);
+  expect([...new Set([compiled.corpus.baseLocale, ...Object.keys(compiled.corpus.documentsByLocale ?? {})])].sort()).toEqual([
     "de",
     "en",
   ]);

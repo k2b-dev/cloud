@@ -1,15 +1,15 @@
 import { type AuthContext, getLocale } from "@k2b/cloud/server";
-import { resolveHelpManifest } from "@k2b/cloud/shared";
+import { preloadLayoutHelp } from "@k2b/cloud/ssr/help";
 import { getLocalizedRuntimeContext } from "@k2b/cloud/ssr";
 import { ssr } from "../../config";
 import CoreLayoutHelp from "../CoreLayoutHelp.island";
 import { corePageMessages } from "../messages";
 
-export default ssr<AuthContext>((c) => {
+export default ssr<AuthContext>(async (c) => {
   const locale = getLocale(c);
   const { t } = corePageMessages.resolve([locale]);
   const app = getLocalizedRuntimeContext(c).apps.find((candidate) => candidate.id === c.req.param("appId"));
-  const help = app?.help ? resolveHelpManifest(app.help, locale) : undefined;
+  const help = app?.help ? await preloadLayoutHelp(c, app.id) : undefined;
   if (!app || !help) return ssr.error(c, 404, { layout: "minimal", description: t.helpUnavailable });
 
   const requested = c.req.param("topic");

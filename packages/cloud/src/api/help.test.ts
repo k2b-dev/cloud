@@ -1,159 +1,49 @@
 import { describe, expect, test } from "bun:test";
-import { compileHelp } from "../_internal/help";
-import type { AppRegistryEntry, HelpRegistryEntry } from "../contracts/registry";
-import { defineHelp } from "../server/help";
+import { fixtureHelpReader } from "../../test/help-reader";
 import { createHelpRoutes } from "./help";
 
-const source = `---
-id: getting-started
-title: Getting started
-description: Create the first item.
-order: 10
----
-
-# Getting started
-
-## Create an item {icon="plus"}
-
-Open the catalog and create an adapter.`;
-
-const compiled = compileHelp({
-  appId: "inventory",
-  appName: "Inventory",
-  appIcon: "ti ti-package",
-  basePath: "/app/inventory",
-  definition: defineHelp({ documents: [source] }),
-});
-
-const app: AppRegistryEntry = {
-  id: "inventory",
-  name: "Inventory",
-  icon: "ti ti-package",
-  description: "Inventory app",
-  baseUrl: "http://app-inventory:3000",
-  routes: ["/app/inventory"],
-  help: compiled.summary,
-};
-
 const authenticate = async (_c: unknown, next: () => Promise<void>) => next();
-
+const help = fixtureHelpReader(async () => [
+  {
+    appId: "inventory",
+    appName: "Inventory",
+    manifestHash: "current",
+    baseLocale: "en",
+    documents: [{ id: "start", title: "Start", order: 10, markdown: '## Create {icon="plus"}\nHello <script>danger()</script>' }],
+    documentsByLocale: { de: [{ id: "start", title: "Starten", order: 10, markdown: "## Erstellen\nHallo" }] },
+  },
+]);
 describe("Help API", () => {
-  test("mounts public Help before authenticated capability middleware", async () => {
+  test("mounts Help before capability middleware", async () => {
     const source = await Bun.file(new URL("./index.ts", import.meta.url)).text();
     expect(source.indexOf('.route("/", helpRoutes)')).toBeLessThan(source.indexOf('.route("/", capabilityRoutes)'));
   });
-
-  test("searches and renders one live matching corpus", async () => {
-    const legacyHelp: HelpRegistryEntry = {
-      ...compiled.registryEntry,
-      documents: compiled.registryEntry.documents.map((document) => ({
-        id: document.id,
-        title: document.title,
-        icon: document.icon,
-        description: document.description,
-        order: document.order,
-        markdown: document.markdown,
-      })),
-    };
-    const routes = createHelpRoutes({
-      getApp: async () => app,
-      getHelp: async () => legacyHelp,
-      authenticate,
-    });
-
-    const search = await routes.request("/help/v1/inventory/search?q=adapter");
-    expect(search.status).toBe(200);
-    expect(await search.json()).toEqual({ locale: "en", ids: ["getting-started"] });
-
-    const document = await routes.request("/help/v1/inventory/documents/getting-started");
-    expect(document.status).toBe(200);
-    expect(await document.json()).toMatchObject({
-      locale: "en",
-      id: "getting-started",
-      title: "Getting started",
-      markdown: expect.stringContaining("Create an item"),
-      html: expect.stringContaining("<h2"),
-    });
+  test("uses the shared reader for search and safe article rendering", async () => {
+    const routes = createHelpRoutes({ help, authenticate });
+    expect(await (await routes.request("/help/v1/inventory/search?q=create")).json()).toEqual({ locale: "en", ids: ["start"] });
+    const response = await routes.request("/help/v1/inventory/documents/start");
+    expect(response.status).toBe(200);
+    const article = await response.json();
+    expect(article.html).not.toContain("<script>");
+    expect(article.markdown).toContain("Hello");
   });
-
-  test("uses the registered search text and renders once per manifest", async () => {
-    let currentApp = app;
-    let currentHelp: HelpRegistryEntry = {
-      ...compiled.registryEntry,
-      documents: compiled.registryEntry.documents.map((document) => ({ ...document, searchText: "indexed alias" })),
-    };
-    let renderCount = 0;
-    const routes = createHelpRoutes({
-      getApp: async () => currentApp,
-      getHelp: async () => currentHelp,
-      authenticate,
-      renderMarkdown: (markdown) => {
-        renderCount += 1;
-        return `<p>${markdown.length}</p>`;
-      },
-    });
-
-    expect(await (await routes.request("/help/v1/inventory/search?q=indexed%20alias")).json()).toEqual({
-      locale: "en",
-      ids: ["getting-started"],
-    });
-    expect((await routes.request("/help/v1/inventory/documents/getting-started")).status).toBe(200);
-    expect((await routes.request("/help/v1/inventory/documents/getting-started")).status).toBe(200);
-    expect(renderCount).toBe(1);
-
-    currentHelp = { ...currentHelp, manifestHash: "next-manifest" };
-    currentApp = { ...currentApp, help: { ...currentApp.help!, manifestHash: "next-manifest" } };
-    expect((await routes.request("/help/v1/inventory/documents/getting-started")).status).toBe(200);
-    expect(renderCount).toBe(2);
+  test("resolves locales independently across requests", async () => {
+    const routes = createHelpRoutes({ help, authenticate });
+    const read = async (locale: string) =>
+      (await routes.request("/help/v1/inventory/documents/start", { headers: { "x-cloud-locale": locale } })).json();
+    expect(await read("de-CH")).toMatchObject({ locale: "de", title: "Starten" });
+    expect(await read("en")).toMatchObject({ locale: "en", title: "Start" });
+    expect((await routes.request("/help/v1/inventory/documents/missing")).status).toBe(404);
   });
-
-  test("uses the request locale for localized search, reads, and render caches", async () => {
-    const localized = compileHelp({
-      appId: "inventory",
-      appName: "Inventory",
-      appIcon: "ti ti-package",
-      definition: defineHelp({
-        baseLocale: "en",
-        documents: {
-          en: [source],
-          de: [source.replace("Getting started", "Erste Schritte").replace("Create the first item.", "Ersten Eintrag anlegen.")],
-        },
+  test("rejects entry before reading and propagates outages", async () => {
+    const routes = createHelpRoutes({ help, authenticate: async (c) => c.json({ error: "unauthorized" }, 401) });
+    expect((await routes.request("/help/v1/inventory/search?q=test")).status).toBe(401);
+    const failed = createHelpRoutes({
+      authenticate,
+      help: fixtureHelpReader(async () => {
+        throw new Error("database unavailable");
       }),
     });
-    const localizedApp = { ...app, help: localized.summary };
-    let renderCount = 0;
-    const routes = createHelpRoutes({
-      getApp: async () => localizedApp,
-      getHelp: async () => localized.registryEntry,
-      authenticate,
-      renderMarkdown: (markdown) => {
-        renderCount += 1;
-        return markdown;
-      },
-    });
-
-    const deHeaders = { "x-cloud-locale": "de-CH" };
-    const search = await routes.request("/help/v1/inventory/search?q=ersten", { headers: deHeaders });
-    expect(await search.json()).toEqual({ locale: "de", ids: ["getting-started"] });
-    const de = await routes.request("/help/v1/inventory/documents/getting-started", { headers: deHeaders });
-    expect(await de.json()).toMatchObject({ locale: "de", title: "Erste Schritte" });
-    const en = await routes.request("/help/v1/inventory/documents/getting-started", { headers: { "x-cloud-locale": "en" } });
-    expect(await en.json()).toMatchObject({ locale: "en", title: "Getting started" });
-    expect(renderCount).toBe(2);
-  });
-
-  test("rejects missing, mismatched, and unknown Help", async () => {
-    const missing = createHelpRoutes({ getApp: async () => null, getHelp: async () => null, authenticate });
-    expect((await missing.request("/help/v1/missing/search?q=test")).status).toBe(404);
-
-    const stale = createHelpRoutes({
-      getApp: async () => ({ ...app, help: { ...compiled.summary, manifestHash: "stale" } }),
-      getHelp: async () => compiled.registryEntry,
-      authenticate,
-    });
-    expect((await stale.request("/help/v1/inventory/search?q=test")).status).toBe(503);
-
-    const routes = createHelpRoutes({ getApp: async () => app, getHelp: async () => compiled.registryEntry, authenticate });
-    expect((await routes.request("/help/v1/inventory/documents/missing")).status).toBe(404);
+    expect((await failed.request("/help/v1/inventory/search?q=test")).status).toBe(500);
   });
 });

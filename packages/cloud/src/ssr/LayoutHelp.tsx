@@ -1,3 +1,4 @@
+import { searchHelpTopics } from "./layout-help-search";
 import { clipboard, hotkeys } from "@k2b/stdlib/solid";
 import { Button, IconButton, IconButtonLink, MarkdownView, NoticeCard, Placeholder, prompts, ScrollArea, useLocale } from "@k2b/ui";
 import type { HelpDocumentManifest, HelpDocumentPayload, HelpSearchPayload } from "@k2b/cloud/shared";
@@ -161,7 +162,7 @@ const HelpShell = (props: {
   const [loading, setLoading] = createSignal(props.session.view === "article");
   const [loadError, setLoadError] = createSignal<string | null>(null);
   const [loadAttempt, setLoadAttempt] = createSignal(0);
-  const [remoteMatches, setRemoteMatches] = createSignal<ReadonlySet<string>>(new Set());
+  const [remoteIds, setRemoteIds] = createSignal<readonly string[] | null>(null);
   const [searching, setSearching] = createSignal(false);
   const [copyingAll, setCopyingAll] = createSignal(false);
   const [copyAllError, setCopyAllError] = createSignal<string | null>(null);
@@ -234,10 +235,7 @@ const HelpShell = (props: {
   const results = createMemo(() => {
     const value = normalizedQuery();
     if (!value) return topics();
-    const matches = remoteMatches();
-    return topics().filter(
-      (topic) => [topic.title, topic.description].some((part) => part?.toLocaleLowerCase().includes(value)) || matches.has(topic.id),
-    );
+    return searchHelpTopics(topics(), value, remoteIds());
   });
 
   createEffect(() => {
@@ -250,7 +248,7 @@ const HelpShell = (props: {
       ),
     ];
     const version = ++searchVersion;
-    setRemoteMatches(new Set<string>());
+    setRemoteIds(null);
     setSearching(false);
     if (!value || urls.length === 0) return;
 
@@ -269,7 +267,7 @@ const HelpShell = (props: {
         }),
       )
         .then((groups) => {
-          if (version === searchVersion) setRemoteMatches(new Set<string>(groups.flat()));
+          if (version === searchVersion) setRemoteIds([...new Set(groups.flat())]);
         })
         .catch((error) => {
           if (error instanceof DOMException && error.name === "AbortError") return;
@@ -445,7 +443,7 @@ const HelpShell = (props: {
   };
   const showHub = () => {
     setQuery("");
-    setRemoteMatches(new Set<string>());
+    setRemoteIds(null);
     setView("hub");
   };
   const modalTitle = createMemo(() => {

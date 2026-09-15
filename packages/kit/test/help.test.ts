@@ -25,9 +25,8 @@ test("Assistant authoring instructions name only declared Kit operations", async
 });
 
  test("CRUD example fits one Help read and exact SDK headings keep the full method", async () => {
-  const { createHelpCatalog, readHelpCatalog } = await import("../../cloud/src/_internal/help-catalog");
-  const catalog = createHelpCatalog([{ appId: "kit", appName: "Kit", appIcon: "ti ti-code", manifestHash: "test", documents: kitHelp.documents }]);
-  const read = (documentId: string, query?: string) => readHelpCatalog(catalog, { appId: "kit", documentId, query });
+  const { selectHelpMarkdown } = await import("../../cloud/src/_internal/help-catalog");
+  const read = (documentId: string, query?: string) => selectHelpMarkdown(kitHelp.getMarkdown(documentId)!, query);
   expect(read("kit-crud-example")?.truncated).toBe(false);
   const method = read("kit-sdk-ui", "kit.ui.select")!.markdown;
   expect(method).toContain("No onChange");

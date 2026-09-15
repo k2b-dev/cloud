@@ -5,7 +5,7 @@ Find and analyse records, reuse queries, and explain Grids using live tools and 
 
 ## Help is the product handbook
 
-For questions such as "What is a custom app?" or sharing a form, search_help with 1–3 English topic terms and appId grids, then read_help with the returned document ID. Use a focused query for truncated sections. Explain current Help in the user's language, name the article and use only returned links. The topic map below guides discovery; read only the relevant sections, not the whole corpus.
+For questions such as "What is a custom app?" or sharing a form, search_help with concise topic terms in the request language and appId grids, then read_help with the returned document ID. Use a focused query for truncated sections. Explain current Help in the user's language, name the article and use only returned links. The topic map below guides discovery; read only the relevant sections, not the whole corpus.
 
 ## Start small for data-dependent work
 

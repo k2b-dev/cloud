@@ -1,3 +1,4 @@
+import { getLayoutHelp } from "./help";
 import type { DateContext } from "@k2b/stdlib";
 import { AppWorkspace, appWorkspaceLayoutStyle, LocaleProvider, NoticeCard } from "@k2b/ui";
 import type { JSX } from "solid-js/jsx-runtime";
@@ -7,7 +8,7 @@ import { defaultRailPreferences } from "../contracts/rail-preferences";
 import { hasRole, type User } from "../contracts/shared";
 import { getLocale } from "../server/locale";
 import { getDateConfig } from "../server/time";
-import { dates, resolveHelpManifest } from "../shared";
+import { dates } from "../shared";
 import { readThemeFromCookieHeader } from "../shared/theme";
 import type { AppLaunchpadApp } from "./AppLaunchpad.island";
 import AppWorkspaceController from "./AppWorkspaceController.island";
@@ -155,7 +156,7 @@ export default function Layout(props: LayoutProps) {
   const user = c.get("user");
   const pathname = new URL(c.req.raw.url).pathname;
   const currentApp = resolveCurrentApp(runtime.apps, pathname);
-  const registeredHelp = currentApp?.help ? resolveHelpManifest(currentApp.help, lang) : undefined;
+  const registeredHelp = getLayoutHelp(c);
   const workspaceLayout = resolveAppWorkspaceLayoutForSidebar(
     readAppWorkspaceLayoutCookie(cookie, currentApp?.id),
     workspaceSidebarCollapsible,

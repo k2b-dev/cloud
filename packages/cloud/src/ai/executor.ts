@@ -3,7 +3,7 @@ import { AiRunTimeout } from "./run-timeout";
 import { createTurnTimingRecorder, withDurableTurnTiming } from "./turn-timing";
 import type { CompactEvent, NessiLoop, OutboundEvent, Provider, Tool, ToolResolver } from "@k2b/nessi";
 import { compact, nessi } from "@k2b/nessi";
-import { loadCurrentHelp } from "../_internal/help-catalog";
+import { createHelpReader } from "../services/help";
 import { listCapabilities } from "../_internal/registry";
 import type { CapabilityActionReview } from "../contracts/capabilities";
 import type { AccessSubject, RequestActor } from "../server";
@@ -889,12 +889,8 @@ export class AiTurnExecutor {
             log.warn("AI Capability registry unavailable; continuing without app capabilities", {
               error: error instanceof Error ? error.message : String(error),
             }),
-          listHelpRegistry: loadCurrentHelp,
+          help: createHelpReader,
           locale: promptLocale,
-          onHelpRegistryError: (error) =>
-            log.warn("AI Help registry unavailable; continuing without Help documents", {
-              error: error instanceof Error ? error.message : String(error),
-            }),
           maxLoadedTools: resolved.profile.maxLoadedTools,
           ...(capabilityAuthority
             ? {

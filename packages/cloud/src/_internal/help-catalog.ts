@@ -1,49 +1,7 @@
-import type { AppRegistryEntry, HelpRegistryDocument, HelpRegistryEntry } from "../contracts/registry";
-import { helpLocaleChain } from "../shared/help";
+import type { HelpArticle } from "../services/help/types";
 import { markdownToPlainText } from "../shared/markdown";
-import { getApp, getHelp, listApps, listHelp } from "./registry";
-
 export const HELP_SEARCH_MAX_LIMIT = 25;
 export const HELP_READ_MAX_CHARS = 7_000;
-
-export type HelpCatalogDocument = {
-  appId: string;
-  appName: string;
-  appIcon?: string;
-  manifestHash: string;
-  locale: string;
-  documentId: string;
-  title: string;
-  description?: string;
-  order: number;
-  markdown: string;
-  searchText: string;
-};
-
-export type HelpCatalogItem = Omit<HelpCatalogDocument, "appIcon" | "manifestHash" | "order" | "markdown" | "searchText"> & {
-  kind: "help";
-};
-
-export type HelpCatalogRead = HelpCatalogItem & {
-  markdown: string;
-  truncated: boolean;
-};
-
-export type HelpCatalogDependencies = {
-  listApps?: () => Promise<AppRegistryEntry[]>;
-  listHelp?: () => Promise<HelpRegistryEntry[]>;
-};
-
-export type AppHelpDependencies = {
-  getApp?: (appId: string) => Promise<AppRegistryEntry | null>;
-  getHelp?: (appId: string) => Promise<HelpRegistryEntry | null>;
-};
-
-export type ResolvedAppHelp =
-  | { status: "available"; app: AppRegistryEntry; help: HelpRegistryEntry }
-  | { status: "missing" }
-  | { status: "stale" };
-
 const normalizeSearchText = (value: string): string =>
   value
     .normalize("NFKD")
@@ -51,125 +9,7 @@ const normalizeSearchText = (value: string): string =>
     .toLocaleLowerCase()
     .replace(/[^\p{L}\p{N}]+/gu, " ")
     .trim();
-
-const searchTerms = (value: string): string[] =>
-  Array.from(
-    new Set(
-      normalizeSearchText(value)
-        .split(" ")
-        .filter((term) => term.length > 0),
-    ),
-  );
-
-export const resolveAppHelp = async (appId: string, dependencies: AppHelpDependencies = {}): Promise<ResolvedAppHelp> => {
-  const [app, help] = await Promise.all([(dependencies.getApp ?? getApp)(appId), (dependencies.getHelp ?? getHelp)(appId)]);
-  if (!app?.help || !help) return { status: "missing" };
-  if (app.help.manifestHash !== help.manifestHash) return { status: "stale" };
-  return { status: "available", app, help };
-};
-
-export const loadCurrentHelp = async (dependencies: HelpCatalogDependencies = {}): Promise<HelpRegistryEntry[]> => {
-  const [apps, entries] = await Promise.all([(dependencies.listApps ?? listApps)(), (dependencies.listHelp ?? listHelp)()]);
-  const manifestHashes = new Map(apps.flatMap((app) => (app.help ? [[app.id, app.help.manifestHash] as const] : [])));
-  return entries.filter((entry) => manifestHashes.get(entry.appId) === entry.manifestHash);
-};
-
-const resolveRegistryDocuments = (
-  entry: HelpRegistryEntry,
-  requestedLocale: string,
-): { locale: string; documents: HelpRegistryDocument[] } => {
-  const baseLocale = entry.baseLocale ?? "en";
-  const variants = entry.documentsByLocale ?? {};
-  const chain = helpLocaleChain(requestedLocale, baseLocale);
-  const locale = chain.find((candidate) => candidate === baseLocale || variants[candidate] !== undefined) ?? baseLocale;
-  const byId = new Map(entry.documents.map((document) => [document.id, document]));
-  for (const candidate of [...chain.slice(0, chain.indexOf(baseLocale)), baseLocale].reverse()) {
-    if (candidate === baseLocale) continue;
-    for (const document of variants[candidate] ?? []) byId.set(document.id, { ...byId.get(document.id), ...document });
-  }
-  return { locale, documents: entry.documents.map((document) => byId.get(document.id) ?? document) };
-};
-
-export const createHelpCatalog = (entries: readonly HelpRegistryEntry[], requestedLocale = "en"): HelpCatalogDocument[] =>
-  entries
-    .flatMap((entry) => {
-      const resolved = resolveRegistryDocuments(entry, requestedLocale);
-      return resolved.documents.map((document) => ({
-        appId: entry.appId,
-        appName: entry.appName,
-        appIcon: entry.appIcon,
-        manifestHash: entry.manifestHash,
-        locale: resolved.locale,
-        documentId: document.id,
-        title: document.title,
-        description: document.description,
-        order: document.order,
-        markdown: document.markdown,
-        searchText: document.searchText ?? markdownToPlainText(document.markdown),
-      }));
-    })
-    .sort(
-      (left, right) => left.appId.localeCompare(right.appId) || left.order - right.order || left.documentId.localeCompare(right.documentId),
-    );
-
-export const loadHelpCatalog = async (dependencies: HelpCatalogDependencies = {}, requestedLocale = "en"): Promise<HelpCatalogDocument[]> =>
-  createHelpCatalog(await loadCurrentHelp(dependencies), requestedLocale);
-
-const catalogItem = (document: HelpCatalogDocument): HelpCatalogItem => ({
-  appId: document.appId,
-  appName: document.appName,
-  kind: "help",
-  locale: document.locale,
-  documentId: document.documentId,
-  title: document.title,
-  description: document.description,
-});
-
-const searchScore = (document: HelpCatalogDocument, query: string): number => {
-  const phrase = normalizeSearchText(query);
-  const terms = searchTerms(query);
-  if (!phrase || terms.length === 0) return 0;
-
-  const app = normalizeSearchText(`${document.appId} ${document.appName}`);
-  const identity = normalizeSearchText(`${document.documentId} ${document.title}`);
-  const description = normalizeSearchText(document.description ?? "");
-  const body = normalizeSearchText(document.searchText);
-  let score = 0;
-  if (identity === phrase) score += 80;
-  else if (identity.includes(phrase)) score += 40;
-  if (app.includes(phrase)) score += 30;
-  if (description.includes(phrase)) score += 20;
-  if (body.includes(phrase)) score += 10;
-  for (const term of terms) {
-    if (identity.includes(term)) score += 8;
-    if (app.includes(term)) score += 6;
-    if (description.includes(term)) score += 4;
-    if (body.includes(term)) score += 1;
-  }
-  return score;
-};
-
-export const searchHelpCatalog = (
-  catalog: readonly HelpCatalogDocument[],
-  input: { query: string; appId?: string; limit?: number },
-): HelpCatalogItem[] => {
-  const limit = Math.max(1, Math.min(Math.floor(input.limit ?? 10), HELP_SEARCH_MAX_LIMIT));
-  return catalog
-    .filter((document) => !input.appId || document.appId === input.appId)
-    .map((document) => ({ document, score: searchScore(document, input.query) }))
-    .filter(({ score }) => score > 0)
-    .sort(
-      (left, right) =>
-        right.score - left.score ||
-        left.document.appId.localeCompare(right.document.appId) ||
-        left.document.documentId.localeCompare(right.document.documentId),
-    )
-    .slice(0, limit)
-    .map(({ document }) => catalogItem(document));
-};
-
-export const findHelpDocument = (catalog: readonly HelpCatalogDocument[], appId: string, documentId: string): HelpCatalogDocument | null =>
-  catalog.find((document) => document.appId === appId && document.documentId === documentId) ?? null;
+const searchTerms = (value: string): string[] => [...new Set(normalizeSearchText(value).split(" ").filter(Boolean))];
 
 const splitSections = (markdown: string): string[] => {
   const starts = [
@@ -193,13 +33,20 @@ const boundedExcerpt = (markdown: string, terms: readonly string[]): string => {
   return `${start > 0 ? `${marker}\n\n` : ""}${body}${start + budget < markdown.length ? `\n\n${marker}` : ""}`;
 };
 
-const selectMarkdown = (markdown: string, query?: string): { markdown: string; truncated: boolean } => {
+export const selectHelpMarkdown = (markdown: string, query?: string): { markdown: string; truncated: boolean } => {
   // An exact heading identifies one complete reference section, even in short articles.
   const headingQuery = query?.trim().toLocaleLowerCase();
-  const exact = headingQuery && splitSections(markdown).find((section) => {
-    const heading = section.match(/^##\s+([^\n]+)/)?.[1]?.replace(/\s*\{icon="[^"]*"\}\s*$/, "").replaceAll("`", "").trim().toLocaleLowerCase();
-    return heading === headingQuery;
-  });
+  const exact =
+    headingQuery &&
+    splitSections(markdown).find((section) => {
+      const heading = section
+        .match(/^##\s+([^\n]+)/)?.[1]
+        ?.replace(/\s*\{icon="[^"]*"\}\s*$/, "")
+        .replaceAll("`", "")
+        .trim()
+        .toLocaleLowerCase();
+      return heading === headingQuery;
+    });
   if (exact) return { markdown: boundedExcerpt(exact, [headingQuery]), truncated: exact !== markdown };
   if (markdown.length <= HELP_READ_MAX_CHARS) return { markdown, truncated: false };
   const terms = searchTerms(query ?? "");
@@ -224,15 +71,16 @@ const selectMarkdown = (markdown: string, query?: string): { markdown: string; t
   return { markdown: excerpt || boundedExcerpt(markdown, terms), truncated: true };
 };
 
-export const readHelpCatalog = (
-  catalog: readonly HelpCatalogDocument[],
-  input: { appId: string; documentId: string; query?: string },
-): HelpCatalogRead | null => {
-  const document = findHelpDocument(catalog, input.appId, input.documentId);
-  if (!document) return null;
-  const selected = selectMarkdown(document.markdown, input.query);
-  return { ...catalogItem(document), ...selected };
-};
+export const readHelpArticle = (document: HelpArticle, query?: string) => ({
+  kind: "help" as const,
+  appId: document.appId,
+  appName: document.appName,
+  locale: document.locale,
+  documentId: document.documentId,
+  title: document.title,
+  description: document.description,
+  ...selectHelpMarkdown(document.markdown, query),
+});
 
 export const helpResourceUri = (appId: string, documentId: string): string =>
   `cloud://help/${encodeURIComponent(appId)}/${encodeURIComponent(documentId)}`;

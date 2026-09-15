@@ -1,5 +1,5 @@
 import { type AuthContext, getLocale } from "@k2b/cloud/server";
-import { getRuntimeContext } from "@k2b/cloud/ssr";
+import { preloadLayoutHelp } from "@k2b/cloud/ssr/help";
 import { currentActorUser, gateBaseAtAccess, gridsAccessContext } from "../../../api/permissions";
 import { toPublicFields, toPublicTables, toPublicViews } from "../../../api/public-dto";
 import { ssr } from "../../../config";
@@ -63,7 +63,7 @@ export default ssr<AuthContext>(async (c) => {
       const publicRecordCountsByTable = Object.fromEntries(
         Object.entries(recordCountsByTable).map(([tableId, count]) => [publicTableId(tableId), count]),
       );
-      const helpDocuments = getRuntimeContext(c).apps.find((registeredApp) => registeredApp.id === "grids")?.help?.documents ?? [];
+      const helpDocuments = (await preloadLayoutHelp(c, "grids"))?.documents ?? [];
 
       return () => (
         <QueryReferenceWindow

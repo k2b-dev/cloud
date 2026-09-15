@@ -18,6 +18,8 @@ type HeartbeatRegistry<T> = {
 type HeartbeatOptions<T> = {
   registry: HeartbeatRegistry<T>;
   key?: string;
+  /** Publish dependent data before advertising or renewing the app. */
+  beforeWrite?: () => Promise<void>;
   intervalMs?: number;
   retryMs?: number;
   staleAfterMs?: number;
@@ -53,6 +55,7 @@ export const createHeartbeat = <T>(appId: string, entry: T, options: HeartbeatOp
   };
 
   const register = async (): Promise<void> => {
+    await options.beforeWrite?.();
     await registry.upsert({ key, value: entry });
     noteSuccess();
   };
@@ -61,6 +64,7 @@ export const createHeartbeat = <T>(appId: string, entry: T, options: HeartbeatOp
     // Touch renews the existing entry (and emits a registry invalidation).
     // Avoid rebuilding the manifest here. A missing entry is repaired
     // immediately, preserving restart-free registry recovery.
+    await options.beforeWrite?.();
     const touched = await registry.touch({ key });
     if (!touched) await registry.upsert({ key, value: entry });
     noteSuccess();

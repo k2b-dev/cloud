@@ -5,7 +5,7 @@ section: Platform services
 order: 580
 description: Declare app-owned Markdown once for the shared Help UI, full-page Help, Assistant, and MCP.
 tags: [help, markdown, product, agents]
-updated: 2026-08-28
+updated: 2026-09-15
 ---
 
 # In-product Help
@@ -28,7 +28,7 @@ permission-sensitive data in an authorized Query or application route.
 | Markdown content and article order | Validation and bounded registration |
 | Stable article IDs and useful metadata | Layout Help and full-page Help |
 | Whether the content is safe to expose as product guidance | Search, reads, and agent discovery |
-| Specialized embedded presentation, when needed | Registry lifecycle and derived routes |
+| Specialized embedded presentation, when needed | Publication lifecycle and derived routes |
 
 ## Keep Help in one module
 
@@ -215,9 +215,15 @@ Cloud already knows the owning application's ID and base path when it starts.
 declaration. Startup compiles the complete collection, rejects duplicate IDs,
 and calculates its manifest hash before the application advertises Help.
 
-The contract limits one Markdown article to 128 KiB and one serialized Help
-registry entry to 512 KiB. An invalid or oversized collection fails startup
-instead of registering a partial or unreachable Help surface.
+One Markdown article is limited to 128 KiB. The former 512 KiB limit on the
+combined collection no longer applies, and search text is retained for every
+language. Invalid articles fail startup before the application advertises Help.
+
+Core creates the shared Help schema in Postgres during setup. Applications
+publish their complete collection in a transaction before advertising readiness.
+An unchanged content hash reuses the stored collection; a changed hash publishes
+a separate version. The app registry carries only the current hash and route
+metadata. Article metadata and Markdown live in Postgres.
 
 ## Register Help when the app starts
 
@@ -253,8 +259,16 @@ Do not mount a Help API router, render a `Layout.HelpDocuments` registrar, or
 add standalone Help page routes. Those are consumers of the registration, not
 additional declarations.
 
-Help is registered when the application starts and restored automatically if
-its registry entry is lost.
+The existing app heartbeat renews the published collection before renewing app
+registration. If the collection disappears, that heartbeat republishes it from
+the application declaration. Core must recreate a missing schema before this
+can succeed. Persistent registration failures use the existing app-lease
+failure policy and restart the process.
+
+Core removes at most one expired collection per minute. A collection becomes
+eligible after six minutes without renewal: two app-lease lifetimes. Stopping
+one replica does not delete Help used by another. Stored collections from
+unavailable applications are not exposed as current Help.
 
 ## Use the automatically derived surfaces
 
@@ -274,26 +288,57 @@ not repeat that path in their Help declaration. Core owns search and article
 transport and the shared reader; the derived application routes forward to
 that reader while the application remains the content owner.
 
-The browser receives the small manifest and loads article bodies on demand. An
+SSR loads the current application's localized article metadata from Postgres.
+The browser receives this manifest and loads article bodies on demand. An
 agent uses bounded search and read operations; Cloud does not create one
 permanently loaded tool for every article.
 
-Every automatic surface uses the same request locale and returns its resolved
-content locale. Search and article caches distinguish locales, so regional
-fallback cannot mix content between requests. AI and MCP clients receive final
-localized titles, descriptions, and Markdown; they never receive application
-message keys.
+Every automatic surface uses the same request locale. Article responses and
+AI/MCP matches report each article's actual content locale. Browser article
+caches distinguish locales, so regional fallback cannot mix content between
+requests. AI and MCP clients receive final localized titles, descriptions, and
+Markdown; they never receive application message keys.
 
 For a user-backed direct chat on a tool-capable model, AI Core resolves
-`search_help` and `read_help` dynamically from the current Help registry. This
+`search_help` and `read_help` dynamically through the shared Help service. This
 does not require capability discovery to be enabled. Applications register
 their Help declaration only; they do not define AI tools or provider settings.
-A temporary Help registry read failure is isolated from the chat and from app
-capabilities, and a later model turn reads the registry again.
+Tool discovery does not load article bodies. A temporary Help read failure is
+isolated from ordinary chat and app capabilities; a later tool call can retry.
 
-If the corpus is missing or its hash does not match the app manifest, Core
-returns an unavailable response instead of serving stale Help. The application
-heartbeat can then restore the current registration.
+Every reader selects the hash advertised by the current app registration.
+Missing articles or versions are not served from an older collection. Database
+failures remain errors rather than appearing as successful empty searches.
+The application heartbeat can restore a missing collection.
+
+## Search product guidance
+
+UI, Assistant, and MCP use the same PostgreSQL search and locale selection.
+Search accepts up to 200 characters and returns at most 25 results. Use concise
+terms in the request language. English and German articles use their respective
+PostgreSQL language configurations; other languages use `simple` tokenization.
+Exact article IDs and titles rank first. Native full-text search weights titles
+above descriptions and body text. Whitespace-separated terms must all match;
+quoted phrases, `OR`, and exclusions follow PostgreSQL web-search syntax.
+
+Cloud chooses one language variant per article before searching. A `de-CH`
+request can therefore return a German article and an untranslated English
+article, each reporting its actual content locale. It does not search a hidden
+English translation and then open a different German article.
+
+When the operator has enabled `pg_textsearch` and all three Help search indexes
+are valid, Cloud uses BM25 to rank matching articles after exact-title/ID
+priority. Without it, native full-text search remains available. Both paths
+use the same matching and language rules; ordering can differ. The Help UI
+preserves the returned document order and uses local metadata matches while
+a search is pending or unavailable. See
+[Deployment requirements](/en/docs/operations/deployment-requirements#optional-help-search-ranking)
+for installation and verification.
+
+`read_help` and `cloud__help__read` return at most 7,000 characters, selecting
+relevant sections when a query is supplied. An exact level-two heading selects
+that section. Full article reads in the UI and MCP resources still return the
+complete article.
 
 ## Keep the content safe to expose
 
@@ -324,7 +369,11 @@ Use the automatic Layout and full-page surfaces for ordinary application Help.
 Add a specialized consumer only when its surrounding workflow needs a distinct
 presentation.
 
-
+For server-rendered embedded readers, `preloadLayoutHelp(c, appId)` from
+`@k2b/cloud/ssr/help` loads the published, request-localized metadata. Reuse its
+`documents` and derived URLs; do not read article lists from the app registry.
+The explicit app ID also supports public Help pages. Automatic layout loading
+only runs for signed-in users.
 
 ## Verify Help
 
@@ -342,7 +391,7 @@ Before shipping, also verify:
 - search and article reads;
 - one agent Help search and read;
 - any specialized embedded reader;
-- registry recovery after the ephemeral entry disappears.
+- recovery after the published collection disappears.
 
 Cloud repository maintainers additionally run the repository-wide Help corpus
 checks for built-in applications. Third-party application CI does not depend on

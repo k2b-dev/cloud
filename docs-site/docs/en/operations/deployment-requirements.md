@@ -252,3 +252,31 @@ Application authors remove calls to `syncOps.registerDeadLetters()` and
 `syncOps.registerScheduler()`: Cloud discovers native handles automatically.
 Custom administration clients must include `queue`, `job`, or `topic` in dead-letter
 mutation paths, between `/dead-letters/` and the resource name.
+
+## Optional Help search ranking
+
+Help publication and native full-text search require the Core-managed Postgres
+schema. The supplied PostgreSQL 15 development service supports this baseline.
+Apps renew their Help collection through the existing app heartbeat; Core owns
+bounded cleanup of expired collections. See [In-product Help](/en/docs/platform/help).
+
+BM25 ranking is optional. This integration was verified with `pg_textsearch`
+1.4.0 on PostgreSQL 17. The extension supports PostgreSQL 17 and 18; check its
+[installation instructions](https://github.com/timescale/pg_textsearch) against
+your operator-managed database before enabling it.
+
+1. Install the extension package matching the database major version and architecture.
+2. Add `pg_textsearch` to `shared_preload_libraries` and restart Postgres during
+   an approved maintenance window.
+3. Enable it in the Cloud database with `CREATE EXTENSION pg_textsearch`.
+4. Run Core setup again to create the optional Help indexes.
+
+Cloud does not install this extension automatically. It checks extension and
+index availability when searching, so existing processes can use the indexes
+once they are ready. If the extension or an index is absent, native search
+remains active. Ordinary database failures are still reported as errors.
+
+Keep the existing database's storage and major version unchanged when testing
+BM25 in a separate environment. Verify both search modes with real application
+articles and the required language; a healthy Postgres container alone does
+not prove that the optional indexes are usable.

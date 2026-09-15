@@ -103,32 +103,11 @@ export const validateAppRegistryEntry = (value: unknown): string | null => {
       return invalid("capabilities", "a valid capability summary");
     }
   }
-  if (value.help !== undefined) {
-    if (
-      !isRecord(value.help) ||
-      !isString(value.help.manifestHash) ||
-      !isString(value.help.pageBase) ||
-      !Array.isArray(value.help.documents)
-    ) {
-      return invalid("help", "a valid Help summary");
-    }
-    if (
-      !value.help.pageBase.startsWith("/") ||
-      value.help.documents.some(
-        (document) =>
-          !isRecord(document) ||
-          !isString(document.id) ||
-          !isString(document.title) ||
-          typeof document.order !== "number" ||
-          !isString(document.searchUrl) ||
-          !document.searchUrl.startsWith("/") ||
-          !isString(document.url) ||
-          !document.url.startsWith("/"),
-      )
-    ) {
-      return invalid("help", "a valid Help summary");
-    }
+  if (value.help !== undefined && (!isRecord(value.help) || !isString(value.help.manifestHash) ||
+    !isString(value.help.baseLocale) || !isString(value.help.pageBase) || !value.help.pageBase.startsWith("/"))) {
+    return invalid("help", "a valid Help reference");
   }
+
   if (value.openapi !== undefined && !isString(value.openapi)) return invalid("openapi", "a string");
   return null;
 };

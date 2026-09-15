@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { defineHelp, type HelpDefinition } from "../server/help";
-import { compileHelp, HELP_DOCUMENT_MAX_BYTES, HELP_REGISTRY_MAX_BYTES } from "./help";
+import { compileHelp, HELP_DOCUMENT_MAX_BYTES } from "./help";
 
 const article = (id: string, title: string, order: number, body = "Read this article.") => `---
 id: ${id}
@@ -31,29 +31,19 @@ describe("Help registration compiler", () => {
     const definition = defineHelp({ documents: [article("getting-started", "Getting started", 10)] });
     const first = compileHelp({
       appId: "inventory",
-      appName: "Inventory",
-      appIcon: "ti ti-package",
       basePath: "/app/inventory/",
       definition,
     });
     const second = compileHelp({
       appId: "inventory",
-      appName: "Inventory",
-      appIcon: "ti ti-package",
       basePath: "/app/inventory",
       definition,
     });
 
     expect(first.summary).toEqual(second.summary);
-    expect(first.registryEntry.documents[0]?.searchText).toContain("Read this article");
+    expect(first.corpus.documents[0]?.searchText).toContain("Read this article");
     expect(first.summary).toMatchObject({
       pageBase: "/app/inventory/help",
-      documents: [
-        {
-          searchUrl: "/api/help/v1/inventory/search",
-          url: "/api/help/v1/inventory/documents/getting-started",
-        },
-      ],
     });
   });
 
@@ -66,20 +56,18 @@ describe("Help registration compiler", () => {
         "de-CH": [article("details", "Details CH", 20, "Schweizer Inhalt")],
       },
     });
-    const compiled = compileHelp({ appId: "inventory", appName: "Inventory", appIcon: "ti ti-package", definition });
+    const compiled = compileHelp({ appId: "inventory", definition });
 
-    expect(compiled.registryEntry.baseLocale).toBe("en");
-    expect(Object.keys(compiled.registryEntry.documentsByLocale ?? {})).toEqual(["de", "de-CH"]);
+    expect(compiled.corpus.baseLocale).toBe("en");
+    expect(Object.keys(compiled.corpus.documentsByLocale ?? {})).toEqual(["de", "de-CH"]);
     expect(definition.getMarkdown("start", "de-CH")).toContain("Deutscher Inhalt");
-    expect(compiled.registryEntry.documents).toHaveLength(2);
+    expect(compiled.corpus.documents).toHaveLength(2);
   });
 
-  test("fails closed when an article or corpus exceeds its bound", () => {
+  test("rejects oversized articles but accepts large complete corpora", () => {
     expect(() =>
       compileHelp({
         appId: "inventory",
-        appName: "Inventory",
-        appIcon: "ti ti-package",
         definition: defineHelp({ documents: [article("large", "Large", 10, "x".repeat(HELP_DOCUMENT_MAX_BYTES + 1))] }),
       }),
     ).toThrow(`${HELP_DOCUMENT_MAX_BYTES}-byte limit`);
@@ -89,7 +77,7 @@ describe("Help registration compiler", () => {
         id: `article-${index}`,
         title: `Article ${index}`,
         order: index,
-        markdown: "x".repeat(Math.floor(HELP_REGISTRY_MAX_BYTES / 5)),
+        markdown: "x".repeat(120 * 1024),
         html: "",
         searchText: "",
       })),
@@ -98,19 +86,15 @@ describe("Help registration compiler", () => {
     expect(() =>
       compileHelp({
         appId: "inventory",
-        appName: "Inventory",
-        appIcon: "ti ti-package",
         definition: oversized,
       }),
-    ).toThrow(`${HELP_REGISTRY_MAX_BYTES}-byte registry limit`);
+    ).not.toThrow();
   });
 
-  test("omits derivable search text when that keeps the corpus within its bound", () => {
+  test("keeps search text and a constant-sized reference for large multilingual corpora", () => {
     const body = "Searchable help content. ".repeat(2_800);
     const compiled = compileHelp({
       appId: "inventory",
-      appName: "Inventory",
-      appIcon: "ti ti-package",
       definition: defineHelp({
         baseLocale: "en",
         documents: {
@@ -120,7 +104,9 @@ describe("Help registration compiler", () => {
       }),
     });
 
-    expect(compiled.registryEntry.documents[0]?.searchText).toBeUndefined();
-    expect(compiled.registryEntry.documentsByLocale?.de?.[0]?.searchText).toBeUndefined();
+    expect(Object.keys(compiled.summary).sort()).toEqual(["baseLocale", "manifestHash", "pageBase"]);
+    expect(Buffer.byteLength(JSON.stringify(compiled.corpus))).toBeGreaterThan(512 * 1024);
+    expect(compiled.corpus.documents[0]?.searchText).toBeTruthy();
+    expect(compiled.corpus.documentsByLocale?.de?.[0]?.searchText).toBeTruthy();
   });
 });

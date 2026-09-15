@@ -1,3 +1,4 @@
+import { createHelpReader, type HelpReader, type HelpReaderFactory, type HelpMetadata, type HelpArticle } from "../services/help";
 import { createHash } from "node:crypto";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
@@ -16,16 +17,12 @@ import { Hono, type MiddlewareHandler } from "hono";
 import { z } from "zod";
 import { readBoundedJson } from "../_internal/bounded-json";
 import {
-  findHelpDocument,
   HELP_SEARCH_MAX_LIMIT,
-  type HelpCatalogDocument,
   helpResourceUri,
-  loadHelpCatalog,
   parseHelpResourceUri,
-  readHelpCatalog,
-  searchHelpCatalog,
+  readHelpArticle,
 } from "../_internal/help-catalog";
-import { getCapability, listApps, listHelp } from "../_internal/registry";
+import { getCapability, listApps } from "../_internal/registry";
 import { capabilityValueMeta, recordCapabilityExecution } from "../capabilities/executions";
 import {
   CAPABILITY_FRAMEWORK_ERROR_CODES,
@@ -40,7 +37,7 @@ import {
   cloudResourceRefAppId,
   resolveCapabilityResourceReader,
 } from "../contracts/capabilities";
-import type { AppRegistryEntry, CapabilityRegistryEntry, HelpRegistryEntry } from "../contracts/registry";
+import type { AppRegistryEntry, CapabilityRegistryEntry } from "../contracts/registry";
 import { type AuthContext, auth, type RequestAuthority, rateLimit, rejectReservedWorkloadCredential, resolveLocale } from "../server";
 import { normalizeInvocationRequestId } from "../services/identity/invocation-token";
 import { logger } from "../services/logging";
@@ -63,7 +60,7 @@ const log = logger("mcp");
 
 type McpRouteDependencies = CapabilityDispatchDependencies & {
   listApps?: () => Promise<AppRegistryEntry[]>;
-  listHelp?: () => Promise<HelpRegistryEntry[]>;
+  help?: HelpReaderFactory;
   getOperatorLocale?: () => Promise<string | undefined>;
   getAppUrl?: () => Promise<string>;
   authenticate?: MiddlewareHandler<AuthContext>;
@@ -377,13 +374,12 @@ const semanticResourceLinks = (body: Record<string, unknown>, origin: string): C
   }));
 };
 
-const helpResource = (document: HelpCatalogDocument): Resource => ({
+const helpResource = (document: HelpMetadata): Resource => ({
   uri: helpResourceUri(document.appId, document.documentId),
   name: `${document.appName}: ${document.title}`,
   title: document.title,
   description: document.description ?? `Product Help from ${document.appName}.`,
   mimeType: "text/markdown",
-  size: new TextEncoder().encode(document.markdown).byteLength,
   annotations: { audience: ["assistant"], priority: 0.8 },
   _meta: {
     "cloud/appId": document.appId,
@@ -393,10 +389,10 @@ const helpResource = (document: HelpCatalogDocument): Resource => ({
   },
 });
 
-const helpResourcePage = (catalog: readonly HelpCatalogDocument[], cursor?: string): { resources: Resource[]; nextCursor?: string } => {
+const helpResourcePage = (catalog: readonly HelpMetadata[], cursor?: string): { resources: Resource[]; nextCursor?: string } => {
   const resources = catalog
     .map(helpResource)
-    .sort((left, right) => left.uri.localeCompare(right.uri))
+    .sort((left, right) => (left.uri < right.uri ? -1 : left.uri > right.uri ? 1 : 0))
     .filter((resource) => !cursor || resource.uri > cursor)
     .slice(0, MCP_RESOURCE_PAGE_SIZE);
   const hasMore =
@@ -414,7 +410,7 @@ const hasOnlyKeys = (value: Record<string, unknown>, keys: readonly string[]): b
 const validationToolError = (message: string): CallToolResult =>
   boundedToolResult({ code: CAPABILITY_FRAMEWORK_ERROR_CODES.validationFailed, message }, true);
 
-const callHelpTool = async (name: string, argsValue: unknown, catalog: readonly HelpCatalogDocument[]): Promise<CallToolResult | null> => {
+const callHelpTool = async (name: string, argsValue: unknown, reader: HelpReader): Promise<CallToolResult | null> => {
   const args = helpArguments(argsValue);
   if (name === HELP_SEARCH_TOOL) {
     const query = typeof args.query === "string" ? args.query.trim() : "";
@@ -430,7 +426,7 @@ const callHelpTool = async (name: string, argsValue: unknown, catalog: readonly 
     ) {
       return validationToolError("cloud__help__search requires query (1-200 characters) and an optional limit from 1 to 25");
     }
-    const documents = searchHelpCatalog(catalog, { query, appId, limit });
+    const documents = await reader.search({ query, appId, limit });
     const result = boundedToolResult({ documents }, false);
     result.content.push(
       ...documents.map((document) => ({
@@ -459,7 +455,8 @@ const callHelpTool = async (name: string, argsValue: unknown, catalog: readonly 
         "cloud__help__read requires exact appId and documentId values and accepts an optional query up to 200 characters",
       );
     }
-    const document = readHelpCatalog(catalog, { appId, documentId, query });
+    const article = await reader.read({ appId, documentId });
+    const document = article ? readHelpArticle(article, query) : null;
     if (!document) return boundedToolResult({ code: "HELP_NOT_FOUND", message: "Help document is not in the current live catalog" }, true);
     const result = boundedToolResult({ document }, false);
     result.content.push({
@@ -488,8 +485,7 @@ const createMcpServer = (
     (helpLocale ??= (dependencies.getOperatorLocale ?? (() => get<string>("app.locale")))().then((operatorDefault) =>
       resolveLocale(request.headers, operatorDefault),
     ));
-  const helpCatalog = async () =>
-    loadHelpCatalog({ listApps: registry, listHelp: dependencies.listHelp ?? listHelp }, await resolveHelpLocale());
+  const helpReader = async () => (dependencies.help ?? ((locale) => createHelpReader(locale, { listApps: registry })))(await resolveHelpLocale());
   const hasScope = (scope: "read" | "write"): boolean =>
     oauthScopes === null || oauthScopes.includes(scope) || oauthScopes.includes("admin");
   const requireScope = (scope: "read" | "write"): void => {
@@ -509,10 +505,10 @@ const createMcpServer = (
       throw new McpError(ErrorCode.InvalidParams, "Invalid Cloud Help resource cursor");
     }
     try {
-      return helpResourcePage(await helpCatalog(), message.params?.cursor);
+      return helpResourcePage(await (await helpReader()).list(message.params?.cursor), message.params?.cursor);
     } catch (error) {
       log.error("Failed to list MCP Help resources", { error: error instanceof Error ? error.message : String(error) });
-      throw new McpError(ErrorCode.InternalError, "Help registry is currently unavailable", {
+      throw new McpError(ErrorCode.InternalError, "Help is currently unavailable", {
         code: CAPABILITY_FRAMEWORK_ERROR_CODES.appUnavailable,
       });
     }
@@ -522,16 +518,15 @@ const createMcpServer = (
     requireScope("read");
     const identity = parseHelpResourceUri(message.params.uri);
     if (!identity) throw new McpError(ErrorCode.InvalidParams, "Unknown Cloud Help resource URI");
-    let catalog: HelpCatalogDocument[];
+    let document: HelpArticle | null;
     try {
-      catalog = await helpCatalog();
+      document = await (await helpReader()).read(identity);
     } catch (error) {
-      log.error("Failed to read MCP Help catalog", { error: error instanceof Error ? error.message : String(error) });
-      throw new McpError(ErrorCode.InternalError, "Help registry is currently unavailable", {
+      log.error("Failed to read Help", { error: error instanceof Error ? error.message : String(error) });
+      throw new McpError(ErrorCode.InternalError, "Help is currently unavailable", {
         code: CAPABILITY_FRAMEWORK_ERROR_CODES.appUnavailable,
       });
     }
-    const document = findHelpDocument(catalog, identity.appId, identity.documentId);
     if (!document) throw new McpError(ErrorCode.InvalidParams, "Help resource is not in the current live catalog");
     return {
       contents: [
@@ -569,11 +564,11 @@ const createMcpServer = (
         return boundedToolResult({ code: "FORBIDDEN", message: "OAuth scope read is required" }, true);
       }
       try {
-        return (await callHelpTool(message.params.name, message.params.arguments, await helpCatalog()))!;
+        return (await callHelpTool(message.params.name, message.params.arguments, await helpReader()))!;
       } catch (error) {
         log.error("Failed to call MCP Help tool", { error: error instanceof Error ? error.message : String(error) });
         return boundedToolResult(
-          { code: CAPABILITY_FRAMEWORK_ERROR_CODES.appUnavailable, message: "Help registry is currently unavailable" },
+          { code: CAPABILITY_FRAMEWORK_ERROR_CODES.appUnavailable, message: "Help is currently unavailable" },
           true,
         );
       }

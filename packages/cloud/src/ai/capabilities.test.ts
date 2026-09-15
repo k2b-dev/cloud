@@ -1,3 +1,4 @@
+import { fixtureHelpReader, type FixtureCorpus } from "../../test/help-reader";
 import { describe, expect, test } from "bun:test";
 import { nessi, type ProviderRequest, type StoreEntry } from "@k2b/nessi";
 import type { Provider } from "@k2b/nessi/ai";
@@ -5,7 +6,7 @@ import { ok } from "@k2b/stdlib";
 import { z } from "zod";
 import { compileCapabilities } from "../_internal/capabilities";
 import { type CapabilityActionReview, CapabilityActionReviewSchema, defineCapabilities } from "../contracts/capabilities";
-import type { CapabilityRegistryEntry, HelpRegistryEntry } from "../contracts/registry";
+import type { CapabilityRegistryEntry } from "../contracts/registry";
 import {
   aiCapabilityInputSchema,
   aiCapabilityToolName,
@@ -211,7 +212,7 @@ describe("AI capability catalog", () => {
   });
 
   test("searches and reads registered Help without per-document tools", async () => {
-    const help: HelpRegistryEntry = {
+    const help: FixtureCorpus = {
       appId: "grids",
       appName: "Grids",
       appIcon: "ti ti-table",
@@ -227,7 +228,7 @@ describe("AI capability catalog", () => {
         },
       ],
     };
-    const prepared = prepareAiTools({ tools: createAiHelpTools([help]), actor, conversationId: "conversation-1" });
+    const prepared = prepareAiTools({ tools: createAiHelpTools(fixtureHelpReader(async () => [help])), actor, conversationId: "conversation-1" });
     expect(prepared.tools.map((tool) => tool.def.name)).toEqual(["search_help", "read_help"]);
     const search = prepared.tools[0];
     const read = prepared.tools[1];
@@ -256,7 +257,7 @@ describe("AI capability catalog", () => {
   });
 
   test("resolves AI Help for the turn locale without exposing message keys", async () => {
-    const help: HelpRegistryEntry = {
+    const help: FixtureCorpus = {
       appId: "grids",
       appName: "Grids",
       appIcon: "ti ti-table",
@@ -267,7 +268,7 @@ describe("AI capability catalog", () => {
         de: [{ id: "start", title: "Starten", order: 10, markdown: "# Starten\n\nDeutsche Hilfe." }],
       },
     };
-    const [search] = prepareAiTools({ tools: createAiHelpTools([help], "de-CH"), actor, conversationId: "localized" }).tools;
+    const [search] = prepareAiTools({ tools: createAiHelpTools(fixtureHelpReader(async () => [help]), "de-CH"), actor, conversationId: "localized" }).tools;
     if (!search || search.kind !== "server") throw new Error("Help search missing");
     const result = await search.execute(
       { query: "Deutsche Hilfe" },
@@ -276,8 +277,8 @@ describe("AI capability catalog", () => {
     expect(result).toMatchObject({ documents: [{ locale: "de", title: "Starten" }] });
   });
 
-  test("ranks non-contiguous Help terms and bounds long reads to relevant sections", async () => {
-    const help: HelpRegistryEntry = {
+  test("forwards ranked Help results and bounds long reads to relevant sections", async () => {
+    const help: FixtureCorpus = {
       appId: "contacts",
       appName: "Contacts",
       appIcon: "ti ti-address-book",
@@ -299,7 +300,7 @@ describe("AI capability catalog", () => {
         },
       ],
     };
-    const prepared = prepareAiTools({ tools: createAiHelpTools([help]), actor, conversationId: "conversation-1" });
+    const prepared = prepareAiTools({ tools: createAiHelpTools(fixtureHelpReader(async () => [{ ...help, documents: [help.documents[1]!, help.documents[0]!] }])), actor, conversationId: "conversation-1" });
     const search = prepared.tools[0];
     const read = prepared.tools[1];
     if (!search || search.kind !== "server" || !read || read.kind !== "server") throw new Error("Help tools missing");
@@ -332,7 +333,7 @@ describe("AI capability catalog", () => {
   test("keeps Help isolated and retries the live registry after a failure", async () => {
     const failures: unknown[] = [];
     let attempts = 0;
-    const help: HelpRegistryEntry = {
+    const help: FixtureCorpus = {
       appId: "contacts",
       appName: "Contacts",
       appIcon: "ti ti-address-book",
@@ -354,16 +355,18 @@ describe("AI capability catalog", () => {
         getLoadedTools: async () => [],
         loadTools: async ({ names }) => ({ loaded: names, alreadyLoaded: [], evicted: [] }),
       },
-      listHelpRegistry: async () => {
+      help: fixtureHelpReader(async () => {
         attempts += 1;
         if (attempts === 1) throw new Error("registry unavailable");
         return [help];
-      },
-      onHelpRegistryError: (error) => failures.push(error),
+      }),
     });
 
     const unavailable = await resolver();
     expect(unavailable.map((tool) => tool.def.name)).toEqual(["search_tools", "load_tools", "list_apps", "search_help", "read_help"]);
+    const failingSearch = unavailable.find(tool => tool.def.name === "search_help");
+    if (!failingSearch || failingSearch.kind !== "server") throw new Error("Missing search");
+    await expect(failingSearch.execute({ query: "test" }, { signal: AbortSignal.timeout(1000), requestApproval: async () => true, requestClientTool: async <T>() => undefined as T })).rejects.toThrow("registry unavailable");
     const recovered = await resolver();
     const search = recovered.find((tool) => tool.def.name === "search_help");
     if (!search || search.kind !== "server") throw new Error("search_help missing");
@@ -378,7 +381,6 @@ describe("AI capability catalog", () => {
 
     expect(result).toMatchObject({ documents: [{ appId: "contacts", documentId: "contacts-start" }] });
     expect(attempts).toBe(2);
-    expect(failures).toHaveLength(1);
   });
 
   test("uses readable provider-safe names without dot or underscore collisions", () => {
@@ -477,7 +479,7 @@ describe("AI capability catalog", () => {
           return { loaded: names, alreadyLoaded: [], evicted: [] };
         },
       },
-      listHelpRegistry: async () => [],
+      help: fixtureHelpReader(async () => []),
     });
 
     const first = await resolver();
@@ -863,10 +865,9 @@ describe("AI capability catalog", () => {
         loadTools: async ({ names }) => ({ loaded: names, alreadyLoaded: [], evicted: [] }),
       },
       listRegistry: async () => [capabilityApp("contacts", "Contacts")],
-      listHelpRegistry: async () => {
+      help: fixtureHelpReader(async () => {
         throw new Error("registry unavailable");
-      },
-      onHelpRegistryError: (error) => failures.push(error),
+      }),
       execute: async () => ({ data: [] }),
     });
 
@@ -877,7 +878,7 @@ describe("AI capability catalog", () => {
       "search_help",
       "read_help",
     ]);
-    expect(failures).toHaveLength(1);
+    expect(failures).toHaveLength(0);
   });
 
   test("keeps static tools available when the Capability registry fails", async () => {

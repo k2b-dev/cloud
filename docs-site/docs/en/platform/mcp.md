@@ -80,7 +80,7 @@ sections; the protocol resource still contains the complete registered
 article.
 
 An application registers Help once through `app.start({ help })`. Cloud uses
-the same hash-validated live corpus for the shared Help UI, HTTP Help,
+the same hash-selected PostgreSQL collection for the shared Help UI, HTTP Help,
 Assistant, and MCP. See [In-product Help](/en/docs/platform/help).
 
 ## Authenticate

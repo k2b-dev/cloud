@@ -375,3 +375,36 @@ The alpha AI service and runtime renames are hard cuts; there are no compatibili
 5. remove local adapters that only supported the old shape.
 
 The current package version does not assign removal dates to these APIs.
+
+## Help moves to Postgres
+
+Update Core and every Help-producing application to the same new Cloud release.
+This is a coordinated breaking change; old processes still write the retired
+NATS Help registry and cannot populate the new store.
+
+1. Prepare the new application images and the existing Postgres connection.
+2. Run Core setup to create the Help schema and start the updated Core readers.
+3. Restart every application with the updated Cloud package. Each application
+   publishes its packaged Markdown before advertising readiness.
+4. Verify an article, a search, and an AI or MCP Help read in the intended language.
+
+No export or import of the old NATS Help registry is required. Keep app-owned
+Markdown and `app.start({ help })`. The dedicated Help ephemeral and its
+`helpRegistry`, `getHelp`, `listHelp`, and `HELP_REGISTRY_CONFIG` exports are
+removed, along with the old registry corpus types and `resolveHelpManifest`.
+Apps should use the automatic Help surfaces instead of those platform internals.
+Runtime app metadata now contains a Help reference rather than article lists.
+The article endpoint returns `HELP_NOT_FOUND` (404) for an absent article or
+published version; the old `HELP_STALE` response is retired. Search returns no
+matches for an absent app or version. Database failures still return errors.
+
+Core owns the SQL schema. If it is missing, rerun Core setup before restarting
+applications. Existing app heartbeats restore missing collections once the
+schema is available. See [In-product Help](/en/docs/platform/help) for search,
+limits, and lifecycle behavior.
+
+Do not upgrade a Postgres volume merely to enable optional BM25. Native search
+works without that extension. Rolling back requires a consistent old image set
+and application restarts to repopulate its NATS registry; retained SQL rows do
+not make old readers compatible. Retired NATS resource removal is a separate
+operator action after verifying the cutover.

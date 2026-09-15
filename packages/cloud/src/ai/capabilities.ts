@@ -1,14 +1,13 @@
+import { createHelpReader, type HelpReaderFactory } from "../services/help";
 import { createCodeSourceTool } from "./code-source-tools";
 import { CODE_SOURCE_TOOLS } from "./code-source-contracts";
 import { createHash } from "node:crypto";
 import type { Tool, ToolContext, ToolResolver } from "@k2b/nessi";
 import { z } from "zod";
 import {
-  createHelpCatalog,
   HELP_READ_MAX_CHARS,
   HELP_SEARCH_MAX_LIMIT,
-  readHelpCatalog,
-  searchHelpCatalog,
+  readHelpArticle,
 } from "../_internal/help-catalog";
 import {
   type CapabilityActionManifest,
@@ -18,7 +17,7 @@ import {
   cloudResourceRefAppId,
   resolveCapabilityResourceReader,
 } from "../contracts/capabilities";
-import type { CapabilityRegistryEntry, HelpRegistryEntry } from "../contracts/registry";
+import type { CapabilityRegistryEntry } from "../contracts/registry";
 import type { RequestActor } from "../server";
 import { recordRejectedAiCapability } from "./capability-execution";
 import { CLOUD_AI_DEFERRED_BUILTIN_TOOL_NAMES } from "./default-tools";
@@ -307,14 +306,14 @@ const AiHelpDocumentSchema = AiHelpCatalogItemSchema.extend({
   truncated: z.boolean(),
 }).strict();
 
-/** Search and read the live Help snapshot without loading one tool per article. */
-export const createAiHelpTools = (registry: readonly HelpRegistryEntry[], locale = "en"): AiRuntimeTool[] => {
-  const documents = createHelpCatalog(registry, locale);
+/** Search and read published Help without loading one tool per article. */
+export const createAiHelpTools = (help: HelpReaderFactory = createHelpReader, locale = "en"): AiRuntimeTool[] => {
+  const reader = help(locale);
 
   const search = defineAiTool({
     name: "search_help",
     description:
-      "Search installed Cloud app Help when product behavior, settings, workflows, permissions, or app errors are unclear. Use 1-3 concise English product terms and scope appId when known. Returns compact document ids for read_help; skip this tool for straightforward live-data requests.",
+      "Search installed Cloud app Help when product behavior, settings, workflows, permissions, or app errors are unclear. Use concise product terms in the request language and scope appId when known. Returns compact document ids for read_help; skip this tool for straightforward live-data requests.",
     inputSchema: z
       .object({
         query: z.string().trim().min(1).max(200).describe("Product task or concept to find."),
@@ -325,7 +324,7 @@ export const createAiHelpTools = (registry: readonly HelpRegistryEntry[], locale
     outputSchema: z.object({ documents: z.array(AiHelpCatalogItemSchema).max(HELP_SEARCH_MAX_LIMIT) }).strict(),
     approval: "never",
   }).server(async ({ query, appId, limit }) => ({
-    documents: searchHelpCatalog(documents, { query, appId, limit: boundedLimit(limit, DEFAULT_SEARCH_LIMIT, HELP_SEARCH_MAX_LIMIT) }),
+    documents: await reader.search({ query, appId, limit: boundedLimit(limit, DEFAULT_SEARCH_LIMIT, HELP_SEARCH_MAX_LIMIT) }),
   }));
 
   const read = defineAiTool({
@@ -341,23 +340,12 @@ export const createAiHelpTools = (registry: readonly HelpRegistryEntry[], locale
       .strict(),
     outputSchema: z.object({ document: AiHelpDocumentSchema.nullable() }).strict(),
     approval: "never",
-  }).server(async ({ appId, documentId, query }) => ({
-    document: readHelpCatalog(documents, { appId, documentId, query }),
-  }));
+  }).server(async ({ appId, documentId, query }) => {
+    const document = await reader.read({ appId, documentId });
+    return { document: document ? readHelpArticle(document, query) : null };
+  });
 
   return [search, read];
-};
-
-const resolveHelpRegistry = async (
-  listRegistry: () => Promise<HelpRegistryEntry[]>,
-  onError?: (error: unknown) => void,
-): Promise<HelpRegistryEntry[]> => {
-  try {
-    return await listRegistry();
-  } catch (error) {
-    onError?.(error);
-    return [];
-  }
 };
 
 const resolveCapabilityRegistry = async (
@@ -635,8 +623,7 @@ export const createAiToolResolver =
     store: Pick<AiConversationService, "getLoadedTools" | "loadTools">;
     listRegistry?: () => Promise<CapabilityRegistryEntry[]>;
     onCapabilityRegistryError?: (error: unknown) => void;
-    listHelpRegistry?: () => Promise<HelpRegistryEntry[]>;
-    onHelpRegistryError?: (error: unknown) => void;
+    help?: HelpReaderFactory;
     locale?: string;
     maxLoadedTools?: number;
     execute?: (entry: AiCapabilityCatalogEntry, args: unknown, context: ToolContext) => Promise<unknown>;
@@ -649,10 +636,9 @@ export const createAiToolResolver =
     }) => void;
   }): ToolResolver =>
   async (): Promise<Tool[]> => {
-    const [registry, persistedLoadedNames, helpRegistry] = await Promise.all([
+    const [registry, persistedLoadedNames] = await Promise.all([
       input.listRegistry ? resolveCapabilityRegistry(input.listRegistry, input.onCapabilityRegistryError) : [],
       input.store.getLoadedTools({ conversationId: input.conversationId }),
-      input.listHelpRegistry ? resolveHelpRegistry(input.listHelpRegistry, input.onHelpRegistryError) : [],
     ]);
     const configuredLimit = Math.floor(input.maxLoadedTools ?? 0);
     const loadedNames = configuredLimit > 0 ? persistedLoadedNames.slice(-configuredLimit) : persistedLoadedNames;
@@ -665,7 +651,7 @@ export const createAiToolResolver =
     }
     const allowed = input.allowedTools == null ? null : new Set(input.allowedTools);
     const capabilityCatalog = buildAiCapabilityCatalog(registry).filter((entry) => !allowed || allowed.has(entry.name));
-    const helpTools = input.listHelpRegistry ? createAiHelpTools(helpRegistry, input.locale) : [];
+    const helpTools = input.help ? createAiHelpTools(input.help, input.locale) : [];
     const resourceTool =
       input.execute && (capabilityCatalog.length > 0 || input.staticTools.some(tool => tool.def.name === "code_read"))
         ? createAiResourceReaderTool({ apps: registry, catalog: capabilityCatalog, execute: input.execute })
