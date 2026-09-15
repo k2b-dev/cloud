@@ -2,6 +2,7 @@ import { Button, prompts, SegmentedControl, toast } from "@k2b/ui";
 import { clipboard } from "@k2b/stdlib/browser";
 import { createSignal } from "solid-js";
 import { usePulseMessages } from "../use-messages";
+import { openResolvedPublicDisplay } from "./public-display-window";
 
 export type PublicDashboardDisplayTheme = "light" | "dark";
 export type PublicDashboardDisplayHeight = "scroll" | "full";
@@ -41,7 +42,7 @@ export const openPublicDashboardDisplayDialog = async (options: OpenPublicDashbo
         const openLink = async () => {
           setBusy("open");
           try {
-            window.open(await resolveLink(), "_blank", "noopener,noreferrer");
+            await openResolvedPublicDisplay(resolveLink, t().publicDisplayPopupBlocked);
             close();
           } catch (error) {
             toast.error(error instanceof Error ? error.message : t().publicDisplayOpenFailed);
