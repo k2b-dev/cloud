@@ -23,6 +23,7 @@ import type {
   AppLifecycle,
   AppMeta,
   AppPresentationCatalog,
+  AppSearchLink,
   CloudLifecycleContext,
   WidgetEndpoint,
 } from "../contracts/app";
@@ -153,6 +154,8 @@ export type AppOptions<S extends AppSettingsMap = {}, N extends NotificationDefi
    * always open in a new tab from the login footer.
    */
   legalLinks?: ReadonlyArray<{ label: string; href: string; icon?: string }>;
+  /** Static destinations for the global search UI; no capabilities are created. */
+  searchLinks?: readonly AppSearchLink[];
   /**
    * Dashboard widget endpoints this app exposes. Each entry references an
    * HTTP path on this app that returns a `WidgetResponse`. The dashboard
@@ -391,6 +394,7 @@ export const defineApp = <
     routes: [...opts.routes],
     nav: opts.nav,
     legalLinks: opts.legalLinks ? [...opts.legalLinks] : undefined,
+    searchLinks: opts.searchLinks?.map((link) => ({ ...link, keywords: link.keywords ? [...link.keywords] : undefined })),
     widgets: opts.widgets ? opts.widgets.map((w) => ({ ...w })) : undefined,
     settingKeys: opts.settings ? Object.keys(opts.settings) : undefined,
     openapi: opts.openapi,
@@ -483,6 +487,7 @@ export const defineApp = <
           : undefined,
         help: compiledHelp?.summary,
         legalLinks: meta.legalLinks ? meta.legalLinks.map((l) => ({ ...l })) : undefined,
+        searchLinks: meta.searchLinks,
         widgets: meta.widgets ? meta.widgets.map((w) => ({ ...w })) : undefined,
         settingKeys: meta.settingKeys ? [...meta.settingKeys] : undefined,
         openapi: advertiseOpenapi ? opts.openapi : undefined,

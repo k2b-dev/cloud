@@ -1,4 +1,5 @@
 import { getLayoutHelp } from "./help";
+import { navigationSearchItems } from "../browser/navigation-search";
 import type { DateContext } from "@k2b/stdlib";
 import { AppWorkspace, appWorkspaceLayoutStyle, LocaleProvider, NoticeCard } from "@k2b/ui";
 import type { JSX } from "solid-js/jsx-runtime";
@@ -171,6 +172,10 @@ export default function Layout(props: LayoutProps) {
     description: app.description,
     accent: app.accent,
   }));
+  const searchLinks = navigationSearchItems(
+    runtime.apps,
+    allApps.map((app) => app.id),
+  );
   const searchHelpApps: GlobalSearchHelpApp[] = runtime.apps
     .filter((app) => (app.searchTags?.length ?? 0) > 0)
     .map((app) => ({
@@ -254,6 +259,7 @@ export default function Layout(props: LayoutProps) {
             profileAvatarSrc={profileAvatarSrc}
             profileName={profileName}
             searchHelpApps={searchHelpApps}
+            searchLinks={searchLinks}
             theme={theme}
           />
         )}
@@ -270,6 +276,7 @@ export default function Layout(props: LayoutProps) {
             profileAvatarSrc={profileAvatarSrc}
             profileName={profileName}
             searchHelpApps={searchHelpApps}
+            searchLinks={searchLinks}
             signInLabel={t.signIn}
             theme={theme}
           />

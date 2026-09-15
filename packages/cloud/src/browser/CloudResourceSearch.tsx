@@ -3,6 +3,7 @@ import { NoticeCard, ScrollArea, Select, useLocale } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import type { SearchApp, SearchItem, SearchResponse } from "../api/search/schemas";
 import type { CloudResourceRef } from "../contracts";
+import { matchNavigationSearchItems, type NavigationSearchItem } from "./navigation-search";
 import { cloudResourceSearchUrl, filterCloudResourceSearchItems } from "./resource-search";
 import { resourceSearchMessages } from "./resource-search-messages";
 
@@ -25,6 +26,8 @@ export type CloudResourceSearchProps = {
   initialAppId?: string;
   placeholder?: string;
   requireReader?: boolean;
+  /** Global navigation search only; omitted by resource pickers. */
+  navigationItems?: readonly NavigationSearchItem[];
   excludeRefs?: readonly CloudResourceRef[];
 };
 
@@ -169,9 +172,21 @@ export default function CloudResourceSearch(props: CloudResourceSearchProps) {
     const sorted = filterCloudResourceSearchItems(searchQuery.data()?.items ?? [], props)
       .slice()
       .sort(sortByPriorityAndTitle);
-    return groupByApp(sorted);
+    const links = matchNavigationSearchItems(props.navigationItems ?? [], {
+      ...parsedInput(),
+      appId: appId(),
+      requireReader: props.requireReader,
+    });
+    // Navigation is always below resources, including priority-zero results.
+    return [...groupByApp(sorted), ...groupByApp(links)];
   });
-  const apps = createMemo<SearchApp[]>(() => searchQuery.data()?.apps ?? []);
+  const apps = createMemo<SearchApp[]>(() => {
+    const catalog = new Map((searchQuery.data()?.apps ?? []).map((app) => [app.id, app]));
+    for (const item of props.navigationItems ?? []) {
+      if (!catalog.has(item.appId)) catalog.set(item.appId, { id: item.appId, name: item.appName, icon: item.appIcon });
+    }
+    return [...catalog.values()];
+  });
   const unsupportedTags = createMemo(() => searchQuery.data()?.unsupportedTags ?? []);
 
   // Tag suggestions for the empty state — flat list of every tag declared by

@@ -20,6 +20,7 @@ const mergedTranslation = (catalog: AppPresentationCatalog, requestedLocale: str
         adminGroups: { ...current.adminGroups, ...next.adminGroups },
         adminLinks: { ...current.adminLinks, ...next.adminLinks },
         legalLinks: { ...current.legalLinks, ...next.legalLinks },
+        searchLinks: { ...current.searchLinks, ...next.searchLinks },
       };
     },
     {},
@@ -40,6 +41,7 @@ export const resolveAppPresentation = <T extends AppMeta>(app: T, requestedLocal
       label: (group.id && translation.adminGroups?.[group.id]) || group.label,
       links: group.links.map((link) => ({ ...link, label: translation.adminLinks?.[link.href] ?? link.label })),
     })),
+    searchLinks: app.searchLinks?.map((link) => ({ ...link, label: translation.searchLinks?.[link.href] ?? link.label })),
     legalLinks: app.legalLinks?.map((link) => ({ ...link, label: translation.legalLinks?.[link.href] ?? link.label })),
   };
 };

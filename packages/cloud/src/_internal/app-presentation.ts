@@ -34,6 +34,7 @@ export const compileAppPresentation = (app: AppMeta, catalog: AppPresentationCat
     groupIds.add(group.id);
   }
   const adminHrefs = new Set((app.adminNav ?? []).flatMap((group) => group.links.map((link) => link.href)));
+  const searchHrefs = new Set((app.searchLinks ?? []).map((link) => link.href));
   const legalHrefs = new Set((app.legalLinks ?? []).map((link) => link.href));
   const translations: Record<string, AppPresentationTranslation> = {};
 
@@ -49,6 +50,7 @@ export const compileAppPresentation = (app: AppMeta, catalog: AppPresentationCat
         : {}),
       ...(translation.adminGroups ? { adminGroups: labels(translation.adminGroups, groupIds, `${canonical}.adminGroups`) } : {}),
       ...(translation.adminLinks ? { adminLinks: labels(translation.adminLinks, adminHrefs, `${canonical}.adminLinks`) } : {}),
+      ...(translation.searchLinks ? { searchLinks: labels(translation.searchLinks, searchHrefs, `${canonical}.searchLinks`) } : {}),
       ...(translation.legalLinks ? { legalLinks: labels(translation.legalLinks, legalHrefs, `${canonical}.legalLinks`) } : {}),
     };
   }

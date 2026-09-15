@@ -14,6 +14,16 @@ export type LegalLink = {
   icon?: string;
 };
 
+/** Static page links for the global search UI, ranked after resource results.
+ * These declare navigation only; they do not create capabilities or readers.
+ */
+export type AppSearchLink = {
+  label: string;
+  href: string;
+  icon?: string;
+  keywords?: readonly string[];
+};
+
 export type AppAppearanceColor = `#${string}`;
 
 export type AppAppearance = {
@@ -52,10 +62,12 @@ export type AppPresentationTranslation = {
   adminLinks?: Readonly<Record<string, string>>;
   /** Legal-link labels keyed by their stable same-origin href. */
   legalLinks?: Readonly<Record<string, string>>;
+  /** Search-link labels keyed by their stable same-origin href. */
+  searchLinks?: Readonly<Record<string, string>>;
 };
 
 export type AppPresentationCatalog = {
-  /** Locale of the complete `name`, `description`, `adminNav`, and `legalLinks` declaration. */
+  /** Locale of the complete `name`, `description`, `adminNav`, `legalLinks`, and `searchLinks` declaration. */
   baseLocale: string;
   /** Partial presentation overlays with exact -> ancestor -> base fallback. */
   translations: Readonly<Record<string, AppPresentationTranslation>>;
@@ -89,6 +101,8 @@ export type AppMeta = {
    * contributes its own (e.g. settings → terms/privacy/imprint, faq → FAQ).
    */
   legalLinks?: LegalLink[];
+  /** Static search destinations, visible when the app is in the user's navigation catalog. */
+  searchLinks?: readonly AppSearchLink[];
   /**
    * Dashboard widget endpoints this app exposes. Each entry references an
    * HTTP endpoint that returns a `WidgetResponse` (see `contracts/widgets.ts`).

@@ -1,3 +1,4 @@
+import type { NavigationSearchItem } from "../browser/navigation-search";
 import type { RailSnapshot } from "../contracts/rail-preferences";
 import type { CloudTheme } from "../shared/theme";
 import AppLaunchpad, { type AppLaunchpadApp } from "./AppLaunchpad.island";
@@ -22,6 +23,7 @@ type LayoutRailProps = {
   profileAvatarSrc?: string;
   profileName: string;
   searchHelpApps: GlobalSearchHelpApp[];
+  searchLinks?: NavigationSearchItem[];
   theme: CloudTheme;
 };
 
@@ -53,7 +55,7 @@ export default function LayoutRail(props: LayoutRailProps) {
             label={props.openAppsLabel}
           />
           <div class="mt-auto shrink-0 flex flex-col items-center gap-1">
-            <GlobalSearchTrigger variant="rail" searchHelpApps={props.searchHelpApps} />
+            <GlobalSearchTrigger variant="rail" searchLinks={props.searchLinks} searchHelpApps={props.searchHelpApps} />
             <HotkeysHelpRail variant="rail" registerHotkey searchHelpApps={props.searchHelpApps} accent={props.accent} />
             <ProfilePreferences avatarSrc={props.profileAvatarSrc} initialTheme={props.theme} name={props.profileName} placement="rail" />
           </div>

@@ -1,15 +1,17 @@
 import { defineApp } from "@k2b/cloud";
+import { germanToolSearchLabels, toolSearchLinks } from "./search-links";
 
 export const app = defineApp({
   id: "tools",
   name: "Tools",
   icon: "ti ti-tools",
   description: "Utility tools for day-to-day work tasks.",
+  searchLinks: toolSearchLinks,
   appearance: { accent: "#475569", background: { from: "#64748b" } },
   presentation: {
     baseLocale: "en",
     translations: {
-      de: { name: "Werkzeuge", description: "Praktische Werkzeuge für alltägliche Aufgaben." },
+      de: { name: "Werkzeuge", description: "Praktische Werkzeuge für alltägliche Aufgaben.", searchLinks: germanToolSearchLabels },
     },
   },
   basePath: "/tools",

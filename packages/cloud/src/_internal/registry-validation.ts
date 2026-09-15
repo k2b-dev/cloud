@@ -43,7 +43,7 @@ export const validateAppRegistryEntry = (value: unknown): string | null => {
       if (translation.description !== undefined && !isString(translation.description)) {
         return invalid(`presentation.translations.${locale}.description`, "a string");
       }
-      for (const field of ["adminGroups", "adminLinks", "legalLinks"] as const) {
+      for (const field of ["adminGroups", "adminLinks", "legalLinks", "searchLinks"] as const) {
         if (translation[field] !== undefined && !isStringRecord(translation[field])) {
           return invalid(`presentation.translations.${locale}.${field}`, "a string map");
         }
@@ -84,6 +84,22 @@ export const validateAppRegistryEntry = (value: unknown): string | null => {
     ) {
       return invalid("legalLinks", "an array of valid links");
     }
+  }
+  if (value.searchLinks !== undefined) {
+    if (
+      !Array.isArray(value.searchLinks) ||
+      value.searchLinks.some(
+        (link) =>
+          !isRecord(link) ||
+          !isString(link.label) ||
+          !link.label.trim() ||
+          !isString(link.href) ||
+          !/^\/(?![\/\\])[^\\\s]*$/.test(link.href) ||
+          (link.icon !== undefined && !isString(link.icon)) ||
+          (link.keywords !== undefined && !isStringArray(link.keywords)),
+      )
+    )
+      return invalid("searchLinks", "an array of same-origin navigation links");
   }
   if (value.widgets !== undefined) {
     if (

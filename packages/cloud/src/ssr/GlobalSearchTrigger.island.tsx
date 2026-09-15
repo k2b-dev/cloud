@@ -1,5 +1,6 @@
 import { hotkeys } from "@k2b/stdlib/solid";
 import { IconButton, Tooltip, useLocale } from "@k2b/ui";
+import type { NavigationSearchItem } from "../browser/navigation-search";
 import { openGlobalSearchDialog } from "./GlobalSearchDialog";
 import type { GlobalSearchHelpApp } from "./GlobalSearchHelpDialog";
 import { platformMessages } from "./platform-messages";
@@ -9,6 +10,7 @@ type GlobalSearchTriggerProps = {
   class?: string;
   registerHotkey?: boolean;
   searchHelpApps?: GlobalSearchHelpApp[];
+  searchLinks?: NavigationSearchItem[];
 };
 
 /** Opens the spotlight-style global search dialog from nav/header trigger points. */
@@ -22,7 +24,7 @@ export default function GlobalSearchTrigger(props: GlobalSearchTriggerProps) {
       "mod+k": {
         label: t().openGlobalSearch,
         desc: t().globalSearchDescription,
-        run: () => openGlobalSearchDialog(searchHelpApps),
+        run: () => openGlobalSearchDialog(searchHelpApps, props.searchLinks),
       },
     }));
   }
@@ -32,7 +34,7 @@ export default function GlobalSearchTrigger(props: GlobalSearchTriggerProps) {
       <Tooltip.Trigger
         type="button"
         class={`rail-item text-blue-500 hover:bg-blue-500/10 hover:text-blue-600 dark:text-blue-400 dark:hover:bg-blue-500/15 dark:hover:text-blue-300 ${props.class ?? ""}`}
-        onClick={() => openGlobalSearchDialog(searchHelpApps)}
+        onClick={() => openGlobalSearchDialog(searchHelpApps, props.searchLinks)}
         aria-label={t().openGlobalSearch}
         placement="right"
         delay={0}
@@ -45,7 +47,7 @@ export default function GlobalSearchTrigger(props: GlobalSearchTriggerProps) {
   return (
     <IconButton
       class={props.class}
-      onClick={() => openGlobalSearchDialog(searchHelpApps)}
+      onClick={() => openGlobalSearchDialog(searchHelpApps, props.searchLinks)}
       label={t().openGlobalSearch}
       title={t().searchShortcut}
     >

@@ -1,4 +1,5 @@
 import { ButtonLink } from "@k2b/ui";
+import type { NavigationSearchItem } from "../browser/navigation-search";
 import type { CloudTheme } from "../shared/theme";
 import AppLaunchpad, { type AppLaunchpadApp } from "./AppLaunchpad.island";
 import type { GlobalSearchHelpApp } from "./GlobalSearchHelpDialog";
@@ -21,6 +22,7 @@ type LayoutHeaderProps = {
   profileAvatarSrc?: string;
   profileName: string;
   searchHelpApps: GlobalSearchHelpApp[];
+  searchLinks?: NavigationSearchItem[];
   signInLabel: string;
   theme: CloudTheme;
 };
@@ -58,7 +60,7 @@ export default function LayoutHeader(props: LayoutHeaderProps) {
             searchHelpApps={props.searchHelpApps}
             accent={props.accent}
           />
-          {props.authenticated && <GlobalSearchTrigger variant="header" registerHotkey searchHelpApps={props.searchHelpApps} />}
+          {props.authenticated && <GlobalSearchTrigger variant="header" registerHotkey searchLinks={props.searchLinks} searchHelpApps={props.searchHelpApps} />}
         </div>
         {props.authenticated ? (
           <>

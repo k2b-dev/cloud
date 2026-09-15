@@ -1,4 +1,4 @@
-import type { AppAdminNavigationGroup, AppAppearance, AppAppearanceColor, AppPresentationCatalog } from "./app";
+import type { AppAdminNavigationGroup, AppAppearance, AppAppearanceColor, AppPresentationCatalog, AppSearchLink } from "./app";
 import type { CapabilityManifest, CapabilityPresentationCatalog } from "./capabilities";
 import type { Role } from "./shared";
 import type { DashboardWidgetPresentation } from "./widgets";
@@ -77,6 +77,7 @@ export type AppRegistryEntry = {
   capabilities?: AppRegistryCapabilitySummary;
   help?: AppRegistryHelpSummary;
   legalLinks?: AppRegistryLegalLink[];
+  searchLinks?: readonly AppSearchLink[];
   widgets?: AppRegistryWidget[];
   /** Setting keys declared by this app. Used by admin tooling to avoid treating live app-owned settings as legacy. */
   settingKeys?: readonly string[];

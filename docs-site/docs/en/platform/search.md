@@ -5,7 +5,7 @@ section: Platform services
 order: 560
 description: Project focused application Queries into the shared Cloud search.
 tags: [search, capabilities, authorization]
-updated: 2026-08-13
+updated: 2026-09-15
 ---
 
 # Universal search
@@ -17,6 +17,36 @@ and merges their results.
 
 Read [App capabilities](/en/docs/platform/capabilities) first for the shared
 Type, Query, schema, result, registry, and authorization rules.
+
+## Add static page links
+
+For utility pages such as a QR generator, add `searchLinks` to `defineApp()`:
+
+```ts
+searchLinks: [
+  {
+    label: "QR code generator",
+    href: "/tools/qr",
+    icon: "ti ti-qrcode",
+    keywords: ["qr", "barcode", "scan"],
+  },
+],
+```
+
+These links appear only in the global search dialog, below all resource
+results. Cloud includes them when the app is visible in the user's navigation
+catalog. The browser matches every search word against the label and keywords,
+ignoring case, after at least two characters. The app filter applies; tag
+searches omit static links.
+
+Use same-origin paths and public page labels. Destination routes still enforce
+their own authorization. Localize labels with
+`presentation.translations.<locale>.searchLinks`, keyed by `href`, and include
+alternate search terms in `keywords`.
+
+Static links create no agent capabilities or resource readers and do not appear
+in `/api/search` or resource pickers. Use a search Query for dynamic application
+data instead.
 
 ## Add a search Query
 

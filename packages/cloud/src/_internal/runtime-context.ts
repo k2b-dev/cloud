@@ -29,6 +29,7 @@ export const buildRuntimeFromRegistry = (entries: AppRegistryEntry[], capabiliti
                   adminGroups: translation.adminGroups ? { ...translation.adminGroups } : undefined,
                   adminLinks: translation.adminLinks ? { ...translation.adminLinks } : undefined,
                   legalLinks: translation.legalLinks ? { ...translation.legalLinks } : undefined,
+                  searchLinks: translation.searchLinks ? { ...translation.searchLinks } : undefined,
                 },
               ]),
             ),
@@ -64,6 +65,7 @@ export const buildRuntimeFromRegistry = (entries: AppRegistryEntry[], capabiliti
         ]),
       ),
       legalLinks: e.legalLinks ? e.legalLinks.map((l) => ({ ...l })) : undefined,
+      searchLinks: e.searchLinks?.map((link) => ({ ...link, keywords: link.keywords ? [...link.keywords] : undefined })),
       openapi: e.openapi,
     };
   }),
