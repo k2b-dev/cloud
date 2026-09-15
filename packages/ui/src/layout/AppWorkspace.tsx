@@ -1,3 +1,4 @@
+import { createScrollFade } from "./scroll-fade";
 import { SidebarItemPreview } from "./SidebarItemPreview";
 import { Link, type LinkNavigateEvent, type NavigationScrollMode } from "@k2b/ssr/nav";
 import {
@@ -160,6 +161,7 @@ export type AppWorkspaceMainProps = {
   class?: string;
   mobilePane?: string;
   scroll?: boolean;
+  scrollFade?: boolean;
   scrollPreserveKey?: string | false;
   "aria-busy"?: boolean | "true" | "false";
 };
@@ -175,6 +177,7 @@ export type AppWorkspaceMainPaneProps = {
   maxSize?: number;
   class?: string;
   scroll?: boolean;
+  scrollFade?: boolean;
   children: JSX.Element;
 };
 export type AppWorkspaceDetailWidth = "sm" | "md" | "lg" | "xl";
@@ -402,6 +405,7 @@ function AppWorkspaceMain(props: AppWorkspaceMainProps): JSX.Element {
     <div
       class={`k2b-app-workspace__main ${hasPanes() ? "has-panes" : ""} ${props.class ?? ""}`}
       data-mobile-pane={props.mobilePane}
+      data-scroll-fade-mode={!hasPanes() && props.scroll !== false && props.scrollFade !== false ? "both" : undefined}
       data-scroll={props.scroll === false ? "false" : undefined}
       aria-busy={props["aria-busy"]}
       {...scrollAttrs(props.scrollPreserveKey)}
@@ -459,6 +463,7 @@ function AppWorkspaceMain(props: AppWorkspaceMainProps): JSX.Element {
                   data-workspace-resizable={resizable() ? "true" : "false"}
                   data-surface={pane.props.surface === "navigation" ? "navigation" : undefined}
                   data-scroll={pane.props.scroll === false ? "false" : undefined}
+                  data-scroll-fade-mode={pane.props.scroll !== false && pane.props.scrollFade !== false ? "both" : undefined}
                   style={isAnchor() ? undefined : { "--k2b-workspace-panel-size": `var(${variable}, ${defaultSize()}px)` }}
                 >
                   {pane.props.children}
@@ -601,15 +606,21 @@ function AppWorkspaceSidebar(props: AppWorkspaceSidebarProps): JSX.Element {
 
 const AppWorkspaceSidebarDesktop = (props: { children: JSX.Element }): JSX.Element =>
   ({ kind: SIDEBAR_DESKTOP, children: props.children }) as unknown as JSX.Element;
-const AppWorkspaceSidebarBody = (props: AppWorkspaceSidebarBodyProps) => (
-  <div
-    class={`k2b-app-workspace__sidebar-body ${props.class ?? ""}`}
-    {...scrollAttrs(props.scrollPreserveKey)}
-    {...modeAttrs(props.sidebarMode)}
-  >
-    {props.children}
-  </div>
-);
+const AppWorkspaceSidebarBody = (props: AppWorkspaceSidebarBodyProps & { scrollFade?: boolean }) => {
+  let body!: HTMLDivElement;
+  createScrollFade(() => body, () => props.scrollFade !== false);
+  return (
+    <div
+      ref={body}
+      class={`k2b-app-workspace__sidebar-body ${props.class ?? ""}`}
+      data-scroll-fade-mode={props.scrollFade !== false ? "both" : undefined}
+      {...scrollAttrs(props.scrollPreserveKey)}
+      {...modeAttrs(props.sidebarMode)}
+    >
+      {props.children}
+    </div>
+  );
+};
 const AppWorkspaceSidebarFooter = (props: AppWorkspaceSidebarBodyProps) => (
   <footer class={`k2b-app-workspace__sidebar-footer ${props.class ?? ""}`} {...modeAttrs(props.sidebarMode)}>
     {props.children}

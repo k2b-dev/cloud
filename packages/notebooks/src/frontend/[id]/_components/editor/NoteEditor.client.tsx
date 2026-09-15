@@ -4,7 +4,7 @@ import { refreshCurrentPath } from "@k2b/ssr/nav";
 import { encoding } from "@k2b/stdlib";
 import { clipboard, files } from "@k2b/stdlib/browser";
 import { dropzone, query } from "@k2b/stdlib/solid";
-import { NoticeCard, prompts, toast, useLocale } from "@k2b/ui";
+import { NoticeCard, prompts, ScrollArea, toast, useLocale } from "@k2b/ui";
 import { layout } from "@k2b/cloud/ssr/layout-runtime";
 import { createCodeMirror } from "solid-codemirror";
 import { createEffect, createSignal, onCleanup, onMount, Show } from "solid-js";
@@ -766,8 +766,8 @@ function EditorInstance(props: EditorInstanceProps) {
       <Show when={historyIncomplete()}>
         <NoticeCard role="status" tone="warning" title={t().historyIncompleteTitle} detail={t().historyIncompleteDetail} />
       </Show>
-      <div
-        class={`relative min-h-0 flex-1 cursor-text overflow-y-auto transition-colors ${
+      <ScrollArea
+        class={`relative min-h-0 flex-1 cursor-text transition-colors ${
           !props.readOnly && dz.isDragging() ? "ring-2 ring-blue-400 dark:ring-blue-500 ring-inset" : ""
         }`}
         onMouseDown={(event) => {
@@ -801,7 +801,7 @@ function EditorInstance(props: EditorInstanceProps) {
         aria-label={props.readOnly ? t().readonlySurface : t().editorSurface}
       >
         <div ref={editorRef} />
-      </div>
+      </ScrollArea>
       <Show when={!props.readOnly}>
         <EditorToolbar
           connected={connected()}

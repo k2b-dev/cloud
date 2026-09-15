@@ -3,6 +3,16 @@
 `ScrollArea` creates one bounded scrollport whose content width stays stable
 when growing content starts or stops overflowing.
 
+Top and bottom overflow hints are enabled by default. They use a subtle 16 px
+fade only where more content remains. Set `scrollFade={false}` when a
+specialized view needs an unmasked surface. Scrolling, resizing, and content
+changes update the hint; forced-color mode leaves content unmasked.
+
+Hydrated components initialize themselves. Server-rendered scroll areas inside
+a workspace are also initialized by `installAppWorkspaceController`; Cloud
+already installs that controller. Arbitrary elements with `overflow: auto`
+are not modified.
+
 ## Import
 
 ```tsx
@@ -27,6 +37,11 @@ scrollport's position. Use a stable purpose-based key rather than an item id.
 
 Keep one scroll owner for a full-height region. Do not wrap an existing
 scrolling component such as `DetailPanel.Body` in another `ScrollArea`.
+An editor can use `ScrollArea` as its outer scroll owner when the editor
+content grows naturally. Keep its toolbar outside the scroll area so controls
+remain fully visible. Notebooks uses this arrangement for its CodeMirror
+editor; its book view inherits the fade from `AppWorkspace.Main`.
+
 `DetailPanel` also integrates its gutter with the surrounding workspace inset;
 that panel-specific geometry is not part of `ScrollArea`.
 

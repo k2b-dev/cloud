@@ -32,6 +32,13 @@ inside `Content`. Put `BottomDrawer` at the workspace root.
 
 `Main` adds no padding. Pass an application class through `class` when the workspace needs an inset. Omit it for edge-to-edge tables, editors, canvases, or `Panes`. `Main` is the default scroll owner and reserves a stable scrollbar gutter. Pass `scrollPreserveKey` when enhanced navigation should restore its position.
 
+`Main` and `MainPane` show subtle 16 px overflow hints by default when they
+own scrolling. Set `scrollFade={false}` to opt out. A split `Main` wrapper
+never masks its panes; each scrolling pane owns its hint. Regions with
+`scroll={false}` do not add a hint around their child scrollport. The workspace
+controller also initializes marked server-rendered scrollports and cleans them
+up during navigation, sharing observers with hydrated components.
+
 Set `scroll={false}` when a bounded child such as `ScrollArea`, `DataTable`, a reader, editor, or an explicit `overflow-auto` region owns scrolling. Do the same on `MainPane` when its child owns the pane's scrollport. Keep exactly one vertical scroll owner for each region; do not place another scrollport inside a still-scrolling `Main` or `MainPane`.
 
 Use `MainPane` for a stable peer region such as a list beside a reader. Use `Detail` for contextual information about the current selection. Use `BottomDrawer` for activity, preview, or a composer below the work area.
@@ -68,6 +75,12 @@ the compact rail. The collapsed flag is part of `AppWorkspaceLayoutState`, so
 the host can restore the same navigation state on the next mount.
 
 Set `scrollPreserveKey` on scrolling sidebar bodies when enhanced navigation should restore their position.
+
+`SidebarBody` fades its top and bottom edges automatically while more content
+is available in that direction. Scrolling, resizing, and live content changes
+update the hint without reserving layout space. Set `scrollFade={false}` to
+opt out. Forced-color mode keeps content unmasked. Card items retain subtle
+surfaces in dark themes.
 
 On hover-capable fine pointers, `SidebarBody` keeps its scrollbar thumb hidden
 until the sidebar is hovered or contains keyboard focus. Its scrollbar geometry
@@ -218,7 +231,7 @@ type AppWorkspaceLayoutStateProviderProps = {
 type AppWorkspaceContentProps = { children: JSX.Element; class?: string };
 
 type AppWorkspaceMainProps = {
-  children: JSX.Element; class?: string; mobilePane?: string; scroll?: boolean;
+  children: JSX.Element; class?: string; mobilePane?: string; scroll?: boolean; scrollFade?: boolean;
   scrollPreserveKey?: string | false;
   "aria-busy"?: boolean | "true" | "false";
 };
@@ -226,7 +239,7 @@ type AppWorkspaceMainProps = {
 type AppWorkspaceMainPaneProps = {
   id: string; label: string; surface?: "default" | "navigation"; open?: boolean; resizable?: boolean;
   resizeShadow?: boolean; defaultSize?: number; minSize?: number; maxSize?: number; class?: string;
-  scroll?: boolean; children: JSX.Element;
+  scroll?: boolean; scrollFade?: boolean; children: JSX.Element;
 };
 
 type AppWorkspaceDetailProps = {

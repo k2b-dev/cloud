@@ -9,6 +9,25 @@ describe("@k2b/ui AppWorkspace behavior", () => {
     return;
   }
 
+  test("fades only scrollable sidebar content and clears the hint at the end", async () => {
+    const dom = createDomTestHarness();
+    const { default: AppWorkspace } = await import("../src/layout/AppWorkspace");
+    const dispose = render(() => <AppWorkspace.SidebarBody scrollFade><div>Chats</div></AppWorkspace.SidebarBody>, dom.root);
+    try {
+      const body = dom.root.firstElementChild as HTMLElement;
+      Object.defineProperties(body, { scrollHeight: { configurable: true, value: 500 }, clientHeight: { value: 200 } });
+      body.dispatchEvent(new dom.window.Event("scroll"));
+      expect(body.dataset.scrollFade).toBe("bottom");
+      body.scrollTop = 300;
+      body.dispatchEvent(new dom.window.Event("scroll"));
+      expect(body.dataset.scrollFade).toBe("top");
+      body.scrollTop = 0;
+      Object.defineProperty(body, "scrollHeight", { value: 200 });
+      body.dispatchEvent(new dom.window.Event("scroll"));
+      expect(body.dataset.scrollFade).toBeUndefined();
+    } finally { dispose(); dom.cleanup(); }
+  });
+
   test("keeps main pane content mounted when visibility inputs and mobile selection change", async () => {
     const dom = createDomTestHarness();
     const { default: AppWorkspace } = await import("../src/layout/AppWorkspace");

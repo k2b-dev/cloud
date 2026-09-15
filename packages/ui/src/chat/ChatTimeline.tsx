@@ -1,3 +1,4 @@
+import { createScrollFade } from "../layout/scroll-fade";
 import { createEffect, createSignal, For, type JSX, onCleanup, onMount, Show, untrack } from "solid-js";
 import { useUiMessages } from "../intl/messages";
 import Placeholder from "../surfaces/Placeholder";
@@ -41,6 +42,7 @@ export type ChatActivityItem = {
 export type ChatTimelineItem = ChatMessageItem | ChatActivityItem;
 
 export type ChatTimelineProps = {
+  scrollFade?: boolean;
   items: readonly ChatTimelineItem[];
   conversationKey?: string | null;
   loading?: boolean;
@@ -64,6 +66,7 @@ export function ChatTimeline(props: ChatTimelineProps): JSX.Element {
   const [loadingOlderInternally, setLoadingOlderInternally] = createSignal(false);
   const [historyError, setHistoryError] = createSignal<string | null>(null);
   let viewportRef: HTMLDivElement | undefined;
+  createScrollFade(() => viewportRef, () => props.scrollFade !== false);
   let contentRef: HTMLDivElement | undefined;
   let topSentinelRef: HTMLDivElement | undefined;
   let followFrame: number | undefined;
@@ -192,6 +195,7 @@ export function ChatTimeline(props: ChatTimelineProps): JSX.Element {
           props.viewportRef?.(element);
         }}
         class="k2b-chat-timeline__viewport"
+        data-scroll-fade-mode={props.scrollFade !== false ? "bottom" : undefined}
         data-initializing=""
         role="region"
         aria-label={messages().conversationMessages({ label: props.label ?? messages().conversation })}

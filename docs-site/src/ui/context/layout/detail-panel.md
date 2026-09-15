@@ -3,6 +3,11 @@
 `DetailPanel` gives contextual inspectors one quiet content structure without
 owning their surrounding drawer, workspace region, dialog, or domain state.
 
+`DetailPanel.Body` automatically fades its top and bottom edges while content
+remains beyond that edge. Header and footer controls stay outside the fade.
+Set `scrollFade={false}` to disable it. The hint follows resize and live content
+changes, reserves no space, and is disabled in forced-color mode.
+
 ## Import
 
 ```tsx
@@ -114,7 +119,7 @@ type DetailPanelHeaderProps = DetailPanelHeaderBaseProps &
   );
 
 type DetailPanelBodyProps = {
-  children: JSX.Element; scrollPreserveKey?: string; class?: string;
+  children: JSX.Element; scrollPreserveKey?: string; scrollFade?: boolean; class?: string;
 };
 
 type DetailPanelSummaryProps = {

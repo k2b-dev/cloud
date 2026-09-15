@@ -1,3 +1,4 @@
+import { createScrollFade } from "./scroll-fade";
 import { createEffect, createSignal, createUniqueId, type JSX, Show, splitProps } from "solid-js";
 import { Button, ButtonLink, type ButtonLinkProps, type ButtonProps } from "../actions/Button";
 import { Dropdown, type DropdownItem } from "../actions/Dropdown";
@@ -29,6 +30,7 @@ export type DetailPanelHeaderProps = DetailPanelHeaderBaseProps &
   );
 
 export type DetailPanelBodyProps = {
+  scrollFade?: boolean;
   children: JSX.Element;
   scrollPreserveKey?: string;
   class?: string;
@@ -159,11 +161,13 @@ const DetailPanelHeader = (props: DetailPanelHeaderProps): JSX.Element => (
   </header>
 );
 
-const DetailPanelBody = (props: DetailPanelBodyProps): JSX.Element => (
-  <div class={classNames("k2b-detail-panel__body", props.class)} data-scroll-preserve={props.scrollPreserveKey}>
+const DetailPanelBody = (props: DetailPanelBodyProps): JSX.Element => {
+  let body!: HTMLDivElement;
+  createScrollFade(() => body, () => props.scrollFade !== false);
+  return <div ref={body} class={classNames("k2b-detail-panel__body", props.class)} data-scroll-fade-mode={props.scrollFade !== false ? "both" : undefined} data-scroll-preserve={props.scrollPreserveKey}>
     {props.children}
-  </div>
-);
+  </div>;
+};
 
 const DetailPanelSummary = (props: DetailPanelSummaryProps): JSX.Element => {
   const headingId = `k2b-detail-panel-summary-${createUniqueId()}`;

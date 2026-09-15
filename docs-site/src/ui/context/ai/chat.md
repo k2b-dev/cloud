@@ -2,6 +2,11 @@
 
 `Chat` is a controlled compound component for assistants and other conversational workflows. It has no knowledge of Cloud sessions, providers, tool protocols, persistence, or uploads.
 
+`ChatTimeline` softly fades its bottom edge while more messages remain below.
+The latest-message button and composer stay outside the fade. At the end of
+the conversation the fade disappears. Set `scrollFade={false}` to opt out;
+forced-color mode always leaves content unmasked.
+
 ## Use Chat
 
 Compose `Chat.Timeline` and `Chat.Composer` inside `Chat`. The application owns messages, draft, attachments, model selection, run state, and mutations. The components own keyboard behavior, scrolling, focus, disclosures, structured actions, and accessible status presentation.
@@ -143,7 +148,7 @@ type ChatTimelineProps = {
   loadingOlder?: boolean; onLoadOlder?: () => boolean | void | Promise<boolean | void>; emptyTitle?: string;
   emptyDescription?: string; navigation?: JSX.Element; onActionError?: (error: unknown) => void;
   viewportRef?: (element: HTMLDivElement) => void; contentRef?: (element: HTMLDivElement) => void;
-  label?: string; followThreshold?: number; class?: string;
+  label?: string; followThreshold?: number; scrollFade?: boolean; class?: string;
 };
 
 ```

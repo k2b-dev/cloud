@@ -1,3 +1,4 @@
+import { installScrollFades } from "./scroll-fade";
 import {
   APP_WORKSPACE_DETAIL_MAX,
   APP_WORKSPACE_DETAIL_MIN,
@@ -258,6 +259,7 @@ const measureLabel = (label: HTMLElement) => {
 
 export const installAppWorkspaceController = (options: AppWorkspaceControllerOptions = {}): (() => void) => {
   const eventRoot = options.root ?? document;
+  const stopScrollFades = installScrollFades(eventRoot);
   let layoutState = normalizeAppWorkspaceLayoutState(options.readState?.()) ?? { version: 2 as const };
   let active: ActiveResize | null = null;
   let resizeFrame: number | null = null;
@@ -535,6 +537,7 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
   });
   scheduleReconcile();
   return () => {
+    stopScrollFades();
     // Flush the latest coalesced pointer sample before listeners and frames are
     // torn down, so unmounting during a drag cannot lose the final size.
     stopResize();

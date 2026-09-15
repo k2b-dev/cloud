@@ -7774,6 +7774,24 @@
 .k2b-ui .k2b-app-workspace__sidebar-item[data-variant="card"]:hover {
   background: var(--k2b-hover);
 }
+.k2b-ui[data-theme="dark"] .k2b-app-workspace__sidebar-item[data-variant="card"]:not(.is-active):not(:hover),
+.k2b-ui.k2b-dark .k2b-app-workspace__sidebar-item[data-variant="card"]:not(.is-active):not(:hover),
+.dark .k2b-ui .k2b-app-workspace__sidebar-item[data-variant="card"]:not(.is-active):not(:hover) {
+  background: var(--k2b-surface-elevated);
+  border-color: var(--k2b-border);
+}
+.k2b-ui [data-scroll-fade] {
+  --scroll-fade-size: 1rem;
+  --scroll-fade-top: 0rem;
+  --scroll-fade-bottom: 0rem;
+  mask-image: linear-gradient(to bottom, transparent, #000 var(--scroll-fade-top), #000 calc(100% - var(--scroll-fade-bottom)), transparent);
+}
+.k2b-ui [data-scroll-fade="top"], .k2b-ui [data-scroll-fade="both"] { --scroll-fade-top: var(--scroll-fade-size, 1rem); }
+.k2b-ui [data-scroll-fade="bottom"], .k2b-ui [data-scroll-fade="both"] { --scroll-fade-bottom: var(--scroll-fade-size, 1rem); }
+.k2b-ui .k2b-app-workspace__sidebar-body, .k2b-ui .k2b-chat-timeline__viewport { --scroll-fade-size: 2rem; }
+@media (forced-colors: active) {
+  .k2b-ui [data-scroll-fade] { mask-image: none; }
+}
 .k2b-ui .k2b-app-workspace__sidebar-item[data-variant="card"].is-active {
   background: var(--k2b-hover);
   border-color: color-mix(in srgb, var(--k2b-action) 25%, var(--k2b-border));

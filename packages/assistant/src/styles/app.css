@@ -269,6 +269,9 @@
 }
 
 /* Keep chat titles primary and every secondary status aligned. */
+.k2b-ui .k2b-app-workspace .assistant-chat-sidebar-item[data-variant] .k2b-app-workspace__sidebar-item-label-text {
+  font-weight: 400;
+}
 .k2b-ui .assistant-chat-sidebar-item .assistant-conversation-status {
   font-size: 0.6875rem;
   line-height: 1rem;

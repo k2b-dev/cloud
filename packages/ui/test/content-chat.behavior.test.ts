@@ -348,6 +348,11 @@ describe("@k2b/ui content and chat behavior", () => {
     await new Promise<void>((done) => requestAnimationFrame(() => done()));
     expect(viewport!.scrollTop).toBe(450);
     expect(dom.root.querySelector(".k2b-chat-timeline__latest")).not.toBeNull();
+    expect(viewport!.dataset.scrollFade).toBe("bottom");
+    expect(viewport!.contains(dom.root.querySelector(".k2b-chat-timeline__latest"))).toBe(false);
+    viewport!.scrollTop = 800;
+    viewport!.dispatchEvent(new Event("scroll"));
+    expect(viewport!.dataset.scrollFade).toBeUndefined();
 
     dispose();
     dom.cleanup();
@@ -385,12 +390,12 @@ describe("@k2b/ui content and chat behavior", () => {
     );
     await new Promise<void>((done) => requestAnimationFrame(() => done()));
 
-    expect(observers).toHaveLength(1);
+    expect(observers.length).toBeGreaterThan(0);
     expect(observers[0]!.targets).toContain(viewport!);
     expect(observers[0]!.targets).toContain(dom.root.querySelector(".k2b-chat-timeline__content")!);
 
     scrollHeight = 650;
-    observers[0]!.trigger();
+    for (const observer of observers) observer.trigger();
     await new Promise<void>((done) => requestAnimationFrame(() => done()));
     expect(viewport!.scrollTop).toBe(650);
 
