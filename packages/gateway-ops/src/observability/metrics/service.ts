@@ -6,9 +6,9 @@ import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { getGridsOperationalSnapshot, listAppSloWindows } from "../../grids-operational-health";
 import { listRegisteredAppStatus } from "../../registered-apps";
 import { getPostgresDiagnostics, getRedisDiagnostics } from "../data/service";
-import { getNatsClusterDiagnostics, getNatsInventorySummary } from "../nats/service";
-import { natsMetricSamples } from "../nats/metrics";
 import { getNatsConsumerMetricSamples } from "../nats/consumer-metrics";
+import { natsMetricSamples } from "../nats/metrics";
+import { getNatsClusterDiagnostics, getNatsInventorySummary } from "../nats/service";
 
 export const METRICS_ENDPOINT = "/metrics";
 export const METRICS_SCOPE = "metrics:read";
@@ -21,7 +21,6 @@ export const METRICS_SERVICE_ACCOUNT = {
 
 const CACHE_TTL_MS = 15_000;
 const COLLECTOR_TIMEOUT_MS = 2_500;
-const TOP_REDIS_PREFIXES = 10;
 
 type MetricType = "counter" | "gauge";
 type MetricLabels = Record<string, string | number | boolean>;
@@ -613,7 +612,7 @@ const metricCatalog: CollectorDefinition[] = [
     id: "redis",
     degraded: (samples) => (upGaugeIsDown(samples, "cloud_redis_up") ? "Redis diagnostics unavailable" : null),
     name: "Redis",
-    description: "Redis keyspace, expiry, TTL, and bounded prefix sample diagnostics.",
+    description: "Redis keyspace, expiry, TTL, and aggregate sample diagnostics.",
     metricNames: [
       "cloud_redis_up",
       "cloud_redis_keys_total",
@@ -621,7 +620,6 @@ const metricCatalog: CollectorDefinition[] = [
       "cloud_redis_avg_ttl_ms",
       "cloud_redis_sampled_keys",
       "cloud_redis_scan_complete",
-      "cloud_redis_prefix_sample_keys",
       "cloud_redis_warnings_total",
     ],
     collect: async () => {
@@ -649,17 +647,6 @@ const metricCatalog: CollectorDefinition[] = [
           labels: { database: row.database },
         },
       ]);
-      const prefixSamples = diagnostics.prefixes
-        .filter((row) => row.depth === 1)
-        .slice(0, TOP_REDIS_PREFIXES)
-        .map((row) => ({
-          name: "cloud_redis_prefix_sample_keys",
-          help: "Bounded Redis key prefix sample count. Prefix labels are sampled and limited.",
-          type: "gauge" as const,
-          value: row.count,
-          labels: { depth: row.depth, prefix: row.prefix },
-        }));
-
       return [
         {
           name: "cloud_redis_up",
@@ -686,7 +673,6 @@ const metricCatalog: CollectorDefinition[] = [
           value: diagnostics.warnings.length,
         },
         ...keyspaceSamples,
-        ...prefixSamples,
       ];
     },
   },
@@ -746,11 +732,22 @@ const selfMetric = (name: string, help: string, value: number, labels?: MetricLa
   labels,
 });
 
-const runCollector = async (collector: CollectorDefinition): Promise<{ status: MetricsCollectorStatus; samples: MetricSample[] }> => {
+// A response timeout does not cancel database or Redis work. Keep the slot
+// occupied until the underlying operation settles, including after a timeout.
+const runningCollectors = new WeakSet<CollectorDefinition>();
+
+export const runCollector = async (
+  collector: CollectorDefinition,
+): Promise<{ status: MetricsCollectorStatus; samples: MetricSample[] }> => {
   const start = performance.now();
   const lastRunAt = nowIso();
   try {
-    const samples = await withTimeout(collector.name, collector.collect(), collector.timeoutMs ?? COLLECTOR_TIMEOUT_MS);
+    if (runningCollectors.has(collector)) throw new Error(`${collector.name} is still running after an earlier scrape`);
+    runningCollectors.add(collector);
+    const work = Promise.resolve()
+      .then(() => collector.collect())
+      .finally(() => runningCollectors.delete(collector));
+    const samples = await withTimeout(collector.name, work, collector.timeoutMs ?? COLLECTOR_TIMEOUT_MS);
     const degraded = collector.degraded?.(samples) ?? null;
     return {
       samples,

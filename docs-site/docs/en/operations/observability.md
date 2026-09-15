@@ -269,6 +269,26 @@ provider failure, stream reconnect, abort, approval denial, and worker restart.
 See [Chat interface](/en/docs/ai/chat-interface) for browser state and
 shared chat components.
 
+## Scrape platform metrics
+
+Use **Admin > Observability > Metrics** to create a dedicated scrape token.
+Send it as a Bearer token to `/metrics` from Pulse or a Prometheus-compatible
+collector. The token is restricted to metrics; anonymous requests are rejected.
+
+Gateway Ops caches each snapshot for 15 seconds and shares concurrent refreshes.
+Collectors have bounded response times. A timed-out collector keeps its execution
+slot until its underlying work finishes; later scrapes report it unavailable
+instead of starting overlapping work. This limit applies per Gateway Ops process.
+Other collectors continue to report their results. Check
+`cloud_metrics_collector_success` to distinguish a partial scrape from a healthy
+one, even when the HTTP response succeeds.
+
+Redis metrics contain aggregate keyspace, expiry, and sampling counts. Raw keys
+and dynamic key-prefix labels are not exported; inspect prefix samples on the
+administrator-only Redis diagnostics page. The former
+`cloud_redis_prefix_sample_keys` series is removed; use `cloud_redis_keys_total`
+for total key counts by database.
+
 ## Alert on user impact
 
 Useful alerts include:
