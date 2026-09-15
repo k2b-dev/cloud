@@ -447,7 +447,7 @@ describe("declared Grids workflow actions", () => {
         })
         .route("/", createWorkflowRunRoutes());
       const [publicRun] = await sql`SELECT short_id FROM grids.workflow_run_profile WHERE run_id = ${runId}::uuid`;
-      const path = `/runs/${publicRun.short_id}/files/${capture.id}?sha256=${capture.sha256}`;
+      const path = `/runs/${publicRun.short_id}/files/steps.0?sha256=${capture.sha256}`;
       const preview = await api.request(path);
       expect(preview.status, await preview.clone().text()).toBe(200);
       expect(WorkflowFilePreviewSchema.parse(await preview.json()).reports[0]?.entryCount).toBe(2);

@@ -1,9 +1,9 @@
 import { beforeAll, describe, expect, spyOn } from "bun:test";
 import type { AuthContext } from "@k2b/cloud/server";
 import { sql } from "bun";
-import { fromPublicFormConfig } from "../../api/form-api-shared";
 import { Hono } from "hono";
 import { createCustomAppsApi } from "../../api/custom-apps";
+import { fromPublicFormConfig } from "../../api/form-api-shared";
 import type { CustomAppDefinition } from "../../custom-apps/contracts";
 import { postgresTest, testShortId, testUuid } from "../../integration-test-utils";
 import { migrate } from "../../migrate";
@@ -97,7 +97,9 @@ describe("published App SSR availability", () => {
         baseId: basePublicId,
         name: "Public SSR app",
         startPageId: "home",
-        sidebar: { actions: [{ id: "new-request", label: "New request", kind: "form", formId: formPublicId, fixedValues: {}, tone: "default" }] },
+        sidebar: {
+          actions: [{ id: "new-request", label: "New request", kind: "form", formId: formPublicId, fixedValues: {}, tone: "default" }],
+        },
         pages: [
           {
             id: "home",
@@ -418,7 +420,17 @@ describe("published App SSR availability", () => {
         .get("/:shortId/:pageId", ...customAppPage);
       const home = await app.request(`/${appPublicId}/home`);
       expect(home.status).toBe(200);
-      expect(await home.text()).not.toContain("Unavailable records must not render");
+      // Navigation receives the published definition as island props. Check
+      // rendered content separately from that public configuration metadata.
+      const rendered = await new HTMLRewriter()
+        .on("solid-island", {
+          element(element) {
+            element.removeAttribute("data-props");
+          },
+        })
+        .transform(home)
+        .text();
+      expect(rendered).not.toContain("Unavailable records must not render");
       expect(viewGet).not.toHaveBeenCalled();
 
       const denied = await app.request(`/${appPublicId}/denied`);

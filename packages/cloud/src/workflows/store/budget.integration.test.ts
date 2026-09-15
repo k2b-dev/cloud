@@ -22,13 +22,9 @@ import { createChildWorkflowRuns, createWorkflowRun } from "./runs";
 let readiness: Promise<boolean> | null = null;
 const ready = (): Promise<boolean> => {
   readiness ??= (async () => {
-    try {
-      await migrate();
-      const [row] = await sql<{ run: string | null }[]>`SELECT to_regclass('workflows.run')::text AS run`;
-      return Boolean(row?.run);
-    } catch {
-      return false;
-    }
+    await migrate();
+    const [row] = await sql<{ run: string | null }[]>`SELECT to_regclass('workflows.run')::text AS run`;
+    return Boolean(row?.run);
   })();
   return readiness;
 };
@@ -72,7 +68,7 @@ const budgeted = async (effectBudget: Record<string, number>) => {
   return { base, workflowId: workflow.id };
 };
 
-describe("effect budgets", () => {
+describe("effect budget validation", () => {
   test("budgets and charges reject negative or non-finite values", () => {
     expect(() => validateWorkflowEffectBudget({ emails: -1 })).toThrow("finite non-negative");
     expect(() => validateWorkflowEffectBudget({ emails: Number.NaN })).toThrow("finite non-negative");
@@ -87,9 +83,11 @@ describe("effect budgets", () => {
     expect(checkEffectBudget({ emails: 10 }, planned).state).toBe("ok");
     expect(checkEffectBudget({ emails: 4 }, planned)).toMatchObject({ state: "exceeded", dimension: "emails", limit: 4 });
   });
+});
 
+(process.env.CLOUD_DATABASE_TEST === "1" ? describe : describe.skip)("effect budgets", () => {
   test("a dimension the budget does not mention is uncapped but still counted", async () => {
-    if (!(await ready())) return;
+    expect(await ready()).toBe(true);
     const { base } = await budgeted({ emails: 1 });
     const runId = await createWorkflowRun({ ...base, idempotencyKey: "uncapped" });
 
@@ -100,7 +98,7 @@ describe("effect budgets", () => {
   });
 
   test("charging accumulates and stops exactly at the cap", async () => {
-    if (!(await ready())) return;
+    expect(await ready()).toBe(true);
     const { base } = await budgeted({ emails: 3 });
     const runId = await createWorkflowRun({ ...base, idempotencyKey: "accumulate" });
 
@@ -116,7 +114,7 @@ describe("effect budgets", () => {
   });
 
   test("a rejected charge spends nothing", async () => {
-    if (!(await ready())) return;
+    expect(await ready()).toBe(true);
     const { base } = await budgeted({ emails: 2 });
     const runId = await createWorkflowRun({ ...base, idempotencyKey: "atomic" });
 
@@ -132,7 +130,7 @@ describe("effect budgets", () => {
   });
 
   test("a fan-out charges the root, not each child", async () => {
-    if (!(await ready())) return;
+    expect(await ready()).toBe(true);
     const { base } = await budgeted({ emails: 5 });
     const parentId = await createWorkflowRun({ ...base, idempotencyKey: "fanout-parent" });
     await createChildWorkflowRuns(
@@ -156,7 +154,7 @@ describe("effect budgets", () => {
   });
 
   test("concurrent charges cannot both spend the last of the allowance", async () => {
-    if (!(await ready())) return;
+    expect(await ready()).toBe(true);
     const { base } = await budgeted({ emails: 10 });
     const runId = await createWorkflowRun({ ...base, idempotencyKey: "concurrent" });
 

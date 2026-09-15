@@ -97,9 +97,20 @@ jobs:
           echo "release_tag=$release_tag" >> "$GITHUB_OUTPUT"
           echo "Matrix: $apps"
 
-  build:
+  grids-certification:
     needs: matrix
-    if: ${{ needs.matrix.outputs.apps != '[]' }}
+    if: ${{ contains(fromJSON(needs.matrix.outputs.apps), 'grids') }}
+    uses: ./.github/workflows/grids.yml
+    permissions:
+      contents: read
+
+  build:
+    needs: [matrix, grids-certification]
+    # A release containing Grids must certify this checkout before any image is published.
+    if: >-
+      ${{ !cancelled() && needs.matrix.result == 'success' && needs.matrix.outputs.apps != '[]' &&
+          (needs.grids-certification.result == 'success' ||
+           (needs.grids-certification.result == 'skipped' && !contains(fromJSON(needs.matrix.outputs.apps), 'grids'))) }}
     runs-on: ubuntu-latest
     timeout-minutes: 60
     permissions:

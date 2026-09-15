@@ -14,8 +14,8 @@ import {
   getWorkflowRun,
   listStrandedWorkflowEffects,
   listWorkflowFamilies,
-  listWorkflowRunTimeline,
   listWorkflowRuns,
+  listWorkflowRunTimeline,
   workflowHealth,
 } from "./observability";
 import { beginWorkflowEffect, claimWorkflowRun, createChildWorkflowRuns, createWorkflowRuntimeRepository, finishWorkflowRun } from "./runs";
@@ -23,13 +23,9 @@ import { beginWorkflowEffect, claimWorkflowRun, createChildWorkflowRuns, createW
 let readiness: Promise<boolean> | null = null;
 const ready = (): Promise<boolean> => {
   readiness ??= (async () => {
-    try {
-      await migrate();
-      const [row] = await sql<{ run: string | null }[]>`SELECT to_regclass('workflows.run')::text AS run`;
-      return Boolean(row?.run);
-    } catch {
-      return false;
-    }
+    await migrate();
+    const [row] = await sql<{ run: string | null }[]>`SELECT to_regclass('workflows.run')::text AS run`;
+    return Boolean(row?.run);
   })();
   return readiness;
 };
@@ -79,9 +75,9 @@ const step = (runId: string, generation: number, key: string) => ({
   action: "probe.send",
 });
 
-describe("workflow observability", () => {
+(process.env.CLOUD_DATABASE_TEST === "1" ? describe : describe.skip)("workflow observability", () => {
   test("a run detail says what caused it, what it did and what it spent", async () => {
-    if (!(await ready())) return;
+    expect(await ready()).toBe(true);
     const { scopeId } = await listening("probe", "probe.detail");
     const emission = await emitWorkflowEvent(
       { appId: "probe", scopeId, type: "probe.detail", data: { rowId: "r-7" } },
@@ -109,7 +105,7 @@ describe("workflow observability", () => {
   });
 
   test("children stay out of the list until you open their parent", async () => {
-    if (!(await ready())) return;
+    expect(await ready()).toBe(true);
     const { scopeId, workflowId } = await listening("probe", "probe.fanout");
     const emission = await emitWorkflowEvent({ appId: "probe", scopeId, type: "probe.fanout" }, { dispatch: "now" });
     const parentId = emission.runIds[0]!;
@@ -138,7 +134,7 @@ describe("workflow observability", () => {
   });
 
   test("an effect that escaped is listed with its age", async () => {
-    if (!(await ready())) return;
+    expect(await ready()).toBe(true);
     const appId = `stranded-${crypto.randomUUID().slice(0, 8)}`;
     const { scopeId } = await listening(appId, "probe.stranded");
     const emission = await emitWorkflowEvent({ appId, scopeId, type: "probe.stranded" }, { dispatch: "now" });
@@ -157,7 +153,7 @@ describe("workflow observability", () => {
   });
 
   test("health answers 'is anything broken' per app in one pass", async () => {
-    if (!(await ready())) return;
+    expect(await ready()).toBe(true);
     const appId = `health-${crypto.randomUUID().slice(0, 8)}`;
     const { scopeId } = await listening(appId, "probe.health");
 
@@ -175,7 +171,7 @@ describe("workflow observability", () => {
   });
 
   test("a run that started long after its cause reports the lag", async () => {
-    if (!(await ready())) return;
+    expect(await ready()).toBe(true);
     const appId = `lag-${crypto.randomUUID().slice(0, 8)}`;
     const { scopeId } = await listening(appId, "probe.lag");
 
@@ -193,7 +189,7 @@ describe("workflow observability", () => {
   });
 
   test("families summarize runs while the timeline stays bounded and honest", async () => {
-    if (!(await ready())) return;
+    expect(await ready()).toBe(true);
     const appId = `families-${crypto.randomUUID().slice(0, 8)}`;
     const { scopeId, workflowId } = await listening(appId, "probe.family");
 

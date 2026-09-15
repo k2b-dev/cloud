@@ -127,7 +127,7 @@ describe("GridsSidebar workflows", () => {
     const readOnlyHtml = renderToString(() => createComponent(GridsSidebar, { state: workflowState() }));
 
     expect(editableHtml).toContain(">New<");
-    expect(editableHtml.match(/>New</g)).toHaveLength(2);
+    expect(editableHtml.match(/>New</g)).toHaveLength(1);
     expect(editableHtml).not.toContain("New workflow");
     expect(editableHtml).not.toContain("Email templates");
     expect(readOnlyHtml).not.toContain(">New<");

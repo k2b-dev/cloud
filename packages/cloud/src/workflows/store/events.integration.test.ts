@@ -18,13 +18,9 @@ import { claimWorkflowRun } from "./runs";
 let readiness: Promise<boolean> | null = null;
 const ready = (): Promise<boolean> => {
   readiness ??= (async () => {
-    try {
-      await migrate();
-      const [row] = await sql<{ event: string | null }[]>`SELECT to_regclass('workflows.event')::text AS event`;
-      return Boolean(row?.event);
-    } catch {
-      return false;
-    }
+    await migrate();
+    const [row] = await sql<{ event: string | null }[]>`SELECT to_regclass('workflows.event')::text AS event`;
+    return Boolean(row?.event);
   })();
   return readiness;
 };
@@ -66,9 +62,9 @@ const listeningInScope = async (scopeId: string, eventType: string, options: { a
 
 const listening = (eventType: string, options: { activations?: number } = {}) => listeningInScope(testData.scope(), eventType, options);
 
-describe("workflow events", () => {
+(process.env.CLOUD_DATABASE_TEST === "1" ? describe : describe.skip)("workflow events", () => {
   test("current workflow schema setup is idempotent and includes runtime columns", async () => {
-    if (!(await ready())) return;
+    expect(await ready()).toBe(true);
     await migrate();
     const rows = await sql<{ table_name: string; column_name: string }[]>`
       SELECT table_name, column_name
@@ -88,7 +84,7 @@ describe("workflow events", () => {
   });
 
   test("an event starts one run per activation listening for it", async () => {
-    if (!(await ready())) return;
+    expect(await ready()).toBe(true);
     const { scopeId } = await listening("probe.recordChanged", { activations: 2 });
 
     const emission = await emitWorkflowEvent(
@@ -106,7 +102,7 @@ describe("workflow events", () => {
   });
 
   test("an event nothing listens for is recorded rather than dropped", async () => {
-    if (!(await ready())) return;
+    expect(await ready()).toBe(true);
     const scopeId = testData.scope();
     const emission = await emitWorkflowEvent({ appId: "probe", scopeId, type: "probe.unheard" }, { dispatch: "now" });
 
@@ -120,7 +116,7 @@ describe("workflow events", () => {
   });
 
   test("the same dedupe key answers with the runs it already started", async () => {
-    if (!(await ready())) return;
+    expect(await ready()).toBe(true);
     const { scopeId } = await listening("probe.tick");
     const input = { appId: "probe", scopeId, type: "probe.tick", dedupeKey: "slot-2026-01-01T00:00" } as const;
 
@@ -135,7 +131,7 @@ describe("workflow events", () => {
   });
 
   test("a deferred event runs later, and dispatching twice adds nothing", async () => {
-    if (!(await ready())) return;
+    expect(await ready()).toBe(true);
     const { scopeId } = await listening("probe.deferred");
 
     const emission = await emitWorkflowEvent({ appId: "probe", scopeId, type: "probe.deferred" });
@@ -152,7 +148,7 @@ describe("workflow events", () => {
   });
 
   test("a dispatch failure is recorded on the event, not swallowed", async () => {
-    if (!(await ready())) return;
+    expect(await ready()).toBe(true);
     const { scopeId } = await listening("probe.broken");
     const emission = await emitWorkflowEvent({ appId: "probe", scopeId, type: "probe.broken" });
 
@@ -186,7 +182,7 @@ describe("workflow events", () => {
   });
 
   test("one poison event does not block later events in the batch", async () => {
-    if (!(await ready())) return;
+    expect(await ready()).toBe(true);
     const scopeId = testData.scope();
     await listeningInScope(scopeId, "probe.poison");
     await listeningInScope(scopeId, "probe.healthy");
@@ -206,7 +202,7 @@ describe("workflow events", () => {
   });
 
   test("an event is dead-lettered after its bounded final dispatch attempt", async () => {
-    if (!(await ready())) return;
+    expect(await ready()).toBe(true);
     const { scopeId } = await listening("probe.dead");
     const emission = await emitWorkflowEvent({ appId: "probe", scopeId, type: "probe.dead" });
     await sql`
@@ -230,7 +226,7 @@ describe("workflow events", () => {
   });
 
   test("a dedupe key is scoped, so two bases cannot collide", async () => {
-    if (!(await ready())) return;
+    expect(await ready()).toBe(true);
     const mine = await listening("probe.scoped-dedupe");
     const other = await listening("probe.scoped-dedupe");
     const dedupeKey = "slot-2026-01-01T00:00";
@@ -252,7 +248,7 @@ describe("workflow events", () => {
   });
 
   test("a targeted event reaches only the workflow it names", async () => {
-    if (!(await ready())) return;
+    expect(await ready()).toBe(true);
     const scopeId = testData.scope();
     const [mine, other] = await Promise.all([listeningInScope(scopeId, "probe.targeted"), listeningInScope(scopeId, "probe.targeted")]);
 
@@ -270,7 +266,7 @@ describe("workflow events", () => {
   });
 
   test("a targeted deferred event stays targeted after the dispatcher re-reads it", async () => {
-    if (!(await ready())) return;
+    expect(await ready()).toBe(true);
     const scopeId = testData.scope();
     const mine = await listeningInScope(scopeId, "probe.deferred-target");
     await listeningInScope(scopeId, "probe.deferred-target");
@@ -285,7 +281,7 @@ describe("workflow events", () => {
   });
 
   test("the emitter's actor wins, and the activation is the fallback", async () => {
-    if (!(await ready())) return;
+    expect(await ready()).toBe(true);
     const { scopeId } = await listening("probe.actor");
 
     const pressed = await emitWorkflowEvent(
@@ -301,7 +297,7 @@ describe("workflow events", () => {
   });
 
   test("context reaches the run alongside the payload", async () => {
-    if (!(await ready())) return;
+    expect(await ready()).toBe(true);
     const { scopeId } = await listening("probe.context");
     const emission = await emitWorkflowEvent(
       { appId: "probe", scopeId, type: "probe.context", data: { rowId: "r-1" }, context: { snapshot: { name: "captured" } } },
@@ -316,7 +312,7 @@ describe("workflow events", () => {
   });
 
   test("publishing does not turn a disabled workflow back on", async () => {
-    if (!(await ready())) return;
+    expect(await ready()).toBe(true);
     const { workflowId, scopeId } = await listening("probe.stays-off");
     await sql`UPDATE workflows.activation SET enabled = false WHERE workflow_id = ${workflowId}::uuid`;
 
@@ -333,7 +329,7 @@ describe("workflow events", () => {
   });
 
   test("scope deletion removes workflows, runs, and events without touching another scope", async () => {
-    if (!(await ready())) return;
+    expect(await ready()).toBe(true);
     const { workflowId, scopeId } = await listening("probe.deletable");
     const emission = await emitWorkflowEvent({ appId: "probe", scopeId, type: "probe.deletable" }, { dispatch: "now" });
     const neighbour = await listening("probe.neighbour");
@@ -356,7 +352,7 @@ describe("workflow events", () => {
   });
 
   test("publishing a new version re-points activations with no window", async () => {
-    if (!(await ready())) return;
+    expect(await ready()).toBe(true);
     const { scopeId, workflowId, versionId } = await listening("probe.published");
 
     const second = await publishWorkflowVersion({
@@ -381,7 +377,7 @@ describe("workflow events", () => {
   });
 
   test("deferred dispatch keeps the version that matched at receipt time", async () => {
-    if (!(await ready())) return;
+    expect(await ready()).toBe(true);
     const { scopeId, workflowId, versionId } = await listening("probe.receipt");
     const emission = await emitWorkflowEvent({ appId: "probe", scopeId, type: "probe.receipt" });
 
@@ -402,7 +398,7 @@ describe("workflow events", () => {
   });
 
   test("a draft version does not change the live version or activations", async () => {
-    if (!(await ready())) return;
+    expect(await ready()).toBe(true);
     const { scopeId, workflowId, versionId } = await listening("probe.live");
 
     const draft = await publishWorkflowVersion({
@@ -433,7 +429,7 @@ describe("workflow events", () => {
   });
 
   test("publishing refreshes the activation authorization snapshot", async () => {
-    if (!(await ready())) return;
+    expect(await ready()).toBe(true);
     const { scopeId, workflowId } = await listening("probe.authorization");
     await publishWorkflowVersion({
       workflowId,
@@ -452,7 +448,7 @@ describe("workflow events", () => {
   });
 
   test("a trigger removed from the source stops firing", async () => {
-    if (!(await ready())) return;
+    expect(await ready()).toBe(true);
     const { scopeId, workflowId } = await listening("probe.removed");
 
     await publishWorkflowVersion({
@@ -468,7 +464,7 @@ describe("workflow events", () => {
   });
 
   test("an event only reaches workflows in its own scope", async () => {
-    if (!(await ready())) return;
+    expect(await ready()).toBe(true);
     const mine = await listening("probe.scoped");
     await listening("probe.scoped");
 
@@ -477,7 +473,7 @@ describe("workflow events", () => {
   });
 
   test("disabling a workflow stops it matching without deleting anything", async () => {
-    if (!(await ready())) return;
+    expect(await ready()).toBe(true);
     const { scopeId, workflowId } = await listening("probe.disabled");
     await sql`UPDATE workflows.activation SET enabled = false WHERE workflow_id = ${workflowId}::uuid`;
 

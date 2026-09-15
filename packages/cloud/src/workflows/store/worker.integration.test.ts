@@ -31,13 +31,9 @@ import { dryRunOneWorkflow, runOneWorkflow, tickWorkflows } from "./worker";
 let readiness: Promise<boolean> | null = null;
 const ready = (): Promise<boolean> => {
   readiness ??= (async () => {
-    try {
-      await migrate();
-      const [row] = await sql<{ run: string | null }[]>`SELECT to_regclass('workflows.run')::text AS run`;
-      return Boolean(row?.run);
-    } catch {
-      return false;
-    }
+    await migrate();
+    const [row] = await sql<{ run: string | null }[]>`SELECT to_regclass('workflows.run')::text AS run`;
+    return Boolean(row?.run);
   })();
   return readiness;
 };
@@ -97,9 +93,9 @@ const workflowListening = async (eventType: string, plan: WorkflowBoundPlan) => 
   return { appId, scopeId, workflowId: workflow.id };
 };
 
-describe("workflow worker", () => {
+(process.env.CLOUD_DATABASE_TEST === "1" ? describe : describe.skip)("workflow worker", () => {
   test("an event becomes a finished run in one tick", async () => {
-    if (!(await ready())) return;
+    expect(await ready()).toBe(true);
     const plan = planWith([actionStep(0, "probe.record")], ["probe.record"]);
     const { appId, scopeId } = await workflowListening("probe.worker", plan);
 
@@ -129,7 +125,7 @@ describe("workflow worker", () => {
   });
 
   test("a failing action settles the run rather than losing it", async () => {
-    if (!(await ready())) return;
+    expect(await ready()).toBe(true);
     const plan = planWith([actionStep(0, "probe.explode")], ["probe.explode"]);
     const { appId, scopeId } = await workflowListening("probe.explode", plan);
     const emission = await emitWorkflowEvent({ appId, scopeId, type: "probe.explode" }, { dispatch: "now" });
@@ -151,7 +147,7 @@ describe("workflow worker", () => {
   });
 
   test("a version bound against another app module is never executed", async () => {
-    if (!(await ready())) return;
+    expect(await ready()).toBe(true);
     const plan = {
       ...planWith([actionStep(0, "probe.stale")], ["probe.stale"]),
       manifestHash: hex("stale-manifest"),
@@ -182,7 +178,7 @@ describe("workflow worker", () => {
   });
 
   test("a running cancel is finalized by the worker that observes it", async () => {
-    if (!(await ready())) return;
+    expect(await ready()).toBe(true);
     const plan = planWith([actionStep(0, "probe.cancel")], ["probe.cancel"]);
     const { appId, scopeId } = await workflowListening("probe.cancel", plan);
     const emission = await emitWorkflowEvent({ appId, scopeId, type: "probe.cancel" }, { dispatch: "now" });
@@ -205,7 +201,7 @@ describe("workflow worker", () => {
   });
 
   test("an expired canceled claim is finalized by the next app tick", async () => {
-    if (!(await ready())) return;
+    expect(await ready()).toBe(true);
     const plan = planWith([actionStep(0, "probe.never")], ["probe.never"]);
     const { appId, scopeId } = await workflowListening("probe.cancel-crash", plan);
     const emission = await emitWorkflowEvent({ appId, scopeId, type: "probe.cancel-crash" }, { dispatch: "now" });
@@ -220,7 +216,7 @@ describe("workflow worker", () => {
   });
 
   test("canceling an expired claim keeps an uncertain effect visible", async () => {
-    if (!(await ready())) return;
+    expect(await ready()).toBe(true);
     const plan = planWith([actionStep(0, "probe.uncertain")], ["probe.uncertain"]);
     const { appId, scopeId } = await workflowListening("probe.cancel-uncertain", plan);
     const emission = await emitWorkflowEvent({ appId, scopeId, type: "probe.cancel-uncertain" }, { dispatch: "now" });
@@ -255,7 +251,7 @@ describe("workflow worker", () => {
   });
 
   test("a lost lease mid-run does not repeat the step that already landed", async () => {
-    if (!(await ready())) return;
+    expect(await ready()).toBe(true);
     const plan = planWith([actionStep(0, "probe.first"), actionStep(1, "probe.second")], ["probe.first", "probe.second"]);
     const { appId, scopeId } = await workflowListening("probe.crash", plan);
     const emission = await emitWorkflowEvent({ appId, scopeId, type: "probe.crash" }, { dispatch: "now" });
@@ -302,7 +298,7 @@ describe("workflow worker", () => {
   });
 
   test("a run announces that it started and how it settled, around its steps", async () => {
-    if (!(await ready())) return;
+    expect(await ready()).toBe(true);
     const plan = planWith([actionStep(0, "probe.watched")], ["probe.watched"]);
     const { appId, scopeId } = await workflowListening("probe.watched", plan);
     const emission = await emitWorkflowEvent({ appId, scopeId, type: "probe.watched" }, { dispatch: "now" });
@@ -329,7 +325,7 @@ describe("workflow worker", () => {
   });
 
   test("an observer that throws does not cost the run its outcome", async () => {
-    if (!(await ready())) return;
+    expect(await ready()).toBe(true);
     const plan = planWith([actionStep(0, "probe.observed")], ["probe.observed"]);
     const { appId, scopeId } = await workflowListening("probe.observed", plan);
     const emission = await emitWorkflowEvent({ appId, scopeId, type: "probe.observed" }, { dispatch: "now" });
@@ -353,7 +349,7 @@ describe("workflow worker", () => {
   });
 
   test("a dry run is leased and journaled like a run, and performs nothing", async () => {
-    if (!(await ready())) return;
+    expect(await ready()).toBe(true);
     const plan = planWith([actionStep(0, "probe.costly")], ["probe.costly"]);
     const { appId, scopeId, workflowId } = await workflowListening("probe.dry", plan);
     const version = await sql<{ id: string }[]>`
@@ -396,7 +392,7 @@ describe("workflow worker", () => {
   });
 
   test("the execute worker never answers a dry run by doing the work", async () => {
-    if (!(await ready())) return;
+    expect(await ready()).toBe(true);
     const plan = planWith([actionStep(0, "probe.untouched")], ["probe.untouched"]);
     const { appId, scopeId, workflowId } = await workflowListening("probe.modes", plan);
     const [version] = await sql<{ id: string }[]>`
@@ -432,7 +428,7 @@ describe("workflow worker", () => {
   });
 
   test("an idle worker says so instead of spinning", async () => {
-    if (!(await ready())) return;
+    expect(await ready()).toBe(true);
     // An app with nothing queued: the worker reports idle rather than looping.
     expect(await runOneWorkflow({ worker: "w1", ...forApp(`empty-${crypto.randomUUID()}`), actions: port({}) })).toEqual({ state: "idle" });
     expect(await claimWorkflowRun({ worker: "w1", appId: `empty-${crypto.randomUUID()}` })).toBeNull();

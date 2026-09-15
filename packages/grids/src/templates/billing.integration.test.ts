@@ -47,7 +47,7 @@ for (const locale of ["en", "de"]) {
           const apps = await sql`SELECT id, published_definition FROM grids.custom_apps
             WHERE base_id = ${baseId}::uuid AND published_definition IS NOT NULL`;
           expect(apps).toHaveLength(1);
-          expect(apps[0].published_definition.pages).toHaveLength(10);
+          expect(apps[0].published_definition.pages).toHaveLength(11);
           const workflows = await sql`SELECT w.id FROM grids.workflow_profile p
             JOIN workflows.workflow w ON w.id = p.id
             WHERE p.base_id = ${baseId}::uuid AND w.active_version_id IS NOT NULL`;
@@ -323,8 +323,8 @@ for (const valid of [false, true]) {
           if (["failed", "succeeded", "needs_attention", "canceled"].includes(run.state)) {
             expect(run.state, JSON.stringify(run.error)).toBe(valid ? "succeeded" : "failed");
             if (!valid) {
-              expect(run.error?.code).toBe("BAD_INPUT");
-              expect(JSON.stringify(run.error)).toContain("iban");
+              expect(run.error?.code).toBe("DOCUMENT_INPUT_INVALID");
+              expect(JSON.stringify(run.error)).toContain("IBAN");
             }
             terminal = true;
             break;

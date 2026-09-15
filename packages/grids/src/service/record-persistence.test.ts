@@ -30,7 +30,7 @@ describe("record persistence", () => {
         id: "record-id",
         short_id: "REC001",
         table_id: "table-id",
-        data: JSON.stringify({ name: "Ada" }),
+        data: { name: "Ada" },
         version: 3,
         deleted_at: null,
         created_by: null,

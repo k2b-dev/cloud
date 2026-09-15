@@ -611,7 +611,12 @@ for (const scenario of [
             Array<{ id: string }>
           >`SELECT id::text FROM grids.records WHERE table_id = ${bills.id}::uuid AND finalized_at IS NULL`;
           expect(remaining).toBeDefined();
-          await bills.edit(remaining!.id, { positions: scenarioLines("0.0200"), reason: "Remaining refund" });
+          await bills.edit(remaining!.id, {
+            positions: scenarioLines("0.0200"),
+            invoice_date: "2026-09-15",
+            due_date: "2026-09-15",
+            reason: "Remaining refund",
+          });
           succeeded(await f.invoke("Issue correction", { bill: ref(bills.id, remaining!.id) }));
           const totals = await sql<
             Array<{ profile_output: { netAmount: string; taxAmount: string; grossAmount: string } }>

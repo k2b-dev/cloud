@@ -159,6 +159,14 @@ Cloud maintainers use only a `sha-...` platform tag whose Docker workflow
 finished the `release-set` job; that job proves the complete platform image set
 exists.
 
+When a Docker release includes Grids, the workflow requires Grids certification
+from the same commit before publishing any selected image. Certification runs the
+full Grids and shared workflow tests with PostgreSQL, NATS JetStream, Valkey and
+real PDF rendering, plus an unfiltered Grids typecheck. Failed, cancelled or
+missing certification blocks the release. Its workflow artifact retains JUnit
+reports, logs and runtime versions. This gate does not replace the operator's
+backup restoration and process recovery checks.
+
 When operating the Cloud platform itself, render and inspect its deployment
 before changing platform containers:
 

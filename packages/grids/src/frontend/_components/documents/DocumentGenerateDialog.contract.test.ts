@@ -6,9 +6,11 @@ describe("document generation dialog", () => {
     const source = await Bun.file(new URL("./DocumentGenerateDialog.tsx", import.meta.url)).text();
     expect(source).toContain("when={!attempt.request()}");
     expect(source).toContain("disabled={() => attempt.request() !== null}");
-    expect(source).toContain("prompts.confirm(t().newGenerationAttemptDetail");
+    expect(source).toMatch(
+      /prompts\.confirm\(\s*props\.args\.template\.issuancePolicy === "oncePerFinalizedRecord" \? t\(\)\.issuanceOnceNewAttempt : t\(\)\.newGenerationAttemptDetail/,
+    );
     expect(source).toContain("request.filename ||");
-    expect(source).toContain("(!attempt.request() && !hasCurrentPreview())");
+    expect(source).toContain("(!once() && !attempt.request() && !hasCurrentPreview())");
     for (const locale of ["en", "de"]) {
       const copy = documentMessages.resolve([locale]).t;
       expect(copy.retryGenerationDetail.length).toBeGreaterThan(0);

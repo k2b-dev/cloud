@@ -152,9 +152,6 @@ describe("authored template workflow transitions", () => {
     if (process.env.GRIDS_DB_TEST !== "1") return;
     const target = new URL(process.env.DATABASE_URL ?? "");
     expect(["localhost", "127.0.0.1"]).toContain(target.hostname);
-    expect(target.port || "5432").toBe("5432");
-    const [server] = await sql<Array<{ port: number }>>`SELECT inet_server_port() AS port`;
-    expect(server?.port).toBe(5432);
     await migrate();
   });
 

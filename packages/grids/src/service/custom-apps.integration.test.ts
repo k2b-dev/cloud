@@ -953,6 +953,7 @@ describe("Grids App lifecycle", () => {
         forms: [
           {
             sidebarActionId: "create-request",
+            relationLookupHash: expect.stringMatching(/^[a-f0-9]{64}$/),
             formId,
             tableId,
             userInputFieldIds: [fieldId, relationFieldId].sort(),
@@ -961,6 +962,7 @@ describe("Grids App lifecycle", () => {
           {
             pageId: "home",
             blockId: "apply",
+            relationLookupHash: expect.stringMatching(/^[a-f0-9]{64}$/),
             formId,
             tableId,
             userInputFieldIds: [fieldId, relationFieldId].sort(),
@@ -969,6 +971,7 @@ describe("Grids App lifecycle", () => {
           {
             pageId: "request",
             blockId: "follow-up",
+            relationLookupHash: expect.stringMatching(/^[a-f0-9]{64}$/),
             formId,
             tableId,
             userInputFieldIds: [fieldId, relationFieldId].sort(),

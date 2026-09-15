@@ -160,7 +160,7 @@ describe("Grids Base settings composition", () => {
   test("keeps every dialog exit behind the dirty and save guards", () => {
     const panel = readFileSync(join(import.meta.dir, "BaseSettingsPanel.tsx"), "utf8");
     const sections = readFileSync(join(import.meta.dir, "BaseSettingsSections.tsx"), "utf8");
-    const opener = readFileSync(join(import.meta.dir, "../sidebar/BaseSettingsButton.island.tsx"), "utf8");
+    const opener = readFileSync(join(import.meta.dir, "../sidebar/base-settings.tsx"), "utf8");
 
     expect(opener).toContain("setDismissHandler={context.setDismissHandler}");
     expect(panel).toContain("props.setDismissHandler?.(requestClose)");

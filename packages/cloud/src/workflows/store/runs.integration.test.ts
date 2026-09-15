@@ -38,13 +38,9 @@ import {
 let readiness: Promise<boolean> | null = null;
 const ready = (): Promise<boolean> => {
   readiness ??= (async () => {
-    try {
-      await migrate();
-      const [row] = await sql<{ run: string | null }[]>`SELECT to_regclass('workflows.run')::text AS run`;
-      return Boolean(row?.run);
-    } catch {
-      return false;
-    }
+    await migrate();
+    const [row] = await sql<{ run: string | null }[]>`SELECT to_regclass('workflows.run')::text AS run`;
+    return Boolean(row?.run);
   })();
   return readiness;
 };
@@ -118,9 +114,9 @@ const effectRow = async (runId: string) => {
   return row;
 };
 
-describe("workflow run store", () => {
+(process.env.CLOUD_DATABASE_TEST === "1" ? describe : describe.skip)("workflow run store", () => {
   test("stores scalar JSON workflow results without changing their type", async () => {
-    if (!(await ready())) return;
+    expect(await ready()).toBe(true);
 
     for (const result of [true, false, 42, "done"] as const) {
       const { base } = await fixture();
@@ -133,7 +129,7 @@ describe("workflow run store", () => {
   });
 
   test("a claim fences with the generation, so a stale worker writes nothing", async () => {
-    if (!(await ready())) return;
+    expect(await ready()).toBe(true);
     const { base } = await fixture();
     const runId = await createWorkflowRun({ ...base, idempotencyKey: "fence" });
 
@@ -158,7 +154,7 @@ describe("workflow run store", () => {
   });
 
   test("two workers reaching for the same queue get different runs", async () => {
-    if (!(await ready())) return;
+    expect(await ready()).toBe(true);
     const { base } = await fixture();
     await createWorkflowRun({ ...base, idempotencyKey: "a" });
     await createWorkflowRun({ ...base, idempotencyKey: "b" });
@@ -173,7 +169,7 @@ describe("workflow run store", () => {
   });
 
   test("a crash mid-run resumes from the journal instead of repeating work", async () => {
-    if (!(await ready())) return;
+    expect(await ready()).toBe(true);
     const { base } = await fixture();
     const runId = await createWorkflowRun({ ...base, idempotencyKey: "crash" });
     const journal = createWorkflowRuntimeRepository();
@@ -197,7 +193,7 @@ describe("workflow run store", () => {
   });
 
   test("a step in flight is not an outcome, so a replay re-runs it", async () => {
-    if (!(await ready())) return;
+    expect(await ready()).toBe(true);
     const { base } = await fixture();
     const runId = await createWorkflowRun({ ...base, idempotencyKey: "inflight" });
     const journal = createWorkflowRuntimeRepository();
@@ -218,7 +214,7 @@ describe("workflow run store", () => {
   });
 
   test("an effect that may have escaped is never replayed", async () => {
-    if (!(await ready())) return;
+    expect(await ready()).toBe(true);
     const { base } = await fixture();
     const runId = await createWorkflowRun({ ...base, idempotencyKey: "effect" });
     const journal = createWorkflowRuntimeRepository();
@@ -240,7 +236,7 @@ describe("workflow run store", () => {
   });
 
   test("a stale worker cannot settle another generation's effect", async () => {
-    if (!(await ready())) return;
+    expect(await ready()).toBe(true);
     const { base } = await fixture();
     const runId = await createWorkflowRun({ ...base, idempotencyKey: "stale-settle" });
     const claim = await claimWorkflowRun({ worker: "w1", runId });
@@ -255,7 +251,7 @@ describe("workflow run store", () => {
   });
 
   test("parking a step parks its run, and a deadline wakes it", async () => {
-    if (!(await ready())) return;
+    expect(await ready()).toBe(true);
     const { base } = await fixture();
     const runId = await createWorkflowRun({ ...base, idempotencyKey: "park" });
     const journal = createWorkflowRuntimeRepository();
@@ -278,7 +274,7 @@ describe("workflow run store", () => {
   });
 
   test("a dependency that fires wakes exactly the runs parked on it", async () => {
-    if (!(await ready())) return;
+    expect(await ready()).toBe(true);
     const { base } = await fixture();
     const waiting = await createWorkflowRun({ ...base, idempotencyKey: "dep-waiting" });
     const other = await createWorkflowRun({ ...base, idempotencyKey: "dep-other" });
@@ -302,7 +298,7 @@ describe("workflow run store", () => {
   });
 
   test("a dependency signal recorded before parking is not lost", async () => {
-    if (!(await ready())) return;
+    expect(await ready()).toBe(true);
     const { base } = await fixture();
     const runId = await createWorkflowRun({ ...base, idempotencyKey: "wake-before-park" });
     await wakeWorkflowRunsWaitingOn({ appId: base.appId, kind: "probe.reply", key: "early" });
@@ -318,7 +314,7 @@ describe("workflow run store", () => {
   });
 
   test("a released run backs off instead of spinning", async () => {
-    if (!(await ready())) return;
+    expect(await ready()).toBe(true);
     const { base } = await fixture();
     const runId = await createWorkflowRun({ ...base, idempotencyKey: "release" });
 
@@ -333,7 +329,7 @@ describe("workflow run store", () => {
   });
 
   test("a cancel request stops the holder rather than being lost", async () => {
-    if (!(await ready())) return;
+    expect(await ready()).toBe(true);
     const { base } = await fixture();
     const runId = await createWorkflowRun({ ...base, idempotencyKey: "cancel" });
 
@@ -348,7 +344,7 @@ describe("workflow run store", () => {
   });
 
   test("a queued run cancels outright, with no worker to notice", async () => {
-    if (!(await ready())) return;
+    expect(await ready()).toBe(true);
     const { base } = await fixture();
     const runId = await createWorkflowRun({ ...base, idempotencyKey: "cancel-queued" });
 
@@ -358,7 +354,7 @@ describe("workflow run store", () => {
   });
 
   test("the same idempotency key answers with the run it already started", async () => {
-    if (!(await ready())) return;
+    expect(await ready()).toBe(true);
     const { base } = await fixture();
     const first = await createWorkflowRun({ ...base, idempotencyKey: "same" });
     const second = await createWorkflowRun({ ...base, idempotencyKey: "same" });
@@ -366,7 +362,7 @@ describe("workflow run store", () => {
   });
 
   test("fan-out is child runs, and the parent reads them as one aggregate", async () => {
-    if (!(await ready())) return;
+    expect(await ready()).toBe(true);
     const { base } = await fixture();
     const parentId = await createWorkflowRun({ ...base, idempotencyKey: "parent" });
 
@@ -388,7 +384,7 @@ describe("workflow run store", () => {
   });
 
   test("canceling a fan-out propagates to every unfinished descendant", async () => {
-    if (!(await ready())) return;
+    expect(await ready()).toBe(true);
     const { base } = await fixture();
     const parentId = await createWorkflowRun({ ...base, idempotencyKey: "cancel-parent" });
     await createChildWorkflowRuns(
@@ -402,7 +398,7 @@ describe("workflow run store", () => {
   });
 
   test("a dry run is never claimed by an execute worker", async () => {
-    if (!(await ready())) return;
+    expect(await ready()).toBe(true);
     const { base } = await fixture();
     const dryRunId = await createWorkflowRun({ ...base, mode: "dryRun", idempotencyKey: "ask" });
 
@@ -413,7 +409,7 @@ describe("workflow run store", () => {
   });
 
   test("a cancelled run keeps the reason it was cancelled for", async () => {
-    if (!(await ready())) return;
+    expect(await ready()).toBe(true);
     const { base } = await fixture();
     const runId = await createWorkflowRun({ ...base, idempotencyKey: "cancel-reason" });
     const claim = await claimWorkflowRun({ worker: "w1", runId });
@@ -427,7 +423,7 @@ describe("workflow run store", () => {
   });
 
   test("a version cannot be edited under a run that pinned it", async () => {
-    if (!(await ready())) return;
+    expect(await ready()).toBe(true);
     const { workflowVersionId } = await fixture();
     // Awaited inside a try rather than through `.rejects`: a Bun sql query is
     // lazy, and handing the unawaited query object to a matcher never settles.

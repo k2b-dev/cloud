@@ -16,7 +16,7 @@ import { parseGridsQueryDsl } from "../src/query-dsl/parser";
 test("registers complete bilingual Help with a small discovery reference", () => {
   const compiled = compileHelp({ appId: "grids", basePath: "/app/grids", definition: gridsHelp });
   expect(Object.keys(compiled.summary).sort()).toEqual(["baseLocale", "manifestHash", "pageBase"]);
-  expect(compiled.corpus.documents.every(doc => doc.searchText.length > 0)).toBe(true);
+  expect(compiled.corpus.documents.every((doc) => doc.searchText.length > 0)).toBe(true);
   expect(compiled.corpus.documents).toHaveLength(gridsHelp.documents.length);
   expect(compiled.corpus.documentsByLocale?.de).toHaveLength(gridsHelp.documentsByLocale?.de?.length ?? 0);
 });
@@ -26,9 +26,9 @@ const cliSkillReference = await Bun.file(new URL("../../../skills/cloud-cli/refe
 test("documents issuer responsibility without an external E-Invoice approval gate", () => {
   const english = gridsHelp.getMarkdown("grids-documents-pdfs", "en")!;
   const german = gridsHelp.getMarkdown("grids-documents-pdfs", "de")!;
-  expect(english).toContain("invoice issuer is responsible");
+  expect(english).toContain("The issuer must verify suitability");
   expect(english).not.toContain("Production use still requires");
-  expect(german).toContain("Rechnungsaussteller verantwortet den Inhalt");
+  expect(german).toContain("Der Aussteller prüft die Eignung");
   expect(german).not.toContain("Produktiveinsatz erfordert");
   expect(cliSkillReference).toContain("Do not interpret a valid report as a compliance certificate");
 });
@@ -39,6 +39,8 @@ const expectedTopics = [
   "grids-build-base",
   "grids-build-business-app",
   "grids-tables-fields",
+  "grids-field-configuration",
+  "grids-data-exchange",
   "grids-views-reports",
   "grids-combined-tables",
   "grids-gql",
@@ -48,6 +50,7 @@ const expectedTopics = [
   "grids-custom-app-pages-blocks",
   "grids-documents-pdfs",
   "grids-publish-custom-app",
+  "grids-financial-formats",
   "grids-custom-app-yaml-cli",
   "grids-custom-app-api",
   "grids-custom-apps",
@@ -56,6 +59,7 @@ const expectedTopics = [
   "grids-evidence-exports",
   "grids-retention-preservation",
   "grids-operations-troubleshooting",
+  "grids-camt",
 ];
 
 describe("grids help", () => {
@@ -72,21 +76,21 @@ describe("grids help", () => {
   test("states record-level review and payment boundaries in both business guides", () => {
     const english = gridsHelp.getMarkdown("grids-build-business-app", "en")!;
     const german = gridsHelp.getMarkdown("grids-build-business-app", "de")!;
-    expect(english).toContain("does not recursively finalize its line records");
+    expect(english).toContain("does not recursively finalize related lines");
     expect(english).toContain("It does not compare a separate claimant field");
-    expect(english).toContain("Editing a related line record is not the same as editing the reviewed Record");
-    expect(english).toContain("A Paid checkbox does not transfer money");
-    expect(german).toContain("finalisiert seine Positionsdatensätze nicht rekursiv");
+    expect(english).toContain("Header approval does not approve later line edits");
+    expect(english).toContain("A Paid checkbox transfers nothing");
+    expect(german).toContain("finalisiert verknüpfte Positionen nicht rekursiv");
     expect(german).toContain("Sie vergleicht kein separates Anspruchstellerfeld");
-    expect(german).toContain("Die Bearbeitung eines verknüpften Positionsdatensatzes");
-    expect(german).toContain("Ein Bezahlt-Kontrollkästchen überweist kein Geld");
+    expect(german).toContain("Eine Kopffreigabe genehmigt keine späteren Positionsänderungen");
+    expect(german).toContain("Ein Bezahlt-Kontrollkästchen überweist nichts");
   });
 
   test("explains bound App action inputs and table-scoped Document evidence", () => {
     const english = gridsHelp.getMarkdown("grids-build-business-app", "en")!;
     const german = gridsHelp.getMarkdown("grids-build-business-app", "de")!;
-    expect(english).toContain("This mode does not open a free-form input dialog in the App");
-    expect(german).toContain("Dieser Modus öffnet in der App keinen freien Eingabedialog");
+    expect(english).toContain("requires App-supplied inputs, not a free-form dialog");
+    expect(german).toContain("verlangt App-Eingaben, öffnet aber keinen freien Dialog");
     for (const guide of [english, german]) {
       expect(guide).toContain("`inputMode: prompt`");
       expect(guide).toContain("`ROW.id`");
@@ -184,7 +188,7 @@ describe("grids help", () => {
     }
 
     const forms = gridsHelp.getMarkdown("grids-forms")!;
-    for (const capability of ["Public form", "required inputs", "hidden values", "redirect", "Grids App"]) {
+    for (const capability of ["Public form", "required fields", "hidden values", "redirect", "Grids App"]) {
       expect(forms, `missing form capability ${capability}`).toContain(capability);
     }
 
@@ -302,11 +306,19 @@ describe("grids help", () => {
     expect(gridsHelp.getMarkdown("grids-retention-preservation", "de-CH")).toContain("Mindestaufbewahrung");
   });
 
-  test("keeps fenced technical examples identical across locales", () => {
-    const codeBlocks = (markdown: string | undefined) => markdown?.match(/```[\s\S]*?```/g) ?? [];
+  test("keeps technical example structure aligned across locales", () => {
+    const codeBlocks = (id: string, locale: string) =>
+      (gridsHelp.getMarkdown(id, locale)?.match(/```[\s\S]*?```/g) ?? []).map((block) => {
+        // These examples localize user-owned names and sample labels. Keep
+        // their commands, keys and options identical; the binder separately
+        // compiles both CAMT examples against their named tables and fields.
+        if (id === "grids-camt") return block.replace(/\b(table|field):[^\n]+/g, "$1: <localized name>");
+        if (id === "grids-data-exchange") return block.replace(/"Name01":"[^"]+"/g, '"Name01":"<localized label>"');
+        return block;
+      });
 
     for (const id of expectedTopics) {
-      expect(codeBlocks(gridsHelp.getMarkdown(id, "de")), id).toEqual(codeBlocks(gridsHelp.getMarkdown(id, "en")));
+      expect(codeBlocks(id, "de"), id).toEqual(codeBlocks(id, "en"));
     }
   });
 

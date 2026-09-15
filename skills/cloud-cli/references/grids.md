@@ -1831,6 +1831,6 @@ evidence preflight|list|create|get|retry|cancel|download|verify
 email-templates reference|list|get|create|update|delete
 workflows reference|list|get|create|update|history|restore|delete|validate|autocomplete|invoke
 workflow-launchers list|create|update|delete|invoke
-workflow-runs list|get|cancel|steps|documents|download-documents|preview-export|confirm-export
+workflow-runs list|get|cancel|steps|documents|download-documents|preview-export|confirm-export|file|download-file
 workflow-emails list
 ```
