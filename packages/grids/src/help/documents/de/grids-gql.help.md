@@ -134,6 +134,18 @@ limit 50
 
 Das Relationsfeld auf der linken Seite muss auf die `id` des verbundenen Alias zeigen. Nutze `left join`, wenn Datensätze ohne verknüpftes Ziel im Ergebnis verbleiben sollen.
 
+### Unabhängige Summen verbinden
+
+Speichere `PaymentTotals` als `from table Payments; group by Invoice; aggregate sum(Amount) as paid`, wobei `Invoice` auf `Invoices` verweist:
+
+```gql
+from table Invoices as bill
+left join view PaymentTotals as payments on payments.Invoice = bill.id
+select Number, formula(Gross - IF(ISBLANK(payments.paid), 0, payments.paid)) as outstanding
+```
+
+Verbinde Korrekturen über eine zweite gruppierte Ansicht, um doppelte Summen zu vermeiden. Jede liefert höchstens eine Zeile pro Rechnung; fehlende Gruppen ergeben `null`. Aggregataliasse unterstützen Auswahl, Formeln, Filter und Sortierung. Gruppiere jede Ansicht nach einer Relation zur Haupttabelle und deklariere Aggregate. Nur `left join view` funktioniert; keine äußere Gruppierung oder Quellen mit Limit, Suche, Gruppensortierung, HAVING oder anderen nicht wiederverwendbaren Klauseln. Haupt- und Kindtabelle müssen gespeichert, nicht kombiniert sein. Fehlende Rechte sind Fehler; Ergebnisse sind schreibgeschützt.
+
 ## Reihenfolge der Klauseln {icon="search"}
 
 Nicht jede Abfrage benötigt jede Klausel. Wenn du Klauseln kombinierst, behalte diese Reihenfolge bei, damit die Quelle leicht zu überblicken bleibt:

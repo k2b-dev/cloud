@@ -26,6 +26,7 @@ const CORRECTION_PREFILL_FIELD_TYPES = [
 ] as const;
 
 export const MAX_CORRECTION_PREFILL_FIELDS = 100;
+export const MAX_ATOMIC_LOCK_RECORDS = 100;
 
 const CORRECTION_DRAFT_INTENTS = ["correction", "cancellation"] as const;
 

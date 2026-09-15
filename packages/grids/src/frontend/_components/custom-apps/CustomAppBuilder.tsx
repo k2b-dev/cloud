@@ -3591,11 +3591,23 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                             onValueChange={(templateIds) =>
                               updateSelectedBlock((block) =>
                                 block.type === "record"
-                                  ? { ...block, documents: templateIds.length > 0 ? { templateIds: templateIds.slice(0, 12) } : undefined }
+                                  ? { ...block, documents: templateIds.length > 0 ? { ...block.documents, templateIds: templateIds.slice(0, 12) } : undefined }
                                   : block,
                               )
                             }
                           />
+                          <Show when={(selectedRecordBlock()?.documents?.templateIds.length ?? 0) > 0}>
+                            <Switch
+                              label={text("Allow draft PDF previews")}
+                              description={text("Readers can preview saved drafts using these templates, including their queried data. No document is issued. Template or schema changes require republishing the app.")}
+                              value={() => selectedRecordBlock()?.documents?.preview === true}
+                              onValueChange={(preview) => updateSelectedBlock((block) =>
+                                block.type === "record" && block.documents
+                                  ? { ...block, documents: { ...block.documents, preview } }
+                                  : block,
+                              )}
+                            />
+                          </Show>
                         </Show>
                       </DetailPanel.Section>
                     </DetailPanel.Group>

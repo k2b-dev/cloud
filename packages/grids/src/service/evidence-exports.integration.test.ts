@@ -153,6 +153,17 @@ describe("evidence export integration", () => {
       const result = await download(exportShortId);
       if (!result.ok) throw result.error;
       const entries = readTar(await collect(result.data.body));
+      const [storedManifest] = await sql`
+        SELECT jsonb_typeof(manifest) AS type, manifest->>'schema' AS schema,
+          manifest #>> '{request,id}' AS request_id, manifest
+        FROM grids.evidence_exports WHERE id = ${exportId}::uuid
+      `;
+      expect(storedManifest.type).toBe("object");
+      expect(storedManifest.schema).toBe("cloud.grids.evidence-export");
+      expect(storedManifest.request_id).toBe(exportShortId);
+      const manifestBytes = entries.get("manifest.json");
+      if (!manifestBytes) throw new Error("Manifest missing");
+      expect(storedManifest.manifest).toEqual(JSON.parse(new TextDecoder().decode(manifestBytes)));
       const queryPaths = [...entries.keys()].filter((path) => path.startsWith("documents/queries/"));
       expect(queryPaths).toHaveLength(2);
       for (const document of documents) {

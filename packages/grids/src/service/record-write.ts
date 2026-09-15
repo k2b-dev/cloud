@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import { type DateContext, err, fail, ok, type Result } from "@k2b/stdlib";
 import { sql } from "bun";
 import type { RecordMutationAudit } from "../contracts";
@@ -24,8 +23,6 @@ import { insertWithShortIdForDb } from "./short-id";
 import type { Field, GridRecord } from "./types";
 
 type DbRow = Record<string, unknown>;
-
-const sha256 = (value: string): string => createHash("sha256").update(value).digest("hex");
 
 const recordVersionConflict = (locale?: string) => ({
   code: "CONFLICT" as const,
@@ -593,18 +590,19 @@ export const update = async (
   return ok(record);
 };
 
-export const softDelete = async (
+export const softDeleteInTransaction = async (
+  tx: SqlClient,
   tableId: string,
   recordId: string,
   actorId: string | null,
   origin: MutationOrigin,
   audit?: RecordMutationAudit,
   locale?: string,
-): Promise<Result<void>> => {
+): Promise<Result<string>> => {
   const messages = getGridsCrudMessages(locale);
-  const writable = await requireStoredTableWritable(tableId, sql, locale);
+  const writable = await requireStoredTableWritable(tableId, tx, locale);
   if (!writable.ok) return writable;
-  const existing = await get(tableId, recordId);
+  const existing = await get(tableId, recordId, { client: tx });
   if (!existing || existing.deletedAt) return fail(err.notFound(messages.record));
   const eventPayload = {
     v: 1,
@@ -613,19 +611,18 @@ export const softDelete = async (
     changedFieldIds: Object.keys(existing.data),
     actorId,
   };
-  const deleted = await sql
-    .begin(async (tx): Promise<Result<string>> => {
-      const allowed = await assertMutationAllowed(tx, tableId, origin, locale);
-      if (!allowed.ok) return allowed;
-      await lockDurableHistoryMutationBoundary(tx, tableId);
-      const auditPolicy = await loadTableAuditPolicy(tx, tableId, locale);
-      if (!auditPolicy.ok) return auditPolicy;
-      const auditContext = buildRecordAuditContext(auditPolicy.data, "delete", [], audit, locale);
-      if (!auditContext.ok) return auditContext;
-      await prepareRecordMutation(tx, tableId, recordId);
-      const mutable = await assertRecordMutable(tx, tableId, recordId, locale);
-      if (!mutable.ok) return mutable;
-      const [row] = await tx<Array<{ outbox_id: string }>>`
+  const deleted = await (async (): Promise<Result<string>> => {
+    const allowed = await assertMutationAllowed(tx, tableId, origin, locale);
+    if (!allowed.ok) return allowed;
+    await lockDurableHistoryMutationBoundary(tx, tableId);
+    const auditPolicy = await loadTableAuditPolicy(tx, tableId, locale);
+    if (!auditPolicy.ok) return auditPolicy;
+    const auditContext = buildRecordAuditContext(auditPolicy.data, "delete", [], audit, locale);
+    if (!auditContext.ok) return auditContext;
+    await prepareRecordMutation(tx, tableId, recordId);
+    const mutable = await assertRecordMutable(tx, tableId, recordId, locale);
+    if (!mutable.ok) return mutable;
+    const [row] = await tx<Array<{ outbox_id: string }>>`
         UPDATE grids.records
         SET deleted_at = now(), updated_by = ${actorId}::uuid, updated_at = now()
         WHERE id = ${recordId}::uuid
@@ -634,28 +631,41 @@ export const softDelete = async (
           AND version = ${existing.version}
         RETURNING grids.enqueue_record_event(${tableId}::uuid, ${recordId}::uuid, ${eventPayload}::jsonb)::text AS outbox_id
       `;
-      if (!row) {
-        const conflict = new Error("VERSION_CONFLICT") as Error & { __versionConflict: true };
-        conflict.__versionConflict = true;
-        throw conflict;
-      }
-      await supersedePendingFinalizationRequest(tx, tableId, recordId, actorId, "The Record was moved to trash.");
-      await captureRecordEventSnapshot(tx, {
-        snapshotId: row.outbox_id,
-        tableId,
-        recordId,
-        eventType: "record.deleted",
-      });
-      await captureRecordRevision(tx, {
-        tableId,
-        recordId,
-        action: "deleted",
-        changedFieldIds: Object.keys(existing.data),
-        actorId,
-      });
-      await logAudit({ tableId, recordId, userId: actorId, action: "deleted", context: auditContext.data }, tx);
-      return ok(row.outbox_id);
-    })
+    if (!row) {
+      const conflict = new Error("VERSION_CONFLICT") as Error & { __versionConflict: true };
+      conflict.__versionConflict = true;
+      throw conflict;
+    }
+    await supersedePendingFinalizationRequest(tx, tableId, recordId, actorId, "The Record was moved to trash.");
+    await captureRecordEventSnapshot(tx, {
+      snapshotId: row.outbox_id,
+      tableId,
+      recordId,
+      eventType: "record.deleted",
+    });
+    await captureRecordRevision(tx, {
+      tableId,
+      recordId,
+      action: "deleted",
+      changedFieldIds: Object.keys(existing.data),
+      actorId,
+    });
+    await logAudit({ tableId, recordId, userId: actorId, action: "deleted", context: auditContext.data }, tx);
+    return ok(row.outbox_id);
+  })();
+  return deleted;
+};
+
+export const softDelete = async (
+  tableId: string,
+  recordId: string,
+  actorId: string | null,
+  origin: MutationOrigin,
+  audit?: RecordMutationAudit,
+  locale?: string,
+): Promise<Result<void>> => {
+  const deleted = await sql
+    .begin((tx) => softDeleteInTransaction(tx, tableId, recordId, actorId, origin, audit, locale))
     .catch((error: unknown) => {
       if ((error as { __versionConflict?: true })?.__versionConflict) return fail(recordVersionConflict(locale));
       throw error;

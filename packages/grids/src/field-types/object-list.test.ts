@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { FORMULA_LIMITS } from "../formula/parser";
-import { OBJECT_LIST_LIMITS, ObjectListConfigSchema, objectListRecordInputValues, validateObjectList } from "./object-list";
+import { createObjectListEntry, OBJECT_LIST_LIMITS, ObjectListConfigSchema, objectListRecordInputValues, validateObjectList } from "./object-list";
 
 const fields = [
   { id: "Label1", name: "Description", type: "text", required: true, config: { maxLength: 80 } },
@@ -9,6 +9,36 @@ const fields = [
 const config = { fields };
 
 describe("typed object-list values", () => {
+  test("column defaults use scalar validation and initialize independent entries only", () => {
+    const config = ObjectListConfigSchema.parse({ fields: [
+      { id: "Amount", name: "Amount", type: "number", defaultValue: 0 },
+      { id: "Flag01", name: "Flag", type: "boolean", defaultValue: false },
+      { id: "Choice", name: "Choice", type: "select", defaultValue: ["one"], config: { multiple: true, options: [{ id: "one", label: "One" }] } },
+      { id: "Empty1", name: "Empty", type: "text", defaultValue: null },
+      { id: "Total1", name: "Total", type: "number", formula: { expression: "Amount * 2" } },
+    ] });
+    const first = createObjectListEntry(config);
+    const second = createObjectListEntry(config);
+    expect(first).toEqual({ Amount: "0", Flag01: false, Choice: ["one"] });
+    expect(first).toEqual(second);
+    expect(first.Choice).not.toBe(second.Choice);
+    expect(first.Choice).not.toBe(config.fields[2]!.defaultValue);
+    const validated = validateObjectList([{ Amount: null, Flag01: true, Choice: [] }], config, false);
+    expect(validated.ok && validated.value?.[0]).toMatchObject({ Amount: null, Flag01: true, Choice: null });
+  });
+
+  test.each([
+    { type: "number", config: { min: "1" }, defaultValue: "0" },
+    { type: "select", config: { options: [{ id: "one", label: "One" }] }, defaultValue: ["missing"] },
+    { type: "text", config: { maxLength: 2 }, defaultValue: "long" },
+    { type: "date", defaultValue: { kind: "now" } },
+    { type: "number", formula: { expression: "1" }, defaultValue: "1" },
+  ])("rejects invalid column defaults: %j", (column) => {
+    const result = ObjectListConfigSchema.safeParse({ fields: [{ id: "Value1", name: "Value", ...column }] });
+    expect(result.success).toBe(false);
+    if (!result.success) expect(result.error.issues[0]?.path).toEqual(["fields", 0, "defaultValue"]);
+  });
+
   test("localizes calculation failures without exposing evaluator codes", () => {
     for (const [expression, detail] of [
       ["1 / 0", "Durch null kann nicht geteilt werden."],

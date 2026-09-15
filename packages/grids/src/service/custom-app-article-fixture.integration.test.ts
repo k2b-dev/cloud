@@ -98,7 +98,7 @@ const insertArticleResources = async (): Promise<void> => {
           ARTICLE.articleWeightFieldId,
           ARTICLE.articleDescriptionFieldId,
         ].map((fieldId) => ({ kind: "user_input", fieldId })),
-      })}::jsonb,
+      })}::text::jsonb,
       true,
       0
     )

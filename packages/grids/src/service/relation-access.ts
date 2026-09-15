@@ -8,10 +8,13 @@ export type ExpansionViewer = {
   userGroups: string[];
   serviceAccountId?: string | null;
   isAdmin?: boolean;
-  /** Restricts candidate tables; each candidate still needs Base Read access. */
+  /** Restricts candidate tables; each still needs the viewer's read authority. */
   readableTableIds?: ReadonlySet<string>;
   /** Request-local cache shared by relation, lookup, and computed-field reads. */
   tableReadAccess?: Map<string, boolean>;
+  /** Internal, permission-aware execution scope (for example a published App
+   * workflow). A denied table stays denied; this never falls back to Base grants. */
+  authorizeTable?: (tableId: string) => Promise<boolean>;
 };
 
 type RelationAccessReadOptions = { signal?: AbortSignal; queryTimeoutMs?: number };
@@ -35,6 +38,11 @@ export const resolveReadableTableIds = async (
     if (!candidateIdSet.has(tableId)) cached.set(tableId, false);
   }
   if (unresolvedIds.length === 0) {
+    return new Set(candidateIds.filter((tableId) => cached.get(tableId)));
+  }
+
+  if (viewer.authorizeTable) {
+    await Promise.all(unresolvedIds.map(async (tableId) => cached.set(tableId, await viewer.authorizeTable!(tableId))));
     return new Set(candidateIds.filter((tableId) => cached.get(tableId)));
   }
 

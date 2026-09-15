@@ -131,6 +131,18 @@ limit 50
 
 The relation field on the left must target the joined alias's `id`. Use `left join` when records without a related target should remain in the result.
 
+### Combine independent totals
+
+Save `PaymentTotals` as `from table Payments; group by Invoice; aggregate sum(Amount) as paid`, with `Invoice` relating to `Invoices`:
+
+```gql
+from table Invoices as bill
+left join view PaymentTotals as payments on payments.Invoice = bill.id
+select Number, formula(Gross - IF(ISBLANK(payments.paid), 0, payments.paid)) as outstanding
+```
+
+Join corrections through a second grouped view to avoid duplicated sums. Each contributes at most one row per invoice; absent groups yield `null`. Aggregate aliases support selection, formulas, filters and sorting. Group each view by one relation to the root and declare aggregates. Only `left join view` works; no outer grouping or source limit, search, group-sort, HAVING or other non-reusable clauses. Root and child must be stored tables, not Combined tables. Access failures are errors; results are read-only.
+
 ## Clause order {icon="search"}
 
 Not every query needs every clause. When clauses are combined, keep them in this order so the source remains easy to scan:

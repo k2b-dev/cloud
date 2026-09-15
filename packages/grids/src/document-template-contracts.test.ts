@@ -15,6 +15,12 @@ const htmlRenderer = {
 };
 
 describe("document template renderer contract", () => {
+  test("issuance policy is explicit at creation and cannot be relaxed by an update", () => {
+    const input = { name: "Invoice", source: "from table Invoices", renderer: htmlRenderer, issuancePolicy: "oncePerFinalizedRecord" };
+    expect(CreateDocumentTemplateSchema.parse(input).issuancePolicy).toBe("oncePerFinalizedRecord");
+    expect(CreateDocumentTemplateSchema.safeParse({ ...input, issuancePolicy: "once" }).success).toBe(false);
+    expect(UpdateDocumentTemplateSchema.safeParse({ issuancePolicy: "repeatable" }).success).toBe(false);
+  });
   test("round-trips one explicit HTML renderer", () => {
     expect(DocumentTemplateRendererSchema.parse(htmlRenderer)).toEqual(htmlRenderer);
     expect(DocumentTemplateRendererSummarySchema.parse({ kind: "html" })).toEqual({ kind: "html" });

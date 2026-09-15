@@ -100,7 +100,9 @@ export const WORKFLOW_REFERENCE = {
     recordValues:
       "Record targets use references such as inputs.item. Relation field values and relation filters use public Record IDs, for example ${{ inputs.item.recordId }}, never internal UUIDs or display labels.",
     atomicPredicates:
-      "Checks use stored-field filter operators. Formula fields and aggregate arithmetic are not supported; check the stored facts under the same coordination lock.",
+      "atomicRecords.checks accepts stored-field table/where checks or query: {source, parameters} GQL checks with formulas, grouping, aggregates and having. Each check uses assert: empty|notEmpty and an optional message. Locks accept Record and record-list references (at most 100 distinct Records); include the shared coordination Record for concurrent runs. Ordered changes support createRecord, updateRecord and finalizeRecord. Optional validateDocuments: [{template, record}] validates profile inputs after changes and rolls back all changes on failure; it does not issue a Document. Generate the Document in a later step.",
+    recordLifecycle:
+      "deleteRecord moves one non-finalized Record to trash; it is not permanent destruction and follows current permissions, mutation policy and audit requirements. finalizeRecord.record accepts one Record reference, never a list or tree, including inside atomicRecords.changes. Owned Object-list positions belong to that Record. Finalization does not bypass Four-eyes approval.",
     conditions: {
       equals: "Exact value equality; notEquals negates it.",
       notEquals: "Exact value inequality.",

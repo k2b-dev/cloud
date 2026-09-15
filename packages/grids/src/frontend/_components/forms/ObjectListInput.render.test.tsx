@@ -10,7 +10,7 @@ const config = {
     { id: "Total1", name: "Total", type: "number", formula: { expression: "Amount * 2" } },
   ],
 };
-const render = (value: unknown, error?: string, settings = config) =>
+const render = (value: unknown, error?: string, settings: unknown = config) =>
   renderToString(() =>
     createComponent(ObjectListInput, {
       name: "Items1",
@@ -73,18 +73,32 @@ describe("ObjectListInput", () => {
     expect(html).toContain('name="Items1-0-Amount"');
     expect(html).toContain('name="Items1-1-Amount"');
     expect(html).not.toContain('name="Items1-0-Total1"');
-    expect(html).toContain("Calculated values are a preview");
+    expect(html).not.toContain("Calculated values are a preview");
     expect(html).toContain("18014398509481986.5");
-    expect(html).toContain("Move row up");
-    expect(html).toContain("Remove row");
+    expect(html).toContain("Move entry up");
+    expect(html).toContain("Remove entry");
   });
   test("distinguishes an empty list from an invalid stored value", () => {
-    expect(render([])).toContain("No rows yet");
-    expect(render(null)).toContain("Add row");
+    expect(render([])).toContain("No entries yet");
+    expect(render(null)).toContain("Add entry");
     const invalid = render([{ Amount: "1" }, null]);
     expect(invalid).toContain("Nothing has been changed");
-    expect(invalid).not.toContain("Add row");
-    expect(invalid).not.toContain("No rows yet");
+    expect(invalid).not.toContain("Add entry");
+    expect(invalid).not.toContain("No entries yet");
+  });
+  test("uses the shared quiet surface and a real pressed toggle", () => {
+    const html = render([{ Amount: "12" }], undefined, {
+      fields: [
+        ...config.fields,
+        { id: "More01", name: "Detail", type: "number", detailsOnly: true, formula: { expression: "Amount * 3" } },
+      ],
+    });
+    expect(html).toContain('class="paper ');
+    expect(html).not.toContain("border-layout");
+    expect(html).toContain('aria-pressed="false"');
+    expect(html).toContain("ti-eye");
+    expect(html).not.toContain("aria-expanded");
+    expect(render([{}])).not.toContain("—");
   });
   test("keeps row-specific server errors visible", () => {
     expect(render([{ Amount: "bad" }], "Row 1, Amount: must be a number")).toContain("Row 1, Amount: must be a number");
@@ -93,17 +107,17 @@ describe("ObjectListInput", () => {
     const html = render([{ Amount: "not a number", Total1: "999.00" }]);
     expect(html).toContain("must be a finite number");
     expect(html).not.toContain("999.00");
-    expect(html).toContain("Complete the row values");
+    expect(html).not.toContain("Complete the row values");
   });
   test("keeps valid row previews visible when another row is incomplete", () => {
     const html = render([{ Amount: "12.50" }, { Amount: "bad", Total1: "999" }]);
-    expect(html).toContain("<output>25</output>");
+    expect(html).toContain(">25</output>");
     expect(html).not.toContain("999");
-    expect(html).toContain("Complete the row values");
+    expect(html).not.toContain("Complete the row values");
   });
   test("bounds initial controls while retaining the full row count", () => {
     const html = render(Array.from({ length: 60 }, (_, index) => ({ Amount: String(index + 1) })));
-    expect(html).toContain("Rows 1–25 of 60");
+    expect(html).toContain("Entries 1–25 of 60");
     expect(html).toContain('name="Items1-24-Amount"');
     expect(html).not.toContain('name="Items1-25-Amount"');
     expect(html.match(/data-list-row/g)?.length).toBe(25);
@@ -132,9 +146,9 @@ describe("ObjectListInput", () => {
         },
       }),
     );
-    expect(html).toContain("<output>25%</output>");
-    expect(html).toContain("<output>00:01:30</output>");
-    expect(html).toContain("<output>Yes</output>");
-    expect(html).toContain("<output>EUR 12.50</output>");
+    expect(html).toContain(">25%</output>");
+    expect(html).toContain(">00:01:30</output>");
+    expect(html).toContain(">Yes</output>");
+    expect(html).toContain(">EUR 12.50</output>");
   });
 });

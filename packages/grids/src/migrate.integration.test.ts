@@ -46,6 +46,64 @@ const withIsolatedDatabase = async (run: (database: SQL) => Promise<void>) => {
 
 describe("grids schema migration", () => {
   postgresTest(
+    "defines issuance policy on fresh schema and preserves templates on repeated startup",
+    async () => {
+      await withIsolatedDatabase(async (database) => {
+        await migrateCoreWorkflows(database);
+        await migrate(database);
+        const policySchema = () => database`
+          SELECT column_default, is_nullable,
+            (SELECT pg_get_constraintdef(oid) FROM pg_constraint
+              WHERE conrelid = 'grids.document_templates'::regclass
+                AND conname = 'document_templates_issuance_policy_check') AS constraint
+          FROM information_schema.columns
+          WHERE table_schema = 'grids' AND table_name = 'document_templates' AND column_name = 'issuance_policy'
+        `;
+        const expectedPolicySchema = await policySchema();
+        expect(expectedPolicySchema).toEqual([
+          {
+            column_default: "'repeatable'::text",
+            is_nullable: "NO",
+            constraint: "CHECK ((issuance_policy = ANY (ARRAY['repeatable'::text, 'oncePerFinalizedRecord'::text])))",
+          },
+        ]);
+        const baseId = uuid();
+        const tableId = uuid();
+        await database`INSERT INTO grids.bases (id, short_id, name)
+          VALUES (${baseId}::uuid, ${shortId("B")}, 'Existing base')`;
+        await database`INSERT INTO grids.tables (id, short_id, base_id, name)
+          VALUES (${tableId}::uuid, ${shortId("T")}, ${baseId}::uuid, 'Existing table')`;
+        const [existing] = await database`INSERT INTO grids.document_templates
+          (short_id, table_id, name, source, renderer_kind, html, number_template, filename_template)
+          VALUES (${shortId("D")}, ${tableId}::uuid, 'Existing template', 'from table "Existing table"',
+            'html', '<p>Existing content</p>', 'DOC-{{ sequence }}', 'existing.pdf')
+          RETURNING to_jsonb(document_templates) - 'issuance_policy' AS data`;
+
+        await migrate(database);
+        const [upgraded] = await database`SELECT to_jsonb(template) - 'issuance_policy' AS data, issuance_policy
+          FROM grids.document_templates template`;
+        expect(upgraded?.data).toEqual(existing?.data);
+        expect(upgraded?.issuance_policy).toBe("repeatable");
+        expect(await policySchema()).toEqual(expectedPolicySchema);
+        await expect(Promise.resolve(database`UPDATE grids.document_templates SET issuance_policy = 'unsupported'`)).rejects.toMatchObject({
+          errno: "23514",
+        });
+        await expect(Promise.resolve(database`UPDATE grids.document_templates SET issuance_policy = NULL`)).rejects.toMatchObject({
+          errno: "23502",
+        });
+        await database`UPDATE grids.document_templates SET issuance_policy = 'oncePerFinalizedRecord'`;
+        await migrate(database);
+        const [repeated] = await database`SELECT to_jsonb(template) - 'issuance_policy' AS data, issuance_policy
+          FROM grids.document_templates template`;
+        expect(repeated?.data).toEqual(existing?.data);
+        expect(repeated?.issuance_policy).toBe("oncePerFinalizedRecord");
+        expect(await policySchema()).toEqual(expectedPolicySchema);
+      });
+    },
+    30_000,
+  );
+
+  postgresTest(
     "defines table-scoped Direct and Four-eyes Finalization storage",
     async () => {
       await withIsolatedDatabase(async (database) => {

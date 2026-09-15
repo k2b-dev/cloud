@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import type { SQL } from "bun";
 import { mapFieldRow } from "./field-read";
 import type { GridsWorkflowActionScope } from "./workflow-action-scope";
-import { atomicQueryMatches, resolveWorkflowRecordValues } from "./workflow-atomic-records";
+import { atomicQueryMatches, lockAtomicRecords, resolveWorkflowRecordValues } from "./workflow-atomic-records";
 
 const baseId = "11111111-1111-4111-8111-111111111111";
 const tableId = "22222222-2222-4222-8222-222222222222";
@@ -28,6 +28,25 @@ const fieldRow = {
   updated_at: new Date(),
 };
 const fields = [mapFieldRow(fieldRow)];
+
+test("atomic locks acquire sorted parents, including create targets, before any row", async () => {
+  const calls: string[] = [];
+  const db = (async (strings: TemplateStringsArray, ...values: unknown[]) => {
+    const query = strings.join("?");
+    if (query.includes("SELECT base_id")) return [{ base_id: baseId }];
+    calls.push(`${query.includes("grids.bases") ? "base" : query.includes("grids.tables") ? "table" : "record"}:${values[0]}`);
+    return [{ id: values[0] }];
+  }) as unknown as SQL;
+  await lockAtomicRecords(
+    db,
+    [{ tableId: targetTableId, recordId, required: "write" }],
+    async () => {
+      calls.push("authorize");
+    },
+    [tableId],
+  );
+  expect(calls).toEqual(["authorize", `base:${baseId}`, `table:${tableId}`, `table:${targetTableId}`, `record:${targetTableId}`]);
+});
 
 const fixture = (options: { permitted?: boolean; sameBase?: boolean; correctTarget?: boolean } = {}) => {
   const calls: string[] = [];

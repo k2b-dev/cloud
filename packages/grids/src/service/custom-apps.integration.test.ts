@@ -3,6 +3,7 @@ import { sql } from "bun";
 import { migrate as migrateCoreWorkflows } from "../../../core/src/migrate/core/workflows";
 import { projectPublishedRecords } from "../api/custom-app-public-dto";
 import { type CustomAppDefinition, CustomAppDefinitionSchema } from "../custom-apps/contracts";
+import { customAppFormSecurityHash } from "../custom-apps/form-capability";
 import { customAppViewSourceHash } from "../custom-apps/insight-source";
 import { canonicalCustomAppQueryContext } from "../custom-apps/query-plan-hash";
 import { customAppScannerConfigHash } from "../custom-apps/scanner-capability";
@@ -24,6 +25,7 @@ import {
   saveDraft,
   unpublish,
 } from "./custom-apps";
+import type { FormConfig } from "./forms";
 import { canExecuteWorkflow } from "./workflow-action-scope";
 import { getWorkflow } from "./workflow-definitions";
 import { createLauncher } from "./workflow-launchers";
@@ -448,6 +450,14 @@ describe("Grids App lifecycle", () => {
     const workflowId = testUuid();
     const bulkWorkflowId = testUuid();
     const accessIds: string[] = [];
+    const textDefault = '{"kind":"now"}';
+    const formConfig: FormConfig = {
+      title: "Apply",
+      fields: [
+        { kind: "user_input", fieldId },
+        { kind: "user_input", fieldId: relationFieldId },
+      ],
+    };
     try {
       await sql`INSERT INTO grids.bases (id, short_id, name) VALUES (${baseId}::uuid, ${testShortId("B")}, 'Grids Apps')`;
       await sql`
@@ -455,8 +465,8 @@ describe("Grids App lifecycle", () => {
         VALUES (${tableId}::uuid, ${testShortId("T")}, ${baseId}::uuid, 'Requests')
       `;
       await sql`
-        INSERT INTO grids.fields (id, short_id, table_id, name, type, config, position)
-        VALUES (${fieldId}::uuid, ${testShortId("F")}, ${tableId}::uuid, 'Title', 'text', '{}'::jsonb, 0)
+        INSERT INTO grids.fields (id, short_id, table_id, name, type, config, default_value, position)
+        VALUES (${fieldId}::uuid, ${testShortId("F")}, ${tableId}::uuid, 'Title', 'text', '{}'::jsonb, ${JSON.stringify(textDefault)}::text::jsonb, 0)
       `;
       await sql`
         INSERT INTO grids.fields (id, short_id, table_id, name, type, config, position)
@@ -482,7 +492,7 @@ describe("Grids App lifecycle", () => {
           ${tableId}::uuid,
           'Parent request',
           'relation',
-          ${JSON.stringify({ targetTableId: tableId, cardinality: "single" })}::jsonb,
+          ${JSON.stringify({ targetTableId: tableId, cardinality: "single" })}::text::jsonb,
           1
         )
       `;
@@ -493,13 +503,7 @@ describe("Grids App lifecycle", () => {
           ${testShortId("M")},
           ${tableId}::uuid,
           'Request form',
-          ${JSON.stringify({
-            title: "Apply",
-            fields: [
-              { kind: "user_input", fieldId },
-              { kind: "user_input", fieldId: relationFieldId },
-            ],
-          })}::jsonb,
+          ${JSON.stringify(formConfig)}::text::jsonb,
           true,
           0
         )
@@ -780,6 +784,39 @@ describe("Grids App lifecycle", () => {
       expect(compiled.compiled.definition).toEqual(CustomAppDefinitionSchema.parse(originalDefinition));
       expect(compiled.compiled.bindings).toEqual({ appId: null, baseId });
 
+      // JSON-looking text must remain text in both direct and inline field snapshots.
+      const securityFields = [
+        { id: fieldId, tableId, type: "text", config: {}, required: false, defaultValue: textDefault, deletedAt: null },
+        {
+          id: relationFieldId,
+          tableId,
+          type: "relation",
+          config: { targetTableId: tableId, cardinality: "single" },
+          required: false,
+          defaultValue: null,
+          deletedAt: null,
+        },
+      ];
+      expect(compiled.compiled.capabilities.forms).toHaveLength(3);
+      for (const capability of compiled.compiled.capabilities.forms) {
+        expect(capability.formSecurityHash).toBe(customAppFormSecurityHash({ tableId, config: formConfig, fields: securityFields }));
+      }
+      const inlineFormConfig: FormConfig = {
+        ...formConfig,
+        fields: [
+          { kind: "user_input", fieldId },
+          { kind: "user_input", fieldId: relationFieldId, inlineCreate: { enabled: true, fields: [{ fieldId }] } },
+        ],
+      };
+      await sql`UPDATE grids.forms SET config = ${inlineFormConfig}::jsonb WHERE id = ${formId}::uuid`;
+      const inlineCompiled = await compile(definition);
+      if (!inlineCompiled.ok) throw new Error(inlineCompiled.diagnostics.map((item) => item.message).join("; "));
+      expect(inlineCompiled.compiled.capabilities.forms).toHaveLength(3);
+      for (const capability of inlineCompiled.compiled.capabilities.forms) {
+        expect(capability.formSecurityHash).toBe(customAppFormSecurityHash({ tableId, config: inlineFormConfig, fields: securityFields }));
+      }
+      await sql`UPDATE grids.forms SET config = ${formConfig}::jsonb WHERE id = ${formId}::uuid`;
+
       const parameterAction = structuredClone(definition);
       const actions = parameterAction.pages[1]!.rows[0]!.columns[0]!.blocks.find((block) => block.type === "actions");
       if (!actions || actions.type !== "actions") throw new Error("Missing action fixture");
@@ -992,7 +1029,7 @@ describe("Grids App lifecycle", () => {
       if (!authUser) throw new Error("Grids App lifecycle test needs one auth user");
       await sql`
         INSERT INTO grids.records (id, short_id, table_id, data)
-        VALUES (${requestRecordId}::uuid, ${requestRecordShortId}, ${tableId}::uuid, ${JSON.stringify({ [fieldId]: authUser.id })}::jsonb)
+        VALUES (${requestRecordId}::uuid, ${requestRecordShortId}, ${tableId}::uuid, ${JSON.stringify({ [fieldId]: authUser.id })}::text::jsonb)
       `;
       const publishedAt = firstPublish.data.publishedAt!;
       const appGrant = await grantAccess({
@@ -1078,7 +1115,7 @@ describe("Grids App lifecycle", () => {
       await sql`UPDATE grids.workflow_launchers SET config = ${JSON.stringify({
         kind: "scanner",
         inputSources: { ["request"]: { kind: "scan", value: "record", resolve: { by: "field", field: "Title" } } },
-      })}::jsonb WHERE id = ${scannerLauncherId}::uuid`;
+      })}::text::jsonb WHERE id = ${scannerLauncherId}::uuid`;
       expect(await canExecuteWorkflow(scannerExecutionClaim)).toBe(false);
       await sql`
         UPDATE grids.records

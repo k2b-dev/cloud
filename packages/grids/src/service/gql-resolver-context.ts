@@ -1,7 +1,8 @@
 import { sql } from "bun";
 import { parseGridsQueryDsl } from "../query-dsl/parser";
 import type { DslResolverContext, DslTableSource, DslViewSource } from "../query-dsl/resolver";
-import { resolveDslQueryToRecordQuery } from "../query-dsl/resolver";
+import { resolveDslQueryToQueryPlan, resolveDslQueryToRecordQuery } from "../query-dsl/resolver";
+import { projectDslPlanToRecordQuery } from "../query-dsl/resolver-record-query";
 import { collectDslFieldTableIds, needsDslViewCatalog } from "../query-dsl/source-plan";
 import type { DslQueryAst } from "../query-dsl/types";
 import type { SqlClient } from "./audit";
@@ -60,18 +61,27 @@ export const hydrateDslViewQueries = (params: {
     if (!view.source) return [view];
     const parsed = parseGridsQueryDsl(view.source);
     if (!parsed.ok) return [];
+    if (parsed.ast.having || parsed.ast.offset !== undefined)
+      return [{ ...view, query: {}, unavailableReason: parsed.ast.having ? ("having" as const) : ("offset" as const) }];
     const currentTable = params.tables.find((table) => table.id === view.tableId);
-    const resolved = resolveDslQueryToRecordQuery(parsed.ast, {
+    const context: DslResolverContext = {
       documentMetadata: params.documentMetadata === true,
       ...(currentTable ? { currentTable } : {}),
       tables: params.tables,
       views: [],
       fieldsByTableId: params.fieldsByTableId,
-    });
+    };
+    const resolved = resolveDslQueryToRecordQuery(parsed.ast, context);
     // A View reference must preserve its complete saved scope. Some valid
     // standalone GQL plans cannot be represented by nested RecordQuery sources;
     // keep those unavailable instead of silently falling back to the whole table.
-    return resolved.ok ? [{ ...view, query: resolved.plan.query }] : [];
+    if (resolved.ok) return [{ ...view, query: resolved.plan.query }];
+    const sqlPlan = resolveDslQueryToQueryPlan(parsed.ast, context);
+    if (!sqlPlan.ok || !sqlPlan.plan.formulaAggregations?.length || sqlPlan.plan.query.groupBy?.length !== 1) return [];
+    // Preserve all other projection guards. Only the formula aggregates are
+    // carried separately for the read-only summary compiler.
+    const projected = projectDslPlanToRecordQuery({ ...sqlPlan.plan, formulaAggregations: undefined }, parsed.ast);
+    return projected.ok ? [{ ...view, query: projected.plan.query, summaryFormulaAggregations: sqlPlan.plan.formulaAggregations }] : [];
   });
 
 export const buildTrustedGqlResolverContext = async (

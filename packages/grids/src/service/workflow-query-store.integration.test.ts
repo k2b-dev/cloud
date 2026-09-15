@@ -27,7 +27,7 @@ postgresTest("query payload is immutable, scoped, deduplicated and rolls back wi
       binding: bound.data.binding,
       values: {},
       timeZone: "UTC",
-      canReadTable: async () => true,
+      createTableAccess: async () => async () => true,
     });
     if (!captured.ok) throw new Error(captured.error.message);
     const input = { baseId: fixture.baseId, runId, stepKey: "steps.0", capture: captured.data };
@@ -80,7 +80,7 @@ postgresTest("query payload is immutable, scoped, deduplicated and rolls back wi
       binding: bound.data.binding,
       values: {},
       timeZone: "UTC",
-      canReadTable: async () => true,
+      createTableAccess: async () => async () => true,
     });
     if (!fresh.ok) throw new Error(fresh.error.message);
     const conflict = await sql.begin((tx) => persistWorkflowQueryDataInTransaction({ ...input, capture: fresh.data }, tx));

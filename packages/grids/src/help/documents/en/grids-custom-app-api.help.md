@@ -5,7 +5,9 @@ icon: ti ti-code
 description: Definition options, defaults, bindings, validation and published Form payloads.
 order: 137
 ---
-For visual authoring, read [Build a Custom App](/app/grids/help/grids-build-custom-app). This reference covers App definitions and published Form payloads.
+For visual authoring, read [Build a Custom App](/app/grids/help/grids-build-custom-app).
+
+Private App pages send signed-out visitors to login, returning to the same path and query. Public Apps, API/download statuses, and 404 for signed-in visitors without access stay unchanged. See [Form layout](/app/grids/help/grids-forms).
 
 ## Read the installed contract {icon="code"}
 
@@ -51,6 +53,8 @@ Every block requires `id` and `type`; all accept optional `title` (1–160 chara
 `source` is exactly `{kind:view,viewId}` or `{kind:gql,query}`. For `records`, `display` is `{kind:table,columnIds:[…]}` (up to 30) or `{kind:cards}`. Saved-view tables need at least one column; inline GQL tables normally use the query's selected columns with `columnIds:[]`; a non-empty list narrows displayed fields while retaining selected fields for behavior. Cards inherit a saved View's Cards configuration and cannot use inline GQL. Metrics require ungrouped scalar aggregates (up to 12); charts require grouped aggregates (up to 100 groups). At most four Records blocks, 24 insight blocks and 24 Scanner blocks are allowed per App.
 
 `referenced_records`, `record`, `html` and `comments` require a bound page Record. Incoming relations must target its table. Across Record/HTML blocks a page may expose at most 30 distinct fields. Editable fields are an explicit writable subset of displayed fields. `documents.templateIds` allows reading existing generated Documents, not issuing new ones. An `html` block displays an existing HTML field in an isolated frame.
+
+`documents.preview:true` grants saved-draft PDF previews, including templates' queried data, without issuance or number reservation. Source interpolation accepts only `{{ record.id }}` or `{{ record.shortId }}`, without Liquid filters/tags. Template or Base schema changes require republishing.
 
 `valueFormat` requires `style:number|integer|percent`; optional keys are `decimalPlaces` (0–20), `unit` (1–20 characters) and `unitPosition:prefix|suffix`. Integer style rejects decimal places; only number style accepts a custom unit; unit position requires a unit. Omitted formatting options use the normal renderer formatting.
 

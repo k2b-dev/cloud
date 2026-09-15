@@ -1117,7 +1117,7 @@ const processExportLocked = async (exportId: string, heartbeat: () => Promise<vo
       SET status = 'completed', processed_entries = ${ctx.processed}, completed_at = now(),
           expires_at = now() + interval '7 days', package_filename = ${filename},
           package_size_bytes = ${packageResult.sizeBytes}, package_sha256 = ${packageResult.sha256},
-          manifest_sha256 = ${manifestSha256}, manifest = ${JSON.stringify(manifest)}::jsonb, last_error = NULL
+          manifest_sha256 = ${manifestSha256}, manifest = ${JSON.stringify(manifest)}::text::jsonb, last_error = NULL
       WHERE id = ${exportId}::uuid AND status = 'running'
       RETURNING id
     `;

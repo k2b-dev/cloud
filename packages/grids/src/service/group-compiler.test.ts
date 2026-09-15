@@ -71,6 +71,17 @@ describe("isAggregatable", () => {
 });
 
 describe("compileGroupQuery — basic shape", () => {
+  test("internal summaries omit sort and cursor work without changing ordinary unlimited queries", async () => {
+    const field = mkField("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", "text");
+    const params = { tableId: field.tableId, fields: [field], groupBy: [{ fieldId: field.id }], aggregations: [{ agg: "count" as const, fieldId: "*" }], limit: null };
+    const summary = compileGroupQuery({ ...params, summaryOnly: true });
+    const ordinary = compileGroupQuery(params);
+    expect(summary.ok).toBe(true);
+    expect(ordinary.ok).toBe(true);
+    if (!summary.ok || !ordinary.ok) throw new Error("Compile failed");
+    expect(normalizedSql(summary.query)).not.toContain("ORDER BY");
+    expect(normalizedSql(ordinary.query)).toContain("ORDER BY");
+  });
   const tableId = "11111111-1111-1111-1111-111111111111";
   const author = mkField("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", "text", "author", { shortId: "AUTH01" });
   const amount = mkField("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb", "number", "amount", { shortId: "AMNT01" });
@@ -169,7 +180,7 @@ describe("compileGroupQuery — basic shape", () => {
     });
     expect(r.ok).toBe(true);
     if (!r.ok) return;
-    expect(normalizedSql(r.query)).toContain('WHERE ((TRUE AND "gk_0" IS NOT NULL))');
+    expect(normalizedSql(r.query)).toContain('(TRUE AND "gk_0" IS NOT NULL)');
   });
 
   test("compiles having predicates over aggregate aliases", () => {
@@ -216,7 +227,15 @@ describe("compileGroupQuery — basic shape", () => {
       fields,
     });
     expect(r.ok).toBe(true);
-    if (r.ok) expect(r.aggKeys).toContain("gross__sum");
+    if (r.ok) {
+      expect(r.aggKeys).toContain("gross__sum");
+      const query = normalizedSql(r.query);
+      expect(query).not.toContain("HAVING");
+      expect(query).toContain('"gross__sum"');
+      // One source-field expansion for the aggregate; its output is reused by
+      // the predicate instead of recompiling a potentially huge formula.
+      expect(query.match(/sum\(/gi)).toHaveLength(1);
+    }
   });
 
   test("rejects incompatible formula aggregate arguments", () => {

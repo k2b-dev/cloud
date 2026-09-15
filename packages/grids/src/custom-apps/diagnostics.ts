@@ -33,6 +33,7 @@ const customAppDiagnosticMessages = i18n.define({
               "html_field.missing": `HTML template field ${v("fieldId")} is missing or belongs to another table.`,
               "relation_target.table_invalid": `Relation target table ${v("tableId")} is missing or belongs to another Base.`,
               "document_template.invalid": `Document template ${v("templateId")} is missing or belongs to another table.`,
+              "document_template.preview_invalid": "Document preview requires an enabled template. Its GQL source may interpolate only {{ record.id }} or {{ record.shortId }}, not field values or other Liquid expressions.",
               "referenced_records.record_page_required": "Referenced records require a record page.",
               "referenced_records.relation_invalid": "Referenced records require an active Relation field targeting the record page table.",
               "referenced_records.fields_invalid": "Displayed fields must be active fields from the referenced records source table.",
@@ -113,6 +114,7 @@ const customAppDiagnosticMessages = i18n.define({
               "html_field.missing": `Das HTML-Vorlagenfeld ${v("fieldId")} fehlt oder gehört zu einer anderen Tabelle.`,
               "relation_target.table_invalid": `Die Zieltabelle ${v("tableId")} der Relation fehlt oder gehört zu einer anderen Base.`,
               "document_template.invalid": `Die Dokumentvorlage ${v("templateId")} fehlt oder gehört zu einer anderen Tabelle.`,
+              "document_template.preview_invalid": "Die Dokumentvorschau benötigt eine aktivierte Vorlage. Ihre GQL-Quelle darf nur {{ record.id }} oder {{ record.shortId }} einsetzen, keine Feldwerte oder anderen Liquid-Ausdrücke.",
               "referenced_records.record_page_required": "Referenzierte Datensätze erfordern eine Datensatzseite.",
               "referenced_records.relation_invalid":
                 "Referenzierte Datensätze erfordern ein aktives Relationsfeld zur Tabelle der Datensatzseite.",

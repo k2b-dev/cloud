@@ -1,5 +1,5 @@
-import { i18n } from "@k2b/stdlib";
 import { getLocale } from "@k2b/cloud/server";
+import { i18n } from "@k2b/stdlib";
 
 export const gridsApiMessages = i18n.define({
   baseLocale: "en",
@@ -29,6 +29,7 @@ export const gridsApiMessages = i18n.define({
       fileNotFound: "File not found",
       filesNotFound: "Files not found",
       formNotFound: "Form not found",
+      untitledRecord: "Untitled record",
       gridsAppNotFound: "Grids App not found",
       historicalFileNotFound: "Historical file not found",
       preservationHoldNotFound: "Preservation hold not found",
@@ -44,6 +45,16 @@ export const gridsApiMessages = i18n.define({
       workflowNotFound: "Workflow not found",
       workflowRevisionNotFound: "Workflow revision not found",
       workflowRunNotFound: "Workflow run not found",
+      workflowStatusValidationFailed:
+        "The workflow could not validate its inputs. Review the saved values and required details. If they are correct, contact the app owner.",
+      workflowStatusStateChanged:
+        "The current record or workflow settings do not allow this action. Reload and review the current state before starting again.",
+      workflowStatusAuthorizationChanged:
+        "This action is no longer permitted or available. Reload the app. If the action is still unavailable, contact the app owner.",
+      workflowStatusNeedsAttention:
+        "This workflow needs review. Check the current results and contact the app owner before starting it again.",
+      workflowStatusCanceled: "The workflow was canceled. Steps already completed may have changed data; check the current results before starting it again.",
+      workflowStatusFailed: "The workflow could not finish. Check the current results and contact the app owner before starting it again.",
       invalidBaseId: "Invalid base id",
       invalidCommentCursor: "Invalid comment cursor.",
       invalidEvidenceExportSections: "Invalid evidence export sections",
@@ -85,6 +96,8 @@ export const gridsApiMessages = i18n.define({
       sourceTablesUnavailable: "One or more source tables are unavailable or not administrable.",
       cancelRunStateInvalid: "Only queued, running, or waiting runs can be canceled.",
       recordEditorChanged: "This record editor changed after the app was published",
+      documentPreviewChanged:
+        "Preview is unavailable. Open a saved draft; if its template or Base schema changed, ask an app administrator to publish the app again.",
       recordUpdateUnknownField: "Record update contains an unknown field",
       recordUpdateOutsideEditor: "Record update contains a field outside this published editor",
       recordUpdateNotWritable: "Record update contains a field that is not JSON-writable",
@@ -128,6 +141,7 @@ export const gridsApiMessages = i18n.define({
       fileNotFound: "Datei nicht gefunden",
       filesNotFound: "Dateien nicht gefunden",
       formNotFound: "Formular nicht gefunden",
+      untitledRecord: "Unbenannter Datensatz",
       gridsAppNotFound: "Grids App nicht gefunden",
       historicalFileNotFound: "Historische Datei nicht gefunden",
       preservationHoldNotFound: "Erhaltungssperre nicht gefunden",
@@ -143,6 +157,17 @@ export const gridsApiMessages = i18n.define({
       workflowNotFound: "Workflow nicht gefunden",
       workflowRevisionNotFound: "Workflow-Revision nicht gefunden",
       workflowRunNotFound: "Workflow-Ausführung nicht gefunden",
+      workflowStatusValidationFailed:
+        "Der Workflow konnte seine Eingaben nicht validieren. Prüfe die gespeicherten Werte und Pflichtangaben. Sind sie korrekt, wende dich an die App-Verantwortlichen.",
+      workflowStatusStateChanged:
+        "Der aktuelle Datensatz oder die Workflow-Einstellungen erlauben diese Aktion nicht. Lade die Seite neu und prüfe den aktuellen Stand vor einem erneuten Start.",
+      workflowStatusAuthorizationChanged:
+        "Diese Aktion ist nicht mehr erlaubt oder verfügbar. Lade die App neu. Bleibt die Aktion nicht verfügbar, wende dich an die App-Verantwortlichen.",
+      workflowStatusNeedsAttention:
+        "Dieser Workflow muss geprüft werden. Prüfe die bisherigen Ergebnisse und wende dich vor einem erneuten Start an die App-Verantwortlichen.",
+      workflowStatusCanceled: "Der Workflow wurde abgebrochen. Bereits abgeschlossene Schritte können Daten verändert haben; prüfe die Ergebnisse vor einem erneuten Start.",
+      workflowStatusFailed:
+        "Der Workflow konnte nicht abgeschlossen werden. Prüfe die bisherigen Ergebnisse und wende dich vor einem erneuten Start an die App-Verantwortlichen.",
       invalidBaseId: "Ungültige Basis-ID",
       invalidCommentCursor: "Ungültiger Kommentar-Cursor.",
       invalidEvidenceExportSections: "Ungültige Bereiche des Beweispakets",
@@ -185,6 +210,8 @@ export const gridsApiMessages = i18n.define({
       sourceTablesUnavailable: "Mindestens eine Quelltabelle ist nicht verfügbar oder kann nicht verwaltet werden.",
       cancelRunStateInvalid: "Nur wartende, laufende oder in der Warteschlange befindliche Ausführungen können abgebrochen werden.",
       recordEditorChanged: "Dieser Datensatzeditor wurde seit der Veröffentlichung der App geändert",
+      documentPreviewChanged:
+        "Die Vorschau ist nicht verfügbar. Öffne einen gespeicherten Entwurf. Wurde die Vorlage oder das Base-Schema geändert, muss ein App-Administrator die App erneut veröffentlichen.",
       recordUpdateUnknownField: "Die Datensatzänderung enthält ein unbekanntes Feld",
       recordUpdateOutsideEditor: "Die Datensatzänderung enthält ein Feld außerhalb dieses veröffentlichten Editors",
       recordUpdateNotWritable: "Die Datensatzänderung enthält ein Feld, das nicht über JSON geschrieben werden kann",

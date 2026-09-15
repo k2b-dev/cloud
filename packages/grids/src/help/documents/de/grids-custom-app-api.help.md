@@ -7,6 +7,8 @@ order: 137
 ---
 Den visuellen Ablauf beschreibt [Custom App bauen](/app/grids/help/grids-build-custom-app). Hier stehen App-Definitionen und veröffentlichte Formular-Payloads.
 
+Private App-Seiten führen ausgeloggte Besucher zum Login, danach zum selben Pfad samt Query. Öffentliche Apps, API-/Download-Status und 404 für Angemeldete ohne Zugriff bleiben unverändert. Siehe [Formularlayout](/app/grids/help/grids-forms).
+
 ## Installierten Vertrag lesen {icon="code"}
 
 `cld grids apps reference --json` oder `GET /api/grids/apps/reference` liefert `definitionSchema`: das erzeugte Eingabe-JSON-Schema mit allen Eigenschaften, Pflichtfeldern, Aufzählungen, Standardwerten und Größenlimits.
@@ -51,6 +53,8 @@ Jeder Block benötigt `id` und `type`. Alle unterstützen optional `title` (1–
 `source` ist genau `{kind:view,viewId}` oder `{kind:gql,query}`. Für `records` ist `display` entweder `{kind:table,columnIds:[…]}` (bis 30) oder `{kind:cards}`. Tabellen aus gespeicherten Ansichten benötigen mindestens eine Spalte; Inline-GQL zeigt mit `columnIds:[]` seine ausgewählten Spalten; eine nichtleere Liste begrenzt die sichtbaren Felder, während ausgewählte Felder für Verhalten verfügbar bleiben. Karten übernehmen die Kartenkonfiguration einer gespeicherten Ansicht; Inline-GQL ist dafür nicht möglich. Kennzahlen benötigen ungruppierte skalare Aggregate (bis 12); Diagramme gruppierte Aggregate (bis 100 Gruppen). Pro App sind höchstens vier Records-Blöcke, 24 Kennzahlen-/Diagrammblöcke und 24 Scanner-Blöcke erlaubt.
 
 `referenced_records`, `record`, `html` und `comments` benötigen einen gebundenen Seitendatensatz. Eingehende Relationen müssen auf dessen Tabelle zeigen. Record-/HTML-Blöcke einer Seite dürfen zusammen höchstens 30 unterschiedliche Felder zeigen. `editableFieldIds` ist eine explizite beschreibbare Teilmenge der angezeigten Felder. `documents.templateIds` erlaubt vorhandene Dokumente zu lesen, nicht neue zu erzeugen. `html` zeigt ein vorhandenes HTML-Feld in einem isolierten Frame.
+
+`documents.preview:true` erlaubt PDF-Vorschauen gespeicherter Entwürfe samt Vorlagendaten, ohne Ausstellung oder Nummernreservierung. Die Quelle darf nur `{{ record.id }}` oder `{{ record.shortId }}` einsetzen, ohne Liquid-Filter/Tags. Vorlagen- oder Base-Schemaänderungen erfordern erneutes Veröffentlichen.
 
 `valueFormat` benötigt `style:number|integer|percent`; optional sind `decimalPlaces` (0–20), `unit` (1–20 Zeichen) und `unitPosition:prefix|suffix`. Ganzzahlen erlauben keine Nachkommastellen; nur `number` erlaubt eine eigene Einheit; deren Position benötigt eine Einheit. Ohne diese Optionen gilt die normale Darstellung des Renderers.
 

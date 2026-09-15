@@ -1,5 +1,5 @@
 import type { WorkflowActionMap, WorkflowFieldSchema } from "@k2b/cloud/workflows";
-import { MAX_CORRECTION_PREFILL_FIELDS } from "./contracts";
+import { MAX_ATOMIC_LOCK_RECORDS, MAX_CORRECTION_PREFILL_FIELDS } from "./contracts";
 import { FINANCIAL_WORKFLOW_OUTPUTS } from "./financial-output-metadata";
 import { WORKFLOW_QUERY_PARAMETER_TYPES } from "./query-parameters";
 
@@ -37,6 +37,33 @@ const auditAnswers = {
   description: "Audit answers keyed by the table audit-question UUID.",
 } as const;
 
+const querySource = {
+  kind: "string",
+  minLength: 1,
+  maxLength: 20_000,
+  description: "Inline GQL with an explicit table source and optional @params.name values. Grouped summary View joins pin their definitions at publication.",
+} as const;
+const queryParameters = {
+  kind: "record",
+  optional: true,
+  description: "Typed values keyed by lowercase parameter names; reference them in GQL as @params.name.",
+  values: {
+    kind: "object",
+    properties: {
+      type: {
+        kind: "string",
+        enum: [...WORKFLOW_QUERY_PARAMETER_TYPES],
+        description: "Parameter type. Decimal values must be exact decimal strings.",
+      },
+      value: { kind: "value", description: "Literal or workflow expression. Record values use existing record inputs or outputs." },
+    },
+  },
+} satisfies WorkflowFieldSchema;
+const atomicAssertion = {
+  assert: { kind: "string", enum: ["empty", "notEmpty"], description: "Whether the query must match no records or at least one record." },
+  message: { kind: "string", minLength: 1, maxLength: 500, optional: true, description: "Failure shown when the assertion is false." },
+} satisfies Record<string, WorkflowFieldSchema>;
+
 export const GRIDS_WORKFLOW_ACTION_METADATA = {
   query: {
     effect: "transactional",
@@ -46,28 +73,8 @@ export const GRIDS_WORKFLOW_ACTION_METADATA = {
     config: {
       kind: "object",
       properties: {
-        source: {
-          kind: "string",
-          minLength: 1,
-          maxLength: 20_000,
-          description: "Inline GQL with an explicit table source and optional @params.name values.",
-        },
-        parameters: {
-          kind: "record",
-          optional: true,
-          description: "Typed values keyed by lowercase parameter names; reference them in GQL as @params.name.",
-          values: {
-            kind: "object",
-            properties: {
-              type: {
-                kind: "string",
-                enum: [...WORKFLOW_QUERY_PARAMETER_TYPES],
-                description: "Parameter type. Decimal values must be exact decimal strings.",
-              },
-              value: { kind: "value", description: "Literal or workflow expression. Record values use existing record inputs or outputs." },
-            },
-          },
-        },
+        source: querySource,
+        parameters: queryParameters,
         saveAs,
       },
     },
@@ -128,6 +135,27 @@ export const GRIDS_WORKFLOW_ACTION_METADATA = {
           optional: true,
           description: "Explicit stored value fields carried into the correction Draft.",
         },
+        values: {
+          kind: "record",
+          optional: true,
+          values: { kind: "value", description: "Explicit draft input, including required relations or new dates." },
+          description: "Initial values override copied inputs, but cannot override typeField or originalField.",
+        },
+        saveAs,
+      },
+    },
+  },
+  deleteRecord: {
+    effect: "transactional",
+    label: "Move record to trash",
+    description: "Moves one non-finalized record to trash after current permission, mutation-policy, and audit checks. Does not destroy its data.",
+    outputType: "grids.record",
+    config: {
+      kind: "object",
+      properties: {
+        record: { kind: "string", minLength: 1, maxLength: 500, description: "Record input or output reference." },
+        audit: auditAnswers,
+        saveAs,
       },
     },
   },
@@ -191,46 +219,47 @@ export const GRIDS_WORKFLOW_ACTION_METADATA = {
         locks: {
           kind: "array",
           minItems: 1,
-          maxItems: 100,
-          items: { kind: "string", minLength: 1, maxLength: 500, description: "Record reference used to coordinate concurrent runs." },
-          description: "Records locked in stable order before checks run.",
+          maxItems: MAX_ATOMIC_LOCK_RECORDS,
+          items: { kind: "string", minLength: 1, maxLength: 500, description: "Record or record-list reference used to coordinate concurrent runs." },
+          description: "At most 100 distinct records across explicit locks, change targets and validateDocuments targets together, locked in stable order before checks run.",
         },
         checks: {
           kind: "array",
           minItems: 1,
           maxItems: 50,
           items: {
-            kind: "object",
-            properties: {
-              table: { kind: "string", minLength: 1, maxLength: 200, description: "Table queried by this check." },
-              where: {
-                kind: "array",
-                minItems: 1,
-                maxItems: 20,
-                items: {
-                  kind: "object",
-                  properties: {
-                    field: { kind: "string", minLength: 1, maxLength: 200, description: "Field name or ID." },
-                    op: { kind: "string", minLength: 1, maxLength: 80, description: "Grids filter operator." },
-                    value: { kind: "value", optional: true, description: "Filter value." },
-                    caseInsensitive: { kind: "boolean", optional: true, description: "Use case-insensitive text comparison." },
-                  },
+            kind: "union",
+            variants: [
+              {
+                kind: "object",
+                properties: {
+                  query: { kind: "object", properties: { source: querySource, parameters: queryParameters } },
+                  ...atomicAssertion,
                 },
-                description: "Bound predicates combined with AND.",
               },
-              assert: {
-                kind: "string",
-                enum: ["empty", "notEmpty"],
-                description: "Whether the query must match no records or at least one record.",
+              {
+                kind: "object",
+                properties: {
+                  table: { kind: "string", minLength: 1, maxLength: 200, description: "Table queried by this check." },
+                  where: {
+                    kind: "array",
+                    minItems: 1,
+                    maxItems: 20,
+                    items: {
+                      kind: "object",
+                      properties: {
+                        field: { kind: "string", minLength: 1, maxLength: 200, description: "Field name or ID." },
+                        op: { kind: "string", minLength: 1, maxLength: 80, description: "Grids filter operator." },
+                        value: { kind: "value", optional: true, description: "Filter value." },
+                        caseInsensitive: { kind: "boolean", optional: true, description: "Use case-insensitive text comparison." },
+                      },
+                    },
+                    description: "Bound predicates combined with AND.",
+                  },
+                  ...atomicAssertion,
+                },
               },
-              message: {
-                kind: "string",
-                minLength: 1,
-                maxLength: 500,
-                optional: true,
-                description: "Failure shown when the assertion is false.",
-              },
-            },
+            ],
           },
           description: "Current-state assertions evaluated while coordination records are locked.",
         },
@@ -241,6 +270,22 @@ export const GRIDS_WORKFLOW_ACTION_METADATA = {
           items: {
             kind: "union",
             variants: [
+              {
+                kind: "object",
+                properties: {
+                  finalizeRecord: {
+                    kind: "object",
+                    properties: {
+                      record: {
+                        kind: "string",
+                        minLength: 1,
+                        maxLength: 500,
+                        description: "Existing record reference to finalize after the checks pass in the same transaction.",
+                      },
+                    },
+                  },
+                },
+              },
               {
                 kind: "object",
                 properties: {
@@ -285,7 +330,22 @@ export const GRIDS_WORKFLOW_ACTION_METADATA = {
               },
             ],
           },
-          description: "Record creates and updates committed in order.",
+          description: "Record creates, updates and finalizations committed in order. A later failure rolls back every change.",
+        },
+        validateDocuments: {
+          kind: "array",
+          optional: true,
+          minItems: 1,
+          maxItems: 50,
+          items: {
+            kind: "object",
+            properties: {
+              template: { kind: "string", minLength: 1, maxLength: 200, description: "Profile document template to validate." },
+              record: { kind: "string", minLength: 1, maxLength: 500, description: "Existing record reference, read after the changes." },
+            },
+          },
+          description:
+            "Validate profile inputs after changes, before commit. Failure rolls back changes. Does not render or issue a document.",
         },
       },
     },
@@ -302,7 +362,8 @@ export const GRIDS_WORKFLOW_ACTION_METADATA = {
           kind: "string",
           optional: true,
           minLength: 1,
-          description: "Saved single-table row query defining the records associated with this document. Uses frozen IDs and versions, never re-runs the query. Only with data/output. Without this, simple row queries associate their own records; joins and aggregates imply no membership. Does not replace sourceVersions freshness checks.",
+          description:
+            "Saved single-table row query defining the records associated with this document. Uses frozen IDs and versions, never re-runs the query. Only with data/output. Without this, simple row queries associate their own records; joins and aggregates imply no membership. Does not replace sourceVersions freshness checks.",
         },
         sourceVersions: {
           kind: "value",

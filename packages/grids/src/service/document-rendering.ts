@@ -157,6 +157,7 @@ const executeDocumentGqlSource = async (params: {
   tableId: string;
   source: string;
   dateConfig?: DateContext;
+  signal?: AbortSignal;
 }): Promise<Result<{ columns: unknown[]; rows: Array<Record<string, unknown>> }>> => {
   const t = documentServiceText(params.dateConfig?.locale);
   const parsed = parseGridsQueryDsl(params.source);
@@ -174,6 +175,7 @@ const executeDocumentGqlSource = async (params: {
 
   const fieldsByTableId = await fieldsWithPlanExtras(ctx.fieldsByTableId, params.tableId, resolved.plan, params.client);
   const preview = await previewDslQuery(resolved.plan, {
+    signal: params.signal,
     client: params.client,
     templateApp: params.templateApp,
     fieldsByTableId,
@@ -342,10 +344,12 @@ export const buildLiveRenderData = async (params: {
   app?: DocumentTemplateAppData;
   dateConfig?: DateContext;
   createdAt?: Date;
+  includeScanMetadata?: boolean;
+  signal?: AbortSignal;
 }): Promise<Result<{ source: string; columns: unknown[]; rows: Array<Record<string, unknown>>; data: Record<string, unknown> }>> => {
   const appData = params.app ?? (await buildTemplateAppData());
   const businessData = await buildTemplateBusinessData(params.table.baseId, appData, params.client);
-  const recordMeta = await buildRecordScanMeta({
+  const recordMeta = params.includeScanMetadata === false ? {} : await buildRecordScanMeta({
     baseId: params.table.baseId,
     tableId: params.table.id,
     recordId: params.record.id,
@@ -379,6 +383,7 @@ export const buildLiveRenderData = async (params: {
   if (!source.ok) return source;
 
   const executed = await executeDocumentGqlSource({
+    signal: params.signal,
     client: params.client,
     templateApp: appData,
     baseId: params.table.baseId,

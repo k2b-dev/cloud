@@ -16,7 +16,7 @@ import {
 } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import { apiClient } from "@/api/client";
-import type { DocumentPreviewResponse, DocumentTemplateRenderer } from "../../../contracts";
+import type { DocumentPreviewResponse, DocumentTemplate, DocumentTemplateRenderer } from "../../../contracts";
 import type { DocumentTemplateStarter } from "../../../document-template-starters";
 import { requestDocumentTemplateDraftPreview } from "../documents/document-transfer-client";
 import { documentMessages, documentStarterPresentation } from "../documents/messages";
@@ -181,6 +181,7 @@ function DocumentTemplateEditorDialog(props: {
   const [footerHtml, setFooterHtml] = createSignal(initialRenderer.kind === "html" ? (initialRenderer.footer ?? "") : "");
   const [pageCss, setPageCss] = createSignal(initialRenderer.kind === "html" ? (initialRenderer.css ?? "") : "");
   const [enabled, setEnabled] = createSignal(template?.enabled ?? false);
+  const [issuancePolicy, setIssuancePolicy] = createSignal<DocumentTemplate["issuancePolicy"]>(template?.issuancePolicy ?? "repeatable");
   const [previewRecordId, setPreviewRecordId] = createSignal("");
   const [previewData, setPreviewData] = createSignal<DocumentPreviewResponse | null>(null);
   const [previewDataLoading, setPreviewDataLoading] = createSignal(false);
@@ -216,7 +217,8 @@ function DocumentTemplateEditorDialog(props: {
     description() !== initialDescription ||
     source() !== (template?.source ?? initialStarter.source) ||
     JSON.stringify(currentRenderer()) !== JSON.stringify(initialRenderer) ||
-    enabled() !== (template?.enabled ?? false);
+    enabled() !== (template?.enabled ?? false) ||
+    issuancePolicy() !== (template?.issuancePolicy ?? "repeatable");
 
   const currentPreviewSignature = () =>
     JSON.stringify({
@@ -258,7 +260,10 @@ function DocumentTemplateEditorDialog(props: {
       };
       const res = template
         ? await apiClient.documents.templates[":templateId"].$patch({ param: { templateId: template.id }, json: payload })
-        : await apiClient.documents.templates["by-table"][":tableId"].$post({ param: { tableId: props.args.tableId }, json: payload });
+        : await apiClient.documents.templates["by-table"][":tableId"].$post({
+            param: { tableId: props.args.tableId },
+            json: { ...payload, issuancePolicy: issuancePolicy() },
+          });
       if (!res.ok) throw new Error(await errorMessage(res, t().failedSaveTemplate));
       return res.json();
     },
@@ -477,6 +482,19 @@ function DocumentTemplateEditorDialog(props: {
             disabled={saveMut.loading()}
           >
             <div class="grid shrink-0 gap-2 lg:grid-cols-2 items-end">
+              <Select
+                label={t().issuancePolicy}
+                description={template ? t().issuancePolicyFixed : t().issuancePolicyChoose}
+                value={issuancePolicy}
+                onValueChange={(value) => {
+                  if (value === "repeatable" || value === "oncePerFinalizedRecord") setIssuancePolicy(value);
+                }}
+                options={[
+                  { id: "repeatable", label: t().issuanceRepeatable },
+                  { id: "oncePerFinalizedRecord", label: t().issuanceOnce },
+                ]}
+                disabled={!!template || saveMut.loading()}
+              />
               <TextInput
                 label={t().description}
                 value={description}

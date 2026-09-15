@@ -42,7 +42,7 @@ const predicateBlocker = (plan: DslResolvedSqlQueryPlan, ast: DslQueryAst): DslR
 };
 
 const joinBlocker = (plan: DslResolvedSqlQueryPlan, ast: DslQueryAst): DslResolverDiagnostic | null =>
-  (plan.joins?.length ?? 0) > 0
+  (plan.joins?.length ?? 0) > 0 || (plan.summaryJoins?.length ?? 0) > 0
     ? diagnostic("queries with relation joins cannot be represented by the records-table runtime yet", ast.joins[0]?.span)
     : null;
 

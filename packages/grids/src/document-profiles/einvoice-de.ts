@@ -109,6 +109,10 @@ export const germanBillingSnapshotSchema = germanEInvoiceSnapshotSchema
   .safeExtend({
     billing: billingKindSchema,
     serviceDate: date,
+    lines: germanEInvoiceSnapshotSchema.shape.lines.element.extend({
+      description: text(4_000).optional(),
+      unitCode: z.enum([UnitCode.UNIT, UnitCode.HOUR, UnitCode.DAY, UnitCode.KILOGRAM]).optional(),
+    }).strict().array().min(1).max(1_000),
   })
   .superRefine((value, ctx) => {
     if (value.billing.kind === "creditNote" && value.billing.original.invoiceDate > value.invoiceDate) {
@@ -190,8 +194,9 @@ const facturXInput = (
     lines: totals.lines.map((line) => ({
       id: line.id,
       name: line.name,
+      ...("description" in line && line.description ? { description: line.description } : {}),
       quantity: Number(line.quantity),
-      unitCode: UnitCode.UNIT,
+      unitCode: "unitCode" in line ? (line.unitCode ?? UnitCode.UNIT) : UnitCode.UNIT,
       unitPrice: Number(line.unitPrice),
       // The library otherwise recalculates using binary floating point and
       // validates the header against unrounded products, unlike the PDF.
@@ -248,7 +253,12 @@ const buildHtml = (snapshot: GermanEInvoiceSnapshot, number: string) => {
         ? `<p>Erstellt durch den Leistungsempfänger (Käufer). Vereinbarung: ${escapeHtml(billing.agreementReference)}</p>`
         : "";
   const service = "serviceDate" in snapshot ? `<p>Leistungsdatum: ${snapshot.serviceDate}</p>` : "";
-  return `<!doctype html><html lang="de"><head><meta charset="utf-8"><style>@page{size:A4;margin:18mm}body{font:12px system-ui;color:#17202a}h1{font-size:24px}table{width:100%;border-collapse:collapse;margin-top:24px}th,td{padding:8px;border-bottom:1px solid #ccd1d1;text-align:right}th:first-child,td:first-child{text-align:left}.total{font-weight:700}</style></head><body><h1>${title} ${escapeHtml(number)}</h1>${detail}${service}<p>${escapeHtml(snapshot.seller.name)} · ${escapeHtml(snapshot.seller.address.line1)} · ${escapeHtml(snapshot.seller.address.postalCode)} ${escapeHtml(snapshot.seller.address.city)}</p><p>An: ${escapeHtml(snapshot.buyer.name)}<br>${escapeHtml(snapshot.buyer.address.line1)}<br>${escapeHtml(snapshot.buyer.address.postalCode)} ${escapeHtml(snapshot.buyer.address.city)}</p><p>Rechnungsdatum: ${snapshot.invoiceDate} · Fällig: ${snapshot.dueDate}</p><table><thead><tr><th>Leistung</th><th>Menge</th><th>Einzelpreis</th><th>USt.</th><th>Netto</th></tr></thead><tbody>${totals.lines.map((line) => `<tr><td>${escapeHtml(line.name)}</td><td>${line.quantity}</td><td>${line.unitPrice} EUR</td><td>${line.taxRate} %</td><td>${money(line.net)} EUR</td></tr>`).join("")}<tr><td colspan="4">Netto</td><td>${money(totals.net)} EUR</td></tr><tr><td colspan="4">Umsatzsteuer</td><td>${money(totals.tax)} EUR</td></tr><tr class="total"><td colspan="4">Gesamt</td><td>${money(totals.total)} EUR</td></tr></tbody></table><p>IBAN: ${snapshot.payment.iban}</p></body></html>`;
+  const unitLabel = (line: (typeof totals.lines)[number]) => {
+    const unit = "unitCode" in line ? line.unitCode : UnitCode.UNIT;
+    return unit === UnitCode.HOUR ? "Std." : unit === UnitCode.DAY ? "Tage" : unit === UnitCode.KILOGRAM ? "kg" : "Stk.";
+  };
+  const rows = totals.lines.map((line) => `<tr><td>${escapeHtml(line.name)}${"description" in line && line.description ? `<div class="description">${escapeHtml(line.description)}</div>` : ""}</td><td>${line.quantity} ${unitLabel(line)}</td><td>${line.unitPrice} EUR</td><td>${line.taxRate} %</td><td>${money(line.net)} EUR</td></tr>`).join("");
+  return `<!doctype html><html lang="de"><head><meta charset="utf-8"><style>@page{size:A4;margin:18mm}body{font:12px system-ui;color:#17202a}h1{font-size:24px}table{width:100%;border-collapse:collapse;margin-top:24px}thead{display:table-header-group}tr{break-inside:avoid}th,td{padding:8px;border-bottom:1px solid #ccd1d1;text-align:right;vertical-align:top}th:first-child,td:first-child{text-align:left;overflow-wrap:anywhere}.description{white-space:pre-wrap;margin-top:4px}.total{font-weight:700}.settlement{break-inside:avoid}.settlement td{white-space:nowrap}.settlement .payment{text-align:left;white-space:normal;overflow-wrap:anywhere}</style></head><body><h1>${title} ${escapeHtml(number)}</h1>${detail}${service}<p>${escapeHtml(snapshot.seller.name)} · ${escapeHtml(snapshot.seller.address.line1)} · ${escapeHtml(snapshot.seller.address.postalCode)} ${escapeHtml(snapshot.seller.address.city)}</p><p>An: ${escapeHtml(snapshot.buyer.name)}<br>${escapeHtml(snapshot.buyer.address.line1)}<br>${escapeHtml(snapshot.buyer.address.postalCode)} ${escapeHtml(snapshot.buyer.address.city)}</p><p>Rechnungsdatum: ${snapshot.invoiceDate} · Fällig: ${snapshot.dueDate}</p><table><thead><tr><th>Leistung</th><th>Menge</th><th>Einzelpreis</th><th>USt.</th><th>Netto</th></tr></thead><tbody>${rows}</tbody><tbody class="settlement"><tr><td colspan="4">Netto</td><td>${money(totals.net)} EUR</td></tr><tr><td colspan="4">Umsatzsteuer</td><td>${money(totals.tax)} EUR</td></tr><tr class="total"><td colspan="4">Gesamt</td><td>${money(totals.total)} EUR</td></tr><tr><td class="payment" colspan="5">IBAN: ${snapshot.payment.iban}</td></tr></tbody></table></body></html>`;
 };
 
 export const createGermanEInvoiceProfile = (

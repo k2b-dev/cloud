@@ -50,6 +50,29 @@ describe("GQL lookup/rollup fields (C3)", () => {
     return resolved.plan;
   };
 
+  test("a prepared formula root is projected directly with its error guard", () => {
+    const compiled = compileDslQueryPlanToSql(planOf("select margin\nsort margin desc"), {
+      fieldsByTableId: rollupCtx().fieldsByTableId,
+      computedFieldSql: new Map([[marginId, { sql: sql`(SELECT 42::numeric)`, errorSql: sql`(SELECT false)`, type: "numeric" as const }]]),
+    });
+    expect(compiled.ok).toBe(true);
+    if (!compiled.ok) return;
+    const text = normalizedSql(compiled.query.sql);
+    expect(text).toContain("grids.require_valid_calculation((SELECT false), (SELECT 42::numeric)) AS q_col_0");
+    expect(text).not.toContain("MATERIALIZED");
+    expect(compiled.query.columns[0]?.sqlType).toBe("numeric");
+  });
+
+  test("a formula without a prepared root still compiles from its fields", () => {
+    const compiled = compileDslQueryPlanToSql(planOf("select margin"), {
+      fieldsByTableId: rollupCtx().fieldsByTableId,
+    });
+    expect(compiled.ok).toBe(true);
+    if (!compiled.ok) return;
+    expect(normalizedSql(compiled.query.sql)).toContain("grids.canonical_numeric(r.data->>");
+    expect(compiled.query.columns[0]?.sqlType).toBe("numeric");
+  });
+
   test("a rollup field is selectable and compiles to its injected SQL", () => {
     const compiled = compileDslQueryPlanToSql(planOf(`select amount, total`), {
       fieldsByTableId: rollupCtx().fieldsByTableId,
@@ -177,7 +200,9 @@ describe("GQL lookup/rollup fields (C3)", () => {
     const text = normalizedSql(compiled.query.sql);
     expect(text).toContain("(SELECT 7)");
     expect(text).toContain("Direct_Total__sum");
-    expect(text).toContain("HAVING");
+    // Apply HAVING to the projected aggregate, without compiling the rollup twice.
+    expect(text).toContain("FROM (");
+    expect(text).toMatch(/\) grouped\s+WHERE.*"Direct_Total__sum"/s);
   });
 
   test("direct rollup aggregates fail loudly without compatible computed SQL", () => {

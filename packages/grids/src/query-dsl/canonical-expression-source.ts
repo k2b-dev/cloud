@@ -5,6 +5,9 @@ import type { Field } from "../service/types";
 import type { DslDerivedViewColumn, DslResolvedRelationJoin, DslResolverDiagnostic } from "./resolver";
 import { gqlFieldRef, gqlLiteralSource, gqlQuotedRef } from "./source-format";
 import type { DslQualifiedRef } from "./types";
+import type { DslSummaryJoin } from "./resolver-summary-joins";
+import { derivedColumnByRef } from "./resolver-derived-columns";
+import { isResolverDiagnostic } from "./resolver-diagnostics";
 
 export type CanonicalScope = {
   tableId: string;
@@ -12,6 +15,7 @@ export type CanonicalScope = {
   derivedColumns?: DslDerivedViewColumn[];
   fieldsByTableId: Record<string, Field[]>;
   joinsByAlias: Map<string, DslResolvedRelationJoin>;
+  summariesByAlias?: Map<string, DslSummaryJoin>;
 };
 
 type FormulaPrintOptions = {
@@ -98,6 +102,12 @@ export const resolveFieldRef = (
   ref: DslQualifiedRef,
   scope: CanonicalScope,
 ): { ok: true; text: string } | { ok: false; diagnostic: DslResolverDiagnostic } => {
+  const summary = ref.scope ? scope.summariesByAlias?.get(normalizeRefKey(ref.scope)) : undefined;
+  if (summary) {
+    const column = derivedColumnByRef(summary.columns, ref.ref, ref.span);
+    return isResolverDiagnostic(column) ? { ok: false, diagnostic: column }
+      : { ok: true, text: `${summary.alias}.${gqlQuotedRef(column.publicKey ?? column.key)}` };
+  }
   if (scope.derivedColumns && !ref.scope) {
     const key = normalizeRefKey(ref.ref);
     const matches = scope.derivedColumns.filter((column) => column.refs.some((candidate) => normalizeRefKey(candidate) === key));
@@ -119,6 +129,7 @@ const fieldForFormulaFieldRef = (
 ): { ok: true; field: Field } | { ok: true; field: null } | { ok: false; diagnostic: DslResolverDiagnostic } => {
   const qualified = parseQualifiedIdentifierRef(ref) ?? { ref };
   if (recordMetaRef(qualified)) return { ok: true, field: null };
+  if (qualified.scope && scope.summariesByAlias?.has(normalizeRefKey(qualified.scope))) return { ok: true, field: null };
   if (!qualified.scope && options.aggregateAliases?.has(normalizeRefKey(qualified.ref))) return { ok: true, field: null };
   if (scope.derivedColumns && !qualified.scope) return { ok: true, field: null };
   const resolved = fieldForRef(qualified, scope);

@@ -1,4 +1,5 @@
 import { sql } from "bun";
+import { compileSummaryJoin } from "./sql-compiler-summary-joins";
 import type { RecordQuery } from "../contracts";
 import { normalizeRefKey, parseQualifiedIdentifierRef } from "../ref-syntax";
 import { containsDocumentMetadata } from "../service/document-query-expression";
@@ -75,7 +76,7 @@ const canCorrelateBoundedSingleJoins = (plan: RowPlan, fieldsByTableId: Record<s
   if (!limit || joins.length === 0 || joins.some((join) => joinCanFanOut(join, fieldsByTableId))) return false;
   const aliases = new Set(joins.map((join) => normalizeRefKey(join.alias)));
   if ((plan.sqlSearch?.length ?? 0) > 0 || valueUsesJoinAlias(plan.wherePredicate, aliases)) return false;
-  return !(plan.sqlSort ?? []).some((sort) => sort.kind === "joined" || sort.kind === "joinedField" || sort.kind === "computed");
+  return !(plan.sqlSort ?? []).some((sort) => sort.kind === "joined" || sort.kind === "joinedField" || sort.kind === "computed" || sort.kind === "summary");
 };
 
 const outputColumnsForPlan = (plan: RowPlan, baseFields: Field[]): DslOutputColumn[] => {
@@ -125,6 +126,12 @@ const compileSqlSort = (
   const cursorColumns: DslKeysetColumn[] = [];
 
   for (const sort of sorts) {
+    if (sort.kind === "summary") {
+      cursorColumns.push({ expression: sql`${sql.unsafe(`summary_${sort.index}`)}.${sql.unsafe(`"${sort.column.key}"`)}`,
+        type: sort.column.sqlType === "json" ? "unknown" : sort.column.sqlType,
+        direction: sort.direction, nullsFirst: sort.nullsFirst });
+      continue;
+    }
     if (sort.kind === "record") {
       const expression = sort.key === "createdAt" ? sql`r.created_at` : sort.key === "updatedAt" ? sql`r.updated_at` : sql`r.deleted_at`;
       cursorColumns.push({ expression, type: "datetime", direction: sort.direction, nullsFirst: sort.nullsFirst });
@@ -227,7 +234,7 @@ export const compileDslQueryPlanToSql = (
   }
   if (
     options.recordProjection !== undefined &&
-    ((plan.joins?.length ?? 0) > 0 || plan.derivedViewSource || options.recordSource?.kind === "federated")
+    ((plan.joins?.length ?? 0) > 0 || (plan.summaryJoins?.length ?? 0) > 0 || plan.derivedViewSource || options.recordSource?.kind === "federated")
   ) {
     return fail("editable record projection requires a stored table without joins or derived rows");
   }
@@ -251,6 +258,11 @@ export const compileDslQueryPlanToSql = (
     joinSql.push(compiled.fragment);
   }
   const resolveFormulaField = scopedFormulaResolverForPlan(plan, baseFields, joinAliases, options);
+  for (const [index, join] of (plan.summaryJoins ?? []).entries()) {
+    const compiled = compileSummaryJoin(join, index, options);
+    if (!compiled.ok) return fail(compiled.error);
+    joinSql.push(compiled.sql);
+  }
 
   const selectFragments: unknown[] =
     options.recordProjection !== undefined

@@ -701,7 +701,7 @@ describe("classic resource route contracts", () => {
               version: 1,
               changedFieldIds: [],
               actorId: null,
-            })}::jsonb
+            })}::text::jsonb
           )::text AS id
         `;
         await sql`

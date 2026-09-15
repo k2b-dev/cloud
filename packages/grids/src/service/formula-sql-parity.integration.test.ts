@@ -6,6 +6,7 @@ import { parseFormula } from "../formula/parser";
 import { isFormulaError } from "../formula/types";
 import { migrate } from "../migrate";
 import { normalizeRefKey } from "../ref-syntax";
+import { normalizedSqlParts } from "../sql-test-utils";
 import { compileFormulaSourceToSql, type FormulaSqlType } from "./formula-sql-compiler";
 import type { Field } from "./types";
 
@@ -39,6 +40,65 @@ const formulaField = (id: string, name: string, type: Field["type"], config: Fie
   deletedAt: null,
   createdAt: "2026-01-01T00:00:00.000Z",
   updatedAt: "2026-01-01T00:00:00.000Z",
+});
+
+postgresTest("list reductions reuse prepared cells and preserve their error and null semantics", async () => {
+  const items = formulaField("prepared-list", "Items1", "object_list", {
+    fields: [{ id: "Total1", name: "Total", type: "number", formula: { expression: "1 / 0" } }],
+  });
+  for (const sample of [
+    { value: [{ Total1: "0.1" }, { Total1: "0.2" }], error: false, count: "2", sum: "0.3" },
+    { value: [], error: false, count: "0", sum: "0" },
+    { value: null, error: false, count: null, sum: null },
+    { value: sql`'null'::jsonb`, error: false, count: null, sum: null },
+    { value: [{ Total1: "0.1" }], error: true, count: null, sum: null },
+  ]) {
+    for (const [source, expected] of [
+      ["LIST_COUNT(Items1)", sample.count],
+      ["LIST_SUM(Items1, 'Total1')", sample.sum],
+    ] as const) {
+      const compiled = compileFormulaSourceToSql(source, {
+        fields: [items],
+        computedFieldSql: new Map([
+          [items.id, { type: "unknown", sql: sql`${sample.value}::jsonb`, errorSql: sql`${sample.error}::boolean` }],
+        ]),
+      });
+      if (!compiled.ok) throw new Error(compiled.error);
+      const [row] = await sql<Array<{ value: string | null; error: boolean }>>`
+        SELECT (${compiled.expression.sql})::text AS value, ${compiled.expression.errorSql} AS error
+        FROM (SELECT ${{ [items.id]: [{}] }}::jsonb AS data, NULL::timestamptz AS finalized_at) r`;
+      expect(row).toEqual({ value: expected, error: sample.error });
+      // The sole LIST_SUM scan consumes prepared values; no live cell plan is rebuilt.
+      const text = normalizedSqlParts(sql`SELECT ${compiled.expression.sql}`).text;
+      expect(text.match(/jsonb_array_elements\(/g) ?? []).toHaveLength(source.startsWith("LIST_COUNT") ? 0 : 1);
+    }
+  }
+});
+
+postgresTest("unused list reductions do not demand a failing prepared list", async () => {
+  const items = formulaField("prepared-list", "Items1", "object_list", {
+    fields: [{ id: "Total1", name: "Total", type: "number" }],
+  });
+  for (const source of ["IF(false, LIST_SUM(Items1, 'Total1'), 17)", "IFERROR(17, LIST_COUNT(Items1))"]) {
+    const compiled = compileFormulaSourceToSql(source, {
+      fields: [items],
+      computedFieldSql: new Map([
+        [
+          items.id,
+          {
+            type: "unknown",
+            sql: sql`jsonb_build_array(jsonb_build_object('Total1', 1 / (r.data->>'zero')::numeric))`,
+            errorSql: sql`false`,
+          },
+        ],
+      ]),
+    });
+    if (!compiled.ok) throw new Error(compiled.error);
+    const [row] = await sql<Array<{ value: string; error: boolean }>>`
+      SELECT (${compiled.expression.sql})::text AS value, COALESCE(${compiled.expression.errorSql}, false) AS error
+      FROM (SELECT ${{ zero: "0", [items.id]: [] }}::jsonb AS data, NULL::timestamptz AS finalized_at OFFSET 0) r`;
+    expect(row).toEqual({ value: "17", error: false });
+  }
 });
 
 const expectParity = async (

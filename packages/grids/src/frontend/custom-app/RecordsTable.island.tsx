@@ -185,12 +185,11 @@ export default function RecordsTable(props: {
     const value = resultColumns().map((column) => ({
       id: column.key,
       header: column.label,
-      subtitle: column.type,
       value: (row: ReturnType<typeof rows>[number]) => row.values[column.key],
       class: ["text", "longtext", "relation"].includes(column.type) ? "min-w-48" : "min-w-32",
     }));
     if ((props.rowActions?.length ?? 0) > 0) {
-      value.push({ id: "__actions", header: messages().actions, subtitle: "", value: (row) => row.recordId, class: "min-w-28" });
+      value.push({ id: "__actions", header: messages().actions, value: (row) => row.recordId, class: "min-w-28" });
     }
     return value;
   });

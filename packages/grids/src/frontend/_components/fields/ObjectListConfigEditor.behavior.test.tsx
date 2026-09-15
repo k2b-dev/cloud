@@ -4,6 +4,31 @@ import { isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../../../../ui/test/dom";
 
 const domTest = isServer ? test.skip : test;
+domTest("column defaults can be changed and cleared and are removed when enabling a calculation", async () => {
+  const dom = createDomTestHarness();
+  const { ObjectListConfigEditor } = await import("./ObjectListConfigEditor");
+  const [config, setConfig] = createSignal<Record<string, unknown>>({
+    fields: [{ id: "Amount", name: "Amount", type: "number", config: {}, required: true, defaultValue: "1" }],
+  });
+  const dispose = render(() => createComponent(ObjectListConfigEditor, { config, onChange: setConfig, renderConstraints: () => null }), dom.root);
+  try {
+    const input = () => dom.root.querySelector<HTMLInputElement>('input[name="Amount"]')!;
+    expect(input().value).toBe("1");
+    input().value = "2";
+    input().dispatchEvent(new Event("input", { bubbles: true }));
+    expect(config().fields).toMatchObject([{ defaultValue: "2" }]);
+    input().value = "";
+    input().dispatchEvent(new Event("input", { bubbles: true }));
+    expect(config().fields).toMatchObject([{ defaultValue: undefined }]);
+    input().value = "3";
+    input().dispatchEvent(new Event("input", { bubbles: true }));
+    Array.from(dom.root.querySelectorAll("label"))
+      .find((label) => label.textContent?.includes("Calculate this column"))!
+      .querySelector<HTMLInputElement>('input[type="checkbox"]')!.click();
+    expect(config().fields).toMatchObject([{ defaultValue: undefined, formula: { expression: "" } }]);
+    expect(input()).toBeNull();
+  } finally { dispose(); dom.cleanup(); }
+});
 domTest("explains unsupported selection calculations and allows removing an existing formula", async () => {
   const dom = createDomTestHarness();
   const { ObjectListConfigEditor } = await import("./ObjectListConfigEditor");
@@ -16,7 +41,9 @@ domTest("explains unsupported selection calculations and allows removing an exis
     host,
   );
   try {
-    const calculationToggle = () => Array.from(host.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')).at(-1)!;
+    const calculationToggle = () => Array.from(host.querySelectorAll("label"))
+      .find((label) => label.textContent?.includes("Calculate this column"))!
+      .querySelector<HTMLInputElement>('input[type="checkbox"]')!;
     expect(calculationToggle().disabled).toBe(true);
     expect(host.textContent).toContain("Selection columns use option IDs and cannot be calculated");
     setConfig({ fields: [{ ...choice, formula: { expression: "'a'" } }] });

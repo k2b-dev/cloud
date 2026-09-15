@@ -48,7 +48,7 @@ describe("document summary mapping", () => {
     }
   });
   test("matches full document summaries including structured artifact metadata", () => {
-    const full = mapDocument({ ...row, template_snapshot: { renderer: "test" }, render_data: '{"record":{}}' }, artifacts);
+    const full = mapDocument({ ...row, template_snapshot: { renderer: "test" }, render_data: { record: {} } }, artifacts);
     expect(mapDocumentSummary(row, artifacts)).toEqual(summarizeDocument(full));
     expect(full.templateSnapshot).toEqual({ renderer: "test" });
     expect(full.renderData).toEqual({ record: {} });
@@ -75,6 +75,12 @@ describe("document summary mapping", () => {
   test("keeps full document payload validation", () => {
     expect(() => mapDocument({ ...row, template_snapshot: [], render_data: {} }, artifacts)).toThrow("Document template snapshot");
     expect(() => mapDocument({ ...row, template_snapshot: {}, render_data: "invalid" }, artifacts)).toThrow("Document render data");
+    expect(() => mapDocument({ ...row, template_snapshot: {}, render_data: '{"record":{}}' }, artifacts)).toThrow(
+      "Document render data must be a JSON object",
+    );
+    expect(() => mapDocument({ ...row, template_snapshot: "{}", render_data: {} }, artifacts)).toThrow(
+      "Document template snapshot must be a JSON object",
+    );
   });
 
   test("requires the declared primary artifact and filename for both read shapes", () => {

@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { expect, setSystemTime, test } from "bun:test";
 import { isServer } from "solid-js/web";
 import { createDomTestHarness } from "../../../../../ui/test/dom";
 import type { PublicField, PublicGridRecord } from "../../../api/public-dto";
@@ -320,6 +320,25 @@ domTest("Escape asks before discarding a record draft", async () => {
   }
 });
 
+domTest("form date defaults use one supplied instant and retain explicitly authored dates", async () => {
+  const dom = createDomTestHarness();
+  try {
+    const { buildInitialValues } = await import("../forms/form-fields");
+    const fields = [field("FIELD1", "date"), field("FIELD2", "date")];
+    const entries = [
+      { kind: "user_input" as const, fieldId: "FIELD1", defaultValue: { kind: "now" } },
+      { kind: "user_input" as const, fieldId: "FIELD2", defaultValue: "2026-01-01" },
+    ];
+    expect(buildInitialValues(entries, fields, {
+      dateConfig: { timeZone: "Europe/Berlin" }, now: new Date("2026-09-14T23:30:00Z"),
+    })).toEqual({ FIELD1: "2026-09-15", FIELD2: "2026-01-01" });
+    expect(entries[0]?.defaultValue).toEqual({ kind: "now" });
+    // SSR clients receive a concrete server date; without an explicit instant
+    // they must not re-evaluate the sentinel during hydration.
+    expect(buildInitialValues(entries, fields)).toEqual({ FIELD2: "2026-01-01" });
+  } finally { dom.cleanup(); }
+});
+
 domTest("form cross-field errors appear once after submit and disappear when corrected", async () => {
   const dom = createDomTestHarness();
   const { openFormModal } = await import("./FormSubmitModal");
@@ -362,6 +381,33 @@ domTest("form cross-field errors appear once after submit and disappear when cor
     set("FIELD1", "5");
     expect(dom.document.body.textContent).not.toContain("Start must not exceed end");
   } finally {
+    while (dialogCore.isOpen()) dialogCore.close();
+    dom.cleanup();
+  }
+});
+
+domTest("an untouched form keeps its date across midnight and closes without discard confirmation", async () => {
+  const dom = createDomTestHarness();
+  const { openFormModal } = await import("./FormSubmitModal");
+  const { dialogCore } = await import("@k2b/ui");
+  try {
+    setSystemTime(new Date("2026-09-14T21:30:00Z"));
+    const result = openFormModal({
+      id: "FORM01", tableId: "TABLE1", name: "Date form", publicToken: null, isActive: true,
+      ownerUserId: null, position: 0, isDefault: false, deletedAt: null,
+      createdAt: "2026-01-01T00:00:00Z", updatedAt: "2026-01-01T00:00:00Z",
+      config: { fields: [{ kind: "user_input", fieldId: "FIELD1", defaultValue: { kind: "now" } }] },
+    }, [field("FIELD1", "date")], { dateConfig: { timeZone: "Europe/Berlin" } });
+    expect(dom.document.body.textContent).toContain("14 Sep 2026");
+    setSystemTime(new Date("2026-09-14T23:30:00Z"));
+    expect(dom.document.body.textContent).toContain("14 Sep 2026");
+    dom.document.querySelector("dialog")!.dispatchEvent(new Event("cancel", { cancelable: true }));
+    await Bun.sleep(20);
+    expect(dom.document.body.textContent).not.toContain("Unsaved changes");
+    expect(dialogCore.isOpen()).toBe(false);
+    await result;
+  } finally {
+    setSystemTime();
     while (dialogCore.isOpen()) dialogCore.close();
     dom.cleanup();
   }

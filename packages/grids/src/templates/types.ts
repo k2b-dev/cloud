@@ -1,4 +1,5 @@
 import type { WorkflowJsonValue } from "@k2b/cloud/workflows";
+import type { DocumentTemplateRenderer, TableMutationPolicy } from "../contracts";
 import type { CustomAppDefinition } from "../custom-apps/contracts";
 import type { NavigationReference } from "../navigation-contracts";
 import type { GridsWorkflowLauncherConfig } from "../workflows/contracts";
@@ -55,6 +56,9 @@ type TemplateTable = {
   name: string;
   description?: string | null;
   displayConfig?: unknown;
+  durableHistory?: boolean;
+  finalization?: { mode: "direct" };
+  mutationPolicy?: TableMutationPolicy;
   fields: TemplateField[];
 };
 
@@ -69,6 +73,8 @@ type TemplateRecord = {
   table: string;
   values: Record<string, unknown>;
   files?: TemplateRecordFile[];
+  /** Required setup data, installed even when sample data is disabled. */
+  required?: boolean;
 };
 
 type TemplateView = {
@@ -96,12 +102,12 @@ type TemplateCustomApp = {
 type TemplateDocumentTemplate = {
   key: string;
   table: string;
-  starterId: string;
   name?: string;
   description?: string | null;
   source?: unknown;
   enabled?: boolean;
-};
+  issuancePolicy?: "repeatable" | "oncePerFinalizedRecord";
+} & ({ starterId: string; renderer?: never } | { starterId?: never; name: string; source: unknown; renderer: DocumentTemplateRenderer });
 
 type TemplateEmailTemplate = {
   key: string;
@@ -151,6 +157,8 @@ export type GridTemplate = {
 
 export const table = (key: string): TemplateRef => ({ $ref: "table", key });
 export const field = (key: string): TemplateRef => ({ $ref: "field", key });
+/** Field-keyed maps such as a Custom App form's fixedValues. */
+export const fieldKey = (key: string): string => `$field:${key}`;
 export const record = (key: string): TemplateRef => ({ $ref: "record", key });
 export const view = (key: string): TemplateRef => ({ $ref: "view", key });
 export const viewColumns = (key: string): TemplateViewColumnsRef => ({ $ref: "viewColumns", key });

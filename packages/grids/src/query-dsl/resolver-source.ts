@@ -29,6 +29,11 @@ export const resolveSource = (astSource: DslSourceRef | undefined, ctx: DslResol
   if (matches.length > 1) return diagnostic(`source "${astSource.ref}" is ambiguous; use table or view`, astSource.span);
 
   const source = matches[0]!;
+  if (source.kind === "view" && source.unavailableReason)
+    return diagnostic(
+      `view "${source.name}" uses ${source.unavailableReason.toUpperCase()}, which is not supported in a nested view source; use a view without that clause`,
+      astSource.span,
+    );
   if (source.kind === "view") return { source, tableId: source.tableId, baseQuery: source.query, span: astSource.span };
   return { source, tableId: source.id, baseQuery: {}, span: astSource.span };
 };

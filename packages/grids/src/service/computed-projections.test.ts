@@ -1,10 +1,11 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
 import {
   applyComputedProjections,
   buildComputedColumnSqlProjections,
   buildComputedProjections,
   buildFormulaSqlProjections,
 } from "./computed-projections";
+import * as fieldReads from "./field-read";
 import type { Field, GridRecord } from "./types";
 
 const field = (overrides: Partial<Field> & Pick<Field, "id" | "shortId" | "name" | "type">): Field => ({
@@ -100,6 +101,50 @@ describe("buildComputedColumnSqlProjections", () => {
 });
 
 describe("buildComputedProjections", () => {
+  test("reuses loaded target fields and formula dependencies without metadata queries", async () => {
+    const amount = { ...field({ id: "amount_id", shortId: "AMOUNT", name: "Amount", type: "number" }), tableId: "target_table" };
+    const total = {
+      ...field({ id: "total_id", shortId: "TOTAL1", name: "Total", type: "formula", config: { expression: "Amount * 2" } }),
+      tableId: "target_table",
+    };
+    const relation = field({
+      id: "relation_id",
+      shortId: "RELAT1",
+      name: "Relation",
+      type: "relation",
+      config: { targetTableId: "target_table" },
+    });
+    const lookup = field({
+      id: "lookup_id",
+      shortId: "LOOKUP",
+      name: "Total lookup",
+      type: "lookup",
+      config: { relationFieldId: relation.id, targetFieldId: total.id },
+    });
+    const get = spyOn(fieldReads, "get").mockImplementation(async () => {
+      throw new Error("Unexpected target field query");
+    });
+    const list = spyOn(fieldReads, "listByTable").mockImplementation(async () => {
+      throw new Error("Unexpected target schema query");
+    });
+    try {
+      const source = [relation, lookup];
+      const options = {
+        fieldsByTableId: { table_1: source, target_table: [amount, total] },
+        authorizedTableIds: new Set(["target_table"]),
+      };
+      const result = await buildComputedProjections(source, options);
+      expect(result).toHaveLength(1);
+      expect(result[0]).toMatchObject({ fieldId: lookup.id, outputType: "decimal" });
+      expect(await buildComputedProjections(source, { ...options, authorizedTableIds: new Set() })).toEqual([]);
+      expect(get).not.toHaveBeenCalled();
+      expect(list).not.toHaveBeenCalled();
+    } finally {
+      get.mockRestore();
+      list.mockRestore();
+    }
+  });
+
   test("omits lookup and rollup values whose relation target is not readable", async () => {
     const relation = field({
       id: "relation_id",

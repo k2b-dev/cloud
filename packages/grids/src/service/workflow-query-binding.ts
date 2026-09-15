@@ -19,7 +19,7 @@ export const workflowQueryBinder =
     const context = await buildTrustedGqlResolverContext({ baseId, ast: parsed.ast, purpose: "workflow-query", client });
     const tables = new Set([...catalog.tables.refs.values()].map((table) => table.id));
     context.tables = context.tables?.filter((table) => tables.has(table.id));
-    context.views = [];
+    context.views = context.views?.filter((view) => tables.has(view.tableId)) ?? [];
     context.fieldsByTableId = Object.fromEntries(
       Object.entries(context.fieldsByTableId)
         .filter(([id]) => tables.has(id))

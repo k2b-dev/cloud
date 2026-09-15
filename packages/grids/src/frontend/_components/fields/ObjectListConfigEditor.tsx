@@ -6,6 +6,8 @@ import { FormulaConfigSchema } from "../../../field-types/formula";
 import { OBJECT_LIST_LIMITS, ObjectListColumnSchema, ObjectListScalarTypeSchema } from "../../../field-types/object-list";
 import { planObjectListCalculations } from "../../../formula/object-list-plan";
 import { gridsFieldMessages } from "./messages";
+import { FormFieldWidthSelect } from "../forms/field-layout";
+import { FieldInput } from "../forms/form-fields";
 
 // Drafts permit unfinished names/formulas; the owning field schema validates save.
 const DraftColumns = z.array(
@@ -67,7 +69,7 @@ export function ObjectListConfigEditor(props: {
                   value={() => column().type}
                   onValueChange={(value) => {
                     const type = ObjectListScalarTypeSchema.safeParse(value);
-                    if (type.success && type.data !== column().type) update(index, { type: type.data, config: {} });
+                    if (type.success && type.data !== column().type) update(index, { type: type.data, config: {}, defaultValue: undefined });
                   }}
                 />
               </div>
@@ -87,6 +89,7 @@ export function ObjectListConfigEditor(props: {
                 }}
               >
                 <div class="flex flex-col gap-3">
+                  <FormFieldWidthSelect value={column().width} onChange={(width) => update(index, { width })} />
                   <dl class="flex flex-wrap gap-x-2 text-sm">
                     <dt class="text-dimmed">{t().listColumnId}</dt>
                     <dd class="select-all font-mono">{column().id}</dd>
@@ -102,14 +105,32 @@ export function ObjectListConfigEditor(props: {
                     onValueChange={(description) => update(index, { description })}
                   />
                   {props.renderConstraints(column, (config) => update(index, { config }))}
+                  <Show when={!column().formula}>
+                    <FieldInput
+                      field={{ ...column(), name: t().defaultValue }}
+                      entry={{ kind: "user_input", fieldId: column().id, required: false }}
+                      value={column().defaultValue}
+                      onChange={(value) => update(index, {
+                        defaultValue: value === "" || value === null || (Array.isArray(value) && value.length === 0) ? undefined : value,
+                      })}
+                    />
+                    <p class="text-sm text-dimmed">{t().listDefaultDescription}</p>
+                    <Show when={column().defaultValue !== undefined && column().defaultValue !== null}>
+                      <Button type="button" variant="ghost" onClick={() => update(index, { defaultValue: undefined })}>
+                        {t().removeDefault}
+                      </Button>
+                    </Show>
+                  </Show>
                   <CheckboxCard
                     value={() => Boolean(column().formula)}
                     disabled={column().type === "select" && !column().formula}
-                    onValueChange={(calculated) => update(index, { formula: calculated ? { expression: "" } : undefined })}
+                    onValueChange={(calculated) => update(index, { formula: calculated ? { expression: "" } : undefined, detailsOnly: calculated ? column().detailsOnly : undefined, defaultValue: calculated ? undefined : column().defaultValue })}
                     label={t().listCalculatedColumn}
                     description={column().type === "select" ? t().listCalculatedSelectUnsupported : t().listCalculatedDescription}
                   />
                   <Show when={column().formula}>
+                    <CheckboxCard label={t().listDetailsOnly} value={() => column().detailsOnly ?? false}
+                      onValueChange={(detailsOnly) => update(index, { detailsOnly })} />
                     <TextInput
                       label={t().listRowFormula}
                       value={() => column().formula?.expression ?? ""}

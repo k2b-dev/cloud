@@ -10,6 +10,7 @@ import {
 } from "../service/formula-sql-compiler";
 import { compileObjectListProjection } from "../service/object-list-projection";
 import type { Field } from "../service/types";
+import { createDerivedFormulaFieldResolver, type DslDerivedViewColumn } from "./resolver-derived-columns";
 
 type DslFormulaRecordScope = {
   alias?: string;
@@ -21,6 +22,7 @@ type DslFormulaRecordScope = {
 type DslScopedFormulaOptions = {
   base: DslFormulaRecordScope;
   joins?: DslFormulaRecordScope[];
+  summaries?: Array<{ alias: string; recordAlias: string; columns: DslDerivedViewColumn[] }>;
   dateConfig?: DateContext;
 };
 
@@ -82,6 +84,8 @@ export const createDslScopedFormulaFieldResolver = (options: DslScopedFormulaOpt
   return (ref) => {
     const qualified = parseQualifiedIdentifierRef(ref);
     if (!qualified?.scope) return null;
+    const summary = options.summaries?.find((item) => scopeMatches(item.alias, qualified.scope!));
+    if (summary) return createDerivedFormulaFieldResolver(summary.columns, summary.recordAlias)(qualified.ref);
     const scope = resolveScope(options, qualified.scope);
     if (typeof scope === "string") return scope;
     const label = `${qualified.scope}.${qualified.ref}`;

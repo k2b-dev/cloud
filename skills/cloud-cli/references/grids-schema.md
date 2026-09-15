@@ -195,7 +195,7 @@ common options but **does not change `type`**. `config` is owned by the type.
 | `required` | Default `false`; checked during record validation, not a display-only hint. |
 | `presentable` | Default `false`; contributes to the record label used in lookups, links, and pickers. It is not the record's public ID. |
 | `hideInTable` | Default `false`; presentation only, not a secrecy or access boundary. |
-| `defaultValue` | Type-specific input, validated like that type; default `null`. New record default, not an expression or backfill. Use typed values, not formatted display text. |
+| `defaultValue` | Type-specific input, validated like that type; default `null`. New record default, not an expression or backfill. Date fields also accept `{"kind":"now"}`; use the same value on a Form's `user_input` entry for a visible current-date suggestion when opening a creation form. Existing record dates are not replaced. |
 | `indexed` | Default `false`; performance setting, not uniqueness. Supports `number`, `percent`, `duration`, `date`, `boolean`, `text`, `longtext`, `id`, and single `select`; unsupported shapes do not gain a nested index. |
 | `uniqueConstraint` | Default `false`; supported for `text`, `longtext`, `number`, `percent`, `date`, `boolean`, `id`. Generated `id` always enforces uniqueness on stored tables. Existing conflicting values block activation. |
 
@@ -303,7 +303,10 @@ permissions, identities, links, or workflows.
 | `type` | Required: `text`, `longtext`, `number`, `boolean`, `date`, `select`, `percent`, `duration`. |
 | `config` | Scalar type configuration from the catalog; default `{}`. Select columns still need `options`. |
 | `required` | Default `false`. |
+| `defaultValue` | Optional literal suggestion for newly added entries in the UI, validated and normalized by the scalar type. Selects use option-ID arrays, including single-select (for example `["C62"]`); numbers use decimal strings. Omitted or `null` means no suggestion. Calculated columns cannot have defaults; dynamic defaults such as `{ "kind": "now" }` are not supported for list columns. Existing entries and API write payloads are never filled implicitly. |
 | `formula` | Optional `{expression?, format?}`; expression references sibling columns by name or ID. A calculated column keeps its declared scalar type and validation. |
+| `width` | Optional `"fullWidth"` (default) or `"compact"`. Applies equally to inputs and calculated columns. Consecutive compact columns share space and wrap; full-width columns start a full row. No automatic type/name heuristics. |
+| `detailsOnly` | Optional boolean, default `false`; only for calculated columns. Values appear under Calculation details when the list has rows. |
 
 Columns must have unique IDs and normalized names, without ambiguous name/ID
 references. No nested lists, JSON objects, files, principals, or relations.
@@ -328,7 +331,7 @@ Example field body:
     "maxItems": 100,
     "fields": [
       { "id": "Label1", "name": "Label", "type": "text", "required": true },
-      { "id": "Qty001", "name": "Quantity", "type": "number", "config": { "min": "0" }, "required": true },
+      { "id": "Qty001", "name": "Quantity", "type": "number", "config": { "min": "0" }, "required": true, "defaultValue": "1" },
       { "id": "Price1", "name": "Unit price", "type": "number", "config": { "decimalPlaces": 2 }, "required": true },
       { "id": "Total1", "name": "Total", "type": "number", "config": { "decimalPlaces": 2 }, "formula": { "expression": "ROUND(Quantity * \"Unit price\", 2)" } }
     ]
@@ -435,16 +438,23 @@ The complete `config` shape:
 | --- | --- |
 | `title`, `description` | Optional strings. |
 | `fields` | Required ordered array of `user_input` or `form_value` entries below; each field may occur once. |
+| `computedFields` | Optional ordered array, up to 20 `{fieldId, label?, helpText?, width?}` entries. Read-only formulas using visible form inputs; never submit these as data. Labels up to 200 characters, hints up to 2,000. |
 | `validations` | Optional array, at most 20 cross-field rules below. |
 | `submitLabel`, `successMessage` | Optional strings shown to the user. |
 | `redirectUrl` | Optional string or `null`; use an allowed destination, not a script URL. |
 | `titleImage` | Optional image data URL, at most 1,000,000 characters. |
 
 `user_input` entries accept `kind: "user_input"`, `fieldId` (required public
-ID), and optional `label`, `helpText`, `required`, `defaultValue`, and
+ID), and optional `label`, `helpText`, `width`, `required`, `defaultValue`, and
 `inlineCreate`. `required` and `defaultValue` are form overrides; underlying
 field validation remains authoritative. Do not use a default as a protected
 value that users must not change.
+
+`width` accepts `"fullWidth"` (default) or `"compact"` on `user_input`,
+`computedFields`, and inline-create field entries. Consecutive compact fields
+share available space and wrap; full-width fields start a full row. Order is
+preserved. This is presentation only, not a validation or calculation rule.
+For example: `{"kind":"user_input","fieldId":"Start1","width":"compact"}`.
 
 `form_value` entries use `{kind: "form_value", fieldId, value}` with all three
 properties required. The server supplies this fixed value rather than trusting
@@ -454,7 +464,7 @@ Only record-writable fields may be configured. Generated IDs, computed/system
 fields, and file bytes are not ordinary form JSON entries.
 
 For a relation `user_input`, `inlineCreate` can be
-`{enabled: true, fields: [{fieldId, label?, helpText?, required?, defaultValue?}]}`.
+`{enabled: true, fields: [{fieldId, label?, helpText?, width?, required?, defaultValue?}]}`.
 Its fields are public IDs on the relation's target table. Enabled inline
 creation needs at least one field and a configured target. No duplicate target
 fields, computed/system/file fields, or further relations are allowed. It is

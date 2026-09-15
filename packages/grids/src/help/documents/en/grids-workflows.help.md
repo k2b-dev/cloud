@@ -15,6 +15,8 @@ Agents use `workflow.record-actions` and `workflow.record-action` for approved c
 
 **New workflow → Create a file from a query:** preview GQL, choose CSV/JSON/PDF/XML, then review the disabled draft. **Run inputs** binds `@params.name`; preview values are not saved. Capture happens when the workflow runs.
 
+Workflow GQL starts with `from table`. Independent grouped summary Views can be joined, including in atomic checks. Publication pins their complete definitions and field dependencies; republish after changing a used summary. Ordinary View roots and non-summary View joins are not supported.
+
 DATEV starters need issued totals and accounting fields; SEPA starters need finalized reimbursements with required unique numbers. Configure the destination and check dates. Files are not imported bookings or payments.
 
 Name and Description explain the workflow. YAML defines inputs, optional triggers, and steps.
@@ -230,11 +232,12 @@ Run options are configured separately from the workflow source. One workflow can
 | --- | --- | --- | --- |
 | `query` | GQL `source` | Typed `parameters`, `saveAs` | Checks schema and access without capturing rows |
 | `closeRecord` | `record` | `expectedMode`, `expectedPolicyRevision` | Predicts Direct Finalization or a Four-eyes request from the Table's current policy |
-| `createCorrectionDraft` | `original`, `typeField`, `typeValue`, `originalField` | `intent` (`correction` default), `copyFields` | Validates the finalized original and predicts one linked Draft |
+| `createCorrectionDraft` | `original`, `typeField`, `typeValue`, `originalField` | `intent` (`correction` default), `copyFields`, `values`, `saveAs` | Validates the finalized original and predicts one linked Draft |
 | `finalizeRecord` | `record` | None | Validates Write access and predicts one permanent finalization |
+| `deleteRecord` | `record` | `audit`, `saveAs` | Checks permission and predicts moving a non-finalized Record to trash, not destroying it |
 | `updateRecord` | `record`, non-empty `set` | `audit` answers keyed by audit-question UUID | Validates and predicts the record update |
 | `createRecord` | `table`, non-empty `values` | `saveAs` | Validates and predicts the new record |
-| `atomicRecords` | 1–100 `locks`, 1–50 `checks`, 1–50 `changes` | Check `message`; update `ifVersion` and `audit` | Evaluates current checks and predicts the bounded record changes without locking or writing |
+| `atomicRecords` | 1–100 `locks`, 1–50 `checks`, 1–50 `changes` | Check `message`; update `ifVersion`/`audit`; 1–50 `validateDocuments` | Evaluates checks and predicts changes without locking or writing |
 | `generateDocument` | `template` + `record`, or `data` + `output` | `filename`, up to 20 `tags`, `associatedData`, `saveAs` | Validates access and values; does not generate |
 | `createDocumentLink` | `document` output reference | `expiresIn` (`1d`, `7d`, `30d`, `90d`; default `30d`), `comment`, `saveAs` | Validates the document and access; does not create a link |
 | `sendEmail` | `template`, 1–50 `to` recipients | `data` with up to 200 keys, `saveAs` | Validates template, recipients, data, and access; does not send |
@@ -279,7 +282,7 @@ steps:
       saveAs: reportDocument
 ```
 
-Do not combine `data`/`output` with `template`/`record`. Multiple file steps can use the same captured result; repeating a step returns its existing Document. Generation requires current execution permission, Base write access and source-table access. Find the resulting file in **All Documents** or the workflow run. Dry-runs do not render files.
+Do not combine `data`/`output` with `template`/`record`. File steps can share captured data; retries return the existing Document. Generation rechecks direct Base rights or the published App Workflow authorization, not UI table visibility. Find files in **All Documents** or the run. Dry-runs do not render.
 
 - **CSV:** UTF-8, CRLF, ordered aliases as headers. `delimiter` accepts comma (default), semicolon, tab (`"\t"`) or pipe. Null becomes an empty cell; nested values require `nestedValues: json`. Default `textProtection: spreadsheet` prefixes risky text, including `+`/`-` phone numbers, with an apostrophe; the report counts changed cells. Use `raw` only when the recipient handles unmodified text safely.
 - **CSV column selection:** Optional `columns: [{ source: Amount, label: Total }, { source: Name }]` selects and orders exact GQL aliases. Omit `label` to keep the alias. Unknown or repeated sources, empty selections and duplicate headings fail. Use aliases, not internal column keys.
@@ -318,28 +321,36 @@ and approval logic. Grids rechecks current permissions before creation.
 
 `closeRecord` follows the Table's mode: Direct finalizes; Four-eyes requests another eligible person's approval. Optional expected mode and policy revision pin a review. **Close selected Records** reviews up to 100 exact Records; its protected profile retains confirmed IDs instead of refreshing a View or query. Changed policy or changed/incomplete Records stop later steps and leave affected Records editable. The run shows completed steps and failures.
 
-`createCorrectionDraft` creates an editable same-Table Record, linking the unchanged finalized original through a single self-relation and setting an existing single-select value. `copyFields` copies up to 100 stored fields, including empty values and object-list inputs; defaults apply only elsewhere. Unique fields, generated IDs, Files, other Relations, calculations and Documents are excluded. Calculated columns use current formulas. Number Series, mutation policy, access, Durable History and Finalization still apply. Replay returns the same Draft.
+`createCorrectionDraft` links a new Draft to its finalized original and sets its type. `copyFields` copies up to 100 stored fields, including empty values and object-list inputs, but not unique fields, IDs, Files, Relations or calculations. Optional `values` supplies up to 100 explicit inputs, including required Relations; it overrides copies, never type/original. Relations need public IDs (`inputs.original.Customer.recordId`). `saveAs` names the result. Validation, permissions and current formulas apply. Replay returns the same Draft.
 
 The starter labels the action **Correction** or **Cancellation**; its run option must match. The selected single-select value stores that meaning. Both create linked Drafts for a person to complete, without reversing amounts, taxes or bookings or generating Documents.
 
 `finalizeRecord` uses the table's generic Finalization contract: it validates the complete record, assigns final IDs, stores the final Durable History version, and permanently locks the record atomically. Retrying the same workflow step is safe. `updateRecord` and `createRecord` field keys accept exact field names or public IDs. If a table requires change context, `updateRecord.audit` must answer the applicable questions by their question UUID. `generateDocument.template` and `sendEmail.template` accept an enabled template exact name or public ID. Ambiguous and inaccessible references are rejected during validation.
 
+`deleteRecord` trashes one non-finalized Record, never destroys it. Permission, mutation-policy and required `audit` checks apply; `saveAs` returns its reference. Not supported inside `atomicRecords.changes`.
+
 **Four-eyes Finalization** cannot be bypassed by `finalizeRecord`: request it from the Record; a different current approver-group member approves. Direct mode instead permits writers to finalize through Workflows, API, CLI and Record actions.
 
 ### Commit related record changes together
 
-Use `atomicRecords` when a current Grids condition and several record writes must succeed together. It accepts only Grids record work: it cannot send email, call HTTP, generate documents, run another workflow, or contain control flow.
+`atomicRecords` commits bounded Grids changes together. Email, HTTP, document generation, other workflows and control flow belong in separate steps.
+
+`validateDocuments: [{template, record}]` checks profile inputs after changes, before commit; failure rolls back finalization. HTML fails with `DOCUMENT_PROFILE_REQUIRED`. No rendering/issuance occurs, but an idempotent scan code may be created. Dry run checks targets, not changed values. Use record data, not a new document number; generate later.
 
 :::reference
-- **locks:** Existing record references acquired in stable order before any check runs. Every competing workflow must lock the same coordination record for the same business decision.
-- **checks:** Each check selects one bound table and 1–20 bound field predicates in `where`. Predicates use `field`, `op`, optional `value`, and optional `caseInsensitive`, and are combined with AND. `assert` is `empty` or `notEmpty`; optional `message` replaces the default failure text.
-- **changes:** An ordered list of `createRecord` or `updateRecord` entries. Create uses `table` and non-empty `values`. Update uses `record`, non-empty `set`, optional `ifVersion`, and optional `audit` answers.
-- **transaction:** Grids rechecks current permissions and row scope, locks every coordination and update record, evaluates every check, then commits records, relations, audit entries, event outbox rows, and the workflow outcome together. A failed check or change rolls all of it back.
+- **locks:** Record or record-list references, such as `inputs.item` or `inputs.items`, acquired in stable order before checks. Duplicates count once; explicit locks, change targets and `validateDocuments` targets together may include at most 100 distinct records. Empty lists add no locks. Every competing workflow must lock the same coordination record for the same business decision.
+- **checks:** Choose `query: {source, parameters}` or `table` with 1–20 AND-combined `where` predicates (`field`, `op`, optional `value`/`caseInsensitive`). `assert: empty|notEmpty` tests row existence; optional `message` explains failure.
+- **changes:** An ordered list of `createRecord`, `updateRecord`, or `finalizeRecord` entries. Create uses `table` and non-empty `values`. Update uses `record`, non-empty `set`, optional `ifVersion`, and optional `audit` answers. Finalize uses `record` and requires enabled direct Finalization; it does not bypass Four-eyes approval. Finalize after the required updates. A later rejected change rolls back the finalization too.
+- **transaction:** Permissions and row scope are rechecked. Records, relations, audit, outbox and outcome commit together or roll back together.
 :::
 
-An empty query has no row of its own to lock. For a reservation, lock the shared item (or another stable coordination record), then check that no active reservation references it. If competing workflows lock different records, the transaction cannot serialize that business decision for them.
+`finalizeRecord.record` accepts one Record reference, never a list or tree, including inside `changes`. Owned Object-list positions are part of that Record.
 
-Atomic checks support stored fields, not Formula fields or aggregate arithmetic. Check the stored facts that establish your decision under the same lock. Relation values in `createRecord` and `updateRecord`, and values for relation filters, use public Record IDs such as `${{ inputs.item.recordId }}`. Do not pass internal UUIDs, labels, or a whole record-reference object as a Relation value. Record targets and locks use the reference itself, such as `inputs.item`. Related records must remain readable in the configured target table and Base; dry run checks that boundary too.
+An empty query locks no row. Competing reservations must lock the same stable item before checking availability.
+
+Formula/aggregate checks use `query: {source, parameters}`: typed GQL after locks, before changes (10,000 rows/5 MiB; no capture). Select violations with `where`/`having`, assert `empty`; a row containing `false`/`0` is not empty. Read changing amounts in GQL, not pre-resolved parameters; include proposed changes. Dry runs reserve nothing.
+
+The `table`/`where` variant supports stored-field predicates only. Relation values in `createRecord` and `updateRecord`, and values for relation filters, use public Record IDs such as `${{ inputs.item.recordId }}`. Do not pass internal UUIDs, labels, or a whole record-reference object as a Relation value. Record targets and locks use the reference itself, such as `inputs.item`. Related records must remain readable in the configured target table and Base; dry run checks that boundary too.
 
 **Reserve one available item atomically**
 
@@ -373,7 +384,7 @@ steps:
         - createRecord:
             table: Movements
             values:
-              Item: ${{ inputs.item }}
+              Item: ${{ inputs.item.recordId }}
               Type: Active loan
 ```
 
@@ -409,7 +420,7 @@ steps:
   - createRecord:
       table: Movements
       values:
-        Item: ${{ inputs.item }}
+        Item: ${{ inputs.item.recordId }}
         Type: Check-in
       saveAs: movement
   - generateDocument:
@@ -641,47 +652,20 @@ Interrupted runs resume from recorded outcomes, not from the beginning:
 
 :::reference
 - **Run permission:** Direct calls and standalone run options require Base Write. A published Grids App may invoke only its exact included launcher, and public visitors cannot run Workflow actions.
-- **Caller run identity:** Direct UI, API, and CLI calls plus scanner and bulk run options run as the user or service account that starts them. Grids App run options use the authenticated user's identity; Grids App grants do not support service accounts. Direct calls appear under the api channel.
-- **Automatic run identity:** Schedules and record events run as the workflow owner with the owner's current groups. A record event keeps the user who changed the record in trigger metadata, but does not inherit that user's permissions.
-- **Action permission:** Raw runs use the owning Base permission. Grids App invocation rechecks the immutable app capability and `availableWhen` rule on the server; workflow preconditions still protect state that can change after the run starts.
-- **App result:** The invoking App action may poll only its own run and receives `running`, `succeeded`, or `failed` plus the workflow's sanitized result message. It does not gain access to generic run history or raw errors.
+- **Identity:** Direct calls (channel `api`), scanners and bulk use the caller; App grants require a signed-in user, not a service account. Schedules/events use the owner's current groups. Events record the triggering user without inheriting their rights.
+- **Action permission:** Raw runs use Base permissions. App grants, publication, inputs, launcher and `availableWhen` are rechecked before effects. `atomicRecords` checks once after acquiring locks; its own changes do not invalidate that step. Later effects check again. Enforce starting state with atomic checks. App Workflows may use all tables in their Base, not only visible ones. Base admins own business restrictions and export disclosure.
+- **App result:** Actions poll their own run: `running`, `succeeded` or `failed`. `fail.message` and atomic `checks[].message` reach readers verbatim: write safe recovery instructions. Other errors get safe hints, never internal details or raw history.
 - **Email delivery:** Email template management requires base admin access. Workflow runs can use enabled email templates without exposing template HTML in autocomplete.
 - **Email-template dependencies:** Grids shows which workflows use an email template and refuses to delete a referenced template. Change those workflows first.
-- **HTTP guardrails:** `httpRequest` reaches public internet addresses only. A URL naming a private, local, or otherwise reserved address is refused, and so is a hostname that resolves to one — including a name that also resolves to a public address. There is no allowlist and no setting that opens this up; a service inside your network cannot be called from a workflow.
+- **HTTP guardrails:** Only public internet addresses are allowed. Private, local or reserved targets are rejected, including hostnames resolving to both public and private addresses. No setting or allowlist enables internal network calls.
 - **HTTP limits:** `httpRequest` limits request and response bodies to 64 KiB, applies the configured timeout to the complete request including target resolution, and rejects credentials embedded in the URL. Connection and transfer headers cannot be overridden.
 :::
 
 One workflow may declare at most 100 inputs and 1,000 steps across all branches and loops. Control flow and recursive conditions may each be nested 20 levels deep, with at most 1,000 conditions. A `recordList`, bulk selection, or `forEach` loop can contain at most 10,000 records. Workflow YAML itself is limited to 200,000 characters.
 
-These are validation and execution boundaries, not recommended design targets. Split a workflow before it approaches them so one run still has one understandable purpose.
-
 ## Scanner example {icon="point"}
 
-**Scanner workflow YAML**
-
-```yaml
-inputs:
-  item:
-    type: record
-    table: Items
-    required: true
-steps:
-  - if:
-      equals:
-        - ${{ inputs.item.Status }}
-        - Loaned
-    then:
-      - updateRecord:
-          record: inputs.item
-          set:
-            Status: Available
-            Last scanned at: ${{ now() }}
-      - succeed:
-          message: "${{ inputs.item.Name }} returned."
-    else:
-      - fail:
-          message: "${{ inputs.item.Name }} is not currently loaned out."
-```
+Use the record input and update action above. For returns, check that `inputs.item.Status` is `Loaned` before changing it to `Available`; otherwise stop with `fail`. Use `atomicRecords` when competing writes must be checked and committed together.
 
 :::note Scanner run option
 Add a scanner run option that maps `item` to a scanned record. Choose generated scan-code resolution or configure a unique field such as `Label code`. The option remains outside this YAML.

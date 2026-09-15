@@ -1,6 +1,7 @@
 import type { DateContext } from "@k2b/stdlib";
-import { Button, DescriptionList, IconButton, PanelHeader, Placeholder, prompts } from "@k2b/ui";
-import { createSignal, Show } from "solid-js";
+import { Button, DescriptionList, IconButton, PanelHeader, Placeholder, prompts, dialogCore, PanelDialog, PdfPreview, panelDialogFixedOptions } from "@k2b/ui";
+import { createSignal, For, onCleanup, Show } from "solid-js";
+import type { CustomAppDocumentPreview } from "../../api/custom-app-published-page";
 import type { PublicField as Field, PublicGridFile as GridFile, PublicGridRecord as GridRecord } from "../../api/public-dto";
 import type { RecordMutationAudit, TableAuditPolicy } from "../../contracts";
 import type { CustomAppBlock } from "../../custom-apps/contracts";
@@ -34,9 +35,24 @@ export default function RecordDetails(props: {
   fileEndpoints: Record<string, string>;
   filesByField: Record<string, GridFile[]>;
   documents: CustomAppDocument[];
+  documentPreviews?: CustomAppDocumentPreview[];
   dateConfig: DateContext;
 }) {
   const messages = useCustomAppRuntimeMessages();
+  const preview = (entry: CustomAppDocumentPreview) => dialogCore.open<void>((close) => {
+    const controller = new AbortController();
+    onCleanup(() => controller.abort());
+    return (
+    <PanelDialog>
+      <PanelDialog.Header title={messages().previewDocument} subtitle={entry.name} close={close} />
+      <PanelDialog.Body>
+        <p class="text-sm text-secondary">{messages().previewDraftOnly}</p>
+        <PdfPreview title={messages().previewDocument} buttonLabel={messages().renderPreview}
+          class="h-[62dvh] min-h-72" request={() => fetch(entry.url, { method: "POST", signal: controller.signal, headers: { Accept: "application/pdf" } })} />
+      </PanelDialog.Body>
+    </PanelDialog>
+    );
+  }, { ...panelDialogFixedOptions, panelClassName: `${panelDialogFixedOptions.panelClassName} is-wide` });
   const [record, setRecord] = createSignal(props.record);
   const [relationLabels, setRelationLabels] = createSignal(props.relationLabels);
   const [saving, setSaving] = createSignal(false);
@@ -166,6 +182,14 @@ export default function RecordDetails(props: {
       <Show when={props.block.documents}>
         <section class="flex min-w-0 flex-col gap-3" aria-labelledby={`${props.block.id}-documents`}>
           <PanelHeader title={<span id={`${props.block.id}-documents`}>{messages().documents}</span>} as="h3" size="md" />
+          <div class="flex flex-wrap gap-2">
+            <For each={props.documentPreviews ?? []}>{(entry) => (
+              <Button variant="secondary" onClick={() => void preview(entry)}>
+                <i class="ti ti-eye" aria-hidden="true" />
+                {messages().previewDocument}: {entry.name}
+              </Button>
+            )}</For>
+          </div>
           <Show
             when={props.documents.length > 0}
             fallback={<Placeholder align="left" class="px-0 py-1" description={messages().noDocuments} />}
@@ -178,7 +202,7 @@ export default function RecordDetails(props: {
                 term: (
                   <span class="flex items-center gap-2">
                     <i class="ti ti-file-type-pdf shrink-0 text-base text-secondary" aria-hidden="true" />
-                    <span>PDF</span>
+                    <span class="min-w-0 break-words">{document.number}</span>
                   </span>
                 ),
                 description: (

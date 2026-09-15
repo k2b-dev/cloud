@@ -47,13 +47,18 @@ import { get as getEmailTemplate } from "./service/email-templates";
 import { listByTable as listFields } from "./service/field-read";
 import { assertMutationAllowed } from "./service/mutation-policy";
 import {
+  assertRecordMutable,
   finalizeInTransaction as finalizeRecordInTransaction,
   getStatus as getRecordFinalizationStatus,
   inspect as inspectRecordFinalization,
   requestFinalizationInTransaction,
 } from "./service/record-finalization";
 import { publicIdsForRecords } from "./service/record-read";
-import { createInTransaction as createRecordInTransaction, updateInTransaction as updateRecordInTransaction } from "./service/record-write";
+import {
+  createInTransaction as createRecordInTransaction,
+  softDeleteInTransaction,
+  updateInTransaction as updateRecordInTransaction,
+} from "./service/record-write";
 import { get as getRecord } from "./service/records";
 import { get as getTable } from "./service/tables";
 import {
@@ -61,9 +66,12 @@ import {
   actorId,
   canAccessWorkflowRunTable,
   canExecuteRun,
+  createWorkflowCaptureTableAccess,
+  createWorkflowEffectAccess,
   documentActorForScope,
   GridsWorkflowActionError,
   type GridsWorkflowActionScope,
+  type WorkflowEffectAccess,
   requireExecution,
   requireOk,
   requirePermission,
@@ -85,6 +93,7 @@ import {
   captureWorkflowRecordSource,
   planWorkflowDocumentSource,
 } from "./service/workflow-document-sources";
+import { validateWorkflowDocument } from "./service/workflow-document-validation";
 import { captureWorkflowDocumentValues } from "./service/workflow-document-values";
 import { sendWorkflowEmail, type WorkflowEmailRecipient } from "./service/workflow-email-send";
 import { preflightWorkflowHttp, requestWorkflowHttp } from "./service/workflow-http-client";
@@ -98,7 +107,7 @@ import {
 } from "./service/workflow-query-store";
 import { workflowInvocationLocale, workflowRuntimeText } from "./workflow-runtime-messages";
 import { GRIDS_WORKFLOW_ACTION_METADATA } from "./workflows/action-metadata";
-import { isCorrectionPrefillFieldType, MAX_CORRECTION_PREFILL_FIELDS } from "./workflows/contracts";
+import { isCorrectionPrefillFieldType, MAX_ATOMIC_LOCK_RECORDS, MAX_CORRECTION_PREFILL_FIELDS } from "./workflows/contracts";
 import { resolveWorkflowQueryParameters, WorkflowQueryParametersSchema } from "./workflows/query-parameters";
 
 // ─── Shared config fragments ─────────────────────────────────────────────────
@@ -179,6 +188,21 @@ const recordReference = async (ctx: WorkflowActionContext, reference: string, ke
   const value = await ctx.resolveReference(reference, key);
   if (!isRuntimeRecord(value)) throw actionError("WORKFLOW_VALUE_INVALID", runtimeText(ctx).recordReferenceRequired({ path: key }));
   return value;
+};
+
+const atomicLockReferences = async (ctx: WorkflowActionContext, references: readonly string[]): Promise<RuntimeRecord[]> => {
+  const records = new Map<string, RuntimeRecord>();
+  for (const [index, reference] of references.entries()) {
+    const value = await ctx.resolveReference(reference, `locks.${index}`);
+    if (value === null) throw actionError("WORKFLOW_VALUE_INVALID", runtimeText(ctx).recordReferenceRequired({ path: reference }));
+    const values = Array.isArray(value) ? value : [value];
+    for (const record of values) {
+      if (!isRuntimeRecord(record)) throw actionError("WORKFLOW_VALUE_INVALID", runtimeText(ctx).atomicLocksInvalid);
+      records.set(`${record.tableId}:${record.recordId}`, record);
+      if (records.size > MAX_ATOMIC_LOCK_RECORDS) throw actionError("WORKFLOW_VALUE_INVALID", runtimeText(ctx).atomicLocksInvalid);
+    }
+  }
+  return [...records.values()];
 };
 
 /**
@@ -316,6 +340,21 @@ const correctionCopyFieldIds = (ctx: WorkflowActionContext, copyFields: string[]
     return id;
   });
 
+const correctionExplicitValues = async (
+  ctx: WorkflowActionContext,
+  scope: GridsWorkflowActionScope,
+  tableId: string,
+  values: Record<string, WorkflowJsonValue> | undefined,
+  client: SqlClient,
+) => {
+  const payload = values === undefined ? {} : atomicFieldPayloadAt(ctx, ["values"], values);
+  if (Object.keys(payload).length > MAX_CORRECTION_PREFILL_FIELDS)
+    throw actionError("WORKFLOW_VALUE_INVALID", runtimeText(ctx).correctionPrefillLimit({ count: MAX_CORRECTION_PREFILL_FIELDS }));
+  if (boundId(ctx, "typeField") in payload || boundId(ctx, "originalField") in payload)
+    throw actionError("WORKFLOW_VALUE_INVALID", runtimeText(ctx).correctionPrefillReservedFields);
+  return resolveWorkflowRecordValues(scope, await listFields(tableId, false, client), payload, client);
+};
+
 const auditAnswerPayload = (
   ctx: WorkflowActionContext,
   answers: Record<string, WorkflowJsonValue> | undefined,
@@ -378,10 +417,16 @@ const transaction = (ctx: WorkflowActionContext): SqlClient => {
   return ctx.tx;
 };
 
-const workflowQueryInput = async (ctx: WorkflowActionContext, rawParameters: unknown, planning = false) => {
-  const scope = await workflowRunScope(ctx);
-  await requireExecution(scope);
-  const binding = ctx.binding("$query");
+const workflowQueryInput = async (
+  ctx: WorkflowActionContext,
+  rawParameters: unknown,
+  planning = false,
+  options: { client?: SqlClient; bindingPath?: string; effectAccess?: WorkflowEffectAccess } = {},
+) => {
+  const client = options.client ?? sql;
+  const scope = options.effectAccess?.scope ?? (await workflowRunScope(ctx, client));
+  if (!options.effectAccess) await requireExecution(scope, client);
+  const binding = ctx.binding(options.bindingPath ?? "$query");
   if (
     !binding ||
     typeof binding !== "object" ||
@@ -398,12 +443,15 @@ const workflowQueryInput = async (ctx: WorkflowActionContext, rawParameters: unk
     async (references) => {
       const idsByTable = new Map<string, Map<string, string>>();
       for (const tableId of new Set(references.map((reference) => reference.tableId))) {
-        await currentTable(ctx, scope, tableId);
-        await requireTableAccess(scope, tableId, "read");
+        if (options.effectAccess) await options.effectAccess.requireTable(tableId);
+        else {
+          await requireWorkflowTable(client, scope.baseId, tableId);
+          await requireTableAccess(scope, tableId, "read", client);
+        }
         const ids = references
           .filter((reference) => reference.tableId === tableId && !(planning && "planned" in reference))
           .map((reference) => reference.recordId);
-        idsByTable.set(tableId, await publicIdsForRecords(tableId, ids));
+        idsByTable.set(tableId, await publicIdsForRecords(tableId, ids, client));
       }
       return references.map((reference) => {
         // Planned IDs remain type-checking placeholders, never SQL identities.
@@ -427,6 +475,36 @@ const documentTemplate = async (ctx: WorkflowActionContext, resume = false) => {
   const template = await (resume ? getStoredTemplate : getTemplate)(boundId(ctx, "template"));
   if (!template || (!resume && !template.enabled)) throw actionError("NOT_FOUND", runtimeText(ctx).documentTemplateUnavailable);
   return template;
+};
+
+const atomicGqlCheckMatches = async (
+  ctx: WorkflowActionContext,
+  checkIndex: number,
+  parameters: unknown,
+  timeZone: string,
+  client?: SqlClient,
+  effectAccess?: WorkflowEffectAccess,
+) => {
+  const input = await workflowQueryInput(ctx, parameters, client === undefined, {
+    client,
+    effectAccess,
+    bindingPath: `checks.${checkIndex}.query.$query`,
+  });
+  const result = requireOk(
+    await captureWorkflowQueryData(
+      {
+        baseId: input.scope.baseId,
+        binding: input.binding,
+        values: input.values,
+        timeZone,
+        locale: invocationLocale(ctx),
+        createTableAccess: (db) =>
+          effectAccess ? Promise.resolve(effectAccess.canReadTable) : createWorkflowCaptureTableAccess(input.scope, db),
+      },
+      client,
+    ),
+  );
+  return result.rowCount > 0;
 };
 
 const documentRecord = async (
@@ -596,7 +674,7 @@ export const GRIDS_WORKFLOW_ACTIONS = {
             values: input.values,
             timeZone: (await dateContext(ctx)).timeZone ?? "UTC",
             locale: invocationLocale(ctx),
-            canReadTable: (tableId, client) => canAccessWorkflowRunTable(input.scope, tableId, "read", client),
+            createTableAccess: (client) => createWorkflowCaptureTableAccess(input.scope, client),
           }),
         );
         // Reading and committing are separate transactions. Recheck current
@@ -804,8 +882,9 @@ export const GRIDS_WORKFLOW_ACTIONS = {
           original.recordId,
           correctionCopyFieldIds(ctx, config.copyFields),
         );
+        const explicit = await correctionExplicitValues(ctx, scope, original.tableId, config.values, tx);
         const created = requireOk(
-          await createRecordInTransaction(tx, original.tableId, values, actorId(scope), "workflow", {
+          await createRecordInTransaction(tx, original.tableId, { ...values, ...explicit }, actorId(scope), "workflow", {
             dateConfig: await dateContext(ctx),
             viewer: viewerForScope(scope),
           }),
@@ -857,10 +936,61 @@ export const GRIDS_WORKFLOW_ACTIONS = {
           original.recordId,
           correctionCopyFieldIds(ctx, config.copyFields),
         );
+        await correctionExplicitValues(ctx, scope, original.tableId, config.values, sql);
         return {
           summary: runtimeText(ctx).createFollowUpDraft,
           output: { kind: "record", tableId: original.tableId, recordId: `dry-run:${ctx.stepKey}`, planned: true },
         };
+      }),
+  }),
+
+  deleteRecord: workflowAction.transactional({
+    ...GRIDS_WORKFLOW_ACTION_METADATA.deleteRecord,
+    run: (ctx, config) =>
+      attempt(async () => {
+        const tx = transaction(ctx);
+        const scope = await workflowRunScope(ctx, tx);
+        await requireExecution(scope, tx);
+        const record = await recordReference(ctx, config.record, "record");
+        await currentTable(ctx, scope, record.tableId);
+        await lockAtomicRecords(tx, [{ ...record, required: "write" }], async () => {
+          await requireTableAccess(scope, record.tableId, "write", tx);
+        });
+        await ctx.heartbeat(tx);
+        requireOk(
+          await softDeleteInTransaction(
+            tx,
+            record.tableId,
+            record.recordId,
+            actorId(scope),
+            "workflow",
+            auditAnswerPayload(ctx, config.audit),
+            invocationLocale(ctx),
+          ),
+        );
+        await logAudit(
+          {
+            baseId: scope.baseId,
+            tableId: record.tableId,
+            recordId: record.recordId,
+            userId: actorId(scope),
+            action: "workflow.record.deleted",
+            diff: { workflowRecordDeletion: { old: null, new: workflowAuditMeta(scope) } },
+          },
+          tx,
+        );
+        return { state: "succeeded", output: { kind: "record", tableId: record.tableId, recordId: record.recordId } };
+      }),
+    plan: (ctx, config) =>
+      planned(async () => {
+        const scope = await workflowRunScope(ctx);
+        await requireExecution(scope);
+        const record = await recordReference(ctx, config.record, "record");
+        await readableRecord(ctx, scope, record, "write");
+        requireOk(await assertMutationAllowed(sql, record.tableId, "workflow", invocationLocale(ctx)));
+        // Finalized rows never return to trash, including through workflow launchers.
+        requireOk(await assertRecordMutable(sql, record.tableId, record.recordId, invocationLocale(ctx)));
+        return { summary: runtimeText(ctx).deleteRecord, output: record as unknown as WorkflowJsonValue };
       }),
   }),
 
@@ -875,26 +1005,36 @@ export const GRIDS_WORKFLOW_ACTIONS = {
         const record = await recordReference(ctx, config.record, "record");
         await currentTable(ctx, scope, record.tableId);
         await requireTableAccess(scope, record.tableId, "write", tx);
+        await lockAtomicRecords(tx, [{ ...record, required: "write" }], async (target) => {
+          await requireWorkflowTable(tx, scope.baseId, target.tableId);
+          await requireTableAccess(scope, target.tableId, target.required, tx);
+        });
+        // Fence after potentially waiting for domain locks. The run-row lock
+        // then protects finalization and its journal until this transaction ends.
+        await ctx.heartbeat(tx);
+        const dates = await dateContext(ctx);
         const finalized = requireOk(
           await finalizeRecordInTransaction(tx, {
             tableId: record.tableId,
             recordId: record.recordId,
             actorId: actorId(scope),
             origin: "workflow",
-            dateConfig: await dateContext(ctx),
+            dateConfig: dates,
+            locale: dates.locale,
           }),
         );
-        await logAudit(
-          {
-            baseId: scope.baseId,
-            tableId: record.tableId,
-            recordId: record.recordId,
-            userId: actorId(scope),
-            action: "workflow.record.finalized",
-            diff: { workflowRecordFinalization: { old: null, new: workflowAuditMeta(scope) } },
-          },
-          tx,
-        );
+        if (finalized.outboxId)
+          await logAudit(
+            {
+              baseId: scope.baseId,
+              tableId: record.tableId,
+              recordId: record.recordId,
+              userId: actorId(scope),
+              action: "workflow.record.finalized",
+              diff: { workflowRecordFinalization: { old: null, new: workflowAuditMeta(scope) } },
+            },
+            tx,
+          );
         return {
           state: "succeeded",
           output: { kind: "record", tableId: finalized.record.tableId, recordId: finalized.record.id } as WorkflowJsonValue,
@@ -1041,46 +1181,85 @@ export const GRIDS_WORKFLOW_ACTIONS = {
         const dates = await dateContext(ctx);
 
         const locks: AtomicRecordRef[] = [];
-        for (let index = 0; index < config.locks.length; index += 1) {
-          const record = await recordReference(ctx, config.locks[index]!, `locks.${index}`);
+        const documentTargets: Array<{ templateId: string; tableId: string; recordId: string }> = [];
+        for (let index = 0; index < (config.validateDocuments?.length ?? 0); index += 1) {
+          const target = config.validateDocuments![index]!;
+          const record = await recordReference(ctx, target.record, `validateDocuments.${index}.record`);
+          if (record.planned)
+            throw actionError(
+              "WORKFLOW_VALUE_INVALID",
+              runtimeText(ctx).existingRecordRequired({ path: `validateDocuments.${index}.record` }),
+            );
+          documentTargets.push({
+            templateId: boundIdAt(ctx, ["validateDocuments", index, "template"]),
+            tableId: record.tableId,
+            recordId: record.recordId,
+          });
+          locks.push({ tableId: record.tableId, recordId: record.recordId, required: "read" });
+        }
+        for (const record of await atomicLockReferences(ctx, config.locks)) {
           if (record.planned) {
-            throw actionError("WORKFLOW_VALUE_INVALID", runtimeText(ctx).existingRecordRequired({ path: `locks.${index}` }));
+            throw actionError("WORKFLOW_VALUE_INVALID", runtimeText(ctx).existingRecordRequired({ path: "locks" }));
           }
           locks.push({ tableId: record.tableId, recordId: record.recordId, required: "read" });
         }
         for (let index = 0; index < config.changes.length; index += 1) {
           const change = config.changes[index]!;
-          if (!("updateRecord" in change)) continue;
-          const record = await recordReference(ctx, change.updateRecord.record, `changes.${index}.updateRecord.record`);
+          if ("createRecord" in change) continue;
+          const kind = "updateRecord" in change ? "updateRecord" : "finalizeRecord";
+          const reference = "updateRecord" in change ? change.updateRecord.record : change.finalizeRecord.record;
+          const record = await recordReference(ctx, reference, `changes.${index}.${kind}.record`);
           if (record.planned)
             throw actionError(
               "WORKFLOW_VALUE_INVALID",
-              runtimeText(ctx).existingRecordRequired({ path: `changes.${index}.updateRecord.record` }),
+              runtimeText(ctx).existingRecordRequired({ path: `changes.${index}.${kind}.record` }),
             );
           locks.push({ tableId: record.tableId, recordId: record.recordId, required: "write" });
         }
+        if (new Set(locks.map((record) => `${record.tableId}:${record.recordId}`)).size > MAX_ATOMIC_LOCK_RECORDS)
+          throw actionError("WORKFLOW_VALUE_INVALID", runtimeText(ctx).atomicLocksInvalid);
 
-        const authorizedTables = new Set<string>();
-        const accessFor = async (tableId: string, required: "read" | "write") => {
-          const key = `${tableId}:${required}`;
-          if (authorizedTables.has(key)) return;
+        const createTableIds: string[] = [];
+        for (let index = 0; index < config.changes.length; index += 1) {
+          if (!("createRecord" in config.changes[index]!)) continue;
+          const tableId = boundIdAt(ctx, ["changes", index, "createRecord", "table"]);
           await requireWorkflowTable(tx, scope.baseId, tableId);
-          await requireTableAccess(scope, tableId, required, tx);
-          authorizedTables.add(key);
-        };
-        await lockAtomicRecords(tx, locks, (record) => accessFor(record.tableId, record.required));
+          createTableIds.push(tableId);
+        }
+        await lockAtomicRecords(tx, locks, (record) => requireWorkflowTable(tx, scope.baseId, record.tableId), createTableIds);
+        // A worker can lose its lease while waiting above. Fence before checks
+        // or writes; this transaction retains the run-row lock through commit.
+        await ctx.heartbeat(tx);
+
+        // Lock waiting can outlive an App grant or publication. Authorize once
+        // here; subsequent checks and postconditions share this exact effect.
+        const effectAccess = await createWorkflowEffectAccess(scope, tx);
 
         for (let checkIndex = 0; checkIndex < config.checks.length; checkIndex += 1) {
           const check = config.checks[checkIndex]!;
+          if ("query" in check) {
+            const matches = await atomicGqlCheckMatches(ctx, checkIndex, check.query.parameters, dates.timeZone ?? "UTC", tx, effectAccess);
+            if ((check.assert === "empty" && matches) || (check.assert === "notEmpty" && !matches)) {
+              throw actionError("ATOMIC_CHECK_FAILED", check.message?.trim() || runtimeText(ctx).atomicCheckFailed);
+            }
+            continue;
+          }
           const tableId = boundIdAt(ctx, ["checks", checkIndex, "table"]);
-          await accessFor(tableId, "read");
+          await effectAccess.requireTable(tableId);
           const predicates: AtomicQueryPredicate[] = check.where.map((predicate, predicateIndex) => ({
             fieldId: boundIdAt(ctx, ["checks", checkIndex, "where", predicateIndex, "field"]),
             op: predicate.op,
             ...(predicate.value === undefined ? {} : { value: predicate.value }),
             ...(predicate.caseInsensitive === undefined ? {} : { caseInsensitive: predicate.caseInsensitive }),
           }));
-          const matches = await atomicQueryMatches({ scope, client: tx, tableId, predicates, timeZone: dates.timeZone ?? "UTC" });
+          const matches = await atomicQueryMatches({
+            scope,
+            client: tx,
+            tableId,
+            predicates,
+            timeZone: dates.timeZone ?? "UTC",
+            effectAccess,
+          });
           const passed = check.assert === "empty" ? !matches : matches;
           if (!passed) throw actionError("ATOMIC_CHECK_FAILED", check.message?.trim() || runtimeText(ctx).atomicCheckFailed);
         }
@@ -1089,14 +1268,42 @@ export const GRIDS_WORKFLOW_ACTIONS = {
         const updated: RuntimeRecord[] = [];
         for (let changeIndex = 0; changeIndex < config.changes.length; changeIndex += 1) {
           const change = config.changes[changeIndex]!;
+          if ("finalizeRecord" in change) {
+            const record = await recordReference(ctx, change.finalizeRecord.record, `changes.${changeIndex}.finalizeRecord.record`);
+            await effectAccess.requireTable(record.tableId);
+            const finalized = requireOk(
+              await finalizeRecordInTransaction(tx, {
+                tableId: record.tableId,
+                recordId: record.recordId,
+                actorId: actorId(scope),
+                origin: "workflow",
+                dateConfig: dates,
+                locale: dates.locale,
+              }),
+            );
+            if (finalized.outboxId)
+              await logAudit(
+                {
+                  baseId: scope.baseId,
+                  tableId: record.tableId,
+                  recordId: record.recordId,
+                  userId: actorId(scope),
+                  action: "workflow.record.finalized",
+                  diff: { workflowRecordFinalization: { old: null, new: workflowAuditMeta(scope) } },
+                },
+                tx,
+              );
+            continue;
+          }
           if ("createRecord" in change) {
             const tableId = boundIdAt(ctx, ["changes", changeIndex, "createRecord", "table"]);
-            await accessFor(tableId, "write");
+            await effectAccess.requireTable(tableId);
             const values = await resolveWorkflowRecordValues(
               scope,
               await listFields(tableId, false, tx),
               atomicFieldPayloadAt(ctx, ["changes", changeIndex, "createRecord", "values"], change.createRecord.values),
               tx,
+              effectAccess,
             );
             const result = requireOk(
               await createRecordInTransaction(tx, tableId, values, actorId(scope), "workflow", {
@@ -1120,12 +1327,13 @@ export const GRIDS_WORKFLOW_ACTIONS = {
           }
 
           const record = await recordReference(ctx, change.updateRecord.record, `changes.${changeIndex}.updateRecord.record`);
-          await accessFor(record.tableId, "write");
+          await effectAccess.requireTable(record.tableId);
           const values = await resolveWorkflowRecordValues(
             scope,
             await listFields(record.tableId, false, tx),
             atomicFieldPayloadAt(ctx, ["changes", changeIndex, "updateRecord", "set"], change.updateRecord.set),
             tx,
+            effectAccess,
           );
           const audit = auditAnswerPayload(ctx, change.updateRecord.audit);
           const result = requireOk(
@@ -1160,6 +1368,7 @@ export const GRIDS_WORKFLOW_ACTIONS = {
           updated.push({ kind: "record", tableId: record.tableId, recordId: result.record.id });
         }
 
+        for (const target of documentTargets) await validateWorkflowDocument(tx, scope, target, dates, effectAccess);
         return { state: "succeeded", output: { created, updated } as unknown as WorkflowJsonValue };
       }),
 
@@ -1170,12 +1379,28 @@ export const GRIDS_WORKFLOW_ACTIONS = {
         const dates = await dateContext(ctx);
         const issues: string[] = [];
 
-        for (let index = 0; index < config.locks.length; index += 1) {
-          const record = await recordReference(ctx, config.locks[index]!, `locks.${index}`);
+        for (let index = 0; index < (config.validateDocuments?.length ?? 0); index += 1) {
+          const target = config.validateDocuments![index]!;
+          const record = await recordReference(ctx, target.record, `validateDocuments.${index}.record`);
+          await readableRecord(ctx, scope, record, "read");
+          await requirePermission(scope, "write");
+          const template = await getTemplate(boundIdAt(ctx, ["validateDocuments", index, "template"]));
+          if (!template || template.tableId !== record.tableId || !template.enabled || template.renderer.kind !== "profile")
+            throw actionError("DOCUMENT_PROFILE_REQUIRED", documentServiceText(dates.locale).profileRequired);
+        }
+
+        for (const record of await atomicLockReferences(ctx, config.locks)) {
           await readableRecord(ctx, scope, record, "read");
         }
         for (let checkIndex = 0; checkIndex < config.checks.length; checkIndex += 1) {
           const check = config.checks[checkIndex]!;
+          if ("query" in check) {
+            const matches = await atomicGqlCheckMatches(ctx, checkIndex, check.query.parameters, dates.timeZone ?? "UTC");
+            if ((check.assert === "empty" && matches) || (check.assert === "notEmpty" && !matches)) {
+              issues.push(check.message?.trim() || runtimeText(ctx).checkDoesNotPass({ index: checkIndex + 1 }));
+            }
+            continue;
+          }
           const tableId = boundIdAt(ctx, ["checks", checkIndex, "table"]);
           await currentTable(ctx, scope, tableId);
           await requireTableAccess(scope, tableId, "read");
@@ -1201,6 +1426,9 @@ export const GRIDS_WORKFLOW_ACTIONS = {
               await listFields(tableId),
               atomicFieldPayloadAt(ctx, ["changes", changeIndex, "createRecord", "values"], change.createRecord.values),
             );
+          } else if ("finalizeRecord" in change) {
+            const record = await recordReference(ctx, change.finalizeRecord.record, `changes.${changeIndex}.finalizeRecord.record`);
+            await readableRecord(ctx, scope, record, "write");
           } else {
             const record = await recordReference(ctx, change.updateRecord.record, `changes.${changeIndex}.updateRecord.record`);
             await readableRecord(ctx, scope, record, "write");

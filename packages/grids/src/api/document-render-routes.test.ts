@@ -669,6 +669,29 @@ describe("document render routes", () => {
     expect(htmlInputs).toEqual([]);
   });
 
+  test.each(["en", "de-DE"])("forwards %s to draft profile PDF validation", async (locale) => {
+    const response = await app().request(path(`/templates/${templatePublicId}/preview-draft`), {
+      ...postJson({ source: template.source, renderer: profileTemplate.renderer, recordId: recordPublicId }),
+      headers: { "content-type": "application/json", "x-cloud-locale": locale },
+    });
+    expect(response.status).toBe(200);
+    expect(gridsService.document.preview).toHaveBeenCalledWith(
+      expect.objectContaining({ profileId: profileTemplate.renderer.id, profileVersion: 1, locale }),
+    );
+  });
+
+  test.each(["en", "de-DE"])("forwards %s to saved profile PDF validation", async (locale) => {
+    currentTemplate = profileTemplate;
+    const response = await app().request(path(`/templates/${templatePublicId}/preview-pdf`), {
+      ...postJson(recordBody),
+      headers: { "content-type": "application/json", "x-cloud-locale": locale },
+    });
+    expect(response.status).toBe(200);
+    expect(gridsService.document.preview).toHaveBeenCalledWith(
+      expect.objectContaining({ profileId: profileTemplate.renderer.id, profileVersion: 1, locale }),
+    );
+  });
+
   test("renders a saved PDF preview with template write and exact inline headers", async () => {
     baseLevel = "write";
     const response = await app().request(path(`/templates/${templatePublicId}/preview-pdf`), postJson(recordBody));

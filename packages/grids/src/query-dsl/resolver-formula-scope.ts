@@ -15,4 +15,5 @@ export const scopedFormulaResolverForScope = (scope: Scope) =>
       recordAlias: join.alias,
       computedFieldSql: join.computedStub,
     })),
+    summaries: [...scope.summaryJoins.values()].map((join) => ({ alias: join.alias, recordAlias: join.alias, columns: join.columns })),
   });

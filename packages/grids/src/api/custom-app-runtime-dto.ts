@@ -30,6 +30,7 @@ export function projectCustomAppRuntimePage(data: NonNullable<Awaited<ReturnType
           record: data.pageRecords.get(block.id),
           editableFieldIds: block.type === "record" && data.recordUpdateEndpoints.has(block.id) ? block.editableFieldIds : undefined,
           documents: data.documents.get(block.id),
+          documentPreviews: data.documentPreviews.get(block.id),
           html: data.renderedHtml.get(block.id),
           form: data.forms.get(block.id),
           actions: data.actions.get(block.id),

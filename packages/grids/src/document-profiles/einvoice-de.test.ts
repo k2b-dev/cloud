@@ -72,6 +72,11 @@ describe("German E-Invoice profile", () => {
       expect(xml).toContain("<ram:GrandTotalAmount>140.40</ram:GrandTotalAmount>");
       expect(html).toContain(`<h1>${title} ${context.number}</h1>`);
       expect(html).toContain("140.40 EUR");
+      // Keep totals and payment details together when the positions span pages.
+      expect(html).toContain('.settlement{break-inside:avoid}');
+      const settlement = html.match(/<tbody class="settlement">([\s\S]*?)<\/tbody>/)?.[1];
+      expect(settlement).toContain("Gesamt");
+      expect(settlement).toContain(`IBAN: ${input.payment.iban}`);
       expect(xml).toContain("<ram:SellerTradeParty><ram:Name>Example Seller GmbH</ram:Name>");
       if (billing.kind === "creditNote") {
         expect(xml).toContain("<ram:InvoiceReferencedDocument>");

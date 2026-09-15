@@ -1123,6 +1123,8 @@ export const DocumentTemplateRendererSummarySchema = z.discriminatedUnion("kind"
   ProfileDocumentTemplateRendererSchema.pick({ kind: true, id: true, version: true }).strict(),
 ]);
 
+export const DocumentIssuancePolicySchema = z.enum(["repeatable", "oncePerFinalizedRecord"]);
+
 export const DocumentTemplateSchema = z.object({
   id: z.string().uuid(),
   shortId: ShortIdSchema,
@@ -1131,6 +1133,7 @@ export const DocumentTemplateSchema = z.object({
   description: z.string().nullable(),
   source: z.string().trim().min(1).max(20_000),
   renderer: DocumentTemplateRendererSchema,
+  issuancePolicy: DocumentIssuancePolicySchema.default("repeatable"),
   enabled: z.boolean(),
   position: z.number().int(),
   createdBy: z.string().uuid().nullable(),
@@ -1148,6 +1151,7 @@ const DocumentTemplateSummarySchema = DocumentTemplateSchema.pick({
   name: true,
   description: true,
   enabled: true,
+  issuancePolicy: true,
   position: true,
   createdAt: true,
   updatedAt: true,
@@ -1160,6 +1164,7 @@ export const CreateDocumentTemplateSchema = z
     description: z.string().max(2_000).nullable().optional(),
     source: z.string().trim().min(1).max(20_000),
     renderer: DocumentTemplateRendererSchema,
+    issuancePolicy: DocumentIssuancePolicySchema.optional(),
     enabled: z.boolean().optional(),
   })
   .strict();
@@ -1397,8 +1402,11 @@ export type DocumentPreviewResponse = z.infer<typeof DocumentPreviewResponseSche
 //
 // Stored form config is JSONB. Keep the write contract here so API and
 // service boundaries validate the same shape before anything reaches DB.
+export const FormFieldWidthSchema = z.enum(["fullWidth", "compact"]);
+
 const InlineCreateFormFieldSchema = z.object({
   fieldId: z.string().uuid(),
+  width: FormFieldWidthSchema.optional(),
   label: z.string().optional(),
   helpText: z.string().optional(),
   required: z.boolean().optional(),
@@ -1413,6 +1421,7 @@ const InlineCreateConfigSchema = z.object({
 const UserInputFormFieldEntrySchema = z.object({
   kind: z.literal("user_input"),
   fieldId: z.string().uuid(),
+  width: FormFieldWidthSchema.optional(),
   label: z.string().optional(),
   helpText: z.string().optional(),
   required: z.boolean().optional(),
@@ -1439,10 +1448,21 @@ export const FormValidationRuleSchema = z
   .strict();
 export type FormValidationRule = z.infer<typeof FormValidationRuleSchema>;
 
+// A summary is a small read-only section, with the same entry budget as form
+// validation rules. Bound presentation text before publishing public payloads.
+export const FORM_COMPUTED_FIELD_LIMIT = 20;
+export const FormComputedFieldSchema = z.object({
+  fieldId: z.string().uuid(),
+  width: FormFieldWidthSchema.optional(),
+  label: z.string().max(200).optional(),
+  helpText: z.string().max(2_000).optional(),
+});
+
 export const FormConfigSchema = z.object({
   title: z.string().optional(),
   description: z.string().optional(),
   fields: z.array(FormFieldEntrySchema),
+  computedFields: z.array(FormComputedFieldSchema).max(FORM_COMPUTED_FIELD_LIMIT).optional(),
   validations: z.array(FormValidationRuleSchema).max(20).optional(),
   submitLabel: z.string().optional(),
   successMessage: z.string().optional(),

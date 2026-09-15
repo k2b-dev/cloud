@@ -7,7 +7,7 @@ import { parseGridsQueryDsl } from "../query-dsl/parser";
 import { dslQueryReferencedFieldIds } from "../query-dsl/plan-dependencies";
 import { previewDslQuery } from "../query-dsl/preview";
 import type { DslResolvedSqlQueryPlan, DslResolverContext } from "../query-dsl/resolver";
-import { collectDslPlanTableIds, needsDslViewCatalog } from "../query-dsl/source-plan";
+import { collectDslPlanTableIds } from "../query-dsl/source-plan";
 import { MAX_WORKFLOW_QUERY_ROWS, type WorkflowQueryCapture, WorkflowQueryPayloadSchema } from "../workflows/query-contracts";
 import type { SqlClient } from "./audit";
 import { canonicalDocumentJson, canonicalJson, MAX_DOCUMENT_PROFILE_INPUT_BYTES } from "./document-json";
@@ -62,7 +62,17 @@ const queryDependencies = (plan: DslResolvedSqlQueryPlan, context: DslResolverCo
       },
     ];
   });
-  return { fields, tableIds: [...tableIds].sort() };
+  // Summary joins pin the complete saved definition, not the mutable view ID
+  // alone. Parameter values belong to this run and must not enter this hash.
+  const summaries = (plan.summaryJoins ?? [])
+    .map((join) => ({
+      id: join.source.id,
+      ...(join.source.source !== undefined ? { source: join.source.source } : {}),
+      query: join.source.query,
+      ...(join.source.summaryFormulaAggregations ? { formulaAggregations: join.source.summaryFormulaAggregations } : {}),
+    }))
+    .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  return { fields, tableIds: [...tableIds].sort(), ...(summaries.length ? { summaries } : {}) };
 };
 
 /** Bind once at publication; the source keeps parameters, never their values. */
@@ -78,11 +88,11 @@ export const bindWorkflowQueryData = (
   if (!validSource.success) return fail(err.badInput(t.sourceInvalid));
   const parsed = parseGridsQueryDsl(validSource.data);
   if (!parsed.ok) return fail(err.badInput(t.sourceInvalid));
-  // Live View definitions cannot be a stable workflow input. V1 binds inline
-  // table sources; a future View input must pin its actual definition first.
-  if (!parsed.ast.source || needsDslViewCatalog(parsed.ast)) return fail(err.badInput(t.workflowQueryInlineRequired));
+  if (parsed.ast.source?.kind !== "table") return fail(err.badInput(t.workflowQueryInlineRequired));
   const canonical = canonicalizeDslQuery(parsed.ast, context, values, options);
   if (!canonical.ok) return fail(err.badInput(t.sourceInvalid));
+  // The resolver allows only independent summary View joins. Their complete
+  // definitions are pinned below; ordinary View roots remain unsupported.
   const dependencies = queryDependencies(canonical.plan, context);
   const schemaHash = canonicalJson({ source: canonical.source, ...dependencies }, locale).sha256;
   return ok({
@@ -94,18 +104,20 @@ export const bindWorkflowQueryData = (
 
 /** Capture only. The transactional workflow step must persist this payload and
  * its small journal reference together. Never return these rows in the journal. */
-export const captureWorkflowQueryData = async (input: {
-  baseId: string;
-  binding: WorkflowQueryBinding;
-  values: DslQueryContextInput;
-  timeZone: string;
-  locale?: string;
-  signal?: AbortSignal;
-  canReadTable: (tableId: string, client: SqlClient) => Promise<boolean>;
-}): Promise<Result<WorkflowQueryCapture>> => {
+export const captureWorkflowQueryData = async (
+  input: {
+    baseId: string;
+    binding: WorkflowQueryBinding;
+    values: DslQueryContextInput;
+    timeZone: string;
+    locale?: string;
+    signal?: AbortSignal;
+    createTableAccess: (client: SqlClient) => Promise<(tableId: string) => Promise<boolean>>;
+  },
+  transactionClient?: SqlClient,
+): Promise<Result<WorkflowQueryCapture>> => {
   const t = documentServiceText(input.locale);
-  return sql.begin(async (client) => {
-    await client`SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY`;
+  const capture = async (client: SqlClient): Promise<Result<WorkflowQueryCapture>> => {
     input.signal?.throwIfAborted();
     const parsed = parseGridsQueryDsl(input.binding.source);
     if (!parsed.ok) return fail(err.badInput(t.sourceInvalid));
@@ -118,15 +130,16 @@ export const captureWorkflowQueryData = async (input: {
     const bound = bindWorkflowQueryData(input.binding.source, context, input.values, input.locale);
     if (!bound.ok) return bound;
     if (bound.data.binding.schemaHash !== input.binding.schemaHash) return fail(err.conflict(t.workflowQuerySchemaChanged));
+    const canReadTable = await input.createTableAccess(client);
     const authorizedTableIds = new Set<string>();
     for (const tableId of bound.data.tableIds) {
-      if (!(await input.canReadTable(tableId, client))) return fail(err.forbidden(t.workflowQueryAccessDenied));
+      if (!(await canReadTable(tableId))) return fail(err.forbidden(t.workflowQueryAccessDenied));
       authorizedTableIds.add(tableId);
     }
     // Frozen computations may retain dependencies absent from today's schema.
     // Additional tables are individually checked, never implicitly granted.
     for (const table of context.tables ?? []) {
-      if (!authorizedTableIds.has(table.id) && (await input.canReadTable(table.id, client))) authorizedTableIds.add(table.id);
+      if (!authorizedTableIds.has(table.id) && (await canReadTable(table.id))) authorizedTableIds.add(table.id);
     }
     const result = await previewDslQuery(bound.data.plan, {
       client,
@@ -178,5 +191,12 @@ export const captureWorkflowQueryData = async (input: {
     const checked = WorkflowQueryPayloadSchema.safeParse(payload.value);
     if (!checked.success) return fail(err.badInput(t.tableOutputDataInvalid));
     return ok({ payload: checked.data, sha256: payload.sha256, rowCount: projected.rows.length, capturedAt });
+  };
+  // Atomic assertions must observe the state after their coordination locks,
+  // on the writer's transaction. Ordinary captures retain a read-only snapshot.
+  if (transactionClient) return capture(transactionClient);
+  return sql.begin(async (client) => {
+    await client`SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY`;
+    return capture(client);
   });
 };

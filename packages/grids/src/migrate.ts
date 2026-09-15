@@ -818,6 +818,7 @@ const defineSchema = async (sql: SQL): Promise<void> => {
       description text,
       source text NOT NULL,
       renderer_kind text NOT NULL,
+      issuance_policy text DEFAULT 'repeatable' NOT NULL CHECK (issuance_policy IN ('repeatable', 'oncePerFinalizedRecord')),
       html text,
       header_html text,
       footer_html text,

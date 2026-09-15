@@ -9,6 +9,7 @@ const TOP_LEVEL_KEYWORDS: Array<{ label: string; insertText: string; detail: str
   { label: "where", insertText: "where ", detail: "Filter rows", singleton: "where" },
   { label: "join table", insertText: "join table ", detail: "Join through a relation field" },
   { label: "left join table", insertText: "left join table ", detail: "Keep source rows without a match" },
+  { label: "left join view", insertText: "left join view ", detail: "Join independent grouped totals" },
   { label: "group by", insertText: "group by ", detail: "Bucket rows" },
   { label: "aggregate", insertText: "aggregate ", detail: "Calculate grouped values" },
   { label: "having", insertText: "having ", detail: "Filter grouped output", singleton: "having" },

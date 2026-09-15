@@ -1,12 +1,13 @@
 import { beforeAll, describe, expect } from "bun:test";
-import { err, fail, ok } from "@k2b/stdlib";
 import type { AuthContext } from "@k2b/cloud/server";
+import { err, fail, ok } from "@k2b/stdlib";
 import { sql } from "bun";
 import { Hono } from "hono";
 import { snapshotTableReadAuthorizer } from "../api/documents-api-shared";
 import { postgresTest, testShortId, testUuid } from "../integration-test-utils";
 import { migrate } from "../migrate";
 import { createDocumentForRecord } from "./document-core";
+import { captureRecordSnapshotDraft } from "./document-snapshots";
 import { createTemplate, updateTemplate } from "./document-templates";
 import * as fields from "./fields";
 import * as records from "./record-write";
@@ -61,6 +62,49 @@ const fixture = async () => {
 };
 
 describe("public Document capture and replay", () => {
+  postgresTest("shares the captured root without applying snapshot graph pruning to rendering data", async () => {
+    const item = await fixture();
+    const targetId = testUuid();
+    await sql`INSERT INTO grids.tables (id, short_id, base_id, name)
+      VALUES (${targetId}::uuid, ${testShortId("T")}, ${item.baseId}::uuid, 'Outside snapshot')`;
+    const target = await records.create(targetId, {}, null, "direct");
+    if (!target.ok) throw target.error;
+    const relation = await fields.create(
+      { tableId: item.table.id, name: "Related", type: "relation", config: { targetTableId: targetId, cardinality: "single" } },
+      null,
+    );
+    if (!relation.ok) throw relation.error;
+    const linked = await records.update(item.table.id, item.record.id, { [relation.data.id]: [target.data.id] }, null, "direct");
+    if (!linked.ok) throw linked.error;
+    const captured = await captureRecordSnapshotDraft({
+      baseId: item.baseId,
+      tableId: item.table.id,
+      recordId: item.record.id,
+      actorId: null,
+      canReadTable: async ({ tableId }) => tableId === item.table.id,
+    });
+    if (!captured.ok) throw captured.error;
+    const { record, snapshot } = captured.data;
+    expect(record.shortId).toBe(item.record.shortId);
+    expect(record.version).toBe(linked.data.version);
+    expect(record.data[relation.data.id]).toEqual([target.data.id]);
+    expect(snapshot.root.data).toMatchObject({ [relation.data.id]: [] });
+    expect(snapshot.root.data).not.toBe(record.data);
+    expect(snapshot.graph).toMatchObject({ records: { [`${item.table.id}:${item.record.id}`]: snapshot.root } });
+    expect(snapshot.root.data).toMatchObject({ [item.name.id]: record.data[item.name.id] });
+    expect(
+      (
+        await captureRecordSnapshotDraft({
+          baseId: item.baseId,
+          tableId: item.table.id,
+          recordId: item.record.id,
+          actorId: null,
+          canReadTable: async () => false,
+        })
+      ).ok,
+    ).toBe(false);
+  });
+
   postgresTest("captures authorized lookup and HTML fields with only one available pool connection", async () => {
     const item = await fixture();
     const relation = await fields.create(
@@ -259,8 +303,8 @@ describe("public Document capture and replay", () => {
       template: edited.data,
       canReadTable: async ({ tableId }) => {
         if (tableId === item.table.id && ++rootAccessChecks === 2) {
-          // Rendering has read the related row. Commit an independent update
-          // before the snapshot graph traverses that same relation.
+          // The capture transaction has established its snapshot. Commit an
+          // independent update before graph traversal and source rendering.
           const updated = await records.update(relatedTableId, related.data.id, { [name.data.id]: "Changed related" }, null, "direct");
           if (!updated.ok) throw updated.error;
           changed = true;

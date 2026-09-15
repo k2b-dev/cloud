@@ -379,7 +379,7 @@ const bindFinancialOutput = (
 
 const expectReference = (
   value: WorkflowJsonValue | undefined,
-  expectedType: string,
+  expectedType: string | readonly string[],
   label: string,
   path: Array<string | number>,
   scope: ReadonlyMap<string, ValueInfo>,
@@ -392,8 +392,9 @@ const expectReference = (
     return null;
   }
   const actual = resolveReference(source, path, scope, context);
-  if (actual && actual.type !== expectedType) {
-    addDiagnostic(context, "reference.type", `${label} references ${actual.type}, expected ${expectedType}`, path);
+  const expectedTypes = typeof expectedType === "string" ? [expectedType] : expectedType;
+  if (actual && !expectedTypes.includes(actual.type)) {
+    addDiagnostic(context, "reference.type", `${label} references ${actual.type}, expected ${expectedTypes.join(" or ")}`, path);
     return null;
   }
   return actual;
@@ -482,6 +483,55 @@ const bindMessage = (
   });
 };
 
+const bindQueryConfig = (
+  config: Record<string, WorkflowJsonValue>,
+  path: Array<string | number>,
+  scope: Map<string, ValueInfo>,
+  context: BindingContext,
+): void => {
+  const parameters = WorkflowQueryParametersSchema.safeParse(config.parameters ?? {});
+  if (!parameters.success) {
+    addDiagnostic(context, "query.parameters", "Use typed query parameters with lowercase names", [...path, "parameters"]);
+  } else {
+    for (const [name, parameter] of Object.entries(parameters.data)) {
+      const value = bindValue(parameter.value, [...path, "parameters", name, "value"], scope, context);
+      const expected =
+        parameter.type === "record" || parameter.type === "recordList"
+          ? `grids.${parameter.type}`
+          : parameter.type === "decimal"
+            ? "core.text"
+            : `core.${parameter.type}`;
+      // Record fields carry core.value: their declared parameter type is
+      // checked against the actual value at execution, without coercion.
+      if (
+        value.type !== expected &&
+        value.type !== "core.value" &&
+        !(value.type === "core.text" && (parameter.type === "date" || parameter.type === "dateTime"))
+      ) {
+        addDiagnostic(context, "query.parameterType", `Parameter "${name}" requires ${parameter.type}, received ${value.type}`, [
+          ...path,
+          "parameters",
+          name,
+          "value",
+        ]);
+      }
+    }
+    if (typeof config.source === "string") {
+      // The kernel evaluates config expressions; never let an expression
+      // replace the published query. All dynamic data belongs in parameters.
+      if (config.source.includes("${{"))
+        addDiagnostic(context, "query.source", "Use @params.name instead of workflow expressions in GQL", [...path, "source"]);
+      else
+        context.queries.push({
+          source: config.source,
+          values: workflowQueryParameterSamples(parameters.data),
+          parameters: parameters.data,
+          path,
+        });
+    }
+  }
+};
+
 const bindAction = (step: Extract<WorkflowIrStep, { kind: "action" }>, scope: Map<string, ValueInfo>, context: BindingContext): void => {
   const config = step.config;
   const path = [...step.sourcePath, step.action];
@@ -489,59 +539,20 @@ const bindAction = (step: Extract<WorkflowIrStep, { kind: "action" }>, scope: Ma
   let output: ValueInfo | undefined = outputType ? valueDescriptor(outputType) : undefined;
 
   if (step.action === "query") {
-    const parameters = WorkflowQueryParametersSchema.safeParse(config.parameters ?? {});
-    if (!parameters.success) {
-      addDiagnostic(context, "query.parameters", "Use typed query parameters with lowercase names", [...path, "parameters"]);
-    } else {
-      for (const [name, parameter] of Object.entries(parameters.data)) {
-        const value = bindValue(parameter.value, [...path, "parameters", name, "value"], scope, context);
-        const expected =
-          parameter.type === "record" || parameter.type === "recordList"
-            ? `grids.${parameter.type}`
-            : parameter.type === "decimal"
-              ? "core.text"
-              : `core.${parameter.type}`;
-        // Record fields carry core.value: their declared parameter type is
-        // checked against the actual value at execution, without coercion.
-        if (
-          value.type !== expected &&
-          value.type !== "core.value" &&
-          !(value.type === "core.text" && (parameter.type === "date" || parameter.type === "dateTime"))
-        ) {
-          addDiagnostic(context, "query.parameterType", `Parameter "${name}" requires ${parameter.type}, received ${value.type}`, [
-            ...path,
-            "parameters",
-            name,
-            "value",
-          ]);
-        }
-      }
-      if (typeof config.source === "string") {
-        const parsed = parseGridsQueryDsl(config.source);
-        if (output && parsed.ok)
-          output = {
-            ...output,
-            documentRowQuery:
-              parsed.ast.source?.kind === "table" &&
-              !parsed.ast.joins.length &&
-              !parsed.ast.groupBy.length &&
-              !parsed.ast.aggregations.length,
-          };
-        // The kernel evaluates config expressions; never let an expression
-        // replace the published query. All dynamic data belongs in parameters.
-        if (config.source.includes("${{"))
-          addDiagnostic(context, "query.source", "Use @params.name instead of workflow expressions in GQL", [...path, "source"]);
-        else
-          context.queries.push({
-            source: config.source,
-            values: workflowQueryParameterSamples(parameters.data),
-            parameters: parameters.data,
-            path,
-          });
-      }
+    bindQueryConfig(config, path, scope, context);
+    const parsed = typeof config.source === "string" ? parseGridsQueryDsl(config.source) : null;
+    if (output && parsed?.ok)
+      output = {
+        ...output,
+        documentRowQuery:
+          parsed.ast.source?.kind === "table" && !parsed.ast.joins.length && !parsed.ast.groupBy.length && !parsed.ast.aggregations.length,
+      };
+  } else if (step.action === "finalizeRecord" || step.action === "closeRecord" || step.action === "deleteRecord") {
+    const record = expectReference(config.record, "grids.record", "record", [...path, "record"], scope, context);
+    if (step.action === "deleteRecord") {
+      if (config.audit !== undefined) bindValue(config.audit, [...path, "audit"], scope, context);
+      output = { ...recordValue, ...(record?.tableId ? { tableId: record.tableId } : {}) };
     }
-  } else if (step.action === "finalizeRecord" || step.action === "closeRecord") {
-    expectReference(config.record, "grids.record", "record", [...path, "record"], scope, context);
     if (step.action === "closeRecord" && config.expectedMode !== undefined) {
       expectReference(config.expectedMode, "core.text", "expectedMode", [...path, "expectedMode"], scope, context);
     }
@@ -575,6 +586,8 @@ const bindAction = (step: Extract<WorkflowIrStep, { kind: "action" }>, scope: Ma
         });
       }
     }
+    bindAtomicFieldMap(config.values, original?.tableId, [...path, "values"], scope, context);
+    output = { ...recordValue, ...(original?.tableId ? { tableId: original.tableId } : {}) };
   } else if (step.action === "updateRecord") {
     const record = expectReference(config.record, "grids.record", "record", [...path, "record"], scope, context);
     bindFieldMap(config.set, record?.tableId, [...path, "set"], scope, context);
@@ -587,15 +600,33 @@ const bindAction = (step: Extract<WorkflowIrStep, { kind: "action" }>, scope: Ma
     bindFieldMap(config.values, table?.id, [...path, "values"], scope, context);
     output = { ...recordValue, ...(table ? { tableId: table.id } : {}) };
   } else if (step.action === "atomicRecords") {
+    if (Array.isArray(config.validateDocuments)) {
+      config.validateDocuments.forEach((raw, index) => {
+        if (!raw || typeof raw !== "object" || Array.isArray(raw)) return;
+        const at = [...path, "validateDocuments", index];
+        const template =
+          typeof raw.template === "string"
+            ? resolveCatalogRef(context, context.catalog.templates, raw.template, "document template", [...at, "template"])
+            : null;
+        const record = expectReference(raw.record, "grids.record", "record", [...at, "record"], scope, context);
+        if (template && record?.tableId && template.tableId !== record.tableId) {
+          addDiagnostic(context, "binding.scope", "Record table does not match the document template table", [...at, "record"]);
+        }
+      });
+    }
     if (Array.isArray(config.locks)) {
       config.locks.forEach((record, index) => {
-        expectReference(record, "grids.record", "lock", [...path, "locks", index], scope, context);
+        expectReference(record, ["grids.record", "grids.recordList"], "lock", [...path, "locks", index], scope, context);
       });
     }
     if (Array.isArray(config.checks)) {
       config.checks.forEach((rawCheck, checkIndex) => {
         if (!rawCheck || typeof rawCheck !== "object" || Array.isArray(rawCheck)) return;
         const check = rawCheck as Record<string, WorkflowJsonValue>;
+        if (check.query && typeof check.query === "object" && !Array.isArray(check.query)) {
+          bindQueryConfig(check.query, [...path, "checks", checkIndex, "query"], scope, context);
+          return;
+        }
         const table =
           typeof check.table === "string"
             ? resolveCatalogRef(context, context.catalog.tables, check.table, "table", [...path, "checks", checkIndex, "table"])
@@ -618,6 +649,16 @@ const bindAction = (step: Extract<WorkflowIrStep, { kind: "action" }>, scope: Ma
         if (!rawChange || typeof rawChange !== "object" || Array.isArray(rawChange)) return;
         const change = rawChange as Record<string, WorkflowJsonValue>;
         const basePath = [...path, "changes", changeIndex];
+        if (change.finalizeRecord && typeof change.finalizeRecord === "object" && !Array.isArray(change.finalizeRecord)) {
+          expectReference(
+            change.finalizeRecord.record,
+            "grids.record",
+            "record",
+            [...basePath, "finalizeRecord", "record"],
+            scope,
+            context,
+          );
+        }
         if (change.createRecord && typeof change.createRecord === "object" && !Array.isArray(change.createRecord)) {
           const create = change.createRecord as Record<string, WorkflowJsonValue>;
           const table =

@@ -4,6 +4,7 @@ import { fetchRecordLookup } from "./record-lookup";
 
 type Props = {
   tableId: string;
+  lookupUrl?: string;
   templateId?: string;
   value: () => string;
   onChange: (recordId: string) => void;
@@ -41,6 +42,7 @@ export default function RecordPicker(props: Props) {
       fetchData={async (query, signal) => {
         const items = await fetchRecordLookup({
           tableId: props.tableId,
+          lookupUrl: props.lookupUrl,
           templateId: props.templateId,
           query,
           excludeIds: excludedIds(),

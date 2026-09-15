@@ -10,6 +10,7 @@ import { assertFederatedPublication, buildDslSqlRecordSource } from "../query-ds
 import { remove as removeBase, restore as restoreBase } from "./bases";
 import * as boundedQuery from "./bounded-query";
 import * as combinedAudit from "./combined-audit";
+import { customAppFormRelationScope } from "./custom-app-form-relations";
 import * as durableHistory from "./durable-history";
 import { exportRecords } from "./export";
 import {
@@ -238,6 +239,39 @@ beforeAll(async () => {
 });
 
 describe("combined table integration", () => {
+  postgresTest("published form relation labels pin Combined publication even when its fields stay unchanged", async () => {
+    const fixture = await createFixture();
+    try {
+      const relation: Field = {
+        ...fixture.targetFields[0]!,
+        id: uuid(),
+        type: "relation",
+        config: { targetTableId: fixture.targetTableId, cardinality: "one" },
+      };
+      const form = { tableId: fixture.targetTableId, config: { fields: [{ kind: "user_input" as const, fieldId: relation.id }] } };
+      const scope = await customAppFormRelationScope(form, [relation], []);
+      expect(scope).not.toBeNull();
+      const target = scope!.targets[0]!;
+      const snapshot = {
+        fields: target.targetFields,
+        presentable: target.labels,
+        tableKind: target.tableKind,
+        recordSource: target.recordSource,
+      };
+      const before = await lookupRecords({ targetTableId: fixture.targetTableId, labelSnapshot: snapshot });
+      expect(before.items.map((item) => item.id)).toContain(fixture.recordId);
+      await sql`UPDATE grids.federated_table_revisions SET updated_at = updated_at + interval '1 second' WHERE id = ${fixture.revisionId}::uuid`;
+      const changed = await customAppFormRelationScope(form, [relation], []);
+      expect(changed?.hash).not.toBe(scope!.hash);
+      expect((await loadTableFields(fixture.targetTableId)).map(({ id, type, config }) => ({ id, type, config }))).toEqual(
+        fixture.targetFields.map(({ id, type, config }) => ({ id, type, config })),
+      );
+      await expect(lookupRecords({ targetTableId: fixture.targetTableId, labelSnapshot: snapshot })).rejects.toThrow("publication changed");
+    } finally {
+      await cleanupFixture(fixture);
+    }
+  });
+
   postgresTest("batch record identities retain stored and Combined source boundaries", async () => {
     const fixture = await createFixture();
     try {

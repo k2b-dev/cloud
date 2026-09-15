@@ -8,6 +8,7 @@ import { type Document, type DocumentArtifact, type DocumentTemplate, DocumentTe
 import type { DocumentProfileReference, PrimaryDocumentArtifact } from "../document-profile-contracts";
 import { type DocumentArtifactDraft, type DocumentProfile, documentProfiles, profileKey, profileRegistry } from "../document-profiles";
 import { financialQueryProfiles } from "../document-profiles/financial";
+import { documentProfileInputMessage } from "../document-profiles/input-diagnostics";
 import { validateDocumentArtifactDrafts } from "./document-artifact-drafts";
 import { reserveDocumentExportClaims } from "./document-export-claims";
 import { normalizeFinancialDocumentOutput } from "./document-financial-output";
@@ -16,10 +17,11 @@ import { canonicalDocumentJson, canonicalJson } from "./document-json";
 import { documentNumberFor } from "./document-liquid";
 import { type DocumentDbRow, hydrateDocuments } from "./document-mappers";
 import { documentServiceText, isGermanDocumentLocale } from "./document-messages";
+import { validateDocumentProfileInput } from "./document-profile-validation";
 import { DocumentQueryOutputSchema, validateDocumentQueryOutput } from "./document-query-output";
 import { capturedDocumentRecords, resolveCapturedDocumentRecords } from "./document-record-sources";
 import { buildDocumentRenderData, renderDocumentPdf, renderDocumentProfileInput } from "./document-rendering";
-import { persistRecordSnapshot, type RecordSnapshotDraft } from "./document-snapshots";
+import { persistRecordSnapshot, type RecordSnapshotDraft, type SnapshotTableReadAuthorizer } from "./document-snapshots";
 import {
   DocumentSourceVersionsInputSchema,
   DocumentSourceVersionsSchema,
@@ -228,6 +230,7 @@ export type IssueDocumentInput = {
   renderData: Record<string, unknown>;
   actor: DocumentIssuanceActor;
   idempotencyKey: string;
+  canReadTable?: SnapshotTableReadAuthorizer;
   tags?: string[];
   workflowRunId?: string | null;
   workflowStepKey?: string | null;
@@ -238,7 +241,7 @@ export type IssueDocumentInput = {
 
 type RecordDocumentRequest = Pick<
   IssueDocumentInput,
-  "actor" | "idempotencyKey" | "tags" | "workflowRunId" | "workflowStepKey" | "dateConfig" | "filename" | "renderPdf"
+  "actor" | "idempotencyKey" | "tags" | "workflowRunId" | "workflowStepKey" | "dateConfig" | "filename" | "renderPdf" | "canReadTable"
 > & { baseId: string; tableId: string; recordId: string; templateId: string };
 
 const recordRequestIdentityHash = (input: RecordDocumentRequest): string =>
@@ -413,15 +416,7 @@ export const createDocumentIssuanceService = (options: { profiles?: readonly Doc
     if (!profile) return fail(err.badInput(t.unknownProfile({ profile: `${input.profileId}@${input.profileVersion}` })));
     const parsed = profile.input.safeParse(input.snapshot);
     if (!parsed.success) {
-      if (isGermanDocumentLocale(input.locale)) return fail(err.badInput(t.profileInputInvalid));
-      return fail(
-        err.badInput(
-          parsed.error.issues
-            .slice(0, 10)
-            .map((issue) => `${issue.path.join(".") || "$"}: ${issue.message}`)
-            .join("; "),
-        ),
-      );
+      return fail(err.badInput(documentProfileInputMessage(profile.id, parsed.error.issues, input.locale)));
     }
     try {
       const rendered = await profile.issue(parsed.data, {
@@ -432,8 +427,8 @@ export const createDocumentIssuanceService = (options: { profiles?: readonly Doc
       return artifacts.ok ? ok(artifacts.data.artifacts) : artifacts;
     } catch (error) {
       const known = serviceError(error);
-      if (known) return fail(isGermanDocumentLocale(input.locale) ? { ...known, message: t.profilePreviewFailed } : known);
-      return fail(err.badInput(!isGermanDocumentLocale(input.locale) && error instanceof Error ? error.message : t.profilePreviewFailed));
+      if (known) return fail({ ...known, message: t.profilePreviewFailed });
+      return fail(err.badInput(t.profilePreviewFailed));
     }
   };
 
@@ -441,6 +436,71 @@ export const createDocumentIssuanceService = (options: { profiles?: readonly Doc
     const rows = await db<DocumentDbRow[]>`SELECT * FROM grids.documents WHERE id = ${id}::uuid`;
     const [document] = await hydrateDocuments(rows, db);
     return document ?? null;
+  };
+
+  // Policy is persisted and immutable through the template API. Caller-supplied
+  // snapshots cannot opt out; a different run or actor cannot allocate again.
+  const operationIdentity = async (
+    request: Pick<RecordDocumentRequest, "baseId" | "tableId" | "recordId" | "templateId" | "idempotencyKey" | "dateConfig">,
+    client: SQL = db,
+  ) => {
+    const t = documentServiceText(request.dateConfig?.locale);
+    const [binding] = await client<
+      Array<{ issuance_policy: DocumentTemplate["issuancePolicy"]; final_revision_id: string | null; live: boolean }>
+    >`
+      SELECT template.issuance_policy, record.final_revision_id::text,
+        (base.deleted_at IS NULL AND table_.deleted_at IS NULL AND record.id IS NOT NULL AND record.deleted_at IS NULL) AS live
+      FROM grids.document_templates template
+      JOIN grids.tables table_ ON table_.id = template.table_id
+      JOIN grids.bases base ON base.id = table_.base_id
+      LEFT JOIN grids.records record ON record.table_id = table_.id AND record.id = ${request.recordId}::uuid
+      WHERE template.id = ${request.templateId}::uuid AND table_.id = ${request.tableId}::uuid
+        AND base.id = ${request.baseId}::uuid
+    `;
+    if (!binding) throw err.notFound(t.recordNotFound);
+    if (binding.issuance_policy === "repeatable") return { hash: sha256Hex(request.idempotencyKey), once: false };
+    if (binding.issuance_policy !== "oncePerFinalizedRecord") throw err.internal(t.receiptReadFailed);
+    if (!binding.live) throw err.notFound(t.recordNotFound);
+    if (!binding.final_revision_id) throw err.badInput(t.issuanceRequiresFinalization);
+    return {
+      // NUL is prohibited in caller keys, keeping the server namespace separate.
+      hash: sha256Hex(`grids:finalized-document\0${request.baseId}:${request.templateId}:${request.recordId}:${binding.final_revision_id}`),
+      once: true,
+    };
+  };
+
+  const authorizeSnapshot = async (
+    snapshot: Pick<RecordSnapshotDraft, "baseId" | "tableId" | "graph">,
+    authorize: SnapshotTableReadAuthorizer | undefined,
+    locale?: string,
+    client: SQL = db,
+  ) => {
+    const t = documentServiceText(locale);
+    if (!authorize) throw err.forbidden(t.workflowQueryAccessDenied);
+    const graph = z.object({ records: z.record(z.string(), z.object({ table: z.object({ id: z.uuid() }) })) }).safeParse(snapshot.graph);
+    if (!graph.success) throw err.internal(t.receiptReadFailed);
+    const tableIds = new Set([snapshot.tableId, ...Object.values(graph.data.records).map((record) => record.table.id)]);
+    for (const tableId of tableIds) {
+      if (!(await authorize({ baseId: snapshot.baseId, tableId }, client))) throw err.forbidden(t.workflowQueryAccessDenied);
+    }
+  };
+
+  const authorizeReceipt = async (
+    receipt: IssuanceRow,
+    authorize: SnapshotTableReadAuthorizer | undefined,
+    locale?: string,
+    client: SQL = db,
+  ) => {
+    if (!receipt.document_id) return authorizeSnapshot(parseFrozenRequest(receipt.frozen_request).snapshot, authorize, locale, client);
+    // Completed receipts release their temporary request; the immutable snapshot
+    // is now owned by the Document and remains the authority for replay access.
+    const [snapshot] = await client<Array<{ baseId: string; tableId: string; graph: Record<string, unknown> }>>`
+      SELECT snapshot.base_id::text AS "baseId", snapshot.table_id::text AS "tableId", snapshot.graph
+      FROM grids.documents document JOIN grids.record_snapshots snapshot ON snapshot.id = document.snapshot_id
+      WHERE document.id = ${receipt.document_id}::uuid AND document.base_id = ${receipt.base_id}::uuid
+    `;
+    if (!snapshot) throw err.internal(documentServiceText(locale).receiptReadFailed);
+    return authorizeSnapshot(snapshot, authorize, locale, client);
   };
 
   const issueDocument = async (
@@ -464,10 +524,24 @@ export const createDocumentIssuanceService = (options: { profiles?: readonly Doc
     }
     const requestHash = requestHashFor(input);
     if (!requestHash.ok) return requestHash;
-    const operationKeyHash = sha256Hex(input.idempotencyKey);
-
     try {
       const receipt = await db.begin(async (tx) => {
+        const operation = await operationIdentity(
+          {
+            baseId: input.snapshot.baseId,
+            tableId: input.snapshot.tableId,
+            recordId: input.snapshot.recordId,
+            templateId: input.template.id,
+            idempotencyKey: input.idempotencyKey,
+            dateConfig: input.dateConfig,
+          },
+          tx,
+        );
+        const operationKeyHash = operation.hash;
+        if (operation.once) {
+          if (!input.canReadTable || !(await input.canReadTable({ baseId: input.snapshot.baseId, tableId: input.snapshot.tableId }, tx)))
+            throw err.forbidden(t.workflowQueryAccessDenied);
+        }
         await tx`SELECT pg_advisory_xact_lock(hashtextextended(${`grids:document-issuance:${input.snapshot.baseId}:${operationKeyHash}`}, 0))`;
         const [existing] = await tx<IssuanceRow[]>`
           SELECT id::text, base_id::text, request_hash, request_identity_hash, document_short_id, frozen_request, document_id::text, created_at
@@ -475,7 +549,9 @@ export const createDocumentIssuanceService = (options: { profiles?: readonly Doc
           WHERE base_id = ${input.snapshot.baseId}::uuid AND operation_key_hash = ${operationKeyHash}
         `;
         if (existing) {
-          if (
+          if (operation.once) {
+            await authorizeReceipt(existing, input.canReadTable, input.dateConfig?.locale, tx);
+          } else if (
             existing.request_identity_hash
               ? !requestIdentity || existing.request_identity_hash !== recordRequestIdentityHash(requestIdentity)
               : existing.request_hash !== requestHash.data
@@ -483,6 +559,7 @@ export const createDocumentIssuanceService = (options: { profiles?: readonly Doc
             throw err.conflict(t.idempotencyConflict);
           return existing;
         }
+        if (operation.once) await authorizeSnapshot(input.snapshot, input.canReadTable, input.dateConfig?.locale, tx);
         return insertWithShortIdForDb(tx, "document_issuances_document_short_id_key", async (attempt, documentShortId) => {
           const [binding] = await attempt<
             Array<{
@@ -651,19 +728,12 @@ export const createDocumentIssuanceService = (options: { profiles?: readonly Doc
             const renderedProfileInput = await profileInputFor(input.template, frozenRenderData, input.dateConfig?.locale);
             if (!renderedProfileInput.ok) throw renderedProfileInput.error;
             if (!renderedProfileInput.data) throw err.internal(t.profileInputMissing);
-            const parsed = profile!.input.safeParse(renderedProfileInput.data);
-            if (!parsed.success) {
-              throw err.badInput(
-                parsed.error.issues
-                  .slice(0, 10)
-                  .map((issue) => `${issue.path.join(".") || "$"}: ${issue.message}`)
-                  .join("; "),
-              );
-            }
+            const parsed = validateDocumentProfileInput(profile!, renderedProfileInput.data, input.dateConfig?.locale);
+            if (!parsed.ok) throw parsed.error;
             profileInput = renderedProfileInput.data;
           }
           const frozen: FrozenDocumentRequest = {
-            template: input.template,
+            template: { ...input.template, issuancePolicy: operation.once ? "oncePerFinalizedRecord" : "repeatable" },
             snapshot: input.snapshot,
             renderData: frozenRenderData,
             actor: actor.data,
@@ -1002,7 +1072,7 @@ export const createDocumentIssuanceService = (options: { profiles?: readonly Doc
               ...(outputKind === "xml" ? outputOptions : {}),
             },
       );
-      if (!profileInput.success) return fail(err.badInput(t.profileInputInvalid));
+      if (!profileInput.success) return fail(err.badInput(documentProfileInputMessage(profile.id, profileInput.error.issues, locale)));
       const rendered = await profile.issue(profileInput.data, { number: frozen.number, issuedAt: new Date(frozen.issuedAt) });
       const profileOutput = rendered.output === undefined ? undefined : canonicalDocumentJson(rendered.output, locale).value;
       const checked = validateDocumentArtifactDrafts(rendered.artifacts, profile.primaryArtifact, locale);
@@ -1275,33 +1345,41 @@ export const createDocumentIssuanceService = (options: { profiles?: readonly Doc
     } catch (error) {
       return fail(serviceError(error) ?? err.badInput(t.requestInvalidJson));
     }
-    const [receipt] = await db<IssuanceRow[]>`
+    try {
+      const operation = await operationIdentity(request);
+      const [receipt] = await db<IssuanceRow[]>`
       SELECT id::text, base_id::text, request_hash, request_identity_hash, document_short_id, frozen_request, document_id::text, created_at
       FROM grids.document_issuances
-      WHERE base_id = ${request.baseId}::uuid AND operation_key_hash = ${sha256Hex(request.idempotencyKey)}
+      WHERE base_id = ${request.baseId}::uuid AND operation_key_hash = ${operation.hash}
     `;
-    if (receipt?.request_identity_hash) {
-      if (receipt.request_identity_hash !== recordRequestIdentityHash(request)) return fail(err.conflict(t.idempotencyConflict));
-      if (receipt.document_id) {
-        const document = await getDocument(receipt.document_id);
-        return document ? ok(document) : fail(err.internal(t.receiptReadFailed));
+      if (receipt && (operation.once || receipt.request_identity_hash)) {
+        if (operation.once) await authorizeReceipt(receipt, request.canReadTable, request.dateConfig?.locale);
+        else if (receipt.request_identity_hash !== recordRequestIdentityHash(request)) return fail(err.conflict(t.idempotencyConflict));
+        if (receipt.document_id) {
+          const document = await getDocument(receipt.document_id);
+          return document ? ok(document) : fail(err.internal(t.receiptReadFailed));
+        }
+        const frozen = parseFrozenRequest(receipt.frozen_request);
+        const resumed = await issueDocument(
+          {
+            ...request,
+            template: frozen.template,
+            snapshot: frozen.snapshot,
+            renderData: frozen.renderData,
+          },
+          request,
+        );
+        return resumed.ok ? ok(resumed.data.document) : resumed;
       }
-      const frozen = parseFrozenRequest(receipt.frozen_request);
-      const resumed = await issueDocument(
-        {
-          ...request,
-          template: frozen.template,
-          snapshot: frozen.snapshot,
-          renderData: frozen.renderData,
-        },
-        request,
-      );
-      return resumed.ok ? ok(resumed.data.document) : resumed;
+      const captured = await capture();
+      if (!captured.ok) return captured;
+      const issued = await issueDocument({ ...request, ...captured.data }, request);
+      return issued.ok ? ok(issued.data.document) : issued;
+    } catch (error) {
+      const known = serviceError(error);
+      if (known) return fail(known);
+      throw error;
     }
-    const captured = await capture();
-    if (!captured.ok) return captured;
-    const issued = await issueDocument({ ...request, ...captured.data }, request);
-    return issued.ok ? ok(issued.data.document) : issued;
   };
 
   return {

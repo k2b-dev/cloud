@@ -6,6 +6,7 @@ import type { Field } from "../service/types";
 import type { DslResolverContext, DslTableSource } from "./resolver-context";
 import { type DslResolverDiagnostic, diagnostic, isResolverDiagnostic as isDiagnostic } from "./resolver-diagnostics";
 import type { DslQualifiedRef, DslSourceSpan } from "./types";
+import type { DslSummaryJoin } from "./resolver-summary-joins";
 
 export type Scope = {
   documentMetadata: boolean;
@@ -15,6 +16,7 @@ export type Scope = {
   byRef: Map<string, Field[]>;
   readableTableIds: Set<string>;
   joins: Map<string, JoinScope>;
+  summaryJoins: Map<string, DslSummaryJoin>;
   fieldAliases: Map<string, string>;
   joinedAliases: Set<string>;
   computedAliases: Set<string>;
@@ -67,6 +69,7 @@ export const createScope = (fields: Field[], ctx: DslResolverContext, tableId: s
   byRef: buildFieldMap(fields),
   readableTableIds: new Set(ctx.tables.map((table) => table.id)),
   joins: new Map(),
+  summaryJoins: new Map(),
   fieldAliases: new Map(),
   joinedAliases: new Set(),
   computedAliases: new Set(),
@@ -121,7 +124,7 @@ export const fieldByRefMap = (
 
 const aliasKey = (alias: string): string => normalizeRefKey(alias);
 
-export const hasJoinAlias = (scope: Scope, alias: string): boolean => scope.joins.has(aliasKey(alias));
+export const hasJoinAlias = (scope: Scope, alias: string): boolean => scope.joins.has(aliasKey(alias)) || scope.summaryJoins.has(aliasKey(alias));
 
 export const setJoinAlias = (scope: Scope, alias: string, join: JoinScope): void => {
   scope.joins.set(aliasKey(alias), join);

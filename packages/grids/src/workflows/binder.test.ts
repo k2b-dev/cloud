@@ -345,6 +345,12 @@ steps:
       originalField: FLD006
       copyFields:
         - FLD001
+      values:
+        Name: "\${{ inputs.original.Status }}"
+      saveAs: correction
+  - updateRecord:
+      record: correction
+      set: {Name: Review}
 `,
       catalog(),
     );
@@ -356,6 +362,9 @@ steps:
       "steps.0.createCorrectionDraft.typeField": ids.status,
       "steps.0.createCorrectionDraft.originalField": ids.corrects,
       "steps.0.createCorrectionDraft.copyFields.0": ids.name,
+      "steps.0.createCorrectionDraft.values.FLD001.$target": ids.name,
+      "steps.0.createCorrectionDraft.values.FLD001": ids.status,
+      "steps.1.updateRecord.set.FLD001": ids.name,
     });
   });
 
@@ -581,6 +590,8 @@ steps:
             table: Archive
             values:
               Name: "\${{ inputs.item.Name }}"
+        - finalizeRecord:
+            record: inputs.item
 `;
     const result = await bindGridsWorkflow(await compile(source), catalog());
     expect(result.ok).toBe(true);
@@ -594,6 +605,141 @@ steps:
       "steps.0.atomicRecords.checks.0.table": ids.items,
       "steps.0.atomicRecords.checks.0.where.0.field": ids.status,
     });
+  });
+
+  test("atomic locks bind record-list inputs and relations but reject scalar inputs", async () => {
+    for (const lock of ["inputs.items", "inputs.item.Related archives", "inputs.label"]) {
+      const result = await compileAndBindGridsWorkflowSource(
+        `inputs:
+  item: {type: record, table: Items}
+  items: {type: recordList, table: Items}
+  label: {type: text}
+steps:
+  - atomicRecords:
+      locks: [${JSON.stringify(lock)}]
+      checks:
+        - table: Items
+          where: [{field: Status, op: equals, value: Ready}]
+          assert: notEmpty
+      changes:
+        - updateRecord: {record: inputs.item, set: {Status: Reserved}}
+`,
+        catalog(),
+      );
+      expect(result.ok, JSON.stringify(result)).toBe(lock !== "inputs.label");
+    }
+  });
+
+  test("atomic finalization accepts only one record, not lists or scalar references", async () => {
+    for (const record of ["inputs.item", "inputs.item.Current archive", "inputs.items", "inputs.item.Related archives", "inputs.label"]) {
+      const result = await compileAndBindGridsWorkflowSource(
+        `inputs:
+  item: {type: record, table: Items}
+  items: {type: recordList, table: Items}
+  label: {type: text}
+steps:
+  - atomicRecords:
+      locks: [inputs.item]
+      checks:
+        - table: Items
+          where: [{field: Status, op: equals, value: Ready}]
+          assert: notEmpty
+      changes:
+        - finalizeRecord: {record: ${JSON.stringify(record)}}
+`,
+        catalog(),
+      );
+      expect(result.ok, JSON.stringify(result)).toBe(record === "inputs.item" || record === "inputs.item.Current archive");
+      if (!result.ok) expect(result.diagnostics.some((diagnostic) => diagnostic.code === "reference.type")).toBe(true);
+    }
+  });
+
+  test("atomic relation finalization binds its change path, not the unrelated coordination lock", async () => {
+    const result = await compileAndBindGridsWorkflowSource(
+      `inputs:
+  item: {type: record, table: Items}
+steps:
+  - atomicRecords:
+      locks: [inputs.item]
+      checks:
+        - table: Items
+          where: [{field: Status, op: equals, value: Ready}]
+          assert: notEmpty
+      changes:
+        - finalizeRecord: {record: "inputs.item.Current archive"}
+`,
+      catalog(),
+    );
+    expect(result.ok, JSON.stringify(result)).toBe(true);
+    if (!result.ok) return;
+    expect(result.plan.bindings["steps.0.atomicRecords.locks.0"]).toBeUndefined();
+    expect(result.plan.bindings).toMatchObject({
+      "steps.0.atomicRecords.changes.0.finalizeRecord.record": ids.current,
+      "steps.0.atomicRecords.changes.0.finalizeRecord.record.$relationTarget": ids.archive,
+      "steps.0.atomicRecords.changes.0.finalizeRecord.record.$relationCardinality": "single",
+    });
+  });
+
+  test("deleteRecord binds a single record and audit references without accepting lists", async () => {
+    for (const record of ["inputs.item", "inputs.item.Current archive", "inputs.items", "inputs.label"]) {
+      const result = await compileAndBindGridsWorkflowSource(
+        `inputs:
+  item: {type: record, table: Items}
+  items: {type: recordList, table: Items}
+  label: {type: text}
+steps:
+  - deleteRecord:
+      record: ${JSON.stringify(record)}
+      audit:
+        aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa: "\${{ inputs.item.Name }}"
+      saveAs: removed
+  - succeed:
+      message: "Removed \${{ removed.recordId }}"
+`,
+        catalog(),
+      );
+      expect(result.ok, JSON.stringify(result)).toBe(record !== "inputs.items" && record !== "inputs.label");
+      if (result.ok) {
+        expect(result.plan.bindings["steps.0.deleteRecord.audit.aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"]).toBe(ids.name);
+      } else {
+        expect(result.diagnostics.some((diagnostic) => diagnostic.code === "reference.type")).toBe(true);
+      }
+    }
+  });
+
+  test("atomic GQL checks pin their own query and reject untyped or interpolated input", async () => {
+    const source = `inputs:
+  item: { type: record, table: Items, required: true }
+steps:
+  - atomicRecords:
+      locks: [inputs.item]
+      checks:
+        - query:
+            source: from table Items select Name
+            parameters:
+              threshold: { type: decimal, value: "100.00" }
+          assert: notEmpty
+      changes:
+        - finalizeRecord: { record: inputs.item }
+`;
+    const result = await compileAndBindGridsWorkflowSource(source, catalog(), async (_query, values) => {
+      expect(values["params.threshold"]).toEqual({ decimal: "0" });
+      return { ok: true, data: { source: "from table Items select Name", schemaHash: "schema" } };
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok)
+      expect(result.plan.bindings["steps.0.atomicRecords.checks.0.query.$query"]).toEqual({
+        source: "from table Items select Name",
+        schemaHash: "schema",
+      });
+    expect((await compileAndBindGridsWorkflowSource(source, catalog())).ok).toBe(false);
+    for (const invalid of [
+      source.replace('value: "100.00"', "value: 100"),
+      source.replace("source: from table Items select Name", 'source: "${{ inputs.item.Name }}"'),
+    ]) {
+      const rejected = await compileAndBindGridsWorkflowSource(invalid, catalog());
+      expect(rejected.ok).toBe(false);
+    }
   });
 
   test("types relation fields as record references in existing workflow slots", async () => {

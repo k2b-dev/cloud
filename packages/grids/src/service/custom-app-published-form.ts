@@ -3,6 +3,7 @@ import type { CustomAppCapabilities, CustomAppFormBlock, CustomAppPage, CustomAp
 import { customAppFormInlineTargetTableIds } from "../custom-apps/form-capability";
 import { customAppFormMatchesPublishedCapability } from "../custom-apps/form-runtime";
 import { customAppBindingRecordTableId } from "../custom-apps/value-bindings";
+import { customAppFormRelationScope } from "./custom-app-form-relations";
 import { listByTable } from "./fields";
 import { get as getForm } from "./forms";
 import { resolvePublicId, resolvePublicIds } from "./public-resources";
@@ -86,5 +87,8 @@ export const resolvePublishedCustomAppForm = async (input: {
   ) {
     return null;
   }
-  return { form, fields, inlineTargetFields, fixedValues } as const;
+  const relationScope = await customAppFormRelationScope(form, fields, Object.keys(fixedValues));
+  if (!relationScope || (relationScope.targets.length > 0 && relationScope.hash !== capability.relationLookupHash)) return null;
+  const relationLookup = relationScope;
+  return { form, fields, inlineTargetFields, fixedValues, relationLookup } as const;
 };

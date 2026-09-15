@@ -15,6 +15,8 @@ export type CustomAppRenderedSidebarAction = {
   form: PublicRenderableForm;
   fields: Field[];
   inlineTargetFields: Record<string, Field[]>;
+  relationLabels?: Record<string, string>;
+  relationLookupFields?: string[];
   dateConfig: DateContext;
 };
 
@@ -42,6 +44,8 @@ export default function SidebarActions(props: { actions: CustomAppRenderedSideba
               form={action.form}
               fields={action.fields}
               inlineTargetFields={action.inlineTargetFields}
+              relationLabels={action.relationLabels}
+              relationLookupFields={action.relationLookupFields}
               dateConfig={action.dateConfig}
               surface="bare"
               showTitle={false}

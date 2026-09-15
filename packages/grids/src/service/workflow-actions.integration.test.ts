@@ -33,7 +33,7 @@ import { compileAndBindGridsWorkflowSource } from "../workflows/binder";
 import type { GridsWorkflowPrincipal } from "../workflows/contracts";
 import { gridsWorkflows } from "../workflows/module";
 import { grantAccess, revokeAccess } from "./access";
-import { apply as applyCustomApp, publish as publishCustomApp } from "./custom-apps";
+import { apply as applyCustomApp, plan as planCustomApp, publish as publishCustomApp } from "./custom-apps";
 import { documentIssuanceService, readDocumentArtifact } from "./document-issuance";
 import * as documentRendering from "./document-rendering";
 import { createRecordSnapshot } from "./document-snapshots";
@@ -51,7 +51,7 @@ import { listReferencedBy } from "./referenced-by";
 import { canAccessWorkflowRunTable, canExecuteRun, documentActorForScope } from "./workflow-action-scope";
 import { loadWorkflowCatalog } from "./workflow-catalog";
 import { captureWorkflowDocumentSource, captureWorkflowRecordSource } from "./workflow-document-sources";
-import { invokeRecordLauncher } from "./workflow-launcher-invocations";
+import { invokeCustomAppLauncher, invokeRecordLauncher } from "./workflow-launcher-invocations";
 import { createLauncher } from "./workflow-launchers";
 import { workflowQueryBinder } from "./workflow-query-binding";
 import { getWorkflow } from "./workflow-read";
@@ -1689,36 +1689,52 @@ steps:
     }
   });
 
-  postgresTest("finalizeRecord cannot bypass a Table's Four-eyes policy", async () => {
-    const fixture = createFixture();
-    const groupId = uuid();
-    try {
-      await insertFixture(fixture);
-      await sql`INSERT INTO auth.groups (id, cn, provider, name) VALUES (${groupId}::uuid, ${`workflow-approvers-${groupId}`}, 'local', 'Workflow approvers')`;
-      await sql`INSERT INTO auth.user_groups_v2 (user_id, group_id) VALUES (${fixture.actorId}::uuid, ${groupId}::uuid)`;
-      const history = await enableDurableHistory(fixture.tableId, fixture.actorId);
-      if (!history.ok) throw history.error;
-      const activation = await enableFinalization(fixture.tableId, { mode: "direct" }, fixture.actorId);
-      if (!activation.ok) throw activation.error;
-      const policy = await setFinalizationPolicy(fixture.tableId, { mode: "fourEyes", approverGroupId: groupId }, fixture.actorId);
-      if (!policy.ok) throw policy.error;
-      const runId = await queueRun(fixture, {
-        plan: boundPlan([actionStep(0, "finalizeRecord", { record: "inputs.record" })], {}),
-        inputs: { record: { kind: "record", tableId: fixture.tableId, recordId: fixture.recordId } },
-      });
+  for (const atomic of [false, true]) {
+    postgresTest(`${atomic ? "atomicRecords" : "finalizeRecord"} cannot bypass a Table's Four-eyes policy`, async () => {
+      const fixture = createFixture();
+      const groupId = uuid();
+      try {
+        await insertFixture(fixture);
+        await sql`INSERT INTO auth.groups (id, cn, provider, name) VALUES (${groupId}::uuid, ${`workflow-approvers-${groupId}`}, 'local', 'Workflow approvers')`;
+        await sql`INSERT INTO auth.user_groups_v2 (user_id, group_id) VALUES (${fixture.actorId}::uuid, ${groupId}::uuid)`;
+        const history = await enableDurableHistory(fixture.tableId, fixture.actorId);
+        if (!history.ok) throw history.error;
+        const activation = await enableFinalization(fixture.tableId, { mode: "direct" }, fixture.actorId);
+        if (!activation.ok) throw activation.error;
+        const policy = await setFinalizationPolicy(fixture.tableId, { mode: "fourEyes", approverGroupId: groupId }, fixture.actorId);
+        if (!policy.ok) throw policy.error;
+        const runId = await queueRun(fixture, {
+          plan: atomic
+            ? boundPlan(
+                [
+                  actionStep(0, "atomicRecords", {
+                    locks: ["inputs.record"],
+                    checks: [{ table: "Tasks", where: [{ field: "Status", op: "equals", value: "Open" }], assert: "notEmpty" }],
+                    changes: [{ finalizeRecord: { record: "inputs.record" } }],
+                  }),
+                ],
+                {
+                  "steps.0.atomicRecords.checks.0.table": fixture.tableId,
+                  "steps.0.atomicRecords.checks.0.where.0.field": fixture.statusFieldId,
+                },
+              )
+            : boundPlan([actionStep(0, "finalizeRecord", { record: "inputs.record" })], {}),
+          inputs: { record: { kind: "record", tableId: fixture.tableId, recordId: fixture.recordId } },
+        });
 
-      expect(await drive(runId)).toBe("failed");
-      const [record] = await sql<Array<{ finalized_at: Date | null }>>`
+        expect(await drive(runId)).toBe("failed");
+        const [record] = await sql<Array<{ finalized_at: Date | null }>>`
         SELECT finalized_at FROM grids.records WHERE id = ${fixture.recordId}::uuid
       `;
-      expect(record?.finalized_at).toBeNull();
-      expect((await runRow(runId)).error).toMatchObject({ code: "CONFLICT" });
-    } finally {
-      await cleanupFixture(fixture);
-      await sql`DELETE FROM auth.user_groups_v2 WHERE group_id = ${groupId}::uuid`;
-      await sql`DELETE FROM auth.groups WHERE id = ${groupId}::uuid`;
-    }
-  });
+        expect(record?.finalized_at).toBeNull();
+        expect((await runRow(runId)).error).toMatchObject({ code: "CONFLICT" });
+      } finally {
+        await cleanupFixture(fixture);
+        await sql`DELETE FROM auth.user_groups_v2 WHERE group_id = ${groupId}::uuid`;
+        await sql`DELETE FROM auth.groups WHERE id = ${groupId}::uuid`;
+      }
+    });
+  }
 
   postgresTest("closeRecord follows the Table's Direct Finalization mode", async () => {
     const fixture = createFixture();
@@ -1806,7 +1822,7 @@ steps:
       const activation = await enableFinalization(fixture.tableId, { mode: "direct" }, fixture.actorId);
       if (!activation.ok) throw activation.error;
       await sql`
-        UPDATE grids.fields SET default_value = ${JSON.stringify("New")}::jsonb
+        UPDATE grids.fields SET default_value = ${JSON.stringify("New")}::text::jsonb
         WHERE id = ${fixture.statusFieldId}::uuid
       `;
       await sql`
@@ -2399,6 +2415,355 @@ steps:
     }
   });
 
+  postgresTest("atomicRecords rolls back an earlier update when Four-eyes rejects finalization", async () => {
+    const fixture = createFixture();
+    const groupId = uuid();
+    try {
+      await insertFixture(fixture);
+      await sql`INSERT INTO auth.groups (id, cn, provider, name) VALUES (${groupId}::uuid, ${`atomic-approvers-${groupId}`}, 'local', 'Atomic approvers')`;
+      const history = await enableDurableHistory(fixture.tableId, fixture.actorId);
+      if (!history.ok) throw history.error;
+      const activation = await enableFinalization(fixture.tableId, { mode: "fourEyes", approverGroupId: groupId }, fixture.actorId);
+      if (!activation.ok) throw activation.error;
+      const runId = await queueRun(fixture, {
+        plan: boundPlan(
+          [
+            actionStep(0, "atomicRecords", {
+              locks: ["inputs.record"],
+              checks: [{ table: "Tasks", where: [{ field: "Status", op: "equals", value: "Open" }], assert: "notEmpty" }],
+              changes: [
+                { updateRecord: { record: "inputs.record", set: { Status: "Approved" } } },
+                { finalizeRecord: { record: "inputs.record" } },
+              ],
+            }),
+          ],
+          {
+            "steps.0.atomicRecords.checks.0.table": fixture.tableId,
+            "steps.0.atomicRecords.checks.0.where.0.field": fixture.statusFieldId,
+            "steps.0.atomicRecords.changes.0.updateRecord.set.Status.$target": fixture.statusFieldId,
+          },
+        ),
+        inputs: { record: { kind: "record", tableId: fixture.tableId, recordId: fixture.recordId } },
+      });
+      expect(await drive(runId)).toBe("failed");
+      expect((await runRow(runId)).error).toMatchObject({ code: "CONFLICT", retryable: false });
+      expect((await recordData(fixture.recordId))[fixture.statusFieldId]).toBe("Open");
+      const [record] = await sql`SELECT finalized_at, version FROM grids.records WHERE id = ${fixture.recordId}::uuid`;
+      expect(record).toMatchObject({ finalized_at: null, version: 1 });
+      const revisions = await listRecordRevisions({ tableId: fixture.tableId, recordId: fixture.recordId });
+      expect(revisions.ok).toBe(true);
+      if (revisions.ok)
+        expect(revisions.data.items.filter((revision) => revision.action === "finalized" || revision.action === "updated")).toHaveLength(0);
+    } finally {
+      await cleanupFixture(fixture);
+      await sql`DELETE FROM auth.groups WHERE id = ${groupId}::uuid`;
+    }
+  });
+
+  for (const rollback of [false, true]) {
+    // Rollback and replay are separate from a fresh action on an already-finalized record.
+    postgresTest(
+      `atomicRecords finalization ${rollback ? "rolls back on a later rejected write" : "commits and replays once"}`,
+      async () => {
+        const fixture = createFixture();
+        try {
+          await insertFixture(fixture);
+          const history = await enableDurableHistory(fixture.tableId, fixture.actorId);
+          if (!history.ok) throw history.error;
+          const activation = await enableFinalization(fixture.tableId, { mode: "direct" }, fixture.actorId);
+          if (!activation.ok) throw activation.error;
+          const runId = await queueRun(fixture, {
+            plan: boundPlan(
+              [
+                actionStep(0, "atomicRecords", {
+                  locks: ["inputs.record"],
+                  checks: [{ table: "Tasks", where: [{ field: "Status", op: "equals", value: "Open" }], assert: "notEmpty" }],
+                  changes: [
+                    { finalizeRecord: { record: "inputs.record" } },
+                    ...(rollback ? [{ updateRecord: { record: "inputs.record", set: { Status: "Forbidden after finalization" } } }] : []),
+                  ],
+                }),
+              ],
+              {
+                "steps.0.atomicRecords.checks.0.table": fixture.tableId,
+                "steps.0.atomicRecords.checks.0.where.0.field": fixture.statusFieldId,
+                ...(rollback ? { "steps.0.atomicRecords.changes.1.updateRecord.set.Status.$target": fixture.statusFieldId } : {}),
+              },
+            ),
+            inputs: { record: { kind: "record", tableId: fixture.tableId, recordId: fixture.recordId } },
+          });
+          expect(await drive(runId)).toBe(rollback ? "failed" : "succeeded");
+          if (!rollback) {
+            await reopenForReplay(runId);
+            expect(await drive(runId)).toBe("succeeded");
+          }
+          const [record] = await sql<Array<{ finalized_at: Date | null; version: number }>>`
+          SELECT finalized_at, version FROM grids.records WHERE id = ${fixture.recordId}::uuid
+        `;
+          expect(Boolean(record?.finalized_at)).toBe(!rollback);
+          expect(record?.version).toBe(rollback ? 1 : 2);
+          expect((await recordData(fixture.recordId))[fixture.statusFieldId]).toBe("Open");
+          const revisions = await listRecordRevisions({ tableId: fixture.tableId, recordId: fixture.recordId });
+          expect(revisions.ok && revisions.data.items.filter((revision) => revision.action === "finalized")).toHaveLength(rollback ? 0 : 1);
+        } finally {
+          await cleanupFixture(fixture);
+        }
+      },
+    );
+  }
+
+  for (const atomic of [false, true]) {
+    postgresTest(`${atomic ? "atomic" : "standalone"} repeated finalization audits only the state transition`, async () => {
+      const fixture = createFixture();
+      try {
+        await insertFixture(fixture);
+        const history = await enableDurableHistory(fixture.tableId, fixture.actorId);
+        if (!history.ok) throw history.error;
+        const activation = await enableFinalization(fixture.tableId, { mode: "direct" }, fixture.actorId);
+        if (!activation.ok) throw activation.error;
+        const bindings: Record<string, WorkflowJsonValue> = {};
+        const steps = [0, 1].map((index) => {
+          if (!atomic) return actionStep(index, "finalizeRecord", { record: "inputs.record" });
+          bindings[`steps.${index}.atomicRecords.checks.0.table`] = fixture.tableId;
+          bindings[`steps.${index}.atomicRecords.checks.0.where.0.field`] = fixture.statusFieldId;
+          return actionStep(index, "atomicRecords", {
+            locks: ["inputs.record"],
+            checks: [{ table: "Tasks", where: [{ field: "Status", op: "equals", value: "Open" }], assert: "notEmpty" }],
+            changes: [{ finalizeRecord: { record: "inputs.record" } }],
+          });
+        });
+        const runId = await queueRun(fixture, {
+          plan: boundPlan(steps, bindings),
+          inputs: { record: { kind: "record", tableId: fixture.tableId, recordId: fixture.recordId } },
+        });
+        expect(await drive(runId)).toBe("succeeded");
+        const audits =
+          await sql`SELECT id FROM grids.audit_log WHERE base_id = ${fixture.baseId}::uuid AND action = 'workflow.record.finalized'`;
+        expect(audits).toHaveLength(1);
+        const revisions = await listRecordRevisions({ tableId: fixture.tableId, recordId: fixture.recordId });
+        expect(revisions.ok).toBe(true);
+        if (revisions.ok) expect(revisions.data.items.filter((revision) => revision.action === "finalized")).toHaveLength(1);
+      } finally {
+        await cleanupFixture(fixture);
+      }
+    });
+  }
+
+  for (const valid of [false, true]) {
+    postgresTest(`atomicRecords profile postcondition ${valid ? "accepts" : "rolls back"} finalization without issuing`, async () => {
+      const fixture = createFixture();
+      try {
+        await insertFixture(fixture);
+        const history = await enableDurableHistory(fixture.tableId, fixture.actorId);
+        if (!history.ok) throw history.error;
+        const enabled = await enableFinalization(fixture.tableId, { mode: "direct" }, fixture.actorId);
+        if (!enabled.ok) throw enabled.error;
+        await sql`UPDATE grids.document_templates SET source = ${"from table Tasks\nselect Name\nlimit 1"} WHERE id = ${fixture.documentTemplateId}::uuid`;
+        await sql`UPDATE grids.document_templates SET renderer_kind = 'profile', html = NULL, number_template = NULL, filename_template = NULL, profile_id = ${jsonDocumentProfile.id},
+          profile_version = ${jsonDocumentProfile.version}, profile_input_template = ${valid ? '{"columns":[{"key":"status","label":"Status","type":"text","sqlType":"text"}],"rows":[{"status":"ok"}]}' : "{}"}
+          WHERE id = ${fixture.documentTemplateId}::uuid`;
+        const catalog = await loadWorkflowCatalog(fixture.baseId);
+        const compiled = await compileAndBindGridsWorkflowSource(
+          `inputs:\n  record:\n    type: record\n    table: Tasks\nsteps:\n  - atomicRecords:\n      locks: [inputs.record]\n      checks:\n        - table: Tasks\n          where: [{field: Status, op: equals, value: Open}]\n          assert: notEmpty\n      changes:\n        - finalizeRecord: {record: inputs.record}\n      validateDocuments:\n        - template: Task sheet\n          record: inputs.record\n`,
+          catalog,
+          workflowQueryBinder(fixture.baseId, catalog),
+        );
+        if (!compiled.ok) throw new Error(JSON.stringify(compiled.diagnostics));
+        const runId = await queueRun(fixture, {
+          plan: compiled.plan,
+          inputs: { record: { kind: "record", tableId: fixture.tableId, recordId: fixture.recordId } },
+        });
+        const state = await drive(runId);
+        if (valid && state !== "succeeded") throw new Error(JSON.stringify(await stepRuns(runId)));
+        expect(state).toBe(valid ? "succeeded" : "failed");
+        if (!valid)
+          expect((await stepRuns(runId))[0]?.outcome).toMatchObject({
+            error: { code: "DOCUMENT_INPUT_INVALID", message: expect.stringContaining("columns") },
+          });
+        const [record] = await sql`SELECT finalized_at, version FROM grids.records WHERE id = ${fixture.recordId}::uuid`;
+        expect(Boolean(record.finalized_at)).toBe(valid);
+        expect(record.version).toBe(valid ? 2 : 1);
+        expect(await sql`SELECT id FROM grids.documents WHERE workflow_run_id = ${runId}::uuid`).toHaveLength(0);
+        expect(await sql`SELECT id FROM grids.document_issuances WHERE base_id = ${fixture.baseId}::uuid`).toHaveLength(0);
+      } finally {
+        await cleanupFixture(fixture);
+      }
+    });
+  }
+
+  postgresTest("an App atomic effect may invalidate its own availability before document validation", async () => {
+    const fixture = createFixture();
+    try {
+      await insertFixture(fixture);
+      await sql`UPDATE grids.document_templates SET source = ${"from table Tasks\nselect Name\nlimit 1"},
+        renderer_kind = 'profile', html = NULL, number_template = NULL, filename_template = NULL,
+        profile_id = ${jsonDocumentProfile.id}, profile_version = ${jsonDocumentProfile.version},
+        profile_input_template = ${'{"columns":[{"key":"status","label":"Status","type":"text","sqlType":"text"}],"rows":[{"status":"ok"}]}'}
+        WHERE id = ${fixture.documentTemplateId}::uuid`;
+      const source = `inputs:
+  record: {type: record, table: Tasks, required: true}
+steps:
+  - atomicRecords:
+      locks: [inputs.record]
+      checks:
+        - query:
+            source: |
+              from table Tasks
+              select Name
+              where Status = 'Open'
+              limit 1
+          assert: notEmpty
+        - query:
+            source: |
+              from table Tasks
+              select Name
+              where Status = 'Open'
+              limit 1
+          assert: notEmpty
+      changes:
+        - updateRecord: {record: inputs.record, set: {Status: Approved}}
+      validateDocuments:
+        - {template: Task sheet, record: inputs.record}
+`;
+      const catalog = await loadWorkflowCatalog(fixture.baseId);
+      const compiled = await compileAndBindGridsWorkflowSource(source, catalog, workflowQueryBinder(fixture.baseId, catalog));
+      if (!compiled.ok) throw new Error(JSON.stringify(compiled.diagnostics));
+      await publishTestWorkflowVersion(fixture.workflowId, source, compiled.plan);
+      const workflow = await getWorkflow(fixture.workflowId);
+      if (!workflow) throw new Error("Missing workflow");
+      const launcher = await createLauncher(
+        workflow,
+        {
+          name: "Approve",
+          enabled: true,
+          config: { kind: "customApp", inputMode: "prompt" },
+        },
+        fixture.actorId,
+      );
+      if (!launcher.ok) throw launcher.error;
+      const [base] = await sql`SELECT short_id FROM grids.bases WHERE id = ${fixture.baseId}::uuid`;
+      const [table] = await sql`SELECT short_id FROM grids.tables WHERE id = ${fixture.tableId}::uuid`;
+      const [record] = await sql`SELECT short_id FROM grids.records WHERE id = ${fixture.recordId}::uuid`;
+      const [nameField] = await sql`SELECT short_id FROM grids.fields WHERE id = ${fixture.nameFieldId}::uuid`;
+      const applyValidatedApp = async (definition: unknown, actorId: string) => {
+        const planned = await planCustomApp(definition);
+        if (!planned.valid) throw new Error(JSON.stringify(planned.diagnostics));
+        return applyCustomApp(definition, actorId);
+      };
+      const app = await applyValidatedApp(
+        {
+          schemaVersion: 5,
+          kind: "grids.custom-app",
+          id: shortId("A"),
+          baseId: base.short_id,
+          name: "Atomic approval",
+          startPageId: "home",
+          sidebar: { actions: [] },
+          pages: [
+            {
+              id: "home",
+              title: "Home",
+              navigation: { visible: true },
+              parameters: {},
+              rows: [
+                {
+                  id: "home-content",
+                  columns: [
+                    { id: "home-main", span: 12, blocks: [{ id: "help", type: "markdown", markdown: "Select a task to approve." }] },
+                  ],
+                },
+              ],
+            },
+            {
+              id: "task",
+              title: "Task",
+              navigation: { visible: false },
+              parameters: { record_id: { type: "record", tableId: table.short_id, required: true } },
+              record: { tableId: table.short_id, id: { source: "PARAMS", path: "record_id" } },
+              rows: [
+                {
+                  id: "content",
+                  columns: [
+                    {
+                      id: "main",
+                      span: 12,
+                      blocks: [
+                        { id: "task-record", type: "record", fieldIds: [nameField.short_id], editableFieldIds: [] },
+                        {
+                          id: "actions",
+                          type: "actions",
+                          actions: [
+                            {
+                              id: "approve",
+                              kind: "workflow",
+                              label: "Approve",
+                              launcherId: launcher.data.shortId,
+                              inputs: { record: { source: "RECORD", path: "id" } },
+                              availableWhen: {
+                                query: "from table Tasks\nselect Name\nwhere record.id = @params.record_id and Status = 'Open'\nlimit 1",
+                              },
+                            },
+                          ],
+                        },
+                      ],
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+        fixture.actorId,
+      );
+      if (!app.ok) throw app.error;
+      const published = await publishCustomApp(app.data.id, fixture.actorId);
+      if (!published.ok) throw published.error;
+      const grant = await grantAccess({
+        resourceType: "customApp",
+        resourceId: app.data.id,
+        principal: { type: "user", userId: fixture.actorId },
+        permission: "read",
+        actorId: fixture.actorId,
+      });
+      if (!grant.ok) throw grant.error;
+      await sql`DELETE FROM auth.access WHERE id IN (SELECT access_id FROM grids.base_access WHERE base_id = ${fixture.baseId}::uuid)`;
+      const invoke = () =>
+        invokeCustomAppLauncher({
+          launcherId: launcher.data.id,
+          operationId: uuid(),
+          expectedRevision: launcher.data.validatedRevision,
+          mode: "execute",
+          principal: { userId: fixture.actorId, groupIds: [], serviceAccountId: null },
+          inputs: { record: record.short_id },
+          authorization: {
+            kind: "custom-app-action",
+            customAppId: app.data.id,
+            publishedAt: published.data.publishedAt!,
+            pageId: "task",
+            pageParams: { record_id: fixture.recordId },
+            blockId: "actions",
+            actionId: "approve",
+            revision: launcher.data.validatedRevision,
+            timeZone: "UTC",
+          },
+        });
+      const run = await invoke();
+      if (!run.ok) throw new Error(JSON.stringify(run.error));
+      const state = await drive(run.data.runId);
+      if (state !== "succeeded") throw new Error(JSON.stringify(await stepRuns(run.data.runId)));
+      expect(state).toBe("succeeded");
+      expect((await recordData(fixture.recordId))[fixture.statusFieldId]).toBe("Approved");
+      expect(await sql`SELECT id FROM grids.documents WHERE base_id = ${fixture.baseId}::uuid`).toHaveLength(0);
+      expect(await sql`SELECT id FROM grids.document_issuances WHERE base_id = ${fixture.baseId}::uuid`).toHaveLength(0);
+      // The previous effect's proof must not authorize a new invocation.
+      const again = await invoke();
+      expect(again.ok).toBe(false);
+      if (!again.ok) expect(again.error.code).toBe("FORBIDDEN");
+    } finally {
+      await cleanupFixture(fixture);
+    }
+  });
+
   postgresTest("atomicRecords commits its checks, update, create, audits, outbox, and outcome together", async () => {
     const fixture = createFixture();
     try {
@@ -2452,6 +2817,50 @@ steps:
     }
   });
 
+  for (const selection of ["duplicates", "overflow", "missing", "invalid"] as const) {
+    postgresTest(`atomicRecords resolves bounded record-list locks (${selection}) before changing records`, async () => {
+      const fixture = createFixture();
+      try {
+        await insertFixture(fixture);
+        const record = { kind: "record", tableId: fixture.tableId, recordId: fixture.recordId };
+        const items =
+          selection === "overflow"
+            ? Array.from({ length: 101 }, () => ({ ...record, recordId: uuid() }))
+            : selection === "missing"
+              ? [{ ...record, recordId: uuid() }]
+              : selection === "invalid"
+                ? ["not a record"]
+                : [record, record];
+        const runId = await queueRun(fixture, {
+          plan: boundPlan(
+            [
+              actionStep(0, "atomicRecords", {
+                locks: ["inputs.record", "inputs.items"],
+                checks: [{ table: "Tasks", where: [{ field: "Status", op: "equals", value: "Open" }], assert: "notEmpty" }],
+                changes: [{ updateRecord: { record: "inputs.record", set: { Status: "Approved" } } }],
+              }),
+            ],
+            {
+              "steps.0.atomicRecords.checks.0.table": fixture.tableId,
+              "steps.0.atomicRecords.checks.0.where.0.field": fixture.statusFieldId,
+              "steps.0.atomicRecords.changes.0.updateRecord.set.Status.$target": fixture.statusFieldId,
+            },
+          ),
+          inputs: { record, items },
+        });
+        expect(await drive(runId)).toBe(selection === "duplicates" ? "succeeded" : "failed");
+        expect((await recordData(fixture.recordId))[fixture.statusFieldId]).toBe(selection === "duplicates" ? "Approved" : "Open");
+        if (selection !== "duplicates")
+          expect((await runRow(runId)).error).toMatchObject({
+            code: selection === "missing" ? "ATOMIC_LOCK_UNAVAILABLE" : "WORKFLOW_VALUE_INVALID",
+            retryable: false,
+          });
+      } finally {
+        await cleanupFixture(fixture);
+      }
+    });
+  }
+
   postgresTest("atomicRecords rolls every record, audit, and outbox write back when a later change conflicts", async () => {
     const fixture = createFixture();
     try {
@@ -2499,7 +2908,128 @@ steps:
     }
   });
 
-  postgresTest("atomicRecords serializes competing reservations on the same coordination record", async () => {
+  postgresTest("atomicRecords GQL sums allow only one competing finalization within the budget", async () => {
+    const fixture = createFixture();
+    try {
+      await insertFixture(fixture);
+      const amountId = uuid();
+      await sql`INSERT INTO grids.fields (id, short_id, table_id, name, type, config)
+        VALUES (${amountId}::uuid, ${shortId("F")}, ${fixture.tableId}::uuid, 'Amount', 'number', '{"decimalPlaces":2}'::jsonb)`;
+      const candidates = [uuid(), uuid()];
+      for (const [index, id] of candidates.entries()) {
+        await sql`INSERT INTO grids.records (id, short_id, table_id, data, created_by, updated_by)
+          VALUES (${id}::uuid, ${shortId("R")}, ${fixture.tableId}::uuid,
+            ${{ [fixture.nameFieldId]: `Candidate ${index}`, [fixture.assetIdFieldId]: `ITEM-000${index + 2}`, [amountId]: "60.00" }}::jsonb,
+            ${fixture.actorId}::uuid, ${fixture.actorId}::uuid)`;
+      }
+      const history = await enableDurableHistory(fixture.tableId, fixture.actorId);
+      if (!history.ok) throw history.error;
+      const activation = await enableFinalization(fixture.tableId, { mode: "direct" }, fixture.actorId);
+      if (!activation.ok) throw activation.error;
+      const catalog = await loadWorkflowCatalog(fixture.baseId);
+      const compiled = await compileAndBindGridsWorkflowSource(
+        `inputs:
+  record: { type: record, table: Tasks, required: true }
+  candidate: { type: record, table: Tasks, required: true }
+steps:
+  - atomicRecords:
+      locks: [inputs.record]
+      checks:
+        - query:
+            source: |
+              from table Tasks
+              where record.id = @params.candidate or record.finalizationState = 'finalized'
+              group by Status
+              aggregate sum(Amount) as total
+              having total <= 100
+            parameters:
+              candidate: { type: record, value: "\${{ inputs.candidate }}" }
+          assert: notEmpty
+          message: Budget exceeded
+      changes:
+        - finalizeRecord: { record: inputs.candidate }
+`,
+        catalog,
+        async (source, values) => {
+          const parsed = parseGridsQueryDsl(source);
+          if (!parsed.ok) throw new Error(JSON.stringify(parsed.diagnostics));
+          const context = await buildTrustedGqlResolverContext({
+            baseId: fixture.baseId,
+            ast: parsed.ast,
+            purpose: "workflow-query",
+            client: sql,
+          });
+          const canonical = canonicalizeDslQuery(parsed.ast, context, values);
+          if (!canonical.ok) throw new Error(JSON.stringify(canonical));
+          return workflowQueryBinder(fixture.baseId, catalog)(source, values);
+        },
+      );
+      if (!compiled.ok) throw new Error(JSON.stringify(compiled.diagnostics));
+      const runIds: string[] = [];
+      const dryRunId = await queueRun(fixture, {
+        plan: compiled.plan,
+        mode: "dryRun",
+        inputs: {
+          record: { kind: "record", tableId: fixture.tableId, recordId: fixture.recordId },
+          candidate: { kind: "record", tableId: fixture.tableId, recordId: candidates[0]! },
+        },
+      });
+      expect(await drive(dryRunId, "dryRun")).toBe("succeeded");
+      expect(await sql`SELECT id FROM grids.records WHERE table_id = ${fixture.tableId}::uuid AND finalized_at IS NOT NULL`).toHaveLength(
+        0,
+      );
+      for (const candidate of candidates)
+        runIds.push(
+          await queueRun(fixture, {
+            plan: compiled.plan,
+            inputs: {
+              record: { kind: "record", tableId: fixture.tableId, recordId: fixture.recordId },
+              candidate: { kind: "record", tableId: fixture.tableId, recordId: candidate },
+            },
+          }),
+        );
+      const locked = Promise.withResolvers<void>();
+      const release = Promise.withResolvers<void>();
+      const holding = sql.begin(async (tx) => {
+        await tx`SELECT id FROM grids.records WHERE id = ${fixture.recordId}::uuid FOR UPDATE`;
+        locked.resolve();
+        await release.promise;
+      });
+      void holding.catch(locked.reject);
+      const executions: Array<ReturnType<typeof drive>> = [];
+      try {
+        await locked.promise;
+        executions.push(...runIds.map((id) => drive(id)));
+        let waiting = 0;
+        for (let attempt = 0; attempt < 200 && waiting < 2; attempt++) {
+          const [state] = await sql`SELECT count(*)::int AS count FROM pg_stat_activity
+            WHERE datname = current_database() AND wait_event_type = 'Lock'
+              AND query LIKE '%FOR UPDATE OF r%'`;
+          waiting = state.count;
+          if (waiting < 2) await Bun.sleep(10);
+        }
+        // Both workers reached the DB lock before either can check capacity.
+        expect(waiting).toBe(2);
+      } finally {
+        release.resolve();
+        await holding;
+        await Promise.allSettled(executions);
+      }
+      expect((await Promise.all(executions)).sort()).toEqual(["failed", "succeeded"]);
+      const failures = await Promise.all(runIds.map(runRow));
+      expect(failures.find((run) => run.state === "failed")?.error).toMatchObject({
+        code: "ATOMIC_CHECK_FAILED",
+        message: "Budget exceeded",
+        retryable: false,
+      });
+      const finalized = await sql`SELECT id FROM grids.records WHERE table_id = ${fixture.tableId}::uuid AND finalized_at IS NOT NULL`;
+      expect(finalized).toHaveLength(1);
+    } finally {
+      await cleanupFixture(fixture);
+    }
+  });
+
+  postgresTest("atomicRecords allows only one competing reservation on the same coordination record", async () => {
     const fixture = createFixture();
     try {
       await insertFixture(fixture);
@@ -2601,6 +3131,204 @@ steps:
       await cleanupFixture(fixture);
     }
   });
+
+  postgresTest("atomic GQL checks reject access revoked while waiting for a record lock", async () => {
+    const fixture = createFixture();
+    const held = Promise.withResolvers<number>();
+    const release = Promise.withResolvers<void>();
+    let holding: Promise<unknown> | undefined;
+    let execution: Promise<unknown> | undefined;
+    try {
+      await insertFixture(fixture);
+      const catalog = await loadWorkflowCatalog(fixture.baseId);
+      const compiled = await compileAndBindGridsWorkflowSource(
+        `inputs:
+  record: {type: record, table: Tasks, required: true}
+steps:
+  - atomicRecords:
+      locks: [inputs.record]
+      checks:
+        - query:
+            source: |
+              from table Tasks
+              select Name
+              limit 1
+          assert: empty
+          message: Query ran without fresh access
+      changes:
+        - updateRecord:
+            record: inputs.record
+            set: {Status: Approved}
+`,
+        catalog,
+        workflowQueryBinder(fixture.baseId, catalog),
+      );
+      if (!compiled.ok) throw new Error(JSON.stringify(compiled.diagnostics));
+      const runId = await queueRun(fixture, {
+        plan: compiled.plan,
+        inputs: { record: { kind: "record", tableId: fixture.tableId, recordId: fixture.recordId } },
+      });
+      holding = sql.begin(async (tx) => {
+        await tx`SELECT id FROM grids.records WHERE id = ${fixture.recordId}::uuid FOR UPDATE`;
+        const [backend] = await tx`SELECT pg_backend_pid() AS pid`;
+        held.resolve(backend.pid);
+        await release.promise;
+      });
+      void holding.catch(held.reject);
+      const blocker = await held.promise;
+      execution = drive(runId);
+      let waiting = false;
+      // Observe the actual database wait, not a timing assumption. This means
+      // initial action authorization ran before we revoke the grant.
+      for (let attempt = 0; attempt < 200 && !waiting; attempt++) {
+        const [state] = await sql`SELECT EXISTS (
+          SELECT 1 FROM pg_stat_activity WHERE datname = current_database()
+          AND ${blocker}::int = ANY(pg_blocking_pids(pid))
+        ) AS waiting`;
+        waiting = state.waiting;
+        if (!waiting) await Bun.sleep(10);
+      }
+      expect(waiting).toBe(true);
+      await sql`DELETE FROM auth.access WHERE id IN (
+        SELECT access_id FROM grids.base_access WHERE base_id = ${fixture.baseId}::uuid
+      )`;
+      release.resolve();
+      await holding;
+      expect(await execution).toBe("failed");
+      // Without fresh query authorization this check sees the existing row
+      // and fails with ATOMIC_CHECK_FAILED, before reaching updateRecord.
+      expect((await runRow(runId)).error).toMatchObject({ code: "FORBIDDEN" });
+      expect((await recordData(fixture.recordId))[fixture.statusFieldId]).toBe("Open");
+    } finally {
+      release.resolve();
+      await Promise.allSettled([holding, execution].filter((promise) => promise !== undefined));
+      await cleanupFixture(fixture);
+    }
+  });
+
+  for (const finalized of [false, true]) {
+    postgresTest(`deleteRecord ${finalized ? "refuses finalized records" : "moves drafts to trash once across replay"}`, async () => {
+      const fixture = createFixture();
+      try {
+        await insertFixture(fixture);
+        const history = await enableDurableHistory(fixture.tableId, fixture.actorId);
+        if (!history.ok) throw history.error;
+        const activation = await enableFinalization(fixture.tableId, { mode: "direct" }, fixture.actorId);
+        if (!activation.ok) throw activation.error;
+        const input = { record: { kind: "record", tableId: fixture.tableId, recordId: fixture.recordId } };
+        if (finalized) {
+          const finalizeRun = await queueRun(fixture, {
+            plan: boundPlan([actionStep(0, "finalizeRecord", { record: "inputs.record" })], {}),
+            inputs: input,
+          });
+          expect(await drive(finalizeRun)).toBe("succeeded");
+        }
+        const runId = await queueRun(fixture, {
+          plan: boundPlan([actionStep(0, "deleteRecord", { record: "inputs.record" })], {}),
+          inputs: input,
+        });
+        expect(await drive(runId)).toBe(finalized ? "failed" : "succeeded");
+        if (!finalized) {
+          await reopenForReplay(runId);
+          expect(await drive(runId)).toBe("succeeded");
+        }
+        const [record] = await sql`SELECT deleted_at, data FROM grids.records WHERE id = ${fixture.recordId}::uuid`;
+        expect(Boolean(record.deleted_at)).toBe(!finalized);
+        expect(record.data[fixture.statusFieldId]).toBe("Open");
+        const audits =
+          await sql`SELECT id FROM grids.audit_log WHERE record_id = ${fixture.recordId}::uuid AND action = 'workflow.record.deleted'`;
+        expect(audits).toHaveLength(finalized ? 0 : 1);
+        const revisions = await listRecordRevisions({ tableId: fixture.tableId, recordId: fixture.recordId });
+        expect(revisions.ok).toBe(true);
+        if (revisions.ok) expect(revisions.data.items.filter((revision) => revision.action === "deleted")).toHaveLength(finalized ? 0 : 1);
+      } finally {
+        await cleanupFixture(fixture);
+      }
+    });
+  }
+
+  for (const action of ["atomicRecords", "finalizeRecord"] as const) {
+    for (const interruptedBy of ["cancel", "takeover"] as const) {
+      postgresTest(`${action} fences ${interruptedBy} after waiting for domain locks`, async () => {
+        const fixture = createFixture();
+        const held = Promise.withResolvers<number>();
+        const release = Promise.withResolvers<void>();
+        let holding: Promise<unknown> | undefined;
+        let execution: ReturnType<typeof runGridsWorkflowRun> | undefined;
+        try {
+          await insertFixture(fixture);
+          const history = await enableDurableHistory(fixture.tableId, fixture.actorId);
+          if (!history.ok) throw history.error;
+          const activation = await enableFinalization(fixture.tableId, { mode: "direct" }, fixture.actorId);
+          if (!activation.ok) throw activation.error;
+          const before = await sql`SELECT data, version, finalized_at FROM grids.records WHERE id = ${fixture.recordId}::uuid`;
+          const auditBefore = await sql`SELECT id FROM grids.audit_log WHERE record_id = ${fixture.recordId}::uuid ORDER BY id`;
+          const outboxBefore = await sql`SELECT id FROM grids.record_event_outbox WHERE record_id = ${fixture.recordId}::uuid ORDER BY id`;
+          const revisionsBefore = await listRecordRevisions({ tableId: fixture.tableId, recordId: fixture.recordId });
+          const config: Record<string, WorkflowJsonValue> =
+            action === "atomicRecords"
+              ? {
+                  locks: ["inputs.record"],
+                  checks: [{ table: "Tasks", where: [{ field: "Status", op: "equals", value: "Open" }], assert: "notEmpty" }],
+                  changes: [{ finalizeRecord: { record: "inputs.record" } }],
+                }
+              : { record: "inputs.record" };
+          const runId = await queueRun(fixture, {
+            plan: boundPlan(
+              [actionStep(0, action, config)],
+              action === "atomicRecords"
+                ? {
+                    "steps.0.atomicRecords.checks.0.table": fixture.tableId,
+                    "steps.0.atomicRecords.checks.0.where.0.field": fixture.statusFieldId,
+                  }
+                : {},
+            ),
+            inputs: { record: { kind: "record", tableId: fixture.tableId, recordId: fixture.recordId } },
+          });
+          holding = sql.begin(async (tx) => {
+            await tx`SELECT id FROM grids.records WHERE id = ${fixture.recordId}::uuid FOR UPDATE`;
+            const [backend] = await tx`SELECT pg_backend_pid() AS pid`;
+            held.resolve(backend.pid);
+            await release.promise;
+          });
+          void holding.catch(held.reject);
+          const blocker = await held.promise;
+          execution = runGridsWorkflowRun(runId);
+          let waiting = false;
+          for (let attempt = 0; attempt < 200 && !waiting; attempt++) {
+            const [state] = await sql`SELECT EXISTS (
+              SELECT 1 FROM pg_stat_activity WHERE datname = current_database()
+              AND ${blocker}::int = ANY(pg_blocking_pids(pid))
+            ) AS waiting`;
+            waiting = state.waiting;
+            if (!waiting) await Bun.sleep(10);
+          }
+          expect(waiting).toBe(true);
+          if (interruptedBy === "cancel") {
+            await sql`UPDATE workflows.run SET cancel_requested_at = now() WHERE id = ${runId}::uuid`;
+          } else {
+            await sql`UPDATE workflows.run SET execution_generation = execution_generation + 1 WHERE id = ${runId}::uuid`;
+          }
+          release.resolve();
+          await holding;
+          const result = await execution;
+          if (interruptedBy === "takeover") expect(result.state).toBe("lost");
+          else expect((await runRow(runId)).state).toBe("canceled");
+          expect(await sql`SELECT data, version, finalized_at FROM grids.records WHERE id = ${fixture.recordId}::uuid`).toEqual(before);
+          expect(await sql`SELECT id FROM grids.audit_log WHERE record_id = ${fixture.recordId}::uuid ORDER BY id`).toEqual(auditBefore);
+          expect(await sql`SELECT id FROM grids.record_event_outbox WHERE record_id = ${fixture.recordId}::uuid ORDER BY id`).toEqual(
+            outboxBefore,
+          );
+          expect(await listRecordRevisions({ tableId: fixture.tableId, recordId: fixture.recordId })).toEqual(revisionsBefore);
+          expect((await stepRuns(runId)).some((step) => step.effect_state === "succeeded")).toBe(false);
+        } finally {
+          release.resolve();
+          await Promise.allSettled([holding, execution].filter((promise) => promise !== undefined));
+          await cleanupFixture(fixture);
+        }
+      });
+    }
+  }
 
   postgresTest("an atomicRecords replay returns its journaled outcome without applying its changes again", async () => {
     const fixture = createFixture();

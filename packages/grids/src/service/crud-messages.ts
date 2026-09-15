@@ -91,6 +91,7 @@ export const gridsCrudMessages = i18n.define({
       groupInvalid: ({ detail }: { detail: string }) => `The grouping is invalid: ${detail}`,
       aggregateInvalid: ({ detail }: { detail: string }) => `The aggregation is invalid: ${detail}`,
       calculationFailed: "This value could not be calculated. Check the formula and its input values.",
+      queryTimedOut: "This query exceeded the time limit. Select only the fields you need, narrow the filter, or reduce the limit.",
       missingCapturedCalculation:
         "A finalized record has no captured value for a requested calculation. Exclude that record or calculation; historical values cannot be recalculated.",
       fieldNameUnique: "The field name must be unique within this Table.",
@@ -260,6 +261,8 @@ export const gridsCrudMessages = i18n.define({
       groupInvalid: ({ detail }) => `Die Gruppierung ist ungültig: ${detail}`,
       aggregateInvalid: ({ detail }) => `Die Aggregation ist ungültig: ${detail}`,
       calculationFailed: "Dieser Wert konnte nicht berechnet werden. Prüfe die Formel und ihre Eingabewerte.",
+      queryTimedOut:
+        "Die Abfrage hat das Zeitlimit überschritten. Wähle nur benötigte Felder aus, grenze den Filter ein oder verringere das Limit.",
       missingCapturedCalculation:
         "Für eine angeforderte Berechnung fehlt der gespeicherte Wert eines abgeschlossenen Datensatzes. Schließe diesen Datensatz oder die Berechnung aus; historische Werte können nicht nachträglich berechnet werden.",
       fieldNameUnique: "Der Feldname muss innerhalb dieser Tabelle eindeutig sein.",

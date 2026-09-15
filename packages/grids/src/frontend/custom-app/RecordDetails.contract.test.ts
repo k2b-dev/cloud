@@ -20,5 +20,6 @@ describe("App record details", () => {
     expect(source).not.toContain('<ul class="flex flex-col gap-1">');
     expect(source).toContain("fetch(document.downloadUrl");
     expect(source).toContain("CustomAppDocument");
+    expect(source).toContain("{document.number}");
   });
 });

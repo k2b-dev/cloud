@@ -22,6 +22,7 @@ const AUDIT_ACTION_VISIBILITY = {
   "finalization.request.approved": "record",
   "finalization.request.rejected": "record",
   "workflow.record.updated": "record",
+  "workflow.record.deleted": "record",
   "workflow.record.created": "record",
   "workflow.record.finalized": "record",
   "workflow.record.finalization.requested": "record",

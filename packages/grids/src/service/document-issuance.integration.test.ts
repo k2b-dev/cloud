@@ -18,7 +18,9 @@ import { createDocumentIssuanceService, type IssueDocumentInput } from "./docume
 import { MAX_DOCUMENT_PROFILE_INPUT_BYTES } from "./document-json";
 import { type DocumentDbRow, mapDocumentTemplate } from "./document-mappers";
 import { createTemplate, getTemplate } from "./document-templates";
+import { enable as enableHistory } from "./durable-history";
 import { provisionDocumentNumberSeries } from "./number-series";
+import { enable as enableFinalization, finalize } from "./record-finalization";
 import { canExecuteRun, documentActorForScope } from "./workflow-action-scope";
 import { loadWorkflowCatalog } from "./workflow-catalog";
 import { captureWorkflowDocumentSource } from "./workflow-document-sources";
@@ -102,6 +104,124 @@ const insertProfileTemplate = async (
   if (!template) throw new Error("profile template missing");
   return template;
 };
+
+postgresTest("once-per-finalized-record rejects drafts and caller policy overrides", async () => {
+  const scope = await createScope();
+  const created = await createTemplate(
+    scope.tableId,
+    {
+      name: "Issued once",
+      source: "from table Invoices",
+      issuancePolicy: "oncePerFinalizedRecord",
+      renderer: {
+        kind: "html",
+        body: "<p>Invoice</p>",
+        numberTemplate: "INV-{{ series.value }}",
+        filenameTemplate: "{{ document.number }}.pdf",
+      },
+    },
+    null,
+  );
+  if (!created.ok) throw created.error;
+  const service = createDocumentIssuanceService();
+  const result = await service.issueDocument(
+    inputFor({ ...created.data, issuancePolicy: "repeatable" }, scope, { canReadTable: async () => true }),
+  );
+  expect(result.ok).toBe(false);
+  if (!result.ok) expect(result.error.message).toContain("Finalize");
+  const [count] = await sql<
+    Array<{ count: number }>
+  >`SELECT count(*)::int AS count FROM grids.document_issuances WHERE base_id = ${scope.baseId}::uuid`;
+  expect(count?.count).toBe(0);
+});
+
+postgresTest("once-per-finalized-record retries across keys and actors without a second number or lost authorization", async () => {
+  const scope = await createScope();
+  const created = await createTemplate(
+    scope.tableId,
+    {
+      name: "Issued once",
+      source: "from table Invoices",
+      issuancePolicy: "oncePerFinalizedRecord",
+      renderer: {
+        kind: "html",
+        body: "<p>Invoice</p>",
+        numberTemplate: "INV-{{ series.value }}",
+        filenameTemplate: "{{ document.number }}.pdf",
+      },
+    },
+    null,
+  );
+  if (!created.ok) throw created.error;
+  for (const enabled of [await enableHistory(scope.tableId, null), await enableFinalization(scope.tableId, { mode: "direct" }, null)]) {
+    if (!enabled.ok) throw enabled.error;
+  }
+  const finalized = await finalize({ tableId: scope.tableId, recordId: scope.recordId, actorId: null, origin: "direct" });
+  if (!finalized.ok) throw finalized.error;
+  const input = inputFor(created.data, scope, {
+    canReadTable: async () => true,
+    tags: ["first"],
+    renderPdf: async () => fail(err.internal("Temporary render failure")),
+  });
+  input.snapshot.root = { ...input.snapshot.root, version: finalized.data.version, updatedAt: finalized.data.updatedAt };
+  input.renderData.record = { id: scope.recordShortId, version: finalized.data.version, updatedAt: finalized.data.updatedAt, data: {} };
+  const relatedTableId = testUuid();
+  await sql`INSERT INTO grids.tables (id, short_id, base_id, name) VALUES (${relatedTableId}::uuid, ${testShortId("T")}, ${scope.baseId}::uuid, 'Related')`;
+  input.snapshot.graph = {
+    rootId: `${scope.tableId}:${scope.recordId}`,
+    records: {
+      [`${scope.tableId}:${scope.recordId}`]: input.snapshot.root,
+      related: { ...input.snapshot.root, table: { id: relatedTableId } },
+    },
+  };
+  const service = createDocumentIssuanceService();
+  const failed = await service.issueDocument(input);
+  expect(failed.ok).toBe(false);
+  if (!failed.ok) expect(failed.error.message).toBe("Temporary render failure");
+  const retry = {
+    ...input,
+    idempotencyKey: `other-${testUuid()}`,
+    actor: { kind: "user" as const, userId: testUuid() },
+    tags: ["ignored"],
+    renderPdf: async () => ({ ok: true as const, data: { pdf: pdf("recovered"), contentType: "application/pdf" as const } }),
+  };
+  const results = await Promise.all([
+    service.issueDocument(retry),
+    service.issueDocument({ ...retry, idempotencyKey: `third-${testUuid()}` }),
+  ]);
+  for (const result of results) if (!result.ok) throw result.error;
+  const first = results[0];
+  const second = results[1];
+  if (!first?.ok || !second?.ok) throw new Error("issuance failed");
+  expect(second.data.document.id).toBe(first.data.document.id);
+  expect(first.data.document.tags).toEqual(["first"]);
+  expect(first.data.document.createdBy).toBeNull();
+  const [count] = await sql<
+    Array<{ count: number }>
+  >`SELECT count(*)::int AS count FROM grids.document_issuances WHERE base_id = ${scope.baseId}::uuid`;
+  expect(count?.count).toBe(1);
+  const denied = await service.issueDocument({ ...retry, canReadTable: async ({ tableId }) => tableId !== relatedTableId });
+  expect(denied.ok).toBe(false);
+  if (!denied.ok) expect(denied.error.status).toBe(403);
+  const request = { ...retry, baseId: scope.baseId, tableId: scope.tableId, recordId: scope.recordId, templateId: created.data.id };
+  let captures = 0;
+  const replay = await service.issueRecordDocument(request, async () => {
+    captures++;
+    return { ok: true, data: input };
+  });
+  expect(replay.ok && replay.data.id).toBe(first.data.document.id);
+  expect(captures).toBe(0);
+  const deniedReplay = await service.issueRecordDocument(
+    { ...request, canReadTable: async ({ tableId }) => tableId !== relatedTableId },
+    async () => {
+      captures++;
+      return { ok: true, data: input };
+    },
+  );
+  expect(deniedReplay.ok).toBe(false);
+  if (!deniedReplay.ok) expect(deniedReplay.error.status).toBe(403);
+  expect(captures).toBe(0);
+});
 
 postgresTest(
   "issued invoice totals remain exact immutable workflow source values",

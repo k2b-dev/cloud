@@ -1,6 +1,9 @@
 import { createHash } from "node:crypto";
+import { planFormComputedFields } from "../form-computed-fields";
+import { collectFieldRefs } from "../formula/parser";
+import { normalizeRefKey } from "../ref-syntax";
 import type { FormConfig } from "../service/forms";
-import { stableCustomAppValue } from "./stable-value";
+import { customAppFieldConfig, stableCustomAppValue } from "./stable-value";
 
 type CustomAppFormCapabilityField = {
   id: string;
@@ -10,6 +13,8 @@ type CustomAppFormCapabilityField = {
 };
 
 export type CustomAppFormSecurityField = CustomAppFormCapabilityField & {
+  name?: string;
+  shortId?: string;
   tableId: string;
   required: boolean;
   defaultValue: unknown;
@@ -22,7 +27,7 @@ export const customAppFormFieldHash = (fieldIds: readonly string[], fields: read
   const snapshots = [...new Set(fieldIds)].sort().map((fieldId) => {
     const field = fieldsById.get(fieldId);
     return field
-      ? { id: field.id, type: field.type, config: stableCustomAppValue(field.config), deleted: field.deletedAt !== null }
+      ? { id: field.id, type: field.type, config: stableCustomAppValue(customAppFieldConfig(field)), deleted: field.deletedAt !== null }
       : { id: fieldId, missing: true };
   });
   return createHash("sha256").update("grids.custom-app.form-fields.v1\0").update(JSON.stringify(snapshots)).digest("hex");
@@ -61,10 +66,23 @@ export const customAppFormSecurityHash = (input: {
   fields: readonly CustomAppFormSecurityField[];
 }): string => {
   const directFields = input.fields.filter((field) => field.tableId === input.tableId);
+  const computed = input.config.computedFields?.length
+    ? planFormComputedFields(
+        input.config.computedFields.map((entry) => entry.fieldId),
+        new Set(input.config.fields.filter((entry) => entry.kind === "user_input").map((entry) => entry.fieldId)),
+        directFields.map((field) => ({ ...field, name: field.name ?? field.id })),
+      )
+    : undefined;
   const inlineReferences = customAppFormInlineTargetReferences(input.config, directFields);
+  const computedBindings = computed
+    ? [...new Set(computed.steps.flatMap((step) => [...collectFieldRefs(step.ast)].map(normalizeRefKey)))]
+        .sort()
+        .map((ref) => [ref, computed.refs[ref]])
+    : [];
   const fieldReferences = [
     ...input.config.fields.map((entry) => ({ tableId: input.tableId, fieldId: entry.fieldId })),
     ...inlineReferences,
+    ...(computed?.fields ?? []).map((field) => ({ tableId: input.tableId, fieldId: field.id })),
   ];
   const fieldsByKey = new Map(input.fields.map((field) => [`${field.tableId}\0${field.id}`, field]));
   const fieldSnapshots = [
@@ -82,7 +100,7 @@ export const customAppFormSecurityHash = (input: {
             tableId: field.tableId,
             id: field.id,
             type: field.type,
-            config: stableCustomAppValue(field.config),
+            config: stableCustomAppValue(customAppFieldConfig(field)),
             required: field.required,
             defaultValue: configuredDefault(field.defaultValue),
             deleted: field.deletedAt !== null,
@@ -120,6 +138,17 @@ export const customAppFormSecurityHash = (input: {
   });
   return createHash("sha256")
     .update("grids.custom-app.form-security.v1\0")
-    .update(JSON.stringify({ config: { fields: fieldsConfig, validations }, fields: fieldSnapshots }))
+    .update(
+      JSON.stringify({
+        config: {
+          fields: fieldsConfig,
+          validations,
+          ...(input.config.computedFields?.length
+            ? { computedFields: input.config.computedFields.map((entry) => entry.fieldId), validComputedFields: !!computed, computedBindings }
+            : {}),
+        },
+        fields: fieldSnapshots,
+      }),
+    )
     .digest("hex");
 };

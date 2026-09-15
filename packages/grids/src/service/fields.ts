@@ -278,7 +278,7 @@ const insertPreparedField = async (state: FieldCreateState, actorId: string | nu
                   ${field.id}::uuid, ${shortId}, ${field.tableId}::uuid, ${field.name}, ${field.description}::text,
                   ${field.icon}::text, ${field.type}, ${field.config}::jsonb,
                   COALESCE(${state.requestedPosition}::int, (SELECT COALESCE(MAX(position) + 1, 0) FROM grids.fields WHERE table_id = ${field.tableId}::uuid AND deleted_at IS NULL)),
-                  ${field.required}, ${field.presentable}, ${field.hideInTable}, ${state.defaultValueJsonb}::jsonb,
+                  ${field.required}, ${field.presentable}, ${field.hideInTable}, ${state.defaultValueJsonb}::text::jsonb,
                   ${field.indexed}, ${field.uniqueConstraint}
                 )
                 RETURNING *
@@ -435,7 +435,7 @@ const ensureUniqueToggleAllowed = async (
 };
 
 const persistFieldUpdate = async (id: string, next: FieldUpdateState, client: SqlClient = sql, locale?: string): Promise<Result<Field>> => {
-  // Same primitive-to-JSONB stringify dance as create.
+  // Decode serialized JSON explicitly; a direct jsonb binding would encode the text again.
   const nextDefaultValueJsonb = next.defaultValue === undefined || next.defaultValue === null ? null : JSON.stringify(next.defaultValue);
   const [row] = await client<DbRow[]>`
     UPDATE grids.fields
@@ -447,7 +447,7 @@ const persistFieldUpdate = async (id: string, next: FieldUpdateState, client: Sq
         required = ${next.required},
         presentable = ${next.presentable},
         hide_in_table = ${next.hideInTable},
-        default_value = ${nextDefaultValueJsonb}::jsonb,
+        default_value = ${nextDefaultValueJsonb}::text::jsonb,
         indexed = ${next.indexed},
         unique_constraint = ${next.uniqueConstraint},
         updated_at = now()

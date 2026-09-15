@@ -1,6 +1,7 @@
 import { beforeAll, describe, expect, spyOn } from "bun:test";
 import type { AuthContext } from "@k2b/cloud/server";
 import { sql } from "bun";
+import { fromPublicFormConfig } from "../../api/form-api-shared";
 import { Hono } from "hono";
 import { createCustomAppsApi } from "../../api/custom-apps";
 import type { CustomAppDefinition } from "../../custom-apps/contracts";
@@ -81,7 +82,12 @@ describe("published App SSR availability", () => {
             { kind: "user_input", fieldId },
             { kind: "user_input", fieldId: listFieldId },
             { kind: "user_input", fieldId: relationId, inlineCreate: { enabled: true, fields: [{ fieldId }, { fieldId: listFieldId }] } },
-            { kind: "user_input", fieldId: otherRelationId, inlineCreate: { enabled: true, fields: [{ fieldId: otherFieldId }] } },
+            {
+              kind: "user_input",
+              fieldId: otherRelationId,
+              defaultValue: [childId],
+              inlineCreate: { enabled: true, fields: [{ fieldId: otherFieldId }] },
+            },
           ],
         }}::jsonb)`;
       const definition: CustomAppDefinition = {
@@ -91,6 +97,7 @@ describe("published App SSR availability", () => {
         baseId: basePublicId,
         name: "Public SSR app",
         startPageId: "home",
+        sidebar: { actions: [{ id: "new-request", label: "New request", kind: "form", formId: formPublicId, fixedValues: {}, tone: "default" }] },
         pages: [
           {
             id: "home",
@@ -189,6 +196,16 @@ describe("published App SSR availability", () => {
       expect(discovered.status).toBe(200);
       const discoveredPage = await discovered.json();
       const discoveredForm = discoveredPage.blocks.find((block: { id: string }) => block.id === "edit-form").form;
+      const createForm = discoveredPage.blocks.find((block: { id: string }) => block.id === "form").form;
+      expect(createForm.relationLabels[childPublicId]).toBe("Existing line");
+      expect(discoveredPage.sidebarActions[0].relationLabels[childPublicId]).toBe("Existing line");
+      expect(
+        createForm.form.config.fields.find((field: { fieldId: string }) => field.fieldId === otherRelationPublicId).defaultValue,
+      ).toEqual([childPublicId]);
+      expect(discoveredForm.initialRecord.values[otherRelationPublicId]).toEqual([]);
+      const roundtrip = await fromPublicFormConfig(tableId, createForm.form.config);
+      const roundtripRelation = roundtrip?.fields.find((entry) => entry.fieldId === otherRelationId);
+      expect(roundtripRelation?.kind === "user_input" ? roundtripRelation.defaultValue : null).toEqual([childId]);
       expect(discoveredForm.inlineTargetFields[tablePublicId].map((field: { id: string }) => field.id).sort()).toEqual(
         [fieldPublicId, otherFieldPublicId, listFieldPublicId].sort(),
       );
@@ -255,6 +272,20 @@ describe("published App SSR availability", () => {
       const editForm = sharedPage.blocks.find((block: { id: string }) => block.id === "edit-form").form;
       expect(editForm.initialRecord.values[relationPublicId]).toEqual([childPublicId]);
       expect(editForm.initialRecord.inlineCreates[relationPublicId]).toEqual([]);
+      expect(editForm.relationLabels[childPublicId]).toBe("Edited line");
+      expect(editForm.relationLookupFields).toContain(relationPublicId);
+      const lookupUrl = `/runtime/${appPublicId}/detail/edit-form/relations/${relationPublicId}/lookup?request_id=${recordPublicId}`;
+      const lookupResponse = await api.request(`${lookupUrl}&_search=Edited%20line&_limit=1`);
+      expect(lookupResponse.status).toBe(200);
+      expect(await lookupResponse.json()).toEqual({ items: [{ id: childPublicId, label: "Edited line" }] });
+      const excluded = await api.request(`${lookupUrl}&_search=Edited%20line&_exclude=${childPublicId}`);
+      expect(excluded.status).toBe(200);
+      expect(await excluded.json()).toEqual({ items: [] });
+      expect((await api.request(lookupUrl.replace(relationPublicId, fieldPublicId))).status).toBe(404);
+      expect((await api.request(lookupUrl.replace("/edit-form/", "/missing-form/"))).status).toBe(404);
+      expect((await api.request(`${lookupUrl}&_limit=51`)).status).toBe(400);
+      await sql`UPDATE grids.fields SET position = position + 20, name = 'Unrelated renamed field' WHERE id = ${otherFieldId}::uuid`;
+      expect((await api.request(`${lookupUrl}&_search=Edited%20line`)).status).toBe(200);
       expect(
         (
           await send(editUrl, {
@@ -265,6 +296,13 @@ describe("published App SSR availability", () => {
         ).status,
       ).toBe(200);
       expect((await send(editUrl, { ...body, version: 3, idempotencyKey: "shared-child-forged" })).status).toBe(400);
+      await sql`UPDATE grids.fields SET presentable = TRUE WHERE id = ${otherFieldId}::uuid`;
+      expect((await api.request(lookupUrl)).status).toBe(404);
+      const driftResponse = await api.request(`/runtime/${appPublicId}/detail?request_id=${recordPublicId}`);
+      if (driftResponse.status === 200) {
+        const drift = await driftResponse.json();
+        expect(drift.blocks.find((block: { id: string }) => block.id === "edit-form").form.ok).toBe(false);
+      } else expect(driftResponse.status).toBe(404);
       expect((await app.request(`/${appPublicId}/detail?request_id=${recordId}`)).status).toBe(404);
       await sql`UPDATE grids.fields SET short_id = ${testShortId("F")} WHERE id = ${fieldId}::uuid`;
       expect((await app.request(`/${appPublicId}/detail?request_id=${recordPublicId}`)).status).toBe(404);
@@ -385,6 +423,26 @@ describe("published App SSR availability", () => {
 
       const denied = await app.request(`/${appPublicId}/denied`);
       expect(denied.status).toBe(404);
+      expect(denied.headers.get("location")).toBeNull();
+
+      // Revoke only this fixture's public grant: the same published page now
+      // needs login, not a misleading 404. Return paths never become origins.
+      await sql`DELETE FROM auth.access WHERE id = ${grant.data.accessId}::uuid`;
+      const requested = `/${appPublicId}/home?record=ABC123&next=https%3A%2F%2Fevil.test`;
+      const protectedPage = await app.request(requested);
+      expect(protectedPage.status).toBe(302);
+      const location = new URL(protectedPage.headers.get("location")!, "https://cloud.test");
+      expect(location.origin).toBe("https://cloud.test");
+      expect(location.pathname).toBe("/auth/login");
+      expect(location.searchParams.get("redirectTo")).toBe(requested);
+      expect(protectedPage.headers.get("cache-control")).toContain("no-store");
+      expect((await app.request(`/${appPublicId}/missing`)).status).toBe(404);
+      expect((await app.request("/NOAPP1/home")).status).toBe(404);
+
+      await sql`UPDATE grids.custom_apps SET published_definition = NULL WHERE id = ${applied.data.id}::uuid`;
+      const unpublished = await app.request(`/${appPublicId}/home`);
+      expect(unpublished.status).toBe(404);
+      expect(unpublished.headers.get("location")).toBeNull();
     } finally {
       viewGet.mockRestore();
       await sql`DELETE FROM grids.bases WHERE id = ${baseId}::uuid`;

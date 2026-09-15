@@ -129,7 +129,7 @@ const customAppAuthorizationIsAvailable = async (params: {
   if (!app.publishedDefinition || !app.publishedCapabilities || app.publishedAt !== authorization.publishedAt) return false;
   const userId = params.subject.type === "user" ? params.subject.userId : null;
   const [base, user, groupIds] = await Promise.all([
-    getBase(app.baseId),
+    getBase(app.baseId, { client: params.client }),
     userId ? accounts.users.get({ id: userId }) : null,
     getEffectiveGroupIds({ userId }, params.client),
   ]);
@@ -158,6 +158,7 @@ const customAppAuthorizationIsAvailable = async (params: {
           signal: new AbortController().signal,
           timeZone: authorization.timeZone,
           viewer,
+          client: params.client,
         })),
     );
     return available;
@@ -238,6 +239,8 @@ const customAppAuthorizationIsAvailable = async (params: {
       viewerServiceAccountId: viewer.serviceAccountId,
       search,
       cursor,
+      client: params.client,
+      includePresentation: false,
     }).catch(() => null);
     if (!published?.response.ok) return false;
     const visibleIds = new Set(published.response.rows.flatMap((row) => (row.recordId ? [row.recordId] : [])));
@@ -415,6 +418,22 @@ export const canAccessWorkflowRunTable = async (
   return canAccessWorkflowExecutionTable({ ...scope, workflowId: scope.workflow.id }, tableId, required, client);
 };
 
+/** One read authorization decision for one query capture. The caller creates
+ * this inside the capture transaction and uses the client-bound checker only
+ * for that capture. Effect/commit authorization stays separate.
+ */
+export const createWorkflowCaptureTableAccess = async (
+  scope: GridsWorkflowActionScope,
+  client: SqlClient,
+  deps = { authorizeWorkflowBase, canExecuteRun, workflowTableBelongsToBase },
+): Promise<(tableId: string) => Promise<boolean>> => {
+  const allowed =
+    scope.authorization.kind === "workflow"
+      ? await deps.authorizeWorkflowBase(scope.principal, scope.baseId, "read", client)
+      : await deps.canExecuteRun(scope, client);
+  return async (tableId) => allowed && (await deps.workflowTableBelongsToBase(scope.baseId, tableId, client));
+};
+
 export const requireTableAccess = async (
   scope: GridsWorkflowActionScope,
   tableId: string,
@@ -423,6 +442,29 @@ export const requireTableAccess = async (
 ): Promise<void> => {
   if (!(await canAccessWorkflowRunTable(scope, tableId, required, client))) throw forbidden();
 };
+
+/** A single atomic effect's authority, created after its domain locks and lease
+ * fence. Availability is a precondition, not a postcondition of our own writes.
+ * Never retain this context beyond its transaction or reuse it for a retry.
+ */
+export const createWorkflowEffectAccess = async (
+  scope: GridsWorkflowActionScope,
+  client: SqlClient,
+  deps = { authorizeWorkflowBase, canExecuteRun, workflowTableBelongsToBase },
+) => {
+  const allowed =
+    scope.authorization.kind === "workflow"
+      ? await deps.authorizeWorkflowBase(scope.principal, scope.baseId, "write", client)
+      : await deps.canExecuteRun(scope, client);
+  if (!allowed) throw forbidden();
+  const canReadTable = (tableId: string): Promise<boolean> => deps.workflowTableBelongsToBase(scope.baseId, tableId, client);
+  const requireTable = async (tableId: string): Promise<void> => {
+    if (!(await canReadTable(tableId))) throw forbidden();
+  };
+  return { scope, canReadTable, requireTable };
+};
+
+export type WorkflowEffectAccess = Awaited<ReturnType<typeof createWorkflowEffectAccess>>;
 
 /** Provenance an audit entry carries, so a write can be traced back to its credential. */
 export const workflowAuditMeta = (scope: GridsWorkflowActionScope) => ({

@@ -1,7 +1,7 @@
-import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { logger } from "@k2b/cloud/services";
 import { parseDataUrl } from "@k2b/cloud/shared";
 import { deleteWorkflowScope } from "@k2b/cloud/workflows/store";
+import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { sql } from "bun";
 import { documentTemplateStarterById } from "../document-template-starters";
 import { type GridTemplate, getTemplate, getTemplates, type TemplateDateExpression, type TemplateRef } from "../templates";
@@ -10,12 +10,15 @@ import { updateBaseNavigation } from "./base-navigation";
 import * as bases from "./bases";
 import * as customApps from "./custom-apps";
 import * as documents from "./documents";
+import * as durableHistory from "./durable-history";
 import * as emailTemplates from "./email-templates";
 import * as fields from "./fields";
 import * as files from "./files";
 import type { FormConfig } from "./forms";
 import * as forms from "./forms";
 import { serviceMessagesFor } from "./messages";
+import * as mutationPolicy from "./mutation-policy";
+import * as recordFinalization from "./record-finalization";
 import * as records from "./records";
 import { newShortId } from "./short-id";
 import * as tables from "./tables";
@@ -231,7 +234,7 @@ const resolveCustomAppValue = (value: unknown, ctx: TemplateContext): unknown =>
   const record = value as Record<string, unknown>;
   return Object.fromEntries(
     Object.entries(record).map(([key, nested]) => [
-      key,
+      key.startsWith("$field:") ? resolvePublicRef({ $ref: "field", key: key.slice(7) }, ctx) : key,
       record.kind === "gql" && key === "query" ? resolveGqlValue(nested, ctx) : resolveCustomAppValue(nested, ctx),
     ]),
   );
@@ -303,8 +306,9 @@ const applyTableDisplayConfigs = async (template: GridTemplate, actorId: string 
   }
 };
 
-const createRecords = async (template: GridTemplate, actorId: string | null, ctx: TemplateContext) => {
+const createRecords = async (template: GridTemplate, actorId: string | null, ctx: TemplateContext, withSampleData: boolean) => {
   for (const record of template.records ?? []) {
+    if (!withSampleData && !record.required) continue;
     const tableId = ctx.tables.get(record.table);
     if (!tableId) throw new TemplateError(err.badInput(`template table not found: ${record.table}`));
 
@@ -343,6 +347,28 @@ const createRecords = async (template: GridTemplate, actorId: string | null, ctx
         }),
       );
     }
+  }
+};
+
+const enableTableHistory = async (template: GridTemplate, actorId: string | null, ctx: TemplateContext, locale?: string) => {
+  for (const definition of template.tables) {
+    const tableId = ctx.tables.get(definition.key);
+    if (!tableId) throw new TemplateError(err.badInput(`template table not found: ${definition.key}`));
+    if (definition.durableHistory || definition.finalization) {
+      requireResult(await durableHistory.enable(tableId, actorId, locale));
+    }
+    if (definition.finalization) {
+      requireResult(await recordFinalization.enable(tableId, definition.finalization, actorId, locale));
+    }
+  }
+};
+
+const applyMutationPolicies = async (template: GridTemplate, actorId: string | null, ctx: TemplateContext, locale?: string) => {
+  for (const definition of template.tables) {
+    if (!definition.mutationPolicy) continue;
+    const tableId = ctx.tables.get(definition.key);
+    if (!tableId) throw new TemplateError(err.badInput(`template table not found: ${definition.key}`));
+    requireResult(await mutationPolicy.update(tableId, definition.mutationPolicy, actorId, locale));
   }
 };
 
@@ -435,21 +461,26 @@ const createDocumentTemplates = async (template: GridTemplate, actorId: string |
   for (const definition of template.documentTemplates ?? []) {
     const tableId = ctx.tables.get(definition.table);
     if (!tableId) throw new TemplateError(err.badInput(`template table not found: ${definition.table}`));
-    const starter = documentTemplateStarterById(definition.starterId, locale);
-    if (!starter) throw new TemplateError(err.badInput(`document template starter not found: ${definition.starterId}`));
-    const source = definition.source === undefined ? starter.source(tableId) : resolveGqlValue(definition.source, ctx);
+    const starter = definition.starterId === undefined ? undefined : documentTemplateStarterById(definition.starterId, locale);
+    if (definition.starterId !== undefined && !starter) {
+      throw new TemplateError(err.badInput(`document template starter not found: ${definition.starterId}`));
+    }
+    const source = definition.source === undefined ? starter?.source(tableId) : resolveGqlValue(definition.source, ctx);
     if (typeof source !== "string" || !source.trim()) {
       throw new TemplateError(err.badInput(`document template "${definition.key}" must provide a GQL source`));
     }
+    const renderer = definition.renderer ?? starter?.renderer;
+    if (!renderer) throw new TemplateError(err.badInput(`document template "${definition.key}" must provide a renderer`));
 
     const created = requireResult(
       await documents.createTemplate(
         tableId,
         {
-          name: definition.name?.trim() || starter.name,
-          description: definition.description === undefined ? starter.description : definition.description,
+          name: definition.name?.trim() || starter?.name || definition.key,
+          description: definition.description === undefined ? (starter?.description ?? null) : definition.description,
           source: source.trim(),
-          renderer: starter.renderer,
+          renderer,
+          issuancePolicy: definition.issuancePolicy,
           enabled: definition.enabled,
         },
         actorId,
@@ -531,7 +562,17 @@ export const instantiate = async (
   const t = serviceMessagesFor(locale);
   const template = getTemplate(templateId, locale);
   if (!template) return fail({ ...err.notFound("Template"), message: t.templateNotFound });
+  return instantiateDefinition(template, input, actorId, locale);
+};
 
+/** Internal installer; routes accept only registered template IDs. */
+export const instantiateDefinition = async (
+  template: GridTemplate,
+  input: InstantiateTemplateInput,
+  actorId: string | null,
+  locale?: string,
+): Promise<Result<Base>> => {
+  const t = serviceMessagesFor(locale);
   const name = input.name?.trim() || template.baseName;
   const baseResult = await bases.create(
     {
@@ -561,9 +602,13 @@ export const instantiate = async (
 
   try {
     await createTables(template, base.id, actorId, ctx);
+    // Empty tables have a complete baseline immediately. Enable before fields
+    // so finalization-assigned IDs are valid; seed writes are captured normally.
+    await enableTableHistory(template, actorId, ctx, locale);
     await createFields(template, actorId, ctx);
     await applyTableDisplayConfigs(template, actorId, ctx);
-    if (input.withSampleData !== false) await createRecords(template, actorId, ctx);
+    await createRecords(template, actorId, ctx, input.withSampleData !== false);
+    await applyMutationPolicies(template, actorId, ctx, locale);
     await createViews(template, actorId, ctx);
     await createForms(template, actorId, ctx, locale);
     await createDocumentTemplates(template, actorId, ctx, locale);
@@ -596,9 +641,23 @@ export const instantiate = async (
     // template's workflows, versions and activations behind for good — with an
     // enabled `grids.invoked` activation pointing at a base that is gone.
     await deleteWorkflowScope({ appId: GRIDS_APP_ID, scopeId: base.id }).catch(() => {});
-    await sql`DELETE FROM grids.bases WHERE id = ${base.id}::uuid`.catch(() => {});
+    await sql
+      .begin(async (tx) => {
+        // A failed installation can already have captured its seed baseline.
+        // These rows intentionally restrict normal Base deletion. This scope is
+        // the newly created, unfinished Base only; finalized data still fails its FK.
+        await tx`DELETE FROM grids.file_protected_references WHERE base_id = ${base.id}::uuid AND owner_kind = 'record_revision'`;
+        await tx`DELETE FROM grids.record_revisions WHERE table_id IN (SELECT id FROM grids.tables WHERE base_id = ${base.id}::uuid)`;
+        await tx`DELETE FROM grids.table_finalization_activations WHERE table_id IN (SELECT id FROM grids.tables WHERE base_id = ${base.id}::uuid)`;
+        await tx`DELETE FROM grids.durable_history_activations WHERE table_id IN (SELECT id FROM grids.tables WHERE base_id = ${base.id}::uuid)`;
+        await tx`DELETE FROM grids.table_schema_revisions WHERE table_id IN (SELECT id FROM grids.tables WHERE base_id = ${base.id}::uuid)`;
+        await tx`DELETE FROM grids.bases WHERE id = ${base.id}::uuid`;
+      })
+      .catch((cleanupError) => {
+        log.error("Could not remove unfinished template Base", { baseId: base.id, error: String(cleanupError) });
+      });
     log.error("Template instantiation failed", {
-      templateId,
+      templateId: template.id,
       error: error instanceof Error ? error.message : String(error),
     });
     return fail({ ...err.internal("Could not create base from template."), message: t.templateCreateFailed });

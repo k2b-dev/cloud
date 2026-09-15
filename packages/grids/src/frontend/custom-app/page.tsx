@@ -6,6 +6,7 @@ import {
   type ChartBlock,
   type ChartBlockData,
   type CustomAppDocument,
+  type CustomAppDocumentPreview,
   type FormBlock,
   type FormBlockData,
   loadPublishedCustomAppPage,
@@ -15,6 +16,8 @@ import {
   type RecordsLikeBlock,
 } from "../../api/custom-app-published-page";
 import { ssr } from "../../config";
+import { gridsAccessContext } from "../../api/permissions";
+import { customAppPageNeedsLogin } from "./login";
 import type { CustomAppDefinition, CustomAppPage } from "../../custom-apps/contracts";
 import { renderCustomAppMarkdown } from "../../custom-apps/markdown-context";
 import type { DslQueryContextValues } from "../../query-dsl/parameters";
@@ -113,6 +116,7 @@ const Record = (props: {
   baseId: string;
   updateEndpoint?: string;
   documents: CustomAppDocument[];
+  documentPreviews: CustomAppDocumentPreview[];
   dateConfig: ReturnType<typeof getDateConfig>;
 }) => {
   const messages = useCustomAppRuntimeMessages();
@@ -139,6 +143,7 @@ const Record = (props: {
       fileEndpoints={props.pageRecord.fileEndpoints}
       filesByField={props.pageRecord.filesByField}
       documents={props.documents}
+      documentPreviews={props.documentPreviews}
       dateConfig={props.dateConfig}
     />
   );
@@ -156,6 +161,8 @@ const Form = (props: { block: FormBlock; data: FormBlockData; dateConfig: Return
       fields={props.data.fields}
       inlineTargetFields={props.data.inlineTargetFields}
       initialRecord={props.data.initialRecord}
+      relationLabels={props.data.relationLabels}
+      relationLookupFields={props.data.relationLookupFields}
       dateConfig={props.dateConfig}
       surface="bare"
       showTitle={!props.block.title}
@@ -178,6 +185,7 @@ const CustomAppPage = (props: {
   recordEndpoints: Map<string, string>;
   recordUpdateEndpoints: Map<string, string>;
   documents: Map<string, CustomAppDocument[]>;
+  documentPreviews: Map<string, CustomAppDocumentPreview[]>;
   pageRecords: Map<string, PageRecord>;
   renderedHtml: Map<string, { html: unknown; fieldName: string }>;
   dateConfig: ReturnType<typeof getDateConfig>;
@@ -225,6 +233,7 @@ const CustomAppPage = (props: {
             baseId={props.definition.baseId}
             updateEndpoint={props.recordUpdateEndpoints.get(block.id)}
             documents={props.documents.get(block.id) ?? []}
+            documentPreviews={props.documentPreviews.get(block.id) ?? []}
             dateConfig={props.dateConfig}
           />
         ) : block.type === "html" ? (
@@ -265,7 +274,13 @@ const CustomAppPage = (props: {
 
 export default ssr<AuthContext>(async (c) => {
   const data = await loadPublishedCustomAppPage(c);
-  if (!data) return ssr.error(c, 404, { layout: "minimal" });
+  if (!data) {
+    if (await customAppPageNeedsLogin(gridsAccessContext(c), c.req.param("shortId") ?? "", c.req.param("pageId"))) {
+      const response = await ssr.access.onReject(c, "unauthenticated");
+      return typeof response === "string" ? c.redirect(response) : response;
+    }
+    return ssr.error(c, 404, { layout: "minimal" });
+  }
   return () => (
     <Layout c={c} fullWidth fullPage title={[{ title: data.definition.name, href: `/apps/${data.shortId}` }, { title: data.page.title }]}>
       <CustomAppPage {...data} />

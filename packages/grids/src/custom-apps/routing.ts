@@ -134,6 +134,10 @@ export const customAppDocumentDownloadUrl = (
   return customAppRuntimeUrl(shortId, pageId, blockId, ["documents", runId, "download"], params);
 };
 
+export const customAppDocumentPreviewUrl = (
+  shortId: string, pageId: string, blockId: string, templateId: string, params: Record<string, string>,
+): string => customAppRuntimeUrl(shortId, pageId, blockId, ["document-previews", templateId], params);
+
 export const customAppActionHref = (
   shortId: string,
   action: Extract<CustomAppAction, { kind: "navigate" }>,

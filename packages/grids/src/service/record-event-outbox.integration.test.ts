@@ -283,6 +283,28 @@ describe("record event outbox integration", () => {
     }
   });
 
+  postgresTest("rejects double-encoded JSONB events instead of decoding an obsolete storage shape", async () => {
+    const fixture = createFixture();
+    try {
+      await insertFixture(fixture);
+      const created = await sql.begin((tx) => insertRecordAndEvent(tx, fixture, "Double encoded"));
+      await sql`UPDATE grids.record_event_outbox SET payload = to_jsonb(payload::text) WHERE id = ${created.outboxId}::uuid`;
+      const [stored] = await sql`SELECT jsonb_typeof(payload) AS kind FROM grids.record_event_outbox WHERE id = ${created.outboxId}::uuid`;
+      expect(stored.kind).toBe("string");
+      let published = false;
+      await expect(
+        dispatchRecordEventOutbox(created.outboxId, async () => {
+          published = true;
+        }),
+      ).rejects.toThrow("Invalid record event payload");
+      expect(published).toBe(false);
+      const [row] = await sql`SELECT status, attempts FROM grids.record_event_outbox WHERE id = ${created.outboxId}::uuid`;
+      expect(row).toEqual({ status: "dead", attempts: 1 });
+    } finally {
+      await cleanupFixture(fixture);
+    }
+  });
+
   postgresTest("claims disjoint backlog batches across concurrent reconcilers", async () => {
     const fixture = createFixture();
     try {

@@ -5,11 +5,11 @@ icon: ti ti-file-type-pdf
 description: Create, generate, organize, and share PDFs from saved records.
 order: 135
 ---
-Document templates turn table records into repeatable PDFs. Use them for invoices, contracts, labels, certificates, delivery notes, quotes, packing lists, checklists, and record summaries.
+Document templates create PDFs from table records, for example invoices, contracts and labels.
 
 Each template belongs to one table and defines one document family. A generated document belongs to one selected record, receives a stable number and filename, and keeps the exact source snapshot after the live records change. It appears in the record's Documents section, its template workspace, and the Base-wide **All documents** catalog.
 
-Use a document template when output must be formatted for people, printed, shared by an expiring link, or redownloaded later. Use CSV or JSON export when you only need data for another system.
+Use templates for formatted, shareable output; CSV/JSON exports for data exchange.
 
 ## One immutable Document model {icon="shield-check"}
 
@@ -17,13 +17,15 @@ Agents can use `document.templates` to find templates, `document.list` and `docu
 
 Retrying generation with the same idempotency key returns the same immutable Document; reusing that key with different input fails.
 
-If generation fails, **Retry generation** resends the original inputs. Once generation has saved its source data, retries use that data even if the record or template changes. The dialog locks the inputs and hides the live preview during retries. To correct inputs or use current data, choose **Start a new attempt** and preview again. Check **All documents** first: the previous attempt may already have created a Document, and a new attempt can create another one. Writers can still manage existing Document links when its template is disabled or no longer available.
+Creation-only `issuancePolicy: "oncePerFinalizedRecord"` reuses frozen input, number and Document across keys/runs. Finalize, then generate. If rendering fails, retry generation for the same Record/template without resetting or repeating finalization. Access is rechecked; live preview is unnecessary and may differ. Default: `repeatable`. Cloned templates have independent issuance scopes.
+
+**Retry generation** locks original inputs and captured data; no live preview. For `repeatable`, **Start a new attempt** uses current data for another Document; check **All documents** first. Once-only issuance still reuses the original. Writers can manage existing links without an enabled template.
 
 A template selects one renderer. The HTML renderer turns Liquid HTML and CSS into a PDF. An installed E-Invoice renderer maps the selected record through Liquid JSON, then creates and validates the PDF and structured artifact together. The renderer changes the artifacts a Document contains, not the Document model or the way it is generated, listed, inspected, or downloaded.
 
 Validation proves only the technical checks named by the selected renderer and version. It is not a general tax, accounting, signature, custody, or legal-compliance decision. Use `cld grids documents renderers --json` to inspect the renderers available on this installation, including each renderer's `inputSchema`. `cld grids document-templates reference --json` provides the template create/update schemas. These describe structural inputs; preview also checks the renderer's semantic rules.
 
-The built-in `de.zugferd.en16931@1` renderer creates outgoing EUR invoices as a readable PDF/A-3b with an embedded `factur-x.xml`, and retains the XML as a separate artifact. It verifies the embedded XML after rendering, targets ZUGFeRD 2.5 / Factur-X 1.09 EN 16931, validates the generated CII XML against the pinned XSD, and uses exact decimal strings with documented half-up rounding. Version 1 supports German seller and buyer addresses, standard VAT categories, and bank transfer. It does not cover corrections, replacements, incoming invoices, foreign currencies, tax exemptions, allowances, charges, prepayments, cash discounts, self-billing, or filings. The invoice issuer is responsible for the content and for checking whether this renderer fits the intended use. Grids does not certify tax or legal compliance.
+`de.zugferd.en16931@1` renders outgoing EUR invoices for German seller/buyer addresses, standard VAT and bank transfer. It creates PDF/A-3b with embedded and separate `factur-x.xml`, verifies embedding and pinned CII XSD, and targets ZUGFeRD 2.5 / Factur-X 1.09 EN 16931 with exact decimal strings and half-up rounding. Unsupported: corrections, incoming invoices, exemptions, allowances, charges, prepayments, discounts, self-billing and filings. The issuer must verify suitability; Grids does not certify legal compliance.
 
 Version 2 (`de.zugferd.en16931@2`) additionally renders credit notes with an original invoice number, date and reason, and self-billing with an agreement reference. It requires an explicit document kind and service date. Quantities and amounts stay positive; the document kind determines whether it is an invoice or a credit. For self-billing, the seller remains the supplier and the buyer remains the customer issuing the document. Payment details identify the intended receiving account; they are not inferred from the document kind.
 
@@ -442,7 +444,7 @@ The document page lists every generated Document for a template. Use **Table** f
 
 **All documents** opens in **Folders**, grouped by document template and then year. Its search covers filenames, document numbers, and tags across the Base, regardless of the open folder. Both document pages include their first results when the page loads.
 
-Open a document to download its stored files. Workflow outputs show the captured row count and data timestamp. **Preview** displays CSV, JSON and XML up to 2 MiB; larger files remain downloadable. CSV shows the original text, without guessing its delimiter. **Share links** is available only for PDFs. **Technical details** opens IDs and checksums. Subdialogs return to the document. Writers can use **More actions → Generate again** without changing the original.
+Document details offer stored downloads, captured row count and timestamp. **Preview** shows CSV, JSON and XML up to 2 MiB; larger files remain downloadable. CSV stays original text. **Share links** requires PDF; **Technical details** shows IDs and hashes. Subdialogs return here. **More actions → Generate again** follows the template's issuance policy, never overwriting the original.
 
 Before generation you can add tags and, for an HTML template, override the filename. An E-Invoice renderer owns its artifact filenames. A completed Document's number, filename, tags, and artifacts are immutable.
 
@@ -459,7 +461,7 @@ To share one generated PDF without a Cloud login, create a public link for 1, 7,
 
 Generating a PDF creates a recursive snapshot of the root record and related records reached through relation fields. A snapshot includes at most four relation levels and 500 records. Grids renders once and stores the exact completed PDF bytes together with their SHA-256, MIME type, size, renderer version, template revision, document number, and source snapshot. Downloads return those stored bytes even after live records, the template, or the renderer change.
 
-Use **Generate again** to create a new Document and its artifacts. It never replaces an older Document. Open the Document details to inspect its renderer, source Record, validation status, and artifact hashes.
+**Generate again:** `repeatable` creates another Document; `oncePerFinalizedRecord` retrieves the original, even after template edits. Details show renderer, source, validation and hashes.
 
 :::reference
 - **Document numbers:** Each Document receives a stable number. HTML templates use their configured number pattern; an E-Invoice renderer owns its numbering. Allocations are never reused; technical gaps are possible. Pattern changes affect future Documents only.
@@ -491,6 +493,7 @@ These are safety ceilings, not layout targets. For a document with thousands of 
 - **Invalid GQL source:** Open the Source tab. It shows the GQL after Liquid variables were substituted.
 - **Missing Liquid variable:** Choose a preview record, open Data, then copy the exact path from the tree.
 - **Empty document rows:** Check the GQL source filter and confirm the selected preview record matches it.
+- **Invalid E-Invoice details:** The message names the affected party, bank or document fields. Correct and save their source records, then retry. If the values are already correct, check the template's Renderer input mapping. Preview does not allocate an official number.
 - **Barcode does not render:** Check the barcode type and input value. Empty input returns an empty data URL.
 - **Multipage layout breaks:** Move repeated content to header/footer, set @page margins, and preview with enough rows.
 :::

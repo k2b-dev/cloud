@@ -5,7 +5,7 @@ icon: ti ti-layout-grid
 description: Compose responsive pages from typed, resource-backed blocks.
 order: 134
 ---
-A Grids App is a small composition of existing Grids resources. Its page tree controls layout and navigation; its blocks control which resources appear and which already-defined operations a person may start.
+A Grids App arranges existing resources into pages and exposes selected operations through blocks.
 
 ## Set up pages and layout {icon="layout-grid"}
 
@@ -15,7 +15,7 @@ This release supports required Record parameters only. Each parameter declares a
 
 Under **Route parameters**, choose a parameter ID and its table. Adding a Record or Rendered HTML block binds that parameter automatically. A route-only page can also use the authorized parameter in GQL or fixed Form values without displaying the record. Required-parameter pages stay out of navigation and cannot be the start page. Missing or inaccessible records show the standard unavailable state.
 
-Pages contain rows, columns and blocks. Use width 12 for one task, 8 + 4 for main content and context, or 6 + 6 for peers. Columns stack in order on narrow screens. Check both widths before publishing; do not create separate mobile layouts.
+Pages contain rows, columns and blocks: width 12 for one task, 8 + 4 for main content and context, 6 + 6 for peers. Columns stack on narrow screens; check both widths before publishing.
 
 ## Configure resource-backed blocks {icon="blocks"}
 
@@ -47,7 +47,7 @@ The published capability records the exact tables and fields behind the block. A
 
 ### Form
 
-Form references one existing Grids form. The form owns visible fields, validation, required inputs, defaults, and record creation.
+Form owns inputs, validation, defaults, and creation. App readers can select related records without Base access: search exposes only IDs and published presentable labels from the configured target. Changing those labels or their formula dependencies requires republishing.
 
 Choose **Form action → Edit this page's record** to edit an existing draft. The page must bind a record from the Form's table. The server loads its inputs and configured inline rows before rendering; saving checks the versions of the parent and edited rows together. Removing an inline row detaches it from the parent, but does not delete the underlying record. Shared rows and finalized records cannot be edited this way. Related tables must belong to the same Base. Existing Form blocks keep creating new records unless you change this action and publish the App again.
 
@@ -65,7 +65,7 @@ The Edit action appears only when the publication includes that writable field a
 
 An editable File field uses the same audited Add, atomic Replace, and **Remove from record** lifecycle as the Base workspace. The App grant remains the outer gate and the published editable-field capability narrows it further. Removal detaches the current attachment; protected history or artifacts may retain the exact bytes, while unprotected files may be cleaned up.
 
-An optional `documents.templateIds` allowlist shows existing generated PDFs linked to the current record. Every template must belong to the page record table when the app is published. The runtime uses the immutable capability and protected document download route. The block does not generate documents or create public links; use a Workflow for generation.
+`documents.templateIds` shows linked documents from templates belonging to the page record's table. Downloads are protected; issuance requires a Workflow. Optional draft previews require an explicit grant: see [the API reference](/app/grids/help/grids-custom-app-api). This block creates no public links.
 
 ### Rendered HTML
 
@@ -114,7 +114,7 @@ availableWhen:
     limit 1
 ```
 
-An empty result, invalid query, missing context, timeout, or cancellation means unavailable. The runtime omits the resource, does not execute its data source, and rechecks the guard before every Form submission or action invocation. Browser visibility is never the enforcement boundary.
+Empty results or query errors omit the resource and data source. Submission, invocation and Workflow effects recheck guards, grants, launcher and publication. `atomicRecords` checks once after locks; its own changes do not invalidate that step. Later effects check again. Enforce starting state with atomic checks.
 
 In the visual builder, optional availability stays collapsed until you add a rule. Its summary says **Always**, **Custom rule**, or **Needs attention**. Edit short queries in the inspector or choose **Open large editor** for the same automatically saved draft value. Both editors use only the implicit context available on the selected page; the raw GQL console deliberately does not offer Grids App `@…` context.
 

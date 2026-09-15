@@ -1,6 +1,8 @@
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { FormConfigSchema } from "../contracts";
 import { isRecordWritableFieldType } from "../field-types";
+import { inspectFormComputedFields } from "../form-computed-fields";
+import { formComputedDiagnosticMessage } from "../form-computed-messages";
 import { formValidationFieldsCompatible } from "../form-validations";
 import { listByTable as listFields, validateDefaultValue } from "./fields";
 import { formMessagesFor } from "./form-messages";
@@ -100,6 +102,14 @@ export const validateFormConfig = async (tableId: string, config: unknown, local
   }
 
   const userInputIds = new Set(normalizedFields.filter((entry) => entry.kind === "user_input").map((entry) => entry.fieldId));
+  const summary = inspectFormComputedFields(
+    (parsed.data.computedFields ?? []).map((entry) => entry.fieldId),
+    userInputIds,
+    fields,
+  );
+  if (!summary.ok) {
+    return fail(err.badInput(formComputedDiagnosticMessage(summary.code, locale)));
+  }
   for (const rule of parsed.data.validations ?? []) {
     const left = byId.get(rule.leftFieldId);
     const right = byId.get(rule.rightFieldId);

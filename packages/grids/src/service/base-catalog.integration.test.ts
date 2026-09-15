@@ -18,6 +18,41 @@ const grant = async (userId: string, permission: "none" | "read" | "write" | "ad
 };
 
 describe("base catalog integration", () => {
+  postgresTest("preserves JSON-looking text and falsy defaults in the authorized catalog", async () => {
+    const userId = testUuid();
+    const baseId = testUuid();
+    const tableId = testUuid();
+    const defaults = [
+      { name: "JSON text", type: "text", value: '{"kind":"now"}' },
+      { name: "Array text", type: "text", value: '["item"]' },
+      { name: "Incomplete text", type: "text", value: "{unfinished" },
+      { name: "Disabled", type: "boolean", value: false },
+      { name: "Duration", type: "duration", value: 0 },
+    ];
+    try {
+      await sql`INSERT INTO auth.users (id, uid, provider, profile, display_name, given_name, sn)
+        VALUES (${userId}::uuid, ${`catalog-${userId}`}, 'local', 'user', 'Catalog User', 'Catalog', 'User')`;
+      await sql`INSERT INTO grids.bases (id, short_id, name)
+        VALUES (${baseId}::uuid, ${testShortId("B")}, 'Default catalog')`;
+      await sql`INSERT INTO grids.tables (id, short_id, base_id, name)
+        VALUES (${tableId}::uuid, ${testShortId("T")}, ${baseId}::uuid, 'Defaults')`;
+      for (const [position, entry] of defaults.entries()) {
+        await sql`INSERT INTO grids.fields (id, short_id, table_id, name, type, config, default_value, position)
+          VALUES (${testUuid()}::uuid, ${testShortId("F")}, ${tableId}::uuid, ${entry.name}, ${entry.type},
+            '{}'::jsonb, ${JSON.stringify(entry.value)}::text::jsonb, ${position})`;
+      }
+      const baseAccess = await grant(userId, "read");
+      await sql`INSERT INTO grids.base_access (base_id, access_id) VALUES (${baseId}::uuid, ${baseAccess}::uuid)`;
+      const catalog = await listForBase({ baseId, userId, userGroups: [] });
+      expect(catalog.fieldsByTable[tableId]?.map(({ name, defaultValue }) => ({ name, value: defaultValue }))).toEqual(
+        defaults.map(({ name, value }) => ({ name, value })),
+      );
+    } finally {
+      await sql`DELETE FROM grids.bases WHERE id = ${baseId}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
+    }
+  });
+
   postgresTest("projects every live resource at the owning base level", async () => {
     const userId = testUuid();
     const baseId = testUuid();

@@ -19,6 +19,7 @@ type JoinScope = {
   alias: string;
   tableId: string;
   fields: Field[];
+  derivedColumns?: DslDerivedViewColumn[];
 };
 
 type ResolvedSource = SourceScope & {
@@ -41,8 +42,9 @@ const viewIsDerived = (view: DslViewSource): boolean => (view.query.groupBy?.len
 
 const derivedColumnsForView = (ctx: DslResolverContext, view: DslViewSource): DslDerivedViewColumn[] | undefined => {
   if (!viewIsDerived(view)) return undefined;
-  const columns = derivedViewColumns(view.query, aliveFields(ctx.fieldsByTableId[view.tableId] ?? []));
-  return isDiagnostic(columns) ? undefined : columns;
+  const columns = derivedViewColumns(view.query, aliveFields(ctx.fieldsByTableId[view.tableId] ?? []), view.summaryFormulaAggregations);
+  if (isDiagnostic(columns)) return undefined;
+  return columns;
 };
 
 const explicitSource = (query: string): { kind: "table" | "view"; ref: string; alias?: string } | undefined => {
@@ -126,13 +128,23 @@ const resolveSource = (
 };
 
 const collectJoinScopes = (ctx: DslResolverContext, query: string): JoinScope[] => {
-  const re = new RegExp(String.raw`\b(?:left\s+)?join\s+table\s+(${SOURCE_REF_RE})\s+as\s+([A-Za-z_][A-Za-z0-9_]*)`, "gi");
+  const re = new RegExp(String.raw`\b(?:left\s+)?join\s+(table|view)\s+(${SOURCE_REF_RE})\s+as\s+([A-Za-z_][A-Za-z0-9_]*)`, "gi");
   const joins: JoinScope[] = [];
   const seen = new Set<string>();
   for (const match of query.matchAll(re)) {
-    const ref = match[1] ? parseSourceReference(match[1]) : null;
-    const alias = match[2];
+    const ref = match[2] ? parseSourceReference(match[2]) : null;
+    const alias = match[3];
     if (!ref || !alias) continue;
+    if (match[1]!.toLowerCase() === "view") {
+      const view = resolveView(ctx, ref);
+      const derivedColumns = view && derivedColumnsForView(ctx, view);
+      if (!view || !derivedColumns || !ctx.tables.some((table) => table.id === view.tableId)) continue;
+      const key = normalizeRefKey(alias);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      joins.push({ alias, tableId: view.tableId, fields: [], derivedColumns });
+      continue;
+    }
     const table = ctx.tables.find((item) => sourceMatches(item, ref));
     if (!table) continue;
     const key = normalizeRefKey(alias);
@@ -209,6 +221,9 @@ export const fieldReferenceSuggestions = (
   if (scope) {
     const join = joins.find((item) => normalizeRefKey(item.alias) === normalizeRefKey(scope));
     if (join) {
+      if (join.derivedColumns) return rankItems(query, range, join.derivedColumns
+        .filter((column) => purpose === "join" ? column.kind === "group" : columnAllowedForPurpose(column, purpose, aggregate))
+        .map((column) => derivedColumnItem(range, column)));
       if (purpose === "join") items.push(pseudoIdItem(range, "id"));
       pushFields(join.fields);
       return rankItems(query, range, uniqueItems(items));
@@ -231,6 +246,13 @@ export const fieldReferenceSuggestions = (
   }
 
   for (const join of joins) {
+    if (join.derivedColumns) {
+      for (const column of join.derivedColumns) {
+        if (purpose === "join" ? column.kind === "group" : columnAllowedForPurpose(column, purpose, aggregate))
+          items.push(derivedColumnItem(range, column, `${join.alias}.${formatIdentifierRef(column.label)}`));
+      }
+      continue;
+    }
     for (const field of join.fields) {
       if (!fieldAllowedForPurpose(ctx, field, purpose, aggregate)) continue;
       const ref = `${join.alias}.${formatIdentifierRef(field.name)}`;

@@ -82,12 +82,11 @@ const iso = (value: Date | string): string => (value instanceof Date ? value.toI
 
 const parseUuidArray = (value: unknown): string[] => {
   if (Array.isArray(value)) return value.filter((item): item is string => typeof item === "string");
-  if (typeof value !== "string") return [];
-  if (value.startsWith("[")) {
-    const parsed = parseJsonbRow<unknown[]>(value, []);
-    return parsed.filter((item): item is string => typeof item === "string");
+  // Unlike JSONB, Bun returns PostgreSQL uuid[] as its native {uuid,...}
+  // text representation. This is driver decoding, not a stored JSON fallback.
+  if (typeof value === "string" && value.startsWith("{") && value.endsWith("}")) {
+    return value.slice(1, -1).split(",").filter(Boolean);
   }
-  if (value.startsWith("{") && value.endsWith("}")) return value.slice(1, -1).split(",").filter(Boolean);
   return [];
 };
 

@@ -13,8 +13,19 @@ export const fetchRecordLookup = async (params: {
   includeDeleted?: boolean;
   signal: AbortSignal;
   locale?: string;
+  lookupUrl?: string;
 }): Promise<RecordLookupItem[]> => {
   const { t } = recordMessages.resolve([params.locale ?? "en"]);
+  if (params.lookupUrl) {
+    const url = new URL(params.lookupUrl, window.location.href);
+    url.searchParams.set("_search", params.query);
+    url.searchParams.set("_limit", String(params.limit ?? 10));
+    url.searchParams.set("_exclude", (params.excludeIds ?? []).join(","));
+    const response = await fetch(url, { signal: params.signal, headers: { Accept: "application/json" } });
+    if (!response.ok) throw new Error(t.recordLookupFailed);
+    const data: { items: RecordLookupItem[] } = await response.json();
+    return data.items;
+  }
   if (params.templateId) {
     const res = await apiClient.documents.templates[":templateId"].records.lookup.$get(
       {

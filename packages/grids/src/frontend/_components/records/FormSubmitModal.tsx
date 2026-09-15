@@ -4,6 +4,8 @@ import { createMemo, createSignal, For, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { PublicField as Field, PublicForm as Form } from "../../../api/public-dto";
 import { evaluateFormValidations } from "../../../form-validations";
+import { FormComputedSummary } from "../forms/FormComputedSummary";
+import { formFieldClass, formLayoutClass } from "../forms/field-layout";
 import { buildFormSubmitPayload, buildInitialValues, FieldInput, type InlineCreateState, userInputEntriesOf } from "../forms/form-fields";
 import { gridsFormMessages } from "../forms/messages";
 import { errorMessage } from "../utils/api-helpers";
@@ -59,7 +61,9 @@ function FormSubmitBody(props: {
   const fieldsById = new Map(props.fields.map((f) => [f.id, f]));
   const entries = userInputEntriesOf(props.form.config.fields);
 
-  const [values, setValues] = createSignal<Record<string, unknown>>(buildInitialValues(entries, props.fields));
+  const freshValues = () => buildInitialValues(entries, props.fields, { dateConfig: props.dateConfig, now: new Date() });
+  let initialValues = freshValues();
+  const [values, setValues] = createSignal<Record<string, unknown>>(initialValues);
   const [inlineCreates, setInlineCreates] = createSignal<InlineCreateState>({});
   const [submitting, setSubmitting] = createSignal(false);
   const [pendingSubmission, setPendingSubmission] = createSignal<Record<string, unknown> | null>(null);
@@ -72,7 +76,7 @@ function FormSubmitBody(props: {
       done() ||
       (await confirmDiscardIfDirty(
         () =>
-          JSON.stringify(values()) !== JSON.stringify(buildInitialValues(entries, props.fields)) || Object.keys(inlineCreates()).length > 0,
+          JSON.stringify(values()) !== JSON.stringify(initialValues) || Object.keys(inlineCreates()).length > 0,
       ))
     )
       props.close();
@@ -134,7 +138,8 @@ function FormSubmitBody(props: {
 
   const handleAddAnother = () => {
     setPendingSubmission(null);
-    setValues(buildInitialValues(entries, props.fields));
+    initialValues = freshValues();
+    setValues(initialValues);
     setInlineCreates({});
     setError(null);
     setDone(false);
@@ -157,12 +162,13 @@ function FormSubmitBody(props: {
           <p class="text-sm text-dimmed">{props.form.config.description}</p>
         </Show>
 
-        <fieldset disabled={submitting() || pendingSubmission() !== null} class="contents">
+        <fieldset disabled={submitting() || pendingSubmission() !== null} class={formLayoutClass}>
           <For each={entries}>
             {(entry) => {
               const field = fieldsById.get(entry.fieldId);
               if (!field || field.deletedAt) return null;
               return (
+                <div class={formFieldClass(entry.width)}>
                 <FieldInput
                   field={field}
                   entry={entry}
@@ -173,6 +179,7 @@ function FormSubmitBody(props: {
                   onInlineCreatesChange={setInlineDrafts}
                   dateConfig={props.dateConfig}
                 />
+                </div>
               );
             }}
           </For>
@@ -188,6 +195,7 @@ function FormSubmitBody(props: {
           </Show>
         </Show>
 
+        <FormComputedSummary config={props.form.config} fields={props.fields} values={values()} dateConfig={props.dateConfig} />
         <div class="mt-2 flex items-center gap-2">
           {/* Public-form share affordance — bottom-left so it doesn't
               compete with the primary Submit on the right. Only shown

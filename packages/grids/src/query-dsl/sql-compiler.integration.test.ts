@@ -101,17 +101,17 @@ describe("Query DSL Postgres smoke — rows and text search", () => {
     try {
       await sql`
         UPDATE grids.records
-        SET data = jsonb_set(data, ${`{${fixture.statusId}}`}::text[], ${JSON.stringify("a".repeat(20_000))}::jsonb)
+        SET data = jsonb_set(data, ${`{${fixture.statusId}}`}::text[], ${JSON.stringify("a".repeat(20_000))}::text::jsonb)
         WHERE id = ${fixture.orderBId}::uuid
       `;
       await sql`
         UPDATE grids.records
-        SET data = jsonb_set(data, ${`{${fixture.statusId}}`}::text[], ${JSON.stringify("b".repeat(20_000))}::jsonb)
+        SET data = jsonb_set(data, ${`{${fixture.statusId}}`}::text[], ${JSON.stringify("b".repeat(20_000))}::text::jsonb)
         WHERE id = ${fixture.orderAId}::uuid
       `;
       await sql`
         UPDATE grids.records
-        SET data = jsonb_set(data, ${`{${fixture.statusId}}`}::text[], ${JSON.stringify("c".repeat(20_000))}::jsonb)
+        SET data = jsonb_set(data, ${`{${fixture.statusId}}`}::text[], ${JSON.stringify("c".repeat(20_000))}::text::jsonb)
         WHERE id = ${fixture.orderCId}::uuid
       `;
 

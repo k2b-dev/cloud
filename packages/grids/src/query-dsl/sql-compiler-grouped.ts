@@ -5,6 +5,7 @@ import { compileFilter, renderClause } from "../service/filter-compiler";
 import { compileFormulaPredicateAstToSql, type FormulaSqlType } from "../service/formula-sql-compiler";
 import { compileGroupQuery, type GroupHavingRef } from "../service/group-compiler";
 import { compileDslKeyset, type DslKeysetColumn } from "../service/keyset-compiler";
+import { assertSqlIdentifier } from "../service/sql-ident";
 import type { DslResolvedSqlAggregation, DslResolvedSqlGroupBy, DslResolvedSqlQueryPlan } from "./resolver";
 import { aliveFields, fieldById } from "./sql-compiler-fields";
 import { joinFragments } from "./sql-compiler-fragments";
@@ -150,8 +151,9 @@ const compileJoinedGroupedQueryPlanToSql = (plan: DslResolvedSqlQueryPlan, optio
           resolveField: (ref) => {
             const aggregate = plan.formulaHaving?.aggregateRefs.find((item) => normalizeRefKey(item.ref) === normalizeRefKey(ref));
             if (!aggregate) return null;
-            const resolved = aggregateExprsByKey.get(aggregateKey(aggregate));
-            return resolved ? { sql: resolved.expr, type: resolved.type } : null;
+            const key = aggregateKey(aggregate);
+            const resolved = aggregateExprsByKey.get(key);
+            return resolved ? { sql: sql`${sql.unsafe(`"${assertSqlIdentifier(key)}"`)}`, type: resolved.type } : null;
           },
         })
       : null;
@@ -217,7 +219,9 @@ const compileJoinedGroupedQueryPlanToSql = (plan: DslResolvedSqlQueryPlan, optio
   const groupByClause = groupBySql.length > 0 ? sql`GROUP BY ${joinFragments(groupBySql, sql`, `)}` : sql``;
   const limit = aggregateOnly ? 1 : options.limit === null ? null : Math.min(Math.max(options.limit ?? plan.query.limit ?? 100, 1), 10_001);
   const offset = aggregateOnly ? 0 : dslSqlOffset(options, plan.offset);
-  const havingClause = having && having.ok ? sql`HAVING ${having.expression.sql}` : sql``;
+  // Filter the projected aggregates rather than expanding their calculation
+  // again in HAVING (especially costly for object-list/formula inputs).
+  const havingClause = having && having.ok ? having.expression.sql : sql`TRUE`;
   const groupedSql = sql`
     SELECT ${joinFragments(selectParts, sql`, `)}
     FROM ${dslRecordRelation(options)}
@@ -226,18 +230,17 @@ const compileJoinedGroupedQueryPlanToSql = (plan: DslResolvedSqlQueryPlan, optio
     ${joinFragments(joinSql, sql` `)}
     WHERE ${where}
     ${groupByClause}
-    ${havingClause}
   `;
   const pagedSql = keyset
     ? sql`
         SELECT grouped.*, ${keyset.select}
         FROM (${groupedSql}) grouped
-        WHERE ${keyset.where}
+        WHERE (${havingClause}) AND (${keyset.where})
         ORDER BY ${keyset.orderBy}
         LIMIT ${limit}
         OFFSET ${offset}
       `
-    : sql`${groupedSql} LIMIT ${limit}`;
+    : sql`SELECT * FROM (${groupedSql}) grouped WHERE ${havingClause} LIMIT ${limit}`;
 
   return {
     ok: true,

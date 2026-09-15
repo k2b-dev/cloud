@@ -1,4 +1,5 @@
 import { sql } from "bun";
+import type { DslSqlFederatedRecordSource } from "../query-dsl/sql-compiler-types";
 import { assertFederatedPublication, buildDslSqlRecordSource } from "../query-dsl/sql-record-source";
 import type { SqlClient } from "./audit";
 import { buildFormulaSqlProjections } from "./computed-projections";
@@ -119,18 +120,23 @@ export const lookupRecords = async (params: {
   limit?: number;
   excludeIds?: string[];
   includeDeleted?: boolean;
+  /** Internal publication snapshot: do not reload mutable label configuration after authorization. */
+  labelSnapshot?: { fields: Field[]; presentable: Field[]; tableKind: string; recordSource: DslSqlFederatedRecordSource | null };
+  recordIds?: string[];
+  untitledLabel?: string;
 }): Promise<{ items: { id: string; label: string }[] }> => {
   const limit = Math.min(Math.max(params.limit ?? 10, 1), 50);
-  const fields = await listFields(params.targetTableId);
-  const presentable = relationLabelFields(fields);
+  const fields = params.labelSnapshot?.fields ?? (await listFields(params.targetTableId));
+  const presentable = params.labelSnapshot?.presentable ?? relationLabelFields(fields);
   const searchTargets = presentable.filter((field) => LABEL_TEXT_TYPES.has(field.type));
   const presentableIds = new Set(presentable.map((field) => field.id));
   const formulaSearchTargets = buildFormulaSqlProjections(fields).filter(
     (projection) => presentableIds.has(projection.fieldId) && projection.expr,
   );
-  const table = await getTable(params.targetTableId);
-  const recordSource =
-    table?.kind === "federated"
+  const tableKind = params.labelSnapshot?.tableKind ?? (await getTable(params.targetTableId))?.kind;
+  const recordSource = params.labelSnapshot
+    ? params.labelSnapshot.recordSource
+    : tableKind === "federated"
       ? await buildDslSqlRecordSource(
           params.targetTableId,
           { [params.targetTableId]: fields },
@@ -152,6 +158,7 @@ export const lookupRecords = async (params: {
   if (params.excludeIds && params.excludeIds.length > 0) {
     conditions.push(sql`r.id <> ALL(${sql.array(params.excludeIds, "UUID")})`);
   }
+  if (params.recordIds) conditions.push(sql`r.id = ANY(${sql.array(params.recordIds, "UUID")})`);
   const where = conditions.reduce((left, right) => sql`${left} AND ${right}`);
   if (recordSource) await assertFederatedPublication(recordSource);
   const rows = recordSource
@@ -179,7 +186,7 @@ export const lookupRecords = async (params: {
   return {
     items: records.map((record) => {
       const parts = presentable.map((field) => formatLabelPart(record.data[field.id])).filter((part) => part.length > 0);
-      return { id: record.id, label: parts.length > 0 ? parts.join(" · ") : "Untitled record" };
+      return { id: record.id, label: parts.length > 0 ? parts.join(" · ") : (params.untitledLabel ?? "Untitled record") };
     }),
   };
 };

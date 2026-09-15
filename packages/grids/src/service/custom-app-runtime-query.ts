@@ -6,6 +6,7 @@ import { previewDslQuery } from "../query-dsl/preview";
 import type { DslResultCursor } from "../query-dsl/result-cursor";
 import { collectDslPlanTableIds } from "../query-dsl/source-plan";
 import { compileCustomAppQuery } from "./custom-app-query";
+import type { SqlClient } from "./audit";
 import type { ExpansionViewer } from "./relations";
 
 type PublishedQueryCapability = {
@@ -24,6 +25,7 @@ const sameIds = (left: readonly string[], right: readonly string[]): boolean =>
  */
 export const executePublishedCustomAppQuery = async (params: {
   baseId: string;
+  client?: SqlClient;
   source: string;
   capability: PublishedQueryCapability;
   context: DslQueryContextValues;
@@ -49,6 +51,7 @@ export const executePublishedCustomAppQuery = async (params: {
   }
 
   const compiled = await compileCustomAppQuery({
+    client: params.client,
     baseId: params.baseId,
     source: params.source,
     context: params.context,
@@ -91,8 +94,9 @@ export const executePublishedCustomAppQuery = async (params: {
     if (!group.fieldIds.includes(column.fieldId)) group.fieldIds.push(column.fieldId);
     joinedByAlias.set(column.joinAlias, group);
   }
-  const result = await runWithQueryAdmissionSignal(params.signal, (signal) =>
+  const execute = (signal: AbortSignal) =>
     previewDslQuery(compiled.data.plan, {
+      client: params.client,
       fieldsByTableId: compiled.data.fieldsByTableId,
       timeZone: params.timeZone,
       maxRows: params.maxRows,
@@ -120,8 +124,9 @@ export const executePublishedCustomAppQuery = async (params: {
       },
       authorizedTableIds,
       primaryTableAuthorized: true,
-    }),
-  );
+    });
+  // A transactional caller owns admission for its complete snapshot read.
+  const result = params.client ? await execute(params.signal) : await runWithQueryAdmissionSignal(params.signal, execute);
   return result.ok ? result.data : diagnostic(result.error.message);
 };
 

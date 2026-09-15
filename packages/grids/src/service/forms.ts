@@ -1,6 +1,6 @@
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { sql } from "bun";
-import { type FormValidationRule, FormValidationRuleSchema } from "../contracts";
+import { FormConfigSchema, FormFieldWidthSchema, type FormValidationRule, FormValidationRuleSchema } from "../contracts";
 import { logAudit } from "./audit";
 import { listByTable as listFields } from "./fields";
 import { validateFormConfig } from "./form-config-validation";
@@ -39,6 +39,7 @@ export type FormFieldEntry =
       fieldId: string;
       label?: string;
       helpText?: string;
+      width?: "fullWidth" | "compact";
       /** Tightens the field's own required flag for THIS form (cannot loosen). */
       required?: boolean;
       defaultValue?: unknown;
@@ -48,6 +49,7 @@ export type FormFieldEntry =
           fieldId: string;
           label?: string;
           helpText?: string;
+          width?: "fullWidth" | "compact";
           required?: boolean;
           defaultValue?: unknown;
         }>;
@@ -61,6 +63,7 @@ export type FormFieldEntry =
     };
 
 export type FormConfig = {
+  computedFields?: Array<{ fieldId: string; label?: string; helpText?: string; width?: "fullWidth" | "compact" }>;
   title?: string;
   description?: string;
   fields: FormFieldEntry[];
@@ -149,6 +152,7 @@ const normalizeFieldEntry = (raw: unknown): FormFieldEntry | null => {
     fieldId,
     label: typeof obj.label === "string" ? obj.label : undefined,
     helpText: typeof obj.helpText === "string" ? obj.helpText : undefined,
+    width: FormFieldWidthSchema.safeParse(obj.width).data,
     required: typeof obj.required === "boolean" ? obj.required : undefined,
     defaultValue: obj.defaultValue,
     inlineCreate:
@@ -168,6 +172,7 @@ const normalizeFieldEntry = (raw: unknown): FormFieldEntry | null => {
                           fieldId: nested.fieldId,
                           label: typeof nested.label === "string" ? nested.label : undefined,
                           helpText: typeof nested.helpText === "string" ? nested.helpText : undefined,
+                          width: FormFieldWidthSchema.safeParse(nested.width).data,
                           required: typeof nested.required === "boolean" ? nested.required : undefined,
                           defaultValue: nested.defaultValue,
                         }
@@ -195,6 +200,7 @@ export const normalizeFormConfig = (raw: unknown): FormConfig => {
     title: cfg.title,
     description: cfg.description,
     fields: entries,
+    computedFields: FormConfigSchema.shape.computedFields.safeParse(cfg.computedFields).data,
     validations: validations.length > 0 ? validations : undefined,
     submitLabel: cfg.submitLabel,
     successMessage: cfg.successMessage,

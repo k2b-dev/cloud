@@ -5,6 +5,7 @@ export const documentServiceMessages = i18n.define({
   messages: {
     en: {
       templateDisabled: "Document template is disabled.",
+      issuanceRequiresFinalization: "Finalize this record before issuing its document.",
       templateWrongTable: "Document template does not belong to the table.",
       recordNotFound: "Record",
       tableNotFound: "Table",
@@ -24,7 +25,7 @@ export const documentServiceMessages = i18n.define({
       sourceTooLarge: "GQL source is too large.",
       sourceInvalid: "The GQL source is invalid.",
       sourceExecutionFailed: "The GQL source could not be executed.",
-      workflowQueryInlineRequired: "Use an inline GQL query with an explicit table source. Live Views are not supported as workflow data.",
+      workflowQueryInlineRequired: "Use an inline GQL query with an explicit table source. Only grouped summary Views may be joined; their definitions are pinned when publishing.",
       workflowQuerySchemaChanged: "The query schema changed. Review and save the workflow again before generating documents.",
       workflowQueryAccessDenied: "You no longer have access to all tables used by this query.",
       workflowQueryIntegrityFailed: "Stored workflow query data failed its integrity check. No document was generated.",
@@ -205,6 +206,7 @@ export const documentServiceMessages = i18n.define({
       tableOutputNestedValue: ({ row, column }) =>
         `Zeile ${row}, Spalte „${column}“ enthält verschachtelte Daten. Wähle einen skalaren Wert oder aktiviere JSON-Zellen für CSV.`,
       templateDisabled: "Die Dokumentvorlage ist deaktiviert.",
+      issuanceRequiresFinalization: "Schreibe diesen Datensatz fest, bevor du sein Dokument ausstellst.",
       templateWrongTable: "Die Dokumentvorlage gehört nicht zu dieser Tabelle.",
       recordNotFound: "Datensatz",
       tableNotFound: "Tabelle",
@@ -224,7 +226,7 @@ export const documentServiceMessages = i18n.define({
       sourceInvalid: "Die GQL-Quelle ist ungültig.",
       sourceExecutionFailed: "Die GQL-Quelle konnte nicht ausgeführt werden.",
       workflowQueryInlineRequired:
-        "Verwende eine direkte GQL-Abfrage mit expliziter Tabelle. Live-Ansichten sind als Workflow-Daten nicht unterstützt.",
+        "Verwende eine direkte GQL-Abfrage mit expliziter Tabelle. Nur gruppierte Summen-Ansichten können verknüpft werden; ihre Definition wird beim Veröffentlichen gebunden.",
       workflowQuerySchemaChanged: "Das Abfrageschema wurde geändert. Prüfe und speichere den Workflow erneut, bevor du Dokumente erzeugst.",
       workflowQueryAccessDenied: "Du hast nicht mehr auf alle Tabellen dieser Abfrage Zugriff.",
       workflowQueryIntegrityFailed:

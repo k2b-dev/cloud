@@ -82,7 +82,7 @@ const mapField = (row: DbRow): Field => ({
   required: row.required as boolean,
   presentable: (row.presentable as boolean | null) ?? false,
   hideInTable: (row.hide_in_table as boolean | null) ?? false,
-  defaultValue: parseJsonbRow<unknown>(row.default_value, null),
+  defaultValue: row.default_value ?? null,
   indexed: row.indexed as boolean,
   uniqueConstraint: row.unique_constraint as boolean,
   deletedAt: row.deleted_at ? (row.deleted_at as Date).toISOString() : null,

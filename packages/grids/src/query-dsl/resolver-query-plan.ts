@@ -108,6 +108,8 @@ const resolveRowClauses = (ast: DslQueryAst, source: ResolvedSource, scope: Scop
   const diagnostics: DslResolverDiagnostic[] = [];
   const joins = resolveJoins(ast.joins, source, scope, ctx);
   diagnostics.push(...joins.diagnostics);
+  if (joins.summaryJoins.length > 0 && hasGroupedDslShape(ast))
+    diagnostics.push(diagnostic("grouped-view joins produce parent rows; use select formulas rather than grouping the joined result"));
 
   const select = resolveQueryPlanSelect(ast.select, scope);
   if (isDiagnostic(select)) diagnostics.push(select);
@@ -287,6 +289,7 @@ const buildSqlPlan = (options: {
     ...(viewSourceNeedsRecordScope(source) ? { viewSourceQuery: source.baseQuery } : {}),
     ...(ast.offset !== undefined ? { offset: ast.offset } : {}),
     ...(row.joins.joins.length > 0 ? { joins: row.joins.joins } : {}),
+    ...(row.joins.summaryJoins.length > 0 ? { summaryJoins: row.joins.summaryJoins } : {}),
     ...(row.select.outputColumns.length > 0 ? { outputColumns: row.select.outputColumns } : {}),
     ...(row.select.joinedColumns.length > 0 ? { joinedColumns: row.select.joinedColumns } : {}),
     ...(sort && sort.sqlSort.length > 0 ? { sqlSort: sort.sqlSort } : {}),
@@ -310,6 +313,8 @@ const buildSqlPlan = (options: {
 export const resolveDslQueryToQueryPlan = (ast: DslQueryAst, ctx: DslResolverContext): DslQueryPlanResolveResult => {
   const source = resolveSource(ast.source, ctx);
   if (isDiagnostic(source)) return { ok: false, diagnostics: [source] };
+  if (source.source.kind === "view" && source.source.summaryFormulaAggregations?.length)
+    return { ok: false, diagnostics: [diagnostic("this grouped formula view is available through left join view, not from view", ast.source?.span)] };
   if (isDerivedViewSource(source)) return resolveDerivedViewSourcePlan(ast, source, ctx);
 
   const sourceCompatibility = validateViewSource(source);

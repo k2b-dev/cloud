@@ -1,10 +1,12 @@
 import type { DateContext } from "@k2b/stdlib";
 import { Button, NoticeCard, PanelHeader, prompts, useLocale } from "@k2b/ui";
-import { createMemo, createSignal, For, onMount, Show } from "solid-js";
+import { createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import { evaluateFormValidations } from "../../../form-validations";
 import type { PublicRenderableForm } from "../../../service/forms";
 import { errorMessage } from "../utils/api-helpers";
+import { FormComputedSummary } from "./FormComputedSummary";
+import { formFieldClass, formLayoutClass } from "./field-layout";
 import {
   buildFormSubmitPayload,
   buildInitialValues,
@@ -23,6 +25,8 @@ type Props = {
   fields: Field[];
   inlineTargetFields?: Record<string, Field[]>;
   initialRecord?: FormEditState;
+  relationLabels?: Record<string, string>;
+  relationLookupFields?: string[];
   dateConfig?: DateContext;
   surface?: "bare" | "paper";
   showTitle?: boolean;
@@ -56,6 +60,7 @@ export default function FormSubmit(props: Props) {
   );
   const [inlineCreates, setInlineCreates] = createSignal<InlineCreateState>(props.initialRecord?.inlineCreates ?? {});
   const [submitting, setSubmitting] = createSignal(false);
+  const [dirty, setDirty] = createSignal(false);
   const [pendingSubmission, setPendingSubmission] = createSignal<Record<string, unknown> | null>(null);
   const [confirmedConflict, setConfirmedConflict] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
@@ -69,17 +74,29 @@ export default function FormSubmit(props: Props) {
   const setValue = (fieldId: string, v: unknown) => {
     if (pendingSubmission()) return;
     setValues((current) => ({ ...current, [fieldId]: v }));
+    setDirty(true);
     props.onDirtyChange?.(true);
   };
   const setInlineDrafts = (fieldId: string, drafts: InlineCreateState[string]) => {
     if (pendingSubmission()) return;
     setInlineCreates((current) => ({ ...current, [fieldId]: drafts }));
+    setDirty(true);
     props.onDirtyChange?.(true);
   };
   const hasInlineCreate = () => entries.some((entry) => entry.inlineCreate?.enabled);
   const surfaceClass = () => (props.surface === "bare" ? "w-full" : "paper mx-auto max-w-xl p-6");
 
-  onMount(() => setClientReady(true));
+  onMount(() => {
+    setClientReady(true);
+    const warn = (event: BeforeUnloadEvent) => {
+      if (!props.preview && (dirty() || submitting())) {
+        event.preventDefault();
+        event.returnValue = "";
+      }
+    };
+    window.addEventListener("beforeunload", warn);
+    onCleanup(() => window.removeEventListener("beforeunload", warn));
+  });
 
   const handleSubmit = async (event: Event) => {
     event.preventDefault();
@@ -130,6 +147,8 @@ export default function FormSubmit(props: Props) {
         setError(await errorMessage(res, t().submitFailed));
         return;
       }
+      setDirty(false);
+      setSubmitting(false);
       props.onDirtyChange?.(false);
       if (props.submitUrl) {
         const result = (await res.json()) as { navigateTo?: unknown };
@@ -192,9 +211,9 @@ export default function FormSubmit(props: Props) {
           data-grids-public-form-ready={clientReady() ? "true" : "false"}
           onSubmit={handleSubmit}
         >
-          <fieldset disabled={submitting() || pendingSubmission() !== null} class="flex flex-col gap-3 min-w-0">
+          <fieldset disabled={submitting() || pendingSubmission() !== null} class={formLayoutClass}>
             <Show when={hasInlineCreate()}>
-              <NoticeCard tone="warning" icon={false} bodyClass="flex items-start gap-2">
+              <NoticeCard class="basis-full" tone="warning" icon={false} bodyClass="flex items-start gap-2">
                 <i class="ti ti-alert-triangle mt-0.5 shrink-0" />
                 <span>{t().linkedRecordsWarning}</span>
               </NoticeCard>
@@ -204,10 +223,17 @@ export default function FormSubmit(props: Props) {
                 const field = fieldsById.get(entry.fieldId);
                 if (!field || field.deletedAt) return null;
                 return (
+                  <div class={formFieldClass(entry.width)}>
                   <FieldInput
                     field={field}
                     entry={entry}
                     value={values()[entry.fieldId]}
+                    relationLabels={props.relationLabels}
+                    relationLookupUrl={
+                      props.relationLookupFields?.includes(entry.fieldId)
+                        ? props.submitUrl?.replace(/\/submit(?=\?|$)/, `/relations/${entry.fieldId}/lookup`)
+                        : undefined
+                    }
                     onChange={(v) => setValue(entry.fieldId, v)}
                     error={() => validationErrors()[entry.fieldId]}
                     inlineCreates={inlineCreates}
@@ -215,6 +241,7 @@ export default function FormSubmit(props: Props) {
                     inlineTargetFields={props.inlineTargetFields}
                     dateConfig={props.dateConfig}
                   />
+                  </div>
                 );
               }}
             </For>
@@ -245,6 +272,7 @@ export default function FormSubmit(props: Props) {
             </Show>
           </Show>
 
+          <FormComputedSummary config={props.form.config} fields={props.fields} values={values()} dateConfig={props.dateConfig} />
           {/* Wrap the button so it sizes to its content rather than
               stretching the full form width (flex-column children are
               `align-items: stretch` by default). */}

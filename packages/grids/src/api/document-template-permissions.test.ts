@@ -81,6 +81,7 @@ const table = {
 };
 
 const template = {
+  issuancePolicy: "repeatable" as const,
   id: templateId,
   shortId: templatePublicId,
   tableId,
@@ -279,6 +280,7 @@ describe("document template permission surfaces", () => {
         name: template.name,
         description: template.description,
         renderer: template.renderer,
+        issuancePolicy: template.issuancePolicy,
         enabled: template.enabled,
         position: template.position,
         createdAt: template.createdAt,

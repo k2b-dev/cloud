@@ -4,6 +4,7 @@ import { validateObjectList } from "../field-types/object-list";
 import { FORMULA_LIMITS } from "../formula/parser";
 import { postgresTest } from "../integration-test-utils";
 import { migrate } from "../migrate";
+import { normalizedSqlParts } from "../sql-test-utils";
 import { applyComputedProjections, buildComputedColumnSqlProjections } from "./computed-projections";
 import { compileFormulaAstToSql, compileFormulaSourceToSql } from "./formula-sql-compiler";
 import { compileObjectListRow, compileObjectListValue } from "./object-list-sql";
@@ -19,6 +20,76 @@ const rowPlan = (fields: unknown[]) =>
   );
 
 describe("object-list SQL calculation", () => {
+  postgresTest("collects list values and errors in one value pass without dropping invalid rows", async () => {
+    const field = { id: "Items1", config: { fields: [
+      { id: "Amount", name: "Amount", type: "number", required: true },
+      { id: "Total1", name: "Total", type: "number", formula: { expression: "Amount / 2" } },
+    ] } };
+    const compiled = compileObjectListValue(field, "r", (ast, resolveField, recordAlias) =>
+      compileFormulaAstToSql(ast, { fields: [], resolveField, recordAlias }));
+    if (!compiled.ok) throw new Error(compiled.error);
+    const valueQuery = normalizedSqlParts(sql`SELECT ${compiled.expression.sql}`);
+    expect(valueQuery.text.match(/jsonb_array_elements\(/g)).toHaveLength(1);
+    for (const invalid of [false, true]) {
+      const values = [{ Amount: "2" }, { Amount: invalid ? "not-a-number" : "4" }];
+      const [result] = await sql`SELECT ${compiled.expression.sql} AS value, ${compiled.expression.errorSql} AS error
+        FROM (SELECT ${{ Items1: values }}::jsonb AS data, NULL::timestamptz AS finalized_at) r`;
+      expect(result.error).toBe(invalid);
+      expect(result.value).toEqual(invalid ? null : [{ Amount: "2", Total1: "1" }, { Amount: "4", Total1: "2" }]);
+    }
+  });
+  test("stages select normalization once for value and cardinality checks", () => {
+    const compiled = rowPlan([{
+      id: "Choice", name: "Choice", type: "select", required: true,
+      config: { multiple: true, minSelected: 1, maxSelected: 2,
+        options: [{ id: "a", label: "A" }, { id: "b", label: "B" }] },
+    }]);
+    if (!compiled.ok) throw new Error(compiled.error);
+    const query = normalizedSqlParts(sql`SELECT ${compiled.plan.json}, ${compiled.plan.errorSql}
+      FROM (SELECT '{}'::jsonb AS data) item ${compiled.plan.joins}`);
+    expect(query.text.match(/jsonb_agg\(/g)).toHaveLength(1);
+  });
+  postgresTest("preserves nullable calculated date types through staging", async () => {
+    for (const includeTime of [false, true]) {
+      const fields = [
+        {
+          id: "Result",
+          name: "Result",
+          type: "date",
+          config: {
+            includeTime,
+            min: includeTime ? "2026-01-01T00:00:00Z" : "2026-01-01",
+            max: includeTime ? "2026-12-31T00:00:00Z" : "2026-12-31",
+          },
+          formula: { expression: "NULL" },
+        },
+      ];
+      expect(validateObjectList([{}], { fields }, false)).toEqual({ ok: true, value: [{ Result: null }] });
+      const compiled = rowPlan(fields);
+      if (!compiled.ok) throw new Error(compiled.error);
+      const [row] = await sql<
+        Array<{ value: unknown; error: boolean }>
+      >`SELECT ${compiled.plan.json} AS value, ${compiled.plan.errorSql} AS error
+        FROM (SELECT '{}'::jsonb AS data) item ${compiled.plan.joins}`;
+      expect(row).toEqual({ value: { Result: null }, error: false });
+    }
+  });
+  postgresTest("preserves calculated scalar nulls and rejects required nulls in both runtimes", async () => {
+    for (const type of ["number", "boolean", "text"] as const) {
+      for (const required of [false, true]) {
+        const fields = [{ id: "Result", name: "Result", type, required, config: {}, formula: { expression: "NULL" } }];
+        const checked = validateObjectList([{}], { fields }, false);
+        expect(checked.ok).toBe(!required);
+        if (checked.ok) expect(checked.value).toEqual([{ Result: null }]);
+        const compiled = rowPlan(fields);
+        if (!compiled.ok) throw new Error(compiled.error);
+        const [row] = await sql<Array<{ value: unknown; error: boolean }>>`
+          SELECT ${compiled.plan.json} AS value, ${compiled.plan.errorSql} AS error
+          FROM (SELECT '{}'::jsonb AS data) item ${compiled.plan.joins}`;
+        expect(row).toEqual({ value: { Result: null }, error: required });
+      }
+    }
+  });
   postgresTest("matches select membership, cardinality and normalization after schema changes", async () => {
     for (const required of [false, true]) {
       for (const multiple of [false, true]) {

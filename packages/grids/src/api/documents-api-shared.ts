@@ -2,6 +2,7 @@ import { type AuthContext, getDateConfig, getLocale, type RequestActor } from "@
 import type { Context } from "hono";
 import { z } from "zod";
 import {
+  DocumentIssuancePolicySchema,
   DocumentTemplateRendererSchema,
   DocumentTemplateRendererSummarySchema,
   type DocumentTemplateSummary,
@@ -41,6 +42,7 @@ export const PublicDocumentTemplateSchema = z.object({
   description: z.string().nullable(),
   source: z.string(),
   renderer: DocumentTemplateRendererSchema,
+  issuancePolicy: DocumentIssuancePolicySchema,
   enabled: z.boolean(),
   position: z.number().int(),
   createdBy: z.string().uuid().nullable(),
@@ -57,6 +59,7 @@ export const PublicDocumentTemplateSummarySchema = PublicDocumentTemplateSchema.
   name: true,
   description: true,
   enabled: true,
+  issuancePolicy: true,
   position: true,
   createdAt: true,
   updatedAt: true,
@@ -238,6 +241,7 @@ export const projectDocumentTemplateSummaries = async (templates: readonly Docum
     name: template.name,
     description: template.description,
     renderer: template.renderer,
+    issuancePolicy: template.issuancePolicy,
     enabled: template.enabled,
     position: template.position,
     createdAt: template.createdAt,
@@ -722,7 +726,21 @@ export const renderDraftPdfResponse = async (
   const dateConfig = await getDateConfig(c);
   const rendered = await liveRenderData(c, { ...params, createdAt, dateConfig });
   if (!rendered.ok) return c.json({ message: rendered.message, phase: rendered.phase }, rendered.status === 400 ? 400 : 404);
-  const data = await addDraftDocumentMetadata(c, { template: params.template, data: rendered.data, createdAt, dateConfig });
+  return renderPreparedDraftPdfResponse(c, { template: params.template, data: rendered.data, createdAt, dateConfig });
+};
+
+/** Render only after the caller has authorized and prepared the complete data. */
+export const renderPreparedDraftPdfResponse = async (
+  c: Context<AuthContext>,
+  params: {
+    template: ReturnType<typeof draftTemplateFromBody>;
+    data: Record<string, unknown>;
+    createdAt: Date;
+    dateConfig: Awaited<ReturnType<typeof getDateConfig>>;
+  },
+) => {
+  const { createdAt } = params;
+  const data = await addDraftDocumentMetadata(c, params);
   if (!data.ok) return data.response;
 
   if (params.template.renderer.kind === "profile") {
@@ -733,6 +751,7 @@ export const renderDraftPdfResponse = async (
       profileVersion: params.template.renderer.version,
       snapshot: input.data,
       issuedAt: createdAt,
+      locale: getLocale(c),
     });
     if (!preview.ok) return c.json({ message: preview.error.message, phase: "profile" }, preview.error.status);
     const pdf = preview.data.find((artifact) => artifact.key === "pdf");

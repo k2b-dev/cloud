@@ -1,6 +1,7 @@
-import { Button, IconButton, NoticeCard, useLocale } from "@k2b/ui";
+import { Button, IconButton, NoticeCard, Placeholder, useLocale } from "@k2b/ui";
 import { createMemo, createSignal, For, Index, type JSX, Show } from "solid-js";
 import {
+  createObjectListEntry,
   type ObjectListColumn,
   ObjectListConfigSchema,
   objectListScalarHandlers,
@@ -9,6 +10,7 @@ import {
 import type { FormulaRuntimeContext } from "../../../formula/function-runtime";
 import { formatCell } from "../table/format-cell";
 import { gridsFormMessages } from "./messages";
+import { formFieldClass, formLayoutClass } from "./field-layout";
 
 /** A parent-owned value editor; row controls never create independent records. */
 export function ObjectListInput(props: {
@@ -33,6 +35,7 @@ export function ObjectListInput(props: {
   const t = () => gridsFormMessages.resolve([locale()]).t;
   const pageSize = 25;
   const [requestedPage, setPage] = createSignal(0);
+  const [showDetails, setShowDetails] = createSignal(false);
   const page = () => Math.min(requestedPage(), Math.max(0, Math.ceil(rows().length / pageSize) - 1));
   let root: HTMLFieldSetElement | undefined;
   const focusRow = (index: number) => {
@@ -52,6 +55,23 @@ export function ObjectListInput(props: {
       : [];
   const validValue = () => props.value == null || (Array.isArray(props.value) && rows().length === props.value.length);
   const calculatedColumns = createMemo(() => config()?.fields.filter((column) => column.formula) ?? []);
+  const addButton = () => (
+    <Button
+      type="button"
+      variant="input"
+      disabled={rows().length >= (config()?.maxItems ?? 0)}
+      onClick={() => {
+        const index = rows().length;
+        const settings = config();
+        if (!settings) return;
+        props.onChange([...rows(), createObjectListEntry(settings)]);
+        focusRow(index);
+      }}
+    >
+      <i class="ti ti-plus" aria-hidden="true" />
+      {t().listAddRow}
+    </Button>
+  );
   const changeCell = (index: number, id: string, value: unknown) =>
     props.onChange(rows().map((row, current) => (current === index ? { ...row, [id]: value } : row)));
   const move = (index: number, delta: number) => {
@@ -75,9 +95,6 @@ export function ObjectListInput(props: {
         <p class="text-sm text-dimmed">{props.description}</p>
       </Show>
       <Show when={config() && validValue()} fallback={<NoticeCard tone="danger">{t().listInvalidValue}</NoticeCard>}>
-        <Show when={rows().length === 0}>
-          <p class="text-sm text-dimmed">{t().listEmpty}</p>
-        </Show>
         <Show when={page() + 1} keyed>
           {(selectedPage) => (
             <Index each={rows().slice((selectedPage - 1) * pageSize, selectedPage * pageSize)}>
@@ -97,14 +114,31 @@ export function ObjectListInput(props: {
                   const result = preview();
                   return result && !result.ok ? result.calculationError : undefined;
                 };
+                const calculatedValue = (column: ObjectListColumn) => (
+                  <div class="flex min-w-0 flex-col gap-1 py-1">
+                    <span class="break-words text-sm text-dimmed">{column.name}</span>
+                    <output class="min-h-6 break-words font-medium tabular-nums" aria-label={column.name}>
+                      {(() => {
+                        const result = preview();
+                        const value = result?.ok && Array.isArray(result.value) ? result.value[0]?.[column.id] : undefined;
+                        return value == null ? (
+                          <span class="sr-only">{t().calculationPending}</span>
+                        ) : (
+                          formatCell(value, column.type, column.config, undefined, props.dateConfig, locale())
+                        );
+                      })()}
+                    </output>
+                  </div>
+                );
                 return (
-                  <fieldset data-list-row tabIndex={-1} class="flex min-w-0 flex-col gap-3 rounded-lg bg-input p-3">
+                  <fieldset data-list-row tabIndex={-1} class="paper flex min-w-0 flex-col gap-3 p-3">
                     <legend class="sr-only">{t().listRow({ number: index + 1 })}</legend>
                     <div class="flex items-center gap-2">
                       <span class="mr-auto text-sm text-dimmed">{t().listRow({ number: index + 1 })}</span>
                       <IconButton
                         type="button"
                         variant="ghost"
+                        size="sm"
                         label={t().listMoveUp}
                         disabled={index === 0}
                         onClick={() => move(index, -1)}
@@ -114,6 +148,7 @@ export function ObjectListInput(props: {
                       <IconButton
                         type="button"
                         variant="ghost"
+                        size="sm"
                         label={t().listMoveDown}
                         disabled={index === rows().length - 1}
                         onClick={() => move(index, 1)}
@@ -123,6 +158,7 @@ export function ObjectListInput(props: {
                       <IconButton
                         type="button"
                         variant="ghost"
+                        size="sm"
                         label={t().listRemoveRow}
                         onClick={() => {
                           const next = rows().filter((_, current) => current !== index);
@@ -133,68 +169,43 @@ export function ObjectListInput(props: {
                         <i class="ti ti-trash" aria-hidden="true" />
                       </IconButton>
                     </div>
-                    <div class="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2">
-                      <For each={config()?.fields.filter((column) => !column.formula) ?? []}>
-                        {(column) =>
-                          props.renderCell(
-                            column,
-                            `${props.name}-${index}-${column.id}`,
-                            () => row()[column.id],
-                            (value) => changeCell(index, column.id, value),
-                            () => {
-                              const value = row()[column.id];
-                              if (value === undefined && !props.error) return undefined;
-                              const result = objectListScalarHandlers[column.type].validate(value, column.config, column.required, {
-                                dateConfig: props.dateConfig,
-                                locale: locale(),
-                              });
-                              return result.ok ? undefined : result.error;
-                            },
-                          )
-                        }
+                    <div class={formLayoutClass}>
+                      <For each={config()?.fields.filter((column) => !column.detailsOnly || showDetails()) ?? []}>
+                        {(column) => (
+                          <div class={formFieldClass(column.width)}>
+                            {column.formula
+                              ? calculatedValue(column)
+                              : props.renderCell(
+                                  column,
+                                  `${props.name}-${index}-${column.id}`,
+                                  () => row()[column.id],
+                                  (value) => changeCell(index, column.id, value),
+                                  () => {
+                                    const value = row()[column.id];
+                                    if (value === undefined && !props.error) return undefined;
+                                    const result = objectListScalarHandlers[column.type].validate(value, column.config, column.required, {
+                                      dateConfig: props.dateConfig,
+                                      locale: locale(),
+                                    });
+                                    return result.ok ? undefined : result.error;
+                                  },
+                                )}
+                          </div>
+                        )}
                       </For>
                     </div>
-                    <Show when={calculatedColumns().length > 0}>
-                      <dl class="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2">
-                        <For each={calculatedColumns()}>
-                          {(column) => {
-                            const value = () => {
-                              const result = preview();
-                              return result?.ok && Array.isArray(result.value) ? result.value[0]?.[column.id] : undefined;
-                            };
-                            return (
-                              <div class="min-w-0">
-                                <dt class="text-sm text-dimmed">
-                                  <i class="ti ti-calculator" aria-hidden="true" /> {column.name}
-                                </dt>
-                                <dd class="break-words tabular-nums">
-                                  <output>
-                                    {formatCell(value(), column.type, column.config, undefined, props.dateConfig, locale()) || "—"}
-                                  </output>
-                                </dd>
-                              </div>
-                            );
-                          }}
-                        </For>
-                      </dl>
-                    </Show>
-                    <Show when={preview() && !preview()?.ok}>
-                      <Show when={calculationError()} fallback={<p class="text-sm text-dimmed">{t().listPreviewIncomplete}</p>}>
-                        {(error) => (
-                          <NoticeCard tone="danger" title={`${error().field}: ${error().detail}`}>
-                            {t().listCalculationFailed}
-                          </NoticeCard>
-                        )}
-                      </Show>
+                    <Show when={calculationError()}>
+                      {(error) => (
+                        <NoticeCard tone="danger" title={`${error().field}: ${error().detail}`}>
+                          {t().listCalculationFailed}
+                        </NoticeCard>
+                      )}
                     </Show>
                   </fieldset>
                 );
               }}
             </Index>
           )}
-        </Show>
-        <Show when={calculatedColumns().length > 0}>
-          <p class="text-sm text-dimmed">{t().listCalculationPreview}</p>
         </Show>
         <Show when={rows().length > pageSize}>
           <div class="flex flex-wrap items-center gap-2">
@@ -218,21 +229,17 @@ export function ObjectListInput(props: {
             </Button>
           </div>
         </Show>
-        <div>
-          <Button
-            type="button"
-            variant="input"
-            disabled={rows().length >= (config()?.maxItems ?? 0)}
-            onClick={() => {
-              const index = rows().length;
-              props.onChange([...rows(), {}]);
-              focusRow(index);
-            }}
-          >
-            <i class="ti ti-plus" aria-hidden="true" />
-            {t().listAddRow}
-          </Button>
-        </div>
+        <Show when={rows().length > 0} fallback={<Placeholder variant="compact" title={t().listEmpty} action={addButton()} />}>
+          <div class="flex flex-wrap items-center gap-3">
+            {addButton()}
+            <Show when={calculatedColumns().some((column) => column.detailsOnly)}>
+              <Button type="button" variant="input" aria-pressed={showDetails()} onClick={() => setShowDetails(!showDetails())}>
+                <i class={showDetails() ? "ti ti-eye-off" : "ti ti-eye"} aria-hidden="true" />
+                {t().listCalculationDetails}
+              </Button>
+            </Show>
+          </div>
+        </Show>
       </Show>
       <Show when={props.error}>
         <p role="alert" class="text-sm text-red-500">

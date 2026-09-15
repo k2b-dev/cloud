@@ -22,17 +22,21 @@ type RowPlan = { columns: Map<string, FormulaSqlExpression>; json: unknown; erro
 const textTrimCharacters =
   " \t\n\v\f\r\u00a0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a\u2028\u2029\u202f\u205f\u3000\ufeff";
 
-const normalizedSelect = (column: ObjectListColumn, source: unknown): FormulaSqlCompileResult => {
+const normalizedSelect = (
+  column: ObjectListColumn,
+  source: unknown,
+  stageValue: (value: unknown) => unknown,
+): FormulaSqlCompileResult => {
   const parsed = SelectConfigSchema.safeParse(column.config);
   if (!parsed.success) return formulaSqlFail(`Invalid select configuration: ${column.name}`);
   const config = parsed.data;
   const absent = sql`${source} IS NULL OR ${source} = 'null'::jsonb OR ${source} = '\"\"'::jsonb`;
   const array = sql`CASE WHEN jsonb_typeof(${source}) = 'array' THEN ${source} ELSE '[]'::jsonb END`;
   // The scalar validator removes empty IDs and duplicates, retaining first order.
-  const normalized = sql`(SELECT jsonb_agg(value ORDER BY first_position) FROM (
+  const normalized = stageValue(sql`(SELECT jsonb_agg(value ORDER BY first_position) FROM (
     SELECT value, min(position) AS first_position FROM jsonb_array_elements(${array}) WITH ORDINALITY AS choices(value, position)
     WHERE value <> '\"\"'::jsonb GROUP BY value
-  ) unique_choices)`;
+  ) unique_choices)`);
   const count = sql`COALESCE(jsonb_array_length(${normalized}), 0)`;
   const invalidOption = sql`EXISTS (SELECT 1 FROM jsonb_array_elements(${array}) AS choices(value)
     WHERE jsonb_typeof(value) <> 'string' OR
@@ -118,6 +122,12 @@ export const compileObjectListRow = (
   if (!calculations.ok) return calculations;
   const columns = new Map<string, FormulaSqlExpression>();
   const joins: unknown[] = [];
+  const stage = (expression: FormulaSqlExpression, suffix: string): FormulaSqlExpression => {
+    const alias = sql.unsafe(`${rowAlias}_${suffix}`);
+    joins.push(sql`CROSS JOIN LATERAL (SELECT ${expression.sql} AS value,
+      COALESCE(${expression.errorSql ?? sql`false`}, false) AS error OFFSET 0) ${alias}`);
+    return { ...expression, sql: sql`${alias}.value`, errorSql: sql`${alias}.error` };
+  };
   for (const column of config.fields) {
     if (column.formula) continue;
     const projection = storageOf(column).project(column, rowAlias);
@@ -132,18 +142,24 @@ export const compileObjectListRow = (
       expression.errorSql = sql`NOT (${absent}) AND (jsonb_typeof(${raw}) NOT IN ('string', 'number') OR ${finite} IS NULL)`;
     }
     if (column.type === "select") {
-      const checked = normalizedSelect(column, expression.sql);
+      // Cardinality validation and the result consume the same normalized
+      // choices. Materialize that set once instead of copying its aggregation
+      // into every cardinality branch of every dependent list formula.
+      const source = stage(expression, `source_${columns.size}`);
+      const checked = normalizedSelect(column, source.sql, (value) =>
+        stage({ sql: value, type: "unknown" }, `choices_${columns.size}`).sql,
+      );
       if (!checked.ok) return checked;
-      columns.set(column.id, { ...checked.expression, select: column });
+      columns.set(column.id, stage({ ...checked.expression, select: column }, `input_${columns.size}`));
       continue;
     }
     // Stored values can become invalid after tightening a column's constraints.
     // Reuse the same scalar checks as calculated cells, not a null/zero fallback.
     if (type !== "unknown") {
-      const checked = normalizedCalculation(column, expression);
+      const checked = normalizedCalculation(column, stage(expression, `source_${columns.size}`));
       if (!checked.ok) return checked;
-      columns.set(column.id, checked.expression);
-    } else columns.set(column.id, expression);
+      columns.set(column.id, stage(checked.expression, `input_${columns.size}`));
+    } else columns.set(column.id, stage(expression, `input_${columns.size}`));
   }
   for (const [index, step] of calculations.plan.steps.entries()) {
     const column = config.fields.find((field) => field.id === step.id)!;
@@ -156,14 +172,20 @@ export const compileObjectListRow = (
         : (expression ?? `Unknown list column ${ref}`);
     });
     if (!compiled.ok) return compiled;
-    const normalized = normalizedCalculation(column, compiled.expression);
+    // Validation references a result several times (scale, range, required).
+    // Stage before validation too: otherwise each check copies its entire
+    // nested formula plan and PostgreSQL spends seconds compiling tiny lists.
+    const expression = compiled.expression;
+    const targetType = scalarSqlTypeForField(column);
+    // A projected untyped NULL becomes text in PostgreSQL. Keep the declared
+    // scalar type before range checks consume the staged nullable result.
+    const typed =
+      expression.type === "unknown" && targetType !== "unknown"
+        ? { ...expression, sql: sql`(${expression.sql})::${sql.unsafe(targetType === "datetime" ? "timestamptz" : targetType)}` }
+        : expression;
+    const normalized = normalizedCalculation(column, stage(typed, `raw_${index}`));
     if (!normalized.ok) return normalized;
-    const alias = sql.unsafe(`${rowAlias}_calc_${index}`);
-    // Keep each dependency a scalar result rather than exponentially inlining
-    // its expression at every reference. OFFSET 0 prevents subquery pull-up.
-    joins.push(sql`CROSS JOIN LATERAL (SELECT ${normalized.expression.sql} AS value,
-      COALESCE(${normalized.expression.errorSql ?? sql`false`}, false) AS error OFFSET 0) ${alias}`);
-    columns.set(column.id, { sql: sql`${alias}.value`, type: normalized.expression.type, errorSql: sql`${alias}.error` });
+    columns.set(column.id, stage(normalized.expression, `calc_${index}`));
   }
   const entries = config.fields.map((column) => {
     const expression = columns.get(column.id)!;
@@ -209,7 +231,13 @@ export const compileObjectListValue = (
   const rowError = sql`jsonb_typeof(${sql.unsafe(rowAlias)}.data) <> 'object' OR ${row.plan.errorSql}`;
   const errorSql = sql`CASE WHEN ${stored} THEN false WHEN ${absent} THEN ${minimum > 0}
     ELSE (${shapeError} OR (SELECT COALESCE(bool_or(${rowError}), false) FROM ${rows} ${row.plan.joins})) END`;
-  const value = sql`CASE WHEN ${stored} OR ${absent} THEN ${source}
-    ELSE (SELECT COALESCE(jsonb_agg(${row.plan.json} ORDER BY ${sql.unsafe(rowAlias)}.position), '[]'::jsonb) FROM ${rows} ${row.plan.joins}) END`;
-  return formulaSqlOk(value, "unknown", errorSql);
+  // Validate and collect each live row in one pass. Wrapping this value in
+  // formulaSqlOk would run the complete row plan again just to guard it.
+  const value = sql`CASE WHEN ${stored} THEN ${source}
+    WHEN ${absent} THEN ${minimum > 0 ? sql`NULL::jsonb` : source}
+    WHEN ${shapeError} THEN NULL::jsonb
+    ELSE (SELECT CASE WHEN COALESCE(bool_or(${rowError}), false) THEN NULL::jsonb
+      ELSE COALESCE(jsonb_agg(${row.plan.json} ORDER BY ${sql.unsafe(rowAlias)}.position), '[]'::jsonb) END
+      FROM ${rows} ${row.plan.joins}) END`;
+  return { ok: true, expression: { sql: value, type: "unknown", errorSql } };
 };

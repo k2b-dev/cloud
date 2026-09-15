@@ -13,6 +13,9 @@ import {
   type Scope,
 } from "./resolver-scope";
 import type { DslSelectItem, DslSourceSpan } from "./types";
+import { normalizeRefKey } from "../ref-syntax";
+import { derivedColumnByRef } from "./resolver-derived-columns";
+import { gqlQuotedRef } from "./source-format";
 
 export type DslJoinedColumn = {
   joinAlias: string;
@@ -81,6 +84,22 @@ export const resolveQueryPlanSelect = (
     if (alias) {
       const aliasConflict = aliasConflictDiagnostic(scope, alias, item.span);
       if (aliasConflict) return aliasConflict;
+    }
+
+    if (item.kind === "field" && item.field.scope) {
+      const summary = scope.summaryJoins.get(normalizeRefKey(item.field.scope));
+      if (summary) {
+        const column = derivedColumnByRef(summary.columns, item.field.ref, item.field.span);
+        if (isDiagnostic(column)) return column;
+        const label = item.alias ?? `${summary.alias}.${column.label}`;
+        const id = computedIdForAlias(label);
+        if (computedIds.has(id)) return diagnostic(`duplicate select output "${label}"`, item.span);
+        computedIds.add(id);
+        scope.computedAliases.add(label);
+        const computed = { kind: "computed" as const, id, label, expression: `${summary.alias}.${gqlQuotedRef(column.publicKey ?? column.key)}` };
+        columns.push(computed); outputColumns.push(computed);
+        continue;
+      }
     }
 
     if (item.kind === "field") {

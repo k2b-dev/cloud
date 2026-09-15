@@ -1,6 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import type { Field } from "../service/types";
+import { hydrateDslViewQueries } from "../service/gql-resolver-context";
 import { buildDslQueryIntelligence } from "./intelligence";
+import { parseGridsQueryDsl } from "./parser";
+import { resolveDslQueryToQueryPlan } from "./resolver";
 import type { DslResolverContext, DslTableSource, DslViewSource } from "./resolver";
 
 const table = (id: string, shortId: string, name: string): DslTableSource => ({
@@ -76,6 +79,44 @@ const ctx = (overrides: Partial<DslResolverContext> = {}): DslResolverContext =>
 
 const labels = (query: string, context = ctx()) =>
   buildDslQueryIntelligence({ query, caret: query.length, ctx: context }).map((item) => item.label);
+
+test("summary joins suggest view sources and only their derived columns", () => {
+  const prefix = 'from table Customers as parent\nleft join view "Revenue by customer" as paid on paid.Customer = parent.id\n';
+  expect(labels("from table Customers\nleft join ")).toContain("view");
+  expect(labels("from table Customers\njoin ")).not.toContain("view");
+  expect(labels("from table Customers\nleft join view ")).toContain(revenueView.name);
+  for (const clause of ["select paid.", "sort paid.", "where paid.", "select formula(paid."]) {
+    const suggestions = labels(prefix + clause);
+    expect(suggestions).toContain("revenue");
+    expect(suggestions).not.toContain("Amount");
+    expect(suggestions).not.toContain("Stage");
+  }
+  expect(labels('from table Customers as parent\nleft join view "Revenue by customer" as paid on paid.')).toEqual(["Customer"]);
+  expect(item(prefix + "select ", "revenue")?.insertText).toBe("paid.revenue");
+});
+
+test("summary completions include hydrated formula aggregates but omit inaccessible source fields", () => {
+  // Hydration validates persisted RecordQuery IDs, unlike token-only fixtures.
+  const source = table("00000000-0000-4000-8000-000000000001", "Orders", "Orders");
+  const target = table("00000000-0000-4000-8000-000000000002", "Custmr", "Customers");
+  const context = ctx({ tables: [source, target], fieldsByTableId: {
+    [source.id]: [field(source.id, "00000000-0000-4000-8000-000000000003", "Amount", "Amount", "number"),
+      field(source.id, "00000000-0000-4000-8000-000000000004", "Link01", "Customer", "relation", { targetTableId: target.id })],
+    [target.id]: [],
+  } });
+  const querySource = "from table Orders\ngroup by Customer\naggregate sum(formula(Amount * 2)) as doubled";
+  const parsed = parseGridsQueryDsl(querySource);
+  if (!parsed.ok) throw new Error(JSON.stringify(parsed));
+  const resolved = resolveDslQueryToQueryPlan(parsed.ast, context);
+  if (!resolved.ok) throw new Error(JSON.stringify(resolved));
+  context.views = hydrateDslViewQueries({ ...context, views: [{ ...revenueView,
+    tableId: source.id, source: querySource, query: {} }] });
+  expect(context.views).toHaveLength(1);
+  const query = 'from table Customers as parent\nleft join view "Revenue by customer" as paid on paid.Customer = parent.id\nselect paid.';
+  expect(labels(query, context)).toContain("doubled");
+  expect(labels(query, { ...context, tables: [target] })).not.toContain("doubled");
+  expect(labels(query, { ...context, views: [] })).toEqual([]);
+});
 
 const labelsForCurrentSource = (query: string, currentSource: { kind: "table"; tableId: string } | { kind: "view"; viewId: string }) =>
   buildDslQueryIntelligence({ query, caret: query.length, ctx: ctx(), currentSource }).map((item) => item.label);

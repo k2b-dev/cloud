@@ -8,6 +8,7 @@ import type { DslResolvedRelationJoin } from "./resolver-joins";
 import type { DslJoinedColumn, DslOutputColumn } from "./resolver-output";
 import type { DslResolvedSqlSearch } from "./resolver-search";
 import type { DslWherePredicate } from "./resolver-where";
+import type { DslSummaryJoin } from "./resolver-summary-joins";
 
 type DslResolvedQueryPlan = {
   source: DslTableSource | DslViewSource;
@@ -21,6 +22,7 @@ export type DslResolvedSqlQueryPlan = DslResolvedQueryPlan & {
   readableTableIds: string[];
   viewSourceQuery?: RecordQuery;
   joins?: DslResolvedRelationJoin[];
+  summaryJoins?: DslSummaryJoin[];
   outputColumns?: DslOutputColumn[];
   joinedColumns?: DslJoinedColumn[];
   sqlSort?: DslResolvedSqlSort[];

@@ -103,6 +103,7 @@ function DocumentTemplatesManager(props: { baseId: string; tableId: string; tabl
         description: template.description,
         source: template.source,
         renderer: template.renderer,
+        issuancePolicy: template.issuancePolicy,
         enabled: false,
       },
     });

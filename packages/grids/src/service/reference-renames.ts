@@ -38,7 +38,7 @@ export const rewriteFieldNameReferences = async (
     if (!expression) continue;
     await client`
       UPDATE grids.fields
-      SET config = ${JSON.stringify({ ...config, expression })}::jsonb,
+      SET config = ${JSON.stringify({ ...config, expression })}::text::jsonb,
           updated_at = now()
       WHERE id = ${row.id}::uuid
     `;

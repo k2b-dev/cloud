@@ -49,7 +49,7 @@ export const updateBaseNavigation = async (
     )
       return fail(err.badInput(t.invalidTarget));
     const next = { revision: current.revision + 1, groups: parsed.data.groups };
-    await tx`UPDATE grids.bases SET navigation_groups = ${JSON.stringify(next.groups)}::jsonb, navigation_revision = ${next.revision}, updated_at = now()
+    await tx`UPDATE grids.bases SET navigation_groups = ${JSON.stringify(next.groups)}::text::jsonb, navigation_revision = ${next.revision}, updated_at = now()
       WHERE id = ${baseId}::uuid`;
     await logAudit({ baseId, userId: actorId, action: "updated", diff: { navigation: { old: current.groups, new: next.groups } } }, tx);
     return ok(next);

@@ -24,16 +24,8 @@ type DocumentArtifactDbRow = {
 };
 
 const strictJsonObject = (value: unknown, field: string): Record<string, unknown> => {
-  let parsed = value;
-  if (typeof value === "string") {
-    try {
-      parsed = JSON.parse(value);
-    } catch {
-      throw new Error(`${field} contains invalid JSON`);
-    }
-  }
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error(`${field} must be a JSON object`);
-  return parsed as Record<string, unknown>;
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(`${field} must be a JSON object`);
+  return value as Record<string, unknown>;
 };
 
 const mapDocumentArtifact = (row: DocumentArtifactDbRow): DocumentArtifact => ({
@@ -92,6 +84,7 @@ export const mapDocumentTemplate = (row: DocumentDbRow): DocumentTemplate => {
     description: (row.description as string | null) ?? null,
     source: row.source as string,
     renderer,
+    issuancePolicy: row.issuance_policy as DocumentTemplate["issuancePolicy"],
     enabled: row.enabled as boolean,
     position: row.position as number,
     createdBy: (row.created_by as string | null) ?? null,
@@ -207,6 +200,7 @@ export const summarizeDocumentTemplate = (template: DocumentTemplate): DocumentT
       ? { kind: "html" }
       : { kind: "profile", id: template.renderer.id, version: template.renderer.version },
   enabled: template.enabled,
+  issuancePolicy: template.issuancePolicy,
   position: template.position,
   createdAt: template.createdAt,
   updatedAt: template.updatedAt,

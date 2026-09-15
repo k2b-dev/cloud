@@ -1,7 +1,8 @@
 import { sql } from "bun";
 import type { RecordQuery } from "../contracts";
 import { normalizeRefKey } from "../ref-syntax";
-import { aggregateOutputKey, aggregateSqlTypeForField } from "../service/aggregate-capabilities";
+import { aggregateOutputKey, aggregateOutputKeyFor, aggregateSqlTypeForField, aggregateSqlTypeForFormula } from "../service/aggregate-capabilities";
+import type { DslFormulaAggregation } from "./resolver-aggregates";
 import { groupSqlTypeForField, storageOf } from "../service/field-storage";
 import type { FormulaSqlExpression, FormulaSqlType } from "../service/formula-sql-compiler";
 import { formulaSqlTypeForField } from "../service/formula-sql-compiler";
@@ -41,7 +42,7 @@ export const uniqueRefs = (refs: Array<string | null | undefined>): string[] => 
   return result;
 };
 
-export const derivedViewColumns = (query: RecordQuery, fields: Field[]): DslDerivedViewColumn[] | DslResolverDiagnostic => {
+export const derivedViewColumns = (query: RecordQuery, fields: Field[], formulaAggregations: readonly DslFormulaAggregation[] = []): DslDerivedViewColumn[] | DslResolverDiagnostic => {
   const fieldsById = new Map(fields.map((field) => [field.id, field]));
   const columns: DslDerivedViewColumn[] = [];
 
@@ -91,6 +92,11 @@ export const derivedViewColumns = (query: RecordQuery, fields: Field[]): DslDeri
     });
   }
 
+  for (const aggregation of formulaAggregations) {
+    const key = aggregateOutputKeyFor(aggregation);
+    columns.push({ kind: "aggregate", key, publicKey: key, label: aggregation.id, refs: [key, aggregation.id],
+      sqlType: aggregateSqlTypeForFormula(aggregation.sqlType, aggregation.agg), type: "aggregate", agg: aggregation.agg });
+  }
   return columns;
 };
 

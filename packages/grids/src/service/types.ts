@@ -83,6 +83,7 @@ export type AuditAction =
   | "workflow.run.canceled"
   | "workflow.run.needs_attention"
   | "workflow.record.updated"
+  | "workflow.record.deleted"
   | "workflow.record.created"
   | "workflow.record.finalized"
   | "workflow.record.finalization.requested"

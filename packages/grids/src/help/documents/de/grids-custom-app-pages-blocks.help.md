@@ -47,7 +47,7 @@ Die veröffentlichte Capability zeichnet die exakten Tabellen und Felder hinter 
 
 ### Formular
 
-Formular referenziert ein vorhandenes Grids-Formular. Das Formular ist für sichtbare Felder, Validierung, Pflichtfelder, Standardwerte und Datensatzerstellung verantwortlich.
+Formulare bestimmen Eingaben, Validierung und Standardwerte. App-Lesende können ohne Base-Zugriff verknüpfte Datensätze wählen: Die Suche zeigt nur IDs und veröffentlichte Anzeigefelder der Zieltabelle. Änderungen daran oder an ihren Formelabhängigkeiten erfordern erneutes Veröffentlichen.
 
 Wähle **Formularaktion → Datensatz dieser Seite bearbeiten**, um einen vorhandenen Entwurf zu bearbeiten. Die Seite muss einen Datensatz aus der Tabelle des Formulars binden. Der Server lädt die Eingaben und konfigurierten zugehörigen Zeilen vor der Darstellung; beim Speichern werden ihre Versionen gemeinsam geprüft. Eine entfernte Zeile wird vom übergeordneten Datensatz getrennt, aber nicht gelöscht. Gemeinsam genutzte Zeilen und festgeschriebene Datensätze lassen sich hier nicht bearbeiten. Verknüpfte Tabellen müssen zur selben Base gehören. Bestehende Formular-Blöcke legen weiterhin neue Datensätze an, bis du die Aktion änderst und die App erneut veröffentlichst.
 
@@ -65,7 +65,7 @@ Die Aktion Bearbeiten erscheint nur, wenn die Veröffentlichung dieses beschreib
 
 Ein bearbeitbares Dateifeld verwendet denselben auditierten Lebenszyklus für Hinzufügen, atomisches Ersetzen und **Aus Datensatz entfernen** wie der Basis-Arbeitsbereich. Die App-Freigabe bleibt die äußere Grenze; die veröffentlichte Capability für bearbeitbare Felder grenzt sie weiter ein. Das Entfernen löst den aktuellen Anhang. Geschützte Historie oder Artefakte können die exakten Bytes behalten, während ungeschützte Dateien bereinigt werden können.
 
-Eine optionale Erlaubnisliste `documents.templateIds` zeigt vorhandene generierte PDFs, die mit dem aktuellen Datensatz verknüpft sind. Jede Vorlage muss bei der Veröffentlichung zur Tabelle des Seitendatensatzes gehören. Die Laufzeit verwendet die unveränderliche Capability und die geschützte Route zum Herunterladen von Dokumenten. Der Block generiert keine Dokumente und erstellt keine öffentlichen Links. Nutze für die Generierung einen Workflow.
+`documents.templateIds` zeigt verknüpfte Dokumente aus Vorlagen der Seitendatensatz-Tabelle. Downloads sind geschützt; die Ausstellung erfordert einen Workflow. Optionale Entwurfsvorschauen müssen explizit freigegeben werden: siehe [API-Referenz](/app/grids/help/grids-custom-app-api). Der Block erstellt keine öffentlichen Links.
 
 ### Gerendertes HTML
 
@@ -114,7 +114,7 @@ availableWhen:
     limit 1
 ```
 
-Ein leeres Ergebnis, eine ungültige Abfrage, fehlender Kontext, eine Zeitüberschreitung oder ein Abbruch bedeutet nicht verfügbar. Die Laufzeit lässt die Ressource aus, führt ihre Datenquelle nicht aus und prüft die Schutzregel vor jeder Formulareingabe und Aktion erneut. Sichtbarkeit im Browser ist niemals die Durchsetzungsgrenze.
+Leere Ergebnisse oder Abfragefehler blenden Ressource und Datenquelle aus. Absenden, Aufruf und Workflow-Effekte prüfen Regeln, Rechte, Launcher und Veröffentlichung. `atomicRecords` prüft einmal nach den Sperren; eigene Änderungen entziehen diesem Schritt nicht die Freigabe. Spätere Effekte prüfen erneut. Sichere den Startzustand atomar.
 
 Im visuellen Builder bleibt die optionale Verfügbarkeit eingeklappt, bis du eine Regel hinzufügst. Ihre Zusammenfassung lautet **Immer**, **Eigene Regel** oder **Benötigt Aufmerksamkeit**. Bearbeite kurze Abfragen im Inspektor oder wähle **Großen Editor öffnen** für denselben automatisch gespeicherten Entwurfswert. Beide Editoren verwenden nur den impliziten Kontext der ausgewählten Seite. Die unmittelbare GQL-Konsole bietet den `@…`-Kontext von Grids Apps bewusst nicht an.
 

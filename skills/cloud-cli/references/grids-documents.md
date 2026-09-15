@@ -497,6 +497,11 @@ Both versions require the following JSON input (unknown properties rejected):
   exactly four, tax rate greater than zero and at most 100 with exactly two.
   All numeric inputs are decimal strings, e.g. `"1.0000"`, `"19.9900"`, `"19.00"`.
 
+Version 2 additionally accepts two optional properties per line:
+`description` (1–4,000 characters) and `unitCode` (`C62` for units, `HUR` for
+hours, `DAY` for days, or `KGM` for kilograms; default `C62`). Version 1 does
+not accept these properties.
+
 Version 2 also requires `serviceDate` and one `billing` variant:
 
 ```json

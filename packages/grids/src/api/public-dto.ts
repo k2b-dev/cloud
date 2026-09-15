@@ -16,7 +16,10 @@ import {
   type FederatedSourcePublication,
   type Field,
   FieldSchema,
+  FORM_COMPUTED_FIELD_LIMIT,
   FormatSpecSchema,
+  FormComputedFieldSchema,
+  FormFieldWidthSchema,
   type GridRecord,
   GridRecordSchema,
   PublicTableAuditPolicySchema,
@@ -283,6 +286,7 @@ export const PublicCreateViewSchema = CreateViewSchema.omit({ ui: true }).extend
 export const PublicUpdateViewSchema = UpdateViewSchema.omit({ ui: true }).extend({ ui: PublicViewUiSettingsSchema.optional() });
 const PublicInlineCreateFieldSchema = z.object({
   fieldId: ShortIdSchema,
+  width: FormFieldWidthSchema.optional(),
   label: z.string().optional(),
   helpText: z.string().optional(),
   required: z.boolean().optional(),
@@ -292,6 +296,7 @@ const PublicFormFieldEntrySchema = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("user_input"),
     fieldId: ShortIdSchema,
+    width: FormFieldWidthSchema.optional(),
     label: z.string().optional(),
     helpText: z.string().optional(),
     required: z.boolean().optional(),
@@ -301,6 +306,10 @@ const PublicFormFieldEntrySchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("form_value"), fieldId: ShortIdSchema, value: z.unknown() }),
 ]);
 export const PublicFormConfigSchema = z.object({
+  computedFields: z
+    .array(FormComputedFieldSchema.extend({ fieldId: ShortIdSchema }))
+    .max(FORM_COMPUTED_FIELD_LIMIT)
+    .optional(),
   title: z.string().optional(),
   description: z.string().optional(),
   fields: z.array(PublicFormFieldEntrySchema),
@@ -1022,11 +1031,52 @@ export const toPublicForms = async (forms: readonly Form[]): Promise<PublicForm[
   const projected = await Promise.all(
     forms.map(async (form) => {
       const { id: _internalId, shortId, ...rest } = form;
+      const fields = await listByTable(form.tableId);
+      const byId = new Map(fields.map((field) => [field.id, field]));
+      const relationValue = async (field: Field | undefined, value: unknown): Promise<unknown> => {
+        if (field?.type !== "relation" || value === undefined || value === null) return value;
+        const ids = publicRelationRecordIds(value);
+        const projected = await projectPublicIds("record", ids);
+        return Array.isArray(value) ? ids.map((id) => publicId(projected, id, "record")) : publicId(projected, ids[0]!, "record");
+      };
+      const config = {
+        ...form.config,
+        fields: await Promise.all(
+          form.config.fields.map(async (entry) => {
+            const field = byId.get(entry.fieldId);
+            if (entry.kind === "form_value") return { ...entry, value: await relationValue(field, entry.value) };
+            const targetFields =
+              entry.inlineCreate?.enabled && field?.type === "relation" && typeof field.config.targetTableId === "string"
+                ? await listByTable(field.config.targetTableId)
+                : [];
+            const targetById = new Map(targetFields.map((target) => [target.id, target]));
+            return {
+              ...entry,
+              ...(entry.defaultValue !== undefined ? { defaultValue: await relationValue(field, entry.defaultValue) } : {}),
+              ...(entry.inlineCreate
+                ? {
+                    inlineCreate: {
+                      ...entry.inlineCreate,
+                      fields: await Promise.all(
+                        (entry.inlineCreate.fields ?? []).map(async (inline) => ({
+                          ...inline,
+                          ...(inline.defaultValue !== undefined
+                            ? { defaultValue: await relationValue(targetById.get(inline.fieldId), inline.defaultValue) }
+                            : {}),
+                        })),
+                      ),
+                    },
+                  }
+                : {}),
+            };
+          }),
+        ),
+      };
       return {
         ...rest,
         ...(shortId ? { id: shortId } : {}),
         tableId: publicId(tableIds, form.tableId, "table"),
-        config: await projectKnownIds(form.config),
+        config: await projectKnownIds(config),
       };
     }),
   );

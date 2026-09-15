@@ -24,6 +24,8 @@ describe("App Records table actions", () => {
     expect(source).toContain("window.setTimeout(() => void loadPage(null, value.trim(), []), 250)");
     expect(source).toContain('<DataTable.Header title={props.title} as="h2" size="md" />');
     expect(source).toContain("<DataTable.Footer>");
+    expect(source).toContain("header: column.label");
+    expect(source).not.toContain("subtitle: column.type");
     expect(source).toContain("props.preview || Boolean(pendingKey())");
     expect(source).toContain("if (props.preview || !props.endpoint) return");
     expect(source).toContain("prompts.confirm");

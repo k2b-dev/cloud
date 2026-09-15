@@ -15,15 +15,18 @@ import {
   TextInput,
   useLocale,
 } from "@k2b/ui";
-import { createEffect, createSignal, type JSX, Show } from "solid-js";
+import { createEffect, createSignal, For, type JSX, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { PublicField as Field, PublicForm } from "../../../api/public-dto";
 import type { FormValidationRule } from "../../../contracts";
+import { inspectFormComputedFields } from "../../../form-computed-fields";
+import { formComputedDiagnosticMessage } from "../../../form-computed-messages";
 import type { FormFieldEntry } from "../../../service/forms";
 import { errorMessage } from "../utils/api-helpers";
 import { FormFieldsEditor } from "./FormFieldsEditor";
 import { FormValidationsEditor } from "./FormValidationsEditor";
 import { gridsFormMessages } from "./messages";
+import { FormFieldWidthSelect } from "./field-layout";
 
 type OpenFormEditorDialogArgs = {
   form: PublicForm;
@@ -141,6 +144,7 @@ function FormEditor(props: {
   const [redirectUrl, setRedirectUrl] = createSignal(props.form.config.redirectUrl ?? "");
   const [titleImage, setTitleImage] = createSignal<string | null>(props.form.config.titleImage ?? null);
   const [entries, setEntries] = createSignal<FormFieldEntry[]>(props.form.config.fields.map((entry) => ({ ...entry })));
+  const [computedFields, setComputedFields] = createSignal(props.form.config.computedFields ?? []);
   const [validations, setValidations] = createSignal<FormValidationRule[]>(
     props.form.config.validations?.map((rule) => ({ ...rule })) ?? [],
   );
@@ -179,6 +183,7 @@ function FormEditor(props: {
             redirectUrl: redirectUrl().trim() || null,
             titleImage: titleImage() ?? undefined,
             fields: entries(),
+            computedFields: computedFields(),
             validations: validations().length > 0 ? validations() : undefined,
           },
         },
@@ -189,6 +194,7 @@ function FormEditor(props: {
     onSuccess: (next, request) => {
       setEntries(next.config.fields.map((entry) => ({ ...entry })));
       setValidations(next.config.validations?.map((rule) => ({ ...rule })) ?? []);
+      setComputedFields(next.config.computedFields ?? []);
       setDirty(false);
       props.onDirtyChange?.(false);
       if (request?.closeMainDialog) props.onSaved(next);
@@ -355,6 +361,53 @@ function FormEditor(props: {
               }}
             />
           </FormEditorSection>
+          <Show when={props.tableFields.some((field) => !field.deletedAt && field.type === "formula")}>
+            <FormEditorSection title={t().computedSummary} subtitle={t().computedSummaryDescription} icon="ti ti-sum">
+              <For each={props.tableFields.filter((field) => !field.deletedAt && field.type === "formula")}>
+                {(field) => {
+                  const selected = () => computedFields().some((entry) => entry.fieldId === field.id);
+                  const inspection = () =>
+                    inspectFormComputedFields(
+                      [field.id],
+                      new Set(
+                        entries()
+                          .filter((entry) => entry.kind === "user_input")
+                          .map((entry) => entry.fieldId),
+                      ),
+                      props.tableFields,
+                    );
+                  return (
+                    <div class="flex flex-col gap-2">
+                    <Checkbox
+                      label={field.name}
+                      value={selected}
+                      disabled={!selected() && !inspection().ok}
+                      description={(() => {
+                        const result = inspection();
+                        return result.ok ? undefined : formComputedDiagnosticMessage(result.code, locale());
+                      })()}
+                      onValueChange={(checked) => {
+                        setComputedFields((current) =>
+                          checked ? [...current, { fieldId: field.id }] : current.filter((entry) => entry.fieldId !== field.id),
+                        );
+                        markDirty();
+                      }}
+                    />
+                    <Show when={selected()}>
+                      <FormFieldWidthSelect
+                        value={computedFields().find((entry) => entry.fieldId === field.id)?.width}
+                        onChange={(width) => {
+                          setComputedFields((current) => current.map((entry) => entry.fieldId === field.id ? { ...entry, width } : entry));
+                          markDirty();
+                        }}
+                      />
+                    </Show>
+                    </div>
+                  );
+                }}
+              </For>
+            </FormEditorSection>
+          </Show>
         </fieldset>
       </PanelDialog.Body>
 

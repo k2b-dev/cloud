@@ -27,7 +27,24 @@ const plan = (steps: WorkflowIrStep[], bindings: Record<string, WorkflowJsonValu
 });
 
 describe("mutation policy workflow impact", () => {
+  test("finds a finalize-only atomic change", () => {
+    const candidate = plan(
+      [
+        action(["steps", 0], "atomicRecords", {
+          changes: [{ finalizeRecord: { record: "inputs.items" } }],
+        }),
+      ],
+      { "inputs.items.table": TABLE },
+    );
+    expect(workflowMutatesTable(candidate, TABLE)).toBe(true);
+    expect(workflowMutatesTable(candidate, OTHER_TABLE)).toBe(false);
+  });
   test("finds nested updates through record-list aliases", () => {
+    for (const [operation, key] of [["deleteRecord", "record"], ["createCorrectionDraft", "original"]] as const) {
+      const candidate = plan([action(["steps", 0], operation, { [key]: "inputs.items" })], { "inputs.items.table": TABLE });
+      expect(workflowMutatesTable(candidate, TABLE)).toBe(true);
+      expect(workflowMutatesTable(candidate, OTHER_TABLE)).toBe(false);
+    }
     const candidate = plan(
       [
         {

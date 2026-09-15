@@ -1,5 +1,6 @@
 import { normalizeRefKey } from "../ref-syntax";
 import type { Field } from "../service/types";
+import { dslQueryReferencedFieldIds } from "./plan-dependencies";
 import type { DslResolvedSqlQueryPlan, DslTableSource, DslViewSource } from "./resolver";
 import type { DslQueryAst, DslSourceRef } from "./types";
 
@@ -57,14 +58,30 @@ export const collectDslPlanExtraFieldTableIds = (plan: DslResolvedSqlQueryPlan):
   return [...tableIds];
 };
 
-/** Returns every table read by the primary SQL plan. Relation label and search
+/** Returns every table read by the SQL plan, including computed values. Relation label and search
  * dependencies are loaded separately once the resolver has identified them. */
-export const collectDslPlanTableIds = (plan: DslResolvedSqlQueryPlan, _fieldsByTableId: Record<string, Field[]>): string[] => {
+export const collectDslPlanTableIds = (plan: DslResolvedSqlQueryPlan, fieldsByTableId: Record<string, Field[]>): string[] => {
   const tableIds = new Set<string>([
     plan.tableId,
+    ...(plan.summaryJoins ?? []).map((join) => join.tableId),
     ...(plan.joins ?? []).flatMap((join) => [join.fromTableId, join.tableId]),
     ...(plan.derivedViewSource?.joins ?? []).map((join) => join.tableId),
     ...(plan.derivedViewSource?.relationJoins ?? []).flatMap((join) => [join.fromTableId, join.tableId]),
   ]);
+  const fields = new Map(
+    Object.values(fieldsByTableId)
+      .flat()
+      .map((field) => [field.id, field]),
+  );
+  for (const fieldId of dslQueryReferencedFieldIds(plan, fieldsByTableId)) {
+    const field = fields.get(fieldId);
+    if (!field) continue;
+    tableIds.add(field.tableId);
+    if (field.type !== "lookup" && field.type !== "rollup") continue;
+    const relationFieldId = field.config.relationFieldId;
+    const relation = typeof relationFieldId === "string" ? fields.get(relationFieldId) : undefined;
+    const targetTableId = relation?.type === "relation" ? relation.config.targetTableId : undefined;
+    if (typeof targetTableId === "string") tableIds.add(targetTableId);
+  }
   return [...tableIds];
 };

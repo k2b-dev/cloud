@@ -169,6 +169,28 @@ cld grids tables get Authors --json
 cld grids tables mutation-policy Authors --json
 ```
 
+The `billing` template supplies invoices, linked credit notes and commission
+self-billing through ordinary fields, Object lists, Forms and Workflows. Start
+with issuer setup; samples are drafts, not valid company/bank details. Its
+scope is EUR, German business partners with distinct German VAT IDs, and 7% or
+19% VAT. Payments start as separate editable pending records; only confirmed,
+finalized payments affect balances. Corrections enforce net/VAT
+budgets and reject rounding splits that would strand the remaining credit.
+Customer refunds use positive amounts on the original invoice and subtract from
+received payments after confirmation. Atomic checks cap concurrent refunds at
+the current credit balance. Corrections have no separate payment balance;
+pending payments/refunds can be discarded. Correction drafts use today's date
+and require a newly chosen due date.
+Self-billing stores positions directly in the bill's Object list, with one
+partner and agreement reference. Issuance finalizes only the bill, not a tree
+or separate commission collection. The issuer must avoid duplicate obligations;
+the template does not match positions against earlier commission settlements.
+Use the authored **Issue / retrieve** action instead of generating
+replacement bills. See the [billing guide](https://cloud.k2b.dev/en/apps/grids#start-with-the-billing-template).
+The random `REF-…` record reference is not a second invoice sequence. The
+immutable Document owns the official number, shown in the App's record
+Documents section and returned by the documents API/CLI.
+
 Built-in templates create complete example bases with schema, views, Grids Apps, documents, workflows, and optional sample records. Sample
 records are included by default; pass `--empty` to keep the complete configuration without those records. Commands are
 `templates list|instantiate`.
@@ -583,9 +605,30 @@ it. Text literals use single quotes. Stable fields and sources use `{public-id}`
 letter or underscore, continues with letters, digits, or underscores, is at most 64 characters, and cannot be a GQL keyword, logical operator,
 or reserved literal. Aliases are case-insensitive when referenced later. Sort defaults to ascending order with missing values last.
 
-Joins follow Grids relations only: the left side must be a relation field that targets the joined alias's `.id`. `join` removes source rows
+Table joins follow Grids relations: the left side must be a relation field that targets the joined alias's `.id`. `join` removes source rows
 without a target; `left join` keeps them. Arbitrary join predicates, subqueries, common table expressions, window functions, and unrestricted
 expressions are not GQL.
+
+**Independent sums without duplicated amounts:** save a view `PaymentTotals` with
+`from table Payments; group by Invoice; aggregate sum(Amount) as paid`, where
+`Invoice` is a relation to `Invoices`. Then join the grouped view:
+
+```gql
+from table Invoices as bill
+left join view PaymentTotals as payments on payments.Invoice = bill.id
+select Number, formula(Gross - IF(ISBLANK(payments.paid), 0, payments.paid)) as outstanding
+sort Number asc
+```
+
+Each grouped view contributes at most one row per source record. Join a second
+independent grouped view for corrections; do not join both child tables before
+summing. Missing groups return `null`, not zero. Aggregate aliases work in
+selection, formulas, filters and sorting. Sources must group by exactly one
+relation to the root table and declare aggregates (including formula aggregates).
+Use `left join view`; no outer grouping, source limit, search, group-sort window,
+HAVING or other non-reusable source clauses. Unsupported sources and denied
+source-table access fail closed. Results are read-only projections, not editable
+table views. Root and child must be stored tables, not Combined tables. The group may also be referenced as `gk_0`.
 
 Conditions use `=`, `!=`, `<`, `<=`, `>`, `>=`, `and`, `or`, `not`, and parentheses. Direct predicate compatibility is:
 
@@ -789,6 +832,10 @@ cld grids forms submit Orders Checkout --body-file submission.json --json
 
 Commands are `forms list|default|get|create|update|delete|restore|submit`. `--public` creates or retains a public submit token; `--private` removes it. Public form links allow form submission, not unrestricted table access.
 
+`config.computedFields` optionally lists up to 20 read-only summary formulas (labels: 200 characters; help text: 2,000):
+`[{"fieldId":"Total1","label":"Total (EUR)","helpText":"Calculated from the positions"}]`.
+Targets must be same-table formula fields; their full dependency chain must end in visible `user_input` value fields. Hidden values, relations, lookups and rollups cannot feed a summary. Existing formula and object-list calculation rules apply while typing; invalid input shows an incomplete preview. These values are never submitted: saving recalculates authoritative values. Custom App fixed inputs cannot feed a summary either. Changing a summary or its transitive formula schema requires republishing the App. The Form editor exposes this under **Calculated summary**; CLI uses public field IDs as usual.
+
 ### Form submission contract
 
 Create accepts field values directly or `{data,inlineCreates?,idempotencyKey?}`. Prefer the envelope with a stable key for retryable operations. Each `inlineCreates` key is a relation Field ID and its value is `[{tempId,data}]`; include those temporary IDs in the root relation values. Only configured `inlineCreate.fields` are writable. Parent and children commit together.
@@ -833,7 +880,7 @@ Saved-view Records blocks can use `display: { kind: table, columnIds: [...] }` o
 
 On a Record page, `referenced_records` pins one source table, one Relation field targeting the page record table, the exact displayed `fieldIds`, table or Cards display, search, page size, and optional row actions. The server derives and compiles the bounded GQL membership query from the page record parameter; do not add a second query or client-side reverse lookup.
 
-Pages, blocks, Forms, and actions may use one `availableWhen.query`. At least one returned row means available. An empty result, invalid query, missing context, timeout, or cancellation means unavailable. The server rechecks Forms and actions before execution.
+Pages, blocks, Forms, and actions may use one `availableWhen.query`. A returned row means available; empty results, invalid queries, missing context, timeouts or cancellation mean unavailable. Submission, invocation and Workflow effects recheck guards, grants, publication and launcher validity. `atomicRecords` checks once after locks; its own changes do not invalidate that step. Later effects check again, so guards must permit their resulting state. Enforce starting state with atomic checks. App actions expose authored `fail.message` and atomic `checks[].message`; other failures receive safe hints without internal details. Include recovery instructions in authored messages.
 
 For dynamic responsibility, join the owning table and use `oneof(cost.Responsible, @auth.subjects)` on its Principal field. Joined `oneof`, `noneof`, and `containsall` keep the direct field's typed membership rules. On stored tables, `Receipts != null` requires a current attachment; `Receipts = null` checks for none. Combined-table file presence is unsupported. Keep these conditions server-side rather than copying group assignments onto requests.
 
@@ -899,6 +946,15 @@ Template commands are:
 
 Saved-template previews use the stored template. Draft previews accept unsaved source and one `renderer` object. Use `kind: "html"` with body and optional page parts, or `kind: "profile"` with an installed renderer id, version, and `inputTemplate`. Passing a saved template uses it as defaults before applying draft overrides.
 
+Template creation also accepts `issuancePolicy`: `repeatable` (default) or
+`oncePerFinalizedRecord`. This policy cannot be changed by an update. The latter
+requires a finalized Record and returns its first Document for this template,
+even across different workflow runs, actors and idempotency keys. Retries resume
+the first frozen input and number; later tags, filenames and actor metadata do
+not replace the original evidence. Current access to all frozen source tables
+is required. A cloned template is a new issuance scope, so keep one canonical
+issuing template per business document kind. Preview remains non-issuing.
+
 Generate and manage immutable document output from a selected record:
 
 ```bash
@@ -933,7 +989,7 @@ their input. Read the completed Document's `filename` after generation.
 
 The installed `de.zugferd.en16931@1` renderer accepts outgoing German EUR invoices with German seller and buyer addresses, standard VAT rates, bank transfer, and exact string decimals. It emits both the hybrid PDF/A-3b and `factur-x.xml`, validates the XML against the pinned XSD, then verifies the embedded XML. Use four decimal places for quantities and unit prices and two for tax rates. Version 1 excludes corrections, replacements, tax exemptions, allowances, charges, prepayments, discounts, foreign currencies, incoming invoices, and filings. These technical checks are not tax or legal approval. The invoice issuer is responsible for the content and for checking whether this renderer fits the intended use. Do not interpret a valid report as a compliance certificate.
 
-Renderer `de.zugferd.en16931@2` retains the version 1 fields and additionally requires `serviceDate` (`YYYY-MM-DD`) and one strict `billing` object:
+Renderer `de.zugferd.en16931@2` retains the version 1 fields. Each line additionally accepts optional `description` (1–4,000 characters) and `unitCode` (`C62` units, `HUR` hours, `DAY` days, `KGM` kilograms; default `C62`). It also requires `serviceDate` (`YYYY-MM-DD`) and one strict `billing` object:
 
 - `{ "kind": "invoice" }` — commercial invoice (380).
 - `{ "kind": "creditNote", "original": { "number": "RE-42", "invoiceDate": "2026-08-01" }, "reason": "Returned goods" }` — credit note (381), with a preceding invoice reference.
@@ -1064,7 +1120,7 @@ Workflow YAML stores `inputs`, optional `triggers`, and `steps`; name and descri
 cld grids workflows reference --json
 ```
 
-The shipped inputs are `record`, `recordList`, `text`, `number`, `boolean`, `date`, `dateTime`, and `select`. Triggers are `schedule` and `recordEvent`. Actions are `query`, `closeRecord`, `createCorrectionDraft`, `finalizeRecord`, `updateRecord`, `createRecord`, `atomicRecords`, `generateDocument`, `createDocumentLink`, `sendEmail`, `httpRequest`, `setVariable`, `fail`, and `succeed`. Control flow supports `if/then/else`, `switch/cases/default`, and `forEach/as/do`.
+The shipped inputs are `record`, `recordList`, `text`, `number`, `boolean`, `date`, `dateTime`, and `select`. Triggers are `schedule` and `recordEvent`. Actions are `query`, `closeRecord`, `createCorrectionDraft`, `deleteRecord`, `finalizeRecord`, `updateRecord`, `createRecord`, `atomicRecords`, `generateDocument`, `createDocumentLink`, `sendEmail`, `httpRequest`, `setVariable`, `fail`, and `succeed`. Control flow supports `if/then/else`, `switch/cases/default`, and `forEach/as/do`.
 
 `schedule` and `recordEvent` are the only triggers written in YAML. A direct invocation and a launcher press are API and CLI operations, not
 YAML — but they are still events, and a workflow is always listening for them, so nothing has to be declared to make it invocable.
@@ -1115,11 +1171,12 @@ Action fields are:
 | --- | --- | --- | --- |
 | `query` | Inline GQL `source` (up to 20,000 characters) | Typed `parameters`, `saveAs` | frozen query reference and metadata |
 | `closeRecord` | `record` | `expectedMode`, `expectedPolicyRevision` | none |
-| `createCorrectionDraft` | `original`, `typeField`, `typeValue`, `originalField` | `intent` (`correction` default), `copyFields` | created linked Draft |
+| `createCorrectionDraft` | `original`, `typeField`, `typeValue`, `originalField` | `intent` (`correction` default), `copyFields`, `values`, `saveAs` | created linked Draft |
+| `deleteRecord` | `record` | `audit` answers by question UUID, `saveAs` | trashed record identity |
 | `finalizeRecord` | `record` | none | none |
 | `updateRecord` | `record`, non-empty `set` | `audit` answers by question UUID | none |
 | `createRecord` | `table`, non-empty `values` | `saveAs` | created record |
-| `atomicRecords` | 1–100 `locks`, 1–50 `checks`, 1–50 `changes` | check `message`; update `ifVersion` and `audit` | none |
+| `atomicRecords` | 1–100 `locks`, 1–50 `checks`, 1–50 `changes` | check `message`; update `ifVersion`/`audit`; 1–50 `validateDocuments: [{template, record}]` | none |
 | `generateDocument` | `template` + `record`, or `data` + `output` | `filename`, up to 20 `tags`, `saveAs` | document |
 | `createDocumentLink` | `document` | `expiresIn: 1d|7d|30d|90d` default `30d`, `comment`, `saveAs` | public link |
 | `sendEmail` | `template`, `to` with 1–50 recipients | `data` with at most 200 keys, `saveAs` | email result |
@@ -1131,10 +1188,17 @@ Action fields are:
 `sendEmail.to` entries contain exactly one of `email` or `user`. HTTP methods are `GET`, `POST`, `PUT`, `PATCH`, and `DELETE`; requests
 carry optional JSON only. Field, table, document-template, and email-template references accept an exact name or public ID.
 
+`createCorrectionDraft.values` supplies up to 100 explicit initial fields after `copyFields` (for example, required Relations or a new date).
+It cannot override `typeField` or `originalField`. Ordinary field validation and related-table access apply. Relations receive public IDs,
+for example `"${{ inputs.original.Customer.recordId }}"`, not the whole Record object. Use `saveAs` to reference the created Draft.
+
 `query.parameters` maps lowercase names (`[a-z][a-z0-9_]*`) to `{type, value}`. Types are `text`, `number`, `decimal`, `boolean`,
 `date`, `dateTime`, `record`, and `recordList`. Decimal values are exact strings, not JSON numbers. Record values are workflow references,
 not manually constructed IDs. Bind them as `@params.name` in GQL, never interpolate workflow expressions into `source`.
-Use an explicit `from table` source; live View bindings are not supported.
+Use an explicit `from table` source. Independent grouped summary Views may be
+joined; publication pins each used definition and its field dependencies.
+Changing a used summary requires republishing the workflow. Ordinary View roots
+and non-summary View joins are not supported.
 In the workflow editor, `generateDocument.data` suggests prior query result names in the current scope. Reuse one name for multiple files; results declared inside a branch or loop stay inside it.
 
 ```yaml
@@ -1182,7 +1246,7 @@ steps:
 ```
 
 Both steps use the same captured rows. Each creates one immutable Document; a retry of that step returns its existing Document.
-Generation rechecks execution permission, Base write access and source-table access. Dry-runs validate but do not render files.
+Generation rechecks execution authorization: direct runs require Base Write; published App Workflows use their authorized launcher within the same Base, without personal Base grants or a UI-table restriction. Dry-runs validate but do not render files.
 The Document belongs to the workflow, not a dummy Record; find it under **All Documents** or the workflow run.
 Downloads use the stored primary artifact; public download links currently support PDF only.
 
@@ -1325,14 +1389,27 @@ for date display; exact amounts remain decimal strings. Never fetch a new hash s
 mean the file already exists. Inspect the completed run and download its Document. The UI offers the same review from the waiting
 step or a Custom App action's status. Confirmation has no automatic expiry: closing the review leaves the run waiting until confirmation or explicit cancellation. The frozen data and reserved number remain retained; current permissions and source-version guards are rechecked at confirmation and issuance.
 
-`atomicRecords` is a bounded Grids-only transaction. `locks` contains existing record references acquired in stable order. Each `checks`
-entry selects a bound `table`, has 1–20 `where` predicates combined with AND, and uses `assert: empty|notEmpty`; predicates contain
+`atomicRecords` is a bounded Grids-only transaction. `locks` contains record or record-list references (`inputs.item`, `inputs.items`, or a bound relation path) acquired in stable order. Across all entries, at most 100 distinct explicit records are allowed; duplicates count once and empty lists add no locks. Missing or inaccessible records reject the action before changes. Each `checks`
+entry chooses `query: {source, parameters}` or a bound `table` with 1–20 `where` predicates combined with AND, and uses `assert: empty|notEmpty`; predicates contain
 `field`, `op`, optional `value`, and optional `caseInsensitive`. Optional `message` controls the failed-check text. `changes` contains only
-`createRecord` entries (`table`, non-empty `values`) or `updateRecord` entries (`record`, non-empty `set`, optional `ifVersion`, optional
-`audit`). Grids rechecks current Base permission and commits the writes, relations, audit rows, event outbox, and step outcome
+`createRecord` entries (`table`, non-empty `values`), `updateRecord` entries (`record`, non-empty `set`, optional `ifVersion`, optional
+`audit`), or `finalizeRecord` entries (`record`, one record reference, never a list). All explicit locks, change targets and document-validation targets share the 100-record limit. Finalization requires enabled direct Finalization and does not bypass Four-eyes approval.
+Place finalization after updates; a later rejected change rolls it back too. Grids rechecks direct Base rights or published App Workflow authorization and commits the writes, relations, audit rows, event outbox, and step outcome
 together. A failure rolls back all of them. Dry run validates and evaluates but neither locks nor writes.
 
-Use stored fields for atomic predicates; Formula fields and aggregate arithmetic are not supported. Relation field values in `createRecord`/`updateRecord` and relation-filter values use public Record IDs (for example `${{ inputs.item.recordId }}`), not internal UUIDs, display labels, or whole record-reference objects. Record targets and locks still use references such as `inputs.item`. Relation targets must remain readable in the expected table and Base, including during dry run.
+`deleteRecord` is a separate transactional action: it moves an editable record to Trash, preserves its history, and respects the table's workflow mutation policy. It cannot delete a finalized record or its issued documents. Retrying the same successful step does not delete twice. A Custom App can offer this action on its draft list so the user remains on an existing page after deletion.
+
+Before transactional writes, Grids checks that the run still owns its lease. PostgreSQL serialization failures and deadlocks roll back the entire step before a bounded retry; validation failures are not retried. Custom App status exposes authored `fail.message` and `atomicRecords` check messages, but not raw internal errors. Keep those authored messages suitable for the App's users.
+
+Alternatively a check uses `query: {source, parameters}` instead of `table`/`where`, with the same `assert` and optional `message`. This uses the ordinary published GQL binding and typed query parameters, but evaluates current data on the writing transaction after the locks. Formula and grouped aggregate conditions are supported here; `table`/`where` remains stored-field-only. The complete result is bounded to 10,000 rows/5 MiB and is not persisted as document data. Schema drift and denied table access fail closed.
+
+For multiple budgets, select violations and use `assert: empty`; finding one passing group with `notEmpty` does not prove all groups pass. Read mutable amounts inside GQL, not earlier workflow parameters. Parameters should identify the candidate and fixed thresholds. Include its proposed amount in the check. Checks precede every change; dry run reserves nothing.
+
+Assertions test row existence, not cell truth: one row with `false` or `COUNT = 0` is nonempty. Express conditions with `where`/`having`. Reading a table does not automatically coordinate its writers; all competing operations need the same explicit lock. Use small projections and `limit 1` for existence checks.
+
+Optional `validateDocuments: [{template, record}]` (1–50 entries) validates profile-template inputs after all changes and before commit. HTML templates fail with `DOCUMENT_PROFILE_REQUIRED`. References use the same syntax as `generateDocument`; the template must be enabled and belong to the record's table. A schema/permission/input failure rolls back the whole action, including finalization. It does not issue a document, reserve a document number, or render a PDF. Building the input may create the record's idempotent scan code on the same transaction; rollback removes that change too. Use frozen record values in the profile mapping; issuance-only values such as the new document number are unavailable. Dry run checks the targets but cannot validate the post-change data. Generate the document in a later step; rendering failures can then be retried separately.
+
+Relation field values in `createRecord`/`updateRecord` and relation-filter values use public Record IDs (for example `${{ inputs.item.recordId }}`), not internal UUIDs, display labels, or whole record-reference objects. Record targets and locks still use references such as `inputs.item`. Relation targets must remain readable in the expected table and Base, including during dry run.
 
 An empty query has no row to lock. Competing reservation workflows must therefore name the same stable coordination record in `locks`, then
 check for the absence of an active relation while that record is locked:
@@ -1639,7 +1716,7 @@ Direct published-runtime HTTP reads use `_search`, `_cursor`, and `_limit` for l
 
 `update` takes `{values,audit?}`; only the published editable fields can change. `scan` takes `{operationId,expectedRevision,scannedText,inputs?}` using the discovered revision and prompt inputs. `submit` and `sidebar-submit` accept field values or `{data,inlineCreates?,idempotencyKey?}`. Do not supply fixed fields. Use an explicit stable `idempotencyKey` and the identical body on retries; unkeyed creates can duplicate. An edit Form additionally requires root `version` and may accept `inlineUpdates`; see the Form submission contract above. Commands that submit, update, scan or run actions require `--yes`.
 
-`comments create|update` takes `--body '{"body":"Markdown"}'`; update/delete also need `--comment <id>`. File commands take the discovered File field as the fourth argument: upload/replace use `--file <path>`, existing files use `--id <id>`, downloads use `--out <path>`. Delete and replace require `--yes`. `document` downloads the exact stored PDF with `--out`. All writes retain the published runtime's authentication, current availability and permission checks; App grants never grant raw Base access. JSONL keeps the complete page envelope, including cursors.
+`comments create|update` takes `--body '{"body":"Markdown"}'`; update/delete also need `--comment <id>`. File commands take the discovered File field as the fourth argument: upload/replace use `--file <path>`, existing files use `--id <id>`, downloads use `--out <path>`. Delete and replace require `--yes`. `document` downloads the exact stored PDF with `--out`. All writes retain runtime authentication, availability and permission checks. App grants never grant raw Base access, but a published App Workflow may deliberately read/write other tables in the same Base absent from the UI. Grids checks the App grant, exact published Workflow/revision/inputs and Base boundary; UI tables and `recordQueries` do not restrict Workflow internals. Base admins own business restrictions and any data disclosed through exports. JSONL keeps the complete page envelope, including cursors.
 
 ### Daily capabilities
 

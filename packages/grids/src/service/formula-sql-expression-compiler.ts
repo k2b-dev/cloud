@@ -459,27 +459,32 @@ const compileListReduction = (fn: ListFormulaFunctionName, args: Expr[], context
     if (typeof field === "string") return formulaSqlFail(field);
     if (field.type !== "object_list") return formulaSqlFail(`${field.name} is not an object-list field`);
     configValue = field.config;
+    // Finalization supplies already validated, calculated cells from its input snapshot.
+    const prepared = context.computedFieldSql?.get(field.id);
+    if (prepared && !ObjectListConfigSchema.safeParse(configValue).success) return formulaSqlFail("Invalid object-list configuration");
     value = namedExpression(listKey, context, (local) =>
-      stageExpression(
-        compileObjectListValue(field, context.recordAlias, (ast, resolveField, recordAlias) => {
-          const rowContext = {
-            ...context,
-            fieldsByRef: new Map<string, Field[]>(),
-            resolveField,
-            recordAlias,
-            steps: [],
-            named: [],
-            fieldValues: new Map<string, FormulaSqlCompileResult>(),
-            resolvedRefs: new Map(),
-            condition: undefined,
-            useFinalizedFormulaValues: false,
-          };
-          const bound = bindSelects(ast, rowContext);
-          return bound.ok ? finishPlan(compileExpression(bound.ast, rowContext), rowContext) : formulaSqlFail(bound.error);
-        }),
-        local,
-        context.depth > 0,
-      ),
+      prepared
+        ? { ok: true, expression: prepared }
+        : stageExpression(
+            compileObjectListValue(field, context.recordAlias, (ast, resolveField, recordAlias) => {
+              const rowContext = {
+                ...context,
+                fieldsByRef: new Map<string, Field[]>(),
+                resolveField,
+                recordAlias,
+                steps: [],
+                named: [],
+                fieldValues: new Map<string, FormulaSqlCompileResult>(),
+                resolvedRefs: new Map(),
+                condition: undefined,
+                useFinalizedFormulaValues: false,
+              };
+              const bound = bindSelects(ast, rowContext);
+              return bound.ok ? finishPlan(compileExpression(bound.ast, rowContext), rowContext) : formulaSqlFail(bound.error);
+            }),
+            local,
+            context.depth > 0,
+          ),
     );
   }
   if (!value.ok) return value;

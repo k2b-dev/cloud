@@ -21,6 +21,7 @@ import type { CustomAppLauncherInvocation, ScannerLauncherInvocation } from "../
 import type { GridsWorkflowAuthorization, GridsWorkflowRunScope } from "../service/workflow-runs";
 import type { GridsWorkflowPrincipal, GridsWorkflowRun } from "../workflows/contracts";
 import { createCustomAppsApi } from "./custom-apps";
+import { apiMessagesForLocale } from "./messages";
 
 const authenticateAs =
   (user: User): MiddlewareHandler<AuthContext> =>
@@ -433,7 +434,7 @@ describe("Grids App Form runtime", () => {
         INSERT INTO grids.fields (id, short_id, table_id, name, type, config, required, default_value, position) VALUES
           (${fieldId}::uuid, ${fieldPublicId}, ${tableId}::uuid, 'Subject', 'text', '{}'::jsonb, TRUE, NULL, 0),
           (${hiddenFieldId}::uuid, ${hiddenFieldPublicId}, ${tableId}::uuid, 'Internal source', 'text', '{}'::jsonb, FALSE, NULL, 1),
-          (${suppliedFieldId}::uuid, ${suppliedFieldPublicId}, ${tableId}::uuid, 'Channel', 'text', '{}'::jsonb, FALSE, ${JSON.stringify("Web default")}::jsonb, 2),
+          (${suppliedFieldId}::uuid, ${suppliedFieldPublicId}, ${tableId}::uuid, 'Channel', 'text', '{}'::jsonb, FALSE, ${JSON.stringify("Web default")}::text::jsonb, 2),
           (${imageFieldId}::uuid, ${imageFieldPublicId}, ${tableId}::uuid, 'Preview', 'file', '{}'::jsonb, FALSE, NULL, 3)
       `;
         await sql`
@@ -444,7 +445,7 @@ describe("Grids App Form runtime", () => {
           ${tableId}::uuid,
           'Request search',
           ${`from table {${tablePublicId}}\nselect {${fieldPublicId}}`},
-          ${JSON.stringify({ displayConfig: { mode: "cards", cards: { fieldIds: [suppliedFieldId], imageFieldId } } })}::jsonb
+          ${JSON.stringify({ displayConfig: { mode: "cards", cards: { fieldIds: [suppliedFieldId], imageFieldId } } })}::text::jsonb
         )
       `;
         await sql`
@@ -492,7 +493,7 @@ describe("Grids App Form runtime", () => {
             ${workflowId}::uuid,
             'Approve request',
             'customApp',
-            ${JSON.stringify({ kind: "customApp", inputSchema: {} })}::jsonb,
+            ${JSON.stringify({ kind: "customApp", inputSchema: {} })}::text::jsonb,
             TRUE,
             1
           )
@@ -1066,7 +1067,7 @@ describe("Grids App Form runtime", () => {
         expect(anonymousRecordEdit.status).toBe(401);
         await sql`
           UPDATE grids.records
-          SET data = data || ${JSON.stringify({ [hiddenFieldId]: "Internal only" })}::jsonb
+          SET data = data || ${JSON.stringify({ [hiddenFieldId]: "Internal only" })}::text::jsonb
           WHERE id = ${recordId}::uuid
         `;
         const updatedRecord = await api.request(recordUrl, {
@@ -1274,7 +1275,7 @@ describe("Grids App Form runtime", () => {
         if (!stored) throw new Error("Published Grids App is missing");
         await sql`
         UPDATE grids.custom_apps
-        SET published_definition = ${JSON.stringify(actionDefinition)}::jsonb,
+        SET published_definition = ${JSON.stringify(actionDefinition)}::text::jsonb,
             published_capabilities = ${JSON.stringify({
               ...stored.published_capabilities,
               availability: [...((stored.published_capabilities.availability as unknown[]) ?? []), actionCapability],
@@ -1310,7 +1311,7 @@ describe("Grids App Form runtime", () => {
                 { pageId: "request", blockId: "actions", actionId: "approve", launcherId, workflowId, revision: 1 },
                 { pageId: "request", blockId: "requests", actionId: "approve-row", launcherId, workflowId, revision: 1 },
               ],
-            })}::jsonb
+            })}::text::jsonb
         WHERE id = ${appId}::uuid
       `;
         expect(await getPublishedByShortId(applied.data.shortId)).not.toBeNull();
@@ -1450,6 +1451,11 @@ describe("Grids App Form runtime", () => {
             channel: "customApp" | "scanner";
           }
         >();
+        let statusResult: Pick<GridsWorkflowRun, "status" | "error" | "resultMessage"> = {
+          status: "succeeded",
+          error: null,
+          resultMessage: "Approved",
+        };
         const createStatusApi = (serviceAccountId: string) =>
           new Hono<AuthContext>().route(
             "/apps",
@@ -1524,10 +1530,8 @@ describe("Grids App Form runtime", () => {
                       actorUserId: accepted.principal.userId,
                       serviceAccountId: accepted.principal.serviceAccountId,
                       inputs: {},
-                      status: "succeeded",
                       result: null,
-                      error: null,
-                      resultMessage: "Approved",
+                      ...statusResult,
                       createdAt: "2026-01-01T00:00:00.000Z",
                       startedAt: "2026-01-01T00:00:00.000Z",
                       finishedAt: "2026-01-01T00:00:01.000Z",
@@ -1553,6 +1557,22 @@ describe("Grids App Form runtime", () => {
         expect(ownStatus.status).toBe(200);
         expect(await ownStatus.json()).toEqual({ status: "succeeded", message: "Approved" });
         expect((await secondServiceAccountApi.request(statusPath)).status).toBe(404);
+
+        for (const code of ["WORKFLOW_FAILED", "ATOMIC_CHECK_FAILED", "WORKFLOW_ACTION_ERROR"]) {
+          statusResult = {
+            status: "failed",
+            resultMessage: null,
+            error: { code, message: "Check the agreement and IBAN", retryable: false },
+          };
+          const failedStatus = await firstServiceAccountApi.request(statusPath);
+          expect(failedStatus.status).toBe(200);
+          expect(await failedStatus.json()).toEqual({
+            status: "failed",
+            message: code === "WORKFLOW_ACTION_ERROR" ? apiMessagesForLocale("en").workflowStatusFailed : "Check the agreement and IBAN",
+          });
+          expect((await secondServiceAccountApi.request(statusPath)).status).toBe(404);
+        }
+        statusResult = { status: "succeeded", error: null, resultMessage: "Approved" };
 
         const referencedActionResponse = await firstServiceAccountApi.request(
           `/apps/runtime/${applied.data.shortId}/request/references/row-actions/approve-reference?request_id=${body.recordId}`,
@@ -1620,8 +1640,8 @@ describe("Grids App Form runtime", () => {
         if (!scannerCapabilities.success) throw new Error(scannerCapabilities.error.message);
         await sql`
         UPDATE grids.custom_apps
-        SET published_definition = ${JSON.stringify(actionDefinition)}::jsonb,
-            published_capabilities = ${JSON.stringify(scannerCapabilities.data)}::jsonb
+        SET published_definition = ${JSON.stringify(actionDefinition)}::text::jsonb,
+            published_capabilities = ${JSON.stringify(scannerCapabilities.data)}::text::jsonb
         WHERE id = ${appId}::uuid
       `;
         const scannerPublished = await getPublishedByShortId(applied.data.shortId);

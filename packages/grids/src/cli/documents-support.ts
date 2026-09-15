@@ -26,6 +26,8 @@ export const DOCUMENT_TEMPLATE_REFERENCE = {
     renderer:
       "Renderer definition. Use {kind:'html', body, header?, footer?, css?, numberTemplate, filenameTemplate} or {kind:'profile', id, version, inputTemplate}.",
     enabled: "Disabled templates are hidden from normal generation flows.",
+    issuancePolicy:
+      "Creation only: repeatable (default) or oncePerFinalizedRecord. The latter reuses the first frozen issuance across keys and runs; it requires finalization and current source access.",
     position: "Optional integer order on update, not on create.",
   },
   liquidData: [

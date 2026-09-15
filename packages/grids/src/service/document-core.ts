@@ -7,9 +7,8 @@ import { type DocumentArtifactContent, type DocumentIssuanceActor, documentIssua
 import { type DocumentDbRow, hydrateDocuments, loadDocumentArtifacts } from "./document-mappers";
 import { documentServiceText } from "./document-messages";
 import { buildLiveRenderData } from "./document-rendering";
-import { createRecordSnapshotDraft, type SnapshotTableReadAuthorizer } from "./document-snapshots";
+import { captureRecordSnapshotDraft, type SnapshotTableReadAuthorizer } from "./document-snapshots";
 import { getStoredTemplate } from "./document-templates";
-import { get as getRecord } from "./records";
 import type { ExpansionViewer } from "./relation-access";
 import { get as getTable } from "./tables";
 import { buildTemplateAppData } from "./template-context";
@@ -58,13 +57,19 @@ export const createDocumentForRecord = async (params: {
           if (!template || !table) return fail(err.notFound(t.tableNotFound));
           if (!template.enabled || template.deletedAt) return fail(err.badInput(t.templateDisabled));
 
-          const record = await getRecord(params.table.id, params.recordId, {
+          const captured = await captureRecordSnapshotDraft({
             client,
             templateApp,
-            dateConfig: params.dateConfig,
+            baseId: params.table.baseId,
+            tableId: params.table.id,
+            recordId: params.recordId,
+            actorId: params.actor.kind === "user" ? params.actor.userId : null,
+            canReadTable: params.canReadTable,
             viewer: params.viewer,
+            dateConfig: params.dateConfig,
           });
-          if (!record) return fail(err.notFound(t.recordNotFound));
+          if (!captured.ok) return captured;
+          const { snapshot, record } = captured.data;
 
           const rendered = await buildLiveRenderData({
             client,
@@ -77,23 +82,10 @@ export const createDocumentForRecord = async (params: {
           });
           if (!rendered.ok) return rendered;
 
-          const snapshot = await createRecordSnapshotDraft({
-            client,
-            templateApp,
-            baseId: params.table.baseId,
-            tableId: params.table.id,
-            recordId: params.recordId,
-            actorId: params.actor.kind === "user" ? params.actor.userId : null,
-            canReadTable: params.canReadTable,
-            viewer: params.viewer,
-            dateConfig: params.dateConfig,
-          });
-          if (!snapshot.ok) return snapshot;
-
           return ok({
             template,
-            snapshot: snapshot.data,
-            renderData: { ...rendered.data.data, snapshot: snapshot.data },
+            snapshot,
+            renderData: { ...rendered.data.data, snapshot },
           });
         })
         .catch((error: unknown) => {

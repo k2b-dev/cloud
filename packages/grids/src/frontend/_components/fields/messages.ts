@@ -163,6 +163,7 @@ export const gridsFieldMessages = i18n.define({
       listCalculatedDescription: "Read-only result calculated from columns in the same row.",
       listCalculatedSelectUnsupported: "Selection columns use option IDs and cannot be calculated. Use an input column instead.",
       listRowFormula: "Row formula",
+      listDetailsOnly: "Show under calculation details",
       listFormulaHelp:
         "Reference columns by name; put names with spaces in double quotes. After renaming a column, update its references. Use its stable column ID when names should be free to change.",
       listBounds: "Row limits",
@@ -211,6 +212,8 @@ export const gridsFieldMessages = i18n.define({
       defaultDescription: "Optional value used when a create request omits this field.",
       noDefaultSupported: "This field type does not support a configurable default value.",
       defaultValue: "Default value",
+      listDefaultDescription: "Suggested when adding an entry. Existing entries stay unchanged.",
+      removeDefault: "Remove default",
       none: "None",
       fixedDate: "Fixed date",
       currentDateTime: "Current date and time when created",
@@ -424,6 +427,7 @@ export const gridsFieldMessages = i18n.define({
       listCalculatedSelectUnsupported:
         "Auswahlspalten verwenden Options-IDs und können nicht berechnet werden. Verwende sie als Eingabespalte.",
       listRowFormula: "Zeilenformel",
+      listDetailsOnly: "Unter Berechnungsdetails anzeigen",
       listFormulaHelp:
         "Verwende Spaltennamen; Namen mit Leerzeichen stehen in doppelten Anführungszeichen. Passe Verweise nach dem Umbenennen an. Mit der stabilen Spalten-ID bleiben Verweise unabhängig vom Namen.",
       listBounds: "Zeilenanzahl begrenzen",
@@ -475,6 +479,8 @@ export const gridsFieldMessages = i18n.define({
       defaultDescription: "Optionaler Wert, wenn eine Erstellungsanfrage dieses Feld auslässt.",
       noDefaultSupported: "Für diesen Feldtyp lässt sich kein Standardwert konfigurieren.",
       defaultValue: "Standardwert",
+      listDefaultDescription: "Vorschlag beim Hinzufügen eines Eintrags. Vorhandene Einträge bleiben unverändert.",
+      removeDefault: "Standardwert entfernen",
       none: "Keiner",
       fixedDate: "Festes Datum",
       currentDateTime: "Aktuelles Datum und aktuelle Uhrzeit beim Erstellen",

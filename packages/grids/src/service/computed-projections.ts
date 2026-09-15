@@ -167,13 +167,20 @@ export const readableComputedTargetTableIds = async (
 
 type TargetFieldResolver = (id: string) => Promise<Field | null>;
 
-const createTargetFieldResolver = (fieldsById: Map<string, Field>, client?: SqlClient): TargetFieldResolver => {
+const createTargetFieldResolver = (fieldsById: Map<string, Field>, options: ComputedOptions): TargetFieldResolver => {
+  const knownFields = new Map(
+    Object.values(options.fieldsByTableId ?? {})
+      .flat()
+      .map((field) => [field.id, field]),
+  );
   const cache = new Map<string, Field | null>();
   return async (id) => {
     const local = fieldsById.get(id);
     if (local) return local;
+    const known = knownFields.get(id);
+    if (known) return known;
     if (cache.has(id)) return cache.get(id) ?? null;
-    const field = await getField(id, client);
+    const field = await getField(id, options.client);
     cache.set(id, field);
     return field;
   };
@@ -193,6 +200,8 @@ type ComputedOptions = {
   /** Query/export evaluation must not turn absent historical captures into incomplete totals. */
   requireCapturedValues?: boolean;
   client?: SqlClient;
+  /** Reuse the query's already loaded schema for cross-table dependencies. */
+  fieldsByTableId?: Readonly<Record<string, Field[]>>;
   recordAlias?: string;
   authorizedTableIds?: ReadonlySet<string>;
   now?: Date;
@@ -237,7 +246,7 @@ const targetValue = async (
 } | null> => {
   const descriptor = storageOf(field);
   if (field.type === "formula") {
-    const fields = await listByTable(field.tableId, false, options.client);
+    const fields = options.fieldsByTableId?.[field.tableId] ?? (await listByTable(field.tableId, false, options.client));
     const computedFieldSql = await buildComputedFieldSqlMap(fields, {
       ...options,
       recordAlias: alias,
@@ -255,7 +264,7 @@ const targetValue = async (
     return compiled.ok ? { ...compiled.expression, outputType: outputTypeForFormula(compiled.expression.type) } : null;
   }
   if (field.type === "lookup" || field.type === "rollup") {
-    const fields = await listByTable(field.tableId, false, options.client);
+    const fields = options.fieldsByTableId?.[field.tableId] ?? (await listByTable(field.tableId, false, options.client));
     const projections = await buildComputedProjections(fields, { ...options, recordAlias: alias, fieldIds: new Set([field.id]) });
     const projection = projections.find((item) => item.fieldId === field.id);
     return projection ? { sql: projection.expr, errorSql: projection.errorSql, outputType: projection.outputType } : null;
@@ -391,8 +400,8 @@ const buildRollupProjection = async (options: {
  *
  * Async because rollup/lookup `targetFieldId` lives on a DIFFERENT
  * table (the relation's target). The source-field list passed in only
- * has the current table's fields; we fetch missing target fields
- * one by one. Cross-table targets are common in real schemas, so
+ * has the current table's fields; reuse the supplied query schema or fetch
+ * missing target fields. Cross-table targets are common in real schemas, so
  * resolving them is necessary so the storage descriptor can project
  * the target field with the same rules as filters, sorts, and
  * aggregates. Without this lookup, cross-table rollup columns were
@@ -402,7 +411,7 @@ export const buildComputedProjections = async (fields: Field[], options: Compute
   const fieldsById = new Map(fields.map((f) => [f.id, f]));
   const out: ComputedProjection[] = [];
   const recordAlias = assertSqlIdentifier(options.recordAlias ?? "r");
-  const resolveTargetField = createTargetFieldResolver(fieldsById, options.client);
+  const resolveTargetField = createTargetFieldResolver(fieldsById, options);
 
   for (const field of fields) {
     if (field.deletedAt) continue;

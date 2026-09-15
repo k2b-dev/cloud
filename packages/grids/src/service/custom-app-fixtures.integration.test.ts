@@ -105,7 +105,7 @@ const insertCertificateResources = async (): Promise<void> => {
           ...[titleFieldId, descriptionFieldId, periodFieldId].map((fieldId) => ({ kind: "user_input", fieldId })),
           { kind: "form_value", fieldId: statusFieldId, value: ["pending"] },
         ],
-      })}::jsonb,
+      })}::text::jsonb,
       true,
       0
     )

@@ -389,6 +389,9 @@ const deCopy = {
   "Let readers view and download existing documents for the page record.":
     "Benutzern erlauben, vorhandene Dokumente zum Seitendatensatz anzusehen und herunterzuladen.",
   "Document templates": "Dokumentvorlagen",
+  "Allow draft PDF previews": "PDF-Vorschau für Entwürfe erlauben",
+  "Readers can preview saved drafts using these templates, including their queried data. No document is issued. Template or schema changes require republishing the app.":
+    "Benutzer können gespeicherte Entwürfe mit diesen Vorlagen samt abgefragten Daten ansehen. Es wird kein Dokument ausgestellt. Nach Vorlagen- oder Schemaänderungen muss die App erneut veröffentlicht werden.",
   "Show existing generated documents from these enabled templates.":
     "Vorhandene erstellte Dokumente aus diesen aktivierten Vorlagen anzeigen.",
   "Read the document guide": "Dokumentationsleitfaden öffnen",

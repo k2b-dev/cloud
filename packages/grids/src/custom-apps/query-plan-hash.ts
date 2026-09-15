@@ -3,7 +3,7 @@ import type { DslQueryContextInput, DslQueryContextValues } from "../query-dsl/p
 import { dslQueryReferencedFieldIds } from "../query-dsl/plan-dependencies";
 import type { DslResolvedSqlQueryPlan } from "../query-dsl/resolver";
 import type { Field } from "../service/types";
-import { stableCustomAppValue } from "./stable-value";
+import { customAppFieldConfig, stableCustomAppValue } from "./stable-value";
 
 const CANONICAL_UUID = "00000000-0000-4000-8000-000000000000";
 const CANONICAL_RECORD_ID = "REC001";
@@ -89,7 +89,7 @@ export const customAppQueryPlanHash = (plan: DslResolvedSqlQueryPlan, fieldsByTa
       id: field.id,
       tableId: field.tableId,
       type: field.type,
-      config: field.config,
+      config: customAppFieldConfig(field),
       position: field.position,
       presentable: field.presentable,
     }))

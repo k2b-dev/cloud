@@ -7,7 +7,7 @@ import { ShortIdSchema } from "../contracts";
 import { gridsService } from "../service";
 import { type FormSubmission, MAX_INLINE_CREATES_PER_FIELD, MAX_INLINE_CREATES_PER_SUBMISSION } from "../service/form-submission";
 import type { Form } from "../service/forms";
-import { fromPublicRecordValues, projectPublicId, resolvePublicId } from "../service/public-resources";
+import { fromPublicRecordValues, fromPublicRelationValues, projectPublicId, resolvePublicId } from "../service/public-resources";
 import type { ExpansionViewer } from "../service/relation-access";
 import { apiMessages } from "./messages";
 import {
@@ -26,8 +26,12 @@ export const fromPublicFormConfig = async (tableId: string, config: PublicFormCo
   for (const entry of config.fields) {
     const field = byPublicId.get(entry.fieldId);
     if (!field) return null;
+    const raw = entry.kind === "form_value" ? entry.value : entry.defaultValue;
+    const converted = raw === undefined ? null : await fromPublicRelationValues([field], { [field.id]: raw });
+    if (converted && !converted.ok) return null;
+    const value = converted?.ok ? converted.data[field.id] : raw;
     if (entry.kind === "form_value") {
-      entries.push({ ...entry, fieldId: field.id });
+      entries.push({ ...entry, fieldId: field.id, value });
       continue;
     }
     let inlineCreate: Extract<Form["config"]["fields"][number], { kind: "user_input" }>["inlineCreate"];
@@ -35,15 +39,25 @@ export const fromPublicFormConfig = async (tableId: string, config: PublicFormCo
       const targetTableId = field.type === "relation" ? (field.config as { targetTableId?: unknown }).targetTableId : null;
       if (typeof targetTableId !== "string") return null;
       const targetFields = await gridsService.field.listByTable(targetTableId);
-      const targetByPublicId = new Map(targetFields.map((target) => [target.shortId, target.id]));
-      const inlineFields = entry.inlineCreate.fields?.map((inlineField) => {
-        const internalId = targetByPublicId.get(inlineField.fieldId);
-        return internalId ? { ...inlineField, fieldId: internalId } : null;
-      });
+      const targetByPublicId = new Map(targetFields.map((target) => [target.shortId, target]));
+      const inlineFields = entry.inlineCreate.fields
+        ? await Promise.all(
+            entry.inlineCreate.fields.map(async (inlineField) => {
+              const target = targetByPublicId.get(inlineField.fieldId);
+              if (!target) return null;
+              const converted =
+                inlineField.defaultValue === undefined
+                  ? null
+                  : await fromPublicRelationValues([target], { [target.id]: inlineField.defaultValue });
+              if (converted && !converted.ok) return null;
+              return { ...inlineField, fieldId: target.id, ...(converted?.ok ? { defaultValue: converted.data[target.id] } : {}) };
+            }),
+          )
+        : undefined;
       if (inlineFields?.some((inlineField) => !inlineField)) return null;
       inlineCreate = { ...entry.inlineCreate, fields: inlineFields?.filter((item): item is NonNullable<typeof item> => Boolean(item)) };
     }
-    entries.push({ ...entry, fieldId: field.id, inlineCreate });
+    entries.push({ ...entry, fieldId: field.id, inlineCreate, ...(raw !== undefined ? { defaultValue: value } : {}) });
   }
   const validations = config.validations?.map((rule) => {
     const leftFieldId = byPublicId.get(rule.leftFieldId)?.id;
@@ -54,7 +68,17 @@ export const fromPublicFormConfig = async (tableId: string, config: PublicFormCo
       : null;
   });
   if (validations?.some((rule) => !rule)) return null;
-  return { ...config, fields: entries, validations: validations?.filter((rule): rule is NonNullable<typeof rule> => Boolean(rule)) };
+  const computedFields = config.computedFields?.map((entry) => {
+    const fieldId = byPublicId.get(entry.fieldId)?.id;
+    return fieldId ? { ...entry, fieldId } : null;
+  });
+  if (computedFields?.some((entry) => !entry)) return null;
+  return {
+    ...config,
+    fields: entries,
+    computedFields: computedFields?.filter((entry): entry is NonNullable<typeof entry> => !!entry),
+    validations: validations?.filter((rule): rule is NonNullable<typeof rule> => Boolean(rule)),
+  };
 };
 
 export const FormSchema = AuthenticatedPublicFormSchema;

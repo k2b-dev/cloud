@@ -45,6 +45,7 @@ function DocumentGenerateDialog(props: {
 }) {
   const locale = useLocale();
   const t = () => documentMessages.resolve([locale()]).t;
+  const once = () => props.args.template.issuancePolicy === "oncePerFinalizedRecord";
   const attempt = createDocumentGenerationAttempt();
   const defaultDownloadFilename = `${props.args.template.name}.pdf`;
   const [recordId, setRecordId] = createSignal(props.args.initialRecordId ?? "");
@@ -75,7 +76,7 @@ function DocumentGenerateDialog(props: {
     mutation: async (_, { abortSignal }) => {
       if (!attempt.request()) {
         if (!recordId().trim()) throw new Error(t().chooseRecordFirst);
-        if (!hasCurrentPreview()) throw new Error(t().previewBeforeGenerate);
+        if (!once() && !hasCurrentPreview()) throw new Error(t().previewBeforeGenerate);
       }
       const request =
         attempt.request() ??
@@ -100,7 +101,13 @@ function DocumentGenerateDialog(props: {
   const closeSafely = async () => {
     if (generateMut.loading()) return;
     if (attempt.request()) {
-      if (!(await prompts.confirm(t().abandonGenerationDetail, { title: t().abandonGeneration, confirmText: t().closeAnyway }))) return;
+      if (
+        !(await prompts.confirm(
+          props.args.template.issuancePolicy === "oncePerFinalizedRecord" ? t().issuanceOnceAbandon : t().abandonGenerationDetail,
+          { title: t().abandonGeneration, confirmText: t().closeAnyway },
+        ))
+      )
+        return;
     } else if (
       !(await confirmDiscardIfDirty(() => Boolean(filename().trim() || tags().length || recordId() !== (props.args.initialRecordId ?? ""))))
     ) {
@@ -112,7 +119,13 @@ function DocumentGenerateDialog(props: {
 
   const startNewAttempt = async () => {
     if (generateMut.loading()) return;
-    if (!(await prompts.confirm(t().newGenerationAttemptDetail, { title: t().newGenerationAttempt }))) return;
+    if (
+      !(await prompts.confirm(
+        props.args.template.issuancePolicy === "oncePerFinalizedRecord" ? t().issuanceOnceNewAttempt : t().newGenerationAttemptDetail,
+        { title: t().newGenerationAttempt },
+      ))
+    )
+      return;
     attempt.reset();
     setPreviewedRecordId(null);
   };
@@ -121,7 +134,7 @@ function DocumentGenerateDialog(props: {
     <PanelDialog>
       <PanelDialog.Header
         title={t().generateTitle({
-          action: props.args.mode === "generate-again" ? t().generateAgain : t().generate,
+          action: once() ? t().issueOrRetrieve : props.args.mode === "generate-again" ? t().generateAgain : t().generate,
           template: props.args.template.name,
         })}
         subtitle={props.args.table.name}
@@ -163,7 +176,15 @@ function DocumentGenerateDialog(props: {
             onValueChange={setTags}
             disabled={attempt.request() !== null}
           />
-          <NoticeCard tone="info" title={t().immutableGeneratedDocument} detail={t().immutableGeneratedDocumentDetail} />
+          <NoticeCard
+            tone="info"
+            title={t().immutableGeneratedDocument}
+            detail={
+              props.args.template.issuancePolicy === "oncePerFinalizedRecord"
+                ? t().issuanceOnceDetail
+                : t().immutableGeneratedDocumentDetail
+            }
+          />
         </section>
         <Show
           when={!attempt.request()}
@@ -194,10 +215,16 @@ function DocumentGenerateDialog(props: {
             size="sm"
             type="button"
             onClick={() => generateMut.mutate(undefined)}
-            disabled={generateMut.loading() || (!attempt.request() && !hasCurrentPreview())}
+            disabled={generateMut.loading() || !recordId().trim() || (!once() && !attempt.request() && !hasCurrentPreview())}
           >
             {generateMut.loading() ? <i class="ti ti-loader-2 animate-spin" /> : <i class="ti ti-download" />}
-            {attempt.request() ? t().retryGeneration : props.args.mode === "generate-again" ? t().generateAgain : t().generateDocument}
+            {attempt.request()
+              ? t().retryGeneration
+              : once()
+                ? t().issueOrRetrieve
+                : props.args.mode === "generate-again"
+                  ? t().generateAgain
+                  : t().generateDocument}
           </Button>
         </div>
       </PanelDialog.Footer>

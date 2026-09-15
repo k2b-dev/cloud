@@ -16,6 +16,69 @@ documents, and workflows without splitting the domain across unrelated tools.
 
 ## Use Grids
 
+### Start with the billing template
+
+The **Billing** Base template provides invoices, credit notes linked to an
+original invoice, and commission self-billing. Positions belong to their bill
+as an Object list; payments have their own table.
+It uses EUR and German business partners with distinct German VAT IDs,
+with 7% or 19% VAT. Check this scope before using it for your business.
+
+In the Billing App, new invoices and self-billing drafts suggest today's
+document date. Check it before saving; choose the service and due dates yourself.
+Editing a draft preserves its saved dates. Optional notes are at the end of
+the edit form; **Back to document** returns to the bill. The required
+buyer reference stays in the main form. After finalization, notes are read-only.
+
+New positions suggest quantity 1, Pieces, and 19% VAT. Change these when needed;
+descriptions and prices stay empty. New payments and refunds suggest today's
+date. Editing preserves the saved values. Short fields share a compact row,
+including in the embedded business-partner form.
+
+**Edit draft** opens a separate form. Saving returns to the document's saved
+positions and totals; preview and issuance run only there,
+never alongside unsaved inputs. **Record payment** also opens a separate form.
+
+1. Complete **Your company**, including the receiving bank account, and confirm
+   that the issuer details have been checked. Example records are drafts,
+   not usable company or bank details.
+2. Create an invoice draft, choose or create the business partner, and enter
+   positions. Review the calculated totals before issuing.
+3. Issue the document. This freezes the bill's values and uses a template
+   configured to issue once per finalized record. If rendering is interrupted,
+   use the same **Issue / retrieve** action on the finalized entry; do not create a
+   replacement invoice. Finalization alone does not prove that the file exists.
+4. Record actual payments separately, review the saved entry, then choose
+   **Confirm payment**. Unconfirmed payments remain visible but do not affect
+   balances. Confirmation requires a finalized bill and freezes the payment;
+   it can no longer be edited, deleted or moved to another bill. The balance
+   combines confirmed payments and finalized corrections without multiplying
+   either through joins. Recording a payment does not initiate a bank transfer.
+
+Use **Discard draft** on the draft list to move an unfinished bill to Trash.
+Issued bills and their documents cannot be discarded this way.
+
+The `REF-…` value identifies an internal record; it is not an invoice number
+or a sequential counter. The issued Document owns the official number. Open
+the bill's **Documents** section to see that number beside its stored file.
+Retries retrieve the same Document and number.
+
+For a correction, start from the original invoice and reduce the copied
+positions for a partial credit. The workflow checks the remaining net and VAT
+at each rate, including whether the residual amount stays exactly correctable
+after rounding. An incompatible split stays a draft; adjust its positions or
+correct the complete remaining amount. Refunds require the recipient's bank
+details. The document retains the original issuer and recipient facts.
+
+For self-billing, choose the partner, supply the agreement reference and enter
+positions directly in the bill's Object list. Review the saved totals and
+recipient's bank account before issuing. Only this bill is finalized; there
+is no separate commission collection or automatic check against earlier
+commission settlements. The issuer must avoid entering the same obligation
+twice. This is not accounting certification or a payment-execution service.
+
+### Navigate a Base
+
 Use **New** in Edit mode for permitted creation actions. Table-based actions ask for a table and preselect the current one when eligible. **View** opens the existing query editor. **Documents** always expands to **All documents** and individual template destinations. Workflow email templates live under **Settings → Email templates**.
 
 **All documents** defaults to folders by document template and year. Search matches filenames, document numbers, and tags across the Base. Both the Base catalog and template document pages load their initial results on the server.
@@ -114,7 +177,7 @@ For Assistant discovery, `grids.gql.context` keeps the `fields` catalog compact.
 ### Generate documents and evidence
 
 - Generate documents or PDFs from reviewed templates and record data.
-- Download the exact stored primary file or an additional artifact of a completed Document. `primaryArtifactKey` identifies the main file and its MIME type determines the format. Public links share only a primary PDF. **Generate again** creates a new immutable Document.
+- Download the exact stored primary file or an additional artifact of a completed Document. `primaryArtifactKey` identifies the main file and its MIME type determines the format. Public links share only a primary PDF. Repeatable templates can generate a new immutable Document; once-per-finalized-record templates retrieve the existing one for that finalized revision.
 - If generation has an uncertain result, keep its dialog open and retry that
   attempt. Closing loses the retry context; check All documents before creating
   another Document.
@@ -181,6 +244,10 @@ usual field constraints. Supported types are text, long text, number, boolean,
 date, select, percent, and duration. Lists cannot contain nested objects,
 relations, or further lists. The editor shows names and types first;
 **Rules and calculation** reveals validation and calculated-column options.
+
+Set a column's **Default value** there to suggest a value when adding an entry.
+Defaults follow the column's validation rules. Existing entries stay unchanged;
+API writes still need to supply their own values. Calculated columns have no defaults.
 
 The record editor shows 25 rows per page and preserves all edits when paging.
 Adding or moving a row opens the relevant page and keeps keyboard focus with

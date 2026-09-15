@@ -81,7 +81,8 @@ const snapshotRecord = (table: Table, fields: Field[], record: GridRecord): Snap
     createdAt: field.createdAt,
     updatedAt: field.updatedAt,
   })),
-  data: record.data,
+  // Graph pruning must not change the live record used by document rendering.
+  data: { ...record.data },
   version: record.version,
   createdAt: record.createdAt,
   updatedAt: record.updatedAt,
@@ -101,7 +102,9 @@ const buildRecordSnapshotGraph = async (
     maxDepth?: number;
     maxRecords?: number;
   },
-): Promise<Result<{ root: SnapshotRecord; graph: { rootId: string; records: Record<string, SnapshotRecord> } }>> => {
+): Promise<
+  Result<{ root: SnapshotRecord; rootRecord: GridRecord; graph: { rootId: string; records: Record<string, SnapshotRecord> } }>
+> => {
   const t = documentServiceText(options.dateConfig?.locale);
   const maxDepth = options.maxDepth ?? SNAPSHOT_MAX_DEPTH;
   const maxRecords = options.maxRecords ?? SNAPSHOT_MAX_RECORDS;
@@ -110,6 +113,7 @@ const buildRecordSnapshotGraph = async (
   const tables = new Map<string, Table>();
   const readers = new Map<string, RecordReader>();
   const tableReadAccess = new Map<string, boolean>();
+  let rootRecord: GridRecord | undefined;
 
   const loadTable = async (tableId: string): Promise<Table | null> => {
     const cached = tables.get(tableId);
@@ -181,6 +185,7 @@ const buildRecordSnapshotGraph = async (
           continue;
         }
         if (record.fieldErrors && Object.keys(record.fieldErrors).length > 0) return fail(err.badInput(t.snapshotInvalidFields));
+        if (depth === 0) rootRecord = record;
         seen.add(`${currentTableId}:${id}`);
         records[`${currentTableId}:${id}`] = snapshotRecord(table, reader.fields, record);
         capturedAtDepth.push({ record, reader });
@@ -202,7 +207,7 @@ const buildRecordSnapshotGraph = async (
 
   const rootId = `${tableId}:${recordId}`;
   const root = records[rootId];
-  if (!root) return fail(err.internal(t.snapshotRootMissing));
+  if (!root || !rootRecord) return fail(err.internal(t.snapshotRootMissing));
   for (const captured of Object.values(records)) {
     for (const field of captured.fields) {
       if (field.type !== "relation") continue;
@@ -211,7 +216,7 @@ const buildRecordSnapshotGraph = async (
       captured.data[field.id] = relationIds(captured.data[field.id]).filter((id) => records[`${targetTableId}:${id}`] !== undefined);
     }
   }
-  return ok({ root, graph: { rootId, records } });
+  return ok({ root, rootRecord, graph: { rootId, records } });
 };
 
 type CreateRecordSnapshotParams = {
@@ -228,7 +233,10 @@ type CreateRecordSnapshotParams = {
 
 export type RecordSnapshotDraft = Omit<RecordSnapshot, "shortId">;
 
-export const createRecordSnapshotDraft = async (params: CreateRecordSnapshotParams): Promise<Result<RecordSnapshotDraft>> => {
+/** Capture once for consumers that also render the authorized root record. */
+export const captureRecordSnapshotDraft = async (
+  params: CreateRecordSnapshotParams,
+): Promise<Result<{ snapshot: RecordSnapshotDraft; record: GridRecord }>> => {
   const graph = await buildRecordSnapshotGraph(params.tableId, params.recordId, {
     client: params.client,
     templateApp: params.templateApp,
@@ -238,7 +246,7 @@ export const createRecordSnapshotDraft = async (params: CreateRecordSnapshotPara
     dateConfig: params.dateConfig,
   });
   if (!graph.ok) return graph;
-  return ok({
+  const snapshot: RecordSnapshotDraft = {
     id: Bun.randomUUIDv7(),
     baseId: params.baseId,
     tableId: params.tableId,
@@ -247,7 +255,13 @@ export const createRecordSnapshotDraft = async (params: CreateRecordSnapshotPara
     graph: graph.data.graph,
     createdBy: params.actorId,
     createdAt: new Date().toISOString(),
-  });
+  };
+  return ok({ snapshot, record: graph.data.rootRecord });
+};
+
+export const createRecordSnapshotDraft = async (params: CreateRecordSnapshotParams): Promise<Result<RecordSnapshotDraft>> => {
+  const captured = await captureRecordSnapshotDraft(params);
+  return captured.ok ? ok(captured.data.snapshot) : captured;
 };
 
 export const persistRecordSnapshot = async (

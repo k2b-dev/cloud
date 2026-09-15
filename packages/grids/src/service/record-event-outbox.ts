@@ -24,15 +24,7 @@ type OutboxRow = {
 class InvalidRecordEventPayloadError extends Error {}
 
 const parsePayload = (value: unknown): GridsRecordEvent => {
-  let parsed = value;
-  if (typeof value === "string") {
-    try {
-      parsed = JSON.parse(value);
-    } catch {
-      throw new InvalidRecordEventPayloadError("Invalid record event payload: expected valid JSON");
-    }
-  }
-  const result = GridsRecordEventSchema.safeParse(parsed);
+  const result = GridsRecordEventSchema.safeParse(value);
   if (result.success) return result.data;
   const issue = result.error.issues[0];
   const path = issue?.path.length ? `${issue.path.join(".")}: ` : "";

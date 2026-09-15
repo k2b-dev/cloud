@@ -17,9 +17,11 @@ import {
   customAppSidebarFormSuccessHref,
 } from "../custom-apps/routing";
 import { resolveCustomAppValueBinding } from "../custom-apps/value-bindings";
+import { customAppWorkflowStatusMessage } from "../custom-apps/workflow-status-message";
 import { isRecordWritableFieldType } from "../field-types";
 import { toWorkflowRunEventSummary } from "../lib/workflow-run-events";
 import { gridsService } from "../service";
+import { prepareCustomAppDocumentPreview } from "../service/custom-app-document-preview";
 import { resolvePublishedCustomAppForm } from "../service/custom-app-published-form";
 import { buildCustomAppRecordLabelCache, customAppRecordRelationsMatchPublished } from "../service/custom-app-record-relations";
 import { executePublishedCustomAppRecords } from "../service/custom-app-records-query";
@@ -40,6 +42,7 @@ import { projectGridRecord, projectPublishedRecords, requiredProjected } from ".
 import { loadPublishedCustomAppPage } from "./custom-app-published-page";
 import { resolvePublishedCustomAppGlobalRuntime, resolvePublishedCustomAppRuntime } from "./custom-app-published-runtime";
 import { projectCustomAppRuntimePage } from "./custom-app-runtime-dto";
+import { renderPreparedDraftPdfResponse } from "./documents-api-shared";
 import { encodeHeaderValue, pdfResponse } from "./download-response";
 import { FormSubmitSchema, fromPublicFormSubmission } from "./form-api-shared";
 import { apiMessages } from "./messages";
@@ -51,6 +54,7 @@ import {
   gateCredentialScope,
   gridsAccessContext,
 } from "./permissions";
+import { runWithQueryAdmission } from "./query-admission";
 import { internalIdParam, requirePublicIdParam } from "./route-params";
 import { v } from "./validator";
 import { ScannerLauncherRequestSchema } from "./workflow-api-shared";
@@ -527,6 +531,60 @@ const resolveRuntimeRecordFile = async (c: Context<AuthContext>, requireWrite: b
   return field?.type === "file" && !field.deletedAt ? { ...resolved, fieldId } : null;
 };
 
+const lookupPublishedFormRelation = async (c: Context<AuthContext>, sidebar = false) => {
+  const runtime = sidebar ? await resolvePublishedSidebarRuntime(c) : await resolvePublishedRuntime(c);
+  const unavailable = () => c.json({ message: apiMessages(c).formNotFound }, 404);
+  if (!runtime) return unavailable();
+  const block = "action" in runtime ? null : runtime.blocks.get(c.req.param("blockId") ?? "");
+  const surface = "action" in runtime ? runtime.action : block?.type === "form" ? block : null;
+  if (!surface) return unavailable();
+  if (!("action" in runtime) && !(await runtime.available("block", surface.availableWhen?.query, surface.id))) return unavailable();
+  const resolved = await resolvePublishedCustomAppForm({
+    surface,
+    capabilities: runtime.capabilities,
+    ...("page" in runtime ? { page: runtime.page } : {}),
+  });
+  const target = resolved?.relationLookup.targets.find((target) => target.field.shortId === c.req.param("fieldId"));
+  if (!target) return unavailable();
+  const query = z
+    .object({
+      _search: z.string().max(200).default(""),
+      _limit: z.coerce.number().int().min(1).max(50).default(10),
+      _exclude: z
+        .string()
+        .max(7000)
+        .default("")
+        .transform((value) => value.split(",").filter(Boolean))
+        .pipe(z.array(ShortIdSchema).max(1000)),
+    })
+    .safeParse(c.req.query());
+  if (!query.success) return c.json({ message: apiMessages(c).invalidFormSubmission }, 400);
+  const ids = await resolvePublicIds("record", query.data._exclude);
+  const result = await gridsService.relations.lookup({
+    targetTableId: target.tableId,
+    q: query.data._search,
+    limit: query.data._limit,
+    excludeIds: [...ids.values()],
+    labelSnapshot: {
+      fields: target.targetFields,
+      presentable: target.labels,
+      tableKind: target.tableKind,
+      recordSource: target.recordSource,
+    },
+    untitledLabel: apiMessages(c).untitledRecord,
+  });
+  const publicIds = await projectPublicIds(
+    "record",
+    result.items.map((item) => item.id),
+  );
+  return c.json({
+    items: result.items.flatMap((item) => {
+      const id = publicIds.get(item.id);
+      return id ? [{ id, label: item.label }] : [];
+    }),
+  });
+};
+
 const submitPublishedCustomAppForm = async (c: Context<AuthContext>, submitted: Record<string, unknown>) => {
   const runtime = await resolvePublishedRuntime(c);
   if (!runtime) return c.json({ message: apiMessages(c).formNotFound }, 404);
@@ -698,6 +756,12 @@ export const createCustomAppsApi = (
     .post("/runtime/:shortId/:pageId/:blockId/submit", loadOptionalActor, requireRuntimeWrite, v("json", FormSubmitSchema), (c) =>
       submitPublishedCustomAppForm(c, c.req.valid("json")),
     )
+    .get("/runtime/:shortId/:pageId/:blockId/relations/:fieldId/lookup", loadOptionalActor, requireRuntimeWrite, (c) =>
+      lookupPublishedFormRelation(c),
+    )
+    .get("/runtime/:shortId/sidebar/forms/:actionId/relations/:fieldId/lookup", loadOptionalActor, requireRuntimeWrite, (c) =>
+      lookupPublishedFormRelation(c, true),
+    )
     .post("/runtime/:shortId/sidebar/forms/:actionId/submit", loadOptionalActor, requireRuntimeWrite, v("json", FormSubmitSchema), (c) =>
       submitPublishedSidebarForm(c, c.req.valid("json")),
     )
@@ -750,6 +814,69 @@ export const createCustomAppsApi = (
           "X-Grids-Document-Number": document.documentNumber,
           "X-Grids-Document-Filename": encodeHeaderValue(document.filename),
           "X-Grids-Document-Artifact": "stored",
+        });
+      },
+    )
+    .post(
+      "/runtime/:shortId/:pageId/:blockId/document-previews/:templateId",
+      loadOptionalActor,
+      requirePublicIdParam("templateId", "documentTemplate", "Document"),
+      async (c) => {
+        c.header("Cache-Control", "private, no-store");
+        const runtime = await resolvePublishedRuntime(c);
+        const block = runtime?.blocks.get(c.req.param("blockId") ?? "");
+        if (
+          !runtime ||
+          !runtime.page.record ||
+          !block ||
+          block.type !== "record" ||
+          !block.documents?.preview ||
+          !block.documents.templateIds.includes(c.req.param("templateId")!)
+        ) {
+          return c.json({ message: apiMessages(c).documentNotFound }, 404);
+        }
+        const templateId = internalIdParam(c, "templateId")!;
+        const capability = runtime.capabilities.documents.find((entry) => entry.pageId === runtime.page.id && entry.blockId === block.id);
+        const fingerprint = capability?.previewFingerprints?.[templateId];
+        const context = fingerprint ? await loadRuntimeBindingContext(runtime) : null;
+        if (
+          !capability ||
+          !fingerprint ||
+          !capability.templateIds.includes(templateId) ||
+          !context?.pageRecord ||
+          context.pageRecord.tableId !== capability.tableId
+        )
+          return c.json({ message: apiMessages(c).documentNotFound }, 404);
+        if (
+          !(await runtime.available("page", runtime.page.availableWhen?.query)) ||
+          !(await runtime.available("block", block.availableWhen?.query, block.id))
+        ) {
+          return c.json({ message: apiMessages(c).documentNotFound }, 404);
+        }
+        const pageRecord = context.pageRecord;
+        return runWithQueryAdmission(c, async (signal) => {
+          const prepared = await prepareCustomAppDocumentPreview({
+            baseId: runtime.app.baseId,
+            tableId: capability.tableId,
+            templateId,
+            fingerprint,
+            recordId: pageRecord.id,
+            recordVersion: pageRecord.version,
+            dateConfig: runtime.dateConfig,
+            signal,
+            authorize: async (client) =>
+              (await runtime.available("page", runtime.page.availableWhen?.query, undefined, undefined, client)) &&
+              (await runtime.available("block", block.availableWhen?.query, block.id, undefined, client)),
+          });
+          if (!prepared) return c.json({ message: apiMessages(c).documentPreviewChanged }, 409);
+          if (!prepared.rendered.ok) return c.json({ message: prepared.rendered.error.message }, prepared.rendered.error.status);
+          signal.throwIfAborted();
+          return renderPreparedDraftPdfResponse(c, {
+            template: prepared.template,
+            data: prepared.rendered.data.data,
+            createdAt: prepared.createdAt,
+            dateConfig: runtime.dateConfig,
+          });
         });
       },
     )
@@ -1394,7 +1521,7 @@ export const createCustomAppsApi = (
         const confirmation = run.status === "waiting" ? await getWorkflowDocumentConfirmation(run.id) : undefined;
         return c.json({
           status,
-          message: run.resultMessage,
+          message: customAppWorkflowStatusMessage(run, apiMessages(c)),
           ...(confirmation
             ? {
                 documentConfirmation: { ...confirmation, runId: await requiredPublicId("workflowRun", run.id) },

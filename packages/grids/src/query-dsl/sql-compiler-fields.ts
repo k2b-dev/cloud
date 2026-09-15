@@ -39,6 +39,10 @@ const compileFormulaFieldProjection = (params: {
   if (typeof expression !== "string" || expression.trim().length === 0) {
     return { ok: false, error: `formula field "${params.field.name}" has no expression` };
   }
+  // Prepared roots already include captured-value and error guards. Compiling
+  // them again duplicates their complete value/error plans in another stage.
+  const prepared = params.computedFieldSql?.get(params.field.id);
+  if (prepared) return { ok: true, projection: requireValidCalculationSql(prepared), sqlType: prepared.type };
   const compiled = compileFormulaFieldToSql(params.field, {
     fields: params.fields,
     recordAlias: params.recordAlias,

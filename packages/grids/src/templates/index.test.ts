@@ -15,6 +15,7 @@ import {
 import { CustomAppDefinitionSchema } from "../custom-apps/contracts";
 import { documentTemplateStarterById } from "../document-template-starters";
 import { fieldTypeRegistry, getRecordWritableFieldType } from "../field-types";
+import { materializeFieldDefault } from "../field-defaults";
 import { bindDslQueryContext } from "../query-dsl/parameters";
 import { parseGridsQueryDsl } from "../query-dsl/parser";
 import { type DslResolverContext, resolveDslQueryToQueryPlan } from "../query-dsl/resolver";
@@ -22,7 +23,9 @@ import { renderDocumentHtml, renderDocumentSource, validateTemplateWrite } from 
 import { renderEmailTemplate, validateEmailTemplateWrite } from "../service/email-templates";
 import type { Field } from "../service/types";
 import { buildWorkflowCatalog } from "../service/workflow-catalog";
+import { hydrateDslViewQueries } from "../service/gql-resolver-context";
 import { validateLauncherConfig } from "../service/workflow-launchers";
+import { bindWorkflowQueryData } from "../service/workflow-query-data";
 import { bindGridsWorkflow } from "../workflows/binder";
 import { CreateGridsWorkflowSchema } from "../workflows/contracts";
 import { gridsWorkflows } from "../workflows/module";
@@ -151,7 +154,12 @@ const resolveTestCustomAppValue = (value: unknown, ctx: TemplateTestContext): un
   if (isCurrentMonthDate(value)) return "2026-06-15";
   if (Array.isArray(value)) return value.map((item) => resolveTestCustomAppValue(item, ctx));
   if (value && typeof value === "object") {
-    return Object.fromEntries(Object.entries(value).map(([key, nested]) => [key, resolveTestCustomAppValue(nested, ctx)]));
+    return Object.fromEntries(
+      Object.entries(value).map(([key, nested]) => [
+        key.startsWith("$field:") ? publicTestRef({ $ref: "field", key: key.slice(7) }) : key,
+        resolveTestCustomAppValue(nested, ctx),
+      ]),
+    );
   }
   return value;
 };
@@ -228,17 +236,24 @@ const gqlRef = (name: string): string => {
 const templateNamesForGql = (template: GridTemplate) => {
   const tables = new Map<string, string>();
   const fields = new Map<string, string>();
+  const views = new Map((template.views ?? []).map((view) => [view.key, view.name]));
   for (const table of template.tables) {
     tables.set(table.key, table.name);
     for (const field of table.fields) fields.set(`${table.key}.${field.key}`, field.name);
   }
-  return { tables, fields };
+  return { tables, fields, views };
 };
 
 const resolveTemplateGqlValue = (value: unknown, names: ReturnType<typeof templateNamesForGql>): unknown => {
   if (isRef(value)) {
     const resolved =
-      value.$ref === "table" ? names.tables.get(value.key) : value.$ref === "field" ? names.fields.get(value.key) : undefined;
+      value.$ref === "table"
+        ? names.tables.get(value.key)
+        : value.$ref === "field"
+          ? names.fields.get(value.key)
+          : value.$ref === "view"
+            ? names.views.get(value.key)
+            : undefined;
     if (!resolved) throw new Error(`unsupported GQL template ref ${value.$ref}:${value.key}`);
     return gqlRef(resolved);
   }
@@ -258,9 +273,10 @@ const templateFieldForResolver = (
   fieldId: string,
   position: number,
   ctx: TemplateTestContext,
+  shortId: string,
 ): Field => ({
   id: fieldId,
-  shortId: templateField.key,
+  shortId,
   tableId,
   name: templateField.name,
   description: templateField.description ?? null,
@@ -298,6 +314,7 @@ const templateResolverContext = (template: GridTemplate, currentTableKey: string
             resolveTestRef({ $ref: "field", key: `${table.key}.${templateField.key}` }, ctx),
             index,
             ctx,
+            publicTestRef({ $ref: "field", key: `${table.key}.${templateField.key}` }),
           ),
         ),
       ];
@@ -306,7 +323,20 @@ const templateResolverContext = (template: GridTemplate, currentTableKey: string
   const currentTableId = resolveTestRef({ $ref: "table", key: currentTableKey }, ctx);
   const currentTable = tables.find((table) => table.id === currentTableId);
   if (!currentTable) throw new Error(`missing current template table ${currentTableKey}`);
-  return { currentTable, tables, fieldsByTableId, views: [] };
+  const views = hydrateDslViewQueries({
+    tables,
+    fieldsByTableId,
+    views: (template.views ?? []).map((view) => ({
+      kind: "view",
+      id: resolveTestRef({ $ref: "view", key: view.key }, ctx),
+      shortId: publicTestRef({ $ref: "view", key: view.key }),
+      name: view.name,
+      tableId: resolveTestRef({ $ref: "table", key: view.table }, ctx),
+      source: String(resolveTemplateGqlValue(view.source, templateNamesForGql(template))),
+      query: {},
+    })),
+  });
+  return { currentTable, tables, fieldsByTableId, views };
 };
 
 describe("built-in grid templates", () => {
@@ -317,7 +347,7 @@ describe("built-in grid templates", () => {
     expect(english).toEqual(templates);
     expect(getTemplates("fr")).toEqual(english);
     expect(getTemplates("de-CH")).toEqual(german);
-    expect(german.map((template) => template.name)).toEqual(["Buchhandlung", "Private Finanzen", "Inventar"]);
+    expect(german.map((template) => template.name)).toEqual(["Buchhandlung", "Private Finanzen", "Inventar", "Rechnungswesen"]);
 
     const stableShape = (template: GridTemplate) => ({
       id: template.id,
@@ -801,7 +831,9 @@ describe("built-in grid templates", () => {
         `${template.id} document template keys`,
       );
       assertUnique(
-        (template.documentTemplates ?? []).map((documentTemplate) => documentTemplate.name ?? documentTemplate.starterId),
+        (template.documentTemplates ?? []).map(
+          (documentTemplate) => documentTemplate.name ?? documentTemplate.starterId ?? documentTemplate.key,
+        ),
         `${template.id} document template names`,
       );
       assertUnique(
@@ -903,11 +935,10 @@ describe("built-in grid templates", () => {
     }
   });
 
-  test("each template has meaningful Grids App charts", () => {
+  test("configured Grids App charts have meaningful grouped sources", () => {
     for (const template of templates) {
       const viewsByKey = new Map((template.views ?? []).map((view) => [view.key, view]));
       const charts = customAppBlocks(template).filter((block) => block.type === "chart");
-      expect(charts.length, `${template.id} Grids App charts`).toBeGreaterThan(0);
 
       for (const chart of charts) {
         const source = chart.source;
@@ -988,7 +1019,7 @@ describe("built-in grid templates", () => {
         }
 
         for (const templateField of table.fields) {
-          const config = resolveTestValue(templateField.config ?? {}, ctx);
+          const config = CreateFieldSchema.shape.config.parse(resolveTestValue(templateField.config ?? {}, ctx)) ?? {};
           const defaultValue = resolveTestValue(templateField.defaultValue, ctx);
           const fieldType = fieldTypeRegistry[templateField.type];
           expect(fieldType, `${template.id}.${table.key}.${templateField.key} field type`).toBeDefined();
@@ -1016,7 +1047,11 @@ describe("built-in grid templates", () => {
           const writableType = getRecordWritableFieldType(templateField.type);
           if (writableType && defaultValue !== undefined) {
             expect(
-              writableType.validate(defaultValue, parsedConfig.success ? parsedConfig.data : config, templateField.required === true).ok,
+              writableType.validate(
+                materializeFieldDefault({ type: templateField.type, config, defaultValue }),
+                parsedConfig.success ? parsedConfig.data : config,
+                templateField.required === true,
+              ).ok,
               `${template.id}.${table.key}.${templateField.key} default value`,
             ).toBe(true);
           }
@@ -1115,19 +1150,21 @@ describe("built-in grid templates", () => {
       const documentTemplateEntries: Array<{ id: string; shortId: string; tableId: string; name: string }> = [];
       for (const [index, documentTemplate] of (template.documentTemplates ?? []).entries()) {
         const tableId = ctx.tables.get(documentTemplate.table);
-        const starter = documentTemplateStarterById(documentTemplate.starterId);
+        const starter = documentTemplate.starterId === undefined ? undefined : documentTemplateStarterById(documentTemplate.starterId);
         expect(tableId, `${template.id}.${documentTemplate.key} table`).toBeDefined();
-        expect(starter, `${template.id}.${documentTemplate.key} starter`).toBeDefined();
-        if (!tableId || !starter) throw new Error(`invalid document template ${template.id}.${documentTemplate.key}`);
-        const sourceValue = resolveTemplateGqlValue(documentTemplate.source ?? starter.source(tableId), templateNamesForGql(template));
+        if (documentTemplate.starterId) expect(starter, `${template.id}.${documentTemplate.key} starter`).toBeDefined();
+        const renderer = documentTemplate.renderer ?? starter?.renderer;
+        if (!tableId || !renderer) throw new Error(`invalid document template ${template.id}.${documentTemplate.key}`);
+        const sourceValue = resolveTemplateGqlValue(documentTemplate.source ?? starter?.source(tableId), templateNamesForGql(template));
         expect(typeof sourceValue, `${template.id}.${documentTemplate.key} document source`).toBe("string");
         if (typeof sourceValue !== "string") throw new Error(`invalid document source ${template.id}.${documentTemplate.key}`);
         const source = sourceValue;
         const payload = {
-          name: documentTemplate.name ?? starter.name,
-          description: documentTemplate.description === undefined ? starter.description : documentTemplate.description,
+          name: documentTemplate.name ?? starter?.name ?? documentTemplate.key,
+          description: documentTemplate.description === undefined ? starter?.description : documentTemplate.description,
           source,
-          renderer: starter.renderer,
+          renderer,
+          issuancePolicy: documentTemplate.issuancePolicy,
           enabled: documentTemplate.enabled,
         };
         expect(CreateDocumentTemplateSchema.safeParse(payload).success, `${template.id}.${documentTemplate.key} document payload`).toBe(
@@ -1136,7 +1173,7 @@ describe("built-in grid templates", () => {
         expect(validateTemplateWrite(payload).ok, `${template.id}.${documentTemplate.key} document Liquid`).toBe(true);
         if (documentTemplate.starterId === "loan-agreement") {
           const rendered = await renderDocumentHtml(
-            { renderer: starter.renderer },
+            { renderer },
             {
               app: { name: "Cloud" },
               business: { legalName: "Example Operations", senderLine: "Example Operations", address: "Example Street 1" },
@@ -1243,6 +1280,12 @@ describe("built-in grid templates", () => {
         templates: documentTemplateEntries,
         emailTemplates: emailTemplateEntries,
       });
+      const bindQuery: NonNullable<Parameters<typeof bindGridsWorkflow>[3]> = async (source, values) => {
+        const result = bindWorkflowQueryData(source, templateResolverContext(template, template.tables[0]!.key, ctx), values, "en", {
+          parameterTypesOnly: true,
+        });
+        return result.ok ? { ok: true, data: result.data.binding } : result;
+      };
       for (const workflow of template.workflows ?? []) {
         expect(CreateGridsWorkflowSchema.safeParse(workflow).success, `${template.id}.${workflow.key} workflow payload`).toBe(true);
         const compiled = await compileWorkflow(workflow.source, gridsWorkflows);
@@ -1251,7 +1294,7 @@ describe("built-in grid templates", () => {
           `${template.id}.${workflow.key} workflow YAML: ${compiled.ok ? "" : compiled.diagnostics.map((item) => item.message).join("; ")}`,
         ).toBe(true);
         if (!compiled.ok) continue;
-        const bound = await bindGridsWorkflow(compiled.ir, workflowCatalog);
+        const bound = await bindGridsWorkflow(compiled.ir, workflowCatalog, workflow.source, bindQuery);
         expect(
           bound.ok,
           `${template.id}.${workflow.key} workflow YAML: ${bound.ok ? "" : bound.diagnostics.map((item) => item.message).join("; ")}`,
@@ -1266,7 +1309,7 @@ describe("built-in grid templates", () => {
         const compiled = await compileWorkflow(workflow.source, gridsWorkflows);
         expect(compiled.ok, `${template.id}.${launcher.key} launcher workflow compiles`).toBe(true);
         if (!compiled.ok) continue;
-        const bound = await bindGridsWorkflow(compiled.ir, workflowCatalog);
+        const bound = await bindGridsWorkflow(compiled.ir, workflowCatalog, workflow.source, bindQuery);
         expect(bound.ok, `${template.id}.${launcher.key} launcher workflow binds`).toBe(true);
         if (!bound.ok) continue;
         expect(

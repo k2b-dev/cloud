@@ -8,6 +8,7 @@ const deDetails: Readonly<Record<string, string>> = {
   "Filter rows": "Datensätze filtern",
   "Join through a relation field": "Über ein Relationsfeld verknüpfen",
   "Keep source rows without a match": "Quelldatensätze ohne Treffer behalten",
+  "Join independent grouped totals": "Unabhängige gruppierte Summen verknüpfen",
   "Bucket rows": "Datensätze gruppieren",
   "Calculate grouped values": "Gruppierte Werte berechnen",
   "Filter grouped output": "Gruppierte Ausgabe filtern",

@@ -17,6 +17,7 @@ import {
 } from "./resolver-scope";
 import { type ResolvedSource, resolveSource } from "./resolver-source";
 import type { DslJoin } from "./types";
+import { resolveSummaryJoin, type DslSummaryJoin } from "./resolver-summary-joins";
 
 const MAX_JOIN_COUNT = 5;
 const MAX_JOIN_DEPTH = 3;
@@ -158,12 +159,19 @@ export const resolveJoins = (
   source: ResolvedSource,
   scope: Scope,
   ctx: DslResolverContext,
-): { joins: DslResolvedRelationJoin[]; diagnostics: DslResolverDiagnostic[] } => {
+): { joins: DslResolvedRelationJoin[]; summaryJoins: DslSummaryJoin[]; diagnostics: DslResolverDiagnostic[] } => {
   const diagnostics: DslResolverDiagnostic[] = [];
   const resolved: DslResolvedRelationJoin[] = [];
+  const summaryJoins: DslSummaryJoin[] = [];
   if (joins.length > MAX_JOIN_COUNT)
     diagnostics.push(diagnostic(`query can join at most ${MAX_JOIN_COUNT} tables`, joins[MAX_JOIN_COUNT]?.span));
   for (const join of joins.slice(0, MAX_JOIN_COUNT)) {
+    if (join.source.kind === "view") {
+      const summary = resolveSummaryJoin(join, source, scope, ctx);
+      if (isDiagnostic(summary)) diagnostics.push(summary);
+      else { summaryJoins.push(summary); scope.summaryJoins.set(normalizeRefKey(summary.alias), summary); }
+      continue;
+    }
     const result = resolveRelationJoin(join, source, scope, ctx);
     if (isDiagnostic(result)) {
       diagnostics.push(result);
@@ -171,7 +179,7 @@ export const resolveJoins = (
     }
     resolved.push(result);
   }
-  return { joins: resolved, diagnostics };
+  return { joins: resolved, summaryJoins, diagnostics };
 };
 
 const resolveDerivedRelationJoin = (

@@ -35,11 +35,6 @@ const expectSingleConcurrentConflict = (results: Array<{ ok: boolean; error?: { 
   expectConflict(conflict ?? { ok: true });
 };
 
-const readJsonb = <T>(raw: unknown): T => {
-  if (typeof raw === "string") return JSON.parse(raw) as T;
-  return raw as T;
-};
-
 describe("named refs Postgres integration", () => {
   postgresTest("enforces table, field, and view name uniqueness", async () => {
     const baseId = await createBase();
@@ -182,8 +177,7 @@ describe("named refs Postgres integration", () => {
       const [formulaRow] = await sql<{ config: unknown }[]>`
         SELECT config FROM grids.fields WHERE id = ${total.data.id}::uuid
       `;
-      const formulaConfig = readJsonb<{ expression: string }>(formulaRow?.config);
-      expect(formulaConfig.expression).toBe('ROUND("Unit price" * Quantity, 2)');
+      expect(formulaRow?.config).toMatchObject({ expression: 'ROUND("Unit price" * Quantity, 2)' });
     } finally {
       await cleanupBase(baseId);
     }

@@ -6,7 +6,7 @@ import {
 import { bindDslQueryContext, type DslQueryContextKey, type DslQueryContextValues, dslQueryContextKeys } from "../query-dsl/parameters";
 import { parseGridsQueryDsl } from "../query-dsl/parser";
 import { type DslResolvedSqlQueryPlan, resolveDslQueryToQueryPlan } from "../query-dsl/resolver";
-import { collectDslPlanExtraFieldTableIds } from "../query-dsl/source-plan";
+import { collectDslPlanExtraFieldTableIds, collectDslPlanTableIds } from "../query-dsl/source-plan";
 import type { SqlClient } from "./audit";
 import { containsDocumentMetadata } from "./document-query-expression";
 import * as fields from "./fields";
@@ -69,23 +69,26 @@ export const compileCustomAppQuery = async (params: {
     })),
   );
 
-  const fieldsWithPlanExtras = {
+  const fieldsByTableId = {
     ...context.fieldsByTableId,
     ...Object.fromEntries(missingFields.map((group) => [group.tableId, group.fields])),
   };
-  const relationTargetTableIds = customAppQueryPlanRelationTargetTableIds(canonicalResolved.plan, fieldsWithPlanExtras).filter(
-    (tableId) => fieldsWithPlanExtras[tableId] === undefined,
-  );
-  const relationTargetFields = await Promise.all(
-    relationTargetTableIds.map(async (tableId) => ({
-      tableId,
-      fields: await fields.listByTable(tableId, false, params.client),
-    })),
-  );
-  const fieldsByTableId = {
-    ...fieldsWithPlanExtras,
-    ...Object.fromEntries(relationTargetFields.map((group) => [group.tableId, group.fields])),
-  };
+  const availableTableIds = new Set(context.tables.map((table) => table.id));
+  // A lookup can target another computed field. Load only the reachable
+  // metadata to a fixed point so publication pins the complete read boundary.
+  for (;;) {
+    const targetTableIds = [
+      ...new Set([
+        ...collectDslPlanTableIds(canonicalResolved.plan, fieldsByTableId),
+        ...customAppQueryPlanRelationTargetTableIds(canonicalResolved.plan, fieldsByTableId),
+      ]),
+    ].filter((tableId) => fieldsByTableId[tableId] === undefined);
+    if (targetTableIds.length === 0) break;
+    if (targetTableIds.some((tableId) => !availableTableIds.has(tableId)))
+      return { ok: false, error: "A computed or relation dependency is outside the available query scope" };
+    const targets = await fields.listByTables(targetTableIds, params.client);
+    for (const tableId of targetTableIds) fieldsByTableId[tableId] = targets.get(tableId) ?? [];
+  }
 
   return {
     ok: true,

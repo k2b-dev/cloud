@@ -12,7 +12,7 @@ import { dslRecordRelation, dslRecordTableCondition, dslRelationValuesInRecordDa
 import type { DslSqlCompileOptions } from "./sql-compiler-types";
 
 export const scopedFormulaResolverForPlan = (
-  plan: Pick<DslResolvedSqlQueryPlan, "sourceAlias" | "joins">,
+  plan: Pick<DslResolvedSqlQueryPlan, "sourceAlias" | "joins" | "summaryJoins">,
   baseFields: Field[],
   joinAliases: Map<string, string>,
   options: DslSqlCompileOptions,
@@ -30,6 +30,7 @@ export const scopedFormulaResolverForPlan = (
       recordAlias: joinAliases.get(join.alias) ?? join.alias,
       computedFieldSql: options.computedFieldSqlByJoinAlias?.get(join.alias),
     })),
+    summaries: (plan.summaryJoins ?? []).map((join, index) => ({ alias: join.alias, recordAlias: `summary_${index}`, columns: join.columns })),
     dateConfig: options.timeZone ? { timeZone: options.timeZone } : undefined,
   });
 

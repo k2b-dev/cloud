@@ -35,11 +35,15 @@ export const findTableId = async (recordId: string): Promise<string | null> => {
 
 /** Identity-only read after the caller authorizes the table. Combined tables
  * still use their published source and its revision guard, not raw source IDs. */
-export const publicIdsForRecords = async (tableId: string, recordIds: readonly string[]): Promise<Map<string, string>> => {
+export const publicIdsForRecords = async (
+  tableId: string,
+  recordIds: readonly string[],
+  client: SqlClient = sql,
+): Promise<Map<string, string>> => {
   if (recordIds.length === 0) return new Map();
-  const source = await buildDslSqlRecordSource(tableId, {});
-  if (source) await assertFederatedPublication(source);
-  const rows = await sql<Array<{ id: string; short_id: string }>>`
+  const source = await buildDslSqlRecordSource(tableId, {}, undefined, client);
+  if (source) await assertFederatedPublication(source, client);
+  const rows = await client<Array<{ id: string; short_id: string }>>`
     SELECT r.id::text, r.short_id FROM ${source?.relation ?? sql`grids.records`} r
     ${liveRecordParentJoinSql("r", "rt", "rb")}
     WHERE r.table_id = ${tableId}::uuid
@@ -291,42 +295,60 @@ export const createReader = async (tableId: string, opts: RecordReadOptions = {}
   if (table?.kind === "federated") return createFederatedReader(tableId, fields, opts);
   const fieldsWithLookupMeta = await withLookupTargetMetadata(fields, client);
   const authorizedTargetTableIds = await readableComputedTargetTableIds(fields, opts.viewer, opts.authorizeComputedTable, client);
-  const computed = await buildComputedProjections(fields, {
-    authorizedTableIds: authorizedTargetTableIds,
-    client,
-    dateConfig: opts.dateConfig,
-  });
-  const formulaSql = buildFormulaSqlProjections(fields, { dateConfig: opts.dateConfig, authorizedTableIds: authorizedTargetTableIds });
-  const projections = [...computed, ...formulaSql];
-  const projectionFragments = projectionFragmentsFor(projections);
-  const formulaFieldIds = new Set(formulaSql.map((projection) => projection.fieldId));
-  const formulaLookupPlan = await prepareFormulaLookupPlan(
-    fieldsWithLookupMeta,
-    opts.dateConfig,
-    opts.viewer,
-    opts.authorizeComputedTable,
-    client,
-    new Set(computed.map((projection) => projection.fieldId)),
-  );
+  const buildLivePlan = async () => {
+    const computed = await buildComputedProjections(fields, {
+      authorizedTableIds: authorizedTargetTableIds,
+      client,
+      dateConfig: opts.dateConfig,
+    });
+    const formulaSql = buildFormulaSqlProjections(fields, { dateConfig: opts.dateConfig, authorizedTableIds: authorizedTargetTableIds });
+    const projections = [...computed, ...formulaSql];
+    const projectionFragments = projectionFragmentsFor(projections);
+    const formulaFieldIds = new Set(formulaSql.map((projection) => projection.fieldId));
+    const formulaLookupPlan = await prepareFormulaLookupPlan(
+      fieldsWithLookupMeta,
+      opts.dateConfig,
+      opts.viewer,
+      opts.authorizeComputedTable,
+      client,
+      new Set(computed.map((projection) => projection.fieldId)),
+    );
+    return { projections, projectionFragments, formulaFieldIds, formulaLookupPlan };
+  };
+  let livePlan: ReturnType<typeof buildLivePlan> | undefined;
 
   const getMany = async (recordIds: string[]): Promise<GridRecord[]> => {
     if (recordIds.length === 0) return [];
     opts.signal?.throwIfAborted();
     const deletedClause =
       opts.deleted === "include" ? sql`TRUE` : opts.deleted === "only" ? sql`r.deleted_at IS NOT NULL` : sql`r.deleted_at IS NULL`;
-    const query = client<DbRow[]>`
-      SELECT r.*${projectionFragments}
+    const readRows = async (ids: string[], fragments: unknown): Promise<DbRow[]> => {
+      const query = client<DbRow[]>`
+      SELECT r.*${fragments}
       FROM grids.records r
       JOIN grids.tables t ON t.id = r.table_id AND t.deleted_at IS NULL
       JOIN grids.bases b ON b.id = t.base_id AND b.deleted_at IS NULL
-      WHERE r.id = ANY(${sql.array(recordIds, "UUID")}::uuid[])
+      WHERE r.id = ANY(${sql.array(ids, "UUID")}::uuid[])
         AND r.table_id = ${tableId}::uuid
         AND ${deletedClause}
     `;
-    const rows =
-      opts.queryTimeoutMs !== undefined || opts.signal
+      return opts.queryTimeoutMs !== undefined || opts.signal
         ? await runBoundedQuery<DbRow>(query, opts.queryTimeoutMs ?? 5_000, opts.signal, undefined, opts.client)
         : await query;
+    };
+    // This is the authoritative frozen row, not a metadata preflight. Captured
+    // values are immutable and need no live SQL plan. Drafts are read again in
+    // full with projections; their existing CASE guards handle finalization
+    // between the two statements without combining different row versions.
+    const initialRows = await readRows(recordIds, sql``);
+    const draftIds = initialRows.flatMap((row) => (!row.finalized_at && typeof row.id === "string" ? [row.id] : []));
+    if (draftIds.length > 0 && !livePlan) livePlan = buildLivePlan().catch((error) => {
+      livePlan = undefined;
+      throw error;
+    });
+    const plan = draftIds.length > 0 && livePlan ? await livePlan : null;
+    const projectedRows = plan ? await readRows(draftIds, plan.projectionFragments) : [];
+    const rows = [...initialRows.filter((row) => row.finalized_at), ...projectedRows];
     opts.signal?.throwIfAborted();
     const records = rows.map(mapRecordRow);
     await hydrateRelationsFromLinks(records, fields, opts.viewer, {
@@ -336,19 +358,22 @@ export const createReader = async (tableId: string, opts: RecordReadOptions = {}
     });
     opts.signal?.throwIfAborted();
     const recordsById = new Map(records.map((record) => [record.id, record]));
-    applyComputedProjections(rows as Array<Record<string, unknown>>, recordsById, projections, opts.dateConfig?.locale);
+    if (plan) applyComputedProjections(projectedRows, recordsById, plan.projections, opts.dateConfig?.locale);
     applyFinalizedComputedAccess(rows, recordsById, authorizedTargetTableIds, fields, opts.dateConfig?.locale);
-    await enrichFormulaLookupsWithPlan(records, formulaLookupPlan, {
-      client,
-      dateConfig: opts.dateConfig,
-      signal: opts.signal,
-      queryTimeoutMs: opts.queryTimeoutMs,
-    });
+    const liveRecords = records.filter((record) => !record.finalizedAt);
+    if (plan)
+      await enrichFormulaLookupsWithPlan(liveRecords, plan.formulaLookupPlan, {
+        client,
+        dateConfig: opts.dateConfig,
+        signal: opts.signal,
+        queryTimeoutMs: opts.queryTimeoutMs,
+      });
     opts.signal?.throwIfAborted();
-    enrichRecordsWithFormulas(records, fieldsWithLookupMeta, {
-      dateConfig: opts.dateConfig,
-      skipFormulaFieldIds: formulaFieldIds,
-    });
+    if (plan)
+      enrichRecordsWithFormulas(liveRecords, fieldsWithLookupMeta, {
+        dateConfig: opts.dateConfig,
+        skipFormulaFieldIds: plan.formulaFieldIds,
+      });
     await enrichRecordsWithHtmlTemplates(records, fieldsWithLookupMeta, {
       client,
       app: opts.templateApp,

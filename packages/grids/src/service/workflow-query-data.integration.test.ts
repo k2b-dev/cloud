@@ -7,6 +7,41 @@ import { loadWorkflowCatalog } from "./workflow-catalog";
 import { workflowQueryBinder } from "./workflow-query-binding";
 import { bindWorkflowQueryData, captureWorkflowQueryData } from "./workflow-query-data";
 
+postgresTest("summary workflow bindings capture real rows and reject a changed used View definition", async () => {
+  const fixture = await insertDslDbFixture();
+  try {
+    const viewId = Bun.randomUUIDv7();
+    const shortId = Math.random().toString(36).slice(2, 8);
+    const source = `from table {${fixture.orders.shortId}}\ngroup by {${fixture.fieldsByTableId[fixture.orders.id]!.find((field) => field.id === fixture.customerLinkId)!.shortId}}\naggregate sum(Amount) as summed_amount`;
+    await sql`INSERT INTO grids.views (id, short_id, base_id, table_id, name, source)
+      VALUES (${viewId}::uuid, ${shortId}, ${fixture.baseId}::uuid, ${fixture.orders.id}::uuid, 'Order totals', ${source})`;
+    const query = `from table Customers as customer\nleft join view {${shortId}} as totals on totals.gk_0 = customer.id\nselect formula(IF(ISBLANK(totals.summed_amount), 0, totals.summed_amount)) as total`;
+    const catalog = await loadWorkflowCatalog(fixture.baseId);
+    const bound = await workflowQueryBinder(fixture.baseId, catalog)(query, {});
+    if (!bound.ok) throw new Error(bound.error.message);
+    const capture = () =>
+      captureWorkflowQueryData({
+        baseId: fixture.baseId,
+        binding: bound.data,
+        values: {},
+        timeZone: "UTC",
+        createTableAccess: async () => async () => true,
+      });
+    const first = await capture();
+    if (!first.ok) throw new Error(first.error.message);
+    expect(first.data.payload.rows.length).toBeGreaterThan(0);
+    expect(first.data.payload.rows.some((row) => Object.values(row).some((value) => Number(value) > 0))).toBe(true);
+    await sql`UPDATE grids.views SET description = 'Presentation only' WHERE id = ${viewId}::uuid`;
+    expect((await capture()).ok).toBe(true);
+    await sql`UPDATE grids.views SET source = ${source.replace("\ngroup by", "\nwhere Amount > 10\ngroup by")} WHERE id = ${viewId}::uuid`;
+    const changed = await capture();
+    expect(changed.ok).toBe(false);
+    if (!changed.ok) expect(changed.error.code).toBe("CONFLICT");
+  } finally {
+    await cleanupFixture(fixture.baseId);
+  }
+});
+
 beforeAll(async () => {
   if (process.env.GRIDS_DB_TEST === "1") await migrate();
 });
@@ -23,7 +58,7 @@ postgresTest("refuses to capture an incomplete formula result and preserves an e
         values: {},
         locale: "de",
         timeZone: "UTC",
-        canReadTable: async () => true,
+        createTableAccess: async () => async () => true,
       });
     };
     const invalid = await capture("IFEMPTY(Amount, 1) / 0");
@@ -54,7 +89,7 @@ postgresTest("semantic bindings tolerate presentation changes but reject changed
         binding,
         values: {},
         timeZone: "UTC",
-        canReadTable: async () => true,
+        createTableAccess: async () => async () => true,
       });
     expect((await capture(modern.data.binding)).ok).toBe(true);
     expect((await capture(searched.data.binding)).ok).toBe(true);
@@ -102,7 +137,7 @@ postgresTest("publishes a typed select parameter and validates its real value be
           binding: bound.data,
           values: { "params.status": status },
           timeZone: "UTC",
-          canReadTable: async () => true,
+          createTableAccess: async () => async () => true,
         });
         expect(result.ok).toBe(expected);
         if (result.ok) expect(result.data.rowCount).toBe(1);
@@ -126,13 +161,13 @@ postgresTest("an empty record selection captures no rows without bypassing table
       values: { "params.selected": [] },
       timeZone: "UTC",
     };
-    const captured = await captureWorkflowQueryData({ ...input, canReadTable: async () => true });
+    const captured = await captureWorkflowQueryData({ ...input, createTableAccess: async () => async () => true });
     if (!captured.ok) throw new Error(captured.error.message);
     expect(captured.data.payload.rows).toEqual([]);
     expect(captured.data.rowCount).toBe(0);
     expect(captured.data.payload.complete).toBe(true);
     expect(captured.data.payload.columns).toHaveLength(1);
-    const denied = await captureWorkflowQueryData({ ...input, canReadTable: async () => false });
+    const denied = await captureWorkflowQueryData({ ...input, createTableAccess: async () => async () => false });
     expect(denied.ok).toBe(false);
     if (!denied.ok) expect(denied.error.code).toBe("FORBIDDEN");
   } finally {
@@ -151,17 +186,23 @@ postgresTest("workflow query captures exact typed rows with public IDs and check
     );
     if (!bound.ok) throw new Error(bound.error.message);
     const checked: string[] = [];
+    let accessScopes = 0;
     const captured = await captureWorkflowQueryData({
       baseId: fixture.baseId,
       binding: bound.data.binding,
       values: {},
       timeZone: "UTC",
-      canReadTable: async (id) => {
-        checked.push(id);
-        return true;
+      createTableAccess: async (client) => {
+        accessScopes += 1;
+        expect(client).not.toBe(sql);
+        return async (id) => {
+          checked.push(id);
+          return true;
+        };
       },
     });
     if (!captured.ok) throw new Error(captured.error.message);
+    expect(accessScopes).toBe(1);
     expect(checked).toContain(fixture.orders.id);
     expect(checked).toContain(fixture.customers.id);
     expect(captured.data.rowCount).toBe(2);
@@ -180,7 +221,7 @@ postgresTest("workflow query captures exact typed rows with public IDs and check
       binding: bound.data.binding,
       values: {},
       timeZone: "UTC",
-      canReadTable: async (id) => id !== fixture.customers.id,
+      createTableAccess: async () => async (id) => id !== fixture.customers.id,
     });
     expect(denied.ok).toBe(false);
     if (!denied.ok) expect(denied.error.code).toBe("FORBIDDEN");
@@ -195,7 +236,7 @@ postgresTest("workflow query captures exact typed rows with public IDs and check
         binding: parameterized.data.binding,
         values: { "params.amount": { decimal: "9007199254740993.42" }, "params.amounts": [{ decimal: "9007199254740993.42" }] },
         timeZone: "UTC",
-        canReadTable: async () => true,
+        createTableAccess: async () => async () => true,
       });
       if (!exact.ok) throw new Error(exact.error.message);
       expect(exact.data.payload.rows).toEqual([{ q_col_0: "9007199254740993.42" }]);
@@ -218,7 +259,7 @@ postgresTest(
           binding: bound.data.binding,
           values: {},
           timeZone: "UTC",
-          canReadTable: async () => true,
+          createTableAccess: async () => async () => true,
         });
       const before = await capture();
       if (!before.ok) throw new Error(before.error.message);
@@ -228,7 +269,7 @@ postgresTest(
         binding: bound.data.binding,
         values: {},
         timeZone: "UTC",
-        canReadTable: async () => {
+        createTableAccess: async () => async () => {
           if (!changed) {
             changed = true;
             await sql`UPDATE grids.records SET data = data || ${{ [fixture.amountId]: "999" }}::jsonb WHERE id = ${fixture.orderAId}::uuid`;
@@ -271,7 +312,7 @@ postgresTest("workflow query keeps stable names but rejects schema changes and l
       binding: bound.data.binding,
       values: { "params.minimum": 1 },
       timeZone: "UTC",
-      canReadTable: async () => true,
+      createTableAccess: async () => async () => true,
     };
     await sql`UPDATE grids.fields SET name = 'Renamed amount' WHERE id = ${fixture.amountId}::uuid`;
     expect((await captureWorkflowQueryData(input)).ok).toBe(true);

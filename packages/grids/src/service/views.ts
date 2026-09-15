@@ -152,19 +152,20 @@ export const listForTable = async (params: {
 // ──────────────────────────────────────────────────────────────────
 // ──────────────────────────────────────────────────────────────────
 
-export const get = async (id: string, opts: { includeDeleted?: boolean } = {}): Promise<View | null> => {
+export const get = async (id: string, opts: { includeDeleted?: boolean; client?: SqlClient } = {}): Promise<View | null> => {
   // SELECT v.* keeps the slug in the projection for mapRow. Live-parent
   // invariant: parent table + base must be alive; trashed views require
   // explicit `includeDeleted`.
+  const client = opts.client ?? sql;
   const [row] = opts.includeDeleted
-    ? await sql<DbRow[]>`
+    ? await client<DbRow[]>`
         SELECT v.*
         FROM grids.views v
         JOIN grids.tables t ON t.id = v.table_id AND t.deleted_at IS NULL
         JOIN grids.bases b ON b.id = t.base_id AND b.deleted_at IS NULL
         WHERE v.id = ${id}::uuid
       `
-    : await sql<DbRow[]>`
+    : await client<DbRow[]>`
         SELECT v.*
         FROM grids.views v
         JOIN grids.tables t ON t.id = v.table_id AND t.deleted_at IS NULL

@@ -1,4 +1,6 @@
-import { type DateContext, dates, err, fail, ok, type Result } from "@k2b/stdlib";
+import { err, fail, ok, type Result } from "@k2b/stdlib";
+import { isDateNowDefault } from "../field-defaults";
+export { materializeFieldDefault } from "../field-defaults";
 import { sql } from "bun";
 import { getFieldType, getRecordWritableFieldType } from "../field-types";
 import { ObjectListConfigSchema, objectListInputValue } from "../field-types/object-list";
@@ -31,19 +33,6 @@ export const validateFieldConfig = (type: string, config: Record<string, unknown
     if (!compiled.ok) return fail(err.badInput(messages.invalidFieldConfig({ type, detail: compiled.error })));
   }
   return ok(parsed.data);
-};
-
-const isDateNowDefault = (value: unknown): value is { kind: "now" } =>
-  typeof value === "object" &&
-  value !== null &&
-  (value as { kind?: unknown }).kind === "now" &&
-  Object.keys(value as Record<string, unknown>).length === 1;
-
-export const materializeFieldDefault = (field: Field, options: { dateConfig?: DateContext; now?: Date } = {}): unknown => {
-  if (field.type !== "date" || !isDateNowDefault(field.defaultValue)) return field.defaultValue;
-  const includeTime = (field.config as { includeTime?: boolean }).includeTime ?? false;
-  const now = options.now ?? new Date();
-  return includeTime ? now.toISOString() : dates.formatDateKey(now, options.dateConfig);
 };
 
 export const validateDefaultValue = (type: string, config: Record<string, unknown>, value: unknown, locale?: string): Result<unknown> => {

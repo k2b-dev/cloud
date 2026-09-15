@@ -8,6 +8,7 @@ import {
   loadCustomAppAuthSubjectIds,
 } from "../custom-apps/runtime-context";
 import { gridsService } from "../service";
+import type { SqlClient } from "../service/audit";
 import { publishedCustomAppAvailability } from "../service/custom-app-runtime-query";
 import { resolvePublicIds } from "../service/public-resources";
 import { actorViewerFor, type GridsAccessContext, gateCustomAppAtAccess } from "./permissions";
@@ -120,11 +121,12 @@ export const resolvePublishedCustomAppRuntime = async (input: PublishedCustomApp
   }
   // Records membership stays in custom-app-records-query: it needs the
   // request's search/cursor and must replay the current published query.
-  const available = async (target: "page" | "block" | "action", query: string | undefined, blockId?: string, actionId?: string) => {
+  const available = async (target: "page" | "block" | "action", query: string | undefined, blockId?: string, actionId?: string, client?: SqlClient) => {
     if (!query) return true;
     const capability = global.availabilityCapabilities.get(availabilityKey(target, page.id, blockId, actionId));
     if (!capability) return false;
     return publishedCustomAppAvailability({
+      client,
       baseId: app.baseId,
       source: query,
       capability,

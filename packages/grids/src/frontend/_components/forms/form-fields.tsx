@@ -15,12 +15,14 @@ import {
 import { createMemo, createSignal, For, Index, onMount, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { PublicField } from "../../../api/public-dto";
+import { materializeFieldDefault } from "../../../field-defaults";
 import { objectListRecordInputValues } from "../../../field-types/object-list";
 import type { Field, FormFieldEntry } from "../../../service";
 import RelationPicker from "../records/RelationPicker";
 import type { InlineCreateDraft, InlineCreateState } from "./form-submit-payload";
 import { gridsFormMessages } from "./messages";
 import { ObjectListInput } from "./ObjectListInput";
+import { formFieldClass, formLayoutClass } from "./field-layout";
 import PrincipalInput from "./PrincipalInput";
 
 export { buildFormSubmitPayload, type InlineCreateState } from "./form-submit-payload";
@@ -38,9 +40,19 @@ export const userInputEntriesOf = (entries: FormFieldEntry[]): UserInputEntry[] 
  * Build the initial value map from a list of user-input entries —
  * seeded with each entry's `defaultValue` when present.
  */
-export const buildInitialValues = (entries: UserInputEntry[], fields: FrontendField[] = []): Record<string, unknown> => {
+export const buildInitialValues = (
+  entries: UserInputEntry[],
+  fields: FrontendField[] = [],
+  options?: { dateConfig?: DateContext; now?: Date },
+): Record<string, unknown> => {
   const values: Record<string, unknown> = {};
+  const fieldsById = new Map(fields.map((field) => [field.id, field]));
   for (const entry of entries) {
+    const field = fieldsById.get(entry.fieldId);
+    if (options && field && entry.defaultValue !== undefined && entry.defaultValue !== null) {
+      values[entry.fieldId] = materializeFieldDefault({ ...field, defaultValue: entry.defaultValue }, options);
+      continue;
+    }
     if (
       entry.defaultValue !== undefined &&
       entry.defaultValue !== null &&
@@ -99,6 +111,7 @@ export function FieldInput(props: {
   baseId?: string;
   /** Optional UUID → label map for already-linked relation values. */
   relationLabels?: Record<string, string>;
+  relationLookupUrl?: string;
   /** Existing record id in edit mode. Excluded from self-relation pickers. */
   currentRecordId?: string;
   dateConfig?: DateContext;
@@ -411,6 +424,7 @@ export function FieldInput(props: {
               <div class="min-w-0 flex-1">
                 <RelationPicker
                   targetTableId={cfg.targetTableId}
+                  lookupUrl={props.relationLookupUrl}
                   multi={multi}
                   value={existingRelationIds}
                   labels={() => props.relationLabels ?? {}}
@@ -422,7 +436,7 @@ export function FieldInput(props: {
                 />
               </div>
               <Show when={props.entry.inlineCreate?.enabled}>
-                <Button variant="secondary" size="sm" type="button" class="shrink-0" onClick={createInlineDraft}>
+                <Button variant="input" type="button" class="shrink-0" onClick={createInlineDraft}>
                   <i class="ti ti-plus" />
                   {t().createNew}
                 </Button>
@@ -529,6 +543,7 @@ function InlineRelationCreate(props: {
       helpText: config?.helpText,
       required: config?.required ?? field.required,
       defaultValue: config?.defaultValue,
+      width: config?.width,
     };
   };
 
@@ -576,8 +591,10 @@ function InlineRelationCreate(props: {
                     </Tooltip.Anchor>
                   </div>
                 </Show>
+                <div class={formLayoutClass}>
                 <For each={inlineFields()}>
                   {(field) => (
+                    <div class={formFieldClass(inlineEntryFor(field).width)}>
                     <FieldInput
                       field={field}
                       entry={inlineEntryFor(field)}
@@ -585,8 +602,10 @@ function InlineRelationCreate(props: {
                       onChange={(value) => setDraftField(index, field.id, value)}
                       dateConfig={props.dateConfig}
                     />
+                    </div>
                   )}
                 </For>
+                </div>
               </div>
             )}
           </Index>

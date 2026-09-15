@@ -623,6 +623,16 @@ export const previewDslQuery = async (
   plan: DslResolvedSqlQueryPlan,
   options: DslQueryPreviewOptions,
 ): Promise<Result<DslQueryPreviewSuccess>> => {
+  // A missing child scope is not a zero sum. In particular, do not turn hidden
+  // payments into an apparently outstanding balance.
+  if (
+    options.authorizedTableIds !== undefined &&
+    (plan.summaryJoins ?? []).some(
+      (join) =>
+        !(join.tableId === plan.tableId && options.primaryTableAuthorized === true) && !options.authorizedTableIds!.has(join.tableId),
+    )
+  )
+    return fail(err.forbidden("a joined summary table is not available"));
   const bounds = pageBoundsForPlan(plan, options);
 
   try {
@@ -738,6 +748,7 @@ export const previewDslQuery = async (
     }
     const computedDateConfig = options.timeZone ? { timeZone: options.timeZone } : undefined;
     const computedFieldSql = await buildComputedFieldSqlMap(options.fieldsByTableId[plan.tableId] ?? [], {
+      fieldsByTableId: options.fieldsByTableId,
       requireCapturedValues: true,
       useFinalizedFormulaValues: recordSource?.kind !== "federated",
       dateConfig: computedDateConfig,
@@ -745,8 +756,20 @@ export const previewDslQuery = async (
       authorizedTableIds: authorizedComputedTableIds,
     });
     const computedFieldSqlByJoinAlias = new Map<string, Awaited<ReturnType<typeof buildComputedFieldSqlMap>>>();
+    for (const join of plan.summaryJoins ?? []) {
+      const map = await buildComputedFieldSqlMap(options.fieldsByTableId[join.tableId] ?? [], {
+        fieldsByTableId: options.fieldsByTableId,
+        requireCapturedValues: true,
+        useFinalizedFormulaValues: true,
+        dateConfig: computedDateConfig,
+        client: options.client,
+        authorizedTableIds: authorizedComputedTableIds,
+      });
+      computedFieldSqlByJoinAlias.set(join.alias, map);
+    }
     for (const [index, join] of (plan.joins ?? []).entries()) {
       const map = await buildComputedFieldSqlMap(options.fieldsByTableId[join.tableId] ?? [], {
+        fieldsByTableId: options.fieldsByTableId,
         requireCapturedValues: true,
         useFinalizedFormulaValues: recordSourcesByTableId.get(join.tableId)?.kind !== "federated",
         dateConfig: computedDateConfig,
@@ -758,6 +781,7 @@ export const previewDslQuery = async (
     }
     for (const [index, join] of (plan.derivedViewSource?.joins ?? []).entries()) {
       const map = await buildComputedFieldSqlMap(options.fieldsByTableId[join.tableId] ?? [], {
+        fieldsByTableId: options.fieldsByTableId,
         requireCapturedValues: true,
         useFinalizedFormulaValues: recordSourcesByTableId.get(join.tableId)?.kind !== "federated",
         dateConfig: computedDateConfig,
@@ -769,6 +793,7 @@ export const previewDslQuery = async (
     }
     for (const [index, join] of (plan.derivedViewSource?.relationJoins ?? []).entries()) {
       const map = await buildComputedFieldSqlMap(options.fieldsByTableId[join.tableId] ?? [], {
+        fieldsByTableId: options.fieldsByTableId,
         requireCapturedValues: true,
         useFinalizedFormulaValues: recordSourcesByTableId.get(join.tableId)?.kind !== "federated",
         dateConfig: computedDateConfig,
@@ -975,7 +1000,7 @@ export const previewDslQuery = async (
     if (isMissingCapturedCalculationError(error))
       return fail(err.badInput(getGridsCrudMessages(options.locale).missingCapturedCalculation));
     if (isInvalidCalculationError(error)) return fail(err.badInput(getGridsCrudMessages(options.locale).calculationFailed));
-    if (isTimeout(error)) return fail(err.badInput("This query took too long (over 5s). Add a filter or a smaller limit and try again."));
+    if (isTimeout(error)) return fail(err.badInput(getGridsCrudMessages(options.locale).queryTimedOut));
     const revisionMessage = federatedRevisionMessage(error);
     if (revisionMessage) return fail(err.badInput(revisionMessage));
     throw error;

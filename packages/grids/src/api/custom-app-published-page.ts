@@ -1,4 +1,5 @@
 import { type AuthContext, getDateConfig, getLocale } from "@k2b/cloud/server";
+import type { DateContext } from "@k2b/stdlib";
 import { projectPublishedRecords } from "../api/custom-app-public-dto";
 import { resolvePublishedCustomAppRuntime } from "../api/custom-app-published-runtime";
 import { projectDocuments } from "../api/documents-api-shared";
@@ -22,6 +23,7 @@ import {
   customAppActionUrl,
   customAppCommentsUrl,
   customAppDocumentDownloadUrl,
+  customAppDocumentPreviewUrl,
   customAppFormSubmitUrl,
   customAppPageHref,
   customAppRecordFilesUrl,
@@ -34,6 +36,7 @@ import {
 import { buildCustomAppRuntimeContext, customAppDefinitionWithAvailableNavigation } from "../custom-apps/runtime-context";
 import { customAppScannerConfigHash } from "../custom-apps/scanner-capability";
 import { objectListRecordInputValues } from "../field-types/object-list";
+import { planFormComputedFields } from "../form-computed-fields";
 import type { PublicDocument } from "../frontend/_components/documents/public-document-types";
 import type { FormEditState } from "../frontend/_components/forms/form-submit-payload";
 import type { WorkflowScannerState } from "../frontend/_components/workflows/WorkflowScannerSurface";
@@ -52,11 +55,14 @@ import { resolvePublishedCustomAppForm } from "../service/custom-app-published-f
 import { buildCustomAppRecordLabelCache, customAppRecordRelationsMatchPublished } from "../service/custom-app-record-relations";
 import { executePublishedCustomAppRecords } from "../service/custom-app-records-query";
 import { executePublishedCustomAppQuery, publishedCustomAppAvailability } from "../service/custom-app-runtime-query";
+import { materializeFormRenderDefaults } from "../service/form-render-defaults";
 import { isExclusiveFormChild, MAX_INLINE_CREATES_PER_FIELD, MAX_INLINE_CREATES_PER_SUBMISSION } from "../service/form-submission";
 import type { PublicRenderableForm } from "../service/forms";
 import { toPublicGqlResponse } from "../service/gql-public-result";
 import { projectPublicIds, resolvePublicId, resolvePublicIds } from "../service/public-resources";
+import { lookupRecords } from "../service/relation-labels";
 import { scannerLauncherPromptInputSources } from "../workflows/contracts";
+import { gridsApiMessages } from "./messages";
 
 type RecordsBlock = Extract<CustomAppBlock, { type: "records" }>;
 type ReferencedRecordsBlock = Extract<CustomAppBlock, { type: "referenced_records" }>;
@@ -90,25 +96,39 @@ export type FormBlockData =
       inlineTargetFields: Record<string, PublicField[]>;
       submitUrl: string;
       initialRecord?: FormEditState;
+      relationLabels?: Record<string, string>;
+      relationLookupFields?: string[];
     }
   | { ok: false; message: string };
 export type CustomAppDocument = PublicDocument & { downloadUrl: string };
+export type CustomAppDocumentPreview = { name: string; url: string };
 type ResolvedPublishedForm = NonNullable<Awaited<ReturnType<typeof resolvePublishedCustomAppForm>>>;
 
 const preparePublishedForm = async (
   resolved: ResolvedPublishedForm,
+  dateConfig: DateContext,
+  locale: string,
   recordId?: string,
 ): Promise<Omit<Extract<FormBlockData, { ok: true }>, "submitUrl"> | null> => {
   const fixed = new Set(Object.keys(resolved.fixedValues));
-  const renderable = gridsService.form.toPublicRenderableForm(resolved.form);
+  const renderable = gridsService.form.toPublicRenderableForm(
+    recordId ? resolved.form : materializeFormRenderDefaults(resolved.form, resolved.fields, { dateConfig }),
+  );
   renderable.config = {
     ...renderable.config,
     redirectUrl: null,
     fields: renderable.config.fields.filter((entry) => !fixed.has(entry.fieldId)),
   };
   const visibleFieldIds = new Set(renderable.config.fields.map((entry) => entry.fieldId));
-  const fields = resolved.fields.filter((field) => visibleFieldIds.has(field.id));
-  if (fields.length !== visibleFieldIds.size) return null;
+  const summary = planFormComputedFields(
+    (renderable.config.computedFields ?? []).map((entry) => entry.fieldId),
+    visibleFieldIds,
+    resolved.fields,
+  );
+  if (!summary) return null;
+  const renderFieldIds = new Set([...visibleFieldIds, ...summary.fields.map((field) => field.id)]);
+  const fields = resolved.fields.filter((field) => renderFieldIds.has(field.id));
+  if (fields.length !== renderFieldIds.size) return null;
 
   const fieldsById = new Map(resolved.fields.map((field) => [field.id, field]));
   const inlineTargetFields: Record<string, Field[]> = {};
@@ -195,11 +215,49 @@ const preparePublishedForm = async (
       initialRecord.values[field.shortId] = relationValues;
     }
   }
+  const relationTargets = resolved.relationLookup.targets;
+  const labelIds = new Map<string, Set<string>>();
+  for (const target of relationTargets) {
+    const entry = renderable.config.fields.find((entry) => entry.fieldId === target.field.id);
+    const value = initialRecord
+      ? initialRecord.values[target.field.shortId]
+      : entry?.kind === "user_input"
+        ? entry.defaultValue
+        : undefined;
+    if (!Array.isArray(value)) continue;
+    const selected = value.filter((id): id is string => typeof id === "string" && !id.startsWith("tmp_"));
+    const ids = initialRecord ? await resolvePublicIds("record", selected) : new Map(selected.map((id) => [id, id]));
+    labelIds.set(target.tableId, new Set([...(labelIds.get(target.tableId) ?? []), ...ids.values()]));
+  }
+  const labels: Record<string, string> = {};
+  for (const target of relationTargets) {
+    const ids = [...(labelIds.get(target.tableId) ?? [])];
+    for (let offset = 0; offset < ids.length; offset += 50) {
+      const result = await lookupRecords({
+        targetTableId: target.tableId,
+        recordIds: ids.slice(offset, offset + 50),
+        limit: 50,
+        labelSnapshot: {
+          fields: target.targetFields,
+          presentable: target.labels,
+          tableKind: target.tableKind,
+          recordSource: target.recordSource,
+        },
+        untitledLabel: gridsApiMessages.resolve([locale]).t.untitledRecord,
+      });
+      for (const item of result.items) labels[item.id] = item.label;
+    }
+  }
+  const publicLabelIds = await projectPublicIds("record", Object.keys(labels));
   return {
     ok: true,
     form: await toPublicForm({ ...resolved.form, config: renderable.config }),
     fields: await toPublicFields(fields),
     inlineTargetFields: publicInlineTargetFields,
+    relationLabels: Object.fromEntries(
+      Object.entries(labels).flatMap(([id, label]) => (publicLabelIds.has(id) ? [[publicLabelIds.get(id)!, label]] : [])),
+    ),
+    relationLookupFields: relationTargets.map((target) => target.field.shortId),
     ...(initialRecord ? { initialRecord } : {}),
   };
 };
@@ -326,6 +384,7 @@ export async function loadPublishedCustomAppPage<T extends AuthContext>(c: impor
   const renderedHtml = new Map<string, { html: unknown; fieldName: string }>();
   const recordUpdateEndpoints = new Map<string, string>();
   const documents = new Map<string, CustomAppDocument[]>();
+  const documentPreviews = new Map<string, CustomAppDocumentPreview[]>();
   if (page.record) {
     const tableId = parameterTableIds.get(page.record.tableId);
     if (!tableId) return null;
@@ -470,6 +529,18 @@ export async function loadPublishedCustomAppPage<T extends AuthContext>(c: impor
     const projectedDocuments = await projectDocuments(documentSummaries);
     for (const block of documentBlocks) {
       const allowed = new Set((block.documents?.templateIds ?? []).map((id) => templateIds.get(id)!));
+      if (block.documents?.preview && !record.finalizedAt) {
+        const previews: CustomAppDocumentPreview[] = [];
+        for (const publicId of block.documents.templateIds) {
+          const template = await gridsService.document.getTemplate(templateIds.get(publicId)!);
+          if (template?.enabled)
+            previews.push({
+              name: template.name,
+              url: customAppDocumentPreviewUrl(app.shortId, page.id, block.id, publicId, publicPageParams),
+            });
+        }
+        documentPreviews.set(block.id, previews);
+      }
       documents.set(
         block.id,
         documentSummaries.flatMap((documentSummary, index) => {
@@ -613,10 +684,15 @@ export async function loadPublishedCustomAppPage<T extends AuthContext>(c: impor
     formBlocks.map(async (block): Promise<[string, FormBlockData]> => {
       const resolvedForm = await resolvePublishedCustomAppForm({ surface: block, page, capabilities });
       if (!resolvedForm) {
-        return [block.id, { ok: false, message: t.thisFormUnavailable }];
+        return [block.id, { ok: false, message: t.formChanged }];
       }
       if (block.mode === "edit" && !pageRecord) return [block.id, { ok: false, message: t.thisFormUnavailable }];
-      const prepared = await preparePublishedForm(resolvedForm, block.mode === "edit" ? pageRecord?.id : undefined);
+      const prepared = await preparePublishedForm(
+        resolvedForm,
+        dateConfig,
+        getLocale(c),
+        block.mode === "edit" ? pageRecord?.id : undefined,
+      );
       if (!prepared) {
         return [block.id, { ok: false, message: t.formChanged }];
       }
@@ -634,7 +710,7 @@ export async function loadPublishedCustomAppPage<T extends AuthContext>(c: impor
   for (const action of availableSidebarActions) {
     const resolvedForm = await resolvePublishedCustomAppForm({ surface: action, capabilities });
     if (!resolvedForm) continue;
-    const prepared = await preparePublishedForm(resolvedForm);
+    const prepared = await preparePublishedForm(resolvedForm, dateConfig, getLocale(c));
     if (!prepared) continue;
     sidebarActions.push({
       id: action.id,
@@ -646,6 +722,8 @@ export async function loadPublishedCustomAppPage<T extends AuthContext>(c: impor
       form: prepared.form,
       fields: prepared.fields,
       inlineTargetFields: prepared.inlineTargetFields,
+      relationLabels: prepared.relationLabels,
+      relationLookupFields: prepared.relationLookupFields,
       dateConfig,
     });
   }
@@ -778,6 +856,7 @@ export async function loadPublishedCustomAppPage<T extends AuthContext>(c: impor
     recordEndpoints,
     recordUpdateEndpoints,
     documents,
+    documentPreviews,
     pageRecords,
     renderedHtml,
     dateConfig,

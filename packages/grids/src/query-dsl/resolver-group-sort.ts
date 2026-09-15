@@ -1,5 +1,6 @@
 import type { GroupSortSpec, RecordQuery } from "../contracts";
 import { normalizeRefKey } from "../ref-syntax";
+import { derivedColumnByRef, type DslDerivedViewColumn } from "./resolver-derived-columns";
 import { isGroupable } from "../service/group-compiler";
 import type { Field } from "../service/types";
 import { type DslFormulaAggregation, type DslResolvedSqlAggregation, groupAggForDsl } from "./resolver-aggregates";
@@ -33,6 +34,7 @@ export type DslResolvedSqlGroupSort = GroupSortSpec & {
 };
 
 export type DslResolvedSqlSort =
+  | { kind: "summary"; index: number; column: DslDerivedViewColumn; direction: "asc" | "desc"; nullsFirst?: boolean }
   | {
       kind: "record";
       key: "createdAt" | "updatedAt" | "deletedAt";
@@ -161,6 +163,13 @@ export const resolveQueryPlanSort = (
       continue;
     }
     if (target.scope) {
+      const summary = scope.summaryJoins.get(normalizeRefKey(target.scope));
+      if (summary) {
+        const column = derivedColumnByRef(summary.columns, target.ref, target.span);
+        if (isDiagnostic(column)) return column;
+        sqlSort.push({ kind: "summary", index: [...scope.summaryJoins.values()].indexOf(summary), column, direction: item.direction, ...nulls });
+        continue;
+      }
       const join = joinScopeByAlias(scope, target.scope, target.span);
       if (isDiagnostic(join)) return join;
       const field = fieldByRefMap(join.byRef, target.ref, `${target.scope}."${target.ref}"`, target.span);

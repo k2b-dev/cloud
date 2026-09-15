@@ -439,7 +439,9 @@ const buildHavingRefResolver = (
     const resolved = byKey.get(key);
     if (!resolved) continue;
     byRef.set(normalizeRefKey(item.ref), {
-      sql: resolved.expr,
+      // HAVING is applied to the grouped projection below. Refer to its output
+      // once instead of expanding a potentially large calculated field again.
+      sql: sql`${sql.unsafe(`"${assertSqlIdentifier(key)}"`)}`,
       type:
         resolved.type === "unknown" && !isFormulaAggregation(item)
           ? formulaTypeForAggregate(item, item.fieldId === "*" ? null : (fieldsById.get(item.fieldId) ?? null))
@@ -554,6 +556,8 @@ type CompileGroupParams = {
   cursor?: { keys: unknown[] } | null;
   /** Null leaves a nested source unbounded; its outer query owns pagination. */
   limit?: number | null;
+  /** Internal joined summaries need all groups, but neither ordering nor cursors. */
+  summaryOnly?: boolean;
   /** Callers that already request one lookahead row disable the service-level lookahead. */
   lookahead?: boolean;
   offset?: number;
@@ -630,8 +634,11 @@ const buildGroupedSql = (
     FROM ${from}
     WHERE ${where.where}
     GROUP BY ${groupByPositions}
-    HAVING ${userHaving}
   `;
+  if (params.summaryOnly) return {
+    ok: true, query: sql`SELECT * FROM (${groupedQuery}) grouped WHERE ${userHaving}`,
+    cursorable: false, cursorValuesFromRow: () => [],
+  };
   const aggregateByKey = new Map(aggregations.aggExprs.map((aggregate) => [aggregate.key, aggregate]));
   const groupType = (group: ResolvedGroup): DslKeysetType => {
     const kind = storageOf(group.field).kind;
@@ -672,7 +679,7 @@ const buildGroupedSql = (
         FROM (
           SELECT *, ${keyset.select}
           FROM (${groupedQuery}) grouped_tail
-          WHERE TRUE
+          WHERE ${userHaving}
           ORDER BY ${reverseOrderBy}
           LIMIT ${fetchLimit}
         ) grouped_tail_window
@@ -681,7 +688,7 @@ const buildGroupedSql = (
     : sql`
         SELECT *, ${keyset.select}
         FROM (${groupedQuery}) grouped
-        WHERE ${keyset.where}
+        WHERE (${userHaving}) AND (${keyset.where})
         ORDER BY ${keyset.orderBy}
         LIMIT ${fetchLimit}
         OFFSET ${offset}

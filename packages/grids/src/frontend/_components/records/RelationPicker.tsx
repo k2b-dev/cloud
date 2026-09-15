@@ -24,6 +24,7 @@ type LookupItem = RecordLookupItem;
 type Props = {
   /** Target table to search records of. */
   targetTableId: string;
+  lookupUrl?: string;
   /** Currently-linked record ids. Empty array = nothing linked. */
   value: () => string[];
   /** Pre-resolved labels for the currently-linked ids — passed in by
@@ -63,6 +64,7 @@ export default function RelationPicker(props: Props) {
     return (
       <RecordPicker
         tableId={props.targetTableId}
+        lookupUrl={props.lookupUrl}
         placeholder={t().pickLinkedRecord}
         clearable
         disabled={() => props.saving?.() ?? false}
@@ -92,6 +94,7 @@ export default function RelationPicker(props: Props) {
       fetchData={async (q, signal) => {
         const items = await fetchRecordLookup({
           tableId: props.targetTableId,
+          lookupUrl: props.lookupUrl,
           query: q,
           excludeIds: excludedIds(),
           signal,

@@ -202,6 +202,18 @@ export const documentMessages = i18n.define({
       documentNumber: "Document number",
       numberPatternDescription: "Liquid pattern for stable generated document numbers.",
       rendererOwnsNumbering: "The selected renderer owns numbering and filenames.",
+      issuancePolicy: "Document issuance",
+      issueOrRetrieve: "Issue or retrieve",
+      issuanceOnceAbandon:
+        "The document may already have been created. You can reopen it and retry: this template keeps one issuance per finalized record. Selecting another record can create a different document. Close now?",
+      issuanceOnceNewAttempt:
+        "You can select another record. For the same record, this template still returns the first issuance; a new preview does not replace its frozen content. Start a new attempt?",
+      issuanceRepeatable: "New document per attempt",
+      issuanceOnce: "Once per finalized record",
+      issuanceOnceDetail:
+        "Finalize the record before issuing. If this template already issued it, you receive the original document and number. A retry keeps the first inputs, tags and filename. Preview is optional and shows current template data, not an earlier frozen issuance.",
+      issuancePolicyChoose: "Fixed after saving. Once requires finalization and reuses the first document and number on every retry.",
+      issuancePolicyFixed: "Fixed when this template was created. Preview never issues a document.",
       numberSeries: ({ id, value }: { id: string; value: string }) =>
         `Number series ${id} · Last allocated ${value}. Technical gaps can occur; pattern changes apply only to future documents.`,
       numberSeriesCreated: "A durable number series is created automatically when this template is saved. Technical gaps can occur.",
@@ -446,6 +458,19 @@ export const documentMessages = i18n.define({
       documentNumber: "Dokumentnummer",
       numberPatternDescription: "Liquid-Muster für dauerhaft vergebene Dokumentnummern.",
       rendererOwnsNumbering: "Der ausgewählte Renderer bestimmt Nummerierung und Dateinamen.",
+      issuancePolicy: "Dokumentausgabe",
+      issueOrRetrieve: "Ausstellen oder abrufen",
+      issuanceOnceAbandon:
+        "Das Dokument wurde möglicherweise bereits erstellt. Du kannst es erneut öffnen und wiederholen: Diese Vorlage behält eine Ausgabe je festgeschriebenem Datensatz. Ein anderer Datensatz kann ein weiteres Dokument erzeugen. Jetzt schließen?",
+      issuanceOnceNewAttempt:
+        "Du kannst einen anderen Datensatz auswählen. Für denselben Datensatz gibt diese Vorlage weiterhin die erste Ausgabe zurück; eine neue Vorschau ersetzt deren gespeicherten Inhalt nicht. Neuen Versuch starten?",
+      issuanceRepeatable: "Neues Dokument je Versuch",
+      issuanceOnce: "Einmal je festgeschriebenem Datensatz",
+      issuanceOnceDetail:
+        "Schreibe den Datensatz vor der Ausgabe fest. Hat diese Vorlage ihn bereits ausgestellt, erhältst du das ursprüngliche Dokument mit derselben Nummer. Eine Wiederholung behält die zuerst verwendeten Daten, Tags und Dateinamen. Die Vorschau ist optional und zeigt aktuelle Vorlagendaten, nicht eine frühere gespeicherte Ausgabe.",
+      issuancePolicyChoose:
+        "Nach dem Speichern festgelegt. Einmalige Ausgabe verlangt die Festschreibung und verwendet bei Wiederholungen dasselbe Dokument und dieselbe Nummer.",
+      issuancePolicyFixed: "Beim Anlegen dieser Vorlage festgelegt. Die Vorschau stellt kein Dokument aus.",
       numberSeries: ({ id, value }) =>
         `Nummernserie ${id} · Zuletzt vergeben: ${value}. Technisch bedingte Lücken sind möglich; Musteränderungen gelten nur für künftige Dokumente.`,
       numberSeriesCreated:

@@ -180,17 +180,20 @@ const joinClauseSuggestions = (
 ): DslQueryCompletionItem[] => {
   const restRaw = segment.trimStart().replace(/^(?:left\s+)?join\b/i, "");
   const rest = restRaw.trimStart();
-  if (!rest || /^(?:t|ta|tab|tabl)$/i.test(rest)) return sourceKindSuggestions(query, range, true);
-  const tableMatch = rest.match(/^table\b([\s\S]*)$/i);
+  const leftJoin = /^left\s+join\b/i.test(segment.trimStart());
+  if (!rest || /^(?:t|ta|tab|tabl|v|vi|vie)$/i.test(rest)) return sourceKindSuggestions(query, range, !leftJoin);
+  const tableMatch = rest.match(/^(table|view)\b([\s\S]*)$/i);
   if (!tableMatch) return [];
-  const afterTable = tableMatch[1] ?? "";
-  if (!afterTable && !/\s$/.test(restRaw)) return sourceKindSuggestions(query, range, true);
+  const kind = tableMatch[1]!.toLowerCase() === "view" ? "view" : "table";
+  if (kind === "view" && !leftJoin) return [];
+  const afterTable = tableMatch[2] ?? "";
+  if (!afterTable && !/\s$/.test(restRaw)) return sourceKindSuggestions(query, range, !leftJoin);
 
   const sourceMatch = afterTable.match(new RegExp(String.raw`^\s+(${SOURCE_REF_RE})([\s\S]*)$`, "i"));
-  if (!sourceMatch) return sourceSuggestions(ctx, query, range, "table");
+  if (!sourceMatch) return sourceSuggestions(ctx, query, range, kind);
 
   const sourceRef = sourceMatch[1] ? parseSourceReference(sourceMatch[1]) : null;
-  if (!sourceRef || !sourceRefExists(ctx, "table", sourceRef)) return sourceSuggestions(ctx, query, range, "table");
+  if (!sourceRef || !sourceRefExists(ctx, kind, sourceRef)) return sourceSuggestions(ctx, query, range, kind);
 
   const tail = sourceMatch[2] ?? "";
   if (tail === "") {

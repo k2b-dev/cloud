@@ -50,6 +50,42 @@ const field = (tableId: string, id: string, shortId: string, name: string) => ({
 });
 
 describe("buildTrustedGqlResolverContext", () => {
+  test("formula summary hydration retains filters and rejects unsupported saved scope", () => {
+    const context = ctx();
+    for (const scope of ["supported", "having", "offset", "field-filter"]) {
+      const suffix = scope === "having" ? "\nhaving total > 10" : scope === "offset" ? "\noffset 1" : "";
+      const source = `from table Orders\nwhere amount > ${scope === "field-filter" ? "cost" : "0"}\ngroup by customer_link\naggregate sum(formula(amount * 2)) as total${suffix}`;
+      expect(resolveDslQueryToQueryPlan(parseOk(source), context).ok).toBe(true);
+      const views = hydrateDslViewQueries({
+        ...context,
+        views: [
+          {
+            kind: "view",
+            id: hiddenTableId,
+            shortId: "Totals",
+            name: "Totals",
+            tableId: orders.id,
+            source,
+            query: {},
+          },
+        ],
+      });
+      if (scope !== "supported") {
+        if (scope === "having" || scope === "offset") {
+          const result = resolveDslQueryToQueryPlan(parseOk("from view Totals"), { ...context, views });
+          expect(result.ok).toBe(false);
+          if (!result.ok) expect(result.diagnostics[0]?.message).toContain(scope.toUpperCase());
+        } else expect(views).toHaveLength(0);
+        continue;
+      }
+      expect(views).toHaveLength(1);
+      expect(views[0]?.query.filter).toBeDefined();
+      expect(views[0]?.summaryFormulaAggregations).toHaveLength(1);
+      // Formula aggregates are supported by the explicit summary join, not
+      // silently reinterpreted as an ordinary editable RecordQuery source.
+      expect(resolveDslQueryToQueryPlan(parseOk("from view Totals"), { ...context, views }).ok).toBe(false);
+    }
+  });
   test.each([
     "where amount > cost",
     "where not amount > 0",
@@ -76,7 +112,8 @@ describe("buildTrustedGqlResolverContext", () => {
     });
     const referenced = resolveDslQueryToQueryPlan(parseOk("from view Profit\nselect amount"), { ...context, views });
     expect(referenced.ok).toBe(false);
-    if (!referenced.ok) expect(referenced.diagnostics[0]?.message).toContain('source "Profit" is not available');
+    if (!referenced.ok)
+      expect(referenced.diagnostics[0]?.message).toContain(clause === "offset 1" ? "OFFSET" : 'source "Profit" is not available');
   });
 
   test("preserves the complete filter of a supported saved View", () => {

@@ -98,7 +98,7 @@ const derivedTypeSummary = (column: DslDerivedViewColumn, tables: Map<string, Ds
 const renderViewFieldRows = (view: DslViewSource, ctx: DslResolverContext): string[] => {
   const sourceFields = aliveFields(ctx.fieldsByTableId[view.tableId] ?? []);
   if (!viewIsDerived(view)) return renderFieldRows(sourceFields, ctx);
-  const columns = derivedViewColumns(view.query, sourceFields);
+  const columns = derivedViewColumns(view.query, sourceFields, view.summaryFormulaAggregations);
   if ("message" in columns) return [`- View output could not be described: ${mdEscape(columns.message)}`];
   const tables = visibleTablesById(ctx);
   return columns.map((column) => `- ${code(ref(column.label))}: ${mdEscape(derivedTypeSummary(column, tables))}`);
@@ -122,14 +122,16 @@ const renderViewSection = (view: DslViewSource, ctx: DslResolverContext): string
   return [
     `### View: ${mdEscape(view.name)}`,
     "",
-    `Use as: ${code(sourceRef("view", view.name))}`,
+    view.summaryFormulaAggregations?.length
+      ? `Use with left join view ${code(ref(view.name))}; this formula-aggregate source cannot be used with from view.`
+      : `Use as: ${code(sourceRef("view", view.name))}`,
     `Parent table: ${parent ? mdEscape(parent.name) : "not listed in this context"}`,
     `Shape: ${viewIsDerived(view) ? "derived/grouped output" : "row-shaped saved view"}`,
     "",
     "Output fields:",
     ...renderViewFieldRows(view, ctx),
     "",
-    "Rule: a listed view is a valid source. Do not assume access to its parent table unless that table is listed above.",
+    "Rule: use the source form stated above. A summary join requires its parent table to be listed; a from-view grant does not imply parent-table access.",
     "",
   ];
 };
@@ -239,6 +241,23 @@ export const renderGqlAssistantSkill = (): string =>
     "- `context.md` contains schema only, not record values. Do not invent literal filter values unless the user supplied them or they are listed select options.",
     "",
     "## Common Patterns",
+    "### Independent child totals",
+    "For balances involving payments and corrections, aggregate each child set before joining. Joining both child tables first can multiply amounts. Do not use distinct sums as a repair: equal amounts can belong to different records.",
+    "Use existing visible grouped views, or explain which views an author must create. Example PaymentTotals source (Invoice relates to Invoices):",
+    "```gql",
+    "from table Payments",
+    "group by Invoice",
+    "aggregate sum(Amount) as paid",
+    "```",
+    "Then read invoices with the saved summary:",
+    "```gql",
+    "from table Invoices as bill",
+    "left join view PaymentTotals as payments on payments.Invoice = bill.id",
+    "select Number, formula(Gross - IF(ISBLANK(payments.paid), 0, payments.paid)) as outstanding",
+    "```",
+    "Join a second independently grouped correction view in the same way. Each summary contributes at most one row per root; missing groups return null. Aggregate aliases work in select, formulas, where and sort. Use actual names and IDs from context, not these example names.",
+    "Summary sources must group by exactly one relation to the root table and declare aggregates; formula aggregates are supported. Only left join view is supported, without outer grouping, source limits, search, group-sort windows, HAVING or other non-reusable clauses. Root and child must be stored tables, not Combined tables. The child table must be readable; denied access is an error, never a zero balance. These are read-only projections. View group columns may also use gk_0.",
+    "",
     "```gql",
     "from table Books",
     "select Title, Author, Price",

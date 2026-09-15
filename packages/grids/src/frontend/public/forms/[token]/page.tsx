@@ -2,8 +2,10 @@ import { listLegalLinks } from "@k2b/cloud";
 import { type AuthContext, getDateConfig, getLocale } from "@k2b/cloud/server";
 import { MinimalLayout } from "@k2b/cloud/ssr";
 import { toPublicForm } from "../../../../api/form-api-shared";
+import { materializeFormRenderDefaults } from "../../../../service/form-render-defaults";
 import { toPublicFields } from "../../../../api/public-dto";
 import { ssr } from "../../../../config";
+import { planFormComputedFields } from "../../../../form-computed-fields";
 import { gridsService } from "../../../../service";
 import PublicFormSubmit from "../../../_components/forms/PublicFormSubmit.island";
 import { resolveGridsMessages } from "../../../messages";
@@ -53,7 +55,13 @@ export default ssr<AuthContext>(async (c) => {
   // applied server-side).
   const userInputIds = new Set(form.config.fields.filter((e) => e.kind === "user_input").map((e) => e.fieldId));
   const liveFields = await gridsService.field.listByTable(form.tableId);
-  const internalFields = liveFields.filter((f) => userInputIds.has(f.id));
+  const summary = planFormComputedFields(
+    (form.config.computedFields ?? []).map((entry) => entry.fieldId),
+    userInputIds,
+    liveFields,
+  );
+  const visibleIds = new Set([...userInputIds, ...(summary?.fields ?? []).map((field) => field.id)]);
+  const internalFields = liveFields.filter((f) => visibleIds.has(f.id));
   const fields = await toPublicFields(internalFields);
   const publicFieldsByInternalId = new Map<string, (typeof fields)[number]>();
   for (const [index, field] of internalFields.entries()) {
@@ -82,7 +90,7 @@ export default ssr<AuthContext>(async (c) => {
 
   // Mirrors the public API DTO: only form render config, no table ids,
   // share tokens, owner metadata, timestamps, or server-applied values.
-  const safeForm = await toPublicForm(form);
+  const safeForm = await toPublicForm(materializeFormRenderDefaults(form, internalFields, { dateConfig }));
 
   return () => (
     <MinimalLayout c={c}>

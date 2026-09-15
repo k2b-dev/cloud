@@ -41,6 +41,7 @@ export const GQL_REFERENCE = {
     "select <field>, formula(<expr>) as alias",
     "join table <table-ref> as alias on <scope.field> = <alias.field>",
     "left join table <table-ref> as alias on <scope.field> = <alias.field>",
+    "left join view <grouped-view-ref> as summary on summary.<relation-group> = <root-alias>.id",
     "where <formula predicate>",
     "group by <field> [by day|week|month|quarter|year]",
     "aggregate count(*) as total, sum(<field>) as revenue",
@@ -64,6 +65,7 @@ export const GQL_REFERENCE = {
     "from table Items\nsearch 'camera' in Name, Notes\nwhere Available = true\nlimit 50",
   ],
   execution: [
+    "Grouped-view joins combine independent child aggregates without multiplying root rows. Each view must group by one relation to the root table; aggregate aliases work in selection, formulas, filters and sorting. Missing groups yield null. Use left join only, without outer grouping or source limit/search/group-sort windows. Unsupported source clauses and denied access fail closed; these results are read-only projections.",
     "limit caps the complete logical result across all cursor pages.",
     "gql run --page-size N reads one page; --cursor continues from an opaque server cursor.",
     "gql run --all follows cursors up to --max-rows (default 10000).",

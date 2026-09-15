@@ -345,6 +345,9 @@ export const createGridsWorkflowValueResolver = (
             userId: principal.userId,
             userGroups: principal.groupIds,
             serviceAccountId: principal.serviceAccountId,
+            // Relations and computed fields use the same checked execution
+            // authority as the input record, not a second Base-only identity.
+            authorizeTable: canReadTable,
           },
         });
         readers.set(tableId, reader);

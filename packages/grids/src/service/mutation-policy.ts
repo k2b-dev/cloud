@@ -1,5 +1,5 @@
-import { err, fail, ok, type Result } from "@k2b/stdlib";
 import type { WorkflowBoundPlan, WorkflowIrStep, WorkflowJsonValue } from "@k2b/cloud/workflows";
+import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { sql } from "bun";
 import type { MutationSource, TableMutationPolicy } from "../contracts";
 import { MutationSourceSchema, TableMutationPolicySchema } from "../contracts";
@@ -112,8 +112,9 @@ const mutationTargets = (
         targets.add(boundTable);
         outputTable = boundTable;
       }
-    } else if (step.action === "updateRecord" || step.action === "finalizeRecord" || step.action === "closeRecord") {
-      const target = recordTableForReference(step.config.record, scope, bindings, [...actionPath, "record"]);
+    } else if (["updateRecord", "finalizeRecord", "closeRecord", "deleteRecord", "createCorrectionDraft"].includes(step.action)) {
+      const key = step.action === "createCorrectionDraft" ? "original" : "record";
+      const target = recordTableForReference(step.config[key], scope, bindings, [...actionPath, key]);
       if (target) {
         targets.add(target);
         outputTable = target;
@@ -129,6 +130,14 @@ const mutationTargets = (
         }
         if (change.updateRecord && typeof change.updateRecord === "object" && !Array.isArray(change.updateRecord)) {
           const target = recordTableForReference(change.updateRecord.record, scope, bindings, [...changePath, "updateRecord", "record"]);
+          if (target) targets.add(target);
+        }
+        if (change.finalizeRecord && typeof change.finalizeRecord === "object" && !Array.isArray(change.finalizeRecord)) {
+          const target = recordTableForReference(change.finalizeRecord.record, scope, bindings, [
+            ...changePath,
+            "finalizeRecord",
+            "record",
+          ]);
           if (target) targets.add(target);
         }
       });

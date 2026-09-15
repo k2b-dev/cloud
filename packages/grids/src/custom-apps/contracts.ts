@@ -348,6 +348,7 @@ const CustomAppRecordBlockSchema = z
     documents: z
       .object({
         templateIds: z.array(CustomAppResourceIdSchema).min(1).max(12),
+        preview: z.boolean().optional(),
       })
       .strict()
       .optional(),
@@ -1004,6 +1005,10 @@ export const CustomAppCapabilitiesSchema = z
               fixedFieldIds: z.array(z.string().uuid()).max(30),
               fieldHash: z.string().regex(/^[a-f0-9]{64}$/),
               formSecurityHash: z.string().regex(/^[a-f0-9]{64}$/),
+              relationLookupHash: z
+                .string()
+                .regex(/^[a-f0-9]{64}$/)
+                .optional(),
             })
             .strict(),
           z
@@ -1015,6 +1020,10 @@ export const CustomAppCapabilitiesSchema = z
               fixedFieldIds: z.array(z.string().uuid()).max(30),
               fieldHash: z.string().regex(/^[a-f0-9]{64}$/),
               formSecurityHash: z.string().regex(/^[a-f0-9]{64}$/),
+              relationLookupHash: z
+                .string()
+                .regex(/^[a-f0-9]{64}$/)
+                .optional(),
             })
             .strict(),
         ]),
@@ -1041,6 +1050,7 @@ export const CustomAppCapabilitiesSchema = z
             blockId: CustomAppLocalIdSchema,
             tableId: z.string().uuid(),
             templateIds: z.array(z.string().uuid()).min(1).max(12),
+            previewFingerprints: z.record(z.string().uuid(), z.string().regex(/^[a-f0-9]{64}$/)).optional(),
           })
           .strict(),
       )
@@ -1193,7 +1203,8 @@ export const CUSTOM_APP_REFERENCE = {
     record: {
       required: ["id", "type", "fieldIds"],
       editableFieldIds: "Optional writable or attachable subset of fieldIds",
-      documents: "Optionally show existing generated documents from an exact template allowlist",
+      documents:
+        "Show existing documents from templateIds (1–12). Optional preview:true grants saved draft PDF previews and the templates' queried data; source interpolation is limited to record.id/record.shortId, and template/schema changes require republishing. Does not issue documents.",
       note: "Displays allowlisted fields from the current page record and may edit values or attachments from an explicit subset",
     },
     comments: { required: ["id", "type"], note: "Shows the bounded comment thread for the current page record" },

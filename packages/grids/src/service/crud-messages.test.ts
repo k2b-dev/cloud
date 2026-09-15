@@ -5,6 +5,11 @@ import { validateFieldConfig } from "./field-validation";
 describe("Grids CRUD service messages", () => {
   test("keeps every locale complete", () => expect(gridsCrudMessages.check()).toEqual([]));
 
+  test("timeout guidance includes narrowing fields even for a single-record query", () => {
+    expect(getGridsCrudMessages("en").queryTimedOut).toContain("Select only the fields you need");
+    expect(getGridsCrudMessages("de").queryTimedOut).toContain("nur benötigte Felder");
+  });
+
   test("uses German messages for regional locales", () => {
     expect(validateFieldConfig("unknown-type", {}, "de-CH")).toEqual({
       ok: false,

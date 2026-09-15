@@ -6,6 +6,7 @@ import { customAppRecordsDisplayFieldHash, isSafeInlineCardImageMimeType } from 
 import { type CustomAppRecordsLikeBlock, referencedRecordsGqlSource } from "../custom-apps/referenced-records";
 import type { DslQueryContextValues } from "../query-dsl/parameters";
 import { decodeDslResultCursor, gqlResultFingerprint } from "../query-dsl/result-cursor";
+import type { SqlClient } from "./audit";
 import {
   customAppRecordRelationSnapshot,
   customAppRelationLabelFieldIdsByTableId,
@@ -37,7 +38,7 @@ type PublishedCustomAppRecordsResult = {
   };
 };
 
-export const customAppRowNavigationParams = (
+const customAppRowNavigationParams = (
   navigation: CustomAppRowNavigation,
   recordIds: readonly string[],
   records: readonly GridRecord[],
@@ -78,14 +79,17 @@ export const executePublishedCustomAppRecords = async (input: {
   viewerServiceAccountId: string | null;
   search?: string;
   cursor?: string;
+  client?: SqlClient;
+  /** Workflow admission needs the exact rows, not card/file/navigation rendering. */
+  includePresentation?: boolean;
 }): Promise<PublishedCustomAppRecordsResult | null> => {
   const { block } = input;
   const source =
     block.type === "referenced_records"
       ? { kind: "gql" as const, query: referencedRecordsGqlSource(input.page, block) ?? "" }
       : block.source;
-  const viewId = source.kind === "view" ? await resolvePublicId("view", source.viewId) : null;
-  const view = viewId ? await getView(viewId) : null;
+  const viewId = source.kind === "view" ? await resolvePublicId("view", source.viewId, input.client) : null;
+  const view = viewId ? await getView(viewId, { client: input.client }) : null;
   const capability: RecordsCapability | undefined =
     source.kind === "view"
       ? input.capabilities.views.find((candidate) => candidate.viewId === viewId && candidate.tableId === view?.tableId)
@@ -93,7 +97,7 @@ export const executePublishedCustomAppRecords = async (input: {
   if (!capability) return null;
   const publicDisplayFieldIds =
     block.type === "referenced_records" ? block.fieldIds : block.display.kind === "table" ? block.display.columnIds : [];
-  const displayFieldIds = await resolvePublicIds("field", publicDisplayFieldIds);
+  const displayFieldIds = await resolvePublicIds("field", publicDisplayFieldIds, input.client);
   if (displayFieldIds.size !== publicDisplayFieldIds.length) return null;
 
   const search = block.searchable ? input.search?.trim().slice(0, 200) || undefined : undefined;
@@ -120,6 +124,7 @@ export const executePublishedCustomAppRecords = async (input: {
     signal: input.signal,
     timeZone: input.timeZone,
     viewer: input.viewer,
+    client: input.client,
     ...(view ? { currentTableId: view.tableId, sourceHashScope: view.tableId } : {}),
     maxRows: 100,
     pageSize: block.pageSize,
@@ -146,9 +151,12 @@ export const executePublishedCustomAppRecords = async (input: {
         }
       : {}),
     maxResultBytes: 512_000,
+    // Relation labels contribute to the byte-limited page: admission must use
+    // the same page as SSR even when downstream presentation is unnecessary.
     labelRelationValues: true,
   });
   const primaryTableId = "primaryTableId" in capability ? capability.primaryTableId : capability.tableId;
+  if (input.includePresentation === false) return { response, primaryTableId };
   const fieldTableIds = response.ok
     ? [...new Set(response.columns.flatMap((column) => (column.fieldId && column.tableId ? [column.tableId] : [])))]
     : [];

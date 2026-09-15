@@ -218,6 +218,7 @@ export const createDocumentRenderRoutes = () =>
             profileVersion: loaded.template.renderer.version,
             snapshot: input.data,
             issuedAt: createdAt,
+            locale: getLocale(c),
           });
           if (!preview.ok) return c.json({ message: preview.error.message, phase: "profile" }, preview.error.status);
           const artifact = preview.data.find((candidate) => candidate.key === "pdf");

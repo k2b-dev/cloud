@@ -5,11 +5,11 @@ icon: ti ti-file-type-pdf
 description: PDFs aus gespeicherten Datensätzen erstellen, generieren, organisieren und teilen.
 order: 135
 ---
-Dokumentvorlagen verwandeln Tabellendatensätze in wiederholbar erzeugbare PDFs. Nutze sie für Rechnungen, Verträge, Etiketten, Zertifikate, Lieferscheine, Angebote, Packlisten, Checklisten und Datensatzübersichten.
+Dokumentvorlagen erzeugen PDFs aus Tabellendatensätzen, etwa Rechnungen, Verträge und Etiketten.
 
 Jede Vorlage gehört zu einer Tabelle und definiert eine Dokumentfamilie. Ein generiertes Dokument gehört zu einem ausgewählten Datensatz, erhält eine stabile Nummer und einen stabilen Dateinamen und bewahrt den exakten Quell-Snapshot, nachdem sich die aktiven Datensätze geändert haben. Es erscheint im Bereich Dokumente des Datensatzes, im Arbeitsbereich seiner Vorlage und im basisweiten Katalog **Alle Dokumente**.
 
-Nutze eine Dokumentvorlage, wenn die Ausgabe für Personen formatiert, gedruckt, über einen ablaufenden Link geteilt oder später erneut heruntergeladen werden soll. Nutze einen CSV- oder JSON-Export, wenn du nur Daten für ein anderes System benötigst.
+Nutze Vorlagen für formatierte, teilbare Ausgaben; CSV-/JSON-Exporte für den Datenaustausch.
 
 ## Ein unveränderliches Dokumentmodell {icon="shield-check"}
 
@@ -17,13 +17,15 @@ Agents finden mit `document.templates` Vorlagen, lesen mit `document.list` und `
 
 Eine wiederholte Generierung mit demselben Idempotenzschlüssel gibt dasselbe unveränderliche Dokument zurück; die Wiederverwendung mit anderer Eingabe scheitert.
 
-Scheitert die Erzeugung, sendet **Erzeugung wiederholen** die ursprünglichen Eingaben erneut. Hat die Erzeugung ihre Quelldaten bereits gespeichert, verwenden Wiederholungen diese Daten auch nach Änderungen am Datensatz oder an der Vorlage. Der Dialog sperrt die Eingaben und blendet die Live-Vorschau aus. Wähle **Neuen Versuch starten**, um Eingaben zu korrigieren oder aktuelle Daten zu verwenden, und erstelle die Vorschau erneut. Prüfe zuerst **Alle Dokumente**: Der vorherige Versuch hat möglicherweise bereits ein Dokument erstellt, und ein neuer Versuch kann ein weiteres erzeugen. Personen mit Schreibzugriff können vorhandene Dokumentlinks auch verwalten, wenn die Vorlage deaktiviert oder nicht mehr verfügbar ist.
+Die beim Anlegen feste `issuancePolicy: "oncePerFinalizedRecord"` verwendet über Schlüssel/Läufe hinweg dieselben gespeicherten Daten, Nummer und Dokument. Erst festschreiben, dann erzeugen. Nach Renderfehlern die Erzeugung für denselben Record/dieselbe Vorlage wiederholen, ohne Festschreibung zurückzusetzen oder zu wiederholen. Rechte werden erneut geprüft; eine Live-Vorschau ist unnötig und kann abweichen. Standard: `repeatable`. Kopierte Vorlagen haben getrennte Ausgabebereiche.
+
+**Erzeugung wiederholen** sperrt ursprüngliche Eingaben und gespeicherte Daten; keine Live-Vorschau. Bei `repeatable` nutzt **Neuen Versuch starten** aktuelle Daten für ein weiteres Dokument; prüfe zuerst **Alle Dokumente**. Einmalige Ausgabe verwendet weiterhin das Original. Schreibberechtigte verwalten bestehende Links auch ohne aktivierte Vorlage.
 
 Eine Vorlage wählt einen Renderer aus. Der HTML-Renderer wandelt Liquid-HTML und CSS in ein PDF um. Ein installierter E-Rechnungs-Renderer ordnet den ausgewählten Datensatz über Liquid-JSON zu und erstellt und validiert anschließend PDF und strukturiertes Artefakt gemeinsam. Der Renderer verändert die Artefakte eines Dokuments, nicht das Dokumentmodell oder die Art, wie es generiert, aufgelistet, geprüft oder heruntergeladen wird.
 
 Die Validierung belegt nur die technischen Prüfungen, die der gewählte Renderer und seine Version benennen. Sie ist keine allgemeine steuerliche, buchhalterische, Signatur-, Aufbewahrungs- oder Rechtskonformitätsentscheidung. Rufe mit `cld grids documents renderers --json` die verfügbaren Renderer einschließlich ihres `inputSchema` ab. `cld grids document-templates reference --json` liefert die Schemas zum Erstellen und Ändern von Vorlagen. Sie beschreiben die Eingabestruktur; die Vorschau prüft zusätzlich die inhaltlichen Regeln des Renderers.
 
-Der integrierte Renderer `de.zugferd.en16931@1` erstellt ausgehende EUR-Rechnungen als lesbares PDF/A-3b mit eingebettetem `factur-x.xml` und bewahrt die XML-Datei als getrenntes Artefakt auf. Er prüft nach dem Rendern die eingebettete XML-Datei, zielt auf ZUGFeRD 2.5 / Factur-X 1.09 EN 16931, validiert das erzeugte CII-XML gegen das festgeschriebene XSD und verwendet exakte Dezimalzeichenfolgen mit dokumentierter kaufmännischer Rundung. Version 1 unterstützt deutsche Anschriften für verkaufende und kaufende Organisationen, Standard-Mehrwertsteuerkategorien und Banküberweisung. Korrekturen, Ersatzbelege, eingehende Rechnungen, Fremdwährungen, Steuerbefreiungen, Nachlässe, Zuschläge, Vorauszahlungen, Skonto, Selbstfakturierung oder Meldungen werden nicht unterstützt. Der Rechnungsaussteller verantwortet den Inhalt und prüft, ob dieser Renderer für den vorgesehenen Einsatz geeignet ist. Grids bestätigt keine steuerliche oder rechtliche Konformität.
+`de.zugferd.en16931@1` rendert EUR-Ausgangsrechnungen mit deutschen Adressen, Standard-Umsatzsteuer und Überweisung. Es erzeugt PDF/A-3b mit eingebetteter und separater `factur-x.xml`, prüft Einbettung und festgelegtes CII-XSD und verwendet exakte Dezimalstrings mit kaufmännischer Rundung (ZUGFeRD 2.5 / Factur-X 1.09 EN 16931). Nicht unterstützt: Korrekturen, Ersatzbelege, Eingangsrechnungen, Steuerbefreiungen, Zu-/Abschläge, Vorauszahlungen, Skonto, Selbstabrechnung und Meldungen. Der Aussteller prüft die Eignung; Grids bestätigt keine Rechtskonformität.
 
 Version 2 (`de.zugferd.en16931@2`) rendert zusätzlich Rechnungskorrekturen mit Nummer und Datum der ursprünglichen Rechnung sowie einem Grund und Selbstabrechnungen mit einer Vereinbarungsreferenz. Belegart und Leistungsdatum müssen ausdrücklich angegeben werden. Mengen und Beträge bleiben positiv; die Belegart bestimmt, ob es eine Rechnung oder Korrektur ist. Bei Selbstabrechnungen bleibt der Verkäufer der Leistungserbringer und der Käufer der ausstellende Leistungsempfänger. Die Zahlungsdaten benennen das gewünschte Empfängerkonto; es wird nicht aus der Belegart abgeleitet.
 
@@ -443,7 +445,7 @@ Die Dokumentseite listet jedes generierte Dokument einer Vorlage auf. Nutze **Ta
 
 **Alle Dokumente** öffnet sich in der Ansicht **Ordner**, gruppiert nach Dokumentvorlage und anschließend Jahr. Die Suche durchsucht Dateinamen, Dokumentnummern und Tags der gesamten Base, unabhängig vom geöffneten Ordner. Beide Dokumentseiten zeigen ihre ersten Ergebnisse bereits beim Laden der Seite.
 
-Öffne ein Dokument, um seine gespeicherten Dateien herunterzuladen. Workflow-Ausgaben zeigen die übernommene Zeilenanzahl und den Datenstand. **Vorschau** zeigt CSV, JSON und XML bis 2 MiB; größere Dateien bleiben herunterladbar. CSV zeigt den Originaltext, ohne Trennzeichen zu erraten. **Freigabelinks** gibt es nur für PDFs. **Technische Details** öffnet IDs und Prüfsummen. Unterdialoge führen zum Dokument zurück. Mit Schreibzugriff erstellt **Weitere Aktionen → Erneut erzeugen** ein neues Dokument; das Original bleibt unverändert.
+Dokumentdetails zeigen Downloads, übernommene Zeilenanzahl und Datenstand. **Vorschau** zeigt CSV, JSON und XML bis 2 MiB; größere Dateien bleiben herunterladbar. CSV bleibt Originaltext. **Freigabelinks** erfordert PDF; **Technische Details** zeigt IDs und Prüfsummen. Unterdialoge führen zurück. **Weitere Aktionen → Erneut erzeugen** folgt der Ausstellungsregel und überschreibt nie das Original.
 
 Vor der Generierung kannst du Tags ergänzen und bei einer HTML-Vorlage den Dateinamen überschreiben. Ein E-Rechnungsrenderer bestimmt seine Artefaktdateinamen selbst. Nummer, Dateiname, Tags und Artefakte eines abgeschlossenen Dokuments sind unveränderlich.
 
@@ -461,7 +463,7 @@ Erstelle einen öffentlichen Link für 1, 7, 30 oder 90 Tage, um ein generiertes
 
 Beim Generieren eines PDFs entsteht ein rekursiver Snapshot des Wurzeldatensatzes und der über Relationsfelder erreichten verknüpften Datensätze. Ein Snapshot umfasst höchstens vier Relationsebenen und 500 Datensätze. Grids rendert einmal und speichert die exakten abgeschlossenen PDF-Bytes zusammen mit SHA-256, MIME-Typ, Größe, Renderer-Version, Vorlagenrevision, Dokumentnummer und Quell-Snapshot. Downloads geben diese gespeicherten Bytes auch dann zurück, wenn sich aktive Datensätze, Vorlage oder Renderer geändert haben.
 
-Nutze **Erneut generieren**, um ein neues Dokument und seine Artefakte zu erstellen. Ein älteres Dokument wird nie ersetzt. Öffne die Dokumentdetails, um Renderer, Quelldatensatz, Validierungsstatus und Artefakthashes zu prüfen.
+**Erneut generieren:** `repeatable` erstellt ein weiteres Dokument; `oncePerFinalizedRecord` liefert das Original, auch nach Vorlagenänderungen. Details zeigen Renderer, Quelle, Validierung und Hashes.
 
 :::reference
 - **Dokumentnummern:** Jedes Dokument erhält eine stabile Nummer. HTML-Vorlagen verwenden ihr konfiguriertes Nummernmuster; ein E-Rechnungsrenderer bestimmt seine Nummerierung selbst. Vergaben werden nie wiederverwendet; technische Lücken sind möglich. Änderungen am Muster betreffen nur zukünftige Dokumente.
@@ -493,6 +495,7 @@ Dies sind Sicherheitsobergrenzen und keine Layoutziele. Teste bei einem Dokument
 - **Ungültige GQL-Quelle:** Öffne den Tab Quelle. Er zeigt das GQL nach dem Ersetzen der Liquid-Variablen.
 - **Fehlende Liquid-Variable:** Wähle einen Vorschaudatensatz, öffne Daten und kopiere dann den exakten Pfad aus dem Baum.
 - **Leere Dokumentzeilen:** Prüfe den Filter der GQL-Quelle und ob der ausgewählte Vorschaudatensatz dazu passt.
+- **Ungültige E-Rechnungsangaben:** Die Meldung nennt die betroffenen Partei-, Bank- oder Belegfelder. Korrigiere und speichere deren Quelldatensätze und versuche es erneut. Stimmen die Werte bereits, prüfe die Zuordnung unter Renderer-Eingabe. Eine Vorschau vergibt keine offizielle Nummer.
 - **Barcode wird nicht gerendert:** Prüfe Barcode-Typ und Eingabewert. Eine leere Eingabe gibt eine leere Daten-URL zurück.
 - **Mehrseitiges Layout bricht:** Verschiebe wiederholte Inhalte in Kopf-/Fußzeile, lege @page-Ränder fest und prüfe die Vorschau mit ausreichend Zeilen.
 :::

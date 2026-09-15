@@ -202,6 +202,7 @@ domTest("template editor validates inline and freezes its draft during save", as
   let saves = 0;
   let finish: ((response: Response) => void) | undefined;
   const template = {
+    issuancePolicy: "repeatable" as const,
     id: "TMPL01",
     tableId: "TABLE1",
     name: "Loan PDF",

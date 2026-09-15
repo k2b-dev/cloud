@@ -8,7 +8,7 @@ import {
   type DslResolverDiagnostic,
   resolveDslQueryToQueryPlan,
 } from "./resolver";
-import { gqlFieldRef, gqlSourceRef, gqlStringLiteral } from "./source-format";
+import { gqlFieldRef, gqlQuotedRef, gqlSourceRef, gqlStringLiteral } from "./source-format";
 import type { DslAggregateItem, DslQueryAst, DslSortItem } from "./types";
 
 type CanonicalResult = { ok: true; source: string; plan: DslResolvedSqlQueryPlan } | { ok: false; diagnostics: DslResolverDiagnostic[] };
@@ -197,9 +197,15 @@ export const canonicalizeDslQuery = (
     ...(plan.derivedViewSource ? { derivedColumns: plan.derivedViewSource.columns } : {}),
     fieldsByTableId: ctx.fieldsByTableId,
     joinsByAlias: new Map((plan.joins ?? []).map((join) => [normalizeRefKey(join.alias), join])),
+    summariesByAlias: new Map((plan.summaryJoins ?? []).map((join) => [normalizeRefKey(join.alias), join])),
   };
 
   const lines: string[] = [sourceLine(plan), ...(plan.joins ?? []).map((join) => joinLine(join, scope))];
+  for (const join of plan.summaryJoins ?? []) {
+    lines.push(
+      `left join ${gqlSourceRef("view", join.source.shortId)} as ${join.alias} on ${join.alias}.${gqlQuotedRef(join.group.publicKey ?? join.group.key)} = ${plan.sourceAlias ? `${plan.sourceAlias}.id` : "id"}`,
+    );
+  }
   for (const section of [
     selectLine(ast, scope),
     whereLine(ast, scope),

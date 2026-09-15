@@ -1,5 +1,5 @@
-import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { toPgUuidArray } from "@k2b/cloud/services";
+import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { sql } from "bun";
 import {
   type CreateDocumentTemplateInput,
@@ -153,7 +153,7 @@ export const createTemplate = async (
       sql.begin(async (tx) => {
         const [created] = await tx<DocumentDbRow[]>`
           INSERT INTO grids.document_templates (
-            short_id, table_id, name, description, source, renderer_kind,
+            short_id, table_id, name, description, source, renderer_kind, issuance_policy,
             html, header_html, footer_html, page_css, number_template, filename_template,
             profile_id, profile_version, profile_input_template,
             enabled, position, created_by, updated_by
@@ -165,6 +165,7 @@ export const createTemplate = async (
             ${input.description ?? null},
             ${source},
             ${renderer.kind},
+            ${input.issuancePolicy ?? "repeatable"},
             ${html?.body ?? null},
             ${html?.header ?? null},
             ${html?.footer ?? null},

@@ -11,7 +11,7 @@ import {
   TextInput,
   useLocale,
 } from "@k2b/ui";
-import { createMemo, createSignal, Show } from "solid-js";
+import { createMemo, createSignal, For, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { FormFieldEntry } from "../../../service/forms";
 import { isRecordInputField } from "../fields/field-render";
@@ -20,6 +20,7 @@ import { gridsFieldMessages } from "../fields/messages";
 import { errorMessage } from "../utils/api-helpers";
 import { FieldInput, type FrontendField } from "./form-fields";
 import { gridsFormMessages } from "./messages";
+import { FormFieldWidthSelect } from "./field-layout";
 export function FormFieldInspector(props: {
   class?: string;
   entry: () => FormFieldEntry | null;
@@ -86,6 +87,7 @@ function FormFieldSettings(props: {
       <Show when={props.userEntry()}>
         {(entry) => (
           <>
+            <FormFieldWidthSelect value={entry().width} onChange={(width) => props.updateEntry({ width })} />
             <Checkbox
               label={t().required}
               description={t().requiredDescription}
@@ -265,12 +267,12 @@ function InlineCreateEditor(props: {
     props.onChange({
       inlineCreate: {
         enabled: true,
-        fields: ids
-          .map((fieldId) => {
-            const field = fieldById.get(fieldId);
-            return field ? { fieldId, required: field.required } : null;
-          })
-          .filter((entry): entry is { fieldId: string; required: boolean } => Boolean(entry)),
+        fields: ids.flatMap((fieldId) => {
+          const field = fieldById.get(fieldId);
+          return field
+            ? [props.entry?.inlineCreate?.fields?.find((entry) => entry.fieldId === fieldId) ?? { fieldId, required: field.required }]
+            : [];
+        }),
       },
     });
   };
@@ -316,6 +318,26 @@ function InlineCreateEditor(props: {
             clearable
             disabled={fieldsUnavailable()}
           />
+          <For each={props.entry?.inlineCreate?.fields}>
+            {(field) => (
+              <div class="flex flex-col gap-1">
+                <span class="text-sm">{targetFields().find((candidate) => candidate.id === field.fieldId)?.name}</span>
+                <FormFieldWidthSelect
+                  value={field.width}
+                  onChange={(width) =>
+                    props.onChange({
+                      inlineCreate: {
+                        enabled: true,
+                        fields: props.entry?.inlineCreate?.fields?.map((entry) =>
+                          entry.fieldId === field.fieldId ? { ...entry, width } : entry,
+                        ),
+                      },
+                    })
+                  }
+                />
+              </div>
+            )}
+          </For>
         </Show>
       </div>
     </Show>

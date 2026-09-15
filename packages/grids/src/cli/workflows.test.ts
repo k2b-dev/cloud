@@ -188,6 +188,13 @@ describe("Grids workflow CLI", () => {
     }
   });
   test("keeps the reference invocation aligned with a compilable and bindable YAML example", async () => {
+    expect(WORKFLOW_REFERENCE.language.atomicPredicates).toContain("query: {source, parameters}");
+    expect(WORKFLOW_REFERENCE.language.atomicPredicates).toContain("finalizeRecord");
+    expect(WORKFLOW_REFERENCE.language.atomicPredicates).toContain("validateDocuments");
+    expect(WORKFLOW_REFERENCE.language.atomicPredicates).toContain("record-list references");
+    expect(WORKFLOW_REFERENCE.language.atomicPredicates).not.toContain("Formula fields and aggregate arithmetic are not supported");
+    expect(WORKFLOW_REFERENCE.language.recordLifecycle).toContain("deleteRecord moves one non-finalized Record to trash");
+    expect(WORKFLOW_REFERENCE.language.recordLifecycle).toContain("finalizeRecord.record accepts one Record reference, never a list or tree");
     expect(WORKFLOW_REFERENCE.invocation.direct.inputs).toEqual({ item: "Rec001" });
     expect(WORKFLOW_REFERENCE.launchers.correctionDraft.config.intent).toBe("correction");
     expect(WORKFLOW_REFERENCE.launchers.cancellationDraft.config.intent).toBe("cancellation");

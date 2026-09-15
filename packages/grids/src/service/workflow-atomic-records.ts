@@ -6,7 +6,13 @@ import { compileFilter, renderClause } from "./filter-compiler";
 import { fromPublicRelationValues } from "./public-resources";
 import { validateRelationTargets } from "./relation-links";
 import type { Field } from "./types";
-import { actionError, type GridsWorkflowActionScope, requireOk, requireTableAccess } from "./workflow-action-scope";
+import {
+  actionError,
+  type GridsWorkflowActionScope,
+  requireOk,
+  requireTableAccess,
+  type WorkflowEffectAccess,
+} from "./workflow-action-scope";
 
 export type AtomicRecordRef = { tableId: string; recordId: string; required: "read" | "write" };
 export type AtomicQueryPredicate = {
@@ -34,6 +40,7 @@ export const resolveWorkflowRecordValues = async (
   fields: readonly Field[],
   values: Record<string, unknown>,
   client: SqlClient = sql,
+  effectAccess?: WorkflowEffectAccess,
 ): Promise<Record<string, unknown>> => {
   const relations = fields.filter((field) => {
     const value = values[field.id];
@@ -42,8 +49,11 @@ export const resolveWorkflowRecordValues = async (
   for (const field of relations) {
     const targetTableId = field.config.targetTableId;
     if (typeof targetTableId !== "string") throw actionError("WORKFLOW_VALUE_INVALID", "Relation target table is missing");
-    await requireWorkflowTable(client, scope.baseId, targetTableId);
-    await requireTableAccess(scope, targetTableId, "read", client);
+    if (effectAccess) await effectAccess.requireTable(targetTableId);
+    else {
+      await requireWorkflowTable(client, scope.baseId, targetTableId);
+      await requireTableAccess(scope, targetTableId, "read", client);
+    }
   }
   const resolved = requireOk(await fromPublicRelationValues(fields, values, {}, client));
   for (const field of relations) {
@@ -68,6 +78,7 @@ export const lockAtomicRecords = async (
   client: SqlClient,
   records: AtomicRecordRef[],
   requireAccess: (record: AtomicRecordRef) => Promise<void>,
+  additionalTableIds: readonly string[] = [],
 ): Promise<void> => {
   const requiredByRecord = new Map<string, AtomicRecordRef>();
   for (const record of records) {
@@ -79,8 +90,31 @@ export const lockAtomicRecords = async (
   const ordered = [...requiredByRecord.values()].sort((left, right) =>
     left.tableId === right.tableId ? left.recordId.localeCompare(right.recordId) : left.tableId.localeCompare(right.tableId),
   );
+  for (const record of ordered) await requireAccess(record);
+  // Match ordinary writers: parent locks precede row locks. Acquire every
+  // table in one order, including create-only targets, before any change runs.
+  const tableIds = [...new Set([...ordered.map((record) => record.tableId), ...additionalTableIds])].sort();
+  const baseIds = new Set<string>();
+  for (const tableId of tableIds) {
+    const [table] = await client<Array<{ base_id: string }>>`
+      SELECT base_id::text FROM grids.tables WHERE id = ${tableId}::uuid AND deleted_at IS NULL
+    `;
+    if (!table) throw actionError("ATOMIC_LOCK_UNAVAILABLE", "A table required by the atomic change is no longer available");
+    baseIds.add(table.base_id);
+  }
+  for (const baseId of [...baseIds].sort()) {
+    const [base] = await client<Array<{ id: string }>>`
+      SELECT id::text FROM grids.bases WHERE id = ${baseId}::uuid AND deleted_at IS NULL FOR SHARE
+    `;
+    if (!base) throw actionError("ATOMIC_LOCK_UNAVAILABLE", "The base required by the atomic change is no longer available");
+  }
+  for (const tableId of tableIds) {
+    const [table] = await client<Array<{ id: string }>>`
+      SELECT id::text FROM grids.tables WHERE id = ${tableId}::uuid AND deleted_at IS NULL FOR SHARE
+    `;
+    if (!table) throw actionError("ATOMIC_LOCK_UNAVAILABLE", "A table required by the atomic change is no longer available");
+  }
   for (const record of ordered) {
-    await requireAccess(record);
     const [locked] = await client<Array<{ id: string }>>`
       SELECT r.id::text AS id
       FROM grids.records r
@@ -99,6 +133,7 @@ export const atomicQueryMatches = async (params: {
   tableId: string;
   predicates: AtomicQueryPredicate[];
   timeZone: string;
+  effectAccess?: WorkflowEffectAccess;
 }): Promise<boolean> => {
   const client = params.client ?? sql;
   const fields = await listByTable(params.tableId, false, client);
@@ -108,7 +143,13 @@ export const atomicQueryMatches = async (params: {
       predicates.push(predicate);
       continue;
     }
-    const values = await resolveWorkflowRecordValues(params.scope, fields, { [predicate.fieldId]: predicate.value }, client);
+    const values = await resolveWorkflowRecordValues(
+      params.scope,
+      fields,
+      { [predicate.fieldId]: predicate.value },
+      client,
+      params.effectAccess,
+    );
     predicates.push({ ...predicate, value: values[predicate.fieldId] });
   }
   const filter: FilterTree = {

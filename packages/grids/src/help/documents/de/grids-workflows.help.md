@@ -15,6 +15,8 @@ Agents nutzen `workflow.record-actions` und `workflow.record-action` für bestä
 
 **Neuer Workflow → Datei aus einer Abfrage erstellen:** GQL prüfen, CSV/JSON/PDF/XML wählen, deaktivierten Entwurf prüfen. **Eingaben beim Start** bindet `@params.name`; Vorschauwerte werden nicht gespeichert. Die Erfassung erfolgt beim Ausführen.
 
+Workflow-GQL beginnt mit `from table`. Unabhängig gruppierte Summen-Ansichten können verknüpft werden, auch in atomaren Prüfungen. Beim Veröffentlichen werden ihre vollständigen Definitionen und Feldabhängigkeiten gebunden. Nach Änderungen an einer verwendeten Summe muss der Workflow erneut veröffentlicht werden. Ansichten als Ausgangsquelle und normale Ansichts-Joins werden nicht unterstützt.
+
 DATEV-Starter benötigen ausgestellte Summen und Kontierung; SEPA-Starter finalisierte Erstattungen mit verpflichtenden eindeutigen Nummern. Ziel einrichten und Datumswerte prüfen. Dateien sind keine importierten Buchungen oder ausgeführten Zahlungen.
 
 Name und Beschreibung erklären den Workflow. YAML definiert Eingaben, optionale Trigger und Schritte.
@@ -230,11 +232,12 @@ Ausführungsoptionen werden getrennt von der Workflow-Quelle konfiguriert. Ein W
 | --- | --- | --- | --- |
 | `query` | GQL unter `source` | Typisierte `parameters`, `saveAs` | Prüft Schema und Zugriff, erfasst keine Zeilen |
 | `closeRecord` | `record` | `expectedMode`, `expectedPolicyRevision` | Sagt direkte Finalisierung oder Vier-Augen-Anfrage aus der aktuellen Tabellenrichtlinie vorher |
-| `createCorrectionDraft` | `original`, `typeField`, `typeValue`, `originalField` | `intent` (Standard `correction`), `copyFields` | Validiert das finalisierte Original und sagt einen verknüpften Entwurf vorher |
+| `createCorrectionDraft` | `original`, `typeField`, `typeValue`, `originalField` | `intent` (Standard `correction`), `copyFields`, `values`, `saveAs` | Validiert das finalisierte Original und sagt einen verknüpften Entwurf vorher |
 | `finalizeRecord` | `record` | Keine | Validiert Schreibzugriff und sagt eine dauerhafte Finalisierung vorher |
+| `deleteRecord` | `record` | `audit`, `saveAs` | Prüft Berechtigungen und sagt das Verschieben eines nicht festgeschriebenen Datensatzes in den Papierkorb vorher, keine Vernichtung |
 | `updateRecord` | `record`, nicht leeres `set` | Nach UUID der Audit-Frage indizierte `audit`-Antworten | Validiert die Datensatzaktualisierung und sagt sie vorher |
 | `createRecord` | `table`, nicht leere `values` | `saveAs` | Validiert den neuen Datensatz und sagt ihn vorher |
-| `atomicRecords` | 1–100 `locks`, 1–50 `checks`, 1–50 `changes` | `message` der Prüfung; `ifVersion` und `audit` der Aktualisierung | Wertet aktuelle Prüfungen aus und sagt begrenzte Datensatzänderungen ohne Sperren oder Schreiben vorher |
+| `atomicRecords` | 1–100 `locks`, 1–50 `checks`, 1–50 `changes` | Prüfungs-`message`; Update-`ifVersion`/`audit`; 1–50 `validateDocuments` | Prüft und sagt Änderungen ohne Sperren oder Schreiben vorher |
 | `generateDocument` | `template` + `record` oder `data` + `output` | `filename`, bis zu 20 `tags`, `associatedData`, `saveAs` | Validiert Zugriff und Werte; generiert nichts |
 | `createDocumentLink` | Ausgabereferenz `document` | `expiresIn` (`1d`, `7d`, `30d`, `90d`; Standard `30d`), `comment`, `saveAs` | Validiert Dokument und Zugriff; erstellt keinen Link |
 | `sendEmail` | `template`, 1–50 Empfänger unter `to` | `data` mit bis zu 200 Schlüsseln, `saveAs` | Validiert Vorlage, Empfänger, Daten und Zugriff; sendet nichts |
@@ -279,7 +282,7 @@ steps:
       saveAs: reportDocument
 ```
 
-`data`/`output` darf nicht mit `template`/`record` kombiniert werden. Mehrere Dateischritte können dasselbe erfasste Ergebnis verwenden; eine Wiederholung eines Schritts liefert sein bestehendes Dokument. Die Erzeugung prüft Ausführungsrecht, Base-Schreibrecht und Zugriff auf die Quelltabellen erneut. Die Datei erscheint unter **Alle Dokumente** und im Workflow-Lauf. Testläufe rendern keine Dateien.
+`data`/`output` nicht mit `template`/`record` kombinieren. Dateischritte können erfasste Daten teilen; Wiederholungen liefern das bestehende Dokument. Erzeugung prüft direkte Basisrechte oder die veröffentlichte App-Workflow-Berechtigung, nicht sichtbare UI-Tabellen. Dateien stehen unter **Alle Dokumente** und im Lauf. Testläufe rendern nicht.
 
 - **CSV:** UTF-8, CRLF, geordnete Aliase als Überschriften. `delimiter` erlaubt Komma (Standard), Semikolon, Tabulator (`"\t"`) oder Pipe. Null wird leer; verschachtelte Werte benötigen `nestedValues: json`. Standard `textProtection: spreadsheet` setzt vor riskante Texte, auch Telefonnummern mit `+`/`-`, ein Apostroph; der Bericht zählt Änderungen. `raw` nur verwenden, wenn der Empfänger unveränderte Texte sicher verarbeitet.
 - **CSV-Spaltenauswahl:** Optional wählt und sortiert `columns: [{ source: Betrag, label: Gesamt }, { source: Name }]` exakte GQL-Aliase. Ohne `label` bleibt der Alias als Überschrift erhalten. Unbekannte oder wiederholte Quellen, eine leere Auswahl und doppelte Überschriften werden abgelehnt. Verwende Aliase, keine internen Spaltenschlüssel.
@@ -318,7 +321,7 @@ Kontierung und Freigaben. Grids prüft aktuelle Rechte vor der Erzeugung erneut.
 
 `closeRecord` folgt dem Tabellenmodus: Direkt finalisiert; Vier-Augen fordert eine andere berechtigte Person zur Freigabe auf. Erwarteter Modus und Richtlinienrevision können eine Prüfung festschreiben. **Ausgewählte Datensätze schließen** prüft bis zu 100 exakte Datensätze. Das geschützte Profil behält bestätigte IDs statt eine Ansicht oder Abfrage neu auszuwerten. Geänderte Richtlinien oder geänderte/unvollständige Datensätze stoppen spätere Schritte; betroffene Datensätze bleiben bearbeitbar. Der Lauf zeigt abgeschlossene Schritte und Fehler.
 
-`createCorrectionDraft` erstellt einen bearbeitbaren Datensatz derselben Tabelle, verknüpft das unveränderte finalisierte Original durch eine einzelne Selbstrelation und setzt einen vorhandenen Auswahlwert. `copyFields` kopiert bis zu 100 Wertefelder samt Leerwerten und Objektlisten-Eingaben; nur sonst gelten Standardwerte. Eindeutige Felder, generierte IDs, Dateien, andere Relationen, Berechnungen und Dokumente bleiben ausgeschlossen. Berechnete Spalten nutzen aktuelle Formeln. Nummernkreise, Mutationsrichtlinie, Zugriff, Durable History und Finalisierung gelten weiterhin. Wiederholung liefert denselben Entwurf.
+`createCorrectionDraft` verknüpft einen neuen Entwurf mit dem finalisierten Original und setzt seinen Typ. `copyFields` kopiert bis zu 100 Wertefelder samt Leerwerten und Objektlisten-Eingaben, aber keine eindeutigen Felder, IDs, Dateien, Relationen oder Berechnungen. Optionales `values` ergänzt bis zu 100 Eingaben, auch Pflichtrelationen; es überschreibt Kopien, nie Typ/Original. Relationen benötigen öffentliche IDs (`inputs.original.Kunde.recordId`). `saveAs` benennt das Ergebnis. Validierung, Rechte und aktuelle Formeln gelten weiter. Wiederholung liefert denselben Entwurf.
 
 Der Starter beschriftet die Aktion als **Korrektur** oder **Storno**; die Ausführungsoption muss dazu passen. Der gewählte Auswahlwert speichert diese Bedeutung. Beides erstellt verknüpfte Entwürfe zum Vervollständigen, ohne Beträge, Steuern oder Buchungen umzukehren oder Dokumente zu erzeugen.
 
@@ -326,20 +329,28 @@ Der Starter beschriftet die Aktion als **Korrektur** oder **Storno**; die Ausfü
 
 `finalizeRecord` umgeht keine **Vier-Augen-Finalisierung**: Fordere sie am Datensatz an; ein anderes aktuelles Mitglied der Freigabegruppe genehmigt. Der Modus Direkt erlaubt dagegen Schreibberechtigten die Finalisierung über Workflows, API, CLI und Datensatzaktionen.
 
+`deleteRecord` verschiebt einen nicht festgeschriebenen Datensatz in den Papierkorb, ohne Vernichtung. Berechtigungen, Schreibregeln und nötige `audit`-Antworten werden geprüft; `saveAs` liefert seine Referenz. Nicht in `atomicRecords.changes` unterstützt.
+
 ### Zusammengehörige Datensatzänderungen gemeinsam festschreiben
 
-Nutze `atomicRecords`, wenn eine aktuelle Grids-Bedingung und mehrere Schreibvorgänge an Datensätzen gemeinsam erfolgreich sein müssen. Der Schritt akzeptiert ausschließlich Grids-Datensatzarbeit. Er kann keine E-Mail senden, HTTP aufrufen, Dokumente generieren, einen anderen Workflow ausführen oder Kontrollfluss enthalten.
+`atomicRecords` schreibt begrenzte Grids-Änderungen gemeinsam fest. E-Mail, HTTP, Dokumenterzeugung, andere Workflows und Kontrollfluss gehören in separate Schritte.
+
+`validateDocuments: [{template, record}]` prüft Profileingaben nach Änderungen, vor dem Commit; Fehler rollen auch Festschreibungen zurück. HTML scheitert mit `DOCUMENT_PROFILE_REQUIRED`. Kein Dokument entsteht, eventuell ein idempotenter Scan-Code. Testläufe prüfen Ziele, nicht geänderte Werte. Nutze Datensatzwerte, keine neue Dokumentnummer; erzeuge später.
 
 :::reference
-- **locks:** Vorhandene Datensatzreferenzen, die in stabiler Reihenfolge gesperrt werden, bevor eine Prüfung läuft. Jeder konkurrierende Workflow muss denselben Koordinationsdatensatz für dieselbe fachliche Entscheidung sperren.
-- **checks:** Jede Prüfung wählt eine gebundene Tabelle und 1 bis 20 gebundene Feldprädikate unter `where`. Prädikate verwenden `field`, `op`, optional `value` und optional `caseInsensitive` und werden mit AND kombiniert. `assert` ist `empty` oder `notEmpty`; eine optionale `message` ersetzt den Standardfehlertext.
-- **changes:** Geordnete Liste aus Einträgen `createRecord` oder `updateRecord`. Erstellen verwendet `table` und nicht leere `values`. Aktualisieren verwendet `record`, nicht leeres `set`, optional `ifVersion` und optionale `audit`-Antworten.
-- **transaction:** Grids prüft aktuelle Berechtigungen und Zeilenbereich erneut, sperrt jeden Koordinations- und Aktualisierungsdatensatz, wertet jede Prüfung aus und schreibt anschließend Datensätze, Relationen, Audit-Einträge, Ereignis-Outbox-Zeilen und Workflow-Ergebnis gemeinsam fest. Eine fehlgeschlagene Prüfung oder Änderung setzt alles zurück.
+- **locks:** Datensatz- oder Listenreferenzen wie `inputs.item` oder `inputs.items`, vor Prüfungen in stabiler Reihenfolge gesperrt. Duplikate zählen einmal; explizite Sperren, Änderungsziele und `validateDocuments`-Ziele dürfen zusammen höchstens 100 verschiedene Datensätze umfassen. Leere Listen sperren nichts. Jeder konkurrierende Workflow muss denselben Koordinationsdatensatz für dieselbe fachliche Entscheidung sperren.
+- **checks:** Wähle `query: {source, parameters}` oder `table` mit 1–20 AND-verknüpften `where`-Prädikaten (`field`, `op`, optional `value`/`caseInsensitive`). `assert: empty|notEmpty` prüft Zeilenexistenz; optional erklärt `message` den Fehler.
+- **changes:** Geordnete Liste aus Einträgen `createRecord`, `updateRecord` oder `finalizeRecord`. Erstellen verwendet `table` und nicht leere `values`. Aktualisieren verwendet `record`, nicht leeres `set`, optional `ifVersion` und optionale `audit`-Antworten. Finalisieren verwendet `record` und benötigt aktivierte direkte Finalisierung; die Vier-Augen-Freigabe wird nicht umgangen. Finalisiere nach den nötigen Aktualisierungen. Eine später abgelehnte Änderung nimmt auch die Finalisierung zurück.
+- **transaction:** Berechtigungen und Zeilenbereich werden erneut geprüft. Datensätze, Relationen, Audit, Outbox und Ergebnis werden gemeinsam festgeschrieben oder zurückgerollt.
 :::
 
-Eine leere Abfrage besitzt keine eigene Zeile zum Sperren. Sperre bei einer Reservierung das gemeinsam verwendete Element oder einen anderen stabilen Koordinationsdatensatz und prüfe anschließend, dass keine aktive Reservierung darauf verweist. Wenn konkurrierende Workflows unterschiedliche Datensätze sperren, kann die Transaktion diese fachliche Entscheidung nicht für sie serialisieren.
+`finalizeRecord.record` akzeptiert eine Datensatzreferenz, nie eine Liste oder einen Baum, auch in `changes`. Eigene Objektlistenpositionen gehören zu diesem Datensatz.
 
-Atomare Prüfungen unterstützen gespeicherte Felder, keine Formelfelder oder Aggregatberechnungen. Prüfe die zugrunde liegenden gespeicherten Werte unter derselben Sperre. Relationswerte in `createRecord` und `updateRecord` sowie Werte für Relationsfilter verwenden öffentliche Datensatz-IDs wie `${{ inputs.item.recordId }}`. Übergib keine internen UUIDs, Labels oder vollständigen Referenzobjekte als Relationswert. Datensatzziele und Sperren verwenden dagegen die Referenz selbst, etwa `inputs.item`. Verknüpfte Datensätze müssen in der konfigurierten Zieltabelle und Basis lesbar bleiben; auch der Testlauf prüft diese Grenze.
+Eine leere Abfrage sperrt keine Zeile. Konkurrierende Reservierungen müssen vor der Verfügbarkeitsprüfung dasselbe stabile Element sperren.
+
+Formel-/Aggregatprüfungen nutzen `query: {source, parameters}`: typisiertes GQL nach Sperren, vor Änderungen (10.000 Zeilen/5 MiB; kein Capture). Wähle Verstöße mit `where`/`having`, prüfe `empty`; eine Zeile mit `false`/`0` ist nicht leer. Lies veränderliche Beträge in GQL statt vorab ausgewerteter Parameter; berücksichtige geplante Änderungen. Testläufe reservieren nichts.
+
+Die Variante `table`/`where` unterstützt nur gespeicherte Felder. Relationswerte in `createRecord` und `updateRecord` sowie Werte für Relationsfilter verwenden öffentliche Datensatz-IDs wie `${{ inputs.item.recordId }}`. Übergib keine internen UUIDs, Labels oder vollständigen Referenzobjekte als Relationswert. Datensatzziele und Sperren verwenden dagegen die Referenz selbst, etwa `inputs.item`. Verknüpfte Datensätze müssen in der konfigurierten Zieltabelle und Basis lesbar bleiben; auch der Testlauf prüft diese Grenze.
 
 **Ein verfügbares Element atomar reservieren**
 
@@ -373,7 +384,7 @@ steps:
         - createRecord:
             table: Movements
             values:
-              Item: ${{ inputs.item }}
+              Item: ${{ inputs.item.recordId }}
               Type: Active loan
 ```
 
@@ -409,7 +420,7 @@ steps:
   - createRecord:
       table: Movements
       values:
-        Item: ${{ inputs.item }}
+        Item: ${{ inputs.item.recordId }}
         Type: Check-in
       saveAs: movement
   - generateDocument:
@@ -641,47 +652,20 @@ Unterbrochene Läufe setzen anhand gespeicherter Ergebnisse fort, nicht von vorn
 
 :::reference
 - **Ausführungsberechtigung:** Direkte Aufrufe und eigenständige Ausführungsoptionen erfordern Schreibzugriff auf die Basis. Eine veröffentlichte Grids App darf nur ihren exakt enthaltenen Launcher aufrufen. Öffentliche Besucher dürfen keine Workflow-Aktionen ausführen.
-- **Identität direkt aufrufender Ausführungen:** Direkte Aufrufe über Oberfläche, API und CLI sowie Scanner- und Bulk-Ausführungsoptionen laufen als startende Person oder startendes Dienstkonto. Ausführungsoptionen in Grids Apps verwenden die Identität der angemeldeten Person. Freigaben für Grids Apps unterstützen keine Dienstkonten. Direkte Aufrufe erscheinen im Kanal `api`.
-- **Identität automatischer Ausführungen:** Zeitpläne und Datensatzereignisse laufen als verantwortliche Person des Workflows mit deren aktuellen Gruppen. Ein Datensatzereignis bewahrt die ändernde Person in den Trigger-Metadaten, übernimmt aber nicht deren Berechtigungen.
-- **Aktionsberechtigung:** Unmittelbare Ausführungen verwenden die Berechtigung der zugehörigen Basis. Ein Aufruf aus einer Grids App prüft die unveränderliche App-Capability und die `availableWhen`-Regel erneut auf dem Server. Workflow-Vorbedingungen schützen weiterhin Zustand, der sich nach dem Start ändern kann.
-- **App-Ergebnis:** Die aufrufende App-Aktion darf nur ihre eigene Ausführung abfragen und erhält `running`, `succeeded` oder `failed` sowie die bereinigte Ergebnismeldung des Workflows. Sie erhält weder allgemeinen Ausführungsverlauf noch rohe Fehler.
+- **Identität:** Direkte Aufrufe (Kanal `api`), Scanner und Bulk nutzen den Aufrufer; App-Freigaben verlangen angemeldete Personen, keine Dienstkonten. Zeitpläne/Ereignisse nutzen die aktuellen Gruppen des Verantwortlichen. Ereignisse vermerken den Auslöser, übernehmen aber nicht dessen Rechte.
+- **Aktionsberechtigung:** Direkte Läufe nutzen Basisrechte. App-Rechte, Veröffentlichung, Eingaben, Launcher und `availableWhen` werden vor Effekten geprüft. `atomicRecords` prüft einmal nach den Sperren; eigene Änderungen entziehen diesem Schritt nicht die Freigabe. Spätere Effekte prüfen erneut. Sichere den Startzustand atomar. App-Workflows dürfen alle Tabellen ihrer Basis nutzen, nicht nur sichtbare. Basis-Admins verantworten Geschäftsregeln und Exportfreigaben.
+- **App-Ergebnis:** Aktionen fragen ihren Lauf ab: `running`, `succeeded` oder `failed`. `fail.message` und atomare `checks[].message` erreichen Leser wörtlich: Nenne sichere Abhilfen. Andere Fehler erhalten sichere Hinweise, nie interne Details oder rohen Verlauf.
 - **E-Mail-Zustellung:** Die Verwaltung von E-Mail-Vorlagen erfordert Verwaltungszugriff auf die Basis. Workflow-Ausführungen können aktivierte Vorlagen verwenden, ohne deren HTML in der Autovervollständigung offenzulegen.
 - **Abhängigkeiten von E-Mail-Vorlagen:** Grids zeigt, welche Workflows eine E-Mail-Vorlage verwenden, und verweigert das Löschen einer referenzierten Vorlage. Ändere zuerst diese Workflows.
-- **HTTP-Schutzregeln:** `httpRequest` erreicht ausschließlich öffentliche Internetadressen. Eine URL zu einer privaten, lokalen oder anderweitig reservierten Adresse wird verweigert. Dasselbe gilt für einen Hostnamen, der zu einer solchen Adresse auflöst, auch wenn er zusätzlich zu einer öffentlichen Adresse auflöst. Es gibt weder eine Erlaubnisliste noch eine Einstellung zum Öffnen dieser Grenze. Ein Dienst im eigenen Netzwerk kann nicht von einem Workflow aufgerufen werden.
+- **HTTP-Schutzregeln:** Nur öffentliche Internetadressen sind erlaubt. Private, lokale oder reservierte Ziele werden abgelehnt, auch Hostnamen mit gleichzeitig öffentlichen und privaten Adressen. Keine Einstellung oder Erlaubnisliste ermöglicht interne Netzwerkaufrufe.
 - **HTTP-Grenzen:** `httpRequest` begrenzt Anfrage- und Antwortinhalt auf 64 KiB, wendet die konfigurierte Zeitüberschreitung auf die vollständige Anfrage einschließlich Zielauflösung an und lehnt in der URL eingebettete Anmeldedaten ab. Verbindungs- und Übertragungsheader können nicht überschrieben werden.
 :::
 
 Ein Workflow darf über alle Zweige und Schleifen höchstens 100 Eingaben und 1.000 Schritte deklarieren. Kontrollfluss und rekursive Bedingungen dürfen jeweils 20 Ebenen tief verschachtelt sein und höchstens 1.000 Bedingungen enthalten. Eine `recordList`, Bulk-Auswahl oder `forEach`-Schleife darf höchstens 10.000 Datensätze enthalten. Workflow-YAML ist auf 200.000 Zeichen begrenzt.
 
-Dies sind Validierungs- und Ausführungsgrenzen, keine empfohlenen Entwurfsziele. Teile einen Workflow auf, bevor er sich ihnen nähert, damit eine Ausführung weiterhin einen verständlichen Zweck besitzt.
-
 ## Scanner-Beispiel {icon="point"}
 
-**Workflow-YAML für Scanner**
-
-```yaml
-inputs:
-  item:
-    type: record
-    table: Items
-    required: true
-steps:
-  - if:
-      equals:
-        - ${{ inputs.item.Status }}
-        - Loaned
-    then:
-      - updateRecord:
-          record: inputs.item
-          set:
-            Status: Available
-            Last scanned at: ${{ now() }}
-      - succeed:
-          message: "${{ inputs.item.Name }} returned."
-    else:
-      - fail:
-          message: "${{ inputs.item.Name }} is not currently loaned out."
-```
+Nutze die Datensatzeingabe und Aktualisierungsaktion oben. Prüfe bei Rückgaben vor dem Wechsel zu `Available`, dass `inputs.item.Status` gleich `Loaned` ist; andernfalls stoppe mit `fail`. Nutze `atomicRecords`, wenn konkurrierende Änderungen gemeinsam geprüft und gespeichert werden müssen.
 
 :::note Scanner-Ausführungsoption
 Füge eine Scanner-Ausführungsoption hinzu, die `item` einem gescannten Datensatz zuordnet. Wähle die Auflösung über generierten Scan-Code oder konfiguriere ein eindeutiges Feld wie `Label code`. Die Option bleibt außerhalb dieses YAML.

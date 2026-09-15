@@ -27,10 +27,13 @@ import { customAppScannerConfigHash } from "../custom-apps/scanner-capability";
 import { stableCustomAppStringify } from "../custom-apps/stable-value";
 import { customAppBindingRecordTableId } from "../custom-apps/value-bindings";
 import { getRecordWritableFieldType, isRecordWritableFieldType } from "../field-types";
+import { planFormComputedFields } from "../form-computed-fields";
 import type { DslQueryContextValues } from "../query-dsl/parameters";
 import { isDslAggregateOnlyPlan } from "../query-dsl/resolver";
 import { collectDslPlanTableIds } from "../query-dsl/source-plan";
 import { logAudit, type SqlClient } from "./audit";
+import { customAppDocumentPreviewFingerprint } from "./custom-app-document-preview";
+import { customAppFormRelationScope } from "./custom-app-form-relations";
 import { customAppMessagesFor } from "./custom-app-messages";
 import { compileCustomAppQuery } from "./custom-app-query";
 import { customAppRecordRelationSnapshot } from "./custom-app-record-relations";
@@ -599,7 +602,31 @@ export const compile = async (input: unknown, client: SqlClient = sql, locale?: 
             );
           }
         }
-        documents.push({ pageId: page.id, blockId: block.id, tableId: tableId(page.record.tableId), templateIds });
+        const previewFingerprints: Record<string, string> = {};
+        if (block.documents?.preview) {
+          for (const templateId of templateIds) {
+            const fingerprint = await customAppDocumentPreviewFingerprint(client, base.id, tableId(page.record.tableId), templateId);
+            if (fingerprint) previewFingerprints[templateId] = fingerprint;
+            else
+              diagnostics.push(
+                customAppDiagnostic(locale, "document_template.preview_invalid", [
+                  "pages",
+                  page.id,
+                  "blocks",
+                  block.id,
+                  "documents",
+                  "preview",
+                ]),
+              );
+          }
+        }
+        documents.push({
+          pageId: page.id,
+          blockId: block.id,
+          tableId: tableId(page.record.tableId),
+          templateIds,
+          ...(block.documents?.preview ? { previewFingerprints } : {}),
+        });
       }
     }
   };
@@ -975,11 +1002,13 @@ export const compile = async (input: unknown, client: SqlClient = sql, locale?: 
       const fieldIds = [...new Set([...userInputFieldIds, ...fixedFieldIds])];
       const formFieldIds = [...new Set(config.fields.map((entry) => entry.fieldId))];
       const fields =
-        formFieldIds.length === 0
+        formFieldIds.length === 0 && !config.computedFields?.length
           ? []
           : await client<
               Array<{
                 id: string;
+                name: string;
+                short_id: string;
                 table_id: string;
                 type: string;
                 config: unknown;
@@ -988,21 +1017,32 @@ export const compile = async (input: unknown, client: SqlClient = sql, locale?: 
                 deleted_at: Date | null;
               }>
             >`
-            SELECT id, table_id, type, config, required, default_value, deleted_at
+            SELECT id, name, short_id, table_id, type, config, required, default_value, deleted_at
             FROM grids.fields
             WHERE table_id = ${formRow.table_id}::uuid
-              AND id = ANY(${toPgUuidArray(formFieldIds)}::uuid[])
+              AND (${!!config.computedFields?.length} OR id = ANY(${toPgUuidArray(formFieldIds)}::uuid[]))
           `;
       const capabilityFields: CustomAppFormSecurityField[] = fields.map((field) => ({
         id: field.id,
+        name: field.name,
+        shortId: field.short_id,
         tableId: field.table_id,
         type: field.type,
         config: field.config,
         required: field.required,
-        defaultValue: parseJsonbRow<unknown>(field.default_value, null),
+        defaultValue: field.default_value ?? null,
         deletedAt: field.deleted_at?.toISOString() ?? null,
       }));
       const fieldsById = new Map(capabilityFields.map((field) => [field.id, field]));
+      if (
+        !planFormComputedFields(
+          (config.computedFields ?? []).map((entry) => entry.fieldId),
+          new Set(userInputFieldIds.filter((id) => !fixedFieldIds.includes(id))),
+          capabilityFields.map((field) => ({ ...field, name: field.name ?? field.id })),
+        )
+      ) {
+        diagnostics.push(customAppDiagnostic(locale, "form.field_invalid", [...formPath, "formId"]));
+      }
       for (const fieldId of formFieldIds) {
         const field = fieldsById.get(fieldId);
         if (!field || field.deletedAt || !isRecordWritableFieldType(field.type)) {
@@ -1050,7 +1090,7 @@ export const compile = async (input: unknown, client: SqlClient = sql, locale?: 
         type: field.type,
         config: field.config,
         required: field.required,
-        defaultValue: parseJsonbRow<unknown>(field.default_value, null),
+        defaultValue: field.default_value ?? null,
         deletedAt: field.deleted_at?.toISOString() ?? null,
       }));
       const inlineFieldsByKey = new Map(inlineCapabilityFields.map((field) => [`${field.tableId}\0${field.id}`, field]));
@@ -1126,6 +1166,15 @@ export const compile = async (input: unknown, client: SqlClient = sql, locale?: 
           continue;
         }
       }
+      const relationScope = await customAppFormRelationScope(
+        { tableId: formRow.table_id, config },
+        await listFields(formRow.table_id),
+        fixedFieldIds,
+      );
+      if (!relationScope) {
+        diagnostics.push(customAppDiagnostic(locale, "form.invalid", [...formPath, "formId"]));
+        continue;
+      }
       forms.push({
         ...capabilityIdentity,
         ...(editing ? { mode: "edit" as const } : {}),
@@ -1133,6 +1182,7 @@ export const compile = async (input: unknown, client: SqlClient = sql, locale?: 
         tableId: formRow.table_id,
         userInputFieldIds,
         fixedFieldIds,
+        relationLookupHash: relationScope.hash,
         fieldHash: customAppFormFieldHash(fieldIds, capabilityFields),
         formSecurityHash: customAppFormSecurityHash({
           tableId: formRow.table_id,
