@@ -449,9 +449,8 @@ const eventAggregateExpression = (aggregation: NonNullable<EventQuery["aggregati
     case "sum":
       return sql`SUM(value)::double precision`;
     case "unique_actor":
-      return sql`COUNT(DISTINCT (source_identity,actor_id)) FILTER (WHERE actor_id IS NOT NULL)::double precision`;
     case "unique_session":
-      return sql`COUNT(DISTINCT (source_identity,session_id)) FILTER (WHERE session_id IS NOT NULL)::double precision`;
+      return sql`COUNT(identity)::double precision`;
     default:
       throw new Error("Rows are not an event aggregation");
   }
@@ -509,6 +508,9 @@ export const queryEventAggregateData = async (
     const dimensions = jsonbObject(normalizeDimensions(query.dimensions));
     const since = range.from;
     const maxOutputPoints = Math.min(1_000, Math.max(1, limits.maxOutputPoints ?? 1_000));
+    // Typed deduplication allows hash/parallel aggregation. Keep null rows so anonymous-only groups still return zero.
+    const unique = aggregation === "unique_actor" || aggregation === "unique_session";
+    const identity = aggregation === "unique_session" ? sql`session_id` : sql`actor_id`;
     const rows = await db<EventAggregateRow[]>`
     WITH scoped AS (
       SELECT
@@ -527,10 +529,14 @@ export const queryEventAggregateData = async (
         AND event.dimensions @> (${dimensions}::jsonb #>> '{}')::jsonb
         AND event.ts >= ${since} AND event.ts < ${range.to}
     )
+    ${unique ? sql`, identities AS (
+      SELECT bucket,group_data,source_identity,${identity} AS identity FROM scoped
+      GROUP BY bucket,group_data,source_identity,${identity}
+    )` : sql``}
     SELECT ${query.bucket === "all" && groupBy.length === 0 ? sql`${range.from}::timestamptz AS bucket` : sql`bucket`},
       ${eventAggregateExpression(aggregation)} AS value,
       ${query.bucket === "all" && groupBy.length === 0 ? sql`'{}'::jsonb AS group_data` : sql`group_data`}
-    FROM scoped
+    FROM ${unique ? sql`identities` : sql`scoped`}
     ${query.bucket === "all" && groupBy.length === 0 ? sql`` : sql`GROUP BY bucket, group_data`}
     ${query.bucket === "all" && groupBy.length === 0 ? sql`ORDER BY bucket ASC` : sql`ORDER BY bucket ASC, group_data::text ASC`}
     LIMIT ${maxOutputPoints + 1}
