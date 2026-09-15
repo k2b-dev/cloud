@@ -43,11 +43,15 @@ const clearExpiredEventSensitiveChunk = async (baseId?: string): Promise<number>
   const result = await sql`
     WITH victim AS (
       SELECT e.id, e.ts
-      FROM pulse.events e
-      JOIN pulse.bases b ON b.id = e.base_id
-      WHERE e.ts < now() - (b.sensitive_retention_hours * interval '1 hour')
-        AND e.sensitive <> '{}'::jsonb
-        AND b.deletion_started_at IS NULL
+      FROM pulse.bases b
+      CROSS JOIN LATERAL (
+        SELECT e.id, e.ts FROM pulse.events e
+        WHERE e.base_id=b.id
+          AND e.ts < now() - (b.sensitive_retention_hours * interval '1 hour')
+          AND e.sensitive <> '{}'::jsonb
+        LIMIT ${RETENTION_DELETE_BATCH_SIZE}
+      ) e
+      WHERE b.deletion_started_at IS NULL
         AND (
           b.data_clear_started_at IS NULL
           OR b.data_clear_completed_at IS NOT NULL
@@ -84,10 +88,14 @@ const deleteExpiredMetricSamplesChunk = async (baseId?: string): Promise<number>
   const result = await sql`
     WITH victim AS (
       SELECT ms.series_id, ms.ts
-      FROM pulse.metric_samples ms
-      JOIN pulse.bases b ON b.id = ms.base_id
-      JOIN pulse.metric_hours h ON h.base_id=ms.base_id AND h.hour=date_bin('1 hour',ms.ts,'1970-01-01'::timestamptz)
-      WHERE h.state='sealed' AND ms.ts < date_bin('1 hour',now() - (b.retention_days * interval '1 day'),'1970-01-01'::timestamptz)
+      FROM pulse.bases b
+      JOIN pulse.metric_hours h ON h.base_id=b.id
+      CROSS JOIN LATERAL (
+        SELECT ms.series_id, ms.ts FROM pulse.metric_samples ms
+        WHERE ms.base_id=b.id AND ms.ts>=h.hour AND ms.ts<h.hour+interval '1 hour'
+        LIMIT ${RETENTION_DELETE_BATCH_SIZE}
+      ) ms
+      WHERE h.state='sealed' AND h.hour < date_bin('1 hour',now() - (b.retention_days * interval '1 day'),'1970-01-01'::timestamptz)
         AND b.deletion_started_at IS NULL
         AND (
           b.data_clear_started_at IS NULL
@@ -109,10 +117,14 @@ const deleteExpiredMetricRollupsChunk = async (baseId?: string): Promise<number>
   const result = await sql`
     WITH victim AS (
       SELECT mr.series_id, mr.bucket
-      FROM pulse.metric_rollups_hourly mr
-      JOIN pulse.bases b ON b.id = mr.base_id
-      WHERE mr.bucket < date_bin('1 hour',now() - (b.rollup_retention_days * interval '1 day'),'1970-01-01'::timestamptz)
-        AND b.deletion_started_at IS NULL
+      FROM pulse.bases b
+      CROSS JOIN LATERAL (
+        SELECT mr.series_id, mr.bucket FROM pulse.metric_rollups_hourly mr
+        WHERE mr.base_id=b.id
+          AND mr.bucket < date_bin('1 hour',now() - (b.rollup_retention_days * interval '1 day'),'1970-01-01'::timestamptz)
+        LIMIT ${RETENTION_DELETE_BATCH_SIZE}
+      ) mr
+      WHERE b.deletion_started_at IS NULL
         AND (
           b.data_clear_started_at IS NULL
           OR b.data_clear_completed_at IS NOT NULL
@@ -133,10 +145,13 @@ const deleteExpiredEventsChunk = async (baseId?: string): Promise<number> => {
   const result = await sql`
     WITH victim AS (
       SELECT e.id, e.ts
-      FROM pulse.events e
-      JOIN pulse.bases b ON b.id = e.base_id
-      WHERE e.ts < now() - (b.retention_days * interval '1 day')
-        AND b.deletion_started_at IS NULL
+      FROM pulse.bases b
+      CROSS JOIN LATERAL (
+        SELECT e.id, e.ts FROM pulse.events e
+        WHERE e.base_id=b.id AND e.ts < now() - (b.retention_days * interval '1 day')
+        LIMIT ${RETENTION_DELETE_BATCH_SIZE}
+      ) e
+      WHERE b.deletion_started_at IS NULL
         AND (
           b.data_clear_started_at IS NULL
           OR b.data_clear_completed_at IS NOT NULL

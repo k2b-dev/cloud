@@ -51,6 +51,11 @@ describe("fresh Pulse installation", () => {
       expect(row?.name).toBe("Preserved");
       const [installation] = await sql`SELECT count(*)::int AS count FROM pulse.installation`;
       expect(installation?.count).toBe(1);
+      const [sensitiveIndex] = await sql`SELECT indexdef FROM pg_indexes WHERE schemaname='pulse' AND indexname='idx_pulse_events_sensitive_retention'`;
+      expect(sensitiveIndex?.indexdef).toContain("(base_id, ts)");
+      expect(sensitiveIndex?.indexdef).toContain("WHERE (sensitive <> '{}'::jsonb)");
+      const [recentIndex] = await sql`SELECT indexdef FROM pg_indexes WHERE schemaname='pulse' AND indexname='idx_pulse_events_base_recent'`;
+      expect(recentIndex?.indexdef).toContain("(base_id, ts DESC, recorded_at DESC)");
       await expect(Promise.resolve(sql`SELECT 'histogram'::pulse.metric_type`)).rejects.toThrow();
       await expect(
         Promise.resolve(

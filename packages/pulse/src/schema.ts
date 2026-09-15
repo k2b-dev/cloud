@@ -285,6 +285,8 @@ export const initializeSchema = async (): Promise<void> => {
 
     await sql`CREATE INDEX idx_pulse_events_base_kind_ts ON pulse.events(base_id, kind, ts DESC)`.simple();
 
+    await sql`CREATE INDEX idx_pulse_events_base_recent ON pulse.events(base_id, ts DESC, recorded_at DESC)`.simple();
+
     await sql`CREATE INDEX idx_pulse_events_actor_ts ON pulse.events(base_id, actor_id, ts DESC) WHERE actor_id IS NOT NULL`.simple();
 
     await sql`CREATE INDEX idx_pulse_events_correlation_ts ON pulse.events(base_id, correlation_id, ts DESC) WHERE correlation_id IS NOT NULL`.simple();
@@ -292,6 +294,8 @@ export const initializeSchema = async (): Promise<void> => {
     await sql`CREATE INDEX idx_pulse_events_resource_ts ON pulse.events(base_id, resource_key, ts DESC) WHERE resource_key IS NOT NULL`.simple();
 
     await sql`CREATE INDEX idx_pulse_events_ts_brin ON pulse.events USING BRIN (ts) WITH (autosummarize = on)`.simple();
+
+    await sql`CREATE INDEX idx_pulse_events_sensitive_retention ON pulse.events(base_id, ts) WHERE sensitive <> '{}'::jsonb`.simple();
 
     await sql`
     CREATE TABLE pulse.states_current (
