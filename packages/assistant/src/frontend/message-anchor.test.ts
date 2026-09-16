@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { AiConversationTimelineEntry, AiStoredMessage } from "@k2b/cloud/ai";
-import { assistantMessageAnchorSeq, assistantMessageSearchItem } from "./AssistantChatMessageSearch";
+import { assistantMessageAnchorSeq } from "./message-anchor";
 
 const stored = (input: { role: "user" | "assistant"; seq: number; text: string; loopId?: string | null }): AiStoredMessage => ({
   id: `message-${input.seq}`,
@@ -38,14 +38,6 @@ const turn = (seq: number, loopId: string | null): AiConversationTimelineEntry =
 });
 
 describe("Assistant chat message search", () => {
-  test("maps messages to compact Spotlight results", () => {
-    expect(assistantMessageSearchItem(stored({ role: "assistant", seq: 4, text: "First\n\nsecond", loopId: "loop-1" }))).toMatchObject({
-      label: "First second",
-      desc: "Assistant · Message 4",
-      icon: "ti ti-sparkles",
-    });
-  });
-
   test("targets user messages directly and assistant messages through their Turn", () => {
     const timeline = [turn(1, "loop-1"), turn(5, "loop-2")];
     expect(assistantMessageAnchorSeq(stored({ role: "user", seq: 5, text: "Question", loopId: "loop-2" }), timeline)).toBe(5);

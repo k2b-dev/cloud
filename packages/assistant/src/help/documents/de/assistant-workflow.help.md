@@ -16,7 +16,7 @@ Der Assistent trennt Projekt-Chats und allgemeine Chats in der Seitenleiste. Ers
 - **Projektseite:** Gib die erste Nachricht in das normale Eingabefeld ein und füge bei Bedarf Dateien hinzu. Der Assistent erstellt einen privaten Projekt-Chat, sendet die Nachricht und öffnet anschließend die normale Chatansicht. Unter dem Eingabefeld kannst du vorhandene Projekt-Chats durchsuchen und durchblättern.
 - **Projektkontext:** Die Projektseite zeigt Anweisungen, Wissen, Bilder, Dateien und Referenzen des Projekts. Personen mit Schreibzugriff können diesen gemeinsamen Kontext dort ergänzen oder bearbeiten.
 - **Allgemeine Chats:** Bis zu 15 Chats ohne Projekt erscheinen im Bereich **Chats** unter den Projekten. Über **Alle Chats anzeigen** öffnest du den vollständigen Verlauf.
-- **Chats durchsuchen:** Nutze die Suchschaltfläche in der Seitenleiste oder das plattformweite Tastenkürzel, um gespeicherte Chats zu durchsuchen.
+- **Alle Chats durchsuchen:** Nutze die Suchschaltfläche in der Seitenleiste oder das plattformweite Tastenkürzel, um gespeicherte Chats zu durchsuchen.
 - **Alle Chats:** Projekt-Badges kennzeichnen Projekt-Chats im seitenweise geladenen Verlauf. **Alle Chats** bietet außerdem eine serverseitige Suche und Bearbeitungsaktionen.
 - **Chat-Kontext:** Auf Laptop- und Desktop-Bildschirmen bleibt die kompakte Kontextansicht oben rechts. Auf kleineren Bildschirmen öffnet die Schaltfläche **Kontext** unter dem Eingabefeld dieselbe Zusammenfassung in einem Dialog. Ein Projekt-Chat enthält seinen geerbten Projektkontext ohne Aktionen zur Projektbearbeitung.
 - **Aktueller Dateikontext:** Hochgeladene und erzeugte Dateien werden direkt aktualisiert. Bilder öffnen sich in der Bildansicht, Dateien direkt im Dateibrowser. Projekt- und Chatdateien erscheinen in derselben Liste und behalten ihre Herkunft.
@@ -104,3 +104,14 @@ Ein Projekt kannst du einem Chat ohne Projekt einmalig dauerhaft zuordnen.
 Danach gelten seine Anweisungen und Dateien für neue Antworten; Projekt-Treffer
 verschwinden aus dem Slash-Menü. Laufende oder wartende Nachrichten müssen
 vorher abgeschlossen sein.
+
+## Chats durchsuchen
+
+**Alle Chats durchsuchen** öffnet die globale Suche für Titel und Nachrichteninhalte
+deiner Assistant-Chats. **Diesen Chat durchsuchen** begrenzt sie auf Nachrichten im
+geöffneten Chat. Der entfernbare Filter zeigt den Suchbereich. Eine Suchaktion
+in der Palette setzt ihn direkt im offenen Fenster. Entfernst du den Filter,
+suchst du wieder in allen Cloud-Apps.
+
+Nachrichtentreffer springen zur passenden Stelle im Chat. Mit Cmd/Strg+Enter
+öffnest du einen Treffer in einem neuen Tab.

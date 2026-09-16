@@ -1,8 +1,9 @@
+import { registerContextAwareCommand } from "@k2b/cloud/browser/commands";
 import { navigateTo, refreshCurrentPath } from "@k2b/ssr/nav";
 import { mutation as mutations } from "@k2b/stdlib/solid";
 import { Button, Dropdown, ProgressBar, prompts, ScrollArea, TextInput, toast, useLocale } from "@k2b/ui";
 import { formatBytes } from "@k2b/cloud/shared";
-import { createSignal, For, onCleanup, onMount, Show } from "solid-js";
+import { createEffect, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { FileBaseInfo } from "@/contracts";
 import { filesMessages } from "../messages";
@@ -213,6 +214,31 @@ export default function FileToolbar({
 
   const handleUploadFiles = () => uploadManager.startUpload("files", baseType, baseId, currentPath, uploadOptions);
   const handleUploadFolder = () => uploadManager.startUpload("folder", baseType, baseId, currentPath, uploadOptions);
+
+  createEffect(() => {
+    if (mkdirMutation.loading() || uploadManager.state.isUploading) return;
+    const description = `${baseType === "home" ? "~" : baseId}/${currentPath}`;
+    onCleanup(
+      registerContextAwareCommand({
+        id: "files.upload",
+        title: t().uploadFiles,
+        description,
+        icon: "ti ti-upload",
+        action: handleUploadFiles,
+      }),
+    );
+    onCleanup(
+      registerContextAwareCommand({
+        id: "files.folder.compose",
+        title: t().newFolder,
+        description,
+        icon: "ti ti-folder-plus",
+        action: async () => {
+          await mkdirMutation.mutate(undefined);
+        },
+      }),
+    );
+  });
 
   const handleFilterSubmit = (e: Event) => {
     e.preventDefault();

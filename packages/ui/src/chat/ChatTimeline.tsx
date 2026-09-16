@@ -55,6 +55,7 @@ export type ChatTimelineProps = {
   onActionError?: (error: unknown) => void;
   viewportRef?: (element: HTMLDivElement) => void;
   contentRef?: (element: HTMLDivElement) => void;
+  scrollToAnchorRef?: (scrollToAnchor: (anchorId: string | number) => boolean) => void;
   label?: string;
   followThreshold?: number;
   class?: string;
@@ -85,6 +86,16 @@ export function ChatTimeline(props: ChatTimelineProps): JSX.Element {
     if (followFrame !== undefined) cancelAnimationFrame(followFrame);
     followFrame = undefined;
   };
+
+  props.scrollToAnchorRef?.((anchorId) => {
+    const anchor = Array.from(contentRef?.querySelectorAll<HTMLElement>("[data-chat-anchor]") ?? [])
+      .find((element) => element.dataset.chatAnchor === String(anchorId));
+    if (!viewportRef || !anchor) return false;
+    cancelFollow();
+    setPinned(false);
+    viewportRef.scrollTop = Math.max(0, viewportRef.scrollTop + anchor.getBoundingClientRect().top - viewportRef.getBoundingClientRect().top - 16);
+    return true;
+  });
 
   const noteUserScrollAway = () => {
     userScrollingAway = true;

@@ -4,7 +4,7 @@ import type { CloudTheme } from "../shared/theme";
 import AppLaunchpad, { type AppLaunchpadApp } from "./AppLaunchpad.island";
 import type { GlobalSearchHelpApp } from "./GlobalSearchHelpDialog";
 import GlobalSearchTrigger from "./GlobalSearchTrigger.island";
-import HotkeysHelpRail from "./HotkeysHelpRail.island";
+import LayoutHelpTrigger from "./LayoutHelpTrigger.island";
 import LayoutBreadcrumbs from "./LayoutBreadcrumbs.island";
 import LayoutPreferences from "./LayoutPreferences.island";
 import type { LayoutBreadcrumb } from "./layout-runtime";
@@ -54,15 +54,15 @@ export default function LayoutHeader(props: LayoutHeaderProps) {
       </div>
       <div class="flex shrink-0 items-center gap-1">
         <div class="flex items-center gap-1 lg:hidden">
-          <HotkeysHelpRail
+          <LayoutHelpTrigger
             variant="header"
-            registerHotkey={!props.authenticated}
+            registerCommand={!props.authenticated}
             searchHelpApps={props.searchHelpApps}
             accent={props.accent}
           />
           <GlobalSearchTrigger
             variant={props.authenticated ? "header" : "host"}
-            registerHotkey
+            registerCommand
             searchLinks={props.searchLinks}
             searchResources={props.authenticated}
           />

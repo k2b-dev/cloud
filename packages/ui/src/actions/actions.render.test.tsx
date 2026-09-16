@@ -23,7 +23,6 @@ const {
   FilterChip,
   IconButton,
   IconButtonLink,
-  isSpotlightShortcut,
   RemoveButton,
   SegmentedControl,
   SplitButton,
@@ -678,12 +677,6 @@ describe("@k2b/ui complete action migrations", () => {
     const remove = renderToString(() => createComponent(RemoveButton, { ariaLabel: "Remove attachment" }));
 
     expect(remove).toContain('aria-label="Remove attachment"');
-  });
-
-  test("recognizes the cross-platform spotlight shortcut", () => {
-    expect(isSpotlightShortcut({ metaKey: true, ctrlKey: false, shiftKey: true, key: "K" } as KeyboardEvent)).toBe(true);
-    expect(isSpotlightShortcut({ metaKey: false, ctrlKey: true, shiftKey: true, key: "k" } as KeyboardEvent)).toBe(true);
-    expect(isSpotlightShortcut({ metaKey: true, ctrlKey: false, shiftKey: false, key: "k" } as KeyboardEvent)).toBe(false);
   });
 
   test("keeps an icon button quiet by default, like Cloud's icon-btn utility", () => {

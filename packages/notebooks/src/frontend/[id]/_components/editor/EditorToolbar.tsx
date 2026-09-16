@@ -3,7 +3,6 @@ import type { EditorView } from "@codemirror/view";
 import { keymap } from "@codemirror/view";
 import { Dropdown, IconButton, IconButtonLink, Tooltip, useLocale } from "@k2b/ui";
 import { createEffect, createSignal, onCleanup, onMount, Show } from "solid-js";
-import { requestNotebookSearch } from "../../../lib/hotkeys";
 import { buildNoteUrl } from "../../../params";
 import { notebookWorkspaceMessages } from "../../messages";
 import { bookMessages } from "../book/messages";
@@ -27,13 +26,6 @@ type Props = {
 export function formattingKeymap(opts: { notebookId: string }) {
   return Prec.high(
     keymap.of([
-      {
-        key: "Mod-Shift-k",
-        run: () => {
-          requestNotebookSearch();
-          return true;
-        },
-      },
       {
         key: "Mod-b",
         run: (view) => {

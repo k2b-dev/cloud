@@ -1,3 +1,5 @@
+import { registerContextAwareCommand } from "@k2b/cloud/browser/commands";
+import { createEffect, onCleanup } from "solid-js";
 import { createSpaceCommands } from "../../../space-commands";
 import { WorkspaceNavigationProvider } from "@k2b/cloud/ssr/islands";
 import type { DateContext } from "@k2b/stdlib";
@@ -29,6 +31,20 @@ export default function SpaceNavigation(props: { ctx: SpaceContext; baseUrl: str
     get defaultType() {
       return props.ctx.currentView === "calendar" ? "event" : "task";
     },
+  });
+  createEffect(() => {
+    if (!props.ctx.canWrite) return;
+    for (const type of ["task", "event"] as const)
+      onCleanup(
+        registerContextAwareCommand({
+          id: `spaces.${type}.compose`,
+          title: type === "task" ? t.newTask : t.newEvent,
+          description: props.ctx.space.name,
+          icon: type === "task" ? "ti ti-checkbox" : "ti ti-calendar-event",
+          ...(type === (props.ctx.currentView === "calendar" ? "event" : "task") ? { shortcut: "c" } : {}),
+          action: { command: `spaces.${type}.compose`, input: { spaceId: props.ctx.space.id } },
+        }),
+      );
   });
   const search = createSpaceSearch({
     get spaceId() {

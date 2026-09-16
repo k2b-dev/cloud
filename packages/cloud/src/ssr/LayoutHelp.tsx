@@ -1,5 +1,6 @@
+import { COMMANDS_CHANGED, contextCommandsWithShortcuts, shortcutLabel } from "../browser/command-shortcuts";
 import { searchHelpTopics } from "./layout-help-search";
-import { clipboard, hotkeys } from "@k2b/stdlib/solid";
+import { clipboard } from "@k2b/stdlib/solid";
 import { Button, IconButton, IconButtonLink, MarkdownView, NoticeCard, Placeholder, prompts, ScrollArea, useLocale } from "@k2b/ui";
 import type { HelpDocumentManifest, HelpDocumentPayload, HelpSearchPayload } from "@k2b/cloud/shared";
 import { createEffect, createMemo, createSignal, For, type JSX, onCleanup, onMount, Show } from "solid-js";
@@ -107,7 +108,17 @@ export function LayoutHelpDocuments(props: LayoutHelpDocumentsProps) {
 const Shortcuts = (props: { openSearchHelp: () => void }) => {
   const locale = useLocale();
   const t = () => helpMessages.resolve([locale()]).t;
-  const entries = createMemo(() => [...hotkeys.entries()].sort((a, b) => a.label.localeCompare(b.label) || a.keys.localeCompare(b.keys)));
+  const [commands, setCommands] = createSignal(contextCommandsWithShortcuts());
+  onMount(() => {
+    const update = () => setCommands(contextCommandsWithShortcuts());
+    window.addEventListener(COMMANDS_CHANGED, update);
+    onCleanup(() => window.removeEventListener(COMMANDS_CHANGED, update));
+  });
+  const entries = createMemo(() =>
+    commands()
+      .filter((command) => command.shortcut)
+      .sort((a, b) => a.title.localeCompare(b.title)),
+  );
   return (
     <div class="flex flex-col gap-3">
       <p class="text-sm leading-relaxed text-dimmed">{t().shortcutsIntro}</p>
@@ -119,20 +130,14 @@ const Shortcuts = (props: { openSearchHelp: () => void }) => {
           {(entry) => (
             <div class="flex items-start justify-between gap-4 rounded-[var(--ui-radius-surface)] bg-[var(--ui-surface-subtle)] px-3 py-2.5">
               <div class="min-w-0">
-                <p class="text-sm font-medium text-primary">{entry.label}</p>
-                <Show when={entry.desc}>
-                  <p class="mt-0.5 text-xs text-dimmed">{entry.desc}</p>
+                <p class="text-sm font-medium text-primary">{entry.title}</p>
+                <Show when={entry.description}>
+                  <p class="mt-0.5 text-xs text-dimmed">{entry.description}</p>
                 </Show>
               </div>
-              <div class="flex shrink-0 gap-1" role="group" aria-label={entry.keysPretty.map((part) => part.ariaLabel).join(" + ")}>
-                <For each={entry.keysPretty}>
-                  {(part) => (
-                    <kbd class="rounded bg-[var(--ui-surface-raised)] px-1.5 py-1 text-[11px] ring-1 ring-black/10 dark:ring-white/10">
-                      {part.key}
-                    </kbd>
-                  )}
-                </For>
-              </div>
+              <kbd class="shrink-0 rounded bg-[var(--ui-surface-raised)] px-1.5 py-1 text-[11px] ring-1 ring-black/10 dark:ring-white/10">
+                {shortcutLabel(entry.shortcut!)}
+              </kbd>
             </div>
           )}
         </For>

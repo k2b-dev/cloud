@@ -1,3 +1,4 @@
+import { assistantCapabilities } from "./capabilities";
 import { agentHost } from "./artifacts/agent-host";
 import { httpService } from "./artifacts/http-service";
 import adminPages from "./artifacts/admin-page";
@@ -31,6 +32,7 @@ router.get("/app/assistant/*", auth.requireRole("*"), (c) => ssr.error(c, 404));
 const result = await app.start({
   fetch: router.fetch,
   help: assistantHelp,
+  capabilities: assistantCapabilities,
   openapi: apiRoutes,
   lifecycle: { setup: migrateArtifacts,
     start: async () => { hostTimer=setInterval(()=>{hostSweep ??= agentHost.sweep().catch(()=>console.warn("Code host cleanup deferred")).finally(()=>{hostSweep=undefined;});},1000);hostTimer.unref(); await sweep(); databaseTimer=setInterval(() => void sweep(),30000); databaseTimer.unref(); },

@@ -212,6 +212,9 @@ its aliases. Enter or a click applies a filter; Tab keeps normal focus navigatio
 A typed tag is committed with whitespace. An unfinished tag does not trigger an
 unsupported-filter warning.
 
+**All filters** remains available while tags load and shows their loading state
+inside the filter view. It uses the same padded hover surface as **Actions**.
+
 Results are grouped by application. Desktop search shows a preview beside the
 input and result list. The centered dialog keeps its width and top position across search
 states, growing downward until its content needs to scroll.
@@ -271,7 +274,8 @@ The context is a removable chip. Removing it clears the application restriction
 and tag filters while preserving the search text. Labels and icons are display
 metadata, never authorization. Concrete scopes are not listed in filter
 discovery. Reopening an existing dialog updates its context and focuses the
-input. Calls made before layout hydration wait for the host; only the latest
+input. Pass `query` to replace the text too; omit it to preserve the current text.
+Calls made before layout hydration wait for the host; only the latest
 request is retained, with a bounded wait and visible failure if it cannot open.
 On public pages, signed-out users can search the navigation links visible to
 them, such as Tools. The layout does not call the authenticated resource-search
@@ -393,6 +397,7 @@ createEffect(() => {
     title: `Compose email to ${contact.name}`,
     description: "Opens Mail with this contact as the recipient.",
     icon: "ti ti-mail-plus",
+    shortcut: "mod+shift+m",
     action: {
       command: "mail.compose",
       input: { contact: { type: "contacts.contact", id: contact.id } },
@@ -414,3 +419,77 @@ an arrow key before pressing Enter. Typing a filter after `>` selects the first
 matching action for Enter. Asynchronous catalog updates preserve the selected
 target; removing that target clears the selection. Cmd/Ctrl+Enter opens linkable
 Commands in a new tab and leaves the palette open; local functions cannot open in a new tab.
+
+### Write distinct action titles and useful descriptions
+
+Apply these rules to both global Commands and browser context commands:
+
+- Make the title understandable on its own. Name the action and its scope;
+  use **Search all chats** and **Search this chat**, rather than distinguishing
+  them only by **Chats** and **Chat**. Do not rely on icons or shortcuts to
+  tell similar actions apart.
+- Use the description to add information: which content is searched, which
+  resource is affected, or what opens next. Never repeat the title or describe
+  the underlying API.
+- Include the current resource name when it helps identify the target. Keep
+  titles short and put longer names in the description. Update both with the
+  active context and localize them through the application's message catalog.
+
+| Title | Description |
+| --- | --- |
+| Search all chats | Find titles and messages in your Assistant chats. |
+| Search this chat | Find messages in “Daily planning”. |
+| New chat | Start a conversation with the Assistant. |
+| Compose email to Alex | Opens Mail with this contact as the recipient. |
+
+The first two titles become **Alle Chats durchsuchen** and
+**Diesen Chat durchsuchen** in German. Preserve that distinction in every locale.
+
+### Search actions
+
+A context command can change the search context without closing the palette:
+
+```ts
+action: {
+  search: {
+    scope: {
+      ref: { type: "assistant.chat", id: chat.id },
+      label: chat.title,
+      icon: "ti ti-message",
+    },
+  },
+},
+```
+
+This reuses `GlobalSearchOptions`. The palette clears the action query, applies
+its removable scope and focuses the existing input. An optional `query` supplies
+initial search text. Triggering the command through its shortcut opens the same
+global search host. Search actions do not navigate, open a second dialog or
+support opening in a new tab. Resource-result links still support Cmd/Ctrl+Enter.
+Describe what the search finds instead of repeating the action title.
+
+### Context command shortcuts
+
+Set an optional `shortcut` on a browser context command, for example `"e"`,
+`"mod+shift+k"`, or `"mod+alt+n"`. `mod` means Command on macOS and Control
+elsewhere. Commands in the server capability catalog do not declare shortcuts.
+Cloud's layout owns keyboard dispatch; applications must not add a separate
+shortcut listener or registry.
+
+The search palette and Layout Help display the same currently registered
+shortcuts. Duplicate command IDs are unavailable until ownership is unique.
+Conflicting key combinations remain clickable commands but have no active
+shortcut or shortcut label until the conflict disappears. Remove registrations
+with their Solid owner and re-register when the target or permission changes.
+
+Unmodified shortcuts do not run in editable fields. Registered Control/Command
+combinations take priority over editor bindings; all other editor keys remain local.
+Events already prevented by another capture listener are ignored. Application shortcuts do
+not run behind an open dialog. The universal search shortcut remains available.
+Repeated and IME composition events are ignored. The palette and keyboard share
+live ownership checks, prevent concurrent execution of one registration, and
+show an execution error once. Never bind destructive or send actions to casual
+single-letter shortcuts.
+
+Editor formatting and component navigation, such as arrows within a Kanban
+board, stay with their component. They are not application commands.

@@ -85,6 +85,9 @@ describe("Spaces keyboard shortcuts", () => {
     const dom = createDomTestHarness();
     dom.root.className = "k2b-ui";
     const { default: KanbanBoard } = await import("../src/frontend/[id]/_components/kanban/KanbanBoard");
+    const { attachCommandShortcuts } = await import("../../cloud/src/browser/command-shortcuts");
+    const { runContextAwareCommand } = await import("@k2b/cloud/browser/commands");
+    const stopKeyboard = attachCommandShortcuts((command) => void runContextAwareCommand(command));
     const dispose = render(
       () =>
         createComponent(KanbanBoard, {
@@ -152,6 +155,17 @@ describe("Spaces keyboard shortcuts", () => {
     await flush();
     expect(calls).toEqual(["assign:Item03", "complete:Item03"]);
 
+    const outside = dom.document.createElement("button");
+    dom.root.append(outside);
+    board.querySelector<HTMLAnchorElement>('[data-item-id="Item01"]')!.focus();
+    outside.focus();
+    await flush();
+    key(outside, "m");
+    key(outside, "d");
+    await flush();
+    expect(calls).toEqual(["assign:Item03", "complete:Item03"]);
+
+    stopKeyboard();
     dispose();
     dom.cleanup();
   });

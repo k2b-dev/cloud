@@ -41,7 +41,7 @@ Du kannst einen eigenen Kommentar bis zu zehn Minuten nach dem Veröffentlichen 
 
 ## Schnell mit der Tastatur arbeiten {icon="keyboard"}
 
-Drücke außerhalb eines Eingabefelds oder Dialogs **C**, um einen Eintrag zu erstellen, und **/**, um die Suche zu öffnen. Fokussiere im Kanban-Board eine Karte und wechsle mit den Pfeiltasten zwischen Karten. Mit **Enter** öffnest du die fokussierte Karte, mit **M** weist du sie dir zu und mit **D** erledigst du sie. Während du in einem Feld oder Editor schreibst, bleiben diese Einzeltasten-Kürzel inaktiv.
+Drücke außerhalb eines Eingabefelds oder Dialogs **C**, um einen Eintrag zu erstellen, und **Cmd/Ctrl+Shift+K**, um den aktuellen Space zu durchsuchen. Fokussiere im Kanban-Board eine Karte und wechsle mit den Pfeiltasten zwischen Karten. Mit **Enter** öffnest du die fokussierte Karte, mit **M** weist du sie dir zu und mit **D** erledigst du sie. Während du in einem Feld oder Editor schreibst, bleiben diese Einzeltasten-Kürzel inaktiv. Verfügbare Aktionen und ihre Kürzel findest du auch in der Cloud-Suche und in der Layout-Hilfe.
 
 ## Umsetzung und Übergabe {icon="notes"}
 

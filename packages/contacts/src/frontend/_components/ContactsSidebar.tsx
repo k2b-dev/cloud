@@ -103,7 +103,7 @@ export default function ContactsSidebar(props: Props) {
       <AppWorkspace.Sidebar collapsible>
         <AppWorkspace.SidebarDesktop>
           <div data-sidebar-mode="expanded" style={`view-transition-name:${vt("primary-actions-desktop")}`}>
-            <ContactsSpotlightButton variant="sidebar" registerShortcut />
+            <ContactsSpotlightButton variant="sidebar" registerCommand />
           </div>
           <AppWorkspace.SidebarIconGrid sidebarMode="collapsed">
             <ContactsSpotlightButton variant="icon" />

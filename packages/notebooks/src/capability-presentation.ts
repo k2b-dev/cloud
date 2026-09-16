@@ -4,6 +4,7 @@ export const notebooksCapabilityPresentation: CapabilityPresentationCatalog = {
   baseLocale: "en",
   translations: {
     de: {
+      commands: { "note.compose": { title: "Neue Notiz", description: "Notizbuch auswählen und eine Notiz schreiben." } },
       types: {
         note: {
           title: "Hinweis",

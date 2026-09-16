@@ -1,3 +1,7 @@
+import { openGlobalSearch } from "@k2b/cloud/browser/search";
+import { assistantSearchOptions } from "./assistant-search";
+import { assistantCommandMessages } from "../commands";
+import { registerContextAwareCommand } from "@k2b/cloud/browser/commands";
 import { WorkspaceNavigationProvider } from "@k2b/cloud/ssr/islands";
 import { ConversationSidebarPreview } from "./ConversationSidebarPreview";
 import { useAssistantText } from "./ui-copy";
@@ -12,14 +16,11 @@ import {
   Dropdown,
   Format,
   IconButton,
-  isSpotlightShortcut,
-  openSpotlightSearch,
-  SPOTLIGHT_SHORTCUT_TITLE,
   toast,
   useLocale,
 } from "@k2b/ui";
 import type { AiConversation, AiProject } from "@k2b/cloud/ai";
-import { type Accessor, createSignal, For, onCleanup, onMount, Show } from "solid-js";
+import { type Accessor, createSignal, For, createEffect, onCleanup, Show } from "solid-js";
 import { assistantApi } from "../api/client";
 import { openAssistantAllChatsDialog } from "./AssistantAllChatsDialog";
 import { openAssistantConversationEditor } from "./AssistantConversationEditor";
@@ -49,64 +50,23 @@ type AssistantSidebarProps = {
   live: AssistantLiveHub;
 };
 
-const PER_SPOTLIGHT_PAGE = 20;
-
-function createAssistantSearch(props: {
-  registerShortcut?: boolean;
-  openConversation?: (conversation: AiConversation) => void | Promise<void>;
-  variant?: "item" | "icon";
-}) {
+function AssistantSearchButton(props: { registerCommand?: boolean; variant?: "item" | "icon" }) {
   const locale = useLocale();
   const t = () => assistantMessages.resolve([locale()]).t;
-  const openSearch = async () => {
-    const selected = await openSpotlightSearch<AiConversation>({
-      title: t().searchChats,
-      icon: "ti ti-sparkles",
-      placeholder: t().searchChatsPlaceholder,
-      minQueryLength: 1,
-      noResultsText: t().noChatsFound,
-      resolve: async ({ query, abortSignal }) => {
-        const trimmed = query.trim();
-        if (!trimmed) return [];
+  const openSearch = () => openGlobalSearch(assistantSearchOptions(locale()));
 
-        const conversations = await assistantApi.listConversations({ q: trimmed, limit: PER_SPOTLIGHT_PAGE, signal: abortSignal });
-        return conversations.map((conversation) => ({
-          value: conversation,
-          label: conversation.title,
-          desc: conversation.description || new Date(conversation.updatedAt).toLocaleString(locale()),
-        }));
-      },
-    });
-
-    if (!selected?.value) return;
-    if (props.openConversation) await props.openConversation(selected.value);
-    else navigateTo(assistantConversationHref("/app/assistant", selected.value.id));
-  };
-
-  return openSearch;
-}
-
-function AssistantSpotlightButton(props: Parameters<typeof createAssistantSearch>[0]) {
-  const locale = useLocale();
-  const t = () => assistantMessages.resolve([locale()]).t;
-  const openSearch = createAssistantSearch(props);
-
-  onMount(() => {
-    if (!props.registerShortcut) return;
-
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (!isSpotlightShortcut(event)) return;
-      event.preventDefault();
-      void openSearch();
-    };
-    window.addEventListener("keydown", onKeyDown);
-    onCleanup(() => window.removeEventListener("keydown", onKeyDown));
+  createEffect(() => {
+    if (!props.registerCommand) return;
+    onCleanup(registerContextAwareCommand({
+      id: "assistant.search", title: t().searchChats, description: assistantCommandMessages.resolve([locale()]).t.searchChatsDescription,
+      icon: "ti ti-search", shortcut: "mod+shift+k", action: { search: assistantSearchOptions(locale()) },
+    }));
   });
 
   return props.variant === "icon" ? (
-    <AppWorkspace.SidebarIconAction icon="ti ti-search" onClick={openSearch} label={`${t().searchChats} (${SPOTLIGHT_SHORTCUT_TITLE})`} />
+    <AppWorkspace.SidebarIconAction icon="ti ti-search" onClick={openSearch} label={t().searchChats} />
   ) : (
-    <AppWorkspace.SidebarItem icon="ti ti-search" onClick={openSearch} title={`${t().searchChats} (${SPOTLIGHT_SHORTCUT_TITLE})`}>
+    <AppWorkspace.SidebarItem icon="ti ti-search" onClick={openSearch} title={t().searchChats}>
       {t().searchChats}
     </AppWorkspace.SidebarItem>
   );
@@ -375,7 +335,7 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
     },
   ];
 
-  const openSearch = createAssistantSearch({ openConversation: openConversationFromCommand });
+  const openSearch = () => openGlobalSearch(assistantSearchOptions(locale()));
   const [savingIds, setSavingIds] = createSignal<ReadonlySet<string>>(new Set());
   const chatItem = (conversation: AiConversation): NavigationItem => {
     const busy = ["queued", "running", "needs_attention", "waiting_for_browser"].includes(conversation.runStatus);
@@ -523,7 +483,7 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
               disabled={creatingConversation()}
               onClick={() => void props.onNewConversation?.()}
             />
-            <AssistantSpotlightButton variant="icon" registerShortcut openConversation={openConversationFromCommand} />
+            <AssistantSearchButton variant="icon" registerCommand />
           </AppWorkspace.SidebarIconGrid>
 
           <AppWorkspace.SidebarIconGrid columns={3} sidebarMode="collapsed">
@@ -533,7 +493,7 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
               disabled={creatingConversation()}
               onClick={() => void props.onNewConversation?.()}
             />
-            <AssistantSpotlightButton variant="icon" openConversation={openConversationFromCommand} />
+            <AssistantSearchButton variant="icon" />
             <AppWorkspace.SidebarIconAction
               icon="ti ti-folder-plus"
               label={t().createProject}

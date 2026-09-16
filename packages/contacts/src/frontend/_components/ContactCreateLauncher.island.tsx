@@ -1,6 +1,9 @@
+import { consumeCommandLink, registerCommandHandler, registerContextAwareCommand } from "@k2b/cloud/browser/commands";
+import { ContactComposeInputSchema } from "../../commands";
+import { detailMessages } from "./detail-messages";
 import { navigateTo } from "@k2b/ssr/nav";
 import { useLocale } from "@k2b/ui";
-import { onMount } from "solid-js";
+import { createEffect, onCleanup, onMount } from "solid-js";
 import { CONTACTS_CREATE_QUERY_KEYS, parseContactCreateSeed } from "../../integration";
 import { openContactCreateFlow, type WritableContactBook } from "./ContactCreateFlow";
 
@@ -12,9 +15,50 @@ const consumeCreateQuery = (url: URL): void => {
   window.history.replaceState(window.history.state, "", `${url.pathname}${url.search}${url.hash}`);
 };
 
-export default function ContactCreateLauncher(props: { writableBooks: WritableContactBook[] }) {
+export default function ContactCreateLauncher(props: { writableBooks: WritableContactBook[]; defaultBookId?: string }) {
   const locale = useLocale();
+  let pending = false;
+  let active = true;
+  onCleanup(() => {
+    active = false;
+  });
+  const create = async (bookId?: string) => {
+    if (pending) return;
+    pending = true;
+    try {
+      if (bookId && !props.writableBooks.some((book) => book.id === bookId))
+        throw new Error(detailMessages.resolve([locale()]).t.noWritableBookHint);
+      const result = await openContactCreateFlow({
+        writableBooks: props.writableBooks,
+        defaultBookId: bookId,
+        chooseBook: !bookId,
+        locale: locale(),
+      });
+      if (result && active) navigateTo(contactHref(result.bookId, result.contact.id));
+    } finally {
+      pending = false;
+    }
+  };
+  createEffect(() => {
+    if (!props.writableBooks.length) return;
+    onCleanup(
+      registerContextAwareCommand({
+        id: "contacts.contact.compose",
+        title: detailMessages.resolve([locale()]).t.newContact,
+        description:
+          props.writableBooks.find((book) => book.id === props.defaultBookId)?.name ??
+          detailMessages.resolve([locale()]).t.chooseContactBook,
+        icon: "ti ti-user-plus",
+        shortcut: "mod+alt+n",
+        action: { command: "contacts.contact.compose", input: props.defaultBookId ? { bookId: props.defaultBookId } : {} },
+      }),
+    );
+  });
   onMount(() => {
+    onCleanup(
+      registerCommandHandler("contacts.contact.compose", ContactComposeInputSchema, (input) => create(input.bookId ?? props.defaultBookId)),
+    );
+    void consumeCommandLink();
     const url = new URL(window.location.href);
     if (url.searchParams.get("createContact") !== "1") return;
     const seed = parseContactCreateSeed(url.searchParams);

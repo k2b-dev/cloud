@@ -289,6 +289,33 @@ export default function ContactDetailPanel(props: Props) {
     invalidateDetail: detailQuery.invalidate,
   });
 
+  createEffect(() => {
+    const current = contact();
+    if (!current) return;
+    const description = resolveContactName(current, t().unnamedContact);
+    if (actions.canEdit())
+      onCleanup(
+        registerContextAwareCommand({
+          id: `contacts.${current.id}.edit`,
+          title: t().editAllFields,
+          description,
+          icon: "ti ti-edit",
+          shortcut: "e",
+          action: () => actions.openEditDialog(current),
+        }),
+      );
+    if (actions.canMove())
+      onCleanup(
+        registerContextAwareCommand({
+          id: `contacts.${current.id}.move`,
+          title: t().moveToAnotherBook,
+          description,
+          icon: "ti ti-folder",
+          action: () => actions.moveToBook(current),
+        }),
+      );
+  });
+
   return (
     <Show
       when={contact()}

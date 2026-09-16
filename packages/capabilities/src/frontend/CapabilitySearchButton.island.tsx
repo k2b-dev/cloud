@@ -1,6 +1,7 @@
+import { registerContextAwareCommand } from "@k2b/cloud/browser/commands";
 import { createCapabilitySearch } from "./capability-search";
-import { isSpotlightShortcut, SPOTLIGHT_SHORTCUT_TITLE, SpotlightButton, type SpotlightButtonVariant, useLocale } from "@k2b/ui";
-import { onCleanup, onMount } from "solid-js";
+import { SpotlightButton, type SpotlightButtonVariant, useLocale } from "@k2b/ui";
+import { createEffect, onCleanup } from "solid-js";
 import { capabilityUiMessages } from "./messages";
 
 export type CapabilitySearchEntry = {
@@ -13,31 +14,28 @@ export type CapabilitySearchEntry = {
 type Props = {
   entries: CapabilitySearchEntry[];
   variant?: SpotlightButtonVariant;
-  registerShortcut?: boolean;
+  registerCommand?: boolean;
 };
 
 export default function CapabilitySearchButton(props: Props) {
   const locale = useLocale();
   const t = () => capabilityUiMessages.resolve([locale()]).t;
   const openSearch = createCapabilitySearch(props);
-  onMount(() => {
-    if (!props.registerShortcut) return;
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (!isSpotlightShortcut(event)) return;
-      event.preventDefault();
-      void openSearch();
-    };
-    window.addEventListener("keydown", onKeyDown);
-    onCleanup(() => window.removeEventListener("keydown", onKeyDown));
+  createEffect(() => {
+    if (!props.registerCommand) return;
+    onCleanup(
+      registerContextAwareCommand({
+        id: "capabilities.search",
+        title: t().search,
+        description: t().search,
+        icon: "ti ti-search",
+        shortcut: "mod+shift+k",
+        action: openSearch,
+      }),
+    );
   });
 
   return (
-    <SpotlightButton
-      variant={props.variant ?? "chip"}
-      label={t().search}
-      ariaLabel={t().search}
-      title={`${t().search} (${SPOTLIGHT_SHORTCUT_TITLE})`}
-      onClick={openSearch}
-    />
+    <SpotlightButton variant={props.variant ?? "chip"} label={t().search} ariaLabel={t().search} title={t().search} onClick={openSearch} />
   );
 }

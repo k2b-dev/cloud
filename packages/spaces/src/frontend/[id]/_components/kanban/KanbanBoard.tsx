@@ -1,10 +1,10 @@
+import { registerContextAwareCommand } from "@k2b/cloud/browser/commands";
 import { type DateContext, dates } from "@k2b/stdlib";
 import {
   type DndBuildIntentContext,
   type DndDraggableSnapshot,
   type DndDroppableSnapshot,
   dnd,
-  hotkeys,
   mutation as mutations,
   query,
 } from "@k2b/stdlib/solid";
@@ -587,7 +587,7 @@ export default function KanbanBoard(props: Props) {
     onFinally: () => setMovingItemId(null),
   });
 
-  const assignShortcutMutation = mutations.create<SpaceItem, SpaceItem>({
+  const assignCardMutation = mutations.create<SpaceItem, SpaceItem>({
     mutation: async (item) => {
       if (item.assignees?.some((assignee) => assignee.id === props.currentUserId)) return item;
       const response = await apiClient[":id"].items[":itemId"].$patch({
@@ -614,7 +614,7 @@ export default function KanbanBoard(props: Props) {
     onError: (error) => prompts.error(error.message),
   });
 
-  const completeShortcutMutation = mutations.create<SpaceItem, SpaceItem>({
+  const completeCardMutation = mutations.create<SpaceItem, SpaceItem>({
     mutation: async (item) => {
       const response = await apiClient[":id"].items[":itemId"].completed.$post({
         param: { id: props.spaceId, itemId: item.id },
@@ -640,7 +640,7 @@ export default function KanbanBoard(props: Props) {
     card.scrollIntoView({ block: "nearest", inline: "nearest" });
   };
 
-  const shortcutTarget = () => {
+  const navigationTarget = () => {
     if (document.querySelector("dialog[open]")) return null;
     const target = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     if (!target || !boardScrollContainer?.contains(target) || target.closest("button")) return null;
@@ -648,7 +648,7 @@ export default function KanbanBoard(props: Props) {
   };
 
   const navigateCards = (direction: "up" | "down" | "left" | "right") => {
-    const target = shortcutTarget();
+    const target = navigationTarget();
     if (!target) return;
     const cards = kanbanCards();
     const current = target?.closest<HTMLAnchorElement>("[data-spaces-kanban-card]") ?? null;
@@ -677,35 +677,38 @@ export default function KanbanBoard(props: Props) {
     }
   };
 
-  const focusedLocation = () => {
-    const current = shortcutTarget()?.closest<HTMLAnchorElement>("[data-spaces-kanban-card]");
-    if (!current) return null;
-    return findItemLocation(current.dataset.itemId ?? "");
-  };
-
-  const openFocusedItem = () => {
-    const active = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    if (document.querySelector("dialog[open]") || !active || !boardScrollContainer?.contains(active)) {
-      if (active?.matches('button, a[href], [role="button"]')) active.click();
-      return;
-    }
-    const target = shortcutTarget();
-    if (!target) return;
-    const card = target.closest<HTMLAnchorElement>("[data-spaces-kanban-card]") ?? kanbanCards()[0];
-    card?.click();
-  };
-
-  const assignFocusedItem = () => {
-    const location = focusedLocation();
-    if (!location || assignShortcutMutation.loading()) return;
-    assignShortcutMutation.mutate(location.item);
-  };
-
-  const completeFocusedItem = () => {
-    const location = focusedLocation();
-    if (!location || location.item.completedAt || completeShortcutMutation.loading()) return;
-    completeShortcutMutation.mutate(location.item);
-  };
+  const [focusedItemId, setFocusedItemId] = createSignal<string>();
+  createEffect(() => {
+    if (!props.canWrite || selectedItemId()) return;
+    const id = focusedItemId();
+    const item = id ? findItemLocation(id)?.item : undefined;
+    if (!item) return;
+    onCleanup(
+      registerContextAwareCommand({
+        id: `spaces.${item.id}.assign`,
+        title: t.assignFocusedItem,
+        description: item.title,
+        icon: "ti ti-user-check",
+        shortcut: "m",
+        action: async () => {
+          await assignCardMutation.mutate(item);
+        },
+      }),
+    );
+    if (!item.completedAt)
+      onCleanup(
+        registerContextAwareCommand({
+          id: `spaces.${item.id}.complete`,
+          title: t.completeFocusedItem,
+          description: item.title,
+          icon: "ti ti-check",
+          shortcut: "d",
+          action: async () => {
+            await completeCardMutation.mutate(item);
+          },
+        }),
+      );
+  });
 
   const handleBoardKeyDown = (event: KeyboardEvent) => {
     if (event.defaultPrevented || event.repeat || event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return;
@@ -723,30 +726,8 @@ export default function KanbanBoard(props: Props) {
       event.preventDefault();
       event.stopPropagation();
       navigateCards(direction);
-    } else if (key === "m" && props.canWrite) {
-      event.preventDefault();
-      event.stopPropagation();
-      assignFocusedItem();
-    } else if (key === "d" && props.canWrite) {
-      event.preventDefault();
-      event.stopPropagation();
-      completeFocusedItem();
     }
   };
-
-  hotkeys.create(() => ({
-    arrowup: { label: t.focusPreviousCard, desc: t.focusPreviousCardDescription, run: () => navigateCards("up") },
-    arrowdown: { label: t.focusNextCard, desc: t.focusNextCardDescription, run: () => navigateCards("down") },
-    arrowleft: { label: t.focusPreviousColumn, desc: t.focusPreviousColumnDescription, run: () => navigateCards("left") },
-    arrowright: { label: t.focusNextColumn, desc: t.focusNextColumnDescription, run: () => navigateCards("right") },
-    enter: { label: t.openFocusedItem, desc: t.openFocusedItemDescription, run: openFocusedItem },
-    ...(props.canWrite
-      ? {
-          m: { label: t.assignFocusedItem, desc: t.assignFocusedItemDescription, run: assignFocusedItem },
-          d: { label: t.completeFocusedItem, desc: t.completeFocusedItemDescription, run: completeFocusedItem },
-        }
-      : {}),
-  }));
 
   const bucketQuery = (bucketKey: string) => bucketQueries.find(({ initialBucket }) => initialBucket.key === bucketKey)?.pages;
   const isDropIndicatorVisible = (bucketKey: string, index: number) => {
@@ -774,6 +755,18 @@ export default function KanbanBoard(props: Props) {
         aria-label={t.kanban}
         aria-describedby={`spaces-kanban-shortcuts-${props.spaceId}`}
         onKeyDown={handleBoardKeyDown}
+        onFocusIn={(event) => setFocusedItemId(event.target.closest<HTMLElement>("[data-spaces-kanban-card]")?.dataset.itemId)}
+        onFocusOut={() => {
+          // Opening the palette transfers focus into a dialog; keep its explicit card actions.
+          queueMicrotask(() => {
+            if (
+              !boardScrollContainer?.contains(document.activeElement) &&
+              !document.querySelector('dialog[open], [role="dialog"][aria-modal="true"]')
+            ) {
+              setFocusedItemId(undefined);
+            }
+          });
+        }}
         class="min-h-0 flex-1 overflow-x-auto overflow-y-hidden"
         data-scroll-preserve={`spaces-kanban-board-${props.spaceId}`}
       >

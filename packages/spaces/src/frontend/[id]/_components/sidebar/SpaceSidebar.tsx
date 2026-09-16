@@ -35,13 +35,12 @@ export default function SpaceSidebar(props: Props) {
                     tags={props.ctx.tags}
                     dateConfig={props.dateConfig}
                     variant="icon"
-                    registerShortcut
                     defaultType={props.ctx.currentView === "calendar" ? "event" : "task"}
                   />
                 </div>
               </Show>
               <div style={`view-transition-name:${vt("search-desktop")}`}>
-                <SearchButton spaceId={props.ctx.space.id} spaceName={props.ctx.space.name} variant="icon" registerShortcut />
+                <SearchButton spaceId={props.ctx.space.id} spaceName={props.ctx.space.name} variant="icon" registerCommand />
               </div>
               <AppWorkspace.SidebarIconAction
                 href="/app/spaces"

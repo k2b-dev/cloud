@@ -87,7 +87,7 @@ describe("Assistant frontend contracts", () => {
     const [workspace, page, messageSearch] = await Promise.all([
       read("./AssistantWorkspace.island.tsx"),
       read("./page.tsx"),
-      read("./AssistantChatMessageSearch.ts"),
+      read("./assistant-search.ts"),
     ]);
 
     expect(workspace).not.toContain("type ChatCommand");
@@ -105,9 +105,10 @@ describe("Assistant frontend contracts", () => {
     expect(workspace).toContain("composerAttachmentsFor(sessionKey).length >= AI_TURN_ATTACHMENT_MAX_ITEMS");
     expect(workspace).toContain('id: "search-chat"');
     expect(workspace).toContain('id: "compact-context"');
-    expect(workspace).toContain("openAssistantChatMessageSearch");
+    expect(workspace).toContain("openGlobalSearch(assistantSearchOptions(locale(), conversation))");
     expect(workspace).toContain("loadHistoryThroughSeq");
-    expect(messageSearch).toContain("openSpotlightSearch");
+    expect(messageSearch).toContain("assistant.chat");
+    expect(messageSearch).not.toContain("openSpotlightSearch");
     expect(messageSearch).not.toContain("listConversationResources");
     expect(messageSearch).not.toContain("listResources");
   });

@@ -21,13 +21,17 @@ export const assistantConversationHref = (currentHref: string, conversationId: s
   else url.searchParams.delete("conversation");
   url.searchParams.delete("project");
   url.searchParams.delete("q");
-  if (previousConversationId !== conversationId) url.searchParams.delete("artifact");
+  if (previousConversationId !== conversationId) {
+    url.searchParams.delete("artifact");
+    url.searchParams.delete("message");
+  }
   return relativeHref(url);
 };
 
 export const assistantProjectHref = (currentHref: string, projectId: string): string => {
   const url = new URL(currentHref, URL_BASE);
   url.searchParams.delete("conversation");
+  url.searchParams.delete("message");
   url.searchParams.delete("artifact");
   url.searchParams.set("project", projectId);
   url.searchParams.delete("q");
@@ -46,3 +50,11 @@ export const assistantArtifactHref = (currentHref: string, path: string | null):
 };
 
 export const assistantArtifactPathFromHref = (href: string): string | null => new URL(href, URL_BASE).searchParams.get("artifact");
+
+/** Message sequence links remain valid across reloads and history navigation. */
+export const assistantMessageSeqFromHref = (href: string): number | null => {
+  const value = new URL(href, URL_BASE).searchParams.get("message");
+  if (!value || !/^[1-9]\d*$/.test(value)) return null;
+  const seq = Number(value);
+  return Number.isSafeInteger(seq) ? seq : null;
+};

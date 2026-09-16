@@ -28,11 +28,7 @@ export type {
   SpotlightSearchResolver,
 } from "./SpotlightSearch";
 export {
-  isSpotlightShortcut,
   openSpotlightSearch,
-  SPOTLIGHT_SHORTCUT,
-  SPOTLIGHT_SHORTCUT_LABEL,
-  SPOTLIGHT_SHORTCUT_TITLE,
   SpotlightButton,
 } from "./SpotlightSearch";
 export type { SegmentedControlProps, SegmentOption } from "./SegmentedControl";

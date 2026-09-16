@@ -1,8 +1,14 @@
+import { requestGlobalSearch } from "./search-bridge";
 import { toast } from "@k2b/ui";
 import { resolveCommand } from "../capabilities/client";
 import { clearCommand, CommandOptionsSchema, readCommand, type CommandOptions } from "../contracts/commands";
 import { resourceSearchMessages } from "./resource-search-messages";
-import { requestCommandHandling } from "./command-bridge";
+import {
+  collectContextAwareCommands,
+  requestContextCommandExecution,
+  type ContextAwareCommand,
+  requestCommandHandling,
+} from "./command-bridge";
 export { registerCommandHandler, registerContextAwareCommand } from "./command-bridge";
 export type { CommandTarget, ContextAwareCommand } from "./command-bridge";
 export type { CommandOptions } from "../contracts/commands";
@@ -38,6 +44,22 @@ export const consumeCommandLink = async (): Promise<void> => {
       return;
     }
     await handled;
+  } catch (error) {
+    toast.error(error instanceof Error && error.message ? error.message : messages.commandFailed);
+  }
+};
+
+/** The palette and keyboard share live ownership checks, pending guards and error feedback. */
+export const runContextAwareCommand = async (command: ContextAwareCommand): Promise<void> => {
+  const messages = resourceSearchMessages.resolve([document.documentElement.lang]).t;
+  try {
+    const current = collectContextAwareCommands().find((item) => item.id === command.id && item.action === command.action);
+    if (!current) throw new Error(messages.commandUnavailable);
+    await requestContextCommandExecution(current, async () => {
+      if (typeof current.action === "function") await current.action();
+      else if ("search" in current.action) await requestGlobalSearch({ query: "", ...current.action.search });
+      else await openCommand(current.action.command, current.action.input, current.action.options);
+    });
   } catch (error) {
     toast.error(error instanceof Error && error.message ? error.message : messages.commandFailed);
   }

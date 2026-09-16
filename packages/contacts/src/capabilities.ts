@@ -1,3 +1,4 @@
+import { ContactComposeInputSchema } from "./commands";
 import { createHash } from "node:crypto";
 import {
   type CapabilityActionReview,
@@ -1058,6 +1059,15 @@ const runNoteCreate = async (input: z.infer<typeof ContactNoteCreateInputSchema>
 
 export const contactsCapabilities = defineCapabilities({
   protocolVersion: 2,
+  commands: {
+    "contact.compose": {
+      title: "New contact",
+      description: "Choose an address book and create a contact.",
+      icon: "ti ti-user-plus",
+      input: ContactComposeInputSchema,
+      path: "/app/contacts",
+    },
+  },
   presentation: contactsCapabilityPresentation,
   types: {
     contact: {

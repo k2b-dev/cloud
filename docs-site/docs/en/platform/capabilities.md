@@ -1294,3 +1294,5 @@ Omit it when users should stay with their newly created content.
 
 Localize titles, descriptions, and input field descriptions under
 `presentation.translations.<locale>.commands`, keyed by local Command ID.
+Follow the palette's [action wording guidance](/en/docs/platform/search#write-distinct-action-titles-and-useful-descriptions)
+so users can distinguish actions by scope and understand what each one opens.

@@ -49,7 +49,7 @@ export const matchingCommands = (commands: readonly PaletteCommand[], query: str
   const normalized = query.toLocaleLowerCase().trim();
   const matches = commands.filter((command) =>
     !normalized
-      ? all || command.context
+      ? all || (command.context && !command.id.startsWith("cloud."))
       : [command.title, command.description, command.appName, ...(command.keywords ?? [])]
           .join(" ")
           .toLocaleLowerCase()

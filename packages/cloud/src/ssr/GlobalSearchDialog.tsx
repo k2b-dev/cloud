@@ -2,7 +2,8 @@ import { type DialogRender, dialogCore, toast, useLocale } from "@k2b/ui";
 import { query } from "@k2b/stdlib/solid";
 import { resolveCommand } from "../capabilities/client";
 import { COMMANDS_CHANGED, collectContextAwareCommands } from "../browser/command-bridge";
-import { openCommand } from "../browser/commands";
+import { contextCommandsWithShortcuts } from "../browser/command-shortcuts";
+import { openCommand, runContextAwareCommand } from "../browser/commands";
 import { loadSearchCommands, type PaletteCommand } from "../browser/search-commands";
 import { createEffect, createSignal, For, onCleanup, onMount } from "solid-js";
 import type { SearchItem } from "../api/search/schemas";
@@ -25,7 +26,7 @@ export default function GlobalSearchDialog(props: GlobalSearchDialogProps) {
   const locale = useLocale();
   const messages = () => resourceSearchMessages.resolve([locale()]).t;
   const [contextCommands, setContextCommands] = createSignal<PaletteCommand[]>([]);
-  const updateContextCommands = () => setContextCommands(collectContextAwareCommands().map((command) => ({ ...command, context: true })));
+  const updateContextCommands = () => setContextCommands(contextCommandsWithShortcuts().map((command) => ({ ...command, context: true })));
   const commandsQuery = query.create({
     source: locale,
     enabled: () => props.searchResources !== false,
@@ -47,9 +48,13 @@ export default function GlobalSearchDialog(props: GlobalSearchDialogProps) {
       toast.error(messages().commandUnavailable);
       return;
     }
+    const target = command.action;
+    if (typeof target !== "function" && "search" in target) {
+      if (!newTab) await runContextAwareCommand(command);
+      return;
+    }
     setNavigating(true);
     setNavigationError(false);
-    const target = command.action;
     if (newTab && typeof target !== "function") {
       // Reserve synchronously inside the user gesture; never lose it to popup blocking.
       const tab = window.open("about:blank", "_blank");
@@ -69,7 +74,8 @@ export default function GlobalSearchDialog(props: GlobalSearchDialogProps) {
     }
     props.close();
     try {
-      if (typeof target === "function") await target();
+      if (command.context) await runContextAwareCommand(command);
+      else if (typeof target === "function") await target();
       else await openCommand(target.command, target.input, target.options);
     } catch (error) {
       toast.error(error instanceof Error && error.message ? error.message : messages().commandFailed);
@@ -113,7 +119,10 @@ export default function GlobalSearchDialog(props: GlobalSearchDialogProps) {
   return (
     <div ref={host} class="cloud-global-search">
       <CloudResourceSearch
-        commands={[...contextCommands(), ...(commandsQuery.data() ?? [])]}
+        commands={[
+          ...contextCommands(),
+          ...(commandsQuery.data() ?? []).filter((command) => !contextCommands().some((context) => context.id === command.id)),
+        ]}
         commandsLoading={commandsQuery.loading()}
         commandsError={Boolean(commandsQuery.error())}
         onCommand={props.searchResources === false ? undefined : (command, newTab) => void runCommand(command, newTab)}

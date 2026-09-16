@@ -703,3 +703,22 @@ discovery returns `publishedVersion`; only draft discovery returns a working
 15-second database budget across all tables; inspect partial results before retrying.
 Single-table deletion is supported by the Manage-only structured CLI operation
 `tables.delete`, not by the runtime JavaScript database handle or an agent tool.
+
+## Actions in Cloud search
+
+Use **New chat** in Cloud search to start a conversation without sending a message. Within a project, the context action creates a chat in that project. The current chat exposes message search and marking the chat done or reopening it when no response is active.
+
+Available keyboard shortcuts appear next to actions and in Layout Help.
+
+### Search chats from the global palette
+
+**Search all chats** searches titles and message content in your non-archived chats.
+**Search this chat** searches messages in the currently open chat. Both use the
+global search with a removable context chip. Choosing either action inside the
+palette changes that context in place and keeps the input focused. Remove the
+chip to search across Cloud again.
+
+Chat results open the conversation; message results reveal the matching part of
+the timeline, loading older history when needed. Cmd/Ctrl+Enter opens the same
+message link in a new tab. Chats remain private to their owner, including when
+they belong to a shared Project. Search results do not advertise a resource reader.

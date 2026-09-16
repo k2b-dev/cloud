@@ -1,3 +1,4 @@
+import ContactCreateLauncher from "../_components/ContactCreateLauncher.island";
 import { AppWorkspace } from "@k2b/ui";
 import type { AuthContext } from "@k2b/cloud/server";
 import { expectUserBackedActor, getLocale } from "@k2b/cloud/server";
@@ -165,6 +166,7 @@ export default ssr<AuthContext>(async (c) => {
             width="lg"
             viewTransitionName="contacts-detail-panel-shell"
           >
+            <ContactCreateLauncher writableBooks={writableBooks} defaultBookId={canWrite ? currentBook.id : undefined} />
             <ContactDetailPanel
               initialContact={selectedPublicContact}
               initialContactId={initialSelectedContactId}

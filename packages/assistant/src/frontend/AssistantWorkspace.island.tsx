@@ -1,5 +1,7 @@
 import { assistantComposerCommands } from "./composer-commands";
 import { type ChatMention, reconcileChatMentions } from "@k2b/ui";
+import { consumeCommandLink, registerCommandHandler, registerContextAwareCommand } from "@k2b/cloud/browser/commands";
+import { ChatComposeInputSchema, assistantCommandMessages } from "../commands";
 import AssistantQuota, { createAssistantQuota } from "./AssistantQuota";
 import { parseAiTodoPlan } from "@k2b/cloud/ai/browser";
 import { browserHttpHost, openSecretsDialog } from "../artifacts/SecretsDialog";
@@ -49,7 +51,9 @@ import type { AssistantChatContextSnapshot } from "../chat-context";
 import type { AssistantProjectContextSnapshot } from "../project-context";
 import type { AssistantSidebarSnapshot } from "../sidebar";
 import { AssistantChatContextContent, type ContextCategory, type ContextView, AssistantChatContextPanel } from "./AssistantChatContext";
-import { assistantMessageAnchorSeq, openAssistantChatMessageSearch } from "./AssistantChatMessageSearch";
+import { assistantMessageAnchorSeq } from "./message-anchor";
+import { assistantSearchOptions } from "./assistant-search";
+import { openGlobalSearch, registerSearchNavigation } from "@k2b/cloud/browser/search";
 import { resolveAssistantCloudResource } from "./AssistantContextContent";
 import AssistantEmptyChat, { type AssistantStarterAction } from "./AssistantEmptyChat";
 import { openAssistantCreateProjectDialog } from "./AssistantProjectsDialog";
@@ -63,6 +67,7 @@ import {
   matchesAssistantInvalidation,
 } from "./assistant-live";
 import {
+  assistantMessageSeqFromHref,
   assistantArtifactHref,
   assistantArtifactPathFromHref,
   assistantConversationHref,
@@ -274,22 +279,35 @@ export default function AssistantWorkspace(props: Props) {
   const [filesDialogOpen, setFilesDialogOpen] = createSignal(false);
   const [timelineViewport, setTimelineViewport] = createSignal<HTMLDivElement>();
   const [timelineContent, setTimelineContent] = createSignal<HTMLDivElement>();
+  let scrollToMessageAnchor: ((anchorId: string | number) => boolean) | undefined;
 
-  const revealMessage = async (message: AiStoredMessage) => {
+  let revealRequest = 0;
+  const revealMessage = async (messageSeq: number) => {
+    const request = ++revealRequest;
+    const conversationId = chat.activeConversationId();
+    const navigation = navigationRequest;
+    const current = () =>
+      request === revealRequest && navigation === navigationRequest && !projectView() && conversationId === chat.activeConversationId();
+    const unavailable = () => new Error(assistantCommandMessages.resolve([locale()]).t.messageUnavailable);
+    if (!(await chat.loadHistoryThroughSeq(messageSeq))) {
+      if (current()) throw unavailable();
+      return false;
+    }
+    if (!current()) return false;
+    const message = chat.usageMessages().find(item => item.seq === messageSeq);
+    if (!message) throw unavailable();
     const seq = assistantMessageAnchorSeq(message, chat.timeline());
     if (!(await chat.loadHistoryThroughSeq(seq))) {
-      chat.setError("Could not load this message.");
-      return;
+      if (current()) throw unavailable();
+      return false;
     }
+    if (!current()) return false;
     await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
-    const viewport = timelineViewport();
+    if (!current()) return false;
     const anchor = timelineContent()?.querySelector<HTMLElement>(`[data-chat-anchor="${seq}"]`);
-    if (!viewport || !anchor) {
-      chat.setError("Could not find this message in the timeline.");
-      return;
+    if (!anchor || !scrollToMessageAnchor?.(seq)) {
+      throw unavailable();
     }
-    const viewportRect = viewport.getBoundingClientRect();
-    viewport.scrollTop = Math.max(0, viewport.scrollTop + anchor.getBoundingClientRect().top - viewportRect.top - 16);
     anchor.tabIndex = -1;
     anchor.focus({ preventScroll: true });
     if (!window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
@@ -301,6 +319,7 @@ export default function AssistantWorkspace(props: Props) {
         { duration: 900, easing: "ease-out" },
       );
     }
+    return true;
   };
 
 
@@ -462,6 +481,25 @@ export default function AssistantWorkspace(props: Props) {
     onCleanup(() => window.clearTimeout(timer));
   });
   const createAndFocusConversation = () => createConversation(true);
+  onMount(() => {
+    onCleanup(registerCommandHandler("assistant.chat.compose", ChatComposeInputSchema, async input => {
+      if (input.projectId && !projects().some(project => project.id === input.projectId)) throw new Error(assistantCommandMessages.resolve([locale()]).t.unavailable);
+      const result = await createConversation(true, input.projectId);
+      if (!result) throw new Error(assistantCommandMessages.resolve([locale()]).t.failed);
+    }));
+    void consumeCommandLink();
+  });
+  createEffect(() => {
+    if (newConversation.loading()) return;
+    const project = activeProject();
+    onCleanup(registerContextAwareCommand({ id: "assistant.chat.compose", title: t().newChat,
+      description: project
+        ? assistantCommandMessages.resolve([locale()]).t.newProjectChatDescription({ name: project.name })
+        : assistantCommandMessages.resolve([locale()]).t.newChatDescription,
+      icon: "ti ti-plus", shortcut: "mod+alt+n",
+      action: { command: "assistant.chat.compose", input: project ? { projectId: project.id } : {} },
+    }));
+  });
   const canSend = createMemo(
     () => canUseComposer() && !newConversation.loading() && !chat.loadingConversation() && !chat.running() && !chat.activeTurn(),
   );
@@ -516,6 +554,22 @@ export default function AssistantWorkspace(props: Props) {
   };
 
   onMount(() => {
+    onCleanup(() => { revealRequest++; navigationRequest++; });
+    onCleanup(registerSearchNavigation(async ({ href, ref }) => {
+      if (ref?.type !== "assistant.chat" && ref?.type !== "assistant.message") return false;
+      const target = new URL(href, props.cloudUrl);
+      if (target.origin !== new URL(props.cloudUrl).origin || target.pathname !== "/app/assistant") return false;
+      const conversationId = assistantConversationIdFromHref(href);
+      if (!conversationId) return false;
+      const generation = navigationRequest + 1;
+      if (!(await openAndFocusConversation(conversationId))) return true;
+      const seq = assistantMessageSeqFromHref(href);
+      if (seq !== null && !(await revealMessage(seq))) return true;
+      if (navigationRequest === generation && chat.activeConversationId() === conversationId) navigate(href, { scroll: "manual", viewTransition: false });
+      return true;
+    }));
+    const initialMessage = assistantMessageSeqFromHref(window.location.href);
+    if (initialMessage !== null) void revealMessage(initialMessage).catch(error => chat.setError(error.message));
     artifactWorkspace.restore();
     const guardUnsaved = (event: BeforeUnloadEvent) => {
       if (artifactWorkspace.hasDirty()) { event.preventDefault(); event.returnValue = ""; }
@@ -527,10 +581,12 @@ export default function AssistantWorkspace(props: Props) {
     if (props.initialArtifactPath) requestAnimationFrame(() => void openFiles(props.initialArtifactPath!));
 
     const handlePopState = () => {
+      navigationRequest++;
       artifactWorkspace.restore();
       const conversationId = assistantConversationIdFromHref(window.location.href);
       const projectId = assistantProjectIdFromHref(window.location.href);
       const artifactPath = assistantArtifactPathFromHref(window.location.href);
+      const messageSeq = assistantMessageSeqFromHref(window.location.href);
       if (projectId) {
         void openProject(projectId).catch(() => navigateTo("/app/assistant"));
         return;
@@ -540,11 +596,15 @@ export default function AssistantWorkspace(props: Props) {
         return;
       }
       if (projectView() || conversationId !== chat.activeConversationId()) {
-        void openAndFocusConversation(conversationId).then((opened) => {
-          if (opened && artifactPath) void openFiles(artifactPath);
-        }).catch(() => navigateTo(window.location.href));
+        const generation = navigationRequest + 1;
+        void openAndFocusConversation(conversationId).then(async (opened) => {
+          if (!opened || navigationRequest !== generation) return;
+          if (messageSeq !== null && !(await revealMessage(messageSeq))) return;
+          if (navigationRequest === generation && artifactPath) void openFiles(artifactPath);
+        }).catch(() => { if (navigationRequest === generation) navigateTo(window.location.href); });
         return;
       }
+      if (messageSeq !== null) void revealMessage(messageSeq).catch(error => chat.setError(error.message));
       if (artifactPath) void openFiles(artifactPath);
     };
     window.addEventListener("popstate", handlePopState);
@@ -1195,8 +1255,7 @@ export default function AssistantWorkspace(props: Props) {
                     onSelect: async () => {
                       const conversation = activeConversation();
                       if (!conversation) return;
-                      const message = await openAssistantChatMessageSearch(conversation.id, locale());
-                      if (message) await revealMessage(message);
+                      openGlobalSearch(assistantSearchOptions(locale(), conversation));
                     },
                   },
                 ]
@@ -1252,6 +1311,20 @@ export default function AssistantWorkspace(props: Props) {
       projectIds: null,
     });
   };
+
+  createEffect(() => {
+    const conversation = activeConversation();
+    if (!conversation || activeProject()) return;
+    const copy = assistantCommandMessages.resolve([locale()]).t;
+    onCleanup(registerContextAwareCommand({ id: `assistant.${conversation.id}.search`, title: t().searchThisChat,
+      description: copy.searchChatDescription({ title: conversation.title }), icon: "ti ti-search",
+      action: { search: assistantSearchOptions(locale(), conversation) },
+    }));
+    if (!["queued", "running", "needs_attention", "waiting_for_browser"].includes(conversation.runStatus))
+      onCleanup(registerContextAwareCommand({ id: `assistant.${conversation.id}.done`, title: conversation.isDone ? copy.reopen : copy.done,
+        description: conversation.title, icon: "ti ti-check", action: async () => updateConversation(await assistantApi.setConversationDone(conversation.id, !conversation.isDone)),
+      }));
+  });
 
   const archiveConversation = (archived: AiConversation) => {
     void sidebar.invalidate({
@@ -1318,6 +1391,7 @@ export default function AssistantWorkspace(props: Props) {
         emptyTitle={props.status.enabled ? t().startConversation : t().aiDisabled}
         viewportRef={setTimelineViewport}
         contentRef={setTimelineContent}
+        scrollToAnchorRef={(scrollToAnchor) => { scrollToMessageAnchor = scrollToAnchor; }}
         onActionError={(error) => chat.setError(error instanceof Error ? error.message : t().chatActionFailed)}
         navigation={
           <AiChatTurnNavigator

@@ -208,9 +208,9 @@ export const moveFileItem = async (
 };
 
 type FileActionHandlers = {
-  rename: (options: FileActionOptions) => void;
-  duplicate: (options: FileActionOptions) => void;
-  delete: (options: FileActionOptions) => void;
+  rename: (options: FileActionOptions) => void | Promise<unknown>;
+  duplicate: (options: FileActionOptions) => void | Promise<unknown>;
+  delete: (options: FileActionOptions) => void | Promise<unknown>;
 };
 
 export const createFileActionMutations = () => {
@@ -268,7 +268,7 @@ export const buildFileMenuElements = (
   { item, itemPath, ctx, onShowDetail, onCloseDetail }: FileActionOptions,
   handlers?: FileActionHandlers,
   locale = "en",
-): DropdownItem[] => {
+): (DropdownItem & { id?: string })[] => {
   const { t } = filesMessages.resolve([locale]);
   const detailItemKey = itemPath;
   const canOpenInline = item.type === "directory" || canOpenFileInline(item);
@@ -287,15 +287,17 @@ export const buildFileMenuElements = (
     },
     {
       icon: "ti ti-download",
+      id: "download",
       label: item.type === "directory" ? t.downloadTar : t.download,
       action: () => downloadFileItem({ item, itemPath, ctx }),
     },
     {
       icon: "ti ti-pencil",
+      id: "rename",
       label: t.rename,
       action: async () => {
         if (handlers) {
-          handlers.rename(actionOptions);
+          await handlers.rename(actionOptions);
           return;
         }
         const renamed = await renameFileItem({ item, itemPath, ctx }, locale);
@@ -308,10 +310,11 @@ export const buildFileMenuElements = (
     },
     {
       icon: "ti ti-copy",
+      id: "duplicate",
       label: t.duplicate,
       action: async () => {
         if (handlers) {
-          handlers.duplicate(actionOptions);
+          await handlers.duplicate(actionOptions);
           return;
         }
         const duplicated = await duplicateFileItem({ item, itemPath, ctx }, locale);
@@ -323,6 +326,7 @@ export const buildFileMenuElements = (
       ? [
           {
             icon: "ti ti-folder-share",
+            id: "move",
             label: t.moveTo,
             action: () => moveFileItem({ item, itemPath, ctx, onCloseDetail }, locale),
           },
@@ -344,7 +348,7 @@ export const buildFileMenuElements = (
       variant: "danger" as const,
       action: async () => {
         if (handlers) {
-          handlers.delete(actionOptions);
+          await handlers.delete(actionOptions);
           return;
         }
         const deleted = await deleteFileItem({ item, itemPath, ctx }, locale);

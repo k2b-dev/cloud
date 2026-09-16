@@ -53,6 +53,8 @@ up to approximately fifteen visible lines.
 
 `Chat.Timeline` follows new messages and growing rich content while the reader remains near the bottom. Content and viewport resizing keep the latest item visible without overriding a reader who has scrolled upward. Set `hasMore` and `onLoadOlder` to load history while preserving the visible scroll position.
 
+Use `scrollToAnchorRef` to receive a function that scrolls to a rendered `anchorId` and pauses following. It returns `false` if the anchor is not rendered yet; load the relevant history first. This also works behind an open dialog where browser focus is blocked. Following resumes when the reader returns to the bottom.
+
 On hover-capable fine pointers, the timeline keeps its scrollbar thumb hidden
 until the timeline is hovered or contains keyboard focus. Its stable scrollbar
 gutter prevents the conversation from shifting when the thumb appears. Touch,
@@ -152,6 +154,7 @@ type ChatTimelineProps = {
   loadingOlder?: boolean; onLoadOlder?: () => boolean | void | Promise<boolean | void>; emptyTitle?: string;
   emptyDescription?: string; navigation?: JSX.Element; onActionError?: (error: unknown) => void;
   viewportRef?: (element: HTMLDivElement) => void; contentRef?: (element: HTMLDivElement) => void;
+  scrollToAnchorRef?: (scrollToAnchor: (anchorId: string | number) => boolean) => void;
   label?: string; followThreshold?: number; scrollFade?: boolean; class?: string;
 };
 

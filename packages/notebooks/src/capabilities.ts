@@ -1,3 +1,4 @@
+import { NoteComposeInputSchema } from "./commands";
 import {
   type CapabilityExecutionContext,
   type CapabilityInvocationResult,
@@ -1009,6 +1010,15 @@ const runNoteMove = async (input: z.infer<typeof NoteMoveInputSchema>, context: 
 
 export const notebooksCapabilities = defineCapabilities({
   protocolVersion: 2,
+  commands: {
+    "note.compose": {
+      title: "New note",
+      description: "Choose a notebook and write a note.",
+      icon: "ti ti-note",
+      input: NoteComposeInputSchema,
+      path: "/app/notebooks",
+    },
+  },
   presentation: notebooksCapabilityPresentation,
   types: {
     notebook: {

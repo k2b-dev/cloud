@@ -4,7 +4,7 @@ import type { CloudTheme } from "../shared/theme";
 import AppLaunchpad, { type AppLaunchpadApp } from "./AppLaunchpad.island";
 import type { GlobalSearchHelpApp } from "./GlobalSearchHelpDialog";
 import GlobalSearchTrigger from "./GlobalSearchTrigger.island";
-import HotkeysHelpRail from "./HotkeysHelpRail.island";
+import LayoutHelpTrigger from "./LayoutHelpTrigger.island";
 import ProfilePreferences from "./ProfilePreferences.island";
 import RailApps from "./RailApps.island";
 import type { RailApp } from "./rail-navigation";
@@ -56,7 +56,7 @@ export default function LayoutRail(props: LayoutRailProps) {
           />
           <div class="mt-auto shrink-0 flex flex-col items-center gap-1">
             <GlobalSearchTrigger variant="rail" searchLinks={props.searchLinks} />
-            <HotkeysHelpRail variant="rail" registerHotkey searchHelpApps={props.searchHelpApps} accent={props.accent} />
+            <LayoutHelpTrigger variant="rail" registerCommand searchHelpApps={props.searchHelpApps} accent={props.accent} />
             <ProfilePreferences avatarSrc={props.profileAvatarSrc} initialTheme={props.theme} name={props.profileName} placement="rail" />
           </div>
         </nav>

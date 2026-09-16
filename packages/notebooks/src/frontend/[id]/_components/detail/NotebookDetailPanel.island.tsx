@@ -1,3 +1,4 @@
+import { registerContextAwareCommand } from "@k2b/cloud/browser/commands";
 import { navigateTo } from "@k2b/ssr/nav";
 import { type DateContext, dates, fileIcons, type Paginated } from "@k2b/stdlib";
 import { clipboard, files } from "@k2b/stdlib/browser";
@@ -277,6 +278,42 @@ export default function NotebookDetailPanel(props: Props) {
       openPdf(exportContent());
     }
   };
+
+  createEffect(() => {
+    const id = noteId();
+    if (!id) return;
+    const description = noteTitle() || t().untitled;
+    onCleanup(
+      registerContextAwareCommand({
+        id: `notebooks.${id}.markdown`,
+        title: t().downloadNoteMarkdown,
+        description,
+        icon: "ti ti-markdown",
+        action: downloadContent,
+      }),
+    );
+    onCleanup(
+      registerContextAwareCommand({
+        id: `notebooks.${id}.pdf`,
+        title: t().downloadNotePdf,
+        description,
+        icon: "ti ti-file-type-pdf",
+        action: downloadPdf,
+      }),
+    );
+    if (props.mode === "edit" && props.canWrite && !lockedAt() && !editWithAi.loading())
+      onCleanup(
+        registerContextAwareCommand({
+          id: `notebooks.${id}.ai`,
+          title: t().editWithAi,
+          description,
+          icon: "ti ti-sparkles",
+          action: async () => {
+            await editWithAi.mutate();
+          },
+        }),
+      );
+  });
 
   const onTocItemClick = (event: MouseEvent, id: string) => {
     if (props.mode === "read") return;

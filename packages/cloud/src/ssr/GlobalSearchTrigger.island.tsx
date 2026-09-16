@@ -1,6 +1,7 @@
-import { hotkeys } from "@k2b/stdlib/solid";
+import { registerContextAwareCommand, runContextAwareCommand } from "../browser/commands";
+import { attachCommandShortcuts } from "../browser/command-shortcuts";
 import { IconButton, Tooltip, useLocale } from "@k2b/ui";
-import { onCleanup, onMount } from "solid-js";
+import { createEffect, onCleanup, onMount } from "solid-js";
 import type { NavigationSearchItem } from "../browser/navigation-search";
 import { openGlobalSearch } from "../browser/search";
 import { registerGlobalSearchHost } from "../browser/search-bridge";
@@ -10,7 +11,7 @@ import { platformMessages } from "./platform-messages";
 type GlobalSearchTriggerProps = {
   variant: "header" | "rail" | "host";
   class?: string;
-  registerHotkey?: boolean;
+  registerCommand?: boolean;
   searchLinks?: NavigationSearchItem[];
   searchResources?: boolean;
 };
@@ -20,18 +21,24 @@ export default function GlobalSearchTrigger(props: GlobalSearchTriggerProps) {
   const locale = useLocale();
   const t = () => platformMessages.resolve([locale()]).t;
 
-  if (props.registerHotkey) {
+  if (props.registerCommand) {
     const host = createGlobalSearchHost(() => props.searchLinks ?? [], props.searchResources);
     onMount(() => {
       onCleanup(registerGlobalSearchHost(host.open, host.dispose));
     });
-    hotkeys.create(() => ({
-      "mod+k": {
-        label: t().openGlobalSearch,
-        desc: t().globalSearchDescription,
-        run: () => openGlobalSearch(),
-      },
-    }));
+    onMount(() => onCleanup(attachCommandShortcuts((command) => void runContextAwareCommand(command))));
+    createEffect(() =>
+      onCleanup(
+        registerContextAwareCommand({
+          id: "cloud.search",
+          title: t().openGlobalSearch,
+          description: t().globalSearchDescription,
+          icon: "ti ti-search",
+          shortcut: "mod+k",
+          action: { search: {} },
+        }),
+      ),
+    );
   }
 
   if (props.variant === "host") return null;

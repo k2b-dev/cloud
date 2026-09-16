@@ -549,21 +549,54 @@ export default function ItemDetailPanel(props: Props) {
         title: copy.edit({ title }),
         description: copy.currentItem,
         icon: "ti ti-edit",
+        shortcut: "e",
         action: () => {
           if (props.item.id === itemId && canEditItem() && !isLoading()) return handleEdit();
         },
       }),
     );
-    if (!isCompleted() && !completionBlocked())
+    if (!props.item.assignees?.some((assignee) => assignee.id === props.currentUserId))
+      onCleanup(
+        registerContextAwareCommand({
+          id: `spaces.${itemId}.assign`,
+          title: t.assignFocusedItem,
+          description: title,
+          icon: "ti ti-user-check",
+          shortcut: "m",
+          action: async () => {
+            await updateMutation.mutate({
+              assigneeIds: [...(props.item.assignees?.map((assignee) => assignee.id) ?? []), props.currentUserId],
+            });
+          },
+        }),
+      );
+    if (!isEvent())
+      onCleanup(
+        registerContextAwareCommand({
+          id: `spaces.${itemId}.deadline`,
+          title: t.deadline,
+          description: title,
+          icon: "ti ti-calendar",
+          action: async () => {
+            const result = await prompts.form({
+              title: t.deadline,
+              fields: { deadline: { type: "datetime", label: t.deadline, default: props.item.deadline ?? undefined } },
+            });
+            if (result && props.item.id === itemId && canEditItem()) await updateMutation.mutate({ deadline: result.deadline || null });
+          },
+        }),
+      );
+    if (!completionBlocked())
       onCleanup(
         registerContextAwareCommand({
           id: `spaces.${itemId}.complete`,
-          title: copy.complete({ title }),
+          title: isCompleted() ? t.reopen : copy.complete({ title }),
           description: copy.currentItem,
           icon: "ti ti-checkbox",
+          shortcut: "d",
           action: () => {
-            if (props.item.id === itemId && canEditItem() && !isLoading() && !completionBlocked() && !isCompleted())
-              return completeMutation.mutate(true);
+            if (props.item.id === itemId && canEditItem() && !isLoading() && !completionBlocked())
+              return completeMutation.mutate(!isCompleted());
           },
         }),
       );

@@ -64,3 +64,15 @@ describe("Assistant conversation navigation", () => {
     expect(shouldOpenProjectConversation(null, "chat-1", "chat-2")).toBe(true);
   });
 });
+
+test("message deep links accept positive sequences and do not leak into another chat or project", async () => {
+  const { assistantMessageSeqFromHref } = await import("./assistant-navigation");
+  expect(assistantMessageSeqFromHref("/app/assistant?conversation=Chat01&message=17")).toBe(17);
+  for (const value of ["0", "-1", "1.2", "1e3", "9007199254740992", "text"]) {
+    expect(assistantMessageSeqFromHref(`/app/assistant?message=${value}`)).toBeNull();
+  }
+  const current = "/app/assistant?conversation=Chat01&message=17";
+  expect(assistantConversationHref(current, "Chat01")).toBe(current);
+  expect(assistantConversationHref(current, "Chat02")).toBe("/app/assistant?conversation=Chat02");
+  expect(assistantProjectHref(current, "Proj01")).toBe("/app/assistant?project=Proj01");
+});

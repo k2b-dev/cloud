@@ -16,7 +16,7 @@ Assistant separates Project chats from general chats in the sidebar. Create a Pr
 - **Project page:** Enter the first message in the standard composer, including files when needed. Assistant creates a private Project chat, sends the message, and then opens the normal chat. Search and scroll through existing Project chats below the composer.
 - **Project context:** The Project page shows Project instructions, knowledge, images, files, and references. People with write access can add or edit this shared context from that page.
 - **General chats:** Up to 15 chats without a Project appear in one **Chats** section below Projects. Use **See all** for the complete history.
-- **Search chats:** Use the sidebar search button or the platform shortcut to search saved chats.
+- **Search all chats:** Use the sidebar search button or the platform shortcut to search saved chats.
 - **All Chats:** Project badges identify Project chats in the paginated history. All Chats also provides server-side search and edit actions.
 - **Chat context:** On laptop and desktop screens, the compact context stays at the upper right. On smaller screens, use the Context button below the composer to open the same summary in a dialog. A Project chat includes its inherited Project context without Project editing actions.
 - **Live file context:** Uploads and generated files update in place. Images open in the image viewer; files open directly in the file browser. Project and chat files share the list and retain their origin.
@@ -102,3 +102,13 @@ Selected Skills load for the next response. Mentioning an app does not run it.
 You can permanently assign a Project once to a chat without a Project. Its
 instructions and files apply to future responses, and Project suggestions then
 disappear. Active and queued messages must finish before assignment.
+
+## Search chats
+
+**Search all chats** opens the global search for titles and message content in your
+Assistant chats. **Search this chat** limits it to messages in the open chat. The
+removable chip shows the current scope. Selecting a search action in the palette
+updates it in place; removing the chip searches all Cloud apps again.
+
+Message results jump to the matching part of the chat. Use Cmd/Ctrl+Enter to
+open a result in a new tab.

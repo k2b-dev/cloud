@@ -451,3 +451,15 @@ Mail's interactive task/event creation now opens the owning Spaces form through
 a Command. The old Mail `POST .../conversations/:conversationId/spaces/items`
 and `GET .../spaces/:spaceId` form-support routes are removed. Existing resource
 link/unlink operations and calendar automation continue to use their domain APIs.
+
+## Application keyboard shortcuts
+
+Register browser context commands with an optional `shortcut` instead of
+application `hotkeys.create()` calls or window key listeners. Remove the old
+registration when moving each action; retaining both executes it twice.
+Shortcut-only event relays should call the existing command or search API.
+See [Context command shortcuts](/en/docs/platform/search#context-command-shortcuts).
+
+The portable UI package no longer exports `isSpotlightShortcut` or
+`SPOTLIGHT_SHORTCUT*` constants. `SpotlightButton` has no implicit shortcut
+label. Supply `shortcutLabel` only when the host actually owns that binding.

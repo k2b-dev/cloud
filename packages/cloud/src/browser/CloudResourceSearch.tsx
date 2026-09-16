@@ -1,3 +1,4 @@
+import { shortcutLabel } from "./command-shortcuts";
 import { query, timed } from "@k2b/stdlib/solid";
 import { Button, IconButton, ScrollArea, useLocale } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, createUniqueId, For, on, onCleanup, onMount, Show } from "solid-js";
@@ -33,6 +34,8 @@ export type CloudResourceSearchProps = {
   excludeRefs?: readonly CloudResourceRef[];
 };
 
+const isLinkableCommand = (command: PaletteCommand) => typeof command.action !== "function" && "command" in command.action;
+
 const itemKey = (item: SearchItem) => `${item.ref.type}:${item.ref.id}`;
 const groupByApp = (items: SearchItem[]) => {
   const groups = new Map<string, SearchItem[]>();
@@ -62,6 +65,10 @@ export default function CloudResourceSearch(props: CloudResourceSearchProps) {
     const request = props.request;
     if (!request) return;
     setScope(request.scope);
+    if (request.query !== undefined) {
+      setInput(request.query);
+      setCaret(request.query.length);
+    }
     setTags([]);
     setBrowsingTags(false);
     queueMicrotask(() => inputRef?.focus());
@@ -277,7 +284,7 @@ export default function CloudResourceSearch(props: CloudResourceSearchProps) {
   const openNewTab = (item: SearchItem) => {
     const command = commandFor(item);
     if (command) {
-      if (typeof command.action !== "function") props.onCommand?.(command, true);
+      if (typeof command.action !== "function" && "command" in command.action) props.onCommand?.(command, true);
     } else props.onOpenInNewTab?.(item);
   };
   const handleKeyDown = (event: KeyboardEvent) => {
@@ -472,7 +479,7 @@ export default function CloudResourceSearch(props: CloudResourceSearchProps) {
                     >
                       <For each={quickTags()}>
                         {(tag) => (
-                          <Button variant="subtle" size="xs" onClick={() => addTag(tag.tag)}>
+                          <Button variant="subtle" size="sm" onClick={() => addTag(tag.tag)}>
                             #{tag.tag}
                           </Button>
                         )}
@@ -480,9 +487,8 @@ export default function CloudResourceSearch(props: CloudResourceSearchProps) {
                     </Show>
                     <Show when={!response() || catalog().length > 0}>
                       <Button
-                        variant="text"
-                        size="xs"
-                        disabled={!catalog().length}
+                        variant="ghost"
+                        size="sm"
                         onClick={() => {
                           setBrowsingTags(true);
                           focusInput();
@@ -493,8 +499,8 @@ export default function CloudResourceSearch(props: CloudResourceSearchProps) {
                     </Show>
                     <Show when={props.onCommand && !props.selectionMode}>
                       <Button
-                        variant="text"
-                        size="xs"
+                        variant="ghost"
+                        size="sm"
                         onClick={() => {
                           setInput(">");
                           setCaret(1);
@@ -555,6 +561,9 @@ export default function CloudResourceSearch(props: CloudResourceSearchProps) {
                             <span>{item.title}</span>
                             <small>{item.preview ?? item.appName}</small>
                           </span>
+                          <Show when={commandFor(item)?.shortcut}>
+                            {(shortcut) => <kbd class="shrink-0 text-xs text-dimmed">{shortcutLabel(shortcut())}</kbd>}
+                          </Show>
                           <Show when={props.selectionMode && selectedKey() === itemKey(item)}>
                             <i class="ti ti-check" aria-hidden="true" />
                           </Show>
@@ -650,7 +659,7 @@ export default function CloudResourceSearch(props: CloudResourceSearchProps) {
                     props.onOpenInNewTab &&
                     !props.selectionMode &&
                     !choosingTag() &&
-                    (!activeItem() || typeof commandFor(activeItem()!)?.action !== "function")
+                    (!activeItem() || !commandFor(activeItem()!) || isLinkableCommand(commandFor(activeItem()!)!))
                   }
                 >
                   <span>⌘/Ctrl ↵ {t().newTab}</span>

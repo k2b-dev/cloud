@@ -20,7 +20,6 @@ import type {
   AiSkillReferenceInput,
   AiSkillSummary,
   AiSkillsRoutes,
-  AiStoredMessage,
   AiUserPrefs,
   AiChatTaskView as AssistantChatTask,
 } from "@k2b/cloud/ai";
@@ -236,27 +235,6 @@ export const assistantApi = {
     return response.json();
   },
 
-  searchMessages: async (input: {
-    conversationId: string;
-    q: string;
-    before?: number;
-    limit?: number;
-    signal?: AbortSignal;
-  }): Promise<{ messages: AiStoredMessage[]; nextCursor?: string }> => {
-    const response = await client.conversations[":conversationId"].messages.search.$get(
-      {
-        param: { conversationId: input.conversationId },
-        query: {
-          q: input.q,
-          before: input.before ? String(input.before) : undefined,
-          limit: input.limit ? String(input.limit) : undefined,
-        },
-      },
-      { init: { signal: input.signal } },
-    );
-    if (!response.ok) throw new Error(await readError(response, "Failed to search chat messages"));
-    return response.json();
-  },
 
   listConversationResources: async (input: {
     conversationId: string;

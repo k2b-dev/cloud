@@ -22,7 +22,7 @@ Der Assistent ist der zentrale Arbeitsbereich für deinen persönlichen Cloud-Ag
 :::reference
 - **Chat beginnen:** Wähle **Neuer Chat** oder schreibe eine Nachricht in einer leeren Assistentenansicht.
 - **Arbeit aus einer anderen Anwendung fortsetzen:** Eine Anwendung kann einen neuen Assistenten-Chat öffnen und dabei die aktuellen Cloud-Ressourcen anhängen. Die jeweilige Anwendung bleibt für den Zugriff auf ihre Daten und Aktionen verantwortlich.
-- **Vorhandene Arbeit fortsetzen:** Nutze die Gruppen mit aktuellen Chats, **Chats durchsuchen** oder **Alle Chats**, ohne zuerst eine Unterhaltung zu öffnen.
+- **Vorhandene Arbeit fortsetzen:** Nutze die Gruppen mit aktuellen Chats, **Alle Chats durchsuchen** oder **Alle Chats**, ohne zuerst eine Unterhaltung zu öffnen.
 - **Zwischen Chats wechseln:** Beim Wechsel zwischen Chats, beim Öffnen eines Projekt-Chats, beim Abzweigen sowie bei der Vorwärts- und Rückwärtsnavigation bleiben Live-Aktualisierungen verbunden. Nach einer Unterbrechung lädt der Assistent den aktuellen freigegebenen Chat und setzt ihn ab dem gespeicherten Stand fort.
 - **Bei Bedarf ein Modell wählen:** Wähle im Eingabefeld ein Modell, wenn mehrere auswählbare Streaming-Modelle verfügbar sind.
 - **Anfrage senden:** Formuliere die Aufgabe klar. Hänge vor dem Senden über das Plus-Menü unterstützte Dateien oder Cloud-Ressourcen an.

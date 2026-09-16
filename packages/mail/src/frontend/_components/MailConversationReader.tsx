@@ -1,3 +1,4 @@
+import { registerContextAwareCommand } from "@k2b/cloud/browser/commands";
 import { documentNavigate, type LinkNavigateEvent } from "@k2b/ssr/nav";
 import { type DateContext, dates } from "@k2b/stdlib";
 import { mutation as mutations } from "@k2b/stdlib/solid";
@@ -724,6 +725,24 @@ export default function MailConversationReader(props: {
     if (!message || !canRespondToLatest()) return;
     startComposer(intent, message, intent === "forward" ? forwardMessageBody(message, props.dateConfig, locale()) : undefined);
   };
+
+  createEffect(() => {
+    const conversationId = props.selectedConversationId;
+    if (!conversationId || !canRespondToLatest() || composerBusy()) return;
+    for (const intent of ["reply", "reply_all", "forward"] as const) {
+      if (intent === "reply_all" && !canReplyAllToLatest()) continue;
+      onCleanup(
+        registerContextAwareCommand({
+          id: `mail.${conversationId}.${intent}`,
+          title: intent === "reply" ? t().reply : intent === "reply_all" ? t().replyAll : t().forward,
+          description: props.subject,
+          icon: intent === "forward" ? "ti ti-arrow-forward-up" : "ti ti-arrow-back-up",
+          ...(intent === "reply" ? { shortcut: "r" } : {}),
+          action: () => respondToLatest(intent),
+        }),
+      );
+    }
+  });
 
   const directToolbarAction = (id: MailConversationToolbarActionId): DirectToolbarAction | null => {
     if (id === "print") {

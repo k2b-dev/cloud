@@ -99,7 +99,7 @@ function CapabilitiesSidebar(props: {
         <AppWorkspace.SidebarDesktop>
           <AppWorkspace.SidebarBody scrollPreserveKey="capabilities-apps-sidebar">
             <AppWorkspace.SidebarSection>
-              <CapabilitySearchButton entries={props.searchEntries} variant="sidebar" registerShortcut />
+              <CapabilitySearchButton entries={props.searchEntries} variant="sidebar" registerCommand />
             </AppWorkspace.SidebarSection>
             <AppWorkspace.SidebarSection title={props.labels.apps}>
               <For each={props.apps}>{renderApp}</For>

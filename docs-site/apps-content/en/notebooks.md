@@ -266,3 +266,9 @@ and copied note content retain the warning. Ordinary editing does not clear it.
 See [Deployment requirements](/en/docs/operations/deployment-requirements) for
 this app’s startup prerequisites, optional integrations, configuration and
 functional checks.
+
+## Actions in Cloud search
+
+Use **New note** in Cloud search to choose a writable notebook and create a note. Within a notebook, the action uses that notebook directly. The current note also exposes AI editing when writable and Markdown/PDF export. **Cmd/Ctrl+Alt+N** creates a note and **Cmd/Ctrl+Shift+K** searches the notebook.
+
+Available keyboard shortcuts appear next to actions and in Layout Help.

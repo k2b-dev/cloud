@@ -1,6 +1,7 @@
+import { registerContextAwareCommand } from "@k2b/cloud/browser/commands";
 import { dates, fileIcons, text } from "@k2b/stdlib";
 import { Button, DescriptionList, DetailPanel, IconButton, Placeholder, Tooltip, useLocale } from "@k2b/ui";
-import { createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import type { FileBaseInfo, FileInfo } from "@/contracts";
 import { DETAIL_FILE_SELECT_EVENT, type DetailFileSelectPayload, fileApiUrl, setDetailFileInUrl } from "./context";
 import { type buildFileMenuElements, canOpenFileInline, createFileActionMutations, type FileActionContext } from "./FileActions";
@@ -170,6 +171,27 @@ export default function FileDetailPanel(props: FileDetailPanelProps) {
       })
       .filter(isActionEntry);
     return items.slice(1);
+  });
+
+  createEffect(() => {
+    const selected = file();
+    if (!selected || fileActions.loading()) return;
+    for (const entry of actionItems()) {
+      if (!entry.id || !["rename", "duplicate", "move", "download"].includes(entry.id) || !("action" in entry) || !entry.action) continue;
+      const action = entry.action;
+      onCleanup(
+        registerContextAwareCommand({
+          id: `files.${entry.id}`,
+          title: entry.label,
+          description: selected.name,
+          icon: entry.icon,
+          ...(entry.id === "rename" ? { shortcut: "e" } : {}),
+          action: async () => {
+            await action();
+          },
+        }),
+      );
+    }
   });
 
   const runAction = (entry: FileActionEntry) => {

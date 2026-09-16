@@ -77,9 +77,11 @@ label, without separate assignees, dates, or detail pages. Checklist changes
 also count as task activity.
 
 Spaces keeps common actions keyboard-first. Outside form fields and dialogs,
-**C** creates an item and **/** opens search. A focused Kanban card supports
+**C** creates an item and **Cmd/Ctrl+Shift+K** opens scoped search. These actions
+also appear in Cloud search and Layout Help. A focused Kanban card supports
 arrow-key navigation, **Enter** to open, **M** to assign it to yourself, and
-**D** to complete it.
+**D** to complete it. An open item also exposes editing, assignment, deadline,
+and completion or reopening actions in the palette.
 
 ## How Spaces fits Cloud
 

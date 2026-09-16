@@ -155,11 +155,9 @@ const selected = await prompts.search(
 
 Use `openSpotlightSearch` for application or workspace navigation. It supplies search-oriented defaults around `prompts.search`. `SpotlightButton` provides matching triggers for ordinary, compact, chip, sidebar, mobile-sidebar, and icon placements.
 
-The shortcut is one contract shared by every trigger, exported so the
-application can bind the same keys it advertises: `SPOTLIGHT_SHORTCUT`
-(`"mod+shift+k"`, the binding), `SPOTLIGHT_SHORTCUT_LABEL` (`"⇧⌘K"`, the chip
-text, overridable per button through `shortcutLabel`), and
-`SPOTLIGHT_SHORTCUT_TITLE` (`"Mod+Shift+K"`, used in the default `title`).
+The host owns keyboard bindings. `SpotlightButton` does not assume a shortcut;
+set `shortcutLabel` only for a binding the host actually registers. Cloud apps
+use context Commands so search and Layout Help share the active shortcuts.
 
 ## Custom dialogs
 

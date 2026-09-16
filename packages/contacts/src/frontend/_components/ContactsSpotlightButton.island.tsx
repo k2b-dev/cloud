@@ -1,39 +1,29 @@
-import {
-  AppWorkspace,
-  isSpotlightShortcut,
-  SPOTLIGHT_SHORTCUT_TITLE,
-  SpotlightButton,
-  type SpotlightButtonVariant,
-  useLocale,
-} from "@k2b/ui";
-import { onCleanup, onMount } from "solid-js";
+import { registerContextAwareCommand } from "@k2b/cloud/browser/commands";
+import { AppWorkspace, SpotlightButton, type SpotlightButtonVariant, useLocale } from "@k2b/ui";
+import { createEffect, onCleanup } from "solid-js";
 import { createContactsSearch, spotlightMessages } from "./contact-spotlight";
 export { spotlightMessages } from "./contact-spotlight";
-type Props = { variant?: SpotlightButtonVariant; registerShortcut?: boolean };
+type Props = { variant?: SpotlightButtonVariant; registerCommand?: boolean };
 export default function ContactsSpotlightButton(props: Props) {
   const locale = useLocale();
   const t = () => spotlightMessages.resolve([locale()]).t;
   const openSearch = createContactsSearch();
-  onMount(() => {
-    if (!props.registerShortcut) return;
-
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (!isSpotlightShortcut(event)) return;
-      event.preventDefault();
-      void openSearch();
-    };
-    window.addEventListener("keydown", onKeyDown);
-    onCleanup(() => window.removeEventListener("keydown", onKeyDown));
+  createEffect(() => {
+    if (!props.registerCommand) return;
+    onCleanup(
+      registerContextAwareCommand({
+        id: "contacts.search",
+        title: t().searchContacts,
+        description: t().searchContacts,
+        icon: "ti ti-search",
+        shortcut: "mod+shift+k",
+        action: openSearch,
+      }),
+    );
   });
 
   if (props.variant === "icon") {
-    return (
-      <AppWorkspace.SidebarIconAction
-        icon="ti ti-search"
-        label={t().searchContactsWithShortcut({ shortcut: SPOTLIGHT_SHORTCUT_TITLE })}
-        onClick={() => void openSearch()}
-      />
-    );
+    return <AppWorkspace.SidebarIconAction icon="ti ti-search" label={t().searchContacts} onClick={() => void openSearch()} />;
   }
 
   return (
@@ -41,7 +31,7 @@ export default function ContactsSpotlightButton(props: Props) {
       variant={props.variant}
       label={t().searchContactsButton}
       onClick={openSearch}
-      title={t().searchContactsWithShortcut({ shortcut: SPOTLIGHT_SHORTCUT_TITLE })}
+      title={t().searchContacts}
       ariaLabel={t().searchContacts}
     />
   );

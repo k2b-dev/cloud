@@ -66,7 +66,7 @@ export const ToolsWorkspace = (props: ToolsWorkspaceProps) => {
                   label={t().overview}
                   active={!props.activeToolId}
                 />
-                <ToolSearchButton variant="icon" registerShortcut />
+                <ToolSearchButton variant="icon" registerCommand />
               </AppWorkspace.SidebarIconGrid>
               {categoryNavigation("expanded")}
             </AppWorkspace.SidebarBody>

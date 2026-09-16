@@ -27,7 +27,7 @@ export default ssr<AuthContext>(async (c) => {
           <AppOverview.Main
             title={t.apps}
             description={t.appsOnPage({ count: catalog.apps.length })}
-            toolbar={<CapabilitySearchButton entries={searchEntries} registerShortcut />}
+            toolbar={<CapabilitySearchButton entries={searchEntries} registerCommand />}
           >
             <Show
               when={catalog.apps.length > 0}

@@ -1,19 +1,20 @@
-import { hotkeys } from "@k2b/stdlib/solid";
+import { registerContextAwareCommand } from "../browser/commands";
+import { createEffect, onCleanup } from "solid-js";
 import { IconButton, Tooltip, useLocale } from "@k2b/ui";
 import type { GlobalSearchHelpApp } from "./GlobalSearchHelpDialog";
 import { openLayoutHelpDialog } from "./LayoutHelp";
 import { platformMessages } from "./platform-messages";
 
-type HotkeysHelpTriggerProps = {
+type LayoutHelpTriggerProps = {
   variant: "header" | "rail";
   class?: string;
-  registerHotkey?: boolean;
+  registerCommand?: boolean;
   searchHelpApps?: GlobalSearchHelpApp[];
   accent?: string;
 };
 
 /** Opens end-user help from either the desktop rail or the compact header. */
-export default function HotkeysHelpRail(props: HotkeysHelpTriggerProps) {
+export default function LayoutHelpTrigger(props: LayoutHelpTriggerProps) {
   const locale = useLocale();
   const t = () => platformMessages.resolve([locale()]).t;
   const searchHelpApps = props.searchHelpApps ?? [];
@@ -22,14 +23,19 @@ export default function HotkeysHelpRail(props: HotkeysHelpTriggerProps) {
     openLayoutHelpDialog(searchHelpApps, props.accent);
   };
 
-  if (props.registerHotkey) {
-    hotkeys.create(() => ({
-      "shift+/": {
-        label: t().openShortcutHelp,
-        desc: t().shortcutHelpDescription,
-        run: openHelp,
-      },
-    }));
+  if (props.registerCommand) {
+    createEffect(() =>
+      onCleanup(
+        registerContextAwareCommand({
+          id: "cloud.help",
+          title: t().openShortcutHelp,
+          description: t().shortcutHelpDescription,
+          icon: "ti ti-help-circle",
+          shortcut: "shift+/",
+          action: openHelp,
+        }),
+      ),
+    );
   }
 
   if (props.variant === "rail")

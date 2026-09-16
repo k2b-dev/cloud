@@ -1,3 +1,4 @@
+import { registerContextAwareCommand } from "@k2b/cloud/browser/commands";
 import { type DateContext, dates } from "@k2b/stdlib";
 import { mutation as mutations } from "@k2b/stdlib/solid";
 import {
@@ -225,6 +226,59 @@ export default function MailDetailsPanel(props: {
     setReminderDueAt(null);
     detailUpdates.enqueue({ kind: "cancel_reminder" });
   };
+
+  createEffect(() => {
+    if (!props.active) return;
+    const conversationId = props.conversationId;
+    const description = props.subject;
+    if (props.canWrite && !props.detailErrors.assignableUsers)
+      onCleanup(
+        registerContextAwareCommand({
+          id: `mail.${conversationId}.assign`,
+          title: t().assignee,
+          description,
+          icon: "ti ti-user-check",
+          action: async () => {
+            const selected = await prompts.form({
+              title: t().assignee,
+              fields: {
+                userId: {
+                  type: "select",
+                  label: t().assignee,
+                  default: state().assignee?.id ?? "",
+                  options: props.assignableUsers.map((user) => ({ id: user.id, label: user.displayName })),
+                },
+              },
+            });
+            if (selected && props.active && props.conversationId === conversationId && props.canWrite)
+              updateCollaboration({ assigneeUserId: selected.userId || null });
+          },
+        }),
+      );
+    if (!props.detailErrors.reminder)
+      onCleanup(
+        registerContextAwareCommand({
+          id: `mail.${conversationId}.reminder`,
+          title: t().personalReminder,
+          description,
+          icon: "ti ti-bell",
+          action: async () => {
+            const selected = await prompts.form({
+              title: t().personalReminder,
+              fields: {
+                dueAt: {
+                  type: "datetime",
+                  label: t().personalReminder,
+                  required: true,
+                  default: reminderDueAt() ?? undefined,
+                },
+              },
+            });
+            if (selected?.dueAt && props.active && props.conversationId === conversationId) updateReminder(selected.dueAt);
+          },
+        }),
+      );
+  });
 
   const createTagMutation = mutations.create<LocalTag, { name: string; color: string }>({
     mutation: async (values, { abortSignal }) => {

@@ -4,6 +4,7 @@ export const contactsCapabilityPresentation: CapabilityPresentationCatalog = {
   baseLocale: "en",
   translations: {
     de: {
+      commands: { "contact.compose": { title: "Neuer Kontakt", description: "Adressbuch auswählen und einen Kontakt anlegen." } },
       types: {
         book: {
           title: "Adressbuch",

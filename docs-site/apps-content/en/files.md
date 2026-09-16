@@ -78,3 +78,9 @@ bases and items.
 See [Deployment requirements](/en/docs/operations/deployment-requirements) for
 this app’s startup prerequisites, optional integrations, configuration and
 functional checks.
+
+## Actions in Cloud search
+
+In a folder, Cloud search offers file upload and folder creation. Selecting a file adds rename, move, duplicate and download actions. These use the same permissions and dialogs as the file menus.
+
+Available keyboard shortcuts appear next to actions and in Layout Help.

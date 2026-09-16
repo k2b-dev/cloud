@@ -1,13 +1,14 @@
 import { openGlobalSearch } from "@k2b/cloud/browser/search";
-import { type HotkeyMap, hotkeys } from "@k2b/stdlib/solid";
-import { AppWorkspace, SPOTLIGHT_SHORTCUT, SPOTLIGHT_SHORTCUT_TITLE, SpotlightButton, type SpotlightButtonVariant } from "@k2b/ui";
+import { registerContextAwareCommand } from "@k2b/cloud/browser/commands";
+import { createEffect, onCleanup } from "solid-js";
+import { AppWorkspace, SpotlightButton, type SpotlightButtonVariant } from "@k2b/ui";
 import { useSpaceMessages } from "../../messages";
 
 type Props = {
   spaceId: string;
   spaceName: string;
   variant?: SpotlightButtonVariant;
-  registerShortcut?: boolean;
+  registerCommand?: boolean;
 };
 
 export function createSpaceSearch(props: Props) {
@@ -18,35 +19,22 @@ export function createSpaceSearch(props: Props) {
 export default function SearchButton(props: Props) {
   const t = useSpaceMessages();
   const openSearch = createSpaceSearch(props);
-  const runSearch = () => {
-    if (!document.querySelector("dialog[open]")) void openSearch();
-  };
-  hotkeys.create(
-    (): HotkeyMap =>
-      props.registerShortcut
-        ? {
-            [SPOTLIGHT_SHORTCUT]: {
-              label: t.searchItemsCommand,
-              desc: t.searchItemsCommandDescription,
-              run: runSearch,
-            },
-            "/": {
-              label: t.searchItemsCommand,
-              desc: t.searchItemsCommandDescription,
-              run: runSearch,
-            },
-          }
-        : {},
-  );
+  createEffect(() => {
+    if (props.registerCommand)
+      onCleanup(
+        registerContextAwareCommand({
+          id: "spaces.search",
+          title: t.searchItemsCommand,
+          description: props.spaceName,
+          icon: "ti ti-search",
+          shortcut: "mod+shift+k",
+          action: openSearch,
+        }),
+      );
+  });
 
   if (props.variant === "icon") {
-    return (
-      <AppWorkspace.SidebarIconAction
-        icon="ti ti-search"
-        label={t.searchItemsWithShortcut({ shortcut: `${SPOTLIGHT_SHORTCUT_TITLE} · /` })}
-        onClick={() => void openSearch()}
-      />
-    );
+    return <AppWorkspace.SidebarIconAction icon="ti ti-search" label={t.searchItems} onClick={() => void openSearch()} />;
   }
 
   return (
@@ -54,7 +42,7 @@ export default function SearchButton(props: Props) {
       variant={props.variant}
       label={t.searchItemsLabel}
       onClick={openSearch}
-      title={t.searchItemsWithShortcut({ shortcut: `${SPOTLIGHT_SHORTCUT_TITLE} · /` })}
+      title={t.searchItems}
       ariaLabel={t.searchItems}
     />
   );

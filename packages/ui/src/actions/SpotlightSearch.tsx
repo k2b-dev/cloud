@@ -3,10 +3,6 @@ import type { PromptSearchInput, PromptSearchItem, PromptSearchOptions } from ".
 import { prompts } from "../feedback/prompts";
 import { resolveUiMessages, useUiMessages } from "../intl/messages";
 
-export const SPOTLIGHT_SHORTCUT = "mod+shift+k";
-export const SPOTLIGHT_SHORTCUT_LABEL = "⇧⌘K";
-export const SPOTLIGHT_SHORTCUT_TITLE = "Mod+Shift+K";
-
 export type SpotlightSearchResolver<T = unknown> = (input: PromptSearchInput) => Promise<PromptSearchItem<T>[]> | PromptSearchItem<T>[];
 
 export type SpotlightSearchOptions<T = unknown> = PromptSearchOptions & {
@@ -27,9 +23,6 @@ export type SpotlightButtonProps = {
   onClick: () => void | Promise<void>;
 };
 
-export const isSpotlightShortcut = (event: KeyboardEvent): boolean =>
-  (event.metaKey || event.ctrlKey) && event.shiftKey && event.key.toLowerCase() === "k";
-
 export const openSpotlightSearch = <T = unknown>(options: SpotlightSearchOptions<T>): Promise<PromptSearchItem<T> | undefined> => {
   const { resolve, ...promptOptions } = options;
   const messages = resolveUiMessages();
@@ -48,9 +41,9 @@ export function SpotlightButton(props: SpotlightButtonProps): JSX.Element {
   const variant = () => props.variant ?? "default";
   const label = () => props.label ?? messages().searchLabel;
   const icon = () => props.icon ?? "ti ti-search";
-  const shortcut = () => (props.shortcutLabel === undefined ? SPOTLIGHT_SHORTCUT_LABEL : props.shortcutLabel);
-  const title = () => props.title ?? `${label()} (${SPOTLIGHT_SHORTCUT_TITLE})`;
-  const showsShortcut = () => shortcut() !== false && ["chip", "sidebar"].includes(variant());
+  const shortcut = () => props.shortcutLabel;
+  const title = () => props.title ?? label();
+  const showsShortcut = () => Boolean(shortcut()) && ["chip", "sidebar"].includes(variant());
 
   return (
     <button

@@ -106,7 +106,7 @@ export default function AccountsNavSidebar(props: Props) {
         <AppWorkspace.SidebarDesktop>
           <AppWorkspace.SidebarBody scrollPreserveKey="accounts-sidebar">
             <AppWorkspace.SidebarSection>
-              <AccountsSearchButton isAdmin={props.isAdmin} variant="sidebar" registerShortcut />
+              <AccountsSearchButton isAdmin={props.isAdmin} variant="sidebar" registerCommand />
               {generalItems().map(renderItem)}
             </AppWorkspace.SidebarSection>
             {props.isAdmin ? (

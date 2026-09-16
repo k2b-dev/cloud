@@ -10,7 +10,7 @@ import FloatingEditButton from "./_components/book/FloatingEditButton.island";
 import NotebookDetailPanel from "./_components/detail/NotebookDetailPanel.island";
 import NoteEditor from "./_components/editor/NoteEditor.client";
 import NotebookGraph from "./_components/graph/NotebookGraph.island";
-import NotebookHotkeys from "./_components/shortcuts/NotebookHotkeys.island";
+import NotebookCommands from "./_components/NotebookCommands.island";
 import NotebookNavigatorPane from "./_components/sidebar/NotebookNavigatorPane.island";
 import NotebookSidebar from "./_components/sidebar/NotebookSidebar.island";
 import WorkspaceEventBridge from "./_components/sidebar/WorkspaceEventBridge.island";
@@ -92,7 +92,7 @@ export default ssr<AuthContext>(async (c) => {
     >
       <link rel="stylesheet" href={katexStylesHref} />
       <AppWorkspace mobileSurface="flush" class="flex-1 min-h-0">
-        <NotebookHotkeys
+        <NotebookCommands
           notebookId={notebook.id}
           notebookName={notebook.name}
           canWrite={canWrite}

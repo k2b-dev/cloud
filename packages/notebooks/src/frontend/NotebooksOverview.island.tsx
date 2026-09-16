@@ -1,3 +1,4 @@
+import { createNoteCommands } from "./note-commands";
 import { openGlobalSearch } from "@k2b/cloud/browser/search";
 import { navigateTo } from "@k2b/ssr/nav";
 import { type DateContext, dates } from "@k2b/stdlib";
@@ -139,6 +140,7 @@ const activityEventIcon = (action: string): string => {
 };
 
 export default function NotebooksOverview(props: Props) {
+  createNoteCommands();
   const locale = useLocale();
   const t = () => notebooksPageMessages.resolve([locale()]).t;
   const [pinnedNotebookIds, setPinnedNotebookIds] = createSignal(props.initialPinnedNotebookIds);

@@ -177,3 +177,9 @@ form. The source conversation appears as a removable link before submission.
 After saving or canceling, you return to the conversation with your Mail
 filters preserved.
 Calendar invitation, RSVP, and delivery workflows keep their existing behavior.
+
+## Actions in Cloud search
+
+Cloud search exposes reply, reply-all when applicable, and forwarding for the selected conversation. An open details panel also supplies assignment and a personal reminder. These actions open the existing composer or controls; they never send an email automatically.
+
+Available keyboard shortcuts appear next to actions and in Layout Help.

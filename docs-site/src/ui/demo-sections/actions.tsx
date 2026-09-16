@@ -484,7 +484,7 @@ const SpotlightDemo = () => (
   <DemoCard
     id="spotlight"
     chip={{ kind: "component", name: "SpotlightButton", from: "@k2b/ui" }}
-    description="Search launchers keep one shortcut contract while adapting to buttons, chips, sidebars, mobile navigation, and icon-only toolbars."
+    description="Search launchers adapt to buttons, chips, sidebars, mobile navigation, and icon-only toolbars. The host owns keyboard shortcuts."
     code={`import {
   openSpotlightSearch,
   SpotlightButton,

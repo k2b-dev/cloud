@@ -1,5 +1,5 @@
 import type { DateContext } from "@k2b/stdlib";
-import { type HotkeyMap, hotkeys, mutation as mutations } from "@k2b/stdlib/solid";
+import { mutation as mutations } from "@k2b/stdlib/solid";
 import { AppWorkspace, Button, dialogCore, prompts, toast } from "@k2b/ui";
 import { createSignal } from "solid-js";
 import { apiClient } from "@/api/client";
@@ -19,7 +19,6 @@ type Props = {
   variant?: "primary" | "secondary" | "sidebar" | "chip" | "icon" | "inline";
   defaultType?: ItemType;
   defaultColumnId?: string;
-  registerShortcut?: boolean;
 };
 
 export function createItemController(props: Props) {
@@ -84,20 +83,6 @@ export function createItemController(props: Props) {
 export default function CreateItemButton(props: Props) {
   const t = useSpaceMessages();
   const { createItem, pending, label, defaultType } = createItemController(props);
-  hotkeys.create(
-    (): HotkeyMap =>
-      props.registerShortcut
-        ? {
-            c: {
-              label: t.createItemCommand,
-              desc: t.createItemCommandDescription,
-              run: () => {
-                if (!document.querySelector("dialog[open]")) void createItem();
-              },
-            },
-          }
-        : {},
-  );
 
   if (props.variant === "chip") {
     return (

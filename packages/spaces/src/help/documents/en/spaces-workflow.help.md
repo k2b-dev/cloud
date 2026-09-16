@@ -41,7 +41,7 @@ You can edit or delete your own comment for 10 minutes after posting. Other peop
 
 ## Work Quickly from the Keyboard {icon="keyboard"}
 
-Press **C** outside an input or dialog to create an item, and press **/** to open search. In Kanban, focus the board and use the arrow keys to move between cards. Press **Enter** to open the focused card, **M** to assign it to yourself, or **D** to complete it. These single-key shortcuts stay inactive while you type in a field or editor.
+Press **C** outside an input or dialog to create an item, and press **Cmd/Ctrl+Shift+K** to search the current space. In Kanban, focus the board and use the arrow keys to move between cards. Press **Enter** to open the focused card, **M** to assign it to yourself, or **D** to complete it. These single-key shortcuts stay inactive while you type in a field or editor. Available actions and their shortcuts also appear in Cloud search and the layout help.
 
 ## Implementation work and handoffs {icon="notes"}
 
