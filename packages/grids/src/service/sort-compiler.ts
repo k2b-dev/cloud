@@ -1,6 +1,7 @@
 import { sql } from "bun";
 import type { RecordMetaSortKey, SortSpec } from "../contracts";
 import { type ProjectionKind, storageOf } from "./field-storage";
+import { type FormulaSqlExpression, requireValidCalculationSql } from "./formula-sql-values";
 import { compileDslKeyset, type DslKeysetColumn, type DslKeysetType } from "./keyset-compiler";
 import type { Field } from "./types";
 
@@ -37,10 +38,14 @@ const cursorTypeFor = (kind: ProjectionKind): DslKeysetType | null => {
   }
 };
 
-const projectionForField = (field: Field): { expression: unknown; type: DslKeysetType } | null => {
+const projectionForField = (
+  field: Field,
+  computedFieldSql?: Map<string, FormulaSqlExpression>,
+): { expression: unknown; type: DslKeysetType } | null => {
   const desc = storageOf(field);
   if (!desc.sortable) return null;
-  const expression = desc.project(field, "r");
+  const prepared = computedFieldSql?.get(field.id);
+  const expression = prepared ? requireValidCalculationSql(prepared) : desc.project(field, "r");
   if (!expression) return null;
   const type = desc.kind === "system" && field.type.endsWith("_at") ? "datetime" : cursorTypeFor(desc.kind);
   return type ? { expression, type } : null;
@@ -70,6 +75,7 @@ export const compileSort = (
   specs: SortSpec[],
   fields: Field[],
   cursor: { values: unknown[]; id: string } | null,
+  computedFieldSql?: Map<string, FormulaSqlExpression>,
 ): { ok: true; result: CompiledSort } | { ok: false; error: string } => {
   const fieldsById = new Map(fields.map((field) => [field.id, field]));
   const columns: DslKeysetColumn[] = [];
@@ -83,7 +89,7 @@ export const compileSort = (
     const field = fieldsById.get(spec.fieldId);
     if (!field) return { ok: false, error: "unknown sort field" };
     if (field.deletedAt) return { ok: false, error: `sort field "${field.name}" is deleted` };
-    const projection = projectionForField(field);
+    const projection = projectionForField(field, computedFieldSql);
     if (!projection) return { ok: false, error: `field "${field.name}" (type "${field.type}") is not sortable` };
     columns.push({ ...projection, direction: spec.direction, nullsFirst: spec.nullsFirst });
   }

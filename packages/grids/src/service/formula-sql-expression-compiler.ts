@@ -374,12 +374,10 @@ const compileFieldExpression = (expression: Extract<Expr, { kind: "field" }>, co
   }
   const field = fieldByRef(context.fieldsByRef, expression.fieldId);
   if (typeof field === "string") return formulaSqlFail(field);
-  if (field.type === "formula" || field.type === "lookup" || field.type === "rollup") {
-    const computed = context.computedFieldSql?.get(field.id);
-    if (computed) {
-      if (computed.type === "json") return formulaSqlFail(formulaSelectText(context.dateConfig?.locale).nonScalar);
-      return namedExpression(field.id, context, () => ({ ok: true, expression: computed }));
-    }
+  const computed = context.computedFieldSql?.get(field.id);
+  if (computed) {
+    if (computed.type === "json") return formulaSqlFail(formulaSelectText(context.dateConfig?.locale).nonScalar);
+    return namedExpression(field.id, context, () => ({ ok: true, expression: computed }));
   }
   if (field.type === "formula") {
     return namedExpression(field.id, context, (local) => inlineFormulaField(field, local));
@@ -560,16 +558,15 @@ const compileNode = (expression: Expr, context: CompileContext): FormulaSqlCompi
         const custom = resolveField(ref, context);
         const field = fieldByRef(context.fieldsByRef, ref);
         if ((custom && typeof custom !== "string" && custom.select) || (typeof field !== "string" && field.type === "select")) {
-          const source =
-            custom && typeof custom !== "string"
-              ? custom.sql
-              : sql`${sql.unsafe(context.recordAlias)}.data->${typeof field === "string" ? ref : field.id}`;
+          const prepared =
+            custom && typeof custom !== "string" ? custom : typeof field !== "string" ? context.computedFieldSql?.get(field.id) : undefined;
+          const source = prepared?.sql ?? sql`${sql.unsafe(context.recordAlias)}.data->${typeof field === "string" ? ref : field.id}`;
           return formulaSqlOk(
             expression.fn === "ISBLANK"
               ? sql`(${source} IS NULL OR ${source} = 'null'::jsonb OR ${source} = '[]'::jsonb)`
               : sql`COALESCE(${source} @> ${[expression.args[1]?.kind === "literal" ? expression.args[1].value : null]}::jsonb, false)`,
             "boolean",
-            custom && typeof custom !== "string" ? custom.errorSql : undefined,
+            prepared?.errorSql,
           );
         }
       }

@@ -6,7 +6,7 @@ import { readableComputedTargetTableIds } from "./computed-projections";
 import { mapFieldRow } from "./field-read";
 import { parseJsonbRow } from "./jsonb";
 import { liveRecordParentJoinSql } from "./parent-checks";
-import { applyFinalizedComputedAccess } from "./record-persistence";
+import { applyFinalizedComputedAccess, mapRecordCalculationData } from "./record-persistence";
 import type { ExpansionViewer } from "./relation-access";
 import { enrichRecordsWithFormulas } from "./relation-formulas";
 import { readRecordLinksBatch } from "./relation-links";
@@ -17,7 +17,7 @@ const LABEL_TEXT_TYPES = new Set(["text"]);
 
 type RelationTargets = {
   fields: Field[];
-  records: Array<{ id: string; data: Record<string, unknown>; finalizedAt?: string | null }>;
+  records: Array<{ id: string; data: Record<string, unknown>; fieldErrors?: Record<string, string>; finalizedAt?: string | null }>;
 };
 
 export const relationLabelFields = (fields: Field[]): Field[] => {
@@ -112,6 +112,7 @@ export const loadRelationTargetsBatch = async (
   const storedTableIds: string[] = [];
   const storedRecordIds = new Set<string>();
   const federatedTableIds: string[] = [];
+  const mappedCalculationFields = new Map<string, Set<string>>();
 
   for (const targetTableId of targetTableIds) {
     const allFields = fieldsByTable.get(targetTableId) ?? [];
@@ -175,19 +176,23 @@ export const loadRelationTargetsBatch = async (
     if (!recordSource) continue;
     await assertFederatedPublication(recordSource, client);
     const ids = idsByTargetTable.get(targetTableId)!;
-    const rows = await client<Array<{ id: string; data: unknown }>>`
-      SELECT r.id, r.data
+    mappedCalculationFields.set(targetTableId, new Set(recordSource.calculationFieldIds));
+    const rows = await client<Array<{ id: string; data: unknown; calculation_errors: unknown }>>`
+      SELECT r.id, r.data, r.calculation_errors
       FROM ${recordSource.relation} r
       WHERE r.id = ANY(${toPgUuidArray([...ids])}::uuid[])
         AND r.deleted_at IS NULL
     `;
     targetsByTable.get(targetTableId)!.records = rows.map((row) => ({
       id: row.id,
-      data: parseJsonbRow<Record<string, unknown>>(row.data, {}),
+      ...mapRecordCalculationData(row),
     }));
   }
   for (const [targetTableId, targets] of targetsByTable) {
-    enrichRecordsWithFormulas(targets.records, fieldsByTable.get(targetTableId) ?? []);
+    enrichRecordsWithFormulas(targets.records, fieldsByTable.get(targetTableId) ?? [], {
+      useFinalizedFormulaValues: tableKinds.get(targetTableId) !== "federated",
+      skipObjectListFieldIds: mappedCalculationFields.get(targetTableId),
+    });
   }
   return targetsByTable;
 };

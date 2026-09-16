@@ -7,7 +7,8 @@ import { listByTables } from "../service/field-read";
 import { storageOf } from "../service/field-storage";
 import { listByTable as listFields } from "../service/fields";
 import { type CompiledClause, compileFilter, renderClause } from "../service/filter-compiler";
-import { type FormulaSqlExpression, requireValidCalculationSql } from "../service/formula-sql-values";
+import { formulaSqlTypeForField } from "../service/formula-sql-compiler";
+import type { FormulaSqlExpression } from "../service/formula-sql-values";
 import { get as getTable } from "../service/tables";
 import type { Field } from "../service/types";
 import type { DslWherePredicate } from "./resolver";
@@ -170,7 +171,7 @@ const sourceFieldJson = (
     )`;
   }
   const prepared = computed.get(field.id);
-  if (prepared) return sql`to_jsonb(${requireValidCalculationSql(prepared)})`;
+  if (prepared) return sql`to_jsonb(${prepared.sql})`;
   if (descriptor.kind === "json" || descriptor.kind === "jsonbArray") {
     return sql`${sql.unsafe(recordAlias)}.data->${field.id}`;
   }
@@ -190,7 +191,7 @@ const branchForSource = async (params: {
   targetFields: Map<string, Field>;
   mappings: Array<{ targetFieldId: string; sourceFieldId: string; config: Record<string, unknown> }>;
   pushdown?: PushdownInput;
-}): Promise<{ relation: unknown }> => {
+}): Promise<{ relation: unknown; calculationFieldIds: string[] }> => {
   const sourceFieldsById = new Map(params.sourceFields.map((field) => [field.id, field]));
   const computed = await buildComputedFieldSqlMap(params.sourceFields, {
     recordAlias: "source_record",
@@ -198,6 +199,8 @@ const branchForSource = async (params: {
     useStoredLocalValues: true,
   });
   const pairs: unknown[] = [];
+  const errorPairs: unknown[] = [];
+  const calculationFieldIds: string[] = [];
   const sourceFieldByTargetId = new Map<string, Field>();
 
   for (const mapping of params.mappings) {
@@ -209,16 +212,23 @@ const branchForSource = async (params: {
     if (["text", "numeric", "boolean", "date", "datetime"].includes(storageOf(source).kind)) {
       sourceFieldByTargetId.set(mapping.targetFieldId, source);
     }
+    const errorSql = computed.get(source.id)?.errorSql;
+    if (errorSql !== undefined) {
+      calculationFieldIds.push(target.id);
+      errorPairs.push(sql`${target.id}::text, COALESCE(${errorSql}, false)`);
+    }
     pairs.push(sql`${target.id}::text, ${sourceFieldJson(source, mapping.config, "source_record", computed)}`);
   }
 
   const data = pairs.length > 0 ? sql`jsonb_build_object(${joinSql(pairs, sql`, `)})` : sql`'{}'::jsonb`;
+  const errors = errorPairs.length > 0 ? sql`jsonb_build_object(${joinSql(errorPairs, sql`, `)})` : sql`'{}'::jsonb`;
   const pushdown = branchPushdown({
     input: params.pushdown,
     targetFields: [...params.targetFields.values()],
     sourceFieldByTargetId,
   });
   return {
+    calculationFieldIds,
     relation: sql`
       SELECT source_record.id,
              source_record.short_id,
@@ -226,6 +236,7 @@ const branchForSource = async (params: {
              ${params.sourceTableId}::uuid AS source_table_id,
              source_table.base_id AS source_base_id,
              ${data} AS data,
+             ${errors} AS calculation_errors,
              source_record.version,
              source_record.finalized_at,
              source_record.finalized_by,
@@ -326,6 +337,7 @@ export const buildDslSqlRecordSource = async (
 
   return {
     kind: "federated",
+    calculationFieldIds: [...new Set(branches.flatMap((branch) => branch.calculationFieldIds))],
     tableId,
     revision: revision.revision,
     revisionId: revision.id,
@@ -358,4 +370,29 @@ export const buildDslSqlRecordSource = async (
         AND combined_rows.id IS NOT NULL
     )`,
   };
+};
+
+/** Mapped values keep their error channel until the consuming expression decides how to handle it. */
+export const buildFederatedFieldSqlMap = (
+  source: DslSqlRecordSource | null | undefined,
+  fields: Field[],
+  recordAlias = "r",
+): Map<string, FormulaSqlExpression> => {
+  const expressions = new Map<string, FormulaSqlExpression>();
+  if (source?.kind !== "federated") return expressions;
+  for (const field of fields) {
+    if (!source.calculationFieldIds.includes(field.id)) continue;
+    const descriptor = storageOf(field);
+    const value =
+      descriptor.kind === "json" || descriptor.kind === "jsonbArray"
+        ? sql`${sql.unsafe(recordAlias)}.data->${field.id}`
+        : descriptor.project(field, recordAlias);
+    if (value === null) continue;
+    expressions.set(field.id, {
+      sql: value,
+      type: descriptor.kind === "json" || descriptor.kind === "jsonbArray" ? "json" : formulaSqlTypeForField(field),
+      errorSql: sql`COALESCE((${sql.unsafe(recordAlias)}.calculation_errors->>${field.id})::boolean, false)`,
+    });
+  }
+  return expressions;
 };

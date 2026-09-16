@@ -33,6 +33,17 @@ const positions = () =>
   });
 
 describe("local calculation plans", () => {
+  test("retains null-only formulas and their typed conditional dependents", () => {
+    const plan = planLocalCalculations([
+      formula("Empty1", "null"),
+      formula("Empty2", "IF(true, null, null)"),
+      formula("Number", "IFEMPTY(Empty1, 7)"),
+      formula("Check1", "IFERROR(Empty2, true)"),
+    ]);
+    expect([...plan.formulaIds]).toEqual(["Empty1-id", "Empty2-id", "Number-id", "Check1-id"]);
+    expect(plan.types).toEqual({ "Empty1-id": "unknown", "Empty2-id": "unknown", "Number-id": "numeric", "Check1-id": "boolean" });
+  });
+
   test("orders transitive invoice dependencies and reuses prepared list/formula types", () => {
     const fields = [
       formula("Gross1", "Net001 + Tax001"),

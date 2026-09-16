@@ -10,6 +10,7 @@ import { assertFederatedPublication, buildDslSqlRecordSource } from "../query-ds
 import { remove as removeBase, restore as restoreBase } from "./bases";
 import * as boundedQuery from "./bounded-query";
 import * as combinedAudit from "./combined-audit";
+import { getGridsCrudMessages } from "./crud-messages";
 import { customAppFormRelationScope } from "./custom-app-form-relations";
 import * as durableHistory from "./durable-history";
 import { exportRecords } from "./export";
@@ -30,12 +31,14 @@ import {
 } from "./federated-tables";
 import { create as createField, update as updateField } from "./fields";
 import { getContent, listFirstImagePreviews, listForRecordField } from "./files";
+import { planLocalCalculations } from "./local-calculations";
 import { resolveFederatedTargetsForRecordEvent } from "./record-events";
 import * as finalization from "./record-finalization";
 import { listByRecord as listRecordHistory } from "./record-history";
 import { createReader, publicIdsForRecords } from "./record-read";
 import { create as createRecord } from "./record-write";
 import { buildRelationLabelCache, lookupRecords } from "./relation-labels";
+import { loadRelationTargetsBatch } from "./relation-targets";
 import { remove as removeTable, restore as restoreTable, update as updateTable } from "./tables";
 import type { Field } from "./types";
 
@@ -239,6 +242,55 @@ beforeAll(async () => {
 });
 
 describe("combined table integration", () => {
+  postgresTest("stored picker snapshots retain complete calculation signatures without widening publication identity", async () => {
+    const fixture = await createFixture();
+    try {
+      const label = await createField(
+        { tableId: fixture.sourceTableId, name: "Label", type: "formula", config: { expression: "'Visible label'" } },
+        null,
+      );
+      const unrelated = await createField(
+        { tableId: fixture.sourceTableId, name: "Unrelated", type: "formula", config: { expression: "42" } },
+        null,
+      );
+      if (!label.ok || !unrelated.ok) throw new Error("Failed to create picker calculations");
+      await sql`UPDATE grids.fields SET presentable = (id = ${label.data.id}::uuid) WHERE table_id = ${fixture.sourceTableId}::uuid`;
+      const relation: Field = {
+        ...fixture.targetFields[0]!,
+        id: uuid(),
+        type: "relation",
+        config: { targetTableId: fixture.sourceTableId, cardinality: "one" },
+      };
+      const form = { tableId: fixture.sourceTableId, config: { fields: [{ kind: "user_input" as const, fieldId: relation.id }] } };
+      const scope = await customAppFormRelationScope(form, [relation], []);
+      expect(scope).not.toBeNull();
+      const target = scope!.targets[0]!;
+      const allFields = await loadTableFields(fixture.sourceTableId);
+      expect(planLocalCalculations(target.targetFields).signature).toBe(planLocalCalculations(allFields).signature);
+      expect(target.targetFields.some((item) => item.id === unrelated.data.id)).toBe(true);
+      const result = await lookupRecords({
+        targetTableId: fixture.sourceTableId,
+        q: "Visible",
+        labelSnapshot: {
+          fields: target.targetFields,
+          presentable: target.labels,
+          tableKind: target.tableKind,
+          recordSource: target.recordSource,
+        },
+      });
+      expect(result.items).toEqual([{ id: fixture.recordId, label: "Visible label" }]);
+      const changed = await updateField(unrelated.data.id, { config: { expression: "43" } }, null);
+      if (!changed.ok) throw changed.error;
+      const updatedScope = await customAppFormRelationScope(form, [relation], []);
+      expect(updatedScope?.hash).toBe(scope!.hash);
+      expect(planLocalCalculations(updatedScope!.targets[0]!.targetFields).signature).not.toBe(
+        planLocalCalculations(target.targetFields).signature,
+      );
+    } finally {
+      await cleanupFixture(fixture);
+    }
+  });
+
   postgresTest("published form relation labels pin Combined publication even when its fields stay unchanged", async () => {
     const fixture = await createFixture();
     try {
@@ -1818,4 +1870,76 @@ describe("combined table integration", () => {
     },
     30_000,
   );
+});
+
+postgresTest("mapped calculation errors remain field-local and propagate through Combined query consumers", async () => {
+  const fixture = await createFixture();
+  try {
+    const broken = await createField(
+      { tableId: fixture.sourceTableId, name: "Broken", type: "formula", config: { expression: "IF(1 / 0 > 0, 'a', 'b')" } },
+      null,
+    );
+    if (!broken.ok) throw broken.error;
+    await sql`UPDATE grids.federated_field_mappings SET source_field_id = ${broken.data.id}::uuid WHERE revision_id = ${fixture.revisionId}::uuid AND target_field_id = ${fixture.targetTextFieldId}::uuid`;
+    const other = uuid();
+    await sql`INSERT INTO grids.fields(id, short_id, table_id, name, type, config, position) VALUES (${other}::uuid, ${shortId("OT")}, ${fixture.targetTableId}::uuid, 'Other', 'text', '{}'::jsonb, 2)`;
+    await sql`INSERT INTO grids.federated_field_mappings(revision_id, target_field_id, source_table_id, source_field_id, config) VALUES (${fixture.revisionId}::uuid, ${other}::uuid, ${fixture.sourceTableId}::uuid, ${fixture.sourceTextFieldId}::uuid, '{}'::jsonb)`;
+    fixture.targetFields = await loadTableFields(fixture.targetTableId);
+
+    const independent = await previewCombined(fixture, "from table Combined\nselect Other");
+    expect(independent.rows[0]?.values.q_col_0).toBe("Mapped value");
+    for (const expression of ["IFERROR(Name, 'fallback')", "IFERROR(combined.Name, 'fallback')"]) {
+      const recovered = await previewCombined(fixture, `from table Combined as combined\nselect formula(${expression}) as recovered`);
+      expect(recovered.rows[0]?.values.q_col_0).toBe("fallback");
+    }
+    for (const suffix of [
+      "select Name",
+      "select Other\nwhere Name = 'a'",
+      "select Other\nsort Name asc",
+      "group by Name\naggregate count(*) as total",
+      "aggregate count(Name) as total",
+      "select formula(IFEMPTY(Name, 'incorrect')) as missing",
+    ]) {
+      await expect(previewCombined(fixture, `from table Combined\n${suffix}`)).rejects.toThrow(getGridsCrudMessages().calculationFailed);
+    }
+    const reader = await createReader(fixture.targetTableId);
+    const record = await reader.get(fixture.recordId);
+    expect(record?.data[other]).toBe("Mapped value");
+    expect(record?.fieldErrors?.[fixture.targetTextFieldId]).toBeTruthy();
+
+    const brokenNumber = await createField(
+      { tableId: fixture.sourceTableId, name: "Broken number", type: "formula", config: { expression: "1 / 0" } },
+      null,
+    );
+    if (!brokenNumber.ok) throw brokenNumber.error;
+    const amountId = uuid();
+    await sql`INSERT INTO grids.fields (id, short_id, table_id, name, type, config, position)
+      VALUES (${amountId}::uuid, ${shortId("AM")}, ${fixture.targetTableId}::uuid, 'Amount', 'number', '{}'::jsonb, 3)`;
+    await sql`INSERT INTO grids.federated_field_mappings(revision_id, target_field_id, source_table_id, source_field_id, config)
+      VALUES (${fixture.revisionId}::uuid, ${amountId}::uuid, ${fixture.sourceTableId}::uuid, ${brokenNumber.data.id}::uuid, '{}'::jsonb)`;
+    fixture.targetFields = await loadTableFields(fixture.targetTableId);
+    await expect(previewCombined(fixture, "from table Combined\naggregate sum(Amount) as total")).rejects.toThrow(
+      getGridsCrudMessages().calculationFailed,
+    );
+    const total = await previewCombined(fixture, "from table Combined\naggregate sum(formula(IFERROR(Amount, 0))) as total");
+    expect(Number(total.rows[0]?.values.total__sum)).toBe(0);
+
+    // Canonical formulas and both relation-label read paths retain the source
+    // error channel, so IFERROR recovers rather than treating failure as empty.
+    const recoveredId = uuid();
+    await sql`UPDATE grids.fields SET presentable = false WHERE table_id = ${fixture.targetTableId}::uuid`;
+    await sql`INSERT INTO grids.fields (id, short_id, table_id, name, type, config, position, presentable)
+      VALUES (${recoveredId}::uuid, ${shortId("RC")}, ${fixture.targetTableId}::uuid, 'Recovered', 'formula',
+        ${{ expression: "IFERROR(Name, 'fallback')" }}::jsonb, 3, true)`;
+    const recoveredReader = await createReader(fixture.targetTableId);
+    const recoveredRecord = await recoveredReader.get(fixture.recordId);
+    expect(recoveredRecord?.data[recoveredId]).toBe("fallback");
+    expect(recoveredRecord?.fieldErrors?.[recoveredId]).toBeUndefined();
+    const labels = await loadRelationTargetsBatch(new Map([[fixture.targetTableId, new Set([fixture.recordId])]]));
+    expect(labels.get(fixture.targetTableId)?.records[0]?.data[recoveredId]).toBe("fallback");
+    const choices = await lookupRecords({ targetTableId: fixture.targetTableId, q: "fallback" });
+    expect(choices.items).toEqual([{ id: fixture.recordId, label: "fallback" }]);
+  } finally {
+    await cleanupFixture(fixture);
+  }
 });

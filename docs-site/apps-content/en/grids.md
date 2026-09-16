@@ -248,10 +248,17 @@ system fields remain live. Combined tables calculate their own formulas over
 their published sources. Inline GQL formulas reuse stored dependencies and
 calculate the remaining expression when queried. Calculation errors keep their
 usual behavior, including `IFERROR`; a failed object list keeps its editable
-inputs. Missing or stale stored calculations fail the read instead of returning
+inputs. In Combined tables, a mapped calculation error affects its field and
+expressions that use it. Unrelated fields remain readable, and `IFERROR` can
+provide a replacement. Unhandled errors in selected values, filters, sorting,
+groups, or aggregates fail the query rather than silently omitting bad values.
+Missing or stale stored calculations fail the read instead of returning
 old values or silently switching to live evaluation.
 
 For operators, startup populates existing draft calculations transactionally.
+An ordinary restart preserves the existing calculation column and trigger, so
+checking or backfilling calculations does not require an exclusive table lock
+that blocks readers. The initial schema upgrade still needs its DDL locks.
 This is a one-way schema upgrade: run the matching Grids code and schema together.
 Writers must use the Grids record service; direct SQL input changes invalidate
 stored calculations. Schema refreshes update derived state without changing user

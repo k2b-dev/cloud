@@ -14,6 +14,7 @@ type PredicateCompileOptions = {
   recordSourcesByTableId?: Map<string, DslSqlRecordSource>;
   timeZone?: string;
   computedFieldSql?: Map<string, FormulaSqlExpression>;
+  computedFieldSqlByJoinAlias?: Map<string, Map<string, FormulaSqlExpression>>;
   resolveField?: FormulaSqlFieldResolver;
   relationSource?: "links" | "recordData";
 };
@@ -74,6 +75,7 @@ export const compileWherePredicate = (
       return compileWherePredicate(node.predicate, scopedFields, {
         ...options,
         recordAlias,
+        computedFieldSql: options.computedFieldSqlByJoinAlias?.get(node.joinAlias),
         relationSource: options.recordSourcesByTableId?.has(node.tableId) ? "recordData" : "links",
       });
     }
@@ -97,7 +99,14 @@ export const compileWherePredicate = (
     case "tree": {
       const compiled = compileFilter(node.kind === "tree" ? node.tree : node.leaf, fields, { timeZone: options.timeZone });
       if (!compiled.ok) return { ok: false, error: compiled.error };
-      return { ok: true, sql: renderClause(compiled.clause, { recordAlias: options.recordAlias, relationSource: options.relationSource }) };
+      return {
+        ok: true,
+        sql: renderClause(compiled.clause, {
+          recordAlias: options.recordAlias,
+          relationSource: options.relationSource,
+          computedFieldSql: options.computedFieldSql,
+        }),
+      };
     }
     case "recordMeta":
       return { ok: true, sql: compileRecordMetaFilter(node.meta) };
@@ -121,7 +130,7 @@ export const compileWherePredicate = (
       const compiled = compileFormulaPredicateAstToSql(node.expression, {
         documentMetadata: true,
         fields,
-        recordAlias: "r",
+        recordAlias: options.recordAlias ?? "r",
         dateConfig: options.timeZone ? { timeZone: options.timeZone } : undefined,
         computedFieldSql: options.computedFieldSql,
         resolveField: options.resolveField,

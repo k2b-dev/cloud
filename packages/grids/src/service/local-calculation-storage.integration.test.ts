@@ -3,11 +3,13 @@ import { sql } from "bun";
 import { postgresTest, testShortId, testUuid } from "../integration-test-utils";
 import { migrate } from "../migrate";
 import * as bases from "./bases";
+import * as durableHistory from "./durable-history";
 import * as fields from "./fields";
 import { lockFinalizedSchema } from "./finalized-schema";
 import { requireValidCalculationSql } from "./formula-sql-values";
 import * as storage from "./local-calculation-storage";
 import * as parents from "./parent-checks";
+import * as finalization from "./record-finalization";
 import { get as getRecord } from "./record-read";
 import * as records from "./record-write";
 import * as tables from "./tables";
@@ -49,6 +51,68 @@ const repair = (tableId: string) =>
     await lockFinalizedSchema(tx, tableId);
     await storage.refreshLocalCalculations(tx, tableId);
   });
+
+postgresTest(
+  "null-only materializations remain null through dependent formulas, reads and finalization",
+  async () => {
+    const item = await fixture();
+    try {
+      const expected: Record<string, unknown> = {};
+      for (const [name, expression, value] of [
+        ["Empty", "null", null],
+        ["NestedEmpty", "IF(Amount > 0, null, null)", null],
+        ["CopyEmpty", "Empty", null],
+        ["EmptyFallback", "IFEMPTY(NestedEmpty, 7)", "7"],
+        ["ErrorFallback", "IFERROR(Empty, 8)", null],
+        ["NullBranch", "IF(Amount > 0, Empty, 9)", null],
+        ["BooleanFallback", "IFEMPTY(Empty, true)", true],
+        ["NullArithmetic", "Empty + 1", null],
+      ] as const) {
+        const created = await fields.create({ tableId: item.tableId, name, type: "formula", config: { expression } }, null);
+        if (!created.ok) throw created.error;
+        expected[created.data.id] = value;
+      }
+      const assertValues = async (recordId: string) => {
+        const read = await getRecord(item.tableId, recordId);
+        expect(read?.data).toMatchObject(expected);
+        expect(read?.fieldErrors).toBeUndefined();
+      };
+      await assertValues(item.record.id);
+      const created = await records.create(item.tableId, { [item.amount.id]: "4" }, null, "direct");
+      if (!created.ok) throw created.error;
+      expect(created.data.data).toMatchObject(expected);
+      const updated = await records.update(item.tableId, created.data.id, { [item.amount.id]: "5" }, null, "direct", created.data.version);
+      if (!updated.ok) throw updated.error;
+      expect(updated.data.data).toMatchObject(expected);
+      const materialized = await readStored(created.data.id);
+      expect(materialized.calculations.values).toMatchObject(expected);
+      for (const id of Object.keys(expected)) expect(materialized.calculations.errors[id]).toBe(false);
+      expect(materialized.inputsMatch).toBe(true);
+      await assertValues(created.data.id);
+
+      const history = await durableHistory.enable(item.tableId, null);
+      if (!history.ok) throw history.error;
+      const enabled = await finalization.enable(item.tableId, { mode: "direct" }, null);
+      if (!enabled.ok) throw enabled.error;
+      const finalized = await finalization.finalize({ tableId: item.tableId, recordId: created.data.id, actorId: null, origin: "direct" });
+      if (!finalized.ok) throw finalized.error;
+      expect(finalized.data.data).toMatchObject(expected);
+      const frozen = await readStored(created.data.id);
+      expect(frozen.data).toMatchObject(expected);
+      await assertValues(created.data.id);
+    } finally {
+      await sql`UPDATE grids.records SET finalized_at = NULL, finalized_by = NULL, final_revision_id = NULL
+        WHERE table_id = ${item.tableId}::uuid`;
+      await sql`DELETE FROM grids.record_revisions WHERE table_id = ${item.tableId}::uuid`;
+      await sql`DELETE FROM grids.record_finalization_requests WHERE table_id = ${item.tableId}::uuid`;
+      await sql`DELETE FROM grids.table_finalization_activations WHERE table_id = ${item.tableId}::uuid`;
+      await sql`DELETE FROM grids.durable_history_activations WHERE table_id = ${item.tableId}::uuid`;
+      await sql`DELETE FROM grids.table_schema_revisions WHERE table_id = ${item.tableId}::uuid`;
+      await sql`DELETE FROM grids.bases WHERE id = ${item.baseId}::uuid`;
+    }
+  },
+  30_000,
+);
 
 postgresTest(
   "record writes commit values and materialization atomically and retain one winner in a version race",

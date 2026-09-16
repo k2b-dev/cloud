@@ -1,5 +1,4 @@
 import { sql } from "bun";
-import { compileSummaryJoin } from "./sql-compiler-summary-joins";
 import type { RecordQuery } from "../contracts";
 import { normalizeRefKey, parseQualifiedIdentifierRef } from "../ref-syntax";
 import { containsDocumentMetadata } from "../service/document-query-expression";
@@ -24,6 +23,7 @@ import { joinFragments } from "./sql-compiler-fragments";
 import { compileRelationJoin } from "./sql-compiler-joins";
 import { compileViewSourceRecordScope, recordDeletedCondition, scopedFormulaResolverForPlan } from "./sql-compiler-scope";
 import { dslRecordRelation, dslRelationValuesInRecordData } from "./sql-compiler-source";
+import { compileSummaryJoin } from "./sql-compiler-summary-joins";
 import {
   type DslSqlCompiledQuery,
   type DslSqlCompileOptions,
@@ -76,7 +76,9 @@ const canCorrelateBoundedSingleJoins = (plan: RowPlan, fieldsByTableId: Record<s
   if (!limit || joins.length === 0 || joins.some((join) => joinCanFanOut(join, fieldsByTableId))) return false;
   const aliases = new Set(joins.map((join) => normalizeRefKey(join.alias)));
   if ((plan.sqlSearch?.length ?? 0) > 0 || valueUsesJoinAlias(plan.wherePredicate, aliases)) return false;
-  return !(plan.sqlSort ?? []).some((sort) => sort.kind === "joined" || sort.kind === "joinedField" || sort.kind === "computed" || sort.kind === "summary");
+  return !(plan.sqlSort ?? []).some(
+    (sort) => sort.kind === "joined" || sort.kind === "joinedField" || sort.kind === "computed" || sort.kind === "summary",
+  );
 };
 
 const outputColumnsForPlan = (plan: RowPlan, baseFields: Field[]): DslOutputColumn[] => {
@@ -127,9 +129,12 @@ const compileSqlSort = (
 
   for (const sort of sorts) {
     if (sort.kind === "summary") {
-      cursorColumns.push({ expression: sql`${sql.unsafe(`summary_${sort.index}`)}.${sql.unsafe(`"${sort.column.key}"`)}`,
+      cursorColumns.push({
+        expression: sql`${sql.unsafe(`summary_${sort.index}`)}.${sql.unsafe(`"${sort.column.key}"`)}`,
         type: sort.column.sqlType === "json" ? "unknown" : sort.column.sqlType,
-        direction: sort.direction, nullsFirst: sort.nullsFirst });
+        direction: sort.direction,
+        nullsFirst: sort.nullsFirst,
+      });
       continue;
     }
     if (sort.kind === "record") {
@@ -234,7 +239,10 @@ export const compileDslQueryPlanToSql = (
   }
   if (
     options.recordProjection !== undefined &&
-    ((plan.joins?.length ?? 0) > 0 || (plan.summaryJoins?.length ?? 0) > 0 || plan.derivedViewSource || options.recordSource?.kind === "federated")
+    ((plan.joins?.length ?? 0) > 0 ||
+      (plan.summaryJoins?.length ?? 0) > 0 ||
+      plan.derivedViewSource ||
+      options.recordSource?.kind === "federated")
   ) {
     return fail("editable record projection requires a stored table without joins or derived rows");
   }
@@ -364,7 +372,10 @@ export const compileDslQueryPlanToSql = (
   const conditions: unknown[] = [
     compileRecordScopeFilter(plan.tableId),
     recordDeletedCondition(plan),
-    renderClause(filter.clause, { relationSource: dslRelationValuesInRecordData(options) ? "recordData" : "links" }),
+    renderClause(filter.clause, {
+      computedFieldSql: options.computedFieldSql,
+      relationSource: dslRelationValuesInRecordData(options) ? "recordData" : "links",
+    }),
     compileRecordMetaFilter(plan.query.recordMeta ?? null),
   ];
   const viewScope = compileViewSourceRecordScope(plan, baseFields, options);
@@ -375,6 +386,7 @@ export const compileDslQueryPlanToSql = (
       joinAliases,
       fieldsByTableId: options.fieldsByTableId,
       recordSourcesByTableId: options.recordSourcesByTableId,
+      computedFieldSqlByJoinAlias: options.computedFieldSqlByJoinAlias,
       timeZone: options.timeZone,
       computedFieldSql: options.computedFieldSql,
       resolveField: resolveFormulaField,

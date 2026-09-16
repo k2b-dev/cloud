@@ -61,7 +61,10 @@ export const customAppFormRelationScope = async (form: Pick<Form, "config" | "ta
         tableKind: table.kind,
         recordSource,
         labels,
-        targetFields: targetFields.filter((candidate) => dependencies.has(candidate.id)),
+        // Runtime signatures cover the full table; publication identity only
+        // depends on the label fields and their transitive references.
+        targetFields,
+        dependencyFieldIds: dependencies,
         bindings,
       };
     }),
@@ -74,7 +77,7 @@ export const customAppFormRelationScope = async (form: Pick<Form, "config" | "ta
         stableCustomAppValue(
           [...selected]
             .sort((a, b) => (a.field.id < b.field.id ? -1 : 1))
-            .map(({ field, tableId, tableKind, recordSource, labels, targetFields, bindings }) => ({
+            .map(({ field, tableId, tableKind, recordSource, labels, targetFields, dependencyFieldIds, bindings }) => ({
               fieldId: field.id,
               config: field.config,
               tableId,
@@ -82,7 +85,8 @@ export const customAppFormRelationScope = async (form: Pick<Form, "config" | "ta
               publication: recordSource ? { id: recordSource.revisionId, token: recordSource.revisionToken } : null,
               bindings,
               labels: labels.map((label) => ({ id: label.id, type: label.type, config: label.config })),
-              fields: [...targetFields]
+              fields: targetFields
+                .filter((target) => dependencyFieldIds.has(target.id))
                 .sort((a, b) => (a.id < b.id ? -1 : 1))
                 .map((target) => ({ id: target.id, type: target.type, config: target.config })),
             })),

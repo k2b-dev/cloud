@@ -32,7 +32,7 @@ import {
   dslJoinRecordAlias,
 } from "./sql-compiler";
 import type { DslSqlRecordSource } from "./sql-compiler-types";
-import { buildDslSqlRecordSource } from "./sql-record-source";
+import { buildDslSqlRecordSource, buildFederatedFieldSqlMap } from "./sql-record-source";
 
 type DslQueryPreviewSuccess = Extract<DslQueryPreviewResponse, { ok: true }>;
 type DslQueryPreviewRow = DslQueryPreviewSuccess["rows"][number];
@@ -750,6 +750,7 @@ export const previewDslQuery = async (
     const computedDateConfig = options.timeZone ? { timeZone: options.timeZone } : undefined;
     const calculationFieldIds = dslQueryCalculationFieldIds(plan, options.fieldsByTableId);
     const computedFieldSql = await buildComputedFieldSqlMap(options.fieldsByTableId[plan.tableId] ?? [], {
+      sourceFieldSql: buildFederatedFieldSqlMap(recordSource, options.fieldsByTableId[plan.tableId] ?? []),
       fieldIds: calculationFieldIds,
       fieldsByTableId: options.fieldsByTableId,
       requireCapturedValues: true,
@@ -766,6 +767,11 @@ export const previewDslQuery = async (
     const computedFieldSqlByJoinAlias = new Map<string, Awaited<ReturnType<typeof buildComputedFieldSqlMap>>>();
     for (const join of plan.summaryJoins ?? []) {
       const map = await buildComputedFieldSqlMap(options.fieldsByTableId[join.tableId] ?? [], {
+        sourceFieldSql: buildFederatedFieldSqlMap(
+          recordSourcesByTableId.get(join.tableId),
+          options.fieldsByTableId[join.tableId] ?? [],
+          "r",
+        ),
         fieldIds: calculationFieldIds,
         fieldsByTableId: options.fieldsByTableId,
         requireCapturedValues: true,
@@ -782,6 +788,11 @@ export const previewDslQuery = async (
     }
     for (const [index, join] of (plan.joins ?? []).entries()) {
       const map = await buildComputedFieldSqlMap(options.fieldsByTableId[join.tableId] ?? [], {
+        sourceFieldSql: buildFederatedFieldSqlMap(
+          recordSourcesByTableId.get(join.tableId),
+          options.fieldsByTableId[join.tableId] ?? [],
+          dslJoinRecordAlias(index),
+        ),
         fieldIds: calculationFieldIds,
         fieldsByTableId: options.fieldsByTableId,
         requireCapturedValues: true,
@@ -796,6 +807,11 @@ export const previewDslQuery = async (
     }
     for (const [index, join] of (plan.derivedViewSource?.joins ?? []).entries()) {
       const map = await buildComputedFieldSqlMap(options.fieldsByTableId[join.tableId] ?? [], {
+        sourceFieldSql: buildFederatedFieldSqlMap(
+          recordSourcesByTableId.get(join.tableId),
+          options.fieldsByTableId[join.tableId] ?? [],
+          dslDerivedJoinRecordAlias(index),
+        ),
         fieldIds: calculationFieldIds,
         fieldsByTableId: options.fieldsByTableId,
         requireCapturedValues: true,
@@ -810,6 +826,11 @@ export const previewDslQuery = async (
     }
     for (const [index, join] of (plan.derivedViewSource?.relationJoins ?? []).entries()) {
       const map = await buildComputedFieldSqlMap(options.fieldsByTableId[join.tableId] ?? [], {
+        sourceFieldSql: buildFederatedFieldSqlMap(
+          recordSourcesByTableId.get(join.tableId),
+          options.fieldsByTableId[join.tableId] ?? [],
+          dslJoinRecordAlias(index),
+        ),
         fieldIds: calculationFieldIds,
         fieldsByTableId: options.fieldsByTableId,
         requireCapturedValues: true,

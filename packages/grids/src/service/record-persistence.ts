@@ -38,7 +38,7 @@ export const applyFinalizedComputedAccess = (
   }
 };
 
-export const mapRecordRow = (row: DbRecordRow, locale?: string): GridRecord => {
+export const mapRecordCalculationData = (row: DbRecordRow, locale?: string): Pick<GridRecord, "data" | "fieldErrors"> => {
   const data = { ...parseJsonbRow<Record<string, unknown>>(row.data, {}) };
   const fieldErrors: Record<string, string> = {};
   if (!row.finalized_at) {
@@ -49,12 +49,18 @@ export const mapRecordRow = (row: DbRecordRow, locale?: string): GridRecord => {
       if (calculations.errors?.[id]) fieldErrors[id] = getGridsCrudMessages(locale).calculationFailed;
     }
   }
+  for (const [id, failed] of Object.entries(parseJsonbRow<Record<string, unknown>>(row.calculation_errors, {}))) {
+    if (failed === true) fieldErrors[id] = getGridsCrudMessages(locale).calculationFailed;
+  }
+  return { data, ...(Object.keys(fieldErrors).length ? { fieldErrors } : {}) };
+};
+
+export const mapRecordRow = (row: DbRecordRow, locale?: string): GridRecord => {
   return {
     id: row.id as string,
     shortId: row.short_id as string,
     tableId: row.table_id as string,
-    data,
-    ...(Object.keys(fieldErrors).length ? { fieldErrors } : {}),
+    ...mapRecordCalculationData(row, locale),
     version: row.version as number,
     finalizedAt: row.finalized_at ? (row.finalized_at as Date).toISOString() : null,
     finalizedBy: (row.finalized_by as string | null) ?? null,

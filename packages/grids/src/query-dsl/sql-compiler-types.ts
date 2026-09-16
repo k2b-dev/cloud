@@ -52,6 +52,7 @@ export type DslSqlFederatedRecordSource = {
   revisionId: string;
   revisionToken: string;
   sourceTableIds: string[];
+  calculationFieldIds: string[];
   relationMappings: Array<{ targetFieldId: string; sourceTableId: string; sourceFieldId: string }>;
 };
 

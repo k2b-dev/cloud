@@ -205,6 +205,9 @@ export const groupFieldProjection = (
   readableTableIds?: readonly string[],
 ): { ok: true; expr: unknown; sqlType: DslSqlOutputColumn["sqlType"]; joins?: unknown[] } | { ok: false; error: string } => {
   const descriptor = storageOf(field);
+  const computedFieldSql = computedFieldSqlForScope(options, group.joinAlias);
+  const prepared = computedFieldSql?.get(field.id);
+  const jsonValue = prepared ? requireValidCalculationSql(prepared) : sql`${sql.unsafe(recordAlias)}.data->${field.id}`;
   if (descriptor.kind === "relationLink") {
     const alias = `jg_rl_${index}`;
     if (options.recordSourcesByTableId?.has(group.tableId) || (options.recordSource && recordAlias === "r")) {
@@ -215,8 +218,8 @@ export const groupFieldProjection = (
         joins: [
           sql`CROSS JOIN LATERAL jsonb_array_elements_text(
             CASE
-              WHEN jsonb_typeof(${sql.unsafe(recordAlias)}.data->${field.id}) = 'array'
-              THEN ${sql.unsafe(recordAlias)}.data->${field.id}
+              WHEN jsonb_typeof(${jsonValue}) = 'array'
+              THEN ${jsonValue}
               ELSE '[]'::jsonb
             END
           ) AS ${sql.unsafe(alias)}(value)`,
@@ -243,8 +246,8 @@ export const groupFieldProjection = (
       joins: [
         sql`CROSS JOIN LATERAL jsonb_array_elements_text(
           CASE
-            WHEN jsonb_typeof(${sql.unsafe(recordAlias)}.data->${field.id}) = 'array'
-            THEN ${sql.unsafe(recordAlias)}.data->${field.id}
+            WHEN jsonb_typeof(${jsonValue}) = 'array'
+            THEN ${jsonValue}
             ELSE '[]'::jsonb
           END
         ) AS ${sql.unsafe(alias)}(value)`,
@@ -254,21 +257,22 @@ export const groupFieldProjection = (
   if (descriptor.kind === "jsonbArray") {
     return {
       ok: true,
-      expr: sql`${sql.unsafe(recordAlias)}.data->${field.id}->>0`,
+      expr: sql`(${jsonValue})->>0`,
       sqlType: "text",
     };
   }
   if (field.type === "date" && group.granularity) {
+    const value = prepared ? requireValidCalculationSql(prepared) : descriptor.project(field, recordAlias);
     const expr = (field.config as { includeTime?: boolean }).includeTime
-      ? sql`grids.canonical_timestamptz(${sql.unsafe(recordAlias)}.data->>${field.id}) AT TIME ZONE ${options.timeZone ?? "UTC"}`
-      : sql`grids.canonical_date(${sql.unsafe(recordAlias)}.data->>${field.id})::timestamp`;
+      ? sql`${value} AT TIME ZONE ${options.timeZone ?? "UTC"}`
+      : sql`${value}::timestamp`;
     return { ok: true, expr: sql`date_trunc(${group.granularity}, ${expr})::date`, sqlType: "date" };
   }
   const projection = fieldProjection(field, recordAlias, {
     fields: aliveFields(options.fieldsByTableId[group.tableId] ?? []),
     timeZone: options.timeZone,
     readableTableIds,
-    computedFieldSql: computedFieldSqlForScope(options, group.joinAlias),
+    computedFieldSql,
   });
   if (!projection.ok) return projection;
   return { ok: true, expr: projection.projection, sqlType: projection.sqlType ?? outputTypeFor(field) };

@@ -1,12 +1,12 @@
 import { sql } from "bun";
 import type { DslSqlFederatedRecordSource } from "../query-dsl/sql-compiler-types";
-import { assertFederatedPublication, buildDslSqlRecordSource } from "../query-dsl/sql-record-source";
+import { assertFederatedPublication, buildDslSqlRecordSource, buildFederatedFieldSqlMap } from "../query-dsl/sql-record-source";
 import type { SqlClient } from "./audit";
 import { buildFormulaSqlProjections } from "./computed-projections";
 import { listByTable as listFields } from "./fields";
-import { parseJsonbRow } from "./jsonb";
 import { storedLocalCalculationSqlMap } from "./local-calculation-storage";
 import { liveRecordParentJoinSql } from "./parent-checks";
+import { mapRecordCalculationData } from "./record-persistence";
 import { type ExpansionViewer, resolveReadableTableIds } from "./relation-access";
 import { enrichRecordsWithFormulas } from "./relation-formulas";
 import { collectRelationTargetIds, loadRelationTargetsBatch, relationLabelFields } from "./relation-targets";
@@ -132,10 +132,6 @@ export const lookupRecords = async (params: {
   const searchTargets = presentable.filter((field) => LABEL_TEXT_TYPES.has(field.type));
   const presentableIds = new Set(presentable.filter((field) => field.type === "formula").map((field) => field.id));
   const tableKind = params.labelSnapshot?.tableKind ?? (await getTable(params.targetTableId))?.kind;
-  const formulaSearchTargets = buildFormulaSqlProjections(fields, {
-    useFinalizedFormulaValues: tableKind !== "federated",
-    computedFieldSql: tableKind === "stored" ? storedLocalCalculationSqlMap(fields) : undefined,
-  }).filter((projection) => presentableIds.has(projection.fieldId) && projection.expr);
   const recordSource = params.labelSnapshot
     ? params.labelSnapshot.recordSource
     : tableKind === "federated"
@@ -145,6 +141,11 @@ export const lookupRecords = async (params: {
           params.includeDeleted ? { includeDeleted: true } : undefined,
         )
       : null;
+  const sourceFieldSql = recordSource ? buildFederatedFieldSqlMap(recordSource, fields) : storedLocalCalculationSqlMap(fields);
+  const formulaSearchTargets = buildFormulaSqlProjections(fields, {
+    useFinalizedFormulaValues: tableKind !== "federated",
+    computedFieldSql: sourceFieldSql,
+  }).filter((projection) => presentableIds.has(projection.fieldId) && projection.expr);
   const conditions: any[] = [sql`TRUE`];
   if (!params.includeDeleted) conditions.push(sql`r.deleted_at IS NULL`);
   if (!recordSource) conditions.push(sql`r.table_id = ${params.targetTableId}::uuid`);
@@ -165,7 +166,7 @@ export const lookupRecords = async (params: {
   if (recordSource) await assertFederatedPublication(recordSource);
   const rows = recordSource
     ? await sql<DbRow[]>`
-        SELECT r.id, r.data, NULL::text AS finalized_at
+        SELECT r.id, r.data, r.calculation_errors, NULL::text AS finalized_at
         FROM ${recordSource.relation} r
         WHERE ${where}
         ORDER BY r.created_at DESC, r.source_table_id, r.id
@@ -181,10 +182,13 @@ export const lookupRecords = async (params: {
       `;
   const records = rows.map((row) => ({
     id: row.id as string,
-    data: parseJsonbRow<Record<string, unknown>>(row.data, {}),
+    ...mapRecordCalculationData(row),
     finalizedAt: typeof row.finalized_at === "string" ? row.finalized_at : null,
   }));
-  enrichRecordsWithFormulas(records, fields);
+  enrichRecordsWithFormulas(records, fields, {
+    useFinalizedFormulaValues: !recordSource,
+    skipObjectListFieldIds: recordSource ? new Set(sourceFieldSql.keys()) : undefined,
+  });
   return {
     items: records.map((record) => {
       const parts = presentable.map((field) => formatLabelPart(record.data[field.id])).filter((part) => part.length > 0);

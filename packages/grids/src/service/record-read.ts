@@ -1,7 +1,7 @@
 import type { DateContext } from "@k2b/stdlib";
 import { sql } from "bun";
 import { type LookupTargetMeta, lookupTargetMeta } from "../lookup-display";
-import { assertFederatedPublication, buildDslSqlRecordSource } from "../query-dsl/sql-record-source";
+import { assertFederatedPublication, buildDslSqlRecordSource, buildFederatedFieldSqlMap } from "../query-dsl/sql-record-source";
 import type { SqlClient } from "./audit";
 import { runBoundedQuery } from "./bounded-query";
 import {
@@ -257,7 +257,12 @@ const createFederatedReader = async (tableId: string, fields: Field[], opts: Rec
     opts.client,
   );
   if (!recordSource) throw new Error("Combined table source is not available");
-  const formulaSql = buildFormulaSqlProjections(fields, { dateConfig: opts.dateConfig, useFinalizedFormulaValues: false });
+  const sourceFieldSql = buildFederatedFieldSqlMap(recordSource, fields);
+  const formulaSql = buildFormulaSqlProjections(fields, {
+    dateConfig: opts.dateConfig,
+    useFinalizedFormulaValues: false,
+    computedFieldSql: sourceFieldSql,
+  });
   const projectionFragments = projectionFragmentsFor(formulaSql);
   const formulaFieldIds = new Set(formulaSql.map((projection) => projection.fieldId));
   const fieldsWithLookupMeta = await withLookupTargetMetadata(fields, opts.client);
@@ -285,6 +290,7 @@ const createFederatedReader = async (tableId: string, fields: Field[], opts: Rec
     enrichRecordsWithFormulas(records, fieldsWithLookupMeta, {
       dateConfig: opts.dateConfig,
       skipFormulaFieldIds: formulaFieldIds,
+      skipObjectListFieldIds: new Set(sourceFieldSql.keys()),
       useFinalizedFormulaValues: false,
     });
     if (opts.includeRelations) await attachRelationExpansion(records, fieldsWithLookupMeta, opts.viewer);

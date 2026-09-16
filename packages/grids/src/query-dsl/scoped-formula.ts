@@ -52,7 +52,12 @@ const compileScopedField = (
   options: DslScopedFormulaOptions,
   label: string,
 ): Exclude<ReturnType<FormulaSqlFieldResolver>, null> => {
-  if (field.type === "select") return { sql: sql`${sql.unsafe(scope.recordAlias)}.data->${field.id}`, type: "unknown", select: field };
+  if (field.type === "select") {
+    const prepared = scope.computedFieldSql?.get(field.id);
+    return prepared
+      ? { ...prepared, select: field }
+      : { sql: sql`${sql.unsafe(scope.recordAlias)}.data->${field.id}`, type: "unknown", select: field };
+  }
   if (field.type === "object_list") {
     const prepared = scope.computedFieldSql?.get(field.id);
     if (prepared) return { ...prepared, objectListConfig: field.config };
@@ -77,6 +82,8 @@ const compileScopedField = (
     if (computed) return computed;
     return `Field "${label}" (${field.type}) is not available as a scoped formula value`;
   }
+  const prepared = scope.computedFieldSql?.get(field.id);
+  if (prepared) return prepared;
   const projection = storageOf(field).project(field, scope.recordAlias);
   if (projection === null) return `Field "${label}" (${field.type}) cannot be used as a scalar formula value`;
   return { sql: projection, type: formulaSqlTypeForField(field) };

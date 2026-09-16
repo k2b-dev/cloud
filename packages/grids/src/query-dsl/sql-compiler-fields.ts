@@ -118,6 +118,8 @@ export const fieldProjection = (
   if (!relationTargetIsReadable(field, options?.readableTableIds)) {
     return { ok: false, error: `relation field "${field.name}" target table is not available` };
   }
+  const prepared = options?.computedFieldSql?.get(field.id);
+  if (prepared) return { ok: true, projection: requireValidCalculationSql(prepared), sqlType: outputTypeFor(field) };
   const descriptor = storageOf(field);
   const projected = descriptor.project(field, recordAlias);
   if (projected) return { ok: true, projection: projected };
@@ -283,12 +285,13 @@ export const sortProjectionForField = (
   }
   if (field.type === "lookup" || field.type === "rollup") {
     const computed = options?.computedFieldSql?.get(field.id);
-    if (computed) return { ok: true, projection: computed.sql, sqlType: computed.type };
+    if (computed) return { ok: true, projection: requireValidCalculationSql(computed), sqlType: computed.type };
     return { ok: false, error: `field "${field.name}" (type "${field.type}") is not available for sorting` };
   }
   const descriptor = storageOf(field);
   if (!descriptor.sortable) return { ok: false, error: `field "${field.name}" (type "${field.type}") is not sortable` };
-  const projection = descriptor.project(field, recordAlias);
+  const prepared = options?.computedFieldSql?.get(field.id);
+  const projection = prepared ? requireValidCalculationSql(prepared) : descriptor.project(field, recordAlias);
   if (!projection) return { ok: false, error: `field "${field.name}" (type "${field.type}") is not sortable` };
   const sqlType = outputTypeFor(field);
   return { ok: true, projection, sqlType: sqlType === "json" ? "unknown" : sqlType };

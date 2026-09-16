@@ -196,7 +196,10 @@ const compileJoinedGroupedQueryPlanToSql = (plan: DslResolvedSqlQueryPlan, optio
   const conditions: unknown[] = [
     compileRecordScopeFilter(plan.tableId),
     recordDeletedCondition(plan),
-    renderClause(filter.clause, { relationSource: dslRelationValuesInRecordData(options) ? "recordData" : "links" }),
+    renderClause(filter.clause, {
+      computedFieldSql: options.computedFieldSql,
+      relationSource: dslRelationValuesInRecordData(options) ? "recordData" : "links",
+    }),
   ];
   const viewScope = compileViewSourceRecordScope(plan, fields, options);
   if (!viewScope.ok) return failGroup(viewScope.error);
@@ -206,6 +209,7 @@ const compileJoinedGroupedQueryPlanToSql = (plan: DslResolvedSqlQueryPlan, optio
       joinAliases,
       fieldsByTableId: options.fieldsByTableId,
       recordSourcesByTableId: options.recordSourcesByTableId,
+      computedFieldSqlByJoinAlias: options.computedFieldSqlByJoinAlias,
       timeZone: options.timeZone,
       computedFieldSql: options.computedFieldSql,
       resolveField: resolveFormulaField,

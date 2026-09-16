@@ -44,7 +44,87 @@ const withIsolatedDatabase = async (run: (database: SQL) => Promise<void>) => {
   }
 };
 
+const insertCalculationFixture = async (database: SQL) => {
+  const baseId = uuid();
+  const tableId = uuid();
+  const amountId = uuid();
+  const totalId = uuid();
+  const recordId = uuid();
+  await database`INSERT INTO grids.bases (id, short_id, name)
+    VALUES (${baseId}::uuid, ${shortId("B")}, 'Calculation migration')`;
+  await database`INSERT INTO grids.tables (id, short_id, base_id, name)
+    VALUES (${tableId}::uuid, ${shortId("T")}, ${baseId}::uuid, 'Records')`;
+  await database`INSERT INTO grids.fields (id, short_id, table_id, name, type, config)
+    VALUES (${amountId}::uuid, ${shortId("F")}, ${tableId}::uuid, 'Amount', 'number', '{}'::jsonb),
+      (${totalId}::uuid, ${shortId("F")}, ${tableId}::uuid, 'Total', 'formula', '{"expression":"Amount * 2"}'::jsonb)`;
+  await database`INSERT INTO grids.records (id, short_id, table_id, data)
+    VALUES (${recordId}::uuid, ${shortId("R")}, ${tableId}::uuid, jsonb_build_object(${amountId}::text, '36'::text))`;
+  return { recordId, amountId, totalId };
+};
+
 describe("grids schema migration", () => {
+  postgresTest(
+    "restarts and backfills without demanding an exclusive records lock or replacing its calculation trigger",
+    async () => {
+      await withIsolatedDatabase(async (database) => {
+        await migrateCoreWorkflows(database);
+        await migrate(database);
+        const fixture = await insertCalculationFixture(database);
+        const [before] = await database<Array<{ oid: number }>>`
+          SELECT oid::int AS oid FROM pg_trigger
+          WHERE tgrelid = 'grids.records'::regclass AND tgname = 'record_local_calculations'`;
+        if (!before) throw new Error("Calculation trigger was not installed");
+        const reader = await database.reserve();
+        const restarting = new SQL({ ...database.options, max: 1, connection: { ...database.options.connection, lock_timeout: "2s" } });
+        try {
+          await reader`BEGIN`.simple();
+          // Hold ACCESS SHARE until the restart finishes. Any attempted
+          // ACCESS EXCLUSIVE records DDL must fail at the lock timeout.
+          await reader`SELECT id FROM grids.records WHERE id = ${fixture.recordId}::uuid`;
+          await migrate(restarting);
+          const [after] = await reader<Array<{ oid: number; total: string; inputsMatch: boolean }>>`
+            SELECT trigger.oid::int AS oid, record.local_calculations->'values'->>${fixture.totalId} AS total,
+              record.local_calculations->>'inputs' = md5(record.data::text) AS "inputsMatch"
+            FROM grids.records record
+            JOIN pg_trigger trigger ON trigger.tgrelid = 'grids.records'::regclass AND trigger.tgname = 'record_local_calculations'
+            WHERE record.id = ${fixture.recordId}::uuid`;
+          expect(after).toEqual({ oid: before.oid, total: "72", inputsMatch: true });
+        } finally {
+          await reader`ROLLBACK`.simple();
+          reader.release();
+          await restarting.close({ timeout: 5 });
+        }
+      });
+    },
+    90_000,
+  );
+
+  postgresTest(
+    "upgrades a missing calculation column and trigger before exposing populated values",
+    async () => {
+      await withIsolatedDatabase(async (database) => {
+        await migrateCoreWorkflows(database);
+        await migrate(database);
+        const fixture = await insertCalculationFixture(database);
+        await database`ALTER TABLE grids.records DROP COLUMN local_calculations CASCADE`.simple();
+        await migrate(database);
+        const [upgraded] = await database<Array<{ total: string; inputsMatch: boolean; triggerCount: number }>>`
+          SELECT local_calculations->'values'->>${fixture.totalId} AS total,
+            local_calculations->>'inputs' = md5(data::text) AS "inputsMatch",
+            (SELECT count(*)::int FROM pg_trigger
+              WHERE tgrelid = 'grids.records'::regclass AND tgname = 'record_local_calculations' AND tgenabled = 'O') AS "triggerCount"
+          FROM grids.records WHERE id = ${fixture.recordId}::uuid`;
+        expect(upgraded).toEqual({ total: "72", inputsMatch: true, triggerCount: 1 });
+        await database`UPDATE grids.records SET data = jsonb_build_object(${fixture.amountId}::text, '40'::text)
+          WHERE id = ${fixture.recordId}::uuid`;
+        const [invalidated] = await database<Array<{ calculations: unknown }>>`
+          SELECT local_calculations AS calculations FROM grids.records WHERE id = ${fixture.recordId}::uuid`;
+        expect(invalidated?.calculations).toEqual({});
+      });
+    },
+    90_000,
+  );
+
   postgresTest(
     "adds unchecked output status on existing schemas and stays idempotent",
     async () => {

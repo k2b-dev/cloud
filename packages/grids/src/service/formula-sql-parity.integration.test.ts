@@ -458,6 +458,24 @@ describe("formula evaluator and PostgreSQL parity", () => {
     await expectParity("CONCAT(1 / 0, 'x')");
   });
 
+  postgresTest("coerces staged null-only branches to each conditional result type", async () => {
+    const now = new Date("2026-09-16T12:00:00.000Z");
+    for (const source of [
+      "IF(true, IF(false, null, null), 7)",
+      "IF(false, 7, IF(true, null, null))",
+      "IFEMPTY(IF(true, null, null), 7)",
+      "IFEMPTY(IF(true, null, null), true)",
+      "IFERROR(IF(true, null, null), 7)",
+      "IFERROR(IF(true, null, null), true)",
+      "IF(true, IF(true, null, null), TODAY())",
+      "IFEMPTY(IF(false, null, null), NOW())",
+      "IFERROR(1 / 0, IF(true, null, null))",
+      "IFERROR(IF(false, IF(true, null, null), 1 / 0), 17)",
+      "IFERROR(IF(true, null, null), 1 / 0)",
+    ])
+      await expectParity(source, { now, dateConfig: berlin });
+  });
+
   postgresTest("uses one coercion matrix for equality and ordering", async () => {
     await expectParity("'10.00' = 10");
     await expectParity("'9.99' < '24.50'");
@@ -487,4 +505,28 @@ describe("formula evaluator and PostgreSQL parity", () => {
       values: { [numericText.id]: "24.50" },
     });
   });
+});
+
+postgresTest("prepared Select predicates retain mapped errors and IFERROR recovery", async () => {
+  const tax = formulaField("55555555-5555-4555-8555-555555555555", "Tax", "select", {
+    multiple: false,
+    options: [{ id: "standard", label: "Standard" }],
+  });
+  for (const ref of ["Tax", "combined.Tax"]) {
+    const prepared = { sql: sql`NULL::jsonb`, type: "json" as const, errorSql: sql`true` };
+    for (const source of [`ISBLANK(${ref})`, `HAS_OPTION(${ref}, 'standard')`, `${ref} = null`]) {
+      for (const recover of [false, true]) {
+        const compiled = compileFormulaSourceToSql(recover ? `IFERROR(${source}, false)` : source, {
+          fields: [tax],
+          computedFieldSql: new Map([[tax.id, prepared]]),
+          scopedRefs: true,
+          resolveField: (value) => (value === "combined.Tax" ? { ...prepared, select: tax } : null),
+          useFinalizedFormulaValues: false,
+        });
+        if (!compiled.ok) throw new Error(compiled.error);
+        const [row] = await sql`SELECT ${compiled.expression.sql} AS value, ${compiled.expression.errorSql ?? sql`false`} AS error`;
+        expect(row).toEqual({ value: recover ? false : null, error: !recover });
+      }
+    }
+  }
 });

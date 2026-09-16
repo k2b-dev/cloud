@@ -1,5 +1,6 @@
 import { sql } from "bun";
 import type { CompiledClause } from "./filter-compiler";
+import { type FormulaSqlExpression, requireValidCalculationSql } from "./formula-sql-values";
 
 type PredicateClause = Extract<CompiledClause, { kind: "predicate" }>;
 type PredicateProjection = {
@@ -11,7 +12,11 @@ type PredicateProjection = {
   dateOnly: any;
   bool: any;
 };
-type RenderOptions = { recordAlias?: string; relationSource?: "links" | "recordData" };
+type RenderOptions = {
+  recordAlias?: string;
+  relationSource?: "links" | "recordData";
+  computedFieldSql?: Map<string, FormulaSqlExpression>;
+};
 
 const escapeLikePattern = (value: string): string => value.replace(/([\\%_])/g, "\\$1");
 const recordData = (recordAlias: string): any => sql`${sql.unsafe(recordAlias)}.data`;
@@ -20,18 +25,23 @@ const recordId = (recordAlias: string): any => sql`${sql.unsafe(recordAlias)}.id
 const predicateProjection = (predicate: PredicateClause, options: RenderOptions = {}): PredicateProjection => {
   const timeZone = predicate.timeZone ?? "UTC";
   const data = recordData(options.recordAlias ?? "r");
-  const rawJson = sql`${data}->${predicate.fieldId}`;
-  const rawText = sql`${data}->>${predicate.fieldId}`;
+  const prepared = options.computedFieldSql?.get(predicate.fieldId);
+  const value = prepared ? requireValidCalculationSql(prepared) : undefined;
+  const rawJson = prepared ? sql`to_jsonb(${value})` : sql`${data}->${predicate.fieldId}`;
+  const rawText = prepared ? sql`(${value})::text` : sql`${data}->>${predicate.fieldId}`;
+  const date = prepared
+    ? value
+    : predicate.dateIncludeTime
+      ? sql`grids.canonical_timestamptz(${rawText})`
+      : sql`grids.canonical_date(${rawText})`;
   return {
     rawJson,
     rawText,
     text: predicate.caseInsensitive ? sql`LOWER(${rawText})` : rawText,
-    numeric: sql`grids.canonical_numeric(${rawText})`,
-    date: predicate.dateIncludeTime ? sql`grids.canonical_timestamptz(${rawText})` : sql`grids.canonical_date(${rawText})`,
-    dateOnly: predicate.dateIncludeTime
-      ? sql`(grids.canonical_timestamptz(${rawText}) AT TIME ZONE ${timeZone})::date`
-      : sql`grids.canonical_date(${rawText})`,
-    bool: sql`grids.canonical_boolean(${rawText})`,
+    numeric: prepared ? value : sql`grids.canonical_numeric(${rawText})`,
+    date,
+    dateOnly: predicate.dateIncludeTime ? sql`(${date} AT TIME ZONE ${timeZone})::date` : date,
+    bool: prepared ? value : sql`grids.canonical_boolean(${rawText})`,
   };
 };
 
@@ -268,7 +278,7 @@ const renderPrincipalPredicate = (predicate: PredicateClause, projection: Predic
 const renderRelationPredicate = (predicate: PredicateClause, options: RenderOptions = {}): any => {
   const recordAlias = options.recordAlias ?? "r";
   if (options.relationSource === "recordData") {
-    const rawJson = sql`${recordData(recordAlias)}->${predicate.fieldId}`;
+    const rawJson = predicateProjection(predicate, options).rawJson;
     const values = sql`CASE WHEN jsonb_typeof(${rawJson}) = 'array' THEN ${rawJson} ELSE '[]'::jsonb END`;
     const items = (predicate.value as string[]) ?? [];
     const containsAny =

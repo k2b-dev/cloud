@@ -30,7 +30,11 @@ export const scopedFormulaResolverForPlan = (
       recordAlias: joinAliases.get(join.alias) ?? join.alias,
       computedFieldSql: options.computedFieldSqlByJoinAlias?.get(join.alias),
     })),
-    summaries: (plan.summaryJoins ?? []).map((join, index) => ({ alias: join.alias, recordAlias: `summary_${index}`, columns: join.columns })),
+    summaries: (plan.summaryJoins ?? []).map((join, index) => ({
+      alias: join.alias,
+      recordAlias: `summary_${index}`,
+      columns: join.columns,
+    })),
     dateConfig: options.timeZone ? { timeZone: options.timeZone } : undefined,
   });
 
@@ -50,13 +54,13 @@ const queryDeletedCondition = (query: RecordQuery): unknown =>
 export const compileViewSourceRecordScope = (
   plan: Pick<DslResolvedSqlQueryPlan, "tableId" | "viewSourceQuery">,
   fields: Field[],
-  options: Pick<DslSqlCompileOptions, "timeZone" | "viewSourceSearchClause" | "recordSource">,
+  options: Pick<DslSqlCompileOptions, "timeZone" | "viewSourceSearchClause" | "recordSource" | "computedFieldSql">,
 ): { ok: true; condition?: unknown } | { ok: false; error: string } => {
   const source = plan.viewSourceQuery;
   if (!source) return { ok: true };
   const filter = compileFilter(source.filter ?? null, fields, { timeZone: options.timeZone });
   if (!filter.ok) return { ok: false, error: `view source filter: ${filter.error}` };
-  const sort = compileSort(source.sort ?? [], fields, null);
+  const sort = compileSort(source.sort ?? [], fields, null, options.computedFieldSql);
   if (!sort.ok) return { ok: false, error: `view source sort: ${sort.error}` };
   if (source.search && options.viewSourceSearchClause === undefined) {
     return { ok: false, error: "view source search was not compiled" };
@@ -66,7 +70,10 @@ export const compileViewSourceRecordScope = (
   const conditions = [
     compileRecordScopeFilter(plan.tableId),
     queryDeletedCondition(source),
-    renderClause(filter.clause, { relationSource: dslRelationValuesInRecordData(options) ? "recordData" : "links" }),
+    renderClause(filter.clause, {
+      computedFieldSql: options.computedFieldSql,
+      relationSource: dslRelationValuesInRecordData(options) ? "recordData" : "links",
+    }),
     options.viewSourceSearchClause ?? sql`TRUE`,
     compileRecordMetaFilter(source.recordMeta ?? null),
   ];

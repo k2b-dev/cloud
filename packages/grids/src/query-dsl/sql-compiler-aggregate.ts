@@ -1,6 +1,7 @@
 import { sql } from "bun";
 import { aggregateOutputKey } from "../service/aggregate-capabilities";
 import { compileFilter, renderClause } from "../service/filter-compiler";
+import { compileRecordScopeFilter } from "../service/record-metadata";
 import type { DslResolvedSqlQueryPlan } from "./resolver";
 import { aliveFields } from "./sql-compiler-fields";
 import { joinFragments } from "./sql-compiler-fragments";
@@ -12,7 +13,6 @@ import {
   formulaAggregateSqlType,
   viewAggregateSqlType,
 } from "./sql-compiler-grouping";
-import { compileRecordScopeFilter } from "../service/record-metadata";
 import { recordDeletedCondition, scopedFormulaResolverForPlan } from "./sql-compiler-scope";
 import { dslRecordRelation, dslRelationValuesInRecordData } from "./sql-compiler-source";
 import type { DslSqlAggregateCompileResult, DslSqlAggregateOutputColumn, DslSqlCompileOptions } from "./sql-compiler-types";
@@ -92,7 +92,7 @@ export const compileDslAggregateQueryPlanToSql = (
 
   const where = sql`${compileRecordScopeFilter(plan.tableId)}
     AND ${recordDeletedCondition(plan)}
-    AND ${renderClause(filter.clause, { relationSource: dslRelationValuesInRecordData(options) ? "recordData" : "links" })}
+    AND ${renderClause(filter.clause, { computedFieldSql: options.computedFieldSql, relationSource: dslRelationValuesInRecordData(options) ? "recordData" : "links" })}
     AND ${extraWhere.where ?? sql`TRUE`}
     AND ${options.searchClause ?? sql`TRUE`}`;
   return {

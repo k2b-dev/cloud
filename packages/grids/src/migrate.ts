@@ -1444,7 +1444,20 @@ const defineSchema = async (sql: SQL): Promise<void> => {
       CONSTRAINT records_updated_by_fkey FOREIGN KEY (updated_by) REFERENCES auth.users(id) ON DELETE SET NULL
     )
   `.simple();
-  await sql`ALTER TABLE grids.records ADD COLUMN IF NOT EXISTS local_calculations jsonb NOT NULL DEFAULT '{}'::jsonb`.simple();
+  // Even ADD COLUMN IF NOT EXISTS acquires ACCESS EXCLUSIVE on an existing
+  // table. Only the one-way upgrade needs that lock, not every restart.
+  await sql`
+    DO $upgrade$
+    BEGIN
+      IF NOT EXISTS (
+        SELECT 1 FROM pg_attribute
+        WHERE attrelid = 'grids.records'::regclass AND attname = 'local_calculations' AND NOT attisdropped
+      ) THEN
+        ALTER TABLE grids.records ADD COLUMN local_calculations jsonb NOT NULL DEFAULT '{}'::jsonb;
+      END IF;
+    END;
+    $upgrade$
+  `.simple();
   await sql`
     CREATE OR REPLACE FUNCTION grids.current_local_calculations(value jsonb, expected_signature text, field_id text)
     RETURNS jsonb LANGUAGE plpgsql IMMUTABLE PARALLEL SAFE AS $function$
@@ -1469,9 +1482,21 @@ const defineSchema = async (sql: SQL): Promise<void> => {
     END;
     $function$
   `.simple();
-  await sql`DROP TRIGGER IF EXISTS record_local_calculations ON grids.records`.simple();
-  await sql`CREATE TRIGGER record_local_calculations BEFORE INSERT OR UPDATE OF data, local_calculations
-    ON grids.records FOR EACH ROW EXECUTE FUNCTION grids.invalidate_local_calculations()`.simple();
+  // The trigger contract is stable; replacing its function above updates the
+  // behavior without dropping/recreating the trigger and locking all readers.
+  await sql`
+    DO $upgrade$
+    BEGIN
+      IF NOT EXISTS (
+        SELECT 1 FROM pg_trigger
+        WHERE tgrelid = 'grids.records'::regclass AND tgname = 'record_local_calculations' AND NOT tgisinternal
+      ) THEN
+        CREATE TRIGGER record_local_calculations BEFORE INSERT OR UPDATE OF data, local_calculations
+          ON grids.records FOR EACH ROW EXECUTE FUNCTION grids.invalidate_local_calculations();
+      END IF;
+    END;
+    $upgrade$
+  `.simple();
   await sql`
     CREATE UNIQUE INDEX IF NOT EXISTS uq_grids_records_id_table ON grids.records USING btree (id, table_id)
   `.simple();
@@ -2097,7 +2122,7 @@ export const migrate = async (sql: SQL = defaultSql): Promise<void> => {
     await connection`BEGIN`.simple();
     transactionStarted = true;
     // Writers acquire parent locks before touching records. Match that order
-    // before DDL takes an exclusive records lock, including during a restart.
+    // before an upgrade needs an exclusive records lock or backfill writes rows.
     const [existing] = await connection<Array<{ present: boolean }>>`SELECT to_regclass('grids.tables') IS NOT NULL AS present`;
     if (existing?.present) await connection`SELECT id FROM grids.tables ORDER BY id FOR UPDATE`;
     await defineSchema(connection);

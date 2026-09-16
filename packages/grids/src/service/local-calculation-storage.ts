@@ -102,6 +102,8 @@ export const storedLocalCalculationSqlMap = (
   for (const [id, type] of Object.entries(plan.types)) {
     const source = sql`grids.current_local_calculations(${row}.local_calculations, ${plan.signature}, ${id})`;
     const json = sql`${source}->'values'->${id}`;
+    // Unknown scalar formulas contain legitimate nulls. Extract SQL NULL,
+    // matching captured scalar values, instead of returning a JSON null value.
     const text = sql`(${json}) #>> '{}'`;
     const value =
       type === "numeric"
@@ -112,7 +114,7 @@ export const storedLocalCalculationSqlMap = (
             ? sql`(${text})::date`
             : type === "datetime"
               ? sql`(${text})::timestamptz`
-              : type === "json" || type === "unknown"
+              : type === "json"
                 ? json
                 : text;
     const errorSql = sql`COALESCE((${source}->'errors'->>${id})::boolean, false)`;

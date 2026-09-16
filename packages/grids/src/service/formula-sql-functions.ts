@@ -70,11 +70,18 @@ const conditionalResult = (
   fn: string,
   left: FormulaSqlExpression,
   right: FormulaSqlExpression,
-  sqlFragment: unknown,
+  sqlFragment: (left: unknown, right: unknown) => unknown,
   errorSql: unknown | undefined,
 ): FormulaSqlCompileResult => {
   const result = conditionalType(fn, left, right);
-  return result.ok ? formulaSqlOk(sqlFragment, result.type, errorSql) : formulaSqlFail(result.error);
+  if (!result.ok) return formulaSqlFail(result.error);
+  // A null-only expression becomes a text column when staged in a subquery.
+  // Cast it to the chosen branch type before CASE resolves its SQL types.
+  const branch = (expression: FormulaSqlExpression) =>
+    expression.type === "unknown" && result.type !== "unknown"
+      ? sql`(${expression.sql})::${sql.unsafe(result.type === "datetime" ? "timestamptz" : result.type === "json" ? "jsonb" : result.type)}`
+      : expression.sql;
+  return formulaSqlOk(sqlFragment(branch(left), branch(right)), result.type, errorSql);
 };
 
 const shortCircuitErrors = (args: FormulaSqlExpression[], continueWhen: boolean): unknown | undefined => {
@@ -294,7 +301,13 @@ const FORMULA_FUNCTION_COMPILERS = {
       arg(0).errorSql === undefined && arg(1).errorSql === undefined && arg(2).errorSql === undefined
         ? undefined
         : sql`(${formulaSqlError(arg(0))} OR CASE WHEN ${condition} THEN ${formulaSqlError(arg(1))} ELSE ${formulaSqlError(arg(2))} END)`;
-    return conditionalResult("IF", arg(1), arg(2), sql`CASE WHEN ${condition} THEN ${arg(1).sql} ELSE ${arg(2).sql} END`, errorSql);
+    return conditionalResult(
+      "IF",
+      arg(1),
+      arg(2),
+      (then, otherwise) => sql`CASE WHEN ${condition} THEN ${then} ELSE ${otherwise} END`,
+      errorSql,
+    );
   },
   IFEMPTY: ({ arg }) => {
     const empty = sql`(${arg(0).sql} IS NULL OR (${arg(0).sql})::text = '')`;
@@ -302,13 +315,25 @@ const FORMULA_FUNCTION_COMPILERS = {
       arg(0).errorSql === undefined && arg(1).errorSql === undefined
         ? undefined
         : sql`(${formulaSqlError(arg(0))} OR (${empty} AND ${formulaSqlError(arg(1))}))`;
-    return conditionalResult("IFEMPTY", arg(0), arg(1), sql`CASE WHEN ${empty} THEN ${arg(1).sql} ELSE ${arg(0).sql} END`, errorSql);
+    return conditionalResult(
+      "IFEMPTY",
+      arg(0),
+      arg(1),
+      (value, fallback) => sql`CASE WHEN ${empty} THEN ${fallback} ELSE ${value} END`,
+      errorSql,
+    );
   },
   IFERROR: ({ arg }) => {
     const sourceError = formulaSqlError(arg(0));
     const errorSql =
       arg(0).errorSql === undefined || arg(1).errorSql === undefined ? undefined : sql`(${sourceError} AND ${arg(1).errorSql})`;
-    return conditionalResult("IFERROR", arg(0), arg(1), sql`CASE WHEN ${sourceError} THEN ${arg(1).sql} ELSE ${arg(0).sql} END`, errorSql);
+    return conditionalResult(
+      "IFERROR",
+      arg(0),
+      arg(1),
+      (value, fallback) => sql`CASE WHEN ${sourceError} THEN ${fallback} ELSE ${value} END`,
+      errorSql,
+    );
   },
   AND: ({ compiled }) =>
     formulaSqlOk(

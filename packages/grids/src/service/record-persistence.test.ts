@@ -1,5 +1,12 @@
 import { describe, expect, test } from "bun:test";
-import { buildPersistedUpdateData, buildRecordDiff, mapRecordRow, splitRelationsFromData } from "./record-persistence";
+import {
+  buildPersistedUpdateData,
+  buildRecordDiff,
+  mapRecordCalculationData,
+  mapRecordRow,
+  splitRelationsFromData,
+} from "./record-persistence";
+import { enrichRecordsWithFormulas } from "./relation-formulas";
 import type { Field } from "./types";
 
 const field = (id: string, type: string, patch: Partial<Field> = {}): Field => ({
@@ -68,6 +75,27 @@ describe("record persistence", () => {
     const frozen = mapRecordRow({ ...row, finalized_at: new Date("2026-01-02") });
     expect(frozen.data).toEqual(row.data);
     expect(frozen.fieldErrors).toBeUndefined();
+  });
+
+  test("mapped Combined errors survive partial reads and remain recoverable by formulas", () => {
+    const record = mapRecordCalculationData({
+      data: { Name01: null, Other1: "visible", Items1: null },
+      calculation_errors: { Name01: true, Other1: false, Items1: true },
+    });
+    expect(Object.keys(record.fieldErrors ?? {}).sort()).toEqual(["Items1", "Name01"]);
+    enrichRecordsWithFormulas(
+      [record],
+      [
+        field("Name01", "text"),
+        field("Other1", "text"),
+        field("Items1", "object_list", { config: { fields: [{ id: "Amount", name: "Amount", type: "number" }] } }),
+        field("Safe01", "formula", { config: { expression: "IFERROR(Name01, 'fallback')" } }),
+      ],
+      { useFinalizedFormulaValues: false, skipObjectListFieldIds: new Set(["Items1"]) },
+    );
+    expect(record.data.Other1).toBe("visible");
+    expect(record.data.Safe01).toBe("fallback");
+    expect(Object.keys(record.fieldErrors ?? {}).sort()).toEqual(["Items1", "Name01"]);
   });
 
   test("separates live relation values from JSONB data", () => {

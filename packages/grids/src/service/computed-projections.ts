@@ -201,6 +201,8 @@ const lookupOutputType = (field: Field): ComputedProjectionOutputType => {
 };
 
 type ComputedOptions = {
+  /** Safe mapped values and error channels from a virtual record source. */
+  sourceFieldSql?: Map<string, FormulaSqlExpression>;
   /** Stored rows use transactionally materialized local calculations. Virtual rows stay live. */
   useStoredLocalValues?: boolean;
   /** Query/export evaluation must not turn absent historical captures into incomplete totals. */
@@ -481,6 +483,7 @@ export const buildComputedFieldSqlMap = async (
   const expressions = new Map<string, FormulaSqlExpression>(
     projections.map((p) => [p.fieldId, { sql: p.expr, errorSql: p.errorSql, type: computedOutputToFormulaType(p.outputType) }]),
   );
+  for (const [fieldId, expression] of options.sourceFieldSql ?? []) expressions.set(fieldId, expression);
   const stored = options.useStoredLocalValues ? storedLocalCalculationSqlMap(fields, options) : new Map<string, FormulaSqlExpression>();
   for (const [fieldId, expression] of stored) {
     if (!options.fieldIds || options.fieldIds.has(fieldId)) expressions.set(fieldId, expression);
