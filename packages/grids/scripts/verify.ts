@@ -135,7 +135,6 @@ if (process.argv.includes("--bootstrap")) {
       "src/frontend/_components/workflows/WorkflowRunDetailPanel.behavior.test.tsx",
       "src/frontend/_components/workflows/FinancialWorkflowStarter.behavior.test.tsx",
       "src/frontend/_components/workflows/FinancialExportDialog.behavior.test.tsx",
-      "src/frontend/_components/workflows/CamtReportDialog.behavior.test.tsx",
       "src/frontend/_components/workflows/QueryExportStarter.behavior.test.tsx",
       "src/frontend/_components/fields/ObjectListConfigEditor.behavior.test.tsx",
       "src/frontend/_components/forms/ObjectListInput.behavior.test.tsx",

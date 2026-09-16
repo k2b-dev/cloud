@@ -1,16 +1,10 @@
 import { ErrorResponseSchema } from "@k2b/cloud/contracts";
 import { type AuthContext, getLocale, jsonResponse, respond } from "@k2b/cloud/server";
-import { sql } from "bun";
 import { Hono } from "hono";
-import { describeRoute, resolver } from "hono-openapi";
-import { z } from "zod";
-import { ShortIdSchema } from "../contracts";
-import { documentServiceText } from "../service/document-messages";
+import { describeRoute } from "hono-openapi";
 import { listDocumentsForWorkflow, renderWorkflowDocumentsPdf } from "../service/documents";
 import { getWorkflow } from "../service/workflow-definitions";
 import { listWorkflowEmailDeliveriesPage } from "../service/workflow-email-deliveries";
-import { workflowFilePreview } from "../service/workflow-file-data";
-import { findWorkflowDocumentDataForStep } from "../service/workflow-query-store";
 import {
   cancelWorkflowRun,
   getWorkflowDocumentConfirmation,
@@ -19,8 +13,7 @@ import {
   listWorkflowRunsPage,
   listWorkflowStepRunsPage,
 } from "../service/workflow-runs";
-import { WorkflowFilePreviewSchema } from "../workflows/file-preview-contracts";
-import { encodeHeaderValue, fileResponse, pdfResponse } from "./download-response";
+import { encodeHeaderValue, pdfResponse } from "./download-response";
 import { apiMessages } from "./messages";
 import { currentActorUserId, gateAt } from "./permissions";
 import { resolvePublicIdParam } from "./route-params";
@@ -61,58 +54,6 @@ const canReadDocument = (c: Parameters<typeof gateAt>[0]) => async (document: { 
 
 export const createWorkflowRunRoutes = () =>
   new Hono<AuthContext>()
-    .get(
-      "/runs/:runId/files/:stepKey",
-      describeRoute({
-        tags: ["Grids:Workflow"],
-        summary: "Inspect a captured CAMT report or download its original bytes",
-        responses: {
-          200: {
-            description: "Bank report preview or original XML",
-            content: {
-              "application/json": { schema: resolver(WorkflowFilePreviewSchema) },
-              "application/xml": { schema: { type: "string" } },
-            },
-          },
-          400: jsonResponse(ErrorResponseSchema, "Invalid reference"),
-          403: jsonResponse(ErrorResponseSchema, "Forbidden"),
-          404: jsonResponse(ErrorResponseSchema, "Not found"),
-          409: jsonResponse(ErrorResponseSchema, "Capture hash mismatch"),
-        },
-      }),
-      v(
-        "param",
-        z.object({
-          runId: ShortIdSchema,
-          stepKey: z
-            .string()
-            .min(1)
-            .refine((key) => !z.uuid().safeParse(key).success),
-        }),
-      ),
-      v("query", z.object({ sha256: z.string().regex(/^[a-f0-9]{64}$/), download: z.enum(["original"]).optional() })),
-      async (c) => {
-        const runId = await resolvePublicIdParam(c, "runId", "workflowRun");
-        if (!runId) return c.json({ message: apiMessages(c).invalidWorkflowRunId }, 400);
-        const loaded = await loadReadableRun(c, runId);
-        if (!loaded) return c.json({ message: apiMessages(c).workflowRunNotFound }, 404);
-        if (!("run" in loaded)) return respond(c, () => Promise.resolve(loaded));
-        const query = c.req.valid("query");
-        const captured = await findWorkflowDocumentDataForStep(
-          { baseId: loaded.workflow.baseId, runId, stepKey: c.req.valid("param").stepKey, locale: getLocale(c) },
-          sql,
-        );
-        if (!captured.ok) return respond(c, () => Promise.resolve(captured));
-        if (!captured.data || captured.data.payload.version !== 5) return c.json({ message: apiMessages(c).workflowRunNotFound }, 404);
-        if (captured.data.reference.sha256 !== query.sha256)
-          return c.json({ message: documentServiceText(getLocale(c)).workflowQueryIntegrityFailed }, 409);
-        const payload = captured.data.payload;
-        if (query.download)
-          return fileResponse(Buffer.from(payload.source.bytesBase64, "base64"), payload.source.filename, "application/xml");
-        c.header("Cache-Control", "no-store");
-        return c.json(workflowFilePreview(payload));
-      },
-    )
     .get(
       "/by-base/:baseId/runs",
       describeRoute({

@@ -31,7 +31,6 @@ import { canonicalizeDslQuery } from "../query-dsl/canonical";
 import { parseGridsQueryDsl } from "../query-dsl/parser";
 import { compileAndBindGridsWorkflowSource } from "../workflows/binder";
 import type { GridsWorkflowPrincipal } from "../workflows/contracts";
-import { WorkflowFilePreviewSchema } from "../workflows/file-preview-contracts";
 import { gridsWorkflows } from "../workflows/module";
 import { grantAccess, revokeAccess } from "./access";
 import { apply as applyCustomApp, plan as planCustomApp, publish as publishCustomApp } from "./custom-apps";
@@ -39,7 +38,6 @@ import { documentIssuanceService, readDocumentArtifact } from "./document-issuan
 import * as documentRendering from "./document-rendering";
 import { createRecordSnapshot } from "./document-snapshots";
 import { enable as enableDurableHistory, listRecordRevisions } from "./durable-history";
-import { remove as removeFile, upload as uploadFile } from "./files";
 import { buildTrustedGqlResolverContext } from "./gql-resolver-context";
 import { update as updateMutationPolicy } from "./mutation-policy";
 import { provisionFieldNumberSeries } from "./number-series";
@@ -53,7 +51,6 @@ import { listReferencedBy } from "./referenced-by";
 import { canAccessWorkflowRunTable, canExecuteRun, documentActorForScope } from "./workflow-action-scope";
 import { loadWorkflowCatalog } from "./workflow-catalog";
 import { captureWorkflowDocumentSource, captureWorkflowRecordSource } from "./workflow-document-sources";
-import { camtFixture } from "./workflow-file-data.fixture";
 import { invokeCustomAppLauncher, invokeRecordLauncher } from "./workflow-launcher-invocations";
 import { createLauncher } from "./workflow-launchers";
 import { workflowQueryBinder } from "./workflow-query-binding";
@@ -361,116 +358,6 @@ beforeAll(async () => {
 }, 30_000);
 
 describe("declared Grids workflow actions", () => {
-  postgresTest("CAMT captures an authorized attachment atomically, exports JSON, and retains source through replay", async () => {
-    const fixture = createFixture();
-    try {
-      await insertFixture(fixture);
-      const fieldId = uuid();
-      await sql`INSERT INTO grids.fields (id, short_id, table_id, name, type, config, position)
-        VALUES (${fieldId}::uuid, ${shortId("F")}, ${fixture.tableId}::uuid, 'Bank file', 'file', '{}'::jsonb, 10)`;
-      const uploaded = await uploadFile({
-        tableId: fixture.tableId,
-        recordId: fixture.recordId,
-        fieldId,
-        filename: "bank.xml",
-        mimeType: "application/xml",
-        bytes: new TextEncoder().encode(camtFixture),
-        userId: fixture.actorId,
-        origin: "direct",
-      });
-      if (!uploaded.ok) throw uploaded.error;
-      const catalog = await loadWorkflowCatalog(fixture.baseId);
-      const compiled = await compileAndBindGridsWorkflowSource(
-        "inputs:\n  selected: { type: record, table: Tasks, required: true }\nsteps:\n  - parseDocument:\n      record: inputs.selected\n      field: Bank file\n      format: camt.052.001.08\n      saveAs: bank\n  - generateDocument:\n      data: bank\n      output: { kind: json }\n",
-        catalog,
-      );
-      if (!compiled.ok) throw new Error(JSON.stringify(compiled.diagnostics));
-      const inputs = { selected: { kind: "record", tableId: fixture.tableId, recordId: fixture.recordId } };
-      const dryRun = await queueRun(fixture, { plan: compiled.plan, inputs, mode: "dryRun" });
-      expect(await drive(dryRun, "dryRun")).toBe("succeeded");
-      expect(await sql`SELECT id FROM grids.workflow_query_data WHERE run_id = ${dryRun}::uuid`).toHaveLength(0);
-      const runId = await queueRun(fixture, { plan: compiled.plan, inputs });
-      expect(await drive(runId), JSON.stringify(await runRow(runId))).toBe("succeeded");
-      const [capture] = await sql`SELECT id::text, payload, sha256 FROM grids.workflow_query_data WHERE run_id = ${runId}::uuid`;
-      expect(capture.payload).toMatchObject({ version: 5, rowCount: 2, source: { fileId: uploaded.data.id } });
-      const effect = (await stepRuns(runId))[0]?.effect_output;
-      expect(effect).toMatchObject({ kind: "fileSnapshot", id: capture.id, rowCount: 2 });
-      expect(effect).not.toHaveProperty("rows");
-      const [document] = await sql`SELECT id::text FROM grids.documents WHERE workflow_run_id = ${runId}::uuid`;
-      const artifact = await readDocumentArtifact(document.id, "json");
-      if (!artifact.ok) throw artifact.error;
-      expect(new TextDecoder().decode(artifact.data.bytes)).toContain("unknown-amount");
-      expect(await sql`SELECT * FROM grids.document_record_sources WHERE document_id = ${document.id}::uuid`).toHaveLength(0);
-      expect(
-        (
-          await removeFile({
-            tableId: fixture.tableId,
-            recordId: fixture.recordId,
-            fieldId,
-            fileId: uploaded.data.id,
-            userId: fixture.actorId,
-            origin: "direct",
-          })
-        ).ok,
-      ).toBe(true);
-      await reopenForReplay(runId);
-      expect(await drive(runId)).toBe("succeeded");
-      const replayed = await sql`SELECT id::text, payload, sha256 FROM grids.workflow_query_data WHERE run_id = ${runId}::uuid`;
-      expect(replayed).toHaveLength(1);
-      expect(replayed[0]).toEqual(capture);
-
-      const user: User = {
-        id: fixture.actorId,
-        uid: "camt-test",
-        roles: ["user"],
-        provider: "local",
-        profile: "user",
-        givenname: "Workflow",
-        sn: "Actor",
-        displayName: "Workflow Actor",
-        mail: "workflow@example.test",
-        avatarHash: null,
-        accountExpires: null,
-        lastLoginLocal: null,
-        memberofGroup: [],
-        memberofGroupIds: [],
-        manages: [],
-        managesGroupIds: [],
-        ipa: null,
-      };
-      const api = new Hono<AuthContext>()
-        .use("*", async (c, next) => {
-          c.set("actor", { kind: "user", user });
-          c.set("user", user);
-          c.set("accessSubject", { type: "user", userId: fixture.actorId });
-          await next();
-        })
-        .route("/", createWorkflowRunRoutes());
-      const [publicRun] = await sql`SELECT short_id FROM grids.workflow_run_profile WHERE run_id = ${runId}::uuid`;
-      const path = `/runs/${publicRun.short_id}/files/steps.0?sha256=${capture.sha256}`;
-      const preview = await api.request(path);
-      expect(preview.status, await preview.clone().text()).toBe(200);
-      expect(WorkflowFilePreviewSchema.parse(await preview.json()).reports[0]?.entryCount).toBe(2);
-      const original = await api.request(`${path}&download=original`);
-      expect(original.status).toBe(200);
-      expect(await original.text()).toBe(camtFixture);
-      expect(original.headers.get("Content-Disposition")).toContain("attachment;");
-      expect((await api.request(path.replace(capture.sha256, "0".repeat(64)))).status).toBe(409);
-      const emptyRun = await queueRun(fixture, { plan: compiled.plan, inputs });
-      expect(await drive(emptyRun)).toBe("failed");
-      expect(await sql`SELECT id FROM grids.workflow_query_data WHERE run_id = ${emptyRun}::uuid`).toHaveLength(0);
-      const [otherPublicRun] = await sql`SELECT short_id FROM grids.workflow_run_profile WHERE run_id = ${emptyRun}::uuid`;
-      expect((await api.request(path.replace(publicRun.short_id, otherPublicRun.short_id))).status).toBe(404);
-      await sql`DELETE FROM grids.base_access WHERE base_id = ${fixture.baseId}::uuid`;
-      expect((await api.request(path)).status).toBe(403);
-      expect((await api.request(`${path}&download=original`)).status).toBe(403);
-      const denied = await queueRun(fixture, { plan: compiled.plan, inputs });
-      expect(await drive(denied)).toBe("failed");
-      expect(await sql`SELECT id FROM grids.workflow_query_data WHERE run_id = ${denied}::uuid`).toHaveLength(0);
-    } finally {
-      await cleanupFixture(fixture);
-    }
-  });
   postgresTest("associatedData captures real records and rejects malformed references without retrying", async () => {
     const fixture = createFixture();
     try {

@@ -14,7 +14,6 @@ Grids bietet einen definierten Umfang an Finanzformaten. Wähle ein vom Empfäng
 | E-Rechnungsrenderer `de.zugferd.en16931`, Versionen 1 und 2 | ZUGFeRD 2.5 / Factur-X 1.09 EN 16931, CII | PDF mit eingebetteter `factur-x.xml` und separater XML-Datei |
 | `datev-csv`, Version 1 | DATEV 700/13, EUR | UTF-8-CSV mit BOM; Dateiname `EXTF_*.csv` |
 | `sepa-xml`, Version 1 | SCT `pain.001.001.09`, DK GBIC 5, EUR | Eine XML-Datei mit einer oder mehreren Überweisungen |
-| Lesendes `parseDocument` | `camt.052.001.08` | Gespeicherte Kontoberichte und Original-XML, keine Zahlungsdatensätze |
 
 Berechnung und Serialisierung verwenden öffentliche APIs aus stdlib 0.25.0. Grids verwaltet Datenstände, Rechte, Workflow-Identitäten, Bestätigung, unveränderliche Ausstellung und Schutz vor Doppelexporten. Freies CSV/JSON/XML und HTML-PDF bleiben eigene allgemeine Ausgaben.
 
@@ -82,4 +81,4 @@ Ein manueller Lauf wartet auf Prüfung. Bestätige vor der Ausstellung den exakt
 
 Zur Laufzeit werden Eingaben fachlich und erzeugtes E-Rechnungs-/SEPA-XML gegen das festgelegte XSD geprüft. Nach externem PDF-Rendering liest Grids die eingebettete XML und vergleicht sie. XSD- und Einbettungsprüfung sind keine vollständige Schematron- oder PDF/A-Zertifizierung, Steuerberatung oder Bankannahmeprüfung.
 
-Weiter: [Dokumentlebenszyklus](/app/grids/help/grids-documents-pdfs), [CAMT-Eingabe](/app/grids/help/grids-camt), [Billing-Vorlage](/app/grids/help/grids-build-business-app).
+Weiter: [Dokumentlebenszyklus](/app/grids/help/grids-documents-pdfs), [Billing-Vorlage](/app/grids/help/grids-build-business-app).

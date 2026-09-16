@@ -11,7 +11,7 @@ Each template belongs to one table and defines one document family. A generated 
 
 Use templates for formatted, shareable output; CSV/JSON exports for data exchange.
 
-Workflows can also create one PDF from several Records, free CSV/JSON/XML, DATEV booking batches, and SEPA transfer files. All are Documents, not just PDFs. See [workflow outputs](/app/grids/help/grids-workflows) for header/mapping configuration and [CAMT](/app/grids/help/grids-camt) for reading bank input.
+Workflows can also create one PDF from several Records, free CSV/JSON/XML, DATEV booking batches, and SEPA transfer files. All are Documents, not just PDFs. See [workflow outputs](/app/grids/help/grids-workflows) for header/mapping configuration.
 
 The financial serializers use stdlib 0.25.0. Grids owns permissions, captured inputs, IDs, duplicate-export claims and confirmation; stdlib owns format calculation and serialization. E-Invoice XML and SEPA XML also receive the format's pinned XSD validation at runtime. The generated PDF's actual embedded XML is read and compared with the structured artifact; a successful serializer alone does not prove the PDF contains it. This does not certify the whole business process.
 

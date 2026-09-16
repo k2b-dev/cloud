@@ -27,7 +27,6 @@ import { documentAllowsPublicLinks } from "./document-sharing";
 import { objectListRecordInputValues } from "./field-types/object-list";
 import { logAudit, type SqlClient } from "./service/audit";
 import { documentIssuanceService } from "./service/document-issuance";
-import { MAX_DOCUMENT_PROFILE_INPUT_BYTES } from "./service/document-json";
 import { summarizeDocument } from "./service/document-mappers";
 import { documentServiceText } from "./service/document-messages";
 import { DocumentQueryOutputSchema } from "./service/document-query-output";
@@ -98,7 +97,6 @@ import {
 import { validateWorkflowDocument } from "./service/workflow-document-validation";
 import { captureWorkflowDocumentValues } from "./service/workflow-document-values";
 import { sendWorkflowEmail, type WorkflowEmailRecipient } from "./service/workflow-email-send";
-import { captureWorkflowCamt } from "./service/workflow-file-data";
 import { preflightWorkflowHttp, requestWorkflowHttp } from "./service/workflow-http-client";
 import { workflowQueryBinder } from "./service/workflow-query-binding";
 import { captureWorkflowQueryData } from "./service/workflow-query-data";
@@ -662,70 +660,6 @@ const workflowDocumentOutput = (document: Document) => {
 // ─── Actions ─────────────────────────────────────────────────────────────────
 
 export const GRIDS_WORKFLOW_ACTIONS = {
-  parseDocument: workflowAction.transactional({
-    ...GRIDS_WORKFLOW_ACTION_METADATA.parseDocument,
-    authorize: mayExecute,
-    run: (ctx, config) =>
-      attempt(async () => {
-        const tx = transaction(ctx);
-        const scope = await workflowRunScope(ctx, tx);
-        await requireExecution(scope, tx);
-        const record = await recordReference(ctx, config.record, "record");
-        await currentTable(ctx, scope, record.tableId);
-        await requireTableAccess(scope, record.tableId, "read", tx);
-        const t = documentServiceText(invocationLocale(ctx));
-        const fieldId = ctx.binding("field");
-        if (typeof fieldId !== "string") throw actionError("WORKFLOW_BINDING_INVALID", t.camtSingleFile);
-        const target = { client: tx, tableId: record.tableId, recordId: record.recordId, fieldId, locale: invocationLocale(ctx) };
-        const files = requireOk(await listForRecordField(target));
-        const file = files[0];
-        if (files.length !== 1 || !file) throw actionError("BAD_INPUT", t.camtSingleFile);
-        if (file.sizeBytes > MAX_DOCUMENT_PROFILE_INPUT_BYTES) throw actionError("BAD_INPUT", t.workflowCaptureBudget);
-        const content = requireOk(await getFileContent({ ...target, fileId: file.id }));
-        const captured = requireOk(
-          captureWorkflowCamt(
-            {
-              source: {
-                tableId: record.tableId,
-                recordId: record.recordId,
-                fieldId,
-                fileId: content.id,
-                filename: content.filename,
-                sha256: content.sha256,
-              },
-              bytes: content.bytes,
-              capturedAt: new Date().toISOString(),
-            },
-            invocationLocale(ctx),
-          ),
-        );
-        await ctx.heartbeat(tx);
-        const output = requireOk(
-          await persistWorkflowQueryDataInTransaction(
-            {
-              baseId: scope.baseId,
-              runId: ctx.runId,
-              stepKey: ctx.stepKey,
-              capture: captured,
-              locale: invocationLocale(ctx),
-            },
-            tx,
-          ),
-        );
-        return { state: "succeeded", output };
-      }),
-    plan: (ctx, config) =>
-      planned(async () => {
-        const scope = await workflowRunScope(ctx);
-        await requireExecution(scope);
-        const record = await recordReference(ctx, config.record, "record");
-        await readableRecord(ctx, scope, record, "read");
-        return {
-          summary: documentServiceText(invocationLocale(ctx)).camtPlanned,
-          output: { kind: "fileSnapshot", id: `dry-run:${ctx.stepKey}`, planned: true },
-        };
-      }),
-  }),
   query: workflowAction.transactional({
     ...GRIDS_WORKFLOW_ACTION_METADATA.query,
     authorize: mayExecute,
@@ -1694,7 +1628,7 @@ export const GRIDS_WORKFLOW_ACTIONS = {
             reference &&
             typeof reference === "object" &&
             !Array.isArray(reference) &&
-            (reference.kind === "queryResult" || reference.kind === "fileSnapshot") &&
+            reference.kind === "queryResult" &&
             reference.planned === true &&
             typeof reference.id === "string" &&
             reference.id.startsWith("dry-run:");

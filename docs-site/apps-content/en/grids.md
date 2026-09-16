@@ -19,10 +19,10 @@ documents, and workflows without splitting the domain across unrelated tools.
 Grids resources use six-character public IDs in URLs, API and CLI responses,
 relations, workflow results, and live updates. Database UUIDs stay internal.
 Cloud account/group identities and operational audit IDs use their own
-contracts. A workflow capture is opened with the run's public ID and step key;
-its internal capture ID is not part of the public API.
+contracts. Workflow capture references expose step keys; internal capture IDs
+are not part of the public API.
 
-### Choose a file format or read a bank report
+### Choose a file format
 
 Workflows can generate PDF, CSV, JSON, XML, SEPA transfer files, and DATEV
 booking batches from captured data. Financial profiles use the shared stdlib
@@ -37,18 +37,11 @@ including UBL, XRechnung, SEPA direct debit, and instant payments, are not
 provided by these profiles. Unsupported SEPA characters are input errors;
 they are not silently replaced.
 
-Use the `parseDocument` workflow action to read a `camt.052.001.08` file
-attached to a Record. It captures the original file and a typed report
-hierarchy. The run shows accounts, entries, statuses, reversals, and bank-page
-completeness, with an original-file download. It does not create payments,
-match invoices, or mark bills paid. Subsequent workflow steps can explicitly
-map the captured reports into an export.
-
 The in-app Help overview links every Grids topic in English and German.
 Use **Field configuration reference** for field types and ID strategies,
-**Financial formats** for exact inputs and limits, and **Read bank reports
-(CAMT)** for the workflow, CLI, and API contracts. Agents should discover and
-read those Help pages rather than infer options from a UI label.
+**Financial formats** for exact inputs and limits, and **Workflows** for the
+workflow, CLI, and API contracts. Agents should discover and read those Help
+pages rather than infer options from a UI label.
 
 ### Start with the billing template
 

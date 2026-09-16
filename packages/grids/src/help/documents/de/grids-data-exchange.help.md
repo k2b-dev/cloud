@@ -46,6 +46,5 @@ Diese APIs planen keine Synchronisation und gewähren keine Rechte auf andere Cl
 
 Für wiederholbare, unveränderliche Dateien aus mehreren Datensätzen nutze [Workflow-Abfragen und Dokumentausgaben](/app/grids/help/grids-workflows). PDF, freies CSV/JSON/XML, DATEV-CSV und SEPA-XML teilen den Dokumentlebenszyklus. Eine SEPA-Datei überweist kein Geld; DATEV-CSV wird nicht automatisch in die Buchhaltungssoftware importiert.
 
-Eine Bankdatei liest du mit [CAMT](/app/grids/help/grids-camt). Dabei entstehen keine Zahlungen.
 
 Ein CSV-/JSON-Download ist keine vollständige Sicherung: Berechtigungen, Workflow-Zustand, Vorlagen, Anhänge und unveränderliche Historie werden dadurch nicht wiederhergestellt. Verwende [Evidence-Exporte](/app/grids/help/grids-evidence-exports) für prüfbare Nachweise und die Sicherungsprozedur des Betreibers für die Wiederherstellung nach einem Ausfall.

@@ -109,11 +109,15 @@ Das ist eine fehlgeschlagene Abfrage, nicht der unten beschriebene Status `needs
 
 Plattformadministratoren prüfen gespeicherte Zustellfehler mit `cld grids record-events failures <base-id> --json`. Weitere Seiten liest du mit dem zurückgegebenen `nextOffset` über `--offset`. Nach Behebung der Ursache spielt `cld grids record-events replay <base-id> <failure-id> --yes` ein gestopptes Ereignis mit seinen ursprünglichen Daten erneut ein. Verwende die genaue Fehler-UUID aus der Liste. Die Annahme bestätigt noch keine abgeschlossene Verarbeitung; Base-Admin-Zugriff allein erlaubt diese Betreiberaktion nicht.
 
-`needs_attention` ist kein Fehler. Der Status bedeutet, dass ein Schritt etwas außerhalb von Grids ausgeführt hat und nicht festgestellt werden kann, ob es angekommen ist. In der Praxis betrifft das eine `httpRequest`, die den Prozess verlassen hat, ohne dass eine vollständige Antwort zurückkam. Grids wiederholt den Schritt bewusst nicht und bezeichnet ihn nicht als fehlgeschlagen: Eine Wiederholung kann eine empfangende Stelle doppelt belasten, und die Bezeichnung als Fehler würde behaupten, dass die Anfrage nicht angekommen ist.
+`needs_attention` erfordert, dass eine Person vor dem Fortfahren den Grund prüft.
+
+Bei `WORKFLOW_MODULE_MISMATCH` hat ein Update die verfügbaren Workflow-Aktionen geändert. Prüfe den Workflow und veröffentliche ihn erneut. Bestehende Ausführungen behalten ihren ursprünglichen Plan; eine erneute Veröffentlichung aktualisiert sie nicht. Prüfe abgeschlossene Schritte und externe Wirkungen, bevor du eine neue Ausführung startest.
+
+Bei einer unterbrochenen `httpRequest` hat die Anfrage Grids verlassen, ohne dass eine vollständige Antwort zurückkam. Grids kann deshalb nicht feststellen, ob das empfangende System sie verarbeitet hat. Grids wiederholt den Schritt bewusst nicht und bezeichnet ihn nicht als fehlgeschlagen: Eine Wiederholung kann eine empfangende Stelle doppelt belasten, und die Bezeichnung als Fehler würde behaupten, dass die Anfrage nicht angekommen ist.
 
 Prüfe im empfangenden System, ob die Anfrage angekommen ist, und entscheide anschließend. Wenn sie nicht angekommen ist, starte eine neue Ausführung. Wenn sie angekommen ist, ist keine weitere Aktion erforderlich; die Ausführung bleibt als Aufzeichnung des Vorgangs erhalten. Die Ausführungsdetails können diese Frage nicht beantworten. Genau deshalb wurde der Vorgang für eine Person angehalten.
 
-Datensatzänderungen, generierte Dokumente und versendete E-Mails enden niemals in diesem Zustand. Diese Schritte werden durch die Unterbrechung entweder rückgängig gemacht oder können sicher fortgesetzt werden.
+Datensatzänderungen, generierte Dokumente und versendete E-Mails haben dieses unklare HTTP-Ergebnis nicht. Diese Schritte werden durch die Unterbrechung entweder rückgängig gemacht oder können sicher fortgesetzt werden.
 
 ## Ein Testlauf meldet ein unbestimmtes Ergebnis {icon="lifebuoy"}
 

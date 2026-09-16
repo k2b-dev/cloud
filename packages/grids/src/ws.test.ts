@@ -23,7 +23,7 @@ test("workflow live events project nested results through the same boundary as R
   const runId = "55555555-5555-4555-8555-555555555555";
   const captureId = "66666666-6666-4666-8666-666666666666";
   const at = "2026-09-15T12:00:00.000Z";
-  const capture = { kind: "fileSnapshot", id: captureId, sha256: "a".repeat(64), rowCount: 1, capturedAt: at };
+  const capture = { kind: "queryResult", id: captureId, sha256: "a".repeat(64), rowCount: 1, capturedAt: at };
   const projected = await toPublicWorkflowRunEvent(
     {
       v: 1,
@@ -52,7 +52,7 @@ test("workflow live events project nested results through the same boundary as R
           sourcePath: ["steps", 0],
           iterationPath: [],
           kind: "action",
-          action: "parseDocument",
+          action: "query",
           status: "completed",
           outcome: { state: "succeeded", output: capture },
           executionGeneration: 0,

@@ -587,7 +587,6 @@ export function WorkflowRunDetailPanel(props: {
               />
               <WorkflowRunInputsSection inputs={inputRows()} />
               <WorkflowRunStepsSection
-                runId={props.runId}
                 steps={steps()}
                 truncated={stepsTruncated()}
                 loading={loadMut.loading()}

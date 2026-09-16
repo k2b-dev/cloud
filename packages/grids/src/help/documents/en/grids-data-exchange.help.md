@@ -46,6 +46,5 @@ These APIs do not schedule a sync or authorize access to another Cloud applicati
 
 For repeatable, immutable files from several Records, use [workflow query captures and document outputs](/app/grids/help/grids-workflows). PDF, free CSV/JSON/XML, DATEV CSV and SEPA XML share the Document lifecycle. Creating a SEPA file does not transfer money; creating DATEV CSV does not import it into accounting software.
 
-Read a bank-provided file with [CAMT](/app/grids/help/grids-camt). It does not automatically create payments.
 
 A CSV/JSON download is not a complete backup: it does not recreate permissions, workflow state, templates, attachments and immutable history. Use [Evidence exports](/app/grids/help/grids-evidence-exports) for verifiable retained evidence and the operator's backup procedure for disaster recovery.

@@ -57,7 +57,6 @@ Choose a small process that already has clear items, such as equipment loans or 
 - [Publish safely and test each audience](/app/grids/help/grids-publish-custom-app)
 - [Templates, PDF/E-Invoices, generated files and source records](/app/grids/help/grids-documents-pdfs)
 - [Actions, triggers, launchers, file outputs, approvals and retries](/app/grids/help/grids-workflows)
-- [Read CAMT bank reports without recording payments](/app/grids/help/grids-camt)
 - [Financial format inputs, limits and validation](/app/grids/help/grids-financial-formats)
 - [Base access, app audiences and anonymous forms](/app/grids/help/grids-permissions)
 - [Retention, holds, trash and destruction](/app/grids/help/grids-retention-preservation)

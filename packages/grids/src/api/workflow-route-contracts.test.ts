@@ -27,7 +27,7 @@ describe("workflow route contracts", () => {
   test("capture references expose run-relative step keys, not UUIDs, including nested outputs", async () => {
     const id = "11111111-1111-4111-8111-111111111111";
     const fieldId = "22222222-2222-4222-8222-222222222222";
-    const capture = { kind: "fileSnapshot", id, sha256: "a".repeat(64), rowCount: 1, capturedAt: "2026-09-15T12:00:00.000Z" };
+    const capture = { kind: "queryResult", id, sha256: "a".repeat(64), rowCount: 1, capturedAt: "2026-09-15T12:00:00.000Z" };
     let reads = 0;
     const result = await toPublicWorkflowPayloads(
       [
@@ -45,10 +45,10 @@ describe("workflow route contracts", () => {
     expect(result).toEqual([
       {
         state: "succeeded",
-        output: { kind: "fileSnapshot", stepKey: "steps.0", sha256: capture.sha256, rowCount: 1, capturedAt: capture.capturedAt },
+        output: { kind: "queryResult", stepKey: "steps.0", sha256: capture.sha256, rowCount: 1, capturedAt: capture.capturedAt },
       },
       {
-        nested: [{ kind: "fileSnapshot", stepKey: "steps.0", sha256: capture.sha256, rowCount: 1, capturedAt: capture.capturedAt }],
+        nested: [{ kind: "queryResult", stepKey: "steps.0", sha256: capture.sha256, rowCount: 1, capturedAt: capture.capturedAt }],
         values: { [fieldId]: "unchanged" },
       },
     ]);
@@ -65,9 +65,9 @@ describe("workflow route contracts", () => {
     expect(DIRECT_WORKFLOW_CHANNEL).toBe("api");
   });
 
-  test("file preview URLs reject capture UUIDs before loading a run", async () => {
-    const response = await app().request("/workflows/runs/RUN001/files/11111111-1111-4111-8111-111111111111?sha256=" + "a".repeat(64));
-    expect(response.status).toBe(400);
+  test("removed captured-file routes return not found", async () => {
+    const response = await app().request("/workflows/runs/RUN001/files/steps.0?sha256=" + "a".repeat(64));
+    expect(response.status).toBe(404);
   });
 
   test("workflow payload projection batches only typed resource references and preserves text", async () => {

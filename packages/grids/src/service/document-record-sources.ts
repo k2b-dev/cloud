@@ -39,8 +39,6 @@ export const loadDocumentRecordCounts = async (ids: string[]) => {
 };
 
 export const resolveCapturedDocumentRecords = async (payload: WorkflowDocumentDataCapture["payload"], baseId: string, tx: SQL) => {
-  // A bank report does not establish Grids record membership for its entries.
-  if (payload.version === 5) return null;
   if (payload.version === 1 || payload.version === 2) return capturedDocumentRecords(payload);
   const ids = tx.array(payload.source.ids, "TEXT");
   const relation = payload.version === 3 ? tx`grids.documents` : tx`grids.record_snapshots`;

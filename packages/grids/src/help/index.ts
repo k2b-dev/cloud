@@ -2,7 +2,6 @@ import { defineHelp } from "@k2b/cloud/server";
 import buildBaseDe from "./documents/de/grids-build-base.help.md" with { type: "text" };
 import buildBusinessAppDe from "./documents/de/grids-build-business-app.help.md" with { type: "text" };
 import buildCustomAppDe from "./documents/de/grids-build-custom-app.help.md" with { type: "text" };
-import camtDe from "./documents/de/grids-camt.help.md" with { type: "text" };
 import combinedTablesDe from "./documents/de/grids-combined-tables.help.md" with { type: "text" };
 import coreModelDe from "./documents/de/grids-core-model.help.md" with { type: "text" };
 import customAppApiDe from "./documents/de/grids-custom-app-api.help.md" with { type: "text" };
@@ -28,7 +27,6 @@ import workflowsDe from "./documents/de/grids-workflows.help.md" with { type: "t
 import buildBase from "./documents/en/grids-build-base.help.md" with { type: "text" };
 import buildBusinessApp from "./documents/en/grids-build-business-app.help.md" with { type: "text" };
 import buildCustomApp from "./documents/en/grids-build-custom-app.help.md" with { type: "text" };
-import camt from "./documents/en/grids-camt.help.md" with { type: "text" };
 import combinedTables from "./documents/en/grids-combined-tables.help.md" with { type: "text" };
 import coreModel from "./documents/en/grids-core-model.help.md" with { type: "text" };
 import customAppApi from "./documents/en/grids-custom-app-api.help.md" with { type: "text" };
@@ -77,7 +75,6 @@ export const gridsHelp = defineHelp({
       documents,
       financialFormats,
       workflows,
-      camt,
       permissions,
       evidenceExports,
       retentionPreservation,
@@ -105,7 +102,6 @@ export const gridsHelp = defineHelp({
       documentsDe,
       financialFormatsDe,
       workflowsDe,
-      camtDe,
       permissionsDe,
       evidenceExportsDe,
       retentionPreservationDe,

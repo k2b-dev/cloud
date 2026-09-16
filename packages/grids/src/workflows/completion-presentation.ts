@@ -23,7 +23,6 @@ const deDetailsByStableLabel: Readonly<Record<string, string>> = {
   atomicRecords: "Sperrt Datensätze, prüft aktuelle Grids-Daten und schreibt begrenzte Änderungen gemeinsam oder gar nicht.",
   query:
     "Speichert ein vollständiges, typisiertes GQL-Ergebnis einmalig für spätere Dokumentschritte. Parameter sind Werte, kein Abfragetext.",
-  parseDocument: "Erfasst eine CAMT-Datei und ihre Berichte einmalig. Gleicht keine Rechnungen ab und bestätigt keine Zahlungen.",
   deleteRecord: "Verschiebt einen nicht festgeschriebenen Datensatz nach einer Berechtigungsprüfung in den Papierkorb.",
   generateDocument: "Erstellt ein unveränderliches Dokument aus einer Datensatzvorlage oder einem erfassten Abfrageergebnis.",
   createDocumentLink: "Erstellt einen widerrufbaren öffentlichen Download-Link für ein erzeugtes Dokument.",

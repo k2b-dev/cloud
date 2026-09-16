@@ -6,14 +6,6 @@ const suggest = (source: string) => {
   return queryResultCompletions(source.replace("|", ""), caret);
 };
 const query = (name: string) => `- query: { source: 'from table Items', saveAs: ${name} }`;
-test("offers prior CAMT captures as document data", () => {
-  expect(
-    suggest(
-      `steps:\n  - parseDocument: { record: inputs.bank, field: File, format: camt.052.001.08, saveAs: bank }\n  - generateDocument:\n      data: |\n`,
-    ),
-  ).toEqual(["bank"]);
-});
-
 test("suggests only prior query results, including while typing a quoted value", () => {
   expect(suggest(`steps:\n  ${query("report")}\n  - generateDocument:\n      data: \"re|\n  ${query("later")}\n`)).toEqual(["report"]);
   expect(suggest(`steps:\n  - generateDocument:\n      data: |\n  ${query("later")}\n`)).toEqual([]);

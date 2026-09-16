@@ -41,19 +41,5 @@ test("all implemented field types and workflow actions have discoverable authori
     expect(fields).toContain("cld grids fields type <type> --json");
     const workflows = await Bun.file(new URL(`./documents/${locale}/grids-workflows.help.md`, import.meta.url)).text();
     for (const action of Object.keys(GRIDS_WORKFLOW_ACTION_METADATA)) expect(workflows, `${locale}: ${action}`).toContain(`\`${action}\``);
-    const camt = await Bun.file(new URL(`./documents/${locale}/grids-camt.help.md`, import.meta.url)).text();
-    for (const feature of [
-      "camt.052.001.08",
-      "fileSnapshot",
-      "lastPage",
-      "CRDT",
-      "DBIT",
-      "BOOK",
-      "PDNG",
-      "5 MiB",
-      "--sha256",
-      "download-file",
-    ])
-      expect(camt, `${locale}: ${feature}`).toContain(feature);
   }
 });

@@ -14,7 +14,6 @@ Grids offers a defined subset of financial formats. Choose a format supported by
 | E-Invoice renderer `de.zugferd.en16931`, versions 1 and 2 | ZUGFeRD 2.5 / Factur-X 1.09 EN 16931, CII | PDF with embedded `factur-x.xml` plus the separate XML |
 | `datev-csv`, version 1 | DATEV 700/13, EUR | UTF-8 CSV with BOM; filename `EXTF_*.csv` |
 | `sepa-xml`, version 1 | SCT `pain.001.001.09`, DK GBIC 5, EUR | One XML file containing one or more transfers |
-| Read-only `parseDocument` | `camt.052.001.08` | Captured account reports and original XML, not payment Records |
 
 Calculation and serialization use public stdlib 0.25.0 APIs. Grids retains ownership of snapshots, permission checks, workflow identities, confirmation, immutable issuance and duplicate-export protection. Free CSV/JSON/XML and HTML PDF remain separate generic output options.
 
@@ -82,4 +81,4 @@ A manual run pauses for review. Confirm the exact preview hash before issuance. 
 
 Runtime checks include semantic input validation and pinned XSD validation for generated E-Invoice/SEPA XML. After external PDF rendering, Grids reads and compares the embedded XML. XSD and embedding checks are not full Schematron, PDF/A certification, tax advice or a bank acceptance test.
 
-Related: [Document lifecycle](/app/grids/help/grids-documents-pdfs), [CAMT input](/app/grids/help/grids-camt), [Billing template](/app/grids/help/grids-build-business-app).
+Related: [Document lifecycle](/app/grids/help/grids-documents-pdfs), [Billing template](/app/grids/help/grids-build-business-app).

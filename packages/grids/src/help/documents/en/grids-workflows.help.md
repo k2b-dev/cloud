@@ -231,7 +231,6 @@ Run options are configured separately from the workflow source. One workflow can
 | Step | Required fields | Optional fields and defaults | Dry run |
 | --- | --- | --- | --- |
 | `query` | GQL `source` | Typed `parameters`, `saveAs` | Checks schema and access without capturing rows |
-| `parseDocument` | `record`, File `field`, `format: camt.052.001.08` | `saveAs` | Checks the Record reference; does not read or validate the file |
 | `closeRecord` | `record` | `expectedMode`, `expectedPolicyRevision` | Predicts Direct Finalization or a Four-eyes request from the Table's current policy |
 | `createCorrectionDraft` | `original`, `typeField`, `typeValue`, `originalField` | `intent` (`correction` default), `copyFields`, `values`, `saveAs` | Validates the finalized original and predicts one linked Draft |
 | `finalizeRecord` | `record` | None | Validates Write access and predicts one permanent finalization |
@@ -257,7 +256,6 @@ operational audit/delivery IDs retain their own identity format.
 
 ### Create files from a query
 
-For bank-provided input, see [Read bank reports (CAMT)](/app/grids/help/grids-camt): `parseDocument` captures the exact original plus typed account reports and returns a small `fileSnapshot` reference usable as `generateDocument.data`. It does not post payments or flatten bank transactions.
 
 For a joined or grouped file, `associatedData: selection` names an earlier
 single-table row query saved as `selection`. Those frozen record identities

@@ -228,7 +228,6 @@ Ausführungsoptionen werden getrennt von der Workflow-Quelle konfiguriert. Ein W
 
 ## Schrittreferenz {icon="book-2"}
 
-Bankdateien liest `parseDocument` mit `record`, Datei-`field`, `format: camt.052.001.08` und optional `saveAs`. Die Aktion speichert Original und typisierte Kontoberichte zusammen. Ein Probelauf prüft die Datensatzreferenz, nicht die Datei. Die kleine `fileSnapshot`-Referenz lässt sich als `generateDocument.data` verwenden. Es werden keine Zahlungen gebucht. Vollständiges Beispiel, Grenzen und CLI: [Bankberichte lesen (CAMT)](/app/grids/help/grids-camt).
 
 | Schritt | Erforderliche Felder | Optionale Felder und Standardwerte | Testlauf |
 | --- | --- | --- | --- |

@@ -66,21 +66,6 @@ const atomicAssertion = {
 } satisfies Record<string, WorkflowFieldSchema>;
 
 export const GRIDS_WORKFLOW_ACTION_METADATA = {
-  parseDocument: {
-    effect: "transactional",
-    label: "Read bank report",
-    description: "Captures one CAMT file and its reports once. Does not match invoices or confirm payments.",
-    outputType: "grids.queryResult",
-    config: {
-      kind: "object",
-      properties: {
-        record: { kind: "string", minLength: 1, maxLength: 500, description: "Record reference containing the uploaded file." },
-        field: { kind: "string", minLength: 1, description: "File field name or ID. Must contain exactly one file." },
-        format: { kind: "string", enum: ["camt.052.001.08"], description: "Exact supported bank report format; UTF-8 XML only." },
-        saveAs,
-      },
-    },
-  },
   query: {
     effect: "transactional",
     label: "Capture query data",

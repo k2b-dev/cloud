@@ -556,15 +556,7 @@ const bindAction = (step: Extract<WorkflowIrStep, { kind: "action" }>, scope: Ma
   const outputType = gridsWorkflows.manifest.actions.find((action) => action.kind === step.action)?.outputType;
   let output: ValueInfo | undefined = outputType ? valueDescriptor(outputType) : undefined;
 
-  if (step.action === "parseDocument") {
-    const record = expectReference(config.record, "grids.record", "record", [...path, "record"], scope, context);
-    if (record && !record.tableId)
-      addDiagnostic(context, "binding.type", "parseDocument requires a record input with a declared table", [...path, "record"]);
-    if (record?.tableId && typeof config.field === "string") {
-      const field = bindField(context, record.tableId, config.field, [...path, "field"]);
-      if (field && !field.file) addDiagnostic(context, "binding.type", "parseDocument requires a File field", [...path, "field"]);
-    }
-  } else if (step.action === "query") {
+  if (step.action === "query") {
     bindQueryConfig(config, path, scope, context);
     const parsed = typeof config.source === "string" ? parseGridsQueryDsl(config.source) : null;
     if (output && parsed?.ok)

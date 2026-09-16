@@ -4,12 +4,6 @@ export const documentServiceMessages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
-      camtInvalid:
-        "Cannot read this bank report. Use a standalone camt.052.001.08 XML file. Check its version and XML structure; no payments were recorded.",
-      camtUtf8Required: "Use a UTF-8 XML bank report, not a PDF, ZIP or another encoding.",
-      camtSingleFile: "Select a File field containing exactly one bank report.",
-      camtPlanned: "Read one bank report without recording payments.",
-      camtUnsupported: "Unsupported bank-report format. This action reads only camt.052.001.08, not camt.053 or camt.054.",
       templateDisabled: "Document template is disabled.",
       issuanceRequiresFinalization: "Finalize this record before issuing its document.",
       templateWrongTable: "Document template does not belong to the table.",
@@ -170,13 +164,6 @@ export const documentServiceMessages = i18n.define({
       createdDocumentReadFailed: "The created document could not be read.",
     },
     de: {
-      camtInvalid:
-        "Dieser Bankbericht kann nicht gelesen werden. Verwende eine eigenständige camt.052.001.08-XML-Datei. Prüfe Version und XML-Struktur; es wurden keine Zahlungen erfasst.",
-      camtUtf8Required: "Verwende einen XML-Bankbericht in UTF-8, keine PDF-, ZIP-Datei oder andere Zeichenkodierung.",
-      camtSingleFile: "Wähle ein Datei-Feld mit genau einem Bankbericht.",
-      camtPlanned: "Einen Bankbericht lesen, ohne Zahlungen zu erfassen.",
-      camtUnsupported:
-        "Nicht unterstütztes Bankbericht-Format. Diese Aktion liest ausschließlich camt.052.001.08, nicht camt.053 oder camt.054.",
       associatedDataInvalid: "associatedData muss auf das gespeicherte Ergebnis eines vorherigen Abfrageschritts verweisen.",
       associatedDataNotRowQuery:
         "associatedData benötigt eine Zeilenabfrage aus einer Tabelle ohne Joins, Gruppierung oder Aggregate. Erfasse die Quelldatensätze in einem eigenen Abfrageschritt.",

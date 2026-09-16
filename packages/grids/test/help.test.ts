@@ -59,7 +59,6 @@ const expectedTopics = [
   "grids-evidence-exports",
   "grids-retention-preservation",
   "grids-operations-troubleshooting",
-  "grids-camt",
 ];
 
 describe("grids help", () => {
@@ -309,10 +308,6 @@ describe("grids help", () => {
   test("keeps technical example structure aligned across locales", () => {
     const codeBlocks = (id: string, locale: string) =>
       (gridsHelp.getMarkdown(id, locale)?.match(/```[\s\S]*?```/g) ?? []).map((block) => {
-        // These examples localize user-owned names and sample labels. Keep
-        // their commands, keys and options identical; the binder separately
-        // compiles both CAMT examples against their named tables and fields.
-        if (id === "grids-camt") return block.replace(/\b(table|field):[^\n]+/g, "$1: <localized name>");
         if (id === "grids-data-exchange") return block.replace(/"Name01":"[^"]+"/g, '"Name01":"<localized label>"');
         return block;
       });

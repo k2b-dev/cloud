@@ -61,7 +61,7 @@ export function queryResultCompletions(source: string, caret: number): string[] 
       } else if (Object.keys(step).length === 1) {
         const [action, config] = Object.entries(step)[0]!;
         const options = object(config);
-        defineName(scope, action === "setVariable" ? options?.name : options?.saveAs, action === "query" || action === "parseDocument");
+        defineName(scope, action === "setVariable" ? options?.name : options?.saveAs, action === "query");
       }
       for (const branch of branches) {
         const found = visit(branch.value, branch.path, branch.scope, depth + 1);

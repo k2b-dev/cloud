@@ -57,7 +57,6 @@ Wähle einen kleinen Prozess mit bereits klar definierten Einträgen, etwa Gerä
 - [Sicher veröffentlichen und jede Zielgruppe prüfen](/app/grids/help/grids-publish-custom-app)
 - [Vorlagen, PDF/E-Rechnungen, erzeugte Dateien und Quelldatensätze](/app/grids/help/grids-documents-pdfs)
 - [Aktionen, Trigger, Starter, Dateiausgaben, Bestätigungen und Wiederholung](/app/grids/help/grids-workflows)
-- [CAMT-Bankberichte lesen, ohne Zahlungen anzulegen](/app/grids/help/grids-camt)
 - [Eingaben, Grenzen und Prüfung der Finanzformate](/app/grids/help/grids-financial-formats)
 - [Base-Rechte, App-Zielgruppen und anonyme Formulare](/app/grids/help/grids-permissions)
 - [Aufbewahrung, Sperren, Papierkorb und Vernichtung](/app/grids/help/grids-retention-preservation)

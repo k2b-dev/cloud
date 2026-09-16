@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { defineWorkflowModule } from "@k2b/cloud/workflows";
-import { hashWorkflowJson } from "@k2b/cloud/workflows/language";
+import { compileWorkflow, hashWorkflowJson } from "@k2b/cloud/workflows/language";
 import { gridsWorkflows } from "./module";
 
 const gridsWorkflowManifest = gridsWorkflows.manifest;
@@ -17,14 +17,20 @@ describe("Grids workflow manifest", () => {
     }
   });
 
-  test("pins the query-enabled manifest hash; older plans require republication", async () => {
-    expect(await hashWorkflowJson(gridsWorkflowManifest)).toBe("5ffd400ad14d78c197c1b0e7c7efcd1086b8534c9c82e790626ce2cba7014048");
+  test("pins the current manifest hash; older plans require republication", async () => {
+    expect(await hashWorkflowJson(gridsWorkflowManifest)).toBe("b5828290b6f3d2a6b867bc88d513293937a2503fa6ae144a026f7b340cd016ad");
+  });
+
+  test("rejects removed actions at compilation", async () => {
+    const result = await compileWorkflow("steps:\n  - parseDocument: {}\n", gridsWorkflows);
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("Removed action was accepted");
+    expect(result.diagnostics).toEqual(expect.arrayContaining([expect.objectContaining({ code: "action.unknown" })]));
   });
 
   test("classifies every effectful action explicitly", () => {
     expect(Object.fromEntries(gridsWorkflowManifest.actions.map((action) => [action.kind, action.effect]))).toMatchObject({
       query: "transactional",
-      parseDocument: "transactional",
       finalizeRecord: "transactional",
       deleteRecord: "transactional",
       closeRecord: "transactional",
