@@ -16,6 +16,7 @@ const germanText: Record<string, string> = {
   "Chat settings": "Chat-Einstellungen",
   "Stop the response before marking it done": "Vor dem Abschließen die Antwort stoppen",
   "Could not update chat. Stop the response first or try again.": "Chat konnte nicht aktualisiert werden. Stoppe die Antwort oder versuche es erneut.",
+  "Could not load context": "Kontext konnte nicht geladen werden",
   "Could not load chat details.": "Chatdetails konnten nicht geladen werden.",
   "Loading details…": "Details werden geladen…",
   "Not used yet": "Noch nicht verwendet",

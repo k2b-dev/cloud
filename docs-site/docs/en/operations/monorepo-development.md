@@ -224,6 +224,19 @@ contracts, shared UI coverage, CSS architecture, and formatting.
 
 See [Frontend testing](/en/docs/frontend/testing) for browser-facing checks.
 
+Assistant separates server and DOM tests through its package test command:
+
+```bash
+bun run --cwd packages/assistant test
+bun run --cwd packages/assistant typecheck
+bun run --cwd packages/assistant test:integration
+```
+
+The test command runs `*.behavior.test.tsx` with the browser Solid build and
+the shared DOM compiler in a separate process. Other tests use the server
+build. The integration command creates disposable PostgreSQL and rsql
+containers and removes them afterward; it does not use the development database.
+
 ### Run application integration checks
 
 Applications that talk to PostgreSQL and NATS keep those checks behind a

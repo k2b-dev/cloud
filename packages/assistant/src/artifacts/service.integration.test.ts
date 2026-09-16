@@ -569,7 +569,7 @@ const isolated = /\/cloud_assistant_artifacts_test(?:\?|$)/.test(process.env.DAT
 
   test("script capabilities require real approval, remember scopes and never execute twice", async () => {
     const applet=await artifacts.create({title:"Capability app",source},owner);
-    const definitions=defineCapabilities({protocolVersion:1,actions:{write:{title:"Write item",description:"Write a test item",input:z.object({value:z.string().describe("Value")}).strict(),data:z.unknown(),approval:"rememberable",idempotency:"required",destructive:false,openWorld:false,
+    const definitions=defineCapabilities({protocolVersion:2,actions:{write:{title:"Write item",description:"Write a test item",input:z.object({value:z.string().describe("Value")}).strict(),data:z.unknown(),approval:"rememberable",idempotency:"required",destructive:false,openWorld:false,
       review:async()=>ok({message:"Write item?",approvalScope:"items:one"}),run:async()=>ok({data:{}})}}});
     const manifest=compileCapabilityManifest("demo",definitions);
     const catalog=spyOn(capabilityClient,"getCapabilityCatalogApp").mockResolvedValue({ok:true,data:{appId:"demo",appName:"Demo",appDescription:"",appIcon:"ti ti-app-window",manifest}});
@@ -611,7 +611,7 @@ const isolated = /\/cloud_assistant_artifacts_test(?:\?|$)/.test(process.env.DAT
     await artifacts.publish(resource.id,1,owner,"Initial release");
     await artifacts.grant(resource.id,{type:"user",userId:reader.user.id},"read",owner);
     const input=z.object({}).strict();
-    const definitions=defineCapabilities({protocolVersion:1,
+    const definitions=defineCapabilities({protocolVersion:2,
       queries:{read:{title:"Read private data",description:"Read test data",input,data:z.unknown(),openWorld:false,run:async()=>ok({data:[]})}},
       actions:{write:{title:"Write private data",description:"Write test data",input,data:z.unknown(),approval:"rememberable",idempotency:"required",destructive:false,openWorld:false,review:async()=>ok({message:"Write?",approvalScope:"private"}),run:async()=>ok({data:{}})}}});
     const manifest=compileCapabilityManifest("consent",definitions);

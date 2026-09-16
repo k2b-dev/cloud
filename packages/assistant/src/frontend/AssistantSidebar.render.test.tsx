@@ -127,11 +127,11 @@ describe("Assistant sidebar", () => {
     expect(html).not.toContain("overflow-y-auto");
   });
 
-  test("pinned cards expose unpin in the preview without a Done action or Ready filler", () => {
+  test("pinned cards expose their status without a Done action or Ready filler", () => {
     const html = renderToString(() => createComponent(AssistantSidebar, {
       conversations: () => [{ ...conversation("pinned", "Pinned work", null), pinnedAt: "2026-09-14T11:00:00.000Z" }], live,
     }));
-    expect(html).toContain("Unpin chat");
+    expect(html).toContain('aria-label="Pinned"');
     expect(html).not.toContain("Mark chat done");
     expect(html).not.toContain(">Ready<");
     expect(html).not.toContain('class="k2b-app-workspace__sidebar-item-description"');

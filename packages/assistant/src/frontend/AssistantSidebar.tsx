@@ -129,7 +129,7 @@ function ConversationSidebarItem(props: {
         !props.conversation.isDone ? (
           <span class="inline-flex items-center gap-1.5">
             <Show when={props.conversation.pinnedAt}>
-              <i class="ti ti-pin-filled" aria-label={text("Unpin chat")} />
+              <i class="ti ti-pin-filled" role="img" aria-label={assistantMessages.resolve([locale()]).t.pinnedLabel} />
             </Show>
             <Format.RelativeTime value={props.conversation.lastUsedAt} />
           </span>

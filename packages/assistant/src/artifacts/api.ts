@@ -76,7 +76,7 @@ export const createArtifactServiceRoutes = (caller: (context: Context<AuthContex
     await studioPdf.authorize({ resourceId: c.req.query("resourceId"), conversationId: c.req.query("conversationId") }, identity(c));
     await next();
   }, bodyLimit({ maxSize: STORAGE_TRANSPORT_BYTES }), async c => {
-    let input;
+    let input: ReturnType<typeof decodePdfRequest>;
     try { input = decodePdfRequest(await c.req.raw.formData()); }
     catch { throw new ArtifactError("INVALID_INPUT"); }
     const result = await studioPdf.execute(input, c.req.raw.signal);

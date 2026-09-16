@@ -104,7 +104,7 @@ export function ArtifactWorkspace(props: { controller: ArtifactWorkspaceControll
       // Key by identity, not by snapshot object. Switching tabs never remounts a run or editor.
       const tab = state().tabs.find((tab) => tab.key === key)!;
       onCleanup(() => props.controller.setDirty(key, false));
-      return <div class="artifact-workspace__tab" hidden={state().active !== key} aria-label={tab.title}>
+      return <div class="artifact-workspace__tab" role="tabpanel" hidden={state().active !== key} aria-label={title(tab)}>
         <ErrorBoundary fallback={(_error, reset) => <Placeholder
           state="error" variant="panel" title={t().loadFailed}
           description={t().loadFailedDescription}

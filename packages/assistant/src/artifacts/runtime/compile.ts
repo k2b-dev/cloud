@@ -26,10 +26,12 @@ function resolveSourceFile(importer: string, specifier: string, files: ReadonlyM
 
 let runtime: Promise<string> | undefined;
 export function runtimeSource(): Promise<string> {
-  if (process.env.NODE_ENV === "production")
-    return runtime ??= Bun.file(new URL("./assistant-artifact-worker.js", import.meta.url)).text().catch((error) => {
+  if (process.env.NODE_ENV === "production") {
+    runtime ??= Bun.file(new URL("./assistant-artifact-worker.js", import.meta.url)).text().catch((error) => {
       runtime = undefined; throw error;
     });
+    return runtime;
+  }
   if (!runtime) runtime = Bun.build({
     entrypoints: [new URL("./worker.ts", import.meta.url).pathname],
     target: "browser", format: "iife", minify: true,

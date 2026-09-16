@@ -8,6 +8,7 @@ import * as live from "@k2b/cloud/ai/live";
 import type { CloudRuntime, User } from "@k2b/cloud/contracts";
 import type { AuthContext } from "@k2b/cloud/server";
 import * as services from "@k2b/cloud/services";
+import * as rail from "@k2b/cloud/services/rail-snapshot";
 import { Hono } from "hono";
 import * as projectContext from "../project-context";
 import * as sidebar from "../sidebar";
@@ -55,6 +56,8 @@ afterEach(() => {
   for (const spy of spies.splice(0)) spy.mockRestore();
 });
 beforeEach(() => {
+  spies.push(spyOn(ai, "getAiChatQuotas").mockResolvedValue({ enabled: false, balances: [] }));
+  spies.push(spyOn(rail, "readRailSnapshot").mockResolvedValue({ revision: 0, visibility: {}, shortcuts: [], managedShortcuts: [] }));
   spies.push(spyOn(live, "latestAiInvalidationCursor").mockResolvedValue("s6t.cloud-ai-invalidations.0"));
   spies.push(
     spyOn(ai, "assistantAiSettingsState").mockResolvedValue({

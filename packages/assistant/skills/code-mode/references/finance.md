@@ -41,8 +41,8 @@ const sepaExample = {
   messageId: "example-batch-1", paymentInformationId: "example-payment-1",
   debtorName: "Example & Partners", debtorIban: "DE89370400440532013000", executionDate: "2026-09-14",
   rows: [
-    { endToEndId: "example-transfer-1", amount: "12.30", creditorName: "Recipient <Example>",
-      creditorIban: "NL91ABNA0417164300", remittance: 'Example "train" & meal' },
+    { endToEndId: "example-transfer-1", amount: "12.30", creditorName: "Recipient (Example)",
+      creditorIban: "NL91ABNA0417164300", remittance: "Example train & meal" },
     { endToEndId: "example-transfer-2", amount: "0.01", creditorName: "Second recipient",
       creditorIban: "NL91ABNA0417164300", creditorBic: "ABNANL2A", remittance: "Example adjustment" },
   ],
@@ -112,7 +112,10 @@ DATEV constraints:
 SEPA constraints:
 - IDs: 1–35 ASCII letters/digits or `+ ? / : ( ) . , ' -` and spaces;
   no leading/trailing slash or `//`.
-- Names: 1–70 characters; `remittance`: 1–140; no control characters.
+- Names: 1–70 characters; `remittance`: 1–140. Both use ASCII letters/digits,
+  `+ ? / : ( ) . , ' -` and spaces, plus `ÄÖÜäöüß&*$%`. Blank values,
+  double quotes, angle brackets, other accented letters, emoji, and control
+  characters are rejected; text is not transliterated.
 - IBANs must be valid uppercase SEPA IBANs without spaces; QR-IBANs are rejected.
   Optional BICs must be valid BICs.
 

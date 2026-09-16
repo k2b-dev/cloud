@@ -9,7 +9,9 @@
     "./cli": "./src/cli.ts"
   },
   "scripts": {
-    "typecheck": "tsc -p tsconfig.json --noEmit --pretty false 2>&1 | grep -v node_modules | (! grep -q 'error TS')"
+    "test": "bun run scripts/test.ts",
+    "test:integration": "bun run scripts/test-artifacts.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit --pretty false"
   },
   "dependencies": {
     "@k2b/cloud": "workspace:*",

@@ -83,7 +83,7 @@ describe("Assistant frontend contracts", () => {
     expect(projectSettings).toContain("<SettingsModal");
   });
 
-  test("keeps Assistant composer actions in one contextual Plus menu", async () => {
+  test("keeps contextual composer actions alongside shared slash commands", async () => {
     const [workspace, page, messageSearch] = await Promise.all([
       read("./AssistantWorkspace.island.tsx"),
       read("./page.tsx"),
@@ -92,7 +92,7 @@ describe("Assistant frontend contracts", () => {
 
     expect(workspace).not.toContain("type ChatCommand");
     expect(workspace).not.toContain("const slashCommands");
-    expect(workspace).not.toContain("commands={");
+    expect(workspace).toContain("searchCommands={(query, signal) => assistantComposerCommands(");
     expect(workspace).not.toContain("type / ...");
     expect(workspace).toContain('id: "attach-resource"');
     expect(workspace).toContain("onPaste={(event) => pasteComposerContent");

@@ -113,6 +113,7 @@ describe("Assistant Project view", () => {
               files: [],
               references: [{
                 id: "mail-ref",
+                shortId: "MaR123",
                 projectId: project.id,
                 ref: { type: "mail.conversation", id: "MaL123" },
                 label: "Supplier invoice September",
